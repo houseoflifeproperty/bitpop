@@ -1,7 +1,10 @@
+.landmines
+*.gypcmd
 *.Makefile
 *.mk
 *.ncb
 *.ninja
+*.orig
 *.props
 *.pyc
 *.rules
@@ -36,9 +39,12 @@ v8.log
 /bitpop_specific/extensions/*.pem
 /bitpop_specific/extensions/*.crx
 /bitpop_specific/extensions/upload
+/build/util/LASTCHANGE.blink
 /chrome/browser/extensions/default_extensions/*.crx
 /native_client/toolchain
 /third_party/llvm-build
+/third_party/clang_format/bin
+/tools/gn/bin
 /build/Debug
 /build/Purify
 /build/Release

@@ -49,7 +49,6 @@
 #include "core/editing/FrameSelection.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/frame/Settings.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
@@ -74,11 +73,6 @@
 namespace WebCore {
 
 const int ResizerControlExpandRatioForTouch = 2;
-
-// Default value is set to 15 as the default
-// minimum size used by firefox is 15x15.
-static const int defaultMinimumWidthForResizing = 15;
-static const int defaultMinimumHeightForResizing = 15;
 
 RenderLayerScrollableArea::RenderLayerScrollableArea(RenderLayer& layer)
     : m_layer(layer)
@@ -486,20 +480,6 @@ IntPoint RenderLayerScrollableArea::lastKnownMousePosition() const
     return box().frame() ? box().frame()->eventHandler().lastKnownMousePosition() : IntPoint();
 }
 
-bool RenderLayerScrollableArea::scrollAnimatorEnabled() const
-{
-    return box().frame()->settings() && box().frame()->settings()->scrollAnimatorEnabled();
-}
-
-bool RenderLayerScrollableArea::scheduleAnimation()
-{
-    if (HostWindow* window = box().frameView()->hostWindow()) {
-        window->scheduleAnimation();
-        return true;
-    }
-    return false;
-}
-
 bool RenderLayerScrollableArea::shouldSuspendScrollAnimations() const
 {
     RenderView* view = box().view();
@@ -725,16 +705,6 @@ static bool overflowRequiresScrollbar(EOverflow overflow)
 static bool overflowDefinesAutomaticScrollbar(EOverflow overflow)
 {
     return overflow == OAUTO || overflow == OOVERLAY;
-}
-
-IntSize RenderLayerScrollableArea::minimumSizeForResizing()
-{
-    int minimumWidth = intValueForLength(box().style()->logicalMinWidth(), box().containingBlock()->logicalWidth());
-    int minimumHeight = intValueForLength(box().style()->logicalMinHeight(), box().containingBlock()->logicalHeight());
-
-    minimumWidth = std::max(minimumWidth, defaultMinimumWidthForResizing);
-    minimumHeight = std::max(minimumHeight, defaultMinimumHeightForResizing);
-    return IntSize(minimumWidth, minimumHeight);
 }
 
 void RenderLayerScrollableArea::updateAfterStyleChange(const RenderStyle* oldStyle)
@@ -1395,6 +1365,8 @@ void RenderLayerScrollableArea::resize(const PlatformEvent& evt, const LayoutSiz
     newOffset.setHeight(newOffset.height() / zoomFactor);
 
     LayoutSize currentSize = LayoutSize(box().width() / zoomFactor, box().height() / zoomFactor);
+    LayoutSize minimumSize = element->minimumSizeForResizing().shrunkTo(currentSize);
+    element->setMinimumSizeForResizing(minimumSize);
 
     LayoutSize adjustedOldOffset = LayoutSize(oldOffset.width() / zoomFactor, oldOffset.height() / zoomFactor);
     if (box().style()->shouldPlaceBlockDirectionScrollbarOnLogicalLeft()) {
@@ -1402,7 +1374,7 @@ void RenderLayerScrollableArea::resize(const PlatformEvent& evt, const LayoutSiz
         adjustedOldOffset.setWidth(-adjustedOldOffset.width());
     }
 
-    LayoutSize difference = (currentSize + newOffset - adjustedOldOffset).expandedTo(minimumSizeForResizing()) - currentSize;
+    LayoutSize difference = (currentSize + newOffset - adjustedOldOffset).expandedTo(minimumSize) - currentSize;
 
     bool isBoxSizingBorder = box().style()->boxSizing() == BORDER_BOX;
 

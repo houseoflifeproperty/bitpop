@@ -36,11 +36,14 @@ BrowserAccessibilityManagerWin::BrowserAccessibilityManagerWin(
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
     : BrowserAccessibilityManager(initial_tree, delegate, factory),
-      parent_hwnd_(accessible_hwnd->GetParent()),
+      parent_hwnd_(NULL),
       parent_iaccessible_(parent_iaccessible),
       tracked_scroll_object_(NULL),
       accessible_hwnd_(accessible_hwnd) {
-  accessible_hwnd_->set_browser_accessibility_manager(this);
+  if (accessible_hwnd_) {
+    accessible_hwnd_->set_browser_accessibility_manager(this);
+    parent_hwnd_ = accessible_hwnd_->GetParent();
+  }
 }
 
 BrowserAccessibilityManagerWin::~BrowserAccessibilityManagerWin() {
@@ -67,10 +70,19 @@ ui::AXTreeUpdate BrowserAccessibilityManagerWin::GetEmptyDocument() {
   return update;
 }
 
+void BrowserAccessibilityManagerWin::SetAccessibleHWND(
+    LegacyRenderWidgetHostHWND* accessible_hwnd) {
+  accessible_hwnd_ = accessible_hwnd;
+  if (accessible_hwnd_) {
+    accessible_hwnd_->set_browser_accessibility_manager(this);
+    parent_hwnd_ = accessible_hwnd_->GetParent();
+  }
+}
+
 void BrowserAccessibilityManagerWin::MaybeCallNotifyWinEvent(DWORD event,
                                                              LONG child_id) {
   // Don't fire events if this view isn't hooked up to its parent.
-  if (!parent_iaccessible())
+  if (!parent_iaccessible() || !parent_hwnd())
     return;
 
   // If on Win 7 and complete accessibility is enabled, use the fake child HWND
