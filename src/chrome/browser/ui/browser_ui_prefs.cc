@@ -19,6 +19,8 @@ void RegisterBrowserPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kAllowFileSelectionDialogs, true);
   registry->RegisterIntegerPref(prefs::kShowFirstRunBubbleOption,
                              first_run::FIRST_RUN_BUBBLE_DONT_SHOW);
+  registry->RegisterIntegerPref(prefs::kShowFirstRunFacebookBubbleOption,
+                             first_run::FIRST_RUN_BUBBLE_SHOW);
 }
 
 void RegisterBrowserUserPrefs(user_prefs::PrefRegistrySyncable* registry) {

@@ -213,7 +213,7 @@ FB.Client.prototype.logout = function () {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('myUid');
     //notifyObservingExtensions({ type: 'loggedOut' });
-    chrome.bitpop.facebookChat.loggedOutFacebookSession();
+    chrome.bitpopFacebookChat.loggedOutFacebookSession();
 
     var url = FB.LOGOUT_URL + '?next=' +
       FB.LOGOUT_NEXT_URL +
@@ -388,8 +388,8 @@ FB.Client.prototype.onGotUid = function () {
   console.log('onGotUid() called');
   $.publish('myUidAvailable.client.fb');
 
-  chrome.bitpop.facebookChat.loggedInFacebookSession();
-  chrome.bitpop.facebookChat.setGlobalMyUidForProfile(this.myUid);
+  chrome.bitpopFacebookChat.loggedInFacebookSession();
+  chrome.bitpopFacebookChat.setGlobalMyUidForProfile(this.myUid);
 }
 
 FB.Client.prototype.extendAccessToken = function () {

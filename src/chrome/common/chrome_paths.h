@@ -128,8 +128,6 @@ enum {
   DIR_TEST_DATA,                // Directory where unit test data resides.
   DIR_TEST_TOOLS,               // Directory where unit test tools reside.
 
-  DIR_DEPRECATED_EXTERNAL_EXTENSIONS,
-
   PATH_END
 };
 

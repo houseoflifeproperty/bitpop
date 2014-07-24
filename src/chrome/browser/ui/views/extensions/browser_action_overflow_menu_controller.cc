@@ -14,7 +14,7 @@
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
 #include "chrome/browser/ui/views/toolbar/browser_action_view.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
-#include "chrome/common/chrome_constants.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "extensions/common/extension.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/controls/menu/menu_item_view.h"
@@ -92,11 +92,11 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
         GetTitle(owner_->GetCurrentTabId()));
     menu_->SetTooltip(tooltip, command_id);
 
-    if (view->button()->extension()->id() == chrome::kFacebookChatExtensionId)
+    if (view->button()->extension()->id() == extension_misc::kFacebookChatExtensionId)
       facebook_chat_item_id_ = command_id;
-    else if (view->button()->extension()->id() == chrome::kFacebookMessagesExtensionId)
+    else if (view->button()->extension()->id() == extension_misc::kFacebookMessagesExtensionId)
       facebook_messages_item_id_ = command_id;
-    else if (view->button()->extension()->id() == chrome::kFacebookNotificationsExtensionId)
+    else if (view->button()->extension()->id() == extension_misc::kFacebookNotificationsExtensionId)
       facebook_notifications_item_id_ = command_id;
 
     icon_updaters_.push_back(new IconUpdater(menu_item, view->button()));

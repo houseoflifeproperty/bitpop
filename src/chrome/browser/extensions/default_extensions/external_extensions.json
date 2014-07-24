@@ -2,39 +2,3 @@
 // in the installer.
 
 {
-  "jcpicigjjhpmobmnaoegfajemdcjkjdm": {
-    "external_crx": "dropdown_most_visited.crx",
-    "external_version": "0.15"
-  },
-  "engefnlnhcgeegefndkhijjfdfbpbeah": {
-    "external_crx": "facebook_friends.crx",
-    "external_version": "2.2"
-  },
-  "dhcejgafhmkdfanoalflifpjimaaijda": {
-    "external_crx": "facebook_messages.crx",
-    "external_version": "1.33"
-  },
-  "omkphklbdjafhafacohmepaahbofnkcp": {
-    "external_crx": "facebook_notifications.crx",
-    "external_version": "2.10"
-  },
-  "oadgfoondcimpmclpkphkdnjhaddaehg": {
-    "external_crx": "uncensor_domains.crx",
-    "external_version": "1.2"
-  },
-  "fjfallkmojjifpfkopjoogodecehcjam": {
-    "external_crx": "uncensor_proxy.crx",
-    "external_version": "1.11"
-  },
-  "lgnnehjoabpehiaamnigofbmajljjefh": {
-    "external_crx": "share_this.crx",
-    "external_version": "0.1"
-  },
-  "nnbmlagghjjcbdhgmkedmbmedengocbn": {
-    "external_update_url": "http://clients2.google.com/service/update2/crx"
-  },
-  "geoplninmkljnhklaihoejihlogghapi": {
-    "external_crx": "share_button.crx",
-    "external_version": "0.4"
-  }
-}

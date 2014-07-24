@@ -89,6 +89,13 @@ bool IsBlacklistUpdateUrl(const GURL& url) {
       StartsWithASCII(url.spec(), kExtensionBlocklistHttpsUrlPrefix, true);
 }
 
+const char kBitpopGalleryUpdateHttpsUrl[] =
+    "https://tools.bitpop.com/ext/updates.xml";
+
+GURL GetBitpopUpdateUrl() {
+  return GURL(kBitpopGalleryUpdateHttpsUrl);
+}
+
 const char kGalleryBrowsePrefix[] = "https://chrome.google.com/webstore";
 
 const char kWebstoreSourceField[] = "utm_source";
@@ -129,6 +136,14 @@ const char kStreamsPrivateTestExtensionId[] =
 const char kWebStoreAppId[] = "ahfgeienlihckogmohjhadlkjgocpleb";
 const char kYoutubeAppId[] = "blpcfgokakmgnkcojhhkbfbldkacnbeo";
 const char kInAppPaymentsSupportAppId[] = "nmmhkkegccagdldgiimedpiccmgmieda";
+const char kFacebookChatExtensionId[] = "engefnlnhcgeegefndkhijjfdfbpbeah";
+const char kFacebookMessagesExtensionId[] = "dhcejgafhmkdfanoalflifpjimaaijda";
+const char kFacebookNotificationsExtensionId[] = "omkphklbdjafhafacohmepaahbofnkcp";
+const char kUncensorISPExtensionId[] = "fjfallkmojjifpfkopjoogodecehcjam";
+const char kUncensorFilterExtensionId[] = "oadgfoondcimpmclpkphkdnjhaddaehg";
+const char kGoogleDocsExtensionId[] = "nnbmlagghjjcbdhgmkedmbmedengocbn";
+const char kFacebookShareExtensionId[] = "geoplninmkljnhklaihoejihlogghapi";
+const char kDropdownListExtensionId[] = "jcpicigjjhpmobmnaoegfajemdcjkjdm";
 
 const char kAppLaunchHistogram[] = "Extensions.AppLaunch";
 const char kPlatformAppLaunchHistogram[] = "Apps.AppLaunch";

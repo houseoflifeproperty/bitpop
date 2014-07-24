@@ -1672,6 +1672,9 @@ const char kCertificateManagerWindowLastTabIndex[] =
 // This preference is only registered by the first-run procedure.
 const char kShowFirstRunBubbleOption[] = "show-first-run-bubble-option";
 
+// Same as previous but for facebook chat extension popup.
+const char kShowFirstRunFacebookBubbleOption[] = "show-first-run-facebook-bubble-option";
+
 // String containing the last known Google URL.  We re-detect this on startup in
 // most cases, and use it to send traffic to the correct Google host or with the
 // correct Google domain/country code for whatever location the user is in.

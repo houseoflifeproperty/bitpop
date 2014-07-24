@@ -494,11 +494,7 @@ void ChromeContentClient::AddAdditionalSchemes(
 }
 
 std::string ChromeContentClient::GetProduct() const {
-  chrome::VersionInfo version_info;
-  std::string bitpopProduct("Chrome/");
-  bitpopProduct += version_info.is_valid() ?
-      version_info.ChromiumReleaseVersion() : "0.0.0.0";
-  return bitpopProduct;
+  return ::GetProduct();
 }
 
 std::string ChromeContentClient::GetUserAgent() const {

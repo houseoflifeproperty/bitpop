@@ -24,7 +24,7 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_constants.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
@@ -93,7 +93,7 @@ void BitpopUncensorFilterHandler::ChangeUncensorExceptions(
   else {
     extensions::ExtensionPrefs* prefs = extensions::ExtensionPrefs::Get(profile);
     prefs->UpdateExtensionPref(
-        chrome::kUncensorFilterExtensionId,
+        extension_misc::kUncensorFilterExtensionId,
         prefs::kUncensorDomainExceptions,
         base::Value::CreateStringValue(strValue));
   }

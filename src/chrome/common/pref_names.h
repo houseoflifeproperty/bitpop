@@ -542,6 +542,7 @@ extern const char kOptionsWindowLastTabIndex[];
 extern const char kContentSettingsWindowLastTabIndex[];
 extern const char kCertificateManagerWindowLastTabIndex[];
 extern const char kShowFirstRunBubbleOption[];
+extern const char kShowFirstRunFacebookBubbleOption[];
 
 extern const char kLastKnownGoogleURL[];
 extern const char kLastPromptedGoogleURL[];

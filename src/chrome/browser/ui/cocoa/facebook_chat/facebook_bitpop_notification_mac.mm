@@ -18,91 +18,61 @@
 
 #include "base/mac/mac_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/bitmap_fetcher.h"
 #include "chrome/browser/profiles/profile.h"
 #import  "chrome/browser/ui/cocoa/dock_icon.h"
 #include "content/child/image_decoder.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/url_request/url_fetcher_impl.h"
-#include "net/url_request/url_fetcher.h"
-#include "net/url_request/url_fetcher_delegate.h"
-#include "net/url_request/url_fetcher_factory.h"
-#include "net/http/http_response_headers.h"
-#include "net/url_request/url_request_status.h"
+#include "net/base/load_flags.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
-using net::URLFetcher;
+using chrome::BitmapFetcher;
+
+namespace {
 
 static const char* kProfileImageURLPart1 = "http://graph.facebook.com/";
 static const char* kProfileImageURLPart2 = "/picture?type=square";
 
-
-class FacebookProfileImageFetcherDelegate : public net::URLFetcherDelegate {
+class FacebookProfileBitmapFetcherDelegate : public chrome::BitmapFetcherDelegate {
 public:
-  FacebookProfileImageFetcherDelegate(Profile* profile,
-      const std::string &uid, int num_unread_to_set_on_callback);
+  FacebookProfileBitmapFetcherDelegate(int num_unread_to_set_on_callback)
+    : num_unread_to_set_(num_unread_to_set_on_callback), fetcher_for_deletion_(NULL) {}
 
-  virtual void OnURLFetchComplete(const URLFetcher* source) OVERRIDE;
-
-private:
-  scoped_ptr<URLFetcher> url_fetcher_;
-  Profile* profile_;
-  int num_unread_to_set_;
-};
-
-FacebookProfileImageFetcherDelegate::FacebookProfileImageFetcherDelegate(
-    Profile* profile, const std::string &uid, int num_unread_to_set_on_callback)
- :
-  profile_(profile),
-  num_unread_to_set_(num_unread_to_set_on_callback) {
-
-  url_fetcher_.reset(new net::URLFetcherImpl(
-      GURL(std::string(kProfileImageURLPart1) + uid +
-              std::string(kProfileImageURLPart2)),
-          URLFetcher::GET,
-          this)
-  );
-  url_fetcher_->SetRequestContext(profile_->GetRequestContext());
-  url_fetcher_->Start();
-}
-
-void FacebookProfileImageFetcherDelegate::OnURLFetchComplete(const URLFetcher* source) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (source->GetStatus().is_success() && (source->GetResponseCode() / 100 == 2)) {
-    std::string mime_type;
-    if (source->GetResponseHeaders()->GetMimeType(&mime_type) &&
-        (mime_type == "image/gif" || mime_type == "image/png" ||
-         mime_type == "image/jpeg")) {
-
-      content::ImageDecoder decoder;
-
-      std::string data;
-      if (source->GetResponseAsString(&data)) {
-        SkBitmap decoded = decoder.Decode(
-            reinterpret_cast<const unsigned char*>(data.c_str()),
-            data.length());
-
-        CGColorSpaceRef color_space = base::mac::GetSystemColorSpace();
-        NSImage* image = gfx::SkBitmapToNSImageWithColorSpace(decoded, color_space);
-
-        [[DockIcon sharedDockIcon] setUnreadNumber:num_unread_to_set_
-                                  withProfileImage:image];
-        [[DockIcon sharedDockIcon] updateIcon];
-
-        [NSApp requestUserAttention:NSInformationalRequest];
-      }
-    }
+  void set_fetcher_for_deletion(BitmapFetcher* fetcher) {
+    fetcher_for_deletion_ = fetcher;
   }
 
-  delete this;
-}
+  virtual void OnFetchComplete(const GURL url, const SkBitmap* bitmap) OVERRIDE {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-// ---------------------------------------------------------------------------
+    if (bitmap) {
+      CGColorSpaceRef color_space = base::mac::GetSystemColorSpace();
+      NSImage* image = gfx::SkBitmapToNSImageWithColorSpace(*bitmap, color_space);
+
+      [[DockIcon sharedDockIcon] setUnreadNumber:num_unread_to_set_
+                                withProfileImage:image];
+      [[DockIcon sharedDockIcon] updateIcon];
+
+      [NSApp requestUserAttention:NSInformationalRequest];
+    }
+
+    if (fetcher_for_deletion_)
+      delete fetcher_for_deletion_;
+
+    delete this;
+  }
+private:
+  int num_unread_to_set_;
+  BitmapFetcher* fetcher_for_deletion_;
+};
+
+} // namespace
+
 FacebookBitpopNotificationMac::FacebookBitpopNotificationMac(Profile *profile)
-  : profile_(profile), delegate_(NULL) {
+    : profile_(profile) {
 }
 
 FacebookBitpopNotificationMac::~FacebookBitpopNotificationMac() {
@@ -116,9 +86,21 @@ void FacebookBitpopNotificationMac::ClearNotification() {
 
 void FacebookBitpopNotificationMac::NotifyUnreadMessagesWithLastUser(
     int num_unread, const std::string& user_id) {
+  DCHECK(profile_);
+
   if (![NSApp isActive]) {
-    delegate_ = new FacebookProfileImageFetcherDelegate(profile_, user_id,
-        num_unread);
+    FacebookProfileBitmapFetcherDelegate* delegate =
+        new FacebookProfileBitmapFetcherDelegate(num_unread);
+    BitmapFetcher* fetcher = new BitmapFetcher(
+        GURL(std::string(kProfileImageURLPart1) + user_id +
+             std::string(kProfileImageURLPart2)),
+        delegate);
+    delegate->set_fetcher_for_deletion(fetcher);
+    fetcher->Start(
+        profile_->GetRequestContext(),
+        std::string(),
+        net::URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE,
+        net::LOAD_NORMAL);
   }
 }
 

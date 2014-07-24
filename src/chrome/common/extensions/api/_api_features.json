@@ -137,7 +137,7 @@
     "dependencies": ["permission:bitpop"],
     "contexts": ["blessed_extension"]
   },
-  "bitpop.facebookChat": {
+  "bitpopFacebookChat": {
     "dependencies": ["permission:bitpop"],
     "contexts": ["blessed_extension"]
   },

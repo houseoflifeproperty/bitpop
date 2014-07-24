@@ -22,7 +22,6 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
 
-class FacebookProfileImageFetcherDelegate;
 class Profile;
 
 class FacebookBitpopNotificationMac : public FacebookBitpopNotification {
@@ -38,7 +37,6 @@ public:
 
 private:
   Profile* const profile_;
-  FacebookProfileImageFetcherDelegate *delegate_;
 };
 
 #endif  // CHROME_BROWSER_UI_COCOA_FACEBOK_CHAT_FACEBOOK_BITPOP_NOTIFICATION_MAC_H_

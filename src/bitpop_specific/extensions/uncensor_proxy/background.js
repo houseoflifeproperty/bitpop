@@ -190,20 +190,16 @@ function updateProxifiedDomains() {
         chrome.bitpop.prefs.ipRecognitionCountryName.set({ value: response.country_name });
 
         //chrome.extension.sendMessage({ reason: 'settingsChanged' });
-
-        var notification = webkitNotifications.createNotification(
-          // icon url - can be relative
-          '48uncensorp.png',
-          // notification title
-          'Uncensor ISP',
-          // notification body text
-          'The list of domains to use proxy for, was updated successfully.' +
-          ' Country detected is ' + response.country_name + '.'
-        );
-        notification.show();
-        setTimeout(function() {
-          notification.cancel();
-        }, UPDATED_NOTIFICATION_SHOW_TIME);
+        chrome.notifications.create("", {
+          type: "basic",
+          iconUrl: '48uncensorp.png',
+          title: 'Uncensor ISP',
+          message: 'The list of domains to use proxy for, was updated successfully.' +
+                   ' Country detected is ' + response.country_name + '.'
+        }, function (notificationId) {
+          setTimeout(function () { chrome.notifications.clear(notificationId); },
+                     UPDATED_NOTIFICATION_SHOW_TIME);
+        });
       }
 
       settings.set('last_update_time', Date.now());

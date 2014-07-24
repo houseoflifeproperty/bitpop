@@ -17,7 +17,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_action_context_menu_controller.h"
-#include "chrome/common/chrome_constants.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
@@ -139,7 +139,7 @@ class ExtensionActionIconFactoryBridge
               tabId:(int)tabId {
   if ((self = [super initWithFrame:frame])) {
     isCustomExtension_ =
-        extension->id() == chrome::kFacebookChatExtensionId;
+        extension->id() == extension_misc::kFacebookChatExtensionId;
     BrowserActionCell* cell = [[[BrowserActionCell alloc] init] autorelease];
     // [NSButton setCell:] warns to NOT use setCell: other than in the
     // initializer of a control.  However, we are using a basic
@@ -206,15 +206,15 @@ class ExtensionActionIconFactoryBridge
 }
 
 - (void)mouseDown:(NSEvent*)theEvent {
-  if (extension_->id() != chrome::kFacebookChatExtensionId &&
-      extension_->id() != chrome::kFacebookMessagesExtensionId &&
-      extension_->id() != chrome::kFacebookNotificationsExtensionId) {
+  if (extension_->id() != extension_misc::kFacebookChatExtensionId &&
+      extension_->id() != extension_misc::kFacebookMessagesExtensionId &&
+      extension_->id() != extension_misc::kFacebookNotificationsExtensionId) {
     [[self cell] setHighlighted:YES];
     dragCouldStart_ = YES;
     dragStartPoint_ = [theEvent locationInWindow];
   }
 
-  if (extension_->id() == chrome::kFacebookChatExtensionId)
+  if (extension_->id() == extension_misc::kFacebookChatExtensionId)
     [[self cell] setHighlighted:YES];
 }
 

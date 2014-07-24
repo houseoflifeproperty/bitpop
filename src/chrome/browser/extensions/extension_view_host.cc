@@ -63,7 +63,8 @@ ExtensionViewHost::ExtensionViewHost(
   // Not used for panels, see PanelHost.
   DCHECK(host_type == VIEW_TYPE_EXTENSION_DIALOG ||
          host_type == VIEW_TYPE_EXTENSION_INFOBAR ||
-         host_type == VIEW_TYPE_EXTENSION_POPUP);
+         host_type == VIEW_TYPE_EXTENSION_POPUP ||
+         host_type == VIEW_TYPE_TAB_CONTENTS);
 }
 
 ExtensionViewHost::~ExtensionViewHost() {

@@ -134,7 +134,7 @@ SafeBrowsingProtocolManager::SafeBrowsingProtocolManager(
   back_off_fuzz_ = static_cast<float>(base::RandDouble());
 
   chrome::VersionInfo version_info;
-  version_ = version_info.ChromiumReleaseVersion();
+  version_ = version_info.Version();
 }
 
 // static

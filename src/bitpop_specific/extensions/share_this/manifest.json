@@ -1,5 +1,6 @@
 {
   "name": "Share via BitPop",
+  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDrjzokVAF98QtZ2ybcVqMgb0ApY72edPEz6z/s3dPZqOxfWsoYxWM4MxpTHmzVqFvji204li9/nTsupO/fheyaaDqw+IBPgNL98nSYie8Rh9CS7ZXsw3Q9JHv5uh+2Hx96X+FacUa/C6l38V7i280spbhIzt1ws05e8Eyo44zIEwIDAQAB",
   "description": "Provides Facebook sharing features for the web you browse",
   "icons": {
     "16": "images/icon-16.png",

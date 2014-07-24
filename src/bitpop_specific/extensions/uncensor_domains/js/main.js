@@ -52,15 +52,14 @@ function downloadFilterData() {
           changed = true;
 
       if (changed && prefs.notifyUpdate) {
-        var notification = webkitNotifications.createNotification(
-          '48uncensor.png',  // icon url - can be relative
-          chrome.i18n.getMessage("extName"),  // notification title
-          chrome.i18n.getMessage("updateSuccessMsg")  // notification body text
-        );
-        notification.show();
-        setTimeout(function() {
-          notification.cancel();
-        }, 5000);
+        chrome.notifications.create("", {
+          type: "basic", 
+          iconUrl: "48uncensor.png",
+          title: chrome.i18n.getMessage("extName"),
+          message: chrome.i18n.getMessage("updateSuccessMsg")
+        }, function (notificationId) {
+          setTimeout(function() { chrome.notifications.clear(notificationId); }, 5000);
+        });
       }
 
       prefs.domainFilter = od;
@@ -139,16 +138,14 @@ function redirectListener(tabId, changeInfo, tab) {
       var newUri = reconstructUri(uri);
       chrome.tabs.update(tabId, {"url": newUri});
 
-      var notification = webkitNotifications.createNotification(
-        '48uncensor.png',  // icon url - can be relative
-        chrome.i18n.getMessage("extName"),  // notification title
-        chrome.i18n.getMessage("redirectedMsg").format(newUri)  // notification body text
-      );
-      notification.show();
-
-      setTimeout(function() {
-        notification.cancel();
-      }, 5000);
+      chrome.notifications.create("", {
+        type: "basic",
+        iconUrl: "48uncensor.png",
+        title: chrome.i18n.getMessage("extName"),
+        message: chrome.i18n.getMessage("redirectedMsg").format(newUri)
+      }, function (notificationId) {
+        setTimeout(function() { chrome.notifications.clear(notificationId); }, 5000);
+      });
     }
   }
 };

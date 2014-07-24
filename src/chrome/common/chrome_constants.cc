@@ -272,14 +272,6 @@ const char kApplicationClientIDStringForAVScanning[] =
 const size_t kMaxMetaTagAttributeLength = 2000;
 #endif
 
-const char kFacebookChatExtensionId[] = "engefnlnhcgeegefndkhijjfdfbpbeah";
-const char kFacebookMessagesExtensionId[] = "dhcejgafhmkdfanoalflifpjimaaijda";
-const char kFacebookNotificationsExtensionId[] = "omkphklbdjafhafacohmepaahbofnkcp";
-const char kUncensorISPExtensionId[] = "fjfallkmojjifpfkopjoogodecehcjam";
-const char kUncensorFilterExtensionId[] = "oadgfoondcimpmclpkphkdnjhaddaehg";
-const char kGoogleDocsExtensionId[] = "nnbmlagghjjcbdhgmkedmbmedengocbn";
-const char kFacebookShareExtensionId[] = "geoplninmkljnhklaihoejihlogghapi";
-const char kDropdownListExtensionId[] = "jcpicigjjhpmobmnaoegfajemdcjkjdm";
 }  // namespace chrome
 
 #undef FPL

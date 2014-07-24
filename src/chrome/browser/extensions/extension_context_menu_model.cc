@@ -15,7 +15,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
@@ -172,9 +171,9 @@ void ExtensionContextMenuModel::InitMenu(const Extension* extension) {
   AddItem(NAME, base::UTF8ToUTF16(extension_name));
   AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(CONFIGURE, IDS_EXTENSIONS_OPTIONS_MENU_ITEM);
-  if (!(extension->id() == chrome::kFacebookChatExtensionId ||
-        extension->id() == chrome::kFacebookMessagesExtensionId ||
-        extension->id() == chrome::kFacebookNotificationsExtensionId)) {
+  if (!(extension->id() == extension_misc::kFacebookChatExtensionId ||
+        extension->id() == extension_misc::kFacebookMessagesExtensionId ||
+        extension->id() == extension_misc::kFacebookNotificationsExtensionId)) {
     AddItem(UNINSTALL, l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL));
     if (extension_action_manager->GetBrowserAction(*extension))
       AddItemWithStringId(HIDE, IDS_EXTENSIONS_HIDE_BUTTON);

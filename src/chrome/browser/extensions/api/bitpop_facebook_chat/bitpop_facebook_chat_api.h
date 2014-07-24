@@ -26,49 +26,49 @@ class TabContents;
 class BitpopFacebookChatSetFriendsSidebarVisibleFunction : public ChromeSyncExtensionFunction {
   virtual ~BitpopFacebookChatSetFriendsSidebarVisibleFunction() {}
   virtual bool RunSync() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION("bitpop.facebookChat.setFriendsSidebarVisible",
+  DECLARE_EXTENSION_FUNCTION("bitpopFacebookChat.setFriendsSidebarVisible",
     BITPOP_FACEBOOKCHAT_SETFRIENDSSIDEBARVISIBLE);
 };
 
 class BitpopFacebookChatGetFriendsSidebarVisibleFunction : public ChromeSyncExtensionFunction {
   virtual ~BitpopFacebookChatGetFriendsSidebarVisibleFunction() {}
   virtual bool RunSync() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION("bitpop.facebookChat.getFriendsSidebarVisible",
+  DECLARE_EXTENSION_FUNCTION("bitpopFacebookChat.getFriendsSidebarVisible",
       BITPOP_FACEBOOKCHAT_GETFRIENDSSIDEBARVISIBLE);
 };
 
 class BitpopFacebookChatAddChatFunction : public ChromeSyncExtensionFunction {
   virtual ~BitpopFacebookChatAddChatFunction() {}
   virtual bool RunSync() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION("bitpop.facebookChat.addChat",
+  DECLARE_EXTENSION_FUNCTION("bitpopFacebookChat.addChat",
       BITPOP_FACEBOOKCHAT_ADDCHAT);
 };
 
 class BitpopFacebookChatNewIncomingMessageFunction : public ChromeSyncExtensionFunction {
   virtual ~BitpopFacebookChatNewIncomingMessageFunction() {}
   virtual bool RunSync() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION("bitpop.facebookChat.newIncomingMessage",
+  DECLARE_EXTENSION_FUNCTION("bitpopFacebookChat.newIncomingMessage",
       BITPOP_FACEBOOKCHAT_NEWINCOMINGMESSAGE);
 };
 
 class BitpopFacebookChatLoggedOutFacebookSessionFunction : public ChromeSyncExtensionFunction {
   virtual ~BitpopFacebookChatLoggedOutFacebookSessionFunction() {}
   virtual bool RunSync() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION("bitpop.facebookChat.loggedOutFacebookSession",
+  DECLARE_EXTENSION_FUNCTION("bitpopFacebookChat.loggedOutFacebookSession",
       BITPOP_FACEBOOKCHAT_LOGGEDOUTFACEBOOKSESSION);
 };
 
 class BitpopFacebookChatLoggedInFacebookSessionFunction : public ChromeSyncExtensionFunction {
   virtual ~BitpopFacebookChatLoggedInFacebookSessionFunction() {}
   virtual bool RunSync() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION("bitpop.facebookChat.loggedInFacebookSession",
+  DECLARE_EXTENSION_FUNCTION("bitpopFacebookChat.loggedInFacebookSession",
       BITPOP_FACEBOOKCHAT_LOGGEDINFACEBOOKSESSION);
 };
 
 class BitpopFacebookChatSetGlobalMyUidForProfileFunction : public ChromeSyncExtensionFunction {
   virtual ~BitpopFacebookChatSetGlobalMyUidForProfileFunction() {}
   virtual bool RunSync() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION("bitpop.facebookChat.setGlobalMyUidForProfile",
+  DECLARE_EXTENSION_FUNCTION("bitpopFacebookChat.setGlobalMyUidForProfile",
       BITPOP_FACEBOOKCHAT_SETGLOBALMYUIDFORPROFILE);
 };
 

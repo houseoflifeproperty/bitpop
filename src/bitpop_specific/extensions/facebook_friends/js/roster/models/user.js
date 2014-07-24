@@ -97,7 +97,7 @@ Chat.Models.User = Ember.Object.extend(Chat.Jsonable, {
         if (this.get('show') != newValue) {
             this.set('show', newValue);
             // Update browser status of user
-            chrome.bitpop.facebookChat.newIncomingMessage(
+            chrome.bitpopFacebookChat.newIncomingMessage(
                 "service",
                 Strophe.getBareJidFromJid(this.get('jid')),
                 "",

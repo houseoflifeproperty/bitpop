@@ -55,6 +55,10 @@ bool IsWebstoreUpdateUrl(const GURL& update_url);
 
 // Returns true if the URL points to an extension blacklist.
 bool IsBlacklistUpdateUrl(const GURL& url);
+
+// Returns the update URL used by Bitpop extensions.
+GURL GetBitpopUpdateUrl();
+
 // The greatest common prefixes of the main extensions gallery's browse and
 // download URLs.
 extern const char kGalleryBrowsePrefix[];
@@ -145,6 +149,16 @@ extern const char kYoutubeAppId[];
 
 // The extension id of the in-app payments support application.
 extern const char kInAppPaymentsSupportAppId[];
+
+// The extension ids of BitPop integrated extensions
+extern const char kFacebookChatExtensionId[];
+extern const char kFacebookMessagesExtensionId[];
+extern const char kFacebookNotificationsExtensionId[];
+extern const char kUncensorISPExtensionId[];
+extern const char kUncensorFilterExtensionId[];
+extern const char kGoogleDocsExtensionId[];
+extern const char kFacebookShareExtensionId[];
+extern const char kDropdownListExtensionId[];
 
 // The name of the app launch histogram.
 extern const char kAppLaunchHistogram[];

@@ -1,11 +1,11 @@
 {
   "name": "Uncensor ISP",
-  "version": "1.11",
+  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCw50MKvzSqEHHP+SUbMlsLwQ2lwITdtOo/1EqUd7fyyMVGvJAFMQEeRFLP3LUfDWiHdAJmzfNdQdpvgsYi3eZGr9piOCKv2vkWgFCYaIpjy5hf8Sl3OJ70sASgcNLpTVrFl94/ZHYbqnM46ygxuiwZ/eg4XhxFe8cGElGcoQcj3QIDAQAB",
+  "version": "1.12",
   "description": "Your internet provider might try to block your access to some sites without proper proceedure. We give you access automatically through a proxy.",
   "background": {
-    "scripts": ["parseuri.js", "fancy-settings/source/lib/store.js", "background.js"]
+    "scripts": ["parseuri.js", "store.js", "background.js"]
   },
-  "options_page": "fancy-settings/source/index.html",
   "permissions" : [
     "bitpop",
     "webRequest",

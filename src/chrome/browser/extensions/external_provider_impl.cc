@@ -514,17 +514,6 @@ void ExternalProviderImpl::CreateExternalProviders(
                 Manifest::EXTERNAL_PREF,
                 Manifest::EXTERNAL_PREF_DOWNLOAD,
                 Extension::NO_FLAGS)));
-
-    provider_list->push_back(
-        linked_ptr<ExternalProviderInterface>(
-            new ExternalProviderImpl(
-                service,
-                new ExternalPrefLoader(chrome::DIR_DEPRECATED_EXTERNAL_EXTENSIONS,
-                                       ExternalPrefLoader::NONE),
-                profile,
-                Manifest::EXTERNAL_PREF,
-                Manifest::EXTERNAL_PREF_DOWNLOAD,
-                Extension::NO_FLAGS)));
 #endif
 
 #if defined(OS_WIN)

@@ -49,9 +49,7 @@ std::string VersionInfo::Name() const {
 }
 
 std::string VersionInfo::Version() const {
-  if (!is_valid())
-    return std::string();
-  return base::UTF16ToUTF8(version_info_->product_version());
+  return CHROMIUM_RELEASE_VERSION;
 }
 
 std::string VersionInfo::LastChange() const {
@@ -64,6 +62,12 @@ bool VersionInfo::IsOfficialBuild() const {
   if (!is_valid())
     return false;
   return version_info_->is_official_build();
+}
+
+std::string VersionInfo::BitpopVersion() const {
+  if (!is_valid())
+    return std::string();
+  return base::UTF16ToUTF8(version_info_->product_version());
 }
 
 #elif defined(OS_POSIX)
@@ -87,7 +91,7 @@ std::string VersionInfo::Name() const {
 }
 
 std::string VersionInfo::Version() const {
-  return PRODUCT_VERSION;
+  return CHROMIUM_RELEASE_VERSION;
 }
 
 std::string VersionInfo::LastChange() const {
@@ -96,6 +100,10 @@ std::string VersionInfo::LastChange() const {
 
 bool VersionInfo::IsOfficialBuild() const {
   return IS_OFFICIAL_BUILD;
+}
+
+std::string VersionInfo::BitpopVersion() const {
+  return PRODUCT_VERSION;
 }
 
 #endif
@@ -144,10 +152,6 @@ std::string VersionInfo::OSType() const {
 #else
   return "Unknown";
 #endif
-}
-
-std::string VersionInfo::ChromiumReleaseVersion() const {
-  return CHROMIUM_RELEASE_VERSION;
 }
 
 }  // namespace chrome

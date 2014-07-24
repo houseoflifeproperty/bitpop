@@ -88,12 +88,6 @@
     [self close];
 }
 
-- (void)windowDidResignKey:(NSNotification*)notification {
-}
-
-- (void)parentWindowWillClose:(NSNotification*)notification {
-}
-
 - (IBAction)onChange:(id)sender {
   first_run::LogFirstRunMetric(first_run::FIRST_RUN_BUBBLE_CHANGE_INVOKED);
 

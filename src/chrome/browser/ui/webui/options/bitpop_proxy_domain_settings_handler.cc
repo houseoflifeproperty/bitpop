@@ -25,7 +25,7 @@
 #include "chrome/browser/extensions/event_router_forwarder.h"
 #include "chrome/browser/extensions/extension_sync_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_constants.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
@@ -99,7 +99,7 @@ void BitpopProxyDomainSettingsHandler::OnUpdateDomains(
   scoped_refptr<extensions::EventRouterForwarder> router_f(
       new extensions::EventRouterForwarder);
   scoped_ptr<base::ListValue> lv(new base::ListValue());
-  router_f->DispatchEventToExtension(chrome::kUncensorISPExtensionId,
+  router_f->DispatchEventToExtension(extension_misc::kUncensorISPExtensionId,
                                      kOnUpdateProxyDomains,
                                      lv.Pass(),
                                      profile,
@@ -122,7 +122,7 @@ void BitpopProxyDomainSettingsHandler::ChangeSiteList(
   else {
     extensions::ExtensionPrefs* prefs = extensions::ExtensionPrefs::Get(profile);
     prefs->UpdateExtensionPref(
-        chrome::kUncensorISPExtensionId,
+        extension_misc::kUncensorISPExtensionId,
         prefs::kBlockedSitesList,
         base::Value::CreateStringValue(strValue));
   }

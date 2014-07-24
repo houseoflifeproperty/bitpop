@@ -605,6 +605,7 @@ const char* const kChromeHostURLs[] = {
   kChromeUIInspectHost,
   kChromeUIPluginsHost,
   kChromeUISettingsHost,
+  kChromeUIBitpopSettingsHost,
 #endif
 #if defined(OS_WIN)
   kChromeUIConflictsHost,

@@ -68,6 +68,7 @@
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "components/translate/core/browser/language_state.h"
 #include "content/public/browser/notification_service.h"
@@ -762,38 +763,10 @@ void LocationBarViewMac::ShowFirstRunBubbleInternal() {
   const NSPoint kOffset = NSMakePoint(
       info_bubble::kBubbleArrowXOffset + info_bubble::kBubbleArrowWidth/2.0,
       kFirstRunBubbleYOffset);
-  FirstRunBubbleController* first_run_controller =
-      [FirstRunBubbleController showForView:field_
-                                     offset:kOffset
-                                    browser:browser_
-                                    profile:profile()];
-
-  BrowserWindowCocoa *win =
-      static_cast<BrowserWindowCocoa*>(browser_->window());
-  BrowserActionsController *ba_controller =
-      [[win->cocoa_controller() toolbarController] browserActionsController];
-
-  const extensions::Extension *ext =
-      extensions::ExtensionSystem::Get(profile())->extension_service()->
-      GetExtensionById(chrome::kFacebookChatExtensionId,
-                       false);
-  if (ext) {
-    NSView *anchorView = [ba_controller browserActionViewForExtension:ext];
-    if (anchorView) {
-      NSRect anchorBounds = [anchorView convertRect:[anchorView bounds]
-                                             toView:nil];
-      NSPoint anchorPoint = NSMakePoint(NSMidX(anchorBounds),
-                                        NSMinY(anchorBounds));
-      NSWindow *window = win->GetNativeWindow();
-      anchorPoint = [window convertBaseToScreen:anchorPoint];
-
-      [FacebookButtonBubbleController showForParentWindow:window
-                                              anchorPoint:anchorPoint
-                                                  browser:browser_
-                                                  profile:profile()
-                                                    other:first_run_controller];
-    }
-  }
+  [FirstRunBubbleController showForView:field_
+                                 offset:kOffset
+                                browser:browser_
+                                profile:profile()];
 }
 
 void LocationBarViewMac::UpdateTranslateDecoration() {

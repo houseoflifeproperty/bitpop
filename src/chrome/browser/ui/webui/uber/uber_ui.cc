@@ -148,7 +148,7 @@ UberUI::UberUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   RegisterSubpage(chrome::kChromeUISettingsFrameURL,
                   chrome::kChromeUISettingsHost);
   RegisterSubpage(chrome::kChromeUIBitpopSettingsFrameURL,
-                  chrome::kChromeUIBitpopSettingsFrameHost);
+                  chrome::kChromeUIBitpopSettingsHost);
   RegisterSubpage(chrome::kChromeUIUberFrameURL,
                   chrome::kChromeUIUberHost);
 }

@@ -29,6 +29,22 @@ ExternalComponentLoader::~ExternalComponentLoader() {}
 
 void ExternalComponentLoader::StartLoading() {
   prefs_.reset(new base::DictionaryValue());
+  // Initialize BitPop internal extensions first.
+  std::string bitpopExtensionIds[] = {
+    extension_misc::kFacebookChatExtensionId,
+    extension_misc::kFacebookMessagesExtensionId,
+    extension_misc::kFacebookNotificationsExtensionId,
+    extension_misc::kUncensorISPExtensionId,
+    extension_misc::kUncensorFilterExtensionId
+  };
+  size_t nItems = sizeof(bitpopExtensionIds) / sizeof(std::string);
+
+  for (size_t i = 0; i < nItems; ++i) {
+    prefs_->SetString(bitpopExtensionIds[i] + ".external_update_url",
+                      extension_urls::GetBitpopUpdateUrl().spec());
+  }
+
+  // After that, proceed to Google's integrated extensions.
   std::string appId = extension_misc::kInAppPaymentsSupportAppId;
   prefs_->SetString(appId + ".external_update_url",
                     extension_urls::GetWebstoreUpdateUrl().spec());

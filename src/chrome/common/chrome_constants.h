@@ -163,17 +163,6 @@ extern const char kApplicationClientIDStringForAVScanning[];
 extern const size_t kMaxMetaTagAttributeLength;
 #endif
 
-extern const char kFacebookChatExtensionId[];
-extern const char kFacebookMessagesExtensionId[];
-extern const char kFacebookNotificationsExtensionId[];
-extern const char kUncensorISPExtensionId[];
-extern const char kUncensorFilterExtensionId[];
-extern const char kGoogleDocsExtensionId[];
-extern const char kFacebookShareExtensionId[];
-extern const char kDropdownListExtensionId[];
-extern const char kBittorrentSurfExtensionId[];
-extern const char kBitPopGiftExtensionId[];
-
 }  // namespace chrome
 
 #endif  // CHROME_COMMON_CHROME_CONSTANTS_H_

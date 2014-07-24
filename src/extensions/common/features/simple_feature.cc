@@ -511,7 +511,8 @@ bool SimpleFeature::MatchesManifestLocation(
       return true;
     case SimpleFeature::COMPONENT_LOCATION:
       // TODO(kalman/asargent): Should this include EXTERNAL_COMPONENT too?
-      return manifest_location == Manifest::COMPONENT;
+      return manifest_location == Manifest::COMPONENT ||
+             manifest_location == Manifest::EXTERNAL_COMPONENT;
     case SimpleFeature::POLICY_LOCATION:
       return manifest_location == Manifest::EXTERNAL_POLICY ||
              manifest_location == Manifest::EXTERNAL_POLICY_DOWNLOAD;

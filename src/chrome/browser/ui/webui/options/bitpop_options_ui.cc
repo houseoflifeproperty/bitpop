@@ -117,7 +117,7 @@ BitpopOptionsUIHTMLSource::BitpopOptionsUIHTMLSource(
 }
 
 std::string BitpopOptionsUIHTMLSource::GetSource() const {
-  return chrome::kChromeUISettingsFrameHost;
+  return chrome::kChromeUIBitpopSettingsFrameHost;
 }
 
 void BitpopOptionsUIHTMLSource::StartDataRequest(
@@ -302,7 +302,7 @@ void BitpopOptionsUI::DidStartProvisionalLoadForFrame(
     bool is_iframe_srcdoc,
     content::RenderViewHost* render_view_host) {
   if (render_view_host == web_ui()->GetWebContents()->GetRenderViewHost() &&
-      validated_url.host() == chrome::kChromeUISettingsFrameHost) {
+      validated_url.host() == chrome::kChromeUIBitpopSettingsFrameHost) {
     for (size_t i = 0; i < handlers_.size(); ++i)
       handlers_[i]->PageLoadStarted();
   }

@@ -680,7 +680,8 @@ base::RefCountedMemory* ChromeWebUIControllerFactory::GetFaviconResourceBytes(
       page_url.host() == chrome::kChromeUISettingsFrameHost)
     return options::OptionsUI::GetFaviconResourceBytes(scale_factor);
 
-  if (page_url.host() == chrome::kChromeUIBitpopSettingsFrameHost)
+  if (page_url.host() == chrome::kChromeUIBitpopSettingsHost ||
+      page_url.host() == chrome::kChromeUIBitpopSettingsFrameHost)
     return options::BitpopOptionsUI::GetFaviconResourceBytes(scale_factor);
 
 #if defined(ENABLE_EXTENSIONS)

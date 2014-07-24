@@ -32,8 +32,8 @@ Chat.Controllers.Application = Ember.Object.extend({
     (function () {
       if (chrome.browserAction)
         chrome.browserAction.onClicked.addListener(function (tab) {
-          chrome.bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
-            chrome.bitpop.facebookChat.setFriendsSidebarVisible(!is_visible);
+          chrome.bitpopFacebookChat.getFriendsSidebarVisible(function(is_visible) {
+            chrome.bitpopFacebookChat.setFriendsSidebarVisible(!is_visible);
           });
         });
       else
@@ -262,7 +262,7 @@ Chat.Controllers.Application = Ember.Object.extend({
     chrome.extension.sendMessage('dhcejgafhmkdfanoalflifpjimaaijda',
       { type: 'chatIsAvailable'}
     );
-    chrome.bitpop.facebookChat.setGlobalMyUidForProfile(jid);
+    chrome.bitpopFacebookChat.setGlobalMyUidForProfile(jid);
   },
 
   _onRoster: function (event, friends) {
@@ -338,9 +338,9 @@ Chat.Controllers.Application = Ember.Object.extend({
 
     var jid = Strophe.getBareJidFromJid(desc.from_jid);
     if (desc.is_typing) {
-      chrome.bitpop.facebookChat.newIncomingMessage("service", jid, "", 'composing', "");
+      chrome.bitpopFacebookChat.newIncomingMessage("service", jid, "", 'composing', "");
     } else {
-      chrome.bitpop.facebookChat.newIncomingMessage("service", jid, "", 'online', "");
+      chrome.bitpopFacebookChat.newIncomingMessage("service", jid, "", 'online', "");
     }
   },
 
@@ -491,7 +491,7 @@ Chat.Controllers.Application = Ember.Object.extend({
                                     };
                                 sendResponseToContentScript(sendResponse1, data, "ok", response);
                             } else {
-                                //chrome.bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
+                                //chrome.bitpopFacebookChat.getFriendsSidebarVisible(function(is_visible) {
                                 chrome.bitpop.prefs.facebookShowChat.get({}, function(details) {
                                   var facebookShowChat = details.value;
                                   //chrome.bitpop.prefs.facebookShowJewels.get({}, function(details2) {
@@ -564,11 +564,6 @@ Chat.Controllers.Application = Ember.Object.extend({
         chrome.tabs.remove(tabId);
       }
     }, this));
-
-    chrome.bitpop.onSyncStatusChanged.addListener(function (enabled, logout_from_fb_com) {
-      if (!enabled && logout_from_fb_com)
-        chrome.cookies.remove({ 'url': 'https://www.facebook.com', 'name': 'c_user' });
-    });
   },
 
   startChatAgain: function () {

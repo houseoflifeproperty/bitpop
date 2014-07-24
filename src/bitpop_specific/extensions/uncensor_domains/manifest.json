@@ -1,6 +1,8 @@
 {
   "name": "__MSG_extName__",
-  "version": "1.2",
+  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDJsupqBGq+R4qdEP9yxVUhTG9ouDyd8MvnwNDT5EahM91Y4YkCjtrAQvNjwSKOIM+vDhhSaNFNJpYh2dCCuW4bW5uzhxjrl6UjeCCTj34oNhZjOZz/cvrbXUeJr9TH3E6tHSODoFQ6lWuGWU7Jly5PpfYL8vS9jqBgq3mFwZKhDwIDAQAB",
+  "default_locale": "en",
+  "version": "1.3",
   "description": "__MSG_extDesc__",
   "default_locale": "en",
   "background": {

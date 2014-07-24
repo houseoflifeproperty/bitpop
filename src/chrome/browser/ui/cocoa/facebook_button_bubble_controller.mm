@@ -96,7 +96,6 @@
   [NSObject cancelPreviousPerformRequestsWithTarget:self
                                            selector:@selector(closeIfNotKey)
                                              object:nil];
-  [other_ close];
   [super close];
 }
 

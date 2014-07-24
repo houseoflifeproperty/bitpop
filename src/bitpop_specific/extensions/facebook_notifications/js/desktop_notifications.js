@@ -1,4 +1,4 @@
-`// This file is packaged with the extension then re-fetched from the
+// This file is packaged with the extension then re-fetched from the
 // server for updates. Bitter experience has taught us that we can't depend on
 // the server resource loading correctly.
 
@@ -272,15 +272,39 @@ DesktopNotifications = {
     if (self._latest_data) {
       // var uri = self.protocol + self.domain + self.getEndpoint +
       //   '?type=' + (type || '');
-      var notification =
-        window.webkitNotifications.createNotification(self._latest_data.icon_url,
-            'Facebook Notification', self._latest_data.title_text);
-      notification.clickHref = self._latest_data.href;
-      // In case the user has multiple windows or tabs open, replace
-      // any existing windows for this alert with this one.
-      notification.replaceId = 'com.facebook.alert.' + type;
+      
+      var notificationClickedCallback = function (notificationId) {
+        if (notificationId == 'com.facebook.alert.notifications') {
+          chrome.tabs.create({ url: self._latest_data.href });
+          // Oddly, defer(0) still cancels the notification before the
+          // click passes through.  Give it a little time before we
+          // close the window.
+          setTimeout(function() {
+              chrome.notifications.clear("com.facebook.alert.notifications", 
+                                         function () {});
+            },
+            DesktopNotifications.CLOSE_ON_CLICK_DELAY,
+            false // quickling eats timeouts otherwise
+          );
+        }
+      };
 
-      self.showNotification(notification, self.DEFAULT_FADEOUT_DELAY);
+      chrome.notifications.create("com.facebook.alert.notifications", {
+        type: "basic",
+        iconUrl: self._latest_data.icon_url,
+        title: 'Facebook Notification',
+        message: self._latest_data.title_text,
+        isClickable: true
+      }, function (notificationId) {
+        chrome.notifications.onClosed.addListener(function (notificationClosedId) {
+          if (notificationClosedId == notificationId) {
+            chrome.notifications.onClicked.removeListener(notificationClickedCallback);
+            chrome.notifications.onClosed.removeListener(arguments.callee);
+          }
+        });
+        chrome.notifications.onClicked.addListener(notificationClickedCallback);
+      });
+      DesktopNotifications.restartTimer(self.DEFAULT_FADEOUT_DELAY);
     }
   },
 
@@ -333,6 +357,7 @@ DesktopNotifications = {
     DesktopNotifications.notifications.forEach(function(n) { n.cancel(); });
     DesktopNotifications.notifications = [];
     DesktopNotifications._timer = null;
+    chrome.notifications.clear('com.facebook.alert.notifications', function () {});
   },
 
   restartTimer: function(extraTime) {

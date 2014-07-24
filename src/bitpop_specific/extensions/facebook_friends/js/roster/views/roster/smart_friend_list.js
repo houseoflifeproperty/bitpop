@@ -87,7 +87,7 @@ Chat.Views.Roster.SmartFriendList = Ember.View.extend({
 
 $(window).load(function () {
     $(document).on('click', '.friend a', function (ev) {
-      chrome.bitpop.facebookChat.addChat(
+      chrome.bitpopFacebookChat.addChat(
                 $(this).attr('data-jid'),
                 $(this).find('span').text(),
                 $(this).attr('data-category')

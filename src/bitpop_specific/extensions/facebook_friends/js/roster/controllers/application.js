@@ -40,7 +40,7 @@ Chat.Controllers.Application = Ember.Object.extend({
     } else if (request.kind == 'windowReady') {
       var jid = Strophe.getBareJidFromJid(request.jid);
       if (jid == Strophe.getBareJidFromJid(this.user.get('jid')))
-        this._onWindowReady(request.friend_jid, sender.tab.id);
+        this._onWindowReady(request.friend_jid, null);
     } else if (request.kind == 'updateTimesReady') {
       this.onUpdateTimesReady(request.data);
     } else if (request.kind == 'connectionInProgress') {
@@ -283,7 +283,6 @@ Chat.Controllers.Application = Ember.Object.extend({
           Chat.Controllers.sidebarMainUI.set('statusTitle', response.data[0].message);
         }
       }, this));
-      Chat.Controllers.sidebarLoginController.onSlideToFriendsView();
     }
   }.observes('chatAvailable'),
 
@@ -346,7 +345,7 @@ Chat.Controllers.Application = Ember.Object.extend({
         if (views[i].location.hash.length && views[i].location.hash.indexOf(user.get('jid')) !== -1)
           return;
       }
-      chrome.bitpop.facebookChat.newIncomingMessage(
+      chrome.bitpopFacebookChat.newIncomingMessage(
                                message.id,
                                Strophe.getBareJidFromJid(user.get('jid')),
                                user.get('name'),

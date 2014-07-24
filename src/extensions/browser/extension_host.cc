@@ -129,7 +129,8 @@ ExtensionHost::ExtensionHost(const Extension* extension,
   DCHECK(host_type == VIEW_TYPE_EXTENSION_BACKGROUND_PAGE ||
          host_type == VIEW_TYPE_EXTENSION_DIALOG ||
          host_type == VIEW_TYPE_EXTENSION_INFOBAR ||
-         host_type == VIEW_TYPE_EXTENSION_POPUP);
+         host_type == VIEW_TYPE_EXTENSION_POPUP ||
+         host_type == VIEW_TYPE_TAB_CONTENTS);
   host_contents_.reset(WebContents::Create(
       WebContents::CreateParams(browser_context_, site_instance))),
   content::WebContentsObserver::Observe(host_contents_.get());
