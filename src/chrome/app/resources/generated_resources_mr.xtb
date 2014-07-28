@@ -308,7 +308,7 @@
 <translation id="7938958445268990899">सर्व्हरचे प्रमाणपत्र अद्याप वैध नाही.</translation>
 <translation id="4569998400745857585">मेनूमध्ये लपलेले विस्तार आहेत</translation>
 <translation id="4081383687659939437">माहिती जतन करा </translation>
-<translation id="1801827354178857021">अवधी</translation>
+<translation id="1801827354178857021">पूर्णविराम</translation>
 <translation id="4560332071395409256"><ph name="BEGIN_BOLD"/>प्रारंभ करा<ph name="END_BOLD"/> क्लिक करा, <ph name="BEGIN_BOLD"/>चालवा<ph name="END_BOLD"/> क्लिक करा, <ph name="BEGIN_BOLD"/>%windir%\networkdiagnostic\xpnetdiag.exe<ph name="END_BOLD"/> टाइप करा आणि नंतर <ph name="BEGIN_BOLD"/>ओके<ph name="END_BOLD"/> क्लिक करा.</translation>
 <translation id="2179052183774520942">शोध इंजिन जोडा</translation>
 <translation id="4043223219875055035">अ‍ॅप्स ला सेटिंग्ज संकालित करण्यास अनुमती देण्यासाठी आणि अन्य सानुकूलित सेवा प्रदान करण्यासाठी आपल्या Google खात्यासह साइन इन करा.</translation>
@@ -492,7 +492,7 @@
 <translation id="4801956050125744859">दोन्ही ठेवा</translation>
 <translation id="3878840326289104869">पर्यवेक्षी वापरकर्ता तयार करत आहे</translation>
 <translation id="406070391919917862">पार्श्वभूमी अनुप्रयोग</translation>
-<translation id="8820817407110198400">बुकमार्क</translation>
+<translation id="8820817407110198400">Bookmarks</translation>
 <translation id="6347003977836730270">इन्फोबार ऐवजी नवीन भाषांतर फुगा UX सक्षम करा ऑफर केले आहे.</translation>
 <translation id="2580170710466019930">कृपया <ph name="PRODUCT_NAME"/> नवीनतम सिस्टम अद्यतने स्थापित करेपर्यंत प्रतीक्षा करा.</translation>
 <translation id="7428061718435085649">2र्‍या आणि 3र्‍या उमेदवाराला निवडण्यासाठी डावी आणि उजवी Shift की निवडा</translation>
@@ -2245,7 +2245,7 @@
 <translation id="4710257996998566163">अखेरचे अद्यतनित:</translation>
 <translation id="5299682071747318445">आपल्या समक्रमित वाक्यांशासह सर्व डेटा कूटबद्ध केला आहे</translation>
 <translation id="7556242789364317684">दुर्दैवाने, <ph name="SHORT_PRODUCT_NAME"/> आपल्या सेटिंग्ज पुनर्प्राप्त करण्यात अक्षम आहे. त्रुटीचे निराकरण करण्यासाठी, <ph name="SHORT_PRODUCT_NAME"/> ने पॉवरवॉशसह आपले डिव्हाइस रीसेट करणे आवश्यक आहे.</translation>
-<translation id="1383876407941801731">शोध</translation>
+<translation id="1383876407941801731">शोधा</translation>
 <translation id="23362385947277794">पार्श्वभूमी रंग आणि प्रतिमा</translation>
 <translation id="409579654357498729">मेघ मुद्रण वर जोडा</translation>
 <translation id="2120316813730635488">जेव्हा एखादा विस्तार स्थापित होतो तेव्हाच्या घटना</translation>
@@ -2744,7 +2744,7 @@
 <translation id="5400640815024374115">विश्वसनीय प्लॅटफॉर्म मॉड्यूल (TPM) चिप अक्षम किंवा अनुपस्थित आहे.</translation>
 <translation id="2025623846716345241">रीलोड करण्याची पुष्टी करा</translation>
 <translation id="2151576029659734873">अवैध टॅब अनुक्रमणिका प्रविष्ट केली.</translation>
-<translation id="496546018524231664">आयर्लंड</translation>
+<translation id="496546018524231664">आयरलँड</translation>
 <translation id="1815861158988915678"><ph name="BEGIN_BOLD"/>ताकीद:<ph name="END_BOLD"/>  या फायली तात्पुरत्या आहेत आणि डिस्क स्थान मुक्त करण्‍यासाठी कदाचित स्वयंचलितपणे हटविल्या जातील.  <ph name="BEGIN_LINK"/>अधिक जाणून घ्या<ph name="END_LINK"/></translation>
 <translation id="4722920479021006856"><ph name="APP_NAME"/> आपली स्क्रीन सामायिक करत आहे.</translation>
 <translation id="5150254825601720210">Netscape प्रमाणपत्र SSL सर्व्हर नाव</translation>
@@ -3763,7 +3763,7 @@
 <translation id="2255317897038918278">Microsoft Time Stamping</translation>
 <translation id="3493881266323043047">वैधता</translation>
 <translation id="5979421442488174909"><ph name="LANGUAGE"/> मध्ये &amp;अनुवाद करा</translation>
-<translation id="2662876636500006917">Chrome वेब स्टोअर</translation>
+<translation id="2662876636500006917">Chrome वेब बाजार</translation>
 <translation id="676881925959847033">संरक्षित माध्यम अभिज्ञापकावर प्रवेश करताना डीफॉल्टनुसार माहितीबार पॉपअप अक्षम करा.</translation>
 <translation id="952992212772159698">सक्रिय नाही</translation>
 <translation id="443464694732789311">सुरु ठेवा</translation>
@@ -3821,7 +3821,7 @@
 <translation id="6175314957787328458">Microsoft Domain GUID</translation>
 <translation id="6883209331334683549"><ph name="PRODUCT_NAME"/> मदत</translation>
 <translation id="6970480684834282392">प्रारंभ वेळ</translation>
-<translation id="8179976553408161302">प्रवेश करा</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">फोटो फ्लिप केला</translation>
 <translation id="691321796646552019">कापून टाका!</translation>
 <translation id="8026964361287906498">(एन्टरप्राईज धोरणाद्वारे व्यवस्थापित केले)</translation>
@@ -3994,7 +3994,7 @@
 <translation id="9076523132036239772">क्षमस्व, आपले ईमेल किंवा संकेतशब्द सत्यापित करणे शक्य नाही. प्रथम एखाद्या नेटवर्कशी कनेक्ट करण्याचा प्रयत्न करा.</translation>
 <translation id="6965978654500191972">डिव्हाइस</translation>
 <translation id="5295309862264981122">नॅव्हिगेशनची पुष्टी करा</translation>
-<translation id="718827667662449283">युनायटेड किंगडम</translation>
+<translation id="718827667662449283">यूनायटेड किंगडम</translation>
 <translation id="358796204584394954">जोडण्यासाठी &quot;<ph name="DEVICE_NAME"/>&quot; वर हा कोड टाइप करा:</translation>
 <translation id="2908999529399859069">नाही, रद्द करा</translation>
 <translation id="5804241973901381774">परवानग्या</translation>
@@ -4554,7 +4554,7 @@
 <translation id="193971656137910869">आपले बुकमार्क वाचा आणि सुधारित करा</translation>
 <translation id="6268747994388690914">HTML फायलीवरुन बुकमार्क आयात करा...</translation>
 <translation id="6096047740730590436">वाढवलेले उघडा</translation>
-<translation id="3924145049010392604">मेटा</translation>
+<translation id="3924145049010392604">Meta</translation>
 <translation id="5365539031341696497">थाई इनपुट पद्धत (केस्मानी कीबोर्ड)</translation>
 <translation id="5157635116769074044">हे पृष्ठ प्रारंभ स्क्रीनवर पिन करा...</translation>
 <translation id="2403091441537561402">गेटवे:</translation>

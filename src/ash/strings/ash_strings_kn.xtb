@@ -151,7 +151,7 @@
 <translation id="1882897271359938046"><ph name="DISPLAY_NAME"/> ಗೆ ಪ್ರತಿಬಿಂಬಿಸುತ್ತಿದೆ</translation>
 <translation id="2727977024730340865">ಕಡಿಮೆ ವಿದ್ಯುತ್ ಚಾರ್ಜರ್‌ಗೆ ಪ್ಲಗ್ ಮಾಡಲಾಗಿದೆ. ಬ್ಯಾಟರಿ ಚಾರ್ಜಿಂಗ್ ವಿಶ್ವಾಸಾರ್ಹವಾಗಿಲ್ಲದಿರಬಹುದು.</translation>
 <translation id="3784455785234192852">ಲಾಕ್ ಮಾಡಿ</translation>
-<translation id="2805756323405976993">ಅಪ್ಲಿಕೇಶನ್‌ಗಳು</translation>
+<translation id="2805756323405976993">Apps</translation>
 <translation id="1512064327686280138">ಸಕ್ರಿಯಗೊಳಿಸುವಿಕೆ ವಿಫಲವಾಗಿದೆ</translation>
 <translation id="5097002363526479830">'<ph name="NAME"/>' ನೆಟ್‌ವರ್ಕ್‌ಗೆ ಸಂಪರ್ಕಿಸಲು ವಿಫಲವಾಗಿದೆ: <ph name="DETAILS"/></translation>
 <translation id="1850504506766569011">Wi-Fi ಆಫ್ ಮಾಡಲಾಗಿದೆ.</translation>
@@ -190,7 +190,7 @@
 <translation id="2999742336789313416"><ph name="DOMAIN"/> ಮೂಲಕ ನಿರ್ವಹಿಸಲಾದ ಸಾರ್ವಜನಿಕ ಸೆಶನ್ <ph name="DISPLAY_NAME"/> ಆಗಿದೆ</translation>
 <translation id="9044646465488564462">ನೆಟ್‌ವರ್ಕ್‌ಗೆ ಸಂಪರ್ಕಿಸಲು ವಿಫಲವಾಗಿದೆ: <ph name="DETAILS"/></translation>
 <translation id="7029814467594812963">ಸೆಶನ್‌ನಿಂದ ನಿರ್ಗಮಿಸು</translation>
-<translation id="479989351350248267">ಹುಡುಕಿ</translation>
+<translation id="479989351350248267">search</translation>
 <translation id="8454013096329229812">Wi-Fi ಆನ್ ಮಾಡಲಾಗಿದೆ.</translation>
 <translation id="4872237917498892622">Alt+ಹುಡುಕಾಟ ಅಥವಾ Shift</translation>
 <translation id="2429753432712299108">ಬ್ಲೂಟೂತ್‌‌ ಸಾಧನವು &quot;<ph name="DEVICE_NAME"/>&quot; ಜೋಡಣೆಗಾಗಿ ಅನುಮತಿಯನ್ನು ಬಯಸುತ್ತದೆ. ಸಮ್ಮತಿಸುವುದಕ್ಕೂ ಮೊದಲು, ದಯವಿಟ್ಟು ಆ ಸಾಧನದಲ್ಲಿ ಈ ಪಾಸ್‌ಕೀಲಿಯನ್ನು ತೋರಿಸಲಾಗಿದೆಯೇ ಎಂಬುದನ್ನು ಖಾತರಿಪಡಿಸಿಕೊಳ್ಳಿ: <ph name="PASSKEY"/></translation>

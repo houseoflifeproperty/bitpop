@@ -88,6 +88,8 @@ class ATL_NO_VTABLE DECLSPEC_UUID("45F07275-4EEA-47AD-A356-755AED238AAD")
 
   static bool path_provider_initialized_;
 
+  void SetHighDPIRegistryKey(bool enable);
+
   bool GetLaunchScheme(base::string16* display_name, INTERNET_SCHEME* scheme);
   HRESULT LaunchDesktopChrome();
   // Returns the launch mode, i.e. desktop launch/metro launch, etc.

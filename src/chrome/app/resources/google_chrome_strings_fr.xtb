@@ -86,7 +86,7 @@ Certaines fonctionnalités ne seront peut-être pas disponibles, et les modifica
 </translation>
 <translation id="8823341990149967727">Version de Chrome obsolète</translation>
 <translation id="473775607612524610">Mettre à jour</translation>
-<translation id="1195935957447623558">Google Chrome ne s'est pas arrêté correctement. Pour rouvrir les pages précédemment ouvertes, cliquez sur Rétablir.</translation>
+<translation id="1195935957447623558">Google Chrome ne s'est pas arrêté correctement. Pour rouvrir les pages précédemment ouvertes, cliquez sur Restaurer.</translation>
 <translation id="2576431527583832481">Google Chrome s'est amélioré ! Une nouvelle version est désormais disponible.</translation>
 <translation id="4633000520311261472">Afin de rendre Chrome plus sûr, nous avons désactivé certaines extensions qui ne sont pas répertoriées sur le <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/> et qui ont pu être ajoutées à votre insu.</translation>
 <translation id="3656661827369545115">Lancer Chromium automatiquement au démarrage de l'ordinateur</translation>
@@ -155,6 +155,7 @@ Si vous vous connectez quand même, toutes les informations Chrome, comme les fa
 <translation id="2665296953892887393">Aidez-nous à améliorer Google Chrome en nous envoyant des rapports d'erreur et des <ph name="UMA_LINK"/>.</translation>
 <translation id="7761834446675418963">Cliquez sur votre nom pour ouvrir Chrome et commencer à naviguer.</translation>
 <translation id="4864451188650489141">Vous pouvez ajouter d'autres comptes Google et verrouiller votre navigateur Chromium ci-dessous.</translation>
+<translation id="2669824781555328029"><ph name="FILE_NAME"/> peut nuire à votre confort de navigation, il a donc été bloqué par Chrome.</translation>
 <translation id="5875635642195358109">Accédez au
         menu Chrome &gt;
         <ph name="SETTINGS_TITLE"/>

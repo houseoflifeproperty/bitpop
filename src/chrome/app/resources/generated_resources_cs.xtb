@@ -130,7 +130,7 @@
 <translation id="9008201768610948239">Ignorovat</translation>
 <translation id="528468243742722775">Klávesa End</translation>
 <translation id="1723824996674794290">Nové okno</translation>
-<translation id="1313405956111467313">Automatické nastavení serveru proxy</translation>
+<translation id="1313405956111467313">Automatické nastavení proxy serveru</translation>
 <translation id="3527276236624876118">Dozorovaný uživatel <ph name="USER_DISPLAY_NAME"/> byl vytvořen.</translation>
 <translation id="4367782753568896354">Nepodařilo se nainstalovat:</translation>
 <translation id="1589055389569595240">Zobrazit pravopis a gramatiku</translation>
@@ -237,7 +237,7 @@
 <translation id="7348093485538360975">Klávesnice na obrazovce</translation>
 <translation id="8178665534778830238">Obsah:</translation>
 <translation id="2610260699262139870">&amp;Skutečná velikost</translation>
-<translation id="4535734014498033861">Připojení k serveru proxy se nezdařilo.</translation>
+<translation id="4535734014498033861">Připojení k proxy serveru se nezdařilo.</translation>
 <translation id="558170650521898289">Ověření ovladače hardwaru systému Microsoft Windows</translation>
 <translation id="5866560098872665830">ServiceWorker je nový typ webové technologie, která dokáže zachytit požadavky na zdroj. Další informace naleznete na stránkách https://github.com/slightlyoff/ServiceWorker.</translation>
 <translation id="4395129973926795186"><ph name="START_DATE"/> – <ph name="END_DATE"/></translation>
@@ -303,7 +303,7 @@
 <translation id="7938958445268990899">Certifikát serveru ještě není platný.</translation>
 <translation id="4569998400745857585">Nabídka obsahuje skrytá rozšíření</translation>
 <translation id="4081383687659939437">Uložit informace</translation>
-<translation id="1801827354178857021">Tečka</translation>
+<translation id="1801827354178857021">Období</translation>
 <translation id="4560332071395409256">Klikněte na tlačítko
           <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/>,
           na položku
@@ -380,7 +380,7 @@
 <translation id="3549644494707163724">Šifrovat synchronizovaná hesla pomocí vlastního hesla pro synchronizaci.</translation>
 <translation id="5667293444945855280">Malware</translation>
 <translation id="6831043979455480757">Přeložit</translation>
-<translation id="2856203831666278378">Odpověď ze serveru obsahovala duplicitní záhlaví. Tento problém je obvykle způsoben nesprávnou konfigurací webových stránek nebo serveru proxy. Opravit jej může pouze správce webu nebo serveru proxy.</translation>
+<translation id="2856203831666278378">Odpověď ze serveru obsahovala duplicitní záhlaví. Tento problém je obvykle způsoben nesprávnou konfigurací webových stránek nebo proxy serveru. Opravit jej může pouze správce webu nebo proxy serveru.</translation>
 <translation id="3587482841069643663">Vše</translation>
 <translation id="6698381487523150993">Vytvořil:</translation>
 <translation id="4684748086689879921">Přeskočit import</translation>
@@ -434,7 +434,7 @@
 <translation id="2279770628980885996">Při pokusu o splnění požadavku došlo na serveru k neočekávané situaci.</translation>
 <translation id="210116126541562594">Blokováno ve výchozím nastavení</translation>
 <translation id="1986824139605408742">Pokud si nepamatujete heslo, můžete pokračovat, přijdete však o místní údaje. Načtou se pouze synchronizovaná nastavení a údaje.</translation>
-<translation id="9123413579398459698">Server proxy protokolu FTP</translation>
+<translation id="9123413579398459698">Proxy server protokolu FTP</translation>
 <translation id="1751752860232137596">Aktivovat experimentální implementaci plynulého posunu.</translation>
 <translation id="9142627797714859698">Kliknutím na tlačítko Pokračovat potvrdíte, že souhlasíte s použitím Peněženky Google. Abychom vás ochránili před podvodem, budou s Peněženkou Google sdíleny informace o vašem počítači (včetně údajů o poloze).</translation>
 <translation id="8534801226027872331">V tomto případě obsahuje certifikát předložený vašemu prohlížeči chyby a je nesrozumitelný. To může znamenat, že nemůžeme porozumět informaci o identitě, jež je v certifikátu obsažená, nebo určitým dalším informacím v certifikátu, které se používají pro zabezpečení spojení. Neměli byste postupovat dále.</translation>
@@ -456,7 +456,7 @@ Tyto i další pokyny naleznete v e-mailu, který byl odeslán na adresu <ph nam
 <translation id="4700157086864140907">Google Chrome může poskytovat lepší kontrolu pravopisu tím, že text zadaný do prohlížeče odešle na servery Google. Umožňuje vám tak používat stejnou technologii kontroly pravopisu, jakou používá Vyhledávání Google.</translation>
 <translation id="1880905663253319515">Smazat certifikát <ph name="CERTIFICATE_NAME"/>?</translation>
 <translation id="8546306075665861288">Mezipaměť obrázků</translation>
-<translation id="5904093760909470684">Nastavení serveru proxy</translation>
+<translation id="5904093760909470684">Nastavení proxy serveru</translation>
 <translation id="5706551819490830015">Spravovat fakturační adresy...</translation>
 <translation id="3348643303702027858">Vytváření média pro obnovení operačního systému bylo zrušeno.</translation>
 <translation id="7027779093245283639">Na tuto webovou stránku byl vložen obsah z webu <ph name="ELEMENTS_HOST_NAME"/>, který je známým distributorem malwaru. Pokud tuto stránku navštívíte, pravděpodobně vaše zařízení nakazí malwarem.</translation>
@@ -484,7 +484,7 @@ Tyto i další pokyny naleznete v e-mailu, který byl odeslán na adresu <ph nam
 <translation id="5355351445385646029">Vybrat návrh stiskem mezerníku</translation>
 <translation id="5453029940327926427">Zavřít karty</translation>
 <translation id="949088605431823851">Kde jste toto zařízení HP Chromebook 11 zakoupili?</translation>
-<translation id="9087353528325876418">Adresa URL automatického zjišťování webového serveru proxy</translation>
+<translation id="9087353528325876418">Adresa URL automatického zjišťování webového proxy serveru</translation>
 <translation id="4801956050125744859">Ponechat obojí</translation>
 <translation id="3878840326289104869">Vytváření dozorovaného uživatele</translation>
 <translation id="406070391919917862">Aplikace na pozadí</translation>
@@ -501,7 +501,7 @@ Tyto i další pokyny naleznete v e-mailu, který byl odeslán na adresu <ph nam
 <translation id="3649256019230929621">Minimalizovat okno</translation>
 <translation id="5618972959246891967">Systémové datum</translation>
 <translation id="3809280248639369696">Marťan</translation>
-<translation id="1985136186573666099">K připojení do sítě používá <ph name="PRODUCT_NAME"/> nastavení serveru proxy podle systému v počítači.</translation>
+<translation id="1985136186573666099">K připojení do sítě používá <ph name="PRODUCT_NAME"/> nastavení proxy serveru podle systému v počítači.</translation>
 <translation id="6435285122322546452">Spravovat aplikace pro režim veřejného terminálu...</translation>
 <translation id="5748409721703101646">Chromebook se pomocí sítě <ph name="NETWORK_NAME"/> nemůže připojit k internetu. Zkuste prosím jinou síť. <ph name="LEARN_MORE_LINK_START"/>Další informace<ph name="LEARN_MORE_LINK_END"/></translation>
 <translation id="1064835277883315402">Připojit se k privátní síti</translation>
@@ -828,7 +828,7 @@ Všichni uživatelé se před pokračováním musejí odhlásit.</translation>
 <translation id="5455790498993699893"><ph name="ACTIVE_MATCH"/> z <ph name="TOTAL_MATCHCOUNT"/></translation>
 <translation id="1617097702943948177">Dočasné úložiště:</translation>
 <translation id="6551508934388063976">Příkaz není k dispozici. Stisknutím kombinace kláves Ctrl+N otevřete nové okno prohlížeče.</translation>
-<translation id="1202290638211552064">Časový limit brány nebo serveru proxy vypršel během čekání na odpověď z nadřazeného serveru.</translation>
+<translation id="1202290638211552064">Časový limit brány nebo proxy serveru vypršel během čekání na odpověď z nadřazeného serveru.</translation>
 <translation id="5089823027662815955">&amp;Vyhledat tento obrázek pomocí služby <ph name="SEARCH_ENGINE"/></translation>
 <translation id="7765158879357617694">Přesunout</translation>
 <translation id="2192280117622171197">Rozšíření změnilo stránku, která se zobrazí při vyhledávání z omniboxu.</translation>
@@ -1042,7 +1042,7 @@ Pssst! Příště by se vám mohl hodit anonymní režim (<ph name="SHORTCUT_KEY
 <translation id="7810202088502699111">Na této stránce byla zablokována vyskakovací okna.</translation>
 <translation id="3808873045540128170">A je po ptákách!</translation>
 <translation id="744341768939279100">Vytvořit nový profil</translation>
-<translation id="646727171725540434">Server proxy protokolu HTTP</translation>
+<translation id="646727171725540434">Proxy server protokolu HTTP</translation>
 <translation id="7576690715254076113">Kompletovat</translation>
 <translation id="4594569381978438382">Chcete instalovat tyto aplikace?</translation>
 <translation id="602369534869631690">Vypnout tato oznámení</translation>
@@ -1101,7 +1101,7 @@ Výpočet zbývajícího času</translation>
 <translation id="5949910269212525572">Adresu DNS serveru nelze vyhledat.</translation>
 <translation id="3115147772012638511">Čekání na mezipaměť</translation>
 <translation id="257088987046510401">Motivy</translation>
-<translation id="6771079623344431310">K serveru proxy se nelze připojit.</translation>
+<translation id="6771079623344431310">K proxy serveru se nelze připojit.</translation>
 <translation id="7740996059027112821">Standardně</translation>
 <translation id="409980434320521454">Synchronizace se nezdařila</translation>
 <translation id="192144045824434199">Povolí okna Panelu, která se otvírají mimo rámec prohlížeče. Pokud toto nastavení nebude povoleno, pokusy o otevření Panelu otevřou vyskakovací okna. Panely jsou vždy povoleny ve verzích pro vývojáře a v testovací verzi canary.</translation>
@@ -1116,7 +1116,7 @@ Výpočet zbývajícího času</translation>
 <translation id="4341364588986930687"><ph name="DOMAIN"/> vyžaduje, aby Google ověřil identitu vašeho zařízení s cílem stanovit způsobilost pro vylepšené přehrávání chráněných médií. <ph name="LEARN_MORE"/>.</translation>
 <translation id="7643817847124207232">Internetové spojení se ztratilo.</translation>
 <translation id="4871210892959306034">$1 kB</translation>
-<translation id="932327136139879170">Domů</translation>
+<translation id="932327136139879170">Domovská stránka</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">K&amp;opírovat adresu URL videa</translation>
 <translation id="2981113813906970160">Zobrazit velký kurzor myši</translation>
@@ -1129,7 +1129,7 @@ Výpočet zbývajícího času</translation>
 <translation id="1357589289913453911">ID rozšíření</translation>
 <translation id="7570477672765183">Začněte kliknutím sem</translation>
 <translation id="8688579245973331962">Nevidíte svoje jméno?</translation>
-<translation id="3804941997676372569">Vyhledávejte, nebo řekněte „Ok, Google“.</translation>
+<translation id="3804941997676372569">Vyhledávejte, nebo řekněte „Ok Google“.</translation>
 <translation id="3226128629678568754">Klikněte na tlačítko Načíst znovu. Tím znovu odešlete údaje potřebné k načtení stránky.</translation>
 <translation id="1384035515048721170"><ph name="LEGAL_DOC_AGREEMENT"/> Abychom vás ochránili před podvodem, budou s Peněženkou Google sdíleny informace o vašem počítači (včetně údajů o poloze).</translation>
 <translation id="6166101525540035714">Pro používání Chromu platí <ph name="BEGIN_LINK1"/>smluvní podmínky<ph name="END_LINK1"/> a <ph name="BEGIN_LINK2"/>sdělení k ochraně osobních údajů<ph name="END_LINK2"/> aplikace Chrome.</translation>
@@ -1481,8 +1481,8 @@ Pokud nezměníte výchozí nastavení, uživatel <ph name="USER_DISPLAY_NAME"/>
 <translation id="5204967432542742771">Zadejte heslo</translation>
 <translation id="6686817083349815241">Uložte si heslo</translation>
 <translation id="9025098623496448965">Chci přejít zpět na obrazovku pro přihlášení</translation>
-<translation id="589737135092634133">Zkontrolujte nastavení serveru proxy nebo se obraťte na správce sítě
-          a ověřte, zda server proxy funguje. Pokud se domníváte, že by server
+<translation id="589737135092634133">Zkontrolujte nastavení proxy serveru nebo se obraťte na správce sítě
+          a ověřte, zda proxy server funguje. Pokud se domníváte, že by server
           proxy neměl být používán:
           <ph name="PLATFORM_TEXT"/></translation>
 <translation id="5485754497697573575">Obnovit všechny karty</translation>
@@ -1665,7 +1665,7 @@ Po vytvoření nového dozorovaného uživatele můžete jeho nastavení spravov
 <translation id="131364520783682672">Caps Lock</translation>
 <translation id="2335122562899522968">Tato stránka nastavila soubory cookie.</translation>
 <translation id="4628757576491864469">Zařízení</translation>
-<translation id="8461914792118322307">Server proxy</translation>
+<translation id="8461914792118322307">Proxy server</translation>
 <translation id="4707934200082538898">Další pokyny naleznete v e-mailu odeslaném na adresu <ph name="BEGIN_BOLD"/><ph name="MANAGER_EMAIL"/><ph name="END_BOLD"/>.</translation>
 <translation id="8680544835056685300">Neustále hledáme nové způsoby, jak prohlížení ještě více zabezpečit. Dříve vás mohla k instalaci rozšíření do prohlížeče vyzvat jakákoli webová stránka. V nejnovějších verzích prohlížeče Google Chrome je třeba instalaci těchto rozšíření provést ručně prostřednictvím stránky Rozšíření. <ph name="BEGIN_LINK"/>Další informace<ph name="END_LINK"/></translation>
 <translation id="4089521618207933045">Obsahuje podnabídku</translation>
@@ -1711,7 +1711,7 @@ Po vytvoření nového dozorovaného uživatele můžete jeho nastavení spravov
 <translation id="3625870480639975468">Resetovat lupu</translation>
 <translation id="8337399713761067085">Momentálně jste v režimu offline.</translation>
 <translation id="5199729219167945352">Experimenty</translation>
-<translation id="6499143127267478107">Rozpoznávání hostitele ve skriptu serveru proxy...</translation>
+<translation id="6499143127267478107">Rozpoznávání hostitele ve skriptu proxy serveru...</translation>
 <translation id="8069615408251337349">Google Cloud Print</translation>
 <translation id="5055518462594137986">Zapamatovat moji volbu pro všechny odkazy tohoto typu.</translation>
 <translation id="246059062092993255">Na této stránce byly zablokovány pluginy.</translation>
@@ -1873,7 +1873,7 @@ Po vytvoření nového dozorovaného uživatele můžete jeho nastavení spravov
 <translation id="2462911512468050799">Další informace naleznete na adrese</translation>
 <translation id="2276503375879033601">Přidat další aplikace</translation>
 <translation id="2682935131208585215">Zeptat se, když se web pokouší sledovat vaši fyzickou polohu (doporučeno)</translation>
-<translation id="5015344424288992913">Rozpoznávání serveru proxy...</translation>
+<translation id="5015344424288992913">Rozpoznávání proxy serveru...</translation>
 <translation id="4389091756366370506">Uživatel <ph name="VALUE"/></translation>
 <translation id="4528459871550620573">Pokud používáte Bluetooth, ujistěte se, že jsou zařízení připravena k párování.</translation>
 <translation id="4620809267248568679">Toto nastavení bylo vynuceno rozšířením.</translation>
@@ -1915,8 +1915,8 @@ Po vytvoření nového dozorovaného uživatele můžete jeho nastavení spravov
 <translation id="7252661675567922360">Nenačítat</translation>
 <translation id="1983959805486816857">Po vytvoření nového dozorovaného uživatele můžete tato nastavení spravovat na adrese <ph name="MANAGEMENT_URL"/>, a to kdykoli a z libovolného zařízení.</translation>
 <translation id="2815382244540487333">Následující soubory cookie byly blokovány:</translation>
-<translation id="1084538181352409184">Zkontrolujte nastavení serveru proxy nebo se obraťte na správce sítě
-          a ověřte, zda server proxy funguje.
+<translation id="1084538181352409184">Zkontrolujte nastavení proxy serveru nebo se obraťte na správce sítě
+          a ověřte, zda proxy server funguje.
           <ph name="PLATFORM_TEXT"/></translation>
 <translation id="374530189620960299">Bezpečnostní certifikát webu není důvěryhodný!</translation>
 <translation id="2560069378501715434">Povolit technologii WebAudio</translation>
@@ -2060,7 +2060,7 @@ Po vytvoření nového dozorovaného uživatele můžete jeho nastavení spravov
 <translation id="2861941300086904918">Správce zabezpečení nativního klienta</translation>
 <translation id="5650203097176527467">Načítání údajů o platbě</translation>
 <translation id="5581700288664681403">Načítání služby <ph name="CLOUD_PRINT_NAME"/></translation>
-<translation id="6991443949605114807">&lt;p&gt;Při spuštění aplikace <ph name="PRODUCT_NAME"/> v podporovaném počítačovém prostředí se použijí systémová nastavení serveru proxy. Váš systém však buď není podporován, nebo došlo k problému se spuštěním konfigurace systému.&lt;/p&gt;
+<translation id="6991443949605114807">&lt;p&gt;Při spuštění aplikace <ph name="PRODUCT_NAME"/> v podporovaném počítačovém prostředí se použijí systémová nastavení proxy serveru. Váš systém však buď není podporován, nebo došlo k problému se spuštěním konfigurace systému.&lt;/p&gt;
 
         &lt;p&gt;Konfiguraci můžete provést pomocí příkazového řádku. Další informace o příznacích a proměnných prostředí zobrazíte zadáním příkazu: &lt;code&gt;man <ph name="PRODUCT_BINARY_NAME"/>&lt;/code&gt;.&lt;/p&gt;</translation>
 <translation id="389589731200570180">Sdílet s hosty</translation>
@@ -2158,7 +2158,7 @@ Dejte pozor, abyste mu nezpřístupnili žádné citlivé informace.</translatio
 <translation id="3297788108165652516">Tato síť je sdílena s dalšími uživateli.</translation>
 <translation id="4810984886082414856">Modul Simple Cache pro protokol HTTP</translation>
 <translation id="1548132948283577726">Zde se zobrazí weby, které nikdy neukládají heslo.</translation>
-<translation id="583281660410589416">Neznámý</translation>
+<translation id="583281660410589416">Neznámé</translation>
 <translation id="3774278775728862009">Metoda zadávání thajštiny (klávesnice TIS-820.2538)</translation>
 <translation id="9115675100829699941">&amp;Záložky</translation>
 <translation id="2485422356828889247">Odinstalovat</translation>
@@ -2260,7 +2260,7 @@ Dejte pozor, abyste mu nezpřístupnili žádné citlivé informace.</translatio
 <translation id="6423731501149634044">Použít Adobe Reader jako výchozí prohlížeč souborů PDF?</translation>
 <translation id="1965328510789761112">Privátní paměť</translation>
 <translation id="7312441861087971374">Plugin <ph name="PLUGIN_NAME"/> je zastaralý.</translation>
-<translation id="5790085346892983794">Úspěch</translation>
+<translation id="5790085346892983794">Úspěšně provedeno</translation>
 <translation id="7639178625568735185">Mám to!</translation>
 <translation id="1901769927849168791">Byla rozpoznána karta SD</translation>
 <translation id="818454486170715660"><ph name="NAME"/> – vlastník</translation>
@@ -2365,7 +2365,7 @@ Dejte pozor, abyste mu nezpřístupnili žádné citlivé informace.</translatio
 <translation id="6555432686520421228">Odebere všechny uživatelské účty a resetuje zařízení <ph name="IDS_SHORT_PRODUCT_NAME"/> na tovární nastavení.</translation>
 <translation id="1346748346194534595">Doprava</translation>
 <translation id="7756363132985736290">Certifikát již existuje.</translation>
-<translation id="1181037720776840403">Odstranit</translation>
+<translation id="1181037720776840403">Odebrat</translation>
 <translation id="5261073535210137151">Tato složka obsahuje záložky (<ph name="COUNT"/>). Opravdu ji chcete smazat?</translation>
 <translation id="59174027418879706">Aktivní</translation>
 <translation id="4194415033234465088">Dachen 26</translation>
@@ -2445,7 +2445,7 @@ Dejte pozor, abyste mu nezpřístupnili žádné citlivé informace.</translatio
 <translation id="8428213095426709021">Nastavení</translation>
 <translation id="7211994749225247711">Smazat...</translation>
 <translation id="2819994928625218237">Bez &amp;návrhů při psaní</translation>
-<translation id="382518646247711829">Pokud používáte server proxy...</translation>
+<translation id="382518646247711829">Pokud používáte proxy server...</translation>
 <translation id="1923342640370224680">Poslední hodina</translation>
 <translation id="6432458268957186486">Tisknout pomocí dialogového okna služby <ph name="CLOUD_PRINT_NAME"/>…</translation>
 <translation id="2950186680359523359">Server ukončil spojení, aniž by odeslal jakákoli data.</translation>
@@ -2840,7 +2840,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="2350182423316644347">Aplikace se inicializuje...</translation>
 <translation id="132101382710394432">Preferované sítě...</translation>
 <translation id="532360961509278431">Soubor $1 nelze otevřít: $2</translation>
-<translation id="8096505003078145654">Server proxy je prostředníkem mezi vaším počítačem a jinými servery. Váš systém je momentálně nastaven na připojování pomocí serveru proxy, ale aplikace
+<translation id="8096505003078145654">Proxy server je prostředníkem mezi vaším počítačem a jinými servery. Váš systém je momentálně nastaven na připojování pomocí proxy serveru, ale aplikace
           <ph name="PRODUCT_NAME"/>
           se k němu nemůže připojit.</translation>
 <translation id="7687314205250676044">Změnit zpět na jazyk <ph name="FROM_LOCALE"/> (vyžaduje odhlášení)</translation>
@@ -3112,7 +3112,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="7026338066939101231">Snížit</translation>
 <translation id="2556876185419854533">&amp;Vrátit úpravy zpět</translation>
 <translation id="5875858680971105888">Jejda, dozorovaného uživatele nebylo možné importovat. Zkontrolujte připojení k síti a zkuste to znovu.</translation>
-<translation id="5411472733320185105">Nepoužívat nastavení serveru proxy pro následující hostitele a domény:</translation>
+<translation id="5411472733320185105">Nepoužívat nastavení proxy serveru pro následující hostitele a domény:</translation>
 <translation id="7358682983403815415">Otevřené karty, záložky, historie a další údaje se synchronizují s vaším účtem Google.</translation>
 <translation id="3685121001045880436">Server, který webovou stránku hostuje, byl pravděpodobně přetížen nebo se na něm vyskytla chyba.
 	Aby rozšíření nezvyšovala provoz a nezpůsobovala další potíže,
@@ -3239,7 +3239,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="580886651983547002">Aplikace <ph name="PRODUCT_NAME"/>
         nemůže získat přístup k požadovaným webovým stránkám. To je většinou
         způsobeno potížemi se sítí, příčinou však může být také chybně 
-        nakonfigurovaná brána firewall nebo server proxy.</translation>
+        nakonfigurovaná brána firewall nebo proxy server.</translation>
 <translation id="4387554346626014084">Aktivuje synchronizaci Spouštěče aplikací. Pokud je k dispozici funkce složek, bude povolena také (v systémech OS X nebude povolena).</translation>
 <translation id="5445557969380904478">Informace o rozpoznávání hlasu</translation>
 <translation id="4104400246019119780">Děkujeme</translation>
@@ -3322,10 +3322,10 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="7450732239874446337">Funkce vstupu a výstupu sítě byly pozastaveny.</translation>
 <translation id="4003393903129308792">Povolit rasterizátor s jednou kopií</translation>
 <translation id="5178667623289523808">Najít předchozí</translation>
-<translation id="1510785804673676069">Pokud používáte server proxy, zkontrolujte jeho nastavení nebo
+<translation id="1510785804673676069">Pokud používáte proxy server, zkontrolujte jeho nastavení nebo
    se obraťte na administrátora sítě a ujistěte se, zda funguje.
-   Pokud se domníváte, že byste server proxy používat neměli,
-   upravte svá <ph name="LINK_START"/>nastavení serveru proxy<ph name="LINK_END"/>.</translation>
+   Pokud se domníváte, že byste proxy server používat neměli,
+   upravte svá <ph name="LINK_START"/>nastavení proxy serveru<ph name="LINK_END"/>.</translation>
 <translation id="3136551860576779817">Hodnota hash veřejného klíče: <ph name="HASHES"/></translation>
 <translation id="8687485617085920635">Další okno</translation>
 <translation id="2610780100389066815">Podpis seznamu důvěryhodných certifikátů Microsoft</translation>
@@ -3549,7 +3549,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="3019161740160361583">Certifikát, který Chrome během tohoto spojení obdržel, nemá správný formát, proto jej Chrome nemůže použít k ochraně vašich údajů.</translation>
 <translation id="3076909148546628648"><ph name="DOWNLOAD_RECEIVED"/>/<ph name="DOWNLOAD_TOTAL"/></translation>
 <translation id="1810107444790159527">Seznam</translation>
-<translation id="3820987243972964957">Odeslat názor.</translation>
+<translation id="3820987243972964957">Odeslat zpětnou vazbu.</translation>
 <translation id="6136253676302684829">Toto nastavení je řízeno následujícím rozšířením:</translation>
 <translation id="1859234291848436338">Zápis trasy</translation>
 <translation id="4065829769065634745">Připojte prosím myš nebo klávesnici</translation>
@@ -3562,7 +3562,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="2453860139492968684">Dokončit</translation>
 <translation id="756445078718366910">Otevřít okno prohlížeče</translation>
 <translation id="6132383530370527946">Smluvní podmínky</translation>
-<translation id="9033780830059217187">Server proxy je vynucen rozšířením.</translation>
+<translation id="9033780830059217187">Proxy server je vynucen rozšířením.</translation>
 <translation id="5729996640881880439">Je nám líto, kód této chyby nelze zobrazit.</translation>
 <translation id="5088534251099454936">Šifrování PKCS #1 SHA-512 s RSA</translation>
 <translation id="1688000535217925742">Návrh hesla</translation>
@@ -3714,7 +3714,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="2784949926578158345">Připojení bylo resetováno.</translation>
 <translation id="6663792236418322902">Heslo, které si vyberete, budete později potřebovat k obnovení souboru. Bezpečně je uschovejte.</translation>
 <translation id="7052237160939977163">Odesílat údaje sledování výkonu</translation>
-<translation id="7077829361966535409">Přihlašovací stránku se pomocí aktuálního nastavení serveru proxy nepodařilo načíst. <ph name="GAIA_RELOAD_LINK_START"/>Zkuste se prosím přihlásit znovu<ph name="GAIA_RELOAD_LINK_END"/>, nebo použijte jiné <ph name="PROXY_SETTINGS_LINK_START"/>nastavení serveru proxy<ph name="PROXY_SETTINGS_LINK_END"/>.</translation>
+<translation id="7077829361966535409">Přihlašovací stránku se pomocí aktuálního nastavení proxy serveru nepodařilo načíst. <ph name="GAIA_RELOAD_LINK_START"/>Zkuste se prosím přihlásit znovu<ph name="GAIA_RELOAD_LINK_END"/>, nebo použijte jiné <ph name="PROXY_SETTINGS_LINK_START"/>nastavení proxy serveru<ph name="PROXY_SETTINGS_LINK_END"/>.</translation>
 <translation id="6321196148033717308">Informace o rozpoznávání hlasu</translation>
 <translation id="4055023634561256217">Než bude možné zařízení resetovat pomocí funkce Powerwash, je třeba ho restartovat.</translation>
 <translation id="8088137642766812908">Pozor, tato funkce trochu zlobí</translation>
@@ -3794,11 +3794,11 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="6175314957787328458">Identifikátor GUID domény Microsoft</translation>
 <translation id="6883209331334683549">Nápověda prohlížeče <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Typ spouštění</translation>
-<translation id="8179976553408161302">Začít</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Fotka byla zrcadlově obrácena</translation>
 <translation id="691321796646552019">Zakázat.</translation>
 <translation id="8026964361287906498">(Spravováno podnikovými zásadami)</translation>
-<translation id="8261506727792406068">Smazat</translation>
+<translation id="8261506727792406068">Vymazat</translation>
 <translation id="7800518121066352902">Otočit &amp;proti směru hodinových ručiček</translation>
 <translation id="345693547134384690">Otevřít o&amp;brázek na nové kartě</translation>
 <translation id="7422192691352527311">Nastavení...</translation>
@@ -3815,7 +3815,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="3206175707080061730">Soubor s názvem „$1“ již existuje. Chcete jej nahradit?</translation>
 <translation id="5976160379964388480">Ostatní</translation>
 <translation id="3439970425423980614">Otevírání souboru PDF v náhledu</translation>
-<translation id="1648797160541174252">Server proxy sítě <ph name="NETWORK_NAME"/></translation>
+<translation id="1648797160541174252">Proxy server sítě <ph name="NETWORK_NAME"/></translation>
 <translation id="3914173277599553213">Vyžadováno</translation>
 <translation id="3527085408025491307">Složka</translation>
 <translation id="2375701438512326360">Vynutí, aby byla podpora dotykové obrazovky vždy povolena nebo zakázána, popřípadě aby byla povolena, když je dotyková obrazovka zjištěna při spuštění (výchozí možnost Automaticky).</translation>
@@ -3836,7 +3836,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="3454157711543303649">Aktivace dokončena</translation>
 <translation id="3895034729709274924">Aktivovat tiché ladění</translation>
 <translation id="884923133447025588">Nebyl nalezen žádný mechanismus zamítnutí.</translation>
-<translation id="8830796635868321089">Při použití aktuálního nastavení serveru proxy se kontrola aktualizací nezdařila. Upravte <ph name="PROXY_SETTINGS_LINK_START"/>nastavení serveru proxy<ph name="PROXY_SETTINGS_LINK_END"/>.</translation>
+<translation id="8830796635868321089">Při použití aktuálního nastavení proxy serveru se kontrola aktualizací nezdařila. Upravte <ph name="PROXY_SETTINGS_LINK_START"/>nastavení proxy serveru<ph name="PROXY_SETTINGS_LINK_END"/>.</translation>
 <translation id="7801746894267596941">Šifrované údaje si může přečíst pouze osoba, která zná přístupové heslo. Přístupové heslo se společnosti Google neodesílá, ani jej společnost Google neuchovává. Pokud jej zapomenete, budete muset</translation>
 <translation id="9218350802691534808">Povolit pro aplikace zobrazení při prvním překreslení</translation>
 <translation id="5771849619911534867">Prohledávání zařízení bylo zastaveno.</translation>
@@ -3871,7 +3871,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="3828373662010953415">Aktivovat novou nabídku avatarů</translation>
 <translation id="6483805311199035658">Otevírání souboru <ph name="FILE"/>...</translation>
 <translation id="940425055435005472">Velikost písma:</translation>
-<translation id="494286511941020793">Nápověda ke konfiguraci serveru proxy</translation>
+<translation id="494286511941020793">Nápověda ke konfiguraci proxy serveru</translation>
 <translation id="2765217105034171413">Malé</translation>
 <translation id="9154176715500758432">Zůstat na této stránce</translation>
 <translation id="7938594894617528435">Momentálně offline</translation>
@@ -3880,7 +3880,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="3842552989725514455">Patkové písmo</translation>
 <translation id="1813278315230285598">Služby</translation>
 <translation id="88986195241502842">O stránku dolů</translation>
-<translation id="6860097299815761905">Nastavení serveru proxy...</translation>
+<translation id="6860097299815761905">Nastavení proxy serveru...</translation>
 <translation id="3672159315667503033">Stránka <ph name="URL"/> chce trvale ukládat data v místním počítači.</translation>
 <translation id="373572798843615002">1 karta</translation>
 <translation id="4806065163318322702">Přepnout hlasový vstup</translation>
@@ -3900,7 +3900,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="4966802378343010715">Vytvořit nového uživatele</translation>
 <translation id="3616741288025931835">&amp;Smazat údaje o prohlížení...</translation>
 <translation id="3313622045786997898">Hodnota podpisu certifikátu</translation>
-<translation id="6105366316359454748">Server proxy je prostředníkem mezi vaším zařízením a jinými servery. Váš systém je momentálně nastaven tak, aby se připojoval pomocí serveru proxy, ale aplikace <ph name="PRODUCT_NAME"/> se k němu připojit nemůže.</translation>
+<translation id="6105366316359454748">Proxy server je prostředníkem mezi vaším zařízením a jinými servery. Váš systém je momentálně nastaven tak, aby se připojoval pomocí proxy serveru, ale aplikace <ph name="PRODUCT_NAME"/> se k němu připojit nemůže.</translation>
 <translation id="8535005006684281994">Adresa URL pro obnovu certifikátu Netscape</translation>
 <translation id="6970856801391541997">Tisknout konkrétní stránky</translation>
 <translation id="7828106701649804503">Určete výchozí šířku dlaždic.</translation>
@@ -3969,7 +3969,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="2908999529399859069">Ne, zrušit</translation>
 <translation id="5804241973901381774">Oprávnění</translation>
 <translation id="901834265349196618">e-mail</translation>
-<translation id="8382207127145268451">Aktivace serveru proxy pro kompresi dat</translation>
+<translation id="8382207127145268451">Aktivace proxy serveru pro kompresi dat</translation>
 <translation id="5038863510258510803">Aktivování...</translation>
 <translation id="1973491249112991739">Stahování pluginu <ph name="PLUGIN_NAME"/> selhalo. </translation>
 <translation id="5527474464531963247">Můžete také vybrat jinou síť</translation>
@@ -4077,7 +4077,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="5886975541134980009">Je-li tato možnost deaktivována, po prvním přihlášení se nezobrazí překryvná vrstva s výukovým programem.</translation>
 <translation id="8962198349065195967">Tato síť je nastavena vaším administrátorem.</translation>
 <translation id="357479282490346887">litevština</translation>
-<translation id="2143778271340628265">Ruční nastavení serveru proxy</translation>
+<translation id="2143778271340628265">Ruční nastavení proxy serveru</translation>
 <translation id="440150639010863291">Použít Peněženku Google</translation>
 <translation id="8888432776533519951">Barva:</translation>
 <translation id="5294529402252479912">Aktualizovat program Adobe Reader</translation>
@@ -4093,7 +4093,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="7691122742290396436">Používat namísto stabilního přehrávače zvuku nový experimentální přehrávač.</translation>
 <translation id="8562413501751825163">Před importem zavřete prohlížeč Firefox</translation>
 <translation id="8686213429977032554">Tento soubor na Disku dosud není sdílen</translation>
-<translation id="2448046586580826824">Server proxy protokolu HTTPS</translation>
+<translation id="2448046586580826824">Proxy server protokolu HTTPS</translation>
 <translation id="4032534284272647190">Přístup na adresu <ph name="URL"/> odepřen.</translation>
 <translation id="5958529069007801266">Dozorovaný uživatel</translation>
 <translation id="3129173833825111527">Levý okraj</translation>
@@ -4266,7 +4266,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="6458308652667395253">Spravovat blokování JavaScriptu...</translation>
 <translation id="8435334418765210033">Uložené sítě</translation>
 <translation id="512608082539554821">Pokud je tato možnost aktivní, budou přechody v úvodním výukovém programu animované.</translation>
-<translation id="8632275030377321303">Uživatel nemůže server proxy změnit.</translation>
+<translation id="8632275030377321303">Uživatel nemůže proxy server změnit.</translation>
 <translation id="6449285849137521213">Aplikace <ph name="EXTENSION_NAME"/> byla přidána.</translation>
 <translation id="6516193643535292276">Nelze se připojit k internetu.</translation>
 <translation id="5125751979347152379">Neplatná adresa URL.</translation>
@@ -4321,7 +4321,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="1049926623896334335">Dokument aplikace Word</translation>
 <translation id="8412145213513410671">Selhání (<ph name="CRASH_COUNT"/>)</translation>
 <translation id="7003257528951459794">Frekvence:</translation>
-<translation id="1248269069727746712">K připojení do sítě používá <ph name="PRODUCT_NAME"/> nastavení serveru proxy podle systému v zařízení.</translation>
+<translation id="1248269069727746712">K připojení do sítě používá <ph name="PRODUCT_NAME"/> nastavení proxy serveru podle systému v zařízení.</translation>
 <translation id="3467267818798281173">Žádat o návrhy z Googlu</translation>
 <translation id="8408402540408758445">Předběžné načítání výsledků vyhledávání</translation>
 <translation id="5486275809415469523">Aplikace <ph name="APP_NAME"/> sdílí vaši obrazovku s kartou <ph name="TAB_NAME"/>.</translation>
@@ -4339,14 +4339,14 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="8513974249124254369">Funkce ChromeVox (hlasová odezva) je aktivní. Deaktivujete ji stisknutím kláves Ctrl+Alt+Z.</translation>
 <translation id="117624967391683467">Kopírování souboru <ph name="FILE_NAME"/>...</translation>
 <translation id="3095995014811312755">verze</translation>
-<translation id="7052500709156631672">Brána nebo server proxy obdržely neplatnou odpověď od nadřazeného serveru.</translation>
+<translation id="7052500709156631672">Brána nebo proxy server obdržely neplatnou odpověď od nadřazeného serveru.</translation>
 <translation id="281133045296806353">Ve stávající relaci prohlížeče bylo vytvořeno nové okno.</translation>
 <translation id="3605780360466892872">Manažer</translation>
 <translation id="4709423352780499397">Data v místním úložišti</translation>
 <translation id="8204484782770036444">• <ph name="PERMISSION"/></translation>
 <translation id="7144878232160441200">Opakovat</translation>
 <translation id="3570985609317741174">Webový obsah</translation>
-<translation id="3951872452847539732">Nastavení síťového serveru proxy je spravováno rozšířením.</translation>
+<translation id="3951872452847539732">Nastavení síťového proxy serveru je spravováno rozšířením.</translation>
 <translation id="4720113199587244118">Přidat zařízení</translation>
 <translation id="6442697326824312960">Odepnout kartu</translation>
 <translation id="8714406895390098252">Kolo</translation>
@@ -4450,7 +4450,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="604124094241169006">Automaticky</translation>
 <translation id="862542460444371744">Rozšíř&amp;ení</translation>
 <translation id="6807906590218483700">Pokusili jste se přejít na web <ph name="DOMAIN"/>, ale místo toho jste se dostali na server, který sám sebe označuje jako <ph name="DOMAIN2"/>. Příčinou může být nesprávná konfigurace serveru nebo něco mnohem vážnějšího. Ve vaší síti může být útočník, který se vás pokouší přimět k návštěvě podvodné (a potenciálně nebezpečné) verze webu <ph name="DOMAIN3"/>.</translation>
-<translation id="2539110682392681234">Server proxy je vynucen správcem.</translation>
+<translation id="2539110682392681234">Proxy server je vynucen správcem.</translation>
 <translation id="4977942889532008999">Potvrzení přístupu</translation>
 <translation id="7781335840981796660">Veškeré uživatelské účty a místní data budou odebrána.</translation>
 <translation id="2383066183457571563">Potvrďte prosím, že se nejedná o zařízení podniku. Registrace podniku bude zrušena.</translation>
@@ -4522,7 +4522,7 @@ Zde poskytnutý diagnostický nástroj na řešení problémů s připojením v�
 <translation id="8677914765885474883">Varování: Nejedná se o souhrnné údaje, stránka může reagovat pomalu.</translation>
 <translation id="3163460631729938959">Zobrazit oprávnění</translation>
 <translation id="169515659049020177">Shift</translation>
-<translation id="3551117997325569860">Pokud chcete změnit server proxy, aktivujte nastavení <ph name="USE_SHARED_PROXIES"/>.</translation>
+<translation id="3551117997325569860">Pokud chcete změnit proxy server, aktivujte nastavení <ph name="USE_SHARED_PROXIES"/>.</translation>
 <translation id="8906421963862390172">Možno&amp;sti kontroly pravopisu</translation>
 <translation id="193971656137910869">Číst a upravovat vaše záložky</translation>
 <translation id="6268747994388690914">Importovat záložky ze souboru HTML...</translation>
@@ -4678,7 +4678,7 @@ Výpočet času zbývajícího do úplného nabití</translation>
 <translation id="4189406272289638749">Toto nastavení je spravováno rozšířením &lt;b&gt;<ph name="EXTENSION_NAME"/>&lt;/b&gt;.</translation>
 <translation id="803771048473350947">Soubor</translation>
 <translation id="6206311232642889873">&amp;Kopírovat obrázek</translation>
-<translation id="5158983316805876233">Pro všechny protokoly použít stejný server proxy</translation>
+<translation id="5158983316805876233">Pro všechny protokoly použít stejný proxy server</translation>
 <translation id="7108338896283013870">Skrýt</translation>
 <translation id="3366404380928138336">Požadavek na externí protokol</translation>
 <translation id="5300589172476337783">Zobrazit</translation>
@@ -4945,7 +4945,7 @@ Chcete-li pokračovat v práci, stiskněte libovolnou klávesu.</translation>
 <translation id="1088086359088493902">Sekundy</translation>
 <translation id="3348205115529235073">Aktivovat režim offline mezipaměti</translation>
 <translation id="73289266812733869">Nevybráno</translation>
-<translation id="1758230322558024056">Klikněte nebo vyslovením příkazu „Ok, Google“ zahajte hlasové vyhledávání.</translation>
+<translation id="1758230322558024056">Klikněte nebo vyslovením příkazu „Ok Google“ zahajte hlasové vyhledávání.</translation>
 <translation id="8639963783467694461">Nastavení automatického vyplňování</translation>
 <translation id="2951247061394563839">Vycentrovat okno</translation>
 <translation id="3435738964857648380">Zabezpečení</translation>
@@ -5003,7 +5003,7 @@ Chcete-li pokračovat v práci, stiskněte libovolnou klávesu.</translation>
 <translation id="5801568494490449797">Nastavení</translation>
 <translation id="5903039909300841652">Přesouvání...</translation>
 <translation id="1038842779957582377">neznámé jméno</translation>
-<translation id="5327248766486351172">Název</translation>
+<translation id="5327248766486351172">Jméno</translation>
 <translation id="2150661552845026580">Přidat rozšíření <ph name="EXTENSION_NAME"/>?</translation>
 <translation id="5553784454066145694">Vyberte nový kód PIN</translation>
 <translation id="6101226222197207147">Byla přidána nová aplikace (<ph name="EXTENSION_NAME"/>)</translation>

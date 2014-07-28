@@ -497,7 +497,7 @@
 <translation id="4801956050125744859">Simpan kedua-duanya</translation>
 <translation id="3878840326289104869">Menghasilkan pengguna diselia</translation>
 <translation id="406070391919917862">Apl Latar Belakang</translation>
-<translation id="8820817407110198400">Penanda halaman</translation>
+<translation id="8820817407110198400">Penanda buku</translation>
 <translation id="6347003977836730270">Mendayakan UX gelembung Terjemahan baharu dan bukannya bar maklumat.</translation>
 <translation id="2580170710466019930">Sila tunggu sementara <ph name="PRODUCT_NAME"/> memasang kemas kini sistem terkini.</translation>
 <translation id="7428061718435085649">Gunakan kekunci Anjak ke kiri dan kanan untuk memilih calon kedua dan ketiga</translation>
@@ -1129,7 +1129,7 @@ Psst! <ph name="SHORTCUT_KEY"/> mod Inkognito mungkin akan berguna pada masa aka
 <translation id="4341364588986930687"><ph name="DOMAIN"/> memerlukan identiti peranti anda disahkan, oleh Google, untuk menentukan kelayakan bagi main balik yang dipertingkat untuk media yang dilindungi. <ph name="LEARN_MORE"/>.</translation>
 <translation id="7643817847124207232">Sambungan Internet terputus.</translation>
 <translation id="4871210892959306034">$1 KB</translation>
-<translation id="932327136139879170">Halaman Utama</translation>
+<translation id="932327136139879170">Laman Utama</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">S&amp;alin URL Video</translation>
 <translation id="2981113813906970160">Paparkan kursor tetikus besar</translation>
@@ -1313,7 +1313,7 @@ Psst! <ph name="SHORTCUT_KEY"/> mod Inkognito mungkin akan berguna pada masa aka
 <translation id="2462724976360937186">ID Kekunci Pihak Berkuasa Pensijilan</translation>
 <translation id="981121421437150478">Luar talian</translation>
 <translation id="2964193600955408481">Lumpuhkan Wi-Fi</translation>
-<translation id="6786747875388722282">Sambungan</translation>
+<translation id="6786747875388722282">Pelanjutan</translation>
 <translation id="2570648609346224037">Terdapat masalah semasa muat turun imej pemulihan.</translation>
 <translation id="5372384633701027870">Kosongkan kuki dan data lain apabila anda keluar dari penyemak imbas anda</translation>
 <translation id="4781787911582943401">Zum masuk skrin</translation>
@@ -2250,7 +2250,7 @@ Pastikan anda tidak mendedahkan sebarang maklumat sensitif.</translation>
 <translation id="4710257996998566163">Terakhir dikemas kini:</translation>
 <translation id="5299682071747318445">Semua data disulitkan dengan frasa laluan segerak anda</translation>
 <translation id="7556242789364317684">Malangnya, <ph name="SHORT_PRODUCT_NAME"/> tidak dapat memulihkan tetapan anda. <ph name="SHORT_PRODUCT_NAME"/> mesti menetapkan semula peranti anda menggunakan Powerwash untuk membetulkan ralat.</translation>
-<translation id="1383876407941801731">Cari</translation>
+<translation id="1383876407941801731">Carian</translation>
 <translation id="23362385947277794">Warna dan imej latar belakang</translation>
 <translation id="409579654357498729">Tambahkan pada Cetakan Awan</translation>
 <translation id="2120316813730635488">Kejadian apabila sambungan telah dipasang</translation>
@@ -2286,7 +2286,7 @@ Pastikan anda tidak mendedahkan sebarang maklumat sensitif.</translation>
 <translation id="6423731501149634044">Gunakan Adobe Reader sebagai alat lihat PDF lalai anda?</translation>
 <translation id="1965328510789761112">Memori peribadi</translation>
 <translation id="7312441861087971374"><ph name="PLUGIN_NAME"/> ketinggalan zaman.</translation>
-<translation id="5790085346892983794">Kejayaan</translation>
+<translation id="5790085346892983794">Berjaya</translation>
 <translation id="7639178625568735185">Faham!</translation>
 <translation id="1901769927849168791">Kad SD dikesan</translation>
 <translation id="818454486170715660"><ph name="NAME"/> - Pemilik</translation>
@@ -3831,7 +3831,7 @@ Pastikan anda tidak mendedahkan sebarang maklumat sensitif.</translation>
 <translation id="6175314957787328458">Microsoft Domain GUID</translation>
 <translation id="6883209331334683549">Bantuan <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Jenis pemula</translation>
-<translation id="8179976553408161302">Masuk</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Foto diterbalikkan</translation>
 <translation id="691321796646552019">Jangan buat macam tu!</translation>
 <translation id="8026964361287906498">(Diuruskan oleh dasar perusahaan)</translation>
@@ -4868,7 +4868,7 @@ Tekan sebarang kekunci untuk terus meneroka.</translation>
 <translation id="5996258716334177896">Profil anda tidak dapat dibuka dengan betul. Beberapa ciri mungkin tidak tersedia. Sila semak bahawa profil tersebut wujud dan anda mempunyai kebenaran untuk membaca dan menulis kandungannya.</translation>
 <translation id="7040138676081995583">Buka dengan...</translation>
 <translation id="7953739707111622108">Peranti ini tidak boleh dibuka kerana sistem fail tidak dikenali.</translation>
-<translation id="2433507940547922241">Penampilan</translation>
+<translation id="2433507940547922241">Tampilan</translation>
 <translation id="6051354611314852653">Op!  Sistem gagal membenarkan akses API untuk peranti ini.</translation>
 <translation id="7851716364080026749">Sentiasa halang akses kamera dan mikrofon</translation>
 <translation id="839072384475670817">Cipta &amp;Pintasan Aplikasi...</translation>

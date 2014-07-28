@@ -302,7 +302,7 @@
 <translation id="7938958445268990899">Tjenerens sertifikat er ikke gyldig ennå.</translation>
 <translation id="4569998400745857585">Meny med skjulte utvidelser</translation>
 <translation id="4081383687659939437">Lagre informasjon</translation>
-<translation id="1801827354178857021">Punktum</translation>
+<translation id="1801827354178857021">Periode</translation>
 <translation id="4560332071395409256">Klikk på
           <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/>,
           klikk på
@@ -1122,7 +1122,7 @@ Forresten: Inkognitomodus (<ph name="SHORTCUT_KEY"/>) kan være kjekt neste gang
 <translation id="4341364588986930687"><ph name="DOMAIN"/> krever at identiteten til enheten din bekreftes av Google, for å bestemme berettigelse for forbedret avspilling av beskyttet media. <ph name="LEARN_MORE"/>.</translation>
 <translation id="7643817847124207232">Internett-tilkoblingen er blitt borte.</translation>
 <translation id="4871210892959306034">$1 KB</translation>
-<translation id="932327136139879170">Home</translation>
+<translation id="932327136139879170">Start</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">K&amp;opier videoens nettadresse</translation>
 <translation id="2981113813906970160">Vis stor musepeker</translation>
@@ -2075,7 +2075,7 @@ annet sertifikat, kan du prøve å bruke dette. Ellers kan du forsøke å
 <translation id="4731351517694976331">Tillat at Google-tjenester bruker posisjonen din</translation>
 <translation id="5815645614496570556">X.400-adresse</translation>
 <translation id="1223853788495130632">Administratoren din anbefaler en spesifikk verdi for denne innstillingen.</translation>
-<translation id="313407085116013672">Fordi <ph name="IDS_SHORT_PRODUCT_OS_NAME"/> sikkert krypterer alle de lokale dataene dine, må du skrive inn det gamle passordet nå for å låse opp disse dataene.</translation>
+<translation id="313407085116013672">Fordi <ph name="IDS_SHORT_PRODUCT_OS_NAME"/> krypterer alle de lokale dataene dine, må du skrive inn det gamle passordet nå for å låse opp disse dataene.</translation>
 <translation id="3551320343578183772">Lukk fanen</translation>
 <translation id="3345886924813989455">Ingen støttede nettlesere funnet</translation>
 <translation id="3712897371525859903">L&amp;agre side som...</translation>
@@ -2895,7 +2895,7 @@ Pass på at du ikke deler privat informasjon.</translation>
 <translation id="7347751611463936647">For å bruke denne utvidelsen, skriver du «<ph name="EXTENSION_KEYWORD"/>» , trykker på TAB, og skriver kommandoordet eller søkeordet.</translation>
 <translation id="878431691778285679">Det ser ut som om du allerede administrerer en bruker med det navnet.<ph name="LINE_BREAK"/>Ville du <ph name="BEGIN_LINK"/>importere <ph name="PROFILE_NAME"/> til denne enheten<ph name="END_LINK"/>?</translation>
 <translation id="2912905526406334195"><ph name="HOST"/> ønsker å bruke mikrofonen din.</translation>
-<translation id="2805756323405976993">Programmer</translation>
+<translation id="2805756323405976993">Apps</translation>
 <translation id="5151511998946489774">Identiteten til dette nettstedet har blitt bekreftet av <ph name="ISSUER"/> og er offentlig tilgjengelig.</translation>
 <translation id="1608626060424371292">Fjern denne brukeren</translation>
 <translation id="3075239840551149663"><ph name="NEW_PROFILE_NAME"/> er opprettet som overvåket bruker.</translation>
@@ -3795,7 +3795,7 @@ Pass på at du ikke deler privat informasjon.</translation>
 <translation id="6175314957787328458">Microsoft domeneguide</translation>
 <translation id="6883209331334683549">Hjelp for <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Oppstartstype</translation>
-<translation id="8179976553408161302">Start</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Bildet er snudd</translation>
 <translation id="691321796646552019">Slå det av</translation>
 <translation id="8026964361287906498">(Administrert av virksomhetens retningslinjer)</translation>

@@ -311,7 +311,7 @@
 <translation id="7938958445268990899">Het servercertificaat is nog niet geldig.</translation>
 <translation id="4569998400745857585">Menu met verborgen extensies</translation>
 <translation id="4081383687659939437">Info opslaan</translation>
-<translation id="1801827354178857021">Punt</translation>
+<translation id="1801827354178857021">Periode</translation>
 <translation id="4560332071395409256">Klik op
           <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/>,
           klik op
@@ -391,7 +391,7 @@
 <translation id="2856203831666278378">De reactie van de server bevatte dubbele headers. Dit probleem
         wordt meestal veroorzaakt door een onjuist geconfigureerde website
         of proxy. Alleen de beheerder van de website of proxy kan dit probleem oplossen.</translation>
-<translation id="3587482841069643663">Alle</translation>
+<translation id="3587482841069643663">Alles</translation>
 <translation id="6698381487523150993">Gemaakt:</translation>
 <translation id="4684748086689879921">Import overslaan</translation>
 <translation id="6418443601594065950">Pop-up in infobalk voor beveiligde media uitschakelen.</translation>
@@ -1134,7 +1134,7 @@ Resterende tijd berekenen</translation>
 <translation id="4341364588986930687"><ph name="DOMAIN"/> vereist dat de identiteit van je apparaat wordt geverifieerd door Google om de geschiktheid voor het geoptimaliseerd afspelen van beveiligde media vast te stellen. <ph name="LEARN_MORE"/>.</translation>
 <translation id="7643817847124207232">De internetverbinding is verbroken.</translation>
 <translation id="4871210892959306034">$1 kB</translation>
-<translation id="932327136139879170">Home</translation>
+<translation id="932327136139879170">Startpagina</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">Vide&amp;o-URL kopiëren</translation>
 <translation id="2981113813906970160">Grote muisaanwijzer weergeven</translation>
@@ -1319,7 +1319,7 @@ Resterende tijd berekenen</translation>
 <translation id="2462724976360937186">Sleutel-id van certificeringsinstantie</translation>
 <translation id="981121421437150478">Offline</translation>
 <translation id="2964193600955408481">Wifi uitschakelen</translation>
-<translation id="6786747875388722282">Extensies</translation>
+<translation id="6786747875388722282">Uitbreidingen</translation>
 <translation id="2570648609346224037">Er is een probleem opgetreden tijdens het downloaden van de herstelkopie.</translation>
 <translation id="5372384633701027870">Cookies en andere sitegegevens wissen wanneer je je browser sluit</translation>
 <translation id="4781787911582943401">Scherm inzoomen</translation>
@@ -2284,7 +2284,7 @@ Zorg ervoor dat je geen gevoelige informatie weergeeft.</translation>
 <translation id="6423731501149634044">Adobe Reader als je standaard PDF-viewer gebruiken?</translation>
 <translation id="1965328510789761112">Privégeheugen</translation>
 <translation id="7312441861087971374"><ph name="PLUGIN_NAME"/> is verouderd.</translation>
-<translation id="5790085346892983794">Gereed</translation>
+<translation id="5790085346892983794">Geslaagd</translation>
 <translation id="7639178625568735185">Begrepen!</translation>
 <translation id="1901769927849168791">SD-kaart gevonden</translation>
 <translation id="818454486170715660"><ph name="NAME"/> - eigenaar</translation>
@@ -2922,7 +2922,7 @@ Zorg ervoor dat je geen gevoelige informatie weergeeft.</translation>
 <translation id="7347751611463936647">Als je deze extensie wilt gebruiken, typ je '<ph name="EXTENSION_KEYWORD"/>', druk je op Tab en geef je je opdracht of zoekopdracht op.</translation>
 <translation id="878431691778285679">Het lijkt erop dat je al een gebruiker met die naam beheert.<ph name="LINE_BREAK"/>Wil je <ph name="BEGIN_LINK"/><ph name="PROFILE_NAME"/> importeren naar dit apparaat<ph name="END_LINK"/>?</translation>
 <translation id="2912905526406334195"><ph name="HOST"/> wil gebruikmaken van je microfoon.</translation>
-<translation id="2805756323405976993">Applicaties</translation>
+<translation id="2805756323405976993">Google Apps</translation>
 <translation id="5151511998946489774">De identiteit van deze website is geverifieerd door <ph name="ISSUER"/> en is openbaar controleerbaar.</translation>
 <translation id="1608626060424371292">Deze gebruiker verwijderen</translation>
 <translation id="3075239840551149663"><ph name="NEW_PROFILE_NAME"/> is gemaakt als gebruiker met beperkte rechten.</translation>
@@ -3554,7 +3554,7 @@ Zorg ervoor dat je geen gevoelige informatie weergeeft.</translation>
 <translation id="8434177709403049435">Te&amp;kenset</translation>
 <translation id="1196849605089373692">Bepaalt de kwaliteitsinstellingen voor vastgelegde afbeeldingen bij verkleinen.</translation>
 <translation id="3202237796902623372">Het hervatten van downloads inschakelen</translation>
-<translation id="3810838688059735925">Video</translation>
+<translation id="3810838688059735925">Videobestanden</translation>
 <translation id="2747011872211212100">Nieuwe printer in je netwerk</translation>
 <translation id="2028531481946156667">Kan het formatteren niet starten.</translation>
 <translation id="7439964298085099379">Je hebt de modus voor hoog contrast ingeschakeld. Wil je onze extensie voor hoog contrast en een donker thema installeren?</translation>
@@ -3826,7 +3826,7 @@ Zorg ervoor dat je geen gevoelige informatie weergeeft.</translation>
 <translation id="6175314957787328458">Microsoft-domein-GUID</translation>
 <translation id="6883209331334683549"><ph name="PRODUCT_NAME"/> Help</translation>
 <translation id="6970480684834282392">Opstarttype</translation>
-<translation id="8179976553408161302">Beginnen</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Foto gedraaid</translation>
 <translation id="691321796646552019">Niet doen.</translation>
 <translation id="8026964361287906498">(Beheerd door bedrijfsbeleid)</translation>
@@ -4866,7 +4866,7 @@ Druk op een toets om door te gaan met verkennen.</translation>
 Sommige functies zijn wellicht niet beschikbaar. Controleer of het profiel bestaat en of je beschikt over lees- en schrijfrechten voor de inhoud van het profiel.</translation>
 <translation id="7040138676081995583">Openen met...</translation>
 <translation id="7953739707111622108">Dit apparaat kan niet worden geopend omdat het bijbehorende bestandssysteem niet wordt herkend.</translation>
-<translation id="2433507940547922241">Uiterlijk</translation>
+<translation id="2433507940547922241">Vormgeving</translation>
 <translation id="6051354611314852653">Het systeem kan API-toegang voor dit apparaat niet verifiëren.</translation>
 <translation id="7851716364080026749">Toegang tot de camera en microfoon altijd blokkeren</translation>
 <translation id="839072384475670817">&amp;Snelkoppelingen maken...</translation>

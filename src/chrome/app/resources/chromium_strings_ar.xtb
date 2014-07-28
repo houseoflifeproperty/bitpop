@@ -3,157 +3,158 @@
 <translationbundle lang="ar">
 <translation id="6676384891291319759">الدخول إلى الإنترنت</translation>
 <translation id="8586442755830160949">‏حقوق الطبع والنشر لعام <ph name="YEAR"/> لصالح The Chromium Authors. جميع الحقوق محفوظة.</translation>
-<translation id="8447784615389818621">‏هل تريد بالتأكيد إزالة BitPop؟</translation>
-<translation id="1928147301259050372">‏هل تريد من BitPop حفظ معلومات بطاقة الائتمان لإكمال نماذج الويب؟</translation>
-<translation id="100741878661450640">‏إزالة BitPop</translation>
-<translation id="7015513946685052865">‏سيتوقف هذا الكمبيوتر قريبًا عن تلقي تحديثات BitPop نظرًا لأن أجهزته لم تعد متوافقة.</translation>
-<translation id="4301276314211054820">‏تم تحديث متصفح BitPop، ولكنك لم تستخدمه منذ أكثر من 30 يومًا.</translation>
-<translation id="8935261719622405725">‏تشغيل تطبيقات BitPop</translation>
-<translation id="2787245396912783582">‏مشغل تطبيقات BitPop عبارة عن نظام أساسي مستقل لتطبيقات BitPop.</translation>
+<translation id="6373523479360886564">‏هل تريد بالتأكيد إزالة Chromium؟</translation>
+<translation id="5065199687811594072">‏هل تريد من Chromium حفظ معلومات بطاقة الائتمان لإكمال نماذج الويب؟</translation>
+<translation id="6510925080656968729">‏إزالة Chromium</translation>
+<translation id="2615699638672665509">‏سيتوقف هذا الكمبيوتر قريبًا عن تلقي تحديثات Chromium نظرًا لأن أجهزته لم تعد متوافقة.</translation>
+<translation id="6893813176749746474">‏تم تحديث متصفح Chromium، ولكنك لم تستخدمه منذ أكثر من 30 يومًا.</translation>
+<translation id="1550579416447684632">‏تشغيل تطبيقات Chromium</translation>
+<translation id="4267347018362241535">‏مشغل تطبيقات Chromium عبارة عن نظام أساسي مستقل لتطبيقات Chromium.</translation>
 <translation id="2770231113462710648">تغيير المتصفح الافتراضي إلى:</translation>
-<translation id="6870152852581894991">‏ستسري التغييرات في المرة التالية التي تعيد فيها تشغيل BitPop.</translation>
-<translation id="7725527658463487664">‏إصدار BitPop قديم</translation>
-<translation id="302025056100997516">‏يمكن أن تساعد التفاصيل الواردة من جهات اتصالك في ملء النماذج بسرعة في BitPop.</translation>
-<translation id="3588014340702790340">‏أنت تعرض صفحة Google Chrome آمنة.</translation>
+<translation id="6613594504749178791">‏ستسري التغييرات في المرة التالية التي تعيد فيها تشغيل Chromium.</translation>
+<translation id="9089354809943900324">‏إصدار Chromium قديم</translation>
+<translation id="59625444380784159">‏يمكن أن تساعد التفاصيل الواردة من جهات اتصالك في ملء النماذج بسرعة في Chromium.</translation>
+<translation id="3748537968684000502">‏أنت تعرض صفحة Google Chrome آمنة.</translation>
 <translation id="2077129598763517140">استخدام تسريع الأجهزة عند توفره</translation>
 <translation id="1065672644894730302">لا يمكن قراءة تفضيلاتك. قد تكون بعض الميزات غير متاحة، ولن يتم حفظ التغييرات في التفضيلات.</translation>
-<translation id="4795239855223923830">‏تخصيص BitPop والتحكم فيه</translation>
-<translation id="98449668525928921">‏أنت تسجل الدخول باستخدام حساب يخضع للإدارة وتتيح للمشرف إمكانية التحكم في ملفك الشخصي على BitPop. وستكون بياناتك في BitPop مثل تطبيقاتك وإشاراتك المرجعية وسجلك وكلمات المرور التابعة لك والإعدادات الأخرى مرتبطة دائمًا بالمستخدم <ph name="USER_NAME"/>. ستتمكن من حذف هذه البيانات عبر لوحة تحكم حسابات Google، ولكنك لن تتمكن من إقران هذه البيانات بحساب آخر. ويُمكنك اختيار إنشاء ملف شخصي جديد للإبقاء على بياناتك الحالية في BitPop بشكل مستقل. <ph name="LEARN_MORE"/></translation>
-<translation id="7711905272664478875">‏نشكرك لتجربة BitPop الجديد. يحتاج BitPop إلى إعادة التشغيل لضمان أنك قمت بحفظ أي أعمال مفتوحة قبل الاستمرار.</translation>
+<translation id="4423735387467980091">‏تخصيص Chromium والتحكم فيه</translation>
+<translation id="1881322772814446296">‏أنت تسجل الدخول باستخدام حساب يخضع للإدارة وتتيح للمشرف إمكانية التحكم في ملفك الشخصي على Chromium. وستكون بياناتك في Chromium مثل تطبيقاتك وإشاراتك المرجعية وسجلك وكلمات المرور التابعة لك والإعدادات الأخرى مرتبطة دائمًا بالمستخدم <ph name="USER_NAME"/>. ستتمكن من حذف هذه البيانات عبر لوحة تحكم حسابات Google، ولكنك لن تتمكن من إقران هذه البيانات بحساب آخر. ويُمكنك اختيار إنشاء ملف شخصي جديد للإبقاء على بياناتك الحالية في Chromium بشكل مستقل. <ph name="LEARN_MORE"/></translation>
+<translation id="455521026202544465">‏نشكرك لتجربة Chromium الجديد. يحتاج Chromium إلى إعادة التشغيل لضمان أنك قمت بحفظ أي أعمال مفتوحة قبل الاستمرار.</translation>
 <translation id="731644333568559921">‏تحديث ن&amp;ظام التشغيل BitPop</translation>
-<translation id="5284421695473942517">‏يتطلب BitPop نظام التشغيل Windows XP أو نظام تشغيل أحدث. قد لا تعمل بعض الميزات.</translation>
-<translation id="4534284284800306880">‏يتعيّن عليك ترقية BitPop حتى يتسنى لك استخدام محفظة Google [<ph name="ERROR_CODE"/>].</translation>
-<translation id="1258942147733482141">‏تراخيص مفتوحة المصدر لـ BitPop</translation>
-<translation id="2001441118695834744">‏إذا كنت تفضل الإبقاء على بيانات BitPop الحالية بشكل منفصل، فيمكنك إنشاء حساب مستخدم BitPop جديد للمستخدم <ph name="USER_NAME"/>.</translation>
-<translation id="3207916442629104800">‏تعيين BitPop المتصفح الافتراضي</translation>
-<translation id="2346981135360001626">جارٍ تحديث جهازك إلى قناة <ph name="CHANNEL_NAME"/>...</translation>
+<translation id="7421823331379285070">‏يتطلب Chromium نظام التشغيل Windows XP أو نظام تشغيل أحدث. قد لا تعمل بعض الميزات.</translation>
+<translation id="7023267510504981715">‏يتعيّن عليك ترقية Chromium حتى يتسنى لك استخدام محفظة Google [<ph name="ERROR_CODE"/>].</translation>
+<translation id="1444754455097148408">‏تراخيص مفتوحة المصدر لـ Chromium</translation>
+<translation id="7419987137528340081">‏إذا كنت تفضل الإبقاء على بيانات Chromium الحالية بشكل منفصل، فيمكنك إنشاء حساب مستخدم Chromium جديد للمستخدم <ph name="USER_NAME"/>.</translation>
+<translation id="5427571867875391349">‏تعيين Chromium المتصفح الافتراضي</translation>
+<translation id="8030318113982266900">جارٍ تحديث جهازك إلى قناة <ph name="CHANNEL_NAME"/>...</translation>
 <translation id="3549345495227188780">‏البدء في استخدام نظام التشغيل BitPop</translation>
-<translation id="7593639489233822734">‏بعد إزالة حسابك من BitPop، قد تحتاج إلى إعادة تحميل علامات التبويب المفتوحة لتفعيلها.</translation>
-<translation id="8235603028098851915">‏شريط أدوات BitPop</translation>
-<translation id="325440606879482824">‏أخفقت عملية التثبيت بسبب خطأ غير محدد. إذا كان BitPop في حالة التشغيل حاليًا، فالرجاء إغلاقه وإعادة المحاولة.</translation>
-<translation id="2681187513058372590">‏يحاول BitPop إظهار كلمات المرور.</translation>
-<translation id="9205983754412543288">‏اختياري: ساعد في تحسين BitPop عن طريق إرسال إحصائيات الاستخدام وتقارير الأعطال إلى Google تلقائيًا.</translation>
-<translation id="3898160962923474892">‏انتقل إلى
-          قائمة BitPop &gt;
+<translation id="1668054258064581266">‏بعد إزالة حسابك من Chromium، قد تحتاج إلى إعادة تحميل علامات التبويب المفتوحة لتفعيلها.</translation>
+<translation id="6953661834318318668">‏شريط أدوات Chromium</translation>
+<translation id="4285930937574705105">‏أخفقت عملية التثبيت بسبب خطأ غير محدد. إذا كان Chromium في حالة التشغيل حاليًا، فالرجاء إغلاقه وإعادة المحاولة.</translation>
+<translation id="1396446129537741364">‏يحاول Chromium إظهار كلمات المرور.</translation>
+<translation id="2886012850691518054">‏اختياري: ساعد في تحسين Chromium عن طريق إرسال إحصائيات الاستخدام وتقارير الأعطال إلى Google تلقائيًا.</translation>
+<translation id="580822234363523061">‏انتقل إلى
+          قائمة Chromium &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
           وتأكد من ضبط التهيئة على "بلا خادم وكيل" أو "مباشر."</translation>
-<translation id="7541322662422142299"><ph name="PAGE_TITLE"/> - BitPop</translation>
-<translation id="3334080844010912902">‏تعذر على BitPop مزامنة البيانات نظرًا لأن المزامنة غير متاحة في نطاقك.</translation>
-<translation id="2030214613468936763">‏لقد حاولت الوصول إلى &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;، ولكن الشهادة التي قدمها الخادم تحتوي على أخطاء. يتعذر على BitPop استخدام شهادة تحتوي على أخطاء، ويتعذر عليه التحقق من هوية الموقع الذي حاولت الاتصال به.</translation>
-<translation id="3801183610358973379">‏أخفقت أداة التثبيت في فك ضغط الأرشيف. الرجاء إعادة تنزيل BitPop.</translation>
-<translation id="4138697454314244697">‏لم يتم العثور على تثبيت BitPop لإجراء التحديث.</translation>
-<translation id="4450789702440326676">‏دع BitPop يعمل في الخلفية</translation>
-<translation id="8743840534367614002">‏تطبيقات BitPop</translation>
-<translation id="2963590958538393837">‏نعم، الخروج من BitPop</translation>
+<translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
+<translation id="7729447699958282447">‏تعذر على Chromium مزامنة البيانات نظرًا لأن المزامنة غير متاحة في نطاقك.</translation>
+<translation id="1989424089625731201">‏لقد حاولت الوصول إلى &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;، ولكن الشهادة التي قدمها الخادم تحتوي على أخطاء. يتعذر على Chromium استخدام شهادة تحتوي على أخطاء، ويتعذر عليه التحقق من هوية الموقع الذي حاولت الاتصال به.</translation>
+<translation id="3103660991484857065">‏أخفقت أداة التثبيت في فك ضغط الأرشيف. الرجاء إعادة تنزيل Chromium.</translation>
+<translation id="7064610482057367130">‏لم يتم العثور على تثبيت Chromium لإجراء التحديث.</translation>
+<translation id="872034308864968620">‏دع Chromium يعمل في الخلفية</translation>
+<translation id="459535195905078186">‏تطبيقات Chromium</translation>
+<translation id="5109068449432240255">‏نعم، الخروج من Chromium</translation>
 <translation id="1480489203462860648">يمكنك تجريبه، إنه مثبت من قبل</translation>
-<translation id="7098153548331126805">‏جارٍ الإضافة إلى BitPop...</translation>
+<translation id="3032787606318309379">‏جارٍ الإضافة إلى Chromium...</translation>
 <translation id="4831257561365056138">‏إلغاء تثبيت مشغل تطبيقات BitPop</translation>
-<translation id="7680117738450774222">‏لقد سجلت الدخول الآن إلى BitPop! عطّل المشرف المزامنة.</translation>
-<translation id="5995722392285490130"><ph name="BEGIN_BOLD"/>تحذير:<ph name="END_BOLD"/> لا يستطيع منع الإضافات من تسجيل سجل التصفح. لتعطيل هذه الإضافة في وضع التصفح المخفي، ألغ تحديد هذا الخيار.</translation>
-<translation id="9123740998411173947">‏والآن بعد أن سجّلت دخولك، يمكنك الحصول على علامات التبويب والإشارات المرجعية وعناصر BitPop الأخرى عبر الكمبيوتر المحمول والهاتف والجهاز اللوحي: كما ستتلقى المزيد من الاقتراحات والميزات ذات الصلة في خدمات Google.</translation>
+<translation id="4222580632002216401">‏لقد سجلت الدخول الآن إلى Chromium! عطّل المشرف المزامنة.</translation>
+<translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>تحذير:<ph name="END_BOLD"/> لا يستطيع منع الإضافات من تسجيل سجل التصفح. لتعطيل هذه الإضافة في وضع التصفح المخفي، ألغ تحديد هذا الخيار.</translation>
+<translation id="4516868174453854611">‏والآن بعد أن سجّلت دخولك، يمكنك الحصول على علامات التبويب والإشارات المرجعية وعناصر Chromium الأخرى عبر الكمبيوتر المحمول والهاتف والجهاز اللوحي: كما ستتلقى المزيد من الاقتراحات والميزات ذات الصلة في خدمات Google.</translation>
 <translation id="985602178874221306">The Chromium Authors</translation>
-<translation id="3941397373453695568">‏لا يتضمن BitPop عارض PDF المطلوب لإجراء معاينة الطباعة.</translation>
-<translation id="8155571637339134666">‏قد يستخدم BitPop خدمات الويب لتحسين تجربة التصفح لديك.</translation>
-<translation id="6157791660174418859">‏جرب الطريقة الجديدة لاستخدام BitPop مع حسابك في Google وعلى أجهزة الكمبيوتر المشتركة.</translation>
-<translation id="4759775690587852534">‏عذرًا، فإن إعدادات موزيلا فَيَرفُكس غير متاحة أثناء تشغيل هذا المتصفح. لاستيراد هذه الإعدادات إلى BitPop، قم بحفظ عملك وإغلاق جميع نوافذ فَيَرفُكس. بعد ذلك انقر على "استمرار".</translation>
-<translation id="5769857394054687534">‏في هذه الحالة، يكون العنوان الوارد في الشهادة لا يطابق عنوان موقع الويب الذي يحاول المتصفح الانتقال إليه. ويكون أحد الأسباب المحتملة لذلك أن تكون اتصالاتك يتم اعتراضها بواسطة أحد المخترقين والذي يقدم شهادة لموقع ويب مختلف، والتي قد تتسبب في عدم التطابق. وأحد الأسباب المحتملة الأخرى أن يكون تم إعداد الخادم ليعرض الشهادة ذاتها لعدة مواقع ويب، بما في ذلك موقع الويب الذي تحاول الانتقال إليه، برغم أن الشهادة غير صالحة لمواقع الويب هذه. يمكن أن يذكر BitPop أنك قد وصلت إلى &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; بالتأكيد، ولكنه لا يمكنه التأكد أنه هو الموقع ذاته &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; والذي تقصد الوصول إليه. في حالة المتابعة، فإن BitPop لن يتحقق من أية أخطاء إضافية في الأسماء.</translation>
-<translation id="2224367722165014156">‏تعذر تحديث BitPop إلى أحدث إصدار، وبالتالي تفوتك ميزات جديدة رائعة وإصلاحات للأمان. يلزمك إعادة تثبيت BitPop يدويًا.</translation>
+<translation id="8628626585870903697">‏لا يتضمن Chromium عارض PDF المطلوب لإجراء معاينة الطباعة.</translation>
+<translation id="7138853919861947730">‏قد يستخدم Chromium خدمات الويب لتحسين تجربة التصفح لديك.</translation>
+<translation id="934663725767849097">‏جرب الطريقة الجديدة لاستخدام Chromium مع حسابك في Google وعلى أجهزة الكمبيوتر المشتركة.</translation>
+<translation id="3849925841547750267">‏عذرًا، فإن إعدادات موزيلا فَيَرفُكس غير متاحة أثناء تشغيل هذا المتصفح. لاستيراد هذه الإعدادات إلى Chromium، قم بحفظ عملك وإغلاق جميع نوافذ فَيَرفُكس. بعد ذلك انقر على "استمرار".</translation>
+<translation id="7771626876550251690">‏في هذه الحالة، يكون العنوان الوارد في الشهادة لا يطابق عنوان موقع الويب الذي يحاول المتصفح الانتقال إليه. ويكون أحد الأسباب المحتملة لذلك أن تكون اتصالاتك يتم اعتراضها بواسطة أحد المخترقين والذي يقدم شهادة لموقع ويب مختلف، والتي قد تتسبب في عدم التطابق. وأحد الأسباب المحتملة الأخرى أن يكون تم إعداد الخادم ليعرض الشهادة ذاتها لعدة مواقع ويب، بما في ذلك موقع الويب الذي تحاول الانتقال إليه، برغم أن الشهادة غير صالحة لمواقع الويب هذه. يمكن أن يذكر Chromium أنك قد وصلت إلى &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; بالتأكيد، ولكنه لا يمكنه التأكد أنه هو الموقع ذاته &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; والذي تقصد الوصول إليه. في حالة المتابعة، فإن Chromium لن يتحقق من أية أخطاء إضافية في الأسماء.</translation>
+<translation id="7027298027173928763">‏تعذر تحديث Chromium إلى أحدث إصدار، وبالتالي تفوتك ميزات جديدة رائعة وإصلاحات للأمان. يلزمك إعادة تثبيت Chromium يدويًا.</translation>
 <translation id="8897323336392112261">‏كما أنها تتحكم في الصفحة التي تظهر عند تشغيل Chromium أو النقر على زر الصفحة الرئيسية.</translation>
-<translation id="2886079192271351730">‏هذه الوحدة معروف أنها تتعارض مع BitPop.</translation>
-<translation id="8324687802311409372">‏للأسف! تعطل BitPop. هل تريد إعادة التشغيل الآن؟</translation>
-<translation id="5689811886832352959">‏يمكنك المساعدة في تحسين BitPop عن طريق إرسال تقارير الأعطال و<ph name="UMA_LINK"/> إلى Google</translation>
-<translation id="5101127815285864538">‏الويب والإشارات المرجعية وغيرها من عناصر BitPop توجد هنا.</translation>
+<translation id="4330585738697551178">‏هذه الوحدة معروف أنها تتعارض مع Chromium.</translation>
+<translation id="3190315855212034486">‏للأسف! تعطل Chromium. هل تريد إعادة التشغيل الآن؟</translation>
+<translation id="3068515742935458733">‏يمكنك المساعدة في تحسين Chromium عن طريق إرسال تقارير الأعطال و<ph name="UMA_LINK"/> إلى Google</translation>
+<translation id="734373864078049451">‏الويب والإشارات المرجعية وغيرها من عناصر Chromium توجد هنا.</translation>
 <translation id="3197823471738295152">جهازك محدّث.</translation>
 <translation id="8551886023433311834">محدّث تقريبًا! أعد تشغيل الجهاز لإنهاء التحديث.</translation>
-<translation id="9090519209458031409">‏هل تريد من BitPop حفظ كلمة المرور لهذا الموقع؟</translation>
+<translation id="8353224596138547809">‏هل تريد من Chromium حفظ كلمة المرور لهذا الموقع؟</translation>
 <translation id="7339898014177206373">نافذة جديدة</translation>
-<translation id="6188910816550019957">‏انتقل إلى
-        قائمة BitPop &gt;
+<translation id="3733625138702910745">‏انتقل إلى
+        قائمة Chromium &gt;
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
         وألغ تحديد "<ph name="NO_PREFETCH_DESCRIPTION"/>."
         في حالة ما إذا لم يؤد ذلك إلى حل المشكلة، فنوصي بتحديد هذا الخيار
         مرة أخرى لتحسين الأداء.</translation>
-<translation id="2397909649953118924">‏BitPop - الإشعارات (<ph name="QUANTITY"/> غير مقروءة)</translation>
+<translation id="7463979740390522693">‏Chromium - الإشعارات (<ph name="QUANTITY"/> غير مقروءة)</translation>
 <translation id="225614027745146050">مرحبًا</translation>
-<translation id="1823899440832622134">‏تعذر تحديث BitPop إلى أحدث إصدار، وبالتالي تفوتك ميزات جديدة رائعة وإصلاحات للأمان. يلزمك تحديث BitPop.</translation>
-<translation id="3421246989510066651">‏ثبّت أحد المشرفين BitPop على هذا النظام، وهو متاح لجميع المستخدمين. سيحل تثبيت BitPop على مستوى النظام محل التثبيت على مستوى المستخدم الآن.</translation>
+<translation id="5823381412099532241">‏تعذر تحديث Chromium إلى أحدث إصدار، وبالتالي تفوتك ميزات جديدة رائعة وإصلاحات للأمان. يلزمك تحديث Chromium.</translation>
+<translation id="9191268552238695869">‏ثبّت أحد المشرفين Chromium على هذا النظام، وهو متاح لجميع المستخدمين. سيحل تثبيت Chromium على مستوى النظام محل التثبيت على مستوى المستخدم الآن.</translation>
 <translation id="4298853828775962437">http://support.google.com/chrome/?p=ib_chromeframe</translation>
-<translation id="1563133725769368154">‏الرجاء إغلاق جميع نوافذ BitPop وإعادة المحاولة.</translation>
-<translation id="6948146312619379712">‏الرجاء إغلاق جميع نوافذ BitPop وإعادة تشغيل BitPop حتى يسري هذا التغيير.</translation>
+<translation id="3509308970982693815">‏الرجاء إغلاق جميع نوافذ Chromium وإعادة المحاولة.</translation>
+<translation id="4077262827416206768">‏الرجاء إغلاق جميع نوافذ Chromium وإعادة تشغيل Chromium حتى يسري هذا التغيير.</translation>
 <translation id="6475912303565314141">‏كما أنها تتحكم في الصفحة التي تظهر عند تشغيل Chromium.</translation>
-<translation id="158578066452246627">‏يُعد الملف برنامجًا ضارًا، وقد أجرى BitPop حظره.</translation>
-<translation id="5845248948746043578">‏الوحدات المحملة في BitPop</translation>
-<translation id="3494861236236958082">‏في نظام التشغيل Mac، يتم حفظ كلمات المرور في تطبيق Keychain  ويمكن الدخول إليها أو مزامنتها من قبل مستخدمي BitPop الآخرين الذين يشاركون حساب نظام التشغيل X هذا.</translation>
-<translation id="6497704981133944775">‏لقد حاولت الوصول إلى &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; ولكن الخادم قدم شهادة تم إصدارها بواسطة كيان غير موثوق فيه من قِبل نظام تشغيل الكمبيوتر. قد يعني ذلك أن الخادم قد أنشأ بيانات اعتماد الأمان الخاصة به، والتي لا يمكن لـ BitPop الاعتماد عليها للحصول على معلومات الهوية أو ربما أن أحد المخترقين يحاول اعتراض اتصالاتك.</translation>
-<translation id="963040405972220509">‏يجب أن تسجّل الدخول إلى BitPop لاستخدام التطبيقات. ويتيح هذا مزامنة BitPop لتطبيقاتك وإشاراتك المرجعية وسجلك وكلمات المرور التابعة لك، فضلاً عن الإعدادات الأخرى عبر الأجهزة.</translation>
-<translation id="2585492770508769131">‏استمرار تشغيل تطبيقات الخلفية عند إغلاق BitPop</translation>
+<translation id="1725059042853530269">‏قد يضر <ph name="FILE_NAME"/> بتجربة متصفحك، لذلك فقد حظره Chromium.</translation>
+<translation id="750717762378961310">‏يُعد الملف برنامجًا ضارًا، وقد أجرى Chromium حظره.</translation>
+<translation id="6944967875980567883">‏الوحدات المحملة في Chromium</translation>
+<translation id="6899795326977034905">‏في نظام التشغيل Mac، يتم حفظ كلمات المرور في تطبيق Keychain  ويمكن الدخول إليها أو مزامنتها من قبل مستخدمي Chromium الآخرين الذين يشاركون حساب نظام التشغيل X هذا.</translation>
+<translation id="118298050220780080">‏لقد حاولت الوصول إلى &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; ولكن الخادم قدم شهادة تم إصدارها بواسطة كيان غير موثوق فيه من قِبل نظام تشغيل الكمبيوتر. قد يعني ذلك أن الخادم قد أنشأ بيانات اعتماد الأمان الخاصة به، والتي لا يمكن لـ Chromium الاعتماد عليها للحصول على معلومات الهوية أو ربما أن أحد المخترقين يحاول اعتراض اتصالاتك.</translation>
+<translation id="3046695367536568084">‏يجب أن تسجّل الدخول إلى Chromium لاستخدام التطبيقات. ويتيح هذا مزامنة Chromium لتطبيقاتك وإشاراتك المرجعية وسجلك وكلمات المرور التابعة لك، فضلاً عن الإعدادات الأخرى عبر الأجهزة.</translation>
+<translation id="3296368748942286671">‏استمرار تشغيل تطبيقات الخلفية عند إغلاق Chromium</translation>
 <translation id="473775607612524610">تحديث</translation>
-<translation id="1053737967432347853">‏هذا الموقع يستخدم المكون الإضافي BitPop Frame والذي سيصبح غير معتمد قريبًا. يُرجى إلغاء تثبيته والترقية إلى متصفّح حديث.</translation>
-<translation id="8237944200818342704">‏تشغيل BitPop تلقائيًا عندما يتم تشغيل جهاز الكمبيوتر</translation>
-<translation id="5904788103100750653">‏إذا كنت تشارك الكمبيوتر مع أصدقائك وعائلتك، فبإمكانهم التصفح على حدة وإعداد BitPop على النحو الذي يريدونه.</translation>
-<translation id="1141543168124987471">‏يتوفر إصدار جديد من BitPop، وهو أسرع بكثير من ذي قبل.</translation>
-<translation id="3089560314597734657">‏تعذر على BitPop مزامنة البيانات نظرًا لأن تفاصيل تسجيل الدخول إلى حسابك قديمة.</translation>
-<translation id="5107343520309227066">‏يبدو أن الملف الشخصي قيد الاستخدام بواسطة عملية أخرى في BitPop (<ph name="PROCESS_ID"/>) على جهاز كمبيوتر آخر (<ph name="HOST_NAME"/>). وقد تمّ قفل الملف الشخصي من جانب BitPop لضمان عدم تعرضه للتلف. فإذا كنت واثقًا من عدم وجود عمليات أخرى قيد التشغيل على جهاز الكمبيوتر، فيُمكنك إلغاء قفل الملف الشخصي وإعادة تشغيل BitPop مجددًا.</translation>
-<translation id="5971960158340115871">‏إزالة من BitPop</translation>
-<translation id="4817923018536741011">‏إضافة نفسك إلى BitPop</translation>
+<translation id="7707841053049645517">‏هذا الموقع يستخدم المكون الإضافي Chromium Frame والذي سيصبح غير معتمد قريبًا. يُرجى إلغاء تثبيته والترقية إلى متصفّح حديث.</translation>
+<translation id="3656661827369545115">‏تشغيل Chromium تلقائيًا عندما يتم تشغيل جهاز الكمبيوتر</translation>
+<translation id="2241627712206172106">‏إذا كنت تشارك الكمبيوتر مع أصدقائك وعائلتك، فبإمكانهم التصفح على حدة وإعداد Chromium على النحو الذي يريدونه.</translation>
+<translation id="6055895534982063517">‏يتوفر إصدار جديد من Chromium، وهو أسرع بكثير من ذي قبل.</translation>
+<translation id="8821041990367117597">‏تعذر على Chromium مزامنة البيانات نظرًا لأن تفاصيل تسجيل الدخول إلى حسابك قديمة.</translation>
+<translation id="4677944499843243528">‏يبدو أن الملف الشخصي قيد الاستخدام بواسطة عملية أخرى في Chromium (<ph name="PROCESS_ID"/>) على جهاز كمبيوتر آخر (<ph name="HOST_NAME"/>). وقد تمّ قفل الملف الشخصي من جانب Chromium لضمان عدم تعرضه للتلف. فإذا كنت واثقًا من عدم وجود عمليات أخرى قيد التشغيل على جهاز الكمبيوتر، فيُمكنك إلغاء قفل الملف الشخصي وإعادة تشغيل Chromium مجددًا.</translation>
+<translation id="5405650547142096840">‏إزالة من Chromium</translation>
+<translation id="4994636714258228724">‏إضافة نفسك إلى Chromium</translation>
 <translation id="7066436765290594559">‏تعذر على نظام التشغيل BitPop مزامنة البيانات. الرجاء تحديث عبارة مرور المزامنة.</translation>
 <translation id="7747138024166251722">تعذر على أداة المثبِّت إنشاء دليل مؤقت. يُرجى التحقق من وجود مساحة خالية على القرص وتوفر الإذن اللازم لتثبيت البرنامج.</translation>
-<translation id="1657309500244281883">‏يتعذر على BitPop القراءة والكتابة في دليل البيانات الخاص به:
+<translation id="3258596308407688501">‏يتعذر على Chromium القراءة والكتابة في دليل البيانات الخاص به:
 
 <ph name="USER_DATA_DIRECTORY"/></translation>
 <translation id="6970811910055250180">جارٍ تحديث الجهاز...</translation>
 <translation id="2485422356828889247">إزالة التثبيت</translation>
-<translation id="8450502629618876351">‏الحصول على مساعدة بشأن استخدام BitPop</translation>
-<translation id="7974150821733212325">‏أنت تسجل الدخول باستخدام حساب يخضع للإدارة وتتيح للمشرف إمكانية التحكم في ملفك الشخصي على BitPop. وستكون بياناتك في BitPop مثل تطبيقاتك وإشاراتك المرجعية وسجلك وكلمات المرور التابعة لك والإعدادات الأخرى مرتبطة دائمًا بالمستخدم <ph name="USER_NAME"/>. ستتمكن من حذف هذه البيانات عبر لوحة تحكم حسابات Google، ولكنك لن تتمكن من إقران هذه البيانات بحساب آخر. <ph name="LEARN_MORE"/></translation>
+<translation id="85843667276690461">‏الحصول على مساعدة بشأن استخدام Chromium</translation>
+<translation id="5358375970380395591">‏أنت تسجل الدخول باستخدام حساب يخضع للإدارة وتتيح للمشرف إمكانية التحكم في ملفك الشخصي على Chromium. وستكون بياناتك في Chromium مثل تطبيقاتك وإشاراتك المرجعية وسجلك وكلمات المرور التابعة لك والإعدادات الأخرى مرتبطة دائمًا بالمستخدم <ph name="USER_NAME"/>. ستتمكن من حذف هذه البيانات عبر لوحة تحكم حسابات Google، ولكنك لن تتمكن من إقران هذه البيانات بحساب آخر. <ph name="LEARN_MORE"/></translation>
 <translation id="9036189287518468038">‏مشغل تطبيقات BitPop</translation>
-<translation id="8643500805082769156">‏إصدار BitPop قديم</translation>
+<translation id="8493179195440786826">‏إصدار Chromium قديم</translation>
 <translation id="911206726377975832">هل تريد أيضًا حذف بيانات التصفح؟</translation>
-<translation id="7531302439507262213">‏<ph name="DOMAIN"/> يتطلب قراءة وقبول بنود الخدمة التالية قبل استخدام هذا الجهاز. وهذه البنود لا توسع أو تعدّل أو تقيّد بنود نظام التشغيل BitPop.</translation>
+<translation id="95514773681268843">‏<ph name="DOMAIN"/> يتطلب قراءة وقبول بنود الخدمة التالية قبل استخدام هذا الجهاز. وهذه البنود لا توسع أو تعدّل أو تقيّد بنود نظام التشغيل Chromium.</translation>
 <translation id="5603085937604338780">chromium</translation>
-<translation id="4501582071990606935">‏الرجاء إغلاق جميع نوافذ BitPop (بما في ذلك تلك المفتوحة في وضع Windows 8) ثم إعادة المحاولة.</translation>
-<translation id="2318017154298876822">‏تح&amp;ديث BitPop</translation>
+<translation id="1699664235656412242">‏الرجاء إغلاق جميع نوافذ Chromium (بما في ذلك تلك المفتوحة في وضع Windows 8) ثم إعادة المحاولة.</translation>
+<translation id="6734080038664603509">‏تح&amp;ديث Chromium</translation>
 <translation id="8862326446509486874">لا تملك الحقوق الكافية للتثبيت على مستوى النظام. جرّب تشغيل المثبِّت بصفة مشرف.</translation>
 <translation id="2535480412977113886">‏تعذر على نظام التشغيل BitPop مزامنة البيانات نظرًا لأن تفاصيل تسجيل الدخول إلى حسابك قديمة.</translation>
 <translation id="8697124171261953979">‏كما أنها تتحكم في الصفحة التي تظهر عند تشغيل Chromium أو إجراء بحث من المربع متعدد الاستخدامات.</translation>
-<translation id="8106224471637848707">‏البرامج التي تعمل على جهاز الكمبيوتر لا تتوافق مع BitPop.</translation>
-<translation id="8308846639737830860">‏دع BitPop يعمل في الخلفية</translation>
-<translation id="8251642411216619957">‏تسجيل الدخول إلى BitPop</translation>
+<translation id="894903460958736500">‏البرامج التي تعمل على جهاز الكمبيوتر لا تتوافق مع Chromium.</translation>
+<translation id="1774152462503052664">‏دع Chromium يعمل في الخلفية</translation>
+<translation id="9022552996538154597">‏تسجيل الدخول إلى Chromium</translation>
 <translation id="4365115785552740256">‏أصبح Chromium الآن متاحًا بفضل المشروع المفتوح المصدر <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> و<ph name="BEGIN_LINK_OSS"/>برامج أخرى مفتوحة المصدر<ph name="END_LINK_OSS"/>.</translation>
-<translation id="1990056108053403520">BitPop (mDNS-In)</translation>
-<translation id="5819325063060806784">‏يمكن للضيف استخدام BitPop بدون أن يترك أي أثر وراءه.</translation>
-<translation id="1526986572493888898">‏هذا الموقع يستخدم المكون الإضافي BitPop Frame والذي سيصبح غير معتمد قريبًا. يُرجى إلغاء تثبيته وتنزيل متصفح متوافق.</translation>
-<translation id="7131892997749364444">‏غيّرت إحدى الإضافات الصفحة التي تظهر عند تشغيل BitPop.</translation>
+<translation id="9190841055450128916">Chromium (mDNS-In)</translation>
+<translation id="4987820182225656817">‏يمكن للضيف استخدام Chromium بدون أن يترك أي أثر وراءه.</translation>
+<translation id="2216475571518225820">‏هذا الموقع يستخدم المكون الإضافي Chromium Frame والذي سيصبح غير معتمد قريبًا. يُرجى إلغاء تثبيته وتنزيل متصفح متوافق.</translation>
+<translation id="3487263810738775861">‏غيّرت إحدى الإضافات الصفحة التي تظهر عند تشغيل Chromium.</translation>
 <translation id="5877064549588274448">تم تغيير القناة. يمكنك إعادة تشغيل الجهاز لتدخل التغييرات حيز التنفيذ.</translation>
-<translation id="6321973207566602686">‏جعل BitPop المتصفح الافتراضي</translation>
-<translation id="6899689707951760367">‏يستخدم BitPop الكاميرا.</translation>
-<translation id="4645868211198791394">BitPop</translation>
+<translation id="6248213926982192922">‏جعل Chromium المتصفح الافتراضي</translation>
+<translation id="6309712487085796862">‏يستخدم Chromium الكاميرا.</translation>
+<translation id="7337881442233988129">Chromium</translation>
 <translation id="5820394555380036790">‏نظام التشغيل BitPop</translation>
 <translation id="6757767188268205357">عدم المطالبة مرة أخرى</translation>
-<translation id="690823546498424823">‏سيخزن BitPop معلوماتك في مكان آمن ولذلك لن تحتاج إلى كتابتها مرة أخرى، ولكن سيظل يلزمك التحقق من رمز الأمان في بطاقتك لإجراء عمليات دفع مستقبلية.</translation>
-<translation id="6220055452245182274">‏تقارير الأعطال غير متاحة في BitPop.</translation>
-<translation id="924450301557116466">‏لا يتم استخدامها في BitPop. عنصر نائب للاحتفاظ بخرائط الموارد في المزامنة. إنها تتوقع وسيطة واحدة: $1.</translation>
-<translation id="843167022919259875">‏يتم تشغيل BitPop في الخلفية.</translation>
-<translation id="2171549355847332070">‏تم تسجيل دخولك إلى BitPop باعتبارك <ph name="USER_EMAIL_ADDRESS"/>. الرجاء استخدام الحساب نفسه لتسجيل الدخول مرة أخرى.</translation>
-<translation id="6165323383832829057">‏توقف تحديث BitPop ولم يعد متوافقًا مع هذا الإصدار من نظام التشغيل.</translation>
-<translation id="2645729404591158594">‏معاينة BitPop الجديد</translation>
-<translation id="1984238998837921833">‏جارٍ تحديث BitPop...</translation>
-<translation id="9102885271730191378">‏إدارة المهام - BitPop</translation>
-<translation id="1608739712349494181">‏لجعل BitPop أكثر أمانًا، تم تعطيل بعض الإضافات غير المدرجة في <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/> والتي ربما تمت إضافتها بدون علمك.</translation>
-<translation id="5243897687251941678">‏ابحث عن الإشارات المرجعية في قائمة BitPop أو على شريط الإشارات المرجعية.</translation>
-<translation id="5925519479755588070">‏أوشك الانتهاء من التحديث! إعادة تشغيل BitPop لإنهاء التحديث.</translation>
-<translation id="5866485601389562653">‏يمكنك إضافة حسابات Google الأخرى وقفل BitPop أدناه.</translation>
-<translation id="8072646586465991214">‏تم العثور على عملية تثبيت متعارضة لـ BitPop على النظام. الرجاء إزالته وإعادة المحاولة.</translation>
-<translation id="4352003675682958984">‏يتوفر إصدار جديد من BitPop.</translation>
-<translation id="8972540218839637401">‏حدث خطأ في نظام التشغيل أثناء عملية التثبيت. الرجاء إعادة تنزيل BitPop.</translation>
-<translation id="2581134012974124523">‏تمت إضافة <ph name="EXTENSION_NAME"/> إلى BitPop.</translation>
-<translation id="6452045500174243632">‏انتقل إلى
-          قائمة BitPop &gt;
+<translation id="1745962126679160932">‏سيخزن Chromium معلوماتك في مكان آمن ولذلك لن تحتاج إلى كتابتها مرة أخرى، ولكن سيظل يلزمك التحقق من رمز الأمان في بطاقتك لإجراء عمليات دفع مستقبلية.</translation>
+<translation id="275588974610408078">‏تقارير الأعطال غير متاحة في Chromium.</translation>
+<translation id="5909170354645388250">‏لا يتم استخدامها في Chromium. عنصر نائب للاحتفاظ بخرائط الموارد في المزامنة. إنها تتوقع وسيطة واحدة: $1.</translation>
+<translation id="5805689092869152320">‏يتم تشغيل Chromium في الخلفية.</translation>
+<translation id="7937630085815544518">‏تم تسجيل دخولك إلى Chromium باعتبارك <ph name="USER_EMAIL_ADDRESS"/>. الرجاء استخدام الحساب نفسه لتسجيل الدخول مرة أخرى.</translation>
+<translation id="2685838254101182273">‏توقف تحديث Chromium ولم يعد متوافقًا مع هذا الإصدار من نظام التشغيل.</translation>
+<translation id="3223794808658970984">‏معاينة Chromium الجديد</translation>
+<translation id="3582788516608077514">‏جارٍ تحديث Chromium...</translation>
+<translation id="7223968959479464213">‏إدارة المهام - Chromium</translation>
+<translation id="1779356040007214683">‏لجعل Chromium أكثر أمانًا، تم تعطيل بعض الإضافات غير المدرجة في <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/> والتي ربما تمت إضافتها بدون علمك.</translation>
+<translation id="6638567566961868659">‏ابحث عن الإشارات المرجعية في قائمة Chromium أو على شريط الإشارات المرجعية.</translation>
+<translation id="2673087257647337101">‏أوشك الانتهاء من التحديث! إعادة تشغيل Chromium لإنهاء التحديث.</translation>
+<translation id="4864451188650489141">‏يمكنك إضافة حسابات Google الأخرى وقفل Chromium أدناه.</translation>
+<translation id="1293235220023151515">‏تم العثور على عملية تثبيت متعارضة لـ Chromium على النظام. الرجاء إزالته وإعادة المحاولة.</translation>
+<translation id="5398878173008909840">‏يتوفر إصدار جديد من Chromium.</translation>
+<translation id="2648074677641340862">‏حدث خطأ في نظام التشغيل أثناء عملية التثبيت. الرجاء إعادة تنزيل Chromium.</translation>
+<translation id="5942520288919337908">‏تمت إضافة <ph name="EXTENSION_NAME"/> إلى Chromium.</translation>
+<translation id="4559775032954821361">‏انتقل إلى
+          قائمة Chromium &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
@@ -162,87 +163,87 @@
           &gt;
           إعدادات الشبكة المحلية
           وألغ تحديد مربع الاختيار "استخدام خادم وكيل لشبكة الاتصال المحلية".</translation>
-<translation id="8988481325911971852">‏أخفق التثبيت نظرًا لحدوث خطأ غير محدد. الرجاء إعادة تنزيل BitPop.</translation>
-<translation id="660036136456272595">‏لا يمكن استخدام ملفك الشخصي نظرًا لأنه من إصدار أحدث من BitPop.
+<translation id="8621669128220841554">‏أخفق التثبيت نظرًا لحدوث خطأ غير محدد. الرجاء إعادة تنزيل Chromium.</translation>
+<translation id="6717134281241384636">‏لا يمكن استخدام ملفك الشخصي نظرًا لأنه من إصدار أحدث من Chromium.
 
-قد تكون بعض الميزات غير متاحة. الرجاء تحديد دليل ملف شخصي مختلف أو استخدام إصدار أحدث من BitPop.</translation>
-<translation id="3787192530015965250">‏يحاول BitPop عرض كلمات المرور. اكتب كلمة مرور Windows للسماح بذلك.</translation>
-<translation id="7862155441175671173">‏إضافة إلى BitPop</translation>
-<translation id="1211470790061593728">‏الآن أصبح استخدام BitPop مع حسابك في Google وفي أجهزة الكمبيوتر المشتركة أكثر سهولة.</translation>
-<translation id="5594704848342987755">‏يحتوي هذا الكمبيوتر فعلاً على إصدار أحدث من BitPop. إذا كان البرنامج لا يعمل، فالرجاء إزالة BitPop وإعادة المحاولة.</translation>
-<translation id="3528119622127530876">‏تعذر على BitPop مزامنة البيانات. الرجاء تحديث عبارة مرور المزامنة.</translation>
+قد تكون بعض الميزات غير متاحة. الرجاء تحديد دليل ملف شخصي مختلف أو استخدام إصدار أحدث من Chromium.</translation>
+<translation id="8907580949721785412">‏يحاول Chromium عرض كلمات المرور. اكتب كلمة مرور Windows للسماح بذلك.</translation>
+<translation id="9013087743919948559">‏إضافة إلى Chromium</translation>
+<translation id="6334986366598267305">‏الآن أصبح استخدام Chromium مع حسابك في Google وفي أجهزة الكمبيوتر المشتركة أكثر سهولة.</translation>
+<translation id="6212496753309875659">‏يحتوي هذا الكمبيوتر فعلاً على إصدار أحدث من Chromium. إذا كان البرنامج لا يعمل، فالرجاء إزالة Chromium وإعادة المحاولة.</translation>
+<translation id="1115445892567829615">‏تعذر على Chromium مزامنة البيانات. الرجاء تحديث عبارة مرور المزامنة.</translation>
 <translation id="1298199220304005244">‏الحصول على مساعدة بشأن استخدام نظام التشغيل BitPop</translation>
 <translation id="331951419404882060">‏تعذر على نظام التشغيل BitPop مزامنة البيانات نظرًا لحدوث خطأ أثناء تسجيل الدخول.</translation>
 <translation id="8187289872471304532">‏انتقل إلى Applications (التطبيقات) &gt; System Preferences (تفضيلات النظام) &gt; Network (الشبكة) &gt; Advanced (الخيارات المتقدمة) &gt; Proxies (الخوادم الوكيلة) وألغ تحديد أي خوادم وكيلة تم تحديدها.</translation>
-<translation id="4634257184917711644">‏يُعد <ph name="FILE_NAME"/> برنامجًا ضارًا، وقد أجرى BitPop حظره.</translation>
-<translation id="454930334682314382">‏تم حفظ تفاصيل الفوترة في BitPop.</translation>
+<translation id="2801146392936645542">‏يُعد <ph name="FILE_NAME"/> برنامجًا ضارًا، وقد أجرى Chromium حظره.</translation>
+<translation id="4488676065623537541">‏تم حفظ تفاصيل الفوترة في Chromium.</translation>
 <translation id="130631256467250065">تسري التغييرات في المرة التالية التي تعيد فيها تشغيل الجهاز.</translation>
-<translation id="8810991521775422988">‏مركز إشعارات BitPop</translation>
-<translation id="2901348058800597589">‏لم يتم إيقاف تشغيل BitPop بشكل صحيح. لإعادة فتح الصفحات التي كانت مفتوحة، انقر على "استعادة".</translation>
-<translation id="838316505303362561">‏مقترحة من خلال BitPop</translation>
-<translation id="5653921603290474550">‏لا يستجيب BitPop. هل تريد إعادة التشغيل الآن؟</translation>
-<translation id="3306752603341080445">‏تم تسجيل دخولك إلى BitPop!</translation>
+<translation id="3244477511402911926">‏مركز إشعارات Chromium</translation>
+<translation id="1105130903706696483">‏لم يتم إيقاف تشغيل Chromium بشكل صحيح. لإعادة فتح الصفحات التي كانت مفتوحة، انقر على "استعادة".</translation>
+<translation id="9214519575840037443">‏مقترحة من خلال Chromium</translation>
+<translation id="1929939181775079593">‏لا يستجيب Chromium. هل تريد إعادة التشغيل الآن؟</translation>
+<translation id="1414495520565016063">‏تم تسجيل دخولك إلى Chromium!</translation>
 <translation id="2158734852934720349">‏تراخيص مفتوحة المصدر لنظام التشغيل BitPop</translation>
-<translation id="2239725456669400190">‏يحتاج BitPop إلى تشغيل تطبيق خارجي للتعامل مع روابط <ph name="SCHEME"/>. والرابط المطلوب هو <ph name="PROTOLINK"/>.</translation>
-<translation id="5574763173398621221">‏هل تريد من BitPop حفظ كلمة المرور؟</translation>
-<translation id="5387335700352644169">‏إظهار قائمة BitPop</translation>
-<translation id="1981756165552484777">‏أنت تستخدم <ph name="PROFILE_EMAIL"/> لمزامنة عناصرك في BitPop. لتحديث تفضيل المزامنة أو استخدام BitPop بدون حساب Google، يُرجى الانتقال إلى <ph name="SETTINGS_LINK"/>.</translation>
-<translation id="1681324505975197559">‏(<ph name="BEGIN_BUTTON"/>إعادة تشغيل<ph name="END_BUTTON"/> BitPop مطلوبة)</translation>
-<translation id="6863452815496188645">‏يمكنك إعداد المزامنة لحفظ ميزات المتصفح المخصصة على الويب والدخول إليها من BitPop على أي كمبيوتر.</translation>
+<translation id="2966088006374919794">‏يحتاج Chromium إلى تشغيل تطبيق خارجي للتعامل مع روابط <ph name="SCHEME"/>. والرابط المطلوب هو <ph name="PROTOLINK"/>.</translation>
+<translation id="2558235863893655150">‏هل تريد من Chromium حفظ كلمة المرور؟</translation>
+<translation id="1231416733874080281">‏إظهار قائمة Chromium</translation>
+<translation id="6485906693002546646">‏أنت تستخدم <ph name="PROFILE_EMAIL"/> لمزامنة عناصرك في Chromium. لتحديث تفضيل المزامنة أو استخدام Chromium بدون حساب Google، يُرجى الانتقال إلى <ph name="SETTINGS_LINK"/>.</translation>
+<translation id="5772805321386874569">‏(<ph name="BEGIN_BUTTON"/>إعادة تشغيل<ph name="END_BUTTON"/> Chromium مطلوبة)</translation>
+<translation id="1688750314291223739">‏يمكنك إعداد المزامنة لحفظ ميزات المتصفح المخصصة على الويب والدخول إليها من Chromium على أي كمبيوتر.</translation>
 <translation id="8865765905101981392">متصفح الإنترنت</translation>
-<translation id="3099708656176429608">‏اسمح للمتصفح BitPop بالدخول إلى الشبكة من خلال إعدادات الجدار الناري أو
+<translation id="8610831143142469229">‏اسمح للمتصفح Chromium بالدخول إلى الشبكة من خلال إعدادات الجدار الناري أو
         برنامج مكافحة الفيروسات.</translation>
-<translation id="8098179324031720100">‏لقد أصبح BitPop أفضل من ذي قبل! يتوفر إصدار جديد.</translation>
-<translation id="4320683788245444425">‏لن يتلقى هذا الكمبيوتر تحديثات BitPop بعد الآن نظرًا لأن أجهزته لم تعد متوافقة.</translation>
-<translation id="6385431739515246076">‏حو&amp;ل BitPop</translation>
-<translation id="7521125380721653484">‏أرشيف أداة التثبيت تالف أو غير صالح. الرجاء إعادة تنزيل BitPop.</translation>
-<translation id="8457938350903919620">‏انقر على اسمك لفتح BitPop وبدء التصفح.</translation>
-<translation id="8410648211590980711">‏يستخدم BitPop الميكروفون.</translation>
-<translation id="3298525902784604502">‏لقد حاولت الوصول إلى &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; ولكن الخادم قدم شهادة منتهية الصلاحية. ليست هناك أية معلومات متاحة لتحديد ما إذا كانت هذه الشهادة تم اختراقها منذ انتهاء صلاحيتها. يعني هذا أن BitPop لا يمكنه ضمان اتصالك بـ &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; وليس أحد المخترقين. تم ضبط ساعة الكمبيوتر حاليًا على <ph name="CURRENT_TIME"/>. هل يبدو ذلك صحيحًا؟ إذا لم يكن كذلك، يجب عليك تصحيح الخطأ وتحديث هذه الصفحة.</translation>
+<translation id="6424492062988593837">‏لقد أصبح Chromium أفضل من ذي قبل! يتوفر إصدار جديد.</translation>
+<translation id="811857857463334932">‏لن يتلقى هذا الكمبيوتر تحديثات Chromium بعد الآن نظرًا لأن أجهزته لم تعد متوافقة.</translation>
+<translation id="2910007522516064972">‏حو&amp;ل Chromium</translation>
+<translation id="8453117565092476964">‏أرشيف أداة التثبيت تالف أو غير صالح. الرجاء إعادة تنزيل Chromium.</translation>
+<translation id="3889543394854987837">‏انقر على اسمك لفتح Chromium وبدء التصفح.</translation>
+<translation id="3130323860337406239">‏يستخدم Chromium الميكروفون.</translation>
+<translation id="3249425904492147663">‏لقد حاولت الوصول إلى &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; ولكن الخادم قدم شهادة منتهية الصلاحية. ليست هناك أية معلومات متاحة لتحديد ما إذا كانت هذه الشهادة تم اختراقها منذ انتهاء صلاحيتها. يعني هذا أن Chromium لا يمكنه ضمان اتصالك بـ &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; وليس أحد المخترقين. تم ضبط ساعة الكمبيوتر حاليًا على <ph name="CURRENT_TIME"/>. هل يبدو ذلك صحيحًا؟ إذا لم يكن كذلك، يجب عليك تصحيح الخطأ وتحديث هذه الصفحة.</translation>
 <translation id="7196020411877309443">لماذا أرى مربع الحوار هذا؟</translation>
-<translation id="6809805128084420516">‏معلومات مهمة بخصوص بياناتك في BitPop</translation>
-<translation id="5312973105258198185">لقد سجلت دخولك باعتبارك <ph name="USER_EMAIL_ADDRESS"/>. ويُمكنك الآن الاستمتاع بالدخول إلى الإشارات المرجعية، والسجلّ، والإعدادات الأخرى على جميع الأجهزة التي تسجّل الدخول إليها.</translation>
-<translation id="473359818469623008">‏لا يمكن تثبيت إصدار BitPop ذاته الذي يتم تشغيله حاليًا. الرجاء إغلاق BitPop وإعادة المحاولة.</translation>
-<translation id="2595850371931815386">‏ليس BitPop متصفحك الافتراضي.</translation>
+<translation id="457845228957001925">‏معلومات مهمة بخصوص بياناتك في Chromium</translation>
+<translation id="4567424176335768812">لقد سجلت دخولك باعتبارك <ph name="USER_EMAIL_ADDRESS"/>. ويُمكنك الآن الاستمتاع بالدخول إلى الإشارات المرجعية، والسجلّ، والإعدادات الأخرى على جميع الأجهزة التي تسجّل الدخول إليها.</translation>
+<translation id="7483335560992089831">‏لا يمكن تثبيت إصدار Chromium ذاته الذي يتم تشغيله حاليًا. الرجاء إغلاق Chromium وإعادة المحاولة.</translation>
+<translation id="7641113255207688324">‏ليس Chromium متصفحك الافتراضي.</translation>
 <translation id="4458285410772214805">الرجاء الخروج ثم تسجيل الدخول حتى يسري هذا التغيير.</translation>
-<translation id="6627720938086825017">‏يستخدم BitPop الكاميرا والميكروفون.</translation>
-<translation id="6382607600997384001">‏يُمكنك الاطلاع على جميع إشعاراتك من تطبيقات BitPop والإضافات ومواقع الويب هنا.</translation>
+<translation id="761356813943268536">‏يستخدم Chromium الكاميرا والميكروفون.</translation>
+<translation id="805745970029938373">‏يُمكنك الاطلاع على جميع إشعاراتك من تطبيقات Chromium والإضافات ومواقع الويب هنا.</translation>
 <translation id="2119636228670142020">‏حول ن&amp;ظام التشغيل BitPop</translation>
-<translation id="4196382931981526364">‏يتوفر إصدار جديد وأكثر أمانًا BitPop.</translation>
-<translation id="862266784641000464">‏يتيح لك BitPop النقر على رقم هاتف على الويب والاتصال به باستخدام Skype!</translation>
-<translation id="8072591166076742072">‏هناك تنزيل قيد التقدم. هل تريد الخروج من BitPop وإلغاء التنزيل؟</translation>
-<translation id="8650443074479376435">‏تعذر على BitPop مزامنة البيانات نظرًا لحدوث خطأ أثناء تسجيل الدخول.</translation>
-<translation id="7561209000218748370">‏قاعدة الوارد إلى BitPop للسماح بحركة مرور mDNS.</translation>
+<translation id="1708666629004767631">‏يتوفر إصدار جديد وأكثر أمانًا Chromium.</translation>
+<translation id="378917192836375108">‏يتيح لك Chromium النقر على رقم هاتف على الويب والاتصال به باستخدام Skype!</translation>
+<translation id="8724049448828509830">‏هناك تنزيل قيد التقدم. هل تريد الخروج من Chromium وإلغاء التنزيل؟</translation>
+<translation id="608189560609172163">‏تعذر على Chromium مزامنة البيانات نظرًا لحدوث خطأ أثناء تسجيل الدخول.</translation>
+<translation id="4888717733111232871">‏قاعدة الوارد إلى Chromium للسماح بحركة مرور mDNS.</translation>
 <translation id="151962892725702025">‏تعذر على نظام التشغيل BitPop مزامنة البيانات نظرًا لأن المزامنة غير متاحة في نطاقك.</translation>
 <translation id="3360567213983886831">‏ثنائيات BitPop</translation>
-<translation id="108010966668726733">‏سجّل شخص ما الدخول من قبل إلى BitPop على هذا الكمبيوتر باعتباره <ph name="ACCOUNT_EMAIL_LAST"/>. فإذا لم يكن هذا هو حسابك، فأنشئ حساب مستخدم BitPop جديدًا للإبقاء على معلوماتك بشكل منفصل.
+<translation id="8985587603644336029">‏سجّل شخص ما الدخول من قبل إلى Chromium على هذا الكمبيوتر باعتباره <ph name="ACCOUNT_EMAIL_LAST"/>. فإذا لم يكن هذا هو حسابك، فأنشئ حساب مستخدم Chromium جديدًا للإبقاء على معلوماتك بشكل منفصل.
 
-سيؤدي تسجيل الدخول على أية حال إلى دمج معلومات BitPop مثل الإشارات المرجعية والسجل والإعدادات الأخرى مع <ph name="ACCOUNT_EMAIL_NEW"/>.</translation>
-<translation id="7826309952950470209">‏هناك تنزيلات قيد التقدم حاليًا. هل تريد الخروج من BitPop وإلغاء التنزيلات؟</translation>
-<translation id="380873736468525691">‏يتطلب BitPop نظام التشغيل Windows Vista أو Windows XP المزود بحزمة الخدمة SP2 أو الإصدارات الأحدث.</translation>
-<translation id="2762974284703971745">‏هناك وحدة تحمل الاسم نفسه ومعروف أنها تتعارض مع BitPop.</translation>
-<translation id="5213128101330439346">‏هذا هو BitPop الخاص بك</translation>
-<translation id="5443433498537176573">‏BitPop محدّث.</translation>
-<translation id="5637727561937246825">‏يوجد على هذا الكمبيوتر إصدارًا أحدث من مكونات BitPop. الرجاء استخدام أداة تثبيت أحدث.</translation>
-<translation id="4547797007790555015">‏لقد حاولت الوصول إلى &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;، ولكن الخادم قدم شهادة لا تُعد صالحة حتى الآن. ليست هناك أية معلومات متاحة لتحديد ما إذا كانت هذه الشهادة يمكن الوثوق بها أم لا. لا يمكن أن يضمن BitPop على نحو موثوق أنك تتصل بـ &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;  وليس أحد المخترقين. تم ضبط ساعة الكمبيوتر حاليًا على <ph name="CURRENT_TIME"/>. هل يبدو ذلك صحيحًا؟ إذا لم يكن كذلك، يجب عليك تصحيح الخطأ وتحديث هذه الصفحة.</translation>
-<translation id="185658551912723674">‏مرحبًا بك في BitPop</translation>
-<translation id="1909867102505992367">‏ملف التفضيلات تالف أو غير صالح.
+سيؤدي تسجيل الدخول على أية حال إلى دمج معلومات Chromium مثل الإشارات المرجعية والسجل والإعدادات الأخرى مع <ph name="ACCOUNT_EMAIL_NEW"/>.</translation>
+<translation id="2739631515503418643">‏هناك تنزيلات قيد التقدم حاليًا. هل تريد الخروج من Chromium وإلغاء التنزيلات؟</translation>
+<translation id="9013262824292842194">‏يتطلب Chromium نظام التشغيل Windows Vista أو Windows XP المزود بحزمة الخدمة SP2 أو الإصدارات الأحدث.</translation>
+<translation id="1967743265616885482">‏هناك وحدة تحمل الاسم نفسه ومعروف أنها تتعارض مع Chromium.</translation>
+<translation id="8704119203788522458">‏هذا هو Chromium الخاص بك</translation>
+<translation id="4224199872375172890">‏Chromium محدّث.</translation>
+<translation id="374481098568514319">‏يوجد على هذا الكمبيوتر إصدارًا أحدث من مكونات Chromium. الرجاء استخدام أداة تثبيت أحدث.</translation>
+<translation id="6240281849816458190">‏لقد حاولت الوصول إلى &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;، ولكن الخادم قدم شهادة لا تُعد صالحة حتى الآن. ليست هناك أية معلومات متاحة لتحديد ما إذا كانت هذه الشهادة يمكن الوثوق بها أم لا. لا يمكن أن يضمن Chromium على نحو موثوق أنك تتصل بـ &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;  وليس أحد المخترقين. تم ضبط ساعة الكمبيوتر حاليًا على <ph name="CURRENT_TIME"/>. هل يبدو ذلك صحيحًا؟ إذا لم يكن كذلك، يجب عليك تصحيح الخطأ وتحديث هذه الصفحة.</translation>
+<translation id="5862307444128926510">‏مرحبًا بك في Chromium</translation>
+<translation id="7318036098707714271">‏ملف التفضيلات تالف أو غير صالح.
 
-يتعذر على BitPop استعادة إعداداتك.</translation>
-<translation id="6239286721842301381">‏أنت تعاين BitPop الجديد.</translation>
-<translation id="7591092481995851856">‏سيؤدي فصل <ph name="USERNAME"/>إلى مسح السجّل والإشارات المرجعية والإعدادات و بيانات Chrome الأخرى المخزنة على هذا الجهاز. لن يتم مسح البيانات المخزنة في حساب Google ويمكن إدارتها على <ph name="GOOGLE_DASHBOARD_LINK"/>لوحة تحكم Google<ph name="END_GOOGLE_DASHBOARD_LINK"/>.</translation>
-<translation id="4933902704814222889">‏ إن BitPop هو متصفح ويب يشغّل صفحات الويب والتطبيقات بسرعة مذهلة. إنه سريع وثابت وسهل الاستخدام. يمكنك تصفح الويب بشكل أكثر أمانًا من خلال ميزات الحماية من البرامج الضارة والتصيّد الاحتيالي المدمجة في BitPop.</translation>
-<translation id="5806792281256987775">‏لقد حاولت الوصول إلى <ph name="DOMAIN"/> لكن الخادم قدم شهادة تم إصدارها بواسطة كيان غير موثوق فيه من قِبل BitPop. قد يعني ذلك أن الخادم قد أنشأ بيانات اعتماد الأمان الخاصة به، والتي لا يمكن لـ BitPop الاعتماد عليها للحصول على معلومات الهوية أو ربما أن أحد المخترقين يحاول اعتراض اتصالاتك.</translation>
-<translation id="26317130586606191">‏هل ترغب في ربط بياناتك في BitPop بهذا الحساب؟</translation>
-<translation id="5583217122091744450">‏أداة مساعدة BitPop</translation>
-<translation id="3089741509794563091">‏BitPop أصبح أفضل</translation>
-<translation id="6404599307042403560">‏تمت تهيئة BitPop لتشغيله تلقائيًا عند بدء تشغيل جهاز الكمبيوتر.</translation>
-<translation id="554833011526807667">‏أصبح نظام التشغيل BitPop متاحًا من خلال المزيد من <ph name="BEGIN_LINK_CROS_OSS"/>البرامج مفتوحة المصدر<ph name="END_LINK_CROS_OSS"/>.</translation>
-<translation id="8166042339699941380">‏أنت تسجل الدخول بحساب يخضع للإدارة وتتيح للمشرف إمكانية التحكم في ملفك الشخصي على BitPop. وستكون بياناتك في BitPop مثل تطبيقاتك وإشاراتك المرجعية وسجلك وكلمات المرور التابعة لك والإعدادات الأخرى مرتبطة دائمًا بالمستخدم <ph name="USER_NAME"/>. ستتمكن من حذف هذه البيانات عبر لوحة تحكم حسابات Google، ولكنك لن تتمكن من إقران هذه البيانات بحساب آخر.</translation>
-<translation id="2032763513380168750">‏ربط بياناتي في BitPop بهذا الحساب</translation>
-<translation id="2477235356415090659">‏إعادة تثبيت BitPop</translation>
-<translation id="807350504213044844">‏لا يتيح نظام التشغيل BitPop إمكانية تشغيل تطبيق خارجي للتعامل مع روابط <ph name="SCHEME"/>. والرابط المطلوب هو <ph name="PROTOLINK"/>.</translation>
-<translation id="3484768020161794310">‏مفاتيح واجهة برمجة تطبيقات Google مفقودة. وسيترتب على ذلك توقف بعض وظائف BitPop عن العمل.</translation>
-<translation id="531363935678210182">‏BitPop - الإشعارات</translation>
-<translation id="3151848949510984428">‏حفظ التفاصيل في BitPop</translation>
+يتعذر على Chromium استعادة إعداداتك.</translation>
+<translation id="473845343586694349">‏أنت تعاين Chromium الجديد.</translation>
+<translation id="918373042641772655">‏سيؤدي فصل <ph name="USERNAME"/>إلى مسح السجّل والإشارات المرجعية والإعدادات و بيانات Chrome الأخرى المخزنة على هذا الجهاز. لن يتم مسح البيانات المخزنة في حساب Google ويمكن إدارتها على <ph name="GOOGLE_DASHBOARD_LINK"/>لوحة تحكم Google<ph name="END_GOOGLE_DASHBOARD_LINK"/>.</translation>
+<translation id="6403826409255603130">‏ إن Chromium هو متصفح ويب يشغّل صفحات الويب والتطبيقات بسرعة مذهلة. إنه سريع وثابت وسهل الاستخدام. يمكنك تصفح الويب بشكل أكثر أمانًا من خلال ميزات الحماية من البرامج الضارة والتصيّد الاحتيالي المدمجة في Chromium.</translation>
+<translation id="4019464536895378627">‏لقد حاولت الوصول إلى <ph name="DOMAIN"/> لكن الخادم قدم شهادة تم إصدارها بواسطة كيان غير موثوق فيه من قِبل Chromium. قد يعني ذلك أن الخادم قد أنشأ بيانات اعتماد الأمان الخاصة به، والتي لا يمكن لـ Chromium الاعتماد عليها للحصول على معلومات الهوية أو ربما أن أحد المخترقين يحاول اعتراض اتصالاتك.</translation>
+<translation id="4230135487732243613">‏هل ترغب في ربط بياناتك في Chromium بهذا الحساب؟</translation>
+<translation id="2572494885440352020">‏أداة مساعدة Chromium</translation>
+<translation id="7617377681829253106">‏Chromium أصبح أفضل</translation>
+<translation id="442817494342774222">‏تمت تهيئة Chromium لتشغيله تلقائيًا عند بدء تشغيل جهاز الكمبيوتر.</translation>
+<translation id="8974095189086268230">‏أصبح نظام التشغيل Chromium متاحًا من خلال المزيد من <ph name="BEGIN_LINK_CROS_OSS"/>البرامج مفتوحة المصدر<ph name="END_LINK_CROS_OSS"/>.</translation>
+<translation id="313551035350905294">‏أنت تسجل الدخول بحساب يخضع للإدارة وتتيح للمشرف إمكانية التحكم في ملفك الشخصي على Chromium. وستكون بياناتك في Chromium مثل تطبيقاتك وإشاراتك المرجعية وسجلك وكلمات المرور التابعة لك والإعدادات الأخرى مرتبطة دائمًا بالمستخدم <ph name="USER_NAME"/>. ستتمكن من حذف هذه البيانات عبر لوحة تحكم حسابات Google، ولكنك لن تتمكن من إقران هذه البيانات بحساب آخر.</translation>
+<translation id="8823523095753232532">‏ربط بياناتي في Chromium بهذا الحساب</translation>
+<translation id="1808667845054772817">‏إعادة تثبيت Chromium</translation>
+<translation id="1221340462641866827">‏لا يتيح نظام التشغيل Chromium إمكانية تشغيل تطبيق خارجي للتعامل مع روابط <ph name="SCHEME"/>. والرابط المطلوب هو <ph name="PROTOLINK"/>.</translation>
+<translation id="328888136576916638">‏مفاتيح واجهة برمجة تطبيقات Google مفقودة. وسيترتب على ذلك توقف بعض وظائف Chromium عن العمل.</translation>
+<translation id="2602806952220118310">‏Chromium - الإشعارات</translation>
+<translation id="5032989939245619637">‏حفظ التفاصيل في Chromium</translation>
 </translationbundle>

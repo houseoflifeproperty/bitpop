@@ -307,7 +307,7 @@
 <translation id="7938958445268990899">Το πιστοποιητικό του διακομιστή δεν είναι ακόμα έγκυρο.</translation>
 <translation id="4569998400745857585">Μενού που περιέχει κρυφές επεκτάσεις</translation>
 <translation id="4081383687659939437">Αποθήκευση πληροφοριών</translation>
-<translation id="1801827354178857021">Τελεία</translation>
+<translation id="1801827354178857021">Περίοδος</translation>
 <translation id="4560332071395409256">Κάντε κλικ στις επιλογές
           <ph name="BEGIN_BOLD"/>Έναρξη<ph name="END_BOLD"/>,
           και
@@ -387,7 +387,7 @@
 <translation id="2856203831666278378">Η απάντηση από το διακομιστή περιλάμβανε διπλότυπες κεφαλίδες.  Αυτό το πρόβλημα
         είναι γενικά το αποτέλεσμα ενός ιστότοπου ή διακομιστή μεσολάβησης που δεν ρυθμίστηκε σωστά.  Μόνο ο
         διαχειριστής του ιστότοπου ή του διακομιστή μεσολάβησης μπορεί να διορθώσει αυτό το πρόβλημα.</translation>
-<translation id="3587482841069643663">Όλα</translation>
+<translation id="3587482841069643663">Όλες</translation>
 <translation id="6698381487523150993">Δημιουργήθηκε:</translation>
 <translation id="4684748086689879921">Παράλειψη εισαγωγής</translation>
 <translation id="6418443601594065950">Απενεργοποίηση αναδυόμενης γραμμής πληροφοριών για τα προστατευμένα πολυμέσα.</translation>
@@ -2273,7 +2273,7 @@
 <translation id="6423731501149634044">Να χρησιμοποιείται από προεπιλογή το Adobe Reader για προβολή αρχείων PDF;</translation>
 <translation id="1965328510789761112">Ιδιωτική μνήμη</translation>
 <translation id="7312441861087971374">Η προσθήκη <ph name="PLUGIN_NAME"/> δεν είναι ενημερωμένη.</translation>
-<translation id="5790085346892983794">Ολοκληρώθηκε με επιτυχία</translation>
+<translation id="5790085346892983794">Επιτυχία</translation>
 <translation id="7639178625568735185">Κατάλαβα!</translation>
 <translation id="1901769927849168791">Εντοπίστηκε κάρτα SD</translation>
 <translation id="818454486170715660"><ph name="NAME"/> - Κάτοχος</translation>
@@ -2904,7 +2904,7 @@
 <translation id="7347751611463936647">Για να χρησιμοποιήσετε αυτήν την επέκταση, πληκτρολογήστε &quot;<ph name="EXTENSION_KEYWORD"/>&quot;, κατόπιν TAB και, στη συνέχεια, την εντολή ή την αναζήτησή σας.</translation>
 <translation id="878431691778285679">Φαίνεται ότι διαχειρίζεστε ήδη έναν χρήστη με αυτό το όνομα.<ph name="LINE_BREAK"/>Θέλετε να γίνει <ph name="BEGIN_LINK"/>εισαγωγή του <ph name="PROFILE_NAME"/> σε αυτήν τη συσκευή<ph name="END_LINK"/>;</translation>
 <translation id="2912905526406334195">Ο ιστότοπος <ph name="HOST"/> επιθυμεί να χρησιμοποιήσει το μικρόφωνο σας.</translation>
-<translation id="2805756323405976993">Εφαρμογές</translation>
+<translation id="2805756323405976993">Εφαρμογές </translation>
 <translation id="5151511998946489774">Η ταυτότητα αυτού του ιστότοπου επαληθεύτηκε από <ph name="ISSUER"/> και υπάρχει δυνατότητα δημόσιου ελέγχου.</translation>
 <translation id="1608626060424371292">Κατάργηση αυτού του χρήστη</translation>
 <translation id="3075239840551149663">Δημιουργήθηκε το προφίλ εποπτευόμενου χρήστη <ph name="NEW_PROFILE_NAME"/>!</translation>
@@ -3808,7 +3808,7 @@
 <translation id="6175314957787328458">Microsoft Domain GUID</translation>
 <translation id="6883209331334683549">Βοήθεια <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Τύπος εκκίνησης</translation>
-<translation id="8179976553408161302">Είσοδος</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Η φωτογραφία μετακινήθηκε</translation>
 <translation id="691321796646552019">Να σταματήσει!</translation>
 <translation id="8026964361287906498">(Τέθηκε σε διαχείριση από πολιτική επιχείρησης)</translation>
@@ -5211,7 +5211,7 @@
 Διατηρείτε το αρχείο κλειδιού σε ασφαλές μέρος. Θα το χρειαστείτε για τη δημιουργία νέων εκδόσεων της επέκτασής σας.</translation>
 <translation id="5522156646677899028">Αυτή η επέκταση περιλαμβάνει μια σοβαρή ευπάθεια ασφαλείας.</translation>
 <translation id="1004032892340602806">Επιτρέπει σε όλους τους ιστότοπους να χρησιμοποιήσουν μια προσθήκη για να αποκτούν πρόσβαση στον υπολογιστή σας</translation>
-<translation id="3813984289128269159">OΚ Google</translation>
+<translation id="3813984289128269159">Ok Google</translation>
 <translation id="417475959318757854">Τοποθετήστε την Εφαρμογή εκκίνησης στο κέντρο.</translation>
 <translation id="5505154136304809922">Ενεργοποιήθηκε και τοποθετήθηκε στην αρχή της γραμμής τοποθεσίας</translation>
 <translation id="5218183485292899140">Γαλλικά Ελβετίας</translation>

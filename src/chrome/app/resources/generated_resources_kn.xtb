@@ -2892,7 +2892,7 @@
 <translation id="7347751611463936647">ಈ ವಿಸ್ತರಣೆಯನ್ನು ಬಳಸಲು, &quot;<ph name="EXTENSION_KEYWORD"/>&quot; ಅನ್ನು ಟೈಪ್ ಮಾಡಿ, ನಂತರ  TAB, ನಂತರ ನಿಮ್ಮ ಆದೇಶ ಅಥವಾ ಹುಡುಕಾಟ‌ವನ್ನು ಟೈಪ್ ಮಾಡಿ.</translation>
 <translation id="878431691778285679">ಆ ಹೆಸರಿನ ಮೂಲಕ ನೀವು ಈಗಾಗಲೇ ಬಳಕೆದಾರರನ್ನು ನಿರ್ವಹಿಸುತ್ತಿರುವಂತೆ ತೋರುತ್ತಿದೆ.<ph name="LINE_BREAK"/>ನೀವು ಈ ಸಾಧನಕ್ಕೆ <ph name="BEGIN_LINK"/>ಆಮದು ಮಾಡಲು <ph name="PROFILE_NAME"/> ಬಯಸುವಿರಾ<ph name="END_LINK"/>?</translation>
 <translation id="2912905526406334195">ನಿಮ್ಮ ಮೈಕ್ರೊಫೋನ್ ಅನ್ನು <ph name="HOST"/> ಬಳಸಬೇಕೆಂದು ಬಯಸುತ್ತದೆ.</translation>
-<translation id="2805756323405976993">ಅಪ್ಲಿಕೇಶನ್‌ಗಳು</translation>
+<translation id="2805756323405976993">Apps</translation>
 <translation id="5151511998946489774">ಈ ವೆಬ್‌ಸೈಟ್‌ ಗುರುತನ್ನು <ph name="ISSUER"/> ಮೂಲಕ ಪರಿಶೀಲಿಸಲಾಗಿದೆ ಮತ್ತು ಇದನ್ನು ಸಾರ್ವಜನಿಕವಾಗಿ ಪರಿಶೋಧಿಸಬಹುದಾಗಿದೆ.</translation>
 <translation id="1608626060424371292">ಈ ಬಳಕೆದಾರರನ್ನು ತೆಗೆದುಹಾಕಿ</translation>
 <translation id="3075239840551149663"><ph name="NEW_PROFILE_NAME"/> ಅವರನ್ನು ಮೇಲ್ವಿಚಾರಣೆ ಬಳಕೆದಾರರಾಗಿ ರಚಿಸಲಾಗಿದೆ!</translation>
@@ -3168,7 +3168,7 @@
 <translation id="1146673768181266552">ಕ್ರ್ಯಾಷ್ ID <ph name="CRASH_ID"/> (<ph name="CRASH_LOCAL_ID"/>)</translation>
 <translation id="5488640658880603382">&quot;<ph name="PROFILE_NAME"/>&quot; ಮತ್ತು ಈ ಕಂಪ್ಯೂಟರ್‌‌ನೊಂದಿಗೆ ಸಂಯೋಜಿತವಾಗಿರುವ ಎಲ್ಲಾ ಡೇಟಾವನ್ನು ನೀವು ಖಚಿತವಾಗಿ ಅಳಿಸಲು ಬಯಸುವಿರಾ? ಇದನ್ನು ರದ್ದುಪಡಿಸಲಾಗುವುದಿಲ್ಲ!</translation>
 <translation id="8044899503464538266">ನಿಧಾನ</translation>
-<translation id="3789841737615482174">ಇನ್‌ಸ್ಟಾಲ್</translation>
+<translation id="3789841737615482174">ಸ್ಥಾಪಿಸು</translation>
 <translation id="4320697033624943677">ಬಳಕೆದಾರರನ್ನು ಸೇರಿಸು</translation>
 <translation id="1283379245075810567">ಪ್ರತಿಬಿಂಬಿಸುವಿಕೆಯನ್ನು ಪ್ರಾರಂಭಿಸಿ</translation>
 <translation id="9153934054460603056">ಗುರುತಿಸುವಿಕೆ ಮತ್ತು ಪಾಸ್‌ವರ್ಡ್ ಉಳಿಸಿ</translation>
@@ -3738,7 +3738,7 @@
 <translation id="2255317897038918278">Microsoft Time Stamping</translation>
 <translation id="3493881266323043047">ವಾಯಿದೆ</translation>
 <translation id="5979421442488174909"><ph name="LANGUAGE"/> ಗೆ &amp;ಭಾಷಾಂತರಿಸಿ</translation>
-<translation id="2662876636500006917">Chrome ವೆಬ್‌ ಅಂಗಡಿ</translation>
+<translation id="2662876636500006917">Chrome ವೆಬ್ ಪೇಟೆ</translation>
 <translation id="676881925959847033">ಸಂರಕ್ಷಿತ ಮಾಧ್ಯಮ ಗುರುತುಕಾರಕವನ್ನು ಪ್ರವೇಶಿಸುವಾಗ ಡೀಫಾಲ್ಟ್ ಮೂಲಕ ಮಾಹಿತಿಪಟ್ಟಿ ಪಾಪ್ಅಪ್ ಅನ್ನು ನಿಷ್ಕ್ರಿಯಗೊಳಿಸಿ.</translation>
 <translation id="952992212772159698">ಸಕ್ರಿಯಗೊಳಿಸಲಾಗಿಲ್ಲ</translation>
 <translation id="443464694732789311">ಮುಂದುವರಿಸು</translation>
@@ -3796,7 +3796,7 @@
 <translation id="6175314957787328458">Microsoft ಡೊಮೇನ್ GUID</translation>
 <translation id="6883209331334683549"><ph name="PRODUCT_NAME"/> ಸಹಾಯ</translation>
 <translation id="6970480684834282392">ಸ್ಟಾರ್ಟ್ಅಪ್ ಪ್ರಕಾರ</translation>
-<translation id="8179976553408161302">ನಮೂದಿಸಿ</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">ಫೋಟೋ ತಿರುಗಿಸು</translation>
 <translation id="691321796646552019">ನಿಷ್ಕ್ರಿಯಗೊಳಿಸು!</translation>
 <translation id="8026964361287906498">(ಎಂಟರ್‌ಪ್ರೈಸಸ್ ನೀತಿಯ ಮೂಲಕ ನಿರ್ವಹಿಸಲಾಗಿದೆ)</translation>
@@ -3968,7 +3968,7 @@
 <translation id="9076523132036239772">ಕ್ಷಮಿಸಿ, ನಿಮ್ಮ ಇಮೇಲ್ ಅಥವಾ ಪಾಸ್‌ವರ್ಡ್ ಅನ್ನು ಪರಿಶೀಲಿಸಲಾಗಲಿಲ್ಲ. ಮೊದಲು ಯಾವುದಾದರೂ ನೆಟ್‌ವರ್ಕ್‌ ಜೊತೆ ಸಂಪರ್ಕ ಸಾಧಿಸಲು ಪ್ರಯತ್ನಿಸಿ.</translation>
 <translation id="6965978654500191972">ಸಾಧನ</translation>
 <translation id="5295309862264981122">ನ್ಯಾವಿಗೇಶನ್ ಅನ್ನು ಖಚಿತಪಡಿಸಿಕೊಳ್ಳಿ</translation>
-<translation id="718827667662449283">ಯುನೈಟೆಡ್ ಕಿಂಗ್‌ಡಮ್‌‌</translation>
+<translation id="718827667662449283">ಯುನೈಟೆಡ್ ಕಿಂಗ್‌ಡಮ್</translation>
 <translation id="358796204584394954">&quot;<ph name="DEVICE_NAME"/>&quot; ಗೆ ಜೋಡಿ ಮಾಡಲು ಈ ಕೋಡ್ ಅನ್ನು ಟೈಪ್ ಮಾಡಿ:</translation>
 <translation id="2908999529399859069">ಇಲ್ಲ, ರದ್ದುಮಾಡಿ</translation>
 <translation id="5804241973901381774">ಅನುಮತಿಗಳು</translation>
@@ -4528,7 +4528,7 @@
 <translation id="193971656137910869">ನಿಮ್ಮ ಬುಕ್‌ಮಾರ್ಕ್‌ಗಳನ್ನು ಓದಿ ಮತ್ತು ಮಾರ್ಪಡಿಸಿ</translation>
 <translation id="6268747994388690914">HTML ಫೈಲ್‌ಗಳಿಂದ ಬುಕ್‌ಮಾರ್ಕ್‌ಗಳನ್ನು ಆಮದು ಮಾಡಿ......</translation>
 <translation id="6096047740730590436">ಗರಿಷ್ಠಗೊಳಿಸುವಿಕೆಯಲ್ಲಿ ತೆರೆಯಿರಿ</translation>
-<translation id="3924145049010392604">ಮೆಟಾ</translation>
+<translation id="3924145049010392604">Meta</translation>
 <translation id="5365539031341696497">ಥಾಯ್ ಇನ್‌ಪುಟ್ ವಿಧಾನ (ಕೆಸ್‌ಮಾನಿ ಕೀಬೋರ್ಡ್)</translation>
 <translation id="5157635116769074044">ಆರಂಭಿಕ ಪರದೆಗೆ ಈ ಪುಟವನ್ನು ಪಿನ್ ಮಾಡಿ...</translation>
 <translation id="2403091441537561402">ಗೇಟ್‌ವೇ:</translation>

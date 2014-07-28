@@ -163,7 +163,7 @@
 <translation id="5177479852722101802">Continuer à bloquer l'accès à la caméra et au micro</translation>
 <translation id="4422428420715047158">Domaine :</translation>
 <translation id="7788444488075094252">Langues et saisie</translation>
-<translation id="6723354935081862304">Imprimer depuis Google Documents et d'autres emplacements de destination dans le cloud. <ph name="BEGIN_LINK"/>Connectez-vous<ph name="END_LINK"/> pour imprimer depuis Google Cloud Print.</translation>
+<translation id="6723354935081862304">Imprimer depuis Google Docs et d'autres emplacements de destination dans le cloud. <ph name="BEGIN_LINK"/>Connectez-vous<ph name="END_LINK"/> pour imprimer depuis Google Cloud Print.</translation>
 <translation id="7115051913071512405">Essayer</translation>
 <translation id="8561096986926824116">La connexion à
         <ph name="HOST_NAME"/>
@@ -276,7 +276,7 @@
 <translation id="5255315797444241226">La phrase secrète saisie est incorrecte.</translation>
 <translation id="521582610500777512">La photo a été supprimée.</translation>
 <translation id="762917759028004464">Le navigateur par défaut est actuellement <ph name="BROWSER_NAME"/>.</translation>
-<translation id="7740287852186792672">Résultats de recherche</translation>
+<translation id="7740287852186792672">Résultats de la recherche</translation>
 <translation id="218492098606937156">Activer les événements tactiles</translation>
 <translation id="300544934591011246">Mot de passe précédent</translation>
 <translation id="6015796118275082299">Année</translation>
@@ -307,7 +307,7 @@
 <translation id="7938958445268990899">Le certificat du serveur n'est pas encore valide.</translation>
 <translation id="4569998400745857585">Menu contenant des extensions masquées</translation>
 <translation id="4081383687659939437">Enregistrer les infos</translation>
-<translation id="1801827354178857021">Point</translation>
+<translation id="1801827354178857021">Période</translation>
 <translation id="4560332071395409256">Cliquez sur <ph name="BEGIN_BOLD"/>Démarrer<ph name="END_BOLD"/>,
 puis sur <ph name="BEGIN_BOLD"/>Exécuter<ph name="END_BOLD"/>,
 saisissez <ph name="BEGIN_BOLD"/>%windir%\network diagnostic\xpnetdiag.exe<ph name="END_BOLD"/>,
@@ -381,7 +381,7 @@ puis cliquez sur <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>.</translation>
 <translation id="5667293444945855280">Logiciels malveillants</translation>
 <translation id="6831043979455480757">Traduire</translation>
 <translation id="2856203831666278378">La réponse du serveur contient des en-têtes doubles. Ce problème est généralement dû à un site Web ou un proxy mal configuré. Seul l'administrateur du site Web ou du proxy peut remédier à ce problème.</translation>
-<translation id="3587482841069643663">Tout</translation>
+<translation id="3587482841069643663">Tous</translation>
 <translation id="6698381487523150993">Créé :</translation>
 <translation id="4684748086689879921">Annuler l'importation</translation>
 <translation id="6418443601594065950">Désactiver le pop-up de la barre d'infos pour le contenu multimédia protégé</translation>
@@ -1126,7 +1126,7 @@ Calcul de la durée restante</translation>
 <translation id="4341364588986930687">La validation de l'identité de votre appareil par Google est requise pour le site <ph name="DOMAIN"/> afin de déterminer si vous pouvez bénéficier d'une lecture améliorée des médias protégés. <ph name="LEARN_MORE"/></translation>
 <translation id="7643817847124207232">La connexion Internet a été interrompue.</translation>
 <translation id="4871210892959306034">$1 Ko</translation>
-<translation id="932327136139879170">Début</translation>
+<translation id="932327136139879170">Accueil</translation>
 <translation id="3561204836318837461">BSSID :</translation>
 <translation id="2560794850818211873">C&amp;opier l'URL de la vidéo</translation>
 <translation id="2981113813906970160">Afficher le grand curseur</translation>
@@ -1496,7 +1496,7 @@ Calcul de la durée restante</translation>
           vous assurer que le serveur proxy fonctionne. Si vous
           ne pensez pas devoir utiliser de serveur proxy, procédez comme suit :
           <ph name="PLATFORM_TEXT"/></translation>
-<translation id="5485754497697573575">Rétablir tous les onglets</translation>
+<translation id="5485754497697573575">Restaurer tous les onglets</translation>
 <translation id="5532223876348815659">Raccourcis globaux</translation>
 <translation id="644038709730536388">En savoir plus sur la manière de se protéger des logiciels malveillants en ligne</translation>
 <translation id="2155931291251286316">Toujours afficher les fenêtres pop-up de <ph name="HOST"/></translation>
@@ -1788,7 +1788,7 @@ Une fois que vous avez créé un compte utilisateur supervisé, vous pouvez gér
 <translation id="4215350869199060536">Petit problème… Le nom contient des symboles non autorisés.</translation>
 <translation id="8911393093747857497">Autre interface des étagères</translation>
 <translation id="894360074127026135">Fonction d'optimisation internationale Netscape </translation>
-<translation id="8420060421540670057">Afficher les fichiers Google Documents</translation>
+<translation id="8420060421540670057">Afficher les fichiers Google Docs</translation>
 <translation id="6075731018162044558">Échec d'obtention d'un jeton d'accès aux API à long terme pour cet appareil.</translation>
 <translation id="1201402288615127009">Suivant</translation>
 <translation id="1335588927966684346">Utilitaire :</translation>
@@ -1943,8 +1943,7 @@ Une fois que vous avez créé un compte utilisateur supervisé, vous pouvez gér
 <translation id="2633212996805280240">Désinstaller &quot;<ph name="EXTENSION_NAME"/>&quot; ?</translation>
 <translation id="9084064520949870008">Ouvrir dans une fenêtre</translation>
 <translation id="4075084141581903552">Connexion automatique disponible pour <ph name="EMAIL_ADDRESS"/></translation>
-<translation id="1293556467332435079">Fichiers
-</translation>
+<translation id="1293556467332435079">Fichiers</translation>
 <translation id="2287590536030307392">Cette option désactive toutes les connexions sans fil.</translation>
 <translation id="8535658110233909809">Emplacement d'extension</translation>
 <translation id="8116483400482790018">Dictionnaire orthographique personnalisé</translation>
@@ -2163,7 +2162,7 @@ Assurez-vous de ne pas dévoiler d'informations sensibles.</translation>
 <translation id="5612734644261457353">Désolé, nous ne pouvons toujours pas valider votre mot de passe. Remarque : si vous l'avez modifié dernièrement, votre nouveau mot de passe ne sera appliqué qu'une fois que vous vous serez déconnecté. Veuillez donc utiliser votre ancien mot de passe.</translation>
 <translation id="2908162660801918428">Ajouter une galerie de médias par répertoire</translation>
 <translation id="2282872951544483773">Tests non disponibles.</translation>
-<translation id="2562685439590298522">Documents</translation>
+<translation id="2562685439590298522">Docs</translation>
 <translation id="8673383193459449849">Problème avec le serveur.</translation>
 <translation id="4060383410180771901">Le site Web ne parvient pas à gérer la demande associée à <ph name="URL"/>.</translation>
 <translation id="6710213216561001401">Précédent</translation>
@@ -2246,7 +2245,7 @@ Assurez-vous de ne pas dévoiler d'informations sensibles.</translation>
 <translation id="4710257996998566163">Dernière mise à jour :</translation>
 <translation id="5299682071747318445">Toutes les données sont chiffrées avec votre phrase secrète de synchronisation.</translation>
 <translation id="7556242789364317684">Malheureusement, il est impossible de récupérer vos paramètres <ph name="SHORT_PRODUCT_NAME"/>. Pour corriger cette erreur, votre appareil doit être réinitialisé avec la fonctionnalité <ph name="SHORT_PRODUCT_NAME"/> Powerwash.</translation>
-<translation id="1383876407941801731">Recherche</translation>
+<translation id="1383876407941801731">Rechercher</translation>
 <translation id="23362385947277794">Couleurs et images d'arrière-plan</translation>
 <translation id="409579654357498729">Ajouter à Google Cloud Print</translation>
 <translation id="2120316813730635488">Événements d'installation d'une extension</translation>
@@ -2282,7 +2281,7 @@ Assurez-vous de ne pas dévoiler d'informations sensibles.</translation>
 <translation id="6423731501149634044">Définir Adobe Reader comme visionneuse de documents PDF par défaut ?</translation>
 <translation id="1965328510789761112">Mémoire privée</translation>
 <translation id="7312441861087971374"><ph name="PLUGIN_NAME"/> est obsolète.</translation>
-<translation id="5790085346892983794">Opération réussie !</translation>
+<translation id="5790085346892983794">Succès</translation>
 <translation id="7639178625568735185">OK</translation>
 <translation id="1901769927849168791">Carte SD détectée.</translation>
 <translation id="818454486170715660"><ph name="NAME"/> - Propriétaire</translation>
@@ -2916,7 +2915,7 @@ Assurez-vous de ne pas dévoiler d'informations sensibles.</translation>
 <translation id="7347751611463936647">Pour utiliser cette extension, saisissez &quot;<ph name="EXTENSION_KEYWORD"/>&quot;, TAB, puis votre commande ou votre recherche.</translation>
 <translation id="878431691778285679">Il semble que vous gérez déjà un utilisateur portant ce nom.<ph name="LINE_BREAK"/>Voulez-vous <ph name="BEGIN_LINK"/>importer <ph name="PROFILE_NAME"/> sur cet appareil<ph name="END_LINK"/> ?</translation>
 <translation id="2912905526406334195"><ph name="HOST"/> veut utiliser votre micro.</translation>
-<translation id="2805756323405976993">Applications</translation>
+<translation id="2805756323405976993">Google Apps</translation>
 <translation id="5151511998946489774">L'identité de ce site Web a été validée par <ph name="ISSUER"/>, et elle est vérifiable publiquement.</translation>
 <translation id="1608626060424371292">Supprimer cet utilisateur</translation>
 <translation id="3075239840551149663"><ph name="NEW_PROFILE_NAME"/> a bien été créé en tant qu'utilisateur supervisé</translation>
@@ -3548,7 +3547,7 @@ Assurez-vous de ne pas dévoiler d'informations sensibles.</translation>
 <translation id="8434177709403049435">Codag&amp;e</translation>
 <translation id="1196849605089373692">Spécifie le paramètre de qualité pour les images capturées en cas de réduction du dimensionnement de celles-ci.</translation>
 <translation id="3202237796902623372">Activer la reprise du téléchargement</translation>
-<translation id="3810838688059735925">Vidéo</translation>
+<translation id="3810838688059735925">Google Vidéos</translation>
 <translation id="2747011872211212100">Nouvelle imprimante sur le réseau</translation>
 <translation id="2028531481946156667">Impossible de lancer le processus de formatage.</translation>
 <translation id="7439964298085099379">Le mode contraste élevé est activé. Voulez-vous installer notre extension &quot;Contraste élevé&quot; ou un thème sombre ?</translation>
@@ -3661,7 +3660,7 @@ Assurez-vous de ne pas dévoiler d'informations sensibles.</translation>
 <translation id="5275973617553375938">Fichiers récupérés sur Google Drive</translation>
 <translation id="8213577208796878755">Un autre périphérique disponible</translation>
 <translation id="3445092916808119474">Définir comme affichage principal</translation>
-<translation id="1012794136286421601">Vos fichiers Documents, Feuilles de calcul, Présentations et Dessins sont en cours de synchronisation. Ouvrez l'application Google Drive pour y accéder en ligne ou hors connexion.</translation>
+<translation id="1012794136286421601">Vos fichiers Docs, Sheets, Slides et Drawings sont en cours de synchronisation. Ouvrez l'application Google Drive pour y accéder en ligne ou hors connexion.</translation>
 <translation id="6374100501221763867">Désactiver le décodage vidéo avec accélération matérielle</translation>
 <translation id="5530819628665366444">Incompatibilité logicielle : en savoir plus</translation>
 <translation id="9101691533782776290">Lancer l'application</translation>
@@ -3762,7 +3761,7 @@ Assurez-vous de ne pas dévoiler d'informations sensibles.</translation>
 <translation id="2255317897038918278">Enregistrement des informations de date Microsoft</translation>
 <translation id="3493881266323043047">Validité</translation>
 <translation id="5979421442488174909">&amp;Traduire en <ph name="LANGUAGE"/></translation>
-<translation id="2662876636500006917">Chrome Web Store</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">Désactiver le pop-up de la barre d'infos lors de l'accès à l'identifiant du contenu multimédia protégé</translation>
 <translation id="952992212772159698">Désactivé</translation>
 <translation id="443464694732789311">Continuer</translation>
@@ -3820,7 +3819,7 @@ Assurez-vous de ne pas dévoiler d'informations sensibles.</translation>
 <translation id="6175314957787328458">GUID de domaine Microsoft</translation>
 <translation id="6883209331334683549">Aide <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Type de démarrage</translation>
-<translation id="8179976553408161302">Entrer</translation>
+<translation id="8179976553408161302">Entrée</translation>
 <translation id="6422329785618833949">Photo retournée.</translation>
 <translation id="691321796646552019">Désactiver</translation>
 <translation id="8026964361287906498">(Géré par une stratégie d'entreprise)</translation>
@@ -4169,7 +4168,7 @@ Assurez-vous de ne pas dévoiler d'informations sensibles.</translation>
 <translation id="1038168778161626396">Chiffrer seulement</translation>
 <translation id="8765985713192161328">Gérer les gestionnaires...</translation>
 <translation id="7179921470347911571">Relancer maintenant</translation>
-<translation id="9065203028668620118">Édition</translation>
+<translation id="9065203028668620118">Modifier</translation>
 <translation id="2251218783371366160">Ouvrir avec le lecteur système</translation>
 <translation id="1177863135347784049">Personnalisé</translation>
 <translation id="4881695831933465202">Ouvrir</translation>
@@ -5219,7 +5218,7 @@ Fichier de clé : <ph name="KEY_FILE"/>
 Conservez votre fichier de clé en lieu sûr. Vous en aurez besoin lors de la création de nouvelles versions de l'extension.</translation>
 <translation id="5522156646677899028">Cette extension contient une grave faille de sécurité.</translation>
 <translation id="1004032892340602806">Autoriser tous les sites à utiliser un plug-in pour accéder à mon ordinateur</translation>
-<translation id="3813984289128269159">OK Google</translation>
+<translation id="3813984289128269159">Ok Google</translation>
 <translation id="417475959318757854">Centrer le lanceur d'applications</translation>
 <translation id="5505154136304809922">Activé, et placé avant la barre d'adresse</translation>
 <translation id="5218183485292899140">Français suisse</translation>

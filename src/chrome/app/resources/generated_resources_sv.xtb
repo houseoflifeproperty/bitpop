@@ -311,7 +311,7 @@ Dina inloggningsuppgifter för kontot är inaktuella.</translation>
 <translation id="7938958445268990899">Servercertifikatet är inte giltigt ännu.</translation>
 <translation id="4569998400745857585">Menyn innehåller dolda tillägg</translation>
 <translation id="4081383687659939437">Spara info</translation>
-<translation id="1801827354178857021">Punkt</translation>
+<translation id="1801827354178857021">Period</translation>
 <translation id="4560332071395409256">Klicka på
           <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/>,
           klicka på
@@ -1144,7 +1144,7 @@ Psst! Nästa gång kanske inkognitoläget <ph name="SHORTCUT_KEY"/> kan vara nå
 <translation id="1357589289913453911">Tilläggs-ID</translation>
 <translation id="7570477672765183">Klicka för att starta</translation>
 <translation id="8688579245973331962">Hittar du inte ditt namn?</translation>
-<translation id="3804941997676372569">Sök eller säg &quot;OK Google&quot;</translation>
+<translation id="3804941997676372569">Sök eller säg &quot;Ok Google&quot;</translation>
 <translation id="3226128629678568754">Om du på nytt vill skicka datan som behövs för att läsa in sidan trycker du på knappen Läs in igen.</translation>
 <translation id="1384035515048721170"><ph name="LEGAL_DOC_AGREEMENT"/> Information om din dator (inklusive datorns plats) delas med Google Wallet för att skydda dig mot bedrägeri.</translation>
 <translation id="6166101525540035714">Chromes <ph name="BEGIN_LINK1"/>användarvillkor<ph name="END_LINK1"/> och <ph name="BEGIN_LINK2"/>sekretessmeddelande<ph name="END_LINK2"/> gäller när du använder Chrome.</translation>
@@ -2180,7 +2180,7 @@ Lämna inte ut känsliga uppgifter.</translation>
 <translation id="3297788108165652516">Nätverket delas med andra användare.</translation>
 <translation id="4810984886082414856">Enkel cache för HTTP.</translation>
 <translation id="1548132948283577726">Webbplatser som aldrig sparar lösenord visas här.</translation>
-<translation id="583281660410589416">Okänt</translation>
+<translation id="583281660410589416">Okänd</translation>
 <translation id="3774278775728862009">Thailändsk inmatningsmetod (TIS-820.2538-tangentbord)</translation>
 <translation id="9115675100829699941">&amp;Bokmärken</translation>
 <translation id="2485422356828889247">Avinstallera</translation>
@@ -2907,7 +2907,7 @@ Lämna inte ut känsliga uppgifter.</translation>
 <translation id="7347751611463936647">Om du vill använda det här tillägget skriver du ”<ph name="EXTENSION_KEYWORD"/>”, trycker på tabbtangenten och anger kommandot eller sökningen.</translation>
 <translation id="878431691778285679">Det ser ut som om du redan hanterar en användare med det namnet.<ph name="LINE_BREAK"/>Ville du <ph name="BEGIN_LINK"/>importera <ph name="PROFILE_NAME"/> till den här enheten<ph name="END_LINK"/>?</translation>
 <translation id="2912905526406334195"><ph name="HOST"/> försöker använda din mikrofon.</translation>
-<translation id="2805756323405976993">Appar</translation>
+<translation id="2805756323405976993">Apps</translation>
 <translation id="5151511998946489774">Webbplatsens identitet har verifierats av <ph name="ISSUER"/> och kan granskas offentligt.</translation>
 <translation id="1608626060424371292">Ta bort den här användaren</translation>
 <translation id="3075239840551149663"><ph name="NEW_PROFILE_NAME"/> har skapats som en övervakad användare!</translation>
@@ -3756,7 +3756,7 @@ Lämna inte ut känsliga uppgifter.</translation>
 <translation id="2255317897038918278">Microsofts tidsstämpling</translation>
 <translation id="3493881266323043047">Giltighet</translation>
 <translation id="5979421442488174909">&amp;Översätt till <ph name="LANGUAGE"/></translation>
-<translation id="2662876636500006917">Chrome Web Store</translation>
+<translation id="2662876636500006917">Chrome webbshop</translation>
 <translation id="676881925959847033">Inaktiverar informationsfältet som standard vid åtkomst till den skyddade medieidentifieraren.</translation>
 <translation id="952992212772159698">Inte aktiverat</translation>
 <translation id="443464694732789311">Fortsätt</translation>
@@ -3816,11 +3816,11 @@ hanteraren
 <translation id="6175314957787328458">Grafiskt användargränssnitt för Microsoft-domänen</translation>
 <translation id="6883209331334683549">Hjälp för <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Starttyp</translation>
-<translation id="8179976553408161302">Start</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Fotot har vänts</translation>
 <translation id="691321796646552019">Sluta!</translation>
 <translation id="8026964361287906498">(Hanteras av företagspolicy)</translation>
-<translation id="8261506727792406068">Ta bort</translation>
+<translation id="8261506727792406068">Radera</translation>
 <translation id="7800518121066352902">Rotera m&amp;oturs</translation>
 <translation id="345693547134384690">Öppna &amp;bild i ny flik</translation>
 <translation id="7422192691352527311">Inställningar...</translation>
@@ -4440,7 +4440,7 @@ hanteraren
         symboler</translation>
 <translation id="4784330909746505604">PowerPoint-presentation</translation>
 <translation id="4345587454538109430">Konfigurera...</translation>
-<translation id="3255228561559750854">Sök eller säg &quot;OK Google&quot;</translation>
+<translation id="3255228561559750854">Sök eller säg &quot;Ok Google&quot;</translation>
 <translation id="8148264977957212129">Inmatningsmetoden Pinyin</translation>
 <translation id="2288278176040912387">Skivspelare</translation>
 <translation id="7772032839648071052">Bekräfta lösenfras</translation>

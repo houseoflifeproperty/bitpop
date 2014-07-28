@@ -2,7 +2,7 @@
 #  To use this DEPS file to re-create a Chromium release you
 #  need the tools from http://dev.chromium.org installed.
 #  
-#  This DEPS file corresponds to Chromium 36.0.1985.67
+#  This DEPS file corresponds to Chromium 36.0.1985.125
 #  
 #  
 #  
@@ -224,7 +224,7 @@ deps_os = {
       'src/chrome/test/data/extensions/api_test/permissions/nacl_enabled/bin':
       None,
       'src/third_party/WebKit/public':
-      Var("webkit_trunk")[:-6] + '/branches/chromium/1985/public@175906',
+      Var("webkit_trunk")[:-6] + '/branches/chromium/1985/public@177902',
       'src/native_client':
       None,
       'src/testing/iossim/third_party/class-dump':
@@ -398,7 +398,7 @@ deps = {
    'src/third_party/bidichecker':
       Var("bidichecker") + '/trunk/lib@4',
    'src/third_party/WebKit':
-      Var("webkit_trunk")[:-6] + '/branches/chromium/1985@175906',
+      Var("webkit_trunk")[:-6] + '/branches/chromium/1985@177902',
    'src/breakpad/src':
       Var("google-breakpad") + '/trunk/src@1325',
    'src/third_party/openmax_dl':
@@ -462,7 +462,7 @@ deps = {
    'src/testing/gtest':
       Var("googletest") + '/trunk@643',
    'src':
-      '/branches/1985/src@276210',
+      '/branches/1985/src@283153',
    'src/third_party/icu':
       '/trunk/deps/third_party/icu46@262949',
    'src/third_party/speex':
@@ -478,7 +478,7 @@ deps = {
    'src/third_party/angle':
       Var("git.chromium.org") + '/angle/angle.git@d3d870647655ea8292cee9a1b65820547b13ac0c',
    'src/v8':
-      Var("v8") + '/branches/3.26@21367',
+      Var("v8") + '/branches/3.26@21981',
    'src/third_party/libwebm/source':
       Var("git.chromium.org") + '/webm/libwebm.git@fb6b6e64444c637f27d103fd113e0c7bf4f107dd',
    'src/third_party/libvpx':

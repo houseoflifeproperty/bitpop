@@ -275,7 +275,7 @@
 <translation id="5255315797444241226">La passphrase inserita non è corretta.</translation>
 <translation id="521582610500777512">La foto è stata eliminata</translation>
 <translation id="762917759028004464">Al momento il browser predefinito è <ph name="BROWSER_NAME"/>.</translation>
-<translation id="7740287852186792672">Risultati di ricerca</translation>
+<translation id="7740287852186792672">Risultati della ricerca</translation>
 <translation id="218492098606937156">Attiva eventi al tocco</translation>
 <translation id="300544934591011246">Password precedente</translation>
 <translation id="6015796118275082299">Anno</translation>
@@ -306,7 +306,7 @@
 <translation id="7938958445268990899">Il certificato del server non è ancora valido.</translation>
 <translation id="4569998400745857585">Menu contenente le estensioni nascoste</translation>
 <translation id="4081383687659939437">Salva informazioni</translation>
-<translation id="1801827354178857021">Punto</translation>
+<translation id="1801827354178857021">Periodo</translation>
 <translation id="4560332071395409256">Fai clic su <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/>, su <ph name="BEGIN_BOLD"/>Esegui<ph name="END_BOLD"/>, digita <ph name="BEGIN_BOLD"/>%windir%\network diagnostic\xpnetdiag.exe<ph name="END_BOLD"/>, quindi fai clic su <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Aggiungi motore di ricerca</translation>
 <translation id="4043223219875055035">Accedi con il tuo account Google per consentire alle app di sincronizzare le impostazioni e fornire altri servizi personalizzati.</translation>
@@ -377,7 +377,7 @@
 <translation id="5667293444945855280">Malware</translation>
 <translation id="6831043979455480757">Traduci</translation>
 <translation id="2856203831666278378">La risposta dal server conteneva intestazioni duplicate. Questo problema è generalmente dovuto a un sito web o a un proxy configurato in modo scorretto. Solo l'amministratore del sito o del proxy può correggere questo problema.</translation>
-<translation id="3587482841069643663">Tutte</translation>
+<translation id="3587482841069643663">Tutti</translation>
 <translation id="6698381487523150993">Data creazione:</translation>
 <translation id="4684748086689879921">Ignora importazione</translation>
 <translation id="6418443601594065950">Disattiva popup barra informazioni per contenuti multimediali protetti.</translation>
@@ -484,7 +484,7 @@
 <translation id="4801956050125744859">Conserva entrambe</translation>
 <translation id="3878840326289104869">Creazione utente supervisionato in corso</translation>
 <translation id="406070391919917862">Applicazioni in background</translation>
-<translation id="8820817407110198400">Preferiti</translation>
+<translation id="8820817407110198400">Segnalibri</translation>
 <translation id="6347003977836730270">Attiva la nuova esperienza utente con fumetti di Traduttore anziché la barra delle informazioni.</translation>
 <translation id="2580170710466019930">Attendi mentre <ph name="PRODUCT_NAME"/> installa gli aggiornamenti di sistema più recenti.</translation>
 <translation id="7428061718435085649">Utilizza i tasti Maiusc sinistro e destro per selezionare il secondo e il terzo candidato</translation>
@@ -1109,7 +1109,7 @@ Psst! La prossima volta potrebbe esserti utile la modalità di navigazione in in
 <translation id="4341364588986930687"><ph name="DOMAIN"/> richiede che Google controlli l'identità del tuo dispositivo per determinarne l'idoneità alla riproduzione avanzata di contenuti multimediali protetti. <ph name="LEARN_MORE"/>.</translation>
 <translation id="7643817847124207232">Connessione a Internet interrotta.</translation>
 <translation id="4871210892959306034">$1 kB</translation>
-<translation id="932327136139879170">Home</translation>
+<translation id="932327136139879170">Home page</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">C&amp;opia URL video</translation>
 <translation id="2981113813906970160">Mostra puntatore mouse grande</translation>
@@ -2208,7 +2208,7 @@ Assicurati di non mostrare informazioni riservate.</translation>
 <translation id="4710257996998566163">Ultimo aggiornamento:</translation>
 <translation id="5299682071747318445">Tutti i dati vengono crittografati con la tua passphrase di sincronizzazione</translation>
 <translation id="7556242789364317684">Purtroppo <ph name="SHORT_PRODUCT_NAME"/> non può recuperare le tue impostazioni. Per correggere l'errore, <ph name="SHORT_PRODUCT_NAME"/> deve ripristinare il tuo dispositivo con Powerwash.</translation>
-<translation id="1383876407941801731">Ricerca</translation>
+<translation id="1383876407941801731">Cerca</translation>
 <translation id="23362385947277794">Colori e immagini di sfondo</translation>
 <translation id="409579654357498729">Aggiungi a Cloud Print</translation>
 <translation id="2120316813730635488">Occorrenze in caso di installazione di un'estensione</translation>
@@ -2244,7 +2244,7 @@ Assicurati di non mostrare informazioni riservate.</translation>
 <translation id="6423731501149634044">Utilizzare Adobe Reader come visualizzatore di file PDF predefinito?</translation>
 <translation id="1965328510789761112">Memoria privata</translation>
 <translation id="7312441861087971374"><ph name="PLUGIN_NAME"/> è obsoleto.</translation>
-<translation id="5790085346892983794">Operazione riuscita</translation>
+<translation id="5790085346892983794">Completato</translation>
 <translation id="7639178625568735185">Ok.</translation>
 <translation id="1901769927849168791">Scheda SD rilevata</translation>
 <translation id="818454486170715660"><ph name="NAME"/> - Proprietario</translation>
@@ -2867,7 +2867,7 @@ Assicurati di non mostrare informazioni riservate.</translation>
 <translation id="7347751611463936647">Per utilizzare questa estensione, digita &quot;<ph name="EXTENSION_KEYWORD"/>&quot;, quindi TAB, poi il tuo comando o la tua ricerca.</translation>
 <translation id="878431691778285679">Sembra che tu gestisca già un utente con il nome indicato.<ph name="LINE_BREAK"/>Volevi <ph name="BEGIN_LINK"/>importarlo<ph name="PROFILE_NAME"/> in questo dispositivo<ph name="END_LINK"/>?</translation>
 <translation id="2912905526406334195"><ph name="HOST"/> vuole utilizzare il microfono.</translation>
-<translation id="2805756323405976993">Applicazioni</translation>
+<translation id="2805756323405976993">Google Apps</translation>
 <translation id="5151511998946489774">L'identità di questo sito web è stata verificata da <ph name="ISSUER"/> e può essere controllata pubblicamente.</translation>
 <translation id="1608626060424371292">Rimuovi questo utente</translation>
 <translation id="3075239840551149663"><ph name="NEW_PROFILE_NAME"/> è stato creato come utente supervisionato.</translation>
@@ -3764,7 +3764,7 @@ Assicurati di non mostrare informazioni riservate.</translation>
 <translation id="6175314957787328458">GUID di dominio Microsoft</translation>
 <translation id="6883209331334683549">Guida di <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Tipo di avvio</translation>
-<translation id="8179976553408161302">Invia</translation>
+<translation id="8179976553408161302">Invio</translation>
 <translation id="6422329785618833949">Foto capovolta orizzontalmente</translation>
 <translation id="691321796646552019">Dacci un taglio.</translation>
 <translation id="8026964361287906498">(Gestito da norma aziendale)</translation>

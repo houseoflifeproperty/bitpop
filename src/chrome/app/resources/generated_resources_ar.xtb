@@ -304,7 +304,7 @@
 <translation id="7938958445268990899">شهادة الخادم ليست صالحة بعد.</translation>
 <translation id="4569998400745857585">قائمة تحتوي على إضافات مخفية</translation>
 <translation id="4081383687659939437">حفظ المعلومات</translation>
-<translation id="1801827354178857021">نقطة</translation>
+<translation id="1801827354178857021">الفترة</translation>
 <translation id="4560332071395409256">‏انقر على
           <ph name="BEGIN_BOLD"/>ابدأ<ph name="END_BOLD"/>، ثم
           انقر على
@@ -379,7 +379,7 @@
 <translation id="3150927491400159470">إعادة تحميل بشكل كامل</translation>
 <translation id="3549644494707163724">تشفير جميع البيانات المتزامنة باستخدام عبارة مرور المزامنة</translation>
 <translation id="5667293444945855280">برامج ضارة</translation>
-<translation id="6831043979455480757">الترجمة</translation>
+<translation id="6831043979455480757">ترجمة</translation>
 <translation id="2856203831666278378">تضمن الرد من الخادم رؤوسًا متكررة. تظهر هذه المشكلة بشكل عام نتيجة لتهيئة موقع الويب أو الوكيل بشكل خاطئ. لا يمكن لأحد حل هذه المشكلة سوى مشرف موقع الويب أو الوكيل.</translation>
 <translation id="3587482841069643663">الكل</translation>
 <translation id="6698381487523150993">تاريخ الإنشاء:</translation>
@@ -491,7 +491,7 @@
 <translation id="4801956050125744859">الاحتفاظ بالاثنتين</translation>
 <translation id="3878840326289104869">إنشاء مستخدم يخضع للإدارة</translation>
 <translation id="406070391919917862">تطبيقات الخلفية</translation>
-<translation id="8820817407110198400">الإشارات</translation>
+<translation id="8820817407110198400">إشارات</translation>
 <translation id="6347003977836730270">‏تمكين الميزة الاختبارية الجديدة UX لخدمة الترجمة بدلاً من شريط المعلومات.</translation>
 <translation id="2580170710466019930">الرجاء الانتظار لحين تثبيت <ph name="PRODUCT_NAME"/> لآخر تحديثات النظام.</translation>
 <translation id="7428061718435085649">‏استخدام مفتاحي Shift الأيمن والأيسر لتحديد الطريقتين الثانية والثالثة المرشحتين للإدخال</translation>
@@ -2039,7 +2039,7 @@
 <translation id="3039828483675273919">جارٍ نقل $1 من العناصر...</translation>
 <translation id="7816949580378764503">الهوية متحقق منها</translation>
 <translation id="1521442365706402292">تنظيم الشهادات</translation>
-<translation id="1679068421605151609">أدوات المطورين</translation>
+<translation id="1679068421605151609">أدوات مطوّري البرامج</translation>
 <translation id="7014051144917845222">تم رفض محاولة <ph name="PRODUCT_NAME"/> للاتصال بـ <ph name="HOST_NAME"/>. قد يكون موقع الويب معطلاً أو لم تتم تهيئة الشبكة بشكل صحيح.</translation>
 <translation id="2097372108957554726">‏يلزمك تسجيل الدخول إلى Chrome لتسجيل الأجهزة الجديدة</translation>
 <translation id="4332213577120623185">يلزم إدخال المزيد من المعلومات لإتمام عملية الشراء هذه.</translation>
@@ -2152,7 +2152,7 @@
 <translation id="3297788108165652516">هذه الشبكة مشتركة مع مستخدمين آخرين.</translation>
 <translation id="4810984886082414856">‏ذاكرة تخزين مؤقت بسيطة لبروتوكول HTTP.</translation>
 <translation id="1548132948283577726">تظهر هنا المواقع التي لا يتم حفظ كلمات المرور لها.</translation>
-<translation id="583281660410589416">غير محدّد</translation>
+<translation id="583281660410589416">غير معروف</translation>
 <translation id="3774278775728862009">‏أسلوب الإدخال التايلاندي (للوحة المفاتيح TIS-820.2538)</translation>
 <translation id="9115675100829699941">إ&amp;شارات مرجعية</translation>
 <translation id="2485422356828889247">إزالة التثبيت</translation>
@@ -2254,7 +2254,7 @@
 <translation id="6423731501149634044">‏هل تريد استخدام Adobe Reader كعارض PDF افتراضي؟</translation>
 <translation id="1965328510789761112">ذاكرة خاصة</translation>
 <translation id="7312441861087971374"><ph name="PLUGIN_NAME"/> قديم.</translation>
-<translation id="5790085346892983794">نجحت العملية</translation>
+<translation id="5790085346892983794">تم بنجاح</translation>
 <translation id="7639178625568735185">تم إنشاء الحساب!</translation>
 <translation id="1901769927849168791">‏اكتشاف بطاقة SD</translation>
 <translation id="818454486170715660"><ph name="NAME"/> - المالك</translation>
@@ -2878,7 +2878,7 @@
 <translation id="7347751611463936647">‏لاستخدام هذه الإضافة، اكتب &quot;<ph name="EXTENSION_KEYWORD"/>&quot;، ثم TAB، ثم الأمر أو البحث.</translation>
 <translation id="878431691778285679">يبدو أنك تدير مستخدمًا من خلال هذا الاسم فعلاً.<ph name="LINE_BREAK"/>هل كنت تريد <ph name="BEGIN_LINK"/>الاستيراد <ph name="PROFILE_NAME"/> إلى هذا الجهاز<ph name="END_LINK"/>؟</translation>
 <translation id="2912905526406334195">يريد <ph name="HOST"/> استخدام الميكروفون.</translation>
-<translation id="2805756323405976993">تطبيقات</translation>
+<translation id="2805756323405976993">التطبيقات</translation>
 <translation id="5151511998946489774">تم التحقق من هوية موقع الويب هذا بواسطة <ph name="ISSUER"/> وهو قابل للتدقيق بشكل عام.</translation>
 <translation id="1608626060424371292">إزالة هذا المستخدم</translation>
 <translation id="3075239840551149663">تمّ إنشاء <ph name="NEW_PROFILE_NAME"/> باعتباره مستخدمًا يخضع للإشراف!</translation>
@@ -3510,7 +3510,7 @@
 <translation id="8434177709403049435">&amp;التشفير</translation>
 <translation id="1196849605089373692">لتحديد إعدادات جودة الصورة الملتقطة في حالة انخفاض مستوى الجودة.</translation>
 <translation id="3202237796902623372">تمكين استئناف التنزيل</translation>
-<translation id="3810838688059735925">الفيديو</translation>
+<translation id="3810838688059735925">فيديو</translation>
 <translation id="2747011872211212100">طابعة جديدة على شبكتك</translation>
 <translation id="2028531481946156667">يتعذر بدء عملية التنسيق.</translation>
 <translation id="7439964298085099379">تم تمكين وضع التباين العالي. هل تريد تثبيت إضافة التباين العالي مع مظهر داكن؟</translation>
@@ -3723,7 +3723,7 @@
 <translation id="2255317897038918278">‏الطابع الزمني لـ Microsoft</translation>
 <translation id="3493881266323043047">الصلاحية</translation>
 <translation id="5979421442488174909">تر&amp;جمة إلى <ph name="LANGUAGE"/></translation>
-<translation id="2662876636500006917">‏سوق Chrome الإلكتروني</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">تعطيل شريط المعلومات المنبثق بشكل افتراضي عند الدخول إلى معرّف وسائط محمية.</translation>
 <translation id="952992212772159698">غير نشطة</translation>
 <translation id="443464694732789311">متابعة</translation>
@@ -4133,7 +4133,7 @@
 <translation id="1038168778161626396">التشفير فقط</translation>
 <translation id="8765985713192161328">إدارة المعالجات...</translation>
 <translation id="7179921470347911571">إعادة التشغيل الآن</translation>
-<translation id="9065203028668620118">تعديل</translation>
+<translation id="9065203028668620118">تحرير</translation>
 <translation id="2251218783371366160">فتح باستخدام عارض النظام</translation>
 <translation id="1177863135347784049">مخصص</translation>
 <translation id="4881695831933465202">فتح</translation>
@@ -4697,7 +4697,7 @@
 <translation id="8605428685123651449">‏ذاكرة SQLite</translation>
 <translation id="7498566414244653415">تعطيل عنصر مصدر الوسائط. يتيح هذا العنصر لجافا سكريبت إرسال بيانات الوسائط إلى أي عنصر فيديو مباشرةً.</translation>
 <translation id="2841013758207633010">الوقت</translation>
-<translation id="4880827082731008257">البحث في السجل</translation>
+<translation id="4880827082731008257">سجلّ البحث</translation>
 <translation id="8661290697478713397">ف&amp;تح رابط في نافذة التصفح المتخفي</translation>
 <translation id="249819058197909513">لا أريد التحذير مرة أخرى بشأن هذا التطبيق</translation>
 <translation id="8997135628821231"><ph name="ISSUED_BY"/> [<ph name="ISSUED_TO"/>] (<ph name="DEVICE"/>)</translation>

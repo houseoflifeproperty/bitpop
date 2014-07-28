@@ -1,5 +1,5 @@
 entries = {
-  '36.0.1985.67': 'https://src.chromium.org/chrome/releases/36.0.1985.67',
+  '36.0.1985.125': 'https://src.chromium.org/chrome/releases/36.0.1985.125',
   'build': 'https://src.chromium.org/chrome/trunk/tools/build@269491',
   'build/scripts/command_wrapper/bin': 'https://src.chromium.org/chrome/trunk/tools/command_wrapper/bin@135178',
   'build/scripts/gsd_generate_index': 'https://src.chromium.org/chrome/trunk/tools/gsd_generate_index@164784',
@@ -7,7 +7,7 @@ entries = {
   'build/scripts/tools/deps2git': 'https://src.chromium.org/chrome/trunk/tools/deps2git@263285',
   'build/third_party/lighttpd': 'https://src.chromium.org/chrome/trunk/deps/third_party/lighttpd@58968',
   'depot_tools': 'https://src.chromium.org/chrome/trunk/tools/depot_tools@269489',
-  'src': 'https://src.chromium.org/chrome/branches/1985/src@276210',
+  'src': 'https://src.chromium.org/chrome/branches/1985/src@283153',
   'src/breakpad/src': 'http://google-breakpad.googlecode.com/svn/trunk/src@1325',
   'src/chrome/browser/resources/pdf/html_office': 'https://chromium.googlesource.com/chromium/html-office-public.git@eeff97614f65e0578529490d44d412032c3d7359',
   'src/chrome/installer/mac/third_party/xz/xz': 'https://src.chromium.org/chrome/trunk/deps/third_party/xz@233311',
@@ -26,7 +26,7 @@ entries = {
   'src/sdch/open-vcdiff': 'http://open-vcdiff.googlecode.com/svn/trunk@42',
   'src/testing/gmock': 'http://googlemock.googlecode.com/svn/trunk@410',
   'src/testing/gtest': 'http://googletest.googlecode.com/svn/trunk@643',
-  'src/third_party/WebKit': 'http://src.chromium.org/blink/branches/chromium/1985@175906',
+  'src/third_party/WebKit': 'http://src.chromium.org/blink/branches/chromium/1985@177902',
   'src/third_party/WebKit/LayoutTests': None,
   'src/third_party/WebKit/LayoutTests/w3c/csswg-test': 'https://chromium.googlesource.com/external/w3c/csswg-test.git@bacbb4a8dca702cd86646761fde96793db13d4f1',
   'src/third_party/WebKit/LayoutTests/w3c/web-platform-tests': 'https://chromium.googlesource.com/external/w3c/web-platform-tests.git@6bed4516fe8522d65512c76ef02e4f0ae8234395',
@@ -93,5 +93,5 @@ entries = {
   'src/tools/gyp': 'http://gyp.googlecode.com/svn/trunk@1918',
   'src/tools/page_cycler/acid3': 'https://src.chromium.org/chrome/trunk/deps/page_cycler/acid3@171600',
   'src/tools/swarming_client': 'https://chromium.googlesource.com/external/swarming.client.git@ae8085b09e6162b4ec869e430d7d09c16b32b433',
-  'src/v8': 'http://v8.googlecode.com/svn/branches/3.26@21367',
+  'src/v8': 'http://v8.googlecode.com/svn/branches/3.26@21981',
 }

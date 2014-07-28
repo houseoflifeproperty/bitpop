@@ -302,7 +302,7 @@
 <translation id="7938958445268990899">Сертификат сервера еще не действителен.</translation>
 <translation id="4569998400745857585">Меню со скрытыми закладками</translation>
 <translation id="4081383687659939437">Сохранить сведения</translation>
-<translation id="1801827354178857021">Точка</translation>
+<translation id="1801827354178857021">Период</translation>
 <translation id="4560332071395409256">Нажмите кнопку <ph name="BEGIN_BOLD"/>Пуск<ph name="END_BOLD"/>, выберите <ph name="BEGIN_BOLD"/>Выполнить<ph name="END_BOLD"/>, введите путь <ph name="BEGIN_BOLD"/>%windir%\network diagnostic\xpnetdiag.exe<ph name="END_BOLD"/> и нажмите кнопку <ph name="BEGIN_BOLD"/>ОК<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Добавить поисковую систему</translation>
 <translation id="4043223219875055035">Войдите в свой аккаунт Google, чтобы синхронизировать настройки приложений и получить доступ к персонализированным функциям.</translation>
@@ -792,7 +792,7 @@
 <translation id="938470336146445890">Установите сертификат пользователя.</translation>
 <translation id="3396331542604645348">Принтер недоступен или установлен неправильно. Проверьте его или выберите другой.</translation>
 <translation id="8480417584335382321">Масштаб страницы:</translation>
-<translation id="8869806297305312746">Включить голосовой поиск по команде &quot;ОК Google&quot;</translation>
+<translation id="8869806297305312746">Включить голосовой поиск по команде &quot;О'кей Google&quot;</translation>
 <translation id="3872166400289564527">Внешний диск</translation>
 <translation id="1442912890475371290">Заблокирована попытка <ph name="BEGIN_LINK"/>перехода на страницу<ph name="DOMAIN"/><ph name="END_LINK"/>.</translation>
 <translation id="5912378097832178659">&amp;Изменить поисковые системы...</translation>
@@ -1116,7 +1116,7 @@
 <translation id="4341364588986930687">Чтобы определить, доступно ли для вашего устройство улучшенное воспроизведение защищенного контента в домене <ph name="DOMAIN"/>, требуется идентификация Google. <ph name="LEARN_MORE"/></translation>
 <translation id="7643817847124207232">Потеряно соединение с Интернетом.</translation>
 <translation id="4871210892959306034">$1 кБ</translation>
-<translation id="932327136139879170">На главную</translation>
+<translation id="932327136139879170">Главная страница</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">Копировать URL видео</translation>
 <translation id="2981113813906970160">Показывать большой курсор мыши</translation>
@@ -1129,7 +1129,7 @@
 <translation id="1357589289913453911">Идентификатор расширения</translation>
 <translation id="7570477672765183">Нажмите, чтобы начать</translation>
 <translation id="8688579245973331962">Не нашли свое имя?</translation>
-<translation id="3804941997676372569">Введите запрос или скажите &quot;OK Google&quot;</translation>
+<translation id="3804941997676372569">Введите запрос или скажите &quot;О'кей Google&quot;</translation>
 <translation id="3226128629678568754">Чтобы повторно ввести данные, необходимые для загрузки страницы, нажмите &quot;Обновить&quot;.</translation>
 <translation id="1384035515048721170"><ph name="LEGAL_DOC_AGREEMENT"/> Чтобы защитить ваши данные от мошенничества, сведения о вашем компьютере, включая его местоположение, будут переданы в Google Кошелек.</translation>
 <translation id="6166101525540035714">Работа с браузером Chrome регламентируется соответствующими <ph name="BEGIN_LINK1"/>Условиями использования<ph name="END_LINK1"/> и <ph name="BEGIN_LINK2"/>Примечанием о конфиденциальности<ph name="END_LINK2"/>.</translation>
@@ -1554,7 +1554,7 @@
 <translation id="4250680216510889253">Нет</translation>
 <translation id="5109044022078737958">Мия</translation>
 <translation id="6291953229176937411">Показать в Finder</translation>
-<translation id="8571032220281885258">Chrome записывает фразу, произнесенную после &quot;OK Google&quot;, и выполняет по ней поиск.</translation>
+<translation id="8571032220281885258">Chrome записывает фразу, произнесенную после &quot;О'кей Google&quot;, и выполняет по ней поиск.</translation>
 <translation id="8598687241883907630">Отключить аккаунт Google...</translation>
 <translation id="3790571977176307462">Выберите зарядное устройство, которое сейчас подключено к Chromebook:</translation>
 <translation id="4781649528196590732">Активировать предыдущую панель</translation>
@@ -2158,7 +2158,7 @@
 <translation id="3297788108165652516">Эта сеть используется совместно с другими пользователями.</translation>
 <translation id="4810984886082414856">Simple Cache для HTTP</translation>
 <translation id="1548132948283577726">Здесь будут показаны сайты, которые никогда не сохраняют пароли.</translation>
-<translation id="583281660410589416">неизвестно</translation>
+<translation id="583281660410589416">Неизвестно</translation>
 <translation id="3774278775728862009">тайская раскладка (для клавиатуры TIS-820.2538)</translation>
 <translation id="9115675100829699941">&amp;Закладки</translation>
 <translation id="2485422356828889247">Удалить</translation>
@@ -2260,7 +2260,7 @@
 <translation id="6423731501149634044">Использовать Adobe Reader для просмотра файлов PDF по умолчанию?</translation>
 <translation id="1965328510789761112">Частная память</translation>
 <translation id="7312441861087971374">Плагин <ph name="PLUGIN_NAME"/> устарел.</translation>
-<translation id="5790085346892983794">Получилось</translation>
+<translation id="5790085346892983794">Выполнено</translation>
 <translation id="7639178625568735185">Готово!</translation>
 <translation id="1901769927849168791">Обнаружена SD-карта</translation>
 <translation id="818454486170715660"><ph name="NAME"/> – владелец</translation>
@@ -3241,7 +3241,7 @@
 <translation id="4104400246019119780">Спасибо!</translation>
 <translation id="3487007233252413104">анонимные функции</translation>
 <translation id="8965037249707889821">Введите старый пароль</translation>
-<translation id="6410328738210026208">Выбрать другую версию и включить Powerwash</translation>
+<translation id="6410328738210026208">Выбрать другой канал и включить Powerwash</translation>
 <translation id="4261901459838235729">Презентация Google</translation>
 <translation id="5325811048571015442">В вашем аккаунте <ph name="ACCOUNT_EMAIL"/> оно теперь может выполнять указанные ниже действия.</translation>
 <translation id="529172024324796256">Имя пользователя:</translation>
@@ -3468,7 +3468,7 @@
 <translation id="9024127637873500333">&amp;Открыть в новой вкладке</translation>
 <translation id="1145509906569575332">Открыть рабочий стол Ash</translation>
 <translation id="2332742915001411729">Масштаб по умолчанию</translation>
-<translation id="6387478394221739770">Хотите быть в курсе новинок Chrome? Загрузите бета-версию на странице &quot;chrome.com/beta&quot;.</translation>
+<translation id="6387478394221739770">Хотите быть в курсе новинок Chrome? Выберите бета-канал на странице &quot;chrome.com/beta&quot;.</translation>
 <translation id="3968098439516354663">Для корректного отображения страницы необходим плагин <ph name="PLUGIN_NAME"/>.</translation>
 <translation id="2636625531157955190">У Chrome нет доступа к изображению.</translation>
 <translation id="1166212789817575481">Закрыть вкладки справа</translation>
@@ -3730,7 +3730,7 @@
 <translation id="2255317897038918278">Штамп времени Microsoft</translation>
 <translation id="3493881266323043047">Срок действия</translation>
 <translation id="5979421442488174909">&amp;Перевести на <ph name="LANGUAGE"/></translation>
-<translation id="2662876636500006917">Интернет-магазин Chrome</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">Отключает всплывающую информационную панель, которая по умолчанию отображается при доступе к защищенным медиафайлам.</translation>
 <translation id="952992212772159698">Не активировано</translation>
 <translation id="443464694732789311">Продолжить</translation>
@@ -3788,7 +3788,7 @@
 <translation id="6175314957787328458">Идентификатор GUID домена Microsoft</translation>
 <translation id="6883209331334683549">Справка <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Тип запуска</translation>
-<translation id="8179976553408161302">Войти</translation>
+<translation id="8179976553408161302">ВВОД</translation>
 <translation id="6422329785618833949">Зеркальное отражение фото</translation>
 <translation id="691321796646552019">Отключить</translation>
 <translation id="8026964361287906498">(Определяется корпоративной политикой)</translation>
@@ -4411,7 +4411,7 @@
     чжуинь</translation>
 <translation id="4784330909746505604">Презентация PowerPoint</translation>
 <translation id="4345587454538109430">Настройка...</translation>
-<translation id="3255228561559750854">Введите запрос или скажите &quot;OK Google&quot;</translation>
+<translation id="3255228561559750854">Введите запрос или скажите &quot;О'кей Google&quot;</translation>
 <translation id="8148264977957212129">раскладка пиньинь</translation>
 <translation id="2288278176040912387">Патефон</translation>
 <translation id="7772032839648071052">Подтвердите кодовую фразу</translation>
@@ -4489,7 +4489,7 @@
 <translation id="437184764829821926">Расширенные настройки шрифтов</translation>
 <translation id="6165508094623778733">Подробнее...</translation>
 <translation id="9052208328806230490">Вы зарегистрировали принтеры в <ph name="CLOUD_PRINT_NAME"/> с использованием аккаунта <ph name="EMAIL"/></translation>
-<translation id="7674629440242451245">Хотите быть в курсе новинок Chrome? Загрузите версию для разработчиков на странице &quot;chrome.com/dev&quot;.</translation>
+<translation id="7674629440242451245">Хотите быть в курсе новинок Chrome? Выберите канал обновления для разработчиков на странице &quot;chrome.com/dev&quot;.</translation>
 <translation id="7568593326407688803">Язык этой страницы<ph name="ORIGINAL_LANGUAGE"/>Хотите перевести ее?</translation>
 <translation id="7818135753970109980">Добавлена новая тема (<ph name="EXTENSION_NAME"/>)</translation>
 <translation id="917306543655291301">Подробнее:</translation>
@@ -4937,7 +4937,7 @@
 <translation id="1088086359088493902">Секунды</translation>
 <translation id="3348205115529235073">Автономный режим кеша</translation>
 <translation id="73289266812733869">Не выбрано</translation>
-<translation id="1758230322558024056">Нажмите на этот значок или произнесите &quot;ОК Google&quot;, чтобы начать голосовой поиск</translation>
+<translation id="1758230322558024056">Нажмите на этот значок или произнесите &quot;О'кей Google&quot;, чтобы начать голосовой поиск</translation>
 <translation id="8639963783467694461">Настройки автозаполнения</translation>
 <translation id="2951247061394563839">Разместить окно по центру</translation>
 <translation id="3435738964857648380">Безопасность</translation>
@@ -5025,7 +5025,7 @@
 <translation id="1434886155212424586">В качестве главной страницы установлена страница быстрого доступа.</translation>
 <translation id="6057141540394398784">Это контролируемый профиль.
 Чтобы управлять им, войдите в свой аккаунт.</translation>
-<translation id="2966598748518102999">Отправлять в Google запись фразы &quot;OK Google&quot; и нескольких секунд до нее, чтобы улучшить работу голосового поиска</translation>
+<translation id="2966598748518102999">Отправлять в Google запись фразы &quot;О'кей Google&quot; и нескольких секунд до нее, чтобы улучшить работу голосового поиска</translation>
 <translation id="7566723889363720618">F12</translation>
 <translation id="7713320380037170544">Разрешить всем сайтам доступ к устройствам MIDI с помощью системных сообщений.</translation>
 <translation id="4093955363990068916">Локальный файл:</translation>
@@ -5143,7 +5143,7 @@
 <translation id="2339641773402824483">Проверка обновлений...</translation>
 <translation id="5770385044111747894">NPAPI</translation>
 <translation id="9111742992492686570">Загрузить критическое обновление безопасности</translation>
-<translation id="1979280758666859181">Вы переходите на устаревшую версию <ph name="PRODUCT_NAME"/>. Чтобы изменения вступили в силу, устанавливаемая и текущая версия на вашем устройстве должны совпадать.</translation>
+<translation id="1979280758666859181">Вы переходите на канал обновления с более ранней версией <ph name="PRODUCT_NAME"/>. Чтобы изменения вступили в силу, версия канала и текущая версия на вашем устройстве должны совпадать.</translation>
 <translation id="304009983491258911">Изменить PIN-код SIM-карты</translation>
 <translation id="8636666366616799973">Недопустимый пакет. Подробные сведения: &quot;<ph name="ERROR_MESSAGE"/>&quot;.</translation>
 <translation id="2045969484888636535">Продолжать блокировать файлы cookie</translation>
@@ -5185,7 +5185,7 @@
 Храните файл ключей в надежном месте. Он потребуется для создания новых версий расширения.</translation>
 <translation id="5522156646677899028">В этом расширении обнаружена серьезная уязвимость, угрожающая безопасности.</translation>
 <translation id="1004032892340602806">Разрешить всем сайтам использовать плагины для доступа к компьютеру</translation>
-<translation id="3813984289128269159">OK Google</translation>
+<translation id="3813984289128269159">О'кей Google</translation>
 <translation id="417475959318757854">Поместить Панель запуска приложений в центре</translation>
 <translation id="5505154136304809922">Показывать перед адресной строкой</translation>
 <translation id="5218183485292899140">Швейцарская (французская)</translation>

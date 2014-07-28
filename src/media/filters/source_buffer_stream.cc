@@ -168,7 +168,9 @@ class SourceBufferRange {
 
   // Gets the timestamp for the keyframe that is after |timestamp|. If
   // there isn't a keyframe in the range after |timestamp| then kNoTimestamp()
-  // is returned.
+  // is returned. If |timestamp| is in the "gap" between the value  returned by
+  // GetStartTimestamp() and the timestamp on the first buffer in |buffers_|,
+  // then |timestamp| is returned.
   base::TimeDelta NextKeyframeTimestamp(base::TimeDelta timestamp);
 
   // Gets the timestamp for the closest keyframe that is <= |timestamp|. If
@@ -503,7 +505,7 @@ bool SourceBufferStream::Append(const BufferQueue& buffers) {
     // segment, then we must make sure that we start with a keyframe.
     // This can happen if the GOP in the previous append gets destroyed
     // by a Remove() call.
-    if (!new_media_segment_ && !buffers.front()->IsKeyframe()) {
+    if (!new_media_segment_) {
       BufferQueue::const_iterator itr = buffers.begin();
 
       // Scan past all the non-keyframes.
@@ -517,13 +519,15 @@ bool SourceBufferStream::Append(const BufferQueue& buffers) {
         last_appended_buffer_timestamp_ = buffers.back()->GetDecodeTimestamp();
         last_appended_buffer_is_keyframe_ = buffers.back()->IsKeyframe();
         return true;
+      } else if (itr != buffers.begin()) {
+        // Copy the first keyframe and everything after it into
+        // |trimmed_buffers|.
+        trimmed_buffers.assign(itr, buffers.end());
+        buffers_for_new_range = &trimmed_buffers;
       }
 
-      // Copy the first keyframe and everything after it into |trimmed_buffers|.
-      trimmed_buffers.assign(itr, buffers.end());
-
-      new_range_start_time = trimmed_buffers.front()->GetDecodeTimestamp();
-      buffers_for_new_range = &trimmed_buffers;
+      new_range_start_time =
+          buffers_for_new_range->front()->GetDecodeTimestamp();
     }
 
     range_for_next_append_ =
@@ -1598,6 +1602,8 @@ void SourceBufferStream::DeleteAndRemoveRange(RangeList::iterator* itr) {
   if (*itr == range_for_next_append_) {
     DVLOG(1) << __FUNCTION__ << " deleting range_for_next_append_.";
     range_for_next_append_ = ranges_.end();
+    last_appended_buffer_timestamp_ = kNoTimestamp();
+    last_appended_buffer_is_keyframe_ = false;
   }
 
   delete **itr;
@@ -1676,7 +1682,7 @@ SourceBufferRange::SourceBufferRange(
       media_segment_start_time_(media_segment_start_time),
       interbuffer_distance_cb_(interbuffer_distance_cb),
       size_in_bytes_(0) {
-  DCHECK(!new_buffers.empty());
+  CHECK(!new_buffers.empty());
   DCHECK(new_buffers.front()->IsKeyframe());
   DCHECK(!interbuffer_distance_cb.is_null());
   AppendBuffersToEnd(new_buffers);
@@ -1743,6 +1749,8 @@ void SourceBufferRange::SeekToStart() {
 
 SourceBufferRange* SourceBufferRange::SplitRange(
     base::TimeDelta timestamp, bool is_exclusive) {
+  CHECK(!buffers_.empty());
+
   // Find the first keyframe after |timestamp|. If |is_exclusive|, do not
   // include keyframes at |timestamp|.
   KeyframeMap::iterator new_beginning_keyframe =
@@ -1759,13 +1767,25 @@ SourceBufferRange* SourceBufferRange::SplitRange(
   DCHECK_LT(keyframe_index, static_cast<int>(buffers_.size()));
   BufferQueue::iterator starting_point = buffers_.begin() + keyframe_index;
   BufferQueue removed_buffers(starting_point, buffers_.end());
+
+  base::TimeDelta new_range_start_timestamp = kNoTimestamp();
+  if (GetStartTimestamp() < buffers_.front()->GetDecodeTimestamp() &&
+      timestamp < removed_buffers.front()->GetDecodeTimestamp()) {
+    // The split is in the gap between |media_segment_start_time_| and
+    // the first buffer of the new range so we should set the start
+    // time of the new range to |timestamp| so we preserve part of the
+    // gap in the new range.
+    new_range_start_timestamp = timestamp;
+  }
+
   keyframe_map_.erase(new_beginning_keyframe, keyframe_map_.end());
   FreeBufferRange(starting_point, buffers_.end());
 
   // Create a new range with |removed_buffers|.
   SourceBufferRange* split_range =
       new SourceBufferRange(
-          type_, removed_buffers, kNoTimestamp(), interbuffer_distance_cb_);
+          type_, removed_buffers, new_range_start_timestamp,
+          interbuffer_distance_cb_);
 
   // If the next buffer position is now in |split_range|, update the state of
   // this range and |split_range| accordingly.
@@ -1984,7 +2004,7 @@ bool SourceBufferRange::TruncateAt(
 
   // Return if we're not deleting anything.
   if (starting_point == buffers_.end())
-    return false;
+    return buffers_.empty();
 
   // Reset the next buffer index if we will be deleting the buffer that's next
   // in sequence.
@@ -2133,6 +2153,16 @@ base::TimeDelta SourceBufferRange::NextKeyframeTimestamp(
   KeyframeMap::iterator itr = GetFirstKeyframeAt(timestamp, false);
   if (itr == keyframe_map_.end())
     return kNoTimestamp();
+
+  // If the timestamp is inside the gap between the start of the media
+  // segment and the first buffer, then just pretend there is a
+  // keyframe at the specified timestamp.
+  if (itr == keyframe_map_.begin() &&
+      timestamp > media_segment_start_time_ &&
+      timestamp < itr->first) {
+    return timestamp;
+  }
+
   return itr->first;
 }
 

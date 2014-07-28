@@ -42,9 +42,8 @@ public:
     virtual ~CustomElementMicrotaskStep() { }
 
     enum Result {
-        ContinueWithRemoving = 0,
-        ShouldStop           = 1 << 0,
-        ShouldRemain         = 1 << 1
+        Processing,
+        FinishedProcessing
     };
 
     virtual Result process() = 0;

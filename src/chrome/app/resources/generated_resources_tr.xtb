@@ -310,7 +310,7 @@
 <translation id="7938958445268990899">Sunucunun sertifikası henüz geçerli değil.</translation>
 <translation id="4569998400745857585">Gizlenmiş uzantıları içeren menü</translation>
 <translation id="4081383687659939437">Bilgileri kaydet</translation>
-<translation id="1801827354178857021">Nokta</translation>
+<translation id="1801827354178857021">Dönem</translation>
 <translation id="4560332071395409256">          <ph name="BEGIN_BOLD"/>Başlat<ph name="END_BOLD"/>'ı 
           ve sonra
           <ph name="BEGIN_BOLD"/>Çalıştır<ph name="END_BOLD"/>'ı
@@ -2244,7 +2244,7 @@ Hassas bilgileri vermediğinizden emin olun.</translation>
 <translation id="4710257996998566163">Son güncelleme tarihi:</translation>
 <translation id="5299682071747318445">Tüm veriler senkronizasyon parolanızla şifrelendi</translation>
 <translation id="7556242789364317684">Maalesef <ph name="SHORT_PRODUCT_NAME"/>, ayarlarınızı kurtaramıyor. Hatayı düzeltmek için <ph name="SHORT_PRODUCT_NAME"/> cihazınızı Powerwash ile sıfırlamalısınız.</translation>
-<translation id="1383876407941801731">Arama</translation>
+<translation id="1383876407941801731">Ara</translation>
 <translation id="23362385947277794">Arka plan renkleri ve resimleri</translation>
 <translation id="409579654357498729">Google Cloud Print'e ekle</translation>
 <translation id="2120316813730635488">Uzantı yüklemelerinde</translation>
@@ -3759,7 +3759,7 @@ Dolması için gereken süre: <ph name="HOUR"/>:<ph name="MINUTE"/></translation
 <translation id="2255317897038918278">Microsoft Zaman Damgası</translation>
 <translation id="3493881266323043047">Geçerlilik</translation>
 <translation id="5979421442488174909"><ph name="LANGUAGE"/> Diline Çe&amp;vir</translation>
-<translation id="2662876636500006917">Chrome Web Mağazası</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">Korunan medya tanımlayıcısına erişirken varsayılan olarak bilgi çubuğu açılır penceresini devre dışı bırakın.</translation>
 <translation id="952992212772159698">Etkin değil</translation>
 <translation id="443464694732789311">Devam</translation>
@@ -3817,7 +3817,7 @@ Dolması için gereken süre: <ph name="HOUR"/>:<ph name="MINUTE"/></translation
 <translation id="6175314957787328458">Microsoft Etki Alanı GUID'si</translation>
 <translation id="6883209331334683549"><ph name="PRODUCT_NAME"/> yardımı</translation>
 <translation id="6970480684834282392">Başlatma türü</translation>
-<translation id="8179976553408161302">Giriş</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Fotoğraf arkaya gönderildi</translation>
 <translation id="691321796646552019">İptal et!</translation>
 <translation id="8026964361287906498">(Kurumsal politika tarafından yönetiliyor)</translation>
@@ -4546,7 +4546,7 @@ Dolması için gereken süre: <ph name="HOUR"/>:<ph name="MINUTE"/></translation
 <translation id="5614190747811328134">Kullanıcı Bildirimi</translation>
 <translation id="8677914765885474883">Uyarı: Veriler toplanmıyor! Bu durum, sayfanın yavaş olmasına neden olabilir!</translation>
 <translation id="3163460631729938959">İzinleri göster</translation>
-<translation id="169515659049020177">Üst karakter</translation>
+<translation id="169515659049020177">ÜstKrktr</translation>
 <translation id="3551117997325569860">Proxy'yi değiştirmek için, &quot;<ph name="USE_SHARED_PROXIES"/>&quot; ayarını etkinleştirin.</translation>
 <translation id="8906421963862390172">&amp;Yazım Denetleyici Seçenekleri</translation>
 <translation id="193971656137910869">Yer işaretlerinizi okuma ve değiştirme</translation>
@@ -5028,7 +5028,7 @@ Keşfetmeye devam etmek için herhangi bir tuşa basın.</translation>
 <translation id="5801568494490449797">Tercihler</translation>
 <translation id="5903039909300841652">Taşınıyor...</translation>
 <translation id="1038842779957582377">bilinmeyen ad</translation>
-<translation id="5327248766486351172">Ad</translation>
+<translation id="5327248766486351172">Adı</translation>
 <translation id="2150661552845026580">&quot;<ph name="EXTENSION_NAME"/>&quot; eklensin mi?</translation>
 <translation id="5553784454066145694">Yeni PIN seçin</translation>
 <translation id="6101226222197207147">Yeni uygulama eklendi (<ph name="EXTENSION_NAME"/>)</translation>

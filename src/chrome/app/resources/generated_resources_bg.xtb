@@ -302,7 +302,7 @@
 <translation id="7938958445268990899">Сертификатът на сървъра още не е валиден.</translation>
 <translation id="4569998400745857585">Менюто съдържа скрити разширения</translation>
 <translation id="4081383687659939437">Запазване на информацията</translation>
-<translation id="1801827354178857021">Точка</translation>
+<translation id="1801827354178857021">Период</translation>
 <translation id="4560332071395409256">Кликнете върху <ph name="BEGIN_BOLD"/>Старт<ph name="END_BOLD"/>, след това върху <ph name="BEGIN_BOLD"/>Изпълнение<ph name="END_BOLD"/>, въведете <ph name="BEGIN_BOLD"/>%windir%\network diagnostic\xpnetdiag.exe<ph name="END_BOLD"/> и кликнете върху <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Добавяне на търсеща машина</translation>
 <translation id="4043223219875055035">Влезте с профила си в Google, за да разрешите на приложенията да синхронизират настройки и да предоставят други персонализирани услуги.</translation>
@@ -1115,7 +1115,7 @@
 <translation id="4341364588986930687"><ph name="DOMAIN"/> изисква удостоверяване на идентичността на устройството ви чрез Google, за да се установи дали то отговаря на условията за подобрено възпроизвеждане на защитено мултимедийно съдържание. <ph name="LEARN_MORE"/>.</translation>
 <translation id="7643817847124207232">Връзката с интернет прекъсна.</translation>
 <translation id="4871210892959306034">$1 КБ</translation>
-<translation id="932327136139879170">Home</translation>
+<translation id="932327136139879170">Начална страница</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">&amp;Копиране на URL адреса на видеоклипа</translation>
 <translation id="2981113813906970160">Показване на голям курсор на мишката</translation>
@@ -3197,7 +3197,7 @@ PDF файл или в Google Диск.</translation>
 <translation id="8899285681604219177">Неподдържаните разширения са деактивирани</translation>
 <translation id="889901481107108152">За съжаление този експеримент не се предлага за платформата ви.</translation>
 <translation id="3228969707346345236">Преводът не бе успешен, защото страницата вече е на <ph name="LANGUAGE"/>.</translation>
-<translation id="8238191901674777266">Съединени щати</translation>
+<translation id="8238191901674777266">Съединени американски щати</translation>
 <translation id="1873879463550486830">Тестова среда „SUID“</translation>
 <translation id="8118860139461251237">Управление на изтеглянията ви</translation>
 <translation id="5111852801054039429">Деактивиране на WebRTC</translation>
@@ -3717,7 +3717,7 @@ PDF файл или в Google Диск.</translation>
 <translation id="2255317897038918278">Поставяне на времево клеймо от Microsoft</translation>
 <translation id="3493881266323043047">Валидност</translation>
 <translation id="5979421442488174909">&amp;Превод на <ph name="LANGUAGE"/></translation>
-<translation id="2662876636500006917">Уеб магазин на Chrome</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">Деактивиране на изскачащата информационна лента при достъп до идентификатора на защитена мултимедия.</translation>
 <translation id="952992212772159698">Не е активиран</translation>
 <translation id="443464694732789311">Напред</translation>
@@ -3775,7 +3775,7 @@ PDF файл или в Google Диск.</translation>
 <translation id="6175314957787328458">GUID на домейн от Microsoft</translation>
 <translation id="6883209331334683549">Помощ за <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Тип стартиране</translation>
-<translation id="8179976553408161302">Влизане</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Снимката бе обърната</translation>
 <translation id="691321796646552019">Деактивиране!</translation>
 <translation id="8026964361287906498">(Управлява се от корпоративно правило)</translation>

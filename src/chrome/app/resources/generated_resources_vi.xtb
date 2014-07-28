@@ -307,7 +307,7 @@
 <translation id="7938958445268990899">Chứng chỉ của máy chủ chưa hợp lệ.</translation>
 <translation id="4569998400745857585">Trình đơn chứa các tiện ích mở rộng bị ẩn</translation>
 <translation id="4081383687659939437">Lưu thông tin</translation>
-<translation id="1801827354178857021">Dấu chấm</translation>
+<translation id="1801827354178857021">Khoảng thời gian</translation>
 <translation id="4560332071395409256">Nhấp
           <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/>,
           nhấp
@@ -383,7 +383,7 @@
 <translation id="3150927491400159470">Tải lại cứng</translation>
 <translation id="3549644494707163724">Mã hóa tất cả dữ liệu đã đồng bộ hóa với cụm mật khẩu đồng bộ hóa của riêng bạn</translation>
 <translation id="5667293444945855280">Phần mềm độc hại</translation>
-<translation id="6831043979455480757">Dịch</translation>
+<translation id="6831043979455480757">Dịch</translation>
 <translation id="2856203831666278378">Phản hồi của máy chủ chứa các tiêu đề trùng lặp.  Sự cố này
         nói chung là kết quả của trang web hoặc proxy bị định cấu hình sai.  Chỉ
         quản trị viên trang web hoặc proxy mới có thể khắc phục sự cố này.</translation>
@@ -2065,7 +2065,7 @@ Sau khi tạo người dùng được giám sát mới, bạn có thể quản l
 <translation id="3039828483675273919">Đang di chuyển $1 mục...</translation>
 <translation id="7816949580378764503">Đã xác minh nhận dạng</translation>
 <translation id="1521442365706402292">Quản lý chứng chỉ</translation>
-<translation id="1679068421605151609">Công cụ dành cho Nhà phát triển</translation>
+<translation id="1679068421605151609">Công cụ dành cho nhà phát triển</translation>
 <translation id="7014051144917845222">Cố gắng kết nối của <ph name="PRODUCT_NAME"/>
         tới
         <ph name="HOST_NAME"/>
@@ -2182,7 +2182,7 @@ Hãy đảm bảo bạn không hiển thị bất kỳ thông tin nhạy cảm n
 <translation id="3297788108165652516">Mạng này được chia sẻ với những người dùng khác.</translation>
 <translation id="4810984886082414856">Bộ nhớ cache đơn giản cho HTTP.</translation>
 <translation id="1548132948283577726">Trang web không bao giờ lưu mật khẩu sẽ hiển thị tại đây.</translation>
-<translation id="583281660410589416">Không biết</translation>
+<translation id="583281660410589416">Không xác định</translation>
 <translation id="3774278775728862009">Phương pháp nhập tiếng Thái (bàn phím TIS-820.2538)</translation>
 <translation id="9115675100829699941">&amp;Dấu trang</translation>
 <translation id="2485422356828889247">Gỡ cài đặt</translation>
@@ -2749,7 +2749,7 @@ Hãy đảm bảo bạn không hiển thị bất kỳ thông tin nhạy cảm n
 <translation id="5400640815024374115">Phần Mô-đun nền tảng đáng tin cậy (TPM) đã bị vô hiệu hóa hoặc bị thiếu.</translation>
 <translation id="2025623846716345241">Xác nhận tải lại</translation>
 <translation id="2151576029659734873">Chỉ mục tab không hợp lệ được nhập.</translation>
-<translation id="496546018524231664">Ai-len</translation>
+<translation id="496546018524231664">Ireland</translation>
 <translation id="1815861158988915678"><ph name="BEGIN_BOLD"/>Chú ý:<ph name="END_BOLD"/> Các tệp này là tạm thời và có thể tự động bị xóa để giải phóng dung lượng ổ đĩa. <ph name="BEGIN_LINK"/>Tìm hiểu thêm<ph name="END_LINK"/></translation>
 <translation id="4722920479021006856"><ph name="APP_NAME"/> đang chia sẻ màn hình của bạn.</translation>
 <translation id="5150254825601720210">Tên Máy chủ SSL của Chứng chỉ Netscape</translation>
@@ -3603,7 +3603,7 @@ Hãy đảm bảo bạn không hiển thị bất kỳ thông tin nhạy cảm n
 <translation id="9026731007018893674">tải xuống</translation>
 <translation id="3212792897911394068">Tắt phiên bản thử nghiệm của Tiện ích mở rộng phương tiện được mã hóa trên phần tử video và âm thanh.</translation>
 <translation id="6199775032047436064">Tải lại trang hiện tại</translation>
-<translation id="6981982820502123353">Khả năng truy cập</translation>
+<translation id="6981982820502123353">Truy cập</translation>
 <translation id="7210998213739223319">Tên người dùng.</translation>
 <translation id="4523336217659634227">Đã xảy ra lỗi (<ph name="ERROR"/>) khi tải xuống trình cắm.</translation>
 <translation id="4478664379124702289">Lưu Liên &amp;kết Dưới dạng...</translation>
@@ -3764,7 +3764,7 @@ Hãy đảm bảo bạn không hiển thị bất kỳ thông tin nhạy cảm n
 <translation id="2255317897038918278">Dấu Thời gian của Microsoft</translation>
 <translation id="3493881266323043047">Hiệu lực</translation>
 <translation id="5979421442488174909">&amp;Dịch sang <ph name="LANGUAGE"/></translation>
-<translation id="2662876636500006917">Cửa hàng Chrome trực tuyến</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">Tắt thanh thông tin bật lên theo mặc định khi truy cập trình nhận dạng phương tiện được bảo vệ.</translation>
 <translation id="952992212772159698">Chưa được kích hoạt</translation>
 <translation id="443464694732789311">Tiếp tục</translation>
@@ -3822,7 +3822,7 @@ Hãy đảm bảo bạn không hiển thị bất kỳ thông tin nhạy cảm n
 <translation id="6175314957787328458">GUID Tên miền của Microsoft</translation>
 <translation id="6883209331334683549">Trợ giúp của <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Kiểu khởi động</translation>
-<translation id="8179976553408161302">Vào</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Đã lật ảnh</translation>
 <translation id="691321796646552019">Vô hiệu hóa!</translation>
 <translation id="8026964361287906498">(Được quản lý bởi chính sách doanh nghiệp)</translation>
@@ -3994,7 +3994,7 @@ Hãy đảm bảo bạn không hiển thị bất kỳ thông tin nhạy cảm n
 <translation id="9076523132036239772">Rất tiếc, email hoặc mật khẩu của bạn không thể xác minh được. Trước tiên hãy thử kết nối với một mạng.</translation>
 <translation id="6965978654500191972">Thiết bị</translation>
 <translation id="5295309862264981122">Xác nhận Điều hướng</translation>
-<translation id="718827667662449283">Vương quốc Anh</translation>
+<translation id="718827667662449283">Vương Quốc Anh</translation>
 <translation id="358796204584394954">Nhập mã này vào &quot;<ph name="DEVICE_NAME"/>&quot; để ghép nối:</translation>
 <translation id="2908999529399859069">Không, hủy</translation>
 <translation id="5804241973901381774">Giấy phép</translation>
@@ -4860,7 +4860,7 @@ Nhấn phím bất kỳ để tiếp tục khám phá.</translation>
 Một số tính năng có thể không có sẵn. Hãy kiểm tra xem tiểu sử có tồn tại và bạn có quyền đọc và ghi nội dung trong tiểu sử không.</translation>
 <translation id="7040138676081995583">Mở bằng...</translation>
 <translation id="7953739707111622108">Thiết bị này không thể mở được vì hệ thống tệp của thiết bị không được nhận dạng.</translation>
-<translation id="2433507940547922241">Giao diện</translation>
+<translation id="2433507940547922241">Hình thức</translation>
 <translation id="6051354611314852653">Rất tiếc! Hệ thống không cho phép truy cập API cho thiết bị này.</translation>
 <translation id="7851716364080026749">Luôn chặn truy cập vào máy ảnh và micrô</translation>
 <translation id="839072384475670817">Tạo các &amp;Phím tắt cho Ứng dụng...</translation>

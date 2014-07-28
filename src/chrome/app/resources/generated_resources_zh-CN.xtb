@@ -302,7 +302,7 @@
 <translation id="7938958445268990899">服务器的证书尚未生效。</translation>
 <translation id="4569998400745857585">包含隐藏扩展程序的菜单</translation>
 <translation id="4081383687659939437">保存信息</translation>
-<translation id="1801827354178857021">句号</translation>
+<translation id="1801827354178857021">期间</translation>
 <translation id="4560332071395409256">依次点击<ph name="BEGIN_BOLD"/>开始<ph name="END_BOLD"/>和<ph name="BEGIN_BOLD"/>运行<ph name="END_BOLD"/>，键入 <ph name="BEGIN_BOLD"/>%windir%\network diagnostic\xpnetdiag.exe<ph name="END_BOLD"/>，然后点击<ph name="BEGIN_BOLD"/>确定<ph name="END_BOLD"/>。</translation>
 <translation id="2179052183774520942">添加搜索引擎</translation>
 <translation id="4043223219875055035">请使用您的 Google 帐户登录，以便允许应用同步设置并提供其他自定义服务。</translation>
@@ -481,7 +481,7 @@
 <translation id="4801956050125744859">保留两种版本</translation>
 <translation id="3878840326289104869">正在创建受监管用户</translation>
 <translation id="406070391919917862">后台应用</translation>
-<translation id="8820817407110198400">已保存的书签</translation>
+<translation id="8820817407110198400">书签</translation>
 <translation id="6347003977836730270">启用新的翻译气泡用户体验而非显示信息栏。</translation>
 <translation id="2580170710466019930"><ph name="PRODUCT_NAME"/>正在安装最新的系统更新，请稍候。</translation>
 <translation id="7428061718435085649">分别使用左侧和右侧的 Shift 键选择第二和第三候选词</translation>
@@ -782,7 +782,7 @@
 <translation id="938470336146445890">请安装用户证书。</translation>
 <translation id="3396331542604645348">所选打印机无法使用或未正确安装。请检查打印机，或尝试选择其他打印机。</translation>
 <translation id="8480417584335382321">网页缩放：</translation>
-<translation id="8869806297305312746">允许使用指令“OK Google”启动语音搜索</translation>
+<translation id="8869806297305312746">允许使用指令“Ok Google”启动语音搜索</translation>
 <translation id="3872166400289564527">外部存储</translation>
 <translation id="1442912890475371290">尝试<ph name="BEGIN_LINK"/>访问 <ph name="DOMAIN"/> 中的网页<ph name="END_LINK"/>的行为已遭阻止。</translation>
 <translation id="5912378097832178659">修改搜索引擎(&amp;E)...</translation>
@@ -1106,7 +1106,7 @@
 <translation id="4341364588986930687"><ph name="DOMAIN"/>规定您的设备需通过Google的身份验证，以确定是否能使用受保护媒体的增强播放功能。<ph name="LEARN_MORE"/>。</translation>
 <translation id="7643817847124207232">互联网连接已中断。</translation>
 <translation id="4871210892959306034">$1 KB</translation>
-<translation id="932327136139879170">主页</translation>
+<translation id="932327136139879170">家庭</translation>
 <translation id="3561204836318837461">BSSID：</translation>
 <translation id="2560794850818211873">复制视频网址(&amp;O)</translation>
 <translation id="2981113813906970160">显示大号鼠标光标</translation>
@@ -3509,7 +3509,7 @@
 <translation id="8926518602592448999">请停用以开发者模式运行的扩展程序</translation>
 <translation id="2902734494705624966">美国英语（扩展）</translation>
 <translation id="5793220536715630615">复制视频网址(&amp;O)</translation>
-<translation id="523397668577733901">要改为<ph name="BEGIN_LINK"/>浏览该程序库<ph name="END_LINK"/>吗？</translation>
+<translation id="523397668577733901">要改为<ph name="BEGIN_LINK"/>浏览应用程序库<ph name="END_LINK"/>吗？</translation>
 <translation id="2922350208395188000">无法核实服务器证书。</translation>
 <translation id="3778740492972734840">开发者工具(&amp;D)</translation>
 <translation id="8335971947739877923">导出...</translation>
@@ -3770,7 +3770,7 @@
 <translation id="6175314957787328458">Microsoft 域 GUID</translation>
 <translation id="6883209331334683549"><ph name="PRODUCT_NAME"/>帮助</translation>
 <translation id="6970480684834282392">启动类型</translation>
-<translation id="8179976553408161302">进入</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">照片已翻转</translation>
 <translation id="691321796646552019">停用自动启动！</translation>
 <translation id="8026964361287906498">（受企业政策管理）</translation>
@@ -3841,7 +3841,7 @@
 <translation id="2731392572903530958">重新打开关闭的窗口(&amp;E)</translation>
 <translation id="476950697228943547">已嵌入</translation>
 <translation id="6509136331261459454">管理其他用户...</translation>
-<translation id="6561726789132298588">Enter键</translation>
+<translation id="6561726789132298588">Enter</translation>
 <translation id="1254593899333212300">直接连接到互联网</translation>
 <translation id="6107012941649240045">颁发对象</translation>
 <translation id="3828373662010953415">启用新的头像菜单</translation>
@@ -4117,7 +4117,7 @@
 <translation id="1038168778161626396">仅加密</translation>
 <translation id="8765985713192161328">管理处理程序...</translation>
 <translation id="7179921470347911571">立即重新启动</translation>
-<translation id="9065203028668620118">编辑</translation>
+<translation id="9065203028668620118">修改</translation>
 <translation id="2251218783371366160">使用系统查看器打开</translation>
 <translation id="1177863135347784049">自定义</translation>
 <translation id="4881695831933465202">打开</translation>
@@ -4392,7 +4392,7 @@
 <translation id="4613953875836890448">预编辑缓冲区内的中文字符数上限（包括正在输入的注音符号）</translation>
 <translation id="4784330909746505604">PowerPoint 演示文稿</translation>
 <translation id="4345587454538109430">配置...</translation>
-<translation id="3255228561559750854">输入搜索内容或说“OK Google”</translation>
+<translation id="3255228561559750854">输入搜索内容或说“Ok Google”</translation>
 <translation id="8148264977957212129">拼音输入法</translation>
 <translation id="2288278176040912387">电唱机</translation>
 <translation id="7772032839648071052">确认密码</translation>
@@ -4914,7 +4914,7 @@
 <translation id="1088086359088493902">秒</translation>
 <translation id="3348205115529235073">启用离线缓存模式</translation>
 <translation id="73289266812733869">未选中</translation>
-<translation id="1758230322558024056">点击或说“OK，Google”可启动语音搜索</translation>
+<translation id="1758230322558024056">点击或说“Ok Google”可启动语音搜索</translation>
 <translation id="8639963783467694461">自动填充设置</translation>
 <translation id="2951247061394563839">使窗口居中</translation>
 <translation id="3435738964857648380">安全</translation>
@@ -4972,7 +4972,7 @@
 <translation id="5801568494490449797">偏好设置</translation>
 <translation id="5903039909300841652">正在移动…</translation>
 <translation id="1038842779957582377">未知名称</translation>
-<translation id="5327248766486351172">名称</translation>
+<translation id="5327248766486351172">姓名</translation>
 <translation id="2150661552845026580">要添加“<ph name="EXTENSION_NAME"/>”吗？</translation>
 <translation id="5553784454066145694">选择新的 PIN</translation>
 <translation id="6101226222197207147">已添加新应用（<ph name="EXTENSION_NAME"/>）</translation>
@@ -5002,7 +5002,7 @@
 <translation id="1434886155212424586">首页是新标签页</translation>
 <translation id="6057141540394398784">此用户是由您管理的受监管用户。
   您需要登录才能使用此功能。</translation>
-<translation id="2966598748518102999">通过将听到的“OK Google”和前几秒听到的内容发送给Google，改进语音搜索。</translation>
+<translation id="2966598748518102999">允许将“Ok Google”及其之前几秒所说的内容发送给Google，帮助改进语音搜索。</translation>
 <translation id="7566723889363720618">F12</translation>
 <translation id="7713320380037170544">允许所有网站使用系统专有消息来访问 MIDI 设备</translation>
 <translation id="4093955363990068916">本地文件：</translation>

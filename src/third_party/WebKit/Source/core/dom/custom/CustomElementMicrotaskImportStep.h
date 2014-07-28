@@ -65,7 +65,6 @@ private:
 
     void didUpgradeAllCustomElements();
     bool shouldWaitForImport() const;
-    bool shouldStopProcessing() const;
 
     // CustomElementMicrotaskStep
     virtual Result process() OVERRIDE FINAL;

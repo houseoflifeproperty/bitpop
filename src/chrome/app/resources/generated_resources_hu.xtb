@@ -276,7 +276,7 @@
 <translation id="5255315797444241226">A megadott összetett jelszó helytelen.</translation>
 <translation id="521582610500777512">A fotót elvetették</translation>
 <translation id="762917759028004464">Az alapértelmezett böngésző jelenleg ez: <ph name="BROWSER_NAME"/>.</translation>
-<translation id="7740287852186792672">Keresési eredmények</translation>
+<translation id="7740287852186792672">Keresés eredménye</translation>
 <translation id="218492098606937156">Érintéses események engedélyezése</translation>
 <translation id="300544934591011246">Korábbi jelszó</translation>
 <translation id="6015796118275082299">Év</translation>
@@ -303,7 +303,7 @@
 <translation id="7938958445268990899">A szerver tanúsítványa még nem érvényes.</translation>
 <translation id="4569998400745857585">Rejtett bővítményeket tartalmazó menü</translation>
 <translation id="4081383687659939437">Információ mentése</translation>
-<translation id="1801827354178857021">Pont</translation>
+<translation id="1801827354178857021">Időszak</translation>
 <translation id="4560332071395409256">Kattintson a <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/> menüre, majd a <ph name="BEGIN_BOLD"/>Futtatás<ph name="END_BOLD"/> menüpontra, írja be a következőt: <ph name="BEGIN_BOLD"/>%windir%\network diagnostic\xpnetdiag.exe<ph name="END_BOLD"/>, és ezt követően kattintson az <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/> gombra.</translation>
 <translation id="2179052183774520942">Keresőmotor hozzáadása</translation>
 <translation id="4043223219875055035">Ahhoz, hogy az alkalmazások számára engedélyezze a beállítások szinkronizálását és egyéb személyre szabott szolgáltatások nyújtását, jelentkezzen be Google Fiókjával.</translation>
@@ -2258,7 +2258,7 @@ Győződjön meg arról, hogy nem ad ki bizalmas adatokat.</translation>
 <translation id="6423731501149634044">Az Adobe Reader legyen az alapértelmezett PDF-megjelenítő?</translation>
 <translation id="1965328510789761112">Saját memória</translation>
 <translation id="7312441861087971374">A(z) <ph name="PLUGIN_NAME"/> egy elavult plug-in.</translation>
-<translation id="5790085346892983794">Sikerült</translation>
+<translation id="5790085346892983794">Siker</translation>
 <translation id="7639178625568735185">Sikerült!</translation>
 <translation id="1901769927849168791">SD-kártya észlelve</translation>
 <translation id="818454486170715660"><ph name="NAME"/> -- tulajdonos</translation>
@@ -2882,7 +2882,7 @@ Győződjön meg arról, hogy nem ad ki bizalmas adatokat.</translation>
 <translation id="7347751611463936647">A kifejezés használatához írja be a következőt: &quot;<ph name="EXTENSION_KEYWORD"/>&quot;, ezután nyomja meg a TAB-ot, majd parancsát vagy keresését.</translation>
 <translation id="878431691778285679">Úgy tűnik, Ön már kezel egy ilyen nevű felhasználót.<ph name="LINE_BREAK"/>Inkább <ph name="BEGIN_LINK"/>importálni szeretné <ph name="PROFILE_NAME"/> felhasználót erre az eszközre<ph name="END_LINK"/>?</translation>
 <translation id="2912905526406334195">A(z) <ph name="HOST"/> a mikrofont kívánja használni.</translation>
-<translation id="2805756323405976993">Alkalmazások</translation>
+<translation id="2805756323405976993">Google Alkalmazások</translation>
 <translation id="5151511998946489774">A(z) <ph name="ISSUER"/> igazolta ennek a webhelynek az identitását, és az nyilvánosan megtekinthető.</translation>
 <translation id="1608626060424371292">Felhasználó eltávolítása</translation>
 <translation id="3075239840551149663"><ph name="NEW_PROFILE_NAME"/> létrehozva felügyelt felhasználóként!</translation>
@@ -2931,7 +2931,7 @@ Győződjön meg arról, hogy nem ad ki bizalmas adatokat.</translation>
 <translation id="9065010339377966858">SHA-256</translation>
 <translation id="7646821968331713409">Raszterszálak száma</translation>
 <translation id="5017508259293544172">LEAP</translation>
-<translation id="3093245981617870298">Ön jelenleg offline van.</translation>
+<translation id="3093245981617870298">Ön jelenleg offline.</translation>
 <translation id="3113551216836192921">A mellékelt fájl a Google szervereire lesz feltöltve hibakeresés céljából.</translation>
 <translation id="2498765460639677199">Óriási</translation>
 <translation id="4801448226354548035">Fiókok elrejtése</translation>
@@ -3203,7 +3203,7 @@ Győződjön meg arról, hogy nem ad ki bizalmas adatokat.</translation>
 <translation id="8899285681604219177">Nem támogatott kiterjesztések kikapcsolva</translation>
 <translation id="889901481107108152">Sajnos ez a kísérlet nem érhető el az Ön operációs rendszerén.</translation>
 <translation id="3228969707346345236">A fordítás nem sikerült, mert az oldal már ezen a nyelven van: <ph name="LANGUAGE"/>.</translation>
-<translation id="8238191901674777266">Amerikai Egyesült Államok</translation>
+<translation id="8238191901674777266">Egyesült Államok</translation>
 <translation id="1873879463550486830">SUID Sandbox</translation>
 <translation id="8118860139461251237">A letöltések kezelése</translation>
 <translation id="5111852801054039429">WebRTC letiltása</translation>
@@ -3726,7 +3726,7 @@ Győződjön meg arról, hogy nem ad ki bizalmas adatokat.</translation>
 <translation id="2255317897038918278">Microsoft - időbélyegzés</translation>
 <translation id="3493881266323043047">Érvényesség</translation>
 <translation id="5979421442488174909">F&amp;ordítás <ph name="LANGUAGE"/> nyelvre</translation>
-<translation id="2662876636500006917">Chrome Internetes áruház</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">Az információs sáv előugró ablakainak alapértelmezés szerinti letiltása a védett médiaelemek azonosítójának elérésekor.</translation>
 <translation id="952992212772159698">Nincs aktiválva</translation>
 <translation id="443464694732789311">Tovább</translation>
@@ -3784,7 +3784,7 @@ Győződjön meg arról, hogy nem ad ki bizalmas adatokat.</translation>
 <translation id="6175314957787328458">Microsoft Domain GUID</translation>
 <translation id="6883209331334683549"><ph name="PRODUCT_NAME"/> Súgó</translation>
 <translation id="6970480684834282392">Kezdési típus</translation>
-<translation id="8179976553408161302">Belépés</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Fénykép megfordítva</translation>
 <translation id="691321796646552019">Felejtsd el!</translation>
 <translation id="8026964361287906498">(Vállalati házirend kezeli)</translation>

@@ -302,7 +302,7 @@
 <translation id="7938958445268990899">Сертифікат сервера ще не дійсний.</translation>
 <translation id="4569998400745857585">Меню, яке містить сховані розширення</translation>
 <translation id="4081383687659939437">Зберегти дані</translation>
-<translation id="1801827354178857021">Крапка</translation>
+<translation id="1801827354178857021">Період</translation>
 <translation id="4560332071395409256">Натисніть <ph name="BEGIN_BOLD"/>Пуск<ph name="END_BOLD"/>, виберіть <ph name="BEGIN_BOLD"/>Виконати<ph name="END_BOLD"/>, введіть <ph name="BEGIN_BOLD"/>%windir%\\network diagnostic\\xpnetdiag.exe<ph name="END_BOLD"/> та натисніть <ph name="BEGIN_BOLD"/>ОК<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Додати пошукову систему</translation>
 <translation id="4043223219875055035">Увійдіть, використовуючи дані облікового запису Google, щоб дозволити програмам синхронізувати налаштування та надавати інші спеціальні послуги.</translation>
@@ -373,7 +373,7 @@
 <translation id="5667293444945855280">Шкідливі програми</translation>
 <translation id="6831043979455480757">Перекласти</translation>
 <translation id="2856203831666278378">Відповідь від сервера містить дубльовані заголовки. Цю проблему зазвичай спричиняє неправильно налаштований веб-сайт або проксі-сервер. Проблему може вирішити лише адміністратор веб-сайту чи проксі-сервера.</translation>
-<translation id="3587482841069643663">Усі</translation>
+<translation id="3587482841069643663">Все</translation>
 <translation id="6698381487523150993">Створено:</translation>
 <translation id="4684748086689879921">Пропустити імпорт</translation>
 <translation id="6418443601594065950">Вимкнути спливаючі вікна інформаційного рядка для захищених медіа.</translation>
@@ -1108,7 +1108,7 @@
 <translation id="4341364588986930687">Домену <ph name="DOMAIN"/> потрібно підтвердити ідентифікацію пристрою від Google, щоб визначити придатність для розширених можливостей відтворення захищених медіа. <ph name="LEARN_MORE"/>.</translation>
 <translation id="7643817847124207232">Інтернет-з’єднання втрачено.</translation>
 <translation id="4871210892959306034">$1 Кб</translation>
-<translation id="932327136139879170">Home</translation>
+<translation id="932327136139879170">Домашня сторінка</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">К&amp;опіювати URL-адресу відео</translation>
 <translation id="2981113813906970160">Показувати великий курсор миші</translation>
@@ -2035,7 +2035,7 @@
 <translation id="3039828483675273919">Переміщення елементів ($1)…</translation>
 <translation id="7816949580378764503">Ідентифікацію перевірено</translation>
 <translation id="1521442365706402292">Керування сертифікатами</translation>
-<translation id="1679068421605151609">Інструменти розробника</translation>
+<translation id="1679068421605151609">Інструменти для розробників</translation>
 <translation id="7014051144917845222">Спробу <ph name="PRODUCT_NAME"/> з’єднатися з хостом <ph name="HOST_NAME"/> відхилено. Можливо веб-сайт не працює або вашу мережу не налаштовано належним чином.</translation>
 <translation id="2097372108957554726">Щоб зареєструвати нові пристрої, потрібно ввійти в Chrome</translation>
 <translation id="4332213577120623185">Для завершення цієї покупки потрібно більше інформації.</translation>
@@ -2148,7 +2148,7 @@
 <translation id="3297788108165652516">Доступ до цієї мережі надається й іншим користувачам.</translation>
 <translation id="4810984886082414856">Simple Cache для HTTP.</translation>
 <translation id="1548132948283577726">Тут відображатимуться сайти, які ніколи не зберігають паролі.</translation>
-<translation id="583281660410589416">Невідомо</translation>
+<translation id="583281660410589416">Невідомий</translation>
 <translation id="3774278775728862009">Метод введення для тайської мови (клавіатура TIS-820.2538)</translation>
 <translation id="9115675100829699941">&amp;Закладки</translation>
 <translation id="2485422356828889247">Видалити</translation>
@@ -2251,7 +2251,7 @@
 <translation id="6423731501149634044">Використовувати Adobe Reader як засіб перегляду файлів PDF за умовчанням?</translation>
 <translation id="1965328510789761112">Приватна пам’ять</translation>
 <translation id="7312441861087971374">Плагін <ph name="PLUGIN_NAME"/> застарілий.</translation>
-<translation id="5790085346892983794">Виконано</translation>
+<translation id="5790085346892983794">Готово</translation>
 <translation id="7639178625568735185">Готово!</translation>
 <translation id="1901769927849168791">Виявлено карту SD</translation>
 <translation id="818454486170715660"><ph name="NAME"/> – власник</translation>
@@ -3134,7 +3134,7 @@
 <translation id="1146673768181266552">Ідентифікатор аварійного завершення роботи <ph name="CRASH_ID"/> (<ph name="CRASH_LOCAL_ID"/>)</translation>
 <translation id="5488640658880603382">Дійсно видалити профіль &quot;<ph name="PROFILE_NAME"/>&quot; і всі пов’язані з ним дані з цього комп’ютера? Цю дію неможливо скасувати.</translation>
 <translation id="8044899503464538266">Повільна</translation>
-<translation id="3789841737615482174">Інсталювати</translation>
+<translation id="3789841737615482174">Встановити</translation>
 <translation id="4320697033624943677">Додати користувачів</translation>
 <translation id="1283379245075810567">Розпочати дзеркалювання</translation>
 <translation id="9153934054460603056">Зберегти ідентифікацію та пароль</translation>
@@ -3699,7 +3699,7 @@
 <translation id="2255317897038918278">Встановлення позначки часу Microsoft</translation>
 <translation id="3493881266323043047">Чинність</translation>
 <translation id="5979421442488174909">&amp;Перекласти такою мовою: <ph name="LANGUAGE"/></translation>
-<translation id="2662876636500006917">Веб-магазин Chrome</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">За умовчанням вимикати спливаючі вікна інформаційного рядка під час отримання доступу до ідентифікатора захищених медіа.</translation>
 <translation id="952992212772159698">Не активовано</translation>
 <translation id="443464694732789311">Продовжити</translation>
@@ -3757,7 +3757,7 @@
 <translation id="6175314957787328458">GUID домену Microsoft</translation>
 <translation id="6883209331334683549">Довідка <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Тип запуску</translation>
-<translation id="8179976553408161302">Увійти</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Фотографія обернулася</translation>
 <translation id="691321796646552019">Відключити!</translation>
 <translation id="8026964361287906498">(Керується політикою підприємства)</translation>
@@ -4792,7 +4792,7 @@
 <translation id="5996258716334177896">Не вдається відкрити ваш профіль належним чином. Можливо, деякі функції недоступні. Переконайтеся, що профіль існує та ви маєте дозвіл переглядати й створювати його вміст.</translation>
 <translation id="7040138676081995583">Відкрити за допомогою...</translation>
 <translation id="7953739707111622108">Не вдається відкрити пристрій, оскільки його файлову систему не розпізнано.</translation>
-<translation id="2433507940547922241">Вигляд</translation>
+<translation id="2433507940547922241">Зовнішній вигляд</translation>
 <translation id="6051354611314852653">Помилка. Системі на вдалося надати API доступ до цього пристрою.</translation>
 <translation id="7851716364080026749">Завжди блокувати доступ до камери та мікрофона</translation>
 <translation id="839072384475670817">Створити &amp;ярлики програми...</translation>
@@ -4965,7 +4965,7 @@
 <translation id="5801568494490449797">Налаштування</translation>
 <translation id="5903039909300841652">Переміщення…</translation>
 <translation id="1038842779957582377">Невідоме ім’я</translation>
-<translation id="5327248766486351172">Ім'я</translation>
+<translation id="5327248766486351172">Ім’я</translation>
 <translation id="2150661552845026580">Додати &quot;<ph name="EXTENSION_NAME"/>&quot;?</translation>
 <translation id="5553784454066145694">Виберіть новий PIN-код</translation>
 <translation id="6101226222197207147">Додано нову програму (<ph name="EXTENSION_NAME"/>)</translation>

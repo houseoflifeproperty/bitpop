@@ -64,7 +64,7 @@
 <translation id="1434626383986940139">Chrome Canary-Apps</translation>
 <translation id="8551886023433311834">Fast fertig! Starten Sie Ihr Gerät neu, um die Aktualisierung abzuschließen.</translation>
 <translation id="6169866489629082767"><ph name="PAGE_TITLE"/> - Google Chrome</translation>
-<translation id="1073391069195728457">Chrome – Benachrichtigungen</translation>
+<translation id="1073391069195728457">Chrome-Benachrichtigungen</translation>
 <translation id="7339898014177206373">Neues Fenster</translation>
 <translation id="3282568296779691940">In Chrome anmelden</translation>
 <translation id="3089968997497233615">Es gibt eine neue, sicherere Version von Google Chrome.</translation>
@@ -140,12 +140,13 @@ Sollten Sie sich trotzdem anmelden, werden die Chrome-Daten wie Lesezeichen, Ver
 <translation id="2665296953892887393">Absturzberichte und <ph name="UMA_LINK"/> zur Verbesserung von Google Chrome an Google senden</translation>
 <translation id="7761834446675418963">Klicken Sie auf Ihren Namen, um Chrome zu öffnen und im Web zu surfen.</translation>
 <translation id="4864451188650489141">Sie können Ihre anderen Google-Konten hinzufügen und Chromium unten sperren.</translation>
+<translation id="2669824781555328029"><ph name="FILE_NAME"/> kann Ihre Browsererfahrung beeinträchtigen und wurde daher von Chrome blockiert.</translation>
 <translation id="5875635642195358109">Gehen Sie zum Chrome-Menü &gt; &quot;<ph name="SETTINGS_TITLE"/>&quot; &gt; &quot;<ph name="ADVANCED_TITLE"/>&quot; und deaktivieren Sie die Option &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>&quot;. Wenn das Problem danach weiterhin besteht, aktivieren Sie diese Option wieder, um die Leistung zu verbessern.</translation>
 <translation id="6235018212288296708">Eingangsregel für die Zulassung von mDNS-Verkehr in Google Chrome</translation>
 <translation id="61852838583753520">&amp;Chrome OS aktualisieren</translation>
 <translation id="5028489144783860647">Google Chrome konnte Ihre Daten nicht synchronisieren. Bitte aktualisieren Sie Ihre Passphrase für die Synchronisierung.</translation>
 <translation id="9026991721384951619">Chrome OS konnte Ihre Daten nicht synchronisieren, da die Anmeldedaten Ihres Kontos veraltet sind.</translation>
-<translation id="8547799825197623713">Chrome-App-Übersicht für Canary</translation>
+<translation id="8547799825197623713">Chrome App Launcher für Canary</translation>
 <translation id="6326175484149238433">Aus Chrome entfernen</translation>
 <translation id="2871893339301912279">Sie sind in Chrome angemeldet.</translation>
 <translation id="7890208801193284374">Bei gemeinsam genutzten Computern können die verschiedenen Personen separat surfen und Chrome jeweils nach ihren Wünschen einrichten.</translation>

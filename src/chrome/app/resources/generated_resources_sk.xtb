@@ -1125,7 +1125,7 @@ Nabudúce by sa vám mohol hodiť režim inkognito (<ph name="SHORTCUT_KEY"/>).<
 <translation id="4341364588986930687"><ph name="DOMAIN"/> vyžaduje, aby služba Google overila identitu vášho zariadenia s cieľom stanoviť spôsobilosť pre vylepšené prehrávanie chránených médií. <ph name="LEARN_MORE"/>.</translation>
 <translation id="7643817847124207232">Prerušilo sa pripojenie na internet.</translation>
 <translation id="4871210892959306034">$1 kB</translation>
-<translation id="932327136139879170">Home</translation>
+<translation id="932327136139879170">Domov</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">K&amp;opírovať adresu URL videa</translation>
 <translation id="2981113813906970160">Zobraziť veľký kurzor myši</translation>
@@ -1138,7 +1138,7 @@ Nabudúce by sa vám mohol hodiť režim inkognito (<ph name="SHORTCUT_KEY"/>).<
 <translation id="1357589289913453911">ID rozšírenia</translation>
 <translation id="7570477672765183">Začnite kliknutím tu</translation>
 <translation id="8688579245973331962">Nezobrazuje sa vaše meno?</translation>
-<translation id="3804941997676372569">Vyhľadávajte alebo vyslovte „Ok, Google“.</translation>
+<translation id="3804941997676372569">Vyhľadávajte alebo vyslovte „Ok Google“.</translation>
 <translation id="3226128629678568754">Stlačením tlačidla opakovaného spustenia znova odošlete údaje potrebné na načítanie stránky.</translation>
 <translation id="1384035515048721170"><ph name="LEGAL_DOC_AGREEMENT"/> Z dôvodu ochrany pred podvodmi sa budú informácie o vašom počítači (vrátane jeho polohy) zdieľať so službou Peňaženka Google.</translation>
 <translation id="6166101525540035714">Na vaše používanie prehliadača Chrome sa vzťahujú <ph name="BEGIN_LINK1"/>Zmluvné podmienky<ph name="END_LINK1"/> a <ph name="BEGIN_LINK2"/>Upozornenie o ochrane osobných údajov<ph name="END_LINK2"/>.</translation>
@@ -2172,7 +2172,7 @@ Uistite sa, že neodhaľujete žiadne citlivé informácie.</translation>
 <translation id="3297788108165652516">Táto sieť je zdieľaná s ostatnými používateľmi.</translation>
 <translation id="4810984886082414856">Jednoduchá vyrovnávacia pamäť pre protokol HTTP.</translation>
 <translation id="1548132948283577726">Tu sa zobrazia stránky, ktoré nikdy neukladajú heslá.</translation>
-<translation id="583281660410589416">Neznámy</translation>
+<translation id="583281660410589416">Neznáme</translation>
 <translation id="3774278775728862009">Thajská metóda vstupu (klávesnica TIS-820.2538)</translation>
 <translation id="9115675100829699941">&amp;Záložky</translation>
 <translation id="2485422356828889247">Odinštalovať</translation>
@@ -2274,7 +2274,7 @@ Uistite sa, že neodhaľujete žiadne citlivé informácie.</translation>
 <translation id="6423731501149634044">Chcete program Adobe Reader nastaviť ako predvolený program na zobrazovanie súborov PDF?</translation>
 <translation id="1965328510789761112">Súkromná pamäť</translation>
 <translation id="7312441861087971374">Doplnok <ph name="PLUGIN_NAME"/> je zastaraný.</translation>
-<translation id="5790085346892983794">Úspech</translation>
+<translation id="5790085346892983794">Úspešné</translation>
 <translation id="7639178625568735185">Rozumiem.</translation>
 <translation id="1901769927849168791">Zistila sa prítomnosť karty SD</translation>
 <translation id="818454486170715660"><ph name="NAME"/> – vlastník</translation>
@@ -3222,7 +3222,7 @@ Uistite sa, že neodhaľujete žiadne citlivé informácie.</translation>
 <translation id="8899285681604219177">Bolo zakázané nepodporované rozšírenie</translation>
 <translation id="889901481107108152">Je nám ľúto, ale tento experiment nie je na vašej platforme k dispozícii.</translation>
 <translation id="3228969707346345236">Prekladanie zlyhalo, pretože stránka už je v jazyku: <ph name="LANGUAGE"/></translation>
-<translation id="8238191901674777266">Spojené štáty</translation>
+<translation id="8238191901674777266">USA</translation>
 <translation id="1873879463550486830">Karanténa SUID</translation>
 <translation id="8118860139461251237">Spravovať vaše stiahnutia</translation>
 <translation id="5111852801054039429">Zakázať službu WebRTC</translation>
@@ -3748,7 +3748,7 @@ Do úplného nabitia zostáva: <ph name="HOUR"/>:<ph name="MINUTE"/></translatio
 <translation id="2255317897038918278">Časová pečiatka od spoločnosti Microsoft</translation>
 <translation id="3493881266323043047">Platnosť</translation>
 <translation id="5979421442488174909">&amp;Preložiť do jazyka <ph name="LANGUAGE"/></translation>
-<translation id="2662876636500006917">Internetový obchod Chrome</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">Predvolene zakázať kontextové okná informačnej lišty pri pristupovaní k chránenému identifikátoru médií.</translation>
 <translation id="952992212772159698">Neaktivované</translation>
 <translation id="443464694732789311">Pokračovať</translation>
@@ -3806,7 +3806,7 @@ Do úplného nabitia zostáva: <ph name="HOUR"/>:<ph name="MINUTE"/></translatio
 <translation id="6175314957787328458">Identifikátor GUID domény spoločnosti Microsoft</translation>
 <translation id="6883209331334683549">Pomocník aplikácie <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Typ spustenia</translation>
-<translation id="8179976553408161302">Začať</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Fotka bola zrkadlovo obrátená</translation>
 <translation id="691321796646552019">Zakázať</translation>
 <translation id="8026964361287906498">(Spravované podnikovými pravidlami)</translation>
@@ -4431,7 +4431,7 @@ Do úplného nabitia zostáva: <ph name="HOUR"/>:<ph name="MINUTE"/></translatio
 <translation id="4613953875836890448">Maximálny počet čínskych znakov vo vyrovnávacej pamäti pred úpravou (vrátane vkladania symbolov Zhuyin)</translation>
 <translation id="4784330909746505604">Prezentácia aplikácie PowerPoint</translation>
 <translation id="4345587454538109430">Konfigurovať...</translation>
-<translation id="3255228561559750854">Vyhľadávajte alebo vyslovte „Ok, Google“</translation>
+<translation id="3255228561559750854">Vyhľadávajte alebo vyslovte „Ok Google“</translation>
 <translation id="8148264977957212129">Metóda vstupu Pinyin</translation>
 <translation id="2288278176040912387">Gramofón</translation>
 <translation id="7772032839648071052">Potvrďte prístupovú frázu</translation>
@@ -5018,7 +5018,7 @@ Ak chcete pokračovať v práci, stlačte ľubovoľný kláves.</translation>
 <translation id="5801568494490449797">Predvoľby</translation>
 <translation id="5903039909300841652">Prebieha presúvanie...</translation>
 <translation id="1038842779957582377">neznámy názov</translation>
-<translation id="5327248766486351172">Názov</translation>
+<translation id="5327248766486351172">Meno</translation>
 <translation id="2150661552845026580">Pridať rozšírenie <ph name="EXTENSION_NAME"/>?</translation>
 <translation id="5553784454066145694">Voľba nového kódu PIN</translation>
 <translation id="6101226222197207147">Bola pridaná nová aplikácia (<ph name="EXTENSION_NAME"/>)</translation>

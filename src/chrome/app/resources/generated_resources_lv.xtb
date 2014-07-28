@@ -303,7 +303,7 @@ Jūsu konta pierakstīšanās informācija ir novecojusi.</translation>
 <translation id="7938958445268990899">Servera sertifikāts vēl nav apstiprināts.</translation>
 <translation id="4569998400745857585">Izvēlne ar paslēptiem paplašinājumiem</translation>
 <translation id="4081383687659939437">Saglabāt informāciju</translation>
-<translation id="1801827354178857021">Punkts</translation>
+<translation id="1801827354178857021">Periods</translation>
 <translation id="4560332071395409256">Noklikšķiniet uz
           <ph name="BEGIN_BOLD"/>Sākt<ph name="END_BOLD"/>,
           noklikšķiniet uz
@@ -798,7 +798,7 @@ Atlicis: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="938470336146445890">Instalējiet lietotāja sertifikātu.</translation>
 <translation id="3396331542604645348">Atlasītais printeris nav pieejams vai nav instalēts pareizi. Pārbaudiet savu printeri vai pamēģiniet atlasīt citu printeri.</translation>
 <translation id="8480417584335382321">Lapas tālummaiņa:</translation>
-<translation id="8869806297305312746">Iespējot “OK Google”, lai sāktu meklēšanu ar balsi</translation>
+<translation id="8869806297305312746">Iespējot “Ok Google”, lai sāktu meklēšanu ar balsi</translation>
 <translation id="3872166400289564527">Ārējā glabātuve</translation>
 <translation id="1442912890475371290">Tika bloķēts mēģinājums <ph name="BEGIN_LINK"/>apmeklēt lapu domēnā <ph name="DOMAIN"/><ph name="END_LINK"/>.</translation>
 <translation id="5912378097832178659">Rediģēt meklējumprogrammas...</translation>
@@ -1123,7 +1123,7 @@ Tiek rēķināts atlikušais laiks</translation>
 <translation id="4341364588986930687">Vietne <ph name="DOMAIN"/> pieprasa jūsu ierīces identifikāciju, ko veic Google, lai noteiktu, vai jūsu ierīce ir piemērota aizsargāta multivides satura uzlabotai atskaņošanai. <ph name="LEARN_MORE"/>.</translation>
 <translation id="7643817847124207232">Interneta savienojums ir pazaudēts.</translation>
 <translation id="4871210892959306034">$1 KB</translation>
-<translation id="932327136139879170">Sākumvieta</translation>
+<translation id="932327136139879170">Sākums</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">K&amp;opēt video URL</translation>
 <translation id="2981113813906970160">Rādīt lielu peles kursoru</translation>
@@ -1136,7 +1136,7 @@ Tiek rēķināts atlikušais laiks</translation>
 <translation id="1357589289913453911">Paplašinājuma ID</translation>
 <translation id="7570477672765183">Noklikšķiniet, lai sāktu.</translation>
 <translation id="8688579245973331962">Vai neredzat savu vārdu?</translation>
-<translation id="3804941997676372569">Veiciet meklēšanu vai sakiet “OK Google”.</translation>
+<translation id="3804941997676372569">Veiciet meklēšanu vai sakiet “Ok Google”.</translation>
 <translation id="3226128629678568754">Nospiediet atkārtotas ielādes pogu, lai atkārtoti iesniegtu datus, kas nepieciešami lapas ielādei.</translation>
 <translation id="1384035515048721170"><ph name="LEGAL_DOC_AGREEMENT"/> Lai nodrošinātu aizsardzību pret krāpšanu, informācija par jūsu datoru (tostarp tā atrašanās vieta) tiks kopīgota ar pakalpojumu Google maks.</translation>
 <translation id="6166101525540035714">Pārlūka Chrome lietošana ir noteikta Chrome <ph name="BEGIN_LINK1"/>pakalpojumu sniegšanas noteikumos<ph name="END_LINK1"/> un <ph name="BEGIN_LINK2"/>konfidencialitātes paziņojumā<ph name="END_LINK2"/>.</translation>
@@ -1561,7 +1561,7 @@ Tiek rēķināts atlikušais laiks</translation>
 <translation id="4250680216510889253">Nē</translation>
 <translation id="5109044022078737958">Atlēte</translation>
 <translation id="6291953229176937411">Rādīt lietojumprogrammā &amp;Finder</translation>
-<translation id="8571032220281885258">Kad izrunāsiet tekstu “OK Google”, pārlūkā Chrome tiks meklēts vaicājums, kuru izrunāsiet kā nākamo.</translation>
+<translation id="8571032220281885258">Kad izrunāsiet tekstu “Ok Google”, pārlūkā Chrome tiks meklēts vaicājums, kuru izrunāsiet kā nākamo.</translation>
 <translation id="8598687241883907630">Atvienot savu Google kontu...</translation>
 <translation id="3790571977176307462">Atlasiet uzlādes ierīci, kas pašlaik ir pievienota jūsu Chromebook datoram:</translation>
 <translation id="4781649528196590732">Izcelt iepriekšējo rūti</translation>
@@ -2238,7 +2238,7 @@ Pārbaudiet, vai nepadarīsiet redzamu sensitīvu informāciju.</translation>
 <translation id="4710257996998566163">Pēdējoreiz atjaunināts:</translation>
 <translation id="5299682071747318445">Visi dati ir šifrēti, izmantojot sinhronizācijas ieejas frāzi</translation>
 <translation id="7556242789364317684">Diemžēl <ph name="SHORT_PRODUCT_NAME"/> nevar atkopt jūsu iestatījumus. Lai novērstu šo kļūdu, pārlūkam <ph name="SHORT_PRODUCT_NAME"/> ir jāatiestata jūsu ierīce, izmantojot funkciju Powerwash.</translation>
-<translation id="1383876407941801731">Meklēšana</translation>
+<translation id="1383876407941801731">Meklēt</translation>
 <translation id="23362385947277794">Fona krāsas un attēli</translation>
 <translation id="409579654357498729">Pievienot mākoņdrukai</translation>
 <translation id="2120316813730635488">Gadījumi, kad paplašinājums tika instalēts</translation>
@@ -2274,7 +2274,7 @@ Pārbaudiet, vai nepadarīsiet redzamu sensitīvu informāciju.</translation>
 <translation id="6423731501149634044">Vai izmantot Adobe Reader par noklusējuma PDF skatītāju?</translation>
 <translation id="1965328510789761112">Privāta atmiņa</translation>
 <translation id="7312441861087971374">Spraudnis <ph name="PLUGIN_NAME"/> ir novecojis.</translation>
-<translation id="5790085346892983794">Gatavs</translation>
+<translation id="5790085346892983794">Veiksmīgi pabeigts</translation>
 <translation id="7639178625568735185">Sapratu!</translation>
 <translation id="1901769927849168791">Noteikta SD karte</translation>
 <translation id="818454486170715660"><ph name="NAME"/> — īpašnieks</translation>
@@ -3177,7 +3177,7 @@ Pārbaudiet, vai nepadarīsiet redzamu sensitīvu informāciju.</translation>
 <translation id="1146673768181266552">Avārijas ID: <ph name="CRASH_ID"/> (<ph name="CRASH_LOCAL_ID"/>)</translation>
 <translation id="5488640658880603382">Vai tiešām vēlaties dzēst profilu <ph name="PROFILE_NAME"/> un visus ar to saistītos datus šajā datorā? Šo darbību nevar atsaukt!</translation>
 <translation id="8044899503464538266">Lēns</translation>
-<translation id="3789841737615482174">Iestatīt</translation>
+<translation id="3789841737615482174">Instalēt</translation>
 <translation id="4320697033624943677">Pievienot lietotājus</translation>
 <translation id="1283379245075810567">Sākt spoguļošanu</translation>
 <translation id="9153934054460603056">Saglabāt identitāti un paroli</translation>
@@ -3222,7 +3222,7 @@ Pārbaudiet, vai nepadarīsiet redzamu sensitīvu informāciju.</translation>
 <translation id="8899285681604219177">Tika atspējoti neatbalstīti paplašinājumi</translation>
 <translation id="889901481107108152">Diemžēl šis eksperiments nav pieejams jūsu platformā.</translation>
 <translation id="3228969707346345236">Tulkošana neizdevās, jo lapa jau ir <ph name="LANGUAGE"/> valodā.</translation>
-<translation id="8238191901674777266">Amerikas Savienotās Valstis</translation>
+<translation id="8238191901674777266">Savienotās Valstis</translation>
 <translation id="1873879463550486830">SUID smilškaste</translation>
 <translation id="8118860139461251237">Pārvaldīt lejupielādes</translation>
 <translation id="5111852801054039429">Atspējot WebRTC</translation>
@@ -3746,7 +3746,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="2255317897038918278">Microsoft laikspiedola uzlikšana</translation>
 <translation id="3493881266323043047">Derīgums</translation>
 <translation id="5979421442488174909">&amp;Tulkot <ph name="LANGUAGE"/> valodā</translation>
-<translation id="2662876636500006917">Chrome interneta veikals</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">Atspējot informācijas joslas uzniršanu pēc noklusējuma, piekļūstot aizsargātās multivides identifikatoram.</translation>
 <translation id="952992212772159698">Neaktivizēts</translation>
 <translation id="443464694732789311">Turpināt</translation>
@@ -3976,7 +3976,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="9076523132036239772">Diemžēl jūsu e-pasta adresi vai paroli nevarēja verificēt. Vispirms mēģiniet izveidot savienojumu ar tīklu.</translation>
 <translation id="6965978654500191972">Ierīce</translation>
 <translation id="5295309862264981122">Apstiprināt navigāciju</translation>
-<translation id="718827667662449283">Lielbritānija</translation>
+<translation id="718827667662449283">Apvienotā Karaliste</translation>
 <translation id="358796204584394954">Lai izveidotu savienojumu pārī, ierīcē “<ph name="DEVICE_NAME"/>” ievadiet šo kodu:</translation>
 <translation id="2908999529399859069">Nē, atcelt</translation>
 <translation id="5804241973901381774">Atļaujas</translation>
@@ -4154,7 +4154,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
 <translation id="1038168778161626396">Tikai šifrēt</translation>
 <translation id="8765985713192161328">Pārvaldīt apdarinātājus...</translation>
 <translation id="7179921470347911571">Restartēt tūlīt</translation>
-<translation id="9065203028668620118">Rediģēt</translation>
+<translation id="9065203028668620118">Labot</translation>
 <translation id="2251218783371366160">Atvēršana, izmantojot sistēmas skatītāju</translation>
 <translation id="1177863135347784049">Pielāgota</translation>
 <translation id="4881695831933465202">Atvērt</translation>
@@ -4430,7 +4430,7 @@ Vēl jālādē: <ph name="HOUR"/>:<ph name="MINUTE"/></translation>
         simbolu ievadi</translation>
 <translation id="4784330909746505604">PowerPoint prezentācija</translation>
 <translation id="4345587454538109430">Konfigurēt...</translation>
-<translation id="3255228561559750854">Veiciet meklēšanu vai sakiet “OK Google”.</translation>
+<translation id="3255228561559750854">Veiciet meklēšanu vai sakiet “Ok Google”.</translation>
 <translation id="8148264977957212129">Pinyin valodas ievades metode</translation>
 <translation id="2288278176040912387">Ierakstu atskaņotājs</translation>
 <translation id="7772032839648071052">Apstipriniet ieejas frāzi</translation>
@@ -4959,7 +4959,7 @@ Lai turpinātu skatīšanu, nospiediet jebkuru taustiņu.</translation>
 <translation id="1088086359088493902">Sekundes</translation>
 <translation id="3348205115529235073">Iespējot bezsaistes kešatmiņas režīmu</translation>
 <translation id="73289266812733869">Neatlasīts</translation>
-<translation id="1758230322558024056">Noklikšķiniet vai izrunājiet frāzi “OK Google”, lai sāktu meklēšanu ar balsi.</translation>
+<translation id="1758230322558024056">Noklikšķiniet vai izrunājiet frāzi “Ok Google”, lai sāktu meklēšanu ar balsi.</translation>
 <translation id="8639963783467694461">Automātiskās aizpildes iestatījumi</translation>
 <translation id="2951247061394563839">Centrēt logu</translation>
 <translation id="3435738964857648380">Drošība</translation>
@@ -5047,7 +5047,7 @@ Vai piekrītat?</translation>
 <translation id="1434886155212424586">Sākumlapa ir jaunas cilnes lapa</translation>
 <translation id="6057141540394398784">Šis ir uzraudzīts lietotājs, un jūs būsiet tā pārzinis.
 Lai izmantotu šo funkciju, jums ir jāpierakstās.</translation>
-<translation id="2966598748518102999">Uzlabot meklēšanu ar balsi, nosūtot Google serveriem balss ieraksta fragmentu, kurā dzirdams izrunātais teksts “OK Google” un dažas sekundes pirms tā.</translation>
+<translation id="2966598748518102999">Uzlabot meklēšanu ar balsi, nosūtot Google serveriem balss ieraksta fragmentu, kurā dzirdams izrunātais teksts “Ok Google” un dažas sekundes pirms tā.</translation>
 <translation id="7566723889363720618">F12</translation>
 <translation id="7713320380037170544">Ļaut visām vietnēm izmantot ekskluzīvus sistēmas ziņojumus, lai piekļūtu MIDI ierīcēm</translation>
 <translation id="4093955363990068916">Lokālais fails:</translation>
@@ -5207,7 +5207,7 @@ Atslēgas fails: <ph name="KEY_FILE"/>
 Glabājiet atslēgas failu drošā vietā. Tas būs vajadzīgs, lai izveidotu jaunas paplašinājuma versijas.</translation>
 <translation id="5522156646677899028">Šis paplašinājums nopietni apdraud drošību.</translation>
 <translation id="1004032892340602806">Ļaut visām vietnēm izmantot spraudni, lai piekļūtu manam datoram</translation>
-<translation id="3813984289128269159">OK Google</translation>
+<translation id="3813984289128269159">Ok Google</translation>
 <translation id="417475959318757854">Lietotņu palaidēja centrēšana.</translation>
 <translation id="5505154136304809922">Iespējots un novietots pirms atrašanās vietas joslas</translation>
 <translation id="5218183485292899140">Šveices franču</translation>

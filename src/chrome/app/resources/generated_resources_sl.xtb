@@ -306,7 +306,7 @@
 <translation id="7938958445268990899">Potrdilo strežnika še ni veljavno.</translation>
 <translation id="4569998400745857585">Meni s skritimi razširitvami</translation>
 <translation id="4081383687659939437">Shrani podatke</translation>
-<translation id="1801827354178857021">Pika</translation>
+<translation id="1801827354178857021">Obdobje</translation>
 <translation id="4560332071395409256">Kliknite
           <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/>,
           kliknite
@@ -1126,7 +1126,7 @@ Pst! Naslednjič vam lahko pride prav bližnjica <ph name="SHORTCUT_KEY"/> za na
 <translation id="4341364588986930687"><ph name="DOMAIN"/> zahteva, da Google preveri identiteto naprave in tako določi, ali je ustrezna za izboljšano predvajanje zaščitene predstavnosti. <ph name="LEARN_MORE"/>.</translation>
 <translation id="7643817847124207232">Internetna povezava je prekinjena.</translation>
 <translation id="4871210892959306034">$1 kB</translation>
-<translation id="932327136139879170">Home</translation>
+<translation id="932327136139879170">Domov</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">K&amp;opiraj URL videoposnetka</translation>
 <translation id="2981113813906970160">Pokaži velik miškin kazalec</translation>
@@ -1139,7 +1139,7 @@ Pst! Naslednjič vam lahko pride prav bližnjica <ph name="SHORTCUT_KEY"/> za na
 <translation id="1357589289913453911">ID razširitve</translation>
 <translation id="7570477672765183">Kliknite za začetek</translation>
 <translation id="8688579245973331962">Ali ne vidite svojega imena?</translation>
-<translation id="3804941997676372569">Iščite ali izgovorite »OK Google«</translation>
+<translation id="3804941997676372569">Iščite ali izgovorite »Ok Google«</translation>
 <translation id="3226128629678568754">Pritisnite gumb za vnovično nalaganje, da znova pošljete podatke za nalaganje strani.</translation>
 <translation id="1384035515048721170"><ph name="LEGAL_DOC_AGREEMENT"/> Ker vas želimo zaščititi pred poneverbami, bomo podatke o vašem računalniku (vključno z njegovo lokacijo) razkrili Google Denarnici.</translation>
 <translation id="6166101525540035714">Vašo uporabo Chroma urejajo<ph name="BEGIN_LINK1"/>pogoji storitve<ph name="END_LINK1"/> in <ph name="BEGIN_LINK2"/>obvestilo o zasebnosti<ph name="END_LINK2"/> za Chrome.</translation>
@@ -2246,7 +2246,7 @@ Poskrbite, da ne boste razkrili morebitnih občutljivih podatkov.</translation>
 <translation id="4710257996998566163">Nazadnje posodobljeno:</translation>
 <translation id="5299682071747318445">Vsi podatki so šifrirani z vašim geslom</translation>
 <translation id="7556242789364317684"><ph name="SHORT_PRODUCT_NAME"/> ne more obnoviti vaših nastavitev. <ph name="SHORT_PRODUCT_NAME"/> lahko napako popravi tako, da napravo ponastavi s funkcijo Powerwash.</translation>
-<translation id="1383876407941801731">Iskanje</translation>
+<translation id="1383876407941801731">Išči</translation>
 <translation id="23362385947277794">Barve in slike za ozadje</translation>
 <translation id="409579654357498729">Dodaj v Google Tiskanje v oblaku</translation>
 <translation id="2120316813730635488">Dogodki, ko je bila razširitev nameščena</translation>
@@ -2282,7 +2282,7 @@ Poskrbite, da ne boste razkrili morebitnih občutljivih podatkov.</translation>
 <translation id="6423731501149634044">Želite kot privzeti bralnik dokumentov PDF uporabljati Adobe Reader?</translation>
 <translation id="1965328510789761112">Zasebni pomnilnik</translation>
 <translation id="7312441861087971374">Vtičnik <ph name="PLUGIN_NAME"/> je zastarel.</translation>
-<translation id="5790085346892983794">Uspelo je</translation>
+<translation id="5790085346892983794">Uspešno</translation>
 <translation id="7639178625568735185">Razumem.</translation>
 <translation id="1901769927849168791">Kartica SD zaznana</translation>
 <translation id="818454486170715660"><ph name="NAME"/> – lastnik</translation>
@@ -2912,7 +2912,7 @@ Poskrbite, da ne boste razkrili morebitnih občutljivih podatkov.</translation>
 <translation id="7347751611463936647">Če želite uporabiti to razširitev, vnesite »<ph name="EXTENSION_KEYWORD"/>«, pritisnite tabulatorko in vnesite ukaz ali iskanje.</translation>
 <translation id="878431691778285679">Videti je, da že upravljate uporabnika s tem imenom.<ph name="LINE_BREAK"/>Želite <ph name="BEGIN_LINK"/>uvoziti profil uporabnika <ph name="PROFILE_NAME"/> v to napravo<ph name="END_LINK"/>?</translation>
 <translation id="2912905526406334195"><ph name="HOST"/> želi uporabiti vaš ​​mikrofon.</translation>
-<translation id="2805756323405976993">Google Apps</translation>
+<translation id="2805756323405976993">Aplikacije</translation>
 <translation id="5151511998946489774">Identiteto tega spletnega mesta je preveril izdajatelj <ph name="ISSUER"/> in jo lahko preverjajo tudi drugi.</translation>
 <translation id="1608626060424371292">Odstrani tega uporabnika</translation>
 <translation id="3075239840551149663">Profil <ph name="NEW_PROFILE_NAME"/> je uspešno ustvarjen kot nadzorovani uporabnik.</translation>
@@ -3234,7 +3234,7 @@ Poskrbite, da ne boste razkrili morebitnih občutljivih podatkov.</translation>
 <translation id="8899285681604219177">Nepodprte razširitve so onemogočene</translation>
 <translation id="889901481107108152">Oprostite, ta poskus ni na voljo za vaše okolje.</translation>
 <translation id="3228969707346345236">Prevod ni uspel, ker je stran že v jeziku <ph name="LANGUAGE"/></translation>
-<translation id="8238191901674777266">Združene države</translation>
+<translation id="8238191901674777266">Združene države Amerike</translation>
 <translation id="1873879463550486830">Varnostne omejitve SUID</translation>
 <translation id="8118860139461251237">Upravljanje prenosov</translation>
 <translation id="5111852801054039429">Onemogoči WebRTC</translation>
@@ -3816,7 +3816,7 @@ Poskrbite, da ne boste razkrili morebitnih občutljivih podatkov.</translation>
 <translation id="6175314957787328458">GUID Microsoftove domene</translation>
 <translation id="6883209331334683549">Pomoč za <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Vrsta zagona</translation>
-<translation id="8179976553408161302">Potrdi</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Fotografija je zrcaljena</translation>
 <translation id="691321796646552019">Nehaj!</translation>
 <translation id="8026964361287906498">(Skupino vtičnikov upravlja pravilnik podjetja)</translation>
@@ -4165,7 +4165,7 @@ Poskrbite, da ne boste razkrili morebitnih občutljivih podatkov.</translation>
 <translation id="1038168778161626396">Le šifriranje</translation>
 <translation id="8765985713192161328">Upravljanje kontrolnikov ...</translation>
 <translation id="7179921470347911571">Znova zaženi</translation>
-<translation id="9065203028668620118">Urejanje</translation>
+<translation id="9065203028668620118">Uredi</translation>
 <translation id="2251218783371366160">Odpri s sistemskim pregledovalnikom</translation>
 <translation id="1177863135347784049">Po meri</translation>
 <translation id="4881695831933465202">Odpri</translation>
@@ -4442,7 +4442,7 @@ Poskrbite, da ne boste razkrili morebitnih občutljivih podatkov.</translation>
     zinjin</translation>
 <translation id="4784330909746505604">PowerPointova predstavitev</translation>
 <translation id="4345587454538109430">Konfiguracija ...</translation>
-<translation id="3255228561559750854">Iščite ali izgovorite »OK Google«</translation>
+<translation id="3255228561559750854">Iščite ali izgovorite »Ok Google«</translation>
 <translation id="8148264977957212129">Način vnosa pinjin</translation>
 <translation id="2288278176040912387">Gramofon</translation>
 <translation id="7772032839648071052">Potrdi geslo</translation>

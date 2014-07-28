@@ -72,7 +72,7 @@ Drücken Sie zum Wechseln Shift+Alt.</translation>
 <translation id="7170041865419449892">Außerhalb des Bereichs</translation>
 <translation id="4804818685124855865">Verbindung trennen</translation>
 <translation id="2544853746127077729">Ablehnung des Authentifizierungszertifikats durch das Netzwerk</translation>
-<translation id="2963773877003373896">mod3</translation>
+<translation id="2963773877003373896">Mod3</translation>
 <translation id="5222676887888702881">Abmelden</translation>
 <translation id="2391579633712104609">180°</translation>
 <translation id="2688477613306174402">Konfiguration</translation>
@@ -117,7 +117,7 @@ Drücken Sie zum Wechseln Shift+Alt.</translation>
 <translation id="4442424173763614572">DNS-Suche fehlgeschlagen</translation>
 <translation id="7874779702599364982">Suche nach Mobilfunknetzen läuft...</translation>
 <translation id="583281660410589416">Unbekannt</translation>
-<translation id="1383876407941801731">Suche</translation>
+<translation id="1383876407941801731">Suchen</translation>
 <translation id="3901991538546252627">Verbindung mit <ph name="NAME"/> wird hergestellt.</translation>
 <translation id="2204305834655267233">Netzwerkinformationen</translation>
 <translation id="1621499497873603021">Verbleibende Akku-Laufzeit: <ph name="TIME_LEFT"/></translation>
@@ -151,7 +151,7 @@ Drücken Sie zum Wechseln Shift+Alt.</translation>
 <translation id="1882897271359938046">Wird auf <ph name="DISPLAY_NAME"/> gespiegelt...</translation>
 <translation id="2727977024730340865">Das Gerät ist an ein Schwachstrom-Ladegerät angeschlossen. Möglicherweise kann der Akku nicht zuverlässig aufgeladen werden.</translation>
 <translation id="3784455785234192852">Sperren</translation>
-<translation id="2805756323405976993">Apps</translation>
+<translation id="2805756323405976993">Apps definitiv möglich</translation>
 <translation id="1512064327686280138">Aktivierungsfehler</translation>
 <translation id="5097002363526479830">Fehler beim Herstellen einer Verbindung mit dem Netzwerk &quot;<ph name="NAME"/>&quot;: <ph name="DETAILS"/></translation>
 <translation id="1850504506766569011">WLAN ist deaktiviert.</translation>
@@ -190,7 +190,7 @@ Servernachricht: <ph name="SERVER_MSG"/></translation>
 <translation id="2999742336789313416"><ph name="DISPLAY_NAME"/> ist eine öffentliche Sitzung, die von <ph name="DOMAIN"/> verwaltet wird.</translation>
 <translation id="9044646465488564462">Fehler beim Herstellen einer Verbindung mit dem Netzwerk: <ph name="DETAILS"/></translation>
 <translation id="7029814467594812963">Sitzung beenden</translation>
-<translation id="479989351350248267">Suchbegriff eingeben</translation>
+<translation id="479989351350248267">Suchen</translation>
 <translation id="8454013096329229812">WLAN ist aktiviert.</translation>
 <translation id="4872237917498892622">Alt+Suchen oder Shift</translation>
 <translation id="2429753432712299108">Das Bluetooth-Gerät &quot;<ph name="DEVICE_NAME"/>&quot; bittet um Erlaubnis für das Pairing. Bevor Sie akzeptieren, überprüfen Sie, ob folgender Passkey auf dem Gerät angezeigt wird: <ph name="PASSKEY"/>.</translation>
@@ -233,7 +233,7 @@ Drücken Sie die Such-Taste oder Shift, um die Aktivierung aufzuheben.</translat
 <translation id="743058460480092004">Kamera und Mikrofon werden verwendet.</translation>
 <translation id="8372369524088641025">Ungültiger WEP-Schlüssel</translation>
 <translation id="6636709850131805001">Unbekannter Status</translation>
-<translation id="6406704438230478924">alt gr</translation>
+<translation id="6406704438230478924">AltGr</translation>
 <translation id="3573179567135747900">Zurücksetzen auf &quot;<ph name="FROM_LOCALE"/>&quot; (Neustart erforderlich)</translation>
 <translation id="8103386449138765447">SMS: <ph name="MESSAGE_COUNT"/></translation>
 <translation id="7097613348211027502">ChromeVox (gesprochenes Feedback) ist aktiviert.

@@ -311,7 +311,7 @@
 <translation id="7938958445268990899">સર્વરનું પ્રમાણપત્ર હજી માન્ય નથી.</translation>
 <translation id="4569998400745857585">મેનૂમાં છુપાયેલા એક્સ્ટેશંસ છે</translation>
 <translation id="4081383687659939437">માહિતી સાચવો </translation>
-<translation id="1801827354178857021">અવધિ</translation>
+<translation id="1801827354178857021">સમયગાળો</translation>
 <translation id="4560332071395409256">
           <ph name="BEGIN_BOLD"/>પ્રારંભ કરો<ph name="END_BOLD"/> ક્લિક કરો,
           <ph name="BEGIN_BOLD"/>ચલાવો<ph name="END_BOLD"/> ક્લિક કરો,
@@ -2249,7 +2249,7 @@
 <translation id="4710257996998566163">છેલ્લે અપડેટ કર્યું:</translation>
 <translation id="5299682071747318445">તમારા સમન્વયન પાસફ્રેઝ સાથે તમામ ડેટા એન્ક્રિપ્ટ કરાયો છે</translation>
 <translation id="7556242789364317684">કમનસીબે, <ph name="SHORT_PRODUCT_NAME"/> તમારી સેટિંગ્સને પુનઃપ્રાપ્ત કરવામાં અસમર્થ છે. ભૂલને ઠીક કરવા માટે, <ph name="SHORT_PRODUCT_NAME"/> એ Powerwash સાથે તમારા ઉપકરણને ફરીથી સેટ કરવું આવશ્યક છે.</translation>
-<translation id="1383876407941801731">શોધ</translation>
+<translation id="1383876407941801731">શોધો</translation>
 <translation id="23362385947277794">પૃષ્ઠભૂમિ રંગો અને છબીઓ</translation>
 <translation id="409579654357498729">મેઘ મુદ્રણ પર ઉમેરો</translation>
 <translation id="2120316813730635488">જ્યારે એક એક્સ્ટેન્શન ઇન્સ્ટોલ કર્યું હતું ત્યારની ઘટનાઓ</translation>
@@ -2743,7 +2743,7 @@
 <translation id="5400640815024374115">ટ્રસ્ટેડ પ્લેટફોર્મ મૉડ્યૂલ (TPM) ચિપ અક્ષમ અથવા ગેરહાજર છે.</translation>
 <translation id="2025623846716345241">ફરીથી લોડ કરવાની પુષ્ટિ કરો</translation>
 <translation id="2151576029659734873">અમાન્ય ટૅબ અનુક્રમણિકા દાખલ કરી.</translation>
-<translation id="496546018524231664">આયર્લેન્ડ</translation>
+<translation id="496546018524231664">આયર્લેંડ</translation>
 <translation id="1815861158988915678"><ph name="BEGIN_BOLD"/>ચેતવણી:<ph name="END_BOLD"/>  આ ફાઇલો અસ્થાયી છે અને બની શકે કે ડિસ્ક સ્થાન ખાલી કરવા માટે આપમેળે કાઢી નાંખવામાં આવે.  <ph name="BEGIN_LINK"/>વધુ જાણો<ph name="END_LINK"/></translation>
 <translation id="4722920479021006856"><ph name="APP_NAME"/> તમારી સ્ક્રીનને શેર કરી રહી છે.</translation>
 <translation id="5150254825601720210">નેટસ્કેપ પ્રમાણપત્ર SSL સર્વર નામ</translation>
@@ -3762,7 +3762,7 @@
 <translation id="2255317897038918278">Microsoft Time Stamping</translation>
 <translation id="3493881266323043047">માન્યતા</translation>
 <translation id="5979421442488174909"><ph name="LANGUAGE"/> માં &amp;અનુવાદ કરો</translation>
-<translation id="2662876636500006917">Chrome વેબ સ્ટોર</translation>
+<translation id="2662876636500006917">Chrome વેબ બજાર</translation>
 <translation id="676881925959847033">સુરક્ષિત મીડિયા ઓળખકર્તાને ઍક્સેસ કરતી વખતે ડિફોલ્ટ રૂપે માહિતી બાર પોપઅપને અક્ષમ કરો.</translation>
 <translation id="952992212772159698">સક્રિય કરેલું નથી</translation>
 <translation id="443464694732789311">ચાલુ રાખો</translation>
@@ -3820,7 +3820,7 @@
 <translation id="6175314957787328458">Microsoft ડોમેન GUID</translation>
 <translation id="6883209331334683549"><ph name="PRODUCT_NAME"/> સહાય</translation>
 <translation id="6970480684834282392">સ્ટાર્ટઅપ પ્રકાર</translation>
-<translation id="8179976553408161302">દાખલ કરો</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">ફોટો ફ્લિપ કર્યો</translation>
 <translation id="691321796646552019">તેને કટ કરી નાખો!</translation>
 <translation id="8026964361287906498">(સંગઠન નીતિ દ્વારા સંચાલિત)</translation>
@@ -4168,7 +4168,7 @@
 <translation id="1038168778161626396">ફક્ત ચિહ્નિત કરો</translation>
 <translation id="8765985713192161328">હેન્ડલર્સ મેનેજ કરો...</translation>
 <translation id="7179921470347911571">હમણાં ફરીથી લોંચ કરો</translation>
-<translation id="9065203028668620118">સંપાદિત કરો</translation>
+<translation id="9065203028668620118">સંપાદન</translation>
 <translation id="2251218783371366160">સિસ્ટમ દર્શક સાથે ખોલો</translation>
 <translation id="1177863135347784049">કસ્ટમ</translation>
 <translation id="4881695831933465202">ખોલો</translation>
@@ -4551,7 +4551,7 @@
 <translation id="193971656137910869">તમારા બુકમાર્ક્સ વાંચો અને સંશોધિત કરો</translation>
 <translation id="6268747994388690914">HTML ફાઇલમાંથી બુકમાર્ક્સ આયાત કરો...</translation>
 <translation id="6096047740730590436">મહત્તમ ખોલો</translation>
-<translation id="3924145049010392604">મેટા</translation>
+<translation id="3924145049010392604">Meta</translation>
 <translation id="5365539031341696497">થાઈ ઇનપુટ મેથડ (કેસમાની કીબોર્ડ) </translation>
 <translation id="5157635116769074044">પ્રારંભ સ્ક્રીન પર આ પૃષ્ઠ પિન કરો...</translation>
 <translation id="2403091441537561402">ગેટવે:</translation>

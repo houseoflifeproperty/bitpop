@@ -14,7 +14,7 @@
 <translation id="166179487779922818">पासवर्ड बहुत छोटा है.</translation>
 <translation id="9048642391959913289">पाठ का अधिक तेज़ स्वत: आकार बदलना लागू करना.</translation>
 <translation id="2345460471437425338">होस्‍ट के लिए गलत प्रमाणपत्र.</translation>
-<translation id="3688507211863392146">आपके द्वारा एप्लिकेशन में खोली गईं फ़ाइलों और फ़ोल्डर में लिखें</translation>
+<translation id="3688507211863392146">आपके द्वारा ऐप्लिकेशन में खोली गईं फ़ाइलों और फ़ोल्डर में लिखें</translation>
 <translation id="3595596368722241419">बैटरी पूर्ण</translation>
 <translation id="8098352321677019742"><ph name="PRODUCT_NAME"/> सूचनाएं</translation>
 <translation id="3228679360002431295">कनेक्ट कर रहा है और पुष्टि कर रहा है<ph name="ANIMATED_ELLIPSIS"/></translation>
@@ -300,7 +300,7 @@
           <ph name="LINE_BREAK"/>
           <ph name="PLATFORM_TEXT"/></translation>
 <translation id="4119224432853805992">QTKit के बजाय Mac OS X AVFoundation API के उपयोग को सक्षम करें.</translation>
-<translation id="6317369057005134371">एप्लिकेशन विंडो की प्रतीक्षा की जा रही है...</translation>
+<translation id="6317369057005134371">ऐप्लिकेशन विंडो की प्रतीक्षा की जा रही है...</translation>
 <translation id="6391832066170725637">फ़ाइल या निर्देशिका मिली.</translation>
 <translation id="6980028882292583085">JavaScript अलर्ट</translation>
 <translation id="577624874850706961">कुकी खोजें</translation>
@@ -342,7 +342,7 @@
 <translation id="6928441285542626375">TCP फ़ास्ट ओपन सक्षम करें</translation>
 <translation id="7792388396321542707">साझाकरण रोकें</translation>
 <translation id="5463275305984126951"><ph name="LOCATION"/> का इंडेक्स</translation>
-<translation id="8034304765210371109">एप्लिकेशन लॉन्चर का प्रयोगात्मक संस्करण सक्षम करें.</translation>
+<translation id="8034304765210371109">ऐप्लिकेशन लॉन्चर का प्रयोगात्मक संस्करण सक्षम करें.</translation>
 <translation id="8959810181433034287">पर्यवेक्षित उपयोगकर्ता को प्रवेश करने के लिए इस पासवर्ड की आवश्यकता होगी, इसलिए एक सुरक्षित पासवर्ड चुनें और पर्यवेक्षित उपयोगकर्ता के साथ उसकी चर्चा करना याद रखें.</translation>
 <translation id="5154917547274118687">स्मृति</translation>
 <translation id="1493492096534259649">वर्तनी जांच के लिए इस भाषा का उपयोग नहीं किया जा सकता है</translation>
@@ -379,7 +379,7 @@
 <translation id="3150927491400159470">कठिन पुन: लोड</translation>
 <translation id="3549644494707163724">सभी समन्वयित डेटा को अपने स्वयं के समन्वयन पासफ़्रेज़ के साथ एन्क्रिप्ट करें</translation>
 <translation id="5667293444945855280">मालवेयर</translation>
-<translation id="6831043979455480757">अनुवाद</translation>
+<translation id="6831043979455480757">अनुवाद करें</translation>
 <translation id="2856203831666278378">सर्वर के प्रतिसाद में डुप्‍लीकेट शीर्षलेख सम्मिलित थे.  यह समस्‍या
         सामान्‍यत: किसी गलत कॉन्‍फ़ि‍गर की गई वेबसाइट या प्रॉक्‍सी के परिणामस्वरूप होती है.  केवल
         वेबसाइट या प्रॉक्‍सी व्‍यवस्‍थापक ही इस समस्‍या को ठीक कर सकता है.</translation>
@@ -509,7 +509,7 @@
 <translation id="5618972959246891967">सिस्टम का दिनांक</translation>
 <translation id="3809280248639369696">मूनबीम</translation>
 <translation id="1985136186573666099">नेटवर्क से कनेक्‍ट होने के लिए <ph name="PRODUCT_NAME"/> आपके कंप्‍यूटर की सिस्‍टम प्रॉक्‍सी सेटिंग का उपयोग कर रहा है.</translation>
-<translation id="6435285122322546452">किओस्क एप्लिकेशन प्रबंधित करें...</translation>
+<translation id="6435285122322546452">किओस्क ऐप्लिकेशन प्रबंधित करें...</translation>
 <translation id="5748409721703101646">आपका Chrome बुक <ph name="NETWORK_NAME"/> का उपयोग करके इंटरनेट से कनेक्ट नहीं कर पा रहा है. कृपया कोई अन्य नेटवर्क चुनें. <ph name="LEARN_MORE_LINK_START"/>और जानें<ph name="LEARN_MORE_LINK_END"/></translation>
 <translation id="1064835277883315402">निजी नेटवर्क से जुड़ें</translation>
 <translation id="6508261954199872201">ऐप्‍लिकेशन: <ph name="APP_NAME"/></translation>
@@ -657,7 +657,7 @@
 <translation id="2152580633399033274">सभी चित्र दिखाएं (सुझाये गये) </translation>
 <translation id="5618075537869101857">अरे नहीं, कियोस्क ऐप्स  लॉन्च नहीं किया जा सका.</translation>
 <translation id="6196041699996825846">अतिथि ब्राउज़िंग के बारे में और जानें</translation>
-<translation id="337286756654493126">आपके द्वारा एप्लिकेशन में खोले गए फ़ोल्डर पढ़ें</translation>
+<translation id="337286756654493126">आपके द्वारा ऐप्लिकेशन में खोले गए फ़ोल्डर पढ़ें</translation>
 <translation id="2783661497142353826">कियोस्क ऐप्स  प्रबंधित करें</translation>
 <translation id="5701101281789450335">भाषा और अक्षर सेटिंग...</translation>
 <translation id="5483838506518938965">आप बिल्कुल तैयार हैं</translation>
@@ -752,7 +752,7 @@
 <translation id="8427933533533814946">इनके द्वारा फ़ोटो</translation>
 <translation id="5078638979202084724">सभी टैब बुकमार्क करें</translation>
 <translation id="5585118885427931890">बुकमार्क फ़ोल्‍डर नहीं बना सका.</translation>
-<translation id="2553100941515833716">प्रत्येक बार पुन: प्रारंभ होने पर एप्लिकेशन लॉन्चर इंस्टॉल स्थिति रीसेट करें.</translation>
+<translation id="2553100941515833716">प्रत्येक बार पुन: प्रारंभ होने पर ऐप्लिकेशन लॉन्चर इंस्टॉल स्थिति रीसेट करें.</translation>
 <translation id="6019169947004469866">काटें</translation>
 <translation id="6455348477571378046">प्रमाणपत्र प्रकार:</translation>
 <translation id="4964265576827795281">समय रिज़ॉल्यूशन</translation>
@@ -941,7 +941,7 @@
 <translation id="5920618722884262402">आपत्तिजनक शब्‍दों को अवरुद्ध करें</translation>
 <translation id="7782102568078991263">Google की ओर से कोई और सुझाव नहीं</translation>
 <translation id="8038111231936746805">(डिफ़ॉल्ट)</translation>
-<translation id="774931929940050765">किओस्क एप्लिकेशन अब इस उपकरण पर स्वत: लॉन्च होने के लिए कॉन्फ़िगर किए जा सकते हैं.</translation>
+<translation id="774931929940050765">किओस्क ऐप्लिकेशन अब इस उपकरण पर स्वत: लॉन्च होने के लिए कॉन्फ़िगर किए जा सकते हैं.</translation>
 <translation id="1279006502633062819">जब कोई पृष्ठ लोड होने में विफल रहता है, तो पृष्ठ की पुरानी जानकारी की प्रतिलिपि ब्राउज़र में मौजूद रहने पर, उपयोगकर्ता के लिए उस पुरानी जानकारी की प्रतिलिपि लोड करने देने के लिए एक बटन प्रदर्शित किया जाएगा.</translation>
 <translation id="8280151743281770066">आर्मेनियाई फ़ोनेटिक</translation>
 <translation id="567881659373499783">संस्करण <ph name="PRODUCT_VERSION"/></translation>
@@ -960,7 +960,7 @@
 <translation id="6921598660714597024">बाइट</translation>
 <translation id="7465778193084373987">Netscape प्रमाणपत्र प्रतिसंहरण URL</translation>
 <translation id="6321917430147971392">अपनी DNS सेटिंग जांचें</translation>
-<translation id="5609231933459083978">एप्लिकेशन अमान्य प्रतीत होता है.</translation>
+<translation id="5609231933459083978">ऐप्लिकेशन अमान्य प्रतीत होता है.</translation>
 <translation id="3441653493275994384">स्क्रीन</translation>
 <translation id="6667102209320924827">डिस्प्ले का रंग कैलिब्रेशन अक्षम करें.</translation>
 <translation id="5945992478690277605">पिंच आभासी व्यूपोर्ट सक्षम करें.</translation>
@@ -1245,7 +1245,7 @@
 <translation id="3725367690636977613">पृष्ठ</translation>
 <translation id="2023858181460116500">स्क्रिप्ट बबल</translation>
 <translation id="8656946437567854031">जारी रखें क्लिक करके आप <ph name="LEGAL_DOC_LINK_TEXT_1"/>, <ph name="LEGAL_DOC_LINK_TEXT_2"/>, <ph name="LEGAL_DOC_LINK_TEXT_3"/>, <ph name="LEGAL_DOC_LINK_TEXT_4"/>, <ph name="LEGAL_DOC_LINK_TEXT_5"/>, और <ph name="LEGAL_DOC_LINK_TEXT_6"/> से सहमति देते हैं.</translation>
-<translation id="5232608264500294401">ऐप्स जानकारी आइकन सक्षम करें. यदि सक्षम हो, तो उपयोगकर्ता एप्लिकेशन लॉन्चर में 'ऐप्स की जानकारी' संदर्भ मेनू को चुन सकेगा ताकि चयनित ऐप्स के लिए ऐप्स की जानकारी संवाद दिखाया जा सके.</translation>
+<translation id="5232608264500294401">ऐप्स जानकारी आइकन सक्षम करें. यदि सक्षम हो, तो उपयोगकर्ता ऐप्लिकेशन लॉन्चर में 'ऐप्स की जानकारी' संदर्भ मेनू को चुन सकेगा ताकि चयनित ऐप्स के लिए ऐप्स की जानकारी संवाद दिखाया जा सके.</translation>
 <translation id="830598693585544337">इस विकल्‍प को सक्षम करना, वेब साइटों को WebAudio API एक्सेस करने से रोक देता है.</translation>
 <translation id="5158789498596736885">ऐप्स  पुन: लोड करें</translation>
 <translation id="5974943308520469117">तकनीकी विवरण</translation>
@@ -1660,7 +1660,7 @@
 <translation id="6915711422691334155">यह एक्‍सटेंशन आपके कंप्‍यूटर और Google, Facebook, Yahoo, आदि सहित सभी वेबसाइटों पर उपलब्ध संपूर्ण डेटा पढ़ सकता है और बदल सकता है.</translation>
 <translation id="6095666334801788310">कृपया अपना पासवर्ड पुनः डालें</translation>
 <translation id="7360506455591495242">हस्ताक्षरित प्रमाणपत्र टाइमस्टैम्प व्यूअर</translation>
-<translation id="3925083541997316308">पर्यवेक्षित उपयोगकर्ताओं के द्वारा एप्लिकेशन और एक्सटेंशन में बदलाव नहीं किए जा सकते हैं.</translation>
+<translation id="3925083541997316308">पर्यवेक्षित उपयोगकर्ताओं के द्वारा ऐप्लिकेशन और एक्सटेंशन में बदलाव नहीं किए जा सकते हैं.</translation>
 <translation id="8425755597197517046">चिप&amp;काएं और खोजें</translation>
 <translation id="6341850831632289108">अपने भौतिक स्थान का पता लगाएं</translation>
 <translation id="3003623123441819449">CSS संचय</translation>
@@ -1814,7 +1814,7 @@
 <translation id="8494214181322051417">नया!</translation>
 <translation id="1745087082567737511">लॉन्चर आइटम 1 सक्रिय करें</translation>
 <translation id="7759809451544302770">वैकल्पिक</translation>
-<translation id="2937174152333875430">एप्लिकेशन लॉन्चर समन्वयन सक्षम करें</translation>
+<translation id="2937174152333875430">ऐप्लिकेशन लॉन्चर समन्वयन सक्षम करें</translation>
 <translation id="2386255080630008482">सर्वर का प्रमाणपत्र निरस्त कर दिया गया है.</translation>
 <translation id="1586260122947707821">Quickoffice घटक एक्सटेंशन अक्षम करें</translation>
 <translation id="6365411474437319296">परिवार और मित्रों को जोड़ें</translation>
@@ -2288,7 +2288,7 @@
 <translation id="6423731501149634044">Adobe Reader को आपके डिफ़ॉल्ट व्यूअर के रूप में उपयोग करें?</translation>
 <translation id="1965328510789761112">गोपनीय स्मृति</translation>
 <translation id="7312441861087971374"><ph name="PLUGIN_NAME"/> पुराना है.</translation>
-<translation id="5790085346892983794">सफल</translation>
+<translation id="5790085346892983794">सफलता</translation>
 <translation id="7639178625568735185">समझ लिया!</translation>
 <translation id="1901769927849168791">SD कार्ड का पता चला</translation>
 <translation id="818454486170715660"><ph name="NAME"/> - स्‍वामी</translation>
@@ -2487,7 +2487,7 @@
 <translation id="266983583785200437"><ph name="SHORT_PRODUCT_NAME"/> क्रैश और विफलताओं से संबंधित ईवेंट</translation>
 <translation id="5785746630574083988">Windows 8 में पुन: लॉन्च करने से आपके Chrome ऐप्स बंद हो जाएंगे और पुन: लॉन्च हो जाएंगे.</translation>
 <translation id="9118804773997839291">नीचे पृष्ठ के लिए सभी असुरक्षित तत्वों की सूची दी गई है. किसी विशिष्ट तत्व के लिए थ्रेड पर अधिक जानकारी हेतु नैदानिक लिंक पर क्लिक करें.</translation>
-<translation id="6287852322318138013">यह फ़ाइल खोलने के लिए कोई एप्लिकेशन चुनें</translation>
+<translation id="6287852322318138013">यह फ़ाइल खोलने के लिए कोई ऐप्लिकेशन चुनें</translation>
 <translation id="1313065465616456728">जारी करने का दिनांक</translation>
 <translation id="895586998699996576">$1 चित्र</translation>
 <translation id="4534166495582787863">मध्य बटन के रूप में टचपैड तीन-अंगुली-क्लिक को सक्षम करता है.</translation>
@@ -2607,7 +2607,7 @@
 <translation id="5966707198760109579">सप्ताह</translation>
 <translation id="7371490661692457119">डिफ़ॉल्ट टाइल चौड़ाई</translation>
 <translation id="5148652308299789060">3D सॉफ़्टवेयर रेस्‍टराइज़र अक्षम करें</translation>
-<translation id="9205143043463108573">भू-दृश्य पहलू के साथ एप्लिकेशन लॉन्चर का स्थान स्क्रीन के केंद्र में निर्धारित करता है.</translation>
+<translation id="9205143043463108573">भू-दृश्य पहलू के साथ ऐप्लिकेशन लॉन्चर का स्थान स्क्रीन के केंद्र में निर्धारित करता है.</translation>
 <translation id="1678382244942098700">पैकेज की गई ऐप्स  विडो के लिए स्थानीय-शैली वाली विंडो सजावट का उपयोग करें.</translation>
 <translation id="1414648216875402825">आप <ph name="PRODUCT_NAME"/> के ऐसे अस्थिर संस्करण में अपडेट कर रहे हैं जिसकी सुविधाओं पर काम चल रहा है. क्रैश और अप्रत्याशित बग उत्पन्न होंगे. कृपया सावधानी से आगे बढ़ें.</translation>
 <translation id="8382913212082956454">ईमेल पते की प्रतिलिपि बनाएं</translation>
@@ -2926,7 +2926,7 @@
 <translation id="7347751611463936647">इस एक्सटेंशन का उपयोग करने के लिए, &quot;<ph name="EXTENSION_KEYWORD"/>&quot; लिखें, फिर टैब लगाएं, फिर अपना आदेश या खोज लिखें.</translation>
 <translation id="878431691778285679">ऐसा लगता है आप पहले से ही उस नाम से किसी उपयोगकर्ता को प्रबंधित कर रहे हैं.<ph name="LINE_BREAK"/>क्या आप<ph name="BEGIN_LINK"/> <ph name="PROFILE_NAME"/> को इस उपकरण में निर्यात करना चाहते थे<ph name="END_LINK"/>?</translation>
 <translation id="2912905526406334195"><ph name="HOST"/> आपके माइक्रोफ़ोन का उपयोग करना चाहता है.</translation>
-<translation id="2805756323405976993">ऐप्स </translation>
+<translation id="2805756323405976993">Apps</translation>
 <translation id="5151511998946489774">इस वेबसाइट की पहचान को <ph name="ISSUER"/> द्वारा सत्यापित किया गया है और यह सार्वजनिक रूप से ऑडिट किए जाने योग्य है.</translation>
 <translation id="1608626060424371292">इस उपयोगकर्ता को निकालें</translation>
 <translation id="3075239840551149663"><ph name="NEW_PROFILE_NAME"/> को पर्यवेक्षित उपयोगकर्ता बनाया गया है!</translation>
@@ -2942,7 +2942,7 @@
 <translation id="4853020600495124913">&amp;नई विंडो में खोलें</translation>
 <translation id="6847758263950452722">MHTML के रूप में पृष्ठ सहेजें</translation>
 <translation id="4711094779914110278">तुर्की</translation>
-<translation id="8193362611902704788">एप्लिकेशन लॉन्चर सक्षम करें. सक्षम करने पर, एप्लिकेशन लॉन्चर के लिए ऑपरेटिंग सिस्टम शॉर्टकट बना देता है.</translation>
+<translation id="8193362611902704788">ऐप्लिकेशन लॉन्चर सक्षम करें. सक्षम करने पर, ऐप्लिकेशन लॉन्चर के लिए ऑपरेटिंग सिस्टम शॉर्टकट बना देता है.</translation>
 <translation id="5121130586824819730">आपकी हार्ड डिस्‍क भर गई है.  कृपया किसी अन्‍य स्‍थान पर सहेजें या हार्ड डिस्‍क पर जगह बनाएं.</translation>
 <translation id="1875987452136482705">यह विकल्प प्लेटफ़ॉर्म हार्डवेयर का उपयोग करके वीडियो स्ट्रीम को डीकोड करने के लिए WebRTC में समर्थन को अक्षम करता है.</translation>
 <translation id="6164005077879661055">इस पर्यवेक्षित उपयोगकर्ता को निकाले जाने के बाद, पर्यवेक्षित उपयोगकर्ता से संबद्ध सभी फ़ाइलें और स्थानीय डेटा को स्थायी रूप से हटा दिया जाएगा. प्रबंधक द्वारा अब भी इस पर्यवेक्षित उपयोगकर्ता द्वारा देखी गईं वेबसाइटें और सेटिंग <ph name="MANAGEMENT_URL"/> पर देखी जा सकेंगी.</translation>
@@ -3249,7 +3249,7 @@
 <translation id="8899285681604219177">असमर्थित एक्‍सटेंशन अक्षम</translation>
 <translation id="889901481107108152">क्षमा करें, यह प्रयोग आपके प्‍लेटफ़ॉर्म पर उपलब्ध नहीं है.</translation>
 <translation id="3228969707346345236">अनुवाद विफल हो गया क्योंकि पृष्ठ पहले से ही <ph name="LANGUAGE"/> में है.</translation>
-<translation id="8238191901674777266">संयुक्त राज्य</translation>
+<translation id="8238191901674777266">युनाइटेड स्टेट्स</translation>
 <translation id="1873879463550486830">SUID सैंडबॉक्स</translation>
 <translation id="8118860139461251237">अपने डाउनलोड प्रबंधित करें</translation>
 <translation id="5111852801054039429">WebRTC को अक्षम करें</translation>
@@ -3277,7 +3277,7 @@
 <translation id="580886651983547002"><ph name="PRODUCT_NAME"/>
         वेबसाइट तक नहीं पहुंच सकता.  ऐसा आमतौर पर नेटवर्क समस्याओं के कारण होता है,
         लेकिन यह ग़लत ढंग से कॉन्फ़िगर की गई फायरवॉल या प्रॉक्सी सर्वर के कारण भी हो सकता है.</translation>
-<translation id="4387554346626014084">एप्लिकेशन लॉन्चर समन्वयन सक्षम करें. यह उपलब्ध होने पर फ़ोल्डर भी सक्षम करता है (गैर OSX).</translation>
+<translation id="4387554346626014084">ऐप्लिकेशन लॉन्चर समन्वयन सक्षम करें. यह उपलब्ध होने पर फ़ोल्डर भी सक्षम करता है (गैर OSX).</translation>
 <translation id="5445557969380904478">ध्‍वनि पहचान के बारे में</translation>
 <translation id="4104400246019119780">धन्यवाद!</translation>
 <translation id="3487007233252413104">अनाम फ़ंक्शन</translation>
@@ -3626,7 +3626,7 @@
 <translation id="715118844758971915">क्‍लासि‍क प्रिंटर</translation>
 <translation id="7877451762676714207">अज्ञात सर्वर त्रुटि. कृपया पुन: प्रयास करें, या सर्वर व्यवस्थापक से संपर्क करें.</translation>
 <translation id="5085162214018721575">अपडेट जांच रहा है</translation>
-<translation id="5264252276333215551">किओस्क मोड में अपने एप्लिकेशन लॉन्च करने के लिए कृपया इंटरनेट से कनेक्ट करें.</translation>
+<translation id="5264252276333215551">किओस्क मोड में अपने ऐप्लिकेशन लॉन्च करने के लिए कृपया इंटरनेट से कनेक्ट करें.</translation>
 <translation id="7180865173735832675">कस्टमाइज़ करें</translation>
 <translation id="7054808953701320293">समझ लिया, मुझे फिर से न दिखाएं.</translation>
 <translation id="144932861331386147">अपने Chrome बुक को अपडेट करने के लिए कृपया इंटरनेट से कनेक्ट करें.</translation>
@@ -3696,7 +3696,7 @@
 <translation id="375403751935624634">सर्वर त्रुटि के कारण अनुवाद विफल.</translation>
 <translation id="2101225219012730419">संस्‍करण:</translation>
 <translation id="3082374807674020857"><ph name="PAGE_TITLE"/> - <ph name="PAGE_URL"/></translation>
-<translation id="4588173105134911375">ऐसा लगता है कि आप कोई क्लासिक एप्लिकेशन चलाने का प्रयास कर रहे हैं. कृपया विकल्प के रूप में इन नए वेब-आधारित ऐप्स में से किसी का उपयोग करें.</translation>
+<translation id="4588173105134911375">ऐसा लगता है कि आप कोई क्लासिक ऐप्लिकेशन चलाने का प्रयास कर रहे हैं. कृपया विकल्प के रूप में इन नए वेब-आधारित ऐप्स में से किसी का उपयोग करें.</translation>
 <translation id="8050038245906040378">Microsoft Commercial Code Signing</translation>
 <translation id="3031557471081358569">आयात करने के लिए आइटम को चुनें:</translation>
 <translation id="6728144975495880845">सक्षम होने पर, रास्टर थ्रेड GPU स्मृति पर लिखते हैं.</translation>
@@ -3729,7 +3729,7 @@
 <translation id="3228279582454007836">आपने आज से पहले यह साइट कभी नहीं देखी है.</translation>
 <translation id="7027125358315426638">डेटाबेस नाम:</translation>
 <translation id="4030383055268325496">&amp;जोड़ना पूर्ववत करें</translation>
-<translation id="5474648613967354713">एप्लिकेशन लॉन्चर में बोलकर खोजना अक्षम करें.</translation>
+<translation id="5474648613967354713">ऐप्लिकेशन लॉन्चर में बोलकर खोजना अक्षम करें.</translation>
 <translation id="5449716055534515760">विं&amp;डो बंद करें</translation>
 <translation id="3224239078034945833">कनाडियाई बहुभाषी</translation>
 <translation id="4875057836161716898">इनपुट दृश्यों को सक्षम करें.</translation>
@@ -3775,7 +3775,7 @@
 <translation id="2255317897038918278">Microsoft Time Stamping</translation>
 <translation id="3493881266323043047">मान्यता</translation>
 <translation id="5979421442488174909"><ph name="LANGUAGE"/> में &amp;अनुवाद करें</translation>
-<translation id="2662876636500006917">Chrome वेब स्‍टोर</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">संरक्षित मीडिया पहचानकर्ता एक्सेस करते समय सूचनाबार पॉपअप को डिफ़ॉल्ट रूप से अक्षम करें.</translation>
 <translation id="952992212772159698">सक्रिय नहीं किया गया</translation>
 <translation id="443464694732789311">जारी रखें</translation>
@@ -3833,7 +3833,7 @@
 <translation id="6175314957787328458">Microsoft Domain GUID</translation>
 <translation id="6883209331334683549"><ph name="PRODUCT_NAME"/> सहायता</translation>
 <translation id="6970480684834282392">स्टार्टअप प्रकार</translation>
-<translation id="8179976553408161302">प्रविष्ट करें</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">फ़ोटो फ़्लिप किया गया</translation>
 <translation id="691321796646552019">इसे बंद कर दें!</translation>
 <translation id="8026964361287906498">(एंटरप्राइज़ नीति द्वारा प्रबंधित)</translation>
@@ -3994,7 +3994,7 @@
 <translation id="7253521419891527137">&amp;अधिक जानें</translation>
 <translation id="496226124210045887">आपके द्वारा चुने गए फ़ोल्डर में संवेदनशील फ़ाइलें हैं. क्या आप वाकई इस फ़ोल्डर को &quot;$1&quot; स्थायी पढ़ने की एक्सेस देना चाहते हैं?</translation>
 <translation id="8698464937041809063">Google ड्रॉइंग</translation>
-<translation id="1539714775460645859">प्रयोगात्मक एप्लिकेशन लॉन्चर सक्षम करें.</translation>
+<translation id="1539714775460645859">प्रयोगात्मक ऐप्लिकेशन लॉन्चर सक्षम करें.</translation>
 <translation id="7053053706723613360">बेहतर सत्र पुन:स्‍थापन अक्षम करें</translation>
 <translation id="7255935316994522020">लागू करें</translation>
 <translation id="142758023928848008">स्टिकी कुंजियां सक्षम करें (उन्हें क्रमिक रूप से टाइप करके कीबोर्ड शॉर्टकट निष्पादित करने के लिए)</translation>
@@ -4087,7 +4087,7 @@
 <translation id="8211154138148153396">स्थानीय नेटवर्क पर उपकरण खोज सूचनाएं.</translation>
 <translation id="5039512255859636053">$1 TB</translation>
 <translation id="4285498937028063278">अनपिन करें</translation>
-<translation id="8734073480934656039">इस सेटिंग को सक्षम करने से किओस्क एप्लिकेशन स्टार्टअप पर अपने आप लॉन्च हो जाते हैं.</translation>
+<translation id="8734073480934656039">इस सेटिंग को सक्षम करने से किओस्क ऐप्लिकेशन स्टार्टअप पर अपने आप लॉन्च हो जाते हैं.</translation>
 <translation id="2588322182880276190">Chrome लोगो</translation>
 <translation id="5449624072515809082">पाठ लिखते समय स्वत: सुधार चालू करें. समकालीन वर्तनी-जांच इस सुविधा के साथ समर्थित नहीं है.</translation>
 <translation id="2668079306436607263">ओवरस्क्रॉल इतिहास मार्गदर्शक</translation>
@@ -4105,7 +4105,7 @@
 <translation id="5139955368427980650">&amp;खोलें</translation>
 <translation id="8136149669168180907"><ph name="TOTAL_SIZE"/> में से <ph name="DOWNLOADED_AMOUNT"/> डाउनलोड किया गया</translation>
 <translation id="4643612240819915418">वीडियो नए टैब में &amp;खोलें</translation>
-<translation id="2791952154587244007">एक त्रुटि हुई. किओस्क एप्लिकेशन इस उपकरण पर स्वत: लॉन्च नहीं हो सकेंगे.</translation>
+<translation id="2791952154587244007">एक त्रुटि हुई. किओस्क ऐप्लिकेशन इस उपकरण पर स्वत: लॉन्च नहीं हो सकेंगे.</translation>
 <translation id="7997479212858899587">पहचान:</translation>
 <translation id="2213819743710253654">पृष्ठ कार्य</translation>
 <translation id="641105183165925463">$1 MB</translation>
@@ -4206,7 +4206,7 @@
 <translation id="1812514023095547458">रंग को चुनें</translation>
 <translation id="2487656424763972284">आसान अनलॉक</translation>
 <translation id="7047998246166230966">सूचक</translation>
-<translation id="743268637741709136">एप्लिकेशन लॉन्चर में बोलकर खोजना अक्षम करें. यदि अक्षम हो, तो उपयोगकर्ता बोलकर नहीं खोज सकेगा.</translation>
+<translation id="743268637741709136">ऐप्लिकेशन लॉन्चर में बोलकर खोजना अक्षम करें. यदि अक्षम हो, तो उपयोगकर्ता बोलकर नहीं खोज सकेगा.</translation>
 <translation id="3252266817569339921">फ़्रेंच</translation>
 <translation id="2665717534925640469">यह पृष्ठ अब पूर्ण स्‍क्रीन है और आपका माउस कर्सर अक्षम कर दिया गया है.</translation>
 <translation id="3414952576877147120">आकार:</translation>
@@ -4568,7 +4568,7 @@
 <translation id="193971656137910869">अपने बुकमार्क पढ़ें और बदलें</translation>
 <translation id="6268747994388690914">HTML फ़ाइल से बुकमार्क आयात करें...</translation>
 <translation id="6096047740730590436">बड़े दृश्‍य में खोलें</translation>
-<translation id="3924145049010392604">मेटा</translation>
+<translation id="3924145049010392604">Meta</translation>
 <translation id="5365539031341696497">थाई इनपुट पद्धति (केसमानी कीबोर्ड)</translation>
 <translation id="5157635116769074044">इस पृष्ठ को प्रारंभ स्क्रीन में पिन करें...</translation>
 <translation id="2403091441537561402">गेटवे:</translation>
@@ -5160,7 +5160,7 @@
 <translation id="747459581954555080">सभी को पुनर्स्थापित करें</translation>
 <translation id="7602079150116086782">अन्य उपकरणों से कोई टैब नहीं</translation>
 <translation id="7167486101654761064">इस प्रकार की फ़ाइलें &amp;हमेशा खोलें</translation>
-<translation id="6218364611373262432">प्रत्‍येक पुनरारंभ पर एप्लिकेशन लॉन्‍चर इंस्‍टॉल स्‍थिति को रीसेट करें. यह फ़्लैग सेट होने पर, Chrome प्रत्‍येक बार प्रारंभ होने पर, इंस्‍टॉल किए गए लॉन्‍चर को याद नहीं रखेगा. इसका उपयोग एप्लिकेशन लॉन्‍चर इंस्‍टॉल प्रवाह का परीक्षण करने के लिए किया जाता है.</translation>
+<translation id="6218364611373262432">प्रत्‍येक पुनरारंभ पर ऐप्लिकेशन लॉन्‍चर इंस्‍टॉल स्‍थिति को रीसेट करें. यह फ़्लैग सेट होने पर, Chrome प्रत्‍येक बार प्रारंभ होने पर, इंस्‍टॉल किए गए लॉन्‍चर को याद नहीं रखेगा. इसका उपयोग ऐप्लिकेशन लॉन्‍चर इंस्‍टॉल प्रवाह का परीक्षण करने के लिए किया जाता है.</translation>
 <translation id="4396124683129237657">नया क्रेडिट कार्ड...</translation>
 <translation id="4103763322291513355">काली सूची में डाले गए URL तथा आपके सिस्टम व्यवस्थापक द्वारा लागू की गई अन्य नीतियों को देखने के लिए &lt;strong&gt;chrome://policy&lt;/strong&gt; पर जाएं.</translation>
 <translation id="8799314737325793817">और दिखाएं...</translation>
@@ -5217,7 +5217,7 @@
 <translation id="7336748286991450492">अपने बुकमार्क कहीं भी प्राप्त करने के लिए <ph name="SIGN_IN_LINK"/> करें.</translation>
 <translation id="8487700953926739672">ऑफ़लाइन उपलब्ध है</translation>
 <translation id="6098975396189420741">इस विकल्‍प को सक्षम करना, वेब ऐप्स  को WebGL API में पहुंचने से रोक देता है.</translation>
-<translation id="7053681315773739487">एप्लिकेशन फ़ोल्डर</translation>
+<translation id="7053681315773739487">ऐप्लिकेशन फ़ोल्डर</translation>
 <translation id="6444070574980481588">दिनांक और समय सेट करें</translation>
 <translation id="4377301101584272308">सभी साइटों को आपका भौतिक स्थान ट्रैक करने देता है</translation>
 <translation id="2742870351467570537">चयनित आइटम निकालें</translation>
@@ -5236,7 +5236,7 @@
 <translation id="5522156646677899028">इस एक्सटेंशन में गंभीर सुरक्षा भेद्यता शामिल है.</translation>
 <translation id="1004032892340602806">सभी साइटों को आपका कंप्यूटर एक्सेस करने के लिए प्लग-इन का उपयोग करने दें</translation>
 <translation id="3813984289128269159">Ok Google</translation>
-<translation id="417475959318757854">एप्लिकेशन लॉन्चर को केंद्र में लाता है.</translation>
+<translation id="417475959318757854">ऐप्लिकेशन लॉन्चर को केंद्र में लाता है.</translation>
 <translation id="5505154136304809922">स्थान बार को आगे लाने के लिए सक्षम किया गया और स्थिति निर्धारित की गई</translation>
 <translation id="5218183485292899140">स्विस फ़्रेंच</translation>
 <translation id="7685049629764448582">JavaScript स्मृति</translation>

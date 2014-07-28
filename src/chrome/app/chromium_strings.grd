@@ -209,7 +209,7 @@ be available for now. --><grit base_dir="." latest_public_release="0" current_re
   <release seq="1" allow_pseudo="false">
     <messages fallback_to_english="true">
       <message name="IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TEXT" desc="Message explaining to the user what will happen if they disconnect the managed profile.">
-        Disconnecting $1<ph name="USERNAME">$1<ex>someone@example.com</ex></ph> will clear your history, bookmarks, settings, and other BitPop data stored on this device. Data stored in your Google Account will not be cleared and can be managed on &lt;a target="_blank" href="$2"&gt;<ph name="GOOGLE_DASHBOARD_LINK">&lt;a target="_blank" href="$2"&gt;</ph>Google Dashboard&lt;/a&gt;<ph name="END_GOOGLE_DASHBOARD_LINK">&lt;/a&gt;</ph>.
+        Disconnecting $1$1<ph name="USERNAME">$1<ex>someone@example.com</ex></ph> will clear your history, bookmarks, settings, and other BitPop data stored on this device. Data stored in your Google Account will not be cleared and can be managed on &lt;a target="_blank" href="$2"&gt;&lt;a target="_blank" href="$2"&gt;<ph name="GOOGLE_DASHBOARD_LINK">&lt;a target="_blank" href="$2"&gt;</ph>Google Dashboard&lt;/a&gt;&lt;/a&gt;<ph name="END_GOOGLE_DASHBOARD_LINK">&lt;/a&gt;</ph>.
       </message>
       <message name="IDS_PRODUCT_NAME" desc="The Chrome application name">
         BitPop
@@ -258,26 +258,26 @@ be available for now. --><grit base_dir="." latest_public_release="0" current_re
         </message>
       </if>
       <message name="IDS_CERT_ERROR_COMMON_NAME_INVALID_EXTRA_INFO_2" desc="2nd paragraph of extra information for an unsafe common name in an X509 certificate">
-        In this case, the address listed in the certificate does not match the address of the website your browser tried to go to. One possible reason for this is that your communications are being intercepted by an attacker who is presenting a certificate for a different website, which would cause a mismatch. Another possible reason is that the server is set up to return the same certificate for multiple websites, including the one you are attempting to visit, even though that certificate is not valid for all of those websites. BitPop can say for sure that you reached &lt;strong&gt;$1<ph name="DOMAIN2">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but cannot verify that that is the same site as &lt;strong&gt;$2<ph name="DOMAIN">$2<ex>www.paypal.com</ex></ph>&lt;/strong&gt; which you intended to reach. If you proceed, BitPop will not check for any further name mismatches.
+        In this case, the address listed in the certificate does not match the address of the website your browser tried to go to. One possible reason for this is that your communications are being intercepted by an attacker who is presenting a certificate for a different website, which would cause a mismatch. Another possible reason is that the server is set up to return the same certificate for multiple websites, including the one you are attempting to visit, even though that certificate is not valid for all of those websites. BitPop can say for sure that you reached &lt;strong&gt;$1$1<ph name="DOMAIN2">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but cannot verify that that is the same site as &lt;strong&gt;$2$2<ph name="DOMAIN">$2<ex>www.paypal.com</ex></ph>&lt;/strong&gt; which you intended to reach. If you proceed, BitPop will not check for any further name mismatches.
       </message>
       <message name="IDS_CERT_ERROR_EXPIRED_DETAILS" desc="Details for an expired X509 certificate">
-        You attempted to reach &lt;strong&gt;$1<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented an expired certificate. No information is available to indicate whether that certificate has been compromised since its expiration. This means BitPop cannot guarantee that you are communicating with &lt;strong&gt;$2<ph name="DOMAIN2">$2<ex>paypal.com</ex></ph>&lt;/strong&gt; and not an attacker. Your computer's clock is currently set to $3<ph name="CURRENT_TIME">$3<ex>Monday, July 18th, 2012 12:31PM</ex></ph>. Does that look right? If not, you should correct the error and refresh this page.
+        You attempted to reach &lt;strong&gt;$1$1<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented an expired certificate. No information is available to indicate whether that certificate has been compromised since its expiration. This means BitPop cannot guarantee that you are communicating with &lt;strong&gt;$2$2<ph name="DOMAIN2">$2<ex>paypal.com</ex></ph>&lt;/strong&gt; and not an attacker. Your computer's clock is currently set to $3$3<ph name="CURRENT_TIME">$3<ex>Monday, July 18th, 2012 12:31PM</ex></ph>. Does that look right? If not, you should correct the error and refresh this page.
       </message>
       <message name="IDS_CERT_ERROR_NOT_YET_VALID_DETAILS" desc="Details for an X509 certificate that is not yet valid">
-        You attempted to reach &lt;strong&gt;$1<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate that is not yet valid. No information is available to indicate whether that certificate can be trusted. BitPop cannot reliably guarantee that you are communicating with &lt;strong&gt;$2<ph name="DOMAIN2">$2<ex>paypal.com</ex></ph>&lt;/strong&gt; and not an attacker. Your computer's clock is currently set to $3<ph name="CURRENT_TIME">$3<ex>Monday, July 18th, 2012 12:31PM</ex></ph>. Does that look right? If not, you should correct your system's clock and then refresh this page.
+        You attempted to reach &lt;strong&gt;$1$1<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate that is not yet valid. No information is available to indicate whether that certificate can be trusted. BitPop cannot reliably guarantee that you are communicating with &lt;strong&gt;$2$2<ph name="DOMAIN2">$2<ex>paypal.com</ex></ph>&lt;/strong&gt; and not an attacker. Your computer's clock is currently set to $3$3<ph name="CURRENT_TIME">$3<ex>Monday, July 18th, 2012 12:31PM</ex></ph>. Does that look right? If not, you should correct your system's clock and then refresh this page.
       </message>
       <if expr="is_ios">
         <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_DETAILS" desc="Details for an X509 certificate with an invalid authority">
-          You attempted to reach &lt;strong&gt;$1<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate issued by an entity that is not trusted by BitPop. This may mean that the server has generated its own security credentials, which BitPop cannot rely on for identity information, or an attacker may be trying to intercept your communications.
+          You attempted to reach &lt;strong&gt;$1$1<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate issued by an entity that is not trusted by BitPop. This may mean that the server has generated its own security credentials, which BitPop cannot rely on for identity information, or an attacker may be trying to intercept your communications.
         </message>
       </if>
       <if expr="not is_ios">
         <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_DETAILS" desc="Details for an X509 certificate with an invalid authority">
-          You attempted to reach &lt;strong&gt;$1<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate issued by an entity that is not trusted by your computer's operating system. This may mean that the server has generated its own security credentials, which BitPop cannot rely on for identity information, or an attacker may be trying to intercept your communications.
+          You attempted to reach &lt;strong&gt;$1$1<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate issued by an entity that is not trusted by your computer's operating system. This may mean that the server has generated its own security credentials, which BitPop cannot rely on for identity information, or an attacker may be trying to intercept your communications.
         </message>
       </if>
       <message name="IDS_CERT_ERROR_CONTAINS_ERRORS_DETAILS" desc="Details of the error page for an X509 certificate that contains errors">
-        You attempted to reach &lt;strong&gt;$1<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the certificate that the server presented contains errors. BitPop cannot use a certificate with errors and cannot validate the identity of the site that you have attempted to connect to.
+        You attempted to reach &lt;strong&gt;$1$1<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the certificate that the server presented contains errors. BitPop cannot use a certificate with errors and cannot validate the identity of the site that you have attempted to connect to.
       </message>
       <message name="IDS_TASK_MANAGER_TITLE" desc="The title of the Task Manager window">
         Task Manager - BitPop
@@ -286,11 +286,11 @@ be available for now. --><grit base_dir="." latest_public_release="0" current_re
         BitPop didn't shut down correctly. To reopen the pages you had open, click Restore.
       </message>
       <message name="IDS_SESSION_CRASHED_VIEW_UMA_OPTIN" desc="Text besides the checkbox to let users optin to UMA in the restore from previous crash bubble.">
-        Help make BitPop better by sending crash reports and $1<ph name="UMA_LINK">$1<ex>usage statistics</ex></ph> to Google
+        Help make BitPop better by sending crash reports and $1$1<ph name="UMA_LINK">$1<ex>usage statistics</ex></ph> to Google
       </message>
       <!-- Browser Window Title Format -->
       <message name="IDS_BROWSER_WINDOW_TITLE_FORMAT" desc="The format for titles displayed in tabs and popup windows">
-        $1<ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - BitPop
+        $1$1<ph name="PAGE_TITLE">$1<ex>Google</ex></ph> - BitPop
       </message>
       <if expr="not chromeos">
         <message name="IDS_GET_HELP_USING_CHROME" desc="Text of the button which takes the user to the Chrome help page.">
@@ -306,17 +306,17 @@ be available for now. --><grit base_dir="." latest_public_release="0" current_re
         BitPop AS
       </message>
       <message name="IDS_ABOUT_VERSION_COPYRIGHT" desc="Copyright information on the about pages">
-        Copyright $1<ph name="YEAR">$1</ph> The Chromium Authors. All rights reserved.
+        Copyright $1$1<ph name="YEAR">$1</ph> The Chromium Authors. All rights reserved.
       </message>
       <message name="IDS_ABOUT_VERSION_LICENSE" desc="The label below the copyright message, containing the URLs.">
-        BitPop is made possible by the &lt;a target="_blank" href="$1"&gt;<ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1"&gt;</ph>BitPop&lt;/a&gt;<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> open source project and other &lt;a target="_blank" href="$2"&gt;<ph name="BEGIN_LINK_OSS">&lt;a target="_blank" href="$2"&gt;</ph>open source software&lt;/a&gt;<ph name="END_LINK_OSS">&lt;/a&gt;</ph>.
+        BitPop is made possible by the &lt;a target="_blank" href="$1"&gt;&lt;a target="_blank" href="$1"&gt;<ph name="BEGIN_LINK_CHROMIUM">&lt;a target="_blank" href="$1"&gt;</ph>BitPop&lt;/a&gt;&lt;/a&gt;<ph name="END_LINK_CHROMIUM">&lt;/a&gt;</ph> open source project and other &lt;a target="_blank" href="$2"&gt;&lt;a target="_blank" href="$2"&gt;<ph name="BEGIN_LINK_OSS">&lt;a target="_blank" href="$2"&gt;</ph>open source software&lt;/a&gt;&lt;/a&gt;<ph name="END_LINK_OSS">&lt;/a&gt;</ph>.
       </message>
       <message name="IDS_ABOUT_VERSION_LICENSE_EULA" desc="The label below the copyright message, containing the URLs.">
         BitPop open source licenses
       </message>
       <if expr="chromeos">
         <message name="IDS_ABOUT_CROS_VERSION_LICENSE" desc="Additional text displayed beneath the Chromium open source URLs for Chrome OS.">
-          Chromium OS is made possible by additional &lt;a target="_blank" href="$1"&gt;<ph name="BEGIN_LINK_CROS_OSS">&lt;a target="_blank" href="$1"&gt;</ph>open source software&lt;/a&gt;<ph name="END_LINK_CROS_OSS">&lt;/a&gt;</ph>.
+          Chromium OS is made possible by additional &lt;a target="_blank" href="$1"&gt;&lt;a target="_blank" href="$1"&gt;<ph name="BEGIN_LINK_CROS_OSS">&lt;a target="_blank" href="$1"&gt;</ph>open source software&lt;/a&gt;&lt;/a&gt;<ph name="END_LINK_CROS_OSS">&lt;/a&gt;</ph>.
         </message>
         <message name="IDS_ABOUT_CROS_VERSION_LICENSE_EULA" desc="Additional text displayed beneath the Chromium open source URLs for Chrome OS.">
           Chromium OS open source licenses
@@ -394,12 +394,12 @@ be available for now. --><grit base_dir="." latest_public_release="0" current_re
       </if>
       <if expr="not chromeos">
         <message name="IDS_EXTERNAL_PROTOCOL_INFORMATION" desc="General information about what Chrome is trying to do when opening this external protocol">
-          BitPop needs to launch an external application to handle $1<ph name="SCHEME">$1<ex>acrobat:</ex></ph> links. The link requested is $2<ph name="PROTOLINK">$2<ex>acrobat:yourpdf</ex></ph>.
+          BitPop needs to launch an external application to handle $1$1<ph name="SCHEME">$1<ex>acrobat:</ex></ph> links. The link requested is $2$2<ph name="PROTOLINK">$2<ex>acrobat:yourpdf</ex></ph>.
         </message>
       </if>
       <if expr="chromeos">
         <message name="IDS_EXTERNAL_PROTOCOL_INFORMATION" desc="General information about what Chrome is trying to do when opening this external protocol">
-          Chromium OS does not support launching an external application to handle $1<ph name="SCHEME">$1<ex>acrobat:</ex></ph> links. The link requested is $2<ph name="PROTOLINK">$2<ex>acrobat:yourpdf</ex></ph>.
+          Chromium OS does not support launching an external application to handle $1$1<ph name="SCHEME">$1<ex>acrobat:</ex></ph> links. The link requested is $2$2<ph name="PROTOLINK">$2<ex>acrobat:yourpdf</ex></ph>.
         </message>
       </if>
       <!-- Strings used to warn that an OS is not supported -->
@@ -435,12 +435,12 @@ be available for now. --><grit base_dir="." latest_public_release="0" current_re
         Use hardware acceleration when available
       </message>
       <message name="IDS_OPTIONS_SYSTEM_ENABLE_HARDWARE_ACCELERATION_MODE_RESTART" desc="The restart string after changing hardware acceleration mode">
-        (requires BitPop &lt;button id="gpu-mode-reset-restart-button" type="button" class="link-button standalone-link-button"&gt;<ph name="BEGIN_BUTTON">&lt;button id="gpu-mode-reset-restart-button" type="button" class="link-button standalone-link-button"&gt;</ph>restart&lt;/button&gt;<ph name="END_BUTTON">&lt;/button&gt;</ph>)
+        (requires BitPop &lt;button id="gpu-mode-reset-restart-button" type="button" class="link-button standalone-link-button"&gt;&lt;button id="gpu-mode-reset-restart-button" type="button" class="link-button standalone-link-button"&gt;<ph name="BEGIN_BUTTON">&lt;button id="gpu-mode-reset-restart-button" type="button" class="link-button standalone-link-button"&gt;</ph>restart&lt;/button&gt;&lt;/button&gt;<ph name="END_BUTTON">&lt;/button&gt;</ph>)
       </message>
       <message name="IDS_CANT_WRITE_USER_DIRECTORY_SUMMARY" desc="Summary of problem displayed in dialog when we can't create a directory for this user.">
 BitPop cannot read and write to its data directory:
 
-$1<ph name="USER_DATA_DIRECTORY">$1<ex>C:\Documents and Settings\devint\Local Settings\Application Data\Google\Chrome</ex></ph>
+$1$1<ph name="USER_DATA_DIRECTORY">$1<ex>C:\Documents and Settings\devint\Local Settings\Application Data\Google\Chrome</ex></ph>
       </message>
       <message name="IDS_EULA_CHECKBOX_ENABLE_LOGGING" desc="The label of the checkbox to enable/disable crash and user metrics logging">
         Optional: Help make BitPop better by automatically sending usage statistics and crash reports to Google.
@@ -620,14 +620,14 @@ BitPop is unable to recover your settings.
       </message>
 
       <message name="IDS_PROMPT_DOWNLOAD_CHANGES_SETTINGS" desc="Message shown on the download shelf when the download is known to change settings in the browser in a malicious way.">
-        $1<ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> may harm your browsing experience, so BitPop has blocked it.
+        $1$1<ph name="FILE_NAME">$1<ex>bla.exe</ex></ph> may harm your browsing experience, so BitPop has blocked it.
       </message>
 
       <message name="IDS_PROMPT_MALICIOUS_DOWNLOAD_URL" desc="Message shown to the user to validate the download when the download url is classified to lead to malware by the safebrowsing database.">
         This file is malicious, and BitPop has blocked it.
       </message>
       <message name="IDS_PROMPT_MALICIOUS_DOWNLOAD_CONTENT" desc="Message shown to the user to validate the download when the download content is classified to lead to malware by safebrowsing.">
-        $1<ph name="FILE_NAME">$1<ex>malware.exe</ex></ph> is malicious, and BitPop has blocked it.
+        $1$1<ph name="FILE_NAME">$1<ex>malware.exe</ex></ph> is malicious, and BitPop has blocked it.
       </message>
 
       <!-- Remove in-progress downloads confirmation dialog -->
@@ -729,7 +729,7 @@ For BitPop, processes used to display diagnostics information (such as this "abo
       </if>
       <if expr="chromeos">
         <message name="IDS_UPGRADE_UPDATING_CHANNEL_SWITCH" desc="Status label: Updating Chromium OS to a specified channel">
-          Updating your device to $1<ph name="CHANNEL_NAME">$1<ex>stable</ex></ph> channel...
+          Updating your device to $1$1<ph name="CHANNEL_NAME">$1<ex>stable</ex></ph> channel...
         </message>
       </if>
 
@@ -751,7 +751,7 @@ For BitPop, processes used to display diagnostics information (such as this "abo
       <!-- Extension installed bubble -->
       <if expr="enable_extensions">
         <message name="IDS_EXTENSION_INSTALLED_HEADING" desc="First line in the content area of the extension installed bubble. Instructs that the extension was installed.">
-          $1<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> has been added to BitPop.
+          $1$1<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> has been added to BitPop.
         </message>
         <message name="IDS_EXTENSION_INSTALLED_SIGNIN_PROMO_LINK" desc="The first part of the sign-in promo paragraph. This part will be converted to a link and will get more text appended to it (see IDS_EXTENSION_INSTALLED_SIGNIN_PROMO). Keep this text short.">
           Sign in to BitPop
@@ -760,7 +760,7 @@ For BitPop, processes used to display diagnostics information (such as this "abo
 
       <!-- chrome://settings/extensions page -->
       <message name="IDS_EXTENSIONS_INCOGNITO_WARNING" desc="Warns the user that Chromium cannot prevent extensions from recording history in incognito mode. Displayed in extensions management UI after an extension is selected to be run in incognito mode.">
-        &lt;b&gt;<ph name="BEGIN_BOLD">&lt;b&gt;</ph>Warning:&lt;/b&gt;<ph name="END_BOLD">&lt;/b&gt;</ph> BitPop cannot prevent extensions from recording your browsing history. To disable this extension in incognito mode, unselect this option.
+        &lt;b&gt;&lt;b&gt;<ph name="BEGIN_BOLD">&lt;b&gt;</ph>Warning:&lt;/b&gt;&lt;/b&gt;<ph name="END_BOLD">&lt;/b&gt;</ph> BitPop cannot prevent extensions from recording your browsing history. To disable this extension in incognito mode, unselect this option.
       </message>
       <message name="IDS_EXTENSIONS_UNINSTALL" desc="The link for uninstalling extensions.">
         Remove from BitPop
@@ -768,7 +768,7 @@ For BitPop, processes used to display diagnostics information (such as this "abo
 
       <if expr="enable_extensions">
         <message name="IDS_EXTENSIONS_UNSUPPORTED_DISABLED_BODY" desc="Body of the dialog shown when unsupported extensions have been disabled">
-          To make BitPop safer, we disabled some extensions that aren't listed in the $1<ph name="IDS_EXTENSION_WEB_STORE_TITLE">$1<ex>Chrome Web Store</ex></ph> and may have been added without your knowledge.
+          To make BitPop safer, we disabled some extensions that aren't listed in the $1$1<ph name="IDS_EXTENSION_WEB_STORE_TITLE">$1<ex>Chrome Web Store</ex></ph> and may have been added without your knowledge.
         </message>
       </if>
 
@@ -838,7 +838,7 @@ For BitPop, processes used to display diagnostics information (such as this "abo
         After removing your account from BitPop, you may need to reload your open tabs to take effect.
       </message>
       <message name="IDS_PROFILES_PRIMARY_ACCOUNT_REMOVAL_TEXT" desc="Main text of the account removal view when removing a primary account.">
-        You're using $1<ph name="PROFILE_EMAIL">$1<ex>jessica@gmail.com</ex></ph> to sync your BitPop stuff. To update your sync preference or to use BitPop without a Google account, visit $2<ph name="SETTINGS_LINK">$2<ex>settings</ex></ph>.
+        You're using $1$1<ph name="PROFILE_EMAIL">$1<ex>jessica@gmail.com</ex></ph> to sync your BitPop stuff. To update your sync preference or to use BitPop without a Google account, visit $2$2<ph name="SETTINGS_LINK">$2<ex>settings</ex></ph>.
       </message>
 
       <!-- End-preview view in the avatar menu bubble -->
@@ -858,7 +858,7 @@ For BitPop, processes used to display diagnostics information (such as this "abo
           You're signed in to BitPop!
         </message>
         <message name="IDS_ONE_CLICK_SIGNIN_DIALOG_MESSAGE_NEW" desc="The message of the one click sign-in dialog.">
-          You're signed in as $1<ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Now you can access your bookmarks, history, and other settings on all your signed in devices.
+          You're signed in as $1$1<ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Now you can access your bookmarks, history, and other settings on all your signed in devices.
         </message>
         <message name="IDS_ONE_CLICK_SIGNIN_BUBBLE_MESSAGE_NEW" desc="The body of the sync promo NTP bubble.">
           Now that you're signed in, you can get your tabs, bookmarks and other BitPop stuff across your laptop, phone and tablet. You will also receive more relevant suggestions and features on Google services.
@@ -867,12 +867,12 @@ For BitPop, processes used to display diagnostics information (such as this "abo
           You're now signed in to BitPop! Sync is disabled by your administrator.
         </message>
         <message name="IDS_SYNC_WRONG_EMAIL" desc="Message shown when sync setup failed due to the user entering the wrong email address for sign-in.">
-          You were signed in to BitPop as $1<ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Please use the same account to sign in again.
+          You were signed in to BitPop as $1$1<ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Please use the same account to sign in again.
         </message>
         <message name="IDS_ONE_CLICK_SIGNIN_CONFIRM_EMAIL_DIALOG_MESSAGE" desc="Error message to display when setting up sync for a second time and the user name is different from the previous user name.">
-          Someone previously signed in to BitPop on this computer as $1<ph name="ACCOUNT_EMAIL_LAST">$1<ex>user@example.com</ex></ph>. If that isn't your account, create a new BitPop user to keep your information separate.
+          Someone previously signed in to BitPop on this computer as $1$1<ph name="ACCOUNT_EMAIL_LAST">$1<ex>user@example.com</ex></ph>. If that isn't your account, create a new BitPop user to keep your information separate.
 
-Signing in anyway will merge BitPop information like bookmarks, history, and other settings to $2<ph name="ACCOUNT_EMAIL_NEW">$2<ex>user@example.com</ex></ph>.
+Signing in anyway will merge BitPop information like bookmarks, history, and other settings to $2$2<ph name="ACCOUNT_EMAIL_NEW">$2<ex>user@example.com</ex></ph>.
         </message>
       </if>
 
@@ -882,10 +882,10 @@ Signing in anyway will merge BitPop information like bookmarks, history, and oth
           Important information regarding your BitPop data
         </message>
         <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. This message is followed by a 'Learn more' link.">
-          You are signing in with a managed account and giving its administrator control over your BitPop profile. Your BitPop data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to $1<ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account.
+          You are signing in with a managed account and giving its administrator control over your BitPop profile. Your BitPop data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to $1$1<ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account.
         </message>
         <message name="IDS_ENTERPRISE_SIGNIN_CREATE_NEW_PROFILE_MESSAGE" desc="The text of the prompt to create a new profile after signing in to an enterprise account">
-          If you prefer to keep your existing BitPop data separate, you can create a new BitPop user for $1<ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>.
+          If you prefer to keep your existing BitPop data separate, you can create a new BitPop user for $1$1<ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>.
         </message>
         <message name="IDS_ENTERPRISE_SIGNIN_CONTINUE" desc="Text of the button to link the current profile with the signed-in enterprise account">
           Link my BitPop data to this account
@@ -899,10 +899,10 @@ Signing in anyway will merge BitPop information like bookmarks, history, and oth
           Link your BitPop data to this account?
         </message>
         <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITHOUT_PROFILE_CREATION_NEW_STYLE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. This message is followed by a 'Learn more' link.">
-          You are signing in with a managed account and giving its administrator control over your BitPop profile. Your BitPop data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to $1<ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. $2<ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
+          You are signing in with a managed account and giving its administrator control over your BitPop profile. Your BitPop data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to $1$1<ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. $2$2<ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
         </message>
         <message name="IDS_ENTERPRISE_SIGNIN_EXPLANATION_WITH_PROFILE_CREATION_NEW_STYLE" desc="The warning message displayed to an enterprise user about to link their profile to their Google account. Additionally notifies the user that they can create a new profile instead. This message is followed by a 'Learn more' link.">
-          You are signing in with a managed account and giving its administrator control over your BitPop profile. Your BitPop data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to $1<ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. You can optionally create a new profile to keep your existing BitPop data separate. $2<ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
+          You are signing in with a managed account and giving its administrator control over your BitPop profile. Your BitPop data, such as your apps, bookmarks, history, passwords, and other settings will become permanently tied to $1$1<ph name="USER_NAME">$1<ex>pat@example.com</ex></ph>. You will be able to delete this data via the Google Accounts Dashboard, but you will not be able to associate this data with another account. You can optionally create a new profile to keep your existing BitPop data separate. $2$2<ph name="LEARN_MORE">$2<ex>Learn more</ex></ph>
         </message>
       </if>
 
@@ -957,17 +957,17 @@ Signing in anyway will merge BitPop information like bookmarks, history, and oth
         Your billing details have been saved in BitPop.
       </message>
       <message name="IDS_AUTOFILL_WALLET_UPGRADE_CHROME_ERROR" desc="Text explaining that user must upgrade Chrome to use Wallet.">
-        You must upgrade BitPop to use Google Wallet [$1<ph name="ERROR_CODE">$1<ex>54</ex></ph>].
+        You must upgrade BitPop to use Google Wallet [$1$1<ph name="ERROR_CODE">$1<ex>54</ex></ph>].
       </message>
 
       <!-- Network Error Pages -->
       <message name="IDS_ERRORPAGES_SUGGESTION_NETWORK_PREDICTION_BODY" desc="When a page fails to load, sometimes we suggest disabling predicting network actions.  These are details below a header.">
         Go to
         the BitPop menu &gt;
-        &lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ph name="SETTINGS_TITLE">&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ex>Settings</ex></ph>
+        &lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ph name="SETTINGS_TITLE">&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ex>Settings</ex></ph>
         &gt;
-        &lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ph name="ADVANCED_TITLE">&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ex>Under the Hood</ex></ph>
-        and deselect "&lt;span jscontent="noNetworkPredictionTitle"&gt;&lt;/span&gt;<ph name="NO_PREFETCH_DESCRIPTION">&lt;span jscontent="noNetworkPredictionTitle"&gt;&lt;/span&gt;<ex>Predict network actions to improve page load performance</ex></ph>."
+        &lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ph name="ADVANCED_TITLE">&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ex>Under the Hood</ex></ph>
+        and deselect "&lt;span jscontent="noNetworkPredictionTitle"&gt;&lt;/span&gt;&lt;span jscontent="noNetworkPredictionTitle"&gt;&lt;/span&gt;<ph name="NO_PREFETCH_DESCRIPTION">&lt;span jscontent="noNetworkPredictionTitle"&gt;&lt;/span&gt;<ex>Predict network actions to improve page load performance</ex></ph>."
         If this does not resolve the issue, we recommend selecting this option
         again for improved performance.
       </message>
@@ -990,11 +990,11 @@ Signing in anyway will merge BitPop information like bookmarks, history, and oth
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Linux instructions for disabling use of a proxy server.">
           Go to
           the BitPop menu &gt;
-          &lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ph name="SETTINGS_TITLE">&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ex>Settings</ex></ph>
+          &lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ph name="SETTINGS_TITLE">&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ex>Settings</ex></ph>
           &gt;
-          &lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ph name="ADVANCED_TITLE">&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ex>Under the Hood</ex></ph>
+          &lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ph name="ADVANCED_TITLE">&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ex>Under the Hood</ex></ph>
           &gt;
-          &lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;<ph name="PROXIES_TITLE">&lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;<ex>Change proxy settings...</ex></ph>
+          &lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;&lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;<ph name="PROXIES_TITLE">&lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;<ex>Change proxy settings...</ex></ph>
           and make sure your configuration is set to "no proxy" or "direct."
         </message>
       </if>
@@ -1002,11 +1002,11 @@ Signing in anyway will merge BitPop information like bookmarks, history, and oth
         <message name="IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM" desc="Windows instructions for disabling use of a proxy server.">
           Go to
           the BitPop menu &gt;
-          &lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ph name="SETTINGS_TITLE">&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ex>Settings</ex></ph>
+          &lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ph name="SETTINGS_TITLE">&lt;span jscontent="settingsTitle"&gt;&lt;/span&gt;<ex>Settings</ex></ph>
           &gt;
-          &lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ph name="ADVANCED_TITLE">&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ex>Under the Hood</ex></ph>
+          &lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ph name="ADVANCED_TITLE">&lt;span jscontent="advancedTitle"&gt;&lt;/span&gt;<ex>Under the Hood</ex></ph>
           &gt;
-          &lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;<ph name="PROXIES_TITLE">&lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;<ex>Change proxy settings...</ex></ph>
+          &lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;&lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;<ph name="PROXIES_TITLE">&lt;span jscontent="proxyTitle"&gt;&lt;/span&gt;<ex>Change proxy settings...</ex></ph>
           &gt;
           LAN Settings
           and deselect the "Use a proxy server for your LAN" checkbox.
@@ -1054,7 +1054,7 @@ Signing in anyway will merge BitPop information like bookmarks, history, and oth
       <!-- Chrome OS OOBE Terms of Service screen-->
       <if expr="chromeos">
         <message name="IDS_TERMS_OF_SERVICE_SCREEN_SUBHEADING" desc="Subheading at the top of the Terms of Service screen.">
-          $1<ph name="DOMAIN">$1<ex>example.com</ex></ph> requires that you read and accept the following Terms of Service before using this device. These terms do not expand, modify or limit the Chromium OS Terms.
+          $1$1<ph name="DOMAIN">$1<ex>example.com</ex></ph> requires that you read and accept the following Terms of Service before using this device. These terms do not expand, modify or limit the Chromium OS Terms.
         </message>
       </if>
 
@@ -1072,7 +1072,7 @@ Signing in anyway will merge BitPop information like bookmarks, history, and oth
           BitPop - Notifications
         </message>
         <message name="IDS_MESSAGE_CENTER_TOOLTIP_UNREAD" desc="Tooltip for notification tray icon with unread notifications">
-          BitPop - Notifications ($1<ph name="QUANTITY">$1<ex>3</ex></ph> unread)
+          BitPop - Notifications ($1$1<ph name="QUANTITY">$1<ex>3</ex></ph> unread)
         </message>
       </if>
 
@@ -1090,7 +1090,7 @@ Signing in anyway will merge BitPop information like bookmarks, history, and oth
       <!-- ProcessSingleton -->
       <if expr="is_linux or is_macosx">
         <message name="IDS_PROFILE_IN_USE_POSIX" desc="Message shown when the browser cannot start because the profile is in use on a different host.">
-          The profile appears to be in use by another BitPop process ($1<ph name="PROCESS_ID">$1<ex>12345</ex></ph>) on another computer ($2<ph name="HOST_NAME">$2<ex>example.com</ex></ph>). BitPop has locked the profile so that it doesn't get corrupted. If you are sure no other processes are using this profile, you can unlock the profile and relaunch BitPop.
+          The profile appears to be in use by another BitPop process ($1$1<ph name="PROCESS_ID">$1<ex>12345</ex></ph>) on another computer ($2$2<ph name="HOST_NAME">$2<ex>example.com</ex></ph>). BitPop has locked the profile so that it doesn't get corrupted. If you are sure no other processes are using this profile, you can unlock the profile and relaunch BitPop.
         </message>
       </if>
 

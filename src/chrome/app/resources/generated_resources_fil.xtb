@@ -276,7 +276,7 @@
 <translation id="5255315797444241226">Mali ang inilagay mong passphrase.</translation>
 <translation id="521582610500777512">Na-discard ang larawan</translation>
 <translation id="762917759028004464">Ang default ng browser ay kasalukuyang <ph name="BROWSER_NAME"/>.</translation>
-<translation id="7740287852186792672">Mga resulta ng paghahanap</translation>
+<translation id="7740287852186792672">Mga resulta sa paghahanap</translation>
 <translation id="218492098606937156">Pinapagana ang mga touch event</translation>
 <translation id="300544934591011246">Nakaraang password</translation>
 <translation id="6015796118275082299">Taon</translation>
@@ -307,7 +307,7 @@
 <translation id="7938958445268990899">Wala pang bisa ang certificate ng server.</translation>
 <translation id="4569998400745857585">Menu na naglalaman ng mga nakatagong extension</translation>
 <translation id="4081383687659939437">I-save ang impormasyon</translation>
-<translation id="1801827354178857021">Tuldok</translation>
+<translation id="1801827354178857021">Panahon</translation>
 <translation id="4560332071395409256">I-click ang
           <ph name="BEGIN_BOLD"/>Simulan<ph name="END_BOLD"/>,
           i-click ang
@@ -383,7 +383,7 @@
 <translation id="3150927491400159470">I-hard Reload</translation>
 <translation id="3549644494707163724">I-encrypt ang lahat ng naka-sync na data gamit ang sarili mong passphrase sa pag-sync</translation>
 <translation id="5667293444945855280">Malware</translation>
-<translation id="6831043979455480757">Isaling-wika</translation>
+<translation id="6831043979455480757">I-translate</translation>
 <translation id="2856203831666278378">Naglaman ng mga duplicate na header ang tugon mula sa server. Karaniwang resulta ng isang maling na-configure na website o proxy ang problemang ito. Tanging ang administrator ng website o proxy ang makakapag-ayos ng isyung ito.</translation>
 <translation id="3587482841069643663">Lahat</translation>
 <translation id="6698381487523150993">Nalikha:</translation>
@@ -497,7 +497,7 @@ Pakitingnan ang iyong email sa <ph name="ACCOUNT_EMAIL"/> para sa mga ito at mga
 <translation id="4801956050125744859">Panatilihin pareho</translation>
 <translation id="3878840326289104869">Gumagawa ng pinangangasiwaang user</translation>
 <translation id="406070391919917862">Background na Apps</translation>
-<translation id="8820817407110198400">Bookmarks</translation>
+<translation id="8820817407110198400">Mga bookmark</translation>
 <translation id="6347003977836730270">Iniaalok ang I-enable ang bagong Translate bubble UX sa halip na ang infobar.</translation>
 <translation id="2580170710466019930">Mangyaring maghintay habang ini-install ng <ph name="PRODUCT_NAME"/> ang mga pinakabagong pag-update sa system.</translation>
 <translation id="7428061718435085649">Gamitin ang kaliwa at kanang mga Shift key upang piliin ang 2nd at 3rd na mga kandidato</translation>
@@ -599,7 +599,7 @@ Pakitingnan ang iyong email sa <ph name="ACCOUNT_EMAIL"/> para sa mga ito at mga
 <translation id="5584537427775243893">Nag-i-import</translation>
 <translation id="4779735050989188948">Manipulahin ang mga setting na nagkokontrol sa access ng mga website sa cookies, JavaScript, at mga plug-in</translation>
 <translation id="168841957122794586">Naglalaman ang server certificate ng isang mahinang cryptographic key.</translation>
-<translation id="4181841719683918333">Mga wika</translation>
+<translation id="4181841719683918333">Mga Wika</translation>
 <translation id="1758831820837444715">I-configure ang network ng Ethernet</translation>
 <translation id="6535131196824081346">Maaaring maganap ang error na ito kapag kumukonekta sa secure na (HTTPS) server. Nangangahulugan
         ito na sinusubukan ng server na mag-set up ng secure na koneksyon ngunit, dahil sa
@@ -729,7 +729,7 @@ Dapat mag-sign out ang lahat ng user upang magpatuloy.</translation>
 <translation id="8670262106224659584">Yama LSM enforcing</translation>
 <translation id="7221155467930685510">$1 GB</translation>
 <translation id="2624142942574147739">Ina-access ng pahinang ito ang iyong camera at mikropono.</translation>
-<translation id="7658239707568436148">Kanselahin</translation>
+<translation id="7658239707568436148">Ikansela</translation>
 <translation id="557722062034137776">Hindi maaapektuhan ng pag-reset sa iyong device ang iyong mga Google account o anumang data na naka-sync sa mga account na ito. Gayunpaman, matatanggal ang lahat ng file na lokal na naka-save sa iyong device.</translation>
 <translation id="8695825812785969222">Buksan ang &amp;Lokasyon...</translation>
 <translation id="4538417792467843292">Magtanggal ng salita</translation>
@@ -1112,7 +1112,7 @@ Kinakalkula ang natitirang oras</translation>
 <translation id="121827551500866099">Ipakita ang lahat ng mga pag-download...</translation>
 <translation id="5949910269212525572">Hindi malutas ang DNS address ng server.</translation>
 <translation id="3115147772012638511">Naghihintay para sa cache...</translation>
-<translation id="257088987046510401">Mga Tema</translation>
+<translation id="257088987046510401">Mga tema</translation>
 <translation id="6771079623344431310">Hindi nagawang kumonekta sa proxy server</translation>
 <translation id="7740996059027112821">Karaniwan</translation>
 <translation id="409980434320521454">Nabigo ang pag-sync</translation>
@@ -2180,7 +2180,7 @@ Tiyaking hindi ka maglalantad ng anumang sensitibong impormasyon.</translation>
 <translation id="3297788108165652516">Ibinabahagi sa ibang mga user ang network na ito.</translation>
 <translation id="4810984886082414856">Simpleng Cache para sa HTTP.</translation>
 <translation id="1548132948283577726">Lilitaw dito ang mga site na hindi kailanman nagsa-save ng mga password.</translation>
-<translation id="583281660410589416">Hindi kilala</translation>
+<translation id="583281660410589416">Hindi-alam</translation>
 <translation id="3774278775728862009">Paraan ng pag-input na Thai (TIS-820.2538 na keyboard)</translation>
 <translation id="9115675100829699941">&amp;Mga Bookmark</translation>
 <translation id="2485422356828889247">I-uninstall</translation>
@@ -2247,7 +2247,7 @@ Tiyaking hindi ka maglalantad ng anumang sensitibong impormasyon.</translation>
 <translation id="4710257996998566163">Huling na-update:</translation>
 <translation id="5299682071747318445">Ine-encrypt ang lahat ng data gamit ang iyong passphrase sa pag-sync</translation>
 <translation id="7556242789364317684">Sa kasamaang palad, hindi mabawi ng <ph name="SHORT_PRODUCT_NAME"/> ang iyong mga setting. Upang maayos ang error, dapat i-reset ng <ph name="SHORT_PRODUCT_NAME"/> ang iyong device gamit ang Powerwash.</translation>
-<translation id="1383876407941801731">Paghahanap</translation>
+<translation id="1383876407941801731">Hanapin</translation>
 <translation id="23362385947277794">Mga kulay at larawan sa background</translation>
 <translation id="409579654357498729">Idagdag sa Cloud Print</translation>
 <translation id="2120316813730635488">Mga paglitaw noong na-install ang isang extension</translation>
@@ -3191,7 +3191,7 @@ Tiyaking hindi ka maglalantad ng anumang sensitibong impormasyon.</translation>
 <translation id="1146673768181266552">Crash ID <ph name="CRASH_ID"/> (<ph name="CRASH_LOCAL_ID"/>)</translation>
 <translation id="5488640658880603382">Sigurado ka bang nais mong tanggalin ang &quot;<ph name="PROFILE_NAME"/>&quot; at lahat ng data na nauugnay dito mula sa computer na ito? Hindi ito maaaring bawiin!</translation>
 <translation id="8044899503464538266">Mabagal</translation>
-<translation id="3789841737615482174">Install</translation>
+<translation id="3789841737615482174">Mag-install</translation>
 <translation id="4320697033624943677">Magdagdag ng mga user</translation>
 <translation id="1283379245075810567">Simulan ang pag-mirror</translation>
 <translation id="9153934054460603056">I-save ang pagkakakilanlan at password</translation>
@@ -3600,7 +3600,7 @@ Tiyaking hindi ka maglalantad ng anumang sensitibong impormasyon.</translation>
 <translation id="9026731007018893674">i-download</translation>
 <translation id="3212792897911394068">I-disable ang eksperimental na bersyon ng Naka-encrypt na Media Extension sa mga element ng video at audio.</translation>
 <translation id="6199775032047436064">I-reload ang iyong kasalukuyang pahina</translation>
-<translation id="6981982820502123353">Accessibility</translation>
+<translation id="6981982820502123353">Pagiging Maa-access</translation>
 <translation id="7210998213739223319">Username.</translation>
 <translation id="4523336217659634227">Nagkaroon ng error (<ph name="ERROR"/>) habang dina-download ang plug-in.</translation>
 <translation id="4478664379124702289">I-save ang Lin&amp;k Bilang...</translation>
@@ -3819,11 +3819,11 @@ Tiyaking hindi ka maglalantad ng anumang sensitibong impormasyon.</translation>
 <translation id="6175314957787328458">Microsoft Domain GUID</translation>
 <translation id="6883209331334683549">Tulong sa <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Uri ng pag-startup</translation>
-<translation id="8179976553408161302">Pumasok</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Na-flip ang larawan</translation>
 <translation id="691321796646552019">Ihinto ito!</translation>
 <translation id="8026964361287906498">(Pinamamahalaan ng patakaran ng enterprise)</translation>
-<translation id="8261506727792406068">Tanggalin</translation>
+<translation id="8261506727792406068">Burahin</translation>
 <translation id="7800518121066352902">I-rotate P&amp;akaliwa</translation>
 <translation id="345693547134384690">Buksan ang &amp;imahe sa bagong tab</translation>
 <translation id="7422192691352527311">Preferences...</translation>
@@ -4860,7 +4860,7 @@ Pumindot ng anumang key upang magpatuloy sa pagtuklas.</translation>
 Maaaring hindi available ang ilang tampok.  Mangyaring suriin na umiiral ang profile at mayroon kang pagpapahintulot na magbasa at magsulat ng mga nilalaman nito.</translation>
 <translation id="7040138676081995583">Buksan gamit ang...</translation>
 <translation id="7953739707111622108">Hindi mabuksan ang device na ito dahil hindi nakilala ang filesystem nito.</translation>
-<translation id="2433507940547922241">Hitsura</translation>
+<translation id="2433507940547922241">Itsura</translation>
 <translation id="6051354611314852653">Oops! Nabigong pahintulutan ng system ang pag-access sa API para sa device na ito.</translation>
 <translation id="7851716364080026749">Palaging i-block ang access sa camera at mikropono</translation>
 <translation id="839072384475670817">Lumikha ng Mga &amp;Shortcut ng Application...</translation>

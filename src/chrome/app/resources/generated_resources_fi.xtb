@@ -302,7 +302,7 @@
 <translation id="7938958445268990899">Palvelimen varmenne ei ole vielä voimassa.</translation>
 <translation id="4569998400745857585">Piilotetut laajennukset sisältävä valikko</translation>
 <translation id="4081383687659939437">Tallenna tiedot</translation>
-<translation id="1801827354178857021">Piste</translation>
+<translation id="1801827354178857021">Jakso</translation>
 <translation id="4560332071395409256">Klikkaa <ph name="BEGIN_BOLD"/>Käynnistä<ph name="END_BOLD"/>, klikkaa <ph name="BEGIN_BOLD"/>Suorita<ph name="END_BOLD"/>, kirjoita <ph name="BEGIN_BOLD"/>%windir%\\network diagnostic\\xpnetdiag.exe<ph name="END_BOLD"/> ja klikkaa sitten <ph name="BEGIN_BOLD"/>OK<ph name="END_BOLD"/>.</translation>
 <translation id="2179052183774520942">Lisää hakukone</translation>
 <translation id="4043223219875055035">Kirjaudu Google-tiliisi, jos haluat sovelluksien synkronoivan asetukset ja tarjoavan muita muokattuja palveluita.</translation>
@@ -1114,7 +1114,7 @@ Psst! Suosittelemme käyttämään ensi kerralla incognito-tilaa <ph name="SHORT
 <translation id="4341364588986930687"><ph name="DOMAIN"/> vaatii Googlea vahvistamaan laitteesi identiteetin. Tämän avulla määritetään, onko laitteellasi oikeus käyttää suojatun median edistyneitä toisto-ominaisuuksia. <ph name="LEARN_MORE"/>.</translation>
 <translation id="7643817847124207232">Internetyhteys on katkennut.</translation>
 <translation id="4871210892959306034">$1 Kt</translation>
-<translation id="932327136139879170">Home</translation>
+<translation id="932327136139879170">Etusivu</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">K&amp;opioi videon URL-osoite</translation>
 <translation id="2981113813906970160">Näytä suuri hiiren osoitin</translation>
@@ -3770,7 +3770,7 @@ ei saa yhteyttä sivustoon. Syynä on yleensä verkon ongelma, mutta ongelma saa
 <translation id="6175314957787328458">Microsoftin toimialueen GUID-tunnus</translation>
 <translation id="6883209331334683549">Ohje: <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Käynnistystyyppi</translation>
-<translation id="8179976553408161302">Sisään</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Kuva käännettiin</translation>
 <translation id="691321796646552019">Poista käytöstä</translation>
 <translation id="8026964361287906498">(Yrityskäytännön hallinnoima)</translation>
@@ -4581,7 +4581,7 @@ ei saa yhteyttä sivustoon. Syynä on yleensä verkon ongelma, mutta ongelma saa
 <translation id="6921812972154549137">Evästeet ja muut sivuston ja laajennuksien tiedot</translation>
 <translation id="6886871292305414135">Avaa linkki uudessa &amp;välilehdessä</translation>
 <translation id="4499634737431431434">Viikot</translation>
-<translation id="7961015016161918242">Ei valmistunut</translation>
+<translation id="7961015016161918242">Ei koskaan</translation>
 <translation id="3950924596163729246">Ei yhteyttä verkkoon.</translation>
 <translation id="5212461935944305924">Eväste- ja sivustotietopoikkeukset</translation>
 <translation id="1543152709146436555">Poista kosketuksien säätö käytöstä.</translation>
@@ -4799,7 +4799,7 @@ Julkinen eksponentti (<ph name="PUBLIC_EXPONENT_NUM_BITS"/> bittiä):
 <translation id="5996258716334177896">Profiilisi avaaminen ei onnistunut. Kaikki ominaisuudet eivät ole välttämättä saatavilla. Tarkista, että profiili on olemassa ja että sinulla on sen sisältöön luku- ja kirjoitusoikeudet.</translation>
 <translation id="7040138676081995583">Avaa sovelluksessa...</translation>
 <translation id="7953739707111622108">Tätä laitetta ei voi avata, sillä sen tiedostojärjestelmää ei tunnistettu.</translation>
-<translation id="2433507940547922241">Ulkoasu</translation>
+<translation id="2433507940547922241">Ulkonäkö</translation>
 <translation id="6051354611314852653">Hups! Järjestelmä ei voinut sallia sovellusliittymän käyttöä tälle laitteelle.</translation>
 <translation id="7851716364080026749">Estä kameran ja mikrofonin käyttö aina</translation>
 <translation id="839072384475670817">Luo &amp;sovelluspikakuvakkeita...</translation>

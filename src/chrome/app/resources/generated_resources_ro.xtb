@@ -306,7 +306,7 @@
 <translation id="7938958445268990899">Certificatul serverului nu este încă valid.</translation>
 <translation id="4569998400745857585">Meniu ce conține extensiile ascunse</translation>
 <translation id="4081383687659939437">Salvați informațiile</translation>
-<translation id="1801827354178857021">Punct</translation>
+<translation id="1801827354178857021">Perioada</translation>
 <translation id="4560332071395409256">Faceți clic pe
           <ph name="BEGIN_BOLD"/>Start<ph name="END_BOLD"/>,
           apoi pe
@@ -382,7 +382,7 @@
 <translation id="3150927491400159470">Reîncărcați forțat</translation>
 <translation id="3549644494707163724">Criptați toate datele sincronizate cu parola dvs. de acces pentru sincronizare</translation>
 <translation id="5667293444945855280">Programe malware</translation>
-<translation id="6831043979455480757">Traducere</translation>
+<translation id="6831043979455480757">Traduceți</translation>
 <translation id="2856203831666278378">Răspunsul de la server conținea antete duplicat. Această problemă este determinată în general de un site web sau de un proxy configurat greșit. Numai administratorul site-ului web sau al proxy-ului poate soluționa această problemă.</translation>
 <translation id="3587482841069643663">Toate</translation>
 <translation id="6698381487523150993">Creat:</translation>
@@ -3190,7 +3190,7 @@ Asigurați-vă că nu expuneți informații confidențiale.</translation>
 <translation id="1146673768181266552">ID blocare <ph name="CRASH_ID"/> (<ph name="CRASH_LOCAL_ID"/>)</translation>
 <translation id="5488640658880603382">Sigur doriți să ștergeți de pe acest computer profilul „<ph name="PROFILE_NAME"/>” și toate datele asociate acestuia? Acțiunea nu poate fi anulată!</translation>
 <translation id="8044899503464538266">Lent</translation>
-<translation id="3789841737615482174">Instalați</translation>
+<translation id="3789841737615482174">Instalaţi</translation>
 <translation id="4320697033624943677">Adăugați utilizatori</translation>
 <translation id="1283379245075810567">Începeți oglindirea</translation>
 <translation id="9153934054460603056">Salvați identitatea și parola</translation>
@@ -3235,7 +3235,7 @@ Asigurați-vă că nu expuneți informații confidențiale.</translation>
 <translation id="8899285681604219177">Extensiile necompatibile au fost dezactivate</translation>
 <translation id="889901481107108152">Ne pare rău, acest experiment nu este disponibil pe platforma dvs.</translation>
 <translation id="3228969707346345236">Traducerea nu a reușit, deoarece pagina este deja în <ph name="LANGUAGE"/>.</translation>
-<translation id="8238191901674777266">Statele Unite ale Americii</translation>
+<translation id="8238191901674777266">Statele Unite</translation>
 <translation id="1873879463550486830">Mediu de testare SUID</translation>
 <translation id="8118860139461251237">Gestionează descărcările</translation>
 <translation id="5111852801054039429">Dezactivați WebRTC</translation>
@@ -3816,7 +3816,7 @@ Asigurați-vă că nu expuneți informații confidențiale.</translation>
 <translation id="6175314957787328458">GUID domeniu Microsoft</translation>
 <translation id="6883209331334683549">Ajutor <ph name="PRODUCT_NAME"/></translation>
 <translation id="6970480684834282392">Tip de pornire</translation>
-<translation id="8179976553408161302">Intrați</translation>
+<translation id="8179976553408161302">Enter</translation>
 <translation id="6422329785618833949">Fotografia a fost răsturnată</translation>
 <translation id="691321796646552019">Încetează!</translation>
 <translation id="8026964361287906498">(Gestionat de politica întreprinderii)</translation>
@@ -3988,7 +3988,7 @@ Asigurați-vă că nu expuneți informații confidențiale.</translation>
 <translation id="9076523132036239772">Adresa de e-mail sau parola dvs. nu au putut fi confirmate. Încercați să vă conectați mai întâi la o rețea.</translation>
 <translation id="6965978654500191972">Dispozitiv</translation>
 <translation id="5295309862264981122">Confirmați navigarea</translation>
-<translation id="718827667662449283">Regatul Unit</translation>
+<translation id="718827667662449283">Regatul Unit (United Kingdom)</translation>
 <translation id="358796204584394954">Pentru a conecta, introduceți acest cod pe „<ph name="DEVICE_NAME"/>”:</translation>
 <translation id="2908999529399859069">Anulați</translation>
 <translation id="5804241973901381774">Permisiuni</translation>
@@ -4165,7 +4165,7 @@ Asigurați-vă că nu expuneți informații confidențiale.</translation>
 <translation id="1038168778161626396">Numai cifrare</translation>
 <translation id="8765985713192161328">Gestionați programele asociate...</translation>
 <translation id="7179921470347911571">Reporniți acum</translation>
-<translation id="9065203028668620118">Modificați</translation>
+<translation id="9065203028668620118">Modificare</translation>
 <translation id="2251218783371366160">Deschideți cu Utilitarul de vizualizare al sistemului</translation>
 <translation id="1177863135347784049">Personalizat</translation>
 <translation id="4881695831933465202">Deschideți</translation>

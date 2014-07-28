@@ -3,159 +3,160 @@
 <translationbundle lang="fil">
 <translation id="6676384891291319759">I-access ang Internet</translation>
 <translation id="8586442755830160949">Copyright <ph name="YEAR"/> Ang Mga May-akda ng Chromium. Nakalaan ang lahat ng karapatan.</translation>
-<translation id="8447784615389818621">Sigurado ka bang nais mong i-uninstall ang BitPop?</translation>
-<translation id="1928147301259050372">Gusto mo bang i-save ng BitPop ang impormasyon ng credit card na ito para sa pagkumpleto ng mga form sa web?</translation>
-<translation id="100741878661450640">I-uninstall ang BitPop</translation>
-<translation id="7015513946685052865">Malapit nang hindi makatanggap ng mga update sa BitPop ang computer na ito dahil hindi na sinusuportahan ang hardware nito.</translation>
-<translation id="4301276314211054820">Na-update na ang BitPop, ngunit hindi mo pa ito nagagamit sa loob ng hindi bababa sa 30 araw.</translation>
-<translation id="8935261719622405725">Ilunsad ang apps ng BitPop</translation>
-<translation id="2787245396912783582">Isang standalone na platform ang Chromium App Launcher para sa apps ng BitPop.</translation>
+<translation id="6373523479360886564">Sigurado ka bang nais mong i-uninstall ang Chromium?</translation>
+<translation id="5065199687811594072">Gusto mo bang i-save ng Chromium ang impormasyon ng credit card na ito para sa pagkumpleto ng mga form sa web?</translation>
+<translation id="6510925080656968729">I-uninstall ang Chromium</translation>
+<translation id="2615699638672665509">Malapit nang hindi makatanggap ng mga update sa Chromium ang computer na ito dahil hindi na sinusuportahan ang hardware nito.</translation>
+<translation id="6893813176749746474">Na-update na ang Chromium, ngunit hindi mo pa ito nagagamit sa loob ng hindi bababa sa 30 araw.</translation>
+<translation id="1550579416447684632">Ilunsad ang apps ng Chromium</translation>
+<translation id="4267347018362241535">Isang standalone na platform ang Chromium App Launcher para sa apps ng Chromium.</translation>
 <translation id="2770231113462710648">Baguhin ang default na browser sa:</translation>
-<translation id="6870152852581894991">Magkakabisa ang iyong mga pagbabago sa susunod na ilunsad mong muli ang BitPop.</translation>
-<translation id="7725527658463487664">Luma na ang BitPop</translation>
-<translation id="302025056100997516">Ang mga detalye mula sa iyong mga contact ay maaaring makatulong sa iyong sumagot ng mga form nang mas mabilis sa BitPop.</translation>
-<translation id="3588014340702790340">Tinitingnan mo ang isang secure na pahina ng BitPop.</translation>
+<translation id="6613594504749178791">Magkakabisa ang iyong mga pagbabago sa susunod na ilunsad mong muli ang Chromium.</translation>
+<translation id="9089354809943900324">Luma na ang Chromium</translation>
+<translation id="59625444380784159">Ang mga detalye mula sa iyong mga contact ay maaaring makatulong sa iyong sumagot ng mga form nang mas mabilis sa Chromium.</translation>
+<translation id="3748537968684000502">Tinitingnan mo ang isang secure na pahina ng Chromium.</translation>
 <translation id="2077129598763517140">Gamitin ang pagpapabilis ng hardware kapag available</translation>
 <translation id="1065672644894730302">Hindi mabasa ang iyong mga kagustuhan.
 
 Maaaring hindi available ang ilang tampok at hindi mase-save ang mga pagbabago sa mga kagustuhan.</translation>
-<translation id="4795239855223923830">I-customize at kontrolin ang BitPop</translation>
-<translation id="98449668525928921">Nagsa-sign in ka gamit ang isang pinamamahalaang account at nagbibigay sa administrator nito ng kontrol sa iyong profile sa BitPop. Permanenteng mauugnay ang iyong data sa BitPop, gaya ng iyong apps, mga bookmark, kasaysayan, password, at iba pang mga setting sa <ph name="USER_NAME"/>. Matatanggal mo ang data na ito sa Google Accounts Dashboard, ngunit hindi mo maiuugnay ang data na ito sa isa pang account. Maaari ka ring gumawa ng bagong profile upang ihiwalay ang iyong umiiral na data sa BitPop. <ph name="LEARN_MORE"/></translation>
-<translation id="7711905272664478875">Salamat sa pagsubok sa bagong BitPop. Kailangang i-restart ang BitPop upang tiyaking na-save mo ang anumang nakabukas na gawain bago magpatuloy.</translation>
+<translation id="4423735387467980091">I-customize at kontrolin ang Chromium</translation>
+<translation id="1881322772814446296">Nagsa-sign in ka gamit ang isang pinamamahalaang account at nagbibigay sa administrator nito ng kontrol sa iyong profile sa Chromium. Permanenteng mauugnay ang iyong data sa Chromium, gaya ng iyong apps, mga bookmark, kasaysayan, password, at iba pang mga setting sa <ph name="USER_NAME"/>. Matatanggal mo ang data na ito sa Google Accounts Dashboard, ngunit hindi mo maiuugnay ang data na ito sa isa pang account. Maaari ka ring gumawa ng bagong profile upang ihiwalay ang iyong umiiral na data sa Chromium. <ph name="LEARN_MORE"/></translation>
+<translation id="455521026202544465">Salamat sa pagsubok sa bagong Chromium. Kailangang i-restart ang Chromium upang tiyaking na-save mo ang anumang nakabukas na gawain bago magpatuloy.</translation>
 <translation id="731644333568559921">I-update ang &amp;Chromium OS</translation>
-<translation id="5284421695473942517">Nangangailangan ang BitPop ng Windows XP o mas bago. Maaaring hindi gumana ang ilang tampok.</translation>
-<translation id="4534284284800306880">Dapat mong i-upgrade ang BitPop upang magamit ang Google Wallet [<ph name="ERROR_CODE"/>].</translation>
-<translation id="1258942147733482141">Mga lisensya ng open source ng BitPop</translation>
-<translation id="2001441118695834744">Kung gusto mong ihiwalay ang iyong umiiral nang data sa BitPop, maaari kang lumikha ng bagong user ng BitPop para kay <ph name="USER_NAME"/>.</translation>
-<translation id="3207916442629104800">Itakda ang BitPop bilang iyong default na browser</translation>
-<translation id="2346981135360001626">Ina-update ang iyong device sa <ph name="CHANNEL_NAME"/> na channel...</translation>
+<translation id="7421823331379285070">Nangangailangan ang Chromium ng Windows XP o mas bago. Maaaring hindi gumana ang ilang tampok.</translation>
+<translation id="7023267510504981715">Dapat mong i-upgrade ang Chromium upang magamit ang Google Wallet [<ph name="ERROR_CODE"/>].</translation>
+<translation id="1444754455097148408">Mga lisensya ng open source ng Chromium</translation>
+<translation id="7419987137528340081">Kung gusto mong ihiwalay ang iyong umiiral nang data sa Chromium, maaari kang lumikha ng bagong user ng Chromium para kay <ph name="USER_NAME"/>.</translation>
+<translation id="5427571867875391349">Itakda ang Chromium bilang iyong default na browser</translation>
+<translation id="8030318113982266900">Ina-update ang iyong device sa <ph name="CHANNEL_NAME"/> na channel...</translation>
 <translation id="3549345495227188780">Magsimula sa Chromium OS</translation>
-<translation id="7593639489233822734">Pagkatapos alisin ang iyong account sa BitPop, maaaring kailangan mong i-reload ang mga nakabukas mong tab upang magkabisa.</translation>
-<translation id="8235603028098851915">Toolbar ng BitPop</translation>
-<translation id="325440606879482824">Nabigo ang pag-install dahil sa hindi natukoy na error. Kung kasalukuyang tumatakbo ang BitPop, pakisara ito at subukang muli.</translation>
-<translation id="2681187513058372590">Sinusubukan ng BitPop na magpakita ng mga password.</translation>
-<translation id="9205983754412543288">Opsyonal: Tumulong na pahusayin ang BitPop sa pamamagitan ng awtomatikong pagpapadala sa Google ng mga istatistika ng paggamit at mga ulat ng pag-crash.</translation>
-<translation id="3898160962923474892">Pumunta sa
-          menu ng BitPop &gt;
+<translation id="1668054258064581266">Pagkatapos alisin ang iyong account sa Chromium, maaaring kailangan mong i-reload ang mga nakabukas mong tab upang magkabisa.</translation>
+<translation id="6953661834318318668">Toolbar ng Chromium</translation>
+<translation id="4285930937574705105">Nabigo ang pag-install dahil sa hindi natukoy na error. Kung kasalukuyang tumatakbo ang Chromium, pakisara ito at subukang muli.</translation>
+<translation id="1396446129537741364">Sinusubukan ng Chromium na magpakita ng mga password.</translation>
+<translation id="2886012850691518054">Opsyonal: Tumulong na pahusayin ang Chromium sa pamamagitan ng awtomatikong pagpapadala sa Google ng mga istatistika ng paggamit at mga ulat ng pag-crash.</translation>
+<translation id="580822234363523061">Pumunta sa
+          menu ng Chromium &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
           at tiyaking nakatakda sa "walang proxy" o "direkta" ang iyong configuration.</translation>
-<translation id="7541322662422142299"><ph name="PAGE_TITLE"/> - BitPop</translation>
-<translation id="3334080844010912902">Hindi mai-sync ng BitPop ang iyong data dahil hindi available ang Pag-sync para sa iyong domain.</translation>
-<translation id="2030214613468936763">Tinangka mong marating ang &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ngunit ang certificate na ipinakita ng server ay naglalaman ng mga error. Hindi makakagamit ang BitPop ng certificate na may mga error at hindi nito mapapatunayan ang pagkakakilanlan ng site kung saan ka nagtangkang kumonekta.</translation>
-<translation id="3801183610358973379">Nabigong i-uncompress ng installer ang archive. Mangyaring i-download muli ang BitPop.</translation>
-<translation id="4138697454314244697">Walang nakitang pag-install ng BitPop upang i-update.</translation>
-<translation id="4450789702440326676">Hayaang Tumakbo ang BitPop sa Background</translation>
-<translation id="8743840534367614002">BitPop Apps</translation>
-<translation id="2963590958538393837">Oo, lumabas sa BitPop</translation>
+<translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
+<translation id="7729447699958282447">Hindi mai-sync ng Chromium ang iyong data dahil hindi available ang Pag-sync para sa iyong domain.</translation>
+<translation id="1989424089625731201">Tinangka mong marating ang &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ngunit ang certificate na ipinakita ng server ay naglalaman ng mga error. Hindi makakagamit ang Chromium ng certificate na may mga error at hindi nito mapapatunayan ang pagkakakilanlan ng site kung saan ka nagtangkang kumonekta.</translation>
+<translation id="3103660991484857065">Nabigong i-uncompress ng installer ang archive. Mangyaring i-download muli ang Chromium.</translation>
+<translation id="7064610482057367130">Walang nakitang pag-install ng Chromium upang i-update.</translation>
+<translation id="872034308864968620">Hayaang Tumakbo ang Chromium sa Background</translation>
+<translation id="459535195905078186">Chromium Apps</translation>
+<translation id="5109068449432240255">Oo, lumabas sa Chromium</translation>
 <translation id="1480489203462860648">Subukan mo ito, naka-install na ito</translation>
-<translation id="7098153548331126805">Idinaragdag sa BitPop...</translation>
+<translation id="3032787606318309379">Idinaragdag sa Chromium...</translation>
 <translation id="4831257561365056138">I-uninstall ang Chromium App Launcher</translation>
-<translation id="7680117738450774222">Naka-sign in ka na ngayon sa BitPop! Na-disable ng iyong administrator ang pag-sync.</translation>
-<translation id="5995722392285490130"><ph name="BEGIN_BOLD"/>Babala:<ph name="END_BOLD"/> Hindi mapipigilan ng Google Chrome ang pagtatala ng mga extension ng iyong kasaysayan sa pagba-browse. Upang huwag paganahin ang extension na ito sa mode na incognito, alisin ang pagkakapili sa opsyong ito.</translation>
-<translation id="9123740998411173947">Ngayong naka-sign in ka na, maaari mong makuha ang iyong mga tab, bookmark at iba pang mga bagay-bagay sa BitPop sa iyong laptop, telepono at tablet. Makakatanggap ka rin ng higit na nauugnay na mga suhestiyon at feature sa mga serbisyo ng Google.</translation>
+<translation id="4222580632002216401">Naka-sign in ka na ngayon sa Chromium! Na-disable ng iyong administrator ang pag-sync.</translation>
+<translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Babala:<ph name="END_BOLD"/> Hindi mapipigilan ng Google Chrome ang pagtatala ng mga extension ng iyong kasaysayan sa pagba-browse. Upang huwag paganahin ang extension na ito sa mode na incognito, alisin ang pagkakapili sa opsyong ito.</translation>
+<translation id="4516868174453854611">Ngayong naka-sign in ka na, maaari mong makuha ang iyong mga tab, bookmark at iba pang mga bagay-bagay sa Chromium sa iyong laptop, telepono at tablet. Makakatanggap ka rin ng higit na nauugnay na mga suhestiyon at feature sa mga serbisyo ng Google.</translation>
 <translation id="985602178874221306">Ang Mga May-akda ng Chromium</translation>
-<translation id="3941397373453695568">Hindi isinasama ng BitPop ang PDF viewer na kinakailangan upang gumana ang Preview ng Pag-print.</translation>
-<translation id="8155571637339134666">Maaaring gumamit ang BitPop ng mga serbisyo sa web upang mapahusay ang iyong karanasan sa pagba-browse.</translation>
-<translation id="6157791660174418859">Subukan ang bagong paraan ng paggamit ng BitPop gamit ang iyong Google Account at sa mga nakabahaging computer.</translation>
-<translation id="4759775690587852534">Sa kasamaang palad, hindi available ang mga setting ng iyong Mozilla Firefox habang tumatakbo ang browser na iyon. Upang i-import sa BitPop ang mga setting na iyon, i-save ang iyong gawa at isara ang lahat ng window sa Firefox. Pagkatapos, i-click ang Magpatuloy.</translation>
-<translation id="5769857394054687534">Sa sitwasyong ito, hindi tumutugma ang address na nakalista sa certificate sa address ng website na sinubukang puntahan ng iyong browser. Ang isang posibleng dahilan nito ay ang iyong mga pakikipag-ugnayan ay hinahadlangan ng isang umaatake na nagpapakita ng certificate para sa ibang website, bagay na magdudulot ng hindi pagkakatugma. Isa pang posibleng dahilan ay naka-set up ang server upang ibalik ang certificate na iyon para sa maramihang website, kabilang ang website na tinatangka mong bisitahin, kahit na hindi wasto ang certificate na iyon para sa lahat ng website na iyon. Matitiyak ng BitPop na narating mo ang &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, ngunit hindi nito mabe-verify na kapareho ng site na ito ang &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; na nilalayon mong marating. Kung magpapatuloy ka, hindi maghahanap ang BitPop ng anumang karagdagang hindi pagkakatugma-tugma sa pangalan.</translation>
-<translation id="2224367722165014156">Hindi ma-update ng BitPop ang sarili nito patungo sa pinakabagong bersyon, kaya napapalampas mo ang mahuhusay na bagong feature at pag-aayos sa seguridad. Kailangan mong muling i-install ang BitPop nang manu-mano.</translation>
+<translation id="8628626585870903697">Hindi isinasama ng Chromium ang PDF viewer na kinakailangan upang gumana ang Preview ng Pag-print.</translation>
+<translation id="7138853919861947730">Maaaring gumamit ang Chromium ng mga serbisyo sa web upang mapahusay ang iyong karanasan sa pagba-browse.</translation>
+<translation id="934663725767849097">Subukan ang bagong paraan ng paggamit ng Chromium gamit ang iyong Google Account at sa mga nakabahaging computer.</translation>
+<translation id="3849925841547750267">Sa kasamaang palad, hindi available ang mga setting ng iyong Mozilla Firefox habang tumatakbo ang browser na iyon. Upang i-import sa Chromium ang mga setting na iyon, i-save ang iyong gawa at isara ang lahat ng window sa Firefox. Pagkatapos, i-click ang Magpatuloy.</translation>
+<translation id="7771626876550251690">Sa sitwasyong ito, hindi tumutugma ang address na nakalista sa certificate sa address ng website na sinubukang puntahan ng iyong browser. Ang isang posibleng dahilan nito ay ang iyong mga pakikipag-ugnayan ay hinahadlangan ng isang umaatake na nagpapakita ng certificate para sa ibang website, bagay na magdudulot ng hindi pagkakatugma. Isa pang posibleng dahilan ay naka-set up ang server upang ibalik ang certificate na iyon para sa maramihang website, kabilang ang website na tinatangka mong bisitahin, kahit na hindi wasto ang certificate na iyon para sa lahat ng website na iyon. Matitiyak ng Chromium na narating mo ang &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, ngunit hindi nito mabe-verify na kapareho ng site na ito ang &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; na nilalayon mong marating. Kung magpapatuloy ka, hindi maghahanap ang Chromium ng anumang karagdagang hindi pagkakatugma-tugma sa pangalan.</translation>
+<translation id="7027298027173928763">Hindi ma-update ng Chromium ang sarili nito patungo sa pinakabagong bersyon, kaya napapalampas mo ang mahuhusay na bagong feature at pag-aayos sa seguridad. Kailangan mong muling i-install ang Chromium nang manu-mano.</translation>
 <translation id="8897323336392112261">Kinokontrol din nito kung anong pahina ang ipinapakita kapag sinimulan mo ang Chromium o na-click ang button ng Home.</translation>
-<translation id="2886079192271351730">Natuklasang sumasalungat sa BitPop ang module na ito.</translation>
-<translation id="8324687802311409372">Whoa! Nag-crash ang BitPop. Muling ilunsad ngayon?</translation>
-<translation id="5689811886832352959">Tumulong na gawing mas mahusay ang BitPop sa pamamagitan ng pagpapadala ng mga ulat ng pag-crash at <ph name="UMA_LINK"/> sa Google</translation>
-<translation id="5101127815285864538">Makikita dito ang iyong web, mga bookmark at iba pang mga bagay-bagay sa BitPop.</translation>
+<translation id="4330585738697551178">Natuklasang sumasalungat sa Chromium ang module na ito.</translation>
+<translation id="3190315855212034486">Whoa! Nag-crash ang Chromium. Muling ilunsad ngayon?</translation>
+<translation id="3068515742935458733">Tumulong na gawing mas mahusay ang Chromium sa pamamagitan ng pagpapadala ng mga ulat ng pag-crash at <ph name="UMA_LINK"/> sa Google</translation>
+<translation id="734373864078049451">Makikita dito ang iyong web, mga bookmark at iba pang mga bagay-bagay sa Chromium.</translation>
 <translation id="3197823471738295152">Napapanahon ang iyong device.</translation>
 <translation id="8551886023433311834">Halos napapanahon na! I-restart ang iyong device upang tapusin ang pag-update.</translation>
-<translation id="9090519209458031409">Nais mo bang i-save ng BitPop ang iyong password para sa site na ito?</translation>
+<translation id="8353224596138547809">Nais mo bang i-save ng Chromium ang iyong password para sa site na ito?</translation>
 <translation id="7339898014177206373">Bagong window</translation>
-<translation id="6188910816550019957">Pumunta sa
-        menu ng BitPop &gt;
+<translation id="3733625138702910745">Pumunta sa
+        menu ng Chromium &gt;
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
         at alisin sa pagkakapili ang "<ph name="NO_PREFETCH_DESCRIPTION"/>."
         Kung hindi nito naresolba ang isyu, inirerekomenda naming piliing muli ang opsyong ito
         para sa mas mahusay na pagganap.</translation>
-<translation id="2397909649953118924">BitPop - Mga Notification (<ph name="QUANTITY"/> ang hindi pa nababasa)</translation>
+<translation id="7463979740390522693">Chromium - Mga Notification (<ph name="QUANTITY"/> ang hindi pa nababasa)</translation>
 <translation id="225614027745146050">Maligayang pagdating</translation>
-<translation id="1823899440832622134">Hindi ma-update ng BitPop ang sarili nito patungo sa pinakabagong bersyon, kaya napapalampas mo ang mahuhusay na bagong feature at pag-aayos sa seguridad. Kailangan mong i-update ang BitPop.</translation>
-<translation id="3421246989510066651">Nag-install ang administrator ng BitPop sa system na ito, at available ito para sa lahat ng user. Papalitan ng BitPop sa antas ng system ang iyong pag-install sa antas ng user ngayon.</translation>
+<translation id="5823381412099532241">Hindi ma-update ng Chromium ang sarili nito patungo sa pinakabagong bersyon, kaya napapalampas mo ang mahuhusay na bagong feature at pag-aayos sa seguridad. Kailangan mong i-update ang Chromium.</translation>
+<translation id="9191268552238695869">Nag-install ang administrator ng Chromium sa system na ito, at available ito para sa lahat ng user. Papalitan ng Chromium sa antas ng system ang iyong pag-install sa antas ng user ngayon.</translation>
 <translation id="4298853828775962437">http://support.google.com/chrome/?p=ib_chromeframe</translation>
-<translation id="1563133725769368154">Pakisara ang lahat ng window sa BitPop at subukang muli.</translation>
-<translation id="6948146312619379712">Pakisara ang lahat ng window sa BitPop at muling ilunsad ang BitPop upang magkabisa ang pagbabagong ito.</translation>
+<translation id="3509308970982693815">Pakisara ang lahat ng window sa Chromium at subukang muli.</translation>
+<translation id="4077262827416206768">Pakisara ang lahat ng window sa Chromium at muling ilunsad ang Chromium upang magkabisa ang pagbabagong ito.</translation>
 <translation id="6475912303565314141">Kinokontrol din nito kung anong pahina ang ipinapakita kapag sinimulan mo ang Chromium.</translation>
-<translation id="158578066452246627">Nakakahamak ang file na ito, at na-block ito ng BitPop.</translation>
-<translation id="5845248948746043578">Mga module na nai-load sa BitPop</translation>
-<translation id="3494861236236958082">Sa Mac, ang mga password ay sine-save sa iyong Keychain at maaaring ma-access o ma-sync ng ibang mga user ng BitPop na nakikihati sa OS X account na ito.</translation>
-<translation id="6497704981133944775">Sinubukan mong pumunta sa &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ngunit nagpakita ang server ng certificate na mula sa entity na hindi pinagkakatiwalaan ng operating system ng iyong computer. Maaari itong mangahulugan na bumuo ang server ng sarili nitong mga panseguridad na kredensyal, na hindi maaasahan ng BitPop para sa impormasyon ng pagkakakilanlan, o maaaring may isang attacker na sinusubukang humadlang sa iyong mga pakikipag-ugnayan.</translation>
-<translation id="963040405972220509">Kailangang naka-sign in ka sa BitPop upang makagamit ng mga app. Nagbibigay-daan ito sa BitPop na i-sync ang iyong mga app, bookmark, kasaysayan, password at iba pang mga setting sa mga device.</translation>
-<translation id="2585492770508769131">Patuloy na magpatakbo ng background na apps kapag nakasara ang BitPop</translation>
+<translation id="1725059042853530269">Maaaring makapahamak ang <ph name="FILE_NAME"/> sa iyong karanasan sa pagba-browse, kaya na-block ito ng Chromium.</translation>
+<translation id="750717762378961310">Nakakahamak ang file na ito, at na-block ito ng Chromium.</translation>
+<translation id="6944967875980567883">Mga module na nai-load sa Chromium</translation>
+<translation id="6899795326977034905">Sa Mac, ang mga password ay sine-save sa iyong Keychain at maaaring ma-access o ma-sync ng ibang mga user ng Chromium na nakikihati sa OS X account na ito.</translation>
+<translation id="118298050220780080">Sinubukan mong pumunta sa &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ngunit nagpakita ang server ng certificate na mula sa entity na hindi pinagkakatiwalaan ng operating system ng iyong computer. Maaari itong mangahulugan na bumuo ang server ng sarili nitong mga panseguridad na kredensyal, na hindi maaasahan ng Chromium para sa impormasyon ng pagkakakilanlan, o maaaring may isang attacker na sinusubukang humadlang sa iyong mga pakikipag-ugnayan.</translation>
+<translation id="3046695367536568084">Kailangang naka-sign in ka sa Chromium upang makagamit ng mga app. Nagbibigay-daan ito sa Chromium na i-sync ang iyong mga app, bookmark, kasaysayan, password at iba pang mga setting sa mga device.</translation>
+<translation id="3296368748942286671">Patuloy na magpatakbo ng background na apps kapag nakasara ang Chromium</translation>
 <translation id="473775607612524610">Mag-update</translation>
-<translation id="1053737967432347853">Ginagamit ng site na ito ang plug-in na BitPop Frame na malapit nang hindi suportahan. Paki-uninstall ito at mag-upgrade sa isang modernong browser.</translation>
-<translation id="8237944200818342704">Awtomatikong ilunsad ang BitPop kapag nagbukas ang iyong computer</translation>
-<translation id="5904788103100750653">Kung nagpapahiram ka ng computer, ang mga kaibigan at kapamilya ay maaaring mag-browse nang hiwalay at i-set up ang BitPop sa paraang gusto nila.</translation>
-<translation id="1141543168124987471">May available na bagong bersyon ng BitPop, at mas mabilis ito kaysa sa dati.</translation>
-<translation id="3089560314597734657">Hindi mai-sync ng BitPop ang iyong data dahil hindi napapanahon ang mga detalye sa pag-sign in ng iyong account.</translation>
-<translation id="5107343520309227066">Mukhang ginagamit ang profile ng iba pang proseso ng BitPop (<ph name="PROCESS_ID"/>) sa iba pang computer (<ph name="HOST_NAME"/>).  Ni-lock ng BitPop ang profile upang hindi ito ma-corrupt.  Kung nakakatiyak ka na walang ibang mga proseso ang gumagamit sa profile na ito, maaari mong i-unlock ang profile at ilunsad muli ang BitPop.</translation>
-<translation id="5971960158340115871">Alisin mula sa BitPop</translation>
-<translation id="4817923018536741011">Idagdag ang iyong sarili sa BitPop</translation>
+<translation id="7707841053049645517">Ginagamit ng site na ito ang plug-in na Chromium Frame na malapit nang hindi suportahan. Paki-uninstall ito at mag-upgrade sa isang modernong browser.</translation>
+<translation id="3656661827369545115">Awtomatikong ilunsad ang Chromium kapag nagbukas ang iyong computer</translation>
+<translation id="2241627712206172106">Kung nagpapahiram ka ng computer, ang mga kaibigan at kapamilya ay maaaring mag-browse nang hiwalay at i-set up ang Chromium sa paraang gusto nila.</translation>
+<translation id="6055895534982063517">May available na bagong bersyon ng Chromium, at mas mabilis ito kaysa sa dati.</translation>
+<translation id="8821041990367117597">Hindi mai-sync ng Chromium ang iyong data dahil hindi napapanahon ang mga detalye sa pag-sign in ng iyong account.</translation>
+<translation id="4677944499843243528">Mukhang ginagamit ang profile ng iba pang proseso ng Chromium (<ph name="PROCESS_ID"/>) sa iba pang computer (<ph name="HOST_NAME"/>).  Ni-lock ng Chromium ang profile upang hindi ito ma-corrupt.  Kung nakakatiyak ka na walang ibang mga proseso ang gumagamit sa profile na ito, maaari mong i-unlock ang profile at ilunsad muli ang Chromium.</translation>
+<translation id="5405650547142096840">Alisin mula sa Chromium</translation>
+<translation id="4994636714258228724">Idagdag ang iyong sarili sa Chromium</translation>
 <translation id="7066436765290594559">Hindi ma-sync ng Chromium OS ang iyong data. Paki-update ang iyong Passphrase sa pag-sync.</translation>
 <translation id="7747138024166251722">Hindi makalikha ng pansamantalang direktoryo ang installer. Paki-suri para sa puwang sa disk na walang laman at pahintulot upang i-install ang software.</translation>
-<translation id="1657309500244281883">Hindi makakapag-read at makakapag-write ang BitPop sa direktoryo ng data nito:
+<translation id="3258596308407688501">Hindi makakapag-read at makakapag-write ang Chromium sa direktoryo ng data nito:
 
 <ph name="USER_DATA_DIRECTORY"/></translation>
 <translation id="6970811910055250180">Ina-update ang iyong device...</translation>
 <translation id="2485422356828889247">I-uninstall</translation>
-<translation id="8450502629618876351">Kumuha ng tulong sa paggamit ng BitPop</translation>
-<translation id="7974150821733212325">Nagsa-sign in ka gamit ang isang pinamamahalaang account at nagbibigay sa administrator nito ng kontrol sa iyong profile sa BitPop. Permanenteng mauugnay ang iyong data sa BitPop, gaya ng iyong apps, mga bookmark, kasaysayan, password, at iba pang mga setting sa <ph name="USER_NAME"/>. Matatanggal mo ang data na ito sa Google Accounts Dashboard, ngunit hindi mo maiuugnay ang data na ito sa isa pang account. <ph name="LEARN_MORE"/></translation>
+<translation id="85843667276690461">Kumuha ng tulong sa paggamit ng Chromium</translation>
+<translation id="5358375970380395591">Nagsa-sign in ka gamit ang isang pinamamahalaang account at nagbibigay sa administrator nito ng kontrol sa iyong profile sa Chromium. Permanenteng mauugnay ang iyong data sa Chromium, gaya ng iyong apps, mga bookmark, kasaysayan, password, at iba pang mga setting sa <ph name="USER_NAME"/>. Matatanggal mo ang data na ito sa Google Accounts Dashboard, ngunit hindi mo maiuugnay ang data na ito sa isa pang account. <ph name="LEARN_MORE"/></translation>
 <translation id="9036189287518468038">App Launcher ng BitPop</translation>
-<translation id="8643500805082769156">Luma na ang BitPop</translation>
+<translation id="8493179195440786826">Luma na ang Chromium</translation>
 <translation id="911206726377975832">Tatanggalin din ang iyong data sa pag-browse?</translation>
-<translation id="7531302439507262213">Kinakailangan ng <ph name="DOMAIN"/> na basahin mo at tanggapin ang sumusunod na Mga Tuntunin ng Serbisyo bago gamitin ang device na ito. Hindi pinapalawak, binabago o nililimitahan ng mga tuntuning ito ang Mga Tuntunin ng Chromium OS.</translation>
+<translation id="95514773681268843">Kinakailangan ng <ph name="DOMAIN"/> na basahin mo at tanggapin ang sumusunod na Mga Tuntunin ng Serbisyo bago gamitin ang device na ito. Hindi pinapalawak, binabago o nililimitahan ng mga tuntuning ito ang Mga Tuntunin ng Chromium OS.</translation>
 <translation id="5603085937604338780">chromium</translation>
-<translation id="4501582071990606935">Pakisara ang lahat ng window ng BitPop (kasama ang mga nasa mode na Windows 8) at subukang muli.</translation>
-<translation id="2318017154298876822">I-update ang &amp;BitPop</translation>
+<translation id="1699664235656412242">Pakisara ang lahat ng window ng Chromium (kasama ang mga nasa mode na Windows 8) at subukang muli.</translation>
+<translation id="6734080038664603509">I-update ang &amp;Chromium</translation>
 <translation id="8862326446509486874">Wala kang naaangkop na mga karapatan para sa pag-install sa antas ng system. Subukan muling patakbuhin ang installer bilang Administrator.</translation>
 <translation id="2535480412977113886">Hindi ma-sync ng Chromium OS ang iyong data dahil hindi napapanahon ang mga detalye sa pag-sign in sa iyong account.</translation>
 <translation id="8697124171261953979">Kinokontrol din nito kung anong pahina ang ipinapakita kapag sinimulan mo ang Chromium o naghanap mula sa Omnibox.</translation>
-<translation id="8106224471637848707">Hindi tumutugma ang software na tumatakbo sa iyong computer sa BitPop.</translation>
-<translation id="8308846639737830860">Hayaang tumakbo ang BitPop sa background</translation>
-<translation id="8251642411216619957">Mag-sign in sa BitPop</translation>
+<translation id="894903460958736500">Hindi tumutugma ang software na tumatakbo sa iyong computer sa Chromium.</translation>
+<translation id="1774152462503052664">Hayaang tumakbo ang Chromium sa background</translation>
+<translation id="9022552996538154597">Mag-sign in sa Chromium</translation>
 <translation id="4365115785552740256">Nagiging posible ang Chromium sa pamamagitan ng proyekto sa open source ng <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> at iba pang <ph name="BEGIN_LINK_OSS"/>open source na software<ph name="END_LINK_OSS"/>.</translation>
-<translation id="1990056108053403520">BitPop (mDNS-In)</translation>
-<translation id="5819325063060806784">Makakagamit ng BitPop ang mga bisita nang hindi nag-iiwan ng anumang bakas.</translation>
-<translation id="1526986572493888898">Ginagamit ng site na ito ang plug-in na BitPop Frame na malapit nang hindi suportahan. Paki-uninstall ito at mag-download ng tumutugmang browser.</translation>
-<translation id="7131892997749364444">Binago ng isang extension kung anong pahina ang ipinapakita kapag sinimulan mo ang BitPop.</translation>
+<translation id="9190841055450128916">Chromium (mDNS-In)</translation>
+<translation id="4987820182225656817">Makakagamit ng Chromium ang mga bisita nang hindi nag-iiwan ng anumang bakas.</translation>
+<translation id="2216475571518225820">Ginagamit ng site na ito ang plug-in na Chromium Frame na malapit nang hindi suportahan. Paki-uninstall ito at mag-download ng tumutugmang browser.</translation>
+<translation id="3487263810738775861">Binago ng isang extension kung anong pahina ang ipinapakita kapag sinimulan mo ang Chromium.</translation>
 <translation id="5877064549588274448">Binago ang channel. I-restart ang iyong device upang ilapat ang mga pagbabago.</translation>
-<translation id="6321973207566602686">Gawing default na browser ang BitPop</translation>
-<translation id="6899689707951760367">Ginagamit ng BitPop ang iyong camera.</translation>
-<translation id="4645868211198791394">BitPop</translation>
+<translation id="6248213926982192922">Gawing default na browser ang Chromium</translation>
+<translation id="6309712487085796862">Ginagamit ng Chromium ang iyong camera.</translation>
+<translation id="7337881442233988129">Chromium</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
 <translation id="6757767188268205357">Huwag akong istorbohin</translation>
-<translation id="690823546498424823">Secure na iiimbak ng BitPop ang iyong impormasyon upang hindi mo na ito kailangang i-type muli, ngunit kakailanganin mo pa ring i-verify ang panseguridad na code ng iyong card para sa mga pagbabayad sa hinaharap.</translation>
-<translation id="6220055452245182274">Hindi available ang pag-uulat ng crash sa BitPop.</translation>
-<translation id="924450301557116466">Hindi ginagamit sa BitPop. Placeholder na nagpapanatiling naka-sync ang mga mapa ng mapagkukunan. Umaasa ito ng isang argumento: $1.</translation>
-<translation id="843167022919259875">Tumatakbo ang BitPop sa background.</translation>
-<translation id="2171549355847332070">Naka-sign in ka sa BitPop bilang <ph name="USER_EMAIL_ADDRESS"/>. Pakigamit ang parehong account upang mag-sign in muli.</translation>
-<translation id="6165323383832829057">Huminto na sa pag-update ang BitPop at hindi na nito sinusuportahan ang bersyong ito ng iyong operating system.</translation>
-<translation id="2645729404591158594">I-preview ang bagong BitPop</translation>
-<translation id="1984238998837921833">Ina-update ang BitPop...</translation>
-<translation id="9102885271730191378">Task Manager - BitPop</translation>
-<translation id="1608739712349494181">Upang gawing mas ligtas ang BitPop, nag-disable kami ng ilang extension na hindi nakalista sa <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/> at maaaring naidagdag nang hindi mo nalalaman.</translation>
-<translation id="5243897687251941678">Hanapin ang iyong mga bookmark sa BitPop menu o sa bookmarks bar.</translation>
-<translation id="5925519479755588070">Halos napapanahon na! Muling ilunsad ang BitPop upang tapusin ang pag-update.</translation>
-<translation id="5866485601389562653">Maaari mong idagdag ang iyong iba pang Google Accounts at i-lock ang iyong BitPop sa ibaba.</translation>
-<translation id="8072646586465991214">May nakitang sumasalungat na pag-install ng BitPop sa system. Paki-uninstall ito at subukang muli.</translation>
-<translation id="4352003675682958984">May available na isang bagong bersyon ng BitPop.</translation>
-<translation id="8972540218839637401">May naganap na error sa operating system sa panahon ng pag-install. Mangyaring i-download muli ang BitPop.</translation>
-<translation id="2581134012974124523">Naidagdag na sa BitPop ang <ph name="EXTENSION_NAME"/>.</translation>
-<translation id="6452045500174243632">Pumunta sa
-          menu ng BitPop &gt;
+<translation id="1745962126679160932">Secure na iiimbak ng Chromium ang iyong impormasyon upang hindi mo na ito kailangang i-type muli, ngunit kakailanganin mo pa ring i-verify ang panseguridad na code ng iyong card para sa mga pagbabayad sa hinaharap.</translation>
+<translation id="275588974610408078">Hindi available ang pag-uulat ng crash sa Chromium.</translation>
+<translation id="5909170354645388250">Hindi ginagamit sa Chromium. Placeholder na nagpapanatiling naka-sync ang mga mapa ng mapagkukunan. Umaasa ito ng isang argumento: $1.</translation>
+<translation id="5805689092869152320">Tumatakbo ang Chromium sa background.</translation>
+<translation id="7937630085815544518">Naka-sign in ka sa Chromium bilang <ph name="USER_EMAIL_ADDRESS"/>. Pakigamit ang parehong account upang mag-sign in muli.</translation>
+<translation id="2685838254101182273">Huminto na sa pag-update ang Chromium at hindi na nito sinusuportahan ang bersyong ito ng iyong operating system.</translation>
+<translation id="3223794808658970984">I-preview ang bagong Chromium</translation>
+<translation id="3582788516608077514">Ina-update ang Chromium...</translation>
+<translation id="7223968959479464213">Task Manager - Chromium</translation>
+<translation id="1779356040007214683">Upang gawing mas ligtas ang Chromium, nag-disable kami ng ilang extension na hindi nakalista sa <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/> at maaaring naidagdag nang hindi mo nalalaman.</translation>
+<translation id="6638567566961868659">Hanapin ang iyong mga bookmark sa Chromium menu o sa bookmarks bar.</translation>
+<translation id="2673087257647337101">Halos napapanahon na! Muling ilunsad ang Chromium upang tapusin ang pag-update.</translation>
+<translation id="4864451188650489141">Maaari mong idagdag ang iyong iba pang Google Accounts at i-lock ang iyong Chromium sa ibaba.</translation>
+<translation id="1293235220023151515">May nakitang sumasalungat na pag-install ng Chromium sa system. Paki-uninstall ito at subukang muli.</translation>
+<translation id="5398878173008909840">May available na isang bagong bersyon ng Chromium.</translation>
+<translation id="2648074677641340862">May naganap na error sa operating system sa panahon ng pag-install. Mangyaring i-download muli ang Chromium.</translation>
+<translation id="5942520288919337908">Naidagdag na sa Chromium ang <ph name="EXTENSION_NAME"/>.</translation>
+<translation id="4559775032954821361">Pumunta sa
+          menu ng Chromium &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
@@ -164,89 +165,89 @@ Maaaring hindi available ang ilang tampok at hindi mase-save ang mga pagbabago s
           &gt;
           Mga Setting ng LAN
           at alisin sa pagkakapili ang checkbox ng "Gumamit ng proxy server para sa iyong LAN."</translation>
-<translation id="8988481325911971852">Nabigo ang pag-install dahil sa hindi natukoy na error. Mangyaring i-download muli ang BitPop.</translation>
-<translation id="660036136456272595">Hindi maaaring gamitin ang iyong profile dahil mula ito sa isang mas bagong bersyon ng BitPop.
+<translation id="8621669128220841554">Nabigo ang pag-install dahil sa hindi natukoy na error. Mangyaring i-download muli ang Chromium.</translation>
+<translation id="6717134281241384636">Hindi maaaring gamitin ang iyong profile dahil mula ito sa isang mas bagong bersyon ng Chromium.
 
-Maaaring hindi available ang ilang tampok. Mangyaring tumukoy ng ibang direktoryo ng profile o gumamit ng mas bagong bersyon ng BitPop.</translation>
-<translation id="3787192530015965250">Sinusubukan ng BitPop na ipakita ang mga password. I-type ang password sa Windows upang payagan ito.</translation>
-<translation id="7862155441175671173">Idagdag sa BitPop</translation>
-<translation id="1211470790061593728">Ngayon, mas madali nang gamitin ang BitPop sa iyong Google Account at sa mga nakabahaging computer.</translation>
-<translation id="5594704848342987755">May mas bagong bersyon ng BitPop na ang computer na ito. Kung hindi gumagana ang software, mangyaring i-uninstall ang BitPop at subukang muli.</translation>
-<translation id="3528119622127530876">Hindi mai-sync ng BitPop ang iyong data. Paki-update ang iyong passphrase sa Pag-sync.</translation>
+Maaaring hindi available ang ilang tampok. Mangyaring tumukoy ng ibang direktoryo ng profile o gumamit ng mas bagong bersyon ng Chromium.</translation>
+<translation id="8907580949721785412">Sinusubukan ng Chromium na ipakita ang mga password. I-type ang password sa Windows upang payagan ito.</translation>
+<translation id="9013087743919948559">Idagdag sa Chromium</translation>
+<translation id="6334986366598267305">Ngayon, mas madali nang gamitin ang Chromium sa iyong Google Account at sa mga nakabahaging computer.</translation>
+<translation id="6212496753309875659">May mas bagong bersyon ng Chromium na ang computer na ito. Kung hindi gumagana ang software, mangyaring i-uninstall ang Chromium at subukang muli.</translation>
+<translation id="1115445892567829615">Hindi mai-sync ng Chromium ang iyong data. Paki-update ang iyong passphrase sa Pag-sync.</translation>
 <translation id="1298199220304005244">Kumuha ng tulong sa paggamit ng Chromium OS</translation>
 <translation id="331951419404882060">Hindi ma-sync ng Chromium OS ang iyong data dahil sa isang error sa pagsa-sign in.</translation>
 <translation id="8187289872471304532">Pumunta sa
           Applications &gt; System Preferences &gt; Network &gt; Advanced &gt; Proxies
           at alisin sa pagkakapili ang anumang mga napiling proxy.</translation>
-<translation id="4634257184917711644">Nakakahamak ang <ph name="FILE_NAME"/>, at na-block ito ng BitPop.</translation>
-<translation id="454930334682314382">Na-save na sa BitPop ang iyong mga detalye ng pagsingil.</translation>
+<translation id="2801146392936645542">Nakakahamak ang <ph name="FILE_NAME"/>, at na-block ito ng Chromium.</translation>
+<translation id="4488676065623537541">Na-save na sa Chromium ang iyong mga detalye ng pagsingil.</translation>
 <translation id="130631256467250065">Magkakabisa ang iyong mga pagbabago sa susunod na i-restart ang iyong device.</translation>
-<translation id="8810991521775422988">BitPop Notification Center</translation>
-<translation id="2901348058800597589">Hindi nag-shut down nang tama ang BitPop. Upang muling buksan ang mga pahinang nabuksan mo, i-click ang Ipanumbalik.</translation>
-<translation id="838316505303362561">Iminumungkahi ng BitPop</translation>
-<translation id="5653921603290474550">Hindi gumagana ang BitPop. Muling ilunsad ngayon?</translation>
-<translation id="3306752603341080445">Naka-sign in ka sa BitPop!</translation>
+<translation id="3244477511402911926">Chromium Notification Center</translation>
+<translation id="1105130903706696483">Hindi nag-shut down nang tama ang Chromium. Upang muling buksan ang mga pahinang nabuksan mo, i-click ang Ipanumbalik.</translation>
+<translation id="9214519575840037443">Iminumungkahi ng Chromium</translation>
+<translation id="1929939181775079593">Hindi gumagana ang Chromium. Muling ilunsad ngayon?</translation>
+<translation id="1414495520565016063">Naka-sign in ka sa Chromium!</translation>
 <translation id="2158734852934720349">Mga lisensya ng open source ng Chromium OS</translation>
-<translation id="2239725456669400190">Kinakailangang maglunsad ng BitPop ng panlabas na application upang mangasiwa ng mga <ph name="SCHEME"/> na link. Ang hiniling na link ay <ph name="PROTOLINK"/>.</translation>
-<translation id="5574763173398621221">Nais mo bang i-save ng BitPop ang iyong password?</translation>
-<translation id="5387335700352644169">Ipakita ang BitPop menu</translation>
-<translation id="1981756165552484777">Ginagamit mo ang <ph name="PROFILE_EMAIL"/> upang i-sync ang iyong bagay sa BitPop. Upang ma-update ang iyong kagustuhan sa pag-sync o upang magamit ang BitPop nang walang Google account, bisitahin ang <ph name="SETTINGS_LINK"/>.</translation>
-<translation id="1681324505975197559">(kinakailangang <ph name="BEGIN_BUTTON"/>i-restart<ph name="END_BUTTON"/> ang BitPop)</translation>
-<translation id="6863452815496188645">I-set up ang Pag-sync upang i-save ang iyong personalized na mga tampok ng browser sa web at i-access ang mga iyon mula sa BitPop sa anumang computer.</translation>
+<translation id="2966088006374919794">Kinakailangang maglunsad ng Chromium ng panlabas na application upang mangasiwa ng mga <ph name="SCHEME"/> na link. Ang hiniling na link ay <ph name="PROTOLINK"/>.</translation>
+<translation id="2558235863893655150">Nais mo bang i-save ng Chromium ang iyong password?</translation>
+<translation id="1231416733874080281">Ipakita ang Chromium menu</translation>
+<translation id="6485906693002546646">Ginagamit mo ang <ph name="PROFILE_EMAIL"/> upang i-sync ang iyong bagay sa Chromium. Upang ma-update ang iyong kagustuhan sa pag-sync o upang magamit ang Chromium nang walang Google account, bisitahin ang <ph name="SETTINGS_LINK"/>.</translation>
+<translation id="5772805321386874569">(kinakailangang <ph name="BEGIN_BUTTON"/>i-restart<ph name="END_BUTTON"/> ang Chromium)</translation>
+<translation id="1688750314291223739">I-set up ang Pag-sync upang i-save ang iyong personalized na mga tampok ng browser sa web at i-access ang mga iyon mula sa Chromium sa anumang computer.</translation>
 <translation id="8865765905101981392">Internet Browser</translation>
-<translation id="3099708656176429608">Payagan ang BitPop na i-access ang network sa mga setting ng iyong firewall
+<translation id="8610831143142469229">Payagan ang Chromium na i-access ang network sa mga setting ng iyong firewall
         o antivirus.</translation>
-<translation id="8098179324031720100">Naging mas mahusay na ang BitPop! Available na ang bagong bersyon.</translation>
-<translation id="4320683788245444425">Hindi na makakatanggap ng mga update sa BitPop ang computer na ito dahil hindi na sinusuportahan ang hardware nito.</translation>
-<translation id="6385431739515246076">Tungkol sa &amp;BitPop</translation>
-<translation id="7521125380721653484">Sira o di-wasto ang archive ng installer. Mangyaring i-download muli ang BitPop.</translation>
-<translation id="8457938350903919620">I-click ang iyong pangalan upang buksan ang BitPop at simulan ang pagba-browse.</translation>
-<translation id="8410648211590980711">Ginagamit ng BitPop ang iyong mikropono.</translation>
-<translation id="3298525902784604502">Tinangka mong marating ang &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ngunit nagpakita ng na-expire nang certificate ang server. Walang available na impormasyon upang isaad kung nakompromiso ang certificate simula noong pag-expire nito. Hindi magagarantiya ng BitPop na nakikipag-ugnayan ka sa &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; at hindi sa isang umaatake. Kasalukuyang nakatakda sa <ph name="CURRENT_TIME"/> ang orasan ng iyong computer. Mukha ba itong tama? Kung hindi, dapat mong iwasto ang error at i-refresh ang pahinang ito.</translation>
+<translation id="6424492062988593837">Naging mas mahusay na ang Chromium! Available na ang bagong bersyon.</translation>
+<translation id="811857857463334932">Hindi na makakatanggap ng mga update sa Chromium ang computer na ito dahil hindi na sinusuportahan ang hardware nito.</translation>
+<translation id="2910007522516064972">Tungkol sa &amp;Chromium</translation>
+<translation id="8453117565092476964">Sira o di-wasto ang archive ng installer. Mangyaring i-download muli ang Chromium.</translation>
+<translation id="3889543394854987837">I-click ang iyong pangalan upang buksan ang Chromium at simulan ang pagba-browse.</translation>
+<translation id="3130323860337406239">Ginagamit ng Chromium ang iyong mikropono.</translation>
+<translation id="3249425904492147663">Tinangka mong marating ang &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ngunit nagpakita ng na-expire nang certificate ang server. Walang available na impormasyon upang isaad kung nakompromiso ang certificate simula noong pag-expire nito. Hindi magagarantiya ng Chromium na nakikipag-ugnayan ka sa &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; at hindi sa isang umaatake. Kasalukuyang nakatakda sa <ph name="CURRENT_TIME"/> ang orasan ng iyong computer. Mukha ba itong tama? Kung hindi, dapat mong iwasto ang error at i-refresh ang pahinang ito.</translation>
 <translation id="7196020411877309443">Bakit ko nakikita ito?</translation>
-<translation id="6809805128084420516">Mahalagang impormasyon patungkol sa iyong data sa BitPop</translation>
-<translation id="5312973105258198185">Naka-sign in ka bilang <ph name="USER_EMAIL_ADDRESS"/>. Maaari mo na ngayong i-access ang iyong mga bookmark, kasaysayan, at iba pang setting sa lahat ng iyong device na naka-sign in.</translation>
-<translation id="473359818469623008">Hindi ma-install ang parehong Bersyon ng BitPop na kasalukuyang tumatakbo. Pakisara ang BitPop at subukang muli.</translation>
-<translation id="2595850371931815386">Hindi BitPop ang iyong default na browser.</translation>
+<translation id="457845228957001925">Mahalagang impormasyon patungkol sa iyong data sa Chromium</translation>
+<translation id="4567424176335768812">Naka-sign in ka bilang <ph name="USER_EMAIL_ADDRESS"/>. Maaari mo na ngayong i-access ang iyong mga bookmark, kasaysayan, at iba pang setting sa lahat ng iyong device na naka-sign in.</translation>
+<translation id="7483335560992089831">Hindi ma-install ang parehong Bersyon ng Chromium na kasalukuyang tumatakbo. Pakisara ang Chromium at subukang muli.</translation>
+<translation id="7641113255207688324">Hindi Chromium ang iyong default na browser.</translation>
 <translation id="4458285410772214805">Mangyaring mag-sign out at mag-sign in muli upang magkabisa ang pagbabagong ito.</translation>
-<translation id="6627720938086825017">Ginagamit ng BitPop ang iyong camera at mikropono.</translation>
-<translation id="6382607600997384001">Makikita mo ang lahat ng iyong notification mula sa apps, mga extension, at website ng BitPop dito.</translation>
+<translation id="761356813943268536">Ginagamit ng Chromium ang iyong camera at mikropono.</translation>
+<translation id="805745970029938373">Makikita mo ang lahat ng iyong notification mula sa apps, mga extension, at website ng Chromium dito.</translation>
 <translation id="2119636228670142020">Tungkol sa &amp;Chromium OS</translation>
-<translation id="4196382931981526364">May available na bago at mas ligtas na bersyon ng BitPop.</translation>
-<translation id="862266784641000464">Pinapayagan ka ng Google Chrome na mag-click sa isang numero ng telepono sa web at tawagan ito gamit ang Skype!</translation>
-<translation id="8072591166076742072">Kasalukuyang ginagawa ang pag-download. Gusto mo bang lumabas ng BitPop at kanselahin ang pag-download?</translation>
-<translation id="8650443074479376435">Hindi mai-sync ng BitPop ang iyong data dahil sa isang error sa pagsa-sign in.</translation>
-<translation id="7561209000218748370">Inbound na panuntunan para sa BitPop upang payagan ang trapiko ng mDNS.</translation>
+<translation id="1708666629004767631">May available na bago at mas ligtas na bersyon ng Chromium.</translation>
+<translation id="378917192836375108">Pinapayagan ka ng Google Chrome na mag-click sa isang numero ng telepono sa web at tawagan ito gamit ang Skype!</translation>
+<translation id="8724049448828509830">Kasalukuyang ginagawa ang pag-download. Gusto mo bang lumabas ng Chromium at kanselahin ang pag-download?</translation>
+<translation id="608189560609172163">Hindi mai-sync ng Chromium ang iyong data dahil sa isang error sa pagsa-sign in.</translation>
+<translation id="4888717733111232871">Inbound na panuntunan para sa Chromium upang payagan ang trapiko ng mDNS.</translation>
 <translation id="151962892725702025">Hindi ma-sync ng Chromium OS ang iyong data dahil hindi available ang Pag-sync para sa iyong domain.</translation>
 <translation id="3360567213983886831">Mga BitPop Binary</translation>
-<translation id="108010966668726733">May nag-sign in dati sa BitPop sa computer na ito bilang <ph name="ACCOUNT_EMAIL_LAST"/>. Kung hindi iyon ang iyong account, lumikha ng bagong user ng BitPop upang ihiwalay ang iyong impormasyon.
+<translation id="8985587603644336029">May nag-sign in dati sa Chromium sa computer na ito bilang <ph name="ACCOUNT_EMAIL_LAST"/>. Kung hindi iyon ang iyong account, lumikha ng bagong user ng Chromium upang ihiwalay ang iyong impormasyon.
 
-Kapag nag-sign in ka pa rin, isasama sa <ph name="ACCOUNT_EMAIL_NEW"/> ang impormasyon sa BitPop gaya ng mga bookmark, kasaysayan, at iba pang mga setting.</translation>
-<translation id="7826309952950470209">Kasalukuyang ginagawa ang mga pag-download. Gusto mo bang lumabas ng BitPop at kanselahin ang mga pag-download?</translation>
-<translation id="380873736468525691">Kinakailangan ng BitPop ang Windows Vista o Windows XP na may SP2 o mas mataas.</translation>
-<translation id="2762974284703971745">May module na may kaparehong pangalan ang natuklasang sumasalungat sa BitPop.</translation>
-<translation id="5213128101330439346">Ito ang iyong BitPop</translation>
-<translation id="5443433498537176573">Napapanahon ang BitPop.</translation>
-<translation id="5637727561937246825">Mayroon nang mas bagong bersyon ng mga component ng BitPop ang computer na ito. Mangyaring gumamit ng mas bagong installer.</translation>
-<translation id="4547797007790555015">Tinangka mong marating ang &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ngunit nagpakita ang server ng wala pang bisang certificate. Walang available na impormasyon upang isaad kung mapagkakatiwalaan ang certificate. Hindi magagarantiya ng BitPop na nakikipag-ugnayan ka sa &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; at hindi sa isang nang-aatake. Kasalukuyang nakatakda sa <ph name="CURRENT_TIME"/> ang orasan ng iyong computer. Tama ba ito? Kung hindi, dapat mong iwasto ang system ng orasan at i-refresh ang pahinang ito.</translation>
-<translation id="185658551912723674">Maligayang Pagdating sa BitPop</translation>
-<translation id="1909867102505992367">Sira o di-wasto ang file ng iyong mga kagustuhan.
+Kapag nag-sign in ka pa rin, isasama sa <ph name="ACCOUNT_EMAIL_NEW"/> ang impormasyon sa Chromium gaya ng mga bookmark, kasaysayan, at iba pang mga setting.</translation>
+<translation id="2739631515503418643">Kasalukuyang ginagawa ang mga pag-download. Gusto mo bang lumabas ng Chromium at kanselahin ang mga pag-download?</translation>
+<translation id="9013262824292842194">Kinakailangan ng Chromium ang Windows Vista o Windows XP na may SP2 o mas mataas.</translation>
+<translation id="1967743265616885482">May module na may kaparehong pangalan ang natuklasang sumasalungat sa Chromium.</translation>
+<translation id="8704119203788522458">Ito ang iyong Chromium</translation>
+<translation id="4224199872375172890">Napapanahon ang Chromium.</translation>
+<translation id="374481098568514319">Mayroon nang mas bagong bersyon ng mga component ng Chromium ang computer na ito. Mangyaring gumamit ng mas bagong installer.</translation>
+<translation id="6240281849816458190">Tinangka mong marating ang &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ngunit nagpakita ang server ng wala pang bisang certificate. Walang available na impormasyon upang isaad kung mapagkakatiwalaan ang certificate. Hindi magagarantiya ng Chromium na nakikipag-ugnayan ka sa &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; at hindi sa isang nang-aatake. Kasalukuyang nakatakda sa <ph name="CURRENT_TIME"/> ang orasan ng iyong computer. Tama ba ito? Kung hindi, dapat mong iwasto ang system ng orasan at i-refresh ang pahinang ito.</translation>
+<translation id="5862307444128926510">Maligayang Pagdating sa Chromium</translation>
+<translation id="7318036098707714271">Sira o di-wasto ang file ng iyong mga kagustuhan.
 
-Hindi mabawi ng BitPop ang iyong mga setting.</translation>
-<translation id="6239286721842301381">Pini-preview mo ang bagong BitPop.</translation>
-<translation id="7591092481995851856">Iki-clear ng pagdiskonekta kay <ph name="USERNAME"/> ang iyong history, mga bookmark, setting at iba pang data ng BitPop na naka-imbak sa device na ito. Hindi iki-clear ang data na naka-imbak sa iyong Google Account at maaaring pamahalaan sa <ph name="GOOGLE_DASHBOARD_LINK"/>Google Dashboard<ph name="END_GOOGLE_DASHBOARD_LINK"/>.</translation>
-<translation id="4933902704814222889">Ang BitPop ay isang web browser na nagpapatakbo ng mga webpage at application sa bilis ng kidlat. Ito ay mabilis, maaasahan, at madaling gamitin. Mas maingat na mag-browse sa web gamit ang proteksyon ng BitPop laban sa malware at phishing.</translation>
-<translation id="5806792281256987775">Sinubukan mong marating ang &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ngunit nagpakita ang server ng certificate na mula sa entity na hindi pinagkakatiwalaan ng BitPop. Maaaring nangangahulugan itong bumuo ang server ng sarili nitong mga panseguridad na kredensyal, na hindi maaasahan ng BitPop para sa impormasyon ng pagkakakilanlan, o maaaring may isang umaatake na sinusubukang humadlang sa iyong mga pakikipag-ugnayan.</translation>
-<translation id="26317130586606191">I-link ang iyong data sa BitPop sa account na ito?</translation>
-<translation id="5583217122091744450">Helper ng BitPop</translation>
-<translation id="3089741509794563091">Mas mahusay na ang BitPop</translation>
-<translation id="6404599307042403560">Naka-configure ang BitPop upang awtomatikong malunsad kapag binuksan mo ang iyong computer.</translation>
-<translation id="554833011526807667">Nagiging posible ang Chromium OS sa pamamagitan ng karagdagang <ph name="BEGIN_LINK_CROS_OSS"/>open source na software<ph name="END_LINK_CROS_OSS"/>.</translation>
-<translation id="8166042339699941380">Nagsa-sign in ka gamit ang isang pinamamahalaang account at ibinibigay mo ang kontrol ng administrator nito sa iyong profile sa BitPop. Permanenteng mauugnay sa <ph name="USER_NAME"/> ang iyong data sa BitPop, gaya ng iyong apps, mga bookmark, kasaysayan, mga password, at iba pang mga setting. Matatanggal mo ang data na ito sa pamamagitan ng Dashboard ng Mga Google Account, ngunit hindi mo maiuugnay ang data na ito sa isa pang account.</translation>
-<translation id="2032763513380168750">I-link ang aking data sa BitPop sa account na ito</translation>
-<translation id="2477235356415090659">Muling i-install ang BitPop</translation>
-<translation id="807350504213044844">Hindi sinusuportahan ng Chromium OS ang paglulunsad ng panlabas na application upang mangasiwa ng mga <ph name="SCHEME"/> na link. Ang hinihiling na link ay <ph name="PROTOLINK"/>.</translation>
-<translation id="3484768020161794310">Nawawala ang mga Google API key. Madi-disable ang ilang pagpapagana ng BitPop.</translation>
-<translation id="531363935678210182">BitPop - Mga Notification</translation>
-<translation id="3151848949510984428">I-save ang mga detalye sa BitPop</translation>
+Hindi mabawi ng Chromium ang iyong mga setting.</translation>
+<translation id="473845343586694349">Pini-preview mo ang bagong Chromium.</translation>
+<translation id="918373042641772655">Iki-clear ng pagdiskonekta kay <ph name="USERNAME"/> ang iyong history, mga bookmark, setting at iba pang data ng Chromium na naka-imbak sa device na ito. Hindi iki-clear ang data na naka-imbak sa iyong Google Account at maaaring pamahalaan sa <ph name="GOOGLE_DASHBOARD_LINK"/>Google Dashboard<ph name="END_GOOGLE_DASHBOARD_LINK"/>.</translation>
+<translation id="6403826409255603130">Ang Chromium ay isang web browser na nagpapatakbo ng mga webpage at application sa bilis ng kidlat. Ito ay mabilis, maaasahan, at madaling gamitin. Mas maingat na mag-browse sa web gamit ang proteksyon ng Chromium laban sa malware at phishing.</translation>
+<translation id="4019464536895378627">Sinubukan mong marating ang &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ngunit nagpakita ang server ng certificate na mula sa entity na hindi pinagkakatiwalaan ng Chromium. Maaaring nangangahulugan itong bumuo ang server ng sarili nitong mga panseguridad na kredensyal, na hindi maaasahan ng Chromium para sa impormasyon ng pagkakakilanlan, o maaaring may isang umaatake na sinusubukang humadlang sa iyong mga pakikipag-ugnayan.</translation>
+<translation id="4230135487732243613">I-link ang iyong data sa Chromium sa account na ito?</translation>
+<translation id="2572494885440352020">Helper ng Chromium</translation>
+<translation id="7617377681829253106">Mas mahusay na ang Chromium</translation>
+<translation id="442817494342774222">Naka-configure ang Chromium upang awtomatikong malunsad kapag binuksan mo ang iyong computer.</translation>
+<translation id="8974095189086268230">Nagiging posible ang Chromium OS sa pamamagitan ng karagdagang <ph name="BEGIN_LINK_CROS_OSS"/>open source na software<ph name="END_LINK_CROS_OSS"/>.</translation>
+<translation id="313551035350905294">Nagsa-sign in ka gamit ang isang pinamamahalaang account at ibinibigay mo ang kontrol ng administrator nito sa iyong profile sa Chromium. Permanenteng mauugnay sa <ph name="USER_NAME"/> ang iyong data sa Chromium, gaya ng iyong apps, mga bookmark, kasaysayan, mga password, at iba pang mga setting. Matatanggal mo ang data na ito sa pamamagitan ng Dashboard ng Mga Google Account, ngunit hindi mo maiuugnay ang data na ito sa isa pang account.</translation>
+<translation id="8823523095753232532">I-link ang aking data sa Chromium sa account na ito</translation>
+<translation id="1808667845054772817">Muling i-install ang Chromium</translation>
+<translation id="1221340462641866827">Hindi sinusuportahan ng Chromium OS ang paglulunsad ng panlabas na application upang mangasiwa ng mga <ph name="SCHEME"/> na link. Ang hinihiling na link ay <ph name="PROTOLINK"/>.</translation>
+<translation id="328888136576916638">Nawawala ang mga Google API key. Madi-disable ang ilang pagpapagana ng Chromium.</translation>
+<translation id="2602806952220118310">Chromium - Mga Notification</translation>
+<translation id="5032989939245619637">I-save ang mga detalye sa Chromium</translation>
 </translationbundle>

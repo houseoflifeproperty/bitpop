@@ -117,7 +117,7 @@
 <translation id="4442424173763614572">DNS претрага није успела</translation>
 <translation id="7874779702599364982">Претраживање мобилних мрежа...</translation>
 <translation id="583281660410589416">Непознато</translation>
-<translation id="1383876407941801731">Претрага</translation>
+<translation id="1383876407941801731">Претражи</translation>
 <translation id="3901991538546252627">Повезивање са мрежом <ph name="NAME"/></translation>
 <translation id="2204305834655267233">Информације о мрежи</translation>
 <translation id="1621499497873603021">Време које је преостало док се батерија не испразни, <ph name="TIME_LEFT"/></translation>
@@ -167,7 +167,7 @@
 <translation id="1119447706177454957">Интерна грешка</translation>
 <translation id="3019353588588144572">Време које је преостало док се батерија у потпуности не напуни, <ph name="TIME_REMAINING"/></translation>
 <translation id="3473479545200714844">Лупа екрана</translation>
-<translation id="7005812687360380971">Није успело</translation>
+<translation id="7005812687360380971">Грешка</translation>
 <translation id="882279321799040148">Кликните за приказ</translation>
 <translation id="1753067873202720523">Chromebook се можда неће пунити док је укључен.</translation>
 <translation id="7561014039265304140"><ph name="DISPLAY_NAME"/> не подржава <ph name="SPECIFIED_RESOLUTION"/>. Резолуција је промењена на <ph name="FALLBACK_RESOLUTION"/></translation>
@@ -190,7 +190,7 @@
 <translation id="2999742336789313416"><ph name="DISPLAY_NAME"/> је јавна сесија којом управља <ph name="DOMAIN"/></translation>
 <translation id="9044646465488564462">Повезивање са мрежом није успело: <ph name="DETAILS"/></translation>
 <translation id="7029814467594812963">Изађи из сесије</translation>
-<translation id="479989351350248267">претражите</translation>
+<translation id="479989351350248267">search</translation>
 <translation id="8454013096329229812">Wi-Fi је укључен.</translation>
 <translation id="4872237917498892622">Alt + тастер за претрагу или Shift</translation>
 <translation id="2429753432712299108">Bluetooth уређај „<ph name="DEVICE_NAME"/>“ жели дозволу за упаривање. Пре него што му је дате, уверите се да је ова шифра приказана на том уређају: <ph name="PASSKEY"/></translation>

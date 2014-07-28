@@ -3,222 +3,223 @@
 <translationbundle lang="zh-CN">
 <translation id="6676384891291319759">访问互联网</translation>
 <translation id="8586442755830160949">版权所有<ph name="YEAR"/> The Chromium Authors。保留所有权利。</translation>
-<translation id="8447784615389818621">确定要卸载 BitPop 吗？</translation>
-<translation id="1928147301259050372">您希望 BitPop 保存该信用卡信息以便填写网络表单吗？</translation>
-<translation id="100741878661450640">卸载 BitPop</translation>
-<translation id="7015513946685052865">此计算机很快将停止接收BitPop更新，因为其硬件不再受支持。</translation>
-<translation id="4301276314211054820">BitPop 已更新，但您已经至少 30 天未使用它了。</translation>
-<translation id="8935261719622405725">启动 BitPop 应用</translation>
-<translation id="2787245396912783582">BitPop 应用启动器是 BitPop 应用的独立平台。</translation>
+<translation id="6373523479360886564">确定要卸载 Chromium 吗？</translation>
+<translation id="5065199687811594072">您希望 Chromium 保存该信用卡信息以便填写网络表单吗？</translation>
+<translation id="6510925080656968729">卸载 Chromium</translation>
+<translation id="2615699638672665509">此计算机很快将停止接收Chromium更新，因为其硬件不再受支持。</translation>
+<translation id="6893813176749746474">Chromium 已更新，但您已经至少 30 天未使用它了。</translation>
+<translation id="1550579416447684632">启动 Chromium 应用</translation>
+<translation id="4267347018362241535">Chromium 应用启动器是 Chromium 应用的独立平台。</translation>
 <translation id="2770231113462710648">将默认浏览器更改为：</translation>
-<translation id="6870152852581894991">您所做的更改会在下次重新启动 BitPop 时生效。</translation>
-<translation id="7725527658463487664">BitPop版本太旧</translation>
-<translation id="302025056100997516">通讯录中的详细信息有助于您在BitPop中更快速地填写表单。</translation>
-<translation id="3588014340702790340">您正在查看的是安全的 BitPop 网页。</translation>
+<translation id="6613594504749178791">您所做的更改会在下次重新启动 Chromium 时生效。</translation>
+<translation id="9089354809943900324">Chromium版本太旧</translation>
+<translation id="59625444380784159">通讯录中的详细信息有助于您在Chromium中更快速地填写表单。</translation>
+<translation id="3748537968684000502">您正在查看的是安全的 Chromium 网页。</translation>
 <translation id="2077129598763517140">使用硬件加速模式（如果可用）</translation>
 <translation id="1065672644894730302">系统无法读取您的偏好设置。某些功能可能无法使用，并且对偏好设置所做的更改不会保存。</translation>
-<translation id="4795239855223923830">自定义及控制 BitPop</translation>
-<translation id="98449668525928921">您目前登录的帐户是一个托管帐户，该帐户的管理员将能够控制您的 BitPop 个人资料。您的 BitPop 数据（例如您的应用、书签、历史记录、密码和其他设置）将永远与 <ph name="USER_NAME"/> 相关联。您可以通过 Google 帐户信息中心删除这些数据，但无法将这些数据与其他帐户相关联。您可以选择创建新的个人资料来单独存储您现有的 BitPop 数据。<ph name="LEARN_MORE"/></translation>
-<translation id="7711905272664478875">感谢您试用新版BitPop。BitPop需要重新启动。继续之前，请务必先保存所有未保存的工作。</translation>
+<translation id="4423735387467980091">自定义及控制 Chromium</translation>
+<translation id="1881322772814446296">您目前登录的帐户是一个托管帐户，该帐户的管理员将能够控制您的 Chromium 个人资料。您的 Chromium 数据（例如您的应用、书签、历史记录、密码和其他设置）将永远与 <ph name="USER_NAME"/> 相关联。您可以通过 Google 帐户信息中心删除这些数据，但无法将这些数据与其他帐户相关联。您可以选择创建新的个人资料来单独存储您现有的 Chromium 数据。<ph name="LEARN_MORE"/></translation>
+<translation id="455521026202544465">感谢您试用新版Chromium。Chromium需要重新启动。继续之前，请务必先保存所有未保存的工作。</translation>
 <translation id="731644333568559921">更新 BitPop 操作系统(&amp;C)</translation>
-<translation id="5284421695473942517">您需要在 Windows XP 或更高版本的操作系统中运行 BitPop，否则可能无法正常使用某些功能。</translation>
-<translation id="4534284284800306880">您必须升级 BitPop 才能使用 Google 电子钱包 [<ph name="ERROR_CODE"/>]。</translation>
-<translation id="1258942147733482141">BitPop开放源代码许可</translation>
-<translation id="2001441118695834744">如果您更倾向于单独保存您现有的 BitPop 数据，可以为 <ph name="USER_NAME"/> 创建一个新的 BitPop 用户。</translation>
-<translation id="3207916442629104800">将BitPop设为默认浏览器</translation>
-<translation id="2346981135360001626">正在将您的设备更新至“<ph name="CHANNEL_NAME"/>”版…</translation>
+<translation id="7421823331379285070">您需要在 Windows XP 或更高版本的操作系统中运行 Chromium，否则可能无法正常使用某些功能。</translation>
+<translation id="7023267510504981715">您必须升级 Chromium 才能使用 Google 电子钱包 [<ph name="ERROR_CODE"/>]。</translation>
+<translation id="1444754455097148408">Chromium开放源代码许可</translation>
+<translation id="7419987137528340081">如果您更倾向于单独保存您现有的 Chromium 数据，可以为 <ph name="USER_NAME"/> 创建一个新的 Chromium 用户。</translation>
+<translation id="5427571867875391349">将Chromium设为默认浏览器</translation>
+<translation id="8030318113982266900">正在将您的设备更新至“<ph name="CHANNEL_NAME"/>”版…</translation>
 <translation id="3549345495227188780">BitPop 操作系统使用入门</translation>
-<translation id="7593639489233822734">从BitPop移除您的帐户后，您可能需要重新加载已打开的标签页才能使其正常显示。</translation>
-<translation id="8235603028098851915">BitPop 工具栏</translation>
-<translation id="325440606879482824">未知错误导致安装失败。如果 BitPop 正在运行，请将其关闭，然后重试。</translation>
-<translation id="2681187513058372590">BitPop 正尝试显示密码。</translation>
-<translation id="9205983754412543288">可选：将使用情况统计信息和崩溃报告自动发送给 Google，帮助我们完善 BitPop。</translation>
-<translation id="3898160962923474892">依次转到 BitPop 菜单 &gt;“<ph name="SETTINGS_TITLE"/>”&gt;“<ph name="ADVANCED_TITLE"/>”&gt;“<ph name="PROXIES_TITLE"/>”，并确保您已将配置设为“无代理”或“直接连接”。</translation>
-<translation id="7541322662422142299"><ph name="PAGE_TITLE"/> - BitPop</translation>
-<translation id="3334080844010912902">由于您的网域停用了同步功能，BitPop无法同步您的数据。</translation>
-<translation id="2030214613468936763">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书包含错误。BitPop 无法使用有错误的证书，也无法验证所尝试连接的网站的身份。</translation>
-<translation id="3801183610358973379">安装程序解压缩归档失败。请重新下载 BitPop。</translation>
-<translation id="4138697454314244697">未找到要更新的BitPop安装实例。</translation>
-<translation id="4450789702440326676">让 BitPop 在后台运行</translation>
-<translation id="8743840534367614002">BitPop 应用</translation>
-<translation id="2963590958538393837">是的，退出 BitPop</translation>
+<translation id="1668054258064581266">从Chromium移除您的帐户后，您可能需要重新加载已打开的标签页才能使其正常显示。</translation>
+<translation id="6953661834318318668">Chromium 工具栏</translation>
+<translation id="4285930937574705105">未知错误导致安装失败。如果 Chromium 正在运行，请将其关闭，然后重试。</translation>
+<translation id="1396446129537741364">Chromium 正尝试显示密码。</translation>
+<translation id="2886012850691518054">可选：将使用情况统计信息和崩溃报告自动发送给 Google，帮助我们完善 Chromium。</translation>
+<translation id="580822234363523061">依次转到 Chromium 菜单 &gt;“<ph name="SETTINGS_TITLE"/>”&gt;“<ph name="ADVANCED_TITLE"/>”&gt;“<ph name="PROXIES_TITLE"/>”，并确保您已将配置设为“无代理”或“直接连接”。</translation>
+<translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
+<translation id="7729447699958282447">由于您的网域停用了同步功能，Chromium无法同步您的数据。</translation>
+<translation id="1989424089625731201">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书包含错误。Chromium 无法使用有错误的证书，也无法验证所尝试连接的网站的身份。</translation>
+<translation id="3103660991484857065">安装程序解压缩归档失败。请重新下载 Chromium。</translation>
+<translation id="7064610482057367130">未找到要更新的Chromium安装实例。</translation>
+<translation id="872034308864968620">让 Chromium 在后台运行</translation>
+<translation id="459535195905078186">Chromium 应用</translation>
+<translation id="5109068449432240255">是的，退出 Chromium</translation>
 <translation id="1480489203462860648">它已经安装完毕了，试试看吧。</translation>
-<translation id="7098153548331126805">正在添加到 BitPop...</translation>
+<translation id="3032787606318309379">正在添加到 Chromium...</translation>
 <translation id="4831257561365056138">卸载 BitPop 应用启动器</translation>
-<translation id="7680117738450774222">您现在已登录 BitPop！不过，管理员已停用同步功能。</translation>
-<translation id="5995722392285490130"><ph name="BEGIN_BOLD"/>警告<ph name="END_BOLD"/>：BitPop 无法阻止扩展程序记录您的浏览记录。要在隐身模式下停用此扩展程序，请取消选中此选项。</translation>
-<translation id="9123740998411173947">您已登录，现在您除了可以获取您的笔记本电脑、手机和平板电脑上的标签页、书签和其他 BitPop 内容外，还将获得 Google 服务方面的更多相关建议和功能。</translation>
+<translation id="4222580632002216401">您现在已登录 Chromium！不过，管理员已停用同步功能。</translation>
+<translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>警告<ph name="END_BOLD"/>：Chromium 无法阻止扩展程序记录您的浏览记录。要在隐身模式下停用此扩展程序，请取消选中此选项。</translation>
+<translation id="4516868174453854611">您已登录，现在您除了可以获取您的笔记本电脑、手机和平板电脑上的标签页、书签和其他 Chromium 内容外，还将获得 Google 服务方面的更多相关建议和功能。</translation>
 <translation id="985602178874221306">The Chromium Authors</translation>
-<translation id="3941397373453695568">BitPop 未包含运行打印预览所需的 PDF 查看器。</translation>
-<translation id="8155571637339134666">BitPop 可能会使用网络服务改善您的浏览体验。</translation>
-<translation id="6157791660174418859">赶快通过您的Google帐户以及共用的计算机试试BitPop的新界面吧！</translation>
-<translation id="4759775690587852534">抱歉，无法在 Mozilla Firefox 浏览器运行时获取其设置。要将其设置导入 BitPop，请保存您手头的工作并关闭所有 Firefox 窗口，然后点击“继续”。</translation>
-<translation id="5769857394054687534">在此例中，证书中所列的地址与浏览器尝试访问的网站网址不一致。一种可能的原因是某个攻击者拦截了您的通信内容，并向其他网站出示某个证书，这就会导致出现不一致的情况。另一种可能的原因是服务器已设置为对多个网站（包括您尝试访问的网站）返回同一证书，即使该证书并非对所有网站都有效。BitPop 可以确定您已转到 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;，但无法确认这与您要访问的 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; 是不是同一网站。如果您继续操作，BitPop 就不会再检查其他任何名称不一致的情况了。</translation>
-<translation id="2224367722165014156">BitPop无法自动更新到最新版本，因此其中缺少一些非常棒的新功能和安全修复程序。要获得这些内容，您需要手动重新安装BitPop。</translation>
+<translation id="8628626585870903697">Chromium 未包含运行打印预览所需的 PDF 查看器。</translation>
+<translation id="7138853919861947730">Chromium 可能会使用网络服务改善您的浏览体验。</translation>
+<translation id="934663725767849097">赶快通过您的Google帐户以及共用的计算机试试Chromium的新界面吧！</translation>
+<translation id="3849925841547750267">抱歉，无法在 Mozilla Firefox 浏览器运行时获取其设置。要将其设置导入 Chromium，请保存您手头的工作并关闭所有 Firefox 窗口，然后点击“继续”。</translation>
+<translation id="7771626876550251690">在此例中，证书中所列的地址与浏览器尝试访问的网站网址不一致。一种可能的原因是某个攻击者拦截了您的通信内容，并向其他网站出示某个证书，这就会导致出现不一致的情况。另一种可能的原因是服务器已设置为对多个网站（包括您尝试访问的网站）返回同一证书，即使该证书并非对所有网站都有效。Chromium 可以确定您已转到 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;，但无法确认这与您要访问的 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; 是不是同一网站。如果您继续操作，Chromium 就不会再检查其他任何名称不一致的情况了。</translation>
+<translation id="7027298027173928763">Chromium无法自动更新到最新版本，因此其中缺少一些非常棒的新功能和安全修复程序。要获得这些内容，您需要手动重新安装Chromium。</translation>
 <translation id="8897323336392112261">它还能够控制您启动Chromium或点击“主页”按钮后系统显示的页面。</translation>
-<translation id="2886079192271351730">已知此模块与 BitPop 存在冲突。</translation>
-<translation id="8324687802311409372">哎呀！BitPop 崩溃了。要立即重新启动吗？</translation>
-<translation id="5689811886832352959">将崩溃报告和<ph name="UMA_LINK"/>发送给Google，帮助我们完善BitPop。</translation>
-<translation id="5101127815285864538">您的上网记录、书签和其他BitPop内容都保存在此处。</translation>
+<translation id="4330585738697551178">已知此模块与 Chromium 存在冲突。</translation>
+<translation id="3190315855212034486">哎呀！Chromium 崩溃了。要立即重新启动吗？</translation>
+<translation id="3068515742935458733">将崩溃报告和<ph name="UMA_LINK"/>发送给Google，帮助我们完善Chromium。</translation>
+<translation id="734373864078049451">您的上网记录、书签和其他Chromium内容都保存在此处。</translation>
 <translation id="3197823471738295152">您的设备已更新到最新版本。</translation>
 <translation id="8551886023433311834">即将更新到最新版本！请重新启动您的设备，以完成更新。</translation>
-<translation id="9090519209458031409">您希望 BitPop 保存您在此网站上使用的密码吗？</translation>
+<translation id="8353224596138547809">您希望 Chromium 保存您在此网站上使用的密码吗？</translation>
 <translation id="7339898014177206373">打开新的窗口</translation>
-<translation id="6188910816550019957">依次转到 BitPop 菜单 &gt;“<ph name="SETTINGS_TITLE"/>”&gt;“<ph name="ADVANCED_TITLE"/>”，然后取消选中“<ph name="NO_PREFETCH_DESCRIPTION"/>”。如果这样仍无法解决问题，建议您重新选中此选项以提高性能。</translation>
-<translation id="2397909649953118924">BitPop - 通知（<ph name="QUANTITY"/>条未读）</translation>
+<translation id="3733625138702910745">依次转到 Chromium 菜单 &gt;“<ph name="SETTINGS_TITLE"/>”&gt;“<ph name="ADVANCED_TITLE"/>”，然后取消选中“<ph name="NO_PREFETCH_DESCRIPTION"/>”。如果这样仍无法解决问题，建议您重新选中此选项以提高性能。</translation>
+<translation id="7463979740390522693">Chromium - 通知（<ph name="QUANTITY"/>条未读）</translation>
 <translation id="225614027745146050">欢迎</translation>
-<translation id="1823899440832622134">BitPop无法自动更新到最新版本，因此其中缺少一些非常棒的新功能和安全修复程序。要获得这些内容，您需要更新BitPop。</translation>
-<translation id="3421246989510066651">管理员已在此系统上安装了 BitPop 以供所有用户使用。系统级 BitPop 将替换您安装的用户级版本。</translation>
+<translation id="5823381412099532241">Chromium无法自动更新到最新版本，因此其中缺少一些非常棒的新功能和安全修复程序。要获得这些内容，您需要更新Chromium。</translation>
+<translation id="9191268552238695869">管理员已在此系统上安装了 Chromium 以供所有用户使用。系统级 Chromium 将替换您安装的用户级版本。</translation>
 <translation id="4298853828775962437">http://support.google.com/chrome/?p=ib_chromeframe</translation>
-<translation id="1563133725769368154">请关闭所有 BitPop 窗口并重试。</translation>
-<translation id="6948146312619379712">请关闭所有 BitPop 窗口，然后重新启动 BitPop，以便让此更改生效。</translation>
+<translation id="3509308970982693815">请关闭所有 Chromium 窗口并重试。</translation>
+<translation id="4077262827416206768">请关闭所有 Chromium 窗口，然后重新启动 Chromium，以便让此更改生效。</translation>
 <translation id="6475912303565314141">它还能够控制Chromium启动后显示的页面。</translation>
-<translation id="158578066452246627">这是恶意文件，BitPop 已将其拦截。</translation>
-<translation id="5845248948746043578">模块已加载到 BitPop 中</translation>
-<translation id="3494861236236958082">在 Mac 上，密码会保存到您的钥匙串 (Keychain) 中，可供其他共用此 OS X 帐户的 BitPop 用户访问或同步。</translation>
-<translation id="6497704981133944775">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书是由您计算机操作系统不信任的实体发布的。这可能意味着该服务器自行生成了安全凭据，BitPop 无法依据这些凭据确定身份信息，也可能是某个攻击者尝试拦截您的通信内容。</translation>
-<translation id="963040405972220509">您需要先登录BitPop，再使用各项应用。这样，BitPop就可以在各个设备上同步您的应用、书签、历史记录、密码和其他设置。</translation>
-<translation id="2585492770508769131">关闭 BitPop 后继续运行后台应用</translation>
+<translation id="1725059042853530269"><ph name="FILE_NAME"/>会影响您的浏览体验，因此Chromium已将其阻止。</translation>
+<translation id="750717762378961310">这是恶意文件，Chromium 已将其拦截。</translation>
+<translation id="6944967875980567883">模块已加载到 Chromium 中</translation>
+<translation id="6899795326977034905">在 Mac 上，密码会保存到您的钥匙串 (Keychain) 中，可供其他共用此 OS X 帐户的 Chromium 用户访问或同步。</translation>
+<translation id="118298050220780080">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书是由您计算机操作系统不信任的实体发布的。这可能意味着该服务器自行生成了安全凭据，Chromium 无法依据这些凭据确定身份信息，也可能是某个攻击者尝试拦截您的通信内容。</translation>
+<translation id="3046695367536568084">您需要先登录Chromium，再使用各项应用。这样，Chromium就可以在各个设备上同步您的应用、书签、历史记录、密码和其他设置。</translation>
+<translation id="3296368748942286671">关闭 Chromium 后继续运行后台应用</translation>
 <translation id="473775607612524610">更新</translation>
-<translation id="1053737967432347853">此网站使用的 BitPop 内嵌框架插件很快将不受支持。请卸载该插件，然后升级到新型浏览器。</translation>
-<translation id="8237944200818342704">启动计算机时自动启动BitPop</translation>
-<translation id="5904788103100750653">如果您与亲朋好友共用计算机，他们将能够使用单独的帐户进行浏览，并可随心所欲地设置BitPop。</translation>
-<translation id="1141543168124987471">BitPop 现已推出速度更快的新版本。</translation>
-<translation id="3089560314597734657">由于您的帐户登录详细信息已过期，BitPop无法同步您的数据。</translation>
-<translation id="5107343520309227066">其他计算机 (<ph name="HOST_NAME"/>) 的另一个 BitPop 进程 (<ph name="PROCESS_ID"/>) 好像正在使用此个人资料。BitPop 已锁定此个人资料以防止其受损。如果您确定其他进程目前未使用此个人资料，请为其解锁并重新启动 BitPop。</translation>
-<translation id="5971960158340115871">从BitPop中移除</translation>
-<translation id="4817923018536741011">将您自己添加到BitPop</translation>
+<translation id="7707841053049645517">此网站使用的 Chromium 内嵌框架插件很快将不受支持。请卸载该插件，然后升级到新型浏览器。</translation>
+<translation id="3656661827369545115">启动计算机时自动启动Chromium</translation>
+<translation id="2241627712206172106">如果您与亲朋好友共用计算机，他们将能够使用单独的帐户进行浏览，并可随心所欲地设置Chromium。</translation>
+<translation id="6055895534982063517">Chromium 现已推出速度更快的新版本。</translation>
+<translation id="8821041990367117597">由于您的帐户登录详细信息已过期，Chromium无法同步您的数据。</translation>
+<translation id="4677944499843243528">其他计算机 (<ph name="HOST_NAME"/>) 的另一个 Chromium 进程 (<ph name="PROCESS_ID"/>) 好像正在使用此个人资料。Chromium 已锁定此个人资料以防止其受损。如果您确定其他进程目前未使用此个人资料，请为其解锁并重新启动 Chromium。</translation>
+<translation id="5405650547142096840">从Chromium中移除</translation>
+<translation id="4994636714258228724">将您自己添加到Chromium</translation>
 <translation id="7066436765290594559">BitPop操作系统无法同步您的数据。请更新您的同步密码。</translation>
 <translation id="7747138024166251722">安装程序无法创建临时目录。请检查您是否有足够的磁盘空间和权限来安装该软件。</translation>
-<translation id="1657309500244281883">BitPop 无法读写其数据目录：
+<translation id="3258596308407688501">Chromium 无法读写其数据目录：
 
 <ph name="USER_DATA_DIRECTORY"/></translation>
 <translation id="6970811910055250180">正在更新设备...</translation>
 <translation id="2485422356828889247">卸载</translation>
-<translation id="8450502629618876351">获取 BitPop 使用帮助</translation>
-<translation id="7974150821733212325">您目前登录的帐户是一个托管帐户，该帐户的管理员将能够控制您的 BitPop 个人资料。您的 BitPop 数据（例如您的应用、书签、历史记录、密码和其他设置）将永远与 <ph name="USER_NAME"/> 相关联。您可以通过 Google 帐户信息中心删除这些数据，但无法将这些数据与其他帐户相关联。<ph name="LEARN_MORE"/></translation>
+<translation id="85843667276690461">获取 Chromium 使用帮助</translation>
+<translation id="5358375970380395591">您目前登录的帐户是一个托管帐户，该帐户的管理员将能够控制您的 Chromium 个人资料。您的 Chromium 数据（例如您的应用、书签、历史记录、密码和其他设置）将永远与 <ph name="USER_NAME"/> 相关联。您可以通过 Google 帐户信息中心删除这些数据，但无法将这些数据与其他帐户相关联。<ph name="LEARN_MORE"/></translation>
 <translation id="9036189287518468038">BitPop 应用启动器</translation>
-<translation id="8643500805082769156">BitPop版本太旧</translation>
+<translation id="8493179195440786826">Chromium版本太旧</translation>
 <translation id="911206726377975832">同时删除您的浏览数据吗？</translation>
-<translation id="7531302439507262213"><ph name="DOMAIN"/> 要求您必须先阅读并接受以下服务条款，才能使用此设备。这些条款不会扩大、修改或限制 BitPop 操作系统条款。</translation>
+<translation id="95514773681268843"><ph name="DOMAIN"/> 要求您必须先阅读并接受以下服务条款，才能使用此设备。这些条款不会扩大、修改或限制 Chromium 操作系统条款。</translation>
 <translation id="5603085937604338780">Chromium</translation>
-<translation id="4501582071990606935">请关闭所有 BitPop 窗口（包括 Windows 8 模式下的窗口），然后重试。</translation>
-<translation id="2318017154298876822">更新 BitPop(&amp;C)</translation>
+<translation id="1699664235656412242">请关闭所有 Chromium 窗口（包括 Windows 8 模式下的窗口），然后重试。</translation>
+<translation id="6734080038664603509">更新 Chromium(&amp;C)</translation>
 <translation id="8862326446509486874">您的权限不足，无法进行系统级安装。请尝试以管理员身份再次运行安装程序。</translation>
 <translation id="2535480412977113886">您的帐户登录详细信息已过期，BitPop操作系统无法同步您的数据。</translation>
 <translation id="8697124171261953979">它还能够控制您启动Chromium后或通过多功能框进行搜索时系统显示的页面。</translation>
-<translation id="8106224471637848707">您计算机上运行的软件与 BitPop 不兼容。</translation>
-<translation id="8308846639737830860">让 BitPop 在后台运行</translation>
-<translation id="8251642411216619957">登录 BitPop</translation>
+<translation id="894903460958736500">您计算机上运行的软件与 Chromium 不兼容。</translation>
+<translation id="1774152462503052664">让 Chromium 在后台运行</translation>
+<translation id="9022552996538154597">登录 Chromium</translation>
 <translation id="4365115785552740256">Chromium 的诞生离不开 <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> 开放源代码项目以及其他<ph name="BEGIN_LINK_OSS"/>开放源代码软件<ph name="END_LINK_OSS"/>。</translation>
-<translation id="1990056108053403520">BitPop (mDNS-In)</translation>
-<translation id="5819325063060806784">访客使用BitPop不会留下任何痕迹。</translation>
-<translation id="1526986572493888898">此网站使用的 BitPop 内嵌框架插件很快将不受支持。请卸载该插件，然后下载兼容的浏览器。</translation>
-<translation id="7131892997749364444">某个扩展程序更改了BitPop启动后显示的页面。</translation>
+<translation id="9190841055450128916">Chromium (mDNS-In)</translation>
+<translation id="4987820182225656817">访客使用Chromium不会留下任何痕迹。</translation>
+<translation id="2216475571518225820">此网站使用的 Chromium 内嵌框架插件很快将不受支持。请卸载该插件，然后下载兼容的浏览器。</translation>
+<translation id="3487263810738775861">某个扩展程序更改了Chromium启动后显示的页面。</translation>
 <translation id="5877064549588274448">版本已更改。请重新启动设备来应用这些变更。</translation>
-<translation id="6321973207566602686">将 BitPop 设置为默认浏览器</translation>
-<translation id="6899689707951760367">BitPop 正在使用您的摄像头。</translation>
-<translation id="4645868211198791394">BitPop</translation>
+<translation id="6248213926982192922">将 Chromium 设置为默认浏览器</translation>
+<translation id="6309712487085796862">Chromium 正在使用您的摄像头。</translation>
+<translation id="7337881442233988129">Chromium</translation>
 <translation id="5820394555380036790">BitPop 操作系统</translation>
 <translation id="6757767188268205357">谢绝打扰</translation>
-<translation id="690823546498424823">BitPop 会妥善地存储您的信息，这样您日后就不必重新输入了。不过，您将来付款时仍需验证信用卡的安全码。</translation>
-<translation id="6220055452245182274">BitPop 未提供崩溃报告。</translation>
-<translation id="924450301557116466">未在 BitPop 中使用。该占位符用于在同步中保留资源映射。要求使用一个参数：$1。</translation>
-<translation id="843167022919259875">BitPop正在后台运行。</translation>
-<translation id="2171549355847332070">您之前登录 BitPop 时使用的帐户为 <ph name="USER_EMAIL_ADDRESS"/>，请使用同一帐户再次登录。</translation>
-<translation id="6165323383832829057">BitPop 已停止更新，并且不再支持您的操作系统版本。</translation>
-<translation id="2645729404591158594">预览一下新版BitPop吧</translation>
-<translation id="1984238998837921833">正在更新 BitPop...</translation>
-<translation id="9102885271730191378">任务管理器 - BitPop</translation>
-<translation id="1608739712349494181">为了提高 BitPop 的安全性，系统停用了一些未列在 <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/>中、可能是在您不知情的情况下添加的扩展程序。</translation>
-<translation id="5243897687251941678">在 BitPop 菜单或书签栏中查找您的书签。</translation>
-<translation id="5925519479755588070">即将更新到最新版本！重新启动 BitPop 以完成更新。</translation>
-<translation id="5866485601389562653">您可以添加其他Google帐户，并在下方锁定您的BitPop。</translation>
-<translation id="8072646586465991214">系统上已安装存在冲突的BitPop。请先将其卸载，然后重试。</translation>
-<translation id="4352003675682958984">BitPop 现已推出新版本。</translation>
-<translation id="8972540218839637401">安装过程中出现操作系统错误。请重新下载 BitPop。</translation>
-<translation id="2581134012974124523">“<ph name="EXTENSION_NAME"/>”已添加到 BitPop。</translation>
-<translation id="6452045500174243632">依次转到 BitPop 菜单 &gt;“<ph name="SETTINGS_TITLE"/>”&gt;“<ph name="ADVANCED_TITLE"/>”&gt;“<ph name="PROXIES_TITLE"/>”&gt;“LAN 设置”，然后取消选中“为 LAN 使用代理服务器”复选框。</translation>
-<translation id="8988481325911971852">未指定的错误导致安装失败。请重新下载 BitPop。</translation>
-<translation id="660036136456272595">您的个人资料来自更高版本的 BitPop，因此无法使用。
+<translation id="1745962126679160932">Chromium 会妥善地存储您的信息，这样您日后就不必重新输入了。不过，您将来付款时仍需验证信用卡的安全码。</translation>
+<translation id="275588974610408078">Chromium 未提供崩溃报告。</translation>
+<translation id="5909170354645388250">未在 Chromium 中使用。该占位符用于在同步中保留资源映射。要求使用一个参数：$1。</translation>
+<translation id="5805689092869152320">Chromium正在后台运行。</translation>
+<translation id="7937630085815544518">您之前登录 Chromium 时使用的帐户为 <ph name="USER_EMAIL_ADDRESS"/>，请使用同一帐户再次登录。</translation>
+<translation id="2685838254101182273">Chromium 已停止更新，并且不再支持您的操作系统版本。</translation>
+<translation id="3223794808658970984">预览一下新版Chromium吧</translation>
+<translation id="3582788516608077514">正在更新 Chromium...</translation>
+<translation id="7223968959479464213">任务管理器 - Chromium</translation>
+<translation id="1779356040007214683">为了提高 Chromium 的安全性，系统停用了一些未列在 <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/>中、可能是在您不知情的情况下添加的扩展程序。</translation>
+<translation id="6638567566961868659">在 Chromium 菜单或书签栏中查找您的书签。</translation>
+<translation id="2673087257647337101">即将更新到最新版本！重新启动 Chromium 以完成更新。</translation>
+<translation id="4864451188650489141">您可以添加其他Google帐户，并在下方锁定您的Chromium。</translation>
+<translation id="1293235220023151515">系统上已安装存在冲突的Chromium。请先将其卸载，然后重试。</translation>
+<translation id="5398878173008909840">Chromium 现已推出新版本。</translation>
+<translation id="2648074677641340862">安装过程中出现操作系统错误。请重新下载 Chromium。</translation>
+<translation id="5942520288919337908">“<ph name="EXTENSION_NAME"/>”已添加到 Chromium。</translation>
+<translation id="4559775032954821361">依次转到 Chromium 菜单 &gt;“<ph name="SETTINGS_TITLE"/>”&gt;“<ph name="ADVANCED_TITLE"/>”&gt;“<ph name="PROXIES_TITLE"/>”&gt;“LAN 设置”，然后取消选中“为 LAN 使用代理服务器”复选框。</translation>
+<translation id="8621669128220841554">未指定的错误导致安装失败。请重新下载 Chromium。</translation>
+<translation id="6717134281241384636">您的个人资料来自更高版本的 Chromium，因此无法使用。
 
-某些功能可能会无法使用。请指定其他个人资料目录或使用更高版本的 BitPop。</translation>
-<translation id="3787192530015965250">BitPop正在尝试显示密码，请输入您的Windows密码以允许此操作。</translation>
-<translation id="7862155441175671173">添加到 BitPop</translation>
-<translation id="1211470790061593728">现在，无论是通过Google帐户还是在共用的计算机上，您都可以更轻松地使用BitPop。</translation>
-<translation id="5594704848342987755">此计算机已安装了更高版本的 BitPop。如果软件无法正常运行，请卸载 BitPop 并重试。</translation>
-<translation id="3528119622127530876">BitPop无法同步您的数据。请更新您的同步密码。</translation>
+某些功能可能会无法使用。请指定其他个人资料目录或使用更高版本的 Chromium。</translation>
+<translation id="8907580949721785412">Chromium正在尝试显示密码，请输入您的Windows密码以允许此操作。</translation>
+<translation id="9013087743919948559">添加到 Chromium</translation>
+<translation id="6334986366598267305">现在，无论是通过Google帐户还是在共用的计算机上，您都可以更轻松地使用Chromium。</translation>
+<translation id="6212496753309875659">此计算机已安装了更高版本的 Chromium。如果软件无法正常运行，请卸载 Chromium 并重试。</translation>
+<translation id="1115445892567829615">Chromium无法同步您的数据。请更新您的同步密码。</translation>
 <translation id="1298199220304005244">获取 BitPop 操作系统使用帮助</translation>
 <translation id="331951419404882060">登录时出现错误，BitPop操作系统无法同步您的数据。</translation>
 <translation id="8187289872471304532">依次转到“应用”&gt;“系统偏好设置”&gt;“网络”&gt;“高级”&gt;“代理”，然后取消选中所有已选的代理。</translation>
-<translation id="4634257184917711644"><ph name="FILE_NAME"/> 是恶意文件，BitPop 已将其拦截。</translation>
-<translation id="454930334682314382">您的帐单明细已保存在 BitPop 中。</translation>
+<translation id="2801146392936645542"><ph name="FILE_NAME"/> 是恶意文件，Chromium 已将其拦截。</translation>
+<translation id="4488676065623537541">您的帐单明细已保存在 Chromium 中。</translation>
 <translation id="130631256467250065">您所做的更改会在下次重新启动设备时生效。</translation>
-<translation id="8810991521775422988">BitPop 通知中心</translation>
-<translation id="2901348058800597589">BitPop 未正确关闭。要重新打开您之前浏览的网页，请点击“恢复”。</translation>
-<translation id="838316505303362561">BitPop建议使用</translation>
-<translation id="5653921603290474550">BitPop 未响应。要立即重新启动吗？</translation>
-<translation id="3306752603341080445">您已登录 BitPop！</translation>
+<translation id="3244477511402911926">Chromium 通知中心</translation>
+<translation id="1105130903706696483">Chromium 未正确关闭。要重新打开您之前浏览的网页，请点击“恢复”。</translation>
+<translation id="9214519575840037443">Chromium建议使用</translation>
+<translation id="1929939181775079593">Chromium 未响应。要立即重新启动吗？</translation>
+<translation id="1414495520565016063">您已登录 Chromium！</translation>
 <translation id="2158734852934720349">BitPop操作系统开放源代码许可</translation>
-<translation id="2239725456669400190">BitPop 必须启动外部应用才能处理 <ph name="SCHEME"/> 链接。请求的链接是 <ph name="PROTOLINK"/>。</translation>
-<translation id="5574763173398621221">要让 BitPop 保存您的密码吗？</translation>
-<translation id="5387335700352644169">显示 BitPop 菜单</translation>
-<translation id="1981756165552484777">您在使用<ph name="PROFILE_EMAIL"/>同步自己的BitPop资料和数据。要更新您的同步偏好设置或在不登录Google帐户的情况下使用BitPop，请前往<ph name="SETTINGS_LINK"/>部分。</translation>
-<translation id="1681324505975197559">（需要<ph name="BEGIN_BUTTON"/>重新启动<ph name="END_BUTTON"/> BitPop）</translation>
-<translation id="6863452815496188645">您可以设置同步以将个性化浏览器功能保存到网上，以便在任意计算机上的 BitPop 中使用这些功能。</translation>
+<translation id="2966088006374919794">Chromium 必须启动外部应用才能处理 <ph name="SCHEME"/> 链接。请求的链接是 <ph name="PROTOLINK"/>。</translation>
+<translation id="2558235863893655150">要让 Chromium 保存您的密码吗？</translation>
+<translation id="1231416733874080281">显示 Chromium 菜单</translation>
+<translation id="6485906693002546646">您在使用<ph name="PROFILE_EMAIL"/>同步自己的Chromium资料和数据。要更新您的同步偏好设置或在不登录Google帐户的情况下使用Chromium，请前往<ph name="SETTINGS_LINK"/>部分。</translation>
+<translation id="5772805321386874569">（需要<ph name="BEGIN_BUTTON"/>重新启动<ph name="END_BUTTON"/> Chromium）</translation>
+<translation id="1688750314291223739">您可以设置同步以将个性化浏览器功能保存到网上，以便在任意计算机上的 Chromium 中使用这些功能。</translation>
 <translation id="8865765905101981392">互联网浏览器</translation>
-<translation id="3099708656176429608">对防火墙或防病毒软件进行设置，以允许 BitPop 访问该网络。</translation>
-<translation id="8098179324031720100">BitPop 刚刚经过了改进！新版本已推出。</translation>
-<translation id="4320683788245444425">此计算机将不再接收BitPop更新，因为其硬件不再受支持。</translation>
-<translation id="6385431739515246076">关于 BitPop(&amp;C)</translation>
-<translation id="7521125380721653484">安装程序归档损坏或无效。请重新下载 BitPop。</translation>
-<translation id="8457938350903919620">点击您的姓名即可打开BitPop并开始浏览。</translation>
-<translation id="8410648211590980711">BitPop 正在使用您的麦克风。</translation>
-<translation id="3298525902784604502">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书已过期。由于该证书已过期，因此没有任何信息可表明它是否已被盗用。这意味着 BitPop 无法保证与您通信的是 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; 还是攻击者。您计算机时钟的当前设置为 <ph name="CURRENT_TIME"/>。该设置是否正确？如果不正确，您应更正错误并刷新此页面。</translation>
+<translation id="8610831143142469229">对防火墙或防病毒软件进行设置，以允许 Chromium 访问该网络。</translation>
+<translation id="6424492062988593837">Chromium 刚刚经过了改进！新版本已推出。</translation>
+<translation id="811857857463334932">此计算机将不再接收Chromium更新，因为其硬件不再受支持。</translation>
+<translation id="2910007522516064972">关于 Chromium(&amp;C)</translation>
+<translation id="8453117565092476964">安装程序归档损坏或无效。请重新下载 Chromium。</translation>
+<translation id="3889543394854987837">点击您的姓名即可打开Chromium并开始浏览。</translation>
+<translation id="3130323860337406239">Chromium 正在使用您的麦克风。</translation>
+<translation id="3249425904492147663">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书已过期。由于该证书已过期，因此没有任何信息可表明它是否已被盗用。这意味着 Chromium 无法保证与您通信的是 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; 还是攻击者。您计算机时钟的当前设置为 <ph name="CURRENT_TIME"/>。该设置是否正确？如果不正确，您应更正错误并刷新此页面。</translation>
 <translation id="7196020411877309443">为何会出现这个窗口？</translation>
-<translation id="6809805128084420516">与您的 BitPop 数据相关的重要信息</translation>
-<translation id="5312973105258198185">您已使用 <ph name="USER_EMAIL_ADDRESS"/> 的身份登录。现在您可在已登录的所有设备上访问您的书签、历史记录和其他设置。</translation>
-<translation id="473359818469623008">无法安装与当前运行的版本相同的 BitPop。请关闭 BitPop 并重试。</translation>
-<translation id="2595850371931815386">BitPop 不是您的默认浏览器。</translation>
+<translation id="457845228957001925">与您的 Chromium 数据相关的重要信息</translation>
+<translation id="4567424176335768812">您已使用 <ph name="USER_EMAIL_ADDRESS"/> 的身份登录。现在您可在已登录的所有设备上访问您的书签、历史记录和其他设置。</translation>
+<translation id="7483335560992089831">无法安装与当前运行的版本相同的 Chromium。请关闭 Chromium 并重试。</translation>
+<translation id="7641113255207688324">Chromium 不是您的默认浏览器。</translation>
 <translation id="4458285410772214805">请先退出，然后重新登录，以便此更改生效。</translation>
-<translation id="6627720938086825017">BitPop 正在使用您的摄像头和麦克风。</translation>
-<translation id="6382607600997384001">您可以在此处查看来自 BitPop 应用、扩展程序和网站的所有通知。</translation>
+<translation id="761356813943268536">Chromium 正在使用您的摄像头和麦克风。</translation>
+<translation id="805745970029938373">您可以在此处查看来自 Chromium 应用、扩展程序和网站的所有通知。</translation>
 <translation id="2119636228670142020">关于 BitPop 操作系统(&amp;C)</translation>
-<translation id="4196382931981526364">BitPop 现已推出更安全的新版本。</translation>
-<translation id="862266784641000464">您可以在 BitPop 中点击网上的电话号码，然后通过 Skype 拨打！</translation>
-<translation id="8072591166076742072">正在进行一项下载。您希望退出 BitPop 并取消该下载吗？</translation>
-<translation id="8650443074479376435">由于在登录时出现错误，BitPop无法同步您的数据。</translation>
-<translation id="7561209000218748370">BitPop的入站规则，允许mDNS流量。</translation>
+<translation id="1708666629004767631">Chromium 现已推出更安全的新版本。</translation>
+<translation id="378917192836375108">您可以在 Chromium 中点击网上的电话号码，然后通过 Skype 拨打！</translation>
+<translation id="8724049448828509830">正在进行一项下载。您希望退出 Chromium 并取消该下载吗？</translation>
+<translation id="608189560609172163">由于在登录时出现错误，Chromium无法同步您的数据。</translation>
+<translation id="4888717733111232871">Chromium的入站规则，允许mDNS流量。</translation>
 <translation id="151962892725702025">由于您的网域停用了同步功能，BitPop操作系统无法同步您的数据。</translation>
 <translation id="3360567213983886831">BitPop 二进制文件</translation>
-<translation id="108010966668726733">之前有人在此计算机上以 <ph name="ACCOUNT_EMAIL_LAST"/> 帐户登录 BitPop。如果这不是您的帐户，请新建一个 BitPop 用户来单独保存您的信息。
+<translation id="8985587603644336029">之前有人在此计算机上以 <ph name="ACCOUNT_EMAIL_LAST"/> 帐户登录 Chromium。如果这不是您的帐户，请新建一个 Chromium 用户来单独保存您的信息。
 
-如果您仍然登录，BitPop 信息（例如书签、历史记录和其他设置）将合并到 <ph name="ACCOUNT_EMAIL_NEW"/>。</translation>
-<translation id="7826309952950470209">正在进行多项下载。您希望退出 BitPop 并取消这些下载吗？</translation>
-<translation id="380873736468525691">BitPop 要求操作系统为 Windows Vista，或者 Windows XP SP2 或更高版本。</translation>
-<translation id="2762974284703971745">已发现一个同名的模块与 BitPop 存在冲突。</translation>
-<translation id="5213128101330439346">这是您的专属BitPop</translation>
-<translation id="5443433498537176573">BitPop 已是最新版本。</translation>
-<translation id="5637727561937246825">该计算机已经安装了更高版本的 BitPop 组件。请使用更高版本的安装程序。</translation>
-<translation id="4547797007790555015">您尝试访问 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书尚未生效。没有任何信息可表明该证书是否可信。BitPop 无法准确保证与您通信的是 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; 而不是攻击者。您计算机时钟的当前时间为 <ph name="CURRENT_TIME"/>。该时间是否准确？如果不准确，您可以更正系统上的时钟并刷新此网页。</translation>
-<translation id="185658551912723674">欢迎使用 BitPop</translation>
-<translation id="1909867102505992367">您的偏好设置文件已损坏或无效。
+如果您仍然登录，Chromium 信息（例如书签、历史记录和其他设置）将合并到 <ph name="ACCOUNT_EMAIL_NEW"/>。</translation>
+<translation id="2739631515503418643">正在进行多项下载。您希望退出 Chromium 并取消这些下载吗？</translation>
+<translation id="9013262824292842194">Chromium 要求操作系统为 Windows Vista，或者 Windows XP SP2 或更高版本。</translation>
+<translation id="1967743265616885482">已发现一个同名的模块与 Chromium 存在冲突。</translation>
+<translation id="8704119203788522458">这是您的专属Chromium</translation>
+<translation id="4224199872375172890">Chromium 已是最新版本。</translation>
+<translation id="374481098568514319">该计算机已经安装了更高版本的 Chromium 组件。请使用更高版本的安装程序。</translation>
+<translation id="6240281849816458190">您尝试访问 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书尚未生效。没有任何信息可表明该证书是否可信。Chromium 无法准确保证与您通信的是 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; 而不是攻击者。您计算机时钟的当前时间为 <ph name="CURRENT_TIME"/>。该时间是否准确？如果不准确，您可以更正系统上的时钟并刷新此网页。</translation>
+<translation id="5862307444128926510">欢迎使用 Chromium</translation>
+<translation id="7318036098707714271">您的偏好设置文件已损坏或无效。
 
-BitPop 无法恢复您的设置。</translation>
-<translation id="6239286721842301381">您正在预览新版BitPop。</translation>
-<translation id="7591092481995851856">取消与<ph name="USERNAME"/>的关联将会清除您的历史记录、书签、设置以及存储在此设备上的其他BitPop数据。您的Google帐户中存储的数据将不会被清除，并且您可以通过<ph name="GOOGLE_DASHBOARD_LINK"/>Google信息中心<ph name="END_GOOGLE_DASHBOARD_LINK"/>管理这些数据。</translation>
-<translation id="4933902704814222889">BitPop 是一款可高速运行网页和应用的网络浏览器。它快捷、稳定且易于使用。BitPop 内置的防护恶意软件和网上诱骗的功能可让您更安全地浏览网页。</translation>
-<translation id="5806792281256987775">您曾尝试访问 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书却不是由 BitPop 信任的实体颁发的。这可能意味着该服务器已生成自己的安全凭据（BitPop 无法依据这些凭据确定身份信息），或者有攻击者尝试拦截您的通信。</translation>
-<translation id="26317130586606191">是否将您的 BitPop 数据与此帐户相关联？</translation>
-<translation id="5583217122091744450">BitPop 帮助程序</translation>
-<translation id="3089741509794563091">BitPop现在更好用了</translation>
-<translation id="6404599307042403560">BitPop 已配置为在计算机启动时自动启动。</translation>
-<translation id="554833011526807667">BitPop 操作系统的问世还有其他<ph name="BEGIN_LINK_CROS_OSS"/>开放源代码软件<ph name="END_LINK_CROS_OSS"/>的一份功能。</translation>
-<translation id="8166042339699941380">您目前是以托管帐户登录，该帐户的管理员将能够控制您的 BitPop 个人资料。您的 BitPop 数据（例如您的应用、书签、历史记录、密码和其他设置）将永久绑定到 <ph name="USER_NAME"/>。您可以通过 Google 帐户信息中心删除这些数据，但无法将这些数据关联到其他帐户。</translation>
-<translation id="2032763513380168750">将我的 BitPop 数据与此帐户关联</translation>
-<translation id="2477235356415090659">重新安装BitPop</translation>
-<translation id="807350504213044844">BitPop 操作系统不支持启动外部应用处理 <ph name="SCHEME"/> 链接。请求的链接是 <ph name="PROTOLINK"/>。</translation>
-<translation id="3484768020161794310">缺少 Google API 密钥，因此 BitPop 的部分功能将无法使用。</translation>
-<translation id="531363935678210182">BitPop - 通知</translation>
-<translation id="3151848949510984428">在 BitPop 中保存详细信息</translation>
+Chromium 无法恢复您的设置。</translation>
+<translation id="473845343586694349">您正在预览新版Chromium。</translation>
+<translation id="918373042641772655">取消与<ph name="USERNAME"/>的关联将会清除您的历史记录、书签、设置以及存储在此设备上的其他Chromium数据。您的Google帐户中存储的数据将不会被清除，并且您可以通过<ph name="GOOGLE_DASHBOARD_LINK"/>Google信息中心<ph name="END_GOOGLE_DASHBOARD_LINK"/>管理这些数据。</translation>
+<translation id="6403826409255603130">Chromium 是一款可高速运行网页和应用的网络浏览器。它快捷、稳定且易于使用。Chromium 内置的防护恶意软件和网上诱骗的功能可让您更安全地浏览网页。</translation>
+<translation id="4019464536895378627">您曾尝试访问 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书却不是由 Chromium 信任的实体颁发的。这可能意味着该服务器已生成自己的安全凭据（Chromium 无法依据这些凭据确定身份信息），或者有攻击者尝试拦截您的通信。</translation>
+<translation id="4230135487732243613">是否将您的 Chromium 数据与此帐户相关联？</translation>
+<translation id="2572494885440352020">Chromium 帮助程序</translation>
+<translation id="7617377681829253106">Chromium现在更好用了</translation>
+<translation id="442817494342774222">Chromium 已配置为在计算机启动时自动启动。</translation>
+<translation id="8974095189086268230">Chromium 操作系统的问世还有其他<ph name="BEGIN_LINK_CROS_OSS"/>开放源代码软件<ph name="END_LINK_CROS_OSS"/>的一份功能。</translation>
+<translation id="313551035350905294">您目前是以托管帐户登录，该帐户的管理员将能够控制您的 Chromium 个人资料。您的 Chromium 数据（例如您的应用、书签、历史记录、密码和其他设置）将永久绑定到 <ph name="USER_NAME"/>。您可以通过 Google 帐户信息中心删除这些数据，但无法将这些数据关联到其他帐户。</translation>
+<translation id="8823523095753232532">将我的 Chromium 数据与此帐户关联</translation>
+<translation id="1808667845054772817">重新安装Chromium</translation>
+<translation id="1221340462641866827">Chromium 操作系统不支持启动外部应用处理 <ph name="SCHEME"/> 链接。请求的链接是 <ph name="PROTOLINK"/>。</translation>
+<translation id="328888136576916638">缺少 Google API 密钥，因此 Chromium 的部分功能将无法使用。</translation>
+<translation id="2602806952220118310">Chromium - 通知</translation>
+<translation id="5032989939245619637">在 Chromium 中保存详细信息</translation>
 </translationbundle>

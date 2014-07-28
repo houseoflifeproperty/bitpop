@@ -1126,7 +1126,7 @@ Inkognito režiim <ph name="SHORTCUT_KEY"/> võib järgmisel korral kasulikuks o
 <translation id="4341364588986930687"><ph name="DOMAIN"/> nõuab, et Google valideeriks seadme identiteedi, et tuvastada sobilikkus kaitstud meediasisu täiustatud taasesitamiseks. <ph name="LEARN_MORE"/> .</translation>
 <translation id="7643817847124207232">Interneti-ühendus kadus.</translation>
 <translation id="4871210892959306034">$1 kB</translation>
-<translation id="932327136139879170">Home</translation>
+<translation id="932327136139879170">Kodu</translation>
 <translation id="3561204836318837461">BSSID:</translation>
 <translation id="2560794850818211873">K&amp;opeeri video URL</translation>
 <translation id="2981113813906970160">Kuva suur hiirekursor</translation>
@@ -2237,7 +2237,7 @@ Veenduge, et te ei avalikustaks tundlikke andmeid.</translation>
 <translation id="4710257996998566163">Viimati uuendatud:</translation>
 <translation id="5299682071747318445">Kõik andmed krüpteeritakse teie sünkroonimise parooliga</translation>
 <translation id="7556242789364317684">Kahjuks ei saa teenus <ph name="SHORT_PRODUCT_NAME"/> teie seadeid taastada. Vea parandamiseks peab teenus <ph name="SHORT_PRODUCT_NAME"/> seadme lähtestama funktsiooniga Powerwash.</translation>
-<translation id="1383876407941801731">Otsing</translation>
+<translation id="1383876407941801731">Otsi</translation>
 <translation id="23362385947277794">Taustavärvid ja -kujutised</translation>
 <translation id="409579654357498729">Lisa pilvprintimisse</translation>
 <translation id="2120316813730635488">Esinemisjuhud, kus laiendus installiti</translation>
@@ -3746,7 +3746,7 @@ Veenduge, et te ei avalikustaks tundlikke andmeid.</translation>
 <translation id="2255317897038918278">Microsofti ajatembeldus</translation>
 <translation id="3493881266323043047">Kehtivus</translation>
 <translation id="5979421442488174909">&amp;Tõlgi järgmisesse keelde: <ph name="LANGUAGE"/></translation>
-<translation id="2662876636500006917">Chrome'i veebipood</translation>
+<translation id="2662876636500006917">Chrome Web Store</translation>
 <translation id="676881925959847033">Keelab juurdepääsul kaitstud meediumi identifikaatorile vaikimisi hüpikteaberiba.</translation>
 <translation id="952992212772159698">Aktiveerimata</translation>
 <translation id="443464694732789311">Jätka</translation>
