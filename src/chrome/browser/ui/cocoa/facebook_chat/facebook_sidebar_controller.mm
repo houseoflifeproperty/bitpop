@@ -1,4 +1,4 @@
-// BitPop browser with features like Facebook chat and uncensored browsing. 
+// BitPop browser with features like Facebook chat and uncensored browsing.
 // Copyright (C) 2014 BitPop AS
 //
 // This program is free software: you can redistribute it and/or modify
@@ -30,6 +30,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
@@ -153,7 +154,7 @@ class SidebarLoadedObserver : public extensions::ExtensionRegistryObserver {
       }
     }
   }
-  
+
   virtual void OnExtensionUnloaded(content::BrowserContext* browser_context,
                                    const Extension* extension,
                                    UnloadedExtensionInfo::Reason reason) OVERRIDE {
@@ -200,7 +201,7 @@ class SidebarLoadedObserver : public extensions::ExtensionRegistryObserver {
     ];
 
     sidebar_loaded_observer_.reset(new SidebarLoadedObserver(self));
-    extensions::ExtensionRegistry* extension_registry = 
+    extensions::ExtensionRegistry* extension_registry =
         extensions::ExtensionRegistry::Get(browser_->profile());
     extension_registry->AddObserver(sidebar_loaded_observer_.get());
 
@@ -220,7 +221,7 @@ class SidebarLoadedObserver : public extensions::ExtensionRegistryObserver {
 
 - (void)dealloc {
   if (sidebar_loaded_observer_.get()) {
-    extensions::ExtensionRegistry* extension_registry = 
+    extensions::ExtensionRegistry* extension_registry =
         extensions::ExtensionRegistry::Get(browser_->profile());
     extension_registry->RemoveObserver(sidebar_loaded_observer_.get());
   }
@@ -262,11 +263,13 @@ class SidebarLoadedObserver : public extensions::ExtensionRegistryObserver {
   std::string url = std::string("chrome-extension://") +
       std::string(extension_misc::kFacebookChatExtensionId) +
       std::string("/roster.html");
-  
+
   extension_view_host_.reset(
     extensions::ExtensionViewHostFactory::CreateSidebarHost(
       GURL(url), browser_));
   if (extension_view_host_.get()) {
+    extension_view_host_->SetAssociatedWebContents(browser_->tab_strip_model()->GetActiveWebContents());
+
     gfx::NativeView native_view = extension_view_host_->view()->native_view();
     NSRect container_bounds = [[self view] bounds];
     [native_view setFrame:container_bounds];

@@ -14543,6 +14543,9 @@ Do you accept?
     <message name="IDS_OPTIONS_UPDATES_AUTOCHECK_LABEL" desc="The label for automatic updates checkbox">
       Automatically check daily
     </message>
+    <message name="IDS_SIGNIN_OPENED_PROMPT" desc="The label for infobar opening when the signin page with Chrome branding is opened">
+      BitPop allows you to store browser bookmarks, history etc. through Google Chrome's service
+    </message>
   </messages>
   </release>
 </grit>

@@ -29,7 +29,8 @@ void ExtensionViewHostMac::UnhandledKeyboardEvent(
     content::WebContents* source,
     const NativeWebKeyboardEvent& event) {
   if (event.skip_in_browser || event.type == NativeWebKeyboardEvent::Char ||
-      extension_host_type() != VIEW_TYPE_EXTENSION_POPUP) {
+      (extension_host_type() != VIEW_TYPE_EXTENSION_POPUP &&
+       extension_host_type() != VIEW_TYPE_TAB_CONTENTS)) {
     return;
   }
 

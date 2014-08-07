@@ -19,8 +19,8 @@ const char kMasterPreferencesDirectory[] = "Google";
 const char kMasterPreferencesFileName[] = "Google Chrome Master Preferences";
 #else
 const NSSearchPathDirectory kSearchPath = NSApplicationSupportDirectory;
-const char kMasterPreferencesDirectory[] = "Chromium";
-const char kMasterPreferencesFileName[] = "Chromium Master Preferences";
+const char kMasterPreferencesDirectory[] = "BitPop";
+const char kMasterPreferencesFileName[] = "BitPop Master Preferences";
 #endif  // GOOGLE_CHROME_BUILD
 
 }  // namespace

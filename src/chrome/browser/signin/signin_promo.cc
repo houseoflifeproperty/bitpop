@@ -150,7 +150,7 @@ bool ShouldShowPromoAtStartup(Profile* profile, bool is_new_profile) {
     return false;
 
   // Default to show the promo for Google Chrome builds.
-#if defined(GOOGLE_CHROME_BUILD)
+#if 1 // defined(GOOGLE_CHROME_BUILD)
   return true;
 #else
   return false;

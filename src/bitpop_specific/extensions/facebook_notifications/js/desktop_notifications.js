@@ -289,21 +289,32 @@ DesktopNotifications = {
         }
       };
 
-      chrome.notifications.create("com.facebook.alert.notifications", {
+      var options = {
         type: "basic",
-        iconUrl: self._latest_data.icon_url,
         title: 'Facebook Notification',
         message: self._latest_data.title_text,
         isClickable: true
-      }, function (notificationId) {
-        chrome.notifications.onClosed.addListener(function (notificationClosedId) {
-          if (notificationClosedId == notificationId) {
-            chrome.notifications.onClicked.removeListener(notificationClickedCallback);
-            chrome.notifications.onClosed.removeListener(arguments.callee);
-          }
-        });
-        chrome.notifications.onClicked.addListener(notificationClickedCallback);
-      });
+      };
+
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", self._latest_data.icon_url);
+      xhr.responseType = "blob";
+      xhr.onload = function(){
+          var blob = this.response;
+          options.iconUrl = window.URL.createObjectURL(blob);
+          chrome.notifications.create("com.facebook.alert.notifications", options, function (notificationId) {
+            console.log(chrome.runtime.lastError);
+            chrome.notifications.onClosed.addListener(function (notificationClosedId) {
+              if (notificationClosedId == notificationId) {
+                chrome.notifications.onClicked.removeListener(notificationClickedCallback);
+                chrome.notifications.onClosed.removeListener(arguments.callee);
+              }
+            });
+            chrome.notifications.onClicked.addListener(notificationClickedCallback);
+          });
+      };
+      xhr.send(null);
+
       DesktopNotifications.restartTimer(self.DEFAULT_FADEOUT_DELAY);
     }
   },

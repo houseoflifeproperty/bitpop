@@ -1972,6 +1972,14 @@ void Browser::Observe(int type,
         LocationBar* location_bar = window()->GetLocationBar();
         if (location_bar)
           location_bar->UpdateContentSettingsIcons();
+
+        GURL current_url = web_contents->GetLastCommittedURL();
+        if (current_url.host() == chrome::kChromeUIChromeSigninHost) {
+          SimpleAlertInfoBarDelegate::Create(
+            InfoBarService::FromWebContents(web_contents),
+            infobars::InfoBarDelegate::kNoIconID,
+            l10n_util::GetStringUTF16(IDS_SIGNIN_OPENED_PROMPT), true);
+        }
       }
       break;
     }
