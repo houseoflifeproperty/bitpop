@@ -9,10 +9,11 @@
 #include "content/renderer/media/media_stream.h"
 #include "content/renderer/media/media_stream_impl.h"
 #include "content/renderer/media/media_stream_track.h"
-#include "content/renderer/media/mock_media_stream_dependency_factory.h"
 #include "content/renderer/media/mock_media_stream_dispatcher.h"
 #include "content/renderer/media/mock_media_stream_video_source.h"
+#include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/platform/WebMediaDeviceInfo.h"
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
@@ -26,7 +27,7 @@ class MockMediaStreamVideoCapturerSource : public MockMediaStreamVideoSource {
   MockMediaStreamVideoCapturerSource(
       const StreamDeviceInfo& device,
       const SourceStoppedCallback& stop_callback,
-      MediaStreamDependencyFactory* factory)
+      PeerConnectionDependencyFactory* factory)
   : MockMediaStreamVideoSource(false) {
     SetDeviceInfo(device);
     SetStopCallback(stop_callback);
@@ -43,7 +44,7 @@ class MediaStreamImplUnderTest : public MediaStreamImpl {
   };
 
   MediaStreamImplUnderTest(MediaStreamDispatcher* media_stream_dispatcher,
-                           MediaStreamDependencyFactory* dependency_factory)
+                           PeerConnectionDependencyFactory* dependency_factory)
       : MediaStreamImpl(NULL, media_stream_dispatcher, dependency_factory),
         state_(REQUEST_NOT_STARTED),
         result_(NUM_MEDIA_REQUEST_RESULTS),
@@ -55,6 +56,12 @@ class MediaStreamImplUnderTest : public MediaStreamImpl {
     blink::WebUserMediaRequest user_media_request;
     state_ = REQUEST_NOT_COMPLETE;
     requestUserMedia(user_media_request);
+  }
+
+  void RequestMediaDevices() {
+    blink::WebMediaDevicesRequest media_devices_request;
+    state_ = REQUEST_NOT_COMPLETE;
+    requestMediaDevices(media_devices_request);
   }
 
   virtual void GetUserMediaRequestSucceeded(
@@ -72,6 +79,13 @@ class MediaStreamImplUnderTest : public MediaStreamImpl {
     result_ = result;
   }
 
+  virtual void EnumerateDevicesSucceded(
+      blink::WebMediaDevicesRequest* request,
+      blink::WebVector<blink::WebMediaDeviceInfo>& devices) OVERRIDE {
+    state_ = REQUEST_SUCCEEDED;
+    last_devices_ = devices;
+  }
+
   virtual MediaStreamVideoSource* CreateVideoSource(
       const StreamDeviceInfo& device,
       const MediaStreamSource::SourceStoppedCallback& stop_callback) OVERRIDE {
@@ -83,6 +97,10 @@ class MediaStreamImplUnderTest : public MediaStreamImpl {
 
   const blink::WebMediaStream& last_generated_stream() {
     return last_generated_stream_;
+  }
+
+  const blink::WebVector<blink::WebMediaDeviceInfo>& last_devices() {
+    return last_devices_;
   }
 
   void ClearLastGeneratedStream() {
@@ -100,7 +118,8 @@ class MediaStreamImplUnderTest : public MediaStreamImpl {
   blink::WebMediaStream last_generated_stream_;
   RequestState state_;
   content::MediaStreamRequestResult result_;
-  MediaStreamDependencyFactory* factory_;
+  blink::WebVector<blink::WebMediaDeviceInfo> last_devices_;
+  PeerConnectionDependencyFactory* factory_;
   MockMediaStreamVideoCapturerSource* video_source_;
 };
 
@@ -110,14 +129,14 @@ class MediaStreamImplTest : public ::testing::Test {
     // Create our test object.
     child_process_.reset(new ChildProcess());
     ms_dispatcher_.reset(new MockMediaStreamDispatcher());
-    dependency_factory_.reset(new MockMediaStreamDependencyFactory());
+    dependency_factory_.reset(new MockPeerConnectionDependencyFactory());
     ms_impl_.reset(new MediaStreamImplUnderTest(ms_dispatcher_.get(),
                                                 dependency_factory_.get()));
   }
 
   blink::WebMediaStream RequestLocalMediaStream() {
     ms_impl_->RequestUserMedia();
-    FakeMediaStreamDispatcherComplete();
+    FakeMediaStreamDispatcherRequestUserMediaComplete();
     StartMockedVideoSource();
 
     EXPECT_EQ(MediaStreamImplUnderTest::REQUEST_SUCCEEDED,
@@ -142,11 +161,21 @@ class MediaStreamImplTest : public ::testing::Test {
     return desc;
   }
 
-  void FakeMediaStreamDispatcherComplete() {
-    ms_impl_->OnStreamGenerated(ms_dispatcher_->request_id(),
+  void FakeMediaStreamDispatcherRequestUserMediaComplete() {
+    // Audio request ID is used as the shared request ID.
+    ms_impl_->OnStreamGenerated(ms_dispatcher_->audio_input_request_id(),
                                 ms_dispatcher_->stream_label(),
-                                ms_dispatcher_->audio_array(),
+                                ms_dispatcher_->audio_input_array(),
                                 ms_dispatcher_->video_array());
+  }
+
+  void FakeMediaStreamDispatcherRequestMediaDevicesComplete() {
+    ms_impl_->OnDevicesEnumerated(ms_dispatcher_->audio_input_request_id(),
+                                  ms_dispatcher_->audio_input_array());
+    ms_impl_->OnDevicesEnumerated(ms_dispatcher_->audio_output_request_id(),
+                                  ms_dispatcher_->audio_output_array());
+    ms_impl_->OnDevicesEnumerated(ms_dispatcher_->video_request_id(),
+                                  ms_dispatcher_->video_array());
   }
 
   void StartMockedVideoSource() {
@@ -172,7 +201,7 @@ class MediaStreamImplTest : public ::testing::Test {
   scoped_ptr<ChildProcess> child_process_;
   scoped_ptr<MockMediaStreamDispatcher> ms_dispatcher_;
   scoped_ptr<MediaStreamImplUnderTest> ms_impl_;
-  scoped_ptr<MockMediaStreamDependencyFactory> dependency_factory_;
+  scoped_ptr<MockPeerConnectionDependencyFactory> dependency_factory_;
 };
 
 TEST_F(MediaStreamImplTest, GenerateMediaStream) {
@@ -317,7 +346,7 @@ TEST_F(MediaStreamImplTest, FrameWillClose) {
 // This test what happens if a video source to a MediaSteam fails to start.
 TEST_F(MediaStreamImplTest, MediaVideoSourceFailToStart) {
   ms_impl_->RequestUserMedia();
-  FakeMediaStreamDispatcherComplete();
+  FakeMediaStreamDispatcherRequestUserMediaComplete();
   FailToStartMockedVideoSource();
   EXPECT_EQ(MediaStreamImplUnderTest::REQUEST_FAILED,
             ms_impl_->request_state());
@@ -332,7 +361,7 @@ TEST_F(MediaStreamImplTest, MediaVideoSourceFailToStart) {
 TEST_F(MediaStreamImplTest, MediaAudioSourceFailToInitialize) {
   FailToCreateNextAudioCapturer();
   ms_impl_->RequestUserMedia();
-  FakeMediaStreamDispatcherComplete();
+  FakeMediaStreamDispatcherRequestUserMediaComplete();
   StartMockedVideoSource();
   EXPECT_EQ(MediaStreamImplUnderTest::REQUEST_FAILED,
             ms_impl_->request_state());
@@ -347,7 +376,7 @@ TEST_F(MediaStreamImplTest, MediaAudioSourceFailToInitialize) {
 // started.
 TEST_F(MediaStreamImplTest, MediaStreamImplShutDown) {
   ms_impl_->RequestUserMedia();
-  FakeMediaStreamDispatcherComplete();
+  FakeMediaStreamDispatcherRequestUserMediaComplete();
   EXPECT_EQ(1, ms_dispatcher_->request_stream_counter());
   EXPECT_EQ(MediaStreamImplUnderTest::REQUEST_NOT_COMPLETE,
             ms_impl_->request_state());
@@ -370,7 +399,7 @@ TEST_F(MediaStreamImplTest, ReloadFrameWhileGeneratingStream) {
 // started.
 TEST_F(MediaStreamImplTest, ReloadFrameWhileGeneratingSources) {
   ms_impl_->RequestUserMedia();
-  FakeMediaStreamDispatcherComplete();
+  FakeMediaStreamDispatcherRequestUserMediaComplete();
   EXPECT_EQ(1, ms_dispatcher_->request_stream_counter());
   ms_impl_->FrameWillClose(NULL);
   EXPECT_EQ(1, ms_dispatcher_->stop_audio_device_counter());
@@ -399,6 +428,48 @@ TEST_F(MediaStreamImplTest, StopTrackAfterReload) {
   MediaStreamTrack* video_track = MediaStreamTrack::GetTrack(video_tracks[0]);
   video_track->Stop();
   EXPECT_EQ(1, ms_dispatcher_->stop_video_device_counter());
+}
+
+TEST_F(MediaStreamImplTest, EnumerateMediaDevices) {
+  ms_impl_->RequestMediaDevices();
+  FakeMediaStreamDispatcherRequestMediaDevicesComplete();
+
+  EXPECT_EQ(MediaStreamImplUnderTest::REQUEST_SUCCEEDED,
+            ms_impl_->request_state());
+
+  // Audio input device with matched output ID.
+  EXPECT_FALSE(ms_impl_->last_devices()[0].deviceId().isEmpty());
+  EXPECT_EQ(blink::WebMediaDeviceInfo::MediaDeviceKindAudioInput,
+            ms_impl_->last_devices()[0].kind());
+  EXPECT_FALSE(ms_impl_->last_devices()[0].label().isEmpty());
+  EXPECT_FALSE(ms_impl_->last_devices()[0].groupId().isEmpty());
+
+  // Audio input device without matched output ID.
+  EXPECT_FALSE(ms_impl_->last_devices()[1].deviceId().isEmpty());
+  EXPECT_EQ(blink::WebMediaDeviceInfo::MediaDeviceKindAudioInput,
+            ms_impl_->last_devices()[1].kind());
+  EXPECT_FALSE(ms_impl_->last_devices()[1].label().isEmpty());
+  EXPECT_FALSE(ms_impl_->last_devices()[1].groupId().isEmpty());
+
+  // Video input device.
+  EXPECT_FALSE(ms_impl_->last_devices()[2].deviceId().isEmpty());
+  EXPECT_EQ(blink::WebMediaDeviceInfo::MediaDeviceKindVideoInput,
+            ms_impl_->last_devices()[2].kind());
+  EXPECT_FALSE(ms_impl_->last_devices()[2].label().isEmpty());
+  EXPECT_TRUE(ms_impl_->last_devices()[2].groupId().isEmpty());
+
+  // Audio output device.
+  EXPECT_FALSE(ms_impl_->last_devices()[3].deviceId().isEmpty());
+  EXPECT_EQ(blink::WebMediaDeviceInfo::MediaDeviceKindAudioOutput,
+            ms_impl_->last_devices()[3].kind());
+  EXPECT_FALSE(ms_impl_->last_devices()[3].label().isEmpty());
+  EXPECT_FALSE(ms_impl_->last_devices()[3].groupId().isEmpty());
+
+  // Verfify group IDs.
+  EXPECT_TRUE(ms_impl_->last_devices()[0].groupId().equals(
+                  ms_impl_->last_devices()[3].groupId()));
+  EXPECT_FALSE(ms_impl_->last_devices()[1].groupId().equals(
+                   ms_impl_->last_devices()[3].groupId()));
 }
 
 }  // namespace content

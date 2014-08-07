@@ -35,10 +35,10 @@ class DownloadService : public KeyedService {
 
   // Get the interface to the history system. Returns NULL if profile is
   // incognito or if the DownloadManager hasn't been created yet or if there is
-  // no HistoryService for profile.
-  DownloadHistory* GetDownloadHistory();
+  // no HistoryService for profile. Virtual for testing.
+  virtual DownloadHistory* GetDownloadHistory();
 
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_EXTENSIONS)
   extensions::ExtensionDownloadsEventRouter* GetExtensionEventRouter() {
     return extension_event_router_.get();
   }
@@ -88,13 +88,15 @@ class DownloadService : public KeyedService {
   // The UI controller is responsible for observing the download manager and
   // notifying the UI of any new downloads. Its lifetime matches that of the
   // associated download manager.
+  // Note on destruction order: download_ui_ depends on download_history_ and
+  // should be destroyed before the latter.
   scoped_ptr<DownloadUIController> download_ui_;
 
   // On Android, GET downloads are not handled by the DownloadManager.
   // Once we have extensions on android, we probably need the EventRouter
   // in ContentViewDownloadDelegate which knows about both GET and POST
   // downloads.
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_EXTENSIONS)
   // The ExtensionDownloadsEventRouter dispatches download creation, change, and
   // erase events to extensions. Like ChromeDownloadManagerDelegate, it's a
   // chrome-level concept and its lifetime should match DownloadManager. There

@@ -22,9 +22,8 @@
 
 #include "core/svg/SVGFEOffsetElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
 namespace WebCore {
@@ -42,10 +41,7 @@ inline SVGFEOffsetElement::SVGFEOffsetElement(Document& document)
     addToPropertyMap(m_in1);
 }
 
-PassRefPtr<SVGFEOffsetElement> SVGFEOffsetElement::create(Document& document)
-{
-    return adoptRef(new SVGFEOffsetElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEOffsetElement)
 
 bool SVGFEOffsetElement::isSupportedAttribute(const QualifiedName& attrName)
 {

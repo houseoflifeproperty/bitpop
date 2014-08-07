@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -159,8 +158,7 @@ class AppChildControllerImpl : public InterfaceImpl<AppChildController> {
     DCHECK(thread_checker_.CalledOnValidThread());
 
     // TODO(vtl): Pass in the result from |MainMain()|.
-    if (controller_client_)
-      controller_client_->AppCompleted(MOJO_RESULT_UNIMPLEMENTED);
+    client()->AppCompleted(MOJO_RESULT_UNIMPLEMENTED);
   }
 
   // To be executed on the controller thread. Creates the |AppChildController|,
@@ -194,21 +192,13 @@ class AppChildControllerImpl : public InterfaceImpl<AppChildController> {
   }
 
   // |AppChildController| methods:
-
-  virtual void SetClient(AppChildControllerClient* client) OVERRIDE {
-    controller_client_ = client;
-  }
-
   virtual void StartApp(const String& app_path,
                         ScopedMessagePipeHandle service) OVERRIDE {
-    DVLOG(2) << "AppChildControllerImpl::StartApp("
-             << app_path.To<std::string>() << ", ...)";
+    DVLOG(2) << "AppChildControllerImpl::StartApp(" << app_path << ", ...)";
     DCHECK(thread_checker_.CalledOnValidThread());
 
-    // TODO(darin): Add TypeConverter for FilePath <-> mojo::String.
     unblocker_.Unblock(base::Bind(&AppChildControllerImpl::StartAppOnMainThread,
-                                  base::FilePath::FromUTF8Unsafe(
-                                      app_path.To<std::string>()),
+                                  base::FilePath::FromUTF8Unsafe(app_path),
                                   base::Passed(&service)));
   }
 
@@ -217,7 +207,6 @@ class AppChildControllerImpl : public InterfaceImpl<AppChildController> {
                          const Blocker::Unblocker& unblocker)
       : app_context_(app_context),
         unblocker_(unblocker),
-        controller_client_(NULL),
         channel_info_(NULL) {
   }
 
@@ -233,9 +222,6 @@ class AppChildControllerImpl : public InterfaceImpl<AppChildController> {
     // TODO(vtl): This is copied from in_process_dynamic_service_runner.cc.
     DVLOG(2) << "Loading/running Mojo app from " << app_path.value()
              << " out of process";
-
-    base::ScopedClosureRunner app_deleter(
-        base::Bind(base::IgnoreResult(&base::DeleteFile), app_path, false));
 
     do {
       base::NativeLibraryLoadError load_error;
@@ -267,7 +253,6 @@ class AppChildControllerImpl : public InterfaceImpl<AppChildController> {
   AppContext* const app_context_;
   Blocker::Unblocker unblocker_;
 
-  AppChildControllerClient* controller_client_;
   embedder::ChannelInfo* channel_info_;
 
   DISALLOW_COPY_AND_ASSIGN(AppChildControllerImpl);

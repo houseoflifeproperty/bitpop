@@ -255,7 +255,7 @@ extern "C" {
 #endif
 
 /* This is not an IANA defined extension number */
-#define TLSEXT_TYPE_channel_id			30031
+#define TLSEXT_TYPE_channel_id			30032
 
 /* NameType value from RFC 3546 */
 #define TLSEXT_NAMETYPE_host_name 0

@@ -886,6 +886,10 @@ int vp9_full_range_search_c(const MACROBLOCK *x,
   int r, c, i;
   int start_col, end_col, start_row, end_row;
 
+  // The cfg and search_param parameters are not used in this search variant
+  (void)cfg;
+  (void)search_param;
+
   clamp_mv(ref_mv, x->mv_col_min, x->mv_col_max, x->mv_row_min, x->mv_row_max);
   *best_mv = *ref_mv;
   *num00 = 11;
@@ -1551,7 +1555,7 @@ int vp9_refining_search_8p_c(const MACROBLOCK *x,
                              int search_range,
                              const vp9_variance_fn_ptr_t *fn_ptr,
                              const MV *center_mv,
-                             const uint8_t *second_pred, int w, int h) {
+                             const uint8_t *second_pred) {
   const MV neighbors[8] = {{-1, 0}, {0, -1}, {0, 1}, {1, 0},
                            {-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
   const MACROBLOCKD *const xd = &x->e_mbd;

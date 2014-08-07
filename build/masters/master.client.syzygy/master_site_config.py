@@ -12,3 +12,4 @@ class Syzygy(Master.Master3):
   master_port = 8042
   slave_port = 8142
   master_port_alt = 8242
+  buildbot_url = 'https://build.chromium.org/p/client.syzygy/'

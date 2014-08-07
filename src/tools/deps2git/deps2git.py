@@ -6,6 +6,7 @@
 """Convert SVN based DEPS into .DEPS.git for use with NewGit."""
 
 import collections
+from cStringIO import StringIO
 import json
 import optparse
 import os
@@ -13,14 +14,29 @@ import Queue
 import shutil
 import subprocess
 import sys
+import threading
 import time
-
-from multiprocessing.pool import ThreadPool
 
 import deps_utils
 import git_tools
 import svn_to_git_public
 
+try:
+  import git_cache
+except ImportError:
+  for p in os.environ['PATH'].split(os.pathsep):
+    if (os.path.basename(p) == 'depot_tools' and
+        os.path.exists(os.path.join(p, 'git_cache.py'))):
+      sys.path.append(p)
+  import git_cache
+
+Job = collections.namedtuple(
+    'Job',
+    ['dep', 'git_url', 'dep_url', 'path', 'git_host', 'dep_rev', 'svn_branch'])
+
+ConversionResults = collections.namedtuple(
+    'ConversionResults',
+    ['new_deps', 'deps_vars', 'bad_git_urls', 'bad_dep_urls', 'bad_git_hash'])
 
 # This is copied from depot_tools/gclient.py
 DEPS_OS_CHOICES = {
@@ -36,6 +52,7 @@ DEPS_OS_CHOICES = {
     "android": "android",
 }
 
+
 def SplitScmUrl(url):
   """Given a repository, return a set containing the URL and the revision."""
   url_split = url.split('@')
@@ -46,14 +63,15 @@ def SplitScmUrl(url):
   return (scm_url, scm_rev)
 
 
-def SvnRevToGitHash(svn_rev, git_url, repos_path, workspace, dep_path,
-                    git_host, svn_branch_name=None, cache_dir=None):
+def SvnRevToGitHash(
+    svn_rev, git_url, repos_path, workspace, dep_path, git_host,
+    svn_branch_name=None, cache_dir=None, outbuf=None, shallow=None):
   """Convert a SVN revision to a Git commit id."""
   git_repo = None
   if git_url.startswith(git_host):
     git_repo = git_url.replace(git_host, '')
   else:
-    raise Exception('Unknown git server %s, host %s' % (git_url, git_host))
+    raise RuntimeError('Unknown git server %s, host %s' % (git_url, git_host))
   if repos_path is None and workspace is None and cache_dir is None:
     # We're running without a repository directory (i.e. no -r option).
     # We cannot actually find the commit id, but this mode is useful
@@ -64,11 +82,10 @@ def SvnRevToGitHash(svn_rev, git_url, repos_path, workspace, dep_path,
     mirror = True
     git_repo_path = os.path.join(repos_path, git_repo)
     if not os.path.exists(git_repo_path) or not os.listdir(git_repo_path):
-      git_tools.Clone(git_url, git_repo_path, mirror)
+      git_tools.Clone(git_url, git_repo_path, mirror, outbuf)
   elif cache_dir:
-    mirror = 'bare'
-    git_tools.Clone(git_url, None, mirror, cache_dir=cache_dir)
-    git_repo_path = git_tools.GetCacheRepoDir(git_url, cache_dir)
+    mirror = True
+    git_repo_path = git_tools.PopulateCache(git_url, shallow)
   else:
     mirror = False
     git_repo_path = os.path.join(workspace, dep_path)
@@ -84,7 +101,7 @@ def SvnRevToGitHash(svn_rev, git_url, repos_path, workspace, dep_path,
       else:
         shutil.rmtree(git_repo_path)
     if not os.path.exists(git_repo_path):
-      git_tools.Clone(git_url, git_repo_path, mirror)
+      git_tools.Clone(git_url, git_repo_path, mirror, outbuf)
 
   if svn_branch_name:
     # svn branches are mirrored with:
@@ -99,26 +116,115 @@ def SvnRevToGitHash(svn_rev, git_url, repos_path, workspace, dep_path,
     else:
       refspec = 'refs/remotes/origin/master'
 
-  try:
-    return git_tools.Search(git_repo_path, svn_rev, mirror, refspec, git_url)
-  except Exception:
-    print >> sys.stderr, '%s <-> ERROR' % git_repo_path
-    raise
+  # Work-around for:
+  #   http://code.google.com/p/chromium/issues/detail?id=362222
+  if (git_url.startswith('https://chromium.googlesource.com/external/pefile')
+      and int(svn_rev) in (63, 141)):
+    return '72c6ae42396cb913bcab63c15585dc3b5c3f92f1'
 
-def ConvertDepsToGit(deps, options, deps_vars, svn_deps_vars, svn_to_git_objs,
-                     deps_overrides):
+  return git_tools.Search(git_repo_path, svn_rev, mirror, refspec, git_url)
+
+
+def MessageMain(message_q, threads):
+  while True:
+    try:
+      msg = message_q.get(True, 10)
+    except Queue.Empty:
+      print >> sys.stderr, 'Still working on:'
+      for s in sorted([th.working_on for th in threads if th.working_on]):
+        print >> sys.stderr, '  %s' % s
+      continue
+    if msg is Queue.Empty:
+      return
+    if msg:
+      print >> sys.stderr, msg
+
+
+def ConvertDepMain(dep_q, message_q, options, results):
+  cur_thread = threading.current_thread()
+  while True:
+    try:
+      job = dep_q.get(False)
+      dep, git_url, dep_url, path, git_host, dep_rev, svn_branch = job
+      cur_thread.working_on = dep
+    except Queue.Empty:
+      cur_thread.working_on = None
+      return
+
+    outbuf = StringIO()
+    def _print(s):
+      for l in s.splitlines():
+        outbuf.write('[%s] %s\n' % (dep, l))
+
+    if options.verify:
+      delay = 0.5
+      success = False
+      for try_index in range(1, 6):
+        _print('checking %s (try #%d) ...' % (git_url, try_index))
+        if git_tools.Ping(git_url, verbose=True):
+          _print(' success')
+          success = True
+          break
+        _print(' failure')
+        _print('sleeping for %.01f seconds ...' % delay)
+        time.sleep(delay)
+        delay *= 2
+
+      if not success:
+        results.bad_git_urls.add(git_url)
+
+    # Get the Git hash based off the SVN rev.
+    git_hash = ''
+    if dep_rev != 'HEAD':
+      # Pass-through the hash for Git repositories. Resolve the hash for
+      # subversion repositories.
+      if dep_url.endswith('.git'):
+        git_hash = '@%s' % dep_rev
+      else:
+        try:
+          git_hash = '@%s' % SvnRevToGitHash(
+              dep_rev, git_url, options.repos, options.workspace, path,
+              git_host, svn_branch, options.cache_dir)
+        except Exception as e:
+          if options.no_fail_fast:
+            results.bad_git_hash.append(e)
+            continue
+          raise
+
+    # If this is webkit, we need to add the var for the hash.
+    if dep == 'src/third_party/WebKit' and dep_rev:
+      results.deps_vars['webkit_rev'] = git_hash
+      git_hash = 'VAR_WEBKIT_REV'
+
+    # Hack to preserve the angle_revision variable in .DEPS.git.
+    # This will go away as soon as deps2git does.
+    if dep == 'src/third_party/angle' and git_hash:
+      # Cut the leading '@' so this variable has the same semantics in
+      # DEPS and .DEPS.git.
+      results.deps_vars['angle_revision'] = git_hash[1:]
+      git_hash = 'VAR_ANGLE_REVISION'
+
+    # Add this Git dep to the new deps.
+    results.new_deps[path] = '%s%s' % (git_url, git_hash)
+
+    message_q.put(outbuf.getvalue())
+
+
+def ConvertDepsToGit(deps, options, deps_vars, svn_to_git_objs):
   """Convert a 'deps' section in a DEPS file from SVN to Git."""
-  new_deps = {}
-  bad_git_urls = set([])
-  bad_dep_urls = []
-  bad_override = []
-  bad_git_hash = []
+  results = ConversionResults(
+      new_deps={},
+      deps_vars=deps_vars,
+      bad_git_urls=set([]),
+      bad_dep_urls=[],
+      bad_git_hash=[]
+  )
 
   # Populate our deps list.
-  deps_to_process = {}
+  deps_to_process = Queue.Queue()
   for dep, dep_url in deps.iteritems():
     if not dep_url:  # dep is 'None' and emitted to exclude the dep
-      new_deps[dep] = None
+      results.new_deps[dep] = None
       continue
 
     # Get the URL and the revision/hash for this dependency.
@@ -142,115 +248,31 @@ def ConvertDepsToGit(deps, options, deps_vars, svn_deps_vars, svn_to_git_objs,
         # Make all match failures fatal to catch errors early. When a match is
         # found, we break out of the loop so the exception is not thrown.
         if options.no_fail_fast:
-          bad_dep_urls.append(dep_url)
+          results.bad_dep_urls.append(dep_url)
           continue
-        raise Exception('No match found for %s' % dep_url)
+        raise RuntimeError('No match found for %s' % dep_url)
 
-    Job = collections.namedtuple('Job', ['git_url', 'dep_url', 'path',
-                                         'git_host', 'dep_rev', 'svn_branch'])
-    deps_to_process[dep] = Job(
-        git_url, dep_url, path, git_host, dep_rev, svn_branch)
+    deps_to_process.put(
+        Job(dep, git_url, dep_url, path, git_host, dep_rev, svn_branch))
 
-  # Lets pre-cache all of the git repos now if we have cache_dir turned on.
-  if options.cache_dir:
-    if not os.path.isdir(options.cache_dir):
-      os.makedirs(options.cache_dir)
-    pool = ThreadPool(processes=len(deps_to_process))
-    output_queue = Queue.Queue()
-    num_threads = 0
-    for git_url, _, _, _, _, _ in deps_to_process.itervalues():
-      print 'Populating cache for %s' % git_url
-      num_threads += 1
-      pool.apply_async(git_tools.Clone, (git_url, None, 'bare',
-                                         output_queue, options.cache_dir,
-                                         options.shallow))
-    pool.close()
+  threads = []
+  message_q = Queue.Queue()
+  thread_args = (deps_to_process, message_q, options, results)
+  num_threads = options.num_threads or deps_to_process.qsize()
+  for _ in xrange(num_threads):
+    th = threading.Thread(target=ConvertDepMain, args=thread_args)
+    th.working_on = None
+    th.start()
+    threads.append(th)
+  message_th = threading.Thread(target=MessageMain, args=(message_q, threads))
+  message_th.start()
 
-    # Stream stdout line by line.
-    sec_since = 0
-    while num_threads > 0:
-      try:
-        line = output_queue.get(block=True, timeout=1)
-        sec_since = 0
-      except Queue.Empty:
-        sec_since += 1
-        line = ('Main> Heartbeat ping. We are still alive!! '
-                'Seconds since last output: %d sec' % sec_since)
-      if line is None:
-        num_threads -= 1
-      else:
-        print line
-    pool.join()
+  for th in threads:
+    th.join()
+  message_q.put(Queue.Empty)
+  message_th.join()
 
-
-  for dep, items in deps_to_process.iteritems():
-    git_url, dep_url, path, git_host, dep_rev, svn_branch = items
-    if options.verify:
-      delay = 0.5
-      success = False
-      for try_index in range(1, 6):
-        print >> sys.stderr, 'checking %s (try #%d) ...' % (git_url, try_index),
-        if git_tools.Ping(git_url, verbose=True):
-          print >> sys.stderr, ' success'
-          success = True
-          break
-
-        print >> sys.stderr, ' failure'
-        print >> sys.stderr, 'sleeping for %.01f seconds ...' % delay
-        time.sleep(delay)
-        delay *= 2
-
-      if not success:
-        bad_git_urls.update([git_url])
-
-    # Get the Git hash based off the SVN rev.
-    git_hash = ''
-    if dep_rev != 'HEAD':
-      if dep in deps_overrides and deps_overrides[dep]:
-        # Transfer any required variables over from SVN DEPS.
-        if not deps_overrides[dep] in svn_deps_vars:
-          if options.no_fail_fast:
-            bad_override.append(deps_overrides[dep])
-            continue
-          raise Exception('Missing DEPS variable: %s' % deps_overrides[dep])
-        deps_vars[deps_overrides[dep]] = (
-            '@' + svn_deps_vars[deps_overrides[dep]].lstrip('@'))
-        # Tag this variable as needing a transform by Varify() later.
-        git_hash = '%s_%s' % (deps_utils.VARIFY_MARKER_TAG_PREFIX,
-                              deps_overrides[dep])
-      else:
-        # Pass-through the hash for Git repositories. Resolve the hash for
-        # subversion repositories.
-        if dep_url.endswith('.git'):
-          git_hash = '@%s' % dep_rev
-        else:
-          try:
-            git_hash = '@%s' % SvnRevToGitHash(
-                dep_rev, git_url, options.repos, options.workspace, path,
-                git_host, svn_branch, options.cache_dir)
-          except Exception as e:
-            if options.no_fail_fast:
-              bad_git_hash.append(e)
-              continue
-            raise
-
-    # If this is webkit, we need to add the var for the hash.
-    if dep == 'src/third_party/WebKit' and dep_rev:
-      deps_vars['webkit_rev'] = git_hash
-      git_hash = 'VAR_WEBKIT_REV'
-
-    # Hack to preserve the angle_revision variable in .DEPS.git.
-    # This will go away as soon as deps2git does.
-    if dep == 'src/third_party/angle' and git_hash:
-      # Cut the leading '@' so this variable has the same semantics in
-      # DEPS and .DEPS.git.
-      deps_vars['angle_revision'] = git_hash[1:]
-      git_hash = 'VAR_ANGLE_REVISION'
-
-    # Add this Git dep to the new deps.
-    new_deps[path] = '%s%s' % (git_url, git_hash)
-
-  return new_deps, bad_git_urls, bad_dep_urls, bad_override, bad_git_hash
+  return results
 
 
 def main():
@@ -259,6 +281,8 @@ def main():
                     help='path to the DEPS file to convert')
   parser.add_option('-o', '--out',
                     help='path to the converted DEPS file (default: stdout)')
+  parser.add_option('-j', '--num-threads', type='int', default=4,
+                    help='Maximum number of threads')
   parser.add_option('-t', '--type',
                     help='[DEPRECATED] type of DEPS file (public, etc)')
   parser.add_option('-x', '--extra-rules',
@@ -281,9 +305,8 @@ def main():
   options = parser.parse_args()[0]
 
   # Get the content of the DEPS file.
-  deps_content = deps_utils.GetDepsContent(options.deps)
-  (deps, deps_os, include_rules, skip_child_includes, hooks,
-   svn_deps_vars) = deps_content
+  deps, deps_os, include_rules, skip_child_includes, hooks = (
+      deps_utils.GetDepsContent(options.deps))
 
   if options.extra_rules and options.type:
     parser.error('Can\'t specify type and extra-rules at the same time.')
@@ -300,7 +323,7 @@ def main():
     options.cache_dir = os.path.abspath(options.cache_dir)
 
   if options.extra_rules and not os.path.exists(options.extra_rules):
-    raise Exception('Can\'t locate rules file "%s".' % options.extra_rules)
+    raise RuntimeError('Can\'t locate rules file "%s".' % options.extra_rules)
 
   # Create a var containing the Git and Webkit URL, this will make it easy for
   # people to use a mirror instead.
@@ -312,15 +335,12 @@ def main():
 
   # Find and load svn_to_git_* modules that handle the URL mapping.
   svn_to_git_objs = [svn_to_git_public]
-  deps_overrides = getattr(svn_to_git_public, 'DEPS_OVERRIDES', {}).copy()
   if options.extra_rules:
     rules_dir, rules_file = os.path.split(options.extra_rules)
     rules_file_base = os.path.splitext(rules_file)[0]
     sys.path.insert(0, rules_dir)
     svn_to_git_mod = __import__(rules_file_base)
     svn_to_git_objs.insert(0, svn_to_git_mod)
-    # Allow extra_rules file to override rules in svn_to_git_public.
-    deps_overrides.update(getattr(svn_to_git_mod, 'DEPS_OVERRIDES', {}))
 
   # If a workspace parameter is given, and a .gclient file is present, limit
   # DEPS conversion to only the repositories that are actually used in this
@@ -345,51 +365,54 @@ def main():
     if not options.cache_dir and 'cache_dir' in gclient_dict:
       options.cache_dir = os.path.abspath(gclient_dict['cache_dir'])
 
+  if options.cache_dir:
+    git_cache.Mirror.SetCachePath(options.cache_dir)
+  else:
+    try:
+      options.cache_dir = git_cache.Mirror.GetCachePath()
+    except RuntimeError:
+      pass
+
   # Do general pre-processing of the DEPS data.
   for svn_git_converter in svn_to_git_objs:
     if hasattr(svn_git_converter, 'CleanDeps'):
       svn_git_converter.CleanDeps(deps, deps_os, include_rules,
-                                  skip_child_includes, hooks, svn_deps_vars)
+                                  skip_child_includes, hooks)
 
   # Convert the DEPS file to Git.
-  deps, baddeps, badmaps, badvars, badhashes = ConvertDepsToGit(
-      deps, options, deps_vars, svn_deps_vars, svn_to_git_objs, deps_overrides)
+  results = ConvertDepsToGit(
+      deps, options, deps_vars, svn_to_git_objs)
   for os_dep in deps_os:
-    result = ConvertDepsToGit(deps_os[os_dep], options, deps_vars,
-                              svn_deps_vars, svn_to_git_objs, deps_overrides)
-    deps_os[os_dep] = result[0]
-    baddeps = baddeps.union(result[1])
-    badmaps.extend(result[2])
-    badvars.extend(result[3])
-    badhashes.extend(result[4])
+    os_results = ConvertDepsToGit(deps_os[os_dep], options, deps_vars,
+                                  svn_to_git_objs)
+    deps_os[os_dep] = os_results.new_deps
+    results.bad_git_urls.update(os_results.bad_git_urls)
+    results.bad_dep_urls.extend(os_results.bad_dep_urls)
+    results.bad_git_hash.extend(os_results.bad_git_hash)
 
   if options.json:
     with open(options.json, 'w') as f:
-      json.dump(list(baddeps), f, sort_keys=True, indent=2)
+      json.dump(list(results.bad_git_urls), f, sort_keys=True, indent=2)
 
-  if baddeps:
+  if results.bad_git_urls:
     print >> sys.stderr, ('\nUnable to resolve the following repositories. '
         'Please make sure\nthat any svn URLs have a git mirror associated with '
         'them.\nTo see the exact error, run `git ls-remote [repository]` where'
         '\n[repository] is the URL ending in .git (strip off the @revision\n'
         'number.) For more information, visit http://code.google.com\n'
         '/p/chromium/wiki/UsingGit#Adding_new_repositories_to_DEPS.\n')
-    for dep in baddeps:
+    for dep in results.bad_git_urls:
       print >> sys.stderr, ' ' + dep
-  if badmaps:
+  if results.bad_dep_urls:
     print >> sys.stderr, '\nNo mappings found for the following urls:\n'
-    for bad in badmaps:
+    for bad in results.bad_dep_urls:
       print >> sys.stderr, ' ' + bad
-  if badvars:
-    print >> sys.stderr, '\nMissing DEPS variables for overrides:\n'
-    for bad in badvars:
-      print >> sys.stderr, ' ' + bad
-  if badhashes:
+  if results.bad_git_hash:
     print >> sys.stderr, '\nsvn rev to git hash failures:\n'
-    for bad in badhashes:
+    for bad in results.bad_git_hash:
       print >> sys.stderr, ' ' + str(bad)
 
-  if baddeps or badmaps or badvars or badhashes:
+  if (results.bad_git_urls or results.bad_dep_urls or results.bad_git_hash):
     return 2
 
   if options.verify:
@@ -398,8 +421,8 @@ def main():
     return 0
 
   # Write the DEPS file to disk.
-  deps_utils.WriteDeps(options.out, deps_vars, deps, deps_os, include_rules,
-                       skip_child_includes, hooks)
+  deps_utils.WriteDeps(options.out, deps_vars, results.new_deps, deps_os,
+                       include_rules, skip_child_includes, hooks)
   return 0
 
 

@@ -29,13 +29,13 @@ namespace ui {
 namespace {
 
 bool ScaleFactorComparator(const ScaleFactor& lhs, const ScaleFactor& rhs){
-  return GetImageScale(lhs) < GetImageScale(rhs);
+  return GetScaleForScaleFactor(lhs) < GetScaleForScaleFactor(rhs);
 }
 
 std::vector<ScaleFactor>* g_supported_scale_factors = NULL;
 
 const float kScaleFactorScales[] = {1.0f, 1.0f, 1.25f, 1.33f, 1.4f, 1.5f, 1.8f,
-                                    2.0f, 3.0f};
+                                    2.0f, 2.5f, 3.0f};
 COMPILE_ASSERT(NUM_SCALE_FACTORS == arraysize(kScaleFactorScales),
                kScaleFactorScales_incorrect_size);
 
@@ -90,30 +90,6 @@ float GetImageScale(ScaleFactor scale_factor) {
   return GetScaleForScaleFactor(scale_factor);
 }
 
-bool IsScaleFactorSupported(ScaleFactor scale_factor) {
-  DCHECK(g_supported_scale_factors != NULL);
-  return std::find(g_supported_scale_factors->begin(),
-                   g_supported_scale_factors->end(),
-                   scale_factor) != g_supported_scale_factors->end();
-}
-
-// Returns the scale factor closest to |scale| from the full list of factors.
-// Note that it does NOT rely on the list of supported scale factors.
-// Finding the closest match is inefficient and shouldn't be done frequently.
-ScaleFactor FindClosestScaleFactorUnsafe(float scale) {
-  float smallest_diff =  std::numeric_limits<float>::max();
-  ScaleFactor closest_match = SCALE_FACTOR_100P;
-  for (int i = SCALE_FACTOR_100P; i < NUM_SCALE_FACTORS; ++i) {
-    const ScaleFactor scale_factor = static_cast<ScaleFactor>(i);
-    float diff = std::abs(kScaleFactorScales[scale_factor] - scale);
-    if (diff < smallest_diff) {
-      closest_match = scale_factor;
-      smallest_diff = diff;
-    }
-  }
-  return closest_match;
-}
-
 float GetScaleForScaleFactor(ScaleFactor scale_factor) {
   return kScaleFactorScales[scale_factor];
 }
@@ -144,13 +120,13 @@ ScopedSetSupportedScaleFactors::~ScopedSetSupportedScaleFactors() {
 }  // namespace test
 
 #if !defined(OS_MACOSX)
-ScaleFactor GetScaleFactorForNativeView(gfx::NativeView view) {
+float GetScaleFactorForNativeView(gfx::NativeView view) {
   gfx::Screen* screen = gfx::Screen::GetScreenFor(view);
   if (screen->IsDIPEnabled()) {
     gfx::Display display = screen->GetDisplayNearestWindow(view);
-    return GetSupportedScaleFactor(display.device_scale_factor());
+    return display.device_scale_factor();
   }
-  return ui::SCALE_FACTOR_100P;
+  return 1.0f;
 }
 #endif  // !defined(OS_MACOSX)
 

@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //device/serial
       'target_name': 'device_serial',
       'type': 'static_library',
       'include_dirs': [
@@ -20,7 +21,14 @@
           ],
         }],
       ],
+      'variables': {
+        'mojom_base_output_dir': 'device/serial',
+      },
+      'includes': [
+        '../../mojo/public/tools/bindings/mojom_bindings_generator.gypi',
+      ],
       'sources': [
+        'serial.mojom',
         'serial_device_enumerator.cc',
         'serial_device_enumerator.h',
         'serial_device_enumerator_linux.cc',
@@ -29,8 +37,6 @@
         'serial_device_enumerator_mac.h',
         'serial_device_enumerator_win.cc',
         'serial_device_enumerator_win.h',
-        'serial_device_info.cc',
-        'serial_device_info.h',
       ],
     },
   ],

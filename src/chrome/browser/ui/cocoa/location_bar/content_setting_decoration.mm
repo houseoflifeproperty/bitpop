@@ -263,7 +263,7 @@ bool ContentSettingDecoration::AcceptsMousePress() {
   return true;
 }
 
-bool ContentSettingDecoration::OnMousePressed(NSRect frame) {
+bool ContentSettingDecoration::OnMousePressed(NSRect frame, NSPoint location) {
   // Get host. This should be shared on linux/win/osx medium-term.
   Browser* browser = owner_->browser();
   WebContents* web_contents = owner_->GetWebContents();
@@ -287,6 +287,7 @@ bool ContentSettingDecoration::OnMousePressed(NSRect frame) {
           web_contents, profile_,
           content_setting_image_model_->get_content_settings_type());
   [ContentSettingBubbleController showForModel:model
+                                   webContents:web_contents
                                   parentWindow:[field window]
                                     anchoredAt:anchor];
   return true;

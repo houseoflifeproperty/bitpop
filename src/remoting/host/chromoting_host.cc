@@ -8,8 +8,10 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "build/build_config.h"
+#include "jingle/glue/thread_wrapper.h"
 #include "remoting/base/constants.h"
 #include "remoting/base/logging.h"
 #include "remoting/host/chromoting_host_context.h"
@@ -86,13 +88,10 @@ ChromotingHost::ChromotingHost(
   DCHECK(network_task_runner_->BelongsToCurrentThread());
   DCHECK(signal_strategy);
 
-  // VP9 encode is not yet supported.
-  protocol::CandidateSessionConfig::DisableVideoCodec(
-      protocol_config_.get(), protocol::ChannelConfig::CODEC_VP9);
+  jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
 
   if (!desktop_environment_factory_->SupportsAudioCapture()) {
-    protocol::CandidateSessionConfig::DisableAudioChannel(
-        protocol_config_.get());
+    protocol_config_->DisableAudioChannel();
   }
 }
 
@@ -133,6 +132,10 @@ void ChromotingHost::AddStatusObserver(HostStatusObserver* observer) {
 void ChromotingHost::RemoveStatusObserver(HostStatusObserver* observer) {
   DCHECK(CalledOnValidThread());
   status_observers_.RemoveObserver(observer);
+}
+
+void ChromotingHost::AddExtension(scoped_ptr<HostExtension> extension) {
+  extensions_.push_back(extension.release());
 }
 
 void ChromotingHost::RejectAuthenticatingClient() {
@@ -222,6 +225,19 @@ void ChromotingHost::OnSessionChannelsConnected(ClientSession* client) {
   // Notify observers.
   FOR_EACH_OBSERVER(HostStatusObserver, status_observers_,
                     OnClientConnected(client->client_jid()));
+}
+
+void ChromotingHost::OnSessionClientCapabilities(ClientSession* client) {
+  DCHECK(CalledOnValidThread());
+
+  // Create extension sessions from each registered extension for this client.
+  for (HostExtensionList::iterator extension = extensions_.begin();
+       extension != extensions_.end(); ++extension) {
+    scoped_ptr<HostExtensionSession> extension_session =
+        (*extension)->CreateExtensionSession(client);
+    if (extension_session)
+      client->AddExtensionSession(extension_session.Pass());
+  }
 }
 
 void ChromotingHost::OnSessionAuthenticationFailed(ClientSession* client) {
@@ -314,6 +330,13 @@ void ChromotingHost::OnIncomingSession(
       desktop_environment_factory_,
       max_session_duration_,
       pairing_registry_);
+
+  // Registers capabilities provided by host extensions.
+  for (HostExtensionList::iterator extension = extensions_.begin();
+       extension != extensions_.end(); ++extension) {
+    client->AddHostCapabilities((*extension)->GetCapabilities());
+  }
+
   clients_.push_back(client);
 }
 

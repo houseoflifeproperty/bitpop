@@ -12,7 +12,6 @@
 #include "chrome/browser/extensions/webstore_standalone_installer.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "extensions/browser/extension_registry_observer.h"
 
 class ExtensionEnableFlow;
 class Profile;
@@ -31,7 +30,6 @@ class ExtensionRegistry;
 // launches the app.
 class EphemeralAppLauncher : public extensions::WebstoreStandaloneInstaller,
                              public content::WebContentsObserver,
-                             public extensions::ExtensionRegistryObserver,
                              public ExtensionEnableFlowDelegate {
  public:
   typedef WebstoreStandaloneInstaller::Callback Callback;
@@ -64,7 +62,6 @@ class EphemeralAppLauncher : public extensions::WebstoreStandaloneInstaller,
 
   virtual ~EphemeralAppLauncher();
 
-  void StartObserving();
   void LaunchApp(const extensions::Extension* extension) const;
 
   // WebstoreStandaloneInstaller implementation.
@@ -73,8 +70,8 @@ class EphemeralAppLauncher : public extensions::WebstoreStandaloneInstaller,
   virtual bool ShouldShowPostInstallUI() const OVERRIDE;
   virtual bool ShouldShowAppInstalledBubble() const OVERRIDE;
   virtual content::WebContents* GetWebContents() const OVERRIDE;
-  virtual scoped_ptr<ExtensionInstallPrompt::Prompt>
-      CreateInstallPrompt() const OVERRIDE;
+  virtual scoped_refptr<ExtensionInstallPrompt::Prompt> CreateInstallPrompt()
+      const OVERRIDE;
   virtual bool CheckInlineInstallPermitted(
       const base::DictionaryValue& webstore_data,
       std::string* error) const OVERRIDE;
@@ -92,19 +89,9 @@ class EphemeralAppLauncher : public extensions::WebstoreStandaloneInstaller,
   // content::WebContentsObserver implementation.
   virtual void WebContentsDestroyed() OVERRIDE;
 
-  // ExtensionRegistryObserver implementation.
-  virtual void OnExtensionLoaded(
-      content::BrowserContext* browser_context,
-      const extensions::Extension* extension) OVERRIDE;
-
   // ExtensionEnableFlowDelegate implementation.
   virtual void ExtensionEnableFlowFinished() OVERRIDE;
   virtual void ExtensionEnableFlowAborted(bool user_initiated) OVERRIDE;
-
-  // Listen to extension unloaded notifications.
-  ScopedObserver<extensions::ExtensionRegistry,
-                 extensions::ExtensionRegistryObserver>
-      extension_registry_observer_;
 
   gfx::NativeWindow parent_window_;
   scoped_ptr<content::WebContents> dummy_web_contents_;

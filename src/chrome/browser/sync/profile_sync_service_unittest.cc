@@ -3,36 +3,49 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/invalidation/fake_invalidation_service.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/sync/glue/data_type_manager_impl.h"
 #include "chrome/browser/sync/glue/sync_backend_host_mock.h"
 #include "chrome/browser/sync/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/testing_profile_manager.h"
+#include "components/invalidation/invalidation_service.h"
+#include "components/invalidation/profile_invalidation_provider.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/sync_driver/data_type_manager_impl.h"
 #include "components/sync_driver/pref_names.h"
+#include "components/sync_driver/sync_prefs.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+namespace content {
+class BrowserContext;
+}
 
 namespace browser_sync {
 
 namespace {
 
 ACTION(ReturnNewDataTypeManager) {
-  return new browser_sync::DataTypeManagerImpl(arg0,
+  return new browser_sync::DataTypeManagerImpl(base::Closure(),
+                                               arg0,
                                                arg1,
                                                arg2,
                                                arg3,
@@ -40,6 +53,7 @@ ACTION(ReturnNewDataTypeManager) {
                                                arg5);
 }
 
+using testing::Return;
 using testing::StrictMock;
 using testing::_;
 
@@ -74,12 +88,56 @@ class SyncBackendHostNoReturn : public SyncBackendHostMock {
       syncer::NetworkResources* network_resources) OVERRIDE {}
 };
 
+class SyncBackendHostMockCollectDeleteDirParam : public SyncBackendHostMock {
+ public:
+  explicit SyncBackendHostMockCollectDeleteDirParam(
+      std::vector<bool>* delete_dir_param)
+     : delete_dir_param_(delete_dir_param) {}
+
+  virtual void Initialize(
+      SyncFrontend* frontend,
+      scoped_ptr<base::Thread> sync_thread,
+      const syncer::WeakHandle<syncer::JsEventHandler>& event_handler,
+      const GURL& service_url,
+      const syncer::SyncCredentials& credentials,
+      bool delete_sync_data_folder,
+      scoped_ptr<syncer::SyncManagerFactory> sync_manager_factory,
+      scoped_ptr<syncer::UnrecoverableErrorHandler> unrecoverable_error_handler,
+      syncer::ReportUnrecoverableErrorFunction
+          report_unrecoverable_error_function,
+      syncer::NetworkResources* network_resources) OVERRIDE {
+    delete_dir_param_->push_back(delete_sync_data_folder);
+    SyncBackendHostMock::Initialize(frontend, sync_thread.Pass(),
+                                    event_handler, service_url, credentials,
+                                    delete_sync_data_folder,
+                                    sync_manager_factory.Pass(),
+                                    unrecoverable_error_handler.Pass(),
+                                    report_unrecoverable_error_function,
+                                    network_resources);
+  }
+
+ private:
+  std::vector<bool>* delete_dir_param_;
+};
+
 ACTION(ReturnNewSyncBackendHostMock) {
   return new browser_sync::SyncBackendHostMock();
 }
 
 ACTION(ReturnNewSyncBackendHostNoReturn) {
   return new browser_sync::SyncBackendHostNoReturn();
+}
+
+ACTION_P(ReturnNewMockHostCollectDeleteDirParam, delete_dir_param) {
+  return new browser_sync::SyncBackendHostMockCollectDeleteDirParam(
+      delete_dir_param);
+}
+
+KeyedService* BuildFakeProfileInvalidationProvider(
+    content::BrowserContext* context) {
+  return new invalidation::ProfileInvalidationProvider(
+      scoped_ptr<invalidation::InvalidationService>(
+          new invalidation::FakeInvalidationService));
 }
 
 // A test harness that uses a real ProfileSyncService and in most cases a
@@ -90,18 +148,29 @@ ACTION(ReturnNewSyncBackendHostNoReturn) {
 class ProfileSyncServiceTest : public ::testing::Test {
  protected:
   ProfileSyncServiceTest()
-      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
+      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
+        profile_manager_(TestingBrowserProcess::GetGlobal()) {}
   virtual ~ProfileSyncServiceTest() {}
 
   virtual void SetUp() OVERRIDE {
-    TestingProfile::Builder builder;
+    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kSyncDeferredStartupTimeoutSeconds, "0");
 
-    builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              BuildAutoIssuingFakeProfileOAuth2TokenService);
-    invalidation::InvalidationServiceFactory::GetInstance()->
-        RegisterTestingFactory(invalidation::FakeInvalidationService::Build);
+    CHECK(profile_manager_.SetUp());
 
-    profile_ = builder.Build().Pass();
+    TestingProfile::TestingFactories testing_facotries;
+    testing_facotries.push_back(
+            std::make_pair(ProfileOAuth2TokenServiceFactory::GetInstance(),
+                           BuildAutoIssuingFakeProfileOAuth2TokenService));
+    testing_facotries.push_back(
+            std::make_pair(
+                invalidation::ProfileInvalidationProviderFactory::GetInstance(),
+                BuildFakeProfileInvalidationProvider));
+
+    profile_ = profile_manager_.CreateTestingProfile(
+        "sync-service-test", scoped_ptr<PrefServiceSyncable>(),
+        base::UTF8ToUTF16("sync-service-test"), 0, std::string(),
+        testing_facotries);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -110,28 +179,40 @@ class ProfileSyncServiceTest : public ::testing::Test {
       service_->Shutdown();
 
     service_.reset();
-    profile_.reset();
   }
 
   void IssueTestTokens() {
-    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get())
+    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)
         ->UpdateCredentials("test", "oauth2_login_token");
   }
 
   void CreateService(ProfileSyncServiceStartBehavior behavior) {
     SigninManagerBase* signin =
-        SigninManagerFactory::GetForProfile(profile_.get());
+        SigninManagerFactory::GetForProfile(profile_);
     signin->SetAuthenticatedUsername("test");
     ProfileOAuth2TokenService* oauth2_token_service =
-        ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get());
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
     components_factory_ = new StrictMock<ProfileSyncComponentsFactoryMock>();
     service_.reset(new ProfileSyncService(
         components_factory_,
-        profile_.get(),
-        new ManagedUserSigninManagerWrapper(profile_.get(), signin),
+        profile_,
+        make_scoped_ptr(new ManagedUserSigninManagerWrapper(profile_, signin)),
         oauth2_token_service,
         behavior));
+    service_->SetClearingBrowseringDataForTesting(
+        base::Bind(&ProfileSyncServiceTest::ClearBrowsingDataCallback,
+                   base::Unretained(this)));
   }
+
+#if defined(OS_WIN) || defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+  void CreateServiceWithoutSignIn() {
+    CreateService(browser_sync::MANUAL_START);
+    SigninManagerFactory::GetForProfile(profile())->SignOut(
+        signin_metrics::SIGNOUT_TEST);
+    service()->SetBackupStartDelayForTest(
+        base::TimeDelta::FromMilliseconds(100));
+  }
+#endif
 
   void ShutdownAndDeleteService() {
     if (service_)
@@ -143,23 +224,33 @@ class ProfileSyncServiceTest : public ::testing::Test {
     service_->Initialize();
   }
 
-  void ExpectDataTypeManagerCreation() {
-    EXPECT_CALL(*components_factory_, CreateDataTypeManager(_, _, _, _, _, _)).
-        WillOnce(ReturnNewDataTypeManager());
+  void ExpectDataTypeManagerCreation(int times) {
+    EXPECT_CALL(*components_factory_, CreateDataTypeManager(_, _, _, _, _, _))
+        .Times(times)
+        .WillRepeatedly(ReturnNewDataTypeManager());
   }
 
-  void ExpectSyncBackendHostCreation() {
-    EXPECT_CALL(*components_factory_, CreateSyncBackendHost(_, _, _)).
-        WillOnce(ReturnNewSyncBackendHostMock());
+  void ExpectSyncBackendHostCreation(int times) {
+    EXPECT_CALL(*components_factory_, CreateSyncBackendHost(_, _, _, _, _))
+        .Times(times)
+        .WillRepeatedly(ReturnNewSyncBackendHostMock());
+  }
+
+  void ExpectSyncBackendHostCreationCollectDeleteDir(
+      int times, std::vector<bool> *delete_dir_param) {
+    EXPECT_CALL(*components_factory_, CreateSyncBackendHost(_, _, _, _, _))
+        .Times(times)
+        .WillRepeatedly(ReturnNewMockHostCollectDeleteDirParam(
+            delete_dir_param));
   }
 
   void PrepareDelayedInitSyncBackendHost() {
-    EXPECT_CALL(*components_factory_, CreateSyncBackendHost(_, _, _)).
+    EXPECT_CALL(*components_factory_, CreateSyncBackendHost(_, _, _, _, _)).
         WillOnce(ReturnNewSyncBackendHostNoReturn());
   }
 
   TestingProfile* profile() {
-    return profile_.get();
+    return profile_;
   }
 
   ProfileSyncService* service() {
@@ -170,14 +261,24 @@ class ProfileSyncServiceTest : public ::testing::Test {
     return components_factory_;
   }
 
+  void ClearBrowsingDataCallback(Profile* profile, base::Time start,
+                                 base::Time end) {
+    EXPECT_EQ(profile_, profile);
+    clear_browsing_data_start_ = start;
+  }
+
+ protected:
+  // The requested start time when ClearBrowsingDataCallback is called.
+  base::Time clear_browsing_data_start_;
+
  private:
-  scoped_ptr<TestingProfile> profile_;
+  content::TestBrowserThreadBundle thread_bundle_;
+  TestingProfileManager profile_manager_;
+  TestingProfile* profile_;
   scoped_ptr<ProfileSyncService> service_;
 
   // Pointer to the components factory.  Not owned.  May be null.
   ProfileSyncComponentsFactoryMock* components_factory_;
-
-  content::TestBrowserThreadBundle thread_bundle_;
 };
 
 // Verify that the server URLs are sane.
@@ -195,11 +296,12 @@ TEST_F(ProfileSyncServiceTest, SuccessfulInitialization) {
       sync_driver::prefs::kSyncManaged, base::Value::CreateBooleanValue(false));
   IssueTestTokens();
   CreateService(browser_sync::AUTO_START);
-  ExpectDataTypeManagerCreation();
-  ExpectSyncBackendHostCreation();
+  ExpectDataTypeManagerCreation(1);
+  ExpectSyncBackendHostCreation(1);
   Initialize();
   EXPECT_FALSE(service()->IsManaged());
   EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_EQ(ProfileSyncService::SYNC, service()->backend_mode());
 }
 
 
@@ -236,8 +338,8 @@ TEST_F(ProfileSyncServiceTest, DisabledByPolicyBeforeInit) {
 TEST_F(ProfileSyncServiceTest, DisabledByPolicyAfterInit) {
   IssueTestTokens();
   CreateService(browser_sync::AUTO_START);
-  ExpectDataTypeManagerCreation();
-  ExpectSyncBackendHostCreation();
+  ExpectDataTypeManagerCreation(1);
+  ExpectSyncBackendHostCreation(1);
   Initialize();
 
   EXPECT_FALSE(service()->IsManaged());
@@ -277,8 +379,8 @@ TEST_F(ProfileSyncServiceTest, EarlyStopAndSuppress) {
   EXPECT_FALSE(service()->sync_initialized());
 
   // Remove suppression.  This should be enough to allow init to happen.
-  ExpectDataTypeManagerCreation();
-  ExpectSyncBackendHostCreation();
+  ExpectDataTypeManagerCreation(1);
+  ExpectSyncBackendHostCreation(1);
   service()->UnsuppressAndStart();
   EXPECT_TRUE(service()->sync_initialized());
   EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(
@@ -289,8 +391,8 @@ TEST_F(ProfileSyncServiceTest, EarlyStopAndSuppress) {
 TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
   CreateService(browser_sync::AUTO_START);
   IssueTestTokens();
-  ExpectDataTypeManagerCreation();
-  ExpectSyncBackendHostCreation();
+  ExpectDataTypeManagerCreation(1);
+  ExpectSyncBackendHostCreation(1);
   Initialize();
 
   EXPECT_TRUE(service()->sync_initialized());
@@ -304,8 +406,8 @@ TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
   EXPECT_TRUE(profile()->GetPrefs()->GetBoolean(
       sync_driver::prefs::kSyncSuppressStart));
 
-  ExpectDataTypeManagerCreation();
-  ExpectSyncBackendHostCreation();
+  ExpectDataTypeManagerCreation(1);
+  ExpectSyncBackendHostCreation(1);
 
   service()->UnsuppressAndStart();
   EXPECT_TRUE(service()->sync_initialized());
@@ -315,12 +417,29 @@ TEST_F(ProfileSyncServiceTest, DisableAndEnableSyncTemporarily) {
 
 // Certain ProfileSyncService tests don't apply to Chrome OS, for example
 // things that deal with concepts like "signing out" and policy.
-#if !defined (OS_CHROMEOS)
+#if defined(OS_WIN) || defined(OS_MACOSX) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+TEST_F(ProfileSyncServiceTest, EnableSyncAndSignOutDesktop) {
+  CreateService(browser_sync::AUTO_START);
+  ExpectDataTypeManagerCreation(2);
+  ExpectSyncBackendHostCreation(2);
+  IssueTestTokens();
+  Initialize();
 
+  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(
+      sync_driver::prefs::kSyncSuppressStart));
+  EXPECT_EQ(ProfileSyncService::SYNC, service()->backend_mode());
+
+  SigninManagerFactory::GetForProfile(profile())->SignOut(
+      signin_metrics::SIGNOUT_TEST);
+  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_EQ(ProfileSyncService::BACKUP, service()->backend_mode());
+}
+#elif !defined (OS_CHROMEOS)
 TEST_F(ProfileSyncServiceTest, EnableSyncAndSignOut) {
   CreateService(browser_sync::AUTO_START);
-  ExpectDataTypeManagerCreation();
-  ExpectSyncBackendHostCreation();
+  ExpectDataTypeManagerCreation(1);
+  ExpectSyncBackendHostCreation(1);
   IssueTestTokens();
   Initialize();
 
@@ -328,17 +447,17 @@ TEST_F(ProfileSyncServiceTest, EnableSyncAndSignOut) {
   EXPECT_FALSE(profile()->GetPrefs()->GetBoolean(
       sync_driver::prefs::kSyncSuppressStart));
 
-  SigninManagerFactory::GetForProfile(profile())->SignOut();
+  SigninManagerFactory::GetForProfile(profile())->SignOut(
+      signin_metrics::SIGNOUT_TEST);
   EXPECT_FALSE(service()->sync_initialized());
 }
-
 #endif  // !defined(OS_CHROMEOS)
 
 TEST_F(ProfileSyncServiceTest, GetSyncTokenStatus) {
   CreateService(browser_sync::AUTO_START);
   IssueTestTokens();
-  ExpectDataTypeManagerCreation();
-  ExpectSyncBackendHostCreation();
+  ExpectDataTypeManagerCreation(1);
+  ExpectSyncBackendHostCreation(1);
   Initialize();
 
   // Initial status.
@@ -369,6 +488,113 @@ TEST_F(ProfileSyncServiceTest, GetSyncTokenStatus) {
   service()->OnConnectionStatusChange(syncer::CONNECTION_OK);
   token_status = service()->GetSyncTokenStatus();
   EXPECT_EQ(syncer::CONNECTION_OK, token_status.connection_status);
+}
+
+#if defined(ENABLE_PRE_SYNC_BACKUP)
+void QuitLoop() {
+  base::MessageLoop::current()->Quit();
+}
+
+TEST_F(ProfileSyncServiceTest, StartBackup) {
+  CreateServiceWithoutSignIn();
+  ExpectDataTypeManagerCreation(1);
+  std::vector<bool> delete_dir_param;
+  ExpectSyncBackendHostCreationCollectDeleteDir(1, &delete_dir_param);
+  Initialize();
+  EXPECT_EQ(ProfileSyncService::IDLE, service()->backend_mode());
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,  base::Bind(&QuitLoop),
+      base::TimeDelta::FromMilliseconds(100));
+  base::MessageLoop::current()->Run();
+  EXPECT_EQ(ProfileSyncService::BACKUP, service()->backend_mode());
+
+  EXPECT_EQ(1u, delete_dir_param.size());
+  EXPECT_FALSE(delete_dir_param[0]);
+}
+
+TEST_F(ProfileSyncServiceTest, BackupAfterSyncDisabled) {
+  CreateService(browser_sync::MANUAL_START);
+  service()->SetSyncSetupCompleted();
+  ExpectDataTypeManagerCreation(2);
+  std::vector<bool> delete_dir_param;
+  ExpectSyncBackendHostCreationCollectDeleteDir(2, &delete_dir_param);
+  IssueTestTokens();
+  Initialize();
+  base::MessageLoop::current()->PostTask(FROM_HERE,  base::Bind(&QuitLoop));
+  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_EQ(ProfileSyncService::SYNC, service()->backend_mode());
+
+  // First sync time should be recorded.
+  sync_driver::SyncPrefs sync_prefs(service()->profile()->GetPrefs());
+  EXPECT_FALSE(sync_prefs.GetFirstSyncTime().is_null());
+
+  syncer::SyncProtocolError client_cmd;
+  client_cmd.action = syncer::DISABLE_SYNC_ON_CLIENT;
+  service()->OnActionableError(client_cmd);
+  EXPECT_EQ(ProfileSyncService::BACKUP, service()->backend_mode());
+
+  // Browsing data is not cleared because rollback is skipped.
+  EXPECT_TRUE(clear_browsing_data_start_.is_null());
+
+  // First sync time is erased once backup starts.
+  EXPECT_TRUE(sync_prefs.GetFirstSyncTime().is_null());
+
+  EXPECT_EQ(2u, delete_dir_param.size());
+  EXPECT_FALSE(delete_dir_param[0]);
+  EXPECT_TRUE(delete_dir_param[1]);
+}
+
+TEST_F(ProfileSyncServiceTest, RollbackThenBackup) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kSyncEnableRollback);
+
+  CreateService(browser_sync::MANUAL_START);
+  service()->SetSyncSetupCompleted();
+  ExpectDataTypeManagerCreation(3);
+  std::vector<bool> delete_dir_param;
+  ExpectSyncBackendHostCreationCollectDeleteDir(3, &delete_dir_param);
+  IssueTestTokens();
+  Initialize();
+  base::MessageLoop::current()->PostTask(FROM_HERE,  base::Bind(&QuitLoop));
+  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_EQ(ProfileSyncService::SYNC, service()->backend_mode());
+
+  // First sync time should be recorded.
+  sync_driver::SyncPrefs sync_prefs(service()->profile()->GetPrefs());
+  base::Time first_sync_time = sync_prefs.GetFirstSyncTime();
+  EXPECT_FALSE(first_sync_time.is_null());
+
+  syncer::SyncProtocolError client_cmd;
+  client_cmd.action = syncer::DISABLE_SYNC_AND_ROLLBACK;
+  service()->OnActionableError(client_cmd);
+  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_EQ(ProfileSyncService::ROLLBACK, service()->backend_mode());
+
+  // Browser data should be cleared during rollback.
+  EXPECT_EQ(first_sync_time, clear_browsing_data_start_);
+
+  client_cmd.action = syncer::ROLLBACK_DONE;
+  service()->OnActionableError(client_cmd);
+  EXPECT_TRUE(service()->sync_initialized());
+  EXPECT_EQ(ProfileSyncService::BACKUP, service()->backend_mode());
+
+  // First sync time is erased once backup starts.
+  EXPECT_TRUE(sync_prefs.GetFirstSyncTime().is_null());
+
+  EXPECT_EQ(3u, delete_dir_param.size());
+  EXPECT_FALSE(delete_dir_param[0]);
+  EXPECT_FALSE(delete_dir_param[1]);
+  EXPECT_TRUE(delete_dir_param[2]);
+}
+#endif
+
+TEST_F(ProfileSyncServiceTest, GetSyncServiceURL) {
+  // See that we can override the URL with a flag.
+  CommandLine command_line(
+      base::FilePath(base::FilePath(FILE_PATH_LITERAL("chrome.exe"))));
+  command_line.AppendSwitchASCII(switches::kSyncServiceURL, "https://foo/bar");
+  EXPECT_EQ("https://foo/bar",
+            ProfileSyncService::GetSyncServiceURL(command_line).spec());
 }
 
 }  // namespace

@@ -14,9 +14,9 @@
 #include "chrome/browser/search/most_visited_iframe_source.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search/suggestions/suggestions_source.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -398,7 +398,8 @@ void InstantService::OnTemplateURLServiceChanged() {
   const TemplateURL* template_url =
       template_url_service_->GetDefaultSearchProvider();
   bool default_search_provider_changed = !TemplateURL::MatchesData(
-      template_url, previous_default_search_provider_.get());
+      template_url, previous_default_search_provider_.get(),
+      UIThreadSearchTermsData(profile_));
   if (default_search_provider_changed) {
     previous_default_search_provider_.reset(
         template_url ? new TemplateURLData(template_url->data()) : NULL);
@@ -411,7 +412,8 @@ void InstantService::OnTemplateURLServiceChanged() {
   GURL google_base_url(UIThreadSearchTermsData(profile_).GoogleBaseURLValue());
   if (google_base_url != previous_google_base_url_) {
     previous_google_base_url_ = google_base_url;
-    if (template_url && template_url->HasGoogleBaseURLs())
+    if (template_url && template_url->HasGoogleBaseURLs(
+            UIThreadSearchTermsData(profile_)))
       default_search_provider_changed = true;
   }
 

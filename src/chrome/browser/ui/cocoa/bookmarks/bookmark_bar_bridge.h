@@ -14,7 +14,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/prefs/pref_change_registrar.h"
-#include "components/bookmarks/core/browser/bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_model_observer.h"
 
 class Profile;
 @class BookmarkBarController;
@@ -43,7 +43,7 @@ class BookmarkBarBridge : public BookmarkModelObserver {
                                    int old_index,
                                    const BookmarkNode* node,
                                    const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkAllNodesRemoved(
+  virtual void BookmarkAllUserNodesRemoved(
       BookmarkModel* model,
       const std::set<GURL>& removed_urls) OVERRIDE;
   virtual void BookmarkNodeChanged(BookmarkModel* model,
@@ -63,8 +63,9 @@ class BookmarkBarBridge : public BookmarkModelObserver {
   // Needed to react to kShowAppsShortcutInBookmarkBar changes.
   PrefChangeRegistrar profile_pref_registrar_;
 
-  // Updates the visibility of the apps shortcut based on the pref value.
-  void OnAppsPageShortcutVisibilityPrefChanged();
+  // Updates the visibility of the apps shortcut and the managed bookmarks
+  // folder based on the pref values.
+  void OnExtraButtonsVisibilityChanged();
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkBarBridge);
 };

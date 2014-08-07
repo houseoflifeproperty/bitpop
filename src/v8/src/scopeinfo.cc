@@ -4,10 +4,10 @@
 
 #include <stdlib.h>
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "scopeinfo.h"
-#include "scopes.h"
+#include "src/scopeinfo.h"
+#include "src/scopes.h"
 
 namespace v8 {
 namespace internal {
@@ -539,7 +539,7 @@ Handle<ModuleInfo> ModuleInfo::Create(
   int i = 0;
   for (Interface::Iterator it = interface->iterator();
        !it.done(); it.Advance(), ++i) {
-    Variable* var = scope->LocalLookup(it.name());
+    Variable* var = scope->LookupLocal(it.name());
     info->set_name(i, *it.name());
     info->set_mode(i, var->mode());
     ASSERT((var->mode() == MODULE) == (it.interface()->IsModule()));

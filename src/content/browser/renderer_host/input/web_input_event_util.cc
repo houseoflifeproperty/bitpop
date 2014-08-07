@@ -186,8 +186,8 @@ WebTouchPoint CreateWebTouchPoint(const MotionEvent& event,
       static_cast<int>(pointer_index) == event.GetActionIndex());
   touch.position.x = event.GetX(pointer_index);
   touch.position.y = event.GetY(pointer_index);
-  // TODO(joth): Raw event co-ordinates.
-  touch.screenPosition = touch.position;
+  touch.screenPosition.x = event.GetRawX(pointer_index);
+  touch.screenPosition.y = event.GetRawY(pointer_index);
   touch.radiusX = touch.radiusY = event.GetTouchMajor(pointer_index) * 0.5f;
   touch.force = event.GetPressure(pointer_index);
 
@@ -238,10 +238,12 @@ WebGestureEvent CreateWebGestureEventFromGestureEventData(
   WebGestureEvent gesture;
   gesture.x = data.x;
   gesture.y = data.y;
+  gesture.globalX = data.raw_x;
+  gesture.globalY = data.raw_y;
   gesture.timeStampSeconds = (data.time - base::TimeTicks()).InSecondsF();
-  gesture.sourceDevice = WebGestureEvent::Touchscreen;
+  gesture.sourceDevice = blink::WebGestureDeviceTouchscreen;
 
-  switch (data.type) {
+  switch (data.type()) {
     case ui::ET_GESTURE_SHOW_PRESS:
       gesture.type = WebInputEvent::GestureShowPress;
       gesture.data.showPress.width = data.details.bounding_box_f().width();

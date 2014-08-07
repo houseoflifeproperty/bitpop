@@ -8,6 +8,35 @@
     "name": "cleanup temp"
   },
   {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/bot_update.py",
+      "--master",
+      "chromium.testing.master",
+      "--builder",
+      "TestBuilder",
+      "--slave",
+      "TestSlavename",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'googlecode_url': 'svn://svn-mirror.golo.chromium.org/%s', 'nacl_trunk': 'svn://svn-mirror.golo.chromium.org/native_client/trunk', 'sourceforge_url': 'svn://svn-mirror.golo.chromium.org/%(repo)s', 'webkit_trunk': 'svn://svn-mirror.golo.chromium.org/blink/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'}, {'custom_deps': {'src/chrome/test/data/firefox2_profile/searchplugins': None, 'src/chrome/test/data/firefox2_searchplugins': None, 'src/chrome/test/data/firefox3_profile/searchplugins': None, 'src/chrome/test/data/firefox3_searchplugins': None, 'src/chrome/test/data/osdd': None, 'src/chrome/test/data/plugin': None, 'src/chrome/test/data/ssl/certs': None, 'src/data/autodiscovery': None, 'src/data/esctf': None, 'src/data/mach_ports': None, 'src/data/memory_test': None, 'src/data/mozilla_js_tests': None, 'src/data/page_cycler': None, 'src/data/selenium_core': None, 'src/data/tab_switching': None, 'src/tools/grit/grit/test/data': None, 'src/webkit/data/bmp_decoder': None, 'src/webkit/data/ico_decoder': None, 'src/webkit/data/test_shell/plugins': None, 'src/webkit/data/xbm_decoder': None}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src-internal', 'url': 'svn://svn-mirror.golo.chromium.org/chrome-internal/trunk/src-internal'}]",
+      "--revision_mapping_file",
+      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarm_client\": \"got_swarm_client_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
+      "--output_json",
+      "/path/to/tmp/json",
+      "--revision",
+      "src@204787"
+    ],
+    "name": "bot_update",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
     "abort_on_failure": false,
     "can_fail_build": false,
     "cmd": [
@@ -121,11 +150,10 @@
       "--",
       "chromium_gpu_builder",
       "angle_unittests_run",
-      "browser_tests_run",
       "content_gl_tests_run",
       "gl_tests_run",
       "gles2_conform_test_run",
-      "tab_capture_performance_tests_run",
+      "tab_capture_end2end_tests_run",
       "telemetry_gpu_test_run"
     ],
     "name": "compile"
@@ -145,18 +173,18 @@
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"angle_unittests\": \"[dummy hash for angle_unittests]\", @@@",
-      "@@@STEP_LOG_LINE@json.output@  \"browser_tests\": \"[dummy hash for browser_tests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"content_gl_tests\": \"[dummy hash for content_gl_tests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"gl_tests\": \"[dummy hash for gl_tests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"gles2_conform_test\": \"[dummy hash for gles2_conform_test]\", @@@",
-      "@@@STEP_LOG_LINE@json.output@  \"tab_capture_performance_tests\": \"[dummy hash for tab_capture_performance_tests]\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"tab_capture_end2end_tests\": \"[dummy hash for tab_capture_end2end_tests]\", @@@",
       "@@@STEP_LOG_LINE@json.output@  \"telemetry_gpu_test\": \"[dummy hash for telemetry_gpu_test]\"@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
       "@@@STEP_LOG_END@json.output@@@",
-      "@@@SET_BUILD_PROPERTY@swarm_hashes@{\"content_gl_tests\": \"[dummy hash for content_gl_tests]\", \"angle_unittests\": \"[dummy hash for angle_unittests]\", \"browser_tests\": \"[dummy hash for browser_tests]\", \"gles2_conform_test\": \"[dummy hash for gles2_conform_test]\", \"gl_tests\": \"[dummy hash for gl_tests]\", \"tab_capture_performance_tests\": \"[dummy hash for tab_capture_performance_tests]\", \"telemetry_gpu_test\": \"[dummy hash for telemetry_gpu_test]\"}@@@"
+      "@@@SET_BUILD_PROPERTY@swarm_hashes@{\"content_gl_tests\": \"[dummy hash for content_gl_tests]\", \"tab_capture_end2end_tests\": \"[dummy hash for tab_capture_end2end_tests]\", \"gles2_conform_test\": \"[dummy hash for gles2_conform_test]\", \"gl_tests\": \"[dummy hash for gl_tests]\", \"angle_unittests\": \"[dummy hash for angle_unittests]\", \"telemetry_gpu_test\": \"[dummy hash for telemetry_gpu_test]\"}@@@"
     ]
   },
   {
+    "allow_subannotations": true,
     "always_run": true,
     "cmd": [
       "python",
@@ -168,6 +196,10 @@
       "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
       "--build-properties",
       "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=gtest",
+      "--test-type=content_gl_tests",
+      "--generate-json-file",
+      "--results-directory=[SLAVE_BUILD]/gtest-results/content_gl_tests",
       "--builder-name=TestBuilder",
       "--slave-name=TestSlavename",
       "--build-number=571",
@@ -185,6 +217,7 @@
     "name": "content_gl_tests"
   },
   {
+    "allow_subannotations": true,
     "always_run": true,
     "cmd": [
       "python",
@@ -196,34 +229,10 @@
       "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
       "--build-properties",
       "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--builder-name=TestBuilder",
-      "--slave-name=TestSlavename",
-      "--build-number=571",
-      "--run-python-script",
-      "--revision=170242",
-      "--webkit-revision=124383",
-      "[SLAVE_BUILD]/src/tools/swarming_client/run_isolated.py",
-      "-H",
-      "[dummy hash for gles2_conform_test]",
-      "-I",
-      "https://isolateserver.appspot.com",
-      "--",
-      "--use-gpu-in-tests"
-    ],
-    "name": "gles2_conform_test"
-  },
-  {
-    "always_run": true,
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]/scripts/slave/runtest.py",
-      "--target",
-      "Release",
-      "--factory-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--build-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=gtest",
+      "--test-type=gl_tests",
+      "--generate-json-file",
+      "--results-directory=[SLAVE_BUILD]/gtest-results/gl_tests",
       "--builder-name=TestBuilder",
       "--slave-name=TestSlavename",
       "--build-number=571",
@@ -241,6 +250,7 @@
     "name": "gl_tests"
   },
   {
+    "allow_subannotations": true,
     "always_run": true,
     "cmd": [
       "python",
@@ -252,6 +262,10 @@
       "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
       "--build-properties",
       "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "--annotate=gtest",
+      "--test-type=angle_unittests",
+      "--generate-json-file",
+      "--results-directory=[SLAVE_BUILD]/gtest-results/angle_unittests",
       "--builder-name=TestBuilder",
       "--slave-name=TestSlavename",
       "--build-number=571",
@@ -302,6 +316,7 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
+      "--use-devtools-active-port",
       "--build-revision",
       "170242",
       "--test-machine-name",
@@ -343,6 +358,7 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
+      "--use-devtools-active-port",
       "--build-revision",
       "170242",
       "--upload-refimg-to-cloud-storage",
@@ -388,7 +404,8 @@
       "--show-stdout",
       "--output-format=gtest",
       "--browser=release",
-      "-v"
+      "-v",
+      "--use-devtools-active-port"
     ],
     "name": "webgl_conformance_tests"
   },
@@ -425,7 +442,8 @@
       "--show-stdout",
       "--output-format=gtest",
       "--browser=release",
-      "-v"
+      "-v",
+      "--use-devtools-active-port"
     ],
     "name": "context_lost_tests"
   },
@@ -462,7 +480,8 @@
       "--show-stdout",
       "--output-format=gtest",
       "--browser=release",
-      "-v"
+      "-v",
+      "--use-devtools-active-port"
     ],
     "name": "memory_test"
   },
@@ -499,7 +518,8 @@
       "--show-stdout",
       "--output-format=gtest",
       "--browser=release",
-      "-v"
+      "-v",
+      "--use-devtools-active-port"
     ],
     "name": "screenshot_sync_tests"
   },
@@ -536,7 +556,8 @@
       "--show-stdout",
       "--output-format=gtest",
       "--browser=release",
-      "-v"
+      "-v",
+      "--use-devtools-active-port"
     ],
     "name": "hardware_accelerated_feature_tests"
   },
@@ -573,7 +594,8 @@
       "--show-stdout",
       "--output-format=gtest",
       "--browser=release",
-      "-v"
+      "-v",
+      "--use-devtools-active-port"
     ],
     "name": "gpu_process_launch_tests"
   },
@@ -611,6 +633,7 @@
       "--output-format=gtest",
       "--browser=release",
       "-v",
+      "--use-devtools-active-port",
       "--build-revision",
       "170242",
       "--test-machine-name",
@@ -631,10 +654,10 @@
       "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
       "--build-properties",
       "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--annotate=graphing",
-      "--results-url=https://chromeperf.appspot.com",
-      "--perf-dashboard-id=tab_capture_performance",
-      "--test-type=tab_capture_performance_tests",
+      "--annotate=gtest",
+      "--test-type=tab_capture_end2end_tests",
+      "--generate-json-file",
+      "--results-directory=[SLAVE_BUILD]/gtest-results/tab_capture_end2end_tests",
       "--builder-name=TestBuilder",
       "--slave-name=TestSlavename",
       "--build-number=571",
@@ -643,43 +666,10 @@
       "--webkit-revision=124383",
       "[SLAVE_BUILD]/src/tools/swarming_client/run_isolated.py",
       "-H",
-      "[dummy hash for tab_capture_performance_tests]",
+      "[dummy hash for tab_capture_end2end_tests]",
       "-I",
       "https://isolateserver.appspot.com",
-      "--",
-      "--enable-gpu",
-      "--test-launcher-jobs=1",
-      "--test-launcher-print-test-stdio=always",
-      "--gtest_filter=TabCapturePerformanceTest*"
-    ],
-    "name": "tab_capture_performance_tests"
-  },
-  {
-    "always_run": true,
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]/scripts/slave/runtest.py",
-      "--target",
-      "Release",
-      "--factory-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--build-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"branch\": \"TestBranch\", \"build_config\": \"Release\", \"buildername\": \"TestBuilder\", \"buildnumber\": 571, \"mastername\": \"chromium.testing.master\", \"project\": \"\", \"recipe\": \"gpu/build_and_test\", \"repository\": \"svn://svn-mirror.golo.chromium.org/chrome/trunk\", \"revision\": \"204787\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
-      "--builder-name=TestBuilder",
-      "--slave-name=TestSlavename",
-      "--build-number=571",
-      "--run-python-script",
-      "--revision=170242",
-      "--webkit-revision=124383",
-      "[SLAVE_BUILD]/src/tools/swarming_client/run_isolated.py",
-      "-H",
-      "[dummy hash for browser_tests]",
-      "-I",
-      "https://isolateserver.appspot.com",
-      "--",
-      "--enable-gpu",
-      "--gtest_filter=TabCaptureApiPixelTest.*"
+      "--"
     ],
     "name": "tab_capture_end2end_tests"
   }

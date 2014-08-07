@@ -83,7 +83,7 @@ void SVGLengthList::parseInternal(const CharType*& ptr, const CharType* end, Exc
     clear();
     while (ptr < end) {
         const CharType* start = ptr;
-        while (ptr < end && *ptr != ',' && !isSVGSpace(*ptr))
+        while (ptr < end && *ptr != ',' && !isHTMLSpace<CharType>(*ptr))
             ptr++;
         if (ptr == start)
             break;
@@ -117,7 +117,7 @@ void SVGLengthList::setValueAsString(const String& value, ExceptionState& except
     }
 }
 
-void SVGLengthList::add(PassRefPtr<SVGPropertyBase> other, SVGElement* contextElement)
+void SVGLengthList::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement* contextElement)
 {
     RefPtr<SVGLengthList> otherList = toSVGLengthList(other);
 

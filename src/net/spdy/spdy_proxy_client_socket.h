@@ -167,14 +167,14 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
   bool redirect_has_load_timing_info_;
   LoadTimingInfo redirect_load_timing_info_;
 
+  const BoundNetLog net_log_;
+
   // The default weak pointer factory.
   base::WeakPtrFactory<SpdyProxyClientSocket> weak_factory_;
 
   // Only used for posting write callbacks. Weak pointers created by this
   // factory are invalidated in Disconnect().
   base::WeakPtrFactory<SpdyProxyClientSocket> write_callback_weak_factory_;
-
-  const BoundNetLog net_log_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyProxyClientSocket);
 };

@@ -87,10 +87,17 @@ struct WrapperTypeInfo;
 #else
         ASSERT(wrapperTypeInfo->gcType == RefCountedObject || wrapperTypeInfo->gcType == WillBeGarbageCollectedObject);
 #endif
+
+        // Clear out the last internal field, which is assumed to contain a valid persistent pointer value.
+        if (wrapperTypeInfo->gcType == GarbageCollectedObject) {
+            wrapper->SetAlignedPointerInInternalField(wrapper->InternalFieldCount() - 1, 0);
+        } else if (wrapperTypeInfo->gcType == WillBeGarbageCollectedObject) {
+#if ENABLE(OILPAN)
+            wrapper->SetAlignedPointerInInternalField(wrapper->InternalFieldCount() - 1, 0);
+#endif
+        }
         wrapper->SetAlignedPointerInInternalField(v8DOMWrapperObjectIndex, object);
         wrapper->SetAlignedPointerInInternalField(v8DOMWrapperTypeIndex, const_cast<WrapperTypeInfo*>(wrapperTypeInfo));
-        // Clear out the last internal field, which is assumed to contain a valid persistent pointer value.
-        wrapper->SetAlignedPointerInInternalField(wrapper->InternalFieldCount() - 1, 0);
     }
 
     inline void V8DOMWrapper::setNativeInfoWithPersistentHandle(v8::Handle<v8::Object> wrapper, const WrapperTypeInfo* wrapperTypeInfo, void* object, PersistentNode* handle)
@@ -141,11 +148,10 @@ struct WrapperTypeInfo;
             : m_didEnterContext(false)
             , m_context(isolate->GetCurrentContext())
         {
-            // FIXME: Remove all empty creationContexts from caller sites.
-            // If a creationContext is empty, we will end up creating a new object
-            // in the context currently entered. This is wrong.
-            if (creationContext.IsEmpty())
-                return;
+            // creationContext should not be empty. Because if we have an
+            // empty creationContext, we will end up creating
+            // a new object in the context currently entered. This is wrong.
+            RELEASE_ASSERT(!creationContext.IsEmpty());
             v8::Handle<v8::Context> contextForWrapper = creationContext->CreationContext();
             // For performance, we enter the context only if the currently running context
             // is different from the context that we are about to enter.

@@ -101,6 +101,12 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   // Called when the window is zoomed (maximized or de-maximized).
   void WindowWillZoom();
 
+  // Called when the window enters fullscreen.
+  void WindowDidEnterFullscreen();
+
+  // Called when the window exits fullscreen.
+  void WindowDidExitFullscreen();
+
   // Called to handle a key event.
   bool HandledByExtensionCommand(NSEvent* event);
 
@@ -129,6 +135,7 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   virtual SkColor ActiveFrameColor() const OVERRIDE;
   virtual SkColor InactiveFrameColor() const OVERRIDE;
   virtual gfx::Insets GetFrameInsets() const OVERRIDE;
+  virtual bool CanHaveAlphaEnabled() const OVERRIDE;
 
   // These are used to simulate Mac-style hide/show. Since windows can be hidden
   // and shown using the app.window API, this sets is_hidden_with_app_ to
@@ -162,9 +169,7 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   content::WebContents* WebContents() const;
 
   // Returns the WindowStyleMask based on the type of window frame.
-  // Specifically, this includes NSResizableWindowMask if the window is
-  // resizable, and does not include NSTexturedBackgroundWindowMask when a
-  // native frame is used.
+  // This includes NSResizableWindowMask if the window is resizable.
   NSUInteger GetWindowStyleMask() const;
 
   void InstallView();
@@ -181,9 +186,6 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
 
   bool has_frame_;
 
-  // Whether this window is hidden according to the app.window API. This is set
-  // by Hide, Show, and ShowInactive.
-  bool is_hidden_;
   // Whether this window last became hidden due to a request to hide the entire
   // app, e.g. via the dock menu or Cmd+H. This is set by Hide/ShowWithApp.
   bool is_hidden_with_app_;
@@ -197,6 +199,10 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   bool shows_fullscreen_controls_;
 
   apps::SizeConstraints size_constraints_;
+
+  bool has_frame_color_;
+  SkColor active_frame_color_;
+  SkColor inactive_frame_color_;
 
   base::scoped_nsobject<NativeAppWindowController> window_controller_;
   NSInteger attention_request_id_;  // identifier from requestUserAttention

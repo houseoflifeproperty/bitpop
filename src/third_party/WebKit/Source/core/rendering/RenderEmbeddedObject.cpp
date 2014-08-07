@@ -24,8 +24,8 @@
 #include "config.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLPlugInElement.h"
@@ -54,7 +54,6 @@ static const float replacementTextTextOpacity = 0.55f;
 
 RenderEmbeddedObject::RenderEmbeddedObject(Element* element)
     : RenderPart(element)
-    , m_hasFallbackContent(false)
     , m_showsUnavailablePluginIndicator(false)
 {
     view()->frameView()->setIsVisuallyNonEmpty();
@@ -66,11 +65,14 @@ RenderEmbeddedObject::~RenderEmbeddedObject()
 
 LayerType RenderEmbeddedObject::layerTypeRequired() const
 {
-    LayerType type = RenderPart::layerTypeRequired();
-    if (type != NoLayer)
-        return type;
-
-    return requiresAcceleratedCompositing() ? NormalLayer : NoLayer;
+    // This can't just use RenderPart::layerTypeRequired, because RenderLayerCompositor
+    // doesn't loop through RenderEmbeddedObjects the way it does frames in order
+    // to update the self painting bit on their RenderLayer.
+    // Also, unlike iframes, embeds don't used the usesCompositing bit on RenderView
+    // in requiresAcceleratedCompositing.
+    if (requiresAcceleratedCompositing())
+        return NormalLayer;
+    return RenderPart::layerTypeRequired();
 }
 
 static String unavailablePluginReplacementText(Node* node, RenderEmbeddedObject::PluginUnavailabilityReason pluginUnavailabilityReason)
@@ -196,7 +198,7 @@ void RenderEmbeddedObject::layout()
     m_overflow.clear();
     addVisualEffectOverflow();
 
-    updateLayerTransform();
+    updateLayerTransformAfterLayout();
 
     if (!widget() && frameView())
         frameView()->addWidgetToUpdate(*this);

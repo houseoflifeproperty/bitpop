@@ -16,10 +16,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "device/bluetooth/bluetooth_adapter.h"
+#include "device/bluetooth/bluetooth_discovery_manager_mac.h"
 
-@class BluetoothAdapterMacDelegate;
 @class IOBluetoothDevice;
-@class IOBluetoothDeviceInquiry;
 @class NSArray;
 @class NSDate;
 
@@ -33,7 +32,8 @@ namespace device {
 
 class BluetoothAdapterMacTest;
 
-class BluetoothAdapterMac : public BluetoothAdapter {
+class BluetoothAdapterMac : public BluetoothAdapter,
+                            public BluetoothDiscoveryManagerMac::Observer {
  public:
   static base::WeakPtr<BluetoothAdapter> CreateAdapter();
 
@@ -58,17 +58,25 @@ class BluetoothAdapterMac : public BluetoothAdapter {
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual bool IsDiscovering() const OVERRIDE;
-  virtual void ReadLocalOutOfBandPairingData(
-      const BluetoothOutOfBandPairingDataCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+  virtual void CreateRfcommService(
+      const BluetoothUUID& uuid,
+      int channel,
+      const CreateServiceCallback& callback,
+      const CreateServiceErrorCallback& error_callback) OVERRIDE;
+  virtual void CreateL2capService(
+      const BluetoothUUID& uuid,
+      int psm,
+      const CreateServiceCallback& callback,
+      const CreateServiceErrorCallback& error_callback) OVERRIDE;
 
-  // called by BluetoothAdapterMacDelegate.
-  void DeviceInquiryStarted(IOBluetoothDeviceInquiry* inquiry);
-  void DeviceFound(IOBluetoothDeviceInquiry* inquiry,
-                   IOBluetoothDevice* device);
-  void DeviceInquiryComplete(IOBluetoothDeviceInquiry* inquiry,
-                             IOReturn error,
-                             bool aborted);
+  // BluetoothDiscoveryManagerMac::Observer overrides
+  virtual void DeviceFound(BluetoothDiscoveryManagerMac* manager,
+                           IOBluetoothDevice* device) OVERRIDE;
+  virtual void DiscoveryStopped(BluetoothDiscoveryManagerMac* manager,
+                                bool unexpected) OVERRIDE;
+
+  // Registers that a new |device| has connected to the local host.
+  void DeviceConnected(IOBluetoothDevice* device);
 
  protected:
   // BluetoothAdapter:
@@ -77,13 +85,6 @@ class BluetoothAdapterMac : public BluetoothAdapter {
 
  private:
   friend class BluetoothAdapterMacTest;
-
-  enum DiscoveryStatus {
-    NOT_DISCOVERING,
-    DISCOVERY_STARTING,
-    DISCOVERING,
-    DISCOVERY_STOPPING
-  };
 
   BluetoothAdapterMac();
   virtual ~BluetoothAdapterMac();
@@ -100,28 +101,19 @@ class BluetoothAdapterMac : public BluetoothAdapter {
   void InitForTest(scoped_refptr<base::SequencedTaskRunner> ui_task_runner);
   void PollAdapter();
 
-  // Updates |devices_| to be consistent with |devices|.
-  void UpdateDevices(NSArray* devices);
-
-  void MaybeStartDeviceInquiry();
-  void MaybeStopDeviceInquiry();
-
-  typedef std::vector<std::pair<base::Closure, ErrorCallback> >
-      DiscoveryCallbackList;
-  void RunCallbacks(const DiscoveryCallbackList& callback_list,
-                    bool success) const;
+  // Updates |devices_| to include the currently paired devices, as well as any
+  // connected, but unpaired, devices. Notifies observers if any previously
+  // paired or connected devices are no longer present.
+  void UpdateDevices();
 
   std::string address_;
   std::string name_;
   bool powered_;
-  DiscoveryStatus discovery_status_;
 
-  DiscoveryCallbackList on_start_discovery_callbacks_;
-  DiscoveryCallbackList on_stop_discovery_callbacks_;
-  size_t num_discovery_listeners_;
+  int num_discovery_sessions_;
 
-  base::scoped_nsobject<BluetoothAdapterMacDelegate> adapter_delegate_;
-  base::scoped_nsobject<IOBluetoothDeviceInquiry> device_inquiry_;
+  // Discovery manager for Bluetooth Classic.
+  scoped_ptr<BluetoothDiscoveryManagerMac> classic_discovery_manager_;
 
   // A list of discovered device addresses.
   // This list is used to check if the same device is discovered twice during

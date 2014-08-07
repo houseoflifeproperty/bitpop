@@ -5,22 +5,19 @@
 #include "config.h"
 #include "core/html/HTMLRubyElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/rendering/RenderRuby.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLRubyElement::HTMLRubyElement(Document& document)
+inline HTMLRubyElement::HTMLRubyElement(Document& document)
     : HTMLElement(rubyTag, document)
 {
 }
 
-PassRefPtrWillBeRawPtr<HTMLRubyElement> HTMLRubyElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLRubyElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLRubyElement)
 
 RenderObject* HTMLRubyElement::createRenderer(RenderStyle* style)
 {

@@ -22,10 +22,12 @@
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_initializer.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_task_manager.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task_token.h"
 #include "chrome/browser/sync_file_system/fake_remote_change_processor.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/gdata_errorcode.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
@@ -69,6 +71,7 @@ class ConflictResolverTest : public testing::Test {
     context_.reset(new SyncEngineContext(
         fake_drive_service.PassAs<drive::DriveServiceInterface>(),
         drive_uploader.Pass(),
+        NULL,
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current()));
@@ -78,7 +81,8 @@ class ConflictResolverTest : public testing::Test {
 
     sync_task_manager_.reset(new SyncTaskManager(
         base::WeakPtr<SyncTaskManager::Client>(),
-        10 /* maximum_background_task */));
+        10 /* maximum_background_task */,
+        base::MessageLoopProxy::current()));
     sync_task_manager_->Initialize(SYNC_STATUS_OK);
   }
 
@@ -93,7 +97,6 @@ class ConflictResolverTest : public testing::Test {
   void InitializeMetadataDatabase() {
     SyncEngineInitializer* initializer =
         new SyncEngineInitializer(context_.get(),
-                                  base::MessageLoopProxy::current(),
                                   database_dir_.path(),
                                   in_memory_env_.get());
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
@@ -170,17 +173,10 @@ class ConflictResolverTest : public testing::Test {
   }
 
   int CountParents(const std::string& file_id) {
-    scoped_ptr<google_apis::ResourceEntry> entry;
+    scoped_ptr<google_apis::FileResource> entry;
     EXPECT_EQ(google_apis::HTTP_SUCCESS,
-              fake_drive_helper_->GetResourceEntry(file_id, &entry));
-    int count = 0;
-    const ScopedVector<google_apis::Link>& links = entry->links();
-    for (ScopedVector<google_apis::Link>::const_iterator itr = links.begin();
-        itr != links.end(); ++itr) {
-      if ((*itr)->type() == google_apis::Link::LINK_PARENT)
-        ++count;
-    }
-    return count;
+              fake_drive_helper_->GetFileResource(file_id, &entry));
+    return entry->parents().size();
   }
 
   SyncStatusCode RunRemoteToLocalSyncer() {
@@ -203,7 +199,8 @@ class ConflictResolverTest : public testing::Test {
         context_.get(),
         SyncFileMetadata(file_change.file_type(), 0, base::Time()),
         file_change, local_path, url));
-    syncer->RunExclusive(CreateResultReceiver(&status));
+    syncer->RunPreflight(SyncTaskToken::CreateForTesting(
+        CreateResultReceiver(&status)));
     base::RunLoop().RunUntilIdle();
     if (status == SYNC_STATUS_OK)
       remote_change_processor_->ClearLocalChanges(url);
@@ -219,7 +216,8 @@ class ConflictResolverTest : public testing::Test {
   SyncStatusCode RunConflictResolver() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     ConflictResolver resolver(context_.get());
-    resolver.RunExclusive(CreateResultReceiver(&status));
+    resolver.RunPreflight(SyncTaskToken::CreateForTesting(
+        CreateResultReceiver(&status)));
     base::RunLoop().RunUntilIdle();
     return status;
   }

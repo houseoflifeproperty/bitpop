@@ -74,6 +74,12 @@
             'src/policy_target.h',
             'src/process_mitigations.cc',
             'src/process_mitigations.h',
+            'src/process_mitigations_win32k_dispatcher.cc',
+            'src/process_mitigations_win32k_dispatcher.h',
+            'src/process_mitigations_win32k_interception.cc',
+            'src/process_mitigations_win32k_interception.h',
+            'src/process_mitigations_win32k_policy.cc',
+            'src/process_mitigations_win32k_policy.h',
             'src/process_thread_dispatcher.cc',
             'src/process_thread_dispatcher.h',
             'src/process_thread_interception.cc',
@@ -208,6 +214,7 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
+        '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
       ],
       'sources': [
@@ -239,6 +246,7 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
+        '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
       ],
       'sources': [
@@ -255,6 +263,7 @@
       'type': 'executable',
       'dependencies': [
         'sandbox',
+        '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
       ],
       'sources': [

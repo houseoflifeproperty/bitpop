@@ -12,8 +12,7 @@
 #include "chrome/browser/browser_about_handler.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/google/google_url_tracker.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_manager.h"
@@ -31,13 +30,16 @@
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 #include "chrome/browser/ui/android/window_android_helper.h"
 #include "chrome/browser/ui/blocked_content/popup_blocker_tab_helper.h"
+#include "chrome/browser/ui/search/instant_search_prerenderer.h"
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tab_helpers.h"
 #include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_url_tracker.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/infobars/core/infobar_container.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -394,14 +396,28 @@ TabAndroid::TabLoadStatus TabAndroid::LoadUrl(JNIEnv* env,
     bool prefetched_page_loaded = HasPrerenderedUrl(gurl);
     // Getting the load status before MaybeUsePrerenderedPage() b/c it resets.
     chrome::NavigateParams params(NULL, web_contents());
+    InstantSearchPrerenderer* prerenderer =
+        InstantSearchPrerenderer::GetForProfile(GetProfile());
+    if (prerenderer) {
+      const base::string16& search_terms =
+          chrome::ExtractSearchTermsFromURL(GetProfile(), gurl);
+      if (!search_terms.empty() &&
+          prerenderer->CanCommitQuery(web_contents_.get(), search_terms)) {
+        prerenderer->Commit(search_terms);
+
+        if (prerenderer->UsePrerenderedPage(gurl, &params))
+          return FULL_PRERENDERED_PAGE_LOAD;
+      }
+      prerenderer->Cancel();
+    }
     if (prerender_manager->MaybeUsePrerenderedPage(gurl, &params)) {
       return prefetched_page_loaded ?
           FULL_PRERENDERED_PAGE_LOAD : PARTIAL_PRERENDERED_PAGE_LOAD;
     }
   }
 
-  GURL fixed_url(URLFixerUpper::FixupURL(gurl.possibly_invalid_spec(),
-                                         std::string()));
+  GURL fixed_url(
+      url_fixer::FixupURL(gurl.possibly_invalid_spec(), std::string()));
   if (!fixed_url.is_valid())
     return PAGE_LOAD_FAILED;
 
@@ -414,7 +430,10 @@ TabAndroid::TabLoadStatus TabAndroid::LoadUrl(JNIEnv* env,
     // infobar.
     if (google_util::IsGoogleSearchUrl(fixed_url) &&
         (page_transition & content::PAGE_TRANSITION_GENERATED)) {
-      GoogleURLTracker::GoogleURLSearchCommitted(GetProfile());
+      GoogleURLTracker* tracker =
+          GoogleURLTrackerFactory::GetForProfile(GetProfile());
+      if (tracker)
+        tracker->SearchCommitted();
     }
 
     // Record UMA "ShowHistory" here. That way it'll pick up both user

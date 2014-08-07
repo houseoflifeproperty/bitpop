@@ -215,7 +215,8 @@ VpxVideoDecoder::~VpxVideoDecoder() {
 
 void VpxVideoDecoder::Initialize(const VideoDecoderConfig& config,
                                  bool low_delay,
-                                 const PipelineStatusCB& status_cb) {
+                                 const PipelineStatusCB& status_cb,
+                                 const OutputCB& output_cb) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(config.IsValidConfig());
   DCHECK(!config.is_encrypted());
@@ -229,6 +230,7 @@ void VpxVideoDecoder::Initialize(const VideoDecoderConfig& config,
   // Success!
   config_ = config;
   state_ = kNormal;
+  output_cb_ = BindToCurrentLoop(output_cb);
   status_cb.Run(PIPELINE_OK);
 }
 
@@ -257,8 +259,9 @@ static vpx_codec_ctx* InitializeVpxContext(vpx_codec_ctx* context,
 bool VpxVideoDecoder::ConfigureDecoder(const VideoDecoderConfig& config) {
   if (config.codec() != kCodecVP8 && config.codec() != kCodecVP9)
     return false;
-  // Only VP8 videos with alpha are handled by VpxVideoDecoder.  Everything else
-  // goes to FFmpegVideoDecoder.
+
+  // In VP8 videos, only those with alpha are handled by VpxVideoDecoder. All
+  // other VP8 videos go to FFmpegVideoDecoder.
   if (config.codec() == kCodecVP8 && config.format() != VideoFrame::YV12A)
     return false;
 
@@ -314,13 +317,13 @@ void VpxVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
   decode_cb_ = BindToCurrentLoop(decode_cb);
 
   if (state_ == kError) {
-    base::ResetAndReturn(&decode_cb_).Run(kDecodeError, NULL);
+    base::ResetAndReturn(&decode_cb_).Run(kDecodeError);
     return;
   }
 
   // Return empty frames if decoding has finished.
   if (state_ == kDecodeFinished) {
-    base::ResetAndReturn(&decode_cb_).Run(kOk, VideoFrame::CreateEOSFrame());
+    base::ResetAndReturn(&decode_cb_).Run(kOk);
     return;
   }
 
@@ -352,24 +355,21 @@ void VpxVideoDecoder::DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer) {
   // Transition to kDecodeFinished on the first end of stream buffer.
   if (state_ == kNormal && buffer->end_of_stream()) {
     state_ = kDecodeFinished;
-    base::ResetAndReturn(&decode_cb_).Run(kOk, VideoFrame::CreateEOSFrame());
+    base::ResetAndReturn(&decode_cb_).Run(kOk);
     return;
   }
 
   scoped_refptr<VideoFrame> video_frame;
   if (!VpxDecode(buffer, &video_frame)) {
     state_ = kError;
-    base::ResetAndReturn(&decode_cb_).Run(kDecodeError, NULL);
+    base::ResetAndReturn(&decode_cb_).Run(kDecodeError);
     return;
   }
 
-  // If we didn't get a frame we need more data.
-  if (!video_frame.get()) {
-    base::ResetAndReturn(&decode_cb_).Run(kNotEnoughData, NULL);
-    return;
-  }
+  base::ResetAndReturn(&decode_cb_).Run(kOk);
 
-  base::ResetAndReturn(&decode_cb_).Run(kOk, video_frame);
+  if (video_frame)
+    output_cb_.Run(video_frame);
 }
 
 bool VpxVideoDecoder::VpxDecode(const scoped_refptr<DecoderBuffer>& buffer,
@@ -450,27 +450,39 @@ void VpxVideoDecoder::CopyVpxImageTo(const vpx_image* vpx_image,
                                      scoped_refptr<VideoFrame>* video_frame) {
   CHECK(vpx_image);
   CHECK(vpx_image->fmt == VPX_IMG_FMT_I420 ||
-        vpx_image->fmt == VPX_IMG_FMT_YV12);
+        vpx_image->fmt == VPX_IMG_FMT_YV12 ||
+        vpx_image->fmt == VPX_IMG_FMT_I444);
+
+  VideoFrame::Format codec_format = VideoFrame::YV12;
+  int uv_rows = (vpx_image->d_h + 1) / 2;
+
+  if (vpx_image->fmt == VPX_IMG_FMT_I444) {
+    CHECK(!vpx_codec_alpha_);
+    codec_format = VideoFrame::YV24;
+    uv_rows = vpx_image->d_h;
+  } else if (vpx_codec_alpha_) {
+    codec_format = VideoFrame::YV12A;
+  }
 
   gfx::Size size(vpx_image->d_w, vpx_image->d_h);
 
   if (!vpx_codec_alpha_ && memory_pool_) {
     *video_frame = VideoFrame::WrapExternalYuvData(
-                       VideoFrame::YV12,
-                       size, gfx::Rect(size), config_.natural_size(),
-                       vpx_image->stride[VPX_PLANE_Y],
-                       vpx_image->stride[VPX_PLANE_U],
-                       vpx_image->stride[VPX_PLANE_V],
-                       vpx_image->planes[VPX_PLANE_Y],
-                       vpx_image->planes[VPX_PLANE_U],
-                       vpx_image->planes[VPX_PLANE_V],
-                       kNoTimestamp(),
-                       memory_pool_->CreateFrameCallback(vpx_image->fb_priv));
+        codec_format,
+        size, gfx::Rect(size), config_.natural_size(),
+        vpx_image->stride[VPX_PLANE_Y],
+        vpx_image->stride[VPX_PLANE_U],
+        vpx_image->stride[VPX_PLANE_V],
+        vpx_image->planes[VPX_PLANE_Y],
+        vpx_image->planes[VPX_PLANE_U],
+        vpx_image->planes[VPX_PLANE_V],
+        kNoTimestamp(),
+        memory_pool_->CreateFrameCallback(vpx_image->fb_priv));
     return;
   }
 
   *video_frame = frame_pool_.CreateFrame(
-      vpx_codec_alpha_ ? VideoFrame::YV12A : VideoFrame::YV12,
+      codec_format,
       size,
       gfx::Rect(size),
       config_.natural_size(),
@@ -482,11 +494,11 @@ void VpxVideoDecoder::CopyVpxImageTo(const vpx_image* vpx_image,
              video_frame->get());
   CopyUPlane(vpx_image->planes[VPX_PLANE_U],
              vpx_image->stride[VPX_PLANE_U],
-             (vpx_image->d_h + 1) / 2,
+             uv_rows,
              video_frame->get());
   CopyVPlane(vpx_image->planes[VPX_PLANE_V],
              vpx_image->stride[VPX_PLANE_V],
-             (vpx_image->d_h + 1) / 2,
+             uv_rows,
              video_frame->get());
   if (!vpx_codec_alpha_)
     return;

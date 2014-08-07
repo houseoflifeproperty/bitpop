@@ -31,10 +31,11 @@
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "public/platform/Platform.h"
 
 namespace WebCore {
@@ -509,9 +510,13 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyBackfaceVisibility: return 451;
     case CSSPropertyGridTemplate: return 452;
     case CSSPropertyGrid: return 453;
+    case CSSPropertyAll: return 454;
 
-    // Add new features above this line (don't change the assigned numbers of the existing
-    // items) and update maximumCSSSampleId() with the new maximum value.
+    // 1. Add new features above this line (don't change the assigned numbers of the existing
+    // items).
+    // 2. Update maximumCSSSampleId() with the new maximum value.
+    // 3. Run the update_use_counter_css.py script in
+    // chromium/src/tools/metrics/histograms to update the UMA histogram names.
 
     // Internal properties should not be counted.
     case CSSPropertyInternalMarqueeDirection:
@@ -528,7 +533,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     return 0;
 }
 
-static int maximumCSSSampleId() { return 453; }
+static int maximumCSSSampleId() { return 454; }
 
 void UseCounter::muteForInspector()
 {
@@ -602,19 +607,29 @@ void UseCounter::count(const Document& document, Feature feature)
 
 void UseCounter::count(const ExecutionContext* context, Feature feature)
 {
-    if (!context || !context->isDocument())
+    if (!context)
         return;
-    count(*toDocument(context), feature);
+    if (context->isDocument()) {
+        count(*toDocument(context), feature);
+        return;
+    }
+    if (context->isWorkerGlobalScope())
+        toWorkerGlobalScope(context)->countFeature(feature);
 }
 
 void UseCounter::countDeprecation(ExecutionContext* context, Feature feature)
 {
-    if (!context || !context->isDocument())
+    if (!context)
         return;
-    UseCounter::countDeprecation(*toDocument(context), feature);
+    if (context->isDocument()) {
+        UseCounter::countDeprecation(*toDocument(context), feature);
+        return;
+    }
+    if (context->isWorkerGlobalScope())
+        toWorkerGlobalScope(context)->countDeprecation(feature);
 }
 
-void UseCounter::countDeprecation(const DOMWindow* window, Feature feature)
+void UseCounter::countDeprecation(const LocalDOMWindow* window, Feature feature)
 {
     if (!window || !window->document())
         return;
@@ -640,10 +655,6 @@ String UseCounter::deprecationMessage(Feature feature)
     // Quota
     case PrefixedStorageInfo:
         return "'window.webkitStorageInfo' is deprecated. Please use 'navigator.webkitTemporaryStorage' or 'navigator.webkitPersistentStorage' instead.";
-
-    // HTML Media Capture
-    case CaptureAttributeAsEnum:
-        return "Using the 'capture' attribute as an enum is deprecated. Please use it as a boolean and specify the media types that should be accepted in the 'accept' attribute.";
 
     // Keyboard Event (DOM Level 3)
     case KeyboardEventKeyLocation:
@@ -694,9 +705,6 @@ String UseCounter::deprecationMessage(Feature feature)
     case PrefixedCancelRequestAnimationFrame:
         return "'webkitCancelRequestAnimationFrame' is vendor-specific. Please use the standard 'cancelAnimationFrame' instead.";
 
-    case HTMLHtmlElementManifest:
-        return "'HTMLHtmlElement.manifest' is deprecated. The manifest attribute only has an effect during the early stages of document load.";
-
     case DocumentCreateAttributeNS:
         return "'Document.createAttributeNS' is deprecated and has been removed from DOM4 (http://w3.org/tr/dom).";
 
@@ -727,6 +735,18 @@ String UseCounter::deprecationMessage(Feature feature)
     case DocumentImportNodeOptionalArgument:
         return "The behavior of importNode() with no boolean argument is about to change from doing a deep clone to doing a shallow clone.  "
             "Make sure to pass an explicit boolean argument to keep your current behavior.";
+
+    case OverflowChangedEvent:
+        return "The 'overflowchanged' event is deprecated and may be removed. Please do not use it.";
+
+    case HTMLHeadElementProfile:
+        return "'HTMLHeadElement.profile' is deprecated. The reflected attribute has no effect.";
+
+    case ElementSetPrefix:
+        return "Setting 'Element.prefix' is deprecated, as it is read-only per DOM (http://dom.spec.whatwg.org/#element).";
+
+    case SyncXHRWithCredentials:
+        return "Setting 'XMLHttpRequest.withCredentials' for synchronous requests is deprecated.";
 
     // Features that aren't deprecated don't have a deprecation message.
     default:

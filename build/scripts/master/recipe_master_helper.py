@@ -107,7 +107,8 @@ def AddRecipeBasedBuilders(buildmaster_config=None,
         'factory': annotator.BaseFactory(
           slave['recipe'],
           factory_properties,
-          [trigger_name_map[name]] if name in trigger_name_map else None)
+          [trigger_name_map[name]] if name in trigger_name_map else None),
+        'gatekeeper': slave.get('gatekeeper_categories', ''),
       }
       # Don't specify auto_reboot unless slaves.cfg does, to let
       # master_utils' default take effect.

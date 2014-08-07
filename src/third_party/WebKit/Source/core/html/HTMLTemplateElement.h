@@ -40,18 +40,19 @@ class TemplateContentDocumentFragment;
 
 class HTMLTemplateElement FINAL : public HTMLElement {
 public:
-    static PassRefPtrWillBeRawPtr<HTMLTemplateElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLTemplateElement);
     virtual ~HTMLTemplateElement();
+    virtual void trace(Visitor*) OVERRIDE;
 
     DocumentFragment* content() const;
 
 private:
-    virtual PassRefPtr<Node> cloneNode(bool deep = true) OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) OVERRIDE;
     virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
     explicit HTMLTemplateElement(Document&);
 
-    mutable RefPtr<TemplateContentDocumentFragment> m_content;
+    mutable RefPtrWillBeMember<TemplateContentDocumentFragment> m_content;
 };
 
 } // namespace WebCore

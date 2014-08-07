@@ -12,7 +12,7 @@ cd ${SCRIPT_DIR}
 
 OUT_DIR=out
 NACLPORTS_URL=http://naclports.googlecode.com/svn/trunk/src
-NACLPORTS_REV=1174
+NACLPORTS_REV=1290
 NACLPORTS_DIR=${OUT_DIR}/naclports
 
 if [ -z "${NACL_SDK_ROOT:-}" ]; then
@@ -66,9 +66,14 @@ pushd ${NACLPORTS_DIR}
 gclient sync -r ${NACLPORTS_REV}
 popd
 
+
 Banner Building lua
 pushd ${NACLPORTS_DIR}/src
-make NACL_ARCH=pnacl lua_ppapi
+# Do a 'clean' first, since previous lua build from the naclports bundle
+# building might be installed in the toolchain, and that one is built
+# without readline support.
+make TOOLCHAIN=pnacl clean
+make TOOLCHAIN=pnacl lua-ppapi
 popd
 
 Banner Done!

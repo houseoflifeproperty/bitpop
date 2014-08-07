@@ -19,7 +19,6 @@
 // All resource types should be added here. This implements our hand-rolled
 // RTTI system since we don't compile with "real" RTTI.
 #define FOR_ALL_PPAPI_RESOURCE_APIS(F)  \
-  F(ExtensionsCommon_API)               \
   F(PPB_Audio_API)                      \
   F(PPB_AudioBuffer_API)                \
   F(PPB_AudioConfig_API)                \
@@ -30,6 +29,8 @@
   F(PPB_BrowserFont_Singleton_API)      \
   F(PPB_BrowserFont_Trusted_API)        \
   F(PPB_Buffer_API)                     \
+  F(PPB_Compositor_API)                 \
+  F(PPB_CompositorLayer_API)            \
   F(PPB_DeviceRef_API)                  \
   F(PPB_Ext_CrxFileSystem_Private_API)  \
   F(PPB_FileChooser_API)                \
@@ -54,7 +55,6 @@
   F(PPB_ImageData_API)                  \
   F(PPB_InputEvent_API)                 \
   F(PPB_IsolatedFileSystem_Private_API) \
-  F(PPB_LayerCompositor_API)            \
   F(PPB_MediaStreamAudioTrack_API)      \
   F(PPB_MediaStreamVideoTrack_API)      \
   F(PPB_MessageLoop_API)                \
@@ -80,6 +80,7 @@
   F(PPB_URLRequestInfo_API)             \
   F(PPB_URLResponseInfo_API)            \
   F(PPB_VideoCapture_API)               \
+  F(PPB_VideoDecoder_API)               \
   F(PPB_VideoDecoder_Dev_API)           \
   F(PPB_VideoDestination_Private_API)   \
   F(PPB_VideoFrame_API)                 \

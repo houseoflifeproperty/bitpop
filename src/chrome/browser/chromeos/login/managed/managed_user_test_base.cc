@@ -13,22 +13,24 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_impl.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
-#include "chrome/browser/managed_mode/managed_user_constants.h"
-#include "chrome/browser/managed_mode/managed_user_registration_utility.h"
-#include "chrome/browser/managed_mode/managed_user_registration_utility_stub.h"
-#include "chrome/browser/managed_mode/managed_user_shared_settings_service.h"
-#include "chrome/browser/managed_mode/managed_user_shared_settings_service_factory.h"
-#include "chrome/browser/managed_mode/managed_user_sync_service.h"
-#include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
 #include "chrome/browser/profiles/profile_impl.h"
+#include "chrome/browser/supervised_user/supervised_user_constants.h"
+#include "chrome/browser/supervised_user/supervised_user_registration_utility.h"
+#include "chrome/browser/supervised_user/supervised_user_registration_utility_stub.h"
+#include "chrome/browser/supervised_user/supervised_user_shared_settings_service.h"
+#include "chrome/browser/supervised_user/supervised_user_shared_settings_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_sync_service.h"
+#include "chrome/browser/supervised_user/supervised_user_sync_service_factory.h"
 #include "chromeos/cryptohome/mock_async_method_caller.h"
 #include "chromeos/cryptohome/mock_homedir_methods.h"
 #include "content/public/browser/notification_service.h"
@@ -52,10 +54,10 @@ const char kCurrentPage[] = "$('managed-user-creation').currentPage_";
 
 ManagedUsersSyncTestAdapter::ManagedUsersSyncTestAdapter(Profile* profile)
     : processor_(), next_sync_data_id_(0) {
-  service_ = ManagedUserSyncServiceFactory::GetForProfile(profile);
+  service_ = SupervisedUserSyncServiceFactory::GetForProfile(profile);
   processor_ = new syncer::FakeSyncChangeProcessor();
   service_->MergeDataAndStartSyncing(
-      syncer::MANAGED_USERS,
+      syncer::SUPERVISED_USERS,
       syncer::SyncDataList(),
       scoped_ptr<syncer::SyncChangeProcessor>(processor_),
       scoped_ptr<syncer::SyncErrorFactory>(new syncer::SyncErrorFactoryMock));
@@ -68,7 +70,7 @@ ManagedUsersSyncTestAdapter::GetFirstChange() {
   CHECK(HasChanges())
       << "GetFirstChange() should only be callled if HasChanges() is true";
   const syncer::SyncData& data = processor_->changes().front().sync_data();
-  EXPECT_EQ(syncer::MANAGED_USERS, data.GetDataType());
+  EXPECT_EQ(syncer::SUPERVISED_USERS, data.GetDataType());
   result->CopyFrom(data.GetSpecifics().managed_user());
   return result.Pass();
 }
@@ -101,10 +103,10 @@ ManagedUsersSharedSettingsSyncTestAdapter::
     ManagedUsersSharedSettingsSyncTestAdapter(Profile* profile)
     : processor_(), next_sync_data_id_(0) {
   service_ =
-      ManagedUserSharedSettingsServiceFactory::GetForBrowserContext(profile);
+      SupervisedUserSharedSettingsServiceFactory::GetForBrowserContext(profile);
   processor_ = new syncer::FakeSyncChangeProcessor();
   service_->MergeDataAndStartSyncing(
-      syncer::MANAGED_USER_SHARED_SETTINGS,
+      syncer::SUPERVISED_USER_SHARED_SETTINGS,
       syncer::SyncDataList(),
       scoped_ptr<syncer::SyncChangeProcessor>(processor_),
       scoped_ptr<syncer::SyncErrorFactory>(new syncer::SyncErrorFactoryMock));
@@ -117,7 +119,7 @@ ManagedUsersSharedSettingsSyncTestAdapter::GetFirstChange() {
   CHECK(HasChanges())
       << "GetFirstChange() should only be callled if HasChanges() is true";
   const syncer::SyncData& data = processor_->changes().front().sync_data();
-  EXPECT_EQ(syncer::MANAGED_USER_SHARED_SETTINGS, data.GetDataType());
+  EXPECT_EQ(syncer::SUPERVISED_USER_SHARED_SETTINGS, data.GetDataType());
   result->CopyFrom(data.GetSpecifics().managed_user_shared_setting());
   return result.Pass();
 }
@@ -153,7 +155,7 @@ void ManagedUsersSharedSettingsSyncTestAdapter::AddChange(
     bool acknowledged,
     bool update) {
   syncer::SyncData data =
-      ManagedUserSharedSettingsService::CreateSyncDataForSetting(
+      SupervisedUserSharedSettingsService::CreateSyncDataForSetting(
           mu_id, key, value, acknowledged);
   AddChange(data.GetSpecifics().managed_user_shared_setting(), update);
 }
@@ -180,8 +182,8 @@ void ManagedUserTestBase::SetUpInProcessBrowserTestFixture() {
   mock_homedir_methods_->SetUp(true, cryptohome::MOUNT_ERROR_NONE);
   cryptohome::HomedirMethods::InitializeForTesting(mock_homedir_methods_);
 
-  registration_utility_stub_ = new ManagedUserRegistrationUtilityStub();
-  scoped_utility_.reset(new ScopedTestingManagedUserRegistrationUtility(
+  registration_utility_stub_ = new SupervisedUserRegistrationUtilityStub();
+  scoped_utility_.reset(new ScopedTestingSupervisedUserRegistrationUtility(
       registration_utility_stub_));
 
   // Setup network portal detector to return online state for both
@@ -193,7 +195,8 @@ void ManagedUserTestBase::SetUpInProcessBrowserTestFixture() {
   online_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE;
   online_state.response_code = 204;
   network_portal_detector_->SetDefaultNetworkPathForTesting(
-      kStubEthernetServicePath);
+      kStubEthernetServicePath,
+      kStubEthernetServicePath /* guid */);
   network_portal_detector_->SetDetectionResultsForTesting(
       kStubEthernetServicePath, online_state);
 }
@@ -215,7 +218,7 @@ void ManagedUserTestBase::TearDownInProcessBrowserTestFixture() {
 }
 
 void ManagedUserTestBase::JSEval(const std::string& script) {
-  EXPECT_TRUE(content::ExecuteScript(web_contents(), script));
+  EXPECT_TRUE(content::ExecuteScript(web_contents(), script)) << script;
 }
 
 void ManagedUserTestBase::JSExpectAsync(const std::string& function) {
@@ -225,7 +228,7 @@ void ManagedUserTestBase::JSExpectAsync(const std::string& function) {
       StringPrintf(
           "(%s)(function() { window.domAutomationController.send(true); });",
           function.c_str()),
-      &result));
+      &result)) << function;
   EXPECT_TRUE(result);
 }
 
@@ -287,7 +290,9 @@ void ManagedUserTestBase::StartFlowLoginAsManager() {
 
   // Next button is now enabled.
   JSExpect("!$('managed-user-creation-next-button').disabled");
-  SetExpectedCredentials(kTestManager, kTestManagerPassword);
+  UserContext user_context(kTestManager);
+  user_context.SetKey(Key(kTestManagerPassword));
+  SetExpectedCredentials(user_context);
   content::WindowedNotificationObserver login_observer(
       chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED,
       content::NotificationService::AllSources());

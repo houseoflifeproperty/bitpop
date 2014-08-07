@@ -86,6 +86,15 @@ WebInspector.RemoteObject.prototype = {
     },
 
     /**
+     * @param {string} name
+     * @param {function(string=)} callback
+     */
+    deleteProperty: function(name, callback)
+    {
+        throw "Not implemented";
+    },
+
+    /**
      * @param {function(this:Object, ...)} functionDeclaration
      * @param {!Array.<!RuntimeAgent.CallArgument>=} args
      * @param {function(?WebInspector.RemoteObject, boolean=)=} callback
@@ -213,7 +222,7 @@ WebInspector.RemoteObjectImpl = function(target, objectId, type, subtype, value,
         // handle
         this._objectId = objectId;
         this._description = description;
-        this._hasChildren = true;
+        this._hasChildren = (type !== "symbol");
         this._preview = preview;
     } else {
         // Primitive or null object.
@@ -334,8 +343,9 @@ WebInspector.RemoteObjectImpl.prototype = {
             for (var i = 0; properties && i < properties.length; ++i) {
                 var property = properties[i];
                 var propertyValue = property.value ? this._target.runtimeModel.createRemoteObject(property.value) : null;
+                var propertySymbol = property.symbol ? this._target.runtimeModel.createRemoteObject(property.symbol) : null;
                 var remoteProperty = new WebInspector.RemoteObjectProperty(property.name, propertyValue,
-                        !!property.enumerable, !!property.writable, !!property.isOwn, !!property.wasThrown);
+                        !!property.enumerable, !!property.writable, !!property.isOwn, !!property.wasThrown, propertySymbol);
 
                 if (typeof property.value === "undefined") {
                     if (property.get && property.get.type !== "undefined")
@@ -353,7 +363,8 @@ WebInspector.RemoteObjectImpl.prototype = {
                     var property = internalProperties[i];
                     if (!property.value)
                         continue;
-                    internalPropertiesResult.push(new WebInspector.RemoteObjectProperty(property.name, this._target.runtimeModel.createRemoteObject(property.value)));
+                    var propertyValue = this._target.runtimeModel.createRemoteObject(property.value);
+                    internalPropertiesResult.push(new WebInspector.RemoteObjectProperty(property.name, propertyValue, true, false));
                 }
             }
             callback(result, internalPropertiesResult);
@@ -423,6 +434,38 @@ WebInspector.RemoteObjectImpl.prototype = {
                 return;
             }
             callback();
+        }
+    },
+
+    /**
+     * @param {string} name
+     * @param {function(string=)} callback
+     */
+    deleteProperty: function(name, callback)
+    {
+        if (!this._objectId) {
+            callback("Can't delete a property of non-object.");
+            return;
+        }
+
+        var deletePropertyFunction = "function(a) { delete this[a]; return !(a in this); }";
+        this._runtimeAgent.callFunctionOn(this._objectId, deletePropertyFunction, [{ value: name }], true, undefined, undefined, deletePropertyCallback);
+
+        /**
+         * @param {?Protocol.Error} error
+         * @param {!RuntimeAgent.RemoteObject} result
+         * @param {boolean=} wasThrown
+         */
+        function deletePropertyCallback(error, result, wasThrown)
+        {
+            if (error || wasThrown) {
+                callback(error || result.description);
+                return;
+            }
+            if (!result.value)
+                callback("Failed to delete property.");
+            else
+                callback();
         }
     },
 
@@ -721,8 +764,9 @@ WebInspector.ScopeRef = function(number, callFrameId, functionId)
  * @param {boolean=} writable
  * @param {boolean=} isOwn
  * @param {boolean=} wasThrown
+ * @param {?WebInspector.RemoteObject=} symbol
  */
-WebInspector.RemoteObjectProperty = function(name, value, enumerable, writable, isOwn, wasThrown)
+WebInspector.RemoteObjectProperty = function(name, value, enumerable, writable, isOwn, wasThrown, symbol)
 {
     this.name = name;
     if (value !== null)
@@ -731,6 +775,8 @@ WebInspector.RemoteObjectProperty = function(name, value, enumerable, writable, 
     this.writable = typeof writable !== "undefined" ? writable : true;
     this.isOwn = !!isOwn;
     this.wasThrown = !!wasThrown;
+    if (symbol)
+        this.symbol = symbol;
 }
 
 WebInspector.RemoteObjectProperty.prototype = {

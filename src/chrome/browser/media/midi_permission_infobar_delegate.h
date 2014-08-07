@@ -8,15 +8,15 @@
 #include <string>
 
 #include "chrome/browser/content_settings/permission_request_id.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "url/gurl.h"
 
 class PermissionQueueController;
 class InfoBarService;
 
 // MidiPermissionInfoBarDelegates are created by the
-// ChromeMidiPermissionContext to control the display and handling of MIDI
-// permission infobars to the user.
+// MidiPermissionContext to control the display and handling of MIDI permission
+// infobars to the user.
 class MidiPermissionInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
   // Creates a MIDI permission infobar and delegate and adds the infobar to

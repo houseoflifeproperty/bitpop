@@ -10,8 +10,8 @@
 #include "ash/system/chromeos/network/network_icon_animation.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chromeos/network/network_state_handler.h"
 #include "content/public/browser/web_ui.h"
 #include "ui/base/models/menu_model.h"
@@ -90,8 +90,7 @@ base::ListValue* NetworkMenuWebUI::ConvertMenuModel(ui::MenuModel* model) {
     gfx::Image icon;
     if (model->GetIconAt(i, &icon)) {
       SkBitmap icon_bitmap = icon.ToImageSkia()->GetRepresentation(
-          ui::GetImageScale(
-              web_ui_->GetDeviceScaleFactor())).sk_bitmap();
+          web_ui_->GetDeviceScaleFactor()).sk_bitmap();
       item->SetString("icon", webui::GetBitmapDataUrl(icon_bitmap));
     }
     if (id >= 0) {
@@ -192,7 +191,7 @@ void NetworkDropdown::SetNetworkIconAndText() {
         RemoveObserver(this);
   }
   SkBitmap icon_bitmap = icon_image.GetRepresentation(
-      ui::GetImageScale(web_ui_->GetDeviceScaleFactor())).sk_bitmap();
+      web_ui_->GetDeviceScaleFactor()).sk_bitmap();
   std::string icon_str;
   if (!icon_image.isNull())
     icon_str = webui::GetBitmapDataUrl(icon_bitmap);

@@ -81,7 +81,7 @@ void FillRoundRect(gfx::Canvas* canvas,
     p[1].iset(x, y + h);
   }
   skia::RefPtr<SkShader> s = skia::AdoptRef(SkGradientShader::CreateLinear(
-      p, colors, points, count, SkShader::kClamp_TileMode, NULL));
+      p, colors, points, count, SkShader::kClamp_TileMode));
   paint.setShader(s.get());
 
   canvas->DrawPath(path, paint);
@@ -183,7 +183,7 @@ void ProgressBar::GetAccessibleState(ui::AXViewState* state) {
   state->AddStateFlag(ui::AX_STATE_READ_ONLY);
 }
 
-gfx::Size ProgressBar::GetPreferredSize() {
+gfx::Size ProgressBar::GetPreferredSize() const {
   gfx::Size pref_size(100, 11);
   gfx::Insets insets = GetInsets();
   pref_size.Enlarge(insets.width(), insets.height());
@@ -228,7 +228,7 @@ void ProgressBar::OnPaint(gfx::Canvas* canvas) {
           kCornerRadius,
           0,
           &inner_path);
-      canvas->ClipPath(inner_path);
+      canvas->ClipPath(inner_path, false);
 
       const SkColor bar_colors[] = {
         kBarTopColor,
@@ -300,7 +300,7 @@ void ProgressBar::OnPaint(gfx::Canvas* canvas) {
         skia::RefPtr<SkShader> s =
             skia::AdoptRef(SkGradientShader::CreateLinear(
                 p, highlight_colors, highlight_points,
-                arraysize(highlight_colors), SkShader::kClamp_TileMode, NULL));
+                arraysize(highlight_colors), SkShader::kClamp_TileMode));
         paint.setShader(s.get());
         paint.setXfermodeMode(SkXfermode::kSrcOver_Mode);
         canvas->DrawRect(gfx::Rect(highlight_left, 0,

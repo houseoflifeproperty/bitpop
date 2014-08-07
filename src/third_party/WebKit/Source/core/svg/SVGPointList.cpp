@@ -89,7 +89,7 @@ bool SVGPointList::parse(const CharType*& ptr, const CharType* end)
     for (;;) {
         float x = 0.0f;
         float y = 0.0f;
-        bool valid = parseNumber(ptr, end, x) && parseNumber(ptr, end, y, false);
+        bool valid = parseNumber(ptr, end, x) && parseNumber(ptr, end, y, DisallowWhitespace);
         if (!valid) {
             return false;
         }
@@ -132,7 +132,7 @@ void SVGPointList::setValueAsString(const String& value, ExceptionState& excepti
         exceptionState.throwDOMException(SyntaxError, "Problem parsing points=\""+value+"\"");
 }
 
-void SVGPointList::add(PassRefPtr<SVGPropertyBase> other, SVGElement* contextElement)
+void SVGPointList::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement* contextElement)
 {
     RefPtr<SVGPointList> otherList = toSVGPointList(other);
 

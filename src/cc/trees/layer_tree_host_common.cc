@@ -16,7 +16,6 @@
 #include "cc/layers/render_surface_impl.h"
 #include "cc/trees/layer_sorter.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "ui/gfx/point_conversions.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/transform.h"
 
@@ -82,7 +81,7 @@ inline gfx::Rect CalculateVisibleRectWithCachedLayerRect(
   minimal_surface_rect.Intersect(layer_rect_in_target_space);
 
   if (minimal_surface_rect.IsEmpty())
-      return gfx::Rect();
+    return gfx::Rect();
 
   // Project the corners of the target surface rect into the layer space.
   // This bounding rectangle may be larger than it needs to be (being
@@ -328,16 +327,16 @@ template <typename LayerType> static inline bool IsRootLayer(LayerType* layer) {
 
 template <typename LayerType>
 static inline bool LayerIsInExisting3DRenderingContext(LayerType* layer) {
-  return layer->is_3d_sorted() && layer->parent() &&
-         layer->parent()->is_3d_sorted();
+  return layer->Is3dSorted() && layer->parent() &&
+         layer->parent()->Is3dSorted();
 }
 
 template <typename LayerType>
 static bool IsRootLayerOfNewRenderingContext(LayerType* layer) {
   if (layer->parent())
-    return !layer->parent()->is_3d_sorted() && layer->is_3d_sorted();
+    return !layer->parent()->Is3dSorted() && layer->Is3dSorted();
 
-  return layer->is_3d_sorted();
+  return layer->Is3dSorted();
 }
 
 template <typename LayerType>
@@ -432,10 +431,10 @@ static bool LayerShouldBeSkipped(LayerType* layer, bool layer_is_drawn) {
   // Layers can be skipped if any of these conditions are met.
   //   - is not drawn due to it or one of its ancestors being hidden (or having
   //     no copy requests).
+  //   - does not draw content.
+  //   - is transparent.
   //   - has empty bounds
   //   - the layer is not double-sided, but its back face is visible.
-  //   - is transparent
-  //   - does not draw content and does not participate in hit testing.
   //
   // Some additional conditions need to be computed at a later point after the
   // recursion is finished.
@@ -449,7 +448,7 @@ static bool LayerShouldBeSkipped(LayerType* layer, bool layer_is_drawn) {
   if (!layer_is_drawn)
     return true;
 
-  if (layer->bounds().IsEmpty())
+  if (!layer->DrawsContent() || layer->bounds().IsEmpty())
     return true;
 
   LayerType* backface_test_layer = layer;
@@ -464,13 +463,6 @@ static bool LayerShouldBeSkipped(LayerType* layer, bool layer_is_drawn) {
   if (!backface_test_layer->double_sided() &&
       TransformToScreenIsKnown(backface_test_layer) &&
       IsLayerBackFaceVisible(backface_test_layer))
-    return true;
-
-  // The layer is visible to events.  If it's subject to hit testing, then
-  // we can't skip it.
-  bool can_accept_input = !layer->touch_event_handler_region().IsEmpty() ||
-      layer->have_wheel_event_handlers();
-  if (!layer->DrawsContent() && !can_accept_input)
     return true;
 
   return false;
@@ -495,6 +487,11 @@ static inline bool SubtreeShouldBeSkipped(LayerImpl* layer,
   if (layer->draw_properties().layer_or_descendant_has_copy_request)
     return false;
 
+  // We cannot skip the the subtree if a descendant has a wheel or touch handler
+  // or the hit testing code will break (it requires fresh transforms, etc).
+  if (layer->draw_properties().layer_or_descendant_has_input_handler)
+    return false;
+
   // If the layer is not drawn, then skip it and its subtree.
   if (!layer_is_drawn)
     return true;
@@ -508,7 +505,6 @@ static inline bool SubtreeShouldBeSkipped(LayerImpl* layer,
   // The opacity of a layer always applies to its children (either implicitly
   // via a render surface or explicitly if the parent preserves 3D), so the
   // entire subtree can be skipped if this layer is fully transparent.
-  // TODO(sad): Don't skip layers used for hit testing crbug.com/295295.
   return !layer->opacity();
 }
 
@@ -522,6 +518,11 @@ static inline bool SubtreeShouldBeSkipped(Layer* layer, bool layer_is_drawn) {
   if (layer->draw_properties().layer_or_descendant_has_copy_request)
     return false;
 
+  // We cannot skip the the subtree if a descendant has a wheel or touch handler
+  // or the hit testing code will break (it requires fresh transforms, etc).
+  if (layer->draw_properties().layer_or_descendant_has_input_handler)
+    return false;
+
   // If the layer is not drawn, then skip it and its subtree.
   if (!layer_is_drawn)
     return true;
@@ -532,7 +533,6 @@ static inline bool SubtreeShouldBeSkipped(Layer* layer, bool layer_is_drawn) {
   // In particular, it should not cause the subtree to be skipped.
   // Similarly, for layers that might animate opacity using an impl-only
   // animation, their subtree should also not be skipped.
-  // TODO(sad): Don't skip layers used for hit testing crbug.com/295295.
   return !layer->opacity() && !layer->OpacityIsAnimating() &&
          !layer->OpacityCanAnimateOnImplThread();
 }
@@ -919,8 +919,32 @@ gfx::Transform ComputeScrollCompensationMatrixForChildren(
 }
 
 template <typename LayerType>
-static inline void CalculateContentsScale(
+static inline void UpdateLayerScaleDrawProperties(
     LayerType* layer,
+    float ideal_contents_scale,
+    float maximum_animation_contents_scale,
+    float page_scale_factor,
+    float device_scale_factor) {
+  layer->draw_properties().ideal_contents_scale = ideal_contents_scale;
+  layer->draw_properties().maximum_animation_contents_scale =
+      maximum_animation_contents_scale;
+  layer->draw_properties().page_scale_factor = page_scale_factor;
+  layer->draw_properties().device_scale_factor = device_scale_factor;
+}
+
+static inline void CalculateContentsScale(
+    LayerImpl* layer,
+    float contents_scale,
+    float device_scale_factor,
+    float page_scale_factor,
+    float maximum_animation_contents_scale,
+    bool animating_transform_to_screen) {
+  // LayerImpl has all of its content scales and bounds pushed from the Main
+  // thread during commit and just uses those values as-is.
+}
+
+static inline void CalculateContentsScale(
+    Layer* layer,
     float contents_scale,
     float device_scale_factor,
     float page_scale_factor,
@@ -935,7 +959,7 @@ static inline void CalculateContentsScale(
                                 &layer->draw_properties().contents_scale_y,
                                 &layer->draw_properties().content_bounds);
 
-  LayerType* mask_layer = layer->mask_layer();
+  Layer* mask_layer = layer->mask_layer();
   if (mask_layer) {
     mask_layer->CalculateContentsScale(
         contents_scale,
@@ -948,7 +972,7 @@ static inline void CalculateContentsScale(
         &mask_layer->draw_properties().content_bounds);
   }
 
-  LayerType* replica_mask_layer =
+  Layer* replica_mask_layer =
       layer->replica_layer() ? layer->replica_layer()->mask_layer() : NULL;
   if (replica_mask_layer) {
     replica_mask_layer->CalculateContentsScale(
@@ -1194,15 +1218,19 @@ static inline void RemoveSurfaceForEarlyExit(
 
 struct PreCalculateMetaInformationRecursiveData {
   bool layer_or_descendant_has_copy_request;
+  bool layer_or_descendant_has_input_handler;
   int num_unclipped_descendants;
 
   PreCalculateMetaInformationRecursiveData()
       : layer_or_descendant_has_copy_request(false),
+        layer_or_descendant_has_input_handler(false),
         num_unclipped_descendants(0) {}
 
   void Merge(const PreCalculateMetaInformationRecursiveData& data) {
     layer_or_descendant_has_copy_request |=
         data.layer_or_descendant_has_copy_request;
+    layer_or_descendant_has_input_handler |=
+        data.layer_or_descendant_has_input_handler;
     num_unclipped_descendants +=
         data.num_unclipped_descendants;
   }
@@ -1262,12 +1290,18 @@ static void PreCalculateMetaInformation(
   if (layer->HasCopyRequest())
     recursive_data->layer_or_descendant_has_copy_request = true;
 
+  if (!layer->touch_event_handler_region().IsEmpty() ||
+      layer->have_wheel_event_handlers())
+    recursive_data->layer_or_descendant_has_input_handler = true;
+
   layer->draw_properties().num_descendants_that_draw_content =
       num_descendants_that_draw_content;
   layer->draw_properties().num_unclipped_descendants =
       recursive_data->num_unclipped_descendants;
   layer->draw_properties().layer_or_descendant_has_copy_request =
       recursive_data->layer_or_descendant_has_copy_request;
+  layer->draw_properties().layer_or_descendant_has_input_handler =
+      recursive_data->layer_or_descendant_has_input_handler;
 }
 
 static void RoundTranslationComponents(gfx::Transform* transform) {
@@ -1661,25 +1695,21 @@ static void CalculateDrawPropertiesInternal(
     animating_transform_to_screen |=
         layer->parent()->screen_space_transform_is_animating();
   }
-
-  gfx::Size bounds = layer->bounds();
-  gfx::PointF anchor_point = layer->anchor_point();
+  gfx::Point3F transform_origin = layer->transform_origin();
   gfx::Vector2dF scroll_offset = GetEffectiveTotalScrollOffset(layer);
   gfx::PointF position = layer->position() - scroll_offset;
-
   gfx::Transform combined_transform = data_from_ancestor.parent_matrix;
   if (!layer->transform().IsIdentity()) {
-    // LT = Tr[origin] * Tr[origin2anchor]
-    combined_transform.Translate3d(
-        position.x() + anchor_point.x() * bounds.width(),
-        position.y() + anchor_point.y() * bounds.height(),
-        layer->anchor_point_z());
-    // LT = Tr[origin] * Tr[origin2anchor] * M[layer]
+    // LT = Tr[origin] * Tr[origin2transformOrigin]
+    combined_transform.Translate3d(position.x() + transform_origin.x(),
+                                   position.y() + transform_origin.y(),
+                                   transform_origin.z());
+    // LT = Tr[origin] * Tr[origin2origin] * M[layer]
     combined_transform.PreconcatTransform(layer->transform());
-    // LT = Tr[origin] * Tr[origin2anchor] * M[layer] * Tr[anchor2origin]
-    combined_transform.Translate3d(-anchor_point.x() * bounds.width(),
-                                   -anchor_point.y() * bounds.height(),
-                                   -layer->anchor_point_z());
+    // LT = Tr[origin] * Tr[origin2origin] * M[layer] *
+    // Tr[transformOrigin2origin]
+    combined_transform.Translate3d(
+        -transform_origin.x(), -transform_origin.y(), -transform_origin.z());
   } else {
     combined_transform.Translate(position.x(), position.y());
   }
@@ -1754,6 +1784,40 @@ static void CalculateDrawPropertiesInternal(
       combined_maximum_animation_contents_scale,
       animating_transform_to_screen);
 
+  UpdateLayerScaleDrawProperties(
+      layer,
+      ideal_contents_scale,
+      combined_maximum_animation_contents_scale,
+      data_from_ancestor.in_subtree_of_page_scale_application_layer
+          ? globals.page_scale_factor
+          : 1.f,
+      globals.device_scale_factor);
+
+  LayerType* mask_layer = layer->mask_layer();
+  if (mask_layer) {
+    UpdateLayerScaleDrawProperties(
+        mask_layer,
+        ideal_contents_scale,
+        combined_maximum_animation_contents_scale,
+        data_from_ancestor.in_subtree_of_page_scale_application_layer
+            ? globals.page_scale_factor
+            : 1.f,
+        globals.device_scale_factor);
+  }
+
+  LayerType* replica_mask_layer =
+      layer->replica_layer() ? layer->replica_layer()->mask_layer() : NULL;
+  if (replica_mask_layer) {
+    UpdateLayerScaleDrawProperties(
+        replica_mask_layer,
+        ideal_contents_scale,
+        combined_maximum_animation_contents_scale,
+        data_from_ancestor.in_subtree_of_page_scale_application_layer
+            ? globals.page_scale_factor
+            : 1.f,
+        globals.device_scale_factor);
+  }
+
   // The draw_transform that gets computed below is effectively the layer's
   // draw_transform, unless the layer itself creates a render_surface. In that
   // case, the render_surface re-parents the transforms.
@@ -1784,7 +1848,7 @@ static void CalculateDrawPropertiesInternal(
       layer_draw_properties.target_space_transform.
           IsIdentityOrIntegerTranslation();
 
-  gfx::RectF content_rect(layer->content_bounds());
+  gfx::Rect content_rect(layer->content_bounds());
 
   // full_hierarchy_matrix is the matrix that transforms objects between screen
   // space (except projection matrix) and the most recent RenderSurfaceImpl's
@@ -2017,8 +2081,8 @@ static void CalculateDrawPropertiesInternal(
   if (adjust_text_aa)
     layer_draw_properties.can_use_lcd_text = layer_can_use_lcd_text;
 
-  gfx::Rect rect_in_target_space = ToEnclosingRect(
-      MathUtil::MapClippedRect(layer->draw_transform(), content_rect));
+  gfx::Rect rect_in_target_space =
+      MathUtil::MapEnclosingClippedRect(layer->draw_transform(), content_rect);
 
   if (LayerClipsSubtree(layer)) {
     layer_or_ancestor_clips_descendants = true;
@@ -2260,14 +2324,14 @@ static void CalculateDrawPropertiesInternal(
           render_surface_sublayer_scale.x(), render_surface_sublayer_scale.y());
       surface_origin_to_replica_origin_transform.Translate(
           layer->replica_layer()->position().x() +
-          layer->replica_layer()->anchor_point().x() * bounds.width(),
+              layer->replica_layer()->transform_origin().x(),
           layer->replica_layer()->position().y() +
-          layer->replica_layer()->anchor_point().y() * bounds.height());
+              layer->replica_layer()->transform_origin().y());
       surface_origin_to_replica_origin_transform.PreconcatTransform(
           layer->replica_layer()->transform());
       surface_origin_to_replica_origin_transform.Translate(
-          -layer->replica_layer()->anchor_point().x() * bounds.width(),
-          -layer->replica_layer()->anchor_point().y() * bounds.height());
+          -layer->replica_layer()->transform_origin().x(),
+          -layer->replica_layer()->transform_origin().y());
       surface_origin_to_replica_origin_transform.Scale(
           1.0 / render_surface_sublayer_scale.x(),
           1.0 / render_surface_sublayer_scale.y());
@@ -2301,7 +2365,7 @@ static void CalculateDrawPropertiesInternal(
   // drawn from back to front. If the preserves-3d property is also set on the
   // parent then skip the sorting as the parent will sort all the descendants
   // anyway.
-  if (globals.layer_sorter && descendants.size() && layer->is_3d_sorted() &&
+  if (globals.layer_sorter && descendants.size() && layer->Is3dSorted() &&
       !LayerIsInExisting3DRenderingContext(layer)) {
     SortLayers(descendants.begin() + sorting_start_index,
                descendants.end(),
@@ -2427,178 +2491,4 @@ void LayerTreeHostCommon::CalculateDrawProperties(
   DCHECK(inputs->root_layer->render_surface());
 }
 
-static bool PointHitsRect(
-    const gfx::PointF& screen_space_point,
-    const gfx::Transform& local_space_to_screen_space_transform,
-    const gfx::RectF& local_space_rect) {
-  // If the transform is not invertible, then assume that this point doesn't hit
-  // this rect.
-  gfx::Transform inverse_local_space_to_screen_space(
-      gfx::Transform::kSkipInitialization);
-  if (!local_space_to_screen_space_transform.GetInverse(
-          &inverse_local_space_to_screen_space))
-    return false;
-
-  // Transform the hit test point from screen space to the local space of the
-  // given rect.
-  bool clipped = false;
-  gfx::PointF hit_test_point_in_local_space = MathUtil::ProjectPoint(
-      inverse_local_space_to_screen_space, screen_space_point, &clipped);
-
-  // If ProjectPoint could not project to a valid value, then we assume that
-  // this point doesn't hit this rect.
-  if (clipped)
-    return false;
-
-  return local_space_rect.Contains(hit_test_point_in_local_space);
-}
-
-static bool PointHitsRegion(const gfx::PointF& screen_space_point,
-                            const gfx::Transform& screen_space_transform,
-                            const Region& layer_space_region,
-                            float layer_content_scale_x,
-                            float layer_content_scale_y) {
-  // If the transform is not invertible, then assume that this point doesn't hit
-  // this region.
-  gfx::Transform inverse_screen_space_transform(
-      gfx::Transform::kSkipInitialization);
-  if (!screen_space_transform.GetInverse(&inverse_screen_space_transform))
-    return false;
-
-  // Transform the hit test point from screen space to the local space of the
-  // given region.
-  bool clipped = false;
-  gfx::PointF hit_test_point_in_content_space = MathUtil::ProjectPoint(
-      inverse_screen_space_transform, screen_space_point, &clipped);
-  gfx::PointF hit_test_point_in_layer_space =
-      gfx::ScalePoint(hit_test_point_in_content_space,
-                      1.f / layer_content_scale_x,
-                      1.f / layer_content_scale_y);
-
-  // If ProjectPoint could not project to a valid value, then we assume that
-  // this point doesn't hit this region.
-  if (clipped)
-    return false;
-
-  return layer_space_region.Contains(
-      gfx::ToRoundedPoint(hit_test_point_in_layer_space));
-}
-
-static bool PointIsClippedBySurfaceOrClipRect(
-    const gfx::PointF& screen_space_point,
-    LayerImpl* layer) {
-  LayerImpl* current_layer = layer;
-
-  // Walk up the layer tree and hit-test any render_surfaces and any layer
-  // clip rects that are active.
-  while (current_layer) {
-    if (current_layer->render_surface() &&
-        !PointHitsRect(
-            screen_space_point,
-            current_layer->render_surface()->screen_space_transform(),
-            current_layer->render_surface()->content_rect()))
-      return true;
-
-    // Note that drawable content rects are actually in target surface space, so
-    // the transform we have to provide is the target surface's
-    // screen_space_transform.
-    LayerImpl* render_target = current_layer->render_target();
-    if (LayerClipsSubtree(current_layer) &&
-        !PointHitsRect(
-            screen_space_point,
-            render_target->render_surface()->screen_space_transform(),
-            current_layer->drawable_content_rect()))
-      return true;
-
-    current_layer = current_layer->parent();
-  }
-
-  // If we have finished walking all ancestors without having already exited,
-  // then the point is not clipped by any ancestors.
-  return false;
-}
-
-LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-    const gfx::PointF& screen_space_point,
-    const LayerImplList& render_surface_layer_list) {
-  LayerImpl* found_layer = NULL;
-
-  typedef LayerIterator<LayerImpl> LayerIteratorType;
-  LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list);
-  for (LayerIteratorType
-           it = LayerIteratorType::Begin(&render_surface_layer_list);
-       it != end;
-       ++it) {
-    // We don't want to consider render_surfaces for hit testing.
-    if (!it.represents_itself())
-      continue;
-
-    LayerImpl* current_layer = (*it);
-    gfx::RectF content_rect(current_layer->content_bounds());
-    if (!PointHitsRect(screen_space_point,
-                       current_layer->screen_space_transform(),
-                       content_rect))
-      continue;
-
-    // At this point, we think the point does hit the layer, but we need to walk
-    // up the parents to ensure that the layer was not clipped in such a way
-    // that the hit point actually should not hit the layer.
-    if (PointIsClippedBySurfaceOrClipRect(screen_space_point, current_layer))
-      continue;
-
-    // Skip the HUD layer.
-    if (current_layer == current_layer->layer_tree_impl()->hud_layer())
-      continue;
-
-    found_layer = current_layer;
-    break;
-  }
-
-  // This can potentially return NULL, which means the screen_space_point did
-  // not successfully hit test any layers, not even the root layer.
-  return found_layer;
-}
-
-LayerImpl* LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-    const gfx::PointF& screen_space_point,
-    const LayerImplList& render_surface_layer_list) {
-  // First find out which layer was hit from the saved list of visible layers
-  // in the most recent frame.
-  LayerImpl* layer_impl = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      screen_space_point,
-      render_surface_layer_list);
-
-  // Walk up the hierarchy and look for a layer with a touch event handler
-  // region that the given point hits.
-  // This walk may not be necessary anymore: http://crbug.com/310817
-  for (; layer_impl; layer_impl = layer_impl->parent()) {
-     if (LayerTreeHostCommon::LayerHasTouchEventHandlersAt(screen_space_point,
-                                                          layer_impl))
-       break;
-  }
-  return layer_impl;
-}
-
-bool LayerTreeHostCommon::LayerHasTouchEventHandlersAt(
-    const gfx::PointF& screen_space_point,
-    LayerImpl* layer_impl) {
-  if (layer_impl->touch_event_handler_region().IsEmpty())
-    return false;
-
-  if (!PointHitsRegion(screen_space_point,
-                       layer_impl->screen_space_transform(),
-                       layer_impl->touch_event_handler_region(),
-                       layer_impl->contents_scale_x(),
-                       layer_impl->contents_scale_y()))
-    return false;
-
-  // At this point, we think the point does hit the touch event handler region
-  // on the layer, but we need to walk up the parents to ensure that the layer
-  // was not clipped in such a way that the hit point actually should not hit
-  // the layer.
-  if (PointIsClippedBySurfaceOrClipRect(screen_space_point, layer_impl))
-    return false;
-
-  return true;
-}
 }  // namespace cc

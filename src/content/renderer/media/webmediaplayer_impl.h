@@ -47,15 +47,13 @@ class GpuVideoAcceleratorFactories;
 class MediaLog;
 }
 
-namespace webkit {
-class WebLayerImpl;
-}
 
 namespace content {
 class BufferedDataSource;
 class VideoFrameCompositor;
 class WebAudioSourceProviderImpl;
 class WebContentDecryptionModuleImpl;
+class WebLayerImpl;
 class WebMediaPlayerDelegate;
 class WebMediaPlayerParams;
 class WebTextTrackImpl;
@@ -87,7 +85,7 @@ class WebMediaPlayerImpl
   virtual void setRate(double rate);
   virtual void setVolume(double volume);
   virtual void setPreload(blink::WebMediaPlayer::Preload preload);
-  virtual const blink::WebTimeRanges& buffered();
+  virtual blink::WebTimeRanges buffered() const;
   virtual double maxTimeSeekable() const;
 
   // Methods for painting.
@@ -115,9 +113,7 @@ class WebMediaPlayerImpl
   virtual blink::WebMediaPlayer::NetworkState networkState() const;
   virtual blink::WebMediaPlayer::ReadyState readyState() const;
 
-  // TODO(sandersd): Change this to non-const in blink::WebMediaPlayer.
-  // http://crbug.com/360251
-  virtual bool didLoadingProgress() const;
+  virtual bool didLoadingProgress();
 
   virtual bool hasSingleSecurityOrigin() const;
   virtual bool didPassCORSAccessCheck() const;
@@ -179,7 +175,7 @@ class WebMediaPlayerImpl
                   uint32 system_code);
   void OnKeyMessage(const std::string& session_id,
                     const std::vector<uint8>& message,
-                    const std::string& default_url);
+                    const GURL& destination_url);
   void OnNeedKey(const std::string& type,
                  const std::vector<uint8>& init_data);
   void OnAddTextTrack(const media::TextTrackConfig& config,
@@ -193,7 +189,7 @@ class WebMediaPlayerImpl
               CORSMode cors_mode);
 
   // Called after asynchronous initialization of a data source completed.
-  void DataSourceInitialized(const GURL& gurl, bool success);
+  void DataSourceInitialized(bool success);
 
   // Called when the data source is downloading or paused.
   void NotifyDownloading(bool is_downloading);
@@ -312,10 +308,7 @@ class WebMediaPlayerImpl
   // Routes audio playback to either AudioRendererSink or WebAudio.
   scoped_refptr<WebAudioSourceProviderImpl> audio_source_provider_;
 
-  bool is_local_source_;
   bool supports_save_;
-
-  bool starting_;
 
   // These two are mutually exclusive:
   //   |data_source_| is used for regular resource loads.
@@ -328,8 +321,6 @@ class WebMediaPlayerImpl
   media::ChunkDemuxer* chunk_demuxer_;
 
   BufferedDataSourceHostImpl buffered_data_source_host_;
-  // TODO(sandersd): Remove this cache. http://crbug.com/360254
-  blink::WebTimeRanges buffered_web_time_ranges_;
 
   // Temporary for EME v0.1. In the future the init data type should be passed
   // through GenerateKeyRequest() directly from WebKit.
@@ -342,7 +333,7 @@ class WebMediaPlayerImpl
 
   // The compositor layer for displaying the video content when using composited
   // playback.
-  scoped_ptr<webkit::WebLayerImpl> video_weblayer_;
+  scoped_ptr<WebLayerImpl> video_weblayer_;
 
   // Text track objects get a unique index value when they're created.
   int text_track_index_;

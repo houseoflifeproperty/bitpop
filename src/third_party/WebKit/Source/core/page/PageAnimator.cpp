@@ -29,15 +29,21 @@ void PageAnimator::serviceScriptedAnimations(double monotonicAnimationStartTime)
     m_animationFramePending = false;
     TemporaryChange<bool> servicing(m_servicingAnimations, true);
 
-    for (RefPtr<LocalFrame> frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        frame->view()->serviceScrollAnimations();
-        DocumentAnimations::updateAnimationTimingForAnimationFrame(*frame->document(), monotonicAnimationStartTime);
-        SVGDocumentExtensions::serviceOnAnimationFrame(*frame->document(), monotonicAnimationStartTime);
+    for (RefPtr<Frame> frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        if (frame->isLocalFrame()) {
+            RefPtr<LocalFrame> localFrame = toLocalFrame(frame.get());
+            localFrame->view()->serviceScrollAnimations();
+
+            DocumentAnimations::updateAnimationTimingForAnimationFrame(*localFrame->document(), monotonicAnimationStartTime);
+            SVGDocumentExtensions::serviceOnAnimationFrame(*localFrame->document(), monotonicAnimationStartTime);
+        }
     }
 
-    Vector<RefPtr<Document> > documents;
-    for (RefPtr<LocalFrame> frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext())
-        documents.append(frame->document());
+    WillBeHeapVector<RefPtrWillBeMember<Document> > documents;
+    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        if (frame->isLocalFrame())
+            documents.append(toLocalFrame(frame)->document());
+    }
 
     for (size_t i = 0; i < documents.size(); ++i)
         documents[i]->serviceScriptedAnimations(monotonicAnimationStartTime);
@@ -53,7 +59,10 @@ void PageAnimator::scheduleVisualUpdate()
 
 void PageAnimator::updateLayoutAndStyleForPainting()
 {
-    RefPtr<FrameView> view = m_page->mainFrame()->view();
+    if (!m_page->mainFrame()->isLocalFrame())
+        return;
+
+    RefPtr<FrameView> view = m_page->deprecatedLocalMainFrame()->view();
 
     TemporaryChange<bool> servicing(m_updatingLayoutAndStyleForPainting, true);
 

@@ -11,6 +11,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 #include "chrome/browser/ui/webui/uber/uber_ui.h"
@@ -19,6 +20,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
@@ -50,7 +52,7 @@ namespace {
 
 class SignOutWaiter : public SigninManagerBase::Observer {
  public:
-  SignOutWaiter(SigninManagerBase* signin_manager)
+  explicit SignOutWaiter(SigninManagerBase* signin_manager)
       : seen_(false), running_(false), scoped_observer_(this) {
     scoped_observer_.Add(signin_manager);
   }
@@ -91,13 +93,23 @@ void RunClosureWhenProfileInitialized(const base::Closure& closure,
 }
 #endif
 
+bool FrameHasSettingsSourceHost(content::RenderFrameHost* frame) {
+  return frame->GetLastCommittedURL().DomainIs(
+      chrome::kChromeUISettingsFrameHost);
+}
+
 }  // namespace
 
 OptionsUIBrowserTest::OptionsUIBrowserTest() {
 }
 
 void OptionsUIBrowserTest::NavigateToSettings() {
-  const GURL& url = GURL(chrome::kChromeUISettingsURL);
+  NavigateToSettingsSubpage("");
+}
+
+void OptionsUIBrowserTest::NavigateToSettingsSubpage(
+    const std::string& sub_page) {
+  const GURL& url = chrome::GetSettingsUrl(sub_page);
   ui_test_utils::NavigateToURLWithDisposition(browser(), url, CURRENT_TAB, 0);
 
   content::WebContents* web_contents =
@@ -118,6 +130,13 @@ void OptionsUIBrowserTest::NavigateToSettings() {
       subscription = options_ui->RegisterOnFinishedLoadingCallback(
           message_loop_runner->QuitClosure());
   message_loop_runner->Run();
+
+  // The OnFinishedLoading event, which indicates that all WebUI initialization
+  // methods have been called on the JS side, is temporally unrelated to whether
+  // or not the WebContents considers itself to have finished loading. We want
+  // to wait for this too, however, because, e.g. this is a sufficient condition
+  // to get the focus properly placed on a form element.
+  content::WaitForLoadStop(web_contents);
 }
 
 void OptionsUIBrowserTest::NavigateToSettingsFrame() {
@@ -140,6 +159,16 @@ void OptionsUIBrowserTest::VerifyTitle() {
       browser()->tab_strip_model()->GetActiveWebContents()->GetTitle();
   base::string16 expected_title = l10n_util::GetStringUTF16(IDS_SETTINGS_TITLE);
   EXPECT_NE(title.find(expected_title), base::string16::npos);
+}
+
+content::RenderFrameHost* OptionsUIBrowserTest::GetSettingsFrame() {
+  // NB: The utility function content::FrameHasSourceUrl can't be used because
+  // the settings frame navigates itself to chrome://settings-frame/settings
+  // to indicate that it's showing the top-level settings. Therefore, just
+  // match the host.
+  return content::FrameMatchingPredicate(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      base::Bind(&FrameHasSettingsSourceHost));
 }
 
 IN_PROC_BROWSER_TEST_F(OptionsUIBrowserTest, LoadOptionsByURL) {
@@ -173,8 +202,13 @@ IN_PROC_BROWSER_TEST_F(OptionsUIBrowserTest, MAYBE_VerifyManagedSignout) {
       browser()->tab_strip_model()->GetActiveWebContents(),
       "var dialog = $('manage-profile-overlay-disconnect-managed');"
       "var original_status = dialog.hidden;"
-      "$('start-stop-sync').click();"
-      "domAutomationController.send(original_status && !dialog.hidden);",
+      "var original = ManageProfileOverlay.showDisconnectManagedProfileDialog;"
+      "var teststub = function(event) {"
+      "  original(event);"
+      "  domAutomationController.send(original_status && !dialog.hidden);"
+      "};"
+      "ManageProfileOverlay.showDisconnectManagedProfileDialog = teststub;"
+      "$('start-stop-sync').click();",
       &result));
 
   EXPECT_TRUE(result);

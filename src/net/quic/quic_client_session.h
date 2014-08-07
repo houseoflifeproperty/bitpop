@@ -15,6 +15,7 @@
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/proxy/proxy_server.h"
 #include "net/quic/quic_client_session_base.h"
@@ -98,8 +99,8 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
                     const QuicServerId& server_id,
                     const QuicConfig& config,
                     QuicCryptoClientConfig* crypto_config,
+                    base::TaskRunner* task_runner,
                     NetLog* net_log);
-
   virtual ~QuicClientSession();
 
   void AddObserver(Observer* observer);
@@ -149,6 +150,9 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   int CryptoConnect(bool require_confirmation,
                     const CompletionCallback& callback);
 
+  // Resumes a crypto handshake with the server after a timeout.
+  int ResumeCryptoConnect(const CompletionCallback& callback);
+
   // Causes the QuicConnectionHelper to start reading from the socket
   // and passing the data along to the QuicConnection.
   void StartReading();
@@ -157,7 +161,7 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   // that this session has been closed, which will delete the session.
   void CloseSessionOnError(int error);
 
-  base::Value* GetInfoAsValue(const std::set<HostPortPair>& aliases) const;
+  base::Value* GetInfoAsValue(const std::set<HostPortPair>& aliases);
 
   const BoundNetLog& net_log() const { return net_log_; }
 
@@ -213,6 +217,8 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   // delete |this|.
   void NotifyFactoryOfSessionClosed();
 
+  void OnConnectTimeout();
+
   bool require_confirmation_;
   scoped_ptr<QuicCryptoClientStream> crypto_stream_;
   QuicStreamFactory* stream_factory_;
@@ -226,7 +232,9 @@ class NET_EXPORT_PRIVATE QuicClientSession : public QuicClientSessionBase {
   bool read_pending_;
   CompletionCallback callback_;
   size_t num_total_streams_;
+  base::TaskRunner* task_runner_;
   BoundNetLog net_log_;
+  base::TimeTicks handshake_start_;  // Time the handshake was started.
   QuicConnectionLogger logger_;
   // Number of packets read in the current read loop.
   size_t num_packets_read_;

@@ -14,7 +14,8 @@ FakeProfileOAuth2TokenService::PendingRequest::~PendingRequest() {
 }
 
 FakeProfileOAuth2TokenService::FakeProfileOAuth2TokenService()
-    : auto_post_fetch_response_on_message_loop_(false) {
+    : auto_post_fetch_response_on_message_loop_(false),
+      weak_ptr_factory_(this) {
   SigninAccountIdHelper::SetDisableForTest(true);
 }
 
@@ -66,6 +67,10 @@ void FakeProfileOAuth2TokenService::IssueRefreshTokenForUser(
   }
 }
 
+void FakeProfileOAuth2TokenService::IssueAllRefreshTokensLoaded() {
+  FireRefreshTokensLoaded();
+}
+
 void FakeProfileOAuth2TokenService::IssueAllTokensForAccount(
     const std::string& account_id,
     const std::string& access_token,
@@ -76,6 +81,17 @@ void FakeProfileOAuth2TokenService::IssueAllTokensForAccount(
                    GoogleServiceAuthError::AuthErrorNone(),
                    access_token,
                    expiration);
+}
+
+void FakeProfileOAuth2TokenService::IssueErrorForAllPendingRequestsForAccount(
+    const std::string& account_id,
+    const GoogleServiceAuthError& error) {
+  CompleteRequests(account_id,
+                   true,
+                   ScopeSet(),
+                   error,
+                   std::string(),
+                   base::Time());
 }
 
 void FakeProfileOAuth2TokenService::IssueTokenForScope(
@@ -178,7 +194,7 @@ void FakeProfileOAuth2TokenService::FetchOAuth2Token(
   if (auto_post_fetch_response_on_message_loop_) {
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &FakeProfileOAuth2TokenService::IssueAllTokensForAccount,
-        base::Unretained(this),
+        weak_ptr_factory_.GetWeakPtr(),
         account_id,
         "access_token",
         base::Time::Max()));

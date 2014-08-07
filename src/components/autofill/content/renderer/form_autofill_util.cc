@@ -67,17 +67,17 @@ enum FieldFilterMask {
 
 bool IsOptionElement(const WebElement& element) {
   CR_DEFINE_STATIC_LOCAL(WebString, kOption, ("option"));
-  return element.hasTagName(kOption);
+  return element.hasHTMLTagName(kOption);
 }
 
 bool IsScriptElement(const WebElement& element) {
   CR_DEFINE_STATIC_LOCAL(WebString, kScript, ("script"));
-  return element.hasTagName(kScript);
+  return element.hasHTMLTagName(kScript);
 }
 
 bool IsNoScriptElement(const WebElement& element) {
   CR_DEFINE_STATIC_LOCAL(WebString, kNoScript, ("noscript"));
-  return element.hasTagName(kNoScript);
+  return element.hasHTMLTagName(kNoScript);
 }
 
 bool HasTagName(const WebNode& node, const blink::WebString& tag) {
@@ -537,6 +537,9 @@ void FillFormField(const FormFieldData& data,
   if (data.value.empty())
     return;
 
+  if (!data.is_autofilled)
+    return;
+
   field->setAutofilled(true);
 
   WebInputElement* input_element = toWebInputElement(field);
@@ -569,6 +572,9 @@ void PreviewFormField(const FormFieldData& data,
                       blink::WebFormControlElement* field) {
   // Nothing to preview.
   if (data.value.empty())
+    return;
+
+  if (!data.is_autofilled)
     return;
 
   // Preview input, textarea and select fields. For input fields, excludes

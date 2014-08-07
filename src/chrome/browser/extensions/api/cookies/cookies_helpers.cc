@@ -123,7 +123,7 @@ GURL GetURLFromCanonicalCookie(const net::CanonicalCookie& cookie) {
       cookie.IsSecure() ? url::kHttpsScheme : url::kHttpScheme;
   const std::string host =
       domain_key.find('.') != 0 ? domain_key : domain_key.substr(1);
-  return GURL(scheme + content::kStandardSchemeSeparator + host + "/");
+  return GURL(scheme + url::kStandardSchemeSeparator + host + "/");
 }
 
 void AppendMatchingCookiesToVector(const net::CookieList& all_cookies,
@@ -136,7 +136,7 @@ void AppendMatchingCookiesToVector(const net::CookieList& all_cookies,
     // Ignore any cookie whose domain doesn't match the extension's
     // host permissions.
     GURL cookie_domain_url = GetURLFromCanonicalCookie(*it);
-    if (!PermissionsData::HasHostPermission(extension, cookie_domain_url))
+    if (!extension->permissions_data()->HasHostPermission(cookie_domain_url))
       continue;
     // Filter the cookie using the match filter.
     cookies_helpers::MatchFilter filter(details);

@@ -10,13 +10,13 @@
 #include "base/prefs/testing_pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "components/password_manager/core/browser/mock_password_manager_driver.h"
 #include "components/password_manager/core/browser/mock_password_store.h"
 #include "components/password_manager/core/browser/password_autofill_manager.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/password_manager/core/browser/password_manager_driver.h"
 #include "components/password_manager/core/browser/password_store.h"
 #include "components/password_manager/core/browser/stub_password_manager_client.h"
+#include "components/password_manager/core/browser/stub_password_manager_driver.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -48,6 +48,14 @@ class MockPasswordManagerClient : public StubPasswordManagerClient {
   MOCK_METHOD0(GetDriver, PasswordManagerDriver*());
 };
 
+class MockPasswordManagerDriver : public StubPasswordManagerDriver {
+ public:
+  MOCK_METHOD1(FillPasswordForm, void(const autofill::PasswordFormFillData&));
+  MOCK_METHOD0(GetPasswordManager, PasswordManager*());
+  MOCK_METHOD0(GetPasswordAutofillManager, PasswordAutofillManager*());
+  MOCK_METHOD0(DidLastPageLoadEncounterSSLErrors, bool());
+};
+
 ACTION_P(InvokeConsumer, forms) { arg0->OnGetPasswordStoreResults(forms); }
 
 ACTION_P(SaveToScopedPtr, scoped) { scoped->reset(arg0); }
@@ -71,6 +79,7 @@ class PasswordManagerTest : public testing::Test {
                                            true);
 
     store_ = new MockPasswordStore;
+    EXPECT_CALL(*store_, ReportMetrics()).Times(AnyNumber());
     CHECK(store_->Init(syncer::SyncableService::StartSyncFlare()));
 
     EXPECT_CALL(client_, GetPasswordStore()).WillRepeatedly(Return(store_));
@@ -81,18 +90,10 @@ class PasswordManagerTest : public testing::Test {
     password_autofill_manager_.reset(
         new PasswordAutofillManager(&client_, NULL));
 
-    EXPECT_CALL(driver_, DidLastPageLoadEncounterSSLErrors())
-        .WillRepeatedly(Return(false));
-    EXPECT_CALL(driver_, IsOffTheRecord()).WillRepeatedly(Return(false));
-    EXPECT_CALL(driver_, GetPasswordGenerationManager())
-        .WillRepeatedly(Return(static_cast<PasswordGenerationManager*>(NULL)));
     EXPECT_CALL(driver_, GetPasswordManager())
         .WillRepeatedly(Return(manager_.get()));
-    EXPECT_CALL(driver_, AllowPasswordGenerationForForm(_)).Times(AnyNumber());
     EXPECT_CALL(driver_, GetPasswordAutofillManager())
         .WillRepeatedly(Return(password_autofill_manager_.get()));
-
-    EXPECT_CALL(*store_, ReportMetricsImpl()).Times(AnyNumber());
   }
 
   virtual void TearDown() {
@@ -476,10 +477,10 @@ TEST_F(PasswordManagerTest, SavingDependsOnManagerEnabledPreference) {
   // preference.
   prefs_.SetUserPref(prefs::kPasswordManagerEnabled,
                      base::Value::CreateBooleanValue(true));
-  EXPECT_TRUE(manager()->IsSavingEnabled());
+  EXPECT_TRUE(manager()->IsSavingEnabledForCurrentPage());
   prefs_.SetUserPref(prefs::kPasswordManagerEnabled,
                      base::Value::CreateBooleanValue(false));
-  EXPECT_FALSE(manager()->IsSavingEnabled());
+  EXPECT_FALSE(manager()->IsSavingEnabledForCurrentPage());
 }
 
 TEST_F(PasswordManagerTest, FillPasswordsOnDisabledManager) {
@@ -592,6 +593,28 @@ TEST_F(PasswordManagerTest, PasswordFormReappearance) {
   // No expected calls to the PasswordStore...
   manager()->OnPasswordFormsParsed(observed);
   manager()->OnPasswordFormsRendered(observed);
+}
+
+TEST_F(PasswordManagerTest, SavingNotEnabledOnSSLErrors) {
+  EXPECT_CALL(driver_, DidLastPageLoadEncounterSSLErrors())
+      .WillRepeatedly(Return(true));
+  EXPECT_FALSE(manager()->IsSavingEnabledForCurrentPage());
+}
+
+TEST_F(PasswordManagerTest, AutofillingNotEnabledOnSSLErrors) {
+  // Test that in the presence of SSL errors, the password manager does not
+  // attempt to autofill forms found on a website.
+  EXPECT_CALL(driver_, DidLastPageLoadEncounterSSLErrors())
+      .WillRepeatedly(Return(true));
+
+  // Let us pretend some forms were found on a website.
+  std::vector<PasswordForm> forms;
+  forms.push_back(MakeSimpleForm());
+
+  // Feed those forms to |manager()| and check that it does not try to find
+  // matching saved credentials for the forms.
+  EXPECT_CALL(*store_.get(), GetLogins(_, _, _)).Times(Exactly(0));
+  manager()->OnPasswordFormsParsed(forms);
 }
 
 }  // namespace password_manager

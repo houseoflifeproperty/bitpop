@@ -24,9 +24,9 @@
 #include "config.h"
 #include "core/html/HTMLFrameElementBase.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptEventListener.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/frame/FrameView.h"
@@ -127,7 +127,7 @@ void HTMLFrameElementBase::parseAttribute(const QualifiedName& name, const Atomi
         // FIXME: If we are already attached, this has no effect.
     } else if (name == onbeforeunloadAttr) {
         // FIXME: should <frame> elements have beforeunload handlers?
-        setAttributeEventListener(EventTypeNames::beforeunload, createAttributeEventListener(this, name, value));
+        setAttributeEventListener(EventTypeNames::beforeunload, createAttributeEventListener(this, name, value, eventParameterName()));
     } else
         HTMLFrameOwnerElement::parseAttribute(name, value);
 }

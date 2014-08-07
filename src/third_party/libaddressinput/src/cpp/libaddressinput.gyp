@@ -15,13 +15,8 @@
   'variables': {
     'component%': 'shared_library',
   },
+  'includes': ['libaddressinput.gypi'],
   'target_defaults': {
-    'conditions': [
-      ['OS == "linux" and "<(component)" == "shared_library"', {
-        # https://code.google.com/p/gyp/issues/detail?id=374
-        'cflags': ['-fPIC'],
-      }],
-    ],
     'include_dirs': [
       'include',
     ],
@@ -31,46 +26,25 @@
       'target_name': 'libaddressinput',
       'type': '<(component)',
       'sources': [
-        'src/address_field.cc',
-        'src/address_field_util.cc',
-        'src/address_ui.cc',
-        'src/localization.cc',
-        'src/lookup_key_util.cc',
-        'src/region_data_constants.cc',
-        'src/retriever.cc',
-        'src/rule.cc',
-        'src/rule_retriever.cc',
-        'src/util/json.cc',
-        'src/util/md5.cc',
-        'src/validating_storage.cc',
-        'src/validating_util.cc',
+        '<@(libaddressinput_files)',
       ],
       'dependencies': [
         'grit.gyp:generated_messages',
         'rapidjson.gyp:rapidjson',
+        're2.gyp:re2',
+      ],
+      'conditions': [
+        ['OS == "linux" and _type == "shared_library"', {
+          # https://code.google.com/p/gyp/issues/detail?id=374
+          'cflags': ['-fPIC'],
+        }],
       ],
     },
     {
       'target_name': 'unit_tests',
       'type': 'executable',
       'sources': [
-        'test/address_field_util_test.cc',
-        'test/address_ui_test.cc',
-        'test/fake_downloader.cc',
-        'test/fake_downloader_test.cc',
-        'test/fake_storage.cc',
-        'test/fake_storage_test.cc',
-        'test/localization_test.cc',
-        'test/lookup_key_util_test.cc',
-        'test/region_data_constants_test.cc',
-        'test/retriever_test.cc',
-        'test/rule_retriever_test.cc',
-        'test/rule_test.cc',
-        'test/util/json_test.cc',
-        'test/util/md5_unittest.cc',
-        'test/util/scoped_ptr_unittest.cc',
-        'test/validating_storage_test.cc',
-        'test/validating_util_test.cc',
+        '<@(libaddressinput_test_files)',
       ],
       'defines': [
         'TEST_DATA_DIR="../testdata"',

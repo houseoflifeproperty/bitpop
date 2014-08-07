@@ -9,7 +9,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_path_override.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
@@ -24,6 +25,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
+#include "components/google/core/browser/google_pref_names.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_browser_thread.h"
 #include "extensions/common/extension.h"
@@ -93,7 +95,7 @@ using extensions::Manifest;
 // ProfileResetterTest --------------------------------------------------------
 
 // ProfileResetterTest sets up the extension, WebData and TemplateURL services.
-class ProfileResetterTest : public ExtensionServiceTestBase,
+class ProfileResetterTest : public extensions::ExtensionServiceTestBase,
                             public ProfileResetterTestBase {
  public:
   ProfileResetterTest();
@@ -130,7 +132,7 @@ ProfileResetterTest::~ProfileResetterTest() {
 }
 
 void ProfileResetterTest::SetUp() {
-  ExtensionServiceTestBase::SetUp();
+  extensions::ExtensionServiceTestBase::SetUp();
   InitializeEmptyExtensionService();
 
   profile()->CreateWebDataService();

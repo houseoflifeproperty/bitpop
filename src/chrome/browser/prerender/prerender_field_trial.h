@@ -48,6 +48,9 @@ bool IsLocalPredictorPrerenderLaunchEnabled();
 // is irrelevant.
 bool IsLocalPredictorPrerenderAlwaysControlEnabled();
 
+// Returns true if the local predictor should prefetch rather than prerender.
+bool IsLocalPredictorPrerenderPrefetchEnabled();
+
 // Returns true if we should query the prerender service for the profile
 // provided.
 bool ShouldQueryPrerenderService(Profile* profile);
@@ -79,6 +82,10 @@ int GetLocalPredictorPrerenderPriorityHalfLifeTimeSeconds();
 // may maintain.
 int GetLocalPredictorMaxConcurrentPrerenders();
 
+// Returns the maximum number of concurrent prerenders the local predictor
+// may launch concurrently.
+int GetLocalPredictorMaxLaunchPrerenders();
+
 // The following functions return whether certain LocalPredictor checks should
 // be skipped, as indicated by the name.
 bool SkipLocalPredictorFragment();
@@ -89,6 +96,9 @@ bool SkipLocalPredictorLoggedIn();
 bool SkipLocalPredictorDefaultNoPrerender();
 bool SkipLocalPredictorLocalCandidates();
 bool SkipLocalPredictorServiceCandidates();
+
+// Indicates whether no prerender cookie stores should be used for prerendering.
+bool IsPrerenderCookieStoreEnabled();
 
 }  // namespace prerender
 

@@ -12,7 +12,7 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/history/android/android_history_types.h"
-#include "components/bookmarks/core/browser/base_bookmark_model_observer.h"
+#include "components/bookmarks/browser/base_bookmark_model_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -138,10 +138,11 @@ class ChromeBrowserProvider : public BaseBookmarkModelObserver,
                                   jstring title,
                                   jlong parent_id);
 
-  void RemoveAllBookmarks(JNIEnv* env, jobject obj);
+  void RemoveAllUserBookmarks(JNIEnv* env, jobject obj);
 
-  base::android::ScopedJavaLocalRef<jobject> GetAllBookmarkFolders(JNIEnv* env,
-                                                                   jobject obj);
+  base::android::ScopedJavaLocalRef<jobject> GetEditableBookmarkFolders(
+      JNIEnv* env,
+      jobject obj);
 
   base::android::ScopedJavaLocalRef<jobject> GetBookmarkNode(
       JNIEnv* env,

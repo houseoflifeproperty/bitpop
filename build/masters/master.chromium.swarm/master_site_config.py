@@ -11,3 +11,4 @@ class ChromiumSwarm(Master.Master1):
   master_port = 8023
   slave_port = 8123
   master_port_alt = 8223
+  buildbot_url = 'http://build.chromium.org/p/chromium.swarm/'

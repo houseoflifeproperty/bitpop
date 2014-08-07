@@ -29,7 +29,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/RequestAnimationFrameCallback.h"
 #include "core/events/Event.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
@@ -51,6 +51,15 @@ ScriptedAnimationController::ScriptedAnimationController(Document* document)
 
 ScriptedAnimationController::~ScriptedAnimationController()
 {
+}
+
+void ScriptedAnimationController::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+    visitor->trace(m_eventQueue);
+#if ENABLE(OILPAN)
+    visitor->trace(m_perFrameEvents);
+#endif
 }
 
 void ScriptedAnimationController::suspend()
@@ -119,10 +128,12 @@ void ScriptedAnimationController::dispatchEvents()
         // FIXME: we should figure out how to make dispatchEvent properly virtual to avoid
         // special casting window.
         // FIXME: We should not fire events for nodes that are no longer in the tree.
-        if (DOMWindow* window = eventTarget->toDOMWindow())
+        if (LocalDOMWindow* window = eventTarget->toDOMWindow())
             window->dispatchEvent(events[i], nullptr);
         else
             eventTarget->dispatchEvent(events[i]);
+
+        InspectorInstrumentation::didRemoveEvent(eventTarget, events[i].get());
     }
 }
 
@@ -166,7 +177,7 @@ void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTime
     if (m_suspendCount)
         return;
 
-    RefPtr<ScriptedAnimationController> protect(this);
+    RefPtrWillBeRawPtr<ScriptedAnimationController> protect(this);
 
     dispatchEvents();
     executeCallbacks(monotonicTimeNow);
@@ -176,6 +187,7 @@ void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTime
 
 void ScriptedAnimationController::enqueueEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
+    InspectorInstrumentation::didEnqueueEvent(event->target(), event.get());
     m_eventQueue.append(event);
     scheduleAnimationIfNeeded();
 }

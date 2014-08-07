@@ -11,8 +11,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/sync_driver/pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 
 namespace sync_driver {
 
@@ -29,6 +29,8 @@ SyncPrefs::SyncPrefs(PrefService* pref_service) : pref_service_(pref_service) {
       base::Bind(&SyncPrefs::OnSyncManagedPrefChanged, base::Unretained(this)));
 }
 
+SyncPrefs::SyncPrefs() : pref_service_(NULL) {}
+
 SyncPrefs::~SyncPrefs() { DCHECK(CalledOnValidThread()); }
 
 // static
@@ -44,6 +46,10 @@ void SyncPrefs::RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterInt64Pref(
       prefs::kSyncLastSyncedTime,
+      0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterInt64Pref(
+      prefs::kSyncFirstSyncTime,
       0,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
@@ -135,6 +141,10 @@ void SyncPrefs::RegisterProfilePrefs(
   registry->RegisterListPref(prefs::kSyncAcknowledgedSyncTypes,
                              syncer::ModelTypeSetToValue(model_set),
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+
+  registry->RegisterIntegerPref(
+      prefs::kSyncRemainingRollbackTries, 0,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void SyncPrefs::AddSyncPrefObserver(SyncPrefObserver* sync_pref_observer) {
@@ -320,18 +330,18 @@ const char* SyncPrefs::GetPrefNameForDataType(syncer::ModelType data_type) {
       return prefs::kSyncFaviconImages;
     case syncer::FAVICON_TRACKING:
       return prefs::kSyncFaviconTracking;
-    case syncer::MANAGED_USER_SETTINGS:
-      return prefs::kSyncManagedUserSettings;
+    case syncer::SUPERVISED_USER_SETTINGS:
+      return prefs::kSyncSupervisedUserSettings;
     case syncer::PROXY_TABS:
       return prefs::kSyncTabs;
     case syncer::PRIORITY_PREFERENCES:
       return prefs::kSyncPriorityPreferences;
-    case syncer::MANAGED_USERS:
-      return prefs::kSyncManagedUsers;
+    case syncer::SUPERVISED_USERS:
+      return prefs::kSyncSupervisedUsers;
     case syncer::ARTICLES:
       return prefs::kSyncArticles;
-    case syncer::MANAGED_USER_SHARED_SETTINGS:
-      return prefs::kSyncManagedUserSharedSettings;
+    case syncer::SUPERVISED_USER_SHARED_SETTINGS:
+      return prefs::kSyncSupervisedUserSharedSettings;
     default:
       break;
   }
@@ -363,6 +373,14 @@ void SyncPrefs::AcknowledgeSyncedTypes(syncer::ModelTypeSet types) {
   scoped_ptr<base::ListValue> value(
       syncer::ModelTypeSetToValue(acknowledged_types));
   pref_service_->Set(prefs::kSyncAcknowledgedSyncTypes, *value);
+}
+
+int SyncPrefs::GetRemainingRollbackTries() const {
+  return pref_service_->GetInteger(prefs::kSyncRemainingRollbackTries);
+}
+
+void SyncPrefs::SetRemainingRollbackTries(int times) {
+  pref_service_->SetInteger(prefs::kSyncRemainingRollbackTries, times);
 }
 
 void SyncPrefs::OnSyncManagedPrefChanged() {
@@ -405,7 +423,7 @@ void SyncPrefs::RegisterPrefGroups() {
   pref_groups_[syncer::PROXY_TABS].Put(syncer::FAVICON_IMAGES);
   pref_groups_[syncer::PROXY_TABS].Put(syncer::FAVICON_TRACKING);
 
-  pref_groups_[syncer::MANAGED_USER_SETTINGS].Put(syncer::SESSIONS);
+  pref_groups_[syncer::SUPERVISED_USER_SETTINGS].Put(syncer::SESSIONS);
 
   // TODO(zea): put favicons in the bookmarks group as well once it handles
   // those favicons.
@@ -469,6 +487,19 @@ syncer::ModelTypeSet SyncPrefs::ResolvePrefGroups(
   }
   types_with_groups.RetainAll(registered_types);
   return types_with_groups;
+}
+
+base::Time SyncPrefs::GetFirstSyncTime() const {
+  return base::Time::FromInternalValue(
+      pref_service_->GetInt64(prefs::kSyncFirstSyncTime));
+}
+
+void SyncPrefs::SetFirstSyncTime(base::Time time) {
+  pref_service_->SetInt64(prefs::kSyncFirstSyncTime, time.ToInternalValue());
+}
+
+void SyncPrefs::ClearFirstSyncTime() {
+  pref_service_->ClearPref(prefs::kSyncFirstSyncTime);
 }
 
 }  // namespace browser_sync

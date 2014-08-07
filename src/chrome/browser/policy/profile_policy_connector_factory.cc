@@ -8,16 +8,14 @@
 #include "base/memory/singleton.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/pref_names.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "chrome/browser/policy/schema_registry_service.h"
 #include "chrome/browser/policy/schema_registry_service_factory.h"
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
@@ -93,7 +91,8 @@ ProfilePolicyConnectorFactory::CreateForProfileInternal(
   CloudPolicyManager* user_cloud_policy_manager = NULL;
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-  schema_registry = SchemaRegistryServiceFactory::GetForContext(profile);
+  schema_registry =
+      SchemaRegistryServiceFactory::GetForContext(profile)->registry();
 
 #if defined(OS_CHROMEOS)
   chromeos::User* user = NULL;
@@ -139,17 +138,13 @@ void ProfilePolicyConnectorFactory::BrowserContextDestroyed(
   BrowserContextKeyedBaseFactory::BrowserContextDestroyed(context);
 }
 
-void ProfilePolicyConnectorFactory::RegisterProfilePrefs(
-    user_prefs::PrefRegistrySyncable* registry) {
-#if defined(OS_ANDROID) || defined(OS_IOS)
-  registry->RegisterListPref(
-      prefs::kManagedBookmarks,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-#endif
-}
-
 void ProfilePolicyConnectorFactory::SetEmptyTestingFactory(
     content::BrowserContext* context) {}
+
+bool ProfilePolicyConnectorFactory::HasTestingFactory(
+    content::BrowserContext* context) {
+  return false;
+}
 
 void ProfilePolicyConnectorFactory::CreateServiceNow(
     content::BrowserContext* context) {}

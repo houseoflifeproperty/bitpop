@@ -5,23 +5,23 @@
 #ifndef V8_AST_H_
 #define V8_AST_H_
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "assembler.h"
-#include "factory.h"
-#include "feedback-slots.h"
-#include "isolate.h"
-#include "jsregexp.h"
-#include "list-inl.h"
-#include "runtime.h"
-#include "small-pointer-list.h"
-#include "smart-pointers.h"
-#include "token.h"
-#include "types.h"
-#include "utils.h"
-#include "variables.h"
-#include "interface.h"
-#include "zone-inl.h"
+#include "src/assembler.h"
+#include "src/factory.h"
+#include "src/feedback-slots.h"
+#include "src/isolate.h"
+#include "src/jsregexp.h"
+#include "src/list-inl.h"
+#include "src/runtime.h"
+#include "src/small-pointer-list.h"
+#include "src/smart-pointers.h"
+#include "src/token.h"
+#include "src/types.h"
+#include "src/utils.h"
+#include "src/variables.h"
+#include "src/interface.h"
+#include "src/zone-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -441,6 +441,8 @@ class Block V8_FINAL : public BreakableStatement {
   ZoneList<Statement*>* statements() { return &statements_; }
   bool is_initializer_block() const { return is_initializer_block_; }
 
+  BailoutId DeclsId() const { return decls_id_; }
+
   virtual bool IsJump() const V8_OVERRIDE {
     return !statements_.is_empty() && statements_.last()->IsJump()
         && labels() == NULL;  // Good enough as an approximation...
@@ -458,12 +460,14 @@ class Block V8_FINAL : public BreakableStatement {
       : BreakableStatement(zone, labels, TARGET_FOR_NAMED_ONLY, pos),
         statements_(capacity, zone),
         is_initializer_block_(is_initializer_block),
+        decls_id_(GetNextId(zone)),
         scope_(NULL) {
   }
 
  private:
   ZoneList<Statement*> statements_;
   bool is_initializer_block_;
+  const BailoutId decls_id_;
   Scope* scope_;
 };
 
@@ -952,11 +956,13 @@ class ForOfStatement V8_FINAL : public ForEachStatement {
   void Initialize(Expression* each,
                   Expression* subject,
                   Statement* body,
+                  Expression* assign_iterable,
                   Expression* assign_iterator,
                   Expression* next_result,
                   Expression* result_done,
                   Expression* assign_each) {
     ForEachStatement::Initialize(each, subject, body);
+    assign_iterable_ = assign_iterable;
     assign_iterator_ = assign_iterator;
     next_result_ = next_result;
     result_done_ = result_done;
@@ -967,7 +973,12 @@ class ForOfStatement V8_FINAL : public ForEachStatement {
     return subject();
   }
 
-  // var iterator = iterable;
+  // var iterable = subject;
+  Expression* assign_iterable() const {
+    return assign_iterable_;
+  }
+
+  // var iterator = iterable[Symbol.iterator]();
   Expression* assign_iterator() const {
     return assign_iterator_;
   }
@@ -1002,6 +1013,7 @@ class ForOfStatement V8_FINAL : public ForEachStatement {
         back_edge_id_(GetNextId(zone)) {
   }
 
+  Expression* assign_iterable_;
   Expression* assign_iterator_;
   Expression* next_result_;
   Expression* result_done_;
@@ -1350,20 +1362,6 @@ class Literal V8_FINAL : public Expression {
   }
   virtual bool ToBooleanIsFalse() const V8_OVERRIDE {
     return !value_->BooleanValue();
-  }
-
-  // Identity testers.
-  bool IsNull() const {
-    ASSERT(!value_.is_null());
-    return value_->IsNull();
-  }
-  bool IsTrue() const {
-    ASSERT(!value_.is_null());
-    return value_->IsTrue();
-  }
-  bool IsFalse() const {
-    ASSERT(!value_.is_null());
-    return value_->IsFalse();
   }
 
   Handle<Object> value() const { return value_; }
@@ -1762,11 +1760,25 @@ class Call V8_FINAL : public Expression, public FeedbackSlotInterface {
     return !target_.is_null();
   }
 
+  bool global_call() const {
+    VariableProxy* proxy = expression_->AsVariableProxy();
+    return proxy != NULL && proxy->var()->IsUnallocated();
+  }
+
+  bool known_global_function() const {
+    return global_call() && !target_.is_null();
+  }
+
   Handle<JSFunction> target() { return target_; }
 
   Handle<Cell> cell() { return cell_; }
 
+  Handle<AllocationSite> allocation_site() { return allocation_site_; }
+
   void set_target(Handle<JSFunction> target) { target_ = target; }
+  void set_allocation_site(Handle<AllocationSite> site) {
+    allocation_site_ = site;
+  }
   bool ComputeGlobalTarget(Handle<GlobalObject> global, LookupResult* lookup);
 
   BailoutId ReturnId() const { return return_id_; }
@@ -1809,6 +1821,7 @@ class Call V8_FINAL : public Expression, public FeedbackSlotInterface {
 
   Handle<JSFunction> target_;
   Handle<Cell> cell_;
+  Handle<AllocationSite> allocation_site_;
   int call_feedback_slot_;
 
   const BailoutId return_id_;
@@ -2290,6 +2303,12 @@ class FunctionLiteral V8_FINAL : public Expression {
   enum IsGeneratorFlag {
     kIsGenerator,
     kNotGenerator
+  };
+
+  enum ArityRestriction {
+    NORMAL_ARITY,
+    GETTER_ARITY,
+    SETTER_ARITY
   };
 
   DECLARE_NODE_TYPE(FunctionLiteral)

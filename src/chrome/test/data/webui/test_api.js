@@ -122,6 +122,17 @@ var testing = {};
     extraLibraries: [],
 
     /**
+     * Extra libraries to add before loading this test file.
+     * This list is in the form of Closure library style object
+     * names.  To support this, a closure deps.js file must
+     * be specified when generating the test C++ source.
+     * The specified libraries will be included with their transitive
+     * dependencies according to the deps file.
+     * @type {Array.<string>}
+     */
+    closureModuleDeps: [],
+
+    /**
      * Whether to run the accessibility checks.
      * @type {boolean}
      */
@@ -141,6 +152,8 @@ var testing = {};
     get accessibilityAuditConfig() {
       if (!this.accessibilityAuditConfig_) {
         this.accessibilityAuditConfig_ = new axs.AuditConfiguration();
+
+        this.accessibilityAuditConfig_.showUnsupportedRulesWarning = false;
 
         this.accessibilityAuditConfig_.auditRulesToIgnore = [
             // The "elements with meaningful background image" accessibility
@@ -445,7 +458,9 @@ var testing = {};
       try {
         this.setUp();
       } catch(e) {
-        console.error(e.stack);
+        // Mock4JSException doesn't inherit from Error, so fall back on
+        // toString().
+        console.error(e.stack || e.toString());
       }
 
       if (!this.deferred_)
@@ -815,7 +830,14 @@ var testing = {};
       }
       if (!result)
         result = testResult();
-      chrome.send('testResult', result);
+      if (chrome.send) {
+        // For WebUI tests.
+        chrome.send('testResult', result);
+      } else if (window.domAutomationController.send) {
+        // For extension tests.
+        valueResult = { 'result': result[0], message: result[1] };
+        window.domAutomationController.send(JSON.stringify(valueResult));
+      }
       errors.splice(0, errors.length);
     } else {
       console.warn('testIsDone already');
@@ -1086,6 +1108,12 @@ var testing = {};
     // that have enabled content-security-policy.
     var testBody = this[testFunction];    // global object -- not a method.
     var testName = testFunction;
+
+    // Depending on how we were called, |this| might not resolve to the global
+    // context.
+    if (testName == 'RUN_TEST_F' && testBody === undefined)
+      testBody = RUN_TEST_F;
+
     if (typeof testBody === "undefined") {
       testBody = eval(testFunction);
       testName = testBody.toString();

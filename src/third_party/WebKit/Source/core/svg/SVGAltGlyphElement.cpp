@@ -25,10 +25,10 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGAltGlyphElement.h"
 
-#include "SVGNames.h"
-#include "XLinkNames.h"
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/SVGNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/rendering/svg/RenderSVGTSpan.h"
 #include "core/svg/SVGAltGlyphDefElement.h"
@@ -42,10 +42,7 @@ inline SVGAltGlyphElement::SVGAltGlyphElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGAltGlyphElement> SVGAltGlyphElement::create(Document& document)
-{
-    return adoptRef(new SVGAltGlyphElement(document));
-}
+DEFINE_NODE_FACTORY(SVGAltGlyphElement)
 
 void SVGAltGlyphElement::setGlyphRef(const AtomicString&, ExceptionState& exceptionState)
 {

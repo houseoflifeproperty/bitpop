@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
 
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/ui/browser_command_controller.h"
@@ -46,6 +47,13 @@ ManagePasswordsUIController::ManagePasswordsUIController(
 ManagePasswordsUIController::~ManagePasswordsUIController() {}
 
 void ManagePasswordsUIController::UpdateBubbleAndIconVisibility() {
+  // If we're not on a "webby" URL (e.g. "chrome://sign-in"), we shouldn't
+  // display either the bubble or the icon.
+  if (!BrowsingDataHelper::IsWebScheme(
+          web_contents()->GetLastCommittedURL().scheme())) {
+    state_ = password_manager::ui::INACTIVE_STATE;
+  }
+
   #if !defined(OS_ANDROID)
     Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
     if (!browser)
@@ -90,6 +98,7 @@ void ManagePasswordsUIController::WebContentsDestroyed() {
 
 void ManagePasswordsUIController::OnLoginsChanged(
     const password_manager::PasswordStoreChangeList& changes) {
+  password_manager::ui::State current_state = state_;
   for (password_manager::PasswordStoreChangeList::const_iterator it =
            changes.begin();
        it != changes.end();
@@ -100,12 +109,18 @@ void ManagePasswordsUIController::OnLoginsChanged(
 
     if (it->type() == password_manager::PasswordStoreChange::REMOVE) {
       password_form_map_.erase(changed_form.username_value);
+      if (changed_form.blacklisted_by_user)
+        state_ = password_manager::ui::MANAGE_STATE;
     } else {
-      autofill::PasswordForm* new_form =
-          new autofill::PasswordForm(changed_form);
-      password_form_map_[changed_form.username_value] = new_form;
+      new_password_forms_.push_back(new autofill::PasswordForm(changed_form));
+      password_form_map_[changed_form.username_value] =
+          new_password_forms_.back();
+      if (changed_form.blacklisted_by_user)
+        state_ = password_manager::ui::BLACKLIST_STATE;
     }
   }
+  if (current_state != state_)
+    UpdateBubbleAndIconVisibility();
 }
 
 void ManagePasswordsUIController::
@@ -143,6 +158,7 @@ void ManagePasswordsUIController::UnblacklistSite() {
   // form. We can safely pull it out, send it over to the password store
   // for removal, and update our internal state.
   DCHECK(!password_form_map_.empty());
+  DCHECK(password_form_map_.begin()->second);
   DCHECK(state_ == password_manager::ui::BLACKLIST_STATE);
   password_manager::PasswordStore* password_store =
       GetPasswordStore(web_contents());
@@ -155,10 +171,19 @@ void ManagePasswordsUIController::UnblacklistSite() {
 void ManagePasswordsUIController::DidNavigateMainFrame(
     const content::LoadCommittedDetails& details,
     const content::FrameNavigateParams& params) {
+  // Don't react to in-page (fragment) navigations.
   if (details.is_in_page)
     return;
+
+  // Don't do anything if a navigation occurs before a user could reasonably
+  // interact with the password bubble.
+  if (timer_ && timer_->Elapsed() < base::TimeDelta::FromSeconds(1))
+    return;
+
+  // Otherwise, reset the password manager and the timer.
   state_ = password_manager::ui::INACTIVE_STATE;
   UpdateBubbleAndIconVisibility();
+  timer_.reset(new base::ElapsedTimer());
 }
 
 const autofill::PasswordForm& ManagePasswordsUIController::

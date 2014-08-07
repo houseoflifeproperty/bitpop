@@ -32,10 +32,10 @@
 
 #include "bindings/v8/WorkerScriptController.h"
 
-#include "V8DedicatedWorkerGlobalScope.h"
-#include "V8ServiceWorkerGlobalScope.h"
-#include "V8SharedWorkerGlobalScope.h"
-#include "V8WorkerGlobalScope.h"
+#include "bindings/core/v8/V8DedicatedWorkerGlobalScope.h"
+#include "bindings/core/v8/V8SharedWorkerGlobalScope.h"
+#include "bindings/core/v8/V8WorkerGlobalScope.h"
+#include "bindings/modules/v8/V8ServiceWorkerGlobalScope.h"
 #include "bindings/v8/ScriptSourceCode.h"
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8ErrorHandler.h"
@@ -126,7 +126,7 @@ bool WorkerScriptController::initializeContextIfNeeded()
 
     m_scriptState = ScriptState::create(context, m_world);
 
-    v8::Context::Scope scope(context);
+    ScriptState::Scope scope(m_scriptState.get());
 
     // Set DebugId for the new context.
     context->SetEmbedderData(0, v8AtomicString(m_isolate, "worker"));
@@ -207,7 +207,7 @@ void WorkerScriptController::evaluate(const ScriptSourceCode& sourceCode, RefPtr
         if (errorEvent) {
             *errorEvent = m_workerGlobalScope.shouldSanitizeScriptError(state.sourceURL, NotSharableCrossOrigin) ?
                 ErrorEvent::createSanitizedError(m_world.get()) : ErrorEvent::create(state.errorMessage, state.sourceURL, state.lineNumber, state.columnNumber, m_world.get());
-            V8ErrorHandler::storeExceptionOnErrorEventWrapper(errorEvent->get(), state.exception.v8Value(), m_isolate);
+            V8ErrorHandler::storeExceptionOnErrorEventWrapper(errorEvent->get(), state.exception.v8Value(), m_scriptState->context()->Global(), m_isolate);
         } else {
             ASSERT(!m_workerGlobalScope.shouldSanitizeScriptError(state.sourceURL, NotSharableCrossOrigin));
             RefPtrWillBeRawPtr<ErrorEvent> event = nullptr;

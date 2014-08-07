@@ -42,7 +42,7 @@ namespace WebCore {
     // simple selector in the list. The relation() method returns the relationship of the current simple selector to
     // the one in tagHistory(). For example, the CSS selector .a.b #c is represented as:
     //
-    // selectorText(): .a.b .c
+    // selectorText(): .a.b #c
     // --> (relation == Descendant)
     //   selectorText(): .a.b
     //   --> (relation == SubSelector)
@@ -110,16 +110,17 @@ namespace WebCore {
             Tag, // Example: div
             Id, // Example: #id
             Class, // example: .class
-            Exact, // Example: E[foo="bar"]
-            Set, // Example: E[foo]
-            List, // Example: E[foo~="bar"]
-            Hyphen, // Example: E[foo|="bar"]
             PseudoClass, // Example:  :nth-child(2)
             PseudoElement, // Example: ::first-line
+            PagePseudoClass, // ??
+            Exact, // Example: E[foo="bar"]
+            Set, // Example: E[foo]
+            Hyphen, // Example: E[foo|="bar"]
+            List, // Example: E[foo~="bar"]
             Contain, // css3: E[foo*="bar"]
             Begin, // css3: E[foo^="bar"]
             End, // css3: E[foo$="bar"]
-            PagePseudoClass // ??
+            FirstAttributeSelectorMatch = Exact,
         };
 
         enum Relation {
@@ -129,7 +130,7 @@ namespace WebCore {
             IndirectAdjacent, // ~ combinator
             SubSelector, // "No space" combinator
             ShadowPseudo, // Special case of shadow DOM pseudo elements / shadow pseudo element
-            ShadowDeep // /shadow-deep/ combinator
+            ShadowDeep // /deep/ combinator
         };
 
         enum PseudoType {
@@ -291,6 +292,18 @@ namespace WebCore {
         // FIXME: selectors with no tagHistory() get a relation() of Descendant (and sometimes even SubSelector). It should instead be
         // None.
         Relation relation() const { return static_cast<Relation>(m_relation); }
+        void setRelation(Relation relation)
+        {
+            m_relation = relation;
+            ASSERT(static_cast<Relation>(m_relation) == relation); // using a bitfield.
+        }
+
+        Match match() const { return static_cast<Match>(m_match); }
+        void setMatch(Match match)
+        {
+            m_match = match;
+            ASSERT(static_cast<Match>(m_match) == match); // using a bitfield.
+        }
 
         bool isLastInSelectorList() const { return m_isLastInSelectorList; }
         void setLastInSelectorList() { m_isLastInSelectorList = true; }
@@ -306,11 +319,10 @@ namespace WebCore {
         bool relationIsAffectedByPseudoContent() const { return m_relationIsAffectedByPseudoContent; }
         void setRelationIsAffectedByPseudoContent() { m_relationIsAffectedByPseudoContent = true; }
 
+    private:
         unsigned m_relation           : 3; // enum Relation
         mutable unsigned m_match      : 4; // enum Match
         mutable unsigned m_pseudoType : 8; // PseudoType
-
-    private:
         mutable unsigned m_parsedNth      : 1; // Used for :nth-*
         unsigned m_isLastInSelectorList   : 1;
         unsigned m_isLastInTagHistory     : 1;
@@ -402,13 +414,7 @@ inline bool CSSSelector::isSiblingSelector() const
 
 inline bool CSSSelector::isAttributeSelector() const
 {
-    return m_match == CSSSelector::Exact
-        || m_match ==  CSSSelector::Set
-        || m_match == CSSSelector::List
-        || m_match == CSSSelector::Hyphen
-        || m_match == CSSSelector::Contain
-        || m_match == CSSSelector::Begin
-        || m_match == CSSSelector::End;
+    return m_match >= FirstAttributeSelectorMatch;
 }
 
 inline bool CSSSelector::isContentPseudoElement() const

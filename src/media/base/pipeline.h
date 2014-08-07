@@ -13,6 +13,7 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/default_tick_clock.h"
 #include "media/base/audio_renderer.h"
+#include "media/base/buffering_state.h"
 #include "media/base/demuxer.h"
 #include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
@@ -58,14 +59,13 @@ typedef base::Callback<void(PipelineMetadata)> PipelineMetadataCB;
 //   [ InitXXX (for each filter) ]      [ Stopping ]
 //         |                                 |
 //         V                                 V
-//   [ InitPreroll ]                    [ Stopped ]
+//   [ InitPrerolling ]                 [ Stopped ]
 //         |
 //         V
-//   [ Starting ] <-- [ Seeking ]
+//   [ Playing ] <-- [ Seeking ]
 //         |               ^
-//         V               |
-//   [ Started ] ----------'
-//                 Seek()
+//         `---------------'
+//              Seek()
 //
 // Initialization is a series of state transitions from "Created" through each
 // filter initialization state.  When all filter initialization states have
@@ -164,7 +164,7 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   base::TimeDelta GetMediaTime() const;
 
   // Get approximate time ranges of buffered media.
-  Ranges<base::TimeDelta> GetBufferedTimeRanges();
+  Ranges<base::TimeDelta> GetBufferedTimeRanges() const;
 
   // Get the duration of the media in microseconds.  If the duration has not
   // been determined yet, then returns 0.
@@ -172,7 +172,7 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
 
   // Return true if loading progress has been made since the last time this
   // method was called.
-  bool DidLoadingProgress() const;
+  bool DidLoadingProgress();
 
   // Gets the current pipeline statistics.
   PipelineStatistics GetStatistics() const;
@@ -194,8 +194,7 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
     kInitVideoRenderer,
     kInitPrerolling,
     kSeeking,
-    kStarting,
-    kStarted,
+    kPlaying,
     kStopping,
     kStopped,
   };
@@ -305,10 +304,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // indepentent from seeking.
   void DoSeek(base::TimeDelta seek_timestamp, const PipelineStatusCB& done_cb);
 
-  // Updates playback rate and volume and initiates an asynchronous play call
-  // sequence executing |done_cb| with the final status when completed.
-  void DoPlay(const PipelineStatusCB& done_cb);
-
   // Initiates an asynchronous pause-flush-stop call sequence executing
   // |done_cb| when completed.
   void DoStop(const PipelineStatusCB& done_cb);
@@ -316,6 +311,22 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
 
   void OnAudioUnderflow();
 
+  // Collection of callback methods and helpers for tracking changes in
+  // buffering state and transition from paused/underflow states and playing
+  // states.
+  //
+  // While in the kPlaying state:
+  //   - A waiting to non-waiting transition indicates preroll has completed
+  //     and StartPlayback() should be called
+  //   - A non-waiting to waiting transition indicates underflow has occurred
+  //     and StartWaitingForEnoughData() should be called
+  void BufferingStateChanged(BufferingState* buffering_state,
+                             BufferingState new_buffering_state);
+  bool WaitingForEnoughData() const;
+  void StartWaitingForEnoughData();
+  void StartPlayback();
+
+  void PauseClockAndStopRendering_Locked();
   void StartClockIfWaitingForTimeUpdate_Locked();
 
   // Task runner used to execute pipeline tasks.
@@ -335,7 +346,7 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
 
   // True when AddBufferedTimeRange() has been called more recently than
   // DidLoadingProgress().
-  mutable bool did_loading_progress_;
+  bool did_loading_progress_;
 
   // Current volume level (from 0.0f to 1.0f).  This value is set immediately
   // via SetVolume() and a task is dispatched on the task runner to notify the
@@ -355,10 +366,18 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // by filters.
   scoped_ptr<Clock> clock_;
 
-  // If this value is set to true, then |clock_| is paused and we are waiting
-  // for an update of the clock greater than or equal to the elapsed time to
-  // start the clock.
-  bool waiting_for_clock_update_;
+  enum ClockState {
+    // Audio (if present) is not rendering. Clock isn't playing.
+    CLOCK_PAUSED,
+
+    // Audio (if present) is rendering. Clock isn't playing.
+    CLOCK_WAITING_FOR_AUDIO_TIME_UPDATE,
+
+    // Audio (if present) is rendering. Clock is playing.
+    CLOCK_PLAYING,
+  };
+
+  ClockState clock_state_;
 
   // Status of the pipeline.  Initialized to PIPELINE_OK which indicates that
   // the pipeline is operating correctly. Any other value indicates that the
@@ -376,6 +395,9 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   bool audio_ended_;
   bool video_ended_;
   bool text_ended_;
+
+  BufferingState audio_buffering_state_;
+  BufferingState video_buffering_state_;
 
   // Temporary callback used for Start() and Seek().
   PipelineStatusCB seek_cb_;

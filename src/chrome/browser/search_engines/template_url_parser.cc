@@ -13,14 +13,13 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/common/url_constants.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "libxml/parser.h"
 #include "libxml/xmlwriter.h"
 #include "ui/gfx/favicon_size.h"
 #include "url/gurl.h"
+#include "url/url_constants.h"
 
 namespace {
 
@@ -246,7 +245,7 @@ void TemplateURLParsingContext::EndElementImpl(void* ctx, const xmlChar* name) {
       break;
     case TemplateURLParsingContext::IMAGE: {
       GURL image_url(base::UTF16ToUTF8(context->string_));
-      if (image_url.SchemeIs(content::kDataScheme)) {
+      if (image_url.SchemeIs(url::kDataScheme)) {
         // TODO (jcampan): bug 1169256: when dealing with data URL, we need to
         // decode the data URL in the renderer. For now, we'll just point to the
         // favicon from the URL.
@@ -299,18 +298,17 @@ TemplateURL* TemplateURLParsingContext::GetTemplateURL(
   if (derive_image_from_url_ && data_.favicon_url.is_empty())
     data_.favicon_url = TemplateURL::GenerateFaviconURL(search_url);
 
-  data_.SetKeyword(TemplateURLService::GenerateKeyword(search_url));
+  data_.SetKeyword(TemplateURL::GenerateKeyword(search_url));
   data_.show_in_default_list = show_in_default_list;
 
   // Bail if the search URL is empty or if either TemplateURLRef is invalid.
-  scoped_ptr<TemplateURL> template_url(new TemplateURL(profile, data_));
+  scoped_ptr<TemplateURL> template_url(new TemplateURL(data_));
   scoped_ptr<SearchTermsData> search_terms_data(profile ?
       new UIThreadSearchTermsData(profile) : new SearchTermsData());
   if (template_url->url().empty() ||
-      !template_url->url_ref().IsValidUsingTermsData(*search_terms_data) ||
+      !template_url->url_ref().IsValid(*search_terms_data) ||
       (!template_url->suggestions_url().empty() &&
-       !template_url->suggestions_url_ref().
-           IsValidUsingTermsData(*search_terms_data))) {
+       !template_url->suggestions_url_ref().IsValid(*search_terms_data))) {
     return NULL;
   }
 

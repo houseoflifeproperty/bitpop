@@ -359,12 +359,6 @@ bool PeerConnection::DoInitialize(
     portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_IPV6;
   }
 
-  if (value && uma_observer_) {
-    uma_observer_->IncrementCounter(kPeerConnection_IPv6);
-  } else if (!value && uma_observer_) {
-    uma_observer_->IncrementCounter(kPeerConnection_IPv4);
-  }
-
   port_allocator_->set_flags(portallocator_flags);
   // No step delay is used while allocating ports.
   port_allocator_->set_step_delay(cricket::kMinimumStepDelay);
@@ -488,6 +482,8 @@ talk_base::scoped_refptr<DataChannelInterface>
 PeerConnection::CreateDataChannel(
     const std::string& label,
     const DataChannelInit* config) {
+  bool first_datachannel = !mediastream_signaling_->HasDataChannels();
+
   talk_base::scoped_ptr<InternalDataChannelInit> internal_config;
   if (config) {
     internal_config.reset(new InternalDataChannelInit(*config));
@@ -497,7 +493,11 @@ PeerConnection::CreateDataChannel(
   if (!channel.get())
     return NULL;
 
-  observer_->OnRenegotiationNeeded();
+  // Trigger the onRenegotiationNeeded event for every new RTP DataChannel, or
+  // the first SCTP DataChannel.
+  if (session_->data_channel_type() == cricket::DCT_RTP || first_datachannel) {
+    observer_->OnRenegotiationNeeded();
+  }
 
   return DataChannelProxy::Create(signaling_thread(), channel.get());
 }
@@ -628,6 +628,14 @@ bool PeerConnection::AddIceCandidate(
 
 void PeerConnection::RegisterUMAObserver(UMAObserver* observer) {
   uma_observer_ = observer;
+  // Send information about IPv4/IPv6 status.
+  if (uma_observer_ && port_allocator_) {
+    if (port_allocator_->flags() & cricket::PORTALLOCATOR_ENABLE_IPV6) {
+      uma_observer_->IncrementCounter(kPeerConnection_IPv6);
+    } else {
+      uma_observer_->IncrementCounter(kPeerConnection_IPv4);
+    }
+  }
 }
 
 const SessionDescriptionInterface* PeerConnection::local_description() const {

@@ -37,9 +37,9 @@ class Event;
 
 class MediaControls FINAL : public HTMLDivElement {
 public:
-    static PassRefPtr<MediaControls> create(HTMLMediaElement&);
+    static PassRefPtrWillBeRawPtr<MediaControls> create(HTMLMediaElement&);
 
-    HTMLMediaElement& mediaElement() const { return m_mediaElement; }
+    HTMLMediaElement& mediaElement() const { return *m_mediaElement; }
 
     void reset();
 
@@ -66,6 +66,10 @@ public:
 
     void updateTextTrackDisplay();
 
+    void mediaElementFocused();
+
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
     explicit MediaControls(HTMLMediaElement&);
 
@@ -76,7 +80,12 @@ private:
 
     void updatePlayState();
 
-    bool shouldHideMediaControls();
+    enum HideBehaviorFlags {
+        IgnoreVideoHover = 1 << 0,
+        IgnoreFocus = 1 << 1
+    };
+
+    bool shouldHideMediaControls(unsigned behaviorFlags = 0) const;
     void hideMediaControlsTimerFired(Timer<MediaControls>*);
     void startHideMediaControlsTimer();
     void stopHideMediaControlsTimer();
@@ -94,26 +103,26 @@ private:
     // Element
     virtual const AtomicString& shadowPseudoId() const OVERRIDE;
 
-    HTMLMediaElement& m_mediaElement;
+    RawPtrWillBeMember<HTMLMediaElement> m_mediaElement;
 
     // Container for the media control elements.
-    MediaControlPanelElement* m_panel;
+    RawPtrWillBeMember<MediaControlPanelElement> m_panel;
 
     // Container for the text track cues.
-    MediaControlTextTrackContainerElement* m_textDisplayContainer;
+    RawPtrWillBeMember<MediaControlTextTrackContainerElement> m_textDisplayContainer;
 
     // Media control elements.
-    MediaControlOverlayPlayButtonElement* m_overlayPlayButton;
-    MediaControlOverlayEnclosureElement* m_overlayEnclosure;
-    MediaControlPlayButtonElement* m_playButton;
-    MediaControlCurrentTimeDisplayElement* m_currentTimeDisplay;
-    MediaControlTimelineElement* m_timeline;
-    MediaControlMuteButtonElement* m_muteButton;
-    MediaControlVolumeSliderElement* m_volumeSlider;
-    MediaControlToggleClosedCaptionsButtonElement* m_toggleClosedCaptionsButton;
-    MediaControlFullscreenButtonElement* m_fullScreenButton;
-    MediaControlTimeRemainingDisplayElement* m_durationDisplay;
-    MediaControlPanelEnclosureElement* m_enclosure;
+    RawPtrWillBeMember<MediaControlOverlayPlayButtonElement> m_overlayPlayButton;
+    RawPtrWillBeMember<MediaControlOverlayEnclosureElement> m_overlayEnclosure;
+    RawPtrWillBeMember<MediaControlPlayButtonElement> m_playButton;
+    RawPtrWillBeMember<MediaControlCurrentTimeDisplayElement> m_currentTimeDisplay;
+    RawPtrWillBeMember<MediaControlTimelineElement> m_timeline;
+    RawPtrWillBeMember<MediaControlMuteButtonElement> m_muteButton;
+    RawPtrWillBeMember<MediaControlVolumeSliderElement> m_volumeSlider;
+    RawPtrWillBeMember<MediaControlToggleClosedCaptionsButtonElement> m_toggleClosedCaptionsButton;
+    RawPtrWillBeMember<MediaControlFullscreenButtonElement> m_fullScreenButton;
+    RawPtrWillBeMember<MediaControlTimeRemainingDisplayElement> m_durationDisplay;
+    RawPtrWillBeMember<MediaControlPanelEnclosureElement> m_enclosure;
 
     Timer<MediaControls> m_hideMediaControlsTimer;
     bool m_isMouseOverControls : 1;

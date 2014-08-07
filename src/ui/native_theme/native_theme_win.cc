@@ -11,7 +11,6 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/memory/scoped_handle.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/scoped_hdc.h"
@@ -88,15 +87,16 @@ void SetCheckerboardShader(SkPaint* paint, const RECT& align_rect) {
   temp_bitmap.setPixels(buffer);
   SkBitmap bitmap;
   temp_bitmap.copyTo(&bitmap);
-  skia::RefPtr<SkShader> shader = skia::AdoptRef(
-      SkShader::CreateBitmapShader(
-          bitmap, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode));
 
   // Align the pattern with the upper corner of |align_rect|.
-  SkMatrix matrix;
-  matrix.setTranslate(SkIntToScalar(align_rect.left),
-                      SkIntToScalar(align_rect.top));
-  shader->setLocalMatrix(matrix);
+  SkMatrix local_matrix;
+  local_matrix.setTranslate(SkIntToScalar(align_rect.left),
+                            SkIntToScalar(align_rect.top));
+  skia::RefPtr<SkShader> shader =
+      skia::AdoptRef(SkShader::CreateBitmapShader(bitmap,
+                                                  SkShader::kRepeat_TileMode,
+                                                  SkShader::kRepeat_TileMode,
+                                                  &local_matrix));
   paint->setShader(shader.get());
 }
 
@@ -283,6 +283,9 @@ void NativeThemeWin::Paint(SkCanvas* canvas,
     return;
 
   switch (part) {
+    case kComboboxArrow:
+      CommonThemePaintComboboxArrow(canvas, rect);
+      return;
     case kMenuPopupGutter:
       CommonThemePaintMenuGutter(canvas, rect);
       return;

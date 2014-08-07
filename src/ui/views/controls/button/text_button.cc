@@ -276,7 +276,7 @@ void TextButtonBase::SetMultiLine(bool multi_line) {
   }
 }
 
-gfx::Size TextButtonBase::GetPreferredSize() {
+gfx::Size TextButtonBase::GetPreferredSize() const {
   gfx::Insets insets = GetInsets();
 
   // Use the max size to set the button boundaries.
@@ -296,7 +296,7 @@ gfx::Size TextButtonBase::GetPreferredSize() {
   return prefsize;
 }
 
-int TextButtonBase::GetHeightForWidth(int w) {
+int TextButtonBase::GetHeightForWidth(int w) const {
   if (!multi_line_)
     return View::GetHeightForWidth(w);
 
@@ -347,7 +347,8 @@ void TextButtonBase::UpdateTextSize() {
   }
 }
 
-void TextButtonBase::CalculateTextSize(gfx::Size* text_size, int max_width) {
+void TextButtonBase::CalculateTextSize(gfx::Size* text_size,
+                                       int max_width) const {
   int h = font_list_.GetHeight();
   int w = multi_line_ ? max_width : 0;
   int flags = ComputeCanvasStringFlags();
@@ -356,6 +357,39 @@ void TextButtonBase::CalculateTextSize(gfx::Size* text_size, int max_width) {
 
   gfx::Canvas::SizeStringInt(text_, font_list_, &w, &h, 0, flags);
   text_size->SetSize(w, h);
+}
+
+void TextButtonBase::OnPaintText(gfx::Canvas* canvas, PaintButtonMode mode) {
+  gfx::Rect text_bounds(GetTextBounds());
+  if (text_bounds.width() > 0) {
+    // Because the text button can (at times) draw multiple elements on the
+    // canvas, we can not mirror the button by simply flipping the canvas as
+    // doing this will mirror the text itself. Flipping the canvas will also
+    // make the icons look wrong because icons are almost always represented as
+    // direction-insensitive images and such images should never be flipped
+    // horizontally.
+    //
+    // Due to the above, we must perform the flipping manually for RTL UIs.
+    text_bounds.set_x(GetMirroredXForRect(text_bounds));
+
+    SkColor text_color = (show_multiple_icon_states_ &&
+        (state() == STATE_HOVERED || state() == STATE_PRESSED)) ?
+            color_hover_ : color_;
+
+    int draw_string_flags = gfx::Canvas::DefaultCanvasTextAlignment() |
+        ComputeCanvasStringFlags();
+
+    if (mode == PB_FOR_DRAG) {
+      // Disable sub-pixel rendering as background is transparent.
+      draw_string_flags |= gfx::Canvas::NO_SUBPIXEL_RENDERING;
+      canvas->DrawStringRectWithHalo(text_, font_list_,
+                                     SK_ColorBLACK, SK_ColorWHITE,
+                                     text_bounds, draw_string_flags);
+    } else {
+      canvas->DrawStringRectWithFlags(text_, font_list_, text_color,
+                                      text_bounds, draw_string_flags);
+    }
+  }
 }
 
 int TextButtonBase::ComputeCanvasStringFlags() const {
@@ -445,39 +479,10 @@ void TextButtonBase::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
     Painter::PaintFocusPainter(this, canvas, focus_painter_.get());
   }
 
-  gfx::Rect text_bounds(GetTextBounds());
-  if (text_bounds.width() > 0) {
-    // Because the text button can (at times) draw multiple elements on the
-    // canvas, we can not mirror the button by simply flipping the canvas as
-    // doing this will mirror the text itself. Flipping the canvas will also
-    // make the icons look wrong because icons are almost always represented as
-    // direction-insensitive images and such images should never be flipped
-    // horizontally.
-    //
-    // Due to the above, we must perform the flipping manually for RTL UIs.
-    text_bounds.set_x(GetMirroredXForRect(text_bounds));
-
-    SkColor text_color = (show_multiple_icon_states_ &&
-        (state() == STATE_HOVERED || state() == STATE_PRESSED)) ?
-            color_hover_ : color_;
-
-    int draw_string_flags = gfx::Canvas::DefaultCanvasTextAlignment() |
-        ComputeCanvasStringFlags();
-
-    if (mode == PB_FOR_DRAG) {
-      // Disable sub-pixel rendering as background is transparent.
-      draw_string_flags |= gfx::Canvas::NO_SUBPIXEL_RENDERING;
-      canvas->DrawStringRectWithHalo(text_, font_list_,
-                                     SK_ColorBLACK, SK_ColorWHITE,
-                                     text_bounds, draw_string_flags);
-    } else {
-      canvas->DrawStringRectWithFlags(text_, font_list_, text_color,
-                                      text_bounds, draw_string_flags);
-    }
-  }
+  OnPaintText(canvas, mode);
 }
 
-gfx::Size TextButtonBase::GetMinimumSize() {
+gfx::Size TextButtonBase::GetMinimumSize() const {
   return max_text_size_;
 }
 
@@ -593,7 +598,7 @@ void TextButton::SetPushedIcon(const gfx::ImageSkia& icon) {
   SchedulePaint();
 }
 
-gfx::Size TextButton::GetPreferredSize() {
+gfx::Size TextButton::GetPreferredSize() const {
   gfx::Size prefsize(TextButtonBase::GetPreferredSize());
   prefsize.Enlarge(icon_.width(), 0);
   prefsize.set_height(std::max(prefsize.height(), icon_.height()));
@@ -630,7 +635,10 @@ void TextButton::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
       set_alignment(ALIGN_RIGHT);
 
   TextButtonBase::PaintButton(canvas, mode);
+  OnPaintIcon(canvas, mode);
+}
 
+void TextButton::OnPaintIcon(gfx::Canvas* canvas, PaintButtonMode mode) {
   const gfx::ImageSkia& icon = GetImageToPaint();
 
   if (icon.width() > 0) {

@@ -18,6 +18,7 @@
 #include "ipc/ipc_message_utils.h"
 #include "media/audio/audio_manager.h"
 #include "media/base/bind_to_current_loop.h"
+#include "media/base/media_switches.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -89,9 +90,9 @@ class MockAudioRendererHost : public AudioRendererHost {
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(MockAudioRendererHost, *message)
       IPC_MESSAGE_HANDLER(AudioMsg_NotifyStreamCreated,
-                          OnStreamCreated)
+                          OnNotifyStreamCreated)
       IPC_MESSAGE_HANDLER(AudioMsg_NotifyStreamStateChanged,
-                          OnStreamStateChanged)
+                          OnNotifyStreamStateChanged)
       IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
     EXPECT_TRUE(handled);
@@ -100,15 +101,14 @@ class MockAudioRendererHost : public AudioRendererHost {
     return true;
   }
 
-  void OnStreamCreated(const IPC::Message& msg,
-                       int stream_id,
-                       base::SharedMemoryHandle handle,
+  void OnNotifyStreamCreated(int stream_id,
+                             base::SharedMemoryHandle handle,
 #if defined(OS_WIN)
-                       base::SyncSocket::Handle socket_handle,
+                             base::SyncSocket::Handle socket_handle,
 #else
-                       base::FileDescriptor socket_descriptor,
+                             base::FileDescriptor socket_descriptor,
 #endif
-                       uint32 length) {
+                             uint32 length) {
     // Maps the shared memory.
     shared_memory_.reset(new base::SharedMemory(handle, false));
     CHECK(shared_memory_->Map(length));
@@ -128,9 +128,8 @@ class MockAudioRendererHost : public AudioRendererHost {
     OnStreamCreated(stream_id, length);
   }
 
-  void OnStreamStateChanged(const IPC::Message& msg,
-                            int stream_id,
-                            media::AudioOutputIPCDelegate::State state) {
+  void OnNotifyStreamStateChanged(int stream_id,
+                                  media::AudioOutputIPCDelegate::State state) {
     switch (state) {
       case media::AudioOutputIPCDelegate::kPlaying:
         OnStreamPlaying(stream_id);

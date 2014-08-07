@@ -24,7 +24,7 @@ namespace net {
 struct LoadTimingInfo;
 }
 
-namespace webkit_glue {
+namespace content {
 struct ResourceDevToolsInfo;
 }
 
@@ -47,8 +47,8 @@ struct CONTENT_EXPORT ParamTraits<webkit_common::DataElement> {
 };
 
 template <>
-struct ParamTraits<scoped_refptr<webkit_glue::ResourceDevToolsInfo> > {
-  typedef scoped_refptr<webkit_glue::ResourceDevToolsInfo> param_type;
+struct ParamTraits<scoped_refptr<content::ResourceDevToolsInfo> > {
+  typedef scoped_refptr<content::ResourceDevToolsInfo> param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
@@ -84,7 +84,7 @@ IPC_ENUM_TRAITS_MAX_VALUE( \
     net::HttpResponseInfo::NUM_OF_CONNECTION_INFOS - 1)
 
 IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseHead)
-  IPC_STRUCT_TRAITS_PARENT(webkit_glue::ResourceResponseInfo)
+IPC_STRUCT_TRAITS_PARENT(content::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(error_code)
   IPC_STRUCT_TRAITS_MEMBER(request_start)
   IPC_STRUCT_TRAITS_MEMBER(response_start)
@@ -96,7 +96,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::SyncLoadResult)
   IPC_STRUCT_TRAITS_MEMBER(data)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(webkit_glue::ResourceResponseInfo)
+IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(request_time)
   IPC_STRUCT_TRAITS_MEMBER(response_time)
   IPC_STRUCT_TRAITS_MEMBER(headers)
@@ -167,7 +167,7 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   IPC_STRUCT_MEMBER(uint32, request_context)
 
   // Indicates which frame (or worker context) the request is being loaded into,
-  // or kNoHostId.
+  // or kAppCacheNoHostId.
   IPC_STRUCT_MEMBER(int, appcache_host_id)
 
   // Indicates which frame (or worker context) the request is being loaded into,
@@ -255,9 +255,10 @@ IPC_MESSAGE_CONTROL3(ResourceMsg_UploadProgress,
 // Sent when the request has been redirected.  The receiver is expected to
 // respond with either a FollowRedirect message (if the redirect is to be
 // followed) or a CancelRequest message (if it should not be followed).
-IPC_MESSAGE_CONTROL3(ResourceMsg_ReceivedRedirect,
+IPC_MESSAGE_CONTROL4(ResourceMsg_ReceivedRedirect,
                      int /* request_id */,
                      GURL /* new_url */,
+                     GURL /* new_first_party_for_cookies */,
                      content::ResourceResponseHead)
 
 // Sent to set the shared memory buffer to be used to transmit response data to
@@ -302,7 +303,8 @@ IPC_MESSAGE_CONTROL2(ResourceMsg_RequestComplete,
 // Resource messages sent from the renderer to the browser.
 
 // Makes a resource request via the browser.
-IPC_MESSAGE_ROUTED2(ResourceHostMsg_RequestResource,
+IPC_MESSAGE_CONTROL3(ResourceHostMsg_RequestResource,
+                    int /* routing_id */,
                     int /* request_id */,
                     ResourceHostMsg_Request)
 
@@ -312,10 +314,8 @@ IPC_MESSAGE_CONTROL1(ResourceHostMsg_CancelRequest,
 
 // Follows a redirect that occured for the resource request with the ID given
 // as the parameter.
-IPC_MESSAGE_CONTROL3(ResourceHostMsg_FollowRedirect,
-                     int /* request_id */,
-                     bool /* has_new_first_party_for_cookies */,
-                     GURL /* new_first_party_for_cookies */)
+IPC_MESSAGE_CONTROL1(ResourceHostMsg_FollowRedirect,
+                     int /* request_id */)
 
 // Makes a synchronous resource request via the browser.
 IPC_SYNC_MESSAGE_ROUTED2_1(ResourceHostMsg_SyncLoad,

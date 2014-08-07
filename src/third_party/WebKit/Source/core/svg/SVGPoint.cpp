@@ -74,7 +74,7 @@ void SVGPoint::parse(const CharType*& ptr, const CharType* end, ExceptionState& 
 
     float x = 0.0f;
     float y = 0.0f;
-    bool valid = parseNumber(ptr, end, x) && parseNumber(ptr, end, y, false);
+    bool valid = parseNumber(ptr, end, x) && parseNumber(ptr, end, y, DisallowWhitespace);
 
     if (!valid) {
         exceptionState.throwDOMException(SyntaxError, "Problem parsing point \"" + String(start, end - start) + "\"");
@@ -125,7 +125,7 @@ String SVGPoint::valueAsString() const
     return builder.toString();
 }
 
-void SVGPoint::add(PassRefPtr<SVGPropertyBase> other, SVGElement*)
+void SVGPoint::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement*)
 {
     // SVGPoint is not animated by itself
     ASSERT_NOT_REACHED();

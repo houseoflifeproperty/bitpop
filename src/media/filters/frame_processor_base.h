@@ -149,10 +149,25 @@ class MEDIA_EXPORT FrameProcessorBase {
   // frames for the track |id| to |stream|.
   bool AddTrack(StreamParser::TrackId id, ChunkDemuxerStream* stream);
 
+  // Updates the internal mapping of TrackId to track buffer for the track
+  // buffer formerly associated with |old_id| to be associated with |new_id|.
+  // Returns false to indicate failure due to either no existing track buffer
+  // for |old_id| or collision with previous track buffer already mapped to
+  // |new_id|. Otherwise returns true.
+  bool UpdateTrack(StreamParser::TrackId old_id, StreamParser::TrackId new_id);
+
+  // Sets the need random access point flag on all track buffers to true.
+  void SetAllTrackBuffersNeedRandomAccessPoint();
+
   // Resets state for the coded frame processing algorithm as described in steps
   // 2-5 of the MSE Reset Parser State algorithm described at
   // http://www.w3.org/TR/media-source/#sourcebuffer-reset-parser-state
   void Reset();
+
+  // Must be called when the audio config is updated.  Used to manage when
+  // the preroll buffer is cleared and the allowed "fudge" factor between
+  // preroll buffers.
+  void OnPossibleAudioConfigUpdate(const AudioDecoderConfig& config);
 
  protected:
   typedef std::map<StreamParser::TrackId, MseTrackBuffer*> TrackBufferMap;
@@ -166,6 +181,24 @@ class MEDIA_EXPORT FrameProcessorBase {
   // Signals all track buffers' streams that a new media segment is starting
   // with timestamp |segment_timestamp|.
   void NotifyNewMediaSegmentStarting(base::TimeDelta segment_timestamp);
+
+  // Handles partial append window trimming of |buffer|.  Returns true if the
+  // given |buffer| can be partially trimmed or have preroll added; otherwise,
+  // returns false.
+  //
+  // If |buffer| overlaps |append_window_start|, the portion of |buffer| before
+  // |append_window_start| will be marked for post-decode discard.  Further, if
+  // |audio_preroll_buffer_| exists and abuts |buffer|, it will be set as
+  // preroll on |buffer| and |audio_preroll_buffer_| will be cleared.  If the
+  // preroll buffer does not abut |buffer|, it will be discarded, but not used.
+  //
+  // If |buffer| lies entirely before |append_window_start|, and thus would
+  // normally be discarded, |audio_preroll_buffer_| will be set to |buffer| and
+  // the method will return false.
+  bool HandlePartialAppendWindowTrimming(
+      base::TimeDelta append_window_start,
+      base::TimeDelta append_window_end,
+      const scoped_refptr<StreamParserBuffer>& buffer);
 
   // The AppendMode of the associated SourceBuffer.
   // See SetSequenceMode() for interpretation of |sequence_mode_|.
@@ -183,6 +216,17 @@ class MEDIA_EXPORT FrameProcessorBase {
   // short-term plumbing of SetGroupStartTimestampIfInSequenceMode() until
   // LegacyFrameProcessor is removed.
   base::TimeDelta group_start_timestamp_;
+
+ private:
+  // The last audio buffer seen by the frame processor that was removed because
+  // it was entirely before the start of the append window.
+  scoped_refptr<StreamParserBuffer> audio_preroll_buffer_;
+
+  // The AudioDecoderConfig associated with buffers handed to ProcessFrames().
+  AudioDecoderConfig current_audio_config_;
+  base::TimeDelta sample_duration_;
+
+  DISALLOW_COPY_AND_ASSIGN(FrameProcessorBase);
 };
 
 }  // namespace media

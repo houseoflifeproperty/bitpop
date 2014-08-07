@@ -7,15 +7,19 @@
 #include "config.h"
 #include "V8TestSpecialOperations.h"
 
-#include "RuntimeEnabledFeatures.h"
-#include "V8Node.h"
-#include "V8NodeList.h"
+#include "bindings/core/v8/V8NodeList.h"
+#include "bindings/tests/v8/V8Node.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8DOMConfiguration.h"
 #include "bindings/v8/V8HiddenValue.h"
 #include "bindings/v8/V8ObjectConstructor.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
+#include "core/dom/NameNodeList.h"
+#include "core/dom/NodeList.h"
+#include "core/dom/StaticNodeList.h"
+#include "core/html/LabelsNodeList.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "wtf/GetPtr.h"
 #include "wtf/RefPtr.h"
@@ -47,15 +51,18 @@ template <typename T> void V8_USE(T) { }
 static void namedItemMethod(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     if (UNLIKELY(info.Length() < 1)) {
-        throwArityTypeErrorForMethod("namedItem", "TestSpecialOperations", 1, info.Length(), info.GetIsolate());
+        throwMinimumArityTypeErrorForMethod("namedItem", "TestSpecialOperations", 1, info.Length(), info.GetIsolate());
         return;
     }
     TestSpecialOperations* impl = V8TestSpecialOperations::toNative(info.Holder());
-    TOSTRING_VOID(V8StringResource<>, name, info[0]);
+    V8StringResource<> name;
+    {
+        TOSTRING_VOID_INTERNAL(name, info[0]);
+    }
     bool result0Enabled = false;
-    RefPtr<Node> result0;
+    RefPtrWillBeRawPtr<Node> result0;
     bool result1Enabled = false;
-    RefPtr<NodeList> result1;
+    RefPtrWillBeRawPtr<NodeList> result1;
     impl->getItem(name, result0Enabled, result0, result1Enabled, result1);
     if (result0Enabled) {
         v8SetReturnValue(info, result0.release());
@@ -80,9 +87,9 @@ static void namedPropertyGetter(v8::Local<v8::String> name, const v8::PropertyCa
     TestSpecialOperations* impl = V8TestSpecialOperations::toNative(info.Holder());
     AtomicString propertyName = toCoreAtomicString(name);
     bool result0Enabled = false;
-    RefPtr<Node> result0;
+    RefPtrWillBeRawPtr<Node> result0;
     bool result1Enabled = false;
-    RefPtr<NodeList> result1;
+    RefPtrWillBeRawPtr<NodeList> result1;
     impl->getItem(propertyName, result0Enabled, result0, result1Enabled, result1);
     if (!result0Enabled && !result1Enabled)
         return;
@@ -191,16 +198,7 @@ static void configureV8TestSpecialOperationsTemplate(v8::Handle<v8::FunctionTemp
 
 v8::Handle<v8::FunctionTemplate> V8TestSpecialOperations::domTemplate(v8::Isolate* isolate)
 {
-    V8PerIsolateData* data = V8PerIsolateData::from(isolate);
-    v8::Local<v8::FunctionTemplate> result = data->existingDOMTemplate(const_cast<WrapperTypeInfo*>(&wrapperTypeInfo));
-    if (!result.IsEmpty())
-        return result;
-
-    TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "BuildDOMTemplate");
-    result = v8::FunctionTemplate::New(isolate, V8ObjectConstructor::isValidConstructorMode);
-    configureV8TestSpecialOperationsTemplate(result, isolate);
-    data->setDOMTemplate(const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), result);
-    return result;
+    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), configureV8TestSpecialOperationsTemplate);
 }
 
 bool V8TestSpecialOperations::hasInstance(v8::Handle<v8::Value> v8Value, v8::Isolate* isolate)
@@ -216,6 +214,13 @@ v8::Handle<v8::Object> V8TestSpecialOperations::findInstanceInPrototypeChain(v8:
 TestSpecialOperations* V8TestSpecialOperations::toNativeWithTypeCheck(v8::Isolate* isolate, v8::Handle<v8::Value> value)
 {
     return hasInstance(value, isolate) ? fromInternalPointer(v8::Handle<v8::Object>::Cast(value)->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex)) : 0;
+}
+
+v8::Handle<v8::Object> wrap(TestSpecialOperations* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    ASSERT(impl);
+    ASSERT(!DOMDataStore::containsWrapper<V8TestSpecialOperations>(impl, isolate));
+    return V8TestSpecialOperations::createWrapper(impl, creationContext, isolate);
 }
 
 v8::Handle<v8::Object> V8TestSpecialOperations::createWrapper(PassRefPtr<TestSpecialOperations> impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)

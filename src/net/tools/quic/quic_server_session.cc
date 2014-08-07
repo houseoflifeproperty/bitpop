@@ -12,10 +12,9 @@
 namespace net {
 namespace tools {
 
-QuicServerSession::QuicServerSession(
-    const QuicConfig& config,
-    QuicConnection* connection,
-    QuicServerSessionVisitor* visitor)
+QuicServerSession::QuicServerSession(const QuicConfig& config,
+                                     QuicConnection* connection,
+                                     QuicServerSessionVisitor* visitor)
     : QuicSession(connection, config),
       visitor_(visitor) {}
 

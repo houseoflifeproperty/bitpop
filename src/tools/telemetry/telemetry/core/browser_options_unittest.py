@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import optparse
@@ -82,6 +82,13 @@ class BrowserOptionsTest(unittest.TestCase):
 
     self.assertEquals(options.browser_options.extra_browser_args,
                       set(['--foo','--bar']))
+
+  def testUseDevToolsActivePort(self):
+    options = browser_options.BrowserFinderOptions()
+    parser = options.CreateParser()
+    parser.parse_args(['--use-devtools-active-port'])
+
+    self.assertEquals(options.browser_options.use_devtools_active_port, True)
 
   def testMergeDefaultValues(self):
     options = browser_options.BrowserFinderOptions()

@@ -1,10 +1,10 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 from metrics import power
 from telemetry.page import page_measurement
-from telemetry.core.timeline import model
+from telemetry.timeline import model
 
 
 class ImageDecoding(page_measurement.PageMeasurement):
@@ -25,7 +25,13 @@ class ImageDecoding(page_measurement.PageMeasurement):
         }
     """)
     self._power_metric.Start(page, tab)
-    tab.browser.StartTracing('webkit,webkit.console')
+    # FIXME: bare 'devtools' is for compatibility with older reference versions
+    # only and may eventually be removed.
+    # FIXME: Remove webkit.console when blink.console lands in chromium and
+    # the ref builds are updated. crbug.com/386847
+    tab.browser.StartTracing(
+        'disabled-by-default-devtools.timeline*,' +
+            'devtools,webkit.console,blink.console')
 
   def StopBrowserAfterPage(self, browser, page):
     return not browser.tabs[0].ExecuteJavaScript("""
@@ -43,8 +49,7 @@ class ImageDecoding(page_measurement.PageMeasurement):
     def _IsDone():
       return tab.EvaluateJavaScript('isDone')
 
-    decode_image_events = \
-        timeline_model.GetAllEventsOfName('Decode Image')
+    decode_image_events = timeline_model.GetAllEventsOfName('Decode Image')
 
     # If it is a real image page, then store only the last-minIterations
     # decode tasks.
@@ -56,8 +61,8 @@ class ImageDecoding(page_measurement.PageMeasurement):
       decode_image_events = decode_image_events[-min_iterations:]
 
     durations = [d.duration for d in decode_image_events]
-    if not durations:
-      return
+    assert durations, 'Failed to find "Decode Image" trace events.'
+
     image_decoding_avg = sum(durations) / len(durations)
     results.Add('ImageDecoding_avg', 'ms', image_decoding_avg)
     results.Add('ImageLoading_avg', 'ms',

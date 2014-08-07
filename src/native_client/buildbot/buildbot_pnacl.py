@@ -3,20 +3,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import re
+import os
 
 from buildbot_lib import (
-    BuildContext, BuildStatus, Command, ParseStandardCommandLine,
-    RemoveSconsBuildDirectories, RemoveGypBuildDirectories, RunBuild, SCons,
+    BuildContext, BuildStatus, ParseStandardCommandLine,
+    RemoveSconsBuildDirectories, RemoveGypBuildDirectories, RunBuild,
+    SetupLinuxEnvironment, SetupMacEnvironment, SetupWindowsEnvironment, SCons,
     Step )
 
-
-def SetupGypDefines(context, extra_vars=[]):
-  context.SetEnv('GYP_DEFINES', ' '.join(context['gyp_vars'] + extra_vars))
-
-
-def SetupLinuxEnvironment(context):
-  SetupGypDefines(context, ['target_arch=' + context['gyp_arch']])
 
 
 def BuildScriptX86(status, context):
@@ -59,28 +53,68 @@ def BuildScriptX86(status, context):
           args=flags_run + smoke_tests_irt)
 
   # Test sandboxed translation
-  with Step('smoke_tests_sandboxed_translator', status):
-    SCons(context, parallel=True, mode=irt_mode,
-          args=flags_run + ['use_sandboxed_translator=1'] + smoke_tests_irt)
-  with Step('smoke_tests_sandboxed_fast', status):
-    SCons(context, parallel=True, mode=irt_mode,
-          args=flags_run + ['use_sandboxed_translator=1', 'translate_fast=1']
-          + smoke_tests_irt)
+  if not context.Windows():
+    # TODO(dschuff): The standalone sandboxed translator driver does not have
+    # the batch script wrappers, so it can't run on Windows. Either add them to
+    # the translator package or make SCons use the pnacl_newlib drivers except
+    # on the ARM bots where we don't have the pnacl_newlib drivers.
+    with Step('smoke_tests_sandboxed_translator', status, halt_on_fail=False):
+      SCons(context, parallel=True, mode=irt_mode,
+            args=flags_run + ['use_sandboxed_translator=1'] + smoke_tests_irt)
+    with Step('smoke_tests_sandboxed_fast', status, halt_on_fail=False):
+      SCons(context, parallel=True, mode=irt_mode,
+            args=flags_run + ['use_sandboxed_translator=1', 'translate_fast=1']
+            + smoke_tests_irt)
 
-  # Translator memory consumption regression test
-  with Step('large_code_test', status):
-    SCons(context, parallel=True, mode=irt_mode,
-          args=flags_run + ['use_sandboxed_translator=1', 'large_code'])
+    # Translator memory consumption regression test
+    with Step('large_code_test', status, halt_on_fail=False):
+      SCons(context, parallel=True, mode=irt_mode,
+            args=flags_run + ['use_sandboxed_translator=1', 'large_code'])
 
   # Test Non-SFI Mode.
-  with Step('nonsfi_tests', status):
-    # The only architectures that the PNaCl toolchain supports Non-SFI
-    # versions of are currently x86-32 and ARM, and ARM testing is covered
-    # by buildbot_pnacl.sh rather than this Python script.
-    if context['default_scons_platform'] == 'x86-32':
+  # The only architectures that the PNaCl toolchain supports Non-SFI
+  # versions of are currently x86-32 and ARM, and ARM testing is covered
+  # by buildbot_pnacl.sh rather than this Python script.
+  # The x86-64 toolchain bot currently also runs these tests from
+  # buildbot_pnacl.sh
+  if context.Linux() and context['default_scons_platform'] == 'x86-32':
+    with Step('nonsfi_tests', status, halt_on_fail=False):
       # TODO(mseaborn): Enable more tests here when they pass.
+      tests = ['run_' + test + '_test_irt' for test in
+               ['hello_world', 'float', 'malloc_realloc_calloc_free',
+                'dup', 'syscall', 'getpid']]
+      # Using skip_nonstable_bitcode=1 here disables the tests for
+      # zero-cost C++ exception handling, which don't pass for Non-SFI
+      # mode yet because we don't build libgcc_eh for Non-SFI mode.
+      tests.extend(['toolchain_tests_irt',
+                    'skip_nonstable_bitcode=1'])
+      # Extra non-IRT-using test to run for x86-32
+      tests.extend(['run_clock_get_test',
+                    'run_dup_test',
+                    'run_hello_world_test',
+                    'run_mmap_test',
+                    'run_nanosleep_test',
+                    'run_printf_test',
+                    'run_pwrite_test',
+                    'run_thread_test'])
       SCons(context, parallel=True, mode=irt_mode,
-            args=flags_run + ['nonsfi_nacl=1', 'run_hello_world_test_irt'])
+            args=flags_run + ['nonsfi_nacl=1'] + tests)
+
+  # Test unsandboxed mode.
+  if ((context.Linux() or context.Mac()) and
+      context['default_scons_platform'] == 'x86-32'):
+    if context.Linux():
+      tests = ['run_' + test + '_test_irt' for test in
+               ['hello_world', 'irt_futex', 'thread', 'float',
+                'malloc_realloc_calloc_free', 'dup', 'cond_timedwait',
+                'syscall', 'getpid']]
+    else:
+      # TODO(mseaborn): Use the same test list as on Linux when the threading
+      # tests pass for Mac.
+      tests = ['run_hello_world_test_irt']
+    with Step('unsandboxed_tests', status, halt_on_fail=False):
+      SCons(context, parallel=True, mode=irt_mode,
+            args=flags_run + ['pnacl_unsandboxed=1'] + tests)
 
 
 def Main():
@@ -90,6 +124,10 @@ def Main():
 
   if context.Linux():
     SetupLinuxEnvironment(context)
+  elif context.Windows():
+    SetupWindowsEnvironment(context)
+  elif context.Mac():
+    SetupMacEnvironment(context)
   else:
     raise Exception('Unsupported platform')
 

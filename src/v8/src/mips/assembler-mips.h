@@ -38,9 +38,9 @@
 
 #include <stdio.h>
 
-#include "assembler.h"
-#include "constants-mips.h"
-#include "serialize.h"
+#include "src/assembler.h"
+#include "src/mips/constants-mips.h"
+#include "src/serialize.h"
 
 namespace v8 {
 namespace internal {
@@ -419,65 +419,6 @@ class MemOperand : public Operand {
 };
 
 
-// CpuFeatures keeps track of which features are supported by the target CPU.
-// Supported features must be enabled by a CpuFeatureScope before use.
-class CpuFeatures : public AllStatic {
- public:
-  // Detect features of the target CPU. Set safe defaults if the serializer
-  // is enabled (snapshots must be portable).
-  static void Probe(bool serializer_enabled);
-
-  // A special case for printing target and features, which we want to do
-  // before initializing the isolate
-
-  // Check whether a feature is supported by the target CPU.
-  static bool IsSupported(CpuFeature f) {
-    ASSERT(initialized_);
-    return Check(f, supported_);
-  }
-
-  static bool IsSafeForSnapshot(Isolate* isolate, CpuFeature f) {
-    return Check(f, cross_compile_) ||
-           (IsSupported(f) &&
-            !(Serializer::enabled(isolate) &&
-              Check(f, found_by_runtime_probing_only_)));
-  }
-
-  static bool VerifyCrossCompiling() {
-    return cross_compile_ == 0;
-  }
-
-  static bool VerifyCrossCompiling(CpuFeature f) {
-    unsigned mask = flag2set(f);
-    return cross_compile_ == 0 ||
-           (cross_compile_ & mask) == mask;
-  }
-
-  static bool SupportsCrankshaft() { return CpuFeatures::IsSupported(FPU); }
-
- private:
-  static bool Check(CpuFeature f, unsigned set) {
-    return (set & flag2set(f)) != 0;
-  }
-
-  static unsigned flag2set(CpuFeature f) {
-    return 1u << f;
-  }
-
-#ifdef DEBUG
-  static bool initialized_;
-#endif
-  static unsigned supported_;
-  static unsigned found_by_runtime_probing_only_;
-
-  static unsigned cross_compile_;
-
-  friend class ExternalReference;
-  friend class PlatformFeatureScope;
-  DISALLOW_COPY_AND_ASSIGN(CpuFeatures);
-};
-
-
 class Assembler : public AssemblerBase {
  public:
   // Create an assembler. Instructions and relocation information are emitted
@@ -537,7 +478,10 @@ class Assembler : public AssemblerBase {
 
   // Read/Modify the code target address in the branch/call instruction at pc.
   static Address target_address_at(Address pc);
-  static void set_target_address_at(Address pc, Address target);
+  static void set_target_address_at(Address pc,
+                                    Address target,
+                                    ICacheFlushMode icache_flush_mode =
+                                        FLUSH_ICACHE_IF_NEEDED);
   // On MIPS there is no Constant Pool so we skip that parameter.
   INLINE(static Address target_address_at(Address pc,
                                           ConstantPoolArray* constant_pool)) {
@@ -545,8 +489,10 @@ class Assembler : public AssemblerBase {
   }
   INLINE(static void set_target_address_at(Address pc,
                                            ConstantPoolArray* constant_pool,
-                                           Address target)) {
-    set_target_address_at(pc, target);
+                                           Address target,
+                                           ICacheFlushMode icache_flush_mode =
+                                               FLUSH_ICACHE_IF_NEEDED)) {
+    set_target_address_at(pc, target, icache_flush_mode);
   }
   INLINE(static Address target_address_at(Address pc, Code* code)) {
     ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
@@ -554,9 +500,11 @@ class Assembler : public AssemblerBase {
   }
   INLINE(static void set_target_address_at(Address pc,
                                            Code* code,
-                                           Address target)) {
+                                           Address target,
+                                           ICacheFlushMode icache_flush_mode =
+                                               FLUSH_ICACHE_IF_NEEDED)) {
     ConstantPoolArray* constant_pool = code ? code->constant_pool() : NULL;
-    set_target_address_at(pc, constant_pool, target);
+    set_target_address_at(pc, constant_pool, target, icache_flush_mode);
   }
 
   // Return the code target address at a call site from the return address
@@ -698,7 +646,7 @@ class Assembler : public AssemblerBase {
   void jal_or_jalr(int32_t target, Register rs);
 
 
-  //-------Data-processing-instructions---------
+  // -------Data-processing-instructions---------
 
   // Arithmetic.
   void addu(Register rd, Register rs, Register rt);
@@ -736,7 +684,7 @@ class Assembler : public AssemblerBase {
   void rotrv(Register rd, Register rt, Register rs);
 
 
-  //------------Memory-instructions-------------
+  // ------------Memory-instructions-------------
 
   void lb(Register rd, const MemOperand& rs);
   void lbu(Register rd, const MemOperand& rs);
@@ -752,12 +700,12 @@ class Assembler : public AssemblerBase {
   void swr(Register rd, const MemOperand& rs);
 
 
-  //----------------Prefetch--------------------
+  // ----------------Prefetch--------------------
 
   void pref(int32_t hint, const MemOperand& rs);
 
 
-  //-------------Misc-instructions--------------
+  // -------------Misc-instructions--------------
 
   // Break / Trap instructions.
   void break_(uint32_t code, bool break_as_stop = false);
@@ -790,7 +738,7 @@ class Assembler : public AssemblerBase {
   void ins_(Register rt, Register rs, uint16_t pos, uint16_t size);
   void ext_(Register rt, Register rs, uint16_t pos, uint16_t size);
 
-  //--------Coprocessor-instructions----------------
+  // --------Coprocessor-instructions----------------
 
   // Load, store, and move.
   void lwc1(FPURegister fd, const MemOperand& src);
@@ -896,10 +844,10 @@ class Assembler : public AssemblerBase {
       assem_->EndBlockGrowBuffer();
     }
 
-    private:
-     Assembler* assem_;
+   private:
+    Assembler* assem_;
 
-     DISALLOW_IMPLICIT_CONSTRUCTORS(BlockGrowBufferScope);
+    DISALLOW_IMPLICIT_CONSTRUCTORS(BlockGrowBufferScope);
   };
 
   // Debugging.

@@ -14,14 +14,13 @@ class RepaintContinuouslyAction(page_action.PageAction):
   def __init__(self, attributes=None):
     super(RepaintContinuouslyAction, self).__init__(attributes)
 
-  def RunAction(self, page, tab):
+  def RunAction(self, tab):
     assert(hasattr(self, 'seconds'))
     start_time = time.time()
     tab.ExecuteJavaScript(
         'window.__rafCount = 0;'
         'window.__rafFunction = function() {'
           'window.__rafCount += 1;'
-          'chrome.gpuBenchmarking.setNeedsDisplayOnAllLayers();'
           'window.webkitRequestAnimationFrame(window.__rafFunction);'
         '};'
         'window.webkitRequestAnimationFrame(window.__rafFunction);')

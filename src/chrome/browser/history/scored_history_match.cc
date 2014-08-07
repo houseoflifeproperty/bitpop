@@ -17,10 +17,10 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
-#include "chrome/browser/autocomplete/url_prefix.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
-#include "components/bookmarks/core/browser/bookmark_service.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/autocomplete/url_prefix.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/history/core/browser/history_client.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace history {
@@ -55,7 +55,7 @@ ScoredHistoryMatch::ScoredHistoryMatch(
     const WordStarts& terms_to_word_starts_offsets,
     const RowWordStarts& word_starts,
     const base::Time now,
-    BookmarkService* bookmark_service)
+    HistoryClient* history_client)
     : HistoryMatch(row, 0, false, false),
       raw_score_(0),
       can_inline_(false) {
@@ -152,9 +152,9 @@ ScoredHistoryMatch::ScoredHistoryMatch(
 
   const float topicality_score = GetTopicalityScore(
       terms.size(), url, terms_to_word_starts_offsets, word_starts);
-  const float frecency_score = GetFrecency(
-      now, (bookmark_service && bookmark_service->IsBookmarked(gurl)), visits);
-  raw_score_ = GetFinalRelevancyScore(topicality_score, frecency_score);
+  const float frequency_score = GetFrequency(
+      now, (history_client && history_client->IsBookmarked(gurl)), visits);
+  raw_score_ = GetFinalRelevancyScore(topicality_score, frequency_score);
   raw_score_ =
       (raw_score_ <= kint32max) ? static_cast<int>(raw_score_) : kint32max;
 
@@ -519,9 +519,9 @@ void ScoredHistoryMatch::FillInDaysAgoToRecencyScoreArray() {
 }
 
 // static
-float ScoredHistoryMatch::GetFrecency(const base::Time& now,
-                                      const bool bookmarked,
-                                      const VisitInfoVector& visits) {
+float ScoredHistoryMatch::GetFrequency(const base::Time& now,
+                                       const bool bookmarked,
+                                       const VisitInfoVector& visits) {
   // Compute the weighted average |value_of_transition| over the last at
   // most kMaxVisitsToScore visits, where each visit is weighted using
   // GetRecencyScore() based on how many days ago it happened.  Use
@@ -543,14 +543,14 @@ float ScoredHistoryMatch::GetFrecency(const base::Time& now,
 
 // static
 float ScoredHistoryMatch::GetFinalRelevancyScore(float topicality_score,
-                                                 float frecency_score) {
+                                                 float frequency_score) {
   if (topicality_score == 0)
     return 0;
   // Here's how to interpret intermediate_score: Suppose the omnibox
   // has one input term.  Suppose we have a URL for which the omnibox
   // input term has a single URL hostname hit at a word boundary.  (This
   // implies topicality_score = 1.0.).  Then the intermediate_score for
-  // this URL will depend entirely on the frecency_score with
+  // this URL will depend entirely on the frequency_score with
   // this interpretation:
   // - a single typed visit more than three months ago, no other visits -> 0.2
   // - a visit every three days, no typed visits -> 0.706
@@ -559,7 +559,7 @@ float ScoredHistoryMatch::GetFinalRelevancyScore(float topicality_score,
   // - a typed visit once a week -> 11.77
   // - a typed visit every three days -> 14.12
   // - at least ten typed visits today -> 20.0 (maximum score)
-  const float intermediate_score = topicality_score * frecency_score;
+  const float intermediate_score = topicality_score * frequency_score;
   // The below code maps intermediate_score to the range [0, 1399].
   // The score maxes out at 1400 (i.e., cannot beat a good inline result).
   if (intermediate_score <= 1) {

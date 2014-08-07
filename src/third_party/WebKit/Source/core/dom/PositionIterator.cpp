@@ -78,7 +78,7 @@ void PositionIterator::decrement()
     if (m_nodeAfterPositionInAnchor) {
         m_anchorNode = m_nodeAfterPositionInAnchor->previousSibling();
         if (m_anchorNode) {
-            m_nodeAfterPositionInAnchor = 0;
+            m_nodeAfterPositionInAnchor = nullptr;
             m_offsetInAnchor = m_anchorNode->hasChildren() ? 0 : lastOffsetForEditing(m_anchorNode);
         } else {
             m_nodeAfterPositionInAnchor = m_nodeAfterPositionInAnchor->parentNode();
@@ -164,6 +164,12 @@ bool PositionIterator::isCandidate() const
     }
     if (renderer->isText())
         return !Position::nodeIsUserSelectNone(m_anchorNode) && Position(*this).inRenderedText();
+
+    if (renderer->isSVG()) {
+        // We don't consider SVG elements are contenteditable except for
+        // associated renderer returns isText() true, e.g. RenderSVGInlineText.
+        return false;
+    }
 
     if (isRenderedTableElement(m_anchorNode) || editingIgnoresContent(m_anchorNode))
         return (atStartOfNode() || atEndOfNode()) && !Position::nodeIsUserSelectNone(m_anchorNode->parentNode());

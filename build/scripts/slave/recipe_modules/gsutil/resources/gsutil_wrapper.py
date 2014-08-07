@@ -32,7 +32,7 @@ def main(argv):
                       metavar='N', nargs=1, default=2, type=int,
                       help='number of times to retry, with deleting trackers ')
   args = parser.parse_args()
-  cmd = args.command
+  cmd = [sys.executable, '-u'] + args.command
 
   for hard in range(args.hard_retries):
     for soft in range(args.soft_retries):

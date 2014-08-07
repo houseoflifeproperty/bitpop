@@ -21,7 +21,7 @@
 #ifndef SVGImageElement_h
 #define SVGImageElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGAnimatedPreserveAspectRatio.h"
@@ -34,7 +34,8 @@ namespace WebCore {
 class SVGImageElement FINAL : public SVGGraphicsElement,
                               public SVGURIReference {
 public:
-    static PassRefPtr<SVGImageElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGImageElement);
+    virtual void trace(Visitor*) OVERRIDE;
 
     bool currentFrameHasSingleSecurityOrigin() const;
 
@@ -66,6 +67,7 @@ private:
 
     virtual bool selfHasRelativeLengths() const OVERRIDE;
     virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
+    SVGImageLoader& imageLoader() { return *m_imageLoader; }
 
     RefPtr<SVGAnimatedLength> m_x;
     RefPtr<SVGAnimatedLength> m_y;
@@ -73,7 +75,7 @@ private:
     RefPtr<SVGAnimatedLength> m_height;
     RefPtr<SVGAnimatedPreserveAspectRatio> m_preserveAspectRatio;
 
-    SVGImageLoader m_imageLoader;
+    OwnPtrWillBeMember<SVGImageLoader> m_imageLoader;
     bool m_needsLoaderURIUpdate : 1;
 };
 

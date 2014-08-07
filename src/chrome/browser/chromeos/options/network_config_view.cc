@@ -9,8 +9,8 @@
 #include "ash/shell.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/options/network_property_ui_data.h"
 #include "chrome/browser/chromeos/options/vpn_config_view.h"
 #include "chrome/browser/chromeos/options/wifi_config_view.h"
@@ -252,7 +252,7 @@ void NetworkConfigView::Layout() {
   child_config_view_->SetBounds(0, 0, width(), height());
 }
 
-gfx::Size NetworkConfigView::GetPreferredSize() {
+gfx::Size NetworkConfigView::GetPreferredSize() const {
   gfx::Size result(views::Widget::GetLocalizedContentsSize(
       IDS_JOIN_WIFI_NETWORK_DIALOG_WIDTH_CHARS,
       IDS_JOIN_WIFI_NETWORK_DIALOG_MINIMUM_HEIGHT_LINES));
@@ -336,7 +336,7 @@ void ControlledSettingIndicatorView::Update(
   PreferredSizeChanged();
 }
 
-gfx::Size ControlledSettingIndicatorView::GetPreferredSize() {
+gfx::Size ControlledSettingIndicatorView::GetPreferredSize() const {
   return (managed_ && visible()) ? image_view_->GetPreferredSize()
                                  : gfx::Size();
 }

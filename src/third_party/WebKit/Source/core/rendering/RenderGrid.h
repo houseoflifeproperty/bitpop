@@ -59,6 +59,7 @@ private:
     virtual void computePreferredLogicalWidths() OVERRIDE;
 
     virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) OVERRIDE;
+    void addChildToIndexesMap(RenderBox*);
     virtual void removeChild(RenderObject*) OVERRIDE;
 
     virtual void styleDidChange(StyleDifference, const RenderStyle*) OVERRIDE;
@@ -76,11 +77,11 @@ private:
     LayoutUnit computeUsedBreadthOfSpecifiedLength(GridTrackSizingDirection, const Length&) const;
     void resolveContentBasedTrackSizingFunctions(GridTrackSizingDirection, GridSizingData&, LayoutUnit& availableLogicalSpace);
 
-    void growGrid(GridTrackSizingDirection, size_t maximumPosition);
-    void insertItemIntoGrid(RenderBox*, const GridResolvedPosition& rowTrack, const GridResolvedPosition& columnTrack);
+    void ensureGridSize(size_t maximumRowIndex, size_t maximumColumnIndex);
     void insertItemIntoGrid(RenderBox*, const GridCoordinate&);
     void placeItemsOnGrid();
     void populateExplicitGridAndOrderIterator();
+    PassOwnPtr<GridCoordinate> createEmptyGridAreaAtSpecifiedPositionsOutsideGrid(const RenderBox*, GridTrackSizingDirection, const GridSpan& specifiedPositions) const;
     void placeSpecifiedMajorAxisItemsOnGrid(const Vector<RenderBox*>&);
     void placeAutoMajorAxisItemsOnGrid(const Vector<RenderBox*>&);
     void placeAutoMajorAxisItemOnGrid(RenderBox*);
@@ -144,8 +145,7 @@ private:
     HashMap<const RenderBox*, GridCoordinate> m_gridItemCoordinate;
     OrderIterator m_orderIterator;
     Vector<RenderBox*> m_gridItemsOverflowingGridArea;
-
-    friend class GridCoordinateSorter;
+    HashMap<const RenderBox*, size_t> m_gridItemsIndexesMap;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderGrid, isRenderGrid());

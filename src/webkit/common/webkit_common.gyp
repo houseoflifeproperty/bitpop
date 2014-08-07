@@ -9,6 +9,7 @@
   },
   'targets': [
     {
+      # GN version: //webkit/common:common",
       'target_name': 'webkit_common',
       'type': '<(component)',
       'defines': [
@@ -41,10 +42,6 @@
       'sources': [
         'data_element.cc',
         'data_element.h',
-        'resource_devtools_info.cc',
-        'resource_devtools_info.h',
-        'resource_response_info.cc',
-        'resource_response_info.h',
         'resource_type.cc',
         'resource_type.h',
         'webkit_common_export.h',

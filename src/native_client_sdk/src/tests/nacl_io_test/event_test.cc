@@ -80,9 +80,10 @@ class EmitterTest : public ::testing::Test {
 
   void TearDown() { pthread_cond_destroy(&multi_cond_); }
 
-  void CreateThread() {
+  pthread_t CreateThread() {
     pthread_t id;
     EXPECT_EQ(0, pthread_create(&id, NULL, ThreadThunk, this));
+    return id;
   }
 
   static void* ThreadThunk(void* ptr) {
@@ -96,22 +97,35 @@ class EmitterTest : public ::testing::Test {
     waiting_++;
     EXPECT_EQ(0, listener.WaitOnEvent(POLLIN, -1));
     emitter_.ClearEvents_Locked(POLLIN);
+    AUTO_LOCK(signaled_lock_);
     signaled_++;
     return NULL;
+  }
+
+  int GetSignaledCount() {
+    AUTO_LOCK(signaled_lock_);
+    return signaled_;
   }
 
  protected:
   pthread_cond_t multi_cond_;
   EventEmitter emitter_;
+  int waiting_;
 
-  uint32_t waiting_;
-  uint32_t signaled_;
+ private:
+  int signaled_;
+  sdk_util::SimpleLock signaled_lock_;
 };
 
+// Temporarily disabled since it seems to be causing lockup in whe
+// KernelWrapTests later on.
+// TODO(sbc): renable once we fix http://crbug.com/378596
 const int NUM_THREADS = 10;
-TEST_F(EmitterTest, MultiThread) {
+TEST_F(EmitterTest, DISABLED_MultiThread) {
+  pthread_t threads[NUM_THREADS];
+
   for (int a = 0; a < NUM_THREADS; a++)
-    CreateThread();
+    threads[a] = CreateThread();
 
   {
     AUTO_LOCK(emitter_.GetLock());
@@ -120,7 +134,7 @@ TEST_F(EmitterTest, MultiThread) {
     while (waiting_ < NUM_THREADS)
       pthread_cond_wait(&multi_cond_, emitter_.GetLock().mutex());
 
-    ASSERT_EQ(0, signaled_);
+    ASSERT_EQ(0, GetSignaledCount());
 
     emitter_.RaiseEvents_Locked(POLLIN);
   }
@@ -129,7 +143,7 @@ TEST_F(EmitterTest, MultiThread) {
   struct timespec sleeptime = {0, 50 * 1000 * 1000};
   nanosleep(&sleeptime, NULL);
 
-  EXPECT_EQ(1, signaled_);
+  EXPECT_EQ(1, GetSignaledCount());
 
   {
     AUTO_LOCK(emitter_.GetLock());
@@ -137,13 +151,16 @@ TEST_F(EmitterTest, MultiThread) {
   }
 
   nanosleep(&sleeptime, NULL);
-  EXPECT_EQ(2, signaled_);
+  EXPECT_EQ(2, GetSignaledCount());
 
   // Clean up remaining threads.
-  while (signaled_ < waiting_) {
+  while (GetSignaledCount() < waiting_) {
     AUTO_LOCK(emitter_.GetLock());
     emitter_.RaiseEvents_Locked(POLLIN);
   }
+
+  for (int a = 0; a < NUM_THREADS; a++)
+    pthread_join(threads[a], NULL);
 }
 
 TEST(EventListenerPollTest, WaitForAny) {
@@ -174,14 +191,18 @@ TEST(PipeTest, Listener) {
   {
     EventListenerLock locker(&pipe);
     EXPECT_EQ(0, locker.WaitOnEvent(POLLOUT, 0));
-    EXPECT_EQ(sizeof(hello), pipe.Write_Locked(hello, sizeof(hello)));
+    int out_bytes = 0;
+    EXPECT_EQ(0, pipe.Write_Locked(hello, sizeof(hello), &out_bytes));
+    EXPECT_EQ(sizeof(hello), out_bytes);
   }
 
   // We should now be able to poll
   {
     EventListenerLock locker(&pipe);
     EXPECT_EQ(0, locker.WaitOnEvent(POLLIN, 0));
-    EXPECT_EQ(sizeof(hello), pipe.Read_Locked(tmp, sizeof(tmp)));
+    int out_bytes = -1;
+    EXPECT_EQ(0, pipe.Read_Locked(tmp, sizeof(tmp), &out_bytes));
+    EXPECT_EQ(sizeof(hello), out_bytes);
   }
 
   // Verify we can read it correctly.

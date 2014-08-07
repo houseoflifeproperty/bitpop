@@ -37,8 +37,8 @@ class SkBitmap;
 struct AccessibilityHostMsg_EventParams;
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
 struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
-struct ViewHostMsg_TextInputState_Params;
 struct ViewHostMsg_SelectionBounds_Params;
+struct ViewHostMsg_TextInputState_Params;
 
 namespace media {
 class VideoFrame;
@@ -53,8 +53,9 @@ class BrowserAccessibilityManager;
 class SyntheticGesture;
 class SyntheticGestureTarget;
 class WebCursor;
-struct WebPluginGeometry;
+struct DidOverscrollParams;
 struct NativeWebKeyboardEvent;
+struct WebPluginGeometry;
 
 // Basic implementation shared by concrete RenderWidgetHostView subclasses.
 class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
@@ -63,8 +64,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual ~RenderWidgetHostViewBase();
 
   // RenderWidgetHostView implementation.
-  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
-  virtual const SkBitmap& GetBackground() OVERRIDE;
+  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
+  virtual bool GetBackgroundOpaque() OVERRIDE;
   virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
   virtual bool IsShowingContextMenu() const OVERRIDE;
   virtual void SetShowingContextMenu(bool showing_menu) OVERRIDE;
@@ -78,10 +79,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
 
   // IPC::Listener implementation:
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-
-  // Called when a mousewheel event was not processed by the renderer.
-  // virtual for testing.
-  virtual void UnhandledWheelEvent(const blink::WebMouseWheelEvent& event);
 
   // Called by the host when the input flush has completed.
   void OnDidFlushInput();
@@ -118,6 +115,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
                                 size_t offset,
                                 const gfx::Range& range);
 
+  // The requested size of the renderer. May differ from GetViewBounds().size()
+  // when the view requires additional throttling.
+  virtual gfx::Size GetRequestedRendererSize() const;
+
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   virtual gfx::Size GetPhysicalBackingSize() const;
 
@@ -135,6 +136,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Called by the host when it requires an input flush; the flush call should
   // by synchronized with BeginFrame.
   virtual void OnSetNeedsFlushInput();
+
+  virtual void WheelEventAck(const blink::WebMouseWheelEvent& event,
+                             InputEventAckState ack_result);
 
   virtual void GestureEventAck(const blink::WebGestureEvent& event,
                                InputEventAckState ack_result);
@@ -170,6 +174,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // or ignored (when |ack_result| is CONSUMED).
   virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
                                       InputEventAckState ack_result) {}
+
+  virtual void DidOverscroll(const DidOverscrollParams& params) {}
 
   virtual void DidStopFlinging() {}
 
@@ -213,9 +219,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void SetIsLoading(bool is_loading) = 0;
 
   // Updates the type of the input method attached to the view.
-  virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    ui::TextInputMode mode,
-                                    bool can_compose_inline) = 0;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) = 0;
 
   // Cancel the ongoing composition of the input method attached to the view.
   virtual void ImeCancelComposition() = 0;
@@ -276,8 +281,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // IsSurfaceAvailableForCopy() and HasAcceleratedSurface().
   virtual bool CanCopyToVideoFrame() const = 0;
 
-  // Called when accelerated compositing state changes.
-  virtual void OnAcceleratedCompositingStateChange() = 0;
   // Called when an accelerated compositing surface is initialized.
   virtual void AcceleratedSurfaceInitialized(int host_id, int route_id) = 0;
   // |params.window| and |params.surface_id| indicate which accelerated
@@ -312,15 +315,13 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
 
   virtual gfx::GLSurfaceHandle GetCompositingSurface() = 0;
 
-  virtual void SetScrollOffsetPinning(
-      bool is_pinned_to_left, bool is_pinned_to_right) = 0;
+  virtual void OnTextSurroundingSelectionResponse(const base::string16& content,
+                                                  size_t start_offset,
+                                                  size_t end_offset) {};
 
 #if defined(OS_ANDROID)
   virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
                                        const SkBitmap& zoomed_bitmap) = 0;
-
-  // Notifies the View that the renderer selection root bounds has changed.
-  virtual void SelectionRootBoundsChanged(const gfx::Rect& bounds) = 0;
 
   // Instructs the view to not drop the surface even when the view is hidden.
   virtual void LockCompositingSurface() = 0;
@@ -379,9 +380,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // autofill...).
   blink::WebPopupType popup_type_;
 
-  // A custom background to paint behind the web content. This will be tiled
-  // horizontally. Can be null, in which case we fall back to painting white.
-  SkBitmap background_;
+  // When false, the background of the web content is not fully opaque.
+  bool background_opaque_;
 
   // While the mouse is locked, the cursor is hidden from the user. Mouse events
   // are still generated. However, the position they report is the last known

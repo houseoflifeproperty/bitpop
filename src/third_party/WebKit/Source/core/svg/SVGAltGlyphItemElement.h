@@ -21,7 +21,7 @@
 #define SVGAltGlyphItemElement_h
 
 #if ENABLE(SVG_FONTS)
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGElement.h"
 #include "wtf/Vector.h"
 
@@ -29,7 +29,7 @@ namespace WebCore {
 
 class SVGAltGlyphItemElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGAltGlyphItemElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGAltGlyphItemElement);
 
     bool hasValidGlyphElements(Vector<AtomicString>& glyphNames) const;
 

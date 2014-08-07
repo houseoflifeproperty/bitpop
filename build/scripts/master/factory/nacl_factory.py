@@ -19,8 +19,8 @@ class NativeClientFactory(gclient_factory.GClientFactory):
                                  config.Master.sourceforge_url)
   CUSTOM_VARS_WEBKIT_MIRROR = ('webkit_trunk', config.Master.webkit_trunk_url)
 
-  def __init__(self, build_dir, target_platform, use_supplement=False,
-               alternate_url=None, custom_deps_list=None):
+  def __init__(self, build_dir, target_platform,
+               alternate_url=None, custom_deps_list=None, target_os=None):
     solutions = []
     self.target_platform = target_platform
     nacl_url = config.Master.nacl_url
@@ -33,13 +33,9 @@ class NativeClientFactory(gclient_factory.GClientFactory):
                           self.CUSTOM_VARS_SOURCEFORGE_URL])
     solutions.append(main)
 
-    if use_supplement:
-      supplement = gclient_factory.GClientSolution(
-          config.Master.nacl_trunk_url + '/deps/supplement.DEPS')
-      solutions.append(supplement)
-
     gclient_factory.GClientFactory.__init__(self, build_dir, solutions,
-                                            target_platform=target_platform)
+                                            target_platform=target_platform,
+                                            target_os=target_os)
 
   @staticmethod
   def _AddTriggerTests(factory_cmd_obj, tests):

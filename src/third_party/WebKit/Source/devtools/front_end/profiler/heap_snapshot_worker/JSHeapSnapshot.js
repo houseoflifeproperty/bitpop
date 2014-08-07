@@ -30,9 +30,10 @@
 
 /**
  * @constructor
+ * @extends {WebInspector.HeapSnapshot}
+ * @param {!Object} profile
  * @param {!WebInspector.HeapSnapshotProgress} progress
  * @param {boolean} showHiddenData
- * @extends {WebInspector.HeapSnapshot}
  */
 WebInspector.JSHeapSnapshot = function(profile, progress, showHiddenData)
 {
@@ -155,7 +156,7 @@ WebInspector.JSHeapSnapshot.prototype = {
     {
         /**
          * @param {!WebInspector.HeapSnapshotNode} node
-         * @param {!string} name
+         * @param {string} name
          * @return {?WebInspector.HeapSnapshotNode}
          */
         function getChildNodeByName(node, name)

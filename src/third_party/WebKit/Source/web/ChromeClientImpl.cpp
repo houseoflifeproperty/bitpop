@@ -32,9 +32,8 @@
 #include "config.h"
 #include "web/ChromeClientImpl.h"
 
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptController.h"
+#include "core/HTMLNames.h"
 #include "core/accessibility/AXObject.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Document.h"
@@ -61,6 +60,7 @@
 #include "platform/FileChooser.h"
 #include "platform/NotImplemented.h"
 #include "platform/PlatformScreen.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRect.h"
@@ -80,7 +80,6 @@
 #include "public/web/WebInputEvent.h"
 #include "public/web/WebKit.h"
 #include "public/web/WebNode.h"
-#include "public/web/WebPasswordGeneratorClient.h"
 #include "public/web/WebPlugin.h"
 #include "public/web/WebPopupMenuInfo.h"
 #include "public/web/WebSettings.h"
@@ -494,11 +493,6 @@ void ChromeClientImpl::scheduleAnimation()
     m_webView->scheduleAnimation();
 }
 
-bool ChromeClientImpl::isCompositorFramePending() const
-{
-    return m_webView->client()->isCompositorFramePending();
-}
-
 void ChromeClientImpl::scroll(
     const IntSize& scrollDelta, const IntRect& scrollRect,
     const IntRect& clipRect)
@@ -537,8 +531,6 @@ void ChromeClientImpl::contentsSizeChanged(LocalFrame* frame, const IntSize& siz
 
     WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
     webframe->didChangeContentsSize(size);
-    if (webframe->client())
-        webframe->client()->didChangeContentsSize(webframe, size);
 
     frame->loader().restoreScrollPositionAndViewState();
 }
@@ -612,7 +604,7 @@ PassOwnPtr<ColorChooser> ChromeClientImpl::createColorChooser(LocalFrame* frame,
     return controller.release();
 }
 
-PassRefPtr<DateTimeChooser> ChromeClientImpl::openDateTimeChooser(DateTimeChooserClient* pickerClient, const DateTimeChooserParameters& parameters)
+PassRefPtrWillBeRawPtr<DateTimeChooser> ChromeClientImpl::openDateTimeChooser(DateTimeChooserClient* pickerClient, const DateTimeChooserParameters& parameters)
 {
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     return DateTimeChooserImpl::create(this, pickerClient, parameters);
@@ -764,18 +756,6 @@ void ChromeClientImpl::resetPagePopupDriver()
     m_pagePopupDriver = m_webView;
 }
 
-bool ChromeClientImpl::isPasswordGenerationEnabled() const
-{
-    return m_webView->passwordGeneratorClient();
-}
-
-void ChromeClientImpl::openPasswordGenerator(HTMLInputElement* input)
-{
-    ASSERT(isPasswordGenerationEnabled());
-    WebInputElement webInput(input);
-    m_webView->passwordGeneratorClient()->openPasswordGenerator(webInput);
-}
-
 bool ChromeClientImpl::shouldRunModalDialogDuringPageDismissal(const DialogType& dialogType, const String& dialogMessage, Document::PageDismissalType dismissalType) const
 {
     const char* kDialogs[] = {"alert", "confirm", "prompt", "showModalDialog"};
@@ -792,27 +772,6 @@ bool ChromeClientImpl::shouldRunModalDialogDuringPageDismissal(const DialogType&
     m_webView->mainFrame()->addMessageToConsole(WebConsoleMessage(WebConsoleMessage::LevelError, message));
 
     return false;
-}
-
-bool ChromeClientImpl::shouldRubberBandInDirection(WebCore::ScrollDirection direction) const
-{
-    ASSERT(direction != WebCore::ScrollUp && direction != WebCore::ScrollDown);
-
-    if (!m_webView->client())
-        return false;
-
-    if (direction == WebCore::ScrollLeft)
-        return !m_webView->client()->historyBackListCount();
-    if (direction == WebCore::ScrollRight)
-        return !m_webView->client()->historyForwardListCount();
-
-    ASSERT_NOT_REACHED();
-    return true;
-}
-
-void ChromeClientImpl::numWheelEventHandlersChanged(unsigned numberOfWheelHandlers)
-{
-    m_webView->numberOfWheelEventHandlersChanged(numberOfWheelHandlers);
 }
 
 void ChromeClientImpl::needTouchEvents(bool needsTouchEvents)
@@ -845,15 +804,10 @@ void ChromeClientImpl::annotatedRegionsChanged()
         client->draggableRegionsChanged();
 }
 
-void ChromeClientImpl::didAssociateFormControls(const Vector<RefPtr<Element> >& elements)
+void ChromeClientImpl::didAssociateFormControls(const WillBeHeapVector<RefPtrWillBeMember<Element> >& elements)
 {
-    if (!m_webView->autofillClient())
-        return;
-    WebVector<WebNode> elementVector(static_cast<size_t>(elements.size()));
-    size_t elementsCount = elements.size();
-    for (size_t i = 0; i < elementsCount; ++i)
-        elementVector[i] = elements[i].get();
-    m_webView->autofillClient()->didAssociateFormControls(elementVector);
+    if (m_webView->autofillClient())
+        m_webView->autofillClient()->didAssociateFormControls(elements);
 }
 
 void ChromeClientImpl::didCancelCompositionOnSelectionChange()
@@ -928,29 +882,9 @@ void ChromeClientImpl::openTextDataListChooser(HTMLInputElement& input)
         m_webView->autofillClient()->openTextDataListChooser(WebInputElement(&input));
 }
 
-PassOwnPtr<NavigatorContentUtilsClientImpl> NavigatorContentUtilsClientImpl::create(WebViewImpl* webView)
+bool ChromeClientImpl::usesGpuRasterization()
 {
-    return adoptPtr(new NavigatorContentUtilsClientImpl(webView));
-}
-
-NavigatorContentUtilsClientImpl::NavigatorContentUtilsClientImpl(WebViewImpl* webView)
-    : m_webView(webView)
-{
-}
-
-void NavigatorContentUtilsClientImpl::registerProtocolHandler(const String& scheme, const WebCore::KURL& baseURL, const WebCore::KURL& url, const String& title)
-{
-    m_webView->client()->registerProtocolHandler(scheme, baseURL, url, title);
-}
-
-NavigatorContentUtilsClient::CustomHandlersState NavigatorContentUtilsClientImpl::isProtocolHandlerRegistered(const String& scheme, const WebCore::KURL& baseURL, const WebCore::KURL& url)
-{
-    return static_cast<NavigatorContentUtilsClient::CustomHandlersState>(m_webView->client()->isProtocolHandlerRegistered(scheme, baseURL, url));
-}
-
-void NavigatorContentUtilsClientImpl::unregisterProtocolHandler(const String& scheme, const WebCore::KURL& baseURL, const WebCore::KURL& url)
-{
-    m_webView->client()->unregisterProtocolHandler(scheme, baseURL, url);
+    return m_webView->layerTreeView()->usesGpuRasterization();
 }
 
 } // namespace blink

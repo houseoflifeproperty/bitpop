@@ -11,8 +11,6 @@
 #include "base/memory/scoped_vector.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/stringprintf.h"
-#include "device/bluetooth/bluetooth_out_of_band_pairing_data.h"
-#include "device/bluetooth/bluetooth_profile_win.h"
 #include "device/bluetooth/bluetooth_service_record_win.h"
 #include "device/bluetooth/bluetooth_socket_thread.h"
 #include "device/bluetooth/bluetooth_socket_win.h"
@@ -39,7 +37,7 @@ BluetoothDeviceWin::BluetoothDeviceWin(
       net_log_(net_log),
       net_log_source_(net_log_source) {
   name_ = state.name;
-  address_ = state.address;
+  address_ = CanonicalizeAddress(state.address);
   bluetooth_class_ = state.bluetooth_class;
   visible_ = state.visible;
   connected_ = state.connected;
@@ -53,7 +51,7 @@ BluetoothDeviceWin::BluetoothDeviceWin(
     std::copy((*iter)->sdp_bytes.begin(),
               (*iter)->sdp_bytes.end(),
               sdp_bytes_buffer);
-    BluetoothServiceRecord* service_record = new BluetoothServiceRecordWin(
+    BluetoothServiceRecordWin* service_record = new BluetoothServiceRecordWin(
         (*iter)->name,
         (*iter)->address,
         (*iter)->sdp_bytes.size(),
@@ -199,39 +197,21 @@ void BluetoothDeviceWin::Forget(const ErrorCallback& error_callback) {
   NOTIMPLEMENTED();
 }
 
-void BluetoothDeviceWin::ConnectToProfile(
-    device::BluetoothProfile* profile,
-    const base::Closure& callback,
-    const ConnectToProfileErrorCallback& error_callback) {
-  DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
-  static_cast<BluetoothProfileWin*>(profile)->Connect(this,
-                                                      ui_task_runner_,
-                                                      socket_thread_,
-                                                      net_log_,
-                                                      net_log_source_,
-                                                      callback,
-                                                      error_callback);
-}
-
 void BluetoothDeviceWin::ConnectToService(
     const BluetoothUUID& uuid,
     const ConnectToServiceCallback& callback,
     const ConnectToServiceErrorCallback& error_callback) {
-  // TODO(keybuk): implement
-  NOTIMPLEMENTED();
+  scoped_refptr<BluetoothSocketWin> socket(
+      BluetoothSocketWin::CreateBluetoothSocket(
+          ui_task_runner_, socket_thread_, NULL, net::NetLog::Source()));
+  socket->Connect(this, uuid, base::Bind(callback, socket), error_callback);
 }
 
-void BluetoothDeviceWin::SetOutOfBandPairingData(
-    const BluetoothOutOfBandPairingData& data,
-    const base::Closure& callback,
-    const ErrorCallback& error_callback) {
-  NOTIMPLEMENTED();
-}
-
-void BluetoothDeviceWin::ClearOutOfBandPairingData(
-    const base::Closure& callback,
-    const ErrorCallback& error_callback) {
-  NOTIMPLEMENTED();
+void BluetoothDeviceWin::CreateGattConnection(
+      const GattConnectionCallback& callback,
+      const ConnectErrorCallback& error_callback) {
+  // TODO(armansito): Implement.
+  error_callback.Run(ERROR_UNSUPPORTED_DEVICE);
 }
 
 void BluetoothDeviceWin::StartConnectionMonitor(
@@ -240,7 +220,7 @@ void BluetoothDeviceWin::StartConnectionMonitor(
   NOTIMPLEMENTED();
 }
 
-const BluetoothServiceRecord* BluetoothDeviceWin::GetServiceRecord(
+const BluetoothServiceRecordWin* BluetoothDeviceWin::GetServiceRecord(
     const device::BluetoothUUID& uuid) const {
   for (ServiceRecordList::const_iterator iter = service_record_list_.begin();
        iter != service_record_list_.end();

@@ -191,12 +191,13 @@ var InspectorFrontendAPI = {
     },
 
     /**
-     * @param {!Array.<!Adb.Device>} targets
+     * @param {string} eventType
+     * @param {*=} eventData
+     * @return {boolean}
      */
-    populateRemoteDevices: function(targets)
+    dispatchEventToListeners: function(eventType, eventData)
     {
-        // FIXME: this needs to be changed for the sake of modularity.
-        WebInspector.devicesModel.populateRemoteDevices(targets);
+        return WebInspector.inspectorFrontendEventSink.dispatchEventToListeners(eventType, eventData);
     },
 
     /**
@@ -263,7 +264,3 @@ var InspectorFrontendAPI = {
 
 /** @typedef {!Object.<{type: string, keyCode: (number|undefined), keyIdentifier: (string|undefined), modifiers: (number|undefined)}>} */
 InspectorFrontendAPI.ForwardedKeyboardEvent;
-
-if (top !== window) {
-    top.InspectorFrontendAPI = window.InspectorFrontendAPI;
-}

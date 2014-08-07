@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_CHILD_INDEXED_DB_PROXY_WEBIDBDATABASE_IMPL_H_
-#define CONTENT_CHILD_INDEXED_DB_PROXY_WEBIDBDATABASE_IMPL_H_
+#ifndef CONTENT_CHILD_INDEXED_DB_WEBIDBDATABASE_IMPL_H_
+#define CONTENT_CHILD_INDEXED_DB_WEBIDBDATABASE_IMPL_H_
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
@@ -46,16 +46,6 @@ class WebIDBDatabaseImpl : public blink::WebIDBDatabase {
                    const blink::WebIDBKeyRange&,
                    bool keyOnly,
                    blink::WebIDBCallbacks*);
-// TODO(ericu): Remove this once it's obsolete.  It's only here for the
-// three-sided-patch dance.
-  virtual void put(long long transactionId,
-                   long long objectStoreId,
-                   const blink::WebData& value,
-                   const blink::WebIDBKey&,
-                   PutMode,
-                   blink::WebIDBCallbacks*,
-                   const blink::WebVector<long long>& indexIds,
-                   const blink::WebVector<WebIndexKeys>&);
   virtual void put(long long transactionId,
                    long long objectStoreId,
                    const blink::WebData& value,
@@ -116,4 +106,4 @@ class WebIDBDatabaseImpl : public blink::WebIDBDatabase {
 
 }  // namespace content
 
-#endif  // CONTENT_CHILD_INDEXED_DB_PROXY_WEBIDBDATABASE_IMPL_H_
+#endif  // CONTENT_CHILD_INDEXED_DB_WEBIDBDATABASE_IMPL_H_

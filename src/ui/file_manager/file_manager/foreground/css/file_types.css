@@ -9,6 +9,7 @@
       url('chrome://theme/IDR_FILETYPE_GENERIC@2x') 2x);
   background-position: center;
   background-repeat: no-repeat;
+  background-size: 16px 16px;
 }
 
 tree:focus .tree-item[selected] > .tree-row > [file-type-icon],
@@ -65,6 +66,20 @@ list.autocomplete-suggestions [selected] [file-type-icon='excel'] {
   background-image: -webkit-image-set(
       url('chrome://theme/IDR_FILETYPE_FOLDER') 1x,
       url('chrome://theme/IDR_FILETYPE_FOLDER@2x') 2x);
+}
+
+.shared[file-type-icon='folder'] {
+  background-image: -webkit-image-set(
+      url('chrome://theme/IDR_FILETYPE_FOLDER_SHARED') 1x,
+      url('chrome://theme/IDR_FILETYPE_FOLDER_SHARED@2x') 2x);
+}
+
+tree:focus .tree-item[selected] > .tree-row > .shared[file-type-icon='folder'],
+list:focus [selected] .shared[file-type-icon='folder'],
+list.autocomplete-suggestions [selected] .shared[file-type-icon='folder'] {
+  background-image: -webkit-image-set(
+      url('chrome://theme/IDR_FILETYPE_FOLDER_SHARED_WHITE') 1x,
+      url('chrome://theme/IDR_FILETYPE_FOLDER_SHARED_WHITE@2x') 2x);
 }
 
 tree:focus .tree-item[selected] > .tree-row > [file-type-icon='folder'],
@@ -312,6 +327,12 @@ list.autocomplete-suggestions [selected] [file-type-icon='word'] {
       url('chrome://theme/IDR_FILETYPE_LARGE_FOLDER@2x') 2x);
 }
 
+.shared[generic-thumbnail='folder'] {
+  background-image: -webkit-image-set(
+      url('chrome://theme/IDR_FILETYPE_LARGE_FOLDER_SHARED') 1x,
+      url('chrome://theme/IDR_FILETYPE_LARGE_FOLDER_SHARED@2x') 2x);
+}
+
 [generic-thumbnail='image'] {
   background-image: -webkit-image-set(
       url('chrome://theme/IDR_FILETYPE_LARGE_IMAGE') 1x,
@@ -327,6 +348,7 @@ list.autocomplete-suggestions [selected] [file-type-icon='word'] {
 /* Icons for volume types. */
 
 [volume-type-icon='archive'] {
+  background-position: center 2px;
   background-image: -webkit-image-set(
       url('../images/volumes/black_archive.png') 1x,
       url('../images/volumes/2x/black_archive.png') 2x);
@@ -340,6 +362,7 @@ tree:focus .tree-item[selected] > .tree-row > [volume-type-icon='archive'] {
 }
 
 [volume-type-icon='downloads'] {
+  background-position: center 2px;
   background-image: -webkit-image-set(
       url('../images/volumes/black_downloads.png') 1x,
       url('../images/volumes/2x/black_downloads.png') 2x);
@@ -353,6 +376,7 @@ tree:focus .tree-item[selected] > .tree-row > [volume-type-icon='downloads'] {
 }
 
 [volume-type-icon='drive'] {
+  background-position: center 2px;
   background-image: -webkit-image-set(
       url('../images/volumes/black_drive.png') 1x,
       url('../images/volumes/2x/black_drive.png') 2x);
@@ -366,6 +390,7 @@ tree:focus .tree-item[selected] > .tree-row > [volume-type-icon='drive'] {
 }
 
 [volume-type-icon='drive_offline'] {
+  background-position: center 2px;
   background-image: -webkit-image-set(
       url('../images/volumes/black_offline.png') 1x,
       url('../images/volumes/2x/black_offline.png') 2x);
@@ -380,6 +405,7 @@ tree:focus .tree-item[selected] > .tree-row >
 }
 
 [volume-type-icon='drive_shared_with_me'] {
+  background-position: center 2px;
   background-image: -webkit-image-set(
       url('../images/volumes/black_shared.png') 1x,
       url('../images/volumes/2x/black_shared.png') 2x);
@@ -394,6 +420,7 @@ tree:focus .tree-item[selected] > .tree-row >
 }
 
 [volume-type-icon='drive_recent'] {
+  background-position: center 2px;
   background-image: -webkit-image-set(
       url('../images/volumes/black_recent.png') 1x,
       url('../images/volumes/2x/black_recent.png') 2x);
@@ -408,6 +435,7 @@ tree:focus .tree-item[selected] > .tree-row >
 }
 
 [volume-type-icon='removable'] {
+  background-position: center 2px;
   background-image: -webkit-image-set(
       url('../images/volumes/black_usb.png') 1x,
       url('../images/volumes/2x/black_usb.png') 2x);
@@ -422,6 +450,7 @@ tree:focus .tree-item[selected] > .tree-row >
 }
 
 [volume-type-icon='removable'][volume-subtype='sd'] {
+  background-position: center 2px;
   background-image: -webkit-image-set(
       url('../images/volumes/black_sd.png') 1x,
       url('../images/volumes/2x/black_sd.png') 2x);
@@ -436,6 +465,7 @@ tree:focus .tree-item[selected] > .tree-row >
 }
 
 [volume-type-icon='removable'][volume-subtype='optical'] {
+  background-position: center 2px;
   background-image: -webkit-image-set(
       url('../images/volumes/black_optical.png') 1x,
       url('../images/volumes/2x/black_optical.png') 2x);
@@ -451,6 +481,7 @@ tree:focus .tree-item[selected] > .tree-row >
 }
 
 [volume-type-icon='mtp'] {
+  background-position: center 2px;
   background-image: -webkit-image-set(
     url('../images/volumes/black_phone.png') 1x,
     url('../images/volumes/2x/black_phone.png') 2x);
@@ -476,4 +507,9 @@ tree:focus .tree-item[selected] > .tree-row >
   background-image: -webkit-image-set(
       url('../images/volumes/white_hdd.png') 1x,
       url('../images/volumes/2x/white_hdd.png') 2x);
+}
+
+list:focus li[selected] [volume-type-icon='provided'],
+tree:focus .tree-item[selected] > .tree-row > [volume-type-icon='provided']{
+  -webkit-filter: invert(100%) grayscale(100%) brightness(200%);
 }

@@ -5,6 +5,7 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 
 #import "base/mac/mac_util.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
@@ -37,14 +38,6 @@
 #import "testing/gtest_mac.h"
 
 namespace {
-
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-enum {
-  NSWindowDocumentVersionsButton = 6,
-  NSWindowFullScreenButton
-};
-#endif  // MAC_OS_X_VERSION_10_7
 
 void CreateProfileCallback(const base::Closure& quit_closure,
                            Profile* profile,
@@ -141,9 +134,9 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
     return height;
   }
 
-  void SetDevToolsWindowContentsInsets(
-      DevToolsWindow* window, int left, int top, int right, int bottom) {
-    window->SetContentsInsets(left, top, right, bottom);
+  void SetDevToolsWindowContentsBounds(
+      DevToolsWindow* window, const gfx::Rect& bounds) {
+    window->SetInspectedPageBounds(bounds);
   }
 
  private:
@@ -375,7 +368,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
 
   DevToolsWindow* devtools_window = DevToolsWindow::OpenDevToolsWindowForTest(
       browser(), true);
-  SetDevToolsWindowContentsInsets(devtools_window, 10, 10, 10, 10);
+  SetDevToolsWindowContentsBounds(devtools_window, gfx::Rect(10, 10, 100, 100));
 
   NSPoint originWithDevTools = [controller() statusBubbleBaseFrame].origin;
   EXPECT_FALSE(NSEqualPoints(origin, originWithDevTools));

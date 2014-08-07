@@ -5,8 +5,8 @@
 #ifndef V8_IA32_CODE_STUBS_IA32_H_
 #define V8_IA32_CODE_STUBS_IA32_H_
 
-#include "macro-assembler.h"
-#include "ic-inl.h"
+#include "src/macro-assembler.h"
+#include "src/ic-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -20,10 +20,7 @@ void ArrayNativeCode(MacroAssembler* masm,
 class StoreBufferOverflowStub: public PlatformCodeStub {
  public:
   StoreBufferOverflowStub(Isolate* isolate, SaveFPRegsMode save_fp)
-      : PlatformCodeStub(isolate), save_doubles_(save_fp) {
-    ASSERT(CpuFeatures::IsSafeForSnapshot(isolate, SSE2) ||
-           save_fp == kDontSaveFPRegs);
-  }
+      : PlatformCodeStub(isolate), save_doubles_(save_fp) { }
 
   void Generate(MacroAssembler* masm);
 
@@ -43,12 +40,12 @@ class StringHelper : public AllStatic {
   // Generate code for copying characters using the rep movs instruction.
   // Copies ecx characters from esi to edi. Copying of overlapping regions is
   // not supported.
-  static void GenerateCopyCharactersREP(MacroAssembler* masm,
-                                        Register dest,     // Must be edi.
-                                        Register src,      // Must be esi.
-                                        Register count,    // Must be ecx.
-                                        Register scratch,  // Neither of above.
-                                        bool ascii);
+  static void GenerateCopyCharacters(MacroAssembler* masm,
+                                     Register dest,
+                                     Register src,
+                                     Register count,
+                                     Register scratch,
+                                     String::Encoding encoding);
 
   // Generate string hash.
   static void GenerateHashInit(MacroAssembler* masm,
@@ -197,8 +194,6 @@ class RecordWriteStub: public PlatformCodeStub {
         regs_(object,   // An input reg.
               address,  // An input reg.
               value) {  // One scratch reg.
-    ASSERT(CpuFeatures::IsSafeForSnapshot(isolate, SSE2) ||
-           fp_mode == kDontSaveFPRegs);
   }
 
   enum Mode {
@@ -340,11 +335,10 @@ class RecordWriteStub: public PlatformCodeStub {
       if (!scratch0_.is(eax) && !scratch1_.is(eax)) masm->push(eax);
       if (!scratch0_.is(edx) && !scratch1_.is(edx)) masm->push(edx);
       if (mode == kSaveFPRegs) {
-        CpuFeatureScope scope(masm, SSE2);
         masm->sub(esp,
-                  Immediate(kDoubleSize * (XMMRegister::kNumRegisters - 1)));
+                  Immediate(kDoubleSize * (XMMRegister::kMaxNumRegisters - 1)));
         // Save all XMM registers except XMM0.
-        for (int i = XMMRegister::kNumRegisters - 1; i > 0; i--) {
+        for (int i = XMMRegister::kMaxNumRegisters - 1; i > 0; i--) {
           XMMRegister reg = XMMRegister::from_code(i);
           masm->movsd(Operand(esp, (i - 1) * kDoubleSize), reg);
         }
@@ -354,14 +348,13 @@ class RecordWriteStub: public PlatformCodeStub {
     inline void RestoreCallerSaveRegisters(MacroAssembler*masm,
                                            SaveFPRegsMode mode) {
       if (mode == kSaveFPRegs) {
-        CpuFeatureScope scope(masm, SSE2);
         // Restore all XMM registers except XMM0.
-        for (int i = XMMRegister::kNumRegisters - 1; i > 0; i--) {
+        for (int i = XMMRegister::kMaxNumRegisters - 1; i > 0; i--) {
           XMMRegister reg = XMMRegister::from_code(i);
           masm->movsd(reg, Operand(esp, (i - 1) * kDoubleSize));
         }
         masm->add(esp,
-                  Immediate(kDoubleSize * (XMMRegister::kNumRegisters - 1)));
+                  Immediate(kDoubleSize * (XMMRegister::kMaxNumRegisters - 1)));
       }
       if (!scratch0_.is(edx) && !scratch1_.is(edx)) masm->pop(edx);
       if (!scratch0_.is(eax) && !scratch1_.is(eax)) masm->pop(eax);

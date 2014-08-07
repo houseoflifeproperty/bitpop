@@ -23,16 +23,18 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/browser/sync/glue/bookmark_change_processor.h"
 #include "chrome/browser/sync/glue/bookmark_model_associator.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/bookmarks/core/browser/base_bookmark_model_observer.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/browser/base_bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "components/sync_driver/data_type_error_handler.h"
 #include "components/sync_driver/data_type_error_handler_mock.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/read_node.h"
@@ -47,7 +49,6 @@
 
 namespace browser_sync {
 
-using content::BrowserThread;
 using syncer::BaseNode;
 using testing::_;
 using testing::InvokeWithoutArgs;
@@ -318,11 +319,9 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
 
   ProfileSyncServiceBookmarkTest()
       : model_(NULL),
-        ui_thread_(BrowserThread::UI, &message_loop_),
-        file_thread_(BrowserThread::FILE, &message_loop_),
+        thread_bundle_(content::TestBrowserThreadBundle::DEFAULT),
         local_merge_result_(syncer::BOOKMARKS),
-        syncer_merge_result_(syncer::BOOKMARKS) {
-  }
+        syncer_merge_result_(syncer::BOOKMARKS) {}
 
   virtual ~ProfileSyncServiceBookmarkTest() {
     StopSync();
@@ -350,7 +349,8 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
 
     // Be sure to call CreatePermanentBookmarkNodes(), otherwise this will fail.
     syncer::ReadNode bookmark_bar(trans);
-    EXPECT_EQ(BaseNode::INIT_OK, bookmark_bar.InitByTagLookup("bookmark_bar"));
+    EXPECT_EQ(BaseNode::INIT_OK,
+              bookmark_bar.InitByTagLookupForBookmarks("bookmark_bar"));
 
     syncer::WriteNode node(trans);
     EXPECT_TRUE(node.InitBookmarkByCreation(bookmark_bar, NULL));
@@ -400,14 +400,13 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
     // This noticeably speeds up the unit tests that request it.
     if (save == DONT_SAVE_TO_STORAGE)
       model_->ClearStore();
-    message_loop_.RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   int GetSyncBookmarkCount() {
     syncer::ReadTransaction trans(FROM_HERE, test_user_share_.user_share());
     syncer::ReadNode node(&trans);
-    if (node.InitByTagLookup(syncer::ModelTypeToRootTag(syncer::BOOKMARKS)) !=
-        syncer::BaseNode::INIT_OK)
+    if (node.InitTypeRoot(syncer::BOOKMARKS) != syncer::BaseNode::INIT_OK)
       return 0;
     return node.GetTotalNodeCount();
   }
@@ -424,8 +423,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
       uber_root.InitByRootLookup();
 
       syncer::ReadNode root(&trans);
-      root_exists = (root.InitByTagLookup(syncer::ModelTypeToRootTag(type)) ==
-                     BaseNode::INIT_OK);
+      root_exists = (root.InitTypeRoot(type) == BaseNode::INIT_OK);
     }
 
     if (!root_exists) {
@@ -440,8 +438,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
     };
     syncer::WriteTransaction trans(FROM_HERE, test_user_share_.user_share());
     syncer::ReadNode root(&trans);
-    EXPECT_EQ(BaseNode::INIT_OK, root.InitByTagLookup(
-        syncer::ModelTypeToRootTag(type)));
+    EXPECT_EQ(BaseNode::INIT_OK, root.InitTypeRoot(type));
 
     // Loop through creating permanent nodes as necessary.
     int64 last_child_id = syncer::kInvalidId;
@@ -449,7 +446,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
       // First check if the node already exists. This is for tests that involve
       // persistence and set up sync more than once.
       syncer::ReadNode lookup(&trans);
-      if (lookup.InitByTagLookup(permanent_tags[i]) ==
+      if (lookup.InitByTagLookupForBookmarks(permanent_tags[i]) ==
           syncer::ReadNode::INIT_OK) {
         last_child_id = lookup.GetId();
         continue;
@@ -542,7 +539,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
     }
     model_associator_.reset();
 
-    message_loop_.RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
 
     // TODO(akalin): Actually close the database and flush it to disk
     // (and make StartSync reload from disk).  This would require
@@ -552,7 +549,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
   void UnloadBookmarkModel() {
     profile_.CreateBookmarkModel(false /* delete_bookmarks */);
     model_ = NULL;
-    message_loop_.RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   bool InitSyncNodeFromChromeNode(const BookmarkNode* bnode,
@@ -609,7 +606,9 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
       EXPECT_EQ(gnode.GetPredecessorId(), gprev.GetId());
       EXPECT_EQ(gnode.GetParentId(), gprev.GetParentId());
     }
-    if (browser_index == bnode->parent()->child_count() - 1) {
+    // Note: the managed node comes next to the mobile node but isn't synced.
+    if (browser_index == bnode->parent()->child_count() - 1 ||
+        bnode == model_->mobile_node()) {
       EXPECT_EQ(gnode.GetSuccessorId(), 0);
     } else {
       const BookmarkNode* bnext =
@@ -634,6 +633,12 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
     const BookmarkNode* bnode =
         model_associator_->GetChromeNodeFromSyncId(sync_id);
     ASSERT_TRUE(bnode);
+
+    ChromeBookmarkClient* client =
+        ChromeBookmarkClientFactory::GetForProfile(&profile_);
+    ASSERT_TRUE(client);
+    ASSERT_FALSE(client->IsDescendantOfManagedNode(bnode));
+
     int64 id = model_associator_->GetSyncIdFromChromeId(bnode->id());
     EXPECT_EQ(id, sync_id);
     ExpectSyncerNodeMatching(trans, bnode);
@@ -733,12 +738,7 @@ class ProfileSyncServiceBookmarkTest : public testing::Test {
   scoped_ptr<BookmarkModelAssociator> model_associator_;
 
  private:
-  // Used by both |ui_thread_| and |file_thread_|.
-  base::MessageLoop message_loop_;
-  content::TestBrowserThread ui_thread_;
-  // Needed by |model_|.
-  content::TestBrowserThread file_thread_;
-
+  content::TestBrowserThreadBundle thread_bundle_;
   syncer::SyncMergeResult local_merge_result_;
   syncer::SyncMergeResult syncer_merge_result_;
 };
@@ -1313,6 +1313,11 @@ class ProfileSyncServiceBookmarkTestWithData
 
   void ExpectBookmarkModelMatchesTestData();
   void WriteTestDataToBookmarkModel();
+
+  // Output transaction versions of |node| and nodes under it to
+  // |node_versions|.
+  void GetTransactionVersions(const BookmarkNode* root,
+                              BookmarkNodeVersionMap* node_versions);
 
   // Verify transaction versions of bookmark nodes and sync nodes are equal
   // recursively. If node is in |version_expected|, versions should match
@@ -2002,10 +2007,13 @@ TEST_F(ProfileSyncServiceBookmarkTestWithData, UpdateMetaInfoFromModel) {
   ExpectModelMatch();
 }
 
-// Output transaction versions of |node| and nodes under it to |node_versions|.
-void GetTransactionVersions(
+void ProfileSyncServiceBookmarkTestWithData::GetTransactionVersions(
     const BookmarkNode* root,
     BookmarkNodeVersionMap* node_versions) {
+  ChromeBookmarkClient* client =
+      ChromeBookmarkClientFactory::GetForProfile(&profile_);
+  ASSERT_TRUE(client);
+
   node_versions->clear();
   std::queue<const BookmarkNode*> nodes;
   nodes.push(root);
@@ -2017,8 +2025,11 @@ void GetTransactionVersions(
     EXPECT_NE(BookmarkNode::kInvalidSyncTransactionVersion, version);
 
     (*node_versions)[n->id()] = version;
-    for (int i = 0; i < n->child_count(); ++i)
+    for (int i = 0; i < n->child_count(); ++i) {
+      if (client->IsDescendantOfManagedNode(n->GetChild(i)))
+        continue;
       nodes.push(n->GetChild(i));
+    }
   }
 }
 

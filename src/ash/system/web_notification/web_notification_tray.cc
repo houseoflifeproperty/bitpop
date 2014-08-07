@@ -64,7 +64,8 @@ const int kEnableQuietModeDay = 2;
 
 namespace {
 
-const SkColor kWebNotificationColorNoUnread = SkColorSetA(SK_ColorWHITE, 128);
+const SkColor kWebNotificationColorNoUnread =
+    SkColorSetARGB(128, 255, 255, 255);
 const SkColor kWebNotificationColorWithUnread = SK_ColorWHITE;
 
 }
@@ -157,9 +158,10 @@ void WorkAreaObserver::StopObserving() {
 void WorkAreaObserver::OnDisplayWorkAreaInsetsChanged() {
   UpdateShelf();
 
-  collection_->OnDisplayBoundsChanged(
+  collection_->OnDisplayMetricsChanged(
       Shell::GetScreen()->GetDisplayNearestWindow(
-          shelf_->shelf_widget()->GetNativeView()));
+          shelf_->shelf_widget()->GetNativeView()),
+      gfx::DisplayObserver::DISPLAY_METRIC_WORK_AREA);
 }
 
 void WorkAreaObserver::OnAutoHideStateChanged(ShelfAutoHideState new_state) {
@@ -267,11 +269,11 @@ class WebNotificationButton : public views::CustomButton {
 
  protected:
   // Overridden from views::ImageButton:
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(kShelfItemHeight, kShelfItemHeight);
   }
 
-  virtual int GetHeightForWidth(int width) OVERRIDE {
+  virtual int GetHeightForWidth(int width) const OVERRIDE {
     return GetPreferredSize().height();
   }
 
@@ -303,7 +305,6 @@ WebNotificationTray::WebNotificationTray(StatusAreaWidget* status_area_widget)
   tray_container()->AddChildView(button_);
   SetContentsBackground();
   tray_container()->SetBorder(views::Border::NullBorder());
-  SetVisible(false);
   message_center_tray_.reset(new message_center::MessageCenterTray(
       this,
       message_center::MessageCenter::Get()));
@@ -500,7 +501,7 @@ base::string16 WebNotificationTray::GetAccessibleNameForBubble() {
 gfx::Rect WebNotificationTray::GetAnchorRect(
     views::Widget* anchor_widget,
     views::TrayBubbleView::AnchorType anchor_type,
-    views::TrayBubbleView::AnchorAlignment anchor_alignment) {
+    views::TrayBubbleView::AnchorAlignment anchor_alignment) const {
   return GetBubbleAnchorRect(anchor_widget, anchor_type, anchor_alignment);
 }
 

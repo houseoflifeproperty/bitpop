@@ -13,6 +13,9 @@
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/write_on_cache_file.h"
+#include "chrome/browser/download/download_history.h"
+#include "chrome/browser/download/download_service.h"
+#include "chrome/browser/download/download_service_factory.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -94,10 +97,15 @@ void ContinueCheckingForFileExistence(
 // on the download history DB.
 bool IsPersistedDriveDownload(const base::FilePath& drive_tmp_download_path,
                               DownloadItem* download) {
-  // Persisted downloads are not in IN_PROGRESS state when created, while newly
-  // created downloads are.
-  return drive_tmp_download_path.IsParent(download->GetTargetFilePath()) &&
-      download->GetState() != DownloadItem::IN_PROGRESS;
+  if (!drive_tmp_download_path.IsParent(download->GetTargetFilePath()))
+    return false;
+
+  DownloadService* download_service =
+      DownloadServiceFactory::GetForBrowserContext(
+          download->GetBrowserContext());
+  DownloadHistory* download_history = download_service->GetDownloadHistory();
+
+  return download_history && download_history->WasRestoredFromHistory(download);
 }
 
 }  // namespace
@@ -133,9 +141,15 @@ void DownloadHandler::Initialize(
     download_manager->GetAllDownloads(&downloads);
     for (size_t i = 0; i < downloads.size(); ++i) {
       if (IsPersistedDriveDownload(drive_tmp_download_path_, downloads[i]))
-        RemoveDownload(downloads[i]->GetId());
+        downloads[i]->Remove();
     }
   }
+}
+
+void DownloadHandler::ObserveIncognitoDownloadManager(
+    DownloadManager* download_manager) {
+  notifier_incognito_.reset(new AllDownloadItemNotifier(download_manager,
+                                                        this));
 }
 
 void DownloadHandler::SubstituteDriveDownloadPath(
@@ -215,12 +229,13 @@ void DownloadHandler::OnDownloadCreated(DownloadManager* manager,
                             FROM_HERE,
                             base::Bind(&DownloadHandler::RemoveDownload,
                                        weak_ptr_factory_.GetWeakPtr(),
+                                       static_cast<void*>(manager),
                                        download->GetId()));
   }
 }
 
-void DownloadHandler::RemoveDownload(int id) {
-  DownloadManager* manager = notifier_->GetManager();
+void DownloadHandler::RemoveDownload(void* manager_id, int id) {
+  DownloadManager* manager = GetDownloadManager(manager_id);
   if (!manager)
     return;
   DownloadItem* download = manager->GetDownload(id);
@@ -245,7 +260,7 @@ void DownloadHandler::OnDownloadUpdated(
       break;
 
     case DownloadItem::COMPLETE:
-      UploadDownloadItem(download);
+      UploadDownloadItem(manager, download);
       data->set_complete();
       break;
 
@@ -281,7 +296,8 @@ void DownloadHandler::OnCreateDirectory(
   }
 }
 
-void DownloadHandler::UploadDownloadItem(DownloadItem* download) {
+void DownloadHandler::UploadDownloadItem(DownloadManager* manager,
+                                         DownloadItem* download) {
   DCHECK_EQ(DownloadItem::COMPLETE, download->GetState());
   base::FilePath* cache_file_path = new base::FilePath;
   WriteOnCacheFileAndReply(
@@ -292,16 +308,18 @@ void DownloadHandler::UploadDownloadItem(DownloadItem* download) {
                  cache_file_path),
       base::Bind(&DownloadHandler::SetCacheFilePath,
                  weak_ptr_factory_.GetWeakPtr(),
+                 static_cast<void*>(manager),
                  download->GetId(),
                  base::Owned(cache_file_path)));
 }
 
-void DownloadHandler::SetCacheFilePath(int id,
+void DownloadHandler::SetCacheFilePath(void* manager_id,
+                                       int id,
                                        const base::FilePath* cache_file_path,
                                        FileError error) {
   if (error != FILE_ERROR_OK)
     return;
-  DownloadManager* manager = notifier_->GetManager();
+  DownloadManager* manager = GetDownloadManager(manager_id);
   if (!manager)
     return;
   DownloadItem* download = manager->GetDownload(id);
@@ -313,5 +331,12 @@ void DownloadHandler::SetCacheFilePath(int id,
   data->set_cache_file_path(*cache_file_path);
 }
 
+DownloadManager* DownloadHandler::GetDownloadManager(void* manager_id) {
+  if (manager_id == notifier_->GetManager())
+    return notifier_->GetManager();
+  if (notifier_incognito_ && manager_id == notifier_incognito_->GetManager())
+    return notifier_incognito_->GetManager();
+  return NULL;
+}
 
 }  // namespace drive

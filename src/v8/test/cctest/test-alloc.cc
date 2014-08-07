@@ -25,11 +25,11 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "v8.h"
-#include "accessors.h"
-#include "api.h"
+#include "src/v8.h"
+#include "src/accessors.h"
+#include "src/api.h"
 
-#include "cctest.h"
+#include "test/cctest/cctest.h"
 
 
 using namespace v8::internal;
@@ -137,8 +137,8 @@ TEST(StressJS) {
   v8::HandleScope scope(CcTest::isolate());
   v8::Handle<v8::Context> env = v8::Context::New(CcTest::isolate());
   env->Enter();
-  Handle<JSFunction> function = factory->NewFunctionWithPrototype(
-      factory->function_string(), factory->null_value());
+  Handle<JSFunction> function = factory->NewFunction(
+      factory->function_string());
   // Force the creation of an initial map and set the code to
   // something empty.
   factory->NewJSObject(function);
@@ -196,12 +196,12 @@ class Block {
 
 
 TEST(CodeRange) {
-  const int code_range_size = 32*MB;
+  const size_t code_range_size = 32*MB;
   CcTest::InitializeVM();
   CodeRange code_range(reinterpret_cast<Isolate*>(CcTest::isolate()));
   code_range.SetUp(code_range_size);
-  int current_allocated = 0;
-  int total_allocated = 0;
+  size_t current_allocated = 0;
+  size_t total_allocated = 0;
   List<Block> blocks(1000);
 
   while (total_allocated < 5 * code_range_size) {

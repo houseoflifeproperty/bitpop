@@ -8,9 +8,9 @@
 #include <string>
 
 #include "ash/accelerators/accelerator_controller.h"
-#include "ash/accelerators/accelerator_filter.h"
+#include "ash/accelerators/accelerator_delegate.h"
 #include "ash/accelerators/focus_manager_factory.h"
-#include "ash/accelerators/nested_dispatcher_controller.h"
+#include "ash/accelerators/nested_accelerator_delegate.h"
 #include "ash/accelerometer/accelerometer_controller.h"
 #include "ash/ash_switches.h"
 #include "ash/autoclick/autoclick_controller.h"
@@ -30,6 +30,7 @@
 #include "ash/frame/custom_frame_view_ash.h"
 #include "ash/gpu_support.h"
 #include "ash/high_contrast/high_contrast_controller.h"
+#include "ash/host/ash_window_tree_host_init_params.h"
 #include "ash/keyboard_uma_event_filter.h"
 #include "ash/magnifier/magnification_controller.h"
 #include "ash/magnifier/partial_magnification_controller.h"
@@ -47,6 +48,7 @@
 #include "ash/shelf/shelf_window_watcher.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_factory.h"
+#include "ash/shell_init_params.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/locale/locale_notification_controller.h"
 #include "ash/system/status_area_widget.h"
@@ -73,6 +75,7 @@
 #include "ash/wm/toplevel_window_event_handler.h"
 #include "ash/wm/video_detector.h"
 #include "ash/wm/window_animations.h"
+#include "ash/wm/window_cycle_controller.h"
 #include "ash/wm/window_positioner.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_util.h"
@@ -102,9 +105,11 @@
 #include "ui/views/focus/focus_manager_factory.h"
 #include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/accelerator_filter.h"
 #include "ui/wm/core/compound_event_filter.h"
 #include "ui/wm/core/focus_controller.h"
 #include "ui/wm/core/input_method_event_filter.h"
+#include "ui/wm/core/nested_accelerator_controller.h"
 #include "ui/wm/core/shadow_controller.h"
 #include "ui/wm/core/user_activity_detector.h"
 #include "ui/wm/core/visibility_controller.h"
@@ -162,6 +167,15 @@ class AshVisibilityController : public ::wm::VisibilityController {
   DISALLOW_COPY_AND_ASSIGN(AshVisibilityController);
 };
 
+AshWindowTreeHostInitParams ShellInitParamsToAshWindowTreeHostInitParams(
+    const ShellInitParams& shell_init_params) {
+  AshWindowTreeHostInitParams ash_init_params;
+#if defined(OS_WIN)
+  ash_init_params.remote_hwnd = shell_init_params.remote_hwnd;
+#endif
+  return ash_init_params;
+}
+
 }  // namespace
 
 // static
@@ -173,10 +187,10 @@ bool Shell::initially_hide_cursor_ = false;
 // Shell, public:
 
 // static
-Shell* Shell::CreateInstance(ShellDelegate* delegate) {
+Shell* Shell::CreateInstance(const ShellInitParams& init_params) {
   CHECK(!instance_);
-  instance_ = new Shell(delegate);
-  instance_->Init();
+  instance_ = new Shell(init_params.delegate);
+  instance_->Init(init_params);
   return instance_;
 }
 
@@ -453,17 +467,13 @@ void Shell::RemoveShellObserver(ShellObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void Shell::EnableMaximizeModeWindowManager(bool enable) {
-  if (enable && !maximize_mode_window_manager_.get()) {
-    maximize_mode_window_manager_.reset(new MaximizeModeWindowManager());
-  } else if (!enable && maximize_mode_window_manager_.get()) {
-    maximize_mode_window_manager_.reset();
-  }
+#if defined(OS_CHROMEOS)
+bool Shell::ShouldSaveDisplaySettings() {
+  return !((maximize_mode_controller_->IsMaximizeModeWindowManagerEnabled() &&
+            maximize_mode_controller_->in_set_screen_rotation()) ||
+           resolution_notification_controller_->DoesNotificationTimeout());
 }
-
-bool Shell::IsMaximizeModeWindowManagerEnabled() {
-  return maximize_mode_window_manager_.get() != NULL;
-}
+#endif
 
 void Shell::UpdateShelfVisibility() {
   RootWindowControllerList controllers = GetAllRootWindowControllers();
@@ -491,7 +501,7 @@ void Shell::SetShelfAlignment(ShelfAlignment alignment,
   }
 }
 
-ShelfAlignment Shell::GetShelfAlignment(aura::Window* root_window) {
+ShelfAlignment Shell::GetShelfAlignment(const aura::Window* root_window) {
   return GetRootWindowController(root_window)
       ->GetShelfLayoutManager()
       ->GetAlignment();
@@ -664,16 +674,15 @@ Shell::~Shell() {
   RemovePostTargetHandler(toplevel_window_event_handler_.get());
   RemovePreTargetHandler(system_gesture_filter_.get());
   RemovePreTargetHandler(keyboard_metrics_filter_.get());
-  if (mouse_cursor_filter_)
-    RemovePreTargetHandler(mouse_cursor_filter_.get());
+  RemovePreTargetHandler(mouse_cursor_filter_.get());
 
   // TooltipController is deleted with the Shell so removing its references.
   RemovePreTargetHandler(tooltip_controller_.get());
 
-  // Destroy maximize window manager early on since it has some observers which
+  // Destroy maximize mode controller early on since it has some observers which
   // need to be removed.
+  maximize_mode_controller_->Shutdown();
   maximize_mode_controller_.reset();
-  maximize_mode_window_manager_.reset();
 
   // AppList needs to be released before shelf layout manager, which is
   // destroyed with shelf container in the loop below. However, app list
@@ -714,6 +723,7 @@ Shell::~Shell() {
   shadow_controller_.reset();
   resize_shadow_controller_.reset();
 
+  window_cycle_controller_.reset();
   window_selector_controller_.reset();
   mru_window_tracker_.reset();
 
@@ -741,7 +751,7 @@ Shell::~Shell() {
   partial_magnification_controller_.reset();
   tooltip_controller_.reset();
   event_client_.reset();
-  nested_dispatcher_controller_.reset();
+  nested_accelerator_controller_.reset();
   toplevel_window_event_handler_.reset();
   visibility_controller_.reset();
   // |shelf_item_delegate_manager_| observes |shelf_model_|. It must be
@@ -756,6 +766,7 @@ Shell::~Shell() {
   resolution_notification_controller_.reset();
 #endif
   desktop_background_controller_.reset();
+  mouse_cursor_filter_.reset();
 
 #if defined(OS_CHROMEOS) && defined(USE_X11)
   touch_transformer_controller_.reset();
@@ -795,7 +806,7 @@ Shell::~Shell() {
   instance_ = NULL;
 }
 
-void Shell::Init() {
+void Shell::Init(const ShellInitParams& init_params) {
   delegate_->PreInit();
   if (keyboard::IsKeyboardUsabilityExperimentEnabled()) {
     display_manager_->SetSecondDisplayMode(DisplayManager::VIRTUAL_KEYBOARD);
@@ -830,18 +841,14 @@ void Shell::Init() {
   // Shelf, and WallPaper could be created by the factory.
   views::FocusManagerFactory::Install(new AshFocusManagerFactory);
 
-  // Env creates the compositor. Historically it seems to have been implicitly
-  // initialized first by the ActivationController, but now that FocusController
-  // no longer does this we need to do it explicitly.
   aura::Env::CreateInstance(true);
+  aura::Env::GetInstance()->set_context_factory(init_params.context_factory);
 
   // The WindowModalityController needs to be at the front of the input event
   // pretarget handler list to ensure that it processes input events when modal
   // windows are active.
   window_modality_controller_.reset(
       new ::wm::WindowModalityController(this));
-
-  AddPreTargetHandler(this);
 
   env_filter_.reset(new ::wm::CompoundEventFilter);
   AddPreTargetHandler(env_filter_.get());
@@ -856,7 +863,8 @@ void Shell::Init() {
   screen_position_controller_.reset(new ScreenPositionController);
 
   display_controller_->Start();
-  display_controller_->CreatePrimaryHost();
+  display_controller_->CreatePrimaryHost(
+      ShellInitParamsToAshWindowTreeHostInitParams(init_params));
   aura::Window* root_window = display_controller_->GetPrimaryRootWindow();
   target_root_window_ = root_window;
 
@@ -867,7 +875,8 @@ void Shell::Init() {
 
   cursor_manager_.SetDisplay(GetScreen()->GetPrimaryDisplay());
 
-  nested_dispatcher_controller_.reset(new NestedDispatcherController);
+  nested_accelerator_controller_.reset(
+      new ::wm::NestedAcceleratorController(new NestedAcceleratorDelegate));
   accelerator_controller_.reset(new AcceleratorController);
   maximize_mode_controller_.reset(new MaximizeModeController());
 
@@ -900,7 +909,8 @@ void Shell::Init() {
       root_window->GetHost()->GetAcceleratedWidget()));
   AddPreTargetHandler(input_method_filter_.get());
 
-  accelerator_filter_.reset(new AcceleratorFilter);
+  accelerator_filter_.reset(new ::wm::AcceleratorFilter(
+      scoped_ptr< ::wm::AcceleratorDelegate>(new AcceleratorDelegate).Pass()));
   AddPreTargetHandler(accelerator_filter_.get());
 
   event_transformation_handler_.reset(new EventTransformationHandler);
@@ -951,6 +961,7 @@ void Shell::Init() {
   high_contrast_controller_.reset(new HighContrastController);
   video_detector_.reset(new VideoDetector);
   window_selector_controller_.reset(new WindowSelectorController());
+  window_cycle_controller_.reset(new WindowCycleController());
 
   tooltip_controller_.reset(
       new views::corewm::TooltipController(
@@ -1079,9 +1090,9 @@ void Shell::InitRootWindow(aura::Window* root_window) {
   root_window->AddPreTargetHandler(toplevel_window_event_handler_.get());
   root_window->AddPostTargetHandler(toplevel_window_event_handler_.get());
 
-  if (nested_dispatcher_controller_) {
+  if (nested_accelerator_controller_) {
     aura::client::SetDispatcherClient(root_window,
-                                      nested_dispatcher_controller_.get());
+                                      nested_accelerator_controller_.get());
   }
 }
 

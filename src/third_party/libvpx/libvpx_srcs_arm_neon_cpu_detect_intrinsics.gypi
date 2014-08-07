@@ -19,8 +19,6 @@
         '<(libvpx_source)/vp8/common/arm/neon/dequant_idct_neon.c',
         '<(libvpx_source)/vp8/common/arm/neon/dequantizeb_neon.c',
         '<(libvpx_source)/vp8/common/arm/neon/idct_blk_neon.c',
-        '<(libvpx_source)/vp8/common/arm/neon/idct_dequant_0_2x_neon.c',
-        '<(libvpx_source)/vp8/common/arm/neon/idct_dequant_full_2x_neon.c',
         '<(libvpx_source)/vp8/common/arm/neon/iwalsh_neon.c',
         '<(libvpx_source)/vp8/common/arm/neon/loopfiltersimplehorizontaledge_neon.c',
         '<(libvpx_source)/vp8/common/arm/neon/mbloopfilter_neon.c',

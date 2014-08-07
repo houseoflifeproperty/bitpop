@@ -29,7 +29,6 @@
 #define GraphicsContext_h
 
 #include "platform/PlatformExport.h"
-#include "platform/TraceEvent.h"
 #include "platform/fonts/Font.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/DashArray.h"
@@ -112,6 +111,10 @@ public:
     // ---------- State management methods -----------------
     void save();
     void restore();
+    unsigned saveCount() { return m_canvasStateStack.size(); }
+#if ASSERT_ENABLED
+    void disableDestructionChecks() { m_disableDestructionChecks = true; }
+#endif
 
     void saveLayer(const SkRect* bounds, const SkPaint*);
     void restoreLayer();
@@ -235,11 +238,11 @@ public:
     // Get the contents of the image buffer
     bool readPixels(const SkImageInfo&, void* pixels, size_t rowBytes, int x, int y);
 
-    // Sets up the paint for the current fill style.
-    void setupPaintForFilling(SkPaint*) const;
+    // Get the current fill style.
+    const SkPaint& fillPaint() const { return immutableState()->fillPaint(); }
 
-    // Sets up the paint for the current stroke style.
-    void setupPaintForStroking(SkPaint*) const;
+    // Get the current stroke style.
+    const SkPaint& strokePaint() const { return immutableState()->strokePaint(); }
 
     // These draw methods will do both stroking and filling.
     // FIXME: ...except drawRect(), which fills properly but always strokes
@@ -367,20 +370,21 @@ public:
     void clipOut(const Path&);
 
     // ---------- Transformation methods -----------------
-    enum IncludeDeviceScale { DefinitelyIncludeDeviceScale, PossiblyIncludeDeviceScale };
-    AffineTransform getCTM(IncludeDeviceScale includeScale = PossiblyIncludeDeviceScale) const;
+    // Note that the getCTM method returns only the current transform from Blink's perspective,
+    // which is not the final transform used to place content on screen. It cannot be relied upon
+    // for testing where a point will appear on screen or how large it will be.
+    AffineTransform getCTM() const;
     void concatCTM(const AffineTransform& affine) { concat(affineTransformToSkMatrix(affine)); }
     void setCTM(const AffineTransform& affine) { setMatrix(affineTransformToSkMatrix(affine)); }
     void setMatrix(const SkMatrix&);
 
-    void scale(const FloatSize&);
+    void scale(float x, float y);
     void rotate(float angleInRadians);
-    void translate(const FloatSize& size) { translate(size.width(), size.height()); }
     void translate(float x, float y);
 
     // This function applies the device scale factor to the context, making the context capable of
     // acting as a base-level context for a HiDPI environment.
-    void applyDeviceScaleFactor(float deviceScaleFactor) { scale(FloatSize(deviceScaleFactor, deviceScaleFactor)); }
+    void applyDeviceScaleFactor(float deviceScaleFactor) { scale(deviceScaleFactor, deviceScaleFactor); }
     // ---------- End transformation methods -----------------
 
     // URL drawing
@@ -423,35 +427,15 @@ private:
     static void draw2xMarker(SkBitmap*, int);
 #endif
 
-    // Return value % max, but account for value possibly being negative.
-    static int fastMod(int value, int max)
-    {
-        bool isNeg = false;
-        if (value < 0) {
-            value = -value;
-            isNeg = true;
-        }
-        if (value >= max)
-            value %= max;
-        if (isNeg)
-            value = -value;
-        return value;
-    }
-
     // Helpers for drawing a focus ring (drawFocusRing)
     void drawOuterPath(const SkPath&, SkPaint&, int);
     void drawInnerPath(const SkPath&, SkPaint&, int);
 
     // SkCanvas wrappers.
-    bool isDrawingToLayer() const { return m_canvas->isDrawingToLayer(); }
-
     void clipPath(const SkPath&, AntiAliasingMode = NotAntiAliased, SkRegion::Op = SkRegion::kIntersect_Op);
     void clipRRect(const SkRRect&, AntiAliasingMode = NotAntiAliased, SkRegion::Op = SkRegion::kIntersect_Op);
 
     void concat(const SkMatrix&);
-
-    // common code between setupPaintFor[Filling,Stroking]
-    void setupShader(SkPaint*, Gradient*, Pattern*, SkColor) const;
 
     // Apply deferred paint state saves
     void realizePaintSave()
@@ -462,11 +446,14 @@ private:
         if (m_paintState->saveCount()) {
             m_paintState->decrementSaveCount();
             ++m_paintStateIndex;
-            if (m_paintStateStack.size() == m_paintStateIndex)
-                m_paintStateStack.append(GraphicsContextState::create());
-            GraphicsContextState* priorPaintState = m_paintState;
-            m_paintState = m_paintStateStack[m_paintStateIndex].get();
-            m_paintState->copy(priorPaintState);
+            if (m_paintStateStack.size() == m_paintStateIndex) {
+                m_paintStateStack.append(GraphicsContextState::createAndCopy(*m_paintState));
+                m_paintState = m_paintStateStack[m_paintStateIndex].get();
+            } else {
+                GraphicsContextState* priorPaintState = m_paintState;
+                m_paintState = m_paintStateStack[m_paintStateIndex].get();
+                m_paintState->copy(*priorPaintState);
+            }
         }
     }
 
@@ -510,9 +497,10 @@ private:
     struct RecordingState;
     Vector<RecordingState> m_recordingStateStack;
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     unsigned m_annotationCount;
     unsigned m_layerCount;
+    bool m_disableDestructionChecks;
 #endif
     // Tracks the region painted opaque via the GraphicsContext.
     OpaqueRegionSkia m_opaqueRegion;

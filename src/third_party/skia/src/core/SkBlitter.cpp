@@ -993,15 +993,11 @@ SkBlitter* SkBlitter::Choose(const SkBitmap& device,
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const uint16_t gMask_0F0F = 0xF0F;
-const uint32_t gMask_00FF00FF = 0xFF00FF;
-
-///////////////////////////////////////////////////////////////////////////////
-
 class SkTransparentShaderContext : public SkShader::Context {
 public:
     SkTransparentShaderContext(const SkShader& shader, const SkShader::ContextRec& rec)
-        : INHERITED(shader, rec) {}
+        // Override rec with the identity matrix, so it is guaranteed to be invertible.
+        : INHERITED(shader, SkShader::ContextRec(*rec.fDevice, *rec.fPaint, SkMatrix::I())) {}
 
     virtual void shadeSpan(int x, int y, SkPMColor colors[], int count) SK_OVERRIDE {
         sk_bzero(colors, count * sizeof(SkPMColor));

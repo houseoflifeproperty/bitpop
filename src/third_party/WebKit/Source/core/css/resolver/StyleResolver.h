@@ -22,8 +22,6 @@
 #ifndef StyleResolver_h
 #define StyleResolver_h
 
-#include "core/animation/KeyframeEffectModel.h"
-#include "core/css/CSSFontSelectorClient.h"
 #include "core/css/PseudoStyleRequest.h"
 #include "core/css/RuleFeature.h"
 #include "core/css/RuleSet.h"
@@ -35,7 +33,6 @@
 #include "core/css/resolver/ScopedStyleResolver.h"
 #include "core/css/resolver/ScopedStyleTree.h"
 #include "core/css/resolver/StyleBuilder.h"
-#include "core/css/resolver/StyleResolverState.h"
 #include "core/css/resolver/StyleResourceLoader.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Deque.h"
@@ -47,6 +44,8 @@
 
 namespace WebCore {
 
+class AnimatableValue;
+class AnimationTimeline;
 class CSSAnimationUpdate;
 class CSSFontSelector;
 class CSSRuleList;
@@ -55,9 +54,9 @@ class CSSStyleSheet;
 class CSSValue;
 class ContainerNode;
 class Document;
-class DocumentTimeline;
 class Element;
 class ElementRuleCollector;
+class Interpolation;
 class KeyframeList;
 class KeyframeValue;
 class MediaQueryEvaluator;
@@ -100,7 +99,7 @@ public:
 };
 
 // This class selects a RenderStyle for a given element based on a collection of stylesheets.
-class StyleResolver FINAL : public CSSFontSelectorClient {
+class StyleResolver FINAL : public NoBaseWillBeGarbageCollectedFinalized<StyleResolver> {
     WTF_MAKE_NONCOPYABLE(StyleResolver); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     explicit StyleResolver(Document&);
@@ -119,7 +118,8 @@ public:
         RuleMatchingBehavior = MatchAllRules);
 
     PassRefPtr<RenderStyle> styleForKeyframe(Element*, const RenderStyle&, RenderStyle* parentStyle, const StyleKeyframe*, const AtomicString& animationName);
-    static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(Element&, CSSPropertyID, CSSValue*);
+    static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(Element&, CSSPropertyID, CSSValue&);
+    static PassRefPtrWillBeRawPtr<AnimatableValue> createAnimatableValueSnapshot(StyleResolverState&, CSSPropertyID, CSSValue&);
 
     PassRefPtr<RenderStyle> pseudoStyleForElement(Element*, const PseudoStyleRequest&, RenderStyle* parentStyle);
 
@@ -227,13 +227,9 @@ public:
     void increaseStyleSharingDepth() { ++m_styleSharingDepth; }
     void decreaseStyleSharingDepth() { --m_styleSharingDepth; }
 
-    PassRefPtr<PseudoElement> createPseudoElementIfNeeded(Element& parent, PseudoId);
+    PassRefPtrWillBeRawPtr<PseudoElement> createPseudoElementIfNeeded(Element& parent, PseudoId);
 
-    virtual void trace(Visitor*) OVERRIDE;
-
-private:
-    // CSSFontSelectorClient implementation.
-    virtual void fontsNeedUpdate(CSSFontSelector*) OVERRIDE;
+    void trace(Visitor*);
 
 private:
     void initWatchedSelectorRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRule> >& watchedSelectors);
@@ -268,6 +264,10 @@ private:
         LowPriorityProperties
     };
     template <StyleResolver::StyleApplicationPass pass>
+    static inline CSSPropertyID firstCSSPropertyId();
+    template <StyleResolver::StyleApplicationPass pass>
+    static inline CSSPropertyID lastCSSPropertyId();
+    template <StyleResolver::StyleApplicationPass pass>
     static inline bool isPropertyForPass(CSSPropertyID);
     template <StyleApplicationPass pass>
     void applyMatchedProperties(StyleResolverState&, const MatchResult&, bool important, int startIndex, int endIndex, bool inheritedOnly);
@@ -275,6 +275,9 @@ private:
     void applyProperties(StyleResolverState&, const StylePropertySet* properties, StyleRule*, bool isImportant, bool inheritedOnly, PropertyWhitelistType = PropertyWhitelistNone);
     template <StyleApplicationPass pass>
     void applyAnimatedProperties(StyleResolverState&, const WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> >&);
+    template <StyleResolver::StyleApplicationPass pass>
+    void applyAllProperty(StyleResolverState&, CSSValue*);
+
     void matchPageRules(MatchResult&, RuleSet*, bool isLeftPage, bool isFirstPage, const String& pageName);
     void matchPageRulesForList(WillBeHeapVector<RawPtrWillBeMember<StyleRulePage> >& matchedRules, const WillBeHeapVector<RawPtrWillBeMember<StyleRulePage> >&, bool isLeftPage, bool isFirstPage, const String& pageName);
     void collectViewportRules();

@@ -11,6 +11,7 @@
 #include "GrTextContext.h"
 
 class GrTextStrike;
+class GrAtlasMgr;
 
 /*
  * This class implements GrTextContext using standard bitmap fonts
@@ -44,11 +45,13 @@ private:
         kDefaultRequestedVerts   = kDefaultRequestedGlyphs * 4,
     };
 
-    SkPoint*                fVertices;
-    int32_t                 fMaxVertices;
-    GrTexture*              fCurrTexture;
-    int                     fCurrVertex;
-    SkRect                  fVertexBounds;
+    void*                       fVertices;
+    int32_t                     fMaxVertices;
+    GrTexture*                  fCurrTexture;
+    SkAutoTUnref<GrEffectRef>   fCachedEffect;
+    uint32_t                    fEffectTextureGenID;
+    int                         fCurrVertex;
+    SkRect                      fVertexBounds;
 };
 
 #endif

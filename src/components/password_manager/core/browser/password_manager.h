@@ -59,10 +59,11 @@ class PasswordManager : public LoginModel {
   // should always be valid when called.
   void AddSubmissionCallback(const PasswordSubmittedCallback& callback);
 
-  // Is saving new data for password autofill enabled for the current profile?
-  // For example, saving new data is disabled in Incognito mode, whereas filling
-  // data is not.
-  bool IsSavingEnabled() const;
+  // Is saving new data for password autofill enabled for the current profile
+  // and page? For example, saving new data is disabled in Incognito mode,
+  // whereas filling data is not. Also, saving data is disabled in the presence
+  // of SSL errors on a page.
+  bool IsSavingEnabledForCurrentPage() const;
 
   // Called by a PasswordFormManager when it decides a form can be autofilled
   // on the page.
@@ -140,6 +141,11 @@ class PasswordManager : public LoginModel {
   // the password), based on inspecting the state of
   // |provisional_save_manager_|.
   bool ShouldPromptUserToSavePassword() const;
+
+  // Checks for every from in |forms| whether |pending_login_managers_| already
+  // contain a manager for that form. If not, adds a manager for each such form.
+  void CreatePendingLoginManagers(
+      const std::vector<autofill::PasswordForm>& forms);
 
   // Note about how a PasswordFormManager can transition from
   // pending_login_managers_ to provisional_save_manager_ and the infobar.

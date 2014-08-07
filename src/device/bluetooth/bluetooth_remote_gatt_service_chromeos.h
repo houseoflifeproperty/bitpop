@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chromeos/dbus/bluetooth_gatt_characteristic_client.h"
@@ -19,12 +20,14 @@
 
 namespace device {
 
+class BluetoothAdapter;
 class BluetoothGattCharacteristic;
 
 }  // namespace device
 
 namespace chromeos {
 
+class BluetoothAdapterChromeOS;
 class BluetoothDeviceChromeOS;
 class BluetoothRemoteGattCharacteristicChromeOS;
 class BluetoothRemoteGattDescriptorChromeOS;
@@ -64,10 +67,21 @@ class BluetoothRemoteGattServiceChromeOS
   // Object path of the underlying service.
   const dbus::ObjectPath& object_path() const { return object_path_; }
 
+  // Returns the adapter associated with this service.
+  scoped_refptr<device::BluetoothAdapter> GetAdapter() const;
+
   // Notifies its observers that the GATT service has changed. This is mainly
   // used by BluetoothRemoteGattCharacteristicChromeOS instances to notify
   // service observers when characteristic descriptors get added and removed.
   void NotifyServiceChanged();
+
+  // Notifies its observers that the value of a characteristic has changed.
+  // Called by BluetoothRemoteGattCharacteristicChromeOS instances to notify
+  // service observers when their cached value is updated after a successful
+  // read request or when a "ValueUpdated" signal is received.
+  void NotifyCharacteristicValueChanged(
+      BluetoothRemoteGattCharacteristicChromeOS* characteristic,
+      const std::vector<uint8>& value);
 
   // Notifies its observers that a descriptor |descriptor| belonging to
   // characteristic |characteristic| has been added or removed. This is used
@@ -81,8 +95,8 @@ class BluetoothRemoteGattServiceChromeOS
       bool added);
 
   // Notifies its observers that the value of a descriptor has changed. Called
-  // by BluetoothRemoteGattCharacteristicChromeOS instances to notify service
-  // observers when the value of one of their descriptors gets updated.
+  // by BluetoothRemoteGattDescriptorChromeOS instances to notify service
+  // observers when their cached value gets updated after a read request.
   void NotifyDescriptorValueChanged(
       BluetoothRemoteGattCharacteristicChromeOS* characteristic,
       BluetoothRemoteGattDescriptorChromeOS* descriptor,
@@ -91,7 +105,8 @@ class BluetoothRemoteGattServiceChromeOS
  private:
   friend class BluetoothDeviceChromeOS;
 
-  BluetoothRemoteGattServiceChromeOS(BluetoothDeviceChromeOS* device,
+  BluetoothRemoteGattServiceChromeOS(BluetoothAdapterChromeOS* adapter,
+                                     BluetoothDeviceChromeOS* device,
                                      const dbus::ObjectPath& object_path);
   virtual ~BluetoothRemoteGattServiceChromeOS();
 
@@ -115,7 +130,12 @@ class BluetoothRemoteGattServiceChromeOS
   // List of observers interested in event notifications from us.
   ObserverList<device::BluetoothGattService::Observer> observers_;
 
-  // The device this GATT service belongs to.
+  // The adapter associated with this service. It's ok to store a raw pointer
+  // here since |adapter_| indirectly owns this instance.
+  BluetoothAdapterChromeOS* adapter_;
+
+  // The device this GATT service belongs to. It's ok to store a raw pointer
+  // here since |device_| owns this instance.
   BluetoothDeviceChromeOS* device_;
 
   // Mapping from GATT characteristic object paths to characteristic objects.

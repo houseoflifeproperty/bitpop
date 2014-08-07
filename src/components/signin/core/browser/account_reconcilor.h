@@ -46,6 +46,11 @@ class AccountReconcilor : public KeyedService,
 
   void Initialize(bool start_reconcile_if_tokens_available);
 
+  // Signal that the status of the new_profile_management flag has changed.
+  // Pass the new status as an explicit parameter since disabling the flag
+  // doesn't remove it from the CommandLine::ForCurrentProcess().
+  void OnNewProfileManagementFlagChanged(bool new_flag_status);
+
   // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
@@ -116,6 +121,8 @@ class AccountReconcilor : public KeyedService,
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, StartReconcileNoopWithDots);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, StartReconcileNoopMultiple);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, StartReconcileAddToCookie);
+  FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest,
+                           StartReconcileAddToCookieTwice);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, StartReconcileAddToChrome);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, StartReconcileBadPrimary);
   FRIEND_TEST_ALL_PREFIXES(AccountReconcilorTest, StartReconcileOnlyOnce);
@@ -140,10 +147,13 @@ class AccountReconcilor : public KeyedService,
   virtual void PerformAddToChromeAction(const std::string& account_id,
                                         int session_index);
   virtual void PerformLogoutAllAccountsAction();
+  virtual void PerformAddAccountToTokenService(
+      const std::string& account_id,
+      const std::string& refresh_token);
 
   // Used to remove an account from chrome and the cookie jar.
-  virtual void StartRemoveAction(const std::string& account_id);
-  virtual void FinishRemoveAction(
+  virtual void PerformStartRemoveAction(const std::string& account_id);
+  virtual void PerformFinishRemoveAction(
       const std::string& account_id,
       const GoogleServiceAuthError& error,
       const std::vector<std::pair<std::string, bool> >& accounts);
@@ -164,6 +174,10 @@ class AccountReconcilor : public KeyedService,
       const GoogleServiceAuthError& error,
       const std::vector<std::pair<std::string, bool> >& accounts);
   void ValidateAccountsFromTokenService();
+  // Note internally that this |account_id| is added to the cookie jar.
+  void MarkAccountAsAddedToCookie(const std::string& account_id);
+  // Note internally that this |account_id| is added to the token service.
+  void MarkAccountAsAddedToChrome(const std::string& account_id);
 
   void OnCookieChanged(const net::CanonicalCookie* cookie);
 
@@ -212,6 +226,9 @@ class AccountReconcilor : public KeyedService,
   // True while the reconcilor is busy checking or managing the accounts in
   // this profile.
   bool is_reconcile_started_;
+
+  // True iff this is the first time the reconcilor is executing.
+  bool first_execution_;
 
   // Used during reconcile action.
   // These members are used used to validate the gaia cookie.  |gaia_accounts_|

@@ -107,6 +107,11 @@ BASE_EXPORT bool ShouldCrashOnProcessDetach();
 // process is aborted.
 BASE_EXPORT void SetAbortBehaviorForCrashReporting();
 
+// A tablet is a device that is touch enabled and also is being used
+// "like a tablet".  This is used primarily for metrics in order to gain some
+// insight into how users use Chrome.
+BASE_EXPORT bool IsTabletDevice();
+
 // Get the size of a struct up to and including the specified member.
 // This is necessary to set compatible struct sizes for different versions
 // of certain Windows APIs (e.g. SystemParametersInfo).

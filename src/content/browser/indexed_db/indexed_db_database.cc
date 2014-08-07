@@ -27,6 +27,7 @@
 #include "content/common/indexed_db/indexed_db_key_path.h"
 #include "content/common/indexed_db/indexed_db_key_range.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
+#include "third_party/leveldatabase/env_chromium.h"
 #include "webkit/browser/blob/blob_data_handle.h"
 
 using base::ASCIIToUTF16;
@@ -266,7 +267,7 @@ void IndexedDBDatabase::CreateObjectStore(int64 transaction_id,
                                           const base::string16& name,
                                           const IndexedDBKeyPath& key_path,
                                           bool auto_increment) {
-  IDB_TRACE("IndexedDBDatabase::CreateObjectStore");
+  IDB_TRACE1("IndexedDBDatabase::CreateObjectStore", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -277,6 +278,9 @@ void IndexedDBDatabase::CreateObjectStore(int64 transaction_id,
     return;
   }
 
+  // Store creation is done synchronously, as it may be followed by
+  // index creation (also sync) since preemptive OpenCursor/SetIndexKeys
+  // may follow.
   IndexedDBObjectStoreMetadata object_store_metadata(
       name,
       object_store_id,
@@ -284,21 +288,6 @@ void IndexedDBDatabase::CreateObjectStore(int64 transaction_id,
       auto_increment,
       IndexedDBDatabase::kMinimumIndexId);
 
-  transaction->ScheduleTask(
-      base::Bind(&IndexedDBDatabase::CreateObjectStoreOperation,
-                 this,
-                 object_store_metadata),
-      base::Bind(&IndexedDBDatabase::CreateObjectStoreAbortOperation,
-                 this,
-                 object_store_id));
-
-  AddObjectStore(object_store_metadata, object_store_id);
-}
-
-void IndexedDBDatabase::CreateObjectStoreOperation(
-    const IndexedDBObjectStoreMetadata& object_store_metadata,
-    IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::CreateObjectStoreOperation");
   leveldb::Status s =
       backing_store_->CreateObjectStore(transaction->BackingStoreTransaction(),
                                         transaction->database()->id(),
@@ -312,16 +301,22 @@ void IndexedDBDatabase::CreateObjectStoreOperation(
         ASCIIToUTF16("Internal error creating object store '") +
             object_store_metadata.name + ASCIIToUTF16("'."));
     transaction->Abort(error);
-    if (s.IsCorruption())
+    if (leveldb_env::IsCorruption(s))
       factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                              error);
     return;
   }
+
+  AddObjectStore(object_store_metadata, object_store_id);
+  transaction->ScheduleAbortTask(
+      base::Bind(&IndexedDBDatabase::CreateObjectStoreAbortOperation,
+                 this,
+                 object_store_id));
 }
 
 void IndexedDBDatabase::DeleteObjectStore(int64 transaction_id,
                                           int64 object_store_id) {
-  IDB_TRACE("IndexedDBDatabase::DeleteObjectStore");
+  IDB_TRACE1("IndexedDBDatabase::DeleteObjectStore", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -330,17 +325,10 @@ void IndexedDBDatabase::DeleteObjectStore(int64 transaction_id,
   if (!ValidateObjectStoreId(object_store_id))
     return;
 
-  const IndexedDBObjectStoreMetadata& object_store_metadata =
-      metadata_.object_stores[object_store_id];
-
   transaction->ScheduleTask(
       base::Bind(&IndexedDBDatabase::DeleteObjectStoreOperation,
                  this,
-                 object_store_metadata),
-      base::Bind(&IndexedDBDatabase::DeleteObjectStoreAbortOperation,
-                 this,
-                 object_store_metadata));
-  RemoveObjectStore(object_store_id);
+                 object_store_id));
 }
 
 void IndexedDBDatabase::CreateIndex(int64 transaction_id,
@@ -350,7 +338,7 @@ void IndexedDBDatabase::CreateIndex(int64 transaction_id,
                                     const IndexedDBKeyPath& key_path,
                                     bool unique,
                                     bool multi_entry) {
-  IDB_TRACE("IndexedDBDatabase::CreateIndex");
+  IDB_TRACE1("IndexedDBDatabase::CreateIndex", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -358,27 +346,12 @@ void IndexedDBDatabase::CreateIndex(int64 transaction_id,
 
   if (!ValidateObjectStoreIdAndNewIndexId(object_store_id, index_id))
     return;
+
+  // Index creation is done synchronously since preemptive
+  // OpenCursor/SetIndexKeys may follow.
   const IndexedDBIndexMetadata index_metadata(
       name, index_id, key_path, unique, multi_entry);
 
-  transaction->ScheduleTask(
-      base::Bind(&IndexedDBDatabase::CreateIndexOperation,
-                 this,
-                 object_store_id,
-                 index_metadata),
-      base::Bind(&IndexedDBDatabase::CreateIndexAbortOperation,
-                 this,
-                 object_store_id,
-                 index_id));
-
-  AddIndex(object_store_id, index_metadata, index_id);
-}
-
-void IndexedDBDatabase::CreateIndexOperation(
-    int64 object_store_id,
-    const IndexedDBIndexMetadata& index_metadata,
-    IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::CreateIndexOperation");
   if (!backing_store_->CreateIndex(transaction->BackingStoreTransaction(),
                                    transaction->database()->id(),
                                    object_store_id,
@@ -394,13 +367,22 @@ void IndexedDBDatabase::CreateIndexOperation(
         blink::WebIDBDatabaseExceptionUnknownError, error_string));
     return;
   }
+
+  AddIndex(object_store_id, index_metadata, index_id);
+  transaction->ScheduleAbortTask(
+      base::Bind(&IndexedDBDatabase::CreateIndexAbortOperation,
+                 this,
+                 object_store_id,
+                 index_id));
 }
 
 void IndexedDBDatabase::CreateIndexAbortOperation(
     int64 object_store_id,
     int64 index_id,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::CreateIndexAbortOperation");
+  IDB_TRACE1("IndexedDBDatabase::CreateIndexAbortOperation",
+             "txn.id",
+             transaction->id());
   DCHECK(!transaction);
   RemoveIndex(object_store_id, index_id);
 }
@@ -408,7 +390,7 @@ void IndexedDBDatabase::CreateIndexAbortOperation(
 void IndexedDBDatabase::DeleteIndex(int64 transaction_id,
                                     int64 object_store_id,
                                     int64 index_id) {
-  IDB_TRACE("IndexedDBDatabase::DeleteIndex");
+  IDB_TRACE1("IndexedDBDatabase::DeleteIndex", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -416,32 +398,29 @@ void IndexedDBDatabase::DeleteIndex(int64 transaction_id,
 
   if (!ValidateObjectStoreIdAndIndexId(object_store_id, index_id))
     return;
-  const IndexedDBIndexMetadata& index_metadata =
-      metadata_.object_stores[object_store_id].indexes[index_id];
 
   transaction->ScheduleTask(
       base::Bind(&IndexedDBDatabase::DeleteIndexOperation,
                  this,
                  object_store_id,
-                 index_metadata),
-      base::Bind(&IndexedDBDatabase::DeleteIndexAbortOperation,
-                 this,
-                 object_store_id,
-                 index_metadata));
-
-  RemoveIndex(object_store_id, index_id);
+                 index_id));
 }
 
 void IndexedDBDatabase::DeleteIndexOperation(
     int64 object_store_id,
-    const IndexedDBIndexMetadata& index_metadata,
+    int64 index_id,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::DeleteIndexOperation");
+  IDB_TRACE1(
+      "IndexedDBDatabase::DeleteIndexOperation", "txn.id", transaction->id());
+
+  const IndexedDBIndexMetadata index_metadata =
+      metadata_.object_stores[object_store_id].indexes[index_id];
+
   leveldb::Status s =
       backing_store_->DeleteIndex(transaction->BackingStoreTransaction(),
                                   transaction->database()->id(),
                                   object_store_id,
-                                  index_metadata.id);
+                                  index_id);
   if (!s.ok()) {
     base::string16 error_string =
         ASCIIToUTF16("Internal error deleting index '") +
@@ -449,18 +428,28 @@ void IndexedDBDatabase::DeleteIndexOperation(
     IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                  error_string);
     transaction->Abort(error);
-    if (s.IsCorruption())
+    if (leveldb_env::IsCorruption(s))
       factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                              error);
+    return;
   }
+
+  RemoveIndex(object_store_id, index_id);
+  transaction->ScheduleAbortTask(
+      base::Bind(&IndexedDBDatabase::DeleteIndexAbortOperation,
+                 this,
+                 object_store_id,
+                 index_metadata));
 }
 
 void IndexedDBDatabase::DeleteIndexAbortOperation(
     int64 object_store_id,
     const IndexedDBIndexMetadata& index_metadata,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::DeleteIndexAbortOperation");
   DCHECK(!transaction);
+  IDB_TRACE1("IndexedDBDatabase::DeleteIndexAbortOperation",
+             "txn.id",
+             transaction->id());
   AddIndex(object_store_id, index_metadata, IndexedDBIndexMetadata::kInvalidId);
 }
 
@@ -477,7 +466,7 @@ void IndexedDBDatabase::Commit(int64 transaction_id) {
 void IndexedDBDatabase::Abort(int64 transaction_id) {
   // If the transaction is unknown, then it has already been aborted by the
   // backend before this call so it is safe to ignore it.
-  IDB_TRACE("IndexedDBDatabase::Abort");
+  IDB_TRACE1("IndexedDBDatabase::Abort", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (transaction)
     transaction->Abort();
@@ -485,7 +474,7 @@ void IndexedDBDatabase::Abort(int64 transaction_id) {
 
 void IndexedDBDatabase::Abort(int64 transaction_id,
                               const IndexedDBDatabaseError& error) {
-  IDB_TRACE("IndexedDBDatabase::Abort");
+  IDB_TRACE1("IndexedDBDatabase::Abort(error)", "txn.id", transaction_id);
   // If the transaction is unknown, then it has already been aborted by the
   // backend before this call so it is safe to ignore it.
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
@@ -499,7 +488,7 @@ void IndexedDBDatabase::Get(int64 transaction_id,
                             scoped_ptr<IndexedDBKeyRange> key_range,
                             bool key_only,
                             scoped_refptr<IndexedDBCallbacks> callbacks) {
-  IDB_TRACE("IndexedDBDatabase::Get");
+  IDB_TRACE1("IndexedDBDatabase::Get", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -524,7 +513,7 @@ void IndexedDBDatabase::GetOperation(
     indexed_db::CursorType cursor_type,
     scoped_refptr<IndexedDBCallbacks> callbacks,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::GetOperation");
+  IDB_TRACE1("IndexedDBDatabase::GetOperation", "txn.id", transaction->id());
 
   DCHECK(metadata_.object_stores.find(object_store_id) !=
          metadata_.object_stores.end());
@@ -574,7 +563,7 @@ void IndexedDBDatabase::GetOperation(
       DLOG(ERROR) << "Unable to open cursor operation: " << s.ToString();
       IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                    "Internal error deleting data in range");
-      if (s.IsCorruption()) {
+      if (leveldb_env::IsCorruption(s)) {
         factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                                error);
       }
@@ -602,7 +591,7 @@ void IndexedDBDatabase::GetOperation(
                                    "Internal error in GetRecord.");
       callbacks->OnError(error);
 
-      if (s.IsCorruption())
+      if (leveldb_env::IsCorruption(s))
         factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                                error);
       return;
@@ -635,7 +624,7 @@ void IndexedDBDatabase::GetOperation(
     IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                  "Internal error in GetPrimaryKeyViaIndex.");
     callbacks->OnError(error);
-    if (s.IsCorruption())
+    if (leveldb_env::IsCorruption(s))
       factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                              error);
     return;
@@ -661,7 +650,7 @@ void IndexedDBDatabase::GetOperation(
     IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                  "Internal error in GetRecord.");
     callbacks->OnError(error);
-    if (s.IsCorruption())
+    if (leveldb_env::IsCorruption(s))
       factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                              error);
     return;
@@ -739,7 +728,7 @@ void IndexedDBDatabase::Put(int64 transaction_id,
                             PutMode put_mode,
                             scoped_refptr<IndexedDBCallbacks> callbacks,
                             const std::vector<IndexKeys>& index_keys) {
-  IDB_TRACE("IndexedDBDatabase::Put");
+  IDB_TRACE1("IndexedDBDatabase::Put", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -764,7 +753,7 @@ void IndexedDBDatabase::Put(int64 transaction_id,
 
 void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
                                      IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::PutOperation");
+  IDB_TRACE1("IndexedDBDatabase::PutOperation", "txn.id", transaction->id());
   DCHECK_NE(transaction->mode(), indexed_db::TRANSACTION_READ_ONLY);
   bool key_was_generated = false;
 
@@ -807,7 +796,7 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
       IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                    "Internal error checking key existence.");
       params->callbacks->OnError(error);
-      if (s.IsCorruption())
+      if (leveldb_env::IsCorruption(s))
         factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                                error);
       return;
@@ -860,7 +849,7 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
         blink::WebIDBDatabaseExceptionUnknownError,
         "Internal error: backing store error performing put/add.");
     params->callbacks->OnError(error);
-    if (s.IsCorruption())
+    if (leveldb_env::IsCorruption(s))
       factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                              error);
     return;
@@ -888,7 +877,7 @@ void IndexedDBDatabase::PutOperation(scoped_ptr<PutOperationParams> params,
       IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                    "Internal error updating key generator.");
       params->callbacks->OnError(error);
-      if (s.IsCorruption())
+      if (leveldb_env::IsCorruption(s))
         factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                                error);
       return;
@@ -902,7 +891,7 @@ void IndexedDBDatabase::SetIndexKeys(int64 transaction_id,
                                      int64 object_store_id,
                                      scoped_ptr<IndexedDBKey> primary_key,
                                      const std::vector<IndexKeys>& index_keys) {
-  IDB_TRACE("IndexedDBDatabase::SetIndexKeys");
+  IDB_TRACE1("IndexedDBDatabase::SetIndexKeys", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -923,7 +912,7 @@ void IndexedDBDatabase::SetIndexKeys(int64 transaction_id,
     IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                  "Internal error setting index keys.");
     transaction->Abort(error);
-    if (s.IsCorruption())
+    if (leveldb_env::IsCorruption(s))
       factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                              error);
     return;
@@ -977,7 +966,7 @@ void IndexedDBDatabase::SetIndexKeys(int64 transaction_id,
 void IndexedDBDatabase::SetIndexesReady(int64 transaction_id,
                                         int64,
                                         const std::vector<int64>& index_ids) {
-  IDB_TRACE("IndexedDBDatabase::SetIndexesReady");
+  IDB_TRACE1("IndexedDBDatabase::SetIndexesReady", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -993,7 +982,9 @@ void IndexedDBDatabase::SetIndexesReady(int64 transaction_id,
 void IndexedDBDatabase::SetIndexesReadyOperation(
     size_t index_count,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::SetIndexesReadyOperation");
+  IDB_TRACE1("IndexedDBDatabase::SetIndexesReadyOperation",
+             "txn.id",
+             transaction->id());
   for (size_t i = 0; i < index_count; ++i)
     transaction->DidCompletePreemptiveEvent();
 }
@@ -1021,7 +1012,7 @@ void IndexedDBDatabase::OpenCursor(
     bool key_only,
     TaskType task_type,
     scoped_refptr<IndexedDBCallbacks> callbacks) {
-  IDB_TRACE("IndexedDBDatabase::OpenCursor");
+  IDB_TRACE1("IndexedDBDatabase::OpenCursor", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -1045,7 +1036,8 @@ void IndexedDBDatabase::OpenCursor(
 void IndexedDBDatabase::OpenCursorOperation(
     scoped_ptr<OpenCursorOperationParams> params,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::OpenCursorOperation");
+  IDB_TRACE1(
+      "IndexedDBDatabase::OpenCursorOperation", "txn.id", transaction->id());
 
   // The frontend has begun indexing, so this pauses the transaction
   // until the indexing is complete. This can't happen any earlier
@@ -1102,7 +1094,7 @@ void IndexedDBDatabase::OpenCursorOperation(
     DLOG(ERROR) << "Unable to open cursor operation: " << s.ToString();
     IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                  "Internal error opening cursor operation");
-    if (s.IsCorruption()) {
+    if (leveldb_env::IsCorruption(s)) {
       factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                              error);
     }
@@ -1128,7 +1120,7 @@ void IndexedDBDatabase::Count(int64 transaction_id,
                               int64 index_id,
                               scoped_ptr<IndexedDBKeyRange> key_range,
                               scoped_refptr<IndexedDBCallbacks> callbacks) {
-  IDB_TRACE("IndexedDBDatabase::Count");
+  IDB_TRACE1("IndexedDBDatabase::Count", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -1150,7 +1142,7 @@ void IndexedDBDatabase::CountOperation(
     scoped_ptr<IndexedDBKeyRange> key_range,
     scoped_refptr<IndexedDBCallbacks> callbacks,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::CountOperation");
+  IDB_TRACE1("IndexedDBDatabase::CountOperation", "txn.id", transaction->id());
   uint32 count = 0;
   scoped_ptr<IndexedDBBackingStore::Cursor> backing_store_cursor;
 
@@ -1177,7 +1169,7 @@ void IndexedDBDatabase::CountOperation(
     DLOG(ERROR) << "Unable perform count operation: " << s.ToString();
     IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                  "Internal error performing count operation");
-    if (s.IsCorruption()) {
+    if (leveldb_env::IsCorruption(s)) {
       factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                              error);
     }
@@ -1201,7 +1193,7 @@ void IndexedDBDatabase::DeleteRange(
     int64 object_store_id,
     scoped_ptr<IndexedDBKeyRange> key_range,
     scoped_refptr<IndexedDBCallbacks> callbacks) {
-  IDB_TRACE("IndexedDBDatabase::DeleteRange");
+  IDB_TRACE1("IndexedDBDatabase::DeleteRange", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -1222,50 +1214,32 @@ void IndexedDBDatabase::DeleteRangeOperation(
     scoped_ptr<IndexedDBKeyRange> key_range,
     scoped_refptr<IndexedDBCallbacks> callbacks,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::DeleteRangeOperation");
-  leveldb::Status s;
-  scoped_ptr<IndexedDBBackingStore::Cursor> backing_store_cursor =
-      backing_store_->OpenObjectStoreCursor(
-          transaction->BackingStoreTransaction(),
-          id(),
-          object_store_id,
-          *key_range,
-          indexed_db::CURSOR_NEXT,
-          &s);
-  if (backing_store_cursor && s.ok()) {
-    do {
-      if (!backing_store_->DeleteRecord(
-                               transaction->BackingStoreTransaction(),
-                               id(),
-                               object_store_id,
-                               backing_store_cursor->record_identifier())
-               .ok()) {
-        callbacks->OnError(
-            IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
-                                   "Internal error deleting data in range"));
-        return;
-      }
-    } while (backing_store_cursor->Continue(&s));
-  }
-
+  IDB_TRACE1(
+      "IndexedDBDatabase::DeleteRangeOperation", "txn.id", transaction->id());
+  leveldb::Status s =
+      backing_store_->DeleteRange(transaction->BackingStoreTransaction(),
+                                  id(),
+                                  object_store_id,
+                                  *key_range);
   if (!s.ok()) {
+    base::string16 error_string =
+        ASCIIToUTF16("Internal error deleting data in range");
     IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
-                                 ASCIIToUTF16("Internal error deleting range"));
+                                 error_string);
     transaction->Abort(error);
-    if (s.IsCorruption()) {
+    if (leveldb_env::IsCorruption(s)) {
       factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                              error);
     }
     return;
   }
-
   callbacks->OnSuccess();
 }
 
 void IndexedDBDatabase::Clear(int64 transaction_id,
                               int64 object_store_id,
                               scoped_refptr<IndexedDBCallbacks> callbacks) {
-  IDB_TRACE("IndexedDBDatabase::Clear");
+  IDB_TRACE1("IndexedDBDatabase::Clear", "txn.id", transaction_id);
   IndexedDBTransaction* transaction = GetTransaction(transaction_id);
   if (!transaction)
     return;
@@ -1282,14 +1256,14 @@ void IndexedDBDatabase::ClearOperation(
     int64 object_store_id,
     scoped_refptr<IndexedDBCallbacks> callbacks,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::ObjectStoreClearOperation");
+  IDB_TRACE1("IndexedDBDatabase::ClearOperation", "txn.id", transaction->id());
   leveldb::Status s = backing_store_->ClearObjectStore(
       transaction->BackingStoreTransaction(), id(), object_store_id);
   if (!s.ok()) {
     IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                  "Internal error clearing object store");
     callbacks->OnError(error);
-    if (s.IsCorruption()) {
+    if (leveldb_env::IsCorruption(s)) {
       factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                              error);
     }
@@ -1299,13 +1273,18 @@ void IndexedDBDatabase::ClearOperation(
 }
 
 void IndexedDBDatabase::DeleteObjectStoreOperation(
-    const IndexedDBObjectStoreMetadata& object_store_metadata,
+    int64 object_store_id,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::DeleteObjectStoreOperation");
+  IDB_TRACE1("IndexedDBDatabase::DeleteObjectStoreOperation",
+             "txn.id",
+             transaction->id());
+
+  const IndexedDBObjectStoreMetadata object_store_metadata =
+      metadata_.object_stores[object_store_id];
   leveldb::Status s =
       backing_store_->DeleteObjectStore(transaction->BackingStoreTransaction(),
                                         transaction->database()->id(),
-                                        object_store_metadata.id);
+                                        object_store_id);
   if (!s.ok()) {
     base::string16 error_string =
         ASCIIToUTF16("Internal error deleting object store '") +
@@ -1313,10 +1292,17 @@ void IndexedDBDatabase::DeleteObjectStoreOperation(
     IndexedDBDatabaseError error(blink::WebIDBDatabaseExceptionUnknownError,
                                  error_string);
     transaction->Abort(error);
-    if (s.IsCorruption())
+    if (leveldb_env::IsCorruption(s))
       factory_->HandleBackingStoreCorruption(backing_store_->origin_url(),
                                              error);
+    return;
   }
+
+  RemoveObjectStore(object_store_id);
+  transaction->ScheduleAbortTask(
+      base::Bind(&IndexedDBDatabase::DeleteObjectStoreAbortOperation,
+                 this,
+                 object_store_metadata));
 }
 
 void IndexedDBDatabase::VersionChangeOperation(
@@ -1324,14 +1310,13 @@ void IndexedDBDatabase::VersionChangeOperation(
     scoped_refptr<IndexedDBCallbacks> callbacks,
     scoped_ptr<IndexedDBConnection> connection,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::VersionChangeOperation");
+  IDB_TRACE1(
+      "IndexedDBDatabase::VersionChangeOperation", "txn.id", transaction->id());
   int64 old_version = metadata_.int_version;
   DCHECK_GT(version, old_version);
-  metadata_.int_version = version;
+
   if (!backing_store_->UpdateIDBDatabaseIntVersion(
-          transaction->BackingStoreTransaction(),
-          id(),
-          metadata_.int_version)) {
+          transaction->BackingStoreTransaction(), id(), version)) {
     IndexedDBDatabaseError error(
         blink::WebIDBDatabaseExceptionUnknownError,
         ASCIIToUTF16(
@@ -1341,6 +1326,15 @@ void IndexedDBDatabase::VersionChangeOperation(
     transaction->Abort(error);
     return;
   }
+
+  transaction->ScheduleAbortTask(
+      base::Bind(&IndexedDBDatabase::VersionChangeAbortOperation,
+                 this,
+                 metadata_.version,
+                 metadata_.int_version));
+  metadata_.int_version = version;
+  metadata_.version = kNoStringVersion;
+
   DCHECK(!pending_second_half_open_);
   pending_second_half_open_.reset(
       new PendingSuccessCall(callbacks, connection.get(), version));
@@ -1455,8 +1449,7 @@ void IndexedDBDatabase::CreateTransaction(
     IndexedDBConnection* connection,
     const std::vector<int64>& object_store_ids,
     uint16 mode) {
-
-  IDB_TRACE("IndexedDBDatabase::CreateTransaction");
+  IDB_TRACE1("IndexedDBDatabase::CreateTransaction", "txn.id", transaction_id);
   DCHECK(connections_.count(connection));
   DCHECK(transactions_.find(transaction_id) == transactions_.end());
   if (transactions_.find(transaction_id) != transactions_.end())
@@ -1623,17 +1616,12 @@ void IndexedDBDatabase::RunVersionChangeTransactionFinal(
                     object_store_ids,
                     indexed_db::TRANSACTION_VERSION_CHANGE);
 
-  transactions_[transaction_id]
-      ->ScheduleTask(base::Bind(&IndexedDBDatabase::VersionChangeOperation,
-                                this,
-                                requested_version,
-                                callbacks,
-                                base::Passed(&connection)),
-                     base::Bind(&IndexedDBDatabase::VersionChangeAbortOperation,
-                                this,
-                                metadata_.version,
-                                metadata_.int_version));
-
+  transactions_[transaction_id]->ScheduleTask(
+      base::Bind(&IndexedDBDatabase::VersionChangeOperation,
+                 this,
+                 requested_version,
+                 callbacks,
+                 base::Passed(&connection)));
   DCHECK(!pending_second_half_open_);
 }
 
@@ -1748,16 +1736,20 @@ void IndexedDBDatabase::Close(IndexedDBConnection* connection, bool forced) {
 void IndexedDBDatabase::CreateObjectStoreAbortOperation(
     int64 object_store_id,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::CreateObjectStoreAbortOperation");
   DCHECK(!transaction);
+  IDB_TRACE1("IndexedDBDatabase::CreateObjectStoreAbortOperation",
+             "txn.id",
+             transaction->id());
   RemoveObjectStore(object_store_id);
 }
 
 void IndexedDBDatabase::DeleteObjectStoreAbortOperation(
     const IndexedDBObjectStoreMetadata& object_store_metadata,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::DeleteObjectStoreAbortOperation");
   DCHECK(!transaction);
+  IDB_TRACE1("IndexedDBDatabase::DeleteObjectStoreAbortOperation",
+             "txn.id",
+             transaction->id());
   AddObjectStore(object_store_metadata,
                  IndexedDBObjectStoreMetadata::kInvalidId);
 }
@@ -1766,8 +1758,10 @@ void IndexedDBDatabase::VersionChangeAbortOperation(
     const base::string16& previous_version,
     int64 previous_int_version,
     IndexedDBTransaction* transaction) {
-  IDB_TRACE("IndexedDBDatabase::VersionChangeAbortOperation");
   DCHECK(!transaction);
+  IDB_TRACE1("IndexedDBDatabase::VersionChangeAbortOperation",
+             "txn.id",
+             transaction->id());
   metadata_.version = previous_version;
   metadata_.int_version = previous_int_version;
 }

@@ -8,7 +8,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -18,13 +17,12 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/chromeos_switches.h"
 #include "chromeos/network/device_state.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state_handler.h"
@@ -81,47 +79,6 @@ const int kMaxUserCount = 5;
 
 namespace policy {
 
-DeviceStatusCollector::Context::Context() {
-}
-
-DeviceStatusCollector::Context::~Context() {
-}
-
-void DeviceStatusCollector::Context::GetLocationUpdate(
-    const content::GeolocationProvider::LocationUpdateCallback& callback) {
-  owner_callback_ = callback;
-  content::BrowserThread::PostTask(
-      content::BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&DeviceStatusCollector::Context::GetLocationUpdateInternal,
-                 this));
-}
-
-void DeviceStatusCollector::Context::GetLocationUpdateInternal() {
-  our_callback_ = base::Bind(
-      &DeviceStatusCollector::Context::OnLocationUpdate, this);
-  content::GeolocationProvider::GetInstance()->AddLocationUpdateCallback(
-      our_callback_, true);
-}
-
-void DeviceStatusCollector::Context::OnLocationUpdate(
-    const content::Geoposition& geoposition) {
-  content::GeolocationProvider::GetInstance()->RemoveLocationUpdateCallback(
-      our_callback_);
-  our_callback_.Reset();
-  content::BrowserThread::PostTask(
-      content::BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(&DeviceStatusCollector::Context::CallCollector,
-                 this, geoposition));
-}
-
-void DeviceStatusCollector::Context::CallCollector(
-    const content::Geoposition& geoposition) {
-  owner_callback_.Run(geoposition);
-  owner_callback_.Reset();
-}
-
 DeviceStatusCollector::DeviceStatusCollector(
     PrefService* local_state,
     chromeos::system::StatisticsProvider* provider,
@@ -140,14 +97,9 @@ DeviceStatusCollector::DeviceStatusCollector(
       report_boot_mode_(false),
       report_location_(false),
       report_network_interfaces_(false),
-      report_users_(false),
-      context_(new Context()) {
-  if (location_update_requester) {
+      report_users_(false) {
+  if (location_update_requester)
     location_update_requester_ = *location_update_requester;
-  } else {
-    location_update_requester_ =
-        base::Bind(&Context::GetLocationUpdate, context_.get());
-  }
   idle_poll_timer_.Start(FROM_HERE,
                          TimeDelta::FromSeconds(kIdlePollIntervalSeconds),
                          this, &DeviceStatusCollector::CheckIdleState);
@@ -233,18 +185,30 @@ void DeviceStatusCollector::UpdateReportingSettings() {
                  weak_factory_.GetWeakPtr()))) {
     return;
   }
-  cros_settings_->GetBoolean(
-      chromeos::kReportDeviceVersionInfo, &report_version_info_);
-  cros_settings_->GetBoolean(
-      chromeos::kReportDeviceActivityTimes, &report_activity_times_);
-  cros_settings_->GetBoolean(
-      chromeos::kReportDeviceBootMode, &report_boot_mode_);
-  cros_settings_->GetBoolean(
-      chromeos::kReportDeviceLocation, &report_location_);
-  cros_settings_->GetBoolean(
-      chromeos::kReportDeviceNetworkInterfaces, &report_network_interfaces_);
-  cros_settings_->GetBoolean(
-      chromeos::kReportDeviceUsers, &report_users_);
+  if (!cros_settings_->GetBoolean(
+      chromeos::kReportDeviceVersionInfo, &report_version_info_)) {
+    report_version_info_ = true;
+  }
+  if (!cros_settings_->GetBoolean(
+      chromeos::kReportDeviceActivityTimes, &report_activity_times_)) {
+    report_activity_times_ = true;
+  }
+  if (!cros_settings_->GetBoolean(
+      chromeos::kReportDeviceBootMode, &report_boot_mode_)) {
+    report_boot_mode_ = true;
+  }
+  if (!cros_settings_->GetBoolean(
+      chromeos::kReportDeviceLocation, &report_location_)) {
+    report_location_ = false;
+  }
+  if (!cros_settings_->GetBoolean(
+      chromeos::kReportDeviceNetworkInterfaces, &report_network_interfaces_)) {
+    report_network_interfaces_ = true;
+  }
+  if (!cros_settings_->GetBoolean(
+      chromeos::kReportDeviceUsers, &report_users_)) {
+    report_users_ = true;
+  }
 
   if (report_location_) {
     ScheduleGeolocationUpdateRequest();
@@ -518,8 +482,7 @@ bool DeviceStatusCollector::GetDeviceStatus(
   if (report_network_interfaces_)
     GetNetworkInterfaces(status);
 
-  if (report_users_ && !CommandLine::ForCurrentProcess()->HasSwitch(
-        chromeos::switches::kDisableEnterpriseUserReporting)) {
+  if (report_users_) {
     GetUsers(status);
   }
 
@@ -552,20 +515,24 @@ void DeviceStatusCollector::ScheduleGeolocationUpdateRequest() {
     TimeDelta elapsed = GetCurrentTime() - position_.timestamp;
     TimeDelta interval =
         TimeDelta::FromSeconds(kGeolocationPollIntervalSeconds);
-    if (elapsed > interval) {
-      geolocation_update_in_progress_ = true;
-      location_update_requester_.Run(base::Bind(
-          &DeviceStatusCollector::ReceiveGeolocationUpdate,
-          weak_factory_.GetWeakPtr()));
-    } else {
+    if (elapsed <= interval) {
       geolocation_update_timer_.Start(
           FROM_HERE,
           interval - elapsed,
           this,
           &DeviceStatusCollector::ScheduleGeolocationUpdateRequest);
+      return;
     }
+  }
+
+  geolocation_update_in_progress_ = true;
+  if (location_update_requester_.is_null()) {
+    geolocation_subscription_ = content::GeolocationProvider::GetInstance()->
+        AddLocationUpdateCallback(
+            base::Bind(&DeviceStatusCollector::ReceiveGeolocationUpdate,
+                       weak_factory_.GetWeakPtr()),
+            true);
   } else {
-    geolocation_update_in_progress_ = true;
     location_update_requester_.Run(base::Bind(
         &DeviceStatusCollector::ReceiveGeolocationUpdate,
         weak_factory_.GetWeakPtr()));

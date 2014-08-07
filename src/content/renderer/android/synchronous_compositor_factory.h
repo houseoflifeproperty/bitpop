@@ -42,6 +42,7 @@ class SynchronousCompositorFactory {
 
   virtual scoped_refptr<base::MessageLoopProxy>
       GetCompositorMessageLoop() = 0;
+  virtual bool RecordFullLayer() = 0;
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
       int routing_id) = 0;
 
@@ -51,7 +52,7 @@ class SynchronousCompositorFactory {
   virtual scoped_refptr<webkit::gpu::ContextProviderWebContext>
       GetSharedOffscreenContextProviderForMainThread() = 0;
   virtual scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
-      int view_id) = 0;
+      int frame_id) = 0;
   virtual blink::WebGraphicsContext3D* CreateOffscreenGraphicsContext3D(
       const blink::WebGraphicsContext3D::Attributes& attributes) = 0;
 

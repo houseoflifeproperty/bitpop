@@ -27,7 +27,8 @@
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/shadow/DateTimeFieldElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
+#include "core/dom/Document.h"
 #include "core/dom/Text.h"
 #include "core/events/KeyboardEvent.h"
 #include "platform/text/PlatformLocale.h"

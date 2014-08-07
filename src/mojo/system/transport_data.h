@@ -12,12 +12,16 @@
 #include "base/macros.h"
 #include "base/memory/aligned_memory.h"
 #include "base/memory/scoped_ptr.h"
+#include "build/build_config.h"
 #include "mojo/embedder/platform_handle.h"
+#include "mojo/embedder/platform_handle_vector.h"
 #include "mojo/system/dispatcher.h"
 #include "mojo/system/system_impl_export.h"
 
 namespace mojo {
 namespace system {
+
+class Channel;
 
 // This class is used by |MessageInTransit| to represent handles (|Dispatcher|s)
 // in various stages of serialization.
@@ -79,7 +83,24 @@ class MOJO_SYSTEM_IMPL_EXPORT TransportData {
   // dispatcher.
   static const size_t kMaxSerializedDispatcherPlatformHandles = 2;
 
+  // The maximum possible size of a valid transport data buffer.
+  static const size_t kMaxBufferSize;
+
+  // The maximum total number of platform handles that may be attached.
+  static const size_t kMaxPlatformHandles;
+
   TransportData(scoped_ptr<DispatcherVector> dispatchers, Channel* channel);
+
+#if defined(OS_POSIX)
+  // This is a hacky POSIX-only constructor to directly attach only platform
+  // handles to a message, used by |RawChannelPosix| to split messages with too
+  // many platform handles into multiple messages. |Header| will be present, but
+  // be zero. (No other information will be attached, and
+  // |RawChannel::GetSerializedPlatformHandleSize()| should return zero.)
+  explicit TransportData(
+      embedder::ScopedPlatformHandleVectorPtr platform_handles);
+#endif
+
   ~TransportData();
 
   const void* buffer() const { return buffer_.get(); }
@@ -92,10 +113,10 @@ class MOJO_SYSTEM_IMPL_EXPORT TransportData {
 
   // Gets attached platform-specific handles; this may return null if there are
   // none. Note that the caller may mutate the set of platform-specific handles.
-  const std::vector<embedder::PlatformHandle>* platform_handles() const {
+  const embedder::PlatformHandleVector* platform_handles() const {
     return platform_handles_.get();
   }
-  std::vector<embedder::PlatformHandle>* platform_handles() {
+  embedder::PlatformHandleVector* platform_handles() {
     return platform_handles_.get();
   }
 
@@ -108,14 +129,23 @@ class MOJO_SYSTEM_IMPL_EXPORT TransportData {
   // validity of the handle table entries (i.e., does range checking), but does
   // not check that the validity of the actual serialized dispatcher
   // information.
-  static const char* ValidateBuffer(const void* buffer, size_t buffer_size);
+  static const char* ValidateBuffer(size_t serialized_platform_handle_size,
+                                    const void* buffer,
+                                    size_t buffer_size);
+
+  // Gets the platform handle table from a (valid) |TransportData| buffer (which
+  // should have been validated using |ValidateBuffer()| first).
+  static void GetPlatformHandleTable(const void* transport_data_buffer,
+                                     size_t* num_platform_handles,
+                                     const void** platform_handle_table);
 
   // Deserializes dispatchers from the given (serialized) transport data buffer
-  // (typically from a |MessageInTransit::View|). |buffer| should be non-null
-  // and |buffer_size| should be nonzero.
-  static scoped_ptr<DispatcherVector> DeserializeDispatchersFromBuffer(
+  // (typically from a |MessageInTransit::View|) and vector of platform handles.
+  // |buffer| should be non-null and |buffer_size| should be nonzero.
+  static scoped_ptr<DispatcherVector> DeserializeDispatchers(
       const void* buffer,
       size_t buffer_size,
+      embedder::ScopedPlatformHandleVectorPtr platform_handles,
       Channel* channel);
 
  private:
@@ -140,12 +170,6 @@ class MOJO_SYSTEM_IMPL_EXPORT TransportData {
     uint32_t unused;
   };
 
-  // The maximum possible size of a valid transport data buffer.
-  static const size_t kMaxBufferSize;
-
-  // The maximum total number of platform handles that may be attached.
-  static const size_t kMaxPlatformHandles;
-
   const Header* header() const {
     return reinterpret_cast<const Header*>(buffer_.get());
   }
@@ -157,7 +181,7 @@ class MOJO_SYSTEM_IMPL_EXPORT TransportData {
   // transport). The vector (if any) owns the handles that it contains (and is
   // responsible for closing them).
   // TODO(vtl): With C++11, change it to a vector of |ScopedPlatformHandles|.
-  scoped_ptr<std::vector<embedder::PlatformHandle> > platform_handles_;
+  embedder::ScopedPlatformHandleVectorPtr platform_handles_;
 
   DISALLOW_COPY_AND_ASSIGN(TransportData);
 };

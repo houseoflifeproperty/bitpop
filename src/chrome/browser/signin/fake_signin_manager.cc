@@ -9,7 +9,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_global_error.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
@@ -96,7 +95,8 @@ void FakeSigninManager::FailSignin(const GoogleServiceAuthError& error) {
   FOR_EACH_OBSERVER(Observer, observer_list_, GoogleSigninFailed(error));
 }
 
-void FakeSigninManager::SignOut() {
+void FakeSigninManager::SignOut(
+    signin_metrics::ProfileSignout signout_source_metric) {
   if (IsSignoutProhibited())
     return;
   set_auth_in_progress(std::string());

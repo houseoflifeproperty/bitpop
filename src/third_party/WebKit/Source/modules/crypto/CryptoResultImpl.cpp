@@ -38,7 +38,6 @@
 #include "core/dom/DOMException.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/crypto/Key.h"
-#include "modules/crypto/KeyPair.h"
 #include "modules/crypto/NormalizeAlgorithm.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebArrayBuffer.h"
@@ -47,9 +46,31 @@
 
 namespace WebCore {
 
-namespace {
+class CryptoResultImpl::WeakResolver : public ScriptPromiseResolverWithContext {
+public:
+    static WeakPtr<ScriptPromiseResolverWithContext> create(ScriptState* scriptState, CryptoResultImpl* result)
+    {
+        RefPtr<WeakResolver> p = adoptRef(new WeakResolver(scriptState, result));
+        p->suspendIfNeeded();
+        p->keepAliveWhilePending();
+        return p->m_weakPtrFactory.createWeakPtr();
+    }
 
-ExceptionCode toExceptionCode(blink::WebCryptoErrorType errorType)
+    virtual ~WeakResolver()
+    {
+        m_result->cancel();
+    }
+
+private:
+    WeakResolver(ScriptState* scriptState, CryptoResultImpl* result)
+        : ScriptPromiseResolverWithContext(scriptState)
+        , m_weakPtrFactory(this)
+        , m_result(result) { }
+    WeakPtrFactory<ScriptPromiseResolverWithContext> m_weakPtrFactory;
+    RefPtr<CryptoResultImpl> m_result;
+};
+
+ExceptionCode webCryptoErrorToExceptionCode(blink::WebCryptoErrorType errorType)
 {
     switch (errorType) {
     case blink::WebCryptoErrorTypeNotSupported:
@@ -77,127 +98,99 @@ ExceptionCode toExceptionCode(blink::WebCryptoErrorType errorType)
     return 0;
 }
 
-} // namespace
-
-// The PromiseState class contains all the state which is tied to an
-// ExecutionContext. Whereas CryptoResultImpl can be deleted from any thread,
-// PromiseState is not thread safe and must only be accessed and deleted from
-// the blink thread.
-//
-// This is achieved by making CryptoResultImpl hold a WeakPtr to the PromiseState.
-// The PromiseState deletes itself after being notified of completion.
-// Additionally the PromiseState deletes itself when the ExecutionContext is
-// destroyed (necessary to avoid leaks when dealing with WebWorker threads,
-// which may die before the operation is completed).
-class CryptoResultImpl::PromiseState FINAL : public ContextLifecycleObserver {
-public:
-    static WeakPtr<PromiseState> create(ExecutionContext* context)
-    {
-        PromiseState* promiseState = new PromiseState(context);
-        return promiseState->m_weakFactory.createWeakPtr();
-    }
-
-    // Override from ContextLifecycleObserver
-    virtual void contextDestroyed() OVERRIDE
-    {
-        ContextLifecycleObserver::contextDestroyed();
-        delete this;
-    }
-
-    ScriptPromise promise()
-    {
-        return m_promiseResolver->promise();
-    }
-
-    void completeWithError(blink::WebCryptoErrorType errorType, const blink::WebString& errorDetails)
-    {
-        m_promiseResolver->reject(DOMException::create(toExceptionCode(errorType), errorDetails));
-        delete this;
-    }
-
-    void completeWithBuffer(const blink::WebArrayBuffer& buffer)
-    {
-        m_promiseResolver->resolve(PassRefPtr<ArrayBuffer>(buffer));
-        delete this;
-    }
-
-    void completeWithBoolean(bool b)
-    {
-        m_promiseResolver->resolve(b);
-        delete this;
-    }
-
-    void completeWithKey(const blink::WebCryptoKey& key)
-    {
-        m_promiseResolver->resolve(Key::create(key));
-        delete this;
-    }
-
-    void completeWithKeyPair(const blink::WebCryptoKey& publicKey, const blink::WebCryptoKey& privateKey)
-    {
-        m_promiseResolver->resolve(KeyPair::create(publicKey, privateKey));
-        delete this;
-    }
-
-private:
-    explicit PromiseState(ExecutionContext* context)
-        : ContextLifecycleObserver(context)
-        , m_weakFactory(this)
-        , m_promiseResolver(ScriptPromiseResolverWithContext::create(ScriptState::current(toIsolate(context))))
-    {
-    }
-
-    WeakPtrFactory<PromiseState> m_weakFactory;
-    RefPtr<ScriptPromiseResolverWithContext> m_promiseResolver;
-};
-
 CryptoResultImpl::~CryptoResultImpl()
 {
 }
 
-PassRefPtr<CryptoResultImpl> CryptoResultImpl::create()
+PassRefPtr<CryptoResultImpl> CryptoResultImpl::create(ScriptState* scriptState)
 {
-    return adoptRef(new CryptoResultImpl(callingExecutionContext(v8::Isolate::GetCurrent())));
+    return adoptRef(new CryptoResultImpl(scriptState));
 }
 
 void CryptoResultImpl::completeWithError(blink::WebCryptoErrorType errorType, const blink::WebString& errorDetails)
 {
-    if (m_promiseState)
-        m_promiseState->completeWithError(errorType, errorDetails);
+    if (m_resolver)
+        m_resolver->reject(DOMException::create(webCryptoErrorToExceptionCode(errorType), errorDetails));
 }
 
 void CryptoResultImpl::completeWithBuffer(const blink::WebArrayBuffer& buffer)
 {
-    if (m_promiseState)
-        m_promiseState->completeWithBuffer(buffer);
+    if (m_resolver)
+        m_resolver->resolve(PassRefPtr<ArrayBuffer>(buffer));
+}
+
+void CryptoResultImpl::completeWithJson(const char* utf8Data, unsigned length)
+{
+    if (m_resolver) {
+        ScriptPromiseResolverWithContext* resolver = m_resolver.get();
+        ScriptState* scriptState = resolver->scriptState();
+        ScriptState::Scope scope(scriptState);
+
+        v8::Handle<v8::String> jsonString = v8::String::NewFromUtf8(scriptState->isolate(), utf8Data, v8::String::kInternalizedString, length);
+
+        v8::TryCatch exceptionCatcher;
+        v8::Handle<v8::Value> jsonDictionary = v8::JSON::Parse(jsonString);
+        if (exceptionCatcher.HasCaught() || jsonDictionary.IsEmpty()) {
+            ASSERT_NOT_REACHED();
+            resolver->reject(DOMException::create(OperationError, "Failed inflating JWK JSON to object"));
+        } else {
+            resolver->resolve(jsonDictionary);
+        }
+    }
 }
 
 void CryptoResultImpl::completeWithBoolean(bool b)
 {
-    if (m_promiseState)
-        m_promiseState->completeWithBoolean(b);
+    if (m_resolver)
+        m_resolver->resolve(b);
 }
 
 void CryptoResultImpl::completeWithKey(const blink::WebCryptoKey& key)
 {
-    if (m_promiseState)
-        m_promiseState->completeWithKey(key);
+    if (m_resolver)
+        m_resolver->resolve(Key::create(key));
 }
 
 void CryptoResultImpl::completeWithKeyPair(const blink::WebCryptoKey& publicKey, const blink::WebCryptoKey& privateKey)
 {
-    if (m_promiseState)
-        m_promiseState->completeWithKeyPair(publicKey, privateKey);
+    if (m_resolver) {
+        ScriptState* scriptState = m_resolver->scriptState();
+        ScriptState::Scope scope(scriptState);
+
+        // FIXME: Use Dictionary instead, to limit amount of direct v8 access used from WebCore.
+        v8::Handle<v8::Object> keyPair = v8::Object::New(scriptState->isolate());
+
+        v8::Handle<v8::Value> publicKeyValue = toV8NoInline(Key::create(publicKey), scriptState->context()->Global(), scriptState->isolate());
+        v8::Handle<v8::Value> privateKeyValue = toV8NoInline(Key::create(privateKey), scriptState->context()->Global(), scriptState->isolate());
+
+        keyPair->Set(v8::String::NewFromUtf8(scriptState->isolate(), "publicKey"), publicKeyValue);
+        keyPair->Set(v8::String::NewFromUtf8(scriptState->isolate(), "privateKey"), privateKeyValue);
+
+        m_resolver->resolve(v8::Handle<v8::Value>(keyPair));
+    }
 }
 
-CryptoResultImpl::CryptoResultImpl(ExecutionContext* context)
-    : m_promiseState(PromiseState::create(context))
+bool CryptoResultImpl::cancelled() const
 {
+    return acquireLoad(&m_cancelled);
+}
+
+void CryptoResultImpl::cancel()
+{
+    releaseStore(&m_cancelled, 1);
+}
+
+CryptoResultImpl::CryptoResultImpl(ScriptState* scriptState)
+    : m_cancelled(0)
+{
+    // Creating the WeakResolver may return nullptr if active dom objects have
+    // been stopped. And in the process set m_cancelled to 1.
+    m_resolver = WeakResolver::create(scriptState, this);
 }
 
 ScriptPromise CryptoResultImpl::promise()
 {
-    return m_promiseState->promise();
+    return m_resolver ? m_resolver->promise() : ScriptPromise();
 }
 
 } // namespace WebCore

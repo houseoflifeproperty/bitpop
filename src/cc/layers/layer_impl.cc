@@ -40,8 +40,6 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       replica_layer_id_(-1),
       layer_id_(id),
       layer_tree_impl_(tree_impl),
-      anchor_point_(0.5f, 0.5f),
-      anchor_point_z_(0.f),
       scroll_offset_delegate_(NULL),
       scroll_clip_layer_(NULL),
       should_scroll_on_main_thread_(false),
@@ -63,13 +61,13 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl, int id)
       force_render_surface_(false),
       transform_is_invertible_(true),
       is_container_for_fixed_position_layers_(false),
-      is_3d_sorted_(false),
       background_color_(0),
       opacity_(1.0),
       blend_mode_(SkXfermode::kSrcOver_Mode),
       draw_depth_(0.f),
       needs_push_properties_(false),
       num_dependents_need_push_properties_(0),
+      sorting_context_id_(0),
       current_draw_mode_(DRAW_MODE_NONE) {
   DCHECK_GT(layer_id_, 0);
   DCHECK(layer_tree_impl_);
@@ -250,7 +248,8 @@ void LayerImpl::PopulateSharedQuadState(SharedQuadState* state) const {
                 draw_properties_.clip_rect,
                 draw_properties_.is_clipped,
                 draw_properties_.opacity,
-                blend_mode_);
+                blend_mode_,
+                sorting_context_id_);
 }
 
 bool LayerImpl::WillDraw(DrawMode draw_mode,
@@ -290,16 +289,22 @@ void LayerImpl::GetDebugBorderProperties(SkColor* color, float* width) const {
 
 void LayerImpl::AppendDebugBorderQuad(
     QuadSink* quad_sink,
+    const gfx::Size& content_bounds,
     const SharedQuadState* shared_quad_state,
     AppendQuadsData* append_quads_data) const {
   SkColor color;
   float width;
   GetDebugBorderProperties(&color, &width);
-  AppendDebugBorderQuad(
-      quad_sink, shared_quad_state, append_quads_data, color, width);
+  AppendDebugBorderQuad(quad_sink,
+                        content_bounds,
+                        shared_quad_state,
+                        append_quads_data,
+                        color,
+                        width);
 }
 
 void LayerImpl::AppendDebugBorderQuad(QuadSink* quad_sink,
+                                      const gfx::Size& content_bounds,
                                       const SharedQuadState* shared_quad_state,
                                       AppendQuadsData* append_quads_data,
                                       SkColor color,
@@ -307,7 +312,7 @@ void LayerImpl::AppendDebugBorderQuad(QuadSink* quad_sink,
   if (!ShowDebugBorders())
     return;
 
-  gfx::Rect quad_rect(content_bounds());
+  gfx::Rect quad_rect(content_bounds);
   gfx::Rect visible_quad_rect(quad_rect);
   scoped_ptr<DebugBorderDrawQuad> debug_border_quad =
       DebugBorderDrawQuad::Create();
@@ -481,17 +486,12 @@ skia::RefPtr<SkPicture> LayerImpl::GetPicture() {
   return skia::RefPtr<SkPicture>();
 }
 
-bool LayerImpl::AreVisibleResourcesReady() const {
-  return true;
-}
-
 scoped_ptr<LayerImpl> LayerImpl::CreateLayerImpl(LayerTreeImpl* tree_impl) {
   return LayerImpl::Create(tree_impl, layer_id_);
 }
 
 void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
-  layer->SetAnchorPoint(anchor_point_);
-  layer->SetAnchorPointZ(anchor_point_z_);
+  layer->SetTransformOrigin(transform_origin_);
   layer->SetBackgroundColor(background_color_);
   layer->SetBounds(bounds_);
   layer->SetContentBounds(content_bounds());
@@ -519,7 +519,6 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
       is_container_for_fixed_position_layers_);
   layer->SetPositionConstraint(position_constraint_);
   layer->SetShouldFlattenTransform(should_flatten_transform_);
-  layer->SetIs3dSorted(is_3d_sorted_);
   layer->SetUseParentBackfaceVisibility(use_parent_backface_visibility_);
   layer->SetTransformAndInvertibility(transform_, transform_is_invertible_);
 
@@ -530,6 +529,7 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetScrollOffsetAndDelta(
       scroll_offset_, layer->ScrollDelta() - layer->sent_scroll_delta());
   layer->SetSentScrollDelta(gfx::Vector2d());
+  layer->Set3dSortingContextId(sorting_context_id_);
 
   LayerImpl* scroll_parent = NULL;
   if (scroll_parent_) {
@@ -638,6 +638,7 @@ base::DictionaryValue* LayerImpl::LayerTreeAsJson() const {
   result->Set("DrawTransform", list);
 
   result->SetBoolean("DrawsContent", draws_content_);
+  result->SetBoolean("Is3dSorted", Is3dSorted());
   result->SetDouble("Opacity", opacity());
   result->SetBoolean("ContentsOpaque", contents_opaque_);
 
@@ -853,19 +854,10 @@ void LayerImpl::SetHideLayerAndSubtree(bool hide) {
   NoteLayerPropertyChangedForSubtree();
 }
 
-void LayerImpl::SetAnchorPoint(const gfx::PointF& anchor_point) {
-  if (anchor_point_ == anchor_point)
+void LayerImpl::SetTransformOrigin(const gfx::Point3F& transform_origin) {
+  if (transform_origin_ == transform_origin)
     return;
-
-  anchor_point_ = anchor_point;
-  NoteLayerPropertyChangedForSubtree();
-}
-
-void LayerImpl::SetAnchorPointZ(float anchor_point_z) {
-  if (anchor_point_z_ == anchor_point_z)
-    return;
-
-  anchor_point_z_ = anchor_point_z;
+  transform_origin_ = transform_origin;
   NoteLayerPropertyChangedForSubtree();
 }
 
@@ -989,11 +981,10 @@ void LayerImpl::SetShouldFlattenTransform(bool flatten) {
   NoteLayerPropertyChangedForSubtree();
 }
 
-void LayerImpl::SetIs3dSorted(bool sorted) {
-  if (is_3d_sorted_ == sorted)
+void LayerImpl::Set3dSortingContextId(int id) {
+  if (id == sorting_context_id_)
     return;
-
-  is_3d_sorted_ = sorted;
+  sorting_context_id_ = id;
   NoteLayerPropertyChangedForSubtree();
 }
 
@@ -1056,23 +1047,8 @@ void LayerImpl::SetContentsScale(float contents_scale_x,
   NoteLayerPropertyChanged();
 }
 
-void LayerImpl::CalculateContentsScale(float ideal_contents_scale,
-                                       float device_scale_factor,
-                                       float page_scale_factor,
-                                       float maximum_animation_contents_scale,
-                                       bool animating_transform_to_screen,
-                                       float* contents_scale_x,
-                                       float* contents_scale_y,
-                                       gfx::Size* content_bounds) {
-  // Base LayerImpl has all of its content scales and content bounds pushed
-  // from its Layer during commit and just reuses those values as-is.
-  *contents_scale_x = this->contents_scale_x();
-  *contents_scale_y = this->contents_scale_y();
-  *content_bounds = this->content_bounds();
-}
-
 void LayerImpl::SetScrollOffsetDelegate(
-    LayerScrollOffsetDelegate* scroll_offset_delegate) {
+    ScrollOffsetDelegate* scroll_offset_delegate) {
   // Having both a scroll parent and a scroll offset delegate is unsupported.
   DCHECK(!scroll_parent_);
   if (!scroll_offset_delegate && scroll_offset_delegate_) {
@@ -1176,7 +1152,6 @@ gfx::Vector2d LayerImpl::MaxScrollOffset() const {
 
   LayerImpl const* page_scale_layer = layer_tree_impl()->page_scale_layer();
   DCHECK(this != page_scale_layer);
-  DCHECK(scroll_clip_layer_);
   DCHECK(this != layer_tree_impl()->InnerViewportScrollLayer() ||
          IsContainerForFixedPositionLayers());
 
@@ -1427,6 +1402,8 @@ void LayerImpl::AsValueInto(base::DictionaryValue* state) const {
   state->SetInteger("draws_content", DrawsContent());
   state->SetInteger("gpu_memory_usage", GPUMemoryUsageInBytes());
   state->Set("scroll_offset", MathUtil::AsValue(scroll_offset_).release());
+  state->Set("transform_origin",
+             MathUtil::AsValue(transform_origin_).release());
 
   bool clipped;
   gfx::QuadF layer_quad = MathUtil::MapQuad(

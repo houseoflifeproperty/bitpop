@@ -36,16 +36,12 @@ class ToolbarModelImpl : public ToolbarModel {
   static SecurityLevel GetSecurityLevelForWebContents(
       content::WebContents* web_contents);
 
-  // Returns "<organization_name> [<country>]".
-  static base::string16 GetEVCertName(const net::X509Certificate& cert);
-
  private:
   // ToolbarModel:
   virtual base::string16 GetText() const OVERRIDE;
-  virtual base::string16 GetFormattedURL() const OVERRIDE;
+  virtual base::string16 GetFormattedURL(size_t* prefix_end) const OVERRIDE;
   virtual base::string16 GetCorpusNameForMobile() const OVERRIDE;
   virtual GURL GetURL() const OVERRIDE;
-  virtual bool WouldOmitURLDueToOriginChip() const OVERRIDE;
   virtual bool WouldPerformSearchTermReplacement(
       bool ignore_editing) const OVERRIDE;
   virtual SecurityLevel GetSecurityLevel(bool ignore_editing) const OVERRIDE;
@@ -53,6 +49,7 @@ class ToolbarModelImpl : public ToolbarModel {
   virtual int GetIconForSecurityLevel(SecurityLevel level) const OVERRIDE;
   virtual base::string16 GetEVCertName() const OVERRIDE;
   virtual bool ShouldDisplayURL() const OVERRIDE;
+  virtual bool WouldOmitURLDueToOriginChip() const OVERRIDE;
 
   // Returns the navigation controller used to retrieve the navigation entry
   // from which the states are retrieved.

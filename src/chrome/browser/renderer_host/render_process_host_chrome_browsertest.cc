@@ -21,6 +21,7 @@
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/test/browser_test_utils.h"
 
 using content::RenderViewHost;
 using content::RenderWidgetHost;
@@ -72,6 +73,7 @@ class ChromeRenderProcessHostTest : public InProcessBrowserTest {
     CHECK(wc->GetURL() == page);
 
     WaitForLauncherThread();
+    WaitForMessageProcessing(wc);
     return wc->GetRenderProcessHost()->GetHandle();
   }
 
@@ -87,6 +89,7 @@ class ChromeRenderProcessHostTest : public InProcessBrowserTest {
     CHECK(wc->GetVisibleURL() == page);
 
     WaitForLauncherThread();
+    WaitForMessageProcessing(wc);
     return wc->GetRenderProcessHost()->GetHandle();
   }
 
@@ -96,6 +99,16 @@ class ChromeRenderProcessHostTest : public InProcessBrowserTest {
         content::BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
         base::Bind(&base::DoNothing), base::MessageLoop::QuitClosure());
     base::MessageLoop::current()->Run();
+  }
+
+  // Implicitly waits for the renderer process associated with the specified
+  // WebContents to process outstanding IPC messages by running some JavaScript
+  // and waiting for the result.
+  void WaitForMessageProcessing(WebContents* wc) {
+    bool result = false;
+    ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+        wc, "window.domAutomationController.send(true);", &result));
+    ASSERT_TRUE(result);
   }
 
   // When we hit the max number of renderers, verify that the way we do process

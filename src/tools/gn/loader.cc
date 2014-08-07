@@ -21,15 +21,15 @@
 
 namespace {
 
-std::string GetOutputSubdirName(const Label& toolchain_label, bool is_default) {
-  // The default toolchain has no subdir.
-  if (is_default)
-    return std::string();
+struct SourceFileAndOrigin {
+  SourceFileAndOrigin(const SourceFile& f, const LocationRange& o)
+      : file(f),
+        origin(o) {
+  }
 
-  // For now just assume the toolchain name is always a valid dir name. We may
-  // want to clean up the in the future.
-  return toolchain_label.name();
-}
+  SourceFile file;
+  LocationRange origin;
+};
 
 }  // namespace
 
@@ -74,7 +74,7 @@ struct LoaderImpl::ToolchainRecord {
   bool is_toolchain_loaded;
   bool is_config_loaded;
 
-  std::vector<SourceFile> waiting_on_me;
+  std::vector<SourceFileAndOrigin> waiting_on_me;
 };
 
 // -----------------------------------------------------------------------------
@@ -87,8 +87,8 @@ Loader::Loader() {
 Loader::~Loader() {
 }
 
-void Loader::Load(const Label& label) {
-  Load(BuildFileForLabel(label), label.GetToolchainLabel());
+void Loader::Load(const Label& label, const LocationRange& origin) {
+  Load(BuildFileForLabel(label), origin, label.GetToolchainLabel());
 }
 
 // static
@@ -110,7 +110,8 @@ LoaderImpl::~LoaderImpl() {
 }
 
 void LoaderImpl::Load(const SourceFile& file,
-    const Label& in_toolchain_name) {
+                      const LocationRange& origin,
+                      const Label& in_toolchain_name) {
   const Label& toolchain_name = in_toolchain_name.is_null()
       ? default_toolchain_label_ : in_toolchain_name;
   LoadID load_id(file, toolchain_name);
@@ -131,7 +132,7 @@ void LoaderImpl::Load(const SourceFile& file,
     // toolchain name is.
     record->is_toolchain_loaded = true;
 
-    record->waiting_on_me.push_back(file);
+    record->waiting_on_me.push_back(SourceFileAndOrigin(file, origin));
     ScheduleLoadBuildConfig(&record->settings, Scope::KeyValueMap());
     return;
   }
@@ -151,13 +152,13 @@ void LoaderImpl::Load(const SourceFile& file,
     toolchain_records_[toolchain_name] = record;
 
     // Schedule a load of the toolchain using the default one.
-    Load(BuildFileForLabel(toolchain_name), default_toolchain_label_);
+    Load(BuildFileForLabel(toolchain_name), origin, default_toolchain_label_);
   }
 
   if (record->is_config_loaded)
-    ScheduleLoadFile(&record->settings, file);
+    ScheduleLoadFile(&record->settings, origin, file);
   else
-    record->waiting_on_me.push_back(file);
+    record->waiting_on_me.push_back(SourceFileAndOrigin(file, origin));
 }
 
 void LoaderImpl::ToolchainLoaded(const Toolchain* toolchain) {
@@ -202,10 +203,11 @@ const Settings* LoaderImpl::GetToolchainSettings(const Label& label) const {
 }
 
 void LoaderImpl::ScheduleLoadFile(const Settings* settings,
+                                  const LocationRange& origin,
                                   const SourceFile& file) {
   Err err;
   pending_loads_++;
-  if (!AsyncLoadFile(LocationRange(), settings->build_settings(), file,
+  if (!AsyncLoadFile(origin, settings->build_settings(), file,
                      base::Bind(&LoaderImpl::BackgroundLoadFile, this,
                                 settings, file),
                      &err)) {
@@ -259,6 +261,9 @@ void LoaderImpl::BackgroundLoadFile(const Settings* settings,
   if (err.has_error())
     g_scheduler->FailWithError(err);
 
+  if (!our_scope.CheckForUnusedVars(&err))
+    g_scheduler->FailWithError(err);
+
   // Pass all of the items that were defined off to the builder.
   for (size_t i = 0; i < collected_items.size(); i++)
     settings->build_settings()->ItemDefined(collected_items[i]->Pass());
@@ -298,6 +303,11 @@ void LoaderImpl::BackgroundLoadBuildConfig(
   const BlockNode* root_block = root->AsBlock();
   Err err;
   root_block->ExecuteBlockInScope(base_config, &err);
+
+  // Clear all private variables left in the scope. We want the root build
+  // config to be like a .gni file in that variables beginning with an
+  // underscore aren't exported.
+  base_config->RemovePrivateIdentifiers();
 
   trace.Done();
 
@@ -380,8 +390,10 @@ void LoaderImpl::DidLoadBuildConfig(const Label& label) {
   record->is_config_loaded = true;
 
   // Schedule all waiting file loads.
-  for (size_t i = 0; i < record->waiting_on_me.size(); i++)
-    ScheduleLoadFile(&record->settings, record->waiting_on_me[i]);
+  for (size_t i = 0; i < record->waiting_on_me.size(); i++) {
+    ScheduleLoadFile(&record->settings, record->waiting_on_me[i].origin,
+                     record->waiting_on_me[i].file);
+  }
   record->waiting_on_me.clear();
 
   DecrementPendingLoads();

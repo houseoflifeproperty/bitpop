@@ -15,7 +15,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "components/password_manager/core/browser/password_store_change.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 
@@ -25,6 +25,18 @@ using password_manager::PasswordStoreChange;
 using password_manager::PasswordStoreChangeList;
 using password_manager::PasswordStoreDefault;
 using std::vector;
+
+namespace {
+
+bool AddLoginToBackend(const scoped_ptr<PasswordStoreX::NativeBackend>& backend,
+                       const PasswordForm& form,
+                       PasswordStoreChangeList* changes) {
+  *changes = backend->AddLogin(form);
+  return (!changes->empty() &&
+          changes->back().type() == PasswordStoreChange::ADD);
+}
+
+}  // namespace
 
 PasswordStoreX::PasswordStoreX(
     scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
@@ -41,8 +53,7 @@ PasswordStoreX::~PasswordStoreX() {}
 PasswordStoreChangeList PasswordStoreX::AddLoginImpl(const PasswordForm& form) {
   CheckMigration();
   PasswordStoreChangeList changes;
-  if (use_native_backend() && backend_->AddLogin(form)) {
-    changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD, form));
+  if (use_native_backend() && AddLoginToBackend(backend_, form, &changes)) {
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     changes = PasswordStoreDefault::AddLoginImpl(form);
@@ -54,8 +65,7 @@ PasswordStoreChangeList PasswordStoreX::UpdateLoginImpl(
     const PasswordForm& form) {
   CheckMigration();
   PasswordStoreChangeList changes;
-  if (use_native_backend() && backend_->UpdateLogin(form)) {
-    changes.push_back(PasswordStoreChange(PasswordStoreChange::UPDATE, form));
+  if (use_native_backend() && backend_->UpdateLogin(form, &changes)) {
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     changes = PasswordStoreDefault::UpdateLoginImpl(form);
@@ -77,26 +87,34 @@ PasswordStoreChangeList PasswordStoreX::RemoveLoginImpl(
 }
 
 PasswordStoreChangeList PasswordStoreX::RemoveLoginsCreatedBetweenImpl(
-    const base::Time& delete_begin,
-    const base::Time& delete_end) {
+    base::Time delete_begin,
+    base::Time delete_end) {
   CheckMigration();
-  vector<PasswordForm*> forms;
   PasswordStoreChangeList changes;
   if (use_native_backend() &&
-      backend_->GetLoginsCreatedBetween(delete_begin, delete_end, &forms) &&
-      backend_->RemoveLoginsCreatedBetween(delete_begin, delete_end)) {
-    for (vector<PasswordForm*>::const_iterator it = forms.begin();
-         it != forms.end(); ++it) {
-      changes.push_back(PasswordStoreChange(PasswordStoreChange::REMOVE,
-                                            **it));
-    }
+      backend_->RemoveLoginsCreatedBetween(
+          delete_begin, delete_end, &changes)) {
     LogStatsForBulkDeletion(changes.size());
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     changes = PasswordStoreDefault::RemoveLoginsCreatedBetweenImpl(delete_begin,
                                                                    delete_end);
   }
-  STLDeleteElements(&forms);
+  return changes;
+}
+
+PasswordStoreChangeList PasswordStoreX::RemoveLoginsSyncedBetweenImpl(
+    base::Time delete_begin,
+    base::Time delete_end) {
+  CheckMigration();
+  PasswordStoreChangeList changes;
+  if (use_native_backend() &&
+      backend_->RemoveLoginsSyncedBetween(delete_begin, delete_end, &changes)) {
+    allow_fallback_ = false;
+  } else if (allow_default_store()) {
+    changes = PasswordStoreDefault::RemoveLoginsSyncedBetweenImpl(delete_begin,
+                                                                  delete_end);
+  }
   return changes;
 }
 
@@ -237,7 +255,8 @@ ssize_t PasswordStoreX::MigrateLogins() {
     // don't somehow end up with some of the passwords in one store and some in
     // another. We'll always have at least one intact store this way.
     for (size_t i = 0; i < forms.size(); ++i) {
-      if (!backend_->AddLogin(*forms[i])) {
+      PasswordStoreChangeList changes;
+      if (!AddLoginToBackend(backend_, *forms[i], &changes)) {
         ok = false;
         break;
       }

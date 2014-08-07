@@ -22,9 +22,8 @@
 
 #include "core/svg/SVGFECompositeElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
 namespace WebCore {
@@ -64,10 +63,7 @@ inline SVGFECompositeElement::SVGFECompositeElement(Document& document)
     addToPropertyMap(m_svgOperator);
 }
 
-PassRefPtr<SVGFECompositeElement> SVGFECompositeElement::create(Document& document)
-{
-    return adoptRef(new SVGFECompositeElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFECompositeElement)
 
 bool SVGFECompositeElement::isSupportedAttribute(const QualifiedName& attrName)
 {

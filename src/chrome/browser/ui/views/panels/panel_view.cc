@@ -20,6 +20,8 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/screen.h"
@@ -34,6 +36,13 @@
 #include "ui/base/win/shell.h"
 #include "ui/gfx/icon_util.h"
 #include "ui/views/win/hwnd_util.h"
+#endif
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+#include "chrome/browser/shell_integration_linux.h"
+#include "chrome/browser/ui/views/panels/x11_panel_resizer.h"
+#include "chrome/browser/web_applications/web_app.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 #endif
 
 namespace {
@@ -278,6 +287,12 @@ PanelView::PanelView(Panel* panel, const gfx::Rect& bounds, bool always_on_top)
   params.keep_on_top = always_on_top;
   params.visible_on_all_workspaces = always_on_top;
   params.bounds = bounds;
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+  params.wm_class_name = web_app::GetWMClassFromAppName(panel->app_name());
+  params.wm_class_class = shell_integration_linux::GetProgramClassName();
+#endif
+
   window_->Init(params);
   window_->set_frame_type(views::Widget::FRAME_TYPE_FORCE_CUSTOM);
   window_->set_focus_on_creation(false);
@@ -306,6 +321,18 @@ PanelView::PanelView(Panel* panel, const gfx::Rect& bounds, bool always_on_top)
           base::UTF8ToWide(panel->app_name()), panel->profile()->GetPath()),
       views::HWNDForWidget(window_));
   ui::win::PreventWindowFromPinning(views::HWNDForWidget(window_));
+#endif
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+  // Swap the default non client event handler with one which handles resizes
+  // for panels entirely within Chrome. This is needed because it is not
+  // possible to tell when a resize performed by the window manager ends.
+  views::DesktopWindowTreeHostX11* host =
+      views::DesktopWindowTreeHostX11::GetHostForXID(
+          window_->GetNativeView()->GetHost()->GetAcceleratedWidget());
+  scoped_ptr<ui::EventHandler> resizer(
+      new X11PanelResizer(panel_.get(), window_->GetNativeWindow()));
+  host->SwapNonClientEventHandler(resizer.Pass());
 #endif
 }
 
@@ -902,7 +929,7 @@ void PanelView::Layout() {
     web_view_->SetBounds(0, 0, width(), height());
 }
 
-gfx::Size PanelView::GetMinimumSize() {
+gfx::Size PanelView::GetMinimumSize() const {
   // If the panel is minimized, it can be rendered to very small size, like
   // 4-pixel lines when it is docked. Otherwise, its size should not be less
   // than its minimum size.
@@ -910,7 +937,7 @@ gfx::Size PanelView::GetMinimumSize() {
       gfx::Size(panel::kPanelMinWidth, panel::kPanelMinHeight);
 }
 
-gfx::Size PanelView::GetMaximumSize() {
+gfx::Size PanelView::GetMaximumSize() const {
   // If the user is resizing a stacked panel by its bottom edge, make sure its
   // height cannot grow more than what the panel below it could offer. This is
   // because growing a stacked panel by y amount will shrink the panel below it

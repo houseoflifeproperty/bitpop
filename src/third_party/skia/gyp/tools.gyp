@@ -17,6 +17,7 @@
         'bench_pictures',
         'bench_record',
         'bench_playback',
+        'dump_record',
         'filter',
         'gpuveto',
         'lua_app',
@@ -181,7 +182,6 @@
         'gm.gyp:gm_expectations',
         'jsoncpp.gyp:jsoncpp',
         'skia_lib.gyp:skia_lib',
-        'utils.gyp:utils',
       ],
     },
     {
@@ -236,7 +236,6 @@
         'pdf.gyp:pdf',
         'ports.gyp:ports',
         'skia_lib.gyp:skia_lib',
-        'utils.gyp:utils',
       ],
     },
     {
@@ -262,7 +261,6 @@
         'pdf.gyp:pdf',
         'ports.gyp:ports',
         'skia_lib.gyp:skia_lib',
-        'utils.gyp:utils',
       ],
     },
     {
@@ -288,12 +286,12 @@
       'target_name': 'bench_pictures',
       'type': 'executable',
       'sources': [
-        '../bench/SkBenchLogger.h',
-        '../bench/SkBenchLogger.cpp',
-        '../bench/TimerData.h',
-        '../bench/TimerData.cpp',
-        '../tools/bench_pictures_main.cpp',
+        '../bench/BenchLogger.cpp',
+        '../bench/BenchLogger.h',
+        '../bench/ResultsWriter.cpp',
         '../tools/PictureBenchmark.cpp',
+        '../tools/PictureResultsWriter.h',
+        '../tools/bench_pictures_main.cpp',
       ],
       'include_dirs': [
         '../src/core/',
@@ -302,10 +300,13 @@
       ],
       'dependencies': [
         'bench.gyp:bench_timer',
+        'crash_handler.gyp:CrashHandler',
         'flags.gyp:flags',
+        'jsoncpp.gyp:jsoncpp',
         'skia_lib.gyp:skia_lib',
-        'tools.gyp:picture_utils',
         'tools.gyp:picture_renderer',
+        'tools.gyp:picture_utils',
+        'tools.gyp:timer_data',
       ],
     },
     {
@@ -324,7 +325,6 @@
         'bench.gyp:bench_timer',
         'flags.gyp:flags',
         'skia_lib.gyp:skia_lib',
-        'record.gyp:*',
       ],
     },
     {
@@ -336,19 +336,38 @@
       'include_dirs': [
         '../src/core/',
         '../src/images',
-        '../src/record',
       ],
       'dependencies': [
         'bench.gyp:bench_timer',
         'flags.gyp:flags',
         'skia_lib.gyp:skia_lib',
-        'record.gyp:*',
+      ],
+    },
+    {
+      'target_name': 'dump_record',
+      'type': 'executable',
+      'sources': [
+        '../tools/dump_record.cpp',
+        '../tools/DumpRecord.cpp',
+        '../tools/LazyDecodeBitmap.cpp',
+      ],
+      'include_dirs': [
+        '../src/core/',
+        '../src/images',
+        '../src/lazy',
+      ],
+      'dependencies': [
+        'bench.gyp:bench_timer',
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
       ],
     },
     {
       'target_name': 'picture_renderer',
       'type': 'static_library',
       'sources': [
+        '../tools/image_expectations.h',
+        '../tools/image_expectations.cpp',
         '../tools/LazyDecodeBitmap.cpp',
         '../tools/PictureRenderer.h',
         '../tools/PictureRenderer.cpp',
@@ -368,7 +387,7 @@
       ],
       'direct_dependent_settings': {
         'include_dirs': [
-          # needed for JSON headers used within PictureRenderer.h
+          # needed for JSON headers used within image_expectations.h
           '../third_party/externals/jsoncpp-chromium/overrides/include/',
           '../third_party/externals/jsoncpp/include/',
         ],
@@ -457,7 +476,7 @@
       ],
       'direct_dependent_settings': {
         'include_dirs': [
-        '../tools/',
+          '../tools/',
         ],
       },
     },
@@ -484,12 +503,11 @@
         '../tools/bbh_shootout.cpp',
 
         # Bench code:
-        '../bench/TimerData.h',
-        '../bench/TimerData.cpp',
       ],
       'dependencies': [
         'bench.gyp:bench_timer',
         'flags.gyp:flags',
+        'tools.gyp:timer_data',
         'skia_lib.gyp:skia_lib',
         'tools.gyp:picture_renderer',
         'tools.gyp:picture_utils',
@@ -504,8 +522,6 @@
       ],
       'sources': [
         '../tools/filtermain.cpp',
-        '../tools/path_utils.h',
-        '../tools/path_utils.cpp',
         '../src/utils/debugger/SkDrawCommand.h',
         '../src/utils/debugger/SkDrawCommand.cpp',
         '../src/utils/debugger/SkDebugCanvas.h',
@@ -528,6 +544,17 @@
         'skia_lib.gyp:skia_lib',
       ],
     },
+    {
+      'target_name': 'timer_data',
+      'type': 'static_library',
+      'sources': [
+        '../bench/TimerData.cpp',
+      ],
+      'dependencies': [
+        'skia_lib.gyp:skia_lib',
+        'jsoncpp.gyp:jsoncpp'
+      ]
+    }
   ],
   'conditions': [
     ['skia_shared_lib',

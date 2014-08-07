@@ -48,24 +48,21 @@ class RtpSender {
   // video frames. Returns false if configuration is invalid.
   bool InitializeVideo(const CastTransportVideoConfig& config);
 
-  // The video_frame objects ownership is handled by the main cast thread.
-  void IncomingEncodedVideoFrame(const EncodedVideoFrame* video_frame,
-                                 const base::TimeTicks& capture_time);
+  void SendFrame(const EncodedFrame& frame);
 
-  // The audio_frame objects ownership is handled by the main cast thread.
-  void IncomingEncodedAudioFrame(const EncodedAudioFrame* audio_frame,
-                                 const base::TimeTicks& recorded_time);
+  void ResendPackets(const MissingFramesAndPacketsMap& missing_packets,
+                     bool cancel_rtx_if_not_in_list,
+                     base::TimeDelta dedupe_window);
 
-  void ResendPackets(const MissingFramesAndPacketsMap& missing_packets);
-
-  // Set the callback on which RTP statistics data will be returned. Calling
-  // this function would start a timer that would schedule the callback in
-  // a constant interval.
-  void SubscribeRtpStatsCallback(const CastTransportRtpStatistics& callback);
+  size_t send_packet_count() const {
+    return packetizer_ ? packetizer_->send_packet_count() : 0;
+  }
+  size_t send_octet_count() const {
+    return packetizer_ ? packetizer_->send_octet_count() : 0;
+  }
+  uint32 ssrc() const { return config_.ssrc; }
 
  private:
-  void ScheduleNextStatsReport();
-  void RtpStatistics();
   void UpdateSequenceNumber(Packet* packet);
 
   base::TickClock* clock_;  // Not owned by this class.
@@ -73,7 +70,6 @@ class RtpSender {
   scoped_ptr<RtpPacketizer> packetizer_;
   scoped_ptr<PacketStorage> storage_;
   PacedSender* const transport_;
-  CastTransportRtpStatistics stats_callback_;
   scoped_refptr<base::SingleThreadTaskRunner> transport_task_runner_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.

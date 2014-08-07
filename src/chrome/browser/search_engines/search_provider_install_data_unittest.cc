@@ -11,7 +11,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/search_engines/search_provider_install_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
@@ -20,8 +19,6 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -129,6 +126,10 @@ class SearchProviderInstallDataTest : public testing::Test {
   TemplateURL* AddNewTemplateURL(const std::string& url,
                                  const base::string16& keyword);
 
+  // Sets the Google base URL to |base_url| and runs the IO thread for
+  // |SearchProviderInstallData| to process the update.
+  void SetGoogleBaseURLAndProcessOnIOThread(GURL base_url);
+
   TemplateURLServiceTestUtil util_;
 
   // Provides the search provider install state on the I/O thread. It must be
@@ -177,9 +178,23 @@ TemplateURL* SearchProviderInstallDataTest::AddNewTemplateURL(
   data.short_name = keyword;
   data.SetKeyword(keyword);
   data.SetURL(url);
-  TemplateURL* t_url = new TemplateURL(util_.profile(), data);
+  TemplateURL* t_url = new TemplateURL(data);
   util_.model()->Add(t_url);
   return t_url;
+}
+
+void SearchProviderInstallDataTest::SetGoogleBaseURLAndProcessOnIOThread(
+    GURL base_url) {
+  util_.SetGoogleBaseURL(base_url);
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&SearchProviderInstallData::OnGoogleURLChange,
+                 base::Unretained(install_data_),
+                 base_url.spec()));
+
+  // Wait for the I/O thread to process the update notification.
+  base::RunLoop().RunUntilIdle();
 }
 
 // Actual tests ---------------------------------------------------------------
@@ -242,9 +257,7 @@ TEST_F(SearchProviderInstallDataTest, GoogleBaseUrlChange) {
   // Set up the database.
   util_.ChangeModelToLoadState();
   std::string google_host = "w.com";
-  util_.SetGoogleBaseURL(GURL("http://" + google_host + "/"));
-  // Wait for the I/O thread to process the update notification.
-  base::RunLoop().RunUntilIdle();
+  SetGoogleBaseURLAndProcessOnIOThread(GURL("http://" + google_host + "/"));
 
   AddNewTemplateURL("{google:baseURL}?q={searchTerms}",
                     base::ASCIIToUTF16("t"));
@@ -260,9 +273,7 @@ TEST_F(SearchProviderInstallDataTest, GoogleBaseUrlChange) {
 
   // Change the Google base url.
   google_host = "foo.com";
-  util_.SetGoogleBaseURL(GURL("http://" + google_host + "/"));
-  // Wait for the I/O thread to process the update notification.
-  base::RunLoop().RunUntilIdle();
+  SetGoogleBaseURLAndProcessOnIOThread(GURL("http://" + google_host + "/"));
 
   // Verify that the change got picked up.
   test_get_install_state.RunTests(google_host, std::string());

@@ -6,10 +6,20 @@
  */
 
 #include "SkGr.h"
+#include "SkColorFilter.h"
 #include "SkConfig8888.h"
+#include "SkData.h"
 #include "SkMessageBus.h"
 #include "SkPixelRef.h"
 #include "GrResourceCache.h"
+#include "GrGpu.h"
+#include "effects/GrDitherEffect.h"
+#include "GrDrawTargetCaps.h"
+
+#ifndef SK_IGNORE_ETC1_SUPPORT
+#  include "ktx.h"
+#  include "etc1.h"
+#endif
 
 /*  Fill out buffer with the compressed format Ganesh expects from a colortable
  based bitmap. [palette (colortable) + indices].
@@ -23,7 +33,7 @@
  as the colortable.count says it is.
  */
 static void build_compressed_data(void* buffer, const SkBitmap& bitmap) {
-    SkASSERT(SkBitmap::kIndex8_Config == bitmap.config());
+    SkASSERT(kIndex_8_SkColorType == bitmap.colorType());
 
     SkAutoLockPixels alp(bitmap);
     if (!bitmap.readyToDraw()) {
@@ -123,6 +133,66 @@ static void add_genID_listener(GrResourceKey key, SkPixelRef* pixelRef) {
     pixelRef->addGenIDChangeListener(SkNEW_ARGS(GrResourceInvalidator, (key)));
 }
 
+#ifndef SK_IGNORE_ETC1_SUPPORT
+static GrTexture *load_etc1_texture(GrContext* ctx,
+                                    const GrTextureParams* params,
+                                    const SkBitmap &bm, GrTextureDesc desc) {
+    SkAutoTUnref<SkData> data(bm.pixelRef()->refEncodedData());
+
+    // Is this even encoded data?
+    if (NULL == data) {
+        return NULL;
+    }
+
+    // Is this a valid PKM encoded data?
+    const uint8_t *bytes = data->bytes();
+    if (etc1_pkm_is_valid(bytes)) {
+        uint32_t encodedWidth = etc1_pkm_get_width(bytes);
+        uint32_t encodedHeight = etc1_pkm_get_height(bytes);
+
+        // Does the data match the dimensions of the bitmap? If not,
+        // then we don't know how to scale the image to match it...
+        if (encodedWidth != static_cast<uint32_t>(bm.width()) ||
+            encodedHeight != static_cast<uint32_t>(bm.height())) {
+            return NULL;
+        }
+
+        // Everything seems good... skip ahead to the data.
+        bytes += ETC_PKM_HEADER_SIZE;
+        desc.fConfig = kETC1_GrPixelConfig;
+    } else if (SkKTXFile::is_ktx(bytes)) {
+        SkKTXFile ktx(data);
+
+        // Is it actually an ETC1 texture?
+        if (!ktx.isETC1()) {
+            return NULL;
+        }
+
+        // Does the data match the dimensions of the bitmap? If not,
+        // then we don't know how to scale the image to match it...
+        if (ktx.width() != bm.width() || ktx.height() != bm.height()) {
+            return NULL;
+        }        
+
+        bytes = ktx.pixelData();
+        desc.fConfig = kETC1_GrPixelConfig;
+    } else {
+        return NULL;
+    }
+
+    // This texture is likely to be used again so leave it in the cache
+    GrCacheID cacheID;
+    generate_bitmap_cache_id(bm, &cacheID);
+
+    GrResourceKey key;
+    GrTexture* result = ctx->createTexture(params, desc, cacheID, bytes, 0, &key);
+    if (NULL != result) {
+        add_genID_listener(key, bm.pixelRef());
+    }
+    return result;
+}
+#endif   // SK_IGNORE_ETC1_SUPPORT
+
 static GrTexture* sk_gr_create_bitmap_texture(GrContext* ctx,
                                               bool cache,
                                               const GrTextureParams* params,
@@ -134,7 +204,7 @@ static GrTexture* sk_gr_create_bitmap_texture(GrContext* ctx,
     GrTextureDesc desc;
     generate_bitmap_texture_desc(*bitmap, &desc);
 
-    if (SkBitmap::kIndex8_Config == bitmap->config()) {
+    if (kIndex_8_SkColorType == bitmap->colorType()) {
         // build_compressed_data doesn't do npot->pot expansion
         // and paletted textures can't be sub-updated
         if (ctx->supportsIndex8PixelConfig(params, bitmap->width(), bitmap->height())) {
@@ -172,6 +242,27 @@ static GrTexture* sk_gr_create_bitmap_texture(GrContext* ctx,
             desc.fConfig = SkImageInfo2GrPixelConfig(bitmap->info());
         }
     }
+
+    // Is this an ETC1 encoded texture?
+#ifndef SK_IGNORE_ETC1_SUPPORT
+    else if (
+        // We do not support scratch ETC1 textures, hence they should all be at least
+        // trying to go to the cache.
+        cache
+        // Make sure that the underlying device supports ETC1 textures before we go ahead
+        // and check the data.
+        && ctx->getGpu()->caps()->isConfigTexturable(kETC1_GrPixelConfig)
+        // If the bitmap had compressed data and was then uncompressed, it'll still return
+        // compressed data on 'refEncodedData' and upload it. Probably not good, since if
+        // the bitmap has available pixels, then they might not be what the decompressed
+        // data is.
+        && !(bitmap->readyToDraw())) {
+        GrTexture *texture = load_etc1_texture(ctx, params, *bitmap, desc);
+        if (NULL != texture) {
+            return texture;
+        }
+    }
+#endif   // SK_IGNORE_ETC1_SUPPORT
 
     SkAutoLockPixels alp(*bitmap);
     if (!bitmap->readyToDraw()) {
@@ -253,6 +344,7 @@ void GrUnlockAndUnrefCachedBitmapTexture(GrTexture* texture) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#ifdef SK_SUPPORT_LEGACY_BITMAP_CONFIG
 GrPixelConfig SkBitmapConfig2GrPixelConfig(SkBitmap::Config config) {
     switch (config) {
         case SkBitmap::kA8_Config:
@@ -270,6 +362,7 @@ GrPixelConfig SkBitmapConfig2GrPixelConfig(SkBitmap::Config config) {
             return kUnknown_GrPixelConfig;
     }
 }
+#endif
 
 // alphatype is ignore for now, but if GrPixelConfig is expanded to encompass
 // alpha info, that will be considered.
@@ -322,4 +415,130 @@ bool GrPixelConfig2ColorType(GrPixelConfig config, SkColorType* ctOut) {
         *ctOut = ct;
     }
     return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void SkPaint2GrPaintNoShader(GrContext* context, const SkPaint& skPaint, GrColor grColor,
+                             bool constantColor, GrPaint* grPaint) {
+
+    grPaint->setDither(skPaint.isDither());
+    grPaint->setAntiAlias(skPaint.isAntiAlias());
+
+    SkXfermode::Coeff sm;
+    SkXfermode::Coeff dm;
+
+    SkXfermode* mode = skPaint.getXfermode();
+    GrEffectRef* xferEffect = NULL;
+    if (SkXfermode::AsNewEffectOrCoeff(mode, &xferEffect, &sm, &dm)) {
+        if (NULL != xferEffect) {
+            grPaint->addColorEffect(xferEffect)->unref();
+            sm = SkXfermode::kOne_Coeff;
+            dm = SkXfermode::kZero_Coeff;
+        }
+    } else {
+        //SkDEBUGCODE(SkDebugf("Unsupported xfer mode.\n");)
+        // Fall back to src-over
+        sm = SkXfermode::kOne_Coeff;
+        dm = SkXfermode::kISA_Coeff;
+    }
+    grPaint->setBlendFunc(sk_blend_to_grblend(sm), sk_blend_to_grblend(dm));
+    
+    //set the color of the paint to the one of the parameter
+    grPaint->setColor(grColor);
+
+    SkColorFilter* colorFilter = skPaint.getColorFilter();
+    if (NULL != colorFilter) {
+        // if the source color is a constant then apply the filter here once rather than per pixel
+        // in a shader.
+        if (constantColor) {
+            SkColor filtered = colorFilter->filterColor(skPaint.getColor());
+            grPaint->setColor(SkColor2GrColor(filtered));
+        } else {
+            SkAutoTUnref<GrEffectRef> effect(colorFilter->asNewEffect(context));
+            if (NULL != effect.get()) {
+                grPaint->addColorEffect(effect);
+            }
+        }
+    }
+
+#ifndef SK_IGNORE_GPU_DITHER
+    // If the dither flag is set, then we need to see if the underlying context
+    // supports it. If not, then install a dither effect.
+    if (skPaint.isDither() && grPaint->numColorStages() > 0) {
+        // What are we rendering into?
+        const GrRenderTarget *target = context->getRenderTarget();
+        SkASSERT(NULL != target);
+
+        // Suspect the dithering flag has no effect on these configs, otherwise
+        // fall back on setting the appropriate state.
+        if (target->config() == kRGBA_8888_GrPixelConfig ||
+            target->config() == kBGRA_8888_GrPixelConfig) {
+            // The dither flag is set and the target is likely
+            // not going to be dithered by the GPU.
+            SkAutoTUnref<GrEffectRef> effect(GrDitherEffect::Create());
+            if (NULL != effect.get()) {
+                grPaint->addColorEffect(effect);
+                grPaint->setDither(false);
+            }
+        }
+    }
+#endif
+}
+
+/**
+ * Unlike GrContext::AutoMatrix, this doesn't require setting a new matrix. GrContext::AutoMatrix
+ * likes to set the new matrix in its constructor because it is usually necessary to simulataneously
+ * update a GrPaint. This AutoMatrix is used while initially setting up GrPaint, however.
+ */
+class AutoMatrix {
+public:
+    AutoMatrix(GrContext* context) {
+        fMatrix = context->getMatrix();
+        fContext = context;
+    }
+    ~AutoMatrix() {
+        SkASSERT(NULL != fContext);
+        fContext->setMatrix(fMatrix);
+    }
+private:
+    GrContext* fContext;
+    SkMatrix fMatrix;
+};
+
+void SkPaint2GrPaintShader(GrContext* context, const SkPaint& skPaint,
+                           bool constantColor, GrPaint* grPaint) {
+    SkShader* shader = skPaint.getShader();
+    if (NULL == shader) {
+        SkPaint2GrPaintNoShader(context, skPaint, SkColor2GrColor(skPaint.getColor()),
+                                constantColor, grPaint);
+        return;
+    }
+
+    // SkShader::asNewEffect() may do offscreen rendering. Save off the current RT, clip, and
+    // matrix. We don't reset the matrix on the context because SkShader::asNewEffect may use
+    // GrContext::getMatrix() to know the transformation from local coords to device space.
+    GrColor grColor = SkColor2GrColor(skPaint.getColor());
+
+    // Start a new block here in order to preserve our context state after calling
+    // asNewEffect(). Since these calls get passed back to the client, we don't really
+    // want them messing around with the context.
+    {
+        GrContext::AutoRenderTarget art(context, NULL);
+        GrContext::AutoClip ac(context, GrContext::AutoClip::kWideOpen_InitialClip);
+        AutoMatrix am(context);
+
+        // setup the shader as the first color effect on the paint
+        // the default grColor is the paint's color
+        GrEffectRef* grEffect = NULL;
+        if (shader->asNewEffect(context, skPaint, NULL, &grColor, &grEffect) && NULL != grEffect) {
+            SkAutoTUnref<GrEffectRef> effect(grEffect);
+            grPaint->addColorEffect(effect);
+            constantColor = false;
+        }
+    }
+
+    // The grcolor is automatically set when calling asneweffect.
+    // If the shader can be seen as an effect it returns true and adds its effect to the grpaint.
+    SkPaint2GrPaintNoShader(context, skPaint, grColor, constantColor, grPaint);
 }

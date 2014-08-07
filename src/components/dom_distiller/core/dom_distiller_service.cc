@@ -41,12 +41,13 @@ DomDistillerService::DomDistillerService(
     scoped_ptr<DistillerFactory> distiller_factory,
     scoped_ptr<DistillerPageFactory> distiller_page_factory)
     : store_(store.Pass()),
-      content_store_(new InMemoryContentStore()),
+      content_store_(new InMemoryContentStore(kDefaultMaxNumCachedEntries)),
       distiller_factory_(distiller_factory.Pass()),
       distiller_page_factory_(distiller_page_factory.Pass()) {
 }
 
-DomDistillerService::~DomDistillerService() {}
+DomDistillerService::~DomDistillerService() {
+}
 
 syncer::SyncableService* DomDistillerService::GetSyncableService() const {
   return store_->GetSyncableService();
@@ -54,6 +55,13 @@ syncer::SyncableService* DomDistillerService::GetSyncableService() const {
 
 scoped_ptr<DistillerPage> DomDistillerService::CreateDefaultDistillerPage() {
   return distiller_page_factory_->CreateDistillerPage().Pass();
+}
+
+scoped_ptr<DistillerPage>
+DomDistillerService::CreateDefaultDistillerPageWithHandle(
+    scoped_ptr<SourcePageHandle> handle) {
+  return distiller_page_factory_->CreateDistillerPageWithHandle(handle.Pass())
+      .Pass();
 }
 
 const std::string DomDistillerService::AddToList(

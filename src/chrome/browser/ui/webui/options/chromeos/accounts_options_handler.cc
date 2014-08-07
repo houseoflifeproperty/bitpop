@@ -14,7 +14,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/ui/webui/chromeos/ui_account_tweaks.h"
@@ -70,6 +70,9 @@ void AccountsOptionsHandler::GetLocalizedValues(
 
   localized_strings->SetString("allow_BWSI", l10n_util::GetStringUTF16(
       IDS_OPTIONS_ACCOUNTS_ALLOW_BWSI_DESCRIPTION));
+  localized_strings->SetString(
+      "allow_supervised_users",
+      l10n_util::GetStringUTF16(IDS_OPTIONS_ACCOUNTS_ENABLE_SUPERVISED_USERS));
   localized_strings->SetString("use_whitelist", l10n_util::GetStringUTF16(
       IDS_OPTIONS_ACCOUNTS_USE_WHITELIST_DESCRIPTION));
   localized_strings->SetString("show_user_on_signin", l10n_util::GetStringUTF16(

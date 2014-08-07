@@ -34,19 +34,13 @@ void PasswordStoreDefault::ReportMetricsImpl() {
 PasswordStoreChangeList PasswordStoreDefault::AddLoginImpl(
     const PasswordForm& form) {
   DCHECK(GetBackgroundTaskRunner()->BelongsToCurrentThread());
-  PasswordStoreChangeList changes;
-  if (login_db_->AddLogin(form))
-    changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD, form));
-  return changes;
+  return login_db_->AddLogin(form);
 }
 
 PasswordStoreChangeList PasswordStoreDefault::UpdateLoginImpl(
     const PasswordForm& form) {
   DCHECK(GetBackgroundTaskRunner()->BelongsToCurrentThread());
-  PasswordStoreChangeList changes;
-  if (login_db_->UpdateLogin(form, NULL))
-    changes.push_back(PasswordStoreChange(PasswordStoreChange::UPDATE, form));
-  return changes;
+  return login_db_->UpdateLogin(form);
 }
 
 PasswordStoreChangeList PasswordStoreDefault::RemoveLoginImpl(
@@ -59,7 +53,8 @@ PasswordStoreChangeList PasswordStoreDefault::RemoveLoginImpl(
 }
 
 PasswordStoreChangeList PasswordStoreDefault::RemoveLoginsCreatedBetweenImpl(
-    const base::Time& delete_begin, const base::Time& delete_end) {
+    base::Time delete_begin,
+    base::Time delete_end) {
   std::vector<PasswordForm*> forms;
   PasswordStoreChangeList changes;
   if (login_db_->GetLoginsCreatedBetween(delete_begin, delete_end, &forms)) {
@@ -70,6 +65,25 @@ PasswordStoreChangeList PasswordStoreDefault::RemoveLoginsCreatedBetweenImpl(
                                               **it));
       }
       LogStatsForBulkDeletion(changes.size());
+    }
+  }
+  STLDeleteElements(&forms);
+  return changes;
+}
+
+PasswordStoreChangeList PasswordStoreDefault::RemoveLoginsSyncedBetweenImpl(
+    base::Time delete_begin,
+    base::Time delete_end) {
+  std::vector<PasswordForm*> forms;
+  PasswordStoreChangeList changes;
+  if (login_db_->GetLoginsSyncedBetween(delete_begin, delete_end, &forms)) {
+    if (login_db_->RemoveLoginsSyncedBetween(delete_begin, delete_end)) {
+      for (std::vector<PasswordForm*>::const_iterator it = forms.begin();
+           it != forms.end();
+           ++it) {
+        changes.push_back(
+            PasswordStoreChange(PasswordStoreChange::REMOVE, **it));
+      }
     }
   }
   STLDeleteElements(&forms);

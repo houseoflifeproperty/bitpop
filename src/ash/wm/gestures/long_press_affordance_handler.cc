@@ -63,7 +63,7 @@ views::Widget* CreateAffordanceWidget(aura::Window* root_window) {
   params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
   params.keep_on_top = true;
   params.accept_events = false;
-  params.can_activate = false;
+  params.activatable = views::Widget::InitParams::ACTIVATABLE_NO;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.context = root_window;
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
@@ -187,7 +187,7 @@ class LongPressAffordanceHandler::LongPressAffordanceView
 
  private:
   // Overridden from views::View.
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(2 * (kAffordanceOuterRadius + kAffordanceGlowWidth),
         2 * (kAffordanceOuterRadius + kAffordanceGlowWidth));
   }

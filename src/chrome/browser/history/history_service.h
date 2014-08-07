@@ -22,13 +22,14 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "chrome/browser/common/cancelable_request.h"
-#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/delete_directive_handler.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/typed_url_syncable_service.h"
-#include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/ref_counted_util.h"
+#include "components/favicon_base/favicon_callback.h"
+#include "components/history/core/browser/history_client.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "components/search_engines/template_url_id.h"
 #include "components/visitedlink/browser/visitedlink_delegate.h"
 #include "content/public/browser/download_manager_delegate.h"
 #include "content/public/browser/notification_observer.h"
@@ -36,19 +37,18 @@
 #include "content/public/common/page_transition_types.h"
 #include "sql/init_status.h"
 #include "sync/api/syncable_service.h"
-#include "ui/base/layout.h"
 
 #if defined(OS_ANDROID)
-#include "chrome/browser/history/android/android_history_provider_service.h"
+class AndroidHistoryProviderService;
 #endif
 
-class BookmarkService;
 class GURL;
 class HistoryURLProvider;
 class PageUsageData;
 class PageUsageRequest;
 class Profile;
 struct HistoryURLProviderParams;
+struct ImportedFaviconUsage;
 
 namespace base {
 class FilePath;
@@ -62,6 +62,7 @@ class VisitedLinkMaster;
 namespace history {
 
 class HistoryBackend;
+class HistoryClient;
 class HistoryDatabase;
 class HistoryDBTask;
 class HistoryQueryTest;
@@ -91,8 +92,9 @@ class HistoryService : public CancelableRequestProvider,
   // Miscellaneous commonly-used types.
   typedef std::vector<PageUsageData*> PageUsageDataList;
 
-  // Must call Init after construction.
-  explicit HistoryService(Profile* profile);
+  // Must call Init after construction. The |history::HistoryClient| object
+  // must be valid for the whole lifetime of |HistoryService|.
+  explicit HistoryService(history::HistoryClient* client, Profile* profile);
   // The empty constructor is provided only for testing.
   HistoryService();
 
@@ -100,10 +102,9 @@ class HistoryService : public CancelableRequestProvider,
 
   // Initializes the history service, returning true on success. On false, do
   // not call any other functions. The given directory will be used for storing
-  // the history files. The BookmarkService is used when deleting URLs to
-  // test if a URL is bookmarked; it may be NULL during testing.
-  bool Init(const base::FilePath& history_dir, BookmarkService* bookmark_service) {
-    return Init(history_dir, bookmark_service, false);
+  // the history files.
+  bool Init(const base::FilePath& history_dir) {
+    return Init(history_dir, false);
   }
 
   // Triggers the backend to load if it hasn't already, and then returns whether
@@ -125,13 +126,10 @@ class HistoryService : public CancelableRequestProvider,
   // still in memory (pending requests may be holding a reference to us).
   void Cleanup();
 
-  // RenderProcessHost pointers are used to scope page IDs (see AddPage). These
-  // objects must tell us when they are being destroyed so that we can clear
-  // out any cached data associated with that scope.
-  //
-  // The given pointer will not be dereferenced, it is only used for
-  // identification purposes, hence it is a void*.
-  void NotifyRenderProcessHostDestruction(const void* host);
+  // Context ids are used to scope page IDs (see AddPage). These contexts
+  // must tell us when they are being invalidated so that we can clear
+  // out any cached data associated with that context.
+  void ClearCachedDataForContextID(history::ContextID context_id);
 
   // Triggers the backend to load if it hasn't already, and then returns the
   // in-memory URL database. The returned pointer MAY BE NULL if the in-memory
@@ -172,14 +170,13 @@ class HistoryService : public CancelableRequestProvider,
   // Adds the given canonical URL to history with the given time as the visit
   // time. Referrer may be the empty string.
   //
-  // The supplied render process host is used to scope the given page ID. Page
-  // IDs are only unique inside a given render process, so we need that to
-  // differentiate them. This pointer should not be dereferenced by the history
-  // system.
+  // The supplied context id is used to scope the given page ID. Page IDs
+  // are only unique inside a given context, so we need that to differentiate
+  // them.
   //
-  // The scope/ids can be NULL if there is no meaningful tracking information
-  // that can be performed on the given URL. The 'page_id' should be the ID of
-  // the current session history entry in the given process.
+  // The context/page ids can be NULL if there is no meaningful tracking
+  // information that can be performed on the given URL. The 'page_id' should
+  // be the ID of the current session history entry in the given process.
   //
   // 'redirects' is an array of redirect URLs leading to this page, with the
   // page itself as the last item (so when there is no redirect, it will have
@@ -193,7 +190,7 @@ class HistoryService : public CancelableRequestProvider,
   // All "Add Page" functions will update the visited link database.
   void AddPage(const GURL& url,
                base::Time time,
-               const void* id_scope,
+               history::ContextID context_id,
                int32 page_id,
                const GURL& referrer,
                const history::RedirectList& redirects,
@@ -219,12 +216,9 @@ class HistoryService : public CancelableRequestProvider,
   void SetPageTitle(const GURL& url, const base::string16& title);
 
   // Updates the history database with a page's ending time stamp information.
-  // The page can be identified by the combination of the pointer to
-  // a RenderProcessHost, the page id and the url.
-  //
-  // The given pointer will not be dereferenced, it is only used for
-  // identification purposes, hence it is a void*.
-  void UpdateWithPageEndTime(const void* host,
+  // The page can be identified by the combination of the context id, the page
+  // id and the url.
+  void UpdateWithPageEndTime(history::ContextID context_id,
                              int32 page_id,
                              const GURL& url,
                              base::Time end_ts);
@@ -238,20 +232,20 @@ class HistoryService : public CancelableRequestProvider,
   // empty.
   //
   // If success is false, neither the row nor the vector will be valid.
-  typedef base::Callback<void(
-      Handle,
-      bool,  // Success flag, when false, nothing else is valid.
-      const history::URLRow*,
-      history::VisitVector*)> QueryURLCallback;
+  typedef base::Callback<
+      void(bool,  // Success flag, when false, nothing else is valid.
+           const history::URLRow&,
+           const history::VisitVector&)> QueryURLCallback;
 
   // Queries the basic information about the URL in the history database. If
   // the caller is interested in the visits (each time the URL is visited),
   // set |want_visits| to true. If these are not needed, the function will be
   // faster by setting this to false.
-  Handle QueryURL(const GURL& url,
-                  bool want_visits,
-                  CancelableRequestConsumerBase* consumer,
-                  const QueryURLCallback& callback);
+  base::CancelableTaskTracker::TaskId QueryURL(
+      const GURL& url,
+      bool want_visits,
+      const QueryURLCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Provides the result of a query. See QueryResults in history_types.h.
   // The common use will be to use QueryResults.Swap to suck the contents of
@@ -562,6 +556,9 @@ class HistoryService : public CancelableRequestProvider,
   // history. We filter out some URLs such as JavaScript.
   static bool CanAddURL(const GURL& url);
 
+  // Returns the HistoryClient.
+  history::HistoryClient* history_client() { return history_client_; }
+
   base::WeakPtr<HistoryService> AsWeakPtr();
 
   // syncer::SyncableService implementation.
@@ -617,9 +614,7 @@ class HistoryService : public CancelableRequestProvider,
 
   // Low-level Init().  Same as the public version, but adds a |no_db| parameter
   // that is only set by unittests which causes the backend to not init its DB.
-  bool Init(const base::FilePath& history_dir,
-            BookmarkService* bookmark_service,
-            bool no_db);
+  bool Init(const base::FilePath& history_dir, bool no_db);
 
   // Called by the HistoryURLProvider class to schedule an autocomplete, it
   // will be called back on the internal history thread with the history
@@ -649,38 +644,36 @@ class HistoryService : public CancelableRequestProvider,
   // FaviconService.
 
   // Used by FaviconService to get the favicon bitmaps from the history backend
-  // which most closely match |desired_size_in_dip| x |desired_size_in_dip| and
-  // |desired_scale_factors| for |icon_types|. If |desired_size_in_dip| is 0,
-  // the largest favicon bitmap for |icon_types| is returned. The returned
-  // FaviconBitmapResults will have at most one result for each of
-  // |desired_scale_factors|. If a favicon bitmap is determined to be the best
-  // candidate for multiple scale factors there will be less results.
+  // whose edge sizes most closely match |desired_sizes| for |icon_types|. If
+  // |desired_sizes| has a '0' entry, the largest favicon bitmap for
+  // |icon_types| is returned. The returned FaviconBitmapResults will have at
+  // most one result for each entry in |desired_sizes|. If a favicon bitmap is
+  // determined to be the best candidate for multiple |desired_sizes| there will
+  // be fewer results.
   // If |icon_types| has several types, results for only a single type will be
   // returned in the priority of TOUCH_PRECOMPOSED_ICON, TOUCH_ICON, and
   // FAVICON.
   base::CancelableTaskTracker::TaskId GetFavicons(
       const std::vector<GURL>& icon_urls,
       int icon_types,
-      int desired_size_in_dip,
-      const std::vector<ui::ScaleFactor>& desired_scale_factors,
-      const FaviconService::FaviconResultsCallback& callback,
+      const std::vector<int>& desired_sizes,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   // Used by the FaviconService to get favicons mapped to |page_url| for
-  // |icon_types| which most closely match |desired_size_in_dip| and
-  // |desired_scale_factors|. If |desired_size_in_dip| is 0, the largest favicon
-  // bitmap for |icon_types| is returned. The returned FaviconBitmapResults will
-  // have at most one result for each of |desired_scale_factors|. If a favicon
-  // bitmap is determined to be the best candidate for multiple scale factors
-  // there will be less results. If |icon_types| has several types, results for
-  // only a single type will be returned in the priority of
-  // TOUCH_PRECOMPOSED_ICON, TOUCH_ICON, and FAVICON.
+  // |icon_types| whose edge sizes most closely match |desired_sizes|. If
+  // |desired_sizes| has a '0' entry, the largest favicon bitmap for
+  // |icon_types| is returned. The returned FaviconBitmapResults will have at
+  // most one result for each entry in |desired_sizes|. If a favicon bitmap is
+  // determined to be the best candidate for multiple |desired_sizes| there
+  // will be fewer results. If |icon_types| has several types, results for only
+  // a single type will be returned in the priority of TOUCH_PRECOMPOSED_ICON,
+  // TOUCH_ICON, and FAVICON.
   base::CancelableTaskTracker::TaskId GetFaviconsForURL(
       const GURL& page_url,
       int icon_types,
-      int desired_size_in_dip,
-      const std::vector<ui::ScaleFactor>& desired_scale_factors,
-      const FaviconService::FaviconResultsCallback& callback,
+      const std::vector<int>& desired_sizes,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   // Used by FaviconService to find the first favicon bitmap whose width and
@@ -698,18 +691,17 @@ class HistoryService : public CancelableRequestProvider,
       const GURL& page_url,
       const std::vector<int>& icon_types,
       int minimum_size_in_pixels,
-      const FaviconService::FaviconRawCallback& callback,
+      const favicon_base::FaviconRawBitmapCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   // Used by the FaviconService to get the favicon bitmap which most closely
-  // matches |desired_size_in_dip| and |desired_scale_factor| from the favicon
-  // with |favicon_id| from the history backend. If |desired_size_in_dip| is 0,
-  // the largest favicon bitmap for |favicon_id| is returned.
+  // matches |desired_size| from the favicon with |favicon_id| from the history
+  // backend. If |desired_size| is 0, the largest favicon bitmap for
+  // |favicon_id| is returned.
   base::CancelableTaskTracker::TaskId GetFaviconForID(
       favicon_base::FaviconID favicon_id,
-      int desired_size_in_dip,
-      ui::ScaleFactor desired_scale_factor,
-      const FaviconService::FaviconResultsCallback& callback,
+      int desired_size,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   // Used by the FaviconService to replace the favicon mappings to |page_url|
@@ -727,17 +719,15 @@ class HistoryService : public CancelableRequestProvider,
   //    Sample new mappings to |page_url|: { ICON_URL3 }
   // |icon_types| can only have multiple IconTypes if
   // |icon_types| == TOUCH_ICON | TOUCH_PRECOMPOSED_ICON.
-  // The favicon bitmaps which most closely match |desired_size_in_dip|
-  // and |desired_scale_factors| from the favicons which were just mapped
-  // to |page_url| are returned. If |desired_size_in_dip| is 0, the
-  // largest favicon bitmap is returned.
+  // The favicon bitmaps whose edge sizes most closely match |desired_sizes|
+  // from the favicons which were just mapped to |page_url| are returned. If
+  // |desired_sizes| has a '0' entry, the largest favicon bitmap is returned.
   base::CancelableTaskTracker::TaskId UpdateFaviconMappingsAndFetch(
       const GURL& page_url,
       const std::vector<GURL>& icon_urls,
       int icon_types,
-      int desired_size_in_dip,
-      const std::vector<ui::ScaleFactor>& desired_scale_factors,
-      const FaviconService::FaviconResultsCallback& callback,
+      const std::vector<int>& desired_sizes,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   // Used by FaviconService to set a favicon for |page_url| and |icon_url| with
@@ -777,10 +767,10 @@ class HistoryService : public CancelableRequestProvider,
   // deleting the 2x favicon bitmap if it is present in the history backend.
   // See HistoryBackend::ValidateSetFaviconsParams() for more details on the
   // criteria for |favicon_bitmap_data| to be valid.
-  void SetFavicons(
-      const GURL& page_url,
-      favicon_base::IconType icon_type,
-      const std::vector<favicon_base::FaviconBitmapData>& favicon_bitmap_data);
+  void SetFavicons(const GURL& page_url,
+                   favicon_base::IconType icon_type,
+                   const std::vector<favicon_base::FaviconRawBitmapData>&
+                       favicon_bitmap_data);
 
   // Used by the FaviconService to mark the favicon for the page as being out
   // of date.
@@ -1019,6 +1009,10 @@ class HistoryService : public CancelableRequestProvider,
   // TODO(mrossetti): Consider changing ownership. See http://crbug.com/138321
   scoped_ptr<history::InMemoryHistoryBackend> in_memory_backend_;
 
+  // The history client, may be null when testing. The object should otherwise
+  // outlive |HistoryService|.
+  history::HistoryClient* history_client_;
+
   // The profile, may be null when testing.
   Profile* profile_;
 
@@ -1032,7 +1026,6 @@ class HistoryService : public CancelableRequestProvider,
 
   // Cached values from Init(), used whenever we need to reload the backend.
   base::FilePath history_dir_;
-  BookmarkService* bookmark_service_;
   bool no_db_;
 
   // The index used for quick history lookups.

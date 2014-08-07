@@ -312,11 +312,9 @@ enum QuoteType {
 
 enum EBorderFit { BorderFitBorder, BorderFitLines };
 
-enum EAnimationFillMode { AnimationFillModeNone, AnimationFillModeForwards, AnimationFillModeBackwards, AnimationFillModeBoth };
-
 enum EAnimPlayState {
-    AnimPlayStatePlaying = 0x0,
-    AnimPlayStatePaused = 0x1
+    AnimPlayStatePlaying,
+    AnimPlayStatePaused
 };
 
 enum EWhiteSpace {
@@ -395,8 +393,8 @@ enum ECursor {
     CURSOR_PROGRESS,
     CURSOR_NO_DROP,
     CURSOR_NOT_ALLOWED,
-    CURSOR_WEBKIT_ZOOM_IN,
-    CURSOR_WEBKIT_ZOOM_OUT,
+    CURSOR_ZOOM_IN,
+    CURSOR_ZOOM_OUT,
     CURSOR_E_RESIZE,
     CURSOR_NE_RESIZE,
     CURSOR_NW_RESIZE,

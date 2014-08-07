@@ -459,6 +459,8 @@ WebInspector.ExtensionServer.prototype = {
 
     _onGetHAR: function()
     {
+        // Wake up the "network" module for HAR operations.
+        WebInspector.inspectorView.panel("network");
         var requests = WebInspector.networkLog.requests;
         var harLog = (new WebInspector.HARLog(requests)).build();
         for (var i = 0; i < harLog.entries.length; ++i)
@@ -501,6 +503,8 @@ WebInspector.ExtensionServer.prototype = {
 
     /**
      * @param {!WebInspector.ContentProvider} contentProvider
+     * @param {!Object} message
+     * @param {!MessagePort} port
      */
     _getResourceContent: function(contentProvider, message, port)
     {
@@ -767,6 +771,8 @@ WebInspector.ExtensionServer.prototype = {
     _notifyRequestFinished: function(event)
     {
         var request = /** @type {!WebInspector.NetworkRequest} */ (event.data);
+        // Wake up the "network" module for HAR operations.
+        WebInspector.inspectorView.panel("network");
         this._postNotification(WebInspector.extensionAPI.Events.NetworkRequestFinished, this._requestId(request), (new WebInspector.HAREntry(request)).build());
     },
 

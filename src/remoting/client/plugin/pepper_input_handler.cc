@@ -17,13 +17,13 @@
 namespace remoting {
 
 PepperInputHandler::PepperInputHandler(
-    pp::Instance* instance,
-    protocol::InputStub* input_stub)
+    pp::Instance* instance)
     : pp::MouseLock(instance),
       instance_(instance),
-      input_stub_(input_stub),
+      input_stub_(NULL),
       callback_factory_(this),
       has_focus_(false),
+      send_mouse_input_when_unfocused_(false),
       mouse_lock_state_(MouseLockDisallowed),
       wheel_delta_x_(0),
       wheel_delta_y_(0),
@@ -31,8 +31,7 @@ PepperInputHandler::PepperInputHandler(
       wheel_ticks_y_(0) {
 }
 
-PepperInputHandler::~PepperInputHandler() {
-}
+PepperInputHandler::~PepperInputHandler() {}
 
 // Helper function to get the USB key code using the Dev InputEvent interface.
 uint32_t GetUsbKeyCode(pp::KeyboardInputEvent pp_key_event) {
@@ -69,13 +68,14 @@ bool PepperInputHandler::HandleInputEvent(const pp::InputEvent& event) {
       key_event.set_pressed(event.GetType() == PP_INPUTEVENT_TYPE_KEYDOWN);
       key_event.set_lock_states(lock_states);
 
-      input_stub_->InjectKeyEvent(key_event);
+      if (input_stub_)
+        input_stub_->InjectKeyEvent(key_event);
       return true;
     }
 
     case PP_INPUTEVENT_TYPE_MOUSEDOWN:
     case PP_INPUTEVENT_TYPE_MOUSEUP: {
-      if (!has_focus_)
+      if (!has_focus_ && !send_mouse_input_when_unfocused_)
         return false;
 
       pp::MouseInputEvent pp_mouse_event(event);
@@ -106,7 +106,8 @@ bool PepperInputHandler::HandleInputEvent(const pp::InputEvent& event) {
           mouse_event.set_delta_y(delta.y());
         }
 
-        input_stub_->InjectMouseEvent(mouse_event);
+        if (input_stub_)
+          input_stub_->InjectMouseEvent(mouse_event);
       }
       return true;
     }
@@ -114,7 +115,7 @@ bool PepperInputHandler::HandleInputEvent(const pp::InputEvent& event) {
     case PP_INPUTEVENT_TYPE_MOUSEMOVE:
     case PP_INPUTEVENT_TYPE_MOUSEENTER:
     case PP_INPUTEVENT_TYPE_MOUSELEAVE: {
-      if (!has_focus_)
+      if (!has_focus_ && !send_mouse_input_when_unfocused_)
         return false;
 
       pp::MouseInputEvent pp_mouse_event(event);
@@ -129,12 +130,13 @@ bool PepperInputHandler::HandleInputEvent(const pp::InputEvent& event) {
         mouse_event.set_delta_y(delta.y());
       }
 
-      input_stub_->InjectMouseEvent(mouse_event);
+      if (input_stub_)
+        input_stub_->InjectMouseEvent(mouse_event);
       return true;
     }
 
     case PP_INPUTEVENT_TYPE_WHEEL: {
-      if (!has_focus_)
+      if (!has_focus_ && !send_mouse_input_when_unfocused_)
         return false;
 
       pp::WheelInputEvent pp_wheel_event(event);
@@ -175,7 +177,8 @@ bool PepperInputHandler::HandleInputEvent(const pp::InputEvent& event) {
         mouse_event.set_wheel_ticks_x(ticks_x);
         mouse_event.set_wheel_ticks_y(ticks_y);
 
-        input_stub_->InjectMouseEvent(mouse_event);
+        if (input_stub_)
+          input_stub_->InjectMouseEvent(mouse_event);
       }
       return true;
     }

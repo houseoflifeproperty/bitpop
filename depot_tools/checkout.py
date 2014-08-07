@@ -174,6 +174,7 @@ class RawCheckout(CheckoutBase):
         filepath = os.path.join(self.project_path, p.filename)
         if p.is_delete:
           os.remove(filepath)
+          assert(not os.path.exists(filepath))
           stdout.append('Deleted.')
         else:
           dirname = os.path.dirname(p.filename)
@@ -361,6 +362,7 @@ class SvnCheckout(CheckoutBase, SvnMixIn):
         if p.is_delete:
           stdout.append(self._check_output_svn(
               ['delete', p.filename, '--force'], credentials=False))
+          assert(not os.path.exists(filepath))
           stdout.append('Deleted.')
         else:
           # svn add while creating directories otherwise svn add on the
@@ -592,11 +594,11 @@ class GitCheckout(CheckoutBase):
       try:
         # Look if the commit hash already exist. If so, we can skip a
         # 'git fetch' call.
-        revision = self._check_output_git(['rev-parse', revision])
+        revision = self._check_output_git(['rev-parse', revision]).rstrip()
       except subprocess.CalledProcessError:
         self._check_call_git(
             ['fetch', self.remote, self.remote_branch, '--quiet'])
-        revision = self._check_output_git(['rev-parse', revision])
+        revision = self._check_output_git(['rev-parse', revision]).rstrip()
       self._check_call_git(['checkout', '--force', '--quiet', revision])
     else:
       branches, active = self._branches()
@@ -654,6 +656,7 @@ class GitCheckout(CheckoutBase):
             pass
           else:
             stdout.append(self._check_output_git(['rm', p.filename]))
+            assert(not os.path.exists(filepath))
             stdout.append('Deleted.')
         else:
           dirname = os.path.dirname(p.filename)
@@ -707,10 +710,14 @@ class GitCheckout(CheckoutBase):
     found_files = self._check_output_git(
         ['diff', '--ignore-submodules',
          '--name-only', '--staged']).splitlines(False)
-    assert sorted(patches.filenames) == sorted(found_files), (
-        'Found extra %s locally, %s not patched' % (
-            sorted(set(found_files) - set(patches.filenames)),
-            sorted(set(patches.filenames) - set(found_files))))
+    if sorted(patches.filenames) != sorted(found_files):
+      extra_files = sorted(set(found_files) - set(patches.filenames))
+      unpatched_files = sorted(set(patches.filenames) - set(found_files))
+      if extra_files:
+        print 'Found extra files: %r' % (extra_files,)
+      if unpatched_files:
+        print 'Found unpatched files: %r' % (unpatched_files,)
+
 
   def commit(self, commit_message, user):
     """Commits, updates the commit message and pushes."""

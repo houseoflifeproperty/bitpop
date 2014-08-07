@@ -21,9 +21,10 @@ import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
 import org.apache.http.Header;
 import org.apache.http.HttpRequest;
 import org.chromium.android_webview.AwContents;
+import org.chromium.android_webview.AwContentsClient.ShouldInterceptRequestParams;
 import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.AwSettings.LayoutAlgorithm;
-import org.chromium.android_webview.InterceptedRequestData;
+import org.chromium.android_webview.AwWebResourceResponse;
 import org.chromium.android_webview.test.util.CommonResources;
 import org.chromium.android_webview.test.util.ImagePageGenerator;
 import org.chromium.android_webview.test.util.VideoTestUtil;
@@ -832,10 +833,15 @@ public class AwSettingsTest extends AwTestBase {
         @Override
         protected void doEnsureSettingHasValue(Boolean value) throws Throwable {
             AwSettingsTest.this.resetResourceRequestCountInContentProvider(mTarget);
-            loadUrlSync(AwSettingsTest.this.createContentUrl(mTarget));
             if (value == ENABLED) {
+                loadUrlSync(AwSettingsTest.this.createContentUrl(mTarget));
+                String title = getTitleOnUiThread();
+                assertTrue(title != null);
+                assertTrue("[" + mTarget + "] Actual title: \"" + title + "\"",
+                        title.contains(mTarget));
                 AwSettingsTest.this.ensureResourceRequestCountInContentProvider(mTarget, 1);
             } else {
+                loadUrlSyncAndExpectError(AwSettingsTest.this.createContentUrl(mTarget));
                 AwSettingsTest.this.ensureResourceRequestCountInContentProvider(mTarget, 0);
             }
         }
@@ -1726,12 +1732,8 @@ public class AwSettingsTest extends AwTestBase {
                 views.getClient1()));
     }
 
-    /*
     @SmallTest
     @Feature({"AndroidWebView", "Preferences"})
-    crbug.com/370950
-    */
-    @DisabledTest
     public void testFileUrlAccessWithTwoViews() throws Throwable {
         ViewPair views = createViews();
         runPerViewSettingsTest(
@@ -1739,12 +1741,8 @@ public class AwSettingsTest extends AwTestBase {
             new AwSettingsFileUrlAccessTestHelper(views.getContainer1(), views.getClient1(), 1));
     }
 
-    /*
     @SmallTest
     @Feature({"AndroidWebView", "Preferences"})
-    crbug.com/370950
-    */
-    @DisabledTest
     public void testContentUrlAccessWithTwoViews() throws Throwable {
         ViewPair views = createViews();
         runPerViewSettingsTest(
@@ -1785,8 +1783,10 @@ public class AwSettingsTest extends AwTestBase {
                     views.getContainer1(), views.getClient1(), 1));
     }
 
-    @SmallTest
-    @Feature({"AndroidWebView", "Preferences"})
+    // @SmallTest
+    // @Feature({"AndroidWebView", "Preferences"})
+    // http://crbug.com/387101
+    @DisabledTest
     public void testBlockNetworkImagesDoesNotBlockDataUrlImage() throws Throwable {
         final TestAwContentsClient contentClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
@@ -2571,8 +2571,9 @@ public class AwSettingsTest extends AwTestBase {
         final String DEFAULT_VIDEO_POSTER_URL = "http://default_video_poster/";
         TestAwContentsClient client = new TestAwContentsClient() {
             @Override
-            public InterceptedRequestData shouldInterceptRequest(String url) {
-                if (url.equals(DEFAULT_VIDEO_POSTER_URL)) {
+            public AwWebResourceResponse shouldInterceptRequest(
+                    ShouldInterceptRequestParams params) {
+                if (params.url.equals(DEFAULT_VIDEO_POSTER_URL)) {
                     videoPosterAccessedCallbackHelper.notifyCalled();
                 }
                 return null;

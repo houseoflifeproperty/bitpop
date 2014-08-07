@@ -11,9 +11,9 @@
 
 #if defined(ENABLE_PEPPER_CDMS)
 #include "content/renderer/media/crypto/ppapi_decryptor.h"
-#elif defined(OS_ANDROID)
-#include "content/renderer/media/android/proxy_media_keys.h"
-#include "content/renderer/media/android/renderer_media_player_manager.h"
+#elif defined(ENABLE_BROWSER_CDMS)
+#include "content/renderer/media/crypto/proxy_media_keys.h"
+#include "content/renderer/media/crypto/renderer_cdm_manager.h"
 #endif  // defined(ENABLE_PEPPER_CDMS)
 
 namespace content {
@@ -23,11 +23,10 @@ scoped_ptr<media::MediaKeys> ContentDecryptionModuleFactory::Create(
     const GURL& security_origin,
 #if defined(ENABLE_PEPPER_CDMS)
     const CreatePepperCdmCB& create_pepper_cdm_cb,
-#elif defined(OS_ANDROID)
-    RendererMediaPlayerManager* manager,
+#elif defined(ENABLE_BROWSER_CDMS)
+    RendererCdmManager* manager,
     int* cdm_id,
 #endif  // defined(ENABLE_PEPPER_CDMS)
-    const media::SessionCreatedCB& session_created_cb,
     const media::SessionMessageCB& session_message_cb,
     const media::SessionReadyCB& session_ready_cb,
     const media::SessionClosedCB& session_closed_cb,
@@ -37,34 +36,28 @@ scoped_ptr<media::MediaKeys> ContentDecryptionModuleFactory::Create(
   // check the security origin before calling.
   // DCHECK(security_origin.is_valid());
 
-#if defined(OS_ANDROID)
-  *cdm_id = RendererMediaPlayerManager::kInvalidCdmId;
+#if defined(ENABLE_BROWSER_CDMS)
+  *cdm_id = RendererCdmManager::kInvalidCdmId;
 #endif
 
   if (CanUseAesDecryptor(key_system)) {
     return scoped_ptr<media::MediaKeys>(
-        new media::AesDecryptor(session_created_cb,
-                                session_message_cb,
-                                session_ready_cb,
-                                session_closed_cb,
-                                session_error_cb));
+        new media::AesDecryptor(session_message_cb, session_closed_cb));
   }
 #if defined(ENABLE_PEPPER_CDMS)
   return scoped_ptr<media::MediaKeys>(
       PpapiDecryptor::Create(key_system,
                              security_origin,
                              create_pepper_cdm_cb,
-                             session_created_cb,
                              session_message_cb,
                              session_ready_cb,
                              session_closed_cb,
                              session_error_cb));
-#elif defined(OS_ANDROID)
+#elif defined(ENABLE_BROWSER_CDMS)
   scoped_ptr<ProxyMediaKeys> proxy_media_keys =
       ProxyMediaKeys::Create(key_system,
                              security_origin,
                              manager,
-                             session_created_cb,
                              session_message_cb,
                              session_ready_cb,
                              session_closed_cb,

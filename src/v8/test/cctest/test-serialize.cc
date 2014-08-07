@@ -27,21 +27,21 @@
 
 #include <signal.h>
 
-#include "sys/stat.h"
+#include <sys/stat.h>
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "debug.h"
-#include "ic-inl.h"
-#include "runtime.h"
-#include "serialize.h"
-#include "scopeinfo.h"
-#include "snapshot.h"
-#include "cctest.h"
-#include "spaces.h"
-#include "objects.h"
-#include "natives.h"
-#include "bootstrapper.h"
+#include "src/bootstrapper.h"
+#include "src/debug.h"
+#include "src/ic-inl.h"
+#include "src/natives.h"
+#include "src/objects.h"
+#include "src/runtime.h"
+#include "src/scopeinfo.h"
+#include "src/serialize.h"
+#include "src/snapshot.h"
+#include "src/spaces.h"
+#include "test/cctest/cctest.h"
 
 using namespace v8::internal;
 
@@ -210,7 +210,7 @@ void FileByteSink::WriteSpaceUsed(
       int property_cell_space_used) {
   int file_name_length = StrLength(file_name_) + 10;
   Vector<char> name = Vector<char>::New(file_name_length + 1);
-  OS::SNPrintF(name, "%s.size", file_name_);
+  SNPrintF(name, "%s.size", file_name_);
   FILE* fp = OS::FOpen(name.start(), "w");
   name.Dispose();
   fprintf(fp, "new %d\n", new_space_used);
@@ -262,7 +262,7 @@ static void Serialize() {
 // Test that the whole heap can be serialized.
 TEST(Serialize) {
   if (!Snapshot::HaveASnapshotToStartFrom()) {
-    Serializer::RequestEnable(CcTest::i_isolate());
+    CcTest::i_isolate()->enable_serializer();
     v8::V8::Initialize();
     Serialize();
   }
@@ -272,7 +272,7 @@ TEST(Serialize) {
 // Test that heap serialization is non-destructive.
 TEST(SerializeTwice) {
   if (!Snapshot::HaveASnapshotToStartFrom()) {
-    Serializer::RequestEnable(CcTest::i_isolate());
+    CcTest::i_isolate()->enable_serializer();
     v8::V8::Initialize();
     Serialize();
     Serialize();
@@ -370,7 +370,7 @@ DEPENDENT_TEST(DeserializeFromSecondSerializationAndRunScript2,
 TEST(PartialSerialization) {
   if (!Snapshot::HaveASnapshotToStartFrom()) {
     Isolate* isolate = CcTest::i_isolate();
-    Serializer::RequestEnable(isolate);
+    CcTest::i_isolate()->enable_serializer();
     v8::V8::Initialize();
     v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate);
     Heap* heap = isolate->heap();
@@ -404,7 +404,7 @@ TEST(PartialSerialization) {
 
     int file_name_length = StrLength(FLAG_testing_serialization_file) + 10;
     Vector<char> startup_name = Vector<char>::New(file_name_length + 1);
-    OS::SNPrintF(startup_name, "%s.startup", FLAG_testing_serialization_file);
+    SNPrintF(startup_name, "%s.startup", FLAG_testing_serialization_file);
 
     {
       v8::HandleScope handle_scope(v8_isolate);
@@ -447,7 +447,7 @@ static void ReserveSpaceForSnapshot(Deserializer* deserializer,
                                     const char* file_name) {
   int file_name_length = StrLength(file_name) + 10;
   Vector<char> name = Vector<char>::New(file_name_length + 1);
-  OS::SNPrintF(name, "%s.size", file_name);
+  SNPrintF(name, "%s.size", file_name);
   FILE* fp = OS::FOpen(name.start(), "r");
   name.Dispose();
   int new_size, pointer_size, data_size, code_size, map_size, cell_size,
@@ -482,7 +482,7 @@ DEPENDENT_TEST(PartialDeserialization, PartialSerialization) {
   if (!Snapshot::IsEnabled()) {
     int file_name_length = StrLength(FLAG_testing_serialization_file) + 10;
     Vector<char> startup_name = Vector<char>::New(file_name_length + 1);
-    OS::SNPrintF(startup_name, "%s.startup", FLAG_testing_serialization_file);
+    SNPrintF(startup_name, "%s.startup", FLAG_testing_serialization_file);
 
     CHECK(Snapshot::Initialize(startup_name.start()));
     startup_name.Dispose();
@@ -521,7 +521,7 @@ DEPENDENT_TEST(PartialDeserialization, PartialSerialization) {
 TEST(ContextSerialization) {
   if (!Snapshot::HaveASnapshotToStartFrom()) {
     Isolate* isolate = CcTest::i_isolate();
-    Serializer::RequestEnable(isolate);
+    CcTest::i_isolate()->enable_serializer();
     v8::V8::Initialize();
     v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate);
     Heap* heap = isolate->heap();
@@ -548,7 +548,7 @@ TEST(ContextSerialization) {
 
     int file_name_length = StrLength(FLAG_testing_serialization_file) + 10;
     Vector<char> startup_name = Vector<char>::New(file_name_length + 1);
-    OS::SNPrintF(startup_name, "%s.startup", FLAG_testing_serialization_file);
+    SNPrintF(startup_name, "%s.startup", FLAG_testing_serialization_file);
 
     {
       v8::HandleScope handle_scope(v8_isolate);
@@ -594,7 +594,7 @@ DEPENDENT_TEST(ContextDeserialization, ContextSerialization) {
   if (!Snapshot::HaveASnapshotToStartFrom()) {
     int file_name_length = StrLength(FLAG_testing_serialization_file) + 10;
     Vector<char> startup_name = Vector<char>::New(file_name_length + 1);
-    OS::SNPrintF(startup_name, "%s.startup", FLAG_testing_serialization_file);
+    SNPrintF(startup_name, "%s.startup", FLAG_testing_serialization_file);
 
     CHECK(Snapshot::Initialize(startup_name.start()));
     startup_name.Dispose();

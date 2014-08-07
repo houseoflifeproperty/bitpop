@@ -14,6 +14,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::_;
+using ::testing::AnyNumber;
 using ::testing::Assign;
 using ::testing::Invoke;
 using ::testing::NiceMock;
@@ -27,16 +28,13 @@ namespace media {
 
 struct VideoFrameStreamTestParams {
   VideoFrameStreamTestParams(bool is_encrypted,
-                             bool enable_get_decode_output,
                              int decoding_delay,
                              int parallel_decoding)
       : is_encrypted(is_encrypted),
-        enable_get_decode_output(enable_get_decode_output),
         decoding_delay(decoding_delay),
         parallel_decoding(parallel_decoding) {}
 
   bool is_encrypted;
-  bool enable_get_decode_output;
   int decoding_delay;
   int parallel_decoding;
 };
@@ -51,7 +49,6 @@ class VideoFrameStreamTest
                                               GetParam().is_encrypted)),
         decryptor_(new NiceMock<MockDecryptor>()),
         decoder_(new FakeVideoDecoder(GetParam().decoding_delay,
-                                      GetParam().enable_get_decode_output,
                                       GetParam().parallel_decoding)),
         is_initialized_(false),
         num_decoded_frames_(0),
@@ -89,6 +86,7 @@ class VideoFrameStreamTest
     EXPECT_FALSE(is_initialized_);
   }
 
+  MOCK_METHOD1(OnNewSpliceBuffer, void(base::TimeDelta));
   MOCK_METHOD1(SetDecryptorReadyCallback, void(const media::DecryptorReadyCB&));
 
   void OnStatistics(const PipelineStatistics& statistics) {
@@ -181,6 +179,15 @@ class VideoFrameStreamTest
     do {
       ReadOneFrame();
     } while (!pending_read_);
+  }
+
+  void ReadAllFrames() {
+    do {
+      ReadOneFrame();
+    } while (frame_read_.get() && !frame_read_->end_of_stream());
+
+    const int total_num_frames = kNumConfigs * kNumBuffersInOneConfig;
+    DCHECK_EQ(num_decoded_frames_, total_num_frames);
   }
 
   enum PendingState {
@@ -347,33 +354,21 @@ INSTANTIATE_TEST_CASE_P(
     Clear,
     VideoFrameStreamTest,
     ::testing::Values(
-        VideoFrameStreamTestParams(false, false, 0, 1),
-        VideoFrameStreamTestParams(false, false, 3, 1),
-        VideoFrameStreamTestParams(false, false, 7, 1)));
-INSTANTIATE_TEST_CASE_P(
-    Clear_GetDecodeOutput,
-    VideoFrameStreamTest,
-    ::testing::Values(
-        VideoFrameStreamTestParams(false, true, 0, 1),
-        VideoFrameStreamTestParams(false, true, 3, 1),
-        VideoFrameStreamTestParams(false, true, 7, 1)));
+        VideoFrameStreamTestParams(false, 0, 1),
+        VideoFrameStreamTestParams(false, 3, 1),
+        VideoFrameStreamTestParams(false, 7, 1)));
 INSTANTIATE_TEST_CASE_P(
     Encrypted,
     VideoFrameStreamTest,
     ::testing::Values(
-        VideoFrameStreamTestParams(true, false, 7, 1)));
-INSTANTIATE_TEST_CASE_P(
-    Encrypted_GetDecodeOutput,
-    VideoFrameStreamTest,
-    ::testing::Values(
-        VideoFrameStreamTestParams(true, true, 7, 1)));
+        VideoFrameStreamTestParams(true, 7, 1)));
 
 INSTANTIATE_TEST_CASE_P(
     Clear_Parallel,
     VideoFrameStreamTest,
     ::testing::Values(
-        VideoFrameStreamTestParams(false, false, 0, 3),
-        VideoFrameStreamTestParams(false, false, 2, 3)));
+        VideoFrameStreamTestParams(false, 0, 3),
+        VideoFrameStreamTestParams(false, 2, 3)));
 
 
 TEST_P(VideoFrameStreamTest, Initialization) {
@@ -387,12 +382,7 @@ TEST_P(VideoFrameStreamTest, ReadOneFrame) {
 
 TEST_P(VideoFrameStreamTest, ReadAllFrames) {
   Initialize();
-  do {
-    Read();
-  } while (frame_read_.get() && !frame_read_->end_of_stream());
-
-  const int total_num_frames = kNumConfigs * kNumBuffersInOneConfig;
-  DCHECK_EQ(num_decoded_frames_, total_num_frames);
+  ReadAllFrames();
 }
 
 TEST_P(VideoFrameStreamTest, Read_AfterReset) {
@@ -544,12 +534,41 @@ TEST_P(VideoFrameStreamTest, Reset_AfterNormalRead) {
   Read();
 }
 
+TEST_P(VideoFrameStreamTest, Reset_AfterNormalReadWithActiveSplice) {
+  video_frame_stream_->set_splice_observer(base::Bind(
+      &VideoFrameStreamTest::OnNewSpliceBuffer, base::Unretained(this)));
+  Initialize();
+
+  // Send buffers with a splice timestamp, which sets the active splice flag.
+  const base::TimeDelta splice_timestamp = base::TimeDelta();
+  demuxer_stream_->set_splice_timestamp(splice_timestamp);
+  EXPECT_CALL(*this, OnNewSpliceBuffer(splice_timestamp)).Times(AnyNumber());
+  Read();
+
+  // Issue an explicit Reset() and clear the splice timestamp.
+  Reset();
+  demuxer_stream_->set_splice_timestamp(kNoTimestamp());
+
+  // Ensure none of the upcoming calls indicate they have a splice timestamp.
+  EXPECT_CALL(*this, OnNewSpliceBuffer(_)).Times(0);
+  Read();
+}
+
 TEST_P(VideoFrameStreamTest, Reset_AfterDemuxerRead_ConfigChange) {
   Initialize();
   EnterPendingState(DEMUXER_READ_CONFIG_CHANGE);
   SatisfyPendingCallback(DEMUXER_READ_CONFIG_CHANGE);
   Reset();
   Read();
+}
+
+TEST_P(VideoFrameStreamTest, Reset_AfterEndOfStream) {
+  Initialize();
+  ReadAllFrames();
+  Reset();
+  num_decoded_frames_ = 0;
+  demuxer_stream_->SeekToStart();
+  ReadAllFrames();
 }
 
 TEST_P(VideoFrameStreamTest, Reset_DuringNoKeyRead) {

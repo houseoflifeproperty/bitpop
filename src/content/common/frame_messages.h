@@ -301,9 +301,10 @@ IPC_MESSAGE_ROUTED1(FrameMsg_Navigate, FrameMsg_Navigate_Params)
 IPC_MESSAGE_ROUTED0(FrameMsg_BeforeUnload)
 
 // Instructs the frame to swap out for a cross-site transition, including
-// running the unload event handler. Expects a SwapOut_ACK message when
-// finished.
-IPC_MESSAGE_ROUTED0(FrameMsg_SwapOut)
+// running the unload event handler and creating a RenderFrameProxy with the
+// given |proxy_routing_id|. Expects a SwapOut_ACK message when finished.
+IPC_MESSAGE_ROUTED1(FrameMsg_SwapOut,
+                    int /* proxy_routing_id */)
 
 // Request for the renderer to insert CSS into the frame.
 IPC_MESSAGE_ROUTED1(FrameMsg_CSSInsertRequest,
@@ -352,6 +353,19 @@ IPC_MESSAGE_ROUTED2(FrameMsg_DidChooseColorResponse, unsigned, SkColor)
 
 // Notifies the color chooser client that the color chooser has ended.
 IPC_MESSAGE_ROUTED1(FrameMsg_DidEndColorChooser, unsigned)
+
+// Notifies the corresponding RenderFrameProxy object to replace itself with the
+// RenderFrame object it is associated with.
+IPC_MESSAGE_ROUTED0(FrameMsg_DeleteProxy)
+
+// Request the text surrounding the selection with a |max_length|. The response
+// will be sent via FrameHostMsg_TextSurroundingSelectionResponse.
+IPC_MESSAGE_ROUTED1(FrameMsg_TextSurroundingSelectionRequest,
+                    size_t /* max_length */)
+
+// Tells the renderer to insert a link to the specified stylesheet. This is
+// needed to support navigation transitions.
+IPC_MESSAGE_ROUTED1(FrameMsg_AddStyleSheetByURL, std::string)
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
@@ -409,17 +423,18 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_DidFailLoadWithError,
                     int /* error_code */,
                     base::string16 /* error_description */)
 
-// Sent when the renderer starts loading the page. This corresponds to
-// Blink's notion of the throbber starting. Note that sometimes you may get
-// duplicates of these during a single load.
-// |to_different_document| will be true unless the load is a fragment
-// navigation, or triggered by history.pushState/replaceState.
+// Sent when the renderer starts loading the page. |to_different_document| will
+// be true unless the load is a fragment navigation, or triggered by
+// history.pushState/replaceState.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_DidStartLoading,
                     bool /* to_different_document */)
 
-// Sent when the renderer is done loading a page. This corresponds to Blink's
-// notion of the throbber stopping.
+// Sent when the renderer is done loading a page.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_DidStopLoading)
+
+// Sent when the renderer changed the progress of a load.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_DidChangeLoadProgress,
+                    double /* load_progress */)
 
 // Requests that the given URL be opened in the specified manner.
 IPC_MESSAGE_ROUTED1(FrameHostMsg_OpenURL, FrameHostMsg_OpenURL_Params)
@@ -440,6 +455,18 @@ IPC_MESSAGE_ROUTED0(FrameHostMsg_DidAccessInitialDocument)
 // Sent when the frame sets its opener to null, disowning it for the lifetime of
 // the window. Sent for top-level frames.
 IPC_MESSAGE_ROUTED0(FrameHostMsg_DidDisownOpener)
+
+// Changes the title for the page in the UI when the page is navigated or the
+// title changes. Sent for top-level frames.
+IPC_MESSAGE_ROUTED3(FrameHostMsg_UpdateTitle,
+                    int32 /* page_id */,
+                    base::string16 /* title */,
+                    blink::WebTextDirection /* title direction */)
+
+// Change the encoding name of the page in UI when the page has detected
+// proper encoding name. Sent for top-level frames.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_UpdateEncoding,
+                    std::string /* new encoding name */)
 
 // Following message is used to communicate the values received by the
 // callback binding the JS to Cpp.
@@ -589,3 +616,14 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_MediaPlayingNotification,
 
 IPC_MESSAGE_ROUTED1(FrameHostMsg_MediaPausedNotification,
                     int64 /* player_cookie, distinguishes instances */)
+
+// Notify browser the theme color has been changed.
+IPC_MESSAGE_ROUTED1(FrameHostMsg_DidChangeThemeColor,
+                    SkColor /* theme_color */)
+
+// Response for FrameMsg_TextSurroundingSelectionRequest, |startOffset| and
+// |endOffset| are the offsets of the selection in the returned |content|.
+IPC_MESSAGE_ROUTED3(FrameHostMsg_TextSurroundingSelectionResponse,
+                    base::string16,  /* content */
+                    size_t, /* startOffset */
+                    size_t /* endOffset */)

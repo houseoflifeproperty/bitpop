@@ -5,11 +5,9 @@
 #include "config.h"
 #include "modules/battery/BatteryManager.h"
 
-#include "RuntimeEnabledFeatures.h"
-#include "core/events/Event.h"
 #include "modules/battery/BatteryDispatcher.h"
 #include "modules/battery/BatteryStatus.h"
-#include <limits>
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -22,84 +20,106 @@ PassRefPtrWillBeRawPtr<BatteryManager> BatteryManager::create(ExecutionContext* 
 
 BatteryManager::~BatteryManager()
 {
+    stopUpdating();
 }
 
 BatteryManager::BatteryManager(ExecutionContext* context)
     : ActiveDOMObject(context)
-    , DeviceSensorEventController(toDocument(context)->page())
+    , DeviceEventControllerBase(toDocument(context)->page())
+    , m_batteryStatus(BatteryStatus::create())
+    , m_state(NotStarted)
 {
-    m_hasEventListener = true;
-    startUpdating();
+}
+
+ScriptPromise BatteryManager::startRequest(ScriptState* scriptState)
+{
+    if (m_state == Pending)
+        return m_resolver->promise();
+
+    m_resolver = ScriptPromiseResolverWithContext::create(scriptState);
+    ScriptPromise promise = m_resolver->promise();
+
+    if (m_state == Resolved) {
+        // FIXME: Consider returning the same promise in this case. See crbug.com/385025.
+        m_resolver->resolve(this);
+    } else if (m_state == NotStarted) {
+        m_state = Pending;
+        m_hasEventListener = true;
+        startUpdating();
+    }
+
+    return promise;
 }
 
 bool BatteryManager::charging()
 {
-    if (const BatteryStatus* lastData = BatteryDispatcher::instance().getLatestData())
-        return lastData->charging();
-
-    return true;
+    return m_batteryStatus->charging();
 }
 
 double BatteryManager::chargingTime()
 {
-    if (const BatteryStatus* lastData = BatteryDispatcher::instance().getLatestData())
-        return lastData->chargingTime();
-
-    return 0;
+    return m_batteryStatus->chargingTime();
 }
 
 double BatteryManager::dischargingTime()
 {
-    if (const BatteryStatus* lastData = BatteryDispatcher::instance().getLatestData())
-        return lastData->dischargingTime();
-
-    return std::numeric_limits<double>::infinity();
+    return m_batteryStatus->dischargingTime();
 }
 
 double BatteryManager::level()
 {
-    if (const BatteryStatus* lastData = BatteryDispatcher::instance().getLatestData())
-        return lastData->level();
-
-    return 1;
+    return m_batteryStatus->level();
 }
 
-void BatteryManager::didChangeBatteryStatus(PassRefPtrWillBeRawPtr<Event> event)
+void BatteryManager::didUpdateData()
 {
     ASSERT(RuntimeEnabledFeatures::batteryStatusEnabled());
+    ASSERT(m_state != NotStarted);
 
-    dispatchEvent(event);
+    RefPtrWillBeRawPtr<BatteryStatus> oldStatus = m_batteryStatus;
+    m_batteryStatus = BatteryDispatcher::instance().latestData();
+
+#if !ENABLE(OILPAN)
+    // BatteryDispatcher also holds a reference to m_batteryStatus.
+    ASSERT(m_batteryStatus->refCount() > 1);
+#endif
+
+    if (m_state == Pending) {
+        ASSERT(m_resolver);
+        m_state = Resolved;
+        m_resolver->resolve(this);
+        return;
+    }
+
+    Document* document = toDocument(executionContext());
+    if (document->activeDOMObjectsAreSuspended() || document->activeDOMObjectsAreStopped())
+        return;
+
+    ASSERT(oldStatus);
+
+    if (m_batteryStatus->charging() != oldStatus->charging())
+        dispatchEvent(Event::create(EventTypeNames::chargingchange));
+    if (m_batteryStatus->chargingTime() != oldStatus->chargingTime())
+        dispatchEvent(Event::create(EventTypeNames::chargingtimechange));
+    if (m_batteryStatus->dischargingTime() != oldStatus->dischargingTime())
+        dispatchEvent(Event::create(EventTypeNames::dischargingtimechange));
+    if (m_batteryStatus->level() != oldStatus->level())
+        dispatchEvent(Event::create(EventTypeNames::levelchange));
 }
 
 void BatteryManager::registerWithDispatcher()
 {
-    BatteryDispatcher::instance().addClient(this);
+    BatteryDispatcher::instance().addController(this);
 }
 
 void BatteryManager::unregisterWithDispatcher()
 {
-    BatteryDispatcher::instance().removeClient(this);
+    BatteryDispatcher::instance().removeController(this);
 }
 
 bool BatteryManager::hasLastData()
 {
-    return false;
-}
-
-PassRefPtrWillBeRawPtr<Event> BatteryManager::getLastEvent()
-{
-    // Events are dispached via BatteryManager::didChangeBatteryStatus()
-    return nullptr;
-}
-
-bool BatteryManager::isNullEvent(Event*)
-{
-    return false;
-}
-
-Document* BatteryManager::document()
-{
-    return toDocument(executionContext());
+    return BatteryDispatcher::instance().latestData();
 }
 
 void BatteryManager::suspend()
@@ -118,6 +138,12 @@ void BatteryManager::stop()
 {
     m_hasEventListener = false;
     stopUpdating();
+}
+
+void BatteryManager::trace(Visitor* visitor)
+{
+    visitor->trace(m_batteryStatus);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

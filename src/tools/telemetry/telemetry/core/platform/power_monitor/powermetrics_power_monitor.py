@@ -7,14 +7,13 @@ import logging
 import os
 import plistlib
 import shutil
-import signal
 import tempfile
 import xml.parsers.expat
 
 from telemetry import decorators
 from telemetry.core import util
-import telemetry.core.platform as platform
-import telemetry.core.platform.power_monitor as power_monitor
+from telemetry.core.platform import platform_backend
+from telemetry.core.platform import power_monitor
 
 
 class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
@@ -23,7 +22,7 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
     self._powermetrics_process = None
     self._backend = backend
     self._output_filename = None
-    self._ouput_directory = None
+    self._output_directory = None
 
   @property
   def binary_path(self):
@@ -32,19 +31,19 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
   def StartMonitoringPower(self, browser):
     assert not self._powermetrics_process, (
         "Must call StopMonitoringPower().")
-    SAMPLE_INTERVAL_MS = 1000 / 20 # 20 Hz, arbitrary.
     # Empirically powermetrics creates an empty output file immediately upon
     # starting.  We detect file creation as a signal that measurement has
     # started.  In order to avoid various race conditions in tempfile creation
     # we create a temp directory and have powermetrics create it's output
     # there rather than say, creating a tempfile, deleting it and reusing its
     # name.
-    self._ouput_directory = tempfile.mkdtemp()
-    self._output_filename = os.path.join(self._ouput_directory,
+    self._output_directory = tempfile.mkdtemp()
+    self._output_filename = os.path.join(self._output_directory,
         'powermetrics.output')
     args = ['-f', 'plist',
-            '-i', '%d' % SAMPLE_INTERVAL_MS,
-            '-u', self._output_filename]
+            '-u', self._output_filename,
+            '-i0',
+            '--show-usage-summary']
     self._powermetrics_process = self._backend.LaunchApplication(
         self.binary_path, args, elevate_privilege=True)
 
@@ -52,13 +51,12 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
     # synchronous in respect to powermetrics starting.
     def _OutputFileExists():
       return os.path.isfile(self._output_filename)
-    timeout_sec = 2 * (SAMPLE_INTERVAL_MS / 1000.)
-    util.WaitFor(_OutputFileExists, timeout_sec)
+    util.WaitFor(_OutputFileExists, 1)
 
   @decorators.Cache
   def CanMonitorPower(self):
-    mavericks_or_later = (self._backend.GetOSVersionName() >=
-                          platform.mac_platform_backend.MAVERICKS)
+    mavericks_or_later = (
+        self._backend.GetOSVersionName() >= platform_backend.MAVERICKS)
     binary_path = self.binary_path
     return mavericks_or_later and self._backend.CanLaunchApplication(
         binary_path)
@@ -127,12 +125,12 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
           "Was expecting a number: %s (%s)" % (type(out_data), out_data))
       return float(out_data)
 
-    power_samples = []
     sample_durations = []
     total_energy_consumption_mwh = 0
     # powermetrics outputs multiple plists separated by null terminators.
     raw_plists = powermetrics_output.split('\0')
     raw_plists = [x for x in raw_plists if len(x) > 0]
+    assert(len(raw_plists) == 1)
 
     # -------- Examine contents of first plist for systems specs. --------
     plist = PowerMetricsPowerMonitor._ParsePlistString(raw_plists[0])
@@ -174,36 +172,30 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
           cpu_num += 1
 
     # -------- Parse Data Out of Plists --------
-    for raw_plist in raw_plists:
-      plist = PowerMetricsPowerMonitor._ParsePlistString(raw_plist)
-      if not plist:
-        continue
+    plist = PowerMetricsPowerMonitor._ParsePlistString(raw_plists[0])
+    if not plist:
+      logging.error("Error parsing plist.")
+      return {}
 
-      # Duration of this sample.
-      sample_duration_ms = int(plist['elapsed_ns']) / 10**6
-      sample_durations.append(sample_duration_ms)
+    # Duration of this sample.
+    sample_duration_ms = int(plist['elapsed_ns']) / 10**6
+    sample_durations.append(sample_duration_ms)
 
-      if 'processor' not in plist:
-        continue
-      processor = plist['processor']
+    if 'processor' not in plist:
+      logging.error("'processor' field not found in plist.")
+      return {}
+    processor = plist['processor']
 
-      energy_consumption_mw = int(processor.get('package_watts', 0)) * 10**3
+    total_energy_consumption_mwh = (
+        (float(processor.get('package_joules', 0)) / 3600.) * 10**3 )
 
-      total_energy_consumption_mwh += (energy_consumption_mw *
-          (sample_duration_ms / 3600000.))
-
-      power_samples.append(energy_consumption_mw)
-
-      for m in metrics:
-        m.samples.append(DataWithMetricKeyPath(m, plist))
+    for m in metrics:
+      m.samples.append(DataWithMetricKeyPath(m, plist))
 
     # -------- Collect and Process Data --------
     out_dict = {}
     out_dict['identifier'] = 'powermetrics'
-    # Raw power usage samples.
-    if power_samples:
-      out_dict['power_samples_mw'] = power_samples
-      out_dict['energy_consumption_mwh'] = total_energy_consumption_mwh
+    out_dict['energy_consumption_mwh'] = total_energy_consumption_mwh
 
     def StoreMetricAverage(metric, sample_durations, out):
       """Calculate average value of samples in a metric and store in output
@@ -241,8 +233,7 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
         "StartMonitoringPower() not called.")
     # Tell powermetrics to take an immediate sample.
     try:
-      self._powermetrics_process.send_signal(signal.SIGINFO)
-      self._powermetrics_process.send_signal(signal.SIGTERM)
+      self._powermetrics_process.terminate()
       (power_stdout, power_stderr) = self._powermetrics_process.communicate()
       returncode = self._powermetrics_process.returncode
       assert returncode in [0, -15], (
@@ -257,7 +248,7 @@ class PowerMetricsPowerMonitor(power_monitor.PowerMonitor):
           powermetrics_output)
 
     finally:
-      shutil.rmtree(self._ouput_directory)
-      self._ouput_directory = None
+      shutil.rmtree(self._output_directory)
+      self._output_directory = None
       self._output_filename = None
       self._powermetrics_process = None

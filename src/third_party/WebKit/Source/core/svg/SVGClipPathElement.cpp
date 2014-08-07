@@ -24,7 +24,6 @@
 #include "core/svg/SVGClipPathElement.h"
 
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
@@ -36,10 +35,7 @@ inline SVGClipPathElement::SVGClipPathElement(Document& document)
     addToPropertyMap(m_clipPathUnits);
 }
 
-PassRefPtr<SVGClipPathElement> SVGClipPathElement::create(Document& document)
-{
-    return adoptRef(new SVGClipPathElement(document));
-}
+DEFINE_NODE_FACTORY(SVGClipPathElement)
 
 bool SVGClipPathElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -89,7 +85,7 @@ void SVGClipPathElement::childrenChanged(bool changedByParser, Node* beforeChang
         return;
 
     if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+        object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
 RenderObject* SVGClipPathElement::createRenderer(RenderStyle*)

@@ -8,18 +8,21 @@
     "name": "taskkill"
   },
   {
+    "abort_on_failure": false,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
       "[DEPOT_TOOLS]\\gclient.py",
       "config",
       "--spec",
-      "cache_dir = None\nsolutions = [{'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+      "cache_dir = None\nsolutions = [{'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
     ],
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": true,
+    "abort_on_failure": false,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -30,7 +33,8 @@
     "name": "gclient revert"
   },
   {
-    "abort_on_failure": true,
+    "abort_on_failure": false,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -116,15 +120,93 @@
     ]
   },
   {
+    "abort_on_failure": false,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
       "[DEPOT_TOOLS]\\gclient.py",
       "config",
       "--spec",
-      "cache_dir = None\nsolutions = [{'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'safesync_url': 'https://v8-status.appspot.com/lkgr', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+      "cache_dir = None\nsolutions = [{'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'safesync_url': 'https://v8-status.appspot.com/lkgr', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
     ],
     "name": "gclient setup (2)"
+  },
+  {
+    "abort_on_failure": false,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\gclient_safe_revert.py",
+      ".",
+      "[DEPOT_TOOLS]\\gclient.bat"
+    ],
+    "name": "gclient revert (2)"
+  },
+  {
+    "abort_on_failure": false,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "sync",
+      "--nohooks",
+      "--delete_unversioned_trees",
+      "--force",
+      "--verbose",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync (2)",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"v8/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 50110@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@50110@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys\nfrom common import chromium_utils\n\nfor p in [os.path.join(sys.argv[1], x) for x in os.listdir(sys.argv[1])]:\n  if os.path.isdir(p):\n    chromium_utils.RemoveDirectory(p)\n  else:\n    os.unlink(p)\n",
+      "[SLAVE_BUILD]"
+    ],
+    "name": "rmcontents slave build directory",
+    "seed_steps": [
+      "rmcontents slave build directory",
+      "gclient setup (3)"
+    ],
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@for p in [os.path.join(sys.argv[1], x) for x in os.listdir(sys.argv[1])]:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.isdir(p):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    chromium_utils.RemoveDirectory(p)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  else:@@@",
+      "@@@STEP_LOG_LINE@python.inline@    os.unlink(p)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'safesync_url': 'https://v8-status.appspot.com/lkgr', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+    ],
+    "name": "gclient setup (3)"
   },
   {
     "abort_on_failure": true,
@@ -135,7 +217,7 @@
       ".",
       "[DEPOT_TOOLS]\\gclient.bat"
     ],
-    "name": "gclient revert (2)"
+    "name": "gclient revert (3)"
   },
   {
     "abort_on_failure": true,
@@ -151,7 +233,7 @@
       "--output-json",
       "/path/to/tmp/json"
     ],
-    "name": "gclient sync (2)",
+    "name": "gclient sync (3)",
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
@@ -192,11 +274,7 @@
     "env": {
       "GYP_DEFINES": "dcheck_always_on=1 fastbuild=1 target_arch=ia32 v8_target_arch=ia32"
     },
-    "name": "gclient runhooks (2)",
-    "seed_steps": [
-      "gclient runhooks (2)",
-      "compile (with patch, lkgr, clobber)"
-    ]
+    "name": "gclient runhooks (2)"
   },
   {
     "abort_on_failure": true,
@@ -216,6 +294,7 @@
     "name": "compile (with patch, lkgr, clobber)"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -226,7 +305,9 @@
       "ia32",
       "--testname",
       "mjsunit fuzz-natives cctest message preparser",
-      "--quickcheck"
+      "--quickcheck",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]\\v8",
     "name": "Check"

@@ -11,14 +11,10 @@
 #include "base/basictypes.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "components/invalidation/invalidation_service.h"
+#include "components/invalidation/invalidator_registrar.h"
 #include "google_apis/gaia/fake_identity_provider.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/notifier/invalidator_registrar.h"
 #include "sync/test/fake_server/fake_server.h"
-
-namespace content {
-class BrowserContext;
-}
 
 namespace invalidation {
 class InvalidationLogger;
@@ -32,8 +28,6 @@ class FakeServerInvalidationService : public invalidation::InvalidationService,
  public:
   FakeServerInvalidationService();
   virtual ~FakeServerInvalidationService();
-
-  static KeyedService* Build(content::BrowserContext* context);
 
   virtual void RegisterInvalidationHandler(
       syncer::InvalidationHandler* handler) OVERRIDE;
@@ -50,11 +44,20 @@ class FakeServerInvalidationService : public invalidation::InvalidationService,
       base::Callback<void(const base::DictionaryValue&)> caller) const OVERRIDE;
   virtual IdentityProvider* GetIdentityProvider() OVERRIDE;
 
+  // Functions to enable or disable sending of self-notifications.  In the real
+  // world, clients do not receive notifications of their own commits.
+  void EnableSelfNotifications();
+  void DisableSelfNotifications();
+
   // FakeServer::Observer:
-  virtual void OnCommit(syncer::ModelTypeSet committed_model_types) OVERRIDE;
+  virtual void OnCommit(
+      const std::string& committer_id,
+      syncer::ModelTypeSet committed_model_types) OVERRIDE;
 
  private:
   std::string client_id_;
+  bool self_notify_;
+
   syncer::InvalidatorRegistrar invalidator_registrar_;
   FakeProfileOAuth2TokenService token_service_;
   FakeIdentityProvider identity_provider_;

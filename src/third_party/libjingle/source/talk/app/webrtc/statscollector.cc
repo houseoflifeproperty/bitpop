@@ -63,6 +63,18 @@ const char StatsReport::kStatsValueNameComponent[] = "googComponent";
 const char StatsReport::kStatsValueNameContentName[] = "googContentName";
 const char StatsReport::kStatsValueNameCpuLimitedResolution[] =
     "googCpuLimitedResolution";
+const char StatsReport::kStatsValueNameDecodingCTSG[] =
+    "googDecodingCTSG";
+const char StatsReport::kStatsValueNameDecodingCTN[] =
+    "googDecodingCTN";
+const char StatsReport::kStatsValueNameDecodingNormal[] =
+    "googDecodingNormal";
+const char StatsReport::kStatsValueNameDecodingPLC[] =
+    "googDecodingPLC";
+const char StatsReport::kStatsValueNameDecodingCNG[] =
+    "googDecodingCNG";
+const char StatsReport::kStatsValueNameDecodingPLCCNG[] =
+    "googDecodingPLCCNG";
 const char StatsReport::kStatsValueNameDer[] = "googDerBase64";
 // Echo metrics from the audio processing module.
 const char StatsReport::kStatsValueNameEchoCancellationQualityMin[] =
@@ -76,6 +88,8 @@ const char StatsReport::kStatsValueNameEchoReturnLoss[] =
 const char StatsReport::kStatsValueNameEchoReturnLossEnhancement[] =
     "googEchoCancellationReturnLossEnhancement";
 
+const char StatsReport::kStatsValueNameEncodeRelStdDev[] =
+    "googEncodeRelStdDev";
 const char StatsReport::kStatsValueNameEncodeUsagePercent[] =
     "googEncodeUsagePercent";
 const char StatsReport::kStatsValueNameExpandRate[] = "googExpandRate";
@@ -175,7 +189,6 @@ const char StatsReport::kStatsReportTypeCertificate[] = "googCertificate";
 
 const char StatsReport::kStatsReportVideoBweId[] = "bweforvideo";
 
-
 // Implementations of functions in statstypes.h
 void StatsReport::AddValue(const std::string& name, const std::string& value) {
   Value temp;
@@ -226,6 +239,20 @@ std::string StatsId(const std::string& type, const std::string& id) {
   return type + "_" + id;
 }
 
+std::string StatsId(const std::string& type, const std::string& id,
+                    StatsCollector::TrackDirection direction) {
+  ASSERT(direction == StatsCollector::kSending ||
+         direction == StatsCollector::kReceiving);
+
+  // Strings for the direction of the track.
+  const char kSendDirection[] = "send";
+  const char kRecvDirection[] = "recv";
+
+  const std::string direction_id = (direction == StatsCollector::kSending) ?
+      kSendDirection : kRecvDirection;
+  return type + "_" + id + "_" + direction_id;
+}
+
 bool ExtractValueFromReport(
     const StatsReport& report,
     const std::string& name,
@@ -273,6 +300,21 @@ void ExtractStats(const cricket::VoiceReceiverInfo& info, StatsReport* report) {
                    info.packets_rcvd);
   report->AddValue(StatsReport::kStatsValueNamePacketsLost,
                    info.packets_lost);
+  report->AddValue(StatsReport::kStatsValueNameDecodingCTSG,
+                   info.decoding_calls_to_silence_generator);
+  report->AddValue(StatsReport::kStatsValueNameDecodingCTN,
+                   info.decoding_calls_to_neteq);
+  report->AddValue(StatsReport::kStatsValueNameDecodingNormal,
+                   info.decoding_normal);
+  report->AddValue(StatsReport::kStatsValueNameDecodingPLC,
+                   info.decoding_plc);
+  report->AddValue(StatsReport::kStatsValueNameDecodingCNG,
+                   info.decoding_cng);
+  report->AddValue(StatsReport::kStatsValueNameDecodingPLCCNG,
+                   info.decoding_plc_cng);
+  report->AddValue(StatsReport::kStatsValueNameCaptureStartNtpTimeMs,
+                   info.capture_start_ntp_time_ms);
+  report->AddValue(StatsReport::kStatsValueNameCodecName, info.codec_name);
 }
 
 void ExtractStats(const cricket::VoiceSenderInfo& info, StatsReport* report) {
@@ -387,6 +429,8 @@ void ExtractStats(const cricket::VideoSenderInfo& info, StatsReport* report) {
                    info.capture_queue_delay_ms_per_s);
   report->AddValue(StatsReport::kStatsValueNameEncodeUsagePercent,
                    info.encode_usage_percent);
+  report->AddValue(StatsReport::kStatsValueNameEncodeRelStdDev,
+                   info.encode_rsd);
 }
 
 void ExtractStats(const cricket::BandwidthEstimationInfo& info,
@@ -450,20 +494,22 @@ void ExtractRemoteStats(const cricket::MediaReceiverInfo& info,
 template<typename T>
 void ExtractStatsFromList(const std::vector<T>& data,
                           const std::string& transport_id,
-                          StatsCollector* collector) {
+                          StatsCollector* collector,
+                          StatsCollector::TrackDirection direction) {
   typename std::vector<T>::const_iterator it = data.begin();
   for (; it != data.end(); ++it) {
     std::string id;
     uint32 ssrc = it->ssrc();
-    // Each object can result in 2 objects, a local and a remote object.
+    // Each track can have stats for both local and remote objects.
     // TODO(hta): Handle the case of multiple SSRCs per object.
-    StatsReport* report = collector->PrepareLocalReport(ssrc, transport_id);
-    if (!report) {
-      continue;
-    }
-    ExtractStats(*it, report);
+    StatsReport* report = collector->PrepareLocalReport(ssrc, transport_id,
+                                                        direction);
+    if (report)
+      ExtractStats(*it, report);
+
     if (it->remote_stats.size() > 0) {
-      report = collector->PrepareRemoteReport(ssrc, transport_id);
+      report = collector->PrepareRemoteReport(ssrc, transport_id,
+                                              direction);
       if (!report) {
         continue;
       }
@@ -580,18 +626,16 @@ StatsCollector::UpdateStats(PeerConnectionInterface::StatsOutputLevel level) {
 
 StatsReport* StatsCollector::PrepareLocalReport(
     uint32 ssrc,
-    const std::string& transport_id) {
-  std::string ssrc_id = talk_base::ToString<uint32>(ssrc);
+    const std::string& transport_id,
+    TrackDirection direction) {
+  const std::string ssrc_id = talk_base::ToString<uint32>(ssrc);
   StatsMap::iterator it = reports_.find(StatsId(
-      StatsReport::kStatsReportTypeSsrc, ssrc_id));
+      StatsReport::kStatsReportTypeSsrc, ssrc_id, direction));
 
   std::string track_id;
   if (it == reports_.end()) {
-    if (!session()->GetTrackIdBySsrc(ssrc, &track_id)) {
-      LOG(LS_WARNING) << "The SSRC " << ssrc
-                      << " is not associated with a track";
+    if (!GetTrackIdBySsrc(ssrc, &track_id, direction))
       return NULL;
-    }
   } else {
     // Keeps the old track id since we want to report the stats for inactive
     // tracks.
@@ -601,7 +645,7 @@ StatsReport* StatsCollector::PrepareLocalReport(
   }
 
   StatsReport* report = GetOrCreateReport(StatsReport::kStatsReportTypeSsrc,
-                                          ssrc_id);
+                                          ssrc_id, direction);
 
   // Clear out stats from previous GatherStats calls if any.
   if (report->timestamp != stats_gathering_started_) {
@@ -619,18 +663,16 @@ StatsReport* StatsCollector::PrepareLocalReport(
 
 StatsReport* StatsCollector::PrepareRemoteReport(
     uint32 ssrc,
-    const std::string& transport_id) {
-  std::string ssrc_id = talk_base::ToString<uint32>(ssrc);
+    const std::string& transport_id,
+    TrackDirection direction) {
+  const std::string ssrc_id = talk_base::ToString<uint32>(ssrc);
   StatsMap::iterator it = reports_.find(StatsId(
-      StatsReport::kStatsReportTypeRemoteSsrc, ssrc_id));
+      StatsReport::kStatsReportTypeRemoteSsrc, ssrc_id, direction));
 
   std::string track_id;
   if (it == reports_.end()) {
-    if (!session()->GetTrackIdBySsrc(ssrc, &track_id)) {
-      LOG(LS_WARNING) << "The SSRC " << ssrc
-                      << " is not associated with a track";
+    if (!GetTrackIdBySsrc(ssrc, &track_id, direction))
       return NULL;
-    }
   } else {
     // Keeps the old track id since we want to report the stats for inactive
     // tracks.
@@ -640,7 +682,7 @@ StatsReport* StatsCollector::PrepareRemoteReport(
   }
 
   StatsReport* report = GetOrCreateReport(
-      StatsReport::kStatsReportTypeRemoteSsrc, ssrc_id);
+      StatsReport::kStatsReportTypeRemoteSsrc, ssrc_id, direction);
 
   // Clear out stats from previous GatherStats calls if any.
   // The timestamp will be added later. Zero it for debugging.
@@ -839,8 +881,8 @@ void StatsCollector::ExtractVoiceInfo() {
                   << session_->voice_channel()->content_name();
     return;
   }
-  ExtractStatsFromList(voice_info.receivers, transport_id, this);
-  ExtractStatsFromList(voice_info.senders, transport_id, this);
+  ExtractStatsFromList(voice_info.receivers, transport_id, this, kReceiving);
+  ExtractStatsFromList(voice_info.senders, transport_id, this, kSending);
 
   UpdateStatsFromExistingLocalAudioTracks();
 }
@@ -866,8 +908,8 @@ void StatsCollector::ExtractVideoInfo(
                   << session_->video_channel()->content_name();
     return;
   }
-  ExtractStatsFromList(video_info.receivers, transport_id, this);
-  ExtractStatsFromList(video_info.senders, transport_id, this);
+  ExtractStatsFromList(video_info.receivers, transport_id, this, kReceiving);
+  ExtractStatsFromList(video_info.senders, transport_id, this, kSending);
   if (video_info.bw_estimations.size() != 1) {
     LOG(LS_ERROR) << "BWEs count: " << video_info.bw_estimations.size();
   } else {
@@ -900,8 +942,11 @@ bool StatsCollector::GetTransportIdFromProxy(const std::string& proxy,
 }
 
 StatsReport* StatsCollector::GetReport(const std::string& type,
-                                       const std::string& id) {
-  std::string statsid = StatsId(type, id);
+                                       const std::string& id,
+                                       TrackDirection direction) {
+  ASSERT(type == StatsReport::kStatsReportTypeSsrc ||
+         type == StatsReport::kStatsReportTypeRemoteSsrc);
+  std::string statsid = StatsId(type, id, direction);
   StatsReport* report = NULL;
   std::map<std::string, StatsReport>::iterator it = reports_.find(statsid);
   if (it != reports_.end())
@@ -911,10 +956,13 @@ StatsReport* StatsCollector::GetReport(const std::string& type,
 }
 
 StatsReport* StatsCollector::GetOrCreateReport(const std::string& type,
-                                               const std::string& id) {
-  StatsReport* report = GetReport(type, id);
+                                               const std::string& id,
+                                               TrackDirection direction) {
+  ASSERT(type == StatsReport::kStatsReportTypeSsrc ||
+         type == StatsReport::kStatsReportTypeRemoteSsrc);
+  StatsReport* report = GetReport(type, id, direction);
   if (report == NULL) {
-    std::string statsid = StatsId(type, id);
+    std::string statsid = StatsId(type, id, direction);
     report = &reports_[statsid];  // Create new element.
     report->id = statsid;
     report->type = type;
@@ -931,7 +979,8 @@ void StatsCollector::UpdateStatsFromExistingLocalAudioTracks() {
     uint32 ssrc = it->second;
     std::string ssrc_id = talk_base::ToString<uint32>(ssrc);
     StatsReport* report = GetReport(StatsReport::kStatsReportTypeSsrc,
-                                    ssrc_id);
+                                    ssrc_id,
+                                    kSending);
     if (report == NULL) {
       // This can happen if a local audio track is added to a stream on the
       // fly and the report has not been set up yet. Do nothing in this case.
@@ -984,6 +1033,26 @@ void StatsCollector::UpdateReportFromAudioTrack(AudioTrackInterface* track,
                        talk_base::ToString<float>(stats.aec_quality_min));
   report->ReplaceValue(StatsReport::kStatsValueNameEchoDelayStdDev,
                        talk_base::ToString<int>(stats.echo_delay_std_ms));
+}
+
+bool StatsCollector::GetTrackIdBySsrc(uint32 ssrc, std::string* track_id,
+                                      TrackDirection direction) {
+  if (direction == kSending) {
+    if (!session()->GetLocalTrackIdBySsrc(ssrc, track_id)) {
+      LOG(LS_WARNING) << "The SSRC " << ssrc
+                      << " is not associated with a sending track";
+      return false;
+    }
+  } else {
+    ASSERT(direction == kReceiving);
+    if (!session()->GetRemoteTrackIdBySsrc(ssrc, track_id)) {
+      LOG(LS_WARNING) << "The SSRC " << ssrc
+                      << " is not associated with a receiving track";
+      return false;
+    }
+  }
+
+  return true;
 }
 
 }  // namespace webrtc

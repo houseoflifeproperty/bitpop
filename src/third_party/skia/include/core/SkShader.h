@@ -14,9 +14,11 @@
 #include "SkMask.h"
 #include "SkMatrix.h"
 #include "SkPaint.h"
+#include "../gpu/GrColor.h"
 
 class SkPath;
 class SkPicture;
+class SkXfermode;
 class GrContext;
 class GrEffectRef;
 
@@ -38,15 +40,16 @@ public:
     virtual ~SkShader();
 
     /**
-     *  Returns true if the local matrix is not an identity matrix.
-     */
-    bool hasLocalMatrix() const { return !fLocalMatrix.isIdentity(); }
-
-    /**
      *  Returns the local matrix.
      */
     const SkMatrix& getLocalMatrix() const { return fLocalMatrix; }
 
+    /**
+     *  Returns true if the local matrix is not an identity matrix.
+     */
+    bool hasLocalMatrix() const { return !fLocalMatrix.isIdentity(); }
+
+#ifdef SK_SUPPORT_LEGACY_SHADER_LOCALMATRIX
     /**
      *  Set the shader's local matrix.
      *  @param localM   The shader's new local matrix.
@@ -57,6 +60,7 @@ public:
      *  Reset the shader's local matrix to identity.
      */
     void resetLocalMatrix() { fLocalMatrix.reset(); }
+#endif
 
     enum TileMode {
         /** replicate the edge color if the shader draws outside of its
@@ -354,13 +358,41 @@ public:
     virtual GradientType asAGradient(GradientInfo* info) const;
 
     /**
-     *  If the shader subclass has a GrEffect implementation, this resturns the effect to install.
+     *  If the shader subclass is composed of two shaders, return true, and if rec is not NULL,
+     *  fill it out with info about the shader.
+     *
+     *  These are bare pointers; the ownership and reference count are unchanged.
+     */
+
+    struct ComposeRec {
+        const SkShader*     fShaderA;
+        const SkShader*     fShaderB;
+        const SkXfermode*   fMode;
+    };
+
+    virtual bool asACompose(ComposeRec* rec) const { return false; }
+
+
+    /**
+     *  Returns true if the shader subclass succeeds in setting the grEffect and the grColor output 
+     *  parameters to a value, returns false if it fails or if there is not an implementation of
+     *  this method in the shader subclass.
      *  The incoming color to the effect has r=g=b=a all extracted from the SkPaint's alpha.
      *  The output color should be the computed SkShader premul color modulated by the incoming
      *  color. The GrContext may be used by the effect to create textures. The GPU device does not
      *  call createContext. Instead we pass the SkPaint here in case the shader needs paint info.
      */
-    virtual GrEffectRef* asNewEffect(GrContext* context, const SkPaint& paint) const;
+    virtual bool asNewEffect(GrContext* context, const SkPaint& paint,
+                             const SkMatrix* localMatrixOrNull, GrColor* grColor,
+                             GrEffectRef** grEffect) const;
+
+#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
+    /**
+     *  If the shader is a custom shader which has data the caller might want, call this function
+     *  to get that data.
+     */
+    virtual bool asACustomShader(void** customData) const { return false; }
+#endif
 
     //////////////////////////////////////////////////////////////////////////
     //  Factory methods for stock shaders
@@ -401,6 +433,23 @@ public:
     static SkShader* CreatePictureShader(SkPicture* src, TileMode tmx, TileMode tmy,
                                          const SkMatrix* localMatrix = NULL);
 
+    /**
+     *  Return a shader that will apply the specified localMatrix to the proxy shader.
+     *  The specified matrix will be applied before any matrix associated with the proxy.
+     *
+     *  Note: ownership of the proxy is not transferred (though a ref is taken).
+     */
+    static SkShader* CreateLocalMatrixShader(SkShader* proxy, const SkMatrix& localMatrix);
+
+    /**
+     *  If this shader can be represented by another shader + a localMatrix, return that shader
+     *  and, if not NULL, the localMatrix. If not, return NULL and ignore the localMatrix parameter.
+     *
+     *  Note: the returned shader (if not NULL) will have been ref'd, and it is the responsibility
+     *  of the caller to balance that with unref() when they are done.
+     */
+    virtual SkShader* refAsALocalMatrixShader(SkMatrix* localMatrix) const;
+
     SK_TO_STRING_VIRT()
     SK_DEFINE_FLATTENABLE_TYPE(SkShader)
 
@@ -418,7 +467,7 @@ protected:
 
 private:
     SkMatrix fLocalMatrix;
-
+    
     typedef SkFlattenable INHERITED;
 };
 

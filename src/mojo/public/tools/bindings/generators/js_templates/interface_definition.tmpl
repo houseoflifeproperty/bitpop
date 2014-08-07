@@ -1,3 +1,4 @@
+{%- set namespace_as_string = namespace|replace(".","::") %}
 {%- for method in interface.methods %}
   var k{{interface.name}}_{{method.name}}_Name = {{method.ordinal}};
 {%- endfor %}
@@ -5,6 +6,8 @@
   function {{interface.name}}Proxy(receiver) {
     this.receiver_ = receiver;
   }
+
+  {{interface.name}}Proxy.NAME_ = '{{namespace_as_string}}::{{interface.name}}';
 
 {%- for method in interface.methods %}
   {{interface.name}}Proxy.prototype.{{method.name|stylize_method}} = function(
@@ -50,6 +53,8 @@
 
   function {{interface.name}}Stub() {
   }
+
+  {{interface.name}}Stub.NAME_ = '{{namespace_as_string}}::{{interface.name}}';
 
   {{interface.name}}Stub.prototype.accept = function(message) {
     var reader = new codec.MessageReader(message);
@@ -109,3 +114,9 @@ params.{{parameter.name}}{% if not loop.last %}, {% endif -%}
   {{enum_def("%sProxy.%s"|format(interface.name, enum.name), enum, module)}}
   {{interface.name}}Stub.{{enum.name}} = {{interface.name}}Proxy.{{enum.name}};
 {%-  endfor %}
+
+{#--- Constants. #}
+{%  for constant in interface.constants %}
+  {{interface.name}}Proxy.{{constant.name}} = {{constant.value|expression_to_text}};
+  {{interface.name}}Stub.{{constant.name}} = {{interface.name}}Proxy.{{constant.name}};
+{%  endfor %}

@@ -11,7 +11,7 @@
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/file_manager/url_util.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/drive/drive_app_registry.h"
 #include "chrome/browser/drive/event_logger.h"
 #include "chrome/browser/profiles/profile.h"
@@ -86,6 +86,11 @@ void FillDriveEntryPropertiesValue(const drive::ResourceEntry& entry_proto,
       new bool(file_specific_info.is_hosted_document()));
   properties->content_mime_type.reset(
       new std::string(file_specific_info.content_mime_type()));
+
+  properties->is_pinned.reset(
+      new bool(file_specific_info.cache_state().is_pinned()));
+  properties->is_present.reset(
+      new bool(file_specific_info.cache_state().is_present()));
 }
 
 // Creates entry definition list for (metadata) search result info list.
@@ -312,21 +317,6 @@ class SingleDriveEntryPropertiesGetter {
         }
       }
     }
-
-    file_system->GetCacheEntry(
-        file_path_,
-        base::Bind(&SingleDriveEntryPropertiesGetter::CacheStateReceived,
-                   GetWeakPtr()));
-  }
-
-  void CacheStateReceived(bool /* success */,
-                          const drive::FileCacheEntry& cache_entry) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-    // In case of an error (i.e. success is false), cache_entry.is_*() all
-    // returns false.
-    properties_->is_pinned.reset(new bool(cache_entry.is_pinned()));
-    properties_->is_present.reset(new bool(cache_entry.is_present()));
 
     CompleteGetFileProperties(drive::FILE_ERROR_OK);
   }

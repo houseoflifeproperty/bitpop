@@ -4,9 +4,11 @@
 
 #include "content/browser/renderer_host/media/media_stream_ui_proxy.h"
 
+#include "base/command_line.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/content_switches.h"
 #include "media/video/capture/fake_video_capture_device.h"
 
 namespace content {
@@ -206,6 +208,18 @@ void FakeMediaStreamUIProxy::RequestAccess(
 
   response_callback_ = response_callback;
 
+  if (CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      switches::kUseFakeUIForMediaStream) == "deny") {
+    // Immediately deny the request.
+    BrowserThread::PostTask(
+          BrowserThread::IO, FROM_HERE,
+          base::Bind(&MediaStreamUIProxy::ProcessAccessRequestResponse,
+                     weak_factory_.GetWeakPtr(),
+                     MediaStreamDevices(),
+                     MEDIA_DEVICE_PERMISSION_DENIED));
+    return;
+  }
+
   MediaStreamDevices devices_to_use;
   bool accepted_audio = false;
   bool accepted_video = false;
@@ -215,8 +229,8 @@ void FakeMediaStreamUIProxy::RequestAccess(
   for (MediaStreamDevices::const_iterator it = devices_.begin();
        it != devices_.end(); ++it) {
     if (!accepted_audio &&
-        IsAudioMediaType(request.audio_type) &&
-        IsAudioMediaType(it->type) &&
+        IsAudioInputMediaType(request.audio_type) &&
+        IsAudioInputMediaType(it->type) &&
         (request.requested_audio_device_id.empty() ||
          request.requested_audio_device_id == it->id)) {
       devices_to_use.push_back(*it);

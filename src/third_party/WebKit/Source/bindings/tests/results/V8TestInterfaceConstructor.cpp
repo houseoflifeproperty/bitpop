@@ -7,8 +7,7 @@
 #include "config.h"
 #include "V8TestInterfaceConstructor.h"
 
-#include "RuntimeEnabledFeatures.h"
-#include "V8TestInterfaceEmpty.h"
+#include "bindings/tests/v8/V8TestInterfaceEmpty.h"
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8DOMConfiguration.h"
@@ -16,8 +15,9 @@
 #include "bindings/v8/V8ObjectConstructor.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/UseCounter.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "wtf/GetPtr.h"
 #include "wtf/RefPtr.h"
@@ -50,9 +50,9 @@ static void constructor1(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     v8::Isolate* isolate = info.GetIsolate();
     ExceptionState exceptionState(ExceptionState::ConstructionContext, "TestInterfaceConstructor", info.Holder(), isolate);
-    ExecutionContext* context = currentExecutionContext(isolate);
+    ExecutionContext* executionContext = currentExecutionContext(isolate);
     Document& document = *toDocument(currentExecutionContext(isolate));
-    RefPtr<TestInterfaceConstructor> impl = TestInterfaceConstructor::create(context, document, exceptionState);
+    RefPtr<TestInterfaceConstructor> impl = TestInterfaceConstructor::create(executionContext, document, exceptionState);
     if (exceptionState.throwIfNeeded())
         return;
 
@@ -65,27 +65,39 @@ static void constructor2(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     v8::Isolate* isolate = info.GetIsolate();
     ExceptionState exceptionState(ExceptionState::ConstructionContext, "TestInterfaceConstructor", info.Holder(), isolate);
-    TONATIVE_VOID(double, doubleArg, static_cast<double>(info[0]->NumberValue()));
-    TOSTRING_VOID(V8StringResource<>, stringArg, info[1]);
-    TONATIVE_VOID(TestInterfaceEmpty*, testInterfaceEmptyArg, V8TestInterfaceEmpty::toNativeWithTypeCheck(info.GetIsolate(), info[2]));
-    TONATIVE_VOID(Dictionary, dictionaryArg, Dictionary(info[3], info.GetIsolate()));
-    if (!dictionaryArg.isUndefinedOrNull() && !dictionaryArg.isObject()) {
-        exceptionState.throwTypeError("parameter 4 ('dictionaryArg') is not an object.");
-        exceptionState.throwIfNeeded();
-        return;
+    double doubleArg;
+    V8StringResource<> stringArg;
+    TestInterfaceEmpty* testInterfaceEmptyArg;
+    Dictionary dictionaryArg;
+    Vector<String> sequenceStringArg;
+    Vector<Dictionary> sequenceDictionaryArg;
+    Dictionary optionalDictionaryArg;
+    TestInterfaceEmpty* optionalTestInterfaceEmptyArg;
+    {
+        v8::TryCatch block;
+        V8RethrowTryCatchScope rethrow(block);
+        TONATIVE_VOID_INTERNAL(doubleArg, static_cast<double>(info[0]->NumberValue()));
+        TOSTRING_VOID_INTERNAL(stringArg, info[1]);
+        TONATIVE_VOID_INTERNAL(testInterfaceEmptyArg, V8TestInterfaceEmpty::toNativeWithTypeCheck(info.GetIsolate(), info[2]));
+        TONATIVE_VOID_INTERNAL(dictionaryArg, Dictionary(info[3], info.GetIsolate()));
+        if (!dictionaryArg.isUndefinedOrNull() && !dictionaryArg.isObject()) {
+            exceptionState.throwTypeError("parameter 4 ('dictionaryArg') is not an object.");
+            exceptionState.throwIfNeeded();
+            return;
+        }
+        TONATIVE_VOID_INTERNAL(sequenceStringArg, toNativeArray<String>(info[4], 5, info.GetIsolate()));
+        TONATIVE_VOID_INTERNAL(sequenceDictionaryArg, toNativeArray<Dictionary>(info[5], 6, info.GetIsolate()));
+        TONATIVE_VOID_INTERNAL(optionalDictionaryArg, Dictionary(info[6], info.GetIsolate()));
+        if (!optionalDictionaryArg.isUndefinedOrNull() && !optionalDictionaryArg.isObject()) {
+            exceptionState.throwTypeError("parameter 7 ('optionalDictionaryArg') is not an object.");
+            exceptionState.throwIfNeeded();
+            return;
+        }
+        TONATIVE_VOID_INTERNAL(optionalTestInterfaceEmptyArg, V8TestInterfaceEmpty::toNativeWithTypeCheck(info.GetIsolate(), info[7]));
     }
-    TONATIVE_VOID(Vector<String>, sequenceStringArg, toNativeArray<String>(info[4], 5, info.GetIsolate()));
-    TONATIVE_VOID(Vector<Dictionary>, sequenceDictionaryArg, toNativeArray<Dictionary>(info[5], 6, info.GetIsolate()));
-    TONATIVE_VOID(Dictionary, optionalDictionaryArg, Dictionary(info[6], info.GetIsolate()));
-    if (!optionalDictionaryArg.isUndefinedOrNull() && !optionalDictionaryArg.isObject()) {
-        exceptionState.throwTypeError("parameter 7 ('optionalDictionaryArg') is not an object.");
-        exceptionState.throwIfNeeded();
-        return;
-    }
-    TONATIVE_VOID(TestInterfaceEmpty*, optionalTestInterfaceEmptyArg, V8TestInterfaceEmpty::toNativeWithTypeCheck(info.GetIsolate(), info[7]));
-    ExecutionContext* context = currentExecutionContext(isolate);
+    ExecutionContext* executionContext = currentExecutionContext(isolate);
     Document& document = *toDocument(currentExecutionContext(isolate));
-    RefPtr<TestInterfaceConstructor> impl = TestInterfaceConstructor::create(context, document, doubleArg, stringArg, testInterfaceEmptyArg, dictionaryArg, sequenceStringArg, sequenceDictionaryArg, optionalDictionaryArg, optionalTestInterfaceEmptyArg, exceptionState);
+    RefPtr<TestInterfaceConstructor> impl = TestInterfaceConstructor::create(executionContext, document, doubleArg, stringArg, testInterfaceEmptyArg, dictionaryArg, sequenceStringArg, sequenceDictionaryArg, optionalDictionaryArg, optionalTestInterfaceEmptyArg, exceptionState);
     if (exceptionState.throwIfNeeded())
         return;
 
@@ -96,15 +108,44 @@ static void constructor2(const v8::FunctionCallbackInfo<v8::Value>& info)
 
 static void constructor(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    if (((info.Length() == 0))) {
-        TestInterfaceConstructorV8Internal::constructor1(info);
+    v8::Isolate* isolate = info.GetIsolate();
+    ExceptionState exceptionState(ExceptionState::ConstructionContext, "TestInterfaceConstructor", info.Holder(), isolate);
+    switch (std::min(8, info.Length())) {
+    case 0:
+        if (true) {
+            TestInterfaceConstructorV8Internal::constructor1(info);
+            return;
+        }
+        break;
+    case 6:
+        if (true) {
+            TestInterfaceConstructorV8Internal::constructor2(info);
+            return;
+        }
+        break;
+    case 7:
+        if (true) {
+            TestInterfaceConstructorV8Internal::constructor2(info);
+            return;
+        }
+        break;
+    case 8:
+        if (true) {
+            TestInterfaceConstructorV8Internal::constructor2(info);
+            return;
+        }
+        break;
+    default:
+        if (info.Length() >= 0) {
+            throwArityTypeError(exceptionState, "[0, 6, 7, 8]", info.Length());
+            return;
+        }
+        exceptionState.throwTypeError(ExceptionMessages::notEnoughArguments(0, info.Length()));
+        exceptionState.throwIfNeeded();
         return;
     }
-    if (((info.Length() == 6) && (V8TestInterfaceEmpty::hasInstance(info[2], info.GetIsolate())) && (info[3]->IsObject()) && (info[4]->IsArray()) && (info[5]->IsArray())) || ((info.Length() == 7) && (V8TestInterfaceEmpty::hasInstance(info[2], info.GetIsolate())) && (info[3]->IsObject()) && (info[4]->IsArray()) && (info[5]->IsArray()) && (info[6]->IsUndefined() || info[6]->IsObject())) || ((info.Length() == 8) && (V8TestInterfaceEmpty::hasInstance(info[2], info.GetIsolate())) && (info[3]->IsObject()) && (info[4]->IsArray()) && (info[5]->IsArray()) && (info[6]->IsUndefined() || info[6]->IsObject()) && (V8TestInterfaceEmpty::hasInstance(info[7], info.GetIsolate())))) {
-        TestInterfaceConstructorV8Internal::constructor2(info);
-        return;
-    }
-    throwTypeError(ExceptionMessages::failedToConstruct("TestInterfaceConstructor", "No matching constructor signature."), info.GetIsolate());
+    exceptionState.throwTypeError("No matching constructor signature.");
+    exceptionState.throwIfNeeded();
 }
 
 } // namespace TestInterfaceConstructorV8Internal
@@ -147,16 +188,7 @@ static void configureV8TestInterfaceConstructorTemplate(v8::Handle<v8::FunctionT
 
 v8::Handle<v8::FunctionTemplate> V8TestInterfaceConstructor::domTemplate(v8::Isolate* isolate)
 {
-    V8PerIsolateData* data = V8PerIsolateData::from(isolate);
-    v8::Local<v8::FunctionTemplate> result = data->existingDOMTemplate(const_cast<WrapperTypeInfo*>(&wrapperTypeInfo));
-    if (!result.IsEmpty())
-        return result;
-
-    TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "BuildDOMTemplate");
-    result = v8::FunctionTemplate::New(isolate, V8ObjectConstructor::isValidConstructorMode);
-    configureV8TestInterfaceConstructorTemplate(result, isolate);
-    data->setDOMTemplate(const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), result);
-    return result;
+    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), configureV8TestInterfaceConstructorTemplate);
 }
 
 bool V8TestInterfaceConstructor::hasInstance(v8::Handle<v8::Value> v8Value, v8::Isolate* isolate)
@@ -172,6 +204,13 @@ v8::Handle<v8::Object> V8TestInterfaceConstructor::findInstanceInPrototypeChain(
 TestInterfaceConstructor* V8TestInterfaceConstructor::toNativeWithTypeCheck(v8::Isolate* isolate, v8::Handle<v8::Value> value)
 {
     return hasInstance(value, isolate) ? fromInternalPointer(v8::Handle<v8::Object>::Cast(value)->GetAlignedPointerFromInternalField(v8DOMWrapperObjectIndex)) : 0;
+}
+
+v8::Handle<v8::Object> wrap(TestInterfaceConstructor* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    ASSERT(impl);
+    ASSERT(!DOMDataStore::containsWrapper<V8TestInterfaceConstructor>(impl, isolate));
+    return V8TestInterfaceConstructor::createWrapper(impl, creationContext, isolate);
 }
 
 v8::Handle<v8::Object> V8TestInterfaceConstructor::createWrapper(PassRefPtr<TestInterfaceConstructor> impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)

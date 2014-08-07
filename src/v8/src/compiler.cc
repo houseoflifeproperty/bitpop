@@ -2,30 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "compiler.h"
+#include "src/compiler.h"
 
-#include "bootstrapper.h"
-#include "codegen.h"
-#include "compilation-cache.h"
-#include "cpu-profiler.h"
-#include "debug.h"
-#include "deoptimizer.h"
-#include "full-codegen.h"
-#include "gdb-jit.h"
-#include "typing.h"
-#include "hydrogen.h"
-#include "isolate-inl.h"
-#include "lithium.h"
-#include "liveedit.h"
-#include "parser.h"
-#include "rewriter.h"
-#include "runtime-profiler.h"
-#include "scanner-character-streams.h"
-#include "scopeinfo.h"
-#include "scopes.h"
-#include "vm-state-inl.h"
+#include "src/bootstrapper.h"
+#include "src/codegen.h"
+#include "src/compilation-cache.h"
+#include "src/cpu-profiler.h"
+#include "src/debug.h"
+#include "src/deoptimizer.h"
+#include "src/full-codegen.h"
+#include "src/gdb-jit.h"
+#include "src/typing.h"
+#include "src/hydrogen.h"
+#include "src/isolate-inl.h"
+#include "src/lithium.h"
+#include "src/liveedit.h"
+#include "src/parser.h"
+#include "src/rewriter.h"
+#include "src/runtime-profiler.h"
+#include "src/scanner-character-streams.h"
+#include "src/scopeinfo.h"
+#include "src/scopes.h"
+#include "src/vm-state-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -110,9 +110,9 @@ void CompilationInfo::Initialize(Isolate* isolate,
   }
   mode_ = mode;
   abort_due_to_dependency_ = false;
-  if (script_->type()->value() == Script::TYPE_NATIVE) {
-    MarkAsNative();
-  }
+  if (script_->type()->value() == Script::TYPE_NATIVE) MarkAsNative();
+  if (isolate_->debug()->is_active()) MarkAsDebug();
+
   if (!shared_info_.is_null()) {
     ASSERT(strict_mode() == SLOPPY);
     SetStrictMode(shared_info_->strict_mode());
@@ -279,21 +279,6 @@ class HOptimizedGraphBuilderWithPositions: public HOptimizedGraphBuilder {
 };
 
 
-// Determine whether to use the full compiler for all code. If the flag
-// --always-full-compiler is specified this is the case. For the virtual frame
-// based compiler the full compiler is also used if a debugger is connected, as
-// the code from the full compiler supports mode precise break points. For the
-// crankshaft adaptive compiler debugging the optimized code is not possible at
-// all. However crankshaft support recompilation of functions, so in this case
-// the full compiler need not be be used if a debugger is attached, but only if
-// break points has actually been set.
-static bool IsDebuggerActive(Isolate* isolate) {
-  return isolate->use_crankshaft() ?
-    isolate->debug()->has_break_points() :
-    isolate->debugger()->IsDebuggerActive();
-}
-
-
 OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
   ASSERT(isolate()->use_crankshaft());
   ASSERT(info()->IsOptimizing());
@@ -311,7 +296,11 @@ OptimizedCompileJob::Status OptimizedCompileJob::CreateGraph() {
   // to use the Hydrogen-based optimizing compiler. We already have
   // generated code for this from the shared function object.
   if (FLAG_always_full_compiler) return AbortOptimization();
-  if (IsDebuggerActive(isolate())) return AbortOptimization(kDebuggerIsActive);
+
+  // Do not use crankshaft if we need to be able to set break points.
+  if (isolate()->DebuggerHasBreakPoints()) {
+    return AbortOptimization(kDebuggerHasBreakPoints);
+  }
 
   // Limit the number of times we re-compile a functions with
   // the optimizing compiler.
@@ -469,6 +458,20 @@ OptimizedCompileJob::Status OptimizedCompileJob::GenerateCode() {
     if (optimized_code.is_null()) {
       if (info()->bailout_reason() == kNoReason) {
         info_->set_bailout_reason(kCodeGenerationFailed);
+      } else if (info()->bailout_reason() == kMapBecameDeprecated) {
+        if (FLAG_trace_opt) {
+          PrintF("[aborted optimizing ");
+          info()->closure()->ShortPrint();
+          PrintF(" because a map became deprecated]\n");
+        }
+        return AbortOptimization();
+      } else if (info()->bailout_reason() == kMapBecameUnstable) {
+        if (FLAG_trace_opt) {
+          PrintF("[aborted optimizing ");
+          info()->closure()->ShortPrint();
+          PrintF(" because a map became unstable]\n");
+        }
+        return AbortOptimization();
       }
       return AbortAndDisableOptimization();
     }
@@ -521,9 +524,6 @@ void OptimizedCompileJob::RecordOptimizationStats() {
 // Sets the expected number of properties based on estimate from compiler.
 void SetExpectedNofPropertiesFromEstimate(Handle<SharedFunctionInfo> shared,
                                           int estimate) {
-  // See the comment in SetExpectedNofProperties.
-  if (shared->live_objects_may_exist()) return;
-
   // If no properties are added in the constructor, they are more likely
   // to be added later.
   if (estimate == 0) estimate = 2;
@@ -531,7 +531,7 @@ void SetExpectedNofPropertiesFromEstimate(Handle<SharedFunctionInfo> shared,
   // TODO(yangguo): check whether those heuristics are still up-to-date.
   // We do not shrink objects that go into a snapshot (yet), so we adjust
   // the estimate conservatively.
-  if (Serializer::enabled(shared->GetIsolate())) {
+  if (shared->GetIsolate()->serializer_enabled()) {
     estimate += 2;
   } else if (FLAG_clever_optimizations) {
     // Inobject slack tracking will reclaim redundant inobject space later,
@@ -711,6 +711,8 @@ MaybeHandle<Code> Compiler::GetCodeForDebugging(Handle<JSFunction> function) {
   Isolate* isolate = info.isolate();
   VMState<COMPILER> state(isolate);
 
+  info.MarkAsDebug();
+
   ASSERT(!isolate->has_pending_exception());
   Handle<Code> old_code(function->shared()->code());
   ASSERT(old_code->kind() == Code::FUNCTION);
@@ -772,7 +774,7 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
   FixedArray* array = isolate->native_context()->embedder_data();
   script->set_context_data(array->get(0));
 
-  isolate->debugger()->OnBeforeCompile(script);
+  isolate->debug()->OnBeforeCompile(script);
 
   ASSERT(info->is_eval() || info->is_global());
 
@@ -849,7 +851,7 @@ static Handle<SharedFunctionInfo> CompileToplevel(CompilationInfo* info) {
     live_edit_tracker.RecordFunctionInfo(result, lit, info->zone());
   }
 
-  isolate->debugger()->OnAfterCompile(script, Debugger::NO_AFTER_COMPILE_FLAGS);
+  isolate->debug()->OnAfterCompile(script, Debug::NO_AFTER_COMPILE_FLAGS);
 
   return result;
 }

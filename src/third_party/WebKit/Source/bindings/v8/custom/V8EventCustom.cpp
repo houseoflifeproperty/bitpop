@@ -29,11 +29,11 @@
  */
 
 #include "config.h"
-#include "V8Event.h"
+#include "bindings/core/v8/V8Event.h"
 
-#include "EventHeaders.h"
-#include "EventInterfaces.h"
-#include "V8DataTransfer.h"
+#include "EventModulesHeaders.h"
+#include "EventModulesInterfaces.h"
+#include "bindings/core/v8/V8DataTransfer.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/clipboard/Clipboard.h"
 #include "core/events/ClipboardEvent.h"
@@ -66,6 +66,7 @@ v8::Handle<v8::Object> wrap(Event* event, v8::Handle<v8::Object> creationContext
         return V8Event::createWrapper(event, creationContext, isolate);
 
     EVENT_INTERFACES_FOR_EACH(TRY_TO_WRAP_WITH_INTERFACE)
+    EVENT_MODULES_INTERFACES_FOR_EACH(TRY_TO_WRAP_WITH_INTERFACE)
 
     return V8Event::createWrapper(event, creationContext, isolate);
 }

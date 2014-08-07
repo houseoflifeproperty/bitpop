@@ -64,7 +64,7 @@ TEST_F(BrowserPermissionsPolicyDelegateTest, CanExecuteScriptOnPage) {
 
   content::MockRenderProcessHost signin_process(profile_);
   content::MockRenderProcessHost normal_process(profile_);
-  ChromeSigninClient* signin_client =
+  SigninClient* signin_client =
       ChromeSigninClientFactory::GetForProfile(profile_);
   ASSERT_TRUE(signin_client);
   signin_client->SetSigninProcess(signin_process.GetID());
@@ -74,20 +74,21 @@ TEST_F(BrowserPermissionsPolicyDelegateTest, CanExecuteScriptOnPage) {
 
   // The same call should succeed with a normal process, but fail with a signin
   // process.
-  EXPECT_TRUE(PermissionsData::CanExecuteScriptOnPage(extension.get(),
-                                                      kSigninUrl,
-                                                      kSigninUrl,
-                                                      -1,
-                                                      NULL,
-                                                      normal_process.GetID(),
-                                                      &error)) << error;
-  EXPECT_FALSE(PermissionsData::CanExecuteScriptOnPage(extension.get(),
-                                                       kSigninUrl,
-                                                       kSigninUrl,
-                                                       -1,
-                                                       NULL,
-                                                       signin_process.GetID(),
-                                                       &error)) << error;
+  const PermissionsData* permissions_data = extension->permissions_data();
+  EXPECT_TRUE(permissions_data->CanAccessPage(extension,
+                                              kSigninUrl,
+                                              kSigninUrl,
+                                              -1,  // no tab id.
+                                              normal_process.GetID(),
+                                              &error))
+      << error;
+  EXPECT_FALSE(permissions_data->CanAccessPage(extension,
+                                               kSigninUrl,
+                                               kSigninUrl,
+                                               -1,  // no tab id.
+                                               signin_process.GetID(),
+                                               &error))
+      << error;
 }
 #endif
 

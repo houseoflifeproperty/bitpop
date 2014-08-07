@@ -18,6 +18,10 @@ class SlideAnimation;
 
 namespace views {
 
+namespace test {
+class SliderTestApi;
+}
+
 class Slider;
 
 enum SliderChangeReason {
@@ -69,6 +73,8 @@ class VIEWS_EXPORT Slider : public View, public gfx::AnimationDelegate {
   void UpdateState(bool control_on);
 
  private:
+  friend class test::SliderTestApi;
+
   void SetValueInternal(float value, SliderChangeReason reason);
 
   // Should be called on the Mouse Down event. Used to calculate relative
@@ -81,8 +87,14 @@ class VIEWS_EXPORT Slider : public View, public gfx::AnimationDelegate {
 
   void OnPaintFocus(gfx::Canvas* canvas);
 
+  // Notify the listener_, if not NULL, that dragging started.
+  void OnSliderDragStarted();
+
+  // Notify the listener_, if not NULL, that dragging ended.
+  void OnSliderDragEnded();
+
   // views::View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
@@ -97,6 +109,10 @@ class VIEWS_EXPORT Slider : public View, public gfx::AnimationDelegate {
 
   // gfx::AnimationDelegate overrides:
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
+
+  void set_listener(SliderListener* listener) {
+    listener_ = listener;
+  }
 
   SliderListener* listener_;
   Orientation orientation_;

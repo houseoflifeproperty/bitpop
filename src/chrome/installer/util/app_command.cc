@@ -70,11 +70,17 @@ bool AppCommand::Initialize(const base::win::RegKey& key) {
 void AppCommand::AddWorkItems(HKEY predefined_root,
                               const base::string16& command_path,
                               WorkItemList* item_list) const {
-  item_list->AddCreateRegKeyWorkItem(predefined_root, command_path)
+  // Command_path is derived from GetRegCommandKey which always returns
+  // value from GetVersionKey() which should be 32-bit hive.
+  item_list->AddCreateRegKeyWorkItem(
+                 predefined_root, command_path, KEY_WOW64_32KEY)
       ->set_log_message("creating AppCommand registry key");
-  item_list->AddSetRegValueWorkItem(predefined_root, command_path,
+  item_list->AddSetRegValueWorkItem(predefined_root,
+                                    command_path,
+                                    KEY_WOW64_32KEY,
                                     google_update::kRegCommandLineField,
-                                    command_line_, true)
+                                    command_line_,
+                                    true)
       ->set_log_message("setting AppCommand CommandLine registry value");
 
   for (int i = 0; i < arraysize(kNameBoolVars); ++i) {
@@ -86,13 +92,13 @@ void AppCommand::AddWorkItems(HKEY predefined_root,
     if (var_data) {
       item_list->AddSetRegValueWorkItem(predefined_root,
                                         command_path,
+                                        KEY_WOW64_32KEY,
                                         var_name,
                                         static_cast<DWORD>(1),
                                         true);
     } else {
-      item_list->AddDeleteRegValueWorkItem(predefined_root,
-                                           command_path,
-                                           var_name);
+      item_list->AddDeleteRegValueWorkItem(
+          predefined_root, command_path, KEY_WOW64_32KEY, var_name);
     }
   }
 }

@@ -95,8 +95,7 @@ bool UpdateTaskCategory(JumpListUpdater* jumplist_updater) {
   // We remove '&' characters from this string so we can share it with our
   // system menu.
   scoped_refptr<ShellLinkItem> chrome = CreateShellLink();
-  std::wstring chrome_title =
-      base::UTF16ToWide(l10n_util::GetStringUTF16(IDS_NEW_WINDOW));
+  base::string16 chrome_title = l10n_util::GetStringUTF16(IDS_NEW_WINDOW);
   ReplaceSubstringsAfterOffset(&chrome_title, 0, L"&", L"");
   chrome->set_title(chrome_title);
   chrome->set_icon(chrome_path.value(), 0);
@@ -107,8 +106,8 @@ bool UpdateTaskCategory(JumpListUpdater* jumplist_updater) {
   // this item.
   scoped_refptr<ShellLinkItem> incognito = CreateShellLink();
   incognito->GetCommandLine()->AppendSwitch(switches::kIncognito);
-  std::wstring incognito_title =
-      base::UTF16ToWide(l10n_util::GetStringUTF16(IDS_NEW_INCOGNITO_WINDOW));
+  base::string16 incognito_title =
+      l10n_util::GetStringUTF16(IDS_NEW_INCOGNITO_WINDOW);
   ReplaceSubstringsAfterOffset(&incognito_title, 0, L"&", L"");
   incognito->set_title(incognito_title);
   incognito->set_icon(chrome_path.value(), 0);
@@ -397,8 +396,8 @@ void JumpList::StartLoadingFavicon() {
   }
   FaviconService* favicon_service =
       FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
-  task_id_ = favicon_service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(
+  task_id_ = favicon_service->GetFaviconImageForPageURL(
+      FaviconService::FaviconForPageURLParams(
           url, favicon_base::FAVICON, gfx::kFaviconSize),
       base::Bind(&JumpList::OnFaviconDataAvailable, base::Unretained(this)),
       &cancelable_task_tracker_);

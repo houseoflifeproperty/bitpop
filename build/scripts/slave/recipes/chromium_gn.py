@@ -15,56 +15,169 @@ DEPS = [
 ]
 
 
+BUILDERS = {
+  'chromium.webkit': {
+    'builders': {
+      'Android GN': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Release',
+          'TARGET_PLATFORM': 'android',
+          'TARGET_ARCH': 'arm',
+        },
+        'gclient_apply_config': ['android', 'blink'],
+      },
+      'Linux GN': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Release',
+        },
+        'gclient_apply_config': ['blink'],
+      },
+    },
+  },
+  'tryserver.blink': {
+    'builders': {
+      'android_chromium_gn_compile_rel': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Release',
+          'TARGET_PLATFORM': 'android',
+          'TARGET_ARCH': 'arm',
+        },
+        'gclient_apply_config': ['android', 'blink'],
+      },
+      'linux_chromium_gn_rel': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Release',
+        },
+        'gclient_apply_config': ['blink'],
+      },
+    },
+  },
+  'chromium.linux': {
+    'builders': {
+      'Android GN': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Release',
+          'TARGET_PLATFORM': 'android',
+          'TARGET_ARCH': 'arm',
+        },
+        'gclient_apply_config': ['android'],
+      },
+      'Android GN (dbg)': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Debug',
+          'TARGET_PLATFORM': 'android',
+          'TARGET_ARCH': 'arm',
+        },
+        'gclient_apply_config': ['android'],
+      },
+      'Linux GN': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Release',
+        },
+      },
+      'Linux GN (dbg)': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Debug',
+        },
+      },
+    },
+  },
+  'tryserver.chromium': {
+    'builders': {
+      'android_chromium_gn_compile_rel': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Release',
+          'TARGET_PLATFORM': 'android',
+          'TARGET_ARCH': 'arm',
+        },
+        'gclient_apply_config': ['android'],
+      },
+      'android_chromium_gn_compile_dbg': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Debug',
+          'TARGET_PLATFORM': 'android',
+          'TARGET_ARCH': 'arm',
+        },
+        'gclient_apply_config': ['android'],
+      },
+      'linux_chromium_gn_rel': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Release',
+        },
+      },
+      'linux_chromium_gn_dbg': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Debug',
+        },
+      },
+    },
+  },
+  'client.v8': {
+    'builders': {
+      'V8 Linux GN': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Release',
+        },
+        'gclient_apply_config': ['v8_bleeding_edge', 'show_v8_revision'],
+        'set_custom_vars': [{'var': 'v8_revision',
+                             'property': 'revision',
+                             'default': 'HEAD'}]
+      },
+    },
+  },
+}
+
 def GenSteps(api):
   # TODO: crbug.com/358481 . The build_config should probably be a property
   # passed in from slaves.cfg, but that doesn't exist today, so we need a
   # lookup mechanism to map bot name to build_config.
+  mastername = api.properties.get('mastername')
   buildername = api.properties.get('buildername')
-  is_tryserver = api.tryserver.is_tryserver
-  if is_tryserver:
-    api.step.auto_resolve_conflicts = True
+  master_dict = BUILDERS.get(mastername, {})
+  bot_config = master_dict.get('builders', {}).get(buildername)
 
-  kwargs = {}
-  if '(dbg)' in buildername or '_dbg' in buildername:
-    build_config = 'Debug'
-  else:
-    build_config = 'Release'
-  kwargs['BUILD_CONFIG'] = build_config
-  if 'Android ' in buildername or 'android_' in buildername:
-    kwargs['TARGET_PLATFORM'] = 'android'
-    kwargs['TARGET_ARCH'] = 'arm'
-  api.chromium.set_config('chromium', **kwargs)
+  api.chromium.set_config('chromium',
+                          **bot_config.get('chromium_config_kwargs', {}))
 
   # Note that we have to call gclient.set_config() and apply_config() *after*
   # calling chromium.set_config(), above, because otherwise the chromium
   # call would reset the gclient config to its defaults.
   api.gclient.set_config('chromium')
-  if 'Android ' in buildername or 'android_' in buildername:
-    api.gclient.apply_config('android')
+  for c in bot_config.get('gclient_apply_config', []):
+    api.gclient.apply_config(c)
 
-  # TODO(dpranke): crbug.com/358435. We need to figure out how to separate
-  # out the retry and recovery logic from the rest of the recipe.
+  # Overwrite custom deps variables based on build properties.
+  # TODO: Figure out how to make this work generally for custom revisions.
+  for custom in bot_config.get('set_custom_vars', []):
+    s = api.gclient.c.solutions
+    s[0].custom_vars[custom['var']] = api.properties.get(
+        custom['property'], custom['default'])
 
-  yield api.bot_update.ensure_checkout()
-  if not api.step_history.last_step().json.output['did_run']:
-    yield api.gclient.checkout(revert=True,
-                               abort_on_failure=(not is_tryserver),
-                               can_fail_build=(not is_tryserver))
+  if api.tryserver.is_tryserver:
+    api.step.auto_resolve_conflicts = True
 
-    if is_tryserver:
-      if any(step.retcode != 0 for step in api.step_history.values()):
-        yield api.path.rmcontents('slave build directory',
-                                  api.path['slave_build'])
-        yield api.gclient.checkout(revert=False,
-                                   abort_on_failure=True,
-                                   can_fail_build=True)
-      yield api.tryserver.maybe_apply_issue()
+  # FIXME(machenbach): Remove this as soon as crbug.com/380053 is resolved.
+  if mastername == 'client.v8':
+    yield api.gclient.checkout(abort_on_failure=True)
+  else:
+    yield api.bot_update.ensure_checkout(force=True)
 
   yield api.chromium.runhooks(run_gyp=False)
 
   yield api.chromium.run_gn()
 
-  yield api.chromium.compile(targets=['all'])
+  if api.tryserver.is_tryserver:
+    yield api.chromium.compile(
+        targets=['all'], abort_on_failure=False, can_fail_build=False)
+    if api.step_history.last_step().retcode != 0:
+      api.gclient.set_config('chromium_lkcr')
+
+      yield api.bot_update.ensure_checkout(force=True, suffix='lkcr')
+      yield api.chromium.runhooks(run_gyp=False)
+      yield api.chromium.run_gn()
+      yield api.chromium.compile(targets=['all'], force_clobber=True)
+  else:
+    yield api.chromium.compile(targets=['all'])
 
   # TODO(dpranke): crbug.com/353854. Run gn_unittests and other tests
   # when they are also being run as part of the try jobs.
@@ -75,73 +188,28 @@ def _sanitize_nonalpha(text):
 
 
 def GenTests(api):
-  yield (
-      api.test('unittest_linux_rel_success') +
-      api.properties.generic(buildername='unittest_fake_buildername',
-                             mastername='chromium.linux') +
-      api.platform.name('linux')
-  )
-
-  yield (
-      api.test('unittest_android_dbg_trybot_success') +
-      api.properties.tryserver(
-          buildername='unittest_fake_android_dbg_trybot_name') +
-      api.platform.name('linux')
-  )
-
-  # api.gclient.checkout() actually contains a revert call and a sync call,
-  # so we test that either of them failing is handled correctly.
-  yield (
-      api.test('unittest_sync_fails') +
-      api.properties.tryserver(buildername='unittest_fake_trybotname') +
-      api.platform.name('linux') +
-      api.step_data('gclient sync', retcode=1)
-  )
-
-  yield (
-      api.test('unittest_revert_fails') +
-      api.properties.tryserver(buildername='linux_chromium_gn_dbg') +
-      api.platform.name('linux') +
-      api.step_data('gclient revert', retcode=1)
-  )
-
-  # Here both checkout/syncs fail, so we should abort before every trying
-  # to apply the patch.
-  yield (
-      api.test('unittest_second_sync_fails') +
-      api.properties.tryserver(buildername='unittest_fake_trybotname') +
-      api.platform.name('linux') +
-      api.step_data('gclient sync', retcode=1) +
-      api.step_data('gclient sync (2)', retcode=1)
-  )
-
   # TODO: crbug.com/354674. Figure out where to put "simulation"
   # tests. We should have one test for each bot this recipe runs on.
 
-  trybot_names = [
-    'android_chromium_gn_compile_dbg',
-    'android_chromium_gn_compile_rel',
-    'linux_chromium_gn_dbg',
-    'linux_chromium_gn_rel',
-  ]
-  for buildername in trybot_names:
-    yield (
-        api.test('full_%s' % buildername) +
-        api.properties.tryserver(buildername=buildername,
-                                 mastername='tryserver.chromium') +
-        api.platform.name('linux')
-    )
+  for mastername in BUILDERS:
+    for buildername in BUILDERS[mastername]['builders']:
+      test = (
+          api.test('full_%s_%s' % (_sanitize_nonalpha(mastername),
+                                   _sanitize_nonalpha(buildername))) +
+          api.platform.name('linux')
+      )
+      if mastername.startswith('tryserver'):
+        test += api.properties.tryserver(buildername=buildername,
+                                         mastername=mastername)
+      else:
+        test += api.properties.generic(buildername=buildername,
+                                       mastername=mastername)
+      yield test
 
-  buildbot_names = [
-    'Android GN',
-    'Android GN (dbg)',
-    'Linux GN',
-    'Linux GN (dbg)',
-  ]
-  for buildername in buildbot_names:
-    yield (
-        api.test('full_chromium_linux_%s' % _sanitize_nonalpha(buildername)) +
-        api.properties.generic(buildername=buildername,
-                               mastername='chromium.linux') +
-        api.platform.name('linux')
-    )
+  yield (
+    api.test('compile_failure') +
+    api.platform.name('linux') +
+    api.properties.tryserver(
+        buildername='linux_chromium_gn_rel', mastername='tryserver.chromium') +
+    api.step_data('compile', retcode=1)
+  )

@@ -211,6 +211,7 @@ oninvalid
 onkeydown
 onkeypress
 onkeyup
+onlanguagechange
 onload
 onloadeddata
 onloadedmetadata
@@ -283,7 +284,6 @@ pluginspage
 pluginurl
 ping
 poster
-precision
 preload
 primary
 profile
@@ -315,8 +315,6 @@ sizes
 sortable
 sortdirection
 span
-x-webkit-speech
-x-webkit-grammar
 spellcheck
 src
 srcset

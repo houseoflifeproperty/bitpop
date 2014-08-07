@@ -256,6 +256,10 @@ class UI_BASE_EXPORT ResourceBundle {
   // Returns SCALE_FACTOR_100P if no resource is loaded.
   ScaleFactor GetMaxScaleFactor() const;
 
+ protected:
+  // Returns true if |scale_factor| is supported by this platform.
+  static bool IsScaleFactorSupported(ScaleFactor scale_factor);
+
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceBundleTest, DelegateGetPathForLocalePack);
   FRIEND_TEST_ALL_PREFIXES(ResourceBundleTest, DelegateGetImageNamed);
@@ -352,16 +356,6 @@ class UI_BASE_EXPORT ResourceBundle {
   gfx::Image& GetEmptyImage();
 
   const base::FilePath& GetOverriddenPakPath();
-
-  // Platform specific image scaling is done here. Currently only implemented
-  // for Windows.
-  // |image| is the bitmap to be scaled.
-  // |loaded_image_scale| is the current scale of the bitmap.
-  // |desired_scale| is the desired scale of the bitmap.
-  // Returns the scaled bitmap or the original bitmap.
- static SkBitmap PlatformScaleImage(const SkBitmap& image,
-                                    float loaded_image_scale,
-                                    float desired_scale);
 
   // This pointer is guaranteed to outlive the ResourceBundle instance and may
   // be NULL.

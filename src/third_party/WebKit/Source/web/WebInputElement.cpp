@@ -31,14 +31,14 @@
 #include "config.h"
 #include "public/web/WebInputElement.h"
 
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
+#include "core/HTMLNames.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebString.h"
 #include "public/web/WebElementCollection.h"
 #include "wtf/PassRefPtr.h"
@@ -132,17 +132,6 @@ WebString WebInputElement::localizeValue(const WebString& proposedValue) const
 int WebInputElement::defaultMaxLength()
 {
     return HTMLInputElement::maximumLength;
-}
-
-// FIXME: Remove this once password_generation_manager.h stops using it.
-WebElement WebInputElement::decorationElementFor(void*)
-{
-    return passwordGeneratorButtonElement();
-}
-
-WebElement WebInputElement::passwordGeneratorButtonElement() const
-{
-    return WebElement(constUnwrap<HTMLInputElement>()->passwordGeneratorButtonElement());
 }
 
 void WebInputElement::setShouldRevealPassword(bool value)

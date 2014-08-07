@@ -41,6 +41,7 @@
 #include "core/css/StylePropertySet.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/rendering/style/StyleInheritedData.h"
 
 namespace WebCore {
 
@@ -129,7 +130,7 @@ static bool rulesApplicableInCurrentTreeScope(const Element* element, const Cont
     if (!scopingNode || treeScope == scopingNode->treeScope())
         return true;
     // d) the rules comes from a scoped style sheet within an active shadow root whose host is the given element
-    if (element->isInShadowTree() && (behaviorAtBoundary & SelectorChecker::ScopeIsShadowHost) && scopingNode == element->containingShadowRoot()->host())
+    if (SelectorChecker::isHostInItsShadowTree(*element, behaviorAtBoundary, scopingNode))
         return true;
     return false;
 }

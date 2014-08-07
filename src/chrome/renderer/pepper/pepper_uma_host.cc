@@ -29,6 +29,7 @@ const char* const kPredefinedAllowedUMAOrigins[] = {
 };
 
 const char* const kWhitelistedHistogramPrefixes[] = {
+    "22F67DA2061FFC4DC9A4974036348D9C38C22919",  // see http://crbug.com/390221
     "CD190EA2B764EDF0BB97552A638D32072F3CFD41",  // see http://crbug.com/317833
 };
 
@@ -69,16 +70,16 @@ PepperUMAHost::~PepperUMAHost() {}
 int32_t PepperUMAHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperUMAHost, msg)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UMA_HistogramCustomTimes,
-                                    OnHistogramCustomTimes);
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UMA_HistogramCustomCounts,
-                                    OnHistogramCustomCounts);
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UMA_HistogramEnumeration,
-                                    OnHistogramEnumeration);
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_UMA_IsCrashReportingEnabled,
-                                      OnIsCrashReportingEnabled);
-  IPC_END_MESSAGE_MAP()
+  PPAPI_BEGIN_MESSAGE_MAP(PepperUMAHost, msg)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UMA_HistogramCustomTimes,
+                                      OnHistogramCustomTimes)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UMA_HistogramCustomCounts,
+                                      OnHistogramCustomCounts)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UMA_HistogramEnumeration,
+                                      OnHistogramEnumeration)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(
+        PpapiHostMsg_UMA_IsCrashReportingEnabled, OnIsCrashReportingEnabled)
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 

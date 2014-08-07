@@ -7,17 +7,19 @@
 #include <algorithm>
 
 #include "base/logging.h"
+#include "grit/ui_resources.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate.h"
-#include "ui/app_list/pagination_model.h"
 #include "ui/app_list/views/app_list_folder_view.h"
 #include "ui/app_list/views/app_list_main_view.h"
 #include "ui/app_list/views/apps_container_view.h"
 #include "ui/app_list/views/apps_grid_view.h"
+#include "ui/app_list/views/contents_switcher_view.h"
 #include "ui/app_list/views/search_result_list_view.h"
+#include "ui/app_list/views/start_page_view.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
-#include "ui/views/animation/bounds_animator.h"
 #include "ui/views/view_model.h"
 #include "ui/views/view_model_utils.h"
 
@@ -25,54 +27,47 @@ namespace app_list {
 
 namespace {
 
-// Indexes of interesting views in ViewModel of ContentsView.
-const int kIndexAppsContainer = 0;
-const int kIndexSearchResults = 1;
-
 const int kMinMouseWheelToSwitchPage = 20;
 const int kMinScrollToSwitchPage = 20;
 const int kMinHorizVelocityToSwitchPage = 800;
 
 const double kFinishTransitionThreshold = 0.33;
 
-AppsContainerView* GetAppsContainerView(views::ViewModel* model) {
-  return static_cast<AppsContainerView*>(model->view_at(kIndexAppsContainer));
-}
-
-SearchResultListView* GetSearchResultListView(views::ViewModel* model) {
-  return static_cast<SearchResultListView*>(
-      model->view_at(kIndexSearchResults));
-}
-
 }  // namespace
 
-ContentsView::ContentsView(AppListMainView* app_list_main_view,
-                           PaginationModel* pagination_model,
-                           AppListModel* model,
-                           AppListViewDelegate* view_delegate)
-    : show_state_(SHOW_APPS),
-      pagination_model_(pagination_model),
-      view_model_(new views::ViewModel),
-      bounds_animator_(new views::BoundsAnimator(this)) {
-  DCHECK(model);
-  pagination_model_->SetTransitionDurations(
-      kPageTransitionDurationInMs,
-      kOverscrollPageTransitionDurationMs);
-
-  apps_container_view_ =
-      new AppsContainerView(app_list_main_view, pagination_model, model);
-  AddChildView(apps_container_view_);
-  view_model_->Add(apps_container_view_, kIndexAppsContainer);
-
-  SearchResultListView* search_results_view = new SearchResultListView(
-      app_list_main_view, view_delegate);
-  AddChildView(search_results_view);
-  view_model_->Add(search_results_view, kIndexSearchResults);
-
-  GetSearchResultListView(view_model_.get())->SetResults(model->results());
+ContentsView::ContentsView(AppListMainView* app_list_main_view)
+    : search_results_view_(NULL),
+      start_page_view_(NULL),
+      app_list_main_view_(app_list_main_view),
+      contents_switcher_view_(NULL),
+      view_model_(new views::ViewModel) {
+  pagination_model_.AddObserver(this);
 }
 
 ContentsView::~ContentsView() {
+  pagination_model_.RemoveObserver(this);
+}
+
+void ContentsView::InitNamedPages(AppListModel* model,
+                                  AppListViewDelegate* view_delegate) {
+  DCHECK(model);
+
+  if (app_list::switches::IsExperimentalAppListEnabled()) {
+    start_page_view_ = new StartPageView(app_list_main_view_, view_delegate);
+    AddLauncherPage(
+        start_page_view_, IDR_APP_LIST_SEARCH_ICON, NAMED_PAGE_START);
+  } else {
+    search_results_view_ =
+        new SearchResultListView(app_list_main_view_, view_delegate);
+    AddLauncherPage(search_results_view_, 0, NAMED_PAGE_SEARCH_RESULTS);
+    search_results_view_->SetResults(model->results());
+  }
+
+  apps_container_view_ = new AppsContainerView(app_list_main_view_, model);
+  int apps_page_index = AddLauncherPage(
+      apps_container_view_, IDR_APP_LIST_APPS_ICON, NAMED_PAGE_APPS);
+
+  pagination_model_.SelectPage(apps_page_index, false);
 }
 
 void ContentsView::CancelDrag() {
@@ -91,88 +86,129 @@ void ContentsView::SetDragAndDropHostOfCurrentAppList(
   apps_container_view_->SetDragAndDropHostOfCurrentAppList(drag_and_drop_host);
 }
 
-void ContentsView::SetShowState(ShowState show_state) {
-  if (show_state_ == show_state)
+void ContentsView::SetActivePage(int page_index) {
+  if (GetActivePageIndex() == page_index)
     return;
 
-  show_state_ = show_state;
-  ShowStateChanged();
+  SetActivePageInternal(page_index, false);
 }
 
-void ContentsView::ShowStateChanged() {
-  SearchResultListView* results_view =
-      GetSearchResultListView(view_model_.get());
+int ContentsView::GetActivePageIndex() const {
+  // The active page is changed at the beginning of an animation, not the end.
+  return pagination_model_.SelectedTargetPage();
+}
+
+bool ContentsView::IsNamedPageActive(NamedPage named_page) const {
+  std::map<NamedPage, int>::const_iterator it =
+      named_page_to_view_.find(named_page);
+  if (it == named_page_to_view_.end())
+    return false;
+  return it->second == GetActivePageIndex();
+}
+
+int ContentsView::GetPageIndexForNamedPage(NamedPage named_page) const {
+  // Find the index of the view corresponding to the given named_page.
+  std::map<NamedPage, int>::const_iterator it =
+      named_page_to_view_.find(named_page);
+  // GetPageIndexForNamedPage should never be called on a named_page that does
+  // not have a corresponding view.
+  DCHECK(it != named_page_to_view_.end());
+  return it->second;
+}
+
+int ContentsView::NumLauncherPages() const {
+  return pagination_model_.total_pages();
+}
+
+void ContentsView::SetActivePageInternal(int page_index,
+                                         bool show_search_results) {
+  // Start animating to the new page.
+  pagination_model_.SelectPage(page_index, true);
+  ActivePageChanged(show_search_results);
+}
+
+void ContentsView::ActivePageChanged(bool show_search_results) {
   // TODO(xiyuan): Highlight default match instead of the first.
-  if (show_state_ == SHOW_SEARCH_RESULTS && results_view->visible())
-    results_view->SetSelectedIndex(0);
-  results_view->UpdateAutoLaunchState();
+  if (IsNamedPageActive(NAMED_PAGE_SEARCH_RESULTS) &&
+      search_results_view_->visible()) {
+    search_results_view_->SetSelectedIndex(0);
+  }
+  if (search_results_view_)
+    search_results_view_->UpdateAutoLaunchState();
 
-  AnimateToIdealBounds();
+  if (IsNamedPageActive(NAMED_PAGE_START)) {
+    if (show_search_results)
+      start_page_view_->ShowSearchResults();
+    else
+      start_page_view_->Reset();
+  }
+
+  // Notify parent AppListMainView of the page change.
+  app_list_main_view_->UpdateSearchBoxVisibility();
 }
 
-void ContentsView::CalculateIdealBounds() {
+void ContentsView::ShowSearchResults(bool show) {
+  NamedPage new_named_page = show ? NAMED_PAGE_SEARCH_RESULTS : NAMED_PAGE_APPS;
+  if (app_list::switches::IsExperimentalAppListEnabled())
+    new_named_page = NAMED_PAGE_START;
+
+  SetActivePageInternal(GetPageIndexForNamedPage(new_named_page), show);
+}
+
+bool ContentsView::IsShowingSearchResults() const {
+  return app_list::switches::IsExperimentalAppListEnabled()
+             ? IsNamedPageActive(NAMED_PAGE_START) &&
+                   start_page_view_->IsShowingSearchResults()
+             : IsNamedPageActive(NAMED_PAGE_SEARCH_RESULTS);
+}
+
+void ContentsView::UpdatePageBounds() {
   gfx::Rect rect(GetContentsBounds());
   if (rect.IsEmpty())
     return;
 
+  // The bounds calculations will potentially be mid-transition (depending on
+  // the state of the PaginationModel).
+  int current_page = std::max(0, pagination_model_.selected_page());
+  int target_page = current_page;
+  double progress = 1;
+  if (pagination_model_.has_transition()) {
+    const PaginationModel::Transition& transition =
+        pagination_model_.transition();
+    if (pagination_model_.is_valid_page(transition.target_page)) {
+      target_page = transition.target_page;
+      progress = transition.progress;
+    }
+  }
+
+  gfx::Rect incoming_target(rect);
+  gfx::Rect outgoing_target(rect);
+  int dir = target_page > current_page ? -1 : 1;
+
   if (app_list::switches::IsExperimentalAppListEnabled()) {
-    int incoming_view_index = 0;
-    switch (show_state_) {
-      case SHOW_APPS:
-        incoming_view_index = kIndexAppsContainer;
-        break;
-      case SHOW_SEARCH_RESULTS:
-        incoming_view_index = kIndexSearchResults;
-        break;
-      default:
-        NOTREACHED();
-    }
+    // The experimental app list transitions horizontally.
+    int page_width = rect.width();
+    int transition_offset = progress * page_width * dir;
 
-    gfx::Rect incoming_target(rect);
-    gfx::Rect outgoing_target(rect);
-    outgoing_target.set_y(-outgoing_target.height());
+    outgoing_target.set_x(transition_offset);
+    incoming_target.set_x(dir < 0 ? transition_offset + page_width
+                                  : transition_offset - page_width);
+  } else {
+    // The normal app list transitions vertically.
+    int page_height = rect.height();
+    int transition_offset = progress * page_height * dir;
 
-    for (int i = 0; i < view_model_->view_size(); ++i) {
-      view_model_->set_ideal_bounds(i,
-                                    i == incoming_view_index ? incoming_target
-                                                             : outgoing_target);
-    }
-    return;
+    outgoing_target.set_y(transition_offset);
+    incoming_target.set_y(dir < 0 ? transition_offset + page_height
+                                  : transition_offset - page_height);
   }
 
-  gfx::Rect container_frame(rect);
-  gfx::Rect results_frame(rect);
-
-  // Offsets apps grid and result list based on |show_state_|.
-  // SearchResultListView is on top of apps grid. Visible view is left in
-  // visible area and invisible ones is put out of the visible area.
-  int contents_area_height = rect.height();
-  switch (show_state_) {
-    case SHOW_APPS:
-      results_frame.Offset(0, -contents_area_height);
-      break;
-    case SHOW_SEARCH_RESULTS:
-      container_frame.Offset(0, contents_area_height);
-      break;
-    default:
-      NOTREACHED() << "Unknown show_state_ " << show_state_;
-      break;
-  }
-
-  view_model_->set_ideal_bounds(kIndexAppsContainer, container_frame);
-  view_model_->set_ideal_bounds(kIndexSearchResults, results_frame);
+  view_model_->view_at(current_page)->SetBoundsRect(outgoing_target);
+  view_model_->view_at(target_page)->SetBoundsRect(incoming_target);
 }
 
-void ContentsView::AnimateToIdealBounds() {
-  CalculateIdealBounds();
-  for (int i = 0; i < view_model_->view_size(); ++i) {
-    bounds_animator_->AnimateViewTo(view_model_->view_at(i),
-                                    view_model_->ideal_bounds(i));
-  }
-}
-
-void ContentsView::ShowSearchResults(bool show) {
-  SetShowState(show ? SHOW_SEARCH_RESULTS : SHOW_APPS);
+PaginationModel* ContentsView::GetAppsPaginationModel() {
+  return apps_container_view_->apps_grid_view()->pagination_model();
 }
 
 void ContentsView::ShowFolderContent(AppListFolderItem* item) {
@@ -180,15 +216,43 @@ void ContentsView::ShowFolderContent(AppListFolderItem* item) {
 }
 
 void ContentsView::Prerender() {
-  const int selected_page = std::max(0, pagination_model_->selected_page());
+  const int selected_page =
+      std::max(0, GetAppsPaginationModel()->selected_page());
   apps_container_view_->apps_grid_view()->Prerender(selected_page);
 }
 
-gfx::Size ContentsView::GetPreferredSize() {
-  const gfx::Size container_size = GetAppsContainerView(view_model_.get())->
-      apps_grid_view()->GetPreferredSize();
-  const gfx::Size results_size =
-      GetSearchResultListView(view_model_.get())->GetPreferredSize();
+views::View* ContentsView::GetPageView(int index) {
+  return view_model_->view_at(index);
+}
+
+void ContentsView::AddBlankPageForTesting() {
+  AddLauncherPage(new views::View, 0);
+}
+
+int ContentsView::AddLauncherPage(views::View* view, int resource_id) {
+  int page_index = view_model_->view_size();
+  AddChildView(view);
+  view_model_->Add(view, page_index);
+  pagination_model_.SetTotalPages(view_model_->view_size());
+  if (contents_switcher_view_)
+    contents_switcher_view_->AddSwitcherButton(resource_id, page_index);
+  return page_index;
+}
+
+int ContentsView::AddLauncherPage(views::View* view,
+                                  int resource_id,
+                                  NamedPage named_page) {
+  int page_index = AddLauncherPage(view, resource_id);
+  named_page_to_view_.insert(std::pair<NamedPage, int>(named_page, page_index));
+  return page_index;
+}
+
+gfx::Size ContentsView::GetPreferredSize() const {
+  const gfx::Size container_size =
+      apps_container_view_->apps_grid_view()->GetPreferredSize();
+  const gfx::Size results_size = search_results_view_
+                                     ? search_results_view_->GetPreferredSize()
+                                     : gfx::Size();
 
   int width = std::max(container_size.width(), results_size.width());
   int height = std::max(container_size.height(), results_size.height());
@@ -196,24 +260,31 @@ gfx::Size ContentsView::GetPreferredSize() {
 }
 
 void ContentsView::Layout() {
-  CalculateIdealBounds();
-  views::ViewModelUtils::SetViewBoundsToIdealBounds(*view_model_);
+  // Immediately finish all current animations.
+  pagination_model_.FinishAnimation();
+
+  // Move the current view onto the screen, and all other views off screen to
+  // the left. (Since we are not animating, we don't need to be careful about
+  // which side we place the off-screen views onto.)
+  gfx::Rect rect(GetContentsBounds());
+  if (rect.IsEmpty())
+    return;
+
+  gfx::Rect offscreen_target(rect);
+  offscreen_target.set_x(-rect.width());
+
+  for (int i = 0; i < view_model_->view_size(); ++i) {
+    view_model_->view_at(i)->SetBoundsRect(
+        i == pagination_model_.SelectedTargetPage() ? rect : offscreen_target);
+  }
 }
 
 bool ContentsView::OnKeyPressed(const ui::KeyEvent& event) {
-  switch (show_state_) {
-    case SHOW_APPS:
-      return GetAppsContainerView(view_model_.get())->OnKeyPressed(event);
-    case SHOW_SEARCH_RESULTS:
-      return GetSearchResultListView(view_model_.get())->OnKeyPressed(event);
-    default:
-      NOTREACHED() << "Unknown show state " << show_state_;
-  }
-  return false;
+  return view_model_->view_at(GetActivePageIndex())->OnKeyPressed(event);
 }
 
 bool ContentsView::OnMouseWheel(const ui::MouseWheelEvent& event) {
-  if (show_state_ != SHOW_APPS)
+  if (!IsNamedPageActive(NAMED_PAGE_APPS))
     return false;
 
   int offset;
@@ -223,9 +294,8 @@ bool ContentsView::OnMouseWheel(const ui::MouseWheelEvent& event) {
     offset = event.y_offset();
 
   if (abs(offset) > kMinMouseWheelToSwitchPage) {
-    if (!pagination_model_->has_transition()) {
-      pagination_model_->SelectPageRelative(
-          offset > 0 ? -1 : 1, true);
+    if (!GetAppsPaginationModel()->has_transition()) {
+      GetAppsPaginationModel()->SelectPageRelative(offset > 0 ? -1 : 1, true);
     }
     return true;
   }
@@ -233,33 +303,46 @@ bool ContentsView::OnMouseWheel(const ui::MouseWheelEvent& event) {
   return false;
 }
 
+void ContentsView::TotalPagesChanged() {
+}
+
+void ContentsView::SelectedPageChanged(int old_selected, int new_selected) {
+}
+
+void ContentsView::TransitionStarted() {
+}
+
+void ContentsView::TransitionChanged() {
+  UpdatePageBounds();
+}
+
 void ContentsView::OnGestureEvent(ui::GestureEvent* event) {
-  if (show_state_ != SHOW_APPS)
+  if (!IsNamedPageActive(NAMED_PAGE_APPS))
     return;
 
   switch (event->type()) {
     case ui::ET_GESTURE_SCROLL_BEGIN:
-      pagination_model_->StartScroll();
+      GetAppsPaginationModel()->StartScroll();
       event->SetHandled();
       return;
     case ui::ET_GESTURE_SCROLL_UPDATE:
       // event->details.scroll_x() > 0 means moving contents to right. That is,
       // transitioning to previous page.
-      pagination_model_->UpdateScroll(
-          event->details().scroll_x() / GetContentsBounds().width());
+      GetAppsPaginationModel()->UpdateScroll(event->details().scroll_x() /
+                                             GetContentsBounds().width());
       event->SetHandled();
       return;
     case ui::ET_GESTURE_SCROLL_END:
-      pagination_model_->EndScroll(pagination_model_->
-          transition().progress < kFinishTransitionThreshold);
+      GetAppsPaginationModel()->EndScroll(
+          GetAppsPaginationModel()->transition().progress <
+          kFinishTransitionThreshold);
       event->SetHandled();
       return;
     case ui::ET_SCROLL_FLING_START: {
-      pagination_model_->EndScroll(true);
+      GetAppsPaginationModel()->EndScroll(true);
       if (fabs(event->details().velocity_x()) > kMinHorizVelocityToSwitchPage) {
-        pagination_model_->SelectPageRelative(
-            event->details().velocity_x() < 0 ? 1 : -1,
-            true);
+        GetAppsPaginationModel()->SelectPageRelative(
+            event->details().velocity_x() < 0 ? 1 : -1, true);
       }
       event->SetHandled();
       return;
@@ -270,21 +353,20 @@ void ContentsView::OnGestureEvent(ui::GestureEvent* event) {
 }
 
 void ContentsView::OnScrollEvent(ui::ScrollEvent* event) {
-  if (show_state_ != SHOW_APPS ||
+  if (!IsNamedPageActive(NAMED_PAGE_APPS) ||
       event->type() == ui::ET_SCROLL_FLING_CANCEL) {
     return;
   }
 
   float offset;
-  if (abs(event->x_offset()) > abs(event->y_offset()))
+  if (std::abs(event->x_offset()) > std::abs(event->y_offset()))
     offset = event->x_offset();
   else
     offset = event->y_offset();
 
-  if (abs(offset) > kMinScrollToSwitchPage) {
-    if (!pagination_model_->has_transition()) {
-      pagination_model_->SelectPageRelative(offset > 0 ? -1 : 1,
-                                            true);
+  if (std::abs(offset) > kMinScrollToSwitchPage) {
+    if (!GetAppsPaginationModel()->has_transition()) {
+      GetAppsPaginationModel()->SelectPageRelative(offset > 0 ? -1 : 1, true);
     }
     event->SetHandled();
     event->StopPropagation();

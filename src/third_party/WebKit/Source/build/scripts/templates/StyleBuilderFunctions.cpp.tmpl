@@ -10,7 +10,6 @@
 #include "StyleBuilderFunctions.h"
 
 #include "CSSValueKeywords.h"
-#include "core/animation/css/CSSAnimationDataList.h"
 #include "core/css/BasicShapeFunctions.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/Pair.h"
@@ -37,7 +36,7 @@ state.style()->{{property.setter}}
 
 namespace WebCore {
 
-{% for property_id, property in properties.items() if not property.use_handlers_for %}
+{% for property_id, property in properties.items() if property.should_declare_functions %}
 {% set apply_type = property.apply_type %}
 {% if not property.custom_initial %}
 {{declare_initial_function(property_id)}}
@@ -79,76 +78,43 @@ namespace WebCore {
 {% endfor %}
 
 {% macro apply_animation(property_id, attribute, animation) %}
+{% set vector = attribute|lower_first + "List()" %}
 {{declare_initial_function(property_id)}}
 {
-    CSSAnimationDataList* list = state.style()->access{{animation}}();
-    if (list->isEmpty())
-        list->append(CSSAnimationData::create());
-    list->animation(0)->set{{attribute}}(CSSAnimationData::initialAnimation{{attribute}}());
-        {% if property_id == 'CSSPropertyWebkitTransitionProperty' %}
-        list->animation(0)->setAnimationMode(CSSAnimationData::AnimateAll);
-        {% endif %}
-    for (size_t i = 1; i < list->size(); ++i)
-        list->animation(i)->clear{{attribute}}();
+    CSS{{animation}}Data& data = state.style()->access{{animation}}s();
+    data.{{vector}}.clear();
+    data.{{vector}}.append(CSS{{animation}}Data::initial{{attribute}}());
 }
 
 {{declare_inherit_function(property_id)}}
 {
-    CSSAnimationDataList* list = state.style()->access{{animation}}();
-    const CSSAnimationDataList* parentList = state.parentStyle()->{{animation|lower}}();
-    size_t i = 0, parentSize = parentList ? parentList->size() : 0;
-    for ( ; i < parentSize && parentList->animation(i)->is{{attribute}}Set(); ++i) {
-        ASSERT(list->size() >= i);
-        if (list->size() == i)
-            list->append(CSSAnimationData::create());
-        list->animation(i)->set{{attribute}}(parentList->animation(i)->{{attribute|lower_first}}());
-            {% if property_id == 'CSSPropertyWebkitTransitionProperty' %}
-            list->animation(i)->setAnimationMode(parentList->animation(i)->animationMode());
-            {% endif %}
-    }
-
-    // Reset any remaining animations to not have the property set.
-    for ( ; i < list->size(); ++i)
-        list->animation(i)->clear{{attribute}}();
+    const CSS{{animation}}Data* parentData = state.parentStyle()->{{animation|lower}}s();
+    if (!parentData)
+        applyInitial{{property_id}}(state);
+    else
+        state.style()->access{{animation}}s().{{vector}} = parentData->{{vector}};
 }
 
 {{declare_value_function(property_id)}}
 {
-    CSSAnimationDataList* list = state.style()->access{{animation}}();
-    size_t childIndex = 0;
-    if (value->isValueList()) {
-        // Walk each value and put it into an animation, creating new animations as needed.
-        for (CSSValueListIterator i = value; i.hasMore(); i.advance()) {
-            ASSERT(list->size() >= childIndex);
-            if (list->size() == childIndex)
-                list->append(CSSAnimationData::create());
-            state.styleMap().mapAnimation{{attribute}}(list->animation(childIndex), i.value());
-            ++childIndex;
-        }
-    } else {
-        if (list->isEmpty())
-            list->append(CSSAnimationData::create());
-        state.styleMap().mapAnimation{{attribute}}(list->animation(childIndex), value);
-        childIndex = 1;
-    }
-    for ( ; childIndex < list->size(); ++childIndex) {
-        // Reset all remaining animations to not have the property set.
-        list->animation(childIndex)->clear{{attribute}}();
-    }
+    CSS{{animation}}Data& data = state.style()->access{{animation}}s();
+    data.{{vector}}.clear();
+    for (CSSValueListIterator i = value; i.hasMore(); i.advance())
+        data.{{vector}}.append(state.styleMap().mapAnimation{{attribute}}(i.value()));
 }
 {% endmacro %}
-{{apply_animation('CSSPropertyWebkitAnimationDelay', 'Delay', 'Animations')}}
-{{apply_animation('CSSPropertyWebkitAnimationDirection', 'Direction', 'Animations')}}
-{{apply_animation('CSSPropertyWebkitAnimationDuration', 'Duration', 'Animations')}}
-{{apply_animation('CSSPropertyWebkitAnimationFillMode', 'FillMode', 'Animations')}}
-{{apply_animation('CSSPropertyWebkitAnimationIterationCount', 'IterationCount', 'Animations')}}
-{{apply_animation('CSSPropertyWebkitAnimationName', 'Name', 'Animations')}}
-{{apply_animation('CSSPropertyWebkitAnimationPlayState', 'PlayState', 'Animations')}}
-{{apply_animation('CSSPropertyWebkitAnimationTimingFunction', 'TimingFunction', 'Animations')}}
-{{apply_animation('CSSPropertyWebkitTransitionDelay', 'Delay', 'Transitions')}}
-{{apply_animation('CSSPropertyWebkitTransitionDuration', 'Duration', 'Transitions')}}
-{{apply_animation('CSSPropertyWebkitTransitionProperty', 'Property', 'Transitions')}}
-{{apply_animation('CSSPropertyWebkitTransitionTimingFunction', 'TimingFunction', 'Transitions')}}
+{{apply_animation('CSSPropertyWebkitAnimationDelay', 'Delay', 'Animation')}}
+{{apply_animation('CSSPropertyWebkitAnimationDirection', 'Direction', 'Animation')}}
+{{apply_animation('CSSPropertyWebkitAnimationDuration', 'Duration', 'Animation')}}
+{{apply_animation('CSSPropertyWebkitAnimationFillMode', 'FillMode', 'Animation')}}
+{{apply_animation('CSSPropertyWebkitAnimationIterationCount', 'IterationCount', 'Animation')}}
+{{apply_animation('CSSPropertyWebkitAnimationName', 'Name', 'Animation')}}
+{{apply_animation('CSSPropertyWebkitAnimationPlayState', 'PlayState', 'Animation')}}
+{{apply_animation('CSSPropertyWebkitAnimationTimingFunction', 'TimingFunction', 'Animation')}}
+{{apply_animation('CSSPropertyWebkitTransitionDelay', 'Delay', 'Transition')}}
+{{apply_animation('CSSPropertyWebkitTransitionDuration', 'Duration', 'Transition')}}
+{{apply_animation('CSSPropertyWebkitTransitionProperty', 'Property', 'Transition')}}
+{{apply_animation('CSSPropertyWebkitTransitionTimingFunction', 'TimingFunction', 'Transition')}}
 
 {% macro apply_auto(property_id, auto_getter=none, auto_setter=none, auto_identity='CSSValueAuto', compute_length=false) %}
 {% set property = properties[property_id] %}
@@ -190,27 +156,75 @@ namespace WebCore {
 {{apply_auto('CSSPropertyWidows')}}
 {{apply_auto('CSSPropertyZIndex')}}
 
+static bool lengthTypeAndValueMatch(const Length& length, LengthType type, float value)
+{
+    return length.type() == type && length.value() == value;
+}
+
+static bool lengthTypeAndValueMatch(const LengthBox& lengthBox, LengthType type, float value)
+{
+    return (lengthTypeAndValueMatch(lengthBox.left(), type, value)
+        && lengthTypeAndValueMatch(lengthBox.right(), type, value)
+        && lengthTypeAndValueMatch(lengthBox.top(), type, value)
+        && lengthTypeAndValueMatch(lengthBox.bottom(), type, value));
+}
+
+static bool lengthTypeAndValueMatch(const BorderImageLength& borderImageLength, LengthType type, float value)
+{
+    return borderImageLength.isLength() && lengthTypeAndValueMatch(borderImageLength.length(), type, value);
+}
+
+static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengthBox, LengthType type, float value)
+{
+    return (lengthTypeAndValueMatch(borderImageLengthBox.left(), type, value)
+        && lengthTypeAndValueMatch(borderImageLengthBox.right(), type, value)
+        && lengthTypeAndValueMatch(borderImageLengthBox.top(), type, value)
+        && lengthTypeAndValueMatch(borderImageLengthBox.bottom(), type, value));
+}
+
 {% macro apply_border_image_modifier(property_id, modifier_type) %}
 {% set is_mask_box = 'MaskBox' in property_id %}
 {% set getter = 'maskBoxImage' if is_mask_box else 'borderImage' %}
 {% set setter = 'setMaskBoxImage' if is_mask_box else 'setBorderImage' %}
 {{ declare_initial_function(property_id) }}
 {
-    NinePieceImage image(state.style()->{{getter}}());
+    const NinePieceImage& currentImage = state.style()->{{getter}}();
+    {# Check for equality in case we can bail out before creating a new NinePieceImage. #}
+    {% if modifier_type == 'Outset' %}
+    if (lengthTypeAndValueMatch(currentImage.outset(), Fixed, 0))
+        return;
+    {% elif modifier_type == 'Repeat' %}
+    if (currentImage.horizontalRule() == StretchImageRule && currentImage.verticalRule() == StretchImageRule)
+        return;
+    {% elif modifier_type == 'Slice' and is_mask_box %}
+    // Masks have a different initial value for slices. Preserve the value of 0 for backwards compatibility.
+    if (currentImage.fill() == true && lengthTypeAndValueMatch(currentImage.imageSlices(), Fixed, 0))
+        return;
+    {% elif modifier_type == 'Slice' and not is_mask_box %}
+    if (currentImage.fill() == false && lengthTypeAndValueMatch(currentImage.imageSlices(), Percent, 100))
+        return;
+    {% elif modifier_type == 'Width' and is_mask_box %}
+    // Masks have a different initial value for widths. Preserve the value of 'auto' for backwards compatibility.
+    if (lengthTypeAndValueMatch(currentImage.borderSlices(), Auto, 0))
+        return;
+    {% elif modifier_type == 'Width' and not is_mask_box %}
+    if (lengthTypeAndValueMatch(currentImage.borderSlices(), Fixed, 1))
+        return;
+    {% endif %}
+
+    NinePieceImage image(currentImage);
     {% if modifier_type == 'Outset' %}
     image.setOutset(Length(0, Fixed));
     {% elif modifier_type == 'Repeat' %}
     image.setHorizontalRule(StretchImageRule);
     image.setVerticalRule(StretchImageRule);
     {% elif modifier_type == 'Slice' and is_mask_box %}
-    // Masks have a different initial value for slices. Preserve the value of 0 for backwards compatibility.
     image.setImageSlices(LengthBox({{ (['Length(0, Fixed)']*4) | join(', ') }}));
     image.setFill(true);
     {% elif modifier_type == 'Slice' and not is_mask_box %}
     image.setImageSlices(LengthBox({{ (['Length(100, Percent)']*4) | join(', ') }}));
     image.setFill(false);
     {% elif modifier_type == 'Width' %}
-    // Masks have a different initial value for widths. Preserve the value of 'auto' for backwards compatibility.
     image.setBorderSlices({{ 'Length(Auto)' if is_mask_box else '1.0' }});
     {% endif %}
     state.style()->{{setter}}(image);
@@ -476,6 +490,9 @@ namespace WebCore {
     OrderedNamedGridLines orderedNamedGridLines;
     if (!StyleBuilderConverter::convertGridTrackList(value, trackSizes, namedGridLines, orderedNamedGridLines, state))
         return;
+    const NamedGridAreaMap& namedGridAreas = state.style()->namedGridArea();
+    if (!namedGridAreas.isEmpty())
+        StyleBuilderConverter::createImplicitNamedGridLinesFromGridArea(namedGridAreas, namedGridLines, For{{type}}s);
     state.style()->setGridTemplate{{type}}s(trackSizes);
     state.style()->setNamedGrid{{type}}Lines(namedGridLines);
     state.style()->setOrderedNamedGrid{{type}}Lines(orderedNamedGridLines);
@@ -506,7 +523,7 @@ namespace WebCore {
     {% set property = properties[property_id] %}
     if (value->isPrimitiveValue()) {
         CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-        if (primitiveValue->getValueID() == CSSValueAuto)
+        if (primitiveValue->getValueID() == CSSValueNone)
             {{set_value(property)}}(nullptr);
     } else if (value->isImageValue() || value->isImageGeneratorValue() || value->isImageSetValue()) {
         {{set_value(property)}}(ShapeValue::createImageValue(state.styleImage({{property_id}}, value)));
@@ -535,4 +552,68 @@ namespace WebCore {
 }
 {% endmacro %}
 {{apply_value_shape('CSSPropertyShapeOutside')}}
+
+{% macro apply_alignment(property_id, alignment_type) %}
+{{declare_value_function(property_id)}}
+{
+    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
+    if (Pair* pairValue = primitiveValue->getPairValue()) {
+        state.style()->set{{alignment_type}}(*pairValue->first());
+        state.style()->set{{alignment_type}}OverflowAlignment(*pairValue->second());
+    } else {
+        state.style()->set{{alignment_type}}(*primitiveValue);
+        // FIXME: We should clear the overflow-alignment mode here and probably
+        // also set it in the initial and inherit handlers
+    }
+}
+{% endmacro %}
+{{apply_alignment('CSSPropertyJustifySelf', 'JustifySelf')}}
+{{apply_alignment('CSSPropertyAlignItems', 'AlignItems')}}
+{{apply_alignment('CSSPropertyAlignSelf', 'AlignSelf')}}
+
+{% macro apply_svg_paint(property_id, paint_type) %}
+{% set property = properties[property_id] %}
+{{declare_initial_function(property_id)}}
+{
+    {{set_value(property)}}(
+        SVGRenderStyle::initial{{paint_type}}Type(),
+        SVGRenderStyle::initial{{paint_type}}Color(),
+        SVGRenderStyle::initial{{paint_type}}Uri(),
+        state.applyPropertyToRegularStyle(),
+        state.applyPropertyToVisitedLinkStyle());
+}
+
+{{declare_inherit_function(property_id)}}
+{
+    const SVGRenderStyle* svgParentStyle = state.parentStyle()->svgStyle();
+    {{set_value(property)}}(
+        svgParentStyle->{{paint_type|lower_first}}Type(),
+        svgParentStyle->{{paint_type|lower_first}}Color(),
+        svgParentStyle->{{paint_type|lower_first}}Uri(),
+        state.applyPropertyToRegularStyle(),
+        state.applyPropertyToVisitedLinkStyle());
+}
+
+{{declare_value_function(property_id)}}
+{
+    if (value->isSVGPaint()) {
+        SVGPaint* svgPaint = toSVGPaint(value);
+
+        Color color;
+        if (svgPaint->paintType() == SVGPaint::SVG_PAINTTYPE_CURRENTCOLOR
+                || svgPaint->paintType() == SVGPaint::SVG_PAINTTYPE_URI_CURRENTCOLOR)
+            color = state.style()->color();
+        else
+            color = svgPaint->color();
+
+        {{set_value(property)}}(svgPaint->paintType(),
+            color,
+            svgPaint->uri(),
+            state.applyPropertyToRegularStyle(),
+            state.applyPropertyToVisitedLinkStyle());
+    }
+}
+{% endmacro %}
+{{apply_svg_paint('CSSPropertyFill', 'FillPaint')}}
+{{apply_svg_paint('CSSPropertyStroke', 'StrokePaint')}}
 } // namespace WebCore

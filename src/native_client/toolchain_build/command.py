@@ -89,10 +89,12 @@ def PlatformEnvironment(extra_paths):
 
 class Runnable(object):
   """An object representing a single command."""
-  def __init__(self, func, *args, **kwargs):
+  def __init__(self, run_cond, func, *args, **kwargs):
     """Construct a runnable which will call 'func' with 'args' and 'kwargs'.
 
     Args:
+      run_cond: If not None, expects a function which takes a CommandOptions
+                object and returns whether or not to run the command.
       func: Function which will be called by Invoke
       args: Positional arguments to be passed to func
       kwargs: Keyword arguments to be passed to func
@@ -106,6 +108,7 @@ class Runnable(object):
       When 'func' is called, its first argument will be a substitution object
       which it can use to substitute %-templates in its arguments.
     """
+    self._run_cond = run_cond
     self._func = func
     self._args = args or []
     self._kwargs = kwargs or {}
@@ -156,11 +159,16 @@ class Runnable(object):
 
     return '\n'.join(values)
 
+  def CheckRunCond(self, cmd_options):
+    if self._run_cond and not self._run_cond(cmd_options):
+      return False
+    return True
+
   def Invoke(self, subst):
     return self._func(subst, *self._args, **self._kwargs)
 
 
-def Command(command, stdout=None, **kwargs):
+def Command(command, stdout=None, run_cond=None, **kwargs):
   """Return a Runnable which invokes 'command' with check_call.
 
   Args:
@@ -202,19 +210,29 @@ def Command(command, stdout=None, **kwargs):
 
     pynacl.log_tools.CheckCall(command, stdout=stdout, **check_call_kwargs)
 
-  return Runnable(runcmd, command, stdout, **kwargs)
+  return Runnable(run_cond, runcmd, command, stdout, **kwargs)
 
-def SkipForIncrementalCommand(command, **kwargs):
-  """Return a command which has the skip_for_incremental property set on it.
 
-  This will cause the command to be skipped for incremental builds, if the
-  working directory is not empty.
+def SkipForIncrementalCommand(command, run_cond=None, **kwargs):
+  """Return a command which gets skipped for incremental builds.
+
+  Incremental builds are defined to be when the clobber flag is not on and
+  the working directory is not empty.
   """
-  cmd = Command(command, **kwargs)
-  cmd.skip_for_incremental = True
-  return cmd
+  def SkipForIncrementalCondition(cmd_opts):
+    # Check if caller passed their own run_cond.
+    if run_cond and not run_cond(cmd_opts):
+      return False
 
-def Mkdir(path, parents=False):
+    # Only run when clobbering working directory or working directory is empty.
+    return (cmd_opts.IsClobberWorking() or
+            not os.path.isdir(cmd_opts.GetWorkDir()) or
+            len(os.listdir(cmd_opts.GetWorkDir())) == 0)
+
+  return Command(command, run_cond=SkipForIncrementalCondition, **kwargs)
+
+
+def Mkdir(path, parents=False, run_cond=None):
   """Convenience method for generating mkdir commands."""
   def mkdir(subst, path):
     path = subst.SubstituteAbsPaths(path)
@@ -222,18 +240,18 @@ def Mkdir(path, parents=False):
       os.makedirs(path)
     else:
       os.mkdir(path)
-  return Runnable(mkdir, path)
+  return Runnable(run_cond, mkdir, path)
 
 
-def Copy(src, dst):
+def Copy(src, dst, run_cond=None):
   """Convenience method for generating cp commands."""
   def copy(subst, src, dst):
     shutil.copyfile(subst.SubstituteAbsPaths(src),
                     subst.SubstituteAbsPaths(dst))
-  return Runnable(copy, src, dst)
+  return Runnable(run_cond, copy, src, dst)
 
 
-def CopyTree(src, dst, exclude=[]):
+def CopyTree(src, dst, exclude=[], run_cond=None):
   """Copy a directory tree, excluding a list of top-level entries."""
   def copyTree(subst, src, dst, exclude):
     src = subst.SubstituteAbsPaths(src)
@@ -245,14 +263,14 @@ def CopyTree(src, dst, exclude=[]):
         return []
     pynacl.file_tools.RemoveDirectoryIfPresent(dst)
     shutil.copytree(src, dst, symlinks=True, ignore=ignoreExcludes)
-  return Runnable(copyTree, src, dst, exclude)
+  return Runnable(run_cond, copyTree, src, dst, exclude)
 
 
-def RemoveDirectory(path):
+def RemoveDirectory(path, run_cond=None):
   """Convenience method for generating a command to remove a directory tree."""
   def remove(subst, path):
     pynacl.file_tools.RemoveDirectoryIfPresent(subst.SubstituteAbsPaths(path))
-  return Runnable(remove, path)
+  return Runnable(run_cond, remove, path)
 
 
 def Remove(*args):
@@ -267,42 +285,170 @@ def Remove(*args):
                       (path, arg))
       for f in expanded:
         os.remove(f)
-  return Runnable(remove, *args)
+  return Runnable(None, remove, *args)
 
 
-def Rename(src, dst):
+def Rename(src, dst, run_cond=None):
   """Convenience method for generating a command to rename a file."""
   def rename(subst, src, dst):
     os.rename(subst.SubstituteAbsPaths(src), subst.SubstituteAbsPaths(dst))
-  return Runnable(rename, src, dst)
+  return Runnable(run_cond, rename, src, dst)
 
 
-def WriteData(data, dst):
+def WriteData(data, dst, run_cond=None):
   """Convenience method to write a file with fixed contents."""
   def writedata(subst, dst, data):
     with open(subst.SubstituteAbsPaths(dst), 'wb') as f:
       f.write(data)
-  return Runnable(writedata, dst, data)
+  return Runnable(run_cond, writedata, dst, data)
 
 
-def SyncGitRepo(url, destination, revision, reclone=False, clean=False,
-                pathspec=None):
-  def sync(subst, url, dest, rev, reclone, clean, pathspec):
-    pynacl.repo_tools.SyncGitRepo(url, subst.SubstituteAbsPaths(dest), revision,
-                                  reclone, clean, pathspec)
-  return Runnable(sync, url, destination, revision, reclone, clean, pathspec)
+def SyncGitRepoCmds(url, destination, revision, clobber_invalid_repo=False,
+                    reclone=False, clean=False, pathspec=None, git_cache=None,
+                    push_url=None, known_mirrors=[], push_mirrors=[],
+                    run_cond=None):
+  """Returns a list of commands to sync and validate a git repo.
+
+  Args:
+    url: Git repo URL to sync from.
+    destination: Local git repo directory to sync to.
+    revision: If not None, will sync the git repository to this revision.
+    clobber_invalid_repo: Always True for bots, but can be forced for users.
+    reclone: If True, delete the destination directory and re-clone the repo.
+    clean: If True, discard local changes and untracked files.
+           Otherwise the checkout will fail if there are uncommitted changes.
+    pathspec: If not None, add the path to the git checkout command, which
+              causes it to just update the working tree without switching
+              branches.
+    known_mirrors: List of tuples specifying known mirrors for a subset of the
+                   git URL. IE: [('http://mirror.com/mirror', 'http://git.com')]
+    push_mirrors: List of tuples specifying known push mirrors, see
+                  known_mirrors argument for the format.
+    git_cache: If not None, will use git_cache directory as a cache for the git
+               repository and share the objects with any other destination with
+               the same URL.
+    push_url: If not None, specifies what the push URL should be set to.
+    run_cond: Run condition for when to sync the git repo.
+
+  Returns:
+    List of commands, this is a little different from the other command funcs.
+  """
+  def update_valid_mirrors(subst, url, push_url, directory,
+                           known_mirrors, push_mirrors):
+    if push_url is None:
+      push_url = url
+
+    abs_dir = subst.SubstituteAbsPaths(directory)
+    git_dir = os.path.join(abs_dir, '.git')
+    if os.path.exists(git_dir):
+      fetch_list = pynacl.repo_tools.GitRemoteRepoList(abs_dir,
+                                                       include_fetch=True,
+                                                       include_push=False)
+      tracked_fetch_url = dict(fetch_list).get('origin', 'None')
+
+      push_list = pynacl.repo_tools.GitRemoteRepoList(abs_dir,
+                                                      include_fetch=False,
+                                                      include_push=True)
+      tracked_push_url = dict(push_list).get('origin', 'None')
+
+      if ((known_mirrors and tracked_fetch_url != url) or
+          (push_mirrors and tracked_push_url != push_url)):
+        updated_fetch_url = tracked_fetch_url
+        for mirror, url_subset in known_mirrors:
+          if mirror in updated_fetch_url:
+            updated_fetch_url = updated_fetch_url.replace(mirror, url_subset)
+
+        updated_push_url = tracked_push_url
+        for mirror, url_subset in push_mirrors:
+          if mirror in updated_push_url:
+            updated_push_url = updated_push_url.replace(mirror, url_subset)
+
+        if ((updated_fetch_url != tracked_fetch_url) or
+            (updated_push_url != tracked_push_url)):
+          logging.warn('Your git repo is using an old mirror: %s', abs_dir)
+          logging.warn('Updating git repo using known mirror:')
+          logging.warn('  [FETCH] %s -> %s',
+                       tracked_fetch_url, updated_fetch_url)
+          logging.warn('  [PUSH] %s -> %s',
+                       tracked_push_url, updated_push_url)
+          pynacl.repo_tools.GitSetRemoteRepo(updated_fetch_url, abs_dir,
+                                             push_url=updated_push_url)
 
 
-def CleanGitWorkingDir(directory, path):
+  def populate_cache(subst, git_cache, url):
+    if git_cache:
+      abs_git_cache = subst.SubstituteAbsPaths(git_cache)
+      if abs_git_cache:
+        pynacl.repo_tools.PopulateGitCache(abs_git_cache, [url])
+
+  def validate(subst, url, directory, git_cache):
+    expected_url = url
+    if git_cache:
+      abs_git_cache = subst.SubstituteAbsPaths(git_cache)
+      if abs_git_cache:
+        expected_url = pynacl.repo_tools.GetGitCacheURL(abs_git_cache, url)
+
+    pynacl.repo_tools.ValidateGitRepo(expected_url,
+                                      subst.SubstituteAbsPaths(directory),
+                                      clobber_mismatch=True)
+
+  def sync(subst, url, dest, revision, reclone, clean, pathspec, git_cache,
+           push_url):
+    abs_dest = subst.SubstituteAbsPaths(dest)
+    if git_cache:
+      git_cache = subst.SubstituteAbsPaths(git_cache)
+
+    try:
+      pynacl.repo_tools.SyncGitRepo(url, abs_dest, revision,
+                                    reclone=reclone, clean=clean,
+                                    pathspec=pathspec, git_cache=git_cache,
+                                    push_url=push_url)
+    except pynacl.repo_tools.InvalidRepoException, e:
+      remote_repos = dict(pynacl.repo_tools.GitRemoteRepoList(abs_dest))
+      tracked_url = remote_repos.get('origin', 'None')
+      logging.error('Invalid Git Repo: %s' % e)
+      logging.error('Destination Directory: %s', abs_dest)
+      logging.error('Currently Tracked Repo: %s', tracked_url)
+      logging.error('Expected Repo: %s', e.expected_repo)
+      logging.warn('Possible solutions:')
+      logging.warn('  1. The simplest way if you have no local changes is to'
+                   ' simply delete the directory and let the tool resync.')
+      logging.warn('  2. If the tracked repo is merely a mirror, simply go to'
+                   ' the directory and run "git remote set-url origin %s"',
+                   e.expected_repo)
+      raise Exception('Could not validate local git repository.')
+
+  def ClobberInvalidRepoCondition(cmd_opts):
+    # Check if caller passed their own run_cond
+    if run_cond and not run_cond(cmd_opts):
+      return False
+    elif clobber_invalid_repo:
+      return True
+    return cmd_opts.IsBot()
+
+  commands = []
+  if git_cache:
+    commands.append(Runnable(run_cond, populate_cache, git_cache, url))
+
+  commands.extend([Runnable(run_cond, update_valid_mirrors, url, push_url,
+                            destination, known_mirrors, push_mirrors),
+                   Runnable(ClobberInvalidRepoCondition, validate, url,
+                            destination, git_cache),
+                   Runnable(run_cond, sync, url, destination, revision, reclone,
+                            clean, pathspec, git_cache, push_url)])
+  return commands
+
+
+def CleanGitWorkingDir(directory, path, run_cond=None):
   """Clean a path in a git checkout, if the checkout directory exists."""
   def clean(subst, directory, path):
     directory = subst.SubstituteAbsPaths(directory)
     if os.path.exists(directory) and len(os.listdir(directory)) > 0:
       pynacl.repo_tools.CleanGitWorkingDir(directory, path)
-  return Runnable(clean, directory, path)
+  return Runnable(run_cond, clean, directory, path)
 
 
-def GenerateGitPatches(git_dir, info):
+def GenerateGitPatches(git_dir, info, run_cond=None):
   """Generate patches from a Git repository.
 
   Args:
@@ -320,7 +466,7 @@ def GenerateGitPatches(git_dir, info):
     <upstream-name>[-g<commit-abbrev>]-nacl.patch: From the result of that
       (or from 'upstream-base' if none above) to 'rev'.
   """
-  def generatePatches(subst, git_dir, info):
+  def generatePatches(subst, git_dir, info, run_cond=None):
     git_dir_flag = '--git-dir=' + subst.SubstituteAbsPaths(git_dir)
     basename = info['upstream-name']
 
@@ -392,4 +538,4 @@ def GenerateGitPatches(git_dir, info):
       for patch in patch_files:
         f.write('\n# %s\n%s\n' % patch)
 
-  return Runnable(generatePatches, git_dir, info)
+  return Runnable(run_cond, generatePatches, git_dir, info)

@@ -178,7 +178,7 @@ void PrintContext::spoolPage(GraphicsContext& ctx, int pageNumber, float width)
     float scale = width / pageRect.width();
 
     ctx.save();
-    ctx.scale(FloatSize(scale, scale));
+    ctx.scale(scale, scale);
     ctx.translate(-pageRect.x(), -pageRect.y());
     ctx.clip(pageRect);
     m_frame->view()->paintContents(&ctx, pageRect);
@@ -209,7 +209,7 @@ static RenderBoxModelObject* enclosingBoxModelObject(RenderObject* object)
 int PrintContext::pageNumberForElement(Element* element, const FloatSize& pageSizeInPixels)
 {
     // Make sure the element is not freed during the layout.
-    RefPtr<Element> elementRef(element);
+    RefPtrWillBeRawPtr<Element> protect(element);
     element->document().updateLayout();
 
     RenderBoxModelObject* box = enclosingBoxModelObject(element->renderer());
@@ -333,7 +333,7 @@ int PrintContext::numberOfPages(LocalFrame* frame, const FloatSize& pageSizeInPi
 
 void PrintContext::spoolAllPagesWithBoundaries(LocalFrame* frame, GraphicsContext& graphicsContext, const FloatSize& pageSizeInPixels)
 {
-    if (!frame->document() || !frame->view() || !frame->document()->renderer())
+    if (!frame->document() || !frame->view() || !frame->document()->renderView())
         return;
 
     frame->document()->updateLayout();
@@ -354,7 +354,7 @@ void PrintContext::spoolAllPagesWithBoundaries(LocalFrame* frame, GraphicsContex
 
     graphicsContext.save();
     graphicsContext.translate(0, totalHeight);
-    graphicsContext.scale(FloatSize(1, -1));
+    graphicsContext.scale(1, -1);
 
     int currentHeight = 0;
     for (size_t pageIndex = 0; pageIndex < pageRects.size(); pageIndex++) {

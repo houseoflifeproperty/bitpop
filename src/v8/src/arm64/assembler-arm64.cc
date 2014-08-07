@@ -26,24 +26,38 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_ARM64
 
 #define ARM64_DEFINE_REG_STATICS
 
-#include "arm64/assembler-arm64-inl.h"
+#include "src/arm64/assembler-arm64-inl.h"
 
 namespace v8 {
 namespace internal {
 
 
 // -----------------------------------------------------------------------------
-// CpuFeatures utilities (for V8 compatibility).
+// CpuFeatures implementation.
 
-ExternalReference ExternalReference::cpu_features() {
-  return ExternalReference(&CpuFeatures::supported_);
+void CpuFeatures::ProbeImpl(bool cross_compile) {
+  if (cross_compile) {
+    // Always align csp in cross compiled code - this is safe and ensures that
+    // csp will always be aligned if it is enabled by probing at runtime.
+    if (FLAG_enable_always_align_csp) supported_ |= 1u << ALWAYS_ALIGN_CSP;
+  } else {
+    CPU cpu;
+    if (FLAG_enable_always_align_csp && (cpu.implementer() == CPU::NVIDIA ||
+                                         FLAG_debug_code)) {
+      supported_ |= 1u << ALWAYS_ALIGN_CSP;
+    }
+  }
 }
+
+
+void CpuFeatures::PrintTarget() { }
+void CpuFeatures::PrintFeatures() { }
 
 
 // -----------------------------------------------------------------------------
@@ -254,29 +268,31 @@ bool AreSameSizeAndType(const CPURegister& reg1, const CPURegister& reg2,
 }
 
 
-void Operand::initialize_handle(Handle<Object> handle) {
+void Immediate::InitializeHandle(Handle<Object> handle) {
   AllowDeferredHandleDereference using_raw_address;
 
   // Verify all Objects referred by code are NOT in new space.
   Object* obj = *handle;
   if (obj->IsHeapObject()) {
     ASSERT(!HeapObject::cast(obj)->GetHeap()->InNewSpace(obj));
-    immediate_ = reinterpret_cast<intptr_t>(handle.location());
+    value_ = reinterpret_cast<intptr_t>(handle.location());
     rmode_ = RelocInfo::EMBEDDED_OBJECT;
   } else {
     STATIC_ASSERT(sizeof(intptr_t) == sizeof(int64_t));
-    immediate_ = reinterpret_cast<intptr_t>(obj);
+    value_ = reinterpret_cast<intptr_t>(obj);
     rmode_ = RelocInfo::NONE64;
   }
 }
 
 
-bool Operand::NeedsRelocation(Isolate* isolate) const {
-  if (rmode_ == RelocInfo::EXTERNAL_REFERENCE) {
-    return Serializer::enabled(isolate);
+bool Operand::NeedsRelocation(const Assembler* assembler) const {
+  RelocInfo::Mode rmode = immediate_.rmode();
+
+  if (rmode == RelocInfo::EXTERNAL_REFERENCE) {
+    return assembler->serializer_enabled();
   }
 
-  return !RelocInfo::IsNone(rmode_);
+  return !RelocInfo::IsNone(rmode);
 }
 
 
@@ -1116,32 +1132,32 @@ void Assembler::csneg(const Register& rd,
 void Assembler::cset(const Register &rd, Condition cond) {
   ASSERT((cond != al) && (cond != nv));
   Register zr = AppropriateZeroRegFor(rd);
-  csinc(rd, zr, zr, InvertCondition(cond));
+  csinc(rd, zr, zr, NegateCondition(cond));
 }
 
 
 void Assembler::csetm(const Register &rd, Condition cond) {
   ASSERT((cond != al) && (cond != nv));
   Register zr = AppropriateZeroRegFor(rd);
-  csinv(rd, zr, zr, InvertCondition(cond));
+  csinv(rd, zr, zr, NegateCondition(cond));
 }
 
 
 void Assembler::cinc(const Register &rd, const Register &rn, Condition cond) {
   ASSERT((cond != al) && (cond != nv));
-  csinc(rd, rn, rn, InvertCondition(cond));
+  csinc(rd, rn, rn, NegateCondition(cond));
 }
 
 
 void Assembler::cinv(const Register &rd, const Register &rn, Condition cond) {
   ASSERT((cond != al) && (cond != nv));
-  csinv(rd, rn, rn, InvertCondition(cond));
+  csinv(rd, rn, rn, NegateCondition(cond));
 }
 
 
 void Assembler::cneg(const Register &rd, const Register &rn, Condition cond) {
   ASSERT((cond != al) && (cond != nv));
-  csneg(rd, rn, rn, InvertCondition(cond));
+  csneg(rd, rn, rn, NegateCondition(cond));
 }
 
 
@@ -1459,27 +1475,23 @@ void Assembler::ldrsw(const Register& rt, const MemOperand& src) {
 }
 
 
-void Assembler::ldr(const Register& rt, uint64_t imm) {
-  // TODO(all): Constant pool may be garbage collected. Hence we cannot store
-  // arbitrary values in them. Manually move it for now. Fix
-  // MacroAssembler::Fmov when this is implemented.
-  UNIMPLEMENTED();
+void Assembler::ldr_pcrel(const CPURegister& rt, int imm19) {
+  // The pattern 'ldr xzr, #offset' is used to indicate the beginning of a
+  // constant pool. It should not be emitted.
+  ASSERT(!rt.IsZero());
+  Emit(LoadLiteralOpFor(rt) | ImmLLiteral(imm19) | Rt(rt));
 }
 
 
-void Assembler::ldr(const FPRegister& ft, double imm) {
-  // TODO(all): Constant pool may be garbage collected. Hence we cannot store
-  // arbitrary values in them. Manually move it for now. Fix
-  // MacroAssembler::Fmov when this is implemented.
-  UNIMPLEMENTED();
-}
+void Assembler::ldr(const CPURegister& rt, const Immediate& imm) {
+  // Currently we only support 64-bit literals.
+  ASSERT(rt.Is64Bits());
 
-
-void Assembler::ldr(const FPRegister& ft, float imm) {
-  // TODO(all): Constant pool may be garbage collected. Hence we cannot store
-  // arbitrary values in them. Manually move it for now. Fix
-  // MacroAssembler::Fmov when this is implemented.
-  UNIMPLEMENTED();
+  RecordRelocInfo(imm.rmode(), imm.value());
+  BlockConstPoolFor(1);
+  // The load will be patched when the constpool is emitted, patching code
+  // expect a load literal with offset 0.
+  ldr_pcrel(rt, 0);
 }
 
 
@@ -1903,9 +1915,9 @@ void Assembler::AddSub(const Register& rd,
                        FlagsUpdate S,
                        AddSubOp op) {
   ASSERT(rd.SizeInBits() == rn.SizeInBits());
-  ASSERT(!operand.NeedsRelocation(isolate()));
+  ASSERT(!operand.NeedsRelocation(this));
   if (operand.IsImmediate()) {
-    int64_t immediate = operand.immediate();
+    int64_t immediate = operand.ImmediateValue();
     ASSERT(IsImmAddSub(immediate));
     Instr dest_reg = (S == SetFlags) ? Rd(rd) : RdSP(rd);
     Emit(SF(rd) | AddSubImmediateFixed | op | Flags(S) |
@@ -1943,7 +1955,7 @@ void Assembler::AddSubWithCarry(const Register& rd,
   ASSERT(rd.SizeInBits() == rn.SizeInBits());
   ASSERT(rd.SizeInBits() == operand.reg().SizeInBits());
   ASSERT(operand.IsShiftedRegister() && (operand.shift_amount() == 0));
-  ASSERT(!operand.NeedsRelocation(isolate()));
+  ASSERT(!operand.NeedsRelocation(this));
   Emit(SF(rd) | op | Flags(S) | Rm(operand.reg()) | Rn(rn) | Rd(rd));
 }
 
@@ -1964,7 +1976,7 @@ void Assembler::debug(const char* message, uint32_t code, Instr params) {
 #ifdef USE_SIMULATOR
   // Don't generate simulator specific code if we are building a snapshot, which
   // might be run on real hardware.
-  if (!Serializer::enabled(isolate())) {
+  if (!serializer_enabled()) {
     // The arguments to the debug marker need to be contiguous in memory, so
     // make sure we don't try to emit pools.
     BlockPoolsScope scope(this);
@@ -1999,9 +2011,9 @@ void Assembler::Logical(const Register& rd,
                         const Operand& operand,
                         LogicalOp op) {
   ASSERT(rd.SizeInBits() == rn.SizeInBits());
-  ASSERT(!operand.NeedsRelocation(isolate()));
+  ASSERT(!operand.NeedsRelocation(this));
   if (operand.IsImmediate()) {
-    int64_t immediate = operand.immediate();
+    int64_t immediate = operand.ImmediateValue();
     unsigned reg_size = rd.SizeInBits();
 
     ASSERT(immediate != 0);
@@ -2051,9 +2063,9 @@ void Assembler::ConditionalCompare(const Register& rn,
                                    Condition cond,
                                    ConditionalCompareOp op) {
   Instr ccmpop;
-  ASSERT(!operand.NeedsRelocation(isolate()));
+  ASSERT(!operand.NeedsRelocation(this));
   if (operand.IsImmediate()) {
-    int64_t immediate = operand.immediate();
+    int64_t immediate = operand.ImmediateValue();
     ASSERT(IsImmConditionalCompare(immediate));
     ccmpop = ConditionalCompareImmediateFixed | op | ImmCondCmp(immediate);
   } else {
@@ -2166,7 +2178,7 @@ void Assembler::DataProcShiftedRegister(const Register& rd,
                                         Instr op) {
   ASSERT(operand.IsShiftedRegister());
   ASSERT(rn.Is64Bits() || (rn.Is32Bits() && is_uint5(operand.shift_amount())));
-  ASSERT(!operand.NeedsRelocation(isolate()));
+  ASSERT(!operand.NeedsRelocation(this));
   Emit(SF(rd) | op | Flags(S) |
        ShiftDP(operand.shift()) | ImmDPShift(operand.shift_amount()) |
        Rm(operand.reg()) | Rn(rn) | Rd(rd));
@@ -2178,7 +2190,7 @@ void Assembler::DataProcExtendedRegister(const Register& rd,
                                          const Operand& operand,
                                          FlagsUpdate S,
                                          Instr op) {
-  ASSERT(!operand.NeedsRelocation(isolate()));
+  ASSERT(!operand.NeedsRelocation(this));
   Instr dest_reg = (S == SetFlags) ? Rd(rd) : RdSP(rd);
   Emit(SF(rd) | op | Flags(S) | Rm(operand.reg()) |
        ExtendMode(operand.extend()) | ImmExtendShift(operand.shift_amount()) |
@@ -2252,28 +2264,6 @@ bool Assembler::IsImmLSUnscaled(ptrdiff_t offset) {
 bool Assembler::IsImmLSScaled(ptrdiff_t offset, LSDataSize size) {
   bool offset_is_size_multiple = (((offset >> size) << size) == offset);
   return offset_is_size_multiple && is_uint12(offset >> size);
-}
-
-
-void Assembler::LoadLiteral(const CPURegister& rt, int offset_from_pc) {
-  ASSERT((offset_from_pc & ((1 << kLiteralEntrySizeLog2) - 1)) == 0);
-  // The pattern 'ldr xzr, #offset' is used to indicate the beginning of a
-  // constant pool. It should not be emitted.
-  ASSERT(!rt.Is(xzr));
-  Emit(LDR_x_lit |
-       ImmLLiteral(offset_from_pc >> kLiteralEntrySizeLog2) |
-       Rt(rt));
-}
-
-
-void Assembler::LoadRelocatedValue(const CPURegister& rt,
-                                   const Operand& operand,
-                                   LoadLiteralOp op) {
-  int64_t imm = operand.immediate();
-  ASSERT(is_int32(imm) || is_uint32(imm) || (rt.Is64Bits()));
-  RecordRelocInfo(operand.rmode(), imm);
-  BlockConstPoolFor(1);
-  Emit(op | ImmLLiteral(0) | Rt(rt));
 }
 
 
@@ -2516,10 +2506,9 @@ void Assembler::RecordRelocInfo(RelocInfo::Mode rmode, intptr_t data) {
 
   if (!RelocInfo::IsNone(rmode)) {
     // Don't record external references unless the heap will be serialized.
-    if (rmode == RelocInfo::EXTERNAL_REFERENCE) {
-      if (!Serializer::enabled(isolate()) && !emit_debug_code()) {
-        return;
-      }
+    if (rmode == RelocInfo::EXTERNAL_REFERENCE &&
+        !serializer_enabled() && !emit_debug_code()) {
+      return;
     }
     ASSERT(buffer_space() >= kMaxRelocSize);  // too late to grow buffer here
     if (rmode == RelocInfo::CODE_TARGET_WITH_ID) {

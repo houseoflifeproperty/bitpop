@@ -7,13 +7,12 @@
 
 #include <ctype.h>
 
-#include "v8globals.h"
-#include "globals.h"
+#include "src/globals.h"
 
-#include "arm64/assembler-arm64.h"
-#include "arm64/assembler-arm64-inl.h"
-#include "arm64/macro-assembler-arm64.h"
-#include "arm64/instrument-arm64.h"
+#include "src/arm64/assembler-arm64.h"
+#include "src/arm64/assembler-arm64-inl.h"
+#include "src/arm64/macro-assembler-arm64.h"
+#include "src/arm64/instrument-arm64.h"
 
 
 namespace v8 {
@@ -127,8 +126,8 @@ void MacroAssembler::Ccmp(const Register& rn,
                           StatusFlags nzcv,
                           Condition cond) {
   ASSERT(allow_macro_instructions_);
-  if (operand.IsImmediate() && (operand.immediate() < 0)) {
-    ConditionalCompareMacro(rn, -operand.immediate(), nzcv, cond, CCMN);
+  if (operand.IsImmediate() && (operand.ImmediateValue() < 0)) {
+    ConditionalCompareMacro(rn, -operand.ImmediateValue(), nzcv, cond, CCMN);
   } else {
     ConditionalCompareMacro(rn, operand, nzcv, cond, CCMP);
   }
@@ -140,8 +139,8 @@ void MacroAssembler::Ccmn(const Register& rn,
                           StatusFlags nzcv,
                           Condition cond) {
   ASSERT(allow_macro_instructions_);
-  if (operand.IsImmediate() && (operand.immediate() < 0)) {
-    ConditionalCompareMacro(rn, -operand.immediate(), nzcv, cond, CCMP);
+  if (operand.IsImmediate() && (operand.ImmediateValue() < 0)) {
+    ConditionalCompareMacro(rn, -operand.ImmediateValue(), nzcv, cond, CCMP);
   } else {
     ConditionalCompareMacro(rn, operand, nzcv, cond, CCMN);
   }
@@ -152,8 +151,8 @@ void MacroAssembler::Add(const Register& rd,
                          const Register& rn,
                          const Operand& operand) {
   ASSERT(allow_macro_instructions_);
-  if (operand.IsImmediate() && (operand.immediate() < 0)) {
-    AddSubMacro(rd, rn, -operand.immediate(), LeaveFlags, SUB);
+  if (operand.IsImmediate() && (operand.ImmediateValue() < 0)) {
+    AddSubMacro(rd, rn, -operand.ImmediateValue(), LeaveFlags, SUB);
   } else {
     AddSubMacro(rd, rn, operand, LeaveFlags, ADD);
   }
@@ -163,8 +162,8 @@ void MacroAssembler::Adds(const Register& rd,
                           const Register& rn,
                           const Operand& operand) {
   ASSERT(allow_macro_instructions_);
-  if (operand.IsImmediate() && (operand.immediate() < 0)) {
-    AddSubMacro(rd, rn, -operand.immediate(), SetFlags, SUB);
+  if (operand.IsImmediate() && (operand.ImmediateValue() < 0)) {
+    AddSubMacro(rd, rn, -operand.ImmediateValue(), SetFlags, SUB);
   } else {
     AddSubMacro(rd, rn, operand, SetFlags, ADD);
   }
@@ -175,8 +174,8 @@ void MacroAssembler::Sub(const Register& rd,
                          const Register& rn,
                          const Operand& operand) {
   ASSERT(allow_macro_instructions_);
-  if (operand.IsImmediate() && (operand.immediate() < 0)) {
-    AddSubMacro(rd, rn, -operand.immediate(), LeaveFlags, ADD);
+  if (operand.IsImmediate() && (operand.ImmediateValue() < 0)) {
+    AddSubMacro(rd, rn, -operand.ImmediateValue(), LeaveFlags, ADD);
   } else {
     AddSubMacro(rd, rn, operand, LeaveFlags, SUB);
   }
@@ -187,8 +186,8 @@ void MacroAssembler::Subs(const Register& rd,
                           const Register& rn,
                           const Operand& operand) {
   ASSERT(allow_macro_instructions_);
-  if (operand.IsImmediate() && (operand.immediate() < 0)) {
-    AddSubMacro(rd, rn, -operand.immediate(), SetFlags, ADD);
+  if (operand.IsImmediate() && (operand.ImmediateValue() < 0)) {
+    AddSubMacro(rd, rn, -operand.ImmediateValue(), SetFlags, ADD);
   } else {
     AddSubMacro(rd, rn, operand, SetFlags, SUB);
   }
@@ -212,7 +211,7 @@ void MacroAssembler::Neg(const Register& rd,
   ASSERT(allow_macro_instructions_);
   ASSERT(!rd.IsZero());
   if (operand.IsImmediate()) {
-    Mov(rd, -operand.immediate());
+    Mov(rd, -operand.ImmediateValue());
   } else {
     Sub(rd, AppropriateZeroRegFor(rd), operand);
   }
@@ -718,11 +717,7 @@ void MacroAssembler::Fmov(FPRegister fd, double imm) {
   } else if ((imm == 0.0) && (copysign(1.0, imm) == 1.0)) {
     fmov(fd, xzr);
   } else {
-    UseScratchRegisterScope temps(this);
-    Register tmp = temps.AcquireX();
-    // TODO(all): Use Assembler::ldr(const FPRegister& ft, double imm).
-    Mov(tmp, double_to_rawbits(imm));
-    Fmov(fd, tmp);
+    Ldr(fd, imm);
   }
 }
 
@@ -881,16 +876,16 @@ void MacroAssembler::Ldpsw(const Register& rt,
 }
 
 
-void MacroAssembler::Ldr(const FPRegister& ft, double imm) {
+void MacroAssembler::Ldr(const CPURegister& rt, const Immediate& imm) {
   ASSERT(allow_macro_instructions_);
-  ldr(ft, imm);
+  ldr(rt, imm);
 }
 
 
-void MacroAssembler::Ldr(const Register& rt, uint64_t imm) {
+void MacroAssembler::Ldr(const CPURegister& rt, double imm) {
   ASSERT(allow_macro_instructions_);
-  ASSERT(!rt.IsZero());
-  ldr(rt, imm);
+  ASSERT(rt.Is64Bits());
+  ldr(rt, Immediate(double_to_rawbits(imm)));
 }
 
 
@@ -977,7 +972,6 @@ void MacroAssembler::Mrs(const Register& rt, SystemRegister sysreg) {
 
 void MacroAssembler::Msr(SystemRegister sysreg, const Register& rt) {
   ASSERT(allow_macro_instructions_);
-  ASSERT(!rt.IsZero());
   msr(sysreg, rt);
 }
 
@@ -1247,29 +1241,58 @@ void MacroAssembler::Uxtw(const Register& rd, const Register& rn) {
 
 void MacroAssembler::BumpSystemStackPointer(const Operand& space) {
   ASSERT(!csp.Is(sp_));
-  // TODO(jbramley): Several callers rely on this not using scratch registers,
-  // so we use the assembler directly here. However, this means that large
-  // immediate values of 'space' cannot be handled cleanly. (Only 24-bits
-  // immediates or values of 'space' that can be encoded in one instruction are
-  // accepted.) Once we implement our flexible scratch register idea, we could
-  // greatly simplify this function.
-  InstructionAccurateScope scope(this);
-  if ((space.IsImmediate()) && !is_uint12(space.immediate())) {
-    // The subtract instruction supports a 12-bit immediate, shifted left by
-    // zero or 12 bits. So, in two instructions, we can subtract any immediate
-    // between zero and (1 << 24) - 1.
-    int64_t imm = space.immediate();
-    ASSERT(is_uint24(imm));
-
-    int64_t imm_top_12_bits = imm >> 12;
-    sub(csp, StackPointer(), imm_top_12_bits << 12);
-    imm -= imm_top_12_bits << 12;
-    if (imm > 0) {
-      sub(csp, csp, imm);
+  if (!TmpList()->IsEmpty()) {
+    if (CpuFeatures::IsSupported(ALWAYS_ALIGN_CSP)) {
+      UseScratchRegisterScope temps(this);
+      Register temp = temps.AcquireX();
+      Sub(temp, StackPointer(), space);
+      Bic(csp, temp, 0xf);
+    } else {
+      Sub(csp, StackPointer(), space);
     }
   } else {
-    sub(csp, StackPointer(), space);
+    // TODO(jbramley): Several callers rely on this not using scratch
+    // registers, so we use the assembler directly here. However, this means
+    // that large immediate values of 'space' cannot be handled cleanly. (Only
+    // 24-bits immediates or values of 'space' that can be encoded in one
+    // instruction are accepted.) Once we implement our flexible scratch
+    // register idea, we could greatly simplify this function.
+    InstructionAccurateScope scope(this);
+    ASSERT(space.IsImmediate());
+    // Align to 16 bytes.
+    uint64_t imm = RoundUp(space.ImmediateValue(), 0x10);
+    ASSERT(is_uint24(imm));
+
+    Register source = StackPointer();
+    if (CpuFeatures::IsSupported(ALWAYS_ALIGN_CSP)) {
+      bic(csp, source, 0xf);
+      source = csp;
+    }
+    if (!is_uint12(imm)) {
+      int64_t imm_top_12_bits = imm >> 12;
+      sub(csp, source, imm_top_12_bits << 12);
+      source = csp;
+      imm -= imm_top_12_bits << 12;
+    }
+    if (imm > 0) {
+      sub(csp, source, imm);
+    }
   }
+  AssertStackConsistency();
+}
+
+
+void MacroAssembler::SyncSystemStackPointer() {
+  ASSERT(emit_debug_code());
+  ASSERT(!csp.Is(sp_));
+  { InstructionAccurateScope scope(this);
+    if (CpuFeatures::IsSupported(ALWAYS_ALIGN_CSP)) {
+      bic(csp, StackPointer(), 0xf);
+    } else {
+      mov(csp, StackPointer());
+    }
+  }
+  AssertStackConsistency();
 }
 
 
@@ -1320,6 +1343,18 @@ void MacroAssembler::SmiUntagToFloat(FPRegister dst,
     AssertSmi(src);
   }
   Scvtf(dst, src, kSmiShift);
+}
+
+
+void MacroAssembler::SmiTagAndPush(Register src) {
+  STATIC_ASSERT((kSmiShift == 32) && (kSmiTag == 0));
+  Push(src.W(), wzr);
+}
+
+
+void MacroAssembler::SmiTagAndPush(Register src1, Register src2) {
+  STATIC_ASSERT((kSmiShift == 32) && (kSmiTag == 0));
+  Push(src1.W(), wzr, src2.W(), wzr);
 }
 
 
@@ -1541,7 +1576,7 @@ void MacroAssembler::Drop(uint64_t count, uint64_t unit_size) {
     // It is safe to leave csp where it is when unwinding the JavaScript stack,
     // but if we keep it matching StackPointer, the simulator can detect memory
     // accesses in the now-free part of the stack.
-    Mov(csp, StackPointer());
+    SyncSystemStackPointer();
   }
 }
 
@@ -1563,7 +1598,7 @@ void MacroAssembler::Drop(const Register& count, uint64_t unit_size) {
     // It is safe to leave csp where it is when unwinding the JavaScript stack,
     // but if we keep it matching StackPointer, the simulator can detect memory
     // accesses in the now-free part of the stack.
-    Mov(csp, StackPointer());
+    SyncSystemStackPointer();
   }
 }
 
@@ -1585,7 +1620,7 @@ void MacroAssembler::DropBySMI(const Register& count_smi, uint64_t unit_size) {
     // It is safe to leave csp where it is when unwinding the JavaScript stack,
     // but if we keep it matching StackPointer, the simulator can detect memory
     // accesses in the now-free part of the stack.
-    Mov(csp, StackPointer());
+    SyncSystemStackPointer();
   }
 }
 
@@ -1594,7 +1629,7 @@ void MacroAssembler::CompareAndBranch(const Register& lhs,
                                       const Operand& rhs,
                                       Condition cond,
                                       Label* label) {
-  if (rhs.IsImmediate() && (rhs.immediate() == 0) &&
+  if (rhs.IsImmediate() && (rhs.ImmediateValue() == 0) &&
       ((cond == eq) || (cond == ne))) {
     if (cond == eq) {
       Cbz(lhs, label);

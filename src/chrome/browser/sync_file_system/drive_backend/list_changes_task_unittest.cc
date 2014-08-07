@@ -57,12 +57,14 @@ class ListChangesTaskTest : public testing::Test {
 
     sync_task_manager_.reset(new SyncTaskManager(
         base::WeakPtr<SyncTaskManager::Client>(),
-        10 /* maximum_background_task */));
+        10 /* maximum_background_task */,
+        base::MessageLoopProxy::current()));
     sync_task_manager_->Initialize(SYNC_STATUS_OK);
 
     context_.reset(new SyncEngineContext(
         fake_drive_service.PassAs<drive::DriveServiceInterface>(),
         drive_uploader.Pass(),
+        NULL,
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current()));
@@ -166,11 +168,9 @@ class ListChangesTaskTest : public testing::Test {
   void InitializeMetadataDatabase() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     SyncEngineInitializer* initializer =
-        new SyncEngineInitializer(
-            context_.get(),
-            base::MessageLoopProxy::current(),
-            database_dir_.path(),
-            in_memory_env_.get());
+        new SyncEngineInitializer(context_.get(),
+                                  database_dir_.path(),
+                                  in_memory_env_.get());
 
     sync_task_manager_->ScheduleSyncTask(
         FROM_HERE, scoped_ptr<SyncTask>(initializer),

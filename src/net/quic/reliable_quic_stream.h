@@ -20,6 +20,7 @@
 #include "net/quic/quic_flow_controller.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_stream_sequencer.h"
+#include "net/quic/quic_types.h"
 
 namespace net {
 
@@ -92,29 +93,33 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   // Adjust our flow control windows according to new offset in |frame|.
   virtual void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame);
 
-  // If our receive window has dropped below the threshold, then send a
-  // WINDOW_UPDATE frame. This is called whenever bytes are consumed from the
-  // sequencer's buffer.
-  void MaybeSendWindowUpdate();
-
   int num_frames_received() const;
 
   int num_duplicate_frames_received() const;
 
   QuicFlowController* flow_controller() { return &flow_controller_; }
 
-  // Called by the stream sequeuncer as bytes are added to the buffer.
-  void AddBytesBuffered(uint64 bytes);
-  // Called by the stream sequeuncer as bytes are removed from the buffer.
-  void RemoveBytesBuffered(uint64 bytes);
+  // Called when we see a frame which could increase the highest offset.
+  // Returns true if the highest offset did increase.
+  bool MaybeIncreaseHighestReceivedOffset(uint64 new_offset);
   // Called when bytese are sent to the peer.
   void AddBytesSent(uint64 bytes);
-  // Called by the stream sequeuncer as bytes are consumed from the buffer.
+  // Called by the stream sequencer as bytes are consumed from the buffer.
+  // If our receive window has dropped below the threshold, then send a
+  // WINDOW_UPDATE frame.
   void AddBytesConsumed(uint64 bytes);
 
   // Returns true if the stream is flow control blocked, by the stream flow
   // control window or the connection flow control window.
   bool IsFlowControlBlocked();
+
+  // Returns true if we have received either a RST or a FIN - either of which
+  // gives a definitive number of bytes which the peer has sent. If this is not
+  // true on stream termination the session must keep track of the stream's byte
+  // offset until a definitive final value arrives.
+  bool HasFinalReceivedByteOffset() const {
+    return fin_received_ || rst_received_;
+  }
 
  protected:
   // Sends as much of 'data' to the connection as the connection will consume,
@@ -135,6 +140,9 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
       bool fin,
       QuicAckNotifier::DelegateInterface* ack_notifier_delegate);
 
+  // Helper method that returns FecProtection to use for writes to the session.
+  FecProtection GetFecProtection();
+
   // Close the read side of the socket.  Further frames will not be accepted.
   virtual void CloseReadSide();
 
@@ -144,6 +152,8 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   bool HasBufferedData() const;
 
   bool fin_buffered() const { return fin_buffered_; }
+
+  void set_fec_policy(FecPolicy fec_policy) { fec_policy_ = fec_policy; }
 
   const QuicSession* session() const { return session_; }
   QuicSession* session() { return session_; }
@@ -170,12 +180,6 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
     // Can be nullptr.
     scoped_refptr<ProxyAckNotifierDelegate> delegate;
   };
-
-  // Calculates and returns available flow control send window.
-  uint64 SendWindowSize() const;
-
-  // Calculates and returns total number of bytes this stream has received.
-  uint64 TotalReceivedBytes() const;
 
   // Calls MaybeSendBlocked on our flow controller, and connection level flow
   // controller. If we are flow control blocked, marks this stream as write
@@ -208,9 +212,19 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   bool fin_buffered_;
   bool fin_sent_;
 
+  // True if this stream has received (and the sequencer has accepted) a
+  // StreamFrame with the FIN set.
+  bool fin_received_;
+
   // In combination with fin_sent_, used to ensure that a FIN and/or a RST is
   // always sent before stream termination.
   bool rst_sent_;
+
+  // True if this stream has received a RST stream frame.
+  bool rst_received_;
+
+  // FEC policy to be used for this stream.
+  FecPolicy fec_policy_;
 
   // True if the session this stream is running under is a server session.
   bool is_server_;

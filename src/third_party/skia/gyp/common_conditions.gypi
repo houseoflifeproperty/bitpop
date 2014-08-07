@@ -14,6 +14,14 @@
       ],
     }],
 
+    # As of M35, Chrome requires SSE2 on x86 (and SSSE3 on Mac).
+    [ 'skia_arch_type == "x86"', {
+      'cflags': [
+        '-msse2',
+        '-mfpmath=sse',
+      ],
+    }],
+
     [ 'skia_os == "win"',
       {
         'defines': [
@@ -21,7 +29,11 @@
           '_CRT_SECURE_NO_WARNINGS',
           'GR_GL_FUNCTION_TYPE=__stdcall',
         ],
+        'msvs_disabled_warnings': [
+            4345,  # This is an FYI about a behavior change from long ago.  Chrome stifles it too.
+        ],
         'msvs_cygwin_shell': 0,
+        'msvs_disabled_warnings': [4275],
         'msvs_settings': {
           'VCCLCompilerTool': {
             'WarningLevel': '3',
@@ -164,6 +176,7 @@
         'cflags_cc': [
           '-fno-rtti',
           '-Wnon-virtual-dtor',
+          '-Wno-invalid-offsetof',  # GCC <4.6 is old-school strict about what is POD.
         ],
         'conditions': [
           [ 'skia_android_framework==0', {
@@ -233,11 +246,41 @@
               }],
             ],
           }],
+          [ 'skia_arch_type == "mips"', {
+            'cflags': [
+              '-EL',
+            ],
+            'conditions': [
+              [ 'mips_arch_variant == "mips32r2"', {
+                'cflags': [
+                  '-march=mips32r2',
+                ],
+                'conditions': [
+                  [ 'mips_dsp == 1', {
+                    'cflags': [
+                      '-mdsp',
+                    ],
+                  }],
+                  [ 'mips_dsp == 2', {
+                    'cflags': [
+                      '-mdspr2',
+                    ],
+                    'defines': [
+                      '__MIPS_HAVE_DSPR2',
+                    ],
+                  }],
+                ],
+              }],
+            ],
+          }],
         ],
       },
     ],
 
     ['skia_android_framework', {
+      'includes' : [
+        'skia_for_android_framework_defines.gypi',
+      ],
       'cflags': [
         # Skia does not enforce this usage pattern so we disable it here to avoid
         # unecessary log spew when building
@@ -294,25 +337,19 @@
         'SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK',
         'SkLONGLONG int64_t',
         'SK_DEFAULT_FONT_CACHE_LIMIT   (768 * 1024)',
-        'SK_ATOMICS_PLATFORM_H "../../src/ports/SkAtomics_android.h"',
+        'SK_ATOMICS_PLATFORM_H "../../src/ports/SkAtomics_sync.h"',
         'SK_MUTEX_PLATFORM_H "../../src/ports/SkMutex_pthread.h"',
-        # FIXME: b/13729784: Need to rework LayerRasterizer.cpp
-        'SK_SUPPORT_LEGACY_LAYERRASTERIZER_API',
-        # Temporary until https:#googleplex-android-review.git.corp.google.com/#/c/442220/
-        # lands.
-        'SK_SUPPORT_LEGACY_GETTOTALCLIP',
         # Still need to switch Android to the new name for N32.
         'kNative_8888_SkColorType kN32_SkColorType',
-        'SK_SUPPORT_LEGACY_PICTURE_CAN_RECORD',
-        'SK_SUPPORT_DEPRECATED_RECORD_FLAGS',
-        'SK_SUPPORT_LEGACY_DERIVED_PICTURE_CLASSES',
-        'SK_SUPPORT_LEGACY_PICTURE_HEADERS',
-        'SK_SUPPORT_LEGACY_BLURDRAWLOOPERCONSTRUCTORS',
-        'SK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE',
         # Needed until we fix skbug.com/2440.
         'SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG',
         # Transitional, for deprecated SkCanvas::SaveFlags methods.
         'SK_ATTR_DEPRECATED=SK_NOTHING_ARG1',
+        'SK_SUPPORT_LEGACY_SHADER_LOCALMATRIX',
+        'SK_DEFAULT_GLOBAL_DISCARDABLE_MEMORY_POOL_SIZE (512 * 1024)',
+        'SK_IGNORE_ETC1_SUPPORT',
+        # Defines from skia_for_android_framework_defines.gypi
+        '<@(skia_for_android_framework_defines)',
       ],
     }],
 
@@ -428,6 +465,9 @@
             'cflags': [
               # Extra warnings we like but that only Clang knows about.
               '-Wstring-conversion',
+            ],
+            'cflags!': [
+                '-mfpmath=sse',  # Clang doesn't need to be told this, and sometimes gets confused.
             ],
           }],
           [ 'skia_keep_frame_pointer', {
@@ -631,6 +671,13 @@
         'SK_USE_POSIX_THREADS',
       ],
     }],
+
+    [ 'skia_moz2d', {
+      'defines': [
+        # add flags here (e.g. SK_SUPPORT_LEGACY_...) needed by moz2d
+      ],
+    }],
+
   ], # end 'conditions'
   # The Xcode SYMROOT must be at the root. See build/common.gypi in chromium for more details
   'xcode_settings': {

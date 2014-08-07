@@ -15,11 +15,19 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chromeos/chromeos_export.h"
 
+namespace base {
+class ListValue;
+}
+
 namespace chromeos {
+
+class NetworkState;
+class NetworkTypePattern;
 
 // Struct for passing wifi access point data.
 struct CHROMEOS_EXPORT WifiAccessPoint {
@@ -73,11 +81,33 @@ CHROMEOS_EXPORT std::string PrefixLengthToNetmask(int32 prefix_length);
 // e.g. a |netmask| of 255.255.255.0 is converted to a prefixlen of 24
 CHROMEOS_EXPORT int32 NetmaskToPrefixLength(const std::string& netmask);
 
+// Returns |shill_mac_address| in aa:bb format.
+CHROMEOS_EXPORT std::string FormattedMacAddress(
+    const std::string& shill_mac_address);
+
 // Parses |list|, which contains DictionaryValues and returns a vector of
 // CellularScanResult in |scan_results|. Returns false if parsing fails,
 // in which case the contents of |scan_results| will be undefined.
 CHROMEOS_EXPORT bool ParseCellularScanResults(
     const base::ListValue& list, std::vector<CellularScanResult>* scan_results);
+
+// Retrieves the ONC state dictionary for |network| using GetStateProperties.
+// This includes properties from the corresponding NetworkState if it exists.
+CHROMEOS_EXPORT scoped_ptr<base::DictionaryValue> TranslateNetworkStateToONC(
+    const NetworkState* network);
+
+// Retrieves the list of network services by passing |pattern|,
+// |configured_only|, and |visible_only| to NetworkStateHandler::
+// GetNetworkListByType(). Translates the result into a list of ONC
+// dictionaries using TranslateShillServiceToONCPart. |limit| is used to limit
+// the number of results. If |debugging_properties| is true then also include
+// additional debugging properties (used in release code for chrome://network).
+CHROMEOS_EXPORT scoped_ptr<base::ListValue> TranslateNetworkListToONC(
+    NetworkTypePattern pattern,
+    bool configured_only,
+    bool visible_only,
+    int limit,
+    bool debugging_properties);
 
 }  // namespace network_util
 }  // namespace chromeos

@@ -5,10 +5,11 @@
 #ifndef MOJO_SHELL_CONTEXT_H_
 #define MOJO_SHELL_CONTEXT_H_
 
+#include <string>
+
 #include "mojo/service_manager/service_manager.h"
 #include "mojo/shell/keep_alive.h"
-#include "mojo/shell/loader.h"
-#include "mojo/shell/storage.h"
+#include "mojo/shell/mojo_url_resolver.h"
 #include "mojo/shell/task_runners.h"
 
 #if defined(OS_ANDROID)
@@ -30,10 +31,9 @@ class Context {
   ~Context();
 
   TaskRunners* task_runners() { return &task_runners_; }
-  Storage* storage() { return &storage_; }
-  Loader* loader() { return &loader_; }
   ServiceManager* service_manager() { return &service_manager_; }
   KeepAliveCounter* keep_alive_counter() { return &keep_alive_counter_; }
+  MojoURLResolver* mojo_url_resolver() { return &mojo_url_resolver_; }
 
 #if defined(OS_ANDROID)
   jobject activity() const { return activity_.obj(); }
@@ -42,10 +42,10 @@ class Context {
 
  private:
   class NativeViewportServiceLoader;
+
   TaskRunners task_runners_;
-  Storage storage_;
-  Loader loader_;
   ServiceManager service_manager_;
+  MojoURLResolver mojo_url_resolver_;
   scoped_ptr<Spy> spy_;
 #if defined(OS_ANDROID)
   base::android::ScopedJavaGlobalRef<jobject> activity_;

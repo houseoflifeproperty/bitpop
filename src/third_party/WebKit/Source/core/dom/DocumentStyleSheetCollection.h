@@ -32,9 +32,7 @@
 
 namespace WebCore {
 
-class CSSStyleSheet;
 class DocumentStyleSheetCollector;
-class StyleSheet;
 class StyleEngine;
 class TreeScope;
 
@@ -44,7 +42,7 @@ class DocumentStyleSheetCollection FINAL : public TreeScopeStyleSheetCollection 
 public:
     explicit DocumentStyleSheetCollection(TreeScope&);
 
-    bool updateActiveStyleSheets(StyleEngine*, StyleResolverUpdateMode);
+    void updateActiveStyleSheets(StyleEngine*, StyleResolverUpdateMode);
     void collectStyleSheets(StyleEngine*, DocumentStyleSheetCollector&);
 
     virtual void trace(Visitor* visitor) OVERRIDE

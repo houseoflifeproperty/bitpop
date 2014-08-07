@@ -2,16 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import logging
-
 from metrics import Metric
-from telemetry.core.platform import factory
-
+from telemetry.value import scalar
 
 class PowerMetric(Metric):
   """A metric for measuring power usage."""
-
-  enabled = True
 
   def __init__(self):
     super(PowerMetric, self).__init__()
@@ -39,25 +34,7 @@ class PowerMetric(Metric):
       self._results['cpu_stats'] = (
           _SubtractCpuStats(self._browser.cpu_stats, self._starting_cpu_stats))
 
-  @classmethod
-  def CustomizeBrowserOptions(cls, options):
-    PowerMetric.enabled = options.report_root_metrics
-
-    # Friendly informational messages if measurement won't run.
-    system_supports_power_monitoring = (
-        factory.GetPlatformBackendForCurrentOS().CanMonitorPower())
-    if system_supports_power_monitoring:
-      if not PowerMetric.enabled:
-        logging.warning(
-            "--report-root-metrics omitted, power measurement disabled.")
-    else:
-      logging.info("System doesn't support power monitoring, power measurement"
-          " disabled.")
-
   def Start(self, _, tab):
-    if not PowerMetric.enabled:
-      return
-
     if not tab.browser.platform.CanMonitorPower():
       return
 
@@ -71,9 +48,6 @@ class PowerMetric(Metric):
     self._running = True
 
   def Stop(self, _, tab):
-    if not PowerMetric.enabled:
-      return
-
     if not tab.browser.platform.CanMonitorPower():
       return
 
@@ -93,25 +67,33 @@ class PowerMetric(Metric):
 
     energy_consumption_mwh = self._results.get('energy_consumption_mwh')
     if energy_consumption_mwh is not None:
-      results.Add('energy_consumption_mwh', 'mWh', energy_consumption_mwh)
+      results.AddValue(scalar.ScalarValue(
+          results.current_page, 'energy_consumption_mwh', 'mWh',
+          energy_consumption_mwh))
 
     component_utilization = self._results.get('component_utilization', {})
     # GPU Frequency.
     gpu_power = component_utilization.get('gpu', {})
     gpu_freq_hz = gpu_power.get('average_frequency_hz')
     if gpu_freq_hz is not None:
-      results.Add('gpu_average_frequency_hz', 'hz', gpu_freq_hz)
+      results.AddValue(scalar.ScalarValue(
+          results.current_page, 'gpu_average_frequency_hz', 'hz', gpu_freq_hz,
+          important=False))
 
     # Add idle wakeup numbers for all processes.
     for (process_type, stats) in self._results.get('cpu_stats', {}).items():
       trace_name_for_process = 'idle_wakeups_%s' % (process_type.lower())
-      results.Add(trace_name_for_process, 'count', stats)
+      results.AddValue(scalar.ScalarValue(
+          results.current_page, trace_name_for_process, 'count', stats,
+          important=False))
 
     # Add temperature measurements.
     whole_package_utilization = component_utilization.get('whole_package', {})
     board_temperature_c = whole_package_utilization.get('average_temperature_c')
     if board_temperature_c is not None:
-      results.Add('board_temperature', 'celsius', board_temperature_c)
+      results.AddValue(scalar.ScalarValue(
+          results.current_page, 'board_temperature', 'celsius',
+          board_temperature_c, important=False))
 
     self._results = None
 

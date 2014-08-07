@@ -79,6 +79,7 @@ public:
 
     IntPoint dragLocation() const { return m_dragLoc; }
     void setDragImage(Element*, int x, int y, ExceptionState&);
+    void clearDragImage();
     ImageResource* dragImageResource() const { return m_dragImage.get(); }
     void setDragImageResource(ImageResource*, const IntPoint&);
     Node* dragImageElement() const { return m_dragImageElement.get(); }
@@ -132,7 +133,7 @@ private:
 
     IntPoint m_dragLoc;
     ResourcePtr<ImageResource> m_dragImage;
-    RefPtr<Node> m_dragImageElement;
+    RefPtrWillBeMember<Node> m_dragImageElement;
 };
 
 DragOperation convertDropZoneOperationToDragOperation(const String& dragOperation);

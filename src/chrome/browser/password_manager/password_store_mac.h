@@ -58,8 +58,11 @@ class PasswordStoreMac : public password_manager::PasswordStore {
   virtual password_manager::PasswordStoreChangeList RemoveLoginImpl(
       const autofill::PasswordForm& form) OVERRIDE;
   virtual password_manager::PasswordStoreChangeList
-      RemoveLoginsCreatedBetweenImpl(const base::Time& delete_begin,
-                                     const base::Time& delete_end) OVERRIDE;
+      RemoveLoginsCreatedBetweenImpl(base::Time delete_begin,
+                                     base::Time delete_end) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList
+      RemoveLoginsSyncedBetweenImpl(base::Time delete_begin,
+                                    base::Time delete_end) OVERRIDE;
   virtual void GetLoginsImpl(
       const autofill::PasswordForm& form,
       AuthorizationPromptPolicy prompt_policy,

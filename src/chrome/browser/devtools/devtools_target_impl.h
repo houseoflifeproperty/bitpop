@@ -20,11 +20,13 @@ class RenderViewHost;
 
 class DevToolsTargetImpl : public content::DevToolsTarget {
  public:
-  explicit DevToolsTargetImpl(content::DevToolsAgentHost* agent_host);
+  explicit DevToolsTargetImpl(
+      scoped_refptr<content::DevToolsAgentHost> agent_host);
   virtual ~DevToolsTargetImpl();
 
   // content::DevToolsTarget overrides:
   virtual std::string GetId() const OVERRIDE;
+  virtual std::string GetParentId() const OVERRIDE;
   virtual std::string GetType() const OVERRIDE;
   virtual std::string GetTitle() const OVERRIDE;
   virtual std::string GetDescription() const OVERRIDE;
@@ -58,6 +60,7 @@ class DevToolsTargetImpl : public content::DevToolsTarget {
   static scoped_ptr<DevToolsTargetImpl> CreateForRenderViewHost(
       content::RenderViewHost*, bool is_tab);
 
+  void set_parent_id(const std::string& parent_id) { parent_id_ = parent_id; }
   void set_type(const std::string& type) { type_ = type; }
   void set_title(const std::string& title) { title_ = title; }
   void set_description(const std::string& desc) { description_ = desc; }
@@ -76,7 +79,7 @@ class DevToolsTargetImpl : public content::DevToolsTarget {
 
  private:
   scoped_refptr<content::DevToolsAgentHost> agent_host_;
-  std::string id_;
+  std::string parent_id_;
   std::string type_;
   std::string title_;
   std::string description_;

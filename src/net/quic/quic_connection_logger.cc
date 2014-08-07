@@ -102,10 +102,6 @@ base::Value* NetLogQuicStreamFrameCallback(const QuicStreamFrame* frame,
 base::Value* NetLogQuicAckFrameCallback(const QuicAckFrame* frame,
                                         NetLog::LogLevel /* log_level */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
-  base::DictionaryValue* sent_info = new base::DictionaryValue();
-  dict->Set("sent_info", sent_info);
-  sent_info->SetString("least_unacked",
-                       base::Uint64ToString(frame->sent_info.least_unacked));
   base::DictionaryValue* received_info = new base::DictionaryValue();
   dict->Set("received_info", received_info);
   received_info->SetString(
@@ -150,6 +146,10 @@ base::Value* NetLogQuicCongestionFeedbackFrameCallback(
       dict->SetString("type", "TCP");
       dict->SetInteger("receive_window", frame->tcp.receive_window);
       break;
+    case kTCPBBR:
+      dict->SetString("type", "TCPBBR");
+      // TODO(rtenneti): Add support for BBR.
+      break;
   }
 
   return dict;
@@ -188,6 +188,16 @@ base::Value* NetLogQuicBlockedFrameCallback(
     NetLog::LogLevel /* log_level */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("stream_id", frame->stream_id);
+  return dict;
+}
+
+base::Value* NetLogQuicGoAwayFrameCallback(
+    const QuicGoAwayFrame* frame,
+    NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  dict->SetInteger("quic_error", frame->error_code);
+  dict->SetInteger("last_good_stream_id", frame->last_good_stream_id);
+  dict->SetString("reason_phrase", frame->reason_phrase);
   return dict;
 }
 
@@ -247,7 +257,7 @@ void UpdatePublicResetAddressMismatchHistogram(
   if (sample < 0) {
     return;
   }
-  UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.PublicResetAddressMismatch",
+  UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.PublicResetAddressMismatch2",
                             sample, QUIC_ADDRESS_MISMATCH_MAX);
 }
 
@@ -296,6 +306,12 @@ const char* GetConnectionDescriptionString() {
   return description;
 }
 
+// If |address| is an IPv4-mapped IPv6 address, returns ADDRESS_FAMILY_IPV4
+// instead of ADDRESS_FAMILY_IPV6. Othewise, behaves like GetAddressFamily().
+AddressFamily GetRealAddressFamily(const IPAddressNumber& address) {
+  return IsIPv4Mapped(address) ? ADDRESS_FAMILY_IPV4 :
+      GetAddressFamily(address);
+}
 
 }  // namespace
 
@@ -376,6 +392,10 @@ void QuicConnectionLogger::OnFrameAddedToPacket(const QuicFrame& frame) {
                      frame.connection_close_frame));
       break;
     case GOAWAY_FRAME:
+      net_log_.AddEvent(
+          NetLog::TYPE_QUIC_SESSION_GOAWAY_FRAME_SENT,
+          base::Bind(&NetLogQuicGoAwayFrameCallback,
+                     frame.goaway_frame));
       break;
     case WINDOW_UPDATE_FRAME:
       net_log_.AddEvent(
@@ -394,6 +414,10 @@ void QuicConnectionLogger::OnFrameAddedToPacket(const QuicFrame& frame) {
           NetLog::TYPE_QUIC_SESSION_STOP_WAITING_FRAME_SENT,
           base::Bind(&NetLogQuicStopWaitingFrameCallback,
                      frame.stop_waiting_frame));
+      break;
+    case PING_FRAME:
+      // PingFrame has no contents to log, so just record that it was sent.
+      net_log_.AddEvent(NetLog::TYPE_QUIC_SESSION_PING_FRAME_SENT);
       break;
     default:
       DCHECK(false) << "Illegal frame type: " << frame.type;
@@ -427,7 +451,7 @@ void QuicConnectionLogger::OnPacketReceived(const IPEndPoint& self_address,
   if (local_address_from_self_.GetFamily() == ADDRESS_FAMILY_UNSPECIFIED) {
     local_address_from_self_ = self_address;
     UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.ConnectionTypeFromSelf",
-                              self_address.GetFamily(),
+                              GetRealAddressFamily(self_address.address()),
                               ADDRESS_FAMILY_LAST);
   }
 
@@ -555,6 +579,30 @@ void QuicConnectionLogger::OnConnectionCloseFrame(
       base::Bind(&NetLogQuicConnectionCloseFrameCallback, &frame));
 }
 
+void QuicConnectionLogger::OnWindowUpdateFrame(
+    const QuicWindowUpdateFrame& frame) {
+  net_log_.AddEvent(
+      NetLog::TYPE_QUIC_SESSION_WINDOW_UPDATE_FRAME_RECEIVED,
+      base::Bind(&NetLogQuicWindowUpdateFrameCallback, &frame));
+}
+
+void QuicConnectionLogger::OnBlockedFrame(const QuicBlockedFrame& frame) {
+  net_log_.AddEvent(
+      NetLog::TYPE_QUIC_SESSION_BLOCKED_FRAME_RECEIVED,
+      base::Bind(&NetLogQuicBlockedFrameCallback, &frame));
+}
+
+void QuicConnectionLogger::OnGoAwayFrame(const QuicGoAwayFrame& frame) {
+  net_log_.AddEvent(
+      NetLog::TYPE_QUIC_SESSION_GOAWAY_FRAME_RECEIVED,
+      base::Bind(&NetLogQuicGoAwayFrameCallback, &frame));
+}
+
+void QuicConnectionLogger::OnPingFrame(const QuicPingFrame& frame) {
+  // PingFrame has no contents to log, so just record that it was received.
+  net_log_.AddEvent(NetLog::TYPE_QUIC_SESSION_PING_FRAME_RECEIVED);
+}
+
 void QuicConnectionLogger::OnPublicResetPacket(
     const QuicPublicResetPacket& packet) {
   net_log_.AddEvent(NetLog::TYPE_QUIC_SESSION_PUBLIC_RESET_PACKET_RECEIVED);
@@ -590,7 +638,8 @@ void QuicConnectionLogger::OnCryptoHandshakeMessageReceived(
         decoder.Decode(address.data(), address.size())) {
       local_address_from_shlo_ = IPEndPoint(decoder.ip(), decoder.port());
       UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.ConnectionTypeFromPeer",
-                                local_address_from_shlo_.GetFamily(),
+                                GetRealAddressFamily(
+                                    local_address_from_shlo_.address()),
                                 ADDRESS_FAMILY_LAST);
     }
   }

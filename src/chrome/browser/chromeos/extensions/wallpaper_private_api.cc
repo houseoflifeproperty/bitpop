@@ -17,15 +17,18 @@
 #include "base/files/file_enumerator.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/worker_pool.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_image.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wallpaper_manager.h"
+#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/event_router.h"
 #include "grit/app_locale_settings.h"
@@ -260,6 +263,8 @@ bool WallpaperPrivateGetStringsFunction::RunSync() {
   SET_STRING("invalidWallpaper", IDS_WALLPAPER_MANAGER_INVALID_WALLPAPER);
   SET_STRING("surpriseMeLabel", IDS_WALLPAPER_MANAGER_SURPRISE_ME_LABEL);
   SET_STRING("learnMore", IDS_LEARN_MORE);
+  SET_STRING("currentWallpaperSetByMessage",
+             IDS_CURRENT_WALLPAPER_SET_BY_MESSAGE);
 #undef SET_STRING
 
   webui::SetFontAndTextDirection(dict);
@@ -275,7 +280,15 @@ bool WallpaperPrivateGetStringsFunction::RunSync() {
   dict->SetString("manifestBaseURL", kWallpaperManifestBaseURL);
 #endif
 
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  std::string app_name(
+      profile->GetPrefs()->GetString(prefs::kCurrentWallpaperAppName));
+  if (!app_name.empty())
+    dict->SetString("wallpaperAppName", app_name);
+
   dict->SetBoolean("isOEMDefaultWallpaper", IsOEMDefaultWallpaper());
+  dict->SetString("canceledWallpaper",
+                  wallpaper_api_util::kCancelWallpaperMessage);
   return true;
 }
 
@@ -373,6 +386,12 @@ void WallpaperPrivateSetWallpaperIfExistsFunction::OnWallpaperDecoded(
   };
   wallpaper_manager->SetUserWallpaperInfo(user_id_, info, is_persistent);
   SetResult(base::Value::CreateBooleanValue(true));
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  // This API is only available to the component wallpaper picker. We do not
+  // need to show the app's name if it is the component wallpaper picker. So set
+  // the pref to empty string.
+  profile->GetPrefs()->SetString(prefs::kCurrentWallpaperAppName,
+                                 std::string());
   SendResponse(true);
 }
 
@@ -380,7 +399,7 @@ void WallpaperPrivateSetWallpaperIfExistsFunction::OnFileNotExists(
     const std::string& error) {
   SetResult(base::Value::CreateBooleanValue(false));
   OnFailure(error);
-};
+}
 
 WallpaperPrivateSetWallpaperFunction::WallpaperPrivateSetWallpaperFunction() {
 }
@@ -479,6 +498,12 @@ void WallpaperPrivateSetWallpaperFunction::SetDecodedWallpaper(
       chromeos::User::ONLINE,
       base::Time::Now().LocalMidnight()
   };
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  // This API is only available to the component wallpaper picker. We do not
+  // need to show the app's name if it is the component wallpaper picker. So set
+  // the pref to empty string.
+  profile->GetPrefs()->SetString(prefs::kCurrentWallpaperAppName,
+                                 std::string());
   wallpaper_manager->SetUserWallpaperInfo(user_id_, info, is_persistent);
   SendResponse(true);
 }
@@ -508,6 +533,12 @@ bool WallpaperPrivateResetWallpaperFunction::RunAsync() {
   wallpaper_manager->SetUserWallpaperInfo(user_id, info, is_persistent);
 
   wallpaper_manager->SetDefaultWallpaperNow(user_id);
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  // This API is only available to the component wallpaper picker. We do not
+  // need to show the app's name if it is the component wallpaper picker. So set
+  // the pref to empty string.
+  profile->GetPrefs()->SetString(prefs::kCurrentWallpaperAppName,
+                                 std::string());
   return true;
 }
 
@@ -558,6 +589,13 @@ void WallpaperPrivateSetCustomWallpaperFunction::OnWallpaperDecoded(
                                         image,
                                         update_wallpaper);
   unsafe_wallpaper_decoder_ = NULL;
+
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  // This API is only available to the component wallpaper picker. We do not
+  // need to show the app's name if it is the component wallpaper picker. So set
+  // the pref to empty string.
+  profile->GetPrefs()->SetString(prefs::kCurrentWallpaperAppName,
+                                 std::string());
 
   if (params->generate_thumbnail) {
     image.EnsureRepsForSupportedScales();

@@ -11,3 +11,4 @@ class ChromiumGit(Master.Master1):
   master_port = 8019
   slave_port = 8119
   master_port_alt = 8219
+  buildbot_url = 'http://build.chromium.org/p/chromium.git/'

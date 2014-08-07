@@ -27,7 +27,7 @@ namespace WebCore {
 
 class SVGTitleElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGTitleElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGTitleElement);
 
 private:
     explicit SVGTitleElement(Document&);

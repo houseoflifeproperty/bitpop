@@ -16,3 +16,4 @@ class LibyuvTryServer(Master.Master4):
   reply_to = 'chrome-troopers+tryserver@google.com'
   code_review_site = 'http://review.webrtc.org'
   svn_url = 'svn://svn-mirror.golo.chromium.org/chrome-try/try-libyuv'
+  buildbot_url = 'http://build.chromium.org/p/tryserver.libyuv/'

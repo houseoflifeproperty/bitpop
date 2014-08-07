@@ -6,7 +6,11 @@
 #define CHROME_BROWSER_GUEST_VIEW_GUEST_VIEW_H_
 
 #include "chrome/browser/guest_view/guest_view_base.h"
+#include "content/public/browser/render_frame_host.h"
 
+// A GuestView is the templated base class for out-of-process frames in the
+// chrome layer. GuestView is templated on its derived type to allow for type-
+// safe access. See GuestViewBase for more information.
 template <typename T>
 class GuestView : public GuestViewBase {
  public:
@@ -23,16 +27,37 @@ class GuestView : public GuestViewBase {
     return guest ? guest->As<T>() : NULL;
   }
 
+  static T* FromFrameID(int render_process_id, int render_frame_id) {
+    content::RenderFrameHost* render_frame_host =
+        content::RenderFrameHost::FromID(render_process_id, render_frame_id);
+    if (!render_frame_host) {
+      return NULL;
+    }
+    content::WebContents* web_contents =
+        content::WebContents::FromRenderFrameHost(render_frame_host);
+    return FromWebContents(web_contents);
+  }
+
+  T* GetOpener() const {
+    GuestViewBase* guest = GuestViewBase::GetOpener();
+    if (!guest)
+      return NULL;
+    return guest->As<T>();
+  }
+
+  void SetOpener(T* opener) {
+    GuestViewBase::SetOpener(opener);
+  }
+
   // GuestViewBase implementation.
   virtual const char* GetViewType() const OVERRIDE {
     return T::Type;
   }
 
  protected:
-  GuestView(content::WebContents* guest_web_contents,
-            const std::string& embedder_extension_id,
-            const base::WeakPtr<GuestViewBase>& opener)
-      : GuestViewBase(guest_web_contents, embedder_extension_id, opener) {}
+  explicit GuestView(int guest_instance_id)
+      : GuestViewBase(guest_instance_id) {}
+  virtual ~GuestView() {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GuestView);

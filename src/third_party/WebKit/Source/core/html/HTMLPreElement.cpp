@@ -23,9 +23,9 @@
 #include "config.h"
 #include "core/html/HTMLPreElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 #include "core/css/StylePropertySet.h"
 #include "core/frame/UseCounter.h"
 
@@ -39,10 +39,7 @@ inline HTMLPreElement::HTMLPreElement(const QualifiedName& tagName, Document& do
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLPreElement> HTMLPreElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLPreElement(tagName, document));
-}
+DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLPreElement)
 
 bool HTMLPreElement::isPresentationAttribute(const QualifiedName& name) const
 {

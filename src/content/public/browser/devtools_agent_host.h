@@ -14,6 +14,7 @@
 
 namespace content {
 
+class DevToolsExternalAgentProxyDelegate;
 class RenderViewHost;
 class WebContents;
 
@@ -42,6 +43,12 @@ class CONTENT_EXPORT DevToolsAgentHost
   static scoped_refptr<DevToolsAgentHost> GetForWorker(int worker_process_id,
                                                        int worker_route_id);
 
+  // Creates DevToolsAgentHost that communicates to the target by means of
+  // provided |delegate|. |delegate| ownership is passed to the created agent
+  // host.
+  static scoped_refptr<DevToolsAgentHost> Create(
+      DevToolsExternalAgentProxyDelegate* delegate);
+
   static bool IsDebuggerAttached(WebContents* web_contents);
 
   // Returns a list of all existing RenderViewHost's that can be debugged.
@@ -65,6 +72,9 @@ class CONTENT_EXPORT DevToolsAgentHost
 
   // Attaches render view host to this host.
   virtual void ConnectRenderViewHost(RenderViewHost* rvh) = 0;
+
+  // Returns true if DevToolsAgentHost is for worker.
+  virtual bool IsWorker() const = 0;
 
  protected:
   friend class base::RefCounted<DevToolsAgentHost>;

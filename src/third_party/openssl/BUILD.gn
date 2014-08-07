@@ -68,6 +68,10 @@ component("openssl") {
     sources -= gypi_values.openssl_x86_source_excludes
     defines += gypi_values.openssl_x86_defines
   } else if (cpu_arch == "arm") {
+    # The ARM sources do not compile with full warnings enabled.
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [ "//build/config/compiler:no_chromium_code" ]
+
     sources += gypi_values.openssl_arm_sources
     sources -= gypi_values.openssl_arm_source_excludes
     defines += gypi_values.openssl_arm_defines

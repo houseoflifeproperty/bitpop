@@ -64,15 +64,6 @@ GPU_EXPORT void MergeGPUInfo(GPUInfo* basic_gpu_info,
 GPU_EXPORT void MergeGPUInfoGL(GPUInfo* basic_gpu_info,
                                const GPUInfo& context_gpu_info);
 
-// Advanced Micro Devices has interesting configurations on laptops were
-// there are two videocards that can alternatively a given process output.
-enum AMDVideoCardType {
-  UNKNOWN,
-  STANDALONE,
-  INTEGRATED,
-  SWITCHABLE
-};
-
 }  // namespace gpu
 
 #endif  // GPU_CONFIG_GPU_INFO_COLLECTOR_H_

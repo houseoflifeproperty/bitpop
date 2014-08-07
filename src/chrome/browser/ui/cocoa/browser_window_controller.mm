@@ -16,6 +16,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/fullscreen.h"
@@ -27,7 +29,7 @@
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/bookmarks/bookmark_editor.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
@@ -78,7 +80,9 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/command.h"
 #include "chrome/common/url_constants.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/signin/core/common/profile_management_switches.h"
+#include "components/translate/core/browser/translate_manager.h"
 #include "components/translate/core/browser/translate_ui_delegate.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/render_view_host.h"
@@ -185,25 +189,6 @@ using web_modal::WebContentsModalDialogManager;
 - (NSRect)_growBoxRect;
 
 @end
-
-// Replicate specific 10.7 SDK declarations for building with prior SDKs.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-enum {
-  NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7,
-  NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
-};
-
-enum {
-  NSFullScreenWindowMask = 1 << 14
-};
-
-@interface NSWindow (LionSDKDeclarations)
-- (void)setRestorable:(BOOL)flag;
-@end
-
-#endif  // MAC_OS_X_VERSION_10_7
 
 @implementation BrowserWindowController
 
@@ -651,11 +636,10 @@ enum {
   if (WebContents* contents =
           browser_->tab_strip_model()->GetActiveWebContents()) {
 
-    DevToolsWindow* devtoolsWindow =
-        DevToolsWindow::GetDockedInstanceForInspectedTab(contents);
-    if (devtoolsWindow) {
-      RenderWidgetHostView* devtoolsView =
-          devtoolsWindow->web_contents()->GetRenderWidgetHostView();
+    WebContents* devtools = DevToolsWindow::GetInTabWebContents(
+        contents, NULL);
+    if (devtools) {
+      RenderWidgetHostView* devtoolsView = devtools->GetRenderWidgetHostView();
       if (devtoolsView && devtoolsView->HasFocus()) {
         devtoolsView->SetActive(true);
         return;
@@ -681,11 +665,10 @@ enum {
   if (WebContents* contents =
           browser_->tab_strip_model()->GetActiveWebContents()) {
 
-    DevToolsWindow* devtoolsWindow =
-        DevToolsWindow::GetDockedInstanceForInspectedTab(contents);
-    if (devtoolsWindow) {
-      RenderWidgetHostView* devtoolsView =
-          devtoolsWindow->web_contents()->GetRenderWidgetHostView();
+    WebContents* devtools = DevToolsWindow::GetInTabWebContents(
+        contents, NULL);
+    if (devtools) {
+      RenderWidgetHostView* devtoolsView = devtools->GetRenderWidgetHostView();
       if (devtoolsView && devtoolsView->HasFocus()) {
         devtoolsView->SetActive(false);
         return;
@@ -1049,7 +1032,7 @@ enum {
   // does not display the bookmark bar itself.
   if (tag == IDC_SHOW_BOOKMARK_BAR) {
     bool toggled = windowShim_->IsBookmarkBarVisible();
-    NSInteger oldState = [item state];
+    NSInteger oldState = [(NSMenuItem*)item state];
     NSInteger newState = toggled ? NSOnState : NSOffState;
     if (oldState != newState)
       [item setState:newState];
@@ -1071,7 +1054,7 @@ enum {
     const std::string encoding = current_tab->GetEncoding();
 
     bool toggled = encoding_controller.IsItemChecked(profile, encoding, tag);
-    NSInteger oldState = [item state];
+    NSInteger oldState = [(NSMenuItem*)item state];
     NSInteger newState = toggled ? NSOnState : NSOffState;
     if (oldState != newState)
       [item setState:newState];
@@ -1722,9 +1705,12 @@ enum {
   if (!bookmarkBubbleController_) {
     BookmarkModel* model =
         BookmarkModelFactory::GetForProfile(browser_->profile());
-    const BookmarkNode* node = model->GetMostRecentlyAddedNodeForURL(url);
+    ChromeBookmarkClient* client =
+        ChromeBookmarkClientFactory::GetForProfile(browser_->profile());
+    const BookmarkNode* node = model->GetMostRecentlyAddedUserNodeForURL(url);
     bookmarkBubbleController_ =
         [[BookmarkBubbleController alloc] initWithParentWindow:[self window]
+                                                        client:client
                                                          model:model
                                                           node:node
                                              alreadyBookmarked:alreadyMarked];
@@ -1786,12 +1772,11 @@ enum {
 
   std::string sourceLanguage;
   std::string targetLanguage;
-  TranslateTabHelper::GetTranslateLanguages(contents,
-                                            &sourceLanguage, &targetLanguage);
+  ChromeTranslateClient::GetTranslateLanguages(
+      contents, &sourceLanguage, &targetLanguage);
 
   scoped_ptr<TranslateUIDelegate> uiDelegate(new TranslateUIDelegate(
-      TranslateTabHelper::FromWebContents(contents),
-      TranslateTabHelper::GetManagerFromWebContents(contents),
+      ChromeTranslateClient::GetManagerFromWebContents(contents)->GetWeakPtr(),
       sourceLanguage,
       targetLanguage));
   scoped_ptr<TranslateBubbleModel> model(

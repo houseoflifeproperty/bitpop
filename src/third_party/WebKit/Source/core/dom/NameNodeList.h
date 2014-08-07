@@ -26,17 +26,16 @@
 
 #include "core/dom/LiveNodeList.h"
 #include "wtf/Forward.h"
-#include "wtf/text/AtomicString.h"
 
 namespace WebCore {
 
 // NodeList which lists all Nodes in a Element with a given "name" attribute
 class NameNodeList FINAL : public LiveNodeList {
 public:
-    static PassRefPtr<NameNodeList> create(ContainerNode& rootNode, CollectionType type, const AtomicString& name)
+    static PassRefPtrWillBeRawPtr<NameNodeList> create(ContainerNode& rootNode, CollectionType type, const AtomicString& name)
     {
         ASSERT_UNUSED(type, type == NameNodeListType);
-        return adoptRef(new NameNodeList(rootNode, name));
+        return adoptRefWillBeNoop(new NameNodeList(rootNode, name));
     }
 
     virtual ~NameNodeList();

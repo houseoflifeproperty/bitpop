@@ -10,6 +10,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
@@ -19,23 +20,22 @@
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/common/bookmark_pref_names.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/common/bookmark_pref_names.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 
 // static
 BookmarkModel* BookmarkModelFactory::GetForProfile(Profile* profile) {
-  ChromeBookmarkClient* bookmark_client = static_cast<ChromeBookmarkClient*>(
+  return static_cast<BookmarkModel*>(
       GetInstance()->GetServiceForBrowserContext(profile, true));
-  return bookmark_client ? bookmark_client->model() : NULL;
 }
 
+// static
 BookmarkModel* BookmarkModelFactory::GetForProfileIfExists(Profile* profile) {
-  ChromeBookmarkClient* bookmark_client = static_cast<ChromeBookmarkClient*>(
+  return static_cast<BookmarkModel*>(
       GetInstance()->GetServiceForBrowserContext(profile, false));
-  return bookmark_client ? bookmark_client->model() : NULL;
 }
 
 // static
@@ -47,23 +47,28 @@ BookmarkModelFactory::BookmarkModelFactory()
     : BrowserContextKeyedServiceFactory(
         "BookmarkModel",
         BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(ChromeBookmarkClientFactory::GetInstance());
+  DependsOn(StartupTaskRunnerServiceFactory::GetInstance());
 }
 
-BookmarkModelFactory::~BookmarkModelFactory() {}
+BookmarkModelFactory::~BookmarkModelFactory() {
+}
 
 KeyedService* BookmarkModelFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
-  ChromeBookmarkClient* bookmark_client = new ChromeBookmarkClient(
-      profile, OmniboxFieldTrial::BookmarksIndexURLsValue());
-  bookmark_client->model()->Load(
-      profile->GetPrefs(),
-      profile->GetPrefs()->GetString(prefs::kAcceptLanguages),
-      profile->GetPath(),
-      StartupTaskRunnerServiceFactory::GetForProfile(profile)
-          ->GetBookmarkTaskRunner(),
-      content::BrowserThread::GetMessageLoopProxyForThread(
-          content::BrowserThread::UI));
+  ChromeBookmarkClient* bookmark_client =
+      ChromeBookmarkClientFactory::GetForProfile(profile);
+  BookmarkModel* bookmark_model = new BookmarkModel(
+      bookmark_client, OmniboxFieldTrial::BookmarksIndexURLsValue());
+  bookmark_client->Init(bookmark_model);
+  bookmark_model->Load(profile->GetPrefs(),
+                       profile->GetPrefs()->GetString(prefs::kAcceptLanguages),
+                       profile->GetPath(),
+                       StartupTaskRunnerServiceFactory::GetForProfile(profile)
+                           ->GetBookmarkTaskRunner(),
+                       content::BrowserThread::GetMessageLoopProxyForThread(
+                           content::BrowserThread::UI));
 #if !defined(OS_ANDROID)
   bool register_bookmark_undo_service_as_observer = true;
 #if !defined(OS_IOS)
@@ -72,11 +77,11 @@ KeyedService* BookmarkModelFactory::BuildServiceInstanceFor(
           switches::kEnableBookmarkUndo);
 #endif  // !defined(OS_IOS)
   if (register_bookmark_undo_service_as_observer) {
-    bookmark_client->model()->AddObserver(
+    bookmark_model->AddObserver(
         BookmarkUndoServiceFactory::GetForProfile(profile));
   }
 #endif  // !defined(OS_ANDROID)
-  return bookmark_client;
+  return bookmark_model;
 }
 
 void BookmarkModelFactory::RegisterProfilePrefs(
@@ -88,6 +93,9 @@ void BookmarkModelFactory::RegisterProfilePrefs(
   registry->RegisterListPref(prefs::kBookmarkEditorExpandedNodes,
                              new base::ListValue,
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(
+      prefs::kManagedBookmarks,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 content::BrowserContext* BookmarkModelFactory::GetBrowserContextToUse(

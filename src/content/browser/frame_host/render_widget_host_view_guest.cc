@@ -37,7 +37,7 @@ blink::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
   blink::WebGestureEvent gesture_event;
   gesture_event.timeStampSeconds = time_stamp;
   gesture_event.type = blink::WebGestureEvent::GestureFlingCancel;
-  gesture_event.sourceDevice = blink::WebGestureEvent::Touchscreen;
+  gesture_event.sourceDevice = blink::WebGestureDeviceTouchscreen;
   return gesture_event;
 }
 #endif  // defined(USE_AURA)
@@ -287,10 +287,8 @@ void RenderWidgetHostViewGuest::SetIsLoading(bool is_loading) {
   platform_view_->SetIsLoading(is_loading);
 }
 
-void RenderWidgetHostViewGuest::TextInputTypeChanged(
-    ui::TextInputType type,
-    ui::TextInputMode input_mode,
-    bool can_compose_inline) {
+void RenderWidgetHostViewGuest::TextInputStateChanged(
+    const ViewHostMsg_TextInputState_Params& params) {
   if (!guest_)
     return;
 
@@ -298,7 +296,7 @@ void RenderWidgetHostViewGuest::TextInputTypeChanged(
   if (!rwhv)
     return;
   // Forward the information to embedding RWHV.
-  rwhv->TextInputTypeChanged(type, input_mode, can_compose_inline);
+  rwhv->TextInputStateChanged(params);
 }
 
 void RenderWidgetHostViewGuest::ImeCancelComposition() {
@@ -352,20 +350,6 @@ void RenderWidgetHostViewGuest::SelectionBoundsChanged(
   rwhv->SelectionBoundsChanged(guest_params);
 }
 
-#if defined(OS_ANDROID)
-void RenderWidgetHostViewGuest::SelectionRootBoundsChanged(
-    const gfx::Rect& bounds) {
-  if (!guest_)
-    return;
-
-  RenderWidgetHostViewBase* rwhv = GetGuestRenderWidgetHostView();
-  if (!rwhv)
-    return;
-
-  rwhv->SelectionRootBoundsChanged(guest_->ToGuestRect(bounds));
-}
-#endif
-
 void RenderWidgetHostViewGuest::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
@@ -375,14 +359,8 @@ void RenderWidgetHostViewGuest::CopyFromCompositingSurface(
   guest_->CopyFromCompositingSurface(src_subrect, dst_size, callback);
 }
 
-void RenderWidgetHostViewGuest::SetBackground(const SkBitmap& background) {
-  platform_view_->SetBackground(background);
-}
-
-void RenderWidgetHostViewGuest::SetScrollOffsetPinning(
-    bool is_pinned_to_left, bool is_pinned_to_right) {
-  platform_view_->SetScrollOffsetPinning(
-      is_pinned_to_left, is_pinned_to_right);
+void RenderWidgetHostViewGuest::SetBackgroundOpaque(bool opaque) {
+  platform_view_->SetBackgroundOpaque(opaque);
 }
 
 bool RenderWidgetHostViewGuest::LockMouse() {

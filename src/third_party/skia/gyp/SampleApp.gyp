@@ -90,6 +90,7 @@
         '../samplecode/SamplePictFile.cpp',
         '../samplecode/SamplePoints.cpp',
         '../samplecode/SamplePolyToPoly.cpp',
+        '../samplecode/SampleRectanizer.cpp',
         '../samplecode/SampleRegion.cpp',
         '../samplecode/SampleRepeatTile.cpp',
         '../samplecode/SampleRotateCircles.cpp',
@@ -99,6 +100,7 @@
         '../samplecode/SampleSlides.cpp',
         '../samplecode/SampleStringArt.cpp',
         '../samplecode/SampleStrokePath.cpp',
+        '../samplecode/SampleSubpixelTranslate.cpp',
         '../samplecode/SampleText.cpp',
         '../samplecode/SampleTextAlpha.cpp',
         '../samplecode/SampleTextBox.cpp',
@@ -106,7 +108,6 @@
         '../samplecode/SampleTextureDomain.cpp',
         '../samplecode/SampleTiling.cpp',
         '../samplecode/SampleTinyBitmap.cpp',
-        '../samplecode/SampleUnitMapper.cpp',
         '../samplecode/SampleUnpremul.cpp',
         '../samplecode/SampleVertices.cpp',
         '../samplecode/SampleXfermodesBlur.cpp',
@@ -133,6 +134,9 @@
         # Lua
         '../src/utils/SkLuaCanvas.cpp',
         '../src/utils/SkLua.cpp',
+
+        # tools
+        '../tools/sk_tool_utils.cpp',
       ],
       'sources!': [
         '../samplecode/SampleSkLayer.cpp', #relies on SkMatrix44 which doesn't compile
@@ -140,14 +144,17 @@
         '../samplecode/SampleFontCache.cpp',
       ],
       'dependencies': [
+        'animator.gyp:animator',
+        'etc1.gyp:libetc1',
+        'experimental.gyp:experimental',
+        'flags.gyp:flags',
+        'lua.gyp:lua',
+        'pdf.gyp:pdf',
+        'resources.gyp:resources',
         'skia_lib.gyp:skia_lib',
         'views.gyp:views',
-        'animator.gyp:animator',
-        'xml.gyp:xml',
-        'experimental.gyp:experimental',
-        'pdf.gyp:pdf',
         'views_animated.gyp:views_animated',
-        'lua.gyp:lua',
+        'xml.gyp:xml',
       ],
      'conditions' : [
        [ 'sample_pdf_file_viewer == 1', {
@@ -234,7 +241,8 @@
             '../src/views/ios/SkOSWindow_iOS.mm',
             '../src/utils/ios/SkImageDecoder_iOS.mm',
             '../src/utils/ios/SkStream_NSData.mm',
-            '../src/utils/ios/SkOSFile_iOS.mm',
+            # Not fully implemented yet
+            # '../src/utils/ios/SkOSFile_iOS.mm',
 
             '../src/utils/mac/SkCreateCGImageRef.cpp',
             '../experimental/iOSSampleApp/SkiOSSampleApp-Debug.xcconfig',
@@ -273,7 +281,6 @@
         [ 'skia_os == "android"', {
           'sources!': [
             '../samplecode/SampleAnimator.cpp',
-            '../samplecode/SampleUnitMapper.cpp',
           ],
           'dependencies!': [
             'animator.gyp:animator',

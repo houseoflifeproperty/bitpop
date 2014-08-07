@@ -31,56 +31,23 @@
 
 namespace WebCore {
 
+class ClassCollection;
 class ExceptionState;
 class FloatPoint;
 class HTMLCollection;
+class StaticNodeList;
+class TagCollection;
 
 namespace Private {
     template<class GenericNode, class GenericNodeContainer>
     void addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, GenericNodeContainer&);
 }
 
-class NoEventDispatchAssertion {
-public:
-    NoEventDispatchAssertion()
-    {
-#ifndef NDEBUG
-        if (!isMainThread())
-            return;
-        s_count++;
-#endif
-    }
-
-    ~NoEventDispatchAssertion()
-    {
-#ifndef NDEBUG
-        if (!isMainThread())
-            return;
-        ASSERT(s_count);
-        s_count--;
-#endif
-    }
-
-#ifndef NDEBUG
-    static bool isEventDispatchForbidden()
-    {
-        if (!isMainThread())
-            return false;
-        return s_count;
-    }
-#endif
-
-private:
-#ifndef NDEBUG
-    static unsigned s_count;
-#endif
-};
-
 enum DynamicRestyleFlags {
-    ChildrenAffectedByFocus = 1 << 0,
-    ChildrenAffectedByHover = 1 << 1,
-    ChildrenAffectedByActive = 1 << 2,
-    ChildrenAffectedByDrag = 1 << 3,
+    ChildrenOrSiblingsAffectedByFocus = 1 << 0,
+    ChildrenOrSiblingsAffectedByHover = 1 << 1,
+    ChildrenOrSiblingsAffectedByActive = 1 << 2,
+    ChildrenOrSiblingsAffectedByDrag = 1 << 3,
     ChildrenAffectedByFirstChildRules = 1 << 4,
     ChildrenAffectedByLastChildRules = 1 << 5,
     ChildrenAffectedByDirectAdjacentRules = 1 << 6,
@@ -90,6 +57,12 @@ enum DynamicRestyleFlags {
 
     NumberOfDynamicRestyleFlags = 10,
 };
+
+// This constant controls how much buffer is initially allocated
+// for a Node Vector that is used to store child Nodes of a given Node.
+// FIXME: Optimize the value.
+const int initialNodeVectorSize = 11;
+typedef WillBeHeapVector<RefPtrWillBeMember<Node>, initialNodeVectorSize> NodeVector;
 
 class ContainerNode : public Node {
 public:
@@ -103,31 +76,31 @@ public:
     bool hasOneTextChild() const { return hasOneChild() && m_firstChild->isTextNode(); }
     bool hasChildCount(unsigned) const;
 
-    PassRefPtr<HTMLCollection> children();
+    PassRefPtrWillBeRawPtr<HTMLCollection> children();
 
     unsigned countChildren() const;
     Node* traverseToChildAt(unsigned index) const;
 
-    PassRefPtr<Element> querySelector(const AtomicString& selectors, ExceptionState&);
-    PassRefPtr<NodeList> querySelectorAll(const AtomicString& selectors, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Element> querySelector(const AtomicString& selectors, ExceptionState&);
+    PassRefPtrWillBeRawPtr<StaticNodeList> querySelectorAll(const AtomicString& selectors, ExceptionState&);
 
-    void insertBefore(PassRefPtr<Node> newChild, Node* refChild, ExceptionState& = ASSERT_NO_EXCEPTION);
-    void replaceChild(PassRefPtr<Node> newChild, Node* oldChild, ExceptionState& = ASSERT_NO_EXCEPTION);
+    void insertBefore(PassRefPtrWillBeRawPtr<Node> newChild, Node* refChild, ExceptionState& = ASSERT_NO_EXCEPTION);
+    void replaceChild(PassRefPtrWillBeRawPtr<Node> newChild, Node* oldChild, ExceptionState& = ASSERT_NO_EXCEPTION);
     void removeChild(Node* child, ExceptionState& = ASSERT_NO_EXCEPTION);
-    void appendChild(PassRefPtr<Node> newChild, ExceptionState& = ASSERT_NO_EXCEPTION);
+    void appendChild(PassRefPtrWillBeRawPtr<Node> newChild, ExceptionState& = ASSERT_NO_EXCEPTION);
 
     Element* getElementById(const AtomicString& id) const;
-    PassRefPtr<HTMLCollection> getElementsByTagName(const AtomicString&);
-    PassRefPtr<HTMLCollection> getElementsByTagNameNS(const AtomicString& namespaceURI, const AtomicString& localName);
-    PassRefPtr<NodeList> getElementsByName(const AtomicString& elementName);
-    PassRefPtr<HTMLCollection> getElementsByClassName(const AtomicString& classNames);
-    PassRefPtr<RadioNodeList> radioNodeList(const AtomicString&, bool onlyMatchImgElements = false);
+    PassRefPtrWillBeRawPtr<TagCollection> getElementsByTagName(const AtomicString&);
+    PassRefPtrWillBeRawPtr<TagCollection> getElementsByTagNameNS(const AtomicString& namespaceURI, const AtomicString& localName);
+    PassRefPtrWillBeRawPtr<NameNodeList> getElementsByName(const AtomicString& elementName);
+    PassRefPtrWillBeRawPtr<ClassCollection> getElementsByClassName(const AtomicString& classNames);
+    PassRefPtrWillBeRawPtr<RadioNodeList> radioNodeList(const AtomicString&, bool onlyMatchImgElements = false);
 
     // These methods are only used during parsing.
     // They don't send DOM mutation events or handle reparenting.
-    void parserAppendChild(PassRefPtr<Node>);
+    void parserAppendChild(PassRefPtrWillBeRawPtr<Node>);
     void parserRemoveChild(Node&);
-    void parserInsertBefore(PassRefPtr<Node> newChild, Node& refChild);
+    void parserInsertBefore(PassRefPtrWillBeRawPtr<Node> newChild, Node& refChild);
     void parserTakeAllChildrenFrom(ContainerNode&);
 
     void removeChildren();
@@ -142,17 +115,17 @@ public:
     virtual void setActive(bool = true) OVERRIDE;
     virtual void setHovered(bool = true) OVERRIDE;
 
-    bool childrenAffectedByFocus() const { return hasRestyleFlag(ChildrenAffectedByFocus); }
-    void setChildrenAffectedByFocus() { setRestyleFlag(ChildrenAffectedByFocus); }
+    bool childrenOrSiblingsAffectedByFocus() const { return hasRestyleFlag(ChildrenOrSiblingsAffectedByFocus); }
+    void setChildrenOrSiblingsAffectedByFocus() { setRestyleFlag(ChildrenOrSiblingsAffectedByFocus); }
 
-    bool childrenAffectedByHover() const { return hasRestyleFlag(ChildrenAffectedByHover); }
-    void setChildrenAffectedByHover() { setRestyleFlag(ChildrenAffectedByHover); }
+    bool childrenOrSiblingsAffectedByHover() const { return hasRestyleFlag(ChildrenOrSiblingsAffectedByHover); }
+    void setChildrenOrSiblingsAffectedByHover() { setRestyleFlag(ChildrenOrSiblingsAffectedByHover); }
 
-    bool childrenAffectedByActive() const { return hasRestyleFlag(ChildrenAffectedByActive); }
-    void setChildrenAffectedByActive() { setRestyleFlag(ChildrenAffectedByActive); }
+    bool childrenOrSiblingsAffectedByActive() const { return hasRestyleFlag(ChildrenOrSiblingsAffectedByActive); }
+    void setChildrenOrSiblingsAffectedByActive() { setRestyleFlag(ChildrenOrSiblingsAffectedByActive); }
 
-    bool childrenAffectedByDrag() const { return hasRestyleFlag(ChildrenAffectedByDrag); }
-    void setChildrenAffectedByDrag() { setRestyleFlag(ChildrenAffectedByDrag); }
+    bool childrenOrSiblingsAffectedByDrag() const { return hasRestyleFlag(ChildrenOrSiblingsAffectedByDrag); }
+    void setChildrenOrSiblingsAffectedByDrag() { setRestyleFlag(ChildrenOrSiblingsAffectedByDrag); }
 
     bool childrenAffectedByPositionalRules() const { return hasRestyleFlag(ChildrenAffectedByForwardPositionalRules) || hasRestyleFlag(ChildrenAffectedByBackwardPositionalRules); }
 
@@ -192,11 +165,11 @@ public:
 
     virtual void trace(Visitor*) OVERRIDE;
 
+    void notifyNodeInserted(Node&);
+    void notifyNodeRemoved(Node&);
+
 protected:
     ContainerNode(TreeScope*, ConstructionType = CreateContainer);
-
-    template<class GenericNode, class GenericNodeContainer>
-    friend void appendChildToContainer(GenericNode& child, GenericNodeContainer&);
 
     template<class GenericNode, class GenericNodeContainer>
     friend void Private::addChildNodesToDeletionQueue(GenericNode*& head, GenericNode*& tail, GenericNodeContainer&);
@@ -211,9 +184,12 @@ protected:
 private:
     void removeBetween(Node* previousChild, Node* nextChild, Node& oldChild);
     void insertBeforeCommon(Node& nextChild, Node& oldChild);
+    void appendChildCommon(Node& child);
     void updateTreeAfterInsertion(Node& child);
     void willRemoveChildren();
     void willRemoveChild(Node& child);
+
+    void notifyNodeInsertedInternal(Node&, NodeVector& postInsertionNotificationTargets);
 
     bool hasRestyleFlag(DynamicRestyleFlags mask) const { return hasRareData() && hasRestyleFlagInternal(mask); }
     bool hasRestyleFlags() const { return hasRareData() && hasRestyleFlagsInternal(); }
@@ -323,11 +299,11 @@ inline ContainerNode* Node::parentElementOrShadowRoot() const
     return parent && (parent->isElementNode() || parent->isShadowRoot()) ? parent : 0;
 }
 
-// This constant controls how much buffer is initially allocated
-// for a Node Vector that is used to store child Nodes of a given Node.
-// FIXME: Optimize the value.
-const int initialNodeVectorSize = 11;
-typedef Vector<RefPtr<Node>, initialNodeVectorSize> NodeVector;
+inline ContainerNode* Node::parentElementOrDocumentFragment() const
+{
+    ContainerNode* parent = parentNode();
+    return parent && (parent->isElementNode() || parent->isDocumentFragment()) ? parent : 0;
+}
 
 inline void getChildNodes(Node& node, NodeVector& nodes)
 {
@@ -335,71 +311,6 @@ inline void getChildNodes(Node& node, NodeVector& nodes)
     for (Node* child = node.firstChild(); child; child = child->nextSibling())
         nodes.append(child);
 }
-
-class ChildNodesLazySnapshot {
-    WTF_MAKE_NONCOPYABLE(ChildNodesLazySnapshot);
-    WTF_MAKE_FAST_ALLOCATED;
-public:
-    explicit ChildNodesLazySnapshot(Node& parentNode)
-        : m_currentNode(parentNode.firstChild())
-        , m_currentIndex(0)
-    {
-        m_nextSnapshot = latestSnapshot;
-        latestSnapshot = this;
-    }
-
-    ~ChildNodesLazySnapshot()
-    {
-        latestSnapshot = m_nextSnapshot;
-    }
-
-    // Returns 0 if there is no next Node.
-    PassRefPtr<Node> nextNode()
-    {
-        if (LIKELY(!hasSnapshot())) {
-            RefPtr<Node> node = m_currentNode;
-            if (node)
-                m_currentNode = node->nextSibling();
-            return node.release();
-        }
-        Vector<RefPtr<Node> >& nodeVector = *m_childNodes;
-        if (m_currentIndex >= nodeVector.size())
-            return nullptr;
-        return nodeVector[m_currentIndex++];
-    }
-
-    void takeSnapshot()
-    {
-        if (hasSnapshot())
-            return;
-        m_childNodes = adoptPtr(new Vector<RefPtr<Node> >());
-        Node* node = m_currentNode.get();
-        while (node) {
-            m_childNodes->append(node);
-            node = node->nextSibling();
-        }
-    }
-
-    ChildNodesLazySnapshot* nextSnapshot() { return m_nextSnapshot; }
-    bool hasSnapshot() { return !!m_childNodes.get(); }
-
-    static void takeChildNodesLazySnapshot()
-    {
-        ChildNodesLazySnapshot* snapshot = latestSnapshot;
-        while (snapshot && !snapshot->hasSnapshot()) {
-            snapshot->takeSnapshot();
-            snapshot = snapshot->nextSnapshot();
-        }
-    }
-
-private:
-    static ChildNodesLazySnapshot* latestSnapshot;
-
-    RefPtr<Node> m_currentNode;
-    unsigned m_currentIndex;
-    OwnPtr<Vector<RefPtr<Node> > > m_childNodes; // Lazily instantiated.
-    ChildNodesLazySnapshot* m_nextSnapshot;
-};
 
 } // namespace WebCore
 

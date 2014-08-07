@@ -27,7 +27,6 @@ namespace media {
 namespace cast {
 
 namespace {
-static const int64 kStartMillisecond = INT64_C(12345678900000);
 static const uint8 kPixelValue = 123;
 static const int kWidth = 320;
 static const int kHeight = 240;
@@ -54,14 +53,28 @@ void CreateSharedMemory(
 
 class TestPacketSender : public transport::PacketSender {
  public:
-  TestPacketSender() : number_of_rtp_packets_(0), number_of_rtcp_packets_(0) {}
+  TestPacketSender()
+      : number_of_rtp_packets_(0),
+        number_of_rtcp_packets_(0),
+        paused_(false) {}
 
   // A singular packet implies a RTCP packet.
   virtual bool SendPacket(transport::PacketRef packet,
                           const base::Closure& cb) OVERRIDE {
+    if (paused_) {
+      stored_packet_ = packet;
+      callback_ = cb;
+      return false;
+    }
     if (Rtcp::IsRtcpPacket(&packet->data[0], packet->data.size())) {
       ++number_of_rtcp_packets_;
     } else {
+      // Check that at least one RTCP packet was sent before the first RTP
+      // packet.  This confirms that the receiver will have the necessary lip
+      // sync info before it has to calculate the playout time of the first
+      // frame.
+      if (number_of_rtp_packets_ == 0)
+        EXPECT_LE(1, number_of_rtcp_packets_);
       ++number_of_rtp_packets_;
     }
     return true;
@@ -71,9 +84,20 @@ class TestPacketSender : public transport::PacketSender {
 
   int number_of_rtcp_packets() const { return number_of_rtcp_packets_; }
 
+  void SetPause(bool paused) {
+    paused_ = paused;
+    if (!paused && stored_packet_) {
+      SendPacket(stored_packet_, callback_);
+      callback_.Run();
+    }
+  }
+
  private:
   int number_of_rtp_packets_;
   int number_of_rtcp_packets_;
+  bool paused_;
+  base::Closure callback_;
+  transport::PacketRef stored_packet_;
 
   DISALLOW_COPY_AND_ASSIGN(TestPacketSender);
 };
@@ -85,13 +109,11 @@ class PeerVideoSender : public VideoSender {
       const VideoSenderConfig& video_config,
       const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
       const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb,
-      const CastInitializationCallback& cast_initialization_cb,
       transport::CastTransportSender* const transport_sender)
       : VideoSender(cast_environment,
                     video_config,
                     create_vea_cb,
                     create_video_encode_mem_cb,
-                    cast_initialization_cb,
                     transport_sender) {}
   using VideoSender::OnReceivedCastFeedback;
 };
@@ -101,14 +123,14 @@ class VideoSenderTest : public ::testing::Test {
  protected:
   VideoSenderTest() {
     testing_clock_ = new base::SimpleTestTickClock();
-    testing_clock_->Advance(
-        base::TimeDelta::FromMilliseconds(kStartMillisecond));
+    testing_clock_->Advance(base::TimeTicks::Now() - base::TimeTicks());
     task_runner_ = new test::FakeSingleThreadTaskRunner(testing_clock_);
     cast_environment_ =
         new CastEnvironment(scoped_ptr<base::TickClock>(testing_clock_).Pass(),
                             task_runner_,
                             task_runner_,
                             task_runner_);
+    last_pixel_value_ = kPixelValue;
     net::IPEndPoint dummy_endpoint;
     transport_sender_.reset(new transport::CastTransportSenderImpl(
         NULL,
@@ -129,7 +151,7 @@ class VideoSenderTest : public ::testing::Test {
   }
 
   static void UpdateCastTransportStatus(transport::CastTransportStatus status) {
-    EXPECT_EQ(status, transport::TRANSPORT_VIDEO_INITIALIZED);
+    EXPECT_EQ(transport::TRANSPORT_VIDEO_INITIALIZED, status);
   }
 
   void InitEncoder(bool external) {
@@ -160,8 +182,6 @@ class VideoSenderTest : public ::testing::Test {
                                          task_runner_,
                                          base::Passed(&fake_vea)),
                               base::Bind(&CreateSharedMemory),
-                              base::Bind(&VideoSenderTest::InitializationResult,
-                                         base::Unretained(this)),
                               transport_sender_.get()));
     } else {
       video_sender_.reset(
@@ -169,10 +189,9 @@ class VideoSenderTest : public ::testing::Test {
                               video_config,
                               CreateDefaultVideoEncodeAcceleratorCallback(),
                               CreateDefaultVideoEncodeMemoryCallback(),
-                              base::Bind(&VideoSenderTest::InitializationResult,
-                                         base::Unretained(this)),
                               transport_sender_.get()));
     }
+    ASSERT_EQ(STATUS_VIDEO_INITIALIZED, video_sender_->InitializationResult());
   }
 
   scoped_refptr<media::VideoFrame> GetNewVideoFrame() {
@@ -180,20 +199,21 @@ class VideoSenderTest : public ::testing::Test {
     scoped_refptr<media::VideoFrame> video_frame =
         media::VideoFrame::CreateFrame(
             VideoFrame::I420, size, gfx::Rect(size), size, base::TimeDelta());
-    PopulateVideoFrame(video_frame, kPixelValue);
+    PopulateVideoFrame(video_frame, last_pixel_value_++);
+    return video_frame;
+  }
+
+  scoped_refptr<media::VideoFrame> GetLargeNewVideoFrame() {
+    gfx::Size size(kWidth, kHeight);
+    scoped_refptr<media::VideoFrame> video_frame =
+        media::VideoFrame::CreateFrame(
+            VideoFrame::I420, size, gfx::Rect(size), size, base::TimeDelta());
+    PopulateVideoFrameWithNoise(video_frame);
     return video_frame;
   }
 
   void RunTasks(int during_ms) {
-    for (int i = 0; i < during_ms; ++i) {
-      // Call process the timers every 1 ms.
-      testing_clock_->Advance(base::TimeDelta::FromMilliseconds(1));
-      task_runner_->RunTasks();
-    }
-  }
-
-  void InitializationResult(CastInitializationStatus result) {
-    EXPECT_EQ(result, STATUS_VIDEO_INITIALIZED);
+    task_runner_->Sleep(base::TimeDelta::FromMilliseconds(during_ms));
   }
 
   base::SimpleTestTickClock* testing_clock_;  // Owned by CastEnvironment.
@@ -202,6 +222,7 @@ class VideoSenderTest : public ::testing::Test {
   scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
   scoped_ptr<PeerVideoSender> video_sender_;
   scoped_refptr<CastEnvironment> cast_environment_;
+  int last_pixel_value_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoSenderTest);
 };
@@ -210,13 +231,12 @@ TEST_F(VideoSenderTest, BuiltInEncoder) {
   InitEncoder(false);
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
 
-  base::TimeTicks capture_time;
+  const base::TimeTicks capture_time = testing_clock_->NowTicks();
   video_sender_->InsertRawVideoFrame(video_frame, capture_time);
 
   task_runner_->RunTasks();
-  EXPECT_GE(
-      transport_.number_of_rtp_packets() + transport_.number_of_rtcp_packets(),
-      1);
+  EXPECT_LE(1, transport_.number_of_rtp_packets());
+  EXPECT_LE(1, transport_.number_of_rtcp_packets());
 }
 
 TEST_F(VideoSenderTest, ExternalEncoder) {
@@ -225,7 +245,7 @@ TEST_F(VideoSenderTest, ExternalEncoder) {
 
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
 
-  base::TimeTicks capture_time;
+  const base::TimeTicks capture_time = testing_clock_->NowTicks();
   video_sender_->InsertRawVideoFrame(video_frame, capture_time);
 
   task_runner_->RunTasks();
@@ -240,7 +260,7 @@ TEST_F(VideoSenderTest, RtcpTimer) {
 
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
 
-  base::TimeTicks capture_time;
+  const base::TimeTicks capture_time = testing_clock_->NowTicks();
   video_sender_->InsertRawVideoFrame(video_frame, capture_time);
 
   // Make sure that we send at least one RTCP packet.
@@ -248,16 +268,15 @@ TEST_F(VideoSenderTest, RtcpTimer) {
       base::TimeDelta::FromMilliseconds(1 + kDefaultRtcpIntervalMs * 3 / 2);
 
   RunTasks(max_rtcp_timeout.InMilliseconds());
-  EXPECT_GE(transport_.number_of_rtp_packets(), 1);
-  // Don't send RTCP prior to receiving an ACK.
-  EXPECT_GE(transport_.number_of_rtcp_packets(), 0);
+  EXPECT_LE(1, transport_.number_of_rtp_packets());
+  EXPECT_LE(1, transport_.number_of_rtcp_packets());
   // Build Cast msg and expect RTCP packet.
   RtcpCastMessage cast_feedback(1);
   cast_feedback.media_ssrc_ = 2;
   cast_feedback.ack_frame_id_ = 0;
   video_sender_->OnReceivedCastFeedback(cast_feedback);
   RunTasks(max_rtcp_timeout.InMilliseconds());
-  EXPECT_GE(transport_.number_of_rtcp_packets(), 1);
+  EXPECT_LE(1, transport_.number_of_rtcp_packets());
 }
 
 TEST_F(VideoSenderTest, ResendTimer) {
@@ -265,7 +284,7 @@ TEST_F(VideoSenderTest, ResendTimer) {
 
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
 
-  base::TimeTicks capture_time;
+  const base::TimeTicks capture_time = testing_clock_->NowTicks();
   video_sender_->InsertRawVideoFrame(video_frame, capture_time);
 
   // ACK the key frame.
@@ -283,9 +302,9 @@ TEST_F(VideoSenderTest, ResendTimer) {
   // Make sure that we do a re-send.
   RunTasks(max_resend_timeout.InMilliseconds());
   // Should have sent at least 3 packets.
-  EXPECT_GE(
-      transport_.number_of_rtp_packets() + transport_.number_of_rtcp_packets(),
-      3);
+  EXPECT_LE(
+      3,
+      transport_.number_of_rtp_packets() + transport_.number_of_rtcp_packets());
 }
 
 TEST_F(VideoSenderTest, LogAckReceivedEvent) {
@@ -297,7 +316,7 @@ TEST_F(VideoSenderTest, LogAckReceivedEvent) {
   for (int i = 0; i < num_frames; i++) {
     scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
 
-    base::TimeTicks capture_time;
+    const base::TimeTicks capture_time = testing_clock_->NowTicks();
     video_sender_->InsertRawVideoFrame(video_frame, capture_time);
     RunTasks(33);
   }
@@ -313,41 +332,40 @@ TEST_F(VideoSenderTest, LogAckReceivedEvent) {
   event_subscriber.GetFrameEventsAndReset(&frame_events);
 
   ASSERT_TRUE(!frame_events.empty());
-  EXPECT_EQ(kVideoAckReceived, frame_events.rbegin()->type);
+  EXPECT_EQ(FRAME_ACK_RECEIVED, frame_events.rbegin()->type);
+  EXPECT_EQ(VIDEO_EVENT, frame_events.rbegin()->media_type);
   EXPECT_EQ(num_frames - 1u, frame_events.rbegin()->frame_id);
 
   cast_environment_->Logging()->RemoveRawEventSubscriber(&event_subscriber);
 }
 
-TEST_F(VideoSenderTest, StopSendingIntheAbsenceOfAck) {
+TEST_F(VideoSenderTest, StopSendingInTheAbsenceOfAck) {
   InitEncoder(false);
   // Send a stream of frames and don't ACK; by default we shouldn't have more
   // than 4 frames in flight.
-  // Store size in packets of frame 0, as it should be resent sue to timeout.
   scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
-  base::TimeTicks capture_time;
-  video_sender_->InsertRawVideoFrame(video_frame, capture_time);
+  video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
   RunTasks(33);
-  const int size_of_frame0 = transport_.number_of_rtp_packets();
 
-  for (int i = 1; i < 4; ++i) {
-    scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
-    base::TimeTicks capture_time;
-    video_sender_->InsertRawVideoFrame(video_frame, capture_time);
-    RunTasks(33);
-  }
-
-  const int number_of_packets_sent = transport_.number_of_rtp_packets();
-  // Send 4 more frames - they should not be sent to the transport, as we have
-  // received any acks.
+  // Send 3 more frames and record the number of packets sent.
   for (int i = 0; i < 3; ++i) {
     scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
-    base::TimeTicks capture_time;
-    video_sender_->InsertRawVideoFrame(video_frame, capture_time);
+    video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
+    RunTasks(33);
+  }
+  const int number_of_packets_sent = transport_.number_of_rtp_packets();
+
+  // Send 3 more frames - they should not be encoded, as we have not received
+  // any acks.
+  for (int i = 0; i < 3; ++i) {
+    scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
+    video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
     RunTasks(33);
   }
 
-  EXPECT_EQ(number_of_packets_sent + size_of_frame0,
+  // We expect a frame to be retransmitted because of duplicated ACKs.
+  // Only one packet of the frame is re-transmitted.
+  EXPECT_EQ(number_of_packets_sent + 1,
             transport_.number_of_rtp_packets());
 
   // Start acking and make sure we're back to steady-state.
@@ -355,16 +373,152 @@ TEST_F(VideoSenderTest, StopSendingIntheAbsenceOfAck) {
   cast_feedback.media_ssrc_ = 2;
   cast_feedback.ack_frame_id_ = 0;
   video_sender_->OnReceivedCastFeedback(cast_feedback);
-  EXPECT_GE(
-      transport_.number_of_rtp_packets() + transport_.number_of_rtcp_packets(),
-      4);
+  EXPECT_LE(
+      4,
+      transport_.number_of_rtp_packets() + transport_.number_of_rtcp_packets());
 
   // Empty the pipeline.
   RunTasks(100);
   // Should have sent at least 7 packets.
-  EXPECT_GE(
-      transport_.number_of_rtp_packets() + transport_.number_of_rtcp_packets(),
-      7);
+  EXPECT_LE(
+      7,
+      transport_.number_of_rtp_packets() + transport_.number_of_rtcp_packets());
+}
+
+TEST_F(VideoSenderTest, DuplicateAckRetransmit) {
+  InitEncoder(false);
+  scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
+  video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
+  RunTasks(33);
+  RtcpCastMessage cast_feedback(1);
+  cast_feedback.media_ssrc_ = 2;
+  cast_feedback.ack_frame_id_ = 0;
+
+  // Send 3 more frames but don't ACK.
+  for (int i = 0; i < 3; ++i) {
+    scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
+    video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
+    RunTasks(33);
+  }
+  const int number_of_packets_sent = transport_.number_of_rtp_packets();
+
+  // Send duplicated ACKs and mix some invalid NACKs.
+  for (int i = 0; i < 10; ++i) {
+    RtcpCastMessage ack_feedback(1);
+    ack_feedback.media_ssrc_ = 2;
+    ack_feedback.ack_frame_id_ = 0;
+    RtcpCastMessage nack_feedback(1);
+    nack_feedback.media_ssrc_ = 2;
+    nack_feedback.missing_frames_and_packets_[255] = PacketIdSet();
+    video_sender_->OnReceivedCastFeedback(ack_feedback);
+    video_sender_->OnReceivedCastFeedback(nack_feedback);
+  }
+  EXPECT_EQ(number_of_packets_sent, transport_.number_of_rtp_packets());
+
+  // Re-transmit one packet because of duplicated ACKs.
+  for (int i = 0; i < 3; ++i) {
+    RtcpCastMessage ack_feedback(1);
+    ack_feedback.media_ssrc_ = 2;
+    ack_feedback.ack_frame_id_ = 0;
+    video_sender_->OnReceivedCastFeedback(ack_feedback);
+  }
+  EXPECT_EQ(number_of_packets_sent + 1, transport_.number_of_rtp_packets());
+}
+
+TEST_F(VideoSenderTest, DuplicateAckRetransmitDoesNotCancelRetransmits) {
+  InitEncoder(false);
+  scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
+  video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
+  RunTasks(33);
+  RtcpCastMessage cast_feedback(1);
+  cast_feedback.media_ssrc_ = 2;
+  cast_feedback.ack_frame_id_ = 0;
+
+  // Send 2 more frames but don't ACK.
+  for (int i = 0; i < 2; ++i) {
+    scoped_refptr<media::VideoFrame> video_frame = GetNewVideoFrame();
+    video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
+    RunTasks(33);
+  }
+  // Pause the transport
+  transport_.SetPause(true);
+
+  // Insert one more video frame.
+  video_frame = GetLargeNewVideoFrame();
+  video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
+  RunTasks(33);
+
+  const int number_of_packets_sent = transport_.number_of_rtp_packets();
+
+  // Send duplicated ACKs and mix some invalid NACKs.
+  for (int i = 0; i < 10; ++i) {
+    RtcpCastMessage ack_feedback(1);
+    ack_feedback.media_ssrc_ = 2;
+    ack_feedback.ack_frame_id_ = 0;
+    RtcpCastMessage nack_feedback(1);
+    nack_feedback.media_ssrc_ = 2;
+    nack_feedback.missing_frames_and_packets_[255] = PacketIdSet();
+    video_sender_->OnReceivedCastFeedback(ack_feedback);
+    video_sender_->OnReceivedCastFeedback(nack_feedback);
+  }
+  EXPECT_EQ(number_of_packets_sent, transport_.number_of_rtp_packets());
+
+  // Re-transmit one packet because of duplicated ACKs.
+  for (int i = 0; i < 3; ++i) {
+    RtcpCastMessage ack_feedback(1);
+    ack_feedback.media_ssrc_ = 2;
+    ack_feedback.ack_frame_id_ = 0;
+    video_sender_->OnReceivedCastFeedback(ack_feedback);
+  }
+
+  transport_.SetPause(false);
+  RunTasks(100);
+  EXPECT_LT(number_of_packets_sent + 1, transport_.number_of_rtp_packets());
+}
+
+TEST_F(VideoSenderTest, AcksCancelRetransmits) {
+  InitEncoder(false);
+  transport_.SetPause(true);
+  scoped_refptr<media::VideoFrame> video_frame = GetLargeNewVideoFrame();
+  video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
+  RunTasks(33);
+
+  // Frame should be in buffer, waiting. Now let's ack it.
+  RtcpCastMessage cast_feedback(1);
+  cast_feedback.media_ssrc_ = 2;
+  cast_feedback.ack_frame_id_ = 0;
+  video_sender_->OnReceivedCastFeedback(cast_feedback);
+
+  transport_.SetPause(false);
+  RunTasks(33);
+  EXPECT_EQ(0, transport_.number_of_rtp_packets());
+}
+
+TEST_F(VideoSenderTest, NAcksCancelRetransmits) {
+  InitEncoder(false);
+  transport_.SetPause(true);
+  // Send two video frames.
+  scoped_refptr<media::VideoFrame> video_frame = GetLargeNewVideoFrame();
+  video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
+  RunTasks(33);
+  video_frame = GetLargeNewVideoFrame();
+  video_sender_->InsertRawVideoFrame(video_frame, testing_clock_->NowTicks());
+  RunTasks(33);
+
+  // Frames should be in buffer, waiting. Now let's ack the first one and nack
+  // one packet in the second one.
+  RtcpCastMessage cast_feedback(1);
+  cast_feedback.media_ssrc_ = 2;
+  cast_feedback.ack_frame_id_ = 0;
+  PacketIdSet missing_packets;
+  missing_packets.insert(0);
+  cast_feedback.missing_frames_and_packets_[1] = missing_packets;
+  video_sender_->OnReceivedCastFeedback(cast_feedback);
+
+  transport_.SetPause(false);
+  RunTasks(33);
+  // Only one packet should be retransmitted.
+  EXPECT_EQ(1, transport_.number_of_rtp_packets());
 }
 
 }  // namespace cast

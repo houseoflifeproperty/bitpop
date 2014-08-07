@@ -26,8 +26,9 @@
 #include "config.h"
 #include "core/editing/InsertListCommand.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
+#include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/editing/TextIterator.h"
@@ -49,7 +50,7 @@ static Node* enclosingListChild(Node* node, Node* listNode)
 
 HTMLElement* InsertListCommand::fixOrphanedListChild(Node* node)
 {
-    RefPtr<HTMLElement> listElement = createUnorderedListElement(document());
+    RefPtrWillBeRawPtr<HTMLElement> listElement = createUnorderedListElement(document());
     insertNodeBefore(listElement, node);
     removeNode(node);
     appendNode(node, listElement);
@@ -57,9 +58,9 @@ HTMLElement* InsertListCommand::fixOrphanedListChild(Node* node)
     return listElement.get();
 }
 
-PassRefPtr<HTMLElement> InsertListCommand::mergeWithNeighboringLists(PassRefPtr<HTMLElement> passedList)
+PassRefPtrWillBeRawPtr<HTMLElement> InsertListCommand::mergeWithNeighboringLists(PassRefPtrWillBeRawPtr<HTMLElement> passedList)
 {
-    RefPtr<HTMLElement> list = passedList;
+    RefPtrWillBeRawPtr<HTMLElement> list = passedList;
     Element* previousList = ElementTraversal::previousSibling(*list);
     if (canMergeLists(previousList, list.get()))
         mergeIdenticalElements(previousList, list);
@@ -71,7 +72,7 @@ PassRefPtr<HTMLElement> InsertListCommand::mergeWithNeighboringLists(PassRefPtr<
     if (!nextSibling || !nextSibling->isHTMLElement())
         return list.release();
 
-    RefPtr<HTMLElement> nextList = toHTMLElement(nextSibling);
+    RefPtrWillBeRawPtr<HTMLElement> nextList = toHTMLElement(nextSibling);
     if (canMergeLists(list.get(), nextList.get())) {
         mergeIdenticalElements(list, nextList);
         return nextList.release();
@@ -135,13 +136,13 @@ void InsertListCommand::doApply()
         VisiblePosition startOfLastParagraph = startOfParagraph(endOfSelection, CanSkipOverEditingBoundary);
 
         if (startOfParagraph(startOfSelection, CanSkipOverEditingBoundary) != startOfLastParagraph) {
-            RefPtr<ContainerNode> scope;
+            RefPtrWillBeRawPtr<ContainerNode> scope = nullptr;
             int indexForEndOfSelection = indexForVisiblePosition(endOfSelection, scope);
             bool forceCreateList = !selectionHasListOfType(selection, listTag);
 
             RefPtrWillBeRawPtr<Range> currentSelection = endingSelection().firstRange();
             VisiblePosition startOfCurrentParagraph = startOfSelection;
-            while (!inSameParagraph(startOfCurrentParagraph, startOfLastParagraph, CanCrossEditingBoundary)) {
+            while (startOfCurrentParagraph.isNotNull() && !inSameParagraph(startOfCurrentParagraph, startOfLastParagraph, CanCrossEditingBoundary)) {
                 // doApply() may operate on and remove the last paragraph of the selection from the document
                 // if it's in the same list item as startOfCurrentParagraph.  Return early to avoid an
                 // infinite loop and because there is no more work to be done.
@@ -203,7 +204,7 @@ void InsertListCommand::doApplyForSingleParagraph(bool forceCreateList, const Qu
     bool switchListType = false;
     if (listChildNode) {
         // Remove the list chlild.
-        RefPtr<HTMLElement> listNode = enclosingList(listChildNode);
+        RefPtrWillBeRawPtr<HTMLElement> listNode = enclosingList(listChildNode);
         if (!listNode) {
             listNode = fixOrphanedListChild(listChildNode);
             listNode = mergeWithNeighboringLists(listNode);
@@ -221,7 +222,7 @@ void InsertListCommand::doApplyForSingleParagraph(bool forceCreateList, const Qu
             bool rangeStartIsInList = visiblePositionBeforeNode(*listNode) == VisiblePosition(currentSelection.startPosition());
             bool rangeEndIsInList = visiblePositionAfterNode(*listNode) == VisiblePosition(currentSelection.endPosition());
 
-            RefPtr<HTMLElement> newList = createHTMLElement(document(), listTag);
+            RefPtrWillBeRawPtr<HTMLElement> newList = createHTMLElement(document(), listTag);
             insertNodeBefore(newList, listNode);
 
             Node* firstChildInList = enclosingListChild(VisiblePosition(firstPositionInNode(listNode.get())).deepEquivalent().deprecatedNode(), listNode.get());
@@ -279,8 +280,8 @@ void InsertListCommand::unlistifyParagraph(const VisiblePosition& originalStart,
     }
     // When removing a list, we must always create a placeholder to act as a point of insertion
     // for the list content being removed.
-    RefPtr<Element> placeholder = createBreakElement(document());
-    RefPtr<Element> nodeToInsert = placeholder;
+    RefPtrWillBeRawPtr<Element> placeholder = createBreakElement(document());
+    RefPtrWillBeRawPtr<Element> nodeToInsert = placeholder;
     // If the content of the list item will be moved into another list, put it in a list item
     // so that we don't create an orphaned list child.
     if (enclosingList(listNode)) {
@@ -332,7 +333,7 @@ static Element* adjacentEnclosingList(const VisiblePosition& pos, const VisibleP
     return listNode;
 }
 
-PassRefPtr<HTMLElement> InsertListCommand::listifyParagraph(const VisiblePosition& originalStart, const QualifiedName& listTag)
+PassRefPtrWillBeRawPtr<HTMLElement> InsertListCommand::listifyParagraph(const VisiblePosition& originalStart, const QualifiedName& listTag)
 {
     VisiblePosition start = startOfParagraph(originalStart, CanSkipOverEditingBoundary);
     VisiblePosition end = endOfParagraph(start, CanSkipOverEditingBoundary);
@@ -341,14 +342,14 @@ PassRefPtr<HTMLElement> InsertListCommand::listifyParagraph(const VisiblePositio
         return nullptr;
 
     // Check for adjoining lists.
-    RefPtr<HTMLElement> listItemElement = createListItemElement(document());
-    RefPtr<HTMLElement> placeholder = createBreakElement(document());
+    RefPtrWillBeRawPtr<HTMLElement> listItemElement = createListItemElement(document());
+    RefPtrWillBeRawPtr<HTMLElement> placeholder = createBreakElement(document());
     appendNode(placeholder, listItemElement);
 
     // Place list item into adjoining lists.
     Element* previousList = adjacentEnclosingList(start, start.previous(CannotCrossEditingBoundary), listTag);
     Element* nextList = adjacentEnclosingList(start, end.next(CannotCrossEditingBoundary), listTag);
-    RefPtr<HTMLElement> listElement;
+    RefPtrWillBeRawPtr<HTMLElement> listElement = nullptr;
     if (previousList)
         appendNode(listItemElement, previousList);
     else if (nextList)
@@ -362,7 +363,7 @@ PassRefPtr<HTMLElement> InsertListCommand::listifyParagraph(const VisiblePositio
             // Inserting the list into an empty paragraph that isn't held open
             // by a br or a '\n', will invalidate start and end.  Insert
             // a placeholder and then recompute start and end.
-            RefPtr<Node> placeholder = insertBlockPlaceholder(start.deepEquivalent());
+            RefPtrWillBeRawPtr<Node> placeholder = insertBlockPlaceholder(start.deepEquivalent());
             start = VisiblePosition(positionBeforeNode(placeholder.get()));
             end = start;
         }
@@ -384,13 +385,15 @@ PassRefPtr<HTMLElement> InsertListCommand::listifyParagraph(const VisiblePositio
         // Update the start of content, so we don't try to move the list into itself.  bug 19066
         // Layout is necessary since start's node's inline renderers may have been destroyed by the insertion
         // The end of the content may have changed after the insertion and layout so update it as well.
-        if (insertionPos == start.deepEquivalent()) {
-            listElement->document().updateLayoutIgnorePendingStylesheets();
-            start = startOfParagraph(originalStart, CanSkipOverEditingBoundary);
-            end = endOfParagraph(start, CanSkipOverEditingBoundary);
-        }
+        if (insertionPos == start.deepEquivalent())
+            start = originalStart;
     }
 
+    // Inserting list element and list item list may change start of pargraph
+    // to move. We calculate start of paragraph again.
+    document().updateLayoutIgnorePendingStylesheets();
+    start = startOfParagraph(start, CanSkipOverEditingBoundary);
+    end = endOfParagraph(start, CanSkipOverEditingBoundary);
     moveParagraph(start, end, VisiblePosition(positionBeforeNode(placeholder.get())), true);
 
     if (listElement)
@@ -400,6 +403,12 @@ PassRefPtr<HTMLElement> InsertListCommand::listifyParagraph(const VisiblePositio
         mergeIdenticalElements(previousList, nextList);
 
     return listElement;
+}
+
+void InsertListCommand::trace(Visitor* visitor)
+{
+    visitor->trace(m_listElement);
+    CompositeEditCommand::trace(visitor);
 }
 
 }

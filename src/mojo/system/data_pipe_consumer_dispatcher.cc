@@ -15,7 +15,7 @@ DataPipeConsumerDispatcher::DataPipeConsumerDispatcher() {
 }
 
 void DataPipeConsumerDispatcher::Init(scoped_refptr<DataPipe> data_pipe) {
-  DCHECK(data_pipe.get());
+  DCHECK(data_pipe);
   data_pipe_ = data_pipe;
 }
 
@@ -25,7 +25,7 @@ Dispatcher::Type DataPipeConsumerDispatcher::GetType() const {
 
 DataPipeConsumerDispatcher::~DataPipeConsumerDispatcher() {
   // |Close()|/|CloseImplNoLock()| should have taken care of the pipe.
-  DCHECK(!data_pipe_.get());
+  DCHECK(!data_pipe_);
 }
 
 void DataPipeConsumerDispatcher::CancelAllWaitersNoLock() {
@@ -56,7 +56,7 @@ MojoResult DataPipeConsumerDispatcher::ReadDataImplNoLock(
     MojoReadDataFlags flags) {
   lock().AssertAcquired();
 
-  if (!VerifyUserPointer<uint32_t>(num_bytes, 1))
+  if (!VerifyUserPointer<uint32_t>(num_bytes))
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   if ((flags & MOJO_READ_DATA_FLAG_DISCARD)) {
@@ -75,7 +75,7 @@ MojoResult DataPipeConsumerDispatcher::ReadDataImplNoLock(
   }
 
   // Only verify |elements| if we're neither discarding nor querying.
-  if (!VerifyUserPointer<void>(elements, *num_bytes))
+  if (!VerifyUserPointerWithSize<1>(elements, *num_bytes))
     return MOJO_RESULT_INVALID_ARGUMENT;
 
   return data_pipe_->ConsumerReadData(
@@ -88,9 +88,9 @@ MojoResult DataPipeConsumerDispatcher::BeginReadDataImplNoLock(
     MojoReadDataFlags flags) {
   lock().AssertAcquired();
 
-  if (!VerifyUserPointer<const void*>(buffer, 1))
+  if (!VerifyUserPointerWithCount<const void*>(buffer, 1))
     return MOJO_RESULT_INVALID_ARGUMENT;
-  if (!VerifyUserPointer<uint32_t>(buffer_num_bytes, 1))
+  if (!VerifyUserPointer<uint32_t>(buffer_num_bytes))
     return MOJO_RESULT_INVALID_ARGUMENT;
   // These flags may not be used in two-phase mode.
   if ((flags & MOJO_READ_DATA_FLAG_DISCARD) ||
@@ -110,10 +110,10 @@ MojoResult DataPipeConsumerDispatcher::EndReadDataImplNoLock(
 
 MojoResult DataPipeConsumerDispatcher::AddWaiterImplNoLock(
     Waiter* waiter,
-    MojoWaitFlags flags,
-    MojoResult wake_result) {
+    MojoHandleSignals signals,
+    uint32_t context) {
   lock().AssertAcquired();
-  return data_pipe_->ConsumerAddWaiter(waiter, flags, wake_result);
+  return data_pipe_->ConsumerAddWaiter(waiter, signals, context);
 }
 
 void DataPipeConsumerDispatcher::RemoveWaiterImplNoLock(Waiter* waiter) {

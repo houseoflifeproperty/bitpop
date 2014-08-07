@@ -64,10 +64,11 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // on the background thread.  Any message not handled by the filter will be
   // dispatched to the listener.  The given task runner correspond to a thread
   // on which IPC::Channel is created and used (e.g. IO thread).
-  ChannelProxy(const IPC::ChannelHandle& channel_handle,
-               Channel::Mode mode,
-               Listener* listener,
-               base::SingleThreadTaskRunner* ipc_task_runner);
+  static scoped_ptr<ChannelProxy> Create(
+      const IPC::ChannelHandle& channel_handle,
+      Channel::Mode mode,
+      Listener* listener,
+      base::SingleThreadTaskRunner* ipc_task_runner);
 
   virtual ~ChannelProxy();
 
@@ -109,13 +110,12 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
   // Get the process ID for the connected peer.
   // Returns base::kNullProcessId if the peer is not connected yet.
-  base::ProcessId peer_pid() const { return context_->peer_pid_; }
+  base::ProcessId GetPeerPID() const { return context_->peer_pid_; }
 
 #if defined(OS_POSIX) && !defined(OS_NACL)
   // Calls through to the underlying channel's methods.
   int GetClientFileDescriptor();
   int TakeClientFileDescriptor();
-  bool GetPeerEuid(uid_t* peer_euid) const;
 #endif  // defined(OS_POSIX)
 
  protected:
@@ -123,6 +123,9 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // A subclass uses this constructor if it needs to add more information
   // to the internal state.
   ChannelProxy(Context* context);
+
+  ChannelProxy(Listener* listener,
+               base::SingleThreadTaskRunner* ipc_task_runner);
 
   // Used internally to hold state that is referenced on the IPC thread.
   class Context : public base::RefCountedThreadSafe<Context>,
@@ -180,6 +183,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
     void AddFilter(MessageFilter* filter);
     void OnDispatchConnected();
     void OnDispatchError();
+    void OnDispatchBadMessage(const Message& message);
 
     scoped_refptr<base::SingleThreadTaskRunner> listener_task_runner_;
     Listener* listener_;

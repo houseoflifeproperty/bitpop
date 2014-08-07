@@ -4,7 +4,7 @@
 import sys
 
 from measurements import smooth_gesture_util
-from telemetry.core.timeline.model import TimelineModel
+from telemetry.timeline.model import TimelineModel
 from telemetry.page import page_measurement
 from telemetry.page.actions import action_runner
 from telemetry.web_perf import timeline_interaction_record as tir_module
@@ -23,21 +23,24 @@ class SmoothnessController(object):
   def __init__(self):
     self._timeline_model = None
     self._tracing_timeline_data = None
+    self._interaction = None
 
   def Start(self, page, tab):
-    custom_categories = ['webkit.console', 'benchmark']
+    # FIXME: Remove webkit.console when blink.console lands in chromium and
+    # the ref builds are updated. crbug.com/386847
+    custom_categories = ['webkit.console', 'blink.console', 'benchmark']
     custom_categories += page.GetSyntheticDelayCategories()
     tab.browser.StartTracing(','.join(custom_categories), 60)
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
       tab.browser.platform.StartRawDisplayFrameRateMeasurement()
     # Start the smooth marker for all smooth actions.
-    runner = action_runner.ActionRunner(None, tab)
-    runner.BeginInteraction(RUN_SMOOTH_ACTIONS, [tir_module.IS_SMOOTH])
+    runner = action_runner.ActionRunner(tab)
+    self._interaction = runner.BeginInteraction(
+        RUN_SMOOTH_ACTIONS, is_smooth=True)
 
   def Stop(self, tab):
     # End the smooth marker for all smooth actions.
-    runner = action_runner.ActionRunner(None, tab)
-    runner.EndInteraction(RUN_SMOOTH_ACTIONS, [tir_module.IS_SMOOTH])
+    self._interaction.End()
     # Stop tracing for smoothness metric.
     if tab.browser.platform.IsRawDisplayFrameRateSupported():
       tab.browser.platform.StopRawDisplayFrameRateMeasurement()
@@ -50,13 +53,14 @@ class SmoothnessController(object):
     # the time ranges of gestures, if there is at least one, else the the time
     # ranges from the first action to the last action.
 
-    renderer_thread = self._timeline_model.GetRendererThreadFromTab(tab)
+    renderer_thread = self._timeline_model.GetRendererThreadFromTabId(
+        tab.id)
     run_smooth_actions_record = None
     smooth_records = []
     for event in renderer_thread.async_slices:
       if not tir_module.IsTimelineInteractionRecord(event.name):
         continue
-      r = tir_module.TimelineInteractionRecord.FromEvent(event)
+      r = tir_module.TimelineInteractionRecord.FromAsyncEvent(event)
       if r.logical_name == RUN_SMOOTH_ACTIONS:
         assert run_smooth_actions_record is None, (
           'SmoothnessController cannot issue more than 1 %s record' %

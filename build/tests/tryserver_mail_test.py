@@ -170,7 +170,8 @@ def test_from_files(infile, expected, name):
   def inner(self):
     with open(infile) as f:
       data = eval(f.read(), {}, env)
-    data['build_step']['getProperties()'] = FakeBuild(data['build_step_props'])
+    data['build_step']['getProperties()'] = FakeBuild(
+        data['build_step_props']).getProperties()
     data = recursive_key_replace(data, '()', '.return_value')
     self.check_mail(
         data['build_step'], data['builder'], data['steps'], data['master'],

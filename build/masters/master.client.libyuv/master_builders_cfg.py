@@ -28,40 +28,34 @@ test_targets = ['libyuv_unittest']
 win_msvs_2010_factory_properties = {
     'gclient_env': {
         'GYP_MSVS_VERSION': '2010',
-        'GYP_GENERATOR_FLAGS': 'msvs_error_on_missing_sources=1',
     },
 }
 win_msvs_2010_x64_factory_properties = {
     'gclient_env': {
         'GYP_DEFINES': 'target_arch=x64',
         'GYP_MSVS_VERSION': '2010',
-        'GYP_GENERATOR_FLAGS': 'msvs_error_on_missing_sources=1',
     },
 }
 win_msvs_2012_factory_properties = {
     'gclient_env': {
         'GYP_MSVS_VERSION': '2012',
-        'GYP_GENERATOR_FLAGS': 'msvs_error_on_missing_sources=1',
     },
 }
 win_msvs_2012_x64_factory_properties = {
     'gclient_env': {
         'GYP_DEFINES': 'target_arch=x64',
         'GYP_MSVS_VERSION': '2012',
-        'GYP_GENERATOR_FLAGS': 'msvs_error_on_missing_sources=1',
     },
 }
 win_msvs_2013_factory_properties = {
     'gclient_env': {
         'GYP_MSVS_VERSION': '2013',
-        'GYP_GENERATOR_FLAGS': 'msvs_error_on_missing_sources=1',
     },
 }
 win_msvs_2013_x64_factory_properties = {
     'gclient_env': {
         'GYP_DEFINES': 'target_arch=x64',
         'GYP_MSVS_VERSION': '2013',
-        'GYP_GENERATOR_FLAGS': 'msvs_error_on_missing_sources=1',
     },
 }
 

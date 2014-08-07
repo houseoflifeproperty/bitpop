@@ -71,7 +71,7 @@ enum ShouldWeakPointersBeMarkedStrongly {
     WeakPointersActWeak
 };
 
-template<bool needsTracing, bool isWeak, ShouldWeakPointersBeMarkedStrongly strongify, typename T, typename Traits> struct CollectionBackingTraceTrait;
+template<bool needsTracing, WTF::WeakHandlingFlag weakHandlingFlag, ShouldWeakPointersBeMarkedStrongly strongify, typename T, typename Traits> struct CollectionBackingTraceTrait;
 
 // The TraceMethodDelegate is used to convert a trace method for type T to a TraceCallback.
 // This allows us to pass a type's trace method as a parameter to the PersistentNode
@@ -130,14 +130,8 @@ struct FinalizerTraitImpl<T, false> {
 // behavior is not desired.
 template<typename T>
 struct FinalizerTrait {
-    static const bool nonTrivialFinalizer = WTF::IsSubclassOfTemplate<T, GarbageCollectedFinalized>::value;
+    static const bool nonTrivialFinalizer = WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, GarbageCollectedFinalized>::value;
     static void finalize(void* obj) { FinalizerTraitImpl<T, nonTrivialFinalizer>::finalize(obj); }
-};
-
-// The VTableTrait is used to determine if a type has at least one virtual method.
-template<typename T>
-struct VTableTrait {
-    static const bool hasVTable = __is_polymorphic(T);
 };
 
 // Trait to get the GCInfo structure for types that have their
@@ -146,7 +140,7 @@ template<typename T> struct GCInfoTrait;
 
 template<typename T> class GarbageCollected;
 class GarbageCollectedMixin;
-template<typename T, bool = WTF::IsSubclassOfTemplate<T, GarbageCollected>::value> class NeedsAdjustAndMark;
+template<typename T, bool = WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, GarbageCollected>::value> class NeedsAdjustAndMark;
 
 template<typename T>
 class NeedsAdjustAndMark<T, true> {
@@ -157,7 +151,7 @@ public:
 template<typename T>
 class NeedsAdjustAndMark<T, false> {
 public:
-    static const bool value = WTF::IsSubclass<T, GarbageCollectedMixin>::value;
+    static const bool value = WTF::IsSubclass<typename WTF::RemoveConst<T>::Type, GarbageCollectedMixin>::value;
 };
 
 template<typename T, bool = NeedsAdjustAndMark<T>::value> class DefaultTraceTrait;
@@ -245,6 +239,12 @@ public:
     // Fallback method used only when we need to trace raw pointers of T.
     // This is the case when a member is a union where we do not support members.
     template<typename T>
+    void trace(const T* t)
+    {
+        mark(const_cast<T*>(t));
+    }
+
+    template<typename T>
     void trace(T* t)
     {
         mark(t);
@@ -252,16 +252,32 @@ public:
 
     // WeakMember version of the templated trace method. It doesn't keep
     // the traced thing alive, but will write null to the WeakMember later
-    // if the pointed-to object is dead.
+    // if the pointed-to object is dead. It's lying for this to be const,
+    // but the overloading resolver prioritizes constness too high when
+    // picking the correct overload, so all these trace methods have to have
+    // the same constness on their argument to allow the type to decide.
     template<typename T>
     void trace(const WeakMember<T>& t)
     {
-        registerWeakCell(t.cell());
+        // Check that we actually know the definition of T when tracing.
+        COMPILE_ASSERT(sizeof(T), WeNeedToKnowTheDefinitionOfTheTypeWeAreTracing);
+        registerWeakCell(const_cast<WeakMember<T>&>(t).cell());
     }
 
-    // Fallback trace method for part objects to allow individual
-    // trace methods to trace through a part object with
-    // visitor->trace(m_partObject).
+    template<typename T>
+    void traceInCollection(T& t, ShouldWeakPointersBeMarkedStrongly strongify)
+    {
+        HashTraits<T>::traceInCollection(this, t, strongify);
+    }
+
+    // Fallback trace method for part objects to allow individual trace methods
+    // to trace through a part object with visitor->trace(m_partObject). This
+    // takes a const argument, because otherwise it will match too eagerly: a
+    // non-const argument would match a non-const Vector<T>& argument better
+    // than the specialization that takes const Vector<T>&. For a similar reason,
+    // the other specializations take a const argument even though they are
+    // usually used with non-const arguments, otherwise this function would match
+    // too well.
     template<typename T>
     void trace(const T& t)
     {
@@ -270,15 +286,15 @@ public:
 
     // The following trace methods are for off-heap collections.
     template<typename T, size_t inlineCapacity>
-    void trace(const Vector<T, inlineCapacity, WTF::DefaultAllocator>& vector)
+    void trace(const Vector<T, inlineCapacity>& vector)
     {
         OffHeapCollectionTraceTrait<Vector<T, inlineCapacity, WTF::DefaultAllocator> >::trace(this, vector);
     }
 
     template<typename T, typename U, typename V>
-    void trace(const HashSet<T, U, V, WTF::DefaultAllocator>& hashSet)
+    void trace(const HashSet<T, U, V>& hashSet)
     {
-        OffHeapCollectionTraceTrait<HashSet<T, U, V, WTF::DefaultAllocator> >::trace(this, hashSet);
+        OffHeapCollectionTraceTrait<HashSet<T, U, V> >::trace(this, hashSet);
     }
 
     template<typename T, size_t inlineCapacity, typename U>
@@ -474,10 +490,12 @@ struct OffHeapCollectionTraceTrait<WTF::HashSet<T, HashFunctions, Traits, WTF::D
             return;
         if (WTF::ShouldBeTraced<Traits>::value) {
             HashSet& iterSet = const_cast<HashSet&>(set);
-            for (typename HashSet::iterator it = iterSet.begin(), end = iterSet.end(); it != end; ++it)
-                CollectionBackingTraceTrait<WTF::ShouldBeTraced<Traits>::value, Traits::isWeak, WeakPointersActWeak, T, Traits>::trace(visitor, *it);
+            for (typename HashSet::iterator it = iterSet.begin(), end = iterSet.end(); it != end; ++it) {
+                const T& t = *it;
+                CollectionBackingTraceTrait<WTF::ShouldBeTraced<Traits>::value, Traits::weakHandlingFlag, WeakPointersActWeak, T, Traits>::trace(visitor, const_cast<T&>(t));
+            }
         }
-        COMPILE_ASSERT(!Traits::isWeak, WeakOffHeapCollectionsConsideredDangerous0);
+        COMPILE_ASSERT(Traits::weakHandlingFlag == WTF::NoWeakHandlingInCollections, WeakOffHeapCollectionsConsideredDangerous0);
     }
 };
 
@@ -520,12 +538,12 @@ struct OffHeapCollectionTraceTrait<WTF::HashMap<Key, Value, HashFunctions, KeyTr
         if (WTF::ShouldBeTraced<KeyTraits>::value || WTF::ShouldBeTraced<ValueTraits>::value) {
             HashMap& iterMap = const_cast<HashMap&>(map);
             for (typename HashMap::iterator it = iterMap.begin(), end = iterMap.end(); it != end; ++it) {
-                CollectionBackingTraceTrait<WTF::ShouldBeTraced<KeyTraits>::value, KeyTraits::isWeak, WeakPointersActWeak, Key, KeyTraits>::trace(visitor, it->key);
-                CollectionBackingTraceTrait<WTF::ShouldBeTraced<ValueTraits>::value, ValueTraits::isWeak, WeakPointersActWeak, Value, ValueTraits>::trace(visitor, it->value);
+                CollectionBackingTraceTrait<WTF::ShouldBeTraced<KeyTraits>::value, KeyTraits::weakHandlingFlag, WeakPointersActWeak, typename HashMap::KeyType, KeyTraits>::trace(visitor, it->key);
+                CollectionBackingTraceTrait<WTF::ShouldBeTraced<ValueTraits>::value, ValueTraits::weakHandlingFlag, WeakPointersActWeak, typename HashMap::MappedType, ValueTraits>::trace(visitor, it->value);
             }
         }
-        COMPILE_ASSERT(!KeyTraits::isWeak, WeakOffHeapCollectionsConsideredDangerous1);
-        COMPILE_ASSERT(!ValueTraits::isWeak, WeakOffHeapCollectionsConsideredDangerous2);
+        COMPILE_ASSERT(KeyTraits::weakHandlingFlag == WTF::NoWeakHandlingInCollections, WeakOffHeapCollectionsConsideredDangerous1);
+        COMPILE_ASSERT(ValueTraits::weakHandlingFlag == WTF::NoWeakHandlingInCollections, WeakOffHeapCollectionsConsideredDangerous2);
     }
 };
 
@@ -605,7 +623,8 @@ class DefaultTraceTrait<T, true> {
 public:
     static void mark(Visitor* visitor, const T* self)
     {
-        self->adjustAndMark(visitor);
+        if (self)
+            self->adjustAndMark(visitor);
     }
 
 #ifndef NDEBUG
@@ -669,14 +688,15 @@ public:
 public: \
     virtual void adjustAndMark(WebCore::Visitor* visitor) const OVERRIDE    \
     { \
-        typedef WTF::IsSubclassOfTemplate<TYPE, WebCore::GarbageCollected> IsSubclassOfGarbageCollected; \
+        typedef WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<TYPE>::Type, WebCore::GarbageCollected> IsSubclassOfGarbageCollected; \
         COMPILE_ASSERT(IsSubclassOfGarbageCollected::value, OnlyGarbageCollectedObjectsCanHaveGarbageCollectedMixins); \
-        visitor->mark(this, &WebCore::TraceTrait<TYPE>::trace); \
+        visitor->mark(static_cast<const TYPE*>(this), &WebCore::TraceTrait<TYPE>::trace); \
     } \
     virtual bool isAlive(WebCore::Visitor* visitor) const OVERRIDE  \
     { \
         return visitor->isAlive(this); \
-    }
+    } \
+private:
 
 #if ENABLE(OILPAN)
 #define WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TYPE) USING_GARBAGE_COLLECTED_MIXIN(TYPE)
@@ -703,7 +723,7 @@ struct GCInfoAtBase {
             TraceTrait<T>::trace,
             FinalizerTrait<T>::finalize,
             FinalizerTrait<T>::nonTrivialFinalizer,
-            VTableTrait<T>::hasVTable,
+            WTF::IsPolymorphic<T>::value,
 #if ENABLE(GC_TRACING)
             TypenameStringTrait<T>::get()
 #endif
@@ -713,7 +733,7 @@ struct GCInfoAtBase {
 };
 
 template<typename T> class GarbageCollected;
-template<typename T, bool = WTF::IsSubclassOfTemplate<T, GarbageCollected>::value> struct GetGarbageCollectedBase;
+template<typename T, bool = WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, GarbageCollected>::value> struct GetGarbageCollectedBase;
 
 template<typename T>
 struct GetGarbageCollectedBase<T, true> {

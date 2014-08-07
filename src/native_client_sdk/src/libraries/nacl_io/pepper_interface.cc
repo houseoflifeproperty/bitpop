@@ -17,10 +17,12 @@ void PepperInterface::ReleaseResource(PP_Resource resource) {
 }
 
 ScopedResource::ScopedResource(PepperInterface* ppapi)
-    : ppapi_(ppapi), resource_(0) {}
+    : ppapi_(ppapi), resource_(0) {
+}
 
 ScopedResource::ScopedResource(PepperInterface* ppapi, PP_Resource resource)
-    : ppapi_(ppapi), resource_(resource) {}
+    : ppapi_(ppapi), resource_(resource) {
+}
 
 ScopedResource::~ScopedResource() {
   if (resource_)
@@ -37,6 +39,27 @@ void ScopedResource::Reset(PP_Resource resource) {
 PP_Resource ScopedResource::Release() {
   PP_Resource result = resource_;
   resource_ = 0;
+  return result;
+}
+
+ScopedVar::ScopedVar(PepperInterface* ppapi)
+    : ppapi_(ppapi), var_(PP_MakeUndefined()) {}
+
+ScopedVar::ScopedVar(PepperInterface* ppapi, PP_Var var)
+    : ppapi_(ppapi), var_(var) {}
+
+ScopedVar::~ScopedVar() {
+  ppapi_->GetVarInterface()->Release(var_);
+}
+
+void ScopedVar::Reset(PP_Var var) {
+  ppapi_->GetVarInterface()->Release(var_);
+  var_ = var;
+}
+
+PP_Var ScopedVar::Release() {
+  PP_Var result = var_;
+  var_ = PP_MakeUndefined();
   return result;
 }
 

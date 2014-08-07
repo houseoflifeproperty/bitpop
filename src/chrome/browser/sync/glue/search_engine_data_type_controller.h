@@ -10,29 +10,35 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/browser/sync/glue/ui_data_type_controller.h"
 #include "components/sync_driver/generic_change_processor.h"
+#include "components/sync_driver/ui_data_type_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+
+class Profile;
 
 namespace browser_sync {
 
 class SearchEngineDataTypeController : public UIDataTypeController {
  public:
   SearchEngineDataTypeController(
-      ProfileSyncComponentsFactory* profile_sync_factory,
+      SyncApiComponentFactory* profile_sync_factory,
       Profile* profile,
-      ProfileSyncService* sync_service);
+      const DisableTypeCallback& disable_callback);
+
+  TemplateURLService::Subscription* GetSubscriptionForTesting();
 
  private:
   virtual ~SearchEngineDataTypeController();
 
   // FrontendDataTypeController implementations.
   virtual bool StartModels() OVERRIDE;
+  virtual void StopModels() OVERRIDE;
 
   void OnTemplateURLServiceLoaded();
 
   scoped_ptr<TemplateURLService::Subscription> template_url_subscription_;
+  Profile* const profile_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchEngineDataTypeController);
 };

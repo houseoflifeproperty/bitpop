@@ -30,12 +30,12 @@
 [
     CheckSecurity=Frame,
     Custom=ToV8,
-    ImplementedAs=DOMWindow,
+    ImplementedAs=LocalDOMWindow,
     PrimaryGlobal,
     WillBeGarbageCollected,
 ] interface Window : EventTarget {
     // DOM Level 0
-    [Replaceable] readonly attribute Screen screen;
+    readonly attribute Screen screen;
     readonly attribute History history;
     [Replaceable, MeasureAs=BarPropLocationbar] readonly attribute BarProp locationbar;
     [Replaceable, MeasureAs=BarPropMenubar] readonly attribute BarProp menubar;
@@ -43,9 +43,9 @@
     [Replaceable, MeasureAs=BarPropScrollbars] readonly attribute BarProp scrollbars;
     [Replaceable, MeasureAs=BarPropStatusbar] readonly attribute BarProp statusbar;
     [Replaceable, MeasureAs=BarPropToolbar] readonly attribute BarProp toolbar;
-    [PerWorldBindings, LogActivity=GetterOnly] readonly attribute Navigator navigator;
+    [LogActivity=GetterOnly] readonly attribute Navigator navigator;
     [Replaceable] readonly attribute Navigator clientInformation;
-    [DoNotCheckSecurity, Unforgeable, Replaceable, PerWorldBindings, LogActivity, PutForwards=href] readonly attribute Location location;
+    [DoNotCheckSecurity, Unforgeable, Replaceable, LogActivity, PutForwards=href] readonly attribute Location location;
     [Custom, MeasureAs=WindowEvent, NotEnumerable] attribute Event event;
 
     Selection getSelection();
@@ -67,10 +67,11 @@
                                        optional any dialogArgs,
                                        optional DOMString featureArgs);
 
-    void alert([Default=NullString] optional DOMString message);
-    boolean confirm([Default=NullString] optional DOMString message);
-    [TreatReturnedNullStringAs=Null] DOMString prompt([Default=NullString] optional DOMString message,
-                                                      [Default=NullString] optional DOMString defaultValue);
+    void alert();
+    void alert(DOMString message);
+    boolean confirm(optional DOMString message = null);
+    [TreatReturnedNullStringAs=Null] DOMString prompt(optional DOMString message = null,
+                                                      optional DOMString defaultValue = null);
 
     boolean find([Default=Undefined] optional DOMString string,
                  [Default=Undefined] optional boolean caseSensitive,
@@ -95,17 +96,14 @@
     readonly attribute long pageXOffset;
     readonly attribute long pageYOffset;
 
-    // FIXME: should be:
-    // void scrollBy(long x, long y);
-    // [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scrollBy(long x, long y, optional Dictionary scrollOptions);
-    // void scrollTo(long x, long y);
-    // [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scrollTo(long x, long y, optional Dictionary scrollOptions);
-    // void scroll(long x, long y);
-    // [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scroll(long x, long y, optional Dictionary scrollOptions);
-    // http://crbug.com/339000
-    [RaisesException] void scrollBy(long x, long y, optional Dictionary scrollOptions);
-    [RaisesException] void scrollTo(long x, long y, optional Dictionary scrollOptions);
-    [RaisesException] void scroll(long x, long y, optional Dictionary scrollOptions);
+    // Overloading can be replaced by optional if RuntimeEnabled is removed, by
+    // changing the third argument to *optional* Dictionary scrollOptions
+    void scrollBy(long x, long y);
+    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scrollBy(long x, long y, Dictionary scrollOptions);
+    void scrollTo(long x, long y);
+    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scrollTo(long x, long y, Dictionary scrollOptions);
+    void scroll(long x, long y);
+    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scroll(long x, long y, Dictionary scrollOptions);
     void moveBy([Default=Undefined] optional float x, [Default=Undefined] optional float y); // FIXME: this should take longs not floats.
     void moveTo([Default=Undefined] optional float x, [Default=Undefined] optional float y); // FIXME: this should take longs not floats.
     void resizeBy([Default=Undefined] optional float x, [Default=Undefined] optional float y); // FIXME: this should take longs not floats.
@@ -141,7 +139,7 @@
     readonly attribute StyleMedia styleMedia;
 
     // DOM Level 2 Style Interface
-    [PerWorldBindings] CSSStyleDeclaration getComputedStyle([Default=Undefined] optional Element element,
+    CSSStyleDeclaration getComputedStyle([Default=Undefined] optional Element element,
                                                             [TreatNullAs=NullString, TreatUndefinedAs=NullString, Default=Undefined] optional DOMString pseudoElement);
 
     // WebKit extensions
@@ -155,10 +153,10 @@
     [MeasureAs=PrefixedConvertPointFromNodeToPage] WebKitPoint webkitConvertPointFromNodeToPage([Default=Undefined] optional Node node,
                                                                                                 [Default=Undefined] optional WebKitPoint p);
 
-    [RuntimeEnabled=ApplicationCache, PerWorldBindings, LogActivity=GetterOnly] readonly attribute ApplicationCache applicationCache;
+    [RuntimeEnabled=ApplicationCache, LogActivity=GetterOnly] readonly attribute ApplicationCache applicationCache;
 
-    [RuntimeEnabled=SessionStorage, PerWorldBindings, LogActivity=GetterOnly, RaisesException=Getter] readonly attribute Storage sessionStorage;
-    [RuntimeEnabled=LocalStorage, PerWorldBindings, LogActivity=GetterOnly, RaisesException=Getter] readonly attribute Storage localStorage;
+    [RuntimeEnabled=SessionStorage, LogActivity=GetterOnly, RaisesException=Getter] readonly attribute Storage sessionStorage;
+    [RuntimeEnabled=LocalStorage, LogActivity=GetterOnly, RaisesException=Getter] readonly attribute Storage localStorage;
 
     // This is the interface orientation in degrees. Some examples are:
     //  0 is straight up; -90 is when the device is rotated 90 clockwise;
@@ -195,7 +193,7 @@
     attribute EventHandler onwebkitanimationiteration;
     attribute EventHandler onwebkitanimationstart;
     attribute EventHandler onwebkittransitionend;
-    [PerWorldBindings, LogActivity=SetterOnly] attribute EventHandler onwheel;
+    [LogActivity=SetterOnly] attribute EventHandler onwheel;
 
     [MeasureAs=WindowCaptureEvents] void captureEvents();
     [MeasureAs=WindowReleaseEvents] void releaseEvents();

@@ -40,7 +40,7 @@ class DispatcherDelegate {
 
   // Initializes origin permissions for a newly created extension context.
   virtual void InitOriginPermissions(const Extension* extension,
-                                     Feature::Context context_type) {}
+                                     bool is_extension_active) {}
 
   // Includes additional native handlers in a given ModuleSystem.
   virtual void RegisterNativeHandlers(Dispatcher* dispatcher,
@@ -86,9 +86,7 @@ class DispatcherDelegate {
 
   // Allows the delegate to respond to reports from the browser about WebRequest
   // API usage from within this process.
-  virtual void HandleWebRequestAPIUsage(bool adblock,
-                                        bool adblock_plus,
-                                        bool other_webrequest) {}
+  virtual void HandleWebRequestAPIUsage(bool webrequest_used) {}
 };
 
 }  // namespace extensions

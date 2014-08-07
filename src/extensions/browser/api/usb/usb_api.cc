@@ -422,8 +422,8 @@ scoped_refptr<UsbDevice> UsbAsyncApiFunction::GetDeviceOrOrCompleteWithError(
   const uint16_t product_id = input_device.product_id;
   UsbDevicePermission::CheckParam param(
       vendor_id, product_id, UsbDevicePermissionData::UNSPECIFIED_INTERFACE);
-  if (!PermissionsData::CheckAPIPermissionWithParam(
-          GetExtension(), APIPermission::kUsbDevice, &param)) {
+  if (!GetExtension()->permissions_data()->CheckAPIPermissionWithParam(
+          APIPermission::kUsbDevice, &param)) {
     LOG(WARNING) << "Insufficient permissions to access device.";
     CompleteWithError(kErrorPermissionDenied);
     return NULL;
@@ -464,15 +464,15 @@ UsbAsyncApiFunction::GetDeviceHandleOrCompleteWithError(
     return NULL;
   }
 
-  if (!resource->device() || !resource->device()->device()) {
+  if (!resource->device() || !resource->device()->GetDevice()) {
     CompleteWithError(kErrorDisconnect);
     manager_->Remove(extension_->id(), input_device_handle.handle);
     return NULL;
   }
 
-  if (resource->device()->device()->vendor_id() !=
+  if (resource->device()->GetDevice()->vendor_id() !=
           input_device_handle.vendor_id ||
-      resource->device()->device()->product_id() !=
+      resource->device()->GetDevice()->product_id() !=
           input_device_handle.product_id) {
     CompleteWithError(kErrorNoDevice);
     return NULL;
@@ -553,8 +553,8 @@ void UsbFindDevicesFunction::AsyncWorkStart() {
                          ? *parameters_->options.interface_id.get()
                          : UsbDevicePermissionData::ANY_INTERFACE;
   UsbDevicePermission::CheckParam param(vendor_id, product_id, interface_id);
-  if (!PermissionsData::CheckAPIPermissionWithParam(
-          GetExtension(), APIPermission::kUsbDevice, &param)) {
+  if (!GetExtension()->permissions_data()->CheckAPIPermissionWithParam(
+          APIPermission::kUsbDevice, &param)) {
     LOG(WARNING) << "Insufficient permissions to access device.";
     CompleteWithError(kErrorPermissionDenied);
     return;
@@ -629,8 +629,8 @@ void UsbGetDevicesFunction::AsyncWorkStart() {
   const uint16_t product_id = parameters_->options.product_id;
   UsbDevicePermission::CheckParam param(
       vendor_id, product_id, UsbDevicePermissionData::UNSPECIFIED_INTERFACE);
-  if (!PermissionsData::CheckAPIPermissionWithParam(
-          GetExtension(), APIPermission::kUsbDevice, &param)) {
+  if (!GetExtension()->permissions_data()->CheckAPIPermissionWithParam(
+          APIPermission::kUsbDevice, &param)) {
     LOG(WARNING) << "Insufficient permissions to access device.";
     CompleteWithError(kErrorPermissionDenied);
     return;
@@ -721,8 +721,8 @@ void UsbOpenDeviceFunction::AsyncWorkStart() {
 
   SetResult(PopulateConnectionHandle(
       manager_->Add(new UsbDeviceResource(extension_->id(), handle_)),
-      handle_->device()->vendor_id(),
-      handle_->device()->product_id()));
+      handle_->GetDevice()->vendor_id(),
+      handle_->GetDevice()->product_id()));
   AsyncWorkCompleted();
 }
 
@@ -745,7 +745,7 @@ void UsbListInterfacesFunction::AsyncWorkStart() {
     return;
 
   scoped_refptr<UsbConfigDescriptor> config =
-      device_handle->device()->ListInterfaces();
+      device_handle->GetDevice()->ListInterfaces();
 
   if (!config) {
     SetError(kErrorCannotListInterfaces);

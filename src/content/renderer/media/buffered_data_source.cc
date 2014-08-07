@@ -79,14 +79,16 @@ void BufferedDataSource::ReadOperation::Run(
 }
 
 BufferedDataSource::BufferedDataSource(
+    const GURL& url,
+    BufferedResourceLoader::CORSMode cors_mode,
     const scoped_refptr<base::MessageLoopProxy>& render_loop,
     WebFrame* frame,
     media::MediaLog* media_log,
     BufferedDataSourceHost* host,
     const DownloadingCB& downloading_cb)
-    : cors_mode_(BufferedResourceLoader::kUnspecified),
+    : url_(url),
+      cors_mode_(cors_mode),
       total_bytes_(kPositionNotSpecified),
-      assume_fully_buffered_(false),
       streaming_(false),
       frame_(frame),
       intermediate_read_buffer_(new uint8[kInitialReadBufferSize]),
@@ -128,19 +130,14 @@ BufferedResourceLoader* BufferedDataSource::CreateResourceLoader(
                                     media_log_.get());
 }
 
-void BufferedDataSource::Initialize(
-    const GURL& url,
-    BufferedResourceLoader::CORSMode cors_mode,
-    const InitializeCB& init_cb) {
+void BufferedDataSource::Initialize(const InitializeCB& init_cb) {
   DCHECK(render_loop_->BelongsToCurrentThread());
   DCHECK(!init_cb.is_null());
   DCHECK(!loader_.get());
-  url_ = url;
-  cors_mode_ = cors_mode;
 
   init_cb_ = init_cb;
 
-  if (url_.SchemeIs(url::kHttpScheme) || url_.SchemeIs(url::kHttpsScheme)) {
+  if (url_.SchemeIsHTTPOrHTTPS()) {
     // Do an unbounded range request starting at the beginning.  If the server
     // responds with 200 instead of 206 we'll fall back into a streaming mode.
     loader_.reset(CreateResourceLoader(0, kPositionNotSpecified));
@@ -150,7 +147,6 @@ void BufferedDataSource::Initialize(
     // we won't be served HTTP headers.
     loader_.reset(CreateResourceLoader(kPositionNotSpecified,
                                        kPositionNotSpecified));
-    assume_fully_buffered_ = true;
   }
 
   base::WeakPtr<BufferedDataSource> weak_this = weak_factory_.GetWeakPtr();
@@ -353,12 +349,13 @@ void BufferedDataSource::StartCallback(
   // All responses must be successful. Resources that are assumed to be fully
   // buffered must have a known content length.
   bool success = status == BufferedResourceLoader::kOk &&
-      (!assume_fully_buffered_ ||
-       loader_->instance_size() != kPositionNotSpecified);
+                 (!assume_fully_buffered() ||
+                  loader_->instance_size() != kPositionNotSpecified);
 
   if (success) {
     total_bytes_ = loader_->instance_size();
-    streaming_ = !assume_fully_buffered_ &&
+    streaming_ =
+        !assume_fully_buffered() &&
         (total_bytes_ == kPositionNotSpecified || !loader_->range_supported());
 
     media_log_->SetDoubleProperty("total_bytes",
@@ -377,7 +374,7 @@ void BufferedDataSource::StartCallback(
   if (success) {
     if (total_bytes_ != kPositionNotSpecified) {
       host_->SetTotalBytes(total_bytes_);
-      if (assume_fully_buffered_)
+      if (assume_fully_buffered())
         host_->AddBufferedByteRange(0, total_bytes_);
     }
 
@@ -473,7 +470,7 @@ void BufferedDataSource::LoadingStateChangedCallback(
     BufferedResourceLoader::LoadingState state) {
   DCHECK(render_loop_->BelongsToCurrentThread());
 
-  if (assume_fully_buffered_)
+  if (assume_fully_buffered())
     return;
 
   bool is_downloading_data;
@@ -501,7 +498,7 @@ void BufferedDataSource::LoadingStateChangedCallback(
 void BufferedDataSource::ProgressCallback(int64 position) {
   DCHECK(render_loop_->BelongsToCurrentThread());
 
-  if (assume_fully_buffered_)
+  if (assume_fully_buffered())
     return;
 
   // TODO(scherkus): we shouldn't have to lock to signal host(), see
@@ -514,10 +511,9 @@ void BufferedDataSource::ProgressCallback(int64 position) {
 }
 
 void BufferedDataSource::UpdateDeferStrategy(bool paused) {
-  // 200 responses end up not being reused to satisfy future range requests,
-  // and we don't want to get too far ahead of the read-head (and thus require
-  // a restart), so keep to the thresholds.
-  if (!loader_->range_supported()) {
+  // No need to aggressively buffer when we are assuming the resource is fully
+  // buffered.
+  if (assume_fully_buffered()) {
     loader_->UpdateDeferStrategy(BufferedResourceLoader::kCapacityDefer);
     return;
   }
@@ -526,14 +522,15 @@ void BufferedDataSource::UpdateDeferStrategy(bool paused) {
   // and we're paused, then try to load as much as possible (the loader will
   // fall back to kCapacityDefer if it knows the current response won't be
   // useful from the cache in the future).
-  if (media_has_played_ && paused) {
+  if (media_has_played_ && paused && loader_->range_supported()) {
     loader_->UpdateDeferStrategy(BufferedResourceLoader::kNeverDefer);
     return;
   }
 
-  // If media is currently playing or the page indicated preload=auto,
-  // use threshold strategy to enable/disable deferring when the buffer
-  // is full/depleted.
+  // If media is currently playing or the page indicated preload=auto or the
+  // the server does not support the byte range request or we do not want to go
+  // too far ahead of the read head, use threshold strategy to enable/disable
+  // deferring when the buffer is full/depleted.
   loader_->UpdateDeferStrategy(BufferedResourceLoader::kCapacityDefer);
 }
 

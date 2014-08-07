@@ -152,6 +152,7 @@ var kMessages = {
   strict_cannot_assign:          ["Cannot assign to read only '", "%0", "' in strict mode"],
   strict_poison_pill:            ["'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them"],
   strict_caller:                 ["Illegal access to a strict mode caller function."],
+  generator_poison_pill:         ["'caller' and 'arguments' properties may not be accessed on generator functions."],
   unprotected_let:               ["Illegal let declaration in unprotected statement context."],
   unprotected_const:             ["Illegal const declaration in unprotected statement context."],
   cant_prevent_ext_external_array_elements: ["Cannot prevent extension of an object with external array elements"],
@@ -177,10 +178,6 @@ function FormatString(format, args) {
         // str is one of %0, %1, %2 or %3.
         try {
           str = NoSideEffectToString(args[arg_num]);
-          if (str.length > 256) {
-            str = %_SubString(str, 0, 239) + "...<omitted>..." +
-                  %_SubString(str, str.length - 2, str.length);
-          }
         } catch (e) {
           if (%IsJSModule(args[arg_num]))
             str = "module";
@@ -200,10 +197,17 @@ function FormatString(format, args) {
 function NoSideEffectToString(obj) {
   if (IS_STRING(obj)) return obj;
   if (IS_NUMBER(obj)) return %_NumberToString(obj);
-  if (IS_BOOLEAN(obj)) return x ? 'true' : 'false';
+  if (IS_BOOLEAN(obj)) return obj ? 'true' : 'false';
   if (IS_UNDEFINED(obj)) return 'undefined';
   if (IS_NULL(obj)) return 'null';
-  if (IS_FUNCTION(obj)) return  %_CallFunction(obj, FunctionToString);
+  if (IS_FUNCTION(obj)) {
+    var str = %_CallFunction(obj, FunctionToString);
+    if (str.length > 128) {
+      str = %_SubString(str, 0, 111) + "...<omitted>..." +
+            %_SubString(str, str.length - 2, str.length);
+    }
+    return str;
+  }
   if (IS_OBJECT(obj) && %GetDataProperty(obj, "toString") === ObjectToString) {
     var constructor = %GetDataProperty(obj, "constructor");
     if (typeof constructor == "function") {
@@ -954,12 +958,12 @@ function CallSiteToString() {
     var methodName = this.getMethodName();
     if (functionName) {
       if (typeName &&
-          %_CallFunction(functionName, typeName, StringIndexOf) != 0) {
+          %_CallFunction(functionName, typeName, StringIndexOfJS) != 0) {
         line += typeName + ".";
       }
       line += functionName;
       if (methodName &&
-          (%_CallFunction(functionName, "." + methodName, StringIndexOf) !=
+          (%_CallFunction(functionName, "." + methodName, StringIndexOfJS) !=
            functionName.length - methodName.length - 1)) {
         line += " [as " + methodName + "]";
       }
@@ -1236,7 +1240,7 @@ var cyclic_error_marker = new $Object();
 function GetPropertyWithoutInvokingMonkeyGetters(error, name) {
   var current = error;
   // Climb the prototype chain until we find the holder.
-  while (current && !%HasLocalProperty(current, name)) {
+  while (current && !%HasOwnProperty(current, name)) {
     current = %GetPrototype(current);
   }
   if (IS_NULL(current)) return UNDEFINED;

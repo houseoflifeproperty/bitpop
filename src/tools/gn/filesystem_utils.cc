@@ -99,9 +99,8 @@ bool DoesBeginWindowsDriveLetter(const base::StringPiece& path) {
   if (path[1] != ':')
     return false;
 
-  // Check drive letter
-  if (!((path[0] >= 'A' && path[0] <= 'Z') ||
-         path[0] >= 'a' && path[0] <= 'z'))
+  // Check drive letter.
+  if (!IsAsciiAlpha(path[0]))
     return false;
 
   if (!IsSlash(path[2]))
@@ -667,6 +666,16 @@ SourceDir SourceDirForCurrentDirectory(const base::FilePath& source_root) {
   return SourceDirForPath(source_root, cd);
 }
 
+std::string GetOutputSubdirName(const Label& toolchain_label, bool is_default) {
+  // The default toolchain has no subdir.
+  if (is_default)
+    return std::string();
+
+  // For now just assume the toolchain name is always a valid dir name. We may
+  // want to clean up the in the future.
+  return toolchain_label.name() + "/";
+}
+
 SourceDir GetToolchainOutputDir(const Settings* settings) {
   const OutputFile& toolchain_subdir = settings->toolchain_output_subdir();
 
@@ -674,6 +683,13 @@ SourceDir GetToolchainOutputDir(const Settings* settings) {
   if (!toolchain_subdir.value().empty())
     result.append(toolchain_subdir.value());
 
+  return SourceDir(SourceDir::SWAP_IN, &result);
+}
+
+SourceDir GetToolchainOutputDir(const BuildSettings* build_settings,
+                                const Label& toolchain_label, bool is_default) {
+  std::string result = build_settings->build_dir().value();
+  result.append(GetOutputSubdirName(toolchain_label, is_default));
   return SourceDir(SourceDir::SWAP_IN, &result);
 }
 
@@ -688,6 +704,14 @@ SourceDir GetToolchainGenDir(const Settings* settings) {
   return SourceDir(SourceDir::SWAP_IN, &result);
 }
 
+SourceDir GetToolchainGenDir(const BuildSettings* build_settings,
+                             const Label& toolchain_label, bool is_default) {
+  std::string result = GetToolchainOutputDir(
+      build_settings, toolchain_label, is_default).value();
+  result.append("gen/");
+  return SourceDir(SourceDir::SWAP_IN, &result);
+}
+
 SourceDir GetOutputDirForSourceDir(const Settings* settings,
                                    const SourceDir& source_dir) {
   SourceDir toolchain = GetToolchainOutputDir(settings);
@@ -696,10 +720,12 @@ SourceDir GetOutputDirForSourceDir(const Settings* settings,
   toolchain.SwapValue(&ret);
   ret.append("obj/");
 
-  // The source dir should be source-absolute, so we trim off the two leading
-  // slashes to append to the toolchain object directory.
-  DCHECK(source_dir.is_source_absolute());
-  ret.append(&source_dir.value()[2], source_dir.value().size() - 2);
+  if (source_dir.is_source_absolute()) {
+    // The source dir is source-absolute, so we trim off the two leading
+    // slashes to append to the toolchain object directory.
+    ret.append(&source_dir.value()[2], source_dir.value().size() - 2);
+  }
+  // (Put system-absolute stuff in the root obj directory.)
 
   return SourceDir(SourceDir::SWAP_IN, &ret);
 }
@@ -711,10 +737,13 @@ SourceDir GetGenDirForSourceDir(const Settings* settings,
   std::string ret;
   toolchain.SwapValue(&ret);
 
-  // The source dir should be source-absolute, so we trim off the two leading
-  // slashes to append to the toolchain object directory.
-  DCHECK(source_dir.is_source_absolute());
-  ret.append(&source_dir.value()[2], source_dir.value().size() - 2);
+  if (source_dir.is_source_absolute()) {
+    // The source dir should be source-absolute, so we trim off the two leading
+    // slashes to append to the toolchain object directory.
+    DCHECK(source_dir.is_source_absolute());
+    ret.append(&source_dir.value()[2], source_dir.value().size() - 2);
+  }
+  // (Put system-absolute stuff in the root gen directory.)
 
   return SourceDir(SourceDir::SWAP_IN, &ret);
 }

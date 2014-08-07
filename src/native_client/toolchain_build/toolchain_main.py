@@ -27,21 +27,13 @@ import archive_info
 import package_info
 
 import once
+import command_options
 
 DEFAULT_CACHE_DIR = os.path.join(SCRIPT_DIR, 'cache')
+DEFAULT_GIT_CACHE_DIR = os.path.join(SCRIPT_DIR, 'git_cache')
 DEFAULT_SRC_DIR = os.path.join(SCRIPT_DIR, 'src')
 DEFAULT_OUT_DIR = os.path.join(SCRIPT_DIR, 'out')
 
-def PrintFlush(message):
-  """Flush stdout and print a message to stderr.
-
-  Buildbot annotator messages must be at the beginning of a line, and we want to
-  ensure that any output from the script or from subprocesses appears in the
-  correct order wrt BUILD_STEP messages. So we flush stdout before printing all
-  buildbot messages here.
-  """
-  sys.stdout.flush()
-  print >>sys.stderr, message
 
 def PrintAnnotatorURL(url):
   """Print an URL in buildbot annotator form.
@@ -49,7 +41,7 @@ def PrintAnnotatorURL(url):
   Args:
     url: A URL to print.
   """
-  PrintFlush('@@@STEP_LINK@download@%s@@@' % url)
+  pynacl.log_tools.WriteAnnotatorLine('@@@STEP_LINK@download@%s@@@' % url)
 
 
 class PackageBuilder(object):
@@ -102,9 +94,6 @@ class PackageBuilder(object):
                # output will go into the root of the output directory.
             'commands':
               [<list of command.Command objects to run>],
-              # Objects that have a 'skip_for_incremental' attribute that
-              # evaluates to True will not be run on incremental builds unless
-              # the working directory is empty.
           },
         }
       package_targets: A dictionary with the following format. This is a
@@ -132,7 +121,8 @@ class PackageBuilder(object):
         use_cached_results=self._options.use_cached_results,
         cache_results=self._options.cache_results,
         print_url=PrintAnnotatorURL,
-        storage=self.CreateStorage())
+        storage=self.CreateStorage(),
+        extra_paths=self.ExtraSubstitutionPaths())
     self._signature_file = None
     if self._options.emit_signatures is not None:
       if self._options.emit_signatures == '-':
@@ -144,9 +134,12 @@ class PackageBuilder(object):
     """Main entry point."""
     pynacl.file_tools.MakeDirectoryIfAbsent(self._options.source)
     pynacl.file_tools.MakeDirectoryIfAbsent(self._options.output)
-    pynacl.log_tools.SetupLogging(self._options.verbose,
-                                  open(os.path.join(self._options.output,
-                                                   'toolchain_build.log'), 'w'))
+
+    pynacl.log_tools.SetupLogging(
+        verbose=self._options.verbose,
+        log_file=self._options.log_file,
+        quiet=self._options.quiet,
+        no_annotator=self._options.no_annotator)
     self.BuildAll()
     self.OutputPackagesInformation()
 
@@ -157,10 +150,10 @@ class PackageBuilder(object):
       dirname = self._packages[package].get('output_dirname', package)
       return os.path.join(self._options.source, dirname)
     else:
-       root = os.path.join(self._options.output, package + '_install')
-       if use_subdir and 'output_subdir' in self._packages[package]:
-         return os.path.join(root, self._packages[package]['output_subdir'])
-       return root
+      root = os.path.join(self._options.output, package + '_install')
+      if use_subdir and 'output_subdir' in self._packages[package]:
+        return os.path.join(root, self._packages[package]['output_subdir'])
+      return root
 
   def BuildPackage(self, package):
     """Build a single package.
@@ -177,7 +170,7 @@ class PackageBuilder(object):
       raise Exception('package %s does not have a type' % package)
     type_text = package_info['type']
     if type_text not in ('source', 'build'):
-      raise Execption('package %s has unrecognized type: %s' %
+      raise Exception('package %s has unrecognized type: %s' %
                       (package, type_text))
     is_source_target = type_text == 'source'
 
@@ -195,7 +188,8 @@ class PackageBuilder(object):
       logging.debug('Sync skipped: not running commands for %s' % package)
       return
 
-    PrintFlush('@@@BUILD_STEP %s (%s)@@@' % (package, type_text))
+    pynacl.log_tools.WriteAnnotatorLine(
+        '@@@BUILD_STEP %s (%s)@@@' % (package, type_text))
     logging.debug('Building %s package %s' % (type_text, package))
 
     dependencies = package_info.get('dependencies', [])
@@ -209,7 +203,8 @@ class PackageBuilder(object):
           raise Exception('key "%s" found in both dependencies and inputs of '
                           'package "%s"' % (key, package))
         inputs[key] = value
-    else:
+    elif type_text != 'source':
+      # Non-source packages default to a particular input directory.
       inputs['src'] = os.path.join(self._options.source, package)
     # Add in each dependency by package name.
     for dependency in dependencies:
@@ -232,22 +227,29 @@ class PackageBuilder(object):
       os.makedirs(output_subdir)
 
     commands = package_info.get('commands', [])
-    if not self._options.clobber and len(os.listdir(work_dir)) > 0:
-      commands = [cmd for cmd in commands if
-                  not (hasattr(cmd, 'skip_for_incremental') and
-                       cmd.skip_for_incremental)]
+
+    # Create a command option object specifying current build.
+    cmd_options = command_options.CommandOptions(
+        work_dir=work_dir,
+        clobber_working=self._options.clobber,
+        clobber_source=self._options.clobber_source,
+        trybot=self._options.trybot,
+        buildbot=self._options.buildbot)
+
     # Do it.
     self._build_once.Run(
         package, inputs, output,
         commands=commands,
+        cmd_options=cmd_options,
         working_dir=work_dir,
         memoize=not is_source_target,
         signature_file=self._signature_file,
         subdir=output_subdir)
 
     if not is_source_target and self._options.install:
-      logging.debug('Installing output to %s' % self._options.install)
-      pynacl.file_tools.CopyTree(output, self._options.install)
+      install = pynacl.platform.CygPath(self._options.install)
+      logging.debug('Installing output to %s' % install)
+      pynacl.file_tools.CopyTree(output, install)
 
   def BuildOrder(self, targets):
     """Find what needs to be built in what order to build all targets.
@@ -321,8 +323,9 @@ class PackageBuilder(object):
           built_packages.append(package_file)
 
     if self._options.packages_file:
-      pynacl.file_tools.MakeParentDirectoryIfAbsent(self._options.packages_file)
-      with open(self._options.packages_file, 'wt') as f:
+      packages_file = pynacl.platform.CygPath(self._options.packages_file)
+      pynacl.file_tools.MakeParentDirectoryIfAbsent(packages_file)
+      with open(packages_file, 'wt') as f:
         f.write('\n'.join(built_packages))
 
   def DecodeArgs(self, packages, args):
@@ -343,6 +346,10 @@ class PackageBuilder(object):
         default=False, action='store_true',
         help='Produce more output.')
     parser.add_option(
+        '-q', '--quiet', dest='quiet',
+        default=False, action='store_true',
+        help='Produce no output.')
+    parser.add_option(
         '-c', '--clobber', dest='clobber',
         default=False, action='store_true',
         help='Clobber working directories before building.')
@@ -354,6 +361,10 @@ class PackageBuilder(object):
         '-s', '--source', dest='source',
         default=DEFAULT_SRC_DIR,
         help='Select directory containing source checkouts.')
+    parser.add_option(
+        '--git-cache', dest='git_cache',
+        default=DEFAULT_GIT_CACHE_DIR,
+        help='Select directory containing the git cache for syncing.')
     parser.add_option(
         '-o', '--output', dest='output',
         default=DEFAULT_OUT_DIR,
@@ -379,6 +390,10 @@ class PackageBuilder(object):
         default=True, action='store_false',
         help='Do not use pinned revisions.')
     parser.add_option(
+        '--no-annotator', dest='no_annotator',
+        default=False, action='store_true',
+        help='Do not print annotator headings.')
+    parser.add_option(
         '--trybot', dest='trybot',
         default=False, action='store_true',
         help='Run and cache as if on trybot.')
@@ -399,6 +414,10 @@ class PackageBuilder(object):
         default=False, action='store_true',
         help='Run source target commands only')
     parser.add_option(
+        '--disable-git-cache', dest='disable_git_cache',
+        default=False, action='store_true',
+        help='Disable git cache when syncing sources')
+    parser.add_option(
         '--emit-signatures', dest='emit_signatures',
         help='Write human readable build signature for each step to FILE.',
         metavar='FILE')
@@ -409,6 +428,9 @@ class PackageBuilder(object):
     parser.add_option('--install', dest='install',
                       help='After building, copy contents of build packages' +
                       ' to the specified directory')
+    parser.add_option('--log-file', dest='log_file',
+                      default=None, action='store',
+                      help='Log all logging into a log file.')
     options, targets = parser.parse_args(args)
     if options.trybot and options.buildbot:
       print >>sys.stderr, (
@@ -416,6 +438,8 @@ class PackageBuilder(object):
       sys.exit(1)
     if options.trybot or options.buildbot:
       options.verbose = True
+      options.quiet = False
+      options.no_annotator = False
       options.sync_sources = True
       options.clobber = True
       options.emit_signatures = '-'
@@ -452,3 +476,15 @@ class PackageBuilder(object):
           storage=pynacl.gsd_storage.GSDStorage(
               write_bucket=None,
               read_buckets=read_buckets))
+
+  def ExtraSubstitutionPaths(self):
+    """Returns a dictionary of extra substitution paths allowed for commands."""
+    if self._options.disable_git_cache:
+      git_cache_dir = ''
+    else:
+      git_cache_dir = self._options.git_cache
+
+    return {
+        'top_srcdir': NACL_DIR,
+        'git_cache_dir': git_cache_dir,
+        }

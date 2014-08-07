@@ -29,8 +29,7 @@
 #include "config.h"
 #include "core/css/RuleSet.h"
 
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSFontSelector.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSSelectorList.h"
@@ -39,6 +38,7 @@
 #include "core/css/StyleRuleImport.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/html/track/TextTrackCue.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "platform/heap/HeapTerminatedArrayBuilder.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -53,7 +53,7 @@ using namespace HTMLNames;
 
 static inline bool isSelectorMatchingHTMLBasedOnRuleHash(const CSSSelector& selector)
 {
-    if (selector.m_match == CSSSelector::Tag) {
+    if (selector.match() == CSSSelector::Tag) {
         const AtomicString& selectorNamespace = selector.tagQName().namespaceURI();
         if (selectorNamespace != starAtom && selectorNamespace != xhtmlNamespaceURI)
             return false;
@@ -65,7 +65,7 @@ static inline bool isSelectorMatchingHTMLBasedOnRuleHash(const CSSSelector& sele
     }
     if (SelectorChecker::isCommonPseudoClassSelector(selector))
         return true;
-    return selector.m_match == CSSSelector::Id || selector.m_match == CSSSelector::Class;
+    return selector.match() == CSSSelector::Id || selector.match() == CSSSelector::Class;
 }
 
 static inline bool selectorListContainsUncommonAttributeSelector(const CSSSelector* selector)
@@ -115,7 +115,7 @@ static inline bool containsUncommonAttributeSelector(const CSSSelector& selector
 static inline PropertyWhitelistType determinePropertyWhitelistType(const AddRuleFlags addRuleFlags, const CSSSelector& selector)
 {
     for (const CSSSelector* component = &selector; component; component = component->tagHistory()) {
-        if (component->pseudoType() == CSSSelector::PseudoCue || (component->m_match == CSSSelector::PseudoElement && component->value() == TextTrackCue::cueShadowPseudoId()))
+        if (component->pseudoType() == CSSSelector::PseudoCue || (component->match() == CSSSelector::PseudoElement && component->value() == TextTrackCue::cueShadowPseudoId()))
             return PropertyWhitelistCue;
         if (component->pseudoType() == CSSSelector::PseudoFirstLetter)
             return PropertyWhitelistFirstLetter;
@@ -151,7 +151,7 @@ void RuleSet::addToRuleSet(const AtomicString& key, PendingRuleMap& map, const R
 
 static void extractValuesforSelector(const CSSSelector* selector, AtomicString& id, AtomicString& className, AtomicString& customPseudoElementName, AtomicString& tagName)
 {
-    switch (selector->m_match) {
+    switch (selector->match()) {
     case CSSSelector::Id:
         id = selector->value();
         break;
@@ -161,6 +161,8 @@ static void extractValuesforSelector(const CSSSelector* selector, AtomicString& 
     case CSSSelector::Tag:
         if (selector->tagQName().localName() != starAtom)
             tagName = selector->tagQName().localName();
+        break;
+    default:
         break;
     }
     if (selector->isCustomPseudoElement())
@@ -394,6 +396,7 @@ void RuleSet::trace(Visitor* visitor)
     visitor->trace(m_cuePseudoRules);
     visitor->trace(m_focusPseudoClassRules);
     visitor->trace(m_universalRules);
+    visitor->trace(m_features);
     visitor->trace(m_pageRules);
     visitor->trace(m_viewportRules);
     visitor->trace(m_fontFaceRules);

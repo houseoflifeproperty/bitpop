@@ -10,33 +10,6 @@
 
 namespace {
 
-bool IsRtcpPacketEvent(media::cast::CastLoggingEvent event_type) {
-  return event_type == media::cast::kAudioPacketReceived ||
-         event_type == media::cast::kVideoPacketReceived ||
-         event_type == media::cast::kDuplicateAudioPacketReceived ||
-         event_type == media::cast::kDuplicateVideoPacketReceived;
-}
-
-media::cast::transport::RtcpSenderFrameStatus
-TranslateToFrameStatusFromWireFormat(uint8 status) {
-  switch (status) {
-    case 0:
-      return media::cast::transport::kRtcpSenderFrameStatusUnknown;
-    case 1:
-      return media::cast::transport::kRtcpSenderFrameStatusDroppedByEncoder;
-    case 2:
-      return media::cast::transport::kRtcpSenderFrameStatusDroppedByFlowControl;
-    case 3:
-      return media::cast::transport::kRtcpSenderFrameStatusSentToNetwork;
-    default:
-      // If the sender adds new log messages we will end up here until we add
-      // the new messages in the receiver.
-      NOTREACHED();
-      VLOG(1) << "Unexpected status received: " << static_cast<int>(status);
-      return media::cast::transport::kRtcpSenderFrameStatusUnknown;
-  }
-}
-
 // A receiver frame event is identified by frame RTP timestamp, event timestamp
 // and event type.
 // A receiver packet event is identified by all of the above plus packet id.
@@ -127,9 +100,6 @@ void RtcpReceiver::IncomingRtcpPacket(RtcpParser* rtcp_parser) {
         break;
       case kRtcpApplicationSpecificCastReceiverLogCode:
         HandleApplicationSpecificCastReceiverLog(rtcp_parser);
-        break;
-      case kRtcpApplicationSpecificCastSenderLogCode:
-        HandleApplicationSpecificCastSenderLog(rtcp_parser);
         break;
       case kRtcpPayloadSpecificRembCode:
       case kRtcpPayloadSpecificRembItemCode:
@@ -479,7 +449,7 @@ void RtcpReceiver::HandleApplicationSpecificCastReceiverEventLog(
 
   const uint8 event = rtcp_field.cast_receiver_log.event;
   const CastLoggingEvent event_type = TranslateToLogEventFromWireFormat(event);
-  uint16 packet_id = IsRtcpPacketEvent(event_type) ?
+  uint16 packet_id = event_type == PACKET_RECEIVED ?
       rtcp_field.cast_receiver_log.delay_delta_or_packet_id.packet_id : 0;
   const base::TimeTicks event_timestamp =
       base::TimeTicks() +
@@ -518,36 +488,6 @@ void RtcpReceiver::HandleApplicationSpecificCastReceiverEventLog(
   event_log_messages->push_back(event_log);
 }
 
-void RtcpReceiver::HandleApplicationSpecificCastSenderLog(
-    RtcpParser* rtcp_parser) {
-  const RtcpField& rtcp_field = rtcp_parser->Field();
-  uint32 remote_ssrc = rtcp_field.cast_sender_log.sender_ssrc;
-
-  if (remote_ssrc_ != remote_ssrc) {
-    RtcpFieldTypes field_type;
-    // Message not to us. Iterate until we have passed this message.
-    do {
-      field_type = rtcp_parser->Iterate();
-    } while (field_type == kRtcpApplicationSpecificCastSenderLogCode);
-    return;
-  }
-  transport::RtcpSenderLogMessage sender_log;
-
-  RtcpFieldTypes field_type = rtcp_parser->Iterate();
-  while (field_type == kRtcpApplicationSpecificCastSenderLogCode) {
-    const RtcpField& rtcp_field = rtcp_parser->Field();
-    transport::RtcpSenderFrameLogMessage frame_log;
-    frame_log.frame_status =
-        TranslateToFrameStatusFromWireFormat(rtcp_field.cast_sender_log.status);
-    frame_log.rtp_timestamp = rtcp_field.cast_sender_log.rtp_timestamp;
-    sender_log.push_back(frame_log);
-    field_type = rtcp_parser->Iterate();
-  }
-  if (receiver_feedback_) {
-    receiver_feedback_->OnReceivedSenderLog(sender_log);
-  }
-}
-
 void RtcpReceiver::HandlePayloadSpecificCastItem(RtcpParser* rtcp_parser) {
   const RtcpField& rtcp_field = rtcp_parser->Field();
   RtcpCastMessage cast_message(remote_ssrc_);
@@ -583,14 +523,14 @@ void RtcpReceiver::HandlePayloadSpecificCastNackItem(
     frame_it = ret.first;
     DCHECK(frame_it != missing_frames_and_packets->end()) << "Invalid state";
   }
-  if (rtcp_field->cast_nack_item.packet_id == kRtcpCastAllPacketsLost) {
+  uint16 packet_id = rtcp_field->cast_nack_item.packet_id;
+  frame_it->second.insert(packet_id);
+
+  if (packet_id == kRtcpCastAllPacketsLost) {
     // Special case all packets in a frame is missing.
     return;
   }
-  uint16 packet_id = rtcp_field->cast_nack_item.packet_id;
   uint8 bitmask = rtcp_field->cast_nack_item.bitmask;
-
-  frame_it->second.insert(packet_id);
 
   if (bitmask) {
     for (int i = 1; i <= 8; ++i) {

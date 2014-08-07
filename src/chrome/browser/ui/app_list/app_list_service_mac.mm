@@ -7,7 +7,6 @@
 #include <ApplicationServices/ApplicationServices.h>
 #import <Cocoa/Cocoa.h>
 
-#include "apps/app_shim/app_shim_mac.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
@@ -15,6 +14,7 @@
 #include "base/mac/mac_util.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
+#include "base/prefs/pref_service.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -79,7 +79,7 @@ class ImageSkia;
 namespace {
 
 // Version of the app list shortcut version installed.
-const int kShortcutVersion = 1;
+const int kShortcutVersion = 2;
 
 // Duration of show and hide animations.
 const NSTimeInterval kAnimationDuration = 0.2;
@@ -397,7 +397,7 @@ void AppListServiceMac::CreateForProfile(Profile* requested_profile) {
 }
 
 void AppListServiceMac::ShowForProfile(Profile* requested_profile) {
-  if (requested_profile->IsManaged())
+  if (requested_profile->IsSupervised())
     return;
 
   InvalidatePendingProfileLoads();

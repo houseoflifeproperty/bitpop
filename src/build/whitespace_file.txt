@@ -54,7 +54,7 @@ adorning breakfast cereal with halibut -- shameful.
 CHAPTER 4:
 The taste of stale sushi in his mouth the next morning was unbearable. He
 wondered where the sushi came from as he attempted to wash the taste away with
-a bottle of 3000¥ sake. He tries to recall the cook's face.  Purple?
+a bottle of 3000¥ sake. He tries to recall the cook's face.  Purple? Probably.
 
 CHAPTER 5:
 Many tears later, Mr. Usagi would laugh at the memory of the earnest,
@@ -86,7 +86,42 @@ WHAT GOES UP MUST HAVE A NON-ZERO VELOCITY
 I can feel the heat closing in, feel them out there making their moves...
 What could possibly go wrong? We've already ate our cake.
 
-
-Hello from tutorial!
+Stand Still. Pause Clocks. We can make the World Stop.
 
 I want a 1917 build and you will give me what I want.
+
+This sentence is false.
+
+Beauty is in the eyes of a Beholder.
+
+
+The first time Yossarian saw the chaplain, he fell madly in love with him.
+*
+*
+*
+Give not thyself up, then, to fire, lest it invert thee, deaden thee; as for
+the time it did me. There is a wisdom that is woe; but there is a woe that is
+madness. And there is a Catskill eagle in some souls that can alike dive down
+into the blackest gorges, and soar out of them again and become invisible in
+the sunny spaces. And even if he for ever flies within the gorge, that gorge
+is in the mountains; so that even in his lowest swoop the mountain eagle is
+still higher than other birds upon the plain, even though they soar.
+*
+*
+*
+
+I'm here to commit lines and drop rhymes
+*
+This is a line to test and try uploading a cl. 
+
+And lo, in the year 2014, there was verily an attempt to upgrade to GCC 4.8 on
+the Android bots, and it was good. Except on one bot, where it was bad. And
+lo, the change was reverted, and GCC went back to 4.6, where code is slower
+and less optimized. And verily did it break the build, because artifacts had
+been created with 4.8, and alignment was no longer the same, and a great
+sadness descended upon the Android GN buildbot, and it did refuseth to build
+any more. But the sheriffs thought to themselves: Placebo! Let us clobber the
+bot, and perhaps it will rebuild with GCC 4.6, which hath worked for many many
+seasons. And so they modified the whitespace file with these immortal lines,
+and visited it upon the bots, that great destruction might be wrought upon
+their outdated binaries. In clobberus, veritas.

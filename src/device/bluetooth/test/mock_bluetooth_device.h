@@ -9,7 +9,6 @@
 
 #include "base/strings/string16.h"
 #include "device/bluetooth/bluetooth_device.h"
-#include "device/bluetooth/bluetooth_out_of_band_pairing_data.h"
 #include "device/bluetooth/bluetooth_uuid.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -63,22 +62,14 @@ class MockBluetoothDevice : public BluetoothDevice {
                void(const base::Closure& callback,
                     const BluetoothDevice::ErrorCallback& error_callback));
   MOCK_METHOD1(Forget, void(const BluetoothDevice::ErrorCallback&));
-  MOCK_METHOD3(ConnectToProfile,
-               void(BluetoothProfile* profile,
-                    const base::Closure& callback,
-                    const ConnectToProfileErrorCallback& error_callback));
   MOCK_METHOD3(ConnectToService,
                void(const BluetoothUUID& uuid,
                     const ConnectToServiceCallback& callback,
                     const ConnectToServiceErrorCallback& error_callback));
+  MOCK_METHOD2(CreateGattConnection,
+               void(const GattConnectionCallback& callback,
+                    const ConnectErrorCallback& error_callback));
 
-  MOCK_METHOD3(SetOutOfBandPairingData,
-      void(const BluetoothOutOfBandPairingData& data,
-           const base::Closure& callback,
-           const BluetoothDevice::ErrorCallback& error_callback));
-  MOCK_METHOD2(ClearOutOfBandPairingData,
-      void(const base::Closure& callback,
-           const BluetoothDevice::ErrorCallback& error_callback));
   MOCK_METHOD2(StartConnectionMonitor,
                void(const base::Closure& callback,
                     const BluetoothDevice::ErrorCallback& error_callback));

@@ -8,21 +8,23 @@
 #include <map>
 
 #include "mojo/public/cpp/bindings/lib/connector.h"
+#include "mojo/public/cpp/bindings/lib/filter_chain.h"
 #include "mojo/public/cpp/bindings/lib/shared_data.h"
+#include "mojo/public/cpp/environment/environment.h"
 
 namespace mojo {
 namespace internal {
 
-class Router : public MessageReceiver {
+class Router : public MessageReceiverWithResponder {
  public:
-  // The Router takes ownership of |message_pipe|.
-  explicit Router(ScopedMessagePipeHandle message_pipe,
-                  MojoAsyncWaiter* waiter = GetDefaultAsyncWaiter());
+  Router(ScopedMessagePipeHandle message_pipe,
+         FilterChain filters,
+         const MojoAsyncWaiter* waiter = Environment::GetDefaultAsyncWaiter());
   virtual ~Router();
 
   // Sets the receiver to handle messages read from the message pipe that do
   // not have the kMessageIsResponse flag set.
-  void set_incoming_receiver(MessageReceiver* receiver) {
+  void set_incoming_receiver(MessageReceiverWithResponder* receiver) {
     incoming_receiver_ = receiver;
   }
 
@@ -30,13 +32,6 @@ class Router : public MessageReceiver {
   // encountered while reading from the pipe or waiting to read from the pipe.
   void set_error_handler(ErrorHandler* error_handler) {
     connector_.set_error_handler(error_handler);
-  }
-
-  // Errors from incoming receivers will force the router's connector into an
-  // error state, where no more messages will be processed. This method is used
-  // during testing to prevent that from happening.
-  void set_enforce_errors_from_incoming_receiver(bool enforce) {
-    connector_.set_enforce_errors_from_incoming_receiver(enforce);
   }
 
   // Returns true if an error was encountered while reading from the pipe or
@@ -47,14 +42,21 @@ class Router : public MessageReceiver {
     connector_.CloseMessagePipe();
   }
 
-  ScopedMessagePipeHandle ReleaseMessagePipe() {
-    return connector_.ReleaseMessagePipe();
+  ScopedMessagePipeHandle PassMessagePipe() {
+    return connector_.PassMessagePipe();
   }
 
   // MessageReceiver implementation:
   virtual bool Accept(Message* message) MOJO_OVERRIDE;
   virtual bool AcceptWithResponder(Message* message, MessageReceiver* responder)
       MOJO_OVERRIDE;
+
+  // Sets this object to testing mode.
+  // In testing mode:
+  // - the object is more tolerant of unrecognized response messages;
+  // - the connector continues working after seeing errors from its incoming
+  //   receiver.
+  void EnableTestingMode();
 
  private:
   typedef std::map<uint64_t, MessageReceiver*> ResponderMap;
@@ -66,20 +68,21 @@ class Router : public MessageReceiver {
 
     // MessageReceiver implementation:
     virtual bool Accept(Message* message) MOJO_OVERRIDE;
-    virtual bool AcceptWithResponder(Message* message,
-                                     MessageReceiver* responder) MOJO_OVERRIDE;
+
    private:
     Router* router_;
   };
 
   bool HandleIncomingMessage(Message* message);
 
+  HandleIncomingMessageThunk thunk_;
+  FilterChain filters_;
   Connector connector_;
   SharedData<Router*> weak_self_;
-  MessageReceiver* incoming_receiver_;
-  HandleIncomingMessageThunk thunk_;
+  MessageReceiverWithResponder* incoming_receiver_;
   ResponderMap responders_;
   uint64_t next_request_id_;
+  bool testing_mode_;
 };
 
 }  // namespace internal

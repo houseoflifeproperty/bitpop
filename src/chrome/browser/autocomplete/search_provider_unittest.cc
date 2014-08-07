@@ -26,7 +26,6 @@
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
-#include "chrome/browser/search_engines/search_engine_type.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -34,13 +33,16 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/google/core/browser/google_switches.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/search_engines/search_engine_type.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/pref_names.h"
 #include "components/variations/entropy_provider.h"
+#include "components/variations/variations_associated_data.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_status.h"
@@ -252,7 +254,7 @@ void SearchProviderTest::SetUp() {
   data.suggestions_url = "http://defaultturl2/{searchTerms}";
   data.instant_url = "http://does/not/exist?strk=1";
   data.search_terms_replacement_key = "strk";
-  default_t_url_ = new TemplateURL(&profile_, data);
+  default_t_url_ = new TemplateURL(data);
   turl_model->Add(default_t_url_);
   turl_model->SetUserSelectedDefaultSearchProvider(default_t_url_);
   TemplateURLID default_provider_id = default_t_url_->id();
@@ -266,7 +268,7 @@ void SearchProviderTest::SetUp() {
   data.SetKeyword(ASCIIToUTF16("k"));
   data.SetURL("http://keyword/{searchTerms}");
   data.suggestions_url = "http://suggest_keyword/{searchTerms}";
-  keyword_t_url_ = new TemplateURL(&profile_, data);
+  keyword_t_url_ = new TemplateURL(data);
   turl_model->Add(keyword_t_url_);
   ASSERT_NE(0, keyword_t_url_->id());
 
@@ -296,7 +298,7 @@ void SearchProviderTest::RunTest(TestData* cases,
   for (int i = 0; i < num_cases; ++i) {
     AutocompleteInput input(cases[i].input, base::string16::npos,
                             base::string16(), GURL(),
-                            AutocompleteInput::INVALID_SPEC, false,
+                            metrics::OmniboxEventProto::INVALID_SPEC, false,
                             prefer_keyword, true, true);
     provider_->Start(input, false);
     matches = provider_->matches();
@@ -342,7 +344,7 @@ void SearchProviderTest::QueryForInput(const base::string16& text,
                                        bool prefer_keyword) {
   // Start a query.
   AutocompleteInput input(text, base::string16::npos, base::string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC,
+                          metrics::OmniboxEventProto::INVALID_SPEC,
                           prevent_inline_autocomplete, prefer_keyword, true,
                           true);
   provider_->Start(input, false);
@@ -361,10 +363,12 @@ void SearchProviderTest::QueryForInputAndSetWYTMatch(
   if (!wyt_match)
     return;
   ASSERT_GE(provider_->matches().size(), 1u);
-  EXPECT_TRUE(FindMatchWithDestination(GURL(
-      default_t_url_->url_ref().ReplaceSearchTerms(
+  EXPECT_TRUE(FindMatchWithDestination(
+      GURL(default_t_url_->url_ref().ReplaceSearchTerms(
           TemplateURLRef::SearchTermsArgs(base::CollapseWhitespace(
-              text, false)))),
+              text, false)),
+          TemplateURLServiceFactory::GetForProfile(
+              &profile_)->search_terms_data())),
       wyt_match));
 }
 
@@ -375,7 +379,9 @@ GURL SearchProviderTest::AddSearchToHistory(TemplateURL* t_url,
       HistoryServiceFactory::GetForProfile(&profile_,
                                            Profile::EXPLICIT_ACCESS);
   GURL search(t_url->url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(term)));
+      TemplateURLRef::SearchTermsArgs(term),
+      TemplateURLServiceFactory::GetForProfile(
+          &profile_)->search_terms_data()));
   static base::Time last_added_time;
   last_added_time = std::max(base::Time::Now(),
       last_added_time + base::TimeDelta::FromMicroseconds(1));
@@ -480,7 +486,9 @@ TEST_F(SearchProviderTest, QueryDefaultProvider) {
 
   // And the URL matches what we expected.
   GURL expected_url(default_t_url_->suggestions_url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(term)));
+      TemplateURLRef::SearchTermsArgs(term),
+      TemplateURLServiceFactory::GetForProfile(
+          &profile_)->search_terms_data()));
   ASSERT_TRUE(fetcher->GetOriginalURL() == expected_url);
 
   // Tell the SearchProvider the suggest query is done.
@@ -501,7 +509,10 @@ TEST_F(SearchProviderTest, QueryDefaultProvider) {
   AutocompleteMatch wyt_match;
   EXPECT_TRUE(FindMatchWithDestination(
       GURL(default_t_url_->url_ref().ReplaceSearchTerms(
-          TemplateURLRef::SearchTermsArgs(term))), &wyt_match));
+          TemplateURLRef::SearchTermsArgs(term),
+          TemplateURLServiceFactory::GetForProfile(
+              &profile_)->search_terms_data())),
+      &wyt_match));
   EXPECT_TRUE(wyt_match.description.empty());
 
   // The match for term1 should be more relevant than the what you typed match.
@@ -547,7 +558,9 @@ TEST_F(SearchProviderTest, QueryKeywordProvider) {
 
   // And the URL matches what we expected.
   GURL expected_url(keyword_t_url_->suggestions_url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(term)));
+      TemplateURLRef::SearchTermsArgs(term),
+      TemplateURLServiceFactory::GetForProfile(
+          &profile_)->search_terms_data()));
   ASSERT_TRUE(keyword_fetcher->GetOriginalURL() == expected_url);
 
   // Tell the SearchProvider the keyword suggest query is done.
@@ -746,7 +759,9 @@ TEST_F(SearchProviderTest, AutocompleteMultipleVisitsImmediately) {
 TEST_F(SearchProviderTest, AutocompleteAfterSpace) {
   AddSearchToHistory(default_t_url_, ASCIIToUTF16("two  searches "), 2);
   GURL suggested_url(default_t_url_->url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("two searches"))));
+      TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("two searches")),
+      TemplateURLServiceFactory::GetForProfile(
+          &profile_)->search_terms_data()));
   profile_.BlockUntilHistoryProcessesPendingRequests();
 
   AutocompleteMatch wyt_match;
@@ -868,7 +883,7 @@ TEST_F(SearchProviderTest, KeywordOrderingAndDescriptions) {
       AutocompleteProvider::TYPE_SEARCH);
   controller.Start(AutocompleteInput(
       ASCIIToUTF16("k t"), base::string16::npos, base::string16(), GURL(),
-      AutocompleteInput::INVALID_SPEC, false, false, true, true));
+      metrics::OmniboxEventProto::INVALID_SPEC, false, false, true, true));
   const AutocompleteResult& result = controller.result();
 
   // There should be three matches, one for the keyword history, one for
@@ -1019,7 +1034,7 @@ TEST_F(SearchProviderTest, CommandLineOverrides) {
   data.short_name = ASCIIToUTF16("default");
   data.SetKeyword(data.short_name);
   data.SetURL("{google:baseURL}{searchTerms}");
-  default_t_url_ = new TemplateURL(&profile_, data);
+  default_t_url_ = new TemplateURL(data);
   turl_model->Add(default_t_url_);
   turl_model->SetUserSelectedDefaultSearchProvider(default_t_url_);
 
@@ -2882,7 +2897,7 @@ TEST_F(SearchProviderTest, CanSendURL) {
   template_url_data.instant_url = "http://does/not/exist?strk=1";
   template_url_data.search_terms_replacement_key = "strk";
   template_url_data.id = SEARCH_ENGINE_GOOGLE;
-  TemplateURL google_template_url(&profile_, template_url_data);
+  TemplateURL google_template_url(template_url_data);
 
   // Create field trial.
   base::FieldTrial* field_trial = base::FieldTrialList::CreateFieldTrial(
@@ -2893,7 +2908,7 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, &profile_));
+      metrics::OmniboxEventProto::OTHER, &profile_));
   SigninManagerBase* signin = SigninManagerFactory::GetForProfile(&profile_);
   signin->SetAuthenticatedUsername("test");
 
@@ -2901,14 +2916,14 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_TRUE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, &profile_));
+      metrics::OmniboxEventProto::OTHER, &profile_));
 
   // Not in field trial.
   ResetFieldTrialList();
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, &profile_));
+      metrics::OmniboxEventProto::OTHER, &profile_));
   field_trial = base::FieldTrialList::CreateFieldTrial(
       "AutocompleteDynamicTrial_2", "EnableZeroSuggest");
   field_trial->group();
@@ -2917,59 +2932,59 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("badpageurl"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, &profile_));
+      metrics::OmniboxEventProto::OTHER, &profile_));
 
   // Invalid page classification.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS,
+      metrics::OmniboxEventProto::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS,
       &profile_));
 
   // Invalid page classification.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS,
+      metrics::OmniboxEventProto::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS,
       &profile_));
 
   // HTTPS page URL on same domain as provider.
   EXPECT_TRUE(SearchProvider::CanSendURL(
       GURL("https://www.google.com/search"),
       GURL("https://www.google.com/complete/search"),
-      &google_template_url, AutocompleteInput::OTHER, &profile_));
+      &google_template_url, metrics::OmniboxEventProto::OTHER, &profile_));
 
   // Non-HTTP[S] page URL on same domain as provider.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("ftp://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, &profile_));
+      metrics::OmniboxEventProto::OTHER, &profile_));
 
   // Non-HTTP page URL on different domain.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("https://www.notgoogle.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, &profile_));
+      metrics::OmniboxEventProto::OTHER, &profile_));
 
   // Non-HTTPS provider.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("http://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, &profile_));
+      metrics::OmniboxEventProto::OTHER, &profile_));
 
   // Suggest disabled.
   profile_.GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, false);
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, &profile_));
+      metrics::OmniboxEventProto::OTHER, &profile_));
   profile_.GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
 
   // Incognito.
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, profile_.GetOffTheRecordProfile()));
+      metrics::OmniboxEventProto::OTHER, profile_.GetOffTheRecordProfile()));
 
   // Tab sync not enabled.
   profile_.GetPrefs()->SetBoolean(sync_driver::prefs::kSyncKeepEverythingSynced,
@@ -2978,7 +2993,7 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, &profile_));
+      metrics::OmniboxEventProto::OTHER, &profile_));
   profile_.GetPrefs()->SetBoolean(sync_driver::prefs::kSyncTabs, true);
 
   // Tab sync is encrypted.
@@ -2990,7 +3005,7 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_FALSE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, &profile_));
+      metrics::OmniboxEventProto::OTHER, &profile_));
   encrypted_types.Remove(syncer::SESSIONS);
   service->OnEncryptedTypesChanged(encrypted_types, false);
 
@@ -2998,7 +3013,7 @@ TEST_F(SearchProviderTest, CanSendURL) {
   EXPECT_TRUE(SearchProvider::CanSendURL(
       GURL("http://www.google.com/search"),
       GURL("https://www.google.com/complete/search"), &google_template_url,
-      AutocompleteInput::OTHER, &profile_));
+      metrics::OmniboxEventProto::OTHER, &profile_));
 }
 
 TEST_F(SearchProviderTest, TestDeleteMatch) {
@@ -3102,4 +3117,72 @@ TEST_F(SearchProviderTest, CheckDuplicateMatchesSaved) {
   EXPECT_EQ(1U, match_avid.duplicate_matches.size());
 
   EXPECT_EQ(0U, match_apricot.duplicate_matches.size());
+}
+
+TEST_F(SearchProviderTest, SuggestQueryUsesToken) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableAnswersInSuggest);
+
+  TemplateURLService* turl_model =
+      TemplateURLServiceFactory::GetForProfile(&profile_);
+
+  TemplateURLData data;
+  data.short_name = ASCIIToUTF16("default");
+  data.SetKeyword(data.short_name);
+  data.SetURL("http://example/{searchTerms}{google:sessionToken}");
+  data.suggestions_url =
+      "http://suggest/?q={searchTerms}&{google:sessionToken}";
+  default_t_url_ = new TemplateURL(data);
+  turl_model->Add(default_t_url_);
+  turl_model->SetUserSelectedDefaultSearchProvider(default_t_url_);
+
+  base::string16 term = term1_.substr(0, term1_.length() - 1);
+  QueryForInput(term, false, false);
+
+  // Make sure the default provider's suggest service was queried.
+  net::TestURLFetcher* fetcher = test_factory_.GetFetcherByID(
+      SearchProvider::kDefaultProviderURLFetcherID);
+  ASSERT_TRUE(fetcher);
+
+  // And the URL matches what we expected.
+  TemplateURLRef::SearchTermsArgs search_terms_args(term);
+  search_terms_args.session_token = provider_->current_token_;
+  GURL expected_url(default_t_url_->suggestions_url_ref().ReplaceSearchTerms(
+      search_terms_args, turl_model->search_terms_data()));
+  EXPECT_EQ(fetcher->GetOriginalURL().spec(), expected_url.spec());
+
+  // Complete running the fetcher to clean up.
+  fetcher->set_response_code(200);
+  fetcher->delegate()->OnURLFetchComplete(fetcher);
+  RunTillProviderDone();
+}
+
+TEST_F(SearchProviderTest, SessionToken) {
+  // Subsequent calls always get the same token.
+  std::string token = provider_->GetSessionToken();
+  std::string token2 = provider_->GetSessionToken();
+  EXPECT_EQ(token, token2);
+  EXPECT_FALSE(token.empty());
+
+  // Calls do not regenerate a token.
+  provider_->current_token_ = "PRE-EXISTING TOKEN";
+  token = provider_->GetSessionToken();
+  EXPECT_EQ(token, "PRE-EXISTING TOKEN");
+
+  // ... unless the token has expired.
+  provider_->current_token_.clear();
+  const base::TimeDelta kSmallDelta = base::TimeDelta::FromMilliseconds(1);
+  provider_->token_expiration_time_ = base::TimeTicks::Now() - kSmallDelta;
+  token = provider_->GetSessionToken();
+  EXPECT_FALSE(token.empty());
+  EXPECT_EQ(token, provider_->current_token_);
+
+  // The expiration time is always updated.
+  provider_->GetSessionToken();
+  base::TimeTicks expiration_time_1 = provider_->token_expiration_time_;
+  base::PlatformThread::Sleep(kSmallDelta);
+  provider_->GetSessionToken();
+  base::TimeTicks expiration_time_2 = provider_->token_expiration_time_;
+  EXPECT_GT(expiration_time_2, expiration_time_1);
+  EXPECT_GE(expiration_time_2, expiration_time_1 + kSmallDelta);
 }

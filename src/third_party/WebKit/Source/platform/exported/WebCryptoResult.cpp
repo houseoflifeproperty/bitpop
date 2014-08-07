@@ -59,6 +59,12 @@ void WebCryptoResult::completeWithBuffer(const void* bytes, unsigned bytesSize)
     completeWithBuffer(buffer);
 }
 
+void WebCryptoResult::completeWithJson(const char* utf8Data, unsigned length)
+{
+    m_impl->completeWithJson(utf8Data, length);
+    reset();
+}
+
 void WebCryptoResult::completeWithBoolean(bool b)
 {
     m_impl->completeWithBoolean(b);
@@ -78,6 +84,11 @@ void WebCryptoResult::completeWithKeyPair(const WebCryptoKey& publicKey, const W
     ASSERT(!privateKey.isNull());
     m_impl->completeWithKeyPair(publicKey, privateKey);
     reset();
+}
+
+bool WebCryptoResult::cancelled() const
+{
+    return m_impl->cancelled();
 }
 
 WebCryptoResult::WebCryptoResult(const PassRefPtr<WebCore::CryptoResult>& impl)

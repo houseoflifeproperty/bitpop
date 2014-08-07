@@ -55,13 +55,13 @@
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/login_wizard.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_adding_screen.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -72,11 +72,10 @@
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
 #include "chrome/browser/chromeos/ui/choose_mobile_network_dialog.h"
 #include "chrome/browser/drive/drive_service_interface.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
-#include "chrome/browser/ui/ash/stub_user_accounts_delegate.h"
+#include "chrome/browser/ui/ash/user_accounts_delegate_chromeos.h"
 #include "chrome/browser/ui/ash/volume_controller_chromeos.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -98,6 +97,7 @@
 #include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "chromeos/login/login_state.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
@@ -585,11 +585,10 @@ void SystemTrayDelegateChromeOS::ShowEnterpriseInfo() {
         new chromeos::HelpAppLauncher(GetNativeWindow()));
     help_app->ShowHelpTopic(chromeos::HelpAppLauncher::HELP_ENTERPRISE);
   } else {
-    GURL url(google_util::StringAppendGoogleLocaleParam(
-        chrome::kLearnMoreEnterpriseURL));
     chrome::ScopedTabbedBrowserDisplayer displayer(
         ProfileManager::GetActiveUserProfile(), chrome::HOST_DESKTOP_TYPE_ASH);
-    chrome::ShowSingletonTab(displayer.browser(), url);
+    chrome::ShowSingletonTab(displayer.browser(),
+                             GURL(chrome::kLearnMoreEnterpriseURL));
   }
 }
 
@@ -915,18 +914,13 @@ ash::tray::UserAccountsDelegate*
 SystemTrayDelegateChromeOS::GetUserAccountsDelegate(
     const std::string& user_id) {
   if (!accounts_delegates_.contains(user_id)) {
-    // TODO(dzhioev): replace stub with real implementation.
-    accounts_delegates_.set(user_id,
-                            scoped_ptr<ash::tray::UserAccountsDelegate>(
-                                new StubUserAccountsDelegate(user_id)));
-    static_cast<StubUserAccountsDelegate*>(accounts_delegates_.get(user_id))
-        ->AddAccount("secondary_account1@gmail.com");
-    static_cast<StubUserAccountsDelegate*>(accounts_delegates_.get(user_id))
-        ->AddAccount("very_long_account_name_for_user@gmail.com");
-    static_cast<StubUserAccountsDelegate*>(accounts_delegates_.get(user_id))
-        ->AddAccount("secondary_account2@gmail.com");
-    static_cast<StubUserAccountsDelegate*>(accounts_delegates_.get(user_id))
-        ->AddAccount("very_very_very_long_account_name_for_user@gmail.com");
+    const User* user = UserManager::Get()->FindUser(user_id);
+    Profile* user_profile = UserManager::Get()->GetProfileByUser(user);
+    CHECK(user_profile);
+    accounts_delegates_.set(
+        user_id,
+        scoped_ptr<ash::tray::UserAccountsDelegate>(
+            new UserAccountsDelegateChromeOS(user_profile)));
   }
   return accounts_delegates_.get(user_id);
 }
@@ -972,12 +966,12 @@ void SystemTrayDelegateChromeOS::SetProfile(Profile* profile) {
       base::Bind(&SystemTrayDelegateChromeOS::UpdateLogoutDialogDuration,
                  base::Unretained(this)));
   user_pref_registrar_->Add(
-      prefs::kLargeCursorEnabled,
+      prefs::kAccessibilityLargeCursorEnabled,
       base::Bind(&SystemTrayDelegateChromeOS::OnAccessibilityModeChanged,
                  base::Unretained(this),
                  ash::A11Y_NOTIFICATION_NONE));
   user_pref_registrar_->Add(
-      prefs::kAutoclickEnabled,
+      prefs::kAccessibilityAutoclickEnabled,
       base::Bind(&SystemTrayDelegateChromeOS::OnAccessibilityModeChanged,
                  base::Unretained(this),
                  ash::A11Y_NOTIFICATION_NONE));

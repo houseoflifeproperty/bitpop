@@ -5,10 +5,10 @@
 #ifndef V8_ALLOCATION_SITE_SCOPES_H_
 #define V8_ALLOCATION_SITE_SCOPES_H_
 
-#include "ast.h"
-#include "handles.h"
-#include "objects.h"
-#include "zone.h"
+#include "src/ast.h"
+#include "src/handles.h"
+#include "src/objects.h"
+#include "src/zone.h"
 
 namespace v8 {
 namespace internal {
@@ -20,7 +20,7 @@ class AllocationSiteContext {
  public:
   explicit AllocationSiteContext(Isolate* isolate) {
     isolate_ = isolate;
-  };
+  }
 
   Handle<AllocationSite> top() { return top_; }
   Handle<AllocationSite> current() { return current_; }

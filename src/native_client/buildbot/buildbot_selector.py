@@ -58,6 +58,10 @@ BOT_ASSIGNMENT = {
         python + ' buildbot/buildbot_pnacl.py opt 32 pnacl',
     'precise_64-newlib-x86_64-pnacl':
         python + ' buildbot/buildbot_pnacl.py opt 64 pnacl',
+    'mac10.8-newlib-opt-pnacl':
+        python + ' buildbot/buildbot_pnacl.py opt 32 pnacl',
+    'win7-64-newlib-opt-pnacl':
+        python + ' buildbot/buildbot_pnacl.py opt 64 pnacl',
     'precise_64-newlib-mips-pnacl':
         echo + ' "TODO(mseaborn): add mips"',
     # PNaCl Spec
@@ -74,6 +78,12 @@ BOT_ASSIGNMENT = {
         bash + ' buildbot/buildbot_spec2k.sh nacl-x8632',
     'lucid_64-newlib-x86_64-spec':
         bash + ' buildbot/buildbot_spec2k.sh nacl-x8664',
+
+    # Android bots.
+    'precise64-newlib-dbg-android':
+        python + ' buildbot/buildbot_standard.py dbg arm newlib --android',
+    'precise64-newlib-opt-android':
+        python + ' buildbot/buildbot_standard.py opt arm newlib --android',
 
     # Valgrind bots.
     'precise-64-newlib-dbg-valgrind':
@@ -105,6 +115,11 @@ BOT_ASSIGNMENT = {
         bash + ' buildbot/buildbot_valgrind.sh newlib',
     'nacl-precise64_glibc_dbg_valgrind':
         bash + ' buildbot/buildbot_valgrind.sh glibc',
+    # Android trybots.
+    'nacl-precise64-newlib-dbg-android':
+        python + ' buildbot/buildbot_standard.py dbg arm newlib --android',
+    'nacl-precise64-newlib-opt-android':
+        python + ' buildbot/buildbot_standard.py opt arm newlib --android',
     # Coverage trybots.
     'nacl-mac10.6-newlib-coverage':
          python + (' buildbot/buildbot_standard.py '
@@ -136,6 +151,10 @@ BOT_ASSIGNMENT = {
         bash + ' buildbot/buildbot_pnacl.sh mode-buildbot-arm-try',
     'nacl-arm_hw_opt_panda':
         bash + ' buildbot/buildbot_pnacl.sh mode-buildbot-arm-hw-try',
+    'nacl-mac10.8_newlib_opt_pnacl':
+        python + ' buildbot/buildbot_pnacl.py opt 32 pnacl',
+    'nacl-win7_64_newlib_opt_pnacl':
+        python + ' buildbot/buildbot_pnacl.py opt 64 pnacl',
     # Pnacl spec2k trybots
     'nacl-precise_64-newlib-x86_32-pnacl-spec':
         bash + ' buildbot/buildbot_spec2k.sh pnacl-trybot-x8632',
@@ -157,25 +176,26 @@ BOT_ASSIGNMENT = {
     'win7-toolchain_arm':
         python +
         ' buildbot/buildbot_toolchain_build.py'
-        ' toolchain_build'
-        ' --buildbot',
+        ' --buildbot'
+        ' toolchain_build',
     'mac-toolchain_arm':
         python +
         ' buildbot/buildbot_toolchain_build.py'
-        ' toolchain_build'
-        ' --buildbot',
+        ' --buildbot'
+        ' toolchain_build',
     'precise64-toolchain_arm':
         python +
         ' buildbot/buildbot_toolchain_build.py'
-        ' toolchain_build'
-        ' --buildbot',
+        ' --buildbot'
+        ' --test_toolchain nacl_arm_newlib'
+        ' toolchain_build',
 
     # BIONIC toolchain builders.
     'precise64-toolchain_bionic':
         python +
         ' buildbot/buildbot_toolchain_build.py'
-        ' toolchain_build_bionic'
-        ' --buildbot',
+        ' --buildbot'
+        ' toolchain_build_bionic',
 
     # Pnacl toolchain builders.
     'linux-armtools-x86_32':
@@ -217,18 +237,19 @@ BOT_ASSIGNMENT = {
     'nacl-toolchain-precise64-newlib-arm':
         python +
         ' buildbot/buildbot_toolchain_build.py'
-        ' toolchain_build'
-        ' --trybot',
+        ' --trybot'
+        ' --test_toolchain nacl_arm_newlib'
+        ' toolchain_build',
     'nacl-toolchain-mac-newlib-arm':
         python +
         ' buildbot/buildbot_toolchain_build.py'
-        ' toolchain_build'
-        ' --trybot',
+        ' --trybot'
+        ' toolchain_build',
     'nacl-toolchain-win7-newlib-arm':
         python +
         ' buildbot/buildbot_toolchain_build.py'
-        ' toolchain_build'
-        ' --trybot',
+        ' --trybot'
+        ' toolchain_build',
     'nacl-toolchain-precise64-glibc':
         bash + ' buildbot/buildbot_linux-glibc-makefile.sh',
     'nacl-toolchain-mac-glibc':
@@ -314,6 +335,8 @@ def EscapeJson(data):
 def Main():
   builder = os.environ.get('BUILDBOT_BUILDERNAME')
   build_number = os.environ.get('BUILDBOT_BUILDNUMBER')
+  build_revision = os.environ.get('BUILDBOT_GOT_REVISION',
+                                  os.environ.get('BUILDBOT_REVISION'))
   slave_type = os.environ.get('BUILDBOT_SLAVE_TYPE')
   cmd = BOT_ASSIGNMENT.get(builder)
   if not cmd:
@@ -330,8 +353,11 @@ def Main():
   # Use .boto file from home-dir instead of buildbot supplied one.
   if 'AWS_CREDENTIAL_FILE' in env:
     del env['AWS_CREDENTIAL_FILE']
-  env['BOTO_CONFIG'] = os.path.expanduser('~/.boto')
-  env['GSUTIL'] = '/b/build/third_party/gsutil/gsutil'
+  alt_boto = os.path.expanduser('~/.boto')
+  if os.path.exists(alt_boto):
+    env['BOTO_CONFIG'] = alt_boto
+  cwd_drive = os.path.splitdrive(os.getcwd())[0]
+  env['GSUTIL'] = cwd_drive + '/b/build/third_party/gsutil/gsutil'
 
   # When running from cygwin, we sometimes want to use a native python.
   # The native python will use the depot_tools version by invoking python.bat.
@@ -390,6 +416,7 @@ def Main():
     # perf data if relevant.
     cmd = ' '.join([
         python, runtest,
+        '--revision=' + build_revision,
         '--build-dir=src/out',
         '--results-url=https://chromeperf.appspot.com',
         '--annotate=graphing',

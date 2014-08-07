@@ -17,12 +17,10 @@
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/translate/translate_infobar_delegate.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/translate/translate_service.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -38,8 +36,10 @@
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
 #include "components/autofill/core/browser/validation.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "components/infobars/core/infobar_manager.h"
+#include "components/translate/core/browser/translate_infobar_delegate.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -202,8 +202,6 @@ class AutofillInteractiveTest : public InProcessBrowserTest {
 
   // InProcessBrowserTest:
   virtual void SetUpOnMainThread() OVERRIDE {
-    TranslateService::SetUseInfobar(true);
-
     // Don't want Keychain coming up on Mac.
     test::DisableSystemServices(browser()->profile()->GetPrefs());
 
@@ -220,7 +218,7 @@ class AutofillInteractiveTest : public InProcessBrowserTest {
     content::WebContents* web_contents = GetWebContents();
     AutofillManager* autofill_manager = ContentAutofillDriver::FromWebContents(
                                             web_contents)->autofill_manager();
-    autofill_manager->delegate()->HideAutofillPopup();
+    autofill_manager->client()->HideAutofillPopup();
   }
 
   PersonalDataManager* GetPersonalDataManager() {
@@ -483,6 +481,35 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillSelectViaTab) {
 
   // The form should be filled.
   ExpectFilledTestForm();
+}
+
+// Test that a field is still autofillable after the previously autofilled
+// value is deleted.
+IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, OnDeleteValueAfterAutofill) {
+  CreateTestProfile();
+
+  // Load the test page.
+  ASSERT_NO_FATAL_FAILURE(ui_test_utils::NavigateToURL(browser(),
+      GURL(std::string(kDataURIPrefix) + kTestFormString)));
+
+  // Invoke and accept the Autofill popup and verify the form was filled.
+  FocusFirstNameField();
+  SendKeyToPageAndWait(ui::VKEY_M);
+  SendKeyToPopupAndWait(ui::VKEY_DOWN);
+  SendKeyToPopupAndWait(ui::VKEY_RETURN);
+  ExpectFilledTestForm();
+
+  // Delete the value of a filled field.
+  ASSERT_TRUE(content::ExecuteScript(
+      GetRenderViewHost(),
+      "document.getElementById('firstname').value = '';"));
+  ExpectFieldValue("firstname", "");
+
+  // Invoke and accept the Autofill popup and verify the field was filled.
+  SendKeyToPageAndWait(ui::VKEY_M);
+  SendKeyToPopupAndWait(ui::VKEY_DOWN);
+  SendKeyToPopupAndWait(ui::VKEY_RETURN);
+  ExpectFieldValue("firstname", "Milton");
 }
 
 // Test that a JavaScript oninput event is fired after auto-filling a form.
@@ -928,6 +955,10 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterReload) {
 }
 
 IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterTranslate) {
+  // TODO(port): Test corresponding bubble translate UX: http://crbug.com/383235
+  if (TranslateService::IsTranslateBubbleEnabled())
+    return;
+
   CreateTestProfile();
 
   GURL url(std::string(kDataURIPrefix) +

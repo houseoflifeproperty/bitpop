@@ -23,15 +23,9 @@ class Page1(WebrtcCasesPage):
       page_set=page_set)
 
   def RunWebrtc(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 10
-      }))
-    action_runner.RunAction(JavascriptAction(
-      {
-        'expression': 'checkForErrors();'
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.Wait(10)
+    action_runner.ExecuteJavaScript('checkForErrors();')
 
 
 class Page2(WebrtcCasesPage):
@@ -44,48 +38,18 @@ class Page2(WebrtcCasesPage):
       page_set=page_set)
 
   def RunEndure(self, action_runner):
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'button[id="btn1"]'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 2
-      }))
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'button[id="btn2"]'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 10
-      }))
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'button[id="btn3"]'
-      }))
+    action_runner.ClickElement('button[id="btn1"]')
+    action_runner.Wait(2)
+    action_runner.ClickElement('button[id="btn2"]')
+    action_runner.Wait(10)
+    action_runner.ClickElement('button[id="btn3"]')
 
   def RunWebrtc(self, action_runner):
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'button[id="btn1"]'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 2
-      }))
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'button[id="btn2"]'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 10
-      }))
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'button[id="btn3"]'
-      }))
+    action_runner.ClickElement('button[id="btn1"]')
+    action_runner.Wait(2)
+    action_runner.ClickElement('button[id="btn2"]')
+    action_runner.Wait(10)
+    action_runner.ClickElement('button[id="btn3"]')
 
 
 class WebrtcCasesPageSet(page_set_module.PageSet):

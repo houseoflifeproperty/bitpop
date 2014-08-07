@@ -12,6 +12,7 @@ import sys
 
 from telemetry import decorators
 from telemetry.core import browser
+from telemetry.core import platform
 from telemetry.core import possible_browser
 from telemetry.core import util
 from telemetry.core.backends import adb_commands
@@ -24,8 +25,7 @@ CHROME_PACKAGE_NAMES = {
       ['org.chromium.content_shell_apk',
        android_browser_backend.ContentShellBackendSettings,
        'ContentShell.apk'],
-  # TODO(tonyg): rename android-chromium-testshell to android-chrome-shell
-  'android-chromium-testshell':
+  'android-chrome-shell':
       ['org.chromium.chrome.shell',
        android_browser_backend.ChromeShellBackendSettings,
        'ChromeShell.apk'],
@@ -101,7 +101,8 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
 
   def Create(self):
     use_rndis_forwarder = (self.finder_options.android_rndis or
-                           self.finder_options.browser_options.netsim)
+                           self.finder_options.browser_options.netsim or
+                           platform.GetHostPlatform().GetOSName() != 'linux')
     backend = android_browser_backend.AndroidBrowserBackend(
         self.finder_options.browser_options, self._backend_settings,
         use_rndis_forwarder,
@@ -199,6 +200,10 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
   device = devices[0]
 
   adb = adb_commands.AdbCommands(device=device)
+  # Trying to root the device, if possible.
+  if not adb.IsRootEnabled():
+    # Ignore result.
+    adb.EnableAdbRoot()
 
   if sys.platform.startswith('linux'):
     # Host side workaround for crbug.com/268450 (adb instability)
@@ -214,13 +219,12 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
         if ret:
           logging.warn('Failed to taskset %d (%s)', pid, ret)
 
-    if not os.environ.get('BUILDBOT_BUILDERNAME'):
-      # Killing adbd before running tests has proven to make them less likely to
-      # flake out during the test. We skip this if Telemetry is running under a
-      # buildbot because build/android/test_runner.py wrapper already took care
-      # of it before starting the shards.
-      adb.RestartAdbdOnDevice()
-      adb.WaitForDevicePm()
+  if not os.environ.get('BUILDBOT_BUILDERNAME'):
+    # Killing adbd before running tests has proven to make them less likely to
+    # flake out during the test. We skip this if Telemetry is running under a
+    # buildbot because build/android/test_runner.py wrapper already took care
+    # of it before starting the shards.
+    adb.RestartAdbdOnDevice()
 
   packages = adb.RunShellCommand('pm list packages')
   possible_browsers = []

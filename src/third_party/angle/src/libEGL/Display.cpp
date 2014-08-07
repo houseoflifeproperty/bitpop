@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "common/debug.h"
-#include "libGLESv2/mathutil.h"
+#include "common/mathutil.h"
 #include "libGLESv2/main.h"
 #include "libGLESv2/Context.h"
 #include "libGLESv2/renderer/SwapChain.h"
@@ -384,22 +384,29 @@ EGLSurface Display::createOffscreenSurface(EGLConfig config, HANDLE shareHandle,
     return success(surface);
 }
 
-EGLContext Display::createContext(EGLConfig configHandle, const gl::Context *shareContext, bool notifyResets, bool robustAccess)
+EGLContext Display::createContext(EGLConfig configHandle, EGLint clientVersion, const gl::Context *shareContext, bool notifyResets, bool robustAccess)
 {
     if (!mRenderer)
     {
-        return NULL;
+        return EGL_NO_CONTEXT;
     }
     else if (mRenderer->testDeviceLost(false))   // Lost device
     {
         if (!restoreLostDevice())
-            return NULL;
+        {
+            return error(EGL_CONTEXT_LOST, EGL_NO_CONTEXT);
+        }
     }
 
-    gl::Context *context = glCreateContext(shareContext, mRenderer, notifyResets, robustAccess);
+    if (clientVersion > 2 && mRenderer->getMajorShaderModel() < 4)
+    {
+        return error(EGL_BAD_CONFIG, EGL_NO_CONTEXT);
+    }
+
+    gl::Context *context = glCreateContext(clientVersion, shareContext, mRenderer, notifyResets, robustAccess);
     mContextSet.insert(context);
 
-    return context;
+    return success(context);
 }
 
 bool Display::restoreLostDevice()
@@ -495,7 +502,6 @@ bool Display::hasExistingWindowSurface(HWND window)
 
 void Display::initExtensionString()
 {
-    HMODULE swiftShader = GetModuleHandle(TEXT("swiftshader_d3d9.dll"));
     bool shareHandleSupported = mRenderer->getShareHandleSupport();
 
     mExtensionString = "";
@@ -513,11 +519,6 @@ void Display::initExtensionString()
 
     mExtensionString += "EGL_ANGLE_window_fixed_size ";
 
-    if (swiftShader)
-    {
-        mExtensionString += "EGL_ANGLE_software_display ";
-    }
-
     if (shareHandleSupported)
     {
         mExtensionString += "EGL_ANGLE_surface_d3d_texture_2d_share_handle ";
@@ -525,8 +526,11 @@ void Display::initExtensionString()
 
     if (mRenderer->getPostSubBufferSupport())
     {
-        mExtensionString += "EGL_NV_post_sub_buffer";
+        mExtensionString += "EGL_NV_post_sub_buffer ";
     }
+
+    // TODO: complete support for the EGL_KHR_create_context extension
+    mExtensionString += "EGL_KHR_create_context ";
 
     std::string::size_type end = mExtensionString.find_last_not_of(' ');
     if (end != std::string::npos)

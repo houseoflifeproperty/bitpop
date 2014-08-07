@@ -27,6 +27,8 @@ using ::gfx::MockGLInterface;
 using ::testing::_;
 using ::testing::DoAll;
 using ::testing::InSequence;
+using ::testing::Invoke;
+using ::testing::InvokeWithoutArgs;
 using ::testing::MatcherCast;
 using ::testing::Pointee;
 using ::testing::Return;
@@ -35,6 +37,45 @@ using ::testing::SetArgPointee;
 using ::testing::SetArgumentPointee;
 using ::testing::StrEq;
 using ::testing::StrictMock;
+using ::testing::WithArg;
+
+namespace {
+
+void NormalizeInitState(gpu::gles2::GLES2DecoderTestBase::InitState* init) {
+  CHECK(init);
+  const char* kVAOExtensions[] = {
+      "GL_OES_vertex_array_object",
+      "GL_ARB_vertex_array_object",
+      "GL_APPLE_vertex_array_object"
+  };
+  bool contains_vao_extension = false;
+  for (size_t ii = 0; ii < arraysize(kVAOExtensions); ++ii) {
+    if (init->extensions.find(kVAOExtensions[ii]) != std::string::npos) {
+      contains_vao_extension = true;
+      break;
+    }
+  }
+  if (init->use_native_vao) {
+    if (contains_vao_extension)
+      return;
+    if (!init->extensions.empty())
+      init->extensions += " ";
+    if (StartsWithASCII(init->gl_version, "opengl es", false)) {
+      init->extensions += kVAOExtensions[0];
+    } else {
+#if !defined(OS_MACOSX)
+      init->extensions += kVAOExtensions[1];
+#else
+      init->extensions += kVAOExtensions[2];
+#endif  // OS_MACOSX
+    }
+  } else {
+    // Make sure we don't set up an invalid InitState.
+    CHECK(!contains_vao_extension);
+  }
+}
+
+}  // namespace Anonymous
 
 namespace gpu {
 namespace gles2 {
@@ -94,7 +135,8 @@ GLES2DecoderTestBase::InitState::InitState()
       request_depth(false),
       request_stencil(false),
       bind_generates_resource(false),
-      lose_context_when_out_of_memory(false) {
+      lose_context_when_out_of_memory(false),
+      use_native_vao(true) {
 }
 
 void GLES2DecoderTestBase::InitDecoder(const InitState& init) {
@@ -104,6 +146,8 @@ void GLES2DecoderTestBase::InitDecoder(const InitState& init) {
 void GLES2DecoderTestBase::InitDecoderWithCommandLine(
     const InitState& init,
     const base::CommandLine* command_line) {
+  InitState normalized_init = init;
+  NormalizeInitState(&normalized_init);
   Framebuffer::ClearFramebufferCompleteComboMap();
 
   gfx::SetGLGetProcAddressProc(gfx::MockGLInterface::GetGLProcAddress);
@@ -112,9 +156,11 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
   gl_.reset(new StrictMock<MockGLInterface>());
   ::gfx::MockGLInterface::SetGLInterface(gl_.get());
 
+  SetupMockGLBehaviors();
+
   // Only create stream texture manager if extension is requested.
   std::vector<std::string> list;
-  base::SplitString(init.extensions, ' ', &list);
+  base::SplitString(normalized_init.extensions, ' ', &list);
   scoped_refptr<FeatureInfo> feature_info;
   if (command_line)
     feature_info = new FeatureInfo(*command_line);
@@ -124,8 +170,8 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
                        memory_tracker_,
                        new ShaderTranslatorCache,
                        feature_info.get(),
-                       init.bind_generates_resource));
-  bool use_default_textures = init.bind_generates_resource;
+                       normalized_init.bind_generates_resource));
+  bool use_default_textures = normalized_init.bind_generates_resource;
 
   InSequence sequence;
 
@@ -136,17 +182,18 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
   // in turn initialize FeatureInfo, which needs a context to determine
   // extension support.
   context_ = new gfx::GLContextStubWithExtensions;
-  context_->AddExtensionsString(init.extensions.c_str());
-  context_->SetGLVersionString(init.gl_version.c_str());
+  context_->AddExtensionsString(normalized_init.extensions.c_str());
+  context_->SetGLVersionString(normalized_init.gl_version.c_str());
 
   context_->MakeCurrent(surface_.get());
   gfx::GLSurface::InitializeDynamicMockBindingsForTests(context_);
 
-  TestHelper::SetupContextGroupInitExpectations(gl_.get(),
-                                                DisallowedFeatures(),
-                                                init.extensions.c_str(),
-                                                init.gl_version.c_str(),
-                                                init.bind_generates_resource);
+  TestHelper::SetupContextGroupInitExpectations(
+      gl_.get(),
+      DisallowedFeatures(),
+      normalized_init.extensions.c_str(),
+      normalized_init.gl_version.c_str(),
+      normalized_init.bind_generates_resource);
 
   // We initialize the ContextGroup with a MockGLES2Decoder so that
   // we can use the ContextGroup to figure out how the real GLES2Decoder
@@ -156,7 +203,9 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
       group_->Initialize(mock_decoder_.get(), DisallowedFeatures()));
 
   if (group_->feature_info()->feature_flags().native_vertex_array_object) {
-    EXPECT_CALL(*gl_, GenVertexArraysOES(1, _)).Times(1).RetiresOnSaturation();
+    EXPECT_CALL(*gl_, GenVertexArraysOES(1, _))
+      .WillOnce(SetArgumentPointee<1>(kServiceVertexArrayId))
+        .RetiresOnSaturation();
     EXPECT_CALL(*gl_, BindVertexArrayOES(_)).Times(1).RetiresOnSaturation();
   }
 
@@ -239,13 +288,13 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
       .Times(1)
       .RetiresOnSaturation();
   EXPECT_CALL(*gl_, GetIntegerv(GL_ALPHA_BITS, _))
-      .WillOnce(SetArgumentPointee<1>(init.has_alpha ? 8 : 0))
+      .WillOnce(SetArgumentPointee<1>(normalized_init.has_alpha ? 8 : 0))
       .RetiresOnSaturation();
   EXPECT_CALL(*gl_, GetIntegerv(GL_DEPTH_BITS, _))
-      .WillOnce(SetArgumentPointee<1>(init.has_depth ? 24 : 0))
+      .WillOnce(SetArgumentPointee<1>(normalized_init.has_depth ? 24 : 0))
       .RetiresOnSaturation();
   EXPECT_CALL(*gl_, GetIntegerv(GL_STENCIL_BITS, _))
-      .WillOnce(SetArgumentPointee<1>(init.has_stencil ? 8 : 0))
+      .WillOnce(SetArgumentPointee<1>(normalized_init.has_stencil ? 8 : 0))
       .RetiresOnSaturation();
 
   EXPECT_CALL(*gl_, Enable(GL_VERTEX_PROGRAM_POINT_SIZE))
@@ -305,14 +354,15 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
 
   static const int32 kLoseContextWhenOutOfMemory = 0x10003;
 
-  int32 attributes[] = {EGL_ALPHA_SIZE,
-                        init.request_alpha ? 8 : 0,
-                        EGL_DEPTH_SIZE,
-                        init.request_depth ? 24 : 0,
-                        EGL_STENCIL_SIZE,
-                        init.request_stencil ? 8 : 0,
-                        kLoseContextWhenOutOfMemory,
-                        init.lose_context_when_out_of_memory ? 1 : 0, };
+  int32 attributes[] = {
+      EGL_ALPHA_SIZE,
+      normalized_init.request_alpha ? 8 : 0,
+      EGL_DEPTH_SIZE,
+      normalized_init.request_depth ? 24 : 0,
+      EGL_STENCIL_SIZE,
+      normalized_init.request_stencil ? 8 : 0,
+      kLoseContextWhenOutOfMemory,
+      normalized_init.lose_context_when_out_of_memory ? 1 : 0, };
   std::vector<int32> attribs(attributes, attributes + arraysize(attributes));
 
   decoder_.reset(GLES2Decoder::Create(group_.get()));
@@ -364,6 +414,11 @@ void GLES2DecoderTestBase::ResetDecoder() {
   EXPECT_CALL(*gl_, DeleteBuffersARB(1, _))
       .Times(2)
       .RetiresOnSaturation();
+  if (group_->feature_info()->feature_flags().native_vertex_array_object) {
+    EXPECT_CALL(*gl_, DeleteVertexArraysOES(1, Pointee(kServiceVertexArrayId)))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
 
   decoder_->EndDecoding();
   decoder_->Destroy(true);
@@ -372,6 +427,7 @@ void GLES2DecoderTestBase::ResetDecoder() {
   engine_.reset();
   ::gfx::MockGLInterface::SetGLInterface(NULL);
   gl_.reset();
+  gfx::ClearGLBindings();
 }
 
 void GLES2DecoderTestBase::TearDown() {
@@ -645,10 +701,7 @@ void GLES2DecoderTestBase::DoDeleteBuffer(
   EXPECT_CALL(*gl_, DeleteBuffersARB(1, Pointee(service_id)))
       .Times(1)
       .RetiresOnSaturation();
-  cmds::DeleteBuffers cmd;
-  cmd.Init(1, shared_memory_id_, shared_memory_offset_);
-  memcpy(shared_memory_address_, &client_id, sizeof(client_id));
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  GenHelper<cmds::DeleteBuffersImmediate>(client_id);
 }
 
 void GLES2DecoderTestBase::SetupExpectationsForColorMask(bool red,
@@ -672,6 +725,25 @@ void GLES2DecoderTestBase::SetupExpectationsForDepthMask(bool mask) {
   if (ignore_cached_state_for_test_ || cached_depth_mask_ != mask) {
     cached_depth_mask_ = mask;
     EXPECT_CALL(*gl_, DepthMask(mask)).Times(1).RetiresOnSaturation();
+  }
+}
+
+void GLES2DecoderTestBase::SetupExpectationsForStencilMask(uint32 front_mask,
+                                                           uint32 back_mask) {
+  if (ignore_cached_state_for_test_ ||
+      cached_stencil_front_mask_ != front_mask) {
+    cached_stencil_front_mask_ = front_mask;
+    EXPECT_CALL(*gl_, StencilMaskSeparate(GL_FRONT, front_mask))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
+
+  if (ignore_cached_state_for_test_ ||
+      cached_stencil_back_mask_ != back_mask) {
+    cached_stencil_back_mask_ = back_mask;
+    EXPECT_CALL(*gl_, StencilMaskSeparate(GL_BACK, back_mask))
+        .Times(1)
+        .RetiresOnSaturation();
   }
 }
 
@@ -761,23 +833,7 @@ void GLES2DecoderTestBase::SetupExpectationsForApplyingDirtyState(
   SetupExpectationsForColorMask(
       color_mask_red, color_mask_green, color_mask_blue, color_mask_alpha);
   SetupExpectationsForDepthMask(depth_mask);
-
-  if (ignore_cached_state_for_test_ ||
-      cached_stencil_front_mask_ != front_stencil_mask) {
-    cached_stencil_front_mask_ = front_stencil_mask;
-    EXPECT_CALL(*gl_, StencilMaskSeparate(GL_FRONT, front_stencil_mask))
-        .Times(1)
-        .RetiresOnSaturation();
-  }
-
-  if (ignore_cached_state_for_test_ ||
-      cached_stencil_back_mask_ != back_stencil_mask) {
-    cached_stencil_back_mask_ = back_stencil_mask;
-    EXPECT_CALL(*gl_, StencilMaskSeparate(GL_BACK, back_stencil_mask))
-        .Times(1)
-        .RetiresOnSaturation();
-  }
-
+  SetupExpectationsForStencilMask(front_stencil_mask, back_stencil_mask);
   SetupExpectationsForEnableDisable(GL_DEPTH_TEST,
                                     framebuffer_has_depth && depth_enabled);
   SetupExpectationsForEnableDisable(GL_STENCIL_TEST,
@@ -840,10 +896,7 @@ void GLES2DecoderTestBase::DoDeleteFramebuffer(
   EXPECT_CALL(*gl_, DeleteFramebuffersEXT(1, Pointee(service_id)))
       .Times(1)
       .RetiresOnSaturation();
-  cmds::DeleteFramebuffers cmd;
-  cmd.Init(1, shared_memory_id_, shared_memory_offset_);
-  memcpy(shared_memory_address_, &client_id, sizeof(client_id));
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  GenHelper<cmds::DeleteFramebuffersImmediate>(client_id);
 }
 
 void GLES2DecoderTestBase::DoBindRenderbuffer(
@@ -866,10 +919,7 @@ void GLES2DecoderTestBase::DoDeleteRenderbuffer(
   EXPECT_CALL(*gl_, DeleteRenderbuffersEXT(1, Pointee(service_id)))
       .Times(1)
       .RetiresOnSaturation();
-  cmds::DeleteRenderbuffers cmd;
-  cmd.Init(1, shared_memory_id_, shared_memory_offset_);
-  memcpy(shared_memory_address_, &client_id, sizeof(client_id));
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  GenHelper<cmds::DeleteRenderbuffersImmediate>(client_id);
 }
 
 void GLES2DecoderTestBase::DoBindTexture(
@@ -891,10 +941,7 @@ void GLES2DecoderTestBase::DoDeleteTexture(
   EXPECT_CALL(*gl_, DeleteTextures(1, Pointee(service_id)))
       .Times(1)
       .RetiresOnSaturation();
-  cmds::DeleteTextures cmd;
-  cmd.Init(1, shared_memory_id_, shared_memory_offset_);
-  memcpy(shared_memory_address_, &client_id, sizeof(client_id));
-  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  GenHelper<cmds::DeleteTexturesImmediate>(client_id);
 }
 
 void GLES2DecoderTestBase::DoTexImage2D(
@@ -913,7 +960,7 @@ void GLES2DecoderTestBase::DoTexImage2D(
       .WillOnce(Return(GL_NO_ERROR))
       .RetiresOnSaturation();
   cmds::TexImage2D cmd;
-  cmd.Init(target, level, internal_format, width, height, border, format,
+  cmd.Init(target, level, internal_format, width, height, format,
            type, shared_memory_id, shared_memory_offset);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
 }
@@ -935,7 +982,7 @@ void GLES2DecoderTestBase::DoTexImage2DConvertInternalFormat(
       .WillOnce(Return(GL_NO_ERROR))
       .RetiresOnSaturation();
   cmds::TexImage2D cmd;
-  cmd.Init(target, level, requested_internal_format, width, height, border,
+  cmd.Init(target, level, requested_internal_format, width, height,
            format, type, shared_memory_id, shared_memory_offset);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
 }
@@ -958,7 +1005,7 @@ void GLES2DecoderTestBase::DoCompressedTexImage2D(
   bucket->SetSize(size);
   cmds::CompressedTexImage2DBucket cmd;
   cmd.Init(
-      target, level, format, width, height, border,
+      target, level, format, width, height,
       bucket_id);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
 }
@@ -996,7 +1043,7 @@ void GLES2DecoderTestBase::DoFramebufferTexture2D(
       .WillOnce(Return(error))
       .RetiresOnSaturation();
   cmds::FramebufferTexture2D cmd;
-  cmd.Init(target, attachment, textarget, texture_client_id, level);
+  cmd.Init(target, attachment, textarget, texture_client_id);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
 }
 
@@ -1495,12 +1542,6 @@ void GLES2DecoderTestBase::AddExpectationsForSimulatedAttrib0WithError(
     EXPECT_CALL(*gl_, VertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, NULL))
         .Times(1)
         .RetiresOnSaturation();
-    EXPECT_CALL(*gl_, BindBuffer(GL_ARRAY_BUFFER, 0))
-        .Times(1)
-        .RetiresOnSaturation();
-    EXPECT_CALL(*gl_, VertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, NULL))
-        .Times(1)
-        .RetiresOnSaturation();
     EXPECT_CALL(*gl_, BindBuffer(GL_ARRAY_BUFFER, buffer_id))
         .Times(1)
         .RetiresOnSaturation();
@@ -1511,6 +1552,21 @@ void GLES2DecoderTestBase::AddExpectationsForSimulatedAttrib0(
     GLsizei num_vertices, GLuint buffer_id) {
   AddExpectationsForSimulatedAttrib0WithError(
       num_vertices, buffer_id, GL_NO_ERROR);
+}
+
+void GLES2DecoderTestBase::SetupMockGLBehaviors() {
+  ON_CALL(*gl_, BindVertexArrayOES(_))
+      .WillByDefault(Invoke(
+          &gl_states_,
+          &GLES2DecoderTestBase::MockGLStates::OnBindVertexArrayOES));
+  ON_CALL(*gl_, BindBuffer(GL_ARRAY_BUFFER, _))
+      .WillByDefault(WithArg<1>(Invoke(
+          &gl_states_,
+          &GLES2DecoderTestBase::MockGLStates::OnBindArrayBuffer)));
+  ON_CALL(*gl_, VertexAttribPointer(_, _, _, _, _, NULL))
+      .WillByDefault(InvokeWithoutArgs(
+          &gl_states_,
+          &GLES2DecoderTestBase::MockGLStates::OnVertexAttribNullPointer));
 }
 
 GLES2DecoderWithShaderTestBase::MockCommandBufferEngine::

@@ -25,11 +25,19 @@ def GenSteps(api):
 
   # Not all third party dependencies have licenses compatible with the Android
   # license. To prevent developers adding dependencies from the WebView to
-  # incompatibly licensed third parties we check out a subset of DEPS.
-  # The whitelist is in the android_webview/buildbot/deps_whitelist.py file.
-  # This does not cover code checked into the main Chromium repository directly
-  # for that we have the incompatible_directories_check_step below.
-  yield droid.chromium_with_trimmed_deps()
+  # incompatibly licensed third parties we build with only the known
+  # compatible subset of the source.
+  # We start with the main Chromium repository and none of the deps.
+  # Compatible deps are added based on a whitelist of deps is in the
+  # android_webview/buildbot/deps_whitelist.py file. Incompatible code
+  # checked directly into Chromium is removed based on a blacklist in
+  # webview/tools/known_issues.py.
+  # After we have put the right parts of the source into the Android checkout
+  # we use the all_incompatible_directories_check_step to check nothing is
+  # incompatible licenced.
+
+  yield droid.sync_chromium()
+
   yield droid.lastchange_steps()
 
   yield api.tryserver.maybe_apply_issue()
@@ -39,15 +47,17 @@ def GenSteps(api):
   yield droid.repo_sync_steps()
 
   # The Android build system requires the Chromium sources be in the Android
-  # tree. Luckily it doesn't mind if the tree is symlinked in.
-  yield droid.symlink_chromium_into_android_tree_step()
+  # tree. We rsync everything accept the blacklisted source into the Android
+  # tree.
+  yield droid.rsync_chromium_into_android_tree_step()
+
   # This generates the Android.mk files needed by the Android build system to
   # build the parts of Chromium that are needed by the WebView.
   yield droid.gyp_webview_step()
 
   # This check is in place to detect incompatibly-licensed new code that's
   # checked into the main Chromium repository.
-  yield droid.incompatible_directories_check_step()
+  yield droid.all_incompatible_directories_check_step()
 
   # TODO(android): use api.chromium.compile for this
   yield droid.compile_step(

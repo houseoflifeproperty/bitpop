@@ -32,7 +32,7 @@
 #define InstallPhaseEvent_h
 
 #include "bindings/v8/ScriptValue.h"
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 
 namespace WebCore {
 
@@ -45,7 +45,7 @@ public:
 
     virtual ~InstallPhaseEvent();
 
-    void waitUntil(const ScriptValue&);
+    void waitUntil(ScriptState*, const ScriptValue&);
 
     virtual const AtomicString& interfaceName() const OVERRIDE;
     virtual void trace(Visitor*) OVERRIDE;

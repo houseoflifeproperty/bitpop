@@ -63,17 +63,17 @@ do
   shift
 done
 
-ubuntu_versions="12\.04|12\.10|13\.04|13\.10"
-ubuntu_codenames="precise|quantal|raring|saucy"
-ubuntu_issue="Ubuntu ($ubuntu_versions|$ubuntu_codenames)"
-# GCEL is an Ubuntu-derived VM image used on Google Compute Engine; /etc/issue
-# doesn't contain a version number so just trust that the user knows what
-# they're doing.
-gcel_issue="^GCEL"
+# Check for lsb_release command in $PATH
+if ! which lsb_release > /dev/null; then
+  echo "ERROR: lsb_release not found in \$PATH" >&2
+  exit 1;
+fi
 
+lsb_release=$(lsb_release --codename --short)
+ubuntu_codenames="(precise|quantal|raring|saucy|trusty)"
 if [ 0 -eq "${do_unsupported-0}" ] && [ 0 -eq "${do_quick_check-0}" ] ; then
-  if ! egrep -q "($ubuntu_issue|$gcel_issue)" /etc/issue; then
-    echo "ERROR: Only Ubuntu 12.04 (precise) through 13.10 (saucy) are"\
+  if [[ ! $lsb_release =~ $ubuntu_codenames ]]; then
+    echo "ERROR: Only Ubuntu 12.04 (precise) through 14.04 (trusty) are"\
         "currently supported" >&2
     exit 1
   fi
@@ -138,26 +138,31 @@ dbg_list="libatk1.0-dbg libc6-dbg libcairo2-dbg libfontconfig1-dbg
           libstdc++6-4.6-dbg"
 
 # arm cross toolchain packages needed to build chrome on armhf
-arm_list="libc6-armhf-cross libc6-dev-armhf-cross libgcc1-armhf-cross
-          libgomp1-armhf-cross linux-libc-dev-armhf-cross
-          libgcc1-dbg-armhf-cross libgomp1-dbg-armhf-cross
-          binutils-arm-linux-gnueabihf cpp-arm-linux-gnueabihf
-          gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-          libmudflap0-dbg-armhf-cross"
+arm_list="libc6-dev-armhf-cross
+          linux-libc-dev-armhf-cross
+          g++-arm-linux-gnueabihf"
 
-# Old armel cross toolchain packages
-armel_list="libc6-armel-cross libc6-dev-armel-cross libgcc1-armel-cross
-            libgomp1-armel-cross linux-libc-dev-armel-cross
-            libgcc1-dbg-armel-cross libgomp1-dbg-armel-cross
-            binutils-arm-linux-gnueabi cpp-arm-linux-gnueabi
-            gcc-arm-linux-gnueabi g++-arm-linux-gnueabi
-            libmudflap0-dbg-armel-cross"
+# Packages to build NaCl, its toolchains, and its ports.
+nacl_list="autoconf bison cmake g++-mingw-w64-i686 gawk lib32z1-dev
+           libasound2:i386 libcap2:i386 libelf-dev:i386 libexif12:i386
+           libfontconfig1:i386 libgconf-2-4:i386 libglib2.0-0:i386 libgpm2:i386
+           libgtk2.0-0:i386 libncurses5:i386 libnss3:i386 libpango1.0-0:i386
+           libssl0.9.8:i386 libtinfo-dev libtinfo-dev:i386 libtool
+           libxcomposite1:i386 libxcursor1:i386 libxdamage1:i386 libxi6:i386
+           libxrandr2:i386 libxss1:i386 libxtst6:i386 texinfo xvfb"
 
-# TODO(sbc): remove armel once the armhf transition is complete
-arm_list="$arm_list $armel_list"
-
-# Packages to build standalone NaCl and all its toolchains.
-nacl_list="g++-mingw-w64-i686 libtinfo-dev:i386"
+# Find the proper version of libgbm-dev. We can't just install libgbm-dev as
+# it depends on mesa, and only one version of mesa can exists on the system.
+# Hence we must match the same version or this entire script will fail.
+mesa_variant=""
+for variant in "-lts-quantal" "-lts-raring" "-lts-saucy"; do
+  if $(dpkg-query -Wf'${Status}' libgl1-mesa-glx${variant} | \
+       grep -q " ok installed"); then
+    mesa_variant="${variant}"
+  fi
+done
+dev_list="${dev_list} libgbm-dev${mesa_variant}"
+nacl_list="${nacl_list} libgl1-mesa-glx${mesa_variant}:i386"
 
 # Some package names have changed over time
 if package_exists ttf-mscorefonts-installer; then
@@ -179,8 +184,10 @@ else
 fi
 if package_exists libudev1; then
   dev_list="${dev_list} libudev1"
+  nacl_list="${nacl_list} libudev1:i386"
 else
   dev_list="${dev_list} libudev0"
+  nacl_list="${nacl_list} libudev0:i386"
 fi
 if package_exists libbrlapi0.6; then
   dev_list="${dev_list} libbrlapi0.6"
@@ -257,7 +264,13 @@ fi
 # that are part of v8 need to be compiled with -m32 which means
 # that basic multilib support is needed.
 if file /sbin/init | grep -q 'ELF 64-bit'; then
-  arm_list="$arm_list g++-multilib"
+  if [ "$lsb_release" = "trusty" ]; then
+    # gcc-multilib conflicts with the arm cross compiler in trusty but
+    # g++-4.8-multilib gives us the 32-bit support that we need.
+    arm_list="$arm_list g++-4.8-multilib"
+  else
+    arm_list="$arm_list g++-multilib"
+  fi
 fi
 
 if test "$do_inst_arm" = "1" ; then
@@ -268,9 +281,9 @@ else
 fi
 
 if test "$do_inst_nacl" = "1"; then
-  echo "Including standalone NaCl dependencies."
+  echo "Including NaCl, NaCl toolchain, NaCl ports dependencies."
 else
-  echo "Skipping standalone NaCl dependencies."
+  echo "Skipping NaCl, NaCl toolchain, NaCl ports dependencies."
   nacl_list=
 fi
 
@@ -377,6 +390,18 @@ if test "$do_inst_chromeos_fonts" != "0"; then
   fi
 else
   echo "Skipping installation of Chrome OS fonts."
+fi
+
+if test "$do_inst_nacl" = "1"; then
+  echo "Installing symbolic links for NaCl."
+  if [ ! -r /usr/lib/i386-linux-gnu/libcrypto.so ]; then
+    sudo ln -fs libcrypto.so.0.9.8 /usr/lib/i386-linux-gnu/libcrypto.so
+  fi
+  if [ ! -r /usr/lib/i386-linux-gnu/libssl.so ]; then
+    sudo ln -fs libssl.so.0.9.8 /usr/lib/i386-linux-gnu/libssl.so
+  fi
+else
+  echo "Skipping symbolic links for NaCl."
 fi
 
 # Install 32bit backwards compatibility support for 64bit systems

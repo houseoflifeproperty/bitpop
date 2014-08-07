@@ -221,20 +221,20 @@ bool PepperGraphics2DHost::Init(
 int32_t PepperGraphics2DHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperGraphics2DHost, msg)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_Graphics2D_PaintImageData,
-                                    OnHostMsgPaintImageData)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_Graphics2D_Scroll,
-                                    OnHostMsgScroll)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_Graphics2D_ReplaceContents,
-                                    OnHostMsgReplaceContents)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_Graphics2D_Flush,
+  PPAPI_BEGIN_MESSAGE_MAP(PepperGraphics2DHost, msg)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_Graphics2D_PaintImageData,
+                                      OnHostMsgPaintImageData)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_Graphics2D_Scroll,
+                                      OnHostMsgScroll)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_Graphics2D_ReplaceContents,
+                                      OnHostMsgReplaceContents)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_Graphics2D_Flush,
                                       OnHostMsgFlush)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_Graphics2D_SetScale,
-                                    OnHostMsgSetScale)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_Graphics2D_ReadImageData,
-                                    OnHostMsgReadImageData)
-  IPC_END_MESSAGE_MAP()
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_Graphics2D_SetScale,
+                                      OnHostMsgSetScale)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_Graphics2D_ReadImageData,
+                                      OnHostMsgReadImageData)
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -500,10 +500,14 @@ int32_t PepperGraphics2DHost::OnHostMsgReplaceContents(
 }
 
 int32_t PepperGraphics2DHost::OnHostMsgFlush(
-    ppapi::host::HostMessageContext* context) {
+    ppapi::host::HostMessageContext* context,
+    const std::vector<ui::LatencyInfo>& latency_info) {
   // Don't allow more than one pending flush at a time.
   if (HasPendingFlush())
     return PP_ERROR_INPROGRESS;
+
+  if (bound_instance_)
+    bound_instance_->AddLatencyInfo(latency_info);
 
   PP_Resource old_image_data = 0;
   flush_reply_context_ = context->MakeReplyMessageContext();

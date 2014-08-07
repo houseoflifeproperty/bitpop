@@ -29,11 +29,11 @@
  */
 
 #include "config.h"
-#include "V8CSSStyleDeclaration.h"
+#include "bindings/core/v8/V8CSSStyleDeclaration.h"
 
-#include "CSSPropertyNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
+#include "core/CSSPropertyNames.h"
 #include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSStyleDeclaration.h"
@@ -49,7 +49,6 @@
 #include "wtf/text/StringConcatenate.h"
 
 using namespace WTF;
-using namespace std;
 
 namespace WebCore {
 
@@ -165,7 +164,7 @@ void V8CSSStyleDeclaration::namedPropertyEnumeratorCustom(const v8::PropertyCall
             if (RuntimeCSSEnabled::isCSSPropertyEnabled(propertyId))
                 propertyNames.append(getJSPropertyName(propertyId));
         }
-        sort(propertyNames.begin(), propertyNames.end(), codePointCompareLessThan);
+        std::sort(propertyNames.begin(), propertyNames.end(), codePointCompareLessThan);
         propertyNamesLength = propertyNames.size();
     }
 
@@ -210,9 +209,6 @@ void V8CSSStyleDeclaration::namedPropertyGetterCustom(v8::Local<v8::String> name
     }
 
     String result = impl->getPropertyValueInternal(static_cast<CSSPropertyID>(propInfo->propID));
-    if (result.isNull())
-        result = ""; // convert null to empty string.
-
     v8SetReturnValueString(info, result, info.GetIsolate());
 }
 

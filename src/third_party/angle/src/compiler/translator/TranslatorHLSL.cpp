@@ -10,15 +10,20 @@
 #include "compiler/translator/OutputHLSL.h"
 
 TranslatorHLSL::TranslatorHLSL(ShShaderType type, ShShaderSpec spec, ShShaderOutput output)
-    : TCompiler(type, spec), mOutputType(output)
+  : TCompiler(type, spec, output)
 {
 }
 
 void TranslatorHLSL::translate(TIntermNode *root)
 {
     TParseContext& parseContext = *GetGlobalParseContext();
-    sh::OutputHLSL outputHLSL(parseContext, getResources(), mOutputType);
+    sh::OutputHLSL outputHLSL(parseContext, getResources(), getOutputType());
 
     outputHLSL.output();
-    mActiveUniforms = outputHLSL.getUniforms();
+
+    mActiveUniforms         = outputHLSL.getUniforms();
+    mActiveInterfaceBlocks  = outputHLSL.getInterfaceBlocks();
+    mActiveOutputVariables  = outputHLSL.getOutputVariables();
+    mActiveAttributes       = outputHLSL.getAttributes();
+    mActiveVaryings         = outputHLSL.getVaryings();
 }

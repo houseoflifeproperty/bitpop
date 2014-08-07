@@ -8,7 +8,7 @@
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://code.google.com/p/chromium/wiki/UpdatingClang
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION=206824
+CLANG_REVISION=209387
 
 THIS_DIR="$(dirname "${0}")"
 LLVM_DIR="${THIS_DIR}/../../../third_party/llvm"
@@ -217,22 +217,6 @@ if [[ -n "${with_android}" ]] && ! [[ -d "${ANDROID_NDK_DIR}" ]]; then
   echo "http://code.google.com/p/chromium/wiki/AndroidBuildInstructions for how"
   echo "to install the NDK, or pass --without-android."
   exit 1
-fi
-
-# Revert previous temporary patches.
-if [[ -d "${COMPILER_RT_DIR}" ]]; then
-  pushd "${COMPILER_RT_DIR}"
-  svn revert lib/sanitizer_common/sanitizer_symbolizer_posix_libcdep.cc
-  svn revert make/platform/clang_linux.mk
-  popd
-fi
-if [[ -d "${LLVM_DIR}" ]]; then
-  pushd "${LLVM_DIR}"
-  svn revert lib/Target/ARM/MCTargetDesc/ARMMCAsmInfo.cpp
-  svn revert test/CodeGen/ARM/debug-frame-large-stack.ll
-  svn revert test/CodeGen/ARM/debug-frame-vararg.ll
-  svn revert test/CodeGen/ARM/debug-frame.ll
-  popd
 fi
 
 echo Getting LLVM r"${CLANG_REVISION}" in "${LLVM_DIR}"

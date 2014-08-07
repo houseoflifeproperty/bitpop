@@ -37,13 +37,18 @@ class ImageDocument FINAL : public HTMLDocument {
 public:
     static PassRefPtrWillBeRawPtr<ImageDocument> create(const DocumentInit& initializer = DocumentInit())
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new ImageDocument(initializer));
+        return adoptRefWillBeNoop(new ImageDocument(initializer));
     }
+
+    enum ScaleType {
+        ScaleZoomedDocument,
+        ScaleOnlyUnzoomedDocument
+    };
 
     ImageResource* cachedImage();
     HTMLImageElement* imageElement() const { return m_imageElement.get(); }
 
-    void windowSizeChanged();
+    void windowSizeChanged(ScaleType);
     void imageUpdated();
     void imageClicked(int x, int y);
 
@@ -52,12 +57,14 @@ public:
 private:
     explicit ImageDocument(const DocumentInit&);
 
-    virtual PassRefPtr<DocumentParser> createParser() OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<DocumentParser> createParser() OVERRIDE;
+#if !ENABLE(OILPAN)
     virtual void dispose() OVERRIDE;
+#endif
 
     void createDocumentStructure();
-    void resizeImageToFit();
-    void restoreImageSize();
+    void resizeImageToFit(ScaleType);
+    void restoreImageSize(ScaleType);
     bool imageFitsInWindow() const;
     bool shouldShrinkToFit() const;
     float scale() const;

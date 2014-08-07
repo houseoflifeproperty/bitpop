@@ -27,14 +27,12 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     # Fails on all platforms
     self.Fail('conformance/glsl/misc/shaders-with-mis-matching-uniforms.html',
         bug=351396)
-    self.Fail('conformance/glsl/misc/boolean_precision.html',
-        bug=368874)
-    self.Fail('conformance/glsl/bugs/nested-structs-with-same-name.html',
-        bug=368910)
 
     # Flaky on Win
     self.Fail('conformance/extensions/webgl-draw-buffers.html',
         ['win'], bug=369349)
+    self.Fail('conformance/context/context-lost-restored.html',
+        ['win'], bug=374378)
 
     # Win7 / Intel failures
     self.Fail('conformance/rendering/gl-scissor-test.html',
@@ -43,6 +41,14 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
         ['win7', 'intel'])
     self.Fail('conformance/textures/copy-tex-image-and-sub-image-2d.html',
         ['win7', 'intel'])
+    self.Fail('conformance/rendering/gl-viewport-test.html',
+        ['win7', 'intel'], bug=372511)
+    self.Fail('conformance/glsl/misc/shader-with-array-of-structs-uniform.html',
+        ['win7', 'intel', 'nvidia'], bug=373972)
+
+    # Mac failures
+    self.Fail('conformance/glsl/misc/shader-struct-scope.html',
+        ['mac'], bug=368910)
 
     # Mac / Intel failures
     # Radar 13499466
@@ -132,3 +138,97 @@ class WebGLConformanceExpectations(test_expectations.TestExpectations):
     self.Fail('conformance/textures/texture-npot-video.html',
         ['android'], bug=334204)
 
+    # ChromeOS: affecting all devices.
+    self.Fail('conformance/extensions/webgl-depth-texture.html',
+        ['chromeos'], bug=382651)
+
+    # ChromeOS: all Intel except for pinetrail (stumpy, parrot, peppy,...)
+    # We will just include pinetrail here for now as we don't want to list
+    # every single Intel device ID.
+    self.Fail('conformance/glsl/misc/empty_main.vert.html',
+        ['chromeos', 'intel'], bug=375556)
+    self.Fail('conformance/glsl/misc/gl_position_unset.vert.html',
+        ['chromeos', 'intel'], bug=375556)
+    self.Fail('conformance/glsl/misc/shaders-with-varyings.html',
+        ['chromeos', 'intel'], bug=375556)
+    self.Fail('conformance/renderbuffers/framebuffer-object-attachment.html',
+        ['chromeos', 'intel'], bug=375556)
+    self.Fail('conformance/textures/texture-size-limit.html',
+        ['chromeos', 'intel'], bug=385361)
+
+    # ChromeOS: pinetrail (alex, mario, zgb).
+    self.Fail('conformance/attribs/gl-vertex-attrib-render.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/glsl/functions/glsl-function-atan-xy.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/glsl/functions/glsl-function-cos.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/glsl/functions/glsl-function-sin.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/glsl/misc/empty_main.vert.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/glsl/misc/gl_position_unset.vert.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/glsl/misc/shaders-with-varyings.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/glsl/variables/gl-frontfacing.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/limits/gl-max-texture-dimensions.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/acos/acos_001_to_006.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/asin/asin_001_to_006.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/atan/atan_001_to_008.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/build/build_009_to_016.html',
+        ['chromeos', ('intel', 0xa011)], bug=378938)
+    self.Fail('conformance/ogles/GL/control_flow/control_flow_001_to_008.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/cos/cos_001_to_006.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/discard/discard_001_to_002.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/functions/functions_001_to_008.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/functions/functions_065_to_072.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/functions/functions_081_to_088.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/functions/functions_097_to_104.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/functions/functions_105_to_112.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/functions/functions_113_to_120.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/functions/functions_121_to_126.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail(
+        'conformance/ogles/GL/gl_FrontFacing/gl_FrontFacing_001_to_001.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/log/log_001_to_008.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/log2/log2_001_to_008.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/normalize/normalize_001_to_006.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/ogles/GL/sin/sin_001_to_006.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/rendering/point-size.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/rendering/polygon-offset.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/textures/texture-mips.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/textures/texture-npot.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/textures/texture-npot-video.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/textures/texture-size.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/textures/texture-size-limit.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Fail('conformance/uniforms/gl-uniform-arrays.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)
+    self.Skip('conformance/uniforms/uniform-default-values.html',
+        ['chromeos', ('intel', 0xa011)], bug=375554)

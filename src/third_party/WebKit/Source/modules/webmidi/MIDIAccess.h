@@ -32,31 +32,35 @@
 #define MIDIAccess_h
 
 #include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptPromiseResolverWithContext.h"
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventTargetModules.h"
+#include "modules/webmidi/MIDIAccessInitializer.h"
 #include "modules/webmidi/MIDIAccessor.h"
 #include "modules/webmidi/MIDIAccessorClient.h"
 #include "modules/webmidi/MIDIInput.h"
-#include "modules/webmidi/MIDIOptions.h"
 #include "modules/webmidi/MIDIOutput.h"
-#include "platform/AsyncMethodRunner.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
-#include "wtf/WeakPtr.h"
+#include "wtf/Vector.h"
 
 namespace WebCore {
 
 class ExecutionContext;
+struct MIDIOptions;
 
 class MIDIAccess FINAL : public RefCountedWillBeRefCountedGarbageCollected<MIDIAccess>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData, public MIDIAccessorClient {
-    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<MIDIAccess>);
+    REFCOUNTED_EVENT_TARGET(MIDIAccess);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MIDIAccess);
 public:
+    static PassRefPtrWillBeRawPtr<MIDIAccess> create(PassOwnPtr<MIDIAccessor> accessor, bool sysexEnabled, const Vector<MIDIAccessInitializer::PortDescriptor>& ports, ExecutionContext* executionContext)
+    {
+        RefPtrWillBeRawPtr<MIDIAccess> access = adoptRefWillBeRefCountedGarbageCollected(new MIDIAccess(accessor, sysexEnabled, ports, executionContext));
+        access->suspendIfNeeded();
+        return access;
+    }
     virtual ~MIDIAccess();
-    // Returns a promise object that will be resolved with this MIDIAccess.
-    static ScriptPromise request(const MIDIOptions&, ExecutionContext*);
 
     MIDIInputVector inputs() const { return m_inputs; }
     MIDIOutputVector outputs() const { return m_outputs; }
@@ -64,7 +68,6 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(connect);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(disconnect);
 
-    void setSysexEnabled(bool);
     bool sysexEnabled() const { return m_sysexEnabled; }
 
     // EventTarget
@@ -73,43 +76,30 @@ public:
 
     // ActiveDOMObject
     virtual void stop() OVERRIDE;
-    virtual bool hasPendingActivity() const OVERRIDE;
 
     // MIDIAccessorClient
     virtual void didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version) OVERRIDE;
     virtual void didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version) OVERRIDE;
-    virtual void didStartSession(bool success, const String& error, const String& message) OVERRIDE;
+    virtual void didStartSession(bool success, const String& error, const String& message) OVERRIDE
+    {
+        // This method is for MIDIAccess initialization: MIDIAccessInitializer
+        // has the implementation.
+        ASSERT_NOT_REACHED();
+    }
     virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) OVERRIDE;
 
     // |timeStampInMilliseconds| is in the same time coordinate system as performance.now().
     void sendMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStampInMilliseconds);
 
-    void trace(Visitor*);
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    class PostAction;
-    enum State {
-        Requesting,
-        Resolved,
-        Stopped,
-    };
+    MIDIAccess(PassOwnPtr<MIDIAccessor>, bool sysexEnabled, const Vector<MIDIAccessInitializer::PortDescriptor>&, ExecutionContext*);
 
-    MIDIAccess(const MIDIOptions&, ExecutionContext*);
-    ScriptPromise startRequest();
-
-    void permissionDenied();
-
-    // Called when the promise is resolved or rejected.
-    void doPostAction(State);
-
-    State m_state;
-    WeakPtrFactory<MIDIAccess> m_weakPtrFactory;
+    OwnPtr<MIDIAccessor> m_accessor;
+    bool m_sysexEnabled;
     MIDIInputVector m_inputs;
     MIDIOutputVector m_outputs;
-    OwnPtr<MIDIAccessor> m_accessor;
-    MIDIOptions m_options;
-    bool m_sysexEnabled;
-    RefPtr<ScriptPromiseResolverWithContext> m_resolver;
 };
 
 } // namespace WebCore

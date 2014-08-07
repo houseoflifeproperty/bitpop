@@ -32,7 +32,7 @@ class StatsBuilderStatusResource(HtmlResource):
         numberOfFailures += 1
 
       for step in build.getSteps():
-        stepName = step.getName().translate(None, '- /[]{}():')
+        stepName = step.getName().translate(None, '- /[]{}():.,')
         stepTime = stepTimes.setdefault(stepName, [])
         failCount = failingSteps.setdefault(stepName, 0)
         (result, output) = step.getResults()

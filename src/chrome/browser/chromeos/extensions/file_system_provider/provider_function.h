@@ -4,6 +4,7 @@
 
 #ifndef CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_SYSTEM_PROVIDER_PROVIDER_FUNCTION_H_
 #define CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_SYSTEM_PROVIDER_PROVIDER_FUNCTION_H_
+
 #include <string>
 
 #include "base/files/file.h"
@@ -33,6 +34,7 @@ extern const char kSecurityErrorName[];
 
 // Error messages.
 extern const char kEmptyNameErrorMessage[];
+extern const char kEmptyIdErrorMessage[];
 extern const char kMountFailedErrorMessage[];
 extern const char kUnmountFailedErrorMessage[];
 extern const char kResponseFailedErrorMessage[];
@@ -62,11 +64,11 @@ class FileSystemProviderInternalFunction : public ChromeSyncExtensionFunction {
 
   // Fulfills the request with parsed arguments of this API function
   // encapsulated as a RequestValue instance. Also, sets a response.
-  // If |has_next| is set to true, then the function will be called again for
+  // If |has_more| is set to true, then the function will be called again for
   // this request.
   void FulfillRequest(
       scoped_ptr<chromeos::file_system_provider::RequestValue> value,
-      bool has_next);
+      bool has_more);
 
   // Subclasses implement this for their functionality.
   // Called after Parse() is successful, such that |request_id_| and

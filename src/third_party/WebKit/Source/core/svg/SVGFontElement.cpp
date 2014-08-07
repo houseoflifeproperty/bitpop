@@ -44,10 +44,7 @@ inline SVGFontElement::SVGFontElement(Document& document)
     UseCounter::count(document, UseCounter::SVGFontElement);
 }
 
-PassRefPtr<SVGFontElement> SVGFontElement::create(Document& document)
-{
-    return adoptRef(new SVGFontElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFontElement)
 
 void SVGFontElement::invalidateGlyphCache()
 {

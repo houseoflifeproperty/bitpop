@@ -2,11 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/base64.h"
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/test_timeouts.h"
@@ -32,11 +36,6 @@
 #include "testing/perf/perf_test.h"
 #include "ui/gl/gl_switches.h"
 
-// For fine-grained suppression on flaky tests.
-#if defined(OS_WIN)
-#include "base/win/windows_version.h"
-#endif
-
 static const base::FilePath::CharType kFrameAnalyzerExecutable[] =
 #if defined(OS_WIN)
     FILE_PATH_LITERAL("frame_analyzer.exe");
@@ -51,41 +50,26 @@ static const base::FilePath::CharType kArgbToI420ConverterExecutable[] =
     FILE_PATH_LITERAL("rgba_to_i420_converter");
 #endif
 
-static const char kHomeEnvName[] =
-#if defined(OS_WIN)
-    "USERPROFILE";
-#else
-    "HOME";
-#endif
-
-// The working dir should be in the user's home folder.
-static const base::FilePath::CharType kWorkingDirName[] =
-    FILE_PATH_LITERAL("webrtc_video_quality");
 static const base::FilePath::CharType kCapturedYuvFileName[] =
     FILE_PATH_LITERAL("captured_video.yuv");
 static const base::FilePath::CharType kStatsFileName[] =
     FILE_PATH_LITERAL("stats.txt");
 static const char kMainWebrtcTestHtmlPage[] =
     "/webrtc/webrtc_jsep01_test.html";
-
-// If you change the port number, don't forget to modify video_extraction.js
-// too!
-static const char kPyWebSocketPortNumber[] = "12221";
+static const char kCapturingWebrtcHtmlPage[] =
+    "/webrtc/webrtc_video_quality_test.html";
 
 static const struct VideoQualityTestConfig {
   const char* test_name;
   int width;
   int height;
-  const char* capture_page;
   const base::FilePath::CharType* reference_video;
   const char* constraints;
 } kVideoConfigurations[] = {
   { "360p", 640, 360,
-    "/webrtc/webrtc_video_quality_test.html",
     test::kReferenceFileName360p,
     WebRtcTestBase::kAudioVideoCallConstraints360p },
   { "720p", 1280, 720,
-    "/webrtc/webrtc_video_quality_test_hd.html",
     test::kReferenceFileName720p,
     WebRtcTestBase::kAudioVideoCallConstraints720p },
 };
@@ -114,13 +98,14 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase,
     public testing::WithParamInterface<VideoQualityTestConfig> {
  public:
   WebRtcVideoQualityBrowserTest()
-      : pywebsocket_server_(0),
-        environment_(base::Environment::Create()) {
+      : environment_(base::Environment::Create()) {
     test_config_ = GetParam();
   }
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     DetectErrorsInJavaScript();  // Look for errors in our rather complex js.
+
+    ASSERT_TRUE(temp_working_dir_.CreateUniqueTempDir());
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
@@ -137,54 +122,31 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase,
     command_line->AppendSwitch(switches::kUseGpuInTests);
   }
 
-  bool HasAllRequiredResources() {
-    if (!base::PathExists(GetWorkingDir())) {
-      LOG(ERROR) << "Cannot find the working directory for the temporary "
-          "files:" << GetWorkingDir().value();
-      return false;
+  // Writes all frames we've captured so far by grabbing them from the
+  // javascript and writing them to the temporary work directory.
+  void WriteCapturedFramesToWorkingDir(content::WebContents* capturing_tab) {
+    int num_frames = 0;
+    std::string response =
+        ExecuteJavascript("getTotalNumberCapturedFrames()", capturing_tab);
+    ASSERT_TRUE(base::StringToInt(response, &num_frames)) <<
+        "Failed to retrieve frame count: got " << response;
+    ASSERT_NE(0, num_frames) << "Failed to capture any frames.";
+
+    for (int i = 0; i < num_frames; i++) {
+      std::string base64_encoded_frame =
+          ExecuteJavascript(base::StringPrintf("getOneCapturedFrame(%d)", i),
+                            capturing_tab);
+      std::string decoded_frame;
+      ASSERT_TRUE(base::Base64Decode(base64_encoded_frame, &decoded_frame))
+          << "Failed to decode frame data '" << base64_encoded_frame << "'.";
+
+      std::string file_name = base::StringPrintf("frame_%04d", i);
+      base::File frame_file(GetWorkingDir().AppendASCII(file_name),
+                            base::File::FLAG_CREATE | base::File::FLAG_WRITE);
+      size_t written = frame_file.Write(0, decoded_frame.c_str(),
+                                        decoded_frame.length());
+      ASSERT_EQ(decoded_frame.length(), written);
     }
-
-    // Ensure we have the required input files.
-    return test::HasReferenceFilesInCheckout();
-  }
-
-  bool StartPyWebSocketServer() {
-    base::FilePath path_pywebsocket_dir =
-        GetSourceDir().Append(FILE_PATH_LITERAL("third_party/pywebsocket/src"));
-    base::FilePath pywebsocket_server = path_pywebsocket_dir.Append(
-        FILE_PATH_LITERAL("mod_pywebsocket/standalone.py"));
-    base::FilePath path_to_data_handler =
-        GetSourceDir().Append(FILE_PATH_LITERAL("chrome/test/data/webrtc/wsh"));
-
-    if (!base::PathExists(pywebsocket_server)) {
-      LOG(ERROR) << "Missing pywebsocket server.";
-      return false;
-    }
-    if (!base::PathExists(path_to_data_handler)) {
-      LOG(ERROR) << "Missing data handler for pywebsocket server.";
-      return false;
-    }
-
-    AppendToPythonPath(path_pywebsocket_dir);
-
-    // Note: don't append switches to this command since it will mess up the
-    // -u in the python invocation!
-    CommandLine pywebsocket_command(CommandLine::NO_PROGRAM);
-    EXPECT_TRUE(GetPythonCommand(&pywebsocket_command));
-
-    pywebsocket_command.AppendArgPath(pywebsocket_server);
-    pywebsocket_command.AppendArg("-p");
-    pywebsocket_command.AppendArg(kPyWebSocketPortNumber);
-    pywebsocket_command.AppendArg("-d");
-    pywebsocket_command.AppendArgPath(path_to_data_handler);
-
-    VLOG(0) << "Running " << pywebsocket_command.GetCommandLineString();
-    return base::LaunchProcess(pywebsocket_command, base::LaunchOptions(),
-                               &pywebsocket_server_);
-  }
-
-  bool ShutdownPyWebSocketServer() {
-    return base::KillProcess(pywebsocket_server_, 0, false);
   }
 
   // Runs the RGBA to I420 converter on the video in |capture_video_filename|,
@@ -285,16 +247,12 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase,
     return ok;
   }
 
-  base::FilePath GetWorkingDir() {
-    std::string home_dir;
-    environment_->GetVar(kHomeEnvName, &home_dir);
-    base::FilePath::StringType native_home_dir(home_dir.begin(),
-                                               home_dir.end());
-    return base::FilePath(native_home_dir).Append(kWorkingDirName);
-  }
-
  protected:
   VideoQualityTestConfig test_config_;
+
+  base::FilePath GetWorkingDir() {
+    return temp_working_dir_.path();
+  }
 
  private:
   base::FilePath GetSourceDir() {
@@ -309,9 +267,9 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase,
     return browser_dir;
   }
 
-  base::ProcessHandle pywebsocket_server_;
   scoped_ptr<base::Environment> environment_;
   base::FilePath webrtc_reference_video_y4m_;
+  base::ScopedTempDir temp_working_dir_;
 };
 
 INSTANTIATE_TEST_CASE_P(
@@ -321,19 +279,14 @@ INSTANTIATE_TEST_CASE_P(
 
 IN_PROC_BROWSER_TEST_P(WebRtcVideoQualityBrowserTest,
                        MANUAL_TestVideoQuality) {
-
-#if defined(OS_WIN)
-  // Fails on XP. http://crbug.com/353078
-  if (base::win::GetVersion() <= base::win::VERSION_XP)
-    return;
-#endif
+  if (OnWinXp())
+    return;  // Fails on XP. http://crbug.com/353078.
 
   ASSERT_GE(TestTimeouts::action_max_timeout().InSeconds(), 150) <<
       "This is a long-running test; you must specify "
       "--ui-test-action-max-timeout to have a value of at least 150000.";
-  ASSERT_TRUE(HasAllRequiredResources());
+  ASSERT_TRUE(test::HasReferenceFilesInCheckout());
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
-  ASSERT_TRUE(StartPyWebSocketServer());
 
   content::WebContents* left_tab =
       OpenPageAndGetUserMediaInNewTabWithConstraints(
@@ -341,7 +294,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcVideoQualityBrowserTest,
           test_config_.constraints);
   content::WebContents* right_tab =
       OpenPageAndGetUserMediaInNewTabWithConstraints(
-          embedded_test_server()->GetURL(test_config_.capture_page),
+          embedded_test_server()->GetURL(kCapturingWebrtcHtmlPage),
           test_config_.constraints);
 
   SetupPeerconnectionWithLocalStream(left_tab);
@@ -359,21 +312,17 @@ IN_PROC_BROWSER_TEST_P(WebRtcVideoQualityBrowserTest,
 
   HangUp(left_tab);
 
-  EXPECT_TRUE(test::PollingWaitUntil(
-      "haveMoreFramesToSend()", "no-more-frames", right_tab,
-      polling_interval_msec));
+  WriteCapturedFramesToWorkingDir(right_tab);
 
   // Shut everything down to avoid having the javascript race with the analysis
   // tools. For instance, dont have console log printouts interleave with the
   // RESULT lines from the analysis tools (crbug.com/323200).
-  ASSERT_TRUE(ShutdownPyWebSocketServer());
-
   chrome::CloseWebContents(browser(), left_tab, false);
   chrome::CloseWebContents(browser(), right_tab, false);
 
-  RunARGBtoI420Converter(
+  ASSERT_TRUE(RunARGBtoI420Converter(
       test_config_.width, test_config_.height,
-      GetWorkingDir().Append(kCapturedYuvFileName));
+      GetWorkingDir().Append(kCapturedYuvFileName)));
   ASSERT_TRUE(CompareVideosAndPrintResult(
       test_config_.test_name,
       test_config_.width,

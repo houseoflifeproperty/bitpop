@@ -27,8 +27,8 @@
 #include "core/editing/FrameSelection.h"
 
 #include <stdio.h>
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/HTMLNames.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/CharacterData.h"
@@ -45,7 +45,7 @@
 #include "core/editing/TypingCommand.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLFormElement.h"
@@ -107,7 +107,11 @@ FrameSelection::FrameSelection(LocalFrame* frame)
 
 FrameSelection::~FrameSelection()
 {
+#if !ENABLE(OILPAN)
+    // Oilpan: No need to clear out VisibleSelection observer;
+    // it is finalized as a part object of FrameSelection.
     stopObservingVisibleSelectionChangeIfNecessary();
+#endif
 }
 
 Element* FrameSelection::rootEditableElementOrDocumentElement() const
@@ -467,7 +471,6 @@ void FrameSelection::updateSelectionIfNeeded(const Position& base, const Positio
         return;
     VisibleSelection newSelection;
     newSelection.setWithoutValidation(base, extent);
-    m_frame->document()->updateLayout();
     setSelection(newSelection, DoNotSetFocus);
 }
 
@@ -934,11 +937,11 @@ static bool isBoundary(TextGranularity granularity)
 bool FrameSelection::modify(EAlteration alter, SelectionDirection direction, TextGranularity granularity, EUserTriggered userTriggered)
 {
     if (userTriggered == UserTriggered) {
-        FrameSelection trialFrameSelection;
-        trialFrameSelection.setSelection(m_selection);
-        trialFrameSelection.modify(alter, direction, granularity, NotUserTriggered);
+        OwnPtrWillBeRawPtr<FrameSelection> trialFrameSelection = FrameSelection::create();
+        trialFrameSelection->setSelection(m_selection);
+        trialFrameSelection->modify(alter, direction, granularity, NotUserTriggered);
 
-        if (trialFrameSelection.selection().isRange() && m_selection.isCaret() && !dispatchSelectStart())
+        if (trialFrameSelection->selection().isRange() && m_selection.isCaret() && !dispatchSelectStart())
             return false;
     }
 
@@ -1048,9 +1051,9 @@ bool FrameSelection::modify(EAlteration alter, unsigned verticalDistance, Vertic
         return false;
 
     if (userTriggered == UserTriggered) {
-        FrameSelection trialFrameSelection;
-        trialFrameSelection.setSelection(m_selection);
-        trialFrameSelection.modify(alter, verticalDistance, direction, NotUserTriggered);
+        OwnPtrWillBeRawPtr<FrameSelection> trialFrameSelection = FrameSelection::create();
+        trialFrameSelection->setSelection(m_selection);
+        trialFrameSelection->modify(alter, verticalDistance, direction, NotUserTriggered);
     }
 
     willBeModified(alter, direction == DirectionUp ? DirectionBackward : DirectionForward);
@@ -1320,7 +1323,7 @@ bool FrameSelection::contains(const LayoutPoint& point)
 void FrameSelection::selectFrameElementInParentIfFullySelected()
 {
     // Find the parent frame; if there is none, then we have nothing to do.
-    LocalFrame* parent = m_frame->tree().parent();
+    Frame* parent = m_frame->tree().parent();
     if (!parent)
         return;
     Page* page = m_frame->page();
@@ -1335,8 +1338,13 @@ void FrameSelection::selectFrameElementInParentIfFullySelected()
     if (!isEndOfDocument(selection().visibleEnd()))
         return;
 
+    // FIXME: This is not yet implemented for cross-process frame relationships.
+    if (!parent->isLocalFrame())
+        return;
+
     // Get to the <iframe> or <frame> (or even <object>) element in the parent frame.
-    Element* ownerElement = m_frame->ownerElement();
+    // FIXME: Doesn't work for OOPI.
+    Element* ownerElement = m_frame->deprecatedLocalOwner();
     if (!ownerElement)
         return;
     ContainerNode* ownerElementParent = ownerElement->parentNode();
@@ -1355,7 +1363,7 @@ void FrameSelection::selectFrameElementInParentIfFullySelected()
     // Focus on the parent frame, and then select from before this element to after.
     VisibleSelection newSelection(beforeOwnerElement, afterOwnerElement);
     page->focusController().setFocusedFrame(parent);
-    parent->selection().setSelection(newSelection);
+    toLocalFrame(parent)->selection().setSelection(newSelection);
 }
 
 void FrameSelection::selectAll()
@@ -1370,7 +1378,7 @@ void FrameSelection::selectAll()
         }
     }
 
-    RefPtr<Node> root = nullptr;
+    RefPtrWillBeRawPtr<Node> root = nullptr;
     Node* selectStartTarget = 0;
     if (isContentEditable()) {
         root = highestEditableRoot(m_selection.start());
@@ -1399,23 +1407,19 @@ void FrameSelection::selectAll()
     notifyRendererOfSelectionChange(UserTriggered);
 }
 
-bool FrameSelection::setSelectedRange(Range* range, EAffinity affinity, SetSelectionOptions options)
+bool FrameSelection::setSelectedRange(Range* range, EAffinity affinity, DirectoinalOption directional, SetSelectionOptions options)
 {
     if (!range || !range->startContainer() || !range->endContainer())
         return false;
     ASSERT(range->startContainer()->document() == range->endContainer()->document());
-
-    m_frame->document()->updateLayoutIgnorePendingStylesheets();
 
     // Non-collapsed ranges are not allowed to start at the end of a line that is wrapped,
     // they start at the beginning of the next line instead
     m_logicalRange = nullptr;
     stopObservingVisibleSelectionChangeIfNecessary();
 
-    // FIXME: Can we provide extentAffinity?
-    VisiblePosition visibleStart(range->startPosition(), range->collapsed() ? affinity : DOWNSTREAM);
-    VisiblePosition visibleEnd(range->endPosition(), SEL_DEFAULT_AFFINITY);
-    setSelection(VisibleSelection(visibleStart, visibleEnd), options);
+    VisibleSelection newSelection(range, affinity, directional == Directional);
+    setSelection(newSelection, options);
 
     m_logicalRange = range->cloneRange();
     startObservingVisibleSelectionChange();
@@ -1448,7 +1452,7 @@ void FrameSelection::focusedOrActiveStateChanged()
 {
     bool activeAndFocused = isFocusedAndActive();
 
-    RefPtr<Document> document = m_frame->document();
+    RefPtrWillBeRawPtr<Document> document = m_frame->document();
     document->updateRenderTreeIfNeeded();
 
     // Because RenderObject::selectionBackgroundColor() and
@@ -1862,6 +1866,16 @@ void FrameSelection::showTreeForThis() const
 }
 
 #endif
+
+void FrameSelection::trace(Visitor* visitor)
+{
+    visitor->trace(m_selection);
+    visitor->trace(m_originalBase);
+    visitor->trace(m_logicalRange);
+    visitor->trace(m_previousCaretNode);
+    visitor->trace(m_typingStyle);
+    VisibleSelection::ChangeObserver::trace(visitor);
+}
 
 }
 

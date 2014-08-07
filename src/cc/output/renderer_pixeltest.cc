@@ -58,6 +58,7 @@ SharedQuadState* CreateTestSharedQuadState(
   const bool is_clipped = false;
   const float opacity = 1.0f;
   const SkXfermode::Mode blend_mode = SkXfermode::kSrcOver_Mode;
+  int sorting_context_id = 0;
   SharedQuadState* shared_state = render_pass->CreateAndAppendSharedQuadState();
   shared_state->SetAll(content_to_target_transform,
                        content_bounds,
@@ -65,7 +66,8 @@ SharedQuadState* CreateTestSharedQuadState(
                        clip_rect,
                        is_clipped,
                        opacity,
-                       blend_mode);
+                       blend_mode,
+                       sorting_context_id);
   return shared_state;
 }
 
@@ -79,6 +81,7 @@ SharedQuadState* CreateTestSharedQuadStateClipped(
   const bool is_clipped = true;
   const float opacity = 1.0f;
   const SkXfermode::Mode blend_mode = SkXfermode::kSrcOver_Mode;
+  int sorting_context_id = 0;
   SharedQuadState* shared_state = render_pass->CreateAndAppendSharedQuadState();
   shared_state->SetAll(content_to_target_transform,
                        content_bounds,
@@ -86,7 +89,8 @@ SharedQuadState* CreateTestSharedQuadStateClipped(
                        clip_rect,
                        is_clipped,
                        opacity,
-                       blend_mode);
+                       blend_mode,
+                       sorting_context_id);
   return shared_state;
 }
 
@@ -812,8 +816,8 @@ TYPED_TEST(RendererPixelTest, FastPassColorFilterAlpha) {
   matrix[13] = matrix[14] = 0;
   matrix[15] = matrix[16] = matrix[17] = matrix[19] = 0;
   matrix[18] = 1;
-  skia::RefPtr<SkColorFilter> colorFilter(skia::AdoptRef(
-      new SkColorMatrixFilter(matrix)));
+  skia::RefPtr<SkColorFilter> colorFilter(
+      skia::AdoptRef(SkColorMatrixFilter::Create(matrix)));
   skia::RefPtr<SkImageFilter> filter =
       skia::AdoptRef(SkColorFilterImageFilter::Create(colorFilter.get(), NULL));
   FilterOperations filters;
@@ -1057,8 +1061,8 @@ TYPED_TEST(RendererPixelTest, FastPassColorFilterAlphaTranslation) {
   matrix[14] = 1.5f;
   matrix[15] = matrix[16] = matrix[17] = matrix[19] = 0;
   matrix[18] = 1;
-  skia::RefPtr<SkColorFilter> colorFilter(skia::AdoptRef(
-      new SkColorMatrixFilter(matrix)));
+  skia::RefPtr<SkColorFilter> colorFilter(
+      skia::AdoptRef(SkColorMatrixFilter::Create(matrix)));
   skia::RefPtr<SkImageFilter> filter =
       skia::AdoptRef(SkColorFilterImageFilter::Create(colorFilter.get(), NULL));
   FilterOperations filters;

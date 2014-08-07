@@ -17,10 +17,10 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
-#include "chrome/browser/chromeos/login/login_display.h"
-#include "chrome/browser/chromeos/login/login_performer.h"
+#include "chrome/browser/chromeos/login/auth/login_performer.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/ui/login_display.h"
+#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "content/public/browser/notification_observer.h"
@@ -32,6 +32,7 @@ namespace chromeos {
 
 class CrosSettings;
 class LoginDisplayHost;
+class UserContext;
 
 namespace login {
 class NetworkStateHelper;
@@ -304,6 +305,8 @@ class ExistingUserController : public LoginDisplay::Delegate,
 
   scoped_ptr<CrosSettings::ObserverSubscription> show_user_names_subscription_;
   scoped_ptr<CrosSettings::ObserverSubscription> allow_new_user_subscription_;
+  scoped_ptr<CrosSettings::ObserverSubscription>
+      allow_supervised_user_subscription_;
   scoped_ptr<CrosSettings::ObserverSubscription> allow_guest_subscription_;
   scoped_ptr<CrosSettings::ObserverSubscription> users_subscription_;
   scoped_ptr<CrosSettings::ObserverSubscription>

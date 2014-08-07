@@ -31,7 +31,7 @@ class SearchIPCRouterPolicyTest : public BrowserWithTestWindowTest {
     SearchTabHelper* search_tab_helper =
         SearchTabHelper::FromWebContents(web_contents());
     EXPECT_NE(static_cast<SearchTabHelper*>(NULL), search_tab_helper);
-    return search_tab_helper->ipc_router().policy();
+    return search_tab_helper->ipc_router().policy_for_testing();
   }
 
   void SetIncognitoProfile() {
@@ -111,6 +111,14 @@ TEST_F(SearchIPCRouterPolicyTest, DoNotProcessChromeIdentityCheck) {
 TEST_F(SearchIPCRouterPolicyTest, ProcessNavigateToURL) {
   NavigateAndCommitActiveTab(GURL(chrome::kChromeSearchLocalNtpUrl));
   EXPECT_TRUE(GetSearchIPCRouterPolicy()->ShouldProcessNavigateToURL(true));
+}
+
+TEST_F(SearchIPCRouterPolicyTest, DoNotProcessNavigateToURL) {
+  NavigateAndCommitActiveTab(GURL("chrome-search://foo/bar"));
+  EXPECT_FALSE(GetSearchIPCRouterPolicy()->ShouldProcessNavigateToURL(true));
+
+  NavigateAndCommitActiveTab(GURL("file://foo/bar"));
+  EXPECT_FALSE(GetSearchIPCRouterPolicy()->ShouldProcessNavigateToURL(true));
 }
 
 TEST_F(SearchIPCRouterPolicyTest, ProcessPasteIntoOmniboxMsg) {

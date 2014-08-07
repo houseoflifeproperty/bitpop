@@ -156,7 +156,7 @@ def main(argv):
   parser.add_option('--print-cmd', action='store_true',
                     help='only print command instead of running it')
   parser.add_option('--target-android-browser',
-                    default='android-chromium-testshell',
+                    default='android-chrome-shell',
                     help='target browser used on Android')
   parser.add_option('--factory-properties', action='callback',
                     callback=chromium_utils.convert_json, type='string',

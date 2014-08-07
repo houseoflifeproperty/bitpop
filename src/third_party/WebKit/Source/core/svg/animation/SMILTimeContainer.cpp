@@ -27,18 +27,17 @@
 #include "core/svg/animation/SMILTimeContainer.h"
 
 #include "core/animation/AnimationClock.h"
-#include "core/animation/DocumentTimeline.h"
+#include "core/animation/AnimationTimeline.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/frame/FrameView.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/animation/SVGSMILElement.h"
 
-using namespace std;
-
 namespace WebCore {
 
 static const double initialFrameDelay = 0.025;
 
+#if !ENABLE(OILPAN)
 // Every entry-point that calls updateAnimations() should instantiate a
 // DiscardScope to prevent deletion of the ownerElement (and hence itself.)
 class DiscardScope {
@@ -48,6 +47,7 @@ public:
 private:
     RefPtr<SVGSVGElement> m_discardScopeElement;
 };
+#endif
 
 SMILTimeContainer::SMILTimeContainer(SVGSVGElement& owner)
     : m_beginTime(0)
@@ -85,11 +85,11 @@ void SMILTimeContainer::schedule(SVGSMILElement* animation, SVGElement* target, 
 #endif
 
     ElementAttributePair key(target, attributeName);
-    OwnPtr<AnimationsVector>& scheduled = m_scheduledAnimations.add(key, nullptr).storedValue->value;
+    OwnPtrWillBeMember<AnimationsLinkedHashSet>& scheduled = m_scheduledAnimations.add(key, nullptr).storedValue->value;
     if (!scheduled)
-        scheduled = adoptPtr(new AnimationsVector);
+        scheduled = adoptPtrWillBeNoop(new AnimationsLinkedHashSet);
     ASSERT(!scheduled->contains(animation));
-    scheduled->append(animation);
+    scheduled->add(animation);
 
     SMILTime nextFireTime = animation->nextProgressTime();
     if (nextFireTime.isFinite())
@@ -105,11 +105,16 @@ void SMILTimeContainer::unschedule(SVGSMILElement* animation, SVGElement* target
 #endif
 
     ElementAttributePair key(target, attributeName);
-    AnimationsVector* scheduled = m_scheduledAnimations.get(key);
+    GroupedAnimationsMap::iterator it = m_scheduledAnimations.find(key);
+    ASSERT(it != m_scheduledAnimations.end());
+    AnimationsLinkedHashSet* scheduled = it->value.get();
     ASSERT(scheduled);
-    size_t idx = scheduled->find(animation);
-    ASSERT(idx != kNotFound);
-    scheduled->remove(idx);
+    AnimationsLinkedHashSet::iterator itAnimation = scheduled->find(animation);
+    ASSERT(itAnimation != scheduled->end());
+    scheduled->remove(itAnimation);
+
+    if (scheduled->isEmpty())
+        m_scheduledAnimations.remove(it);
 }
 
 bool SMILTimeContainer::hasAnimations() const
@@ -157,13 +162,15 @@ bool SMILTimeContainer::isStarted() const
 
 void SMILTimeContainer::begin()
 {
-    ASSERT(!m_beginTime);
+    RELEASE_ASSERT(!m_beginTime);
     double now = currentTime();
 
     // If 'm_presetStartTime' is set, the timeline was modified via setElapsed() before the document began.
     // In this case pass on 'seekToTime=true' to updateAnimations().
     m_beginTime = now - m_presetStartTime;
+#if !ENABLE(OILPAN)
     DiscardScope discardScope(m_ownerSVGElement);
+#endif
     SMILTime earliestFireTime = updateAnimations(SMILTime(m_presetStartTime), m_presetStartTime ? true : false);
     m_presetStartTime = 0;
 
@@ -231,10 +238,12 @@ void SMILTimeContainer::setElapsed(SMILTime time)
 #endif
     GroupedAnimationsMap::iterator end = m_scheduledAnimations.end();
     for (GroupedAnimationsMap::iterator it = m_scheduledAnimations.begin(); it != end; ++it) {
-        AnimationsVector* scheduled = it->value.get();
-        unsigned size = scheduled->size();
-        for (unsigned n = 0; n < size; n++)
-            scheduled->at(n)->reset();
+        if (!it->key.first)
+            continue;
+
+        AnimationsLinkedHashSet* scheduled = it->value.get();
+        for (AnimationsLinkedHashSet::const_iterator itAnimation = scheduled->begin(), itAnimationEnd = scheduled->end(); itAnimation != itAnimationEnd; ++itAnimation)
+            (*itAnimation)->reset();
     }
 #ifndef NDEBUG
     m_preventScheduledAnimationsChanges = false;
@@ -254,10 +263,10 @@ void SMILTimeContainer::scheduleAnimationFrame(SMILTime fireTime)
     ASSERT(!m_wakeupTimer.isActive());
 
     SMILTime delay = fireTime - elapsed();
-    if (delay.value() < DocumentTimeline::s_minimumDelay) {
+    if (delay.value() < AnimationTimeline::s_minimumDelay) {
         serviceOnNextFrame();
     } else {
-        scheduleWakeUp(delay.value() - DocumentTimeline::s_minimumDelay, FutureAnimationFrame);
+        scheduleWakeUp(delay.value() - AnimationTimeline::s_minimumDelay, FutureAnimationFrame);
     }
 }
 
@@ -297,7 +306,7 @@ void SMILTimeContainer::updateDocumentOrderIndexes()
 
 struct PriorityCompare {
     PriorityCompare(SMILTime elapsed) : m_elapsed(elapsed) {}
-    bool operator()(const RefPtr<SVGSMILElement>& a, const RefPtr<SVGSMILElement>& b)
+    bool operator()(const RefPtrWillBeMember<SVGSMILElement>& a, const RefPtrWillBeMember<SVGSMILElement>& b)
     {
         // FIXME: This should also consider possible timing relations between the elements.
         SMILTime aBegin = a->intervalBegin();
@@ -341,7 +350,9 @@ void SMILTimeContainer::serviceAnimations(double monotonicAnimationStartTime)
 
 void SMILTimeContainer::updateAnimationsAndScheduleFrameIfNeeded(SMILTime elapsed, bool seekToTime)
 {
+#if !ENABLE(OILPAN)
     DiscardScope discardScope(m_ownerSVGElement);
+#endif
     SMILTime earliestFireTime = updateAnimations(elapsed, seekToTime);
     // If updateAnimations() ended up triggering a synchronization (most likely
     // via syncbases), then give that priority.
@@ -370,21 +381,28 @@ SMILTime SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
     if (m_documentOrderIndexesDirty)
         updateDocumentOrderIndexes();
 
-    Vector<RefPtr<SVGSMILElement> >  animationsToApply;
-    GroupedAnimationsMap::iterator end = m_scheduledAnimations.end();
-    for (GroupedAnimationsMap::iterator it = m_scheduledAnimations.begin(); it != end; ++it) {
-        AnimationsVector* scheduled = it->value.get();
+    WillBeHeapHashSet<ElementAttributePair> invalidKeys;
+    typedef WillBeHeapVector<RefPtrWillBeMember<SVGSMILElement> > AnimationsVector;
+    AnimationsVector animationsToApply;
+    for (GroupedAnimationsMap::iterator it = m_scheduledAnimations.begin(), end = m_scheduledAnimations.end(); it != end; ++it) {
+        if (!it->key.first || it->value->isEmpty()) {
+            invalidKeys.add(it->key);
+            continue;
+        }
+
+        AnimationsLinkedHashSet* scheduled = it->value.get();
 
         // Sort according to priority. Elements with later begin time have higher priority.
         // In case of a tie, document order decides.
         // FIXME: This should also consider timing relationships between the elements. Dependents
         // have higher priority.
-        std::sort(scheduled->begin(), scheduled->end(), PriorityCompare(elapsed));
+        AnimationsVector scheduledAnimations;
+        copyToVector(*scheduled, scheduledAnimations);
+        std::sort(scheduledAnimations.begin(), scheduledAnimations.end(), PriorityCompare(elapsed));
 
         SVGSMILElement* resultElement = 0;
-        unsigned size = scheduled->size();
-        for (unsigned n = 0; n < size; n++) {
-            SVGSMILElement* animation = scheduled->at(n);
+        for (AnimationsVector::const_iterator itAnimation = scheduledAnimations.begin(), itAnimationEnd = scheduledAnimations.end(); itAnimation != itAnimationEnd; ++itAnimation) {
+            SVGSMILElement* animation = itAnimation->get();
             ASSERT(animation->timeContainer() == this);
             ASSERT(animation->targetElement());
             ASSERT(animation->hasValidAttributeName());
@@ -403,12 +421,13 @@ SMILTime SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
 
             SMILTime nextFireTime = animation->nextProgressTime();
             if (nextFireTime.isFinite())
-                earliestFireTime = min(nextFireTime, earliestFireTime);
+                earliestFireTime = std::min(nextFireTime, earliestFireTime);
         }
 
         if (resultElement)
             animationsToApply.append(resultElement);
     }
+    m_scheduledAnimations.removeAll(invalidKeys);
 
     std::sort(animationsToApply.begin(), animationsToApply.end(), PriorityCompare(elapsed));
 
@@ -430,8 +449,8 @@ SMILTime SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
 
     for (unsigned i = 0; i < animationsToApplySize; ++i) {
         if (animationsToApply[i]->inDocument() && animationsToApply[i]->isSVGDiscardElement()) {
-            RefPtr<SVGSMILElement> animDiscard = animationsToApply[i];
-            RefPtr<SVGElement> targetElement = animDiscard->targetElement();
+            RefPtrWillBeRawPtr<SVGSMILElement> animDiscard = animationsToApply[i];
+            RefPtrWillBeRawPtr<SVGElement> targetElement = animDiscard->targetElement();
             if (targetElement && targetElement->inDocument()) {
                 targetElement->remove(IGNORE_EXCEPTION);
                 ASSERT(!targetElement->inDocument());
@@ -444,6 +463,11 @@ SMILTime SMILTimeContainer::updateAnimations(SMILTime elapsed, bool seekToTime)
         }
     }
     return earliestFireTime;
+}
+
+void SMILTimeContainer::trace(Visitor* visitor)
+{
+    visitor->trace(m_scheduledAnimations);
 }
 
 }

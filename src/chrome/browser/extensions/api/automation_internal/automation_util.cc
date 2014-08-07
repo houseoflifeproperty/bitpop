@@ -7,12 +7,9 @@
 #include <string>
 #include <utility>
 
-#include "base/command_line.h"
 #include "base/values.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/automation_internal.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/extension_system.h"
 #include "ui/accessibility/ax_enums.h"
 #include "ui/accessibility/ax_node_data.h"
 
@@ -115,25 +112,20 @@ void PopulateNodeData(const ui::AXNodeData& node_data,
 void DispatchEventInternal(content::BrowserContext* context,
                            const std::string& event_name,
                            scoped_ptr<base::ListValue> args) {
-  if (context && ExtensionSystem::Get(context)->event_router()) {
+  if (context && EventRouter::Get(context)) {
     scoped_ptr<Event> event(new Event(event_name, args.Pass()));
     event->restrict_to_browser_context = context;
-    ExtensionSystem::Get(context)->event_router()->BroadcastEvent(event.Pass());
+    EventRouter::Get(context)->BroadcastEvent(event.Pass());
   }
 }
 
-}  //namespace
+}  // namespace
 
 namespace automation_util {
 
 void DispatchAccessibilityEventsToAutomation(
     const std::vector<content::AXEventNotificationDetails>& details,
     content::BrowserContext* browser_context) {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableAutomationAPI)) {
-    return;
-  }
-
   using api::automation_internal::AXEventParams;
 
   std::vector<content::AXEventNotificationDetails>::const_iterator iter =

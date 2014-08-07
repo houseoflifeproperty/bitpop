@@ -16,7 +16,7 @@ from pylib import flag_changer
 from pylib import valgrind_tools
 from pylib.base import base_test_result
 from pylib.base import base_test_runner
-from pylib.device import adb_wrapper
+from pylib.device import device_errors
 from pylib.instrumentation import json_perf_parser
 from pylib.instrumentation import test_result
 
@@ -104,11 +104,11 @@ class TestRunner(base_test_runner.BaseTestRunner):
     test_data = _GetDataFilesForTestSuite(self.test_pkg.GetApkName())
     if test_data:
       # Make sure SD card is ready.
-      self.device.old_interface.WaitForSdCardReady(20)
+      self.device.WaitUntilFullyBooted(timeout=20)
       for p in test_data:
         self.device.old_interface.PushIfNeeded(
             os.path.join(constants.DIR_SOURCE_ROOT, p),
-            os.path.join(self.device.old_interface.GetExternalStorage(), p))
+            os.path.join(self.device.GetExternalStoragePath(), p))
 
     # TODO(frankf): Specify test data in this file as opposed to passing
     # as command-line.
@@ -121,7 +121,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
         self.device.old_interface.PushIfNeeded(
             host_test_files_path,
             '%s/%s/%s' % (
-                self.device.old_interface.GetExternalStorage(),
+                self.device.GetExternalStoragePath(),
                 TestRunner._DEVICE_DATA_DIR,
                 dst_layer))
     self.tool.CopyFiles()
@@ -147,12 +147,15 @@ class TestRunner(base_test_runner.BaseTestRunner):
   def SetUp(self):
     """Sets up the test harness and device before all tests are run."""
     super(TestRunner, self).SetUp()
-    if not self.device.old_interface.IsRootEnabled():
+    if not self.device.HasRoot():
       logging.warning('Unable to enable java asserts for %s, non rooted device',
                       str(self.device))
     else:
       if self.device.old_interface.SetJavaAssertsEnabled(True):
-        self.device.old_interface.Reboot(full_reboot=False)
+        # TODO(jbudorick) How to best do shell restart after the
+        #                 android_commands refactor?
+        self.device.RunShellCommand('stop')
+        self.device.RunShellCommand('start')
 
     # We give different default value to launch HTTP server based on shard index
     # because it may have race condition when multiple processes are trying to
@@ -184,7 +187,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     if self.coverage_dir:
       coverage_basename = '%s.ec' % test
       self.coverage_device_file = '%s/%s/%s' % (
-          self.device.old_interface.GetExternalStorage(),
+          self.device.GetExternalStoragePath(),
           TestRunner._DEVICE_COVERAGE_DIR, coverage_basename)
       self.coverage_host_file = os.path.join(
           self.coverage_dir, coverage_basename)
@@ -234,7 +237,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     if self.coverage_dir:
       self.device.old_interface.Adb().Pull(
           self.coverage_device_file, self.coverage_host_file)
-      self.device.old_interface.RunShellCommand(
+      self.device.RunShellCommand(
           'rm -f %s' % self.coverage_device_file)
 
   def TearDownPerfMonitoring(self, test):
@@ -329,7 +332,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
       return self.device.old_interface.RunInstrumentationTest(
           test, self.test_pkg.GetPackageName(),
           self._GetInstrumentationArgs(), timeout)
-    except (adb_wrapper.CommandTimeoutError,
+    except (device_errors.CommandTimeoutError,
             # TODO(jbudorick) Remove this once the underlying implementations
             #                 for the above are switched or wrapped.
             android_commands.errors.WaitForResponseTimedOutError):
@@ -369,8 +372,8 @@ class TestRunner(base_test_runner.BaseTestRunner):
       results.AddResult(result)
     # Catch exceptions thrown by StartInstrumentation().
     # See ../../third_party/android/testrunner/adb_interface.py
-    except (adb_wrapper.CommandTimeoutError,
-            adb_wrapper.DeviceUnreachableError,
+    except (device_errors.CommandTimeoutError,
+            device_errors.DeviceUnreachableError,
             # TODO(jbudorick) Remove these once the underlying implementations
             #                 for the above are switched or wrapped.
             android_commands.errors.WaitForResponseTimedOutError,

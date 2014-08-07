@@ -27,11 +27,11 @@
 #include "config.h"
 #include "core/editing/Editor.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
-#include "SVGNames.h"
-#include "XLinkNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/CSSPropertyNames.h"
+#include "core/EventNames.h"
+#include "core/HTMLNames.h"
+#include "core/XLinkNames.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/clipboard/Clipboard.h"
 #include "core/clipboard/DataObject.h"
@@ -40,7 +40,6 @@
 #include "core/css/StylePropertySet.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/DocumentMarkerController.h"
-#include "core/dom/NodeList.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/ParserContentPolicy.h"
 #include "core/dom/Text.h"
@@ -68,6 +67,7 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTextAreaElement.h"
@@ -86,7 +86,6 @@
 
 namespace WebCore {
 
-using namespace std;
 using namespace HTMLNames;
 using namespace WTF;
 using namespace Unicode;
@@ -350,7 +349,7 @@ void Editor::pasteAsPlainText(const String& pastingText, bool smartReplace)
     target->dispatchEvent(TextEvent::createForPlainTextPaste(m_frame.domWindow(), pastingText, smartReplace), IGNORE_EXCEPTION);
 }
 
-void Editor::pasteAsFragment(PassRefPtr<DocumentFragment> pastingFragment, bool smartReplace, bool matchStyle)
+void Editor::pasteAsFragment(PassRefPtrWillBeRawPtr<DocumentFragment> pastingFragment, bool smartReplace, bool matchStyle)
 {
     Node* target = findEventTargetFromSelection();
     if (!target)
@@ -388,7 +387,7 @@ void Editor::pasteAsPlainTextWithPasteboard(Pasteboard* pasteboard)
 void Editor::pasteWithPasteboard(Pasteboard* pasteboard)
 {
     RefPtrWillBeRawPtr<Range> range = selectedRange();
-    RefPtr<DocumentFragment> fragment;
+    RefPtrWillBeRawPtr<DocumentFragment> fragment = nullptr;
     bool chosePlainText = false;
 
     if (pasteboard->isHTMLAvailable()) {
@@ -483,7 +482,7 @@ bool Editor::canSmartReplaceWithPasteboard(Pasteboard* pasteboard)
     return smartInsertDeleteEnabled() && pasteboard->canSmartReplace();
 }
 
-void Editor::replaceSelectionWithFragment(PassRefPtr<DocumentFragment> fragment, bool selectReplacement, bool smartReplace, bool matchStyle)
+void Editor::replaceSelectionWithFragment(PassRefPtrWillBeRawPtr<DocumentFragment> fragment, bool selectReplacement, bool smartReplace, bool matchStyle)
 {
     if (m_frame.selection().isNone() || !m_frame.selection().isContentEditable() || !fragment)
         return;
@@ -650,7 +649,7 @@ TriState Editor::selectionHasStyle(CSSPropertyID propertyID, const String& value
 
 String Editor::selectionStartCSSPropertyValue(CSSPropertyID propertyID)
 {
-    RefPtr<EditingStyle> selectionStyle = EditingStyle::styleAtSelectionStart(m_frame.selection().selection(),
+    RefPtrWillBeRawPtr<EditingStyle> selectionStyle = EditingStyle::styleAtSelectionStart(m_frame.selection().selection(),
         propertyID == CSSPropertyBackgroundColor);
     if (!selectionStyle || !selectionStyle->style())
         return String();
@@ -672,7 +671,7 @@ void Editor::outdent()
     IndentOutdentCommand::create(*m_frame.document(), IndentOutdentCommand::Outdent)->apply();
 }
 
-static void dispatchEditableContentChangedEvents(PassRefPtr<Element> startRoot, PassRefPtr<Element> endRoot)
+static void dispatchEditableContentChangedEvents(PassRefPtrWillBeRawPtr<Element> startRoot, PassRefPtrWillBeRawPtr<Element> endRoot)
 {
     if (startRoot)
         startRoot->dispatchEvent(Event::create(EventTypeNames::webkitEditableContentChanged), IGNORE_EXCEPTION);
@@ -680,7 +679,7 @@ static void dispatchEditableContentChangedEvents(PassRefPtr<Element> startRoot, 
         endRoot->dispatchEvent(Event::create(EventTypeNames::webkitEditableContentChanged), IGNORE_EXCEPTION);
 }
 
-void Editor::appliedEditing(PassRefPtr<CompositeEditCommand> cmd)
+void Editor::appliedEditing(PassRefPtrWillBeRawPtr<CompositeEditCommand> cmd)
 {
     EventQueueScope scope;
     m_frame.document()->updateLayout();
@@ -710,7 +709,7 @@ void Editor::appliedEditing(PassRefPtr<CompositeEditCommand> cmd)
     respondToChangedContents(newSelection);
 }
 
-void Editor::unappliedEditing(PassRefPtr<EditCommandComposition> cmd)
+void Editor::unappliedEditing(PassRefPtrWillBeRawPtr<EditCommandComposition> cmd)
 {
     EventQueueScope scope;
     m_frame.document()->updateLayout();
@@ -718,7 +717,9 @@ void Editor::unappliedEditing(PassRefPtr<EditCommandComposition> cmd)
     dispatchEditableContentChangedEvents(cmd->startingRootEditableElement(), cmd->endingRootEditableElement());
 
     VisibleSelection newSelection(cmd->startingSelection());
-    changeSelectionAfterCommand(newSelection, FrameSelection::CloseTyping | FrameSelection::ClearTypingStyle);
+    newSelection.validatePositionsIfNeeded();
+    if (newSelection.start().document() == m_frame.document() && newSelection.end().document() == m_frame.document())
+        changeSelectionAfterCommand(newSelection, FrameSelection::CloseTyping | FrameSelection::ClearTypingStyle);
 
     m_lastEditCommand = nullptr;
     if (UndoStack* undoStack = this->undoStack())
@@ -726,7 +727,7 @@ void Editor::unappliedEditing(PassRefPtr<EditCommandComposition> cmd)
     respondToChangedContents(newSelection);
 }
 
-void Editor::reappliedEditing(PassRefPtr<EditCommandComposition> cmd)
+void Editor::reappliedEditing(PassRefPtrWillBeRawPtr<EditCommandComposition> cmd)
 {
     EventQueueScope scope;
     m_frame.document()->updateLayout();
@@ -742,9 +743,9 @@ void Editor::reappliedEditing(PassRefPtr<EditCommandComposition> cmd)
     respondToChangedContents(newSelection);
 }
 
-PassOwnPtr<Editor> Editor::create(LocalFrame& frame)
+PassOwnPtrWillBeRawPtr<Editor> Editor::create(LocalFrame& frame)
 {
-    return adoptPtr(new Editor(frame));
+    return adoptPtrWillBeNoop(new Editor(frame));
 }
 
 Editor::Editor(LocalFrame& frame)
@@ -793,7 +794,7 @@ bool Editor::insertTextWithoutSendingTextEvent(const String& text, bool selectIn
     selection = selectionForCommand(triggeringEvent);
     if (selection.isContentEditable()) {
         if (Node* selectionStart = selection.start().deprecatedNode()) {
-            RefPtr<Document> document(selectionStart->document());
+            RefPtrWillBeRawPtr<Document> document(selectionStart->document());
 
             // Insert the text
             TypingCommand::Options options = 0;
@@ -917,6 +918,71 @@ void Editor::performDelete()
     // clear the "start new kill ring sequence" setting, because it was set to true
     // when the selection was updated by deleting the range
     setStartNewKillRingSequence(false);
+}
+
+static void countEditingEvent(ExecutionContext* executionContext, const Event* event, UseCounter::Feature featureOnInput, UseCounter::Feature featureOnTextArea, UseCounter::Feature featureOnContentEditable, UseCounter::Feature featureOnNonNode)
+{
+    EventTarget* eventTarget = event->target();
+    Node* node = eventTarget->toNode();
+    if (!node) {
+        UseCounter::count(executionContext, featureOnNonNode);
+        return;
+    }
+
+    if (isHTMLInputElement(node)) {
+        UseCounter::count(executionContext, featureOnInput);
+        return;
+    }
+
+    if (isHTMLTextAreaElement(node)) {
+        UseCounter::count(executionContext, featureOnTextArea);
+        return;
+    }
+
+    HTMLTextFormControlElement* control = enclosingTextFormControl(node);
+    if (isHTMLInputElement(control)) {
+        UseCounter::count(executionContext, featureOnInput);
+        return;
+    }
+
+    if (isHTMLTextAreaElement(control)) {
+        UseCounter::count(executionContext, featureOnTextArea);
+        return;
+    }
+
+    UseCounter::count(executionContext, featureOnContentEditable);
+}
+
+void Editor::countEvent(ExecutionContext* executionContext, const Event* event)
+{
+    if (!executionContext)
+        return;
+
+    if (event->type() == EventTypeNames::textInput) {
+        countEditingEvent(executionContext, event,
+            UseCounter::TextInputEventOnInput,
+            UseCounter::TextInputEventOnTextArea,
+            UseCounter::TextInputEventOnContentEditable,
+            UseCounter::TextInputEventOnNotNode);
+        return;
+    }
+
+    if (event->type() == EventTypeNames::webkitBeforeTextInserted) {
+        countEditingEvent(executionContext, event,
+            UseCounter::WebkitBeforeTextInsertedOnInput,
+            UseCounter::WebkitBeforeTextInsertedOnTextArea,
+            UseCounter::WebkitBeforeTextInsertedOnContentEditable,
+            UseCounter::WebkitBeforeTextInsertedOnNotNode);
+        return;
+    }
+
+    if (event->type() == EventTypeNames::webkitEditableContentChanged) {
+        countEditingEvent(executionContext, event,
+            UseCounter::WebkitEditableContentChangedOnInput,
+            UseCounter::WebkitEditableContentChangedOnTextArea,
+            UseCounter::WebkitEditableContentChangedOnContentEditable,
+            UseCounter::WebkitEditableContentChangedOnNotNode);
+    }
 }
 
 void Editor::copyImage(const HitTestResult& result)
@@ -1062,10 +1128,10 @@ IntRect Editor::firstRectForRange(Range* range) const
 
     if (startCaretRect.y() == endCaretRect.y()) {
         // start and end are on the same line
-        return IntRect(min(startCaretRect.x(), endCaretRect.x()),
+        return IntRect(std::min(startCaretRect.x(), endCaretRect.x()),
             startCaretRect.y(),
             abs(endCaretRect.x() - startCaretRect.x()),
-            max(startCaretRect.height(), endCaretRect.height()));
+            std::max(startCaretRect.height(), endCaretRect.height()));
     }
 
     // start and end aren't on the same line, so go from start to the end of its line
@@ -1083,7 +1149,7 @@ void Editor::computeAndSetTypingStyle(StylePropertySet* style, EditAction editin
     }
 
     // Calculate the current typing style.
-    RefPtr<EditingStyle> typingStyle;
+    RefPtrWillBeRawPtr<EditingStyle> typingStyle = nullptr;
     if (m_frame.selection().typingStyle()) {
         typingStyle = m_frame.selection().typingStyle()->copy();
         typingStyle->overrideWithStyle(style);
@@ -1094,7 +1160,7 @@ void Editor::computeAndSetTypingStyle(StylePropertySet* style, EditAction editin
     typingStyle->prepareToApplyAt(m_frame.selection().selection().visibleStart().deepEquivalent(), EditingStyle::PreserveWritingDirection);
 
     // Handle block styles, substracting these from the typing style.
-    RefPtr<EditingStyle> blockStyle = typingStyle->extractAndRemoveBlockProperties();
+    RefPtrWillBeRawPtr<EditingStyle> blockStyle = typingStyle->extractAndRemoveBlockProperties();
     if (!blockStyle->isEmpty()) {
         ASSERT(m_frame.document());
         ApplyStyleCommand::create(*m_frame.document(), blockStyle.get(), editingAction)->apply();
@@ -1233,6 +1299,12 @@ void Editor::toggleOverwriteModeEnabled()
 {
     m_overwriteModeEnabled = !m_overwriteModeEnabled;
     frame().selection().setShouldShowBlockCursor(m_overwriteModeEnabled);
+}
+
+void Editor::trace(Visitor* visitor)
+{
+    visitor->trace(m_lastEditCommand);
+    visitor->trace(m_mark);
 }
 
 } // namespace WebCore

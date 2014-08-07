@@ -38,11 +38,11 @@ WebInspector.StylesSourceMapping = function(cssModel, workspace)
 {
     this._cssModel = cssModel;
     this._workspace = workspace;
-    this._workspace.addEventListener(WebInspector.Workspace.Events.ProjectWillReset, this._projectWillReset, this);
+    this._workspace.addEventListener(WebInspector.Workspace.Events.ProjectRemoved, this._projectRemoved, this);
     this._workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeAdded, this._uiSourceCodeAddedToWorkspace, this);
     this._workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeRemoved, this._uiSourceCodeRemoved, this);
 
-    WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameCreatedOrNavigated, this._mainFrameCreatedOrNavigated, this);
+    WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._mainFrameNavigated, this);
 
     this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this._styleSheetChanged, this);
     this._initialize();
@@ -81,6 +81,14 @@ WebInspector.StylesSourceMapping.prototype = {
     isIdentity: function()
     {
         return true;
+    },
+
+    /**
+     * @return {!WebInspector.Target}
+     */
+    target: function()
+    {
+        return this._cssModel.target();
     },
 
     /**
@@ -175,7 +183,7 @@ WebInspector.StylesSourceMapping.prototype = {
     /**
      * @param {!WebInspector.Event} event
      */
-    _projectWillReset: function(event)
+    _projectRemoved: function(event)
     {
         var project = /** @type {!WebInspector.Project} */ (event.data);
         var uiSourceCodes = project.uiSourceCodes();
@@ -203,7 +211,7 @@ WebInspector.StylesSourceMapping.prototype = {
     /**
      * @param {!WebInspector.Event} event
      */
-    _mainFrameCreatedOrNavigated: function(event)
+    _mainFrameNavigated: function(event)
     {
         for (var url in this._urlToHeadersByFrameId) {
             var uiSourceCode = this._workspace.uiSourceCodeForURL(url);
@@ -315,17 +323,10 @@ WebInspector.StyleFile = function(uiSourceCode, mapping)
     this._mapping = mapping;
     this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyChanged, this._workingCopyChanged, this);
     this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyCommitted, this._workingCopyCommitted, this);
+    this._commitThrottler = new WebInspector.Throttler(WebInspector.StyleFile.updateTimeout);
 }
 
 WebInspector.StyleFile.updateTimeout = 200;
-
-/**
- * @enum {string}
- */
-WebInspector.StyleFile.PendingChangeType = {
-    Major: "Major",
-    Minor: "Minor"
-}
 
 WebInspector.StyleFile.prototype = {
     /**
@@ -336,8 +337,8 @@ WebInspector.StyleFile.prototype = {
         if (this._isAddingRevision)
             return;
 
-        this._pendingChangeType = WebInspector.StyleFile.PendingChangeType.Major;
-        this._maybeProcessChange();
+        this._isMajorChangePending = true;
+        this._commitThrottler.schedule(this._commitIncrementalEdit.bind(this), true);
     },
 
     /**
@@ -348,59 +349,27 @@ WebInspector.StyleFile.prototype = {
         if (this._isAddingRevision)
             return;
 
-        if (this._pendingChangeType === WebInspector.StyleFile.PendingChangeType.Major)
-            return;
-        this._pendingChangeType = WebInspector.StyleFile.PendingChangeType.Minor;
-        this._maybeProcessChange();
-    },
-
-    _maybeProcessChange: function()
-    {
-        if (this._isSettingContent)
-            return;
-        if (!this._pendingChangeType)
-            return;
-
-        if (this._pendingChangeType === WebInspector.StyleFile.PendingChangeType.Major) {
-            this._clearIncrementalUpdateTimer();
-            delete this._pendingChangeType;
-            this._commitIncrementalEdit(true);
-            return;
-        }
-
-        if (this._incrementalUpdateTimer)
-            return;
-        this._incrementalUpdateTimer = setTimeout(this._commitIncrementalEdit.bind(this, false), WebInspector.StyleFile.updateTimeout);
+        this._commitThrottler.schedule(this._commitIncrementalEdit.bind(this), false);
     },
 
     /**
-     * @param {boolean} majorChange
+     * @param {!WebInspector.Throttler.FinishCallback} finishCallback
      */
-    _commitIncrementalEdit: function(majorChange)
+    _commitIncrementalEdit: function(finishCallback)
     {
-        this._clearIncrementalUpdateTimer();
-        delete this._pendingChangeType;
-        this._isSettingContent = true;
-        this._mapping._setStyleContent(this._uiSourceCode, this._uiSourceCode.workingCopy(), majorChange, this._styleContentSet.bind(this));
+        this._mapping._setStyleContent(this._uiSourceCode, this._uiSourceCode.workingCopy(), this._isMajorChangePending, this._styleContentSet.bind(this, finishCallback));
+        this._isMajorChangePending = false;
     },
 
     /**
+     * @param {!WebInspector.Throttler.FinishCallback} finishCallback
      * @param {?string} error
      */
-    _styleContentSet: function(error)
+    _styleContentSet: function(finishCallback, error)
     {
         if (error)
-            WebInspector.console.showErrorMessage(error);
-        delete this._isSettingContent;
-        this._maybeProcessChange();
-    },
-
-    _clearIncrementalUpdateTimer: function()
-    {
-        if (!this._incrementalUpdateTimer)
-            return;
-        clearTimeout(this._incrementalUpdateTimer);
-        delete this._incrementalUpdateTimer;
+            this._mapping._cssModel.target().consoleModel.showErrorMessage(error);
+        finishCallback();
     },
 
     /**

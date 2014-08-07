@@ -24,6 +24,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/extensions/api/file_browser_private.h"
+#include "chrome/common/extensions/api/file_browser_private_internal.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/render_process_host.h"
@@ -325,6 +326,11 @@ void FileBrowserPrivateRequestFileSystemFunction::OnEntryDefinition(
     return;
   }
 
+  if (!entry_definition.is_directory) {
+    DidFail(base::File::FILE_ERROR_NOT_A_DIRECTORY);
+    return;
+  }
+
   base::DictionaryValue* dict = new base::DictionaryValue();
   SetResult(dict);
   dict->SetString("name", entry_definition.file_system_name);
@@ -547,10 +553,16 @@ bool FileBrowserPrivateStartCopyFunction::RunAsync() {
       file_manager::util::GetFileSystemContextForRenderViewHost(
           GetProfile(), render_view_host());
 
+  // |parent| may have a trailing slash if it is a root directory.
+  std::string destination_url_string = params->parent;
+  if (destination_url_string[destination_url_string.size() - 1] != '/')
+    destination_url_string += '/';
+  destination_url_string += net::EscapePath(params->new_name);
+
   fileapi::FileSystemURL source_url(
       file_system_context->CrackURL(GURL(params->source_url)));
-  fileapi::FileSystemURL destination_url(file_system_context->CrackURL(
-      GURL(params->parent + "/" + net::EscapePath(params->new_name))));
+  fileapi::FileSystemURL destination_url(
+      file_system_context->CrackURL(GURL(destination_url_string)));
 
   if (!source_url.is_valid() || !destination_url.is_valid()) {
     // Error code in format of DOMError.name.
@@ -581,7 +593,7 @@ void FileBrowserPrivateStartCopyFunction::RunAfterStartCopy(
 bool FileBrowserPrivateCancelCopyFunction::RunAsync() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  using  extensions::api::file_browser_private::CancelCopy::Params;
+  using extensions::api::file_browser_private::CancelCopy::Params;
   const scoped_ptr<Params> params(Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -598,4 +610,72 @@ bool FileBrowserPrivateCancelCopyFunction::RunAsync() {
   return true;
 }
 
+bool FileBrowserPrivateInternalResolveIsolatedEntriesFunction::RunAsync() {
+  using extensions::api::file_browser_private_internal::ResolveIsolatedEntries::
+      Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  scoped_refptr<fileapi::FileSystemContext> file_system_context =
+      file_manager::util::GetFileSystemContextForRenderViewHost(
+          GetProfile(), render_view_host());
+  DCHECK(file_system_context);
+
+  const fileapi::ExternalFileSystemBackend* external_backend =
+      file_system_context->external_backend();
+  DCHECK(external_backend);
+
+  file_manager::util::FileDefinitionList file_definition_list;
+  for (size_t i = 0; i < params->urls.size(); ++i) {
+    FileSystemURL fileSystemUrl =
+        file_system_context->CrackURL(GURL(params->urls[i]));
+    DCHECK(external_backend->CanHandleType(fileSystemUrl.type()));
+
+    FileDefinition file_definition;
+    const bool result =
+        file_manager::util::ConvertAbsoluteFilePathToRelativeFileSystemPath(
+            GetProfile(),
+            extension_->id(),
+            fileSystemUrl.path(),
+            &file_definition.virtual_path);
+    if (!result)
+      continue;
+    // The API only supports isolated files.
+    file_definition.is_directory = false;
+    file_definition_list.push_back(file_definition);
+  }
+
+  file_manager::util::ConvertFileDefinitionListToEntryDefinitionList(
+      GetProfile(),
+      extension_->id(),
+      file_definition_list,  // Safe, since copied internally.
+      base::Bind(
+          &FileBrowserPrivateInternalResolveIsolatedEntriesFunction::
+              RunAsyncAfterConvertFileDefinitionListToEntryDefinitionList,
+          this));
+  return true;
+}
+
+void FileBrowserPrivateInternalResolveIsolatedEntriesFunction::
+    RunAsyncAfterConvertFileDefinitionListToEntryDefinitionList(scoped_ptr<
+        file_manager::util::EntryDefinitionList> entry_definition_list) {
+  using extensions::api::file_browser_private_internal::EntryDescription;
+  std::vector<linked_ptr<EntryDescription> > entries;
+
+  for (size_t i = 0; i < entry_definition_list->size(); ++i) {
+    if (entry_definition_list->at(i).error != base::File::FILE_OK)
+      continue;
+    linked_ptr<EntryDescription> entry(new EntryDescription);
+    entry->file_system_name = entry_definition_list->at(i).file_system_name;
+    entry->file_system_root = entry_definition_list->at(i).file_system_root_url;
+    entry->file_full_path =
+        "/" + entry_definition_list->at(i).full_path.AsUTF8Unsafe();
+    entry->file_is_directory = entry_definition_list->at(i).is_directory;
+    entries.push_back(entry);
+  }
+
+  results_ = extensions::api::file_browser_private_internal::
+      ResolveIsolatedEntries::Results::Create(entries);
+  SendResponse(true);
+}
 }  // namespace extensions

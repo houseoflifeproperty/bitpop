@@ -55,7 +55,7 @@ cr.define('print_preview', function() {
     updateSelect_: function() {
       var select = this.select_;
       if (!this.ticketItem_.isCapabilityAvailable()) {
-        select.innerHtml = '';
+        select.innerHTML = '';
         return;
       }
       // Should the select content be updated?
@@ -66,7 +66,7 @@ cr.define('print_preview', function() {
           });
       var indexToSelect = select.selectedIndex;
       if (!sameContent) {
-        select.innerHtml = '';
+        select.innerHTML = '';
         // TODO: Better heuristics for the display name and options grouping.
         this.ticketItem_.capability.option.forEach(function(option, index) {
           var selectOption = document.createElement('option');
@@ -77,16 +77,17 @@ cr.define('print_preview', function() {
             indexToSelect = index;
           }
         });
-      } else {
-        var valueToSelect = JSON.stringify(this.ticketItem_.getValue());
-        for (var i = 0, option; option = select.options[i]; i++) {
-          if (option.value == valueToSelect) {
-            indexToSelect = i;
-            break;
-          }
+      }
+      // Try to select current ticket item.
+      var valueToSelect = JSON.stringify(this.ticketItem_.getValue());
+      for (var i = 0, option; option = select.options[i]; i++) {
+        if (option.value == valueToSelect) {
+          indexToSelect = i;
+          break;
         }
       }
       select.selectedIndex = indexToSelect;
+      this.onSelectChange_();
     },
 
     /**

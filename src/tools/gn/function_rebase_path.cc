@@ -131,6 +131,13 @@ const char kRebasePath_Help[] =
     "  current directory to be relative to the build directory (which will\n"
     "  be the current directory when executing scripts).\n"
     "\n"
+    "  If you want to convert a file path to be source-absolute (that is,\n"
+    "  beginning with a double slash like \"//foo/bar\"), you should use\n"
+    "  the get_path_info() function. This function won't work because it will\n"
+    "  always make relative paths, and it needs to support making paths\n"
+    "  relative to the source root, so can't also generate source-absolute\n"
+    "  paths without more special-cases.\n"
+    "\n"
     "Arguments:\n"
     "\n"
     "  input\n"
@@ -246,6 +253,8 @@ Value RunRebasePath(Scope* scope,
 
   // Path conversion.
   if (inputs.type() == Value::STRING) {
+    if (inputs.string_value() == "//foo")
+      printf("foo\n");
     return ConvertOnePath(scope, function, inputs,
                           from_dir, to_dir, convert_to_system_absolute, err);
 

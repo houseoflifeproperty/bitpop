@@ -20,25 +20,30 @@
 #include "content/public/test/browser_test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
+#if defined(OS_WIN)
+// For fine-grained suppression.
+#include "base/win/windows_version.h"
+#endif
+
 const char WebRtcTestBase::kAudioVideoCallConstraints[] =
-    "'{audio: true, video: true}'";
+    "{audio: true, video: true}";
 const char WebRtcTestBase::kAudioVideoCallConstraintsQVGA[] =
-   "'{audio: true, video: {mandatory: {minWidth: 320, maxWidth: 320, "
-   " minHeight: 240, maxHeight: 240}}}'";
+   "{audio: true, video: {mandatory: {minWidth: 320, maxWidth: 320, "
+   " minHeight: 240, maxHeight: 240}}}";
 const char WebRtcTestBase::kAudioVideoCallConstraints360p[] =
-   "'{audio: true, video: {mandatory: {minWidth: 640, maxWidth: 640, "
-   " minHeight: 360, maxHeight: 360}}}'";
+   "{audio: true, video: {mandatory: {minWidth: 640, maxWidth: 640, "
+   " minHeight: 360, maxHeight: 360}}}";
 const char WebRtcTestBase::kAudioVideoCallConstraintsVGA[] =
-   "'{audio: true, video: {mandatory: {minWidth: 640, maxWidth: 640, "
-   " minHeight: 480, maxHeight: 480}}}'";
+   "{audio: true, video: {mandatory: {minWidth: 640, maxWidth: 640, "
+   " minHeight: 480, maxHeight: 480}}}";
 const char WebRtcTestBase::kAudioVideoCallConstraints720p[] =
-   "'{audio: true, video: {mandatory: {minWidth: 1280, maxWidth: 1280, "
-   " minHeight: 720, maxHeight: 720}}}'";
+   "{audio: true, video: {mandatory: {minWidth: 1280, maxWidth: 1280, "
+   " minHeight: 720, maxHeight: 720}}}";
 const char WebRtcTestBase::kAudioVideoCallConstraints1080p[] =
-    "'{audio: true, video: {mandatory: {minWidth: 1920, maxWidth: 1920, "
-    " minHeight: 1080, maxHeight: 1080}}}'";
-const char WebRtcTestBase::kAudioOnlyCallConstraints[] = "'{audio: true}'";
-const char WebRtcTestBase::kVideoOnlyCallConstraints[] = "'{video: true}'";
+    "{audio: true, video: {mandatory: {minWidth: 1920, maxWidth: 1920, "
+    " minHeight: 1080, maxHeight: 1080}}}";
+const char WebRtcTestBase::kAudioOnlyCallConstraints[] = "{audio: true}";
+const char WebRtcTestBase::kVideoOnlyCallConstraints[] = "{video: true}";
 const char WebRtcTestBase::kFailedWithPermissionDeniedError[] =
     "failed-with-error-PermissionDeniedError";
 const char WebRtcTestBase::kFailedWithPermissionDismissedError[] =
@@ -344,6 +349,22 @@ std::string WebRtcTestBase::GetStreamSize(
 bool WebRtcTestBase::HasWebcamAvailableOnSystem(
     content::WebContents* tab_contents) const {
   std::string result =
-      ExecuteJavascript("HasVideoSourceOnSystem();", tab_contents);
-  return result == "has-video-source";
+      ExecuteJavascript("hasVideoInputDeviceOnSystem();", tab_contents);
+  return result == "has-video-input-device";
+}
+
+bool WebRtcTestBase::OnWinXp() const {
+#if defined(OS_WIN)
+  return base::win::GetVersion() <= base::win::VERSION_XP;
+#else
+  return false;
+#endif
+}
+
+bool WebRtcTestBase::OnWin8() const {
+#if defined(OS_WIN)
+  return base::win::GetVersion() > base::win::VERSION_WIN7;
+#else
+  return false;
+#endif
 }

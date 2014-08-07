@@ -15,15 +15,9 @@ class ImageDecodingMeasurementPage(page_module.Page):
     self.image_decoding_measurement_limit_results_to_min_iterations = True
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(JavascriptAction(
-      {
-        'expression': 'runBenchmark();'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript': 'isDone'
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.ExecuteJavaScript('runBenchmark();')
+    action_runner.WaitForJavaScriptCondition('isDone')
 
 
 class ImageDecodingMeasurementPageSet(page_set_module.PageSet):

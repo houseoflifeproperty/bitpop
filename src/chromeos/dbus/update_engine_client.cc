@@ -38,6 +38,7 @@ const int64_t kDownloadSizeDelta = 1 << 19;
 // Returns UPDATE_STATUS_ERROR on error.
 UpdateEngineClient::UpdateStatusOperation UpdateStatusFromString(
     const std::string& str) {
+  VLOG(1) << "UpdateStatusFromString got " << str << " as input.";
   if (str == update_engine::kUpdateStatusIdle)
     return UpdateEngineClient::UPDATE_STATUS_IDLE;
   if (str == update_engine::kUpdateStatusCheckingForUpdate)
@@ -54,6 +55,8 @@ UpdateEngineClient::UpdateStatusOperation UpdateStatusFromString(
     return UpdateEngineClient::UPDATE_STATUS_UPDATED_NEED_REBOOT;
   if (str == update_engine::kUpdateStatusReportingErrorEvent)
     return UpdateEngineClient::UPDATE_STATUS_REPORTING_ERROR_EVENT;
+  if (str == update_engine::kUpdateStatusAttemptingRollback)
+    return UpdateEngineClient::UPDATE_STATUS_ATTEMPTING_ROLLBACK;
   return UpdateEngineClient::UPDATE_STATUS_ERROR;
 }
 
@@ -478,6 +481,7 @@ class UpdateEngineClientFakeImpl : public UpdateEngineClientStubImpl {
       case UPDATE_STATUS_IDLE:
       case UPDATE_STATUS_UPDATED_NEED_REBOOT:
       case UPDATE_STATUS_REPORTING_ERROR_EVENT:
+      case UPDATE_STATUS_ATTEMPTING_ROLLBACK:
         return;
       case UPDATE_STATUS_CHECKING_FOR_UPDATE:
         next_status = UPDATE_STATUS_UPDATE_AVAILABLE;

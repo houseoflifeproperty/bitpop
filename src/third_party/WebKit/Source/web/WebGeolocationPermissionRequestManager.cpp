@@ -26,6 +26,7 @@
 #include "config.h"
 #include "public/web/WebGeolocationPermissionRequestManager.h"
 
+#include "modules/geolocation/Geolocation.h"
 #include "public/web/WebGeolocationPermissionRequest.h"
 #include "wtf/HashMap.h"
 
@@ -33,8 +34,8 @@ namespace blink {
 
 using namespace WebCore;
 
-typedef HashMap<Geolocation*, int> GeolocationIdMap;
-typedef HashMap<int, Geolocation*> IdGeolocationMap;
+typedef PersistentHeapHashMap<Member<Geolocation>, int> GeolocationIdMap;
+typedef PersistentHeapHashMap<int, Member<Geolocation> > IdGeolocationMap;
 
 class WebGeolocationPermissionRequestManagerPrivate {
 public:
@@ -46,7 +47,8 @@ int WebGeolocationPermissionRequestManager::add(const blink::WebGeolocationPermi
 {
     Geolocation* geolocation = permissionRequest.geolocation();
     ASSERT(!m_private->m_geolocationIdMap.contains(geolocation));
-    int id = ++m_lastId;
+    static int lastId;
+    int id = ++lastId;
     m_private->m_geolocationIdMap.add(geolocation, id);
     m_private->m_idGeolocationMap.add(id, geolocation);
     return id;
@@ -78,7 +80,6 @@ bool WebGeolocationPermissionRequestManager::remove(int id, blink::WebGeolocatio
 
 void WebGeolocationPermissionRequestManager::init()
 {
-    m_lastId = 0;
     m_private.reset(new WebGeolocationPermissionRequestManagerPrivate);
 }
 

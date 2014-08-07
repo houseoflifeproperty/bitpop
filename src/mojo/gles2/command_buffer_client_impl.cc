@@ -8,7 +8,6 @@
 
 #include "base/logging.h"
 #include "base/process/process_handle.h"
-#include "mojo/public/cpp/bindings/allocation_scope.h"
 #include "mojo/public/cpp/bindings/sync_dispatcher.h"
 #include "mojo/services/gles2/command_buffer_type_conversions.h"
 #include "mojo/services/gles2/mojo_buffer_backing.h"
@@ -49,17 +48,17 @@ void CommandBufferDelegate::DrawAnimationFrame() {}
 
 CommandBufferClientImpl::CommandBufferClientImpl(
     CommandBufferDelegate* delegate,
-    MojoAsyncWaiter* async_waiter,
+    const MojoAsyncWaiter* async_waiter,
     ScopedMessagePipeHandle command_buffer_handle)
     : delegate_(delegate),
-      command_buffer_(MakeProxy<mojo::CommandBuffer>(
-          command_buffer_handle.Pass(), async_waiter)),
       shared_state_(NULL),
       last_put_offset_(-1),
       next_transfer_buffer_id_(0),
-      initialize_result_(false) {
+      initialize_result_(false),
+      async_waiter_(async_waiter) {
+  command_buffer_.Bind(command_buffer_handle.Pass(), async_waiter);
   command_buffer_.set_error_handler(this);
-  command_buffer_->SetClient(this);
+  command_buffer_.set_client(this);
 }
 
 CommandBufferClientImpl::~CommandBufferClientImpl() {}
@@ -82,8 +81,8 @@ bool CommandBufferClientImpl::Initialize() {
   sync_dispatcher_.reset(new SyncDispatcher<CommandBufferSyncClient>(
       sync_pipe.handle0.Pass(), this));
   CommandBufferSyncClientPtr sync_client =
-      MakeProxy<CommandBufferSyncClient>(sync_pipe.handle1.Pass());
-  AllocationScope scope;
+      MakeProxy<CommandBufferSyncClient>(sync_pipe.handle1.Pass(),
+                                         async_waiter_);
   command_buffer_->Initialize(sync_client.Pass(), duped.Pass());
   // Wait for DidInitialize to come on the sync client pipe.
   if (!sync_dispatcher_->WaitAndDispatchOneMessage()) {
@@ -147,7 +146,6 @@ scoped_refptr<gpu::Buffer> CommandBufferClientImpl::CreateTransferBuffer(
 
   *id = ++next_transfer_buffer_id_;
 
-  AllocationScope scope;
   command_buffer_->RegisterTransferBuffer(
       *id, duped.Pass(), static_cast<uint32_t>(size));
 
@@ -206,12 +204,6 @@ void CommandBufferClientImpl::SetSurfaceVisible(bool visible) {
   NOTIMPLEMENTED();
 }
 
-void CommandBufferClientImpl::SendManagedMemoryStats(
-    const gpu::ManagedMemoryStats& stats) {
-  // TODO(piman)
-  NOTIMPLEMENTED();
-}
-
 void CommandBufferClientImpl::Echo(const base::Closure& callback) {
   command_buffer_->Echo(callback);
 }
@@ -234,9 +226,9 @@ void CommandBufferClientImpl::DidInitialize(bool success) {
   initialize_result_ = success;
 }
 
-void CommandBufferClientImpl::DidMakeProgress(const CommandBufferState& state) {
-  if (state.generation() - last_state_.generation < 0x80000000U)
-    last_state_ = state;
+void CommandBufferClientImpl::DidMakeProgress(CommandBufferStatePtr state) {
+  if (state->generation - last_state_.generation < 0x80000000U)
+    last_state_ = state.To<State>();
 }
 
 void CommandBufferClientImpl::DidDestroy() {

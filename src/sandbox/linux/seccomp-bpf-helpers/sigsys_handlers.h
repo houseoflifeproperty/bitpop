@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "build/build_config.h"
-#include "sandbox/linux/sandbox_export.h"
+#include "sandbox/sandbox_export.h"
 
 // The handlers are suitable for use in Trap() error codes. They are
 // guaranteed to be async-signal safe.
@@ -53,6 +53,7 @@ SANDBOX_EXPORT const char* GetErrorMessageContentForTests();
 SANDBOX_EXPORT const char* GetCloneErrorMessageContentForTests();
 SANDBOX_EXPORT const char* GetPrctlErrorMessageContentForTests();
 SANDBOX_EXPORT const char* GetIoctlErrorMessageContentForTests();
+SANDBOX_EXPORT const char* GetKillErrorMessageContentForTests();
 SANDBOX_EXPORT const char* GetFutexErrorMessageContentForTests();
 
 }  // namespace sandbox.

@@ -8,7 +8,6 @@
 
 #include "base/version.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "extensions/browser/extension_registry.h"
@@ -25,17 +24,15 @@ typedef std::list<SharedModuleInfo::ImportInfo> ImportInfoList;
 }  // namespace
 
 SharedModuleService::SharedModuleService(content::BrowserContext* context)
-    : context_(context), observing_(false) {
-  InstallTracker::Get(context_)->AddObserver(this);
+    : extension_registry_observer_(this), browser_context_(context) {
+  extension_registry_observer_.Add(ExtensionRegistry::Get(browser_context_));
 }
 
 SharedModuleService::~SharedModuleService() {
-  if (observing_)
-    InstallTracker::Get(context_)->RemoveObserver(this);
 }
 
 SharedModuleService::ImportStatus SharedModuleService::CheckImports(
-    const extensions::Extension* extension,
+    const Extension* extension,
     ImportInfoList* missing_modules,
     ImportInfoList* outdated_modules) {
   DCHECK(extension);
@@ -44,7 +41,7 @@ SharedModuleService::ImportStatus SharedModuleService::CheckImports(
 
   ImportStatus status = IMPORT_STATUS_OK;
 
-  ExtensionRegistry* registry = ExtensionRegistry::Get(context_);
+  ExtensionRegistry* registry = ExtensionRegistry::Get(browser_context_);
   const ImportInfoVector& imports = SharedModuleInfo::GetImports(extension);
   for (ImportInfoVector::const_iterator iter = imports.begin();
        iter != imports.end();
@@ -87,7 +84,7 @@ SharedModuleService::ImportStatus SharedModuleService::SatisfyImports(
       CheckImports(extension, &missing_modules, &outdated_modules);
 
   ExtensionService* service =
-      ExtensionSystem::Get(context_)->extension_service();
+      ExtensionSystem::Get(browser_context_)->extension_service();
 
   PendingExtensionManager* pending_extension_manager =
       service->pending_extension_manager();
@@ -107,14 +104,14 @@ SharedModuleService::ImportStatus SharedModuleService::SatisfyImports(
   return status;
 }
 
-scoped_ptr<const ExtensionSet> SharedModuleService::GetDependentExtensions(
+scoped_ptr<ExtensionSet> SharedModuleService::GetDependentExtensions(
     const Extension* extension) {
   scoped_ptr<ExtensionSet> dependents(new ExtensionSet());
 
   if (SharedModuleInfo::IsSharedModule(extension)) {
-    ExtensionRegistry* registry = ExtensionRegistry::Get(context_);
+    ExtensionRegistry* registry = ExtensionRegistry::Get(browser_context_);
     ExtensionService* service =
-        ExtensionSystem::Get(context_)->extension_service();
+        ExtensionSystem::Get(browser_context_)->extension_service();
 
     ExtensionSet set_to_check;
     set_to_check.InsertAll(registry->enabled_extensions());
@@ -130,17 +127,19 @@ scoped_ptr<const ExtensionSet> SharedModuleService::GetDependentExtensions(
       }
     }
   }
-  return dependents.PassAs<const ExtensionSet>();
+  return dependents.PassAs<ExtensionSet>();
 }
 
-void SharedModuleService::PruneSharedModulesOnUninstall(
+void SharedModuleService::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
     const Extension* extension) {
+  // Uninstalls shared modules that were only referenced by |extension|.
   if (!SharedModuleInfo::ImportsModules(extension))
     return;
 
-  ExtensionRegistry* registry = ExtensionRegistry::Get(context_);
+  ExtensionRegistry* registry = ExtensionRegistry::Get(browser_context_);
   ExtensionService* service =
-      ExtensionSystem::Get(context_)->extension_service();
+      ExtensionSystem::Get(browser_context_)->extension_service();
 
   const ImportInfoVector& imports = SharedModuleInfo::GetImports(extension);
   for (ImportInfoVector::const_iterator iter = imports.begin();
@@ -150,7 +149,7 @@ void SharedModuleService::PruneSharedModulesOnUninstall(
         registry->GetExtensionById(iter->extension_id,
                                    ExtensionRegistry::EVERYTHING);
     if (imported_module && imported_module->from_webstore()) {
-      scoped_ptr<const ExtensionSet> dependents =
+      scoped_ptr<ExtensionSet> dependents =
           GetDependentExtensions(imported_module);
       if (dependents->is_empty()) {
         service->UninstallExtension(iter->extension_id,
@@ -159,15 +158,6 @@ void SharedModuleService::PruneSharedModulesOnUninstall(
       }
     }
   }
-}
-
-void SharedModuleService::OnExtensionUninstalled(const Extension* extension) {
-  PruneSharedModulesOnUninstall(extension);
-}
-
-void SharedModuleService::OnShutdown() {
-  InstallTracker::Get(context_)->RemoveObserver(this);
-  observing_ = false;
 }
 
 }  // namespace extensions

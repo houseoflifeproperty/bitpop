@@ -506,8 +506,9 @@ TEST_F('HistoryWebUITest', 'DISABLED_bulkDeletion', function() {
 
 /**
  * Test selecting multiple entries using shift click.
+ * Disabled due to time out on all platforms: crbug/375910
  */
-TEST_F('HistoryWebUITest', 'multipleSelect', function() {
+TEST_F('HistoryWebUITest', 'DISABLED_multipleSelect', function() {
   var checkboxes = document.querySelectorAll(
       '#results-display input[type=checkbox]');
 
@@ -659,7 +660,10 @@ RangeHistoryWebUITest.prototype = {
   },
 };
 
-TEST_F('RangeHistoryWebUITest', 'allView', function() {
+/**
+ * Disabled due intermitent failures on multiple OSes http://crbug.com/377338
+ */
+TEST_F('RangeHistoryWebUITest', 'DISABLED_allView', function() {
   // Check that we start off in the all time view.
   expectTrue($('timeframe-filter-all').checked);
   // See if the correct number of days is shown.

@@ -262,7 +262,8 @@ void ShellMainDelegate::InitializeResourceBundle() {
   // ResourceBundle pak at launch time.
   int pak_fd =
       base::GlobalDescriptors::GetInstance()->MaybeGet(kShellPakDescriptor);
-  if (pak_fd != base::kInvalidPlatformFileValue) {
+  if (pak_fd >= 0) {
+    // This is clearly wrong. See crbug.com/330930
     ui::ResourceBundle::InitSharedInstanceWithPakFile(base::File(pak_fd),
                                                       false);
     ResourceBundle::GetSharedInstance().AddDataPackFromFile(

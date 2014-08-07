@@ -11,6 +11,7 @@
 #include <winnt.h>
 
 #include <algorithm>
+#include <map>
 #include <vector>
 
 #include "base/base_switches.h"
@@ -32,6 +33,7 @@
 #include "base/win/win_util.h"
 #include "breakpad/src/client/windows/handler/exception_handler.h"
 #include "components/breakpad/app/breakpad_client.h"
+#include "components/breakpad/app/crash_keys_win.h"
 #include "components/breakpad/app/hard_error_handler_win.h"
 #include "content/public/common/result_codes.h"
 #include "sandbox/win/src/nt_internals.h"
@@ -44,9 +46,6 @@
 #pragma intrinsic(_ReturnAddress)
 
 namespace breakpad {
-
-std::vector<google_breakpad::CustomInfoEntry>* g_custom_entries = NULL;
-bool g_deferred_crash_uploads = false;
 
 namespace {
 
@@ -87,20 +86,7 @@ typedef NTSTATUS (WINAPI* NtTerminateProcessPtr)(HANDLE ProcessHandle,
                                                  NTSTATUS ExitStatus);
 char* g_real_terminate_process_stub = NULL;
 
-base::Lock* g_dynamic_entries_lock = NULL;
-// Under *g_dynamic_entries_lock.
-size_t g_dynamic_keys_offset = 0;
-typedef std::map<std::wstring, google_breakpad::CustomInfoEntry*>
-    DynamicEntriesMap;
-// Under *g_dynamic_entries_lock.
-DynamicEntriesMap* g_dynamic_entries = NULL;
-
-// Allow for 256 dynamic entries in addition to the fixed set of entries
-// set up in this file.
-const size_t kMaxDynamicEntries = 256;
-
-// Maximum length for plugin path to include in plugin crash reports.
-const size_t kMaxPluginPathLength = 256;
+}  // namespace
 
 // Dumps the current process memory.
 extern "C" void __declspec(dllexport) __cdecl DumpProcess() {
@@ -115,6 +101,8 @@ extern "C" void __declspec(dllexport) __cdecl DumpProcessWithoutCrash() {
     g_dumphandler_no_crash->WriteMinidump();
   }
 }
+
+namespace {
 
 // We need to prevent ICF from folding DumpForHangDebuggingThread() and
 // DumpProcessWithoutCrashThread() together, since that makes them
@@ -142,6 +130,8 @@ DWORD WINAPI DumpForHangDebuggingThread(void*) {
 MSVC_POP_WARNING()
 MSVC_ENABLE_OPTIMIZE()
 
+}  // namespace
+
 // Injects a thread into a remote process to dump state when there is no crash.
 extern "C" HANDLE __declspec(dllexport) __cdecl
 InjectDumpProcessWithoutCrash(HANDLE process) {
@@ -153,46 +143,6 @@ extern "C" HANDLE __declspec(dllexport) __cdecl
 InjectDumpForHangDebugging(HANDLE process) {
   return CreateRemoteThread(process, NULL, 0, DumpForHangDebuggingThread,
                             0, 0, NULL);
-}
-
-// Appends the plugin path to |g_custom_entries|.
-void SetPluginPath(const std::wstring& path) {
-  DCHECK(g_custom_entries);
-
-  if (path.size() > kMaxPluginPathLength) {
-    // If the path is too long, truncate from the start rather than the end,
-    // since we want to be able to recover the DLL name.
-    SetPluginPath(path.substr(path.size() - kMaxPluginPathLength));
-    return;
-  }
-
-  // The chunk size without terminator.
-  const size_t kChunkSize = static_cast<size_t>(
-      google_breakpad::CustomInfoEntry::kValueMaxLength - 1);
-
-  int chunk_index = 0;
-  size_t chunk_start = 0;  // Current position inside |path|
-
-  for (chunk_start = 0; chunk_start < path.size(); chunk_index++) {
-    size_t chunk_length = std::min(kChunkSize, path.size() - chunk_start);
-
-    g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
-        base::StringPrintf(L"plugin-path-chunk-%i", chunk_index + 1).c_str(),
-        path.substr(chunk_start, chunk_length).c_str()));
-
-    chunk_start += chunk_length;
-  }
-}
-
-// Appends the breakpad dump path to |g_custom_entries|.
-void SetBreakpadDumpPath() {
-  DCHECK(g_custom_entries);
-  base::FilePath crash_dumps_dir_path;
-  if (GetBreakpadClient()->GetAlternativeCrashDumpLocation(
-          &crash_dumps_dir_path)) {
-    g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
-        L"breakpad-dump-location", crash_dumps_dir_path.value().c_str()));
-  }
 }
 
 // Returns a string containing a list of all modifiers for the loaded profile.
@@ -224,88 +174,7 @@ std::wstring GetProfileType() {
   return profile_type;
 }
 
-// Returns the custom info structure based on the dll in parameter and the
-// process type.
-google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& exe_path,
-                                                 const std::wstring& type) {
-  base::string16 version, product;
-  base::string16 special_build;
-  base::string16 channel_name;
-  GetBreakpadClient()->GetProductNameAndVersion(
-      base::FilePath(exe_path),
-      &product,
-      &version,
-      &special_build,
-      &channel_name);
-
-  // We only expect this method to be called once per process.
-  DCHECK(!g_custom_entries);
-  g_custom_entries = new std::vector<google_breakpad::CustomInfoEntry>;
-
-  // Common g_custom_entries.
-  g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"ver",
-                                       base::UTF16ToWide(version).c_str()));
-  g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"prod",
-                                       base::UTF16ToWide(product).c_str()));
-  g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"plat", L"Win32"));
-  g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"ptype", type.c_str()));
-  g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
-      L"pid", base::StringPrintf(L"%d", ::GetCurrentProcessId()).c_str()));
-  g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
-      L"channel", base::UTF16ToWide(channel_name).c_str()));
-  g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
-      L"profile-type", GetProfileType().c_str()));
-
-  if (g_deferred_crash_uploads)
-    g_custom_entries->push_back(
-        google_breakpad::CustomInfoEntry(L"deferred-upload", L"true"));
-
-  if (!special_build.empty())
-    g_custom_entries->push_back(google_breakpad::CustomInfoEntry(
-        L"special", base::UTF16ToWide(special_build).c_str()));
-
-  if (type == L"plugin" || type == L"ppapi") {
-    std::wstring plugin_path =
-        CommandLine::ForCurrentProcess()->GetSwitchValueNative("plugin-path");
-    if (!plugin_path.empty())
-      SetPluginPath(plugin_path);
-  }
-
-  // Check whether configuration management controls crash reporting.
-  bool crash_reporting_enabled = true;
-  bool controlled_by_policy = GetBreakpadClient()->ReportingIsEnforcedByPolicy(
-      &crash_reporting_enabled);
-  const CommandLine& command = *CommandLine::ForCurrentProcess();
-  bool use_crash_service =
-      !controlled_by_policy && (command.HasSwitch(switches::kNoErrorDialogs) ||
-                                GetBreakpadClient()->IsRunningUnattended());
-  if (use_crash_service)
-    SetBreakpadDumpPath();
-
-  // Create space for dynamic ad-hoc keys. The names and values are set using
-  // the API defined in base/debug/crash_logging.h.
-  g_dynamic_keys_offset = g_custom_entries->size();
-  for (size_t i = 0; i < kMaxDynamicEntries; ++i) {
-    // The names will be mutated as they are set. Un-numbered since these are
-    // merely placeholders. The name cannot be empty because Breakpad's
-    // HTTPUpload will interpret that as an invalid parameter.
-    g_custom_entries->push_back(
-        google_breakpad::CustomInfoEntry(L"unspecified-crash-key", L""));
-  }
-
-  g_dynamic_entries_lock = new base::Lock;
-  g_dynamic_entries = new DynamicEntriesMap;
-
-  static google_breakpad::CustomClientInfo custom_client_info;
-  custom_client_info.entries = &g_custom_entries->front();
-  custom_client_info.count = g_custom_entries->size();
-
-  return &custom_client_info;
-}
+namespace {
 
 // This callback is used when we want to get a dump without crashing the
 // process.
@@ -396,60 +265,33 @@ long WINAPI ServiceExceptionFilter(EXCEPTION_POINTERS* info) {
   return EXCEPTION_EXECUTE_HANDLER;
 }
 
+}  // namespace
+
 // NOTE: This function is used by SyzyASAN to annotate crash reports. If you
 // change the name or signature of this function you will break SyzyASAN
 // instrumented releases of Chrome. Please contact syzygy-team@chromium.org
 // before doing so!
 extern "C" void __declspec(dllexport) __cdecl SetCrashKeyValueImpl(
     const wchar_t* key, const wchar_t* value) {
-  if (!g_dynamic_entries)
+  CrashKeysWin* keeper = CrashKeysWin::keeper();
+  if (!keeper)
     return;
 
-  // CustomInfoEntry limits the length of key and value. If they exceed
-  // their maximum length the underlying string handling functions raise
-  // an exception and prematurely trigger a crash. Truncate here.
-  std::wstring safe_key(std::wstring(key).substr(
-      0, google_breakpad::CustomInfoEntry::kNameMaxLength  - 1));
-  std::wstring safe_value(std::wstring(value).substr(
-      0, google_breakpad::CustomInfoEntry::kValueMaxLength - 1));
-
-  // If we already have a value for this key, update it; otherwise, insert
-  // the new value if we have not exhausted the pre-allocated slots for dynamic
-  // entries.
-  DCHECK(g_dynamic_entries_lock);
-  base::AutoLock lock(*g_dynamic_entries_lock);
-
-  DynamicEntriesMap::iterator it = g_dynamic_entries->find(safe_key);
-  google_breakpad::CustomInfoEntry* entry = NULL;
-  if (it == g_dynamic_entries->end()) {
-    if (g_dynamic_entries->size() >= kMaxDynamicEntries)
-      return;
-    entry = &(*g_custom_entries)[g_dynamic_keys_offset++];
-    g_dynamic_entries->insert(std::make_pair(safe_key, entry));
-  } else {
-    entry = it->second;
-  }
-
-  entry->set(safe_key.data(), safe_value.data());
+  // TODO(siggi): This doesn't look quite right - there's NULL deref potential
+  //    here, and an implicit std::wstring conversion. Fixme.
+  keeper->SetCrashKeyValue(key, value);
 }
 
 extern "C" void __declspec(dllexport) __cdecl ClearCrashKeyValueImpl(
     const wchar_t* key) {
-  if (!g_dynamic_entries)
+  CrashKeysWin* keeper = CrashKeysWin::keeper();
+  if (!keeper)
     return;
 
-  DCHECK(g_dynamic_entries_lock);
-  base::AutoLock lock(*g_dynamic_entries_lock);
-
-  std::wstring key_string(key);
-  DynamicEntriesMap::iterator it = g_dynamic_entries->find(key_string);
-  if (it == g_dynamic_entries->end())
-    return;
-
-  it->second->set_value(NULL);
+  // TODO(siggi): This doesn't look quite right - there's NULL deref potential
+  //    here, and an implicit std::wstring conversion. Fixme.
+  keeper->ClearCrashKeyValue(key);
 }
-
-}  // namespace
 
 static bool WrapMessageBoxWithSEH(const wchar_t* text, const wchar_t* caption,
                                   UINT flags, bool* exit_now) {
@@ -489,10 +331,7 @@ bool ShowRestartDialogIfCrashed(bool* exit_now) {
   if (is_rtl_locale)
     flags |= MB_RIGHT | MB_RTLREADING;
 
-  return WrapMessageBoxWithSEH(base::UTF16ToWide(message).c_str(),
-                               base::UTF16ToWide(title).c_str(),
-                               flags,
-                               exit_now);
+  return WrapMessageBoxWithSEH(message.c_str(), title.c_str(), flags, exit_now);
 }
 
 // Crashes the process after generating a dump for the provided exception. Note
@@ -660,8 +499,13 @@ void InitCrashReporter(const std::string& process_type_switch) {
   bool is_per_user_install =
       GetBreakpadClient()->GetIsPerUserInstall(base::FilePath(exe_path));
 
+  // This is intentionally leaked.
+  CrashKeysWin* keeper = new CrashKeysWin();
+
   google_breakpad::CustomClientInfo* custom_info =
-      GetCustomInfo(exe_path, process_type);
+      keeper->GetCustomInfo(exe_path, process_type,
+                            GetProfileType(), CommandLine::ForCurrentProcess(),
+                            GetBreakpadClient());
 
   google_breakpad::ExceptionHandler::MinidumpCallback callback = NULL;
   LPTOP_LEVEL_EXCEPTION_FILTER default_filter = NULL;
@@ -729,6 +573,10 @@ void InitCrashReporter(const std::string& process_type_switch) {
       google_breakpad::ExceptionHandler::HANDLER_NONE,
       dump_type, pipe_name.c_str(), custom_info);
 
+  // Set the DumpWithoutCrashingFunction for this instance of base.lib.  Other
+  // executable images linked with base should set this again for
+  // DumpWithoutCrashing to function correctly.
+  // See chrome_main.cc for example.
   base::debug::SetDumpWithoutCrashingFunction(&DumpProcessWithoutCrash);
 
   if (g_breakpad->IsOutOfProcess()) {

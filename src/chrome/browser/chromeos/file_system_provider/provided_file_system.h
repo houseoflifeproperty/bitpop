@@ -5,10 +5,15 @@
 #ifndef CHROME_BROWSER_CHROMEOS_FILE_SYSTEM_PROVIDER_PROVIDED_FILE_SYSTEM_H_
 #define CHROME_BROWSER_CHROMEOS_FILE_SYSTEM_PROVIDER_PROVIDED_FILE_SYSTEM_H_
 
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_info.h"
 #include "chrome/browser/chromeos/file_system_provider/provided_file_system_interface.h"
 #include "chrome/browser/chromeos/file_system_provider/request_manager.h"
 #include "webkit/browser/fileapi/async_file_util.h"
+
+namespace net {
+class IOBuffer;
+}  // namespace net
 
 namespace base {
 class FilePath;
@@ -38,14 +43,28 @@ class ProvidedFileSystem : public ProvidedFileSystemInterface {
   virtual void ReadDirectory(
       const base::FilePath& directory_path,
       const fileapi::AsyncFileUtil::ReadDirectoryCallback& callback) OVERRIDE;
+  virtual void OpenFile(const base::FilePath& file_path,
+                        OpenFileMode mode,
+                        bool create,
+                        const OpenFileCallback& callback) OVERRIDE;
+  virtual void CloseFile(
+      int file_handle,
+      const fileapi::AsyncFileUtil::StatusCallback& callback) OVERRIDE;
+  virtual void ReadFile(int file_handle,
+                        net::IOBuffer* buffer,
+                        int64 offset,
+                        int length,
+                        const ReadChunkReceivedCallback& callback) OVERRIDE;
   virtual const ProvidedFileSystemInfo& GetFileSystemInfo() const OVERRIDE;
   virtual RequestManager* GetRequestManager() OVERRIDE;
+  virtual base::WeakPtr<ProvidedFileSystemInterface> GetWeakPtr() OVERRIDE;
 
  private:
   extensions::EventRouter* event_router_;
   RequestManager request_manager_;
   ProvidedFileSystemInfo file_system_info_;
 
+  base::WeakPtrFactory<ProvidedFileSystemInterface> weak_ptr_factory_;
   DISALLOW_COPY_AND_ASSIGN(ProvidedFileSystem);
 };
 

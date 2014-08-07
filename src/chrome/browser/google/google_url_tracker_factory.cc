@@ -5,13 +5,13 @@
 #include "chrome/browser/google/google_url_tracker_factory.h"
 
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/google/google_url_tracker.h"
-#include "chrome/browser/google/google_url_tracker_navigation_helper_impl.h"
+#include "chrome/browser/google/chrome_google_url_tracker_client.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/pref_names.h"
+#include "components/google/core/browser/google_pref_names.h"
+#include "components/google/core/browser/google_url_tracker.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 
 
 // static
@@ -35,11 +35,10 @@ GoogleURLTrackerFactory::~GoogleURLTrackerFactory() {
 }
 
 KeyedService* GoogleURLTrackerFactory::BuildServiceInstanceFor(
-    content::BrowserContext* profile) const {
-  scoped_ptr<GoogleURLTrackerNavigationHelper> nav_helper(
-      new GoogleURLTrackerNavigationHelperImpl());
-  return new GoogleURLTracker(static_cast<Profile*>(profile), nav_helper.Pass(),
-                              GoogleURLTracker::NORMAL_MODE);
+    content::BrowserContext* context) const {
+  scoped_ptr<GoogleURLTrackerClient> client(
+      new ChromeGoogleURLTrackerClient(Profile::FromBrowserContext(context)));
+  return new GoogleURLTracker(client.Pass(), GoogleURLTracker::NORMAL_MODE);
 }
 
 void GoogleURLTrackerFactory::RegisterProfilePrefs(

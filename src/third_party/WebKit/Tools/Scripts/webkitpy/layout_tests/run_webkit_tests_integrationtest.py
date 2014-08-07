@@ -266,6 +266,9 @@ class RunTest(unittest.TestCase, StreamTestingMixin):
         tests_run = get_tests_run(['-n'])
         self.assertEqual(tests_run, [])
 
+    def test_enable_sanitizer(self):
+        self.assertTrue(passing_run(['--enable-sanitizer', 'failures/expected/text.html']))
+
     def test_exception_raised(self):
         # Exceptions raised by a worker are treated differently depending on
         # whether they are in-process or out. inline exceptions work as normal,
@@ -1036,3 +1039,17 @@ class MainTest(unittest.TestCase):
             self.assertEqual(res, test_run_results.UNEXPECTED_ERROR_EXIT_STATUS)
         finally:
             run_webkit_tests.run = orig_run_fn
+
+    def test_buildbot_results_are_printed_on_early_exit(self):
+        # unused args pylint: disable=W0613
+        stdout = StringIO.StringIO()
+        stderr = StringIO.StringIO()
+        res = run_webkit_tests.main(['--platform', 'test', '--exit-after-n-failures', '1',
+                                     'failures/unexpected/missing_text.html',
+                                     'failures/unexpected/missing_image.html'],
+                                    stdout, stderr)
+        self.assertEqual(res, test_run_results.EARLY_EXIT_STATUS)
+        self.assertEqual(stdout.getvalue(),
+                ('\n'
+                 'Regressions: Unexpected missing results (1)\n'
+                 '  failures/unexpected/missing_image.html [ Missing ]\n\n'))

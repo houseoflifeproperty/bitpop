@@ -60,7 +60,7 @@
   "chrome/app/theme/chrome_unscaled_resources.grd": {
     "includes": [7500],
   },
-  "ui/base/strings/app_locale_settings.grd": {
+  "ui/strings/app_locale_settings.grd": {
     "messages": [9000],
   },
   "chrome/app/resources/locale_settings.grd": {
@@ -84,7 +84,7 @@
   "chrome/app/resources/locale_settings_win.grd": {
     "messages": [10500],
   },
-  "ui/base/strings/ui_strings.grd": {
+  "ui/strings/ui_strings.grd": {
     "messages": [11000],
   },
   # Chromium strings and Google Chrome strings must start at the same id.
@@ -163,10 +163,13 @@
     "messages": [26000],
   },
   "chrome/common/extensions_api_resources.grd": {
-    "includes": [26500],
+    "includes": [26400],
   },
   "extensions/extensions_resources.grd": {
-    "includes": [26750],
+    "includes": [26600],
+  },
+  "extensions/renderer/resources/extensions_renderer_resources.grd": {
+    "includes": [26800],
   },
   "extensions/extensions_strings.grd": {
     "messages": [27000],
@@ -197,6 +200,9 @@
   },
   "third_party/libaddressinput/chromium/cpp/res/libaddressinput_strings.grd": {
     "messages": [29050],
+  },
+  "chrome/app/address_input_strings.grd": {
+    "messages": [29100],
   },
   "components/components_strings.grd": {
     "messages": [30000],

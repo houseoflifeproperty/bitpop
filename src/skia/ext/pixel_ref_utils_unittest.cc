@@ -67,18 +67,14 @@ void CreateBitmap(gfx::Size size, const char* uri, SkBitmap* bitmap) {
     size.width(), size.height(), kPMColor_SkColorType, kPremul_SkAlphaType
   };
 
-  bitmap->setConfig(info);
-  bitmap->allocPixels();
+  bitmap->allocPixels(info);
   bitmap->pixelRef()->setImmutable();
   bitmap->pixelRef()->setURI(uri);
 }
 
 SkCanvas* StartRecording(SkPictureRecorder* recorder, gfx::Rect layer_rect) {
-  SkCanvas* canvas = recorder->beginRecording(
-      layer_rect.width(),
-      layer_rect.height(),
-      NULL,
-      SkPicture::kUsePathBoundsForClip_RecordingFlag);
+  SkCanvas* canvas =
+      recorder->beginRecording(layer_rect.width(), layer_rect.height());
 
   canvas->save();
   canvas->translate(-layer_rect.x(), -layer_rect.y());

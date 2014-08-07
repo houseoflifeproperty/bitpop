@@ -26,7 +26,6 @@ class Browser;
 class HomeButton;
 class ReloadButton;
 class ToolbarButton;
-class ToolbarOriginChipView;
 class WrenchMenu;
 class WrenchMenuModel;
 class WrenchToolbarButton;
@@ -103,7 +102,6 @@ class ToolbarView : public views::AccessiblePaneView,
   BrowserActionsContainer* browser_actions() const { return browser_actions_; }
   ReloadButton* reload_button() const { return reload_; }
   LocationBarView* location_bar() const { return location_bar_; }
-  ToolbarOriginChipView* origin_chip() const { return origin_chip_view_; }
   views::MenuButton* app_menu() const;
   HomeButton* home_button() const { return home_; }
 
@@ -151,7 +149,8 @@ class ToolbarView : public views::AccessiblePaneView,
       int command_id, ui::Accelerator* accelerator) OVERRIDE;
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
@@ -201,6 +200,9 @@ class ToolbarView : public views::AccessiblePaneView,
   // Returns the number of pixels above the location bar in non-normal display.
   int PopupTopSpacing() const;
 
+  // Given toolbar contents of size |size|, returns the total toolbar size.
+  gfx::Size SizeForContentSize(gfx::Size size) const;
+
   // Loads the images for all the child views.
   void LoadImages();
 
@@ -231,7 +233,6 @@ class ToolbarView : public views::AccessiblePaneView,
   ReloadButton* reload_;
   HomeButton* home_;
   LocationBarView* location_bar_;
-  ToolbarOriginChipView* origin_chip_view_;
   BrowserActionsContainer* browser_actions_;
   WrenchToolbarButton* app_menu_;
   Browser* browser_;

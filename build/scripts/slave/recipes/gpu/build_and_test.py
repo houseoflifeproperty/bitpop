@@ -113,3 +113,13 @@ def GenTests(api):
     api.platform.name('mac') +
     api.step_data('apply_issue', retcode=1)
   )
+
+  # Test one configuration on the FYI waterfall.
+  yield (
+    api.test('win_release_fyi') +
+    api.properties.scheduled(
+      build_config='Release',
+      mastername='chromium.gpu.fyi',
+    ) +
+    api.platform.name('win')
+  )

@@ -39,12 +39,14 @@ class QualifiedName;
 
 class HTMLFormControlsCollection FINAL : public HTMLCollection {
 public:
-    static PassRefPtr<HTMLFormControlsCollection> create(ContainerNode&, CollectionType);
+    static PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> create(ContainerNode&, CollectionType);
 
     virtual ~HTMLFormControlsCollection();
 
     virtual Element* namedItem(const AtomicString& name) const OVERRIDE;
-    void namedGetter(const AtomicString& name, bool& radioNodeListEnabled, RefPtr<RadioNodeList>&, bool& elementEnabled, RefPtr<Element>&);
+    void namedGetter(const AtomicString& name, bool& radioNodeListEnabled, RefPtrWillBeRawPtr<RadioNodeList>&, bool& elementEnabled, RefPtrWillBeRawPtr<Element>&);
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit HTMLFormControlsCollection(ContainerNode&);
@@ -53,13 +55,14 @@ private:
     virtual void supportedPropertyNames(Vector<String>& names) OVERRIDE;
 
     const FormAssociatedElement::List& formControlElements() const;
-    const Vector<HTMLImageElement*>& formImageElements() const;
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >& formImageElements() const;
     virtual Element* virtualItemAfter(Element*) const OVERRIDE;
     virtual void invalidateCache(Document* oldDocument = 0) const OVERRIDE;
 
-    mutable Element* m_cachedElement;
+    mutable RawPtrWillBeMember<Element> m_cachedElement;
     mutable unsigned m_cachedElementOffsetInArray;
 };
+DEFINE_TYPE_CASTS(HTMLFormControlsCollection, LiveNodeListBase, collection, collection->type() == FormControls, collection.type() == FormControls);
 
 } // namespace
 

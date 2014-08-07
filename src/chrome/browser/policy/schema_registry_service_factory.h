@@ -7,8 +7,8 @@
 
 #include <map>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "components/keyed_service/content/browser_context_keyed_base_factory.h"
@@ -65,6 +65,7 @@ class SchemaRegistryServiceFactory : public BrowserContextKeyedBaseFactory {
       content::BrowserContext* context) OVERRIDE;
   virtual void SetEmptyTestingFactory(
       content::BrowserContext* context) OVERRIDE;
+  virtual bool HasTestingFactory(content::BrowserContext* context) OVERRIDE;
   virtual void CreateServiceNow(content::BrowserContext* context) OVERRIDE;
 
   typedef std::map<content::BrowserContext*, SchemaRegistryService*>

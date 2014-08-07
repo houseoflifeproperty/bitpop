@@ -63,10 +63,10 @@ class UndoStack;
 enum EditorCommandSource { CommandFromMenuOrKeyBinding, CommandFromDOM, CommandFromDOMWithUserInterface };
 enum EditorParagraphSeparator { EditorParagraphSeparatorIsDiv, EditorParagraphSeparatorIsP };
 
-class Editor {
+class Editor FINAL : public NoBaseWillBeGarbageCollectedFinalized<Editor> {
     WTF_MAKE_NONCOPYABLE(Editor);
 public:
-    static PassOwnPtr<Editor> create(LocalFrame&);
+    static PassOwnPtrWillBeRawPtr<Editor> create(LocalFrame&);
     ~Editor();
 
     EditorClient& client() const;
@@ -97,6 +97,7 @@ public:
     void pasteAsPlainText();
     void performDelete();
 
+    static void countEvent(ExecutionContext*, const Event*);
     void copyImage(const HitTestResult&);
 
     void indent();
@@ -126,9 +127,9 @@ public:
     void applyStyleToSelection(StylePropertySet*, EditAction);
     void applyParagraphStyleToSelection(StylePropertySet*, EditAction);
 
-    void appliedEditing(PassRefPtr<CompositeEditCommand>);
-    void unappliedEditing(PassRefPtr<EditCommandComposition>);
-    void reappliedEditing(PassRefPtr<EditCommandComposition>);
+    void appliedEditing(PassRefPtrWillBeRawPtr<CompositeEditCommand>);
+    void unappliedEditing(PassRefPtrWillBeRawPtr<EditCommandComposition>);
+    void reappliedEditing(PassRefPtrWillBeRawPtr<EditCommandComposition>);
 
     void setShouldStyleWithCSS(bool flag) { m_shouldStyleWithCSS = flag; }
     bool shouldStyleWithCSS() const { return m_shouldStyleWithCSS; }
@@ -195,7 +196,7 @@ public:
 
     void addToKillRing(Range*, bool prepend);
 
-    void pasteAsFragment(PassRefPtr<DocumentFragment>, bool smartReplace, bool matchStyle);
+    void pasteAsFragment(PassRefPtrWillBeRawPtr<DocumentFragment>, bool smartReplace, bool matchStyle);
     void pasteAsPlainText(const String&, bool smartReplace);
 
     Node* findEventTargetFrom(const VisibleSelection&) const;
@@ -218,7 +219,7 @@ public:
     bool markedTextMatchesAreHighlighted() const;
     void setMarkedTextMatchesAreHighlighted(bool);
 
-    void replaceSelectionWithFragment(PassRefPtr<DocumentFragment>, bool selectReplacement, bool smartReplace, bool matchStyle);
+    void replaceSelectionWithFragment(PassRefPtrWillBeRawPtr<DocumentFragment>, bool selectReplacement, bool smartReplace, bool matchStyle);
     void replaceSelectionWithText(const String&, bool selectReplacement, bool smartReplace);
 
     EditorParagraphSeparator defaultParagraphSeparator() const { return m_defaultParagraphSeparator; }
@@ -234,9 +235,11 @@ public:
     };
     friend class RevealSelectionScope;
 
+    void trace(Visitor*);
+
 private:
     LocalFrame& m_frame;
-    RefPtr<CompositeEditCommand> m_lastEditCommand;
+    RefPtrWillBeMember<CompositeEditCommand> m_lastEditCommand;
     int m_preventRevealSelection;
     bool m_shouldStartNewKillRingSequence;
     bool m_shouldStyleWithCSS;

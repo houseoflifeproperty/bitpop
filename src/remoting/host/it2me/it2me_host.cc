@@ -21,6 +21,7 @@
 #include "remoting/host/register_support_host_request.h"
 #include "remoting/host/session_manager_factory.h"
 #include "remoting/jingle_glue/network_settings.h"
+#include "remoting/jingle_glue/server_log_entry.h"
 #include "remoting/protocol/it2me_host_authenticator_factory.h"
 
 namespace remoting {
@@ -212,11 +213,7 @@ void It2MeHost::FinishConnect() {
   // TODO(sergeyu): Add UI to enable it.
   scoped_ptr<protocol::CandidateSessionConfig> protocol_config =
       protocol::CandidateSessionConfig::CreateDefault();
-  protocol::CandidateSessionConfig::DisableAudioChannel(protocol_config.get());
-
-  // VP9 encode is not yet supported.
-  protocol::CandidateSessionConfig::DisableVideoCodec(
-      protocol_config.get(), protocol::ChannelConfig::CODEC_VP9);
+  protocol_config->DisableAudioChannel();
 
   host_->set_protocol_config(protocol_config.Pass());
 

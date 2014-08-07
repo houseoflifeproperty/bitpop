@@ -1,175 +1,125 @@
-# Copyright 2013 The Chromium Authors. All rights reserved.
+# Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import base64
-from cStringIO import StringIO
+"""Twisted implementation of an interface to the Gerrit REST API and
+associated JSON objects."""
+
 import json
-import netrc
 import urlparse
 
-from twisted.internet import defer, protocol, reactor
+from common.twisted_util.agent import Agent
+from common.twisted_util.agent_util import ToRelativeURL, RelativeURLJoin
+from common.twisted_util.response import JsonResponse
+from common.twisted_util.body_producers import JsonBodyProducer
+from common.twisted_util.authorizer import NETRCAuthorizer
 from twisted.python import log
-from twisted.web.client import Agent
-from twisted.web.http_headers import Headers
-from twisted.web import iweb
-
-from zope.interface import implements
-
-# pylint: disable=W0105
-"""
-Class for sending http requests to a gerrit server, and parsing the
-json-formatted responses.
-"""
 
 
-DEBUG = False
-NETRC = netrc.netrc()
+class GerritJsonResponse(JsonResponse):
+  """JsonResponse specialization for Gerrit responses.
 
+  Gerrit includes a header in its JSON responses to prevent XSS attacks:
+  https://gerrit-review.googlesource.com/Documentation/rest-api.html#output
 
-class GerritError(RuntimeError):
-  def __init__(self, msg, http_code):
-    super(GerritError, self).__init__(msg)
-    self.http_code = http_code
+  This class strips that off before allowing standard JSON processing to
+  happen on the remainder of the body.
+  """
 
-  def __str__(self):
-    s = super(GerritError, self).__str__()
-    return '[http_code=%d] %s' % (self.http_code, s)
+  GERRIT_JSON_HEADER = ")]}'"
 
-
-class JsonResponse(protocol.Protocol):
-  """Receiver protocol to parse a json response from gerrit."""
-
-  @staticmethod
-  def Get(response, url=None):
-    """
-    Given a Response object returned by GerritAgent.request, parse the json
-    body of the response.
-    """
-    finished = defer.Deferred()
-    response.deliverBody(JsonResponse(url, finished))
-    return finished
-
-  def __init__(self, url, finished):
-    self.url = url
-    self.finished = finished
-    self.buf = StringIO()
-    self.reply = None
-
-  def dataReceived(self, _bytes):
-    self.buf.write(_bytes)
-
-  # pylint: disable=W0222
-  def connectionLost(self, _):
-    body = self.buf.getvalue()
-    if not body:
-      self.finished.callback(None)
-      return
-    errmsg = 'Mal-formed json response from %s' % self.url
-    if body[0:4] != ")]}'":
-      self.finished.errback(errmsg)
-      return
-    try:
-      self.reply = json.loads(body[4:])
-      if DEBUG:
-        log.msg(json.dumps(self.reply, indent=2))
-      self.finished.callback(self.reply)
-    except ValueError:
-      self.finished.errback(errmsg)
-
-
-class JsonBodyProducer:
-
-  implements(iweb.IBodyProducer)
-
-  def __init__(self, text):
-    self.text = text
-    self.length = len(text)
-
-  def startProducing(self, consumer):
-    consumer.write(self.text)
-    self.text = ''
-    self.length = 0
-    return defer.succeed(None)
-
-  def stopProducing(self):
-    pass
+  def _processBody(self, body):
+    if not body.startswith(self.GERRIT_JSON_HEADER):
+      raise ValueError("Mal-formed JSON response does not begin with Gerrit "
+                       "JSON header: (%r != %r)" % (
+                           body[:len(self.GERRIT_JSON_HEADER)],
+                           self.GERRIT_JSON_HEADER))
+    return JsonResponse._processBody(
+        self,
+        body[len(self.GERRIT_JSON_HEADER):]
+    )
 
 
 class GerritAgent(Agent):
+  """An 'Agent' that is specialized to query Gerrit servers.
+  """
 
-  gerrit_protocol = 'https'
-
-  def __init__(self, gerrit_host, *args, **kwargs):
-    url_parts = urlparse.urlparse(gerrit_host)
-    if url_parts.scheme:
-      self.gerrit_protocol = url_parts.scheme
-    self.gerrit_host = url_parts.netloc
-
-    auth_entry = NETRC.authenticators(self.gerrit_host.partition(':')[0])
-    if auth_entry:
-      self.auth_token = 'Basic %s' % (
-          base64.b64encode('%s:%s' % (auth_entry[0], auth_entry[2])))
+  def __init__(self, host, *args, **kwargs):
+    # Use 'HTTPS' as the default protocol (backwards compatibility)
+    url = urlparse.urlparse(host)
+    if url.scheme == '':
+      host = 'https://%s' % (host,)
+      is_https = True
+    elif url.scheme == 'https':
+      is_https = True
     else:
-      self.auth_token = None
-    Agent.__init__(self, reactor, *args, **kwargs)
+      is_https = False
 
-  # pylint: disable=W0221
-  def request(self, method, path, headers=None, body=None, expected_code=200,
-              retry=0, delay=0):
+    # Use 'NETRCAuthorizer' if none is provided (backwards-compatibility), but
+    # only for HTTPS.
+    if (kwargs.get('authorizer') is None) and (is_https):
+      log.msg("Using default 'NETRC' authorizer for HTTPS connection")
+      kwargs['authorizer'] = NETRCAuthorizer()
+    super(GerritAgent, self).__init__(host, *args, **kwargs)
+
+  # Overrides 'Agent._buildRequest'
+  def _buildRequest(self, path, headers):
+    """Constructs a Gerrit request.
+
+    See 'Agent._buildRequest' for details.
     """
-    Send an http request to the gerrit service for the given path.
+    # Add authorization
+    if self._authorizer is not None:
+      if self._authorizer.addAuthHeadersForURL(
+          headers,
+          self.base_url):
+        # Switch to authenticated Gerrit URL
+        path = ToRelativeURL(path)
+        if not path.startswith('a/'):
+          path = RelativeURLJoin('a/', path)
+      elif self.verbose:
+        log.msg("No authentication for URL %r" % (self.base_url,))
+    return RelativeURLJoin(self.base_url, path)
 
-    If 'retry' is specified, transient errors (http response code 500-599) will
-    be retried after an exponentially-increasing delay.
+  # Disable argument number difference | pylint: disable=W0221
+  def request(self, method, path, body=None, protocol=None, **kwargs):
+    """Makes a request to a Gerrit server.
 
-    Returns a Deferred which will call back with the parsed json body of the
-    gerrit server's response.
+    'protocol' is a function that accepts a 'Response' object and
+    returns a Deferred whose return value is the loaded body. Some examples of
+    such functions are:
+      - StringResponse.Get
+      - GerritJsonResponse.Get
+    If omitted, the 'GerritJsonResponse.Get' function will be used, treating
+    the Gerrit response as JSON and deserializing it as a return value.
 
     Args:
-      method: 'GET', 'POST', etc.
-      path: Path element of the url.
-      headers: dict of http request headers.
-      body: json-encodable body of http request.
-      expected_code: http response code expected in reply.
-      retry: How many times to retry transient errors.
-      delay: Wait this many seconds before sending the request.
+      method: (str) The HTTP request type (GET, PUT, POST, DELETE)
+      path: (str) The path within the Agent's host to query
+      body: (object) If not 'None', the JSON object to serialize as the HTTP
+          request body.
+      protocol: (func) The Response processing function; if omitted, the
+          Response will be treated as JSON and deserialized.
+      kwargs: Remaining keyword arguments to 'Agent.request'
+    Returns: (Deferred) By default, the Deferred will return the JSON response;
+        this can be overridden via the 'protocol' parameter.
     """
-    retry_delay = delay * 2 if delay else 0.5
-    retry_args = (
-        method, path, headers, body, expected_code, retry - 1, retry_delay)
-    if not path.startswith('/'):
-      path = '/' + path
-    if not headers:
-      headers = Headers()
-    else:
-      # Make a copy so mutations don't affect retry attempts.
-      headers = Headers(dict(headers.getAllRawHeaders()))
-    if self.auth_token:
-      if not path.startswith('/a/'):
-        path = '/a' + path
-      headers.setRawHeaders('Authorization', [self.auth_token])
-    url = '%s://%s%s' % (self.gerrit_protocol, self.gerrit_host, path)
-    if body:
-      body = JsonBodyProducer(json.dumps(body))
-      headers.setRawHeaders('Content-Type', ['application/json'])
-    if DEBUG:
-      log.msg(url)
-    if delay:
-      d = defer.succeed(None)
-      d.addCallback(
-          reactor.callLater, delay, Agent.request, self, method, str(url),
-          headers, body)
-    else:
-      d = Agent.request(self, method, str(url), headers, body)
-    def _check_code(response):
-      if response.code == expected_code:
+    if body is not None:
+      kwargs.setdefault('body_producer', JsonBodyProducer(body))
+    default_json = (protocol is None)
+    if default_json:
+      protocol = GerritJsonResponse.Get
+
+    d = super(GerritAgent, self).request(
+        method,
+        path,
+        **kwargs)
+    d.addCallback(protocol)
+
+    if (self.verbose) and (default_json):
+      def cbDumpResponse(response):
+        log.msg("Gerrit response:\n", json.dumps(response, indent=2))
         return response
-      if retry > 0 and response.code >= 500 and response.code < 600:
-        return self.request(*retry_args)
-      msg = 'Failed gerrit request (code %s, expected %s): %s' % (
-          response.code, expected_code, url)
-      raise GerritError(msg, response.code)
-    d.addCallback(_check_code)
-    d.addCallback(JsonResponse.Get, url=url)
+      d.addCallback(cbDumpResponse)
+
     return d

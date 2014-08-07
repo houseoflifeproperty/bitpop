@@ -10,10 +10,9 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/extensions/wallpaper_private_api.h"
-#include "chrome/browser/chromeos/login/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_chromeos.h"
-#include "chrome/common/chrome_switches.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
@@ -208,7 +207,6 @@ class WallpaperPrivateApiMultiUserUnittest
 };
 
 void WallpaperPrivateApiMultiUserUnittest::SetUp() {
-  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kMultiProfiles);
   AshTestBase::SetUp();
   session_state_delegate_ =
       static_cast<ash::test::TestSessionStateDelegate*> (

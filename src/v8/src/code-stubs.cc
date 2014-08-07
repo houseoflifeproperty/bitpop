@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "bootstrapper.h"
-#include "code-stubs.h"
-#include "cpu-profiler.h"
-#include "stub-cache.h"
-#include "factory.h"
-#include "gdb-jit.h"
-#include "macro-assembler.h"
+#include "src/bootstrapper.h"
+#include "src/code-stubs.h"
+#include "src/cpu-profiler.h"
+#include "src/stub-cache.h"
+#include "src/factory.h"
+#include "src/gdb-jit.h"
+#include "src/macro-assembler.h"
 
 namespace v8 {
 namespace internal {
@@ -22,6 +22,7 @@ CodeStubInterfaceDescriptor::CodeStubInterfaceDescriptor()
       hint_stack_parameter_count_(-1),
       function_mode_(NOT_JS_FUNCTION_STUB_MODE),
       register_params_(NULL),
+      register_param_representations_(NULL),
       deoptimization_handler_(NULL),
       handler_arguments_mode_(DONT_PASS_ARGUMENTS),
       miss_handler_(),
@@ -105,11 +106,6 @@ Handle<Code> PlatformCodeStub::GenerateCode() {
 }
 
 
-void CodeStub::VerifyPlatformFeatures() {
-  ASSERT(CpuFeatures::VerifyCrossCompiling());
-}
-
-
 Handle<Code> CodeStub::GetCode() {
   Heap* heap = isolate()->heap();
   Code* code;
@@ -119,10 +115,6 @@ Handle<Code> CodeStub::GetCode() {
     ASSERT(GetCodeKind() == code->kind());
     return Handle<Code>(code);
   }
-
-#ifdef DEBUG
-  VerifyPlatformFeatures();
-#endif
 
   {
     HandleScope scope(isolate());
@@ -478,6 +470,12 @@ Type* CompareNilICStub::GetInputType(Zone* zone, Handle<Map> map) {
 }
 
 
+void CallIC_ArrayStub::PrintState(StringStream* stream) {
+  state_.Print(stream);
+  stream->Add(" (Array)");
+}
+
+
 void CallICStub::PrintState(StringStream* stream) {
   state_.Print(stream);
 }
@@ -733,9 +731,7 @@ void FastNewContextStub::InstallDescriptors(Isolate* isolate) {
 
 // static
 void FastCloneShallowArrayStub::InstallDescriptors(Isolate* isolate) {
-  FastCloneShallowArrayStub stub(isolate,
-                                 FastCloneShallowArrayStub::CLONE_ELEMENTS,
-                                 DONT_TRACK_ALLOCATION_SITE, 0);
+  FastCloneShallowArrayStub stub(isolate, DONT_TRACK_ALLOCATION_SITE);
   InstallDescriptor(isolate, &stub);
 }
 
@@ -764,6 +760,13 @@ void StringAddStub::InstallDescriptors(Isolate* isolate) {
 // static
 void RegExpConstructResultStub::InstallDescriptors(Isolate* isolate) {
   RegExpConstructResultStub stub(isolate);
+  InstallDescriptor(isolate, &stub);
+}
+
+
+// static
+void KeyedLoadGenericElementStub::InstallDescriptors(Isolate* isolate) {
+  KeyedLoadGenericElementStub stub(isolate);
   InstallDescriptor(isolate, &stub);
 }
 

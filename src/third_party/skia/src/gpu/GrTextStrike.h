@@ -14,7 +14,6 @@
 #include "GrAllocPool.h"
 #include "GrFontScaler.h"
 #include "GrTHashTable.h"
-#include "GrPoint.h"
 #include "GrGlyph.h"
 #include "GrDrawTarget.h"
 #include "GrAtlas.h"
@@ -90,15 +89,21 @@ public:
     }
     GrTextStrike* getHeadStrike() const { return fHead; }
 
+    void updateTextures() {
+        for (int i = 0; i < kAtlasCount; ++i) {
+            if (fAtlasMgr[i]) {
+                fAtlasMgr[i]->uploadPlotsToTexture();
+            }
+        }
+    }
+
 #ifdef SK_DEBUG
     void validate() const;
 #else
     void validate() const {}
 #endif
 
-#ifdef SK_DEVELOPER
     void dump() const;
-#endif
 
     enum AtlasType {
         kA8_AtlasType,   //!< 1-byte per pixel

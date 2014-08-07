@@ -5,15 +5,19 @@
 #include "components/sync_driver/data_type_controller.h"
 
 #include "sync/internal_api/public/base/model_type.h"
+#include "sync/internal_api/public/user_share.h"
 #include "sync/util/data_type_histogram.h"
 
 namespace browser_sync {
 
 DataTypeController::DataTypeController(
     scoped_refptr<base::MessageLoopProxy> ui_thread,
-    const base::Closure& error_callback)
+    const base::Closure& error_callback,
+    const DisableTypeCallback& disable_callback)
     : base::RefCountedDeleteOnMessageLoop<DataTypeController>(ui_thread),
-      error_callback_(error_callback) {
+      error_callback_(error_callback),
+      disable_callback_(disable_callback),
+      user_share_(NULL) {
 }
 
 DataTypeController::~DataTypeController() {
@@ -39,21 +43,21 @@ syncer::SyncError DataTypeController::CreateAndUploadError(
                            type);
 }
 
-void DataTypeController::RecordUnrecoverableError(
-    const tracked_objects::Location& from_here,
-    const std::string& message) {
-  DVLOG(1) << "Datatype Controller failed for type "
-           << ModelTypeToString(type()) << "  "
-           << message << " at location "
-           << from_here.ToString();
-  UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeRunFailures",
-                            ModelTypeToHistogramInt(type()),
-                            syncer::MODEL_TYPE_COUNT);
+void DataTypeController::OnUserShareReady(syncer::UserShare* share) {
+  user_share_ = share;
+}
 
-  // TODO(sync): remove this once search engines triggers less errors, such as
-  // due to crbug.com/130448.
-  if ((type() != syncer::SEARCH_ENGINES) && (!error_callback_.is_null()))
-    error_callback_.Run();
+syncer::UserShare* DataTypeController::user_share() const {
+  return user_share_;
+}
+
+DataTypeController::DisableTypeCallback
+DataTypeController::disable_callback() {
+  return disable_callback_;
+}
+
+bool DataTypeController::ReadyForStart() const {
+  return true;
 }
 
 }  // namespace browser_sync

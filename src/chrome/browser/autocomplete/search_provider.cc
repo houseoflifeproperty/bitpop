@@ -7,13 +7,16 @@
 #include <algorithm>
 #include <cmath>
 
+#include "base/base64.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/i18n/break_iterator.h"
 #include "base/i18n/case_conversion.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
+#include "base/rand_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
@@ -21,8 +24,6 @@
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
-#include "chrome/browser/autocomplete/url_prefix.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/in_memory_database.h"
@@ -34,8 +35,11 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/search/instant_controller.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/url_constants.h"
+#include "components/autocomplete/url_prefix.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
@@ -45,6 +49,7 @@
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/url_constants.h"
 #include "url/url_util.h"
 
 // Helpers --------------------------------------------------------------------
@@ -158,7 +163,7 @@ void SearchProvider::UpdateMatchContentsClass(const base::string16& input_text,
 
 // static
 int SearchProvider::CalculateRelevanceForKeywordVerbatim(
-    AutocompleteInput::Type type,
+    metrics::OmniboxInputType::Type type,
     bool prefer_keyword) {
   // This function is responsible for scoring verbatim query matches
   // for non-extension keywords.  KeywordProvider::CalculateRelevance()
@@ -172,7 +177,7 @@ int SearchProvider::CalculateRelevanceForKeywordVerbatim(
   // describe it, so it's clear why the functions diverge.
   if (prefer_keyword)
     return 1500;
-  return (type == AutocompleteInput::QUERY) ? 1450 : 1100;
+  return (type == metrics::OmniboxInputType::QUERY) ? 1450 : 1100;
 }
 
 void SearchProvider::Start(const AutocompleteInput& input,
@@ -187,7 +192,7 @@ void SearchProvider::Start(const AutocompleteInput& input,
   field_trial_triggered_ = false;
 
   // Can't return search/suggest results for bogus input or without a profile.
-  if (!profile_ || (input.type() == AutocompleteInput::INVALID)) {
+  if (!profile_ || (input.type() == metrics::OmniboxInputType::INVALID)) {
     Stop(true);
     return;
   }
@@ -202,7 +207,8 @@ void SearchProvider::Start(const AutocompleteInput& input,
     keyword_provider = NULL;
 
   const TemplateURL* default_provider = model->GetDefaultSearchProvider();
-  if (default_provider && !default_provider->SupportsReplacement())
+  if (default_provider &&
+      !default_provider->SupportsReplacement(model->search_terms_data()))
     default_provider = NULL;
 
   if (keyword_provider == default_provider)
@@ -338,7 +344,9 @@ void SearchProvider::LogFetchComplete(bool success, bool is_keyword) {
   // non-keyword mode.
   const TemplateURL* default_url = providers_.GetDefaultProviderURL();
   if (!is_keyword && default_url &&
-      (TemplateURLPrepopulateData::GetEngineType(*default_url) ==
+      (TemplateURLPrepopulateData::GetEngineType(
+          *default_url,
+          providers_.template_url_service()->search_terms_data()) ==
        SEARCH_ENGINE_GOOGLE)) {
     const base::TimeDelta elapsed_time =
         base::TimeTicks::Now() - time_suggest_request_sent_;
@@ -545,7 +553,7 @@ bool SearchProvider::IsQuerySuitableForSuggest() const {
 
   // FORCED_QUERY means the user is explicitly asking us to search for this, so
   // we assume it isn't a URL and/or there isn't private data.
-  if (input_.type() == AutocompleteInput::FORCED_QUERY)
+  if (input_.type() == metrics::OmniboxInputType::FORCED_QUERY)
     return true;
 
   // Next we check the scheme.  If this is UNKNOWN/URL with a scheme that isn't
@@ -560,8 +568,8 @@ bool SearchProvider::IsQuerySuitableForSuggest() const {
   // assume we're OK.
   if (!LowerCaseEqualsASCII(input_.scheme(), url::kHttpScheme) &&
       !LowerCaseEqualsASCII(input_.scheme(), url::kHttpsScheme) &&
-      !LowerCaseEqualsASCII(input_.scheme(), content::kFtpScheme))
-    return (input_.type() == AutocompleteInput::QUERY);
+      !LowerCaseEqualsASCII(input_.scheme(), url::kFtpScheme))
+    return (input_.type() == metrics::OmniboxInputType::QUERY);
 
   // Don't send URLs with usernames, queries or refs.  Some of these are
   // private, and the Suggest server is unlikely to have any useful results
@@ -575,7 +583,8 @@ bool SearchProvider::IsQuerySuitableForSuggest() const {
   const url::Parsed& parts = input_.parts();
   if (parts.username.is_nonempty() || parts.port.is_nonempty() ||
       parts.query.is_nonempty() ||
-      (parts.ref.is_nonempty() && (input_.type() == AutocompleteInput::URL)))
+      (parts.ref.is_nonempty() &&
+       (input_.type() == metrics::OmniboxInputType::URL)))
     return false;
 
   // Don't send anything for https except the hostname.  Hostnames are OK
@@ -635,10 +644,14 @@ net::URLFetcher* SearchProvider::CreateSuggestFetcher(
 
   // Bail if the suggestion URL is invalid with the given replacements.
   TemplateURLRef::SearchTermsArgs search_term_args(input.text());
+  search_term_args.input_type = input.type();
   search_term_args.cursor_position = input.cursor_position();
   search_term_args.page_classification = input.current_page_classification();
+  if (OmniboxFieldTrial::EnableAnswersInSuggest())
+    search_term_args.session_token = GetSessionToken();
   GURL suggest_url(template_url->suggestions_url_ref().ReplaceSearchTerms(
-      search_term_args));
+      search_term_args,
+      providers_.template_url_service()->search_terms_data()));
   if (!suggest_url.is_valid())
     return NULL;
   // Send the current page URL if user setting and URL requirements are met and
@@ -649,7 +662,8 @@ net::URLFetcher* SearchProvider::CreateSuggestFetcher(
     search_term_args.current_page_url = current_page_url_.spec();
     // Create the suggest URL again with the current page URL.
     suggest_url = GURL(template_url->suggestions_url_ref().ReplaceSearchTerms(
-        search_term_args));
+        search_term_args,
+        providers_.template_url_service()->search_terms_data()));
   }
 
   suggest_results_pending_++;
@@ -690,8 +704,9 @@ void SearchProvider::ConvertResultsToAutocompleteMatches() {
         base::CollapseWhitespace(input_.text(), false);
     SuggestResult verbatim(
         trimmed_verbatim, AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED,
-        trimmed_verbatim, base::string16(), base::string16(), std::string(),
-        std::string(), false, verbatim_relevance, relevance_from_server, false,
+        trimmed_verbatim, base::string16(), base::string16(), base::string16(),
+        base::string16(), std::string(), std::string(), false,
+        verbatim_relevance, relevance_from_server, false,
         trimmed_verbatim);
     AddMatchToMap(verbatim, std::string(), did_not_accept_default_suggestion,
                   false, &map);
@@ -715,8 +730,9 @@ void SearchProvider::ConvertResultsToAutocompleteMatches() {
         SuggestResult verbatim(
             trimmed_verbatim, AutocompleteMatchType::SEARCH_OTHER_ENGINE,
             trimmed_verbatim, base::string16(), base::string16(),
-            std::string(), std::string(), true, keyword_verbatim_relevance,
-            keyword_relevance_from_server, false, trimmed_verbatim);
+            base::string16(), base::string16(), std::string(), std::string(),
+            true, keyword_verbatim_relevance, keyword_relevance_from_server,
+            false, trimmed_verbatim);
         AddMatchToMap(verbatim, std::string(),
                       did_not_accept_keyword_suggestion, false, &map);
       }
@@ -803,7 +819,7 @@ bool SearchProvider::HasKeywordDefaultMatchInKeywordMode() const {
 
 bool SearchProvider::IsTopMatchSearchWithURLInput() const {
   ACMatches::const_iterator first_match = FindTopMatch();
-  return (input_.type() == AutocompleteInput::URL) &&
+  return (input_.type() == metrics::OmniboxInputType::URL) &&
       (first_match != matches_.end()) &&
       (first_match->relevance > CalculateRelevanceForVerbatim()) &&
       (first_match->type != AutocompleteMatchType::NAVSUGGEST) &&
@@ -832,7 +848,7 @@ void SearchProvider::AddHistoryResultsToMap(const HistoryResults& results,
 
   base::TimeTicks start_time(base::TimeTicks::Now());
   bool prevent_inline_autocomplete = input_.prevent_inline_autocomplete() ||
-      (input_.type() == AutocompleteInput::URL);
+      (input_.type() == metrics::OmniboxInputType::URL);
   const base::string16& input_text =
       is_keyword ? keyword_input_.text() : input_.text();
   bool input_multiple_words = HasMultipleWords(input_text);
@@ -918,8 +934,9 @@ SearchProvider::SuggestResults SearchProvider::ScoreHistoryResults(
         prevent_search_history_inlining);
     scored_results.push_back(SuggestResult(
         trimmed_suggestion, AutocompleteMatchType::SEARCH_HISTORY,
-        trimmed_suggestion, base::string16(), base::string16(), std::string(),
-        std::string(), is_keyword, relevance, false, false, trimmed_input));
+        trimmed_suggestion, base::string16(), base::string16(),
+        base::string16(), base::string16(), std::string(), std::string(),
+        is_keyword, relevance, false, false, trimmed_input));
   }
 
   // History returns results sorted for us.  However, we may have docked some
@@ -977,12 +994,12 @@ int SearchProvider::CalculateRelevanceForVerbatim() const {
 int SearchProvider::
     CalculateRelevanceForVerbatimIgnoringKeywordModeState() const {
   switch (input_.type()) {
-    case AutocompleteInput::UNKNOWN:
-    case AutocompleteInput::QUERY:
-    case AutocompleteInput::FORCED_QUERY:
+    case metrics::OmniboxInputType::UNKNOWN:
+    case metrics::OmniboxInputType::QUERY:
+    case metrics::OmniboxInputType::FORCED_QUERY:
       return kNonURLVerbatimRelevance;
 
-    case AutocompleteInput::URL:
+    case metrics::OmniboxInputType::URL:
       return 850;
 
     default:
@@ -1049,7 +1066,7 @@ int SearchProvider::CalculateRelevanceForHistory(
   // a different way.
   int base_score;
   if (is_primary_provider)
-    base_score = (input_.type() == AutocompleteInput::URL) ? 750 : 1050;
+    base_score = (input_.type() == metrics::OmniboxInputType::URL) ? 750 : 1050;
   else
     base_score = 200;
   return std::max(0, base_score - score_discount);
@@ -1089,7 +1106,7 @@ AutocompleteMatch SearchProvider::NavigationToMatch(
                          &inline_autocomplete_offset));
   // Preserve the forced query '?' prefix in |match.fill_into_edit|.
   // Otherwise, user edits to a suggestion would show non-Search results.
-  if (input_.type() == AutocompleteInput::FORCED_QUERY) {
+  if (input_.type() == metrics::OmniboxInputType::FORCED_QUERY) {
     match.fill_into_edit.insert(0, base::ASCIIToUTF16("?"));
     if (inline_autocomplete_offset != base::string16::npos)
       ++inline_autocomplete_offset;
@@ -1130,4 +1147,24 @@ void SearchProvider::UpdateDone() {
   // We're done when the timer isn't running, there are no suggest queries
   // pending, and we're not waiting on Instant.
   done_ = !timer_.IsRunning() && (suggest_results_pending_ == 0);
+}
+
+std::string SearchProvider::GetSessionToken() {
+  base::TimeTicks current_time(base::TimeTicks::Now());
+  // Renew token if it expired.
+  if (current_time > token_expiration_time_) {
+    const size_t kTokenBytes = 12;
+    std::string raw_data;
+    base::RandBytes(WriteInto(&raw_data, kTokenBytes + 1), kTokenBytes);
+    base::Base64Encode(raw_data, &current_token_);
+
+    // Make the base64 encoded value URL and filename safe(see RFC 3548).
+    std::replace(current_token_.begin(), current_token_.end(), '+', '-');
+    std::replace(current_token_.begin(), current_token_.end(), '/', '_');
+  }
+
+  // Extend expiration time another 60 seconds.
+  token_expiration_time_ = current_time + base::TimeDelta::FromSeconds(60);
+
+  return current_token_;
 }

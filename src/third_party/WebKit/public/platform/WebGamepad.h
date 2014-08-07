@@ -38,16 +38,16 @@ class WebGamepadButton {
 public:
     WebGamepadButton()
         : pressed(false)
-        , value(0.f)
+        , value(0.)
     {
     }
-    WebGamepadButton(bool pressed, float value)
+    WebGamepadButton(bool pressed, double value)
         : pressed(pressed)
         , value(value)
     {
     }
     bool pressed;
-    float value;
+    double value;
 };
 
 // This structure is intentionally POD and fixed size so that it can be shared
@@ -84,7 +84,7 @@ public:
     unsigned axesLength;
 
     // Normalized values representing axes, in the range [-1..1].
-    float axes[axesLengthCap];
+    double axes[axesLengthCap];
 
     // Number of valid entries in the buttons array.
     unsigned buttonsLength;
@@ -97,7 +97,7 @@ public:
 };
 
 #if BLINK_IMPLEMENTATION
-COMPILE_ASSERT(sizeof(WebGamepad) == 529, WebGamepad_has_wrong_size);
+COMPILE_ASSERT(sizeof(WebGamepad) == 721, WebGamepad_has_wrong_size);
 #endif
 
 #pragma pack(pop)

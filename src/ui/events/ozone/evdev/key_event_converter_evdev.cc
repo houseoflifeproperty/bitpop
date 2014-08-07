@@ -11,7 +11,7 @@
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/events/ozone/evdev/event_modifiers_evdev.h"
-#include "ui/events/ozone/event_factory_ozone.h"
+#include "ui/ozone/public/event_factory_ozone.h"
 
 namespace ui {
 
@@ -264,7 +264,7 @@ void KeyEventConverterEvdev::ConvertKeyEvent(int key, int value) {
   int flags = modifiers_->GetModifierFlags();
 
   KeyEvent key_event(
-      down ? ET_KEY_PRESSED : ET_KEY_RELEASED, code, flags, true);
+      down ? ET_KEY_PRESSED : ET_KEY_RELEASED, code, flags, false);
   DispatchEventToCallback(&key_event);
 }
 

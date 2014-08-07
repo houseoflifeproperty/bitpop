@@ -28,14 +28,11 @@ var config = config || {};
 (function() {
 
 config = {
-    kBuildNumberLimit: 20,
     kRelativeTimeUpdateFrequency: 1000 * 60,
     kTreeStatusUpdateFrequency: 1000 * 30,
     kUpdateFrequency: 10 * 60 * 1000,
 
-    kBlinkSvnURL: 'svn://svn.chromium.org/blink/trunk',
     kBlinkRevisionURL: 'http://src.chromium.org/viewvc/blink',
-    kSvnLogURL: 'http://build.chromium.org/cgi-bin/svn-log',
     kRietveldURL: 'https://codereview.chromium.org',
 
     buildConsoleURL: 'http://build.chromium.org/p/chromium.webkit',
@@ -64,9 +61,8 @@ config = {
         return base.underscoredBuilderName(builderName);
     },
     builderApplies: function(builderName) {
-        // FIXME: Remove the Perf check once the bots are gone.
         return builderName.indexOf('GPU') == -1 &&
-               builderName.indexOf('Perf') == -1;
+               builderName.indexOf('Oilpan') == -1;
     },
     useLocalResults: !!base.getURLParameter('useLocalResults') || false,
 };

@@ -26,7 +26,7 @@
 #ifndef UseCounter_h
 #define UseCounter_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 #include "wtf/BitVector.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
@@ -36,7 +36,7 @@
 namespace WebCore {
 
 class CSSStyleSheet;
-class DOMWindow;
+class LocalDOMWindow;
 class Document;
 class ExecutionContext;
 class StyleSheetContents;
@@ -97,7 +97,6 @@ public:
         MinAttribute = 43,
         PatternAttribute = 44,
         PlaceholderAttribute = 45,
-        PrecisionAttribute = 46,
         PrefixedDirectoryAttribute = 47,
         RequiredAttribute = 49,
         ResultsAttribute = 50,
@@ -127,7 +126,6 @@ public:
         DocumentAll = 83,
         FormElement = 84,
         DemotedFormElement = 85,
-        CaptureAttributeAsEnum = 86,
         SVGAnimationElement = 90,
         KeyboardEventKeyLocation = 91,
         LineClamp = 96,
@@ -136,7 +134,6 @@ public:
         TextReplaceWholeText = 100,
         ConsoleMarkTimeline = 102,
         CSSPseudoElementUserAgentCustomPseudo = 103,
-        DocumentTypeInternalSubset = 105, // Removed from DOM4.
         ElementGetAttributeNode = 107, // Removed from DOM4.
         ElementSetAttributeNode = 108, // Removed from DOM4.
         ElementRemoveAttributeNode = 109, // Removed from DOM4.
@@ -222,7 +219,6 @@ public:
         HTMLHeadElementProfile = 207,
         OverflowChangedEvent = 208,
         SVGPointMatrixTransform = 209,
-        HTMLHtmlElementManifest = 210,
         DOMFocusInOutEvent = 211,
         FileGetLastModifiedDate = 212,
         HTMLElementInnerText = 213,
@@ -236,7 +232,6 @@ public:
         // The above items are available in M33 branch.
 
         InitMessageEvent = 222,
-        PrefixedInitMessageEvent = 223,
         ElementSetPrefix = 224, // Element.prefix is readonly in DOM4.
         CSSStyleDeclarationGetPropertyCSSValue = 225,
         PrefixedMediaCancelKeyRequest = 229,
@@ -251,7 +246,6 @@ public:
         ContentSecurityPolicyReportOnlyInMeta = 241,
         ResetReferrerPolicy = 243,
         CaseInsensitiveAttrSelectorMatch = 244, // Case-insensitivity dropped from specification.
-        CaptureAttributeAsBoolean = 245,
         FormNameAccessForImageElement = 246,
         FormNameAccessForPastNamesMap = 247,
         FormAssociationByParser = 248,
@@ -284,7 +278,7 @@ public:
         HTMLMediaElementSeekToFragmentStart = 281,
         HTMLMediaElementPauseAtFragmentEnd = 282,
         PrefixedWindowURL = 283,
-        PrefixedWorkerURL = 284,
+        PrefixedWorkerURL = 284, // This didn't work because of crbug.com/376039. Available since M37.
         WindowOrientation = 285,
         DOMStringListContains = 286,
         DocumentCaptureEvents = 287,
@@ -313,8 +307,8 @@ public:
         NamedNodeMapGetNamedItemNS = 310,
         NamedNodeMapSetNamedItemNS = 311,
         NamedNodeMapRemoveNamedItemNS = 312,
-        OpenWebDatabaseInWorker = 313,
-        OpenWebDatabaseSyncInWorker = 314,
+        OpenWebDatabaseInWorker = 313, // This didn't work because of crbug.com/376039. Available since M37.
+        OpenWebDatabaseSyncInWorker = 314, // This didn't work because of crbug.com/376039. Available since M37.
         PrefixedAllowFullscreenAttribute = 315,
         XHRProgressEventPosition = 316,
         XHRProgressEventTotalSize = 317,
@@ -419,6 +413,63 @@ public:
         VTTCueRenderPositionNot50 = 414,
         VTTCueRenderSizeNot100 = 415,
         VTTCueRenderAlignNotMiddle = 416,
+        // The above items are available in M36 branch.
+
+        ElementRequestPointerLock = 417,
+        VTTCueRenderRtl = 418,
+        PostMessageFromSecureToInsecure = 419,
+        PostMessageFromInsecureToSecure = 420,
+        DocumentExitPointerLock = 421,
+        DocumentPointerLockElement = 422,
+        PrefixedCursorZoomIn = 424,
+        PrefixedCursorZoomOut = 425,
+        CSSCharsetRuleEncoding = 426,
+        DocumentSetCharset = 427,
+        DocumentDefaultCharset = 428,
+        TextEncoderConstructor = 429,
+        TextEncoderEncode = 430,
+        TextDecoderConstructor = 431,
+        TextDecoderDecode= 432,
+        FocusInOutEvent = 433,
+        MouseEventMovementX = 434,
+        MouseEventMovementY = 435,
+        MixedContentTextTrack = 436,
+        MixedContentRaw = 437,
+        MixedContentImage = 438,
+        MixedContentMedia = 439,
+        DocumentFonts = 440,
+        MixedContentFormsSubmitted = 441,
+        FormsSubmitted = 442,
+        TextInputEventOnInput = 443,
+        TextInputEventOnTextArea = 444,
+        TextInputEventOnContentEditable= 445,
+        TextInputEventOnNotNode = 446,
+        WebkitBeforeTextInsertedOnInput = 447,
+        WebkitBeforeTextInsertedOnTextArea = 448,
+        WebkitBeforeTextInsertedOnContentEditable = 449,
+        WebkitBeforeTextInsertedOnNotNode = 450,
+        WebkitEditableContentChangedOnInput = 451,
+        WebkitEditableContentChangedOnTextArea = 452,
+        WebkitEditableContentChangedOnContentEditable = 453,
+        WebkitEditableContentChangedOnNotNode = 454,
+        HTMLImports = 455,
+        ElementCreateShadowRoot = 456,
+        DocumentRegisterElement = 457,
+        EditingAppleInterchangeNewline = 458,
+        EditingAppleConvertedSpace = 459,
+        EditingApplePasteAsQuotation = 460,
+        EditingAppleStyleSpanClass = 461,
+        EditingAppleTabSpanClass = 462,
+        HTMLImportsAsyncAttribute = 463,
+        FontFaceSetReady = 464,
+        XMLHttpRequestSynchronous = 465,
+        CSSSelectorPseudoUnresolved = 466,
+        CSSSelectorPseudoShadow = 467,
+        CSSSelectorPseudoContent = 468,
+        CSSSelectorPseudoHost = 469,
+        CSSSelectorPseudoHostContext = 470,
+        CSSDeepCombinator = 471,
+        SyncXHRWithCredentials = 472,
         // Add new features immediately above this line. Don't change assigned
         // numbers of any item, and don't reuse removed slots.
         // Also, run update_use_counter_feature_enum.py in chromium/src/tools/metrics/histograms/
@@ -428,6 +479,8 @@ public:
 
     // "count" sets the bit for this feature to 1. Repeated calls are ignored.
     static void count(const Document&, Feature);
+    // This doesn't count for ExecutionContexts for shared workers and service
+    // workers.
     static void count(const ExecutionContext*, Feature);
     void count(CSSParserContext, CSSPropertyID);
     void count(Feature);
@@ -435,9 +488,13 @@ public:
     // "countDeprecation" sets the bit for this feature to 1, and sends a deprecation
     // warning to the console. Repeated calls are ignored.
     //
-    // Be considerate to developers' consoles: features should only send deprecation warnings
-    // when we're actively interested in removing them from the platform.
-    static void countDeprecation(const DOMWindow*, Feature);
+    // Be considerate to developers' consoles: features should only send
+    // deprecation warnings when we're actively interested in removing them from
+    // the platform.
+    //
+    // The ExecutionContext* overload doesn't work for shared workers and
+    // service workers.
+    static void countDeprecation(const LocalDOMWindow*, Feature);
     static void countDeprecation(ExecutionContext*, Feature);
     static void countDeprecation(const Document&, Feature);
     String deprecationMessage(Feature);

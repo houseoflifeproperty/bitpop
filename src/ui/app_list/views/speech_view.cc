@@ -21,6 +21,7 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/fill_layout.h"
+#include "ui/views/masked_view_targeter.h"
 #include "ui/views/shadow_border.h"
 
 namespace app_list {
@@ -52,7 +53,7 @@ class SoundLevelIndicator : public views::View {
 
  private:
   // Overridden from views::View:
-  virtual void Paint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(SoundLevelIndicator);
 };
@@ -61,7 +62,7 @@ SoundLevelIndicator::SoundLevelIndicator() {}
 
 SoundLevelIndicator::~SoundLevelIndicator() {}
 
-void SoundLevelIndicator::Paint(gfx::Canvas* canvas) {
+void SoundLevelIndicator::OnPaint(gfx::Canvas* canvas) {
   SkPaint paint;
   paint.setStyle(SkPaint::kFill_Style);
   paint.setColor(kSoundLevelIndicatorColor);
@@ -93,17 +94,44 @@ bool MicButton::HasHitTestMask() const {
   return true;
 }
 
+// TODO(tdanderson): Move the implementation into views::View::HitTestRect()
+//                   and delete this function. See crbug.com/377527.
 void MicButton::GetHitTestMask(views::View::HitTestSource source,
                                gfx::Path* mask) const {
-  // The mic button icon is a circle. |source| doesn't matter.
-  gfx::Rect local_bounds = GetLocalBounds();
-  int radius = local_bounds.width() / 2 + kIndicatorRadiusMinOffset;
-  gfx::Point center = local_bounds.CenterPoint();
-  center.set_y(center.y() + kIndicatorCenterOffsetY);
-  mask->addCircle(SkIntToScalar(center.x()),
-                  SkIntToScalar(center.y()),
-                  SkIntToScalar(radius));
+  const ui::EventTargeter* targeter = GetEventTargeter();
+  CHECK(targeter);
+  static_cast<const views::MaskedViewTargeter*>(targeter)
+      ->GetHitTestMask(this, mask);
 }
+
+// Used to define the circular hit test region of a MicButton for the
+// purposes of event targeting.
+class MicButtonTargeter : public views::MaskedViewTargeter {
+ public:
+  explicit MicButtonTargeter(views::View* mic_button)
+      : views::MaskedViewTargeter(mic_button) {}
+  virtual ~MicButtonTargeter() {}
+
+ private:
+  // views::MaskedViewTargeter:
+  virtual bool GetHitTestMask(const views::View* view,
+                              gfx::Path* mask) const OVERRIDE {
+    DCHECK(mask);
+    DCHECK_EQ(view, masked_view());
+
+    // The mic button icon is a circle.
+    gfx::Rect local_bounds = view->GetLocalBounds();
+    int radius = local_bounds.width() / 2 + kIndicatorRadiusMinOffset;
+    gfx::Point center = local_bounds.CenterPoint();
+    center.set_y(center.y() + kIndicatorCenterOffsetY);
+    mask->addCircle(SkIntToScalar(center.x()),
+                    SkIntToScalar(center.y()),
+                    SkIntToScalar(radius));
+    return true;
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(MicButtonTargeter);
+};
 
 }  // namespace
 
@@ -138,6 +166,8 @@ SpeechView::SpeechView(AppListViewDelegate* delegate)
 
   mic_button_ = new MicButton(this);
   container->AddChildView(mic_button_);
+  mic_button_->SetEventTargeter(
+      scoped_ptr<ui::EventTargeter>(new MicButtonTargeter(mic_button_)));
 
   // TODO(mukai): use BoundedLabel to cap 2 lines.
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
@@ -163,12 +193,7 @@ SpeechView::~SpeechView() {
 }
 
 void SpeechView::Reset() {
-  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
-  speech_result_->SetText(l10n_util::GetStringUTF16(
-      IDS_APP_LIST_SPEECH_HINT_TEXT));
-  speech_result_->SetEnabledColor(kHintTextColor);
-  mic_button_->SetImage(views::Button::STATE_NORMAL,
-                        bundle.GetImageSkiaNamed(IDR_APP_LIST_SPEECH_MIC_ON));
+  OnSpeechRecognitionStateChanged(delegate_->GetSpeechUI()->state());
 }
 
 int SpeechView::GetIndicatorRadius(uint8 level) {
@@ -201,7 +226,7 @@ void SpeechView::Layout() {
       speech_height);
 }
 
-gfx::Size SpeechView::GetPreferredSize() {
+gfx::Size SpeechView::GetPreferredSize() const {
   return gfx::Size(0, kSpeechViewMaxHeight);
 }
 
@@ -210,7 +235,8 @@ void SpeechView::ButtonPressed(views::Button* sender, const ui::Event& event) {
 }
 
 void SpeechView::OnSpeechSoundLevelChanged(uint8 level) {
-  if (!visible())
+  if (!visible() ||
+      delegate_->GetSpeechUI()->state() == SPEECH_RECOGNITION_NETWORK_ERROR)
     return;
 
   gfx::Point origin = mic_button_->bounds().CenterPoint();
@@ -239,6 +265,15 @@ void SpeechView::OnSpeechRecognitionStateChanged(
     resource_id = IDR_APP_LIST_SPEECH_MIC_ON;
   else if (new_state == SPEECH_RECOGNITION_IN_SPEECH)
     resource_id = IDR_APP_LIST_SPEECH_MIC_RECORDING;
+
+  int text_resource_id = IDS_APP_LIST_SPEECH_HINT_TEXT;
+
+  if (new_state == SPEECH_RECOGNITION_NETWORK_ERROR) {
+    text_resource_id = IDS_APP_LIST_SPEECH_NETWORK_ERROR_HINT_TEXT;
+    indicator_->SetVisible(false);
+  }
+  speech_result_->SetText(l10n_util::GetStringUTF16(text_resource_id));
+  speech_result_->SetEnabledColor(kHintTextColor);
 
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   mic_button_->SetImage(views::Button::STATE_NORMAL,

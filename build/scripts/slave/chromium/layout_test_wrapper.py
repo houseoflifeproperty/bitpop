@@ -91,7 +91,8 @@ def layout_test(options, args):
     command.extend(['--target', options.target])
   if options.platform:
     command.extend(['--platform', options.platform])
-
+  if options.skipped:
+    command.extend(['--skipped', options.skipped])
   if options.no_pixel_tests:
     command.append('--no-pixel-tests')
   if options.batch_size:
@@ -185,7 +186,9 @@ def main():
   option_parser.add_option('--options', default='',
       help='additional options to pass to run-webkit-tests')
   option_parser.add_option('--platform', default='',
-      help=('Platform value passed directly to run_blink_tests.'))
+      help=('Platform value passed directly to run-webkit-tests.'))
+  option_parser.add_option('--skipped', default='',
+      help='option for handling Skipped, passed through to run-webkit-tests.')
   option_parser.add_option('--no-pixel-tests', action='store_true',
                            default=False,
                            help='disable pixel-to-pixel PNG comparisons')

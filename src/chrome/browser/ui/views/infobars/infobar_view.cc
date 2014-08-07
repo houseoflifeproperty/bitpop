@@ -23,6 +23,7 @@
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/button/menu_button.h"
+#include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
@@ -129,8 +130,8 @@ views::MenuButton* InfoBarView::CreateMenuButton(
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   menu_button->set_menu_marker(
       rb.GetImageNamed(IDR_INFOBARBUTTON_MENU_DROPARROW).ToImageSkia());
-  menu_button->SetEnabledColor(SK_ColorBLACK);
-  menu_button->SetHoverColor(SK_ColorBLACK);
+  menu_button->SetTextColor(views::Button::STATE_NORMAL, SK_ColorBLACK);
+  menu_button->SetTextColor(views::Button::STATE_HOVERED, SK_ColorBLACK);
   menu_button->SetFontList(rb.GetFontList(ui::ResourceBundle::MediumFont));
   menu_button->SizeToPreferredSize();
   menu_button->SetFocusable(true);
@@ -278,7 +279,8 @@ void InfoBarView::ViewHierarchyChanged(
   SetBarTargetHeight(height);
 }
 
-void InfoBarView::PaintChildren(gfx::Canvas* canvas) {
+void InfoBarView::PaintChildren(gfx::Canvas* canvas,
+                                const views::CullSet& cull_set) {
   canvas->Save();
 
   // TODO(scr): This really should be the |fill_path_|, but the clipPath seems
@@ -289,7 +291,7 @@ void InfoBarView::PaintChildren(gfx::Canvas* canvas) {
   DCHECK_EQ(total_height(), height())
       << "Infobar piecewise heights do not match overall height";
   canvas->ClipRect(gfx::Rect(0, arrow_height(), width(), bar_height()));
-  views::View::PaintChildren(canvas);
+  views::View::PaintChildren(canvas, cull_set);
   canvas->Restore();
 }
 
@@ -303,7 +305,7 @@ void InfoBarView::ButtonPressed(views::Button* sender,
   }
 }
 
-int InfoBarView::ContentMinimumWidth() {
+int InfoBarView::ContentMinimumWidth() const {
   return 0;
 }
 
@@ -402,7 +404,7 @@ void InfoBarView::GetAccessibleState(ui::AXViewState* state) {
   state->keyboard_shortcut = base::ASCIIToUTF16("Alt+Shift+A");
 }
 
-gfx::Size InfoBarView::GetPreferredSize() {
+gfx::Size InfoBarView::GetPreferredSize() const {
   return gfx::Size(
       kEdgeItemPadding + (icon_ ? (icon_->width() + kIconToLabelSpacing) : 0) +
           ContentMinimumWidth() + kBeforeCloseButtonSpacing +

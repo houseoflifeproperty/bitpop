@@ -6,13 +6,19 @@
   'variables': {
     'chromium_code': 1,
   },
-
   'target_defaults': {
     'conditions': [
       ['use_x11 == 1', {
         'include_dirs': [
-          '<(DEPTH)/third_party/khronos',
+          '../../third_party/khronos',
         ],
+      }],
+      ['OS == "mac"', {
+        'link_settings': {
+          'libraries': [
+            '$(SDKROOT)/System/Library/Frameworks/IOSurface.framework',
+          ],
+        },
       }],
     ],
   },
@@ -21,15 +27,12 @@
       'target_name': 'surface',
       'type': '<(component)',
       'dependencies': [
-        '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '<(DEPTH)/media/media.gyp:media',
-        '<(DEPTH)/skia/skia.gyp:skia',
-        '<(DEPTH)/ui/base/ui_base.gyp:ui_base',
-        '<(DEPTH)/ui/events/events.gyp:events_base',
-        '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
-        '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
-        '<(DEPTH)/ui/gl/gl.gyp:gl',
+        '../../base/base.gyp:base',
+        '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../../skia/skia.gyp:skia',
+        '../base/ui_base.gyp:ui_base',
+        '../gfx/gfx.gyp:gfx_geometry',
+        '../gl/gl.gyp:gl',
       ],
       'sources': [
         'accelerated_surface_mac.cc',

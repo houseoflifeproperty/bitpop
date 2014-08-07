@@ -16,6 +16,8 @@
 // from chrome component (see content/browser/devtools/devtools_protocol.*).
 class DevToolsProtocol {
  public:
+  class Response;
+
   class Message {
    public:
     virtual ~Message();
@@ -24,7 +26,6 @@ class DevToolsProtocol {
     base::DictionaryValue* params() { return params_.get(); }
 
    protected:
-    // Takes ownership of |params|.
     Message(const std::string& method, base::DictionaryValue* params);
 
     std::string method_;
@@ -36,12 +37,17 @@ class DevToolsProtocol {
 
   class Command : public Message {
    public:
-    // Takes ownership of |params|.
     Command(int id, const std::string& method, base::DictionaryValue* params);
     virtual ~Command();
 
     int id() { return id_; }
     std::string Serialize();
+
+    // Creates success response. Takes ownership of |result|.
+    scoped_ptr<Response> SuccessResponse(base::DictionaryValue* result);
+
+    // Creates error response.
+    scoped_ptr<Response> InvalidParamResponse(const std::string& param);
 
    private:
     int id_;
@@ -56,12 +62,18 @@ class DevToolsProtocol {
     int id() { return id_; }
     int error_code() { return error_code_; }
 
+    // Result ownership is passed to the caller.
+    base::DictionaryValue* Serialize();
+
    private:
     friend class DevToolsProtocol;
 
-    Response(int id, int error_code);
+    Response(int id, int error_code, const std::string error_message);
+    Response(int id, base::DictionaryValue* result);
     int id_;
     int error_code_;
+    std::string error_message_;
+    scoped_ptr<base::DictionaryValue> result_;
 
     DISALLOW_COPY_AND_ASSIGN(Response);
   };
@@ -79,6 +91,9 @@ class DevToolsProtocol {
 
     DISALLOW_COPY_AND_ASSIGN(Notification);
   };
+
+  // Result ownership is passed to the caller.
+  static Command* ParseCommand(base::DictionaryValue* command_dict);
 
   // Result ownership is passed to the caller.
   static Notification* ParseNotification(const std::string& json);

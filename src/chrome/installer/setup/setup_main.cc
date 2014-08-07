@@ -263,12 +263,19 @@ installer::InstallStatus RenameChromeExecutables(
   for (Products::const_iterator it = products.begin(); it < products.end();
        ++it) {
     version_key = (*it)->distribution()->GetVersionKey();
+    install_list->AddDeleteRegValueWorkItem(reg_root,
+                                            version_key,
+                                            KEY_WOW64_32KEY,
+                                            google_update::kRegOldVersionField);
     install_list->AddDeleteRegValueWorkItem(
-        reg_root, version_key, google_update::kRegOldVersionField);
-    install_list->AddDeleteRegValueWorkItem(
-        reg_root, version_key, google_update::kRegCriticalVersionField);
-    install_list->AddDeleteRegValueWorkItem(
-        reg_root, version_key, google_update::kRegRenameCmdField);
+        reg_root,
+        version_key,
+        KEY_WOW64_32KEY,
+        google_update::kRegCriticalVersionField);
+    install_list->AddDeleteRegValueWorkItem(reg_root,
+                                            version_key,
+                                            KEY_WOW64_32KEY,
+                                            google_update::kRegRenameCmdField);
   }
   installer::InstallStatus ret = installer::RENAME_SUCCESSFUL;
   if (!install_list->Do()) {
@@ -1461,10 +1468,10 @@ InstallStatus InstallProductsHelper(
                               unpack_path.value(),
                               NULL)) {
     installer_state.WriteInstallerResult(
-        UNCOMPRESSION_FAILED,
+        UNPACKING_FAILED,
         IDS_INSTALL_UNCOMPRESSION_FAILED_BASE,
         NULL);
-    return UNCOMPRESSION_FAILED;
+    return UNPACKING_FAILED;
   }
 
   VLOG(1) << "unpacked to " << unpack_path.value();

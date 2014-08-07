@@ -8,8 +8,10 @@
 #include <map>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "components/domain_reliability/beacon.h"
+#include "components/domain_reliability/clear_mode.h"
 #include "components/domain_reliability/config.h"
 #include "components/domain_reliability/context.h"
 #include "components/domain_reliability/dispatcher.h"
@@ -17,30 +19,40 @@
 #include "components/domain_reliability/scheduler.h"
 #include "components/domain_reliability/uploader.h"
 #include "components/domain_reliability/util.h"
-#include "net/base/host_port_pair.h"
 #include "net/base/load_timing_info.h"
+#include "net/http/http_response_info.h"
 #include "net/url_request/url_request_status.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+class ThreadChecker;
+}  // namespace base
 
 namespace net {
 class URLRequest;
 class URLRequestContext;
 class URLRequestContextGetter;
-}
+}  // namespace net
 
 namespace domain_reliability {
 
 // The top-level object that measures requests and hands off the measurements
-// to the proper |DomainReliabilityContext|. Lives on the I/O thread, so the
-// constructor accepts a URLRequestContext directly instead of a
-// URLRequestContextGetter.
+// to the proper |DomainReliabilityContext|.
 class DOMAIN_RELIABILITY_EXPORT DomainReliabilityMonitor {
  public:
-  DomainReliabilityMonitor(net::URLRequestContext* url_request_context,
-                           const std::string& upload_reporter_string);
-  DomainReliabilityMonitor(net::URLRequestContext* url_request_context,
-                           const std::string& upload_reporter_string,
+  explicit DomainReliabilityMonitor(const std::string& upload_reporter_string);
+  DomainReliabilityMonitor(const std::string& upload_reporter_string,
                            scoped_ptr<MockableTime> time);
   ~DomainReliabilityMonitor();
+
+  // Initializes the Monitor.
+  void Init(
+      net::URLRequestContext* url_request_context,
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
+
+  // Same, but for unittests where the Getter is readily available.
+  void Init(
+      scoped_refptr<net::URLRequestContextGetter> url_request_context_getter);
 
   // Populates the monitor with contexts that were configured at compile time.
   void AddBakedInConfigs();
@@ -54,13 +66,24 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityMonitor {
   // actually started before it was terminated.)
   void OnCompleted(net::URLRequest* request, bool started);
 
+  // Called to remove browsing data. With CLEAR_BEACONS, leaves contexts in
+  // place but clears beacons (which betray browsing history); with
+  // CLEAR_CONTEXTS, removes all contexts (which can behave as cookies).
+  void ClearBrowsingData(DomainReliabilityClearMode mode);
+
   DomainReliabilityContext* AddContextForTesting(
       scoped_ptr<const DomainReliabilityConfig> config);
 
   size_t contexts_size_for_testing() const { return contexts_.size(); }
+  bool was_cleared_for_testing() const { return was_cleared_; }
+  DomainReliabilityClearMode cleared_mode_for_testing() const {
+    return cleared_mode_;
+  }
 
  private:
   friend class DomainReliabilityMonitorTest;
+  // Allow the Service to call |MakeWeakPtr|.
+  friend class DomainReliabilityServiceImpl;
 
   typedef std::map<std::string, DomainReliabilityContext*> ContextMap;
 
@@ -69,15 +92,13 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityMonitor {
     explicit RequestInfo(const net::URLRequest& request);
     ~RequestInfo();
 
-    bool DefinitelyReachedNetwork() const;
+    bool AccessedNetwork() const;
 
     GURL url;
     net::URLRequestStatus status;
-    int response_code;
-    net::HostPortPair socket_address;
-    net::LoadTimingInfo load_timing_info;
-    bool was_cached;
+    net::HttpResponseInfo response_info;
     int load_flags;
+    net::LoadTimingInfo load_timing_info;
     bool is_upload;
   };
 
@@ -85,15 +106,24 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityMonitor {
   // (The pointer is only valid until the Monitor is destroyed.)
   DomainReliabilityContext* AddContext(
       scoped_ptr<const DomainReliabilityConfig> config);
+  // Deletes all contexts from |contexts_| and clears the map.
+  void ClearContexts();
   void OnRequestLegComplete(const RequestInfo& info);
 
+  base::WeakPtr<DomainReliabilityMonitor> MakeWeakPtr();
+
+  scoped_ptr<base::ThreadChecker> thread_checker_;
   scoped_ptr<MockableTime> time_;
-  scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
   const std::string upload_reporter_string_;
   DomainReliabilityScheduler::Params scheduler_params_;
   DomainReliabilityDispatcher dispatcher_;
   scoped_ptr<DomainReliabilityUploader> uploader_;
   ContextMap contexts_;
+
+  bool was_cleared_;
+  DomainReliabilityClearMode cleared_mode_;
+
+  base::WeakPtrFactory<DomainReliabilityMonitor> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DomainReliabilityMonitor);
 };

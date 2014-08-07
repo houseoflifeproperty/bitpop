@@ -38,19 +38,14 @@
 #include "platform/weborigin/Referrer.h"
 #include "wtf/Forward.h"
 #include "wtf/Vector.h"
-
-typedef class _jobject* jobject;
-
-namespace v8 {
-class Context;
-template<class T> class Handle;
-}
+#include <v8.h>
 
 namespace blink {
 class WebCookieJar;
 class WebRTCPeerConnectionHandler;
 class WebServiceWorkerProvider;
 class WebServiceWorkerProviderClient;
+class WebSocketHandle;
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
 }
@@ -58,7 +53,6 @@ class WebApplicationCacheHostClient;
 namespace WebCore {
 
     class Color;
-    class Dictionary;
     class DOMWindowExtension;
     class DOMWrapperWorld;
     class DocumentLoader;
@@ -115,6 +109,7 @@ namespace WebCore {
         virtual void dispatchDidFinishDocumentLoad() = 0;
         virtual void dispatchDidFinishLoad() = 0;
         virtual void dispatchDidFirstVisuallyNonEmptyLayout() = 0;
+        virtual void dispatchDidChangeThemeColor() = 0;
 
         virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) = 0;
 
@@ -206,10 +201,11 @@ namespace WebCore {
         virtual void didChangeName(const String&) { }
 
         virtual void dispatchWillOpenSocketStream(SocketStreamHandle*) { }
+        virtual void dispatchWillOpenWebSocket(blink::WebSocketHandle*) { }
 
         virtual void dispatchWillStartUsingPeerConnectionHandler(blink::WebRTCPeerConnectionHandler*) { }
 
-        virtual void didRequestAutocomplete(HTMLFormElement*, const Dictionary&) = 0;
+        virtual void didRequestAutocomplete(HTMLFormElement*) = 0;
 
         virtual bool allowWebGL(bool enabledPerSettings) { return enabledPerSettings; }
         // Informs the embedder that a WebGL canvas inside this frame received a lost context

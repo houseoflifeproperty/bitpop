@@ -11,7 +11,6 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebIconURL.h"
 
 class GURL;
 
@@ -29,6 +28,7 @@ class WebGestureEvent;
 class WebLocalFrame;
 class WebMouseEvent;
 class WebNode;
+class WebString;
 class WebTouchEvent;
 class WebURL;
 struct WebURLError;
@@ -61,8 +61,7 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
                                       const blink::WebURLError& error) {}
   virtual void DidCommitProvisionalLoad(blink::WebLocalFrame* frame,
                                         bool is_new_navigation) {}
-  virtual void DidClearWindowObject(blink::WebLocalFrame* frame, int world_id) {
-  }
+  virtual void DidClearWindowObject(blink::WebLocalFrame* frame) {}
   virtual void DidCreateDocumentElement(blink::WebLocalFrame* frame) {}
   virtual void FrameCreated(blink::WebLocalFrame* parent,
                             blink::WebFrame* frame) {}
@@ -90,18 +89,6 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   virtual void DidHandleMouseEvent(const blink::WebMouseEvent& event) {}
   virtual void DidHandleTouchEvent(const blink::WebTouchEvent& event) {}
 
-  // Called when we receive a console message from WebKit for which we requested
-  // extra details (like the stack trace). |message| is the error message,
-  // |source| is the WebKit-reported source of the error (either external or
-  // internal), and |stack_trace| is the stack trace of the error in a
-  // human-readable format (each frame is formatted as
-  // "\n    at function_name (source:line_number:column_number)").
-  virtual void DetailedConsoleMessageAdded(const base::string16& message,
-                                           const base::string16& source,
-                                           const base::string16& stack_trace,
-                                           int32 line_number,
-                                           int32 severity_level) {}
-
   // These match incoming IPCs.
   virtual void Navigate(const GURL& url) {}
   virtual void ClosePage() {}
@@ -121,6 +108,12 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
  protected:
   explicit RenderViewObserver(RenderView* render_view);
   virtual ~RenderViewObserver();
+
+  // Sets |render_view_| to track.
+  // Removes itself of previous (if any) |render_view_| observer list and adds
+  // to the new |render_view|. Since it assumes that observer outlives
+  // render_view, OnDestruct should be overridden.
+  void Observe(RenderView* render_view);
 
  private:
   friend class RenderViewImpl;

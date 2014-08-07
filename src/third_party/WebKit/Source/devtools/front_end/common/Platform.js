@@ -26,6 +26,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/**
+ * @return {string}
+ */
 WebInspector.platform = function()
 {
     if (!WebInspector._platform)
@@ -33,6 +36,9 @@ WebInspector.platform = function()
     return WebInspector._platform;
 }
 
+/**
+ * @return {boolean}
+ */
 WebInspector.isMac = function()
 {
     if (typeof WebInspector._isMac === "undefined")
@@ -41,6 +47,9 @@ WebInspector.isMac = function()
     return WebInspector._isMac;
 }
 
+/**
+ * @return {boolean}
+ */
 WebInspector.isWin = function()
 {
     if (typeof WebInspector._isWin === "undefined")
@@ -57,6 +66,9 @@ WebInspector.PlatformFlavor = {
     MacLion: "mac-lion"
 }
 
+/**
+ * @return {string}
+ */
 WebInspector.platformFlavor = function()
 {
     function detectFlavor()
@@ -95,6 +107,9 @@ WebInspector.platformFlavor = function()
     return WebInspector._platformFlavor;
 }
 
+/**
+ * @return {string}
+ */
 WebInspector.port = function()
 {
     if (!WebInspector._port)
@@ -122,4 +137,25 @@ WebInspector.fontFamily = function()
         break;
     }
     return WebInspector._fontFamily;
+}
+
+/**
+ * @return {string}
+ */
+WebInspector.monospaceFontFamily = function()
+{
+    if (WebInspector._monospaceFontFamily)
+        return WebInspector._monospaceFontFamily;
+    switch (WebInspector.platform()) {
+    case "linux":
+        WebInspector._monospaceFontFamily = "dejavu sans mono, monospace";
+        break;
+    case "mac":
+        WebInspector._monospaceFontFamily = "Menlo, monospace";
+        break;
+    case "windows":
+        WebInspector._monospaceFontFamily = "Consolas, monospace";
+        break;
+    }
+    return WebInspector._monospaceFontFamily;
 }

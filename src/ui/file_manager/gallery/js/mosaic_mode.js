@@ -326,7 +326,7 @@ Mosaic.prototype.initTiles_ = function(tiles, opt_callback) {
  */
 Mosaic.prototype.initTile_ = function(tile, callback) {
   var onImageMeasured = callback;
-  this.metadataCache_.get(tile.getItem().getEntry(), Gallery.METADATA_TYPE,
+  this.metadataCache_.getOne(tile.getItem().getEntry(), Gallery.METADATA_TYPE,
       function(metadata) {
         tile.init(metadata, onImageMeasured);
       });
@@ -466,7 +466,7 @@ Mosaic.prototype.onSplice_ = function(event) {
   if (event.removed.length) {
     for (var t = 0; t !== event.removed.length; t++) {
       // If the layout for the tile has not done yet, the parent is null.
-      // And the layout will not be done after onSplice_ becuase it is removed
+      // And the layout will not be done after onSplice_ because it is removed
       // from this.tiles_.
       if (this.tiles_[index + t].parentNode)
         this.removeChild(this.tiles_[index + t]);
@@ -1707,7 +1707,7 @@ Mosaic.Tile.SMALL_IMAGE_SIZE = 160;
 /**
  * @return {Gallery.Item} The Gallery item.
  */
-Mosaic.Tile.prototype.getItem = function() { return this.item_ };
+Mosaic.Tile.prototype.getItem = function() { return this.item_; };
 
 /**
  * @return {number} Maximum content height that this tile can have.
@@ -1719,7 +1719,7 @@ Mosaic.Tile.prototype.getMaxContentHeight = function() {
 /**
  * @return {number} The aspect ratio of the tile image.
  */
-Mosaic.Tile.prototype.getAspectRatio = function() { return this.aspectRatio_ };
+Mosaic.Tile.prototype.getAspectRatio = function() { return this.aspectRatio_; };
 
 /**
  * @return {boolean} True if the tile is initialized.

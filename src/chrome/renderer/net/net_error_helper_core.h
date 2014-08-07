@@ -112,7 +112,10 @@ class NetErrorHelperCore {
     GURL search_url;
   };
 
-  explicit NetErrorHelperCore(Delegate* delegate);
+  NetErrorHelperCore(Delegate* delegate,
+                     bool auto_reload_enabled,
+                     bool auto_reload_visible_only,
+                     bool is_visible);
   ~NetErrorHelperCore();
 
   // Examines |frame| and |error| to see if this is an error worthy of a DNS
@@ -130,9 +133,11 @@ class NetErrorHelperCore {
 
   // These methods handle tracking the actual state of the page.
   void OnStartLoad(FrameType frame_type, PageType page_type);
-  void OnCommitLoad(FrameType frame_type);
+  void OnCommitLoad(FrameType frame_type, const GURL& url);
   void OnFinishLoad(FrameType frame_type);
   void OnStop();
+  void OnWasShown();
+  void OnWasHidden();
 
   void CancelPendingFetches();
 
@@ -163,10 +168,6 @@ class NetErrorHelperCore {
   //
   // TODO(rdsmith): prevent the reload storm.
   void NetworkStateChanged(bool online);
-
-  void set_auto_reload_enabled(bool auto_reload_enabled) {
-    auto_reload_enabled_ = auto_reload_enabled;
-  }
 
   int auto_reload_count() const { return auto_reload_count_; }
 
@@ -207,6 +208,7 @@ class NetErrorHelperCore {
   bool MaybeStartAutoReloadTimer();
   void StartAutoReloadTimer();
   void AutoReloadTimerFired();
+  void PauseAutoReloadTimer();
 
   static bool IsReloadableError(const ErrorPageInfo& info);
 
@@ -225,14 +227,35 @@ class NetErrorHelperCore {
 
   NavigationCorrectionParams navigation_correction_params_;
 
-  bool auto_reload_enabled_;
+  // True if auto-reload is enabled at all.
+  const bool auto_reload_enabled_;
+
+  // True if auto-reload should only run when the observed frame is visible.
+  const bool auto_reload_visible_only_;
+
+  // Timer used to wait for auto-reload attempts.
   scoped_ptr<base::Timer> auto_reload_timer_;
+
+  // True if the auto-reload timer would be running but is waiting for an
+  // offline->online network transition.
+  bool auto_reload_paused_;
+
+  // True if there is an uncommitted-but-started load, error page or not. This
+  // is used to inhibit starting auto-reload when an error page finishes, in
+  // case this happens:
+  //   Error page starts
+  //   Error page commits
+  //   Non-error page starts
+  //   Error page finishes
+  bool uncommitted_load_started_;
 
   // Is the browser online?
   bool online_;
 
+  // Is the RenderFrame this object is observing visible?
+  bool visible_;
+
   int auto_reload_count_;
-  bool can_auto_reload_page_;
 
   // This value is set only when a navigation has been initiated from
   // the error page.  It is used to detect when such navigations result

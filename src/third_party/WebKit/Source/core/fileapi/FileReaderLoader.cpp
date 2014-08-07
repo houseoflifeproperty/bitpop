@@ -32,7 +32,7 @@
 
 #include "core/fileapi/FileReaderLoader.h"
 
-#include "FetchInitiatorTypeNames.h"
+#include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
@@ -49,8 +49,6 @@
 #include "wtf/Vector.h"
 #include "wtf/text/Base64.h"
 #include "wtf/text/StringBuilder.h"
-
-using namespace std;
 
 namespace WebCore {
 
@@ -105,19 +103,20 @@ void FileReaderLoader::startInternal(ExecutionContext& executionContext, const S
         request.setHTTPHeaderField("Range", AtomicString(String::format("bytes=%d-%d", m_rangeStart, m_rangeEnd)));
 
     ThreadableLoaderOptions options;
-    options.sniffContent = DoNotSniffContent;
     options.preflightPolicy = ConsiderPreflight;
-    options.allowCredentials = AllowStoredCredentials;
     options.crossOriginRequestPolicy = DenyCrossOriginRequests;
     // FIXME: Is there a directive to which this load should be subject?
     options.contentSecurityPolicyEnforcement = DoNotEnforceContentSecurityPolicy;
     // Use special initiator to hide the request from the inspector.
     options.initiator = FetchInitiatorTypeNames::internal;
 
+    ResourceLoaderOptions resourceLoaderOptions;
+    resourceLoaderOptions.allowCredentials = AllowStoredCredentials;
+
     if (m_client)
-        m_loader = ThreadableLoader::create(executionContext, this, request, options);
+        m_loader = ThreadableLoader::create(executionContext, this, request, options, resourceLoaderOptions);
     else
-        ThreadableLoader::loadResourceSynchronously(executionContext, request, *this, options);
+        ThreadableLoader::loadResourceSynchronously(executionContext, request, *this, options, resourceLoaderOptions);
 }
 
 void FileReaderLoader::start(ExecutionContext* executionContext, PassRefPtr<BlobDataHandle> blobData)
@@ -198,7 +197,7 @@ void FileReaderLoader::didReceiveResponse(unsigned long, const ResourceResponse&
         // Check that we can cast to unsigned since we have to do
         // so to call ArrayBuffer's create function.
         // FIXME: Support reading more than the current size limit of ArrayBuffer.
-        if (initialBufferLength > numeric_limits<unsigned>::max()) {
+        if (initialBufferLength > std::numeric_limits<unsigned>::max()) {
             failed(FileError::NOT_READABLE_ERR);
             return;
         }

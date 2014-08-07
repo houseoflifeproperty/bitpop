@@ -19,7 +19,6 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "base/memory/scoped_handle.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
@@ -622,6 +621,10 @@ void DXVAVideoDecodeAccelerator::Destroy() {
   delete this;
 }
 
+bool DXVAVideoDecodeAccelerator::CanDecodeOnIOThread() {
+  return false;
+}
+
 bool DXVAVideoDecodeAccelerator::InitDecoder(media::VideoCodecProfile profile) {
   if (profile < media::H264PROFILE_MIN || profile > media::H264PROFILE_MAX)
     return false;
@@ -1070,7 +1073,7 @@ void DXVAVideoDecodeAccelerator::FlushInternal() {
 void DXVAVideoDecodeAccelerator::DecodeInternal(
     const base::win::ScopedComPtr<IMFSample>& sample) {
   DCHECK(CalledOnValidThread());
-  
+
   if (state_ == kUninitialized)
     return;
 

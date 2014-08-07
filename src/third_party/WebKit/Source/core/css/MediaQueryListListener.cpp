@@ -20,13 +20,14 @@
 #include "config.h"
 #include "core/css/MediaQueryListListener.h"
 
-#include "V8MediaQueryList.h"
+#include "bindings/core/v8/V8MediaQueryList.h"
 #include "bindings/v8/V8Callback.h"
+#include <v8.h>
 
 namespace WebCore {
 
-MediaQueryListListener::MediaQueryListListener(const ScriptValue& function)
-    : m_scriptState(ScriptState::current(function.isolate()))
+MediaQueryListListener::MediaQueryListListener(ScriptState* scriptState, const ScriptValue& function)
+    : m_scriptState(scriptState)
     , m_function(function)
 {
     ASSERT(m_function.isFunction());
@@ -38,7 +39,7 @@ void MediaQueryListListener::queryChanged(MediaQueryList* query)
         return;
     ScriptState::Scope scope(m_scriptState.get());
     v8::Handle<v8::Value> args[] = { toV8(query, m_scriptState->context()->Global(), m_scriptState->isolate()) };
-    invokeCallback(v8::Handle<v8::Function>::Cast(m_function.v8Value()), WTF_ARRAY_LENGTH(args), args, m_scriptState->executionContext(), m_scriptState->isolate());
+    invokeCallback(m_scriptState.get(), v8::Handle<v8::Function>::Cast(m_function.v8Value()), WTF_ARRAY_LENGTH(args), args);
 }
 
 }

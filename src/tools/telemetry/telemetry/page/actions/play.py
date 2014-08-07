@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -21,12 +21,12 @@ class PlayAction(media_action.MediaAction):
   def __init__(self, attributes=None):
     super(PlayAction, self).__init__(attributes)
 
-  def WillRunAction(self, page, tab):
+  def WillRunAction(self, tab):
     """Load the media metrics JS code prior to running the action."""
-    super(PlayAction, self).WillRunAction(page, tab)
+    super(PlayAction, self).WillRunAction(tab)
     self.LoadJS(tab, 'play.js')
 
-  def RunAction(self, page, tab):
+  def RunAction(self, tab):
     try:
       selector = self.selector if hasattr(self, 'selector') else ''
       tab.ExecuteJavaScript('window.__playMedia("%s");' % selector)

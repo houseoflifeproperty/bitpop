@@ -90,6 +90,7 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_justifySelf(RenderStyle::initialJustifySelf())
     , m_justifySelfOverflowAlignment(RenderStyle::initialJustifySelfOverflowAlignment())
     , m_scrollBehavior(RenderStyle::initialScrollBehavior())
+    , m_requiresAcceleratedCompositingForExternalReasons(false)
 {
     m_maskBoxImage.setMaskDefaults();
 }
@@ -117,8 +118,8 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_counterDirectives(o.m_counterDirectives ? clone(*o.m_counterDirectives) : nullptr)
     , m_boxShadow(o.m_boxShadow)
     , m_boxReflect(o.m_boxReflect)
-    , m_animations(o.m_animations ? adoptPtrWillBeNoop(new CSSAnimationDataList(*o.m_animations)) : nullptr)
-    , m_transitions(o.m_transitions ? adoptPtrWillBeNoop(new CSSAnimationDataList(*o.m_transitions)) : nullptr)
+    , m_animations(o.m_animations ? CSSAnimationData::create(*o.m_animations) : nullptr)
+    , m_transitions(o.m_transitions ? CSSTransitionData::create(*o.m_transitions) : nullptr)
     , m_mask(o.m_mask)
     , m_maskBoxImage(o.m_maskBoxImage)
     , m_pageSize(o.m_pageSize)
@@ -169,6 +170,7 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_justifySelf(o.m_justifySelf)
     , m_justifySelfOverflowAlignment(o.m_justifySelfOverflowAlignment)
     , m_scrollBehavior(o.m_scrollBehavior)
+    , m_requiresAcceleratedCompositingForExternalReasons(o.m_requiresAcceleratedCompositingForExternalReasons)
 {
 }
 
@@ -251,7 +253,8 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_isolation == o.m_isolation
         && m_justifySelf == o.m_justifySelf
         && m_justifySelfOverflowAlignment == o.m_justifySelfOverflowAlignment
-        && m_scrollBehavior == o.m_scrollBehavior;
+        && m_scrollBehavior == o.m_scrollBehavior
+        && m_requiresAcceleratedCompositingForExternalReasons == o.m_requiresAcceleratedCompositingForExternalReasons;
 }
 
 bool StyleRareNonInheritedData::contentDataEquivalent(const StyleRareNonInheritedData& o) const
@@ -284,12 +287,20 @@ bool StyleRareNonInheritedData::reflectionDataEquivalent(const StyleRareNonInher
 
 bool StyleRareNonInheritedData::animationDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    return dataEquivalent(m_animations, o.m_animations);
+    if (!m_animations && !o.m_animations)
+        return true;
+    if (!m_animations || !o.m_animations)
+        return false;
+    return m_animations->animationsMatchForStyleRecalc(*o.m_animations);
 }
 
 bool StyleRareNonInheritedData::transitionDataEquivalent(const StyleRareNonInheritedData& o) const
 {
-    return dataEquivalent(m_transitions, o.m_transitions);
+    if (!m_transitions && !o.m_transitions)
+        return true;
+    if (!m_transitions || !o.m_transitions)
+        return false;
+    return m_transitions->transitionsMatchForStyleRecalc(*o.m_transitions);
 }
 
 bool StyleRareNonInheritedData::hasFilters() const

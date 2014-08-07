@@ -21,7 +21,7 @@
 #ifndef SVGScriptElement_h
 #define SVGScriptElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/dom/ScriptLoaderClient.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedString.h"
@@ -37,7 +37,7 @@ class SVGScriptElement FINAL
     , public SVGURIReference
     , public ScriptLoaderClient {
 public:
-    static PassRefPtr<SVGScriptElement> create(Document&, bool wasInsertedByParser);
+    static PassRefPtrWillBeRawPtr<SVGScriptElement> create(Document&, bool wasInsertedByParser);
 
     ScriptLoader* loader() const { return m_loader.get(); }
 
@@ -73,7 +73,7 @@ private:
 
     virtual void dispatchLoadEvent() OVERRIDE;
 
-    virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren() OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Element> cloneElementWithoutAttributesAndChildren() OVERRIDE;
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
 
     virtual Timer<SVGElement>* svgLoadEventTimer() OVERRIDE { return &m_svgLoadEventTimer; }

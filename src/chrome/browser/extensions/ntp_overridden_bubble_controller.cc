@@ -8,6 +8,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "grit/generated_resources.h"
@@ -35,7 +36,8 @@ class NtpOverriddenBubbleDelegate
           user_action) OVERRIDE;
   virtual void PerformAction(const extensions::ExtensionIdList& list) OVERRIDE;
   virtual base::string16 GetTitle() const OVERRIDE;
-  virtual base::string16 GetMessageBody() const OVERRIDE;
+  virtual base::string16 GetMessageBody(
+      bool anchored_to_browser_action) const OVERRIDE;
   virtual base::string16 GetOverflowText(
       const base::string16& overflow_count) const OVERRIDE;
   virtual base::string16 GetLearnMoreLabel() const OVERRIDE;
@@ -112,7 +114,8 @@ base::string16 NtpOverriddenBubbleDelegate::GetTitle() const {
       IDS_EXTENSIONS_NTP_CONTROLLED_TITLE_HOME_PAGE_BUBBLE);
 }
 
-base::string16 NtpOverriddenBubbleDelegate::GetMessageBody() const {
+base::string16 NtpOverriddenBubbleDelegate::GetMessageBody(
+    bool anchored_to_browser_action) const {
   base::string16 body =
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_NTP_CONTROLLED_FIRST_LINE);
   body += l10n_util::GetStringUTF16(
@@ -153,14 +156,14 @@ void NtpOverriddenBubbleDelegate::RestrictToSingleExtension(
 }
 
 void NtpOverriddenBubbleDelegate::LogExtensionCount(size_t count) {
-  UMA_HISTOGRAM_COUNTS_100("NtpOverriddenBubble.ExtensionCount", count);
 }
 
 void NtpOverriddenBubbleDelegate::LogAction(
     ExtensionMessageBubbleController::BubbleAction action) {
-  UMA_HISTOGRAM_ENUMERATION("NtpOverriddenBubble.UserSelection",
-                            action,
-                            ExtensionMessageBubbleController::ACTION_BOUNDARY);
+  UMA_HISTOGRAM_ENUMERATION(
+      "ExtensionOverrideBubble.NtpOverriddenUserSelection",
+      action,
+      ExtensionMessageBubbleController::ACTION_BOUNDARY);
 }
 
 }  // namespace

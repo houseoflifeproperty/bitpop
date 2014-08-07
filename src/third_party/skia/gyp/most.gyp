@@ -21,7 +21,6 @@
         'tests.gyp:tests',
         'tools.gyp:tools',
         'pathops_unittest.gyp:*',
-        'skpskgr_test.gyp:*',
 #       'pdfviewer.gyp:pdfviewer',
         'dm.gyp:dm',
       ],
@@ -32,11 +31,13 @@
         ['skia_os == "ios"', {
           'dependencies!': [ 'SampleApp.gyp:SampleApp' ],
         }],
+        ['skia_os == "mac" or skia_os == "linux"', {
+          'dependencies': [ 'nanomsg.gyp:*' ],
+        }],
         [ 'skia_skip_gui',
           {
             'dependencies!': [
               'SampleApp.gyp:SampleApp',
-              'skpskgr_test.gyp:*',
             ]
           }
         ]

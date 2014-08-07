@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/at_exit.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
@@ -12,14 +13,17 @@
 #include "mojo/apps/js/test/js_to_cpp.mojom.h"
 #include "mojo/common/common_type_converters.h"
 #include "mojo/common/test/test_utils.h"
-#include "mojo/public/cpp/bindings/allocation_scope.h"
-#include "mojo/public/cpp/environment/environment.h"
 #include "mojo/public/cpp/system/core.h"
 #include "mojo/public/cpp/system/macros.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
 namespace js {
+
+// Global value updated by some checks to prevent compilers from optimizing
+// reads out of existence.
+uint32 g_waste_accumulator = 0;
+
 namespace {
 
 // Negative numbers with different values in each byte, the last of
@@ -60,52 +64,140 @@ bool IsRunningOnIsolatedBot() {
   return false;
 }
 
-// NOTE: Callers will need to have established an AllocationScope, or you're
-// gonna have a bad time.
-js_to_cpp::EchoArgs BuildSampleEchoArgs() {
-    js_to_cpp::EchoArgs::Builder builder;
-    builder.set_si64(kExpectedInt64Value);
-    builder.set_si32(kExpectedInt32Value);
-    builder.set_si16(kExpectedInt16Value);
-    builder.set_si8(kExpectedInt8Value);
-    builder.set_ui64(kExpectedUInt64Value);
-    builder.set_ui32(kExpectedUInt32Value);
-    builder.set_ui16(kExpectedUInt16Value);
-    builder.set_ui8(kExpectedUInt8Value);
-    builder.set_float_val(kExpectedFloatVal);
-    builder.set_float_inf(kExpectedFloatInf);
-    builder.set_float_nan(kExpectedFloatNan);
-    builder.set_double_val(kExpectedDoubleVal);
-    builder.set_double_inf(kExpectedDoubleInf);
-    builder.set_double_nan(kExpectedDoubleNan);
-    builder.set_name("coming");
-    mojo::Array<mojo::String>::Builder string_array(3);
-    string_array[0] = "one";
-    string_array[1] = "two";
-    string_array[2] = "three";
-    builder.set_string_array(string_array.Finish());
-    return builder.Finish();
+void CheckDataPipe(MojoHandle data_pipe_handle) {
+  unsigned char buffer[100];
+  uint32_t buffer_size = static_cast<uint32_t>(sizeof(buffer));
+  MojoResult result = MojoReadData(
+      data_pipe_handle, buffer, &buffer_size, MOJO_READ_DATA_FLAG_NONE);
+  EXPECT_EQ(MOJO_RESULT_OK, result);
+  EXPECT_EQ(64u, buffer_size);
+  for (int i = 0; i < 64; ++i) {
+    EXPECT_EQ(i, buffer[i]);
+  }
+}
+
+void CheckMessagePipe(MojoHandle message_pipe_handle) {
+  unsigned char buffer[100];
+  uint32_t buffer_size = static_cast<uint32_t>(sizeof(buffer));
+  MojoResult result = MojoReadMessage(
+      message_pipe_handle, buffer, &buffer_size, 0, 0, 0);
+  EXPECT_EQ(MOJO_RESULT_OK, result);
+  EXPECT_EQ(64u, buffer_size);
+  for (int i = 0; i < 64; ++i) {
+    EXPECT_EQ(255 - i, buffer[i]);
+  }
+}
+
+js_to_cpp::EchoArgsPtr BuildSampleEchoArgs() {
+  js_to_cpp::EchoArgsPtr args(js_to_cpp::EchoArgs::New());
+  args->si64 = kExpectedInt64Value;
+  args->si32 = kExpectedInt32Value;
+  args->si16 = kExpectedInt16Value;
+  args->si8 = kExpectedInt8Value;
+  args->ui64 = kExpectedUInt64Value;
+  args->ui32 = kExpectedUInt32Value;
+  args->ui16 = kExpectedUInt16Value;
+  args->ui8 = kExpectedUInt8Value;
+  args->float_val = kExpectedFloatVal;
+  args->float_inf = kExpectedFloatInf;
+  args->float_nan = kExpectedFloatNan;
+  args->double_val = kExpectedDoubleVal;
+  args->double_inf = kExpectedDoubleInf;
+  args->double_nan = kExpectedDoubleNan;
+  args->name = "coming";
+  Array<String> string_array(3);
+  string_array[0] = "one";
+  string_array[1] = "two";
+  string_array[2] = "three";
+  args->string_array = string_array.Pass();
+  return args.Pass();
 }
 
 void CheckSampleEchoArgs(const js_to_cpp::EchoArgs& arg) {
-    EXPECT_EQ(kExpectedInt64Value, arg.si64());
-    EXPECT_EQ(kExpectedInt32Value, arg.si32());
-    EXPECT_EQ(kExpectedInt16Value, arg.si16());
-    EXPECT_EQ(kExpectedInt8Value, arg.si8());
-    EXPECT_EQ(kExpectedUInt64Value, arg.ui64());
-    EXPECT_EQ(kExpectedUInt32Value, arg.ui32());
-    EXPECT_EQ(kExpectedUInt16Value, arg.ui16());
-    EXPECT_EQ(kExpectedUInt8Value, arg.ui8());
-    EXPECT_EQ(kExpectedFloatVal, arg.float_val());
-    EXPECT_EQ(kExpectedFloatInf, arg.float_inf());
-    EXPECT_NAN(arg.float_nan());
-    EXPECT_EQ(kExpectedDoubleVal, arg.double_val());
-    EXPECT_EQ(kExpectedDoubleInf, arg.double_inf());
-    EXPECT_NAN(arg.double_nan());
-    EXPECT_EQ(std::string("coming"), arg.name().To<std::string>());
-    EXPECT_EQ(std::string("one"), arg.string_array()[0].To<std::string>());
-    EXPECT_EQ(std::string("two"), arg.string_array()[1].To<std::string>());
-    EXPECT_EQ(std::string("three"), arg.string_array()[2].To<std::string>());
+  EXPECT_EQ(kExpectedInt64Value, arg.si64);
+  EXPECT_EQ(kExpectedInt32Value, arg.si32);
+  EXPECT_EQ(kExpectedInt16Value, arg.si16);
+  EXPECT_EQ(kExpectedInt8Value, arg.si8);
+  EXPECT_EQ(kExpectedUInt64Value, arg.ui64);
+  EXPECT_EQ(kExpectedUInt32Value, arg.ui32);
+  EXPECT_EQ(kExpectedUInt16Value, arg.ui16);
+  EXPECT_EQ(kExpectedUInt8Value, arg.ui8);
+  EXPECT_EQ(kExpectedFloatVal, arg.float_val);
+  EXPECT_EQ(kExpectedFloatInf, arg.float_inf);
+  EXPECT_NAN(arg.float_nan);
+  EXPECT_EQ(kExpectedDoubleVal, arg.double_val);
+  EXPECT_EQ(kExpectedDoubleInf, arg.double_inf);
+  EXPECT_NAN(arg.double_nan);
+  EXPECT_EQ(std::string("coming"), arg.name.get());
+  EXPECT_EQ(std::string("one"), arg.string_array[0].get());
+  EXPECT_EQ(std::string("two"), arg.string_array[1].get());
+  EXPECT_EQ(std::string("three"), arg.string_array[2].get());
+  CheckDataPipe(arg.data_handle.get().value());
+  CheckMessagePipe(arg.message_handle.get().value());
+}
+
+void CheckSampleEchoArgsList(const js_to_cpp::EchoArgsListPtr& list) {
+  if (list.is_null())
+    return;
+  CheckSampleEchoArgs(*list->item);
+  CheckSampleEchoArgsList(list->next);
+}
+
+// More forgiving checks are needed in the face of potentially corrupt
+// messages. The values don't matter so long as all accesses are within
+// bounds.
+void CheckCorruptedString(const String& arg) {
+  if (arg.is_null())
+    return;
+  for (size_t i = 0; i < arg.size(); ++i)
+    g_waste_accumulator += arg[i];
+}
+
+void CheckCorruptedStringArray(const Array<String>& string_array) {
+  if (string_array.is_null())
+    return;
+  for (size_t i = 0; i < string_array.size(); ++i)
+    CheckCorruptedString(string_array[i]);
+}
+
+void CheckCorruptedDataPipe(MojoHandle data_pipe_handle) {
+  unsigned char buffer[100];
+  uint32_t buffer_size = static_cast<uint32_t>(sizeof(buffer));
+  MojoResult result = MojoReadData(
+      data_pipe_handle, buffer, &buffer_size, MOJO_READ_DATA_FLAG_NONE);
+  if (result != MOJO_RESULT_OK)
+    return;
+  for (uint32_t i = 0; i < buffer_size; ++i)
+    g_waste_accumulator += buffer[i];
+}
+
+void CheckCorruptedMessagePipe(MojoHandle message_pipe_handle) {
+  unsigned char buffer[100];
+  uint32_t buffer_size = static_cast<uint32_t>(sizeof(buffer));
+  MojoResult result = MojoReadMessage(
+      message_pipe_handle, buffer, &buffer_size, 0, 0, 0);
+  if (result != MOJO_RESULT_OK)
+    return;
+  for (uint32_t i = 0; i < buffer_size; ++i)
+    g_waste_accumulator += buffer[i];
+}
+
+void CheckCorruptedEchoArgs(const js_to_cpp::EchoArgsPtr& arg) {
+  if (arg.is_null())
+    return;
+  CheckCorruptedString(arg->name);
+  CheckCorruptedStringArray(arg->string_array);
+  if (arg->data_handle.is_valid())
+    CheckCorruptedDataPipe(arg->data_handle.get().value());
+  if (arg->message_handle.is_valid())
+    CheckCorruptedMessagePipe(arg->message_handle.get().value());
+}
+
+void CheckCorruptedEchoArgsList(const js_to_cpp::EchoArgsListPtr& list) {
+  if (list.is_null())
+    return;
+  CheckCorruptedEchoArgs(list->item);
+  CheckCorruptedEchoArgsList(list->next);
 }
 
 // Base Provider implementation class. It's expected that tests subclass and
@@ -113,7 +205,10 @@ void CheckSampleEchoArgs(const js_to_cpp::EchoArgs& arg) {
 // run_loop().
 class CppSideConnection : public js_to_cpp::CppSide {
  public:
-  CppSideConnection() : run_loop_(NULL), js_side_(NULL) {
+  CppSideConnection() :
+      run_loop_(NULL),
+      js_side_(NULL),
+      mishandled_messages_(0) {
   }
   virtual ~CppSideConnection() {}
 
@@ -133,31 +228,35 @@ class CppSideConnection : public js_to_cpp::CppSide {
   }
 
   virtual void PingResponse() OVERRIDE {
-    NOTREACHED();
+    mishandled_messages_ += 1;
   }
 
-  virtual void EchoResponse(const js_to_cpp::EchoArgs& arg1,
-                            const js_to_cpp::EchoArgs& arg2) OVERRIDE {
-    NOTREACHED();
+  virtual void EchoResponse(js_to_cpp::EchoArgsListPtr list) OVERRIDE {
+    mishandled_messages_ += 1;
   }
 
-  virtual void BitFlipResponse(const js_to_cpp::EchoArgs& arg1) OVERRIDE {
-    NOTREACHED();
+  virtual void BitFlipResponse(js_to_cpp::EchoArgsListPtr list) OVERRIDE {
+    mishandled_messages_ += 1;
+  }
+
+  virtual void BackPointerResponse(
+      js_to_cpp::EchoArgsListPtr list) OVERRIDE {
+    mishandled_messages_ += 1;
   }
 
  protected:
   base::RunLoop* run_loop_;
   js_to_cpp::JsSide* js_side_;
+  int mishandled_messages_;
 
  private:
-  Environment environment;
   DISALLOW_COPY_AND_ASSIGN(CppSideConnection);
 };
 
 // Trivial test to verify a message sent from JS is received.
 class PingCppSideConnection : public CppSideConnection {
  public:
-  explicit PingCppSideConnection() : got_message_(false) {}
+  PingCppSideConnection() : got_message_(false) {}
   virtual ~PingCppSideConnection() {}
 
   // js_to_cpp::CppSide:
@@ -171,7 +270,7 @@ class PingCppSideConnection : public CppSideConnection {
   }
 
   bool DidSucceed() {
-    return got_message_;
+    return got_message_ && !mishandled_messages_;
   }
 
  private:
@@ -182,7 +281,7 @@ class PingCppSideConnection : public CppSideConnection {
 // Test that parameters are passed with correct values.
 class EchoCppSideConnection : public CppSideConnection {
  public:
-  explicit EchoCppSideConnection() :
+  EchoCppSideConnection() :
       message_count_(0),
       termination_seen_(false) {
   }
@@ -190,19 +289,18 @@ class EchoCppSideConnection : public CppSideConnection {
 
   // js_to_cpp::CppSide:
   virtual void StartTest() OVERRIDE {
-    AllocationScope scope;
     js_side_->Echo(kExpectedMessageCount, BuildSampleEchoArgs());
   }
 
-  virtual void EchoResponse(const js_to_cpp::EchoArgs& arg1,
-                            const js_to_cpp::EchoArgs& arg2) OVERRIDE {
+  virtual void EchoResponse(js_to_cpp::EchoArgsListPtr list) OVERRIDE {
+    const js_to_cpp::EchoArgsPtr& special_arg = list->item;
     message_count_ += 1;
-    CheckSampleEchoArgs(arg1);
-    EXPECT_EQ(-1, arg2.si64());
-    EXPECT_EQ(-1, arg2.si32());
-    EXPECT_EQ(-1, arg2.si16());
-    EXPECT_EQ(-1, arg2.si8());
-    EXPECT_EQ(std::string("going"), arg2.name().To<std::string>());
+    EXPECT_EQ(-1, special_arg->si64);
+    EXPECT_EQ(-1, special_arg->si32);
+    EXPECT_EQ(-1, special_arg->si16);
+    EXPECT_EQ(-1, special_arg->si8);
+    EXPECT_EQ(std::string("going"), special_arg->name.To<std::string>());
+    CheckSampleEchoArgsList(list->next);
   }
 
   virtual void TestFinished() OVERRIDE {
@@ -211,11 +309,13 @@ class EchoCppSideConnection : public CppSideConnection {
   }
 
   bool DidSucceed() {
-    return termination_seen_ && message_count_ == kExpectedMessageCount;
+    return termination_seen_ &&
+        !mishandled_messages_ &&
+        message_count_ == kExpectedMessageCount;
   }
 
  private:
-  static const int kExpectedMessageCount = 100;
+  static const int kExpectedMessageCount = 10;
   int message_count_;
   bool termination_seen_;
   DISALLOW_COPY_AND_ASSIGN(EchoCppSideConnection);
@@ -224,17 +324,16 @@ class EchoCppSideConnection : public CppSideConnection {
 // Test that corrupted messages don't wreak havoc.
 class BitFlipCppSideConnection : public CppSideConnection {
  public:
-  explicit BitFlipCppSideConnection() : termination_seen_(false) {}
+  BitFlipCppSideConnection() : termination_seen_(false) {}
   virtual ~BitFlipCppSideConnection() {}
 
   // js_to_cpp::CppSide:
   virtual void StartTest() OVERRIDE {
-    AllocationScope scope;
     js_side_->BitFlip(BuildSampleEchoArgs());
   }
 
-  virtual void BitFlipResponse(const js_to_cpp::EchoArgs& arg1) OVERRIDE {
-    // TODO(tsepez): How to check, may be corrupt in various ways.
+  virtual void BitFlipResponse(js_to_cpp::EchoArgsListPtr list) OVERRIDE {
+    CheckCorruptedEchoArgsList(list);
   }
 
   virtual void TestFinished() OVERRIDE {
@@ -251,6 +350,36 @@ class BitFlipCppSideConnection : public CppSideConnection {
   DISALLOW_COPY_AND_ASSIGN(BitFlipCppSideConnection);
 };
 
+// Test that severely random messages don't wreak havoc.
+class BackPointerCppSideConnection : public CppSideConnection {
+ public:
+  BackPointerCppSideConnection() : termination_seen_(false) {}
+  virtual ~BackPointerCppSideConnection() {}
+
+  // js_to_cpp::CppSide:
+  virtual void StartTest() OVERRIDE {
+    js_side_->BackPointer(BuildSampleEchoArgs());
+  }
+
+  virtual void BackPointerResponse(
+      js_to_cpp::EchoArgsListPtr list) OVERRIDE {
+    CheckCorruptedEchoArgsList(list);
+  }
+
+  virtual void TestFinished() OVERRIDE {
+    termination_seen_ = true;
+    run_loop()->Quit();
+  }
+
+  bool DidSucceed() {
+    return termination_seen_;
+  }
+
+ private:
+  bool termination_seen_;
+  DISALLOW_COPY_AND_ASSIGN(BackPointerCppSideConnection);
+};
+
 }  // namespace
 
 class JsToCppTest : public testing::Test {
@@ -263,10 +392,9 @@ class JsToCppTest : public testing::Test {
     MessagePipe pipe;
     js_to_cpp::JsSidePtr js_side =
         MakeProxy<js_to_cpp::JsSide>(pipe.handle0.Pass());
-    js_side->SetClient(cpp_side);
+    js_side.set_client(cpp_side);
 
-    js_side.internal_state()->router()->
-        set_enforce_errors_from_incoming_receiver(false);
+    js_side.internal_state()->router()->EnableTestingMode();
 
     cpp_side->set_js_side(js_side.get());
 
@@ -279,6 +407,7 @@ class JsToCppTest : public testing::Test {
   }
 
  private:
+  base::ShadowingAtExitManager at_exit_;
   base::MessageLoop loop;
   base::RunLoop run_loop_;
 
@@ -303,12 +432,20 @@ TEST_F(JsToCppTest, Echo) {
   EXPECT_TRUE(cpp_side_connection.DidSucceed());
 }
 
-// TODO(tsepez): Disabled due to http://crbug.com/366797.
-TEST_F(JsToCppTest, DISABLED_BitFlip) {
+TEST_F(JsToCppTest, BitFlip) {
   if (IsRunningOnIsolatedBot())
     return;
 
   BitFlipCppSideConnection cpp_side_connection;
+  RunTest("mojo/apps/js/test/js_to_cpp_unittest", &cpp_side_connection);
+  EXPECT_TRUE(cpp_side_connection.DidSucceed());
+}
+
+TEST_F(JsToCppTest, BackPointer) {
+  if (IsRunningOnIsolatedBot())
+    return;
+
+  BackPointerCppSideConnection cpp_side_connection;
   RunTest("mojo/apps/js/test/js_to_cpp_unittest", &cpp_side_connection);
   EXPECT_TRUE(cpp_side_connection.DidSucceed());
 }

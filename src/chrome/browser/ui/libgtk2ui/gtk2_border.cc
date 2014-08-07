@@ -7,6 +7,7 @@
 #include <gtk/gtk.h>
 
 #include "chrome/browser/ui/libgtk2ui/gtk2_ui.h"
+#include "chrome/browser/ui/libgtk2ui/gtk2_util.h"
 #include "chrome/browser/ui/libgtk2ui/native_theme_gtk2.h"
 #include "third_party/skia/include/effects/SkLerpXfermode.h"
 #include "ui/base/theme_provider.h"
@@ -16,6 +17,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/native_theme_delegate.h"
 
 using views::Button;
@@ -26,17 +28,6 @@ namespace libgtk2ui {
 namespace {
 
 const int kNumberOfFocusedStates = 2;
-
-GtkStateType GetGtkState(ui::NativeTheme::State state) {
-  switch (state) {
-    case ui::NativeTheme::kDisabled: return GTK_STATE_INSENSITIVE;
-    case ui::NativeTheme::kHovered:  return GTK_STATE_PRELIGHT;
-    case ui::NativeTheme::kNormal:   return GTK_STATE_NORMAL;
-    case ui::NativeTheme::kPressed:  return GTK_STATE_ACTIVE;
-    case ui::NativeTheme::kMaxState: NOTREACHED() << "Unknown state: " << state;
-  }
-  return GTK_STATE_NORMAL;
-}
 
 class ButtonImageSkiaSource : public gfx::ImageSkiaSource {
  public:
@@ -73,7 +64,7 @@ class ButtonImageSkiaSource : public gfx::ImageSkiaSource {
 
 Gtk2Border::Gtk2Border(Gtk2UI* gtk2_ui,
                        views::LabelButton* owning_button,
-                       scoped_ptr<views::Border> border)
+                       scoped_ptr<views::LabelButtonBorder> border)
     : gtk2_ui_(gtk2_ui),
       owning_button_(owning_button),
       border_(border.Pass()),
@@ -142,7 +133,8 @@ void Gtk2Border::PaintState(const ui::NativeTheme::State state,
   bool focused = extra.button.is_focused;
   Button::ButtonState views_state = Button::GetButtonStateFrom(state);
 
-  if (ShouldDrawBorder(focused, views_state)) {
+  if (border_->GetPainter(focused, views_state) ||
+      (focused && border_->GetPainter(false, views_state))) {
     gfx::ImageSkia* image = &button_images_[focused][views_state];
 
     if (image->isNull() || image->size() != rect.size()) {
@@ -153,19 +145,6 @@ void Gtk2Border::PaintState(const ui::NativeTheme::State state,
     }
     canvas->DrawImageInt(*image, rect.x(), rect.y());
   }
-}
-
-bool Gtk2Border::ShouldDrawBorder(bool focused,
-                                  views::Button::ButtonState state) {
-  // This logic should be kept in sync with the LabelButtonBorder constructor.
-  if (owning_button_->style() == Button::STYLE_BUTTON) {
-    return true;
-  } else if (owning_button_->style() == Button::STYLE_TEXTBUTTON) {
-    return focused == false && (state == Button::STATE_HOVERED ||
-                                state == Button::STATE_PRESSED);
-  }
-
-  return false;
 }
 
 }  // namespace libgtk2ui

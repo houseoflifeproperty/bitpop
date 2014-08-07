@@ -42,7 +42,7 @@ struct vp9_extracfg {
 };
 
 struct extraconfig_map {
-  int usage;
+  unsigned int usage;
   struct vp9_extracfg cfg;
 };
 
@@ -245,7 +245,8 @@ static vpx_codec_err_t validate_config(vpx_codec_alg_priv_t *ctx,
         layer_id = (int)stats->spatial_layer_id;
 
         if (layer_id >= cfg->ss_number_layers
-            ||(int)(stats->count + 0.5) != n_packets_per_layer[layer_id] - 1)
+            ||(unsigned int)(stats->count + 0.5) !=
+               n_packets_per_layer[layer_id] - 1)
           ERROR("rc_twopass_stats_in missing EOS stats packet");
       }
     } else {
@@ -823,7 +824,7 @@ static vpx_codec_err_t encoder_encode(vpx_codec_alg_priv_t  *ctx,
         }
 
         // Add the frame packet to the list of returned packets.
-        round = (vpx_codec_pts_t)1000000 * ctx->cfg.g_timebase.num / 2 - 1;
+        round = (vpx_codec_pts_t)10000000 * ctx->cfg.g_timebase.num / 2 - 1;
         delta = (dst_end_time_stamp - dst_time_stamp);
         pkt.kind = VPX_CODEC_CX_FRAME_PKT;
         pkt.data.frame.pts =
@@ -1003,7 +1004,8 @@ static vpx_codec_err_t ctrl_set_active_map(vpx_codec_alg_priv_t *ctx,
   vpx_active_map_t *const map = va_arg(args, vpx_active_map_t *);
 
   if (map) {
-    if (!vp9_set_active_map(ctx->cpi, map->active_map, map->rows, map->cols))
+    if (!vp9_set_active_map(ctx->cpi, map->active_map,
+                            (int)map->rows, (int)map->cols))
       return VPX_CODEC_OK;
     else
       return VPX_CODEC_INVALID_PARAM;

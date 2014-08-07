@@ -49,14 +49,14 @@ InjectedScriptBase::InjectedScriptBase(const String& name)
 {
 }
 
-InjectedScriptBase::InjectedScriptBase(const String& name, ScriptObject injectedScriptObject, InspectedStateAccessCheck accessCheck)
+InjectedScriptBase::InjectedScriptBase(const String& name, ScriptValue injectedScriptObject, InspectedStateAccessCheck accessCheck)
     : m_name(name)
     , m_injectedScriptObject(injectedScriptObject)
     , m_inspectedStateAccessCheck(accessCheck)
 {
 }
 
-void InjectedScriptBase::initialize(ScriptObject injectedScriptObject, InspectedStateAccessCheck accessCheck)
+void InjectedScriptBase::initialize(ScriptValue injectedScriptObject, InspectedStateAccessCheck accessCheck)
 {
     m_injectedScriptObject = injectedScriptObject;
     m_inspectedStateAccessCheck = accessCheck;
@@ -64,16 +64,18 @@ void InjectedScriptBase::initialize(ScriptObject injectedScriptObject, Inspected
 
 bool InjectedScriptBase::canAccessInspectedWindow() const
 {
+    ASSERT(!isEmpty());
     return m_inspectedStateAccessCheck(m_injectedScriptObject.scriptState());
 }
 
-const ScriptObject& InjectedScriptBase::injectedScriptObject() const
+const ScriptValue& InjectedScriptBase::injectedScriptObject() const
 {
     return m_injectedScriptObject;
 }
 
 ScriptValue InjectedScriptBase::callFunctionWithEvalEnabled(ScriptFunctionCall& function, bool& hadException) const
 {
+    ASSERT(!isEmpty());
     ExecutionContext* executionContext = m_injectedScriptObject.scriptState()->executionContext();
     TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "FunctionCall", "data", InspectorFunctionCallEvent::data(executionContext, 0, name(), 1));
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());

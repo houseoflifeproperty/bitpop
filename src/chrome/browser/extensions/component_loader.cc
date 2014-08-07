@@ -19,7 +19,9 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/plugin_service.h"
@@ -44,7 +46,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/chromeos_switches.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
@@ -55,6 +57,8 @@
 #if defined(ENABLE_APP_LIST)
 #include "grit/chromium_strings.h"
 #endif
+
+using content::BrowserThread;
 
 namespace extensions {
 
@@ -96,6 +100,19 @@ std::string GenerateId(const base::DictionaryValue* manifest,
   return id;
 }
 
+#if defined(OS_CHROMEOS)
+scoped_ptr<base::DictionaryValue>
+LoadManifestOnFileThread(
+    const base::FilePath& chromevox_path, const char* manifest_filename) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
+  std::string error;
+  scoped_ptr<base::DictionaryValue> manifest(
+      file_util::LoadManifest(chromevox_path, manifest_filename, &error));
+  CHECK(manifest) << error;
+  return manifest.Pass();
+}
+#endif  // defined(OS_CHROMEOS)
+
 }  // namespace
 
 ComponentLoader::ComponentExtensionInfo::ComponentExtensionInfo(
@@ -116,7 +133,8 @@ ComponentLoader::ComponentLoader(ExtensionServiceInterface* extension_service,
     : profile_prefs_(profile_prefs),
       local_state_(local_state),
       browser_context_(browser_context),
-      extension_service_(extension_service) {}
+      extension_service_(extension_service),
+      weak_factory_(this) {}
 
 ComponentLoader::~ComponentLoader() {
   ClearAllRegistered();
@@ -296,7 +314,9 @@ void ComponentLoader::AddVideoPlayerExtension() {
 }
 
 void ComponentLoader::AddGalleryExtension() {
-  // TODO(hirono): Disable the new experimental gallery in M36 temporarily.
+#if defined(OS_CHROMEOS)
+  Add(IDR_GALLERY_MANIFEST, base::FilePath(FILE_PATH_LITERAL("gallery")));
+#endif
 }
 
 void ComponentLoader::AddHangoutServicesExtension() {
@@ -326,11 +346,38 @@ void ComponentLoader::AddNetworkSpeechSynthesisExtension() {
 }
 
 #if defined(OS_CHROMEOS)
-std::string ComponentLoader::AddChromeVoxExtension() {
+void ComponentLoader::AddChromeVoxExtension(
+    const base::Closure& done_cb) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  base::FilePath resources_path;
+  PathService::Get(chrome::DIR_RESOURCES, &resources_path);
+  base::FilePath chromevox_path =
+      resources_path.Append(extension_misc::kChromeVoxExtensionPath);
+
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  int idr = command_line->HasSwitch(chromeos::switches::kGuestSession) ?
-      IDR_CHROMEVOX_GUEST_MANIFEST : IDR_CHROMEVOX_MANIFEST;
-  return Add(idr, base::FilePath(extension_misc::kChromeVoxExtensionPath));
+  const char* manifest_filename =
+      command_line->HasSwitch(chromeos::switches::kGuestSession) ?
+      extension_misc::kChromeVoxGuestManifestFilename :
+          extension_misc::kChromeVoxManifestFilename;
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&LoadManifestOnFileThread, chromevox_path, manifest_filename),
+      base::Bind(&ComponentLoader::AddChromeVoxExtensionWithManifest,
+                 weak_factory_.GetWeakPtr(),
+                 chromevox_path,
+                 done_cb));
+}
+
+void ComponentLoader::AddChromeVoxExtensionWithManifest(
+    const base::FilePath& chromevox_path,
+    const base::Closure& done_cb,
+    scoped_ptr<base::DictionaryValue> manifest) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  std::string extension_id = Add(manifest.release(), chromevox_path);
+  CHECK_EQ(extension_misc::kChromeVoxExtensionId, extension_id);
+  if (!done_cb.is_null())
+    done_cb.Run();
 }
 
 std::string ComponentLoader::AddChromeOsSpeechSynthesisExtension() {
@@ -504,23 +551,16 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
     }
 #endif  // defined(GOOGLE_CHROME_BUILD)
 
-    base::FilePath echo_extension_path(FILE_PATH_LITERAL(
-        "/usr/share/chromeos-assets/echo"));
-    if (command_line->HasSwitch(chromeos::switches::kEchoExtensionPath)) {
-      echo_extension_path = command_line->GetSwitchValuePath(
-          chromeos::switches::kEchoExtensionPath);
-    }
-    Add(IDR_ECHO_MANIFEST, echo_extension_path);
+    Add(IDR_ECHO_MANIFEST,
+        base::FilePath(FILE_PATH_LITERAL("/usr/share/chromeos-assets/echo")));
 
     if (!command_line->HasSwitch(chromeos::switches::kGuestSession)) {
       Add(IDR_WALLPAPERMANAGER_MANIFEST,
           base::FilePath(FILE_PATH_LITERAL("chromeos/wallpaper_manager")));
     }
 
-    if (!command_line->HasSwitch(chromeos::switches::kDisableFirstRunUI)) {
-      Add(IDR_FIRST_RUN_DIALOG_MANIFEST,
-          base::FilePath(FILE_PATH_LITERAL("chromeos/first_run/app")));
-    }
+    Add(IDR_FIRST_RUN_DIALOG_MANIFEST,
+        base::FilePath(FILE_PATH_LITERAL("chromeos/first_run/app")));
 
     Add(IDR_NETWORK_CONFIGURATION_MANIFEST,
         base::FilePath(FILE_PATH_LITERAL("chromeos/network_configuration")));
@@ -534,7 +574,7 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
   // Load ChromeVox extension now if spoken feedback is enabled.
   if (chromeos::AccessibilityManager::Get() &&
       chromeos::AccessibilityManager::Get()->IsSpokenFeedbackEnabled()) {
-    AddChromeVoxExtension();
+    AddChromeVoxExtension(base::Closure());
   }
 #endif  // defined(OS_CHROMEOS)
 

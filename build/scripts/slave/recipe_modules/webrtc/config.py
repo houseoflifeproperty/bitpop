@@ -7,8 +7,11 @@ from slave.recipe_config import Single, Static, BadConf
 from slave.recipe_config_types import Path
 
 
-def BaseConfig(**_kwargs):
+def BaseConfig(PERF_ID=None, PERF_CONFIG=None, **_kwargs):
   return ConfigGroup(
+    PERF_ID = Static(PERF_ID),
+    PERF_CONFIG = Static(PERF_CONFIG),
+
     patch_root_dir = Single(Path, required=False, empty_val=Path('[CHECKOUT]')),
 
     # Allow manipulating patches for try jobs.
@@ -18,6 +21,8 @@ def BaseConfig(**_kwargs):
   )
 
 VAR_TEST_MAP = {
+  'PERF_ID': (None, 'perf-id'),
+  'PERF_CONFIG': (None, '{}', '{"a_default_rev": "r_webrtc_rev"}'),
 }
 
 def TEST_NAME_FORMAT(kwargs):
@@ -33,6 +38,21 @@ def webrtc(c):
 
 @config_ctx()
 def webrtc_clang(c):
+  pass
+
+
+@config_ctx()
+def webrtc_asan(c):
+  pass
+
+
+@config_ctx()
+def webrtc_lsan(c):
+  pass
+
+
+@config_ctx()
+def webrtc_tsan2(c):
   pass
 
 
@@ -66,3 +86,8 @@ def webrtc_android_apk_try_builder(c):
 def webrtc_ios(c):
   pass
 
+
+# Only exists to be able to set the PERF_ID and PERF_CONFIG configurations.
+@config_ctx()
+def chromium(c):
+  pass

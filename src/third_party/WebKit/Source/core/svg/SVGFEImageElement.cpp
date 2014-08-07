@@ -23,12 +23,11 @@
 
 #include "core/svg/SVGFEImageElement.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
 #include "platform/graphics/Image.h"
 
@@ -43,10 +42,7 @@ inline SVGFEImageElement::SVGFEImageElement(Document& document)
     addToPropertyMap(m_preserveAspectRatio);
 }
 
-PassRefPtr<SVGFEImageElement> SVGFEImageElement::create(Document& document)
-{
-    return adoptRef(new SVGFEImageElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEImageElement)
 
 SVGFEImageElement::~SVGFEImageElement()
 {

@@ -163,7 +163,7 @@ void OutputSurface::ReleaseGL() {
   DCHECK(client_);
   DCHECK(context_provider_);
   client_->ReleaseGL();
-  ResetContext3d();
+  DCHECK(!context_provider_);
 }
 
 void OutputSurface::SetUpContext3d() {
@@ -179,6 +179,12 @@ void OutputSurface::SetUpContext3d() {
   context_provider_->SetMemoryPolicyChangedCallback(
       base::Bind(&OutputSurface::SetMemoryPolicy,
                  base::Unretained(this)));
+}
+
+void OutputSurface::ReleaseContextProvider() {
+  DCHECK(client_);
+  DCHECK(context_provider_);
+  ResetContext3d();
 }
 
 void OutputSurface::ResetContext3d() {
@@ -226,7 +232,7 @@ void OutputSurface::Reshape(const gfx::Size& size, float scale_factor) {
         size.width(), size.height(), scale_factor);
   }
   if (software_device_)
-    software_device_->Resize(size);
+    software_device_->Resize(size, scale_factor);
 }
 
 gfx::Size OutputSurface::SurfaceSize() const {

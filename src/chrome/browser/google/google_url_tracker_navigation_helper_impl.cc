@@ -5,48 +5,29 @@
 #include "chrome/browser/google/google_url_tracker_navigation_helper_impl.h"
 
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "components/google/core/browser/google_url_tracker.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 
-GoogleURLTrackerNavigationHelperImpl::
-    GoogleURLTrackerNavigationHelperImpl() : tracker_(NULL) {
+GoogleURLTrackerNavigationHelperImpl::GoogleURLTrackerNavigationHelperImpl(
+    content::WebContents* web_contents,
+    GoogleURLTracker* tracker)
+    : GoogleURLTrackerNavigationHelper(tracker),
+      web_contents_(web_contents) {
 }
 
-GoogleURLTrackerNavigationHelperImpl::
-    ~GoogleURLTrackerNavigationHelperImpl() {
-}
-
-void GoogleURLTrackerNavigationHelperImpl::SetGoogleURLTracker(
-    GoogleURLTracker* tracker) {
-  DCHECK(tracker);
-  tracker_ = tracker;
-}
-
-void GoogleURLTrackerNavigationHelperImpl::SetListeningForNavigationStart(
-    bool listen) {
-  if (listen) {
-    registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_PENDING,
-        content::NotificationService::AllBrowserContextsAndSources());
-  } else {
-    registrar_.Remove(this, content::NOTIFICATION_NAV_ENTRY_PENDING,
-        content::NotificationService::AllBrowserContextsAndSources());
-  }
-}
-
-bool GoogleURLTrackerNavigationHelperImpl::IsListeningForNavigationStart() {
-  return registrar_.IsRegistered(this, content::NOTIFICATION_NAV_ENTRY_PENDING,
-      content::NotificationService::AllBrowserContextsAndSources());
+GoogleURLTrackerNavigationHelperImpl::~GoogleURLTrackerNavigationHelperImpl() {
+  web_contents_ = NULL;
 }
 
 void GoogleURLTrackerNavigationHelperImpl::SetListeningForNavigationCommit(
-    const content::NavigationController* nav_controller,
     bool listen) {
   content::NotificationSource navigation_controller_source =
-      content::Source<content::NavigationController>(nav_controller);
+      content::Source<content::NavigationController>(
+          &web_contents_->GetController());
   if (listen) {
     registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
                     navigation_controller_source);
@@ -56,47 +37,45 @@ void GoogleURLTrackerNavigationHelperImpl::SetListeningForNavigationCommit(
   }
 }
 
-bool GoogleURLTrackerNavigationHelperImpl::IsListeningForNavigationCommit(
-    const content::NavigationController* nav_controller) {
+bool GoogleURLTrackerNavigationHelperImpl::IsListeningForNavigationCommit() {
   content::NotificationSource navigation_controller_source =
-      content::Source<content::NavigationController>(nav_controller);
+      content::Source<content::NavigationController>(
+          &web_contents_->GetController());
   return registrar_.IsRegistered(
       this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
       navigation_controller_source);
 }
 
 void GoogleURLTrackerNavigationHelperImpl::SetListeningForTabDestruction(
-    const content::NavigationController* nav_controller,
     bool listen) {
-  content::NotificationSource navigation_controller_source =
-      content::Source<content::NavigationController>(nav_controller);
+  content::NotificationSource web_contents_source =
+      content::Source<content::WebContents>(web_contents_);
   if (listen) {
-    registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                   GetWebContentsSource(navigation_controller_source));
+    registrar_.Add(this,
+                   content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                   web_contents_source);
   } else {
-    registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                      GetWebContentsSource(navigation_controller_source));
+    registrar_.Remove(this,
+                      content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                      web_contents_source);
   }
 }
 
-bool GoogleURLTrackerNavigationHelperImpl::IsListeningForTabDestruction(
-    const content::NavigationController* nav_controller) {
-  content::NotificationSource navigation_controller_source =
-      content::Source<content::NavigationController>(nav_controller);
+bool GoogleURLTrackerNavigationHelperImpl::IsListeningForTabDestruction() {
   return registrar_.IsRegistered(
       this,
       content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-      GetWebContentsSource(navigation_controller_source));
+      content::Source<content::WebContents>(web_contents_));
 }
 
-content::NotificationSource
-    GoogleURLTrackerNavigationHelperImpl::GetWebContentsSource(
-        const content::NotificationSource& nav_controller_source) {
-  content::NavigationController* controller =
-      content::Source<content::NavigationController>(
-          nav_controller_source).ptr();
-  content::WebContents* web_contents = controller->GetWebContents();
-  return content::Source<content::WebContents>(web_contents);
+void GoogleURLTrackerNavigationHelperImpl::OpenURL(
+    GURL url,
+    WindowOpenDisposition disposition,
+    bool user_clicked_on_link) {
+  content::PageTransition transition_type = user_clicked_on_link ?
+      content::PAGE_TRANSITION_LINK : content::PAGE_TRANSITION_GENERATED;
+  web_contents_->OpenURL(content::OpenURLParams(
+      url, content::Referrer(), disposition, transition_type, false));
 }
 
 void GoogleURLTrackerNavigationHelperImpl::Observe(
@@ -104,43 +83,27 @@ void GoogleURLTrackerNavigationHelperImpl::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case content::NOTIFICATION_NAV_ENTRY_PENDING: {
-      content::NavigationController* controller =
-          content::Source<content::NavigationController>(source).ptr();
-      content::WebContents* web_contents = controller->GetWebContents();
-      InfoBarService* infobar_service =
-          InfoBarService::FromWebContents(web_contents);
-      // Because we're listening to all sources, there may be no
-      // InfoBarService for some notifications, e.g. navigations in
-      // bubbles/balloons etc.
-      if (infobar_service) {
-        tracker_->OnNavigationPending(
-            controller, infobar_service,
-            controller->GetPendingEntry()->GetUniqueID());
-      }
-      break;
-    }
-
     case content::NOTIFICATION_NAV_ENTRY_COMMITTED: {
       content::NavigationController* controller =
           content::Source<content::NavigationController>(source).ptr();
+      DCHECK_EQ(web_contents_, controller->GetWebContents());
+
       // Here we're only listening to notifications where we already know
       // there's an associated InfoBarService.
-      content::WebContents* web_contents = controller->GetWebContents();
       InfoBarService* infobar_service =
-          InfoBarService::FromWebContents(web_contents);
+          InfoBarService::FromWebContents(web_contents_);
       DCHECK(infobar_service);
       const GURL& search_url = controller->GetActiveEntry()->GetURL();
       if (!search_url.is_valid())  // Not clear if this can happen.
-        tracker_->OnTabClosed(controller);
-      tracker_->OnNavigationCommitted(infobar_service, search_url);
+        google_url_tracker()->OnTabClosed(this);
+      google_url_tracker()->OnNavigationCommitted(infobar_service, search_url);
       break;
     }
 
     case content::NOTIFICATION_WEB_CONTENTS_DESTROYED: {
-      content::WebContents* web_contents =
-          content::Source<content::WebContents>(source).ptr();
-      tracker_->OnTabClosed(&web_contents->GetController());
+      DCHECK_EQ(web_contents_,
+                content::Source<content::WebContents>(source).ptr());
+      google_url_tracker()->OnTabClosed(this);
       break;
     }
 

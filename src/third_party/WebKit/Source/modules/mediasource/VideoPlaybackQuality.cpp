@@ -32,15 +32,15 @@
 #include "modules/mediasource/VideoPlaybackQuality.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/timing/Performance.h"
 
 namespace WebCore {
 
-VideoPlaybackQuality* VideoPlaybackQuality::create(
+PassRefPtrWillBeRawPtr<VideoPlaybackQuality> VideoPlaybackQuality::create(
     const Document& document, unsigned totalVideoFrames, unsigned droppedVideoFrames, unsigned corruptedVideoFrames)
 {
-    return new VideoPlaybackQuality(document, totalVideoFrames, droppedVideoFrames, corruptedVideoFrames);
+    return adoptRefWillBeNoop(new VideoPlaybackQuality(document, totalVideoFrames, droppedVideoFrames, corruptedVideoFrames));
 }
 
 VideoPlaybackQuality::VideoPlaybackQuality(

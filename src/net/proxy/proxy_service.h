@@ -269,7 +269,6 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
 
   bool quick_check_enabled() const { return quick_check_enabled_; }
 
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
   // Values of the UMA DataReductionProxy.BypassInfo{Primary|Fallback}
   // histograms. This enum must remain synchronized with the enum of the same
   // name in metrics/histograms/histograms.xml.
@@ -292,6 +291,9 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
     // Bypass the proxy because the proxy, not the origin, sent a 4xx response.
     PROXY_4XX_BYPASS,
 
+    // Bypass the proxy because we got a 407 from the proxy without a challenge.
+    MALFORMED_407_BYPASS,
+
     // This must always be last.
     BYPASS_EVENT_TYPE_MAX
   };
@@ -309,7 +311,6 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
       bool is_primary,
       const ProxyServer& proxy_server,
       int net_error);
-#endif
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ProxyServiceTest, UpdateConfigAfterFailedAutodetect);

@@ -42,7 +42,6 @@ class PnaclTranslateThread {
   // Start the translation process. It will continue to run and consume data
   // as it is passed in with PutBytes.
   void RunTranslate(const pp::CompletionCallback& finish_callback,
-                    int32_t manifest_id,
                     const std::vector<TempFile*>* obj_files,
                     TempFile* nexe_file,
                     nacl::DescWrapper* invalid_desc_wrapper,
@@ -67,10 +66,6 @@ class PnaclTranslateThread {
   int64_t GetCompileTime() const { return compile_time_; }
 
  private:
-  // Starts an individual llc or ld subprocess used for translation.
-  NaClSubprocess* StartSubprocess(const nacl::string& url,
-                                  int32_t manifest_id,
-                                  ErrorInfo* error_info);
   // Helper thread entry point for translation. Takes a pointer to
   // PnaclTranslateThread and calls DoTranslate().
   static void WINAPI DoTranslateThread(void* arg);
@@ -97,6 +92,8 @@ class PnaclTranslateThread {
   bool llc_subprocess_active_;
   bool ld_subprocess_active_;
 
+  bool subprocesses_aborted_;
+
   // Condition variable to synchronize communication with the SRPC thread.
   // SRPC thread waits on this condvar if data_buffers_ is empty (meaning
   // there is no bitcode to send to the translator), and the main thread
@@ -114,7 +111,6 @@ class PnaclTranslateThread {
   int64_t compile_time_;
 
   // Data about the translation files, owned by the coordinator
-  int32_t manifest_id_;
   const std::vector<TempFile*>* obj_files_;
   TempFile* nexe_file_;
   nacl::DescWrapper* invalid_desc_wrapper_;

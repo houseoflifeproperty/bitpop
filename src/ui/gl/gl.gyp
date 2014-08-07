@@ -114,8 +114,6 @@
         'gl_version_info.h',
         'gpu_switching_manager.cc',
         'gpu_switching_manager.h',
-        'io_surface_support_mac.cc',
-        'io_surface_support_mac.h',
         'scoped_binders.cc',
         'scoped_binders.h',
         'scoped_make_current.cc',
@@ -138,7 +136,7 @@
           'variables': {
             'generator_path': 'generate_bindings.py',
             # Prefer khronos EGL/GLES headers by listing that path first.
-            'header_paths': '../../third_party/khronos:../../third_party/mesa/src/include',
+            'header_paths': '../../third_party/khronos:../../third_party/mesa/src/include:.:../../gpu',
           },
           'inputs': [
             '<(generator_path)',
@@ -222,7 +220,8 @@
             '<(DEPTH)/build/linux/system.gyp:x11',
             '<(DEPTH)/build/linux/system.gyp:xcomposite',
             '<(DEPTH)/build/linux/system.gyp:xext',
-            '<(DEPTH)/ui/gfx/gfx.gyp:gfx_x11',
+            '<(DEPTH)/ui/events/platform/events_platform.gyp:events_platform',
+            '<(DEPTH)/ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
         ['OS=="win"', {
@@ -260,13 +259,12 @@
             'gl_context_cgl.h',
             'gl_image_io_surface.cc',
             'gl_image_io_surface.h',
-            'gl_surface_cgl.cc',
-            'gl_surface_cgl.h',
             'scoped_cgl.cc',
             'scoped_cgl.h',
           ],
           'link_settings': {
             'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/IOSurface.framework',
               '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
             ],
           },
@@ -347,7 +345,6 @@
           'variables': {
             'jni_gen_package': 'ui/gl',
             'input_java_class': 'android/view/Surface.class',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../../build/jar_file_jni_generator.gypi' ],
         },
@@ -363,7 +360,6 @@
           ],
           'variables': {
             'jni_gen_package': 'ui/gl',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../../build/jni_generator.gypi' ],
         },

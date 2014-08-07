@@ -2,22 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
-#include "lithium-allocator-inl.h"
+#include "src/v8.h"
+#include "src/lithium-allocator-inl.h"
 
-#include "hydrogen.h"
-#include "string-stream.h"
+#include "src/hydrogen.h"
+#include "src/string-stream.h"
 
 #if V8_TARGET_ARCH_IA32
-#include "ia32/lithium-ia32.h"
+#include "src/ia32/lithium-ia32.h"
 #elif V8_TARGET_ARCH_X64
-#include "x64/lithium-x64.h"
+#include "src/x64/lithium-x64.h"
 #elif V8_TARGET_ARCH_ARM64
-#include "arm64/lithium-arm64.h"
+#include "src/arm64/lithium-arm64.h"
 #elif V8_TARGET_ARCH_ARM
-#include "arm/lithium-arm.h"
+#include "src/arm/lithium-arm.h"
 #elif V8_TARGET_ARCH_MIPS
-#include "mips/lithium-mips.h"
+#include "src/mips/lithium-mips.h"
+#elif V8_TARGET_ARCH_X87
+#include "src/x87/lithium-x87.h"
 #else
 #error "Unknown architecture."
 #endif
@@ -46,7 +48,8 @@ UsePosition::UsePosition(LifetimePosition pos,
       register_beneficial_(true) {
   if (operand_ != NULL && operand_->IsUnallocated()) {
     LUnallocated* unalloc = LUnallocated::cast(operand_);
-    requires_reg_ = unalloc->HasRegisterPolicy();
+    requires_reg_ = unalloc->HasRegisterPolicy() ||
+        unalloc->HasDoubleRegisterPolicy();
     register_beneficial_ = !unalloc->HasAnyPolicy();
   }
   ASSERT(pos_.IsValid());
@@ -1005,6 +1008,15 @@ void LAllocator::ProcessInstructions(HBasicBlock* block, BitVector* live) {
           }
           Use(block_start_position, curr_position.InstructionEnd(), temp, NULL);
           Define(curr_position, temp, NULL);
+
+          if (temp->IsUnallocated()) {
+            LUnallocated* temp_unalloc = LUnallocated::cast(temp);
+            if (temp_unalloc->HasDoubleRegisterPolicy()) {
+              double_artificial_registers_.Add(
+                  temp_unalloc->virtual_register() - first_artificial_register_,
+                  zone());
+            }
+          }
         }
       }
     }
@@ -1095,7 +1107,6 @@ bool LAllocator::Allocate(LChunk* chunk) {
 
 void LAllocator::MeetRegisterConstraints() {
   LAllocatorPhase phase("L_Register constraints", this);
-  first_artificial_register_ = next_virtual_register_;
   const ZoneList<HBasicBlock*>* blocks = graph_->blocks();
   for (int i = 0; i < blocks->length(); ++i) {
     HBasicBlock* block = blocks->at(i);

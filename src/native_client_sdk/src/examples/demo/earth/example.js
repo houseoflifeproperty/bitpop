@@ -25,13 +25,13 @@ function attachListeners() {
     document.getElementById('radio'+i).addEventListener('click',
         postThreadFunc(threads[i]));
   }
-  document.getElementById('zoomRange').addEventListener('change',
+  document.getElementById('zoomRange').addEventListener('input',
     function() {
       var value = parseFloat(document.getElementById('zoomRange').value);
       common.naclModule.postMessage({'message' : 'set_zoom',
                                      'value' : value});
     });
-  document.getElementById('lightRange').addEventListener('change',
+  document.getElementById('lightRange').addEventListener('input',
     function() {
       var value = parseFloat(document.getElementById('lightRange').value);
       common.naclModule.postMessage({'message' : 'set_light',

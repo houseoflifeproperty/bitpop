@@ -17,7 +17,7 @@ using appcache::AppCache;
 using appcache::AppCacheFrontend;
 using appcache::AppCacheGroup;
 using appcache::AppCacheHost;
-using appcache::AppCacheService;
+using appcache::AppCacheServiceImpl;
 using appcache::AppCacheUpdateJob;
 
 namespace {
@@ -26,7 +26,7 @@ class TestAppCacheFrontend : public appcache::AppCacheFrontend {
  public:
   TestAppCacheFrontend()
       : last_host_id_(-1), last_cache_id_(-1),
-        last_status_(appcache::OBSOLETE) {
+        last_status_(appcache::APPCACHE_STATUS_OBSOLETE) {
   }
 
   virtual void OnCacheSelected(
@@ -37,15 +37,15 @@ class TestAppCacheFrontend : public appcache::AppCacheFrontend {
   }
 
   virtual void OnStatusChanged(const std::vector<int>& host_ids,
-                               appcache::Status status) OVERRIDE {
+                               appcache::AppCacheStatus status) OVERRIDE {
   }
 
   virtual void OnEventRaised(const std::vector<int>& host_ids,
-                             appcache::EventID event_id) OVERRIDE {
+                             appcache::AppCacheEventID event_id) OVERRIDE {
   }
 
   virtual void OnErrorEventRaised(const std::vector<int>& host_ids,
-                                  const appcache::ErrorDetails& details)
+                                  const appcache::AppCacheErrorDetails& details)
       OVERRIDE {}
 
   virtual void OnProgressEventRaised(const std::vector<int>& host_ids,
@@ -53,7 +53,7 @@ class TestAppCacheFrontend : public appcache::AppCacheFrontend {
                                      int num_total, int num_complete) OVERRIDE {
   }
 
-  virtual void OnLogMessage(int host_id, appcache::LogLevel log_level,
+  virtual void OnLogMessage(int host_id, appcache::AppCacheLogLevel log_level,
                             const std::string& message) OVERRIDE {
   }
 
@@ -63,7 +63,7 @@ class TestAppCacheFrontend : public appcache::AppCacheFrontend {
 
   int last_host_id_;
   int64 last_cache_id_;
-  appcache::Status last_status_;
+  appcache::AppCacheStatus last_status_;
 };
 
 }  // namespace anon
@@ -90,7 +90,7 @@ class TestUpdateObserver : public AppCacheGroup::UpdateObserver {
 class TestAppCacheHost : public AppCacheHost {
  public:
   TestAppCacheHost(int host_id, AppCacheFrontend* frontend,
-                   AppCacheService* service)
+                   AppCacheServiceImpl* service)
       : AppCacheHost(host_id, frontend, service),
         update_completed_(false) {
   }
@@ -197,12 +197,12 @@ TEST_F(AppCacheGroupTest, CleanupUnusedGroup) {
   host1.AssociateCompleteCache(cache1);
   EXPECT_EQ(frontend.last_host_id_, host1.host_id());
   EXPECT_EQ(frontend.last_cache_id_, cache1->cache_id());
-  EXPECT_EQ(frontend.last_status_, appcache::IDLE);
+  EXPECT_EQ(frontend.last_status_, appcache::APPCACHE_STATUS_IDLE);
 
   host2.AssociateCompleteCache(cache1);
   EXPECT_EQ(frontend.last_host_id_, host2.host_id());
   EXPECT_EQ(frontend.last_cache_id_, cache1->cache_id());
-  EXPECT_EQ(frontend.last_status_, appcache::IDLE);
+  EXPECT_EQ(frontend.last_status_, appcache::APPCACHE_STATUS_IDLE);
 
   AppCache* cache2 = new AppCache(service.storage(), 222);
   cache2->set_complete(true);
@@ -214,8 +214,8 @@ TEST_F(AppCacheGroupTest, CleanupUnusedGroup) {
   host1.AssociateNoCache(GURL());
   host2.AssociateNoCache(GURL());
   EXPECT_EQ(frontend.last_host_id_, host2.host_id());
-  EXPECT_EQ(frontend.last_cache_id_, appcache::kNoCacheId);
-  EXPECT_EQ(frontend.last_status_, appcache::UNCACHED);
+  EXPECT_EQ(frontend.last_cache_id_, appcache::kAppCacheNoCacheId);
+  EXPECT_EQ(frontend.last_status_, appcache::APPCACHE_STATUS_UNCACHED);
 }
 
 TEST_F(AppCacheGroupTest, StartUpdate) {
@@ -233,7 +233,7 @@ TEST_F(AppCacheGroupTest, StartUpdate) {
   group->StartUpdateWithHost(NULL);
   EXPECT_EQ(update, group->update_job_);
 
-  // Deleting the update should restore the group to IDLE.
+  // Deleting the update should restore the group to APPCACHE_STATUS_IDLE.
   delete update;
   EXPECT_TRUE(group->update_job_ == NULL);
   EXPECT_EQ(AppCacheGroup::IDLE, group->update_status());

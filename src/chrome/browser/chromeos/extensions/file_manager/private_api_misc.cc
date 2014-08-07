@@ -9,6 +9,7 @@
 #include "ash/frame/frame_util.h"
 #include "base/files/file_path.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
@@ -17,9 +18,11 @@
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_util.h"
 #include "chrome/browser/chromeos/file_manager/app_installer.h"
 #include "chrome/browser/chromeos/file_manager/zip_file_creator.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/drive/event_logger.h"
+#include "chrome/browser/extensions/devtools_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -394,12 +397,6 @@ bool FileBrowserPrivateVisitDesktopFunction::RunSync() {
   const std::vector<linked_ptr<api::file_browser_private::ProfileInfo> >&
       profiles = GetLoggedInProfileInfoList(GetAssociatedWebContents());
 
-  // Check the multi-profile support.
-  if (!profiles::IsMultipleProfilesEnabled()) {
-    SetError("Multi-profile support is not enabled.");
-    return false;
-  }
-
   chrome::MultiUserWindowManager* const window_manager =
       chrome::MultiUserWindowManager::GetInstance();
   DCHECK(window_manager);
@@ -440,6 +437,41 @@ bool FileBrowserPrivateVisitDesktopFunction::RunSync() {
     return false;
   }
 
+  return true;
+}
+
+bool FileBrowserPrivateOpenInspectorFunction::RunSync() {
+  using extensions::api::file_browser_private::OpenInspector::Params;
+  const scoped_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  switch (params->type) {
+    case extensions::api::file_browser_private::INSPECTION_TYPE_NORMAL:
+      // Open inspector for foreground page.
+      DevToolsWindow::OpenDevToolsWindow(render_view_host());
+      break;
+    case extensions::api::file_browser_private::INSPECTION_TYPE_CONSOLE:
+      // Open inspector for foreground page and bring focus to the console.
+      DevToolsWindow::OpenDevToolsWindow(render_view_host(),
+                                         DevToolsToggleAction::ShowConsole());
+      break;
+    case extensions::api::file_browser_private::INSPECTION_TYPE_ELEMENT:
+      // Open inspector for foreground page in inspect element mode.
+      DevToolsWindow::OpenDevToolsWindow(render_view_host(),
+                                         DevToolsToggleAction::Inspect());
+      break;
+    case extensions::api::file_browser_private::INSPECTION_TYPE_BACKGROUND:
+      // Open inspector for background page.
+      extensions::devtools_util::InspectBackgroundPage(GetExtension(),
+                                                       GetProfile());
+      break;
+    default:
+      NOTREACHED();
+      SetError(
+          base::StringPrintf("Unexpected inspection type(%d) is specified.",
+                             static_cast<int>(params->type)));
+      return false;
+  }
   return true;
 }
 

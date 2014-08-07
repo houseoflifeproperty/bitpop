@@ -25,16 +25,16 @@
  * existing Linux DSOs), in contrast to SFI NaCl's 64k page size (required
  * for running on Windows).
  */
-#define PAGE_SIZE 0x1000
-#define PAGE_MASK (PAGE_SIZE - 1)
+#define NONSFI_PAGE_SIZE 0x1000
+#define NONSFI_PAGE_MASK (NONSFI_PAGE_SIZE - 1)
 #define MAX_PHNUM 128
 
 static uintptr_t PageSizeRoundDown(uintptr_t addr) {
-  return addr & ~PAGE_MASK;
+  return addr & ~NONSFI_PAGE_MASK;
 }
 
 static uintptr_t PageSizeRoundUp(uintptr_t addr) {
-  return PageSizeRoundDown(addr + PAGE_SIZE - 1);
+  return PageSizeRoundDown(addr + NONSFI_PAGE_SIZE - 1);
 }
 
 static int ElfFlagsToMmapFlags(int pflags) {
@@ -209,5 +209,6 @@ int main(int argc, char **argv, char **environ) {
   }
   const char *nexe_filename = argv[1];
   uintptr_t entry = LoadElfFile(nexe_filename);
-  return nacl_irt_nonsfi_entry(argc, argv, environ, (nacl_entry_func_t) entry);
+  return nacl_irt_nonsfi_entry(argc - 1, argv + 1, environ,
+                               (nacl_entry_func_t) entry);
 }

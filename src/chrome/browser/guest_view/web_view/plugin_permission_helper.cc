@@ -26,21 +26,33 @@ PluginPermissionHelper::PluginPermissionHelper(WebContents* contents)
 PluginPermissionHelper::~PluginPermissionHelper() {
 }
 
-bool PluginPermissionHelper::OnMessageReceived(const IPC::Message& message) {
+bool PluginPermissionHelper::OnMessageReceived(
+    const IPC::Message& message,
+    content::RenderFrameHost* render_frame_host) {
   IPC_BEGIN_MESSAGE_MAP(PluginPermissionHelper, message)
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_BlockedUnauthorizedPlugin,
-                        OnBlockedUnauthorizedPlugin)
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_CouldNotLoadPlugin,
-                        OnCouldNotLoadPlugin)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_BlockedOutdatedPlugin,
                         OnBlockedOutdatedPlugin)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_BlockedUnauthorizedPlugin,
+                        OnBlockedUnauthorizedPlugin)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_NPAPINotSupported,
                         OnNPAPINotSupported)
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_OpenAboutPlugins,
-                        OnOpenAboutPlugins)
 #if defined(ENABLE_PLUGIN_INSTALLATION)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_FindMissingPlugin,
                         OnFindMissingPlugin)
+#endif
+    IPC_MESSAGE_UNHANDLED(return false)
+  IPC_END_MESSAGE_MAP()
+
+  return true;
+}
+
+bool PluginPermissionHelper::OnMessageReceived(const IPC::Message& message) {
+  IPC_BEGIN_MESSAGE_MAP(PluginPermissionHelper, message)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_CouldNotLoadPlugin,
+                        OnCouldNotLoadPlugin)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_OpenAboutPlugins,
+                        OnOpenAboutPlugins)
+#if defined(ENABLE_PLUGIN_INSTALLATION)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_RemovePluginPlaceholderHost,
                         OnRemovePluginPlaceholderHost)
 #endif
@@ -63,8 +75,8 @@ void PluginPermissionHelper::OnBlockedUnauthorizedPlugin(
   base::DictionaryValue info;
   info.SetString(std::string(kPluginName), name);
   info.SetString(std::string(kPluginIdentifier), identifier);
-  webview->RequestPermission(static_cast<BrowserPluginPermissionType>(
-          WEB_VIEW_PERMISSION_TYPE_LOAD_PLUGIN),
+  webview->RequestPermission(
+      WEB_VIEW_PERMISSION_TYPE_LOAD_PLUGIN,
       info,
       base::Bind(&PluginPermissionHelper::OnPermissionResponse,
                  weak_factory_.GetWeakPtr(),

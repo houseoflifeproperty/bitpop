@@ -28,9 +28,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// https://slightlyoff.github.io/ServiceWorker/spec/service_worker/index.html#install-phase-event-interface
 [
     RuntimeEnabled=ServiceWorker,
     Exposed=ServiceWorker,
 ] interface InstallPhaseEvent : Event {
-    void waitUntil(any value);
+    [CallWith=ScriptState] void waitUntil(any value);
 };

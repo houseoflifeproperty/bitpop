@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_BACKEND_DRIVE_SERVICE_WRAPPER_H_
 
 #include "base/memory/weak_ptr.h"
+#include "base/sequence_checker.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 
 namespace sync_file_system {
@@ -23,7 +24,7 @@ class DriveServiceWrapper : public base::SupportsWeakPtr<DriveServiceWrapper> {
       const std::string& parent_resource_id,
       const std::string& directory_title,
       const drive::DriveServiceInterface::AddNewDirectoryOptions& options,
-      const google_apis::GetResourceEntryCallback& callback);
+      const google_apis::FileResourceCallback& callback);
 
   void DeleteResource(
       const std::string& resource_id,
@@ -42,25 +43,23 @@ class DriveServiceWrapper : public base::SupportsWeakPtr<DriveServiceWrapper> {
 
   void GetChangeList(
       int64 start_changestamp,
-      const google_apis::GetResourceListCallback& callback);
+      const google_apis::ChangeListCallback& callback);
 
   void GetRemainingChangeList(
       const GURL& next_link,
-      const google_apis::GetResourceListCallback& callback);
+      const google_apis::ChangeListCallback& callback);
 
   void GetRemainingFileList(
       const GURL& next_link,
-      const google_apis::GetResourceListCallback& callback);
+      const google_apis::FileListCallback& callback);
 
-  void GetResourceEntry(
+  void GetFileResource(
       const std::string& resource_id,
-      const google_apis::GetResourceEntryCallback& callback);
+      const google_apis::FileResourceCallback& callback);
 
-  void GetResourceListInDirectory(
+  void GetFileListInDirectory(
       const std::string& directory_resource_id,
-      const google_apis::GetResourceListCallback& callback);
-
-  bool HasRefreshToken() const;
+      const google_apis::FileListCallback& callback);
 
   void RemoveResourceFromDirectory(
       const std::string& parent_resource_id,
@@ -70,10 +69,11 @@ class DriveServiceWrapper : public base::SupportsWeakPtr<DriveServiceWrapper> {
   void SearchByTitle(
       const std::string& title,
       const std::string& directory_resource_id,
-      const google_apis::GetResourceListCallback& callback);
+      const google_apis::FileListCallback& callback);
 
  private:
   drive::DriveServiceInterface* drive_service_;
+  base::SequenceChecker sequece_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(DriveServiceWrapper);
 };

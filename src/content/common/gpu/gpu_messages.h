@@ -222,13 +222,6 @@ IPC_STRUCT_TRAITS_BEGIN(gpu::MemoryAllocation)
   IPC_STRUCT_TRAITS_MEMBER(priority_cutoff_when_visible)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(gpu::ManagedMemoryStats)
-  IPC_STRUCT_TRAITS_MEMBER(bytes_required)
-  IPC_STRUCT_TRAITS_MEMBER(bytes_nice_to_have)
-  IPC_STRUCT_TRAITS_MEMBER(bytes_allocated)
-  IPC_STRUCT_TRAITS_MEMBER(backbuffer_requested)
-IPC_STRUCT_TRAITS_END()
-
 IPC_STRUCT_TRAITS_BEGIN(gfx::GLSurfaceHandle)
   IPC_STRUCT_TRAITS_MEMBER(handle)
   IPC_STRUCT_TRAITS_MEMBER(transport_type)
@@ -280,6 +273,18 @@ IPC_MESSAGE_CONTROL3(GpuMsg_CreateImage,
 IPC_MESSAGE_CONTROL3(GpuMsg_DeleteImage,
                      int32, /* client_id */
                      int32, /* image_id */
+                     int32 /* sync_point */)
+
+// Tells the GPU process to create a new gpu memory buffer for |handle|.
+IPC_MESSAGE_CONTROL4(GpuMsg_CreateGpuMemoryBuffer,
+                     gfx::GpuMemoryBufferHandle, /* handle */
+                     gfx::Size, /* size */
+                     unsigned, /* internalformat */
+                     unsigned /* usage */)
+
+// Tells the GPU process to destroy buffer.
+IPC_MESSAGE_CONTROL2(GpuMsg_DestroyGpuMemoryBuffer,
+                     gfx::GpuMemoryBufferHandle, /* handle */
                      int32 /* sync_point */)
 
 // Tells the GPU process to create a context for collecting graphics card
@@ -367,6 +372,10 @@ IPC_MESSAGE_CONTROL1(GpuHostMsg_DestroyCommandBuffer,
 // Response from GPU to a GpuMsg_CreateImage message.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_ImageCreated,
                      gfx::Size /* size */)
+
+// Response from GPU to a GpuMsg_CreateGpuMemoryBuffer message.
+IPC_MESSAGE_CONTROL1(GpuHostMsg_GpuMemoryBufferCreated,
+                     gfx::GpuMemoryBufferHandle /* handle */)
 
 // Response from GPU to a GpuMsg_CollectGraphicsInfo.
 IPC_MESSAGE_CONTROL1(GpuHostMsg_GraphicsInfoCollected,
@@ -591,11 +600,6 @@ IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SetSurfaceVisible, bool /* visible */)
 // Sent to proxy when the gpu memory manager changes its memory allocation.
 IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SetMemoryAllocation,
                     gpu::MemoryAllocation /* allocation */)
-
-// Sent to stub from the proxy with statistics on managed memory usage and
-// requirements.
-IPC_MESSAGE_ROUTED1(GpuCommandBufferMsg_SendClientManagedMemoryStats,
-                    gpu::ManagedMemoryStats /* stats */)
 
 // Sent to stub when proxy is assigned a memory allocation changed callback.
 IPC_MESSAGE_ROUTED1(

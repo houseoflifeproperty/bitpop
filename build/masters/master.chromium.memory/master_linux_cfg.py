@@ -133,7 +133,6 @@ F('linux_asan_rel_tests_1', linux().ChromiumASANFactory(
       'browser_total_shards': 3,
       'browser_shard_index': 1,
       'lsan': True,
-      'lsan_run_all_tests': True,
       'sharded_tests': sharded_tests,
     }))
 
@@ -157,7 +156,6 @@ F('linux_asan_rel_tests_2', linux().ChromiumASANFactory(
       'browser_total_shards': 3,
       'browser_shard_index': 2,
       'lsan': True,
-      'lsan_run_all_tests': True,
       'sharded_tests': sharded_tests,
     }))
 
@@ -178,7 +176,6 @@ F('linux_asan_rel_tests_3', linux().ChromiumASANFactory(
       'browser_total_shards': 3,
       'browser_shard_index': 3,
       'lsan': True,
-      'lsan_run_all_tests': True,
       'sharded_tests': sharded_tests,
     }))
 

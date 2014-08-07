@@ -4,11 +4,9 @@
 
 #include "chrome/browser/safe_browsing/protocol_manager.h"
 
-#ifndef NDEBUG
-#include "base/base64.h"
-#endif
 #include "base/environment.h"
 #include "base/logging.h"
+#include "base/memory/scoped_vector.h"
 #include "base/metrics/histogram.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
@@ -25,6 +23,10 @@
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
+
+#if defined(OS_ANDROID)
+#include "net/base/network_change_notifier.h"
+#endif
 
 using base::Time;
 using base::TimeDelta;
@@ -64,7 +66,7 @@ static const int kSbTimerStartIntervalSecMax = 300;
 static const int kSbMaxUpdateWaitSec = 30;
 
 // Maximum back off multiplier.
-static const int kSbMaxBackOff = 8;
+static const size_t kSbMaxBackOff = 8;
 
 // The default SBProtocolManagerFactory.
 class SBProtocolManagerFactoryImpl : public SBProtocolManagerFactory {
@@ -120,7 +122,8 @@ SafeBrowsingProtocolManager::SafeBrowsingProtocolManager(
       url_prefix_(config.url_prefix),
       backup_update_reason_(BACKUP_UPDATE_REASON_MAX),
       disable_auto_update_(config.disable_auto_update),
-      url_fetcher_id_(0) {
+      url_fetcher_id_(0),
+      app_in_foreground_(true) {
   DCHECK(!url_prefix_.empty());
 
   backup_url_prefixes_[BACKUP_UPDATE_REASON_CONNECT] =
@@ -173,7 +176,7 @@ void SafeBrowsingProtocolManager::GetFullHash(
   if (gethash_error_count_ && Time::Now() <= next_gethash_time_) {
     RecordGetHashResult(is_download, GET_HASH_BACKOFF_ERROR);
     std::vector<SBFullHashResult> full_hashes;
-    callback.Run(full_hashes, false);
+    callback.Run(full_hashes, base::TimeDelta());
     return;
   }
   GURL gethash_url = GetHashUrl();
@@ -181,9 +184,7 @@ void SafeBrowsingProtocolManager::GetFullHash(
       url_fetcher_id_++, gethash_url, net::URLFetcher::POST, this);
   hash_requests_[fetcher] = FullHashDetails(callback, is_download);
 
-  std::string get_hash;
-  SafeBrowsingProtocolParser parser;
-  parser.FormatGetHash(prefixes, &get_hash);
+  const std::string get_hash = safe_browsing::FormatGetHash(prefixes);
 
   fetcher->SetLoadFlags(net::LOAD_DISABLE_CACHE);
   fetcher->SetRequestContext(request_context_getter_.get());
@@ -193,8 +194,19 @@ void SafeBrowsingProtocolManager::GetFullHash(
 
 void SafeBrowsingProtocolManager::GetNextUpdate() {
   DCHECK(CalledOnValidThread());
-  if (!request_.get() && request_type_ == NO_REQUEST)
-    IssueUpdateRequest();
+  if (request_.get() || request_type_ != NO_REQUEST)
+    return;
+
+#if defined(OS_ANDROID)
+  net::NetworkChangeNotifier::ConnectionType type =
+    net::NetworkChangeNotifier::GetConnectionType();
+  if (type != net::NetworkChangeNotifier::CONNECTION_WIFI) {
+    ScheduleNextUpdate(false /* no back off */);
+    return;
+  }
+#endif
+
+  IssueUpdateRequest();
 }
 
 // net::URLFetcherDelegate implementation ----------------------------------
@@ -211,7 +223,6 @@ void SafeBrowsingProtocolManager::OnURLFetchComplete(
     const net::URLFetcher* source) {
   DCHECK(CalledOnValidThread());
   scoped_ptr<const net::URLFetcher> fetcher;
-  bool parsed_ok = true;
 
   HashRequests::iterator it = hash_requests_.find(source);
   if (it != hash_requests_.end()) {
@@ -219,7 +230,7 @@ void SafeBrowsingProtocolManager::OnURLFetchComplete(
     fetcher.reset(it->first);
     const FullHashDetails& details = it->second;
     std::vector<SBFullHashResult> full_hashes;
-    bool can_cache = false;
+    base::TimeDelta cache_lifetime;
     if (source->GetStatus().is_success() &&
         (source->GetResponseCode() == 200 ||
          source->GetResponseCode() == 204)) {
@@ -229,20 +240,16 @@ void SafeBrowsingProtocolManager::OnURLFetchComplete(
         RecordGetHashResult(details.is_download, GET_HASH_STATUS_200);
       else
         RecordGetHashResult(details.is_download, GET_HASH_STATUS_204);
-      can_cache = true;
+
       gethash_error_count_ = 0;
       gethash_back_off_mult_ = 1;
-      SafeBrowsingProtocolParser parser;
       std::string data;
       source->GetResponseAsString(&data);
-      parsed_ok = parser.ParseGetHash(
-          data.data(),
-          static_cast<int>(data.length()),
-          &full_hashes);
-      if (!parsed_ok) {
+      if (!safe_browsing::ParseGetHash(
+              data.data(), data.length(), &cache_lifetime, &full_hashes)) {
         full_hashes.clear();
         RecordGetHashResult(details.is_download, GET_HASH_PARSE_ERROR);
-        // TODO(cbentzel): Should can_cache be set to false here? (See
+        // TODO(cbentzel): Should cache_lifetime be set to 0 here? (See
         // http://crbug.com/360232.)
       }
     } else {
@@ -261,7 +268,7 @@ void SafeBrowsingProtocolManager::OnURLFetchComplete(
     // Invoke the callback with full_hashes, even if there was a parse error or
     // an error response code (in which case full_hashes will be empty). The
     // caller can't be blocked indefinitely.
-    details.callback.Run(full_hashes, can_cache);
+    details.callback.Run(full_hashes, cache_lifetime);
 
     hash_requests_.erase(it);
   } else {
@@ -285,8 +292,11 @@ void SafeBrowsingProtocolManager::OnURLFetchComplete(
       // We have data from the SafeBrowsing service.
       std::string data;
       source->GetResponseAsString(&data);
-      parsed_ok = HandleServiceResponse(
-          source->GetURL(), data.data(), static_cast<int>(data.length()));
+
+      // TODO(shess): Cleanup the flow of this code so that |parsed_ok| can be
+      // removed or omitted.
+      const bool parsed_ok = HandleServiceResponse(
+          source->GetURL(), data.data(), data.length());
       if (!parsed_ok) {
         VLOG(1) << "SafeBrowsing request for: " << source->GetURL()
                 << " failed parse.";
@@ -360,22 +370,20 @@ void SafeBrowsingProtocolManager::OnURLFetchComplete(
   IssueChunkRequest();
 }
 
-bool SafeBrowsingProtocolManager::HandleServiceResponse(const GURL& url,
-                                                        const char* data,
-                                                        int length) {
+bool SafeBrowsingProtocolManager::HandleServiceResponse(
+    const GURL& url, const char* data, size_t length) {
   DCHECK(CalledOnValidThread());
-  SafeBrowsingProtocolParser parser;
 
   switch (request_type_) {
     case UPDATE_REQUEST:
     case BACKUP_UPDATE_REQUEST: {
-      int next_update_sec = -1;
+      size_t next_update_sec = 0;
       bool reset = false;
       scoped_ptr<std::vector<SBChunkDelete> > chunk_deletes(
           new std::vector<SBChunkDelete>);
       std::vector<ChunkUrl> chunk_urls;
-      if (!parser.ParseUpdate(data, length, &next_update_sec,
-                              &reset, chunk_deletes.get(), &chunk_urls)) {
+      if (!safe_browsing::ParseUpdate(data, length, &next_update_sec, &reset,
+                                      chunk_deletes.get(), &chunk_urls)) {
         return false;
       }
 
@@ -410,10 +418,9 @@ bool SafeBrowsingProtocolManager::HandleServiceResponse(const GURL& url,
         return true;
       }
 
-      // Chunks to delete from our storage.  Pass ownership of
-      // |chunk_deletes|.
+      // Chunks to delete from our storage.
       if (!chunk_deletes->empty())
-        delegate_->DeleteChunks(chunk_deletes.release());
+        delegate_->DeleteChunks(chunk_deletes.Pass());
 
       break;
     }
@@ -422,28 +429,18 @@ bool SafeBrowsingProtocolManager::HandleServiceResponse(const GURL& url,
                           base::Time::Now() - chunk_request_start_);
 
       const ChunkUrl chunk_url = chunk_request_urls_.front();
-      scoped_ptr<SBChunkList> chunks(new SBChunkList);
+      scoped_ptr<ScopedVector<SBChunkData> >
+          chunks(new ScopedVector<SBChunkData>);
       UMA_HISTOGRAM_COUNTS("SB2.ChunkSize", length);
       update_size_ += length;
-      if (!parser.ParseChunk(chunk_url.list_name, data, length,
-                             chunks.get())) {
-#ifndef NDEBUG
-        std::string data_str;
-        data_str.assign(data, length);
-        std::string encoded_chunk;
-        base::Base64Encode(data_str, &encoded_chunk);
-        VLOG(1) << "ParseChunk error for chunk: " << chunk_url.url
-                << ", Base64Encode(data): " << encoded_chunk
-                << ", length: " << length;
-#endif
+      if (!safe_browsing::ParseChunk(data, length, chunks.get()))
         return false;
-      }
 
       // Chunks to add to storage.  Pass ownership of |chunks|.
       if (!chunks->empty()) {
         chunk_pending_to_write_ = true;
         delegate_->AddChunks(
-            chunk_url.list_name, chunks.release(),
+            chunk_url.list_name, chunks.Pass(),
             base::Bind(&SafeBrowsingProtocolManager::OnAddChunksComplete,
                        base::Unretained(this)));
       }
@@ -508,7 +505,7 @@ base::TimeDelta SafeBrowsingProtocolManager::GetNextUpdateInterval(
 }
 
 base::TimeDelta SafeBrowsingProtocolManager::GetNextBackOffInterval(
-    int* error_count, int* multiplier) const {
+    size_t* error_count, size_t* multiplier) const {
   DCHECK(CalledOnValidThread());
   DCHECK(multiplier && error_count);
   (*error_count)++;
@@ -605,7 +602,7 @@ void SafeBrowsingProtocolManager::OnGetChunksComplete(
   bool found_malware = false;
   bool found_phishing = false;
   for (size_t i = 0; i < lists.size(); ++i) {
-    update_list_data_.append(FormatList(lists[i]));
+    update_list_data_.append(safe_browsing::FormatList(lists[i]));
     if (lists[i].name == safe_browsing_util::kPhishingList)
       found_phishing = true;
 
@@ -615,13 +612,17 @@ void SafeBrowsingProtocolManager::OnGetChunksComplete(
 
   // If we have an empty database, let the server know we want data for these
   // lists.
-  if (!found_phishing)
-    update_list_data_.append(FormatList(
+  // TODO(shess): These cases never happen because the database fills in the
+  // lists in GetChunks().  Refactor the unit tests so that this code can be
+  // removed.
+  if (!found_phishing) {
+    update_list_data_.append(safe_browsing::FormatList(
         SBListChunkRanges(safe_browsing_util::kPhishingList)));
-
-  if (!found_malware)
-    update_list_data_.append(FormatList(
+  }
+  if (!found_malware) {
+    update_list_data_.append(safe_browsing::FormatList(
         SBListChunkRanges(safe_browsing_util::kMalwareList)));
+  }
 
   // Large requests are (probably) a sign of database corruption.
   // Record stats to inform decisions about whether to automate
@@ -668,25 +669,6 @@ void SafeBrowsingProtocolManager::OnAddChunksComplete() {
   }
 }
 
-// static
-std::string SafeBrowsingProtocolManager::FormatList(
-    const SBListChunkRanges& list) {
-  std::string formatted_results;
-  formatted_results.append(list.name);
-  formatted_results.append(";");
-  if (!list.adds.empty()) {
-    formatted_results.append("a:" + list.adds);
-    if (!list.subs.empty())
-      formatted_results.append(":");
-  }
-  if (!list.subs.empty()) {
-    formatted_results.append("s:" + list.subs);
-  }
-  formatted_results.append("\n");
-
-  return formatted_results;
-}
-
 void SafeBrowsingProtocolManager::HandleGetHashError(const Time& now) {
   DCHECK(CalledOnValidThread());
   base::TimeDelta next = GetNextBackOffInterval(
@@ -700,6 +682,12 @@ void SafeBrowsingProtocolManager::UpdateFinished(bool success) {
 
 void SafeBrowsingProtocolManager::UpdateFinished(bool success, bool back_off) {
   DCHECK(CalledOnValidThread());
+#if defined(OS_ANDROID)
+  if (app_in_foreground_)
+    UMA_HISTOGRAM_COUNTS("SB2.UpdateSizeForeground", update_size_);
+  else
+    UMA_HISTOGRAM_COUNTS("SB2.UpdateSizeBackground", update_size_);
+#endif
   UMA_HISTOGRAM_COUNTS("SB2.UpdateSize", update_size_);
   update_size_ = 0;
   bool update_success = success || request_type_ == CHUNK_REQUEST;

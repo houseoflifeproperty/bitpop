@@ -6,13 +6,9 @@
   'variables': {
     'conditions': [
       ['sysroot!=""', {
-        'pkg-config': '<(chroot_cmd) ./pkg-config-wrapper "<(sysroot)" "<(target_arch)"',
-        # libgcrypt-config-wrapper invokes libgcrypt-config directly from the 
-        # sysroot, so there's no need to prefix it with <(chroot_cmd).
-        'libgcrypt-config': './libgcrypt-config-wrapper "<(sysroot)"',
+        'pkg-config': '<(chroot_cmd) ./pkg-config-wrapper "<(sysroot)" "<(target_arch)" "<(system_libdir)"',
       }, {
         'pkg-config': 'pkg-config',
-        'libgcrypt-config': 'libgcrypt-config',
       }],
     ],
 
@@ -111,7 +107,7 @@
         },
       ],  # targets
     }],
-    [ 'use_x11==1', {
+    [ 'use_x11==1 or ozone_platform_ozonex==1', {
       # Hide X11 and related dependencies when use_x11=0
       'targets': [
         {
@@ -306,23 +302,6 @@
           },
         },
         {
-          'target_name': 'xscrnsaver',
-          'type': 'none',
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(<(pkg-config) --cflags xscrnsaver)',
-            ],
-          },
-          'link_settings': {
-            'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other xscrnsaver)',
-            ],
-            'libraries': [
-              '<!@(<(pkg-config) --libs-only-l xscrnsaver)',
-            ],
-          },
-        },
-        {
           'target_name': 'xtst',
           'type': 'none',
           'toolsets': ['host', 'target'],
@@ -360,6 +339,27 @@
         }
       ],  # targets
     }],
+    ['use_x11==1 and chromeos==0', {
+      'targets': [
+        {
+          'target_name': 'xscrnsaver',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags xscrnsaver)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other xscrnsaver)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l xscrnsaver)',
+            ],
+          },
+        },
+      ],  # targets
+    }],
     ['use_evdev_gestures==1', {
       'targets': [
         {
@@ -393,6 +393,24 @@
             ],
             'libraries': [
               '<!@(<(pkg-config) --libs-only-l libgestures)',
+            ],
+          },
+        },
+      ],
+    }],
+    ['ozone_platform_gbm==1', {
+      'targets': [
+        {
+          'target_name': 'gbm',
+          'type': 'none',
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags gbm)',
+            ],
+          },
+          'link_settings': {
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l gbm)',
             ],
           },
         },
@@ -746,7 +764,6 @@
                      '--link-directly=<(linux_link_libbrlapi)',
                      'brlapi_getHandleSize',
                      'brlapi_error_location',
-                     'brlapi_expandKeyCode',
                      'brlapi_strerror',
                      'brlapi__acceptKeys',
                      'brlapi__openConnection',
@@ -770,27 +787,6 @@
           '-lcap',
         ],
       },
-    },
-    {
-      'target_name': 'libgcrypt',
-      'type': 'none',
-      'conditions': [
-        ['_toolset=="target" and use_cups==1', {
-          'direct_dependent_settings': {
-            'cflags': [
-              '<!@(<(libgcrypt-config) --cflags)',
-            ],
-          },
-          'link_settings': {
-            'libraries': [
-              # libgcrypt-config does not support --libs-only-l options,
-              # and the result contains -L options, which shouldn't be in
-              # the entries of 'libraries'. So filter them out.
-              '<!@(<(libgcrypt-config) --libs | sed -e \'s/-L[^ ]*//g\')',
-            ],
-          },
-        }],
-      ],
     },
     {
       'target_name': 'libpci',

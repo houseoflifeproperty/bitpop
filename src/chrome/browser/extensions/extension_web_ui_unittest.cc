@@ -15,7 +15,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
@@ -91,7 +91,7 @@ TEST_F(ExtensionWebUITest, ExtensionURLOverride) {
   profile_->GetExtensionService()->AddComponentExtension(ext_component.get());
 
   // Despite being registered more recently, the component extension should
-  // not take precendence over the non-component extension.
+  // not take precedence over the non-component extension.
   url = GURL("chrome://bookmarks");
   EXPECT_TRUE(ExtensionWebUI::HandleChromeURLOverride(&url, profile_.get()));
   EXPECT_EQ(url, expected_unpacked_override_url);

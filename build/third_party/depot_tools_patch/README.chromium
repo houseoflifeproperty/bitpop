@@ -1,0 +1,16 @@
+Name: Depot tools' patch.py and patches_data.py
+Short Name: depot_tools_patch
+URL: https://chromium.googlesource.com/chromium/tools/depot_tools.git
+Revision: ff7ea00a6ed5
+License: Apache 2.0
+
+Description:
+Used by patch_path_filter.py and its unit test. A specific version is needed to
+ensure not breaking patching due to changes in the auto-updated depot_tools.
+
+NOTICE: Initially the directory containing this was named depot_tools, but it
+turns out that interferes with other scripts looking for the real depot_tools,
+so please don't rename it to depot_tools.
+
+Local Modifications:
+None.

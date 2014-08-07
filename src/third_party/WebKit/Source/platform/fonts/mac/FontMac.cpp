@@ -83,8 +83,6 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
     const GlyphBuffer& glyphBuffer, unsigned from, unsigned numGlyphs,
     const FloatPoint& point, const FloatRect& textRect) const
 {
-    COMPILE_ASSERT(sizeof(GlyphBufferGlyph) == sizeof(uint16_t), GlyphBufferGlyphSize_equals_uint16_t);
-
     bool shouldSmoothFonts = true;
     bool shouldAntialias = true;
 
@@ -108,7 +106,7 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
         shouldAntialias = shouldAntialias && isFontAntialiasingEnabledForTest();
     }
 
-    const GlyphBufferGlyph* glyphs = glyphBuffer.glyphs(from);
+    const Glyph* glyphs = glyphBuffer.glyphs(from);
     SkScalar x = SkFloatToScalar(point.x());
     SkScalar y = SkFloatToScalar(point.y());
 
@@ -120,7 +118,7 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
     // text drawing can proceed faster. However, it's unclear when those
     // patches may be upstreamed to WebKit so we always use the slower path
     // here.
-    const GlyphBufferAdvance* adv = glyphBuffer.advances(from);
+    const FloatSize* adv = glyphBuffer.advances(from);
     SkAutoSTMalloc<32, SkPoint> storage(numGlyphs);
     SkPoint* pos = storage.get();
 
@@ -142,21 +140,19 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
 
     // We draw text up to two times (once for fill, once for stroke).
     if (textMode & TextModeFill) {
-        SkPaint paint;
-        gc->setupPaintForFilling(&paint);
+        SkPaint paint = gc->fillPaint();
         setupPaint(&paint, font, this, shouldAntialias, shouldSmoothFonts);
         gc->adjustTextRenderMode(&paint);
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
 
-        gc->drawPosText(glyphs, numGlyphs * sizeof(uint16_t), pos, textRect, paint);
+        gc->drawPosText(glyphs, numGlyphs * sizeof(Glyph), pos, textRect, paint);
     }
 
     if ((textMode & TextModeStroke)
         && gc->strokeStyle() != NoStroke
         && gc->strokeThickness() > 0) {
 
-        SkPaint paint;
-        gc->setupPaintForStroking(&paint);
+        SkPaint paint = gc->strokePaint();
         setupPaint(&paint, font, this, shouldAntialias, shouldSmoothFonts);
         gc->adjustTextRenderMode(&paint);
         paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
@@ -167,7 +163,7 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
             paint.setLooper(0);
         }
 
-        gc->drawPosText(glyphs, numGlyphs * sizeof(uint16_t), pos, textRect, paint);
+        gc->drawPosText(glyphs, numGlyphs * sizeof(Glyph), pos, textRect, paint);
     }
     if (font->platformData().orientation() == Vertical)
         gc->restore();

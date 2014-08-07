@@ -108,11 +108,6 @@ void ShowHelpImpl(Browser* browser,
   ShowSingletonTab(browser, url);
 }
 
-bool SettingsWindowEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      ::switches::kEnableSettingsWindow);
-}
-
 }  // namespace
 
 void ShowBookmarkManager(Browser* browser) {
@@ -129,11 +124,6 @@ void ShowBookmarkManagerForNode(Browser* browser, int64 node_id) {
 
 void ShowHistory(Browser* browser) {
   content::RecordAction(UserMetricsAction("ShowHistory"));
-  if (SettingsWindowEnabled()) {
-    SettingsWindowManager::GetInstance()->ShowChromePageForProfile(
-        browser->profile(), GURL(kChromeUIHistoryURL));
-    return;
-  }
   NavigateParams params(
       GetSingletonTabNavigateParams(browser, GURL(kChromeUIHistoryURL)));
   params.path_behavior = NavigateParams::IGNORE_AND_NAVIGATE;
@@ -156,11 +146,6 @@ void ShowDownloads(Browser* browser) {
 void ShowExtensions(Browser* browser,
                     const std::string& extension_to_highlight) {
   content::RecordAction(UserMetricsAction("ShowExtensions"));
-  if (SettingsWindowEnabled()) {
-    SettingsWindowManager::GetInstance()->ShowChromePageForProfile(
-        browser->profile(), GURL(kChromeUIExtensionsURL));
-    return;
-  }
   NavigateParams params(
       GetSingletonTabNavigateParams(browser, GURL(kChromeUIExtensionsURL)));
   params.path_behavior = NavigateParams::IGNORE_AND_NAVIGATE;
@@ -180,7 +165,6 @@ void ShowConflicts(Browser* browser) {
   if (model->modules_to_notify_about() > 0) {
     GURL help_center_url = model->GetFirstNotableConflict();
     if (help_center_url.is_valid()) {
-      EnumerateModulesModel::RecordLearnMoreStat(true);
       ShowSingletonTab(browser, help_center_url);
       model->AcknowledgeConflictNotification();
       return;
@@ -245,7 +229,7 @@ void ShowSettings(Browser* browser) {
 }
 
 void ShowSettingsSubPage(Browser* browser, const std::string& sub_page) {
-  if (SettingsWindowEnabled()) {
+  if (::switches::SettingsWindowEnabled()) {
     ShowSettingsSubPageForProfile(browser->profile(), sub_page);
     return;
   }
@@ -254,7 +238,7 @@ void ShowSettingsSubPage(Browser* browser, const std::string& sub_page) {
 
 void ShowSettingsSubPageForProfile(Profile* profile,
                                    const std::string& sub_page) {
-  if (SettingsWindowEnabled()) {
+  if (::switches::SettingsWindowEnabled()) {
     content::RecordAction(base::UserMetricsAction("ShowOptions"));
     SettingsWindowManager::GetInstance()->ShowChromePageForProfile(
         profile, GetSettingsUrl(sub_page));
@@ -304,6 +288,11 @@ void ShowImportDialog(Browser* browser) {
 
 void ShowAboutChrome(Browser* browser) {
   content::RecordAction(UserMetricsAction("AboutChrome"));
+  if (::switches::SettingsWindowEnabled()) {
+    SettingsWindowManager::GetInstance()->ShowChromePageForProfile(
+        browser->profile(), GURL(kChromeUIUberURL));
+    return;
+  }
   NavigateParams params(
       GetSingletonTabNavigateParams(browser, GURL(kChromeUIUberURL)));
   params.path_behavior = NavigateParams::IGNORE_AND_NAVIGATE;

@@ -22,7 +22,6 @@
 
 #include "core/svg/SVGFEMergeNodeElement.h"
 
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 
 namespace WebCore {
@@ -35,10 +34,7 @@ inline SVGFEMergeNodeElement::SVGFEMergeNodeElement(Document& document)
     addToPropertyMap(m_in1);
 }
 
-PassRefPtr<SVGFEMergeNodeElement> SVGFEMergeNodeElement::create(Document& document)
-{
-    return adoptRef(new SVGFEMergeNodeElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEMergeNodeElement)
 
 bool SVGFEMergeNodeElement::isSupportedAttribute(const QualifiedName& attrName)
 {

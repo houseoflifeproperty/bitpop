@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/files/file_path.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -77,6 +78,7 @@ class Target : public content::DevToolsTarget {
   explicit Target(WebContents* web_contents);
 
   virtual std::string GetId() const OVERRIDE { return id_; }
+  virtual std::string GetParentId() const OVERRIDE { return std::string(); }
   virtual std::string GetType() const OVERRIDE { return kTargetTypePage; }
   virtual std::string GetTitle() const OVERRIDE { return title_; }
   virtual std::string GetDescription() const OVERRIDE { return std::string(); }
@@ -146,7 +148,8 @@ ShellDevToolsDelegate::ShellDevToolsDelegate(BrowserContext* browser_context)
   frontend_url = base::StringPrintf(kFrontEndURL, GetWebKitRevision().c_str());
 #endif
   devtools_http_handler_ =
-      DevToolsHttpHandler::Start(CreateSocketFactory(), frontend_url, this);
+      DevToolsHttpHandler::Start(CreateSocketFactory(), frontend_url, this,
+                                 base::FilePath());
 }
 
 ShellDevToolsDelegate::~ShellDevToolsDelegate() {

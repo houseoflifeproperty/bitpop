@@ -7,12 +7,13 @@
 
 #include "base/compiler_specific.h"
 #include "base/debug/trace_event.h"
-#include "base/platform_file.h"
 #include "base/threading/thread_local_storage.h"
 #include "base/timer/timer.h"
+#include "content/child/webcrypto/webcrypto_impl.h"
 #include "content/child/webfallbackthemeengine_impl.h"
 #include "content/common/content_export.h"
 #include "third_party/WebKit/public/platform/Platform.h"
+#include "third_party/WebKit/public/platform/WebGestureDevice.h"
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "ui/base/layout.h"
 
@@ -43,7 +44,7 @@ class CONTENT_EXPORT BlinkPlatformImpl
   // Platform methods (partial implementation):
   virtual blink::WebThemeEngine* themeEngine();
   virtual blink::WebFallbackThemeEngine* fallbackThemeEngine();
-  virtual base::PlatformFile databaseOpenFile(
+  virtual blink::Platform::FileHandle databaseOpenFile(
       const blink::WebString& vfs_file_name, int desired_flags);
   virtual int databaseDeleteFile(const blink::WebString& vfs_file_name,
                                  bool sync_dir);
@@ -140,7 +141,7 @@ class CONTENT_EXPORT BlinkPlatformImpl
   virtual void stopSharedTimer();
   virtual void callOnMainThread(void (*func)(void*), void* context);
   virtual blink::WebGestureCurve* createFlingAnimationCurve(
-      int device_source,
+      blink::WebGestureDevice device_source,
       const blink::WebFloatPoint& velocity,
       const blink::WebSize& cumulative_scroll) OVERRIDE;
   virtual void didStartWorkerRunLoop(
@@ -174,7 +175,7 @@ class CONTENT_EXPORT BlinkPlatformImpl
   int shared_timer_suspended_;  // counter
   scoped_ptr<FlingCurveConfiguration> fling_curve_configuration_;
   base::ThreadLocalStorage::Slot current_thread_slot_;
-  scoped_ptr<WebCryptoImpl> web_crypto_;
+  WebCryptoImpl web_crypto_;
 };
 
 }  // namespace content

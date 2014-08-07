@@ -130,7 +130,6 @@ class VIEWS_EXPORT DesktopWindowTreeHost {
   // (for example, so that they can overhang onto the window title bar).
   virtual bool ShouldWindowContentsBeTransparent() const = 0;
   virtual void FrameTypeChanged() = 0;
-  virtual NonClientFrameView* CreateNonClientFrameView() = 0;
 
   virtual void SetFullscreen(bool fullscreen) = 0;
   virtual bool IsFullscreen() const = 0;
@@ -154,6 +153,9 @@ class VIEWS_EXPORT DesktopWindowTreeHost {
   // Returns true if the Widget was closed but is still showing because of
   // animations.
   virtual bool IsAnimatingClosed() const = 0;
+
+  // Returns true if the Widget supports translucency.
+  virtual bool IsTranslucentWindowOpacitySupported() const = 0;
 };
 
 }  // namespace views

@@ -188,12 +188,12 @@ def main():
       code = code or code1 or code2
     return code
   else:
-    latest_snapshot_revision = archive.GetLatestRevision(archive.Site.SNAPSHOT)
+    latest_snapshot_revision = archive.GetLatestSnapshotVersion()
     versions = [
         ['HEAD', latest_snapshot_revision],
+        ['36', archive.CHROME_36_REVISION],
         ['35', archive.CHROME_35_REVISION],
-        ['34', archive.CHROME_34_REVISION],
-        ['33', archive.CHROME_33_REVISION]
+        ['34', archive.CHROME_34_REVISION]
     ]
     code = 0
     for version in versions:
@@ -203,7 +203,7 @@ def main():
       version_name = version[0]
       if version_name == 'HEAD':
         version_name = version[1]
-        download_site = archive.Site.SNAPSHOT
+        download_site = archive.GetSnapshotDownloadSite()
       temp_dir, chrome_path = DownloadChrome(version_name, version[1],
                                              download_site)
       if not chrome_path:

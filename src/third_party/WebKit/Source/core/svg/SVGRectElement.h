@@ -21,7 +21,7 @@
 #ifndef SVGRectElement_h
 #define SVGRectElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGGeometryElement.h"
@@ -30,7 +30,7 @@ namespace WebCore {
 
 class SVGRectElement FINAL : public SVGGeometryElement {
 public:
-    static PassRefPtr<SVGRectElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGRectElement);
 
     SVGAnimatedLength* x() const { return m_x.get(); }
     SVGAnimatedLength* y() const { return m_y.get(); }

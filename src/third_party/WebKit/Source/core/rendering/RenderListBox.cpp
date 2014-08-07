@@ -30,8 +30,7 @@
 #include "config.h"
 #include "core/rendering/RenderListBox.h"
 
-#include <math.h>
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/css/CSSFontSelector.h"
 #include "core/css/resolver/StyleResolver.h"
@@ -57,6 +56,7 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/scroll/Scrollbar.h"
 #include "platform/text/BidiTextRun.h"
+#include <math.h>
 
 using namespace std;
 
@@ -169,13 +169,13 @@ void RenderListBox::updateFromElement()
 
         setHasVerticalScrollbar(true);
 
-        setNeedsLayoutAndPrefWidthsRecalc();
+        setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
     }
 }
 
 void RenderListBox::selectionChanged()
 {
-    repaint();
+    paintInvalidationForWholeRenderer();
     if (!m_inAutoscroll) {
         if (m_optionsChanged || needsLayout())
             m_scrollToRevealSelectionAfterLayout = true;
@@ -202,15 +202,15 @@ void RenderListBox::layout()
     }
 
     if (m_scrollToRevealSelectionAfterLayout) {
-        LayoutStateDisabler layoutStateDisabler(*this);
+        ForceHorriblySlowRectMapping slowRectMapping(*this);
         scrollToRevealSelection();
     }
 }
 
-void RenderListBox::repaintTreeAfterLayout()
+void RenderListBox::invalidateTreeAfterLayout(const RenderLayerModelObject& invalidationContainer)
 {
     repaintScrollbarIfNeeded();
-    RenderBox::repaintTreeAfterLayout();
+    RenderBox::invalidateTreeAfterLayout(invalidationContainer);
 }
 
 void RenderListBox::scrollToRevealSelection()
@@ -227,9 +227,7 @@ void RenderListBox::scrollToRevealSelection()
 
 void RenderListBox::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const
 {
-    maxLogicalWidth = m_optionsWidth + 2 * optionsSpacingHorizontal;
-    if (m_vBar)
-        maxLogicalWidth += verticalScrollbarWidth();
+    maxLogicalWidth = m_optionsWidth + 2 * optionsSpacingHorizontal + verticalScrollbarWidth();
     if (!style()->width().isPercent())
         minLogicalWidth = maxLogicalWidth;
 }
@@ -389,7 +387,7 @@ int RenderListBox::scrollbarLeft() const
     if (style()->shouldPlaceBlockDirectionScrollbarOnLogicalLeft())
         scrollbarLeft = borderLeft();
     else
-        scrollbarLeft = width() - borderRight() - verticalScrollbarWidth();
+        scrollbarLeft = width() - borderRight() - (m_vBar ? m_vBar->width() : 0);
     return scrollbarLeft;
 }
 
@@ -398,7 +396,7 @@ void RenderListBox::paintScrollbar(PaintInfo& paintInfo, const LayoutPoint& pain
     if (m_vBar) {
         IntRect scrollRect = pixelSnappedIntRect(paintOffset.x() + scrollbarLeft(),
             paintOffset.y() + borderTop(),
-            verticalScrollbarWidth(),
+            m_vBar->width(),
             height() - (borderTop() + borderBottom()));
         m_vBar->setFrameRect(scrollRect);
         m_vBar->paint(paintInfo.context, paintInfo.rect);
@@ -678,9 +676,9 @@ void RenderListBox::scrollTo(int newOffset)
     m_indexOffset = newOffset;
 
     if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && frameView()->isInPerformLayout())
-        setShouldDoFullRepaintAfterLayout(true);
+        setShouldDoFullPaintInvalidationAfterLayout(true);
     else
-        repaint();
+        paintInvalidationForWholeRenderer();
 
     node()->document().enqueueScrollEventForNode(node());
 }
@@ -697,32 +695,32 @@ int RenderListBox::verticalScrollbarWidth() const
 
 // FIXME: We ignore padding in the vertical direction as far as these values are concerned, since that's
 // how the control currently paints.
-int RenderListBox::scrollWidth() const
+LayoutUnit RenderListBox::scrollWidth() const
 {
     // There is no horizontal scrolling allowed.
-    return pixelSnappedClientWidth();
+    return clientWidth();
 }
 
-int RenderListBox::scrollHeight() const
+LayoutUnit RenderListBox::scrollHeight() const
 {
-    return max(pixelSnappedClientHeight(), roundToInt(listHeight()));
+    return max(clientHeight(), listHeight());
 }
 
-int RenderListBox::scrollLeft() const
+LayoutUnit RenderListBox::scrollLeft() const
 {
     return 0;
 }
 
-void RenderListBox::setScrollLeft(int)
+void RenderListBox::setScrollLeft(LayoutUnit)
 {
 }
 
-int RenderListBox::scrollTop() const
+LayoutUnit RenderListBox::scrollTop() const
 {
     return m_indexOffset * itemHeight();
 }
 
-void RenderListBox::setScrollTop(int newTop)
+void RenderListBox::setScrollTop(LayoutUnit newTop)
 {
     // Determine an index and scroll to it.
     int index = newTop / itemHeight();
@@ -783,7 +781,7 @@ void RenderListBox::invalidateScrollbarRect(Scrollbar* scrollbar, const IntRect&
         m_verticalBarDamage = scrollRect;
         m_hasVerticalBarDamage = true;
     } else {
-        repaintRectangle(scrollRect);
+        invalidatePaintRectangle(scrollRect);
     }
 }
 
@@ -791,7 +789,7 @@ void RenderListBox::repaintScrollbarIfNeeded()
 {
     if (!hasVerticalBarDamage())
         return;
-    repaintRectangle(verticalBarDamage());
+    invalidatePaintRectangle(verticalBarDamage());
 
     resetScrollbarDamage();
 }

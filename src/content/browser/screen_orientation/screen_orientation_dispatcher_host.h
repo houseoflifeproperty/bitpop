@@ -5,34 +5,38 @@
 #ifndef CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DISPATCHER_HOST_H_
 #define CONTENT_BROWSER_SCREEN_ORIENTATION_SCREEN_ORIENTATION_DISPATCHER_HOST_H_
 
-#include "content/public/browser/browser_message_filter.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationLockType.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
 
 namespace content {
 
+class RenderFrameHost;
 class ScreenOrientationProvider;
+class WebContents;
 
-// ScreenOrientationDispatcherHost is a browser filter for Screen Orientation
-// messages and also helps dispatching messages about orientation changes to the
-// renderers.
+// ScreenOrientationDispatcherHost receives lock and unlock requests from the
+// RenderFrames and dispatch them to the ScreenOrientationProvider. It also
+// make sure that the right RenderFrame get replied for each lock request.
 class CONTENT_EXPORT ScreenOrientationDispatcherHost
-    : public BrowserMessageFilter {
+    : public WebContentsObserver {
  public:
-  ScreenOrientationDispatcherHost();
+  explicit ScreenOrientationDispatcherHost(WebContents* web_contents);
+  virtual ~ScreenOrientationDispatcherHost();
 
-  // BrowserMessageFilter
-  virtual bool OnMessageReceived(const IPC::Message&, bool*) OVERRIDE;
+  // WebContentsObserver
+  virtual bool OnMessageReceived(const IPC::Message&,
+                                 RenderFrameHost* render_frame_host) OVERRIDE;
 
   void OnOrientationChange(blink::WebScreenOrientationType orientation);
 
   void SetProviderForTests(ScreenOrientationProvider* provider);
 
  private:
-  virtual ~ScreenOrientationDispatcherHost();
-
-  void OnLockRequest(blink::WebScreenOrientationLockType orientations);
-  void OnUnlockRequest();
+  void OnLockRequest(RenderFrameHost* render_frame_host,
+                     blink::WebScreenOrientationLockType orientation,
+                     int request_id);
+  void OnUnlockRequest(RenderFrameHost* render_frame_host);
 
   static ScreenOrientationProvider* CreateProvider();
 

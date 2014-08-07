@@ -32,9 +32,6 @@ class CHROMEOS_EXPORT DeviceState : public ManagedState {
   // Accessors
   const std::string& mac_address() const { return mac_address_; }
 
-  // Returns |mac_address_| in aa:bb format.
-  std::string GetFormattedMacAddress() const;
-
   // Cellular specific accessors
   const std::string& home_provider_id() const { return home_provider_id_; }
   bool allow_roaming() const { return allow_roaming_; }
@@ -52,10 +49,12 @@ class CHROMEOS_EXPORT DeviceState : public ManagedState {
   const std::string& mdn() const { return mdn_; }
   const CellularScanResults& scan_results() const { return scan_results_; }
 
+  // |ip_configs_| is kept up to date by NetworkStateHandler.
+  const base::DictionaryValue& ip_configs() const { return ip_configs_; }
+
   // Do not use this. It exists temporarily for internet_options_handler.cc
   // which is being deprecated.
   const base::DictionaryValue& properties() const { return properties_; }
-  const base::DictionaryValue& ip_configs() const { return ip_configs_; }
 
   // Ethernet specific accessors
   bool eap_authentication_completed() const {

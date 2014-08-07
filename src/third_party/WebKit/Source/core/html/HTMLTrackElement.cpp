@@ -26,14 +26,12 @@
 #include "config.h"
 #include "core/html/HTMLTrackElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/events/Event.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLMediaElement.h"
 #include "platform/Logging.h"
-
-using namespace std;
 
 namespace WebCore {
 
@@ -58,17 +56,14 @@ inline HTMLTrackElement::HTMLTrackElement(Document& document)
     ScriptWrappable::init(this);
 }
 
+DEFINE_NODE_FACTORY(HTMLTrackElement)
+
 HTMLTrackElement::~HTMLTrackElement()
 {
 #if !ENABLE(OILPAN)
     if (m_track)
         m_track->clearTrackElement();
 #endif
-}
-
-PassRefPtrWillBeRawPtr<HTMLTrackElement> HTMLTrackElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLTrackElement(document));
 }
 
 Node::InsertionNotificationRequest HTMLTrackElement::insertedInto(ContainerNode* insertionPoint)

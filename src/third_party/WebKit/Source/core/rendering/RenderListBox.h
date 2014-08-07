@@ -82,7 +82,7 @@ private:
 
     virtual void layout() OVERRIDE;
 
-    virtual void repaintTreeAfterLayout() OVERRIDE FINAL;
+    virtual void invalidateTreeAfterLayout(const RenderLayerModelObject&) OVERRIDE FINAL;
 
     virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE;
 
@@ -93,12 +93,12 @@ private:
     virtual void panScroll(const IntPoint&) OVERRIDE;
 
     virtual int verticalScrollbarWidth() const OVERRIDE;
-    virtual int scrollLeft() const OVERRIDE;
-    virtual int scrollTop() const OVERRIDE;
-    virtual int scrollWidth() const OVERRIDE;
-    virtual int scrollHeight() const OVERRIDE;
-    virtual void setScrollLeft(int) OVERRIDE;
-    virtual void setScrollTop(int) OVERRIDE;
+    virtual LayoutUnit scrollLeft() const OVERRIDE;
+    virtual LayoutUnit scrollTop() const OVERRIDE;
+    virtual LayoutUnit scrollWidth() const OVERRIDE;
+    virtual LayoutUnit scrollHeight() const OVERRIDE;
+    virtual void setScrollLeft(LayoutUnit) OVERRIDE;
+    virtual void setScrollTop(LayoutUnit) OVERRIDE;
 
     virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
 

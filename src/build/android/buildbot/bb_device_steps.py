@@ -96,13 +96,21 @@ def _GetRevision(options):
   return revision
 
 
-def RunTestSuites(options, suites):
+def RunTestSuites(options, suites, suites_options=None):
   """Manages an invocation of test_runner.py for gtests.
 
   Args:
     options: options object.
     suites: List of suite names to run.
+    suites_options: Command line options dictionary for particular suites.
+                    For example,
+                    {'content_browsertests', ['--num_retries=1', '--release']}
+                    will add the options only to content_browsertests.
   """
+
+  if not suites_options:
+    suites_options = {}
+
   args = ['--verbose']
   if options.target == 'Release':
     args.append('--release')
@@ -110,9 +118,11 @@ def RunTestSuites(options, suites):
     args.append('--tool=asan')
   if options.gtest_filter:
     args.append('--gtest-filter=%s' % options.gtest_filter)
+
   for suite in suites:
     bb_annotations.PrintNamedStep(suite)
     cmd = ['build/android/test_runner.py', 'gtest', '-s', suite] + args
+    cmd += suites_options.get(suite, [])
     if suite == 'content_browsertests':
       cmd.append('--num_retries=1')
     RunCmd(cmd)
@@ -138,7 +148,7 @@ def RunTelemetryPerfUnitTests(options):
     options: options object.
   """
   InstallApk(options, INSTRUMENTATION_TESTS['ChromeShell'], False)
-  args = ['--browser', 'android-chromium-testshell']
+  args = ['--browser', 'android-chrome-shell']
   devices = android_commands.GetAttachedDevices()
   if devices:
     args = args + ['--device', devices[0]]
@@ -171,9 +181,10 @@ def InstallApk(options, test, print_step=False):
   if print_step:
     bb_annotations.PrintNamedStep('install_%s' % test.name.lower())
 
-  args = ['--apk', test.apk, '--apk_package', test.apk_package]
+  args = ['--apk_package', test.apk_package]
   if options.target == 'Release':
     args.append('--release')
+  args.append(test.apk)
 
   RunCmd(['build/android/adb_install_apk.py'] + args, halt_on_failure=True)
 
@@ -396,11 +407,13 @@ def ProvisionDevices(options):
 
   if not bb_utils.TESTING:
     # Restart adb to work around bugs, sleep to wait for usb discovery.
-    device_utils.DeviceUtils(None).old_interface.RestartAdbServer()
+    device_utils.RestartServer()
     RunCmd(['sleep', '1'])
   provision_cmd = ['build/android/provision_devices.py', '-t', options.target]
   if options.auto_reconnect:
     provision_cmd.append('--auto-reconnect')
+  if options.skip_wipe:
+    provision_cmd.append('--skip-wipe')
   RunCmd(provision_cmd)
 
 
@@ -446,10 +459,10 @@ def RunWebRTCNativeTests(options):
 
 
 def RunGPUTests(options):
-  InstallApk(options, INSTRUMENTATION_TESTS['ContentShell'], False)
-
-  bb_annotations.PrintNamedStep('gpu_tests')
   revision = _GetRevision(options)
+  builder_name = options.build_properties.get('buildername', 'noname')
+
+  bb_annotations.PrintNamedStep('pixel_tests')
   RunCmd(['content/test/gpu/run_gpu_test.py',
           'pixel',
           '--browser',
@@ -462,13 +475,22 @@ def RunGPUTests(options):
           '--os-type',
           'android',
           '--test-machine-name',
-          EscapeBuilderName(
-              options.build_properties.get('buildername', 'noname'))])
+          EscapeBuilderName(builder_name)])
 
   bb_annotations.PrintNamedStep('webgl_conformance_tests')
   RunCmd(['content/test/gpu/run_gpu_test.py',
           '--browser=android-content-shell', 'webgl_conformance',
           '--webgl-conformance-version=1.0.1'])
+
+  bb_annotations.PrintNamedStep('gpu_rasterization_tests')
+  RunCmd(['content/test/gpu/run_gpu_test.py',
+          'gpu_rasterization',
+          '--browser',
+          'android-content-shell',
+          '--build-revision',
+          str(revision),
+          '--test-machine-name',
+          EscapeBuilderName(builder_name)])
 
 
 def GetTestStepCmds():
@@ -627,9 +649,18 @@ def GetDeviceStepsOptParser():
   parser.add_option(
       '--auto-reconnect', action='store_true',
       help='Push script to device which restarts adbd on disconnections.')
+  parser.add_option('--skip-wipe', action='store_true',
+                    help='Do not wipe devices during provisioning.')
   parser.add_option(
       '--logcat-dump-output',
       help='The logcat dump output will be "tee"-ed into this file')
+  # During processing perf bisects, a seperate working directory created under
+  # which builds are produced. Therefore we should look for relevent output
+  # file under this directory.(/b/build/slave/<slave_name>/build/bisect/src/out)
+  parser.add_option(
+      '--chrome-output-dir',
+      help='Chrome output directory to be used while bisecting.')
+
   parser.add_option('--disable-stack-tool',  action='store_true',
       help='Do not run stack tool.')
   parser.add_option('--asan-symbolize',  action='store_true',
@@ -649,6 +680,13 @@ def main(argv):
     return sys.exit('Unknown tests %s' % list(unknown_tests))
 
   setattr(options, 'target', options.factory_properties.get('target', 'Debug'))
+
+  if options.chrome_output_dir:
+    global CHROME_OUT_DIR
+    global LOGCAT_DIR
+    CHROME_OUT_DIR = options.chrome_output_dir
+    LOGCAT_DIR = os.path.join(CHROME_OUT_DIR, 'logcat')
+
   if options.coverage_bucket:
     setattr(options, 'coverage_dir',
             os.path.join(CHROME_OUT_DIR, options.target, 'coverage'))

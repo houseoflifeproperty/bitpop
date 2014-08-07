@@ -111,7 +111,7 @@ bool TypedUrlChangeProcessor::CreateOrUpdateSyncNode(
   }
 
   syncer::ReadNode typed_url_root(trans);
-  if (typed_url_root.InitByTagLookup(kTypedUrlTag) !=
+  if (typed_url_root.InitTypeRoot(syncer::TYPED_URLS) !=
           syncer::BaseNode::INIT_OK) {
     error_handler()->OnSingleDatatypeUnrecoverableError(FROM_HERE,
         "Server did not create the top-level typed_url node. We "
@@ -189,7 +189,7 @@ void TypedUrlChangeProcessor::HandleURLsDeleted(
   // a bad clock setting won't go on an archival rampage and delete all
   // history from every client). The server will gracefully age out the sync DB
   // entries when they've been idle for long enough.
-  if (details->archived)
+  if (details->expired)
     return;
 
   if (details->all_history) {
@@ -252,7 +252,7 @@ void TypedUrlChangeProcessor::ApplyChangesFromSyncModel(
     return;
 
   syncer::ReadNode typed_url_root(trans);
-  if (typed_url_root.InitByTagLookup(kTypedUrlTag) !=
+  if (typed_url_root.InitTypeRoot(syncer::TYPED_URLS) !=
           syncer::BaseNode::INIT_OK) {
     error_handler()->OnSingleDatatypeUnrecoverableError(FROM_HERE,
         "TypedUrl root node lookup failed.");

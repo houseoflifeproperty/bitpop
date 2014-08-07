@@ -22,7 +22,7 @@
 #include "config.h"
 #include "core/html/HTMLMapElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLAreaElement.h"
@@ -30,22 +30,17 @@
 #include "core/html/HTMLImageElement.h"
 #include "core/rendering/HitTestResult.h"
 
-using namespace std;
-
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLMapElement::HTMLMapElement(Document& document)
+inline HTMLMapElement::HTMLMapElement(Document& document)
     : HTMLElement(mapTag, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLMapElement> HTMLMapElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLMapElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLMapElement)
 
 HTMLMapElement::~HTMLMapElement()
 {
@@ -72,8 +67,8 @@ bool HTMLMapElement::mapMouseEvent(LayoutPoint location, const LayoutSize& size,
 
 HTMLImageElement* HTMLMapElement::imageElement()
 {
-    RefPtr<HTMLCollection> images = document().images();
-    for (unsigned i = 0; Element* curr = images->item(i); i++) {
+    RefPtrWillBeRawPtr<HTMLCollection> images = document().images();
+    for (unsigned i = 0; Element* curr = images->item(i); ++i) {
         ASSERT(isHTMLImageElement(curr));
 
         // The HTMLImageElement's useMap() value includes the '#' symbol at the beginning,
@@ -114,7 +109,7 @@ void HTMLMapElement::parseAttribute(const QualifiedName& name, const AtomicStrin
     HTMLElement::parseAttribute(name, value);
 }
 
-PassRefPtr<HTMLCollection> HTMLMapElement::areas()
+PassRefPtrWillBeRawPtr<HTMLCollection> HTMLMapElement::areas()
 {
     return ensureCachedHTMLCollection(MapAreas);
 }

@@ -133,11 +133,10 @@ void ReadDirectoryHelper(FileSystemFileUtil* file_util,
 }
 
 void RunCreateOrOpenCallback(
+    FileSystemOperationContext* context,
     const AsyncFileUtil::CreateOrOpenCallback& callback,
-    base::File::Error result,
-    base::PassPlatformFile file,
-    bool created) {
-  callback.Run(result, file, base::Closure());
+    base::File file) {
+  callback.Run(file.Pass(), base::Closure());
 }
 
 }  // namespace
@@ -157,14 +156,12 @@ void AsyncFileUtilAdapter::CreateOrOpen(
     int file_flags,
     const CreateOrOpenCallback& callback) {
   FileSystemOperationContext* context_ptr = context.release();
-  const bool success = base::FileUtilProxy::RelayCreateOrOpen(
+  base::PostTaskAndReplyWithResult(
       context_ptr->task_runner(),
+      FROM_HERE,
       Bind(&FileSystemFileUtil::CreateOrOpen, Unretained(sync_file_util_.get()),
            context_ptr, url, file_flags),
-      Bind(&FileSystemFileUtil::Close, Unretained(sync_file_util_.get()),
-           base::Owned(context_ptr)),
-      Bind(&RunCreateOrOpenCallback, callback));
-  DCHECK(success);
+      Bind(&RunCreateOrOpenCallback, base::Owned(context_ptr), callback));
 }
 
 void AsyncFileUtilAdapter::EnsureFileExists(

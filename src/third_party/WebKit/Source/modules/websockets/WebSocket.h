@@ -34,7 +34,7 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventTargetModules.h"
 #include "modules/websockets/WebSocketChannel.h"
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "platform/Timer.h"
@@ -51,10 +51,11 @@ namespace WebCore {
 class Blob;
 class ExceptionState;
 
-class WebSocket FINAL : public RefCountedWillBeRefCountedGarbageCollected<WebSocket>, public ScriptWrappable, public EventTargetWithInlineData, public ActiveDOMObject, public WebSocketChannelClient {
-    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<WebSocket>);
+class WebSocket : public RefCountedWillBeRefCountedGarbageCollected<WebSocket>, public ScriptWrappable, public EventTargetWithInlineData, public ActiveDOMObject, public WebSocketChannelClient {
+    REFCOUNTED_EVENT_TARGET(WebSocket);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WebSocket);
 public:
-    static const char* subProtocolSeperator();
+    static const char* subprotocolSeperator();
     // WebSocket instances must be used with a wrapper since this class's
     // lifetime management is designed assuming the V8 holds a ref on it while
     // hasPendingActivity() returns true.
@@ -70,8 +71,6 @@ public:
         CLOSED = 3
     };
 
-    void connect(const String& url, ExceptionState&);
-    void connect(const String& url, const String& protocol, ExceptionState&);
     void connect(const String& url, const Vector<String>& protocols, ExceptionState&);
 
     void send(const String& message, ExceptionState&);
@@ -117,15 +116,20 @@ public:
     virtual void stop() OVERRIDE;
 
     // WebSocketChannelClient functions.
-    virtual void didConnect() OVERRIDE;
+    virtual void didConnect(const String& subprotocol, const String& extensions) OVERRIDE;
     virtual void didReceiveMessage(const String& message) OVERRIDE;
     virtual void didReceiveBinaryData(PassOwnPtr<Vector<char> >) OVERRIDE;
     virtual void didReceiveMessageError() OVERRIDE;
-    virtual void didUpdateBufferedAmount(unsigned long bufferedAmount) OVERRIDE;
+    virtual void didConsumeBufferedAmount(unsigned long) OVERRIDE;
     virtual void didStartClosingHandshake() OVERRIDE;
-    virtual void didClose(unsigned long unhandledBufferedAmount, ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) OVERRIDE;
+    virtual void didClose(ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) OVERRIDE;
 
-    void trace(Visitor*);
+    virtual void trace(Visitor*) OVERRIDE;
+
+    static bool isValidSubprotocolString(const String&);
+
+protected:
+    explicit WebSocket(ExecutionContext*);
 
 private:
     // FIXME: This should inherit WebCore::EventQueue.
@@ -178,7 +182,12 @@ private:
         WebSocketSendTypeMax,
     };
 
-    explicit WebSocket(ExecutionContext*);
+    // This function is virtual for unittests.
+    // FIXME: Move WebSocketChannel::create here.
+    virtual PassRefPtrWillBeRawPtr<WebSocketChannel> createChannel(ExecutionContext* context, WebSocketChannelClient* client)
+    {
+        return WebSocketChannel::create(context, client);
+    }
 
     // Adds a console message with JSMessageSource and ErrorMessageLevel.
     void logError(const String& message);
@@ -199,6 +208,7 @@ private:
     // Updates m_bufferedAmountAfterClose given the amount of data passed to
     // send() method after the state changed to CLOSING or CLOSED.
     void updateBufferedAmountAfterClose(unsigned long);
+    void reflectBufferedAmountConsumption(Timer<WebSocket>*);
 
     void releaseChannel();
 
@@ -212,6 +222,9 @@ private:
     State m_state;
     KURL m_url;
     unsigned long m_bufferedAmount;
+    // The consumed buffered amount that will be reflected to m_bufferedAmount
+    // later. It will be cleared once reflected.
+    unsigned long m_consumedBufferedAmount;
     unsigned long m_bufferedAmountAfterClose;
     BinaryType m_binaryType;
     // The subprotocol the server selected.
@@ -219,6 +232,7 @@ private:
     String m_extensions;
 
     RefPtrWillBeMember<EventQueue> m_eventQueue;
+    Timer<WebSocket> m_bufferedAmountConsumeTimer;
 };
 
 } // namespace WebCore

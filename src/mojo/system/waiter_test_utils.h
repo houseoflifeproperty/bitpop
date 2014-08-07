@@ -5,11 +5,13 @@
 #ifndef MOJO_SYSTEM_WAITER_TEST_UTILS_H_
 #define MOJO_SYSTEM_WAITER_TEST_UTILS_H_
 
-#include "base/basictypes.h"
+#include <stdint.h>
+
 #include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/simple_thread.h"
-#include "mojo/public/c/system/core.h"
+#include "mojo/public/c/system/types.h"
 #include "mojo/system/dispatcher.h"
 #include "mojo/system/waiter.h"
 
@@ -45,7 +47,7 @@ class SimpleWaiterThread : public base::SimpleThread {
  public:
   // For the duration of the lifetime of this object, |*result| belongs to it
   // (in the sense that it will write to it whenever it wants).
-  explicit SimpleWaiterThread(MojoResult* result);
+  SimpleWaiterThread(MojoResult* result, uint32_t* context);
   virtual ~SimpleWaiterThread();  // Joins the thread.
 
   Waiter* waiter() { return &waiter_; }
@@ -54,6 +56,7 @@ class SimpleWaiterThread : public base::SimpleThread {
   virtual void Run() OVERRIDE;
 
   MojoResult* const result_;
+  uint32_t* const context_;
   Waiter waiter_;
 
   DISALLOW_COPY_AND_ASSIGN(SimpleWaiterThread);
@@ -64,24 +67,27 @@ class SimpleWaiterThread : public base::SimpleThread {
 // |SimpleWaiterThread|, it requires the machinery of |Dispatcher|.
 class WaiterThread : public base::SimpleThread {
  public:
-  // Note: |*did_wait_out| and |*result| belong to this object while it's alive.
+  // Note: |*did_wait_out|, |*result_out|, and |*context_out| "belong" to this
+  // object (i.e., may be modified by, on some other thread) while it's alive.
   WaiterThread(scoped_refptr<Dispatcher> dispatcher,
-               MojoWaitFlags wait_flags,
+               MojoHandleSignals handle_signals,
                MojoDeadline deadline,
-               MojoResult success_result,
+               uint32_t context,
                bool* did_wait_out,
-               MojoResult* result_out);
+               MojoResult* result_out,
+               uint32_t* context_out);
   virtual ~WaiterThread();
 
  private:
   virtual void Run() OVERRIDE;
 
   const scoped_refptr<Dispatcher> dispatcher_;
-  const MojoWaitFlags wait_flags_;
+  const MojoHandleSignals handle_signals_;
   const MojoDeadline deadline_;
-  const MojoResult success_result_;
+  const uint32_t context_;
   bool* const did_wait_out_;
   MojoResult* const result_out_;
+  uint32_t* const context_out_;
 
   Waiter waiter_;
 

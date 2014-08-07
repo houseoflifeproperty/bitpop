@@ -35,7 +35,6 @@
 #include "chrome/browser/extensions/startup_helper.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
@@ -54,11 +53,12 @@
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/signin/core/common/profile_management_switches.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/navigation_controller.h"
@@ -75,7 +75,7 @@
 #include "chrome/browser/chromeos/app_mode/app_launch_utils.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chromeos/chromeos_switches.h"
@@ -83,6 +83,10 @@
 
 #if defined(TOOLKIT_VIEWS) && defined(OS_LINUX)
 #include "ui/events/x/touch_factory_x11.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "chrome/browser/web_applications/web_app_mac.h"
 #endif
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -299,7 +303,7 @@ bool StartupBrowserCreator::LaunchBrowser(
     chrome::HostDesktopType host_desktop_type =
         chrome::HOST_DESKTOP_TYPE_NATIVE;
 
-#if defined(OS_WIN) && defined(USE_ASH)
+#if defined(USE_ASH) && !defined(OS_CHROMEOS)
     // We want to maintain only one type of instance for now, either ASH
     // or desktop.
     // TODO(shrikant): Remove this code once we decide on running both desktop
@@ -431,20 +435,20 @@ std::vector<GURL> StartupBrowserCreator::GetURLsFromCommandLine(
     // 'about' if the browser was started with a about:foo argument.
     if (!url.is_valid()) {
       base::ThreadRestrictions::ScopedAllowIO allow_io;
-      url = URLFixerUpper::FixupRelativeFile(cur_dir, param);
+      url = url_fixer::FixupRelativeFile(cur_dir, param);
     }
     // Exclude dangerous schemes.
     if (url.is_valid()) {
       ChildProcessSecurityPolicy* policy =
           ChildProcessSecurityPolicy::GetInstance();
       if (policy->IsWebSafeScheme(url.scheme()) ||
-          url.SchemeIs(content::kFileScheme) ||
+          url.SchemeIs(url::kFileScheme) ||
 #if defined(OS_CHROMEOS)
           // In ChromeOS, allow a settings page to be specified on the
           // command line. See ExistingUserController::OnLoginSuccess.
           (url.spec().find(chrome::kChromeUISettingsURL) == 0) ||
 #endif
-          (url.spec().compare(content::kAboutBlankURL) == 0)) {
+          (url.spec().compare(url::kAboutBlankURL) == 0)) {
         urls.push_back(url);
       }
     }
@@ -556,6 +560,11 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
 
 #if defined(TOOLKIT_VIEWS) && defined(USE_X11)
   ui::TouchFactory::SetTouchDeviceListFromCommandLine();
+#endif
+
+#if defined(OS_MACOSX)
+  if (web_app::MaybeRebuildShortcut(command_line))
+    return true;
 #endif
 
   if (!process_startup &&

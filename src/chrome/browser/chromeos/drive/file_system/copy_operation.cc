@@ -117,9 +117,8 @@ FileError TryToCopyLocally(internal::ResourceMetadata* metadata,
 
   // If the cache file is not present and the entry exists on the server,
   // server side copy should be used.
-  FileCacheEntry cache_entry;
-  cache->GetCacheEntry(params->src_entry.local_id(), &cache_entry);
-  if (!cache_entry.is_present() && !params->src_entry.resource_id().empty()) {
+  if (!params->src_entry.file_specific_info().cache_state().is_present() &&
+      !params->src_entry.resource_id().empty()) {
     *should_copy_on_server = true;
     return FILE_ERROR_OK;
   }
@@ -145,7 +144,7 @@ FileError TryToCopyLocally(internal::ResourceMetadata* metadata,
   updated_local_ids->push_back(local_id);
   *directory_changed = true;
 
-  if (!cache_entry.is_present()) {
+  if (!params->src_entry.file_specific_info().cache_state().is_present()) {
     DCHECK(params->src_entry.resource_id().empty());
     // Locally created empty file may have no cache file.
     return FILE_ERROR_OK;
@@ -163,13 +162,14 @@ FileError TryToCopyLocally(internal::ResourceMetadata* metadata,
 // Stores the entry returned from the server and returns its path.
 FileError UpdateLocalStateForServerSideOperation(
     internal::ResourceMetadata* metadata,
-    scoped_ptr<google_apis::ResourceEntry> resource_entry,
+    scoped_ptr<google_apis::FileResource> file_resource,
     base::FilePath* file_path) {
-  DCHECK(resource_entry);
+  DCHECK(file_resource);
 
   ResourceEntry entry;
   std::string parent_resource_id;
-  if (!ConvertToResourceEntry(*resource_entry, &entry, &parent_resource_id) ||
+  if (!ConvertFileResourceToResourceEntry(*file_resource, &entry,
+                                          &parent_resource_id) ||
       parent_resource_id.empty())
     return FILE_ERROR_NOT_A_FILE;
 
@@ -187,10 +187,10 @@ FileError UpdateLocalStateForServerSideOperation(
   if (error == FILE_ERROR_EXISTS)
     error = metadata->GetIdByResourceId(entry.resource_id(), &local_id);
 
-  if (error == FILE_ERROR_OK)
-    *file_path = metadata->GetFilePath(local_id);
+  if (error != FILE_ERROR_OK)
+    return error;
 
-  return error;
+  return metadata->GetFilePath(local_id, file_path);
 }
 
 // Stores the file at |local_file_path| to the cache as a content of entry at
@@ -263,9 +263,9 @@ FileError LocalWorkForTransferJsonGdocFile(
     entry.set_metadata_edit_state(ResourceEntry::DIRTY);
     entry.set_modification_date(base::Time::Now().ToInternalValue());
     error = metadata->RefreshEntry(entry);
-    if (error == FILE_ERROR_OK)
-      params->changed_path = metadata->GetFilePath(local_id);
-    return error;
+    if (error != FILE_ERROR_OK)
+      return error;
+    return metadata->GetFilePath(local_id, &params->changed_path);
   }
 
   params->location_type = HAS_PARENT;
@@ -493,7 +493,7 @@ void CopyOperation::CopyResourceOnServer(
 void CopyOperation::UpdateAfterServerSideOperation(
     const FileOperationCallback& callback,
     google_apis::GDataErrorCode status,
-    scoped_ptr<google_apis::ResourceEntry> resource_entry) {
+    scoped_ptr<google_apis::FileResource> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -510,7 +510,7 @@ void CopyOperation::UpdateAfterServerSideOperation(
       blocking_task_runner_.get(),
       FROM_HERE,
       base::Bind(&UpdateLocalStateForServerSideOperation,
-                 metadata_, base::Passed(&resource_entry), file_path),
+                 metadata_, base::Passed(&entry), file_path),
       base::Bind(&CopyOperation::UpdateAfterLocalStateUpdate,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback, base::Owned(file_path)));

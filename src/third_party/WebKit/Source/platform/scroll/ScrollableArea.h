@@ -167,7 +167,6 @@ public:
     // Returns the bounding box of this scrollable area, in the coordinate system of the enclosing scroll view.
     virtual IntRect scrollableAreaBoundingBox() const = 0;
 
-    virtual bool shouldRubberBandInDirection(ScrollDirection) const { return true; }
     virtual bool isRubberBandInProgress() const { return false; }
 
     virtual bool scrollAnimatorEnabled() const { return false; }
@@ -183,7 +182,6 @@ public:
     void serviceScrollAnimations();
 
     virtual bool usesCompositedScrolling() const { return false; }
-    virtual void updateNeedsCompositedScrolling() { }
 
     virtual void updateAfterCompositingChange() { }
 

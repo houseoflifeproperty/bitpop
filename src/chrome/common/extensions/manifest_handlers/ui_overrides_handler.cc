@@ -140,23 +140,25 @@ const UIOverrides* UIOverrides::Get(const Extension* extension) {
       extension->GetManifestData(manifest_keys::kUIOverride));
 }
 
-bool UIOverrides::RemovesBookmarkButton(const UIOverrides& ui_overrides) {
-  return ui_overrides.bookmarks_ui &&
-      ui_overrides.bookmarks_ui->remove_button &&
-      *ui_overrides.bookmarks_ui->remove_button;
+bool UIOverrides::RemovesBookmarkButton(const Extension* extension) {
+  const UIOverrides* ui_overrides = Get(extension);
+  return ui_overrides && ui_overrides->bookmarks_ui &&
+      ui_overrides->bookmarks_ui->remove_button &&
+      *ui_overrides->bookmarks_ui->remove_button;
 }
 
-bool UIOverrides::RemovesBookmarkShortcut(const UIOverrides& ui_overrides) {
-  return ui_overrides.bookmarks_ui &&
-      ui_overrides.bookmarks_ui->remove_bookmark_shortcut &&
-      *ui_overrides.bookmarks_ui->remove_bookmark_shortcut;
+bool UIOverrides::RemovesBookmarkShortcut(const Extension* extension) {
+  const UIOverrides* ui_overrides = Get(extension);
+  return ui_overrides && ui_overrides->bookmarks_ui &&
+      ui_overrides->bookmarks_ui->remove_bookmark_shortcut &&
+      *ui_overrides->bookmarks_ui->remove_bookmark_shortcut;
 }
 
-bool UIOverrides::RemovesBookmarkOpenPagesShortcut(
-    const UIOverrides& ui_overrides) {
-  return ui_overrides.bookmarks_ui &&
-      ui_overrides.bookmarks_ui->remove_bookmark_open_pages_shortcut &&
-      *ui_overrides.bookmarks_ui->remove_bookmark_open_pages_shortcut;
+bool UIOverrides::RemovesBookmarkOpenPagesShortcut(const Extension* extension) {
+  const UIOverrides* ui_overrides = Get(extension);
+  return ui_overrides && ui_overrides->bookmarks_ui &&
+      ui_overrides->bookmarks_ui->remove_bookmark_open_pages_shortcut &&
+      *ui_overrides->bookmarks_ui->remove_bookmark_open_pages_shortcut;
 }
 
 UIOverridesHandler::UIOverridesHandler() {}
@@ -180,7 +182,7 @@ bool UIOverridesHandler::Parse(Extension* extension, base::string16* error) {
     return false;
   }
   info->manifest_permission.reset(new ManifestPermissionImpl(
-      UIOverrides::RemovesBookmarkButton(*info)));
+      info->bookmarks_ui.get() != NULL));
   extension->SetManifestData(manifest_keys::kUIOverride, info.release());
   return true;
 }

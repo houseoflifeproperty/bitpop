@@ -188,9 +188,11 @@ const gfx::Display& ScreenAsh::GetDisplayForId(int64 display_id) {
   return GetDisplayManager()->GetDisplayForId(display_id);
 }
 
-void ScreenAsh::NotifyBoundsChanged(const gfx::Display& display) {
-  FOR_EACH_OBSERVER(gfx::DisplayObserver, observers_,
-                    OnDisplayBoundsChanged(display));
+void ScreenAsh::NotifyMetricsChanged(const gfx::Display& display,
+                                     uint32_t metrics) {
+  FOR_EACH_OBSERVER(gfx::DisplayObserver,
+                    observers_,
+                    OnDisplayMetricsChanged(display, metrics));
 }
 
 void ScreenAsh::NotifyDisplayAdded(const gfx::Display& display) {
@@ -233,12 +235,11 @@ gfx::Display ScreenAsh::GetDisplayNearestWindow(gfx::NativeView window) const {
   if (!root_window)
     return GetPrimaryDisplay();
   const RootWindowSettings* rws = GetRootWindowSettings(root_window);
-  if (rws->shutdown)
-    return GetPrimaryDisplay();
-
   int64 id = rws->display_id;
   // if id is |kInvaildDisplayID|, it's being deleted.
   DCHECK(id != gfx::Display::kInvalidDisplayID);
+  if (id == gfx::Display::kInvalidDisplayID)
+    return GetPrimaryDisplay();
 
   DisplayManager* display_manager = GetDisplayManager();
   // RootWindow needs Display to determine its device scale factor

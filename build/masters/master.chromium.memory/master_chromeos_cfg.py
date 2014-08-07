@@ -4,7 +4,6 @@
 
 from master import master_config
 from master.factory import chromium_factory
-from master.factory import chromeos_factory
 
 defaults = {}
 
@@ -106,7 +105,6 @@ fp_chromeos_asan = {
         'GYP_GENERATORS': 'ninja',
     },
     'lsan': True,
-    'lsan_run_all_tests': True,
     'sharded_tests': sharded_tests,
 }
 
@@ -188,27 +186,6 @@ F('chromeos_asan_rel_tests_3', linux().ChromiumASANFactory(
                             browser_total_shards='3',
                             browser_shard_index='3')))
 
-B('Chromium OS (x86) ASan',
-  factory='x86_asan',
-  builddir='chromium-tot-chromeos-x86-generic-asan',
-  gatekeeper='crosasantest',
-  scheduler='chromeos_asan_rel',
-  notify_on_missing=True)
-F('x86_asan', chromeos_factory.CbuildbotFactory(
-  buildroot='/b/cbuild.x86.asan',
-  pass_revision=True,
-  params='x86-generic-tot-asan-informational').get_factory())
-
-B('Chromium OS (amd64) ASan',
-  factory='amd64_asan',
-  builddir='chromium-tot-chromeos-amd64-generic-asan',
-  gatekeeper='crosasantest',
-  scheduler='chromeos_asan_rel',
-  notify_on_missing=True)
-F('amd64_asan', chromeos_factory.CbuildbotFactory(
-  buildroot='/b/cbuild.amd64.asan',
-  pass_revision=True,
-  params='amd64-generic-tot-asan-informational').get_factory())
 
 def Update(config, active_master, c):
   return helper.Update(c)

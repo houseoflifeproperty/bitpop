@@ -29,11 +29,11 @@
  */
 
 #include "config.h"
-#include "V8MessageEvent.h"
+#include "bindings/core/v8/V8MessageEvent.h"
 
-#include "V8Blob.h"
-#include "V8MessagePort.h"
-#include "V8Window.h"
+#include "bindings/core/v8/V8Blob.h"
+#include "bindings/core/v8/V8MessagePort.h"
+#include "bindings/core/v8/V8Window.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenValue.h"
@@ -142,7 +142,7 @@ void V8MessageEvent::initMessageEventMethodCustom(const v8::FunctionCallbackInfo
     v8::Handle<v8::Value> dataArg = info[3];
     TOSTRING_VOID(V8StringResource<>, originArg, info[4]);
     TOSTRING_VOID(V8StringResource<>, lastEventIdArg, info[5]);
-    DOMWindow* sourceArg = toDOMWindow(info[6], info.GetIsolate());
+    LocalDOMWindow* sourceArg = toDOMWindow(info[6], info.GetIsolate());
     OwnPtr<MessagePortArray> portArray;
     const int portArrayIndex = 7;
     if (!isUndefinedOrNull(info[portArrayIndex])) {
@@ -160,11 +160,5 @@ void V8MessageEvent::initMessageEventMethodCustom(const v8::FunctionCallbackInfo
             event->setSerializedData(SerializedScriptValue::createAndSwallowExceptions(dataArg, info.GetIsolate()));
     }
 }
-
-void V8MessageEvent::webkitInitMessageEventMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
-{
-    initMessageEventMethodCustom(info);
-}
-
 
 } // namespace WebCore

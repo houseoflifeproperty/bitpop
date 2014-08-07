@@ -41,18 +41,19 @@ class SpaceSplitString;
 class StyleRule;
 
 struct RuleFeature {
-    RuleFeature(StyleRule* rule, unsigned selectorIndex, bool hasDocumentSecurityOrigin)
-        : rule(rule)
-        , selectorIndex(selectorIndex)
-        , hasDocumentSecurityOrigin(hasDocumentSecurityOrigin)
-    {
-    }
-    StyleRule* rule;
+    ALLOW_ONLY_INLINE_ALLOCATION();
+public:
+    RuleFeature(StyleRule* rule, unsigned selectorIndex, bool hasDocumentSecurityOrigin);
+
+    void trace(Visitor*);
+
+    RawPtrWillBeMember<StyleRule> rule;
     unsigned selectorIndex;
     bool hasDocumentSecurityOrigin;
 };
 
 class RuleFeatureSet {
+    DISALLOW_ALLOCATION();
 public:
     RuleFeatureSet();
     ~RuleFeatureSet();
@@ -104,12 +105,14 @@ public:
 
     StyleInvalidator& styleInvalidator();
 
-    Vector<RuleFeature> siblingRules;
-    Vector<RuleFeature> uncommonAttributeRules;
+    void trace(Visitor*);
+
+    WillBeHeapVector<RuleFeature> siblingRules;
+    WillBeHeapVector<RuleFeature> uncommonAttributeRules;
 
 private:
-    typedef HashMap<AtomicString, RefPtr<DescendantInvalidationSet> > InvalidationSetMap;
-    typedef HashMap<CSSSelector::PseudoType, RefPtr<DescendantInvalidationSet>, WTF::IntHash<unsigned>, WTF::UnsignedWithZeroKeyHashTraits<unsigned> > PseudoTypeInvalidationSetMap;
+    typedef WillBeHeapHashMap<AtomicString, RefPtrWillBeMember<DescendantInvalidationSet> > InvalidationSetMap;
+    typedef WillBeHeapHashMap<CSSSelector::PseudoType, RefPtrWillBeMember<DescendantInvalidationSet>, WTF::IntHash<unsigned>, WTF::UnsignedWithZeroKeyHashTraits<unsigned> > PseudoTypeInvalidationSetMap;
 
     struct FeatureMetadata {
         FeatureMetadata()
@@ -145,17 +148,23 @@ private:
     InvalidationSetMode updateInvalidationSets(const CSSSelector&);
 
     struct InvalidationSetFeatures {
-        InvalidationSetFeatures() : customPseudoElement(false) { }
+        InvalidationSetFeatures()
+            : customPseudoElement(false)
+            , treeBoundaryCrossing(false)
+            , wholeSubtree(false)
+        { }
         Vector<AtomicString> classes;
         Vector<AtomicString> attributes;
         AtomicString id;
         AtomicString tagName;
         bool customPseudoElement;
+        bool treeBoundaryCrossing;
+        bool wholeSubtree;
     };
 
     static void extractInvalidationSetFeature(const CSSSelector&, InvalidationSetFeatures&);
     const CSSSelector* extractInvalidationSetFeatures(const CSSSelector&, InvalidationSetFeatures&);
-    void addFeaturesToInvalidationSets(const CSSSelector&, const InvalidationSetFeatures&, bool wholeSubtree);
+    void addFeaturesToInvalidationSets(const CSSSelector&, InvalidationSetFeatures&);
 
     void addClassToInvalidationSet(const AtomicString& className, Element&);
 
@@ -170,5 +179,15 @@ private:
 
 
 } // namespace WebCore
+
+namespace WTF {
+
+template <> struct VectorTraits<WebCore::RuleFeature> : VectorTraitsBase<WebCore::RuleFeature> {
+    static const bool needsDestruction = false;
+    static const bool canInitializeWithMemset = true;
+    static const bool canMoveWithMemcpy = true;
+};
+
+} // namespace WTF
 
 #endif // RuleFeature_h

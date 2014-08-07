@@ -13,8 +13,8 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -24,7 +24,7 @@ namespace options {
 namespace {
 
 const char kHandlersLearnMoreUrl[] =
-    "https://support.google.com/chromebook/answer/1382847";
+    "https://support.google.com/chrome/answer/1382847";
 
 }  // namespace
 
@@ -53,9 +53,8 @@ void HandlerOptionsHandler::GetLocalizedValues(
                 IDS_HANDLER_OPTIONS_WINDOW_TITLE);
   RegisterStrings(localized_strings, resources, arraysize(resources));
 
-  localized_strings->SetString(
-      "handlers_learn_more_url",
-      google_util::StringAppendGoogleLocaleParam(kHandlersLearnMoreUrl));
+  localized_strings->SetString("handlers_learn_more_url",
+                               kHandlersLearnMoreUrl);
 }
 
 void HandlerOptionsHandler::InitializeHandler() {
@@ -99,7 +98,7 @@ static void GetHandlersAsListValue(
     base::ListValue* handlerValue = new base::ListValue();
     handlerValue->Append(new base::StringValue(handler->protocol()));
     handlerValue->Append(new base::StringValue(handler->url().spec()));
-    handlerValue->Append(new base::StringValue(handler->title()));
+    handlerValue->Append(new base::StringValue(handler->url().host()));
     handler_list->Append(handlerValue);
   }
 }
@@ -199,14 +198,11 @@ ProtocolHandler HandlerOptionsHandler::ParseHandlerFromArgs(
     const base::ListValue* args) const {
   base::string16 protocol;
   base::string16 url;
-  base::string16 title;
-  bool ok = args->GetString(0, &protocol) && args->GetString(1, &url) &&
-    args->GetString(2, &title);
+  bool ok = args->GetString(0, &protocol) && args->GetString(1, &url);
   if (!ok)
     return ProtocolHandler::EmptyProtocolHandler();
   return ProtocolHandler::CreateProtocolHandler(base::UTF16ToUTF8(protocol),
-                                                GURL(base::UTF16ToUTF8(url)),
-                                                title);
+                                                GURL(base::UTF16ToUTF8(url)));
 }
 
 void HandlerOptionsHandler::Observe(

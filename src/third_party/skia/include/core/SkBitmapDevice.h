@@ -33,22 +33,6 @@ public:
     static SkBitmapDevice* Create(const SkImageInfo&,
                                   const SkDeviceProperties* = NULL);
 
-    /** Return the width of the device (in pixels).
-    */
-    virtual int width() const SK_OVERRIDE { return fBitmap.width(); }
-    /** Return the height of the device (in pixels).
-    */
-    virtual int height() const SK_OVERRIDE { return fBitmap.height(); }
-
-    /** Returns true if the device's bitmap's config treats every pixels as
-        implicitly opaque.
-    */
-    virtual bool isOpaque() const SK_OVERRIDE { return fBitmap.isOpaque(); }
-
-    /** Return the bitmap config of the device's pixels
-    */
-    virtual SkBitmap::Config config() const SK_OVERRIDE { return fBitmap.config(); }
-
     virtual SkImageInfo imageInfo() const SK_OVERRIDE;
 
     /**

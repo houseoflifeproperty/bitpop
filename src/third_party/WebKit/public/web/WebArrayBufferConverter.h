@@ -34,6 +34,8 @@
 #include "public/platform/WebArrayBuffer.h"
 
 namespace v8 {
+class Isolate;
+class Object;
 class Value;
 template <class T> class Handle;
 }
@@ -42,8 +44,8 @@ namespace blink {
 
 class WebArrayBufferConverter {
 public:
-    BLINK_EXPORT static v8::Handle<v8::Value> toV8Value(WebArrayBuffer*);
-    BLINK_EXPORT static WebArrayBuffer* createFromV8Value(v8::Handle<v8::Value>);
+    BLINK_EXPORT static v8::Handle<v8::Value> toV8Value(WebArrayBuffer*, v8::Handle<v8::Object>, v8::Isolate*);
+    BLINK_EXPORT static WebArrayBuffer* createFromV8Value(v8::Handle<v8::Value>, v8::Isolate*);
 };
 
 } // namespace blink

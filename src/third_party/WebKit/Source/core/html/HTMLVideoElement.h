@@ -41,6 +41,7 @@ class HTMLImageLoader;
 class HTMLVideoElement FINAL : public HTMLMediaElement, public CanvasImageSource {
 public:
     static PassRefPtrWillBeRawPtr<HTMLVideoElement> create(Document&);
+    virtual void trace(Visitor*) OVERRIDE;
 
     unsigned videoWidth() const;
     unsigned videoHeight() const;
@@ -74,6 +75,7 @@ public:
     virtual bool isVideoElement() const OVERRIDE { return true; }
     virtual bool wouldTaintOrigin(SecurityOrigin*) const OVERRIDE;
     virtual FloatSize sourceSize() const OVERRIDE;
+    virtual const KURL& sourceURL() const OVERRIDE { return currentSrc(); }
 
 private:
     HTMLVideoElement(Document&);
@@ -84,7 +86,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
-    virtual bool hasVideo() const OVERRIDE { return player() && player()->hasVideo(); }
+    virtual bool hasVideo() const OVERRIDE { return webMediaPlayer() && webMediaPlayer()->hasVideo(); }
     bool supportsFullscreen() const;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
     virtual const AtomicString imageSourceURL() const OVERRIDE;
@@ -94,7 +96,7 @@ private:
     virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
     virtual void setDisplayMode(DisplayMode) OVERRIDE;
 
-    OwnPtr<HTMLImageLoader> m_imageLoader;
+    OwnPtrWillBeMember<HTMLImageLoader> m_imageLoader;
 
     AtomicString m_defaultPosterURL;
 };

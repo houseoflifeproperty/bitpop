@@ -166,7 +166,7 @@
 
 .resource-headers-view .outline-disclosure .header-value {
     display: inline;
-    margin-right: 100px;
+    margin-right: 1em;
     white-space: pre-wrap;
     word-break: break-all;
     margin-top: 1px;
@@ -277,12 +277,6 @@
     padding-top: 3px;
     padding-bottom: 3px;
     border-top: 1px solid rgb(240, 240, 240);
-}
-
-.resource-websocket .data-column div {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .resource-websocket-row-outcoming {

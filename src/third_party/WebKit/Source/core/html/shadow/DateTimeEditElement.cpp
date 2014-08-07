@@ -27,8 +27,9 @@
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/shadow/DateTimeEditElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
+#include "core/dom/Document.h"
 #include "core/dom/Text.h"
 #include "core/events/MouseEvent.h"
 #include "core/html/forms/DateTimeFieldsState.h"
@@ -401,7 +402,7 @@ void DateTimeEditBuilder::visitLiteral(const String& text)
 {
     DEFINE_STATIC_LOCAL(AtomicString, textPseudoId, ("-webkit-datetime-edit-text", AtomicString::ConstructFromLiteral));
     ASSERT(text.length());
-    RefPtr<HTMLDivElement> element = HTMLDivElement::create(m_editElement.document());
+    RefPtrWillBeRawPtr<HTMLDivElement> element = HTMLDivElement::create(m_editElement.document());
     element->setShadowPseudoId(textPseudoId);
     if (m_parameters.locale.isRTL() && text.length()) {
         Direction dir = direction(text[0]);
@@ -494,7 +495,7 @@ void DateTimeEditElement::blurByOwner()
 
 PassRefPtrWillBeRawPtr<DateTimeEditElement> DateTimeEditElement::create(Document& document, EditControlOwner& editControlOwner)
 {
-    RefPtrWillBeRawPtr<DateTimeEditElement> container = adoptRefWillBeRefCountedGarbageCollected(new DateTimeEditElement(document, editControlOwner));
+    RefPtrWillBeRawPtr<DateTimeEditElement> container = adoptRefWillBeNoop(new DateTimeEditElement(document, editControlOwner));
     container->setShadowPseudoId(AtomicString("-webkit-datetime-edit", AtomicString::ConstructFromLiteral));
     container->setAttribute(idAttr, ShadowElementNames::dateTimeEdit());
     return container.release();
@@ -662,7 +663,7 @@ void DateTimeEditElement::layout(const LayoutParameters& layoutParameters, const
 {
     DEFINE_STATIC_LOCAL(AtomicString, fieldsWrapperPseudoId, ("-webkit-datetime-edit-fields-wrapper", AtomicString::ConstructFromLiteral));
     if (!firstChild()) {
-        RefPtr<HTMLDivElement> element = HTMLDivElement::create(document());
+        RefPtrWillBeRawPtr<HTMLDivElement> element = HTMLDivElement::create(document());
         element->setShadowPseudoId(fieldsWrapperPseudoId);
         appendChild(element.get());
     }

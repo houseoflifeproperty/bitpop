@@ -90,6 +90,13 @@
         '<(_sanitizer_type)-libgdk-pixbuf2.0-0',
         '<(_sanitizer_type)-libpci3',
         '<(_sanitizer_type)-libdbusmenu-glib4',
+        '<(_sanitizer_type)-liboverlay-scrollbar-0.2-0',
+        '<(_sanitizer_type)-libgconf-2-4',
+        '<(_sanitizer_type)-libappindicator1',
+        '<(_sanitizer_type)-libdbusmenu',
+        '<(_sanitizer_type)-atk1.0',
+        '<(_sanitizer_type)-libunity9',
+        '<(_sanitizer_type)-dee',
       ],
       'conditions': [
         ['asan==1', {
@@ -100,6 +107,11 @@
         ['msan==1', {
           'dependencies': [
             '<(_sanitizer_type)-libcups2',
+          ],
+        }],
+        ['tsan==1', {
+          'dependencies!': [
+            '<(_sanitizer_type)-libpng12-0',
           ],
         }],
       ],
@@ -207,7 +219,11 @@
     {
       'library_name': 'libnspr4',
       'dependencies=': [],
-      'extra_configure_flags': '--enable-64bit',
+      'extra_configure_flags': [
+        '--enable-64bit',
+        # TSan reports data races on debug variables.
+        '--disable-debug',
+      ],
       'run_before_build': 'libnspr4.sh',
       'includes': ['standard_instrumented_library_target.gypi'],
     },
@@ -324,6 +340,7 @@
     {
       'library_name': 'zlib1g',
       'dependencies=': [],
+      'run_before_build': 'zlib1g.sh',
       'includes': ['standard_instrumented_library_target.gypi'],
     },
     {
@@ -473,6 +490,72 @@
           # TODO(earthdok): find a better fix.
           '--disable-introspection',
           '--disable-vala',
+      ],
+      'dependencies=': [],
+      'includes': ['standard_instrumented_library_target.gypi'],
+    },
+    {
+      'library_name': 'liboverlay-scrollbar-0.2-0',
+      'extra_configure_flags': [
+          '--with-gtk=2',
+      ],
+      'dependencies=': [],
+      'includes': ['standard_instrumented_library_target.gypi'],
+    },
+    {
+      'library_name': 'libgconf-2-4',
+      'extra_configure_flags': [
+          # From debian/rules. (Even though --with-gtk=3.0 doesn't make sense.)
+          '--with-gtk=3.0',
+          '--disable-orbit',
+          # See above.
+          '--disable-introspection',
+      ],
+      'dependencies=': [],
+      'includes': ['standard_instrumented_library_target.gypi'],
+    },
+    {
+      'library_name': 'libappindicator1',
+      'extra_configure_flags': [
+          # See above.
+          '--disable-introspection',
+      ],
+      'dependencies=': [],
+      'build_method': 'custom_libappindicator1',
+      'includes': ['standard_instrumented_library_target.gypi'],
+    },
+    {
+      'library_name': 'libdbusmenu',
+      'extra_configure_flags': [
+          # From debian/rules.
+          '--disable-scrollkeeper',
+          '--with-gtk=2',
+          # See above.
+          '--disable-introspection',
+          '--disable-vala',
+      ],
+      'dependencies=': [],
+      'includes': ['standard_instrumented_library_target.gypi'],
+    },
+    {
+      'library_name': 'atk1.0',
+      'extra_configure_flags': [
+          # See above.
+          '--disable-introspection',
+      ],
+      'dependencies=': [],
+      'includes': ['standard_instrumented_library_target.gypi'],
+    },
+    {
+      'library_name': 'libunity9',
+      'dependencies=': [],
+      'includes': ['standard_instrumented_library_target.gypi'],
+    },
+    {
+      'library_name': 'dee',
+      'extra_configure_flags': [
+          # See above.
+          '--disable-introspection',
       ],
       'dependencies=': [],
       'includes': ['standard_instrumented_library_target.gypi'],

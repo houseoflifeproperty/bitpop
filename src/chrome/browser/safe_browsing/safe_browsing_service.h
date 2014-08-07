@@ -24,6 +24,7 @@
 
 class PrefChangeRegistrar;
 class PrefService;
+class Profile;
 struct SafeBrowsingProtocolConfig;
 class SafeBrowsingDatabaseManager;
 class SafeBrowsingPingManager;
@@ -31,6 +32,7 @@ class SafeBrowsingProtocolManager;
 class SafeBrowsingServiceFactory;
 class SafeBrowsingUIManager;
 class SafeBrowsingURLRequestContextGetter;
+class TrackedPreferenceValidationDelegate;
 
 namespace base {
 class Thread;
@@ -44,6 +46,7 @@ class URLRequestContextGetter;
 namespace safe_browsing {
 class ClientSideDetectionService;
 class DownloadProtectionService;
+class IncidentReportingService;
 }
 
 // Construction needs to happen on the main thread.
@@ -69,6 +72,12 @@ class SafeBrowsingService
 
   // Create an instance of the safe browsing service.
   static SafeBrowsingService* CreateSafeBrowsingService();
+
+#if defined(OS_ANDROID) && defined(FULL_SAFE_BROWSING)
+  // Return whether the user is in mobile safe browsing
+  // field trial enabled group.
+  static bool IsEnabledByFieldTrial();
+#endif
 
   // Called on the UI thread to initialize the service.
   void Initialize();
@@ -108,6 +117,12 @@ class SafeBrowsingService
   SafeBrowsingProtocolManager* protocol_manager() const;
 
   SafeBrowsingPingManager* ping_manager() const;
+
+  // Returns a preference validation delegate that adds incidents to the
+  // incident reporting service for validation failures. Returns NULL if the
+  // service is not applicable for the given profile.
+  scoped_ptr<TrackedPreferenceValidationDelegate>
+      CreatePreferenceValidationDelegate(Profile* profile) const;
 
  protected:
   // Creates the safe browsing service.  Need to initialize before using.
@@ -210,6 +225,8 @@ class SafeBrowsingService
   // since its running state and lifecycle depends on SafeBrowsingService's.
   // Accessed on UI thread.
   scoped_ptr<safe_browsing::DownloadProtectionService> download_service_;
+
+  scoped_ptr<safe_browsing::IncidentReportingService> incident_service_;
 
   // The UI manager handles showing interstitials.  Accessed on both UI and IO
   // thread.

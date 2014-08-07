@@ -14,6 +14,7 @@
 /** @const */ var SCREEN_OOBE_RESET = 'reset';
 /** @const */ var SCREEN_OOBE_ENROLLMENT = 'oauth-enrollment';
 /** @const */ var SCREEN_OOBE_KIOSK_ENABLE = 'kiosk-enable';
+/** @const */ var SCREEN_OOBE_AUTO_ENROLLMENT_CHECK = 'auto-enrollment-check';
 /** @const */ var SCREEN_GAIA_SIGNIN = 'gaia-signin';
 /** @const */ var SCREEN_ACCOUNT_PICKER = 'account-picker';
 /** @const */ var SCREEN_USER_IMAGE_PICKER = 'user-image';
@@ -97,7 +98,8 @@ cr.define('cr.ui.login', function() {
    */
   var SCREEN_GROUPS = [[SCREEN_OOBE_NETWORK,
                         SCREEN_OOBE_EULA,
-                        SCREEN_OOBE_UPDATE]
+                        SCREEN_OOBE_UPDATE,
+                        SCREEN_OOBE_AUTO_ENROLLMENT_CHECK]
                       ];
   /**
    * Group of screens (screen IDs) where factory-reset screen invocation is
@@ -110,6 +112,7 @@ cr.define('cr.ui.login', function() {
     SCREEN_OOBE_EULA,
     SCREEN_OOBE_UPDATE,
     SCREEN_OOBE_ENROLLMENT,
+    SCREEN_OOBE_AUTO_ENROLLMENT_CHECK,
     SCREEN_GAIA_SIGNIN,
     SCREEN_ACCOUNT_PICKER,
     SCREEN_KIOSK_ENABLE,
@@ -196,6 +199,11 @@ cr.define('cr.ui.login', function() {
      */
     displayType_: DISPLAY_TYPE.UNKNOWN,
 
+    /**
+     * Error message (bubble) was shown. This is checked in tests.
+     */
+    errorMessageWasShownForTesting_: false,
+
     get displayType() {
       return this.displayType_;
     },
@@ -258,14 +266,6 @@ cr.define('cr.ui.login', function() {
     setVirtualKeyboardSize: function(width, height) {
       this.virtualKeyboardWidth_ = width;
       this.virtualKeyboardHeight_ = height;
-
-      // Special case for screen lock. http://crbug.com/377904
-      // In case of virtual keyboard adjuct work area.
-      if (this.displayType == DISPLAY_TYPE.LOCK) {
-        var bottom = (height) ? height : $('login-header-bar').offsetHeight;
-        var clientArea = $('outer-container');
-        clientArea.style.bottom = cr.ui.toCssPx(bottom);
-      }
     },
 
     /**
@@ -331,6 +331,11 @@ cr.define('cr.ui.login', function() {
         if (currentStepId == SCREEN_GAIA_SIGNIN ||
             currentStepId == SCREEN_ACCOUNT_PICKER) {
           chrome.send('toggleEnrollmentScreen');
+        } else if (currentStepId == SCREEN_OOBE_NETWORK ||
+                   currentStepId == SCREEN_OOBE_EULA) {
+          // In this case update check will be skipped and OOBE will
+          // proceed straight to enrollment screen when EULA is accepted.
+          chrome.send('skipUpdateEnrollAfterEula');
         } else if (currentStepId == SCREEN_OOBE_ENROLLMENT) {
           // This accelerator is also used to manually cancel auto-enrollment.
           if (this.currentScreen.cancelAutoEnrollment)
@@ -935,8 +940,10 @@ cr.define('cr.ui.login', function() {
     }
 
     var currentScreen = Oobe.getInstance().currentScreen;
-    if (currentScreen && typeof currentScreen.showErrorBubble === 'function')
+    if (currentScreen && typeof currentScreen.showErrorBubble === 'function') {
       currentScreen.showErrorBubble(loginAttempts, error);
+      this.errorMessageWasShownForTesting_ = true;
+    }
   };
 
   /**
@@ -966,6 +973,11 @@ cr.define('cr.ui.login', function() {
    */
   DisplayManager.clearErrors = function() {
     $('bubble').hide();
+    this.errorMessageWasShownForTesting_ = false;
+
+    var bubbles = document.querySelectorAll('.bubble-shown');
+    for (var i = 0; i < bubbles.length; ++i)
+      bubbles[i].classList.remove('bubble-shown');
   };
 
   /**

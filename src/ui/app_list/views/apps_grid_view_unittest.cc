@@ -11,8 +11,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/timer/timer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_folder_item.h"
@@ -42,7 +42,7 @@ const int kHeight = 240;
 class PageFlipWaiter : public PaginationModelObserver {
  public:
   PageFlipWaiter(base::MessageLoopForUI* ui_loop, PaginationModel* model)
-      : ui_loop_(ui_loop), model_(model), wait_(false), page_changed_(false) {
+      : ui_loop_(ui_loop), model_(model), wait_(false) {
     model_->AddObserver(this);
   }
 
@@ -50,34 +50,28 @@ class PageFlipWaiter : public PaginationModelObserver {
     model_->RemoveObserver(this);
   }
 
-  bool Wait(int time_out_ms) {
+  void Wait() {
     DCHECK(!wait_);
     wait_ = true;
-    page_changed_ = false;
-
-    if (time_out_ms) {
-      wait_timer_.Stop();
-      wait_timer_.Start(FROM_HERE,
-                        base::TimeDelta::FromMilliseconds(time_out_ms),
-                        this, &PageFlipWaiter::OnWaitTimeOut);
-    }
 
     ui_loop_->Run();
     wait_ = false;
-    return page_changed_;
   }
+
+  void Reset() { selected_pages_.clear(); }
+
+  const std::string& selected_pages() const { return selected_pages_; }
 
  private:
-  void OnWaitTimeOut() {
-    ui_loop_->Quit();
-  }
-
   // PaginationModelObserver overrides:
   virtual void TotalPagesChanged() OVERRIDE {
   }
   virtual void SelectedPageChanged(int old_selected,
                                    int new_selected) OVERRIDE {
-    page_changed_ = true;
+    if (!selected_pages_.empty())
+      selected_pages_ += ',';
+    selected_pages_ += base::IntToString(new_selected);
+
     if (wait_)
       ui_loop_->Quit();
   }
@@ -89,8 +83,7 @@ class PageFlipWaiter : public PaginationModelObserver {
   base::MessageLoopForUI* ui_loop_;
   PaginationModel* model_;
   bool wait_;
-  bool page_changed_;
-  base::OneShotTimer<PageFlipWaiter> wait_timer_;
+  std::string selected_pages_;
 
   DISALLOW_COPY_AND_ASSIGN(PageFlipWaiter);
 };
@@ -106,9 +99,9 @@ class AppsGridViewTest : public views::ViewsTestBase {
   virtual void SetUp() OVERRIDE {
     views::ViewsTestBase::SetUp();
     model_.reset(new AppListTestModel);
-    pagination_model_.reset(new PaginationModel);
+    model_->SetFoldersEnabled(true);
 
-    apps_grid_view_.reset(new AppsGridView(NULL, pagination_model_.get()));
+    apps_grid_view_.reset(new AppsGridView(NULL));
     apps_grid_view_->SetLayout(kIconDimension, kCols, kRows);
     apps_grid_view_->SetBoundsRect(gfx::Rect(gfx::Size(kWidth, kHeight)));
     apps_grid_view_->SetModel(model_.get());
@@ -152,6 +145,10 @@ class AppsGridViewTest : public views::ViewsTestBase {
     return rect;
   }
 
+  PaginationModel* GetPaginationModel() {
+    return apps_grid_view_->pagination_model();
+  }
+
   // Points are in |apps_grid_view_|'s coordinates.
   void SimulateDrag(AppsGridView::Pointer pointer,
                     const gfx::Point& from,
@@ -179,7 +176,6 @@ class AppsGridViewTest : public views::ViewsTestBase {
   }
 
   scoped_ptr<AppListTestModel> model_;
-  scoped_ptr<PaginationModel> pagination_model_;
   scoped_ptr<AppsGridView> apps_grid_view_;
   scoped_ptr<AppsGridViewTestApi> test_api_;
 
@@ -230,33 +226,33 @@ TEST_F(AppsGridViewTest, CreatePage) {
   // Fully populates a page.
   const int kPages = 1;
   model_->PopulateApps(kPages * kTilesPerPage);
-  EXPECT_EQ(kPages, pagination_model_->total_pages());
+  EXPECT_EQ(kPages, GetPaginationModel()->total_pages());
 
   // Adds one more and gets a new page created.
   model_->CreateAndAddItem("Extra");
-  EXPECT_EQ(kPages + 1, pagination_model_->total_pages());
+  EXPECT_EQ(kPages + 1, GetPaginationModel()->total_pages());
 }
 
 TEST_F(AppsGridViewTest, EnsureHighlightedVisible) {
   const int kPages = 3;
   model_->PopulateApps(kPages * kTilesPerPage);
-  EXPECT_EQ(kPages, pagination_model_->total_pages());
-  EXPECT_EQ(0, pagination_model_->selected_page());
+  EXPECT_EQ(kPages, GetPaginationModel()->total_pages());
+  EXPECT_EQ(0, GetPaginationModel()->selected_page());
 
   // Highlight first one and last one one first page and first page should be
   // selected.
   model_->HighlightItemAt(0);
-  EXPECT_EQ(0, pagination_model_->selected_page());
+  EXPECT_EQ(0, GetPaginationModel()->selected_page());
   model_->HighlightItemAt(kTilesPerPage - 1);
-  EXPECT_EQ(0, pagination_model_->selected_page());
+  EXPECT_EQ(0, GetPaginationModel()->selected_page());
 
   // Highlight first one on 2nd page and 2nd page should be selected.
   model_->HighlightItemAt(kTilesPerPage + 1);
-  EXPECT_EQ(1, pagination_model_->selected_page());
+  EXPECT_EQ(1, GetPaginationModel()->selected_page());
 
   // Highlight last one in the model and last page should be selected.
   model_->HighlightItemAt(model_->top_level_item_list()->item_count() - 1);
-  EXPECT_EQ(kPages - 1, pagination_model_->selected_page());
+  EXPECT_EQ(kPages - 1, GetPaginationModel()->selected_page());
 }
 
 TEST_F(AppsGridViewTest, RemoveSelectedLastApp) {
@@ -278,7 +274,7 @@ TEST_F(AppsGridViewTest, RemoveSelectedLastApp) {
 }
 
 TEST_F(AppsGridViewTest, MouseDragWithFolderDisabled) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kDisableSyncAppList);
+  model_->SetFoldersEnabled(false);
   const int kTotalItems = 4;
   model_->PopulateApps(kTotalItems);
   EXPECT_EQ(std::string("Item 0,Item 1,Item 2,Item 3"),
@@ -501,55 +497,49 @@ TEST_F(AppsGridViewTest, MouseDragWithCancelDeleteAddItem) {
 
 TEST_F(AppsGridViewTest, MouseDragFlipPage) {
   test_api_->SetPageFlipDelay(10);
-  pagination_model_->SetTransitionDurations(10, 10);
+  GetPaginationModel()->SetTransitionDurations(10, 10);
 
-  PageFlipWaiter page_flip_waiter(message_loop(),
-                                  pagination_model_.get());
+  PageFlipWaiter page_flip_waiter(message_loop(), GetPaginationModel());
 
   const int kPages = 3;
   model_->PopulateApps(kPages * kTilesPerPage);
-  EXPECT_EQ(kPages, pagination_model_->total_pages());
-  EXPECT_EQ(0, pagination_model_->selected_page());
+  EXPECT_EQ(kPages, GetPaginationModel()->total_pages());
+  EXPECT_EQ(0, GetPaginationModel()->selected_page());
 
   gfx::Point from = GetItemTileRectAt(0, 0).CenterPoint();
   gfx::Point to = gfx::Point(apps_grid_view_->width(),
                              apps_grid_view_->height() / 2);
 
   // Drag to right edge.
+  page_flip_waiter.Reset();
   SimulateDrag(AppsGridView::MOUSE, from, to);
 
-  // Page should be flipped after sometime.
-  EXPECT_TRUE(page_flip_waiter.Wait(0));
-  EXPECT_EQ(1, pagination_model_->selected_page());
-
-  // Stay there and page should be flipped again.
-  EXPECT_TRUE(page_flip_waiter.Wait(0));
-  EXPECT_EQ(2, pagination_model_->selected_page());
-
-  // Stay there longer and no page flip happen since we are at the last page.
-  EXPECT_FALSE(page_flip_waiter.Wait(100));
-  EXPECT_EQ(2, pagination_model_->selected_page());
+  // Page should be flipped after sometime to hit page 1 and 2 then stop.
+  while (test_api_->HasPendingPageFlip()) {
+    page_flip_waiter.Wait();
+  }
+  EXPECT_EQ("1,2", page_flip_waiter.selected_pages());
+  EXPECT_EQ(2, GetPaginationModel()->selected_page());
 
   apps_grid_view_->EndDrag(true);
 
   // Now drag to the left edge and test the other direction.
   to.set_x(0);
 
+  page_flip_waiter.Reset();
   SimulateDrag(AppsGridView::MOUSE, from, to);
 
-  EXPECT_TRUE(page_flip_waiter.Wait(0));
-  EXPECT_EQ(1, pagination_model_->selected_page());
+  while (test_api_->HasPendingPageFlip()) {
+    page_flip_waiter.Wait();
+  }
+  EXPECT_EQ("1,0", page_flip_waiter.selected_pages());
+  EXPECT_EQ(0, GetPaginationModel()->selected_page());
 
-  EXPECT_TRUE(page_flip_waiter.Wait(0));
-  EXPECT_EQ(0, pagination_model_->selected_page());
-
-  EXPECT_FALSE(page_flip_waiter.Wait(100));
-  EXPECT_EQ(0, pagination_model_->selected_page());
   apps_grid_view_->EndDrag(true);
 }
 
 TEST_F(AppsGridViewTest, SimultaneousDragWithFolderDisabled) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kDisableSyncAppList);
+  model_->SetFoldersEnabled(false);
   const int kTotalItems = 4;
   model_->PopulateApps(kTotalItems);
   EXPECT_EQ(std::string("Item 0,Item 1,Item 2,Item 3"),
@@ -676,7 +666,7 @@ TEST_F(AppsGridViewTest, HighlightWithKeyboard) {
 
   // After page switch, arrow keys select first item on current page.
   apps_grid_view_->SetSelectedView(GetItemViewAt(first_index));
-  pagination_model_->SelectPage(1, false);
+  GetPaginationModel()->SelectPage(1, false);
   SimulateKeyPress(ui::VKEY_UP);
   EXPECT_TRUE(apps_grid_view_->IsSelectedView(GetItemViewAt(
       first_index_on_page2)));

@@ -22,6 +22,7 @@
 #define Page_h
 
 #include "core/dom/ViewportDescription.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/SettingsDelegate.h"
 #include "core/frame/UseCounter.h"
 #include "core/page/PageAnimator.h"
@@ -51,7 +52,7 @@ class DragClient;
 class DragController;
 class EditorClient;
 class FocusController;
-class LocalFrame;
+class Frame;
 class FrameHost;
 class HistoryItem;
 class InspectorClient;
@@ -127,8 +128,14 @@ public:
     SpellCheckerClient& spellCheckerClient() const { return *m_spellCheckerClient; }
     UndoStack& undoStack() const { return *m_undoStack; }
 
-    void setMainFrame(PassRefPtr<LocalFrame>);
-    LocalFrame* mainFrame() const { return m_mainFrame.get(); }
+    void setMainFrame(Frame*);
+    Frame* mainFrame() const { return m_mainFrame; }
+    // Escape hatch for existing code that assumes that the root frame is
+    // always a LocalFrame. With OOPI, this is not always the case. Code that
+    // depends on this will generally have to be rewritten to propagate any
+    // necessary state through all renderer processes for that page and/or
+    // coordinate/rely on the browser process to help dispatch/coordinate work.
+    LocalFrame* deprecatedLocalMainFrame() const { return toLocalFrame(m_mainFrame); }
 
     void documentDetached(Document*);
 
@@ -149,7 +156,7 @@ public:
     InspectorController& inspectorController() const { return *m_inspectorController; }
     PointerLockController& pointerLockController() const { return *m_pointerLockController; }
     ValidationMessageClient& validationMessageClient() const { return *m_validationMessageClient; }
-    void setValidationMessageClient(PassOwnPtr<ValidationMessageClient>);
+    void setValidationMessageClient(PassOwnPtrWillBeRawPtr<ValidationMessageClient>);
 
     ScrollingCoordinator* scrollingCoordinator();
 
@@ -213,6 +220,8 @@ public:
 
     void didCommitLoad(LocalFrame*);
 
+    void acceptLanguagesChanged();
+
     static void networkStateChanged(bool online);
     PassOwnPtr<LifecycleNotifier<Page> > createLifecycleNotifier();
 
@@ -225,10 +234,10 @@ protected:
 private:
     void initGroup();
 
-#if ASSERT_DISABLED
-    void checkSubframeCountConsistency() const { }
-#else
+#if ASSERT_ENABLED
     void checkSubframeCountConsistency() const;
+#else
+    void checkSubframeCountConsistency() const { }
 #endif
 
     void setTimerAlignmentInterval(double);
@@ -241,16 +250,28 @@ private:
     PageAnimator m_animator;
     const OwnPtr<AutoscrollController> m_autoscrollController;
     const OwnPtr<Chrome> m_chrome;
-    const OwnPtr<DragCaretController> m_dragCaretController;
-    const OwnPtr<DragController> m_dragController;
+    const OwnPtrWillBeMember<DragCaretController> m_dragCaretController;
+    const OwnPtrWillBeMember<DragController> m_dragController;
     const OwnPtr<FocusController> m_focusController;
-    const OwnPtr<ContextMenuController> m_contextMenuController;
+    const OwnPtrWillBeMember<ContextMenuController> m_contextMenuController;
     const OwnPtr<InspectorController> m_inspectorController;
-    const OwnPtr<PointerLockController> m_pointerLockController;
+    const OwnPtrWillBeMember<PointerLockController> m_pointerLockController;
     OwnPtr<ScrollingCoordinator> m_scrollingCoordinator;
-    const OwnPtr<UndoStack> m_undoStack;
+    const OwnPtrWillBeMember<UndoStack> m_undoStack;
 
-    RefPtr<LocalFrame> m_mainFrame;
+    // Typically, the main frame and Page should both be owned by the embedder,
+    // which must call Page::willBeDestroyed() prior to destroying Page. This
+    // call detaches the main frame and clears this pointer, thus ensuring that
+    // this field only references a live main frame.
+    //
+    // However, there are several locations (InspectorOverlay, SVGImage, and
+    // WebPagePopupImpl) which don't hold a reference to the main frame at all
+    // after creating it. These are still safe because they always create a
+    // Frame with a FrameView. FrameView and Frame hold references to each
+    // other, thus keeping each other alive. The call to willBeDestroyed()
+    // breaks this cycle, so the frame is still properly destroyed once no
+    // longer needed.
+    Frame* m_mainFrame;
 
     mutable RefPtr<PluginData> m_pluginData;
 
@@ -258,7 +279,7 @@ private:
     EditorClient* const m_editorClient;
     SpellCheckerClient* const m_spellCheckerClient;
     StorageClient* m_storageClient;
-    OwnPtr<ValidationMessageClient> m_validationMessageClient;
+    OwnPtrWillBeMember<ValidationMessageClient> m_validationMessageClient;
 
     UseCounter m_useCounter;
 

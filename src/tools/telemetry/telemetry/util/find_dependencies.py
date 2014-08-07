@@ -199,7 +199,7 @@ def ZipDependencies(paths, dependencies, options):
     # TODO: If there's a gsutil in telemetry/third_party/, bootstrap_deps
     # will include it. Then there will be two copies of gsutil at the same
     # location in the archive. This can be confusing for users.
-    gsutil_path = cloud_storage.FindGsutil()
+    gsutil_path = os.path.realpath(cloud_storage.FindGsutil())
     if cloud_storage.SupportsProdaccess(gsutil_path):
       gsutil_base_dir = os.path.join(os.path.dirname(gsutil_path), os.pardir)
       gsutil_dependencies = path_set.PathSet()
@@ -209,6 +209,12 @@ def ZipDependencies(paths, dependencies, options):
       gsutil_dependencies.add(os.path.join(gsutil_base_dir, 'retry_decorator'))
       gsutil_dependencies -= FindExcludedFiles(
           set(gsutil_dependencies), options)
+
+      # Also add upload.py to the archive from depot_tools, if it is available.
+      # This allows us to post patches without requiring a full depot_tools
+      # install. There's no real point in including upload.py if we do not
+      # also have gsutil, which is why this is inside the gsutil block.
+      gsutil_dependencies.add(os.path.join(gsutil_base_dir, 'upload.py'))
 
       for path in gsutil_dependencies:
         path_in_archive = os.path.join(

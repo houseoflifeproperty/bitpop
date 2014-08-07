@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -11,110 +11,172 @@ you desire.
 """
 
 import collections
-import fileinput
 import json
+import logging
+import multiprocessing
 import optparse
 import os
-import pprint
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
+
+import binary_size_utils
+
+# This path changee is not beautiful. Temporary (I hope) measure until
+# the chromium project has figured out a proper way to organize the
+# library of python tools. http://crbug.com/375725
+elf_symbolizer_path = os.path.abspath(os.path.join(
+    os.path.dirname(__file__),
+    '..',
+    '..',
+    'build',
+    'android',
+    'pylib'))
+sys.path.append(elf_symbolizer_path)
+import symbols.elf_symbolizer as elf_symbolizer  # pylint: disable=F0401
+
+
+# Node dictionary keys. These are output in json read by the webapp so
+# keep them short to save file size.
+# Note: If these change, the webapp must also change.
+NODE_TYPE_KEY = 'k'
+NODE_NAME_KEY = 'n'
+NODE_CHILDREN_KEY = 'children'
+NODE_SYMBOL_TYPE_KEY = 't'
+NODE_SYMBOL_SIZE_KEY = 'value'
+NODE_MAX_DEPTH_KEY = 'maxDepth'
+NODE_LAST_PATH_ELEMENT_KEY = 'lastPathElement'
+
+# The display name of the bucket where we put symbols without path.
+NAME_NO_PATH_BUCKET = '(No Path)'
+
+# Try to keep data buckets smaller than this to avoid killing the
+# graphing lib.
+BIG_BUCKET_LIMIT = 3000
 
 
 # TODO(andrewhayden): Only used for legacy reports. Delete.
-def FormatBytes(bytes):
+def FormatBytes(byte_count):
   """Pretty-print a number of bytes."""
-  if bytes > 1e6:
-    bytes = bytes / 1.0e6
-    return '%.1fm' % bytes
-  if bytes > 1e3:
-    bytes = bytes / 1.0e3
-    return '%.1fk' % bytes
-  return str(bytes)
+  if byte_count > 1e6:
+    byte_count = byte_count / 1.0e6
+    return '%.1fm' % byte_count
+  if byte_count > 1e3:
+    byte_count = byte_count / 1.0e3
+    return '%.1fk' % byte_count
+  return str(byte_count)
 
 
 # TODO(andrewhayden): Only used for legacy reports. Delete.
-def SymbolTypeToHuman(type):
+def SymbolTypeToHuman(symbol_type):
   """Convert a symbol type as printed by nm into a human-readable name."""
   return {'b': 'bss',
           'd': 'data',
           'r': 'read-only data',
           't': 'code',
           'w': 'weak symbol',
-          'v': 'weak symbol'}[type]
-
-
-def ParseNm(input):
-  """Parse nm output.
-
-  Argument: an iterable over lines of nm output.
-
-  Yields: (symbol name, symbol type, symbol size, source file path).
-  Path may be None if nm couldn't figure out the source file.
-  """
-
-  # Match lines with size, symbol, optional location, optional discriminator
-  sym_re = re.compile(r'^[0-9a-f]{8} ' # address (8 hex digits)
-                      '([0-9a-f]{8}) ' # size (8 hex digits)
-                      '(.) ' # symbol type, one character
-                      '([^\t]+)' # symbol name, separated from next by tab
-                      '(?:\t(.*):[\d\?]+)?.*$') # location
-  # Match lines with addr but no size.
-  addr_re = re.compile(r'^[0-9a-f]{8} (.) ([^\t]+)(?:\t.*)?$')
-  # Match lines that don't have an address at all -- typically external symbols.
-  noaddr_re = re.compile(r'^ {8} (.) (.*)$')
-
-  for line in input:
-    line = line.rstrip()
-    match = sym_re.match(line)
-    if match:
-      size, type, sym = match.groups()[0:3]
-      size = int(size, 16)
-      if type.lower() == 'b':
-        continue  # skip all BSS for now
-      path = match.group(4)
-      yield sym, type, size, path
-      continue
-    match = addr_re.match(line)
-    if match:
-      type, sym = match.groups()[0:2]
-      # No size == we don't care.
-      continue
-    match = noaddr_re.match(line)
-    if match:
-      type, sym = match.groups()
-      if type in ('U', 'w'):
-        # external or weak symbol
-        continue
-
-    print >>sys.stderr, 'unparsed:', repr(line)
+          'v': 'weak symbol'}[symbol_type]
 
 
 def _MkChild(node, name):
-  child = None
-  for test in node['children']:
-    if test['n'] == name:
-      child = test
-      break
-  if not child:
-    child = {'n': name, 'children': []}
-    node['children'].append(child)
+  child = node[NODE_CHILDREN_KEY].get(name)
+  if child is None:
+    child = {NODE_NAME_KEY: name,
+             NODE_CHILDREN_KEY: {}}
+    node[NODE_CHILDREN_KEY][name] = child
   return child
 
 
+
+def SplitNoPathBucket(node):
+  """NAME_NO_PATH_BUCKET can be too large for the graphing lib to
+  handle. Split it into sub-buckets in that case."""
+  root_children = node[NODE_CHILDREN_KEY]
+  if NAME_NO_PATH_BUCKET in root_children:
+    no_path_bucket = root_children[NAME_NO_PATH_BUCKET]
+    old_children = no_path_bucket[NODE_CHILDREN_KEY]
+    count = 0
+    for symbol_type, symbol_bucket in old_children.iteritems():
+      count += len(symbol_bucket[NODE_CHILDREN_KEY])
+    if count > BIG_BUCKET_LIMIT:
+      new_children = {}
+      no_path_bucket[NODE_CHILDREN_KEY] = new_children
+      current_bucket = None
+      index = 0
+      for symbol_type, symbol_bucket in old_children.iteritems():
+        for symbol_name, value in symbol_bucket[NODE_CHILDREN_KEY].iteritems():
+          if index % BIG_BUCKET_LIMIT == 0:
+            group_no = (index / BIG_BUCKET_LIMIT) + 1
+            current_bucket = _MkChild(no_path_bucket,
+                                      '%s subgroup %d' % (NAME_NO_PATH_BUCKET,
+                                                          group_no))
+            assert not NODE_TYPE_KEY in node or node[NODE_TYPE_KEY] == 'p'
+            node[NODE_TYPE_KEY] = 'p'  # p for path
+          index += 1
+          symbol_size = value[NODE_SYMBOL_SIZE_KEY]
+          AddSymbolIntoFileNode(current_bucket, symbol_type,
+                                symbol_name, symbol_size)
+
+
+def MakeChildrenDictsIntoLists(node):
+  largest_list_len = 0
+  if NODE_CHILDREN_KEY in node:
+    largest_list_len = len(node[NODE_CHILDREN_KEY])
+    child_list = []
+    for child in node[NODE_CHILDREN_KEY].itervalues():
+      child_largest_list_len = MakeChildrenDictsIntoLists(child)
+      if child_largest_list_len > largest_list_len:
+        largest_list_len = child_largest_list_len
+      child_list.append(child)
+    node[NODE_CHILDREN_KEY] = child_list
+
+  return largest_list_len
+
+
+def AddSymbolIntoFileNode(node, symbol_type, symbol_name, symbol_size):
+  """Puts symbol into the file path node |node|.
+  Returns the number of added levels in tree. I.e. returns 2."""
+
+  # 'node' is the file node and first step is to find its symbol-type bucket.
+  node[NODE_LAST_PATH_ELEMENT_KEY] = True
+  node = _MkChild(node, symbol_type)
+  assert not NODE_TYPE_KEY in node or node[NODE_TYPE_KEY] == 'b'
+  node[NODE_SYMBOL_TYPE_KEY] = symbol_type
+  node[NODE_TYPE_KEY] = 'b'  # b for bucket
+
+  # 'node' is now the symbol-type bucket. Make the child entry.
+  node = _MkChild(node, symbol_name)
+  if NODE_CHILDREN_KEY in node:
+    if node[NODE_CHILDREN_KEY]:
+      logging.warning('A container node used as symbol for %s.' % symbol_name)
+    # This is going to be used as a leaf so no use for child list.
+    del node[NODE_CHILDREN_KEY]
+  node[NODE_SYMBOL_SIZE_KEY] = symbol_size
+  node[NODE_SYMBOL_TYPE_KEY] = symbol_type
+  node[NODE_TYPE_KEY] = 's'  # s for symbol
+
+  return 2  # Depth of the added subtree.
+
+
 def MakeCompactTree(symbols):
-  result = {'n': '/', 'children': [], 'k': 'p', 'maxDepth': 0}
+  result = {NODE_NAME_KEY: '/',
+            NODE_CHILDREN_KEY: {},
+            NODE_TYPE_KEY: 'p',
+            NODE_MAX_DEPTH_KEY: 0}
+  seen_symbol_with_path = False
   for symbol_name, symbol_type, symbol_size, file_path in symbols:
 
     if 'vtable for ' in symbol_name:
-      symbol_type = '@' # hack to categorize these separately
+      symbol_type = '@'  # hack to categorize these separately
     # Take path like '/foo/bar/baz', convert to ['foo', 'bar', 'baz']
     if file_path:
       file_path = os.path.normpath(file_path)
+      seen_symbol_with_path = True
     else:
-      file_path = '(No Path)'
+      file_path = NAME_NO_PATH_BUCKET
 
     if file_path.startswith('/'):
       file_path = file_path[1:]
@@ -128,26 +190,25 @@ def MakeCompactTree(symbols):
       if len(path_part) == 0:
         continue
       depth += 1
-      node = _MkChild(node, path_part);
-      node['k'] = 'p' # p for path
+      node = _MkChild(node, path_part)
+      assert not NODE_TYPE_KEY in node or node[NODE_TYPE_KEY] == 'p'
+      node[NODE_TYPE_KEY] = 'p'  # p for path
 
-    # 'node' is now the file node. Find the symbol-type bucket.
-    node['lastPathElement'] = True
-    node = _MkChild(node, symbol_type)
-    node['t'] = symbol_type
-    node['k'] = 'b' # b for bucket
-    depth += 1
+    depth += AddSymbolIntoFileNode(node, symbol_type, symbol_name, symbol_size)
+    result[NODE_MAX_DEPTH_KEY] = max(result[NODE_MAX_DEPTH_KEY], depth)
 
-    # 'node' is now the symbol-type bucket. Make the child entry.
-    node = _MkChild(node, symbol_name)
-    if 'children' in node: # Only possible if we're adding duplicate entries!!!
-      del node['children']
-    node['value'] = symbol_size
-    node['t'] = symbol_type
-    node['k'] = 's' # s for symbol
-    depth += 1
-    result['maxDepth'] = max(result['maxDepth'], depth);
+  if not seen_symbol_with_path:
+    logging.warning('Symbols lack paths. Data will not be structured.')
 
+  # The (no path) bucket can be extremely large if we failed to get
+  # path information. Split it into subgroups if needed.
+  SplitNoPathBucket(result)
+
+  largest_list_len = MakeChildrenDictsIntoLists(result)
+
+  if largest_list_len > BIG_BUCKET_LIMIT:
+    logging.warning('There are sections with %d nodes. '
+                    'Results might be unusable.' % largest_list_len)
   return result
 
 
@@ -176,7 +237,7 @@ def TreeifySymbols(symbols):
   leaf nodes within the data structure.
   """
   dirs = {'children': {}, 'size': 0}
-  for sym, type, size, path in symbols:
+  for sym, symbol_type, size, path in symbols:
     dirs['size'] += size
     if path:
       path = os.path.normpath(path)
@@ -209,24 +270,24 @@ def TreeifySymbols(symbols):
         tree['size'] += size
 
         # Accumulate size into a bucket within the file
-        type = type.lower()
+        symbol_type = symbol_type.lower()
         if 'vtable for ' in sym:
           tree['sizes']['[vtable]'] += size
-        elif 'r' == type:
+        elif 'r' == symbol_type:
           tree['sizes']['[rodata]'] += size
-        elif 'd' == type:
+        elif 'd' == symbol_type:
           tree['sizes']['[data]'] += size
-        elif 'b' == type:
+        elif 'b' == symbol_type:
           tree['sizes']['[bss]'] += size
-        elif 't' == type:
+        elif 't' == symbol_type:
           # 'text' in binary parlance means 'code'.
           tree['sizes']['[code]'] += size
-        elif 'w' == type:
+        elif 'w' == symbol_type:
           tree['sizes']['[weak]'] += size
         else:
           tree['sizes']['[other]'] += size
       except:
-        print >>sys.stderr, sym, parts, key
+        print >> sys.stderr, sym, parts, file_key
         raise
     else:
       key = 'symbols without paths'
@@ -272,7 +333,8 @@ def JsonifyTree(tree, name):
       child_json = {'name': kind + ' (' + FormatBytes(size) + ')',
                    'data': { '$area': size }}
       css_class = css_class_map.get(kind)
-      if css_class is not None: child_json['data']['$symbol'] = css_class
+      if css_class is not None:
+        child_json['data']['$symbol'] = css_class
       children.append(child_json)
   # Sort children by size, largest to smallest.
   children.sort(key=lambda child: -child['data']['$area'])
@@ -285,12 +347,11 @@ def JsonifyTree(tree, name):
           'children': children }
 
 def DumpCompactTree(symbols, outfile):
-  out = open(outfile, 'w')
-  try:
-    out.write('var tree_data = ' + json.dumps(MakeCompactTree(symbols)))
-  finally:
-    out.flush()
-    out.close()
+  tree_root = MakeCompactTree(symbols)
+  with open(outfile, 'w') as out:
+    out.write('var tree_data = ')
+    json.dump(tree_root, out)
+  print('Writing %d bytes json' % os.path.getsize(outfile))
 
 
 # TODO(andrewhayden): Only used for legacy reports. Delete.
@@ -306,20 +367,20 @@ def DumpTreemap(symbols, outfile):
 
 # TODO(andrewhayden): Only used for legacy reports. Delete.
 def DumpLargestSymbols(symbols, outfile, n):
-  # a list of (sym, type, size, path); sort by size.
+  # a list of (sym, symbol_type, size, path); sort by size.
   symbols = sorted(symbols, key=lambda x: -x[2])
   dumped = 0
   out = open(outfile, 'w')
   try:
     out.write('var largestSymbols = [\n')
-    for sym, type, size, path in symbols:
-      if type in ('b', 'w'):
+    for sym, symbol_type, size, path in symbols:
+      if symbol_type in ('b', 'w'):
         continue  # skip bss and weak symbols
       if path is None:
         path = ''
       entry = {'size': FormatBytes(size),
                'symbol': sym,
-               'type': SymbolTypeToHuman(type),
+               'type': SymbolTypeToHuman(symbol_type),
                'location': path }
       out.write(json.dumps(entry))
       out.write(',\n')
@@ -334,7 +395,7 @@ def DumpLargestSymbols(symbols, outfile, n):
 
 def MakeSourceMap(symbols):
   sources = {}
-  for sym, type, size, path in symbols:
+  for _sym, _symbol_type, size, path in symbols:
     key = None
     if path:
       key = os.path.normpath(path)
@@ -350,8 +411,8 @@ def MakeSourceMap(symbols):
 
 # TODO(andrewhayden): Only used for legacy reports. Delete.
 def DumpLargestSources(symbols, outfile, n):
-  map = MakeSourceMap(symbols)
-  sources = sorted(map.values(), key=lambda x: -x['size'])
+  source_map = MakeSourceMap(symbols)
+  sources = sorted(source_map.values(), key=lambda x: -x['size'])
   dumped = 0
   out = open(outfile, 'w')
   try:
@@ -374,7 +435,7 @@ def DumpLargestSources(symbols, outfile, n):
 # TODO(andrewhayden): Only used for legacy reports. Delete.
 def DumpLargestVTables(symbols, outfile, n):
   vtables = []
-  for symbol, type, size, path in symbols:
+  for symbol, _type, size, path in symbols:
     if 'vtable for ' in symbol:
       vtables.append({'symbol': symbol, 'path': path, 'size': size})
   vtables = sorted(vtables, key=lambda x: -x['size'])
@@ -397,65 +458,206 @@ def DumpLargestVTables(symbols, outfile, n):
     out.close()
 
 
-# TODO(andrewhayden): Switch to Primiano's python-based version.
-def RunParallelAddress2Line(outfile, library, arch, jobs, verbose):
-  """Run a parallel addr2line processing engine to dump and resolve symbols."""
-  out_dir = os.getenv('CHROMIUM_OUT_DIR', 'out')
-  build_type = os.getenv('BUILDTYPE', 'Release')
-  classpath = os.path.join(out_dir, build_type, 'lib.java',
-                           'binary_size_java.jar')
-  cmd = ['java',
-         '-classpath', classpath,
-         'org.chromium.tools.binary_size.ParallelAddress2Line',
-         '--disambiguate',
-         '--outfile', outfile,
-         '--library', library,
-         '--threads', jobs]
-  if verbose is True:
-    cmd.append('--verbose')
-  prefix = os.path.join('third_party', 'android_tools', 'ndk', 'toolchains')
-  if arch == 'android-arm':
-    prefix = os.path.join(prefix, 'arm-linux-androideabi-4.8', 'prebuilt',
-                          'linux-x86_64', 'bin', 'arm-linux-androideabi-')
-    cmd.extend(['--nm', prefix + 'nm', '--addr2line', prefix + 'addr2line'])
-  elif arch == 'android-mips':
-    prefix = os.path.join(prefix, 'mipsel-linux-android-4.8', 'prebuilt',
-                          'linux-x86_64', 'bin', 'mipsel-linux-android-')
-    cmd.extend(['--nm', prefix + 'nm', '--addr2line', prefix + 'addr2line'])
-  elif arch == 'android-x86':
-    prefix = os.path.join(prefix, 'x86-4.8', 'prebuilt',
-                          'linux-x86_64', 'bin', 'i686-linux-android-')
-    cmd.extend(['--nm', prefix + 'nm', '--addr2line', prefix + 'addr2line'])
-  # else, use whatever is in PATH (don't pass --nm or --addr2line)
+# Regex for parsing "nm" output. A sample line looks like this:
+# 0167b39c 00000018 t ACCESS_DESCRIPTION_free /path/file.c:95
+#
+# The fields are: address, size, type, name, source location
+# Regular expression explained ( see also: https://xkcd.com/208 ):
+# ([0-9a-f]{8,}+)   The address
+# [\s]+             Whitespace separator
+# ([0-9a-f]{8,}+)   The size. From here on out it's all optional.
+# [\s]+             Whitespace separator
+# (\S?)             The symbol type, which is any non-whitespace char
+# [\s*]             Whitespace separator
+# ([^\t]*)          Symbol name, any non-tab character (spaces ok!)
+# [\t]?             Tab separator
+# (.*)              The location (filename[:linennum|?][ (discriminator n)]
+sNmPattern = re.compile(
+  r'([0-9a-f]{8,})[\s]+([0-9a-f]{8,})[\s]*(\S?)[\s*]([^\t]*)[\t]?(.*)')
 
-  if verbose:
-    print cmd
-
-  return_code = subprocess.call(cmd)
-  if return_code:
-    raise RuntimeError('Failed to run ParallelAddress2Line: returned ' +
-                       str(return_code))
+class Progress():
+  def __init__(self):
+    self.count = 0
+    self.skip_count = 0
+    self.collisions = 0
+    self.time_last_output = time.time()
+    self.count_last_output = 0
 
 
-def GetNmSymbols(infile, outfile, library, arch, jobs, verbose):
-  if infile is None:
-    if outfile is None:
-      infile = tempfile.NamedTemporaryFile(delete=False).name
+def RunElfSymbolizer(outfile, library, addr2line_binary, nm_binary, jobs):
+  nm_output = RunNm(library, nm_binary)
+  nm_output_lines = nm_output.splitlines()
+  nm_output_lines_len = len(nm_output_lines)
+  address_symbol = {}
+  progress = Progress()
+  def map_address_symbol(symbol, addr):
+    progress.count += 1
+    if addr in address_symbol:
+      # 'Collision between %s and %s.' % (str(symbol.name),
+      #                                   str(address_symbol[addr].name))
+      progress.collisions += 1
     else:
-      infile = outfile
+      address_symbol[addr] = symbol
+
+    progress_chunk = 100
+    if progress.count % progress_chunk == 0:
+      time_now = time.time()
+      time_spent = time_now - progress.time_last_output
+      if time_spent > 1.0:
+        # Only output at most once per second.
+        progress.time_last_output = time_now
+        chunk_size = progress.count - progress.count_last_output
+        progress.count_last_output = progress.count
+        if time_spent > 0:
+          speed = chunk_size / time_spent
+        else:
+          speed = 0
+        progress_percent = (100.0 * (progress.count + progress.skip_count) /
+                            nm_output_lines_len)
+        print('%.1f%%: Looked up %d symbols (%d collisions) - %.1f lookups/s.' %
+              (progress_percent, progress.count, progress.collisions, speed))
+
+  symbolizer = elf_symbolizer.ELFSymbolizer(library, addr2line_binary,
+                                            map_address_symbol,
+                                            max_concurrent_jobs=jobs)
+  user_interrupted = False
+  try:
+    for line in nm_output_lines:
+      match = sNmPattern.match(line)
+      if match:
+        location = match.group(5)
+        if not location:
+          addr = int(match.group(1), 16)
+          size = int(match.group(2), 16)
+          if addr in address_symbol:  # Already looked up, shortcut
+                                      # ELFSymbolizer.
+            map_address_symbol(address_symbol[addr], addr)
+            continue
+          elif size == 0:
+            # Save time by not looking up empty symbols (do they even exist?)
+            print('Empty symbol: ' + line)
+          else:
+            symbolizer.SymbolizeAsync(addr, addr)
+            continue
+
+      progress.skip_count += 1
+  except KeyboardInterrupt:
+    user_interrupted = True
+    print('Interrupting - killing subprocesses. Please wait.')
+
+  try:
+    symbolizer.Join()
+  except KeyboardInterrupt:
+    # Don't want to abort here since we will be finished in a few seconds.
+    user_interrupted = True
+    print('Patience you must have my young padawan.')
+
+  if user_interrupted:
+    print('Skipping the rest of the file mapping. '
+          'Output will not be fully classified.')
+
+  with open(outfile, 'w') as out:
+    for line in nm_output_lines:
+      match = sNmPattern.match(line)
+      if match:
+        location = match.group(5)
+        if not location:
+          addr = int(match.group(1), 16)
+          symbol = address_symbol.get(addr)
+          if symbol is not None:
+            path = '??'
+            if symbol.source_path is not None:
+              path = symbol.source_path
+            line_number = 0
+            if symbol.source_line is not None:
+              line_number = symbol.source_line
+            out.write('%s\t%s:%d\n' % (line, path, line_number))
+            continue
+
+      out.write('%s\n' % line)
+
+  print('%d symbols in the results.' % len(address_symbol))
+
+
+def RunNm(binary, nm_binary):
+  print('Starting nm')
+  cmd = [nm_binary, '-C', '--print-size', '--size-sort', '--reverse-sort',
+         binary]
+  nm_process = subprocess.Popen(cmd,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+  (process_output, err_output) = nm_process.communicate()
+
+  if nm_process.returncode != 0:
+    if err_output:
+      raise Exception, err_output
+    else:
+      raise Exception, process_output
+
+  print('Finished nm')
+  return process_output
+
+
+def GetNmSymbols(nm_infile, outfile, library, jobs, verbose,
+                 addr2line_binary, nm_binary):
+  if nm_infile is None:
+    if outfile is None:
+      outfile = tempfile.NamedTemporaryFile(delete=False).name
 
     if verbose:
-      print 'Running parallel addr2line, dumping symbols to ' + infile;
-    RunParallelAddress2Line(outfile=infile, library=library, arch=arch,
-             jobs=jobs, verbose=verbose)
+      print 'Running parallel addr2line, dumping symbols to ' + outfile
+    RunElfSymbolizer(outfile, library, addr2line_binary, nm_binary, jobs)
+
+    nm_infile = outfile
+
   elif verbose:
-    print 'Using nm input from ' + infile
-  with file(infile, 'r') as infile:
-    return list(ParseNm(infile))
+    print 'Using nm input from ' + nm_infile
+  with file(nm_infile, 'r') as infile:
+    return list(binary_size_utils.ParseNm(infile))
+
+
+def _find_in_system_path(binary):
+  """Locate the full path to binary in the system path or return None
+  if not found."""
+  system_path = os.environ["PATH"].split(os.pathsep)
+  for path in system_path:
+    binary_path = os.path.join(path, binary)
+    if os.path.isfile(binary_path):
+      return binary_path
+  return None
+
+def CheckDebugFormatSupport(library, addr2line_binary):
+  """Kills the program if debug data is in an unsupported format.
+
+  There are two common versions of the DWARF debug formats and
+  since we are right now transitioning from DWARF2 to newer formats,
+  it's possible to have a mix of tools that are not compatible. Detect
+  that and abort rather than produce meaningless output."""
+  tool_output = subprocess.check_output([addr2line_binary, '--version'])
+  version_re = re.compile(r'^GNU [^ ]+ .* (\d+).(\d+).*?$', re.M)
+  parsed_output = version_re.match(tool_output)
+  major = int(parsed_output.group(1))
+  minor = int(parsed_output.group(2))
+  supports_dwarf4 = major > 2 or major == 2 and minor > 22
+
+  if supports_dwarf4:
+    return
+
+  print('Checking version of debug information in %s.' % library)
+  debug_info = subprocess.check_output(['readelf', '--debug-dump=info',
+                                       '--dwarf-depth=1', library])
+  dwarf_version_re = re.compile(r'^\s+Version:\s+(\d+)$', re.M)
+  parsed_dwarf_format_output = dwarf_version_re.search(debug_info)
+  version = int(parsed_dwarf_format_output.group(1))
+  if version > 2:
+    print('The supplied tools only support DWARF2 debug data but the binary\n' +
+          'uses DWARF%d. Update the tools or compile the binary\n' % version +
+          'with -gdwarf-2.')
+    sys.exit(1)
 
 
 def main():
-  usage="""%prog [options]
+  usage = """%prog [options]
 
   Runs a spatial analysis on a given library, looking up the source locations
   of its symbols and calculating how much space each directory, source file,
@@ -486,18 +688,16 @@ def main():
   parser.add_option('--library', metavar='PATH',
                     help='if specified, process symbols in the library at '
                     'the specified path. Mutually exclusive with --nm-in.')
-  parser.add_option('--arch',
-                    help='the architecture that the library is targeted to. '
-                    'Determines which nm/addr2line binaries are used. When '
-                    '\'host-native\' is chosen, the program will use whichever '
-                    'nm/addr2line binaries are on the PATH. This is '
-                    'appropriate when you are analyzing a binary by and for '
-                    'your computer. '
-                    'This argument is only valid when using --library. '
-                    'Default is \'host-native\'.',
-                    choices=['host-native', 'android-arm',
-                             'android-mips', 'android-x86'],)
-  parser.add_option('--jobs',
+  parser.add_option('--nm-binary',
+                    help='use the specified nm binary to analyze library. '
+                    'This is to be used when the nm in the path is not for '
+                    'the right architecture or of the right version.')
+  parser.add_option('--addr2line-binary',
+                    help='use the specified addr2line binary to analyze '
+                    'library. This is to be used when the addr2line in '
+                    'the path is not for the right architecture or '
+                    'of the right version.')
+  parser.add_option('--jobs', type='int',
                     help='number of jobs to use for the parallel '
                     'addr2line processing pool; defaults to 1. More '
                     'jobs greatly improve throughput but eat RAM like '
@@ -516,7 +716,7 @@ def main():
                     'This argument is only valid when using --library.')
   parser.add_option('--legacy', action='store_true',
                     help='emit legacy binary size report instead of modern')
-  opts, args = parser.parse_args()
+  opts, _args = parser.parse_args()
 
   if ((not opts.library) and (not opts.nm_in)) or (opts.library and opts.nm_in):
     parser.error('exactly one of --library or --nm-in is required')
@@ -524,18 +724,39 @@ def main():
     if opts.jobs:
       print >> sys.stderr, ('WARNING: --jobs has no effect '
                             'when used with --nm-in')
-    if opts.arch:
-      print >> sys.stderr, ('WARNING: --arch has no effect '
-                            'when used with --nm-in')
   if not opts.destdir:
     parser.error('--destdir is required argument')
   if not opts.jobs:
-    opts.jobs = '1'
-  if not opts.arch:
-    opts.arch = 'host-native'
+    # Use the number of processors but cap between 2 and 4 since raw
+    # CPU power isn't the limiting factor. It's I/O limited, memory
+    # bus limited and available-memory-limited. Too many processes and
+    # the computer will run out of memory and it will be slow.
+    opts.jobs = max(2, min(4, str(multiprocessing.cpu_count())))
 
-  symbols = GetNmSymbols(opts.nm_in, opts.nm_out, opts.library, opts.arch,
-                           opts.jobs, opts.verbose is True)
+  if opts.addr2line_binary:
+    assert os.path.isfile(opts.addr2line_binary)
+    addr2line_binary = opts.addr2line_binary
+  else:
+    addr2line_binary = _find_in_system_path('addr2line')
+    assert addr2line_binary, 'Unable to find addr2line in the path. '\
+        'Use --addr2line-binary to specify location.'
+
+  if opts.nm_binary:
+    assert os.path.isfile(opts.nm_binary)
+    nm_binary = opts.nm_binary
+  else:
+    nm_binary = _find_in_system_path('nm')
+    assert nm_binary, 'Unable to find nm in the path. Use --nm-binary '\
+        'to specify location.'
+
+  print('addr2line: %s' % addr2line_binary)
+  print('nm: %s' % nm_binary)
+
+  CheckDebugFormatSupport(opts.library, addr2line_binary)
+
+  symbols = GetNmSymbols(opts.nm_in, opts.nm_out, opts.library,
+                         opts.jobs, opts.verbose is True,
+                         addr2line_binary, nm_binary)
   if not os.path.exists(opts.destdir):
     os.makedirs(opts.destdir, 0755)
 
@@ -562,16 +783,18 @@ def main():
     d3_out = os.path.join(opts.destdir, 'd3')
     if not os.path.exists(d3_out):
       os.makedirs(d3_out, 0755)
-    d3_src = os.path.join('third_party', 'd3', 'src')
-    template_src = os.path.join('tools', 'binary_size',
+    d3_src = os.path.join(os.path.dirname(__file__),
+                          '..',
+                          '..',
+                          'third_party', 'd3', 'src')
+    template_src = os.path.join(os.path.dirname(__file__),
                                 'template')
     shutil.copy(os.path.join(d3_src, 'LICENSE'), d3_out)
     shutil.copy(os.path.join(d3_src, 'd3.js'), d3_out)
     shutil.copy(os.path.join(template_src, 'index.html'), opts.destdir)
     shutil.copy(os.path.join(template_src, 'D3SymbolTreeMap.js'), opts.destdir)
 
-  if opts.verbose:
-    print 'Report saved to ' + opts.destdir + '/index.html'
+  print 'Report saved to ' + opts.destdir + '/index.html'
 
 
 if __name__ == '__main__':

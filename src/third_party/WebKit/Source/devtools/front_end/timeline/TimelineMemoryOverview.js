@@ -32,10 +32,12 @@
  * @constructor
  * @extends {WebInspector.TimelineOverviewBase}
  * @param {!WebInspector.TimelineModel} model
+ * @param {!WebInspector.TimelineUIUtils} uiUtils
  */
-WebInspector.TimelineMemoryOverview = function(model)
+WebInspector.TimelineMemoryOverview = function(model, uiUtils)
 {
     WebInspector.TimelineOverviewBase.call(this, model);
+    this._uiUtils = uiUtils;
     this.element.id = "timeline-overview-memory";
 
     this._heapSizeLabel = this.element.createChild("div", "memory-graph-label");
@@ -63,15 +65,14 @@ WebInspector.TimelineMemoryOverview.prototype = {
         var minUsedHeapSize = 100000000000;
         var minTime = this._model.minimumRecordTime();
         var maxTime = this._model.maximumRecordTime();
+        var uiUtils = this._uiUtils;
         /**
          * @param {!WebInspector.TimelineModel.Record} record
          */
         function calculateMinMaxSizes(record)
         {
-            if (record.type() !== WebInspector.TimelineModel.RecordType.UpdateCounters)
-                return;
-            var counters = record.data();
-            if (!counters.jsHeapSizeUsed)
+            var counters = uiUtils.countersForRecord(record);
+            if (!counters || !counters.jsHeapSizeUsed)
                 return;
             maxUsedHeapSize = Math.max(maxUsedHeapSize, counters.jsHeapSizeUsed);
             minUsedHeapSize = Math.min(minUsedHeapSize, counters.jsHeapSizeUsed);
@@ -92,10 +93,8 @@ WebInspector.TimelineMemoryOverview.prototype = {
          */
         function buildHistogram(record)
         {
-            if (record.type() !== WebInspector.TimelineModel.RecordType.UpdateCounters)
-                return;
-            var counters = record.data();
-            if (!counters.jsHeapSizeUsed)
+            var counters = uiUtils.countersForRecord(record);
+            if (!counters || !counters.jsHeapSizeUsed)
                 return;
             var x = Math.round((record.endTime() - minTime) * xFactor);
             var y = Math.round((counters.jsHeapSizeUsed - minUsedHeapSize) * yFactor);

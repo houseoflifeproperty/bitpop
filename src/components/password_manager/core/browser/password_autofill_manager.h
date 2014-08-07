@@ -8,7 +8,7 @@
 #include <map>
 
 #include "base/gtest_prod_util.h"
-#include "components/autofill/core/browser/autofill_manager_delegate.h"
+#include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_popup_delegate.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 
@@ -23,9 +23,8 @@ class PasswordManagerClient;
 // This class is responsible for filling password forms.
 class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
  public:
-  PasswordAutofillManager(
-      password_manager::PasswordManagerClient* password_manager_client,
-      autofill::AutofillManagerDelegate* autofill_manager_delegate);
+  PasswordAutofillManager(PasswordManagerClient* password_manager_client,
+                          autofill::AutofillClient* autofill_client);
   virtual ~PasswordAutofillManager();
 
   // AutofillPopupDelegate implementation.
@@ -55,9 +54,13 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
   // Invoked to clear any page specific cached values.
   void Reset();
 
-  // A public version of AcceptSuggestion(), only for use in tests.
-  bool AcceptSuggestionForTest(const autofill::FormFieldData& field,
-                               const base::string16& username);
+  // A public version of FillSuggestion(), only for use in tests.
+  bool FillSuggestionForTest(const autofill::FormFieldData& field,
+                             const base::string16& username);
+
+  // A public version of PreviewSuggestion(), only for use in tests.
+  bool PreviewSuggestionForTest(const autofill::FormFieldData& field,
+                                const base::string16& username);
 
  private:
   typedef std::map<autofill::FormFieldData, autofill::PasswordFormFillData>
@@ -65,8 +68,13 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
 
   // Attempts to fill the password associated with user name |username|, and
   // returns true if it was successful.
-  bool AcceptSuggestion(const autofill::FormFieldData& field,
-                        const base::string16& username);
+  bool FillSuggestion(const autofill::FormFieldData& field,
+                      const base::string16& username);
+
+  // Attempts to preview the password associated with user name |username|, and
+  // returns true if it was successful.
+  bool PreviewSuggestion(const autofill::FormFieldData& field,
+                         const base::string16& username);
 
   // If |current_username| matches a username for one of the login mappings in
   // |fill_data|, returns true and assigns the password to |out_password|.
@@ -86,7 +94,7 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
   // Provides embedder-level operations on passwords. Must outlive |this|.
   PasswordManagerClient* const password_manager_client_;  // weak
 
-  autofill::AutofillManagerDelegate* const autofill_manager_delegate_;  // weak
+  autofill::AutofillClient* const autofill_client_;  // weak
 
   // The form field on which the autofill popup is shown.
   autofill::FormFieldData form_field_;

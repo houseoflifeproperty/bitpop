@@ -30,16 +30,18 @@
 
 #include "config.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/dom/Element.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/page/EventHandler.h"
 #include "platform/KeyboardCodes.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/PopupMenu.h"
 #include "platform/PopupMenuClient.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/Color.h"
+#include "platform/scroll/ScrollbarTheme.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebScreenInfo.h"
 #include "public/platform/WebString.h"
@@ -57,6 +59,7 @@
 #include "public/web/WebViewClient.h"
 #include "v8.h"
 #include "web/PopupContainer.h"
+#include "web/PopupListBox.h"
 #include "web/PopupMenuChromium.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebPopupMenuImpl.h"
@@ -74,7 +77,7 @@ namespace {
 class TestPopupMenuClient : public PopupMenuClient {
 public:
     // Item at index 0 is selected by default.
-    TestPopupMenuClient() : m_selectIndex(0), m_node(0) { }
+    TestPopupMenuClient() : m_selectIndex(0), m_node(0), m_listSize(10) { }
     virtual ~TestPopupMenuClient() {}
     virtual void valueChanged(unsigned listIndex, bool fireEvents = true)
     {
@@ -111,7 +114,7 @@ public:
     virtual int clientInsetRight() const { return 0; }
     virtual LayoutUnit clientPaddingLeft() const { return 0; }
     virtual LayoutUnit clientPaddingRight() const { return 0; }
-    virtual int listSize() const { return 10; }
+    virtual int listSize() const { return m_listSize; }
     virtual int selectedIndex() const { return m_selectIndex; }
     virtual void popupDidHide() { }
     virtual bool itemIsSeparator(unsigned listIndex) const { return false; }
@@ -127,11 +130,13 @@ public:
 
     void setDisabledIndex(unsigned index) { m_disabledIndexSet.insert(index); }
     void setFocusedNode(Node* node) { m_node = node; }
+    void setListSize(int listSize) { m_listSize = listSize; }
 
 private:
     unsigned m_selectIndex;
     std::set<unsigned> m_disabledIndexSet;
     Node* m_node;
+    int m_listSize;
 };
 
 class TestWebWidgetClient : public WebWidgetClient {
@@ -250,17 +255,9 @@ protected:
         URLTestHelpers::registerMockedURLLoad(toKURL(baseURL + fileName), WebString::fromUTF8(fileName.c_str()), WebString::fromUTF8("popup/"), WebString::fromUTF8("text/html"));
     }
 
-    void serveRequests()
-    {
-        Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
-    }
-
     void loadFrame(WebFrame* frame, const std::string& fileName)
     {
-        WebURLRequest urlRequest;
-        urlRequest.initialize();
-        urlRequest.setURL(WebURL(toKURL(baseURL + fileName)));
-        frame->loadRequest(urlRequest);
+        FrameTestHelpers::loadFrame(frame, baseURL + fileName);
     }
 
     WebViewImpl* webView() const { return m_helper.webViewImpl(); }
@@ -405,7 +402,6 @@ TEST_F(SelectPopupMenuTest, DISABLED_SelectItemEventFire)
     registerMockedURLLoad("select_event.html");
     webView()->settings()->setJavaScriptEnabled(true);
     loadFrame(mainFrame(), "select_event.html");
-    serveRequests();
 
     m_popupMenuClient.setFocusedNode(mainFrame()->frame()->document()->focusedElement());
 
@@ -450,7 +446,6 @@ TEST_F(SelectPopupMenuTest, FLAKY_SelectItemKeyEvent)
     registerMockedURLLoad("select_event.html");
     webView()->settings()->setJavaScriptEnabled(true);
     loadFrame(mainFrame(), "select_event.html");
-    serveRequests();
 
     m_popupMenuClient.setFocusedNode(mainFrame()->frame()->document()->focusedElement());
 
@@ -472,7 +467,6 @@ TEST_F(SelectPopupMenuTest, SelectItemRemoveSelectOnChange)
     registerMockedURLLoad("select_event_remove_on_change.html");
     webView()->settings()->setJavaScriptEnabled(true);
     loadFrame(mainFrame(), "select_event_remove_on_change.html");
-    serveRequests();
 
     m_popupMenuClient.setFocusedNode(mainFrame()->frame()->document()->focusedElement());
 
@@ -494,7 +488,6 @@ TEST_F(SelectPopupMenuTest, SelectItemRemoveSelectOnClick)
     registerMockedURLLoad("select_event_remove_on_click.html");
     webView()->settings()->setJavaScriptEnabled(true);
     loadFrame(mainFrame(), "select_event_remove_on_click.html");
-    serveRequests();
 
     m_popupMenuClient.setFocusedNode(mainFrame()->frame()->document()->focusedElement());
 
@@ -508,6 +501,51 @@ TEST_F(SelectPopupMenuTest, SelectItemRemoveSelectOnClick)
 
     WebElement element = webView()->mainFrame()->document().getElementById("message");
     EXPECT_STREQ("click", element.innerText().utf8().data());
+}
+
+#if OS(ANDROID)
+TEST_F(SelectPopupMenuTest, DISABLED_PopupListBoxWithOverlayScrollbarEnabled)
+#else
+TEST_F(SelectPopupMenuTest, PopupListBoxWithOverlayScrollbarEnabled)
+#endif
+{
+    Settings::setMockScrollbarsEnabled(true);
+    RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(true);
+    EXPECT_TRUE(ScrollbarTheme::theme()->usesOverlayScrollbars());
+    registerMockedURLLoad("select_rtl.html");
+    loadFrame(mainFrame(), "select_rtl.html");
+
+    m_popupMenuClient.setFocusedNode(mainFrame()->frame()->document()->focusedElement());
+    m_popupMenuClient.setListSize(30);
+
+    showPopup();
+    PopupContainer* container = webView()->selectPopup();
+    PopupListBox* listBox = container->listBox();
+
+    EXPECT_EQ(container->width(), listBox->contentsSize().width() + 2);
+    Settings::setMockScrollbarsEnabled(false);
+    RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(false);
+    EXPECT_FALSE(ScrollbarTheme::theme()->usesOverlayScrollbars());
+}
+
+#if OS(ANDROID)
+TEST_F(SelectPopupMenuTest, DISABLED_PopupListBoxWithOverlayScrollbarDisabled)
+#else
+TEST_F(SelectPopupMenuTest, PopupListBoxWithOverlayScrollbarDisabled)
+#endif
+{
+    EXPECT_FALSE(ScrollbarTheme::theme()->usesOverlayScrollbars());
+    registerMockedURLLoad("select_rtl.html");
+    loadFrame(mainFrame(), "select_rtl.html");
+
+    m_popupMenuClient.setFocusedNode(mainFrame()->frame()->document()->focusedElement());
+    m_popupMenuClient.setListSize(30);
+
+    showPopup();
+    PopupContainer* container = webView()->selectPopup();
+    PopupListBox* listBox = container->listBox();
+
+    EXPECT_EQ(container->width(), listBox->contentsSize().width() + ScrollbarTheme::theme()->scrollbarThickness() + 2);
 }
 
 } // namespace

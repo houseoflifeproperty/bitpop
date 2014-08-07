@@ -274,10 +274,10 @@
         'network/client_cert_util.h',
         'network/device_state.cc',
         'network/device_state.h',
-        'network/favorite_state.cc',
-        'network/favorite_state.h',
         'network/geolocation_handler.cc',
         'network/geolocation_handler.h',
+        'network/host_resolver_impl_chromeos.cc',
+       	'network/host_resolver_impl_chromeos.h',
         'network/managed_network_configuration_handler.cc',
         'network/managed_network_configuration_handler.h',
         'network/managed_network_configuration_handler_impl.cc',
@@ -321,6 +321,8 @@
         'network/network_state_handler.h',
         'network/network_state_handler_observer.cc',
         'network/network_state_handler_observer.h',
+        'network/network_type_pattern.cc',
+        'network/network_type_pattern.h',
         'network/network_ui_data.cc',
         'network/network_ui_data.h',
         'network/network_util.cc',
@@ -355,6 +357,10 @@
         'network/shill_property_util.h',
         'network/dhcp_proxy_script_fetcher_chromeos.cc',
         'network/dhcp_proxy_script_fetcher_chromeos.h',
+        'pairing/fake_controller_pairing_flow.cc',
+        'pairing/fake_controller_pairing_flow.h',
+        'pairing/controller_pairing_flow.cc',
+        'pairing/controller_pairing_flow.h',
         'process_proxy/process_output_watcher.cc',
         'process_proxy/process_output_watcher.h',
         'process_proxy/process_proxy.cc',
@@ -378,7 +384,7 @@
         ['use_x11 == 1', {
           'dependencies': [
             '../build/linux/system.gyp:x11',
-            '../ui/gfx/gfx.gyp:gfx_x11',
+            '../ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }, {
           # use_x11 == 0
@@ -518,6 +524,7 @@
         'login/login_state_unittest.cc',
         'network/client_cert_resolver_unittest.cc',
         'network/geolocation_handler_unittest.cc',
+	'network/host_resolver_impl_chromeos_unittest.cc',
         'network/managed_network_configuration_handler_unittest.cc',
         'network/network_cert_migrator_unittest.cc',
         'network/network_change_notifier_chromeos_unittest.cc',
@@ -529,6 +536,7 @@
         'network/network_sms_handler_unittest.cc',
         'network/network_state_handler_unittest.cc',
         'network/network_state_unittest.cc',
+        'network/network_type_pattern_unittest.cc',
         'network/network_ui_data_unittest.cc',
         'network/network_util_unittest.cc',
         'network/onc/onc_certificate_importer_impl_unittest.cc',
@@ -538,7 +546,6 @@
         'network/onc/onc_utils_unittest.cc',
         'network/onc/onc_validator_unittest.cc',
         'network/shill_property_handler_unittest.cc',
-        'network/shill_property_util_unittest.cc',
         'process_proxy/process_output_watcher_unittest.cc',
         'process_proxy/process_proxy_unittest.cc',
         'system/name_value_pairs_parser_unittest.cc',
@@ -555,7 +562,7 @@
         ],
         ['use_x11 == 1', {
           'dependencies': [
-            '../ui/gfx/gfx.gyp:gfx_x11',
+            '../ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }]
       ],

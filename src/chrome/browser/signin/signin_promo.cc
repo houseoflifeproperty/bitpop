@@ -11,21 +11,20 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/webui/options/core_options_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/net/url_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/common/profile_management_switches.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -45,11 +44,6 @@ using net::GetValueForKeyInQuery;
 
 namespace {
 
-const char kSignInPromoQueryKeyAutoClose[] = "auto_close";
-const char kSignInPromoQueryKeyContinue[] = "continue";
-const char kSignInPromoQueryKeySource[] = "source";
-const char kSignInPromoQueryKeyConstrained[] = "constrained";
-
 // Gaia cannot support about:blank as a continue URL, so using a hosted blank
 // page instead.
 const char kSignInLandingUrlPrefix[] =
@@ -64,12 +58,12 @@ bool g_force_web_based_signin_flow = false;
 // Checks we want to show the sign in promo for the given brand.
 bool AllowPromoAtStartupForCurrentBrand() {
   std::string brand;
-  google_util::GetBrand(&brand);
+  google_brand::GetBrand(&brand);
 
   if (brand.empty())
     return true;
 
-  if (google_util::IsInternetCafeBrandCode(brand))
+  if (google_brand::IsInternetCafeBrandCode(brand))
     return false;
 
   // Enable for both organic and distribution.
@@ -101,8 +95,8 @@ bool ShouldShowPromo(Profile* profile) {
   if (net::NetworkChangeNotifier::IsOffline())
     return false;
 
-  // Don't show for managed profiles.
-  if (profile->IsManaged())
+  // Don't show for supervised profiles.
+  if (profile->IsSupervised())
     return false;
 
   // Display the signin promo if the user is not signed in.
@@ -249,13 +243,12 @@ GURL GetReauthURL(Profile* profile, const std::string& account_id) {
         account_id);
   }
 
-  const std::string primary_account_id =
-    SigninManagerFactory::GetForProfile(profile)->
-        GetAuthenticatedAccountId();
-  signin::Source source = account_id == primary_account_id ?
-      signin::SOURCE_SETTINGS : signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT;
+  signin::Source source = switches::IsNewProfileManagement() ?
+      signin::SOURCE_REAUTH : signin::SOURCE_SETTINGS;
 
-  GURL url = signin::GetPromoURL(source, true);
+  GURL url = signin::GetPromoURL(
+      source, true /* auto_close */,
+      switches::IsNewProfileManagement() /* is_constrained */);
   url = net::AppendQueryParameter(url, "email", account_id);
   url = net::AppendQueryParameter(url, "validateEmail", "1");
   return net::AppendQueryParameter(url, "readOnlyEmail", "1");
@@ -287,6 +280,17 @@ Source GetSourceForPromoURL(const GURL& url) {
 bool IsAutoCloseEnabledInURL(const GURL& url) {
   std::string value;
   if (GetValueForKeyInQuery(url, kSignInPromoQueryKeyAutoClose, &value)) {
+    int enabled = 0;
+    if (base::StringToInt(value, &enabled) && enabled == 1)
+      return true;
+  }
+  return false;
+}
+
+bool ShouldShowAccountManagement(const GURL& url) {
+  std::string value;
+  if (GetValueForKeyInQuery(
+          url, kSignInPromoQueryKeyShowAccountManagement, &value)) {
     int enabled = 0;
     if (base::StringToInt(value, &enabled) && enabled == 1)
       return true;

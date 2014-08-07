@@ -10,7 +10,6 @@
 #include "base/stl_util.h"
 #include "chrome/browser/ui/ash/launcher/browser_shortcut_launcher_item_controller.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
-#include "chrome/browser/ui/ash/launcher/launcher_item_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -83,8 +82,9 @@ class BrowserStatusMonitor::SettingsWindowObserver
 
   // SettingsWindowManagerObserver
   virtual void OnNewSettingsWindow(Browser* settings_browser) OVERRIDE {
-    CreateShelfItemForDialog(IDR_ASH_SHELF_ICON_SETTINGS,
-                             settings_browser->window()->GetNativeWindow());
+    ash::SetShelfItemDetailsForDialogWindow(
+        settings_browser->window()->GetNativeWindow(),
+        IDR_ASH_SHELF_ICON_SETTINGS);
   }
 
  private:
@@ -224,11 +224,6 @@ void BrowserStatusMonitor::OnBrowserRemoved(Browser* browser) {
   UpdateBrowserItemState();
 }
 
-void BrowserStatusMonitor::OnDisplayBoundsChanged(
-    const gfx::Display& display) {
-  // Do nothing here.
-}
-
 void BrowserStatusMonitor::OnDisplayAdded(const gfx::Display& new_display) {
   // Add a new RootWindow and its ActivationClient to observed list.
   aura::Window* root_window = ash::Shell::GetInstance()->
@@ -246,6 +241,11 @@ void BrowserStatusMonitor::OnDisplayRemoved(const gfx::Display& old_display) {
   // When this is called, RootWindow of |old_display| is already removed.
   // Instead, we can remove RootWindow and its ActivationClient in the
   // OnWindowRemoved().
+  // Do nothing here.
+}
+
+void BrowserStatusMonitor::OnDisplayMetricsChanged(const gfx::Display&,
+                                                   uint32_t) {
   // Do nothing here.
 }
 

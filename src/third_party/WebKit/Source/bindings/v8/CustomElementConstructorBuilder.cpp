@@ -31,11 +31,7 @@
 #include "config.h"
 #include "bindings/v8/CustomElementConstructorBuilder.h"
 
-#include "HTMLNames.h"
-#include "SVGNames.h"
-#include "V8Document.h"
-#include "V8HTMLElementWrapperFactory.h"
-#include "V8SVGElementWrapperFactory.h"
+#include "bindings/core/v8/V8Document.h"
 #include "bindings/v8/CustomElementBinding.h"
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/Dictionary.h"
@@ -43,6 +39,10 @@
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenValue.h"
 #include "bindings/v8/V8PerContextData.h"
+#include "core/HTMLNames.h"
+#include "core/SVGNames.h"
+#include "core/V8HTMLElementWrapperFactory.h" // FIXME: should be bindings/core/v8
+#include "core/V8SVGElementWrapperFactory.h" // FIXME: should be bindings/core/v8
 #include "core/dom/Document.h"
 #include "core/dom/custom/CustomElementCallbackDispatcher.h"
 #include "core/dom/custom/CustomElementDefinition.h"
@@ -59,7 +59,7 @@ CustomElementConstructorBuilder::CustomElementConstructorBuilder(ScriptState* sc
     , m_options(options)
     , m_wrapperType(0)
 {
-    ASSERT(m_scriptState->context() == v8::Isolate::GetCurrent()->GetCurrentContext());
+    ASSERT(m_scriptState->context() == m_scriptState->isolate()->GetCurrentContext());
 }
 
 bool CustomElementConstructorBuilder::isFeatureAllowed() const
@@ -71,32 +71,49 @@ bool CustomElementConstructorBuilder::validateOptions(const AtomicString& type, 
 {
     ASSERT(m_prototype.IsEmpty());
 
+    v8::TryCatch tryCatch;
+
     ScriptValue prototypeScriptValue;
     if (m_options->get("prototype", prototypeScriptValue) && !prototypeScriptValue.isNull()) {
+        ASSERT(!tryCatch.HasCaught());
         if (!prototypeScriptValue.isObject()) {
             CustomElementException::throwException(CustomElementException::PrototypeNotAnObject, type, exceptionState);
+            tryCatch.ReThrow();
             return false;
         }
         m_prototype = prototypeScriptValue.v8Value().As<v8::Object>();
-    } else {
+    } else if (!tryCatch.HasCaught()) {
         m_prototype = v8::Object::New(m_scriptState->isolate());
         v8::Local<v8::Object> basePrototype = m_scriptState->perContextData()->prototypeForType(&V8HTMLElement::wrapperTypeInfo);
         if (!basePrototype.IsEmpty())
             m_prototype->SetPrototype(basePrototype);
     }
 
+    if (tryCatch.HasCaught()) {
+        tryCatch.ReThrow();
+        return false;
+    }
+
     AtomicString extends;
     bool extendsProvidedAndNonNull = m_options->get("extends", extends);
+
+    if (tryCatch.HasCaught()) {
+        tryCatch.ReThrow();
+        return false;
+    }
 
     if (!m_scriptState->perContextData()) {
         // FIXME: This should generate an InvalidContext exception at a later point.
         CustomElementException::throwException(CustomElementException::ContextDestroyedCheckingPrototype, type, exceptionState);
+        tryCatch.ReThrow();
         return false;
     }
 
     AtomicString namespaceURI = HTMLNames::xhtmlNamespaceURI;
     if (hasValidPrototypeChainFor(&V8SVGElement::wrapperTypeInfo))
         namespaceURI = SVGNames::svgNamespaceURI;
+
+    ASSERT(!tryCatch.HasCaught());
 
     AtomicString localName;
 
@@ -105,15 +122,18 @@ bool CustomElementConstructorBuilder::validateOptions(const AtomicString& type, 
 
         if (!Document::isValidName(localName)) {
             CustomElementException::throwException(CustomElementException::ExtendsIsInvalidName, type, exceptionState);
+            tryCatch.ReThrow();
             return false;
         }
         if (CustomElement::isValidName(localName)) {
             CustomElementException::throwException(CustomElementException::ExtendsIsCustomElementName, type, exceptionState);
+            tryCatch.ReThrow();
             return false;
         }
     } else {
         if (namespaceURI == SVGNames::svgNamespaceURI) {
             CustomElementException::throwException(CustomElementException::ExtendsIsInvalidName, type, exceptionState);
+            tryCatch.ReThrow();
             return false;
         }
         localName = type;
@@ -126,6 +146,7 @@ bool CustomElementConstructorBuilder::validateOptions(const AtomicString& type, 
     else
         m_wrapperType = findWrapperTypeForSVGTagName(localName);
 
+    ASSERT(!tryCatch.HasCaught());
     ASSERT(m_wrapperType);
     tagName = QualifiedName(nullAtom, localName, namespaceURI);
     return m_wrapperType;
@@ -135,18 +156,16 @@ PassRefPtr<CustomElementLifecycleCallbacks> CustomElementConstructorBuilder::cre
 {
     ASSERT(!m_prototype.IsEmpty());
 
-    RefPtr<ExecutionContext> executionContext = m_scriptState->executionContext();
-
     v8::TryCatch exceptionCatcher;
     exceptionCatcher.SetVerbose(true);
 
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::Isolate* isolate = m_scriptState->isolate();
     v8::Handle<v8::Function> created = retrieveCallback(isolate, "createdCallback");
     v8::Handle<v8::Function> attached = retrieveCallback(isolate, "attachedCallback");
     v8::Handle<v8::Function> detached = retrieveCallback(isolate, "detachedCallback");
     v8::Handle<v8::Function> attributeChanged = retrieveCallback(isolate, "attributeChangedCallback");
 
-    m_callbacks = V8CustomElementLifecycleCallbacks::create(executionContext.get(), m_prototype, created, attached, detached, attributeChanged);
+    m_callbacks = V8CustomElementLifecycleCallbacks::create(m_scriptState.get(), m_prototype, created, attached, detached, attributeChanged);
     return m_callbacks.get();
 }
 
@@ -275,10 +294,16 @@ static void constructCustomElement(const v8::FunctionCallbackInfo<v8::Value>& in
 
     ExceptionState exceptionState(ExceptionState::ConstructionContext, "CustomElement", info.Holder(), info.GetIsolate());
     CustomElementCallbackDispatcher::CallbackDeliveryScope deliveryScope;
-    RefPtr<Element> element = document->createElementNS(namespaceURI, tagName, maybeType->IsNull() ? nullAtom : type, exceptionState);
+    RefPtrWillBeRawPtr<Element> element = document->createElementNS(namespaceURI, tagName, maybeType->IsNull() ? nullAtom : type, exceptionState);
     if (exceptionState.throwIfNeeded())
         return;
+#if ENABLE(OILPAN)
+    // FIXME: Oilpan: We don't have RawPtr<Eement> version of
+    // v8SetReturnValueFast until Node.idl has WillBeGarbageCollected.
+    v8SetReturnValueFast(info, element.get(), document);
+#else
     v8SetReturnValueFast(info, element.release(), document);
+#endif
 }
 
 } // namespace WebCore

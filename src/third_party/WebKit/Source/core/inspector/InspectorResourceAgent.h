@@ -31,8 +31,8 @@
 #ifndef InspectorResourceAgent_h
 #define InspectorResourceAgent_h
 
-#include "InspectorFrontend.h"
 #include "bindings/v8/ScriptString.h"
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
@@ -142,6 +142,7 @@ public:
     virtual void loadResourceForFrontend(ErrorString*, const String& frameId, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtr<LoadResourceForFrontendCallback>) OVERRIDE;
 
     // Called from other agents.
+    void setHostId(const String&);
     bool fetchResourceContent(LocalFrame*, const KURL&, String* content, bool* base64Encoded);
 
 private:
@@ -152,6 +153,7 @@ private:
     InspectorPageAgent* m_pageAgent;
     InspectorFrontend::Network* m_frontend;
     String m_userAgentOverride;
+    String m_hostId;
     OwnPtr<NetworkResourcesData> m_resourcesData;
 
     typedef HashMap<ThreadableLoaderClient*, RefPtr<XHRReplayData> > PendingXHRReplayDataMap;

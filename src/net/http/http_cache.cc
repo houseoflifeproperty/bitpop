@@ -291,13 +291,9 @@ HttpCache::HttpCache(const net::HttpNetworkSession::Params& params,
       backend_factory_(backend_factory),
       building_backend_(false),
       mode_(NORMAL),
-      quic_server_info_factory_(params.enable_quic_persist_server_info ?
-          new QuicServerInfoFactoryAdaptor(this) : NULL),
       network_layer_(new HttpNetworkLayer(new HttpNetworkSession(params))),
       weak_factory_(this) {
-  HttpNetworkSession* session = network_layer_->GetSession();
-  session->quic_stream_factory()->set_quic_server_info_factory(
-      quic_server_info_factory_.get());
+  SetupQuicServerInfoFactory(network_layer_->GetSession());
 }
 
 
@@ -322,6 +318,7 @@ HttpCache::HttpCache(HttpTransactionFactory* network_layer,
       mode_(NORMAL),
       network_layer_(network_layer),
       weak_factory_(this) {
+  SetupQuicServerInfoFactory(network_layer_->GetSession());
 }
 
 HttpCache::~HttpCache() {
@@ -419,17 +416,13 @@ void HttpCache::WriteMetadata(const GURL& url,
 }
 
 void HttpCache::CloseAllConnections() {
-  net::HttpNetworkLayer* network =
-      static_cast<net::HttpNetworkLayer*>(network_layer_.get());
-  HttpNetworkSession* session = network->GetSession();
+  HttpNetworkSession* session = GetSession();
   if (session)
     session->CloseAllConnections();
 }
 
 void HttpCache::CloseIdleConnections() {
-  net::HttpNetworkLayer* network =
-      static_cast<net::HttpNetworkLayer*>(network_layer_.get());
-  HttpNetworkSession* session = network->GetSession();
+  HttpNetworkSession* session = GetSession();
   if (session)
     session->CloseIdleConnections();
 }
@@ -469,9 +462,7 @@ HttpCache* HttpCache::GetCache() {
 }
 
 HttpNetworkSession* HttpCache::GetSession() {
-  net::HttpNetworkLayer* network =
-      static_cast<net::HttpNetworkLayer*>(network_layer_.get());
-  return network->GetSession();
+  return network_layer_->GetSession();
 }
 
 scoped_ptr<HttpTransactionFactory>
@@ -1005,6 +996,16 @@ bool HttpCache::RemovePendingTransactionFromPendingOp(PendingOp* pending_op,
     }
   }
   return false;
+}
+
+void HttpCache::SetupQuicServerInfoFactory(HttpNetworkSession* session) {
+  if (session && session->params().enable_quic_persist_server_info &&
+      !session->quic_stream_factory()->has_quic_server_info_factory()) {
+    DCHECK(!quic_server_info_factory_);
+    quic_server_info_factory_.reset(new QuicServerInfoFactoryAdaptor(this));
+    session->quic_stream_factory()->set_quic_server_info_factory(
+        quic_server_info_factory_.get());
+  }
 }
 
 void HttpCache::ProcessPendingQueue(ActiveEntry* entry) {

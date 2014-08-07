@@ -10,6 +10,7 @@
 .equ HAVE_EDSP ,  0
 .equ HAVE_MEDIA ,  0
 .equ HAVE_NEON ,  0
+.equ HAVE_NEON_ASM ,  0
 .equ HAVE_MIPS32 ,  0
 .equ HAVE_DSPR2 ,  0
 .equ HAVE_MMX ,  0

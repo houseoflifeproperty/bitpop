@@ -43,6 +43,20 @@ function onLoad() {
       remoting.oauth2.doAuthRedirect();
     }
   };
+  var fixAuthError = function() {
+    if (remoting.isAppsV2) {
+      var onRefresh = function() {
+        remoting.hostList.display();
+      };
+      var refreshHostList = function() {
+        goHome();
+        remoting.hostList.refresh(onRefresh);
+      };
+      remoting.identity.removeCachedAuthToken(refreshHostList);
+    } else {
+      doAuthRedirect();
+    }
+  };
   /** @param {Event} event The event. */
   var stopDaemon = function(event) {
     remoting.hostSetupDialog.showForStop();
@@ -92,7 +106,7 @@ function onLoad() {
       { event: 'click', id: 'auth-button', fn: doAuthRedirect },
       { event: 'click', id: 'cancel-connect-button', fn: goHome },
       { event: 'click', id: 'token-refresh-error-ok', fn: goHome },
-      { event: 'click', id: 'token-refresh-error-sign-in', fn: doAuthRedirect }
+      { event: 'click', id: 'token-refresh-error-sign-in', fn: fixAuthError }
   ];
   registerEventListeners(it2me_actions);
   registerEventListeners(me2me_actions);
@@ -101,6 +115,12 @@ function onLoad() {
   remoting.init();
 
   window.addEventListener('resize', remoting.onResize, false);
+  // When a window goes full-screen, a resize event is triggered, but the
+  // Fullscreen.isActive call is not guaranteed to return true until the
+  // full-screen event is triggered. In apps v2, the size of the window's
+  // client area is calculated differently in full-screen mode, so register
+  // for both events.
+  remoting.fullscreen.addListener(remoting.onResize);
   if (!remoting.isAppsV2) {
     window.addEventListener('beforeunload', remoting.promptClose, false);
     window.addEventListener('unload', remoting.disconnect, false);

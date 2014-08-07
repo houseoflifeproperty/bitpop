@@ -14,6 +14,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/break_list.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/render_text_harfbuzz.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -446,7 +447,7 @@ TEST_F(RenderTextTest, ElidedText) {
 
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetFontList(FontList("serif, Sans serif, 12px"));
-  render_text->SetElideBehavior(ELIDE_AT_END);
+  render_text->SetElideBehavior(ELIDE_TAIL);
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
     // Compute expected width
@@ -477,7 +478,7 @@ TEST_F(RenderTextTest, ElidedObscuredText) {
 
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->SetFontList(FontList("serif, Sans serif, 12px"));
-  render_text->SetElideBehavior(ELIDE_AT_END);
+  render_text->SetElideBehavior(ELIDE_TAIL);
   render_text->SetDisplayRect(
       Rect(0, 0, expected_render_text->GetContentWidth(), 100));
   render_text->SetObscured(true);
@@ -943,6 +944,22 @@ TEST_F(RenderTextTest, MidGraphemeSelectionBounds) {
     EXPECT_EQ(0U, render_text->cursor_position());
     render_text->MoveCursor(CHARACTER_BREAK, CURSOR_RIGHT, false);
     EXPECT_EQ(2U, render_text->cursor_position());
+  }
+}
+
+TEST_F(RenderTextTest, FindCursorPosition) {
+  const wchar_t* kTestStrings[] = { kLtrRtl, kLtrRtlLtr, kRtlLtr, kRtlLtrRtl };
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  render_text->SetDisplayRect(Rect(0, 0, 100, 20));
+  for (size_t i = 0; i < arraysize(kTestStrings); ++i) {
+    SCOPED_TRACE(base::StringPrintf("Testing case[%" PRIuS "]", i));
+    render_text->SetText(WideToUTF16(kTestStrings[i]));
+    for(size_t j = 0; j < render_text->text().length(); ++j) {
+      const Range range(render_text->GetGlyphBounds(j));
+      // Test a point just inside the leading edge of the glyph bounds.
+      int x = range.is_reversed() ? range.GetMax() - 1 : range.GetMin() + 1;
+      EXPECT_EQ(j, render_text->FindCursorPosition(Point(x, 0)).caret_pos());
+    }
   }
 }
 
@@ -1751,11 +1768,7 @@ TEST_F(RenderTextTest, DisplayRectShowsCursorRTL) {
 
 // Changing colors between or inside ligated glyphs should not break shaping.
 TEST_F(RenderTextTest, SelectionKeepsLigatures) {
-  const wchar_t* kTestStrings[] = {
-    L"\x644\x623",
-    L"\x633\x627"
-  };
-
+  const wchar_t* kTestStrings[] = { L"\x644\x623", L"\x633\x627" };
   scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
   render_text->set_selection_color(SK_ColorRED);
   Canvas canvas;
@@ -1765,8 +1778,7 @@ TEST_F(RenderTextTest, SelectionKeepsLigatures) {
     const int expected_width = render_text->GetStringSize().width();
     render_text->MoveCursorTo(SelectionModel(Range(0, 1), CURSOR_FORWARD));
     EXPECT_EQ(expected_width, render_text->GetStringSize().width());
-    // Draw the text. It shouldn't hit any DCHECKs or crash.
-    // See http://crbug.com/214150
+    // Drawing the text should not DCHECK or crash; see http://crbug.com/262119
     render_text->Draw(&canvas);
     render_text->MoveCursorTo(SelectionModel(0, CURSOR_FORWARD));
   }
@@ -1891,7 +1903,6 @@ TEST_F(RenderTextTest, Multiline_Newline) {
   }
 }
 
-
 TEST_F(RenderTextTest, Win_BreakRunsByUnicodeBlocks) {
   scoped_ptr<RenderTextWin> render_text(
       static_cast<RenderTextWin*>(RenderText::CreateInstance()));
@@ -1912,5 +1923,121 @@ TEST_F(RenderTextTest, Win_BreakRunsByUnicodeBlocks) {
   EXPECT_EQ(Range(3, 5), render_text->runs_[2]->range);
 }
 #endif  // defined(OS_WIN)
+
+TEST_F(RenderTextTest, HarfBuzz_CharToGlyph) {
+  struct {
+    uint32 glyph_to_char[4];
+    size_t char_to_glyph_expected[4];
+    Range char_range_to_glyph_range_expected[4];
+    bool is_rtl;
+  } cases[] = {
+    { // From string "A B C D" to glyphs "a b c d".
+      { 0, 1, 2, 3 },
+      { 0, 1, 2, 3 },
+      { Range(0, 1), Range(1, 2), Range(2, 3), Range(3, 4) },
+      false
+    },
+    { // From string "A B C D" to glyphs "d b c a".
+      { 3, 2, 1, 0 },
+      { 3, 2, 1, 0 },
+      { Range(3, 4), Range(2, 3), Range(1, 2), Range(0, 1) },
+      true
+    },
+    { // From string "A B C D" to glyphs "ab c c d".
+      { 0, 2, 2, 3 },
+      { 0, 0, 1, 3 },
+      { Range(0, 1), Range(0, 1), Range(1, 3), Range(3, 4) },
+      false
+    },
+    { // From string "A B C D" to glyphs "d c c ba".
+      { 3, 2, 2, 0 },
+      { 3, 3, 1, 0 },
+      { Range(3, 4), Range(3, 4), Range(1, 3), Range(0, 1) },
+      true
+    },
+  };
+
+  internal::TextRunHarfBuzz run;
+  run.range = Range(0, 4);
+  run.glyph_count = 4;
+  run.glyph_to_char.reset(new uint32[4]);
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+    std::copy(cases[i].glyph_to_char, cases[i].glyph_to_char + 4,
+              run.glyph_to_char.get());
+    run.is_rtl = cases[i].is_rtl;
+    for (size_t j = 0; j < 4; ++j) {
+      SCOPED_TRACE(base::StringPrintf("Case %" PRIuS ", char %" PRIuS, i, j));
+      EXPECT_EQ(cases[i].char_to_glyph_expected[j], run.CharToGlyph(j));
+      EXPECT_EQ(cases[i].char_range_to_glyph_range_expected[j],
+                run.CharRangeToGlyphRange(Range(j, j + 1)));
+    }
+  }
+}
+
+TEST_F(RenderTextTest, HarfBuzz_RunDirection) {
+  RenderTextHarfBuzz render_text;
+  const base::string16 mixed =
+      WideToUTF16(L"\x05D0\x05D1" L"1234" L"\x05D2\x05D3");
+  render_text.SetText(mixed);
+  render_text.EnsureLayout();
+  ASSERT_EQ(3U, render_text.runs_.size());
+  EXPECT_TRUE(render_text.runs_[0]->is_rtl);
+  EXPECT_FALSE(render_text.runs_[1]->is_rtl);
+  EXPECT_TRUE(render_text.runs_[2]->is_rtl);
+}
+
+TEST_F(RenderTextTest, HarfBuzz_BreakRunsByUnicodeBlocks) {
+  RenderTextHarfBuzz render_text;
+
+  // The '\x25B6' "play character" should break runs. http://crbug.com/278913
+  render_text.SetText(WideToUTF16(L"x\x25B6y"));
+  render_text.EnsureLayout();
+  ASSERT_EQ(3U, render_text.runs_.size());
+  EXPECT_EQ(Range(0, 1), render_text.runs_[0]->range);
+  EXPECT_EQ(Range(1, 2), render_text.runs_[1]->range);
+  EXPECT_EQ(Range(2, 3), render_text.runs_[2]->range);
+
+  render_text.SetText(WideToUTF16(L"x \x25B6 y"));
+  render_text.EnsureLayout();
+  ASSERT_EQ(3U, render_text.runs_.size());
+  EXPECT_EQ(Range(0, 2), render_text.runs_[0]->range);
+  EXPECT_EQ(Range(2, 3), render_text.runs_[1]->range);
+  EXPECT_EQ(Range(3, 5), render_text.runs_[2]->range);
+}
+
+// Disabled on Mac because RenderTextMac doesn't implement GetGlyphBounds.
+#if !defined(OS_MACOSX)
+TEST_F(RenderTextTest, GlyphBounds) {
+  const wchar_t* kTestStrings[] = {
+      L"asdf 1234 qwer", L"\x0647\x0654", L"\x0645\x0631\x062D\x0628\x0627"
+  };
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+
+  for (size_t i = 0; i < arraysize(kTestStrings); ++i) {
+    render_text->SetText(WideToUTF16(kTestStrings[i]));
+    render_text->EnsureLayout();
+
+    for (size_t j = 0; j < render_text->text().length(); ++j)
+      EXPECT_FALSE(render_text->GetGlyphBounds(j).is_empty());
+  }
+}
+#endif
+
+// Remove this after making RTHB default in favor of RenderTextTest.GlyphBounds.
+TEST_F(RenderTextTest, HarfBuzz_GlyphBounds) {
+  const wchar_t* kTestStrings[] = {
+      L"asdf 1234 qwer", L"\x0647\x0654", L"\x0645\x0631\x062D\x0628\x0627"
+  };
+  scoped_ptr<RenderText> render_text(new RenderTextHarfBuzz);
+
+  for (size_t i = 0; i < arraysize(kTestStrings); ++i) {
+    render_text->SetText(WideToUTF16(kTestStrings[i]));
+    render_text->EnsureLayout();
+
+    for (size_t j = 0; j < render_text->text().length(); ++j)
+      EXPECT_FALSE(render_text->GetGlyphBounds(j).is_empty());
+  }
+}
 
 }  // namespace gfx

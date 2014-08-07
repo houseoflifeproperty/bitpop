@@ -11,6 +11,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 
@@ -111,9 +112,9 @@ void NavigationObserver::InstallUIAbort(bool user_initiated) {
   in_progress_prompt_navigation_controller_ = NULL;
   extension_install_prompt_.reset();
 
-  std::string histogram_name = user_initiated ?
-      "Extensions.Permissions_ReEnableCancel" :
-      "Extensions.Permissions_ReEnableAbort";
+  std::string histogram_name = user_initiated
+                                   ? "Extensions.Permissions_ReEnableCancel2"
+                                   : "Extensions.Permissions_ReEnableAbort2";
   ExtensionService::RecordPermissionMessagesHistogram(
       extension, histogram_name.c_str());
 }

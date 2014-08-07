@@ -36,6 +36,14 @@ public interface Core {
         private static final int FLAG_ALL = ~0;
 
         /**
+         * Immutable flags.
+         */
+        public static final WaitFlags NONE = WaitFlags.none().immutable();
+        public static final WaitFlags READABLE = WaitFlags.none().setReadable(true).immutable();
+        public static final WaitFlags WRITABLE = WaitFlags.none().setWritable(true).immutable();
+        public static final WaitFlags ALL = WaitFlags.all().immutable();
+
+        /**
          * Change the readable bit of this flag.
          *
          * @param readable the new value of the readable bit.
@@ -175,4 +183,10 @@ public interface Core {
      */
     public SharedBufferHandle createSharedBuffer(SharedBufferHandle.CreateOptions options,
             long numBytes);
+
+    /**
+     * Returns a default implementation of {@link AsyncWaiter}.
+     */
+    public AsyncWaiter getDefaultAsyncWaiter();
+
 }

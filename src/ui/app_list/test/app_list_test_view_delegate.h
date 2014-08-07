@@ -19,7 +19,6 @@ namespace app_list {
 namespace test {
 
 class AppListTestModel;
-class TestSigninDelegate;
 
 // A concrete AppListViewDelegate for unit tests.
 class AppListTestViewDelegate : public AppListViewDelegate {
@@ -36,19 +35,22 @@ class AppListTestViewDelegate : public AppListViewDelegate {
     return open_search_result_counts_;
   }
 
+  // Sets the number of apps that the model will be created with the next time
+  // SetProfileByPath() is called.
+  void set_next_profile_app_count(int apps) { next_profile_app_count_ = apps; }
+
   void set_auto_launch_timeout(const base::TimeDelta& timeout) {
     auto_launch_timeout_ = timeout;
   }
 
-  // Sets the signin status of the signin delegate, creating one if there isn't
-  // one already.
-  void SetSignedIn(bool signed_in);
+  // Returns the value of |toggle_speech_recognition_count_| and then
+  // resets this value to 0.
+  int GetToggleSpeechRecognitionCountAndReset();
 
   // AppListViewDelegate overrides:
   virtual bool ForceNativeDesktop() const OVERRIDE;
-  virtual void SetProfileByPath(const base::FilePath& profile_path) OVERRIDE {}
+  virtual void SetProfileByPath(const base::FilePath& profile_path) OVERRIDE;
   virtual AppListModel* GetModel() OVERRIDE;
-  virtual SigninDelegate* GetSigninDelegate() OVERRIDE;
   virtual SpeechUIModel* GetSpeechUI() OVERRIDE;
   virtual void GetShortcutPathForApp(
       const std::string& app_id,
@@ -70,11 +72,13 @@ class AppListTestViewDelegate : public AppListViewDelegate {
   virtual void OpenSettings() OVERRIDE {}
   virtual void OpenHelp() OVERRIDE {}
   virtual void OpenFeedback() OVERRIDE {}
-  virtual void ToggleSpeechRecognition() OVERRIDE {}
+  virtual void ToggleSpeechRecognition() OVERRIDE;
   virtual void ShowForProfileByPath(
       const base::FilePath& profile_path) OVERRIDE {}
-  virtual content::WebContents* GetStartPageContents() OVERRIDE;
-  virtual content::WebContents* GetSpeechRecognitionContents() OVERRIDE;
+#if defined(TOOLKIT_VIEWS)
+  virtual views::View* CreateStartPageWebView(const gfx::Size& size) OVERRIDE;
+#endif
+  virtual bool IsSpeechRecognitionEnabled() OVERRIDE;
   virtual const Users& GetUsers() const OVERRIDE;
   virtual bool ShouldCenterWindow() const OVERRIDE;
   virtual void AddObserver(AppListViewDelegateObserver* observer) OVERRIDE;
@@ -88,10 +92,11 @@ class AppListTestViewDelegate : public AppListViewDelegate {
 
  private:
   int dismiss_count_;
+  int toggle_speech_recognition_count_;
   int open_search_result_count_;
+  int next_profile_app_count_;
   std::map<size_t, int> open_search_result_counts_;
   Users users_;
-  scoped_ptr<TestSigninDelegate> test_signin_delegate_;
   scoped_ptr<AppListTestModel> model_;
   ObserverList<AppListViewDelegateObserver> observers_;
   SpeechUIModel speech_ui_;

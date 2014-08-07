@@ -39,7 +39,7 @@ class CONTENT_EXPORT BrowserMessageFilter
 
   // These match the corresponding IPC::MessageFilter methods and are always
   // called on the IO thread.
-  virtual void OnFilterAdded(IPC::Channel* channel) {}
+  virtual void OnFilterAdded(IPC::Sender* sender) {}
   virtual void OnFilterRemoved() {}
   virtual void OnChannelClosing() {}
   virtual void OnChannelConnected(int32 peer_pid) {}
@@ -75,8 +75,7 @@ class CONTENT_EXPORT BrowserMessageFilter
   // Your function will normally be called on the IO thread.  However, if your
   // OverrideXForMessage modifies the thread used to dispatch the message,
   // your function will be called on the requested thread.
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) = 0;
+  virtual bool OnMessageReceived(const IPC::Message& message) = 0;
 
   // Can be called on any thread, after OnChannelConnected is called.
   base::ProcessHandle PeerHandle();
@@ -124,7 +123,7 @@ class CONTENT_EXPORT BrowserMessageFilter
   // child class does in its OnDestruct method.
   Internal* internal_;
 
-  IPC::Channel* channel_;
+  IPC::Sender* sender_;
   base::ProcessId peer_pid_;
 
   std::vector<uint32> message_classes_to_filter_;

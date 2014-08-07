@@ -13,34 +13,52 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/dialog_client_view.h"
-#include "ui/wm/core/shadow_types.h"
+
+#if defined(OS_WIN)
+#include "ui/base/win/shell.h"
+#endif
 
 namespace views {
 
 ////////////////////////////////////////////////////////////////////////////////
 // DialogDelegate:
 
+DialogDelegate::DialogDelegate() : supports_new_style_(true) {
+}
+
 DialogDelegate::~DialogDelegate() {
 }
 
 // static
-Widget* DialogDelegate::CreateDialogWidget(DialogDelegate* dialog,
+Widget* DialogDelegate::CreateDialogWidget(WidgetDelegate* delegate,
                                            gfx::NativeView context,
                                            gfx::NativeView parent) {
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params;
-  params.delegate = dialog;
+  params.delegate = delegate;
+  DialogDelegate* dialog = delegate->AsDialogDelegate();
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // The new style doesn't support unparented dialogs on Linux desktop.
+  if (dialog)
+    dialog->supports_new_style_ &= parent != NULL;
+#elif defined(OS_WIN)
+  // The new style doesn't support unparented dialogs on Windows Classic themes.
+  if (dialog && !ui::win::IsAeroGlassEnabled())
+    dialog->supports_new_style_ &= parent != NULL;
+#endif
+
   if (!dialog || dialog->UseNewStyleForThisDialog()) {
     params.opacity = Widget::InitParams::TRANSLUCENT_WINDOW;
     params.remove_standard_frame = true;
+    // The bubble frame includes its own shadow; remove any native shadowing.
+    params.shadow_type = views::Widget::InitParams::SHADOW_TYPE_NONE;
   }
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  // Dialogs on Linux always have custom frames.
-  params.remove_standard_frame = true;
-#endif
   params.context = context;
   params.parent = parent;
-  params.top_level = true;
+  // Web-modal (ui::MODAL_TYPE_CHILD) dialogs with parents are marked as child
+  // widgets to prevent top-level window behavior (independent movement, etc).
+  params.child = parent && (delegate->GetModalType() == ui::MODAL_TYPE_CHILD);
   widget->Init(params);
   return widget;
 }
@@ -166,13 +184,11 @@ NonClientFrameView* DialogDelegate::CreateDialogFrameView(Widget* widget) {
     if (titlebar_view)
       frame->SetTitlebarExtraView(titlebar_view);
   }
-  // TODO(msw): Add a matching shadow type and remove the bubble frame border?
-  wm::SetShadowType(widget->GetNativeWindow(), wm::SHADOW_TYPE_NONE);
   return frame;
 }
 
 bool DialogDelegate::UseNewStyleForThisDialog() const {
-  return true;
+  return supports_new_style_;
 }
 
 const DialogClientView* DialogDelegate::GetDialogClientView() const {

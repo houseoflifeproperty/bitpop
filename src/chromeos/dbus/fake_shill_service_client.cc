@@ -13,6 +13,7 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_device_client.h"
 #include "chromeos/dbus/shill_manager_client.h"
+#include "chromeos/dbus/shill_profile_client.h"
 #include "chromeos/dbus/shill_property_changed_observer.h"
 #include "chromeos/network/shill_property_util.h"
 #include "dbus/bus.h"
@@ -38,7 +39,7 @@ void PassStubServiceProperties(
 
 void CallSortManagerServices() {
   DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
-      SortManagerServices();
+      SortManagerServices(true);
 }
 
 int GetInteractiveDelay() {
@@ -307,58 +308,106 @@ void FakeShillServiceClient::AddService(const std::string& service_path,
                                         const std::string& name,
                                         const std::string& type,
                                         const std::string& state,
-                                        bool add_to_visible_list,
-                                        bool add_to_watch_list) {
-  AddServiceWithIPConfig(service_path, name, type, state, "",
-                         add_to_visible_list, add_to_watch_list);
+                                        bool visible) {
+  AddServiceWithIPConfig(service_path, "" /* guid */, name,
+                         type, state, "" /* ipconfig_path */,
+                         visible);
 }
 
 void FakeShillServiceClient::AddServiceWithIPConfig(
     const std::string& service_path,
+    const std::string& guid,
     const std::string& name,
     const std::string& type,
     const std::string& state,
     const std::string& ipconfig_path,
-    bool add_to_visible_list,
-    bool add_to_watch_list) {
-  DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
-      AddManagerService(service_path, add_to_visible_list, add_to_watch_list);
-  std::string device_path =
-      DBusThreadManager::Get()->GetShillDeviceClient()->GetTestInterface()->
-      GetDevicePathForType(type);
+    bool visible) {
+  base::DictionaryValue* properties = SetServiceProperties(
+      service_path, guid, name, type, state, visible);
 
-  base::DictionaryValue* properties =
-      GetModifiableServiceProperties(service_path, true);
-  connect_behavior_.erase(service_path);
-  shill_property_util::SetSSID(name, properties);
-  properties->SetWithoutPathExpansion(
-      shill::kNameProperty,
-      base::Value::CreateStringValue(name));
-  properties->SetWithoutPathExpansion(
-      shill::kDeviceProperty,
-      base::Value::CreateStringValue(device_path));
-  properties->SetWithoutPathExpansion(
-      shill::kTypeProperty,
-      base::Value::CreateStringValue(type));
-  properties->SetWithoutPathExpansion(
-      shill::kStateProperty,
-      base::Value::CreateStringValue(state));
+  std::string profile_path;
+  if (properties->GetStringWithoutPathExpansion(shill::kProfileProperty,
+                                                &profile_path) &&
+      !profile_path.empty()) {
+    DBusThreadManager::Get()->GetShillProfileClient()->GetTestInterface()->
+        UpdateService(profile_path, service_path);
+  }
+
   if (!ipconfig_path.empty()) {
     properties->SetWithoutPathExpansion(
         shill::kIPConfigProperty,
-        base::Value::CreateStringValue(ipconfig_path));
+        new base::StringValue(ipconfig_path));
   }
 
   DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
-      SortManagerServices();
+      AddManagerService(service_path, true);
+}
+
+
+base::DictionaryValue* FakeShillServiceClient::SetServiceProperties(
+    const std::string& service_path,
+    const std::string& guid,
+    const std::string& name,
+    const std::string& type,
+    const std::string& state,
+    bool visible) {
+  base::DictionaryValue* properties =
+      GetModifiableServiceProperties(service_path, true);
+  connect_behavior_.erase(service_path);
+
+  std::string profile_path;
+  base::DictionaryValue profile_properties;
+  if (DBusThreadManager::Get()->GetShillProfileClient()->GetTestInterface()->
+      GetService(service_path, &profile_path, &profile_properties)) {
+    properties->SetWithoutPathExpansion(
+        shill::kProfileProperty,
+        new base::StringValue(profile_path));
+  }
+
+  // If |guid| is provided, set Service.GUID to that. Otherwise if a GUID is
+  // stored in a profile entry, use that. Otherwise leave it blank. Shill does
+  // not enforce a valid guid, we do that at the NetworkStateHandler layer.
+  std::string guid_to_set = guid;
+  if (guid_to_set.empty()) {
+    profile_properties.GetStringWithoutPathExpansion(
+        shill::kGuidProperty, &guid_to_set);
+  }
+  if (!guid_to_set.empty()) {
+    properties->SetWithoutPathExpansion(shill::kGuidProperty,
+                                        new base::StringValue(guid_to_set));
+  }
+  shill_property_util::SetSSID(name, properties);
+  properties->SetWithoutPathExpansion(
+      shill::kNameProperty,
+      new base::StringValue(name));
+  std::string device_path =
+      DBusThreadManager::Get()->GetShillDeviceClient()->GetTestInterface()->
+      GetDevicePathForType(type);
+  properties->SetWithoutPathExpansion(
+      shill::kDeviceProperty,
+      new base::StringValue(device_path));
+  properties->SetWithoutPathExpansion(
+      shill::kTypeProperty,
+      new base::StringValue(type));
+  properties->SetWithoutPathExpansion(
+      shill::kStateProperty,
+      new base::StringValue(state));
+  properties->SetWithoutPathExpansion(
+      shill::kVisibleProperty,
+      new base::FundamentalValue(visible));
+  if (type == shill::kTypeWifi) {
+    properties->SetWithoutPathExpansion(
+        shill::kSecurityProperty,
+        new base::StringValue(shill::kSecurityNone));
+  }
+  return properties;
 }
 
 void FakeShillServiceClient::RemoveService(const std::string& service_path) {
-  DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
-      RemoveManagerService(service_path);
-
   stub_services_.RemoveWithoutPathExpansion(service_path, NULL);
   connect_behavior_.erase(service_path);
+  DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
+      RemoveManagerService(service_path);
 }
 
 bool FakeShillServiceClient::SetServiceProperty(const std::string& service_path,
@@ -390,6 +439,24 @@ bool FakeShillServiceClient::SetServiceProperty(const std::string& service_path,
 
   dict->MergeDictionary(&new_properties);
 
+  // Add or update the profile entry.
+  if (property == shill::kProfileProperty) {
+    std::string profile_path;
+    if (value.GetAsString(&profile_path)) {
+      DBusThreadManager::Get()->GetShillProfileClient()->GetTestInterface()->
+          AddService(profile_path, service_path);
+    } else {
+      LOG(ERROR) << "Profile value is not a String!";
+    }
+  } else {
+    std::string profile_path;
+    if (dict->GetStringWithoutPathExpansion(
+            shill::kProfileProperty, &profile_path) && !profile_path.empty()) {
+      DBusThreadManager::Get()->GetShillProfileClient()->GetTestInterface()->
+          UpdateService(profile_path, service_path);
+    }
+  }
+
   // Notify the Manager if the state changed (affects DefaultService).
   if (property == shill::kStateProperty) {
     std::string state;
@@ -398,9 +465,10 @@ bool FakeShillServiceClient::SetServiceProperty(const std::string& service_path,
         ServiceStateChanged(service_path, state);
   }
 
-  // If the State changes, the sort order of Services may change and the
-  // DefaultService property may change.
-  if (property == shill::kStateProperty) {
+  // If the State or Visibility changes, the sort order of service lists may
+  // change and the DefaultService property may change.
+  if (property == shill::kStateProperty ||
+      property == shill::kVisibleProperty) {
     base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(&CallSortManagerServices));
   }
@@ -503,7 +571,7 @@ void FakeShillServiceClient::SetOtherServicesOffline(
       continue;
     properties->SetWithoutPathExpansion(
         shill::kStateProperty,
-        base::Value::CreateStringValue(shill::kStateIdle));
+        new base::StringValue(shill::kStateIdle));
   }
 }
 

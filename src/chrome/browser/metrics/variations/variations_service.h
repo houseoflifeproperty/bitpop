@@ -10,6 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/metrics/field_trial.h"
 #include "base/time/time.h"
 #include "chrome/browser/metrics/variations/variations_request_scheduler.h"
@@ -25,6 +26,14 @@
 
 class PrefService;
 class PrefRegistrySimple;
+
+namespace base {
+class Version;
+}
+
+namespace metrics {
+class MetricsStateManager;
+}
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -81,8 +90,12 @@ class VariationsService
   // Register Variations related prefs in the Profile prefs.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
-  // Factory method for creating a VariationsService.
-  static VariationsService* Create(PrefService* local_state);
+  // Factory method for creating a VariationsService. Does not take ownership of
+  // |state_manager|. Caller should ensure that |state_manager| is valid for the
+  // lifetime of this class.
+  static scoped_ptr<VariationsService> Create(
+      PrefService* local_state,
+      metrics::MetricsStateManager* state_manager);
 
   // Set the PrefService responsible for getting policy-related preferences,
   // such as the restrict parameter.
@@ -103,9 +116,12 @@ class VariationsService
                          const base::Time& date_fetched);
 
   // This constructor exists for injecting a mock notifier. It is meant for
-  // testing only. This instance will take ownership of |notifier|.
+  // testing only. This instance will take ownership of |notifier|. Does not
+  // take ownership of |state_manager|. Caller should ensure that
+  // |state_manager| is valid for the lifetime of this class.
   VariationsService(ResourceRequestAllowedNotifier* notifier,
-                    PrefService* local_state);
+                    PrefService* local_state,
+                    metrics::MetricsStateManager* state_manager);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(VariationsServiceTest, DoNotFetchIfOffline);
@@ -117,9 +133,12 @@ class VariationsService
   FRIEND_TEST_ALL_PREFIXES(VariationsServiceTest, SeedNotStoredWhenNonOKStatus);
   FRIEND_TEST_ALL_PREFIXES(VariationsServiceTest, SeedDateUpdatedOn304Status);
 
-  // Creates the VariationsService with the given |local_state| prefs service.
+  // Creates the VariationsService with the given |local_state| prefs service
+  // and |state_manager|. Does not take ownership of |state_manager|. Caller
+  // should ensure that |state_manager| is valid for the lifetime of this class.
   // Use the |Create| factory method to create a VariationsService.
-  explicit VariationsService(PrefService* local_state);
+  VariationsService(PrefService* local_state,
+                    metrics::MetricsStateManager* state_manager);
 
   // Checks if prerequisites for fetching the Variations seed are met, and if
   // so, performs the actual fetch using |DoActualFetch|.
@@ -131,11 +150,20 @@ class VariationsService
   // ResourceRequestAllowedNotifier::Observer implementation:
   virtual void OnResourceRequestsAllowed() OVERRIDE;
 
+  // Performs a variations seed simulation with the given |seed| and |version|
+  // and logs the simulation results as histograms.
+  void PerformSimulationWithVersion(scoped_ptr<VariationsSeed> seed,
+                                    const base::Version& version);
+
   // Record the time of the most recent successful fetch.
   void RecordLastFetchTime();
 
   // The pref service used to store persist the variations seed.
   PrefService* local_state_;
+
+  // Used for instantiating entropy providers for variations seed simulation.
+  // Weak pointer.
+  metrics::MetricsStateManager* state_manager_;
 
   // Used to obtain policy-related preferences. Depending on the platform, will
   // either be Local State or Profile prefs.
@@ -174,6 +202,8 @@ class VariationsService
   // Helper that handles synchronizing Variations with the Registry.
   VariationsRegistrySyncer registry_syncer_;
 #endif
+
+  base::WeakPtrFactory<VariationsService> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(VariationsService);
 };

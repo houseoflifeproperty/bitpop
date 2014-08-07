@@ -31,11 +31,12 @@
         '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
         # Need dev-tools related resources in shell_resources.pak and
         # devtools_resources.pak.
-        '<(DEPTH)/content/content_shell_and_tests.gyp:generate_content_shell_resources',
+        '<(DEPTH)/content/content_shell_and_tests.gyp:content_shell_resources',
         '<(DEPTH)/content/browser/devtools/devtools_resources.gyp:devtools_resources',
         '<(DEPTH)/extensions/extensions_resources.gyp:extensions_resources',
-        '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
+        '<(DEPTH)/extensions/extensions_strings.gyp:extensions_strings',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
+        '<(DEPTH)/ui/strings/ui_strings.gyp:ui_strings',
       ],
       'actions': [
         {
@@ -50,7 +51,9 @@
               '<(SHARED_INTERMEDIATE_DIR)/chrome/generated_resources_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/chrome/renderer_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/shell_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_renderer_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/extensions/strings/extensions_strings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings/app_locale_settings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/ui/ui_strings/ui_strings_en-US.pak',
@@ -71,6 +74,8 @@
         '<(DEPTH)/apps/shell/common/api/api.gyp:shell_api',
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/base.gyp:base_prefs_test_support',
+        '<(DEPTH)/components/components.gyp:pref_registry',
+        '<(DEPTH)/components/components.gyp:user_prefs',
         '<(DEPTH)/content/content.gyp:content',
         '<(DEPTH)/content/content.gyp:content_gpu',
         '<(DEPTH)/content/content.gyp:content_ppapi_plugin',
@@ -84,7 +89,6 @@
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink',
         '<(DEPTH)/ui/wm/wm.gyp:wm',
-        '<(DEPTH)/ui/wm/wm.gyp:wm_test_support',
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
       ],
       'include_dirs': [
@@ -97,12 +101,18 @@
         'app/shell_main_delegate.h',
         'browser/api/shell/shell_api.cc',
         'browser/api/shell/shell_api.h',
+        'browser/default_shell_browser_main_delegate.cc',
+        'browser/default_shell_browser_main_delegate.h',
+        'browser/default_shell_app_window_controller.cc',
+        'browser/default_shell_app_window_controller.h',
         'browser/shell_app_sorting.cc',
         'browser/shell_app_sorting.h',
         'browser/shell_app_window.cc',
         'browser/shell_app_window.h',
+        'browser/shell_app_window_controller.h',
         'browser/shell_browser_context.cc',
         'browser/shell_browser_context.h',
+        'browser/shell_browser_main_delegate.h',
         'browser/shell_browser_main_parts.cc',
         'browser/shell_browser_main_parts.h',
         'browser/shell_content_browser_client.cc',
@@ -136,6 +146,7 @@
         'renderer/shell_dispatcher_delegate.h',
         'renderer/shell_extensions_renderer_client.cc',
         'renderer/shell_extensions_renderer_client.h',
+        'renderer/shell_renderer_main_delegate.h',
       ],
       'conditions': [
         ['chromeos==1', {
@@ -168,7 +179,6 @@
               'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
             },
           },
-          'msvs_large_pdb': 1,
           'dependencies': [
             '<(DEPTH)/sandbox/sandbox.gyp:sandbox',
           ],
@@ -190,7 +200,6 @@
       'defines': [
         'HAS_OUT_OF_PROC_TEST_RUNNER',
       ],
-      'msvs_large_pdb': 1,
       'sources': [
         # TODO(yoz): Refactor once we have a second test target.
         'browser/shell_browsertest.cc',

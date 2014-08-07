@@ -7,6 +7,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
+#include "extensions/browser/blob_holder.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_system.h"
@@ -30,7 +31,9 @@ ExtensionMessageFilter::ExtensionMessageFilter(int render_process_id,
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
-ExtensionMessageFilter::~ExtensionMessageFilter() {}
+ExtensionMessageFilter::~ExtensionMessageFilter() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+}
 
 void ExtensionMessageFilter::OverrideThreadForMessage(
     const IPC::Message& message,
@@ -44,6 +47,7 @@ void ExtensionMessageFilter::OverrideThreadForMessage(
     case ExtensionHostMsg_RemoveFilteredListener::ID:
     case ExtensionHostMsg_ShouldSuspendAck::ID:
     case ExtensionHostMsg_SuspendAck::ID:
+    case ExtensionHostMsg_TransferBlobsAck::ID:
       *thread = BrowserThread::UI;
       break;
     default:
@@ -51,10 +55,15 @@ void ExtensionMessageFilter::OverrideThreadForMessage(
   }
 }
 
-bool ExtensionMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                               bool* message_was_ok) {
+void ExtensionMessageFilter::OnDestruct() const {
+  // Destroy the filter on the IO thread since that's where its weak pointers
+  // are being used.
+  BrowserThread::DeleteOnIOThread::Destruct(this);
+}
+
+bool ExtensionMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(ExtensionMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(ExtensionMessageFilter, message)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_AddListener,
                         OnExtensionAddListener)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_RemoveListener,
@@ -71,6 +80,8 @@ bool ExtensionMessageFilter::OnMessageReceived(const IPC::Message& message,
                         OnExtensionShouldSuspendAck)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_SuspendAck,
                         OnExtensionSuspendAck)
+    IPC_MESSAGE_HANDLER(ExtensionHostMsg_TransferBlobsAck,
+                        OnExtensionTransferBlobsAck)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_GenerateUniqueID,
                         OnExtensionGenerateUniqueID)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_ResumeRequests,
@@ -166,6 +177,14 @@ void ExtensionMessageFilter::OnExtensionSuspendAck(
       ExtensionSystem::Get(browser_context_)->process_manager();
   if (process_manager)
     process_manager->OnSuspendAck(extension_id);
+}
+
+void ExtensionMessageFilter::OnExtensionTransferBlobsAck(
+    const std::vector<std::string>& blob_uuids) {
+  RenderProcessHost* process = RenderProcessHost::FromID(render_process_id_);
+  if (!process)
+    return;
+  BlobHolder::FromRenderProcessHost(process)->DropBlobs(blob_uuids);
 }
 
 void ExtensionMessageFilter::OnExtensionGenerateUniqueID(int* unique_id) {

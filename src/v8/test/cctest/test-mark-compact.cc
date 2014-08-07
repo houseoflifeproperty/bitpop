@@ -37,12 +37,12 @@
 
 #include <utility>
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "full-codegen.h"
-#include "global-handles.h"
-#include "snapshot.h"
-#include "cctest.h"
+#include "src/full-codegen.h"
+#include "src/global-handles.h"
+#include "src/snapshot.h"
+#include "test/cctest/cctest.h"
 
 using namespace v8::internal;
 
@@ -77,7 +77,7 @@ TEST(MarkingDeque) {
 TEST(Promotion) {
   CcTest::InitializeVM();
   TestHeap* heap = CcTest::test_heap();
-  heap->ConfigureHeap(2*256*KB, 1*MB, 1*MB, 0);
+  heap->ConfigureHeap(1, 1, 1, 0);
 
   v8::HandleScope sc(CcTest::isolate());
 
@@ -102,7 +102,7 @@ TEST(Promotion) {
 TEST(NoPromotion) {
   CcTest::InitializeVM();
   TestHeap* heap = CcTest::test_heap();
-  heap->ConfigureHeap(2*256*KB, 1*MB, 1*MB, 0);
+  heap->ConfigureHeap(1, 1, 1, 0);
 
   v8::HandleScope sc(CcTest::isolate());
 
@@ -156,11 +156,7 @@ TEST(MarkCompactCollector) {
   { HandleScope scope(isolate);
     // allocate a garbage
     Handle<String> func_name = factory->InternalizeUtf8String("theFunction");
-    Handle<JSFunction> function = factory->NewFunctionWithPrototype(
-        func_name, factory->undefined_value());
-    Handle<Map> initial_map = factory->NewMap(
-        JS_OBJECT_TYPE, JSObject::kHeaderSize);
-    function->set_initial_map(*initial_map);
+    Handle<JSFunction> function = factory->NewFunction(func_name);
     JSReceiver::SetProperty(global, func_name, function, NONE, SLOPPY).Check();
 
     factory->NewJSObject(function);
@@ -170,7 +166,7 @@ TEST(MarkCompactCollector) {
 
   { HandleScope scope(isolate);
     Handle<String> func_name = factory->InternalizeUtf8String("theFunction");
-    CHECK(JSReceiver::HasLocalProperty(global, func_name));
+    CHECK(JSReceiver::HasOwnProperty(global, func_name));
     Handle<Object> func_value =
         Object::GetProperty(global, func_name).ToHandleChecked();
     CHECK(func_value->IsJSFunction());
@@ -188,7 +184,7 @@ TEST(MarkCompactCollector) {
 
   { HandleScope scope(isolate);
     Handle<String> obj_name = factory->InternalizeUtf8String("theObject");
-    CHECK(JSReceiver::HasLocalProperty(global, obj_name));
+    CHECK(JSReceiver::HasOwnProperty(global, obj_name));
     Handle<Object> object =
         Object::GetProperty(global, obj_name).ToHandleChecked();
     CHECK(object->IsJSObject());

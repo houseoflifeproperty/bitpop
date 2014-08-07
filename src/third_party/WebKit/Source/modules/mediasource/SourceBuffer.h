@@ -33,13 +33,14 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/events/EventTarget.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
+#include "modules/EventTargetModules.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
@@ -56,10 +57,11 @@ class MediaSource;
 class Stream;
 class TimeRanges;
 
-class SourceBuffer FINAL : public RefCountedGarbageCollected<SourceBuffer>, public ActiveDOMObject, public EventTargetWithInlineData, public ScriptWrappable, public FileReaderLoaderClient {
-    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedGarbageCollected<SourceBuffer>);
+class SourceBuffer FINAL : public RefCountedWillBeRefCountedGarbageCollected<SourceBuffer>, public ActiveDOMObject, public EventTargetWithInlineData, public ScriptWrappable, public FileReaderLoaderClient {
+    REFCOUNTED_EVENT_TARGET(SourceBuffer);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SourceBuffer);
 public:
-    static SourceBuffer* create(PassOwnPtr<blink::WebSourceBuffer>, MediaSource*, GenericEventQueue*);
+    static PassRefPtrWillBeRawPtr<SourceBuffer> create(PassOwnPtr<blink::WebSourceBuffer>, MediaSource*, GenericEventQueue*);
     static const AtomicString& segmentsKeyword();
     static const AtomicString& sequenceKeyword();
 
@@ -96,7 +98,7 @@ public:
     virtual ExecutionContext* executionContext() const OVERRIDE;
     virtual const AtomicString& interfaceName() const OVERRIDE;
 
-    void trace(Visitor*);
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     SourceBuffer(PassOwnPtr<blink::WebSourceBuffer>, MediaSource*, GenericEventQueue*);
@@ -121,7 +123,7 @@ private:
     virtual void didFail(FileError::ErrorCode) OVERRIDE;
 
     OwnPtr<blink::WebSourceBuffer> m_webSourceBuffer;
-    Member<MediaSource> m_source;
+    RawPtrWillBeMember<MediaSource> m_source;
     GenericEventQueue* m_asyncEventQueue;
 
     AtomicString m_mode;

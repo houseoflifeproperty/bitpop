@@ -16,7 +16,7 @@ def BaseConfig(INTERNAL=False, REPO_NAME=None, REPO_URL=None,
     REPO_URL = Static(REPO_URL),
     BUILD_CONFIG = Static(BUILD_CONFIG),
     revision = Single(basestring, empty_val=REVISION),
-    run_stack_tool_steps = Single(bool, required=False, empty_val=False),
+    revisions = Dict(value_type=(basestring, types.NoneType)),
     asan_symbolize = Single(bool, required=False, empty_val=False),
     get_app_manifest_vars = Single(bool, required=False, empty_val=True),
     run_tree_truth = Single(bool, required=False, empty_val=True),
@@ -65,6 +65,10 @@ def main_builder(c):
 def clang_builder(c):
   pass
 
+@config_ctx()
+def android_shared(c):
+  pass
+
 @config_ctx(config_vars={'BUILD_CONFIG': 'Release'})
 def clang_release_builder(c):
   c.asan_symbolize = True
@@ -98,17 +102,12 @@ def dartium_builder(c):
   c.deps_file = 'DEPS'
   c.managed = True
 
-@config_ctx(includes=['main_builder'])
-def cronet_builder(c):
-  c.storage_bucket='chromium-cronet/android'
-  c.upload_dest_prefix='cronet-'
-
-@config_ctx(includes=['cronet_builder'])
-def cronet_rel(c):
+@config_ctx()
+def arm_builder(c):
   pass
 
 @config_ctx()
-def arm_builder(c):
+def arm_l_builder(c):
   pass
 
 @config_ctx()
@@ -141,7 +140,7 @@ def x86_try_builder(c):
 
 @config_ctx()
 def tests_base(c):
-  c.run_stack_tool_steps = True
+  pass
 
 @config_ctx(includes=['tests_base'])
 def instrumentation_tests(c):

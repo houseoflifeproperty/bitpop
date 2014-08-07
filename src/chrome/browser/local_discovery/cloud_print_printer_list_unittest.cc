@@ -2,30 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/local_discovery/cloud_print_printer_list.h"
+
 #include <set>
 
-#include "base/bind.h"
-#include "base/message_loop/message_loop.h"
-#include "chrome/browser/local_discovery/cloud_print_printer_list.h"
-#include "components/cloud_devices/common/cloud_devices_urls.h"
-#include "content/public/test/test_browser_thread.h"
-#include "google_apis/gaia/fake_oauth2_token_service.h"
-#include "google_apis/gaia/google_service_auth_error.h"
-#include "net/base/host_port_pair.h"
-#include "net/base/net_errors.h"
-#include "net/http/http_request_headers.h"
-#include "net/http/http_status_code.h"
-#include "net/url_request/test_url_fetcher_factory.h"
-#include "net/url_request/url_fetcher_impl.h"
-#include "net/url_request/url_request_status.h"
-#include "net/url_request/url_request_test_util.h"
+#include "base/json/json_reader.h"
+#include "chrome/browser/local_discovery/cloud_device_list_delegate.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "url/gurl.h"
 
 using testing::Mock;
-using testing::NiceMock;
+using testing::SaveArg;
 using testing::StrictMock;
+using testing::_;
 
 namespace local_discovery {
 
@@ -40,91 +29,50 @@ const char kSampleSuccessResponseOAuth[] = "{"
     "    ]"
     "}";
 
-class MockDelegate : public CloudPrintPrinterList::Delegate {
+class MockDelegate : public CloudDeviceListDelegate {
  public:
-  MOCK_METHOD0(OnCloudPrintPrinterListUnavailable, void());
-  MOCK_METHOD0(OnCloudPrintPrinterListReady, void());
+  MOCK_METHOD1(OnDeviceListReady, void(const DeviceList&));
+  MOCK_METHOD0(OnDeviceListUnavailable, void());
 };
 
-class CloudPrintPrinterListTest : public testing::Test {
- public:
-  CloudPrintPrinterListTest()
-      : ui_thread_(content::BrowserThread::UI, &loop_),
-        request_context_(new net::TestURLRequestContextGetter(
-            base::MessageLoopProxy::current())) {
-    ui_thread_.Stop();  // HACK: Fake being on the UI thread
-    token_service_.set_request_context(request_context_.get());
-    token_service_.AddAccount("account_id");
-    printer_list_.reset(
-        new CloudPrintPrinterList(request_context_.get(),
-                                  &token_service_,
-                                  "account_id",
-                                  &delegate_));
+TEST(CloudPrintPrinterListTest, Params) {
+  CloudPrintPrinterList device_list(NULL);
+  EXPECT_EQ(GURL("https://www.google.com/cloudprint/search"),
+            device_list.GetURL());
+  EXPECT_EQ("https://www.googleapis.com/auth/cloudprint",
+            device_list.GetOAuthScope());
+  EXPECT_EQ(net::URLFetcher::GET, device_list.GetRequestType());
+  EXPECT_FALSE(device_list.GetExtraRequestHeaders().empty());
+}
 
-    fallback_fetcher_factory_.reset(new net::TestURLFetcherFactory());
-    net::URLFetcherImpl::set_factory(NULL);
-    fetcher_factory_.reset(new net::FakeURLFetcherFactory(
-        fallback_fetcher_factory_.get()));
-  }
+TEST(CloudPrintPrinterListTest, Parsing) {
+  StrictMock<MockDelegate> delegate;
+  CloudPrintPrinterList device_list(&delegate);
+  CloudDeviceListDelegate::DeviceList devices;
+  EXPECT_CALL(delegate, OnDeviceListReady(_)).WillOnce(SaveArg<0>(&devices));
 
-  virtual ~CloudPrintPrinterListTest() {
-    fetcher_factory_.reset();
-    net::URLFetcherImpl::set_factory(fallback_fetcher_factory_.get());
-    fallback_fetcher_factory_.reset();
-  }
+  scoped_ptr<base::Value> value(
+      base::JSONReader::Read(kSampleSuccessResponseOAuth));
+  const base::DictionaryValue* dictionary = NULL;
+  ASSERT_TRUE(value->GetAsDictionary(&dictionary));
+  device_list.OnGCDAPIFlowComplete(*dictionary);
 
- protected:
-  base::MessageLoopForUI loop_;
-  content::TestBrowserThread ui_thread_;
-  scoped_refptr<net::TestURLRequestContextGetter> request_context_;
-  // Use a test factory as a fallback so we don't have to deal with OAuth2
-  // requests.
-  scoped_ptr<net::TestURLFetcherFactory> fallback_fetcher_factory_;
-  scoped_ptr<net::FakeURLFetcherFactory> fetcher_factory_;
-  FakeOAuth2TokenService token_service_;
-  StrictMock<MockDelegate> delegate_;
-  scoped_ptr<CloudPrintPrinterList> printer_list_;
-};
-
-TEST_F(CloudPrintPrinterListTest, SuccessOAuth2) {
-  fetcher_factory_->SetFakeResponse(
-      cloud_devices::GetCloudPrintRelativeURL("search"),
-      kSampleSuccessResponseOAuth,
-      net::HTTP_OK,
-      net::URLRequestStatus::SUCCESS);
-
-  GCDBaseApiFlow* cloudprint_flow = printer_list_->GetOAuth2ApiFlowForTests();
-
-  printer_list_->Start();
-
-  cloudprint_flow->OnGetTokenSuccess(NULL, "SomeToken", base::Time());
-
-  EXPECT_CALL(delegate_, OnCloudPrintPrinterListReady());
-
-  base::MessageLoop::current()->RunUntilIdle();
-
-  Mock::VerifyAndClear(&delegate_);
+  Mock::VerifyAndClear(&delegate);
 
   std::set<std::string> ids_found;
   std::set<std::string> ids_expected;
-
   ids_expected.insert("someID");
 
-  int length = 0;
-  for (CloudPrintPrinterList::iterator i = printer_list_->begin();
-       i != printer_list_->end(); i++, length++) {
-    ids_found.insert(i->id);
+  for (size_t i = 0; i != devices.size(); ++i) {
+    ids_found.insert(devices[i].id);
   }
 
-  EXPECT_EQ(ids_expected, ids_found);
-  EXPECT_EQ(1, length);
+  ASSERT_EQ(ids_expected, ids_found);
 
-  const CloudPrintPrinterList::PrinterDetails* found =
-      printer_list_->GetDetailsFor("someID");
-  ASSERT_TRUE(found != NULL);
-  EXPECT_EQ("someID", found->id);
-  EXPECT_EQ("someDisplayName", found->display_name);
-  EXPECT_EQ("someDescription", found->description);
+  EXPECT_EQ("someID", devices[0].id);
+  EXPECT_EQ("someDisplayName", devices[0].display_name);
+  EXPECT_EQ("someDescription", devices[0].description);
+  EXPECT_EQ("printer", devices[0].type);
 }
 
 }  // namespace

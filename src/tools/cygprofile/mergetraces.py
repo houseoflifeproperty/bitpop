@@ -13,9 +13,7 @@ create a single log that is an ordered trace of calls by both processes.
 """
 
 import optparse
-import os
 import string
-import subprocess
 import sys
 
 def ParseLogLines(lines):
@@ -26,7 +24,7 @@ def ParseLogLines(lines):
 
     Below is an example of a small log file:
     5086e000-52e92000 r-xp 00000000 b3:02 51276      libchromeview.so
-    secs       msecs      pid:threadid    func
+    secs       usecs      pid:threadid    func
     START
     1314897086 795828     3587:1074648168 0x509e105c
     1314897086 795874     3587:1074648168 0x509e0eb4
@@ -55,7 +53,7 @@ def ParseLogLines(lines):
   return (call_lines, vm_start, vm_end)
 
 def HasDuplicates(calls):
-  """Funcition is a sanity check to make sure that calls are only logged once.
+  """Makes sure that calls are only logged once.
 
   Args:
     calls: list of calls logged
@@ -63,12 +61,12 @@ def HasDuplicates(calls):
   Returns:
     boolean indicating if calls has duplicate calls
   """
-  seen = []
+  seen = set([])
   for call in calls:
     if call[3] in seen:
-      return true
-    else:
-      seen.append(call[3])
+      return True
+    seen.add(call[3])
+  return False
 
 def CheckTimestamps(calls):
   """Prints warning to stderr if the call timestamps are not in order.
@@ -78,18 +76,18 @@ def CheckTimestamps(calls):
   """
   index = 0
   last_timestamp_secs = -1
-  last_timestamp_ms = -1
+  last_timestamp_us = -1
   while (index < len (calls)):
     timestamp_secs = int (calls[index][0])
-    timestamp_ms = int (calls[index][1])
-    timestamp = (timestamp_secs * 1000000) + timestamp_ms
-    last_timestamp = (last_timestamp_secs * 1000000) + last_timestamp_ms
+    timestamp_us = int (calls[index][1])
+    timestamp = (timestamp_secs * 1000000) + timestamp_us
+    last_timestamp = (last_timestamp_secs * 1000000) + last_timestamp_us
     if (timestamp < last_timestamp):
-      sys.stderr.write("WARNING: last_timestamp: " + str(last_timestamp_secs)
-                       + " " + str(last_timestamp_ms) + " timestamp: "
-                       + str(timestamp_secs) + " " + str(timestamp_ms) + "\n")
+      raise Exception("last_timestamp: " + str(last_timestamp_secs)
+                       + " " + str(last_timestamp_us) + " timestamp: "
+                       + str(timestamp_secs) + " " + str(timestamp_us) + "\n")
     last_timestamp_secs = timestamp_secs
-    last_timestamp_ms = timestamp_ms
+    last_timestamp_us = timestamp_us
     index = index + 1
 
 def Convert (call_lines, startAddr, endAddr):
@@ -100,19 +98,19 @@ def Convert (call_lines, startAddr, endAddr):
   address in shared library.
 
   Returns:
-     list of calls as tuples (sec, msec, pid:tid, callee)
+     list of calls as tuples (sec, usec, pid:tid, callee)
   """
   converted_calls = []
   call_addresses = []
   for fields in call_lines:
     secs = int (fields[0])
-    msecs = int (fields[1])
+    usecs = int (fields[1])
     callee = int (fields[3], 16)
     # print ("callee: " + hex (callee) + " start: " + hex (startAddr) + " end: "
     #        + hex (endAddr))
     if (callee >= startAddr and callee < endAddr
         and (not callee in call_addresses)):
-      converted_calls.append((secs, msecs, fields[2], (callee - startAddr)))
+      converted_calls.append((secs, usecs, fields[2], (callee - startAddr)))
       call_addresses.append(callee)
   return converted_calls
 
@@ -137,6 +135,55 @@ def AddTrace (tracemap, trace):
         Timestamp(tracemap[call]) > Timestamp(trace_entry)):
       tracemap[call] = trace_entry
 
+def GroupByProcessAndThreadId(input_trace):
+  """Returns an array of traces grouped by pid and tid.
+
+  This is used to make the order of functions not depend on thread scheduling
+  which can be greatly impacted when profiling is done with cygprofile. As a
+  result each thread has its own contiguous segment of code (ordered by
+  timestamp) and processes also have their code isolated (i.e. not interleaved).
+  """
+  def MakeTimestamp(sec, usec):
+    return sec * 1000000 + usec
+
+  def PidAndTidFromString(pid_and_tid):
+    strings = pid_and_tid.split(':')
+    return (int(strings[0]), int(strings[1]))
+
+  tid_to_pid_map = {}
+  pid_first_seen = {}
+  tid_first_seen = {}
+
+  for (sec, usec, pid_and_tid, _) in input_trace:
+    (pid, tid) = PidAndTidFromString(pid_and_tid)
+
+    # Make sure that thread IDs are unique since this is a property we rely on.
+    if tid_to_pid_map.setdefault(tid, pid) != pid:
+      raise Exception(
+          'Seen PIDs %d and %d for TID=%d. Thread-IDs must be unique' % (
+              tid_to_pid_map[tid], pid, tid))
+
+    if not pid in pid_first_seen:
+      pid_first_seen[pid] = MakeTimestamp(sec, usec)
+    if not tid in tid_first_seen:
+      tid_first_seen[tid] = MakeTimestamp(sec, usec)
+
+  def CompareEvents(event1, event2):
+    (sec1, usec1, pid_and_tid, _) = event1
+    (pid1, tid1) = PidAndTidFromString(pid_and_tid)
+    (sec2, usec2, pid_and_tid, _) = event2
+    (pid2, tid2) = PidAndTidFromString(pid_and_tid)
+
+    pid_cmp = cmp(pid_first_seen[pid1], pid_first_seen[pid2])
+    if pid_cmp != 0:
+      return pid_cmp
+    tid_cmp = cmp(tid_first_seen[tid1], tid_first_seen[tid2])
+    if tid_cmp != 0:
+      return tid_cmp
+    return cmp(MakeTimestamp(sec1, usec1), MakeTimestamp(sec2, usec2))
+
+  return sorted(input_trace, cmp=CompareEvents)
+
 def main():
   """Merge two traces for code in specified library and write to stdout.
 
@@ -151,7 +198,10 @@ def main():
     parser.error('expected at least the following args: trace1 trace2')
 
   step = 0
+
+  # Maps function addresses to their corresponding trace entry.
   tracemap = dict()
+
   for trace_file in args:
     step += 1
     sys.stderr.write("    " + str(step) + "/" + str(len(args)) +
@@ -176,9 +226,11 @@ def main():
     merged_trace.append(tracemap[call])
   merged_trace.sort(key=Timestamp)
 
+  grouped_trace = GroupByProcessAndThreadId(merged_trace)
+
   print "0-ffffffff r-xp 00000000 xx:00 00000 ./"
-  print "secs\tmsecs\tpid:threadid\tfunc"
-  for call in merged_trace:
+  print "secs\tusecs\tpid:threadid\tfunc"
+  for call in grouped_trace:
     print (str(call[0]) + "\t" + str(call[1]) + "\t" + call[2] + "\t" +
            hex(call[3]))
 

@@ -11,3 +11,4 @@ class NativeClientSDKAddIn(Master.NaClBase):
   master_port = 8057
   slave_port = 8157
   master_port_alt = 8257
+  buildbot_url = 'http://build.chromium.org/p/client.nacl.sdk.addin/'

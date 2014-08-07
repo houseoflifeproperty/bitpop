@@ -6,9 +6,10 @@
 
 #include "chrome/browser/profiles/profile.h"
 #include "components/signin/core/browser/signin_manager_base.h"
+#include "google_apis/gaia/gaia_constants.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_constants.h"
+#include "chrome/browser/supervised_user/supervised_user_constants.h"
 #endif
 
 ManagedUserSigninManagerWrapper::ManagedUserSigninManagerWrapper(
@@ -26,8 +27,8 @@ SigninManagerBase* ManagedUserSigninManagerWrapper::GetOriginal() {
 std::string ManagedUserSigninManagerWrapper::GetEffectiveUsername() const {
   const std::string& auth_username = original_->GetAuthenticatedUsername();
 #if defined(ENABLE_MANAGED_USERS)
-  if (auth_username.empty() && profile_->IsManaged())
-    return managed_users::kManagedUserPseudoEmail;
+  if (auth_username.empty() && profile_->IsSupervised())
+    return supervised_users::kSupervisedUserPseudoEmail;
 #endif
   return auth_username;
 }
@@ -35,8 +36,17 @@ std::string ManagedUserSigninManagerWrapper::GetEffectiveUsername() const {
 std::string ManagedUserSigninManagerWrapper::GetAccountIdToUse() const {
   const std::string& auth_account = original_->GetAuthenticatedAccountId();
 #if defined(ENABLE_MANAGED_USERS)
-  if (auth_account.empty() && profile_->IsManaged())
-    return managed_users::kManagedUserPseudoEmail;
+  if (auth_account.empty() && profile_->IsSupervised())
+    return supervised_users::kSupervisedUserPseudoEmail;
 #endif
   return auth_account;
+}
+
+std::string ManagedUserSigninManagerWrapper::GetSyncScopeToUse() const {
+#if defined(ENABLE_MANAGED_USERS)
+  const std::string& auth_account = original_->GetAuthenticatedAccountId();
+  if (auth_account.empty() && profile_->IsSupervised())
+    return GaiaConstants::kChromeSyncSupervisedOAuth2Scope;
+#endif
+  return GaiaConstants::kChromeSyncOAuth2Scope;
 }

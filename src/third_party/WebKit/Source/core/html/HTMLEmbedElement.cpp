@@ -24,8 +24,8 @@
 #include "config.h"
 #include "core/html/HTMLEmbedElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLImageLoader.h"
@@ -47,7 +47,7 @@ inline HTMLEmbedElement::HTMLEmbedElement(Document& document, bool createdByPars
 
 PassRefPtrWillBeRawPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document, bool createdByParser)
 {
-    RefPtrWillBeRawPtr<HTMLEmbedElement> element = adoptRefWillBeRefCountedGarbageCollected(new HTMLEmbedElement(document, createdByParser));
+    RefPtrWillBeRawPtr<HTMLEmbedElement> element = adoptRefWillBeNoop(new HTMLEmbedElement(document, createdByParser));
     element->ensureUserAgentShadowRoot();
     return element.release();
 }
@@ -102,7 +102,7 @@ void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicStr
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
         if (renderer() && isImageType()) {
             if (!m_imageLoader)
-                m_imageLoader = adoptPtr(new HTMLImageLoader(this));
+                m_imageLoader = HTMLImageLoader::create(this);
             m_imageLoader->updateFromElementIgnoringPreviousError();
         }
     } else {
@@ -115,11 +115,11 @@ void HTMLEmbedElement::parametersForPlugin(Vector<String>& paramNames, Vector<St
     if (!hasAttributes())
         return;
 
-    unsigned attributeCount = this->attributeCount();
-    for (unsigned i = 0; i < attributeCount; ++i) {
-        const Attribute& attribute = attributeItem(i);
-        paramNames.append(attribute.localName().string());
-        paramValues.append(attribute.value().string());
+    AttributeCollection attributes = this->attributes();
+    AttributeCollection::const_iterator end = attributes.end();
+    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+        paramNames.append(it->localName().string());
+        paramValues.append(it->value().string());
     }
 }
 
@@ -144,7 +144,7 @@ void HTMLEmbedElement::updateWidgetInternal()
     Vector<String> paramValues;
     parametersForPlugin(paramNames, paramValues);
 
-    RefPtr<HTMLEmbedElement> protect(this); // Loading the plugin might remove us from the document.
+    RefPtrWillBeRawPtr<HTMLEmbedElement> protect(this); // Loading the plugin might remove us from the document.
 
     // FIXME: Can we not have renderer here now that beforeload events are gone?
     if (!renderer())

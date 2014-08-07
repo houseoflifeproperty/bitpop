@@ -4,6 +4,7 @@
 
 #include "ui/base/resource/resource_bundle.h"
 
+#include <limits>
 #include <vector>
 
 #include "base/big_endian.h"
@@ -83,6 +84,25 @@ void InitDefaultFontList() {
 #endif
 }
 
+#if defined(OS_ANDROID)
+// Returns the scale factor closest to |scale| from the full list of factors.
+// Note that it does NOT rely on the list of supported scale factors.
+// Finding the closest match is inefficient and shouldn't be done frequently.
+ScaleFactor FindClosestScaleFactorUnsafe(float scale) {
+  float smallest_diff =  std::numeric_limits<float>::max();
+  ScaleFactor closest_match = SCALE_FACTOR_100P;
+  for (int i = SCALE_FACTOR_100P; i < NUM_SCALE_FACTORS; ++i) {
+    const ScaleFactor scale_factor = static_cast<ScaleFactor>(i);
+    float diff = std::abs(GetScaleForScaleFactor(scale_factor) - scale);
+    if (diff < smallest_diff) {
+      closest_match = scale_factor;
+      smallest_diff = diff;
+    }
+  }
+  return closest_match;
+}
+#endif  // OS_ANDROID
+
 }  // namespace
 
 // An ImageSkiaSource that loads bitmaps for the requested scale factor from
@@ -108,6 +128,12 @@ class ResourceBundle::ResourceBundleImageSource : public gfx::ImageSkiaSource {
     if (!found)
       return gfx::ImageSkiaRep();
 
+    // If the resource is in the package with SCALE_FACTOR_NONE, it
+    // can be used in any scale factor. The image is maked as "unscaled"
+    // so that the ImageSkia do not automatically scale.
+    if (scale_factor == ui::SCALE_FACTOR_NONE)
+      return gfx::ImageSkiaRep(image, 0.0f);
+
     if (fell_back_to_1x) {
       // GRIT fell back to the 100% image, so rescale it to the correct size.
       image = skia::ImageOperations::Resize(
@@ -116,9 +142,7 @@ class ResourceBundle::ResourceBundleImageSource : public gfx::ImageSkiaSource {
           gfx::ToCeiledInt(image.width() * scale),
           gfx::ToCeiledInt(image.height() * scale));
     } else {
-      image = PlatformScaleImage(image,
-                                 ui::GetScaleForScaleFactor(scale_factor),
-                                 scale);
+      scale = GetScaleForScaleFactor(scale_factor);
     }
     return gfx::ImageSkiaRep(image, scale);
   }
@@ -254,15 +278,8 @@ std::string ResourceBundle::LoadLocaleResources(
   DCHECK(!locale_resources_data_.get()) << "locale.pak already loaded";
   std::string app_locale = l10n_util::GetApplicationLocale(pref_locale);
   base::FilePath locale_file_path = GetOverriddenPakPath();
-  if (locale_file_path.empty()) {
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
-    if (command_line->HasSwitch(switches::kLocalePak)) {
-      locale_file_path =
-          command_line->GetSwitchValuePath(switches::kLocalePak);
-    } else {
-      locale_file_path = GetLocaleFilePath(app_locale, true);
-    }
-  }
+  if (locale_file_path.empty())
+    locale_file_path = GetLocaleFilePath(app_locale, true);
 
   if (locale_file_path.empty()) {
     // It's possible that there is no locale.pak.
@@ -345,15 +362,13 @@ gfx::Image& ResourceBundle::GetImageNamed(int resource_id) {
   ui::ScaleFactor scale_factor_to_load = ui::SCALE_FACTOR_100P;
 #endif
 
-    float scale = GetImageScale(scale_factor_to_load);
-
     // TODO(oshima): Consider reading the image size from png IHDR chunk and
     // skip decoding here and remove #ifdef below.
     // ResourceBundle::GetSharedInstance() is destroyed after the
     // BrowserMainLoop has finished running. |image_skia| is guaranteed to be
     // destroyed before the resource bundle is destroyed.
     gfx::ImageSkia image_skia(new ResourceBundleImageSource(this, resource_id),
-                              scale);
+                              GetScaleForScaleFactor(scale_factor_to_load));
     if (image_skia.isNull()) {
       LOG(WARNING) << "Unable to load image with id " << resource_id;
       NOTREACHED();  // Want to assert in debug mode.
@@ -519,6 +534,14 @@ ScaleFactor ResourceBundle::GetMaxScaleFactor() const {
 #endif
 }
 
+bool ResourceBundle::IsScaleFactorSupported(ScaleFactor scale_factor) {
+  const std::vector<ScaleFactor>& supported_scale_factors =
+      ui::GetSupportedScaleFactors();
+  return std::find(supported_scale_factors.begin(),
+                   supported_scale_factors.end(),
+                   scale_factor) != supported_scale_factors.end();
+}
+
 ResourceBundle::ResourceBundle(Delegate* delegate)
     : delegate_(delegate),
       images_and_fonts_lock_(new base::Lock),
@@ -582,7 +605,10 @@ void ResourceBundle::InitSharedInstance(Delegate* delegate) {
 #if defined(OS_WIN)
   // Must be called _after_ supported scale factors are set since it
   // uses them.
-  ui::win::InitDeviceScaleFactor();
+  // Don't initialize the device scale factor if it has already been
+  // initialized.
+  if (!gfx::win::IsDeviceScaleFactorSet())
+    ui::win::InitDeviceScaleFactor();
 #endif
 }
 
@@ -728,13 +754,10 @@ bool ResourceBundle::LoadBitmap(int resource_id,
                                 bool* fell_back_to_1x) const {
   DCHECK(fell_back_to_1x);
   for (size_t i = 0; i < data_packs_.size(); ++i) {
-    // If the resource is in the package with SCALE_FACTOR_NONE, it
-    // can be used in any scale factor, but set 100P in ImageSkia so
-    // that it will be scaled property.
     if (data_packs_[i]->GetScaleFactor() == ui::SCALE_FACTOR_NONE &&
         LoadBitmap(*data_packs_[i], resource_id, bitmap, fell_back_to_1x)) {
-      *scale_factor = ui::SCALE_FACTOR_100P;
       DCHECK(!*fell_back_to_1x);
+      *scale_factor = ui::SCALE_FACTOR_NONE;
       return true;
     }
     if (data_packs_[i]->GetScaleFactor() == *scale_factor &&
@@ -801,14 +824,5 @@ bool ResourceBundle::DecodePNG(const unsigned char* buf,
   *fell_back_to_1x = PNGContainsFallbackMarker(buf, size);
   return gfx::PNGCodec::Decode(buf, size, bitmap);
 }
-
-#if !defined(OS_WIN)
-// static
-SkBitmap ResourceBundle::PlatformScaleImage(const SkBitmap& image,
-                                            float loaded_image_scale,
-                                            float desired_scale) {
-  return image;
-}
-#endif
 
 }  // namespace ui

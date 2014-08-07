@@ -13,6 +13,7 @@
 #include "base/version.h"
 #include "chrome/installer/util/util_constants.h"
 
+class AppRegistrationData;
 class BrowserDistribution;
 
 namespace installer {
@@ -126,7 +127,7 @@ class GoogleUpdateSettings {
   // assigned to a partner. Returns false if the information is not available.
   //
   // NOTE: This function is Windows only.  If the code you are writing is not
-  // specifically for Windows, prefer calling google_util::GetBrand().
+  // specifically for Windows, prefer calling google_brand::GetBrand().
   static bool GetBrand(std::wstring* brand);
 
   // Returns in |brand| the RLZ reactivation brand code or distribution tag
@@ -135,7 +136,7 @@ class GoogleUpdateSettings {
   //
   // NOTE: This function is Windows only.  If the code you are writing is not
   // specifically for Windows, prefer calling
-  // google_util::GetReactivationBrand().
+  // google_brand::GetReactivationBrand().
   static bool GetReactivationBrand(std::wstring* brand);
 
   // Returns in |client| the google_update client field, which is currently
@@ -154,20 +155,21 @@ class GoogleUpdateSettings {
   // true if this operation succeeded.
   static bool ClearReferral();
 
-  // Set did_run "dr" in the client state value. This is used to measure
-  // active users. Returns false if writting to the registry failed.
-  static bool UpdateDidRunState(bool did_run, bool system_level);
+  // Set did_run "dr" in the client state value for app specified by
+  // |app_reg_data|. This is used to measure active users. Returns false if
+  // registry write fails.
+  static bool UpdateDidRunStateForApp(const AppRegistrationData& app_reg_data,
+                                      bool did_run);
 
-  // Set did_run "dr" in the client state value for |dist|. This is used to
-  // measure active users. Returns false if writting to the registry failed.
-  static bool UpdateDidRunStateForDistribution(BrowserDistribution* dist,
-                                               bool did_run,
-                                               bool system_level);
+  // Convenience routine: UpdateDidRunStateForApp() specialized for the current
+  // BrowserDistribution, and also updates Chrome Binary's did_run if the
+  // current distribution is multi-install.
+  static bool UpdateDidRunState(bool did_run, bool system_level);
 
   // Returns only the channel name: "" (stable), "dev", "beta", "canary", or
   // "unknown" if unknown. This value will not be modified by "-m" for a
   // multi-install. See kChromeChannel* in util_constants.h
-  static std::wstring GetChromeChannel(bool system_install);
+  static base::string16 GetChromeChannel(bool system_install);
 
   // Return a human readable modifier for the version string, e.g.
   // the channel (dev, beta, stable). Returns true if this operation succeeded,

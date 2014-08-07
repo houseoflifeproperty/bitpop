@@ -25,13 +25,13 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <v8.h>
-#include "cctest.h"
+#include "include/v8.h"
+#include "test/cctest/cctest.h"
 
-#include "print-extension.h"
-#include "profiler-extension.h"
-#include "trace-extension.h"
-#include "debug.h"
+#include "src/debug.h"
+#include "test/cctest/print-extension.h"
+#include "test/cctest/profiler-extension.h"
+#include "test/cctest/trace-extension.h"
 
 enum InitializationState {kUnset, kUnintialized, kInitialized};
 static InitializationState initialization_state_  = kUnset;
@@ -157,6 +157,10 @@ int main(int argc, char* argv[]) {
   for (int i = 1; i < argc; i++) {
     char* arg = argv[i];
     if (strcmp(arg, "--list") == 0) {
+      // TODO(svenpanne) Serializer::enabled() and Serializer::code_address_map_
+      // are fundamentally broken, so we can't unconditionally initialize and
+      // dispose V8.
+      v8::V8::Initialize();
       PrintTestList(CcTest::last());
       print_run_count = false;
 
@@ -200,7 +204,8 @@ int main(int argc, char* argv[]) {
   if (print_run_count && tests_run != 1)
     printf("Ran %i tests.\n", tests_run);
   CcTest::TearDown();
-  if (!disable_automatic_dispose_) v8::V8::Dispose();
+  // TODO(svenpanne) See comment above.
+  // if (!disable_automatic_dispose_) v8::V8::Dispose();
   return 0;
 }
 

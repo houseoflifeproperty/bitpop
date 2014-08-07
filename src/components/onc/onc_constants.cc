@@ -34,9 +34,11 @@ const char kUnencryptedConfiguration[] = "UnencryptedConfiguration";
 // Network Configuration
 namespace network_config {
 const char kCellular[] = "Cellular";
+const char kDevice[] = "Device";
 const char kEthernet[] = "Ethernet";
 const char kGUID[] = "GUID";
 const char kIPConfigs[] = "IPConfigs";
+const char kMacAddress[] = "MacAddress";
 const char kName[] = "Name";
 const char kNameServers[] = "NameServers";
 const char kProxySettings[] = "ProxySettings";
@@ -68,6 +70,8 @@ const char kCellular[] = "Cellular";
 const char kEthernet[] = "Ethernet";
 const char kVPN[] = "VPN";
 const char kWiFi[] = "WiFi";
+const char kWimax[] = "Wimax";
+const char kWireless[] = "Wireless";
 }  // namespace network_type
 
 namespace cellular {
@@ -97,7 +101,9 @@ const char kProviderRequiresRoaming[] = "ProviderRequiresRoaming";
 const char kRoamingState[] = "RoamingState";
 const char kSelectedNetwork[] = "SelectedNetwork";
 const char kServingOperator[] = "ServingOperator";
+const char kSIMLockEnabled[] = "SIMLockEnabled";
 const char kSIMLockStatus[] = "SIMLockStatus";
+const char kSIMLockType[] = "SIMLockType";
 const char kSIMPresent[] = "SIMPresent";
 const char kSupportedCarriers[] = "SupportedCarriers";
 const char kSupportNetworkScan[] = "SupportNetworkScan";
@@ -260,6 +266,7 @@ const char kAuth[] = "Auth";
 const char kCipher[] = "Cipher";
 const char kCompLZO[] = "CompLZO";
 const char kCompNoAdapt[] = "CompNoAdapt";
+const char kIgnoreDefaultRoute[] = "IgnoreDefaultRoute";
 const char kInteract[] = "interact";
 const char kKeyDirection[] = "KeyDirection";
 const char kNoInteract[] = "nointeract";

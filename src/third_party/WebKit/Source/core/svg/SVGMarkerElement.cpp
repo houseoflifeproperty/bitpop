@@ -23,10 +23,9 @@
 
 #include "core/svg/SVGMarkerElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/svg/RenderSVGResourceMarker.h"
 #include "core/svg/SVGAngleTearOff.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
@@ -65,10 +64,7 @@ inline SVGMarkerElement::SVGMarkerElement(Document& document)
     addToPropertyMap(m_markerUnits);
 }
 
-PassRefPtr<SVGMarkerElement> SVGMarkerElement::create(Document& document)
-{
-    return adoptRef(new SVGMarkerElement(document));
-}
+DEFINE_NODE_FACTORY(SVGMarkerElement)
 
 AffineTransform SVGMarkerElement::viewBoxToViewTransform(float viewWidth, float viewHeight) const
 {
@@ -143,7 +139,7 @@ void SVGMarkerElement::childrenChanged(bool changedByParser, Node* beforeChange,
         return;
 
     if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+        object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
 void SVGMarkerElement::setOrientToAuto()

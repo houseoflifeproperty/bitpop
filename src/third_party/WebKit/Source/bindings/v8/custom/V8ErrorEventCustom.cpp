@@ -29,10 +29,9 @@
  */
 
 #include "config.h"
-#include "V8ErrorEvent.h"
+#include "bindings/core/v8/V8ErrorEvent.h"
 
-#include "RuntimeEnabledFeatures.h"
-#include "V8Event.h"
+#include "bindings/core/v8/V8Event.h"
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/SerializedScriptValue.h"
@@ -40,6 +39,7 @@
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/V8HiddenValue.h"
 #include "core/dom/ContextFeatures.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 

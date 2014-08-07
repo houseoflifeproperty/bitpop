@@ -30,17 +30,17 @@
 
 #include "config.h"
 #include "core/animation/InertAnimation.h"
-#include "core/animation/Interpolation.h"
+#include "core/animation/interpolation/Interpolation.h"
 
 namespace WebCore {
 
-PassRefPtr<InertAnimation> InertAnimation::create(PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, bool paused)
+PassRefPtrWillBeRawPtr<InertAnimation> InertAnimation::create(PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, bool paused)
 {
-    return adoptRef(new InertAnimation(effect, timing, paused));
+    return adoptRefWillBeNoop(new InertAnimation(effect, timing, paused));
 }
 
 InertAnimation::InertAnimation(PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, bool paused)
-    : TimedItem(timing)
+    : AnimationNode(timing)
     , m_effect(effect)
     , m_paused(paused)
 {
@@ -58,10 +58,15 @@ PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > In
     return m_effect->sample(static_cast<int>(iteration), timeFraction(), iterationDuration());
 }
 
-
 double InertAnimation::calculateTimeToEffectChange(bool, double, double) const
 {
     return std::numeric_limits<double>::infinity();
+}
+
+void InertAnimation::trace(Visitor* visitor)
+{
+    visitor->trace(m_effect);
+    AnimationNode::trace(visitor);
 }
 
 } // namespace WebCore

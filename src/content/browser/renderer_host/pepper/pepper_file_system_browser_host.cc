@@ -101,14 +101,15 @@ void PepperFileSystemBrowserHost::OpenExisting(const GURL& root_url,
 int32_t PepperFileSystemBrowserHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperFileSystemBrowserHost, msg)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileSystem_Open, OnHostMsgOpen)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(
-      PpapiHostMsg_FileSystem_InitIsolatedFileSystem,
-      OnHostMsgInitIsolatedFileSystem)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileSystem_ReserveQuota,
-                                    OnHostMsgReserveQuota)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_BEGIN_MESSAGE_MAP(PepperFileSystemBrowserHost, msg)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileSystem_Open,
+                                      OnHostMsgOpen)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
+        PpapiHostMsg_FileSystem_InitIsolatedFileSystem,
+        OnHostMsgInitIsolatedFileSystem)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FileSystem_ReserveQuota,
+                                      OnHostMsgReserveQuota)
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -483,13 +484,15 @@ std::string PepperFileSystemBrowserHost::GeneratePluginId(
   // types).  If we bring this API to stable, we might have to make it more
   // general.
 
-  if (!net::IsMimeType(mime_type))
+  std::string top_level_type;
+  std::string subtype;
+  if (!net::ParseMimeTypeWithoutParameter(
+          mime_type, &top_level_type, &subtype) ||
+      !net::IsValidTopLevelMimeType(top_level_type))
     return std::string();
-  std::string output = mime_type;
 
   // Replace a slash used for type/subtype separator with an underscore.
-  // NOTE: This assumes there is only one slash in the MIME type.
-  ReplaceFirstSubstringAfterOffset(&output, 0, "/", "_");
+  std::string output = top_level_type + "_" + subtype;
 
   // Verify |output| contains only alphabets, digits, or "._-".
   for (std::string::const_iterator it = output.begin(); it != output.end();

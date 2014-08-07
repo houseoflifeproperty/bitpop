@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,6 +8,6 @@ class ReloadAction(page_action.PageAction):
   def __init__(self, attributes=None):
     super(ReloadAction, self).__init__(attributes)
 
-  def RunAction(self, page, tab):
+  def RunAction(self, tab):
     tab.ExecuteJavaScript('window.location.reload()')
     tab.WaitForDocumentReadyStateToBeInteractiveOrBetter()

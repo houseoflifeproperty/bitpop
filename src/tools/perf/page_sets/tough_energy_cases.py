@@ -12,7 +12,6 @@ class ToughEnergyCasesPage(page_module.Page):
   def __init__(self, url, page_set):
     super(ToughEnergyCasesPage, self).__init__(url=url, page_set=page_set)
     self.credentials_path = 'data/credentials.json'
-    self.archive_data_file = 'data/tough_energy_cases.json'
 
 
 class GmailPage(ToughEnergyCasesPage):
@@ -27,13 +26,10 @@ class GmailPage(ToughEnergyCasesPage):
     self.credentials = 'google'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript': (
-          'window.gmonkey !== undefined &&'
-          'document.getElementById("gb") !== null')
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'window.gmonkey !== undefined &&'
+        'document.getElementById("gb") !== null')
 
 
 class ToughEnergyCasesPageSet(page_set_module.PageSet):
@@ -42,14 +38,16 @@ class ToughEnergyCasesPageSet(page_set_module.PageSet):
 
   def __init__(self):
     super(ToughEnergyCasesPageSet, self).__init__(
-      credentials_path='data/credentials.json',
-      archive_data_file='data/tough_energy_cases.json')
+      archive_data_file='data/tough_energy_cases.json',
+      bucket=page_set_module.PUBLIC_BUCKET,
+      credentials_path='data/credentials.json')
 
     # Why: Above the fold animated gif running in the background
     self.AddPage(ToughEnergyCasesPage(
       'file://tough_energy_cases/above-fold-animated-gif.html',
       self))
-    self.AddPage(GmailPage(self))
+    # TODO(dominikg): fix crbug.com/386152
+    #self.AddPage(GmailPage(self))
     # Why: Below the fold animated gif
     self.AddPage(ToughEnergyCasesPage(
       'file://tough_energy_cases/below-fold-animated-gif.html',

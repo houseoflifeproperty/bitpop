@@ -11,7 +11,6 @@
 #include "chrome/browser/extensions/pending_extension_info.h"
 #include "extensions/common/manifest.h"
 
-class ExtensionServiceInterface;
 class GURL;
 
 namespace base {
@@ -39,16 +38,11 @@ void SetupPendingExtensionManagerForTest(
 // time, because they involve downloading, unpacking, and installing.
 // This class allows us to avoid race cases where multiple sources install
 // the same extension.
-// The extensions service creates an instance of this class, and manages
-// its lifetime. This class should only be used from the UI thread.
+// The ExtensionService creates an instance of this class, and manages its
+// lifetime. This class should only be used from the UI thread.
 class PendingExtensionManager {
  public:
-  // |service| is a reference to the ExtensionService whose pending
-  // extensions we are managing. The service creates an instance of
-  // this class on construction, and destroys it on destruction.
-  // The service remains valid over the entire lifetime of this class.
-  explicit PendingExtensionManager(const ExtensionServiceInterface& service,
-                                   content::BrowserContext* context);
+  explicit PendingExtensionManager(content::BrowserContext* context);
   ~PendingExtensionManager();
 
   // TODO(skerner): Many of these methods can be private once code in
@@ -84,7 +78,8 @@ class PendingExtensionManager {
       const std::string& id,
       const GURL& update_url,
       PendingExtensionInfo::ShouldAllowInstallPredicate should_allow_install,
-      bool install_silently);
+      bool install_silently,
+      bool remote_install);
 
   // Adds an extension that was depended on by another extension.
   bool AddFromExtensionImport(
@@ -132,18 +127,13 @@ class PendingExtensionManager {
       bool install_silently,
       Manifest::Location install_source,
       int creation_flags,
-      bool mark_acknowledged);
+      bool mark_acknowledged,
+      bool remote_install);
 
   // Add a pending extension record directly.  Used for unit tests that need
   // to set an inital state. Use friendship to allow the tests to call this
   // method.
   void AddForTesting(const PendingExtensionInfo& pending_extension_info);
-
-  // Reference to the extension service whose pending extensions this class is
-  // managing.  Because this class is a member of |service_|, it is created
-  // and destroyed with |service_|. We only use methods from the interface
-  // ExtensionServiceInterface.
-  const ExtensionServiceInterface& service_;
 
   // The BrowserContext with which the manager is associated.
   content::BrowserContext* context_;

@@ -32,22 +32,26 @@
 #include "core/dom/custom/CustomElementMicrotaskImportStep.h"
 
 #include "core/dom/custom/CustomElementMicrotaskDispatcher.h"
-#include "core/dom/custom/CustomElementMicrotaskQueue.h"
+#include "core/dom/custom/CustomElementSyncMicrotaskQueue.h"
 #include "core/html/imports/HTMLImportChild.h"
 #include "core/html/imports/HTMLImportLoader.h"
 #include <stdio.h>
 
 namespace WebCore {
 
-PassOwnPtr<CustomElementMicrotaskImportStep> CustomElementMicrotaskImportStep::create(HTMLImportChild* import)
+PassOwnPtrWillBeRawPtr<CustomElementMicrotaskImportStep> CustomElementMicrotaskImportStep::create(HTMLImportChild* import)
 {
-    return adoptPtr(new CustomElementMicrotaskImportStep(import));
+    return adoptPtrWillBeNoop(new CustomElementMicrotaskImportStep(import));
 }
 
 CustomElementMicrotaskImportStep::CustomElementMicrotaskImportStep(HTMLImportChild* import)
+#if ENABLE(OILPAN)
+    : m_import(import)
+#else
     : m_import(import->weakPtr())
-    , m_queue(import->loader()->microtaskQueue())
     , m_weakFactory(this)
+#endif
+    , m_queue(import->loader()->microtaskQueue())
 {
 }
 
@@ -57,13 +61,13 @@ CustomElementMicrotaskImportStep::~CustomElementMicrotaskImportStep()
 
 void CustomElementMicrotaskImportStep::parentWasChanged()
 {
-    m_queue = CustomElementMicrotaskQueue::create();
+    m_queue = CustomElementSyncMicrotaskQueue::create();
     m_import.clear();
 }
 
 bool CustomElementMicrotaskImportStep::shouldWaitForImport() const
 {
-    return m_import && !m_import->isLoaded();
+    return m_import && !m_import->loader()->isDone();
 }
 
 void CustomElementMicrotaskImportStep::didUpgradeAllCustomElements()
@@ -81,6 +85,13 @@ CustomElementMicrotaskStep::Result CustomElementMicrotaskImportStep::process()
 
     didUpgradeAllCustomElements();
     return FinishedProcessing;
+}
+
+void CustomElementMicrotaskImportStep::trace(Visitor* visitor)
+{
+    visitor->trace(m_import);
+    visitor->trace(m_queue);
+    CustomElementMicrotaskStep::trace(visitor);
 }
 
 #if !defined(NDEBUG)

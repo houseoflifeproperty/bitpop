@@ -227,9 +227,13 @@ function make_clean {
 # Lint a pair of vpx_config.h and vpx_config.asm to make sure they match.
 # $1 - Header file directory.
 function lint_config {
-  $BASE_DIR/lint_config.sh \
-    -h $BASE_DIR/$LIBVPX_CONFIG_DIR/$1/vpx_config.h \
-    -a $BASE_DIR/$LIBVPX_CONFIG_DIR/$1/vpx_config.asm
+  # mips does not contain any assembly so the header does not need to be
+  # compared to the asm.
+  if [[ "$1" != *mipsel ]]; then
+    $BASE_DIR/lint_config.sh \
+      -h $BASE_DIR/$LIBVPX_CONFIG_DIR/$1/vpx_config.h \
+      -a $BASE_DIR/$LIBVPX_CONFIG_DIR/$1/vpx_config.asm
+  fi
 }
 
 # Print the configuration.
@@ -330,9 +334,10 @@ echo "Generate Config Files"
 all_platforms="--enable-external-build --enable-postproc --disable-install-srcs --enable-multi-res-encoding --enable-temporal-denoising --disable-unit-tests --disable-install-docs --disable-examples --disable-avx2"
 gen_config_files linux/ia32 "--target=x86-linux-gcc --disable-ccache --enable-pic --enable-realtime-only ${all_platforms}"
 gen_config_files linux/x64 "--target=x86_64-linux-gcc --disable-ccache --enable-pic --enable-realtime-only ${all_platforms}"
-gen_config_files linux/arm "--target=armv6-linux-gcc --enable-pic --enable-realtime-only --disable-install-bins --disable-install-libs ${all_platforms}"
-gen_config_files linux/arm-neon "--target=armv7-linux-gcc --enable-pic --enable-realtime-only ${all_platforms}"
-gen_config_files linux/arm-neon-cpu-detect "--target=armv7-linux-gcc --enable-pic --enable-realtime-only --enable-runtime-cpu-detect ${all_platforms}"
+gen_config_files linux/arm "--target=armv6-linux-gcc --enable-pic --enable-realtime-only --disable-install-bins --disable-install-libs --disable-edsp ${all_platforms}"
+gen_config_files linux/arm-neon "--target=armv7-linux-gcc --enable-pic --enable-realtime-only --disable-edsp ${all_platforms}"
+gen_config_files linux/arm-neon-cpu-detect "--target=armv7-linux-gcc --enable-pic --enable-realtime-only --enable-runtime-cpu-detect --disable-edsp ${all_platforms}"
+gen_config_files linux/arm64 "--force-target=armv8-linux-gcc --enable-pic --enable-realtime-only --disable-edsp ${all_platforms}"
 gen_config_files linux/mipsel "--target=mips32-linux-gcc --disable-fast-unaligned ${all_platforms}"
 gen_config_files linux/generic "--target=generic-gnu --enable-pic --enable-realtime-only ${all_platforms}"
 gen_config_files win/ia32 "--target=x86-win32-vs12 --enable-realtime-only ${all_platforms}"
@@ -351,6 +356,8 @@ lint_config linux/x64
 lint_config linux/arm
 lint_config linux/arm-neon
 lint_config linux/arm-neon-cpu-detect
+lint_config linux/arm64
+lint_config linux/mipsel
 lint_config linux/generic
 lint_config win/ia32
 lint_config win/x64
@@ -369,6 +376,7 @@ gen_rtcd_header linux/x64 x86_64
 gen_rtcd_header linux/arm armv6
 gen_rtcd_header linux/arm-neon armv7
 gen_rtcd_header linux/arm-neon-cpu-detect armv7
+gen_rtcd_header linux/arm64 armv8
 gen_rtcd_header linux/mipsel mipsel
 gen_rtcd_header linux/generic generic
 gen_rtcd_header win/ia32 x86
@@ -413,6 +421,12 @@ config=$(print_config linux/arm-neon-cpu-detect)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
 convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_arm_neon_cpu_detect
+
+echo "Generate ARM64 source list."
+config=$(print_config linux/arm64)
+make_clean
+make libvpx_srcs.txt target=libs $config > /dev/null
+convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_arm64
 
 echo "Generate MIPS source list."
 config=$(print_config_basic linux/mipsel)

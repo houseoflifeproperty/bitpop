@@ -30,6 +30,7 @@ INT_DIR = None
 OS = None
 
 USE_ASH = False
+ENABLE_AUTOFILL_DIALOG = False
 
 WHITELIST = None
 
@@ -79,8 +80,8 @@ def calc_inputs(locale):
                 'components_strings_%s.pak' % locale))
 
   if USE_ASH:
-    #e.g. '<(SHARED_INTERMEDIATE_DIR)/ash_strings/ash_strings_da.pak',
-    inputs.append(os.path.join(SHARE_INT_DIR, 'ash_strings',
+    #e.g. '<(SHARED_INTERMEDIATE_DIR)/ash/strings/ash_strings_da.pak',
+    inputs.append(os.path.join(SHARE_INT_DIR, 'ash', 'strings',
                   'ash_strings_%s.pak' % locale))
 
   if OS != 'ios':
@@ -108,11 +109,16 @@ def calc_inputs(locale):
     inputs.append(os.path.join(SHARE_INT_DIR, 'extensions', 'strings',
                   'extensions_strings_%s.pak' % locale))
 
-  if OS != 'ios' and OS != 'android':
+  if ENABLE_AUTOFILL_DIALOG and OS != 'ios' and OS != 'android':
     #e.g. '<(SHARED_INTERMEDIATE_DIR)/third_party/libaddressinput/
     # libaddressinput_strings_da.pak',
     inputs.append(os.path.join(SHARE_INT_DIR, 'third_party', 'libaddressinput',
                                'libaddressinput_strings_%s.pak' % locale))
+
+    #e.g. '<(SHARED_INTERMEDIATE_DIR)/grit/libaddressinput/
+    # address_input_strings_da.pak',
+    inputs.append(os.path.join(SHARE_INT_DIR, 'grit', 'libaddressinput',
+                               'address_input_strings_%s.pak' % locale))
 
   #e.g. '<(grit_out_dir)/google_chrome_strings_da.pak'
   #     or
@@ -172,6 +178,7 @@ def DoMain(argv):
   global OS
   global USE_ASH
   global WHITELIST
+  global ENABLE_AUTOFILL_DIALOG
   global EXTRA_INPUT_FILES
 
   parser = optparse.OptionParser("usage: %prog [options] locales")
@@ -196,6 +203,9 @@ def DoMain(argv):
                     help="Whether to include ash strings")
   parser.add_option("--whitelist", action="store", help="Full path to the "
                     "whitelist used to filter output pak file resource IDs")
+  parser.add_option("--enable-autofill-dialog", action="store",
+                    dest="enable_autofill_dialog",
+                    help="Whether to include strings for autofill dialog")
   options, locales = parser.parse_args(argv)
 
   if not locales:
@@ -211,6 +221,7 @@ def DoMain(argv):
   OS = options.os
   USE_ASH = options.use_ash == '1'
   WHITELIST = options.whitelist
+  ENABLE_AUTOFILL_DIALOG = options.enable_autofill_dialog == '1'
 
   if not OS:
     if sys.platform == 'darwin':

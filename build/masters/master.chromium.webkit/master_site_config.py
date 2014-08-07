@@ -13,3 +13,4 @@ class ChromiumWebkit(Master.Master1):
   master_port_alt = 8214
   base_app_url = 'https://blink-status.appspot.com'
   tree_status_url = base_app_url + '/status'
+  buildbot_url = 'http://build.chromium.org/p/chromium.webkit/'

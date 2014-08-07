@@ -9,9 +9,10 @@
 
 #include "base/strings/string16.h"
 #include "base/time/time.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/sessions/session_id.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
 
 class AutocompleteResult;
 
@@ -21,12 +22,13 @@ struct OmniboxLog {
   OmniboxLog(
       const base::string16& text,
       bool just_deleted_text,
-      AutocompleteInput::Type input_type,
+      metrics::OmniboxInputType::Type input_type,
       bool is_popup_open,
       size_t selected_index,
       bool is_paste_and_go,
       SessionID::id_type tab_id,
-      AutocompleteInput::PageClassification current_page_classification,
+      metrics::OmniboxEventProto::PageClassification
+          current_page_classification,
       base::TimeDelta elapsed_time_since_user_first_modified_omnibox,
       size_t completed_length,
       base::TimeDelta elapsed_time_since_last_change_to_default_match,
@@ -41,7 +43,7 @@ struct OmniboxLog {
   bool just_deleted_text;
 
   // The detected type of the user's input.
-  AutocompleteInput::Type input_type;
+  metrics::OmniboxInputType::Type input_type;
 
   // True if the popup is open.
   bool is_popup_open;
@@ -60,7 +62,7 @@ struct OmniboxLog {
 
   // The type of page (e.g., new tab page, regular web page) that the
   // user was viewing before going somewhere with the omnibox.
-  AutocompleteInput::PageClassification current_page_classification;
+  metrics::OmniboxEventProto::PageClassification current_page_classification;
 
   // The amount of time since the user first began modifying the text
   // in the omnibox.  If at some point after modifying the text, the
@@ -73,8 +75,10 @@ struct OmniboxLog {
   base::TimeDelta elapsed_time_since_user_first_modified_omnibox;
 
   // The number of extra characters the user would have to manually type
-  // if she/he were not given the opportunity to select this match.  Set to
-  // base::string16::npos if not available.
+  // if she/he were not given the opportunity to select this match.  Only
+  // set for matches that are allowed to be the default match (i.e., are
+  // inlineable).  Set to base::string16::npos if the match is not allowed
+  // to be the default match.
   size_t completed_length;
 
   // The amount of time since the last time the default (i.e., inline)

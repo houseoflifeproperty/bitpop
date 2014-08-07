@@ -78,10 +78,12 @@ const int WM_NCUAHDRAWFRAME = 0xAF;
                             LPARAM l_param, \
                             LRESULT& l_result, \
                             DWORD msg_map_id = 0) { \
+    base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr()); \
     BOOL old_msg_handled = msg_handled_; \
     BOOL ret = _ProcessWindowMessage(hwnd, msg, w_param, l_param, l_result, \
                                      msg_map_id); \
-    msg_handled_ = old_msg_handled; \
+    if (ref.get()) \
+      msg_handled_ = old_msg_handled; \
     return ret; \
   } \
   BOOL _ProcessWindowMessage(HWND hWnd, \
@@ -130,7 +132,10 @@ class VIEWS_EXPORT HWNDMessageHandler :
   void GetWindowPlacement(gfx::Rect* bounds,
                           ui::WindowShowState* show_state) const;
 
-  void SetBounds(const gfx::Rect& bounds_in_pixels);
+  // Sets the bounds of the HWND to |bounds_in_pixels|. If the HWND size is not
+  // changed, |force_size_changed| determines if we should pretend it is.
+  void SetBounds(const gfx::Rect& bounds_in_pixels, bool force_size_changed);
+
   void SetSize(const gfx::Size& size);
   void CenterWindow(const gfx::Size& size);
 
@@ -585,12 +590,12 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // class. Allows callers to retrieve the interface pointer.
   scoped_ptr<ui::ViewProp> prop_window_target_;
 
-  // Set to true if we are in the context of a touch down event. This is reset
-  // to false in a delayed task. Defaults to false.
+  // Number of active touch down contexts. This is incremented on touch down
+  // events and decremented later using a delayed task.
   // We need this to ignore WM_MOUSEACTIVATE messages generated in response to
   // touch input. This is fine because activation still works correctly via
   // native SetFocus calls invoked in the views code.
-  bool touch_down_context_;
+  int touch_down_contexts_;
 
   // Time the last touch message was received. Used to flag mouse messages
   // synthesized by Windows for touch which are not flagged by the OS as

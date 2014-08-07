@@ -162,7 +162,7 @@ const int32 kSizeTrasholdUm = 1000;
         static_cast<int>(height* unit_um + 0.5)                  \
   }
 
-const struct MadiaDefinition {
+const struct MediaDefinition {
   MediaType id;
   const char* const json_name;
   int width_um;
@@ -335,8 +335,17 @@ const struct MadiaDefinition {
       MAP_CLOUD_PRINT_MEDIA_TYPE(OM_INVITE, 220, 220, kMmToUm)};
 #undef MAP_CLOUD_PRINT_MEDIA_TYPE
 
-const MadiaDefinition* FindMediaBySize(int32 width_um, int32 height_um) {
-  const MadiaDefinition* result = NULL;
+const MediaDefinition& FindMediaByType(MediaType type) {
+  for (size_t i = 0; i < arraysize(kMediaDefinitions); ++i) {
+    if (kMediaDefinitions[i].id == type)
+      return kMediaDefinitions[i];
+  }
+  NOTREACHED();
+  return kMediaDefinitions[0];
+}
+
+const MediaDefinition* FindMediaBySize(int32 width_um, int32 height_um) {
+  const MediaDefinition* result = NULL;
   for (size_t i = 0; i < arraysize(kMediaDefinitions); ++i) {
     int32 diff = std::max(std::abs(width_um - kMediaDefinitions[i].width_um),
                           std::abs(height_um - kMediaDefinitions[i].height_um));
@@ -432,6 +441,17 @@ Media::Media()
     : type(CUSTOM_MEDIA), width_um(0), height_um(0), is_continuous_feed(false) {
 }
 
+Media::Media(MediaType type)
+    : type(type),
+      width_um(0),
+      height_um(0),
+      is_continuous_feed(false) {
+  const MediaDefinition& media = FindMediaByType(type);
+  width_um = media.width_um;
+  height_um = media.height_um;
+  is_continuous_feed = width_um <= 0 || height_um <= 0;
+}
+
 Media::Media(MediaType type, int32 width_um, int32 height_um)
     : type(type),
       width_um(width_um),
@@ -440,21 +460,22 @@ Media::Media(MediaType type, int32 width_um, int32 height_um)
 }
 
 Media::Media(const std::string& custom_display_name,
+             const std::string& vendor_id,
              int32 width_um,
              int32 height_um)
     : type(CUSTOM_MEDIA),
       width_um(width_um),
       height_um(height_um),
       is_continuous_feed(width_um <= 0 || height_um <= 0),
-      custom_display_name(custom_display_name) {
+      custom_display_name(custom_display_name),
+      vendor_id(vendor_id) {
 }
 
 bool Media::MatchBySize() {
-  const MadiaDefinition* media = FindMediaBySize(width_um, height_um);
+  const MediaDefinition* media = FindMediaBySize(width_um, height_um);
   if (!media)
     return false;
   type = media->id;
-  custom_display_name.clear();
   return true;
 }
 
@@ -738,6 +759,7 @@ class MediaTraits : public ItemsTraits<kOptionMediaSize> {
     dict.GetInteger(kMediaHeight, &option->height_um);
     dict.GetBoolean(kMediaIsContinuous, &option->is_continuous_feed);
     dict.GetString(kCustomName, &option->custom_display_name);
+    dict.GetString(kKeyVendorId, &option->vendor_id);
     return true;
   }
 
@@ -746,6 +768,8 @@ class MediaTraits : public ItemsTraits<kOptionMediaSize> {
       dict->SetString(kKeyName, TypeToString(kMediaDefinitions, option.type));
     if (!option.custom_display_name.empty() || option.type == CUSTOM_MEDIA)
       dict->SetString(kCustomName, option.custom_display_name);
+    if (!option.vendor_id.empty())
+      dict->SetString(kKeyVendorId, option.vendor_id);
     if (option.width_um > 0)
       dict->SetInteger(kMediaWidth, option.width_um);
     if (option.height_um > 0)

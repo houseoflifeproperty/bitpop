@@ -31,11 +31,11 @@
 #ifndef PageScriptDebugServer_h
 #define PageScriptDebugServer_h
 
-
 #include "bindings/v8/ScriptDebugServer.h"
 #include "bindings/v8/ScriptPreprocessor.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
+#include <v8.h>
 
 namespace WebCore {
 
@@ -64,9 +64,9 @@ public:
     };
     void setClientMessageLoop(PassOwnPtr<ClientMessageLoop>);
 
-    virtual void compileScript(ScriptState*, const String& expression, const String& sourceURL, String* scriptId, String* exceptionMessage) OVERRIDE;
+    virtual void compileScript(ScriptState*, const String& expression, const String& sourceURL, String* scriptId, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace) OVERRIDE;
     virtual void clearCompiledScripts() OVERRIDE;
-    virtual void runScript(ScriptState*, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionMessage) OVERRIDE;
+    virtual void runScript(ScriptState*, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace) OVERRIDE;
     virtual void setPreprocessorSource(const String&) OVERRIDE;
     virtual void preprocessBeforeCompile(const v8::Debug::EventDetails&) OVERRIDE;
     virtual PassOwnPtr<ScriptSourceCode> preprocess(LocalFrame*, const ScriptSourceCode&) OVERRIDE;

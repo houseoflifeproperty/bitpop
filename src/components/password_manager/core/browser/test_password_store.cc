@@ -106,7 +106,15 @@ void TestPasswordStore::GetLoginsImpl(
 }
 
 PasswordStoreChangeList TestPasswordStore::RemoveLoginsCreatedBetweenImpl(
-    const base::Time& begin, const base::Time& end) {
+    base::Time begin,
+    base::Time end) {
+  PasswordStoreChangeList changes;
+  return changes;
+}
+
+PasswordStoreChangeList TestPasswordStore::RemoveLoginsSyncedBetweenImpl(
+    base::Time begin,
+    base::Time end) {
   PasswordStoreChangeList changes;
   return changes;
 }

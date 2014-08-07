@@ -45,15 +45,11 @@ enum BackgroundBleedAvoidance {
 
 enum ContentChangeType {
     ImageChanged,
-    MaskImageChanged,
     CanvasChanged,
     CanvasPixelsChanged,
-    VideoChanged,
-    FullScreenChanged,
     CanvasContextChanged
 };
 
-class KeyframeList;
 class RenderTextFragment;
 class StickyPositionViewportConstraints;
 
@@ -294,7 +290,7 @@ public:
     }
     void moveAllChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* beforeChild, bool fullRemoveInsert = false)
     {
-        moveChildrenTo(toBoxModelObject, firstChild(), 0, beforeChild, fullRemoveInsert);
+        moveChildrenTo(toBoxModelObject, slowFirstChild(), 0, beforeChild, fullRemoveInsert);
     }
     // Move all of the kids from |startChild| up to but excluding |endChild|. 0 can be passed as the |endChild| to denote
     // that all the kids from |startChild| onwards should be moved.
@@ -308,7 +304,7 @@ public:
     IntSize calculateImageIntrinsicDimensions(StyleImage*, const IntSize& scaledPositioningAreaSize, ScaleByEffectiveZoomOrNot) const;
 
 private:
-    LayoutUnit computedCSSPadding(Length) const;
+    LayoutUnit computedCSSPadding(const Length&) const;
     virtual bool isBoxModelObject() const OVERRIDE FINAL { return true; }
 
     virtual LayoutRect frameRectForStickyPositioning() const = 0;

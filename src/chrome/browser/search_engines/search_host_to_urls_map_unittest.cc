@@ -5,8 +5,8 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/search_engines/search_host_to_urls_map.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
+#include "components/search_engines/search_terms_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 typedef SearchHostToURLsMap::TemplateURLSet TemplateURLSet;
@@ -31,32 +31,29 @@ void SearchHostToURLsMapTest::SetUp() {
   host_ = "www.unittest.com";
   TemplateURLData data;
   data.SetURL("http://" + host_ + "/path1");
-  t_urls_[0].reset(new TemplateURL(NULL, data));
+  t_urls_[0].reset(new TemplateURL(data));
   data.SetURL("http://" + host_ + "/path2");
-  t_urls_[1].reset(new TemplateURL(NULL, data));
+  t_urls_[1].reset(new TemplateURL(data));
   std::vector<TemplateURL*> template_urls;
   template_urls.push_back(t_urls_[0].get());
   template_urls.push_back(t_urls_[1].get());
 
   provider_map_.reset(new SearchHostToURLsMap);
-  UIThreadSearchTermsData search_terms_data(NULL);
-  provider_map_->Init(template_urls, search_terms_data);
+  provider_map_->Init(template_urls, SearchTermsData());
 }
 
 TEST_F(SearchHostToURLsMapTest, Add) {
   std::string new_host = "example.com";
   TemplateURLData data;
   data.SetURL("http://" + new_host + "/");
-  TemplateURL new_t_url(NULL, data);
-  UIThreadSearchTermsData search_terms_data(NULL);
-  provider_map_->Add(&new_t_url, search_terms_data);
+  TemplateURL new_t_url(data);
+  provider_map_->Add(&new_t_url, SearchTermsData());
 
   ASSERT_EQ(&new_t_url, provider_map_->GetTemplateURLForHost(new_host));
 }
 
 TEST_F(SearchHostToURLsMapTest, Remove) {
-  UIThreadSearchTermsData search_terms_data(NULL);
-  provider_map_->Remove(t_urls_[0].get(), search_terms_data);
+  provider_map_->Remove(t_urls_[0].get(), SearchTermsData());
 
   const TemplateURL* found_url = provider_map_->GetTemplateURLForHost(host_);
   ASSERT_EQ(t_urls_[1].get(), found_url);

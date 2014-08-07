@@ -29,18 +29,18 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "cctest.h"
-#include "compiler.h"
-#include "execution.h"
-#include "isolate.h"
-#include "objects.h"
-#include "parser.h"
-#include "preparser.h"
-#include "scanner-character-streams.h"
-#include "token.h"
-#include "utils.h"
+#include "src/compiler.h"
+#include "src/execution.h"
+#include "src/isolate.h"
+#include "src/objects.h"
+#include "src/parser.h"
+#include "src/preparser.h"
+#include "src/scanner-character-streams.h"
+#include "src/token.h"
+#include "src/utils.h"
+#include "test/cctest/cctest.h"
 
 TEST(ScanKeywords) {
   struct KeywordToken {
@@ -84,7 +84,7 @@ TEST(ScanKeywords) {
     // Adding characters will make keyword matching fail.
     static const char chars_to_append[] = { 'z', '0', '_' };
     for (int j = 0; j < static_cast<int>(ARRAY_SIZE(chars_to_append)); ++j) {
-      i::OS::MemMove(buffer, keyword, length);
+      i::MemMove(buffer, keyword, length);
       buffer[length] = chars_to_append[j];
       i::Utf8ToUtf16CharacterStream stream(buffer, length + 1);
       i::Scanner scanner(&unicode_cache);
@@ -94,7 +94,7 @@ TEST(ScanKeywords) {
     }
     // Replacing characters will make keyword matching fail.
     {
-      i::OS::MemMove(buffer, keyword, length);
+      i::MemMove(buffer, keyword, length);
       buffer[length - 1] = '_';
       i::Utf8ToUtf16CharacterStream stream(buffer, length);
       i::Scanner scanner(&unicode_cache);
@@ -1105,10 +1105,10 @@ TEST(ScopePositions) {
     int kProgramSize = kPrefixLen + kInnerLen + kSuffixLen;
     int kProgramByteSize = kPrefixByteLen + kInnerByteLen + kSuffixByteLen;
     i::ScopedVector<char> program(kProgramByteSize + 1);
-    i::OS::SNPrintF(program, "%s%s%s",
-                             source_data[i].outer_prefix,
-                             source_data[i].inner_source,
-                             source_data[i].outer_suffix);
+    i::SNPrintF(program, "%s%s%s",
+                         source_data[i].outer_prefix,
+                         source_data[i].inner_source,
+                         source_data[i].outer_suffix);
 
     // Parse program source.
     i::Handle<i::String> source = factory->NewStringFromUtf8(
@@ -1147,12 +1147,12 @@ i::Handle<i::String> FormatMessage(i::ScriptData* data) {
   const char* message = data->BuildMessage();
   i::Handle<i::String> format = v8::Utils::OpenHandle(
       *v8::String::NewFromUtf8(CcTest::isolate(), message));
-  i::Vector<const char*> args = data->BuildArgs();
-  i::Handle<i::JSArray> args_array = factory->NewJSArray(args.length());
-  for (int i = 0; i < args.length(); i++) {
+  const char* arg = data->BuildArg();
+  i::Handle<i::JSArray> args_array = factory->NewJSArray(arg == NULL ? 0 : 1);
+  if (arg != NULL) {
     i::JSArray::SetElement(
-        args_array, i, v8::Utils::OpenHandle(*v8::String::NewFromUtf8(
-                                                  CcTest::isolate(), args[i])),
+        args_array, 0, v8::Utils::OpenHandle(*v8::String::NewFromUtf8(
+                                                  CcTest::isolate(), arg)),
         NONE, i::SLOPPY).Check();
   }
   i::Handle<i::JSObject> builtins(isolate->js_builtins_object());
@@ -1162,11 +1162,8 @@ i::Handle<i::String> FormatMessage(i::ScriptData* data) {
   i::Handle<i::Object> result = i::Execution::Call(
       isolate, format_fun, builtins, 2, arg_handles).ToHandleChecked();
   CHECK(result->IsString());
-  for (int i = 0; i < args.length(); i++) {
-    i::DeleteArray(args[i]);
-  }
-  i::DeleteArray(args.start());
   i::DeleteArray(message);
+  i::DeleteArray(arg);
   return i::Handle<i::String>::cast(result);
 }
 
@@ -1410,7 +1407,7 @@ TEST(ParserSync) {
 
         // Plug the source code pieces together.
         i::ScopedVector<char> program(kProgramSize + 1);
-        int length = i::OS::SNPrintF(program,
+        int length = i::SNPrintF(program,
             "label: for (;;) { %s%s%s%s }",
             context_data[i][0],
             statement_data[j],
@@ -1487,11 +1484,11 @@ void RunParserSyncTest(const char* context_data[][2],
 
       // Plug the source code pieces together.
       i::ScopedVector<char> program(kProgramSize + 1);
-      int length = i::OS::SNPrintF(program,
-                                   "%s%s%s",
-                                   context_data[i][0],
-                                   statement_data[j],
-                                   context_data[i][1]);
+      int length = i::SNPrintF(program,
+                               "%s%s%s",
+                               context_data[i][0],
+                               statement_data[j],
+                               context_data[i][1]);
       CHECK(length == kProgramSize);
       TestParserSync(program.start(),
                      flags,
@@ -2012,6 +2009,7 @@ TEST(DontRegressPreParserDataSizes) {
           data->function_count());
       CHECK(false);
     }
+    delete data;
   }
 }
 
@@ -2232,22 +2230,27 @@ TEST(ErrorsObjectLiteralChecking) {
 
   const char* statement_data[] = {
     "foo: 1, get foo() {}",
-    "foo: 1, set foo() {}",
+    "foo: 1, set foo(v) {}",
     "\"foo\": 1, get \"foo\"() {}",
-    "\"foo\": 1, set \"foo\"() {}",
+    "\"foo\": 1, set \"foo\"(v) {}",
     "1: 1, get 1() {}",
     "1: 1, set 1() {}",
     // It's counter-intuitive, but these collide too (even in classic
     // mode). Note that we can have "foo" and foo as properties in classic mode,
     // but we cannot have "foo" and get foo, or foo and get "foo".
     "foo: 1, get \"foo\"() {}",
-    "foo: 1, set \"foo\"() {}",
+    "foo: 1, set \"foo\"(v) {}",
     "\"foo\": 1, get foo() {}",
-    "\"foo\": 1, set foo() {}",
+    "\"foo\": 1, set foo(v) {}",
     "1: 1, get \"1\"() {}",
     "1: 1, set \"1\"() {}",
     "\"1\": 1, get 1() {}"
-    "\"1\": 1, set 1() {}"
+    "\"1\": 1, set 1(v) {}"
+    // Wrong number of parameters
+    "get bar(x) {}",
+    "get bar(x, y) {}",
+    "set bar() {}",
+    "set bar(x, y) {}",
     // Parsing FunctionLiteral for getter or setter fails
     "get foo( +",
     "get foo() \"error\"",
@@ -2271,25 +2274,22 @@ TEST(NoErrorsObjectLiteralChecking) {
     "1: 1, 2: 2",
     // Syntax: IdentifierName ':' AssignmentExpression
     "foo: bar = 5 + baz",
-    // Syntax: 'get' (IdentifierName | String | Number) FunctionLiteral
+    // Syntax: 'get' PropertyName '(' ')' '{' FunctionBody '}'
     "get foo() {}",
     "get \"foo\"() {}",
     "get 1() {}",
-    // Syntax: 'set' (IdentifierName | String | Number) FunctionLiteral
-    "set foo() {}",
-    "set \"foo\"() {}",
-    "set 1() {}",
+    // Syntax: 'set' PropertyName '(' PropertySetParameterList ')'
+    //     '{' FunctionBody '}'
+    "set foo(v) {}",
+    "set \"foo\"(v) {}",
+    "set 1(v) {}",
     // Non-colliding getters and setters -> no errors
     "foo: 1, get bar() {}",
-    "foo: 1, set bar(b) {}",
+    "foo: 1, set bar(v) {}",
     "\"foo\": 1, get \"bar\"() {}",
-    "\"foo\": 1, set \"bar\"() {}",
+    "\"foo\": 1, set \"bar\"(v) {}",
     "1: 1, get 2() {}",
-    "1: 1, set 2() {}",
-    // Weird number of parameters -> no errors
-    "get bar() {}, set bar() {}",
-    "get bar(x) {}, set bar(x) {}",
-    "get bar(x, y) {}, set bar(x, y) {}",
+    "1: 1, set 2(v) {}",
     // Keywords, future reserved and strict future reserved are also allowed as
     // property names.
     "if: 4",
@@ -2458,4 +2458,94 @@ TEST(InvalidLeftHandSide) {
 
   RunParserSyncTest(postfix_context_data, good_statement_data, kSuccess);
   RunParserSyncTest(postfix_context_data, bad_statement_data_common, kError);
+}
+
+
+TEST(FuncNameInferrerBasic) {
+  // Tests that function names are inferred properly.
+  i::FLAG_allow_natives_syntax = true;
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope scope(isolate);
+  LocalContext env;
+  CompileRun("var foo1 = function() {}; "
+             "var foo2 = function foo3() {}; "
+             "function not_ctor() { "
+             "  var foo4 = function() {}; "
+             "  return %FunctionGetInferredName(foo4); "
+             "} "
+             "function Ctor() { "
+             "  var foo5 = function() {}; "
+             "  return %FunctionGetInferredName(foo5); "
+             "} "
+             "var obj1 = { foo6: function() {} }; "
+             "var obj2 = { 'foo7': function() {} }; "
+             "var obj3 = {}; "
+             "obj3[1] = function() {}; "
+             "var obj4 = {}; "
+             "obj4[1] = function foo8() {}; "
+             "var obj5 = {}; "
+             "obj5['foo9'] = function() {}; "
+             "var obj6 = { obj7 : { foo10: function() {} } };");
+  ExpectString("%FunctionGetInferredName(foo1)", "foo1");
+  // foo2 is not unnamed -> its name is not inferred.
+  ExpectString("%FunctionGetInferredName(foo2)", "");
+  ExpectString("not_ctor()", "foo4");
+  ExpectString("Ctor()", "Ctor.foo5");
+  ExpectString("%FunctionGetInferredName(obj1.foo6)", "obj1.foo6");
+  ExpectString("%FunctionGetInferredName(obj2.foo7)", "obj2.foo7");
+  ExpectString("%FunctionGetInferredName(obj3[1])",
+               "obj3.(anonymous function)");
+  ExpectString("%FunctionGetInferredName(obj4[1])", "");
+  ExpectString("%FunctionGetInferredName(obj5['foo9'])", "obj5.foo9");
+  ExpectString("%FunctionGetInferredName(obj6.obj7.foo10)", "obj6.obj7.foo10");
+}
+
+
+TEST(FuncNameInferrerTwoByte) {
+  // Tests function name inferring in cases where some parts of the inferred
+  // function name are two-byte strings.
+  i::FLAG_allow_natives_syntax = true;
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope scope(isolate);
+  LocalContext env;
+  uint16_t* two_byte_source = AsciiToTwoByteString(
+      "var obj1 = { oXj2 : { foo1: function() {} } }; "
+      "%FunctionGetInferredName(obj1.oXj2.foo1)");
+  uint16_t* two_byte_name = AsciiToTwoByteString("obj1.oXj2.foo1");
+  // Make it really non-ASCII (replace the Xs with a non-ASCII character).
+  two_byte_source[14] = two_byte_source[78] = two_byte_name[6] = 0x010d;
+  v8::Local<v8::String> source =
+      v8::String::NewFromTwoByte(isolate, two_byte_source);
+  v8::Local<v8::Value> result = CompileRun(source);
+  CHECK(result->IsString());
+  v8::Local<v8::String> expected_name =
+      v8::String::NewFromTwoByte(isolate, two_byte_name);
+  CHECK(result->Equals(expected_name));
+  i::DeleteArray(two_byte_source);
+  i::DeleteArray(two_byte_name);
+}
+
+
+TEST(FuncNameInferrerEscaped) {
+  // The same as FuncNameInferrerTwoByte, except that we express the two-byte
+  // character as a unicode escape.
+  i::FLAG_allow_natives_syntax = true;
+  v8::Isolate* isolate = CcTest::isolate();
+  v8::HandleScope scope(isolate);
+  LocalContext env;
+  uint16_t* two_byte_source = AsciiToTwoByteString(
+      "var obj1 = { o\\u010dj2 : { foo1: function() {} } }; "
+      "%FunctionGetInferredName(obj1.o\\u010dj2.foo1)");
+  uint16_t* two_byte_name = AsciiToTwoByteString("obj1.oXj2.foo1");
+  // Fix to correspond to the non-ASCII name in two_byte_source.
+  two_byte_name[6] = 0x010d;
+  v8::Local<v8::String> source =
+      v8::String::NewFromTwoByte(isolate, two_byte_source);
+  v8::Local<v8::Value> result = CompileRun(source);
+  CHECK(result->IsString());
+  v8::Local<v8::String> expected_name =
+      v8::String::NewFromTwoByte(isolate, two_byte_name);
+  CHECK(result->Equals(expected_name));
+  i::DeleteArray(two_byte_source);
+  i::DeleteArray(two_byte_name);
 }

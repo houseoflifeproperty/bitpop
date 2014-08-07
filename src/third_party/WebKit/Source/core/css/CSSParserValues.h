@@ -21,7 +21,7 @@
 #ifndef CSSParserValues_h
 #define CSSParserValues_h
 
-#include "CSSValueKeywords.h"
+#include "core/CSSValueKeywords.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSValueList.h"
@@ -223,8 +223,8 @@ public:
     void setValue(const AtomicString& value) { m_selector->setValue(value); }
     void setAttribute(const QualifiedName& value) { m_selector->setAttribute(value); }
     void setArgument(const AtomicString& value) { m_selector->setArgument(value); }
-    void setMatch(CSSSelector::Match value) { m_selector->m_match = value; }
-    void setRelation(CSSSelector::Relation value) { m_selector->m_relation = value; }
+    void setMatch(CSSSelector::Match value) { m_selector->setMatch(value); }
+    void setRelation(CSSSelector::Relation value) { m_selector->setRelation(value); }
     void setForPage() { m_selector->setForPage(); }
     void setRelationIsAffectedByPseudoContent() { m_selector->setRelationIsAffectedByPseudoContent(); }
     bool relationIsAffectedByPseudoContent() const { return m_selector->relationIsAffectedByPseudoContent(); }
@@ -274,6 +274,7 @@ inline void CSSParserValue::setFromFunction(CSSParserFunction* function)
     id = CSSValueInvalid;
     this->function = function;
     unit = Function;
+    isInt = false;
 }
 
 inline void CSSParserValue::setFromValueList(PassOwnPtr<CSSParserValueList> valueList)
@@ -281,6 +282,7 @@ inline void CSSParserValue::setFromValueList(PassOwnPtr<CSSParserValueList> valu
     id = CSSValueInvalid;
     this->valueList = valueList.leakPtr();
     unit = ValueList;
+    isInt = false;
 }
 
 }

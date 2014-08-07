@@ -20,6 +20,7 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import pynacl.gsd_storage
 import pynacl.hashing_tools
+import pynacl.log_tools
 import pynacl.platform
 import pynacl.repo_tools
 
@@ -38,7 +39,7 @@ from file_update import Mkdir, Rmdir, Symlink
 from file_update import NeedsUpdate, UpdateFromTo, UpdateText
 
 
-BIONIC_VERSION = '17f8f59d2fbdcd72a57e94ffaeff465601d68450'
+BIONIC_VERSION = 'ad898e29b1e4fae5c6c65a873ca4828af90be46c'
 ARCHES = ['arm']
 TOOLCHAIN_BUILD_SRC = os.path.join(TOOLCHAIN_BUILD, 'src')
 TOOLCHAIN_BUILD_OUT = os.path.join(TOOLCHAIN_BUILD, 'out')
@@ -87,7 +88,7 @@ def ReplaceArch(text, arch, subarch=None):
     'pnacl': 'pnacl'
   }
   VERSION_MAP = {
-    'arm': '4.8.2',
+    'arm': '4.8.3',
     'x86': '4.4.3',
   }
   REPLACE_MAP = {
@@ -118,7 +119,8 @@ def Clobber(fast=False):
 
 
 def FetchAndBuild_gcc_libs():
-  tc_args = ['-y', '--no-use-remote-cache', 'gcc_libs_arm']
+  tc_args = ['-y', '--no-use-cached-results', '--no-use-remote-cache',
+             'gcc_libs_arm']
   # Call toolchain_build to build the gcc libs. We do not need to fill in
   # any package targets since we are using toolchain_build as an
   # intermediate step.
@@ -150,12 +152,17 @@ def CreateBasicToolchain():
   # Create a toolchain directory containing only the toolchain binaries and
   # basic files line nacl_arm_macros.s.
   arch = 'arm'
-  UpdateFromTo(GetToolchainPath(arch, 'newlib'),
-               GetBionicBuildPath(arch),
-               filters=['*arm-nacl/include*', '*arm-nacl/lib*','*.a', '*.o'])
-  UpdateFromTo(GetToolchainPath(arch, 'newlib'),
-               GetBionicBuildPath(arch),
-               paterns=['*.s'])
+  install_dirs = [
+    'gcc_arm_x86_64_linux_install',
+    'binutils_arm_x86_64_linux_install'
+  ]
+  for ins_path in install_dirs:
+    UpdateFromTo(os.path.join(TOOLCHAIN_BUILD_OUT, ins_path),
+                 GetBionicBuildPath(arch),
+                 filters=['*arm-nacl/include*', '*arm-nacl/lib*','*.a', '*.o'])
+    UpdateFromTo(os.path.join(TOOLCHAIN_BUILD_OUT, ins_path),
+                 GetBionicBuildPath(arch),
+                 paterns=['*.s'])
 
   #  Static build uses:
   #     crt1.o crti.o 4.8.2/crtbeginT.o ... 4.8.2/crtend.o crtn.o
@@ -191,7 +198,7 @@ def CreateBasicToolchain():
     ('bionic/libm/$CPU', '$NACL-nacl/include'),
     ('bionic/safe-iop/include', '$NACL-nacl/include'),
     ('bionic/libstdc++/nacl',
-        '$NACL-nacl/include/c++/4.8.2/$NACL-nacl'),
+        '$NACL-nacl/include/c++/$VER/$NACL-nacl'),
     ('bionic/nacl/$ARCH', '.'),
   ]
 
@@ -199,8 +206,10 @@ def CreateBasicToolchain():
   for arch in ARCHES:
     for name in ['irt.h', 'irt_dev.h']:
       src = os.path.join(NATIVE_CLIENT, 'src', 'untrusted', 'irt', name)
-      dst = GetBionicBuildPath(arch, '$NACL-nacl', 'include', name)
-      MungeIRT(src, ReplaceArch(dst, arch))
+      dst = GetBionicBuildPath(arch, '$NACL-nacl', 'include')
+      dst = ReplaceArch(dst, arch)
+      Mkdir(dst)
+      MungeIRT(src, os.path.join(dst, name))
 
     inspath = GetBionicBuildPath(arch)
 
@@ -227,7 +236,7 @@ def CreateBasicToolchain():
     # Replace items in the spec file
     text = ReplaceText(text, [{
       '-lgcc': '-lgcc --as-needed %{!static: -lgcc_s} --no-as-needed %{!shared: -lgcc_eh}',
-      '--hash-style=gnu': '--hash-style=sysv',
+      '--hash-style=gnu': '--hash-style=sysv %{!static: %{!shared: -Ttext-segment=0x100000}} ',
     }])
     open(specs, 'w').write(text)
 
@@ -370,7 +379,7 @@ def BuildAndInstall_libgcc_s(skip_build=False):
                os.path.join(tcpath, 'arm-nacl', 'lib', 'libgcc_s.so'))
 
 
-def ConfigureAndBuild_libstdcpp():
+def ConfigureAndBuild_libstdcpp(skip_build=False):
   arch = 'arm'
   project = 'libstdc++'
   tcpath = GetBionicBuildPath(arch)
@@ -399,24 +408,17 @@ def ConfigureAndBuild_libstdcpp():
     'CFLAGS=-I../../../gcc_lib_arm_work'
   ]
 
-  ConfigureGCCProject(arch, project, cfg, dstpath, inspath)
-  MakeGCCProject(arch, project, dstpath)
-  MakeGCCProject(arch, project, dstpath, ['install'])
+  if not skip_build:
+    ConfigureGCCProject(arch, project, cfg, dstpath, inspath)
+    MakeGCCProject(arch, project, dstpath)
+    MakeGCCProject(arch, project, dstpath, ['install'])
 
-  filelist = [
-    'libstdc++.a',
-    'libstdc++.la',
-    'libstdc++.so',
-    'libstdc++.so.6',
-    'libstdc++.so.6.0.18',
-    'libstdc++.so.6.0.18-gdb.py',
-    'libsupc++.a',
-    'libsupc++.la'
-  ]
-  for filename in filelist:
-    UpdateFromTo(os.path.join(inspath, 'lib', filename),
-                os.path.join(tcpath, 'arm-nacl', 'lib', filename))
+  # Copy libsupc++ and libstdc++ files and symlinks
+  UpdateFromTo(os.path.join(inspath, 'lib'),
+               os.path.join(tcpath, 'arm-nacl', 'lib'),
+               paterns=['*libstdc++.*', '*libsupc++.*'])
 
+  # Copy C++ headers
   UpdateFromTo(os.path.join(inspath, 'include'),
                os.path.join(tcpath, 'arm-nacl', 'include'))
 
@@ -429,10 +431,13 @@ def GetProjectPaths(arch, project):
   toolpath = GetBionicBuildPath(arch)
   workpath = ReplaceArch(os.path.join(workpath, 'bionic', project), arch)
   instpath = ReplaceArch(os.path.join(toolpath, '$NACL-nacl', 'lib'), arch)
+  gccpath = os.path.join(toolpath, 'lib', 'gcc', '$NACL-nacl', '$VER')
+  gccpath = ReplaceArch(gccpath, arch)
   out = {
     'src': srcpath,
     'work': workpath,
     'ins': instpath,
+    'gcc': gccpath,
     'tc': toolpath,
   }
   return out
@@ -460,6 +465,7 @@ AR:=$(TOOLCHAIN_PREFIX)ar
 SRC_ROOT=$(src_path)
 DST_ROOT=$(dst_path)
 INS_ROOT=$(ins_path)
+GCC_ROOT=$(gcc_path)
 
 NACL_ARCH=$NACL
 GCC_ARCH=$GCC
@@ -477,6 +483,7 @@ include $(src_path)/Makefile
     '$(tc_path)':  GetBionicBuildPath(arch),
     '$(build_tc_path)': TOOLCHAIN_BUILD,
     '$(nacl_path)': NATIVE_CLIENT,
+    '$(gcc_path)': paths['gcc'],
   }
   text = ReplaceText(MAKEFILE_TEMPLATE, [remap])
   text = ReplaceArch(text, arch)
@@ -620,9 +627,14 @@ def main(argv):
         help='Output packages file describing list of package files built.')
 
   parser.add_argument(
+      '--skip-newlib', dest='skip_newlib',
+      default=False, action='store_true',
+      help='Skip building GCC components (libgcc and libstdc++).')
+
+  parser.add_argument(
       '--skip-gcc', dest='skip_gcc',
       default=False, action='store_true',
-      help='Skip building GCC components.')
+      help='Skip building GCC components (libgcc and libstdc++).')
 
   options, leftover_args = parser.parse_known_args()
   if '-h' in leftover_args or '--help' in leftover_args:
@@ -630,6 +642,8 @@ def main(argv):
     parser.print_help()
     print 'The rest of the arguments are generic, in toolchain_main.py'
     return 1
+
+  pynacl.log_tools.SetupLogging(options.verbose)
 
   if options.llvm:
     ARCHES.append('pnacl')
@@ -643,21 +657,21 @@ def main(argv):
   if options.sync or options.buildbot:
     FetchBionicSources()
 
+  if not options.skip_newlib:
+    # Build newlib gcc_libs for use by bionic
+    FetchAndBuild_gcc_libs()
+
   # Copy headers and compiler tools
   CreateBasicToolchain()
+
+  # Configure and build libgcc.a
+  ConfigureAndBuild_libgcc(skip_build=options.skip_gcc)
 
   # Configure Bionic Projects, libc, libm, linker, tests, ...
   ConfigureBionicProjects(clobber=options.buildbot)
 
   # Build and install IRT header before building GCC
   MakeBionicProject('libc', ['irt'])
-
-  if not options.skip_gcc:
-    # Build newlib gcc_libs for use by bionic
-    FetchAndBuild_gcc_libs()
-
-  # Configure and build libgcc.a
-  ConfigureAndBuild_libgcc(skip_build=options.skip_gcc)
 
   # With libgcc.a, we can now build libc.so
   MakeBionicProject('libc')
@@ -669,7 +683,7 @@ def main(argv):
   MakeBionicProject('libm')
 
   # With libc, libgcc, and libm, we can now build libstdc++
-  ConfigureAndBuild_libstdcpp()
+  ConfigureAndBuild_libstdcpp(skip_build=options.skip_gcc)
 
   # Now we can build the linker
   #MakeBionicProject('linker')

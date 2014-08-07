@@ -33,11 +33,16 @@ ExtensionMsg_Loaded_Params::ExtensionMsg_Loaded_Params(
     : manifest(extension->manifest()->value()->DeepCopy()),
       location(extension->location()),
       path(extension->path()),
-      apis(extension->GetActivePermissions()->apis()),
-      manifest_permissions(
-          extension->GetActivePermissions()->manifest_permissions()),
-      explicit_hosts(extension->GetActivePermissions()->explicit_hosts()),
-      scriptable_hosts(extension->GetActivePermissions()->scriptable_hosts()),
+      apis(extension->permissions_data()->active_permissions()->apis()),
+      manifest_permissions(extension->permissions_data()
+                               ->active_permissions()
+                               ->manifest_permissions()),
+      explicit_hosts(extension->permissions_data()
+                         ->active_permissions()
+                         ->explicit_hosts()),
+      scriptable_hosts(extension->permissions_data()
+                           ->active_permissions()
+                           ->scriptable_hosts()),
       id(extension->id()),
       creation_flags(extension->creation_flags()) {
 }
@@ -47,10 +52,8 @@ scoped_refptr<Extension> ExtensionMsg_Loaded_Params::ConvertToExtension(
   scoped_refptr<Extension> extension =
       Extension::Create(path, location, *manifest, creation_flags, error);
   if (extension.get()) {
-    extensions::PermissionsData::SetActivePermissions(
-        extension.get(),
-        new PermissionSet(apis, manifest_permissions,
-                          explicit_hosts, scriptable_hosts));
+    extension->permissions_data()->SetActivePermissions(new PermissionSet(
+        apis, manifest_permissions, explicit_hosts, scriptable_hosts));
   }
   return extension;
 }

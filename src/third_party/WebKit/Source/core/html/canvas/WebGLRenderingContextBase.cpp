@@ -26,7 +26,6 @@
 #include "config.h"
 #include "core/html/canvas/WebGLRenderingContextBase.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
@@ -38,6 +37,7 @@
 #include "core/html/HTMLVideoElement.h"
 #include "core/html/ImageData.h"
 #include "core/html/canvas/ANGLEInstancedArrays.h"
+#include "core/html/canvas/EXTBlendMinMax.h"
 #include "core/html/canvas/EXTFragDepth.h"
 #include "core/html/canvas/EXTShaderTextureLOD.h"
 #include "core/html/canvas/EXTTextureFilterAnisotropic.h"
@@ -75,7 +75,9 @@
 #include "core/rendering/RenderBox.h"
 #include "platform/CheckedInt.h"
 #include "platform/NotImplemented.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/IntSize.h"
+#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 #include "platform/graphics/gpu/DrawingBuffer.h"
 #include "public/platform/Platform.h"
@@ -517,6 +519,7 @@ WebGLRenderingContextBase::WebGLRenderingContextBase(HTMLCanvasElement* passedCa
     , m_multisamplingObserverRegistered(false)
     , m_onePlusMaxEnabledAttribIndex(0)
     , m_onePlusMaxNonDefaultTextureUnit(0)
+    , m_savingImage(false)
 {
     ASSERT(context);
 
@@ -526,17 +529,27 @@ WebGLRenderingContextBase::WebGLRenderingContextBase(HTMLCanvasElement* passedCa
     m_maxViewportDims[0] = m_maxViewportDims[1] = 0;
     context->getIntegerv(GL_MAX_VIEWPORT_DIMS, m_maxViewportDims);
 
-    RefPtr<WebGLRenderingContextEvictionManager> contextEvictionManager = adoptRef(new WebGLRenderingContextEvictionManager());
-
-    // Create the DrawingBuffer and initialize the platform layer.
-    DrawingBuffer::PreserveDrawingBuffer preserve = requestedAttributes->preserveDrawingBuffer() ? DrawingBuffer::Preserve : DrawingBuffer::Discard;
-    m_drawingBuffer = DrawingBuffer::create(context, clampedCanvasSize(), preserve, contextEvictionManager.release());
+    m_drawingBuffer = createDrawingBuffer(context);
     if (!m_drawingBuffer)
         return;
 
     m_drawingBuffer->bind();
     setupFlags();
     initializeNewContext();
+}
+
+PassRefPtr<DrawingBuffer> WebGLRenderingContextBase::createDrawingBuffer(PassOwnPtr<blink::WebGraphicsContext3D> context)
+{
+    RefPtr<WebGLRenderingContextEvictionManager> contextEvictionManager = adoptRef(new WebGLRenderingContextEvictionManager());
+
+    blink::WebGraphicsContext3D::Attributes attrs;
+    attrs.alpha = m_requestedAttributes->alpha();
+    attrs.depth = m_requestedAttributes->depth();
+    attrs.stencil = m_requestedAttributes->stencil();
+    attrs.antialias = m_requestedAttributes->antialias();
+    attrs.premultipliedAlpha = m_requestedAttributes->premultipliedAlpha();
+    DrawingBuffer::PreserveDrawingBuffer preserve = m_requestedAttributes->preserveDrawingBuffer() ? DrawingBuffer::Preserve : DrawingBuffer::Discard;
+    return DrawingBuffer::create(context, clampedCanvasSize(), preserve, attrs, contextEvictionManager.release());
 }
 
 void WebGLRenderingContextBase::initializeNewContext()
@@ -636,18 +649,6 @@ void WebGLRenderingContextBase::setupFlags()
 
     m_isGLES2NPOTStrict = !extensionsUtil()->isExtensionEnabled("GL_OES_texture_npot");
     m_isDepthStencilSupported = extensionsUtil()->isExtensionEnabled("GL_OES_packed_depth_stencil");
-}
-
-bool WebGLRenderingContextBase::allowPrivilegedExtensions() const
-{
-    if (Page* p = canvas()->document().page())
-        return p->settings().privilegedWebGLExtensionsEnabled();
-    return false;
-}
-
-bool WebGLRenderingContextBase::allowWebGLDebugRendererInfo() const
-{
-    return true;
 }
 
 void WebGLRenderingContextBase::addCompressedTextureFormat(GLenum format)
@@ -842,6 +843,7 @@ void WebGLRenderingContextBase::paintRenderingResultsToCanvas()
         canvas()->makePresentationCopy();
     } else
         canvas()->clearPresentationCopy();
+
     clearIfComposited();
 
     if (!m_markedCanvasDirty && !m_layerCleared)
@@ -853,7 +855,7 @@ void WebGLRenderingContextBase::paintRenderingResultsToCanvas()
     ScopedTexture2DRestorer restorer(this);
 
     m_drawingBuffer->commit();
-    if (!(canvas()->buffer())->copyRenderingResultsFromDrawingBuffer(m_drawingBuffer.get())) {
+    if (!(canvas()->buffer())->copyRenderingResultsFromDrawingBuffer(m_drawingBuffer.get(), m_savingImage)) {
         canvas()->ensureUnacceleratedImageBuffer();
         if (canvas()->hasImageBuffer())
             m_drawingBuffer->paintRenderingResultsToCanvas(canvas()->buffer());
@@ -2081,7 +2083,7 @@ PassRefPtr<WebGLContextAttributes> WebGLRenderingContextBase::getContextAttribut
         return nullptr;
     // We always need to return a new WebGLContextAttributes object to
     // prevent the user from mutating any cached version.
-    blink::WebGraphicsContext3D::Attributes attrs = webContext()->getContextAttributes();
+    blink::WebGraphicsContext3D::Attributes attrs = m_drawingBuffer->getActualAttributes();
     RefPtr<WebGLContextAttributes> attributes = m_requestedAttributes->clone();
     // Some requested attributes may not be honored, so we need to query the underlying
     // context/drawing buffer and adjust accordingly.
@@ -2127,10 +2129,6 @@ bool WebGLRenderingContextBase::ExtensionTracker::matchesNameWithPrefixes(const 
 
 bool WebGLRenderingContextBase::extensionSupportedAndAllowed(const ExtensionTracker* tracker)
 {
-    if (tracker->webglDebugRendererInfo() && !allowWebGLDebugRendererInfo())
-        return false;
-    if (tracker->privileged() && !allowPrivilegedExtensions())
-        return false;
     if (tracker->draft() && !RuntimeEnabledFeatures::webGLDraftExtensionsEnabled())
         return false;
     if (!tracker->supported(this))
@@ -3105,7 +3103,7 @@ void WebGLRenderingContextBase::readPixels(GLint x, GLint y, GLsizei width, GLsi
 #if OS(MACOSX)
     // FIXME: remove this section when GL driver bug on Mac is fixed, i.e.,
     // when alpha is off, readPixels should set alpha to 255 instead of 0.
-    if (!m_framebufferBinding && !webContext()->getContextAttributes().alpha) {
+    if (!m_framebufferBinding && !m_drawingBuffer->getActualAttributes().alpha) {
         unsigned char* pixels = reinterpret_cast<unsigned char*>(data);
         for (GLsizei iy = 0; iy < height; ++iy) {
             for (GLsizei ix = 0; ix < width; ++ix) {
@@ -4185,6 +4183,10 @@ void WebGLRenderingContextBase::forceLostContext(WebGLRenderingContextBase::Lost
 
 void WebGLRenderingContextBase::loseContextImpl(WebGLRenderingContextBase::LostContextMode mode)
 {
+#ifndef NDEBUG
+    printWarningToConsole("loseContextImpl(): begin");
+#endif
+
     if (isContextLost())
         return;
 
@@ -4204,6 +4206,10 @@ void WebGLRenderingContextBase::loseContextImpl(WebGLRenderingContextBase::LostC
 
     detachAndRemoveAllObjects();
 
+#ifndef NDEBUG
+    printWarningToConsole("loseContextImpl(): after detachAndRemoveAllObjects()");
+#endif
+
     // Lose all the extensions.
     for (size_t i = 0; i < m_extensions.size(); ++i) {
         ExtensionTracker* tracker = m_extensions[i];
@@ -4218,6 +4224,10 @@ void WebGLRenderingContextBase::loseContextImpl(WebGLRenderingContextBase::LostC
     if (mode != RealLostContext)
         destroyContext();
 
+#ifndef NDEBUG
+    printWarningToConsole("loseContextImpl(): after destroyContext()");
+#endif
+
     ConsoleDisplayPreference display = (mode == RealLostContext) ? DisplayInConsole: DontDisplayInConsole;
     synthesizeGLError(GC3D_CONTEXT_LOST_WEBGL, "loseContext", "context lost", display);
 
@@ -4228,6 +4238,10 @@ void WebGLRenderingContextBase::loseContextImpl(WebGLRenderingContextBase::LostC
     // Always defer the dispatch of the context lost event, to implement
     // the spec behavior of queueing a task.
     m_dispatchContextLostEventTimer.startOneShot(0, FROM_HERE);
+
+#ifndef NDEBUG
+    printWarningToConsole("loseContextImpl(): end");
+#endif
 }
 
 void WebGLRenderingContextBase::forceRestoreContext()
@@ -5090,6 +5104,12 @@ bool WebGLRenderingContextBase::validateBlendEquation(const char* functionName, 
     case GL_FUNC_SUBTRACT:
     case GL_FUNC_REVERSE_SUBTRACT:
         return true;
+    case GL_MIN_EXT:
+    case GL_MAX_EXT:
+        if (extensionEnabled(EXTBlendMinMaxName))
+            return true;
+        synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid mode");
+        return false;
     default:
         synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid mode");
         return false;
@@ -5214,7 +5234,8 @@ bool WebGLRenderingContextBase::validateHTMLImageElement(const char* functionNam
         synthesizeGLError(GL_INVALID_VALUE, functionName, "invalid image");
         return false;
     }
-    if (image->wouldTaintOrigin(canvas()->securityOrigin())) {
+
+    if (wouldTaintOrigin(image)) {
         exceptionState.throwSecurityError("The cross-origin image at " + url.elidedString() + " may not be loaded.");
         return false;
     }
@@ -5227,7 +5248,7 @@ bool WebGLRenderingContextBase::validateHTMLCanvasElement(const char* functionNa
         synthesizeGLError(GL_INVALID_VALUE, functionName, "no canvas");
         return false;
     }
-    if (canvas->wouldTaintOrigin(this->canvas()->securityOrigin())) {
+    if (wouldTaintOrigin(canvas)) {
         exceptionState.throwSecurityError("Tainted canvases may not be loaded.");
         return false;
     }
@@ -5240,7 +5261,8 @@ bool WebGLRenderingContextBase::validateHTMLVideoElement(const char* functionNam
         synthesizeGLError(GL_INVALID_VALUE, functionName, "no video");
         return false;
     }
-    if (video->wouldTaintOrigin(canvas()->securityOrigin())) {
+
+    if (wouldTaintOrigin(video)) {
         exceptionState.throwSecurityError("The video element contains cross-origin data, and may not be loaded.");
         return false;
     }
@@ -5439,6 +5461,9 @@ void WebGLRenderingContextBase::dispatchContextLostEvent(Timer<WebGLRenderingCon
 
 void WebGLRenderingContextBase::maybeRestoreContext(Timer<WebGLRenderingContextBase>*)
 {
+#ifndef NDEBUG
+    printWarningToConsole("maybeRestoreContext(): begin");
+#endif
     ASSERT(isContextLost());
 
     // The rendering context is not restored unless the default behavior of the
@@ -5464,17 +5489,17 @@ void WebGLRenderingContextBase::maybeRestoreContext(Timer<WebGLRenderingContextB
         m_drawingBuffer->beginDestruction();
         m_drawingBuffer.clear();
     }
+#ifndef NDEBUG
+    printWarningToConsole("maybeRestoreContext(): destroyed old DrawingBuffer");
+#endif
 
     blink::WebGraphicsContext3D::Attributes attributes = m_requestedAttributes->attributes(canvas()->document().topDocument().url().string(), settings);
     OwnPtr<blink::WebGraphicsContext3D> context = adoptPtr(blink::Platform::current()->createOffscreenGraphicsContext3D(attributes, 0));
     RefPtr<DrawingBuffer> drawingBuffer;
     // Even if a non-null WebGraphicsContext3D is created, until it's made current, it isn't known whether the context is still lost.
     if (context) {
-        RefPtr<WebGLRenderingContextEvictionManager> contextEvictionManager = adoptRef(new WebGLRenderingContextEvictionManager());
-
         // Construct a new drawing buffer with the new WebGraphicsContext3D.
-        DrawingBuffer::PreserveDrawingBuffer preserve = m_requestedAttributes->preserveDrawingBuffer() ? DrawingBuffer::Preserve : DrawingBuffer::Discard;
-        drawingBuffer = DrawingBuffer::create(context.release(), clampedCanvasSize(), preserve, contextEvictionManager.release());
+        drawingBuffer = createDrawingBuffer(context.release());
         // If DrawingBuffer::create() fails to allocate a fbo, |drawingBuffer| is set to null.
     }
     if (!drawingBuffer) {
@@ -5486,6 +5511,9 @@ void WebGLRenderingContextBase::maybeRestoreContext(Timer<WebGLRenderingContextB
         }
         return;
     }
+#ifndef NDEBUG
+    printWarningToConsole("maybeRestoreContext(): created new DrawingBuffer");
+#endif
 
     m_drawingBuffer = drawingBuffer.release();
     m_drawingBuffer->bind();
@@ -5495,7 +5523,13 @@ void WebGLRenderingContextBase::maybeRestoreContext(Timer<WebGLRenderingContextB
     setupFlags();
     initializeNewContext();
     markContextChanged(CanvasContextChanged);
+#ifndef NDEBUG
+    printWarningToConsole("maybeRestoreContext(): before dispatchEvent");
+#endif
     canvas()->dispatchEvent(WebGLContextEvent::create(EventTypeNames::webglcontextrestored, false, true, ""));
+#ifndef NDEBUG
+    printWarningToConsole("maybeRestoreContext(): end");
+#endif
 }
 
 String WebGLRenderingContextBase::ensureNotNull(const String& text) const

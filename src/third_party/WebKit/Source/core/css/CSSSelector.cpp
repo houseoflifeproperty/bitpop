@@ -26,10 +26,10 @@
 #include "config.h"
 #include "core/css/CSSSelector.h"
 
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSOMUtils.h"
 #include "core/css/CSSSelectorList.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
 #include "wtf/StdLibExtras.h"
@@ -736,7 +736,7 @@ void CSSSelector::setSelectorList(PassOwnPtr<CSSSelectorList> selectorList)
 
 static bool validateSubSelector(const CSSSelector* selector)
 {
-    switch (selector->m_match) {
+    switch (selector->match()) {
     case CSSSelector::Tag:
     case CSSSelector::Id:
     case CSSSelector::Class:
@@ -749,6 +749,7 @@ static bool validateSubSelector(const CSSSelector* selector)
     case CSSSelector::End:
         return true;
     case CSSSelector::PseudoElement:
+    case CSSSelector::Unknown:
         return false;
     case CSSSelector::PagePseudoClass:
     case CSSSelector::PseudoClass:
@@ -775,6 +776,7 @@ static bool validateSubSelector(const CSSSelector* selector)
     case CSSSelector::PseudoOnlyOfType:
     case CSSSelector::PseudoHost:
     case CSSSelector::PseudoHostContext:
+    case CSSSelector::PseudoNot:
         return true;
     default:
         return false;

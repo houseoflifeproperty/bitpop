@@ -5,12 +5,13 @@
 #include "chrome/browser/android/logo_service.h"
 
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/google/google_url_tracker.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_profile_helper.h"
 #include "chrome/browser/image_decoder.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "components/google/core/browser/google_url_tracker.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/search_provider_logos/google_logo_api.h"
 #include "content/public/browser/browser_thread.h"
@@ -39,7 +40,7 @@ GURL GetGoogleDoodleURL(Profile* profile) {
 
   GURL base_url(google_util::CommandLineGoogleBaseURL());
   if (!base_url.is_valid())
-    base_url = GoogleURLTracker::GoogleURL(profile);
+    base_url = google_profile_helper::GetGoogleHomePageURL(profile);
   return base_url.ReplaceComponents(replacements);
 }
 
@@ -126,7 +127,8 @@ void LogoService::GetLogo(search_provider_logos::LogoObserver* observer) {
     return;
 
   TemplateURL* template_url = template_url_service->GetDefaultSearchProvider();
-  if (!template_url || !template_url->url_ref().HasGoogleBaseURLs())
+  if (!template_url || !template_url->url_ref().HasGoogleBaseURLs(
+          template_url_service->search_terms_data()))
     return;
 
   if (!logo_tracker_) {

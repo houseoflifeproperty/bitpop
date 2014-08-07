@@ -2,22 +2,32 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
-#include "accessors.h"
+#include "src/v8.h"
+#include "src/accessors.h"
 
-#include "compiler.h"
-#include "contexts.h"
-#include "deoptimizer.h"
-#include "execution.h"
-#include "factory.h"
-#include "frames-inl.h"
-#include "isolate.h"
-#include "list-inl.h"
-#include "property-details.h"
-#include "api.h"
+#include "src/compiler.h"
+#include "src/contexts.h"
+#include "src/deoptimizer.h"
+#include "src/execution.h"
+#include "src/factory.h"
+#include "src/frames-inl.h"
+#include "src/isolate.h"
+#include "src/list-inl.h"
+#include "src/property-details.h"
+#include "src/api.h"
 
 namespace v8 {
 namespace internal {
+
+
+// We have a slight impedance mismatch between the external API and the way we
+// use callbacks internally: Externally, callbacks can only be used with
+// v8::Object, but internally we even have callbacks on entities which are
+// higher in the hierarchy, so we can only return i::Object here, not
+// i::JSObject.
+Handle<Object> GetThisFrom(const v8::PropertyCallbackInfo<v8::Value>& info) {
+  return Utils::OpenHandle(*v8::Local<v8::Value>(info.This()));
+}
 
 
 Handle<AccessorInfo> Accessors::MakeAccessor(
@@ -31,12 +41,26 @@ Handle<AccessorInfo> Accessors::MakeAccessor(
   info->set_property_attributes(attributes);
   info->set_all_can_read(false);
   info->set_all_can_write(false);
-  info->set_prohibits_overwriting(false);
   info->set_name(*name);
   Handle<Object> get = v8::FromCData(isolate, getter);
   Handle<Object> set = v8::FromCData(isolate, setter);
   info->set_getter(*get);
   info->set_setter(*set);
+  return info;
+}
+
+
+Handle<ExecutableAccessorInfo> Accessors::CloneAccessor(
+    Isolate* isolate,
+    Handle<ExecutableAccessorInfo> accessor) {
+  Factory* factory = isolate->factory();
+  Handle<ExecutableAccessorInfo> info = factory->NewExecutableAccessorInfo();
+  info->set_name(accessor->name());
+  info->set_flag(accessor->flag());
+  info->set_expected_receiver_type(accessor->expected_receiver_type());
+  info->set_getter(accessor->getter());
+  info->set_setter(accessor->setter());
+  info->set_data(accessor->data());
   return info;
 }
 
@@ -146,7 +170,7 @@ void Accessors::ArrayLengthGetter(
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
   DisallowHeapAllocation no_allocation;
   HandleScope scope(isolate);
-  Object* object = *Utils::OpenHandle(*info.This());
+  Object* object = *GetThisFrom(info);
   // Traverse the prototype chain until we reach an array.
   JSArray* holder = FindInstanceOf<JSArray>(isolate, object);
   Object* result;
@@ -173,7 +197,7 @@ void Accessors::ArrayLengthSetter(
   // causes an infinite loop.
   if (!object->IsJSArray()) {
     MaybeHandle<Object> maybe_result =
-        JSObject::SetLocalPropertyIgnoreAttributes(
+        JSObject::SetOwnPropertyIgnoreAttributes(
             object, isolate->factory()->length_string(), value, NONE);
     maybe_result.Check();
     return;
@@ -229,7 +253,7 @@ void Accessors::StringLengthGetter(
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
   DisallowHeapAllocation no_allocation;
   HandleScope scope(isolate);
-  Object* value = *Utils::OpenHandle(*info.This());
+  Object* value = *GetThisFrom(info);
   Object* result;
   if (value->IsJSValue()) value = JSValue::cast(value)->value();
   if (value->IsString()) {
@@ -780,7 +804,7 @@ static Handle<Object> SetFunctionPrototype(Isolate* isolate,
   if (!function->should_have_prototype()) {
     // Since we hit this accessor, object will have no prototype property.
     MaybeHandle<Object> maybe_result =
-        JSObject::SetLocalPropertyIgnoreAttributes(
+        JSObject::SetOwnPropertyIgnoreAttributes(
             receiver, isolate->factory()->prototype_string(), value, NONE);
     return maybe_result.ToHandleChecked();
   }
@@ -824,7 +848,7 @@ void Accessors::FunctionPrototypeGetter(
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
   HandleScope scope(isolate);
-  Handle<Object> object = Utils::OpenHandle(*info.This());
+  Handle<Object> object = GetThisFrom(info);
   Handle<Object> result = GetFunctionPrototype(isolate, object);
   info.GetReturnValue().Set(Utils::ToLocal(result));
 }
@@ -864,7 +888,7 @@ void Accessors::FunctionLengthGetter(
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
   HandleScope scope(isolate);
-  Handle<Object> object = Utils::OpenHandle(*info.This());
+  Handle<Object> object = GetThisFrom(info);
   MaybeHandle<JSFunction> maybe_function;
 
   {
@@ -922,7 +946,7 @@ void Accessors::FunctionNameGetter(
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
   HandleScope scope(isolate);
-  Handle<Object> object = Utils::OpenHandle(*info.This());
+  Handle<Object> object = GetThisFrom(info);
   MaybeHandle<JSFunction> maybe_function;
 
   {
@@ -1071,7 +1095,7 @@ void Accessors::FunctionArgumentsGetter(
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
   HandleScope scope(isolate);
-  Handle<Object> object = Utils::OpenHandle(*info.This());
+  Handle<Object> object = GetThisFrom(info);
   MaybeHandle<JSFunction> maybe_function;
 
   {
@@ -1114,22 +1138,33 @@ Handle<AccessorInfo> Accessors::FunctionArgumentsInfo(
 //
 
 
+static inline bool AllowAccessToFunction(Context* current_context,
+                                         JSFunction* function) {
+  return current_context->HasSameSecurityTokenAs(function->context());
+}
+
+
 class FrameFunctionIterator {
  public:
   FrameFunctionIterator(Isolate* isolate, const DisallowHeapAllocation& promise)
-      : frame_iterator_(isolate),
+      : isolate_(isolate),
+        frame_iterator_(isolate),
         functions_(2),
         index_(0) {
     GetFunctions();
   }
   JSFunction* next() {
-    if (functions_.length() == 0) return NULL;
-    JSFunction* next_function = functions_[index_];
-    index_--;
-    if (index_ < 0) {
-      GetFunctions();
+    while (true) {
+      if (functions_.length() == 0) return NULL;
+      JSFunction* next_function = functions_[index_];
+      index_--;
+      if (index_ < 0) {
+        GetFunctions();
+      }
+      // Skip functions from other origins.
+      if (!AllowAccessToFunction(isolate_->context(), next_function)) continue;
+      return next_function;
     }
-    return next_function;
   }
 
   // Iterate through functions until the first occurence of 'function'.
@@ -1154,6 +1189,7 @@ class FrameFunctionIterator {
     frame_iterator_.Advance();
     index_ = functions_.length() - 1;
   }
+  Isolate* isolate_;
   JavaScriptFrameIterator frame_iterator_;
   List<JSFunction*> functions_;
   int index_;
@@ -1201,6 +1237,10 @@ MaybeHandle<JSFunction> FindCaller(Isolate* isolate,
   if (caller->shared()->strict_mode() == STRICT) {
     return MaybeHandle<JSFunction>();
   }
+  // Don't return caller from another security context.
+  if (!AllowAccessToFunction(isolate->context(), caller)) {
+    return MaybeHandle<JSFunction>();
+  }
   return Handle<JSFunction>(caller);
 }
 
@@ -1210,7 +1250,7 @@ void Accessors::FunctionCallerGetter(
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(info.GetIsolate());
   HandleScope scope(isolate);
-  Handle<Object> object = Utils::OpenHandle(*info.This());
+  Handle<Object> object = GetThisFrom(info);
   MaybeHandle<JSFunction> maybe_function;
   {
     DisallowHeapAllocation no_allocation;

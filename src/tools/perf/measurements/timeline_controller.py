@@ -4,7 +4,7 @@
 from measurements import smooth_gesture_util
 
 from telemetry.core.backends.chrome import tracing_backend
-from telemetry.core.timeline.model import TimelineModel
+from telemetry.timeline.model import TimelineModel
 from telemetry.page.actions import action_runner
 from telemetry.web_perf import timeline_interaction_record as tir_module
 
@@ -19,6 +19,7 @@ class TimelineController(object):
     self._model = None
     self._renderer_process = None
     self._smooth_records = []
+    self._interaction = None
 
   def Start(self, page, tab):
     """Starts gathering timeline data.
@@ -36,25 +37,25 @@ class TimelineController(object):
       categories = page.GetSyntheticDelayCategories()
     tab.browser.StartTracing(','.join(categories))
     # Start the smooth marker for all actions.
-    runner = action_runner.ActionRunner(None, tab)
-    runner.BeginInteraction(RUN_SMOOTH_ACTIONS, [tir_module.IS_SMOOTH])
+    runner = action_runner.ActionRunner(tab)
+    self._interaction = runner.BeginInteraction(
+        RUN_SMOOTH_ACTIONS, is_smooth=True)
 
   def Stop(self, tab):
     # End the smooth marker for all actions.
-    runner = action_runner.ActionRunner(None, tab)
-    runner.EndInteraction(RUN_SMOOTH_ACTIONS, [tir_module.IS_SMOOTH])
+    self._interaction.End()
     # Stop tracing.
     timeline_data = tab.browser.StopTracing()
     self._model = TimelineModel(timeline_data)
-    self._renderer_process = self._model.GetRendererProcessFromTab(tab)
-    renderer_thread = self.model.GetRendererThreadFromTab(tab)
+    self._renderer_process = self._model.GetRendererProcessFromTabId(tab.id)
+    renderer_thread = self.model.GetRendererThreadFromTabId(tab.id)
 
     run_smooth_actions_record = None
     self._smooth_records = []
     for event in renderer_thread.async_slices:
       if not tir_module.IsTimelineInteractionRecord(event.name):
         continue
-      r = tir_module.TimelineInteractionRecord.FromEvent(event)
+      r = tir_module.TimelineInteractionRecord.FromAsyncEvent(event)
       if r.logical_name == RUN_SMOOTH_ACTIONS:
         assert run_smooth_actions_record is None, (
           'TimelineController cannot issue more than 1 %s record' %

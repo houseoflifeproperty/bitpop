@@ -17,6 +17,7 @@
 #include "chrome/installer/util/helper.h"
 #include "chrome/installer/util/install_util.h"
 #include "chrome/installer/util/l10n_string_util.h"
+#include "chrome/installer/util/updating_app_registration_data.h"
 
 #include "installer_util_strings.h"  // NOLINT
 
@@ -25,11 +26,8 @@ const wchar_t kChromeFrameGuid[] = L"{8BA986DA-5100-405E-AA35-86F34A02ACBF}";
 }
 
 ChromeFrameDistribution::ChromeFrameDistribution()
-    : BrowserDistribution(CHROME_FRAME) {
-}
-
-base::string16 ChromeFrameDistribution::GetAppGuid() {
-  return kChromeFrameGuid;
+    : BrowserDistribution(CHROME_FRAME,
+          make_scoped_ptr(new UpdatingAppRegistrationData(kChromeFrameGuid))) {
 }
 
 base::string16 ChromeFrameDistribution::GetBaseAppName() {
@@ -82,26 +80,8 @@ std::string ChromeFrameDistribution::GetSafeBrowsingName() {
   return "googlechromeframe";
 }
 
-base::string16 ChromeFrameDistribution::GetStateKey() {
-  base::string16 key(google_update::kRegPathClientState);
-  key.append(L"\\");
-  key.append(kChromeFrameGuid);
-  return key;
-}
-
-base::string16 ChromeFrameDistribution::GetStateMediumKey() {
-  base::string16 key(google_update::kRegPathClientStateMedium);
-  key.append(L"\\");
-  key.append(kChromeFrameGuid);
-  return key;
-}
-
 std::string ChromeFrameDistribution::GetNetworkStatsServer() const {
   return chrome_common_net::kEchoTestServerLocation;
-}
-
-std::string ChromeFrameDistribution::GetHttpPipeliningTestServer() const {
-  return chrome_common_net::kPipelineTestServerBaseUrl;
 }
 
 base::string16 ChromeFrameDistribution::GetUninstallLinkName() {
@@ -111,13 +91,6 @@ base::string16 ChromeFrameDistribution::GetUninstallLinkName() {
 base::string16 ChromeFrameDistribution::GetUninstallRegPath() {
   return L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"
          L"Google Chrome Frame";
-}
-
-base::string16 ChromeFrameDistribution::GetVersionKey() {
-  base::string16 key(google_update::kRegPathClients);
-  key.append(L"\\");
-  key.append(kChromeFrameGuid);
-  return key;
 }
 
 base::string16 ChromeFrameDistribution::GetIconFilename() {

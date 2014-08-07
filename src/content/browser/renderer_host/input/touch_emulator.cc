@@ -32,6 +32,8 @@ ui::GestureProvider::Config GetGestureProviderConfig() {
   // requested by renderer.
   ui::GestureProvider::Config config = ui::DefaultGestureProviderConfig();
   config.gesture_begin_end_types_enabled = false;
+  config.gesture_detector_config.swipe_enabled = false;
+  config.gesture_detector_config.two_finger_tap_enabled = false;
   return config;
 }
 
@@ -202,6 +204,11 @@ void TouchEmulator::OnGestureEvent(const ui::GestureEventData& gesture) {
       CreateWebGestureEventFromGestureEventData(gesture);
 
   switch (gesture_event.type) {
+    case WebInputEvent::Undefined:
+      NOTREACHED() << "Undefined WebInputEvent type";
+      // Bail without sending the junk event to the client.
+      return;
+
     case WebInputEvent::GestureScrollBegin:
       client_->ForwardGestureEvent(gesture_event);
       // PinchBegin must always follow ScrollBegin.
@@ -319,7 +326,7 @@ void TouchEmulator::PinchEnd(const WebGestureEvent& event) {
 void TouchEmulator::FillPinchEvent(const WebInputEvent& event) {
   pinch_event_.timeStampSeconds = event.timeStampSeconds;
   pinch_event_.modifiers = event.modifiers;
-  pinch_event_.sourceDevice = blink::WebGestureEvent::Touchscreen;
+  pinch_event_.sourceDevice = blink::WebGestureDeviceTouchscreen;
   pinch_event_.x = pinch_anchor_.x();
   pinch_event_.y = pinch_anchor_.y();
 }
@@ -328,7 +335,7 @@ void TouchEmulator::ScrollEnd(const WebGestureEvent& event) {
   WebGestureEvent scroll_event;
   scroll_event.timeStampSeconds = event.timeStampSeconds;
   scroll_event.modifiers = event.modifiers;
-  scroll_event.sourceDevice = blink::WebGestureEvent::Touchscreen;
+  scroll_event.sourceDevice = blink::WebGestureDeviceTouchscreen;
   scroll_event.type = WebInputEvent::GestureScrollEnd;
   client_->ForwardGestureEvent(scroll_event);
 }

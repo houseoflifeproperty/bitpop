@@ -31,9 +31,10 @@
 [
     RuntimeEnabled=WebAnimationsElementAnimate,
     NoInterfaceObject,
+    WillBeGarbageCollected,
     ActiveDOMObject,
 ] interface AnimationPlayer : EventTarget {
-    [RuntimeEnabled=WebAnimationsAPI]          attribute TimedItem? source;
+    [RuntimeEnabled=WebAnimationsAPI]          attribute AnimationNode? source;
     [RuntimeEnabled=WebAnimationsAPI]          attribute double     startTime;
     [RuntimeEnabled=WebAnimationsAPI]          attribute double     currentTime;
     [RuntimeEnabled=WebAnimationsAPI] readonly attribute double     timeLag;

@@ -10,10 +10,12 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
 #include "base/timer/timer.h"
 #include "ui/app_list/app_list_export.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_model_observer.h"
+#include "ui/app_list/pagination_model.h"
 #include "ui/app_list/pagination_model_observer.h"
 #include "ui/base/models/list_model_observer.h"
 #include "ui/compositor/layer_animation_observer.h"
@@ -28,14 +30,9 @@
 #include "ui/base/dragdrop/drag_source_win.h"
 #endif
 
-namespace content {
-class WebContents;
-}
-
 namespace views {
 class ButtonListener;
 class DragImageView;
-class WebView;
 }
 
 namespace app_list {
@@ -70,18 +67,16 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   };
 
   // Constructs the app icon grid view. |delegate| is the delegate of this
-  // view, which usually is the hosting AppListView. |pagination_model| is
-  // the paging info shared within the launcher UI.
-  AppsGridView(AppsGridViewDelegate* delegate,
-               PaginationModel* pagination_model);
+  // view, which usually is the hosting AppListView.
+  explicit AppsGridView(AppsGridViewDelegate* delegate);
   virtual ~AppsGridView();
 
   // Sets fixed layout parameters. After setting this, CalculateLayout below
   // is no longer called to dynamically choosing those layout params.
   void SetLayout(int icon_size, int cols, int rows_per_page);
 
-  int cols() { return cols_; }
-  int rows_per_page() { return rows_per_page_; }
+  int cols() const { return cols_; }
+  int rows_per_page() const { return rows_per_page_; }
 
   // This resets the grid view to a fresh state for showing the app list.
   void ResetForShowApps();
@@ -131,8 +126,11 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   bool has_dragged_view() const { return drag_view_ != NULL; }
   bool dragging() const { return drag_pointer_ != NONE; }
 
+  // Gets the PaginationModel used for the grid view.
+  PaginationModel* pagination_model() { return &pagination_model_; }
+
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
@@ -206,9 +204,11 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
     folder_delegate_ = folder_delegate;
   }
 
-  AppListItemView* activated_item_view() const {
-    return activated_item_view_;
+  AppListItemView* activated_folder_item_view() const {
+    return activated_folder_item_view_;
   }
+
+  const AppListModel* model() const { return model_; }
 
  private:
   friend class test::AppsGridViewTestApi;
@@ -403,9 +403,9 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // Gets the bounds of the tile located at |row| and |col| on current page.
   gfx::Rect GetTileBounds(int row, int col) const;
 
-  // Returns true if the slot of |index| is the first empty slot next to the
-  // last item on the last page.
-  bool IsFirstEmptySlot(const Index& index) const;
+  // Returns true if the slot of |index| is the last possible slot to drop
+  // an item, i.e. first empty slot next to the last item on the last page.
+  bool IsLastPossibleDropTarget(const Index& index) const;
 
   // Gets the item view located at |slot| on the current page. If there is
   // no item located at |slot|, returns NULL.
@@ -461,7 +461,7 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // This can be NULL. Only grid views inside folders have a folder delegate.
   AppsGridViewFolderDelegate* folder_delegate_;
 
-  PaginationModel* pagination_model_;  // Owned by AppListController.
+  PaginationModel pagination_model_;
   PageSwitcher* page_switcher_view_;  // Owned by views hierarchy.
 
   gfx::Size icon_size_;
@@ -497,6 +497,9 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // Created when a drag is started (ie: drag exceeds the drag threshold), but
   // not Run() until supplied with a shortcut path.
   scoped_refptr<SynchronousDrag> synchronous_drag_;
+
+  // Whether to use SynchronousDrag to support dropping to task bar etc.
+  bool use_synchronous_drag_;
 #endif
 
   Pointer drag_pointer_;
@@ -535,8 +538,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
 
   views::BoundsAnimator bounds_animator_;
 
-  // The most recent activated item view.
-  AppListItemView* activated_item_view_;
+  // The most recent activated folder item view.
+  AppListItemView* activated_folder_item_view_;
 
   // Tracks if drag_view_ is dragged out of the folder container bubble
   // when dragging a item inside a folder.

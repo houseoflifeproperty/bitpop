@@ -30,7 +30,7 @@
 #ifndef InspectorDOMAgent_h
 #define InspectorDOMAgent_h
 
-#include "InspectorFrontend.h"
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorBaseAgent.h"
@@ -112,6 +112,8 @@ public:
     void reset();
 
     // Methods called from the frontend for DOM nodes inspection.
+    virtual void enable(ErrorString*) OVERRIDE;
+    virtual void disable(ErrorString*) OVERRIDE;
     virtual void querySelector(ErrorString*, int nodeId, const String& selectors, int* elementId) OVERRIDE;
     virtual void querySelectorAll(ErrorString*, int nodeId, const String& selectors, RefPtr<TypeBuilder::Array<int> >& result) OVERRIDE;
     virtual void getDocument(ErrorString*, RefPtr<TypeBuilder::DOM::Node>& root) OVERRIDE;
@@ -152,6 +154,16 @@ public:
 
     static void getEventListeners(EventTarget*, Vector<EventListenerInfo>& listenersArray, bool includeAncestors);
 
+    class Listener {
+    public:
+        virtual ~Listener() { }
+        virtual void domAgentWasEnabled() = 0;
+        virtual void domAgentWasDisabled() = 0;
+    };
+    void setListener(Listener* listener) { m_listener = listener; }
+
+    bool enabled() const;
+
     // Methods called from the InspectorInstrumentation.
     void setDocument(Document*);
     void releaseDanglingNodes();
@@ -164,7 +176,7 @@ public:
     void willModifyDOMAttr(Element*, const AtomicString& oldValue, const AtomicString& newValue);
     void didModifyDOMAttr(Element*, const AtomicString& name, const AtomicString& value);
     void didRemoveDOMAttr(Element*, const AtomicString& name);
-    void styleAttributeInvalidated(const Vector<Element*>& elements);
+    void styleAttributeInvalidated(const WillBeHeapVector<RawPtrWillBeMember<Element> >& elements);
     void characterDataModified(CharacterData*);
     void didInvalidateStyleAttr(Node*);
     void didPushShadowRoot(Element* host, ShadowRoot*);
@@ -209,7 +221,7 @@ private:
     PassOwnPtr<HighlightConfig> highlightConfigFromInspectorObject(ErrorString*, JSONObject* highlightInspectorObject);
 
     // Node-related methods.
-    typedef HashMap<RefPtr<Node>, int> NodeToIdMap;
+    typedef WillBeHeapHashMap<RefPtrWillBeMember<Node>, int> NodeToIdMap;
     int bind(Node*, NodeToIdMap*);
     void unbind(Node*, NodeToIdMap*);
 
@@ -246,23 +258,24 @@ private:
     InspectorOverlay* m_overlay;
     InspectorFrontend::DOM* m_frontend;
     DOMListener* m_domListener;
-    NodeToIdMap m_documentNodeToIdMap;
+    OwnPtrWillBePersistent<NodeToIdMap> m_documentNodeToIdMap;
     // Owns node mappings for dangling nodes.
-    Vector<OwnPtr<NodeToIdMap> > m_danglingNodeToIdMaps;
-    HashMap<int, Node*> m_idToNode;
-    HashMap<int, NodeToIdMap*> m_idToNodesMap;
+    WillBePersistentHeapVector<OwnPtrWillBeMember<NodeToIdMap> > m_danglingNodeToIdMaps;
+    WillBePersistentHeapHashMap<int, RawPtrWillBeMember<Node> > m_idToNode;
+    WillBePersistentHeapHashMap<int, RawPtrWillBeMember<NodeToIdMap> > m_idToNodesMap;
     HashSet<int> m_childrenRequested;
     HashMap<int, int> m_cachedChildCount;
     int m_lastNodeId;
-    RefPtr<Document> m_document;
-    typedef HashMap<String, Vector<RefPtr<Node> > > SearchResults;
+    RefPtrWillBePersistent<Document> m_document;
+    typedef WillBePersistentHeapHashMap<String, WillBeHeapVector<RefPtrWillBeMember<Node> > > SearchResults;
     SearchResults m_searchResults;
     OwnPtr<RevalidateStyleAttributeTask> m_revalidateStyleAttrTask;
     SearchMode m_searchingForNode;
     OwnPtr<HighlightConfig> m_inspectModeHighlightConfig;
-    OwnPtr<InspectorHistory> m_history;
-    OwnPtr<DOMEditor> m_domEditor;
+    OwnPtrWillBePersistent<InspectorHistory> m_history;
+    OwnPtrWillBePersistent<DOMEditor> m_domEditor;
     bool m_suppressAttributeModifiedEvent;
+    Listener* m_listener;
 };
 
 

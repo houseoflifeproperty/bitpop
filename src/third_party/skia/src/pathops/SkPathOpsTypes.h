@@ -30,9 +30,7 @@ inline bool AlmostEqualUlps(double a, double b) {
 
 // Use Almost Dequal when comparing should not special case denormalized values.
 bool AlmostDequalUlps(float a, float b);
-inline bool AlmostDequalUlps(double a, double b) {
-    return AlmostDequalUlps(SkDoubleToScalar(a), SkDoubleToScalar(b));
-}
+bool AlmostDequalUlps(double a, double b);
 
 bool NotAlmostEqualUlps(float a, float b);
 inline bool NotAlmostEqualUlps(double a, double b) {
@@ -93,6 +91,11 @@ const double DBL_EPSILON_ERR = DBL_EPSILON * 4;  // FIXME: tune -- allow a few b
 const double DBL_EPSILON_SUBDIVIDE_ERR = DBL_EPSILON * 16;
 const double ROUGH_EPSILON = FLT_EPSILON * 64;
 const double MORE_ROUGH_EPSILON = FLT_EPSILON * 256;
+const double WAY_ROUGH_EPSILON = FLT_EPSILON * 2048;
+
+inline bool zero_or_one(double x) {
+    return x == 0 || x == 1;
+}
 
 inline bool approximately_zero(double x) {
     return fabs(x) < FLT_EPSILON;
@@ -299,12 +302,16 @@ inline bool between(double a, double b, double c) {
     return (a - b) * (c - b) <= 0;
 }
 
+inline bool roughly_equal(double x, double y) {
+    return fabs(x - y) < ROUGH_EPSILON;
+}
+
 inline bool more_roughly_equal(double x, double y) {
     return fabs(x - y) < MORE_ROUGH_EPSILON;
 }
 
-inline bool roughly_equal(double x, double y) {
-    return fabs(x - y) < ROUGH_EPSILON;
+inline bool way_roughly_equal(double x, double y) {
+    return fabs(x - y) < WAY_ROUGH_EPSILON;
 }
 
 struct SkDPoint;

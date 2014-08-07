@@ -694,12 +694,10 @@ class TextureLayerImplWithMailboxThreadedCallback : public LayerTreeTest {
 
     gfx::Size bounds(100, 100);
     root_ = Layer::Create();
-    root_->SetAnchorPoint(gfx::PointF());
     root_->SetBounds(bounds);
 
     layer_ = TextureLayer::CreateForMailbox(NULL);
     layer_->SetIsDrawable(true);
-    layer_->SetAnchorPoint(gfx::PointF());
     layer_->SetBounds(bounds);
 
     root_->AddChild(layer_);
@@ -819,12 +817,10 @@ class TextureLayerMailboxIsActivatedDuringCommit : public LayerTreeTest {
   virtual void BeginTest() OVERRIDE {
     gfx::Size bounds(100, 100);
     root_ = Layer::Create();
-    root_->SetAnchorPoint(gfx::PointF());
     root_->SetBounds(bounds);
 
     layer_ = TextureLayer::CreateForMailbox(NULL);
     layer_->SetIsDrawable(true);
-    layer_->SetAnchorPoint(gfx::PointF());
     layer_->SetBounds(bounds);
 
     root_->AddChild(layer_);
@@ -924,7 +920,6 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1);
-    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(
         test_data_.mailbox1_,
         SingleReleaseCallback::Create(test_data_.release_mailbox1_));
@@ -934,7 +929,6 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1);
-    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(TextureMailbox(),
                                   scoped_ptr<SingleReleaseCallback>());
     EXPECT_FALSE(WillDraw(impl_layer.get(), DRAW_MODE_HARDWARE));
@@ -944,7 +938,6 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
     // Software resource.
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1);
-    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(
         test_data_.mailbox3_,
         SingleReleaseCallback::Create(test_data_.release_mailbox3_));
@@ -955,7 +948,6 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1);
-    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(
         test_data_.mailbox1_,
         SingleReleaseCallback::Create(test_data_.release_mailbox1_));
@@ -965,7 +957,6 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1);
-    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(TextureMailbox(),
                                   scoped_ptr<SingleReleaseCallback>());
     EXPECT_FALSE(WillDraw(impl_layer.get(), DRAW_MODE_SOFTWARE));
@@ -975,7 +966,6 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
     // Software resource.
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1);
-    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(
         test_data_.mailbox3_,
         SingleReleaseCallback::Create(test_data_.release_mailbox3_));
@@ -986,7 +976,6 @@ TEST_F(TextureLayerImplWithMailboxTest, TestWillDraw) {
   {
     scoped_ptr<TextureLayerImpl> impl_layer =
         TextureLayerImpl::Create(host_impl_.active_tree(), 1);
-    impl_layer->SetDrawsContent(true);
     impl_layer->SetTextureMailbox(
         test_data_.mailbox1_,
         SingleReleaseCallback::Create(test_data_.release_mailbox1_));
@@ -1069,7 +1058,6 @@ TEST_F(TextureLayerImplWithMailboxTest,
   impl_layer->SetTextureMailbox(
       test_data_.mailbox1_,
       SingleReleaseCallback::Create(test_data_.release_mailbox1_));
-  impl_layer->SetDrawsContent(true);
   impl_layer->DidBecomeActive();
   EXPECT_TRUE(impl_layer->WillDraw(
       DRAW_MODE_HARDWARE, host_impl_.active_tree()->resource_provider()));
@@ -1115,6 +1103,7 @@ class TextureLayerNoExtraCommitForMailboxTest
       scoped_ptr<SingleReleaseCallback>* release_callback,
       bool use_shared_memory) OVERRIDE {
     if (layer_tree_host()->source_frame_number() == 1) {
+      // Once this has been committed, the mailbox will be released.
       *texture_mailbox = TextureMailbox();
       return true;
     }
@@ -1127,19 +1116,19 @@ class TextureLayerNoExtraCommitForMailboxTest
   }
 
   void MailboxReleased(uint32 sync_point, bool lost_resource) {
-    EXPECT_EQ(2, layer_tree_host()->source_frame_number());
+    // Source frame number during callback is the same as the source frame
+    // on which it was released.
+    EXPECT_EQ(1, layer_tree_host()->source_frame_number());
     EndTest();
   }
 
   virtual void SetupTree() OVERRIDE {
     scoped_refptr<Layer> root = Layer::Create();
     root->SetBounds(gfx::Size(10, 10));
-    root->SetAnchorPoint(gfx::PointF());
     root->SetIsDrawable(true);
 
     texture_layer_ = TextureLayer::CreateForMailbox(this);
     texture_layer_->SetBounds(gfx::Size(10, 10));
-    texture_layer_->SetAnchorPoint(gfx::PointF());
     texture_layer_->SetIsDrawable(true);
     root->AddChild(texture_layer_);
 
@@ -1234,7 +1223,6 @@ class TextureLayerChangeInvisibleMailboxTest
   virtual void SetupTree() OVERRIDE {
     scoped_refptr<Layer> root = Layer::Create();
     root->SetBounds(gfx::Size(10, 10));
-    root->SetAnchorPoint(gfx::PointF());
     root->SetIsDrawable(true);
 
     solid_layer_ = SolidColorLayer::Create();
@@ -1250,7 +1238,6 @@ class TextureLayerChangeInvisibleMailboxTest
 
     texture_layer_ = TextureLayer::CreateForMailbox(this);
     texture_layer_->SetBounds(gfx::Size(10, 10));
-    texture_layer_->SetAnchorPoint(gfx::PointF());
     texture_layer_->SetIsDrawable(true);
     parent_layer_->AddChild(texture_layer_);
 
@@ -1369,7 +1356,6 @@ class TextureLayerReleaseResourcesBase
     scoped_refptr<TextureLayer> texture_layer =
         TextureLayer::CreateForMailbox(this);
     texture_layer->SetBounds(gfx::Size(10, 10));
-    texture_layer->SetAnchorPoint(gfx::PointF());
     texture_layer->SetIsDrawable(true);
 
     layer_tree_host()->root_layer()->AddChild(texture_layer);
@@ -1440,12 +1426,10 @@ class TextureLayerWithMailboxMainThreadDeleted : public LayerTreeTest {
   virtual void SetupTree() OVERRIDE {
     gfx::Size bounds(100, 100);
     root_ = Layer::Create();
-    root_->SetAnchorPoint(gfx::PointF());
     root_->SetBounds(bounds);
 
     layer_ = TextureLayer::CreateForMailbox(NULL);
     layer_->SetIsDrawable(true);
-    layer_->SetAnchorPoint(gfx::PointF());
     layer_->SetBounds(bounds);
 
     root_->AddChild(layer_);
@@ -1513,12 +1497,10 @@ class TextureLayerWithMailboxImplThreadDeleted : public LayerTreeTest {
   virtual void SetupTree() OVERRIDE {
     gfx::Size bounds(100, 100);
     root_ = Layer::Create();
-    root_->SetAnchorPoint(gfx::PointF());
     root_->SetBounds(bounds);
 
     layer_ = TextureLayer::CreateForMailbox(NULL);
     layer_->SetIsDrawable(true);
-    layer_->SetAnchorPoint(gfx::PointF());
     layer_->SetBounds(bounds);
 
     root_->AddChild(layer_);

@@ -2,8 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import optparse
 import cloud_storage_test_base
+import optparse
+import page_sets
+
 
 test_harness_script = r"""
   var domAutomationController = {};
@@ -49,7 +51,7 @@ class _GpuRasterizationValidator(cloud_storage_test_base.ValidatorBase):
 
     device_pixel_ratio = tab.EvaluateJavaScript('window.devicePixelRatio')
     if hasattr(page, 'test_rect'):
-      test_rect = [x * device_pixel_ratio for x in page.test_rect]
+      test_rect = [int(x * device_pixel_ratio) for x in page.test_rect]
       screenshot = screenshot.Crop(
           test_rect[0], test_rect[1],
           test_rect[2], test_rect[3])
@@ -64,7 +66,7 @@ class _GpuRasterizationValidator(cloud_storage_test_base.ValidatorBase):
 class GpuRasterization(cloud_storage_test_base.TestBase):
   """Tests that GPU rasterization produces valid content"""
   test = _GpuRasterizationValidator
-  page_set = 'page_sets/gpu_rasterization_tests.py'
+  page_set = page_sets.GpuRasterizationTestsPageSet
 
   def CreatePageSet(self, options):
     page_set = super(GpuRasterization, self).CreatePageSet(options)

@@ -5,6 +5,7 @@
 #ifndef LIBRARIES_NACL_IO_KERNEL_WRAP_H_
 #define LIBRARIES_NACL_IO_KERNEL_WRAP_H_
 
+#include <assert.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -24,6 +25,20 @@
 #define NOTHROW
 #endif
 
+// Most kernel intercept functions (ki_*) return -1 and set the global errno.
+// However, the IRT wrappers are expected to return errno on failure. These
+// macros are used in the wrappers to check that the ki_ function actually
+// set errno and to its value.
+#define RTN_ERRNO_IF(cond) \
+  if (cond) {              \
+    assert(errno != 0);    \
+    return errno;          \
+  }
+
+#define ERRNO_RTN(cond)   \
+  RTN_ERRNO_IF(cond < 0); \
+  return 0;
+
 #if defined(WIN32)
 typedef int chmod_mode_t;
 typedef int getcwd_size_t;
@@ -40,8 +55,8 @@ typedef ssize_t write_ssize_t;
 
 EXTERN_C_BEGIN
 
-void kernel_wrap_init();
-void kernel_wrap_uninit();
+void kernel_wrap_init(void);
+void kernel_wrap_uninit(void);
 
 int NAME(access)(const char* path, int amode) NOTHROW;
 int NAME(chdir)(const char* path) NOTHROW;
@@ -115,15 +130,22 @@ int getsockname(int fd, struct sockaddr* addr, socklen_t* len);
 int getsockopt(int fd, int lvl, int optname, void* optval, socklen_t* len);
 int listen(int fd, int backlog);
 ssize_t recv(int fd, void* buf, size_t len, int flags);
-ssize_t recvfrom(int fd, void* buf, size_t len, int flags,
-                 struct sockaddr* addr, socklen_t* addrlen);
+ssize_t recvfrom(int fd,
+                 void* buf,
+                 size_t len,
+                 int flags,
+                 struct sockaddr* addr,
+                 socklen_t* addrlen);
 ssize_t recvmsg(int fd, struct msghdr* msg, int flags);
 ssize_t send(int fd, const void* buf, size_t len, int flags);
-ssize_t sendto(int fd, const void* buf, size_t len, int flags,
-               const struct sockaddr* addr, socklen_t addrlen);
+ssize_t sendto(int fd,
+               const void* buf,
+               size_t len,
+               int flags,
+               const struct sockaddr* addr,
+               socklen_t addrlen);
 ssize_t sendmsg(int fd, const struct msghdr* msg, int flags);
-int setsockopt(int fd, int lvl, int optname, const void* optval,
-               socklen_t len);
+int setsockopt(int fd, int lvl, int optname, const void* optval, socklen_t len);
 int shutdown(int fd, int how);
 int socket(int domain, int type, int protocol);
 int socketpair(int domain, int type, int protocl, int* sv);

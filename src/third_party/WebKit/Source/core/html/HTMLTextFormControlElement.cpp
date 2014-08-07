@@ -25,9 +25,9 @@
 #include "config.h"
 #include "core/html/HTMLTextFormControlElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeTraversal.h"
@@ -48,7 +48,6 @@
 namespace WebCore {
 
 using namespace HTMLNames;
-using namespace std;
 
 HTMLTextFormControlElement::HTMLTextFormControlElement(const QualifiedName& tagName, Document& doc, HTMLFormElement* form)
     : HTMLFormControlElementWithState(tagName, doc, form)
@@ -104,7 +103,7 @@ void HTMLTextFormControlElement::forwardEvent(Event* event)
 {
     if (event->type() == EventTypeNames::blur || event->type() == EventTypeNames::focus)
         return;
-    innerTextElement()->defaultEventHandler(event);
+    innerEditorElement()->defaultEventHandler(event);
 }
 
 String HTMLTextFormControlElement::strippedPlaceholder() const
@@ -164,12 +163,12 @@ void HTMLTextFormControlElement::updatePlaceholderVisibility(bool placeholderVal
 
 void HTMLTextFormControlElement::setSelectionStart(int start)
 {
-    setSelectionRange(start, max(start, selectionEnd()), selectionDirection());
+    setSelectionRange(start, std::max(start, selectionEnd()), selectionDirection());
 }
 
 void HTMLTextFormControlElement::setSelectionEnd(int end)
 {
-    setSelectionRange(min(end, selectionStart()), end, selectionDirection());
+    setSelectionRange(std::min(end, selectionStart()), end, selectionDirection());
 }
 
 void HTMLTextFormControlElement::setSelectionDirection(const String& direction)
@@ -179,7 +178,7 @@ void HTMLTextFormControlElement::setSelectionDirection(const String& direction)
 
 void HTMLTextFormControlElement::select()
 {
-    setSelectionRange(0, numeric_limits<int>::max(), SelectionHasNoDirection);
+    setSelectionRange(0, std::numeric_limits<int>::max(), SelectionHasNoDirection);
 }
 
 bool HTMLTextFormControlElement::shouldDispatchFormControlChangeEvent(String& oldValue, String& newValue)
@@ -218,7 +217,7 @@ void HTMLTextFormControlElement::setRangeText(const String& replacement, unsigne
     if (hasAuthorShadowRoot())
         return;
 
-    String text = innerTextValue();
+    String text = innerEditorValue();
     unsigned textLength = text.length();
     unsigned replacementLength = replacement.length();
     unsigned newSelectionStart = selectionStart();
@@ -232,7 +231,7 @@ void HTMLTextFormControlElement::setRangeText(const String& replacement, unsigne
     else
         text.insert(replacement, start);
 
-    setInnerTextValue(text);
+    setInnerEditorValue(text);
 
     // FIXME: What should happen to the value (as in value()) if there's no renderer?
     if (!renderer())
@@ -283,10 +282,10 @@ void HTMLTextFormControlElement::setSelectionRange(int start, int end, TextField
     if (!renderer() || !renderer()->isTextControl())
         return;
 
-    end = max(end, 0);
-    start = min(max(start, 0), end);
+    end = std::max(end, 0);
+    start = std::min(std::max(start, 0), end);
 
-    if (!hasVisibleTextArea(renderer(), innerTextElement())) {
+    if (!hasVisibleTextArea(renderer(), innerEditorElement())) {
         cacheSelection(start, end, direction);
         return;
     }
@@ -317,9 +316,9 @@ void HTMLTextFormControlElement::setSelectionRange(int start, int end, TextField
 VisiblePosition HTMLTextFormControlElement::visiblePositionForIndex(int index) const
 {
     if (index <= 0)
-        return VisiblePosition(firstPositionInNode(innerTextElement()), DOWNSTREAM);
+        return VisiblePosition(firstPositionInNode(innerEditorElement()), DOWNSTREAM);
     RefPtrWillBeRawPtr<Range> range = Range::create(document());
-    range->selectNodeContents(innerTextElement(), ASSERT_NO_EXCEPTION);
+    range->selectNodeContents(innerEditorElement(), ASSERT_NO_EXCEPTION);
     CharacterIterator it(range.get());
     it.advance(index - 1);
     return VisiblePosition(it.range()->endPosition(), UPSTREAM);
@@ -332,7 +331,7 @@ int HTMLTextFormControlElement::indexForVisiblePosition(const VisiblePosition& p
         return 0;
     ASSERT(indexPosition.document());
     RefPtrWillBeRawPtr<Range> range = Range::create(*indexPosition.document());
-    range->setStart(innerTextElement(), 0, ASSERT_NO_EXCEPTION);
+    range->setStart(innerEditorElement(), 0, ASSERT_NO_EXCEPTION);
     range->setEnd(indexPosition.containerNode(), indexPosition.offsetInContainerNode(), ASSERT_NO_EXCEPTION);
     return TextIterator::rangeLength(range.get());
 }
@@ -436,7 +435,7 @@ PassRefPtrWillBeRawPtr<Range> HTMLTextFormControlElement::selection() const
     int end = m_cachedSelectionEnd;
 
     ASSERT(start <= end);
-    HTMLElement* innerText = innerTextElement();
+    HTMLElement* innerText = innerEditorElement();
     if (!innerText)
         return nullptr;
 
@@ -503,22 +502,22 @@ bool HTMLTextFormControlElement::lastChangeWasUserEdit() const
     return m_lastChangeWasUserEdit;
 }
 
-void HTMLTextFormControlElement::setInnerTextValue(const String& value)
+void HTMLTextFormControlElement::setInnerEditorValue(const String& value)
 {
     ASSERT(!hasAuthorShadowRoot());
     if (!isTextFormControl() || hasAuthorShadowRoot())
         return;
 
-    bool textIsChanged = value != innerTextValue();
-    if (textIsChanged || !innerTextElement()->hasChildren()) {
+    bool textIsChanged = value != innerEditorValue();
+    if (textIsChanged || !innerEditorElement()->hasChildren()) {
         if (textIsChanged && renderer()) {
             if (AXObjectCache* cache = document().existingAXObjectCache())
                 cache->postNotification(this, AXObjectCache::AXValueChanged, false);
         }
-        innerTextElement()->setInnerText(value, ASSERT_NO_EXCEPTION);
+        innerEditorElement()->setInnerText(value, ASSERT_NO_EXCEPTION);
 
         if (value.endsWith('\n') || value.endsWith('\r'))
-            innerTextElement()->appendChild(HTMLBRElement::create(document()));
+            innerEditorElement()->appendChild(HTMLBRElement::create(document()));
     }
 }
 
@@ -531,15 +530,15 @@ static String finishText(StringBuilder& result)
     return result.toString();
 }
 
-String HTMLTextFormControlElement::innerTextValue() const
+String HTMLTextFormControlElement::innerEditorValue() const
 {
     ASSERT(!hasAuthorShadowRoot());
-    HTMLElement* innerText = innerTextElement();
-    if (!innerText || !isTextFormControl())
+    HTMLElement* innerEditor = innerEditorElement();
+    if (!innerEditor || !isTextFormControl())
         return emptyString();
 
     StringBuilder result;
-    for (Node* node = innerText; node; node = NodeTraversal::next(*node, innerText)) {
+    for (Node* node = innerEditor; node; node = NodeTraversal::next(*node, innerEditor)) {
         if (isHTMLBRElement(*node))
             result.append(newlineCharacter);
         else if (node->isTextNode())
@@ -569,7 +568,7 @@ String HTMLTextFormControlElement::valueWithHardLineBreaks() const
 {
     // FIXME: It's not acceptable to ignore the HardWrap setting when there is no renderer.
     // While we have no evidence this has ever been a practical problem, it would be best to fix it some day.
-    HTMLElement* innerText = innerTextElement();
+    HTMLElement* innerText = innerEditorElement();
     if (!innerText || !isTextFormControl())
         return value();
 
@@ -614,8 +613,11 @@ HTMLTextFormControlElement* enclosingTextFormControl(const Position& position)
     ASSERT(position.isNull() || position.anchorType() == Position::PositionIsOffsetInAnchor
         || position.containerNode() || !position.anchorNode()->shadowHost()
         || (position.anchorNode()->parentNode() && position.anchorNode()->parentNode()->isShadowRoot()));
+    return enclosingTextFormControl(position.containerNode());
+}
 
-    Node* container = position.containerNode();
+HTMLTextFormControlElement* enclosingTextFormControl(Node* container)
+{
     if (!container)
         return 0;
     Element* ancestor = container->shadowHost();
@@ -652,7 +654,7 @@ String HTMLTextFormControlElement::directionForFormData() const
     return "ltr";
 }
 
-HTMLElement* HTMLTextFormControlElement::innerTextElement() const
+HTMLElement* HTMLTextFormControlElement::innerEditorElement() const
 {
     return toHTMLElement(userAgentShadowRoot()->getElementById(ShadowElementNames::innerEditor()));
 }

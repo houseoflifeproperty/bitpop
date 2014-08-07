@@ -64,17 +64,37 @@
       ],
     },
     {
+      'target_name': 'field_trial',
+      'type': 'static_library',
+      'sources': [
+        'field_trial.cc',
+        'field_trial.h',
+      ],
+      'dependencies': [
+        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+      ],
+    },
+    {
+      'target_name': 'test_main',
+      'type': 'static_library',
+      'sources': [
+        'test_main.cc',
+      ],
+      'dependencies': [
+        'field_trial',
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+      ],
+    },
+    {
       'target_name': 'test_support',
       'type': 'static_library',
       'dependencies': [
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/testing/gmock.gyp:gmock',
-        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
       ],
       'sources': [
-        'test_suite.cc',
-        'test_suite.h',
         'testsupport/android/root_path_android.cc',
         'testsupport/android/root_path_android_chromium.cc',
         'testsupport/fileutils.cc',
@@ -97,7 +117,7 @@
       'conditions': [
         # TODO(henrike): remove build_with_chromium==1 when the bots are using
         # Chromium's buildbots.
-        ['build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+        ['build_with_chromium==1 and OS=="android"', {
           'dependencies': [
             '<(DEPTH)/base/base.gyp:base',
           ],
@@ -117,10 +137,16 @@
       'target_name': 'test_support_main',
       'type': 'static_library',
       'dependencies': [
+        'field_trial',
         'test_support',
+        '<(DEPTH)/testing/gmock.gyp:gmock',
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
       ],
       'sources': [
         'run_all_unittests.cc',
+        'test_suite.cc',
+        'test_suite.h',
       ],
     },
     {
@@ -167,7 +193,7 @@
       'conditions': [
         # TODO(henrike): remove build_with_chromium==1 when the bots are
         # using Chromium's buildbots.
-        ['build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+        ['build_with_chromium==1 and OS=="android"', {
           'dependencies': [
             '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
           ],
@@ -202,7 +228,7 @@
     }],
     # TODO(henrike): remove build_with_chromium==1 when the bots are using
     # Chromium's buildbots.
-    ['include_tests==1 and build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+    ['include_tests==1 and build_with_chromium==1 and OS=="android"', {
       'targets': [
         {
           'target_name': 'test_support_unittests_apk_target',

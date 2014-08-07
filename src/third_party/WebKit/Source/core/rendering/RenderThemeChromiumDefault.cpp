@@ -25,8 +25,8 @@
 #include "config.h"
 #include "core/rendering/RenderThemeChromiumDefault.h"
 
-#include "CSSValueKeywords.h"
-#include "UserAgentStyleSheets.h"
+#include "core/CSSValueKeywords.h"
+#include "core/UserAgentStyleSheets.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderProgress.h"
@@ -259,7 +259,7 @@ bool RenderThemeChromiumDefault::paintCheckbox(RenderObject* o, const PaintInfo&
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         i.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        i.context->scale(FloatSize(zoomLevel, zoomLevel));
+        i.context->scale(zoomLevel, zoomLevel);
         i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -442,7 +442,7 @@ bool RenderThemeChromiumDefault::paintSliderTrack(RenderObject* o, const PaintIn
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         i.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        i.context->scale(FloatSize(zoomLevel, zoomLevel));
+        i.context->scale(zoomLevel, zoomLevel);
         i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -469,7 +469,7 @@ bool RenderThemeChromiumDefault::paintSliderThumb(RenderObject* o, const PaintIn
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         i.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        i.context->scale(FloatSize(zoomLevel, zoomLevel));
+        i.context->scale(zoomLevel, zoomLevel);
         i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -491,7 +491,7 @@ bool RenderThemeChromiumDefault::paintInnerSpinButton(RenderObject* o, const Pai
         return false;
     blink::WebThemeEngine::ExtraParams extraParams;
     blink::WebCanvas* canvas = i.context->canvas();
-    extraParams.innerSpin.spinUp = (controlStatesForRenderer(o) & SpinUpState);
+    extraParams.innerSpin.spinUp = (controlStatesForRenderer(o) & SpinUpControlState);
     extraParams.innerSpin.readOnly = isReadOnlyControl(o);
 
     blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartInnerSpinButton, getWebThemeState(this, o), blink::WebRect(rect), &extraParams);

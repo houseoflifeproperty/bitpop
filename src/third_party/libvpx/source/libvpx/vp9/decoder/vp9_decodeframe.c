@@ -316,7 +316,7 @@ static MB_MODE_INFO *set_offsets(VP9_COMMON *const cm, MACROBLOCKD *const xd,
   // as they are always compared to values that are in 1/8th pel units
   set_mi_row_col(xd, tile, mi_row, bh, mi_col, bw, cm->mi_rows, cm->mi_cols);
 
-  vp9_setup_dst_planes(xd, get_frame_new_buffer(cm), mi_row, mi_col);
+  vp9_setup_dst_planes(xd->plane, get_frame_new_buffer(cm), mi_row, mi_col);
   return &xd->mi[0]->mbmi;
 }
 
@@ -676,17 +676,17 @@ static void setup_frame_size_with_refs(VP9_COMMON *cm,
 }
 
 static void decode_tile(VP9Decoder *pbi, const TileInfo *const tile,
-                        vp9_reader *r) {
-  const int num_threads = pbi->oxcf.max_threads;
+                        int do_loopfilter_inline, vp9_reader *r) {
+  const int num_threads = pbi->max_threads;
   VP9_COMMON *const cm = &pbi->common;
   int mi_row, mi_col;
   MACROBLOCKD *xd = &pbi->mb;
 
-  if (pbi->do_loopfilter_inline) {
+  if (do_loopfilter_inline) {
     LFWorkerData *const lf_data = (LFWorkerData*)pbi->lf_worker.data1;
     lf_data->frame_buffer = get_frame_new_buffer(cm);
     lf_data->cm = cm;
-    lf_data->xd = pbi->mb;
+    vp9_copy(lf_data->planes, pbi->mb.plane);
     lf_data->stop = 0;
     lf_data->y_only = 0;
     vp9_loop_filter_frame_init(cm, cm->lf.filter_level);
@@ -702,7 +702,7 @@ static void decode_tile(VP9Decoder *pbi, const TileInfo *const tile,
       decode_partition(cm, xd, tile, mi_row, mi_col, r, BLOCK_64X64);
     }
 
-    if (pbi->do_loopfilter_inline) {
+    if (do_loopfilter_inline) {
       const int lf_start = mi_row - MI_BLOCK_SIZE;
       LFWorkerData *const lf_data = (LFWorkerData*)pbi->lf_worker.data1;
 
@@ -723,7 +723,7 @@ static void decode_tile(VP9Decoder *pbi, const TileInfo *const tile,
     }
   }
 
-  if (pbi->do_loopfilter_inline) {
+  if (do_loopfilter_inline) {
     LFWorkerData *const lf_data = (LFWorkerData*)pbi->lf_worker.data1;
 
     vp9_worker_sync(&pbi->lf_worker);
@@ -749,14 +749,20 @@ static void setup_tile_info(VP9_COMMON *cm, struct vp9_read_bit_buffer *rb) {
     cm->log2_tile_rows += vp9_rb_read_bit(rb);
 }
 
+typedef struct TileBuffer {
+  const uint8_t *data;
+  size_t size;
+  int col;  // only used with multi-threaded decoding
+} TileBuffer;
+
 // Reads the next tile returning its size and adjusting '*data' accordingly
 // based on 'is_last'.
-static size_t get_tile(const uint8_t *const data_end,
-                       int is_last,
-                       struct vpx_internal_error_info *error_info,
-                       const uint8_t **data,
-                       vpx_decrypt_cb decrypt_cb,
-                       void *decrypt_state) {
+static void get_tile_buffer(const uint8_t *const data_end,
+                            int is_last,
+                            struct vpx_internal_error_info *error_info,
+                            const uint8_t **data,
+                            vpx_decrypt_cb decrypt_cb, void *decrypt_state,
+                            TileBuffer *buf) {
   size_t size;
 
   if (!is_last) {
@@ -779,18 +785,34 @@ static size_t get_tile(const uint8_t *const data_end,
   } else {
     size = data_end - *data;
   }
-  return size;
+
+  buf->data = *data;
+  buf->size = size;
+
+  *data += size;
 }
 
-typedef struct TileBuffer {
-  const uint8_t *data;
-  size_t size;
-  int col;  // only used with multi-threaded decoding
-} TileBuffer;
+static void get_tile_buffers(VP9Decoder *pbi,
+                             const uint8_t *data, const uint8_t *data_end,
+                             int tile_cols, int tile_rows,
+                             TileBuffer (*tile_buffers)[1 << 6]) {
+  int r, c;
+
+  for (r = 0; r < tile_rows; ++r) {
+    for (c = 0; c < tile_cols; ++c) {
+      const int is_last = (r == tile_rows - 1) && (c == tile_cols - 1);
+      TileBuffer *const buf = &tile_buffers[r][c];
+      buf->col = c;
+      get_tile_buffer(data_end, is_last, &pbi->common.error, &data,
+                      pbi->decrypt_cb, pbi->decrypt_state, buf);
+    }
+  }
+}
 
 static const uint8_t *decode_tiles(VP9Decoder *pbi,
                                    const uint8_t *data,
-                                   const uint8_t *data_end) {
+                                   const uint8_t *data_end,
+                                   int do_loopfilter_inline) {
   VP9_COMMON *const cm = &pbi->common;
   const int aligned_cols = mi_cols_aligned_to_sb(cm->mi_cols);
   const int tile_cols = 1 << cm->log2_tile_cols;
@@ -811,25 +833,12 @@ static const uint8_t *decode_tiles(VP9Decoder *pbi,
   vpx_memset(cm->above_seg_context, 0,
              sizeof(*cm->above_seg_context) * aligned_cols);
 
-  // Load tile data into tile_buffers
-  for (tile_row = 0; tile_row < tile_rows; ++tile_row) {
-    for (tile_col = 0; tile_col < tile_cols; ++tile_col) {
-      const int last_tile = tile_row == tile_rows - 1 &&
-                            tile_col == tile_cols - 1;
-      const size_t size = get_tile(data_end, last_tile, &cm->error, &data,
-                                   pbi->decrypt_cb, pbi->decrypt_state);
-      TileBuffer *const buf = &tile_buffers[tile_row][tile_col];
-      buf->data = data;
-      buf->size = size;
-      data += size;
-    }
-  }
+  get_tile_buffers(pbi, data, data_end, tile_cols, tile_rows, tile_buffers);
 
   // Decode tiles using data from tile_buffers
   for (tile_row = 0; tile_row < tile_rows; ++tile_row) {
     for (tile_col = 0; tile_col < tile_cols; ++tile_col) {
-      const int col = pbi->oxcf.inv_tile_order ? tile_cols - tile_col - 1
-                                               : tile_col;
+      const int col = pbi->inv_tile_order ? tile_cols - tile_col - 1 : tile_col;
       const int last_tile = tile_row == tile_rows - 1 &&
                                  col == tile_cols - 1;
       const TileBuffer *const buf = &tile_buffers[tile_row][col];
@@ -838,7 +847,7 @@ static const uint8_t *decode_tiles(VP9Decoder *pbi,
       vp9_tile_init(&tile, cm, tile_row, col);
       setup_token_decoder(buf->data, data_end, buf->size, &cm->error, &r,
                           pbi->decrypt_cb, pbi->decrypt_state);
-      decode_tile(pbi, &tile, &r);
+      decode_tile(pbi, &tile, do_loopfilter_inline, &r);
 
       if (last_tile)
         end = vp9_reader_find_end(&r);
@@ -887,8 +896,8 @@ static const uint8_t *decode_tiles_mt(VP9Decoder *pbi,
   const int aligned_mi_cols = mi_cols_aligned_to_sb(cm->mi_cols);
   const int tile_cols = 1 << cm->log2_tile_cols;
   const int tile_rows = 1 << cm->log2_tile_rows;
-  const int num_workers = MIN(pbi->oxcf.max_threads & ~1, tile_cols);
-  TileBuffer tile_buffers[1 << 6];
+  const int num_workers = MIN(pbi->max_threads & ~1, tile_cols);
+  TileBuffer tile_buffers[1][1 << 6];
   int n;
   int final_worker = -1;
 
@@ -899,7 +908,7 @@ static const uint8_t *decode_tiles_mt(VP9Decoder *pbi,
   // TODO(jzern): See if we can remove the restriction of passing in max
   // threads to the decoder.
   if (pbi->num_tile_workers == 0) {
-    const int num_threads = pbi->oxcf.max_threads & ~1;
+    const int num_threads = pbi->max_threads & ~1;
     int i;
     // TODO(jzern): Allocate one less worker, as in the current code we only
     // use num_threads - 1 workers.
@@ -933,19 +942,11 @@ static const uint8_t *decode_tiles_mt(VP9Decoder *pbi,
              sizeof(*cm->above_seg_context) * aligned_mi_cols);
 
   // Load tile data into tile_buffers
-  for (n = 0; n < tile_cols; ++n) {
-    const size_t size =
-        get_tile(data_end, n == tile_cols - 1, &cm->error, &data,
-                 pbi->decrypt_cb, pbi->decrypt_state);
-    TileBuffer *const buf = &tile_buffers[n];
-    buf->data = data;
-    buf->size = size;
-    buf->col = n;
-    data += size;
-  }
+  get_tile_buffers(pbi, data, data_end, tile_cols, tile_rows, tile_buffers);
 
   // Sort the buffers based on size in descending order.
-  qsort(tile_buffers, tile_cols, sizeof(tile_buffers[0]), compare_tile_buffers);
+  qsort(tile_buffers[0], tile_cols, sizeof(tile_buffers[0][0]),
+        compare_tile_buffers);
 
   // Rearrange the tile buffers such that per-tile group the largest, and
   // presumably the most difficult, tile will be decoded in the main thread.
@@ -954,11 +955,11 @@ static const uint8_t *decode_tiles_mt(VP9Decoder *pbi,
   {
     int group_start = 0;
     while (group_start < tile_cols) {
-      const TileBuffer largest = tile_buffers[group_start];
+      const TileBuffer largest = tile_buffers[0][group_start];
       const int group_end = MIN(group_start + num_workers, tile_cols) - 1;
-      memmove(tile_buffers + group_start, tile_buffers + group_start + 1,
-              (group_end - group_start) * sizeof(tile_buffers[0]));
-      tile_buffers[group_end] = largest;
+      memmove(tile_buffers[0] + group_start, tile_buffers[0] + group_start + 1,
+              (group_end - group_start) * sizeof(tile_buffers[0][0]));
+      tile_buffers[0][group_end] = largest;
       group_start = group_end + 1;
     }
   }
@@ -970,7 +971,7 @@ static const uint8_t *decode_tiles_mt(VP9Decoder *pbi,
       VP9Worker *const worker = &pbi->tile_workers[i];
       TileWorkerData *const tile_data = (TileWorkerData*)worker->data1;
       TileInfo *const tile = (TileInfo*)worker->data2;
-      TileBuffer *const buf = &tile_buffers[n];
+      TileBuffer *const buf = &tile_buffers[0][n];
 
       tile_data->cm = cm;
       tile_data->xd = pbi->mb;
@@ -1278,6 +1279,7 @@ static struct vp9_read_bit_buffer* init_read_bit_buffer(
     const uint8_t *data,
     const uint8_t *data_end,
     uint8_t *clear_data /* buffer size MAX_VP9_HEADER_SIZE */) {
+  vp9_zero(*rb);
   rb->bit_offset = 0;
   rb->error_handler = error_handler;
   rb->error_handler_data = &pbi->common;
@@ -1298,7 +1300,7 @@ int vp9_decode_frame(VP9Decoder *pbi,
                      const uint8_t **p_data_end) {
   VP9_COMMON *const cm = &pbi->common;
   MACROBLOCKD *const xd = &pbi->mb;
-  struct vp9_read_bit_buffer rb = { 0 };
+  struct vp9_read_bit_buffer rb;
   uint8_t clear_data[MAX_VP9_HEADER_SIZE];
   const size_t first_partition_size = read_uncompressed_header(pbi,
       init_read_bit_buffer(pbi, &rb, data, data_end, clear_data));
@@ -1306,6 +1308,8 @@ int vp9_decode_frame(VP9Decoder *pbi,
   const int tile_rows = 1 << cm->log2_tile_rows;
   const int tile_cols = 1 << cm->log2_tile_cols;
   YV12_BUFFER_CONFIG *const new_fb = get_frame_new_buffer(cm);
+  const int do_loopfilter_inline = tile_rows == 1 && tile_cols == 1 &&
+                                   cm->lf.filter_level;
   xd->cur_buf = new_fb;
 
   if (!first_partition_size) {
@@ -1321,18 +1325,6 @@ int vp9_decode_frame(VP9Decoder *pbi,
   if (!read_is_valid(data, first_partition_size, data_end))
     vpx_internal_error(&cm->error, VPX_CODEC_CORRUPT_FRAME,
                        "Truncated packet or corrupt header length");
-
-  pbi->do_loopfilter_inline =
-      (cm->log2_tile_rows | cm->log2_tile_cols) == 0 && cm->lf.filter_level;
-  if (pbi->do_loopfilter_inline && pbi->lf_worker.data1 == NULL) {
-    CHECK_MEM_ERROR(cm, pbi->lf_worker.data1,
-                    vpx_memalign(32, sizeof(LFWorkerData)));
-    pbi->lf_worker.hook = (VP9WorkerHook)vp9_loop_filter_worker;
-    if (pbi->oxcf.max_threads > 1 && !vp9_worker_reset(&pbi->lf_worker)) {
-      vpx_internal_error(&cm->error, VPX_CODEC_ERROR,
-                         "Loop filter thread creation failed");
-    }
-  }
 
   init_macroblockd(cm, &pbi->mb);
 
@@ -1353,11 +1345,26 @@ int vp9_decode_frame(VP9Decoder *pbi,
 
   // TODO(jzern): remove frame_parallel_decoding_mode restriction for
   // single-frame tile decoding.
-  if (pbi->oxcf.max_threads > 1 && tile_rows == 1 && tile_cols > 1 &&
+  if (pbi->max_threads > 1 && tile_rows == 1 && tile_cols > 1 &&
       cm->frame_parallel_decoding_mode) {
     *p_data_end = decode_tiles_mt(pbi, data + first_partition_size, data_end);
+    // If multiple threads are used to decode tiles, then we use those threads
+    // to do parallel loopfiltering.
+    vp9_loop_filter_frame_mt(new_fb, pbi, cm, cm->lf.filter_level, 0);
   } else {
-    *p_data_end = decode_tiles(pbi, data + first_partition_size, data_end);
+    if (do_loopfilter_inline && pbi->lf_worker.data1 == NULL) {
+      CHECK_MEM_ERROR(cm, pbi->lf_worker.data1,
+                      vpx_memalign(32, sizeof(LFWorkerData)));
+      pbi->lf_worker.hook = (VP9WorkerHook)vp9_loop_filter_worker;
+      if (pbi->max_threads > 1 && !vp9_worker_reset(&pbi->lf_worker)) {
+        vpx_internal_error(&cm->error, VPX_CODEC_ERROR,
+                           "Loop filter thread creation failed");
+      }
+    }
+    *p_data_end = decode_tiles(pbi, data + first_partition_size, data_end,
+                               do_loopfilter_inline);
+    if (!do_loopfilter_inline)
+      vp9_loop_filter_frame(new_fb, cm, &pbi->mb, cm->lf.filter_level, 0, 0);
   }
 
   new_fb->corrupted |= xd->corrupted;
@@ -1370,16 +1377,17 @@ int vp9_decode_frame(VP9Decoder *pbi,
                          "A stream must start with a complete key frame");
   }
 
-  if (!cm->error_resilient_mode && !cm->frame_parallel_decoding_mode &&
-      !new_fb->corrupted) {
-    vp9_adapt_coef_probs(cm);
+  if (!new_fb->corrupted) {
+    if (!cm->error_resilient_mode && !cm->frame_parallel_decoding_mode) {
+      vp9_adapt_coef_probs(cm);
 
-    if (!frame_is_intra_only(cm)) {
-      vp9_adapt_mode_probs(cm);
-      vp9_adapt_mv_probs(cm, cm->allow_high_precision_mv);
+      if (!frame_is_intra_only(cm)) {
+        vp9_adapt_mode_probs(cm);
+        vp9_adapt_mv_probs(cm, cm->allow_high_precision_mv);
+      }
+    } else {
+      debug_check_frame_counts(cm);
     }
-  } else {
-    debug_check_frame_counts(cm);
   }
 
   if (cm->refresh_frame_context)

@@ -258,7 +258,7 @@ void BundleInstaller::ShowPrompt() {
   for (size_t i = 0; i < dummy_extensions_.size(); ++i) {
     permissions = PermissionSet::CreateUnion(
         permissions.get(),
-        PermissionsData::GetRequiredPermissions(dummy_extensions_[i].get()));
+        dummy_extensions_[i]->permissions_data()->active_permissions());
   }
 
   if (g_auto_approve_for_test == PROCEED) {

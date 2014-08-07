@@ -32,9 +32,9 @@
 #define InspectorCanvasAgent_h
 
 
-#include "InspectorFrontend.h"
-#include "InspectorTypeBuilder.h"
 #include "bindings/v8/ScriptState.h"
+#include "core/InspectorFrontend.h"
+#include "core/InspectorTypeBuilder.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
@@ -48,7 +48,7 @@ class InjectedScriptCanvasModule;
 class InjectedScriptManager;
 class InspectorPageAgent;
 class InstrumentingAgents;
-class ScriptObject;
+class ScriptValue;
 
 typedef String ErrorString;
 
@@ -69,8 +69,8 @@ public:
     void didBeginFrame();
 
     // Called from InspectorCanvasInstrumentation.
-    ScriptObject wrapCanvas2DRenderingContextForInstrumentation(const ScriptObject&);
-    ScriptObject wrapWebGLRenderingContextForInstrumentation(const ScriptObject&);
+    ScriptValue wrapCanvas2DRenderingContextForInstrumentation(const ScriptValue&);
+    ScriptValue wrapWebGLRenderingContextForInstrumentation(const ScriptValue&);
 
     // Called from the front-end.
     virtual void enable(ErrorString*) OVERRIDE;
@@ -89,12 +89,12 @@ private:
     InspectorCanvasAgent(InspectorPageAgent*, InjectedScriptManager*);
 
     InjectedScriptCanvasModule injectedScriptCanvasModule(ErrorString*, ScriptState*);
-    InjectedScriptCanvasModule injectedScriptCanvasModule(ErrorString*, const ScriptObject&);
+    InjectedScriptCanvasModule injectedScriptCanvasModule(ErrorString*, const ScriptValue&);
     InjectedScriptCanvasModule injectedScriptCanvasModule(ErrorString*, const String&);
 
     void findFramesWithUninstrumentedCanvases();
     bool checkIsEnabled(ErrorString*) const;
-    ScriptObject notifyRenderingContextWasWrapped(const ScriptObject&);
+    ScriptValue notifyRenderingContextWasWrapped(const ScriptValue&);
 
     InspectorPageAgent* m_pageAgent;
     InjectedScriptManager* m_injectedScriptManager;

@@ -23,9 +23,9 @@
 #include "config.h"
 #include "core/html/HTMLDivElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
@@ -37,10 +37,7 @@ HTMLDivElement::HTMLDivElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLDivElement> HTMLDivElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLDivElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLDivElement)
 
 void HTMLDivElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {

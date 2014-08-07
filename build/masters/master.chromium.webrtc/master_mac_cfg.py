@@ -2,57 +2,37 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from master import master_config
-from master.factory import chromium_factory
+from buildbot.scheduler import Triggerable
+from buildbot.schedulers.basic import SingleBranchScheduler
 
-defaults = {}
+from master.factory import annotator_factory
 
-helper = master_config.Helper(defaults)
-B = helper.Builder
-F = helper.Factory
-S = helper.Scheduler
-T = helper.Triggerable
+m_annotator = annotator_factory.AnnotatorFactory()
 
+def Update(c):
+  c['schedulers'].extend([
+      SingleBranchScheduler(name='mac_rel_scheduler',
+                            branch='src',
+                            treeStableTimer=60,
+                            builderNames=['Mac Builder']),
+      Triggerable(name='mac_rel_trigger',
+                  builderNames=['Mac Tester']),
+  ])
+  specs = [
+    {
+      'name': 'Mac Builder',
+      'triggers': ['mac_rel_trigger'],
+    },
+    {'name': 'Mac Tester'},
+  ]
 
-def mac():
-  return chromium_factory.ChromiumFactory('src/xcodebuild', 'darwin')
-
-S('mac_rel_scheduler', branch='src', treeStableTimer=60)
-T('mac_rel_trigger')
-
-chromium_rel_mac_archive = master_config.GetArchiveUrl('ChromiumWebRTC',
-    'Mac Builder',
-    'chromium-webrtc-rel-mac-builder',
-    'mac')
-
-tests = [
-    'webrtc_manual_browser_tests',
-    'webrtc_manual_content_browsertests',
-    'webrtc_content_unittests',
-]
-
-defaults['category'] = 'mac'
-
-B('Mac Builder', 'mac_rel_factory', scheduler='mac_rel_scheduler',
-  builddir='chromium-webrtc-rel-mac-builder', notify_on_missing=True)
-F('mac_rel_factory', mac().ChromiumWebRTCFactory(
-    slave_type='Builder',
-    target='Release',
-    options=['--compiler=goma-clang', '--', '-target',
-             'chromium_builder_webrtc'],
-    factory_properties={'trigger': 'mac_rel_trigger',}))
-
-B('Mac Tester', 'mac_tester_factory', scheduler='mac_rel_trigger')
-F('mac_tester_factory', mac().ChromiumWebRTCFactory(
-    slave_type='Tester',
-    build_url=chromium_rel_mac_archive,
-    tests=tests,
-    factory_properties={
-        'show_perf_results': True,
-        'halt_on_missing_build': True,
-        'perf_id': 'chromium-webrtc-rel-mac',
-    }))
-
-
-def Update(config, active_master, c):
-  helper.Update(c)
+  c['builders'].extend([
+      {
+        'name': spec['name'],
+        'factory': m_annotator.BaseFactory(
+            'webrtc/chromium',
+            triggers=spec.get('triggers')),
+        'category': 'mac',
+        'notify_on_missing': True,
+      } for spec in specs
+  ])

@@ -131,9 +131,9 @@ Vector<String> createVectorString(const char* const* rawStrings, size_t size)
     return result;
 }
 
-PassRefPtr<ShadowRoot> createShadowRootForElementWithIDAndSetInnerHTML(TreeScope& scope, const char* hostElementID, const char* shadowRootContent)
+PassRefPtrWillBeRawPtr<ShadowRoot> createShadowRootForElementWithIDAndSetInnerHTML(TreeScope& scope, const char* hostElementID, const char* shadowRootContent)
 {
-    RefPtr<ShadowRoot> shadowRoot = scope.getElementById(AtomicString::fromUTF8(hostElementID))->createShadowRoot(ASSERT_NO_EXCEPTION);
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = scope.getElementById(AtomicString::fromUTF8(hostElementID))->createShadowRoot(ASSERT_NO_EXCEPTION);
     shadowRoot->setInnerHTML(String::fromUTF8(shadowRootContent), ASSERT_NO_EXCEPTION);
     return shadowRoot.release();
 }
@@ -265,7 +265,7 @@ TEST_F(TextIteratorTest, NotEnteringShadowTreeWithNestedShadowTrees)
     Vector<String> expectedTextChunks = createVectorString(expectedTextChunksRawString, WTF_ARRAY_LENGTH(expectedTextChunksRawString));
 
     setBodyInnerHTML(bodyContent);
-    RefPtr<ShadowRoot> shadowRoot1 = createShadowRootForElementWithIDAndSetInnerHTML(document(), "host-in-document", shadowContent1);
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot1 = createShadowRootForElementWithIDAndSetInnerHTML(document(), "host-in-document", shadowContent1);
     createShadowRootForElementWithIDAndSetInnerHTML(*shadowRoot1, "host-in-shadow", shadowContent2);
 
     EXPECT_EQ(expectedTextChunks, iterate());
@@ -338,7 +338,7 @@ TEST_F(TextIteratorTest, EnteringShadowTreeWithNestedShadowTreesWithOption)
     Vector<String> expectedTextChunks = createVectorString(expectedTextChunksRawString, WTF_ARRAY_LENGTH(expectedTextChunksRawString));
 
     setBodyInnerHTML(bodyContent);
-    RefPtr<ShadowRoot> shadowRoot1 = createShadowRootForElementWithIDAndSetInnerHTML(document(), "host-in-document", shadowContent1);
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot1 = createShadowRootForElementWithIDAndSetInnerHTML(document(), "host-in-document", shadowContent1);
     createShadowRootForElementWithIDAndSetInnerHTML(*shadowRoot1, "host-in-shadow", shadowContent2);
 
     EXPECT_EQ(expectedTextChunks, iterate(TextIteratorEntersAuthorShadowRoots));
@@ -377,7 +377,7 @@ TEST_F(TextIteratorTest, StartingAtNodeInShadowRoot)
     Vector<String> expectedTextChunks = createVectorString(expectedTextChunksRawString, WTF_ARRAY_LENGTH(expectedTextChunksRawString));
 
     setBodyInnerHTML(bodyContent);
-    RefPtr<ShadowRoot> shadowRoot = createShadowRootForElementWithIDAndSetInnerHTML(document(), "host", shadowContent);
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = createShadowRootForElementWithIDAndSetInnerHTML(document(), "host", shadowContent);
     Node* outerDiv = document().getElementById("outer");
     Node* spanInShadow = shadowRoot->firstChild();
     Position start(spanInShadow, Position::PositionIsBeforeChildren);
@@ -397,7 +397,7 @@ TEST_F(TextIteratorTest, FinishingAtNodeInShadowRoot)
     Vector<String> expectedTextChunks = createVectorString(expectedTextChunksRawString, WTF_ARRAY_LENGTH(expectedTextChunksRawString));
 
     setBodyInnerHTML(bodyContent);
-    RefPtr<ShadowRoot> shadowRoot = createShadowRootForElementWithIDAndSetInnerHTML(document(), "host", shadowContent);
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = createShadowRootForElementWithIDAndSetInnerHTML(document(), "host", shadowContent);
     Node* outerDiv = document().getElementById("outer");
     Node* spanInShadow = shadowRoot->firstChild();
     Position start(outerDiv, Position::PositionIsBeforeChildren);
@@ -515,6 +515,41 @@ TEST_F(TextIteratorTest, FindPlainTextInvalidTarget)
         RefPtrWillBeRawPtr<Range> actualRange = findPlainText(range.get(), invalidTarget, 0);
         EXPECT_TRUE(areRangesEqual(expectedRange.get(), actualRange.get()));
     }
+}
+
+TEST_F(TextIteratorTest, EmitsReplacementCharForInput)
+{
+    static const char* bodyContent =
+        "<div contenteditable=\"true\">"
+        "Before"
+        "<img src=\"foo.png\">"
+        "After"
+        "</div>";
+    // "Before".
+    static const UChar expectedRawString1[] = { 0x42, 0x65, 0x66, 0x6F, 0x72, 0x65, 0 };
+    // Object replacement char.
+    static const UChar expectedRawString2[] = { 0xFFFC, 0 };
+    // "After".
+    static const UChar expectedRawString3[] = { 0x41, 0x66, 0x74, 0x65, 0x72, 0 };
+    static const UChar* expectedRawStrings[] = { expectedRawString1, expectedRawString2, expectedRawString3 };
+    Vector<String> expectedTextChunks;
+    expectedTextChunks.append(expectedRawStrings, WTF_ARRAY_LENGTH(expectedRawStrings));
+
+    setBodyInnerHTML(bodyContent);
+    EXPECT_EQ(expectedTextChunks, iterate(TextIteratorEmitsObjectReplacementCharacter));
+}
+
+TEST_F(TextIteratorTest, RangeLengthWithReplacedElements)
+{
+    static const char* bodyContent =
+        "<div id=\"div\" contenteditable=\"true\">1<img src=\"foo.png\">3</div>";
+    setBodyInnerHTML(bodyContent);
+    document().view()->updateLayoutAndStyleIfNeededRecursive();
+
+    Node* divNode = document().getElementById("div");
+    RefPtrWillBeRawPtr<Range> range = Range::create(document(), divNode, 0, divNode, 3);
+
+    EXPECT_EQ(3, TextIterator::rangeLength(range.get()));
 }
 
 }

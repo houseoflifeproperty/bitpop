@@ -82,14 +82,14 @@ class SafeBrowsingBlockingPage : public content::InterstitialPageDelegate {
   virtual void OnDontProceed() OVERRIDE;
 
  protected:
+  template <class TestSBInterstitialPage>
   friend class SafeBrowsingBlockingPageTest;
+  template <class TestSBInterstitialPage>
   FRIEND_TEST_ALL_PREFIXES(SafeBrowsingBlockingPageTest,
-                           ProceedThenDontProceed);
-  friend class SafeBrowsingBlockingPageV2Test;
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingBlockingPageV2Test,
                            ProceedThenDontProceed);
 
   void SetReportingPreference(bool report);
+  void UpdateReportingPref();  // Used for the transition from old to new pref.
 
   // Don't instanciate this class directly, use ShowBlockingPage instead.
   SafeBrowsingBlockingPage(SafeBrowsingUIManager* ui_manager,
@@ -105,8 +105,12 @@ class SafeBrowsingBlockingPage : public content::InterstitialPageDelegate {
     return interstitial_page_;
   }
 
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingBlockingPageTest, MalwareReports);
-  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingBlockingPageV2Test, MalwareReports);
+  template <class TestSBInterstitialPage>
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingBlockingPageTest,
+      MalwareReportsTransitionDisabled);
+  template <class TestSBInterstitialPage>
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingBlockingPageTest,
+      MalwareReportsToggling);
 
   enum BlockingPageEvent {
     SHOW,
@@ -200,6 +204,9 @@ class SafeBrowsingBlockingPage : public content::InterstitialPageDelegate {
   // during this interstitial page.
   bool has_expanded_see_more_section_;
 
+  // Whether the user has left the reporting checkbox checked.
+  bool reporting_checkbox_checked_;
+
   // Which type of interstitial this is.
   enum {
     TYPE_MALWARE,
@@ -274,10 +281,28 @@ class SafeBrowsingBlockingPageV2 : public SafeBrowsingBlockingPage {
                                 const base::string16& description2,
                                 const base::string16& description3);
 
-  // For the FieldTrial: this contains the name of the condition.
-  std::string trialCondition_;
-
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingBlockingPageV2);
+};
+
+class SafeBrowsingBlockingPageV3 : public SafeBrowsingBlockingPage {
+ public:
+  SafeBrowsingBlockingPageV3(SafeBrowsingUIManager* ui_manager,
+                             content::WebContents* web_contents,
+                             const UnsafeResourceList& unsafe_resources);
+
+  // InterstitialPageDelegate method:
+  virtual std::string GetHTMLContents() OVERRIDE;
+
+ private:
+  // Fills the passed dictionary with the values to be passed to the template
+  // when creating the HTML.
+  void PopulateMalwareLoadTimeData(base::DictionaryValue* load_time_data);
+  void PopulatePhishingLoadTimeData(base::DictionaryValue* load_time_data);
+
+  // For the M37 FieldTrial: this contains the name of the condition.
+  std::string trial_condition_;
+
+  DISALLOW_COPY_AND_ASSIGN(SafeBrowsingBlockingPageV3);
 };
 
 // Factory for creating SafeBrowsingBlockingPage.  Useful for tests.

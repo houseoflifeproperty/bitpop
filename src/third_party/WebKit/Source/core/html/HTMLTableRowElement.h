@@ -34,7 +34,7 @@ class ExceptionState;
 
 class HTMLTableRowElement FINAL : public HTMLTablePartElement {
 public:
-    static PassRefPtrWillBeRawPtr<HTMLTableRowElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLTableRowElement);
 
     int rowIndex() const;
 
@@ -44,7 +44,7 @@ public:
     PassRefPtrWillBeRawPtr<HTMLElement> insertCell(int index, ExceptionState&);
     void deleteCell(int index, ExceptionState&);
 
-    PassRefPtr<HTMLCollection> cells();
+    PassRefPtrWillBeRawPtr<HTMLCollection> cells();
 
 private:
     explicit HTMLTableRowElement(Document&);

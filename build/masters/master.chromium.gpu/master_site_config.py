@@ -11,3 +11,6 @@ class ChromiumGPU(Master.Master1):
   master_port = 8051
   slave_port = 8151
   master_port_alt = 8251
+  tree_closing_notification_recipients = [
+    'chrome-gpu-build-failures@google.com']
+  buildbot_url = 'http://build.chromium.org/p/chromium.gpu/'

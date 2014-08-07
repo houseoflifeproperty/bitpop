@@ -39,6 +39,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "chrome/browser/history/download_row.h"
@@ -53,8 +54,8 @@
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/thumbnail_score.h"
 #include "chrome/tools/profiles/thumbnail-inl.h"
+#include "components/history/core/common/thumbnail_score.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -140,6 +141,16 @@ class HistoryBackendDBTest : public HistoryUnitTestBase {
             chrome::kHistoryFilename)));
   }
 
+  void CreateArchivedDB() {
+    base::FilePath data_path;
+    ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_path));
+    data_path = data_path.AppendASCII("History");
+    data_path = data_path.AppendASCII("archived_history.4.sql");
+    ASSERT_NO_FATAL_FAILURE(
+        ExecuteSQLScript(data_path, history_dir_.Append(
+            chrome::kArchivedHistoryFilename)));
+  }
+
   // testing::Test
   virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
@@ -174,6 +185,8 @@ class HistoryBackendDBTest : public HistoryUnitTestBase {
                          base::FilePath(FILE_PATH_LITERAL("target-path")),
                          url_chain,
                          GURL("http://referrer.com/"),
+                         "application/vnd.oasis.opendocument.text",
+                         "application/octet-stream",
                          time,
                          time,
                          std::string(),
@@ -256,6 +269,8 @@ TEST_F(HistoryBackendDBTest, ClearBrowsingData_Downloads) {
   EXPECT_FALSE(downloads[0].opened);
   EXPECT_EQ("by_ext_id", downloads[0].by_ext_id);
   EXPECT_EQ("by_ext_name", downloads[0].by_ext_name);
+  EXPECT_EQ("application/vnd.oasis.opendocument.text", downloads[0].mime_type);
+  EXPECT_EQ("application/octet-stream", downloads[0].original_mime_type);
 
   db_->QueryDownloads(&downloads);
   EXPECT_EQ(1U, downloads.size());
@@ -619,6 +634,90 @@ TEST_F(HistoryBackendDBTest, MigrateDownloadValidators) {
   }
 }
 
+TEST_F(HistoryBackendDBTest, PurgeArchivedDatabase) {
+  ASSERT_NO_FATAL_FAILURE(CreateDBVersion(27));
+  ASSERT_NO_FATAL_FAILURE(CreateArchivedDB());
+
+  ASSERT_TRUE(base::PathExists(
+      history_dir_.Append(chrome::kArchivedHistoryFilename)));
+
+  CreateBackendAndDatabase();
+  DeleteBackend();
+
+  // We do not retain expired history entries in an archived database as of M37.
+  // Verify that any legacy archived database is deleted on start-up.
+  ASSERT_FALSE(base::PathExists(
+      history_dir_.Append(chrome::kArchivedHistoryFilename)));
+}
+
+TEST_F(HistoryBackendDBTest, MigrateDownloadMimeType) {
+  Time now(base::Time::Now());
+  ASSERT_NO_FATAL_FAILURE(CreateDBVersion(28));
+  {
+    sql::Connection db;
+    ASSERT_TRUE(db.Open(history_dir_.Append(chrome::kHistoryFilename)));
+    {
+      sql::Statement s(db.GetUniqueStatement(
+          "INSERT INTO downloads (id, current_path, target_path, start_time, "
+          "received_bytes, total_bytes, state, danger_type, interrupt_reason, "
+          "end_time, opened, referrer, by_ext_id, by_ext_name, etag, "
+          "last_modified) VALUES "
+          "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+      s.BindInt64(0, 1);
+      s.BindString(1, "current_path");
+      s.BindString(2, "target_path");
+      s.BindInt64(3, now.ToTimeT());
+      s.BindInt64(4, 100);
+      s.BindInt64(5, 100);
+      s.BindInt(6, 1);
+      s.BindInt(7, 0);
+      s.BindInt(8, 0);
+      s.BindInt64(9, now.ToTimeT());
+      s.BindInt(10, 1);
+      s.BindString(11, "referrer");
+      s.BindString(12, "by extension ID");
+      s.BindString(13, "by extension name");
+      s.BindString(14, "etag");
+      s.BindInt64(15, now.ToTimeT());
+      ASSERT_TRUE(s.Run());
+    }
+    {
+      sql::Statement s(db.GetUniqueStatement(
+          "INSERT INTO downloads_url_chains (id, chain_index, url) VALUES "
+          "(?, ?, ?)"));
+      s.BindInt64(0, 4);
+      s.BindInt64(1, 0);
+      s.BindString(2, "url");
+      ASSERT_TRUE(s.Run());
+    }
+  }
+  // Re-open the db using the HistoryDatabase, which should migrate to the
+  // current version, creating themime_type abd original_mime_type columns.
+  CreateBackendAndDatabase();
+  DeleteBackend();
+  {
+    // Re-open the db for manual manipulation.
+    sql::Connection db;
+    ASSERT_TRUE(db.Open(history_dir_.Append(chrome::kHistoryFilename)));
+    // The version should have been updated.
+    int cur_version = HistoryDatabase::GetCurrentVersion();
+    ASSERT_LE(29, cur_version);
+    {
+      sql::Statement s(db.GetUniqueStatement(
+          "SELECT value FROM meta WHERE key = 'version'"));
+      EXPECT_TRUE(s.Step());
+      EXPECT_EQ(cur_version, s.ColumnInt(0));
+    }
+    {
+      sql::Statement s(db.GetUniqueStatement(
+          "SELECT mime_type, original_mime_type from downloads"));
+      EXPECT_TRUE(s.Step());
+      EXPECT_EQ(std::string(), s.ColumnString(0));
+      EXPECT_EQ(std::string(), s.ColumnString(1));
+    }
+  }
+}
+
 TEST_F(HistoryBackendDBTest, ConfirmDownloadRowCreateAndDelete) {
   // Create the DB.
   CreateBackendAndDatabase();
@@ -675,6 +774,8 @@ TEST_F(HistoryBackendDBTest, DownloadNukeRecordsMissingURLs) {
                        base::FilePath(FILE_PATH_LITERAL("foo-path")),
                        url_chain,
                        GURL(std::string()),
+                       "application/octet-stream",
+                       "application/octet-stream",
                        now,
                        now,
                        std::string(),
@@ -872,15 +973,6 @@ TEST_F(HistoryBackendDBTest,
   }
 }
 
-// The tracker uses RenderProcessHost pointers for scoping but never
-// dereferences them. We use ints because it's easier. This function converts
-// between the two.
-static void* MakeFakeHost(int id) {
-  void* host = 0;
-  memcpy(&host, &id, sizeof(id));
-  return host;
-}
-
 class HistoryTest : public testing::Test {
  public:
   HistoryTest()
@@ -917,7 +1009,7 @@ class HistoryTest : public testing::Test {
     history_dir_ = temp_dir_.path().AppendASCII("HistoryTest");
     ASSERT_TRUE(base::CreateDirectory(history_dir_));
     history_service_.reset(new HistoryService);
-    if (!history_service_->Init(history_dir_, NULL)) {
+    if (!history_service_->Init(history_dir_)) {
       history_service_.reset();
       ADD_FAILURE();
     }
@@ -937,7 +1029,7 @@ class HistoryTest : public testing::Test {
   void CleanupHistoryService() {
     DCHECK(history_service_);
 
-    history_service_->NotifyRenderProcessHostDestruction(0);
+    history_service_->ClearCachedDataForContextID(0);
     history_service_->SetOnBackendDestroyTask(base::MessageLoop::QuitClosure());
     history_service_->Cleanup();
     history_service_.reset();
@@ -953,22 +1045,23 @@ class HistoryTest : public testing::Test {
   // information about the given URL and returns true. If the URL was not
   // found, this will return false and those structures will not be changed.
   bool QueryURL(HistoryService* history, const GURL& url) {
-    history_service_->QueryURL(url, true, &consumer_,
-                               base::Bind(&HistoryTest::SaveURLAndQuit,
-                                          base::Unretained(this)));
+    history_service_->QueryURL(
+        url,
+        true,
+        base::Bind(&HistoryTest::SaveURLAndQuit, base::Unretained(this)),
+        &tracker_);
     base::MessageLoop::current()->Run();  // Will be exited in SaveURLAndQuit.
     return query_url_success_;
   }
 
   // Callback for HistoryService::QueryURL.
-  void SaveURLAndQuit(HistoryService::Handle handle,
-                      bool success,
-                      const URLRow* url_row,
-                      VisitVector* visit_vector) {
+  void SaveURLAndQuit(bool success,
+                      const URLRow& url_row,
+                      const VisitVector& visits) {
     query_url_success_ = success;
     if (query_url_success_) {
-      query_url_row_ = *url_row;
-      query_url_visits_.swap(*visit_vector);
+      query_url_row_ = url_row;
+      query_url_visits_ = visits;
     } else {
       query_url_row_ = URLRow();
       query_url_visits_.clear();
@@ -1028,6 +1121,7 @@ class HistoryTest : public testing::Test {
   bool redirect_query_success_;
 
   // For history requests.
+  base::CancelableTaskTracker tracker_;
   CancelableRequestConsumer consumer_;
 
   // For saving URL info after a call to QueryURL
@@ -1072,9 +1166,9 @@ TEST_F(HistoryTest, AddRedirect) {
   // Add the sequence of pages as a server with no referrer. Note that we need
   // to have a non-NULL page ID scope.
   history_service_->AddPage(
-      first_redirects.back(), base::Time::Now(), MakeFakeHost(1),
-      0, GURL(), first_redirects, content::PAGE_TRANSITION_LINK,
-      history::SOURCE_BROWSED, true);
+      first_redirects.back(), base::Time::Now(),
+      reinterpret_cast<ContextID>(1), 0, GURL(), first_redirects,
+      content::PAGE_TRANSITION_LINK, history::SOURCE_BROWSED, true);
 
   // The first page should be added once with a link visit type (because we set
   // LINK when we added the original URL, and a referrer of nowhere (0).
@@ -1111,7 +1205,8 @@ TEST_F(HistoryTest, AddRedirect) {
   second_redirects.push_back(first_redirects[1]);
   second_redirects.push_back(GURL("http://last.page.com/"));
   history_service_->AddPage(second_redirects[1], base::Time::Now(),
-                   MakeFakeHost(1), 1, second_redirects[0], second_redirects,
+                   reinterpret_cast<ContextID>(1), 1,
+                   second_redirects[0], second_redirects,
                    static_cast<content::PageTransition>(
                        content::PAGE_TRANSITION_LINK |
                        content::PAGE_TRANSITION_CLIENT_REDIRECT),
@@ -1301,12 +1396,12 @@ TEST_F(HistoryTest, SetTitle) {
 TEST_F(HistoryTest, DISABLED_Segments) {
   ASSERT_TRUE(history_service_.get());
 
-  static const void* scope = static_cast<void*>(this);
+  static ContextID context_id = static_cast<ContextID>(this);
 
   // Add a URL.
   const GURL existing_url("http://www.google.com/");
   history_service_->AddPage(
-      existing_url, base::Time::Now(), scope, 0, GURL(),
+      existing_url, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
 
@@ -1326,7 +1421,7 @@ TEST_F(HistoryTest, DISABLED_Segments) {
   // Add a URL which doesn't create a segment.
   const GURL link_url("http://yahoo.com/");
   history_service_->AddPage(
-      link_url, base::Time::Now(), scope, 0, GURL(),
+      link_url, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_LINK,
       history::SOURCE_BROWSED, false);
 
@@ -1346,7 +1441,7 @@ TEST_F(HistoryTest, DISABLED_Segments) {
   // Add a page linked from existing_url.
   history_service_->AddPage(
       GURL("http://www.google.com/foo"), base::Time::Now(),
-      scope, 3, existing_url, history::RedirectList(),
+      context_id, 3, existing_url, history::RedirectList(),
       content::PAGE_TRANSITION_LINK, history::SOURCE_BROWSED,
       false);
 
@@ -1376,15 +1471,15 @@ TEST_F(HistoryTest, MostVisitedURLs) {
   const GURL url3("http://www.google.com/url3/");
   const GURL url4("http://www.google.com/url4/");
 
-  static const void* scope = static_cast<void*>(this);
+  static ContextID context_id = static_cast<ContextID>(this);
 
   // Add two pages.
   history_service_->AddPage(
-      url0, base::Time::Now(), scope, 0, GURL(),
+      url0, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->AddPage(
-      url1, base::Time::Now(), scope, 0, GURL(),
+      url1, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
@@ -1400,7 +1495,7 @@ TEST_F(HistoryTest, MostVisitedURLs) {
 
   // Add another page.
   history_service_->AddPage(
-      url2, base::Time::Now(), scope, 0, GURL(),
+      url2, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
@@ -1417,7 +1512,7 @@ TEST_F(HistoryTest, MostVisitedURLs) {
 
   // Revisit url2, making it the top URL.
   history_service_->AddPage(
-      url2, base::Time::Now(), scope, 0, GURL(),
+      url2, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
@@ -1434,7 +1529,7 @@ TEST_F(HistoryTest, MostVisitedURLs) {
 
   // Revisit url1, making it the top URL.
   history_service_->AddPage(
-      url1, base::Time::Now(), scope, 0, GURL(),
+      url1, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
@@ -1456,7 +1551,7 @@ TEST_F(HistoryTest, MostVisitedURLs) {
 
   // Visit url4 using redirects.
   history_service_->AddPage(
-      url4, base::Time::Now(), scope, 0, GURL(),
+      url4, base::Time::Now(), context_id, 0, GURL(),
       redirects, content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(

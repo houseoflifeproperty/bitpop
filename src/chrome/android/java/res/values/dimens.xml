@@ -8,8 +8,14 @@
     <!-- Certificate Viewer Dimensions -->
     <dimen name="certificate_viewer_padding">20dp</dimen>
 
+    <!-- Accessibility tab switcher -->
+    <dimen name="accessibility_tab_height">65dp</dimen>
+
+    <!-- TabSwitcher - The minimum distance from the edge to commit a side swap. -->
+    <dimen name="swipe_commit_distance">120dp</dimen>
+
     <!-- Custom Menu dimensions -->
-    <dimen name="menu_width">257dp</dimen>
+    <dimen name="menu_width">260dp</dimen>
     <dimen name="menu_vertical_offset">0dp</dimen>
     <!-- The amount to fade the edges of the menu to indicate more content is available
          via scrolling. -->
@@ -21,21 +27,21 @@
     <dimen name="edge_swipe_in_additional_slop">50dp</dimen>
     <dimen name="edge_swipe_out_slop">18dp</dimen>
     
-        <!-- Infobar dimensions -->
-    <!-- Text size of the InfoBar message. -->
+    <!-- Infobar dimensions -->
+    <!-- Text size of the infobar message. -->
     <dimen name="infobar_text_size">16sp</dimen>
-    <!-- Text size of text inside InfoBar buttons. -->
-    <dimen name="infobar_button_text_size">16sp</dimen>
-    <!-- Minimum dimension (height or width) of the upper row of an InfoBar. -->
-    <dimen name="infobar_min_size">60dp</dimen>
-    <!-- Margin between items in an InfoBar. -->
-    <dimen name="infobar_margin">10dp</dimen>
+    <!-- Text size of text inside infobar buttons. -->
+    <dimen name="infobar_button_text_size">12sp</dimen>
+    <!-- Minimum width of an infobar. -->
+    <dimen name="infobar_min_width">220dp</dimen>
+    <!-- Margin between items in an infobar. -->
+    <dimen name="infobar_margin">16dp</dimen>
     <!-- Left/right padding for infobar button text. -->
-    <dimen name="infobar_button_horizontal_padding">30dp</dimen>
+    <dimen name="infobar_button_horizontal_padding">20dp</dimen>
     <!-- Minimum height for a touch target. -->
     <dimen name="infobar_touch_target_height">40dp</dimen>
-    <!-- Dimension (height or width) of the InfoBar icon. -->
-    <dimen name="infobar_icon_size">31dp</dimen>
+    <!-- Width and height of the infobar icon. -->
+    <dimen name="infobar_icon_size">36dp</dimen>
 
     <!-- App banner dimensions -->
     <dimen name="app_banner_max_width">424dp</dimen>

@@ -31,6 +31,7 @@ namespace WebCore {
 
 class ExceptionState;
 class Position;
+class Range;
 class RenderTextControl;
 class VisiblePosition;
 
@@ -75,12 +76,12 @@ public:
 
     virtual String value() const = 0;
 
-    HTMLElement* innerTextElement() const;
+    HTMLElement* innerEditorElement() const;
 
     void selectionChanged(bool userTriggered);
     bool lastChangeWasUserEdit() const;
-    virtual void setInnerTextValue(const String&);
-    String innerTextValue() const;
+    virtual void setInnerEditorValue(const String&);
+    String innerEditorValue() const;
 
     String directionForFormData() const;
 
@@ -145,6 +146,7 @@ inline bool isHTMLTextFormControlElement(const Element& element)
 DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(HTMLTextFormControlElement);
 
 HTMLTextFormControlElement* enclosingTextFormControl(const Position&);
+HTMLTextFormControlElement* enclosingTextFormControl(Node*);
 
 } // namespace
 

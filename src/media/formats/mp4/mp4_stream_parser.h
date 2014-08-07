@@ -42,6 +42,7 @@ class MEDIA_EXPORT MP4StreamParser : public StreamParser {
   enum State {
     kWaitingForInit,
     kParsingBoxes,
+    kWaitingForSampleData,
     kEmittingSamples,
     kError
   };
@@ -56,10 +57,12 @@ class MEDIA_EXPORT MP4StreamParser : public StreamParser {
   // To retain proper framing, each 'mdat' atom must be read; to limit memory
   // usage, the atom's data needs to be discarded incrementally as frames are
   // extracted from the stream. This function discards data from the stream up
-  // to |offset|, updating the |mdat_tail_| value so that framing can be
-  // retained after all 'mdat' information has been read.
+  // to |max_clear_offset|, updating the |mdat_tail_| value so that framing can
+  // be retained after all 'mdat' information has been read. |max_clear_offset|
+  // is the upper bound on what can be removed from |queue_|. Anything below
+  // this offset is no longer needed by the parser.
   // Returns 'true' on success, 'false' if there was an error.
-  bool ReadAndDiscardMDATsUntil(const int64 offset);
+  bool ReadAndDiscardMDATsUntil(int64 max_clear_offset);
 
   void ChangeState(State new_state);
 
@@ -77,6 +80,15 @@ class MEDIA_EXPORT MP4StreamParser : public StreamParser {
                            BufferQueue* video_buffers);
 
   void Reset();
+
+  // Checks to see if we have enough data in |queue_| to transition to
+  // kEmittingSamples and start enqueuing samples.
+  bool HaveEnoughDataToEnqueueSamples();
+
+  // Sets |highest_end_offset_| based on the data in |moov_|
+  // and |moof|. Returns true if |highest_end_offset_| was successfully
+  // computed.
+  bool ComputeHighestEndOffset(const MovieFragment& moof);
 
   State state_;
   InitCB init_cb_;
@@ -98,6 +110,11 @@ class MEDIA_EXPORT MP4StreamParser : public StreamParser {
   // |mdat_tail_| is the stream offset of the end of the current 'mdat' box.
   // Valid iff it is greater than the head of the queue.
   int64 mdat_tail_;
+
+  // The highest end offset in the current moof. This offset is
+  // relative to |moof_head_|. This value is used to make sure we have collected
+  // enough bytes to parse all samples and aux_info in the current moof.
+  int64 highest_end_offset_;
 
   scoped_ptr<mp4::Movie> moov_;
   scoped_ptr<mp4::TrackRunIterator> runs_;

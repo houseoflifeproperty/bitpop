@@ -48,12 +48,15 @@ WebInspector.DebuggerModel = function(target)
     this._scriptsBySourceURL = new StringMap();
 
     this._breakpointsActive = true;
+    /** @type {!WebInspector.Object} */
+    this._breakpointResolvedEventTarget = new WebInspector.Object();
 
+    this._isPausing = false;
     WebInspector.settings.pauseOnExceptionEnabled.addChangeListener(this._pauseOnExceptionStateChanged, this);
     WebInspector.settings.pauseOnCaughtException.addChangeListener(this._pauseOnExceptionStateChanged, this);
 
     WebInspector.settings.enableAsyncStackTraces.addChangeListener(this._asyncStackTracesStateChanged, this);
-    target.profilingLock.addEventListener(WebInspector.Lock.Events.StateChanged, this._asyncStackTracesStateChanged, this);
+    target.profilingLock.addEventListener(WebInspector.Lock.Events.StateChanged, this._profilingStateChanged, this);
 
     this.enableDebugger();
 
@@ -80,7 +83,6 @@ WebInspector.DebuggerModel.Events = {
     DebuggerResumed: "DebuggerResumed",
     ParsedScriptSource: "ParsedScriptSource",
     FailedToParseScriptSource: "FailedToParseScriptSource",
-    BreakpointResolved: "BreakpointResolved",
     GlobalObjectCleared: "GlobalObjectCleared",
     CallFrameSelected: "CallFrameSelected",
     ConsoleCommandEvaluatedInSelectedCallFrame: "ConsoleCommandEvaluatedInSelectedCallFrame",
@@ -168,6 +170,17 @@ WebInspector.DebuggerModel.prototype = {
         this._agent.setPauseOnExceptions(state);
     },
 
+    _profilingStateChanged: function()
+    {
+        if (WebInspector.experimentsSettings.disableAgentsWhenProfile.isEnabled()) {
+            if (this.target().profilingLock.isAcquired())
+                this.disableDebugger();
+            else
+                this.enableDebugger();
+        }
+        this._asyncStackTracesStateChanged();
+    },
+
     _asyncStackTracesStateChanged: function()
     {
         const maxAsyncStackChainDepth = 4;
@@ -178,6 +191,7 @@ WebInspector.DebuggerModel.prototype = {
     _debuggerWasDisabled: function()
     {
         this._debuggerEnabled = false;
+        this._isPausing = false;
         this.dispatchEventToListeners(WebInspector.DebuggerModel.Events.DebuggerWasDisabled);
     },
 
@@ -227,6 +241,14 @@ WebInspector.DebuggerModel.prototype = {
             this._agent.resume();
         }
         this._agent.setOverlayMessage(undefined, callback.bind(this));
+        this._isPausing = false;
+    },
+
+    pause: function()
+    {
+        this._isPausing = true;
+        this.skipAllPauses(false);
+        this._agent.pause();
     },
 
     /**
@@ -330,7 +352,7 @@ WebInspector.DebuggerModel.prototype = {
      */
     _breakpointResolved: function(breakpointId, location)
     {
-        this.dispatchEventToListeners(WebInspector.DebuggerModel.Events.BreakpointResolved, {breakpointId: breakpointId, location: WebInspector.DebuggerModel.Location.fromPayload(this.target(), location)});
+        this._breakpointResolvedEventTarget.dispatchEventToListeners(breakpointId, WebInspector.DebuggerModel.Location.fromPayload(this.target(), location));
     },
 
     _globalObjectCleared: function()
@@ -423,6 +445,7 @@ WebInspector.DebuggerModel.prototype = {
      */
     _setDebuggerPausedDetails: function(debuggerPausedDetails)
     {
+        this._isPausing = false;
         if (this._debuggerPausedDetails)
             this._debuggerPausedDetails.dispose();
         this._debuggerPausedDetails = debuggerPausedDetails;
@@ -533,6 +556,14 @@ WebInspector.DebuggerModel.prototype = {
     isPaused: function()
     {
         return !!this.debuggerPausedDetails();
+    },
+
+    /**
+     * @return {boolean}
+     */
+    isPausing: function()
+    {
+        return this._isPausing;
     },
 
     /**
@@ -706,6 +737,26 @@ WebInspector.DebuggerModel.prototype = {
         }
     },
 
+    /**
+     * @param {!DebuggerAgent.BreakpointId} breakpointId
+     * @param {function(!WebInspector.Event)} listener
+     * @param {!Object=} thisObject
+     */
+    addBreakpointListener: function(breakpointId, listener, thisObject)
+    {
+        this._breakpointResolvedEventTarget.addEventListener(breakpointId, listener, thisObject)
+    },
+
+    /**
+     * @param {!DebuggerAgent.BreakpointId} breakpointId
+     * @param {function(!WebInspector.Event)} listener
+     * @param {!Object=} thisObject
+     */
+    removeBreakpointListener: function(breakpointId, listener, thisObject)
+    {
+        this._breakpointResolvedEventTarget.removeEventListener(breakpointId, listener, thisObject);
+    },
+
     __proto__: WebInspector.TargetAwareObject.prototype
 }
 
@@ -812,6 +863,7 @@ WebInspector.DebuggerModel.Location = function(target, scriptId, lineNumber, col
 /**
  * @param {!WebInspector.Target} target
  * @param {!DebuggerAgent.Location} payload
+ * @return {!WebInspector.DebuggerModel.Location}
  */
 WebInspector.DebuggerModel.Location.fromPayload = function(target, payload)
 {
@@ -855,6 +907,14 @@ WebInspector.DebuggerModel.Location.prototype = {
     continueToLocation: function()
     {
         this._debuggerModel._agent.continueToLocation(this.payload());
+    },
+
+    /**
+     * @return {string}
+     */
+    id: function()
+    {
+        return this.target().id() + ":" + this.scriptId + ":" + this.lineNumber + ":" + this.columnNumber
     },
 
     __proto__: WebInspector.TargetAware.prototype

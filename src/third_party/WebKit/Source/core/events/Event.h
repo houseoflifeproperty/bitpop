@@ -36,7 +36,6 @@ namespace WebCore {
 class EventTarget;
 class EventDispatcher;
 class ExecutionContext;
-class HTMLIFrameElement;
 
 struct EventInit {
     STACK_ALLOCATED();
@@ -113,9 +112,9 @@ public:
     void setType(const AtomicString& type) { m_type = type; }
 
     EventTarget* target() const { return m_target.get(); }
-    void setTarget(PassRefPtr<EventTarget>);
+    void setTarget(PassRefPtrWillBeRawPtr<EventTarget>);
 
-    EventTarget* currentTarget() const { return m_currentTarget; }
+    EventTarget* currentTarget() const;
     void setCurrentTarget(EventTarget* currentTarget) { m_currentTarget = currentTarget; }
 
     unsigned short eventPhase() const { return m_eventPhase; }
@@ -178,7 +177,7 @@ public:
     EventPath& eventPath() { ASSERT(m_eventPath); return *m_eventPath; }
     EventPath& ensureEventPath();
 
-    PassRefPtr<NodeList> path() const;
+    PassRefPtrWillBeRawPtr<StaticNodeList> path() const;
 
     bool isBeingDispatched() const { return eventPhase(); }
 
@@ -204,8 +203,8 @@ private:
     bool m_cancelBubble;
 
     unsigned short m_eventPhase;
-    EventTarget* m_currentTarget;
-    RefPtr<EventTarget> m_target;
+    RawPtrWillBeMember<EventTarget> m_currentTarget;
+    RefPtrWillBeMember<EventTarget> m_target;
     DOMTimeStamp m_createTime;
     RefPtrWillBeMember<Event> m_underlyingEvent;
     OwnPtrWillBeMember<EventPath> m_eventPath;

@@ -71,8 +71,7 @@ public:
     virtual void willEndLiveResize() OVERRIDE FINAL;
     virtual void animate(double frameBeginTime) OVERRIDE FINAL;
     virtual void layout() OVERRIDE FINAL;
-    virtual void enterForceCompositingMode(bool enable) OVERRIDE FINAL;
-    virtual void paint(WebCanvas*, const WebRect&, PaintOptions = ReadbackFromCompositorIfAvailable) OVERRIDE FINAL;
+    virtual void paint(WebCanvas*, const WebRect&) OVERRIDE FINAL;
     virtual void themeChanged() OVERRIDE FINAL;
     virtual bool handleInputEvent(const WebInputEvent&) OVERRIDE FINAL;
     virtual void mouseCaptureLost() OVERRIDE FINAL;
@@ -135,7 +134,6 @@ public:
 
     WebLayerTreeView* m_layerTreeView;
     OwnPtr<WebContentLayer> m_rootLayer;
-    bool m_isAcceleratedCompositingActive;
 
     WebPoint m_lastMousePosition;
 

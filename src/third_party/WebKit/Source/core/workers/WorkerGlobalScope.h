@@ -33,8 +33,8 @@
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
 #include "core/frame/DOMWindowBase64.h"
+#include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
-#include "core/workers/WorkerConsole.h"
 #include "core/workers/WorkerEventQueue.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
@@ -60,7 +60,7 @@ namespace WebCore {
 
     class WorkerGlobalScope : public RefCountedWillBeRefCountedGarbageCollected<WorkerGlobalScope>, public ScriptWrappable, public SecurityContext, public ExecutionContext, public ExecutionContextClient, public WillBeHeapSupplementable<WorkerGlobalScope>, public EventTargetWithInlineData, public DOMWindowBase64 {
         WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScope);
-        DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<WorkerGlobalScope>);
+        REFCOUNTED_EVENT_TARGET(WorkerGlobalScope);
     public:
         virtual ~WorkerGlobalScope();
 
@@ -71,6 +71,8 @@ namespace WebCore {
         virtual bool isSharedWorkerGlobalScope() const { return false; }
         virtual bool isDedicatedWorkerGlobalScope() const { return false; }
         virtual bool isServiceWorkerGlobalScope() const { return false; }
+        virtual void countFeature(UseCounter::Feature) const;
+        virtual void countDeprecation(UseCounter::Feature) const;
 
         const KURL& url() const { return m_url; }
         KURL completeURL(const String&) const;
@@ -121,13 +123,10 @@ namespace WebCore {
         virtual double timerAlignmentInterval() const OVERRIDE FINAL;
 
         WorkerInspectorController* workerInspectorController() { return m_workerInspectorController.get(); }
-        // These methods are used for GC marking. See JSWorkerGlobalScope::visitChildrenVirtual(SlotVisitor&) in
-        // JSWorkerGlobalScopeCustom.cpp.
-        WorkerConsole* optionalConsole() const { return m_console.get(); }
-        WorkerNavigator* optionalNavigator() const { return m_navigator.get(); }
-        WorkerLocation* optionalLocation() const { return m_location.get(); }
 
         bool isClosing() { return m_closing; }
+
+        virtual void stopFetch() { }
 
         bool idleNotification();
 
@@ -138,18 +137,20 @@ namespace WebCore {
         using SecurityContext::securityOrigin;
         using SecurityContext::contentSecurityPolicy;
 
-        virtual void trace(Visitor*);
+        virtual void trace(Visitor*) OVERRIDE;
 
     protected:
         WorkerGlobalScope(const KURL&, const String& userAgent, WorkerThread*, double timeOrigin, PassOwnPtrWillBeRawPtr<WorkerClients>);
         void applyContentSecurityPolicyFromString(const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType);
 
-        virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtr<ScriptCallStack>) OVERRIDE;
-        void addMessageToWorkerConsole(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack>, ScriptState*);
+        virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) OVERRIDE;
+        void addMessageToWorkerConsole(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>, ScriptState*);
 
     private:
+#if !ENABLE(OILPAN)
         virtual void refExecutionContext() OVERRIDE FINAL { ref(); }
         virtual void derefExecutionContext() OVERRIDE FINAL { deref(); }
+#endif
 
         virtual const KURL& virtualURL() const OVERRIDE FINAL;
         virtual KURL virtualCompleteURL(const String&) const OVERRIDE FINAL;
@@ -173,7 +174,7 @@ namespace WebCore {
         OwnPtr<WorkerInspectorController> m_workerInspectorController;
         bool m_closing;
 
-        OwnPtr<WorkerEventQueue> m_eventQueue;
+        OwnPtrWillBeMember<WorkerEventQueue> m_eventQueue;
 
         OwnPtrWillBeMember<WorkerClients> m_workerClients;
 

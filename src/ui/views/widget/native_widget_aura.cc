@@ -36,6 +36,7 @@
 #include "ui/views/widget/widget_aura_utils.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/window_reorderer.h"
+#include "ui/wm/core/shadow_types.h"
 #include "ui/wm/core/window_util.h"
 #include "ui/wm/public/activation_client.h"
 #include "ui/wm/public/drag_drop_client.h"
@@ -76,7 +77,6 @@ NativeWidgetAura::NativeWidgetAura(internal::NativeWidgetDelegate* delegate)
       window_(new aura::Window(this)),
       ownership_(Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET),
       close_widget_factory_(this),
-      can_activate_(true),
       destroying_(false),
       cursor_(gfx::kNullCursor),
       saved_window_state_(ui::SHOW_STATE_DEFAULT) {
@@ -109,6 +109,10 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
   window_->SetTransparent(
       params.opacity == Widget::InitParams::TRANSLUCENT_WINDOW);
   window_->Init(params.layer_type);
+  if (params.shadow_type == Widget::InitParams::SHADOW_TYPE_NONE)
+    SetShadowType(window_, wm::SHADOW_TYPE_NONE);
+  else if (params.shadow_type == Widget::InitParams::SHADOW_TYPE_DROP)
+    SetShadowType(window_, wm::SHADOW_TYPE_RECTANGULAR);
   if (params.type == Widget::InitParams::TYPE_CONTROL)
     window_->Show();
 
@@ -161,9 +165,6 @@ void NativeWidgetAura::InitNativeWidget(const Widget::InitParams& params) {
   else
     SetBounds(window_bounds);
   window_->set_ignore_events(!params.accept_events);
-  can_activate_ = params.can_activate &&
-      params.type != Widget::InitParams::TYPE_CONTROL &&
-      params.type != Widget::InitParams::TYPE_TOOLTIP;
   DCHECK(GetWidget()->GetRootView());
   if (params.type != Widget::InitParams::TYPE_TOOLTIP)
     tooltip_manager_.reset(new views::TooltipManagerAura(GetWidget()));
@@ -487,7 +488,7 @@ void NativeWidgetAura::ShowWithWindowState(ui::WindowShowState state) {
   if (state == ui::SHOW_STATE_MAXIMIZED || state == ui::SHOW_STATE_FULLSCREEN)
     window_->SetProperty(aura::client::kShowStateKey, state);
   window_->Show();
-  if (can_activate_) {
+  if (delegate_->CanActivate()) {
     if (state != ui::SHOW_STATE_INACTIVE)
       Activate();
     // SetInitialFocus() should be always be called, even for
@@ -690,6 +691,14 @@ ui::NativeTheme* NativeWidgetAura::GetNativeTheme() const {
 void NativeWidgetAura::OnRootViewLayout() const {
 }
 
+bool NativeWidgetAura::IsTranslucentWindowOpacitySupported() const {
+  return true;
+}
+
+void NativeWidgetAura::RepostNativeEvent(gfx::NativeEvent native_event) {
+  OnEvent(native_event);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // NativeWidgetAura, views::InputMethodDelegate implementation:
 
@@ -773,7 +782,7 @@ bool NativeWidgetAura::ShouldDescendIntoChildForEventHandling(
 }
 
 bool NativeWidgetAura::CanFocus() {
-  return can_activate_;
+  return ShouldActivate();
 }
 
 void NativeWidgetAura::OnCaptureLost() {
@@ -870,7 +879,7 @@ void NativeWidgetAura::OnGestureEvent(ui::GestureEvent* event) {
 // NativeWidgetAura, aura::client::ActivationDelegate implementation:
 
 bool NativeWidgetAura::ShouldActivate() const {
-  return can_activate_ && delegate_->CanActivate();
+  return delegate_->CanActivate();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -899,6 +908,7 @@ void NativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
     if (GetWidget()->GetInputMethod())  // Null in tests.
       GetWidget()->GetInputMethod()->OnFocus();
     delegate_->OnNativeFocus(lost_focus);
+    GetWidget()->GetFocusManager()->RestoreFocusedView();
   } else if (window_ == lost_focus) {
     // GetInputMethod() recreates the input method if it's previously been
     // destroyed.  If we get called during destruction, the input method will be
@@ -914,9 +924,8 @@ void NativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
       DCHECK_EQ(ownership_, Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET);
     }
 
-    aura::client::FocusClient* client = aura::client::GetFocusClient(window_);
-    if (client)  // NULL during destruction of aura::Window.
-      delegate_->OnNativeBlur(client->GetFocusedWindow());
+    delegate_->OnNativeBlur(gained_focus);
+    GetWidget()->GetFocusManager()->StoreFocusedView(true);
   }
 }
 
@@ -945,13 +954,6 @@ int NativeWidgetAura::OnPerformDrop(const ui::DropTargetEvent& event) {
   DCHECK(drop_helper_.get() != NULL);
   return drop_helper_->OnDrop(event.data(), event.location(),
       last_drop_operation_);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// NativeWidgetAura, NativeWidget implementation:
-
-ui::EventHandler* NativeWidgetAura::GetEventHandler() {
-  return this;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

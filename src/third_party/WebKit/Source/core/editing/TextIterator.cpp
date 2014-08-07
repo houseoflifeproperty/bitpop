@@ -27,8 +27,8 @@
 #include "config.h"
 #include "core/editing/TextIterator.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -55,7 +55,6 @@
 #include <unicode/utf16.h>
 
 using namespace WTF::Unicode;
-using namespace std;
 
 namespace WebCore {
 
@@ -158,7 +157,7 @@ unsigned BitStack::size() const
 
 // --------
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 
 static unsigned depthCrossingShadowBoundaries(Node* node)
 {
@@ -241,17 +240,17 @@ static void setUpFullyClippedStack(BitStack& stack, Node* node)
 // --------
 
 TextIterator::TextIterator(const Range* range, TextIteratorBehaviorFlags behavior)
-    : m_startContainer(0)
+    : m_startContainer(nullptr)
     , m_startOffset(0)
-    , m_endContainer(0)
+    , m_endContainer(nullptr)
     , m_endOffset(0)
-    , m_positionNode(0)
+    , m_positionNode(nullptr)
     , m_textLength(0)
     , m_needsAnotherNewline(false)
     , m_textBox(0)
     , m_remainingTextBox(0)
     , m_firstLetterText(0)
-    , m_lastTextNode(0)
+    , m_lastTextNode(nullptr)
     , m_lastTextNodeEndedWithCollapsedSpace(false)
     , m_lastCharacter(0)
     , m_sortedTextBoxesPosition(0)
@@ -265,23 +264,24 @@ TextIterator::TextIterator(const Range* range, TextIteratorBehaviorFlags behavio
     , m_shouldStop(false)
     , m_emitsImageAltText(behavior & TextIteratorEmitsImageAltText)
     , m_entersAuthorShadowRoots(behavior & TextIteratorEntersAuthorShadowRoots)
+    , m_emitsObjectReplacementCharacter(behavior & TextIteratorEmitsObjectReplacementCharacter)
 {
     if (range)
         initialize(range->startPosition(), range->endPosition());
 }
 
 TextIterator::TextIterator(const Position& start, const Position& end, TextIteratorBehaviorFlags behavior)
-    : m_startContainer(0)
+    : m_startContainer(nullptr)
     , m_startOffset(0)
-    , m_endContainer(0)
+    , m_endContainer(nullptr)
     , m_endOffset(0)
-    , m_positionNode(0)
+    , m_positionNode(nullptr)
     , m_textLength(0)
     , m_needsAnotherNewline(false)
     , m_textBox(0)
     , m_remainingTextBox(0)
     , m_firstLetterText(0)
-    , m_lastTextNode(0)
+    , m_lastTextNode(nullptr)
     , m_lastTextNodeEndedWithCollapsedSpace(false)
     , m_lastCharacter(0)
     , m_sortedTextBoxesPosition(0)
@@ -295,6 +295,7 @@ TextIterator::TextIterator(const Position& start, const Position& end, TextItera
     , m_shouldStop(false)
     , m_emitsImageAltText(behavior & TextIteratorEmitsImageAltText)
     , m_entersAuthorShadowRoots(behavior & TextIteratorEntersAuthorShadowRoots)
+    , m_emitsObjectReplacementCharacter(behavior & TextIteratorEmitsObjectReplacementCharacter)
 {
     initialize(start, end);
 }
@@ -361,7 +362,7 @@ void TextIterator::advance()
         return;
 
     // reset the run information
-    m_positionNode = 0;
+    m_positionNode = nullptr;
     m_textLength = 0;
 
     // handle remembered node that needed a newline after the text node's newline
@@ -372,7 +373,7 @@ void TextIterator::advance()
         // break begins.
         // FIXME: It would be cleaner if we emitted two newlines during the last
         // iteration, instead of using m_needsAnotherNewline.
-        Node* baseNode = m_node->lastChild() ? m_node->lastChild() : m_node;
+        Node* baseNode = m_node->lastChild() ? m_node->lastChild() : m_node.get();
         emitCharacter('\n', baseNode->parentNode(), baseNode, 1, 1);
         m_needsAnotherNewline = false;
         return;
@@ -401,7 +402,7 @@ void TextIterator::advance()
         // precedes the element
         if (m_node == m_endContainer && !m_endOffset) {
             representNodeOffsetZero();
-            m_node = 0;
+            m_node = nullptr;
             return;
         }
 
@@ -616,7 +617,7 @@ bool TextIterator::handleTextNode()
             return false;
         int strLength = str.length();
         int end = (m_node == m_endContainer) ? m_endOffset : INT_MAX;
-        int runEnd = min(strLength, end);
+        int runEnd = std::min(strLength, end);
 
         if (runStart >= runEnd)
             return true;
@@ -669,7 +670,7 @@ void TextIterator::handleTextBox()
     unsigned end = (m_node == m_endContainer) ? static_cast<unsigned>(m_endOffset) : INT_MAX;
     while (m_textBox) {
         unsigned textBoxStart = m_textBox->start();
-        unsigned runStart = max(textBoxStart, start);
+        unsigned runStart = std::max(textBoxStart, start);
 
         // Check for collapsed space at the start of this run.
         InlineTextBox* firstTextBox = renderer->containsReversedText() ? (m_sortedTextBoxes.isEmpty() ? 0 : m_sortedTextBoxes[0]) : renderer->firstTextBox();
@@ -687,7 +688,7 @@ void TextIterator::handleTextBox()
             return;
         }
         unsigned textBoxEnd = textBoxStart + m_textBox->len();
-        unsigned runEnd = min(textBoxEnd, end);
+        unsigned runEnd = std::min(textBoxEnd, end);
 
         // Determine what the next text box will be, but don't advance yet
         InlineTextBox* nextTextBox = 0;
@@ -743,13 +744,13 @@ void TextIterator::handleTextBox()
     }
 }
 
-static inline RenderText* firstRenderTextInFirstLetter(RenderObject* firstLetter)
+static inline RenderText* firstRenderTextInFirstLetter(RenderBoxModelObject* firstLetter)
 {
     if (!firstLetter)
         return 0;
 
     // FIXME: Should this check descendent objects?
-    for (RenderObject* current = firstLetter->firstChild(); current; current = current->nextSibling()) {
+    for (RenderObject* current = firstLetter->slowFirstChild(); current; current = current->nextSibling()) {
         if (current->isText())
             return toRenderText(current);
     }
@@ -759,7 +760,7 @@ static inline RenderText* firstRenderTextInFirstLetter(RenderObject* firstLetter
 void TextIterator::handleTextNodeFirstLetter(RenderTextFragment* renderer)
 {
     if (renderer->firstLetter()) {
-        RenderObject* r = renderer->firstLetter();
+        RenderBoxModelObject* r = renderer->firstLetter();
         if (r->style()->visibility() != VISIBLE && !m_ignoresStyleVisibility)
             return;
         if (RenderText* firstLetter = firstRenderTextInFirstLetter(r)) {
@@ -781,6 +782,11 @@ bool TextIterator::handleReplacedElement()
     RenderObject* renderer = m_node->renderer();
     if (renderer->style()->visibility() != VISIBLE && !m_ignoresStyleVisibility)
         return false;
+
+    if (m_emitsObjectReplacementCharacter) {
+        emitCharacter(objectReplacementCharacter, m_node->parentNode(), m_node, 0, 1);
+        return true;
+    }
 
     if (m_lastTextNodeEndedWithCollapsedSpace) {
         emitCharacter(' ', m_lastTextNode->parentNode(), m_lastTextNode, 1, 1);
@@ -1081,7 +1087,7 @@ void TextIterator::exitNode()
     // Emit with a position *inside* m_node, after m_node's contents, in
     // case it is a block, because the run should start where the
     // emitted character is positioned visually.
-    Node* baseNode = m_node->lastChild() ? m_node->lastChild() : m_node;
+    Node* baseNode = m_node->lastChild() ? m_node->lastChild() : m_node.get();
     // FIXME: This shouldn't require the m_lastTextNode to be true, but we can't change that without making
     // the logic in _web_attributedStringFromRange match. We'll get that for free when we switch to use
     // TextIterator in _web_attributedStringFromRange.
@@ -1140,7 +1146,7 @@ void TextIterator::emitText(Node* textNode, RenderObject* renderObject, int text
     ASSERT(textStartOffset <= textEndOffset);
 
     m_positionNode = textNode;
-    m_positionOffsetBaseNode = 0;
+    m_positionOffsetBaseNode = nullptr;
     m_positionStartOffset = textStartOffset;
     m_positionEndOffset = textEndOffset;
     m_singleCharacterBuffer = 0;
@@ -1164,7 +1170,7 @@ PassRefPtrWillBeRawPtr<Range> TextIterator::range() const
             int index = m_positionOffsetBaseNode->nodeIndex();
             m_positionStartOffset += index;
             m_positionEndOffset += index;
-            m_positionOffsetBaseNode = 0;
+            m_positionOffsetBaseNode = nullptr;
         }
         return Range::create(m_positionNode->document(), m_positionNode, m_positionStartOffset, m_positionNode, m_positionEndOffset);
     }
@@ -1194,20 +1200,20 @@ Node* TextIterator::node() const
 // --------
 
 SimplifiedBackwardsTextIterator::SimplifiedBackwardsTextIterator(const Range* r, TextIteratorBehaviorFlags behavior)
-    : m_node(0)
+    : m_node(nullptr)
     , m_offset(0)
     , m_handledNode(false)
     , m_handledChildren(false)
-    , m_startNode(0)
+    , m_startNode(nullptr)
     , m_startOffset(0)
-    , m_endNode(0)
+    , m_endNode(nullptr)
     , m_endOffset(0)
-    , m_positionNode(0)
+    , m_positionNode(nullptr)
     , m_positionStartOffset(0)
     , m_positionEndOffset(0)
     , m_textOffset(0)
     , m_textLength(0)
-    , m_lastTextNode(0)
+    , m_lastTextNode(nullptr)
     , m_lastCharacter(0)
     , m_singleCharacterBuffer(0)
     , m_havePassedStartNode(false)
@@ -1261,7 +1267,7 @@ SimplifiedBackwardsTextIterator::SimplifiedBackwardsTextIterator(const Range* r,
     m_positionNode = endNode;
 #endif
 
-    m_lastTextNode = 0;
+    m_lastTextNode = nullptr;
     m_lastCharacter = '\n';
 
     m_havePassedStartNode = false;
@@ -1281,7 +1287,7 @@ void SimplifiedBackwardsTextIterator::advance()
         return;
     }
 
-    m_positionNode = 0;
+    m_positionNode = nullptr;
     m_textLength = 0;
 
     while (m_node && !m_havePassedStartNode) {
@@ -1337,7 +1343,7 @@ void SimplifiedBackwardsTextIterator::advance()
             if (advanceRespectingRange(m_node->previousSibling()))
                 pushFullyClippedState(m_fullyClippedStack, m_node);
             else
-                m_node = 0;
+                m_node = nullptr;
         }
 
         // For the purpose of word boundary detection,
@@ -1785,7 +1791,7 @@ inline SearchBuffer::SearchBuffer(const String& target, FindOptions options)
     foldQuoteMarksAndSoftHyphens(m_target.data(), m_target.size());
 
     size_t targetLength = m_target.size();
-    m_buffer.reserveInitialCapacity(max(targetLength * 8, minimumSearchBufferSize));
+    m_buffer.reserveInitialCapacity(std::max(targetLength * 8, minimumSearchBufferSize));
     m_overlap = m_buffer.capacity() / 4;
 
     if ((m_options & AtWordStarts) && targetLength) {
@@ -1843,12 +1849,12 @@ inline void SearchBuffer::append(const CharType* characters, size_t length)
         m_atBreak = false;
     } else if (m_buffer.size() == m_buffer.capacity()) {
         memcpy(m_buffer.data(), m_buffer.data() + m_buffer.size() - m_overlap, m_overlap * sizeof(UChar));
-        m_prefixLength -= min(m_prefixLength, m_buffer.size() - m_overlap);
+        m_prefixLength -= std::min(m_prefixLength, m_buffer.size() - m_overlap);
         m_buffer.shrink(m_overlap);
     }
 
     size_t oldLength = m_buffer.size();
-    size_t usableLength = min(m_buffer.capacity() - oldLength, length);
+    size_t usableLength = std::min(m_buffer.capacity() - oldLength, length);
     ASSERT(usableLength);
     m_buffer.resize(oldLength + usableLength);
     UChar* destination = m_buffer.data() + oldLength;
@@ -1878,7 +1884,7 @@ inline void SearchBuffer::prependContext(const UChar* characters, size_t length)
         wordBoundaryContextStart = startOfLastWordBoundaryContext(characters, wordBoundaryContextStart);
     }
 
-    size_t usableLength = min(m_buffer.capacity() - m_prefixLength, length - wordBoundaryContextStart);
+    size_t usableLength = std::min(m_buffer.capacity() - m_prefixLength, length - wordBoundaryContextStart);
     m_buffer.prepend(characters + length - usableLength, usableLength);
     m_prefixLength += usableLength;
 
@@ -2005,10 +2011,10 @@ nextMatch:
             int wordBoundaryContextStart = matchStart;
             U16_BACK_1(m_buffer.data(), 0, wordBoundaryContextStart);
             wordBoundaryContextStart = startOfLastWordBoundaryContext(m_buffer.data(), wordBoundaryContextStart);
-            overlap = min(size - 1, max(overlap, size - wordBoundaryContextStart));
+            overlap = std::min(size - 1, std::max(overlap, size - wordBoundaryContextStart));
         }
         memcpy(m_buffer.data(), m_buffer.data() + size - overlap, overlap * sizeof(UChar));
-        m_prefixLength -= min(m_prefixLength, size - overlap);
+        m_prefixLength -= std::min(m_prefixLength, size - overlap);
         m_buffer.shrink(overlap);
         return 0;
     }
@@ -2025,7 +2031,7 @@ nextMatch:
 
     size_t newSize = size - (matchStart + 1);
     memmove(m_buffer.data(), m_buffer.data() + matchStart + 1, newSize * sizeof(UChar));
-    m_prefixLength -= min<size_t>(m_prefixLength, matchStart + 1);
+    m_prefixLength -= std::min<size_t>(m_prefixLength, matchStart + 1);
     m_buffer.shrink(newSize);
 
     start = size - matchStart;
@@ -2037,7 +2043,10 @@ nextMatch:
 int TextIterator::rangeLength(const Range* r, bool forSelectionPreservation)
 {
     int length = 0;
-    for (TextIterator it(r, forSelectionPreservation ? TextIteratorEmitsCharactersBetweenAllVisiblePositions : TextIteratorDefaultBehavior); !it.atEnd(); it.advance())
+    TextIteratorBehaviorFlags behaviorFlags = TextIteratorEmitsObjectReplacementCharacter;
+    if (forSelectionPreservation)
+        behaviorFlags |= TextIteratorEmitsCharactersBetweenAllVisiblePositions;
+    for (TextIterator it(r, behaviorFlags); !it.atEnd(); it.advance())
         length += it.length();
 
     return length;

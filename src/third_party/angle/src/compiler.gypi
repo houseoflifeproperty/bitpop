@@ -8,28 +8,24 @@
         {
             'target_name': 'preprocessor',
             'type': 'static_library',
-            'include_dirs': [ ],
-            'sources': [ '<!@(python <(angle_build_scripts_path)/enumerate_files.py compiler/preprocessor -types *.cpp *.h)' ],
-            'msvs_disabled_warnings': [ 4267 ],
+            'includes': [ '../build/common_defines.gypi', ],
+            'sources': [ '<!@(python <(angle_path)/enumerate_files.py compiler/preprocessor -types *.cpp *.h *.y *.l )' ],
         },
-
         {
-            'target_name': 'translator',
-            'type': '<(component)',
+            'target_name': 'translator_lib',
+            'type': 'static_library',
             'dependencies': [ 'preprocessor' ],
+            'includes': [ '../build/common_defines.gypi', ],
             'include_dirs':
             [
                 '.',
                 '../include',
             ],
-            'defines':
-            [
-                'ANGLE_TRANSLATOR_IMPLEMENTATION',
-            ],
             'sources':
             [
-                '<!@(python <(angle_build_scripts_path)/enumerate_files.py \
+                '<!@(python <(angle_path)/enumerate_files.py \
                      -dirs compiler/translator third_party/compiler common ../include \
+                     -excludes compiler/translator/ShaderLang.cpp \
                      -types *.cpp *.h *.y *.l)',
             ],
             'conditions':
@@ -46,17 +42,38 @@
             ],
             'msvs_settings':
             {
-                'VCLibrarianTool':
-                {
-                    'AdditionalOptions': ['/ignore:4221']
-                },
+              'VCLibrarianTool':
+              {
+                'AdditionalOptions': ['/ignore:4221']
+              },
             },
+        },
+
+        {
+            'target_name': 'translator',
+            'type': '<(component)',
+            'dependencies': [ 'translator_lib' ],
+            'includes': [ '../build/common_defines.gypi', ],
+            'include_dirs':
+            [
+                '.',
+                '../include',
+            ],
+            'defines':
+            [
+                'ANGLE_TRANSLATOR_IMPLEMENTATION',
+            ],
+            'sources':
+            [
+                'compiler/translator/ShaderLang.cpp'
+            ],
         },
 
         {
             'target_name': 'translator_static',
             'type': 'static_library',
-            'dependencies': [ 'preprocessor' ],
+            'dependencies': [ 'translator_lib' ],
+            'includes': [ '../build/common_defines.gypi', ],
             'include_dirs':
             [
                 '.',
@@ -73,26 +90,10 @@
                     'ANGLE_TRANSLATOR_STATIC',
                 ],
             },
-            'sources': [ '<!@(python <(angle_build_scripts_path)/enumerate_files.py compiler/translator third_party/compiler common ../include -types *.cpp *.h *.y *.l )', ],
-            'conditions':
+            'sources':
             [
-                ['OS=="win"',
-                    {
-                        'msvs_disabled_warnings': [ 4267 ],
-                        'sources/': [ [ 'exclude', 'compiler/translator/ossource_posix.cpp' ], ],
-                    },
-                    { # else: posix
-                        'sources/': [ [ 'exclude', 'compiler/translator/ossource_win.cpp' ], ],
-                    }
-                ],
+                'compiler/translator/ShaderLang.cpp'
             ],
-            'msvs_settings':
-            {
-               'VCLibrarianTool':
-                {
-                    'AdditionalOptions': ['/ignore:4221']
-                },
-            },
         },
     ],
 }

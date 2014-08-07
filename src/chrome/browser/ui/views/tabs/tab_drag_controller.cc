@@ -7,6 +7,9 @@
 #include <math.h>
 #include <set>
 
+#include "ash/accelerators/accelerator_commands.h"
+#include "ash/wm/coordinate_conversion.h"
+#include "ash/wm/window_state.h"
 #include "base/auto_reset.h"
 #include "base/callback.h"
 #include "base/command_line.h"
@@ -35,25 +38,19 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "ui/aura/env.h"
+#include "ui/aura/env.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/window_modality_controller.h"
-
-#if defined(USE_ASH)
-#include "ash/accelerators/accelerator_commands.h"
-#include "ash/wm/coordinate_conversion.h"
-#include "ash/wm/window_state.h"
-#include "ui/aura/env.h"
-#include "ui/aura/window.h"
-#include "ui/aura/window_event_dispatcher.h"
-#include "ui/events/gestures/gesture_recognizer.h"
-#endif
 
 #if defined(OS_WIN)
 #include "ui/aura/window.h"
@@ -86,21 +83,15 @@ const int kHorizontalMoveThreshold = 16;  // Pixels.
 const int kStackedDistance = 36;
 
 void SetWindowPositionManaged(gfx::NativeWindow window, bool value) {
-#if defined(USE_ASH)
   ash::wm::GetWindowState(window)->set_window_position_managed(value);
-#endif
 }
 
 // Returns true if |tab_strip| browser window is docked.
 bool IsDockedOrSnapped(const TabStrip* tab_strip) {
-#if defined(USE_ASH)
   DCHECK(tab_strip);
   ash::wm::WindowState* window_state =
       ash::wm::GetWindowState(tab_strip->GetWidget()->GetNativeWindow());
   return window_state->IsDocked() || window_state->IsSnapped();
-#else
-  return false;
-#endif
 }
 
 // Returns true if |bounds| contains the y-coordinate |y|. The y-coordinate
@@ -805,8 +796,8 @@ void TabDragController::MoveAttached(const gfx::Point& point_in_screen) {
   if ((abs(point_in_screen.x() - last_move_screen_loc_) > threshold ||
         (initial_move_ && !AreTabsConsecutive()))) {
     TabStripModel* attached_model = GetModel(attached_tabstrip_);
-    gfx::Rect bounds = GetDraggedViewTabStripBounds(dragged_view_point);
-    int to_index = GetInsertionIndexForDraggedBounds(bounds);
+    int to_index = GetInsertionIndexForDraggedBounds(
+        GetDraggedViewTabStripBounds(dragged_view_point));
     bool do_move = true;
     // While dragging within a tabstrip the expectation is the insertion index
     // is based on the left edge of the tabs being dragged. OTOH when dragging
@@ -1013,8 +1004,8 @@ void TabDragController::Attach(TabStrip* attached_tabstrip,
     tab_strip_point.set_x(
         attached_tabstrip_->GetMirroredXInView(tab_strip_point.x()));
     tab_strip_point.Offset(0, -mouse_offset_.y());
-    gfx::Rect bounds = GetDraggedViewTabStripBounds(tab_strip_point);
-    int index = GetInsertionIndexForDraggedBounds(bounds);
+    int index = GetInsertionIndexForDraggedBounds(
+        GetDraggedViewTabStripBounds(tab_strip_point));
     attach_index_ = index;
     attach_x_ = tab_strip_point.x();
     base::AutoReset<bool> setter(&is_mutating_, true);
@@ -1104,6 +1095,7 @@ void TabDragController::Detach(ReleaseCapture release_capture) {
 
     // Hide the tab so that the user doesn't see it animate closed.
     drag_data_[i].attached_tab->SetVisible(false);
+    drag_data_[i].attached_tab->set_detached();
 
     attached_model->DetachWebContentsAt(index);
 
@@ -1255,26 +1247,53 @@ void TabDragController::RunMoveLoop(const gfx::Vector2d& drag_offset) {
 }
 
 int TabDragController::GetInsertionIndexFrom(const gfx::Rect& dragged_bounds,
-                                             int start,
-                                             int delta) const {
-  for (int i = start, tab_count = attached_tabstrip_->tab_count();
-       i >= 0 && i < tab_count; i += delta) {
+                                             int start) const {
+  const int last_tab = attached_tabstrip_->tab_count() - 1;
+  // Make the actual "drag insertion point" be just after the leading edge of
+  // the first dragged tab.  This is closer to where the user thinks of the tab
+  // as "starting" than just dragged_bounds.x(), especially with narrow tabs.
+  const int dragged_x = dragged_bounds.x() + Tab::leading_width_for_drag();
+  if (start < 0 || start > last_tab ||
+      dragged_x < attached_tabstrip_->ideal_bounds(start).x())
+    return -1;
+
+  for (int i = start; i <= last_tab; ++i) {
     const gfx::Rect& ideal_bounds = attached_tabstrip_->ideal_bounds(i);
-    gfx::Rect left_half, right_half;
-    ideal_bounds.SplitVertically(&left_half, &right_half);
-    if (dragged_bounds.x() >= right_half.x() &&
-        dragged_bounds.x() < right_half.right()) {
-      return i + 1;
-    } else if (dragged_bounds.x() >= left_half.x() &&
-               dragged_bounds.x() < left_half.right()) {
+    if (dragged_x < (ideal_bounds.x() + (ideal_bounds.width() / 2)))
       return i;
-    }
   }
-  return -1;
+
+  return (dragged_x < attached_tabstrip_->ideal_bounds(last_tab).right()) ?
+      (last_tab + 1) : -1;
+}
+
+int TabDragController::GetInsertionIndexFromReversed(
+    const gfx::Rect& dragged_bounds,
+    int start) const {
+  // Make the actual "drag insertion point" be just after the leading edge of
+  // the first dragged tab.  This is closer to where the user thinks of the tab
+  // as "starting" than just dragged_bounds.x(), especially with narrow tabs.
+  const int dragged_x = dragged_bounds.x() + Tab::leading_width_for_drag();
+  if (start < 0 || start >= attached_tabstrip_->tab_count() ||
+      dragged_x >= attached_tabstrip_->ideal_bounds(start).right())
+    return -1;
+
+  for (int i = start; i >= 0; --i) {
+    const gfx::Rect& ideal_bounds = attached_tabstrip_->ideal_bounds(i);
+    if (dragged_x >= (ideal_bounds.x() + (ideal_bounds.width() / 2)))
+      return i + 1;
+  }
+
+  return (dragged_x >= attached_tabstrip_->ideal_bounds(0).x()) ? 0 : -1;
 }
 
 int TabDragController::GetInsertionIndexForDraggedBounds(
     const gfx::Rect& dragged_bounds) const {
+  // If the strip has no tabs, the only position to insert at is 0.
+  const int tab_count = attached_tabstrip_->tab_count();
+  if (!tab_count)
+    return 0;
+
   int index = -1;
   if (attached_tabstrip_->touch_layout_.get()) {
     index = GetInsertionIndexForDraggedBoundsStacked(dragged_bounds);
@@ -1291,28 +1310,26 @@ int TabDragController::GetInsertionIndexForDraggedBounds(
       }
     }
   } else {
-    index = GetInsertionIndexFrom(dragged_bounds, 0, 1);
+    index = GetInsertionIndexFrom(dragged_bounds, 0);
   }
   if (index == -1) {
-    int tab_count = attached_tabstrip_->tab_count();
-    int right_tab_x = tab_count == 0 ? 0 :
+    const int last_tab_right =
         attached_tabstrip_->ideal_bounds(tab_count - 1).right();
-    if (dragged_bounds.right() > right_tab_x) {
-      index = GetModel(attached_tabstrip_)->count();
-    } else {
-      index = 0;
-    }
+    index = (dragged_bounds.right() > last_tab_right) ? tab_count : 0;
   }
 
-  if (!drag_data_[0].attached_tab) {
-    // If 'attached_tab' is NULL, it means we're in the process of attaching and
-    // don't need to constrain the index.
-    return index;
+  const Tab* last_visible_tab = attached_tabstrip_->GetLastVisibleTab();
+  int last_insertion_point = last_visible_tab ?
+      (attached_tabstrip_->GetModelIndexOfTab(last_visible_tab) + 1) : 0;
+  if (drag_data_[0].attached_tab) {
+    // We're not in the process of attaching, so clamp the insertion point to
+    // keep it within the visible region.
+    last_insertion_point = std::max(
+        0, last_insertion_point - static_cast<int>(drag_data_.size()));
   }
 
-  int max_index = GetModel(attached_tabstrip_)->count() -
-      static_cast<int>(drag_data_.size());
-  return std::max(0, std::min(max_index, index));
+  // Ensure the first dragged tab always stays in the visible index range.
+  return std::min(index, last_insertion_point);
 }
 
 bool TabDragController::ShouldDragToNextStackedTab(
@@ -1327,6 +1344,8 @@ bool TabDragController::ShouldDragToNextStackedTab(
   int next_x = attached_tabstrip_->ideal_bounds(index + 1).x();
   int mid_x = std::min(next_x - kStackedDistance,
                        active_x + (next_x - active_x) / 4);
+  // TODO(pkasting): Should this add Tab::leading_width_for_drag() as
+  // GetInsertionIndexFrom() does?
   return dragged_bounds.x() >= mid_x;
 }
 
@@ -1342,6 +1361,8 @@ bool TabDragController::ShouldDragToPreviousStackedTab(
   int previous_x = attached_tabstrip_->ideal_bounds(index - 1).x();
   int mid_x = std::max(previous_x + kStackedDistance,
                        active_x - (active_x - previous_x) / 4);
+  // TODO(pkasting): Should this add Tab::leading_width_for_drag() as
+  // GetInsertionIndexFrom() does?
   return dragged_bounds.x() <= mid_x;
 }
 
@@ -1351,11 +1372,11 @@ int TabDragController::GetInsertionIndexForDraggedBoundsStacked(
   int active_index = touch_layout->active_index();
   // Search from the active index to the front of the tabstrip. Do this as tabs
   // overlap each other from the active index.
-  int index = GetInsertionIndexFrom(dragged_bounds, active_index, -1);
+  int index = GetInsertionIndexFromReversed(dragged_bounds, active_index);
   if (index != active_index)
     return index;
   if (index == -1)
-    return GetInsertionIndexFrom(dragged_bounds, active_index + 1, 1);
+    return GetInsertionIndexFrom(dragged_bounds, active_index + 1);
 
   // The position to drag to corresponds to the active tab. If the next/previous
   // tab is stacked, then shorten the distance used to determine insertion
@@ -1363,7 +1384,7 @@ int TabDragController::GetInsertionIndexForDraggedBoundsStacked(
   // tabs. When tabs are stacked the next/previous tab is on top of the tab.
   if (active_index + 1 < attached_tabstrip_->tab_count() &&
       touch_layout->IsStacked(active_index + 1)) {
-    index = GetInsertionIndexFrom(dragged_bounds, active_index + 1, 1);
+    index = GetInsertionIndexFrom(dragged_bounds, active_index + 1);
     if (index == -1 && ShouldDragToNextStackedTab(dragged_bounds, active_index))
       index = active_index + 1;
     else if (index == -1)
@@ -1660,14 +1681,12 @@ void TabDragController::CompleteDrag() {
 
 void TabDragController::MaximizeAttachedWindow() {
   GetAttachedBrowserWidget()->Maximize();
-#if defined(USE_ASH)
   if (was_source_fullscreen_ &&
       host_desktop_type_ == chrome::HOST_DESKTOP_TYPE_ASH) {
     // In fullscreen mode it is only possible to get here if the source
     // was in "immersive fullscreen" mode, so toggle it back on.
     ash::accelerators::ToggleFullscreen();
   }
-#endif
 }
 
 void TabDragController::ResetDelegates() {
@@ -1712,7 +1731,6 @@ void TabDragController::BringWindowUnderPointToFront(
     if (!widget_window)
       return;
 
-#if defined(USE_ASH)
     if (host_desktop_type_ == chrome::HOST_DESKTOP_TYPE_ASH) {
       // TODO(varkha): The code below ensures that the phantom drag widget
       // is shown on top of browser windows. The code should be moved to ash/
@@ -1744,9 +1762,6 @@ void TabDragController::BringWindowUnderPointToFront(
     } else {
       widget_window->StackAtTop();
     }
-#else
-    widget_window->StackAtTop();
-#endif
 
     // The previous call made the window appear on top of the dragged window,
     // move the dragged window to the front.
@@ -1815,7 +1830,7 @@ gfx::Rect TabDragController::CalculateDraggedBrowserBounds(
   // maximized windows, add an additional vertical offset extracted from the tab
   // strip.
   if (source->GetWidget()->IsMaximized())
-    new_bounds.Offset(0, -source->button_v_offset());
+    new_bounds.Offset(0, -source->kNewTabButtonVerticalOffset);
   return new_bounds;
 }
 
@@ -1883,7 +1898,6 @@ Browser* TabDragController::CreateBrowserForDrag(
 }
 
 gfx::Point TabDragController::GetCursorScreenPoint() {
-#if defined(USE_ASH)
   if (host_desktop_type_ == chrome::HOST_DESKTOP_TYPE_ASH &&
       event_source_ == EVENT_SOURCE_TOUCH &&
       aura::Env::GetInstance()->is_touch_down()) {
@@ -1900,7 +1914,7 @@ gfx::Point TabDragController::GetCursorScreenPoint() {
     ash::wm::ConvertPointToScreen(widget_window->GetRootWindow(), &touch_point);
     return touch_point;
   }
-#endif
+
   return screen_->GetCursorScreenPoint();
 }
 

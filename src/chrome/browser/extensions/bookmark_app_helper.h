@@ -37,7 +37,8 @@ class BookmarkAppHelper : public content::NotificationObserver {
 
   // This helper class will create a bookmark app out of |web_app_info| and
   // install it to |service|. Icons will be downloaded from the URLs in
-  // |web_app_info.icons| using |contents|.
+  // |web_app_info.icons| using |contents| if |contents| is not NULL.
+  // All existing icons from WebApplicationInfo will also be used.
   BookmarkAppHelper(ExtensionService* service,
                     WebApplicationInfo web_app_info,
                     content::WebContents* contents);
@@ -52,11 +53,12 @@ class BookmarkAppHelper : public content::NotificationObserver {
       const std::set<int>& sizes);
 
   // Adds a square container icon of |output_size| pixels to |bitmaps| by
-  // centering the biggest smaller icon in |bitmaps| and drawing a rounded
-  // rectangle with strip of the that icon's dominant color at the bottom.
+  // drawing the given |letter| into a rounded background of |color|.
   // Does nothing if an icon of |output_size| already exists in |bitmaps|.
-  static void GenerateContainerIcon(std::map<int, SkBitmap>* bitmaps,
-                                    int output_size);
+  static void GenerateIcon(std::map<int, SkBitmap>* bitmaps,
+                           int output_size,
+                           SkColor color,
+                           char letter);
 
   // Begins the asynchronous bookmark app creation.
   void Create(const CreateBookmarkAppCallback& callback);

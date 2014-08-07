@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -42,7 +42,6 @@ class PageCycler(page_measurement.PageMeasurement):
     self._power_metric = power.PowerMetric()
     self._cpu_metric = None
     self._v8_object_stats_metric = None
-    self._cold_run_start_index = None
     self._has_loaded_page = collections.defaultdict(int)
 
   @classmethod
@@ -63,6 +62,25 @@ class PageCycler(page_measurement.PageMeasurement):
     cls._record_v8_object_stats = args.v8_object_stats
     cls._report_speed_index = args.report_speed_index
 
+    cold_runs_percent_set = (args.cold_load_percent != None)
+    # Handle requests for cold cache runs
+    if (cold_runs_percent_set and
+        (args.cold_load_percent < 0 or args.cold_load_percent > 100)):
+      raise Exception('--cold-load-percent must be in the range [0-100]')
+
+    # Make sure _cold_run_start_index is an integer multiple of page_repeat.
+    # Without this, --pageset_shuffle + --page_repeat could lead to
+    # assertion failures on _started_warm in WillNavigateToPage.
+    if cold_runs_percent_set:
+      number_warm_pageset_runs = int(
+          (int(args.pageset_repeat) - 1) * (100 - args.cold_load_percent) / 100)
+      number_warm_runs = number_warm_pageset_runs * args.page_repeat
+      cls._cold_run_start_index = number_warm_runs + args.page_repeat
+      cls.discard_first_result = (not args.cold_load_percent or
+                                  cls.discard_first_result)
+    else:
+      cls._cold_run_start_index = args.pageset_repeat * args.page_repeat
+
   def DidStartBrowser(self, browser):
     """Initialize metrics once right after the browser has been launched."""
     self._memory_metric = memory.MemoryMetric(browser)
@@ -82,10 +100,10 @@ class PageCycler(page_measurement.PageMeasurement):
     if self._report_speed_index:
       self._speedindex_metric.Start(page, tab)
     self._cpu_metric.Start(page, tab)
+    self._power_metric.Start(page, tab)
 
   def DidNavigateToPage(self, page, tab):
     self._memory_metric.Start(page, tab)
-    self._power_metric.Start(page, tab)
     if self._record_v8_object_stats:
       self._v8_object_stats_metric.Start(page, tab)
 
@@ -99,27 +117,6 @@ class PageCycler(page_measurement.PageMeasurement):
       v8_object_stats.V8ObjectStatsMetric.CustomizeBrowserOptions(options)
     if self._report_speed_index:
       self._speedindex_metric.CustomizeBrowserOptions(options)
-
-    # TODO: Move the rest of this method to ProcessCommandLineArgs.
-    cold_runs_percent_set = (options.cold_load_percent != None)
-    # Handle requests for cold cache runs
-    if (cold_runs_percent_set and
-        (options.cold_load_percent < 0 or options.cold_load_percent > 100)):
-      raise Exception('--cold-load-percent must be in the range [0-100]')
-
-    # Make sure _cold_run_start_index is an integer multiple of page_repeat.
-    # Without this, --pageset_shuffle + --page_repeat could lead to
-    # assertion failures on _started_warm in WillNavigateToPage.
-    if cold_runs_percent_set:
-      number_warm_pageset_runs = int(
-          (int(options.pageset_repeat) - 1) *
-          (100 - options.cold_load_percent) / 100)
-      number_warm_runs = number_warm_pageset_runs * options.page_repeat
-      self._cold_run_start_index = number_warm_runs + options.page_repeat
-      self.discard_first_result = (not options.cold_load_percent or
-                                   self.discard_first_result)
-    else:
-      self._cold_run_start_index = options.pageset_repeat * options.page_repeat
 
   def MeasurePage(self, page, tab, results):
     tab.WaitForJavaScriptExpression('__pc_load_time', 60)

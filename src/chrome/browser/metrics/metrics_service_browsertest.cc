@@ -5,7 +5,7 @@
 // Tests the MetricsService stat recording to make sure that the numbers are
 // what we expect.
 
-#include "chrome/browser/metrics/metrics_service.h"
+#include "components/metrics/metrics_service.h"
 
 #include <string>
 
@@ -64,10 +64,11 @@ IN_PROC_BROWSER_TEST_F(MetricsServiceBrowserTest, CloseRenderersNormally) {
 
   // Verify that the expected stability metrics were recorded.
   const PrefService* prefs = g_browser_process->local_state();
-  EXPECT_EQ(1, prefs->GetInteger(prefs::kStabilityLaunchCount));
+  EXPECT_EQ(1, prefs->GetInteger(metrics::prefs::kStabilityLaunchCount));
   EXPECT_EQ(3, prefs->GetInteger(prefs::kStabilityPageLoadCount));
   EXPECT_EQ(0, prefs->GetInteger(prefs::kStabilityRendererCrashCount));
-  // TODO(isherman): We should also verify that prefs::kStabilityExitedCleanly
+  // TODO(isherman): We should also verify that
+  // metrics::prefs::kStabilityExitedCleanly
   // is set to true, but this preference isn't set until the browser
   // exits... it's not clear to me how to test that.
 }
@@ -100,10 +101,11 @@ IN_PROC_BROWSER_TEST_F(MetricsServiceBrowserTest, MAYBE_CrashRenderers) {
   }
 
   // Verify that the expected stability metrics were recorded.
-  EXPECT_EQ(1, prefs->GetInteger(prefs::kStabilityLaunchCount));
+  EXPECT_EQ(1, prefs->GetInteger(metrics::prefs::kStabilityLaunchCount));
   EXPECT_EQ(4, prefs->GetInteger(prefs::kStabilityPageLoadCount));
   EXPECT_EQ(1, prefs->GetInteger(prefs::kStabilityRendererCrashCount));
-  // TODO(isherman): We should also verify that prefs::kStabilityExitedCleanly
+  // TODO(isherman): We should also verify that
+  // metrics::prefs::kStabilityExitedCleanly
   // is set to true, but this preference isn't set until the browser
   // exits... it's not clear to me how to test that.
 }

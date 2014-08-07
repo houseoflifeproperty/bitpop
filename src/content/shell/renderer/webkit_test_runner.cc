@@ -33,8 +33,8 @@
 #include "content/shell/renderer/shell_render_process_observer.h"
 #include "content/shell/renderer/test_runner/WebTask.h"
 #include "content/shell/renderer/test_runner/WebTestInterfaces.h"
-#include "content/shell/renderer/test_runner/WebTestProxy.h"
-#include "content/shell/renderer/test_runner/WebTestRunner.h"
+#include "content/shell/renderer/test_runner/web_test_proxy.h"
+#include "content/shell/renderer/test_runner/web_test_runner.h"
 #include "net/base/filename_util.h"
 #include "net/base/net_errors.h"
 #include "skia/ext/platform_canvas.h"
@@ -98,32 +98,6 @@ void InvokeTaskHelper(void* context) {
   delete task;
 }
 
-#if !defined(OS_MACOSX)
-void MakeBitmapOpaque(SkBitmap* bitmap) {
-  SkAutoLockPixels lock(*bitmap);
-  DCHECK_EQ(bitmap->config(), SkBitmap::kARGB_8888_Config);
-  for (int y = 0; y < bitmap->height(); ++y) {
-    uint32_t* row = bitmap->getAddr32(0, y);
-    for (int x = 0; x < bitmap->width(); ++x)
-      row[x] |= 0xFF000000;  // Set alpha bits to 1.
-  }
-}
-#endif
-
-void CopyCanvasToBitmap(SkCanvas* canvas,  SkBitmap* snapshot) {
-  SkBaseDevice* device = skia::GetTopDevice(*canvas);
-  const SkBitmap& bitmap = device->accessBitmap(false);
-  const bool success = bitmap.copyTo(snapshot, kPMColor_SkColorType);
-  DCHECK(success);
-
-#if !defined(OS_MACOSX)
-  // Only the expected PNGs for Mac have a valid alpha channel.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableOverlayFullscreenVideo))
-    MakeBitmapOpaque(snapshot);
-#endif
-}
-
 class SyncNavigationStateVisitor : public RenderViewVisitor {
  public:
   SyncNavigationStateVisitor() {}
@@ -177,7 +151,7 @@ class NavigateAwayVisitor : public RenderViewVisitor {
     if (render_view == main_render_view_)
       return true;
     render_view->GetWebView()->mainFrame()->loadRequest(
-        WebURLRequest(GURL(kAboutBlankURL)));
+        WebURLRequest(GURL(url::kAboutBlankURL)));
     return true;
   }
 
@@ -227,20 +201,9 @@ void WebKitTestRunner::setEditCommand(const std::string& name,
   render_view()->SetEditCommandForNextKeyEvent(name, value);
 }
 
-void WebKitTestRunner::setGamepadData(const WebGamepads& gamepads) {
-  SetMockGamepads(gamepads);
-}
-
-void WebKitTestRunner::didConnectGamepad(
-    int index,
-    const blink::WebGamepad& gamepad) {
-  MockGamepadConnected(index, gamepad);
-}
-
-void WebKitTestRunner::didDisconnectGamepad(
-    int index,
-    const blink::WebGamepad& gamepad) {
-  MockGamepadDisconnected(index, gamepad);
+void WebKitTestRunner::setGamepadProvider(
+    RendererGamepadProvider* provider) {
+  SetMockGamepadProvider(provider);
 }
 
 void WebKitTestRunner::setDeviceMotionData(const WebDeviceMotionData& data) {
@@ -254,7 +217,16 @@ void WebKitTestRunner::setDeviceOrientationData(
 
 void WebKitTestRunner::setScreenOrientation(
     const WebScreenOrientationType& orientation) {
-  SetMockScreenOrientation(orientation);
+  SetMockScreenOrientation(render_view(), orientation);
+}
+
+void WebKitTestRunner::resetScreenOrientation() {
+  ResetMockScreenOrientation();
+}
+
+void WebKitTestRunner::didChangeBatteryStatus(
+    const blink::WebBatteryStatus& status) {
+  MockBatteryStatusChanged(status);
 }
 
 void WebKitTestRunner::printMessage(const std::string& message) {
@@ -498,7 +470,7 @@ void WebKitTestRunner::testFinished() {
   WebTestInterfaces* interfaces =
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
   interfaces->setTestIsRunning(false);
-  if (interfaces->testRunner()->shouldDumpBackForwardList()) {
+  if (interfaces->testRunner()->ShouldDumpBackForwardList()) {
     SyncNavigationStateVisitor visitor;
     RenderView::ForEach(&visitor);
     Send(new ShellViewHostMsg_CaptureSessionHistory(routing_id()));
@@ -562,13 +534,10 @@ std::string WebKitTestRunner::dumpHistoryForWindow(WebTestProxyBase* proxy) {
 
 // RenderViewObserver  --------------------------------------------------------
 
-void WebKitTestRunner::DidClearWindowObject(WebLocalFrame* frame,
-                                            int world_id) {
+void WebKitTestRunner::DidClearWindowObject(WebLocalFrame* frame) {
   WebTestingSupport::injectInternalsObject(frame);
-  if (world_id == 0) {
-    ShellRenderProcessObserver::GetInstance()->test_interfaces()->bindTo(frame);
-    GCController::Install(frame);
-  }
+  ShellRenderProcessObserver::GetInstance()->test_interfaces()->bindTo(frame);
+  GCController::Install(frame);
 }
 
 bool WebKitTestRunner::OnMessageReceived(const IPC::Message& message) {
@@ -615,8 +584,8 @@ void WebKitTestRunner::DidFailProvisionalLoad(WebLocalFrame* frame,
 
 void WebKitTestRunner::Reset() {
   // The proxy_ is always non-NULL, it is set right after construction.
-  proxy_->setWidget(render_view()->GetWebView());
-  proxy_->reset();
+  proxy_->set_widget(render_view()->GetWebView());
+  proxy_->Reset();
   prefs_.Reset();
   routing_ids_.clear();
   session_histories_.clear();
@@ -642,25 +611,19 @@ void WebKitTestRunner::CaptureDump() {
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
   TRACE_EVENT0("shell", "WebKitTestRunner::CaptureDump");
 
-  if (interfaces->testRunner()->shouldDumpAsAudio()) {
+  if (interfaces->testRunner()->ShouldDumpAsAudio()) {
     std::vector<unsigned char> vector_data;
-    interfaces->testRunner()->getAudioData(&vector_data);
+    interfaces->testRunner()->GetAudioData(&vector_data);
     Send(new ShellViewHostMsg_AudioDump(routing_id(), vector_data));
   } else {
     Send(new ShellViewHostMsg_TextDump(routing_id(),
-                                       proxy()->captureTree(false)));
+                                       proxy()->CaptureTree(false)));
 
     if (test_config_.enable_pixel_dumping &&
-        interfaces->testRunner()->shouldGeneratePixelResults()) {
-      // TODO(danakj): Remove when kForceCompositingMode is everywhere.
-      if (!render_view()->GetWebView()->isAcceleratedCompositingActive()) {
-        SkBitmap snapshot;
-        CopyCanvasToBitmap(proxy()->capturePixels(), &snapshot);
-        CaptureDumpPixels(snapshot);
-      } else {
-        proxy()->CapturePixelsAsync(base::Bind(
-            &WebKitTestRunner::CaptureDumpPixels, base::Unretained(this)));
-      }
+        interfaces->testRunner()->ShouldGeneratePixelResults()) {
+      CHECK(render_view()->GetWebView()->isAcceleratedCompositingActive());
+      proxy()->CapturePixelsAsync(base::Bind(
+          &WebKitTestRunner::CaptureDumpPixels, base::Unretained(this)));
       return;
     }
   }
@@ -732,7 +695,7 @@ void WebKitTestRunner::OnReset() {
   // Navigating to about:blank will make sure that no new loads are initiated
   // by the renderer.
   render_view()->GetWebView()->mainFrame()->loadRequest(
-      WebURLRequest(GURL(kAboutBlankURL)));
+      WebURLRequest(GURL(url::kAboutBlankURL)));
   Send(new ShellViewHostMsg_ResetDone(routing_id()));
 }
 
@@ -744,7 +707,7 @@ void WebKitTestRunner::OnNotifyDone() {
 void WebKitTestRunner::OnTryLeakDetection() {
   WebLocalFrame* main_frame =
       render_view()->GetWebView()->mainFrame()->toWebLocalFrame();
-  DCHECK_EQ(GURL(kAboutBlankURL), GURL(main_frame->document().url()));
+  DCHECK_EQ(GURL(url::kAboutBlankURL), GURL(main_frame->document().url()));
   DCHECK(!main_frame->isLoading());
 
   leak_detector_->TryLeakDetection(main_frame);

@@ -33,7 +33,7 @@ class ExecutionContext;
 
 class DocumentFragment : public ContainerNode {
 public:
-    static PassRefPtr<DocumentFragment> create(Document&);
+    static PassRefPtrWillBeRawPtr<DocumentFragment> create(Document&);
 
     void parseHTML(const String&, Element* contextElement, ParserContentPolicy = AllowScriptingContent);
     bool parseXML(const String&, Element* contextElement, ParserContentPolicy = AllowScriptingContent);
@@ -47,11 +47,11 @@ protected:
 
 private:
     virtual NodeType nodeType() const OVERRIDE FINAL;
-    virtual PassRefPtr<Node> cloneNode(bool deep = true) OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) OVERRIDE;
     virtual bool childTypeAllowed(NodeType) const OVERRIDE;
 };
 
-DEFINE_NODE_TYPE_CASTS(DocumentFragment, nodeType() == Node::DOCUMENT_FRAGMENT_NODE);
+DEFINE_NODE_TYPE_CASTS(DocumentFragment, isDocumentFragment());
 
 } // namespace WebCore
 

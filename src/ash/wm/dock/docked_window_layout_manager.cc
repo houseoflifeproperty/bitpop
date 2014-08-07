@@ -4,7 +4,6 @@
 
 #include "ash/wm/dock/docked_window_layout_manager.h"
 
-#include "ash/ash_switches.h"
 #include "ash/screen_util.h"
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_constants.h"
@@ -138,7 +137,6 @@ class DockedBackgroundWidget : public views::Widget,
     views::Widget::InitParams params;
     params.type = views::Widget::InitParams::TYPE_POPUP;
     params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
-    params.can_activate = false;
     params.keep_on_top = false;
     params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
     params.parent = parent;
@@ -593,8 +591,6 @@ DockedAlignment DockedWindowLayoutManager::CalculateAlignment() const {
 bool DockedWindowLayoutManager::CanDockWindow(
     aura::Window* window,
     DockedAlignment desired_alignment) {
-  if (!switches::UseDockedWindows())
-    return false;
   // Don't allow interactive docking of windows with transient parents such as
   // modal browser dialogs. Prevent docking of panels attached to shelf during
   // the drag.

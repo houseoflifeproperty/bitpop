@@ -106,9 +106,6 @@ DragSelector.prototype.startDragSelection = function(list, event) {
   // Set the target of the drag selection
   this.target_ = list;
 
-  // Prevent the default action.
-  event.preventDefault();
-
   // Save the start state.
   var startPos = DragSelector.getScrolledPosition(list, event);
   if (!startPos)
@@ -139,6 +136,7 @@ DragSelector.prototype.startDragSelection = function(list, event) {
       'mousemove', this.onMouseMoveBound_, true);
   this.target_.ownerDocument.addEventListener(
       'mouseup', this.onMouseUpBound_, true);
+  cr.dispatchSimpleEvent(this.target_, 'dragselectionstart');
 };
 
 /**

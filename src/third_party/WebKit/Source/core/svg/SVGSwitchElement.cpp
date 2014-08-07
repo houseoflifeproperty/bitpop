@@ -22,7 +22,7 @@
 
 #include "core/svg/SVGSwitchElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/frame/UseCounter.h"
 #include "core/rendering/svg/RenderSVGTransformableContainer.h"
 
@@ -36,10 +36,7 @@ inline SVGSwitchElement::SVGSwitchElement(Document& document)
     UseCounter::count(document, UseCounter::SVGSwitchElement);
 }
 
-PassRefPtr<SVGSwitchElement> SVGSwitchElement::create(Document& document)
-{
-    return adoptRef(new SVGSwitchElement(document));
-}
+DEFINE_NODE_FACTORY(SVGSwitchElement)
 
 RenderObject* SVGSwitchElement::createRenderer(RenderStyle*)
 {

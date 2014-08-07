@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/rendering/RenderTreeAsText.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Document.h"
 #include "core/editing/FrameSelection.h"
@@ -474,7 +474,7 @@ void write(TextStream& ts, const RenderObject& o, int indent, RenderAsTextBehavi
         }
     }
 
-    for (RenderObject* child = o.firstChild(); child; child = child->nextSibling()) {
+    for (RenderObject* child = o.slowFirstChild(); child; child = child->nextSibling()) {
         if (child->hasLayer())
             continue;
         write(ts, *child, indent + 1, behavior);
@@ -538,10 +538,10 @@ static void write(TextStream& ts, RenderLayer& l,
             ts << " scrollX " << l.scrollableArea()->scrollXOffset();
         if (l.scrollableArea()->scrollYOffset())
             ts << " scrollY " << l.scrollableArea()->scrollYOffset();
-        if (l.renderBox() && l.renderBox()->pixelSnappedClientWidth() != l.renderBox()->scrollWidth())
-            ts << " scrollWidth " << l.renderBox()->scrollWidth();
-        if (l.renderBox() && l.renderBox()->pixelSnappedClientHeight() != l.renderBox()->scrollHeight())
-            ts << " scrollHeight " << l.renderBox()->scrollHeight();
+        if (l.renderBox() && l.renderBox()->pixelSnappedClientWidth() != l.renderBox()->pixelSnappedScrollWidth())
+            ts << " scrollWidth " << l.renderBox()->pixelSnappedScrollWidth();
+        if (l.renderBox() && l.renderBox()->pixelSnappedClientHeight() != l.renderBox()->pixelSnappedScrollHeight())
+            ts << " scrollHeight " << l.renderBox()->pixelSnappedScrollHeight();
     }
 
     if (paintPhase == LayerPaintPhaseBackground)
@@ -736,7 +736,7 @@ String externalRepresentation(Element* element, RenderAsTextBehavior behavior)
 
 static void writeCounterValuesFromChildren(TextStream& stream, RenderObject* parent, bool& isFirstCounter)
 {
-    for (RenderObject* child = parent->firstChild(); child; child = child->nextSibling()) {
+    for (RenderObject* child = parent->slowFirstChild(); child; child = child->nextSibling()) {
         if (child->isCounter()) {
             if (!isFirstCounter)
                 stream << " ";
@@ -750,7 +750,7 @@ static void writeCounterValuesFromChildren(TextStream& stream, RenderObject* par
 String counterValueForElement(Element* element)
 {
     // Make sure the element is not freed during the layout.
-    RefPtr<Element> elementRef(element);
+    RefPtrWillBeRawPtr<Element> protector(element);
     element->document().updateLayout();
     TextStream stream;
     bool isFirstCounter = true;
@@ -765,7 +765,7 @@ String counterValueForElement(Element* element)
 String markerTextForListItem(Element* element)
 {
     // Make sure the element is not freed during the layout.
-    RefPtr<Element> elementRef(element);
+    RefPtrWillBeRawPtr<Element> protector(element);
     element->document().updateLayout();
 
     RenderObject* renderer = element->renderer();

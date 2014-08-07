@@ -30,30 +30,30 @@ class DummyDriveService : public DriveServiceInterface {
   virtual void ClearAccessToken() OVERRIDE;
   virtual void ClearRefreshToken() OVERRIDE;
   virtual std::string GetRootResourceId() const OVERRIDE;
-  virtual google_apis::CancelCallback GetAllResourceList(
-      const google_apis::GetResourceListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback GetResourceListInDirectory(
+  virtual google_apis::CancelCallback GetAllFileList(
+      const google_apis::FileListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetFileListInDirectory(
       const std::string& directory_resource_id,
-      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+      const google_apis::FileListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback Search(
       const std::string& search_query,
-      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+      const google_apis::FileListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback SearchByTitle(
       const std::string& title,
       const std::string& directory_resource_id,
-      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+      const google_apis::FileListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetChangeList(
       int64 start_changestamp,
-      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+      const google_apis::ChangeListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetRemainingChangeList(
       const GURL& next_link,
-      const google_apis::GetResourceListCallback& callback) OVERRIDE;
+      const google_apis::ChangeListCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetRemainingFileList(
       const GURL& next_link,
-      const google_apis::GetResourceListCallback& callback) OVERRIDE;
-  virtual google_apis::CancelCallback GetResourceEntry(
+      const google_apis::FileListCallback& callback) OVERRIDE;
+  virtual google_apis::CancelCallback GetFileResource(
       const std::string& resource_id,
-      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
+      const google_apis::FileResourceCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback GetShareUrl(
       const std::string& resource_id,
       const GURL& embed_origin,
@@ -80,14 +80,14 @@ class DummyDriveService : public DriveServiceInterface {
       const std::string& parent_resource_id,
       const std::string& new_title,
       const base::Time& last_modified,
-      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
+      const google_apis::FileResourceCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback UpdateResource(
       const std::string& resource_id,
       const std::string& parent_resource_id,
       const std::string& new_title,
       const base::Time& last_modified,
       const base::Time& last_viewed_by_me,
-      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
+      const google_apis::FileResourceCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback RenameResource(
       const std::string& resource_id,
       const std::string& new_title,
@@ -104,7 +104,7 @@ class DummyDriveService : public DriveServiceInterface {
       const std::string& parent_resource_id,
       const std::string& directory_title,
       const AddNewDirectoryOptions& options,
-      const google_apis::GetResourceEntryCallback& callback) OVERRIDE;
+      const google_apis::FileResourceCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback InitiateUploadNewFile(
       const std::string& content_type,
       int64 content_length,
@@ -125,12 +125,12 @@ class DummyDriveService : public DriveServiceInterface {
       int64 content_length,
       const std::string& content_type,
       const base::FilePath& local_file_path,
-      const google_apis::UploadRangeCallback& callback,
+      const google_apis::drive::UploadRangeCallback& callback,
       const google_apis::ProgressCallback& progress_callback) OVERRIDE;
   virtual google_apis::CancelCallback GetUploadStatus(
       const GURL& upload_url,
       int64 content_length,
-      const google_apis::UploadRangeCallback& callback) OVERRIDE;
+      const google_apis::drive::UploadRangeCallback& callback) OVERRIDE;
   virtual google_apis::CancelCallback AuthorizeApp(
       const std::string& resource_id,
       const std::string& app_id,

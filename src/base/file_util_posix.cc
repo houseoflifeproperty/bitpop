@@ -458,8 +458,11 @@ bool GetTempDir(FilePath* path) {
 #if !defined(OS_MACOSX)  // Mac implementation is in file_util_mac.mm.
 FilePath GetHomeDir() {
 #if defined(OS_CHROMEOS)
-  if (SysInfo::IsRunningOnChromeOS())
-    return FilePath("/home/chronos/user");
+  if (SysInfo::IsRunningOnChromeOS()) {
+    // On Chrome OS chrome::DIR_USER_DATA is overridden with a primary user
+    // homedir once it becomes available. Return / as the safe option.
+    return FilePath("/");
+  }
 #endif
 
   const char* home_dir = getenv("HOME");
@@ -651,6 +654,16 @@ FILE* OpenFile(const FilePath& filename, const char* mode) {
   return result;
 }
 
+// NaCl doesn't implement system calls to open files directly.
+#if !defined(OS_NACL)
+FILE* FileToFILE(File file, const char* mode) {
+  FILE* stream = fdopen(file.GetPlatformFile(), mode);
+  if (stream)
+    file.TakePlatformFile();
+  return stream;
+}
+#endif  // !defined(OS_NACL)
+
 int ReadFile(const FilePath& filename, char* data, int max_size) {
   ThreadRestrictions::AssertIOAllowed();
   int fd = HANDLE_EINTR(open(filename.value().c_str(), O_RDONLY));
@@ -665,7 +678,7 @@ int ReadFile(const FilePath& filename, char* data, int max_size) {
 
 int WriteFile(const FilePath& filename, const char* data, int size) {
   ThreadRestrictions::AssertIOAllowed();
-  int fd = HANDLE_EINTR(creat(filename.value().c_str(), 0666));
+  int fd = HANDLE_EINTR(creat(filename.value().c_str(), 0640));
   if (fd < 0)
     return -1;
 

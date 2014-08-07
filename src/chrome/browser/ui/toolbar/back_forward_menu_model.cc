@@ -107,7 +107,7 @@ base::string16 BackForwardMenuModel::GetLabelAt(int index) const {
   base::string16 menu_text(entry->GetTitleForDisplay(
       profile->GetPrefs()->GetString(prefs::kAcceptLanguages)));
   menu_text =
-      gfx::ElideText(menu_text, gfx::FontList(), kMaxWidth, gfx::ELIDE_AT_END);
+      gfx::ElideText(menu_text, gfx::FontList(), kMaxWidth, gfx::ELIDE_TAIL);
 
 #if !defined(OS_MACOSX)
   for (size_t i = menu_text.find('&'); i != base::string16::npos;
@@ -254,8 +254,8 @@ void BackForwardMenuModel::FetchFavicon(NavigationEntry* entry) {
   if (!favicon_service)
     return;
 
-  favicon_service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(
+  favicon_service->GetFaviconImageForPageURL(
+      FaviconService::FaviconForPageURLParams(
           entry->GetURL(), favicon_base::FAVICON, gfx::kFaviconSize),
       base::Bind(&BackForwardMenuModel::OnFavIconDataAvailable,
                  base::Unretained(this),

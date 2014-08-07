@@ -4,15 +4,18 @@
 
 #include "chrome/browser/profile_resetter/profile_resetter.h"
 
+#include <string>
+
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/synchronization/cancellation_flag.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/google/google_url_tracker.h"
+#include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/profile_resetter/brandcoded_default_settings.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -21,6 +24,8 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/browser_distribution.h"
+#include "components/google/core/browser/google_pref_names.h"
+#include "components/google/core/browser/google_url_tracker.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
@@ -28,8 +33,8 @@
 #if defined(OS_WIN)
 #include "base/base_paths.h"
 #include "base/path_service.h"
+#include "chrome/browser/component_updater/sw_reporter_installer_win.h"
 #include "chrome/installer/util/shell_util.h"
-#include "content/public/browser/browser_thread.h"
 
 namespace {
 
@@ -75,6 +80,7 @@ ProfileResetter::~ProfileResetter() {
 void ProfileResetter::Reset(
     ProfileResetter::ResettableFlags resettable_flags,
     scoped_ptr<BrandcodedDefaultSettings> master_settings,
+    bool accepted_send_feedback,
     const base::Closure& callback) {
   DCHECK(CalledOnValidThread());
   DCHECK(master_settings);
@@ -100,16 +106,16 @@ void ProfileResetter::Reset(
   struct {
     Resettable flag;
     void (ProfileResetter::*method)();
-  } flagToMethod [] = {
-      { DEFAULT_SEARCH_ENGINE, &ProfileResetter::ResetDefaultSearchEngine },
-      { HOMEPAGE, &ProfileResetter::ResetHomepage },
-      { CONTENT_SETTINGS, &ProfileResetter::ResetContentSettings },
-      { COOKIES_AND_SITE_DATA, &ProfileResetter::ResetCookiesAndSiteData },
-      { EXTENSIONS, &ProfileResetter::ResetExtensions },
-      { STARTUP_PAGES, &ProfileResetter::ResetStartupPages },
-      { PINNED_TABS, &ProfileResetter::ResetPinnedTabs },
-      { SHORTCUTS, &ProfileResetter::ResetShortcuts },
-  };
+  } flagToMethod[] = {
+        {DEFAULT_SEARCH_ENGINE, &ProfileResetter::ResetDefaultSearchEngine},
+        {HOMEPAGE, &ProfileResetter::ResetHomepage},
+        {CONTENT_SETTINGS, &ProfileResetter::ResetContentSettings},
+        {COOKIES_AND_SITE_DATA, &ProfileResetter::ResetCookiesAndSiteData},
+        {EXTENSIONS, &ProfileResetter::ResetExtensions},
+        {STARTUP_PAGES, &ProfileResetter::ResetStartupPages},
+        {PINNED_TABS, &ProfileResetter::ResetPinnedTabs},
+        {SHORTCUTS, &ProfileResetter::ResetShortcuts},
+    };
 
   ResettableFlags reset_triggered_for_flags = 0;
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(flagToMethod); ++i) {
@@ -118,6 +124,20 @@ void ProfileResetter::Reset(
       (this->*flagToMethod[i].method)();
     }
   }
+
+// When the user resets any of their settings on Windows and agreed to sending
+// feedback, run the software reporter tool to see if it could find the reason
+// why the user wanted a reset.
+#if defined(OS_WIN)
+  // The browser process and / or local_state can be NULL when running tests.
+  if (accepted_send_feedback && g_browser_process &&
+      g_browser_process->local_state() &&
+      g_browser_process->local_state()->GetBoolean(
+          prefs::kMetricsReportingEnabled)) {
+    ExecuteSwReporter(g_browser_process->component_updater(),
+                      g_browser_process->local_state());
+  }
+#endif
 
   DCHECK_EQ(resettable_flags, reset_triggered_for_flags);
 }
@@ -170,8 +190,13 @@ void ProfileResetter::ResetDefaultSearchEngine() {
     const TemplateURL* default_search_provider =
         template_url_service_->GetDefaultSearchProvider();
     if (default_search_provider &&
-        default_search_provider->HasGoogleBaseURLs())
-      GoogleURLTracker::RequestServerCheck(profile_, true);
+        default_search_provider->HasGoogleBaseURLs(
+            template_url_service_->search_terms_data())) {
+      GoogleURLTracker* tracker =
+          GoogleURLTrackerFactory::GetForProfile(profile_);
+      if (tracker)
+        tracker->RequestServerCheck(true);
+    }
 
     MarkAsDone(DEFAULT_SEARCH_ENGINE);
   } else {

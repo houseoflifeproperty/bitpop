@@ -39,6 +39,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiling.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -178,6 +179,45 @@ void ZoomMenuModel::Build() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// HelpMenuModel
+
+#if defined(GOOGLE_CHROME_BUILD)
+
+class WrenchMenuModel::HelpMenuModel : public ui::SimpleMenuModel {
+ public:
+  HelpMenuModel(ui::SimpleMenuModel::Delegate* delegate,
+                Browser* browser)
+      : SimpleMenuModel(delegate) {
+    Build(browser);
+  }
+  virtual ~HelpMenuModel() {
+  }
+
+ private:
+  void Build(Browser* browser) {
+    int help_string_id = IDS_HELP_PAGE;
+#if defined(OS_CHROMEOS) && defined(OFFICIAL_BUILD)
+    if (!CommandLine::ForCurrentProcess()->HasSwitch(
+            chromeos::switches::kDisableGeniusApp)) {
+      help_string_id = IDS_GET_HELP;
+    }
+#endif
+    AddItemWithStringId(IDC_HELP_PAGE_VIA_MENU, help_string_id);
+    if (browser_defaults::kShowHelpMenuItemIcon) {
+      ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+      SetIcon(GetIndexOfCommandId(IDC_HELP_PAGE_VIA_MENU),
+              rb.GetNativeImageNamed(IDR_HELP_MENU));
+    }
+
+    AddItemWithStringId(IDC_FEEDBACK, IDS_FEEDBACK);
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(HelpMenuModel);
+};
+
+#endif  // defined(GOOGLE_CHROME_BUILD)
+
+////////////////////////////////////////////////////////////////////////////////
 // ToolsMenuModel
 
 ToolsMenuModel::ToolsMenuModel(ui::SimpleMenuModel::Delegate* delegate,
@@ -214,14 +254,6 @@ void ToolsMenuModel::Build(Browser* browser) {
   AddItemWithStringId(IDC_CLEAR_BROWSING_DATA, IDS_CLEAR_BROWSING_DATA);
 
   AddSeparator(ui::NORMAL_SEPARATOR);
-
-#if defined(GOOGLE_CHROME_BUILD)
-#if !defined(OS_CHROMEOS)
-  // Show IDC_FEEDBACK in "Tools" menu for non-ChromeOS platforms.
-  AddItemWithStringId(IDC_FEEDBACK, IDS_FEEDBACK);
-  AddSeparator(ui::NORMAL_SEPARATOR);
-#endif
-#endif // GOOGLE_CHROME_BUILD
 
   encoding_menu_model_.reset(new EncodingMenuModel(browser));
   AddSubMenuWithStringId(IDC_ENCODING_MENU, IDS_ENCODING_MENU,
@@ -278,7 +310,7 @@ bool WrenchMenuModel::IsItemForCommandIdDynamic(int command_id) const {
          command_id == IDC_PIN_TO_START_SCREEN ||
 #endif
          command_id == IDC_UPGRADE_DIALOG ||
-         command_id == IDC_SHOW_SIGNIN;
+         (!switches::IsNewProfileManagement() && command_id == IDC_SHOW_SIGNIN);
 }
 
 base::string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
@@ -309,6 +341,7 @@ base::string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
     case IDC_UPGRADE_DIALOG:
       return GetUpgradeDialogMenuItemName();
     case IDC_SHOW_SIGNIN:
+      DCHECK(!switches::IsNewProfileManagement());
       return signin_ui_util::GetSigninMenuLabel(
           browser_->profile()->GetOriginalProfile());
     default:
@@ -331,6 +364,7 @@ bool WrenchMenuModel::GetIconForCommandId(int command_id,
       return false;
     }
     case IDC_SHOW_SIGNIN: {
+      DCHECK(!switches::IsNewProfileManagement());
       GlobalError* error = signin_ui_util::GetSignedInServiceError(
           browser_->profile()->GetOriginalProfile());
       if (error) {
@@ -356,7 +390,7 @@ void WrenchMenuModel::ExecuteCommand(int command_id, int event_flags) {
     return;
   }
 
-  if (command_id == IDC_SHOW_SIGNIN) {
+  if (!switches::IsNewProfileManagement() && command_id == IDC_SHOW_SIGNIN) {
     // If a custom error message is being shown, handle it.
     GlobalError* error = signin_ui_util::GetSignedInServiceError(
         browser_->profile()->GetOriginalProfile());
@@ -478,7 +512,7 @@ WrenchMenuModel::WrenchMenuModel()
 }
 
 bool WrenchMenuModel::ShouldShowNewIncognitoWindowMenuItem() {
-  if (browser_->profile()->IsManaged())
+  if (browser_->profile()->IsSupervised())
     return false;
 
   return !browser_->profile()->IsGuestSession();
@@ -558,6 +592,11 @@ void WrenchMenuModel::Build(bool is_new_menu) {
   if (!is_new_menu)
     CreateZoomMenu(is_new_menu);
 
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableDomDistiller)) {
+    AddItemWithStringId(IDC_DISTILL_PAGE, IDS_DISTILL_PAGE);
+  }
+
   AddItemWithStringId(IDC_SAVE_PAGE, IDS_SAVE_PAGE);
   AddItemWithStringId(IDC_FIND, IDS_FIND);
   AddItemWithStringId(IDC_PRINT, IDS_PRINT);
@@ -579,19 +618,32 @@ void WrenchMenuModel::Build(bool is_new_menu) {
   AddSeparator(ui::NORMAL_SEPARATOR);
 
 #if !defined(OS_CHROMEOS)
-  // No "Sign in to Chromium..." menu item on ChromeOS.
-  SigninManager* signin = SigninManagerFactory::GetForProfile(
-      browser_->profile()->GetOriginalProfile());
-  if (signin && signin->IsSigninAllowed()) {
-    const base::string16 short_product_name =
-        l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME);
-    AddItem(IDC_SHOW_SYNC_SETUP, l10n_util::GetStringFUTF16(
-        IDS_SYNC_MENU_PRE_SYNCED_LABEL, short_product_name));
-    AddSeparator(ui::NORMAL_SEPARATOR);
+  if (!switches::IsNewProfileManagement()) {
+    // No "Sign in to Chromium..." menu item on ChromeOS.
+    SigninManager* signin = SigninManagerFactory::GetForProfile(
+        browser_->profile()->GetOriginalProfile());
+    if (signin && signin->IsSigninAllowed()) {
+      const base::string16 short_product_name =
+          l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME);
+      AddItem(IDC_SHOW_SYNC_SETUP, l10n_util::GetStringFUTF16(
+          IDS_SYNC_MENU_PRE_SYNCED_LABEL, short_product_name));
+      AddSeparator(ui::NORMAL_SEPARATOR);
+    }
   }
 #endif
 
   AddItemWithStringId(IDC_OPTIONS, IDS_SETTINGS);
+
+// On ChromeOS we don't want the about menu option.
+#if !defined(OS_CHROMEOS)
+  AddItem(IDC_ABOUT, l10n_util::GetStringUTF16(IDS_ABOUT));
+#endif
+
+#if defined(GOOGLE_CHROME_BUILD)
+  help_menu_model_.reset(new HelpMenuModel(this, browser_));
+  AddSubMenuWithStringId(IDC_HELP_MENU, IDS_HELP_MENU,
+                         help_menu_model_.get());
+#endif
 
 #if defined(OS_CHROMEOS)
   if (CommandLine::ForCurrentProcess()->HasSwitch(
@@ -599,14 +651,6 @@ void WrenchMenuModel::Build(bool is_new_menu) {
     AddCheckItemWithStringId(IDC_TOGGLE_REQUEST_TABLET_SITE,
                              IDS_TOGGLE_REQUEST_TABLET_SITE);
 #endif
-
-// On ChromeOS-Touch, we don't want the about menu option.
-#if defined(OS_CHROMEOS)
-  if (!is_new_menu)
-#endif
-  {
-    AddItem(IDC_ABOUT, l10n_util::GetStringUTF16(IDS_ABOUT));
-  }
 
   if (browser_defaults::kShowUpgradeMenuItem)
     AddItem(IDC_UPGRADE_DIALOG, GetUpgradeDialogMenuItemName());
@@ -617,25 +661,10 @@ void WrenchMenuModel::Build(bool is_new_menu) {
               GetNativeImageNamed(IDR_INPUT_ALERT_MENU));
 #endif
 
-  if (!is_new_menu) {
-    AddItemWithStringId(IDC_HELP_PAGE_VIA_MENU, IDS_HELP_PAGE);
-
-    if (browser_defaults::kShowHelpMenuItemIcon) {
-      ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-      SetIcon(GetIndexOfCommandId(IDC_HELP_PAGE_VIA_MENU),
-              rb.GetNativeImageNamed(IDR_HELP_MENU));
-    }
-  }
-
-#if defined(GOOGLE_CHROME_BUILD)
-#if defined(OS_CHROMEOS)
-  AddItemWithStringId(IDC_FEEDBACK, IDS_FEEDBACK);
-#endif
-#endif
-
   AddGlobalErrorMenuItems();
 
   if (is_new_menu) {
+    AddSeparator(ui::NORMAL_SEPARATOR);
     AddSubMenuWithStringId(IDC_ZOOM_MENU, IDS_MORE_TOOLS_MENU,
                            tools_menu_model_.get());
   }
@@ -650,6 +679,8 @@ void WrenchMenuModel::Build(bool is_new_menu) {
     AddSeparator(ui::NORMAL_SEPARATOR);
     AddItemWithStringId(IDC_EXIT, IDS_EXIT);
   }
+
+  RemoveTrailingSeparators();
 }
 
 void WrenchMenuModel::AddGlobalErrorMenuItems() {
@@ -660,9 +691,11 @@ void WrenchMenuModel::AddGlobalErrorMenuItems() {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   // GetSignedInServiceErrors() can modify the global error list, so call it
   // before iterating through that list below.
-  std::vector<GlobalError*> signin_errors =
-      signin_ui_util::GetSignedInServiceErrors(
+  std::vector<GlobalError*> signin_errors;
+  if (!switches::IsNewProfileManagement()) {
+      signin_errors = signin_ui_util::GetSignedInServiceErrors(
           browser_->profile()->GetOriginalProfile());
+  }
   const GlobalErrorService::GlobalErrorList& errors =
       GlobalErrorServiceFactory::GetForProfile(browser_->profile())->errors();
   for (GlobalErrorService::GlobalErrorList::const_iterator

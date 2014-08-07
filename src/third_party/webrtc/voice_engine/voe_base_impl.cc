@@ -148,7 +148,9 @@ int32_t VoEBaseImpl::NeedMorePlayData(
         uint8_t nChannels,
         uint32_t samplesPerSec,
         void* audioSamples,
-        uint32_t& nSamplesOut)
+        uint32_t& nSamplesOut,
+        int64_t* elapsed_time_ms,
+        int64_t* ntp_time_ms)
 {
   WEBRTC_TRACE(kTraceStream, kTraceVoice, VoEId(_shared->instance_id(), -1),
                "VoEBaseImpl::NeedMorePlayData(nSamples=%u, "
@@ -157,7 +159,8 @@ int32_t VoEBaseImpl::NeedMorePlayData(
 
   GetPlayoutData(static_cast<int>(samplesPerSec),
                  static_cast<int>(nChannels),
-                 static_cast<int>(nSamples), true, audioSamples);
+                 static_cast<int>(nSamples), true, audioSamples,
+                 elapsed_time_ms, ntp_time_ms);
 
   nSamplesOut = _audioFrame.samples_per_channel_;
 
@@ -233,12 +236,14 @@ void VoEBaseImpl::PushCaptureData(int voe_channel, const void* audio_data,
 
 void VoEBaseImpl::PullRenderData(int bits_per_sample, int sample_rate,
                                  int number_of_channels, int number_of_frames,
-                                 void* audio_data) {
+                                 void* audio_data,
+                                 int64_t* elapsed_time_ms,
+                                 int64_t* ntp_time_ms) {
   assert(bits_per_sample == 16);
   assert(number_of_frames == static_cast<int>(sample_rate / 100));
 
   GetPlayoutData(sample_rate, number_of_channels, number_of_frames, false,
-                 audio_data);
+                 audio_data, elapsed_time_ms, ntp_time_ms);
 }
 
 int VoEBaseImpl::RegisterVoiceEngineObserver(VoiceEngineObserver& observer)
@@ -791,16 +796,6 @@ int VoEBaseImpl::GetVersion(char version[1024])
     accLen += len;
     assert(accLen < kVoiceEngineVersionMaxMessageSize);
 #endif
-#ifdef WEBRTC_VOE_EXTERNAL_REC_AND_PLAYOUT
-    len = AddExternalRecAndPlayoutBuild(versionPtr);
-    if (len == -1)
-    {
-        return -1;
-    }
-    versionPtr += len;
-    accLen += len;
-    assert(accLen < kVoiceEngineVersionMaxMessageSize);
- #endif
 
     memcpy(version, versionBuf, accLen);
     version[accLen] = '\0';
@@ -847,13 +842,6 @@ int32_t VoEBaseImpl::AddVoEVersion(char* str) const
 int32_t VoEBaseImpl::AddExternalTransportBuild(char* str) const
 {
     return sprintf(str, "External transport build\n");
-}
-#endif
-
-#ifdef WEBRTC_VOE_EXTERNAL_REC_AND_PLAYOUT
-int32_t VoEBaseImpl::AddExternalRecAndPlayoutBuild(char* str) const
-{
-    return sprintf(str, "External recording and playout build\n");
 }
 #endif
 
@@ -1098,7 +1086,9 @@ int VoEBaseImpl::ProcessRecordedDataWithAPM(
 
 void VoEBaseImpl::GetPlayoutData(int sample_rate, int number_of_channels,
                                  int number_of_frames, bool feed_data_to_apm,
-                                 void* audio_data) {
+                                 void* audio_data,
+                                 int64_t* elapsed_time_ms,
+                                 int64_t* ntp_time_ms) {
   assert(_shared->output_mixer() != NULL);
 
   // TODO(andrew): if the device is running in mono, we should tell the mixer
@@ -1119,6 +1109,9 @@ void VoEBaseImpl::GetPlayoutData(int sample_rate, int number_of_channels,
   // Deliver audio (PCM) samples to the ADM
   memcpy(audio_data, _audioFrame.data_,
          sizeof(int16_t) * number_of_frames * number_of_channels);
+
+  *elapsed_time_ms = _audioFrame.elapsed_time_ms_;
+  *ntp_time_ms = _audioFrame.ntp_time_ms_;
 }
 
 }  // namespace webrtc

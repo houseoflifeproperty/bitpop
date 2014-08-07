@@ -11,6 +11,8 @@
 #include "ash/wm/maximize_mode/workspace_backdrop_delegate.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overview/window_selector_controller.h"
+#include "ash/wm/window_state.h"
+#include "ash/wm/window_util.h"
 #include "ash/wm/wm_event.h"
 #include "ash/wm/workspace_controller.h"
 #include "ui/aura/window.h"
@@ -20,12 +22,16 @@ namespace ash {
 
 namespace {
 
+// The height of the area in which a touch operation leads to exiting the
+// full screen mode.
+const int kLeaveFullScreenAreaHeightInPixel = 2;
+
 // Exits overview mode if it is currently active.
 void CancelOverview() {
   WindowSelectorController* controller =
       Shell::GetInstance()->window_selector_controller();
   if (controller && controller->IsSelecting())
-    controller->OnSelectionCanceled();
+    controller->OnSelectionEnded();
 }
 
 }  // namespace
@@ -36,12 +42,12 @@ MaximizeModeWindowManager::~MaximizeModeWindowManager() {
   // overview: http://crbug.com/366605
   CancelOverview();
 
+  Shell::GetInstance()->RemovePreTargetHandler(this);
   Shell::GetInstance()->RemoveShellObserver(this);
   Shell::GetScreen()->RemoveObserver(this);
   EnableBackdropBehindTopWindowOnEachDisplay(false);
   RemoveWindowCreationObservers();
   RestoreAllWindows();
-  Shell::GetInstance()->OnMaximizeModeEnded();
 }
 
 int MaximizeModeWindowManager::GetNumberOfManagedWindows() {
@@ -108,17 +114,43 @@ void MaximizeModeWindowManager::OnWindowBoundsChanged(
   }
 }
 
-void MaximizeModeWindowManager::OnDisplayBoundsChanged(
-    const gfx::Display& display) {
-  // Nothing to do here.
-}
-
 void MaximizeModeWindowManager::OnDisplayAdded(const gfx::Display& display) {
   DisplayConfigurationChanged();
 }
 
 void MaximizeModeWindowManager::OnDisplayRemoved(const gfx::Display& display) {
   DisplayConfigurationChanged();
+}
+
+void MaximizeModeWindowManager::OnDisplayMetricsChanged(const gfx::Display&,
+                                                        uint32_t) {
+  // Nothing to do here.
+}
+
+void MaximizeModeWindowManager::OnTouchEvent(ui::TouchEvent* event) {
+  if (event->type() != ui::ET_TOUCH_PRESSED)
+    return;
+
+  // Find the active window (from the primary screen) to un-fullscreen.
+  aura::Window* window = wm::GetActiveWindow();
+  if (!window)
+    return;
+
+  wm::WindowState* window_state = wm::GetWindowState(window);
+  if (!window_state->IsFullscreen() || window_state->in_immersive_fullscreen())
+    return;
+
+  // Test that the touch happened in the top or bottom lines.
+  int y = event->y();
+  if (y >= kLeaveFullScreenAreaHeightInPixel &&
+      y < (window->bounds().height() - kLeaveFullScreenAreaHeightInPixel)) {
+    return;
+  }
+
+  // Leave full screen mode.
+  event->StopPropagation();
+  wm::WMEvent toggle_fullscreen(wm::WM_EVENT_TOGGLE_FULLSCREEN);
+  window_state->OnWMEvent(&toggle_fullscreen);
 }
 
 MaximizeModeWindowManager::MaximizeModeWindowManager()
@@ -130,9 +162,9 @@ MaximizeModeWindowManager::MaximizeModeWindowManager()
   MaximizeAllWindows();
   AddWindowCreationObservers();
   EnableBackdropBehindTopWindowOnEachDisplay(true);
-  Shell::GetInstance()->OnMaximizeModeStarted();
   Shell::GetScreen()->AddObserver(this);
   Shell::GetInstance()->AddShellObserver(this);
+  Shell::GetInstance()->AddPreTargetHandler(this);
 }
 
 void MaximizeModeWindowManager::MaximizeAllWindows() {

@@ -54,6 +54,7 @@ WebSettingsImpl::WebSettingsImpl(Settings* settings, InspectorController* inspec
     , m_doubleTapToZoomEnabled(false)
     , m_supportDeprecatedTargetDensityDPI(false)
     , m_shrinksViewportContentToFit(false)
+    , m_useExpandedHeuristicsForGpuRasterization(false)
     , m_viewportMetaLayoutSizeQuirk(false)
     , m_viewportMetaNonUserScalableQuirk(false)
     , m_clobberUserAgentInitialScaleQuirk(false)
@@ -289,6 +290,11 @@ void WebSettingsImpl::setAllowScriptsToCloseWindows(bool allow)
     m_settings->setAllowScriptsToCloseWindows(allow);
 }
 
+void WebSettingsImpl::setUseExpandedHeuristicsForGpuRasterization(bool useExpandedHeuristics)
+{
+    m_useExpandedHeuristicsForGpuRasterization = useExpandedHeuristics;
+}
+
 void WebSettingsImpl::setUseLegacyBackgroundSizeShorthandBehavior(bool useLegacyBackgroundSizeShorthandBehavior)
 {
     m_settings->setUseLegacyBackgroundSizeShorthandBehavior(useLegacyBackgroundSizeShorthandBehavior);
@@ -369,11 +375,6 @@ void WebSettingsImpl::setTouchEditingEnabled(bool enabled)
     m_settings->setTouchEditingEnabled(enabled);
 }
 
-void WebSettingsImpl::setThreadedHTMLParser(bool enabled)
-{
-    m_settings->setThreadedHTMLParser(enabled);
-}
-
 void WebSettingsImpl::setOfflineWebApplicationCacheEnabled(bool enabled)
 {
     m_settings->setOfflineWebApplicationCacheEnabled(enabled);
@@ -397,11 +398,6 @@ void WebSettingsImpl::setRegionBasedColumnsEnabled(bool enabled)
 void WebSettingsImpl::setOpenGLMultisamplingEnabled(bool enabled)
 {
     m_settings->setOpenGLMultisamplingEnabled(enabled);
-}
-
-void WebSettingsImpl::setPrivilegedWebGLExtensionsEnabled(bool enabled)
-{
-    m_settings->setPrivilegedWebGLExtensionsEnabled(enabled);
 }
 
 void WebSettingsImpl::setRenderVSyncNotificationEnabled(bool enabled)
@@ -432,12 +428,6 @@ void WebSettingsImpl::setEditingBehavior(EditingBehavior behavior)
 void WebSettingsImpl::setAcceleratedCompositingEnabled(bool enabled)
 {
     m_settings->setAcceleratedCompositingEnabled(enabled);
-    m_settings->setScrollingCoordinatorEnabled(enabled);
-}
-
-void WebSettingsImpl::setForceCompositingMode(bool enabled)
-{
-    m_settings->setForceCompositingMode(enabled);
 }
 
 void WebSettingsImpl::setMockScrollbarsEnabled(bool enabled)
@@ -714,11 +704,6 @@ void WebSettingsImpl::setPinchVirtualViewportEnabled(bool enabled)
 void WebSettingsImpl::setUseSolidColorScrollbars(bool enabled)
 {
     m_settings->setUseSolidColorScrollbars(enabled);
-}
-
-void WebSettingsImpl::setUseThreadedHTMLParserForDataURLs(bool enabled)
-{
-    m_settings->setUseThreadedHTMLParserForDataURLs(enabled);
 }
 
 void WebSettingsImpl::setMainFrameResizesAreOrientationChanges(bool enabled)

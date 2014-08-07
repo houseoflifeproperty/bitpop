@@ -709,6 +709,16 @@ class TestGTestJSONParserTests(unittest.TestCase):
     self.assertEqual(0, parser.FlakyTests())
     self.assertEqual(1, parser.DisabledTests())
 
+  def testCompressList(self):
+    CompressList = gtest_utils.CompressList
+    self.assertEqual(['foo'],          CompressList([1, 2, 3, 4], 0, 'foo'))
+    self.assertEqual(['foo', 4],       CompressList([1, 2, 3, 4], 1, 'foo'))
+    self.assertEqual([1, 'foo', 4],    CompressList([1, 2, 3, 4], 2, 'foo'))
+    self.assertEqual([1, 'foo', 3, 4], CompressList([1, 2, 3, 4], 3, 'foo'))
+    self.assertEqual([1, 2, 3, 4],     CompressList([1, 2, 3, 4], 4, 'foo'))
+    self.assertEqual([1, 2, 3, 4],     CompressList([1, 2, 3, 4], 5, 'foo'))
+    self.assertEqual([1, 2, 3, 4],     CompressList([1, 2, 3, 4], 6, 'foo'))
+
 
 if __name__ == '__main__':
   unittest.main()

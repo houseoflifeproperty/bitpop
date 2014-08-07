@@ -141,7 +141,8 @@ bool ResourceHostToDOMFileSystem(
       blink::WebString::fromUTF8(name),
       root_url,
       blink::WebDOMFileSystem::SerializableTypeSerializable);
-  *dom_file_system = web_dom_file_system.toV8Value();
+  *dom_file_system =
+      web_dom_file_system.toV8Value(context->Global(), context->GetIsolate());
   return true;
 }
 
@@ -203,7 +204,7 @@ ResourceConverterImpl::ResourceConverterImpl(PP_Instance instance,
 ResourceConverterImpl::~ResourceConverterImpl() {
   // Verify Flush() was called.
   DCHECK(browser_host_create_messages_.empty());
-  DCHECK(browser_vars.empty());
+  DCHECK(browser_vars_.empty());
 }
 
 bool ResourceConverterImpl::FromV8Value(v8::Handle<v8::Object> val,
@@ -265,13 +266,22 @@ bool ResourceConverterImpl::FromV8Value(v8::Handle<v8::Object> val,
   return true;
 }
 
+void ResourceConverterImpl::Reset() {
+  browser_host_create_messages_.clear();
+  browser_vars_.clear();
+}
+
+bool ResourceConverterImpl::NeedsFlush() {
+  return !browser_host_create_messages_.empty();
+}
+
 void ResourceConverterImpl::Flush(const base::Callback<void(bool)>& callback) {
   host_->CreateBrowserResourceHosts(
       instance_,
       browser_host_create_messages_,
-      base::Bind(&FlushComplete, callback, browser_vars));
+      base::Bind(&FlushComplete, callback, browser_vars_));
   browser_host_create_messages_.clear();
-  browser_vars.clear();
+  browser_vars_.clear();
 }
 
 bool ResourceConverterImpl::ToV8Value(const PP_Var& var,
@@ -336,7 +346,7 @@ ResourceConverterImpl::CreateResourceVarWithBrowserHost(
   scoped_refptr<HostResourceVar> result =
       CreateResourceVar(pending_renderer_id, create_message);
   browser_host_create_messages_.push_back(browser_host_create_message);
-  browser_vars.push_back(result);
+  browser_vars_.push_back(result);
   return result;
 }
 

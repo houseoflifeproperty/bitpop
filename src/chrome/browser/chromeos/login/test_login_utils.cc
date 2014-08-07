@@ -4,27 +4,25 @@
 
 #include "chrome/browser/chromeos/login/test_login_utils.h"
 
-#include "chrome/browser/chromeos/login/mock_authenticator.h"
-#include "chrome/browser/chromeos/login/user.h"
+#include "base/logging.h"
+#include "chrome/browser/chromeos/login/auth/mock_authenticator.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
 
 namespace chromeos {
 
-TestLoginUtils::TestLoginUtils(const std::string& expected_username,
-                               const std::string& expected_password)
-    : expected_username_(expected_username),
-      expected_password_(expected_password) {
+TestLoginUtils::TestLoginUtils(const UserContext& user_context)
+    : expected_user_context_(user_context) {
 }
 
 TestLoginUtils::~TestLoginUtils() {}
 
 void TestLoginUtils::PrepareProfile(
-    const UserContext& credentials,
-    const std::string& display_email,
+    const UserContext& user_context,
     bool has_cookies,
     bool has_active_session,
     Delegate* delegate) {
-  DCHECK_EQ(expected_username_, credentials.username);
-  DCHECK_EQ(expected_password_, credentials.password);
+  if (user_context != expected_user_context_)
+    NOTREACHED();
   // Profile hasn't been loaded.
   delegate->OnProfilePrepared(NULL);
 }
@@ -34,11 +32,7 @@ void TestLoginUtils::DelegateDeleted(Delegate* delegate) {
 
 scoped_refptr<Authenticator> TestLoginUtils::CreateAuthenticator(
     LoginStatusConsumer* consumer) {
-  return new MockAuthenticator(
-      consumer, expected_username_, expected_password_);
-}
-
-void TestLoginUtils::InitRlzDelayed(Profile* user_profile) {
+  return new MockAuthenticator(consumer, expected_user_context_);
 }
 
 }  // namespace chromeos

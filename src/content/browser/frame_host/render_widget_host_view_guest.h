@@ -18,6 +18,8 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d_f.h"
 
+struct ViewHostMsg_TextInputState_Params;
+
 namespace content {
 class RenderWidgetHost;
 class RenderWidgetHostImpl;
@@ -53,7 +55,7 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
   virtual gfx::Rect GetViewBounds() const OVERRIDE;
-  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
+  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
   virtual gfx::Size GetPhysicalBackingSize() const OVERRIDE;
   virtual base::string16 GetSelectedText() const OVERRIDE;
 
@@ -68,9 +70,8 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
       const std::vector<WebPluginGeometry>& moves) OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    ui::TextInputMode input_mode,
-                                    bool can_compose_inline) OVERRIDE;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
 #if defined(OS_MACOSX) || defined(USE_AURA)
   virtual void ImeCompositionRangeChanged(
@@ -100,8 +101,6 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
   virtual void OnSwapCompositorFrame(
       uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
-  virtual void SetScrollOffsetPinning(
-      bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
 #if defined(USE_AURA)
   virtual void ProcessAckedTouchEvent(
       const TouchEventWithLatencyInfo& touch,
@@ -130,7 +129,6 @@ class CONTENT_EXPORT RenderWidgetHostViewGuest
 
 #if defined(OS_ANDROID)
   // RenderWidgetHostViewBase implementation.
-  virtual void SelectionRootBoundsChanged(const gfx::Rect& bounds) OVERRIDE;
   virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
                                        const SkBitmap& zoomed_bitmap) OVERRIDE;
   virtual void LockCompositingSurface() OVERRIDE;

@@ -292,9 +292,9 @@ void vp9_idct4x4_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
 void vp9_idct4x4_1_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
 RTCD_EXTERN void (*vp9_idct4x4_1_add)(const int16_t *input, uint8_t *dest, int dest_stride);
 
-void vp9_idct8x8_10_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
-void vp9_idct8x8_10_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
-RTCD_EXTERN void (*vp9_idct8x8_10_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct8x8_12_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct8x8_12_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct8x8_12_add)(const int16_t *input, uint8_t *dest, int dest_stride);
 
 void vp9_idct8x8_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
 void vp9_idct8x8_1_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
@@ -800,8 +800,8 @@ static void setup_rtcd_internal(void)
     if (flags & HAS_SSE2) vp9_idct4x4_16_add = vp9_idct4x4_16_add_sse2;
     vp9_idct4x4_1_add = vp9_idct4x4_1_add_c;
     if (flags & HAS_SSE2) vp9_idct4x4_1_add = vp9_idct4x4_1_add_sse2;
-    vp9_idct8x8_10_add = vp9_idct8x8_10_add_c;
-    if (flags & HAS_SSE2) vp9_idct8x8_10_add = vp9_idct8x8_10_add_sse2;
+    vp9_idct8x8_12_add = vp9_idct8x8_12_add_c;
+    if (flags & HAS_SSE2) vp9_idct8x8_12_add = vp9_idct8x8_12_add_sse2;
     vp9_idct8x8_1_add = vp9_idct8x8_1_add_c;
     if (flags & HAS_SSE2) vp9_idct8x8_1_add = vp9_idct8x8_1_add_sse2;
     vp9_idct8x8_64_add = vp9_idct8x8_64_add_c;

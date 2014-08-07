@@ -15,15 +15,13 @@
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/sys_info.h"
 #include "base/third_party/icu/icu_utf.h"
 #include "chromeos/ime/composition_text.h"
+#include "chromeos/ime/ime_keyboard.h"
+#include "chromeos/ime/input_method_manager.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/events/event.h"
-#include "ui/events/event_constants.h"
-#include "ui/events/event_utils.h"
-#include "ui/events/keycodes/keyboard_code_conversion.h"
-#include "ui/events/keycodes/keyboard_code_conversion_x.h"
-#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/rect.h"
 
 namespace {
@@ -102,6 +100,23 @@ void InputMethodChromeOS::ProcessKeyEventDone(uint32 id,
 bool InputMethodChromeOS::DispatchKeyEvent(const ui::KeyEvent& event) {
   DCHECK(event.type() == ET_KEY_PRESSED || event.type() == ET_KEY_RELEASED);
   DCHECK(system_toplevel_window_focused());
+
+  // For linux_chromeos, the ime keyboard cannot track the caps lock state by
+  // itself, so need to call SetCapsLockEnabled() method to reflect the caps
+  // lock state by the key event.
+  if (!base::SysInfo::IsRunningOnChromeOS()) {
+    chromeos::input_method::InputMethodManager* manager =
+        chromeos::input_method::InputMethodManager::Get();
+    if (manager) {
+      chromeos::input_method::ImeKeyboard* keyboard = manager->GetImeKeyboard();
+      if (keyboard && event.type() == ui::ET_KEY_PRESSED) {
+        bool caps = (event.key_code() == ui::VKEY_CAPITAL)
+            ? !keyboard->CapsLockIsEnabled()
+            : (event.flags() & EF_CAPS_LOCK_DOWN);
+        keyboard->SetCapsLockEnabled(caps);
+      }
+    }
+  }
 
   // If |context_| is not usable, then we can only dispatch the key event as is.
   // We only dispatch the key event to input method when the |context_| is an
@@ -377,23 +392,9 @@ void InputMethodChromeOS::ProcessUnfilteredKeyPressEvent(
   // If a key event was not filtered by |context_| and |character_composer_|,
   // then it means the key event didn't generate any result text. So we need
   // to send corresponding character to the focused text input client.
-  const uint32 event_flags = event.flags();
-  uint16 ch = 0;
-  if (event.HasNativeEvent()) {
-    const base::NativeEvent& native_event = event.native_event();
-
-    if (!(event_flags & ui::EF_CONTROL_DOWN))
-      ch = ui::GetCharacterFromXEvent(native_event);
-    if (!ch) {
-      ch = ui::GetCharacterFromKeyCode(
-          ui::KeyboardCodeFromNative(native_event), event_flags);
-    }
-  } else {
-    ch = ui::GetCharacterFromKeyCode(event.key_code(), event_flags);
-  }
-
+  uint16 ch = event.GetCharacter();
   if (ch)
-    client->InsertChar(ch, event_flags);
+    client->InsertChar(ch, event.flags());
 }
 
 void InputMethodChromeOS::ProcessInputMethodResult(const ui::KeyEvent& event,
@@ -438,6 +439,16 @@ bool InputMethodChromeOS::HasInputMethodResult() const {
   return result_text_.length() || composition_changed_;
 }
 
+void InputMethodChromeOS::SendFakeProcessKeyEvent(bool pressed) const {
+  if (!GetTextInputClient())
+    return;
+  KeyEvent evt(pressed ? ET_KEY_PRESSED : ET_KEY_RELEASED,
+               pressed ? VKEY_PROCESSKEY : VKEY_UNKNOWN,
+               EF_IME_FABRICATED_KEY,
+               false);  // is_char
+  DispatchKeyEventPostIME(evt);
+}
+
 void InputMethodChromeOS::AbandonAllPendingKeyEvents() {
   pending_key_events_.clear();
 }
@@ -463,7 +474,9 @@ void InputMethodChromeOS::CommitText(const std::string& text) {
   // If we are not handling key event, do not bother sending text result if the
   // focused text input client does not support text input.
   if (pending_key_events_.empty() && !IsTextInputTypeNone()) {
+    SendFakeProcessKeyEvent(true);
     GetTextInputClient()->InsertText(utf16_text);
+    SendFakeProcessKeyEvent(false);
     result_text_.clear();
   }
 }
@@ -505,7 +518,9 @@ void InputMethodChromeOS::UpdateCompositionText(
   // If we receive a composition text without pending key event, then we need to
   // send it to the focused text input client directly.
   if (pending_key_events_.empty()) {
+    SendFakeProcessKeyEvent(true);
     GetTextInputClient()->SetCompositionText(composition_);
+    SendFakeProcessKeyEvent(false);
     composition_changed_ = false;
     composition_.Clear();
   }
@@ -521,8 +536,11 @@ void InputMethodChromeOS::HidePreeditText() {
 
   if (pending_key_events_.empty()) {
     TextInputClient* client = GetTextInputClient();
-    if (client && client->HasCompositionText())
+    if (client && client->HasCompositionText()) {
+      SendFakeProcessKeyEvent(true);
       client->ClearCompositionText();
+      SendFakeProcessKeyEvent(false);
+    }
     composition_changed_ = false;
   }
 }
@@ -590,9 +608,11 @@ void InputMethodChromeOS::ExtractCompositionText(
       const uint32 end = underline_attributes[i].end_index;
       if (start >= end)
         continue;
-      CompositionUnderline underline(
-          char16_offsets[start], char16_offsets[end],
-          SK_ColorBLACK, false /* thick */);
+      CompositionUnderline underline(char16_offsets[start],
+                                     char16_offsets[end],
+                                     SK_ColorBLACK,
+                                     false /* thick */,
+                                     SK_ColorTRANSPARENT);
       if (underline_attributes[i].type ==
           chromeos::CompositionText::COMPOSITION_TEXT_UNDERLINE_DOUBLE)
         underline.thick = true;
@@ -607,9 +627,11 @@ void InputMethodChromeOS::ExtractCompositionText(
   if (text.selection_start() < text.selection_end()) {
     const uint32 start = text.selection_start();
     const uint32 end = text.selection_end();
-    CompositionUnderline underline(
-        char16_offsets[start], char16_offsets[end],
-        SK_ColorBLACK, true /* thick */);
+    CompositionUnderline underline(char16_offsets[start],
+                                   char16_offsets[end],
+                                   SK_ColorBLACK,
+                                   true /* thick */,
+                                   SK_ColorTRANSPARENT);
     out_composition->underlines.push_back(underline);
 
     // If the cursor is at start or end of this underline, then we treat
@@ -627,7 +649,7 @@ void InputMethodChromeOS::ExtractCompositionText(
   // Use a black thin underline by default.
   if (out_composition->underlines.empty()) {
     out_composition->underlines.push_back(CompositionUnderline(
-        0, length, SK_ColorBLACK, false /* thick */));
+        0, length, SK_ColorBLACK, false /* thick */, SK_ColorTRANSPARENT));
   }
 }
 

@@ -5,7 +5,6 @@
 #include "chrome/common/extensions/chrome_extensions_client.h"
 
 #include "apps/common/api/generated_schemas.h"
-#include "base/command_line.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/api/generated_schemas.h"
 #include "chrome/common/extensions/chrome_manifest_handlers.h"
@@ -17,8 +16,10 @@
 #include "extensions/common/api/generated_schemas.h"
 #include "extensions/common/common_manifest_handlers.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_api.h"
 #include "extensions/common/features/api_feature.h"
 #include "extensions/common/features/base_feature_provider.h"
+#include "extensions/common/features/feature_provider.h"
 #include "extensions/common/features/json_feature_provider_source.h"
 #include "extensions/common/features/manifest_feature.h"
 #include "extensions/common/features/permission_feature.h"
@@ -28,10 +29,12 @@
 #include "extensions/common/permissions/api_permission_set.h"
 #include "extensions/common/permissions/permission_message.h"
 #include "extensions/common/permissions/permissions_info.h"
-#include "extensions/common/switches.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "grit/common_resources.h"
+#if defined(ENABLE_EXTENSIONS)
+#include "grit/extensions_api_resources.h"
+#endif
 #include "grit/extensions_resources.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -99,26 +102,43 @@ ChromeExtensionsClient::GetPermissionMessageProvider() const {
 
 scoped_ptr<FeatureProvider> ChromeExtensionsClient::CreateFeatureProvider(
     const std::string& name) const {
-  JSONFeatureProviderSource source(name);
+  scoped_ptr<FeatureProvider> provider;
+  scoped_ptr<JSONFeatureProviderSource> source(
+      CreateFeatureProviderSource(name));
   if (name == "api") {
-    source.LoadJSON(IDR_EXTENSION_API_FEATURES);
-    source.LoadJSON(IDR_CHROME_EXTENSION_API_FEATURES);
-    return scoped_ptr<FeatureProvider>(new BaseFeatureProvider(
-        source.dictionary(), CreateFeature<APIFeature>));
+    provider.reset(new BaseFeatureProvider(source->dictionary(),
+                                           CreateFeature<APIFeature>));
   } else if (name == "manifest") {
-    source.LoadJSON(IDR_EXTENSION_MANIFEST_FEATURES);
-    source.LoadJSON(IDR_CHROME_EXTENSION_MANIFEST_FEATURES);
-    return scoped_ptr<FeatureProvider>(new BaseFeatureProvider(
-        source.dictionary(), CreateFeature<ManifestFeature>));
+    provider.reset(new BaseFeatureProvider(source->dictionary(),
+                                           CreateFeature<ManifestFeature>));
   } else if (name == "permission") {
-    source.LoadJSON(IDR_EXTENSION_PERMISSION_FEATURES);
-    source.LoadJSON(IDR_CHROME_EXTENSION_PERMISSION_FEATURES);
-    return scoped_ptr<FeatureProvider>(new BaseFeatureProvider(
-        source.dictionary(), CreateFeature<PermissionFeature>));
+    provider.reset(new BaseFeatureProvider(source->dictionary(),
+                                           CreateFeature<PermissionFeature>));
   } else {
     NOTREACHED();
   }
-  return scoped_ptr<FeatureProvider>();
+  return provider.Pass();
+}
+
+scoped_ptr<JSONFeatureProviderSource>
+ChromeExtensionsClient::CreateFeatureProviderSource(
+    const std::string& name) const {
+  scoped_ptr<JSONFeatureProviderSource> source(
+      new JSONFeatureProviderSource(name));
+  if (name == "api") {
+    source->LoadJSON(IDR_EXTENSION_API_FEATURES);
+    source->LoadJSON(IDR_CHROME_EXTENSION_API_FEATURES);
+  } else if (name == "manifest") {
+    source->LoadJSON(IDR_EXTENSION_MANIFEST_FEATURES);
+    source->LoadJSON(IDR_CHROME_EXTENSION_MANIFEST_FEATURES);
+  } else if (name == "permission") {
+    source->LoadJSON(IDR_EXTENSION_PERMISSION_FEATURES);
+    source->LoadJSON(IDR_CHROME_EXTENSION_PERMISSION_FEATURES);
+  } else {
+    NOTREACHED();
+    source.reset();
+  }
+  return source.Pass();
 }
 
 void ChromeExtensionsClient::FilterHostPermissions(
@@ -211,6 +231,42 @@ base::StringPiece ChromeExtensionsClient::GetAPISchema(
     return core_api::GeneratedSchemas::Get(name);
 
   return apps::api::GeneratedSchemas::Get(name);
+}
+
+void ChromeExtensionsClient::RegisterAPISchemaResources(
+    ExtensionAPI* api) const {
+#if defined(ENABLE_EXTENSIONS)
+  api->RegisterSchemaResource("accessibilityPrivate",
+                              IDR_EXTENSION_API_JSON_ACCESSIBILITYPRIVATE);
+  api->RegisterSchemaResource("app", IDR_EXTENSION_API_JSON_APP);
+  api->RegisterSchemaResource("browserAction",
+                              IDR_EXTENSION_API_JSON_BROWSERACTION);
+  api->RegisterSchemaResource("commands", IDR_EXTENSION_API_JSON_COMMANDS);
+  api->RegisterSchemaResource("declarativeContent",
+                              IDR_EXTENSION_API_JSON_DECLARATIVE_CONTENT);
+  api->RegisterSchemaResource("declarativeWebRequest",
+                              IDR_EXTENSION_API_JSON_DECLARATIVE_WEBREQUEST);
+  api->RegisterSchemaResource("fileBrowserHandler",
+                              IDR_EXTENSION_API_JSON_FILEBROWSERHANDLER);
+  api->RegisterSchemaResource("inputMethodPrivate",
+                              IDR_EXTENSION_API_JSON_INPUTMETHODPRIVATE);
+  api->RegisterSchemaResource("pageAction", IDR_EXTENSION_API_JSON_PAGEACTION);
+  api->RegisterSchemaResource("pageActions",
+                              IDR_EXTENSION_API_JSON_PAGEACTIONS);
+  api->RegisterSchemaResource("privacy", IDR_EXTENSION_API_JSON_PRIVACY);
+  api->RegisterSchemaResource("processes", IDR_EXTENSION_API_JSON_PROCESSES);
+  api->RegisterSchemaResource("proxy", IDR_EXTENSION_API_JSON_PROXY);
+  api->RegisterSchemaResource("scriptBadge",
+                              IDR_EXTENSION_API_JSON_SCRIPTBADGE);
+  api->RegisterSchemaResource("ttsEngine", IDR_EXTENSION_API_JSON_TTSENGINE);
+  api->RegisterSchemaResource("tts", IDR_EXTENSION_API_JSON_TTS);
+  api->RegisterSchemaResource("types", IDR_EXTENSION_API_JSON_TYPES);
+  api->RegisterSchemaResource("types.private",
+                              IDR_EXTENSION_API_JSON_TYPES_PRIVATE);
+  api->RegisterSchemaResource("webstore", IDR_EXTENSION_API_JSON_WEBSTORE);
+  api->RegisterSchemaResource("webViewRequest",
+                              IDR_EXTENSION_API_JSON_WEBVIEW_REQUEST);
+#endif  // defined(ENABLE_EXTENSIONS)
 }
 
 bool ChromeExtensionsClient::ShouldSuppressFatalErrors() const {

@@ -22,6 +22,7 @@ class Profile;
 namespace net {
 class FtpTransactionFactory;
 class HttpTransactionFactory;
+class SdchManager;
 }  // namespace net
 
 // OffTheRecordProfile owns a OffTheRecordProfileIOData::Handle, which holds a
@@ -49,7 +50,7 @@ class OffTheRecordProfileIOData : public ProfileIOData {
     content::ResourceContext* GetResourceContextNoInit() const;
     scoped_refptr<ChromeURLRequestContextGetter> CreateMainRequestContextGetter(
         content::ProtocolHandlerMap* protocol_handlers,
-        content::ProtocolHandlerScopedVector protocol_interceptors) const;
+        content::URLRequestInterceptorScopedVector request_interceptors) const;
     scoped_refptr<ChromeURLRequestContextGetter>
         GetExtensionsRequestContextGetter() const;
     scoped_refptr<ChromeURLRequestContextGetter>
@@ -61,7 +62,11 @@ class OffTheRecordProfileIOData : public ProfileIOData {
             const base::FilePath& partition_path,
             bool in_memory,
             content::ProtocolHandlerMap* protocol_handlers,
-            content::ProtocolHandlerScopedVector protocol_interceptors) const;
+            content::URLRequestInterceptorScopedVector
+                request_interceptors) const;
+
+    // Returns the DevToolsNetworkController attached to ProfileIOData.
+    DevToolsNetworkController* GetDevToolsNetworkController() const;
 
    private:
     typedef std::map<StoragePartitionDescriptor,
@@ -106,7 +111,7 @@ class OffTheRecordProfileIOData : public ProfileIOData {
   virtual void InitializeInternal(
       ProfileParams* profile_params,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors)
+      content::URLRequestInterceptorScopedVector request_interceptors)
           const OVERRIDE;
   virtual void InitializeExtensionsRequestContext(
       ProfileParams* profile_params) const OVERRIDE;
@@ -116,7 +121,7 @@ class OffTheRecordProfileIOData : public ProfileIOData {
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors)
+      content::URLRequestInterceptorScopedVector request_interceptors)
           const OVERRIDE;
   virtual ChromeURLRequestContext* InitializeMediaRequestContext(
       ChromeURLRequestContext* original_context,
@@ -129,7 +134,7 @@ class OffTheRecordProfileIOData : public ProfileIOData {
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors)
+      content::URLRequestInterceptorScopedVector request_interceptors)
           const OVERRIDE;
   virtual ChromeURLRequestContext*
       AcquireIsolatedMediaRequestContext(
@@ -142,6 +147,8 @@ class OffTheRecordProfileIOData : public ProfileIOData {
 
   mutable scoped_ptr<net::URLRequestJobFactory> main_job_factory_;
   mutable scoped_ptr<net::URLRequestJobFactory> extensions_job_factory_;
+
+  mutable scoped_ptr<net::SdchManager> sdch_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(OffTheRecordProfileIOData);
 };

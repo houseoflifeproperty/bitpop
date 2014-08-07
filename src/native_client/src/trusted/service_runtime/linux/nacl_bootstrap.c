@@ -250,6 +250,7 @@ static void handle_bss(const char *file,
  */
 static ElfW(Addr) load_elf_file(const char *filename,
                                 size_t pagesize,
+                                ElfW(Addr) *out_base,
                                 ElfW(Addr) *out_phdr,
                                 ElfW(Addr) *out_phnum,
                                 const char **out_interp) {
@@ -395,6 +396,8 @@ static ElfW(Addr) load_elf_file(const char *filename,
 
   sys_close(fd);
 
+  if (out_base != NULL)
+    *out_base = load_bias;
   if (out_phdr != NULL)
     *out_phdr = (ehdr.e_phoff - first_load->p_offset +
                  first_load->p_vaddr + load_bias);
@@ -428,7 +431,10 @@ static void fill_in_template_digits(char *start, size_t num_digits,
  * this process or examining its core file will find the PIE we loaded, the
  * dynamic linker, and all the shared libraries, making debugging pleasant.
  */
+#if !NACL_ANDROID
+/* Android does not define r_debug in a public header file. */
 struct r_debug _r_debug __attribute__((nocommon, section(".r_debug")));
+#endif  /* !NACL_ANDROID */
 
 /*
  * If the argument matches the kRDebugTemplate string, then replace
@@ -436,10 +442,12 @@ struct r_debug _r_debug __attribute__((nocommon, section(".r_debug")));
  */
 static int check_r_debug_arg(char *arg) {
   if (my_strcmp(arg, kRDebugTemplate) == 0) {
+#if !NACL_ANDROID
     fill_in_template_digits(arg + kRDebugPrefixLen,
                             sizeof(TEMPLATE_DIGITS) - 1,
                             (uintptr_t) &_r_debug);
     return 1;
+#endif  /* !NACL_ANDROID */
   }
   return 0;
 }
@@ -488,14 +496,14 @@ static void ReserveBottomPages(size_t pagesize) {
       break;
     } else if (MAP_FAILED == (void *) mmap_rval &&
                (EPERM == my_errno || EACCES == my_errno ||
-                (EINVAL == my_errno && 0 == page_addr))) {
+                EINVAL == my_errno)) {
       /*
        * Normal; this is an invalid page for this process and
        * doesn't need to be protected. Continue with next page.
        */
     } else {
       fail("ReserveBottomPages", "NULL pointer guard page ",
-           "errno", my_errno, NULL, 0);
+           "errno", my_errno, "address", (int) page_addr);
     }
   }
 }
@@ -574,20 +582,25 @@ ElfW(Addr) do_load(stack_val_t *stack) {
    * Record the auxv entries that are specific to the file loaded.
    * The incoming entries point to our own static executable.
    */
+  ElfW(auxv_t) *av_base = NULL;
   ElfW(auxv_t) *av_entry = NULL;
   ElfW(auxv_t) *av_phdr = NULL;
   ElfW(auxv_t) *av_phnum = NULL;
   size_t pagesize = 0;
 
   for (av = auxv;
-       av_entry == NULL || av_phdr == NULL || av_phnum == NULL || pagesize == 0;
+       (av_base == NULL || av_entry == NULL || av_phdr == NULL ||
+        av_phnum == NULL || pagesize == 0);
        ++av) {
     switch (av->a_type) {
       case AT_NULL:
-        fail("startup",
-             "Failed to find AT_ENTRY, AT_PHDR, AT_PHNUM, or AT_PAGESZ!",
+        fail("startup", "\
+Failed to find AT_BASE, AT_ENTRY, AT_PHDR, AT_PHNUM, or AT_PAGESZ!",
              NULL, 0, NULL, 0);
         /*NOTREACHED*/
+        break;
+      case AT_BASE:
+        av_base = av;
         break;
       case AT_ENTRY:
         av_entry = av;
@@ -610,6 +623,7 @@ ElfW(Addr) do_load(stack_val_t *stack) {
   const char *interp = NULL;
   av_entry->a_un.a_val = load_elf_file(program,
                                        pagesize,
+                                       NULL,
                                        &av_phdr->a_un.a_val,
                                        &av_phnum->a_un.a_val,
                                        &interp);
@@ -620,7 +634,8 @@ ElfW(Addr) do_load(stack_val_t *stack) {
     /*
      * There was a PT_INTERP, so we have a dynamic linker to load.
      */
-    entry = load_elf_file(interp, pagesize, NULL, NULL, NULL);
+    entry = load_elf_file(interp, pagesize, &av_base->a_un.a_val,
+                          NULL, NULL, NULL);
   }
 
   return entry;

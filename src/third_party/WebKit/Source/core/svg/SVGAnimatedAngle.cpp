@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/svg/SVGAnimatedAngle.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAngleTearOff.h"
 #include "core/svg/SVGMarkerElement.h"
 
@@ -49,8 +49,6 @@ SVGAnimatedAngle::~SVGAnimatedAngle()
 
 void SVGAnimatedAngle::synchronizeAttribute()
 {
-    ASSERT(needsSynchronizeAttribute());
-
     AtomicString value;
     if (m_orientType->currentValue()->enumValue() == SVGMarkerOrientAuto)
         value = "auto";
@@ -58,12 +56,6 @@ void SVGAnimatedAngle::synchronizeAttribute()
         value = AtomicString(currentValue()->valueAsString());
 
     contextElement()->setSynchronizedLazyAttribute(attributeName(), value);
-}
-
-void SVGAnimatedAngle::animationStarted()
-{
-    SVGAnimatedProperty<SVGAngle>::animationStarted();
-    m_orientType->animationStarted();
 }
 
 void SVGAnimatedAngle::setAnimatedValue(PassRefPtr<SVGPropertyBase> value)

@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
+#include "components/signin/core/browser/signin_error_controller.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #import "ui/base/cocoa/appkit_utils.h"
@@ -19,6 +20,8 @@
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/nine_image_painter_factory.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image_skia_operations.h"
+#include "ui/gfx/image/image_skia_util_mac.h"
 #include "ui/gfx/text_elider.h"
 
 namespace {
@@ -27,7 +30,7 @@ const CGFloat kButtonPadding = 12;
 const CGFloat kButtonDefaultPadding = 5;
 const CGFloat kButtonHeight = 27;
 const CGFloat kButtonTitleImageSpacing = 10;
-const CGFloat kMaxButtonWidth = 120;
+const CGFloat kMaxButtonContentWidth = 100;
 
 const ui::NinePartImageIds kNormalBorderImageIds =
     IMAGE_GRID(IDR_AVATAR_MAC_BUTTON_NORMAL);
@@ -49,21 +52,26 @@ NSImage* GetImageFromResourceID(int resourceId) {
 @interface CustomThemeButtonCell : NSButtonCell {
  @private
    BOOL isThemedWindow_;
+   base::scoped_nsobject<NSImage> authenticationErrorImage_;
 }
 - (void)setIsThemedWindow:(BOOL)isThemedWindow;
+- (void)setHasError:(BOOL)hasError;
+
 @end
 
 @implementation CustomThemeButtonCell
 - (id)initWithThemedWindow:(BOOL)isThemedWindow {
   if ((self = [super init])) {
     isThemedWindow_ = isThemedWindow;
+    authenticationErrorImage_.reset();
   }
   return self;
 }
 
 - (NSSize)cellSize {
   NSSize buttonSize = [super cellSize];
-  buttonSize.width += 2 * kButtonPadding - 2 * kButtonDefaultPadding;
+  CGFloat errorWidth = [authenticationErrorImage_ size].width;
+  buttonSize.width += 2 * (kButtonPadding - kButtonDefaultPadding) + errorWidth;
   buttonSize.height = kButtonHeight;
   return buttonSize;
 }
@@ -72,7 +80,27 @@ NSImage* GetImageFromResourceID(int resourceId) {
           withFrame:(NSRect)frame
              inView:(NSView*)controlView {
   frame.origin.x = kButtonPadding;
-  // Ensure there's always a padding between the text and the image.
+
+  // If there's an auth error, draw a warning icon before the cell image.
+  if (authenticationErrorImage_) {
+    NSSize imageSize = [authenticationErrorImage_ size];
+    NSRect rect = NSMakeRect(
+        frame.size.width - imageSize.width,
+        (kButtonHeight - imageSize.height) / 2,
+        imageSize.width,
+        imageSize.height);
+    [authenticationErrorImage_ drawInRect:rect
+                       fromRect:NSZeroRect
+                      operation:NSCompositeSourceOver
+                       fraction:1.0
+                 respectFlipped:YES
+                          hints:nil];
+    // Padding between the title and the error image.
+    frame.size.width -= kButtonTitleImageSpacing;
+  }
+
+  // Padding between the title (or error image, if it exists) and the
+  // button's drop down image.
   frame.size.width -= kButtonTitleImageSpacing;
   return [super drawTitle:title withFrame:frame inView:controlView];
 }
@@ -106,10 +134,23 @@ NSImage* GetImageFromResourceID(int resourceId) {
 - (void)setIsThemedWindow:(BOOL)isThemedWindow {
   isThemedWindow_ = isThemedWindow;
 }
+
+- (void)setHasError:(BOOL)hasError {
+  if (hasError) {
+    authenticationErrorImage_.reset(
+        [ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+            IDR_ICON_PROFILES_AVATAR_BUTTON_ERROR).ToNSImage() retain]);
+  } else {
+    authenticationErrorImage_.reset();
+  }
+}
+
 @end
 
 @interface AvatarButtonController (Private)
+- (base::string16)getElidedAvatarName;
 - (void)updateAvatarButtonAndLayoutParent:(BOOL)layoutParent;
+- (void)updateErrorStatus:(BOOL)hasError;
 - (void)dealloc;
 - (void)themeDidChangeNotification:(NSNotification*)aNotification;
 @end
@@ -120,7 +161,7 @@ NSImage* GetImageFromResourceID(int resourceId) {
   if ((self = [super initWithBrowser:browser])) {
     ThemeService* themeService =
         ThemeServiceFactory::GetForProfile(browser->profile());
-    isThemedWindow_ = !themeService->UsingNativeTheme();
+    isThemedWindow_ = !themeService->UsingSystemTheme();
 
     HoverImageButton* hoverButton =
         [[HoverImageButton alloc] initWithFrame:NSZeroRect];
@@ -134,6 +175,10 @@ NSImage* GetImageFromResourceID(int resourceId) {
     button_.reset(hoverButton);
     base::scoped_nsobject<CustomThemeButtonCell> cell(
         [[CustomThemeButtonCell alloc] initWithThemedWindow:isThemedWindow_]);
+    SigninErrorController* errorController =
+        profiles::GetSigninErrorController(browser->profile());
+    if (errorController)
+      [cell setHasError:errorController->HasError()];
     [button_ setCell:cell.get()];
     [self setView:button_];
 
@@ -155,7 +200,6 @@ NSImage* GetImageFromResourceID(int resourceId) {
                selector:@selector(themeDidChangeNotification:)
                    name:kBrowserThemeDidChangeNotification
                  object:nil];
-
   }
   return self;
 }
@@ -169,7 +213,7 @@ NSImage* GetImageFromResourceID(int resourceId) {
   // Redraw the button if the window has switched between themed and native.
   ThemeService* themeService =
       ThemeServiceFactory::GetForProfile(browser_->profile());
-  BOOL updatedIsThemedWindow = !themeService->UsingNativeTheme();
+  BOOL updatedIsThemedWindow = !themeService->UsingSystemTheme();
   if (isThemedWindow_ != updatedIsThemedWindow) {
     isThemedWindow_ = updatedIsThemedWindow;
     [[button_ cell] setIsThemedWindow:isThemedWindow_];
@@ -177,11 +221,17 @@ NSImage* GetImageFromResourceID(int resourceId) {
   }
 }
 
+- (base::string16)getElidedAvatarName {
+  base::string16 name = profiles::GetAvatarNameForProfile(browser_->profile());
+  int maxTextWidth = kMaxButtonContentWidth - [[button_ image] size].width;
+  return gfx::ElideText(name, gfx::FontList(gfx::Font([button_ font])),
+                        maxTextWidth, gfx::ELIDE_TAIL);
+}
+
 - (void)updateAvatarButtonAndLayoutParent:(BOOL)layoutParent {
   // The button text has a black foreground and a white drop shadow for regular
   // windows, and a light text with a dark drop shadow for guest windows
   // which are themed with a dark background.
-  // TODO(noms): Figure out something similar for themed windows, if possible.
   base::scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
   [shadow setShadowOffset:NSMakeSize(0, -1)];
   [shadow setShadowBlurRadius:0];
@@ -198,13 +248,20 @@ NSImage* GetImageFromResourceID(int resourceId) {
     [shadow setShadowColor:[NSColor colorWithCalibratedWhite:1.0 alpha:0.4]];
   }
 
+  base::string16 profileName = [self getElidedAvatarName];
+  NSString* buttonTitle = nil;
+  if (browser_->profile()->IsSupervised()) {
+    // Add the "supervised" label after eliding the profile name, so the label
+    // will not get elided, but will instead enlarge the button.
+    buttonTitle = l10n_util::GetNSStringF(IDS_MANAGED_USER_NEW_AVATAR_LABEL,
+                                          profileName);
+  } else {
+    buttonTitle = base::SysUTF16ToNSString(profileName);
+  }
+
   base::scoped_nsobject<NSMutableParagraphStyle> paragraphStyle(
       [[NSMutableParagraphStyle alloc] init]);
-  [paragraphStyle setLineBreakMode:NSLineBreakByTruncatingTail];
   [paragraphStyle setAlignment:NSLeftTextAlignment];
-
-  NSString* buttonTitle = base::SysUTF16ToNSString(
-      profiles::GetAvatarNameForProfile(browser_->profile()));
 
   base::scoped_nsobject<NSAttributedString> attributedTitle(
       [[NSAttributedString alloc]
@@ -215,10 +272,6 @@ NSImage* GetImageFromResourceID(int resourceId) {
   [button_ setAttributedTitle:attributedTitle];
   [button_ sizeToFit];
 
-  // Truncate the title if needed.
-  if (NSWidth([button_ bounds]) > kMaxButtonWidth)
-    [button_ setFrameSize:NSMakeSize(kMaxButtonWidth, kButtonHeight)];
-
   if (layoutParent) {
     // Because the width of the button might have changed, the parent browser
     // frame needs to recalculate the button bounds and redraw it.
@@ -226,6 +279,11 @@ NSImage* GetImageFromResourceID(int resourceId) {
         browserWindowControllerForWindow:browser_->window()->GetNativeWindow()]
         layoutSubviews];
   }
+}
+
+- (void)updateErrorStatus:(BOOL)hasError {
+  [[button_ cell] setHasError:hasError];
+  [self updateAvatarButtonAndLayoutParent:YES];
 }
 
 @end

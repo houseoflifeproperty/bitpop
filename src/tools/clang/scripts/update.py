@@ -18,6 +18,12 @@ import sys
 # Note: this revision is only used for Windows. Other platforms use update.sh.
 LLVM_WIN_REVISION = 'HEAD'
 
+# ASan on Windows is useful enough to use it even while the clang/win is still
+# in bringup. Use a pinned revision to make it slightly more stable.
+if (re.search(r'\b(asan)=1', os.environ.get('GYP_DEFINES', '')) and
+    not 'LLVM_FORCE_HEAD_REVISION' in os.environ):
+  LLVM_WIN_REVISION = '210586'
+
 # Path constants. (All of these should be absolute paths.)
 THIS_DIR = os.path.abspath(os.path.dirname(__file__))
 CHROMIUM_DIR = os.path.abspath(os.path.join(THIS_DIR, '..', '..', '..'))
@@ -81,6 +87,10 @@ def RunCommand(command, tries=1):
     print 'Failed.'
   sys.exit(1)
 
+def CopyFile(src, dst):
+  """Copy a file from src to dst."""
+  shutil.copy(src, dst)
+  print "Copying %s to %s" % (src, dst)
 
 def Checkout(name, url, dir):
   """Checkout the SVN module at url into dir. Use name for the log message."""
@@ -151,8 +161,24 @@ def UpdateClang():
   for root, _, files in os.walk(asan_rt_lib_src_dir):
     for f in files:
       if re.match(r'^.*-i386\.lib$', f):
-        shutil.copy(os.path.join(root, f), asan_rt_lib_dst_dir)
-        print "Copying %s to %s" % (f, asan_rt_lib_dst_dir)
+        CopyFile(os.path.join(root, f), asan_rt_lib_dst_dir)
+
+  CopyFile(os.path.join(asan_rt_lib_src_dir, '..', '..', 'asan_blacklist.txt'),
+           os.path.join(asan_rt_lib_dst_dir, '..', '..'))
+
+  # Make an extra copy of the sanitizer headers, to be put on the include path
+  # of the fallback compiler.
+  sanitizer_include_dir = os.path.join(LLVM_BUILD_DIR, 'lib', 'clang', '3.5.0',
+                                       'include', 'sanitizer')
+  aux_sanitizer_include_dir = os.path.join(LLVM_BUILD_DIR, 'lib', 'clang',
+                                           '3.5.0', 'include_sanitizer',
+                                           'sanitizer')
+  if not os.path.exists(aux_sanitizer_include_dir):
+    os.makedirs(aux_sanitizer_include_dir)
+  for _, _, files in os.walk(sanitizer_include_dir):
+    for f in files:
+      CopyFile(os.path.join(sanitizer_include_dir, f),
+               aux_sanitizer_include_dir)
 
   WriteStampFile(LLVM_WIN_REVISION)
   print 'Clang update was successful.'

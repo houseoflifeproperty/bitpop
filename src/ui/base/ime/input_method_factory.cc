@@ -12,7 +12,9 @@
 #include "base/win/metro.h"
 #include "ui/base/ime/input_method_win.h"
 #include "ui/base/ime/remote_input_method_win.h"
-#elif defined(USE_AURA) && defined(OS_LINUX)
+#elif defined(OS_MACOSX)
+#include "ui/base/ime/input_method_mac.h"
+#elif defined(USE_AURA) && defined(OS_LINUX) && !defined(OS_CHROMEOS)
 #include "ui/base/ime/input_method_auralinux.h"
 #else
 #include "ui/base/ime/input_method_minimal.h"
@@ -43,7 +45,9 @@ scoped_ptr<InputMethod> CreateInputMethod(
   if (IsRemoteInputMethodWinRequired(widget))
     return CreateRemoteInputMethodWin(delegate);
   return scoped_ptr<InputMethod>(new InputMethodWin(delegate, widget));
-#elif defined(USE_AURA) && defined(OS_LINUX)
+#elif defined(OS_MACOSX)
+  return scoped_ptr<InputMethod>(new InputMethodMac(delegate));
+#elif defined(USE_AURA) && defined(OS_LINUX) && !defined(OS_CHROMEOS)
   return scoped_ptr<InputMethod>(new InputMethodAuraLinux(delegate));
 #else
   return scoped_ptr<InputMethod>(new InputMethodMinimal(delegate));

@@ -14,7 +14,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -105,7 +105,7 @@ class ComponentLoaderTest : public testing::Test {
     // Register the local state prefs.
 #if defined(OS_CHROMEOS)
     local_state_.registry()->RegisterBooleanPref(
-        prefs::kSpokenFeedbackEnabled, false);
+        prefs::kAccessibilitySpokenFeedbackEnabled, false);
 #endif
   }
 

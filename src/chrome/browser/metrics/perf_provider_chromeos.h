@@ -12,7 +12,9 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "components/metrics/proto/perf_data.pb.h"
+#include "chromeos/dbus/power_manager_client.h"
+#include "chromeos/login/login_state.h"
+#include "components/metrics/proto/sampled_profile.pb.h"
 
 namespace metrics {
 
@@ -21,40 +23,82 @@ class WindowedIncognitoObserver;
 // Provides access to ChromeOS perf data. perf aka "perf events" is a
 // performance profiling infrastructure built into the linux kernel. For more
 // information, see: https://perf.wiki.kernel.org/index.php/Main_Page.
-class PerfProvider : public base::NonThreadSafe {
+class PerfProvider : public base::NonThreadSafe,
+                     public chromeos::PowerManagerClient::Observer {
  public:
   PerfProvider();
-  ~PerfProvider();
+  virtual ~PerfProvider();
 
-  // Writes collected perf data protobufs to |perf_data|. Clears all the stored
-  // perf data. Returns true if it wrote to |perf_data|.
-  bool GetPerfData(std::vector<PerfDataProto>* perf_data);
+  // Stores collected perf data protobufs in |sampled_profiles|. Clears all the
+  // stored profile data. Returns true if it wrote to |sampled_profiles|.
+  bool GetSampledProfiles(std::vector<SampledProfile>* sampled_profiles);
 
  private:
-  // Starts an internal timer to start collecting perf data. The timer is set to
-  // trigger |interval| after this function call.
-  void ScheduleCollection(const base::TimeDelta& interval);
+  // Class that listens for changes to the login state. When a normal user logs
+  // in, it updates PerfProvider to start collecting data.
+  class LoginObserver : public chromeos::LoginState::Observer {
+   public:
+    explicit LoginObserver(PerfProvider* perf_provider);
 
-  // Collects perf data if it has not been consumed by calling GetPerfData()
-  // (see above).
-  void CollectIfNecessary();
+    // Called when either the login state or the logged in user type changes.
+    // Activates |perf_provider_| to start collecting.
+    virtual void LoggedInStateChanged() OVERRIDE;
 
-  // Collects perf data by calling CollectIfNecessary() and reschedules it to be
-  // collected again.
-  void CollectIfNecessaryAndReschedule();
+   private:
+    // Points to a PerfProvider instance that can be turned on or off based on
+    // the login state.
+    PerfProvider* perf_provider_;
+  };
 
-  // Parses a protobuf from the |data| passed in only if the
+  // Called when a suspend finishes. This is either a successful suspend
+  // followed by a resume, or a suspend that was canceled. Inherited from
+  // PowerManagerClient::Observer.
+  virtual void SuspendDone(const base::TimeDelta& sleep_duration) OVERRIDE;
+
+  // Turns on perf collection. Resets the timer that's used to schedule
+  // collections.
+  void OnUserLoggedIn();
+
+  // Turns off perf collection. Does not delete any data that was already
+  // collected and stored in |cached_perf_data_|.
+  void Deactivate();
+
+  // Selects a random time in the upcoming profiling interval that begins at
+  // |next_profiling_interval_start_|. Schedules |timer_| to invoke
+  // DoPeriodicCollection() when that time comes.
+  void ScheduleCollection();
+
+  // Collects perf data for a given |trigger_event|. Calls perf via the ChromeOS
+  // debug daemon's dbus interface.
+  void CollectIfNecessary(scoped_ptr<SampledProfile> sampled_profile);
+
+  // Collects perf data on a repeating basis by calling CollectIfNecessary() and
+  // reschedules it to be collected again.
+  void DoPeriodicCollection();
+
+  // Parses a perf data protobuf from the |data| passed in only if the
   // |incognito_observer| indicates that no incognito window had been opened
   // during the profile collection period.
+  // |trigger_event| is the cause of the perf data collection.
   void ParseProtoIfValid(
       scoped_ptr<WindowedIncognitoObserver> incognito_observer,
+      scoped_ptr<SampledProfile> sampled_profile,
       const std::vector<uint8>& data);
 
-  // Vector of perf data protobufs.
-  std::vector<PerfDataProto> cached_perf_data_;
+  // Vector of SampledProfile protobufs containing perf profiles.
+  std::vector<SampledProfile> cached_perf_data_;
 
   // For scheduling collection of perf data.
   base::OneShotTimer<PerfProvider> timer_;
+
+  // For detecting when changes to the login state.
+  LoginObserver login_observer_;
+
+  // Record of the last login time.
+  base::TimeTicks login_time_;
+
+  // Record of the start of the upcoming profiling interval.
+  base::TimeTicks next_profiling_interval_start_;
 
   // To pass around the "this" pointer across threads safely.
   base::WeakPtrFactory<PerfProvider> weak_factory_;

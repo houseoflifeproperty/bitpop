@@ -22,8 +22,8 @@
 #include "extensions/common/permissions/permissions_data.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/screen_locker.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #endif
@@ -32,17 +32,15 @@ namespace extensions {
 namespace {
 
 base::ListValue* GetHostPermissions(const Extension* ext, bool effective_perm) {
-  extensions::URLPatternSet pattern_set;
-  if (effective_perm) {
-    pattern_set =
-        extensions::PermissionsData::GetEffectiveHostPermissions(ext);
-  } else {
-    pattern_set = ext->GetActivePermissions()->explicit_hosts();
-  }
+  const PermissionsData* permissions_data = ext->permissions_data();
+  const URLPatternSet& pattern_set =
+      effective_perm ? permissions_data->GetEffectiveHostPermissions()
+                     : permissions_data->active_permissions()->explicit_hosts();
 
   base::ListValue* permissions = new base::ListValue;
-  for (extensions::URLPatternSet::const_iterator perm = pattern_set.begin();
-       perm != pattern_set.end(); ++perm) {
+  for (URLPatternSet::const_iterator perm = pattern_set.begin();
+       perm != pattern_set.end();
+       ++perm) {
     permissions->Append(new base::StringValue(perm->GetAsString()));
   }
 
@@ -52,7 +50,7 @@ base::ListValue* GetHostPermissions(const Extension* ext, bool effective_perm) {
 base::ListValue* GetAPIPermissions(const Extension* ext) {
   base::ListValue* permissions = new base::ListValue;
   std::set<std::string> perm_list =
-      ext->GetActivePermissions()->GetAPIsAsStrings();
+      ext->permissions_data()->active_permissions()->GetAPIsAsStrings();
   for (std::set<std::string>::const_iterator perm = perm_list.begin();
        perm != perm_list.end(); ++perm) {
     permissions->Append(new base::StringValue(perm->c_str()));
@@ -150,10 +148,9 @@ bool AutotestPrivateLockScreenFunction::RunSync() {
 bool AutotestPrivateGetExtensionsInfoFunction::RunSync() {
   DVLOG(1) << "AutotestPrivateGetExtensionsInfoFunction";
 
-  ExtensionService* service = extensions::ExtensionSystem::Get(
-      GetProfile())->extension_service();
-  ExtensionRegistry* registry =
-      extensions::ExtensionRegistry::Get(GetProfile());
+  ExtensionService* service =
+      ExtensionSystem::Get(GetProfile())->extension_service();
+  ExtensionRegistry* registry = ExtensionRegistry::Get(GetProfile());
   const ExtensionSet& extensions = registry->enabled_extensions();
   const ExtensionSet& disabled_extensions = registry->disabled_extensions();
   ExtensionActionManager* extension_action_manager =
@@ -173,10 +170,10 @@ bool AutotestPrivateGetExtensionsInfoFunction::RunSync() {
     extension_value->SetString("name", extension->name());
     extension_value->SetString("publicKey", extension->public_key());
     extension_value->SetString("description", extension->description());
-    extension_value->SetString("backgroundUrl",
-        extensions::BackgroundInfo::GetBackgroundURL(extension).spec());
+    extension_value->SetString(
+        "backgroundUrl", BackgroundInfo::GetBackgroundURL(extension).spec());
     extension_value->SetString("optionsUrl",
-        extensions::ManifestURL::GetOptionsPage(extension).spec());
+                               ManifestURL::GetOptionsPage(extension).spec());
 
     extension_value->Set("hostPermissions",
                          GetHostPermissions(extension, false));

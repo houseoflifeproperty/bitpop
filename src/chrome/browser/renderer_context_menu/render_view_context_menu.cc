@@ -23,7 +23,6 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -34,7 +33,6 @@
 #include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/extensions/devtools_util.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
@@ -44,15 +42,14 @@
 #include "chrome/browser/renderer_context_menu/spellchecker_submenu_observer.h"
 #include "chrome/browser/renderer_context_menu/spelling_menu_observer.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/browser/tab_contents/retargeting_details.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/translate/translate_service.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -67,6 +64,8 @@
 #include "chrome/common/render_messages.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "components/translate/core/browser/translate_download_manager.h"
 #include "components/translate/core/browser/translate_manager.h"
 #include "components/translate/core/browser/translate_prefs.h"
@@ -378,8 +377,8 @@ void AddCustomItemsToMenu(const std::vector<content::MenuItem>& items,
 
 // Helper function to escape "&" as "&&".
 void EscapeAmpersands(base::string16* text) {
-  const base::char16 ampersand[] = {'&', 0};
-  base::ReplaceChars(*text, ampersand, base::ASCIIToUTF16("&&"), text);
+  base::ReplaceChars(*text, base::ASCIIToUTF16("&"), base::ASCIIToUTF16("&&"),
+                     text);
 }
 
 }  // namespace
@@ -809,7 +808,7 @@ void RenderViewContextMenu::AppendLinkItems() {
 
   menu_model_.AddItemWithStringId(
       IDC_CONTENT_CONTEXT_COPYLINKLOCATION,
-      params_.link_url.SchemeIs(content::kMailToScheme) ?
+      params_.link_url.SchemeIs(url::kMailToScheme) ?
           IDS_CONTENT_CONTEXT_COPYEMAILADDRESS :
           IDS_CONTENT_CONTEXT_COPYLINKLOCATION);
 }
@@ -826,12 +825,13 @@ void RenderViewContextMenu::AppendImageItems() {
 }
 
 void RenderViewContextMenu::AppendSearchWebForImageItems() {
+  TemplateURLService* service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
   const TemplateURL* const default_provider =
-      TemplateURLServiceFactory::GetForProfile(profile_)->
-          GetDefaultSearchProvider();
+      service->GetDefaultSearchProvider();
   if (params_.has_image_contents && default_provider &&
       !default_provider->image_url().empty() &&
-      default_provider->image_url_ref().IsValid()) {
+      default_provider->image_url_ref().IsValid(service->search_terms_data())) {
     menu_model_.AddItem(
         IDC_CONTENT_CONTEXT_SEARCHWEBFORIMAGE,
         l10n_util::GetStringFUTF16(IDS_CONTENT_CONTEXT_SEARCHWEBFORIMAGE,
@@ -974,8 +974,8 @@ void RenderViewContextMenu::AppendSearchProvider() {
 
   AutocompleteMatch match;
   AutocompleteClassifierFactory::GetForProfile(profile_)->Classify(
-      params_.selection_text, false, false, AutocompleteInput::INVALID_SPEC,
-      &match, NULL);
+      params_.selection_text, false, false,
+      metrics::OmniboxEventProto::INVALID_SPEC, &match, NULL);
   selection_navigation_url_ = match.destination_url;
   if (!selection_navigation_url_.is_valid())
     return;
@@ -1070,7 +1070,7 @@ void RenderViewContextMenu::AppendProtocolHandlerSubMenu() {
   for (size_t i = 0; i < handlers.size() && i <= max; i++) {
     protocol_handler_submenu_model_.AddItem(
         IDC_CONTENT_CONTEXT_PROTOCOL_HANDLER_FIRST + i,
-        handlers[i].title());
+        base::UTF8ToUTF16(handlers[i].url().host()));
   }
   protocol_handler_submenu_model_.AddSeparator(ui::NORMAL_SEPARATOR);
   protocol_handler_submenu_model_.AddItem(
@@ -1173,12 +1173,12 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       return true;
 
     case IDC_CONTENT_CONTEXT_TRANSLATE: {
-      TranslateTabHelper* translate_tab_helper =
-          TranslateTabHelper::FromWebContents(source_web_contents_);
-      if (!translate_tab_helper)
+      ChromeTranslateClient* chrome_translate_client =
+          ChromeTranslateClient::FromWebContents(source_web_contents_);
+      if (!chrome_translate_client)
         return false;
       std::string original_lang =
-          translate_tab_helper->GetLanguageState().original_language();
+          chrome_translate_client->GetLanguageState().original_language();
       std::string target_lang = g_browser_process->GetApplicationLocale();
       target_lang = TranslateDownloadManager::GetLanguageCode(target_lang);
       // Note that we intentionally enable the menu even if the original and
@@ -1187,7 +1187,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       // language.
       return ((params_.edit_flags & WebContextMenuData::CanTranslate) != 0) &&
              !original_lang.empty() &&  // Did we receive the page language yet?
-             !translate_tab_helper->GetLanguageState().IsPageTranslated() &&
+             !chrome_translate_client->GetLanguageState().IsPageTranslated() &&
              !source_web_contents_->GetInterstitialPage() &&
              // There are some application locales which can't be used as a
              // target language for translation.
@@ -1723,24 +1723,25 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
     case IDC_CONTENT_CONTEXT_TRANSLATE: {
       // A translation might have been triggered by the time the menu got
       // selected, do nothing in that case.
-      TranslateTabHelper* translate_tab_helper =
-          TranslateTabHelper::FromWebContents(source_web_contents_);
-      if (!translate_tab_helper ||
-          translate_tab_helper->GetLanguageState().IsPageTranslated() ||
-          translate_tab_helper->GetLanguageState().translation_pending()) {
+      ChromeTranslateClient* chrome_translate_client =
+          ChromeTranslateClient::FromWebContents(source_web_contents_);
+      if (!chrome_translate_client ||
+          chrome_translate_client->GetLanguageState().IsPageTranslated() ||
+          chrome_translate_client->GetLanguageState().translation_pending()) {
         return;
       }
       std::string original_lang =
-          translate_tab_helper->GetLanguageState().original_language();
+          chrome_translate_client->GetLanguageState().original_language();
       std::string target_lang = g_browser_process->GetApplicationLocale();
       target_lang = TranslateDownloadManager::GetLanguageCode(target_lang);
       // Since the user decided to translate for that language and site, clears
       // any preferences for not translating them.
       scoped_ptr<TranslatePrefs> prefs(
-          TranslateTabHelper::CreateTranslatePrefs(profile_->GetPrefs()));
+          ChromeTranslateClient::CreateTranslatePrefs(profile_->GetPrefs()));
       prefs->UnblockLanguage(original_lang);
       prefs->RemoveSiteFromBlacklist(params_.page_url.HostNoBrackets());
-      TranslateManager* manager = translate_tab_helper->GetTranslateManager();
+      TranslateManager* manager =
+          chrome_translate_client->GetTranslateManager();
       DCHECK(manager);
       manager->TranslatePage(original_lang, target_lang, true);
       break;
@@ -1836,8 +1837,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
           SearchEngineTabHelper::FromWebContents(source_web_contents_);
       if (search_engine_tab_helper &&
           search_engine_tab_helper->delegate()) {
-        base::string16 keyword(
-            TemplateURLService::GenerateKeyword(params_.page_url));
+        base::string16 keyword(TemplateURL::GenerateKeyword(params_.page_url));
         TemplateURLData data;
         data.short_name = keyword;
         data.SetKeyword(keyword);
@@ -1846,7 +1846,7 @@ void RenderViewContextMenu::ExecuteCommand(int id, int event_flags) {
             TemplateURL::GenerateFaviconURL(params_.page_url.GetOrigin());
         // Takes ownership of the TemplateURL.
         search_engine_tab_helper->delegate()->
-            ConfirmAddSearchProvider(new TemplateURL(profile_, data), profile_);
+            ConfirmAddSearchProvider(new TemplateURL(data), profile_);
       }
       break;
     }

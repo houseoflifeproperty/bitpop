@@ -31,20 +31,17 @@
 #include "config.h"
 #include "core/svg/SVGDiscardElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 
 namespace WebCore {
 
-SVGDiscardElement::SVGDiscardElement(Document& document)
+inline SVGDiscardElement::SVGDiscardElement(Document& document)
     : SVGSMILElement(SVGNames::discardTag, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGDiscardElement> SVGDiscardElement::create(Document& document)
-{
-    return adoptRef(new SVGDiscardElement(document));
-}
+DEFINE_NODE_FACTORY(SVGDiscardElement)
 
 bool SVGDiscardElement::hasValidAttributeType()
 {

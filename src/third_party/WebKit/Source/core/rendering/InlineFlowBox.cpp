@@ -20,7 +20,7 @@
 #include "config.h"
 #include "core/rendering/InlineFlowBox.h"
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 #include "core/dom/Document.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/InlineTextBox.h"
@@ -278,7 +278,7 @@ static inline bool isLastChildForRenderer(RenderObject* ancestor, RenderObject* 
     RenderObject* curr = child;
     RenderObject* parent = curr->parent();
     while (parent && (!parent->isRenderBlock() || parent->isInline())) {
-        if (parent->lastChild() != curr)
+        if (parent->slowLastChild() != curr)
             return false;
         if (parent == ancestor)
             return true;

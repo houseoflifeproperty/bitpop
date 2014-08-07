@@ -55,8 +55,14 @@ bool AppListControllerDelegate::ForceNativeDesktop() const {
 
 void AppListControllerDelegate::ViewClosing() {}
 
-void AppListControllerDelegate::OnShowExtensionPrompt() {}
-void AppListControllerDelegate::OnCloseExtensionPrompt() {}
+gfx::Rect AppListControllerDelegate::GetAppListBounds() {
+  return gfx::Rect();
+}
+
+void AppListControllerDelegate::OnShowChildDialog() {
+}
+void AppListControllerDelegate::OnCloseChildDialog() {
+}
 
 std::string AppListControllerDelegate::AppListSourceToString(
     AppListSource source) {
@@ -95,17 +101,11 @@ void AppListControllerDelegate::DoShowAppInfoFlow(
       extension_id);
   DCHECK(extension);
 
-  gfx::NativeWindow parent_window = GetAppListWindow();
-  if (!parent_window)
-    return;
+  OnShowChildDialog();
 
-  OnShowExtensionPrompt();
-  ShowAppInfoDialog(
-      parent_window,
-      profile,
-      extension,
-      base::Bind(&AppListControllerDelegate::OnCloseExtensionPrompt,
-                 base::Unretained(this)));
+  // Since the AppListControllerDelegate is a leaky singleton, passing its
+  // raw pointer around is OK.
+  ShowAppInfoDialog(this, profile, extension);
 }
 
 void AppListControllerDelegate::UninstallApp(Profile* profile,

@@ -4,6 +4,7 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "base/values.h"
@@ -16,6 +17,7 @@
 #include "content/shell/browser/shell.h"
 #include "content/test/webrtc_content_browsertest_base.h"
 #include "media/audio/audio_manager.h"
+#include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
 #if defined(OS_WIN)
@@ -42,20 +44,8 @@ class WebRtcBrowserTest : public WebRtcContentBrowserTest,
     WebRtcContentBrowserTest::SetUpCommandLine(command_line);
 
     bool enable_audio_track_processing = GetParam();
-    if (enable_audio_track_processing)
-      command_line->AppendSwitch(switches::kEnableAudioTrackProcessing);
-  }
-
-  virtual void TearDownOnMainThread() OVERRIDE {
-#if defined(OS_ANDROID)
-    // TODO(phoglund): this is a ugly workaround to let the IO thread
-    // finish its work. The reason we need this on Android is that
-    // content_browsertests tearDown logic is broken with respect
-    // to threading, which causes the IO thread to compete with the
-    // teardown. See http://crbug.com/362852. I also tried with 2
-    // seconds, but that isn't enough.
-    base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(5));
-#endif
+    if (!enable_audio_track_processing)
+      command_line->AppendSwitch(switches::kDisableAudioTrackProcessing);
   }
 
   // Convenience function since most peerconnection-call.html tests just load
@@ -68,6 +58,27 @@ class WebRtcBrowserTest : public WebRtcContentBrowserTest,
 
     DisableOpusIfOnAndroid();
     ExecuteJavascriptAndWaitForOk(javascript);
+  }
+
+  // Convenience method for making calls that detect if audio os playing (which
+  // has some special prerequisites, such that there needs to be an audio output
+  // device on the executing machine).
+  void MakeAudioDetectingPeerConnectionCall(const std::string& javascript) {
+    if (!media::AudioManager::Get()->HasAudioOutputDevices()) {
+      // Bots with no output devices will force the audio code into a state
+      // where it doesn't manage to set either the low or high latency path.
+      // This test will compute useless values in that case, so skip running on
+      // such bots (see crbug.com/326338).
+      LOG(INFO) << "Missing output devices: skipping test...";
+      return;
+    }
+
+    ASSERT_TRUE(CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kUseFakeDeviceForMediaStream))
+            << "Must run with fake devices since the test will explicitly look "
+            << "for the fake device signal.";
+
+    MakeTypicalPeerConnectionCall(javascript);
   }
 
   void DisableOpusIfOnAndroid() {
@@ -102,6 +113,22 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, CanSetupVideoCallWith1To1AspecRatio) {
   const std::string javascript =
       "callAndExpectResolution({video: {mandatory: {minWidth: 320,"
       " maxWidth: 320, minHeight: 320, maxHeight: 320}}}, 320, 320);";
+  MakeTypicalPeerConnectionCall(javascript);
+}
+
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
+                       CanSetupVideoCallWith16To9AspecRatio) {
+  const std::string javascript =
+      "callAndExpectResolution({video: {mandatory: {minWidth: 640,"
+      " maxWidth: 640, minAspectRatio: 1.777}}}, 640, 360);";
+  MakeTypicalPeerConnectionCall(javascript);
+}
+
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
+                       CanSetupVideoCallWith4To3AspecRatio) {
+  const std::string javascript =
+      "callAndExpectResolution({video: {mandatory: {minWidth: 960,"
+      "maxAspectRatio: 1.333}}}, 960, 720);";
   MakeTypicalPeerConnectionCall(javascript);
 }
 
@@ -142,12 +169,17 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
 #define MAYBE_CanForwardRemoteStream720p DISABLED_CanForwardRemoteStream720p
 #else
 #define MAYBE_CanForwardRemoteStream CanForwardRemoteStream
+// Flaky on TSAN v2. http://crbug.com/373637
+#if defined(THREAD_SANITIZER)
+#define MAYBE_CanForwardRemoteStream720p DISABLED_CanForwardRemoteStream720p
+#else
 #define MAYBE_CanForwardRemoteStream720p CanForwardRemoteStream720p
+#endif
 #endif
 IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CanForwardRemoteStream) {
 #if defined (OS_ANDROID)
   // This test fails on Nexus 5 devices.
-  // TODO: see http://crbug.com/362437 and http://crbug.com/359389
+  // TODO(henrika): see http://crbug.com/362437 and http://crbug.com/359389
   // for details.
   CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kDisableWebRtcHWDecoding);
@@ -159,7 +191,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CanForwardRemoteStream) {
 IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CanForwardRemoteStream720p) {
 #if defined (OS_ANDROID)
   // This test fails on Nexus 5 devices.
-  // TODO: see http://crbug.com/362437 and http://crbug.com/359389
+  // TODO(henrika): see http://crbug.com/362437 and http://crbug.com/359389
   // for details.
   CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kDisableWebRtcHWDecoding);
@@ -238,7 +270,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, CallWithSctpDataOnly) {
 // This test will make a PeerConnection-based call and test an unreliable text
 // dataChannel and audio and video tracks.
 // TODO(mallinath) - Remove this test after rtp based data channel is disabled.
-IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CallWithDataAndMedia) {
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, DISABLED_CallWithDataAndMedia) {
   MakeTypicalPeerConnectionCall("callWithDataAndMedia();");
 }
 
@@ -299,62 +331,48 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, AddTwoMediaStreamsToOnePC) {
 }
 
 IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
-                       EstablishAudioVideoCallAndMeasureOutputLevel) {
-  if (!media::AudioManager::Get()->HasAudioOutputDevices()) {
-    // Bots with no output devices will force the audio code into a different
-    // path where it doesn't manage to set either the low or high latency path.
-    // This test will compute useless values in that case, so skip running on
-    // such bots (see crbug.com/326338).
-    LOG(INFO) << "Missing output devices: skipping test...";
-    return;
-  }
+                       EstablishAudioVideoCallAndEnsureAudioIsPlaying) {
+  MakeAudioDetectingPeerConnectionCall(base::StringPrintf(
+      "callAndEnsureAudioIsPlaying(%s, {audio:true, video:true});",
+      kUseLenientAudioChecking));
+}
 
-  ASSERT_TRUE(CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kUseFakeDeviceForMediaStream))
-          << "Must run with fake devices since the test will explicitly look "
-          << "for the fake device signal.";
-
-  MakeTypicalPeerConnectionCall(base::StringPrintf(
-      "callAndEnsureAudioIsPlaying(%s);", kUseLenientAudioChecking));
+IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
+                       EstablishAudioOnlyCallAndEnsureAudioIsPlaying) {
+  MakeAudioDetectingPeerConnectionCall(base::StringPrintf(
+      "callAndEnsureAudioIsPlaying(%s, {audio:true});",
+      kUseLenientAudioChecking));
 }
 
 IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
                        EstablishAudioVideoCallAndVerifyMutingWorks) {
-  if (!media::AudioManager::Get()->HasAudioOutputDevices()) {
-    // See comment on EstablishAudioVideoCallAndMeasureOutputLevel.
-    LOG(INFO) << "Missing output devices: skipping test...";
-    return;
-  }
-
-  ASSERT_TRUE(CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kUseFakeDeviceForMediaStream))
-          << "Must run with fake devices since the test will explicitly look "
-          << "for the fake device signal.";
-
-  MakeTypicalPeerConnectionCall(base::StringPrintf(
+  MakeAudioDetectingPeerConnectionCall(base::StringPrintf(
       "callAndEnsureAudioTrackMutingWorks(%s);", kUseLenientAudioChecking));
 }
 
+// Flaky on TSAN v2: http://crbug.com/373637
+#if defined(THREAD_SANITIZER)
+#define MAYBE_EstablishAudioVideoCallAndVerifyUnmutingWorks\
+        DISABLED_EstablishAudioVideoCallAndVerifyUnmutingWorks
+#else
+#define MAYBE_EstablishAudioVideoCallAndVerifyUnmutingWorks\
+        EstablishAudioVideoCallAndVerifyUnmutingWorks
+#endif
 IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest,
-                       EstablishAudioVideoCallAndVerifyUnmutingWorks) {
-  if (!media::AudioManager::Get()->HasAudioOutputDevices()) {
-    // See comment on EstablishAudioVideoCallAndMeasureOutputLevel.
-    LOG(INFO) << "Missing output devices: skipping test...";
-    return;
-  }
-
-  ASSERT_TRUE(CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kUseFakeDeviceForMediaStream))
-          << "Must run with fake devices since the test will explicitly look "
-          << "for the fake device signal.";
-
-  MakeTypicalPeerConnectionCall(base::StringPrintf(
+                       MAYBE_EstablishAudioVideoCallAndVerifyUnmutingWorks) {
+  MakeAudioDetectingPeerConnectionCall(base::StringPrintf(
       "callAndEnsureAudioTrackUnmutingWorks(%s);", kUseLenientAudioChecking));
 }
 
 IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, CallAndVerifyVideoMutingWorks) {
   MakeTypicalPeerConnectionCall("callAndEnsureVideoTrackMutingWorks();");
 }
+
+#if defined(OS_WIN)
+#define IntToStringType base::IntToString16
+#else
+#define IntToStringType base::IntToString
+#endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
 // Timing out on ARM linux bot: http://crbug.com/238490
@@ -387,6 +405,17 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CallWithAecDump) {
   DisableOpusIfOnAndroid();
   ExecuteJavascriptAndWaitForOk("call({video: true, audio: true});");
 
+  // Get the ID for the render process host. There should only be one.
+  RenderProcessHost::iterator it(
+      content::RenderProcessHost::AllHostsIterator());
+  int render_process_host_id = it.GetCurrentValue()->GetID();
+  EXPECT_GE(render_process_host_id, 0);
+
+  // Add file extensions that we expect to be added.
+  static const int kExpectedConsumerId = 0;
+  dump_file = dump_file.AddExtension(IntToStringType(render_process_host_id))
+                       .AddExtension(IntToStringType(kExpectedConsumerId));
+
   EXPECT_TRUE(base::PathExists(dump_file));
   int64 file_size = 0;
   EXPECT_TRUE(base::GetFileSize(dump_file, &file_size));
@@ -394,6 +423,9 @@ IN_PROC_BROWSER_TEST_P(WebRtcBrowserTest, MAYBE_CallWithAecDump) {
 
   base::DeleteFile(dump_file, false);
 }
+
+// TODO(grunell): Add test for multiple dumps when re-use of
+// MediaStreamAudioProcessor in AudioCapturer has been removed.
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
 // Timing out on ARM linux bot: http://crbug.com/238490

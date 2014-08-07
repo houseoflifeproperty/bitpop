@@ -10,7 +10,7 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_file.h"
 #include "base/process/launch.h"
-#include "sandbox/linux/sandbox_export.h"
+#include "sandbox/sandbox_export.h"
 
 namespace sandbox {
 
@@ -92,10 +92,13 @@ class SANDBOX_EXPORT SetuidSandboxClient {
   void SetupLaunchEnvironment();
 
  private:
+  SetuidSandboxClient();
+
   // Holds the environment. Will never be NULL.
   base::Environment* env_;
   bool sandboxed_;
-  DISALLOW_IMPLICIT_CONSTRUCTORS(SetuidSandboxClient);
+
+  DISALLOW_COPY_AND_ASSIGN(SetuidSandboxClient);
 };
 
 }  // namespace sandbox

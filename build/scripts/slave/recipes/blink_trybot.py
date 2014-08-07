@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 DEPS = [
+  'bot_update',
   'chromium',
   'gclient',
   'json',
@@ -22,6 +23,26 @@ BUILDERS = {
   'tryserver.blink': {
     'builders': {
       'linux_blink_dbg': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Debug',
+          'TARGET_BITS': 64,
+        },
+        'compile_only': False,
+        'testing': {
+          'platform': 'linux',
+        },
+      },
+      'linux_blink_bot_update': {
+        'chromium_config_kwargs': {
+          'BUILD_CONFIG': 'Debug',
+          'TARGET_BITS': 64,
+        },
+        'compile_only': False,
+        'testing': {
+          'platform': 'linux',
+        },
+      },
+      'linux_blink_no_bot_update': {
         'chromium_config_kwargs': {
           'BUILD_CONFIG': 'Debug',
           'TARGET_BITS': 64,
@@ -203,130 +224,6 @@ BUILDERS = {
       },
     },
   },
-  'tryserver.chromium': {
-    'builders': {
-      'linux_blink': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Debug',
-          'TARGET_BITS': 64,
-        },
-        'compile_only': False,
-        'testing': {
-          'platform': 'linux',
-        },
-      },
-      'linux_blink_rel': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Release',
-          'TARGET_BITS': 64,
-        },
-        'compile_only': False,
-        'testing': {
-          'platform': 'linux',
-        },
-      },
-      'linux_blink_compile': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Debug',
-          'TARGET_BITS': 64,
-        },
-        'compile_only': True,
-        'testing': {
-          'platform': 'linux',
-        },
-      },
-      'linux_blink_compile_rel': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Release',
-          'TARGET_BITS': 64,
-        },
-        'compile_only': True,
-        'testing': {
-          'platform': 'linux',
-        },
-      },
-      'mac_blink': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Debug',
-          'TARGET_BITS': 32,
-        },
-        'compile_only': False,
-        'testing': {
-          'platform': 'mac',
-        },
-      },
-      'mac_blink_rel': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Release',
-          'TARGET_BITS': 32,
-        },
-        'compile_only': False,
-        'testing': {
-          'platform': 'mac',
-        },
-      },
-      'mac_blink_compile': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Debug',
-          'TARGET_BITS': 32,
-        },
-        'compile_only': True,
-        'testing': {
-          'platform': 'mac',
-        },
-      },
-      'mac_blink_compile_rel': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Release',
-          'TARGET_BITS': 32,
-        },
-        'compile_only': True,
-        'testing': {
-          'platform': 'mac',
-        },
-      },
-      'win_blink': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Debug',
-          'TARGET_BITS': 32,
-        },
-        'compile_only': False,
-        'testing': {
-          'platform': 'win',
-        },
-      },
-      'win_blink_rel': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Release',
-          'TARGET_BITS': 32,
-        },
-        'compile_only': False,
-        'testing': {
-          'platform': 'win',
-        },
-      },
-      'win_blink_compile': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Debug',
-          'TARGET_BITS': 32,
-        },
-        'compile_only': True,
-        'testing': {
-          'platform': 'win',
-        },
-      },
-      'win_blink_compile_rel': {
-        'chromium_config_kwargs': {
-          'BUILD_CONFIG': 'Release',
-          'TARGET_BITS': 32,
-        },
-        'compile_only': True,
-        'testing': {
-          'platform': 'win',
-        },
-      },
-    },
-  },
   'tryserver.v8': {
     'builders': {
       'v8_linux_layout_dbg': {
@@ -362,7 +259,8 @@ def GenSteps(api):
               '--json-test-results', api.json.test_results(add_json_log=False)]
       if suffix == 'without patch':
         test_list = "\n".join(self.failures('with patch'))
-        args.extend(['--test-list', api.raw_io.input(test_list)])
+        args.extend(['--test-list', api.raw_io.input(test_list),
+                     '--skipped', 'always'])
 
       if 'oilpan' in api.properties['buildername']:
         args.extend(['--additional-expectations',
@@ -449,8 +347,7 @@ def GenSteps(api):
     api.gclient.apply_config('v8_blink_flavor')
     api.gclient.apply_config('show_v8_revision')
     if api.properties['revision']:
-      custom_vars = api.gclient.c.solutions[0].custom_vars
-      custom_vars['v8_revision'] = api.properties['revision']
+      api.gclient.c.revisions['src/v8'] = api.properties['revision']
   api.step.auto_resolve_conflicts = True
 
   if 'oilpan' in buildername:
@@ -463,19 +360,23 @@ def GenSteps(api):
 
   root = bot_config.get('root_override', api.rietveld.calculate_issue_root())
 
-  yield api.gclient.checkout(
-      revert=True, can_fail_build=False, abort_on_failure=False)
-  for step in api.step_history.values():
-    if step.retcode != 0:
-      # TODO(phajdan.jr): Remove the workaround, http://crbug.com/357767 .
-      yield (
-        api.path.rmcontents('slave build directory', api.path['slave_build']),
-        api.gclient.checkout(),
-      )
-      break
+  yield api.bot_update.ensure_checkout()
+  # The first time we run bot update, remember if bot_update mode is on or off.
+  bot_update_mode = api.step_history.last_step().json.output['did_run']
+  if not bot_update_mode:
+    yield api.gclient.checkout(
+        revert=True, can_fail_build=False, abort_on_failure=False)
+    for step in api.step_history.values():
+      if step.retcode != 0:
+        # TODO(phajdan.jr): Remove the workaround, http://crbug.com/357767 .
+        yield (
+          api.path.rmcontents('slave build directory', api.path['slave_build']),
+          api.gclient.checkout(),
+        )
+        break
+    yield api.rietveld.apply_issue(root)
 
   yield (
-    api.rietveld.apply_issue(root),
     api.chromium.runhooks(),
     api.chromium.compile(abort_on_failure=False, can_fail_build=False),
   )
@@ -484,12 +385,17 @@ def GenSteps(api):
     # TODO(phajdan.jr): Remove the workaround, http://crbug.com/357767 .
     if api.platform.is_win:
       yield api.chromium.taskkill()
+    yield api.path.rmcontents('slave build directory', api.path['slave_build'])
+    if bot_update_mode:
+      yield api.bot_update.ensure_checkout()
+    else:
+      yield (
+        api.gclient.checkout(revert=False),
+        api.rietveld.apply_issue(root),
+      )
     yield (
-      api.path.rmcontents('slave build directory', api.path['slave_build']),
-      api.gclient.checkout(revert=False),
-      api.rietveld.apply_issue(root),
       api.chromium.runhooks(),
-      api.chromium.compile()
+      api.chromium.compile(),
     )
 
   if not bot_config['compile_only']:
@@ -510,8 +416,12 @@ def GenSteps(api):
 
   if not bot_config['compile_only']:
     def deapply_patch_fn(_failing_steps):
+      if bot_update_mode:
+        yield api.bot_update.ensure_checkout(patch=False, always_run=True)
+      else:
+        yield api.gclient.checkout(revert=True, always_run=True)
+
       yield (
-        api.gclient.revert(always_run=True),
         api.chromium.runhooks(always_run=True),
         api.chromium.compile(always_run=True),
       )
@@ -566,7 +476,7 @@ def GenTests(api):
   # that we fail the whole build.
   yield (
     api.test('minimal_pass_continues') +
-    properties('tryserver.chromium', 'linux_blink_rel') +
+    properties('tryserver.blink', 'linux_blink_rel') +
     api.override_step_data(with_patch, canned_test(passing=False)) +
     api.override_step_data(without_patch,
                            canned_test(passing=True, minimal=True))
@@ -574,14 +484,14 @@ def GenTests(api):
 
   yield (
     api.test('gclient_revert_nuke') +
-    properties('tryserver.chromium', 'linux_blink_rel') +
+    properties('tryserver.blink', 'linux_blink_no_bot_update') +
     api.step_data('gclient revert', retcode=1) +
     api.override_step_data(with_patch, canned_test(passing=True, minimal=True))
   )
 
   yield (
     api.test('preamble_test_failure') +
-    properties('tryserver.chromium', 'linux_blink_rel') +
+    properties('tryserver.blink', 'linux_blink_rel') +
     api.step_data('webkit_unit_tests', retcode=1)
   )
 
@@ -592,7 +502,7 @@ def GenTests(api):
   # 255 == test_run_results.UNEXPECTED_ERROR_EXIT_STATUS in run-webkit-tests.
   yield (
     api.test('webkit_tests_unexpected_error') +
-    properties('tryserver.chromium', 'linux_blink_rel') +
+    properties('tryserver.blink', 'linux_blink_rel') +
     api.override_step_data(with_patch, canned_test(passing=False,
                                                    retcode=255))
   )
@@ -604,15 +514,23 @@ def GenTests(api):
   # 130 == test_run_results.INTERRUPTED_EXIT_STATUS in run-webkit-tests.
   yield (
     api.test('webkit_tests_interrupted') +
-    properties('tryserver.chromium', 'linux_blink_rel') +
+    properties('tryserver.blink', 'linux_blink_rel') +
     api.override_step_data(with_patch, canned_test(passing=False,
                                                    retcode=130))
   )
 
   yield (
+    api.test('compile_failure_bot_update') +
+    api.platform('linux', 64) +
+    properties('tryserver.blink', 'linux_blink_bot_update') +
+    api.step_data('compile', retcode=1) +
+    api.step_data(with_patch, canned_test(passing=True, minimal=True))
+  )
+
+  yield (
     api.test('compile_failure_win') +
     api.platform('win', 32) +
-    properties('tryserver.chromium', 'win_blink_rel') +
+    properties('tryserver.blink', 'win_blink_rel') +
     api.step_data('compile', retcode=1) +
     api.step_data(with_patch, canned_test(passing=True, minimal=True))
   )
@@ -623,7 +541,7 @@ def GenTests(api):
   # and compare the lists of failing tests).
   yield (
     api.test('too_many_failures_for_retcode') +
-    properties('tryserver.chromium', 'linux_blink_rel') +
+    properties('tryserver.blink', 'linux_blink_rel') +
     api.override_step_data(with_patch,
                            canned_test(passing=False,
                                        num_additional_failures=125)) +

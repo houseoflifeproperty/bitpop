@@ -9,6 +9,7 @@
 #include "SkDevice.h"
 #include "SkDraw.h"
 #include "SkPaintPriv.h"
+#include "SkPicturePlayback.h"
 
 SkPicture::AccelData::Key GPUAccelData::ComputeAccelDataKey() {
     static const SkPicture::AccelData::Key gGPUID = SkPicture::AccelData::GenerateDomain();
@@ -28,7 +29,7 @@ class GrGatherDevice : public SkBaseDevice {
 public:
     SK_DECLARE_INST_COUNT(GrGatherDevice)
 
-    GrGatherDevice(int width, int height, SkPicture* picture, GPUAccelData* accelData,
+    GrGatherDevice(int width, int height, const SkPicture* picture, GPUAccelData* accelData,
                    int saveLayerDepth) {
         fPicture = picture;
         fSaveLayerDepth = saveLayerDepth;
@@ -40,22 +41,13 @@ public:
         fInfo.fHasNestedLayers = false;
         fInfo.fIsNested = (2 == fSaveLayerDepth);
 
-        fEmptyBitmap.setConfig(SkImageInfo::Make(fInfo.fSize.fWidth,
-                                                 fInfo.fSize.fHeight,
-                                                 kUnknown_SkColorType,
-                                                 kIgnore_SkAlphaType));
+        fEmptyBitmap.setInfo(SkImageInfo::MakeUnknown(fInfo.fSize.fWidth, fInfo.fSize.fHeight));
         fAccelData = accelData;
         fAlreadyDrawn = false;
     }
 
     virtual ~GrGatherDevice() { }
 
-    virtual int width() const SK_OVERRIDE { return fInfo.fSize.width(); }
-    virtual int height() const SK_OVERRIDE { return fInfo.fSize.height(); }
-    virtual bool isOpaque() const SK_OVERRIDE { return false; }
-    virtual SkBitmap::Config config() const SK_OVERRIDE {
-        return SkBitmap::kNo_Config;
-    }
     virtual SkImageInfo imageInfo() const SK_OVERRIDE {
         return fEmptyBitmap.info();
     }
@@ -136,16 +128,7 @@ protected:
         device->fInfo.fCTM.postTranslate(SkIntToScalar(-device->getOrigin().fX),
                                          SkIntToScalar(-device->getOrigin().fY));
 
-        // We need the x & y values that will yield 'getOrigin' when transformed
-        // by 'draw.fMatrix'.
-        device->fInfo.fOffset.iset(device->getOrigin());
-
-        SkMatrix invMatrix;
-        if (draw.fMatrix->invert(&invMatrix)) {
-            invMatrix.mapPoints(&device->fInfo.fOffset, 1);
-        } else {
-            device->fInfo.fValid = false;
-        }
+        device->fInfo.fOffset = device->getOrigin();
 
         if (NeedsDeepCopy(paint)) {
             // This NULL acts as a signal that the paint was uncopyable (for now)
@@ -181,7 +164,7 @@ protected:
 
 private:
     // The picture being processed
-    SkPicture *fPicture;
+    const SkPicture *fPicture;
 
     SkBitmap fEmptyBitmap; // legacy -- need to remove
 
@@ -207,7 +190,7 @@ private:
         SkASSERT(kSaveLayer_Usage == usage);
 
         fInfo.fHasNestedLayers = true;
-        return SkNEW_ARGS(GrGatherDevice, (info.width(), info.height(), fPicture, 
+        return SkNEW_ARGS(GrGatherDevice, (info.width(), info.height(), fPicture,
                                            fAccelData, fSaveLayerDepth+1));
     }
 
@@ -232,7 +215,7 @@ private:
 // which is all just to fill in 'accelData'
 class SK_API GrGatherCanvas : public SkCanvas {
 public:
-    GrGatherCanvas(GrGatherDevice* device, SkPicture* pict)
+    GrGatherCanvas(GrGatherDevice* device, const SkPicture* pict)
         : INHERITED(device)
         , fPicture(pict) {
     }
@@ -245,12 +228,9 @@ public:
         this->clipRect(SkRect::MakeWH(SkIntToScalar(fPicture->width()),
                                       SkIntToScalar(fPicture->height())),
                        SkRegion::kIntersect_Op, false);
-        this->drawPicture(*fPicture);
+        this->drawPicture(fPicture);
     }
 
-    virtual void drawPicture(SkPicture& picture) SK_OVERRIDE {
-        picture.draw(this);
-    }
 protected:
     // disable aa for speed
     virtual void onClipRect(const SkRect& rect, SkRegion::Op op, ClipEdgeStyle) SK_OVERRIDE {
@@ -267,15 +247,27 @@ protected:
         this->updateClipConservativelyUsingBounds(rrect.getBounds(), op, false);
     }
 
+    virtual void onDrawPicture(const SkPicture* picture) SK_OVERRIDE {
+        // BBH-based rendering doesn't re-issue many of the operations the gather
+        // process cares about (e.g., saves and restores) so it must be disabled.
+        if (NULL != picture->fPlayback) {
+            picture->fPlayback->setUseBBH(false);
+        }
+        picture->draw(this);
+        if (NULL != picture->fPlayback) {
+            picture->fPlayback->setUseBBH(true);
+        }
+    }
+
 private:
-    SkPicture* fPicture;
+    const SkPicture* fPicture;
 
     typedef SkCanvas INHERITED;
 };
 
 // GatherGPUInfo is only intended to be called within the context of SkGpuDevice's
 // EXPERIMENTAL_optimize method.
-void GatherGPUInfo(SkPicture* pict, GPUAccelData* accelData) {
+void GatherGPUInfo(const SkPicture* pict, GPUAccelData* accelData) {
     if (0 == pict->width() || 0 == pict->height()) {
         return ;
     }

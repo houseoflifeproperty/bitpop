@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-[JavaPackage="org.chromium.mojo.bindings.test"]
+import "sample_import.mojom"
+
+[JavaPackage="org.chromium.mojo.bindings.test.sample"]
 module sample {
 
 // This sample shows how handles to MessagePipes can be sent as both parameters
@@ -19,10 +21,20 @@ struct Response {
   handle<message_pipe> pipe;
 };
 
+interface Object {
+  SetName(string name);
+  GetName() => (string name);
+};
+
 [Client=FactoryClient]
 interface Factory {
   DoStuff(Request request, handle<message_pipe> pipe);
   DoStuff2(handle<data_pipe_consumer> pipe);
+  CreateObject(Object& obj);
+  RequestImportedInterface(
+      imported.ImportedInterface& obj) => (imported.ImportedInterface& obj);
+  TakeImportedInterface(
+      imported.ImportedInterface obj) => (imported.ImportedInterface obj);
 };
 
 interface FactoryClient {

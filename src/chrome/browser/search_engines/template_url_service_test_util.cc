@@ -8,21 +8,18 @@
 #include "base/run_loop.h"
 #include "base/strings/string_split.h"
 #include "base/threading/thread.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/search_engines/default_search_manager.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/notification_service.h"
+#include "components/google/core/browser/google_url_tracker.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/google/google_util_chromeos.h"
+#include "chrome/browser/google/google_brand_chromeos.h"
 #endif
 
 // Trivial subclass of TemplateURLService that records the last invocation of
@@ -127,13 +124,10 @@ void TemplateURLServiceTestUtilBase::SetGoogleBaseURL(
     const GURL& base_url) const {
   DCHECK(base_url.is_valid());
   UIThreadSearchTermsData data(profile());
-  GoogleURLTracker::UpdatedDetails urls(GURL(data.GoogleBaseURLValue()),
-                                        base_url);
+  GURL old_url = GURL(data.GoogleBaseURLValue());
   UIThreadSearchTermsData::SetGoogleBaseURL(base_url.spec());
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_GOOGLE_URL_UPDATED,
-      content::Source<Profile>(profile()),
-      content::Details<GoogleURLTracker::UpdatedDetails>(&urls));
+  TemplateURLServiceFactory::GetForProfile(profile())
+      ->OnGoogleURLUpdated(old_url, base_url);
 }
 
 void TemplateURLServiceTestUtilBase::SetManagedDefaultSearchPreferences(
@@ -220,7 +214,7 @@ void TemplateURLServiceTestUtil::SetUp() {
   TemplateURLServiceTestUtilBase::CreateTemplateUrlService();
 
 #if defined(OS_CHROMEOS)
-  google_util::chromeos::ClearBrandForCurrentSession();
+  google_brand::chromeos::ClearBrandForCurrentSession();
 #endif
 }
 

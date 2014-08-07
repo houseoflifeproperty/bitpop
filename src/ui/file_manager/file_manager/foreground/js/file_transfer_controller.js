@@ -47,12 +47,12 @@ function FileTransferController(doc,
       this.onSelectionChanged_.bind(this));
 
   /**
-   * DOM element to represent selected file in drag operation. Used if only
-   * one element is selected.
-   * @type {HTMLElement}
+   * Promise to be fulfilled with the thumbnail image of selected file in drag
+   * operation. Used if only one element is selected.
+   * @type {Promise}
    * @private
    */
-  this.preloadedThumbnailImageNode_ = null;
+  this.preloadedThumbnailImagePromise_ = null;
 
   /**
    * File objects for selected files.
@@ -76,6 +76,15 @@ function FileTransferController(doc,
    */
   this.touching_ = false;
 }
+
+/**
+ * Size of drag thumbnail for image files.
+ *
+ * @type {number}
+ * @const
+ * @private
+ */
+FileTransferController.DRAG_THUMBNAIL_SIZE_ = 64;
 
 FileTransferController.prototype = {
   __proto__: cr.EventTarget.prototype,
@@ -165,7 +174,7 @@ FileTransferController.prototype = {
    * @this {FileTransferController}
    * @param {DataTransfer} dataTransfer DataTransfer from the event.
    * @param {string} effectAllowed Value must be valid for the
-   *     |dataTransfer.effectAllowed| property ('move', 'copy', 'copyMove').
+   *     |dataTransfer.effectAllowed| property.
    */
   cutOrCopy_: function(dataTransfer, effectAllowed) {
     // Existence of the volumeInfo is checked in canXXX methods.
@@ -329,8 +338,9 @@ FileTransferController.prototype = {
     // work fine.
     var effectAllowed = dataTransfer.effectAllowed !== 'uninitialized' ?
         dataTransfer.effectAllowed : dataTransfer.getData('fs/effectallowed');
-    var toMove = effectAllowed === 'move' ||
-        (effectAllowed === 'copyMove' && opt_effect === 'move');
+    var toMove = util.isDropEffectAllowed(effectAllowed, 'move') &&
+        (!util.isDropEffectAllowed(effectAllowed, 'copy') ||
+         opt_effect === 'move');
     var destinationEntry =
         opt_destinationEntry || this.currentDirectoryContentEntry;
     var entries;
@@ -398,20 +408,36 @@ FileTransferController.prototype = {
    * @param {Entry} entry Entry to preload a thumbnail for.
    */
   preloadThumbnailImage_: function(entry) {
-    var metadataTypes = 'thumbnail|filesystem';
-    var thumbnailContainer = this.document_.createElement('div');
-    this.preloadedThumbnailImageNode_ = thumbnailContainer;
-    this.preloadedThumbnailImageNode_.className = 'img-container';
-    this.metadataCache_.get(
-        entry,
-        metadataTypes,
-        function(metadata) {
-          new ThumbnailLoader(entry,
-                              ThumbnailLoader.LoaderType.IMAGE,
-                              metadata).
-              load(thumbnailContainer,
-                   ThumbnailLoader.FillMode.FILL);
-        }.bind(this));
+    var metadataPromise = new Promise(function(fulfill, reject) {
+      this.metadataCache_.getOne(entry,
+                                 'thumbnail|filesystem',
+                                 function(metadata) {
+        if (metadata)
+          fulfill(metadata);
+        else
+          reject('Failed to fetch metadata.');
+      });
+    }.bind(this));
+
+    var imagePromise = metadataPromise.then(function(metadata) {
+      return new Promise(function(fulfill, reject) {
+        var loader = new ThumbnailLoader(
+            entry, ThumbnailLoader.LoaderType.Image, metadata);
+        loader.loadDetachedImage(function(result) {
+          if (result)
+            fulfill(loader.getImage());
+        });
+      });
+    });
+
+    imagePromise.then(function(image) {
+      // Store the image so that we can obtain the image synchronously.
+      imagePromise.value = image;
+    }, function(error) {
+      console.error(error.stack || error);
+    });
+
+    this.preloadedThumbnailImagePromise_ = imagePromise;
   },
 
   /**
@@ -428,10 +454,6 @@ FileTransferController.prototype = {
     contents.className = 'drag-contents';
     container.appendChild(contents);
 
-    var thumbnailImage;
-    if (this.preloadedThumbnailImageNode_)
-      thumbnailImage = this.preloadedThumbnailImageNode_.querySelector('img');
-
     // Option 1. Multiple selection, render only a label.
     if (length > 1) {
       var label = this.document_.createElement('div');
@@ -443,10 +465,33 @@ FileTransferController.prototype = {
 
     // Option 2. Thumbnail image available, then render it without
     // a label.
-    if (thumbnailImage) {
-      thumbnailImage.classList.add('drag-thumbnail');
+    if (this.preloadedThumbnailImagePromise_ &&
+        this.preloadedThumbnailImagePromise_.value) {
+      var thumbnailImage = this.preloadedThumbnailImagePromise_.value;
+
+      // Resize the image to canvas.
+      var canvas = document.createElement('canvas');
+      canvas.width = FileTransferController.DRAG_THUMBNAIL_SIZE_;
+      canvas.height = FileTransferController.DRAG_THUMBNAIL_SIZE_;
+
+      var minScale = Math.min(
+          thumbnailImage.width / canvas.width,
+          thumbnailImage.height / canvas.height);
+      var srcWidth = Math.min(canvas.width * minScale, thumbnailImage.width);
+      var srcHeight = Math.min(canvas.height * minScale, thumbnailImage.height);
+
+      var context = canvas.getContext('2d');
+      context.drawImage(thumbnailImage,
+                        (thumbnailImage.width - srcWidth) / 2,
+                        (thumbnailImage.height - srcHeight) / 2,
+                        srcWidth,
+                        srcHeight,
+                        0,
+                        0,
+                        canvas.width,
+                        canvas.height);
       contents.classList.add('for-image');
-      contents.appendChild(this.preloadedThumbnailImageNode_);
+      contents.appendChild(canvas);
       return container;
     }
 
@@ -469,15 +514,12 @@ FileTransferController.prototype = {
    * @param {Event} event A dragstart event of DOM.
    */
   onDragStart_: function(list, event) {
-    // If a user is touching, Files.app does not receive drag operations.
-    if (this.touching_) {
-      event.preventDefault();
-      return;
-    }
-
     // Check if a drag selection should be initiated or not.
     if (list.shouldStartDragSelection(event)) {
-      this.dragSelector_.startDragSelection(list, event);
+      event.preventDefault();
+      // If this drag operation is initiated by mouse, start selecting area.
+      if (!this.touching_)
+        this.dragSelector_.startDragSelection(list, event);
       return;
     }
 
@@ -492,9 +534,9 @@ FileTransferController.prototype = {
     var canCut = this.canCutOrDrag_(dt);
     if (canCopy || canCut) {
       if (canCopy && canCut) {
-        this.cutOrCopy_(dt, 'copyMove');
+        this.cutOrCopy_(dt, 'all');
       } else if (canCopy) {
-        this.cutOrCopy_(dt, 'copy');
+        this.cutOrCopy_(dt, 'copyLink');
       } else {
         this.cutOrCopy_(dt, 'move');
       }
@@ -504,7 +546,7 @@ FileTransferController.prototype = {
     }
 
     var dragThumbnail = this.renderThumbnail_();
-    dt.setDragImage(dragThumbnail, 1000, 1000);
+    dt.setDragImage(dragThumbnail, 0, 0);
 
     window[DRAG_AND_DROP_GLOBAL_DATA] = {
       sourceRootURL: dt.getData('fs/sourceRootURL'),
@@ -518,6 +560,10 @@ FileTransferController.prototype = {
    * @param {Event} event A dragend event of DOM.
    */
   onDragEnd_: function(list, event) {
+    // TODO(fukino): This is workaround for crbug.com/373125.
+    // This should be removed after the bug is fixed.
+    this.touching_ = false;
+
     var container = this.document_.querySelector('#drag-container');
     container.textContent = '';
     this.clearDropTarget_();
@@ -696,8 +742,11 @@ FileTransferController.prototype = {
    * Handles touch end.
    */
   onTouchEnd_: function(event) {
-    if (event.touches.length === 0)
-      this.touching_ = false;
+    // TODO(fukino): We have to check if event.touches.length be 0 to support
+    // multi-touch operations, but event.touches has incorrect value by a bug
+    // (crbug.com/373125).
+    // After the bug is fixed, we should check event.touches.
+    this.touching_ = false;
   },
 
   /**
@@ -919,7 +968,7 @@ FileTransferController.prototype = {
   onSelectionChanged_: function(event) {
     var entries = this.selectedEntries_;
     var files = this.selectedFileObjects_ = [];
-    this.preloadedThumbnailImageNode_ = null;
+    this.preloadedThumbnailImagePromise_ = null;
 
     var fileEntries = [];
     for (var i = 0; i < entries.length; i++) {
@@ -1043,19 +1092,19 @@ FileTransferController.prototype = {
       return 'none';
     if (destinationLocationInfo.isReadOnly)
       return 'none';
-    if (event.dataTransfer.effectAllowed === 'move')
-      return 'move';
-    // TODO(mtomasz): Use volumeId instead of comparing roots, as soon as
-    // volumeId gets unique.
-    if (event.dataTransfer.effectAllowed === 'copyMove' &&
-        this.getSourceRootURL_(event.dataTransfer) ===
-            destinationLocationInfo.volumeInfo.fileSystem.root.toURL() &&
-        !event.ctrlKey) {
-      return 'move';
-    }
-    if (event.dataTransfer.effectAllowed === 'copyMove' &&
-        event.shiftKey) {
-      return 'move';
+    if (util.isDropEffectAllowed(event.dataTransfer.effectAllowed, 'move')) {
+      if (!util.isDropEffectAllowed(event.dataTransfer.effectAllowed, 'copy'))
+        return 'move';
+      // TODO(mtomasz): Use volumeId instead of comparing roots, as soon as
+      // volumeId gets unique.
+      if (this.getSourceRootURL_(event.dataTransfer) ===
+              destinationLocationInfo.volumeInfo.fileSystem.root.toURL() &&
+          !event.ctrlKey) {
+        return 'move';
+      }
+      if (event.shiftKey) {
+        return 'move';
+      }
     }
     return 'copy';
   },

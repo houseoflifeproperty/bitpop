@@ -110,24 +110,39 @@ void GrGpu::unimpl(const char msg[]) {
 
 GrTexture* GrGpu::createTexture(const GrTextureDesc& desc,
                                 const void* srcData, size_t rowBytes) {
-    if (kUnknown_GrPixelConfig == desc.fConfig) {
+    if (!this->caps()->isConfigTexturable(desc.fConfig)) {
         return NULL;
     }
+
     if ((desc.fFlags & kRenderTarget_GrTextureFlagBit) &&
         !this->caps()->isConfigRenderable(desc.fConfig, desc.fSampleCnt > 0)) {
         return NULL;
     }
 
-    this->handleDirtyContext();
-    GrTexture* tex = this->onCreateTexture(desc, srcData, rowBytes);
-    if (NULL != tex &&
-        (kRenderTarget_GrTextureFlagBit & desc.fFlags) &&
-        !(kNoStencil_GrTextureFlagBit & desc.fFlags)) {
-        SkASSERT(NULL != tex->asRenderTarget());
-        // TODO: defer this and attach dynamically
-        if (!this->attachStencilBufferToRenderTarget(tex->asRenderTarget())) {
-            tex->unref();
+    GrTexture *tex = NULL;
+    if (GrPixelConfigIsCompressed(desc.fConfig)) {
+        // We shouldn't be rendering into this
+        SkASSERT((desc.fFlags & kRenderTarget_GrTextureFlagBit) == 0);
+
+        if (!this->caps()->npotTextureTileSupport() &&
+            (!SkIsPow2(desc.fWidth) || !SkIsPow2(desc.fHeight))) {
             return NULL;
+        }
+
+        this->handleDirtyContext();
+        tex = this->onCreateCompressedTexture(desc, srcData);
+    } else {
+        this->handleDirtyContext();
+        tex = this->onCreateTexture(desc, srcData, rowBytes);
+        if (NULL != tex &&
+            (kRenderTarget_GrTextureFlagBit & desc.fFlags) &&
+            !(kNoStencil_GrTextureFlagBit & desc.fFlags)) {
+            SkASSERT(NULL != tex->asRenderTarget());
+            // TODO: defer this and attach dynamically
+            if (!this->attachStencilBufferToRenderTarget(tex->asRenderTarget())) {
+                tex->unref();
+                return NULL;
+            }
         }
     }
     return tex;
@@ -303,10 +318,10 @@ const GrIndexBuffer* GrGpu::getQuadIndexBuffer() const {
         GrGpu* me = const_cast<GrGpu*>(this);
         fQuadIndexBuffer = me->createIndexBuffer(SIZE, false);
         if (NULL != fQuadIndexBuffer) {
-            uint16_t* indices = (uint16_t*)fQuadIndexBuffer->lock();
+            uint16_t* indices = (uint16_t*)fQuadIndexBuffer->map();
             if (NULL != indices) {
                 fill_indices(indices, MAX_QUADS);
-                fQuadIndexBuffer->unlock();
+                fQuadIndexBuffer->unmap();
             } else {
                 indices = (uint16_t*)sk_malloc_throw(SIZE);
                 fill_indices(indices, MAX_QUADS);
@@ -422,12 +437,12 @@ void GrGpu::onDrawPaths(int pathCount, const GrPath** paths,
 
 void GrGpu::finalizeReservedVertices() {
     SkASSERT(NULL != fVertexPool);
-    fVertexPool->unlock();
+    fVertexPool->unmap();
 }
 
 void GrGpu::finalizeReservedIndices() {
     SkASSERT(NULL != fIndexPool);
-    fIndexPool->unlock();
+    fIndexPool->unmap();
 }
 
 void GrGpu::prepareVertexPool() {

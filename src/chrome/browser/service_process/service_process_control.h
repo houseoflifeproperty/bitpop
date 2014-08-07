@@ -145,7 +145,8 @@ class ServiceProcessControl : public IPC::Sender,
   class Launcher
       : public base::RefCountedThreadSafe<ServiceProcessControl::Launcher> {
    public:
-    Launcher(ServiceProcessControl* process, base::CommandLine* cmd_line);
+    Launcher(ServiceProcessControl* process,
+             scoped_ptr<base::CommandLine> cmd_line);
     // Execute the command line to start the process asynchronously. After the
     // command is executed |task| is called with the process handle on the UI
     // thread.
@@ -201,7 +202,7 @@ class ServiceProcessControl : public IPC::Sender,
   void ConnectInternal();
 
   // Takes ownership of the pointer. Split out for testing.
-  void SetChannel(IPC::ChannelProxy* channel);
+  void SetChannel(scoped_ptr<IPC::ChannelProxy> channel);
 
   static void RunAllTasksHelper(TaskList* task_list);
 

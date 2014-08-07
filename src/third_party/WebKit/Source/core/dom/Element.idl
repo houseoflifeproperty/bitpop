@@ -19,7 +19,7 @@
  */
 
 [
-    SpecialWrapFor=HTMLElement|SVGElement
+    SpecialWrapFor=HTMLElement|SVGElement,
 ] interface Element : Node {
 
     // DOM Level 1 Core
@@ -32,9 +32,9 @@
     [MeasureAs=ElementGetAttributeNode] Attr getAttributeNode([Default=Undefined] optional DOMString name); // Removed from DOM4.
     [RaisesException, CustomElementCallbacks, MeasureAs=ElementSetAttributeNode] Attr setAttributeNode([Default=Undefined, TypeChecking=Nullable] optional Attr newAttr); // Removed from DOM4.
     [RaisesException, CustomElementCallbacks, MeasureAs=ElementRemoveAttributeNode] Attr removeAttributeNode([Default=Undefined, TypeChecking=Nullable] optional Attr oldAttr); // Removed from DOM4.
-    [PerWorldBindings] HTMLCollection getElementsByTagName(DOMString name);
+    HTMLCollection getElementsByTagName(DOMString name);
 
-    [PerWorldBindings] readonly attribute NamedNodeMap     attributes;
+    [PerWorldBindings, ImplementedAs=attributesForBindings] readonly attribute NamedNodeMap     attributes;
     [MeasureAs=HasAttributes] boolean hasAttributes();
 
     // DOM Level 2 Core
@@ -108,9 +108,9 @@
     [RaisesException, ImplementedAs=matches, MeasureAs=ElementPrefixedMatchesSelector] boolean webkitMatchesSelector(DOMString selectors);
 
     // Shadow DOM API
-    [RaisesException] ShadowRoot createShadowRoot();
+    [RaisesException, MeasureAs=ElementCreateShadowRoot] ShadowRoot createShadowRoot();
     [PerWorldBindings] readonly attribute ShadowRoot shadowRoot;
-    [PerWorldBindings] NodeList getDestinationInsertionPoints();
+    NodeList getDestinationInsertionPoints();
 
     // CSSOM View Module API
     ClientRectList getClientRects();
@@ -118,12 +118,13 @@
 
     // Mozilla version
     const unsigned short ALLOW_KEYBOARD_INPUT = 1;
-    [PerWorldBindings, LogActivity, LogAllWorlds, MeasureAs=PrefixedElementRequestFullScreen] void webkitRequestFullScreen([Default=Undefined] optional unsigned short flags);
+    [LogActivity, LogAllWorlds, MeasureAs=PrefixedElementRequestFullScreen] void webkitRequestFullScreen([Default=Undefined] optional unsigned short flags);
 
     // W3C version
-    [PerWorldBindings, LogActivity, LogAllWorlds, MeasureAs=PrefixedElementRequestFullscreen] void webkitRequestFullscreen();
+    [LogActivity, LogAllWorlds, MeasureAs=PrefixedElementRequestFullscreen] void webkitRequestFullscreen();
 
     [MeasureAs=PrefixedElementRequestPointerLock] void webkitRequestPointerLock();
+    [MeasureAs=ElementRequestPointerLock] void requestPointerLock();
 
     // Event handler attributes
     attribute EventHandler onbeforecopy;
@@ -140,7 +141,7 @@
     [RuntimeEnabled=Touch] attribute EventHandler ontouchstart;
     attribute EventHandler onwebkitfullscreenchange;
     attribute EventHandler onwebkitfullscreenerror;
-    [PerWorldBindings, LogActivity=SetterOnly] attribute EventHandler onwheel;
+    [LogActivity=SetterOnly] attribute EventHandler onwheel;
 };
 
 Element implements ParentNode;

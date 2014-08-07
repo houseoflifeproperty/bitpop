@@ -14,8 +14,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/browser/favicon/favicon_util.h"
 #include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
@@ -27,9 +27,10 @@
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_model_observer.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/favicon_base/favicon_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/models/tree_node_iterator.h"
@@ -97,7 +98,7 @@ class FaviconChangeObserver : public BookmarkModelObserver {
       int old_index,
       const BookmarkNode* node,
       const std::set<GURL>& removed_urls) OVERRIDE {}
-  virtual void BookmarkAllNodesRemoved(
+  virtual void BookmarkAllUserNodesRemoved(
       BookmarkModel* model,
       const std::set<GURL>& removed_urls) OVERRIDE {}
 
@@ -150,7 +151,8 @@ int CountNodesWithTitlesMatching(BookmarkModel* model,
 
 // Checks if the favicon data in |bitmap_a| and |bitmap_b| are equivalent.
 // Returns true if they match.
-bool FaviconBitmapsMatch(const SkBitmap& bitmap_a, const SkBitmap& bitmap_b) {
+bool FaviconRawBitmapsMatch(const SkBitmap& bitmap_a,
+                            const SkBitmap& bitmap_b) {
   if (bitmap_a.getSize() == 0U && bitmap_b.getSize() == 0U)
     return true;
   if ((bitmap_a.getSize() != bitmap_b.getSize()) ||
@@ -300,7 +302,7 @@ bool FaviconsMatch(BookmarkModel* model_a,
       1.0f).sk_bitmap();
   SkBitmap bitmap_b = image_b.AsImageSkia().GetRepresentation(
       1.0f).sk_bitmap();
-  return FaviconBitmapsMatch(bitmap_a, bitmap_b);
+  return FaviconRawBitmapsMatch(bitmap_a, bitmap_b);
 }
 
 // Does a deep comparison of BookmarkNode fields in |model_a| and |model_b|.
@@ -411,14 +413,14 @@ BookmarkModel* GetVerifierBookmarkModel() {
 }
 
 const BookmarkNode* AddURL(int profile,
-                           const std::wstring& title,
+                           const std::string& title,
                            const GURL& url) {
   return AddURL(profile, GetBookmarkBarNode(profile), 0, title,  url);
 }
 
 const BookmarkNode* AddURL(int profile,
                            int index,
-                           const std::wstring& title,
+                           const std::string& title,
                            const GURL& url) {
   return AddURL(profile, GetBookmarkBarNode(profile), index, title, url);
 }
@@ -426,7 +428,7 @@ const BookmarkNode* AddURL(int profile,
 const BookmarkNode* AddURL(int profile,
                            const BookmarkNode* parent,
                            int index,
-                           const std::wstring& title,
+                           const std::string& title,
                            const GURL& url) {
   BookmarkModel* model = GetBookmarkModel(profile);
   if (GetBookmarkNodeByID(model, parent->id()) != parent) {
@@ -435,7 +437,7 @@ const BookmarkNode* AddURL(int profile,
     return NULL;
   }
   const BookmarkNode* result =
-      model->AddURL(parent, index, base::WideToUTF16(title), url);
+      model->AddURL(parent, index, base::UTF8ToUTF16(title), url);
   if (!result) {
     LOG(ERROR) << "Could not add bookmark " << title << " to Profile "
                << profile;
@@ -445,7 +447,7 @@ const BookmarkNode* AddURL(int profile,
     const BookmarkNode* v_parent = NULL;
     FindNodeInVerifier(model, parent, &v_parent);
     const BookmarkNode* v_node = GetVerifierBookmarkModel()->AddURL(
-        v_parent, index, base::WideToUTF16(title), url);
+        v_parent, index, base::UTF8ToUTF16(title), url);
     if (!v_node) {
       LOG(ERROR) << "Could not add bookmark " << title << " to the verifier";
       return NULL;
@@ -456,20 +458,20 @@ const BookmarkNode* AddURL(int profile,
 }
 
 const BookmarkNode* AddFolder(int profile,
-                              const std::wstring& title) {
+                              const std::string& title) {
   return AddFolder(profile, GetBookmarkBarNode(profile), 0, title);
 }
 
 const BookmarkNode* AddFolder(int profile,
                               int index,
-                              const std::wstring& title) {
+                              const std::string& title) {
   return AddFolder(profile, GetBookmarkBarNode(profile), index, title);
 }
 
 const BookmarkNode* AddFolder(int profile,
                               const BookmarkNode* parent,
                               int index,
-                              const std::wstring& title) {
+                              const std::string& title) {
   BookmarkModel* model = GetBookmarkModel(profile);
   if (GetBookmarkNodeByID(model, parent->id()) != parent) {
     LOG(ERROR) << "Node " << parent->GetTitle() << " does not belong to "
@@ -477,7 +479,7 @@ const BookmarkNode* AddFolder(int profile,
     return NULL;
   }
   const BookmarkNode* result =
-      model->AddFolder(parent, index, base::WideToUTF16(title));
+      model->AddFolder(parent, index, base::UTF8ToUTF16(title));
   EXPECT_TRUE(result);
   if (!result) {
     LOG(ERROR) << "Could not add folder " << title << " to Profile "
@@ -488,7 +490,7 @@ const BookmarkNode* AddFolder(int profile,
     const BookmarkNode* v_parent = NULL;
     FindNodeInVerifier(model, parent, &v_parent);
     const BookmarkNode* v_node = GetVerifierBookmarkModel()->AddFolder(
-        v_parent, index, base::WideToUTF16(title));
+        v_parent, index, base::UTF8ToUTF16(title));
     if (!v_node) {
       LOG(ERROR) << "Could not add folder " << title << " to the verifier";
       return NULL;
@@ -500,7 +502,7 @@ const BookmarkNode* AddFolder(int profile,
 
 void SetTitle(int profile,
               const BookmarkNode* node,
-              const std::wstring& new_title) {
+              const std::string& new_title) {
   BookmarkModel* model = GetBookmarkModel(profile);
   ASSERT_EQ(GetBookmarkNodeByID(model, node->id()), node)
       << "Node " << node->GetTitle() << " does not belong to "
@@ -508,9 +510,9 @@ void SetTitle(int profile,
   if (sync_datatype_helper::test()->use_verifier()) {
     const BookmarkNode* v_node = NULL;
     FindNodeInVerifier(model, node, &v_node);
-    GetVerifierBookmarkModel()->SetTitle(v_node, base::WideToUTF16(new_title));
+    GetVerifierBookmarkModel()->SetTitle(v_node, base::UTF8ToUTF16(new_title));
   }
-  model->SetTitle(node, base::WideToUTF16(new_title));
+  model->SetTitle(node, base::UTF8ToUTF16(new_title));
 }
 
 void SetFavicon(int profile,
@@ -605,7 +607,7 @@ void RemoveAll(int profile) {
       }
     }
   }
-  GetBookmarkModel(profile)->RemoveAll();
+  GetBookmarkModel(profile)->RemoveAllUserBookmarks();
 }
 
 void SortChildren(int profile, const BookmarkNode* parent) {
@@ -751,35 +753,32 @@ const BookmarkNode* GetUniqueNodeByURL(int profile, const GURL& url) {
   return nodes[0];
 }
 
-int CountBookmarksWithTitlesMatching(int profile, const std::wstring& title) {
+int CountBookmarksWithTitlesMatching(int profile, const std::string& title) {
   return CountNodesWithTitlesMatching(GetBookmarkModel(profile),
                                       BookmarkNode::URL,
-                                      base::WideToUTF16(title));
+                                      base::UTF8ToUTF16(title));
 }
 
-int CountFoldersWithTitlesMatching(int profile, const std::wstring& title) {
+int CountFoldersWithTitlesMatching(int profile, const std::string& title) {
   return CountNodesWithTitlesMatching(GetBookmarkModel(profile),
                                       BookmarkNode::FOLDER,
-                                      base::WideToUTF16(title));
+                                      base::UTF8ToUTF16(title));
 }
 
 gfx::Image CreateFavicon(SkColor color) {
   const int dip_width = 16;
   const int dip_height = 16;
-  std::vector<ui::ScaleFactor> favicon_scale_factors =
-      FaviconUtil::GetFaviconScaleFactors();
+  std::vector<float> favicon_scales = favicon_base::GetFaviconScales();
   gfx::ImageSkia favicon;
-  for (size_t i = 0; i < favicon_scale_factors.size(); ++i) {
-    float scale = ui::GetImageScale(favicon_scale_factors[i]);
+  for (size_t i = 0; i < favicon_scales.size(); ++i) {
+    float scale = favicon_scales[i];
     int pixel_width = dip_width * scale;
     int pixel_height = dip_height * scale;
     SkBitmap bmp;
     bmp.setConfig(SkBitmap::kARGB_8888_Config, pixel_width, pixel_height);
     bmp.allocPixels();
     bmp.eraseColor(color);
-    favicon.AddRepresentation(
-        gfx::ImageSkiaRep(bmp,
-                          ui::GetImageScale(favicon_scale_factors[i])));
+    favicon.AddRepresentation(gfx::ImageSkiaRep(bmp, scale));
   }
   return gfx::Image(favicon);
 }
@@ -804,20 +803,20 @@ std::string IndexedURL(int i) {
   return base::StringPrintf("http://www.host.ext:1234/path/filename/%d", i);
 }
 
-std::wstring IndexedURLTitle(int i) {
-  return base::StringPrintf(L"URL Title %d", i);
+std::string IndexedURLTitle(int i) {
+  return base::StringPrintf("URL Title %d", i);
 }
 
-std::wstring IndexedFolderName(int i) {
-  return base::StringPrintf(L"Folder Name %d", i);
+std::string IndexedFolderName(int i) {
+  return base::StringPrintf("Folder Name %d", i);
 }
 
-std::wstring IndexedSubfolderName(int i) {
-  return base::StringPrintf(L"Subfolder Name %d", i);
+std::string IndexedSubfolderName(int i) {
+  return base::StringPrintf("Subfolder Name %d", i);
 }
 
-std::wstring IndexedSubsubfolderName(int i) {
-  return base::StringPrintf(L"Subsubfolder Name %d", i);
+std::string IndexedSubsubfolderName(int i) {
+  return base::StringPrintf("Subsubfolder Name %d", i);
 }
 
 }  // namespace bookmarks_helper

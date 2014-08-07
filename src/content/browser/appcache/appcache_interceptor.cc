@@ -7,16 +7,16 @@
 #include "webkit/browser/appcache/appcache_backend_impl.h"
 #include "webkit/browser/appcache/appcache_host.h"
 #include "webkit/browser/appcache/appcache_request_handler.h"
-#include "webkit/browser/appcache/appcache_service.h"
+#include "webkit/browser/appcache/appcache_service_impl.h"
 #include "webkit/browser/appcache/appcache_url_request_job.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
 
 using appcache::AppCacheBackendImpl;
 using appcache::AppCacheHost;
 using appcache::AppCacheRequestHandler;
-using appcache::AppCacheService;
-using appcache::kNoCacheId;
-using appcache::kNoHostId;
+using appcache::AppCacheServiceImpl;
+using appcache::kAppCacheNoCacheId;
+using appcache::kAppCacheNoHostId;
 
 namespace content {
 
@@ -37,9 +37,9 @@ AppCacheRequestHandler* AppCacheInterceptor::GetHandler(
 }
 
 void AppCacheInterceptor::SetExtraRequestInfo(
-    net::URLRequest* request, AppCacheService* service, int process_id,
+    net::URLRequest* request, AppCacheServiceImpl* service, int process_id,
     int host_id, ResourceType::Type resource_type) {
-  if (!service || (host_id == kNoHostId))
+  if (!service || (host_id == kAppCacheNoHostId))
     return;
 
   AppCacheBackendImpl* backend = service->GetBackend(process_id);
@@ -62,7 +62,7 @@ void AppCacheInterceptor::SetExtraRequestInfo(
 void AppCacheInterceptor::GetExtraResponseInfo(net::URLRequest* request,
                                                int64* cache_id,
                                                GURL* manifest_url) {
-  DCHECK(*cache_id == kNoCacheId);
+  DCHECK(*cache_id == kAppCacheNoCacheId);
   DCHECK(manifest_url->is_empty());
   AppCacheRequestHandler* handler = GetHandler(request);
   if (handler)
@@ -85,7 +85,7 @@ void AppCacheInterceptor::CompleteCrossSiteTransfer(
   AppCacheRequestHandler* handler = GetHandler(request);
   if (!handler)
     return;
-  DCHECK_NE(kNoHostId, new_host_id);
+  DCHECK_NE(kAppCacheNoHostId, new_host_id);
   handler->CompleteCrossSiteTransfer(new_process_id,
                                      new_host_id);
 }

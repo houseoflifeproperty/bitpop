@@ -21,7 +21,7 @@
 #ifndef SVGLinearGradientElement_h
 #define SVGLinearGradientElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGGradientElement.h"
 
@@ -31,7 +31,7 @@ struct LinearGradientAttributes;
 
 class SVGLinearGradientElement FINAL : public SVGGradientElement {
 public:
-    static PassRefPtr<SVGLinearGradientElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGLinearGradientElement);
 
     bool collectGradientAttributes(LinearGradientAttributes&);
 

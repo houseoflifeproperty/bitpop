@@ -175,7 +175,7 @@ int CryptoTestUtils::HandshakeWithFakeClient(
   //   crypto_config.SetProofVerifier(ProofVerifierForTesting());
   // }
   if (options.channel_id_enabled) {
-    crypto_config.SetChannelIDSigner(ChannelIDSignerForTesting());
+    crypto_config.SetChannelIDSource(ChannelIDSourceForTesting());
   }
   QuicServerId server_id(kServerHostname, kServerPort, false,
                          PRIVACY_MODE_DISABLED);
@@ -191,9 +191,14 @@ int CryptoTestUtils::HandshakeWithFakeClient(
   CompareClientAndServerKeys(&client, server);
 
   if (options.channel_id_enabled) {
-    EXPECT_EQ(
-        crypto_config.channel_id_signer()->GetKeyForHostname(kServerHostname),
-        server->crypto_negotiated_params().channel_id);
+    scoped_ptr<ChannelIDKey> channel_id_key;
+    QuicAsyncStatus status =
+        crypto_config.channel_id_source()->GetChannelIDKey(kServerHostname,
+                                                           &channel_id_key,
+                                                           NULL);
+    EXPECT_EQ(QUIC_SUCCESS, status);
+    EXPECT_EQ(channel_id_key->SerializeKey(),
+              server->crypto_negotiated_params().channel_id);
   }
 
   return client.num_sent_client_hellos();

@@ -38,17 +38,23 @@ def GenSteps(api):
         break
     upstream = ''
   else:
+    relative_root = '%s/%s' % (api.gclient.c.solutions[0].name, root)
+    relative_root = relative_root.strip('/')
+    got_revision_property = api.gclient.c.got_revision_mapping[relative_root]
     upstream = bot_update_step.json.output['properties'].get(
-        'got_revision_git') or ''
-
-  # Run this regardless of whether bot_update is on or off.
-  spec = api.gclient.c
-  if spec.solutions[0].url.endswith('.git'):
-    yield (
-        api.git('config', 'user.email', 'commit-bot@chromium.org'),
-        api.git('config', 'user.name', 'The Commit Bot'),
-        api.git('clean', '-xfq')
-    )
+        got_revision_property)
+    if (not upstream or
+        isinstance(upstream, int) or
+        (upstream.isdigit() and len(upstream) < 40)):
+      # If got_revision is an svn revision, then use got_revision_git.
+      upstream = bot_update_step.json.output['properties'].get(
+          '%s_git' % got_revision_property) or ''
+    # TODO(hinoka): Extract email/name from issue?
+    yield api.git('-c', 'user.email=commit-bot@chromium.org',
+                  '-c', 'user.name=The Commit Bot',
+                  'commit', '-a', '-m', 'Committed patch',
+                  name='commit git patch',
+                  cwd=api.path['checkout'].join(root))
 
   if not bot_update_mode:
     yield api.rietveld.apply_issue(root)
@@ -71,12 +77,10 @@ def GenSteps(api):
 
 
 def GenTests(api):
-  for repo_name in ['blink', 'tools_build', 'chromium']:
+  for repo_name in ['blink', 'chromium']:
     extra = {}
     if 'blink' in repo_name:
       extra['root'] = 'src/third_party/WebKit'
-    elif 'tools_build' in repo_name:
-      extra['root'] = 'build'
 
     yield (
       api.test(repo_name) +

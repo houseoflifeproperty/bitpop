@@ -13,8 +13,8 @@
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "chrome/browser/shell_integration.h"
-#include "chrome/common/extensions/file_handler_info.h"
 #include "chrome/common/web_application_info.h"
+#include "extensions/common/manifest_handlers/file_handler_info.h"
 
 class Profile;
 
@@ -60,6 +60,10 @@ struct ShortcutInfo {
 // These represent the applications menu root, the "Google Chrome" folder and
 // the "Chrome Apps" folder respectively.
 //
+// APP_MENU_LOCATION_HIDDEN specifies a shortcut that is used to register the
+// app with the OS (in order to give its windows shelf icons, and correct icons
+// and titles), but the app should not show up in menus or search results.
+//
 // NB: On Linux, these locations may not be used by the window manager (e.g
 // Unity and Gnome Shell).
 enum ApplicationsMenuLocation {
@@ -67,6 +71,7 @@ enum ApplicationsMenuLocation {
   APP_MENU_LOCATION_ROOT,
   APP_MENU_LOCATION_SUBDIR_CHROME,
   APP_MENU_LOCATION_SUBDIR_CHROMEAPPS,
+  APP_MENU_LOCATION_HIDDEN,
 };
 
 // Info about which locations to create app shortcuts in.
@@ -82,14 +87,6 @@ struct ShortcutLocations {
   // Mac dock or the gnome/kde application launcher. However, those are not
   // implemented yet.
   bool in_quick_launch_bar;
-
-#if defined(OS_POSIX)
-  // For Linux, this refers to a shortcut which the system knows about (for
-  // the purpose of identifying windows and giving them the correct
-  // title/icon), but which does not show up in menus or search results.
-  // Ignored if applications_menu_location is not APP_MENU_LOCATION_NONE.
-  bool hidden;
-#endif
 };
 
 // This encodes the cause of shortcut creation as the correct behavior in each
@@ -99,12 +96,16 @@ enum ShortcutCreationReason {
   SHORTCUT_CREATION_AUTOMATED,
 };
 
-typedef base::Callback<void(const web_app::ShortcutInfo&)>
-    ShortcutInfoCallback;
+// Called by GetInfoForApp after fetching the ShortcutInfo and FileHandlersInfo.
+typedef base::Callback<void(const ShortcutInfo&,
+                            const extensions::FileHandlersInfo&)> InfoCallback;
+
+// Called by UpdateShortcutInfoAndIconForApp after loading the icon.
+typedef base::Callback<void(const ShortcutInfo&)> ShortcutInfoCallback;
 
 // Extracts shortcut info of the given WebContents.
 void GetShortcutInfoForTab(content::WebContents* web_contents,
-                           web_app::ShortcutInfo* info);
+                           ShortcutInfo* info);
 
 // Updates web app shortcut of the WebContents. This function checks and
 // updates web app icon and shortcuts if needed. For icon, the check is based
@@ -113,16 +114,19 @@ void GetShortcutInfoForTab(content::WebContents* web_contents,
 // updates (recreates) them if they exits.
 void UpdateShortcutForTabContents(content::WebContents* web_contents);
 
-web_app::ShortcutInfo ShortcutInfoForExtensionAndProfile(
+ShortcutInfo ShortcutInfoForExtensionAndProfile(
     const extensions::Extension* app,
     Profile* profile);
 
 // Fetches the icon for |extension| and calls |callback| with shortcut info
 // filled out as by UpdateShortcutInfoForApp.
-void UpdateShortcutInfoAndIconForApp(
-    const extensions::Extension* extension,
-    Profile* profile,
-    const ShortcutInfoCallback& callback);
+void UpdateShortcutInfoAndIconForApp(const extensions::Extension* extension,
+                                     Profile* profile,
+                                     const ShortcutInfoCallback& callback);
+
+// Whether to create a shortcut for this type of extension.
+bool ShouldCreateShortcutFor(Profile* profile,
+                             const extensions::Extension* extension);
 
 // Gets the user data directory for given web app. The path for the directory is
 // based on |extension_id|. If |extension_id| is empty then |url| is used
@@ -137,8 +141,7 @@ base::FilePath GetWebAppDataDirectory(const base::FilePath& profile_path,
                                       const extensions::Extension& extension);
 
 // Compute a deterministic name based on data in the shortcut_info.
-std::string GenerateApplicationNameFromInfo(
-    const web_app::ShortcutInfo& shortcut_info);
+std::string GenerateApplicationNameFromInfo(const ShortcutInfo& shortcut_info);
 
 // Compute a deterministic name based on the URL. We use this pseudo name
 // as a key to store window location per application URLs in Browser and
@@ -154,17 +157,15 @@ std::string GetExtensionIdFromApplicationName(const std::string& app_name);
 // Create shortcuts for web application based on given shortcut data.
 // |shortcut_info| contains information about the shortcuts to create, and
 // |creation_locations| contains information about where to create them.
-void CreateShortcutsForShortcutInfo(
-    web_app::ShortcutCreationReason reason,
-    const web_app::ShortcutLocations& locations,
-    const web_app::ShortcutInfo& shortcut_info);
+void CreateShortcutsForShortcutInfo(ShortcutCreationReason reason,
+                                    const ShortcutLocations& locations,
+                                    const ShortcutInfo& shortcut_info);
 
 // Creates shortcuts for an app.
-void CreateShortcuts(
-    ShortcutCreationReason reason,
-    const web_app::ShortcutLocations& locations,
-    Profile* profile,
-    const extensions::Extension* app);
+void CreateShortcuts(ShortcutCreationReason reason,
+                     const ShortcutLocations& locations,
+                     Profile* profile,
+                     const extensions::Extension* app);
 
 // Delete all shortcuts that have been created for the given profile and
 // extension.
@@ -177,6 +178,11 @@ void UpdateAllShortcuts(const base::string16& old_app_title,
                         Profile* profile,
                         const extensions::Extension* app);
 
+// Updates shortcuts for all apps in this profile. This is expected to be called
+// on the UI thread.
+void UpdateShortcutsForAllApps(Profile* profile,
+                               const base::Closure& callback);
+
 // Returns true if given url is a valid web app url.
 bool IsValidUrl(const GURL& url);
 
@@ -184,8 +190,7 @@ bool IsValidUrl(const GURL& url);
 // Extracts icons info from web app data. Take only square shaped icons and
 // sort them from smallest to largest.
 typedef std::vector<WebApplicationInfo::IconInfo> IconInfoList;
-void GetIconsInfo(const WebApplicationInfo& app_info,
-                  IconInfoList* icons);
+void GetIconsInfo(const WebApplicationInfo& app_info, IconInfoList* icons);
 #endif
 
 #if defined(OS_LINUX)
@@ -197,21 +202,25 @@ std::string GetWMClassFromAppName(std::string app_name);
 
 namespace internals {
 
+// Loads relevant info structs for the app and calls |callback|.
+void GetInfoForApp(const extensions::Extension* extension,
+                   Profile* profile,
+                   const InfoCallback& callback);
+
 #if defined(OS_WIN)
 // Returns the Windows user-level shortcut paths that are specified in
 // |creation_locations|.
 std::vector<base::FilePath> GetShortcutPaths(
-    const web_app::ShortcutLocations& creation_locations);
+    const ShortcutLocations& creation_locations);
 #endif
 
 // Creates a shortcut. Must be called on the file thread. This is used to
 // implement CreateShortcuts() above, and can also be used directly from the
 // file thread. |shortcut_info| contains info about the shortcut to create, and
 // |creation_locations| contains information about where to create them.
-bool CreateShortcutsOnFileThread(
-    ShortcutCreationReason reason,
-    const web_app::ShortcutLocations& locations,
-    const web_app::ShortcutInfo& shortcut_info);
+bool CreateShortcutsOnFileThread(ShortcutCreationReason reason,
+                                 const ShortcutLocations& locations,
+                                 const ShortcutInfo& shortcut_info);
 
 // Implemented for each platform, does the platform specific parts of creating
 // shortcuts. Used internally by CreateShortcutsOnFileThread.
@@ -221,17 +230,16 @@ bool CreateShortcutsOnFileThread(
 // |creation_locations| contains information about where to create them.
 bool CreatePlatformShortcuts(
     const base::FilePath& shortcut_data_path,
-    const web_app::ShortcutInfo& shortcut_info,
+    const ShortcutInfo& shortcut_info,
     const extensions::FileHandlersInfo& file_handlers_info,
-    const web_app::ShortcutLocations& creation_locations,
+    const ShortcutLocations& creation_locations,
     ShortcutCreationReason creation_reason);
 
 // Delete all the shortcuts we have added for this extension. This is the
 // platform specific implementation of the DeleteAllShortcuts function, and
 // is executed on the FILE thread.
-void DeletePlatformShortcuts(
-    const base::FilePath& shortcut_data_path,
-    const web_app::ShortcutInfo& shortcut_info);
+void DeletePlatformShortcuts(const base::FilePath& shortcut_data_path,
+                             const ShortcutInfo& shortcut_info);
 
 // Updates all the shortcuts we have added for this extension. This is the
 // platform specific implementation of the UpdateAllShortcuts function, and
@@ -239,7 +247,7 @@ void DeletePlatformShortcuts(
 void UpdatePlatformShortcuts(
     const base::FilePath& shortcut_data_path,
     const base::string16& old_app_title,
-    const web_app::ShortcutInfo& shortcut_info,
+    const ShortcutInfo& shortcut_info,
     const extensions::FileHandlersInfo& file_handlers_info);
 
 // Delete all the shortcuts for an entire profile.

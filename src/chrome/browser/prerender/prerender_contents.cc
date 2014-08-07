@@ -39,8 +39,10 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/common/page_transition_types.h"
+#include "net/url_request/url_request_context_getter.h"
 #include "ui/gfx/rect.h"
 
+using content::BrowserThread;
 using content::DownloadItem;
 using content::OpenURLParams;
 using content::RenderViewHost;
@@ -134,7 +136,7 @@ class PrerenderContents::WebContentsDelegateImpl
 
   virtual void CanDownload(
       RenderViewHost* render_view_host,
-      int request_id,
+      const GURL& url,
       const std::string& request_method,
       const base::Callback<void(bool)>& callback) OVERRIDE {
     prerender_contents_->Destroy(FINAL_STATUS_DOWNLOAD);
@@ -178,7 +180,6 @@ class PrerenderContents::WebContentsDelegateImpl
   virtual void RegisterProtocolHandler(WebContents* web_contents,
                                        const std::string& protocol,
                                        const GURL& url,
-                                       const base::string16& title,
                                        bool user_gesture) OVERRIDE {
     // TODO(mmenke): Consider supporting this if it is a common case during
     // prerenders.
@@ -292,7 +293,8 @@ PrerenderContents* PrerenderContents::FromWebContents(
 void PrerenderContents::StartPrerendering(
     int creator_child_id,
     const gfx::Size& size,
-    SessionStorageNamespace* session_storage_namespace) {
+    SessionStorageNamespace* session_storage_namespace,
+    net::URLRequestContextGetter* request_context) {
   DCHECK(profile_ != NULL);
   DCHECK(!size.IsEmpty());
   DCHECK(!prerendering_has_started_);
@@ -339,6 +341,28 @@ void PrerenderContents::StartPrerendering(
   // Log transactions to see if we could merge session storage namespaces in
   // the event of a mismatch.
   alias_session_storage_namespace->AddTransactionLogProcessId(child_id_);
+
+  // Add the RenderProcessHost to the Prerender Manager.
+  prerender_manager()->AddPrerenderProcessHost(
+      GetRenderViewHost()->GetProcess());
+
+  // In the prerender tracker, create a Prerender Cookie Store to keep track of
+  // cookie changes performed by the prerender. Once the prerender is shown,
+  // the cookie changes will be committed to the actual cookie store,
+  // otherwise, they will be discarded.
+  // If |request_context| is NULL, the feature must be disabled, so the
+  // operation will not be performed.
+  if (request_context) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&PrerenderTracker::AddPrerenderCookieStoreOnIOThread,
+                   base::Unretained(prerender_manager()->prerender_tracker()),
+                   GetRenderViewHost()->GetProcess()->GetID(),
+                   make_scoped_refptr(request_context),
+                   base::Bind(&PrerenderContents::Destroy,
+                              AsWeakPtr(),
+                              FINAL_STATUS_COOKIE_CONFLICT)));
+  }
 
   NotifyPrerenderStart();
 
@@ -417,7 +441,7 @@ PrerenderContents::~PrerenderContents() {
 
   bool used = final_status() == FINAL_STATUS_USED ||
               final_status() == FINAL_STATUS_WOULD_HAVE_BEEN_USED;
-  prerender_manager_->RecordNetworkBytes(used, network_bytes_);
+  prerender_manager_->RecordNetworkBytes(origin(), used, network_bytes_);
 
   // Broadcast the removal of aliases.
   for (content::RenderProcessHost::iterator host_iterator =
@@ -797,8 +821,8 @@ void PrerenderContents::PrepareForUse() {
 
   NotifyPrerenderStop();
 
-  content::BrowserThread::PostTask(
-      content::BrowserThread::IO,
+  BrowserThread::PostTask(
+      BrowserThread::IO,
       FROM_HERE,
       base::Bind(&ResumeThrottles, resource_throttles_));
   resource_throttles_.clear();

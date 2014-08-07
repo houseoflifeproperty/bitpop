@@ -71,12 +71,12 @@ void NotificationButton::SetTitle(const base::string16& title) {
   SetAccessibleName(title);
 }
 
-gfx::Size NotificationButton::GetPreferredSize() {
+gfx::Size NotificationButton::GetPreferredSize() const {
   return gfx::Size(message_center::kNotificationWidth,
                    message_center::kButtonHeight);
 }
 
-int NotificationButton::GetHeightForWidth(int width) {
+int NotificationButton::GetHeightForWidth(int width) const {
   return message_center::kButtonHeight;
 }
 
@@ -96,6 +96,14 @@ void NotificationButton::OnBlur() {
   views::CustomButton::OnBlur();
   // We render differently when focused.
   SchedulePaint();
+}
+
+void NotificationButton::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  // We disable view hierarchy change detection in the parent
+  // because it resets the hoverstate, which we do not want
+  // when we update the view to contain a new label or image.
+  views::View::ViewHierarchyChanged(details);
 }
 
 void NotificationButton::StateChanged() {

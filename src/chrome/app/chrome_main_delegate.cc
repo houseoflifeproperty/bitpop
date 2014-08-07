@@ -4,6 +4,7 @@
 
 #include "chrome/app/chrome_main_delegate.h"
 
+#include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/cpu.h"
 #include "base/files/file_path.h"
@@ -46,7 +47,6 @@
 #include "base/strings/string_util.h"
 #include "chrome/common/child_process_logging.h"
 #include "sandbox/win/src/sandbox.h"
-#include "tools/memory_watcher/memory_watcher.h"
 #include "ui/base/resource/resource_bundle_win.h"
 #endif
 
@@ -116,7 +116,7 @@ base::LazyInstance<chrome::ChromeContentBrowserClient>
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
 base::LazyInstance<ChromeContentRendererClient>
     g_chrome_content_renderer_client = LAZY_INSTANCE_INITIALIZER;
-base::LazyInstance<chrome::ChromeContentUtilityClient>
+base::LazyInstance<ChromeContentUtilityClient>
     g_chrome_content_utility_client = LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<chrome::ChromeContentPluginClient>
     g_chrome_content_plugin_client = LAZY_INSTANCE_INITIALIZER;
@@ -133,15 +133,6 @@ extern int ServiceProcessMain(const content::MainFunctionParams&);
 namespace {
 
 #if defined(OS_WIN)
-const wchar_t kProfilingDll[] = L"memory_watcher.dll";
-
-// Load the memory profiling DLL.  All it needs to be activated
-// is to be loaded.  Return true on success, false otherwise.
-bool LoadMemoryProfiler() {
-  HMODULE prof_module = LoadLibrary(kProfilingDll);
-  return prof_module != NULL;
-}
-
 // Early versions of Chrome incorrectly registered a chromehtml: URL handler,
 // which gives us nothing but trouble. Avoid launching chrome this way since
 // some apps fail to properly escape arguments.
@@ -223,16 +214,6 @@ static void AdjustLinuxOOMScore(const std::string& process_type) {
     base::AdjustOOMScore(base::GetCurrentProcId(), score);
 }
 #endif  // defined(OS_LINUX)
-
-// Enable the heap profiler if the appropriate command-line switch is
-// present, bailing out of the app we can't.
-void EnableHeapProfiler(const CommandLine& command_line) {
-#if defined(OS_WIN)
-  if (command_line.HasSwitch(switches::kMemoryProfiling))
-    if (!LoadMemoryProfiler())
-      exit(-1);
-#endif
-}
 
 // Returns true if this subprocess type needs the ResourceBundle initialized
 // and resources loaded.
@@ -476,6 +457,16 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
 #endif
 
 #if defined(OS_CHROMEOS)
+  // Initialize primary user homedir (in multi-profile session) as it may be
+  // passed as a command line switch.
+  base::FilePath homedir;
+  if (command_line.HasSwitch(chromeos::switches::kHomedir)) {
+    homedir = base::FilePath(
+        command_line.GetSwitchValueASCII(chromeos::switches::kHomedir));
+    PathService::OverrideAndCreateIfNeeded(
+        base::DIR_HOME, homedir, true, false);
+  }
+
   // If we are recovering from a crash on ChromeOS, then we will do some
   // recovery using the diagnostics module, and then continue on. We fake up a
   // command line to tell it that we want it to recover, and to preserve the
@@ -568,12 +559,10 @@ void ChromeMainDelegate::InitMacCrashReporter(
   //    itself.
   // * If Breakpad is disabled, we only turn on Crash Reporter for the
   //    Browser process in release mode.
-  if (!command_line.HasSwitch(switches::kDisableBreakpad)) {
-    bool disable_apple_crash_reporter = is_debug_build ||
-        base::mac::IsBackgroundOnlyProcess();
-    if (!breakpad::IsCrashReporterEnabled() && disable_apple_crash_reporter) {
-      base::mac::DisableOSCrashDumps();
-    }
+  if (base::mac::IsBackgroundOnlyProcess() ||
+      breakpad::IsCrashReporterEnabled() ||
+      is_debug_build) {
+    base::mac::DisableOSCrashDumps();
   }
 
   // Mac Chrome is packaged with a main app bundle and a helper app bundle.
@@ -663,9 +652,6 @@ void ChromeMainDelegate::PreSandboxStartup() {
   startup_timer_.reset(new base::StatsScope<base::StatsCounterTimer>
                        (*stats_counter_timer_));
 
-  // Enable the heap profiler as early as possible!
-  EnableHeapProfiler(command_line);
-
   // Enable Message Loop related state asap.
   if (command_line.HasSwitch(switches::kMessageLoopHistogrammer))
     base::MessageLoop::EnableHistogrammer(true);
@@ -752,7 +738,7 @@ void ChromeMainDelegate::PreSandboxStartup() {
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
     if (process_type == switches::kUtilityProcess ||
         process_type == switches::kZygoteProcess) {
-      chrome::ChromeContentUtilityClient::PreSandboxStartup();
+      ChromeContentUtilityClient::PreSandboxStartup();
     }
 #endif
   }
@@ -855,11 +841,10 @@ bool ChromeMainDelegate::DelaySandboxInitialization(
       process_type == switches::kRelauncherProcess;
 }
 #elif defined(OS_POSIX) && !defined(OS_ANDROID)
-content::ZygoteForkDelegate* ChromeMainDelegate::ZygoteStarting() {
-#if defined(DISABLE_NACL)
-  return NULL;
-#else
-  return new NaClForkDelegate();
+void ChromeMainDelegate::ZygoteStarting(
+    ScopedVector<content::ZygoteForkDelegate>* delegates) {
+#if !defined(DISABLE_NACL)
+  nacl::AddNaClZygoteForkDelegates(delegates);
 #endif
 }
 

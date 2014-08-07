@@ -29,6 +29,7 @@
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "third_party/skia/include/core/SkXfermode.h"
+#include "ui/gfx/point3_f.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/transform.h"
@@ -103,12 +104,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return !copy_requests_.empty();
   }
 
-  void SetAnchorPoint(const gfx::PointF& anchor_point);
-  gfx::PointF anchor_point() const { return anchor_point_; }
-
-  void SetAnchorPointZ(float anchor_point_z);
-  float anchor_point_z() const { return anchor_point_z_; }
-
   virtual void SetBackgroundColor(SkColor background_color);
   SkColor background_color() const { return background_color_; }
   // If contents_opaque(), return an opaque color else return a
@@ -181,6 +176,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   const gfx::Transform& transform() const { return transform_; }
   bool TransformIsAnimating() const;
   bool transform_is_invertible() const { return transform_is_invertible_; }
+
+  void SetTransformOrigin(const gfx::Point3F&);
+  gfx::Point3F transform_origin() { return transform_origin_; }
 
   void SetScrollParent(Layer* parent);
 
@@ -322,8 +320,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetShouldFlattenTransform(bool flatten);
   bool should_flatten_transform() const { return should_flatten_transform_; }
 
-  void SetIs3dSorted(bool sorted);
-  bool is_3d_sorted() const { return is_3d_sorted_; }
+  bool Is3dSorted() const { return sorting_context_id_ != 0; }
 
   void set_use_parent_backface_visibility(bool use) {
     use_parent_backface_visibility_ = use;
@@ -460,6 +457,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   virtual void RunMicroBenchmark(MicroBenchmark* benchmark);
 
+  void Set3dSortingContextId(int id);
+  int sorting_context_id() const { return sorting_context_id_; }
+
  protected:
   friend class LayerImpl;
   friend class TreeSynchronizer;
@@ -532,6 +532,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   // will be handled implicitly after the update completes.
   bool ignore_set_needs_commit_;
 
+  // Layers that share a sorting context id will be sorted together in 3d
+  // space.  0 is a special value that means this layer will not be sorted and
+  // will be drawn in paint order.
+  int sorting_context_id_;
+
  private:
   friend class base::RefCounted<Layer>;
 
@@ -590,18 +595,15 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool use_parent_backface_visibility_ : 1;
   bool draw_checkerboard_for_missing_tiles_ : 1;
   bool force_render_surface_ : 1;
-  bool is_3d_sorted_ : 1;
   bool transform_is_invertible_ : 1;
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   gfx::PointF position_;
-  gfx::PointF anchor_point_;
   SkColor background_color_;
   float opacity_;
   SkXfermode::Mode blend_mode_;
   FilterOperations filters_;
   FilterOperations background_filters_;
-  float anchor_point_z_;
   LayerPositionConstraint position_constraint_;
   Layer* scroll_parent_;
   scoped_ptr<std::set<Layer*> > scroll_children_;
@@ -610,6 +612,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   scoped_ptr<std::set<Layer*> > clip_children_;
 
   gfx::Transform transform_;
+  gfx::Point3F transform_origin_;
 
   // Replica layer used for reflections.
   scoped_refptr<Layer> replica_layer_;

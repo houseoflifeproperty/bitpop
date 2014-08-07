@@ -6,14 +6,23 @@
 #define CHROME_BROWSER_SEARCH_HOTWORD_SERVICE_H_
 
 #include "base/basictypes.h"
+#include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "base/scoped_observer.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_registry_observer.h"
 
 class ExtensionService;
 class HotwordClient;
 class Profile;
+
+namespace extensions {
+class Extension;
+class WebstoreStandaloneInstaller;
+}  // namespace extensions
 
 namespace hotword_internal {
 // Constants for the hotword field trial.
@@ -24,6 +33,7 @@ extern const char kHotwordFieldTrialDisabledGroupName[];
 // Provides an interface for the Hotword component that does voice triggered
 // search.
 class HotwordService : public content::NotificationObserver,
+                       public extensions::ExtensionRegistryObserver,
                        public KeyedService {
  public:
   // Returns true if the hotword supports the current system language.
@@ -37,15 +47,13 @@ class HotwordService : public content::NotificationObserver,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  bool ShouldShowOptInPopup();
-
-  // Used in testing to ensure that the popup is not shown more than this
-  // maximum number of times.
-  int MaxNumberTimesToShowOptInPopup();
-
-  // In addition to showing the popup, the preferences
-  // kHotwordOptInPopupTimesShown is also incremented.
-  void ShowOptInPopup();
+  // Overridden from ExtensionRegisterObserver:
+  virtual void OnExtensionInstalled(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension) OVERRIDE;
+  virtual void OnExtensionUninstalled(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension) OVERRIDE;
 
   // Checks for whether all the necessary files have downloaded to allow for
   // using the extension.
@@ -58,12 +66,6 @@ class HotwordService : public content::NotificationObserver,
   // Checks if the user has opted into audio logging. Returns true if the user
   // is opted in, false otherwise..
   bool IsOptedIntoAudioLogging();
-
-  // Used in the case of an error with the current hotword extension. Tries
-  // to reload the extension or in the case of failure, tries to re-download it.
-  // Returns true upon successful attempt at reload or if the extension has
-  // already loaded successfully by some other means.
-  virtual bool RetryHotwordExtension();
 
   // Control the state of the hotword extension.
   void EnableHotwordExtension(ExtensionService* extension_service);
@@ -78,6 +80,27 @@ class HotwordService : public content::NotificationObserver,
   void StopHotwordSession(HotwordClient* client);
   HotwordClient* client() { return client_; }
 
+  // Checks if the current version of the hotword extension should be
+  // uninstalled in order to update to a different language version.
+  // Returns true if the extension was uninstalled.
+  bool MaybeReinstallHotwordExtension();
+
+  // Checks based on locale if the current version should be uninstalled so that
+  // a version with a different language can be installed.
+  bool ShouldReinstallHotwordExtension();
+
+  // Helper functions pulled out for testing purposes.
+  // UninstallHotwordExtension returns true if the extension was uninstalled.
+  virtual bool UninstallHotwordExtension(ExtensionService* extension_service);
+  virtual void InstallHotwordExtensionFromWebstore();
+
+  // Sets the pref value of the previous language.
+  void SetPreviousLanguagePref();
+
+  // Returns the current error message id. A value of 0 indicates
+  // no error.
+  int error_message() { return error_message_; }
+
  private:
   Profile* profile_;
 
@@ -85,7 +108,18 @@ class HotwordService : public content::NotificationObserver,
 
   content::NotificationRegistrar registrar_;
 
+  // For observing the ExtensionRegistry.
+  ScopedObserver<extensions::ExtensionRegistry,
+                 extensions::ExtensionRegistryObserver>
+      extension_registry_observer_;
+
+  scoped_refptr<extensions::WebstoreStandaloneInstaller> installer_;
+
   HotwordClient* client_;
+  int error_message_;
+  bool reinstall_pending_;
+
+  base::WeakPtrFactory<HotwordService> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HotwordService);
 };

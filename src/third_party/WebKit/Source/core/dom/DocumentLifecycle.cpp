@@ -63,6 +63,7 @@ DocumentLifecycle::DeprecatedTransition::~DeprecatedTransition()
 
 DocumentLifecycle::DocumentLifecycle()
     : m_state(Uninitialized)
+    , m_detachCount(0)
 {
 }
 
@@ -70,7 +71,7 @@ DocumentLifecycle::~DocumentLifecycle()
 {
 }
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 
 bool DocumentLifecycle::canAdvanceTo(State state) const
 {

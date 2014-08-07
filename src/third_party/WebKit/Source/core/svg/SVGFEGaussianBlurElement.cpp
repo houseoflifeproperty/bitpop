@@ -22,9 +22,8 @@
 
 #include "core/svg/SVGFEGaussianBlurElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
@@ -41,10 +40,7 @@ inline SVGFEGaussianBlurElement::SVGFEGaussianBlurElement(Document& document)
     addToPropertyMap(m_in1);
 }
 
-PassRefPtr<SVGFEGaussianBlurElement> SVGFEGaussianBlurElement::create(Document& document)
-{
-    return adoptRef(new SVGFEGaussianBlurElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEGaussianBlurElement)
 
 void SVGFEGaussianBlurElement::setStdDeviation(float x, float y)
 {

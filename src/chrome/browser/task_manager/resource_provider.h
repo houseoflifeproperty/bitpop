@@ -67,17 +67,12 @@ class Resource {
   virtual bool ReportsCacheStats() const;
   virtual blink::WebCache::ResourceTypeStats GetWebCoreCacheStats() const;
 
-  virtual bool ReportsFPS() const;
-  virtual float GetFPS() const;
-
   virtual bool ReportsSqliteMemoryUsed() const;
   virtual size_t SqliteMemoryUsedBytes() const;
 
   virtual bool ReportsV8MemoryStats() const;
   virtual size_t GetV8MemoryAllocated() const;
   virtual size_t GetV8MemoryUsed() const;
-
-  virtual int GetNaClDebugStubPort() const;
 
   // Returns true if this resource can be inspected using developer tools.
   virtual bool CanInspect() const;
@@ -107,7 +102,6 @@ class Resource {
 
   virtual void NotifyResourceTypeStats(
       const blink::WebCache::ResourceTypeStats& stats) {}
-  virtual void NotifyFPS(float fps) {}
   virtual void NotifyV8HeapStats(size_t v8_memory_allocated,
                                  size_t v8_memory_used) {}
 

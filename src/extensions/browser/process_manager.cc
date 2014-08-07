@@ -257,7 +257,7 @@ ProcessManager::ProcessManager(BrowserContext* context,
   unsigned idle_time_msec = 0;
   if (base::StringToUint(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           extensions::switches::kEventPageIdleTime), &idle_time_msec)) {
-    CHECK(idle_time_msec > 0);  // OnKeepaliveImpulseCheck requires non zero.
+    CHECK_GT(idle_time_msec, 0u);  // OnKeepaliveImpulseCheck requires non zero.
     event_page_idle_time_ = base::TimeDelta::FromMilliseconds(idle_time_msec);
   }
   event_page_suspending_time_ = base::TimeDelta::FromSeconds(5);
@@ -436,7 +436,10 @@ void ProcessManager::DecrementLazyKeepaliveCount(const Extension* extension) {
 void ProcessManager::DecrementLazyKeepaliveCount(
     const std::string& extension_id) {
   int& count = background_page_data_[extension_id].lazy_keepalive_count;
-  DCHECK_GT(count, 0);
+  DCHECK(count > 0 ||
+         !ExtensionRegistry::Get(GetBrowserContext())
+              ->enabled_extensions()
+              .Contains(extension_id));
 
   // If we reach a zero keepalive count when the lazy background page is about
   // to be closed, incrementing close_sequence_id will cancel the close

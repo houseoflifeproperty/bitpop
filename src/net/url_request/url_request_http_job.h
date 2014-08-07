@@ -190,9 +190,6 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
 
   bool read_in_progress_;
 
-  // An URL for an SDCH dictionary as suggested in a Get-Dictionary HTTP header.
-  GURL sdch_dictionary_url_;
-
   scoped_ptr<HttpTransaction> transaction_;
 
   // This is used to supervise traffic and enforce exponential
@@ -248,7 +245,6 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   base::TimeTicks receive_headers_end_;
 
   scoped_ptr<HttpFilterContext> filter_context_;
-  base::WeakPtrFactory<URLRequestHttpJob> weak_factory_;
 
   CompletionCallback on_headers_received_callback_;
 
@@ -270,6 +266,8 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   bool awaiting_callback_;
 
   const HttpUserAgentSettings* http_user_agent_settings_;
+
+  base::WeakPtrFactory<URLRequestHttpJob> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequestHttpJob);
 };

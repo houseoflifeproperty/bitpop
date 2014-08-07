@@ -417,20 +417,6 @@ ImageUtil.ImageLoader = function(document, opt_metadataCache) {
 };
 
 /**
- * Max size of image to be displayed (in pixels)
- */
-ImageUtil.ImageLoader.IMAGE_SIZE_LIMIT = 25 * 1000 * 1000;
-
-/**
- * @param {number} width Width of the image.
- * @param {number} height Height of the image.
- * @return {boolean} True if the image is too large to be loaded.
- */
-ImageUtil.ImageLoader.isTooLarge = function(width, height) {
-  return width * height > ImageUtil.ImageLoader.IMAGE_SIZE_LIMIT;
-};
-
-/**
  * Loads an image.
  * TODO(mtomasz): Simplify, or even get rid of this class and merge with the
  * ThumbnaiLoader class.
@@ -477,11 +463,7 @@ ImageUtil.ImageLoader.prototype.load = function(
     this.image_.onload = function(e) {
       this.image_.onerror = null;
       this.image_.onload = null;
-      if (ImageUtil.ImageLoader.isTooLarge(this.image_.width,
-                                           this.image_.height)) {
-        onError('GALLERY_IMAGE_TOO_BIG_ERROR');
-        return;
-      }
+
       transformFetcher(entry, onTransform.bind(this, e.target));
     }.bind(this);
 
@@ -489,21 +471,16 @@ ImageUtil.ImageLoader.prototype.load = function(
     // general error should not be specified
     this.image_.onerror = onError.bind(this, 'GALLERY_IMAGE_ERROR');
 
-    // Extract the last modification date to determine if the cached image
-    // is outdated.
-    var modificationTime = opt_metadata &&
-                           opt_metadata.modificationTime &&
-                           opt_metadata.modificationTime.getTime();
-
-    // Load the image directly.
-    this.image_.src = entry.toURL();
+    // Load the image directly. The query parameter is workaround for
+    // crbug.com/379678, which force to update the contents of the image.
+    this.image_.src = entry.toURL() + "?nocache=" + Date.now();
   }.bind(this);
 
   // Loads the image. If already loaded, then forces a reload.
   var startLoad = this.resetImage_.bind(this, function() {
     // Fetch metadata to detect last modification time for the caching purpose.
     if (this.metadataCache_)
-      this.metadataCache_.get(entry, 'filesystem', loadImage);
+      this.metadataCache_.getOne(entry, 'filesystem', loadImage);
     else
       loadImage();
   }.bind(this), onError);

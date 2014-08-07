@@ -16,11 +16,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/lock.h"
+#include "base/time/time.h"
 #include "chrome/browser/safe_browsing/safe_browsing_store.h"
 
 namespace base {
 class MessageLoop;
-class Time;
 }
 
 namespace safe_browsing {
@@ -55,7 +55,7 @@ class SafeBrowsingDatabaseFactory {
 struct SBFullHashCached {
   SBFullHash hash;
   int list_id;  // TODO(shess): Use safe_browsing_util::ListType.
-  int received;  // time_t like SBAddFullHash.
+  base::Time expire_after;
 };
 
 // Encapsulates on-disk databases that for safebrowsing. There are
@@ -104,13 +104,13 @@ class SafeBrowsingDatabase {
   virtual bool ResetDatabase() = 0;
 
   // Returns false if |url| is not in the browse database.  If it returns true,
-  // then |prefix_hits| contains the list of prefix matches, and |cached_hits|
+  // then |prefix_hits| contains the list of prefix matches, and |cache_hits|
   // contains the cached gethash results for those prefixes (if any).  This
   // function is safe to call from threads other than the creation thread.
-  virtual bool ContainsBrowseUrl(const GURL& url,
-                                 std::vector<SBPrefix>* prefix_hits,
-                                 std::vector<SBFullHashResult>* cached_hits,
-                                 base::Time last_update) = 0;
+  virtual bool ContainsBrowseUrl(
+      const GURL& url,
+      std::vector<SBPrefix>* prefix_hits,
+      std::vector<SBFullHashResult>* cache_hits) = 0;
 
   // Returns false if none of |urls| are in Download database. If it returns
   // true, |prefix_hits| should contain the prefixes for the URLs that were in
@@ -172,7 +172,7 @@ class SafeBrowsingDatabase {
   // the other functions.
   virtual bool UpdateStarted(std::vector<SBListChunkRanges>* lists) = 0;
   virtual void InsertChunks(const std::string& list_name,
-                            const SBChunkList& chunks) = 0;
+                            const std::vector<SBChunkData*>& chunks) = 0;
   virtual void DeleteChunks(
       const std::vector<SBChunkDelete>& chunk_deletes) = 0;
   virtual void UpdateFinished(bool update_succeeded) = 0;
@@ -182,11 +182,16 @@ class SafeBrowsingDatabase {
   // further GetHash requests we know will be empty.
   virtual void CacheHashResults(
       const std::vector<SBPrefix>& prefixes,
-      const std::vector<SBFullHashResult>& full_hits) = 0;
+      const std::vector<SBFullHashResult>& full_hits,
+      const base::TimeDelta& cache_lifetime) = 0;
 
   // Returns true if the malware IP blacklisting killswitch URL is present
   // in the csd whitelist.
   virtual bool IsMalwareIPMatchKillSwitchOn() = 0;
+
+  // Returns true if the whitelist killswitch URL is present in the csd
+  // whitelist.
+  virtual bool IsCsdWhitelistKillSwitchOn() = 0;
 
   // The name of the bloom-filter file for the given database file.
   // NOTE(shess): OBSOLETE.  Present for deleting stale files.
@@ -298,10 +303,10 @@ class SafeBrowsingDatabaseNew : public SafeBrowsingDatabase {
   // Implement SafeBrowsingDatabase interface.
   virtual void Init(const base::FilePath& filename) OVERRIDE;
   virtual bool ResetDatabase() OVERRIDE;
-  virtual bool ContainsBrowseUrl(const GURL& url,
-                                 std::vector<SBPrefix>* prefix_hits,
-                                 std::vector<SBFullHashResult>* cached_hits,
-                                 base::Time last_update) OVERRIDE;
+  virtual bool ContainsBrowseUrl(
+      const GURL& url,
+      std::vector<SBPrefix>* prefix_hits,
+      std::vector<SBFullHashResult>* cache_hits) OVERRIDE;
   virtual bool ContainsDownloadUrl(const std::vector<GURL>& urls,
                                    std::vector<SBPrefix>* prefix_hits) OVERRIDE;
   virtual bool ContainsCsdWhitelistedUrl(const GURL& url) OVERRIDE;
@@ -315,16 +320,20 @@ class SafeBrowsingDatabaseNew : public SafeBrowsingDatabase {
   virtual bool ContainsMalwareIP(const std::string& ip_address) OVERRIDE;
   virtual bool UpdateStarted(std::vector<SBListChunkRanges>* lists) OVERRIDE;
   virtual void InsertChunks(const std::string& list_name,
-                            const SBChunkList& chunks) OVERRIDE;
+                            const std::vector<SBChunkData*>& chunks) OVERRIDE;
   virtual void DeleteChunks(
       const std::vector<SBChunkDelete>& chunk_deletes) OVERRIDE;
   virtual void UpdateFinished(bool update_succeeded) OVERRIDE;
   virtual void CacheHashResults(
       const std::vector<SBPrefix>& prefixes,
-      const std::vector<SBFullHashResult>& full_hits) OVERRIDE;
+      const std::vector<SBFullHashResult>& full_hits,
+      const base::TimeDelta& cache_lifetime) OVERRIDE;
 
   // Returns the value of malware_kill_switch_;
   virtual bool IsMalwareIPMatchKillSwitchOn() OVERRIDE;
+
+  // Returns true if the CSD whitelist has everything whitelisted.
+  virtual bool IsCsdWhitelistKillSwitchOn() OVERRIDE;
 
  private:
   friend class SafeBrowsingDatabaseTest;
@@ -382,12 +391,12 @@ class SafeBrowsingDatabaseNew : public SafeBrowsingDatabase {
   void OnHandleCorruptDatabase();
 
   // Helpers for InsertChunks().
-  void InsertAdd(int chunk, SBPrefix host, const SBEntry* entry, int list_id);
-  void InsertAddChunks(safe_browsing_util::ListType list_id,
-                       const SBChunkList& chunks);
-  void InsertSub(int chunk, SBPrefix host, const SBEntry* entry, int list_id);
-  void InsertSubChunks(safe_browsing_util::ListType list_id,
-                       const SBChunkList& chunks);
+  void InsertAddChunk(SafeBrowsingStore* store,
+                      safe_browsing_util::ListType list_id,
+                      const SBChunkData& chunk);
+  void InsertSubChunk(SafeBrowsingStore* store,
+                      safe_browsing_util::ListType list_id,
+                      const SBChunkData& chunk);
 
   // Returns the size in bytes of the store after the update.
   int64 UpdateHashPrefixStore(const base::FilePath& store_filename,
@@ -409,35 +418,32 @@ class SafeBrowsingDatabaseNew : public SafeBrowsingDatabase {
   // |prefix_miss_cache_|, |csd_whitelist_|.
   base::Lock lookup_lock_;
 
+  // The base filename passed to Init(), used to generate the store and prefix
+  // set filenames used to store data on disk.
+  base::FilePath filename_base_;
+
   // Underlying persistent store for chunk data.
   // For browsing related (phishing and malware URLs) chunks and prefixes.
-  base::FilePath browse_filename_;
   scoped_ptr<SafeBrowsingStore> browse_store_;
 
   // For download related (download URL and binary hash) chunks and prefixes.
-  base::FilePath download_filename_;
   scoped_ptr<SafeBrowsingStore> download_store_;
 
   // For the client-side phishing detection whitelist chunks and full-length
   // hashes.  This list only contains 256 bit hashes.
-  base::FilePath csd_whitelist_filename_;
   scoped_ptr<SafeBrowsingStore> csd_whitelist_store_;
 
   // For the download whitelist chunks and full-length hashes.  This list only
   // contains 256 bit hashes.
-  base::FilePath download_whitelist_filename_;
   scoped_ptr<SafeBrowsingStore> download_whitelist_store_;
 
   // For extension IDs.
-  base::FilePath extension_blacklist_filename_;
   scoped_ptr<SafeBrowsingStore> extension_blacklist_store_;
 
   // For side-effect free whitelist.
-  base::FilePath side_effect_free_whitelist_filename_;
   scoped_ptr<SafeBrowsingStore> side_effect_free_whitelist_store_;
 
   // For IP blacklist.
-  base::FilePath ip_blacklist_filename_;
   scoped_ptr<SafeBrowsingStore> ip_blacklist_store_;
 
   SBWhitelist csd_whitelist_;
@@ -469,11 +475,9 @@ class SafeBrowsingDatabaseNew : public SafeBrowsingDatabase {
   bool change_detected_;
 
   // Used to check if a prefix was in the browse database.
-  base::FilePath browse_prefix_set_filename_;
   scoped_ptr<safe_browsing::PrefixSet> browse_prefix_set_;
 
   // Used to check if a prefix was in the browse database.
-  base::FilePath side_effect_free_whitelist_prefix_set_filename_;
   scoped_ptr<safe_browsing::PrefixSet> side_effect_free_whitelist_prefix_set_;
 };
 

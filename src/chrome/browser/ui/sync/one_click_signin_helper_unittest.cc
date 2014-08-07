@@ -113,7 +113,7 @@ class TestProfileIOData : public ProfileIOData {
   virtual void InitializeInternal(
       ProfileParams* profile_params,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors)
+      content::URLRequestInterceptorScopedVector request_interceptors)
       const OVERRIDE {
     NOTREACHED();
   }
@@ -127,7 +127,7 @@ class TestProfileIOData : public ProfileIOData {
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors)
+      content::URLRequestInterceptorScopedVector request_interceptors)
       const OVERRIDE {
     NOTREACHED();
     return NULL;
@@ -149,7 +149,7 @@ class TestProfileIOData : public ProfileIOData {
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
           protocol_handler_interceptor,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors)
+      content::URLRequestInterceptorScopedVector request_interceptors)
       const OVERRIDE {
     NOTREACHED();
     return NULL;
@@ -279,7 +279,7 @@ void OneClickSigninHelperTest::SetTrustedSigninProcessID(int id) {
 }
 
 void OneClickSigninHelperTest::SetUpSigninManager(const std::string& username) {
-  ChromeSigninClient* signin_client =
+  SigninClient* signin_client =
       ChromeSigninClientFactory::GetForProfile(profile());
   if (signin_client)
     signin_client->SetSigninProcess(trusted_signin_process_id_);

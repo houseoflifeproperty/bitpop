@@ -14,7 +14,10 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "extensions/renderer/dispatcher.h"
+#include "third_party/WebKit/public/platform/WebPermissionCallbacks.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
@@ -27,7 +30,7 @@
 using blink::WebDataSource;
 using blink::WebDocument;
 using blink::WebFrame;
-using blink::WebFrameClient;
+using blink::WebPermissionCallbacks;
 using blink::WebSecurityOrigin;
 using blink::WebString;
 using blink::WebURL;
@@ -153,7 +156,8 @@ ContentSettingsObserver::ContentSettingsObserver(
       allow_running_insecure_content_(false),
       content_setting_rules_(NULL),
       is_interstitial_page_(false),
-      npapi_plugins_blocked_(false) {
+      npapi_plugins_blocked_(false),
+      current_request_id_(0) {
   ClearBlockedContentSettings();
   render_frame->GetWebFrame()->setPermissionClient(this);
 
@@ -207,6 +211,8 @@ bool ContentSettingsObserver::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ChromeViewMsg_SetAllowRunningInsecureContent,
                         OnSetAllowRunningInsecureContent)
     IPC_MESSAGE_HANDLER(ChromeViewMsg_ReloadFrame, OnReloadFrame);
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_RequestFileSystemAccessAsyncResponse,
+                        OnRequestFileSystemAccessAsyncResponse)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   if (handled)
@@ -243,7 +249,7 @@ void ContentSettingsObserver::DidCommitProvisionalLoad(bool is_new_navigation) {
   // If we start failing this DCHECK, please makes sure we don't regress
   // this bug: http://code.google.com/p/chromium/issues/detail?id=79304
   DCHECK(frame->document().securityOrigin().toString() == "null" ||
-         !url.SchemeIs(content::kDataScheme));
+         !url.SchemeIs(url::kDataScheme));
 }
 
 bool ContentSettingsObserver::allowDatabase(const WebString& name,
@@ -262,17 +268,28 @@ bool ContentSettingsObserver::allowDatabase(const WebString& name,
   return result;
 }
 
-bool ContentSettingsObserver::allowFileSystem() {
+void ContentSettingsObserver::requestFileSystemAccessAsync(
+    const WebPermissionCallbacks& callbacks) {
   WebFrame* frame = render_frame()->GetWebFrame();
   if (frame->document().securityOrigin().isUnique() ||
-      frame->top()->document().securityOrigin().isUnique())
-    return false;
+      frame->top()->document().securityOrigin().isUnique()) {
+    WebPermissionCallbacks permissionCallbacks(callbacks);
+    permissionCallbacks.doDeny();
+    return;
+  }
+  ++current_request_id_;
+  std::pair<PermissionRequestMap::iterator, bool> insert_result =
+      permission_requests_.insert(
+          std::make_pair(current_request_id_, callbacks));
 
-  bool result = false;
-  Send(new ChromeViewHostMsg_AllowFileSystem(
-      routing_id(), GURL(frame->document().securityOrigin().toString()),
-      GURL(frame->top()->document().securityOrigin().toString()), &result));
-  return result;
+  // Verify there are no duplicate insertions.
+  DCHECK(insert_result.second);
+
+  Send(new ChromeViewHostMsg_RequestFileSystemAccessAsync(
+      routing_id(),
+      current_request_id_,
+      GURL(frame->document().securityOrigin().toString()),
+      GURL(frame->top()->document().securityOrigin().toString())));
 }
 
 bool ContentSettingsObserver::allowImage(bool enabled_per_settings,
@@ -390,18 +407,22 @@ bool ContentSettingsObserver::allowStorage(bool local) {
 
 bool ContentSettingsObserver::allowReadFromClipboard(bool default_value) {
   bool allowed = false;
+#if defined(ENABLE_EXTENSIONS)
   WebFrame* frame = render_frame()->GetWebFrame();
   // TODO(dcheng): Should we consider a toURL() method on WebSecurityOrigin?
   Send(new ChromeViewHostMsg_CanTriggerClipboardRead(
       GURL(frame->document().securityOrigin().toString()), &allowed));
+#endif
   return allowed;
 }
 
 bool ContentSettingsObserver::allowWriteToClipboard(bool default_value) {
   bool allowed = false;
+#if defined(ENABLE_EXTENSIONS)
   WebFrame* frame = render_frame()->GetWebFrame();
   Send(new ChromeViewHostMsg_CanTriggerClipboardWrite(
       GURL(frame->document().securityOrigin().toString()), &allowed));
+#endif
   return allowed;
 }
 
@@ -415,7 +436,8 @@ bool ContentSettingsObserver::allowWebComponents(bool default_value) {
     return true;
 
   if (const extensions::Extension* extension = GetExtension(origin)) {
-    if (extension->HasAPIPermission(APIPermission::kExperimental))
+    if (extension->permissions_data()->HasAPIPermission(
+            APIPermission::kExperimental))
       return true;
   }
 
@@ -605,6 +627,23 @@ void ContentSettingsObserver::OnReloadFrame() {
   render_frame()->GetWebFrame()->reload();
 }
 
+void ContentSettingsObserver::OnRequestFileSystemAccessAsyncResponse(
+    int request_id,
+    bool allowed) {
+  PermissionRequestMap::iterator it = permission_requests_.find(request_id);
+  if (it == permission_requests_.end())
+    return;
+
+  WebPermissionCallbacks callbacks = it->second;
+  permission_requests_.erase(it);
+
+  if (allowed) {
+    callbacks.doAllow();
+    return;
+  }
+  callbacks.doDeny();
+}
+
 void ContentSettingsObserver::ClearBlockedContentSettings() {
   for (size_t i = 0; i < arraysize(content_blocked_); ++i)
     content_blocked_[i] = false;
@@ -665,8 +704,8 @@ bool ContentSettingsObserver::IsWhitelistedForContentSettings(
 
   // If the scheme is file:, an empty file name indicates a directory listing,
   // which requires JavaScript to function properly.
-  if (EqualsASCII(origin.protocol(), content::kFileScheme)) {
-    return document_url.SchemeIs(content::kFileScheme) &&
+  if (EqualsASCII(origin.protocol(), url::kFileScheme)) {
+    return document_url.SchemeIs(url::kFileScheme) &&
            document_url.ExtractFileName().empty();
   }
 

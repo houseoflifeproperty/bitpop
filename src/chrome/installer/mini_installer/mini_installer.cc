@@ -145,7 +145,9 @@ bool OpenClientStateKey(HKEY root_key, const wchar_t* app_guid, REGSAM access,
   PathString client_state_key;
   return client_state_key.assign(kApRegistryKeyBase) &&
          client_state_key.append(app_guid) &&
-         (key->Open(root_key, client_state_key.get(), access) == ERROR_SUCCESS);
+         (key->Open(root_key,
+                    client_state_key.get(),
+                    access | KEY_WOW64_32KEY) == ERROR_SUCCESS);
 }
 
 // This function sets the flag in registry to indicate that Google Update
@@ -752,12 +754,14 @@ bool ShouldDeleteExtractedFiles() {
 // executes setup.exe to do the install/upgrade.
 int WMain(HMODULE module) {
 #if defined(COMPONENT_BUILD)
-  static const wchar_t kComponentBuildIncompatibleMessage[] =
-      L"mini_installer.exe is incompatible with the component build, please run"
-      L" setup.exe with the same command line instead. See"
-      L" http://crbug.com/127233#c17 for details.";
-  ::MessageBox(NULL, kComponentBuildIncompatibleMessage, NULL, MB_ICONERROR);
-  return 1;
+  if (::GetEnvironmentVariable(L"MINI_INSTALLER_TEST", NULL, 0) == 0) {
+    static const wchar_t kComponentBuildIncompatibleMessage[] =
+        L"mini_installer.exe is incompatible with the component build, please"
+        L" run setup.exe with the same command line instead. See"
+        L" http://crbug.com/127233#c17 for details.";
+    ::MessageBox(NULL, kComponentBuildIncompatibleMessage, NULL, MB_ICONERROR);
+    return 1;
+  }
 #endif
 
   // Always start with deleting potential leftovers from previous installations.
@@ -774,6 +778,17 @@ int WMain(HMODULE module) {
   Configuration configuration;
   if (!configuration.Initialize())
     return exit_code;
+
+  if (configuration.query_component_build()) {
+    // Exit immediately with an exit code of 1 to indicate component build and 0
+    // to indicate static build. This is used by the tests in
+    // /src/chrome/test/mini_installer/.
+#if defined(COMPONENT_BUILD)
+    return 1;
+#else
+    return 0;
+#endif
+  }
 
   // If the --cleanup switch was specified on the command line, then that means
   // we should only do the cleanup and then exit.
@@ -834,29 +849,11 @@ int MainEntryPoint() {
 extern "C" {
 #pragma function(memset)
 void* memset(void* dest, int c, size_t count) {
-  // Simplistic 32-bit memset C implementation which assumes properly aligned
-  // memory; performance hit on memory that isn't properly aligned, but still
-  // better overall then a 8-bit implementation.
-  size_t adjcount = count >> 2;
-  UINT32 fill = (c << 24 | c << 16 | c << 8 | c);
-  UINT32* dest32 = reinterpret_cast<UINT32*>(dest);
-  UINT8* dest8 = reinterpret_cast<UINT8*>(dest);
-
-  // Take care of the ending 0-3 bytes (binary 11 = 3).  The lack of breaks is
-  // deliberate; it falls through for each byte. Think of it a simplified for
-  // loop.
-  switch (count - (adjcount << 2)) {
-    case 3:
-      dest8[count - 3] = c;
-    case 2:
-      dest8[count - 2] = c;
-    case 1:
-      dest8[count - 1] = c;
+  void* start = dest;
+  while (count--) {
+    *reinterpret_cast<char*>(dest) = static_cast<char>(c);
+    dest = reinterpret_cast<char*>(dest) + 1;
   }
-
-  while (adjcount-- > 0)  // Copy the rest, 4 bytes/32 bits at a time
-    *(dest32++) = fill;
-
-  return dest;
+  return start;
 }
 }  // extern "C"

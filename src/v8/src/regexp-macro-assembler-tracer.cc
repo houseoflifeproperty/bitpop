@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
-#include "ast.h"
-#include "regexp-macro-assembler.h"
-#include "regexp-macro-assembler-tracer.h"
+#include "src/v8.h"
+#include "src/ast.h"
+#include "src/regexp-macro-assembler.h"
+#include "src/regexp-macro-assembler-tracer.h"
 
 namespace v8 {
 namespace internal {
@@ -17,7 +17,7 @@ RegExpMacroAssemblerTracer::RegExpMacroAssemblerTracer(
   unsigned int type = assembler->Implementation();
   ASSERT(type < 6);
   const char* impl_names[] = {"IA32", "ARM", "ARM64",
-                              "MIPS", "X64", "Bytecode"};
+                              "MIPS", "X64", "X87", "Bytecode"};
   PrintF("RegExpMacroAssembler%s();\n", impl_names[type]);
 }
 
@@ -192,7 +192,7 @@ class PrintablePrinter {
       buffer_[0] = '\0';
     }
     return &buffer_[0];
-  };
+  }
 
  private:
   uc16 character_;

@@ -24,7 +24,6 @@
 
 #include "core/rendering/svg/RenderSVGEllipse.h"
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGLength.h"
 
 namespace WebCore {
@@ -44,10 +43,7 @@ inline SVGEllipseElement::SVGEllipseElement(Document& document)
     addToPropertyMap(m_ry);
 }
 
-PassRefPtr<SVGEllipseElement> SVGEllipseElement::create(Document& document)
-{
-    return adoptRef(new SVGEllipseElement(document));
-}
+DEFINE_NODE_FACTORY(SVGEllipseElement)
 
 bool SVGEllipseElement::isSupportedAttribute(const QualifiedName& attrName)
 {

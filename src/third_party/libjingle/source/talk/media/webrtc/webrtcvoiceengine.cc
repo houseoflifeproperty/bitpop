@@ -237,6 +237,7 @@ static AudioOptions GetDefaultEngineOptions() {
   options.experimental_aec.Set(false);
   options.experimental_ns.Set(false);
   options.aec_dump.Set(false);
+  options.opus_fec.Set(false);
   return options;
 }
 
@@ -399,12 +400,8 @@ static bool IsIsac(const AudioCodec& codec) {
 
 // True if params["stereo"] == "1"
 static bool IsOpusStereoEnabled(const AudioCodec& codec) {
-  CodecParameterMap::const_iterator param =
-      codec.params.find(kCodecParamStereo);
-  if (param == codec.params.end()) {
-    return false;
-  }
-  return param->second == kParamValueTrue;
+  int value;
+  return codec.GetParam(kCodecParamStereo, &value) && value == 1;
 }
 
 static bool IsValidOpusBitrate(int bitrate) {
@@ -424,6 +421,22 @@ static int GetOpusBitrateFromParams(const AudioCodec& codec) {
     return 0;
   }
   return bitrate;
+}
+
+// Return true params[kCodecParamUseInbandFec] == kParamValueTrue, false
+// otherwise.
+static bool IsOpusFecEnabled(const AudioCodec& codec) {
+  int value;
+  return codec.GetParam(kCodecParamUseInbandFec, &value) && value == 1;
+}
+
+// Set params[kCodecParamUseInbandFec]. Caller should make sure codec is Opus.
+static void SetOpusFec(AudioCodec *codec, bool opus_fec) {
+  if (opus_fec) {
+    codec->params[kCodecParamUseInbandFec] = kParamValueTrue;
+  } else {
+    codec->params.erase(kCodecParamUseInbandFec);
+  }
 }
 
 void WebRtcVoiceEngine::ConstructCodecs() {
@@ -470,6 +483,7 @@ void WebRtcVoiceEngine::ConstructCodecs() {
           }
           // TODO(hellner): Add ptime, sprop-stereo, stereo and useinbandfec
           // when they can be set to values other than the default.
+          SetOpusFec(&codec, false);
         }
         codecs_.push_back(codec);
       } else {
@@ -892,6 +906,16 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
     LOG(LS_INFO) << "Playout sample rate is " << playout_sample_rate;
     if (voe_wrapper_->hw()->SetPlayoutSampleRate(playout_sample_rate)) {
       LOG_RTCERR1(SetPlayoutSampleRate, playout_sample_rate);
+    }
+  }
+
+  bool opus_fec = false;
+  if (options.opus_fec.Get(&opus_fec)) {
+    LOG(LS_INFO) << "Opus FEC is enabled? " << opus_fec;
+    for (std::vector<AudioCodec>::iterator it = codecs_.begin();
+        it != codecs_.end(); ++it) {
+      if (IsOpus(*it))
+        SetOpusFec(&(*it), opus_fec);
     }
   }
 
@@ -1943,10 +1967,16 @@ bool WebRtcVoiceMediaChannel::SetRecvCodecs(
 
 bool WebRtcVoiceMediaChannel::SetSendCodecs(
     int channel, const std::vector<AudioCodec>& codecs) {
-  // Disable VAD, and FEC unless we know the other side wants them.
+  // Disable VAD, FEC, and RED unless we know the other side wants them.
   engine()->voe()->codec()->SetVADStatus(channel, false);
   engine()->voe()->rtp()->SetNACKStatus(channel, false, 0);
+#ifdef USE_WEBRTC_DEV_BRANCH
+  engine()->voe()->rtp()->SetREDStatus(channel, false);
+  engine()->voe()->codec()->SetFECStatus(channel, false);
+#else
+  // TODO(minyue): Remove code under #else case after new WebRTC roll.
   engine()->voe()->rtp()->SetFECStatus(channel, false);
+#endif  // USE_WEBRTC_DEV_BRANCH
 
   // Scan through the list to figure out the codec to use for sending, along
   // with the proper configuration for VAD and DTMF.
@@ -2005,11 +2035,24 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
       if (bitrate_from_params != 0) {
         voe_codec.rate = bitrate_from_params;
       }
+
+      // For Opus, we also enable inband FEC if it is requested.
+      if (IsOpusFecEnabled(*it)) {
+        LOG(LS_INFO) << "Enabling Opus FEC on channel " << channel;
+#ifdef USE_WEBRTC_DEV_BRANCH
+        if (engine()->voe()->codec()->SetFECStatus(channel, true) == -1) {
+          // Enable in-band FEC of the Opus codec. Treat any failure as a fatal
+          // internal error.
+          LOG_RTCERR2(SetFECStatus, channel, true);
+          return false;
+        }
+#endif  // USE_WEBRTC_DEV_BRANCH
+      }
     }
 
     // We'll use the first codec in the list to actually send audio data.
     // Be sure to use the payload type requested by the remote side.
-    // "red", for FEC audio, is a special case where the actual codec to be
+    // "red", for RED audio, is a special case where the actual codec to be
     // used is specified in params.
     if (IsRedCodec(it->name)) {
       // Parse out the RED parameters. If we fail, just ignore RED;
@@ -2020,9 +2063,16 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
 
       // Enable redundant encoding of the specified codec. Treat any
       // failure as a fatal internal error.
+#ifdef USE_WEBRTC_DEV_BRANCH
+      LOG(LS_INFO) << "Enabling RED on channel " << channel;
+      if (engine()->voe()->rtp()->SetREDStatus(channel, true, it->id) == -1) {
+        LOG_RTCERR3(SetREDStatus, channel, true, it->id);
+#else
+      // TODO(minyue): Remove code under #else case after new WebRTC roll.
       LOG(LS_INFO) << "Enabling FEC";
       if (engine()->voe()->rtp()->SetFECStatus(channel, true, it->id) == -1) {
         LOG_RTCERR3(SetFECStatus, channel, true, it->id);
+#endif  // USE_WEBRTC_DEV_BRANCH
         return false;
       }
     } else {
@@ -3267,6 +3317,12 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info) {
       rinfo.fraction_lost = static_cast<float>(cs.fractionLost) / (1 << 8);
       rinfo.packets_lost = cs.cumulativeLost;
       rinfo.ext_seqnum = cs.extendedMax;
+#ifdef USE_WEBRTC_DEV_BRANCH
+      rinfo.capture_start_ntp_time_ms = cs.capture_start_ntp_time_ms_;
+#endif
+      if (codec.pltype != -1) {
+        rinfo.codec_name = codec.plname;
+      }
       // Convert samples to milliseconds.
       if (codec.plfreq / 1000 > 0) {
         rinfo.jitter_ms = cs.jitterSamples / (codec.plfreq / 1000);

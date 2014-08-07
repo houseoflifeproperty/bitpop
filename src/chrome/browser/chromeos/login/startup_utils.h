@@ -7,11 +7,13 @@
 
 #include <string>
 
+#include "base/callback.h"
+
 class PrefRegistrySimple;
 
 namespace chromeos {
 
-// Static utitliy methods used in startup time to get/change bits of device
+// Static utility methods used at startup time to get/change bits of device
 // state.
 class StartupUtils {
  public:
@@ -27,11 +29,20 @@ class StartupUtils {
   // Marks OOBE process as completed.
   static void MarkOobeCompleted();
 
+  // Stores the next pending OOBE screen in case it will need to be resumed.
+  static void SaveOobePendingScreen(const std::string& screen);
+
   // Returns device registration completion status, i.e. second part of OOBE.
   static bool IsDeviceRegistered();
 
   // Marks device registered. i.e. second part of OOBE is completed.
-  static void MarkDeviceRegistered();
+  static void MarkDeviceRegistered(const base::Closure& done_callback);
+
+  // Returns whether enrollment recovery is required.
+  static bool IsEnrollmentRecoveryRequired();
+
+  // Mark a device as requiring enrollment recovery.
+  static void MarkEnrollmentRecoveryRequired();
 
   // Returns initial locale from local settings.
   static std::string GetInitialLocale();

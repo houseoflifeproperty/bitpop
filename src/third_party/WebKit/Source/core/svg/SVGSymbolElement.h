@@ -30,7 +30,7 @@ namespace WebCore {
 class SVGSymbolElement FINAL : public SVGElement,
                                public SVGFitToViewBox {
 public:
-    static PassRefPtr<SVGSymbolElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGSymbolElement);
 
 private:
     explicit SVGSymbolElement(Document&);
@@ -40,9 +40,6 @@ private:
     virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
 
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-
-    virtual bool selfHasRelativeLengths() const OVERRIDE;
-
 };
 
 } // namespace WebCore

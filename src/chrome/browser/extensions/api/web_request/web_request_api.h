@@ -57,7 +57,7 @@ class WebRequestRulesRegistry;
 
 // Support class for the WebRequest API. Lives on the UI thread. Most of the
 // work is done by ExtensionWebRequestEventRouter below. This class observes
-// extension::EventRouter to deal with event listeners. There is one instance
+// extensions::EventRouter to deal with event listeners. There is one instance
 // per BrowserContext which is shared with incognito.
 class WebRequestAPI : public BrowserContextKeyedAPI,
                       public EventRouter::Observer {
@@ -524,7 +524,6 @@ class WebRequestHandlerBehaviorChangedFunction
 
 // Send updates to |host| with information about what webRequest-related
 // extensions are installed.
-// TODO(mpcomplete): remove. http://crbug.com/100411
 void SendExtensionWebRequestStatusToHost(content::RenderProcessHost* host);
 
 #endif  // CHROME_BROWSER_EXTENSIONS_API_WEB_REQUEST_WEB_REQUEST_API_H_

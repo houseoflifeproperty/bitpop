@@ -896,9 +896,11 @@ def CMDupload(change_info, args):
       # CC_LIST only when --private is specified explicitly on the command
       # line.
       if "--private" in upload_arg:
-        Warn("WARNING: CC_LIST is ignored since private flag is specified.  "
-             "You need to review and add them manually if necessary.")
+        Warn("WARNING: CC_LIST and WATCHLISTS are ignored when --private is "
+             "specified.  You need to review and add them manually if "
+             "necessary.")
         cc_list = ""
+        no_watchlists = True
       else:
         cc_list = GetCodeReviewSetting("CC_LIST")
       if not no_watchlists and watchers:
@@ -910,6 +912,10 @@ def CMDupload(change_info, args):
 
       if GetCodeReviewSetting("PRIVATE") == "True":
         upload_arg.append("--private")
+
+      project = GetCodeReviewSetting("PROJECT")
+      if project:
+        upload_arg.append("--project=%s" % project)
 
     # If we have a lot of files with long paths, then we won't be able to fit
     # the command to "svn diff".  Instead, we generate the diff manually for

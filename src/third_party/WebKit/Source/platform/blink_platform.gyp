@@ -57,6 +57,9 @@
       'BLINK_COMMON_IMPLEMENTATION=1',
       'INSIDE_BLINK',
     ],
+    'include_dirs': [
+      '<(SHARED_INTERMEDIATE_DIR)/blink',
+    ],
     'sources': [
       'exported/WebCString.cpp',
       'exported/WebString.cpp',
@@ -225,10 +228,10 @@
       '<@(platform_heap_files)',
 
       # Additional .cpp files from platform_generated.gyp:make_platform_generated actions.
-      '<(SHARED_INTERMEDIATE_DIR)/blink/FontFamilyNames.cpp',
-      '<(SHARED_INTERMEDIATE_DIR)/blink/RuntimeEnabledFeatures.cpp',
-      '<(SHARED_INTERMEDIATE_DIR)/blink/RuntimeEnabledFeatures.h',
-      '<(SHARED_INTERMEDIATE_DIR)/blink/ColorData.cpp',
+      '<(blink_platform_output_dir)/FontFamilyNames.cpp',
+      '<(blink_platform_output_dir)/RuntimeEnabledFeatures.cpp',
+      '<(blink_platform_output_dir)/RuntimeEnabledFeatures.h',
+      '<(blink_platform_output_dir)/ColorData.cpp',
     ],
     'sources/': [
       # Exclude all platform specific things, reinclude them below on a per-platform basis

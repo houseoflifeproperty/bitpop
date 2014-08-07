@@ -313,6 +313,7 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
     # This is the scm used to checkout self.url. It may be used by dependencies
     # to get the datetime of the revision we checked out.
     self._used_scm = None
+    self._used_revision = None
     # The actual revision we ended up getting, or None if that information is
     # unavailable
     self._got_revision = None
@@ -513,15 +514,9 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
     """Parses the DEPS file for this dependency."""
     assert not self.deps_parsed
     assert not self.dependencies
-    # One thing is unintuitive, vars = {} must happen before Var() use.
-    local_scope = {}
-    var = self.VarImpl(self.custom_vars, local_scope)
-    global_scope = {
-      'File': self.FileImpl,
-      'From': self.FromImpl,
-      'Var': var.Lookup,
-      'deps_os': {},
-    }
+
+    deps_content = None
+    use_strict = False
     filepath = os.path.join(self.root.root_dir, self.name, self.deps_file)
     if not os.path.isfile(filepath):
       logging.info(
@@ -530,11 +525,39 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
     else:
       deps_content = gclient_utils.FileRead(filepath)
       logging.debug('ParseDepsFile(%s) read:\n%s' % (self.name, deps_content))
+      use_strict = 'use strict' in deps_content.splitlines()[0]
+
+    local_scope = {}
+    if deps_content:
+      # One thing is unintuitive, vars = {} must happen before Var() use.
+      var = self.VarImpl(self.custom_vars, local_scope)
+      if use_strict:
+        logging.info(
+          'ParseDepsFile(%s): Strict Mode Enabled', self.name)
+        global_scope = {
+          '__builtins__': {'None': None},
+          'Var': var.Lookup,
+          'deps_os': {},
+        }
+      else:
+        global_scope = {
+          'File': self.FileImpl,
+          'From': self.FromImpl,
+          'Var': var.Lookup,
+          'deps_os': {},
+        }
       # Eval the content.
       try:
         exec(deps_content, global_scope, local_scope)
       except SyntaxError, e:
         gclient_utils.SyntaxErrorToError(filepath, e)
+      if use_strict:
+        for key, val in local_scope.iteritems():
+          if not isinstance(val, (dict, list, tuple, str)):
+            raise gclient_utils.Error(
+              'ParseDepsFile(%s): Strict mode disallows %r -> %r' %
+              (self.name, key, val))
+
     deps = local_scope.get('deps', {})
     if 'recursion' in local_scope:
       self.recursion_override = local_scope.get('recursion')
@@ -601,8 +624,7 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
         self.add_dependency(dep)
     self._mark_as_parsed(hooks)
 
-  def maybeGetParentRevision(
-      self, command, options, parsed_url, parent_name, revision_overrides):
+  def maybeGetParentRevision(self, command, options, parsed_url, parent):
     """Uses revision/timestamp of parent if no explicit revision was specified.
 
     If we are performing an update and --transitive is set, use
@@ -615,7 +637,7 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
     if command == 'update' and options.transitive and not options.revision:
       _, revision = gclient_utils.SplitUrlRevision(parsed_url)
       if not revision:
-        options.revision = revision_overrides.get(parent_name)
+        options.revision = getattr(parent, '_used_revision', None)
         if (options.revision and
             not gclient_utils.IsDateRevision(options.revision)):
           assert self.parent and self.parent.used_scm
@@ -636,7 +658,6 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
             if options.verbose:
               print('Using parent\'s revision date %s since we are in a '
                     'different repository.' % options.revision)
-          revision_overrides[self.name] = options.revision
 
   # Arguments number differs from overridden method
   # pylint: disable=W0221
@@ -667,9 +688,10 @@ class Dependency(gclient_utils.WorkItem, DependencySettings):
       else:
         # Create a shallow copy to mutate revision.
         options = copy.copy(options)
-        options.revision = revision_overrides.get(self.name)
+        options.revision = revision_overrides.pop(self.name, None)
         self.maybeGetParentRevision(
-            command, options, parsed_url, self.parent.name, revision_overrides)
+            command, options, parsed_url, self.parent)
+        self._used_revision = options.revision
         self._used_scm = gclient_scm.CreateSCM(
             parsed_url, self.root.root_dir, self.name, self.outbuf,
             out_cb=work_queue.out_cb)
@@ -1218,13 +1240,8 @@ want to set 'managed': False in .gclient.
       if not '@' in revision:
         # Support for --revision 123
         revision = '%s@%s' % (solutions_names[index], revision)
-      sol, rev = revision.split('@', 1)
-      if not sol in solutions_names:
-        #raise gclient_utils.Error('%s is not a valid solution.' % sol)
-        print >> sys.stderr, ('Please fix your script, having invalid '
-                              '--revision flags will soon considered an error.')
-      else:
-        revision_overrides[sol] = rev
+      name, rev = revision.split('@', 1)
+      revision_overrides[name] = rev
       index += 1
     return revision_overrides
 
@@ -1278,6 +1295,9 @@ want to set 'managed': False in .gclient.
     for s in self.dependencies:
       work_queue.enqueue(s)
     work_queue.flush(revision_overrides, command, args, options=self._options)
+    if revision_overrides:
+      print >> sys.stderr, ('Please fix your script, having invalid '
+                            '--revision flags will soon considered an error.')
 
     # Once all the dependencies have been processed, it's now safe to run the
     # hooks.
@@ -1314,7 +1334,21 @@ want to set 'managed': False in .gclient.
               prev_url, self.root_dir, entry_fixed, self.outbuf)
 
           # Check to see if this directory is now part of a higher-up checkout.
-          if scm.GetCheckoutRoot() in full_entries:
+          # The directory might be part of a git OR svn checkout.
+          scm_root = None
+          for scm_class in (gclient_scm.scm.GIT, gclient_scm.scm.SVN):
+            try:
+              scm_root = scm_class.GetCheckoutRoot(scm.checkout_path)
+            except subprocess2.CalledProcessError:
+              pass
+            if scm_root:
+              break
+          else:
+            logging.warning('Could not find checkout root for %s. Unable to '
+                            'determine whether it is part of a higher-level '
+                            'checkout, so not removing.' % entry)
+            continue
+          if scm_root in full_entries:
             logging.info('%s is part of a higher level checkout, not '
                          'removing.', scm.GetCheckoutRoot())
             continue
@@ -1724,6 +1758,9 @@ def CMDsync(parser, args):
   parser.add_option('--output-json',
                     help='Output a json document to this path containing '
                          'summary information about the sync.')
+  parser.add_option('--shallow', action='store_true',
+                    help='GIT ONLY - Do a shallow clone into the cache dir. '
+                         'Requires Git 1.9+')
   (options, args) = parser.parse_args(args)
   client = GClient.LoadCurrentConfig(options)
 

@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //components/keyed_service/core:core
       'target_name': 'keyed_service_core',
       'type': '<(component)',
       'defines': [
@@ -22,6 +23,7 @@
         'keyed_service/core/dependency_graph.cc',
         'keyed_service/core/dependency_graph.h',
         'keyed_service/core/dependency_node.h',
+        'keyed_service/core/keyed_service.cc',
         'keyed_service/core/keyed_service.h',
         'keyed_service/core/keyed_service_export.h',
       ],
@@ -31,6 +33,7 @@
     ['OS != "ios"', {
       'targets': [
         {
+          # GN version: //components/keyed_service/content:content
           'target_name': 'keyed_service_content',
           'type': '<(component)',
           'defines': [

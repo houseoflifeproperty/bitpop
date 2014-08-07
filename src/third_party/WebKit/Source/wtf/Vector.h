@@ -43,6 +43,9 @@ static const size_t kInitialVectorSize = 1;
 static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
 #endif
 
+    template<typename T, size_t inlineBuffer, typename Allocator>
+    class Deque;
+
     template <bool needsDestruction, typename T>
     struct VectorDestructor;
 
@@ -80,17 +83,11 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         }
     };
 
-    template <bool needsInitialization, bool canInitializeWithMemset, typename T>
+    template <bool canInitializeWithMemset, typename T>
     struct VectorInitializer;
 
-    template<bool ignore, typename T>
-    struct VectorInitializer<false, ignore, T>
-    {
-        static void initialize(T*, T*) {}
-    };
-
     template<typename T>
-    struct VectorInitializer<true, false, T>
+    struct VectorInitializer<false, T>
     {
         static void initialize(T* begin, T* end)
         {
@@ -100,7 +97,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     };
 
     template<typename T>
-    struct VectorInitializer<true, true, T>
+    struct VectorInitializer<true, T>
     {
         static void initialize(T* begin, T* end)
         {
@@ -227,7 +224,9 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     {
         static bool compare(const T* a, const T* b, size_t size)
         {
-            return std::equal(a, a + size, b);
+            if (LIKELY(a && b))
+                return std::equal(a, a + size, b);
+            return !a && !b;
         }
     };
 
@@ -250,7 +249,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
 
         static void initialize(T* begin, T* end)
         {
-            VectorInitializer<VectorTraits<T>::needsInitialization, VectorTraits<T>::canInitializeWithMemset, T>::initialize(begin, end);
+            VectorInitializer<VectorTraits<T>::canInitializeWithMemset, T>::initialize(begin, end);
         }
 
         static void move(const T* src, const T* srcEnd, T* dst)
@@ -308,7 +307,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
 
         void clearUnusedSlots(T* from, T* to)
         {
-            VectorUnusedSlotClearer<Allocator::isGarbageCollected && (VectorTraits<T>::needsDestruction || ShouldBeTraced<VectorTraits<T> >::value || VectorTraits<T>::isWeak), T>::clear(from, to);
+            VectorUnusedSlotClearer<Allocator::isGarbageCollected && (VectorTraits<T>::needsDestruction || ShouldBeTraced<VectorTraits<T> >::value), T>::clear(from, to);
         }
 
     protected:
@@ -500,6 +499,8 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         const T* inlineBuffer() const { return reinterpret_cast_ptr<const T*>(m_inlineBuffer.buffer); }
 
         AlignedBuffer<m_inlineBufferSize, WTF_ALIGN_OF(T)> m_inlineBuffer;
+        template<typename U, size_t inlineBuffer, typename V>
+        friend class Deque;
     };
 
     template<typename T, size_t inlineCapacity, typename Allocator>
@@ -565,6 +566,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
             // that the class does not expect matching constructor and
             // destructor calls as long as the memory is zeroed.
             COMPILE_ASSERT(!Allocator::isGarbageCollected || !VectorTraits<T>::needsDestruction || VectorTraits<T>::canInitializeWithMemset, ClassHasProblemsWithFinalizersCalledOnClearedMemory);
+            COMPILE_ASSERT(!WTF::IsPolymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, CantInitializeWithMemsetIfThereIsAVtable);
             m_size = 0;
         }
 

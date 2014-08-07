@@ -21,9 +21,8 @@
 
 #include "core/svg/SVGFEConvolveMatrixElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 #include "platform/geometry/FloatPoint.h"
@@ -70,10 +69,7 @@ inline SVGFEConvolveMatrixElement::SVGFEConvolveMatrixElement(Document& document
     addToPropertyMap(m_targetY);
 }
 
-PassRefPtr<SVGFEConvolveMatrixElement> SVGFEConvolveMatrixElement::create(Document& document)
-{
-    return adoptRef(new SVGFEConvolveMatrixElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEConvolveMatrixElement)
 
 bool SVGFEConvolveMatrixElement::isSupportedAttribute(const QualifiedName& attrName)
 {

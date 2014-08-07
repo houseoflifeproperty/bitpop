@@ -23,7 +23,7 @@
 #define SVGAltGlyphElement_h
 
 #if ENABLE(SVG_FONTS)
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGTextPositioningElement.h"
 #include "core/svg/SVGURIReference.h"
 #include "wtf/Vector.h"
@@ -31,12 +31,11 @@
 namespace WebCore {
 
 class ExceptionState;
-class SVGGlyphElement;
 
 class SVGAltGlyphElement FINAL : public SVGTextPositioningElement,
                                  public SVGURIReference {
 public:
-    static PassRefPtr<SVGAltGlyphElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGAltGlyphElement);
 
     const AtomicString& glyphRef() const;
     void setGlyphRef(const AtomicString&, ExceptionState&);

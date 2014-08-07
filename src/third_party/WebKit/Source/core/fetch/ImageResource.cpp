@@ -24,7 +24,6 @@
 #include "config.h"
 #include "core/fetch/ImageResource.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/fetch/ImageResourceClient.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceClient.h"
@@ -33,7 +32,9 @@
 #include "core/frame/FrameView.h"
 #include "core/rendering/RenderObject.h"
 #include "core/svg/graphics/SVGImage.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
+#include "platform/TraceEvent.h"
 #include "platform/graphics/BitmapImage.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/StdLibExtras.h"

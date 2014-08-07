@@ -9,10 +9,10 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/default_user_images.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/webui_login_display.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_display.h"
+#include "chrome/browser/chromeos/login/users/avatar/default_user_images.h"
+#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
@@ -158,7 +158,7 @@ void UserImageScreenHandler::HandleGetImages() {
   if (screen_->selected_image() != User::kInvalidImageIndex)
     SelectImage(screen_->selected_image());
 
-  if (screen_->profile_picture_data_url() != content::kAboutBlankURL)
+  if (screen_->profile_picture_data_url() != url::kAboutBlankURL)
     SendProfileImage(screen_->profile_picture_data_url());
   else if (screen_->profile_picture_absent())
     OnProfileImageAbsent();

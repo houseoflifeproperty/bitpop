@@ -252,12 +252,14 @@ void StreamListenSocket::OnObjectSignaled(HANDLE object) {
     return;
   }
 
-  if (ev.lNetworkEvents & FD_CLOSE) {
+  // If both FD_CLOSE and FD_READ are set we only call Read().
+  // This will cause OnObjectSignaled to be called immediately again
+  // unless this socket is destroyed in Read().
+  if ((ev.lNetworkEvents & (FD_CLOSE | FD_READ)) == FD_CLOSE) {
     Close();
     // Close might have deleted this object. We should return immediately.
     return;
   }
-
   // The object was reset by WSAEnumNetworkEvents.  Watch for the next signal.
   watcher_.StartWatching(object, this);
 
@@ -274,8 +276,7 @@ void StreamListenSocket::OnObjectSignaled(HANDLE object) {
       has_pending_reads_ = true;
     } else {
       Read();
-      // Read() might call Close() internally and 'this' can be invalid here
-      return;
+      // Read might have deleted this object. We should return immediately.
     }
   }
 }

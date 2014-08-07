@@ -45,7 +45,7 @@ public:
 
     virtual ~SVGMarkerOrientEnumeration();
 
-    virtual void add(PassRefPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
     virtual void calculateAnimatedValue(SVGAnimationElement*, float, unsigned, PassRefPtr<SVGPropertyBase>, PassRefPtr<SVGPropertyBase>, PassRefPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
     virtual float calculateDistance(PassRefPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
 
@@ -67,7 +67,8 @@ public:
         SVG_ANGLETYPE_UNSPECIFIED = 1,
         SVG_ANGLETYPE_DEG = 2,
         SVG_ANGLETYPE_RAD = 3,
-        SVG_ANGLETYPE_GRAD = 4
+        SVG_ANGLETYPE_GRAD = 4,
+        SVG_ANGLETYPE_TURN = 5
     };
 
     static PassRefPtr<SVGAngle> create()
@@ -99,7 +100,7 @@ public:
     virtual String valueAsString() const OVERRIDE;
     void setValueAsString(const String&, ExceptionState&);
 
-    virtual void add(PassRefPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
     virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) OVERRIDE;
     virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) OVERRIDE;
 

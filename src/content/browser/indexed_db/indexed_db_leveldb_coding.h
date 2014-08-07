@@ -6,6 +6,8 @@
 #define CONTENT_BROWSER_INDEXED_DB_INDEXED_DB_LEVELDB_CODING_H_
 
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
@@ -136,7 +138,7 @@ class KeyPrefix {
   static const int64 kMaxIndexId =
       (1ULL << kMaxIndexIdBits) - 1;  // max signed int32
 
-  static bool IsValidDatabaseId(int64 database_id);
+  CONTENT_EXPORT static bool IsValidDatabaseId(int64 database_id);
   static bool IsValidObjectStoreId(int64 index_id);
   static bool IsValidIndexId(int64 index_id);
   static bool ValidIds(int64 database_id,

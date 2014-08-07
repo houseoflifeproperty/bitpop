@@ -421,7 +421,7 @@ void ShelfWidget::DelegateView::SetDimmed(bool value) {
     views::Widget::InitParams params(
         views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
     params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
-    params.can_activate = false;
+    params.activatable = views::Widget::InitParams::ACTIVATABLE_NO;
     params.accept_events = false;
     params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
     params.parent = shelf_->GetNativeView();
@@ -717,7 +717,7 @@ void ShelfWidget::SetDimsShelf(bool dimming) {
   // status area background, app list button and overflow button.
   if (shelf_)
     shelf_->SchedulePaint();
-  status_area_widget_->GetContentsView()->SchedulePaint();
+  status_area_widget_->SchedulePaint();
 }
 
 bool ShelfWidget::GetDimsShelf() const {

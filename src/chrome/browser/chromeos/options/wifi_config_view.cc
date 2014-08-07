@@ -14,7 +14,6 @@
 #include "chrome/browser/chromeos/options/passphrase_textfield.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chromeos/login/login_state.h"
-#include "chromeos/network/favorite_state.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_handler.h"
@@ -55,7 +54,7 @@ class ComboboxWithWidth : public views::Combobox {
         width_(width) {
   }
   virtual ~ComboboxWithWidth() {}
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     gfx::Size size = Combobox::GetPreferredSize();
     size.set_width(width_);
     return size;

@@ -12,9 +12,6 @@
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
 #include "net/http/http_network_session.h"
-#include "net/http/http_pipelined_connection.h"
-#include "net/http/http_pipelined_host.h"
-#include "net/http/http_pipelined_stream.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_stream_factory_impl_job.h"
 #include "net/http/http_stream_factory_impl_request.h"
@@ -45,15 +42,11 @@ GURL UpgradeUrlToHttps(const GURL& original_url, int port) {
 HttpStreamFactoryImpl::HttpStreamFactoryImpl(HttpNetworkSession* session,
                                              bool for_websockets)
     : session_(session),
-      http_pipelined_host_pool_(this, NULL,
-                                session_->http_server_properties(),
-                                session_->force_http_pipelining()),
       for_websockets_(for_websockets) {}
 
 HttpStreamFactoryImpl::~HttpStreamFactoryImpl() {
   DCHECK(request_map_.empty());
   DCHECK(spdy_session_request_map_.empty());
-  DCHECK(http_pipelining_request_map_.empty());
 
   std::set<const Job*> tmp_job_set;
   tmp_job_set.swap(orphaned_job_set_);
@@ -179,10 +172,6 @@ void HttpStreamFactoryImpl::PreconnectStreams(
   job->Preconnect(num_streams);
 }
 
-base::Value* HttpStreamFactoryImpl::PipelineInfoToValue() const {
-  return http_pipelined_host_pool_.PipelineInfoToValue();
-}
-
 const HostMappingRules* HttpStreamFactoryImpl::GetHostMappingRules() const {
   return session_->params().host_mapping_rules;
 }
@@ -190,7 +179,7 @@ const HostMappingRules* HttpStreamFactoryImpl::GetHostMappingRules() const {
 PortAlternateProtocolPair HttpStreamFactoryImpl::GetAlternateProtocolRequestFor(
     const GURL& original_url,
     GURL* alternate_url) {
-  if (!use_alternate_protocols())
+  if (!session_->params().use_alternate_protocols)
     return kNoAlternateProtocol;
 
   if (original_url.SchemeIs("ftp"))
@@ -207,7 +196,9 @@ PortAlternateProtocolPair HttpStreamFactoryImpl::GetAlternateProtocolRequestFor(
   PortAlternateProtocolPair alternate =
       http_server_properties.GetAlternateProtocol(origin);
   if (alternate.protocol == ALTERNATE_PROTOCOL_BROKEN) {
-    HistogramAlternateProtocolUsage(ALTERNATE_PROTOCOL_USAGE_BROKEN);
+    HistogramAlternateProtocolUsage(
+        ALTERNATE_PROTOCOL_USAGE_BROKEN,
+        http_server_properties.GetAlternateProtocolExperiment());
     return kNoAlternateProtocol;
   }
 
@@ -231,10 +222,10 @@ PortAlternateProtocolPair HttpStreamFactoryImpl::GetAlternateProtocolRequestFor(
   origin.set_port(alternate.port);
   if (alternate.protocol >= NPN_SPDY_MINIMUM_VERSION &&
       alternate.protocol <= NPN_SPDY_MAXIMUM_VERSION) {
-    if (!spdy_enabled())
+    if (!HttpStreamFactory::spdy_enabled())
       return kNoAlternateProtocol;
 
-    if (HttpStreamFactory::HasSpdyExclusion(origin))
+    if (session_->HasSpdyExclusion(origin))
       return kNoAlternateProtocol;
 
     *alternate_url = UpgradeUrlToHttps(original_url, alternate.port);
@@ -317,42 +308,6 @@ void HttpStreamFactoryImpl::OnPreconnectsComplete(const Job* job) {
   preconnect_job_set_.erase(job);
   delete job;
   OnPreconnectsCompleteInternal();
-}
-
-void HttpStreamFactoryImpl::OnHttpPipelinedHostHasAdditionalCapacity(
-    HttpPipelinedHost* host) {
-  while (ContainsKey(http_pipelining_request_map_, host->GetKey())) {
-    HttpPipelinedStream* stream =
-        http_pipelined_host_pool_.CreateStreamOnExistingPipeline(
-            host->GetKey());
-    if (!stream) {
-      break;
-    }
-
-    Request* request = *http_pipelining_request_map_[host->GetKey()].begin();
-    request->Complete(stream->was_npn_negotiated(),
-                      stream->protocol_negotiated(),
-                      false,  // not using_spdy
-                      stream->net_log());
-    request->OnStreamReady(NULL,
-                           stream->used_ssl_config(),
-                           stream->used_proxy_info(),
-                           stream);
-  }
-}
-
-void HttpStreamFactoryImpl::AbortPipelinedRequestsWithKey(
-    const Job* job, const HttpPipelinedHost::Key& key, int status,
-    const SSLConfig& used_ssl_config) {
-  RequestVector requests_to_fail = http_pipelining_request_map_[key];
-  for (RequestVector::const_iterator it = requests_to_fail.begin();
-       it != requests_to_fail.end(); ++it) {
-    Request* request = *it;
-    if (request == request_map_[job]) {
-      continue;
-    }
-    request->OnStreamFailed(NULL, status, used_ssl_config);
-  }
 }
 
 }  // namespace net

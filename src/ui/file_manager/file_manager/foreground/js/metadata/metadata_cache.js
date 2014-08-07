@@ -38,7 +38,7 @@
  *
  *   // Getting fresh value.
  *   cache.clear(entry, 'thumbnail');
- *   cache.get(entry, 'thumbnail', function(thumbnail) {
+ *   cache.getOne(entry, 'thumbnail', function(thumbnail) {
  *     img.src = thumbnail.url;
  *   });
  *
@@ -46,9 +46,10 @@
  *   var size = (cached && cached.size) || UNKNOWN_SIZE;
  * }
  *
+ * @param {Array.<MetadataProvider>} providers Metadata providers.
  * @constructor
  */
-function MetadataCache() {
+function MetadataCache(providers) {
   /**
    * Map from Entry (using Entry.toURL) to metadata. Metadata contains
    * |properties| - an hierarchical object of values, and an object for each
@@ -61,7 +62,7 @@ function MetadataCache() {
    * List of metadata providers.
    * @private
    */
-  this.providers_ = [];
+  this.providers_ = providers;
 
   /**
    * List of observers added. Each one is an object with fields:
@@ -81,9 +82,13 @@ function MetadataCache() {
   /**
    * Time of first get query of the current batch. Items updated later than this
    * will not be evicted.
+   *
+   * @type {Date}
    * @private
    */
   this.lastBatchStart_ = new Date();
+
+  Object.seal(this);
 }
 
 /**
@@ -114,13 +119,13 @@ MetadataCache.EVICTION_THRESHOLD_MARGIN = 500;
  * @return {MetadataCache!} The cache with all providers.
  */
 MetadataCache.createFull = function(volumeManager) {
-  var cache = new MetadataCache();
   // DriveProvider should be prior to FileSystemProvider, because it covers
   // FileSystemProvider for files in Drive.
-  cache.providers_.push(new DriveProvider(volumeManager));
-  cache.providers_.push(new FilesystemProvider());
-  cache.providers_.push(new ContentProvider());
-  return cache;
+  return new MetadataCache([
+    new DriveProvider(volumeManager),
+    new FilesystemProvider(),
+    new ContentProvider()
+  ]);
 };
 
 /**
@@ -163,12 +168,15 @@ MetadataCache.prototype.isInitialized = function() {
 };
 
 /**
- * Sets the size of cache. The actual cache size may be larger than the given
- * value.
- * @param {number} size The cache size to be set.
+ * Changes the size of cache by delta value. The actual cache size may be larger
+ * than the given value.
+ *
+ * @param {number} delta The delta size to be changed the cache size by.
  */
-MetadataCache.prototype.setCacheSize = function(size) {
-  this.currentCacheSize_ = size;
+MetadataCache.prototype.resizeBy = function(delta) {
+  this.currentCacheSize_ += delta;
+  if (this.currentCacheSize_ < 0)
+    this.currentCacheSize_ = 0;
 
   if (this.totalCount_ > this.currentEvictionThreshold_())
     this.evict_();
@@ -187,17 +195,38 @@ MetadataCache.prototype.currentEvictionThreshold_ = function() {
 /**
  * Fetches the metadata, puts it in the cache, and passes to callback.
  * If required metadata is already in the cache, does not fetch it again.
- * @param {Entry|Array.<Entry>} entries The list of entries. May be just a
- *     single item.
+ *
+ * @param {Array.<Entry>} entries The list of entries.
  * @param {string} type The metadata type.
  * @param {function(Object)} callback The metadata is passed to callback.
  */
 MetadataCache.prototype.get = function(entries, type, callback) {
-  if (!(entries instanceof Array)) {
-    this.getOne(entries, type, callback);
-    return;
-  }
+  return this.getInternal_(entries, type, false, callback);
+};
 
+/**
+ * Fetches the metadata, puts it in the cache, and passes to callback.
+ * Even if required metadata is already in the cache, fetches it again.
+ *
+ * @param {Array.<Entry>} entries The list of entries.
+ * @param {string} type The metadata type.
+ * @param {function(Object)} callback The metadata is passed to callback.
+ */
+MetadataCache.prototype.getLatest = function(entries, type, callback, refresh) {
+  return this.getInternal_(entries, type, true, callback);
+};
+
+/**
+ * Fetches the metadata, puts it in the cache. This is only for internal use.
+ *
+ * @param {Array.<Entry>} entries The list of entries.
+ * @param {string} type The metadata type.
+ * @param {boolean} refresh True to get the latest value and refresh the cache,
+ *     false to get the value from the cache.
+ * @param {function(Object)} callback The metadata is passed to callback.
+ */
+MetadataCache.prototype.getInternal_ =
+    function(entries, type, refresh, callback) {
   if (entries.length === 0) {
     if (callback) callback([]);
     return;
@@ -218,7 +247,10 @@ MetadataCache.prototype.get = function(entries, type, callback) {
 
   for (var index = 0; index < entries.length; index++) {
     result.push(null);
-    this.getOne(entries[index], type, onOneItem.bind(this, index));
+    this.getOneInternal_(entries[index],
+                         type,
+                         refresh,
+                         onOneItem.bind(this, index));
   }
 };
 
@@ -228,7 +260,22 @@ MetadataCache.prototype.get = function(entries, type, callback) {
  * @param {string} type Metadata type.
  * @param {function(Object)} callback The callback.
  */
-MetadataCache.prototype.getOne = function(entry, type, callback) {
+MetadataCache.prototype.getOne = function(entry, type, callback, refresh) {
+  return this.getOneInternal_(entry, type, false, callback);
+};
+
+/**
+ * Fetches the metadata for one Entry. This is only for internal use.
+ *
+ * @param {Entry} entry The entry.
+ * @param {string} type Metadata type.
+ * @param {boolean} refresh True to get the latest value and refresh the cache,
+ *     false to get the value from the cache.
+ * @param {function(Object)} callback The callback.
+ * @private
+ */
+MetadataCache.prototype.getOneInternal_ =
+    function(entry, type, refresh, callback) {
   if (type.indexOf('|') !== -1) {
     var types = type.split('|');
     var result = {};
@@ -241,7 +288,8 @@ MetadataCache.prototype.getOne = function(entry, type, callback) {
     };
 
     for (var index = 0; index < types.length; index++) {
-      this.getOne(entry, types[index], onOneType.bind(null, types[index]));
+      this.getOneInternal_(entry, types[index], refresh,
+          onOneType.bind(null, types[index]));
     }
     return;
   }
@@ -256,7 +304,8 @@ MetadataCache.prototype.getOne = function(entry, type, callback) {
 
   var item = this.cache_[entryURL];
 
-  if (type in item.properties) {
+  if (!refresh && type in item.properties) {
+    // Uses cache, if available and not on the 'refresh' mode.
     callback(item.properties[type]);
     return;
   }
@@ -266,37 +315,40 @@ MetadataCache.prototype.getOne = function(entry, type, callback) {
   var currentProvider;
   var self = this;
 
-  var onFetched = function() {
-    if (type in item.properties) {
-      self.endBatchUpdates();
-      // Got properties from provider.
-      callback(item.properties[type]);
-    } else {
-      tryNextProvider();
-    }
-  };
-
-  var onProviderProperties = function(properties) {
-    var id = currentProvider.getId();
-    var fetchedCallbacks = item[id].callbacks;
-    delete item[id].callbacks;
-    item.time = new Date();
-    self.mergeProperties_(entry, properties);
-
-    for (var index = 0; index < fetchedCallbacks.length; index++) {
-      fetchedCallbacks[index]();
-    }
-  };
-
   var queryProvider = function() {
     var id = currentProvider.getId();
-    if ('callbacks' in item[id]) {
-      // We are querying this provider now.
-      item[id].callbacks.push(onFetched);
-    } else {
-      item[id].callbacks = [onFetched];
+
+    // If on 'refresh'-mode, replaces the callback array. The previous
+    // array may be remaining in the closure captured by previous tasks.
+    if (refresh)
+      item[id].callbacks = [];
+    var fetchedCallbacks = item[id].callbacks;
+
+    var onFetched = function() {
+      if (type in item.properties) {
+        self.endBatchUpdates();
+        // Got properties from provider.
+        callback(item.properties[type]);
+      } else {
+        tryNextProvider();
+      }
+    };
+
+    var onProviderProperties = function(properties) {
+      var callbacks = fetchedCallbacks.splice(0);
+      item.time = new Date();
+      self.mergeProperties_(entry, properties);
+
+      for (var index = 0; index < callbacks.length; index++) {
+        callbacks[index]();
+      }
+    };
+
+    fetchedCallbacks.push(onFetched);
+
+    // Querying now.
+    if (fetchedCallbacks.length === 1)
       currentProvider.fetch(entry, type, onProviderProperties);
-    }
   };
 
   var tryNextProvider = function() {
@@ -558,7 +610,7 @@ MetadataCache.prototype.evict_ = function() {
 MetadataCache.prototype.createEmptyItem_ = function() {
   var item = {properties: {}};
   for (var index = 0; index < this.providers_.length; index++) {
-    item[this.providers_[index].getId()] = {};
+    item[this.providers_[index].getId()] = {callbacks: []};
   }
   return item;
 };
@@ -571,7 +623,12 @@ MetadataCache.prototype.createEmptyItem_ = function() {
  */
 MetadataCache.prototype.mergeProperties_ = function(entry, data) {
   if (data === null) return;
-  var properties = this.cache_[entry.toURL()].properties;
+  var entryURL = entry.toURL();
+  if (!(entryURL in this.cache_)) {
+    this.cache_[entryURL] = this.createEmptyItem_();
+    this.totalCount_++;
+  }
+  var properties = this.cache_[entryURL].properties;
   for (var type in data) {
     if (data.hasOwnProperty(type)) {
       properties[type] = data[type];

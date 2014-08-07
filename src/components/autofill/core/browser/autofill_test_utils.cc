@@ -17,7 +17,7 @@
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/os_crypt/os_crypt.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 
 using base::ASCIIToUTF16;
 
@@ -206,12 +206,17 @@ void DisableSystemServices(PrefService* prefs) {
   // Use a mock Keychain rather than the OS one to store credit card data.
 #if defined(OS_MACOSX)
   OSCrypt::UseMockKeychain(true);
-#endif
+#endif  // defined(OS_MACOSX)
 
-  // Disable auxiliary profiles for unit testing.  These reach out to system
-  // services on the Mac.
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  // Don't use the Address Book on Mac, as it reaches out to system services.
+  if (prefs)
+    prefs->SetBoolean(prefs::kAutofillUseMacAddressBook, false);
+#else
+  // Disable auxiliary profiles for unit testing by default.
   if (prefs)
     prefs->SetBoolean(prefs::kAutofillAuxiliaryProfilesEnabled, false);
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 }
 
 }  // namespace test

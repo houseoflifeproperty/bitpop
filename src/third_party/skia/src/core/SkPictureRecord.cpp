@@ -36,7 +36,7 @@ static const uint32_t kSaveSize = 2 * kUInt32Size;
 static const uint32_t kSaveLayerNoBoundsSize = 4 * kUInt32Size;
 static const uint32_t kSaveLayerWithBoundsSize = 4 * kUInt32Size + sizeof(SkRect);
 
-SkPictureRecord::SkPictureRecord(SkPicture* picture, const SkISize& dimensions, uint32_t flags)
+SkPictureRecord::SkPictureRecord(const SkISize& dimensions, uint32_t flags)
     : INHERITED(dimensions.width(), dimensions.height())
     , fBoundingHierarchy(NULL)
     , fStateTree(NULL)
@@ -49,7 +49,6 @@ SkPictureRecord::SkPictureRecord(SkPicture* picture, const SkISize& dimensions, 
     fPointWrites = fRectWrites = fTextWrites = 0;
 #endif
 
-    fPicture = picture;
     fBitmapHeap = SkNEW(SkBitmapHeap);
     fFlattenableHeap.setBitmapStorage(fBitmapHeap);
 
@@ -293,13 +292,12 @@ static bool match(SkWriter32* writer, uint32_t offset,
     int numMatched;
     for (numMatched = 0; numMatched < numCommands && curOffset < writer->bytesWritten(); ++numMatched) {
         DrawType op = peek_op_and_size(writer, curOffset, &curSize);
-        while (NOOP == op && curOffset < writer->bytesWritten()) {
+        while (NOOP == op) {
             curOffset += curSize;
+            if (curOffset >= writer->bytesWritten()) {
+                return false;
+            }
             op = peek_op_and_size(writer, curOffset, &curSize);
-        }
-
-        if (curOffset >= writer->bytesWritten()) {
-            return false; // ran out of byte stream
         }
 
         if (kDRAW_BITMAP_FLAVOR == pattern[numMatched]) {
@@ -428,7 +426,7 @@ static bool merge_savelayer_paint_into_drawbitmp(SkWriter32* writer,
     SkColor layerColor = saveLayerPaint->getColor() | 0xFF000000; // force opaque
 
     SkAutoTDelete<SkPaint> dbmPaint(paintDict->unflatten(dbmPaintId));
-    if (NULL == dbmPaint.get() || dbmPaint->getColor() != layerColor) {
+    if (NULL == dbmPaint.get() || dbmPaint->getColor() != layerColor || !is_simple(*dbmPaint)) {
         return false;
     }
 
@@ -864,11 +862,7 @@ void SkPictureRecord::onClipRRect(const SkRRect& rrect, SkRegion::Op op, ClipEdg
 #else
     this->recordClipRRect(rrect, op, kSoft_ClipEdgeStyle == edgeStyle);
 #endif
-    if (fRecordFlags & SkPicture::kUsePathBoundsForClip_RecordingFlag) {
-        this->updateClipConservativelyUsingBounds(rrect.getBounds(), op, false);
-    } else {
-        this->INHERITED::onClipRRect(rrect, op, edgeStyle);
-    }
+    this->updateClipConservativelyUsingBounds(rrect.getBounds(), op, false);
 }
 
 size_t SkPictureRecord::recordClipRRect(const SkRRect& rrect, SkRegion::Op op, bool doAA) {
@@ -900,12 +894,8 @@ void SkPictureRecord::onClipPath(const SkPath& path, SkRegion::Op op, ClipEdgeSt
     this->recordClipPath(pathID, op, kSoft_ClipEdgeStyle == edgeStyle);
 #endif
 
-    if (fRecordFlags & SkPicture::kUsePathBoundsForClip_RecordingFlag) {
-        this->updateClipConservativelyUsingBounds(path.getBounds(), op,
-                                                  path.isInverseFillType());
-    } else {
-        this->INHERITED::onClipPath(path, op, edgeStyle);
-    }
+    this->updateClipConservativelyUsingBounds(path.getBounds(), op,
+                                              path.isInverseFillType());
 }
 
 size_t SkPictureRecord::recordClipPath(int pathID, SkRegion::Op op, bool doAA) {
@@ -998,6 +988,14 @@ void SkPictureRecord::drawPoints(PointMode mode, size_t count, const SkPoint pts
     size_t initialOffset = this->addDraw(DRAW_POINTS, &size);
     SkASSERT(initialOffset+getPaintOffset(DRAW_POINTS, size) == fWriter.bytesWritten());
     this->addPaint(paint);
+    if (paint.getPathEffect() != NULL) {
+        SkPathEffect::DashInfo info;
+        SkPathEffect::DashType dashType = paint.getPathEffect()->asADash(&info);
+        if (2 == count && SkPaint::kRound_Cap != paint.getStrokeCap() &&
+            SkPathEffect::kDash_DashType == dashType && 2 == info.fCount) {
+            fContentInfo.incFastPathDashEffects();
+        }
+    }
     this->addInt(mode);
     this->addInt(SkToInt(count));
     fWriter.writeMul4(pts, count * sizeof(SkPoint));
@@ -1075,11 +1073,11 @@ void SkPictureRecord::onDrawDRRect(const SkRRect& outer, const SkRRect& inner,
 void SkPictureRecord::drawPath(const SkPath& path, const SkPaint& paint) {
 
     if (paint.isAntiAlias() && !path.isConvex()) {
-        fPicture->incAAConcavePaths();
+        fContentInfo.incAAConcavePaths();
 
         if (SkPaint::kStroke_Style == paint.getStyle() &&
             0 == paint.getStrokeWidth()) {
-            fPicture->incAAHairlineConcavePaths();
+            fContentInfo.incAAHairlineConcavePaths();
         }
     }
 
@@ -1412,7 +1410,7 @@ void SkPictureRecord::onDrawTextOnPath(const void* text, size_t byteLength, cons
     this->validate(initialOffset, size);
 }
 
-void SkPictureRecord::drawPicture(SkPicture& picture) {
+void SkPictureRecord::onDrawPicture(const SkPicture* picture) {
 
 #ifdef SK_COLLAPSE_MATRIX_CLIP_STATE
     fMCMgr.call(SkMatrixClipStateMgr::kOther_CallType);
@@ -1598,7 +1596,7 @@ const SkFlatData* SkPictureRecord::getFlatPaintData(const SkPaint& paint) {
 
 const SkFlatData* SkPictureRecord::addPaintPtr(const SkPaint* paint) {
     if (NULL != paint && NULL != paint->getPathEffect()) {
-        fPicture->incPaintWithPathEffectUses();
+        fContentInfo.incPaintWithPathEffectUses();
     }
 
     const SkFlatData* data = paint ? getFlatPaintData(*paint) : NULL;
@@ -1612,19 +1610,26 @@ void SkPictureRecord::addFlatPaint(const SkFlatData* flatPaint) {
 }
 
 int SkPictureRecord::addPathToHeap(const SkPath& path) {
-    return fPicture->addPathToHeap(path);
+    if (NULL == fPathHeap) {
+        fPathHeap.reset(SkNEW(SkPathHeap));
+    }
+#ifdef SK_DEDUP_PICTURE_PATHS
+    return fPathHeap->insert(path);
+#else
+    return fPathHeap->append(path);
+#endif
 }
 
 void SkPictureRecord::addPath(const SkPath& path) {
     this->addInt(this->addPathToHeap(path));
 }
 
-void SkPictureRecord::addPicture(SkPicture& picture) {
-    int index = fPictureRefs.find(&picture);
+void SkPictureRecord::addPicture(const SkPicture* picture) {
+    int index = fPictureRefs.find(picture);
     if (index < 0) {    // not found
         index = fPictureRefs.count();
-        *fPictureRefs.append() = &picture;
-        picture.ref();
+        *fPictureRefs.append() = picture;
+        picture->ref();
     }
     // follow the convention of recording a 1-based index
     this->addInt(index + 1);
@@ -1647,6 +1652,11 @@ void SkPictureRecord::addPoints(const SkPoint pts[], int count) {
     fPointBytes += count * sizeof(SkPoint);
     fPointWrites++;
 #endif
+}
+
+void SkPictureRecord::addNoOp() {
+    size_t size = kUInt32Size; // op
+    this->addDraw(NOOP, &size);
 }
 
 void SkPictureRecord::addRect(const SkRect& rect) {

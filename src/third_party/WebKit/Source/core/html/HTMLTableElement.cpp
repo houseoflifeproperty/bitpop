@@ -25,11 +25,11 @@
 #include "config.h"
 #include "core/html/HTMLTableElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
@@ -44,13 +44,14 @@
 #include "core/html/HTMLTableSectionElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderTable.h"
+#include "platform/weborigin/Referrer.h"
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLTableElement::HTMLTableElement(Document& document)
+inline HTMLTableElement::HTMLTableElement(Document& document)
     : HTMLElement(tableTag, document)
     , m_borderAttr(false)
     , m_borderColorAttr(false)
@@ -61,10 +62,7 @@ HTMLTableElement::HTMLTableElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLTableElement> HTMLTableElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLTableElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLTableElement)
 
 HTMLTableCaptionElement* HTMLTableElement::caption() const
 {
@@ -214,7 +212,7 @@ PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableElement::insertRow(int index, Excep
         }
     }
 
-    RefPtr<ContainerNode> parent;
+    RefPtrWillBeRawPtr<ContainerNode> parent;
     if (lastRow)
         parent = row ? row->parentNode() : lastRow->parentNode();
     else {
@@ -311,8 +309,11 @@ void HTMLTableElement::collectStyleForPresentationAttribute(const QualifiedName&
         addHTMLColorToStyle(style, CSSPropertyBackgroundColor, value);
     else if (name == backgroundAttr) {
         String url = stripLeadingAndTrailingHTMLSpaces(value);
-        if (!url.isEmpty())
-            style->setProperty(CSSProperty(CSSPropertyBackgroundImage, CSSImageValue::create(url, document().completeURL(url))));
+        if (!url.isEmpty()) {
+            RefPtrWillBeRawPtr<CSSImageValue> imageValue = CSSImageValue::create(url, document().completeURL(url));
+            imageValue->setReferrer(Referrer(document().outgoingReferrer(), document().referrerPolicy()));
+            style->setProperty(CSSProperty(CSSPropertyBackgroundImage, imageValue.release()));
+        }
     } else if (name == valignAttr) {
         if (!value.isEmpty())
             addPropertyToPresentationAttributeStyle(style, CSSPropertyVerticalAlign, value);
@@ -555,12 +556,12 @@ const QualifiedName& HTMLTableElement::subResourceAttributeName() const
     return backgroundAttr;
 }
 
-PassRefPtr<HTMLCollection> HTMLTableElement::rows()
+PassRefPtrWillBeRawPtr<HTMLTableRowsCollection> HTMLTableElement::rows()
 {
-    return ensureCachedHTMLCollection(TableRows);
+    return toHTMLTableRowsCollection(ensureCachedHTMLCollection(TableRows).get());
 }
 
-PassRefPtr<HTMLCollection> HTMLTableElement::tBodies()
+PassRefPtrWillBeRawPtr<HTMLCollection> HTMLTableElement::tBodies()
 {
     return ensureCachedHTMLCollection(TableTBodies);
 }

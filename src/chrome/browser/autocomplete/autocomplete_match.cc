@@ -15,6 +15,7 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "content/public/common/url_constants.h"
 #include "grit/theme_resources.h"
 
@@ -81,6 +82,8 @@ AutocompleteMatch::AutocompleteMatch(const AutocompleteMatch& match)
       contents_class(match.contents_class),
       description(match.description),
       description_class(match.description_class),
+      answer_contents(match.answer_contents),
+      answer_type(match.answer_type),
       transition(match.transition),
       is_history_what_you_typed_match(match.is_history_what_you_typed_match),
       type(match.type),
@@ -117,6 +120,8 @@ AutocompleteMatch& AutocompleteMatch::operator=(
   contents_class = match.contents_class;
   description = match.description;
   description_class = match.description_class;
+  answer_contents = match.answer_contents;
+  answer_type = match.answer_type;
   transition = match.transition;
   is_history_what_you_typed_match = match.is_history_what_you_typed_match;
   type = match.type;
@@ -153,6 +158,7 @@ int AutocompleteMatch::TypeToIcon(Type type) {
     IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_HTTP,
     IDR_OMNIBOX_HTTP,
+    IDR_OMNIBOX_SEARCH,
   };
   COMPILE_ASSERT(arraysize(icons) == AutocompleteMatchType::NUM_TYPES,
                  icons_array_must_match_type_enum);
@@ -335,7 +341,8 @@ bool AutocompleteMatch::IsSpecializedSearchType(Type type) {
   return type == AutocompleteMatchType::SEARCH_SUGGEST_ENTITY ||
          type == AutocompleteMatchType::SEARCH_SUGGEST_INFINITE ||
          type == AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED ||
-         type == AutocompleteMatchType::SEARCH_SUGGEST_PROFILE;
+         type == AutocompleteMatchType::SEARCH_SUGGEST_PROFILE ||
+         type == AutocompleteMatchType::SEARCH_SUGGEST_ANSWER;
 }
 
 void AutocompleteMatch::ComputeStrippedDestinationURL(Profile* profile) {
@@ -349,13 +356,17 @@ void AutocompleteMatch::ComputeStrippedDestinationURL(Profile* profile) {
   // by some obscure query param from each other or from the search/keyword
   // provider matches.
   TemplateURL* template_url = GetTemplateURL(profile, true);
-  if (template_url != NULL && template_url->SupportsReplacement()) {
+  UIThreadSearchTermsData search_terms_data(profile);
+  if (template_url != NULL &&
+      template_url->SupportsReplacement(search_terms_data)) {
     base::string16 search_terms;
     if (template_url->ExtractSearchTermsFromURL(stripped_destination_url,
+                                                search_terms_data,
                                                 &search_terms)) {
       stripped_destination_url =
           GURL(template_url->url_ref().ReplaceSearchTerms(
-              TemplateURLRef::SearchTermsArgs(search_terms)));
+              TemplateURLRef::SearchTermsArgs(search_terms),
+              search_terms_data));
     }
   }
 
@@ -401,7 +412,9 @@ base::string16 AutocompleteMatch::GetSubstitutingExplicitlyInvokedKeyword(
   if (transition != content::PAGE_TRANSITION_KEYWORD)
     return base::string16();
   const TemplateURL* t_url = GetTemplateURL(profile, false);
-  return (t_url && t_url->SupportsReplacement()) ? keyword : base::string16();
+  return (t_url &&
+          t_url->SupportsReplacement(UIThreadSearchTermsData(profile))) ?
+      keyword : base::string16();
 }
 
 TemplateURL* AutocompleteMatch::GetTemplateURL(

@@ -36,8 +36,8 @@ class DevToolsAgent : public RenderViewObserver,
   explicit DevToolsAgent(RenderViewImpl* render_view);
   virtual ~DevToolsAgent();
 
-  // Returns agent instance for its host id.
-  static DevToolsAgent* FromHostId(int host_id);
+  // Returns agent instance for its routing id.
+  static DevToolsAgent* FromRoutingId(int routing_id);
 
   blink::WebDevToolsAgent* GetWebAgent();
 
@@ -50,10 +50,12 @@ class DevToolsAgent : public RenderViewObserver,
   // WebDevToolsAgentClient implementation
   virtual void sendMessageToInspectorFrontend(const blink::WebString& data);
 
-  virtual int hostIdentifier() OVERRIDE;
+  virtual int debuggerId() OVERRIDE;
   virtual void saveAgentRuntimeState(const blink::WebString& state) OVERRIDE;
   virtual blink::WebDevToolsAgentClient::WebKitClientMessageLoop*
       createClientMessageLoop() OVERRIDE;
+  virtual void willEnterDebugLoop() OVERRIDE;
+  virtual void didExitDebugLoop() OVERRIDE;
   virtual void visitAllocatedObjects(AllocatedObjectVisitor* visitor) OVERRIDE;
 
   typedef void (*TraceEventCallback)(
@@ -75,11 +77,12 @@ class DevToolsAgent : public RenderViewObserver,
   virtual void setTouchEventEmulationEnabled(bool enabled,
                                              bool allow_pinch) OVERRIDE;
 
-  void OnAttach();
-  void OnReattach(const std::string& agent_state);
+  void OnAttach(const std::string& host_id);
+  void OnReattach(const std::string& host_id,
+                  const std::string& agent_state);
   void OnDetach();
   void OnDispatchOnInspectorBackend(const std::string& message);
-  void OnInspectElement(int x, int y);
+  void OnInspectElement(const std::string& host_id, int x, int y);
   void OnAddMessageToConsole(ConsoleMessageLevel level,
                              const std::string& message);
   void OnGpuTasksChunk(const std::vector<GpuTaskInfo>& tasks);
@@ -101,6 +104,7 @@ class DevToolsAgent : public RenderViewObserver,
   bool is_attached_;
   bool is_devtools_client_;
   int32 gpu_route_id_;
+  bool paused_in_mouse_move_;
 
   static base::subtle::AtomicWord /* TraceEventCallback */ event_callback_;
 

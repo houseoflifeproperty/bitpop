@@ -5,16 +5,15 @@
 #ifndef CHROME_BROWSER_BOOKMARKS_BOOKMARK_MODEL_FACTORY_H_
 #define CHROME_BROWSER_BOOKMARKS_BOOKMARK_MODEL_FACTORY_H_
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
+#include "base/macros.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 template <typename T> struct DefaultSingletonTraits;
 
-class Profile;
 class BookmarkModel;
+class Profile;
 
-// Singleton that owns all BookmarkModel and associates them with Profiles.
+// Singleton that owns all BookmarkModels and associates them with Profiles.
 class BookmarkModelFactory : public BrowserContextKeyedServiceFactory {
  public:
   static BookmarkModel* GetForProfile(Profile* profile);

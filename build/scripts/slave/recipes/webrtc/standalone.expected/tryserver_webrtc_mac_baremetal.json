@@ -54,28 +54,36 @@
     ]
   },
   {
+    "abort_on_failure": true,
     "cmd": [
-      "python",
-      "-u",
-      "[BUILD]/scripts/slave/apply_svn_patch.py",
-      "-p",
+      "svn",
+      "export",
+      "--force",
       "try_job_svn_patch",
-      "-r",
-      "[SLAVE_BUILD]/src"
+      "/path/to/tmp/diff"
     ],
-    "name": "apply_patch",
-    "seed_steps": [
-      "apply_patch",
-      "gclient runhooks",
-      "compile",
-      "audio_device_tests",
-      "webcam_check",
-      "vie_auto_test",
-      "voe_auto_test",
-      "webcam_check (2)",
-      "video_capture_tests",
-      "webrtc_perf_tests"
+    "name": "download patch",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 1)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 2)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@@@@",
+      "@@@STEP_LOG_END@patch.diff@@@"
     ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "patch",
+      "--dir",
+      "[SLAVE_BUILD]/src",
+      "--force",
+      "--forward",
+      "--remove-empty-files",
+      "--strip",
+      "0"
+    ],
+    "name": "apply patch",
+    "stdin": "fake patch.diff content (line 1)\nfake patch.diff content (line 2)\n"
   },
   {
     "cmd": [
@@ -87,7 +95,18 @@
     "env": {
       "GYP_DEFINES": "clang=1 component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' target_arch=ia32 use_goma=1"
     },
-    "name": "gclient runhooks"
+    "name": "gclient runhooks",
+    "seed_steps": [
+      "gclient runhooks",
+      "compile",
+      "audio_device_tests",
+      "webcam_check",
+      "vie_auto_test",
+      "voe_auto_test",
+      "webcam_check (2)",
+      "video_capture_tests",
+      "webrtc_perf_tests"
+    ]
   },
   {
     "abort_on_failure": true,

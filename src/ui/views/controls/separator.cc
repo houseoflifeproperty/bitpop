@@ -28,7 +28,7 @@ Separator::~Separator() {
 ////////////////////////////////////////////////////////////////////////////////
 // Separator, View overrides:
 
-gfx::Size Separator::GetPreferredSize() {
+gfx::Size Separator::GetPreferredSize() const {
   if (orientation_ == HORIZONTAL)
     return gfx::Size(width(), kSeparatorHeight);
   return gfx::Size(kSeparatorHeight, height());
@@ -38,7 +38,7 @@ void Separator::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_SPLITTER;
 }
 
-void Separator::Paint(gfx::Canvas* canvas) {
+void Separator::Paint(gfx::Canvas* canvas, const views::CullSet& cull_set) {
   canvas->FillRect(bounds(), kDefaultColor);
 }
 

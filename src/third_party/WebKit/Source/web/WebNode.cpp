@@ -36,6 +36,7 @@
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeList.h"
+#include "core/dom/TagCollection.h"
 #include "core/editing/markup.h"
 #include "core/events/Event.h"
 #include "core/html/HTMLCollection.h"
@@ -195,8 +196,12 @@ void WebNode::simulateClick()
 
 WebElementCollection WebNode::getElementsByTagName(const WebString& tag) const
 {
-    if (m_private->isContainerNode())
-        return WebElementCollection(toContainerNode(m_private.get())->getElementsByTagName(tag));
+    if (m_private->isContainerNode()) {
+        // FIXME: Calling getElementsByTagNameNS here is inconsistent with the
+        // function name. This is a temporary fix for a serious bug, and should
+        // be reverted soon.
+        return WebElementCollection(toContainerNode(m_private.get())->getElementsByTagNameNS(HTMLNames::xhtmlNamespaceURI, tag));
+    }
     return WebElementCollection();
 }
 
@@ -204,15 +209,8 @@ WebElement WebNode::querySelector(const WebString& tag, WebExceptionCode& ec) co
 {
     TrackExceptionState exceptionState;
     WebElement element;
-    if (m_private->isContainerNode()) {
-#if ENABLE(OILPAN)
-        // FIXME: ContainerNode::querySelector should return an Element raw
-        // pointer.
-        element = toContainerNode(m_private.get())->querySelector(tag, exceptionState).get();
-#else
+    if (m_private->isContainerNode())
         element = toContainerNode(m_private.get())->querySelector(tag, exceptionState);
-#endif
-    }
     ec = exceptionState.code();
     return element;
 }

@@ -42,6 +42,7 @@ class FormAssociatedElement;
 class FormData;
 class GenericEventQueue;
 class HTMLFormControlElement;
+class HTMLFormControlsCollection;
 class HTMLImageElement;
 class HTMLInputElement;
 
@@ -51,8 +52,8 @@ public:
     virtual ~HTMLFormElement();
     virtual void trace(Visitor*) OVERRIDE;
 
-    PassRefPtr<HTMLCollection> elements();
-    void getNamedElements(const AtomicString&, Vector<RefPtr<Element> >&);
+    PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> elements();
+    void getNamedElements(const AtomicString&, WillBeHeapVector<RefPtrWillBeMember<Element> >&);
 
     unsigned length() const;
     Element* item(unsigned index);
@@ -69,7 +70,9 @@ public:
     void disassociate(FormAssociatedElement&);
     void associate(HTMLImageElement&);
     void disassociate(HTMLImageElement&);
+#if !ENABLE(OILPAN)
     WeakPtr<HTMLFormElement> createWeakPtr();
+#endif
     void didAssociateByParser();
 
     void prepareForSubmission(Event*);
@@ -103,7 +106,7 @@ public:
         AutocompleteResultErrorInvalid,
     };
 
-    void requestAutocomplete(const Dictionary&);
+    void requestAutocomplete();
     void finishRequestAutocomplete(AutocompleteResult);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(autocomplete);
@@ -112,9 +115,9 @@ public:
     RadioButtonGroupScope& radioButtonGroupScope() { return m_radioButtonGroupScope; }
 
     const FormAssociatedElement::List& associatedElements() const;
-    const Vector<HTMLImageElement*>& imageElements();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >& imageElements();
 
-    void anonymousNamedGetter(const AtomicString& name, bool&, RefPtr<RadioNodeList>&, bool&, RefPtr<Element>&);
+    void anonymousNamedGetter(const AtomicString& name, bool&, RefPtrWillBeRawPtr<RadioNodeList>&, bool&, RefPtrWillBeRawPtr<Element>&);
 
 private:
     explicit HTMLFormElement(Document&);
@@ -134,13 +137,13 @@ private:
 
     virtual void copyNonAttributePropertiesFromElement(const Element&) OVERRIDE;
 
-    void submitDialog(PassRefPtr<FormSubmission>);
+    void submitDialog(PassRefPtrWillBeRawPtr<FormSubmission>);
     void submit(Event*, bool activateSubmitButton, bool processingUserGesture, FormSubmissionTrigger);
 
-    void scheduleFormSubmission(PassRefPtr<FormSubmission>);
+    void scheduleFormSubmission(PassRefPtrWillBeRawPtr<FormSubmission>);
 
     void collectAssociatedElements(Node& root, FormAssociatedElement::List&) const;
-    void collectImageElements(Node& root, Vector<HTMLImageElement*>&);
+    void collectImageElements(Node& root, WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >&);
 
     // Returns true if the submission should proceed.
     bool validateInteractively(Event*);
@@ -164,8 +167,10 @@ private:
     // Do not access m_associatedElements directly. Use associatedElements() instead.
     FormAssociatedElement::List m_associatedElements;
     // Do not access m_imageElements directly. Use imageElements() instead.
-    Vector<HTMLImageElement*> m_imageElements;
+    WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> > m_imageElements;
+#if !ENABLE(OILPAN)
     WeakPtrFactory<HTMLFormElement> m_weakPtrFactory;
+#endif
     bool m_associatedElementsAreDirty;
     bool m_imageElementsAreDirty;
     bool m_hasElementsAssociatedByParser;
@@ -177,7 +182,7 @@ private:
 
     bool m_wasDemoted;
 
-    OwnPtr<GenericEventQueue> m_pendingAutocompleteEventsQueue;
+    OwnPtrWillBeMember<GenericEventQueue> m_pendingAutocompleteEventsQueue;
 };
 
 } // namespace WebCore

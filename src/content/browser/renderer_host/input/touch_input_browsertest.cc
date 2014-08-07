@@ -108,13 +108,12 @@ class InputEventMessageFilter : public BrowserMessageFilter {
   }
 
   // BrowserMessageFilter:
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE {
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     if (message.type() == InputHostMsg_HandleInputEvent_ACK::ID) {
-      ui::LatencyInfo latency;
-      WebInputEvent::Type type = WebInputEvent::Undefined;
-      InputEventAckState ack = INPUT_EVENT_ACK_STATE_UNKNOWN;
-      InputHostMsg_HandleInputEvent_ACK::Read(&message, &type, &ack, &latency);
+      InputHostMsg_HandleInputEvent_ACK::Param params;
+      InputHostMsg_HandleInputEvent_ACK::Read(&message, &params);
+      WebInputEvent::Type type = params.a.type;
+      InputEventAckState ack = params.a.state;
       BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
           base::Bind(&InputEventMessageFilter::ReceivedEventAck,
                      this, type, ack));

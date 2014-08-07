@@ -42,16 +42,11 @@ class MessageAccumulator : public MessageReceiver {
     return true;
   }
 
-  virtual bool AcceptWithResponder(Message* message, MessageReceiver* responder)
-      MOJO_OVERRIDE {
-    return false;
-  }
-
  private:
   internal::MessageQueue* queue_;
 };
 
-class ResponseGenerator : public MessageReceiver {
+class ResponseGenerator : public MessageReceiverWithResponder {
  public:
   ResponseGenerator() {
   }
@@ -114,7 +109,7 @@ class RouterTest : public testing::Test {
   }
 
   virtual void SetUp() MOJO_OVERRIDE {
-    CreateMessagePipe(&handle0_, &handle1_);
+    CreateMessagePipe(NULL, &handle0_, &handle1_);
   }
 
   virtual void TearDown() MOJO_OVERRIDE {
@@ -134,8 +129,8 @@ class RouterTest : public testing::Test {
 };
 
 TEST_F(RouterTest, BasicRequestResponse) {
-  internal::Router router0(handle0_.Pass());
-  internal::Router router1(handle1_.Pass());
+  internal::Router router0(handle0_.Pass(), internal::FilterChain());
+  internal::Router router1(handle1_.Pass(), internal::FilterChain());
 
   ResponseGenerator generator;
   router1.set_incoming_receiver(&generator);
@@ -158,8 +153,8 @@ TEST_F(RouterTest, BasicRequestResponse) {
 }
 
 TEST_F(RouterTest, RequestWithNoReceiver) {
-  internal::Router router0(handle0_.Pass());
-  internal::Router router1(handle1_.Pass());
+  internal::Router router0(handle0_.Pass(), internal::FilterChain());
+  internal::Router router1(handle1_.Pass(), internal::FilterChain());
 
   // Without an incoming receiver set on router1, we expect router0 to observe
   // an error as a result of sending a message.
@@ -184,8 +179,8 @@ TEST_F(RouterTest, LateResponse) {
 
   LazyResponseGenerator generator;
   {
-    internal::Router router0(handle0_.Pass());
-    internal::Router router1(handle1_.Pass());
+    internal::Router router0(handle0_.Pass(), internal::FilterChain());
+    internal::Router router1(handle1_.Pass(), internal::FilterChain());
 
     router1.set_incoming_receiver(&generator);
 

@@ -42,12 +42,14 @@ Pipeline::Pipeline(
       volume_(1.0f),
       playback_rate_(0.0f),
       clock_(new Clock(&default_tick_clock_)),
-      waiting_for_clock_update_(false),
+      clock_state_(CLOCK_PAUSED),
       status_(PIPELINE_OK),
       state_(kCreated),
       audio_ended_(false),
       video_ended_(false),
       text_ended_(false),
+      audio_buffering_state_(BUFFERING_HAVE_NOTHING),
+      video_buffering_state_(BUFFERING_HAVE_NOTHING),
       demuxer_(NULL),
       creation_time_(default_tick_clock_.NowTicks()) {
   media_log_->AddEvent(media_log_->CreatePipelineStateChangedEvent(kCreated));
@@ -157,7 +159,7 @@ TimeDelta Pipeline::GetMediaTime() const {
   return clock_->Elapsed();
 }
 
-Ranges<TimeDelta> Pipeline::GetBufferedTimeRanges() {
+Ranges<TimeDelta> Pipeline::GetBufferedTimeRanges() const {
   base::AutoLock auto_lock(lock_);
   return buffered_time_ranges_;
 }
@@ -167,7 +169,7 @@ TimeDelta Pipeline::GetMediaDuration() const {
   return clock_->Duration();
 }
 
-bool Pipeline::DidLoadingProgress() const {
+bool Pipeline::DidLoadingProgress() {
   base::AutoLock auto_lock(lock_);
   bool ret = did_loading_progress_;
   did_loading_progress_ = false;
@@ -188,14 +190,14 @@ void Pipeline::SetErrorForTesting(PipelineStatus status) {
 }
 
 void Pipeline::SetState(State next_state) {
-  if (state_ != kStarted && next_state == kStarted &&
+  if (state_ != kPlaying && next_state == kPlaying &&
       !creation_time_.is_null()) {
     UMA_HISTOGRAM_TIMES("Media.TimeToPipelineStarted",
                         default_tick_clock_.NowTicks() - creation_time_);
     creation_time_ = base::TimeTicks();
   }
 
-  DVLOG(2) << GetStateString(state_) << " -> " << GetStateString(next_state);
+  DVLOG(1) << GetStateString(state_) << " -> " << GetStateString(next_state);
 
   state_ = next_state;
   media_log_->AddEvent(media_log_->CreatePipelineStateChangedEvent(next_state));
@@ -211,8 +213,7 @@ const char* Pipeline::GetStateString(State state) {
     RETURN_STRING(kInitVideoRenderer);
     RETURN_STRING(kInitPrerolling);
     RETURN_STRING(kSeeking);
-    RETURN_STRING(kStarting);
-    RETURN_STRING(kStarted);
+    RETURN_STRING(kPlaying);
     RETURN_STRING(kStopping);
     RETURN_STRING(kStopped);
   }
@@ -249,15 +250,12 @@ Pipeline::State Pipeline::GetNextState() const {
       return kInitPrerolling;
 
     case kInitPrerolling:
-      return kStarting;
+      return kPlaying;
 
     case kSeeking:
-      return kStarting;
+      return kPlaying;
 
-    case kStarting:
-      return kStarted;
-
-    case kStarted:
+    case kPlaying:
     case kStopping:
     case kStopped:
       break;
@@ -295,15 +293,15 @@ void Pipeline::SetError(PipelineStatus error) {
 }
 
 void Pipeline::OnAudioTimeUpdate(TimeDelta time, TimeDelta max_time) {
+  DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_LE(time.InMicroseconds(), max_time.InMicroseconds());
-  DCHECK(IsRunning());
   base::AutoLock auto_lock(lock_);
 
-  if (waiting_for_clock_update_ && time < clock_->Elapsed())
+  if (clock_state_ == CLOCK_WAITING_FOR_AUDIO_TIME_UPDATE &&
+      time < clock_->Elapsed()) {
     return;
+  }
 
-  // TODO(scherkus): |state_| should only be accessed on pipeline thread, see
-  // http://crbug.com/137973
   if (state_ == kSeeking)
     return;
 
@@ -312,18 +310,16 @@ void Pipeline::OnAudioTimeUpdate(TimeDelta time, TimeDelta max_time) {
 }
 
 void Pipeline::OnVideoTimeUpdate(TimeDelta max_time) {
-  DCHECK(IsRunning());
-  base::AutoLock auto_lock(lock_);
+  DCHECK(task_runner_->BelongsToCurrentThread());
 
   if (audio_renderer_)
     return;
 
-  // TODO(scherkus): |state_| should only be accessed on pipeline thread, see
-  // http://crbug.com/137973
   if (state_ == kSeeking)
     return;
 
-  DCHECK(!waiting_for_clock_update_);
+  base::AutoLock auto_lock(lock_);
+  DCHECK_NE(clock_state_, CLOCK_WAITING_FOR_AUDIO_TIME_UPDATE);
   clock_->SetMaxTime(max_time);
 }
 
@@ -364,11 +360,9 @@ void Pipeline::StateTransitionTask(PipelineStatus status) {
 
   // Guard against accidentally clearing |pending_callbacks_| for states that
   // use it as well as states that should not be using it.
-  //
-  // TODO(scherkus): Make every state transition use |pending_callbacks_|.
   DCHECK_EQ(pending_callbacks_.get() != NULL,
-            (state_ == kInitPrerolling || state_ == kStarting ||
-             state_ == kSeeking));
+            (state_ == kInitPrerolling || state_ == kSeeking));
+
   pending_callbacks_.reset();
 
   PipelineStatusCB done_cb = base::Bind(
@@ -412,29 +406,24 @@ void Pipeline::StateTransitionTask(PipelineStatus status) {
 
       return DoInitialPreroll(done_cb);
 
-    case kStarting:
-      return DoPlay(done_cb);
+    case kPlaying:
+      PlaybackRateChangedTask(GetPlaybackRate());
+      VolumeChangedTask(GetVolume());
 
-    case kStarted:
-      {
-        base::AutoLock l(lock_);
-        // We use audio stream to update the clock. So if there is such a
-        // stream, we pause the clock until we receive a valid timestamp.
-        waiting_for_clock_update_ = true;
-        if (!audio_renderer_) {
-          clock_->SetMaxTime(clock_->Duration());
-          StartClockIfWaitingForTimeUpdate_Locked();
-        }
-      }
-
-      DCHECK(!seek_cb_.is_null());
-      DCHECK_EQ(status_, PIPELINE_OK);
-
-      // Fire canplaythrough immediately after playback begins because of
-      // crbug.com/106480.
-      // TODO(vrk): set ready state to HaveFutureData when bug above is fixed.
-      preroll_completed_cb_.Run();
-      return base::ResetAndReturn(&seek_cb_).Run(PIPELINE_OK);
+      // We enter this state from either kInitPrerolling or kSeeking. As of now
+      // both those states call Preroll(), which means by time we enter this
+      // state we've already buffered enough data. Forcefully update the
+      // buffering state, which start the clock and renderers and transition
+      // into kPlaying state.
+      //
+      // TODO(scherkus): Remove after renderers are taught to fire buffering
+      // state callbacks http://crbug.com/144683
+      DCHECK(WaitingForEnoughData());
+      if (audio_renderer_)
+        BufferingStateChanged(&audio_buffering_state_, BUFFERING_HAVE_ENOUGH);
+      if (video_renderer_)
+        BufferingStateChanged(&video_buffering_state_, BUFFERING_HAVE_ENOUGH);
+      return;
 
     case kStopping:
     case kStopped:
@@ -469,6 +458,16 @@ void Pipeline::DoInitialPreroll(const PipelineStatusCB& done_cb) {
     bound_fns.Push(base::Bind(
         &VideoRenderer::Preroll, base::Unretained(video_renderer_.get()),
         seek_timestamp));
+
+    // TODO(scherkus): Remove after VideoRenderer is taught to fire buffering
+    // state callbacks http://crbug.com/144683
+    bound_fns.Push(base::Bind(&VideoRenderer::Play,
+                              base::Unretained(video_renderer_.get())));
+  }
+
+  if (text_renderer_) {
+    bound_fns.Push(base::Bind(
+        &TextRenderer::Play, base::Unretained(text_renderer_.get())));
   }
 
   pending_callbacks_ = SerialRunner::Run(bound_fns, done_cb);
@@ -482,14 +481,6 @@ void Pipeline::DoSeek(
   SerialRunner::Queue bound_fns;
 
   // Pause.
-  if (audio_renderer_) {
-    bound_fns.Push(base::Bind(
-        &AudioRenderer::Pause, base::Unretained(audio_renderer_.get())));
-  }
-  if (video_renderer_) {
-    bound_fns.Push(base::Bind(
-        &VideoRenderer::Pause, base::Unretained(video_renderer_.get())));
-  }
   if (text_renderer_) {
     bound_fns.Push(base::Bind(
         &TextRenderer::Pause, base::Unretained(text_renderer_.get())));
@@ -499,10 +490,24 @@ void Pipeline::DoSeek(
   if (audio_renderer_) {
     bound_fns.Push(base::Bind(
         &AudioRenderer::Flush, base::Unretained(audio_renderer_.get())));
+
+    // TODO(scherkus): Remove after AudioRenderer is taught to fire buffering
+    // state callbacks http://crbug.com/144683
+    bound_fns.Push(base::Bind(&Pipeline::BufferingStateChanged,
+                              base::Unretained(this),
+                              &audio_buffering_state_,
+                              BUFFERING_HAVE_NOTHING));
   }
   if (video_renderer_) {
     bound_fns.Push(base::Bind(
         &VideoRenderer::Flush, base::Unretained(video_renderer_.get())));
+
+    // TODO(scherkus): Remove after VideoRenderer is taught to fire buffering
+    // state callbacks http://crbug.com/144683
+    bound_fns.Push(base::Bind(&Pipeline::BufferingStateChanged,
+                              base::Unretained(this),
+                              &video_buffering_state_,
+                              BUFFERING_HAVE_NOTHING));
   }
   if (text_renderer_) {
     bound_fns.Push(base::Bind(
@@ -524,27 +529,11 @@ void Pipeline::DoSeek(
     bound_fns.Push(base::Bind(
         &VideoRenderer::Preroll, base::Unretained(video_renderer_.get()),
         seek_timestamp));
-  }
 
-  pending_callbacks_ = SerialRunner::Run(bound_fns, done_cb);
-}
-
-void Pipeline::DoPlay(const PipelineStatusCB& done_cb) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-  DCHECK(!pending_callbacks_.get());
-  SerialRunner::Queue bound_fns;
-
-  PlaybackRateChangedTask(GetPlaybackRate());
-  VolumeChangedTask(GetVolume());
-
-  if (audio_renderer_) {
-    bound_fns.Push(base::Bind(
-        &AudioRenderer::Play, base::Unretained(audio_renderer_.get())));
-  }
-
-  if (video_renderer_) {
-    bound_fns.Push(base::Bind(
-        &VideoRenderer::Play, base::Unretained(video_renderer_.get())));
+    // TODO(scherkus): Remove after renderers are taught to fire buffering
+    // state callbacks http://crbug.com/144683
+    bound_fns.Push(base::Bind(&VideoRenderer::Play,
+                              base::Unretained(video_renderer_.get())));
   }
 
   if (text_renderer_) {
@@ -710,7 +699,7 @@ void Pipeline::PlaybackRateChangedTask(float playback_rate) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   // Playback rate changes are only carried out while playing.
-  if (state_ != kStarting && state_ != kStarted)
+  if (state_ != kPlaying)
     return;
 
   {
@@ -728,7 +717,7 @@ void Pipeline::VolumeChangedTask(float volume) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   // Volume changes are only carried out while playing.
-  if (state_ != kStarting && state_ != kStarted)
+  if (state_ != kPlaying)
     return;
 
   if (audio_renderer_)
@@ -740,7 +729,7 @@ void Pipeline::SeekTask(TimeDelta time, const PipelineStatusCB& seek_cb) {
   DCHECK(stop_cb_.is_null());
 
   // Suppress seeking if we're not fully started.
-  if (state_ != kStarted) {
+  if (state_ != kPlaying) {
     DCHECK(state_ == kStopping || state_ == kStopped)
         << "Receive extra seek in unexpected state: " << state_;
 
@@ -763,8 +752,7 @@ void Pipeline::SeekTask(TimeDelta time, const PipelineStatusCB& seek_cb) {
   // Kick off seeking!
   {
     base::AutoLock auto_lock(lock_);
-    if (clock_->IsPlaying())
-      clock_->Pause();
+    PauseClockAndStopRendering_Locked();
     clock_->SetTime(seek_timestamp, seek_timestamp);
   }
   DoSeek(seek_timestamp, base::Bind(
@@ -774,7 +762,7 @@ void Pipeline::SeekTask(TimeDelta time, const PipelineStatusCB& seek_cb) {
 void Pipeline::DoAudioRendererEnded() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  if (state_ != kStarted)
+  if (state_ != kPlaying)
     return;
 
   DCHECK(!audio_ended_);
@@ -793,7 +781,7 @@ void Pipeline::DoAudioRendererEnded() {
 void Pipeline::DoVideoRendererEnded() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  if (state_ != kStarted)
+  if (state_ != kPlaying)
     return;
 
   DCHECK(!video_ended_);
@@ -805,7 +793,7 @@ void Pipeline::DoVideoRendererEnded() {
 void Pipeline::DoTextRendererEnded() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  if (state_ != kStarted)
+  if (state_ != kPlaying)
     return;
 
   DCHECK(!text_ended_);
@@ -828,7 +816,8 @@ void Pipeline::RunEndedCallbackIfNeeded() {
 
   {
     base::AutoLock auto_lock(lock_);
-    clock_->EndOfStream();
+    PauseClockAndStopRendering_Locked();
+    clock_->SetTime(clock_->Duration(), clock_->Duration());
   }
 
   DCHECK_EQ(status_, PIPELINE_OK);
@@ -892,19 +881,105 @@ void Pipeline::OnAudioUnderflow() {
     return;
   }
 
-  if (state_ != kStarted)
+  if (state_ != kPlaying)
     return;
 
   if (audio_renderer_)
     audio_renderer_->ResumeAfterUnderflow();
 }
 
+void Pipeline::BufferingStateChanged(BufferingState* buffering_state,
+                                     BufferingState new_buffering_state) {
+  DVLOG(1) << __FUNCTION__ << "(" << *buffering_state << ", "
+           << " " << new_buffering_state << ") "
+           << (buffering_state == &audio_buffering_state_ ? "audio" : "video");
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  bool was_waiting_for_enough_data = WaitingForEnoughData();
+  *buffering_state = new_buffering_state;
+
+  // Renderer underflowed.
+  if (!was_waiting_for_enough_data && WaitingForEnoughData()) {
+    StartWaitingForEnoughData();
+    return;
+  }
+
+  // Renderer prerolled.
+  if (was_waiting_for_enough_data && !WaitingForEnoughData()) {
+    StartPlayback();
+    return;
+  }
+}
+
+bool Pipeline::WaitingForEnoughData() const {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  if (state_ != kPlaying)
+    return false;
+  if (audio_renderer_ && audio_buffering_state_ != BUFFERING_HAVE_ENOUGH)
+    return true;
+  if (video_renderer_ && video_buffering_state_ != BUFFERING_HAVE_ENOUGH)
+    return true;
+  return false;
+}
+
+void Pipeline::StartWaitingForEnoughData() {
+  DVLOG(1) << __FUNCTION__;
+  DCHECK_EQ(state_, kPlaying);
+  DCHECK(WaitingForEnoughData());
+
+  base::AutoLock auto_lock(lock_);
+  PauseClockAndStopRendering_Locked();
+}
+
+void Pipeline::StartPlayback() {
+  DVLOG(1) << __FUNCTION__;
+  DCHECK_EQ(state_, kPlaying);
+  DCHECK_EQ(clock_state_, CLOCK_PAUSED);
+  DCHECK(!WaitingForEnoughData());
+
+  if (audio_renderer_) {
+    // We use audio stream to update the clock. So if there is such a
+    // stream, we pause the clock until we receive a valid timestamp.
+    base::AutoLock auto_lock(lock_);
+    clock_state_ = CLOCK_WAITING_FOR_AUDIO_TIME_UPDATE;
+    audio_renderer_->StartRendering();
+  } else {
+    base::AutoLock auto_lock(lock_);
+    clock_state_ = CLOCK_PLAYING;
+    clock_->SetMaxTime(clock_->Duration());
+    clock_->Play();
+  }
+
+  preroll_completed_cb_.Run();
+  if (!seek_cb_.is_null())
+    base::ResetAndReturn(&seek_cb_).Run(PIPELINE_OK);
+}
+
+void Pipeline::PauseClockAndStopRendering_Locked() {
+  lock_.AssertAcquired();
+  switch (clock_state_) {
+    case CLOCK_PAUSED:
+      return;
+
+    case CLOCK_WAITING_FOR_AUDIO_TIME_UPDATE:
+      audio_renderer_->StopRendering();
+      break;
+
+    case CLOCK_PLAYING:
+      if (audio_renderer_)
+        audio_renderer_->StopRendering();
+      clock_->Pause();
+      break;
+  }
+
+  clock_state_ = CLOCK_PAUSED;
+}
+
 void Pipeline::StartClockIfWaitingForTimeUpdate_Locked() {
   lock_.AssertAcquired();
-  if (!waiting_for_clock_update_)
+  if (clock_state_ != CLOCK_WAITING_FOR_AUDIO_TIME_UPDATE)
     return;
 
-  waiting_for_clock_update_ = false;
+  clock_state_ = CLOCK_PLAYING;
   clock_->Play();
 }
 

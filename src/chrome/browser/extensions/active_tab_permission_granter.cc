@@ -4,6 +4,7 @@
 
 #include "chrome/browser/extensions/active_tab_permission_granter.h"
 
+#include "chrome/browser/extensions/active_script_controller.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
@@ -13,6 +14,7 @@
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/user_script.h"
+#include "url/gurl.h"
 
 using content::RenderProcessHost;
 using content::WebContentsObserver;
@@ -41,7 +43,21 @@ void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {
   APIPermissionSet new_apis;
   URLPatternSet new_hosts;
 
-  if (extension->HasAPIPermission(APIPermission::kActiveTab)) {
+  const PermissionsData* permissions_data = extension->permissions_data();
+
+  // If the extension requires action for script execution, we grant it
+  // active tab-style permissions, even if it doesn't have the activeTab
+  // permission in the manifest.
+  // We don't take tab id into account, because we want to know if the extension
+  // should require active tab in general (not for the current tab).
+  bool requires_action_for_script_execution =
+      permissions_data->RequiresActionForScriptExecution(extension,
+                                                         -1,  // No tab id.
+                                                         GURL());
+
+  if (extension->permissions_data()->HasAPIPermission(
+          APIPermission::kActiveTab) ||
+      requires_action_for_script_execution) {
     URLPattern pattern(UserScript::ValidUserScriptSchemes());
     // Pattern parsing could fail if this is an unsupported URL e.g. chrome://.
     if (pattern.Parse(web_contents()->GetURL().spec()) ==
@@ -51,7 +67,8 @@ void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {
     new_apis.insert(APIPermission::kTab);
   }
 
-  if (extension->HasAPIPermission(APIPermission::kTabCapture))
+  if (extension->permissions_data()->HasAPIPermission(
+          APIPermission::kTabCapture))
     new_apis.insert(APIPermission::kTabCaptureForTab);
 
   if (!new_apis.empty() || !new_hosts.is_empty()) {
@@ -59,9 +76,7 @@ void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {
     scoped_refptr<const PermissionSet> new_permissions =
         new PermissionSet(new_apis, ManifestPermissionSet(),
                           new_hosts, URLPatternSet());
-    PermissionsData::UpdateTabSpecificPermissions(extension,
-                                                  tab_id_,
-                                                  new_permissions);
+    permissions_data->UpdateTabSpecificPermissions(tab_id_, new_permissions);
     const content::NavigationEntry* navigation_entry =
         web_contents()->GetController().GetVisibleEntry();
     if (navigation_entry) {
@@ -70,6 +85,13 @@ void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {
           tab_id_,
           extension->id(),
           new_hosts));
+      // If more things ever need to know about this, we should consider making
+      // an observer class.
+      // It's important that this comes after the IPC is sent to the renderer,
+      // so that any tasks executing in the renderer occur after it has the
+      // updated permissions.
+      ActiveScriptController::GetForWebContents(web_contents())
+          ->OnActiveTabPermissionGranted(extension);
     }
   }
 }
@@ -104,7 +126,7 @@ void ActiveTabPermissionGranter::ClearActiveExtensionsAndNotify() {
 
   for (ExtensionSet::const_iterator it = granted_extensions_.begin();
        it != granted_extensions_.end(); ++it) {
-    PermissionsData::ClearTabSpecificPermissions(it->get(), tab_id_);
+    it->get()->permissions_data()->ClearTabSpecificPermissions(tab_id_);
     extension_ids.push_back((*it)->id());
   }
 

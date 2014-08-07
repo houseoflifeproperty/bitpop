@@ -277,7 +277,7 @@ void AnalysisCanvas::drawVertices(SkCanvas::VertexMode,
 // by any pixels
 static SkBitmap MakeEmptyBitmap(int width, int height) {
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kNo_Config, width, height);
+  bitmap.setInfo(SkImageInfo::MakeUnknown(width, height));
   return bitmap;
 }
 
@@ -354,9 +354,9 @@ void AnalysisCanvas::onClipRRect(const SkRRect& rrect,
   INHERITED::onClipRect(rrect.getBounds(), op, edge_style);
 }
 
-void AnalysisCanvas::willSave(SkCanvas::SaveFlags flags) {
+void AnalysisCanvas::willSave() {
   ++saved_stack_size_;
-  INHERITED::willSave(flags);
+  INHERITED::willSave();
 }
 
 SkCanvas::SaveLayerStrategy AnalysisCanvas::willSaveLayer(

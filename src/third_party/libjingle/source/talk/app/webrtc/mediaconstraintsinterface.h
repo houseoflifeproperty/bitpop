@@ -122,10 +122,22 @@ class MediaConstraintsInterface {
   static const char kCpuOveruseDetection[];  // googCpuOveruseDetection
   static const char kCpuUnderuseThreshold[];  // googCpuUnderuseThreshold
   static const char kCpuOveruseThreshold[];  // googCpuOveruseThreshold
+  // Low cpu adaptation threshold for relative standard deviation of encode
+  // time.
+  static const char kCpuUnderuseEncodeRsdThreshold[];
+  // High cpu adaptation threshold for relative standard deviation of encode
+  // time.
+  static const char kCpuOveruseEncodeRsdThreshold[];
   static const char kCpuOveruseEncodeUsage[];  // googCpuOveruseEncodeUsage
   static const char kHighStartBitrate[];  // googHighStartBitrate
   static const char kHighBitrate[];  // googHighBitrate
   static const char kVeryHighBitrate[];  // googVeryHighBitrate
+  static const char kPayloadPadding[];  // googPayloadPadding
+
+  // PeerConnection codec constraint keys. This should be combined with the
+  // values above.
+  // kOpusFec controls whether we ask the other side to turn on FEC for Opus.
+  static const char kOpusFec[];  // googOpusFec
 
   // The prefix of internal-only constraints whose JS set values should be
   // stripped by Chrome before passed down to Libjingle.

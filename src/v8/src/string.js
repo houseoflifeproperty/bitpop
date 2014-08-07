@@ -83,7 +83,7 @@ function StringConcat() {
 
 
 // ECMA-262 section 15.5.4.7
-function StringIndexOf(pattern /* position */) {  // length == 1
+function StringIndexOfJS(pattern /* position */) {  // length == 1
   CHECK_OBJECT_COERCIBLE(this, "String.prototype.indexOf");
 
   var subject = TO_STRING_INLINE(this);
@@ -100,7 +100,7 @@ function StringIndexOf(pattern /* position */) {  // length == 1
 
 
 // ECMA-262 section 15.5.4.8
-function StringLastIndexOf(pat /* position */) {  // length == 1
+function StringLastIndexOfJS(pat /* position */) {  // length == 1
   CHECK_OBJECT_COERCIBLE(this, "String.prototype.lastIndexOf");
 
   var sub = TO_STRING_INLINE(this);
@@ -131,7 +131,7 @@ function StringLastIndexOf(pat /* position */) {  // length == 1
 //
 // This function is implementation specific.  For now, we do not
 // do anything locale specific.
-function StringLocaleCompare(other) {
+function StringLocaleCompareJS(other) {
   CHECK_OBJECT_COERCIBLE(this, "String.prototype.localeCompare");
 
   return %StringLocaleCompare(TO_STRING_INLINE(this),
@@ -140,7 +140,7 @@ function StringLocaleCompare(other) {
 
 
 // ECMA-262 section 15.5.4.10
-function StringMatch(regexp) {
+function StringMatchJS(regexp) {
   CHECK_OBJECT_COERCIBLE(this, "String.prototype.match");
 
   var subject = TO_STRING_INLINE(this);
@@ -150,7 +150,6 @@ function StringMatch(regexp) {
     var lastIndex = regexp.lastIndex;
     TO_INTEGER_FOR_SIDE_EFFECT(lastIndex);
     if (!regexp.global) return RegExpExecNoTests(regexp, subject, 0);
-    %_Log('regexp', 'regexp-match,%0S,%1r', [subject, regexp]);
     // lastMatchInfo is defined in regexp.js.
     var result = %StringMatch(subject, regexp, lastMatchInfo);
     if (result !== null) lastMatchInfoOverride = null;
@@ -171,7 +170,7 @@ var NORMALIZATION_FORMS = ['NFC', 'NFD', 'NFKC', 'NFKD'];
 // For now we do nothing, as proper normalization requires big tables.
 // If Intl is enabled, then i18n.js will override it and provide the the
 // proper functionality.
-function StringNormalize(form) {
+function StringNormalizeJS(form) {
   CHECK_OBJECT_COERCIBLE(this, "String.prototype.normalize");
 
   var form = form ? TO_STRING_INLINE(form) : 'NFC';
@@ -221,7 +220,6 @@ function StringReplace(search, replace) {
     // value is discarded.
     var lastIndex = search.lastIndex;
     TO_INTEGER_FOR_SIDE_EFFECT(lastIndex);
-    %_Log('regexp', 'regexp-replace,%0r,%1S', [search, subject]);
 
     if (!IS_SPEC_FUNCTION(replace)) {
       replace = TO_STRING_INLINE(replace);
@@ -587,7 +585,7 @@ function StringSlice(start, end) {
 
 
 // ECMA-262 section 15.5.4.14
-function StringSplit(separator, limit) {
+function StringSplitJS(separator, limit) {
   CHECK_OBJECT_COERCIBLE(this, "String.prototype.split");
 
   var subject = TO_STRING_INLINE(this);
@@ -620,11 +618,7 @@ function StringSplit(separator, limit) {
 }
 
 
-var ArrayPushBuiltin = $Array.prototype.push;
-
 function StringSplitOnRegExp(subject, separator, limit, length) {
-  %_Log('regexp', 'regexp-split,%0S,%1r', [subject, separator]);
-
   if (length === 0) {
     if (DoRegExpExec(separator, subject, 0, 0) != null) {
       return [];
@@ -641,15 +635,13 @@ function StringSplitOnRegExp(subject, separator, limit, length) {
   while (true) {
 
     if (startIndex === length) {
-      %_CallFunction(result, %_SubString(subject, currentIndex, length),
-                     ArrayPushBuiltin);
+      result[result.length] = %_SubString(subject, currentIndex, length);
       break;
     }
 
     var matchInfo = DoRegExpExec(separator, subject, startIndex);
     if (matchInfo == null || length === (startMatch = matchInfo[CAPTURE0])) {
-      %_CallFunction(result, %_SubString(subject, currentIndex, length),
-                     ArrayPushBuiltin);
+      result[result.length] = %_SubString(subject, currentIndex, length);
       break;
     }
     var endIndex = matchInfo[CAPTURE1];
@@ -660,8 +652,7 @@ function StringSplitOnRegExp(subject, separator, limit, length) {
       continue;
     }
 
-    %_CallFunction(result, %_SubString(subject, currentIndex, startMatch),
-                   ArrayPushBuiltin);
+    result[result.length] = %_SubString(subject, currentIndex, startMatch);
 
     if (result.length === limit) break;
 
@@ -670,10 +661,9 @@ function StringSplitOnRegExp(subject, separator, limit, length) {
       var start = matchInfo[i++];
       var end = matchInfo[i++];
       if (end != -1) {
-        %_CallFunction(result, %_SubString(subject, start, end),
-                       ArrayPushBuiltin);
+        result[result.length] = %_SubString(subject, start, end);
       } else {
-        %_CallFunction(result, UNDEFINED, ArrayPushBuiltin);
+        result[result.length] = UNDEFINED;
       }
       if (result.length === limit) break outer_loop;
     }
@@ -760,7 +750,7 @@ function StringSubstr(start, n) {
 
 
 // ECMA-262, 15.5.4.16
-function StringToLowerCase() {
+function StringToLowerCaseJS() {
   CHECK_OBJECT_COERCIBLE(this, "String.prototype.toLowerCase");
 
   return %StringToLowerCase(TO_STRING_INLINE(this));
@@ -776,7 +766,7 @@ function StringToLocaleLowerCase() {
 
 
 // ECMA-262, 15.5.4.18
-function StringToUpperCase() {
+function StringToUpperCaseJS() {
   CHECK_OBJECT_COERCIBLE(this, "String.prototype.toUpperCase");
 
   return %StringToUpperCase(TO_STRING_INLINE(this));
@@ -791,7 +781,7 @@ function StringToLocaleUpperCase() {
 }
 
 // ES5, 15.5.4.20
-function StringTrim() {
+function StringTrimJS() {
   CHECK_OBJECT_COERCIBLE(this, "String.prototype.trim");
 
   return %StringTrim(TO_STRING_INLINE(this), true, true);
@@ -939,22 +929,22 @@ function SetUpString() {
     "charAt", StringCharAt,
     "charCodeAt", StringCharCodeAt,
     "concat", StringConcat,
-    "indexOf", StringIndexOf,
-    "lastIndexOf", StringLastIndexOf,
-    "localeCompare", StringLocaleCompare,
-    "match", StringMatch,
-    "normalize", StringNormalize,
+    "indexOf", StringIndexOfJS,
+    "lastIndexOf", StringLastIndexOfJS,
+    "localeCompare", StringLocaleCompareJS,
+    "match", StringMatchJS,
+    "normalize", StringNormalizeJS,
     "replace", StringReplace,
     "search", StringSearch,
     "slice", StringSlice,
-    "split", StringSplit,
+    "split", StringSplitJS,
     "substring", StringSubstring,
     "substr", StringSubstr,
-    "toLowerCase", StringToLowerCase,
+    "toLowerCase", StringToLowerCaseJS,
     "toLocaleLowerCase", StringToLocaleLowerCase,
-    "toUpperCase", StringToUpperCase,
+    "toUpperCase", StringToUpperCaseJS,
     "toLocaleUpperCase", StringToLocaleUpperCase,
-    "trim", StringTrim,
+    "trim", StringTrimJS,
     "trimLeft", StringTrimLeft,
     "trimRight", StringTrimRight,
     "link", StringLink,

@@ -305,19 +305,19 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
                 m_customCompositionUnderlines[i].endOffset += baseOffset;
             }
             if (baseNode->renderer())
-                baseNode->renderer()->repaint();
+                baseNode->renderer()->paintInvalidationForWholeRenderer();
 
             unsigned start = std::min(baseOffset + selectionStart, extentOffset);
             unsigned end = std::min(std::max(start, baseOffset + selectionEnd), extentOffset);
             RefPtrWillBeRawPtr<Range> selectedRange = Range::create(baseNode->document(), baseNode, start, baseNode, end);
-            m_frame.selection().setSelectedRange(selectedRange.get(), DOWNSTREAM, static_cast<FrameSelection::SetSelectionOption>(0));
+            m_frame.selection().setSelectedRange(selectedRange.get(), DOWNSTREAM, FrameSelection::NonDirectional, NotUserTriggered);
         }
     }
 }
 
 void InputMethodController::setCompositionFromExistingText(const Vector<CompositionUnderline>& underlines, unsigned compositionStart, unsigned compositionEnd)
 {
-    Node* editable = m_frame.selection().rootEditableElement();
+    Element* editable = m_frame.selection().rootEditableElement();
     Position base = m_frame.selection().base().downstream();
     Node* baseNode = base.anchorNode();
     if (editable->firstChild() == baseNode && editable->lastChild() == baseNode && baseNode->isTextNode()) {
@@ -330,16 +330,17 @@ void InputMethodController::setCompositionFromExistingText(const Vector<Composit
             return;
 
         m_compositionNode = toText(baseNode);
-        m_compositionStart = compositionStart;
-        m_compositionEnd = compositionEnd;
+        RefPtrWillBeRawPtr<Range> range = PlainTextRange(compositionStart, compositionEnd).createRange(*editable);
+        m_compositionStart = range->startOffset();
+        m_compositionEnd = range->endOffset();
         m_customCompositionUnderlines = underlines;
         size_t numUnderlines = m_customCompositionUnderlines.size();
         for (size_t i = 0; i < numUnderlines; ++i) {
-            m_customCompositionUnderlines[i].startOffset += compositionStart;
-            m_customCompositionUnderlines[i].endOffset += compositionStart;
+            m_customCompositionUnderlines[i].startOffset += m_compositionStart;
+            m_customCompositionUnderlines[i].endOffset += m_compositionStart;
         }
         if (baseNode->renderer())
-            baseNode->renderer()->repaint();
+            baseNode->renderer()->paintInvalidationForWholeRenderer();
         return;
     }
 
@@ -383,7 +384,7 @@ bool InputMethodController::setSelectionOffsets(const PlainTextRange& selectionO
     if (!range)
         return false;
 
-    return m_frame.selection().setSelectedRange(range.get(), VP_DEFAULT_AFFINITY, FrameSelection::CloseTyping);
+    return m_frame.selection().setSelectedRange(range.get(), VP_DEFAULT_AFFINITY, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
 }
 
 bool InputMethodController::setEditableSelectionOffsets(const PlainTextRange& selectionOffsets)

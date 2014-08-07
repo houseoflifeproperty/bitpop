@@ -42,6 +42,7 @@
 #include "platform/PlatformMouseEvent.h"
 #include "platform/PlatformTouchEvent.h"
 #include "platform/PlatformTouchPoint.h"
+#include "platform/geometry/FloatSize.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/IntSize.h"
@@ -57,8 +58,7 @@ public:
         m_screenPos = screenPos;
         m_pos = pos;
         m_state = state;
-        m_radiusY = radiusY;
-        m_radiusX = radiusX;
+        m_radius = WebCore::FloatSize(radiusX, radiusY);
         m_rotationAngle = rotationAngle;
         m_force = force;
     }
@@ -81,7 +81,7 @@ public:
 
 void ConvertInspectorPoint(WebCore::Page* page, const WebCore::IntPoint& point, WebCore::IntPoint* convertedPoint, WebCore::IntPoint* globalPoint)
 {
-    *convertedPoint = page->mainFrame()->view()->convertToContainingWindow(point);
+    *convertedPoint = page->deprecatedLocalMainFrame()->view()->convertToContainingWindow(point);
     *globalPoint = page->chrome().rootViewToScreen(WebCore::IntRect(point, WebCore::IntSize(0, 0))).location();
 }
 
@@ -267,7 +267,7 @@ void InspectorInputAgent::dispatchTouchEvent(ErrorString* error, const String& t
         event.append(point);
     }
 
-    m_page->mainFrame()->eventHandler().handleTouchEvent(event);
+    m_page->deprecatedLocalMainFrame()->eventHandler().handleTouchEvent(event);
 }
 
 } // namespace WebCore

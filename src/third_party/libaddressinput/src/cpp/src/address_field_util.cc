@@ -16,12 +16,15 @@
 
 #include <libaddressinput/address_field.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <map>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "format_element.h"
 
 namespace i18n {
 namespace addressinput {
@@ -34,14 +37,10 @@ std::map<char, AddressField> InitFields() {
   fields.insert(std::make_pair('S', ADMIN_AREA));
   fields.insert(std::make_pair('C', LOCALITY));
   fields.insert(std::make_pair('D', DEPENDENT_LOCALITY));
-  fields.insert(std::make_pair('x', SORTING_CODE));
+  fields.insert(std::make_pair('X', SORTING_CODE));
   fields.insert(std::make_pair('Z', POSTAL_CODE));
   fields.insert(std::make_pair('A', STREET_ADDRESS));
-  fields.insert(std::make_pair('O', ORGANIZATION));
   fields.insert(std::make_pair('N', RECIPIENT));
-  // An extension of AddressField enum used only internally:
-  fields.insert(std::make_pair(
-      'n', static_cast<AddressField>(NEWLINE)));
   return fields;
 }
 
@@ -50,15 +49,11 @@ const std::map<char, AddressField>& GetFields() {
   return kFields;
 }
 
-bool IsTokenPrefix(char c) {
-  return c == '%';
-}
-
-bool IsToken(char c) {
+bool IsFieldToken(char c) {
   return GetFields().find(c) != GetFields().end();
 }
 
-AddressField ParseToken(char c) {
+AddressField ParseFieldToken(char c) {
   std::map<char, AddressField>::const_iterator it = GetFields().find(c);
   assert(it != GetFields().end());
   return it->second;
@@ -66,16 +61,49 @@ AddressField ParseToken(char c) {
 
 }  // namespace
 
-void ParseAddressFieldsFormat(const std::string& format,
-                              std::vector<AddressField>* fields) {
+void ParseFormatRule(const std::string& format,
+                     std::vector<FormatElement>* elements) {
+  assert(elements != NULL);
+  elements->clear();
+
+  std::string::const_iterator prev = format.begin();
+  for (std::string::const_iterator next = format.begin();
+       next != format.end(); prev = ++next) {
+    // Find the next field element or newline (indicated by %<TOKEN>).
+    if ((next = std::find(next, format.end(), '%')) == format.end()) {
+      // No more tokens in the format string.
+      break;
+    }
+    if (prev < next) {
+      // Push back preceding literal.
+      elements->push_back(FormatElement(std::string(prev, next)));
+    }
+    if ((prev = ++next) == format.end()) {
+      // Move forward and check we haven't reached the end of the string
+      // (unlikely, it shouldn't end with %).
+      break;
+    }
+    // Process the token after the %.
+    if (*next == 'n') {
+      elements->push_back(FormatElement());
+    } else if (IsFieldToken(*next)) {
+      elements->push_back(FormatElement(ParseFieldToken(*next)));
+    }  // Else it's an unknown token, we ignore it.
+  }
+  // Push back any trailing literal.
+  if (prev != format.end()) {
+    elements->push_back(FormatElement(std::string(prev, format.end())));
+  }
+}
+
+void ParseAddressFieldsRequired(const std::string& required,
+                                std::vector<AddressField>* fields) {
   assert(fields != NULL);
   fields->clear();
-  for (std::string::const_iterator current = format.begin(),
-                                   next = format.begin() + 1;
-       current != format.end() && next != format.end();
-       ++current, ++next) {
-    if (IsTokenPrefix(*current) && IsToken(*next)) {
-      fields->push_back(ParseToken(*next));
+  for (std::string::const_iterator it = required.begin();
+       it != required.end(); ++it) {
+    if (IsFieldToken(*it)) {
+      fields->push_back(ParseFieldToken(*it));
     }
   }
 }

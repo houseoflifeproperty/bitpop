@@ -9,6 +9,10 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
+#include "mojo/public/c/system/buffer.h"
+#include "mojo/public/c/system/data_pipe.h"
+#include "mojo/public/c/system/message_pipe.h"
+#include "mojo/public/c/system/types.h"
 #include "mojo/system/handle_table.h"
 #include "mojo/system/mapping_table.h"
 #include "mojo/system/system_impl_export.h"
@@ -22,24 +26,31 @@ class Dispatcher;
 // are thread-safe.
 class MOJO_SYSTEM_IMPL_EXPORT Core {
  public:
-  // These methods are only to be used by via the embedder API.
+  // These methods are only to be used by via the embedder API (and internally).
   Core();
   virtual ~Core();
+
+  // Adds |dispatcher| to the handle table, returning the handle for it. Returns
+  // |MOJO_HANDLE_INVALID| on failure, namely if the handle table is full.
   MojoHandle AddDispatcher(const scoped_refptr<Dispatcher>& dispatcher);
+
+  // Looks up the dispatcher for the given handle. Returns null if the handle is
+  // invalid.
+  scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
 
   // System calls implementation.
   MojoTimeTicks GetTimeTicksNow();
   MojoResult Close(MojoHandle handle);
   MojoResult Wait(MojoHandle handle,
-                  MojoWaitFlags flags,
+                  MojoHandleSignals signals,
                   MojoDeadline deadline);
   MojoResult WaitMany(const MojoHandle* handles,
-                      const MojoWaitFlags* flags,
+                      const MojoHandleSignals* signals,
                       uint32_t num_handles,
                       MojoDeadline deadline);
-  MojoResult CreateMessagePipe(
-      MojoHandle* message_pipe_handle0,
-      MojoHandle* message_pipe_handle1);
+  MojoResult CreateMessagePipe(const MojoCreateMessagePipeOptions* options,
+                               MojoHandle* message_pipe_handle0,
+                               MojoHandle* message_pipe_handle1);
   MojoResult WriteMessage(MojoHandle message_pipe_handle,
                           const void* bytes,
                           uint32_t num_bytes,
@@ -52,10 +63,9 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                          MojoHandle* handles,
                          uint32_t* num_handles,
                          MojoReadMessageFlags flags);
-  MojoResult CreateDataPipe(
-      const MojoCreateDataPipeOptions* options,
-      MojoHandle* data_pipe_producer_handle,
-      MojoHandle* data_pipe_consumer_handle);
+  MojoResult CreateDataPipe(const MojoCreateDataPipeOptions* options,
+                            MojoHandle* data_pipe_producer_handle,
+                            MojoHandle* data_pipe_consumer_handle);
   MojoResult WriteData(MojoHandle data_pipe_producer_handle,
                        const void* elements,
                        uint32_t* num_bytes,
@@ -76,10 +86,9 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
                            MojoReadDataFlags flags);
   MojoResult EndReadData(MojoHandle data_pipe_consumer_handle,
                          uint32_t num_bytes_read);
-  MojoResult CreateSharedBuffer(
-      const MojoCreateSharedBufferOptions* options,
-      uint64_t num_bytes,
-      MojoHandle* shared_buffer_handle);
+  MojoResult CreateSharedBuffer(const MojoCreateSharedBufferOptions* options,
+                                uint64_t num_bytes,
+                                MojoHandle* shared_buffer_handle);
   MojoResult DuplicateBufferHandle(
       MojoHandle buffer_handle,
       const MojoDuplicateBufferHandleOptions* options,
@@ -93,40 +102,11 @@ class MOJO_SYSTEM_IMPL_EXPORT Core {
 
  private:
   friend bool internal::ShutdownCheckNoLeaks(Core*);
-  // The |busy| member is used only to deal with functions (in particular
-  // |WriteMessage()|) that want to hold on to a dispatcher and later remove it
-  // from the handle table, without holding on to the handle table lock.
-  //
-  // For example, if |WriteMessage()| is called with a handle to be sent, (under
-  // the handle table lock) it must first check that that handle is not busy (if
-  // it is busy, then it fails with |MOJO_RESULT_BUSY|) and then marks it as
-  // busy. To avoid deadlock, it should also try to acquire the locks for all
-  // the dispatchers for the handles that it is sending (and fail with
-  // |MOJO_RESULT_BUSY| if the attempt fails). At this point, it can release the
-  // handle table lock.
-  //
-  // If |Close()| is simultaneously called on that handle, it too checks if the
-  // handle is marked busy. If it is, it fails (with |MOJO_RESULT_BUSY|). This
-  // prevents |WriteMessage()| from sending a handle that has been closed (or
-  // learning about this too late).
-  struct HandleTableEntry {
-    HandleTableEntry();
-    explicit HandleTableEntry(const scoped_refptr<Dispatcher>& dispatcher);
-    ~HandleTableEntry();
-
-    scoped_refptr<Dispatcher> dispatcher;
-    bool busy;
-  };
-  typedef base::hash_map<MojoHandle, HandleTableEntry> HandleTableMap;
-
-  // Looks up the dispatcher for the given handle. Returns null if the handle is
-  // invalid.
-  scoped_refptr<Dispatcher> GetDispatcher(MojoHandle handle);
 
   // Internal implementation of |Wait()| and |WaitMany()|; doesn't do basic
   // validation of arguments.
   MojoResult WaitManyInternal(const MojoHandle* handles,
-                              const MojoWaitFlags* flags,
+                              const MojoHandleSignals* signals,
                               uint32_t num_handles,
                               MojoDeadline deadline);
 

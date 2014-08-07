@@ -76,8 +76,8 @@ class DeviceCloudPolicyStoreChromeOS
 
   scoped_refptr<base::SequencedTaskRunner> background_task_runner_;
 
-  // Ensure that UMA stats are only reported once per browser start.
-  bool uma_done_;
+  // Whether enterprise enrollment validation has yet been done.
+  bool enrollment_validation_done_;
 
   base::WeakPtrFactory<DeviceCloudPolicyStoreChromeOS> weak_factory_;
 

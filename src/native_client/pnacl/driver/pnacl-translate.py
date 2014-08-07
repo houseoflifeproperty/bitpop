@@ -41,8 +41,8 @@ EXTRA_ENV = {
   # explicitly to override this.
   'ALLOW_LLVM_BITCODE_INPUT': '0',
 
-  # Flags for pnacl-nativeld
-  'LD_FLAGS': '-static',
+  # Flags for nativeld
+  'LD_FLAGS': '',
 
   'USE_STDLIB'     : '1',
   'USE_DEFAULTLIBS': '1',
@@ -55,11 +55,11 @@ EXTRA_ENV = {
   # Library Strings
   'LD_ARGS' : '${USE_STDLIB ? ${LD_ARGS_normal} : ${LD_ARGS_nostdlib}}',
 
-  # Note: we always requires a shim now, but the dummy shim is not doing
+  # Note: we always require a shim now, but the dummy shim is not doing
   # anything useful.
   # libpnacl_irt_shim.a is generated during the SDK packaging not
   # during the toolchain build and there are hacks in pnacl/driver/ldtools.py
-  # and pnacl/driver/pnacl-nativeld.py that will fall back to
+  # and pnacl/driver/nativeld.py that will fall back to
   # libpnacl_irt_shim_dummy.a if libpnacl_irt_shim.a does not exist.
   'LD_ARGS_IRT_SHIM': '-l:libpnacl_irt_shim.a',
   'LD_ARGS_IRT_SHIM_DUMMY': '-l:libpnacl_irt_shim_dummy.a',
@@ -69,7 +69,9 @@ EXTRA_ENV = {
   # the pexe, however for the IRT it comes from irt_entry.c and when linking it
   # using native object files, this reference is required to make sure it gets
   # pulled in from the archive.
-  'LD_ARGS_ENTRY': '--entry=__pnacl_start --undefined=_start',
+  'LD_ARGS_ENTRY': '${NONSFI_NACL && !USE_IRT '
+                   '  ? --entry=__pnacl_start_linux : --entry=__pnacl_start} '
+                   '--undefined=_start',
 
   'CRTBEGIN': '${ALLOW_ZEROCOST_CXX_EH ? -l:crtbegin_for_eh.o : -l:crtbegin.o}',
   'CRTEND': '-l:crtend.o',
@@ -163,7 +165,6 @@ TranslatorPatterns = [
                   "env.append('LLC_FLAGS_EXTRA', $0)"),
   ( '(-pnaclabi-verify=.*)', "env.append('LLC_FLAGS_EXTRA', $0)"),
   ( '(-pnaclabi-verify-fatal-errors=.*)', "env.append('LLC_FLAGS_EXTRA', $0)"),
-  ( '(-pnaclabi-allow-dev-intrinsics)', "env.append('LLC_FLAGS_EXTRA', $0)"),
   # Allow overriding the -O level.
   ( '-O([0-3])', "env.set('OPT_LEVEL', $0)"),
 
@@ -177,10 +178,8 @@ TranslatorPatterns = [
   # This flag is needed for building libgcc_s.so.
   ( '-nodefaultlibs',  "env.set('USE_DEFAULTLIBS', '0')"),
 
-  ( '--noirt',         "env.set('USE_IRT', '0')\n"
-                       "env.append('LD_FLAGS', '--noirt')"),
+  ( '--noirt',         "env.set('USE_IRT', '0')"),
   ( '--noirtshim',     "env.set('USE_IRT_SHIM', '0')"),
-  ( '(--pnacl-nativeld=.+)', "env.append('LD_FLAGS', $0)"),
 
   # Allowing zero-cost C++ exception handling causes a specific set of
   # native objects to get linked into the nexe.
@@ -239,21 +238,18 @@ def SetUpArch():
   # do auto feature detection based on CPUID, but constrained by what is
   # accepted by NaCl validators.
   cpu_map = {
-      'X8632': 'pentium4',
-      'X8664': 'core2',
+      'X8632': 'pentium4m',
+      'X8664': 'x86-64',
       'ARM': 'cortex-a9',
       'MIPS32': 'mips32r2'}
   env.set('LLC_MCPU', '-mcpu=%s' % cpu_map[base_arch])
 
   llc_flags_map = {
-      'ARM': ['-arm-reserve-r9', '-sfi-disable-cp', '-sfi-load', '-sfi-store',
-              '-sfi-stack', '-sfi-branch', '-sfi-data',
-              '-no-inline-jumptables', '-float-abi=hard', '-mattr=+neon'],
+      'ARM': ['-float-abi=hard', '-mattr=+neon'],
       # Once PNaCl's build of compiler-rt (libgcc.a) defines __aeabi_*
       # functions, we can drop the following ad-hoc option.
       'ARM_NONSFI': ['-arm-enable-aeabi-functions=0'],
-      'MIPS32': ['-sfi-load', '-sfi-store', '-sfi-stack',
-                 '-sfi-branch', '-sfi-data']}
+      }
   env.set('LLC_FLAGS_ARCH', *llc_flags_map.get(env.getone('ARCH'), []))
   # When linking against a host OS's libc (such as Linux glibc), don't
   # use %gs:0 to read the thread pointer because that won't be
@@ -263,11 +259,37 @@ def SetUpArch():
     env.append('LLC_FLAGS_ARCH', '-mtls-use-call')
 
 
+def SetUpLinkOptions():
+  if env.getbool('NONSFI_NACL'):
+    # "_begin" allows a PIE to find its load address in order to apply
+    # dynamic relocations.
+    env.append('LD_FLAGS', '-defsym=_begin=0')
+    if env.getbool('USE_IRT'):
+      env.append('LD_FLAGS', '-pie')
+    else:
+      # Note that we really want to use "-pie" for this case, but it
+      # currently adds a PT_INTERP header to the executable that we don't
+      # want because it stops the executable from being loadable by Linux.
+      # TODO(mseaborn): Add a linker option to omit PT_INTERP.
+      env.append('LD_FLAGS', '-static')
+      # Set _DYNAMIC to a dummy value.  TODO(mseaborn): Remove this when we
+      # use "-pie" instead of "-static" for this case.
+      env.append('LD_FLAGS', '-defsym=_DYNAMIC=1')
+  else:
+    env.append('LD_FLAGS', '-static')
+    # Give non-IRT builds 12MB of text before starting rodata instead of
+    # the larger default gap. The gap cannot be too small (e.g., 0) because
+    # sel_ldr requires space for adding a halt sled.
+    if not env.getbool('USE_IRT'):
+      env.append('LD_FLAGS', '--rosegment-gap=0xc00000')
+
+
 def main(argv):
   env.update(EXTRA_ENV)
   driver_tools.ParseArgs(argv, TranslatorPatterns)
   driver_tools.GetArch(required = True)
   SetUpArch()
+  SetUpLinkOptions()
 
   inputs = env.get('INPUTS')
   output = env.getone('OUTPUT')
@@ -367,7 +389,7 @@ def main(argv):
   return 0
 
 def RunAS(infile, outfile):
-  driver_tools.RunDriver('as', [infile, '-o', outfile])
+  driver_tools.RunDriver('pnacl-as', [infile, '-o', outfile])
 
 def ListReplace(items, old, new):
   ret = []

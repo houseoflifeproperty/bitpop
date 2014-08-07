@@ -36,7 +36,6 @@ namespace WTF {
     struct VectorTraitsBase
     {
         static const bool needsDestruction = !IsPod<T>::value;
-        static const bool needsInitialization = !IsPod<T>::value;
         static const bool canInitializeWithMemset = IsPod<T>::value;
         static const bool canMoveWithMemcpy = IsPod<T>::value;
         static const bool canCopyWithMemcpy = IsPod<T>::value;
@@ -46,7 +45,7 @@ namespace WTF {
         struct NeedsTracingLazily {
             static const bool value = NeedsTracing<T>::value;
         };
-        static const bool isWeak = IsWeak<T>::value;
+        static const WeakHandlingFlag weakHandlingFlag = NoWeakHandlingInCollections; // We don't support weak handling in vectors.
     };
 
     template<typename T>
@@ -79,7 +78,6 @@ namespace WTF {
         typedef VectorTraits<Second> SecondTraits;
 
         static const bool needsDestruction = FirstTraits::needsDestruction || SecondTraits::needsDestruction;
-        static const bool needsInitialization = FirstTraits::needsInitialization || SecondTraits::needsInitialization;
         static const bool canInitializeWithMemset = FirstTraits::canInitializeWithMemset && SecondTraits::canInitializeWithMemset;
         static const bool canMoveWithMemcpy = FirstTraits::canMoveWithMemcpy && SecondTraits::canMoveWithMemcpy;
         static const bool canCopyWithMemcpy = FirstTraits::canCopyWithMemcpy && SecondTraits::canCopyWithMemcpy;
@@ -89,7 +87,7 @@ namespace WTF {
         struct NeedsTracingLazily {
             static const bool value = ShouldBeTraced<FirstTraits>::value || ShouldBeTraced<SecondTraits>::value;
         };
-        static const bool isWeak = FirstTraits::isWeak || SecondTraits::isWeak;
+        static const WeakHandlingFlag weakHandlingFlag = NoWeakHandlingInCollections; // We don't support weak handling in vectors.
     };
 
 } // namespace WTF
@@ -107,6 +105,15 @@ namespace WTF { \
     { \
         static const bool canInitializeWithMemset = true; \
         static const bool canMoveWithMemcpy = true; \
+    }; \
+}
+
+#define WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(ClassName) \
+namespace WTF { \
+    template<> \
+    struct VectorTraits<ClassName> : VectorTraitsBase<ClassName> \
+    { \
+        static const bool canInitializeWithMemset = true; \
     }; \
 }
 

@@ -4,6 +4,7 @@
 
 package org.chromium.content.browser;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.media.MediaMetadataRetriever;
@@ -23,6 +24,7 @@ import java.util.Map;
 /**
  * Tests for MediaResourceGetter.
  */
+@SuppressLint("SdCardPath")
 public class MediaResourceGetterTest extends InstrumentationTestCase {
     private static final String TEST_HTTP_URL = "http://example.com";
     private static final String TEST_USER_AGENT = // Anyhting, really
@@ -333,6 +335,24 @@ public class MediaResourceGetterTest extends InstrumentationTestCase {
                                        "", TEST_USER_AGENT));
         assertNull(mFakeMRG.mUri);
         assertNull(mFakeMRG.mHeaders);
+    }
+
+    @SmallTest
+    public void testConfigure_Net_Allowed_LocalHost_WithNoNetwork() {
+        String[] localHostUrls = {
+            "http://LocalHost",
+            "https://127.0.0.1/",
+            "http://[::1]:8888/",
+        };
+        mMockContext.allowPermission = true;
+        mFakeMRG.mNetworkType = null;
+        for (String localHostUrl : localHostUrls) {
+            assertTrue(mFakeMRG.configure(mMockContext, localHostUrl,
+                                          TEST_COOKIES, TEST_USER_AGENT));
+            assertEquals(localHostUrl, mFakeMRG.mUri);
+            assertEquals(sHeadersCookieAndUA, mFakeMRG.mHeaders);
+            assertNull(mFakeMRG.mPath);
+        }
     }
 
     @SmallTest

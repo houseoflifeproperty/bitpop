@@ -117,9 +117,6 @@ class CONTENT_EXPORT WebRtcAudioCapturer
       const scoped_refptr<media::AudioCapturerSource>& source,
       media::AudioParameters params);
 
-  void StartAecDump(base::File aec_dump_file);
-  void StopAecDump();
-
  protected:
   friend class base::RefCountedThreadSafe<WebRtcAudioCapturer>;
   virtual ~WebRtcAudioCapturer();
@@ -136,7 +133,7 @@ class CONTENT_EXPORT WebRtcAudioCapturer
 
   // AudioCapturerSource::CaptureCallback implementation.
   // Called on the AudioInputDevice audio thread.
-  virtual void Capture(media::AudioBus* audio_source,
+  virtual void Capture(const media::AudioBus* audio_source,
                        int audio_delay_milliseconds,
                        double volume,
                        bool key_pressed) OVERRIDE;

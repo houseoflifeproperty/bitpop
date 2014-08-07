@@ -11,25 +11,6 @@
 var $Set = global.Set;
 var $Map = global.Map;
 
-// Global sentinel to be used instead of undefined keys, which are not
-// supported internally but required for Harmony sets and maps.
-var undefined_sentinel = {};
-
-
-// Map and Set uses SameValueZero which means that +0 and -0 should be treated
-// as the same value.
-function NormalizeKey(key) {
-  if (IS_UNDEFINED(key)) {
-    return undefined_sentinel;
-  }
-
-  if (key === 0) {
-    return 0;
-  }
-
-  return key;
-}
-
 
 // -------------------------------------------------------------------
 // Harmony Set
@@ -43,40 +24,34 @@ function SetConstructor() {
 }
 
 
-function SetAdd(key) {
+function SetAddJS(key) {
   if (!IS_SET(this)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Set.prototype.add', this]);
   }
-  return %SetAdd(this, NormalizeKey(key));
+  return %SetAdd(this, key);
 }
 
 
-function SetHas(key) {
+function SetHasJS(key) {
   if (!IS_SET(this)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Set.prototype.has', this]);
   }
-  return %SetHas(this, NormalizeKey(key));
+  return %SetHas(this, key);
 }
 
 
-function SetDelete(key) {
+function SetDeleteJS(key) {
   if (!IS_SET(this)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Set.prototype.delete', this]);
   }
-  key = NormalizeKey(key);
-  if (%SetHas(this, key)) {
-    %SetDelete(this, key);
-    return true;
-  } else {
-    return false;
-  }
+  return %SetDelete(this, key);
 }
 
 
-function SetGetSize() {
+function SetGetSizeJS() {
   if (!IS_SET(this)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Set.prototype.size', this]);
@@ -85,7 +60,7 @@ function SetGetSize() {
 }
 
 
-function SetClear() {
+function SetClearJS() {
   if (!IS_SET(this)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Set.prototype.clear', this]);
@@ -104,14 +79,12 @@ function SetForEach(f, receiver) {
     throw MakeTypeError('called_non_callable', [f]);
   }
 
-  var iterator = %SetCreateIterator(this, ITERATOR_KIND_VALUES);
+  var iterator = new SetIterator(this, ITERATOR_KIND_VALUES);
   var entry;
-  try {
-    while (!(entry = %SetIteratorNext(iterator)).done) {
-      %_CallFunction(receiver, entry.value, entry.value, this, f);
-    }
-  } finally {
-    %SetIteratorClose(iterator);
+  var stepping = %_DebugCallbackSupportsStepping(f);
+  while (!(entry = %SetIteratorNext(iterator)).done) {
+    if (stepping) %DebugPrepareStepInIfStepping(f);
+    %_CallFunction(receiver, entry.value, entry.value, this, f);
   }
 }
 
@@ -128,12 +101,12 @@ function SetUpSet() {
   %FunctionSetLength(SetForEach, 1);
 
   // Set up the non-enumerable functions on the Set prototype object.
-  InstallGetter($Set.prototype, "size", SetGetSize);
+  InstallGetter($Set.prototype, "size", SetGetSizeJS);
   InstallFunctions($Set.prototype, DONT_ENUM, $Array(
-    "add", SetAdd,
-    "has", SetHas,
-    "delete", SetDelete,
-    "clear", SetClear,
+    "add", SetAddJS,
+    "has", SetHasJS,
+    "delete", SetDeleteJS,
+    "clear", SetClearJS,
     "forEach", SetForEach
   ));
 }
@@ -153,43 +126,43 @@ function MapConstructor() {
 }
 
 
-function MapGet(key) {
+function MapGetJS(key) {
   if (!IS_MAP(this)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Map.prototype.get', this]);
   }
-  return %MapGet(this, NormalizeKey(key));
+  return %MapGet(this, key);
 }
 
 
-function MapSet(key, value) {
+function MapSetJS(key, value) {
   if (!IS_MAP(this)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Map.prototype.set', this]);
   }
-  return %MapSet(this, NormalizeKey(key), value);
+  return %MapSet(this, key, value);
 }
 
 
-function MapHas(key) {
+function MapHasJS(key) {
   if (!IS_MAP(this)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Map.prototype.has', this]);
   }
-  return %MapHas(this, NormalizeKey(key));
+  return %MapHas(this, key);
 }
 
 
-function MapDelete(key) {
+function MapDeleteJS(key) {
   if (!IS_MAP(this)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Map.prototype.delete', this]);
   }
-  return %MapDelete(this, NormalizeKey(key));
+  return %MapDelete(this, key);
 }
 
 
-function MapGetSize() {
+function MapGetSizeJS() {
   if (!IS_MAP(this)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Map.prototype.size', this]);
@@ -198,7 +171,7 @@ function MapGetSize() {
 }
 
 
-function MapClear() {
+function MapClearJS() {
   if (!IS_MAP(this)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Map.prototype.clear', this]);
@@ -217,14 +190,12 @@ function MapForEach(f, receiver) {
     throw MakeTypeError('called_non_callable', [f]);
   }
 
-  var iterator = %MapCreateIterator(this, ITERATOR_KIND_ENTRIES);
+  var iterator = new MapIterator(this, ITERATOR_KIND_ENTRIES);
   var entry;
-  try {
-    while (!(entry = %MapIteratorNext(iterator)).done) {
-      %_CallFunction(receiver, entry.value[1], entry.value[0], this, f);
-    }
-  } finally {
-    %MapIteratorClose(iterator);
+  var stepping = %_DebugCallbackSupportsStepping(f);
+  while (!(entry = %MapIteratorNext(iterator)).done) {
+    if (stepping) %DebugPrepareStepInIfStepping(f);
+    %_CallFunction(receiver, entry.value[1], entry.value[0], this, f);
   }
 }
 
@@ -241,13 +212,13 @@ function SetUpMap() {
   %FunctionSetLength(MapForEach, 1);
 
   // Set up the non-enumerable functions on the Map prototype object.
-  InstallGetter($Map.prototype, "size", MapGetSize);
+  InstallGetter($Map.prototype, "size", MapGetSizeJS);
   InstallFunctions($Map.prototype, DONT_ENUM, $Array(
-    "get", MapGet,
-    "set", MapSet,
-    "has", MapHas,
-    "delete", MapDelete,
-    "clear", MapClear,
+    "get", MapGetJS,
+    "set", MapSetJS,
+    "has", MapHasJS,
+    "delete", MapDeleteJS,
+    "clear", MapClearJS,
     "forEach", MapForEach
   ));
 }

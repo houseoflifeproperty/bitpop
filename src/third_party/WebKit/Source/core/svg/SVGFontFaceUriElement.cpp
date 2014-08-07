@@ -23,7 +23,7 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGFontFaceUriElement.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/dom/Document.h"
 #include "core/fetch/FetchRequest.h"
@@ -40,10 +40,7 @@ inline SVGFontFaceUriElement::SVGFontFaceUriElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFontFaceUriElement> SVGFontFaceUriElement::create(Document& document)
-{
-    return adoptRef(new SVGFontFaceUriElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFontFaceUriElement)
 
 SVGFontFaceUriElement::~SVGFontFaceUriElement()
 {

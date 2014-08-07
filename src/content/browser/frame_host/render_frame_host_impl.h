@@ -17,6 +17,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/common/javascript_message_type.h"
 #include "content/public/common/page_transition_types.h"
+#include "third_party/WebKit/public/web/WebTextDirection.h"
 
 class GURL;
 struct FrameHostMsg_DidFailProvisionalLoadWithError_Params;
@@ -35,8 +36,10 @@ class CrossSiteTransferringRequest;
 class FrameTree;
 class FrameTreeNode;
 class RenderFrameHostDelegate;
+class RenderFrameProxyHost;
 class RenderProcessHost;
 class RenderViewHostImpl;
+class RenderWidgetHostImpl;
 struct ContextMenuParams;
 struct GlobalRequestID;
 struct Referrer;
@@ -78,6 +81,9 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   RenderViewHostImpl* render_view_host() { return render_view_host_; }
   RenderFrameHostDelegate* delegate() { return delegate_; }
   FrameTreeNode* frame_tree_node() { return frame_tree_node_; }
+  // TODO(nasko): The RenderWidgetHost will be owned by RenderFrameHost in
+  // the future, so update this accessor to return the right pointer.
+  RenderWidgetHostImpl* GetRenderWidgetHost();
 
   // This function is called when this is a swapped out RenderFrameHost that
   // lives in the same process as the parent frame. The
@@ -89,6 +95,10 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   void set_cross_process_frame_connector(
       CrossProcessFrameConnector* cross_process_frame_connector) {
     cross_process_frame_connector_ = cross_process_frame_connector;
+  }
+
+  void set_render_frame_proxy_host(RenderFrameProxyHost* proxy) {
+    render_frame_proxy_host_ = proxy;
   }
 
   // Returns a bitwise OR of bindings types that have been enabled for this
@@ -109,12 +119,12 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
       bool should_replace_current_entry);
 
   // Tells the renderer that this RenderFrame is being swapped out for one in a
-  // different renderer process.  It should run its unload handler and move to
-  // a blank document.  The renderer should preserve the Frame object until it
-  // exits, in case we come back.  The renderer can exit if it has no other
-  // active RenderFrames, but not until WasSwappedOut is called (when it is no
-  // longer visible).
-  void SwapOut();
+  // different renderer process.  It should run its unload handler, move to
+  // a blank document and create a RenderFrameProxy to replace the RenderFrame.
+  // The renderer should preserve the Proxy object until it exits, in case we
+  // come back.  The renderer can exit if it has no other active RenderFrames,
+  // but not until WasSwappedOut is called (when it is no longer visible).
+  void SwapOut(RenderFrameProxyHost* proxy);
 
   void OnSwappedOut(bool timed_out);
   bool is_swapped_out() { return is_swapped_out_; }
@@ -125,12 +135,6 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   // Sets the RVH for |this| as pending shutdown. |on_swap_out| will be called
   // when the SwapOutACK is received.
   void SetPendingShutdown(const base::Closure& on_swap_out);
-
-  // TODO(nasko): This method is public so RenderViewHostImpl::Navigate can
-  // call it directly. It should be made private once Navigate moves here.
-  // |to_different_document| will be true unless the load is a fragment
-  // navigation, or triggered by history.pushState/replaceState.
-  void OnDidStartLoading(bool to_different_document);
 
   // Sends the given navigation message. Use this rather than sending it
   // yourself since this does the internal bookkeeping described below. This
@@ -201,7 +205,6 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
                                     const GURL& source_url,
                                     const GURL& target_url);
   void OnNavigate(const IPC::Message& msg);
-  void OnDidStopLoading();
   void OnBeforeUnloadACK(
       bool proceed,
       const base::TimeTicks& renderer_before_unload_start_time,
@@ -224,8 +227,15 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
       int notification_id,
       const ShowDesktopNotificationHostMsgParams& params);
   void OnCancelDesktopNotification(int notification_id);
+  void OnTextSurroundingSelectionResponse(const base::string16& content,
+                                          size_t start_offset,
+                                          size_t end_offset);
   void OnDidAccessInitialDocument();
   void OnDidDisownOpener();
+  void OnUpdateTitle(int32 page_id,
+                     const base::string16& title,
+                     blink::WebTextDirection title_direction);
+  void OnUpdateEncoding(const std::string& encoding);
 
   // Returns whether the given URL is allowed to commit in the current process.
   // This is a more conservative check than RenderProcessHost::FilterURL, since
@@ -255,6 +265,12 @@ class CONTENT_EXPORT RenderFrameHostImpl : public RenderFrameHost {
   //
   // This will move to RenderFrameProxyHost when that class is created.
   CrossProcessFrameConnector* cross_process_frame_connector_;
+
+  // The proxy created for this RenderFrameHost. It is used to send and receive
+  // IPC messages while in swapped out state.
+  // TODO(nasko): This can be removed once we don't have a swapped out state on
+  // RenderFrameHosts. See https://crbug.com/357747.
+  RenderFrameProxyHost* render_frame_proxy_host_;
 
   // Reference to the whole frame tree that this RenderFrameHost belongs to.
   // Allows this RenderFrameHost to add and remove nodes in response to

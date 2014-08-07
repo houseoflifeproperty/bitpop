@@ -47,3 +47,28 @@ if (is_android) {
 } else {
   enable_printing = 1
 }
+
+# The seccomp-bpf sandbox is only supported on three architectures
+# currently.
+# Do not disable seccomp_bpf anywhere without talking to
+# security@chromium.org!
+use_seccomp_bpf = (is_linux || is_android) &&
+  (cpu_arch == "x86" || cpu_arch == "x64" || cpu_arch == "arm")
+
+enable_webrtc = !is_ios
+
+# Enable notifications everywhere except Android.
+# Android is http://crbug.com/115320
+enable_notifications = !is_android
+
+# TODO(brettw) this should be moved to net and only dependents get this define.
+disable_ftp_support = is_ios
+
+# Speech input is compiled in by default. Set to 0 to disable.
+# TODO(tommyw): Speech Input doesn't exist anymore. Clarify the scope
+# of this flag (and probably rename it).
+enable_speech_input = true
+
+use_dbus = is_linux
+
+enable_extensions = (!is_android && !is_ios)

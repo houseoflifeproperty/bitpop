@@ -79,7 +79,8 @@ class TryMailNotifier(mail.MailNotifier):
         'projectName': projectName,
         'builder': name,
         'reason': build.getReason(),
-        'revision': job_stamp.revision,
+        'revision': build.getProperties().getProperty('got_revision',
+                                                      job_stamp.revision),
         'timestamp': getattr(job_stamp, "timestamp", "")
     }
     subject = self.subject % info

@@ -23,8 +23,8 @@
 
 #include "core/svg/SVGLength.h"
 
-#include "SVGNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/SVGNames.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGAnimationElement.h"
@@ -73,32 +73,41 @@ SVGLengthType stringToLengthType(const CharType*& ptr, const CharType* end)
     if (ptr == end)
         return LengthTypeNumber;
 
-    const UChar firstChar = *ptr;
+    SVGLengthType type = LengthTypeUnknown;
+    const CharType firstChar = *ptr++;
 
-    if (++ptr == end)
-        return firstChar == '%' ? LengthTypePercentage : LengthTypeUnknown;
+    if (firstChar == '%') {
+        type = LengthTypePercentage;
+    } else if (isHTMLSpace<CharType>(firstChar)) {
+        type = LengthTypeNumber;
+    } else if (ptr < end) {
+        const CharType secondChar = *ptr++;
 
-    const UChar secondChar = *ptr;
+        if (firstChar == 'p') {
+            if (secondChar == 'x')
+                type = LengthTypePX;
+            if (secondChar == 't')
+                type = LengthTypePT;
+            if (secondChar == 'c')
+                type = LengthTypePC;
+        } else if (firstChar == 'e') {
+            if (secondChar == 'm')
+                type = LengthTypeEMS;
+            if (secondChar == 'x')
+                type = LengthTypeEXS;
+        } else if (firstChar == 'c' && secondChar == 'm') {
+            type = LengthTypeCM;
+        } else if (firstChar == 'm' && secondChar == 'm') {
+            type = LengthTypeMM;
+        } else if (firstChar == 'i' && secondChar == 'n') {
+            type = LengthTypeIN;
+        } else if (isHTMLSpace<CharType>(firstChar) && isHTMLSpace<CharType>(secondChar)) {
+            type = LengthTypeNumber;
+        }
+    }
 
-    if (++ptr != end)
-        return LengthTypeUnknown;
-
-    if (firstChar == 'e' && secondChar == 'm')
-        return LengthTypeEMS;
-    if (firstChar == 'e' && secondChar == 'x')
-        return LengthTypeEXS;
-    if (firstChar == 'p' && secondChar == 'x')
-        return LengthTypePX;
-    if (firstChar == 'c' && secondChar == 'm')
-        return LengthTypeCM;
-    if (firstChar == 'm' && secondChar == 'm')
-        return LengthTypeMM;
-    if (firstChar == 'i' && secondChar == 'n')
-        return LengthTypeIN;
-    if (firstChar == 'p' && secondChar == 't')
-        return LengthTypePT;
-    if (firstChar == 'p' && secondChar == 'c')
-        return LengthTypePC;
+    if (!skipOptionalSVGSpaces(ptr, end))
+        return type;
 
     return LengthTypeUnknown;
 }
@@ -189,7 +198,7 @@ static bool parseValueInternal(const String& string, float& convertedNumber, SVG
     const CharType* ptr = string.getCharacters<CharType>();
     const CharType* end = ptr + string.length();
 
-    if (!parseNumber(ptr, end, convertedNumber, false))
+    if (!parseNumber(ptr, end, convertedNumber, AllowLeadingWhitespace))
         return false;
 
     type = stringToLengthType(ptr, end);
@@ -307,7 +316,7 @@ PassRefPtrWillBeRawPtr<CSSPrimitiveValue> SVGLength::toCSSPrimitiveValue(PassRef
 {
     RefPtr<SVGLength> length = passLength;
 
-    CSSPrimitiveValue::UnitTypes cssType = CSSPrimitiveValue::CSS_UNKNOWN;
+    CSSPrimitiveValue::UnitType cssType = CSSPrimitiveValue::CSS_UNKNOWN;
     switch (length->unitType()) {
     case LengthTypeUnknown:
         break;
@@ -434,7 +443,7 @@ PassRefPtr<SVGLength> SVGLength::blend(PassRefPtr<SVGLength> passFrom, float pro
     return length;
 }
 
-void SVGLength::add(PassRefPtr<SVGPropertyBase> other, SVGElement* contextElement)
+void SVGLength::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement* contextElement)
 {
     SVGLengthContext lengthContext(contextElement);
 

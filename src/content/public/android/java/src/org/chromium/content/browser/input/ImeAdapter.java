@@ -8,12 +8,18 @@ import android.os.Handler;
 import android.os.ResultReceiver;
 import android.os.SystemClock;
 import android.text.Editable;
+import android.text.SpannableString;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.CharacterStyle;
+import android.text.style.UnderlineSpan;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 
 import com.google.common.annotations.VisibleForTesting;
+
+import java.lang.CharSequence;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
@@ -250,6 +256,9 @@ public class ImeAdapter {
         if (nativeImeAdapter != 0) {
             nativeAttachImeAdapter(mNativeImeAdapterAndroid);
         }
+        if (mTextInputType == sTextInputTypeNone) {
+            dismissInput(false);
+        }
     }
 
     /**
@@ -258,13 +267,7 @@ public class ImeAdapter {
      * @param nativeImeAdapter The pointer to the native ImeAdapter object.
      */
     public void attach(long nativeImeAdapter) {
-        if (mNativeImeAdapterAndroid != 0) {
-            nativeResetImeAdapter(mNativeImeAdapterAndroid);
-        }
-        mNativeImeAdapterAndroid = nativeImeAdapter;
-        if (nativeImeAdapter != 0) {
-            nativeAttachImeAdapter(mNativeImeAdapterAndroid);
-        }
+        attach(nativeImeAdapter, sTextInputTypeNone);
     }
 
     private void showKeyboard() {
@@ -295,6 +298,13 @@ public class ImeAdapter {
         return isTextInputType(mTextInputType);
     }
 
+    /**
+     * @return true if the selected text is of password.
+     */
+    public boolean isSelectionPassword() {
+        return mTextInputType == sTextInputTypePassword;
+    }
+
     public boolean dispatchKeyEvent(KeyEvent event) {
         return translateAndSendNativeEvents(event);
     }
@@ -321,14 +331,15 @@ public class ImeAdapter {
 
     // Calls from Java to C++
 
-    boolean checkCompositionQueueAndCallNative(String text, int newCursorPosition,
+    boolean checkCompositionQueueAndCallNative(CharSequence text, int newCursorPosition,
             boolean isCommit) {
         if (mNativeImeAdapterAndroid == 0) return false;
+        String textStr = text.toString();
 
         // Committing an empty string finishes the current composition.
-        boolean isFinish = text.isEmpty();
+        boolean isFinish = textStr.isEmpty();
         mViewEmbedder.onImeEvent(isFinish);
-        int keyCode = shouldSendKeyEventWithKeyCode(text);
+        int keyCode = shouldSendKeyEventWithKeyCode(textStr);
         long timeStampMs = SystemClock.uptimeMillis();
 
         if (keyCode != COMPOSITION_KEY_CODE) {
@@ -338,9 +349,9 @@ public class ImeAdapter {
             nativeSendSyntheticKeyEvent(mNativeImeAdapterAndroid, sEventTypeRawKeyDown,
                     timeStampMs, keyCode, 0);
             if (isCommit) {
-                nativeCommitText(mNativeImeAdapterAndroid, text);
+                nativeCommitText(mNativeImeAdapterAndroid, textStr);
             } else {
-                nativeSetComposingText(mNativeImeAdapterAndroid, text, newCursorPosition);
+                nativeSetComposingText(mNativeImeAdapterAndroid, text, textStr, newCursorPosition);
             }
             nativeSendSyntheticKeyEvent(mNativeImeAdapterAndroid, sEventTypeKeyUp,
                     timeStampMs, keyCode, 0);
@@ -513,6 +524,25 @@ public class ImeAdapter {
     }
 
     @CalledByNative
+    private void populateUnderlinesFromSpans(CharSequence text, long underlines) {
+        if (!(text instanceof SpannableString)) return;
+
+        SpannableString spannableString = ((SpannableString) text);
+        CharacterStyle spans[] =
+                spannableString.getSpans(0, text.length(), CharacterStyle.class);
+        for (CharacterStyle span : spans) {
+            if (span instanceof BackgroundColorSpan) {
+                nativeAppendBackgroundColorSpan(underlines, spannableString.getSpanStart(span),
+                        spannableString.getSpanEnd(span),
+                        ((BackgroundColorSpan) span).getBackgroundColor());
+            } else if (span instanceof UnderlineSpan) {
+                nativeAppendUnderlineSpan(underlines, spannableString.getSpanStart(span),
+                        spannableString.getSpanEnd(span));
+            }
+        }
+    }
+
+    @CalledByNative
     private void cancelComposition() {
         if (mInputConnection != null) mInputConnection.restartInput();
     }
@@ -531,10 +561,15 @@ public class ImeAdapter {
             int action, int modifiers, long timestampMs, int keyCode, boolean isSystemKey,
             int unicodeChar);
 
-    private native void nativeSetComposingText(long nativeImeAdapterAndroid, String text,
-            int newCursorPosition);
+    private static native void nativeAppendUnderlineSpan(long underlinePtr, int start, int end);
 
-    private native void nativeCommitText(long nativeImeAdapterAndroid, String text);
+    private static native void nativeAppendBackgroundColorSpan(long underlinePtr, int start,
+            int end, int backgroundColor);
+
+    private native void nativeSetComposingText(long nativeImeAdapterAndroid, CharSequence text,
+            String textStr, int newCursorPosition);
+
+    private native void nativeCommitText(long nativeImeAdapterAndroid, String textStr);
 
     private native void nativeFinishComposingText(long nativeImeAdapterAndroid);
 

@@ -14,8 +14,8 @@
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager_impl.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager_impl.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
@@ -78,19 +78,19 @@ PrefService* prefs() {
 }
 
 void SetScreenMagnifierEnabledPref(bool enabled) {
-  prefs()->SetBoolean(prefs::kScreenMagnifierEnabled, enabled);
+  prefs()->SetBoolean(prefs::kAccessibilityScreenMagnifierEnabled, enabled);
 }
 
 void SetScreenMagnifierTypePref(ash::MagnifierType type) {
-  prefs()->SetInteger(prefs::kScreenMagnifierType, type);
+  prefs()->SetInteger(prefs::kAccessibilityScreenMagnifierType, type);
 }
 
 void SetFullScreenMagnifierScalePref(double scale) {
-  prefs()->SetDouble(prefs::kScreenMagnifierScale, scale);
+  prefs()->SetDouble(prefs::kAccessibilityScreenMagnifierScale, scale);
 }
 
 bool GetScreenMagnifierEnabledFromPref() {
-  return prefs()->GetBoolean(prefs::kScreenMagnifierEnabled);
+  return prefs()->GetBoolean(prefs::kAccessibilityScreenMagnifierEnabled);
 }
 
 // Creates and logs into a profile with account |name|, and makes sure that

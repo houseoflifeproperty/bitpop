@@ -46,14 +46,14 @@ enum ParsedURLStringTag { ParsedURLString };
 
 class PLATFORM_EXPORT KURL {
 public:
-    KURL()
-        : m_isValid(false)
-        , m_protocolIsInHTTPFamily(false)
-    {
-    }
-
+    KURL();
     KURL(const KURL&);
     KURL& operator=(const KURL&);
+
+#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
+    KURL(KURL&&);
+    KURL& operator=(KURL&&);
+#endif
 
     // The argument is an absolute URL string. The string is assumed to be
     // output of KURL::string() called on a valid KURL object, or indiscernible

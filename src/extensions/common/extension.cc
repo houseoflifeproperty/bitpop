@@ -27,12 +27,12 @@
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handler.h"
-#include "extensions/common/permissions/api_permission_set.h"
+#include "extensions/common/manifest_handlers/permissions_parser.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/permissions/permissions_info.h"
 #include "extensions/common/switches.h"
-#include "extensions/common/url_pattern_set.h"
+#include "extensions/common/url_pattern.h"
 #include "net/base/filename_util.h"
 #include "url/url_util.h"
 
@@ -66,6 +66,8 @@ bool ContainsReservedCharacters(const base::FilePath& path) {
 }
 
 }  // namespace
+
+const int Extension::kInitFromValueFlagBits = 11;
 
 const char Extension::kMimeType[] = "application/x-chrome-extension";
 
@@ -281,19 +283,7 @@ bool Extension::FormatPEMForFileOutput(const std::string& input,
 // static
 GURL Extension::GetBaseURLFromExtensionId(const std::string& extension_id) {
   return GURL(std::string(extensions::kExtensionScheme) +
-              content::kStandardSchemeSeparator + extension_id + "/");
-}
-
-bool Extension::HasAPIPermission(APIPermission::ID permission) const {
-  return PermissionsData::HasAPIPermission(this, permission);
-}
-
-bool Extension::HasAPIPermission(const std::string& permission_name) const {
-  return PermissionsData::HasAPIPermission(this, permission_name);
-}
-
-scoped_refptr<const PermissionSet> Extension::GetActivePermissions() const {
-  return PermissionsData::GetActivePermissions(this);
+              url::kStandardSchemeSeparator + extension_id + "/");
 }
 
 bool Extension::ShowConfigureContextMenus() const {
@@ -331,12 +321,12 @@ bool Extension::RequiresSortOrdinal() const {
 
 bool Extension::ShouldDisplayInAppLauncher() const {
   // Only apps should be displayed in the launcher.
-  return is_app() && display_in_launcher_ && !is_ephemeral();
+  return is_app() && display_in_launcher_;
 }
 
 bool Extension::ShouldDisplayInNewTabPage() const {
   // Only apps should be displayed on the NTP.
-  return is_app() && display_in_new_tab_page_ && !is_ephemeral();
+  return is_app() && display_in_new_tab_page_;
 }
 
 bool Extension::ShouldDisplayInExtensionSettings() const {
@@ -539,8 +529,8 @@ bool Extension::InitFromValue(int flags, base::string16* error) {
   if (is_app() && !LoadAppFeatures(error))
     return false;
 
-  permissions_data_.reset(new PermissionsData);
-  if (!permissions_data_->ParsePermissions(this, error))
+  permissions_parser_.reset(new PermissionsParser());
+  if (!permissions_parser_->Parse(this, error))
     return false;
 
   if (manifest_->HasKey(keys::kConvertedFromUserScript)) {
@@ -551,10 +541,12 @@ bool Extension::InitFromValue(int flags, base::string16* error) {
   if (!LoadSharedFeatures(error))
     return false;
 
+  permissions_parser_->Finalize(this);
+  permissions_parser_.reset();
+
   finished_parsing_manifest_ = true;
 
-  permissions_data_->InitializeManifestPermissions(this);
-  permissions_data_->FinalizePermissions(this);
+  permissions_data_.reset(new PermissionsData(this));
 
   return true;
 }
@@ -768,9 +760,11 @@ ExtensionInfo::~ExtensionInfo() {}
 InstalledExtensionInfo::InstalledExtensionInfo(
     const Extension* extension,
     bool is_update,
+    bool from_ephemeral,
     const std::string& old_name)
     : extension(extension),
       is_update(is_update),
+      from_ephemeral(from_ephemeral),
       old_name(old_name) {}
 
 UnloadedExtensionInfo::UnloadedExtensionInfo(

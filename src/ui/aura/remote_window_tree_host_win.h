@@ -7,7 +7,6 @@
 
 #include <vector>
 
-#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
 #include "ui/aura/window_tree_host.h"
@@ -36,68 +35,6 @@ class Sender;
 
 namespace aura {
 
-typedef base::Callback<void(const base::FilePath&, int, void*)>
-    OpenFileCompletion;
-
-typedef base::Callback<void(const std::vector<base::FilePath>&, void*)>
-    OpenMultipleFilesCompletion;
-
-typedef base::Callback<void(const base::FilePath&, int, void*)>
-    SaveFileCompletion;
-
-typedef base::Callback<void(const base::FilePath&, int, void*)>
-    SelectFolderCompletion;
-
-typedef base::Callback<void(void*)> FileSelectionCanceled;
-
-// Handles the open file operation for Metro Chrome Ash. The on_success
-// callback passed in is invoked when we receive the opened file name from
-// the metro viewer. The on failure callback is invoked on failure.
-AURA_EXPORT void HandleOpenFile(const base::string16& title,
-                                const base::FilePath& default_path,
-                                const base::string16& filter,
-                                const OpenFileCompletion& on_success,
-                                const FileSelectionCanceled& on_failure);
-
-// Handles the open multiple file operation for Metro Chrome Ash. The
-// on_success callback passed in is invoked when we receive the opened file
-// names from the metro viewer. The on failure callback is invoked on failure.
-AURA_EXPORT void HandleOpenMultipleFiles(
-    const base::string16& title,
-    const base::FilePath& default_path,
-    const base::string16& filter,
-    const OpenMultipleFilesCompletion& on_success,
-    const FileSelectionCanceled& on_failure);
-
-// Handles the save file operation for Metro Chrome Ash. The on_success
-// callback passed in is invoked when we receive the saved file name from
-// the metro viewer. The on failure callback is invoked on failure.
-AURA_EXPORT void HandleSaveFile(const base::string16& title,
-                                const base::FilePath& default_path,
-                                const base::string16& filter,
-                                int filter_index,
-                                const base::string16& default_extension,
-                                const SaveFileCompletion& on_success,
-                                const FileSelectionCanceled& on_failure);
-
-// Handles the select folder for Metro Chrome Ash. The on_success
-// callback passed in is invoked when we receive the folder name from the
-// metro viewer. The on failure callback is invoked on failure.
-AURA_EXPORT void HandleSelectFolder(const base::string16& title,
-                                    const SelectFolderCompletion& on_success,
-                                    const FileSelectionCanceled& on_failure);
-
-// Handles the activate desktop command for Metro Chrome Ash.   The |ash_exit|
-// parameter indicates whether the Ash process would be shutdown after
-// activating the desktop.
-AURA_EXPORT void HandleActivateDesktop(
-    const base::FilePath& shortcut,
-    bool ash_exit);
-
-// Handles the metro exit command.  Notifies the metro viewer to shutdown
-// gracefully.
-AURA_EXPORT void HandleMetroExit();
-
 // WindowTreeHost implementaton that receives events from a different
 // process. In the case of Windows this is the Windows 8 (aka Metro)
 // frontend process, which forwards input events to this class.
@@ -106,15 +43,9 @@ class AURA_EXPORT RemoteWindowTreeHostWin
       public ui::EventSource,
       public ui::internal::RemoteInputMethodDelegateWin {
  public:
-  // Returns the only RemoteWindowTreeHostWin, if this is the first time
-  // this function is called and the instance have never set by SetInstance,
-  // it will call Create() wiht empty bounds.
+  // Returns the current RemoteWindowTreeHostWin. This does *not* create a
+  // RemoteWindowTreeHostWin.
   static RemoteWindowTreeHostWin* Instance();
-
-  // Manually sets the instance to be used as a return value of |Instance()|
-  // method above. This should not be called if the instance has already
-  // been set or created, and doing so will result in CHECK failure.
-  static void SetInstance(RemoteWindowTreeHostWin* instance);
 
   // Returns true if there is a RemoteWindowTreeHostWin and it has a valid
   // HWND. A return value of false typically indicates we're not in metro mode.
@@ -124,6 +55,7 @@ class AURA_EXPORT RemoteWindowTreeHostWin
   // window owned by the viewer process. Call this before Connected() for some
   // customers like input method initialization which needs the handle.
   void SetRemoteWindowHandle(HWND remote_window);
+  HWND remote_window() { return remote_window_; }
 
   // The |host| can be used when we need to send a message to it.
   void Connected(IPC::Sender* host);
@@ -136,37 +68,6 @@ class AURA_EXPORT RemoteWindowTreeHostWin
   void HandleOpenURLOnDesktop(const base::FilePath& shortcut,
                               const base::string16& url);
 
-  // The |ash_exit| parameter indicates whether the Ash process would be
-  // shutdown after activating the desktop.
-  void HandleActivateDesktop(const base::FilePath& shortcut, bool ash_exit);
-
-  // Notify the metro viewer that it should shut itself down.
-  void HandleMetroExit();
-
-  void HandleOpenFile(const base::string16& title,
-                      const base::FilePath& default_path,
-                      const base::string16& filter,
-                      const OpenFileCompletion& on_success,
-                      const FileSelectionCanceled& on_failure);
-
-  void HandleOpenMultipleFiles(const base::string16& title,
-                               const base::FilePath& default_path,
-                               const base::string16& filter,
-                               const OpenMultipleFilesCompletion& on_success,
-                               const FileSelectionCanceled& on_failure);
-
-  void HandleSaveFile(const base::string16& title,
-                      const base::FilePath& default_path,
-                      const base::string16& filter,
-                      int filter_index,
-                      const base::string16& default_extension,
-                      const SaveFileCompletion& on_success,
-                      const FileSelectionCanceled& on_failure);
-
-  void HandleSelectFolder(const base::string16& title,
-                          const SelectFolderCompletion& on_success,
-                          const FileSelectionCanceled& on_failure);
-
   void HandleWindowSizeChanged(uint32 width, uint32 height);
 
   // Returns the active ASH root window.
@@ -177,7 +78,7 @@ class AURA_EXPORT RemoteWindowTreeHostWin
   bool IsForegroundWindow();
 
  protected:
-  explicit RemoteWindowTreeHostWin(const gfx::Rect& bounds);
+  RemoteWindowTreeHostWin();
   virtual ~RemoteWindowTreeHostWin();
 
  private:
@@ -201,13 +102,6 @@ class AURA_EXPORT RemoteWindowTreeHostWin
   void OnTouchDown(int32 x, int32 y, uint64 timestamp, uint32 pointer_id);
   void OnTouchUp(int32 x, int32 y, uint64 timestamp, uint32 pointer_id);
   void OnTouchMoved(int32 x, int32 y, uint64 timestamp, uint32 pointer_id);
-  void OnFileSaveAsDone(bool success,
-                        const base::FilePath& filename,
-                        int filter_index);
-  void OnFileOpenDone(bool success, const base::FilePath& filename);
-  void OnMultiFileOpenDone(bool success,
-                           const std::vector<base::FilePath>& files);
-  void OnSelectFolderDone(bool success, const base::FilePath& folder);
   void OnSetCursorPosAck();
 
   // For Input Method support:
@@ -277,14 +171,6 @@ class AURA_EXPORT RemoteWindowTreeHostWin
   HWND remote_window_;
   IPC::Sender* host_;
   scoped_ptr<ui::ViewProp> prop_;
-
-  // Saved callbacks which inform the caller about the result of the open file/
-  // save file/select operations.
-  OpenFileCompletion file_open_completion_callback_;
-  OpenMultipleFilesCompletion multi_file_open_completion_callback_;
-  SaveFileCompletion file_saveas_completion_callback_;
-  SelectFolderCompletion select_folder_completion_callback_;
-  FileSelectionCanceled failure_callback_;
 
   // Set to true if we need to ignore mouse messages until the SetCursorPos
   // operation is acked by the viewer.

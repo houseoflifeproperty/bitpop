@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/html/HTMLAppletElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/loader/FrameLoader.h"
@@ -51,7 +51,7 @@ HTMLAppletElement::HTMLAppletElement(Document& document, bool createdByParser)
 
 PassRefPtrWillBeRawPtr<HTMLAppletElement> HTMLAppletElement::create(Document& document, bool createdByParser)
 {
-    RefPtrWillBeRawPtr<HTMLAppletElement> element = adoptRefWillBeRefCountedGarbageCollected(new HTMLAppletElement(document, createdByParser));
+    RefPtrWillBeRawPtr<HTMLAppletElement> element = adoptRefWillBeNoop(new HTMLAppletElement(document, createdByParser));
     element->ensureUserAgentShadowRoot();
     return element.release();
 }

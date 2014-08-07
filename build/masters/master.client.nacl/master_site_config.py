@@ -11,3 +11,4 @@ class NativeClient(Master.NaClBase):
   master_port = 8030
   slave_port = 8130
   master_port_alt = 8230
+  buildbot_url = 'http://build.chromium.org/p/client.nacl/'

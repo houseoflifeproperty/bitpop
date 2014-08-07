@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "scopes.h"
+#include "src/scopes.h"
 
-#include "accessors.h"
-#include "bootstrapper.h"
-#include "compiler.h"
-#include "messages.h"
-#include "scopeinfo.h"
+#include "src/accessors.h"
+#include "src/bootstrapper.h"
+#include "src/compiler.h"
+#include "src/messages.h"
+#include "src/scopeinfo.h"
 
 namespace v8 {
 namespace internal {
@@ -366,7 +366,7 @@ Scope* Scope::FinalizeBlockScope() {
 }
 
 
-Variable* Scope::LocalLookup(Handle<String> name) {
+Variable* Scope::LookupLocal(Handle<String> name) {
   Variable* result = variables_.Lookup(name);
   if (result != NULL || scope_info_.is_null()) {
     return result;
@@ -425,7 +425,7 @@ Variable* Scope::Lookup(Handle<String> name) {
   for (Scope* scope = this;
        scope != NULL;
        scope = scope->outer_scope()) {
-    Variable* var = scope->LocalLookup(name);
+    Variable* var = scope->LookupLocal(name);
     if (var != NULL) return var;
   }
   return NULL;
@@ -950,7 +950,7 @@ Variable* Scope::LookupRecursive(Handle<String> name,
   }
 
   // Try to find the variable in this scope.
-  Variable* var = LocalLookup(name);
+  Variable* var = LookupLocal(name);
 
   // We found a variable and we are done. (Even if there is an 'eval' in
   // this scope which introduces the same variable again, the resulting
@@ -1211,7 +1211,7 @@ void Scope::AllocateHeapSlot(Variable* var) {
 
 void Scope::AllocateParameterLocals() {
   ASSERT(is_function_scope());
-  Variable* arguments = LocalLookup(isolate_->factory()->arguments_string());
+  Variable* arguments = LookupLocal(isolate_->factory()->arguments_string());
   ASSERT(arguments != NULL);  // functions have 'arguments' declared implicitly
 
   bool uses_sloppy_arguments = false;

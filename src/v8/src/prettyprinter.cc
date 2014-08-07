@@ -4,11 +4,11 @@
 
 #include <stdarg.h>
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "prettyprinter.h"
-#include "scopes.h"
-#include "platform.h"
+#include "src/prettyprinter.h"
+#include "src/scopes.h"
+#include "src/platform.h"
 
 namespace v8 {
 namespace internal {
@@ -492,9 +492,9 @@ void PrettyPrinter::Print(const char* format, ...) {
   for (;;) {
     va_list arguments;
     va_start(arguments, format);
-    int n = OS::VSNPrintF(Vector<char>(output_, size_) + pos_,
-                          format,
-                          arguments);
+    int n = VSNPrintF(Vector<char>(output_, size_) + pos_,
+                      format,
+                      arguments);
     va_end(arguments);
 
     if (n >= 0) {
@@ -506,7 +506,7 @@ void PrettyPrinter::Print(const char* format, ...) {
       const int slack = 32;
       int new_size = size_ + (size_ >> 1) + slack;
       char* new_output = NewArray<char>(new_size);
-      OS::MemCopy(new_output, output_, pos_);
+      MemCopy(new_output, output_, pos_);
       DeleteArray(output_);
       output_ = new_output;
       size_ = new_size;
@@ -668,9 +668,9 @@ void AstPrinter::PrintLiteralWithModeIndented(const char* info,
     PrintLiteralIndented(info, value, true);
   } else {
     EmbeddedVector<char, 256> buf;
-    int pos = OS::SNPrintF(buf, "%s (mode = %s", info,
-                           Variable::Mode2String(var->mode()));
-    OS::SNPrintF(buf + pos, ")");
+    int pos = SNPrintF(buf, "%s (mode = %s", info,
+                       Variable::Mode2String(var->mode()));
+    SNPrintF(buf + pos, ")");
     PrintLiteralIndented(buf.start(), value, true);
   }
 }
@@ -1033,21 +1033,21 @@ void AstPrinter::VisitArrayLiteral(ArrayLiteral* node) {
 void AstPrinter::VisitVariableProxy(VariableProxy* node) {
   Variable* var = node->var();
   EmbeddedVector<char, 128> buf;
-  int pos = OS::SNPrintF(buf, "VAR PROXY");
+  int pos = SNPrintF(buf, "VAR PROXY");
   switch (var->location()) {
     case Variable::UNALLOCATED:
       break;
     case Variable::PARAMETER:
-      OS::SNPrintF(buf + pos, " parameter[%d]", var->index());
+      SNPrintF(buf + pos, " parameter[%d]", var->index());
       break;
     case Variable::LOCAL:
-      OS::SNPrintF(buf + pos, " local[%d]", var->index());
+      SNPrintF(buf + pos, " local[%d]", var->index());
       break;
     case Variable::CONTEXT:
-      OS::SNPrintF(buf + pos, " context[%d]", var->index());
+      SNPrintF(buf + pos, " context[%d]", var->index());
       break;
     case Variable::LOOKUP:
-      OS::SNPrintF(buf + pos, " lookup");
+      SNPrintF(buf + pos, " lookup");
       break;
   }
   PrintLiteralWithModeIndented(buf.start(), var, node->name());
@@ -1114,8 +1114,8 @@ void AstPrinter::VisitUnaryOperation(UnaryOperation* node) {
 
 void AstPrinter::VisitCountOperation(CountOperation* node) {
   EmbeddedVector<char, 128> buf;
-  OS::SNPrintF(buf, "%s %s", (node->is_prefix() ? "PRE" : "POST"),
-               Token::Name(node->op()));
+  SNPrintF(buf, "%s %s", (node->is_prefix() ? "PRE" : "POST"),
+           Token::Name(node->op()));
   IndentedScope indent(this, buf.start());
   Visit(node->expression());
 }

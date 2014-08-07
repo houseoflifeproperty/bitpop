@@ -10,18 +10,14 @@ from master import master_utils
 # automatically.
 # Note: don't include 'update scripts' since we can't do much about it when
 # it's failing and the tree is still technically fine.
-# TODO(glider): browser_tests die unexpectedly on Mac ASan bots
-# (http://crbug.com/196533). Because there have been other problems with the
-# stability of browser_tests and content_browsertests on the ASan bot, let them
-#  not close the tree until the crash rate drops.
 categories_steps = {
   '': ['update', 'runhooks'],
   'testers': [
     'base_unittests',
-    #'browser_tests',
+    'browser_tests',
     'cacheinvalidation_unittests',
     'cc_unittests',
-    #'content_browsertests',
+    'content_browsertests',
     'content_unittests',
     'courgette_unittests',
     'crypto_unittests',
@@ -32,7 +28,6 @@ categories_steps = {
     'ipc_tests',
     'jingle_unittests',
     'media_unittests',
-    'mini_installer_test',
     'nacl_integration',
     'net_unittests',
     'ppapi_unittests',

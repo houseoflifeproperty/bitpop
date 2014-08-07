@@ -21,7 +21,7 @@
 #ifndef SVGUseElement_h
 #define SVGUseElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/fetch/DocumentResource.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
@@ -31,20 +31,15 @@
 namespace WebCore {
 
 class DocumentResource;
-class SVGElementInstance;
 
 class SVGUseElement FINAL : public SVGGraphicsElement,
                             public SVGURIReference,
                             public DocumentResourceClient {
 public:
-    static PassRefPtr<SVGUseElement> create(Document&, bool wasInsertedByParser);
+    static PassRefPtrWillBeRawPtr<SVGUseElement> create(Document&);
     virtual ~SVGUseElement();
 
-    SVGElementInstance* instanceRoot();
-    SVGElementInstance* animatedInstanceRoot() const;
-    SVGElementInstance* instanceForShadowTreeElement(Node*) const;
     void invalidateShadowTree();
-    void invalidateDependentShadowTrees();
 
     RenderObject* rendererClipChild() const;
 
@@ -58,7 +53,7 @@ public:
     virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    SVGUseElement(Document&, bool wasInsertedByParser);
+    explicit SVGUseElement(Document&);
 
     virtual bool isStructurallyExternal() const OVERRIDE { return !hrefString().isNull() && isExternalURIReference(hrefString(), document()); }
 
@@ -78,44 +73,35 @@ private:
     void scheduleShadowTreeRecreation();
     virtual bool haveLoadedRequiredResources() OVERRIDE { return !isStructurallyExternal() || m_haveFiredLoadEvent; }
 
-    virtual void finishParsingChildren() OVERRIDE;
     virtual bool selfHasRelativeLengths() const OVERRIDE;
 
     // Instance tree handling
-    void buildInstanceTree(SVGElement* target, SVGElementInstance* targetInstance, bool& foundCycle, bool foundUse);
-    bool hasCycleUseReferencing(SVGUseElement*, SVGElementInstance* targetInstance, SVGElement*& newTarget);
-
-    // Shadow tree handling
-    void buildShadowTree(SVGElement* target, SVGElementInstance* targetInstance, ShadowRoot* shadowTreeRootElement);
-
-    void expandUseElementsInShadowTree(Node* element);
-    void expandSymbolElementsInShadowTree(Node* element);
-
-    // "Tree connector"
-    void associateInstancesWithShadowTreeElements(Node* target, SVGElementInstance* targetInstance);
-    SVGElementInstance* instanceForShadowTreeElement(Node* element, SVGElementInstance* instance) const;
+    bool buildShadowTree(SVGElement* target, SVGElement* targetInstance, bool foundUse);
+    bool hasCycleUseReferencing(SVGUseElement*, ContainerNode* targetInstance, SVGElement*& newTarget);
+    bool expandUseElementsInShadowTree(SVGElement*);
+    void expandSymbolElementsInShadowTree(SVGElement*);
 
     void transferUseAttributesToReplacedElement(SVGElement* from, SVGElement* to) const;
-    void transferEventListenersToShadowTree(SVGElement* shadowTreeTargetElement);
 
-    RefPtr<SVGAnimatedLength> m_x;
-    RefPtr<SVGAnimatedLength> m_y;
-    RefPtr<SVGAnimatedLength> m_width;
-    RefPtr<SVGAnimatedLength> m_height;
+    void invalidateDependentShadowTrees();
 
     bool resourceIsStillLoading();
     Document* externalDocument() const;
-    bool instanceTreeIsLoading(SVGElementInstance*);
+    bool instanceTreeIsLoading(SVGElement*);
     virtual void notifyFinished(Resource*) OVERRIDE;
     TreeScope* referencedScope() const;
     void setDocumentResource(ResourcePtr<DocumentResource>);
 
     virtual Timer<SVGElement>* svgLoadEventTimer() OVERRIDE { return &m_svgLoadEventTimer; }
 
-    bool m_wasInsertedByParser;
+    RefPtr<SVGAnimatedLength> m_x;
+    RefPtr<SVGAnimatedLength> m_y;
+    RefPtr<SVGAnimatedLength> m_width;
+    RefPtr<SVGAnimatedLength> m_height;
+
     bool m_haveFiredLoadEvent;
     bool m_needsShadowTreeRecreation;
-    RefPtrWillBeMember<SVGElementInstance> m_targetElementInstance;
+    RefPtrWillBeMember<SVGElement> m_targetElementInstance;
     ResourcePtr<DocumentResource> m_resource;
     Timer<SVGElement> m_svgLoadEventTimer;
 };

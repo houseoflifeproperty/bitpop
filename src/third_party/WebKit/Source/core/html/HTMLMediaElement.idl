@@ -33,8 +33,8 @@
     [TypeChecking=Interface|Nullable] readonly attribute MediaError? error;
 
     // network state
-    [Reflect, URL, PerWorldBindings, LogActivity=SetterOnly] attribute DOMString src;
-    [URL, PerWorldBindings, LogActivity=SetterOnly] readonly attribute DOMString currentSrc;
+    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString src;
+    [URL, LogActivity=SetterOnly] readonly attribute DOMString currentSrc;
     [Reflect, ReflectOnly="anonymous"|"use-credentials", ReflectEmpty="anonymous", ReflectInvalid="anonymous"] attribute DOMString crossOrigin;
 
     const unsigned short NETWORK_EMPTY = 0;
@@ -82,6 +82,8 @@
     [Reflect=muted] attribute boolean defaultMuted;
 
     // tracks
+    [RuntimeEnabled=AudioVideoTracks] readonly attribute AudioTrackList audioTracks;
+    [RuntimeEnabled=AudioVideoTracks] readonly attribute VideoTrackList videoTracks;
     readonly attribute TextTrackList textTracks;
     [RaisesException] TextTrack addTextTrack(DOMString kind, optional DOMString label, optional DOMString language);
 

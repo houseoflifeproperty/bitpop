@@ -38,17 +38,20 @@ TEST(DrawQuadTest, CopySharedQuadState) {
   bool is_clipped = true;
   float opacity = 0.25f;
   SkXfermode::Mode blend_mode = SkXfermode::kMultiply_Mode;
+  int sorting_context_id = 65536;
 
-  scoped_ptr<SharedQuadState> state(SharedQuadState::Create());
+  scoped_ptr<SharedQuadState> state(new SharedQuadState);
   state->SetAll(quad_transform,
                 content_bounds,
                 visible_content_rect,
                 clip_rect,
                 is_clipped,
                 opacity,
-                blend_mode);
+                blend_mode,
+                sorting_context_id);
 
-  scoped_ptr<SharedQuadState> copy(state->Copy());
+  scoped_ptr<SharedQuadState> copy(new SharedQuadState);
+  copy->CopyFrom(state.get());
   EXPECT_EQ(quad_transform, copy->content_to_target_transform);
   EXPECT_RECT_EQ(visible_content_rect, copy->visible_content_rect);
   EXPECT_EQ(opacity, copy->opacity);
@@ -64,16 +67,18 @@ scoped_ptr<SharedQuadState> CreateSharedQuadState() {
   gfx::Rect clip_rect(19, 21, 23, 25);
   bool is_clipped = false;
   float opacity = 1.f;
+  int sorting_context_id = 65536;
   SkXfermode::Mode blend_mode = SkXfermode::kSrcOver_Mode;
 
-  scoped_ptr<SharedQuadState> state(SharedQuadState::Create());
+  scoped_ptr<SharedQuadState> state(new SharedQuadState);
   state->SetAll(quad_transform,
                 content_bounds,
                 visible_content_rect,
                 clip_rect,
                 is_clipped,
                 opacity,
-                blend_mode);
+                blend_mode,
+                sorting_context_id);
   return state.Pass();
 }
 
@@ -88,9 +93,10 @@ void CompareDrawQuad(DrawQuad* quad,
   EXPECT_EQ(copy_shared_state, copy->shared_quad_state);
 }
 
-#define CREATE_SHARED_STATE() \
-    scoped_ptr<SharedQuadState> shared_state(CreateSharedQuadState()); \
-    scoped_ptr<SharedQuadState> copy_shared_state(shared_state->Copy()); \
+#define CREATE_SHARED_STATE()                                         \
+  scoped_ptr<SharedQuadState> shared_state(CreateSharedQuadState());  \
+  scoped_ptr<SharedQuadState> copy_shared_state(new SharedQuadState); \
+  copy_shared_state->CopyFrom(shared_state.get());
 
 #define QUAD_DATA \
     gfx::Rect quad_rect(30, 40, 50, 60); \
@@ -488,7 +494,7 @@ TEST(DrawQuadTest, CopyStreamVideoDrawQuad) {
 
 TEST(DrawQuadTest, CopySurfaceDrawQuad) {
   gfx::Rect visible_rect(40, 50, 30, 20);
-  int surface_id = 1234;
+  SurfaceId surface_id(1234);
   CREATE_SHARED_STATE();
 
   CREATE_QUAD_2_NEW(SurfaceDrawQuad, visible_rect, surface_id);
@@ -796,7 +802,7 @@ TEST_F(DrawQuadIteratorTest, StreamVideoDrawQuad) {
 
 TEST_F(DrawQuadIteratorTest, SurfaceDrawQuad) {
   gfx::Rect visible_rect(40, 50, 30, 20);
-  int surface_id = 4321;
+  SurfaceId surface_id(4321);
 
   CREATE_SHARED_STATE();
   CREATE_QUAD_2_NEW(SurfaceDrawQuad, visible_rect, surface_id);

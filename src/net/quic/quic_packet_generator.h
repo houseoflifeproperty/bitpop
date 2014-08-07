@@ -54,8 +54,13 @@
 #define NET_QUIC_QUIC_PACKET_GENERATOR_H_
 
 #include "net/quic/quic_packet_creator.h"
+#include "net/quic/quic_types.h"
 
 namespace net {
+
+namespace test {
+class QuicPacketGeneratorPeer;
+}  // namespace test
 
 class QuicAckNotifier;
 
@@ -78,17 +83,18 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // Interface which gets callbacks from the QuicPacketGenerator at interesting
   // points.  Implementations must not mutate the state of the generator
   // as a result of these callbacks.
-  class NET_EXPORT_PRIVATE DebugDelegateInterface {
+  class NET_EXPORT_PRIVATE DebugDelegate {
    public:
-    virtual ~DebugDelegateInterface() {}
+    virtual ~DebugDelegate() {}
 
     // Called when a frame has been added to the current packet.
     virtual void OnFrameAddedToPacket(const QuicFrame& frame) {}
   };
 
-  QuicPacketGenerator(DelegateInterface* delegate,
-                      DebugDelegateInterface* debug_delegate,
-                      QuicPacketCreator* creator);
+  QuicPacketGenerator(QuicConnectionId connection_id,
+                      QuicFramer* framer,
+                      QuicRandom* random_generator,
+                      DelegateInterface* delegate);
 
   virtual ~QuicPacketGenerator();
 
@@ -117,6 +123,7 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
                                const IOVector& data,
                                QuicStreamOffset offset,
                                bool fin,
+                               FecProtection fec_protection,
                                QuicAckNotifier* notifier);
 
   // Indicates whether batch mode is currently enabled.
@@ -131,11 +138,63 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
 
   bool HasQueuedFrames() const;
 
-  void set_debug_delegate(DebugDelegateInterface* debug_delegate) {
+  // Makes the framer not serialize the protocol version in sent packets.
+  void StopSendingVersion();
+
+  // Creates a version negotiation packet which supports |supported_versions|.
+  // Caller owns the created  packet. Also, sets the entropy hash of the
+  // serialized packet to a random bool and returns that value as a member of
+  // SerializedPacket.
+  QuicEncryptedPacket* SerializeVersionNegotiationPacket(
+      const QuicVersionVector& supported_versions);
+
+
+  // Re-serializes frames with the original packet's sequence number length.
+  // Used for retransmitting packets to ensure they aren't too long.
+  // Caller must ensure that any open FEC group is closed before calling this
+  // method.
+  SerializedPacket ReserializeAllFrames(
+      const QuicFrames& frames,
+      QuicSequenceNumberLength original_length);
+
+  // Update the sequence number length to use in future packets as soon as it
+  // can be safely changed.
+  void UpdateSequenceNumberLength(
+      QuicPacketSequenceNumber least_packet_awaited_by_peer,
+      QuicByteCount congestion_window);
+
+  // Sets the encryption level that will be applied to new packets.
+  void set_encryption_level(EncryptionLevel level);
+
+  // Sequence number of the last created packet, or 0 if no packets have been
+  // created.
+  QuicPacketSequenceNumber sequence_number() const;
+
+  size_t max_packet_length() const;
+
+  void set_max_packet_length(size_t length);
+
+  void set_debug_delegate(DebugDelegate* debug_delegate) {
     debug_delegate_ = debug_delegate;
   }
 
  private:
+  friend class test::QuicPacketGeneratorPeer;
+
+  // Turn on FEC protection for subsequent packets in the generator.
+  // If no FEC group is currently open in the creator, this method flushes any
+  // queued frames in the generator and in the creator, and it then turns FEC on
+  // in the creator. This method may be called with an open FEC group in the
+  // creator, in which case, only the generator's state is altered.
+  void MaybeStartFecProtection();
+
+  // Serializes and calls the delegate on an FEC packet if one was under
+  // construction in the creator. When |force| is false, it relies on the
+  // creator being ready to send an FEC packet, otherwise FEC packet is sent
+  // as long as one is under construction in the creator.  Also tries to turns
+  // off FEC protection in the creator if it's off in the generator.
+  void MaybeSendFecPacketAndCloseGroup(bool force);
+
   void SendQueuedFrames(bool flush);
 
   // Test to see if we have pending ack, feedback, or control frames.
@@ -152,13 +211,17 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   void SerializeAndSendPacket();
 
   DelegateInterface* delegate_;
-  DebugDelegateInterface* debug_delegate_;
+  DebugDelegate* debug_delegate_;
 
-  QuicPacketCreator* packet_creator_;
+  QuicPacketCreator packet_creator_;
   QuicFrames queued_control_frames_;
 
   // True if batch mode is currently enabled.
   bool batch_mode_;
+
+  // True if FEC protection is on. The creator may have an open FEC group even
+  // if this variable is false.
+  bool should_fec_protect_;
 
   // Flags to indicate the need for just-in-time construction of a frame.
   bool should_send_ack_;

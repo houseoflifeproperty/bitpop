@@ -31,7 +31,7 @@
 #include "chrome/browser/extensions/window_controller_list.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/apps/chrome_app_window_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -52,8 +52,9 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "components/translate/core/browser/language_state.h"
 #include "components/translate/core/common/language_detection_details.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
@@ -67,6 +68,7 @@
 #include "extensions/browser/extension_function_util.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/file_reader.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_l10n_util.h"
@@ -132,12 +134,14 @@ bool GetTabById(int tab_id,
                 int* tab_index,
                 std::string* error_message) {
   if (ExtensionTabUtil::GetTabById(tab_id, profile, include_incognito,
-                                   browser, tab_strip, contents, tab_index))
+                                   browser, tab_strip, contents, tab_index)) {
     return true;
+  }
 
-  if (error_message)
+  if (error_message) {
     *error_message = ErrorUtils::FormatErrorMessage(
         keys::kTabNotFoundError, base::IntToString(tab_id));
+  }
 
   return false;
 }
@@ -1173,14 +1177,13 @@ bool TabsUpdateFunction::UpdateURL(const std::string &url_string,
 
   // JavaScript URLs can do the same kinds of things as cross-origin XHR, so
   // we need to check host permissions before allowing them.
-  if (url.SchemeIs(content::kJavaScriptScheme)) {
+  if (url.SchemeIs(url::kJavaScriptScheme)) {
     content::RenderProcessHost* process = web_contents_->GetRenderProcessHost();
-    if (!PermissionsData::CanExecuteScriptOnPage(
+    if (!GetExtension()->permissions_data()->CanAccessPage(
             GetExtension(),
             web_contents_->GetURL(),
             web_contents_->GetURL(),
             tab_id,
-            NULL,
             process ? process->GetID() : -1,
             &error_)) {
       return false;
@@ -1191,6 +1194,7 @@ bool TabsUpdateFunction::UpdateURL(const std::string &url_string,
         ScriptExecutor::JAVASCRIPT,
         url.GetContent(),
         ScriptExecutor::TOP_FRAME,
+        ScriptExecutor::DONT_MATCH_ABOUT_BLANK,
         UserScript::DOCUMENT_IDLE,
         ScriptExecutor::MAIN_WORLD,
         ScriptExecutor::DEFAULT_PROCESS,
@@ -1209,7 +1213,7 @@ bool TabsUpdateFunction::UpdateURL(const std::string &url_string,
 
   // The URL of a tab contents never actually changes to a JavaScript URL, so
   // this check only makes sense in other cases.
-  if (!url.SchemeIs(content::kJavaScriptScheme))
+  if (!url.SchemeIs(url::kJavaScriptScheme))
     DCHECK_EQ(url.spec(), web_contents_->GetURL().spec());
 
   return true;
@@ -1500,9 +1504,8 @@ WebContents* TabsCaptureVisibleTabFunction::GetWebContentsForID(int window_id) {
     return NULL;
   }
 
-  if (!PermissionsData::CanCaptureVisiblePage(GetExtension(),
-                                              SessionID::IdForTab(contents),
-                                              &error_)) {
+  if (!GetExtension()->permissions_data()->CanCaptureVisiblePage(
+          SessionID::IdForTab(contents), &error_)) {
     return NULL;
   }
   return contents;
@@ -1563,14 +1566,19 @@ bool TabsDetectLanguageFunction::RunAsync() {
 
   AddRef();  // Balanced in GotLanguage().
 
-  TranslateTabHelper* translate_tab_helper =
-      TranslateTabHelper::FromWebContents(contents);
-  if (!translate_tab_helper->GetLanguageState().original_language().empty()) {
+  ChromeTranslateClient* chrome_translate_client =
+      ChromeTranslateClient::FromWebContents(contents);
+  if (!chrome_translate_client->GetLanguageState()
+           .original_language()
+           .empty()) {
     // Delay the callback invocation until after the current JS call has
     // returned.
-    base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
-        &TabsDetectLanguageFunction::GotLanguage, this,
-        translate_tab_helper->GetLanguageState().original_language()));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(
+            &TabsDetectLanguageFunction::GotLanguage,
+            this,
+            chrome_translate_client->GetLanguageState().original_language()));
     return true;
   }
   // The tab contents does not know its language yet.  Let's wait until it
@@ -1618,8 +1626,9 @@ ExecuteCodeInTabFunction::ExecuteCodeInTabFunction()
 ExecuteCodeInTabFunction::~ExecuteCodeInTabFunction() {}
 
 bool ExecuteCodeInTabFunction::HasPermission() {
-  if (Init() && PermissionsData::HasAPIPermissionForTab(
-                    extension_.get(), execute_tab_id_, APIPermission::kTab)) {
+  if (Init() &&
+      extension_->permissions_data()->HasAPIPermissionForTab(
+          execute_tab_id_, APIPermission::kTab)) {
     return true;
   }
   return ExtensionFunction::HasPermission();
@@ -1647,12 +1656,11 @@ bool ExecuteCodeInTabFunction::CanExecuteScriptOnPage() {
   // NOTE: This can give the wrong answer due to race conditions, but it is OK,
   // we check again in the renderer.
   content::RenderProcessHost* process = contents->GetRenderProcessHost();
-  if (!PermissionsData::CanExecuteScriptOnPage(
+  if (!GetExtension()->permissions_data()->CanAccessPage(
           GetExtension(),
           contents->GetURL(),
           contents->GetURL(),
           execute_tab_id_,
-          NULL,
           process ? process->GetID() : -1,
           &error_)) {
     return false;

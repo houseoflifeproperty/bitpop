@@ -122,11 +122,6 @@ class V8Commands(commands.FactoryCommands):
     cmd = [self._python, self._v8testing_tool, '--testname', 'presubmit']
     self.AddTestStep(shell.ShellCommand, 'Presubmit', cmd, workdir='build/v8/')
 
-  def AddFuzzer(self):
-    binary = 'out/' + self._target + '/d8'
-    cmd = ['bash', './tools/fuzz-harness.sh', binary]
-    self.AddTestStep(shell.ShellCommand, 'Fuzz', cmd, workdir='build/v8/')
-
   def AddDeoptFuzzer(self):
     if self._target_platform == 'win32':
       self.AddTaskkillStep()

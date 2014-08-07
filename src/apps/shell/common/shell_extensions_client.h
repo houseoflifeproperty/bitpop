@@ -24,6 +24,8 @@ class ShellExtensionsClient : public extensions::ExtensionsClient {
       GetPermissionMessageProvider() const OVERRIDE;
   virtual scoped_ptr<extensions::FeatureProvider> CreateFeatureProvider(
       const std::string& name) const OVERRIDE;
+  virtual scoped_ptr<extensions::JSONFeatureProviderSource>
+      CreateFeatureProviderSource(const std::string& name) const OVERRIDE;
   virtual void FilterHostPermissions(
       const extensions::URLPatternSet& hosts,
       extensions::URLPatternSet* new_hosts,
@@ -39,6 +41,8 @@ class ShellExtensionsClient : public extensions::ExtensionsClient {
   virtual bool IsAPISchemaGenerated(const std::string& name) const OVERRIDE;
   virtual base::StringPiece GetAPISchema(const std::string& name) const
       OVERRIDE;
+  virtual void RegisterAPISchemaResources(
+      extensions::ExtensionAPI* api) const OVERRIDE;
   virtual bool ShouldSuppressFatalErrors() const OVERRIDE;
 
  private:

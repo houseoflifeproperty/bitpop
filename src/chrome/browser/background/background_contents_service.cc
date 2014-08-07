@@ -20,7 +20,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_delegate.h"
@@ -31,7 +30,6 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
@@ -40,6 +38,8 @@
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/image_loader.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_set.h"
@@ -177,11 +177,11 @@ void NotificationImageReady(
   // TODO(mukai, dewittj): remove this and switch to message center
   // notifications.
   DesktopNotificationService::AddIconNotification(
-      GURL() /* empty origin */,
-      base::string16(),
+      GURL("chrome://extension-crash"),  // Origin URL.
+      base::string16(),                  // Title of notification.
       message,
       notification_icon,
-      base::string16(),
+      base::UTF8ToUTF16(delegate->id()),  // Replace ID.
       delegate.get(),
       profile);
 }
@@ -262,10 +262,8 @@ int BackgroundContentsService::restart_delay_in_ms_ = 3000;  // 3 seconds.
 BackgroundContentsService::BackgroundContentsService(
     Profile* profile, const CommandLine* command_line)
     : prefs_(NULL) {
-  // Don't load/store preferences if the proper switch is not enabled, or if
-  // the parent profile is incognito.
-  if (!profile->IsOffTheRecord() &&
-      !command_line->HasSwitch(switches::kDisableRestoreBackgroundContents))
+  // Don't load/store preferences if the parent profile is incognito.
+  if (!profile->IsOffTheRecord())
     prefs_ = profile->GetPrefs();
 
   // Listen for events to tell us when to load/unload persisted background
@@ -353,7 +351,8 @@ void BackgroundContentsService::StartObserving(Profile* profile) {
   // uninstalled/reloaded. We cannot do this from UNLOADED since a crashed
   // extension is unloaded immediately after the crash, not when user reloads or
   // uninstalls the extension.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  content::Source<Profile>(profile));
 }
 
@@ -468,7 +467,8 @@ void BackgroundContentsService::Observe(
         case UnloadedExtensionInfo::REASON_DISABLE:    // Fall through.
         case UnloadedExtensionInfo::REASON_TERMINATE:  // Fall through.
         case UnloadedExtensionInfo::REASON_UNINSTALL:  // Fall through.
-        case UnloadedExtensionInfo::REASON_BLACKLIST:
+        case UnloadedExtensionInfo::REASON_BLACKLIST:  // Fall through.
+        case UnloadedExtensionInfo::REASON_PROFILE_SHUTDOWN:
           ShutdownAssociatedBackgroundContents(base::ASCIIToUTF16(
               content::Details<UnloadedExtensionInfo>(details)->
                   extension->id()));
@@ -498,7 +498,7 @@ void BackgroundContentsService::Observe(
       }
       break;
 
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED: {
       // Close the crash notification balloon for the app/extension, if any.
       ScheduleCloseBalloon(
           content::Details<const Extension>(details).ptr()->id());

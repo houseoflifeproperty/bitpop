@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2002-2012 The ANGLE Project Authors. All rights reserved.
+// Copyright (c) 2002-2013 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -12,7 +12,7 @@
 #include "GLSLANG/ShaderLang.h"
 
 #include "compiler/translator/InitializeDll.h"
-#include "compiler/preprocessor/length_limits.h"
+#include "compiler/translator/length_limits.h"
 #include "compiler/translator/ShHandle.h"
 #include "compiler/translator/TranslatorHLSL.h"
 #include "compiler/translator/VariablePacker.h"
@@ -63,8 +63,11 @@ int ShInitialize()
 //
 int ShFinalize()
 {
-    DetachProcess();
-    isInitialized = false;
+    if (isInitialized)
+    {
+        DetachProcess();
+        isInitialized = false;
+    }
     return 1;
 }
 
@@ -89,9 +92,16 @@ void ShInitBuiltInResources(ShBuiltInResources* resources)
     resources->ARB_texture_rectangle = 0;
     resources->EXT_draw_buffers = 0;
     resources->EXT_frag_depth = 0;
+    resources->EXT_shader_texture_lod = 0;
 
     // Disable highp precision in fragment shader by default.
     resources->FragmentPrecisionHigh = 0;
+
+    // GLSL ES 3.0 constants.
+    resources->MaxVertexOutputVectors = 16;
+    resources->MaxFragmentInputVectors = 15;
+    resources->MinProgramTexelOffset = -8;
+    resources->MaxProgramTexelOffset = 7;
 
     // Disable name hashing by default.
     resources->HashFunction = NULL;
@@ -134,8 +144,25 @@ void ShDestruct(ShHandle handle)
         DeleteCompiler(base->getAsCompiler());
 }
 
+void ShGetBuiltInResourcesString(const ShHandle handle, size_t outStringLen, char *outString)
+{
+    if (!handle || !outString)
+    {
+        return;
+    }
+
+    TShHandleBase *base = static_cast<TShHandleBase*>(handle);
+    TCompiler *compiler = base->getAsCompiler();
+    if (!compiler)
+    {
+        return;
+    }
+
+    strncpy(outString, compiler->getBuiltInResourcesString().c_str(), outStringLen);
+    outString[outStringLen - 1] = '\0';
+}
 //
-// Do an actual compile on the given strings.  The result is left 
+// Do an actual compile on the given strings.  The result is left
 // in the given compile object.
 //
 // Return:  The return value of ShCompile is really boolean, indicating
@@ -180,27 +207,27 @@ void ShGetInfo(const ShHandle handle, ShShaderInfo pname, size_t* params)
         *params = compiler->getUniforms().size();
         break;
     case SH_ACTIVE_UNIFORM_MAX_LENGTH:
-        *params = 1 +  MAX_SYMBOL_NAME_LEN;
+        *params = 1 + GetGlobalMaxTokenSize(compiler->getShaderSpec());
         break;
     case SH_ACTIVE_ATTRIBUTES:
         *params = compiler->getAttribs().size();
         break;
     case SH_ACTIVE_ATTRIBUTE_MAX_LENGTH:
-        *params = 1 + MAX_SYMBOL_NAME_LEN;
+        *params = 1 + GetGlobalMaxTokenSize(compiler->getShaderSpec());
         break;
     case SH_VARYINGS:
         *params = compiler->getVaryings().size();
         break;
     case SH_VARYING_MAX_LENGTH:
-        *params = 1 + MAX_SYMBOL_NAME_LEN;
+        *params = 1 + GetGlobalMaxTokenSize(compiler->getShaderSpec());
         break;
     case SH_MAPPED_NAME_MAX_LENGTH:
         // Use longer length than MAX_SHORTENED_IDENTIFIER_SIZE to
         // handle array and struct dereferences.
-        *params = 1 + MAX_SYMBOL_NAME_LEN;
+        *params = 1 + GetGlobalMaxTokenSize(compiler->getShaderSpec());
         break;
     case SH_NAME_MAX_LENGTH:
-        *params = 1 + MAX_SYMBOL_NAME_LEN;
+        *params = 1 + GetGlobalMaxTokenSize(compiler->getShaderSpec());
         break;
     case SH_HASHED_NAME_MAX_LENGTH:
         if (compiler->getHashFunction() == NULL) {
@@ -209,11 +236,21 @@ void ShGetInfo(const ShHandle handle, ShShaderInfo pname, size_t* params)
             // 64 bits hashing output requires 16 bytes for hex 
             // representation.
             const char HashedNamePrefix[] = HASHED_NAME_PREFIX;
+            (void)HashedNamePrefix;
             *params = 16 + sizeof(HashedNamePrefix);
         }
         break;
     case SH_HASHED_NAMES_COUNT:
         *params = compiler->getNameMap().size();
+        break;
+    case SH_SHADER_VERSION:
+        *params = compiler->getShaderVersion();
+        break;
+    case SH_RESOURCES_STRING_LENGTH:
+        *params = compiler->getBuiltInResourcesString().length() + 1;
+        break;
+    case SH_OUTPUT_TYPE:
+        *params = compiler->getOutputType();
         break;
     default: UNREACHABLE();
     }
@@ -304,14 +341,14 @@ void ShGetVariableInfo(const ShHandle handle,
     // This size must match that queried by
     // SH_ACTIVE_UNIFORM_MAX_LENGTH, SH_ACTIVE_ATTRIBUTE_MAX_LENGTH, SH_VARYING_MAX_LENGTH
     // in ShGetInfo, below.
-    size_t variableLength = 1 + MAX_SYMBOL_NAME_LEN;
+    size_t variableLength = 1 + GetGlobalMaxTokenSize(compiler->getShaderSpec());
     ASSERT(checkVariableMaxLengths(handle, variableLength));
     strncpy(name, varInfo.name.c_str(), variableLength);
     name[variableLength - 1] = 0;
     if (mappedName) {
         // This size must match that queried by
         // SH_MAPPED_NAME_MAX_LENGTH in ShGetInfo, below.
-        size_t maxMappedNameLength = 1 + MAX_SYMBOL_NAME_LEN;
+        size_t maxMappedNameLength = 1 + GetGlobalMaxTokenSize(compiler->getShaderSpec());
         ASSERT(checkMappedNameMaxLength(handle, maxMappedNameLength));
         strncpy(mappedName, varInfo.mappedName.c_str(), maxMappedNameLength);
         mappedName[maxMappedNameLength - 1] = 0;
@@ -374,6 +411,18 @@ void ShGetInfoPointer(const ShHandle handle, ShShaderInfo pname, void** params)
     {
     case SH_ACTIVE_UNIFORMS_ARRAY:
         *params = (void*)&translator->getUniforms();
+        break;
+    case SH_ACTIVE_INTERFACE_BLOCKS_ARRAY:
+        *params = (void*)&translator->getInterfaceBlocks();
+        break;
+    case SH_ACTIVE_OUTPUT_VARIABLES_ARRAY:
+        *params = (void*)&translator->getOutputVariables();
+        break;
+    case SH_ACTIVE_ATTRIBUTES_ARRAY:
+        *params = (void*)&translator->getAttributes();
+        break;
+    case SH_ACTIVE_VARYINGS_ARRAY:
+        *params = (void*)&translator->getVaryings();
         break;
     default: UNREACHABLE();
     }

@@ -33,6 +33,7 @@
 
 #include "platform/TraceEvent.h"
 #include "platform/heap/ThreadState.h"
+#include "public/platform/Platform.h"
 #include "wtf/Assertions.h"
 #include "wtf/LeakAnnotations.h"
 #include "wtf/PassOwnPtr.h"
@@ -105,7 +106,12 @@ size_t osPageSize()
 
 class MemoryRegion {
 public:
-    MemoryRegion(Address base, size_t size) : m_base(base), m_size(size) { ASSERT(size > 0); }
+    MemoryRegion(Address base, size_t size)
+        : m_base(base)
+        , m_size(size)
+    {
+        ASSERT(size > 0);
+    }
 
     bool contains(Address addr) const
     {
@@ -159,6 +165,7 @@ public:
     }
 
     Address base() const { return m_base; }
+    size_t size() const { return m_size; }
 
 private:
     Address m_base;
@@ -178,7 +185,11 @@ private:
 // Guard pages are created before and after the writable memory.
 class PageMemory {
 public:
-    ~PageMemory() { m_reserved.release(); }
+    ~PageMemory()
+    {
+        __lsan_unregister_root_region(m_writable.base(), m_writable.size());
+        m_reserved.release();
+    }
 
     bool commit() WARN_UNUSED_RETURN { return m_writable.commit(); }
     void decommit() { m_writable.decommit(); }
@@ -279,19 +290,13 @@ private:
         : m_reserved(reserved)
         , m_writable(writable)
     {
-        // This annotation is for letting the LeakSanitizer ignore PageMemory objects.
-        //
-        // - The LeakSanitizer runs before the shutdown sequence and reports unreachable memory blocks.
-        // - The LeakSanitizer only recognizes memory blocks allocated through malloc/new,
-        //   and we need special handling for mapped regions.
-        // - The PageMemory object is only referenced by a HeapPage<Header> object, which is
-        //   located inside the mapped region, which is not released until the shutdown sequence.
-        //
-        // Given the above, we need to explicitly annotate that the LeakSanitizer should ignore
-        // PageMemory objects.
-        WTF_ANNOTATE_LEAKING_OBJECT_PTR(this);
-
         ASSERT(reserved.contains(writable));
+
+        // Register the writable area of the memory as part of the LSan root set.
+        // Only the writable area is mapped and can contain C++ objects. Those
+        // C++ objects can contain pointers to objects outside of the heap and
+        // should therefore be part of the LSan root set.
+        __lsan_register_root_region(m_writable.base(), m_writable.size());
     }
 
     MemoryRegion m_reserved;
@@ -401,7 +406,11 @@ void HeapObjectHeader::finalize(const GCInfo* gcInfo, Address object, size_t obj
     if (gcInfo->hasFinalizer()) {
         gcInfo->m_finalize(object);
     }
-#ifndef NDEBUG
+#if !defined(NDEBUG) || defined(LEAK_SANITIZER)
+    // Zap freed memory with a recognizable zap value in debug mode.
+    // Also zap when using leak sanitizer because the heap is used as
+    // a root region for lsan and therefore pointers in unreachable
+    // memory could hide leaks.
     for (size_t i = 0; i < objectSize; i++)
         object[i] = finalizedZapValue;
 #endif
@@ -1321,6 +1330,7 @@ public:
             return;
         header->mark();
 #if ENABLE(GC_TRACING)
+        MutexLocker locker(objectGraphMutex());
         String className(classOf(objectPointer));
         {
             LiveObjectMap::AddResult result = currentlyLive().add(className, LiveObjectSet());
@@ -1328,7 +1338,7 @@ public:
         }
         ObjectGraph::AddResult result = objectGraph().add(reinterpret_cast<uintptr_t>(objectPointer), std::make_pair(reinterpret_cast<uintptr_t>(m_hostObject), m_hostName));
         ASSERT(result.isNewEntry);
-        // printf("%s[%p] -> %s[%p]\n", m_hostName.ascii().data(), m_hostObject, className.ascii().data(), objectPointer);
+        // fprintf(stderr, "%s[%p] -> %s[%p]\n", m_hostName.ascii().data(), m_hostObject, className.ascii().data(), objectPointer);
 #endif
         if (callback)
             Heap::pushTraceCallback(const_cast<void*>(objectPointer), callback);
@@ -1416,14 +1426,14 @@ public:
 #if ENABLE(GC_TRACING)
     void reportStats()
     {
-        printf("\n---------- AFTER MARKING -------------------\n");
+        fprintf(stderr, "\n---------- AFTER MARKING -------------------\n");
         for (LiveObjectMap::iterator it = currentlyLive().begin(), end = currentlyLive().end(); it != end; ++it) {
-            printf("%s %u", it->key.ascii().data(), it->value.size());
+            fprintf(stderr, "%s %u", it->key.ascii().data(), it->value.size());
 
             if (it->key == "WebCore::Document")
                 reportStillAlive(it->value, previouslyLive().get(it->key));
 
-            printf("\n");
+            fprintf(stderr, "\n");
         }
 
         previouslyLive().swap(currentlyLive());
@@ -1438,7 +1448,7 @@ public:
     {
         int count = 0;
 
-        printf(" [previously %u]", previous.size());
+        fprintf(stderr, " [previously %u]", previous.size());
         for (LiveObjectSet::iterator it = current.begin(), end = current.end(); it != end; ++it) {
             if (previous.find(*it) == previous.end())
                 continue;
@@ -1448,32 +1458,40 @@ public:
         if (!count)
             return;
 
-        printf(" {survived 2GCs %d: ", count);
+        fprintf(stderr, " {survived 2GCs %d: ", count);
         for (LiveObjectSet::iterator it = current.begin(), end = current.end(); it != end; ++it) {
             if (previous.find(*it) == previous.end())
                 continue;
-            printf("%ld", *it);
+            fprintf(stderr, "%ld", *it);
             if (--count)
-                printf(", ");
+                fprintf(stderr, ", ");
         }
         ASSERT(!count);
-        printf("}");
+        fprintf(stderr, "}");
     }
 
     static void dumpPathToObjectFromObjectGraph(const ObjectGraph& graph, uintptr_t target)
     {
-        printf("Path to %lx of %s\n", target, classOf(reinterpret_cast<const void*>(target)).ascii().data());
         ObjectGraph::const_iterator it = graph.find(target);
+        if (it == graph.end())
+            return;
+        fprintf(stderr, "Path to %lx of %s\n", target, classOf(reinterpret_cast<const void*>(target)).ascii().data());
         while (it != graph.end()) {
-            printf("<- %lx of %s\n", it->value.first, it->value.second.ascii().data());
+            fprintf(stderr, "<- %lx of %s\n", it->value.first, it->value.second.utf8().data());
             it = graph.find(it->value.first);
         }
-        printf("\n");
+        fprintf(stderr, "\n");
     }
 
     static void dumpPathToObjectOnNextGC(void* p)
     {
         objectsToFindPath().add(reinterpret_cast<uintptr_t>(p));
+    }
+
+    static Mutex& objectGraphMutex()
+    {
+        AtomicallyInitializedStatic(Mutex&, mutex = *new Mutex);
+        return mutex;
     }
 
     static LiveObjectMap& previouslyLive()
@@ -1584,18 +1602,47 @@ Address Heap::checkAndMarkPointer(Visitor* visitor, Address address)
 #if ENABLE(GC_TRACING)
 const GCInfo* Heap::findGCInfo(Address address)
 {
-    ThreadState::AttachedThreadStateSet& threads = ThreadState::attachedThreads();
-    for (ThreadState::AttachedThreadStateSet::iterator it = threads.begin(), end = threads.end(); it != end; ++it) {
-        if (const GCInfo* gcInfo = (*it)->findGCInfo(address)) {
-            return gcInfo;
-        }
-    }
-    return 0;
+    return ThreadState::findGCInfoFromAllThreads(address);
 }
 
 void Heap::dumpPathToObjectOnNextGC(void* p)
 {
     static_cast<MarkingVisitor*>(s_markingVisitor)->dumpPathToObjectOnNextGC(p);
+}
+
+String Heap::createBacktraceString()
+{
+    int framesToShow = 3;
+    int stackFrameSize = 16;
+    ASSERT(stackFrameSize >= framesToShow);
+    typedef void* FramePointer;
+    FramePointer* stackFrame = static_cast<FramePointer*>(alloca(sizeof(FramePointer) * stackFrameSize));
+    WTFGetBacktrace(stackFrame, &stackFrameSize);
+
+    StringBuilder builder;
+    builder.append("Persistent");
+    bool didAppendFirstName = false;
+    // Skip frames before/including "WebCore::Persistent".
+    bool didSeePersistent = false;
+    for (int i = 0; i < stackFrameSize && framesToShow > 0; ++i) {
+        FrameToNameScope frameToName(stackFrame[i]);
+        if (!frameToName.nullableName())
+            continue;
+        if (strstr(frameToName.nullableName(), "WebCore::Persistent")) {
+            didSeePersistent = true;
+            continue;
+        }
+        if (!didSeePersistent)
+            continue;
+        if (!didAppendFirstName) {
+            didAppendFirstName = true;
+            builder.append(" ... Backtrace:");
+        }
+        builder.append("\n\t");
+        builder.append(frameToName.nullableName());
+        --framesToShow;
+    }
+    return builder.toString().replace("WebCore::", "");
 }
 #endif
 
@@ -1656,6 +1703,7 @@ void Heap::collectGarbage(ThreadState::StackState stackState)
 
     TRACE_EVENT0("Blink", "Heap::collectGarbage");
     TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "BlinkGC");
+    double timeStamp = WTF::currentTimeMS();
 #if ENABLE(GC_TRACING)
     static_cast<MarkingVisitor*>(s_markingVisitor)->objectGraph().clear();
 #endif
@@ -1682,6 +1730,15 @@ void Heap::collectGarbage(ThreadState::StackState stackState)
 #if ENABLE(GC_TRACING)
     static_cast<MarkingVisitor*>(s_markingVisitor)->reportStats();
 #endif
+
+    if (blink::Platform::current()) {
+        uint64_t objectSpaceSize;
+        uint64_t allocatedSpaceSize;
+        getHeapSpaceSize(&objectSpaceSize, &allocatedSpaceSize);
+        blink::Platform::current()->histogramCustomCounts("BlinkGC.CollectGarbage", WTF::currentTimeMS() - timeStamp, 0, 10 * 1000, 50);
+        blink::Platform::current()->histogramCustomCounts("BlinkGC.TotalObjectSpace", objectSpaceSize / 1024, 0, 4 * 1024 * 1024, 50);
+        blink::Platform::current()->histogramCustomCounts("BlinkGC.TotalAllocatedSpace", allocatedSpaceSize / 1024, 0, 4 * 1024 * 1024, 50);
+    }
 }
 
 void Heap::collectAllGarbage()
@@ -1698,6 +1755,19 @@ void Heap::collectAllGarbage()
 void Heap::setForcePreciseGCForTesting()
 {
     ThreadState::current()->setForcePreciseGCForTesting(true);
+}
+
+void Heap::getHeapSpaceSize(uint64_t* objectSpaceSize, uint64_t* allocatedSpaceSize)
+{
+    *objectSpaceSize = 0;
+    *allocatedSpaceSize = 0;
+    ASSERT(ThreadState::isAnyThreadInGC());
+    ThreadState::AttachedThreadStateSet& threads = ThreadState::attachedThreads();
+    typedef ThreadState::AttachedThreadStateSet::iterator ThreadStateIterator;
+    for (ThreadStateIterator it = threads.begin(), end = threads.end(); it != end; ++it) {
+        *objectSpaceSize += (*it)->stats().totalObjectSpace();
+        *allocatedSpaceSize += (*it)->stats().totalAllocatedSpace();
+    }
 }
 
 void Heap::getStats(HeapStats* stats)

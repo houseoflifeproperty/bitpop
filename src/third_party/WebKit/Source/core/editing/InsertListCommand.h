@@ -36,12 +36,14 @@ class InsertListCommand FINAL : public CompositeEditCommand {
 public:
     enum Type { OrderedList, UnorderedList };
 
-    static PassRefPtr<InsertListCommand> create(Document& document, Type listType)
+    static PassRefPtrWillBeRawPtr<InsertListCommand> create(Document& document, Type listType)
     {
-        return adoptRef(new InsertListCommand(document, listType));
+        return adoptRefWillBeNoop(new InsertListCommand(document, listType));
     }
 
     virtual bool preservesTypingStyle() const OVERRIDE { return true; }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     InsertListCommand(Document&, Type);
@@ -51,11 +53,12 @@ private:
 
     HTMLElement* fixOrphanedListChild(Node*);
     bool selectionHasListOfType(const VisibleSelection& selection, const QualifiedName&);
-    PassRefPtr<HTMLElement> mergeWithNeighboringLists(PassRefPtr<HTMLElement>);
+    PassRefPtrWillBeRawPtr<HTMLElement> mergeWithNeighboringLists(PassRefPtrWillBeRawPtr<HTMLElement>);
     void doApplyForSingleParagraph(bool forceCreateList, const QualifiedName&, Range& currentSelection);
     void unlistifyParagraph(const VisiblePosition& originalStart, HTMLElement* listNode, Node* listChildNode);
-    PassRefPtr<HTMLElement> listifyParagraph(const VisiblePosition& originalStart, const QualifiedName& listTag);
-    RefPtr<HTMLElement> m_listElement;
+    PassRefPtrWillBeRawPtr<HTMLElement> listifyParagraph(const VisiblePosition& originalStart, const QualifiedName& listTag);
+
+    RefPtrWillBeMember<HTMLElement> m_listElement;
     Type m_type;
 };
 

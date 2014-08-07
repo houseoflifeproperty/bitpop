@@ -22,6 +22,7 @@
 #include "chrome/browser/sync/sync_error_notifier_factory_ash.h"
 #include "chrome/browser/ui/ash/chrome_new_window_delegate.h"
 #include "chrome/browser/ui/ash/session_state_delegate_views.h"
+#include "chrome/browser/ui/ash/solid_color_user_wallpaper_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -35,7 +36,10 @@
 
 #if defined(OS_WIN)
 #include "chrome/browser/ui/ash/system_tray_delegate_win.h"
-#include "chrome/browser/ui/ash/user_wallpaper_delegate_win.h"
+#endif
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#include "chrome/browser/ui/ash/system_tray_delegate_linux.h"
 #endif
 
 namespace {
@@ -149,7 +153,7 @@ class EmptyAccessibilityDelegate : public ash::AccessibilityDelegate {
     return ash::A11Y_ALERT_NONE;
   }
 
-  base::TimeDelta PlayShutdownSound() const OVERRIDE {
+  virtual base::TimeDelta PlayShutdownSound() const OVERRIDE {
     return base::TimeDelta();
   }
 
@@ -184,6 +188,8 @@ ash::SessionStateDelegate* ChromeShellDelegate::CreateSessionStateDelegate() {
 ash::SystemTrayDelegate* ChromeShellDelegate::CreateSystemTrayDelegate() {
 #if defined(OS_WIN)
   return CreateWindowsSystemTrayDelegate();
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  return CreateLinuxSystemTrayDelegate();
 #else
   return new ash::DefaultSystemTrayDelegate;
 #endif
@@ -194,11 +200,7 @@ ash::AccessibilityDelegate* ChromeShellDelegate::CreateAccessibilityDelegate() {
 }
 
 ash::UserWallpaperDelegate* ChromeShellDelegate::CreateUserWallpaperDelegate() {
-#if defined(OS_WIN)
-  return ::CreateUserWallpaperDelegate();
-#else
-  return NULL;
-#endif
+  return CreateSolidColorUserWallpaperDelegate();
 }
 
 void ChromeShellDelegate::Observe(int type,

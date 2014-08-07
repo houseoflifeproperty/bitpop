@@ -75,6 +75,51 @@
         }
       }
     ],
+    "http://build.chromium.org/p/chromium.gpu": [
+      {
+        "tree_notify": ["chrome-gpu-build-failures@google.com"],
+        "sheriff_classes": ["sheriff", "sheriff_gpu"],
+        "builders": {
+          "*": {
+            "closing_optional": [
+              "angle_unittests",
+              "compile",
+              "content_gl_tests",
+              "context_lost_tests",
+              "find isolated tests",
+              "gclient runhooks",
+              "gl_tests",
+              "gles2_conform_test",
+              "gpu_process_launch_tests",
+              "gpu_rasterization_tests",
+              "hardware_accelerated_feature_tests",
+              "maps_pixel_test",
+              "memory_test",
+              "pixel_test",
+              "screenshot_sync_tests",
+              "tab_capture_end2end_tests",
+              "webgl_conformance_tests"
+            ]
+          }
+        },
+        "comment": [
+          "Keep excluded builders in sync with the gpu closers list in",
+          "masters/master.chromium/templates/announce.html."
+        ],
+        "excluded_builders" : [
+          "Android Debug (Nexus 7)",
+          "GPU Linux Builder (dbg)",
+          "GPU Mac Builder (dbg)",
+          "GPU Win Builder (dbg)",
+          "Linux Debug (NVIDIA)",
+          "Mac 10.8 Debug (Intel)",
+          "Mac Debug (Intel)",
+          "Mac Retina Debug",
+          "Win7 Debug (NVIDIA)",
+          "Win8 Debug (NVIDIA)"
+        ]
+      }
+    ],
     "http://build.chromium.org/p/chromium.lkgr": [
       {
         "tree_notify": [
@@ -138,6 +183,7 @@
             "WebKit Linux Oilpan",
             "WebKit Linux Leak",
             "WebKit Linux Oilpan Leak",
+            "WebKit Linux Oilpan ASAN",
             "WebKit Mac Builder (deps)",
             "WebKit Mac Oilpan (dbg)",
             "WebKit Mac Oilpan",

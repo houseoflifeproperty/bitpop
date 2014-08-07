@@ -19,6 +19,8 @@ base::WeakPtr<BluetoothAdapter> BluetoothAdapter::CreateAdapter(
 }
 #endif  // !defined(OS_CHROMEOS) && !defined(OS_WIN) && !defined(OS_MACOSX)
 
+const int BluetoothAdapter::kChannelAuto = 0;
+const int BluetoothAdapter::kPsmAuto = 0;
 
 BluetoothAdapter::BluetoothAdapter()
     : weak_ptr_factory_(this) {
@@ -71,7 +73,12 @@ BluetoothDevice* BluetoothAdapter::GetDevice(const std::string& address) {
 
 const BluetoothDevice* BluetoothAdapter::GetDevice(
     const std::string& address) const {
-  DevicesMap::const_iterator iter = devices_.find(address);
+  std::string canonicalized_address =
+      BluetoothDevice::CanonicalizeAddress(address);
+  if (canonicalized_address.empty())
+    return NULL;
+
+  DevicesMap::const_iterator iter = devices_.find(canonicalized_address);
   if (iter != devices_.end())
     return iter->second;
 

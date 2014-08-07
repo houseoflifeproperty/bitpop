@@ -11,3 +11,4 @@ class ChromiumOS(Master.ChromiumOSBase):
   master_port = 8014
   slave_port = 8114
   master_port_alt = 8214
+  buildbot_url = 'http://build.chromium.org/p/chromiumos/'

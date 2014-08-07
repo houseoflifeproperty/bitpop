@@ -13,6 +13,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "components/translate/core/browser/language_state.h"
 #include "components/translate/core/common/translate_errors.h"
 
 class GURL;
@@ -34,6 +35,12 @@ class TranslateManager {
   TranslateManager(TranslateClient* translate_client,
                    const std::string& accept_language_pref_name);
   virtual ~TranslateManager();
+
+  // Returns a weak pointer to this instance.
+  base::WeakPtr<TranslateManager> GetWeakPtr();
+
+  // Cannot return NULL.
+  TranslateClient* translate_client() { return translate_client_; }
 
   // Returns the language to translate to. The language returned is the
   // first language found in the following list that is supported by the
@@ -82,6 +89,9 @@ class TranslateManager {
   static scoped_ptr<TranslateErrorCallbackList::Subscription>
       RegisterTranslateErrorCallback(const TranslateErrorCallback& callback);
 
+  // Gets the LanguageState associated with the TranslateManager
+  LanguageState& GetLanguageState();
+
  private:
   // Sends a translation request to the TranslateDriver.
   void DoTranslatePage(const std::string& translate_script,
@@ -101,6 +111,8 @@ class TranslateManager {
 
   TranslateClient* translate_client_;  // Weak.
   TranslateDriver* translate_driver_;  // Weak.
+
+  LanguageState language_state_;
 
   base::WeakPtrFactory<TranslateManager> weak_method_factory_;
 

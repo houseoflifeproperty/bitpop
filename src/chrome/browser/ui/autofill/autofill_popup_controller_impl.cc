@@ -59,6 +59,9 @@ const DataResource kDataResources[] = {
   { "jcbCC", IDR_AUTOFILL_CC_JCB },
   { "masterCardCC", IDR_AUTOFILL_CC_MASTERCARD },
   { "visaCC", IDR_AUTOFILL_CC_VISA },
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  { "macContactsIcon", IDR_AUTOFILL_MAC_CONTACTS_ICON },
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 };
 
 }  // namespace
@@ -149,16 +152,12 @@ void AutofillPopupControllerImpl::Show(
 
     // Each field receives space in proportion to its length.
     int name_size = available_width * name_width / total_text_length;
-    names_[i] = gfx::ElideText(names_[i],
-                               GetNameFontListForRow(i),
-                               name_size,
-                               gfx::ELIDE_AT_END);
+    names_[i] = gfx::ElideText(names_[i], GetNameFontListForRow(i),
+                               name_size, gfx::ELIDE_TAIL);
 
     int subtext_size = available_width * subtext_width / total_text_length;
-    subtexts_[i] = gfx::ElideText(subtexts_[i],
-                                  subtext_font_list(),
-                                  subtext_size,
-                                  gfx::ELIDE_AT_END);
+    subtexts_[i] = gfx::ElideText(subtexts_[i], subtext_font_list(),
+                                  subtext_size, gfx::ELIDE_TAIL);
   }
 #endif
 

@@ -29,7 +29,7 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
-#if !defined(OS_CHROMEOS) && defined(USE_AURA) && defined(USE_X11)
+#if !defined(OS_CHROMEOS) && defined(OS_LINUX)
 #include "ui/base/ime/input_method_initializer.h"
 #endif
 
@@ -91,7 +91,7 @@ void ContentBrowserTest::SetUp() {
 #endif
 
   // LinuxInputMethodContextFactory has to be initialized.
-#if !defined(OS_CHROMEOS) && defined(USE_AURA) && defined(USE_X11)
+#if !defined(OS_CHROMEOS) && defined(OS_LINUX)
   ui::InitializeInputMethodForTesting();
 #endif
 
@@ -104,7 +104,7 @@ void ContentBrowserTest::TearDown() {
   BrowserTestBase::TearDown();
 
   // LinuxInputMethodContextFactory has to be shutdown.
-#if !defined(OS_CHROMEOS) && defined(USE_AURA) && defined(USE_X11)
+#if !defined(OS_CHROMEOS) && defined(OS_LINUX)
   ui::ShutdownInputMethodForTesting();
 #endif
 
@@ -157,7 +157,7 @@ void ContentBrowserTest::RunTestOnMainThreadLoop() {
 Shell* ContentBrowserTest::CreateBrowser() {
   return Shell::CreateNewWindow(
       ShellContentBrowserClient::Get()->browser_context(),
-      GURL(kAboutBlankURL),
+      GURL(url::kAboutBlankURL),
       NULL,
       MSG_ROUTING_NONE,
       gfx::Size());
@@ -166,7 +166,7 @@ Shell* ContentBrowserTest::CreateBrowser() {
 Shell* ContentBrowserTest::CreateOffTheRecordBrowser() {
   return Shell::CreateNewWindow(
       ShellContentBrowserClient::Get()->off_the_record_browser_context(),
-      GURL(kAboutBlankURL),
+      GURL(url::kAboutBlankURL),
       NULL,
       MSG_ROUTING_NONE,
       gfx::Size());

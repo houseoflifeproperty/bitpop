@@ -35,7 +35,9 @@ PRUNE_PATHS = set([
     os.path.join('third_party','valgrind'),
 
     # Used for development and test, not in the shipping product.
+    os.path.join('build','secondary'),
     os.path.join('third_party','bison'),
+    os.path.join('third_party','blanketjs'),
     os.path.join('third_party','cygwin'),
     os.path.join('third_party','gnu_binutils'),
     os.path.join('third_party','gold'),
@@ -50,8 +52,9 @@ PRUNE_PATHS = set([
     os.path.join('third_party','psyco_win32'),
     os.path.join('third_party','pylib'),
     os.path.join('third_party','pywebsocket'),
+    os.path.join('third_party','qunit'),
+    os.path.join('third_party','sinonjs'),
     os.path.join('third_party','syzygy'),
-    os.path.join('tools','gn'),
 
     # Chromium code in third_party.
     os.path.join('third_party','fuzzymatch'),
@@ -148,6 +151,11 @@ SPECIAL_CASES = {
     os.path.join('third_party', 'ots'): {
         "Name": "OTS (OpenType Sanitizer)",
         "URL": "http://code.google.com/p/ots/",
+        "License": "BSD",
+    },
+    os.path.join('third_party', 'pdfium'): {
+        "Name": "PDFium",
+        "URL": "http://code.google.com/p/pdfium/",
         "License": "BSD",
     },
     os.path.join('third_party', 'pdfsqueeze'): {

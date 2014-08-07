@@ -29,7 +29,7 @@
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/common/form_data.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
@@ -182,7 +182,7 @@ base::WeakPtr<AutofillDialogController> AutofillDialogControllerAndroid::Create(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const AutofillManagerDelegate::ResultCallback& callback) {
+    const AutofillClient::ResultCallback& callback) {
   // AutofillDialogControllerAndroid owns itself.
   AutofillDialogControllerAndroid* autofill_dialog_controller =
       new AutofillDialogControllerAndroid(contents,
@@ -199,7 +199,7 @@ AutofillDialogController::Create(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const AutofillManagerDelegate::ResultCallback& callback) {
+    const AutofillClient::ResultCallback& callback) {
   return AutofillDialogControllerAndroid::Create(contents,
                                                  form_structure,
                                                  source_url,
@@ -244,7 +244,7 @@ void AutofillDialogControllerAndroid::Show() {
           env,
           invoked_from_same_origin_)) {
     callback_.Run(
-        AutofillManagerDelegate::AutocompleteResultErrorDisabled,
+        AutofillClient::AutocompleteResultErrorDisabled,
         base::ASCIIToUTF16("Cross-origin form invocations are not supported."),
         NULL);
     delete this;
@@ -261,7 +261,7 @@ void AutofillDialogControllerAndroid::Show() {
   // if the dialog shouldn't be shown in a given circumstances.
   if (!has_types) {
     callback_.Run(
-        AutofillManagerDelegate::AutocompleteResultErrorDisabled,
+        AutofillClient::AutocompleteResultErrorDisabled,
         base::ASCIIToUTF16("Form is missing autocomplete attributes."),
         NULL);
     delete this;
@@ -281,7 +281,7 @@ void AutofillDialogControllerAndroid::Show() {
 
   if (!has_credit_card_field) {
     callback_.Run(
-        AutofillManagerDelegate::AutocompleteResultErrorDisabled,
+        AutofillClient::AutocompleteResultErrorDisabled,
         base::ASCIIToUTF16("Form is not a payment form (must contain "
                            "some autocomplete=\"cc-*\" fields). "),
         NULL);
@@ -348,8 +348,6 @@ void AutofillDialogControllerAndroid::Show() {
         g_browser_process->GetApplicationLocale());
   }
 
-  const bool incognito_mode = profile_->IsOffTheRecord();
-
   bool last_used_choice_is_autofill = false;
   base::string16 last_used_account_name;
   std::string last_used_billing;
@@ -370,7 +368,8 @@ void AutofillDialogControllerAndroid::Show() {
     }
   }
 
-  if (contents_->GetBrowserContext()->IsOffTheRecord())
+  const bool incognito_mode = profile_->IsOffTheRecord();
+  if (incognito_mode)
     last_used_choice_is_autofill = true;
 
   ScopedJavaLocalRef<jstring> jlast_used_account_name =
@@ -388,13 +387,20 @@ void AutofillDialogControllerAndroid::Show() {
   ScopedJavaLocalRef<jstring> jmerchant_domain =
       base::android::ConvertUTF8ToJavaString(
           env, source_url_.GetOrigin().spec());
-  const std::set<base::string16> availableShippingCountriesSet =
+  const std::set<base::string16> available_shipping_countries =
       form_structure_.PossibleValues(ADDRESS_HOME_COUNTRY);
   ScopedJavaLocalRef<jobjectArray> jshipping_countries =
       base::android::ToJavaArrayOfStrings(
           env,
-          std::vector<base::string16>(availableShippingCountriesSet.begin(),
-                                      availableShippingCountriesSet.end()));
+          std::vector<base::string16>(available_shipping_countries.begin(),
+                                      available_shipping_countries.end()));
+  const std::set<base::string16> available_credit_card_types =
+      form_structure_.PossibleValues(CREDIT_CARD_TYPE);
+  ScopedJavaLocalRef<jobjectArray> jcredit_card_types =
+      base::android::ToJavaArrayOfStrings(
+          env,
+          std::vector<base::string16>(available_credit_card_types.begin(),
+                                      available_credit_card_types.end()));
 
   java_object_.Reset(Java_AutofillDialogControllerAndroid_create(
       env,
@@ -407,7 +413,8 @@ void AutofillDialogControllerAndroid::Show() {
       jlast_used_billing.obj(), jlast_used_shipping.obj(),
       jlast_used_card.obj(),
       jmerchant_domain.obj(),
-      jshipping_countries.obj()));
+      jshipping_countries.obj(),
+      jcredit_card_types.obj()));
 }
 
 void AutofillDialogControllerAndroid::Hide() {
@@ -425,7 +432,7 @@ bool AutofillDialogControllerAndroid::
 void AutofillDialogControllerAndroid::DialogCancel(JNIEnv* env,
                                                    jobject obj) {
   LogOnCancelMetrics();
-  callback_.Run(AutofillManagerDelegate::AutocompleteResultErrorCancel,
+  callback_.Run(AutofillClient::AutocompleteResultErrorCancel,
                 base::string16(),
                 NULL);
 }
@@ -483,7 +490,7 @@ void AutofillDialogControllerAndroid::DialogContinue(
   LogOnFinishSubmitMetrics();
 
   // Callback should be called as late as possible.
-  callback_.Run(AutofillManagerDelegate::AutocompleteResultSuccess,
+  callback_.Run(AutofillClient::AutocompleteResultSuccess,
                 base::string16(),
                 &form_structure_);
 
@@ -495,7 +502,7 @@ AutofillDialogControllerAndroid::AutofillDialogControllerAndroid(
     content::WebContents* contents,
     const FormData& form_structure,
     const GURL& source_url,
-    const AutofillManagerDelegate::ResultCallback& callback)
+    const AutofillClient::ResultCallback& callback)
     : profile_(Profile::FromBrowserContext(contents->GetBrowserContext())),
       contents_(contents),
       initial_user_state_(AutofillMetrics::DIALOG_USER_STATE_UNKNOWN),

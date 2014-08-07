@@ -35,7 +35,11 @@ class PasswordStoreDefault : public PasswordStore {
   virtual PasswordStoreChangeList RemoveLoginImpl(
       const autofill::PasswordForm& form) OVERRIDE;
   virtual PasswordStoreChangeList RemoveLoginsCreatedBetweenImpl(
-      const base::Time& delete_begin, const base::Time& delete_end) OVERRIDE;
+      base::Time delete_begin,
+      base::Time delete_end) OVERRIDE;
+  virtual PasswordStoreChangeList RemoveLoginsSyncedBetweenImpl(
+      base::Time delete_begin,
+      base::Time delete_end) OVERRIDE;
   virtual void GetLoginsImpl(
       const autofill::PasswordForm& form,
       AuthorizationPromptPolicy prompt_policy,

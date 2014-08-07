@@ -309,6 +309,7 @@
     '<(libvpx_source)/vp9/encoder/vp9_write_bit_buffer.h',
     '<(libvpx_source)/vp9/encoder/vp9_writer.c',
     '<(libvpx_source)/vp9/encoder/vp9_writer.h',
+    '<(libvpx_source)/vp9/encoder/x86/vp9_dct_mmx.asm',
     '<(libvpx_source)/vp9/encoder/x86/vp9_error_sse2.asm',
     '<(libvpx_source)/vp9/encoder/x86/vp9_sad4d_sse2.asm',
     '<(libvpx_source)/vp9/encoder/x86/vp9_sad_mmx.asm',

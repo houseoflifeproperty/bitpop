@@ -11,7 +11,6 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_manager_client.h"
 #include "chromeos/dbus/shill_property_changed_observer.h"
-#include "chromeos/network/shill_property_util.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -238,19 +237,21 @@ ShillDeviceClient::TestInterface* FakeShillDeviceClient::GetTestInterface() {
 
 void FakeShillDeviceClient::AddDevice(const std::string& device_path,
                                       const std::string& type,
-                                      const std::string& object_path) {
+                                      const std::string& name) {
   DBusThreadManager::Get()->GetShillManagerClient()->GetTestInterface()->
       AddDevice(device_path);
 
   base::DictionaryValue* properties = GetDeviceProperties(device_path);
   properties->SetWithoutPathExpansion(shill::kTypeProperty,
                                       base::Value::CreateStringValue(type));
+  properties->SetWithoutPathExpansion(shill::kNameProperty,
+                                      base::Value::CreateStringValue(name));
   properties->SetWithoutPathExpansion(
-      shill::kDBusObjectProperty, base::Value::CreateStringValue(object_path));
+      shill::kDBusObjectProperty, base::Value::CreateStringValue(device_path));
   properties->SetWithoutPathExpansion(
       shill::kDBusServiceProperty,
-      base::Value::CreateStringValue(modemmanager::kModemManager1));
-  if (NetworkTypePattern::Cellular().MatchesType(type)) {
+      base::Value::CreateStringValue(modemmanager::kModemManager1ServiceName));
+  if (type == shill::kTypeCellular) {
     properties->SetWithoutPathExpansion(shill::kCellularAllowRoamingProperty,
                                         new base::FundamentalValue(false));
   }

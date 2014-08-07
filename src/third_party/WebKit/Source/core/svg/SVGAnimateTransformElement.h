@@ -28,11 +28,9 @@
 
 namespace WebCore {
 
-class AffineTransform;
-
 class SVGAnimateTransformElement FINAL : public SVGAnimateElement {
 public:
-    static PassRefPtr<SVGAnimateTransformElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGAnimateTransformElement);
 
     SVGTransformType transformType() const { return m_type; }
 

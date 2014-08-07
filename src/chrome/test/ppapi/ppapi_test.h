@@ -10,19 +10,18 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "chrome/test/base/javascript_test_observer.h"
+#include "content/public/test/javascript_test_observer.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 
 namespace content {
 class RenderViewHost;
 }
 
-class PPAPITestMessageHandler : public TestMessageHandler {
+class PPAPITestMessageHandler : public content::TestMessageHandler {
  public:
   PPAPITestMessageHandler();
 
-  MessageResponse HandleMessage(const std::string& json);
-
+  virtual MessageResponse HandleMessage(const std::string& json) OVERRIDE;
   virtual void Reset() OVERRIDE;
 
   const std::string& message() const {
@@ -50,16 +49,12 @@ class PPAPITestBase : public InProcessBrowserTest {
   // Returns the URL to load for file: tests.
   GURL GetTestFileUrl(const std::string& test_case);
   virtual void RunTest(const std::string& test_case);
-  // Run the test and reload. This can test for clean shutdown, including leaked
-  // instance object vars.
-  virtual void RunTestAndReload(const std::string& test_case);
   virtual void RunTestViaHTTP(const std::string& test_case);
   virtual void RunTestWithSSLServer(const std::string& test_case);
   virtual void RunTestWithWebSocketServer(const std::string& test_case);
   virtual void RunTestIfAudioOutputAvailable(const std::string& test_case);
   virtual void RunTestViaHTTPIfAudioOutputAvailable(
       const std::string& test_case);
-  std::string StripPrefixes(const std::string& test_name);
 
  protected:
   class InfoBarObserver : public content::NotificationObserver {
@@ -133,7 +128,6 @@ class PPAPINaClTest : public PPAPITestBase {
   virtual void SetUpOnMainThread() OVERRIDE;
   // PPAPITestBase overrides.
   virtual void RunTest(const std::string& test_case) OVERRIDE;
-  virtual void RunTestAndReload(const std::string& test_case) OVERRIDE;
   virtual void RunTestViaHTTP(const std::string& test_case) OVERRIDE;
   virtual void RunTestWithSSLServer(const std::string& test_case) OVERRIDE;
   virtual void RunTestWithWebSocketServer(

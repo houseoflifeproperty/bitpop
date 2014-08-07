@@ -3,8 +3,13 @@
 # found in the LICENSE file.
 
 import("//build/config/ui.gni")
+
 if (is_android) {
   import("//build/config/android/config.gni")
+  import("//build/config/android/rules.gni")
+}
+if (use_ozone) {
+  import("//ui/ozone/ozone.gni")
 }
 
 # Several targets want to include this header file, and some of them are
@@ -68,7 +73,7 @@ component("gfx") {
     "color_analysis.h",
     "color_profile.cc",
     "color_profile.h",
-    "color_profile_mac.cc",
+    "color_profile_mac.mm",
     "color_profile_win.cc",
     "color_utils.cc",
     "color_utils.h",
@@ -132,27 +137,6 @@ component("gfx") {
     "native_widget_types.h",
     "nine_image_painter.cc",
     "nine_image_painter.h",
-    "ozone/dri/dri_skbitmap.cc",
-    "ozone/dri/dri_skbitmap.h",
-    "ozone/dri/dri_surface.cc",
-    "ozone/dri/dri_surface.h",
-    "ozone/dri/dri_surface_factory.cc",
-    "ozone/dri/dri_surface_factory.h",
-    "ozone/dri/dri_vsync_provider.cc",
-    "ozone/dri/dri_vsync_provider.h",
-    "ozone/dri/dri_wrapper.cc",
-    "ozone/dri/dri_wrapper.h",
-    "ozone/dri/hardware_display_controller.cc",
-    "ozone/dri/hardware_display_controller.h",
-    "ozone/impl/file_surface_factory.cc",
-    "ozone/impl/file_surface_factory.h",
-    "ozone/surface_factory_ozone.cc",
-    "ozone/surface_factory_ozone.h",
-    "ozone/surface_ozone.h",
-    "ozone/overlay_candidates_ozone.cc",
-    "ozone/overlay_candidates_ozone.h",
-    "pango_util.cc",
-    "pango_util.h",
     "path.cc",
     "path.h",
     "path_aura.cc",
@@ -166,24 +150,12 @@ component("gfx") {
     "platform_font_ios.mm",
     "platform_font_mac.h",
     "platform_font_mac.mm",
-    "platform_font_ozone.cc",
-    "platform_font_pango.cc",
-    "platform_font_pango.h",
     "platform_font_win.cc",
     "platform_font_win.h",
     "range/range.cc",
     "range/range.h",
     "range/range_mac.mm",
     "range/range_win.cc",
-    "render_text.cc",
-    "render_text.h",
-    "render_text_mac.cc",
-    "render_text_mac.h",
-    "render_text_ozone.cc",
-    "render_text_pango.cc",
-    "render_text_pango.h",
-    "render_text_win.cc",
-    "render_text_win.h",
     "scoped_canvas.h",
     "scoped_cg_context_save_gstate_mac.h",
     "scoped_ns_graphics_context_save_gstate_mac.h",
@@ -221,7 +193,6 @@ component("gfx") {
     "text_utils.h",
     "text_utils_android.cc",
     "text_utils_ios.mm",
-    "text_utils_skia.cc",
     "transform.cc",
     "transform.h",
     "transform_util.cc",
@@ -250,6 +221,7 @@ component("gfx") {
     "//base:base_static",
     "//base/third_party/dynamic_annotations",
     "//skia",
+    "//third_party/harfbuzz-ng",
     "//third_party/icu:icui18n",
     "//third_party/icu:icuuc",
     "//third_party/libpng",
@@ -257,6 +229,30 @@ component("gfx") {
     "//ui/gfx/geometry",
   ]
 
+  # Text rendering conditions (complicated so separated out).
+  if (is_android || is_ios) {
+    # We don't support RenderText on these platforms.
+  } else {
+    # These text rendering files are supported everywhere text rendering is.
+    sources += [
+      "render_text.cc",
+      "render_text.h",
+      "render_text_harfbuzz.cc",
+      "render_text_harfbuzz.h",
+      "text_utils_skia.cc",
+    ]
+    # These are the "native" rendering routines, only one should apply.
+    if (is_win) {
+      sources += [ "render_text_win.cc" ]
+    } else if (is_mac) {
+      sources += [ "render_text_mac.cc" ]
+    } else if (use_pango) {
+      sources += [ "render_text_pango.cc" ]
+    } else if (use_ozone) {
+      sources += [ "render_text_ozone.cc" ]
+    }
+  }
+  
   # iOS.
   if (is_ios) {
     sources -= [
@@ -282,22 +278,15 @@ component("gfx") {
       sources -= [ "path.cc" ]
     }
 
-    if (!is_android_webview_build) {
-      deps += [ "//base:base_java" ]
-    }
+    # TODO(GYP) re-enable when base_java exists.
+    #if (!is_android_webview_build) {
+    #  deps += [ "//base:base_java" ]
+    #}
 
-    deps += [ ":jni_headers" ]
+    deps += [ ":gfx_jni_headers" ]
     libs = [
       "android",
       "jnigraphics",
-    ]
-  }
-
-  if (is_android || is_ios) {
-    sources -= [
-      "render_text.cc",
-      "render_text.h",
-      "text_utils_skia.cc",
     ]
   }
 
@@ -323,8 +312,9 @@ component("gfx") {
   }
 
   # Ozone stuff.
-  if (!use_ozone) {
-    sources -= [
+  if (use_ozone) {
+    sources += [
+      "platform_font_ozone.cc",
       "ozone/impl/file_surface_factory.cc",
       "ozone/impl/file_surface_factory.h",
       "ozone/surface_factory_ozone.cc",
@@ -334,30 +324,13 @@ component("gfx") {
       "ozone/overlay_candidates_ozone.h",
     ]
   }
-  if (ozone_platform_dri) {
-    configs += [ "//build/config/linux:dridrm" ]
-  } else {
-    sources -= [
-      "ozone/dri/dri_skbitmap.cc",
-      "ozone/dri/dri_skbitmap.h",
-      "ozone/dri/dri_surface.cc",
-      "ozone/dri/dri_surface.h",
-      "ozone/dri/dri_surface_factory.cc",
-      "ozone/dri/dri_surface_factory.h",
-      "ozone/dri/dri_vsync_provider.cc",
-      "ozone/dri/dri_vsync_provider.h",
-      "ozone/dri/dri_wrapper.cc",
-      "ozone/dri/dri_wrapper.h",
-      "ozone/dri/hardware_display_controller.cc",
-      "ozone/dri/hardware_display_controller.h",
-    ]
-  }
 
   if (!use_aura) {
     sources -= [
       "nine_image_painter.cc",
       "nine_image_painter.h",
       "path_aura.cc",
+      "screen_aura.cc",
     ]
   }
 
@@ -372,77 +345,17 @@ component("gfx") {
   }
 
   if (use_pango) {
-    sources -= [
-      "platform_font_ozone.cc",
-      "render_text_ozone.cc",
-    ]
-    configs += [ "//build/config/linux:pangocairo" ]
-  } else {
-    sources -= [
+    sources += [
       "pango_util.cc",
       "pango_util.h",
       "platform_font_pango.cc",
       "platform_font_pango.h",
-      "render_text_pango.cc",
-      "render_text_pango.h",
     ]
+    configs += [ "//build/config/linux:pangocairo" ]
   }
 }
 
-component("gfx_geometry") {
-  sources = [
-    "geometry/box_f.cc",
-    "geometry/box_f.h",
-    "geometry/cubic_bezier.h",
-    "geometry/cubic_bezier.cc",
-    "geometry/insets.cc",
-    "geometry/insets.h",
-    "geometry/insets_base.h",
-    "geometry/insets_f.cc",
-    "geometry/insets_f.h",
-    "geometry/matrix3_f.cc",
-    "geometry/matrix3_f.h",
-    "geometry/point.cc",
-    "geometry/point.h",
-    "geometry/point3_f.cc",
-    "geometry/point3_f.h",
-    "geometry/point_base.h",
-    "geometry/point_conversions.cc",
-    "geometry/point_conversions.h",
-    "geometry/point_f.cc",
-    "geometry/point_f.h",
-    "geometry/quad_f.cc",
-    "geometry/quad_f.h",
-    "geometry/rect.cc",
-    "geometry/rect.h",
-    "geometry/rect_base.h",
-    "geometry/rect_base_impl.h",
-    "geometry/rect_conversions.cc",
-    "geometry/rect_conversions.h",
-    "geometry/rect_f.cc",
-    "geometry/rect_f.h",
-    "geometry/r_tree.cc",
-    "geometry/r_tree.h",
-    "geometry/safe_integer_conversions.h",
-    "geometry/size.cc",
-    "geometry/size.h",
-    "geometry/size_base.h",
-    "geometry/size_conversions.cc",
-    "geometry/size_conversions.h",
-    "geometry/size_f.cc",
-    "geometry/size_f.h",
-    "geometry/vector2d.cc",
-    "geometry/vector2d.h",
-    "geometry/vector2d_conversions.cc",
-    "geometry/vector2d_conversions.h",
-    "geometry/vector2d_f.cc",
-    "geometry/vector2d_f.h",
-    "geometry/vector3d_f.cc",
-    "geometry/vector3d_f.h",
-  ]
-  defines = [ "GFX_IMPLEMENTATION" ]
-  deps = [ "//base" ]
-}
+# Looking for gfx_geometry? It's //ui/gfx/geometry:geometry
 
 source_set("gfx_test_support") {
   sources = [
@@ -496,7 +409,14 @@ test("gfx_unittests") {
 }
 
 if (is_android) {
-  # TODO(brettw) gfx_jni_headers
+  generate_jni("gfx_jni_headers") {
+    sources = [
+      "../android/java/src/org/chromium/ui/gfx/BitmapHelper.java",
+      "../android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java",
+      "../android/java/src/org/chromium/ui/gfx/ViewConfigurationHelper.java",
+    ]
+    jni_package = "gfx"
+  }
 }
 
 if (use_x11) {
@@ -504,12 +424,17 @@ if (use_x11) {
     sources = [
       "x/x11_atom_cache.cc",
       "x/x11_atom_cache.h",
+      "x/x11_connection.cc",
+      "x/x11_connection.h",
       "x/x11_error_tracker.cc",
       "x/x11_error_tracker.h",
+      "x/x11_switches.cc",
+      "x/x11_switches.h",
       "x/x11_types.cc",
       "x/x11_types.h",
     ]
 
+    defines = [ "GFX_IMPLEMENTATION" ]
     configs += [ "//build/config/linux:x11" ]
 
     deps = [

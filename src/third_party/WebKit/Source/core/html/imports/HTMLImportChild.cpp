@@ -35,59 +35,52 @@
 #include "core/dom/custom/CustomElement.h"
 #include "core/dom/custom/CustomElementMicrotaskDispatcher.h"
 #include "core/dom/custom/CustomElementMicrotaskImportStep.h"
-#include "core/dom/custom/CustomElementMicrotaskQueue.h"
+#include "core/dom/custom/CustomElementSyncMicrotaskQueue.h"
 #include "core/html/imports/HTMLImportChildClient.h"
 #include "core/html/imports/HTMLImportLoader.h"
+#include "core/html/imports/HTMLImportTreeRoot.h"
 #include "core/html/imports/HTMLImportsController.h"
 
 namespace WebCore {
 
-HTMLImportChild::HTMLImportChild(Document& master, const KURL& url, SyncMode sync)
+HTMLImportChild::HTMLImportChild(const KURL& url, HTMLImportLoader* loader, SyncMode sync)
     : HTMLImport(sync)
-#if ENABLE(OILPAN)
-    , m_master(&master)
-#else
-    , m_master(master)
-#endif
     , m_url(url)
-    , m_weakFactory(this)
-    , m_loader(0)
-    , m_client(0)
-{
 #if !ENABLE(OILPAN)
-    m_master.guardRef();
+    , m_weakFactory(this)
 #endif
+    , m_loader(loader)
+    , m_client(nullptr)
+{
 }
 
 HTMLImportChild::~HTMLImportChild()
 {
+#if !ENABLE(OILPAN)
     // importDestroyed() should be called before the destruction.
     ASSERT(!m_loader);
 
     if (m_client)
         m_client->importChildWasDestroyed(this);
-
-#if !ENABLE(OILPAN)
-    m_master.guardDeref();
 #endif
 }
 
-void HTMLImportChild::wasAlreadyLoaded()
+void HTMLImportChild::ownerInserted()
 {
-    ASSERT(!m_loader);
-    ASSERT(m_client);
-    ensureLoader();
+    if (!m_loader->isDone())
+        return;
+    root()->document()->styleResolverChanged();
+}
+
+void HTMLImportChild::didShareLoader()
+{
+    createCustomElementMicrotaskStepIfNeeded();
     stateWillChange();
 }
 
-void HTMLImportChild::startLoading(const ResourcePtr<RawResource>& resource)
+void HTMLImportChild::didStartLoading()
 {
-    ASSERT(!this->resource());
-    ASSERT(!m_loader);
-
-    setResource(resource);
-
-    ensureLoader();
+    createCustomElementMicrotaskStepIfNeeded();
 }
 
 void HTMLImportChild::didFinish()
@@ -98,7 +91,6 @@ void HTMLImportChild::didFinish()
 
 void HTMLImportChild::didFinishLoading()
 {
-    clearResource();
     stateWillChange();
     if (m_customElementMicrotaskStep)
         CustomElementMicrotaskDispatcher::instance().importDidFinish(m_customElementMicrotaskStep.get());
@@ -110,42 +102,27 @@ void HTMLImportChild::didFinishUpgradingCustomElements()
     m_customElementMicrotaskStep.clear();
 }
 
-bool HTMLImportChild::isLoaded() const
-{
-    return m_loader && m_loader->isDone();
-}
-
-bool HTMLImportChild::isFirst() const
-{
-    return m_loader && m_loader->isFirstImport(this);
-}
-
-Document* HTMLImportChild::importedDocument() const
-{
-    if (!m_loader)
-        return 0;
-    return m_loader->importedDocument();
-}
-
+#if !ENABLE(OILPAN)
 void HTMLImportChild::importDestroyed()
 {
     if (parent())
         parent()->removeChild(this);
-    if (m_loader) {
-        m_loader->removeImport(this);
-        m_loader = 0;
-    }
+
+    ASSERT(m_loader);
+    m_loader->removeImport(this);
+    m_loader = nullptr;
 }
+#endif
 
 Document* HTMLImportChild::document() const
 {
-    return m_loader ? m_loader->document() : 0;
+    ASSERT(m_loader);
+    return m_loader->document();
 }
 
 void HTMLImportChild::stateWillChange()
 {
-    toHTMLImportsController(root())->scheduleRecalcState();
-    ensureLoader();
+    toHTMLImportTreeRoot(root())->scheduleRecalcState();
 }
 
 void HTMLImportChild::stateDidChange()
@@ -171,52 +148,30 @@ void HTMLImportChild::createCustomElementMicrotaskStepIfNeeded()
     }
 
     if (!isDone() && !formsCycle()) {
+#if ENABLE(OILPAN)
+        m_customElementMicrotaskStep = CustomElement::didCreateImport(this);
+#else
         m_customElementMicrotaskStep = CustomElement::didCreateImport(this)->weakPtr();
+#endif
     }
 
     for (HTMLImport* child = firstChild(); child; child = child->next())
         toHTMLImportChild(child)->createCustomElementMicrotaskStepIfNeeded();
 }
 
-void HTMLImportChild::ensureLoader()
-{
-    if (m_loader)
-        return;
-
-    if (HTMLImportChild* found = toHTMLImportsController(root())->findLinkFor(m_url, this))
-        shareLoader(found);
-    else
-        createLoader();
-
-    createCustomElementMicrotaskStepIfNeeded();
-}
-
-void HTMLImportChild::createLoader()
-{
-    ASSERT(!m_loader);
-    m_loader = toHTMLImportsController(root())->createLoader();
-    m_loader->addImport(this);
-    m_loader->startLoading(resource());
-}
-
-void HTMLImportChild::shareLoader(HTMLImportChild* loader)
-{
-    ASSERT(!m_loader);
-    m_loader = loader->m_loader;
-    m_loader->addImport(this);
-    stateWillChange();
-}
-
 bool HTMLImportChild::isDone() const
 {
-    return m_loader && m_loader->isDone() && m_loader->microtaskQueue()->isEmpty() && !m_customElementMicrotaskStep;
+    ASSERT(m_loader);
+
+    return m_loader->isDone() && m_loader->microtaskQueue()->isEmpty() && !m_customElementMicrotaskStep;
 }
 
-bool HTMLImportChild::loaderHasError() const
+HTMLImportLoader* HTMLImportChild::loader() const
 {
-    return m_loader && m_loader->hasError();
+    // This should never be called after importDestroyed.
+    ASSERT(m_loader);
+    return m_loader;
 }
-
 
 void HTMLImportChild::setClient(HTMLImportChildClient* client)
 {
@@ -225,12 +180,14 @@ void HTMLImportChild::setClient(HTMLImportChildClient* client)
     m_client = client;
 }
 
+#if !ENABLE(OILPAN)
 void HTMLImportChild::clearClient()
 {
     // Doesn't check m_client nullity because we allow
     // clearClient() to reenter.
-    m_client = 0;
+    m_client = nullptr;
 }
+#endif
 
 HTMLLinkElement* HTMLImportChild::link() const
 {
@@ -260,12 +217,20 @@ void HTMLImportChild::showThis()
     bool isFirst = loader() ? loader()->isFirstImport(this) : false;
     HTMLImport::showThis();
     fprintf(stderr, " loader=%p first=%d, step=%p sync=%s url=%s",
-        m_loader,
+        m_loader.get(),
         isFirst,
         m_customElementMicrotaskStep.get(),
         isSync() ? "Y" : "N",
         url().string().utf8().data());
 }
 #endif
+
+void HTMLImportChild::trace(Visitor* visitor)
+{
+    visitor->trace(m_customElementMicrotaskStep);
+    visitor->trace(m_loader);
+    visitor->trace(m_client);
+    HTMLImport::trace(visitor);
+}
 
 } // namespace WebCore

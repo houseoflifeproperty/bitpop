@@ -5,32 +5,31 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
 #ifndef SkPicturePlayback_DEFINED
 #define SkPicturePlayback_DEFINED
 
-#include "SkPicture.h"
-#include "SkReader32.h"
-
 #include "SkBitmap.h"
-#include "SkData.h"
-#include "SkMatrix.h"
-#include "SkReadBuffer.h"
-#include "SkPaint.h"
-#include "SkPath.h"
 #include "SkPathHeap.h"
-#include "SkRegion.h"
-#include "SkRRect.h"
+#include "SkPicture.h"
 #include "SkPictureFlat.h"
 
 #ifdef SK_BUILD_FOR_ANDROID
 #include "SkThread.h"
 #endif
 
+class SkData;
 class SkPictureRecord;
+class SkReader32;
 class SkStream;
 class SkWStream;
 class SkBBoxHierarchy;
+class SkMatrix;
+class SkPaint;
+class SkPath;
 class SkPictureStateTree;
+class SkReadBuffer;
+class SkRegion;
 
 struct SkPictInfo {
     enum Flags {
@@ -61,6 +60,65 @@ struct SkPictInfo {
 // Always write this guy last (with no length field afterwards)
 #define SK_PICT_EOF_TAG     SkSetFourByteTag('e', 'o', 'f', ' ')
 
+// SkPictureContentInfo is not serialized! It is intended solely for use
+// with suitableForGpuRasterization.
+class SkPictureContentInfo {
+public:
+    SkPictureContentInfo() { this->reset(); }
+
+    SkPictureContentInfo(const SkPictureContentInfo& src) { this->set(src); }
+
+    void set(const SkPictureContentInfo& src) {
+        fNumPaintWithPathEffectUses = src.fNumPaintWithPathEffectUses;
+        fNumFastPathDashEffects = src.fNumFastPathDashEffects;
+        fNumAAConcavePaths = src.fNumAAConcavePaths;
+        fNumAAHairlineConcavePaths = src.fNumAAHairlineConcavePaths;
+    }
+
+    void reset() {
+        fNumPaintWithPathEffectUses = 0;
+        fNumFastPathDashEffects = 0;
+        fNumAAConcavePaths = 0;
+        fNumAAHairlineConcavePaths = 0;
+    }
+
+    void swap(SkPictureContentInfo* other) {
+        SkTSwap(fNumPaintWithPathEffectUses, other->fNumPaintWithPathEffectUses);
+        SkTSwap(fNumFastPathDashEffects, other->fNumFastPathDashEffects);
+        SkTSwap(fNumAAConcavePaths, other->fNumAAConcavePaths);
+        SkTSwap(fNumAAHairlineConcavePaths, other->fNumAAHairlineConcavePaths);
+    }
+
+    void incPaintWithPathEffectUses() { ++fNumPaintWithPathEffectUses; }
+    int numPaintWithPathEffectUses() const { return fNumPaintWithPathEffectUses; }
+
+    void incFastPathDashEffects() { ++fNumFastPathDashEffects; }
+    int numFastPathDashEffects() const { return fNumFastPathDashEffects; }
+
+    void incAAConcavePaths() { ++fNumAAConcavePaths; }
+    int numAAConcavePaths() const { return fNumAAConcavePaths; }
+
+    void incAAHairlineConcavePaths() {
+        ++fNumAAHairlineConcavePaths;
+        SkASSERT(fNumAAHairlineConcavePaths <= fNumAAConcavePaths);
+    }
+    int numAAHairlineConcavePaths() const { return fNumAAHairlineConcavePaths; }
+
+private:
+    // This field is incremented every time a paint with a path effect is
+    // used (i.e., it is not a de-duplicated count)
+    int fNumPaintWithPathEffectUses;
+    // This field is incremented every time a paint with a path effect that is
+    // dashed, we are drawing a line, and we can use the gpu fast path
+    int fNumFastPathDashEffects;
+    // This field is incremented every time an anti-aliased drawPath call is
+    // issued with a concave path
+    int fNumAAConcavePaths;
+    // This field is incremented every time a drawPath call is
+    // issued for a hairline stroked concave path.
+    int fNumAAHairlineConcavePaths;
+};
+
 /**
  * Container for data that is needed to deep copy a SkPicture. The container
  * enables the data to be generated once and reused for subsequent copies.
@@ -75,21 +133,20 @@ struct SkPictCopyInfo {
 
 class SkPicturePlayback {
 public:
-    SkPicturePlayback(const SkPicture* picture, const SkPicturePlayback& src,
+    SkPicturePlayback(const SkPicturePlayback& src,
                       SkPictCopyInfo* deepCopyInfo = NULL);
-    SkPicturePlayback(const SkPicture* picture, const SkPictureRecord& record, const SkPictInfo&,
-                      bool deepCopy = false);
-    static SkPicturePlayback* CreateFromStream(SkPicture* picture,
-                                               SkStream*,
+    SkPicturePlayback(const SkPictureRecord& record, const SkPictInfo&, bool deepCopyOps);
+    static SkPicturePlayback* CreateFromStream(SkStream*,
                                                const SkPictInfo&,
                                                SkPicture::InstallPixelRefProc);
-    static SkPicturePlayback* CreateFromBuffer(SkPicture* picture,
-                                               SkReadBuffer&,
+    static SkPicturePlayback* CreateFromBuffer(SkReadBuffer&,
                                                const SkPictInfo&);
 
     virtual ~SkPicturePlayback();
 
     const SkPicture::OperationList& getActiveOps(const SkIRect& queryRect);
+
+    void setUseBBH(bool useBBH) { fUseBBH = useBBH; }
 
     void draw(SkCanvas& canvas, SkDrawPictureCallback*);
 
@@ -110,10 +167,10 @@ public:
     void resetOpID() { fCurOffset = 0; }
 
 protected:
-    explicit SkPicturePlayback(const SkPicture* picture, const SkPictInfo& info);
+    explicit SkPicturePlayback(const SkPictInfo& info);
 
-    bool parseStream(SkPicture* picture, SkStream*, SkPicture::InstallPixelRefProc);
-    bool parseBuffer(SkPicture* picture, SkReadBuffer& buffer);
+    bool parseStream(SkStream*, SkPicture::InstallPixelRefProc);
+    bool parseBuffer(SkReadBuffer& buffer);
 #ifdef SK_DEVELOPER
     virtual bool preDraw(int opIndex, int type);
     virtual void postDraw(int opIndex);
@@ -144,13 +201,14 @@ private:
     }
 
     const SkPath& getPath(SkReader32& reader) {
-        return fPicture->getPath(reader.readInt() - 1);
+        int index = reader.readInt() - 1;
+        return (*fPathHeap.get())[index];
     }
 
-    SkPicture& getPicture(SkReader32& reader) {
+    const SkPicture* getPicture(SkReader32& reader) {
         int index = reader.readInt();
         SkASSERT(index > 0 && index <= fPictureCount);
-        return *fPictureRefs[index - 1];
+        return fPictureRefs[index - 1];
     }
 
     const SkPaint* getPaint(SkReader32& reader) {
@@ -219,17 +277,30 @@ public:
     void dump() const;
 #endif
 
+#if SK_SUPPORT_GPU
+    /**
+     * sampleCount is the number of samples-per-pixel or zero if non-MSAA.
+     * It is defaulted to be zero.
+     */
+    bool suitableForGpuRasterization(GrContext* context, const char **reason,
+                                     int sampleCount = 0) const;
+
+    /**
+     * Calls getRecommendedSampleCount with GrPixelConfig and dpi to calculate sampleCount
+     * and then calls the above version of suitableForGpuRasterization
+     */
+    bool suitableForGpuRasterization(GrContext* context, const char **reason,
+                                     GrPixelConfig config, SkScalar dpi) const;
+#endif
+
 private:    // these help us with reading/writing
-    bool parseStreamTag(SkPicture* picture, SkStream*, uint32_t tag, uint32_t size,
-                        SkPicture::InstallPixelRefProc);
-    bool parseBufferTag(SkPicture* picture, SkReadBuffer&, uint32_t tag, uint32_t size);
+    bool parseStreamTag(SkStream*, uint32_t tag, uint32_t size, SkPicture::InstallPixelRefProc);
+    bool parseBufferTag(SkReadBuffer&, uint32_t tag, uint32_t size);
     void flattenToBuffer(SkWriteBuffer&) const;
 
 private:
     friend class SkPicture;
-
-    // The picture that owns this SkPicturePlayback object
-    const SkPicture* fPicture;
+    friend class SkGpuDevice;   // for access to setDrawLimits & setReplacements
 
     // Only used by getBitmap() if the passed in index is SkBitmapHeap::INVALID_SLOT. This empty
     // bitmap allows playback to draw nothing and move on.
@@ -242,11 +313,76 @@ private:
 
     SkData* fOpData;    // opcodes and parameters
 
-    SkPicture** fPictureRefs;
+    SkAutoTUnref<const SkPathHeap> fPathHeap;  // reference counted
+
+    const SkPicture** fPictureRefs;
     int fPictureCount;
 
     SkBBoxHierarchy* fBoundingHierarchy;
     SkPictureStateTree* fStateTree;
+
+    SkPictureContentInfo fContentInfo;
+
+    // Limit the opcode playback to be between the offsets 'start' and 'stop'.
+    // The opcode at 'start' should be a saveLayer while the opcode at
+    // 'stop' should be a restore. Neither of those commands will be issued.
+    // Set both start & stop to 0 to disable draw limiting
+    // Draw limiting cannot be enabled at the same time as draw replacing
+    void setDrawLimits(size_t start, size_t stop) {
+        SkASSERT(NULL == fReplacements);
+        fStart = start;
+        fStop = stop;
+    }
+
+    // PlaybackReplacements collects op ranges that can be replaced with
+    // a single drawBitmap call (using a precomputed bitmap).
+    class PlaybackReplacements {
+    public:
+        // All the operations between fStart and fStop (inclusive) will be replaced with
+        // a single drawBitmap call using fPos, fBM and fPaint.
+        // fPaint will be NULL if the picture's paint wasn't copyable
+        struct ReplacementInfo {
+            size_t          fStart;
+            size_t          fStop;
+            SkIPoint        fPos;
+            SkBitmap*       fBM;
+            const SkPaint*  fPaint;  // Note: this object doesn't own the paint
+        };
+
+        ~PlaybackReplacements() { this->freeAll(); }
+
+        // Add a new replacement range. The replacement ranges should be
+        // sorted in increasing order and non-overlapping (esp. no nested
+        // saveLayers).
+        ReplacementInfo* push();
+
+    private:
+        friend class SkPicturePlayback; // for access to lookupByStart
+
+        // look up a replacement range by its start offset
+        ReplacementInfo* lookupByStart(size_t start);
+
+        void freeAll();
+
+#ifdef SK_DEBUG
+        void validate() const;
+#endif
+
+        SkTDArray<ReplacementInfo> fReplacements;
+    };
+
+    // Replace all the draw ops in the replacement ranges in 'replacements' with
+    // the associated drawBitmap call
+    // Draw replacing cannot be enabled at the same time as draw limiting
+    void setReplacements(PlaybackReplacements* replacements) {
+        SkASSERT(fStart == 0 && fStop == 0);
+        fReplacements = replacements;
+    }
+
+    bool   fUseBBH;
+    size_t fStart;
+    size_t fStop;
+    PlaybackReplacements* fReplacements;
 
     class CachedOperationList : public SkPicture::OperationList {
     public:
@@ -281,6 +417,8 @@ private:
 
     static void WriteFactories(SkWStream* stream, const SkFactorySet& rec);
     static void WriteTypefaces(SkWStream* stream, const SkRefCntSet& rec);
+
+    void initForPlayback() const;
 
 #ifdef SK_BUILD_FOR_ANDROID
     SkMutex fDrawMutex;

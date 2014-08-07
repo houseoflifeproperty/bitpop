@@ -40,6 +40,7 @@ To merge multiple archives
   $ ./httparchive.py merge --merged_file new.wpr archive1.wpr archive2.wpr ...
 """
 
+import calendar
 import difflib
 import email.utils
 import httplib
@@ -56,8 +57,6 @@ import tempfile
 import time
 import urlparse
 from collections import defaultdict
-
-import platformsettings
 
 
 def LogRunTime(fn):
@@ -86,7 +85,6 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
     Persist(filename)
 
   Attributes:
-    server_rtt: dict of {hostname, server rtt in milliseconds}
     responses_by_host: dict of {hostname, {request: response}}. This must remain
         in sync with the underlying dict of self. It is used as an optimization
         so that get_requests() doesn't have to linearly search all requests in
@@ -94,7 +92,6 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
   """
 
   def __init__(self):
-    self.server_rtt = {}
     self.responses_by_host = defaultdict(dict)
 
   def __setstate__(self, state):
@@ -126,21 +123,6 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
   def __delitem__(self, key):
     super(HttpArchive, self).__delitem__(key)
     del self.responses_by_host[key.host][key]
-
-  def get_server_rtt(self, server):
-    """Retrieves the round trip time (rtt) to the server
-
-    Args:
-      server: the hostname of the server
-
-    Returns:
-      round trip time to the server in seconds, or 0 if unavailable
-    """
-    if server not in self.server_rtt:
-      # TODO(tonyg): Pinging inline with the request causes timeouts. Need to
-      # find a way to restore this functionality.
-      self.server_rtt[server] = 0  # platform_settings.ping_rtt(server)
-    return self.server_rtt[server]
 
   def get(self, request, default=None):
     """Return the archived response for a given request.
@@ -185,8 +167,8 @@ class HttpArchive(dict, persistentmixin.PersistentMixin):
   def get_conditional_status(self, request, response):
     status = 200
     last_modified = email.utils.parsedate(
-        response.get_header_case_insensitive('last-modified'))
-    response_etag = response.get_header_case_insensitive('etag')
+        response.update_date(response.get_header('last-modified')))
+    response_etag = response.get_header('etag')
     is_get_or_head = request.command.upper() in ('GET', 'HEAD')
 
     match_value = request.headers.get('if-match', None)
@@ -591,6 +573,7 @@ class ArchivedHttpRequest(object):
     - accept: Causes problems with www.bing.com. During record, CSS is fetched
               with *. During replay, it's text/css.
     - accept-charset, accept-language, referer: vary between clients.
+    - cache-control:  sometimes sent from Chrome with 'max-age=0' as value.
     - connection, method, scheme, url, version: Cause problems with spdy.
     - cookie: Extremely sensitive to request/response order.
     - keep-alive: Not supported by Web Page Replay.
@@ -617,7 +600,7 @@ class ArchivedHttpRequest(object):
       if headers['accept-encoding'].endswith(','):
         headers['accept-encoding'] = headers['accept-encoding'][:-1]
     undesirable_keys = [
-        'accept', 'accept-charset', 'accept-language',
+        'accept', 'accept-charset', 'accept-language', 'cache-control',
         'connection', 'cookie', 'keep-alive', 'method',
         'referer', 'scheme', 'url', 'version', 'user-agent', 'proxy-connection',
         'x-chrome-variations']
@@ -664,8 +647,14 @@ class ArchivedHttpResponse(object):
           Concatenating the chunks gives the complete contents
           (i.e. the chunks do not have any lengths or delimiters).
           Do not include the final, zero-length chunk that marks the end.
-      delays: dict of (ms) delays before "headers" and "data". For example,
-          {'headers': 50, 'data': [0, 10, 10]}
+      delays: dict of (ms) delays for 'connect', 'headers' and 'data'.
+          e.g. {'connect': 50, 'headers': 150, 'data': [0, 10, 10]}
+          connect - The time to connect to the server.
+            Each resource has a value because Replay's record mode captures it.
+            This includes the time for the SYN and SYN/ACK (1 rtt).
+          headers - The time elapsed between the TCP connect and the headers.
+            This typically includes all the server-time to generate a response.
+          data - If the response is chunked, these are the times for each chunk.
     """
     self.version = version
     self.status = status
@@ -680,6 +669,7 @@ class ArchivedHttpResponse(object):
     expected_num_delays = len(self.response_data)
     if not self.delays:
       self.delays = {
+          'connect': 0,
           'headers': 0,
           'data': [0] * expected_num_delays
           }
@@ -710,6 +700,7 @@ class ArchivedHttpResponse(object):
     """
     if 'server_delays' in state:
       state['delays'] = {
+          'connect': 0,
           'headers': 0,
           'data': state['server_delays']
           }
@@ -721,15 +712,9 @@ class ArchivedHttpResponse(object):
 
   def get_header(self, key, default=None):
     for k, v in self.headers:
-      if key == k:
-        return v
-    return default
-
-  def get_header_case_insensitive(self, key):
-    for k, v in self.headers:
       if key.lower() == k.lower():
         return v
-    return None
+    return default
 
   def set_header(self, key, value):
     for i, (k, v) in enumerate(self.headers):
@@ -740,9 +725,40 @@ class ArchivedHttpResponse(object):
 
   def remove_header(self, key):
     for i, (k, v) in enumerate(self.headers):
-      if key == k:
+      if key.lower() == k.lower():
         self.headers.pop(i)
         return
+
+  def _get_epoch_seconds(self, date_str):
+    """Return the epoch seconds of a date header.
+
+    Args:
+      date_str: a date string (e.g. "Thu, 01 Dec 1994 16:00:00 GMT")
+    Returns:
+      epoch seconds as a float
+    """
+    date_tuple = email.utils.parsedate(date_str)
+    if date_tuple:
+      return calendar.timegm(date_tuple)
+    return None
+
+  def update_date(self, date_str, now=None):
+    """Return an updated date based on its delta from the "Date" header.
+
+    For example, if |date_str| is one week later than the "Date" header,
+    then the returned date string is one week later than the current date.
+
+    Args:
+      date_str: a date string (e.g. "Thu, 01 Dec 1994 16:00:00 GMT")
+    Returns:
+      a date string
+    """
+    date_seconds = self._get_epoch_seconds(self.get_header('date'))
+    header_seconds = self._get_epoch_seconds(date_str)
+    if date_seconds and header_seconds:
+      updated_seconds = header_seconds + (now or time.time()) - date_seconds
+      return email.utils.formatdate(updated_seconds, usegmt=True)
+    return date_str
 
   def is_gzip(self):
     return self.get_header('content-encoding') == 'gzip'
@@ -761,7 +777,8 @@ class ArchivedHttpResponse(object):
     content_type = self.get_header('content-type')
     if (not content_type or
         not (content_type.startswith('text/') or
-             content_type == 'application/x-javascript')):
+             content_type == 'application/x-javascript' or
+             content_type.startswith('application/json'))):
       return None
     if self.is_compressed():
       uncompressed_chunks = httpzlib.uncompress_chunks(
@@ -807,6 +824,7 @@ class ArchivedHttpResponse(object):
     Args:
       delays_text: JSON encoded text such as the following:
           {
+            connect: 80,
             headers: 80,
             data: [6, 55, 0]
           }
@@ -891,18 +909,18 @@ def main():
 
   http_archive = HttpArchive.Load(replay_file)
   if command == 'ls':
-    print http_archive.ls(options.command, options.host, options.path)
+    print http_archive.ls(options.command, options.host, options.full_path)
   elif command == 'cat':
-    print http_archive.cat(options.command, options.host, options.path)
+    print http_archive.cat(options.command, options.host, options.full_path)
   elif command == 'stats':
-    print http_archive.stats(options.command, options.host, options.path)
+    print http_archive.stats(options.command, options.host, options.full_path)
   elif command == 'merge':
     if not options.merged_file:
       print 'Error: Must specify a merged file name (use --merged_file)'
       return
     http_archive.merge(options.merged_file, args[2:])
   elif command == 'edit':
-    http_archive.edit(options.command, options.host, options.path)
+    http_archive.edit(options.command, options.host, options.full_path)
     http_archive.Persist(replay_file)
   else:
     option_parser.error('Unknown command "%s"' % command)

@@ -105,7 +105,7 @@ void PageRuntimeAgent::didCreateIsolatedContext(LocalFrame* frame, ScriptState* 
 InjectedScript PageRuntimeAgent::injectedScriptForEval(ErrorString* errorString, const int* executionContextId)
 {
     if (!executionContextId) {
-        ScriptState* scriptState = ScriptState::forMainWorld(m_inspectedPage->mainFrame());
+        ScriptState* scriptState = ScriptState::forMainWorld(m_inspectedPage->deprecatedLocalMainFrame());
         InjectedScript result = injectedScriptManager()->injectedScriptFor(scriptState);
         if (result.isEmpty())
             *errorString = "Internal error: main world execution context not found.";
@@ -130,14 +130,17 @@ void PageRuntimeAgent::unmuteConsole()
 void PageRuntimeAgent::reportExecutionContextCreation()
 {
     Vector<std::pair<ScriptState*, SecurityOrigin*> > isolatedContexts;
-    for (LocalFrame* frame = m_inspectedPage->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        if (!frame->script().canExecuteScripts(NotAboutToExecuteScript))
+    for (Frame* frame = m_inspectedPage->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        if (!frame->isLocalFrame())
             continue;
-        String frameId = m_pageAgent->frameId(frame);
+        LocalFrame* localFrame = toLocalFrame(frame);
+        if (!localFrame->script().canExecuteScripts(NotAboutToExecuteScript))
+            continue;
+        String frameId = m_pageAgent->frameId(localFrame);
 
-        ScriptState* scriptState = ScriptState::forMainWorld(frame);
+        ScriptState* scriptState = ScriptState::forMainWorld(localFrame);
         addExecutionContextToFrontend(scriptState, true, "", frameId);
-        frame->script().collectIsolatedContexts(isolatedContexts);
+        localFrame->script().collectIsolatedContexts(isolatedContexts);
         if (isolatedContexts.isEmpty())
             continue;
         for (size_t i = 0; i< isolatedContexts.size(); i++)
@@ -146,7 +149,7 @@ void PageRuntimeAgent::reportExecutionContextCreation()
     }
 }
 
-void PageRuntimeAgent::frameWindowDiscarded(DOMWindow* window)
+void PageRuntimeAgent::frameWindowDiscarded(LocalDOMWindow* window)
 {
     Vector<RefPtr<ScriptState> > scriptStatesToRemove;
     for (ScriptStateToId::iterator it = m_scriptStateToId.begin(); it != m_scriptStateToId.end(); ++it) {

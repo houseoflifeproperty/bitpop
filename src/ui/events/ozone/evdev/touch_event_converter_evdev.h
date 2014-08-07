@@ -11,15 +11,15 @@
 #include "base/files/file_path.h"
 #include "base/message_loop/message_pump_libevent.h"
 #include "ui/events/event_constants.h"
-#include "ui/events/events_export.h"
 #include "ui/events/ozone/evdev/event_converter_evdev.h"
 #include "ui/events/ozone/evdev/event_device_info.h"
+#include "ui/events/ozone/evdev/events_ozone_evdev_export.h"
 
 namespace ui {
 
 class TouchEvent;
 
-class EVENTS_EXPORT TouchEventConverterEvdev
+class EVENTS_OZONE_EVDEV_EXPORT TouchEventConverterEvdev
     : public EventConverterEvdev,
       public base::MessagePumpLibevent::Watcher {
  public:
@@ -47,6 +47,12 @@ class EVENTS_EXPORT TouchEventConverterEvdev
   virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
 
   virtual bool Reinitialize();
+
+  void ProcessInputEvent(const input_event& input);
+  void ProcessAbs(const input_event& input);
+  void ProcessSyn(const input_event& input);
+
+  void ReportEvents(base::TimeDelta delta);
 
   // Set if we have seen a SYN_DROPPED and not yet re-synced with the device.
   bool syn_dropped_;
@@ -110,4 +116,3 @@ class EVENTS_EXPORT TouchEventConverterEvdev
 }  // namespace ui
 
 #endif  // UI_EVENTS_OZONE_EVDEV_TOUCH_EVENT_CONVERTER_EVDEV_H_
-

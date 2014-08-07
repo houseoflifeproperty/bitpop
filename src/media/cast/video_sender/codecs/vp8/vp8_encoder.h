@@ -27,7 +27,7 @@ const int kNumberOfVp8VideoBuffers = 3;
 
 class Vp8Encoder : public SoftwareVideoEncoder {
  public:
-  Vp8Encoder(const VideoSenderConfig& video_config, uint8 max_unacked_frames);
+  Vp8Encoder(const VideoSenderConfig& video_config, int max_unacked_frames);
 
   virtual ~Vp8Encoder();
 
@@ -37,7 +37,7 @@ class Vp8Encoder : public SoftwareVideoEncoder {
 
   // Encode a raw image (as a part of a video stream).
   virtual bool Encode(const scoped_refptr<media::VideoFrame>& video_frame,
-                      transport::EncodedVideoFrame* encoded_image) OVERRIDE;
+                      transport::EncodedFrame* encoded_image) OVERRIDE;
 
   // Update the encoder with a new target bit rate.
   virtual void UpdateRates(uint32 new_bitrate) OVERRIDE;

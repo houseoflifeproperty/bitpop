@@ -81,7 +81,7 @@ static bool FindFormInputElements(blink::WebFormElement* fe,
     // of "name" attribute) so is it considered not found.
     bool found_input = false;
     for (size_t i = 0; i < temp_elements.size(); ++i) {
-      if (temp_elements[i].to<blink::WebElement>().hasTagName("input")) {
+      if (temp_elements[i].to<blink::WebElement>().hasHTMLTagName("input")) {
         // Check for a non-unique match.
         if (found_input) {
           found_input = false;
@@ -229,7 +229,11 @@ PasswordAutofillAgent::PasswordAutofillAgent(content::RenderView* render_view)
       usernames_usage_(NOTHING_TO_AUTOFILL),
       web_view_(render_view->GetWebView()),
       logging_state_active_(false),
+      was_username_autofilled_(false),
+      was_password_autofilled_(false),
+      username_selection_start_(0),
       weak_ptr_factory_(this) {
+  Send(new AutofillHostMsg_PasswordAutofillAgentConstructed(routing_id()));
 }
 
 PasswordAutofillAgent::~PasswordAutofillAgent() {
@@ -367,7 +371,7 @@ bool PasswordAutofillAgent::TextFieldHandlingKeyDown(
   return true;
 }
 
-bool PasswordAutofillAgent::AcceptSuggestion(
+bool PasswordAutofillAgent::FillSuggestion(
     const blink::WebNode& node,
     const blink::WebString& username,
     const blink::WebString& password) {
@@ -391,11 +395,43 @@ bool PasswordAutofillAgent::AcceptSuggestion(
   return true;
 }
 
+bool PasswordAutofillAgent::PreviewSuggestion(
+    const blink::WebNode& node,
+    const blink::WebString& username,
+    const blink::WebString& password) {
+  blink::WebInputElement username_element;
+  PasswordInfo password_info;
+
+  if (!FindLoginInfo(node, &username_element, &password_info) ||
+      !IsElementAutocompletable(username_element) ||
+      !IsElementAutocompletable(password_info.password_field)) {
+    return false;
+  }
+
+  was_username_autofilled_ = username_element.isAutofilled();
+  username_selection_start_ = username_element.selectionStart();
+  username_element.setSuggestedValue(username);
+  username_element.setAutofilled(true);
+  username_element.setSelectionRange(
+      username_selection_start_,
+      username_element.suggestedValue().length());
+
+  was_password_autofilled_ = password_info.password_field.isAutofilled();
+  password_info.password_field.setSuggestedValue(password);
+  password_info.password_field.setAutofilled(true);
+
+  return true;
+}
+
 bool PasswordAutofillAgent::DidClearAutofillSelection(
     const blink::WebNode& node) {
-  blink::WebInputElement input;
-  PasswordInfo password;
-  return FindLoginInfo(node, &input, &password);
+  blink::WebInputElement username_element;
+  PasswordInfo password_info;
+  if (!FindLoginInfo(node, &username_element, &password_info))
+    return false;
+
+  ClearPreview(&username_element, &password_info.password_field);
+  return true;
 }
 
 bool PasswordAutofillAgent::ShowSuggestions(
@@ -432,14 +468,10 @@ void PasswordAutofillAgent::FirstUserGestureObserved() {
 void PasswordAutofillAgent::SendPasswordForms(blink::WebFrame* frame,
                                               bool only_visible) {
   scoped_ptr<RendererSavePasswordProgressLogger> logger;
-  // From the perspective of saving passwords, only calls with |only_visible|
-  // being true are important -- the decision whether to save the password is
-  // only made after visible forms are known, for failed login detection. Calls
-  // with |only_visible| false are important for password form autofill, which
-  // is currently not part of the logging.
-  if (only_visible && logging_state_active_) {
+  if (logging_state_active_) {
     logger.reset(new RendererSavePasswordProgressLogger(this, routing_id()));
     logger->LogMessage(Logger::STRING_SEND_PASSWORD_FORMS_METHOD);
+    logger->LogBoolean(Logger::STRING_ONLY_VISIBLE, only_visible);
   }
 
   // Make sure that this security origin is allowed to use password manager.
@@ -513,7 +545,7 @@ bool PasswordAutofillAgent::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PasswordAutofillAgent, message)
     IPC_MESSAGE_HANDLER(AutofillMsg_FillPasswordForm, OnFillPasswordForm)
-    IPC_MESSAGE_HANDLER(AutofillMsg_ChangeLoggingState, OnChangeLoggingState)
+    IPC_MESSAGE_HANDLER(AutofillMsg_SetLoggingState, OnSetLoggingState)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -761,7 +793,7 @@ void PasswordAutofillAgent::OnFillPasswordForm(
   }
 }
 
-void PasswordAutofillAgent::OnChangeLoggingState(bool active) {
+void PasswordAutofillAgent::OnSetLoggingState(bool active) {
   logging_state_active_ = active;
 }
 
@@ -1013,7 +1045,7 @@ bool PasswordAutofillAgent::FindLoginInfo(const blink::WebNode& node,
     return false;
 
   blink::WebElement element = node.toConst<blink::WebElement>();
-  if (!element.hasTagName("input"))
+  if (!element.hasHTMLTagName("input"))
     return false;
 
   blink::WebInputElement input = element.to<blink::WebInputElement>();
@@ -1024,6 +1056,21 @@ bool PasswordAutofillAgent::FindLoginInfo(const blink::WebNode& node,
   *found_input = input;
   *found_password = iter->second;
   return true;
+}
+
+void PasswordAutofillAgent::ClearPreview(
+    blink::WebInputElement* username,
+    blink::WebInputElement* password) {
+  if (!username->suggestedValue().isEmpty()) {
+    username->setSuggestedValue(blink::WebString());
+    username->setAutofilled(was_username_autofilled_);
+    username->setSelectionRange(username_selection_start_,
+                                username->value().length());
+  }
+  if (!password->suggestedValue().isEmpty()) {
+      password->setSuggestedValue(blink::WebString());
+      password->setAutofilled(was_password_autofilled_);
+  }
 }
 
 }  // namespace autofill

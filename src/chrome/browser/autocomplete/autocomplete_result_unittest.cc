@@ -19,10 +19,13 @@
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
 #include "chrome/common/autocomplete_match_type.h"
-#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "components/variations/entropy_provider.h"
+#include "components/variations/variations_associated_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using metrics::OmniboxEventProto;
 
 namespace {
 
@@ -176,7 +179,7 @@ void AutocompleteResultTest::RunCopyOldMatchesTest(
     const TestData* expected, size_t expected_size) {
   AutocompleteInput input(base::ASCIIToUTF16("a"), base::string16::npos,
                           base::string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC, false, false, false,
+                          OmniboxEventProto::INVALID_SPEC, false, false, false,
                           true);
 
   ACMatches last_matches;
@@ -212,7 +215,7 @@ TEST_F(AutocompleteResultTest, Swap) {
   match.allowed_to_be_default_match = true;
   AutocompleteInput input(base::ASCIIToUTF16("a"), base::string16::npos,
                           base::string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC, false, false, false,
+                          OmniboxEventProto::INVALID_SPEC, false, false, false,
                           true);
   matches.push_back(match);
   r1.AppendMatches(matches);
@@ -295,7 +298,7 @@ TEST_F(AutocompleteResultTest, SortAndCullEmptyDestinationURLs) {
   result.AppendMatches(matches);
   AutocompleteInput input(base::string16(), base::string16::npos,
                           base::string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC, false, false, false,
+                          OmniboxEventProto::INVALID_SPEC, false, false, false,
                           true);
   result.SortAndCull(input, test_util_.profile());
 
@@ -319,7 +322,7 @@ TEST_F(AutocompleteResultTest, SortAndCullDuplicateSearchURLs) {
   url_data.short_name = base::ASCIIToUTF16("unittest");
   url_data.SetKeyword(base::ASCIIToUTF16("foo"));
   url_data.SetURL("http://www.foo.com/s?q={searchTerms}");
-  test_util_.model()->Add(new TemplateURL(test_util_.profile(), url_data));
+  test_util_.model()->Add(new TemplateURL(url_data));
 
   TestData data[] = {
     { 0, 0, 1300 },
@@ -341,7 +344,7 @@ TEST_F(AutocompleteResultTest, SortAndCullDuplicateSearchURLs) {
   result.AppendMatches(matches);
   AutocompleteInput input(base::string16(), base::string16::npos,
                           base::string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC, false, false, false,
+                          OmniboxEventProto::INVALID_SPEC, false, false, false,
                           true);
   result.SortAndCull(input, test_util_.profile());
 
@@ -364,7 +367,7 @@ TEST_F(AutocompleteResultTest, SortAndCullWithMatchDups) {
   url_data.short_name = base::ASCIIToUTF16("unittest");
   url_data.SetKeyword(base::ASCIIToUTF16("foo"));
   url_data.SetURL("http://www.foo.com/s?q={searchTerms}");
-  test_util_.model()->Add(new TemplateURL(test_util_.profile(), url_data));
+  test_util_.model()->Add(new TemplateURL(url_data));
 
   AutocompleteMatch dup_match;
   dup_match.destination_url = GURL("http://www.foo.com/s?q=foo&oq=dup");
@@ -393,7 +396,7 @@ TEST_F(AutocompleteResultTest, SortAndCullWithMatchDups) {
   result.AppendMatches(matches);
   AutocompleteInput input(base::string16(), base::string16::npos,
                           base::string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC, false, false, false,
+                          OmniboxEventProto::INVALID_SPEC, false, false, false,
                           true);
   result.SortAndCull(input, test_util_.profile());
 
@@ -447,7 +450,7 @@ TEST_F(AutocompleteResultTest, SortAndCullWithDemotionsByType) {
   result.AppendMatches(matches);
   AutocompleteInput input(base::string16(), base::string16::npos,
                           base::string16(), GURL(),
-                          AutocompleteInput::HOME_PAGE, false, false, false,
+                          OmniboxEventProto::HOME_PAGE, false, false, false,
                           true);
   result.SortAndCull(input, test_util_.profile());
 
@@ -492,7 +495,7 @@ TEST_F(AutocompleteResultTest, SortAndCullWithMatchDupsAndDemotionsByType) {
     result.AppendMatches(matches);
     AutocompleteInput input(
         base::string16(), base::string16::npos, base::string16(), GURL(),
-        AutocompleteInput::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS, false,
+        OmniboxEventProto::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS, false,
         false, false, true);
     result.SortAndCull(input, test_util_.profile());
 
@@ -530,7 +533,7 @@ TEST_F(AutocompleteResultTest, SortAndCullReorderForDefaultMatch) {
     result.AppendMatches(matches);
     AutocompleteInput input(base::string16(), base::string16::npos,
                             base::string16(), GURL(),
-                            AutocompleteInput::HOME_PAGE, false, false, false,
+                            OmniboxEventProto::HOME_PAGE, false, false, false,
                             true);
     result.SortAndCull(input, test_util_.profile());
     AssertResultMatches(result, data, 4);
@@ -546,13 +549,172 @@ TEST_F(AutocompleteResultTest, SortAndCullReorderForDefaultMatch) {
     result.AppendMatches(matches);
     AutocompleteInput input(base::string16(), base::string16::npos,
                             base::string16(), GURL(),
-                            AutocompleteInput::HOME_PAGE, false, false, false,
+                            OmniboxEventProto::HOME_PAGE, false, false, false,
                             true);
     result.SortAndCull(input, test_util_.profile());
     ASSERT_EQ(4U, result.size());
     EXPECT_EQ("http://c/", result.match_at(0)->destination_url.spec());
     EXPECT_EQ("http://a/", result.match_at(1)->destination_url.spec());
     EXPECT_EQ("http://b/", result.match_at(2)->destination_url.spec());
+    EXPECT_EQ("http://d/", result.match_at(3)->destination_url.spec());
+  }
+}
+
+
+
+TEST_F(AutocompleteResultTest, SortAndCullWithDisableInlining) {
+  TestData data[] = {
+    { 0, 0, 1300 },
+    { 1, 0, 1200 },
+    { 2, 0, 1100 },
+    { 3, 0, 1000 }
+  };
+
+  {
+    // Check that with the field trial disabled, we keep keep the first match
+    // first even if it has an inline autocompletion.
+    ACMatches matches;
+    PopulateAutocompleteMatches(data, arraysize(data), &matches);
+    matches[0].inline_autocompletion = base::ASCIIToUTF16("completion");
+    AutocompleteResult result;
+    result.AppendMatches(matches);
+    AutocompleteInput input(base::string16(), base::string16::npos,
+                            base::string16(), GURL(),
+                            OmniboxEventProto::HOME_PAGE, false, false, false,
+                            true);
+    result.SortAndCull(input, test_util_.profile());
+    AssertResultMatches(result, data, 4);
+  }
+
+  // Enable the field trial to disable inlining.
+  {
+    std::map<std::string, std::string> params;
+    params[OmniboxFieldTrial::kDisableInliningRule] = "true";
+    ASSERT_TRUE(chrome_variations::AssociateVariationParams(
+        OmniboxFieldTrial::kBundledExperimentFieldTrialName, "D", params));
+  }
+  base::FieldTrialList::CreateFieldTrial(
+      OmniboxFieldTrial::kBundledExperimentFieldTrialName, "D");
+
+  {
+    // Now the first match should be demoted past the second.
+    ACMatches matches;
+    PopulateAutocompleteMatches(data, arraysize(data), &matches);
+    matches[0].inline_autocompletion = base::ASCIIToUTF16("completion");
+    AutocompleteResult result;
+    result.AppendMatches(matches);
+    AutocompleteInput input(base::string16(), base::string16::npos,
+                            base::string16(), GURL(),
+                            OmniboxEventProto::HOME_PAGE, false, false, false,
+                            true);
+    result.SortAndCull(input, test_util_.profile());
+    ASSERT_EQ(4U, result.size());
+    EXPECT_EQ("http://b/", result.match_at(0)->destination_url.spec());
+    EXPECT_EQ("http://a/", result.match_at(1)->destination_url.spec());
+    EXPECT_EQ("http://c/", result.match_at(2)->destination_url.spec());
+    EXPECT_EQ("http://d/", result.match_at(3)->destination_url.spec());
+  }
+
+  {
+    // But if there was no inline autocompletion on the first match, then
+    // the order should stay the same.  This is true even if there are
+    // inline autocompletions elsewhere.
+    ACMatches matches;
+    PopulateAutocompleteMatches(data, arraysize(data), &matches);
+    matches[2].inline_autocompletion = base::ASCIIToUTF16("completion");
+    AutocompleteResult result;
+    result.AppendMatches(matches);
+    AutocompleteInput input(base::string16(), base::string16::npos,
+                            base::string16(), GURL(),
+                            OmniboxEventProto::HOME_PAGE, false, false, false,
+                            true);
+    result.SortAndCull(input, test_util_.profile());
+    AssertResultMatches(result, data, 4);
+  }
+
+  {
+    // Try a more complicated situation.
+    ACMatches matches;
+    PopulateAutocompleteMatches(data, arraysize(data), &matches);
+    matches[0].allowed_to_be_default_match = false;
+    matches[1].inline_autocompletion = base::ASCIIToUTF16("completion");
+    AutocompleteResult result;
+    result.AppendMatches(matches);
+    AutocompleteInput input(base::string16(), base::string16::npos,
+                            base::string16(), GURL(),
+                            OmniboxEventProto::HOME_PAGE, false, false, false,
+                            true);
+    result.SortAndCull(input, test_util_.profile());
+    ASSERT_EQ(4U, result.size());
+    EXPECT_EQ("http://c/", result.match_at(0)->destination_url.spec());
+    EXPECT_EQ("http://a/", result.match_at(1)->destination_url.spec());
+    EXPECT_EQ("http://b/", result.match_at(2)->destination_url.spec());
+    EXPECT_EQ("http://d/", result.match_at(3)->destination_url.spec());
+  }
+
+  {
+    // Try another complicated situation.
+    ACMatches matches;
+    PopulateAutocompleteMatches(data, arraysize(data), &matches);
+    matches[0].inline_autocompletion = base::ASCIIToUTF16("completion");
+    matches[1].allowed_to_be_default_match = false;
+    AutocompleteResult result;
+    result.AppendMatches(matches);
+    AutocompleteInput input(base::string16(), base::string16::npos,
+                            base::string16(), GURL(),
+                            OmniboxEventProto::HOME_PAGE, false, false, false,
+                            true);
+    result.SortAndCull(input, test_util_.profile());
+    ASSERT_EQ(4U, result.size());
+    EXPECT_EQ("http://c/", result.match_at(0)->destination_url.spec());
+    EXPECT_EQ("http://a/", result.match_at(1)->destination_url.spec());
+    EXPECT_EQ("http://b/", result.match_at(2)->destination_url.spec());
+    EXPECT_EQ("http://d/", result.match_at(3)->destination_url.spec());
+  }
+
+  {
+    // Check that disaster doesn't strike if we can't demote the top inline
+    // autocompletion because every match either has a completion or isn't
+    // allowed to be the default match.  In this case, we should leave
+    // everything untouched.
+    ACMatches matches;
+    PopulateAutocompleteMatches(data, arraysize(data), &matches);
+    matches[0].inline_autocompletion = base::ASCIIToUTF16("completion");
+    matches[1].allowed_to_be_default_match = false;
+    matches[2].allowed_to_be_default_match = false;
+    matches[3].inline_autocompletion = base::ASCIIToUTF16("completion");
+    AutocompleteResult result;
+    result.AppendMatches(matches);
+    AutocompleteInput input(base::string16(), base::string16::npos,
+                            base::string16(), GURL(),
+                            OmniboxEventProto::HOME_PAGE, false, false, false,
+                            true);
+    result.SortAndCull(input, test_util_.profile());
+    AssertResultMatches(result, data, 4);
+  }
+
+  {
+    // Check a similar situation, except in this case the top match is not
+    // allowed to the default match, so it still needs to be demoted so we
+    // get a legal default match first.  That match will have an inline
+    // autocompletion because we don't have any better options.
+    ACMatches matches;
+    PopulateAutocompleteMatches(data, arraysize(data), &matches);
+    matches[0].allowed_to_be_default_match = false;
+    matches[1].inline_autocompletion = base::ASCIIToUTF16("completion");
+    matches[2].allowed_to_be_default_match = false;
+    matches[3].inline_autocompletion = base::ASCIIToUTF16("completion");
+    AutocompleteResult result;
+    result.AppendMatches(matches);
+    AutocompleteInput input(base::string16(), base::string16::npos,
+                            base::string16(), GURL(),
+                            OmniboxEventProto::HOME_PAGE, false, false, false,
+                            true);
+    result.SortAndCull(input, test_util_.profile());
+    ASSERT_EQ(4U, result.size());
+    EXPECT_EQ("http://b/", result.match_at(0)->destination_url.spec());
+    EXPECT_EQ("http://a/", result.match_at(1)->destination_url.spec());
+    EXPECT_EQ("http://c/", result.match_at(2)->destination_url.spec());
     EXPECT_EQ("http://d/", result.match_at(3)->destination_url.spec());
   }
 }

@@ -65,7 +65,7 @@ class MockMediaStreamDispatcherEventHandler
     if (IsVideoMediaType(device_info.device.type)) {
       EXPECT_TRUE(StreamDeviceInfo::IsEqual(video_device_, device_info));
     }
-    if (IsAudioMediaType(device_info.device.type)) {
+    if (IsAudioInputMediaType(device_info.device.type)) {
       EXPECT_TRUE(StreamDeviceInfo::IsEqual(audio_device_, device_info));
     }
   }
@@ -226,13 +226,15 @@ TEST_F(MediaStreamDispatcherTest, BasicVideoDevice) {
   dispatcher->EnumerateDevices(
       kRequestId1, handler1.get()->AsWeakPtr(),
       kVideoType,
-      security_origin);
+      security_origin,
+      false);
   int ipc_request_id2 = dispatcher->next_ipc_id_;
   EXPECT_NE(ipc_request_id1, ipc_request_id2);
   dispatcher->EnumerateDevices(
       kRequestId2, handler2.get()->AsWeakPtr(),
       kVideoType,
-      security_origin);
+      security_origin,
+      false);
   EXPECT_EQ(dispatcher->requests_.size(), size_t(2));
 
   StreamDeviceInfoArray video_device_array(1);

@@ -11,7 +11,7 @@
 #include "base/test/simple_test_tick_clock.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/engine/fake_connection_handler.h"
-#include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
+#include "google_apis/gcm/monitoring/fake_gcm_stats_recorder.h"
 #include "net/base/backoff_entry.h"
 #include "net/http/http_network_session.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -150,7 +150,7 @@ class TestConnectionFactoryImpl : public ConnectionFactoryImpl {
   base::Closure finished_callback_;
   // The current fake connection handler..
   FakeConnectionHandler* fake_handler_;
-  GCMStatsRecorder dummy_recorder_;
+  FakeGCMStatsRecorder dummy_recorder_;
 };
 
 TestConnectionFactoryImpl::TestConnectionFactoryImpl(
@@ -254,14 +254,24 @@ void TestConnectionFactoryImpl::SetDelayLogin(bool delay_login) {
   fake_handler_->set_fail_login(delay_login_);
 }
 
-class ConnectionFactoryImplTest : public testing::Test {
+}  // namespace
+
+class ConnectionFactoryImplTest
+    : public testing::Test,
+      public ConnectionFactory::ConnectionListener {
  public:
   ConnectionFactoryImplTest();
   virtual ~ConnectionFactoryImplTest();
 
   TestConnectionFactoryImpl* factory() { return &factory_; }
+  GURL& connected_server() { return connected_server_; }
 
   void WaitForConnections();
+
+  // ConnectionFactory::ConnectionListener
+  virtual void OnConnected(const GURL& current_server,
+                           const net::IPEndPoint& ip_endpoint) OVERRIDE;
+  virtual void OnDisconnected() OVERRIDE;
 
  private:
   void ConnectionsComplete();
@@ -269,12 +279,15 @@ class ConnectionFactoryImplTest : public testing::Test {
   TestConnectionFactoryImpl factory_;
   base::MessageLoop message_loop_;
   scoped_ptr<base::RunLoop> run_loop_;
+
+  GURL connected_server_;
 };
 
 ConnectionFactoryImplTest::ConnectionFactoryImplTest()
    : factory_(base::Bind(&ConnectionFactoryImplTest::ConnectionsComplete,
                          base::Unretained(this))),
      run_loop_(new base::RunLoop()) {
+  factory()->SetConnectionListener(this);
   factory()->Initialize(
       ConnectionFactory::BuildLoginRequestCallback(),
       ConnectionHandler::ProtoReceivedCallback(),
@@ -293,11 +306,22 @@ void ConnectionFactoryImplTest::ConnectionsComplete() {
   run_loop_->Quit();
 }
 
+void ConnectionFactoryImplTest::OnConnected(
+    const GURL& current_server,
+    const net::IPEndPoint& ip_endpoint) {
+  connected_server_ = current_server;
+}
+
+void ConnectionFactoryImplTest::OnDisconnected() {
+  connected_server_ = GURL();
+}
+
 // Verify building a connection handler works.
 TEST_F(ConnectionFactoryImplTest, Initialize) {
   ConnectionHandler* handler = factory()->GetConnectionHandler();
   ASSERT_TRUE(handler);
   EXPECT_FALSE(factory()->IsEndpointReachable());
+  EXPECT_FALSE(connected_server().is_valid());
 }
 
 // An initial successful connection should not result in backoff.
@@ -307,6 +331,7 @@ TEST_F(ConnectionFactoryImplTest, ConnectSuccess) {
   EXPECT_TRUE(factory()->NextRetryAttempt().is_null());
   EXPECT_EQ(factory()->GetCurrentEndpoint(), BuildEndpoints()[0]);
   EXPECT_TRUE(factory()->IsEndpointReachable());
+  EXPECT_TRUE(connected_server().is_valid());
 }
 
 // A connection failure should result in backoff, and attempting the fallback
@@ -317,6 +342,7 @@ TEST_F(ConnectionFactoryImplTest, ConnectFail) {
   EXPECT_FALSE(factory()->NextRetryAttempt().is_null());
   EXPECT_EQ(factory()->GetCurrentEndpoint(), BuildEndpoints()[1]);
   EXPECT_FALSE(factory()->IsEndpointReachable());
+  EXPECT_FALSE(connected_server().is_valid());
 }
 
 // A connection success after a failure should reset backoff.
@@ -326,6 +352,7 @@ TEST_F(ConnectionFactoryImplTest, FailThenSucceed) {
   factory()->Connect();
   WaitForConnections();
   EXPECT_FALSE(factory()->IsEndpointReachable());
+  EXPECT_FALSE(connected_server().is_valid());
   base::TimeTicks retry_time = factory()->NextRetryAttempt();
   EXPECT_FALSE(retry_time.is_null());
   EXPECT_GE((retry_time - connect_time).InMilliseconds(), CalculateBackoff(1));
@@ -333,6 +360,7 @@ TEST_F(ConnectionFactoryImplTest, FailThenSucceed) {
   WaitForConnections();
   EXPECT_TRUE(factory()->NextRetryAttempt().is_null());
   EXPECT_TRUE(factory()->IsEndpointReachable());
+  EXPECT_TRUE(connected_server().is_valid());
 }
 
 // Multiple connection failures should retry with an exponentially increasing
@@ -346,6 +374,7 @@ TEST_F(ConnectionFactoryImplTest, MultipleFailuresThenSucceed) {
   factory()->Connect();
   WaitForConnections();
   EXPECT_FALSE(factory()->IsEndpointReachable());
+  EXPECT_FALSE(connected_server().is_valid());
   base::TimeTicks retry_time = factory()->NextRetryAttempt();
   EXPECT_FALSE(retry_time.is_null());
   EXPECT_GE((retry_time - connect_time).InMilliseconds(),
@@ -355,10 +384,11 @@ TEST_F(ConnectionFactoryImplTest, MultipleFailuresThenSucceed) {
   WaitForConnections();
   EXPECT_TRUE(factory()->NextRetryAttempt().is_null());
   EXPECT_TRUE(factory()->IsEndpointReachable());
+  EXPECT_TRUE(connected_server().is_valid());
 }
 
-// IP events should trigger canary connections.
-TEST_F(ConnectionFactoryImplTest, FailThenIPEvent) {
+// Network change events should trigger canary connections.
+TEST_F(ConnectionFactoryImplTest, FailThenNetworkChangeEvent) {
   factory()->SetConnectResult(net::ERR_CONNECTION_FAILED);
   factory()->Connect();
   WaitForConnections();
@@ -366,26 +396,7 @@ TEST_F(ConnectionFactoryImplTest, FailThenIPEvent) {
   EXPECT_FALSE(initial_backoff.is_null());
 
   factory()->SetConnectResult(net::ERR_FAILED);
-  factory()->OnIPAddressChanged();
-  WaitForConnections();
-
-  // Backoff should increase.
-  base::TimeTicks next_backoff = factory()->NextRetryAttempt();
-  EXPECT_GT(next_backoff, initial_backoff);
-  EXPECT_FALSE(factory()->IsEndpointReachable());
-}
-
-// Connection type events should trigger canary connections.
-TEST_F(ConnectionFactoryImplTest, FailThenConnectionTypeEvent) {
-  factory()->SetConnectResult(net::ERR_CONNECTION_FAILED);
-  factory()->Connect();
-  WaitForConnections();
-  base::TimeTicks initial_backoff = factory()->NextRetryAttempt();
-  EXPECT_FALSE(initial_backoff.is_null());
-
-  factory()->SetConnectResult(net::ERR_FAILED);
-  factory()->OnConnectionTypeChanged(
-      net::NetworkChangeNotifier::CONNECTION_WIFI);
+  factory()->OnNetworkChanged(net::NetworkChangeNotifier::CONNECTION_WIFI);
   WaitForConnections();
 
   // Backoff should increase.
@@ -404,16 +415,18 @@ TEST_F(ConnectionFactoryImplTest, CanarySucceedsThenDisconnects) {
   EXPECT_FALSE(initial_backoff.is_null());
 
   factory()->SetConnectResult(net::OK);
-  factory()->OnConnectionTypeChanged(
-      net::NetworkChangeNotifier::CONNECTION_WIFI);
+  factory()->OnNetworkChanged(net::NetworkChangeNotifier::CONNECTION_ETHERNET);
   WaitForConnections();
   EXPECT_TRUE(factory()->IsEndpointReachable());
+  EXPECT_TRUE(connected_server().is_valid());
 
   factory()->SetConnectResult(net::OK);
   factory()->SignalConnectionReset(ConnectionFactory::SOCKET_FAILURE);
   EXPECT_FALSE(factory()->IsEndpointReachable());
+  EXPECT_FALSE(connected_server().is_valid());
   WaitForConnections();
   EXPECT_TRUE(factory()->IsEndpointReachable());
+  EXPECT_TRUE(connected_server().is_valid());
 }
 
 // Verify that if a canary connects, but hasn't finished the handshake, a
@@ -427,8 +440,7 @@ TEST_F(ConnectionFactoryImplTest, CanarySucceedsRetryDuringLogin) {
 
   factory()->SetDelayLogin(true);
   factory()->SetConnectResult(net::OK);
-  factory()->OnConnectionTypeChanged(
-      net::NetworkChangeNotifier::CONNECTION_WIFI);
+  factory()->OnNetworkChanged(net::NetworkChangeNotifier::CONNECTION_WIFI);
   WaitForConnections();
   EXPECT_FALSE(factory()->IsEndpointReachable());
 
@@ -486,6 +498,7 @@ TEST_F(ConnectionFactoryImplTest, SignalResetRestoresBackoff) {
 
   factory()->SignalConnectionReset(ConnectionFactory::SOCKET_FAILURE);
   EXPECT_FALSE(factory()->IsEndpointReachable());
+  EXPECT_FALSE(connected_server().is_valid());
   EXPECT_NE(retry_time, factory()->NextRetryAttempt());
   retry_time = factory()->NextRetryAttempt();
   EXPECT_FALSE(retry_time.is_null());
@@ -499,6 +512,7 @@ TEST_F(ConnectionFactoryImplTest, SignalResetRestoresBackoff) {
   WaitForConnections();
   EXPECT_TRUE(factory()->NextRetryAttempt().is_null());
   EXPECT_TRUE(factory()->IsEndpointReachable());
+  EXPECT_TRUE(connected_server().is_valid());
 
   factory()->SignalConnectionReset(ConnectionFactory::SOCKET_FAILURE);
   EXPECT_NE(retry_time, factory()->NextRetryAttempt());
@@ -507,7 +521,32 @@ TEST_F(ConnectionFactoryImplTest, SignalResetRestoresBackoff) {
   EXPECT_GE((retry_time - connect_time).InMilliseconds(),
             CalculateBackoff(3));
   EXPECT_FALSE(factory()->IsEndpointReachable());
+  EXPECT_FALSE(connected_server().is_valid());
 }
 
-}  // namespace
+// When the network is disconnected, close the socket and suppress further
+// connection attempts until the network returns.
+TEST_F(ConnectionFactoryImplTest, SuppressConnectWhenNoNetwork) {
+  factory()->SetConnectResult(net::OK);
+  factory()->Connect();
+  EXPECT_TRUE(factory()->NextRetryAttempt().is_null());
+  EXPECT_TRUE(factory()->IsEndpointReachable());
+
+  // Advance clock so the login window reset isn't encountered.
+  factory()->tick_clock()->Advance(base::TimeDelta::FromSeconds(11));
+
+  // Will trigger reset, but will not attempt a new connection.
+  factory()->OnNetworkChanged(net::NetworkChangeNotifier::CONNECTION_NONE);
+  EXPECT_FALSE(factory()->IsEndpointReachable());
+  EXPECT_TRUE(factory()->NextRetryAttempt().is_null());
+
+  // When the network returns, attempt to connect.
+  factory()->SetConnectResult(net::OK);
+  factory()->OnNetworkChanged(net::NetworkChangeNotifier::CONNECTION_4G);
+  WaitForConnections();
+
+  EXPECT_TRUE(factory()->IsEndpointReachable());
+  EXPECT_TRUE(factory()->NextRetryAttempt().is_null());
+}
+
 }  // namespace gcm

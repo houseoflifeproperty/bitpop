@@ -16,8 +16,10 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/timer_slack.h"
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
@@ -119,7 +121,7 @@ class SuicideOnChannelErrorFilter : public IPC::MessageFilter {
     // forever and leave behind a renderer process which eats 100% CPU forever.
     //
     // This is because the terminate signals (ViewMsg_ShouldClose and the error
-    // from the IPC channel) are routed to the main message loop but never
+    // from the IPC sender) are routed to the main message loop but never
     // processed (because that message loop is stuck in V8).
     //
     // One could make the browser SIGKILL the renderers, but that leaves open a
@@ -127,7 +129,7 @@ class SuicideOnChannelErrorFilter : public IPC::MessageFilter {
     // the browser because "it's stuck") will leave behind a process eating all
     // the CPU.
     //
-    // So, we install a filter on the channel so that we can process this event
+    // So, we install a filter on the sender so that we can process this event
     // here and kill the process.
     // TODO(earthdok): Re-enable on CrOS http://crbug.com/360622
 #if (defined(ADDRESS_SANITIZER) || defined(LEAK_SANITIZER) || \
@@ -225,13 +227,13 @@ void ChildThread::Init() {
   // the logger, and the logger does not like being created on the IO thread.
   IPC::Logging::GetInstance();
 #endif
-  channel_.reset(
-      new IPC::SyncChannel(channel_name_,
-                           IPC::Channel::MODE_CLIENT,
-                           this,
-                           ChildProcess::current()->io_message_loop_proxy(),
-                           true,
-                           ChildProcess::current()->GetShutDownEvent()));
+  channel_ =
+      IPC::SyncChannel::Create(channel_name_,
+                               IPC::Channel::MODE_CLIENT,
+                               this,
+                               ChildProcess::current()->io_message_loop_proxy(),
+                               true,
+                               ChildProcess::current()->GetShutDownEvent());
 #ifdef IPC_MESSAGE_LOG_ENABLED
   if (!in_browser_process_)
     IPC::Logging::GetInstance()->SetIPCSender(this);
@@ -265,11 +267,16 @@ void ChildThread::Init() {
 
   channel_->AddFilter(histogram_message_filter_.get());
   channel_->AddFilter(sync_message_filter_.get());
-  channel_->AddFilter(new tracing::ChildTraceMessageFilter(
-      ChildProcess::current()->io_message_loop_proxy()));
   channel_->AddFilter(resource_message_filter_.get());
   channel_->AddFilter(quota_message_filter_->GetFilter());
   channel_->AddFilter(service_worker_message_filter_->GetFilter());
+
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)) {
+    // In single process mode, browser-side tracing will cover the whole
+    // process including renderers.
+    channel_->AddFilter(new tracing::ChildTraceMessageFilter(
+        ChildProcess::current()->io_message_loop_proxy()));
+  }
 
   // In single process mode we may already have a power monitor
   if (!base::PowerMonitor::Get()) {
@@ -288,11 +295,21 @@ void ChildThread::Init() {
     channel_->AddFilter(new SuicideOnChannelErrorFilter());
 #endif
 
+  int connection_timeout = kConnectionTimeoutS;
+  std::string connection_override =
+      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kIPCConnectionTimeout);
+  if (!connection_override.empty()) {
+    int temp;
+    if (base::StringToInt(connection_override, &temp))
+      connection_timeout = temp;
+  }
+
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&ChildThread::EnsureConnected,
                  channel_connected_factory_.GetWeakPtr()),
-      base::TimeDelta::FromSeconds(kConnectionTimeoutS));
+      base::TimeDelta::FromSeconds(connection_timeout));
 
 #if defined(OS_ANDROID)
   {
@@ -353,9 +370,11 @@ void ChildThread::OnChannelError() {
   base::MessageLoop::current()->Quit();
 }
 
-void ChildThread::AcceptConnection(
+void ChildThread::ConnectToService(
+    const mojo::String& service_url,
     const mojo::String& service_name,
-    mojo::ScopedMessagePipeHandle message_pipe) {
+    mojo::ScopedMessagePipeHandle message_pipe,
+    const mojo::String& requestor_url) {
   // By default, we don't expect incoming connections.
   NOTREACHED();
 }
@@ -440,6 +459,8 @@ bool ChildThread::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ChildProcessMsg_GetChildProfilerData,
                         OnGetChildProfilerData)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_DumpHandles, OnDumpHandles)
+    IPC_MESSAGE_HANDLER(ChildProcessMsg_SetProcessBackgrounded,
+                        OnProcessBackgrounded)
 #if defined(USE_TCMALLOC)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_GetTcmallocStats, OnGetTcmallocStats)
 #endif
@@ -546,6 +567,20 @@ void ChildThread::OnProcessFinalRelease() {
 void ChildThread::EnsureConnected() {
   VLOG(0) << "ChildThread::EnsureConnected()";
   base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
+}
+
+void ChildThread::OnProcessBackgrounded(bool background) {
+  // Set timer slack to maximum on main thread when in background.
+  base::TimerSlack timer_slack = base::TIMER_SLACK_NONE;
+  if (background)
+    timer_slack = base::TIMER_SLACK_MAXIMUM;
+  base::MessageLoop::current()->SetTimerSlack(timer_slack);
+
+#ifdef OS_WIN
+  // Windows Vista+ has a fancy process backgrounding mode that can only be set
+  // from within the process.
+  base::Process::Current().SetProcessBackgrounded(background);
+#endif  // OS_WIN
 }
 
 }  // namespace content

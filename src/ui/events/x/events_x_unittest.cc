@@ -59,6 +59,20 @@ void InitKeyEvent(Display* display,
   key_event->state = state;
 }
 
+// Returns true if the keysym maps to a KeyEvent with the EF_FUNCTION_KEY
+// flag set, or the keysym maps to a zero key code.
+bool HasFunctionKeyFlagSetIfSupported(Display* display, int x_keysym) {
+  XEvent event;
+  int x_keycode = XKeysymToKeycode(display, x_keysym);
+  // Exclude keysyms for which the server has no corresponding keycode.
+  if (x_keycode) {
+    InitKeyEvent(display, &event, true, x_keycode, 0);
+    ui::KeyEvent ui_key_event(&event, false);
+    return (ui_key_event.flags() & ui::EF_FUNCTION_KEY);
+  }
+  return true;
+}
+
 }  // namespace
 
 TEST(EventsXTest, ButtonEvents) {
@@ -265,7 +279,6 @@ TEST(EventsXTest, NumpadKeyEvents) {
   struct {
     bool is_numpad_key;
     int x_keysym;
-    ui::KeyboardCode ui_keycode;
   } keys[] = {
     // XK_KP_Space and XK_KP_Equal are the extrema in the conventional
     // keysymdef.h numbering.
@@ -369,5 +382,82 @@ TEST(EventsXTest, NumpadKeyEvents) {
     }
   }
 }
+
+TEST(EventsXTest, FunctionKeyEvents) {
+  Display* display = gfx::GetXDisplay();
+
+  // Min  function key code minus 1.
+  EXPECT_FALSE(HasFunctionKeyFlagSetIfSupported(display, XK_F1 - 1));
+  // All function keys.
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F1));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F2));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F3));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F4));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F5));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F6));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F7));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F8));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F9));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F10));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F11));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F12));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F13));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F14));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F15));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F16));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F17));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F18));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F19));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F20));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F21));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F22));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F23));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F24));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F25));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F26));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F27));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F28));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F29));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F30));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F31));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F32));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F33));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F34));
+  EXPECT_TRUE(HasFunctionKeyFlagSetIfSupported(display, XK_F35));
+  // Max function key code plus 1.
+  EXPECT_FALSE(HasFunctionKeyFlagSetIfSupported(display, XK_F35 + 1));
+}
+
+#if !defined(OS_CHROMEOS)
+TEST(EventsXTest, ImeFabricatedKeyEvents) {
+  Display* display = gfx::GetXDisplay();
+
+  unsigned int state_to_be_fabricated[] = {
+    0, ShiftMask, LockMask, ShiftMask | LockMask,
+  };
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(state_to_be_fabricated); ++i) {
+    unsigned int state = state_to_be_fabricated[i];
+    for (int is_char = 0; is_char < 2; ++is_char) {
+      XEvent x_event;
+      InitKeyEvent(display, &x_event, true, 0, state);
+      ui::KeyEvent key_event(&x_event, is_char);
+      EXPECT_TRUE(key_event.flags() & ui::EF_IME_FABRICATED_KEY);
+    }
+  }
+
+  unsigned int state_to_be_not_fabricated[] = {
+    ControlMask, Mod1Mask, Mod2Mask, ShiftMask | ControlMask,
+  };
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(state_to_be_not_fabricated); ++i) {
+    unsigned int state = state_to_be_not_fabricated[i];
+    for (int is_char = 0; is_char < 2; ++is_char) {
+      XEvent x_event;
+      InitKeyEvent(display, &x_event, true, 0, state);
+      ui::KeyEvent key_event(&x_event, is_char);
+      EXPECT_FALSE(key_event.flags() & ui::EF_IME_FABRICATED_KEY);
+    }
+  }
+}
+#endif
 
 }  // namespace ui

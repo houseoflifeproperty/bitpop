@@ -39,7 +39,7 @@ class ToastContentsView : public views::WidgetDelegateView,
                           public gfx::AnimationDelegate {
  public:
   // Computes the size of a toast assuming it will host the given view.
-  static gfx::Size GetToastSizeForView(views::View* view);
+  static gfx::Size GetToastSizeForView(const views::View* view);
 
   ToastContentsView(const std::string& notification_id,
                     base::WeakPtr<MessagePopupCollection> collection);
@@ -74,7 +74,7 @@ class ToastContentsView : public views::WidgetDelegateView,
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
  private:
@@ -97,7 +97,6 @@ class ToastContentsView : public views::WidgetDelegateView,
   // Overridden from views::WidgetDelegate:
   virtual views::View* GetContentsView() OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
-  virtual bool CanActivate() const OVERRIDE;
   virtual void OnDisplayChanged() OVERRIDE;
   virtual void OnWorkAreaChanged() OVERRIDE;
 

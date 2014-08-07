@@ -11,6 +11,7 @@
 class Browser;
 class PrefRegistrySimple;
 class Profile;
+class SigninErrorController;
 namespace base { class FilePath; }
 
 namespace profiles {
@@ -47,6 +48,15 @@ std::vector<std::string> GetSecondaryAccountsForProfile(
 // The distinction is needed because guest profiles are implemented as
 // incognito profiles.
 bool IsRegularOrGuestSession(Browser* browser);
+
+// If the --google-profile-info flag is turned on, starts an update for a new
+// version of the Gaia profile picture.
+void UpdateGaiaProfilePhotoIfNeeded(Profile* profile);
+
+// Returns the sign-in error controller for the given profile.  Some profiles,
+// like guest profiles, may not have a controller so this function may return
+// NULL.
+SigninErrorController* GetSigninErrorController(Profile* profile);
 
 }  // namespace profiles
 

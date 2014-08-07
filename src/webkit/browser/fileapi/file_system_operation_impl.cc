@@ -203,9 +203,8 @@ void FileSystemOperationImpl::OpenFile(const FileSystemURL& url,
   DCHECK(SetPendingOperationType(kOperationOpenFile));
 
   if (file_flags &
-      (base::PLATFORM_FILE_TEMPORARY | base::PLATFORM_FILE_HIDDEN)) {
-    callback.Run(base::File::FILE_ERROR_FAILED,
-                 base::kInvalidPlatformFileValue,
+      (base::File::FLAG_TEMPORARY | base::File::FLAG_HIDDEN)) {
+    callback.Run(base::File(base::File::FILE_ERROR_FAILED),
                  base::Closure());
     return;
   }
@@ -214,8 +213,7 @@ void FileSystemOperationImpl::OpenFile(const FileSystemURL& url,
       base::Bind(&FileSystemOperationImpl::DoOpenFile,
                  weak_factory_.GetWeakPtr(),
                  url, callback, file_flags),
-      base::Bind(callback, base::File::FILE_ERROR_FAILED,
-                 base::kInvalidPlatformFileValue,
+      base::Bind(callback, Passed(base::File(base::File::FILE_ERROR_FAILED)),
                  base::Closure()));
 }
 
@@ -545,10 +543,9 @@ void FileSystemOperationImpl::DidWrite(
 
 void FileSystemOperationImpl::DidOpenFile(
     const OpenFileCallback& callback,
-    base::File::Error rv,
-    base::PassPlatformFile file,
+    base::File file,
     const base::Closure& on_close_callback) {
-  callback.Run(rv, file.ReleaseValue(), on_close_callback);
+  callback.Run(file.Pass(), on_close_callback);
 }
 
 bool FileSystemOperationImpl::SetPendingOperationType(OperationType type) {

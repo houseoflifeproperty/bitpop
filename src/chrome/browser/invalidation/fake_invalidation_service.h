@@ -12,13 +12,9 @@
 #include "base/callback_forward.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 #include "components/invalidation/invalidation_service.h"
+#include "components/invalidation/invalidator_registrar.h"
 #include "google_apis/gaia/fake_identity_provider.h"
-#include "sync/notifier/invalidator_registrar.h"
 #include "sync/notifier/mock_ack_handler.h"
-
-namespace content {
-class BrowserContext;
-}
 
 namespace syncer {
 class Invalidation;
@@ -34,8 +30,6 @@ class FakeInvalidationService : public InvalidationService {
  public:
   FakeInvalidationService();
   virtual ~FakeInvalidationService();
-
-  static KeyedService* Build(content::BrowserContext* context);
 
   virtual void RegisterInvalidationHandler(
       syncer::InvalidationHandler* handler) OVERRIDE;

@@ -7,6 +7,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/sequence_checker.h"
 #include "chrome/browser/sync_file_system/remote_change_processor.h"
 
 namespace base {
@@ -48,10 +49,14 @@ class RemoteChangeProcessorOnWorker : public RemoteChangeProcessor {
       const FileChange& change,
       const SyncStatusCallback& callback) OVERRIDE;
 
+  void DetachFromSequence();
+
  private:
   base::WeakPtr<RemoteChangeProcessorWrapper> wrapper_;
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
   scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
+
+  base::SequenceChecker sequence_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteChangeProcessorOnWorker);
 };

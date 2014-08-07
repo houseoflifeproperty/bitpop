@@ -45,9 +45,6 @@ class WebServiceWorkerNetworkProvider;
 class WebServiceWorkerResponse;
 class WebString;
 
-// FIXME: Remove this after chromium-side code is cleaned up.
-#define HAS_SERVICE_WORKER_CONTEXT_DESTROYED 1
-
 // This interface is implemented by the client. It is supposed to be created
 // on the main thread and then passed on to the worker thread.
 // by a newly created WorkerGlobalScope. All methods of this class, except
@@ -63,6 +60,12 @@ public:
     // ServiceWorker specific method. Called when script accesses the
     // the |scope| attribute of the ServiceWorkerGlobalScope. Immutable per spec.
     virtual WebURL scope() const { return WebURL(); }
+
+    // If the worker was started with WebEmbeddedWorkerStartData indicating to pause
+    // after download, this method is called after the main script resource has been
+    // downloaded. The scope will not be created and the script will not be loaded until
+    // WebEmbeddedWorker.resumeAfterDownload() is invoked.
+    virtual void didPauseAfterDownload() { }
 
     // A new WorkerGlobalScope is created and started to run on the
     // worker thread.

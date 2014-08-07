@@ -13,12 +13,14 @@
       'animation/scrollbar_animation_controller_linear_fade_unittest.cc',
       'animation/scrollbar_animation_controller_thinning_unittest.cc',
       'animation/transform_operations_unittest.cc',
+      'base/delayed_unique_notifier_unittest.cc',
       'base/float_quad_unittest.cc',
       'base/math_util_unittest.cc',
       'base/region_unittest.cc',
       'base/rolling_time_delta_history_unittest.cc',
       'base/scoped_ptr_vector_unittest.cc',
       'base/tiling_data_unittest.cc',
+      'base/unique_notifier_unittest.cc',
       'base/util_unittest.cc',
       'debug/micro_benchmark_controller_unittest.cc',
       'input/top_controls_manager_unittest.cc',
@@ -54,6 +56,7 @@
       'layers/ui_resource_layer_impl_unittest.cc',
       'layers/ui_resource_layer_unittest.cc',
       'layers/video_layer_impl_unittest.cc',
+      'output/begin_frame_args_unittest.cc',
       'output/delegating_renderer_unittest.cc',
       'output/filter_operations_unittest.cc',
       'output/gl_renderer_unittest.cc',
@@ -87,6 +90,7 @@
       'scheduler/scheduler_state_machine_unittest.cc',
       'scheduler/scheduler_unittest.cc',
       'test/layer_tree_json_parser_unittest.cc',
+      'test/ordered_simple_task_runner_unittest.cc',
       'test/test_web_graphics_context_3d_unittest.cc',
       'trees/damage_tracker_unittest.cc',
       'trees/layer_sorter_unittest.cc',
@@ -104,9 +108,12 @@
       'trees/layer_tree_host_unittest_damage.cc',
       'trees/layer_tree_host_unittest_delegated.cc',
       'trees/layer_tree_host_unittest_occlusion.cc',
+      'trees/layer_tree_host_unittest_no_message_loop.cc',
       'trees/layer_tree_host_unittest_picture.cc',
+      'trees/layer_tree_host_unittest_proxy.cc',
       'trees/layer_tree_host_unittest_scroll.cc',
       'trees/layer_tree_host_unittest_video.cc',
+      'trees/layer_tree_impl_unittest.cc',
       'trees/occlusion_tracker_unittest.cc',
       'trees/tree_synchronizer_unittest.cc',
     ],
@@ -120,6 +127,8 @@
     'cc_tests_support_files': [
       'test/animation_test_common.cc',
       'test/animation_test_common.h',
+      'test/begin_frame_args_test.cc',
+      'test/begin_frame_args_test.h',
       'test/fake_content_layer.cc',
       'test/fake_content_layer.h',
       'test/fake_content_layer_client.cc',
@@ -177,14 +186,19 @@
       'test/impl_side_painting_settings.h',
       'test/layer_test_common.cc',
       'test/layer_test_common.h',
+      'test/layer_tree_host_common_test.cc',
+      'test/layer_tree_host_common_test.h',
       'test/layer_tree_json_parser.cc',
       'test/layer_tree_json_parser.h',
       'test/layer_tree_pixel_test.cc',
       'test/layer_tree_pixel_test.h',
       'test/layer_tree_test.cc',
       'test/layer_tree_test.h',
+      'test/mock_occlusion_tracker.h',
       'test/mock_quad_culler.cc',
       'test/mock_quad_culler.h',
+      'test/ordered_simple_task_runner.cc',
+      'test/ordered_simple_task_runner.h',
       'test/ordered_texture_map.cc',
       'test/ordered_texture_map.h',
       'test/paths.cc',
@@ -258,7 +272,7 @@
         '.',
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"',
+        ['OS == "android"',
           {
             'dependencies': [
               '../testing/android/native_test.gyp:native_test_native_code',
@@ -308,7 +322,6 @@
         'resources/task_graph_runner_perftest.cc',
         'resources/tile_manager_perftest.cc',
         'test/cc_test_suite.cc',
-        'test/lap_timer.cc',
         'test/run_all_perftests.cc',
         'trees/layer_tree_host_common_perftest.cc',
         'trees/layer_tree_host_perftest.cc',
@@ -319,7 +332,7 @@
         '.',
       ],
       'conditions': [
-        ['OS == "android" and gtest_target_type == "shared_library"',
+        ['OS == "android"',
           {
             'dependencies': [
               '../testing/android/native_test.gyp:native_test_native_code',
@@ -371,9 +384,7 @@
     },
   ],
   'conditions': [
-    # Special target to wrap a gtest_target_type==shared_library
-    # cc_unittests into an android apk for execution.
-    ['OS == "android" and gtest_target_type == "shared_library"',
+    ['OS == "android"',
       {
         'targets': [
           {

@@ -14,7 +14,7 @@
 #include "webkit/browser/fileapi/async_file_util.h"
 
 namespace base {
-class ListValue;
+class DictionaryValue;
 }  // namespace base
 
 namespace extensions {
@@ -40,7 +40,7 @@ class Operation : public RequestManager::HandlerInterface {
   virtual bool Execute(int request_id) OVERRIDE = 0;
   virtual void OnSuccess(int request_id,
                          scoped_ptr<RequestValue> result,
-                         bool has_next) OVERRIDE = 0;
+                         bool has_more) OVERRIDE = 0;
   virtual void OnError(int request_id, base::File::Error error) OVERRIDE = 0;
 
   // Sets custom dispatchign event implementation for tests.
@@ -53,7 +53,7 @@ class Operation : public RequestManager::HandlerInterface {
   // extension does not handle the |event_name| event.
   bool SendEvent(int request_id,
                  const std::string& event_name,
-                 scoped_ptr<base::ListValue> event_args);
+                 scoped_ptr<base::DictionaryValue> options);
 
   ProvidedFileSystemInfo file_system_info_;
 

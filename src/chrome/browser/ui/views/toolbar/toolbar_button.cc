@@ -47,7 +47,7 @@ bool ToolbarButton::IsMenuShowing() const {
   return menu_showing_;
 }
 
-gfx::Size ToolbarButton::GetPreferredSize() {
+gfx::Size ToolbarButton::GetPreferredSize() const {
   gfx::Size size(image()->GetPreferredSize());
   gfx::Size label_size = label()->GetPreferredSize();
   if (label_size.width() > 0)
@@ -135,7 +135,7 @@ ToolbarButton::CreateDefaultBorder() const {
       LabelButton::CreateDefaultBorder();
 
   ui::ThemeProvider* provider = GetThemeProvider();
-  if (provider && provider->UsingNativeTheme()) {
+  if (provider && provider->UsingSystemTheme()) {
     // We set smaller insets here to accommodate the slightly larger GTK+
     // icons.
     border->set_insets(gfx::Insets(2, 2, 2, 2));

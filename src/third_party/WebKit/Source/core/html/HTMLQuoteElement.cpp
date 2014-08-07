@@ -23,7 +23,7 @@
 #include "config.h"
 #include "core/html/HTMLQuoteElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/StyleEngine.h"
 
@@ -38,10 +38,7 @@ inline HTMLQuoteElement::HTMLQuoteElement(const QualifiedName& tagName, Document
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLQuoteElement> HTMLQuoteElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLQuoteElement(tagName, document));
-}
+DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLQuoteElement)
 
 bool HTMLQuoteElement::isURLAttribute(const Attribute& attribute) const
 {

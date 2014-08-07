@@ -14,8 +14,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_store_factory.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/url_constants.h"
 #include "content/shell/browser/shell_network_delegate.h"
+#include "content/shell/common/shell_content_client.h"
 #include "content/shell/common/shell_switches.h"
 #include "net/base/cache_type.h"
 #include "net/cert/cert_verifier.h"
@@ -33,11 +33,12 @@
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/file_protocol_handler.h"
-#include "net/url_request/protocol_intercept_job_factory.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_storage.h"
+#include "net/url_request/url_request_intercepting_job_factory.h"
 #include "net/url_request/url_request_job_factory_impl.h"
+#include "url/url_constants.h"
 
 namespace content {
 
@@ -64,14 +65,14 @@ ShellURLRequestContextGetter::ShellURLRequestContextGetter(
     base::MessageLoop* io_loop,
     base::MessageLoop* file_loop,
     ProtocolHandlerMap* protocol_handlers,
-    ProtocolHandlerScopedVector protocol_interceptors,
+    URLRequestInterceptorScopedVector request_interceptors,
     net::NetLog* net_log)
     : ignore_certificate_errors_(ignore_certificate_errors),
       base_path_(base_path),
       io_loop_(io_loop),
       file_loop_(file_loop),
       net_log_(net_log),
-      protocol_interceptors_(protocol_interceptors.Pass()) {
+      request_interceptors_(request_interceptors.Pass()) {
   // Must first be created on the UI thread.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -104,13 +105,13 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
     url_request_context_->set_network_delegate(network_delegate_.get());
     storage_.reset(
         new net::URLRequestContextStorage(url_request_context_.get()));
-    storage_->set_cookie_store(
-        content::CreateCookieStore(content::CookieStoreConfig()));
+    storage_->set_cookie_store(CreateCookieStore(CookieStoreConfig()));
     storage_->set_server_bound_cert_service(new net::ServerBoundCertService(
         new net::DefaultServerBoundCertStore(NULL),
         base::WorkerPool::GetTaskRunner(true)));
     storage_->set_http_user_agent_settings(
-        new net::StaticHttpUserAgentSettings("en-us,en", std::string()));
+        new net::StaticHttpUserAgentSettings(
+            "en-us,en", GetShellUserAgent()));
 
     scoped_ptr<net::HostResolver> host_resolver(
         net::HostResolver::CreateDefaultResolver(
@@ -207,27 +208,26 @@ net::URLRequestContext* ShellURLRequestContextGetter::GetURLRequestContext() {
     // ShellContentBrowserClient::IsHandledURL().
     InstallProtocolHandlers(job_factory.get(), &protocol_handlers_);
     bool set_protocol = job_factory->SetProtocolHandler(
-        kDataScheme, new net::DataProtocolHandler);
+        url::kDataScheme, new net::DataProtocolHandler);
     DCHECK(set_protocol);
     set_protocol = job_factory->SetProtocolHandler(
-        kFileScheme,
+        url::kFileScheme,
         new net::FileProtocolHandler(
-            content::BrowserThread::GetBlockingPool()->
-                GetTaskRunnerWithShutdownBehavior(
-                    base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)));
+            BrowserThread::GetBlockingPool()->GetTaskRunnerWithShutdownBehavior(
+                base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)));
     DCHECK(set_protocol);
 
     // Set up interceptors in the reverse order.
     scoped_ptr<net::URLRequestJobFactory> top_job_factory =
         job_factory.PassAs<net::URLRequestJobFactory>();
-    for (ProtocolHandlerScopedVector::reverse_iterator i =
-             protocol_interceptors_.rbegin();
-         i != protocol_interceptors_.rend();
+    for (URLRequestInterceptorScopedVector::reverse_iterator i =
+             request_interceptors_.rbegin();
+         i != request_interceptors_.rend();
          ++i) {
-      top_job_factory.reset(new net::ProtocolInterceptJobFactory(
+      top_job_factory.reset(new net::URLRequestInterceptingJobFactory(
           top_job_factory.Pass(), make_scoped_ptr(*i)));
     }
-    protocol_interceptors_.weak_clear();
+    request_interceptors_.weak_clear();
 
     storage_->set_job_factory(top_job_factory.release());
   }

@@ -99,10 +99,12 @@ GL_FUNCTIONS = [
                'GLbitfield mask, GLenum filter', },
 { 'return_type': 'void',
   'names': ['glBufferData'],
-  'arguments': 'GLenum target, GLsizei size, const void* data, GLenum usage', },
+  'arguments':
+      'GLenum target, GLsizeiptr size, const void* data, GLenum usage', },
 { 'return_type': 'void',
   'names': ['glBufferSubData'],
-  'arguments': 'GLenum target, GLint offset, GLsizei size, const void* data', },
+  'arguments':
+      'GLenum target, GLintptr offset, GLsizeiptr size, const void* data', },
 { 'return_type': 'GLenum',
   'names': ['glCheckFramebufferStatusEXT',
             'glCheckFramebufferStatus'],
@@ -1961,17 +1963,10 @@ def FillExtensionsFromHeaders(functions, extension_headers, extra_extensions):
 def ResolveHeader(header, header_paths):
   paths = header_paths.split(':')
 
-  # Always use a path for Chromium-specific extensions. They are extracted
-  # to separate files.
-  paths.append('.')
-  paths.append('../../gpu')
-
-  root = os.path.abspath(os.path.dirname(__file__))
-
   for path in paths:
     result = os.path.join(path, header)
     if not os.path.isabs(path):
-      result = os.path.relpath(os.path.join(root, result), os.getcwd())
+      result = os.path.relpath(os.path.join(os.getcwd(), result), os.getcwd())
     if os.path.exists(result):
       # Always use forward slashes as path separators. Otherwise backslashes
       # may be incorrectly interpreted as escape characters.

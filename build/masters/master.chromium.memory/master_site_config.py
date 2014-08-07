@@ -11,3 +11,4 @@ class ChromiumMemory(Master.Master1):
   master_port = 8012
   slave_port = 8112
   master_port_alt = 8212
+  buildbot_url = 'http://build.chromium.org/p/chromium.memory/'

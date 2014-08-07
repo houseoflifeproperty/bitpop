@@ -19,8 +19,6 @@
 #include "net/dns/host_cache.h"
 #include "net/dns/host_resolver.h"
 #include "net/http/http_cache.h"
-#include "net/http/http_network_layer.h"
-#include "net/http/http_stream_factory.h"
 
 namespace {
 
@@ -45,20 +43,18 @@ ChromeNetBenchmarkingMessageFilter::~ChromeNetBenchmarkingMessageFilter() {
 }
 
 bool ChromeNetBenchmarkingMessageFilter::OnMessageReceived(
-    const IPC::Message& message, bool* message_was_ok) {
+    const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(ChromeNetBenchmarkingMessageFilter, message,
-                           *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(ChromeNetBenchmarkingMessageFilter, message)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_CloseCurrentConnections,
                         OnCloseCurrentConnections)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ChromeViewHostMsg_ClearCache, OnClearCache)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_ClearHostResolverCache,
                         OnClearHostResolverCache)
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_EnableSpdy, OnEnableSpdy)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_ClearPredictorCache,
                         OnClearPredictorCache)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
@@ -99,23 +95,6 @@ void ChromeNetBenchmarkingMessageFilter::OnClearHostResolverCache(int* result) {
   if (cache) {
     cache->clear();
     *result = 0;
-  }
-}
-
-// TODO(lzheng): This only enables spdy over ssl. Enable spdy for http
-// when needed.
-void ChromeNetBenchmarkingMessageFilter::OnEnableSpdy(bool enable) {
-  // This function is disabled unless the user has enabled
-  // benchmarking extensions.
-  if (!CheckBenchmarkingEnabled()) {
-    NOTREACHED() << "Received unexpected benchmarking IPC";
-    return;
-  }
-  if (enable) {
-    net::HttpStreamFactory::EnableNpnSpdy3();
-    net::HttpNetworkLayer::ForceAlternateProtocol();
-  } else {
-    net::HttpStreamFactory::EnableNpnHttpOnly();
   }
 }
 

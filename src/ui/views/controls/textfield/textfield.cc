@@ -15,6 +15,7 @@
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches_util.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
@@ -61,6 +62,17 @@ void ConvertRectToScreen(const View* src, gfx::Rect* r) {
   gfx::Point new_origin = r->origin();
   View::ConvertPointToScreen(src, &new_origin);
   r->set_origin(new_origin);
+}
+
+// Get the drag selection timer delay, respecting animation scaling for testing.
+int GetDragSelectionDelay() {
+  switch (ui::ScopedAnimationDurationScaleMode::duration_scale_mode()) {
+      case ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION: return 100;
+      case ui::ScopedAnimationDurationScaleMode::FAST_DURATION:   return 25;
+      case ui::ScopedAnimationDurationScaleMode::SLOW_DURATION:   return 400;
+      case ui::ScopedAnimationDurationScaleMode::ZERO_DURATION:   return 0;
+    }
+  return 100;
 }
 
 // Get the default command for a given key |event| and selection state.
@@ -243,10 +255,14 @@ Textfield::Textfield()
       controller_(NULL),
       read_only_(false),
       default_width_in_chars_(0),
-      text_color_(SK_ColorBLACK),
       use_default_text_color_(true),
-      background_color_(SK_ColorWHITE),
       use_default_background_color_(true),
+      use_default_selection_text_color_(true),
+      use_default_selection_background_color_(true),
+      text_color_(SK_ColorBLACK),
+      background_color_(SK_ColorWHITE),
+      selection_text_color_(SK_ColorWHITE),
+      selection_background_color_(SK_ColorBLUE),
       placeholder_text_color_(kDefaultPlaceholderTextColor),
       text_input_type_(ui::TEXT_INPUT_TYPE_TEXT),
       performing_user_action_(false),
@@ -314,14 +330,14 @@ base::i18n::TextDirection Textfield::GetTextDirection() const {
   return GetRenderText()->GetTextDirection();
 }
 
+base::string16 Textfield::GetSelectedText() const {
+  return model_->GetSelectedText();
+}
+
 void Textfield::SelectAll(bool reversed) {
   model_->SelectAll(reversed);
   UpdateSelectionClipboard();
   UpdateAfterChange(false, true);
-}
-
-base::string16 Textfield::GetSelectedText() const {
-  return model_->GetSelectedText();
 }
 
 void Textfield::ClearSelection() {
@@ -371,6 +387,48 @@ void Textfield::SetBackgroundColor(SkColor color) {
 void Textfield::UseDefaultBackgroundColor() {
   use_default_background_color_ = true;
   UpdateBackgroundColor();
+}
+
+SkColor Textfield::GetSelectionTextColor() const {
+  return use_default_selection_text_color_ ?
+      GetNativeTheme()->GetSystemColor(
+          ui::NativeTheme::kColorId_TextfieldSelectionColor) :
+      selection_text_color_;
+}
+
+void Textfield::SetSelectionTextColor(SkColor color) {
+  selection_text_color_ = color;
+  use_default_selection_text_color_ = false;
+  GetRenderText()->set_selection_color(GetSelectionTextColor());
+  SchedulePaint();
+}
+
+void Textfield::UseDefaultSelectionTextColor() {
+  use_default_selection_text_color_ = true;
+  GetRenderText()->set_selection_color(GetSelectionTextColor());
+  SchedulePaint();
+}
+
+SkColor Textfield::GetSelectionBackgroundColor() const {
+  return use_default_selection_background_color_ ?
+      GetNativeTheme()->GetSystemColor(
+          ui::NativeTheme::kColorId_TextfieldSelectionBackgroundFocused) :
+      selection_background_color_;
+}
+
+void Textfield::SetSelectionBackgroundColor(SkColor color) {
+  selection_background_color_ = color;
+  use_default_selection_background_color_ = false;
+  GetRenderText()->set_selection_background_focused_color(
+      GetSelectionBackgroundColor());
+  SchedulePaint();
+}
+
+void Textfield::UseDefaultSelectionBackgroundColor() {
+  use_default_selection_background_color_ = true;
+  GetRenderText()->set_selection_background_focused_color(
+      GetSelectionBackgroundColor());
+  SchedulePaint();
 }
 
 bool Textfield::GetCursorEnabled() const {
@@ -483,7 +541,7 @@ int Textfield::GetBaseline() const {
   return GetInsets().top() + GetRenderText()->GetBaseline();
 }
 
-gfx::Size Textfield::GetPreferredSize() {
+gfx::Size Textfield::GetPreferredSize() const {
   const gfx::Insets& insets = GetInsets();
   return gfx::Size(GetFontList().GetExpectedTextWidth(default_width_in_chars_) +
                    insets.width(), GetFontList().GetHeight() + insets.height());
@@ -554,35 +612,32 @@ bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
 }
 
 bool Textfield::OnMouseDragged(const ui::MouseEvent& event) {
+  last_drag_location_ = event.location();
+
   // Don't adjust the cursor on a potential drag and drop, or if the mouse
   // movement from the last mouse click does not exceed the drag threshold.
   if (initiating_drag_ || !event.IsOnlyLeftMouseButton() ||
-      !ExceededDragThreshold(event.location() - last_click_location_)) {
+      !ExceededDragThreshold(last_drag_location_ - last_click_location_)) {
     return true;
   }
 
-  OnBeforeUserAction();
-  model_->MoveCursorTo(event.location(), true);
-  if (aggregated_clicks_ == 1) {
-    model_->SelectWord();
-    // Expand the selection so the initially selected word remains selected.
-    gfx::Range selection = GetRenderText()->selection();
-    const size_t min = std::min(selection.GetMin(),
-                                double_click_word_.GetMin());
-    const size_t max = std::max(selection.GetMax(),
-                                double_click_word_.GetMax());
-    const bool reversed = selection.is_reversed();
-    selection.set_start(reversed ? max : min);
-    selection.set_end(reversed ? min : max);
-    model_->SelectRange(selection);
+  // A timer is used to continuously scroll while selecting beyond side edges.
+  if ((event.location().x() > 0 && event.location().x() < size().width()) ||
+      GetDragSelectionDelay() == 0) {
+    drag_selection_timer_.Stop();
+    SelectThroughLastDragLocation();
+  } else if (!drag_selection_timer_.IsRunning()) {
+    drag_selection_timer_.Start(
+        FROM_HERE, base::TimeDelta::FromMilliseconds(GetDragSelectionDelay()),
+        this, &Textfield::SelectThroughLastDragLocation);
   }
-  UpdateAfterChange(false, true);
-  OnAfterUserAction();
+
   return true;
 }
 
 void Textfield::OnMouseReleased(const ui::MouseEvent& event) {
   OnBeforeUserAction();
+  drag_selection_timer_.Stop();
   // Cancel suspected drag initiations, the user was clicking in the selection.
   if (initiating_drag_)
     MoveCursorTo(event.location(), false);
@@ -652,6 +707,7 @@ void Textfield::OnGestureEvent(ui::GestureEvent* event) {
       if (event->details().tap_count() == 1) {
         CreateTouchSelectionControllerAndNotifyIt();
       } else {
+        DestroyTouchSelection();
         OnBeforeUserAction();
         SelectAll(false);
         OnAfterUserAction();
@@ -722,9 +778,10 @@ bool Textfield::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
   }
 #endif
 
-  // Skip any accelerator handling of backspace; textfields handle this key.
+  // Skip backspace accelerator handling; editable textfields handle this key.
   // Also skip processing Windows [Alt]+<num-pad digit> Unicode alt-codes.
-  return event.key_code() == ui::VKEY_BACK || event.IsUnicodeKeyCode();
+  const bool is_backspace = event.key_code() == ui::VKEY_BACK;
+  return (is_backspace && !read_only()) || event.IsUnicodeKeyCode();
 }
 
 bool Textfield::GetDropFormats(
@@ -898,11 +955,9 @@ void Textfield::OnNativeThemeChanged(const ui::NativeTheme* theme) {
   render_text->SetColor(GetTextColor());
   UpdateBackgroundColor();
   render_text->set_cursor_color(GetTextColor());
-  render_text->set_selection_color(theme->GetSystemColor(
-      ui::NativeTheme::kColorId_TextfieldSelectionColor));
-  render_text->set_selection_background_focused_color(theme->GetSystemColor(
-      ui::NativeTheme::kColorId_TextfieldSelectionBackgroundFocused));
-
+  render_text->set_selection_color(GetSelectionTextColor());
+  render_text->set_selection_background_focused_color(
+      GetSelectionBackgroundColor());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -938,8 +993,8 @@ void Textfield::WriteDragDataForView(View* sender,
   const base::string16& selected_text(GetSelectedText());
   data->SetString(selected_text);
   Label label(selected_text, GetFontList());
-  const SkColor background = GetBackgroundColor();
-  label.SetBackgroundColor(SkColorSetA(background, SK_AlphaTRANSPARENT));
+  label.SetBackgroundColor(GetBackgroundColor());
+  label.set_subpixel_rendering_enabled(false);
   gfx::Size size(label.GetPreferredSize());
   gfx::NativeView native_view = GetWidget()->GetNativeView();
   gfx::Display display = gfx::Screen::GetScreenFor(native_view)->
@@ -951,11 +1006,11 @@ void Textfield::WriteDragDataForView(View* sender,
   label.SetEnabledColor(GetTextColor());
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Desktop Linux Aura does not yet support transparency in drag images.
-  canvas->DrawColor(background);
+  canvas->DrawColor(GetBackgroundColor());
 #endif
-  label.Paint(canvas.get());
+  label.Paint(canvas.get(), views::CullSet());
   const gfx::Vector2d kOffset(-15, 0);
-  drag_utils::SetDragImageOnDataObject(*canvas, label.size(), kOffset, data);
+  drag_utils::SetDragImageOnDataObject(*canvas, kOffset, data);
   if (controller_)
     controller_->OnWriteDragData(data);
 }
@@ -1259,12 +1314,17 @@ void Textfield::InsertText(const base::string16& new_text) {
 }
 
 void Textfield::InsertChar(base::char16 ch, int flags) {
+  const int kControlModifierMask = ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN |
+                                   ui::EF_COMMAND_DOWN | ui::EF_ALTGR_DOWN |
+                                   ui::EF_MOD3_DOWN;
+
   // Filter out all control characters, including tab and new line characters,
   // and all characters with Alt modifier. But allow characters with the AltGr
   // modifier. On Windows AltGr is represented by Alt+Ctrl, and on Linux it's a
   // different flag that we don't care about.
-  const bool should_insert_char = ((ch >= 0x20 && ch < 0x7F) || ch > 0x9F) &&
-      (flags & ~(ui::EF_SHIFT_DOWN | ui::EF_CAPS_LOCK_DOWN)) != ui::EF_ALT_DOWN;
+  const bool should_insert_char =
+      ((ch >= 0x20 && ch < 0x7F) || ch > 0x9F) &&
+      (flags & kControlModifierMask) != ui::EF_ALT_DOWN;
   if (GetTextInputType() == ui::TEXT_INPUT_TYPE_NONE || !should_insert_char)
     return;
 
@@ -1445,6 +1505,14 @@ void Textfield::OnCandidateWindowUpdated() {}
 
 void Textfield::OnCandidateWindowHidden() {}
 
+bool Textfield::IsEditingCommandEnabled(int command_id) {
+  return IsCommandIdEnabled(command_id);
+}
+
+void Textfield::ExecuteEditingCommand(int command_id) {
+  ExecuteCommand(command_id);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Textfield, protected:
 
@@ -1537,6 +1605,26 @@ void Textfield::PaintTextAndCursor(gfx::Canvas* canvas) {
 void Textfield::MoveCursorTo(const gfx::Point& point, bool select) {
   if (model_->MoveCursorTo(point, select))
     UpdateAfterChange(false, true);
+}
+
+void Textfield::SelectThroughLastDragLocation() {
+  OnBeforeUserAction();
+  model_->MoveCursorTo(last_drag_location_, true);
+  if (aggregated_clicks_ == 1) {
+    model_->SelectWord();
+    // Expand the selection so the initially selected word remains selected.
+    gfx::Range selection = GetRenderText()->selection();
+    const size_t min = std::min(selection.GetMin(),
+                                double_click_word_.GetMin());
+    const size_t max = std::max(selection.GetMax(),
+                                double_click_word_.GetMax());
+    const bool reversed = selection.is_reversed();
+    selection.set_start(reversed ? max : min);
+    selection.set_end(reversed ? min : max);
+    model_->SelectRange(selection);
+  }
+  UpdateAfterChange(false, true);
+  OnAfterUserAction();
 }
 
 void Textfield::OnCaretBoundsChanged() {

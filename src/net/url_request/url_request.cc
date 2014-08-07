@@ -82,9 +82,8 @@ bool g_default_can_use_cookies = true;
 // at which each event occurred.  The API requires the time which the request
 // was blocked on each phase.  This function handles the conversion.
 //
-// In the case of reusing a SPDY session or HTTP pipeline, old proxy results may
-// have been reused, so proxy resolution times may be before the request was
-// started.
+// In the case of reusing a SPDY session, old proxy results may have been
+// reused, so proxy resolution times may be before the request was started.
 //
 // Due to preconnect and late binding, it is also possible for the connection
 // attempt to start before a request has been started, or proxy resolution
@@ -141,12 +140,6 @@ void ConvertRealLoadTimesToBlockingTimes(
 }
 
 }  // namespace
-
-URLRequest::ProtocolFactory*
-URLRequest::Deprecated::RegisterProtocolFactory(const std::string& scheme,
-                                                ProtocolFactory* factory) {
-  return URLRequest::RegisterProtocolFactory(scheme, factory);
-}
 
 void URLRequest::Deprecated::RegisterRequestInterceptor(
     Interceptor* interceptor) {
@@ -243,13 +236,6 @@ URLRequest::~URLRequest() {
   if (status_.status() == URLRequestStatus::FAILED)
     net_error = status_.error();
   net_log_.EndEventWithNetErrorCode(NetLog::TYPE_REQUEST_ALIVE, net_error);
-}
-
-// static
-URLRequest::ProtocolFactory* URLRequest::RegisterProtocolFactory(
-    const string& scheme, ProtocolFactory* factory) {
-  return URLRequestJobManager::GetInstance()->RegisterProtocolFactory(scheme,
-                                                                      factory);
 }
 
 // static
@@ -563,7 +549,7 @@ void URLRequest::SetDefaultCookiePolicyToBlock() {
 
 // static
 bool URLRequest::IsHandledProtocol(const std::string& scheme) {
-  return URLRequestJobManager::GetInstance()->SupportsScheme(scheme);
+  return URLRequestJobManager::SupportsScheme(scheme);
 }
 
 // static
@@ -628,6 +614,9 @@ void URLRequest::set_delegate(Delegate* delegate) {
 }
 
 void URLRequest::Start() {
+  // Some values can be NULL, but the job factory must not be.
+  DCHECK(context_->job_factory());
+
   DCHECK_EQ(network_delegate_, context_->network_delegate());
   // Anything that sets |blocked_by_| before start should have cleaned up after
   // itself.

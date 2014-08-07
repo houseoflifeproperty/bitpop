@@ -35,7 +35,7 @@
 
 namespace WebCore {
 
-NodeEventContext::NodeEventContext(PassRefPtr<Node> node, PassRefPtr<EventTarget> currentTarget)
+NodeEventContext::NodeEventContext(PassRefPtrWillBeRawPtr<Node> node, PassRefPtrWillBeRawPtr<EventTarget> currentTarget)
     : m_node(node)
     , m_currentTarget(currentTarget)
 {
@@ -44,6 +44,13 @@ NodeEventContext::NodeEventContext(PassRefPtr<Node> node, PassRefPtr<EventTarget
 
 NodeEventContext::~NodeEventContext()
 {
+}
+
+void NodeEventContext::trace(Visitor* visitor)
+{
+    visitor->trace(m_node);
+    visitor->trace(m_currentTarget);
+    visitor->trace(m_treeScopeEventContext);
 }
 
 void NodeEventContext::handleLocalEvents(Event* event) const

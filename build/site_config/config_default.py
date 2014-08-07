@@ -145,13 +145,3 @@ class Master(object):
     tree_status_url = base_app_url + '/status'
     store_revisions_url = base_app_url + '/revisions'
     last_good_url = base_app_url + '/lkgr'
-
-  class ChromiumOSTryServer(Master2):
-    project_name = 'ChromiumOS Try Server'
-    master_port = 9051
-    slave_port = 9153
-    master_port_alt = 9063
-    repo_url_ext = 'https://git.chromium.org/chromiumos/tryjobs.git'
-    repo_url_int = None
-    # The reply-to address to set for emails sent from the server.
-    reply_to = 'nobody@example.com'

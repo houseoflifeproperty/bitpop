@@ -205,6 +205,7 @@ WebInspector.ScreencastView.prototype = {
 
     /**
      * @param {boolean} on
+     * @param {!WebInspector.Event} event
      * @private
      */
     _onProfiler: function(on, event) {
@@ -248,7 +249,7 @@ WebInspector.ScreencastView.prototype = {
     },
 
     /**
-     * @param {!Event} event
+     * @param {?Event} event
      */
     _handleMouseEvent: function(event)
     {
@@ -280,14 +281,14 @@ WebInspector.ScreencastView.prototype = {
             if (!node)
                 return;
             if (event.type === "mousemove")
-                node.highlight(this._inspectModeConfig);
+                this.highlightDOMNode(node, this._inspectModeConfig);
             else if (event.type === "click")
                 node.reveal();
         }
     },
 
     /**
-     * @param {!KeyboardEvent} event
+     * @param {?Event} event
      */
     _handleKeyEvent: function(event)
     {
@@ -296,7 +297,7 @@ WebInspector.ScreencastView.prototype = {
             return;
         }
 
-        var shortcutKey = WebInspector.KeyboardShortcut.makeKeyFromEvent(event);
+        var shortcutKey = WebInspector.KeyboardShortcut.makeKeyFromEvent(/** @type {!KeyboardEvent} */ (event));
         var handler = this._shortcuts[shortcutKey];
         if (handler && handler(event)) {
             event.consume();
@@ -319,7 +320,7 @@ WebInspector.ScreencastView.prototype = {
     },
 
     /**
-     * @param {!Event} event
+     * @param {?Event} event
      */
     _handleContextMenuEvent: function(event)
     {
@@ -327,7 +328,7 @@ WebInspector.ScreencastView.prototype = {
     },
 
     /**
-     * @param {!Event} event
+     * @param {?Event} event
      */
     _simulateTouchGestureForMouseEvent: function(event)
     {
@@ -488,7 +489,7 @@ WebInspector.ScreencastView.prototype = {
     },
 
     /**
-     * @param {!Event} event
+     * @param {?Event} event
      * @return {!{x: number, y: number}}
      */
     _zoomIntoScreenSpace: function(event)
@@ -501,7 +502,7 @@ WebInspector.ScreencastView.prototype = {
     },
 
     /**
-     * @param {!Event} event
+     * @param {?Event} event
      * @return {!{x: number, y: number}}
      */
     _convertIntoScreenSpace: function(event)
@@ -512,8 +513,8 @@ WebInspector.ScreencastView.prototype = {
     },
 
     /**
-     * @param {!Event} event
-     * @return number
+     * @param {?Event} event
+     * @return {number}
      */
     _modifiersForEvent: function(event)
     {
@@ -942,7 +943,7 @@ WebInspector.ScreencastView.prototype = {
 }
 
 /**
- * @param {!HTMLElement} element
+ * @param {!Element} element
  * @constructor
  */
 WebInspector.ScreencastView.ProgressTracker = function(element) {
@@ -1018,81 +1019,5 @@ WebInspector.ScreencastView.ProgressTracker.prototype = {
     _displayProgress: function(progress)
     {
         this._element.style.width = (100 * progress) + "%";
-    }
-};
-
-/**
- * @constructor
- */
-WebInspector.ScreencastController = function()
-{
-    var rootView = new WebInspector.RootView();
-
-    this._rootSplitView = new WebInspector.SplitView(false, true, "InspectorView.screencastSplitViewState", 300, 300);
-    this._rootSplitView.show(rootView.element);
-
-    WebInspector.inspectorView.show(this._rootSplitView.sidebarElement());
-    var target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
-    this._screencastView = new WebInspector.ScreencastView(target);
-    this._screencastView.show(this._rootSplitView.mainElement());
-
-    this._onStatusBarButtonStateChanged("disabled");
-    rootView.attachToBody();
-
-    this._initialized = false;
-};
-
-WebInspector.ScreencastController.prototype = {
-    /**
-     * @param {string} state
-     */
-    _onStatusBarButtonStateChanged: function(state)
-    {
-        if (state === "disabled") {
-            this._rootSplitView.toggleResizer(this._rootSplitView.resizerElement(), false);
-            this._rootSplitView.toggleResizer(WebInspector.inspectorView.topResizerElement(), false);
-            this._rootSplitView.hideMain();
-            return;
-        }
-
-        this._rootSplitView.setVertical(state === "left");
-        this._rootSplitView.setSecondIsSidebar(true);
-        this._rootSplitView.toggleResizer(this._rootSplitView.resizerElement(), true);
-        this._rootSplitView.toggleResizer(WebInspector.inspectorView.topResizerElement(), state === "top");
-        this._rootSplitView.showBoth();
-    },
-
-    initialize: function()
-    {
-        this._screencastView.initialize();
-
-        this._currentScreencastState = WebInspector.settings.createSetting("currentScreencastState", "");
-        this._lastScreencastState = WebInspector.settings.createSetting("lastScreencastState", "");
-        this._toggleScreencastButton = new WebInspector.StatusBarStatesSettingButton(
-            "screencast-status-bar-item",
-            ["disabled", "left", "top"],
-            [WebInspector.UIString("Disable screencast."), WebInspector.UIString("Switch to portrait screencast."), WebInspector.UIString("Switch to landscape screencast.")],
-            this._currentScreencastState,
-            this._lastScreencastState,
-            this._onStatusBarButtonStateChanged.bind(this));
-
-        if (this._statusBarPlaceholder) {
-            this._statusBarPlaceholder.parentElement.insertBefore(this._toggleScreencastButton.element, this._statusBarPlaceholder);
-            this._statusBarPlaceholder.parentElement.removeChild(this._statusBarPlaceholder);
-            delete this._statusBarPlaceholder;
-        }
-
-        this._initialized = true;
-    },
-
-    /**
-     * @return {!Element}
-     */
-    statusBarItem: function()
-    {
-        if (this._initialized)
-            return this._toggleScreencastButton.element;
-        this._statusBarPlaceholder = document.createElement("div");
-        return this._statusBarPlaceholder;
     }
 };

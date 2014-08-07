@@ -7,8 +7,8 @@
 #ifndef V8TestInterfaceEventConstructor_h
 #define V8TestInterfaceEventConstructor_h
 
-#include "V8Event.h"
 #include "bindings/tests/idls/TestInterfaceEventConstructor.h"
+#include "bindings/tests/v8/V8Event.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/WrapperTypeInfo.h"
@@ -30,8 +30,12 @@ public:
     static const WrapperTypeInfo wrapperTypeInfo;
     static void derefObject(void*);
     static void constructorCallback(const v8::FunctionCallbackInfo<v8::Value>&);
+#if ENABLE(OILPAN)
     static const int persistentHandleIndex = v8DefaultWrapperInternalFieldCount + 0;
-    static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 1;
+    static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 0 + 1;
+#else
+    static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 0;
+#endif
     static inline void* toInternalPointer(TestInterfaceEventConstructor* impl)
     {
         return V8Event::toInternalPointer(impl);
@@ -49,12 +53,7 @@ private:
     static v8::Handle<v8::Object> createWrapper(PassRefPtrWillBeRawPtr<TestInterfaceEventConstructor>, v8::Handle<v8::Object> creationContext, v8::Isolate*);
 };
 
-inline v8::Handle<v8::Object> wrap(TestInterfaceEventConstructor* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    ASSERT(impl);
-    ASSERT(!DOMDataStore::containsWrapper<V8TestInterfaceEventConstructor>(impl, isolate));
-    return V8TestInterfaceEventConstructor::createWrapper(impl, creationContext, isolate);
-}
+v8::Handle<v8::Object> wrap(TestInterfaceEventConstructor* impl, v8::Handle<v8::Object> creationContext, v8::Isolate*);
 
 inline v8::Handle<v8::Value> toV8(TestInterfaceEventConstructor* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {

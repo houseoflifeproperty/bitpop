@@ -2,24 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "code-stubs.h"
-#include "compilation-cache.h"
-#include "cpu-profiler.h"
-#include "deoptimizer.h"
-#include "execution.h"
-#include "gdb-jit.h"
-#include "global-handles.h"
-#include "heap-profiler.h"
-#include "ic-inl.h"
-#include "incremental-marking.h"
-#include "mark-compact.h"
-#include "objects-visiting.h"
-#include "objects-visiting-inl.h"
-#include "spaces-inl.h"
-#include "stub-cache.h"
-#include "sweeper-thread.h"
+#include "src/base/atomicops.h"
+#include "src/code-stubs.h"
+#include "src/compilation-cache.h"
+#include "src/cpu-profiler.h"
+#include "src/deoptimizer.h"
+#include "src/execution.h"
+#include "src/gdb-jit.h"
+#include "src/global-handles.h"
+#include "src/heap-profiler.h"
+#include "src/ic-inl.h"
+#include "src/incremental-marking.h"
+#include "src/mark-compact.h"
+#include "src/objects-visiting.h"
+#include "src/objects-visiting-inl.h"
+#include "src/spaces-inl.h"
+#include "src/stub-cache.h"
+#include "src/sweeper-thread.h"
 
 namespace v8 {
 namespace internal {
@@ -51,7 +52,6 @@ MarkCompactCollector::MarkCompactCollector(Heap* heap) :  // NOLINT
       migration_slots_buffer_(NULL),
       heap_(heap),
       code_flusher_(NULL),
-      encountered_weak_collections_(NULL),
       have_code_to_deoptimize_(false) { }
 
 #ifdef VERIFY_HEAP
@@ -400,7 +400,6 @@ void MarkCompactCollector::CollectGarbage() {
   // Make sure that Prepare() has been called. The individual steps below will
   // update the state as they proceed.
   ASSERT(state_ == PREPARE_GC);
-  ASSERT(encountered_weak_collections_ == Smi::FromInt(0));
 
   MarkLiveObjects();
   ASSERT(heap_->incremental_marking()->IsStopped());
@@ -416,8 +415,6 @@ void MarkCompactCollector::CollectGarbage() {
 #endif
 
   SweepSpaces();
-
-  if (!FLAG_collect_maps) ReattachInitialMaps();
 
 #ifdef DEBUG
   if (FLAG_verify_native_context_separation) {
@@ -1474,49 +1471,6 @@ class MarkCompactMarkingVisitor
     return true;
   }
 
-  INLINE(static void BeforeVisitingSharedFunctionInfo(HeapObject* object)) {
-    SharedFunctionInfo* shared = SharedFunctionInfo::cast(object);
-    shared->BeforeVisitingPointers();
-  }
-
-  static void VisitWeakCollection(Map* map, HeapObject* object) {
-    MarkCompactCollector* collector = map->GetHeap()->mark_compact_collector();
-    JSWeakCollection* weak_collection =
-        reinterpret_cast<JSWeakCollection*>(object);
-
-    // Enqueue weak map in linked list of encountered weak maps.
-    if (weak_collection->next() == Smi::FromInt(0)) {
-      weak_collection->set_next(collector->encountered_weak_collections());
-      collector->set_encountered_weak_collections(weak_collection);
-    }
-
-    // Skip visiting the backing hash table containing the mappings.
-    int object_size = JSWeakCollection::BodyDescriptor::SizeOf(map, object);
-    BodyVisitorBase<MarkCompactMarkingVisitor>::IteratePointers(
-        map->GetHeap(),
-        object,
-        JSWeakCollection::BodyDescriptor::kStartOffset,
-        JSWeakCollection::kTableOffset);
-    BodyVisitorBase<MarkCompactMarkingVisitor>::IteratePointers(
-        map->GetHeap(),
-        object,
-        JSWeakCollection::kTableOffset + kPointerSize,
-        object_size);
-
-    // Mark the backing hash table without pushing it on the marking stack.
-    Object* table_object = weak_collection->table();
-    if (!table_object->IsHashTable()) return;
-    WeakHashTable* table = WeakHashTable::cast(table_object);
-    Object** table_slot =
-        HeapObject::RawField(weak_collection, JSWeakCollection::kTableOffset);
-    MarkBit table_mark = Marking::MarkBitFrom(table);
-    collector->RecordSlot(table_slot, table_slot, table);
-    if (!table_mark.Get()) collector->SetMark(table, table_mark);
-    // Recording the map slot can be skipped, because maps are not compacted.
-    collector->MarkObject(table->map(), Marking::MarkBitFrom(table->map()));
-    ASSERT(MarkCompactCollector::IsMarked(table->map()));
-  }
-
  private:
   template<int id>
   static inline void TrackObjectStatsAndVisit(Map* map, HeapObject* obj);
@@ -2077,6 +2031,7 @@ int MarkCompactCollector::DiscoverAndPromoteBlackObjectsOnPage(
                     object,
                     size,
                     NEW_SPACE);
+      heap()->IncrementSemiSpaceCopiedObjectSize(size);
     }
     *cells = 0;
   }
@@ -2483,7 +2438,7 @@ void MarkCompactCollector::AfterMarking() {
 
 
 void MarkCompactCollector::ProcessMapCaches() {
-  Object* raw_context = heap()->native_contexts_list_;
+  Object* raw_context = heap()->native_contexts_list();
   while (raw_context != heap()->undefined_value()) {
     Context* context = reinterpret_cast<Context*>(raw_context);
     if (IsMarked(context)) {
@@ -2533,23 +2488,6 @@ void MarkCompactCollector::ProcessMapCaches() {
 }
 
 
-void MarkCompactCollector::ReattachInitialMaps() {
-  HeapObjectIterator map_iterator(heap()->map_space());
-  for (HeapObject* obj = map_iterator.Next();
-       obj != NULL;
-       obj = map_iterator.Next()) {
-    Map* map = Map::cast(obj);
-
-    STATIC_ASSERT(LAST_TYPE == LAST_JS_RECEIVER_TYPE);
-    if (map->instance_type() < FIRST_JS_RECEIVER_TYPE) continue;
-
-    if (map->attached_to_shared_function_info()) {
-      JSFunction::cast(map->constructor())->shared()->AttachInitialMap(map);
-    }
-  }
-}
-
-
 void MarkCompactCollector::ClearNonLiveReferences() {
   // Iterate over the map space, setting map transitions that go from
   // a marked map to an unmarked map to null transitions.  This action
@@ -2563,13 +2501,6 @@ void MarkCompactCollector::ClearNonLiveReferences() {
     if (!map->CanTransition()) continue;
 
     MarkBit map_mark = Marking::MarkBitFrom(map);
-    if (map_mark.Get() && map->attached_to_shared_function_info()) {
-      // This map is used for inobject slack tracking and has been detached
-      // from SharedFunctionInfo during the mark phase.
-      // Since it survived the GC, reattach it now.
-      JSFunction::cast(map->constructor())->shared()->AttachInitialMap(map);
-    }
-
     ClearNonLivePrototypeTransitions(map);
     ClearNonLiveMapTransitions(map, map_mark);
 
@@ -2758,7 +2689,7 @@ int MarkCompactCollector::ClearNonLiveDependentCodeInGroup(
       ASSERT(start + 1 == end);
       Object* old_head = entries->object_at(start);
       MarkCompactWeakObjectRetainer retainer;
-      Object* head = VisitWeakList<Code>(heap(), old_head, &retainer, true);
+      Object* head = VisitWeakList<Code>(heap(), old_head, &retainer);
       entries->set_object_at(new_start, head);
       Object** slot = entries->slot_at(new_start);
       RecordSlot(slot, slot, head);
@@ -2807,23 +2738,24 @@ void MarkCompactCollector::ClearNonLiveDependentCode(DependentCode* entries) {
 
 void MarkCompactCollector::ProcessWeakCollections() {
   GCTracer::Scope gc_scope(tracer_, GCTracer::Scope::MC_WEAKCOLLECTION_PROCESS);
-  Object* weak_collection_obj = encountered_weak_collections();
+  Object* weak_collection_obj = heap()->encountered_weak_collections();
   while (weak_collection_obj != Smi::FromInt(0)) {
-    ASSERT(MarkCompactCollector::IsMarked(
-        HeapObject::cast(weak_collection_obj)));
     JSWeakCollection* weak_collection =
         reinterpret_cast<JSWeakCollection*>(weak_collection_obj);
-    ObjectHashTable* table = ObjectHashTable::cast(weak_collection->table());
-    Object** anchor = reinterpret_cast<Object**>(table->address());
-    for (int i = 0; i < table->Capacity(); i++) {
-      if (MarkCompactCollector::IsMarked(HeapObject::cast(table->KeyAt(i)))) {
-        Object** key_slot =
-            table->RawFieldOfElementAt(ObjectHashTable::EntryToIndex(i));
-        RecordSlot(anchor, key_slot, *key_slot);
-        Object** value_slot =
-            table->RawFieldOfElementAt(ObjectHashTable::EntryToValueIndex(i));
-        MarkCompactMarkingVisitor::MarkObjectByPointer(
-            this, anchor, value_slot);
+    ASSERT(MarkCompactCollector::IsMarked(weak_collection));
+    if (weak_collection->table()->IsHashTable()) {
+      ObjectHashTable* table = ObjectHashTable::cast(weak_collection->table());
+      Object** anchor = reinterpret_cast<Object**>(table->address());
+      for (int i = 0; i < table->Capacity(); i++) {
+        if (MarkCompactCollector::IsMarked(HeapObject::cast(table->KeyAt(i)))) {
+          Object** key_slot =
+              table->RawFieldOfElementAt(ObjectHashTable::EntryToIndex(i));
+          RecordSlot(anchor, key_slot, *key_slot);
+          Object** value_slot =
+              table->RawFieldOfElementAt(ObjectHashTable::EntryToValueIndex(i));
+          MarkCompactMarkingVisitor::MarkObjectByPointer(
+              this, anchor, value_slot);
+        }
       }
     }
     weak_collection_obj = weak_collection->next();
@@ -2833,22 +2765,24 @@ void MarkCompactCollector::ProcessWeakCollections() {
 
 void MarkCompactCollector::ClearWeakCollections() {
   GCTracer::Scope gc_scope(tracer_, GCTracer::Scope::MC_WEAKCOLLECTION_CLEAR);
-  Object* weak_collection_obj = encountered_weak_collections();
+  Object* weak_collection_obj = heap()->encountered_weak_collections();
   while (weak_collection_obj != Smi::FromInt(0)) {
-    ASSERT(MarkCompactCollector::IsMarked(
-        HeapObject::cast(weak_collection_obj)));
     JSWeakCollection* weak_collection =
         reinterpret_cast<JSWeakCollection*>(weak_collection_obj);
-    ObjectHashTable* table = ObjectHashTable::cast(weak_collection->table());
-    for (int i = 0; i < table->Capacity(); i++) {
-      if (!MarkCompactCollector::IsMarked(HeapObject::cast(table->KeyAt(i)))) {
-        table->RemoveEntry(i);
+    ASSERT(MarkCompactCollector::IsMarked(weak_collection));
+    if (weak_collection->table()->IsHashTable()) {
+      ObjectHashTable* table = ObjectHashTable::cast(weak_collection->table());
+      for (int i = 0; i < table->Capacity(); i++) {
+        HeapObject* key = HeapObject::cast(table->KeyAt(i));
+        if (!MarkCompactCollector::IsMarked(key)) {
+          table->RemoveEntry(i);
+        }
       }
     }
     weak_collection_obj = weak_collection->next();
-    weak_collection->set_next(Smi::FromInt(0));
+    weak_collection->set_next(heap()->undefined_value());
   }
-  set_encountered_weak_collections(Smi::FromInt(0));
+  heap()->set_encountered_weak_collections(Smi::FromInt(0));
 }
 
 
@@ -2913,10 +2847,11 @@ void MarkCompactCollector::MigrateObject(HeapObject* dst,
                            SlotsBuffer::IGNORE_OVERFLOW);
       }
     } else if (compacting_ && dst->IsConstantPoolArray()) {
-      ConstantPoolArray* constant_pool = ConstantPoolArray::cast(dst);
-      for (int i = 0; i < constant_pool->count_of_code_ptr_entries(); i++) {
+      ConstantPoolArray* array = ConstantPoolArray::cast(dst);
+      ConstantPoolArray::Iterator code_iter(array, ConstantPoolArray::CODE_PTR);
+      while (!code_iter.is_finished()) {
         Address code_entry_slot =
-            dst_addr + constant_pool->OffsetOfElementAt(i);
+            dst_addr + array->OffsetOfElementAt(code_iter.next_index());
         Address code_entry = Memory::Address_at(code_entry_slot);
 
         if (Page::FromAddress(code_entry)->IsEvacuationCandidate()) {
@@ -3038,20 +2973,20 @@ static void UpdatePointer(HeapObject** address, HeapObject* object) {
   // compare and swap may fail in the case where the pointer update tries to
   // update garbage memory which was concurrently accessed by the sweeper.
   if (new_addr != NULL) {
-    NoBarrier_CompareAndSwap(
-        reinterpret_cast<AtomicWord*>(address),
-        reinterpret_cast<AtomicWord>(object),
-        reinterpret_cast<AtomicWord>(HeapObject::FromAddress(new_addr)));
+    base::NoBarrier_CompareAndSwap(
+        reinterpret_cast<base::AtomicWord*>(address),
+        reinterpret_cast<base::AtomicWord>(object),
+        reinterpret_cast<base::AtomicWord>(HeapObject::FromAddress(new_addr)));
   } else {
     // We have to zap this pointer, because the store buffer may overflow later,
     // and then we have to scan the entire heap and we don't want to find
     // spurious newspace pointers in the old space.
     // TODO(mstarzinger): This was changed to a sentinel value to track down
     // rare crashes, change it back to Smi::FromInt(0) later.
-    NoBarrier_CompareAndSwap(
-        reinterpret_cast<AtomicWord*>(address),
-        reinterpret_cast<AtomicWord>(object),
-        reinterpret_cast<AtomicWord>(Smi::FromInt(0x0f100d00 >> 1)));
+    base::NoBarrier_CompareAndSwap(
+        reinterpret_cast<base::AtomicWord*>(address),
+        reinterpret_cast<base::AtomicWord>(object),
+        reinterpret_cast<base::AtomicWord>(Smi::FromInt(0x0f100d00 >> 1)));
   }
 }
 
@@ -3083,8 +3018,7 @@ bool MarkCompactCollector::TryPromoteObject(HeapObject* object,
                   object,
                   object_size,
                   target_space->identity());
-    heap()->mark_compact_collector()->tracer()->
-        increment_promoted_objects_size(object_size);
+    heap()->IncrementPromotedObjectsSize(object_size);
     return true;
   }
 
@@ -3097,7 +3031,6 @@ void MarkCompactCollector::EvacuateNewSpace() {
   // sweep collection by failing allocations.  But since we are already in
   // a mark-sweep allocation, there is no sense in trying to trigger one.
   AlwaysAllocateScope scope(isolate());
-  heap()->CheckNewSpaceExpansionCriteria();
 
   NewSpace* new_space = heap()->new_space();
 
@@ -3642,9 +3575,6 @@ void MarkCompactCollector::EvacuateNewSpaceAndCandidates() {
       PropertyCell::BodyDescriptor::IterateBody(cell, &updating_visitor);
     }
   }
-
-  // Update the head of the native contexts list in the heap.
-  updating_visitor.VisitPointer(heap_->native_contexts_list_address());
 
   heap_->string_table()->Iterate(&updating_visitor);
   updating_visitor.VisitPointer(heap_->weak_object_to_code_table_address());
@@ -4318,7 +4248,7 @@ void MarkCompactCollector::ParallelSweepSpacesComplete() {
 
 
 void MarkCompactCollector::EnableCodeFlushing(bool enable) {
-  if (isolate()->debug()->IsLoaded() ||
+  if (isolate()->debug()->is_loaded() ||
       isolate()->debug()->has_break_points()) {
     enable = false;
   }

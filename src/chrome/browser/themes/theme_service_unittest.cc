@@ -7,10 +7,11 @@
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #include "chrome/browser/themes/custom_theme_supplier.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/common/chrome_paths.h"
@@ -27,9 +28,9 @@ using extensions::ExtensionRegistry;
 
 namespace theme_service_internal {
 
-class ThemeServiceTest : public ExtensionServiceTestBase {
+class ThemeServiceTest : public extensions::ExtensionServiceTestBase {
  public:
-  ThemeServiceTest() : is_managed_(false),
+  ThemeServiceTest() : is_supervised_(false),
                        registry_(NULL) {}
   virtual ~ThemeServiceTest() {}
 
@@ -82,10 +83,10 @@ class ThemeServiceTest : public ExtensionServiceTestBase {
   }
 
   virtual void SetUp() {
-    ExtensionServiceTestBase::SetUp();
-    ExtensionServiceTestBase::ExtensionServiceInitParams params =
+    extensions::ExtensionServiceTestBase::SetUp();
+    extensions::ExtensionServiceTestBase::ExtensionServiceInitParams params =
         CreateDefaultInitParams();
-    params.profile_is_managed = is_managed_;
+    params.profile_is_supervised = is_supervised_;
     InitializeExtensionService(params);
     service_->Init();
     registry_ = ExtensionRegistry::Get(profile_.get());
@@ -97,7 +98,7 @@ class ThemeServiceTest : public ExtensionServiceTestBase {
   }
 
  protected:
-  bool is_managed_;
+  bool is_supervised_;
   ExtensionRegistry* registry_;
 
 };
@@ -229,32 +230,33 @@ TEST_F(ThemeServiceTest, ThemeUpgrade) {
                                           ExtensionRegistry::DISABLED));
 }
 
-class ThemeServiceManagedUserTest : public ThemeServiceTest {
+class ThemeServiceSupervisedUserTest : public ThemeServiceTest {
  public:
-  ThemeServiceManagedUserTest() {}
-  virtual ~ThemeServiceManagedUserTest() {}
+  ThemeServiceSupervisedUserTest() {}
+  virtual ~ThemeServiceSupervisedUserTest() {}
 
   virtual void SetUp() OVERRIDE {
-    is_managed_ = true;
+    is_supervised_ = true;
     ThemeServiceTest::SetUp();
   }
 };
 
-// Checks that managed users have their own default theme.
-TEST_F(ThemeServiceManagedUserTest, ManagedUserThemeReplacesDefaultTheme) {
+// Checks that supervised users have their own default theme.
+TEST_F(ThemeServiceSupervisedUserTest,
+       SupervisedUserThemeReplacesDefaultTheme) {
   ThemeService* theme_service =
       ThemeServiceFactory::GetForProfile(profile_.get());
   theme_service->UseDefaultTheme();
   EXPECT_TRUE(theme_service->UsingDefaultTheme());
   EXPECT_TRUE(get_theme_supplier(theme_service));
   EXPECT_EQ(get_theme_supplier(theme_service)->get_theme_type(),
-            CustomThemeSupplier::MANAGED_USER_THEME);
+            CustomThemeSupplier::SUPERVISED_USER_THEME);
 }
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-// Checks that managed users don't use the system theme even if it is the
+// Checks that supervised users don't use the system theme even if it is the
 // default. The system theme is only available on Linux.
-TEST_F(ThemeServiceManagedUserTest, ManagedUserThemeReplacesNativeTheme) {
+TEST_F(ThemeServiceSupervisedUserTest, SupervisedUserThemeReplacesNativeTheme) {
   profile_->GetPrefs()->SetBoolean(prefs::kUsesSystemTheme, true);
   ThemeService* theme_service =
       ThemeServiceFactory::GetForProfile(profile_.get());
@@ -262,7 +264,7 @@ TEST_F(ThemeServiceManagedUserTest, ManagedUserThemeReplacesNativeTheme) {
   EXPECT_TRUE(theme_service->UsingDefaultTheme());
   EXPECT_TRUE(get_theme_supplier(theme_service));
   EXPECT_EQ(get_theme_supplier(theme_service)->get_theme_type(),
-            CustomThemeSupplier::MANAGED_USER_THEME);
+            CustomThemeSupplier::SUPERVISED_USER_THEME);
 }
 #endif
 

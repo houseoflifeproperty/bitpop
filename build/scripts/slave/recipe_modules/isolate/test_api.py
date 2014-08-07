@@ -6,9 +6,9 @@ from slave import recipe_test_api
 
 class IsolateTestApi(recipe_test_api.RecipeTestApi):
   def output_json(self, targets=None):
-    """Mocked output or find_isolated_tests.py script.
+    """Mocked output of find_isolated_tests.py script.
 
-    Deterministically synthesized json.output test data for the given targets.
+    Deterministically synthesizes json.output test data for the given targets.
     If |targets| is None, will emit test data with some dummy targets instead,
     emulating find_isolated_tests.py finding some files.
     """

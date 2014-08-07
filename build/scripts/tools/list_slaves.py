@@ -116,7 +116,8 @@ Note: t is replaced with 'tryserver', 'c' with chromium' and
     builders = set(options.builder)
     def builder_interested_in_any(x):
       return builders.intersection(set(x))
-    slaves = [s for s in slaves if builder_interested_in_any(s.get('builder'))]
+    slaves = [s for s in slaves
+              if builder_interested_in_any(s.get('builder', []))]
 
   if options.os:
     selected = set(options.os)

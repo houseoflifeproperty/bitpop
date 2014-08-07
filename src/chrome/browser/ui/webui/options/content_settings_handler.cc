@@ -24,7 +24,6 @@
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -35,6 +34,7 @@
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
@@ -44,12 +44,13 @@
 #include "content/public/common/page_zoom.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/permissions/api_permission.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 
 using base::UserMetricsAction;
@@ -210,7 +211,8 @@ base::DictionaryValue* GetNotificationExceptionForPage(
 template <APIPermission::ID permission>
 bool HostedAppHasPermission(
     const extensions::Extension& extension, Profile* /*profile*/) {
-    return extension.is_hosted_app() && extension.HasAPIPermission(permission);
+  return extension.is_hosted_app() &&
+         extension.permissions_data()->HasAPIPermission(permission);
 }
 
 // Add an "Allow"-entry to the list of |exceptions| for a |url_pattern| from
@@ -396,8 +398,7 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "mediaPepperFlashGlobalPrivacyURL", IDS_FLASH_GLOBAL_PRIVACY_URL },
     { "mediaPepperFlashWebsitePrivacyURL", IDS_FLASH_WEBSITE_PRIVACY_URL },
     // PPAPI broker filter.
-    // TODO(bauerb): Use IDS_PPAPI_BROKER_HEADER.
-    { "ppapi-broker_header", IDS_PPAPI_BROKER_TAB_LABEL },
+    { "ppapi-broker_header", IDS_PPAPI_BROKER_HEADER },
     { "ppapiBrokerTabLabel", IDS_PPAPI_BROKER_TAB_LABEL },
     { "ppapi_broker_allow", IDS_PPAPI_BROKER_ALLOW_RADIO },
     { "ppapi_broker_ask", IDS_PPAPI_BROKER_ASK_RADIO },
@@ -459,10 +460,8 @@ void ContentSettingsHandler::GetLocalizedValues(
   RegisterTitle(localized_strings, "zoomlevels",
                 IDS_ZOOMLEVELS_HEADER_AND_TAB_LABEL);
 
-  localized_strings->SetString(
-      "exceptionsLearnMoreUrl",
-      google_util::StringAppendGoogleLocaleParam(
-          kExceptionsLearnMoreUrl));
+  localized_strings->SetString("exceptionsLearnMoreUrl",
+                               kExceptionsLearnMoreUrl);
 }
 
 void ContentSettingsHandler::InitializeHandler() {

@@ -34,8 +34,8 @@ class AndroidSystraceProfiler(profiler.Profiler):
     # and the two methods conflict.
     self._browser_backend.StartTracing(None, timeout=10)
     self._profiler = subprocess.Popen(
-        [os.path.join(util.GetChromiumSrcDir(),
-                      'build', 'android', 'adb_profile_chrome.py'),
+        ['python', os.path.join(util.GetChromiumSrcDir(), 'tools', 'android',
+                                'adb_profile_chrome.py'),
          '--categories', '', '--continuous', '--output',
          self._systrace_output_path, '--systrace'] + _SYSTRACE_CATEGORIES,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE)
@@ -53,7 +53,6 @@ class AndroidSystraceProfiler(profiler.Profiler):
   def CollectProfile(self):
     self._profiler.communicate(input='\n')
     trace_result = self._browser_backend.StopTracing()
-    self._profiler.communicate()
 
     trace_file = StringIO.StringIO()
     trace_result.Serialize(trace_file)

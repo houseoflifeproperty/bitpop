@@ -134,8 +134,14 @@ class DesktopCaptureDevice::Core
   // True when waiting for |desktop_capturer_| to capture current frame.
   bool capture_in_progress_;
 
+  // True if the first capture call has returned. Used to log the first capture
+  // result.
+  bool first_capture_returned_;
+
   // The type of the capturer.
   DesktopMediaID::Type capturer_type_;
+
+  scoped_ptr<webrtc::BasicDesktopFrame> black_frame_;
 
   DISALLOW_COPY_AND_ASSIGN(Core);
 };
@@ -150,6 +156,7 @@ DesktopCaptureDevice::Core::Core(
       desktop_capturer_(capturer.Pass()),
       capture_task_posted_(false),
       capture_in_progress_(false),
+      first_capture_returned_(false),
       capturer_type_(type) {
   DCHECK(!task_runner_.get() || !thread_.get());
   if (thread_.get())
@@ -192,9 +199,8 @@ void DesktopCaptureDevice::Core::OnCaptureCompleted(
   DCHECK(task_runner_->RunsTasksOnCurrentThread());
   DCHECK(capture_in_progress_);
 
-  static bool first_call = true;
-  if (first_call) {
-    first_call = false;
+  if (!first_capture_returned_) {
+    first_capture_returned_ = true;
     if (capturer_type_ == DesktopMediaID::TYPE_SCREEN) {
       IncrementDesktopCaptureCounter(frame ? FIRST_SCREEN_CAPTURE_SUCCEEDED
                                            : FIRST_SCREEN_CAPTURE_FAILED);
@@ -224,6 +230,24 @@ void DesktopCaptureDevice::Core::OnCaptureCompleted(
       capture_time);
 
   scoped_ptr<webrtc::DesktopFrame> owned_frame(frame);
+
+  // On OSX We receive a 1x1 frame when the shared window is minimized. It
+  // cannot be subsampled to I420 and will be dropped downstream. So we replace
+  // it with a black frame to avoid the video appearing frozen at the last
+  // frame.
+  if (frame->size().width() == 1 || frame->size().height() == 1) {
+    if (!black_frame_.get()) {
+      black_frame_.reset(
+          new webrtc::BasicDesktopFrame(
+              webrtc::DesktopSize(capture_format_.frame_size.width(),
+                                  capture_format_.frame_size.height())));
+      memset(black_frame_->data(),
+             0,
+             black_frame_->stride() * black_frame_->size().height());
+    }
+    owned_frame.reset();
+    frame = black_frame_.get();
+  }
 
   // Handle initial frame size and size changes.
   RefreshCaptureFormat(frame->size());

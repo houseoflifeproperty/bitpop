@@ -56,8 +56,8 @@ class BotUpdateApi(recipe_api.RecipeApi):
     return self.m.python(name, bot_update_path, cmd, **kwargs)
 
   def ensure_checkout(self, gclient_config=None, suffix=None,
-                      patch=True, ref=None, update_presentation=True,
-                      **kwargs):
+                      patch=True, update_presentation=True,
+                      force=False, **kwargs):
     # We can re-use the gclient spec from the gclient module, since all the
     # data bot_update needs is already configured into the gclient spec.
     cfg = gclient_config or self.m.gclient.c
@@ -79,8 +79,6 @@ class BotUpdateApi(recipe_api.RecipeApi):
       # The trybot recipe sometimes wants to de-apply the patch. In which case
       # we pretend the issue/patchset/patch_url never existed.
       issue = patchset = patch_url = None
-    revision = (ref or self.m.properties.get('parent_got_revision') or
-                self.m.properties.get('revision'))
     # Issue and patchset must come together.
     if issue:
       assert patchset
@@ -89,6 +87,10 @@ class BotUpdateApi(recipe_api.RecipeApi):
     if patch_url:
       # If patch_url is present, bot_update will actually ignore issue/ps.
       issue = patchset = None
+
+    rev_map = {}
+    if self.m.gclient.c:
+      rev_map = self.m.gclient.c.got_revision_mapping.as_jsonish()
 
     flags = [
         # 1. Do we want to run? (master/builder/slave).
@@ -99,8 +101,7 @@ class BotUpdateApi(recipe_api.RecipeApi):
         # 2. What do we want to check out (spec/root/rev/rev_map).
         ['--spec', spec_string],
         ['--root', root],
-        ['--revision', revision],
-        ['--revision_mapping', self.m.properties.get('revision_mapping')],
+        ['--revision_mapping_file', self.m.json.input(rev_map)],
 
         # 3. How to find the patch, if any (issue/patchset/patch_url).
         ['--issue', issue],
@@ -110,24 +111,34 @@ class BotUpdateApi(recipe_api.RecipeApi):
         # 4. Hookups to JSON output back into recipes.
         ['--output_json', self.m.json.output()],]
 
+
+    revisions = {}
+    for solution in cfg.solutions:
+      if solution.revision:
+        revisions[solution.name] = solution.revision
+      elif solution == cfg.solutions[0]:
+        revisions[solution.name] = (
+            self.m.properties.get('parent_got_revision') or
+            self.m.properties.get('revision') or
+            'HEAD')
+    if self.m.gclient.c and self.m.gclient.c.revisions:
+      revisions.update(self.m.gclient.c.revisions)
+    for name, revision in sorted(revisions.items()):
+      flags.append(['--revision', '%s@%s' % (name, revision)])
+
     # Filter out flags that are None.
     cmd = [item for flag_set in flags
            for item in flag_set if flag_set[1] is not None]
 
+    if force:
+      cmd.append('--force')
+
     # Inject Json output for testing.
-    try:
-      revision_map_data = self.m.gclient.c.got_revision_mapping
-    except AttributeError:
-      revision_map_data = {}
     git_mode = self.m.properties.get('mastername') in GIT_MASTERS
     first_sln = cfg.solutions[0].name
-    step_test_data = lambda : self.test_api.output_json(master,
-                                                        builder,
-                                                        slave,
-                                                        root,
-                                                        first_sln,
-                                                        revision_map_data,
-                                                        git_mode)
+    step_test_data = lambda: self.test_api.output_json(
+        master, builder, slave, root, first_sln, rev_map, git_mode, force,
+        self.m.properties.get('fail_patch', False))
 
     def followup_fn(step_result):
       if update_presentation:
@@ -140,6 +151,10 @@ class BotUpdateApi(recipe_api.RecipeApi):
       if 'step_text' in step_result.json.output:
         step_text = step_result.json.output['step_text']
         step_result.presentation.step_text = step_text
+      # Add log line output.
+      if 'log_lines' in step_result.json.output:
+        for log_name, log_lines in step_result.json.output['log_lines']:
+          step_result.presentation.logs[log_name] = log_lines.splitlines()
 
     # Add suffixes to the step name, if specified.
     name = 'bot_update'

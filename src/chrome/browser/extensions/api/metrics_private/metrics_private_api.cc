@@ -9,7 +9,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
-#include "chrome/browser/metrics/metrics_service.h"
+#include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
 #include "chrome/common/extensions/api/metrics_private.h"
 #include "components/variations/variations_associated_data.h"
 #include "content/public/browser/user_metrics.h"
@@ -41,7 +41,7 @@ const size_t kMaxBuckets = 10000; // We don't ever want more than these many
 
 bool MetricsPrivateGetIsCrashReportingEnabledFunction::RunSync() {
   SetResult(new base::FundamentalValue(
-      MetricsServiceHelper::IsCrashReportingEnabled()));
+      ChromeMetricsServiceAccessor::IsCrashReportingEnabled()));
   return true;
 }
 
@@ -59,13 +59,10 @@ bool MetricsPrivateGetVariationParamsFunction::RunSync() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   GetVariationParams::Results::Params result;
-  if (!chrome_variations::GetVariationParams(
+  if (chrome_variations::GetVariationParams(
       params->name, &result.additional_properties)) {
-    SetError("Variation parameters are unavailable.");
-    return false;
+    SetResult(result.ToValue().release());
   }
-
-  SetResult(result.ToValue().release());
   return true;
 }
 

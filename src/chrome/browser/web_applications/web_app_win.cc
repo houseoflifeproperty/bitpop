@@ -23,6 +23,7 @@
 #include "chrome/installer/util/shell_util.h"
 #include "chrome/installer/util/util_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "ui/base/win/shell.h"
 #include "ui/gfx/icon_util.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_family.h"
@@ -323,13 +324,64 @@ void GetShortcutLocationsAndDeleteShortcuts(
   }
 }
 
+void CreateIconAndSetRelaunchDetails(const base::FilePath& web_app_path,
+                                     const base::FilePath& icon_file,
+                                     const web_app::ShortcutInfo& shortcut_info,
+                                     HWND hwnd) {
+  DCHECK(content::BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
+
+  CommandLine command_line =
+      ShellIntegration::CommandLineArgsForLauncher(shortcut_info.url,
+                                                   shortcut_info.extension_id,
+                                                   shortcut_info.profile_path);
+
+  base::FilePath chrome_exe;
+  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
+    NOTREACHED();
+    return;
+  }
+  command_line.SetProgram(chrome_exe);
+  ui::win::SetRelaunchDetailsForWindow(
+      command_line.GetCommandLineString(), shortcut_info.title, hwnd);
+
+  if (!base::PathExists(web_app_path) && !base::CreateDirectory(web_app_path))
+    return;
+
+  ui::win::SetAppIconForWindow(icon_file.value(), hwnd);
+  web_app::internals::CheckAndSaveIcon(icon_file, shortcut_info.favicon);
+}
+
+void OnShortcutInfoLoadedForSetRelaunchDetails(
+    HWND hwnd,
+    const web_app::ShortcutInfo& shortcut_info) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  // Set window's icon to the one we're about to create/update in the web app
+  // path. The icon cache will refresh on icon creation.
+  base::FilePath web_app_path =
+      web_app::GetWebAppDataDirectory(shortcut_info.profile_path,
+                                      shortcut_info.extension_id,
+                                      shortcut_info.url);
+  base::FilePath icon_file =
+      web_app_path.Append(web_app::internals::GetSanitizedFileName(
+                              shortcut_info.title))
+          .ReplaceExtension(FILE_PATH_LITERAL(".ico"));
+
+  content::BrowserThread::PostBlockingPoolTask(
+      FROM_HERE,
+      base::Bind(&CreateIconAndSetRelaunchDetails,
+                 web_app_path,
+                 icon_file,
+                 shortcut_info,
+                 hwnd));
+}
+
 }  // namespace
 
 namespace web_app {
 
-base::FilePath CreateShortcutInWebAppDir(
-    const base::FilePath& web_app_dir,
-    const web_app::ShortcutInfo& shortcut_info) {
+base::FilePath CreateShortcutInWebAppDir(const base::FilePath& web_app_dir,
+                                         const ShortcutInfo& shortcut_info) {
   std::vector<base::FilePath> paths;
   paths.push_back(web_app_dir);
   std::vector<base::FilePath> out_filenames;
@@ -350,6 +402,20 @@ base::FilePath CreateShortcutInWebAppDir(
         shortcut_info.favicon);
   }
   return web_app_dir_shortcut;
+}
+
+void UpdateRelaunchDetailsForApp(Profile* profile,
+                                 const extensions::Extension* extension,
+                                 HWND hwnd) {
+  web_app::UpdateShortcutInfoAndIconForApp(
+      extension,
+      profile,
+      base::Bind(&OnShortcutInfoLoadedForSetRelaunchDetails, hwnd));
+}
+
+void UpdateShortcutsForAllApps(Profile* profile,
+                               const base::Closure& callback) {
+  callback.Run();
 }
 
 namespace internals {
@@ -376,11 +442,15 @@ bool CheckAndSaveIcon(const base::FilePath& icon_file,
 
 bool CreatePlatformShortcuts(
     const base::FilePath& web_app_path,
-    const web_app::ShortcutInfo& shortcut_info,
+    const ShortcutInfo& shortcut_info,
     const extensions::FileHandlersInfo& file_handlers_info,
-    const web_app::ShortcutLocations& creation_locations,
+    const ShortcutLocations& creation_locations,
     ShortcutCreationReason creation_reason) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+
+  // Nothing to do on Windows for hidden apps.
+  if (creation_locations.applications_menu_location == APP_MENU_LOCATION_HIDDEN)
+    return true;
 
   // Shortcut paths under which to create shortcuts.
   std::vector<base::FilePath> shortcut_paths =
@@ -419,7 +489,7 @@ bool CreatePlatformShortcuts(
 void UpdatePlatformShortcuts(
     const base::FilePath& web_app_path,
     const base::string16& old_app_title,
-    const web_app::ShortcutInfo& shortcut_info,
+    const ShortcutInfo& shortcut_info,
     const extensions::FileHandlersInfo& file_handlers_info) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
 
@@ -456,9 +526,8 @@ void UpdatePlatformShortcuts(
   CheckAndSaveIcon(icon_file, shortcut_info.favicon);
 }
 
-void DeletePlatformShortcuts(
-    const base::FilePath& web_app_path,
-    const web_app::ShortcutInfo& shortcut_info) {
+void DeletePlatformShortcuts(const base::FilePath& web_app_path,
+                             const ShortcutInfo& shortcut_info) {
   GetShortcutLocationsAndDeleteShortcuts(
       web_app_path, shortcut_info.profile_path, shortcut_info.title, NULL,
       NULL);
@@ -492,7 +561,7 @@ void DeleteAllShortcutsForProfile(const base::FilePath& profile_path) {
 }
 
 std::vector<base::FilePath> GetShortcutPaths(
-    const web_app::ShortcutLocations& creation_locations) {
+    const ShortcutLocations& creation_locations) {
   // Shortcut paths under which to create shortcuts.
   std::vector<base::FilePath> shortcut_paths;
   // Locations to add to shortcut_paths.
@@ -505,15 +574,15 @@ std::vector<base::FilePath> GetShortcutPaths(
       ShellUtil::SHORTCUT_LOCATION_DESKTOP
     }, {
       creation_locations.applications_menu_location ==
-          web_app::APP_MENU_LOCATION_ROOT,
+          APP_MENU_LOCATION_ROOT,
       ShellUtil::SHORTCUT_LOCATION_START_MENU_ROOT
     }, {
       creation_locations.applications_menu_location ==
-          web_app::APP_MENU_LOCATION_SUBDIR_CHROME,
+          APP_MENU_LOCATION_SUBDIR_CHROME,
       ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR
     }, {
       creation_locations.applications_menu_location ==
-          web_app::APP_MENU_LOCATION_SUBDIR_CHROMEAPPS,
+          APP_MENU_LOCATION_SUBDIR_CHROMEAPPS,
       ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_APPS_DIR
     }, {
       // For Win7+, |in_quick_launch_bar| indicates that we are pinning to

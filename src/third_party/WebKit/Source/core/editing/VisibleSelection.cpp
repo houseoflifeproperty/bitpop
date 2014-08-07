@@ -48,7 +48,7 @@ namespace WebCore {
 
 VisibleSelection::VisibleSelection()
     : m_affinity(DOWNSTREAM)
-    , m_changeObserver(0)
+    , m_changeObserver(nullptr)
     , m_selectionType(NoSelection)
     , m_baseIsFirst(true)
     , m_isDirectional(false)
@@ -59,7 +59,7 @@ VisibleSelection::VisibleSelection(const Position& pos, EAffinity affinity, bool
     : m_base(pos)
     , m_extent(pos)
     , m_affinity(affinity)
-    , m_changeObserver(0)
+    , m_changeObserver(nullptr)
     , m_isDirectional(isDirectional)
 {
     validate();
@@ -69,7 +69,7 @@ VisibleSelection::VisibleSelection(const Position& base, const Position& extent,
     : m_base(base)
     , m_extent(extent)
     , m_affinity(affinity)
-    , m_changeObserver(0)
+    , m_changeObserver(nullptr)
     , m_isDirectional(isDirectional)
 {
     validate();
@@ -79,7 +79,7 @@ VisibleSelection::VisibleSelection(const VisiblePosition& pos, bool isDirectiona
     : m_base(pos.deepEquivalent())
     , m_extent(pos.deepEquivalent())
     , m_affinity(pos.affinity())
-    , m_changeObserver(0)
+    , m_changeObserver(nullptr)
     , m_isDirectional(isDirectional)
 {
     validate();
@@ -89,7 +89,7 @@ VisibleSelection::VisibleSelection(const VisiblePosition& base, const VisiblePos
     : m_base(base.deepEquivalent())
     , m_extent(extent.deepEquivalent())
     , m_affinity(base.affinity())
-    , m_changeObserver(0)
+    , m_changeObserver(nullptr)
     , m_isDirectional(isDirectional)
 {
     validate();
@@ -99,7 +99,7 @@ VisibleSelection::VisibleSelection(const Range* range, EAffinity affinity, bool 
     : m_base(range->startPosition())
     , m_extent(range->endPosition())
     , m_affinity(affinity)
-    , m_changeObserver(0)
+    , m_changeObserver(nullptr)
     , m_isDirectional(isDirectional)
 {
     validate();
@@ -111,7 +111,7 @@ VisibleSelection::VisibleSelection(const VisibleSelection& other)
     , m_start(other.m_start)
     , m_end(other.m_end)
     , m_affinity(other.m_affinity)
-    , m_changeObserver(0) // Observer is associated with only one VisibleSelection, so this should not be copied.
+    , m_changeObserver(nullptr) // Observer is associated with only one VisibleSelection, so this should not be copied.
     , m_selectionType(other.m_selectionType)
     , m_baseIsFirst(other.m_baseIsFirst)
     , m_isDirectional(other.m_isDirectional)
@@ -127,7 +127,7 @@ VisibleSelection& VisibleSelection::operator=(const VisibleSelection& other)
     m_start = other.m_start;
     m_end = other.m_end;
     m_affinity = other.m_affinity;
-    m_changeObserver = 0;
+    m_changeObserver = nullptr;
     m_selectionType = other.m_selectionType;
     m_baseIsFirst = other.m_baseIsFirst;
     m_isDirectional = other.m_isDirectional;
@@ -136,7 +136,9 @@ VisibleSelection& VisibleSelection::operator=(const VisibleSelection& other)
 
 VisibleSelection::~VisibleSelection()
 {
+#if !ENABLE(OILPAN)
     didChange();
+#endif
 }
 
 VisibleSelection VisibleSelection::selectionFromContentsOfNode(Node* node)
@@ -602,7 +604,7 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
         // If the start is in non-editable content that is inside the base's editable root, put it
         // at the first editable position after start inside the base's editable root.
         if (startRoot != baseRoot) {
-            VisiblePosition first = firstEditablePositionAfterPositionInRoot(m_start, baseRoot);
+            VisiblePosition first = firstEditableVisiblePositionAfterPositionInRoot(m_start, baseRoot);
             m_start = first.deepEquivalent();
             if (m_start.isNull()) {
                 ASSERT_NOT_REACHED();
@@ -613,7 +615,7 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
         // If the end is in non-editable content that is inside the base's root, put it
         // at the last editable position before the end inside the base's root.
         if (endRoot != baseRoot) {
-            VisiblePosition last = lastEditablePositionBeforePositionInRoot(m_end, baseRoot);
+            VisiblePosition last = lastEditableVisiblePositionBeforePositionInRoot(m_end, baseRoot);
             m_end = last.deepEquivalent();
             if (m_end.isNull())
                 m_end = m_start;
@@ -751,13 +753,44 @@ void VisibleSelection::setChangeObserver(ChangeObserver& observer)
 void VisibleSelection::clearChangeObserver()
 {
     ASSERT(m_changeObserver);
-    m_changeObserver = 0;
+    m_changeObserver = nullptr;
 }
 
 void VisibleSelection::didChange()
 {
     if (m_changeObserver)
         m_changeObserver->didChangeVisibleSelection();
+}
+
+void VisibleSelection::trace(Visitor* visitor)
+{
+    visitor->trace(m_base);
+    visitor->trace(m_extent);
+    visitor->trace(m_start);
+    visitor->trace(m_end);
+    visitor->trace(m_changeObserver);
+}
+
+static bool isValidPosition(const Position& position)
+{
+    if (!position.inDocument())
+        return false;
+
+    if (position.anchorType() != Position::PositionIsOffsetInAnchor)
+        return true;
+
+    if (position.offsetInContainerNode() < 0)
+        return false;
+
+    const unsigned offset = static_cast<unsigned>(position.offsetInContainerNode());
+    const unsigned nodeLength = position.anchorNode()->lengthOfContents();
+    return offset <= nodeLength;
+}
+
+void VisibleSelection::validatePositionsIfNeeded()
+{
+    if (!isValidPosition(m_base) || !isValidPosition(m_extent) || !isValidPosition(m_start) || !isValidPosition(m_end))
+        validate();
 }
 
 #ifndef NDEBUG

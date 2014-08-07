@@ -124,18 +124,17 @@ void RenderViewTest::LoadHTML(const char* html) {
   FrameLoadWaiter(view_->GetMainRenderFrame()).Wait();
 }
 
+PageState RenderViewTest::GetCurrentPageState() {
+  RenderViewImpl* impl = static_cast<RenderViewImpl*>(view_);
+  return HistoryEntryToPageState(impl->history_controller()->GetCurrentEntry());
+}
+
 void RenderViewTest::GoBack(const PageState& state) {
   GoToOffset(-1, state);
 }
 
 void RenderViewTest::GoForward(const PageState& state) {
   GoToOffset(1, state);
-}
-
-void RenderViewTest::GoBackToPrevious() {
-  RenderViewImpl* impl = static_cast<RenderViewImpl*>(view_);
-  GoBack(HistoryEntryToPageState(
-      impl->history_controller()->GetPreviousEntry()));
 }
 
 void RenderViewTest::SetUp() {
@@ -195,6 +194,7 @@ void RenderViewTest::SetUp() {
                              base::string16(),
                              false,  // is_renderer_created
                              false,  // swapped_out
+                             MSG_ROUTING_NONE, // proxy_routing_id
                              false,  // hidden
                              false,  // never_visible
                              1,      // next_page_id

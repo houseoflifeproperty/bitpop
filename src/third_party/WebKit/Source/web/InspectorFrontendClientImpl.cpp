@@ -62,18 +62,18 @@ InspectorFrontendClientImpl::~InspectorFrontendClientImpl()
 void InspectorFrontendClientImpl::windowObjectCleared()
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    v8::HandleScope handleScope(isolate);
-    v8::Handle<v8::Context> frameContext = m_frontendPage->mainFrame() ? toV8Context(isolate, m_frontendPage->mainFrame(), DOMWrapperWorld::mainWorld()) : v8::Local<v8::Context>();
-    v8::Context::Scope contextScope(frameContext);
+    ASSERT(m_frontendPage->mainFrame());
+    ScriptState* scriptState = ScriptState::forMainWorld(m_frontendPage->deprecatedLocalMainFrame());
+    ScriptState::Scope scope(scriptState);
 
     if (m_frontendHost)
         m_frontendHost->disconnectClient();
     m_frontendHost = InspectorFrontendHost::create(this, m_frontendPage);
-    v8::Handle<v8::Value> frontendHostObj = toV8(m_frontendHost.get(), v8::Handle<v8::Object>(), frameContext->GetIsolate());
-    v8::Handle<v8::Object> global = frameContext->Global();
+    v8::Handle<v8::Object> global = scriptState->context()->Global();
+    v8::Handle<v8::Value> frontendHostObj = toV8(m_frontendHost.get(), global, scriptState->isolate());
 
     global->Set(v8::String::NewFromUtf8(isolate, "InspectorFrontendHost"), frontendHostObj);
-    ScriptController* scriptController = m_frontendPage->mainFrame() ? &m_frontendPage->mainFrame()->script() : 0;
+    ScriptController* scriptController = m_frontendPage->mainFrame() ? &m_frontendPage->deprecatedLocalMainFrame()->script() : 0;
     if (scriptController) {
         String installAdditionalAPI =
             "" // Wrap messages that go to embedder.
@@ -121,10 +121,11 @@ void InspectorFrontendClientImpl::windowObjectCleared()
             "     ['searchInPath', 3],"
             "     ['setWhitelistedShortcuts', 1],"
             "     ['setContentsResizingStrategy', 2],"
+            "     ['setInspectedPageBounds', 1],"
             "     ['setIsDocked', 1],"
-            "     ['startRemoteDevicesListener', 0],"
+            "     ['subscribe', 1],"
             "     ['stopIndexing', 1],"
-            "     ['stopRemoteDevicesListener', 0],"
+            "     ['unsubscribe', 1],"
             "     ['zoomIn', 0],"
             "     ['zoomOut', 0]]);"
             ""

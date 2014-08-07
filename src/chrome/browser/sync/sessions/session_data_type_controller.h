@@ -5,9 +5,11 @@
 #ifndef CHROME_BROWSER_SYNC_SESSIONS_SESSION_DATA_TYPE_CONTROLLER_H_
 #define CHROME_BROWSER_SYNC_SESSIONS_SESSION_DATA_TYPE_CONTROLLER_H_
 
-#include "chrome/browser/sync/glue/ui_data_type_controller.h"
+#include "components/sync_driver/ui_data_type_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+
+class Profile;
 
 namespace browser_sync {
 
@@ -16,9 +18,9 @@ namespace browser_sync {
 class SessionDataTypeController : public UIDataTypeController,
                                   public content::NotificationObserver {
  public:
-  SessionDataTypeController(ProfileSyncComponentsFactory* factory,
+  SessionDataTypeController(SyncApiComponentFactory* factory,
                             Profile* profile,
-                            ProfileSyncService* service);
+                            const DisableTypeCallback& disable_callback);
 
   // NotificationObserver interface.
   virtual void Observe(int type,
@@ -31,6 +33,7 @@ class SessionDataTypeController : public UIDataTypeController,
   virtual void StopModels() OVERRIDE;
 
  private:
+  Profile* const profile_;
   content::NotificationRegistrar notification_registrar_;
   DISALLOW_COPY_AND_ASSIGN(SessionDataTypeController);
 };

@@ -22,8 +22,6 @@
 namespace media {
 namespace cast {
 
-static const int64 kStartMillisecond = INT64_C(12345678900000);
-
 class TestPacketSender : public transport::PacketSender {
  public:
   TestPacketSender() : number_of_rtp_packets_(0), number_of_rtcp_packets_(0) {}
@@ -33,6 +31,12 @@ class TestPacketSender : public transport::PacketSender {
     if (Rtcp::IsRtcpPacket(&packet->data[0], packet->data.size())) {
       ++number_of_rtcp_packets_;
     } else {
+      // Check that at least one RTCP packet was sent before the first RTP
+      // packet.  This confirms that the receiver will have the necessary lip
+      // sync info before it has to calculate the playout time of the first
+      // frame.
+      if (number_of_rtp_packets_ == 0)
+        EXPECT_LE(1, number_of_rtcp_packets_);
       ++number_of_rtp_packets_;
     }
     return true;
@@ -54,8 +58,7 @@ class AudioSenderTest : public ::testing::Test {
   AudioSenderTest() {
     InitializeMediaLibraryForTesting();
     testing_clock_ = new base::SimpleTestTickClock();
-    testing_clock_->Advance(
-        base::TimeDelta::FromMilliseconds(kStartMillisecond));
+    testing_clock_->Advance(base::TimeTicks::Now() - base::TimeTicks());
     task_runner_ = new test::FakeSingleThreadTaskRunner(testing_clock_);
     cast_environment_ =
         new CastEnvironment(scoped_ptr<base::TickClock>(testing_clock_).Pass(),
@@ -88,7 +91,7 @@ class AudioSenderTest : public ::testing::Test {
   virtual ~AudioSenderTest() {}
 
   static void UpdateCastTransportStatus(transport::CastTransportStatus status) {
-    EXPECT_EQ(status, transport::TRANSPORT_AUDIO_INITIALIZED);
+    EXPECT_EQ(transport::TRANSPORT_AUDIO_INITIALIZED, status);
   }
 
   base::SimpleTestTickClock* testing_clock_;  // Owned by CastEnvironment.
@@ -108,12 +111,10 @@ TEST_F(AudioSenderTest, Encode20ms) {
                           TestAudioBusFactory::kMiddleANoteFreq,
                           0.5f).NextAudioBus(kDuration));
 
-  base::TimeTicks recorded_time = base::TimeTicks::Now();
-  audio_sender_->InsertAudio(bus.Pass(), recorded_time);
+  audio_sender_->InsertAudio(bus.Pass(), testing_clock_->NowTicks());
   task_runner_->RunTasks();
-  EXPECT_GE(
-      transport_.number_of_rtp_packets() + transport_.number_of_rtcp_packets(),
-      1);
+  EXPECT_LE(1, transport_.number_of_rtp_packets());
+  EXPECT_LE(1, transport_.number_of_rtcp_packets());
 }
 
 TEST_F(AudioSenderTest, RtcpTimer) {
@@ -124,8 +125,7 @@ TEST_F(AudioSenderTest, RtcpTimer) {
                           TestAudioBusFactory::kMiddleANoteFreq,
                           0.5f).NextAudioBus(kDuration));
 
-  base::TimeTicks recorded_time = base::TimeTicks::Now();
-  audio_sender_->InsertAudio(bus.Pass(), recorded_time);
+  audio_sender_->InsertAudio(bus.Pass(), testing_clock_->NowTicks());
   task_runner_->RunTasks();
 
   // Make sure that we send at least one RTCP packet.
@@ -133,8 +133,8 @@ TEST_F(AudioSenderTest, RtcpTimer) {
       base::TimeDelta::FromMilliseconds(1 + kDefaultRtcpIntervalMs * 3 / 2);
   testing_clock_->Advance(max_rtcp_timeout);
   task_runner_->RunTasks();
-  EXPECT_GE(transport_.number_of_rtp_packets(), 1);
-  EXPECT_EQ(transport_.number_of_rtcp_packets(), 1);
+  EXPECT_LE(1, transport_.number_of_rtp_packets());
+  EXPECT_LE(1, transport_.number_of_rtcp_packets());
 }
 
 }  // namespace cast

@@ -11,3 +11,4 @@ class ChromiumEndure(Master.Master1):
   master_port = 8026
   slave_port = 8126
   master_port_alt = 8226
+  buildbot_url = 'http://build.chromium.org/p/chromium.endure/'

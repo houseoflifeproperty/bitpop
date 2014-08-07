@@ -6,6 +6,7 @@
 
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
@@ -22,25 +23,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/test/cocoa_test_event_utils.h"
 #import "ui/gfx/test/ui_cocoa_test_helper.h"
-
-// Declare things that are part of the 10.7 SDK.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-enum {
-  NSEventPhaseNone        = 0, // event not associated with a phase.
-  NSEventPhaseBegan       = 0x1 << 0,
-  NSEventPhaseStationary  = 0x1 << 1,
-  NSEventPhaseChanged     = 0x1 << 2,
-  NSEventPhaseEnded       = 0x1 << 3,
-  NSEventPhaseCancelled   = 0x1 << 4,
-};
-typedef NSUInteger NSEventPhase;
-
-@interface NSEvent (LionAPI)
-- (NSEventPhase)phase;
-@end
-
-#endif  // 10.7
 
 // Helper class with methods used to mock -[NSEvent phase], used by
 // |MockScrollWheelEventWithPhase()|.
@@ -73,22 +55,23 @@ typedef NSUInteger NSEventPhase;
 
 @property(nonatomic) BOOL unhandledWheelEventReceived;
 
-- (void)gotUnhandledWheelEvent;
 @end
 
 @implementation MockRenderWidgetHostViewMacDelegate
 
 @synthesize unhandledWheelEventReceived = unhandledWheelEventReceived_;
 
-- (void)gotUnhandledWheelEvent {
-  unhandledWheelEventReceived_ = true;
+- (void)rendererHandledWheelEvent:(const blink::WebMouseWheelEvent&)event
+                         consumed:(BOOL)consumed {
+  if (!consumed)
+    unhandledWheelEventReceived_ = true;
 }
-- (void)touchesBeganWithEvent:(NSEvent*)event{}
-- (void)touchesMovedWithEvent:(NSEvent*)event{}
-- (void)touchesCancelledWithEvent:(NSEvent*)event{}
-- (void)touchesEndedWithEvent:(NSEvent*)event{}
-- (void)beginGestureWithEvent:(NSEvent*)event{}
-- (void)endGestureWithEvent:(NSEvent*)event{}
+- (void)touchesBeganWithEvent:(NSEvent*)event {}
+- (void)touchesMovedWithEvent:(NSEvent*)event {}
+- (void)touchesCancelledWithEvent:(NSEvent*)event {}
+- (void)touchesEndedWithEvent:(NSEvent*)event {}
+- (void)beginGestureWithEvent:(NSEvent*)event {}
+- (void)endGestureWithEvent:(NSEvent*)event {}
 - (BOOL)canRubberbandLeft:(NSView*)view {
   return true;
 }
@@ -717,9 +700,11 @@ TEST_F(RenderWidgetHostViewMacTest, ScrollWheelEndEventDelivery) {
   ASSERT_EQ(1U, process_host->sink().message_count());
 
   // Send an ACK for the first wheel event, so that the queue will be flushed.
-  scoped_ptr<IPC::Message> response(new InputHostMsg_HandleInputEvent_ACK(
-      0, blink::WebInputEvent::MouseWheel, INPUT_EVENT_ACK_STATE_CONSUMED,
-      ui::LatencyInfo()));
+  InputHostMsg_HandleInputEvent_ACK_Params ack;
+  ack.type = blink::WebInputEvent::MouseWheel;
+  ack.state = INPUT_EVENT_ACK_STATE_CONSUMED;
+  scoped_ptr<IPC::Message> response(
+      new InputHostMsg_HandleInputEvent_ACK(0, ack));
   host->OnMessageReceived(*response);
 
   // Post the NSEventPhaseEnded wheel event to NSApp and check whether the
@@ -761,9 +746,11 @@ TEST_F(RenderWidgetHostViewMacTest, IgnoreEmptyUnhandledWheelEvent) {
   process_host->sink().ClearMessages();
 
   // Indicate that the wheel event was unhandled.
-  scoped_ptr<IPC::Message> response1(new InputHostMsg_HandleInputEvent_ACK(0,
-      blink::WebInputEvent::MouseWheel, INPUT_EVENT_ACK_STATE_NOT_CONSUMED,
-      ui::LatencyInfo()));
+  InputHostMsg_HandleInputEvent_ACK_Params unhandled_ack;
+  unhandled_ack.type = blink::WebInputEvent::MouseWheel;
+  unhandled_ack.state = INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+  scoped_ptr<IPC::Message> response1(
+      new InputHostMsg_HandleInputEvent_ACK(0, unhandled_ack));
   host->OnMessageReceived(*response1);
 
   // Check that the view delegate got an unhandled wheel event.
@@ -776,9 +763,8 @@ TEST_F(RenderWidgetHostViewMacTest, IgnoreEmptyUnhandledWheelEvent) {
   ASSERT_EQ(1U, process_host->sink().message_count());
 
   // Indicate that the wheel event was also unhandled.
-  scoped_ptr<IPC::Message> response2(new InputHostMsg_HandleInputEvent_ACK(0,
-      blink::WebInputEvent::MouseWheel, INPUT_EVENT_ACK_STATE_NOT_CONSUMED,
-      ui::LatencyInfo()));
+  scoped_ptr<IPC::Message> response2(
+      new InputHostMsg_HandleInputEvent_ACK(0, unhandled_ack));
   host->OnMessageReceived(*response2);
 
   // Check that the view delegate ignored the empty unhandled wheel event.

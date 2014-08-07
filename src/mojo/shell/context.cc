@@ -10,14 +10,13 @@
 #include "base/memory/scoped_vector.h"
 #include "mojo/embedder/embedder.h"
 #include "mojo/gles2/gles2_support_impl.h"
-#include "mojo/public/cpp/shell/application.h"
+#include "mojo/public/cpp/application/application.h"
 #include "mojo/service_manager/background_service_loader.h"
 #include "mojo/service_manager/service_loader.h"
 #include "mojo/service_manager/service_manager.h"
 #include "mojo/services/native_viewport/native_viewport_service.h"
 #include "mojo/shell/dynamic_service_loader.h"
 #include "mojo/shell/in_process_dynamic_service_runner.h"
-#include "mojo/shell/network_delegate.h"
 #include "mojo/shell/out_of_process_dynamic_service_runner.h"
 #include "mojo/shell/switches.h"
 #include "mojo/spy/spy.h"
@@ -34,6 +33,12 @@ namespace mojo {
 namespace shell {
 namespace {
 
+// These mojo: URLs are loaded directly from the local filesystem. They
+// correspond to shared libraries bundled alongside the mojo_shell.
+const char* kLocalMojoURLs[] = {
+  "mojo:mojo_network_service",
+};
+
 // Used to ensure we only init once.
 class Setup {
  public:
@@ -49,7 +54,7 @@ class Setup {
   DISALLOW_COPY_AND_ASSIGN(Setup);
 };
 
-static base::LazyInstance<Setup> setup = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<Setup>::Leaky setup = LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -75,15 +80,13 @@ class Context::NativeViewportServiceLoader : public ServiceLoader {
 };
 
 Context::Context()
-    : task_runners_(base::MessageLoop::current()->message_loop_proxy()),
-      storage_(),
-      loader_(task_runners_.io_runner(),
-              task_runners_.file_runner(),
-              task_runners_.cache_runner(),
-              scoped_ptr<net::NetworkDelegate>(new NetworkDelegate()),
-              storage_.profile_path()) {
+    : task_runners_(base::MessageLoop::current()->message_loop_proxy()) {
   setup.Get();
-  CommandLine* cmdline = CommandLine::ForCurrentProcess();
+
+  for (size_t i = 0; i < arraysize(kLocalMojoURLs); ++i)
+    mojo_url_resolver_.AddLocalFileMapping(GURL(kLocalMojoURLs[i]));
+
+  base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
   scoped_ptr<DynamicServiceRunnerFactory> runner_factory;
   if (cmdline->HasSwitch(switches::kEnableMultiprocess))
     runner_factory.reset(new OutOfProcessDynamicServiceRunnerFactory());
@@ -100,7 +103,8 @@ Context::Context()
       scoped_ptr<ServiceLoader>(
           new BackgroundServiceLoader(
               scoped_ptr<ServiceLoader>(new NativeViewportServiceLoader(this)),
-              "native_viewport")),
+              "native_viewport",
+              base::MessageLoop::TYPE_UI)),
       GURL("mojo:mojo_native_viewport_service"));
 #if defined(USE_AURA)
   // TODO(sky): need a better way to find this. It shouldn't be linked in.

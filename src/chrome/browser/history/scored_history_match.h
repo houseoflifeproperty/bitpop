@@ -15,17 +15,16 @@
 #include "chrome/browser/history/in_memory_url_index_types.h"
 #include "testing/gtest/include/gtest/gtest_prod.h"
 
-class BookmarkService;
-
 namespace history {
 
+class HistoryClient;
 class ScoredHistoryMatchTest;
 
 // An HistoryMatch that has a score as well as metrics defining where in the
 // history item's URL and/or page title matches have occurred.
 class ScoredHistoryMatch : public history::HistoryMatch {
  public:
-  // The maximum number of recent visits to examine in GetFrecency().
+  // The maximum number of recent visits to examine in GetFrequency().
   // Public so url_index_private_data.cc knows how many visits it is
   // expected to deliver (at minimum) to this class.
   static const size_t kMaxVisitsToScore;
@@ -41,7 +40,7 @@ class ScoredHistoryMatch : public history::HistoryMatch {
   // terms, it's appropriate to look for the word boundary within the term.
   // For instance, the term ".net" should look for a word boundary at the "n".
   // These offsets (".net" should have an offset of 1) come from
-  // |terms_to_word_starts_offsets|.  |bookmark_service| is used to determine
+  // |terms_to_word_starts_offsets|.  |history_client| is used to determine
   // if the match's URL is referenced by any bookmarks, which can also affect
   // the raw score.  The raw score allows the matches to be ordered and can be
   // used to influence the final score calculated by the client of this index.
@@ -55,7 +54,7 @@ class ScoredHistoryMatch : public history::HistoryMatch {
                      const WordStarts& terms_to_word_starts_offsets,
                      const RowWordStarts& word_starts,
                      const base::Time now,
-                     BookmarkService* bookmark_service);
+                     HistoryClient* history_client);
   ~ScoredHistoryMatch();
 
   // Compares two matches by score.  Functor supporting URLIndexPrivateData's
@@ -123,15 +122,15 @@ class ScoredHistoryMatch : public history::HistoryMatch {
   // how often those visits are typed navigations (i.e., explicitly
   // invoked by the user).  |now| is passed in to avoid unnecessarily
   // recomputing it frequently.
-  static float GetFrecency(const base::Time& now,
-                           const bool bookmarked,
-                           const VisitInfoVector& visits);
+  static float GetFrequency(const base::Time& now,
+                            const bool bookmarked,
+                            const VisitInfoVector& visits);
 
   // Combines the two component scores into a final score that's
   // an appropriate value to use as a relevancy score.
   static float GetFinalRelevancyScore(
       float topicality_score,
-      float frecency_score);
+      float frequency_score);
 
   // Sets |also_do_hup_like_scoring_|,
   // |max_assigned_score_for_non_inlineable_matches_|, |bookmark_value_|,

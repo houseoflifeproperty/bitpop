@@ -9,14 +9,17 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:base_i18n',
         '../google_apis/google_apis.gyp:google_apis',
         '../net/net.gyp:net',
         '../ui/base/ui_base.gyp:ui_base',
         '../url/url.gyp:url_lib',
         'components_resources.gyp:components_resources',
+        'components_strings.gyp:components_strings',
+        'infobars_core',
         'language_usage_metrics',
+        'pref_registry',
         'translate_core_common',
-        'user_prefs',
       ],
       'include_dirs': [
         '..',
@@ -24,6 +27,8 @@
       'sources': [
         'translate/core/browser/language_state.cc',
         'translate/core/browser/language_state.h',
+        'translate/core/browser/options_menu_model.cc',
+        'translate/core/browser/options_menu_model.h',
         'translate/core/browser/page_translated_details.h',
         'translate/core/browser/translate_accept_languages.cc',
         'translate/core/browser/translate_accept_languages.h',
@@ -36,6 +41,8 @@
         'translate/core/browser/translate_error_details.h',
         'translate/core/browser/translate_event_details.cc',
         'translate/core/browser/translate_event_details.h',
+        'translate/core/browser/translate_infobar_delegate.cc',
+        'translate/core/browser/translate_infobar_delegate.h',
         'translate/core/browser/translate_language_list.cc',
         'translate/core/browser/translate_language_list.h',
         'translate/core/browser/translate_manager.cc',
@@ -80,7 +87,7 @@
       ],
     },
     {
-      'target_name': 'translate_language_detection',
+      'target_name': 'translate_core_language_detection',
       'type': 'static_library',
       'dependencies': [
         'translate_core_common',
@@ -91,8 +98,8 @@
         '..',
       ],
       'sources': [
-        'translate/language_detection/language_detection_util.cc',
-        'translate/language_detection/language_detection_util.h',
+        'translate/core/language_detection/language_detection_util.cc',
+        'translate/core/language_detection/language_detection_util.h',
       ],
       'conditions': [
         ['cld_version==0 or cld_version==1', {
@@ -132,7 +139,7 @@
           'type': 'static_library',
           'dependencies': [
             'translate_core_common',
-            'translate_language_detection',
+            'translate_core_language_detection',
             '../base/base.gyp:base',
             '../content/content.gyp:content_common',
             '../ipc/ipc.gyp:ipc',

@@ -40,16 +40,27 @@ class PasswordStoreX : public password_manager::PasswordStoreDefault {
 
     virtual bool Init() = 0;
 
-    virtual bool AddLogin(const autofill::PasswordForm& form) = 0;
-    virtual bool UpdateLogin(const autofill::PasswordForm& form) = 0;
+    virtual password_manager::PasswordStoreChangeList AddLogin(
+        const autofill::PasswordForm& form) = 0;
+    virtual bool UpdateLogin(
+        const autofill::PasswordForm& form,
+        password_manager::PasswordStoreChangeList* changes) = 0;
     virtual bool RemoveLogin(const autofill::PasswordForm& form) = 0;
-    virtual bool RemoveLoginsCreatedBetween(const base::Time& delete_begin,
-                                            const base::Time& delete_end) = 0;
+
+    // Removes all logins created/synced from |delete_begin| onwards (inclusive)
+    // and before |delete_end|. You may use a null Time value to do an unbounded
+    // delete in either direction.
+    virtual bool RemoveLoginsCreatedBetween(
+        base::Time delete_begin,
+        base::Time delete_end,
+        password_manager::PasswordStoreChangeList* changes) = 0;
+    virtual bool RemoveLoginsSyncedBetween(
+        base::Time delete_begin,
+        base::Time delete_end,
+        password_manager::PasswordStoreChangeList* changes) = 0;
+
     virtual bool GetLogins(const autofill::PasswordForm& form,
                            PasswordFormList* forms) = 0;
-    virtual bool GetLoginsCreatedBetween(const base::Time& get_begin,
-                                         const base::Time& get_end,
-                                         PasswordFormList* forms) = 0;
     virtual bool GetAutofillableLogins(PasswordFormList* forms) = 0;
     virtual bool GetBlacklistLogins(PasswordFormList* forms) = 0;
   };
@@ -74,8 +85,11 @@ class PasswordStoreX : public password_manager::PasswordStoreDefault {
   virtual password_manager::PasswordStoreChangeList RemoveLoginImpl(
       const autofill::PasswordForm& form) OVERRIDE;
   virtual password_manager::PasswordStoreChangeList
-      RemoveLoginsCreatedBetweenImpl(const base::Time& delete_begin,
-                                     const base::Time& delete_end) OVERRIDE;
+      RemoveLoginsCreatedBetweenImpl(base::Time delete_begin,
+                                     base::Time delete_end) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList
+      RemoveLoginsSyncedBetweenImpl(base::Time delete_begin,
+                                    base::Time delete_end) OVERRIDE;
   virtual void GetLoginsImpl(
       const autofill::PasswordForm& form,
       AuthorizationPromptPolicy prompt_policy,

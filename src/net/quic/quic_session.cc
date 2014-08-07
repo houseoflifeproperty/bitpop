@@ -8,6 +8,7 @@
 #include "net/quic/crypto/proof_verifier.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_flags.h"
+#include "net/quic/quic_flow_controller.h"
 #include "net/quic/quic_headers_stream.h"
 #include "net/ssl/ssl_info.h"
 
@@ -78,8 +79,8 @@ class VisitorShim : public QuicConnectionVisitorInterface {
     session_->OnWriteBlocked();
   }
 
-  virtual bool HasPendingWrites() const OVERRIDE {
-    return session_->HasPendingWrites();
+  virtual bool WillingAndAbleToWrite() const OVERRIDE {
+    return session_->WillingAndAbleToWrite();
   }
 
   virtual bool HasPendingHandshake() const OVERRIDE {
@@ -94,8 +95,7 @@ class VisitorShim : public QuicConnectionVisitorInterface {
   QuicSession* session_;
 };
 
-QuicSession::QuicSession(QuicConnection* connection,
-                         const QuicConfig& config)
+QuicSession::QuicSession(QuicConnection* connection, const QuicConfig& config)
     : connection_(connection),
       visitor_shim_(new VisitorShim(this)),
       config_(config),
@@ -106,6 +106,17 @@ QuicSession::QuicSession(QuicConnection* connection,
       goaway_received_(false),
       goaway_sent_(false),
       has_pending_handshake_(false) {
+  if (connection_->version() <= QUIC_VERSION_19) {
+    flow_controller_.reset(new QuicFlowController(
+        connection_.get(), 0, is_server(), kDefaultFlowControlSendWindow,
+        config_.GetInitialFlowControlWindowToSend(),
+        config_.GetInitialFlowControlWindowToSend()));
+  } else {
+    flow_controller_.reset(new QuicFlowController(
+        connection_.get(), 0, is_server(), kDefaultFlowControlSendWindow,
+        config_.GetInitialSessionFlowControlWindowToSend(),
+        config_.GetInitialSessionFlowControlWindowToSend()));
+  }
 
   connection_->set_visitor(visitor_shim_.get());
   connection_->SetFromConfig(config_);
@@ -125,14 +136,30 @@ QuicSession::QuicSession(QuicConnection* connection,
 QuicSession::~QuicSession() {
   STLDeleteElements(&closed_streams_);
   STLDeleteValues(&stream_map_);
+
+  DLOG_IF(WARNING,
+          locally_closed_streams_highest_offset_.size() > max_open_streams_)
+      << "Surprisingly high number of locally closed streams still waiting for "
+         "final byte offset: " << locally_closed_streams_highest_offset_.size();
 }
 
 void QuicSession::OnStreamFrames(const vector<QuicStreamFrame>& frames) {
   for (size_t i = 0; i < frames.size(); ++i) {
     // TODO(rch) deal with the error case of stream id 0.
-    QuicStreamId stream_id = frames[i].stream_id;
+    const QuicStreamFrame& frame = frames[i];
+    QuicStreamId stream_id = frame.stream_id;
     ReliableQuicStream* stream = GetStream(stream_id);
     if (!stream) {
+      // The stream no longer exists, but we may still be interested in the
+      // final stream byte offset sent by the peer. A frame with a FIN can give
+      // us this offset.
+      if (frame.fin) {
+        QuicStreamOffset final_byte_offset =
+            frame.offset + frame.data.TotalBufferSize();
+        UpdateFlowControlOnFinalReceivedByteOffset(stream_id,
+                                                   final_byte_offset);
+      }
+
       continue;
     }
     stream->OnStreamFrame(frames[i]);
@@ -183,8 +210,13 @@ void QuicSession::OnRstStream(const QuicRstStreamFrame& frame) {
         "Attempt to reset the headers stream");
     return;
   }
+
   QuicDataStream* stream = GetDataStream(frame.stream_id);
   if (!stream) {
+    // The RST frame contains the final byte offset for the stream: we can now
+    // update the connection level flow controller if needed.
+    UpdateFlowControlOnFinalReceivedByteOffset(frame.stream_id,
+                                               frame.byte_offset);
     return;  // Errors are handled by GetStream.
   }
 
@@ -228,9 +260,8 @@ void QuicSession::OnWindowUpdateFrames(
       DVLOG(1) << ENDPOINT
                << "Received connection level flow control window update with "
                   "byte offset: " << frames[i].byte_offset;
-      if (FLAGS_enable_quic_connection_flow_control &&
-          connection()->flow_controller()->UpdateSendWindowOffset(
-              frames[i].byte_offset)) {
+      if (FLAGS_enable_quic_connection_flow_control_2 &&
+          flow_controller_->UpdateSendWindowOffset(frames[i].byte_offset)) {
         connection_window_updated = true;
       }
       continue;
@@ -261,9 +292,22 @@ void QuicSession::OnBlockedFrames(const vector<QuicBlockedFrame>& frames) {
 
 void QuicSession::OnCanWrite() {
   // We limit the number of writes to the number of pending streams. If more
-  // streams become pending, HasPendingWrites will be true, which will cause
-  // the connection to request resumption before yielding to other connections.
+  // streams become pending, WillingAndAbleToWrite will be true, which will
+  // cause the connection to request resumption before yielding to other
+  // connections.
   size_t num_writes = write_blocked_streams_.NumBlockedStreams();
+  if (flow_controller_->IsBlocked()) {
+    // If we are connection level flow control blocked, then only allow the
+    // crypto and headers streams to try writing as all other streams will be
+    // blocked.
+    num_writes = 0;
+    if (write_blocked_streams_.crypto_stream_blocked()) {
+      num_writes += 1;
+    }
+    if (write_blocked_streams_.headers_stream_blocked()) {
+      num_writes += 1;
+    }
+  }
   if (num_writes == 0) {
     return;
   }
@@ -271,7 +315,8 @@ void QuicSession::OnCanWrite() {
   QuicConnection::ScopedPacketBundler ack_bundler(
       connection_.get(), QuicConnection::NO_ACK);
   for (size_t i = 0; i < num_writes; ++i) {
-    if (!write_blocked_streams_.HasWriteBlockedStreams()) {
+    if (!(write_blocked_streams_.HasWriteBlockedCryptoOrHeadersStream() ||
+          write_blocked_streams_.HasWriteBlockedDataStreams())) {
       // Writing one stream removed another!? Something's broken.
       LOG(DFATAL) << "WriteBlockedStream is missing";
       connection_->CloseConnection(QUIC_INTERNAL_ERROR, false);
@@ -293,8 +338,14 @@ void QuicSession::OnCanWrite() {
   }
 }
 
-bool QuicSession::HasPendingWrites() const {
-  return write_blocked_streams_.HasWriteBlockedStreams();
+bool QuicSession::WillingAndAbleToWrite() const {
+  // If the crypto or headers streams are blocked, we want to schedule a write -
+  // they don't get blocked by connection level flow control. Otherwise only
+  // schedule a write if we are not flow control blocked at the connection
+  // level.
+  return write_blocked_streams_.HasWriteBlockedCryptoOrHeadersStream() ||
+         (!flow_controller_->IsBlocked() &&
+          write_blocked_streams_.HasWriteBlockedDataStreams());
 }
 
 bool QuicSession::HasPendingHandshake() const {
@@ -310,8 +361,9 @@ QuicConsumedData QuicSession::WritevData(
     const IOVector& data,
     QuicStreamOffset offset,
     bool fin,
+    FecProtection fec_protection,
     QuicAckNotifier::DelegateInterface* ack_notifier_delegate) {
-  return connection_->SendStreamData(id, data, offset, fin,
+  return connection_->SendStreamData(id, data, offset, fin, fec_protection,
                                      ack_notifier_delegate);
 }
 
@@ -362,8 +414,48 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id,
   }
 
   closed_streams_.push_back(it->second);
+
+  // If we haven't received a FIN or RST for this stream, we need to keep track
+  // of the how many bytes the stream's flow controller believes it has
+  // received, for accurate connection level flow control accounting.
+  if (!stream->HasFinalReceivedByteOffset() &&
+      stream->flow_controller()->IsEnabled() &&
+      FLAGS_enable_quic_connection_flow_control_2) {
+    locally_closed_streams_highest_offset_[stream_id] =
+        stream->flow_controller()->highest_received_byte_offset();
+  }
+
   stream_map_.erase(it);
   stream->OnClose();
+}
+
+void QuicSession::UpdateFlowControlOnFinalReceivedByteOffset(
+    QuicStreamId stream_id, QuicStreamOffset final_byte_offset) {
+  if (!FLAGS_enable_quic_connection_flow_control_2) {
+    return;
+  }
+
+  map<QuicStreamId, QuicStreamOffset>::iterator it =
+      locally_closed_streams_highest_offset_.find(stream_id);
+  if (it == locally_closed_streams_highest_offset_.end()) {
+    return;
+  }
+
+  DVLOG(1) << ENDPOINT << "Received final byte offset " << final_byte_offset
+           << " for stream " << stream_id;
+  uint64 offset_diff = final_byte_offset - it->second;
+  if (flow_controller_->UpdateHighestReceivedOffset(
+      flow_controller_->highest_received_byte_offset() + offset_diff)) {
+    // If the final offset violates flow control, close the connection now.
+    if (flow_controller_->FlowControlViolation()) {
+      connection_->SendConnectionClose(
+          QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA);
+      return;
+    }
+  }
+
+  flow_controller_->AddBytesConsumed(offset_diff);
+  locally_closed_streams_highest_offset_.erase(it);
 }
 
 bool QuicSession::IsEncryptionEstablished() {
@@ -376,32 +468,68 @@ bool QuicSession::IsCryptoHandshakeConfirmed() {
 
 void QuicSession::OnConfigNegotiated() {
   connection_->SetFromConfig(config_);
-  // Tell all streams about the newly received peer receive window.
-  if (connection()->version() >= QUIC_VERSION_17 &&
-      config_.HasReceivedInitialFlowControlWindowBytes()) {
-    // Streams which were created before the SHLO was received (0RTT requests)
-    // are now informed of the peer's initial flow control window.
-    uint32 new_flow_control_send_window =
-        config_.ReceivedInitialFlowControlWindowBytes();
-    if (new_flow_control_send_window < kDefaultFlowControlSendWindow) {
-      LOG(ERROR)
-          << "Peer sent us an invalid flow control send window: "
-          << new_flow_control_send_window
-          << ", below default: " << kDefaultFlowControlSendWindow;
-      connection_->SendConnectionClose(QUIC_FLOW_CONTROL_ERROR);
-      return;
-    }
-    DataStreamMap::iterator it = stream_map_.begin();
-    while (it != stream_map_.end()) {
-      it->second->flow_controller()->UpdateSendWindowOffset(
-          new_flow_control_send_window);
-      it++;
+  QuicVersion version = connection()->version();
+  if (version < QUIC_VERSION_17) {
+    return;
+  }
+
+  if (version <= QUIC_VERSION_19) {
+    // QUIC_VERSION_17,18,19 don't support independent stream/session flow
+    // control windows.
+    if (config_.HasReceivedInitialFlowControlWindowBytes()) {
+      // Streams which were created before the SHLO was received (0-RTT
+      // requests) are now informed of the peer's initial flow control window.
+      uint32 new_window = config_.ReceivedInitialFlowControlWindowBytes();
+      OnNewStreamFlowControlWindow(new_window);
+      OnNewSessionFlowControlWindow(new_window);
     }
 
-    // Update connection level window.
-    connection()->flow_controller()->UpdateSendWindowOffset(
-        new_flow_control_send_window);
+    return;
   }
+
+  // QUIC_VERSION_20 and higher can have independent stream and session flow
+  // control windows.
+  if (config_.HasReceivedInitialStreamFlowControlWindowBytes()) {
+    // Streams which were created before the SHLO was received (0-RTT
+    // requests) are now informed of the peer's initial flow control window.
+    OnNewStreamFlowControlWindow(
+        config_.ReceivedInitialStreamFlowControlWindowBytes());
+  }
+  if (config_.HasReceivedInitialSessionFlowControlWindowBytes()) {
+    OnNewSessionFlowControlWindow(
+        config_.ReceivedInitialSessionFlowControlWindowBytes());
+  }
+}
+
+void QuicSession::OnNewStreamFlowControlWindow(uint32 new_window) {
+  if (new_window < kDefaultFlowControlSendWindow) {
+    LOG(ERROR)
+        << "Peer sent us an invalid stream flow control send window: "
+        << new_window << ", below default: " << kDefaultFlowControlSendWindow;
+    if (connection_->connected()) {
+      connection_->SendConnectionClose(QUIC_FLOW_CONTROL_INVALID_WINDOW);
+    }
+    return;
+  }
+
+  for (DataStreamMap::iterator it = stream_map_.begin();
+       it != stream_map_.end(); ++it) {
+    it->second->flow_controller()->UpdateSendWindowOffset(new_window);
+  }
+}
+
+void QuicSession::OnNewSessionFlowControlWindow(uint32 new_window) {
+  if (new_window < kDefaultFlowControlSendWindow) {
+    LOG(ERROR)
+        << "Peer sent us an invalid session flow control send window: "
+        << new_window << ", below default: " << kDefaultFlowControlSendWindow;
+    if (connection_->connected()) {
+      connection_->SendConnectionClose(QUIC_FLOW_CONTROL_INVALID_WINDOW);
+    }
+    return;
+  }
+
+  flow_controller_->UpdateSendWindowOffset(new_window);
 }
 
 void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
@@ -422,7 +550,7 @@ void QuicSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
           << "Handshake confirmed without parameter negotiation.";
       // Discard originally encrypted packets, since they can't be decrypted by
       // the peer.
-      connection_->DiscardUnencryptedPackets();
+      connection_->NeuterUnencryptedPackets();
       connection_->SetOverallConnectionTimeout(QuicTime::Delta::Infinite());
       max_open_streams_ = config_.max_streams_per_connection();
       break;
@@ -591,8 +719,9 @@ void QuicSession::MarkWriteBlocked(QuicStreamId id, QuicPriority priority) {
 }
 
 bool QuicSession::HasDataToWrite() const {
-  return write_blocked_streams_.HasWriteBlockedStreams() ||
-      connection_->HasQueuedData();
+  return write_blocked_streams_.HasWriteBlockedCryptoOrHeadersStream() ||
+         write_blocked_streams_.HasWriteBlockedDataStreams() ||
+         connection_->HasQueuedData();
 }
 
 bool QuicSession::GetSSLInfo(SSLInfo* ssl_info) const {
@@ -603,6 +732,21 @@ bool QuicSession::GetSSLInfo(SSLInfo* ssl_info) const {
 void QuicSession::PostProcessAfterData() {
   STLDeleteElements(&closed_streams_);
   closed_streams_.clear();
+}
+
+void QuicSession::OnSuccessfulVersionNegotiation(const QuicVersion& version) {
+  if (version < QUIC_VERSION_19) {
+    flow_controller_->Disable();
+  }
+
+  // Inform all streams about the negotiated version. They may have been created
+  // with a different version.
+  for (DataStreamMap::iterator it = stream_map_.begin();
+       it != stream_map_.end(); ++it) {
+    if (version < QUIC_VERSION_17) {
+      it->second->flow_controller()->Disable();
+    }
+  }
 }
 
 }  // namespace net

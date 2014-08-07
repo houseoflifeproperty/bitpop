@@ -23,8 +23,7 @@ class ChromeNetBenchmarkingMessageFilter
       net::URLRequestContextGetter* request_context);
 
   // content::BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:
   virtual ~ChromeNetBenchmarkingMessageFilter();
@@ -33,7 +32,6 @@ class ChromeNetBenchmarkingMessageFilter
   void OnCloseCurrentConnections();
   void OnClearCache(IPC::Message* reply_msg);
   void OnClearHostResolverCache(int* result);
-  void OnEnableSpdy(bool enable);
   void OnSetCacheMode(bool enabled);
   void OnClearPredictorCache(int* result);
 

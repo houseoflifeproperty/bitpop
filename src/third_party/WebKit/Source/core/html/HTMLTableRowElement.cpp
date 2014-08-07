@@ -25,8 +25,8 @@
 #include "config.h"
 #include "core/html/HTMLTableRowElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLCollection.h"
@@ -38,11 +38,13 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLTableRowElement::HTMLTableRowElement(Document& document)
+inline HTMLTableRowElement::HTMLTableRowElement(Document& document)
     : HTMLTablePartElement(trTag, document)
 {
     ScriptWrappable::init(this);
 }
+
+DEFINE_NODE_FACTORY(HTMLTableRowElement)
 
 bool HTMLTableRowElement::hasLegalLinkAttribute(const QualifiedName& name) const
 {
@@ -52,11 +54,6 @@ bool HTMLTableRowElement::hasLegalLinkAttribute(const QualifiedName& name) const
 const QualifiedName& HTMLTableRowElement::subResourceAttributeName() const
 {
     return backgroundAttr;
-}
-
-PassRefPtrWillBeRawPtr<HTMLTableRowElement> HTMLTableRowElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLTableRowElement(document));
 }
 
 int HTMLTableRowElement::rowIndex() const
@@ -127,7 +124,7 @@ PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableRowElement::insertCell(ExceptionSta
 
 PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, ExceptionState& exceptionState)
 {
-    RefPtr<HTMLCollection> children = cells();
+    RefPtrWillBeRawPtr<HTMLCollection> children = cells();
     int numCells = children ? children->length() : 0;
     if (index < -1 || index > numCells) {
         exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(index) + ") is outside the range [-1, " + String::number(numCells) + "].");
@@ -144,7 +141,7 @@ PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableRowElement::insertCell(int index, E
 
 void HTMLTableRowElement::deleteCell(int index, ExceptionState& exceptionState)
 {
-    RefPtr<HTMLCollection> children = cells();
+    RefPtrWillBeRawPtr<HTMLCollection> children = cells();
     int numCells = children ? children->length() : 0;
     if (index == -1)
         index = numCells-1;
@@ -156,7 +153,7 @@ void HTMLTableRowElement::deleteCell(int index, ExceptionState& exceptionState)
     }
 }
 
-PassRefPtr<HTMLCollection> HTMLTableRowElement::cells()
+PassRefPtrWillBeRawPtr<HTMLCollection> HTMLTableRowElement::cells()
 {
     return ensureCachedHTMLCollection(TRCells);
 }

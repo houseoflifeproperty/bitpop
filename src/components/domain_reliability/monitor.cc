@@ -8,94 +8,69 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
+#include "base/task_runner.h"
+#include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "components/domain_reliability/baked_in_configs.h"
-#include "content/public/browser/browser_thread.h"
 #include "net/base/load_flags.h"
+#include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
-namespace {
-
-bool OnIOThread() {
-  return content::BrowserThread::CurrentlyOn(content::BrowserThread::IO);
-}
-
-// Shamelessly stolen from net/tools/get_server_time/get_server_time.cc.
-// TODO(ttuttle): Merge them, if possible.
-class TrivialURLRequestContextGetter : public net::URLRequestContextGetter {
- public:
-  TrivialURLRequestContextGetter(
-      net::URLRequestContext* context,
-      const scoped_refptr<base::SingleThreadTaskRunner>& main_task_runner)
-      : context_(context),
-        main_task_runner_(main_task_runner) {}
-
-  // net::URLRequestContextGetter implementation:
-  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE {
-    return context_;
-  }
-
-  virtual scoped_refptr<base::SingleThreadTaskRunner>
-  GetNetworkTaskRunner() const OVERRIDE {
-    return main_task_runner_;
-  }
-
- private:
-  virtual ~TrivialURLRequestContextGetter() {}
-
-  net::URLRequestContext* context_;
-  const scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
-};
-
-}  // namespace
-
 namespace domain_reliability {
 
 DomainReliabilityMonitor::DomainReliabilityMonitor(
-    net::URLRequestContext* url_request_context,
     const std::string& upload_reporter_string)
     : time_(new ActualTime()),
-      url_request_context_getter_(scoped_refptr<net::URLRequestContextGetter>(
-          new TrivialURLRequestContextGetter(
-              url_request_context,
-              content::BrowserThread::GetMessageLoopProxyForThread(
-                  content::BrowserThread::IO)))),
       upload_reporter_string_(upload_reporter_string),
       scheduler_params_(
           DomainReliabilityScheduler::Params::GetFromFieldTrialsOrDefaults()),
       dispatcher_(time_.get()),
-      uploader_(
-          DomainReliabilityUploader::Create(url_request_context_getter_)) {
-  DCHECK(OnIOThread());
-}
+      was_cleared_(false),
+      cleared_mode_(MAX_CLEAR_MODE),
+      weak_factory_(this) {}
 
 DomainReliabilityMonitor::DomainReliabilityMonitor(
-    net::URLRequestContext* url_request_context,
     const std::string& upload_reporter_string,
     scoped_ptr<MockableTime> time)
     : time_(time.Pass()),
-      url_request_context_getter_(scoped_refptr<net::URLRequestContextGetter>(
-          new TrivialURLRequestContextGetter(
-              url_request_context,
-              content::BrowserThread::GetMessageLoopProxyForThread(
-                  content::BrowserThread::IO)))),
       upload_reporter_string_(upload_reporter_string),
       scheduler_params_(
           DomainReliabilityScheduler::Params::GetFromFieldTrialsOrDefaults()),
       dispatcher_(time_.get()),
-      uploader_(
-          DomainReliabilityUploader::Create(url_request_context_getter_)) {
-  DCHECK(OnIOThread());
-}
+      was_cleared_(false),
+      cleared_mode_(MAX_CLEAR_MODE),
+      weak_factory_(this) {}
 
 DomainReliabilityMonitor::~DomainReliabilityMonitor() {
-  DCHECK(OnIOThread());
-  STLDeleteContainerPairSecondPointers(contexts_.begin(), contexts_.end());
+  ClearContexts();
+}
+
+void DomainReliabilityMonitor::Init(
+    net::URLRequestContext* url_request_context,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) {
+  DCHECK(!thread_checker_);
+
+  scoped_refptr<net::URLRequestContextGetter> url_request_context_getter =
+      new net::TrivialURLRequestContextGetter(url_request_context,
+                                              task_runner);
+  Init(url_request_context_getter);
+}
+
+void DomainReliabilityMonitor::Init(
+    scoped_refptr<net::URLRequestContextGetter> url_request_context_getter) {
+  DCHECK(!thread_checker_);
+
+  DCHECK(url_request_context_getter->GetNetworkTaskRunner()->
+         RunsTasksOnCurrentThread());
+
+  uploader_ = DomainReliabilityUploader::Create(url_request_context_getter);
+  thread_checker_.reset(new base::ThreadChecker());
 }
 
 void DomainReliabilityMonitor::AddBakedInConfigs() {
+  DCHECK(thread_checker_ && thread_checker_->CalledOnValidThread());
   base::Time now = base::Time::Now();
   for (size_t i = 0; kBakedInJsonConfigs[i]; ++i) {
     std::string json(kBakedInJsonConfigs[i]);
@@ -111,18 +86,18 @@ void DomainReliabilityMonitor::AddBakedInConfigs() {
 }
 
 void DomainReliabilityMonitor::OnBeforeRedirect(net::URLRequest* request) {
-  DCHECK(OnIOThread());
+  DCHECK(thread_checker_ && thread_checker_->CalledOnValidThread());
   // Record the redirect itself in addition to the final request.
   OnRequestLegComplete(RequestInfo(*request));
 }
 
 void DomainReliabilityMonitor::OnCompleted(net::URLRequest* request,
                                            bool started) {
-  DCHECK(OnIOThread());
+  DCHECK(thread_checker_ && thread_checker_->CalledOnValidThread());
   if (!started)
     return;
   RequestInfo request_info(*request);
-  if (request_info.DefinitelyReachedNetwork()) {
+  if (request_info.AccessedNetwork()) {
     OnRequestLegComplete(request_info);
     // A request was just using the network, so now is a good time to run any
     // pending and eligible uploads.
@@ -130,8 +105,31 @@ void DomainReliabilityMonitor::OnCompleted(net::URLRequest* request,
   }
 }
 
+void DomainReliabilityMonitor::ClearBrowsingData(
+   DomainReliabilityClearMode mode) {
+  DCHECK(thread_checker_ && thread_checker_->CalledOnValidThread());
+
+  was_cleared_ = true;
+  cleared_mode_ = mode;
+
+  switch (mode) {
+    case CLEAR_BEACONS: {
+      ContextMap::const_iterator it;
+      for (it = contexts_.begin(); it != contexts_.end(); ++it)
+        it->second->ClearBeacons();
+      break;
+    };
+    case CLEAR_CONTEXTS:
+      ClearContexts();
+      break;
+    case MAX_CLEAR_MODE:
+      NOTREACHED();
+  }
+}
+
 DomainReliabilityContext* DomainReliabilityMonitor::AddContextForTesting(
     scoped_ptr<const DomainReliabilityConfig> config) {
+  DCHECK(thread_checker_ && thread_checker_->CalledOnValidThread());
   return AddContext(config.Pass());
 }
 
@@ -141,21 +139,17 @@ DomainReliabilityMonitor::RequestInfo::RequestInfo(
     const net::URLRequest& request)
     : url(request.url()),
       status(request.status()),
-      response_code(-1),
-      socket_address(request.GetSocketAddress()),
-      was_cached(request.was_cached()),
+      response_info(request.response_info()),
       load_flags(request.load_flags()),
       is_upload(DomainReliabilityUploader::URLRequestIsUpload(request)) {
   request.GetLoadTimingInfo(&load_timing_info);
-  // Can't get response code of a canceled request -- there's no transaction.
-  if (status.status() != net::URLRequestStatus::CANCELED)
-    response_code = request.GetResponseCode();
 }
 
 DomainReliabilityMonitor::RequestInfo::~RequestInfo() {}
 
-bool DomainReliabilityMonitor::RequestInfo::DefinitelyReachedNetwork() const {
-  return status.status() != net::URLRequestStatus::CANCELED && !was_cached;
+bool DomainReliabilityMonitor::RequestInfo::AccessedNetwork() const {
+  return status.status() != net::URLRequestStatus::CANCELED &&
+     response_info.network_accessed;
 }
 
 DomainReliabilityContext* DomainReliabilityMonitor::AddContext(
@@ -182,43 +176,59 @@ DomainReliabilityContext* DomainReliabilityMonitor::AddContext(
   return map_it.first->second;
 }
 
+void DomainReliabilityMonitor::ClearContexts() {
+  STLDeleteContainerPairSecondPointers(
+      contexts_.begin(), contexts_.end());
+  contexts_.clear();
+}
+
 void DomainReliabilityMonitor::OnRequestLegComplete(
     const RequestInfo& request) {
-  if (!request.DefinitelyReachedNetwork())
-    return;
-
-  // Don't monitor requests that are not sending cookies, since sending a beacon
-  // for such requests may allow the server to correlate that request with the
-  // user (by correlating a particular config).
-  if (request.load_flags & net::LOAD_DO_NOT_SEND_COOKIES)
-    return;
-
-  // Don't monitor requests that were, themselves, Domain Reliability uploads,
-  // to avoid infinite chains of uploads.
-  if (request.is_upload)
-    return;
-
-  ContextMap::iterator it = contexts_.find(request.url.host());
-  if (it == contexts_.end())
-    return;
-  DomainReliabilityContext* context = it->second;
-
+  int response_code;
+  if (request.response_info.headers)
+    response_code = request.response_info.headers->response_code();
+  else
+    response_code = -1;
+  ContextMap::iterator context_it;
   std::string beacon_status;
-  bool got_status = GetDomainReliabilityBeaconStatus(
-      request.status.error(),
-      request.response_code,
-      &beacon_status);
-  if (!got_status)
+
+  int error_code = net::OK;
+  if (request.status.status() == net::URLRequestStatus::FAILED)
+    error_code = request.status.error();
+
+  // Ignore requests where:
+  // 1. There is no context for the request host.
+  // 2. The request did not access the network.
+  // 3. The request is not supposed to send cookies (to avoid associating the
+  //    request with any potentially unique data in the config).
+  // 4. The request was itself a Domain Reliability upload (to avoid loops).
+  // 5. There is no defined beacon status for the error or HTTP response code
+  //    (to avoid leaking network-local errors).
+  if ((context_it = contexts_.find(request.url.host())) == contexts_.end() ||
+      !request.AccessedNetwork() ||
+      (request.load_flags & net::LOAD_DO_NOT_SEND_COOKIES) ||
+      request.is_upload ||
+      !GetDomainReliabilityBeaconStatus(
+          error_code, response_code, &beacon_status)) {
     return;
+  }
 
   DomainReliabilityBeacon beacon;
   beacon.status = beacon_status;
-  beacon.chrome_error = request.status.error();
-  beacon.server_ip = request.socket_address.host();
-  beacon.http_response_code = request.response_code;
+  beacon.chrome_error = error_code;
+  if (!request.response_info.was_fetched_via_proxy)
+    beacon.server_ip = request.response_info.socket_address.host();
+  else
+    beacon.server_ip.clear();
+  beacon.http_response_code = response_code;
   beacon.start_time = request.load_timing_info.request_start;
   beacon.elapsed = time_->NowTicks() - beacon.start_time;
-  context->OnBeacon(request.url, beacon);
+  context_it->second->OnBeacon(request.url, beacon);
+}
+
+base::WeakPtr<DomainReliabilityMonitor>
+DomainReliabilityMonitor::MakeWeakPtr() {
+  return weak_factory_.GetWeakPtr();
 }
 
 }  // namespace domain_reliability

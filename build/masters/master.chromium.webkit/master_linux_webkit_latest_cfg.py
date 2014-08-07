@@ -50,7 +50,7 @@ F('f_webkit_linux_rel', linux().ChromiumFactory(
 B('WebKit Linux 32', 'f_webkit_linux_rel', scheduler='global_scheduler')
 
 B('WebKit Linux Oilpan', 'f_webkit_linux_oilpan_rel',
-    scheduler='global_scheduler')
+    scheduler='global_scheduler', category='oilpan')
 F('f_webkit_linux_oilpan_rel', linux().ChromiumFactory(
     tests=chromium_factory.blink_tests,
     options=[
@@ -101,9 +101,39 @@ F('f_webkit_linux_rel_asan', linux().ChromiumFactory(
         'gs_bucket': 'gs://webkit-asan',
         'test_results_server': 'test-results.appspot.com',
         'time_out_ms': '48000',  # ASAN is roughly 8x slower than Release.
+        'webkit_test_options': ['--enable-sanitizer'],
     }))
 
-B('WebKit Linux Leak', 'f_webkit_linux_leak_rel', scheduler='global_scheduler')
+B('WebKit Linux Oilpan ASAN', 'f_webkit_linux_oilpan_rel_asan',
+    scheduler='global_scheduler', auto_reboot=False, category='oilpan')
+F('f_webkit_linux_oilpan_rel_asan', linux().ChromiumFactory(
+    tests=['webkit'],
+    options=[
+        '--build-tool=ninja',
+        '--compiler=goma-clang',
+        '--',
+        'blink_tests'
+    ],
+    factory_properties={
+        'additional_expectations': [
+            ['third_party', 'WebKit', 'LayoutTests', 'ASANExpectations' ],
+        ],
+        'archive_webkit_results': ActiveMaster.is_production_host,
+        'asan': True,
+        'blink_config': 'blink',
+        'gclient_env': {
+          'GYP_DEFINES': asan_gyp + ' enable_oilpan=1',
+          'GYP_GENERATORS': 'ninja',
+        },
+        'generate_gtest_json': True,
+        'gs_bucket': 'gs://webkit-asan',
+        'test_results_server': 'test-results.appspot.com',
+        'time_out_ms': '48000',  # ASAN is roughly 8x slower than Release.
+        'webkit_test_options': ['--enable-sanitizer'],
+    }))
+
+B('WebKit Linux Leak', 'f_webkit_linux_leak_rel', scheduler='global_scheduler',
+    category='oilpan')
 F('f_webkit_linux_leak_rel', linux().ChromiumFactory(
     tests=chromium_factory.blink_tests,
     options=[
@@ -127,7 +157,7 @@ F('f_webkit_linux_leak_rel', linux().ChromiumFactory(
     }))
 
 B('WebKit Linux Oilpan Leak', 'f_webkit_linux_oilpan_leak_rel',
-    scheduler='global_scheduler')
+    scheduler='global_scheduler', category='oilpan')
 F('f_webkit_linux_oilpan_leak_rel', linux().ChromiumFactory(
     tests=chromium_factory.blink_tests,
     options=[
@@ -184,7 +214,7 @@ F('f_webkit_dbg_tests', linux().ChromiumFactory(
     }))
 
 B('WebKit Linux Oilpan (dbg)', 'f_webkit_linux_oilpan_dbg',
-    scheduler='global_scheduler')
+    scheduler='global_scheduler', category='oilpan')
 F('f_webkit_linux_oilpan_dbg', linux().ChromiumFactory(
     target='Debug',
     tests=chromium_factory.blink_tests,

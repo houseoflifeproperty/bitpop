@@ -26,8 +26,7 @@
 #include "config.h"
 #include "core/dom/Position.h"
 
-#include <stdio.h>
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
 #include "core/dom/PositionIterator.h"
 #include "core/dom/Text.h"
@@ -46,6 +45,7 @@
 #include "platform/Logging.h"
 #include "wtf/text/CString.h"
 #include "wtf/unicode/CharacterNames.h"
+#include <stdio.h>
 
 namespace WebCore {
 
@@ -79,7 +79,7 @@ static Node* previousRenderedEditable(Node* node)
     return 0;
 }
 
-Position::Position(PassRefPtr<Node> anchorNode, LegacyEditingOffset offset)
+Position::Position(PassRefPtrWillBeRawPtr<Node> anchorNode, LegacyEditingOffset offset)
     : m_anchorNode(anchorNode)
     , m_offset(offset.value())
     , m_anchorType(anchorTypeForLegacyEditingPosition(m_anchorNode.get(), m_offset))
@@ -88,7 +88,7 @@ Position::Position(PassRefPtr<Node> anchorNode, LegacyEditingOffset offset)
     ASSERT(!m_anchorNode || !m_anchorNode->isPseudoElement());
 }
 
-Position::Position(PassRefPtr<Node> anchorNode, AnchorType anchorType)
+Position::Position(PassRefPtrWillBeRawPtr<Node> anchorNode, AnchorType anchorType)
     : m_anchorNode(anchorNode)
     , m_offset(0)
     , m_anchorType(anchorType)
@@ -101,7 +101,7 @@ Position::Position(PassRefPtr<Node> anchorNode, AnchorType anchorType)
         && (m_anchorNode->isTextNode() || editingIgnoresContent(m_anchorNode.get()))));
 }
 
-Position::Position(PassRefPtr<Node> anchorNode, int offset, AnchorType anchorType)
+Position::Position(PassRefPtrWillBeRawPtr<Node> anchorNode, int offset, AnchorType anchorType)
     : m_anchorNode(anchorNode)
     , m_offset(offset)
     , m_anchorType(anchorType)
@@ -112,7 +112,7 @@ Position::Position(PassRefPtr<Node> anchorNode, int offset, AnchorType anchorTyp
     ASSERT(anchorType == PositionIsOffsetInAnchor);
 }
 
-Position::Position(PassRefPtr<Text> textNode, unsigned offset)
+Position::Position(PassRefPtrWillBeRawPtr<Text> textNode, unsigned offset)
     : m_anchorNode(textNode)
     , m_offset(static_cast<int>(offset))
     , m_anchorType(PositionIsOffsetInAnchor)
@@ -121,7 +121,7 @@ Position::Position(PassRefPtr<Text> textNode, unsigned offset)
     ASSERT(m_anchorNode);
 }
 
-void Position::moveToPosition(PassRefPtr<Node> node, int offset)
+void Position::moveToPosition(PassRefPtrWillBeRawPtr<Node> node, int offset)
 {
     ASSERT(!editingIgnoresContent(node.get()));
     ASSERT(anchorType() == PositionIsOffsetInAnchor || m_isLegacyEditingPosition);
@@ -228,7 +228,6 @@ Node* Position::computeNodeBeforePosition() const
 {
     if (!m_anchorNode)
         return 0;
-
     switch (anchorType()) {
     case PositionIsBeforeChildren:
         return 0;
@@ -804,7 +803,7 @@ static int boundingBoxLogicalHeight(RenderObject *o, const IntRect &rect)
 bool Position::hasRenderedNonAnonymousDescendantsWithHeight(RenderObject* renderer)
 {
     RenderObject* stop = renderer->nextInPreOrderAfterChildren();
-    for (RenderObject *o = renderer->firstChild(); o && o != stop; o = o->nextInPreOrder())
+    for (RenderObject *o = renderer->slowFirstChild(); o && o != stop; o = o->nextInPreOrder())
         if (o->nonPseudoNode()) {
             if ((o->isText() && boundingBoxLogicalHeight(o, toRenderText(o)->linesBoundingBox()))
                 || (o->isBox() && toRenderBox(o)->pixelSnappedLogicalHeight())
@@ -864,6 +863,12 @@ bool Position::isCandidate() const
 
     if (renderer->isText())
         return !nodeIsUserSelectNone(deprecatedNode()) && inRenderedText();
+
+    if (renderer->isSVG()) {
+        // We don't consider SVG elements are contenteditable except for
+        // associated renderer returns isText() true, e.g. RenderSVGInlineText.
+        return false;
+    }
 
     if (isRenderedTableElement(deprecatedNode()) || editingIgnoresContent(deprecatedNode()))
         return (atFirstEditingPositionForNode() || atLastEditingPositionForNode()) && !nodeIsUserSelectNone(deprecatedNode()->parentNode());
@@ -1067,7 +1072,7 @@ void Position::getInlineBoxAndOffset(EAffinity affinity, InlineBox*& inlineBox, 
 
 static bool isNonTextLeafChild(RenderObject* object)
 {
-    if (object->firstChild())
+    if (object->slowFirstChild())
         return false;
     if (object->isText())
         return false;
@@ -1260,7 +1265,10 @@ void Position::getInlineBoxAndOffset(EAffinity affinity, TextDirection primaryDi
                     break;
                 inlineBox = prevBox;
             }
-            caretOffset = inlineBox->caretLeftmostOffset();
+            if (m_anchorNode->selfOrAncestorHasDirAutoAttribute())
+                caretOffset = inlineBox->bidiLevel() < level ? inlineBox->caretLeftmostOffset() : inlineBox->caretRightmostOffset();
+            else
+                caretOffset = inlineBox->caretLeftmostOffset();
         } else if (nextBox->bidiLevel() > level) {
             // Left edge of a "tertiary" run. Set to the right edge of that run.
             while (InlineBox* tertiaryBox = inlineBox->nextLeafChildIgnoringLineBreak()) {
@@ -1286,6 +1294,10 @@ TextDirection Position::primaryDirection() const
     return primaryDirection;
 }
 
+void Position::trace(Visitor* visitor)
+{
+    visitor->trace(m_anchorNode);
+}
 
 void Position::debugPosition(const char* msg) const
 {

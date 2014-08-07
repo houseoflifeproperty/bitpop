@@ -41,7 +41,8 @@ void CalculateWindowStylesFromInitParams(
     *style |= WS_MINIMIZE;
   if (!params.accept_events)
     *ex_style |= WS_EX_TRANSPARENT;
-  if (!params.can_activate)
+  DCHECK_NE(Widget::InitParams::ACTIVATABLE_DEFAULT, params.activatable);
+  if (params.activatable == Widget::InitParams::ACTIVATABLE_NO)
     *ex_style |= WS_EX_NOACTIVATE;
   if (params.keep_on_top)
     *ex_style |= WS_EX_TOPMOST;
@@ -65,7 +66,7 @@ void CalculateWindowStylesFromInitParams(
     if (ui::win::IsAeroGlassEnabled())
       *ex_style |= WS_EX_COMPOSITED;
   }
-  if (params.has_dropshadow) {
+  if (params.shadow_type == Widget::InitParams::SHADOW_TYPE_DROP) {
     *class_style |= (base::win::GetVersion() < base::win::VERSION_XP) ?
         0 : CS_DROPSHADOW;
   }

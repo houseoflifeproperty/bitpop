@@ -25,8 +25,8 @@ class FIFOChar : public FIFOInterface {
   virtual bool IsFull();
   virtual bool Resize(size_t len);
 
-  size_t ReadAvailable();
-  size_t WriteAvailable();
+  virtual size_t ReadAvailable();
+  virtual size_t WriteAvailable();
 
   // Reads out no more than the requested len without updating the tail.
   // Returns actual amount read.
@@ -40,7 +40,7 @@ class FIFOChar : public FIFOInterface {
   // written.
   size_t Write(const void* buf, size_t len);
 
-private:
+ private:
   char* buffer_;
   size_t size_;   // Size of the FIFO
   size_t avail_;  // How much data is currently available

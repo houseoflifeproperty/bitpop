@@ -36,8 +36,8 @@
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/imports/HTMLImportChild.h"
 #include "core/html/imports/HTMLImportLoader.h"
+#include "core/html/imports/HTMLImportTreeRoot.h"
 #include "core/html/imports/HTMLImportsController.h"
-
 
 namespace WebCore {
 
@@ -48,23 +48,27 @@ PassOwnPtrWillBeRawPtr<LinkImport> LinkImport::create(HTMLLinkElement* owner)
 
 LinkImport::LinkImport(HTMLLinkElement* owner)
     : LinkResource(owner)
-    , m_child(0)
+    , m_child(nullptr)
 {
 }
 
 LinkImport::~LinkImport()
 {
+#if !ENABLE(OILPAN)
     if (m_child) {
         m_child->clearClient();
-        m_child = 0;
+        m_child = nullptr;
     }
+#endif
 }
 
 Document* LinkImport::importedDocument() const
 {
     if (!m_child || !m_owner || !m_owner->inDocument())
         return 0;
-    return m_child->importedDocument();
+    if (m_child->loader()->hasError())
+        return 0;
+    return m_child->document();
 }
 
 void LinkImport::process()
@@ -89,7 +93,7 @@ void LinkImport::process()
 
     HTMLImportsController* controller = m_owner->document().importsController();
     HTMLImportLoader* loader = m_owner->document().importLoader();
-    HTMLImport* parent = loader ? static_cast<HTMLImport*>(loader->firstImport()) : static_cast<HTMLImport*>(controller);
+    HTMLImport* parent = loader ? static_cast<HTMLImport*>(loader->firstImport()) : static_cast<HTMLImport*>(controller->root());
     m_child = controller->load(parent, this, builder.build(true));
     if (!m_child) {
         didFinish();
@@ -104,12 +108,14 @@ void LinkImport::didFinish()
     m_owner->scheduleEvent();
 }
 
+#if !ENABLE(OILPAN)
 void LinkImport::importChildWasDestroyed(HTMLImportChild* child)
 {
     ASSERT(m_child == child);
-    m_child = 0;
+    m_child = nullptr;
     m_owner = nullptr;
 }
+#endif
 
 bool LinkImport::isSync() const
 {
@@ -123,11 +129,21 @@ HTMLLinkElement* LinkImport::link()
 
 bool LinkImport::hasLoaded() const
 {
-    return m_child && m_child->isDone() && !m_child->loaderHasError();
+    // Should never be called after importChildWasDestroyed was called.
+    ASSERT(m_owner);
+    return m_child && m_child->isDone() && !m_child->loader()->hasError();
+}
+
+void LinkImport::ownerInserted()
+{
+    if (m_child)
+        m_child->ownerInserted();
 }
 
 void LinkImport::trace(Visitor* visitor)
 {
+    visitor->trace(m_child);
+    HTMLImportChildClient::trace(visitor);
     LinkResource::trace(visitor);
 }
 

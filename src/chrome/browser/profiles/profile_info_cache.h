@@ -39,17 +39,16 @@ class ProfileInfoCache : public ProfileInfoInterface,
   ProfileInfoCache(PrefService* prefs, const base::FilePath& user_data_dir);
   virtual ~ProfileInfoCache();
 
-  // This |is_managed| refers to local management (formerly "managed mode"),
-  // not enterprise management. If the |managed_user_id| is non-empty, the
-  // profile will be marked to be omitted from the avatar-menu list on desktop
-  // versions. This is used while a managed user is in the process of being
-  // registered with the server. Use SetIsOmittedProfileAtIndex() to clear the
-  // flag when the profile is ready to be shown in the menu.
+  // If the |supervised_user_id| is non-empty, the profile will be marked to be
+  // omitted from the avatar-menu list on desktop versions. This is used while a
+  // supervised user is in the process of being registered with the server. Use
+  // SetIsOmittedProfileAtIndex() to clear the flag when the profile is ready to
+  // be shown in the menu.
   void AddProfileToCache(const base::FilePath& profile_path,
                          const base::string16& name,
                          const base::string16& username,
                          size_t icon_index,
-                         const std::string& managed_user_id);
+                         const std::string& supervised_user_id);
   void DeleteProfileFromCache(const base::FilePath& profile_path);
 
   // ProfileInfoInterface:
@@ -85,10 +84,10 @@ class ProfileInfoCache : public ProfileInfoInterface,
       size_t index) const OVERRIDE;
   virtual bool IsUsingGAIAPictureOfProfileAtIndex(
       size_t index) const OVERRIDE;
-  virtual bool ProfileIsManagedAtIndex(size_t index) const OVERRIDE;
+  virtual bool ProfileIsSupervisedAtIndex(size_t index) const OVERRIDE;
   virtual bool IsOmittedProfileAtIndex(size_t index) const OVERRIDE;
   virtual bool ProfileIsSigninRequiredAtIndex(size_t index) const OVERRIDE;
-  virtual std::string GetManagedUserIdOfProfileAtIndex(size_t index) const
+  virtual std::string GetSupervisedUserIdOfProfileAtIndex(size_t index) const
       OVERRIDE;
   virtual bool ProfileIsEphemeralAtIndex(size_t index) const OVERRIDE;
   virtual bool ProfileIsUsingDefaultNameAtIndex(size_t index) const OVERRIDE;
@@ -103,7 +102,7 @@ class ProfileInfoCache : public ProfileInfoInterface,
                                    const base::string16& user_name);
   void SetAvatarIconOfProfileAtIndex(size_t index, size_t icon_index);
   void SetIsOmittedProfileAtIndex(size_t index, bool is_omitted);
-  void SetManagedUserIdOfProfileAtIndex(size_t index, const std::string& id);
+  void SetSupervisedUserIdOfProfileAtIndex(size_t index, const std::string& id);
   void SetLocalAuthCredentialsOfProfileAtIndex(size_t index,
                                                const std::string& auth);
   void SetBackgroundStatusOfProfileAtIndex(size_t index,
@@ -136,15 +135,18 @@ class ProfileInfoCache : public ProfileInfoInterface,
   // Register cache related preferences in Local State.
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
-  // Starts downloading the high res avatar at index |icon_index|.
-  void DownloadHighResAvatar(size_t icon_index);
+  // Starts downloading the high res avatar at index |icon_index| for profile
+  // with path |profile_path|.
+  void DownloadHighResAvatar(size_t icon_index,
+                             const base::FilePath& profile_path);
 
   // Saves the avatar |image| at |image_path|. This is used both for the
   // GAIA profile pictures and the ProfileAvatarDownloader that is used to
   // download the high res avatars.
   void SaveAvatarImageAtPath(const gfx::Image* image,
                              const std::string& key,
-                             const base::FilePath& image_path);
+                             const base::FilePath& image_path,
+                             const base::FilePath& profile_path);
 
   void AddObserver(ProfileInfoCacheObserver* obs);
   void RemoveObserver(ProfileInfoCacheObserver* obs);
@@ -193,7 +195,8 @@ class ProfileInfoCache : public ProfileInfoInterface,
                              gfx::Image** image) const;
   // Called when the picture given by |file_name| has been saved to disk.
   // Used both for the GAIA profile picture and the high res avatar files.
-  void OnAvatarPictureSaved(const std::string& file_name);
+  void OnAvatarPictureSaved(const std::string& file_name,
+                            const base::FilePath& profile_path);
 
   PrefService* prefs_;
   std::vector<std::string> sorted_keys_;

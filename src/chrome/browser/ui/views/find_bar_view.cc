@@ -28,6 +28,7 @@
 #include "ui/base/theme_provider.h"
 #include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
+#include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/painter.h"
@@ -337,7 +338,7 @@ void FindBarView::Layout() {
       find_previous_button_->height());
 }
 
-gfx::Size FindBarView::GetPreferredSize() {
+gfx::Size FindBarView::GetPreferredSize() const {
   gfx::Size prefsize = find_text_->GetPreferredSize();
   prefsize.set_height(preferred_height_);
 

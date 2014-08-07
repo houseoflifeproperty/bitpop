@@ -12,6 +12,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -140,9 +141,7 @@ OpaqueBrowserFrameView::OpaqueBrowserFrameView(BrowserFrame* frame,
       gfx::FontList(BrowserFrame::GetTitleFontList()));
   window_title_->SetVisible(browser_view->ShouldShowWindowTitle());
   window_title_->SetEnabledColor(SK_ColorWHITE);
-  // TODO(msw): Use a transparent background color as a workaround to use the
-  // gfx::Canvas::NO_SUBPIXEL_RENDERING flag and avoid some visual artifacts.
-  window_title_->SetBackgroundColor(0x00000000);
+  window_title_->set_subpixel_rendering_enabled(false);
   window_title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   window_title_->set_id(VIEW_ID_WINDOW_TITLE);
   AddChildView(window_title_);
@@ -190,7 +189,7 @@ void OpaqueBrowserFrameView::UpdateThrobber(bool running) {
     window_icon_->Update();
 }
 
-gfx::Size OpaqueBrowserFrameView::GetMinimumSize() {
+gfx::Size OpaqueBrowserFrameView::GetMinimumSize() const {
   return layout_->GetMinimumSize(width());
 }
 
@@ -351,7 +350,8 @@ void OpaqueBrowserFrameView::ButtonPressed(views::Button* sender,
     frame()->Close();
   } else if (sender == new_avatar_button()) {
     browser_view()->ShowAvatarBubbleFromAvatarButton(
-        BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT);
+        BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT,
+        signin::ManageAccountsParams());
   }
 }
 
@@ -616,7 +616,7 @@ void OpaqueBrowserFrameView::PaintMaximizedFrameBorder(gfx::Canvas* canvas) {
   // the system title bar pref is set, or when maximized on Ubuntu). Hide the
   // gradient in the tab strip (by shifting it up vertically) to avoid a
   // double-gradient effect.
-  if (tp->UsingNativeTheme())
+  if (tp->UsingSystemTheme())
     frame_background_->set_maximized_top_inset(kGTKThemeCondensedFrameTopInset);
 #endif
 
@@ -756,8 +756,14 @@ void OpaqueBrowserFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
     // client edge filled rects start there or at the bottom of the toolbar,
     // whichever is shorter.
     gfx::Rect toolbar_bounds(browser_view()->GetToolbarBounds());
-    image_top += toolbar_bounds.y() +
-        tp->GetImageSkiaNamed(IDR_CONTENT_TOP_LEFT_CORNER)->height();
+
+    gfx::ImageSkia* content_top_left_corner =
+        tp->GetImageSkiaNamed(IDR_CONTENT_TOP_LEFT_CORNER);
+    // TODO(oshima): Sanity checks for crbug.com/374273. Remove when it's fixed.
+    CHECK(content_top_left_corner);
+    CHECK(!content_top_left_corner->isNull());
+
+    image_top += toolbar_bounds.y() + content_top_left_corner->height();
     client_area_top = std::min(image_top,
         client_area_top + toolbar_bounds.bottom() - kClientEdgeThickness);
   } else if (!browser_view()->IsTabStripVisible()) {
@@ -839,7 +845,7 @@ SkColor OpaqueBrowserFrameView::GetFrameColor() const {
   }
 
   if (browser_view()->IsBrowserTypeNormal() ||
-      platform_observer_->IsUsingNativeTheme()) {
+      platform_observer_->IsUsingSystemTheme()) {
     return GetThemeProvider()->GetColor(color_id);
   }
 
@@ -869,8 +875,8 @@ gfx::ImageSkia* OpaqueBrowserFrameView::GetFrameImage() const {
         IDR_THEME_FRAME_INCOGNITO_INACTIVE : IDR_THEME_FRAME_INACTIVE;
   }
 
-  if (platform_observer_->IsUsingNativeTheme()) {
-    // We want to use theme images provided by the platform theme when enabled,
+  if (platform_observer_->IsUsingSystemTheme()) {
+    // We want to use theme images provided by the system theme when enabled,
     // even if we are an app or popup window.
     return GetThemeProvider()->GetImageSkiaNamed(resource_id);
   }

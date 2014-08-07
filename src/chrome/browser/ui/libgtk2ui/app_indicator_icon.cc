@@ -8,14 +8,18 @@
 #include <dlfcn.h>
 
 #include "base/bind.h"
+#include "base/environment.h"
 #include "base/file_util.h"
+#include "base/md5.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/nix/xdg_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/ui/libgtk2ui/menu_util.h"
+#include "chrome/browser/ui/libgtk2ui/app_indicator_icon_menu.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/models/menu_model.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 
 namespace {
@@ -81,6 +85,16 @@ void EnsureMethodsLoaded() {
 
   g_attempted_load = true;
 
+  // Only use libappindicator where it is needed to support dbus based status
+  // icons. In particular, libappindicator does not support a click action.
+  scoped_ptr<base::Environment> env(base::Environment::Create());
+  base::nix::DesktopEnvironment environment =
+      base::nix::GetDesktopEnvironment(env.get());
+  if (environment != base::nix::DESKTOP_ENVIRONMENT_KDE4 &&
+      environment != base::nix::DESKTOP_ENVIRONMENT_UNITY) {
+    return;
+  }
+
   void* indicator_lib = dlopen("libappindicator.so", RTLD_LAZY);
   if (!indicator_lib) {
     indicator_lib = dlopen("libappindicator.so.1", RTLD_LAZY);
@@ -120,9 +134,56 @@ void EnsureMethodsLoaded() {
           dlsym(indicator_lib, "app_indicator_set_icon_theme_path"));
 }
 
-base::FilePath CreateTempImageFile(gfx::ImageSkia* image_ptr,
+// Returns whether a temporary directory should be created for each app
+// indicator image.
+bool ShouldCreateTempDirectoryPerImage(bool using_kde4) {
+  // Create a new temporary directory for each image on Unity since using a
+  // single temporary directory seems to have issues when changing icons in
+  // quick succession.
+  return !using_kde4;
+}
+
+// Returns the subdirectory of |temp_dir| in which the app indicator image
+// should be saved.
+base::FilePath GetImageDirectoryPath(bool using_kde4,
+                                     const base::FilePath& temp_dir) {
+  // On KDE4, an image located in a directory ending with
+  // "icons/hicolor/16x16/apps" can be used as the app indicator image because
+  // "/usr/share/icons/hicolor/16x16/apps" exists.
+  return using_kde4 ?
+      temp_dir.AppendASCII("icons").AppendASCII("hicolor").AppendASCII("16x16").
+          AppendASCII("apps") :
+      temp_dir;
+}
+
+std::string GetImageFileNameForKDE4(
+    const scoped_refptr<base::RefCountedMemory>& png_data) {
+  // On KDE4, the name of the image file for each different looking bitmap must
+  // be unique. It must also be unique across runs of Chrome.
+  base::MD5Digest digest;
+  base::MD5Sum(png_data->front_as<char>(), png_data->size(), &digest);
+  return base::StringPrintf("chrome_app_indicator_%s.png",
+                            base::MD5DigestToBase16(digest).c_str());
+}
+
+std::string GetImageFileNameForNonKDE4(int icon_change_count,
+                                       const std::string& id) {
+  return base::StringPrintf("%s_%d.png", id.c_str(), icon_change_count);
+}
+
+// Returns the "icon theme path" given the file path of the app indicator image.
+std::string GetIconThemePath(bool using_kde4,
+                             const base::FilePath& image_path) {
+  return using_kde4 ?
+      image_path.DirName().DirName().DirName().DirName().value() :
+      image_path.DirName().value();
+}
+
+base::FilePath CreateTempImageFile(bool using_kde4,
+                                   gfx::ImageSkia* image_ptr,
                                    int icon_change_count,
-                                   std::string id) {
+                                   std::string id,
+                                   const base::FilePath& previous_file_path) {
   scoped_ptr<gfx::ImageSkia> image(image_ptr);
 
   scoped_refptr<base::RefCountedMemory> png_data =
@@ -133,16 +194,25 @@ base::FilePath CreateTempImageFile(gfx::ImageSkia* image_ptr,
     return base::FilePath();
   }
 
-  base::FilePath temp_dir;
   base::FilePath new_file_path;
+  if (previous_file_path.empty() ||
+      ShouldCreateTempDirectoryPerImage(using_kde4)) {
+    base::FilePath tmp_dir;
+    if (!base::CreateNewTempDirectory(base::FilePath::StringType(), &tmp_dir))
+      return base::FilePath();
+    new_file_path = GetImageDirectoryPath(using_kde4, tmp_dir);
+    if (new_file_path != tmp_dir) {
+      if (!base::CreateDirectory(new_file_path))
+        return base::FilePath();
+    }
+  } else {
+    new_file_path = previous_file_path.DirName();
+  }
 
-  // Create a new temporary directory for each image since using a single
-  // temporary directory seems to have issues when changing icons in quick
-  // succession.
-  if (!base::CreateNewTempDirectory(base::FilePath::StringType(), &temp_dir))
-    return base::FilePath();
-  new_file_path =
-      temp_dir.Append(id + base::StringPrintf("_%d.png", icon_change_count));
+  new_file_path = new_file_path.Append(using_kde4 ?
+      GetImageFileNameForKDE4(png_data) :
+      GetImageFileNameForNonKDE4(icon_change_count, id));
+
   int bytes_written =
       base::WriteFile(new_file_path,
                       png_data->front_as<char>(), png_data->size());
@@ -152,10 +222,10 @@ base::FilePath CreateTempImageFile(gfx::ImageSkia* image_ptr,
   return new_file_path;
 }
 
-void DeleteTempImagePath(const base::FilePath& icon_file_path) {
-  if (icon_file_path.empty())
+void DeleteTempDirectory(const base::FilePath& dir_path) {
+  if (dir_path.empty())
     return;
-  base::DeleteFile(icon_file_path, true);
+  base::DeleteFile(dir_path, true);
 }
 
 }  // namespace
@@ -166,12 +236,15 @@ AppIndicatorIcon::AppIndicatorIcon(std::string id,
                                    const gfx::ImageSkia& image,
                                    const base::string16& tool_tip)
     : id_(id),
+      using_kde4_(false),
       icon_(NULL),
-      gtk_menu_(NULL),
       menu_model_(NULL),
       icon_change_count_(0),
-      block_activation_(false),
       weak_factory_(this) {
+  scoped_ptr<base::Environment> env(base::Environment::Create());
+  using_kde4_ = base::nix::GetDesktopEnvironment(env.get()) ==
+      base::nix::DESKTOP_ENVIRONMENT_KDE4;
+
   EnsureMethodsLoaded();
   tool_tip_ = base::UTF16ToUTF8(tool_tip);
   SetImage(image);
@@ -179,12 +252,10 @@ AppIndicatorIcon::AppIndicatorIcon(std::string id,
 AppIndicatorIcon::~AppIndicatorIcon() {
   if (icon_) {
     app_indicator_set_status(icon_, APP_INDICATOR_STATUS_PASSIVE);
-    if (gtk_menu_)
-      DestroyMenu();
     g_object_unref(icon_);
     content::BrowserThread::GetBlockingPool()->PostTask(
         FROM_HERE,
-        base::Bind(&DeleteTempImagePath, icon_file_path_.DirName()));
+        base::Bind(&DeleteTempDirectory, icon_file_path_.DirName()));
   }
 }
 
@@ -209,9 +280,11 @@ void AppIndicatorIcon::SetImage(const gfx::ImageSkia& image) {
                 base::SequencedWorkerPool::SKIP_ON_SHUTDOWN).get(),
       FROM_HERE,
       base::Bind(&CreateTempImageFile,
+                 using_kde4_,
                  safe_image.release(),
                  icon_change_count_,
-                 id_),
+                 id_,
+                 icon_file_path_),
       base::Bind(&AppIndicatorIcon::SetImageFromFile,
                  weak_factory_.GetWeakPtr()));
 }
@@ -224,30 +297,13 @@ void AppIndicatorIcon::SetPressedImage(const gfx::ImageSkia& image) {
 void AppIndicatorIcon::SetToolTip(const base::string16& tool_tip) {
   DCHECK(!tool_tip_.empty());
   tool_tip_ = base::UTF16ToUTF8(tool_tip);
-
-  // We can set the click action label only if the icon exists. Also we only
-  // need to update the label if it is shown and it's only shown if we are sure
-  // that there is a click action or if there is no menu.
-  if (icon_ && (delegate()->HasClickAction() || menu_model_ == NULL)) {
-    GList* children = gtk_container_get_children(GTK_CONTAINER(gtk_menu_));
-    for (GList* child = children; child; child = g_list_next(child))
-      if (g_object_get_data(G_OBJECT(child->data), "click-action-item") !=
-          NULL) {
-        gtk_menu_item_set_label(GTK_MENU_ITEM(child->data),
-                                tool_tip_.c_str());
-        break;
-      }
-    g_list_free(children);
-  }
+  UpdateClickActionReplacementMenuItem();
 }
 
 void AppIndicatorIcon::UpdatePlatformContextMenu(ui::MenuModel* model) {
   if (!g_opened)
     return;
 
-  if (gtk_menu_) {
-    DestroyMenu();
-  }
   menu_model_ = model;
 
   // The icon is created asynchronously so it might not exist when the menu is
@@ -257,8 +313,7 @@ void AppIndicatorIcon::UpdatePlatformContextMenu(ui::MenuModel* model) {
 }
 
 void AppIndicatorIcon::RefreshPlatformContextMenu() {
-  gtk_container_foreach(
-      GTK_CONTAINER(gtk_menu_), SetMenuItemInfo, &block_activation_);
+  menu_->Refresh();
 }
 
 void AppIndicatorIcon::SetImageFromFile(const base::FilePath& icon_file_path) {
@@ -271,7 +326,7 @@ void AppIndicatorIcon::SetImageFromFile(const base::FilePath& icon_file_path) {
 
   std::string icon_name =
       icon_file_path_.BaseName().RemoveExtension().value();
-  std::string icon_dir = icon_file_path_.DirName().value();
+  std::string icon_dir = GetIconThemePath(using_kde4_, icon_file_path);
   if (!icon_) {
     icon_ =
         app_indicator_new_with_path(id_.c_str(),
@@ -286,86 +341,39 @@ void AppIndicatorIcon::SetImageFromFile(const base::FilePath& icon_file_path) {
     app_indicator_set_icon_theme_path(icon_, icon_dir.c_str());
     app_indicator_set_icon_full(icon_, icon_name.c_str(), "icon");
 
-    // Delete previous icon directory.
-    content::BrowserThread::GetBlockingPool()->PostTask(
-        FROM_HERE,
-        base::Bind(&DeleteTempImagePath, old_path.DirName()));
+    if (ShouldCreateTempDirectoryPerImage(using_kde4_)) {
+      // Delete previous icon directory.
+      content::BrowserThread::GetBlockingPool()->PostTask(
+          FROM_HERE,
+          base::Bind(&DeleteTempDirectory, old_path.DirName()));
+    }
   }
 }
 
 void AppIndicatorIcon::SetMenu() {
-  gtk_menu_ = gtk_menu_new();
-
-  if (delegate()->HasClickAction() || menu_model_ == NULL) {
-    CreateClickActionReplacement();
-    if (menu_model_) {
-      // Add separator before the other menu items.
-      GtkWidget* menu_item = gtk_separator_menu_item_new();
-      gtk_widget_show(menu_item);
-      gtk_menu_shell_append(GTK_MENU_SHELL(gtk_menu_), menu_item);
-    }
-  }
-  if (menu_model_) {
-    BuildSubmenuFromModel(menu_model_,
-                          gtk_menu_,
-                          G_CALLBACK(OnMenuItemActivatedThunk),
-                          &block_activation_,
-                          this);
-    RefreshPlatformContextMenu();
-  }
-  app_indicator_set_menu(icon_, GTK_MENU(gtk_menu_));
+  menu_.reset(new AppIndicatorIconMenu(menu_model_));
+  UpdateClickActionReplacementMenuItem();
+  app_indicator_set_menu(icon_, menu_->GetGtkMenu());
 }
 
-void AppIndicatorIcon::CreateClickActionReplacement() {
+void AppIndicatorIcon::UpdateClickActionReplacementMenuItem() {
+  // The menu may not have been created yet.
+  if (!menu_.get())
+    return;
+
+  if (!delegate()->HasClickAction() && menu_model_)
+    return;
+
   DCHECK(!tool_tip_.empty());
-
-  // Add "click replacement menu item".
-  GtkWidget* menu_item = gtk_menu_item_new_with_mnemonic(tool_tip_.c_str());
-  g_object_set_data(
-      G_OBJECT(menu_item), "click-action-item", GINT_TO_POINTER(1));
-  g_signal_connect(menu_item, "activate", G_CALLBACK(OnClickThunk), this);
-  gtk_widget_show(menu_item);
-  gtk_menu_shell_prepend(GTK_MENU_SHELL(gtk_menu_), menu_item);
+  menu_->UpdateClickActionReplacementMenuItem(
+      tool_tip_.c_str(),
+      base::Bind(&AppIndicatorIcon::OnClickActionReplacementMenuItemActivated,
+                 base::Unretained(this)));
 }
 
-void AppIndicatorIcon::DestroyMenu() {
-  gtk_widget_destroy(gtk_menu_);
-  gtk_menu_ = NULL;
-  menu_model_ = NULL;
-}
-
-void AppIndicatorIcon::OnClick(GtkWidget* menu_item) {
+void AppIndicatorIcon::OnClickActionReplacementMenuItemActivated() {
   if (delegate())
     delegate()->OnClick();
-}
-
-void AppIndicatorIcon::OnMenuItemActivated(GtkWidget* menu_item) {
-  if (block_activation_)
-    return;
-
-  ui::MenuModel* model = ModelForMenuItem(GTK_MENU_ITEM(menu_item));
-  if (!model) {
-    // There won't be a model for "native" submenus like the "Input Methods"
-    // context menu. We don't need to handle activation messages for submenus
-    // anyway, so we can just return here.
-    DCHECK(gtk_menu_item_get_submenu(GTK_MENU_ITEM(menu_item)));
-    return;
-  }
-
-  // The activate signal is sent to radio items as they get deselected;
-  // ignore it in this case.
-  if (GTK_IS_RADIO_MENU_ITEM(menu_item) &&
-      !gtk_check_menu_item_get_active(GTK_CHECK_MENU_ITEM(menu_item))) {
-    return;
-  }
-
-  int id;
-  if (!GetMenuItemID(menu_item, &id))
-    return;
-
-  // The menu item can still be activated by hotkeys even if it is disabled.
-  if (menu_model_->IsEnabledAt(id))
-    ExecuteCommand(model, id);
 }
 
 }  // namespace libgtk2ui

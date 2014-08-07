@@ -27,6 +27,7 @@
 #include "core/events/EventDispatcher.h"
 
 #include "core/dom/ContainerNode.h"
+#include "core/dom/NoEventDispatchAssertion.h"
 #include "core/events/EventDispatchMediator.h"
 #include "core/events/MouseEvent.h"
 #include "core/events/ScopedEventQueue.h"
@@ -41,7 +42,7 @@ namespace WebCore {
 
 static HashSet<Node*>* gNodesDispatchingSimulatedClicks = 0;
 
-bool EventDispatcher::dispatchEvent(Node* node, PassRefPtr<EventDispatchMediator> mediator)
+bool EventDispatcher::dispatchEvent(Node* node, PassRefPtrWillBeRawPtr<EventDispatchMediator> mediator)
 {
     TRACE_EVENT0("webkit", "EventDispatcher::dispatchEvent");
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
@@ -65,7 +66,7 @@ EventDispatcher::EventDispatcher(Node* node, PassRefPtrWillBeRawPtr<Event> event
     m_event->ensureEventPath().resetWith(m_node.get());
 }
 
-void EventDispatcher::dispatchScopedEvent(Node* node, PassRefPtr<EventDispatchMediator> mediator)
+void EventDispatcher::dispatchScopedEvent(Node* node, PassRefPtrWillBeRawPtr<EventDispatchMediator> mediator)
 {
     // We need to set the target here because it can go away by the time we actually fire the event.
     mediator->event()->setTarget(EventPath::eventTargetRespectingTargetRules(node));
@@ -87,11 +88,13 @@ void EventDispatcher::dispatchSimulatedClick(Node* node, Event* underlyingEvent,
     if (mouseEventOptions == SendMouseOverUpDownEvents)
         EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::mouseover, node->document().domWindow(), underlyingEvent)).dispatch();
 
-    if (mouseEventOptions != SendNoEvents)
+    if (mouseEventOptions != SendNoEvents) {
         EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::mousedown, node->document().domWindow(), underlyingEvent)).dispatch();
-    node->setActive(true);
-    if (mouseEventOptions != SendNoEvents)
+        node->setActive(true);
         EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::mouseup, node->document().domWindow(), underlyingEvent)).dispatch();
+    }
+    // Some elements (e.g. the color picker) may set active state to true before
+    // calling this method and expect the state to be reset during the call.
     node->setActive(false);
 
     // always send click
@@ -108,7 +111,6 @@ bool EventDispatcher::dispatch()
     ASSERT(!m_eventDispatched);
     m_eventDispatched = true;
 #endif
-    ChildNodesLazySnapshot::takeChildNodesLazySnapshot();
 
     m_event->setTarget(EventPath::eventTargetRespectingTargetRules(m_node.get()));
     ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());

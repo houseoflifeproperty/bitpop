@@ -14,16 +14,14 @@
 #include "platform/graphics/ImageBuffer.h"
 #include "wtf/RefPtr.h"
 
-using namespace std;
-
 namespace WebCore {
 
 static inline IntRect normalizeRect(const IntRect& rect)
 {
-    return IntRect(min(rect.x(), rect.maxX()),
-        min(rect.y(), rect.maxY()),
-        max(rect.width(), -rect.width()),
-        max(rect.height(), -rect.height()));
+    return IntRect(std::min(rect.x(), rect.maxX()),
+        std::min(rect.y(), rect.maxY()),
+        std::max(rect.width(), -rect.width()),
+        std::max(rect.height(), -rect.height()));
 }
 
 static inline PassRefPtr<Image> cropImage(Image* image, const IntRect& cropRect)
@@ -43,7 +41,7 @@ ImageBitmap::ImageBitmap(HTMLImageElement* image, const IntRect& cropRect)
     , m_cropRect(cropRect)
 {
     IntRect srcRect = intersection(cropRect, IntRect(0, 0, image->width(), image->height()));
-    m_bitmapRect = IntRect(IntPoint(max(0, -cropRect.x()), max(0, -cropRect.y())), srcRect.size());
+    m_bitmapRect = IntRect(IntPoint(std::max(0, -cropRect.x()), std::max(0, -cropRect.y())), srcRect.size());
     m_bitmapOffset = srcRect.location();
 
     if (!srcRect.width() || !srcRect.height())
@@ -59,7 +57,12 @@ ImageBitmap::ImageBitmap(HTMLVideoElement* video, const IntRect& cropRect)
     , m_cropRect(cropRect)
     , m_bitmapOffset(IntPoint())
 {
-    IntRect videoRect = IntRect(IntPoint(), video->player()->naturalSize());
+    IntSize playerSize;
+
+    if (video->webMediaPlayer())
+        playerSize = video->webMediaPlayer()->naturalSize();
+
+    IntRect videoRect = IntRect(IntPoint(), playerSize);
     IntRect srcRect = intersection(cropRect, videoRect);
     IntRect dstRect(IntPoint(), srcRect.size());
 
@@ -71,7 +74,7 @@ ImageBitmap::ImageBitmap(HTMLVideoElement* video, const IntRect& cropRect)
     c->translate(-srcRect.x(), -srcRect.y());
     video->paintCurrentFrameInContext(c, videoRect);
     m_bitmap = buf->copyImage(DontCopyBackingStore);
-    m_bitmapRect = IntRect(IntPoint(max(0, -cropRect.x()), max(0, -cropRect.y())), srcRect.size());
+    m_bitmapRect = IntRect(IntPoint(std::max(0, -cropRect.x()), std::max(0, -cropRect.y())), srcRect.size());
 
     ScriptWrappable::init(this);
 }
@@ -86,7 +89,7 @@ ImageBitmap::ImageBitmap(HTMLCanvasElement* canvas, const IntRect& cropRect)
         sourceContext->paintRenderingResultsToCanvas();
 
     IntRect srcRect = intersection(cropRect, IntRect(IntPoint(), canvas->size()));
-    m_bitmapRect = IntRect(IntPoint(max(0, -cropRect.x()), max(0, -cropRect.y())), srcRect.size());
+    m_bitmapRect = IntRect(IntPoint(std::max(0, -cropRect.x()), std::max(0, -cropRect.y())), srcRect.size());
     m_bitmap = cropImage(canvas->buffer()->copyImage(CopyBackingStore).get(), cropRect);
 
     ScriptWrappable::init(this);
@@ -103,10 +106,10 @@ ImageBitmap::ImageBitmap(ImageData* data, const IntRect& cropRect)
     if (!buf)
         return;
     if (srcRect.width() > 0 && srcRect.height() > 0)
-        buf->putByteArray(Premultiplied, data->data(), data->size(), srcRect, IntPoint(min(0, -cropRect.x()), min(0, -cropRect.y())));
+        buf->putByteArray(Premultiplied, data->data(), data->size(), srcRect, IntPoint(std::min(0, -cropRect.x()), std::min(0, -cropRect.y())));
 
     m_bitmap = buf->copyImage(DontCopyBackingStore);
-    m_bitmapRect = IntRect(IntPoint(max(0, -cropRect.x()), max(0, -cropRect.y())),  srcRect.size());
+    m_bitmapRect = IntRect(IntPoint(std::max(0, -cropRect.x()), std::max(0, -cropRect.y())),  srcRect.size());
 
     ScriptWrappable::init(this);
 }
@@ -119,7 +122,7 @@ ImageBitmap::ImageBitmap(ImageBitmap* bitmap, const IntRect& cropRect)
 {
     IntRect oldBitmapRect = bitmap->bitmapRect();
     IntRect srcRect = intersection(cropRect, oldBitmapRect);
-    m_bitmapRect = IntRect(IntPoint(max(0, oldBitmapRect.x() - cropRect.x()), max(0, oldBitmapRect.y() - cropRect.y())), srcRect.size());
+    m_bitmapRect = IntRect(IntPoint(std::max(0, oldBitmapRect.x() - cropRect.x()), std::max(0, oldBitmapRect.y() - cropRect.y())), srcRect.size());
 
     if (m_imageElement) {
         m_imageElement->addClient(this);
@@ -138,15 +141,17 @@ ImageBitmap::ImageBitmap(Image* image, const IntRect& cropRect)
 {
     IntRect srcRect = intersection(cropRect, IntRect(IntPoint(), image->size()));
     m_bitmap = cropImage(image, cropRect);
-    m_bitmapRect = IntRect(IntPoint(max(0, -cropRect.x()), max(0, -cropRect.y())),  srcRect.size());
+    m_bitmapRect = IntRect(IntPoint(std::max(0, -cropRect.x()), std::max(0, -cropRect.y())),  srcRect.size());
 
     ScriptWrappable::init(this);
 }
 
 ImageBitmap::~ImageBitmap()
 {
+#if !ENABLE(OILPAN)
     if (m_imageElement)
         m_imageElement->removeClient(this);
+#endif
 }
 
 PassRefPtrWillBeRawPtr<ImageBitmap> ImageBitmap::create(HTMLImageElement* image, const IntRect& cropRect)
@@ -226,6 +231,7 @@ FloatSize ImageBitmap::sourceSize() const
 
 void ImageBitmap::trace(Visitor* visitor)
 {
+    visitor->trace(m_imageElement);
     ImageLoaderClient::trace(visitor);
 }
 

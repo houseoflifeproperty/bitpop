@@ -17,6 +17,7 @@ BUILD_ANDROID_DIR = os.path.join(os.path.dirname(__file__), '..', '..')
 sys.path.append(BUILD_ANDROID_DIR)
 
 from pylib import android_commands
+from pylib.device import device_errors
 from pylib.device import device_utils
 
 GetAttachedDevices = android_commands.GetAttachedDevices
@@ -30,7 +31,7 @@ class BuildDevice(object):
     self.device = device_utils.DeviceUtils(self.id)
 
   def RunShellCommand(self, *args, **kwargs):
-    return self.device.old_interface.RunShellCommand(*args, **kwargs)
+    return self.device.RunShellCommand(*args, **kwargs)
 
   def PushIfNeeded(self, *args, **kwargs):
     return self.device.old_interface.PushIfNeeded(*args, **kwargs)
@@ -57,17 +58,22 @@ def GetConfigurationForDevice(device_id):
   device = device_utils.DeviceUtils(device_id)
   configuration = None
   has_root = False
-  is_online = device.old_interface.IsOnline()
+  is_online = device.IsOnline()
   if is_online:
     cmd = 'ls -l /data/app; getprop ro.build.description'
-    cmd_output = device.old_interface.RunShellCommand(cmd)
+    cmd_output = device.RunShellCommand(cmd)
     has_root = not 'Permission denied' in cmd_output[0]
     if not has_root:
-      # Disable warning log messages from EnableAdbRoot()
+      # Disable warning log messages from EnableRoot()
       logging.getLogger().disabled = True
-      has_root = device.old_interface.EnableAdbRoot()
-      logging.getLogger().disabled = False
-      cmd_output = device.old_interface.RunShellCommand(cmd)
+      try:
+        device.EnableRoot()
+        has_root = True
+      except device_errors.CommandFailedError:
+        has_root = False
+      finally:
+        logging.getLogger().disabled = False
+      cmd_output = device.RunShellCommand(cmd)
 
     configuration = {
         'id': device_id,

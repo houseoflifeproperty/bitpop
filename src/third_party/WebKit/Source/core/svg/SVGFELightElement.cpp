@@ -23,10 +23,9 @@
 
 #include "core/svg/SVGFELightElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGFEDiffuseLightingElement.h"
 #include "core/svg/SVGFESpecularLightingElement.h"
 
@@ -60,14 +59,6 @@ SVGFELightElement::SVGFELightElement(const QualifiedName& tagName, Document& doc
 SVGFELightElement* SVGFELightElement::findLightElement(const SVGElement& svgElement)
 {
     return Traversal<SVGFELightElement>::firstChild(svgElement);
-}
-
-PassRefPtr<LightSource> SVGFELightElement::findLightSource(const SVGElement& svgElement)
-{
-    SVGFELightElement* lightNode = findLightElement(svgElement);
-    if (!lightNode)
-        return nullptr;
-    return lightNode->lightSource();
 }
 
 bool SVGFELightElement::isSupportedAttribute(const QualifiedName& attrName)

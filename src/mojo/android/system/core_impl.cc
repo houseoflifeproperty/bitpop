@@ -8,10 +8,43 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_registrar.h"
 #include "base/android/library_loader/library_loader_hooks.h"
-#include "base/logging.h"
+#include "base/android/scoped_java_ref.h"
+#include "base/bind.h"
+#include "base/message_loop/message_loop.h"
 #include "jni/CoreImpl_jni.h"
 #include "mojo/embedder/embedder.h"
+#include "mojo/public/c/environment/async_waiter.h"
 #include "mojo/public/c/system/core.h"
+#include "mojo/public/cpp/environment/environment.h"
+
+namespace {
+
+// |AsyncWait| is guaranteed never to return 0.
+const MojoAsyncWaitID kInvalidHandleCancelID = 0;
+
+struct AsyncWaitCallbackData {
+  base::android::ScopedJavaGlobalRef<jobject> core_impl;
+  base::android::ScopedJavaGlobalRef<jobject> callback;
+  base::android::ScopedJavaGlobalRef<jobject> cancellable;
+
+  AsyncWaitCallbackData(JNIEnv* env, jobject core_impl, jobject callback) {
+    this->core_impl.Reset(env, core_impl);
+    this->callback.Reset(env, callback);
+  }
+};
+
+void AsyncWaitCallback(void* data, MojoResult result) {
+  scoped_ptr<AsyncWaitCallbackData> callback_data(
+      static_cast<AsyncWaitCallbackData*>(data));
+  mojo::android::Java_CoreImpl_onAsyncWaitResult(
+      base::android::AttachCurrentThread(),
+      callback_data->core_impl.obj(),
+      result,
+      callback_data->callback.obj(),
+      callback_data->cancellable.obj());
+}
+
+}  // namespace
 
 namespace mojo {
 namespace android {
@@ -37,15 +70,16 @@ static jint WaitMany(JNIEnv* env,
 
   const size_t nb_handles = buffer_size / record_size;
   const MojoHandle* handle_start = static_cast<const MojoHandle*>(buffer_start);
-  const MojoWaitFlags* flags_start =
-      static_cast<const MojoWaitFlags*>(handle_start + nb_handles);
-  return MojoWaitMany(handle_start, flags_start, nb_handles, deadline);
+  const MojoHandleSignals* signals_start =
+      static_cast<const MojoHandleSignals*>(handle_start + nb_handles);
+  return MojoWaitMany(handle_start, signals_start, nb_handles, deadline);
 }
 
 static jobject CreateMessagePipe(JNIEnv* env, jobject jcaller) {
   MojoHandle handle1;
   MojoHandle handle2;
-  MojoResult result = MojoCreateMessagePipe(&handle1, &handle2);
+  // TODO(vtl): Add support for the options struct.
+  MojoResult result = MojoCreateMessagePipe(NULL, &handle1, &handle2);
   return Java_CoreImpl_newNativeCreationResult(env, result, handle1, handle2)
       .Release();
 }
@@ -95,9 +129,9 @@ static jint Close(JNIEnv* env, jobject jcaller, jint mojo_handle) {
 static jint Wait(JNIEnv* env,
                  jobject jcaller,
                  jint mojo_handle,
-                 jint flags,
+                 jint signals,
                  jlong deadline) {
-  return MojoWait(mojo_handle, flags, deadline);
+  return MojoWait(mojo_handle, signals, deadline);
 }
 
 static jint WriteMessage(JNIEnv* env,
@@ -150,7 +184,7 @@ static jobject ReadMessage(JNIEnv* env,
   MojoResult result = MojoReadMessage(
       mojo_handle, buffer_start, &buffer_size, handles, &num_handles, flags);
   // Jave code will handle taking ownership of any received handle.
-  return Java_CoreImpl_newNativeReadMessageResult(
+  return Java_CoreImpl_newReadMessageResult(
              env, result, buffer_size, num_handles).Release();
 }
 
@@ -283,6 +317,47 @@ static int Unmap(JNIEnv* env, jobject jcaller, jobject buffer) {
   void* buffer_start = env->GetDirectBufferAddress(buffer);
   DCHECK(buffer_start);
   return MojoUnmapBuffer(buffer_start);
+}
+
+static jobject AsyncWait(JNIEnv* env,
+                         jobject jcaller,
+                         jint mojo_handle,
+                         jint signals,
+                         jlong deadline,
+                         jobject callback) {
+  AsyncWaitCallbackData* callback_data =
+      new AsyncWaitCallbackData(env, jcaller, callback);
+  MojoAsyncWaitID cancel_id;
+  if (static_cast<MojoHandle>(mojo_handle) != MOJO_HANDLE_INVALID) {
+    cancel_id = mojo::Environment::GetDefaultAsyncWaiter()->AsyncWait(
+        mojo_handle, signals, deadline, AsyncWaitCallback, callback_data);
+  } else {
+    cancel_id = kInvalidHandleCancelID;
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(
+            &AsyncWaitCallback, callback_data, MOJO_RESULT_INVALID_ARGUMENT));
+  }
+  base::android::ScopedJavaLocalRef<jobject> cancellable =
+      Java_CoreImpl_newAsyncWaiterCancellableImpl(
+          env, jcaller, cancel_id, reinterpret_cast<intptr_t>(callback_data));
+  callback_data->cancellable.Reset(env, cancellable.obj());
+  return cancellable.Release();
+}
+
+static void CancelAsyncWait(JNIEnv* env,
+                            jobject jcaller,
+                            jlong id,
+                            jlong data_ptr) {
+  if (id == 0) {
+    // If |id| is |kInvalidHandleCancelID|, the async wait was done on an
+    // invalid handle, so the AsyncWaitCallback will be called and will clear
+    // the data_ptr.
+    return;
+  }
+  scoped_ptr<AsyncWaitCallbackData> deleter(
+      reinterpret_cast<AsyncWaitCallbackData*>(data_ptr));
+  mojo::Environment::GetDefaultAsyncWaiter()->CancelWait(id);
 }
 
 bool RegisterCoreImpl(JNIEnv* env) {

@@ -77,7 +77,7 @@ class PasswordStore : protected PasswordStoreSync,
     explicit GetLoginsRequest(PasswordStoreConsumer* consumer);
     virtual ~GetLoginsRequest();
 
-    void set_ignore_logins_cutoff(const base::Time& cutoff) {
+    void set_ignore_logins_cutoff(base::Time cutoff) {
       ignore_logins_cutoff_ = cutoff;
     }
 
@@ -139,8 +139,12 @@ class PasswordStore : protected PasswordStoreSync,
   virtual void RemoveLogin(const autofill::PasswordForm& form);
 
   // Removes all logins created in the given date range.
-  virtual void RemoveLoginsCreatedBetween(const base::Time& delete_begin,
-                                          const base::Time& delete_end);
+  virtual void RemoveLoginsCreatedBetween(base::Time delete_begin,
+                                          base::Time delete_end);
+
+  // Removes all logins synced in the given date range.
+  virtual void RemoveLoginsSyncedBetween(base::Time delete_begin,
+                                         base::Time delete_end);
 
   // Searches for a matching PasswordForm, and notifies |consumer| on
   // completion. The request will be cancelled if the consumer is destroyed.
@@ -213,7 +217,13 @@ class PasswordStore : protected PasswordStoreSync,
 
   // Synchronous implementation to remove the given logins.
   virtual PasswordStoreChangeList RemoveLoginsCreatedBetweenImpl(
-      const base::Time& delete_begin, const base::Time& delete_end) = 0;
+      base::Time delete_begin,
+      base::Time delete_end) = 0;
+
+  // Synchronous implementation to remove the given logins.
+  virtual PasswordStoreChangeList RemoveLoginsSyncedBetweenImpl(
+      base::Time delete_begin,
+      base::Time delete_end) = 0;
 
   typedef base::Callback<void(const std::vector<autofill::PasswordForm*>&)>
       ConsumerCallbackRunner;  // Owns all PasswordForms in the vector.

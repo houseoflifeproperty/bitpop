@@ -137,7 +137,7 @@ void GURL::InitializeFromCanonicalSpec() {
     // canonical_spec actually points to the start of the outer URL, so we'd
     // end up with infinite recursion in this constructor.
     if (!url::FindAndCompareScheme(spec_.data(), spec_.length(),
-                                   "filesystem", &scheme) ||
+                                   url::kFileSystemScheme, &scheme) ||
         scheme.begin == parsed_.scheme.begin) {
       // We need to retain trailing whitespace on path URLs, as the |parsed_|
       // spec we originally received may legitimately contain trailing white-
@@ -370,11 +370,11 @@ bool GURL::SchemeIs(const char* lower_ascii_scheme) const {
 }
 
 bool GURL::SchemeIsHTTPOrHTTPS() const {
-  return SchemeIs("http") || SchemeIs("https");
+  return SchemeIs(url::kHttpScheme) || SchemeIs(url::kHttpsScheme);
 }
 
 bool GURL::SchemeIsWSOrWSS() const {
-  return SchemeIs("ws") || SchemeIs("wss");
+  return SchemeIs(url::kWsScheme) || SchemeIs(url::kWssScheme);
 }
 
 int GURL::IntPort() const {

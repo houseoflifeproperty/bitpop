@@ -18,12 +18,10 @@
 
 namespace device {
 
+class BluetoothGattConnection;
 class BluetoothGattService;
-class BluetoothProfile;
 class BluetoothSocket;
 class BluetoothUUID;
-
-struct BluetoothOutOfBandPairingData;
 
 // BluetoothDevice represents a remote Bluetooth device, both its properties and
 // capabilities as discovered by a local adapter and actions that may be
@@ -277,6 +275,10 @@ class BluetoothDevice {
   // were called after the corresponding call to Connect().
   virtual bool IsConnecting() const = 0;
 
+  // Indicates whether the device can be trusted, based on device properties,
+  // such as vendor and product id.
+  bool IsTrustable() const;
+
   // Returns the set of UUIDs that this device supports. For classic Bluetooth
   // devices this data is collected from both the EIR data and SDP tables,
   // for Low Energy devices this data is collected from AD and GATT primary
@@ -364,17 +366,6 @@ class BluetoothDevice {
   // before that callback would be called.
   virtual void Forget(const ErrorCallback& error_callback) = 0;
 
-  // Attempts to initiate an outgoing connection to this device for the profile
-  // identified by |profile|, on success the profile's connection callback
-  // will be called as well as |callback|; on failure |error_callback| will be
-  // called.
-  typedef base::Callback<void(const std::string&)>
-      ConnectToProfileErrorCallback;
-  virtual void ConnectToProfile(
-      BluetoothProfile* profile,
-      const base::Closure& callback,
-      const ConnectToProfileErrorCallback& error_callback) = 0;
-
   // Attempts to initiate an outgoing L2CAP or RFCOMM connection to the
   // advertised service on this device matching |uuid|, performing an SDP lookup
   // if necessary to determine the correct protocol and channel for the
@@ -391,18 +382,20 @@ class BluetoothDevice {
       const ConnectToServiceCallback& callback,
       const ConnectToServiceErrorCallback& error_callback) = 0;
 
-  // Sets the Out Of Band pairing data for this device to |data|.  Exactly one
-  // of |callback| or |error_callback| will be run.
-  virtual void SetOutOfBandPairingData(
-      const BluetoothOutOfBandPairingData& data,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) = 0;
-
-  // Clears the Out Of Band pairing data for this device.  Exactly one of
-  // |callback| or |error_callback| will be run.
-  virtual void ClearOutOfBandPairingData(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) = 0;
+  // Opens a new GATT connection to this device. On success, a new
+  // BluetoothGattConnection will be handed to the caller via |callback|. On
+  // error, |error_callback| will be called. The connection will be kept alive,
+  // as long as there is at least one active GATT connection. In the case that
+  // the underlying connection gets terminated, either due to a call to
+  // BluetoothDevice::Disconnect or other unexpected circumstances, the
+  // returned BluetoothGattConnection will be automatically marked as inactive.
+  // To monitor the state of the connection, observe the
+  // BluetoothAdapter::Observer::DeviceChanged method.
+  typedef base::Callback<void(scoped_ptr<BluetoothGattConnection>)>
+      GattConnectionCallback;
+  virtual void CreateGattConnection(
+      const GattConnectionCallback& callback,
+      const ConnectErrorCallback& error_callback) = 0;
 
   // Starts monitoring the connection properties, RSSI and TX power. These
   // properties will be tracked, and updated when their values change. Exactly
@@ -417,6 +410,11 @@ class BluetoothDevice {
   // Returns NULL, if no such service exists.
   virtual BluetoothGattService* GetGattService(
       const std::string& identifier) const;
+
+  // Returns the |address| in the canoncial format: XX:XX:XX:XX:XX:XX, where
+  // each 'X' is a hex digit.  If the input |address| is invalid, returns an
+  // empty string.
+  static std::string CanonicalizeAddress(const std::string& address);
 
  protected:
   BluetoothDevice();

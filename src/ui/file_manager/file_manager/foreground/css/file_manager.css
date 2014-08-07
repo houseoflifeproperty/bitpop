@@ -96,7 +96,8 @@ a:focus {
   width: 8px;
 }
 
-:hover > .scrollbar-vertical > .scrollbar-button {
+:hover > .scrollbar-vertical > .scrollbar-button,
+.scrollbar-vertical > .scrollbar-button.scrolling {
   opacity: 0.3;
 }
 
@@ -165,13 +166,13 @@ a:focus {
 }
 
 .dialog-navigation-list-header #app-name {
-  -webkit-margin-start: 15px;
   color: #303030;
   font-size: 130%;
+  margin: 0 15px;
 }
 
 .dialog-navigation-list-header #profile-badge:not([hidden]) + #app-name {
-  -webkit-margin-start: 0;
+  margin: 0;
 }
 
 .dialog-navigation-list-contents {
@@ -242,7 +243,6 @@ div.splitter {
 }
 
 #navigation-list .volume-icon {
-  background-position: center 2px;
   background-repeat: no-repeat;
   height: 24px;
   width: 24px;
@@ -620,6 +620,10 @@ body[drive] .dialog-container[connection='metered'] .offline-icon-space {
   height: 10px;
   overflow: hidden;
   width: 25px;
+}
+
+html[dir='rtl'] .breadcrumbs .separator {
+  -webkit-transform: scaleX(-1);
 }
 
 #filename-input-box input {
@@ -1313,8 +1317,6 @@ body[overlay-visible] > :not(.overlay-pane) {
 /* Invisible container for elements representing files while dragging. */
 #drag-container {
   left: 0;
-  /* Hack for extra margins caused by setDragImage(). */
-  padding: 1000px 0 0 1000px;
   position: fixed;
   top: 0;
   z-index: -1;  /* below .dialog-container */
@@ -1327,6 +1329,7 @@ body[overlay-visible] > :not(.overlay-pane) {
   border-radius: 3px;
   box-shadow: 0 2px 2px 0 rgba(0, 0, 0, .2);
   display: -webkit-box;
+  line-height: 0;
   margin-bottom: 5px;
   padding: 6px;
   transition: opacity 200ms ease-in;
@@ -1339,18 +1342,6 @@ body[overlay-visible] > :not(.overlay-pane) {
 #drag-container .thumbnail-item {
   -webkit-box-orient: horizontal;
   display: -webkit-box;
-}
-
-/* When changing these properties please preserve these conditions:
-   1. width == height (so that the rotated thumbnail does not look off-center)
-   2. width % 8 == 0 (to minimize rounding errors in the centering code) */
-#drag-container .img-container {
-  -webkit-box-flex: 0;
-  display: -webkit-box;
-  height: 64px;
-  overflow: hidden;
-  position: relative;
-  width: 64px;
 }
 
 #drag-container .label {

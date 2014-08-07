@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,7 +47,7 @@ function ImageView(container, viewport, metadataCache) {
   this.screenImage_ = null;
 
   this.localImageTransformFetcher_ = function(entry, callback) {
-    metadataCache.get(entry, 'fetchedMedia', function(fetchedMedia) {
+    metadataCache.getOne(entry, 'fetchedMedia', function(fetchedMedia) {
       callback(fetchedMedia.imageTransform);
     });
   };
@@ -381,10 +381,8 @@ ImageView.prototype.load = function(entry, metadata, effect,
       // As far as the user can tell the image is loaded. We still need to load
       // the full res image to make editing possible, but we can report now.
       ImageUtil.metrics.recordInterval(ImageUtil.getMetricName('DisplayTime'));
-    } else if ((!effect || (effect.constructor.name === 'Slide')) &&
-        metadata.thumbnail && metadata.thumbnail.url &&
-        !(imageWidth && imageHeight &&
-          ImageUtil.ImageLoader.isTooLarge(imageWidth, imageHeight))) {
+    } else if ((effect && effect.constructor.name === 'Slide') &&
+               (metadata.thumbnail && metadata.thumbnail.url)) {
       // Only show thumbnails if there is no effect or the effect is Slide.
       // Also no thumbnail if the image is too large to be loaded.
       var thumbnailLoader = new ThumbnailLoader(
@@ -403,13 +401,24 @@ ImageView.prototype.load = function(entry, metadata, effect,
 
   function displayThumbnail(loadType, canvas) {
     if (canvas) {
+      var width = null;
+      var height = null;
+      if (metadata.media) {
+        width = metadata.media.width;
+        height = metadata.media.height;
+      }
+      // If metadata.drive.present is true, the image data is loaded directly
+      // from local cache, whose size may be out of sync with the drive
+      // metadata.
+      if (metadata.drive && !metadata.drive.present) {
+        width = metadata.drive.imageWidth;
+        height = metadata.drive.imageHeight;
+      }
       self.replace(
           canvas,
           effect,
-          (metadata.media && metadata.media.width) ||
-              (metadata.drive && metadata.drive.imageWidth),
-          (metadata.media && metadata.media.height) ||
-              (metadata.drive && metadata.drive.imageHeight),
+          width,
+          height,
           true /* preview */);
       if (displayCallback) displayCallback();
     }

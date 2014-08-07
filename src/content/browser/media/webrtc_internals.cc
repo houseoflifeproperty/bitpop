@@ -4,7 +4,6 @@
 
 #include "content/browser/media/webrtc_internals.h"
 
-#include "base/command_line.h"
 #include "base/path_service.h"
 #include "content/browser/media/webrtc_internals_ui_observer.h"
 #include "content/browser/web_contents/web_contents_view.h"
@@ -14,7 +13,6 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/content_switches.h"
 
 using base::ProcessId;
 using std::string;
@@ -49,7 +47,7 @@ WebRTCInternals::WebRTCInternals()
     // the platform default path will be used in the file dialog (with no
     // default file name). See SelectFileDialog::SelectFile. On Android where
     // there's no dialog we'll fail to open the file.
-    LOG(WARNING) << "Could not get the download directory.";
+    VLOG(1) << "Could not get the download directory.";
   } else {
     aec_dump_file_path_ =
         aec_dump_file_path_.Append(FILE_PATH_LITERAL("audio.aecdump"));
@@ -246,6 +244,10 @@ void WebRTCInternals::EnableAecDump(content::WebContents* web_contents) {
 void WebRTCInternals::DisableAecDump() {
 #if defined(ENABLE_WEBRTC)
   aec_dump_enabled_ = false;
+
+  // Tear down the dialog since the user has unchecked the AEC dump box.
+  select_file_dialog_ = NULL;
+
   for (RenderProcessHost::iterator i(
            content::RenderProcessHost::AllHostsIterator());
        !i.IsAtEnd(); i.Advance()) {

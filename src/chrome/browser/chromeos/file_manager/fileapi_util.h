@@ -13,6 +13,7 @@
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "url/gurl.h"
+#include "webkit/browser/fileapi/file_system_operation_runner.h"
 
 class Profile;
 
@@ -43,7 +44,9 @@ struct EntryDefinition {
   std::string file_system_root_url;  // Used to create DOMFileSystem.
   std::string file_system_name;      // Value of DOMFileSystem.name.
   base::FilePath full_path;    // Value of Entry.fullPath.
-  bool is_directory;           // Whether to create FileEntry or DirectoryEntry.
+  // Whether to create FileEntry or DirectoryEntry when the corresponding entry
+  // is not found.
+  bool is_directory;
   base::File::Error error;
 };
 
@@ -121,6 +124,12 @@ void ConvertFileDefinitionListToEntryDefinitionList(
     const std::string& extension_id,
     const FileDefinitionList& file_definition_list,
     const EntryDefinitionListCallback& callback);
+
+// Checks if a directory exists at |url|.
+void CheckIfDirectoryExists(
+    scoped_refptr<fileapi::FileSystemContext> file_system_context,
+    const GURL& url,
+    const fileapi::FileSystemOperationRunner::StatusCallback& callback);
 
 }  // namespace util
 }  // namespace file_manager

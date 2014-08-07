@@ -111,9 +111,9 @@ enum {
 
 namespace webrtc {
 
-scoped_refptr<PeerConnectionFactoryInterface>
+talk_base::scoped_refptr<PeerConnectionFactoryInterface>
 CreatePeerConnectionFactory() {
-  scoped_refptr<PeerConnectionFactory> pc_factory(
+  talk_base::scoped_refptr<PeerConnectionFactory> pc_factory(
       new talk_base::RefCountedObject<PeerConnectionFactory>());
 
   if (!pc_factory->Initialize()) {
@@ -122,17 +122,19 @@ CreatePeerConnectionFactory() {
   return pc_factory;
 }
 
-scoped_refptr<PeerConnectionFactoryInterface>
+talk_base::scoped_refptr<PeerConnectionFactoryInterface>
 CreatePeerConnectionFactory(
     talk_base::Thread* worker_thread,
     talk_base::Thread* signaling_thread,
     AudioDeviceModule* default_adm,
     cricket::WebRtcVideoEncoderFactory* encoder_factory,
     cricket::WebRtcVideoDecoderFactory* decoder_factory) {
-  scoped_refptr<PeerConnectionFactory> pc_factory(
-      new talk_base::RefCountedObject<PeerConnectionFactory>(
-          worker_thread, signaling_thread, default_adm,
-          encoder_factory, decoder_factory));
+  talk_base::scoped_refptr<PeerConnectionFactory> pc_factory(
+      new talk_base::RefCountedObject<PeerConnectionFactory>(worker_thread,
+                                                             signaling_thread,
+                                                             default_adm,
+                                                             encoder_factory,
+                                                             decoder_factory));
   if (!pc_factory->Initialize()) {
     return NULL;
   }
@@ -245,6 +247,7 @@ bool PeerConnectionFactory::Initialize_s() {
 
   channel_manager_.reset(new cricket::ChannelManager(
       webrtc_media_engine, device_manager, worker_thread_));
+  channel_manager_->SetVideoRtxEnabled(true);
   if (!channel_manager_->Init()) {
     return false;
   }
@@ -278,7 +281,7 @@ bool PeerConnectionFactory::StartAecDump_s(talk_base::PlatformFile file) {
   return channel_manager_->StartAecDump(file);
 }
 
-scoped_refptr<PeerConnectionInterface>
+talk_base::scoped_refptr<PeerConnectionInterface>
 PeerConnectionFactory::CreatePeerConnection(
     const PeerConnectionInterface::RTCConfiguration& configuration,
     const MediaConstraintsInterface* constraints,
@@ -314,7 +317,7 @@ PeerConnectionFactory::CreatePeerConnection_s(
   return PeerConnectionProxy::Create(signaling_thread(), pc);
 }
 
-scoped_refptr<MediaStreamInterface>
+talk_base::scoped_refptr<MediaStreamInterface>
 PeerConnectionFactory::CreateLocalMediaStream(const std::string& label) {
   return MediaStreamProxy::Create(signaling_thread_,
                                   MediaStream::Create(label));
@@ -348,9 +351,9 @@ PeerConnectionFactory::CreateVideoTrack(
   return VideoTrackProxy::Create(signaling_thread_, track);
 }
 
-scoped_refptr<AudioTrackInterface> PeerConnectionFactory::CreateAudioTrack(
-    const std::string& id,
-    AudioSourceInterface* source) {
+talk_base::scoped_refptr<AudioTrackInterface>
+PeerConnectionFactory::CreateAudioTrack(const std::string& id,
+                                        AudioSourceInterface* source) {
   talk_base::scoped_refptr<AudioTrackInterface> track(
       AudioTrack::Create(id, source));
   return AudioTrackProxy::Create(signaling_thread_, track);

@@ -108,11 +108,7 @@ class ViECapturer
 
   void RegisterCpuOveruseObserver(CpuOveruseObserver* observer);
   void SetCpuOveruseOptions(const CpuOveruseOptions& options);
-
-  void CpuOveruseMeasures(int* capture_jitter_ms,
-                          int* avg_encode_time_ms,
-                          int* encode_usage_percent,
-                          int* capture_queue_delay_ms_per_s) const;
+  void GetCpuOveruseMetrics(CpuOveruseMetrics* metrics) const;
 
  protected:
   ViECapturer(int capture_id,
@@ -173,8 +169,8 @@ class ViECapturer
   EventWrapper& capture_event_;
   EventWrapper& deliver_event_;
 
-  I420VideoFrame captured_frame_;
-  I420VideoFrame deliver_frame_;
+  scoped_ptr<I420VideoFrame> captured_frame_;
+  scoped_ptr<I420VideoFrame> deliver_frame_;
 
   // Image processing.
   ViEEffectFilter* effect_filter_;

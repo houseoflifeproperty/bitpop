@@ -35,6 +35,9 @@ def ConfigureContentSettingsDict(device, desired_settings):
     logging.error('Skipping content settings configuration due to outdated sdk')
     return
 
+  device.old_interface.system_properties['persist.sys.usb.config'] = 'adb'
+  device.old_interface.WaitForDevicePm()
+
   for table, key_value in sorted(desired_settings.iteritems()):
     settings = content_settings.ContentSettings(table, device)
     for key, value in key_value.iteritems():
@@ -43,6 +46,20 @@ def ConfigureContentSettingsDict(device, desired_settings):
     for key, value in sorted(settings.iteritems()):
       logging.info('\t%s: %s', key, value)
 
+
+ENABLE_LOCATION_SETTING = {
+  'settings/secure': {
+    # Ensure Geolocation is enabled and allowed for tests.
+    'location_providers_allowed': 'gps,network',
+  }
+}
+
+DISABLE_LOCATION_SETTING = {
+  'settings/secure': {
+    # Ensure Geolocation is disabled.
+    'location_providers_allowed': '',
+  }
+}
 
 DETERMINISTIC_DEVICE_SETTINGS = {
   'com.google.settings/partner': {
@@ -79,9 +96,6 @@ DETERMINISTIC_DEVICE_SETTINGS = {
     # automation fail (because the dialog steals the focus then mistakenly
     # receives the injected user input events).
     'anr_show_background': 0,
-
-    # Ensure Geolocation is enabled and allowed for tests.
-    'location_providers_allowed': 'gps,network',
 
     'lockscreen.disabled': 1,
 

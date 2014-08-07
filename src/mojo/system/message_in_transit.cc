@@ -20,6 +20,8 @@ STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Type
     MessageInTransit::kTypeMessagePipe;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Type
     MessageInTransit::kTypeChannel;
+STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Type
+    MessageInTransit::kTypeRawChannel;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Subtype
     MessageInTransit::kSubtypeMessagePipeEndpointData;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Subtype
@@ -28,6 +30,8 @@ STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Subtype
     MessageInTransit::kSubtypeChannelRemoveMessagePipeEndpoint;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Subtype
     MessageInTransit::kSubtypeChannelRemoveMessagePipeEndpointAck;
+STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::Subtype
+    MessageInTransit::kSubtypeRawChannelPosixExtraPlatformHandles;
 STATIC_CONST_MEMBER_DEFINITION const MessageInTransit::EndpointId
     MessageInTransit::kInvalidEndpointId;
 STATIC_CONST_MEMBER_DEFINITION const size_t MessageInTransit::kMessageAlignment;
@@ -58,7 +62,8 @@ MessageInTransit::View::View(size_t message_size, const void* buffer)
   DCHECK_EQ(message_size, total_size());
 }
 
-bool MessageInTransit::View::IsValid(const char** error_message) const {
+bool MessageInTransit::View::IsValid(size_t serialized_platform_handle_size,
+                                     const char** error_message) const {
   // Note: This also implies a check on the |main_buffer_size()|, which is just
   // |RoundUpMessageAlignment(sizeof(Header) + num_bytes())|.
   if (num_bytes() > kMaxMessageNumBytes) {
@@ -67,8 +72,10 @@ bool MessageInTransit::View::IsValid(const char** error_message) const {
   }
 
   if (transport_data_buffer_size() > 0) {
-    const char* e = TransportData::ValidateBuffer(transport_data_buffer(),
-                                                  transport_data_buffer_size());
+    const char* e =
+        TransportData::ValidateBuffer(serialized_platform_handle_size,
+                                      transport_data_buffer(),
+                                      transport_data_buffer_size());
     if (e) {
       *error_message = e;
       return false;
@@ -155,12 +162,22 @@ void MessageInTransit::SetDispatchers(
     scoped_ptr<DispatcherVector> dispatchers) {
   DCHECK(dispatchers);
   DCHECK(!dispatchers_);
+  DCHECK(!transport_data_);
 
   dispatchers_ = dispatchers.Pass();
 #ifndef NDEBUG
   for (size_t i = 0; i < dispatchers_->size(); i++)
     DCHECK(!(*dispatchers_)[i] || (*dispatchers_)[i]->HasOneRef());
 #endif
+}
+
+void MessageInTransit::SetTransportData(
+    scoped_ptr<TransportData> transport_data) {
+  DCHECK(transport_data);
+  DCHECK(!transport_data_);
+  DCHECK(!dispatchers_);
+
+  transport_data_ = transport_data.Pass();
 }
 
 void MessageInTransit::SerializeAndCloseDispatchers(Channel* channel) {

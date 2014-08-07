@@ -16,11 +16,14 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/signin/account_reconcilor_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/browser/account_reconcilor.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/user_metrics.h"
 
@@ -159,6 +162,15 @@ void OnUserManagerGuestProfileCreated(
   }
 
   callback.Run(guest_profile, page);
+}
+
+// Updates Chrome services that require notification when
+// the new_profile_management's status changes.
+void UpdateServicesWithNewProfileManagementFlag(Profile* profile,
+                                                bool new_flag_status) {
+  AccountReconcilor* account_reconcilor =
+      AccountReconcilorFactory::GetForProfile(profile);
+  account_reconcilor->OnNewProfileManagementFlagChanged(new_flag_status);
 }
 
 }  // namespace
@@ -305,20 +317,40 @@ void ShowUserManagerMaybeWithTutorial(Profile* profile) {
   }
 }
 
-void EnableNewProfileManagementPreview() {
+void EnableNewProfileManagementPreview(Profile* profile) {
+#if defined(OS_ANDROID)
+  NOTREACHED();
+#else
+  // TODO(rogerta): instead of setting experiment flags and command line
+  // args, we should set a profile preference.
+  const about_flags::Experiment experiment = {
+      kNewProfileManagementExperimentInternalName,
+      0,  // string id for title of experiment
+      0,  // string id for description of experiment
+      0,  // supported platforms
+      about_flags::Experiment::ENABLE_DISABLE_VALUE,
+      switches::kEnableNewProfileManagement,
+      "",  // not used with ENABLE_DISABLE_VALUE type
+      switches::kDisableNewProfileManagement,
+      "",  // not used with ENABLE_DISABLE_VALUE type
+      NULL,  // not used with ENABLE_DISABLE_VALUE type
+      3
+  };
   about_flags::PrefServiceFlagsStorage flags_storage(
       g_browser_process->local_state());
   about_flags::SetExperimentEnabled(
       &flags_storage,
-      kNewProfileManagementExperimentInternalName,
+      experiment.NameForChoice(1),
       true);
 
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kNewProfileManagement);
+  switches::EnableNewProfileManagementForTesting(
+      CommandLine::ForCurrentProcess());
   chrome::ShowUserManagerWithTutorial(profiles::USER_MANAGER_TUTORIAL_OVERVIEW);
+  UpdateServicesWithNewProfileManagementFlag(profile, true);
+#endif
 }
 
-void DisableNewProfileManagementPreview() {
+void DisableNewProfileManagementPreview(Profile* profile) {
   about_flags::PrefServiceFlagsStorage flags_storage(
       g_browser_process->local_state());
   about_flags::SetExperimentEnabled(
@@ -326,6 +358,7 @@ void DisableNewProfileManagementPreview() {
       kNewProfileManagementExperimentInternalName,
       false);
   chrome::AttemptRestart();
+  UpdateServicesWithNewProfileManagementFlag(profile, false);
 }
 
 }  // namespace profiles

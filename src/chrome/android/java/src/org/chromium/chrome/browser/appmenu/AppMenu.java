@@ -7,11 +7,13 @@ package org.chromium.chrome.browser.appmenu;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Rect;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.Surface;
 import android.view.View;
+import android.view.View.OnKeyListener;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
@@ -31,7 +33,7 @@ import java.util.List;
  *   - Only visible MenuItems are shown.
  *   - Disabled items are grayed out.
  */
-public class AppMenu implements OnItemClickListener {
+public class AppMenu implements OnItemClickListener, OnKeyListener {
     private static final float LAST_ITEM_SHOW_FRACTION = 0.5f;
 
     private final Menu mMenu;
@@ -63,7 +65,7 @@ public class AppMenu implements OnItemClickListener {
         mHandler = handler;
 
         mItemDividerHeight = itemDividerHeight;
-        assert mItemDividerHeight > 0;
+        assert mItemDividerHeight >= 0;
 
         mAdditionalVerticalOffset = res.getDimensionPixelSize(R.dimen.menu_vertical_offset);
         mVerticalFadeDistance = res.getDimensionPixelSize(R.dimen.menu_vertical_fade_distance);
@@ -97,6 +99,10 @@ public class AppMenu implements OnItemClickListener {
         });
         mPopup.setWidth(context.getResources().getDimensionPixelSize(R.dimen.menu_width));
 
+        // Need to explicitly set the background here.  Relying on it being set in the style caused
+        // an incorrectly drawn background.
+        mPopup.setBackgroundDrawable(context.getResources().getDrawable(R.drawable.menu_bg));
+
         mCurrentScreenRotation = screenRotation;
         mIsByHardwareButton = isByHardwareButton;
 
@@ -120,6 +126,7 @@ public class AppMenu implements OnItemClickListener {
         mPopup.setOnItemClickListener(this);
         mPopup.show();
         mPopup.getListView().setItemsCanFocus(true);
+        mPopup.getListView().setOnKeyListener(this);
 
         mHandler.onMenuVisibilityChanged(true);
 
@@ -178,6 +185,26 @@ public class AppMenu implements OnItemClickListener {
     @Override
     public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
         onItemClick(mAdapter.getItem(position));
+    }
+
+    @Override
+    public boolean onKey(View v, int keyCode, KeyEvent event) {
+        if (mPopup == null || mPopup.getListView() == null) return false;
+
+        if (event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                event.startTracking();
+                v.getKeyDispatcherState().startTracking(event, this);
+                return true;
+            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                v.getKeyDispatcherState().handleUpEvent(event);
+                if (event.isTracking() && !event.isCanceled()) {
+                    dismiss();
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

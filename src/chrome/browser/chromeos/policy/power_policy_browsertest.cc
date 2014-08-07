@@ -16,22 +16,21 @@
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/device_policy_builder.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
 #include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
-#include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/extensions/api/power/power_api_manager.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/common/extensions/api/power.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/chromeos_paths.h"
@@ -52,7 +51,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_utils.h"
-#include "crypto/rsa_private_key.h"
 #include "policy/proto/device_management_backend.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -218,10 +216,6 @@ void PowerPolicyBrowserTestBase::InstallUserKey() {
 }
 
 void PowerPolicyBrowserTestBase::StoreAndReloadUserPolicy() {
-  ProfileManager* profile_manager = g_browser_process->profile_manager();
-  Profile* profile = profile_manager->GetActiveUserProfile();
-  ASSERT_TRUE(profile);
-
   // Install the new user policy blob in session manager client.
   user_policy_.Build();
   session_manager_client()->set_user_policy(
@@ -231,8 +225,9 @@ void PowerPolicyBrowserTestBase::StoreAndReloadUserPolicy() {
   // Reload user policy from session manager client and wait for the update to
   // take effect.
   RunClosureAndWaitForUserPolicyUpdate(
-      base::Bind(&PowerPolicyBrowserTestBase::ReloadUserPolicy, this, profile),
-      profile);
+      base::Bind(&PowerPolicyBrowserTestBase::ReloadUserPolicy, this,
+                 browser()->profile()),
+      browser()->profile());
 }
 
 void PowerPolicyBrowserTestBase::
@@ -308,9 +303,6 @@ PowerPolicyInSessionBrowserTest::PowerPolicyInSessionBrowserTest() {
 
 void PowerPolicyInSessionBrowserTest::SetUpOnMainThread() {
   PowerPolicyBrowserTestBase::SetUpOnMainThread();
-
-  // Tell the DeviceSettingsService that there is no local owner.
-  chromeos::DeviceSettingsService::Get()->SetUsername(std::string());
 }
 
 // Verifies that device policy is applied on the login screen.
@@ -488,7 +480,7 @@ IN_PROC_BROWSER_TEST_F(PowerPolicyInSessionBrowserTest, AllowScreenWakeLocks) {
 
   // Pretend an extension grabs a screen wake lock.
   const char kExtensionId[] = "abcdefghijklmnopabcdefghijlkmnop";
-  extensions::PowerApiManager::GetInstance()->AddRequest(
+  extensions::PowerApiManager::Get(browser()->profile())->AddRequest(
       kExtensionId, extensions::api::power::LEVEL_DISPLAY);
   base::RunLoop().RunUntilIdle();
 

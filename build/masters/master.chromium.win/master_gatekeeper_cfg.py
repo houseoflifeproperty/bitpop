@@ -11,7 +11,7 @@ from master import master_utils
 # Note: don't include 'update scripts' since we can't do much about it when
 # it's failing and the tree is still technically fine.
 categories_steps = {
-  '': ['update', 'runhooks'],
+  '': ['update', 'runhooks', 'steps'],
   'testers': [
     'app_list_unittests',
     'ash_unittests',
@@ -39,7 +39,6 @@ categories_steps = {
     'ipc_tests',
     'jingle_unittests',
     'media_unittests',
-    'mini_installer_test',
     'nacl_integration',
     'net_unittests',
     'ppapi_unittests',

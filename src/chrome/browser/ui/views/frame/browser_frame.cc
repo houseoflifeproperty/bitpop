@@ -11,6 +11,7 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/ui/ash/ash_init.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window_state.h"
@@ -37,10 +38,6 @@
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 #include "chrome/browser/shell_integration_linux.h"
-#endif
-
-#if defined(USE_ASH)
-#include "chrome/browser/ui/ash/ash_init.h"
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -103,16 +100,15 @@ void BrowserFrame::InitBrowserFrame() {
                                              &params.bounds,
                                              &params.show_state);
   }
-#if defined(USE_ASH)
+
   if (browser_view_->browser()->host_desktop_type() ==
       chrome::HOST_DESKTOP_TYPE_ASH || chrome::ShouldOpenAshOnStartup()) {
     params.context = ash::Shell::GetPrimaryRootWindow();
 #if defined(OS_WIN)
-   // If this window is under ASH on Windows, we need it to be translucent.
-   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
+    // If this window is under ASH on Windows, we need it to be translucent.
+    params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
 #endif
   }
-#endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Set up a custom WM_CLASS for some sorts of window types. This allows
@@ -120,7 +116,7 @@ void BrowserFrame::InitBrowserFrame() {
   // windows and e.g app windows.
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   const Browser& browser = *browser_view_->browser();
-  params.wm_class_class = ShellIntegrationLinux::GetProgramClassName();
+  params.wm_class_class = shell_integration_linux::GetProgramClassName();
   params.wm_class_name = params.wm_class_class;
   if (browser.is_app() && !browser.is_devtools()) {
     // This window is a hosted app or v1 packaged app.
@@ -188,7 +184,8 @@ views::View* BrowserFrame::GetFrameView() const {
 }
 
 bool BrowserFrame::UseCustomFrame() const {
-  return use_custom_frame_pref_.GetValue();
+  return use_custom_frame_pref_.GetValue() &&
+      browser_view_->IsBrowserTypeNormal();
 }
 
 bool BrowserFrame::ShouldSaveWindowPlacement() const {
@@ -215,7 +212,7 @@ views::NonClientFrameView* BrowserFrame::CreateNonClientFrameView() {
 }
 
 bool BrowserFrame::GetAccelerator(int command_id,
-                                  ui::Accelerator* accelerator) {
+                                  ui::Accelerator* accelerator) const {
   return browser_view_->GetAccelerator(command_id, accelerator);
 }
 

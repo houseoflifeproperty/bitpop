@@ -49,9 +49,8 @@ SkMetaData& SkBaseDevice::getMetaData() {
     return *fMetaData;
 }
 
-// TODO: should make this guy pure-virtual.
 SkImageInfo SkBaseDevice::imageInfo() const {
-    return SkImageInfo::MakeUnknown(this->width(), this->height());
+    return SkImageInfo::MakeUnknown();
 }
 
 const SkBitmap& SkBaseDevice::accessBitmap(bool changePixels) {
@@ -131,15 +130,15 @@ void* SkBaseDevice::onAccessPixels(SkImageInfo* info, size_t* rowBytes) {
     return NULL;
 }
 
-void SkBaseDevice::EXPERIMENTAL_optimize(SkPicture* picture) {
+void SkBaseDevice::EXPERIMENTAL_optimize(const SkPicture* picture) {
     // The base class doesn't perform any analysis but derived classes may
 }
 
-void SkBaseDevice::EXPERIMENTAL_purge(SkPicture* picture) {
+void SkBaseDevice::EXPERIMENTAL_purge(const SkPicture* picture) {
     // Derived-classes may have data to purge but not the base class
 }
 
-bool SkBaseDevice::EXPERIMENTAL_drawPicture(SkCanvas* canvas, SkPicture* picture) {
+bool SkBaseDevice::EXPERIMENTAL_drawPicture(SkCanvas* canvas, const SkPicture* picture) {
     // The base class doesn't perform any accelerated picture rendering
     return false;
 }

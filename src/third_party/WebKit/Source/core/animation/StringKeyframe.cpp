@@ -5,8 +5,11 @@
 #include "config.h"
 #include "core/animation/StringKeyframe.h"
 
-#include "core/animation/Interpolation.h"
 #include "core/animation/css/CSSAnimations.h"
+#include "core/animation/interpolation/DefaultStyleInterpolation.h"
+#include "core/animation/interpolation/DeferredLegacyStyleInterpolation.h"
+#include "core/animation/interpolation/LegacyStyleInterpolation.h"
+#include "core/animation/interpolation/LengthStyleInterpolation.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/rendering/style/RenderStyle.h"
 
@@ -66,28 +69,62 @@ PassRefPtrWillBeRawPtr<Interpolation> StringKeyframe::PropertySpecificKeyframe::
 {
     CSSValue* fromCSSValue = m_value.get();
     CSSValue* toCSSValue = toStringPropertySpecificKeyframe(end)->value();
+    ValueRange range = ValueRangeAll;
 
     if (!CSSAnimations::isAnimatableProperty(property))
         return DefaultStyleInterpolation::create(fromCSSValue, toCSSValue, property);
 
     switch (property) {
-    case CSSPropertyLeft:
-    case CSSPropertyRight:
-    case CSSPropertyWidth:
+    case CSSPropertyBorderBottomWidth:
+    case CSSPropertyBorderLeftWidth:
+    case CSSPropertyBorderRightWidth:
+    case CSSPropertyBorderTopWidth:
+    case CSSPropertyFontSize:
     case CSSPropertyHeight:
+    case CSSPropertyLineHeight:
+    case CSSPropertyMaxHeight:
+    case CSSPropertyMaxWidth:
+    case CSSPropertyMinHeight:
+    case CSSPropertyMinWidth:
+    case CSSPropertyOutlineWidth:
+    case CSSPropertyPaddingBottom:
+    case CSSPropertyPaddingLeft:
+    case CSSPropertyPaddingRight:
+    case CSSPropertyPaddingTop:
+    case CSSPropertyPerspective:
+    case CSSPropertyShapeMargin:
+    case CSSPropertyWidth:
+        range = ValueRangeNonNegative;
+        // Fall through
+    case CSSPropertyBottom:
+    case CSSPropertyLeft:
+    case CSSPropertyLetterSpacing:
+    case CSSPropertyMarginBottom:
+    case CSSPropertyMarginLeft:
+    case CSSPropertyMarginRight:
+    case CSSPropertyMarginTop:
+    case CSSPropertyOutlineOffset:
+    case CSSPropertyRight:
+    case CSSPropertyTop:
+    case CSSPropertyVerticalAlign:
+    case CSSPropertyWordSpacing:
         if (LengthStyleInterpolation::canCreateFrom(*fromCSSValue) && LengthStyleInterpolation::canCreateFrom(*toCSSValue))
-            return LengthStyleInterpolation::create(fromCSSValue, toCSSValue, property);
+            return LengthStyleInterpolation::create(fromCSSValue, toCSSValue, property, range);
         break;
     default:
         break;
     }
 
+    if (DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(*fromCSSValue) || DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(*toCSSValue))
+        return DeferredLegacyStyleInterpolation::create(fromCSSValue, toCSSValue, property);
+
     // FIXME: Remove the use of AnimatableValues, RenderStyles and Elements here.
     // FIXME: Remove this cache
+    ASSERT(element);
     if (!m_animatableValueCache)
-        m_animatableValueCache = StyleResolver::createAnimatableValueSnapshot(*element, property, fromCSSValue);
+        m_animatableValueCache = StyleResolver::createAnimatableValueSnapshot(*element, property, *fromCSSValue);
 
-    RefPtrWillBeRawPtr<AnimatableValue> to = StyleResolver::createAnimatableValueSnapshot(*element, property, toCSSValue);
+    RefPtrWillBeRawPtr<AnimatableValue> to = StyleResolver::createAnimatableValueSnapshot(*element, property, *toCSSValue);
     toStringPropertySpecificKeyframe(end)->m_animatableValueCache = to;
 
     return LegacyStyleInterpolation::create(m_animatableValueCache.get(), to.release(), property);

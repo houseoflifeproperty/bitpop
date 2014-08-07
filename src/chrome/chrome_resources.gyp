@@ -17,49 +17,49 @@
       # it easier for us to reference them internally.
       'actions': [
         {
-          'action_name': 'memory_internals_resources',
+          'action_name': 'generate_memory_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/memory_internals_resources.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'net_internals_resources',
+          'action_name': 'generate_net_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/net_internals_resources.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'invalidations_resources',
+          'action_name': 'generate_invalidations_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/invalidations_resources.grd',
             },
           'includes': ['../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'password_manager_internals_resources',
+          'action_name': 'generate_password_manager_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/password_manager_internals_resources.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'signin_internals_resources',
+          'action_name': 'generate_signin_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/signin_internals_resources.grd',
             },
           'includes': ['../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'sync_internals_resources',
+          'action_name': 'generate_sync_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/sync_internals_resources.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'translate_internals_resources',
+          'action_name': 'generate_translate_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/translate_internals_resources.grd',
           },
@@ -76,28 +76,28 @@
           ],
           'actions': [
             {
-              'action_name': 'component_extension_resources',
+              'action_name': 'generate_component_extension_resources',
               'variables': {
                 'grit_grd_file': 'browser/resources/component_extension_resources.grd',
               },
               'includes': [ '../build/grit_action.gypi' ],
             },
             {
-              'action_name': 'options_resources',
+              'action_name': 'generate_options_resources',
               'variables': {
                 'grit_grd_file': 'browser/resources/options_resources.grd',
               },
               'includes': [ '../build/grit_action.gypi' ],
             },
             {
-              'action_name': 'quota_internals_resources',
+              'action_name': 'generate_quota_internals_resources',
               'variables': {
                 'grit_grd_file': 'browser/resources/quota_internals_resources.grd',
               },
               'includes': [ '../build/grit_action.gypi' ],
             },
             {
-              'action_name': 'sync_file_system_internals_resources',
+              'action_name': 'generate_sync_file_system_internals_resources',
               'variables': {
                 'grit_grd_file': 'browser/resources/sync_file_system_internals_resources.grd',
               },
@@ -114,21 +114,30 @@
           ],
         }],
         ['chromeos==1 and disable_nacl==0 and disable_nacl_untrusted==0', {
-          'dependencies': [
-            '../chrome/third_party/chromevox/chromevox.gyp:chromevox_resources',
-            'chromevox_strings',
+          'conditions': [
+            # TODO(dtseng): Remove use_chromevox_next once ChromeVox Next is ready for testing.
+            ['use_chromevox_next==1', {
+              'dependencies': [
+                'browser/resources/chromeos/chromevox2/chromevox.gyp:chromevox2',
+              ],
+            }, { # else use_chromevox_next == 0
+              'dependencies': [
+                'browser/resources/chromeos/chromevox/chromevox.gyp:chromevox',
+              ],
+            }],
           ],
         }],
       ],
     },
     {
+      # GN version: //chrome/browser:chrome_internal_resources_gen
       'target_name': 'chrome_internal_resources_gen',
       'type': 'none',
       'conditions': [
         ['branding=="Chrome"', {
           'actions': [
             {
-              'action_name': 'transform_additional_modules_list',
+              'action_name': 'generate_transform_additional_modules_list',
               'variables': {
                 'additional_modules_input_path':
                   'browser/internal/resources/additional_modules_list.input',
@@ -158,6 +167,8 @@
       # to run grit would list its own .grd files, but unfortunately some
       # of the static libraries currently have circular dependencies among
       # generated headers.
+      #
+      # GN version: //chrome:resources
       'target_name': 'chrome_resources',
       'type': 'none',
       'dependencies': [
@@ -166,9 +177,9 @@
         'chrome_web_ui_mojo_bindings.gyp:web_ui_mojo_bindings',
       ],
       'actions': [
-        # Data resources.
         {
-          'action_name': 'browser_resources',
+          # GN version: //chrome/browser:resources
+          'action_name': 'generate_browser_resources',
           'variables': {
             'grit_grd_file': 'browser/browser_resources.grd',
             'grit_additional_defines': [
@@ -180,14 +191,16 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'common_resources',
+          # GN version: //chrome/common:resources
+          'action_name': 'generate_common_resources',
           'variables': {
             'grit_grd_file': 'common/common_resources.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'renderer_resources',
+          # GN version: //chrome/renderer:resources
+          'action_name': 'generate_renderer_resources',
           'variables': {
             'grit_grd_file': 'renderer/resources/renderer_resources.grd',
           },
@@ -198,7 +211,8 @@
         ['enable_extensions==1', {
           'actions': [
             {
-              'action_name': 'extensions_api_resources',
+              # GN version: //chrome/common:extensions_api_resources
+              'action_name': 'generate_extensions_api_resources',
               'variables': {
                 'grit_grd_file': 'common/extensions_api_resources.grd',
               },
@@ -214,33 +228,38 @@
       # to run grit would list its own .grd files, but unfortunately some
       # of the static libraries currently have circular dependencies among
       # generated headers.
+      #
+      # GN version: //chrome:strings
       'target_name': 'chrome_strings',
       'type': 'none',
       'actions': [
-        # Localizable resources.
         {
-          'action_name': 'locale_settings',
+          # GN version: //chrome/app/resources:locale_settings
+          'action_name': 'generate_locale_settings',
           'variables': {
             'grit_grd_file': 'app/resources/locale_settings.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'chromium_strings.grd',
+          # GN version: //chrome/app:chromium_strings
+          'action_name': 'generate_chromium_strings',
           'variables': {
             'grit_grd_file': 'app/chromium_strings.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'generated_resources',
+          # GN version: //chrome/app:generated_resources
+          'action_name': 'generate_generated_resources',
           'variables': {
             'grit_grd_file': 'app/generated_resources.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'google_chrome_strings',
+          # GN version: //chrome/app:google_chrome_strings
+          'action_name': 'generate_google_chrome_strings',
           'variables': {
             'grit_grd_file': 'app/google_chrome_strings.grd',
           },
@@ -248,6 +267,29 @@
         },
       ],
       'includes': [ '../build/grit_target.gypi' ],
+    },
+    {
+      'target_name': 'chrome_strings_map',
+      'type': 'none',
+      'dependencies': [ 'chrome_strings', ],
+      'actions': [
+        {
+          'action_name': 'generate_resources_map',
+          'inputs': [
+            '<(grit_out_dir)/grit/generated_resources.h'
+          ],
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/chrome/browser/metrics/variations/generated_resources_map.cc',
+          ],
+          'action': [
+            'python',
+            'browser/metrics/variations/generate_resources_map.py',
+            '<(grit_out_dir)/grit/generated_resources.h',
+            '<(SHARED_INTERMEDIATE_DIR)/chrome/browser/metrics/variations/generated_resources_map.cc'
+          ],
+          'message': 'Generating generated resources map.',
+        }
+      ],
     },
     {
       'target_name': 'platform_locale_settings',
@@ -288,7 +330,7 @@
       },  # variables
       'actions': [
         {
-          'action_name': 'platform_locale_settings',
+          'action_name': 'generate_platform_locale_settings',
           'variables': {
             'grit_grd_file': '<(platform_locale_settings_grd)',
           },
@@ -298,11 +340,16 @@
       'includes': [ '../build/grit_target.gypi' ],
     },
     {
-      'target_name': 'theme_resources_gen',
+      # GN version: //chrome/app/theme:theme_resources
+      'target_name': 'theme_resources',
       'type': 'none',
+      'dependencies': [
+        '../ui/resources/ui_resources.gyp:ui_resources',
+        'chrome_unscaled_resources',
+      ],
       'actions': [
         {
-          'action_name': 'theme_resources',
+          'action_name': 'generate_theme_resources',
           'variables': {
             'grit_grd_file': 'app/theme/theme_resources.grd',
           },
@@ -310,15 +357,6 @@
         },
       ],
       'includes': [ '../build/grit_target.gypi' ],
-    },
-    {
-      'target_name': 'theme_resources',
-      'type': 'none',
-      'dependencies': [
-        'chrome_unscaled_resources',
-        'theme_resources_gen',
-        '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
-      ],
     },
     {
       'target_name': 'packed_extra_resources',
@@ -359,8 +397,8 @@
         'theme_resources',
         '<(DEPTH)/components/components_strings.gyp:components_strings',
         '<(DEPTH)/net/net.gyp:net_resources',
-        '<(DEPTH)/ui/base/strings/ui_strings.gyp:ui_strings',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
+        '<(DEPTH)/ui/strings/ui_strings.gyp:ui_strings',
       ],
       'actions': [
         {
@@ -396,8 +434,8 @@
         }],
         ['use_ash==1', {
           'dependencies': [
+             '<(DEPTH)/ash/ash_resources.gyp:ash_resources',
              '<(DEPTH)/ash/ash_strings.gyp:ash_strings',
-             '<(DEPTH)/ash/ash.gyp:ash_resources',
           ],
         }],
         ['enable_autofill_dialog==1 and OS!="android"', {
@@ -466,12 +504,9 @@
     {
       'target_name': 'chrome_unscaled_resources',
       'type': 'none',
-      'variables': {
-        'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/chrome',
-      },
       'actions': [
         {
-          'action_name': 'chrome_unscaled_resources',
+          'action_name': 'generate_chrome_unscaled_resources',
           'variables': {
             'grit_grd_file': 'app/theme/chrome_unscaled_resources.grd',
           },
@@ -481,6 +516,7 @@
       'includes': [ '../build/grit_target.gypi' ],
     },
     {
+      # GN version: //chrome/browser:about_credits
       'target_name': 'about_credits',
       'type': 'none',
       'actions': [
@@ -503,24 +539,6 @@
                      '<(about_credits_file)',
           ],
           'message': 'Generating about:credits',
-        },
-      ],
-    },
-    {
-      'target_name': 'chromevox_strings',
-      'type': 'none',
-      'actions': [
-        {
-          'action_name': 'chromevox_strings',
-          'variables': {
-            'grit_grd_file': 'browser/resources/chromeos/chromevox/strings/chromevox_strings.grd',
-            # TODO(plundblad): Change to use PRODUCT_DIR when we have
-            # translations.
-            'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/resources/chromeos/chromevox',
-            # We don't generate any RC files, so no resource_ds file is needed.
-            'grit_resource_ids': '',
-          },
-          'includes': [ '../build/grit_action.gypi' ],
         },
       ],
     },

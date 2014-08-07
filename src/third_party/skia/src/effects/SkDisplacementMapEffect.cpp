@@ -227,8 +227,7 @@ bool SkDisplacementMapEffect::onFilterImage(Proxy* proxy,
         return false;
     }
 
-    dst->setConfig(color.config(), bounds.width(), bounds.height());
-    if (!dst->allocPixels()) {
+    if (!dst->allocPixels(color.info().makeWH(bounds.width(), bounds.height()))) {
         return false;
     }
 
@@ -257,11 +256,13 @@ void SkDisplacementMapEffect::computeFastBounds(const SkRect& src, SkRect* dst) 
 bool SkDisplacementMapEffect::onFilterBounds(const SkIRect& src, const SkMatrix& ctm,
                                    SkIRect* dst) const {
     SkIRect bounds = src;
-    if (getColorInput() && !getColorInput()->filterBounds(src, ctm, &bounds)) {
-        return false;
+    SkVector scale = SkVector::Make(fScale, fScale);
+    ctm.mapVectors(&scale, 1);
+    bounds.outset(SkScalarCeilToInt(scale.fX * SK_ScalarHalf),
+                  SkScalarCeilToInt(scale.fY * SK_ScalarHalf));
+    if (getColorInput()) {
+        return getColorInput()->filterBounds(bounds, ctm, dst);
     }
-    bounds.outset(SkScalarCeilToInt(fScale * SK_ScalarHalf),
-                  SkScalarCeilToInt(fScale * SK_ScalarHalf));
     *dst = bounds;
     return true;
 }

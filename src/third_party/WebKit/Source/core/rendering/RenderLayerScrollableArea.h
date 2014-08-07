@@ -53,12 +53,6 @@ enum ResizerHitTestType {
     ResizerForTouch
 };
 
-enum ForceNeedsCompositedScrollingMode {
-    DoNotForceCompositedScrolling = 0,
-    CompositedScrollingAlwaysOn = 1,
-    CompositedScrollingAlwaysOff = 2
-};
-
 class PlatformEvent;
 class RenderBox;
 class RenderLayer;
@@ -145,8 +139,8 @@ public:
         return resizerCornerRect(bounds, ResizerForTouch);
     }
 
-    int scrollWidth() const;
-    int scrollHeight() const;
+    LayoutUnit scrollWidth() const;
+    LayoutUnit scrollHeight() const;
 
     int verticalScrollbarWidth(OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize) const;
     int horizontalScrollbarHeight(OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize) const;
@@ -157,9 +151,6 @@ public:
     void paintOverflowControls(GraphicsContext*, const IntPoint& paintOffset, const IntRect& damageRect, bool paintingOverlayControls);
     void paintScrollCorner(GraphicsContext*, const IntPoint&, const IntRect& damageRect);
 
-    // If IntSize is not given, then we must incur additional overhead to instantiate a RenderGeometryMap
-    // and compute the correct offset ourselves.
-    void positionOverflowControls();
     void positionOverflowControls(const IntSize& offsetFromRoot);
 
     // isPointInResizeControl() is used for testing if a pointer/touch position is in the resize control
@@ -224,10 +215,6 @@ private:
     void updateScrollableAreaSet(bool hasOverflow);
 
     void updateCompositingLayersAfterScroll();
-    virtual void updateNeedsCompositedScrolling() OVERRIDE;
-    void setNeedsCompositedScrolling(bool needsCompositedScrolling) { m_needsCompositedScrolling = needsCompositedScrolling; }
-
-    void setForceNeedsCompositedScrolling(ForceNeedsCompositedScrollingMode);
 
     RenderLayer& m_layer;
 
@@ -237,10 +224,6 @@ private:
 
     unsigned m_scrollDimensionsDirty : 1;
     unsigned m_inOverflowRelayout : 1;
-
-    unsigned m_needsCompositedScrolling : 1;
-
-    ForceNeedsCompositedScrollingMode m_forceNeedsCompositedScrolling;
 
     // The width/height of our scrolled area.
     LayoutRect m_overflowRect;

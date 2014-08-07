@@ -8,7 +8,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
@@ -18,9 +17,11 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
@@ -240,7 +241,7 @@ IN_PROC_BROWSER_TEST_F(NewTabUISortingBrowserTest,
   EXPECT_FALSE(service->GetInstalledExtension(app_id));
   // Move the test app from the end to be before the web store.
   sorting->OnExtensionMoved(
-      app_id, base::EmptyString(), extension_misc::kWebStoreAppId);
+      app_id, std::string(), extension_misc::kWebStoreAppId);
   EXPECT_EQ(app_id, last_reordered_extension_id_);
 
   // Now install the app.

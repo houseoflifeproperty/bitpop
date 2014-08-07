@@ -342,6 +342,14 @@ class ChromiumFactory(gclient_factory.GClientFactory):
       f.AddGTestTestStep('dbus_unittests', fp)
     if R('dbus_br'):
       f.AddBuildrunnerGTest('dbus_unittests', fp)
+    if R('display_unittests'):
+      f.AddGTestTestStep('display_unittests', fp)
+    if R('display_unittests_br'):
+      f.AddBuildrunnerGTest('display_unittests', fp)
+    if R('extensions_unittests'):
+      f.AddGTestTestStep('extensions_unittests', fp)
+    if R('extensions_unittests_br'):
+      f.AddBuildrunnerGTest('extensions_unittests', fp)
     if R('gcm_unit_tests'):
       f.AddGTestTestStep('gcm_unit_tests', fp)
     if R('gcm_unit_tests_br'):
@@ -402,6 +410,8 @@ class ChromiumFactory(gclient_factory.GClientFactory):
       f.AddBuildrunnerGTest('mojo_service_manager_unittests', fp)
     if R('mojo_system_unittests'):
       f.AddBuildrunnerGTest('mojo_system_unittests', fp)
+    if R('mojo_view_manager_lib_unittests'):
+      f.AddBuildrunnerGTest('mojo_view_manager_lib_unittests', fp)
     if R('mojo_view_manager_unittests'):
       f.AddBuildrunnerGTest('mojo_view_manager_unittests', fp)
     if R('nacl_loader_unittests'):
@@ -466,6 +476,8 @@ class ChromiumFactory(gclient_factory.GClientFactory):
       f.AddGTestTestStep('views_unittests', fp)
     if R('views_br'):
       f.AddBuildrunnerGTest('views_unittests', fp)
+    if R('wm_unittests_br'):
+      f.AddBuildrunnerGTest('wm_unittests', fp)
     if R('aura'):
       f.AddGTestTestStep('aura_unittests', fp)
     if R('aura_br'):
@@ -617,7 +629,7 @@ class ChromiumFactory(gclient_factory.GClientFactory):
         'blink_perf',
         'dom_perf',
         'image_decoding.tough_decoding_cases',
-        'jsgamebench',
+        'jetstream',
         'kraken',
         'media.android',
         'media.media_cns_cases',
@@ -625,6 +637,7 @@ class ChromiumFactory(gclient_factory.GClientFactory):
         'media.tough_media_cases',
         'octane',
         'robohornet_pro',
+        'scheduler.tough_pepper_cases',
         'scheduler.tough_scheduling_cases',
         'smoothness.fast_path.key_silk_cases',
         'smoothness.fast_path.polymer',
@@ -636,6 +649,7 @@ class ChromiumFactory(gclient_factory.GClientFactory):
         'smoothness.polymer',
         'smoothness.tough_animation_cases',
         'spaceport',
+        'speedometer',
         'sunspider',
         'thread_times.fast_path.key_silk_cases',
         'thread_times.fast_path.polymer',
@@ -687,8 +701,12 @@ class ChromiumFactory(gclient_factory.GClientFactory):
         'smoothness.tough_canvas_cases',
         'smoothness.tough_pinch_zoom_cases',
         'smoothness.tough_webgl_cases',
+        'tab_switching.five_blank_pages',
         'tab_switching.top_10',
+        'tab_switching.tough_energy_cases',
+        'tab_switching.typical_25',
         'thread_times.key_mobile_sites',
+        'thread_times.tough_compositor_cases',
       ]
     for test_name in real_world_benchmarks:
       Telemetry(test_name)
@@ -963,14 +981,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
     # _AddTests() had the factory-specific tests stripped off.
     assert not tests, 'Did you make a typo? %s wasn\'t processed' % tests
 
-  def ForceMissingFilesToBeFatal(self, project, gclient_env):
-    """Force Windows bots to fail GYPing if referenced files do not exist."""
-    gyp_generator_flags = gclient_env.setdefault('GYP_GENERATOR_FLAGS', '')
-    if (self._target_platform == 'win32' and
-        'msvs_error_on_missing_sources=' not in gyp_generator_flags):
-      gclient_env['GYP_GENERATOR_FLAGS'] = (
-          gyp_generator_flags + ' msvs_error_on_missing_sources=1')
-
   def ChromiumFactory(self, target='Release', clobber=False, tests=None,
                       mode=None, slave_type='BuilderTester',
                       options=None, compile_timeout=1200, build_url=None,
@@ -996,12 +1006,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
       self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_VALGRIND]
     elif factory_properties.get('needs_tsan_win'):
       self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_TSAN_WIN]
-    elif factory_properties.get('needs_drmemory'):
-      if 'drmemory.DEPS' not in [s.name for s in self._solutions]:
-        self._solutions.append(gclient_factory.GClientSolution(
-            config.Master.trunk_url +
-            '/deps/third_party/drmemory/drmemory.DEPS',
-            'drmemory.DEPS'))
     elif factory_properties.get('needs_webdriver_java_tests'):
       self._solutions[0].custom_deps_list = [
         self.CUSTOM_DEPS_WEBDRIVER_JAVA_TESTS
@@ -1020,9 +1024,6 @@ class ChromiumFactory(gclient_factory.GClientFactory):
 
     # Ensure that component is set correctly in the gyp defines.
     ForceComponent(target, project, factory_properties['gclient_env'])
-
-    # Ensure GYP errors out if files referenced in .gyp files are missing.
-    self.ForceMissingFilesToBeFatal(project, factory_properties['gclient_env'])
 
     # There's 2 different windows SyzyASan builders:
     #     - The unittests builder, which build all the unittests, instrument

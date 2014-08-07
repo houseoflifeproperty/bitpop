@@ -5,7 +5,7 @@
 #ifndef V8_SERIALIZE_H_
 #define V8_SERIALIZE_H_
 
-#include "hashmap.h"
+#include "src/hashmap.h"
 
 namespace v8 {
 namespace internal {
@@ -17,7 +17,6 @@ enum TypeCode {
   BUILTIN,
   RUNTIME_FUNCTION,
   IC_UTILITY,
-  DEBUG_ADDRESS,
   STATS_COUNTER,
   TOP_ADDRESS,
   C_BUILTIN,
@@ -34,10 +33,8 @@ const int kFirstTypeCode = UNCLASSIFIED;
 const int kReferenceIdBits = 16;
 const int kReferenceIdMask = (1 << kReferenceIdBits) - 1;
 const int kReferenceTypeShift = kReferenceIdBits;
-const int kDebugRegisterBits = 4;
-const int kDebugIdShift = kDebugRegisterBits;
 
-const int kDeoptTableSerializeEntryCount = 12;
+const int kDeoptTableSerializeEntryCount = 64;
 
 // ExternalReferenceTable is a helper class that defines the relationship
 // between external references and their encodings. It is used to build
@@ -60,7 +57,7 @@ class ExternalReferenceTable {
 
  private:
   explicit ExternalReferenceTable(Isolate* isolate) : refs_(64) {
-      PopulateTable(isolate);
+    PopulateTable(isolate);
   }
 
   struct ExternalReferenceEntry {
@@ -286,7 +283,7 @@ int SnapshotByteSource::GetInt() {
 
 
 void SnapshotByteSource::CopyRaw(byte* to, int number_of_bytes) {
-  OS::MemCopy(to, data_ + position_, number_of_bytes);
+  MemCopy(to, data_ + position_, number_of_bytes);
   position_ += number_of_bytes;
 }
 
@@ -447,16 +444,7 @@ class Serializer : public SerializerDeserializer {
   }
 
   Isolate* isolate() const { return isolate_; }
-  static void RequestEnable(Isolate* isolate);
-  static void InitializeOncePerProcess();
-  static void TearDown();
 
-  static bool enabled(Isolate* isolate) {
-    SerializationState state = static_cast<SerializationState>(
-        NoBarrier_Load(&serialization_state_));
-    ASSERT(state != SERIALIZER_STATE_UNINITIALIZED);
-    return state == SERIALIZER_STATE_ENABLED;
-  }
   SerializationAddressMapper* address_mapper() { return &address_mapper_; }
   void PutRoot(int index,
                HeapObject* object,
@@ -468,7 +456,6 @@ class Serializer : public SerializerDeserializer {
   static const int kInvalidRootIndex = -1;
 
   int RootIndex(HeapObject* heap_object, HowToCode from);
-  virtual bool ShouldBeInThePartialSnapshotCache(HeapObject* o) = 0;
   intptr_t root_index_wave_front() { return root_index_wave_front_; }
   void set_root_index_wave_front(intptr_t value) {
     ASSERT(value >= root_index_wave_front_);
@@ -555,14 +542,6 @@ class Serializer : public SerializerDeserializer {
   SnapshotByteSink* sink_;
   ExternalReferenceEncoder* external_reference_encoder_;
 
-  enum SerializationState {
-    SERIALIZER_STATE_UNINITIALIZED = 0,
-    SERIALIZER_STATE_DISABLED = 1,
-    SERIALIZER_STATE_ENABLED = 2
-  };
-
-  static AtomicWord serialization_state_;
-
   SerializationAddressMapper address_mapper_;
   intptr_t root_index_wave_front_;
   void Pad();
@@ -570,8 +549,12 @@ class Serializer : public SerializerDeserializer {
   friend class ObjectSerializer;
   friend class Deserializer;
 
+  // We may not need the code address map for logging for every instance
+  // of the serializer.  Initialize it on demand.
+  void InitializeCodeAddressMap();
+
  private:
-  static CodeAddressMap* code_address_map_;
+  CodeAddressMap* code_address_map_;
   DISALLOW_COPY_AND_ASSIGN(Serializer);
 };
 
@@ -584,18 +567,19 @@ class PartialSerializer : public Serializer {
     : Serializer(isolate, sink),
       startup_serializer_(startup_snapshot_serializer) {
     set_root_index_wave_front(Heap::kStrongRootListLength);
+    InitializeCodeAddressMap();
   }
 
   // Serialize the objects reachable from a single object pointer.
-  virtual void Serialize(Object** o);
+  void Serialize(Object** o);
   virtual void SerializeObject(Object* o,
                                HowToCode how_to_code,
                                WhereToPoint where_to_point,
                                int skip);
 
- protected:
-  virtual int PartialSnapshotCacheIndex(HeapObject* o);
-  virtual bool ShouldBeInThePartialSnapshotCache(HeapObject* o) {
+ private:
+  int PartialSnapshotCacheIndex(HeapObject* o);
+  bool ShouldBeInThePartialSnapshotCache(HeapObject* o) {
     // Scripts should be referred only through shared function infos.  We can't
     // allow them to be part of the partial snapshot because they contain a
     // unique ID, and deserializing several partial snapshots containing script
@@ -608,7 +592,7 @@ class PartialSerializer : public Serializer {
                startup_serializer_->isolate()->heap()->fixed_cow_array_map();
   }
 
- private:
+
   Serializer* startup_serializer_;
   DISALLOW_COPY_AND_ASSIGN(PartialSerializer);
 };
@@ -623,6 +607,7 @@ class StartupSerializer : public Serializer {
     // which will repopulate the cache with objects needed by that partial
     // snapshot.
     isolate->set_serialize_partial_snapshot_cache_length(0);
+    InitializeCodeAddressMap();
   }
   // Serialize the current state of the heap.  The order is:
   // 1) Strong references.
@@ -638,11 +623,6 @@ class StartupSerializer : public Serializer {
     SerializeStrongReferences();
     SerializeWeakReferences();
     Pad();
-  }
-
- private:
-  virtual bool ShouldBeInThePartialSnapshotCache(HeapObject* o) {
-    return false;
   }
 };
 

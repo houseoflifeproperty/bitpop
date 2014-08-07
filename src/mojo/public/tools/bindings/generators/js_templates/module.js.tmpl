@@ -3,20 +3,24 @@
 // found in the LICENSE file.
 
 define("{{module.path}}", [
-    "mojo/public/js/bindings/core",
     "mojo/public/js/bindings/codec",
 {%- for import in imports %}
     "{{import.module.path}}",
 {%- endfor %}
-  ], function(core, codec
+  ], function(codec
 {%- for import in imports -%}
     , {{import.unique_name}}
 {%- endfor -%}
 ) {
 
+{#--- Constants #}
+{%  for constant in module.constants %}
+  var {{constant.name}} = {{constant.value|expression_to_text}};
+{%- endfor %}
+
 {#--- Enums #}
-{%  from "enum_definition.tmpl" import enum_def -%}
-{%  for enum in enums %}
+{%- from "enum_definition.tmpl" import enum_def %}
+{%- for enum in enums %}
   var {{ enum_def(enum.name, enum, module) }}
 {%-  endfor %}
 
@@ -31,6 +35,9 @@ define("{{module.path}}", [
 {%- endfor %}
 
   var exports = {};
+{%  for constant in module.constants %}
+  exports.{{constant.name}} = {{constant.name}};
+{%- endfor %}
 {%- for enum in enums %}
   exports.{{enum.name}} = {{enum.name}};
 {%- endfor %}

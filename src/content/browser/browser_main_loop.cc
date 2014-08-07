@@ -23,6 +23,7 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/hi_res_timer_manager.h"
+#include "content/browser/battery_status/battery_status_service.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/device_sensors/device_inertial_sensor_service.h"
 #include "content/browser/download/save_file_manager.h"
@@ -67,6 +68,7 @@
 #endif
 
 #if defined(USE_AURA)
+#include "content/public/browser/context_factory.h"
 #include "ui/aura/env.h"
 #endif
 
@@ -83,6 +85,7 @@
 #endif
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
+#include "content/browser/bootstrap_sandbox_mac.h"
 #include "content/browser/theme_helper_mac.h"
 #endif
 
@@ -122,11 +125,6 @@
 #include "ui/gfx/x/x11_types.h"
 #endif
 
-#if defined(USE_OZONE)
-#include "ui/ozone/ozone_platform.h"
-#include "ui/events/ozone/event_factory_ozone.h"
-#endif
-
 // One of the linux specific headers defines this as a macro.
 #ifdef DestroyAll
 #undef DestroyAll
@@ -164,7 +162,7 @@ void SetupSandbox(const CommandLine& parsed_command_line) {
   }
 
   // Tickle the sandbox host and zygote host so they fork now.
-  RenderSandboxHostLinux::GetInstance()->Init(sandbox_binary.value());
+  RenderSandboxHostLinux::GetInstance()->Init();
   ZygoteHostImpl::GetInstance()->Init(sandbox_binary.value());
 }
 #endif
@@ -373,6 +371,12 @@ void BrowserMainLoop::EarlyInitialization() {
   if (parts_)
     parts_->PreEarlyInitialization();
 
+#if defined(OS_MACOSX)
+  // We use quite a few file descriptors for our IPC, and the default limit on
+  // the Mac is low (256), so bump it up.
+  base::SetFdLimit(1024);
+#endif
+
 #if defined(OS_WIN)
   net::EnsureWinsockInit();
 #endif
@@ -515,7 +519,6 @@ void BrowserMainLoop::MainMessageLoopStart() {
 }
 
 int BrowserMainLoop::PreCreateThreads() {
-
   if (parts_) {
     TRACE_EVENT0("startup",
         "BrowserMainLoop::CreateThreads:PreCreateThreads");
@@ -676,7 +679,6 @@ int BrowserMainLoop::CreateThreads() {
     }
 
     TRACE_EVENT_END0("startup", "BrowserMainLoop::CreateThreads:start");
-
   }
   created_threads_ = true;
   return result_code_;
@@ -754,8 +756,8 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     resource_dispatcher_host_.get()->Shutdown();
   }
 
-#if defined(USE_AURA)
-  {
+#if defined(USE_AURA) || defined(OS_MACOSX)
+  if (ShouldInitializeBrowserGpuChannelAndTransportSurface()) {
     TRACE_EVENT0("shutdown",
                  "BrowserMainLoop::Subsystem:ImageTransportFactory");
     ImageTransportFactory::Terminate();
@@ -883,6 +885,10 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     DeviceInertialSensorService::GetInstance()->Shutdown();
   }
   {
+    TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:BatteryStatusService");
+    BatteryStatusService::GetInstance()->Shutdown();
+  }
+  {
     TRACE_EVENT0("shutdown", "BrowserMainLoop::Subsystem:DeleteDataSources");
     URLDataManager::DeleteDataSources();
   }
@@ -926,16 +932,20 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 #if !defined(OS_IOS)
   HistogramSynchronizer::GetInstance();
 
+  bool initialize_gpu_data_manager = true;
 #if defined(OS_ANDROID)
   // On Android, GLSurface::InitializeOneOff() must be called before initalizing
   // the GpuDataManagerImpl as it uses the GL bindings. crbug.com/326295
-  if (!gfx::GLSurface::InitializeOneOff())
-    LOG(FATAL) << "GLSurface::InitializeOneOff failed";
+  if (!gfx::GLSurface::InitializeOneOff()) {
+    LOG(ERROR) << "GLSurface::InitializeOneOff failed";
+    initialize_gpu_data_manager = false;
+  }
 #endif
 
   // Initialize the GpuDataManager before we set up the MessageLoops because
   // otherwise we'll trigger the assertion about doing IO on the UI thread.
-  GpuDataManagerImpl::GetInstance()->Initialize();
+  if (initialize_gpu_data_manager)
+    GpuDataManagerImpl::GetInstance()->Initialize();
 
   bool always_uses_gpu = true;
   bool established_gpu_channel = false;
@@ -947,6 +957,12 @@ int BrowserMainLoop::BrowserThreadsStarted() {
     }
     BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
     ImageTransportFactory::Initialize();
+#if defined(USE_AURA)
+    if (aura::Env::GetInstance()) {
+      aura::Env::GetInstance()->set_context_factory(
+          content::GetContextFactory());
+    }
+#endif
   }
 #elif defined(OS_ANDROID)
   established_gpu_channel = true;
@@ -957,12 +973,6 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   device_monitor_linux_.reset(new DeviceMonitorLinux());
 #elif defined(OS_MACOSX)
   device_monitor_mac_.reset(new DeviceMonitorMac());
-#endif
-
-#if defined(USE_OZONE)
-  ui::OzonePlatform::Initialize();
-  ui::EventFactoryOzone::GetInstance()->SetFileTaskRunner(
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
 #endif
 
   // RDH needs the IO thread to be created
@@ -1031,7 +1041,13 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 
 #if defined(OS_MACOSX)
   ThemeHelperMac::GetInstance();
-#endif
+  if (ShouldEnableBootstrapSandbox()) {
+    TRACE_EVENT0("startup",
+        "BrowserMainLoop::BrowserThreadsStarted:BootstrapSandbox");
+    CHECK(GetBootstrapSandbox());
+  }
+#endif  // defined(OS_MACOSX)
+
 #endif  // !defined(OS_IOS)
 
   return result_code_;
@@ -1046,19 +1062,13 @@ bool BrowserMainLoop::InitializeToolkit() {
   // (Need to add InitializeToolkit stage to BrowserParts).
   // See also GTK setup in EarlyInitialization, above, and associated comments.
 
-#if defined(TOOLKIT_GTK)
-  // It is important for this to happen before the first run dialog, as it
-  // styles the dialog as well.
-  gfx::InitRCStyles();
-#endif
-
 #if defined(OS_WIN)
   // Init common control sex.
   INITCOMMONCONTROLSEX config;
   config.dwSize = sizeof(config);
   config.dwICC = ICC_WIN95_CLASSES;
   if (!InitCommonControlsEx(&config))
-    LOG_GETLASTERROR(FATAL);
+    PLOG(FATAL);
 #endif
 
 #if defined(USE_AURA)

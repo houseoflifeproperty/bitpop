@@ -2,10 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-declare_args() {
-  # Switches to using platform functions instead of ICU on Android.
-  use_icu_alternatives_on_android = false
-}
+import("//url/config.gni")
 
 # Sets the USE_ICU_ALTERNATIVES_ON_ANDROID define based on the build flag.
 config("url_icu_config") {
@@ -24,6 +21,8 @@ component("url") {
     "android/url_jni_registrar.h",
     "gurl.cc",
     "gurl.h",
+    "origin.cc",
+    "origin.h",
     "third_party/mozilla/url_parse.cc",
     "third_party/mozilla/url_parse.h",
     "url_canon.h",
@@ -60,13 +59,15 @@ component("url") {
 
   configs += [ ":url_icu_config" ]
 
-  # if (is_win) {
-  #   TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-  #   'msvs_disabled_warnings': [ 4267, ]
-  # }
+  if (is_win) {
+    cflags = [
+      "/wd4267", # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    ]
+  }
 
   deps = [
     "//base",
+    "//base/third_party/dynamic_annotations",
     "//third_party/icu:icudata",
     "//third_party/icu",
   ]
@@ -93,6 +94,7 @@ if (!is_android) {
   test("url_unittests") {
     sources = [
       "gurl_unittest.cc",
+      "origin_unittest.cc",
       "url_canon_icu_unittest.cc",
       "url_canon_unittest.cc",
       "url_parse_unittest.cc",
@@ -106,10 +108,12 @@ if (!is_android) {
     #  }
     #}
 
-    # if (is_win) {
-    #   TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-    #   'msvs_disabled_warnings': [ 4267, ]
-    # }
+    if (is_win) {
+      cflags = [
+        # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+        "/wd4267",
+      ]
+    }
 
     deps = [
       ":url",

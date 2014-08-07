@@ -8,8 +8,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -22,7 +22,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 
 class AvatarIconControllerTest : public CocoaProfileTest {
  public:
@@ -92,16 +92,16 @@ TEST_F(AvatarIconControllerTest, DoubleOpen) {
   testing_profile_manager()->DeleteTestingProfile("p2");
 }
 
-TEST_F(AvatarIconControllerTest, ManagedUserLabel) {
-  DCHECK(!profile()->IsManaged());
+TEST_F(AvatarIconControllerTest, SupervisedUserLabel) {
+  DCHECK(!profile()->IsSupervised());
   EXPECT_FALSE([controller() labelButtonView]);
 
-  // Create a second, managed profile to enable the avatar menu.
+  // Create a second, supervised profile to enable the avatar menu.
   std::string name = "p2";
   TestingProfile* profile = testing_profile_manager()->CreateTestingProfile(
       name, scoped_ptr<PrefServiceSyncable>(), base::ASCIIToUTF16(name), 0,
       "asdf", TestingProfile::TestingFactories());
-  EXPECT_TRUE(profile->IsManaged());
+  EXPECT_TRUE(profile->IsSupervised());
 
   // http://crbug.com/39725
   TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
@@ -115,7 +115,7 @@ TEST_F(AvatarIconControllerTest, ManagedUserLabel) {
   Browser* browser =
       new Browser(Browser::CreateParams(profile, chrome::GetActiveDesktop()));
   // Build a new controller to check if it is initialized correctly for a
-  // managed user profile.
+  // supervised user profile.
   base::scoped_nsobject<AvatarIconController> controller(
       [[AvatarIconController alloc] initWithBrowser:browser]);
 

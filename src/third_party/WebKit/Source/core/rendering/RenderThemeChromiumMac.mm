@@ -49,7 +49,6 @@
 #import "platform/graphics/GraphicsContextStateSaver.h"
 #import "platform/graphics/Image.h"
 #import "platform/graphics/ImageBuffer.h"
-#import "platform/graphics/cg/GraphicsContextCG.h"
 #import "platform/mac/ColorMac.h"
 #import "platform/mac/LocalCurrentGraphicsContext.h"
 #import "platform/mac/ThemeMac.h"
@@ -217,8 +216,9 @@ Color RenderThemeChromiumMac::platformInactiveListBoxSelectionForegroundColor() 
 
 Color RenderThemeChromiumMac::platformFocusRingColor() const
 {
+    static const RGBA32 oldAquaFocusRingColor = 0xFF7DADD9;
     if (usesTestModeFocusRingColor())
-        return oldAquaFocusRingColor();
+        return oldAquaFocusRingColor;
 
     return systemColor(CSSValueWebkitFocusRingColor);
 }
@@ -510,10 +510,11 @@ Color RenderThemeChromiumMac::systemColor(CSSValueID cssValueId) const
     return color;
 }
 
-bool RenderThemeChromiumMac::isControlStyled(const RenderStyle* style, const CachedUAStyle& uaStyle) const
+bool RenderThemeChromiumMac::isControlStyled(const RenderStyle* style, const CachedUAStyle* uaStyle) const
 {
+    ASSERT(uaStyle);
     if (style->appearance() == TextFieldPart || style->appearance() == TextAreaPart || style->appearance() == ListboxPart)
-        return style->border() != uaStyle.border || style->boxShadow();
+        return style->border() != uaStyle->border || style->boxShadow();
 
     // FIXME: This is horrible, but there is not much else that can be done.  Menu lists cannot draw properly when
     // scaled.  They can't really draw properly when transformed either.  We can't detect the transform case at style
@@ -910,7 +911,7 @@ bool RenderThemeChromiumMac::paintMenuList(RenderObject* o, const PaintInfo& pai
         inflatedRect.setWidth(inflatedRect.width() / zoomLevel);
         inflatedRect.setHeight(inflatedRect.height() / zoomLevel);
         paintInfo.context->translate(inflatedRect.x(), inflatedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-inflatedRect.x(), -inflatedRect.y());
     }
 
@@ -1103,7 +1104,7 @@ bool RenderThemeChromiumMac::paintProgressBar(RenderObject* renderObject, const 
 
     if (!renderProgress->style()->isLeftToRightDirection()) {
         paintInfo.context->translate(2 * inflatedRect.x() + inflatedRect.width(), 0);
-        paintInfo.context->scale(FloatSize(-1, 1));
+        paintInfo.context->scale(-1, 1);
     }
 
     paintInfo.context->drawImageBuffer(imageBuffer.get(),
@@ -1313,7 +1314,7 @@ bool RenderThemeChromiumMac::paintSliderTrack(RenderObject* o, const PaintInfo& 
     GraphicsContextStateSaver stateSaver(*paintInfo.context);
     if (zoomLevel != 1) {
         paintInfo.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -1378,7 +1379,7 @@ bool RenderThemeChromiumMac::paintSliderThumb(RenderObject* o, const PaintInfo& 
     FloatRect unzoomedRect(r.x(), r.y(), sliderThumbWidth, sliderThumbHeight);
     if (zoomLevel != 1.0f) {
         paintInfo.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -1463,7 +1464,7 @@ bool RenderThemeChromiumMac::paintSearchField(RenderObject* o, const PaintInfo& 
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         paintInfo.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -1563,7 +1564,7 @@ bool RenderThemeChromiumMac::paintSearchFieldCancelButton(RenderObject* o, const
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         paintInfo.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
@@ -1662,7 +1663,7 @@ bool RenderThemeChromiumMac::paintSearchFieldResultsDecoration(RenderObject* o, 
         unzoomedRect.setWidth(unzoomedRect.width() / zoomLevel);
         unzoomedRect.setHeight(unzoomedRect.height() / zoomLevel);
         paintInfo.context->translate(unzoomedRect.x(), unzoomedRect.y());
-        paintInfo.context->scale(FloatSize(zoomLevel, zoomLevel));
+        paintInfo.context->scale(zoomLevel, zoomLevel);
         paintInfo.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 

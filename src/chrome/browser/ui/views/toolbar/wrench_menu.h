@@ -10,7 +10,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "components/bookmarks/core/browser/base_bookmark_model_observer.h"
+#include "components/bookmarks/browser/base_bookmark_model_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/base/models/menu_model.h"
@@ -51,8 +51,6 @@ class WrenchMenu : public views::MenuDelegate,
   // Whether the menu is currently visible to the user.
   bool IsShowing();
 
-  const views::MenuConfig& GetMenuConfig() const;
-
   bool use_new_menu() const { return use_new_menu_; }
 
   void AddObserver(WrenchMenuObserver* observer);
@@ -92,7 +90,7 @@ class WrenchMenu : public views::MenuDelegate,
   virtual bool IsCommandEnabled(int command_id) const OVERRIDE;
   virtual void ExecuteCommand(int command_id, int mouse_event_flags) OVERRIDE;
   virtual bool GetAccelerator(int command_id,
-                              ui::Accelerator* accelerator) OVERRIDE;
+                              ui::Accelerator* accelerator) const OVERRIDE;
   virtual void WillShowMenu(views::MenuItemView* menu) OVERRIDE;
   virtual void WillHideMenu(views::MenuItemView* menu) OVERRIDE;
 
@@ -111,8 +109,6 @@ class WrenchMenu : public views::MenuDelegate,
 
   typedef std::pair<ui::MenuModel*,int> Entry;
   typedef std::map<int,Entry> CommandIDToEntry;
-
-  const ui::NativeTheme* GetNativeTheme() const;
 
   // Populates |parent| with all the child menus in |model|. Recursively invokes
   // |PopulateMenu| for any submenu.

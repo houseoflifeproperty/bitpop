@@ -11,8 +11,10 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "cc/layers/video_layer.h"
+#include "content/public/renderer/render_view.h"
+#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/media/media_stream_audio_renderer.h"
-#include "content/renderer/media/media_stream_client.h"
+#include "content/renderer/media/media_stream_renderer_factory.h"
 #include "content/renderer/media/video_frame_provider.h"
 #include "content/renderer/media/webmediaplayer_delegate.h"
 #include "content/renderer/media/webmediaplayer_util.h"
@@ -27,7 +29,6 @@
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 using blink::WebCanvas;
 using blink::WebMediaPlayer;
@@ -80,26 +81,24 @@ WebMediaPlayerMS::WebMediaPlayerMS(
     blink::WebFrame* frame,
     blink::WebMediaPlayerClient* client,
     base::WeakPtr<WebMediaPlayerDelegate> delegate,
-    MediaStreamClient* media_stream_client,
-    media::MediaLog* media_log)
+    media::MediaLog* media_log,
+    scoped_ptr<MediaStreamRendererFactory> factory)
     : frame_(frame),
       network_state_(WebMediaPlayer::NetworkStateEmpty),
       ready_state_(WebMediaPlayer::ReadyStateHaveNothing),
       buffered_(static_cast<size_t>(1)),
       client_(client),
       delegate_(delegate),
-      media_stream_client_(media_stream_client),
       paused_(true),
       current_frame_used_(false),
       pending_repaint_(false),
       video_frame_provider_client_(NULL),
       received_first_frame_(false),
-      sequence_started_(false),
       total_frame_count_(0),
       dropped_frame_count_(0),
-      media_log_(media_log) {
+      media_log_(media_log),
+      renderer_factory_(factory.Pass()) {
   DVLOG(1) << "WebMediaPlayerMS::ctor";
-  DCHECK(media_stream_client);
   media_log_->AddEvent(
       media_log_->CreateEvent(media::MediaLogEvent::WEBMEDIAPLAYER_CREATED));
 }
@@ -141,15 +140,16 @@ void WebMediaPlayerMS::load(LoadType load_type,
   SetReadyState(WebMediaPlayer::ReadyStateHaveNothing);
   media_log_->AddEvent(media_log_->CreateLoadEvent(url.spec()));
 
-  // Check if this url is media stream.
-  video_frame_provider_ = media_stream_client_->GetVideoFrameProvider(
+  video_frame_provider_ = renderer_factory_->GetVideoFrameProvider(
       url,
       base::Bind(&WebMediaPlayerMS::OnSourceError, AsWeakPtr()),
       base::Bind(&WebMediaPlayerMS::OnFrameAvailable, AsWeakPtr()));
 
-  audio_renderer_ = media_stream_client_->GetAudioRenderer(
+  RenderFrame* frame = RenderFrame::FromWebFrame(frame_);
+  audio_renderer_ = renderer_factory_->GetAudioRenderer(
     url,
-    RenderFrame::FromWebFrame(frame_)->GetRoutingID());
+    frame->GetRenderView()->GetRoutingID(),
+    frame->GetRoutingID());
 
   if (video_frame_provider_.get() || audio_renderer_.get()) {
     if (audio_renderer_.get())
@@ -301,7 +301,7 @@ WebMediaPlayer::ReadyState WebMediaPlayerMS::readyState() const {
   return ready_state_;
 }
 
-const blink::WebTimeRanges& WebMediaPlayerMS::buffered() {
+blink::WebTimeRanges WebMediaPlayerMS::buffered() const {
   DCHECK(thread_checker_.CalledOnValidThread());
   return buffered_;
 }
@@ -311,7 +311,7 @@ double WebMediaPlayerMS::maxTimeSeekable() const {
   return 0.0;
 }
 
-bool WebMediaPlayerMS::didLoadingProgress() const {
+bool WebMediaPlayerMS::didLoadingProgress() {
   DCHECK(thread_checker_.CalledOnValidThread());
   return true;
 }
@@ -414,8 +414,7 @@ void WebMediaPlayerMS::OnFrameAvailable(
     GetClient()->sizeChanged();
 
     if (video_frame_provider_) {
-      video_weblayer_.reset(
-          new webkit::WebLayerImpl(cc::VideoLayer::Create(this)));
+      video_weblayer_.reset(new WebLayerImpl(cc::VideoLayer::Create(this)));
       video_weblayer_->setOpaque(true);
       GetClient()->setWebLayer(video_weblayer_.get());
     }
@@ -425,10 +424,6 @@ void WebMediaPlayerMS::OnFrameAvailable(
   if (paused_)
     return;
 
-  if (!sequence_started_) {
-    sequence_started_ = true;
-    start_time_ = frame->timestamp();
-  }
   bool size_changed = !current_frame_.get() ||
                       current_frame_->natural_size() != frame->natural_size();
 
@@ -437,7 +432,7 @@ void WebMediaPlayerMS::OnFrameAvailable(
     if (!current_frame_used_ && current_frame_.get())
       ++dropped_frame_count_;
     current_frame_ = frame;
-    current_time_ = frame->timestamp() - start_time_;
+    current_time_ = frame->timestamp();
     current_frame_used_ = false;
   }
 

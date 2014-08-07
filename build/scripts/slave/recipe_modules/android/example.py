@@ -14,12 +14,13 @@ def GenSteps(api):
     'https://android.googlesource.com/platform/manifest')
   api.android.c.repo.branch = 'master'
 
-  yield api.android.chromium_with_trimmed_deps()
+  yield api.android.sync_chromium()
 
   yield api.android.repo_init_steps()
-  yield api.android.generate_local_manifest_step()
   yield api.android.repo_sync_steps()
   yield api.android.update_defaut_props_step({'ro.adb.secure': '0'})
+
+  yield api.android.rsync_chromium_into_android_tree_step()
 
   make_vars = {'CC': 'foo', 'CXX': 'bar'}
   yield api.android.compile_step(
@@ -33,5 +34,6 @@ def GenTests(api):
       mastername='chromium.linux',
       buildername='Android Builder',
       slavename='totallyanandroid-m1',
+      revision='123456',
   )
 

@@ -118,8 +118,6 @@ class CC_EXPORT LayerTreeHost {
   void DidCommitAndDrawFrame() { client_->DidCommitAndDrawFrame(); }
   void DidCompleteSwapBuffers() { client_->DidCompleteSwapBuffers(); }
   void DeleteContentsTexturesOnImplThread(ResourceProvider* resource_provider);
-  // Returns false if we should abort this frame due to initialization failure.
-  bool InitializeOutputSurfaceIfNeeded();
   bool UpdateLayers(ResourceUpdateQueue* queue);
 
   LayerTreeHostClient* client() { return client_; }
@@ -130,12 +128,6 @@ class CC_EXPORT LayerTreeHost {
   void NotifyInputThrottledUntilCommit();
 
   void Composite(base::TimeTicks frame_begin_time);
-
-  // Composites and attempts to read back the result into the provided
-  // buffer. If it wasn't possible, e.g. due to context lost, will return
-  // false.
-  bool CompositeAndReadback(void* pixels,
-                            const gfx::Rect& rect_in_device_viewport);
 
   void FinishAllRendering();
 
@@ -194,9 +186,7 @@ class CC_EXPORT LayerTreeHost {
   bool has_gpu_rasterization_trigger() const {
     return has_gpu_rasterization_trigger_;
   }
-  void set_has_gpu_rasterization_trigger(bool has_trigger) {
-    has_gpu_rasterization_trigger_ = has_trigger;
-  }
+  void SetHasGpuRasterizationTrigger(bool has_trigger);
   bool UseGpuRasterization() const;
 
   void SetViewportSize(const gfx::Size& device_viewport_size);
@@ -283,9 +273,12 @@ class CC_EXPORT LayerTreeHost {
   bool UsingSharedMemoryResources();
   int id() const { return id_; }
 
-  bool ScheduleMicroBenchmark(const std::string& benchmark_name,
-                              scoped_ptr<base::Value> value,
-                              const MicroBenchmark::DoneCallback& callback);
+  // Returns the id of the benchmark on success, 0 otherwise.
+  int ScheduleMicroBenchmark(const std::string& benchmark_name,
+                             scoped_ptr<base::Value> value,
+                             const MicroBenchmark::DoneCallback& callback);
+  // Returns true if the message was successfully delivered and handled.
+  bool SendMessageToMicroBenchmark(int id, scoped_ptr<base::Value> value);
 
   // When a SwapPromiseMonitor is created on the main thread, it calls
   // InsertSwapPromiseMonitor() to register itself with LayerTreeHost.
@@ -355,6 +348,7 @@ class CC_EXPORT LayerTreeHost {
   typedef std::list<UIResourceRequest> UIResourceRequestQueue;
   UIResourceRequestQueue ui_resource_request_queue_;
 
+  void RecordGpuRasterizationHistogram();
   void CalculateLCDTextMetricsCallback(Layer* layer);
 
   void NotifySwapPromiseMonitorsOfSetNeedsCommit();
@@ -370,7 +364,6 @@ class CC_EXPORT LayerTreeHost {
   int source_frame_number_;
   scoped_ptr<RenderingStatsInstrumentation> rendering_stats_instrumentation_;
 
-  bool output_surface_can_be_initialized_;
   bool output_surface_lost_;
   int num_failed_recreate_attempts_;
 
@@ -401,6 +394,7 @@ class CC_EXPORT LayerTreeHost {
   bool trigger_idle_updates_;
   bool has_gpu_rasterization_trigger_;
   bool content_is_suitable_for_gpu_rasterization_;
+  bool gpu_rasterization_histogram_recorded_;
 
   SkColor background_color_;
   bool has_transparent_background_;

@@ -20,9 +20,10 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/pref_names.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/browser/signin_metrics.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "jni/SigninManager_jni.h"
 
@@ -133,7 +134,8 @@ void SigninManagerAndroid::OnSignInCompleted(JNIEnv* env,
 }
 
 void SigninManagerAndroid::SignOut(JNIEnv* env, jobject obj) {
-  SigninManagerFactory::GetForProfile(profile_)->SignOut();
+  SigninManagerFactory::GetForProfile(profile_)->SignOut(
+      signin_metrics::USER_CLICKED_SIGNOUT_SETTINGS);
 }
 
 base::android::ScopedJavaLocalRef<jstring>
@@ -197,7 +199,7 @@ void SigninManagerAndroid::OnPolicyFetchDone(bool success) {
 
 void SigninManagerAndroid::OnBrowsingDataRemoverDone() {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
-  model->RemoveAll();
+  model->RemoveAllUserBookmarks();
 
   // All the Profile data has been wiped. Clear the last signed in username as
   // well, so that the next signin doesn't trigger the acount change dialog.
@@ -233,7 +235,7 @@ void SigninManagerAndroid::LogInSignedInUser(JNIEnv* env, jobject obj) {
             profile_);
     const std::string& primary_acct =
         signin_manager->GetAuthenticatedAccountId();
-    token_service->ValidateAccounts(primary_acct);
+    token_service->ValidateAccounts(primary_acct, true);
 
   } else {
     DVLOG(1) << "SigninManagerAndroid::LogInSignedInUser "

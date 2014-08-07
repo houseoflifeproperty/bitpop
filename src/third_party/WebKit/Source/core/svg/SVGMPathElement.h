@@ -20,7 +20,7 @@
 #ifndef SVGMPathElement_h
 #define SVGMPathElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGElement.h"
@@ -33,7 +33,7 @@ class SVGPathElement;
 class SVGMPathElement FINAL : public SVGElement,
                               public SVGURIReference {
 public:
-    static PassRefPtr<SVGMPathElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGMPathElement);
 
     virtual ~SVGMPathElement();
 

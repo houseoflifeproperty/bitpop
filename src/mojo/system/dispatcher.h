@@ -15,7 +15,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "mojo/embedder/platform_handle.h"
-#include "mojo/public/c/system/core.h"
+#include "mojo/embedder/platform_handle_vector.h"
+#include "mojo/public/c/system/buffer.h"
+#include "mojo/public/c/system/data_pipe.h"
+#include "mojo/public/c/system/message_pipe.h"
+#include "mojo/public/c/system/types.h"
 #include "mojo/system/system_impl_export.h"
 
 namespace mojo {
@@ -55,7 +59,10 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
     kTypeMessagePipe,
     kTypeDataPipeProducer,
     kTypeDataPipeConsumer,
-    kTypeSharedBuffer
+    kTypeSharedBuffer,
+
+    // "Private" types (not exposed via the public interface):
+    kTypePlatformHandle = -1
   };
   virtual Type GetType() const = 0;
 
@@ -110,20 +117,19 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
                        scoped_ptr<RawSharedBufferMapping>* mapping);
 
   // Adds a waiter to this dispatcher. The waiter will be woken up when this
-  // object changes state to satisfy |flags| with result |wake_result| (which
-  // must be >= 0, i.e., a success status). It will also be woken up when it
-  // becomes impossible for the object to ever satisfy |flags| with a suitable
-  // error status.
+  // object changes state to satisfy |signals| with context |context|. It will
+  // also be woken up when it becomes impossible for the object to ever satisfy
+  // |signals| with a suitable error status.
   //
   // Returns:
   //  - |MOJO_RESULT_OK| if the waiter was added;
-  //  - |MOJO_RESULT_ALREADY_EXISTS| if |flags| is already satisfied;
+  //  - |MOJO_RESULT_ALREADY_EXISTS| if |signals| is already satisfied;
   //  - |MOJO_RESULT_INVALID_ARGUMENT| if the dispatcher has been closed; and
   //  - |MOJO_RESULT_FAILED_PRECONDITION| if it is not (or no longer) possible
-  //    that |flags| will ever be satisfied.
+  //    that |signals| will ever be satisfied.
   MojoResult AddWaiter(Waiter* waiter,
-                       MojoWaitFlags flags,
-                       MojoResult wake_result);
+                       MojoHandleSignals signals,
+                       uint32_t context);
   void RemoveWaiter(Waiter* waiter);
 
   // A dispatcher must be put into a special state in order to be sent across a
@@ -174,13 +180,17 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
         Channel* channel,
         void* destination,
         size_t* actual_size,
-        std::vector<embedder::PlatformHandle>* platform_handles);
+        embedder::PlatformHandleVector* platform_handles);
 
     // Deserialization API.
-    static scoped_refptr<Dispatcher> Deserialize(Channel* channel,
-                                                 int32_t type,
-                                                 const void* source,
-                                                 size_t size);
+    // Note: This "clears" (i.e., reset to the invalid handle) any platform
+    // handles that it takes ownership of.
+    static scoped_refptr<Dispatcher> Deserialize(
+        Channel* channel,
+        int32_t type,
+        const void* source,
+        size_t size,
+        embedder::PlatformHandleVector* platform_handles);
   };
 
  protected:
@@ -234,8 +244,8 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
       MojoMapBufferFlags flags,
       scoped_ptr<RawSharedBufferMapping>* mapping);
   virtual MojoResult AddWaiterImplNoLock(Waiter* waiter,
-                                         MojoWaitFlags flags,
-                                         MojoResult wake_result);
+                                         MojoHandleSignals signals,
+                                         uint32_t context);
   virtual void RemoveWaiterImplNoLock(Waiter* waiter);
 
   // These implement the API used to serialize dispatchers to a |Channel|
@@ -259,7 +269,7 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
       Channel* channel,
       void* destination,
       size_t* actual_size,
-      std::vector<embedder::PlatformHandle>* platform_handles);
+      embedder::PlatformHandleVector* platform_handles);
 
   // Available to subclasses. (Note: Returns a non-const reference, just like
   // |base::AutoLock|'s constructor takes a non-const reference.)
@@ -315,11 +325,10 @@ class MOJO_SYSTEM_IMPL_EXPORT Dispatcher :
   // in which case |*actual_size| is set to the amount it actually wrote to
   // |destination|. On failure, |*actual_size| should not be modified; however,
   // the dispatcher will still be closed.
-  bool EndSerializeAndClose(
-      Channel* channel,
-      void* destination,
-      size_t* actual_size,
-      std::vector<embedder::PlatformHandle>* platform_handles);
+  bool EndSerializeAndClose(Channel* channel,
+                            void* destination,
+                            size_t* actual_size,
+                            embedder::PlatformHandleVector* platform_handles);
 
   // This protects the following members as well as any state added by
   // subclasses.

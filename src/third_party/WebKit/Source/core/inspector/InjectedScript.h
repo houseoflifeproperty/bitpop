@@ -31,8 +31,8 @@
 #ifndef InjectedScript_h
 #define InjectedScript_h
 
-#include "InspectorTypeBuilder.h"
-#include "bindings/v8/ScriptObject.h"
+#include "bindings/v8/ScriptValue.h"
+#include "core/InspectorTypeBuilder.h"
 #include "core/inspector/InjectedScriptBase.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/ScriptArguments.h"
@@ -95,7 +95,6 @@ public:
     PassRefPtr<TypeBuilder::Runtime::RemoteObject> wrapTable(const ScriptValue& table, const ScriptValue& columns) const;
     PassRefPtr<TypeBuilder::Runtime::RemoteObject> wrapNode(Node*, const String& groupName);
     ScriptValue findObjectById(const String& objectId) const;
-    ScriptValue findCallFrameById(ErrorString*, const ScriptValue& topCallFrame, const String& callFrameId);
 
     void inspectNode(Node*);
     void releaseObjectGroup(const String&);
@@ -103,7 +102,7 @@ public:
 private:
     friend class InjectedScriptModule;
     friend InjectedScript InjectedScriptManager::injectedScriptFor(ScriptState*);
-    InjectedScript(ScriptObject, InspectedStateAccessCheck);
+    InjectedScript(ScriptValue, InspectedStateAccessCheck);
 
     ScriptValue nodeAsScriptValue(Node*);
 };

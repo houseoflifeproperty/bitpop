@@ -1,10 +1,12 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from telemetry import test
+
 from benchmarks import silk_flags
 from measurements import smoothness
-from telemetry import test
+import page_sets
 
 
 @test.Disabled  # crbug.com/368767
@@ -13,23 +15,24 @@ class SmoothnessTop25(test.Test):
 
   http://www.chromium.org/developers/design-documents/rendering-benchmarks"""
   test = smoothness.Smoothness
-  page_set = 'page_sets/top_25.py'
+  page_set = page_sets.Top25PageSet
 
 
 @test.Disabled('linux', 'mac', 'win')  # crbug.com/368767
 class SmoothnessToughCanvasCases(test.Test):
   test = smoothness.Smoothness
-  page_set = 'page_sets/tough_canvas_cases.py'
+  page_set = page_sets.ToughCanvasCasesPageSet
 
 
+@test.Disabled  # crbug.com/373812
 class SmoothnessToughWebGLCases(test.Test):
   test = smoothness.Smoothness
-  page_set = 'page_sets/tough_webgl_cases.py'
+  page_set = page_sets.ToughWebglCasesPageSet
 
 
 class SmoothnessMaps(test.Test):
   test = smoothness.Smoothness
-  page_set = 'page_sets/maps.py'
+  page_set = page_sets.MapsPageSet
 
 
 class SmoothnessKeyMobileSites(test.Test):
@@ -37,32 +40,30 @@ class SmoothnessKeyMobileSites(test.Test):
 
   http://www.chromium.org/developers/design-documents/rendering-benchmarks"""
   test = smoothness.Smoothness
-  page_set = 'page_sets/key_mobile_sites.py'
+  page_set = page_sets.KeyMobileSitesPageSet
 
 
 @test.Disabled('android', 'mac')  # crbug.com/350692, crbug.com/368767
 class SmoothnessToughAnimationCases(test.Test):
   test = smoothness.Smoothness
-  page_set = 'page_sets/tough_animation_cases.py'
+  page_set = page_sets.ToughAnimationCasesPageSet
 
 
-@test.Disabled('android')  # crbug.com/355952
 class SmoothnessKeySilkCases(test.Test):
   """Measures rendering statistics for the key silk cases without GPU
   rasterization
   """
   test = smoothness.Smoothness
-  page_set = 'page_sets/key_silk_cases.py'
+  page_set = page_sets.KeySilkCasesPageSet
 
 
-@test.Disabled('android')  # crbug.com/355952
 class SmoothnessFastPathKeySilkCases(test.Test):
   """Measures rendering statistics for the key silk cases without GPU
   rasterization using bleeding edge rendering fast paths.
   """
   tag = 'fast_path'
   test = smoothness.Smoothness
-  page_set = 'page_sets/key_silk_cases.py'
+  page_set = page_sets.KeySilkCasesPageSet
   def CustomizeBrowserOptions(self, options):
     silk_flags.CustomizeBrowserOptionsForFastPath(options)
 
@@ -73,7 +74,7 @@ class SmoothnessGpuRasterizationTop25(test.Test):
   """
   tag = 'gpu_rasterization'
   test = smoothness.Smoothness
-  page_set = 'page_sets/top_25.py'
+  page_set = page_sets.Top25PageSet
   def CustomizeBrowserOptions(self, options):
     silk_flags.CustomizeBrowserOptionsForGpuRasterization(options)
 
@@ -85,23 +86,21 @@ class SmoothnessGpuRasterizationKeyMobileSites(test.Test):
   """
   tag = 'gpu_rasterization'
   test = smoothness.Smoothness
-  page_set = 'page_sets/key_mobile_sites.py'
+  page_set = page_sets.KeyMobileSitesPageSet
   def CustomizeBrowserOptions(self, options):
     silk_flags.CustomizeBrowserOptionsForGpuRasterization(options)
 
 
-@test.Disabled('android')  # crbug.com/355952
 class SmoothnessGpuRasterizationKeySilkCases(test.Test):
   """Measures rendering statistics for the key silk cases with GPU rasterization
   """
   tag = 'gpu_rasterization'
   test = smoothness.Smoothness
-  page_set = 'page_sets/key_silk_cases.py'
+  page_set = page_sets.KeySilkCasesPageSet
   def CustomizeBrowserOptions(self, options):
     silk_flags.CustomizeBrowserOptionsForGpuRasterization(options)
 
 
-@test.Disabled('android')  # crbug.com/355952
 class SmoothnessFastPathGpuRasterizationKeySilkCases(
     SmoothnessGpuRasterizationKeySilkCases):
   """Measures rendering statistics for the key silk cases with GPU rasterization
@@ -109,7 +108,7 @@ class SmoothnessFastPathGpuRasterizationKeySilkCases(
   """
   tag = 'fast_path_gpu_rasterization'
   test = smoothness.Smoothness
-  page_set = 'page_sets/key_silk_cases.py'
+  page_set = page_sets.KeySilkCasesPageSet
   def CustomizeBrowserOptions(self, options):
     super(SmoothnessFastPathGpuRasterizationKeySilkCases, self). \
         CustomizeBrowserOptions(options)
@@ -122,7 +121,7 @@ class SmoothnessToughPinchZoomCases(test.Test):
   cases
   """
   test = smoothness.Smoothness
-  page_set = 'page_sets/tough_pinch_zoom_cases.py'
+  page_set = page_sets.ToughPinchZoomCasesPageSet
 
 
 @test.Disabled  # crbug.com/370725
@@ -130,7 +129,7 @@ class SmoothnessPolymer(test.Test):
   """Measures rendering statistics for Polymer cases.
   """
   test = smoothness.Smoothness
-  page_set = 'page_sets/polymer.py'
+  page_set = page_sets.PolymerPageSet
 
 
 @test.Disabled  # crbug.com/370725
@@ -140,7 +139,7 @@ class SmoothnessFastPathPolymer(test.Test):
   """
   tag = 'fast_path'
   test = smoothness.Smoothness
-  page_set = 'page_sets/polymer.py'
+  page_set = page_sets.PolymerPageSet
   def CustomizeBrowserOptions(self, options):
     silk_flags.CustomizeBrowserOptionsForFastPath(options)
 
@@ -151,7 +150,7 @@ class SmoothnessGpuRasterizationPolymer(test.Test):
   """
   tag = 'gpu_rasterization'
   test = smoothness.Smoothness
-  page_set = 'page_sets/polymer.py'
+  page_set = page_sets.PolymerPageSet
   def CustomizeBrowserOptions(self, options):
     silk_flags.CustomizeBrowserOptionsForGpuRasterization(options)
 
@@ -164,7 +163,7 @@ class SmoothnessFastPathGpuRasterizationPolymer(
   """
   tag = 'fast_path_gpu_rasterization'
   test = smoothness.Smoothness
-  page_set = 'page_sets/polymer.py'
+  page_set = page_sets.PolymerPageSet
   def CustomizeBrowserOptions(self, options):
     super(SmoothnessFastPathGpuRasterizationPolymer, self). \
         CustomizeBrowserOptions(options)

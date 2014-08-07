@@ -31,6 +31,10 @@ namespace extensions {
 class BrowserPermissionsPolicyDelegate;
 }
 
+namespace prerender {
+class PrerenderTracker;
+}
+
 namespace user_prefs {
 class PrefRegistrySyncable;
 }
@@ -66,15 +70,12 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual content::WebContentsViewDelegate* GetWebContentsViewDelegate(
       content::WebContents* web_contents) OVERRIDE;
   virtual void GuestWebContentsCreated(
+      int guest_instance_id,
       content::SiteInstance* guest_site_instance,
       content::WebContents* guest_web_contents,
       content::WebContents* opener_web_contents,
       content::BrowserPluginGuestDelegate** guest_delegate,
       scoped_ptr<base::DictionaryValue> extra_params) OVERRIDE;
-  virtual void GuestWebContentsAttached(
-      content::WebContents* guest_web_contents,
-      content::WebContents* embedder_web_contents,
-      const base::DictionaryValue& extra_params) OVERRIDE;
   virtual void RenderProcessWillLaunch(
       content::RenderProcessHost* host) OVERRIDE;
   virtual bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
@@ -88,13 +89,13 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual net::URLRequestContextGetter* CreateRequestContext(
       content::BrowserContext* browser_context,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
   virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
       content::BrowserContext* browser_context,
       const base::FilePath& partition_path,
       bool in_memory,
       content::ProtocolHandlerMap* protocol_handlers,
-      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+      content::URLRequestInterceptorScopedVector request_interceptors) OVERRIDE;
   virtual bool IsHandledURL(const GURL& url) OVERRIDE;
   virtual bool CanCommitURL(content::RenderProcessHost* process_host,
                             const GURL& url) OVERRIDE;
@@ -102,6 +103,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
                                   const GURL& url) OVERRIDE;
   virtual bool IsSuitableHost(content::RenderProcessHost* process_host,
                               const GURL& site_url) OVERRIDE;
+  virtual bool MayReuseHost(content::RenderProcessHost* process_host) OVERRIDE;
   virtual bool ShouldTryToUseExistingProcessHost(
       content::BrowserContext* browser_context, const GURL& url) OVERRIDE;
   virtual void SiteInstanceGotProcess(
@@ -128,7 +130,7 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual std::string GetApplicationLocale() OVERRIDE;
   virtual std::string GetAcceptLangs(
       content::BrowserContext* context) OVERRIDE;
-  virtual gfx::ImageSkia* GetDefaultFavicon() OVERRIDE;
+  virtual const gfx::ImageSkia* GetDefaultFavicon() OVERRIDE;
   virtual bool AllowAppCache(const GURL& manifest_url,
                              const GURL& first_party,
                              content::ResourceContext* context) OVERRIDE;
@@ -183,18 +185,16 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
       const base::Callback<void(net::X509Certificate*)>& callback) OVERRIDE;
-  virtual void AddCertificate(
-      net::URLRequest* request,
-      net::CertificateMimeType cert_type,
-      const void* cert_data,
-      size_t cert_size,
-      int render_process_id,
-      int render_view_id) OVERRIDE;
+  virtual void AddCertificate(net::CertificateMimeType cert_type,
+                              const void* cert_data,
+                              size_t cert_size,
+                              int render_process_id,
+                              int render_frame_id) OVERRIDE;
   virtual content::MediaObserver* GetMediaObserver() OVERRIDE;
   virtual void RequestDesktopNotificationPermission(
       const GURL& source_origin,
       content::RenderFrameHost* render_frame_host,
-      base::Closure& callback) OVERRIDE;
+      const base::Closure& callback) OVERRIDE;
   virtual blink::WebNotificationPresenter::Permission
       CheckDesktopNotificationPermission(
           const GURL& source_origin,
@@ -204,6 +204,25 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       const content::ShowDesktopNotificationHostMsgParams& params,
       content::RenderFrameHost* render_frame_host,
       content::DesktopNotificationDelegate* delegate,
+      base::Closure* cancel_callback) OVERRIDE;
+  virtual void RequestGeolocationPermission(
+      content::WebContents* web_contents,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      base::Callback<void(bool)> result_callback,
+      base::Closure* cancel_callback) OVERRIDE;
+  virtual void RequestMidiSysExPermission(
+      content::WebContents* web_contents,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      base::Callback<void(bool)> result_callback,
+      base::Closure* cancel_callback) OVERRIDE;
+  virtual void RequestProtectedMediaIdentifierPermission(
+      content::WebContents* web_contents,
+      const GURL& origin,
+      base::Callback<void(bool)> result_callback,
       base::Closure* cancel_callback) OVERRIDE;
   virtual bool CanCreateWindow(const GURL& opener_url,
                                const GURL& opener_top_level_frame_url,
@@ -217,7 +236,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
                                bool opener_suppressed,
                                content::ResourceContext* context,
                                int render_process_id,
-                               bool is_guest,
                                int opener_id,
                                bool* no_javascript_access) OVERRIDE;
   virtual std::string GetWorkerProcessTitle(
@@ -259,6 +277,16 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
       content::BrowserContext* browser_context,
       const base::FilePath& storage_partition_path,
       ScopedVector<fileapi::FileSystemBackend>* additional_backends) OVERRIDE;
+  virtual content::DevToolsManagerDelegate*
+      GetDevToolsManagerDelegate() OVERRIDE;
+  virtual bool IsPluginAllowedToCallRequestOSFileHandle(
+      content::BrowserContext* browser_context,
+      const GURL& url) OVERRIDE;
+  virtual bool IsPluginAllowedToUseDevChannelAPIs(
+      content::BrowserContext* browser_context,
+      const GURL& url) OVERRIDE;
+  virtual net::CookieStore* OverrideCookieStoreForRenderProcess(
+      int render_process_id) OVERRIDE;
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   virtual void GetAdditionalMappedFilesForChildProcess(
@@ -271,12 +299,6 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   virtual void PreSpawnRenderer(sandbox::TargetPolicy* policy,
                                 bool* success) OVERRIDE;
 #endif
-
-  virtual bool IsPluginAllowedToCallRequestOSFileHandle(
-      content::BrowserContext* browser_context,
-      const GURL& url) OVERRIDE;
-
-  virtual bool IsPluginAllowedToUseDevChannelAPIs() OVERRIDE;
 
  private:
 #if defined(ENABLE_WEBRTC)
@@ -292,9 +314,20 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
   std::set<std::string> allowed_socket_origins_;
   // Set of origins that can get a handle for FileIO from NaCl.
   std::set<std::string> allowed_file_handle_origins_;
+  // Set of origins that can use "dev chanel" APIs from NaCl, even on stable
+  // versions of Chrome.
+  std::set<std::string> allowed_dev_channel_origins_;
 #endif
   scoped_ptr<extensions::BrowserPermissionsPolicyDelegate>
       permissions_policy_delegate_;
+
+  // The prerender tracker used to determine whether a render process is used
+  // for prerendering and an override cookie store must be provided.
+  // This needs to be kept as a member rather than just looked up from
+  // the profile due to initialization ordering, as well as due to threading.
+  // It is initialized on the UI thread when the ResoureDispatcherHost is
+  // created. It is used only the IO thread.
+  prerender::PrerenderTracker* prerender_tracker_;
 
   friend class DisableWebRtcEncryptionFlagTest;
 

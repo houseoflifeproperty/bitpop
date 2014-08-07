@@ -46,9 +46,15 @@ const size_t kQuicEntropyHashSize = 1;
 // sequence number in ack frames.
 const size_t kQuicDeltaTimeLargestObservedSize = 2;
 // Size in bytes reserved for the number of missing packets in ack frames.
-const size_t kNumberOfMissingPacketsSize = 1;
+const size_t kNumberOfNackRangesSize = 1;
+// Maximum number of missing packet ranges that can fit within an ack frame.
+const size_t kMaxNackRanges =
+    (1 << (kNumberOfNackRangesSize * 8)) - 1;
 // Size in bytes reserved for the number of revived packets in ack frames.
 const size_t kNumberOfRevivedPacketsSize = 1;
+// Maximum number of revived packets that can fit within an ack frame.
+const size_t kMaxRevivedPackets =
+    (1 << (kNumberOfRevivedPacketsSize * 8)) - 1;
 
 // This class receives callbacks from the framer when packets
 // are processed.
@@ -300,13 +306,6 @@ class NET_EXPORT_PRIVATE QuicFramer {
       QuicSequenceNumberLength sequence_number_length);
 
   // Returns a SerializedPacket whose |packet| member is owned by the caller,
-  // and is populated with the fields in |header| and |frames|, or is NULL if
-  // the packet could not be created.
-  // TODO(ianswett): Used for testing only.
-  SerializedPacket BuildUnsizedDataPacket(const QuicPacketHeader& header,
-                                          const QuicFrames& frames);
-
-  // Returns a SerializedPacket whose |packet| member is owned by the caller,
   // is created from the first |num_frames| frames, or is NULL if the packet
   // could not be created.  The packet must be of size |packet_size|.
   SerializedPacket BuildDataPacket(const QuicPacketHeader& header,
@@ -373,6 +372,8 @@ class NET_EXPORT_PRIVATE QuicFramer {
   }
 
   void set_validate_flags(bool value) { validate_flags_ = value; }
+
+  bool is_server() const { return is_server_; }
 
  private:
   friend class test::QuicFramerPeer;

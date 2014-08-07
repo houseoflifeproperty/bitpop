@@ -286,7 +286,10 @@
           'target_name': 'app_mode_app',
           'type': 'executable',
           'mac_bundle' : 1,
-          'variables': { 'enable_wexit_time_destructors': 1, },
+          'variables': {
+            'enable_wexit_time_destructors': 1,
+            'mac_real_dsym': 1,
+          },
           'product_name': 'app_mode_loader',
           'dependencies': [
             'app_mode_app_support',
@@ -726,6 +729,7 @@
             'activity_type_ids_java',
             'app_banner_metrics_ids_java',
             'chrome_resources.gyp:chrome_strings',
+            'chrome_strings_grd',
             'profile_sync_service_model_type_selection_java',
             'resource_id_java',
             'toolbar_model_security_levels_java',
@@ -733,12 +737,14 @@
             '../base/base.gyp:base',
             '../components/components.gyp:autofill_java',
             '../components/components.gyp:dom_distiller_core_java',
+            '../components/components.gyp:gcm_driver_java',
             '../components/components.gyp:navigation_interception_java',
             '../components/components.gyp:sessions',
             '../components/components.gyp:web_contents_delegate_android_java',
             '../content/content.gyp:content_java',
             '../printing/printing.gyp:printing_java',
             '../sync/sync.gyp:sync_java',
+            '../third_party/android_tools/android_tools.gyp:android_support_v7_appcompat_javalib',
             '../third_party/guava/guava.gyp:guava_javalib',
             '../ui/android/ui_android.gyp:ui_java',
           ],
@@ -747,13 +753,22 @@
             'has_java_resources': 1,
             'R_package': 'org.chromium.chrome',
             'R_package_relpath': 'org/chromium/chrome',
-            'java_strings_grd': 'android_chrome_strings.grd',
             # Include xml string files generated from generated_resources.grd
             'res_extra_dirs': ['<(SHARED_INTERMEDIATE_DIR)/chrome/java/res'],
             'res_extra_files': ['<!@pymod_do_main(grit_info <@(grit_defines) --outputs "<(SHARED_INTERMEDIATE_DIR)/chrome" app/generated_resources.grd)'],
           },
           'includes': [
             '../build/java.gypi',
+          ],
+        },
+        {
+          'target_name': 'chrome_strings_grd',
+          'type': 'none',
+          'variables': {
+            'grd_file': '../chrome/android/java/strings/android_chrome_strings.grd',
+          },
+          'includes': [
+            '../build/java_strings_grd.gypi',
           ],
         },
       ], # 'targets'

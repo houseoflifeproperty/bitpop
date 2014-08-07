@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -13,7 +12,6 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -23,6 +21,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
+#include "url/url_constants.h"
 
 #if defined(OS_WIN)
 #include "ui/aura/window.h"
@@ -40,12 +39,6 @@ namespace {
 class PrintPreviewTest : public InProcessBrowserTest {
  public:
   PrintPreviewTest() {}
-
-#if !defined(GOOGLE_CHROME_BUILD)
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    command_line->AppendSwitch(switches::kEnablePrintPreview);
-  }
-#endif
 
   void Print() {
     content::TestNavigationObserver nav_observer(NULL);
@@ -105,7 +98,8 @@ IN_PROC_BROWSER_TEST_F(PrintPreviewTest, MAYBE_TaskManagerNewPrintPreview) {
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAboutBlankTab()));
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyTab()));
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyPrint()));
-  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchPrint("about:blank")));
+  ASSERT_NO_FATAL_FAILURE(
+      WaitForTaskManagerRows(1, MatchPrint(url::kAboutBlankURL)));
 }
 
 // Disable the test for mac as it started being flaky, see http://crbug/367665.
@@ -124,11 +118,11 @@ IN_PROC_BROWSER_TEST_F(PrintPreviewTest,
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAboutBlankTab()));
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyTab()));
   ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchAnyPrint()));
-  ASSERT_NO_FATAL_FAILURE(WaitForTaskManagerRows(1, MatchPrint("about:blank")));
+  ASSERT_NO_FATAL_FAILURE(
+      WaitForTaskManagerRows(1, MatchPrint(url::kAboutBlankURL)));
 }
 
 #if defined(OS_WIN)
-
 BOOL CALLBACK EnumerateChildren(HWND hwnd, LPARAM l_param) {
   HWND* child = reinterpret_cast<HWND*>(l_param);
   *child = hwnd;
@@ -204,6 +198,6 @@ IN_PROC_BROWSER_TEST_F(PrintPreviewTest, NoCrashOnCloseWithOtherTabs) {
 
   browser()->tab_strip_model()->ActivateTabAt(1, true);
 }
-#endif
+#endif  // defined(OS_WIN)
 
 }  // namespace

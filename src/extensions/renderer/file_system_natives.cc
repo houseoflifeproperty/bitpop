@@ -64,7 +64,8 @@ void FileSystemNatives::GetIsolatedFileSystem(
       blink::WebDOMFileSystem::create(webframe,
                                       blink::WebFileSystemTypeIsolated,
                                       blink::WebString::fromUTF8(name),
-                                      root_url).toV8Value());
+                                      root_url)
+          .toV8Value(args.Holder(), args.GetIsolate()));
 }
 
 void FileSystemNatives::GetFileEntry(
@@ -103,7 +104,9 @@ void FileSystemNatives::GetFileEntry(
           blink::WebString::fromUTF8(file_system_name),
           file_system_root_url)
           .createV8Entry(blink::WebString::fromUTF8(file_path_string),
-                         entry_type));
+                         entry_type,
+                         args.Holder(),
+                         args.GetIsolate()));
 }
 
 void FileSystemNatives::CrackIsolatedFileSystemName(
@@ -146,7 +149,8 @@ void FileSystemNatives::GetDOMError(
 
   blink::WebDOMError dom_error = blink::WebDOMError::create(
       blink::WebString::fromUTF8(name), blink::WebString::fromUTF8(message));
-  args.GetReturnValue().Set(dom_error.toV8Value());
+  args.GetReturnValue().Set(
+      dom_error.toV8Value(args.Holder(), args.GetIsolate()));
 }
 
 }  // namespace extensions

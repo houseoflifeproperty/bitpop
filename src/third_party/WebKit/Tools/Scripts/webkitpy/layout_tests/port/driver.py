@@ -167,6 +167,12 @@ class Driver(object):
         pid = self._server_process.pid()
         leaked = self._leaked
 
+        if not crashed and 'AddressSanitizer' in self.error_from_test:
+            self.error_from_test = 'OUTPUT CONTAINS "AddressSanitizer", so we are treating this test as if it crashed, even though it did not.\n\n' + self.error_from_test
+            crashed = True
+            self._crashed_process_name = "unknown process name"
+            self._crashed_pid = 0
+
         if stop_when_done or crashed or timed_out or leaked:
             # We call stop() even if we crashed or timed out in order to get any remaining stdout/stderr output.
             # In the timeout case, we kill the hung process as well.

@@ -21,52 +21,73 @@
 
 #include <gtest/gtest.h>
 
+#include "format_element.h"
+
 namespace {
 
 using i18n::addressinput::AddressField;
 using i18n::addressinput::COUNTRY;
 using i18n::addressinput::LOCALITY;
-using i18n::addressinput::NEWLINE;
-using i18n::addressinput::ORGANIZATION;
-using i18n::addressinput::ParseAddressFieldsFormat;
+using i18n::addressinput::FormatElement;
+using i18n::addressinput::ParseFormatRule;
 using i18n::addressinput::POSTAL_CODE;
 using i18n::addressinput::RECIPIENT;
 using i18n::addressinput::STREET_ADDRESS;
 
-TEST(AddressFieldUtilTest, ParseNewlineFormat) {
-  std::vector<AddressField> actual;
-  ParseAddressFieldsFormat("%O%n%N%n%A%nAX-%Z %C%nÅLAND", &actual);
+TEST(AddressFieldUtilTest, FormatParseNewline) {
+  std::vector<FormatElement> actual;
+  ParseFormatRule("%O%n%N%n%A%nAX-%Z %C%nÅLAND", &actual);
 
-  std::vector<AddressField> expected;
-  expected.push_back(ORGANIZATION);
-  expected.push_back(static_cast<AddressField>(NEWLINE));
-  expected.push_back(RECIPIENT);
-  expected.push_back(static_cast<AddressField>(NEWLINE));
-  expected.push_back(STREET_ADDRESS);
-  expected.push_back(static_cast<AddressField>(NEWLINE));
-  expected.push_back(POSTAL_CODE);
-  expected.push_back(LOCALITY);
-  expected.push_back(static_cast<AddressField>(NEWLINE));
+  std::vector<FormatElement> expected;
+  // Organization is skipped.
+  expected.push_back(FormatElement());
+  expected.push_back(FormatElement(RECIPIENT));
+  expected.push_back(FormatElement());
+  expected.push_back(FormatElement(STREET_ADDRESS));
+  expected.push_back(FormatElement());
+  expected.push_back(FormatElement("AX-"));
+  expected.push_back(FormatElement(POSTAL_CODE));
+  expected.push_back(FormatElement(" "));
+  expected.push_back(FormatElement(LOCALITY));
+  expected.push_back(FormatElement());
+  expected.push_back(FormatElement("ÅLAND"));
 
   EXPECT_EQ(expected, actual);
 }
 
-TEST(AddressFieldUtilTest, DoubleTokenPrefixIsIgnored) {
-  std::vector<AddressField> actual;
-  ParseAddressFieldsFormat("%%R", &actual);
-  std::vector<AddressField> expected(1, COUNTRY);
+TEST(AddressFieldUtilTest, FormatUnknownTokenIsIgnored) {
+  std::vector<FormatElement> actual;
+  ParseFormatRule("%1%R", &actual);  // %1 is not supported.
+  std::vector<FormatElement> expected(1, FormatElement(COUNTRY));
   EXPECT_EQ(expected, actual);
 }
 
-TEST(AddressFieldUtilTest, PrefixWithoutTokenIsIgnored) {
-  std::vector<AddressField> actual;
-  ParseAddressFieldsFormat("%", &actual);
+TEST(AddressFieldUtilTest, FormatPrefixWithoutTokenIsIgnored) {
+  std::vector<FormatElement> actual;
+  ParseFormatRule("%", &actual);
   EXPECT_TRUE(actual.empty());
 }
 
-TEST(AddressFieldUtilTest, EmptyString) {
+TEST(AddressFieldUtilTest, FormatEmptyString) {
+  std::vector<FormatElement> fields;
+  ParseFormatRule(std::string(), &fields);
+  EXPECT_TRUE(fields.empty());
+}
+
+TEST(AddressFieldUtilTest, RequiredParseDefault) {
+  std::vector<AddressField> actual;
+  ParseAddressFieldsRequired("AC", &actual);
+
+  std::vector<AddressField> expected;
+  expected.push_back(STREET_ADDRESS);
+  expected.push_back(LOCALITY);
+
+  EXPECT_EQ(expected, actual);
+}
+
+TEST(AddressFieldUtilTest, RequiredEmptyString) {
   std::vector<AddressField> fields;
-  ParseAddressFieldsFormat(std::string(), &fields);
+  ParseAddressFieldsRequired(std::string(), &fields);
   EXPECT_TRUE(fields.empty());
 }
 

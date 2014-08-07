@@ -28,11 +28,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-importScript("LayerTree.js");
-importScript("Layers3DView.js");
+importScript("LayerTreeOutline.js");
 importScript("LayerDetailsView.js");
 importScript("PaintProfilerView.js");
-importScript("TransformController.js");
+importScript("LayerPaintProfilerView.js");
 
 /**
  * @constructor
@@ -49,17 +48,18 @@ WebInspector.LayersPanel = function()
     this._target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
     this._model = new WebInspector.LayerTreeModel(this._target);
     this._model.addEventListener(WebInspector.LayerTreeModel.Events.LayerTreeChanged, this._onLayerTreeUpdated, this);
+    this._model.addEventListener(WebInspector.LayerTreeModel.Events.LayerPainted, this._onLayerPainted, this);
     this._currentlySelectedLayer = null;
     this._currentlyHoveredLayer = null;
 
-    this._layerTree = new WebInspector.LayerTree(this._model, this.sidebarTree);
-    this._layerTree.addEventListener(WebInspector.LayerTree.Events.LayerSelected, this._onObjectSelected, this);
-    this._layerTree.addEventListener(WebInspector.LayerTree.Events.LayerHovered, this._onObjectHovered, this);
+    this._layerTreeOutline = new WebInspector.LayerTreeOutline(this.sidebarTree);
+    this._layerTreeOutline.addEventListener(WebInspector.LayerTreeOutline.Events.LayerSelected, this._onObjectSelected, this);
+    this._layerTreeOutline.addEventListener(WebInspector.LayerTreeOutline.Events.LayerHovered, this._onObjectHovered, this);
 
     this._rightSplitView = new WebInspector.SplitView(false, true, "layerDetailsSplitViewState");
     this._rightSplitView.show(this.mainElement());
 
-    this._layers3DView = new WebInspector.Layers3DView(this._model);
+    this._layers3DView = new WebInspector.Layers3DView();
     this._layers3DView.show(this._rightSplitView.mainElement());
     this._layers3DView.addEventListener(WebInspector.Layers3DView.Events.ObjectSelected, this._onObjectSelected, this);
     this._layers3DView.addEventListener(WebInspector.Layers3DView.Events.ObjectHovered, this._onObjectHovered, this);
@@ -69,15 +69,13 @@ WebInspector.LayersPanel = function()
     this._tabbedPane = new WebInspector.TabbedPane();
     this._tabbedPane.show(this._rightSplitView.sidebarElement());
 
-    this._layerDetailsView = new WebInspector.LayerDetailsView(this._model);
+    this._layerDetailsView = new WebInspector.LayerDetailsView();
     this._layerDetailsView.addEventListener(WebInspector.LayerDetailsView.Events.ObjectSelected, this._onObjectSelected, this);
     this._tabbedPane.appendTab(WebInspector.LayersPanel.DetailsViewTabs.Details, WebInspector.UIString("Details"), this._layerDetailsView);
-    this._paintProfilerView = new WebInspector.PaintProfilerView(this._model, this._layers3DView);
+
+    this._paintProfilerView = new WebInspector.LayerPaintProfilerView(this._layers3DView.showImageForLayer.bind(this._layers3DView));
     this._tabbedPane.appendTab(WebInspector.LayersPanel.DetailsViewTabs.Profiler, WebInspector.UIString("Profiler"), this._paintProfilerView);
 }
-
-/** @typedef {{layer: !WebInspector.Layer, scrollRectIndex: number}|{layer: !WebInspector.Layer}} */
-WebInspector.LayersPanel.ActiveObject;
 
 WebInspector.LayersPanel.DetailsViewTabs = {
     Details: "details",
@@ -99,27 +97,41 @@ WebInspector.LayersPanel.prototype = {
     },
 
     /**
-     * @param {!WebInspector.LayerTreeSnapshot} snapshot
+     * @param {!WebInspector.DeferredLayerTree} deferredLayerTree
      */
-    _showSnapshot: function(snapshot)
+    _showLayerTree: function(deferredLayerTree)
     {
-        this._model.setSnapshot(snapshot);
-    },
-
-    /**
-     * @param {!WebInspector.TracingLayerSnapshot} snapshot
-     */
-    _showTracingSnapshot: function(snapshot)
-    {
-        this._model.setTracingSnapshot(snapshot);
+        deferredLayerTree.resolve(onLayersReady.bind(this));
+        /**
+         * @param {!WebInspector.LayerTreeBase} layerTree
+         * @this {WebInspector.LayersPanel} this
+         */
+        function onLayersReady(layerTree)
+        {
+            this._model.setLayerTree(layerTree);
+        }
     },
 
     _onLayerTreeUpdated: function()
     {
-        if (this._currentlySelectedLayer && !this._model.layerById(this._currentlySelectedLayer.layer.id()))
+        var layerTree = this._model.layerTree();
+        this._layers3DView.setLayerTree(layerTree);
+        this._layerTreeOutline.update(layerTree);
+        if (this._currentlySelectedLayer && (!layerTree || !layerTree.layerById(this._currentlySelectedLayer.layer.id())))
             this._selectObject(null);
-        if (this._currentlyHoveredLayer && !this._model.layerById(this._currentlyHoveredLayer.layer.id()))
+        if (this._currentlyHoveredLayer && (!layerTree || !layerTree.layerById(this._currentlyHoveredLayer.layer.id())))
             this._hoverObject(null);
+        this._layerDetailsView.update();
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _onLayerPainted: function(event)
+    {
+        this._layers3DView.setLayerTree(this._model.layerTree());
+        if (this._currentlySelectedLayer && this._currentlySelectedLayer.layer === event.data)
+            this._layerDetailsView.update();
     },
 
     /**
@@ -127,7 +139,7 @@ WebInspector.LayersPanel.prototype = {
      */
     _onObjectSelected: function(event)
     {
-        var activeObject = /** @type {!WebInspector.LayersPanel.ActiveObject} */ (event.data);
+        var activeObject = /** @type {!WebInspector.Layers3DView.ActiveObject} */ (event.data);
         this._selectObject(activeObject);
     },
 
@@ -136,7 +148,7 @@ WebInspector.LayersPanel.prototype = {
      */
     _onObjectHovered: function(event)
     {
-        var activeObject = /** @type {!WebInspector.LayersPanel.ActiveObject} */ (event.data);
+        var activeObject = /** @type {!WebInspector.Layers3DView.ActiveObject} */ (event.data);
         this._hoverObject(activeObject);
     },
 
@@ -147,11 +159,11 @@ WebInspector.LayersPanel.prototype = {
     {
         var layer = /** @type {!WebInspector.Layer} */ (event.data);
         this._tabbedPane.selectTab(WebInspector.LayersPanel.DetailsViewTabs.Profiler);
-        this._paintProfilerView.profile(layer);
+        this._paintProfilerView.profileLayer(layer);
     },
 
     /**
-     * @param {?WebInspector.LayersPanel.ActiveObject} activeObject
+     * @param {?WebInspector.Layers3DView.ActiveObject} activeObject
      */
     _selectObject: function(activeObject)
     {
@@ -164,13 +176,13 @@ WebInspector.LayersPanel.prototype = {
             node.highlightForTwoSeconds();
         else
             this._target.domModel.hideDOMNodeHighlight();
-        this._layerTree.selectLayer(layer);
+        this._layerTreeOutline.selectLayer(layer);
         this._layers3DView.selectObject(activeObject);
         this._layerDetailsView.setObject(activeObject);
     },
 
     /**
-     * @param {?WebInspector.LayersPanel.ActiveObject} activeObject
+     * @param {?WebInspector.Layers3DView.ActiveObject} activeObject
      */
     _hoverObject: function(activeObject)
     {
@@ -183,8 +195,17 @@ WebInspector.LayersPanel.prototype = {
             node.highlight();
         else
             this._target.domModel.hideDOMNodeHighlight();
-        this._layerTree.hoverLayer(layer);
+        this._layerTreeOutline.hoverLayer(layer);
         this._layers3DView.hoverObject(activeObject);
+    },
+
+    /**
+     * @param {!WebInspector.Layer} layer
+     * @param {string=} imageURL
+     */
+    _showImageForLayer: function(layer, imageURL)
+    {
+        this._layers3DView.showImageForLayer(layer, imageURL);
     },
 
     __proto__: WebInspector.PanelWithSidebarTree.prototype
@@ -204,9 +225,9 @@ WebInspector.LayersPanel.LayerTreeRevealer.prototype = {
      */
     reveal: function(snapshotData)
     {
-        if (snapshotData instanceof WebInspector.LayerTreeSnapshot)
-            /** @type {!WebInspector.LayersPanel} */ (WebInspector.inspectorView.showPanel("layers"))._showSnapshot(snapshotData);
-        else if (snapshotData instanceof WebInspector.TracingLayerSnapshot)
-            /** @type {!WebInspector.LayersPanel} */ (WebInspector.inspectorView.showPanel("layers"))._showTracingSnapshot(snapshotData);
+        if (!(snapshotData instanceof WebInspector.DeferredLayerTree))
+            return;
+        var panel = /** @type {!WebInspector.LayersPanel} */ (WebInspector.inspectorView.showPanel("layers"));
+        panel._showLayerTree(/** @type {!WebInspector.DeferredLayerTree} */ (snapshotData));
     }
 }

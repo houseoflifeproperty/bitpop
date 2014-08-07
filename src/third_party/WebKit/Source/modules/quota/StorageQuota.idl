@@ -34,11 +34,11 @@ enum StorageType {
 };
 
 [
-    WillBeGarbageCollected,
+    GarbageCollected,
     NoInterfaceObject,
     RuntimeEnabled=QuotaPromise
 ] interface StorageQuota {
     readonly attribute StorageType[] supportedTypes;
-    [CallWith=ExecutionContext] Promise queryInfo(StorageType type);
+    [CallWith=ScriptState] Promise queryInfo(StorageType type);
     [CallWith=ScriptState] Promise requestPersistentQuota([Clamp] unsigned long long newQuota);
 };

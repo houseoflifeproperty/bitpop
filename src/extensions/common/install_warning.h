@@ -13,7 +13,7 @@ namespace extensions {
 // A struct to describe a non-fatal issue discovered in the installation of an
 // extension.
 struct InstallWarning {
-  InstallWarning(const std::string& message);
+  explicit InstallWarning(const std::string& message);
   InstallWarning(const std::string& message,
                  const std::string& key);
   InstallWarning(const std::string& message,
@@ -43,6 +43,6 @@ struct InstallWarning {
 // Let gtest print InstallWarnings.
 void PrintTo(const InstallWarning&, ::std::ostream* os);
 
-}  // namespace
+}  // namespace extensions
 
 #endif  // EXTENSIONS_COMMON_INSTALL_WARNING_H_

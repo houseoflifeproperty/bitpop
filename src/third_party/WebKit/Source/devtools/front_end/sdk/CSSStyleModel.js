@@ -42,7 +42,7 @@ WebInspector.CSSStyleModel = function(target)
     this._styleLoader = new WebInspector.CSSStyleModel.ComputedStyleLoader(this);
     this._domModel.addEventListener(WebInspector.DOMModel.Events.UndoRedoRequested, this._undoRedoRequested, this);
     this._domModel.addEventListener(WebInspector.DOMModel.Events.UndoRedoCompleted, this._undoRedoCompleted, this);
-    target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameCreatedOrNavigated, this._mainFrameCreatedOrNavigated, this);
+    target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._mainFrameNavigated, this);
     target.registerCSSDispatcher(new WebInspector.CSSDispatcher(this));
     this._agent.enable(this._wasEnabled.bind(this));
     this._resetStyleSheets();
@@ -53,6 +53,7 @@ WebInspector.CSSStyleModel.PseudoStatePropertyName = "pseudoState";
 /**
  * @param {!WebInspector.CSSStyleModel} cssModel
  * @param {!Array.<!CSSAgent.RuleMatch>|undefined} matchArray
+ * @return {!Array.<!WebInspector.CSSRule>}
  */
 WebInspector.CSSStyleModel.parseRuleMatchArrayPayload = function(cssModel, matchArray)
 {
@@ -76,6 +77,26 @@ WebInspector.CSSStyleModel.Events = {
 WebInspector.CSSStyleModel.MediaTypes = ["all", "braille", "embossed", "handheld", "print", "projection", "screen", "speech", "tty", "tv"];
 
 WebInspector.CSSStyleModel.prototype = {
+    /**
+     * @param {function(!Array.<!WebInspector.CSSMedia>)} userCallback
+     */
+    getMediaQueries: function(userCallback)
+    {
+        /**
+         * @param {?Protocol.Error} error
+         * @param {?Array.<!CSSAgent.CSSMedia>} payload
+         * @this {!WebInspector.CSSStyleModel}
+         */
+        function callback(error, payload)
+        {
+            var models = [];
+            if (!error && payload)
+                models = WebInspector.CSSMedia.parseMediaArrayPayload(this, payload);
+            userCallback(models);
+        }
+        this._agent.getMediaQueries(callback.bind(this));
+    },
+
     /**
      * @return {boolean}
      */
@@ -541,7 +562,7 @@ WebInspector.CSSStyleModel.prototype = {
         this._pendingCommandsMajorState.pop();
     },
 
-    _mainFrameCreatedOrNavigated: function()
+    _mainFrameNavigated: function()
     {
         this._resetStyleSheets();
     },
@@ -689,6 +710,7 @@ WebInspector.CSSStyleModel.LiveLocation.prototype = {
 /**
  * @constructor
  * @implements {WebInspector.RawLocation}
+ * @param {!WebInspector.Target} target
  * @param {string} url
  * @param {number} lineNumber
  * @param {number=} columnNumber
@@ -1333,6 +1355,61 @@ WebInspector.CSSProperty.prototype = {
 
 /**
  * @constructor
+ * @param {!CSSAgent.MediaQueryExpression} payload
+ */
+WebInspector.CSSMediaQueryExpression = function(payload)
+{
+    this._value = payload.value;
+    this._unit = payload.unit;
+    this._feature = payload.feature;
+    this._computedLength = payload.computedLength || null;
+}
+
+/**
+ * @param {!CSSAgent.MediaQueryExpression} payload
+ */
+WebInspector.CSSMediaQueryExpression.parsePayload = function(payload)
+{
+    return new WebInspector.CSSMediaQueryExpression(payload);
+}
+
+WebInspector.CSSMediaQueryExpression.prototype = {
+    /**
+     * @return {number}
+     */
+    value: function()
+    {
+        return this._value;
+    },
+
+    /**
+     * @return {string}
+     */
+    unit: function()
+    {
+        return this._unit;
+    },
+
+    /**
+     * @return {string}
+     */
+    feature: function()
+    {
+        return this._feature;
+    },
+
+    /**
+     * @return {?number}
+     */
+    computedLength: function()
+    {
+        return this._computedLength;
+    }
+}
+
+
+/**
+ * @constructor
  * @param {!WebInspector.CSSStyleModel} cssModel
  * @param {!CSSAgent.CSSMedia} payload
  */
@@ -1344,6 +1421,17 @@ WebInspector.CSSMedia = function(cssModel, payload)
     this.sourceURL = payload.sourceURL || "";
     this.range = payload.range ? WebInspector.TextRange.fromObject(payload.range) : null;
     this.parentStyleSheetId = payload.parentStyleSheetId;
+    this.mediaList = null;
+    if (payload.mediaList) {
+        this.mediaList = [];
+        for (var i = 0; i < payload.mediaList.length; ++i) {
+            var mediaQueryPayload = payload.mediaList[i];
+            var mediaQueryExpressions = [];
+            for (var j = 0; j < mediaQueryPayload.length; ++j)
+                mediaQueryExpressions.push(WebInspector.CSSMediaQueryExpression.parsePayload(mediaQueryPayload[j]));
+            this.mediaList.push(mediaQueryExpressions);
+        }
+    }
 }
 
 WebInspector.CSSMedia.Source = {
@@ -1471,7 +1559,7 @@ WebInspector.CSSStyleSheetHeader.prototype = {
 
     updateLocations: function()
     {
-        var items = this._locations.items();
+        var items = this._locations.values();
         for (var i = 0; i < items.length; ++i)
             items[i].update();
     },
@@ -1583,7 +1671,7 @@ WebInspector.CSSStyleSheetHeader.prototype = {
         function textCallback(error, text)
         {
             if (error) {
-                WebInspector.console.log("Failed to get text for stylesheet " + this.id + ": " + error);
+                WebInspector.messageSink.addErrorMessage("Failed to get text for stylesheet " + this.id + ": " + error);
                 text = "";
                 // Fall through.
             }

@@ -18,6 +18,7 @@
 #include <libaddressinput/downloader.h>
 #include <libaddressinput/util/scoped_ptr.h>
 
+#include <cstddef>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -48,12 +49,14 @@ class FakeDownloaderTest : public testing::TestWithParam<std::string> {
   std::string data_;
 
  private:
-  void OnDownloaded(bool success,
-                    const std::string& url,
-                    const std::string& data) {
+  void OnDownloaded(bool success, const std::string& url, std::string* data) {
+    ASSERT_FALSE(success && data == NULL);
     success_ = success;
     url_ = url;
-    data_ = data;
+    if (data != NULL) {
+      data_ = *data;
+      delete data;
+    }
   }
 };
 
@@ -71,6 +74,7 @@ testing::AssertionResult DataIsValid(const std::string& data,
                                        << expected_data_begin;
   }
 
+  // Verify that the data ends on "}.
   static const char kDataEnd[] = "\"}";
   static const size_t kDataEndLength = sizeof kDataEnd - 1;
   if (data.compare(data.length() - kDataEndLength,
@@ -96,6 +100,47 @@ TEST_P(FakeDownloaderTest, FakeDownloaderHasValidDataForRegion) {
   EXPECT_TRUE(DataIsValid(data_, key));
 };
 
+// Returns testing::AssertionSuccess if |data| is valid aggregated downloaded
+// data for |key|.
+testing::AssertionResult AggregateDataIsValid(const std::string& data,
+                                              const std::string& key) {
+  if (data.empty()) {
+    return testing::AssertionFailure() << "empty data";
+  }
+
+  std::string expected_data_begin = "{\"" + key;
+  if (data.compare(0, expected_data_begin.length(), expected_data_begin) != 0) {
+    return testing::AssertionFailure() << data << " does not begin with "
+                                       << expected_data_begin;
+  }
+
+  // Verify that the data ends on "}}.
+  static const char kDataEnd[] = "\"}}";
+  static const size_t kDataEndLength = sizeof kDataEnd - 1;
+  if (data.compare(data.length() - kDataEndLength,
+                   kDataEndLength,
+                   kDataEnd,
+                   kDataEndLength) != 0) {
+    return testing::AssertionFailure() << data << " does not end with "
+                                       << kDataEnd;
+  }
+
+  return testing::AssertionSuccess();
+}
+
+// Verifies that FakeDownloader downloads valid aggregated data for a region
+// code.
+TEST_P(FakeDownloaderTest, FakeDownloaderHasValidAggregatedDataForRegion) {
+  std::string key = "data/" + GetParam();
+  std::string url = std::string(FakeDownloader::kFakeAggregateDataUrl) + key;
+  scoped_ptr<Downloader::Callback> callback(BuildCallback());
+  downloader_.Download(url, *callback);
+
+  EXPECT_TRUE(success_);
+  EXPECT_EQ(url, url_);
+  EXPECT_TRUE(AggregateDataIsValid(data_, key));
+};
+
 // Test all region codes.
 INSTANTIATE_TEST_CASE_P(
     AllRegions, FakeDownloaderTest,
@@ -118,6 +163,18 @@ TEST_F(FakeDownloaderTest, DownloadExistingData) {
 TEST_F(FakeDownloaderTest, DownloadMissingKeyReturnsEmptyDictionary) {
   static const std::string kJunkUrl =
       std::string(FakeDownloader::kFakeDataUrl) + "junk";
+  scoped_ptr<Downloader::Callback> callback(BuildCallback());
+  downloader_.Download(kJunkUrl, *callback);
+
+  EXPECT_TRUE(success_);
+  EXPECT_EQ(kJunkUrl, url_);
+  EXPECT_EQ("{}", data_);
+}
+
+// Verifies that aggregate downloading of a missing key will also return "{}".
+TEST_F(FakeDownloaderTest, AggregateDownloadMissingKeyReturnsEmptyDictionary) {
+  static const std::string kJunkUrl =
+      std::string(FakeDownloader::kFakeAggregateDataUrl) + "junk";
   scoped_ptr<Downloader::Callback> callback(BuildCallback());
   downloader_.Download(kJunkUrl, *callback);
 

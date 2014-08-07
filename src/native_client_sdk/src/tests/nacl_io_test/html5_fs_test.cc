@@ -40,12 +40,13 @@ namespace {
 
 class Html5FsForTesting : public Html5Fs {
  public:
-  Html5FsForTesting(StringMap_t& string_map, PepperInterface* ppapi) {
+  Html5FsForTesting(StringMap_t& string_map, PepperInterface* ppapi,
+                    int expected_error = 0) {
     FsInitArgs args;
     args.string_map = string_map;
     args.ppapi = ppapi;
     Error error = Init(args);
-    EXPECT_EQ(0, error);
+    EXPECT_EQ(expected_error, error);
   }
 };
 
@@ -118,6 +119,47 @@ TEST_F(Html5FsTest, FilesystemType) {
   }
 }
 
+TEST_F(Html5FsTest, PassFilesystemResource) {
+  // Fail if given a bad resource.
+  {
+    StringMap_t map;
+    map["filesystem_resource"] = "0";
+    ScopedRef<Html5FsForTesting> fs(
+        new Html5FsForTesting(map, &ppapi_, EINVAL));
+  }
+
+  {
+    EXPECT_TRUE(ppapi_html5_.filesystem_template()->AddEmptyFile("/foo", NULL));
+    PP_Resource filesystem = ppapi_html5_.GetFileSystemInterface()->Create(
+        ppapi_html5_.GetInstance(), PP_FILESYSTEMTYPE_LOCALPERSISTENT);
+
+    ASSERT_EQ(int32_t(PP_OK), ppapi_html5_.GetFileSystemInterface()->Open(
+              filesystem, 0, PP_BlockUntilComplete()));
+
+    StringMap_t map;
+    char buffer[30];
+    snprintf(buffer, 30, "%d", filesystem);
+    map["filesystem_resource"] = buffer;
+    ScopedRef<Html5FsForTesting> fs(
+        new Html5FsForTesting(map, &ppapi_));
+
+    ASSERT_EQ(0, fs->Access(Path("/foo"), R_OK | W_OK | X_OK));
+
+    ppapi_html5_.GetCoreInterface()->ReleaseResource(filesystem);
+  }
+}
+
+TEST_F(Html5FsTest, MountSubtree) {
+  EXPECT_TRUE(ppapi_html5_.filesystem_template()->AddEmptyFile("/foo/bar",
+                                                               NULL));
+  StringMap_t map;
+  map["SOURCE"] = "/foo";
+  ScopedRef<Html5FsForTesting> fs(new Html5FsForTesting(map, &ppapi_));
+
+  ASSERT_EQ(0, fs->Access(Path("/bar"), R_OK | W_OK | X_OK));
+  ASSERT_EQ(ENOENT, fs->Access(Path("/foo/bar"), F_OK));
+}
+
 TEST_F(Html5FsTest, Access) {
   EXPECT_TRUE(ppapi_html5_.filesystem_template()->AddEmptyFile("/foo", NULL));
 
@@ -158,9 +200,7 @@ TEST_F(Html5FsTest, Remove) {
   EXPECT_EQ(ENOENT, fs->Access(path, F_OK));
 }
 
-// Unlink + Rmdir forward to Remove unconditionally, which will not fail if the
-// file type is wrong.
-TEST_F(Html5FsTest, DISABLED_Unlink) {
+TEST_F(Html5FsTest, Unlink) {
   EXPECT_TRUE(ppapi_html5_.filesystem_template()->AddEmptyFile("/file", NULL));
   EXPECT_TRUE(ppapi_html5_.filesystem_template()->AddDirectory("/dir", NULL));
 
@@ -173,9 +213,7 @@ TEST_F(Html5FsTest, DISABLED_Unlink) {
   EXPECT_EQ(0, fs->Access(Path("/dir"), F_OK));
 }
 
-// Unlink + Rmdir forward to Remove unconditionally, which will not fail if the
-// file type is wrong.
-TEST_F(Html5FsTest, DISABLED_Rmdir) {
+TEST_F(Html5FsTest, Rmdir) {
   EXPECT_TRUE(ppapi_html5_.filesystem_template()->AddEmptyFile("/file", NULL));
   EXPECT_TRUE(ppapi_html5_.filesystem_template()->AddDirectory("/dir", NULL));
 

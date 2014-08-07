@@ -4,7 +4,6 @@
 
 #include "chrome/browser/extensions/error_console/error_console.h"
 
-#include <list>
 #include <vector>
 
 #include "base/bind.h"
@@ -14,7 +13,6 @@
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/extensions/features/feature_channel.h"
@@ -22,6 +20,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
@@ -194,14 +193,6 @@ void ErrorConsole::Enable() {
       this,
       chrome::NOTIFICATION_PROFILE_DESTROYED,
       content::NotificationService::AllBrowserContextsAndSources());
-  notification_registrar_.Add(
-      this,
-      chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
-      content::Source<Profile>(profile_));
-  notification_registrar_.Add(
-      this,
-      chrome::NOTIFICATION_EXTENSION_INSTALLED,
-      content::Source<Profile>(profile_));
 
   const ExtensionSet& extensions =
       ExtensionRegistry::Get(profile_)->enabled_extensions();
@@ -233,6 +224,24 @@ void ErrorConsole::OnExtensionLoaded(content::BrowserContext* browser_context,
   CheckEnabled();
 }
 
+void ErrorConsole::OnExtensionInstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  // We don't want to have manifest errors from previous installs. We want
+  // to keep runtime errors, though, because extensions are reloaded on a
+  // refresh of chrome:extensions, and we don't want to wipe our history
+  // whenever that happens.
+  errors_.RemoveErrorsForExtensionOfType(extension->id(),
+                                         ExtensionError::MANIFEST_ERROR);
+  AddManifestErrorsForExtension(extension);
+}
+
+void ErrorConsole::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  errors_.Remove(extension->id());
+}
+
 void ErrorConsole::AddManifestErrorsForExtension(const Extension* extension) {
   const std::vector<InstallWarning>& warnings =
       extension->install_warnings();
@@ -249,37 +258,12 @@ void ErrorConsole::AddManifestErrorsForExtension(const Extension* extension) {
 void ErrorConsole::Observe(int type,
                            const content::NotificationSource& source,
                            const content::NotificationDetails& details) {
-  switch (type) {
-    case chrome::NOTIFICATION_PROFILE_DESTROYED: {
-      Profile* profile = content::Source<Profile>(source).ptr();
-      // If incognito profile which we are associated with is destroyed, also
-      // destroy all incognito errors.
-      if (profile->IsOffTheRecord() && profile_->IsSameProfile(profile))
-        errors_.RemoveIncognitoErrors();
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
-      // No need to check the profile here, since we registered to only receive
-      // notifications from our own.
-      errors_.Remove(content::Details<Extension>(details).ptr()->id());
-      break;
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
-      const InstalledExtensionInfo* info =
-          content::Details<InstalledExtensionInfo>(details).ptr();
-
-      // We don't want to have manifest errors from previous installs. We want
-      // to keep runtime errors, though, because extensions are reloaded on a
-      // refresh of chrome:extensions, and we don't want to wipe our history
-      // whenever that happens.
-      errors_.RemoveErrorsForExtensionOfType(info->extension->id(),
-                                             ExtensionError::MANIFEST_ERROR);
-
-      AddManifestErrorsForExtension(info->extension);
-      break;
-    }
-    default:
-      NOTREACHED();
-  }
+  DCHECK_EQ(chrome::NOTIFICATION_PROFILE_DESTROYED, type);
+  Profile* profile = content::Source<Profile>(source).ptr();
+  // If incognito profile which we are associated with is destroyed, also
+  // destroy all incognito errors.
+  if (profile->IsOffTheRecord() && profile_->IsSameProfile(profile))
+    errors_.RemoveIncognitoErrors();
 }
 
 int ErrorConsole::GetMaskForExtension(const std::string& extension_id) const {

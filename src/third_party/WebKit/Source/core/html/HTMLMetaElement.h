@@ -23,6 +23,7 @@
 #ifndef HTMLMetaElement_h
 #define HTMLMetaElement_h
 
+#include "core/dom/ViewportDescription.h"
 #include "core/html/HTMLElement.h"
 
 namespace WebCore {
@@ -37,7 +38,7 @@ enum ViewportErrorCode {
 
 class HTMLMetaElement FINAL : public HTMLElement {
 public:
-    static PassRefPtrWillBeRawPtr<HTMLMetaElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLMetaElement);
 
     const AtomicString& content() const;
     const AtomicString& httpEquiv() const;

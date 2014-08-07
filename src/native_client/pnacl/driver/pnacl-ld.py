@@ -77,6 +77,7 @@ EXTRA_ENV = {
 
   # Standard Library Directories
   'SEARCH_DIRS_BUILTIN': '${USE_STDLIB ? ' +
+                         '  ${BASE_USR}/local/lib/ ' +
                          '  ${BASE_USR}/lib/ ' +
                          '  ${BASE_SDK}/lib/ ' +
                          '  ${BASE_LIB}/ ' +
@@ -136,7 +137,7 @@ EXTRA_ENV = {
       '--allow-unresolved=_Unwind_SetIP}',
 
   'BCLD_FLAGS':
-    '--oformat ${BCLD_OFORMAT} -Ttext=0x20000 ' +
+    '--oformat ${BCLD_OFORMAT} ' +
     '${!RELOCATABLE ? --undef-sym-check ${BCLD_ALLOW_UNRESOLVED}} ' +
     '${GOLD_PLUGIN_ARGS} ${LD_FLAGS}',
   'RUN_BCLD': ('${LD} ${BCLD_FLAGS} ${inputs} -o ${output}'),
@@ -145,10 +146,6 @@ EXTRA_ENV = {
   'ALLOW_NEXE_BUILD_ID': '0',
   'DISABLE_ABI_CHECK': '0',
   'LLVM_PASSES_TO_DISABLE': '',
-  # Skip dev intrinsic checks in ABI verifier.  Used for pnacl-llc.pexe and
-  # gold.pexe, which currently use llvm.nacl.target.arch.
-  # TODO(jvoung): find way to stop using llvm.nacl.target.arch.
-  'ALLOW_DEV_INTRINSICS': '0',
 }
 
 def AddToBCLinkFlags(*args):
@@ -183,7 +180,6 @@ LDPatterns = [
   # required for ABI-stable pexes but can be omitted when the PNaCl
   # toolchain is used for producing native nexes.
   ( '--pnacl-disable-pass=(.+)', "env.append('LLVM_PASSES_TO_DISABLE', $0)"),
-  ( '--pnacl-allow-dev-intrinsics', "env.set('ALLOW_DEV_INTRINSICS', '1')"),
   ( ('-target', '(.+)'), SetLibTarget),
   ( ('--target=(.+)'), SetLibTarget),
 
@@ -433,9 +429,6 @@ def main(argv):
             '-verify-pnaclabi-functions',
             # A flag for the above -verify-pnaclabi-* passes.
             '-pnaclabi-allow-debug-metadata']
-        if env.getbool('ALLOW_DEV_INTRINSICS'):
-          # A flag for the above -verify-pnaclabi-* passes.
-          postopt_passes += ['-pnaclabi-allow-dev-intrinsics']
     elif still_need_expand_byval:
       # We may still need -expand-byval to match the PPAPI shim
       # calling convention.
@@ -562,16 +555,16 @@ def DoLLVMPasses(pass_list):
   def Func(infile, outfile):
     filtered_list = [pass_option for pass_option in pass_list
                      if pass_option not in env.get('LLVM_PASSES_TO_DISABLE')]
-    RunDriver('opt', filtered_list + [infile, '-o', outfile])
+    RunDriver('pnacl-opt', filtered_list + [infile, '-o', outfile])
   return Func
 
 def DoLTO(infile, outfile):
   opt_flags = env.get('OPT_FLAGS')
-  RunDriver('opt', opt_flags + [ infile, '-o', outfile ])
+  RunDriver('pnacl-opt', opt_flags + [ infile, '-o', outfile ])
 
 def DoStrip(infile, outfile):
   strip_flags = env.get('STRIP_FLAGS')
-  RunDriver('strip', strip_flags + [ infile, '-o', outfile ])
+  RunDriver('pnacl-strip', strip_flags + [ infile, '-o', outfile ])
 
 def DoTranslate(infile, outfile):
   args = env.get('TRANSLATE_FLAGS')
@@ -581,7 +574,7 @@ def DoTranslate(infile, outfile):
   args += ['-Wl,'+s if ldtools.IsFlag(s) else s
            for s in env.get('NATIVE_OBJECTS')]
   args += ['-o', outfile]
-  RunDriver('translate', args)
+  RunDriver('pnacl-translate', args)
 
 def LinkBC(inputs, output):
   '''Input: a bunch of bc/o/lib input files

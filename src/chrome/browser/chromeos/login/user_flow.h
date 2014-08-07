@@ -6,11 +6,13 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_USER_FLOW_H_
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/chromeos/login/login_status_consumer.h"
-#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/auth/login_status_consumer.h"
+#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/profiles/profile.h"
 
 namespace chromeos {
+
+class UserContext;
 
 class LoginDisplayHost;
 // Defines possible variants of user flow upon logging in.
@@ -72,7 +74,7 @@ class ExtendedUserFlow : public UserFlow {
   virtual void UnregisterFlowSoon();
   std::string user_id() {
     return user_id_;
-  };
+  }
 
  private:
   std::string user_id_;

@@ -24,7 +24,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/first_run/first_run_internal.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/importer_list.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
@@ -53,9 +53,9 @@
 #include "chrome/installer/util/master_preferences.h"
 #include "chrome/installer/util/master_preferences_constants.h"
 #include "chrome/installer/util/util_constants.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "components/signin/core/browser/signin_tracker.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -566,8 +566,8 @@ bool CreateSentinel() {
 #if !defined(OS_LINUX) && !defined(OS_BSD)
 bool IsOrganicFirstRun() {
   std::string brand;
-  google_util::GetBrand(&brand);
-  return google_util::IsOrganicFirstRun(brand);
+  google_brand::GetBrand(&brand);
+  return google_brand::IsOrganicFirstRun(brand);
 }
 #endif
 

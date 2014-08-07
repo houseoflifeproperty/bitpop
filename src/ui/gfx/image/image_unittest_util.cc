@@ -56,7 +56,7 @@ const SkBitmap CreateBitmap(int width, int height) {
   SkBitmap bitmap;
   bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
   bitmap.allocPixels();
-  bitmap.eraseRGB(0, 255, 0);
+  bitmap.eraseARGB(255, 0, 255, 0);
   return bitmap;
 }
 
@@ -80,6 +80,8 @@ gfx::Image CreateImage(int width, int height) {
 }
 
 bool IsEqual(const gfx::Image& img1, const gfx::Image& img2) {
+  img1.AsImageSkia().EnsureRepsForSupportedScales();
+  img2.AsImageSkia().EnsureRepsForSupportedScales();
   std::vector<gfx::ImageSkiaRep> img1_reps = img1.AsImageSkia().image_reps();
   gfx::ImageSkia image_skia2 = img2.AsImageSkia();
   if (image_skia2.image_reps().size() != img1_reps.size())

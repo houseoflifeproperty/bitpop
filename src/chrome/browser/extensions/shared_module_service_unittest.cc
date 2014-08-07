@@ -7,11 +7,12 @@
 #include "base/strings/string16.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/shared_module_service.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/install_flag.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/id_util.h"
 #include "extensions/common/value_builder.h"
@@ -65,22 +66,19 @@ void SharedModuleServiceUnitTest::SetUp() {
 testing::AssertionResult SharedModuleServiceUnitTest::InstallExtension(
     const Extension* extension) {
   // Verify the extension is not already installed.
-  if (registry_->GetExtensionById(extension->id(),
-                                  ExtensionRegistry::ENABLED)) {
+  if (registry()->GetExtensionById(extension->id(),
+                                   ExtensionRegistry::ENABLED)) {
     return testing::AssertionFailure() << "Extension already installed.";
   }
 
   // Notify the service that the extension is installed. This adds it to the
   // registry, notifies interested parties, etc.
-  service_->OnExtensionInstalled(extension,
-                                 syncer::StringOrdinal(),
-                                 false,  // No requirement errors.
-                                 NOT_BLACKLISTED,
-                                 false);  // Don't wait for idle.
+  service_->OnExtensionInstalled(
+      extension, syncer::StringOrdinal(), kInstallFlagInstallImmediately);
 
   // Verify that the extension is now installed.
-  if (!registry_->GetExtensionById(extension->id(),
-                                   ExtensionRegistry::ENABLED)) {
+  if (!registry()->GetExtensionById(extension->id(),
+                                    ExtensionRegistry::ENABLED)) {
     return testing::AssertionFailure() << "Could not install extension.";
   }
 
@@ -140,8 +138,8 @@ TEST_F(SharedModuleServiceUnitTest, PruneSharedModulesOnUninstall) {
   // Since the module was only referenced by that single extension, it should
   // have been uninstalled as a side-effect of uninstalling the extension that
   // depended upon it.
-  EXPECT_FALSE(registry_->GetExtensionById(shared_module->id(),
-                                           ExtensionRegistry::EVERYTHING));
+  EXPECT_FALSE(registry()->GetExtensionById(shared_module->id(),
+                                            ExtensionRegistry::EVERYTHING));
 }
 
 TEST_F(SharedModuleServiceUnitTest, WhitelistedImports) {

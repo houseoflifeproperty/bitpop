@@ -9,7 +9,7 @@
 
 #define LOG_PREFIX "nacl_io: "
 
-#if defined(NACL_IO_LOGGING)
+#if NACL_IO_LOGGING
 #define LOG_TRACE(format, ...) \
   nacl_io_log(LOG_PREFIX format "\n", ##__VA_ARGS__)
 #else
@@ -18,6 +18,9 @@
 
 #define LOG_ERROR(format, ...) \
   nacl_io_log(LOG_PREFIX "error: " format "\n", ##__VA_ARGS__)
+
+#define LOG_WARN(format, ...) \
+  nacl_io_log(LOG_PREFIX "warning: " format "\n", ##__VA_ARGS__)
 
 EXTERN_C_BEGIN
 

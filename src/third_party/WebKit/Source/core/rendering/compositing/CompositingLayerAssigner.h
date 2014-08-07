@@ -40,7 +40,7 @@ public:
     explicit CompositingLayerAssigner(RenderLayerCompositor*);
     ~CompositingLayerAssigner();
 
-    void assign(RenderLayer* updateRoot, bool& layersChanged);
+    void assign(RenderLayer* updateRoot, bool& layersChanged, Vector<RenderLayer*>& layersNeedingRepaint);
 
     // FIXME: This function should be private. We should remove the one caller
     // once we've fixed the compositing chicken/egg issues.
@@ -51,18 +51,20 @@ private:
         SquashingState()
             : mostRecentMapping(0)
             , hasMostRecentMapping(false)
+            , haveAssignedBackingsToEntireSquashingLayerSubtree(false)
             , nextSquashedLayerIndex(0)
             , totalAreaOfSquashedRects(0) { }
 
-        void updateSquashingStateForNewMapping(CompositedLayerMappingPtr, bool hasNewCompositedLayerMapping, LayoutPoint newOffsetFromTransformedAncestorForSquashingCLM);
+        void updateSquashingStateForNewMapping(CompositedLayerMappingPtr, bool hasNewCompositedLayerMapping);
 
         // The most recent composited backing that the layer should squash onto if needed.
         CompositedLayerMappingPtr mostRecentMapping;
         bool hasMostRecentMapping;
 
-        // Coordinates of the compositedLayerMapping's owning layer in the space of the transformed ancestor. This is used for computing the correct
-        // positions of renderlayers when they paint into the squashing layer.
-        LayoutPoint offsetFromTransformedAncestorForSquashingCLM;
+        // Whether all RenderLayers in the stacking subtree rooted at the most recent mapping's
+        // owning layer have had CompositedLayerMappings assigned. Layers cannot squash into a
+        // CompositedLayerMapping owned by a stacking ancestor, since this changes paint order.
+        bool haveAssignedBackingsToEntireSquashingLayerSubtree;
 
         // Counter that tracks what index the next RenderLayer would be if it gets squashed to the current squashing layer.
         size_t nextSquashedLayerIndex;
@@ -75,11 +77,11 @@ private:
         uint64_t totalAreaOfSquashedRects;
     };
 
-    void assignLayersToBackingsInternal(RenderLayer*, SquashingState&, bool& layersChanged);
-    void assignLayersToBackingsForReflectionLayer(RenderLayer* reflectionLayer, bool& layersChanged);
-    bool canSquashIntoCurrentSquashingOwner(const RenderLayer*, const SquashingState&);
+    void assignLayersToBackingsInternal(RenderLayer*, SquashingState&, bool& layersChanged, Vector<RenderLayer*>& layersNeedingRepaint);
+    void assignLayersToBackingsForReflectionLayer(RenderLayer* reflectionLayer, bool& layersChanged, Vector<RenderLayer*>& layersNeedingRepaint);
+    CompositingReasons getReasonsPreventingSquashing(const RenderLayer*, const SquashingState&);
     bool squashingWouldExceedSparsityTolerance(const RenderLayer* candidate, const SquashingState&);
-    bool updateSquashingAssignment(RenderLayer*, SquashingState&, CompositingStateTransitionType);
+    bool updateSquashingAssignment(RenderLayer*, SquashingState&, CompositingStateTransitionType, Vector<RenderLayer*>& layersNeedingRepaint);
     bool needsOwnBacking(const RenderLayer*) const;
 
     RenderLayerCompositor* m_compositor;

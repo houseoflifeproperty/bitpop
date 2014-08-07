@@ -36,24 +36,41 @@ ServiceWorkerProviderContext::~ServiceWorkerProviderContext() {
   }
 }
 
-scoped_ptr<ServiceWorkerHandleReference>
-ServiceWorkerProviderContext::GetCurrentServiceWorkerHandle() {
+ServiceWorkerHandleReference* ServiceWorkerProviderContext::waiting() {
   DCHECK(main_thread_loop_proxy_->RunsTasksOnCurrentThread());
-  if (!current_)
-    return scoped_ptr<ServiceWorkerHandleReference>();
-  return ServiceWorkerHandleReference::Create(
-      current_->info(), thread_safe_sender_);
+  return waiting_.get();
+}
+
+ServiceWorkerHandleReference* ServiceWorkerProviderContext::current() {
+  DCHECK(main_thread_loop_proxy_->RunsTasksOnCurrentThread());
+  return current_.get();
 }
 
 void ServiceWorkerProviderContext::OnServiceWorkerStateChanged(
     int handle_id,
     blink::WebServiceWorkerState state) {
-  // Currently .current is the only ServiceWorker associated to this provider.
-  DCHECK_EQ(current_handle_id(), handle_id);
-  current_->set_state(state);
+  ServiceWorkerHandleReference* which = NULL;
+  if (handle_id == current_handle_id()) {
+    which = current_.get();
+  } else if (handle_id == waiting_handle_id()) {
+    which = waiting_.get();
+  }
+
+  // We should only get messages for ServiceWorkers associated with
+  // this provider.
+  DCHECK(which);
+
+  which->set_state(state);
 
   // TODO(kinuko): We can forward the message to other threads here
   // when we support navigator.serviceWorker in dedicated workers.
+}
+
+void ServiceWorkerProviderContext::OnSetWaitingServiceWorker(
+    int provider_id,
+    const ServiceWorkerObjectInfo& info) {
+  DCHECK_EQ(provider_id_, provider_id);
+  waiting_ = ServiceWorkerHandleReference::Adopt(info, thread_safe_sender_);
 }
 
 void ServiceWorkerProviderContext::OnSetCurrentServiceWorker(
@@ -63,8 +80,7 @@ void ServiceWorkerProviderContext::OnSetCurrentServiceWorker(
 
   // This context is is the primary owner of this handle, keeps the
   // initial reference until it goes away.
-  current_ = ServiceWorkerHandleReference::CreateForDeleter(
-      info, thread_safe_sender_);
+  current_ = ServiceWorkerHandleReference::Adopt(info, thread_safe_sender_);
 
   // TODO(kinuko): We can forward the message to other threads here
   // when we support navigator.serviceWorker in dedicated workers.
@@ -73,6 +89,11 @@ void ServiceWorkerProviderContext::OnSetCurrentServiceWorker(
 int ServiceWorkerProviderContext::current_handle_id() const {
   DCHECK(main_thread_loop_proxy_->RunsTasksOnCurrentThread());
   return current_ ? current_->info().handle_id : kInvalidServiceWorkerHandleId;
+}
+
+int ServiceWorkerProviderContext::waiting_handle_id() const {
+  DCHECK(main_thread_loop_proxy_->RunsTasksOnCurrentThread());
+  return waiting_ ? waiting_->info().handle_id : kInvalidServiceWorkerHandleId;
 }
 
 }  // namespace content

@@ -44,6 +44,7 @@ public:
 
     bool containsJavaApplet() const;
 
+    virtual bool hasFallbackContent() const OVERRIDE;
     virtual bool useFallbackContent() const OVERRIDE;
     virtual void renderFallbackContent() OVERRIDE;
 
@@ -61,8 +62,10 @@ public:
     bool checkValidity() { return true; }
     virtual void setCustomValidity(const String&) OVERRIDE { }
 
+#if !ENABLE(OILPAN)
     using Node::ref;
     using Node::deref;
+#endif
 
     virtual bool canContainRangeEndPoint() const OVERRIDE { return useFallbackContent(); }
 
@@ -94,8 +97,6 @@ private:
     void updateDocNamedItem();
 
     void reattachFallbackContent();
-
-    bool hasFallbackContent() const;
 
     // FIXME: This function should not deal with url or serviceType
     // so that we can better share code between <object> and <embed>.

@@ -9,6 +9,7 @@
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/values.h"
 #include "chrome/browser/chromeos/file_system_provider/operations/read_directory.h"
 #include "chrome/common/extensions/api/file_system_provider.h"
 #include "chrome/common/extensions/api/file_system_provider_internal.h"
@@ -22,7 +23,7 @@ namespace operations {
 namespace {
 
 const char kExtensionId[] = "mbflcebpggnecokmikipoihdbecnjfoj";
-const int kFileSystemId = 1;
+const char kFileSystemId[] = "testing-file-system";
 const int kRequestId = 2;
 const base::FilePath::CharType kDirectoryPath[] = "/directory";
 
@@ -135,18 +136,21 @@ TEST_F(FileSystemProviderOperationsReadDirectoryTest, Execute) {
                 kEventName,
             event->event_name);
   base::ListValue* event_args = event->event_args.get();
-  ASSERT_EQ(3u, event_args->GetSize());
+  ASSERT_EQ(1u, event_args->GetSize());
 
-  int event_file_system_id = -1;
-  EXPECT_TRUE(event_args->GetInteger(0, &event_file_system_id));
+  base::DictionaryValue* options = NULL;
+  ASSERT_TRUE(event_args->GetDictionary(0, &options));
+
+  std::string event_file_system_id;
+  EXPECT_TRUE(options->GetString("fileSystemId", &event_file_system_id));
   EXPECT_EQ(kFileSystemId, event_file_system_id);
 
   int event_request_id = -1;
-  EXPECT_TRUE(event_args->GetInteger(1, &event_request_id));
+  EXPECT_TRUE(options->GetInteger("requestId", &event_request_id));
   EXPECT_EQ(kRequestId, event_request_id);
 
   std::string event_directory_path;
-  EXPECT_TRUE(event_args->GetString(2, &event_directory_path));
+  EXPECT_TRUE(options->GetString("directoryPath", &event_directory_path));
   EXPECT_EQ(kDirectoryPath, event_directory_path);
 }
 
@@ -190,8 +194,8 @@ TEST_F(FileSystemProviderOperationsReadDirectoryTest, OnSuccess) {
   // base::Value.
   const std::string input =
       "[\n"
-      "  1,\n"  // kFileSystemId
-      "  2,\n"  // kRequestId
+      "  \"testing-file-system\",\n"  // kFileSystemId
+      "  2,\n"                        // kRequestId
       "  [\n"
       "    {\n"
       "      \"isDirectory\": false,\n"
@@ -202,7 +206,7 @@ TEST_F(FileSystemProviderOperationsReadDirectoryTest, OnSuccess) {
       "      }\n"
       "    }\n"
       "  ],\n"
-      "  false\n"  // has_next
+      "  false\n"  // has_more
       "]\n";
 
   int json_error_code;
@@ -219,8 +223,8 @@ TEST_F(FileSystemProviderOperationsReadDirectoryTest, OnSuccess) {
       RequestValue::CreateForReadDirectorySuccess(params.Pass()));
   ASSERT_TRUE(request_value.get());
 
-  const bool has_next = false;
-  read_directory.OnSuccess(kRequestId, request_value.Pass(), has_next);
+  const bool has_more = false;
+  read_directory.OnSuccess(kRequestId, request_value.Pass(), has_more);
 
   ASSERT_EQ(1u, callback_logger.events().size());
   CallbackLogger::Event* event = callback_logger.events()[0];

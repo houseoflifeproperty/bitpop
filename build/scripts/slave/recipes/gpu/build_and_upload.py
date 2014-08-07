@@ -20,7 +20,6 @@ def GenSteps(api):
   yield api.buildbot.prep()
   yield api.gpu.checkout_steps()
   yield api.gpu.compile_steps()
-  yield api.gpu.upload_steps()
 
 def GenTests(api):
   # The majority of the tests are in the build_and_test recipe.

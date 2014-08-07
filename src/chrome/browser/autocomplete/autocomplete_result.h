@@ -12,9 +12,9 @@
 #include "base/basictypes.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "url/gurl.h"
 
-class AutocompleteInput;
 class AutocompleteProvider;
 class Profile;
 
@@ -150,7 +150,7 @@ class AutocompleteResult {
   // |set_duplicate_matches| is true, the duplicate matches are stored in the
   // |duplicate_matches| vector of the corresponding AutocompleteMatch.
   static void DedupMatchesByDestination(
-      AutocompleteInput::PageClassification page_classification,
+      metrics::OmniboxEventProto::PageClassification page_classification,
       bool set_duplicate_matches,
       ACMatches* matches);
 
@@ -175,19 +175,13 @@ class AutocompleteResult {
   // operator=() by another name.
   void CopyFrom(const AutocompleteResult& rhs);
 
-  // Adds a single match. The match is inserted at the appropriate position
-  // based on relevancy and display order. This is ONLY for use after
-  // SortAndCull() has been invoked, and preserves default_match_.
-  void AddMatch(AutocompleteInput::PageClassification page_classification,
-                const AutocompleteMatch& match);
-
   // Populates |provider_to_matches| from |matches_|.
   void BuildProviderToMatches(ProviderToMatches* provider_to_matches) const;
 
   // Copies matches into this result. |old_matches| gives the matches from the
   // last result, and |new_matches| the results from this result.
   void MergeMatchesByProvider(
-      AutocompleteInput::PageClassification page_classification,
+      metrics::OmniboxEventProto::PageClassification page_classification,
       const ACMatches& old_matches,
       const ACMatches& new_matches);
 

@@ -68,6 +68,7 @@ bool FocusManager::OnKeyEvent(const ui::KeyEvent& event) {
     modifiers |= ui::EF_ALT_DOWN;
   ui::Accelerator accelerator(event.key_code(), modifiers);
   accelerator.set_type(event.type());
+  accelerator.set_is_repeat(event.IsRepeat());
 
   if (event.type() == ui::ET_KEY_PRESSED) {
     // If the focused view wants to process the key event as is, let it be.
@@ -313,8 +314,13 @@ View* FocusManager::GetNextFocusableView(View* original_starting_view,
 
 void FocusManager::SetFocusedViewWithReason(
     View* view, FocusChangeReason reason) {
-  if (focused_view_ == view)
+  if (focused_view_ == view) {
+    // In the case that the widget lost the focus and gained it back without
+    // changing the focused view, we have to make the text input client focused.
+    // TODO(yukishiino): Remove this hack once we fix http://crbug.com/383236
+    FocusTextInputClient(focused_view_);
     return;
+  }
 
   base::AutoReset<bool> auto_changing_focus(&is_changing_focus_, true);
   // Update the reason for the focus change (since this is checked by

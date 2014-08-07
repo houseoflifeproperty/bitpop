@@ -41,16 +41,16 @@
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
-#include "core/events/EventListener.h"
-#include "core/events/EventTarget.h"
 #include "core/dom/Node.h"
-#include "core/dom/NodeList.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/PseudoElement.h"
+#include "core/dom/StaticNodeList.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/markup.h"
+#include "core/events/EventListener.h"
+#include "core/events/EventTarget.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileList.h"
 #include "core/frame/LocalFrame.h"
@@ -88,7 +88,7 @@ namespace WebCore {
 using namespace HTMLNames;
 
 namespace DOMAgentState {
-static const char documentRequested[] = "documentRequested";
+static const char domAgentEnabled[] = "domAgentEnabled";
 };
 
 static const size_t maxTextSize = 10000;
@@ -177,7 +177,7 @@ static Node* hoveredNodeForEvent(LocalFrame* frame, const PlatformTouchEvent& ev
     const Vector<PlatformTouchPoint>& points = event.touchPoints();
     if (!points.size())
         return 0;
-    return hoveredNodeForPoint(frame, points[0].pos(), ignorePointerEventsNone);
+    return hoveredNodeForPoint(frame, roundedIntPoint(points[0].pos()), ignorePointerEventsNone);
 }
 
 class RevalidateStyleAttributeTask {
@@ -191,7 +191,7 @@ public:
 private:
     InspectorDOMAgent* m_domAgent;
     Timer<RevalidateStyleAttributeTask> m_timer;
-    HashSet<RefPtr<Element> > m_elements;
+    WillBePersistentHeapHashSet<RefPtrWillBeMember<Element> > m_elements;
 };
 
 RevalidateStyleAttributeTask::RevalidateStyleAttributeTask(InspectorDOMAgent* domAgent)
@@ -210,8 +210,8 @@ void RevalidateStyleAttributeTask::scheduleFor(Element* element)
 void RevalidateStyleAttributeTask::onTimer(Timer<RevalidateStyleAttributeTask>*)
 {
     // The timer is stopped on m_domAgent destruction, so this method will never be called after m_domAgent has been destroyed.
-    Vector<Element*> elements;
-    for (HashSet<RefPtr<Element> >::iterator it = m_elements.begin(), end = m_elements.end(); it != end; ++it)
+    WillBeHeapVector<RawPtrWillBeMember<Element> > elements;
+    for (WillBePersistentHeapHashSet<RefPtrWillBeMember<Element> >::iterator it = m_elements.begin(), end = m_elements.end(); it != end; ++it)
         elements.append(it->get());
     m_domAgent->styleAttributeInvalidated(elements);
 
@@ -232,9 +232,11 @@ InspectorDOMAgent::InspectorDOMAgent(InspectorPageAgent* pageAgent, InjectedScri
     , m_overlay(overlay)
     , m_frontend(0)
     , m_domListener(0)
+    , m_documentNodeToIdMap(adoptPtrWillBeNoop(new NodeToIdMap()))
     , m_lastNodeId(1)
     , m_searchingForNode(NotSearching)
     , m_suppressAttributeModifiedEvent(false)
+    , m_listener(0)
 {
 }
 
@@ -247,8 +249,8 @@ InspectorDOMAgent::~InspectorDOMAgent()
 void InspectorDOMAgent::setFrontend(InspectorFrontend* frontend)
 {
     ASSERT(!m_frontend);
-    m_history = adoptPtr(new InspectorHistory());
-    m_domEditor = adoptPtr(new DOMEditor(m_history.get()));
+    m_history = adoptPtrWillBeNoop(new InspectorHistory());
+    m_domEditor = adoptPtrWillBeNoop(new DOMEditor(m_history.get()));
 
     m_frontend = frontend->dom();
     m_instrumentingAgents->setInspectorDOMAgent(this);
@@ -268,7 +270,7 @@ void InspectorDOMAgent::clearFrontend()
 
     m_frontend = 0;
     m_instrumentingAgents->setInspectorDOMAgent(0);
-    m_state->setBoolean(DOMAgentState::documentRequested, false);
+    disable(0);
     reset();
 }
 
@@ -282,8 +284,10 @@ void InspectorDOMAgent::restore()
 Vector<Document*> InspectorDOMAgent::documents()
 {
     Vector<Document*> result;
-    for (LocalFrame* frame = m_document->frame(); frame; frame = frame->tree().traverseNext()) {
-        Document* document = frame->document();
+    for (Frame* frame = m_document->frame(); frame; frame = frame->tree().traverseNext()) {
+        if (!frame->isLocalFrame())
+            continue;
+        Document* document = toLocalFrame(frame)->document();
         if (!document)
             continue;
         result.append(document);
@@ -311,7 +315,7 @@ void InspectorDOMAgent::setDocument(Document* doc)
 
     m_document = doc;
 
-    if (!m_state->getBoolean(DOMAgentState::documentRequested))
+    if (!enabled())
         return;
 
     // Immediately communicate 0 document or document that has finished loading.
@@ -343,6 +347,7 @@ void InspectorDOMAgent::unbind(Node* node, NodeToIdMap* nodesMap)
         return;
 
     m_idToNode.remove(id);
+    m_idToNodesMap.remove(id);
 
     if (node->isFrameOwnerElement()) {
         Document* contentDocument = toHTMLFrameOwnerElement(node)->contentDocument();
@@ -383,7 +388,7 @@ void InspectorDOMAgent::unbind(Node* node, NodeToIdMap* nodesMap)
             child = innerNextSibling(child);
         }
     }
-    if (nodesMap == &m_documentNodeToIdMap)
+    if (nodesMap == m_documentNodeToIdMap.get())
         m_cachedChildCount.remove(id);
 }
 
@@ -416,7 +421,7 @@ Element* InspectorDOMAgent::assertElement(ErrorString* errorString, int nodeId)
     if (!node)
         return 0;
 
-    if (node->nodeType() != Node::ELEMENT_NODE) {
+    if (!node->isElementNode()) {
         *errorString = "Node is not an Element";
         return 0;
     }
@@ -481,9 +486,34 @@ Element* InspectorDOMAgent::assertEditableElement(ErrorString* errorString, int 
     return element;
 }
 
+void InspectorDOMAgent::enable(ErrorString*)
+{
+    if (enabled())
+        return;
+    m_state->setBoolean(DOMAgentState::domAgentEnabled, true);
+    if (m_listener)
+        m_listener->domAgentWasEnabled();
+}
+
+bool InspectorDOMAgent::enabled() const
+{
+    return m_state->getBoolean(DOMAgentState::domAgentEnabled);
+}
+
+void InspectorDOMAgent::disable(ErrorString*)
+{
+    if (!enabled())
+        return;
+    m_state->setBoolean(DOMAgentState::domAgentEnabled, false);
+    reset();
+    if (m_listener)
+        m_listener->domAgentWasDisabled();
+}
+
 void InspectorDOMAgent::getDocument(ErrorString* errorString, RefPtr<TypeBuilder::DOM::Node>& root)
 {
-    m_state->setBoolean(DOMAgentState::documentRequested, true);
+    // Backward compatibility. Mark agent as enabled when it requests document.
+    enable(errorString);
 
     if (!m_document) {
         *errorString = "Document is not available";
@@ -492,13 +522,13 @@ void InspectorDOMAgent::getDocument(ErrorString* errorString, RefPtr<TypeBuilder
 
     discardFrontendBindings();
 
-    root = buildObjectForNode(m_document.get(), 2, &m_documentNodeToIdMap);
+    root = buildObjectForNode(m_document.get(), 2, m_documentNodeToIdMap.get());
 }
 
 void InspectorDOMAgent::pushChildNodesToFrontend(int nodeId, int depth)
 {
     Node* node = nodeForId(nodeId);
-    if (!node || (node->nodeType() != Node::ELEMENT_NODE && node->nodeType() != Node::DOCUMENT_NODE && node->nodeType() != Node::DOCUMENT_FRAGMENT_NODE))
+    if (!node || (!node->isElementNode() && !node->isDocumentNode() && !node->isDocumentFragment()))
         return;
 
     NodeToIdMap* nodeMap = m_idToNodesMap.get(nodeId);
@@ -527,8 +557,9 @@ void InspectorDOMAgent::discardFrontendBindings()
     if (m_history)
         m_history->reset();
     m_searchResults.clear();
-    m_documentNodeToIdMap.clear();
+    m_documentNodeToIdMap->clear();
     m_idToNode.clear();
+    m_idToNodesMap.clear();
     releaseDanglingNodes();
     m_childrenRequested.clear();
     m_cachedChildCount.clear();
@@ -541,7 +572,7 @@ Node* InspectorDOMAgent::nodeForId(int id)
     if (!id)
         return 0;
 
-    HashMap<int, Node*>::iterator it = m_idToNode.find(id);
+    WillBeHeapHashMap<int, RawPtrWillBeMember<Node> >::iterator it = m_idToNode.find(id);
     if (it != m_idToNode.end())
         return it->value;
     return 0;
@@ -573,7 +604,7 @@ void InspectorDOMAgent::querySelector(ErrorString* errorString, int nodeId, cons
         return;
 
     TrackExceptionState exceptionState;
-    RefPtr<Element> element = toContainerNode(node)->querySelector(AtomicString(selectors), exceptionState);
+    RefPtrWillBeRawPtr<Element> element = toContainerNode(node)->querySelector(AtomicString(selectors), exceptionState);
     if (exceptionState.hadException()) {
         *errorString = "DOM Error while querying";
         return;
@@ -590,7 +621,7 @@ void InspectorDOMAgent::querySelectorAll(ErrorString* errorString, int nodeId, c
         return;
 
     TrackExceptionState exceptionState;
-    RefPtr<NodeList> nodes = toContainerNode(node)->querySelectorAll(AtomicString(selectors), exceptionState);
+    RefPtrWillBeRawPtr<StaticNodeList> nodes = toContainerNode(node)->querySelectorAll(AtomicString(selectors), exceptionState);
     if (exceptionState.hadException()) {
         *errorString = "DOM Error while querying";
         return;
@@ -608,11 +639,12 @@ int InspectorDOMAgent::pushNodePathToFrontend(Node* nodeToPush)
 
     if (!m_document)
         return 0;
-    if (!m_documentNodeToIdMap.contains(m_document))
+    // FIXME: Oilpan: .get will be unnecessary if m_document is a Member<>.
+    if (!m_documentNodeToIdMap->contains(m_document.get()))
         return 0;
 
     // Return id in case the node is known.
-    int result = m_documentNodeToIdMap.get(nodeToPush);
+    int result = m_documentNodeToIdMap->get(nodeToPush);
     if (result)
         return result;
 
@@ -624,7 +656,7 @@ int InspectorDOMAgent::pushNodePathToFrontend(Node* nodeToPush)
         Node* parent = innerParentNode(node);
         if (!parent) {
             // Node being pushed is detached -> push subtree root.
-            OwnPtr<NodeToIdMap> newMap = adoptPtr(new NodeToIdMap);
+            OwnPtrWillBeRawPtr<NodeToIdMap> newMap = adoptPtrWillBeNoop(new NodeToIdMap);
             danglingMap = newMap.get();
             m_danglingNodeToIdMaps.append(newMap.release());
             RefPtr<TypeBuilder::Array<TypeBuilder::DOM::Node> > children = TypeBuilder::Array<TypeBuilder::DOM::Node>::create();
@@ -633,14 +665,13 @@ int InspectorDOMAgent::pushNodePathToFrontend(Node* nodeToPush)
             break;
         } else {
             path.append(parent);
-            if (m_documentNodeToIdMap.get(parent))
+            if (m_documentNodeToIdMap->get(parent))
                 break;
-            else
-                node = parent;
+            node = parent;
         }
     }
 
-    NodeToIdMap* map = danglingMap ? danglingMap : &m_documentNodeToIdMap;
+    NodeToIdMap* map = danglingMap ? danglingMap : m_documentNodeToIdMap.get();
     for (int i = path.size() - 1; i >= 0; --i) {
         int nodeId = map->get(path.at(i));
         ASSERT(nodeId);
@@ -651,7 +682,7 @@ int InspectorDOMAgent::pushNodePathToFrontend(Node* nodeToPush)
 
 int InspectorDOMAgent::boundNodeId(Node* node)
 {
-    return m_documentNodeToIdMap.get(node);
+    return m_documentNodeToIdMap->get(node);
 }
 
 void InspectorDOMAgent::setAttributeValue(ErrorString* errorString, int elementId, const String& name, const String& value)
@@ -670,7 +701,7 @@ void InspectorDOMAgent::setAttributesAsText(ErrorString* errorString, int elemen
         return;
 
     String markup = "<span " + text + "></span>";
-    RefPtr<DocumentFragment> fragment = element->document().createDocumentFragment();
+    RefPtrWillBeRawPtr<DocumentFragment> fragment = element->document().createDocumentFragment();
 
     bool shouldIgnoreCase = element->document().isHTMLDocument() && element->isHTMLElement();
     // Not all elements can represent the context (i.e. IFRAME), hence using document.body.
@@ -693,15 +724,15 @@ void InspectorDOMAgent::setAttributesAsText(ErrorString* errorString, int elemen
     }
 
     bool foundOriginalAttribute = false;
-    unsigned numAttrs = parsedElement->attributeCount();
-    for (unsigned i = 0; i < numAttrs; ++i) {
+    AttributeCollection attributes = parsedElement->attributes();
+    AttributeCollection::const_iterator end = attributes.end();
+    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
         // Add attribute pair
-        const Attribute& attribute = parsedElement->attributeItem(i);
-        String attributeName = attribute.name().toString();
+        String attributeName = it->name().toString();
         if (shouldIgnoreCase)
             attributeName = attributeName.lower();
         foundOriginalAttribute |= name && attributeName == caseAdjustedName;
-        if (!m_domEditor->setAttribute(element, attributeName, attribute.value(), errorString))
+        if (!m_domEditor->setAttribute(element, attributeName, it->value(), errorString))
             return;
     }
 
@@ -742,7 +773,7 @@ void InspectorDOMAgent::setNodeName(ErrorString* errorString, int nodeId, const 
         return;
 
     TrackExceptionState exceptionState;
-    RefPtr<Element> newElem = oldNode->document().createElement(AtomicString(tagName), exceptionState);
+    RefPtrWillBeRawPtr<Element> newElem = oldNode->document().createElement(AtomicString(tagName), exceptionState);
     if (exceptionState.hadException())
         return;
 
@@ -953,17 +984,17 @@ void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrim
                 if (!element->hasAttributes())
                     break;
 
-                unsigned numAttrs = element->attributeCount();
-                for (unsigned i = 0; i < numAttrs; ++i) {
+                AttributeCollection attributes = element->attributes();
+                AttributeCollection::const_iterator end = attributes.end();
+                for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
                     // Add attribute pair
-                    const Attribute& attribute = element->attributeItem(i);
-                    if (attribute.localName().find(whitespaceTrimmedQuery, 0, false) != kNotFound) {
+                    if (it->localName().find(whitespaceTrimmedQuery, 0, false) != kNotFound) {
                         resultCollector.add(node);
                         break;
                     }
-                    size_t foundPosition = attribute.value().find(attributeQuery, 0, false);
+                    size_t foundPosition = it->value().find(attributeQuery, 0, false);
                     if (foundPosition != kNotFound) {
-                        if (!exactAttributeMatch || (!foundPosition && attribute.value().length() == attributeQuery.length())) {
+                        if (!exactAttributeMatch || (!foundPosition && it->value().length() == attributeQuery.length())) {
                             resultCollector.add(node);
                             break;
                         }
@@ -1001,7 +1032,7 @@ void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrim
         for (Vector<Document*>::iterator it = docs.begin(); it != docs.end(); ++it) {
             Document* document = *it;
             TrackExceptionState exceptionState;
-            RefPtr<NodeList> nodeList = document->querySelectorAll(AtomicString(whitespaceTrimmedQuery), exceptionState);
+            RefPtrWillBeRawPtr<StaticNodeList> nodeList = document->querySelectorAll(AtomicString(whitespaceTrimmedQuery), exceptionState);
             if (exceptionState.hadException() || !nodeList)
                 continue;
 
@@ -1012,7 +1043,7 @@ void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrim
     }
 
     *searchId = IdentifiersFactory::createIdentifier();
-    Vector<RefPtr<Node> >* resultsIt = &m_searchResults.add(*searchId, Vector<RefPtr<Node> >()).storedValue->value;
+    WillBeHeapVector<RefPtrWillBeMember<Node> >* resultsIt = &m_searchResults.add(*searchId, WillBeHeapVector<RefPtrWillBeMember<Node> >()).storedValue->value;
 
     for (ListHashSet<Node*>::iterator it = resultCollector.begin(); it != resultCollector.end(); ++it)
         resultsIt->append(*it);
@@ -1088,7 +1119,7 @@ void InspectorDOMAgent::inspect(Node* inspectedNode)
         return;
 
     Node* node = inspectedNode;
-    while (node && node->nodeType() != Node::ELEMENT_NODE && node->nodeType() != Node::DOCUMENT_NODE && node->nodeType() != Node::DOCUMENT_FRAGMENT_NODE)
+    while (node && !node->isElementNode() && !node->isDocumentNode() && !node->isDocumentFragment())
         node = node->parentOrShadowHostNode();
 
     if (!node)
@@ -1230,12 +1261,13 @@ void InspectorDOMAgent::highlightFrame(
     const RefPtr<JSONObject>* outlineColor)
 {
     LocalFrame* frame = m_pageAgent->frameForId(frameId);
-    if (frame && frame->ownerElement()) {
+    // FIXME: Inspector doesn't currently work cross process.
+    if (frame && frame->deprecatedLocalOwner()) {
         OwnPtr<HighlightConfig> highlightConfig = adoptPtr(new HighlightConfig());
         highlightConfig->showInfo = true; // Always show tooltips for frames.
         highlightConfig->content = parseColor(color);
         highlightConfig->contentOutline = parseColor(outlineColor);
-        m_overlay->highlightNode(frame->ownerElement(), 0 /* eventTarget */, *highlightConfig, false);
+        m_overlay->highlightNode(frame->deprecatedLocalOwner(), 0 /* eventTarget */, *highlightConfig, false);
     }
 }
 
@@ -1539,7 +1571,6 @@ PassRefPtr<TypeBuilder::DOM::Node> InspectorDOMAgent::buildObjectForNode(Node* n
         DocumentType* docType = toDocumentType(node);
         value->setPublicId(docType->publicId());
         value->setSystemId(docType->systemId());
-        value->setInternalSubset(docType->internalSubset());
     } else if (node->isAttributeNode()) {
         Attr* attribute = toAttr(node);
         value->setName(attribute->name());
@@ -1551,7 +1582,7 @@ PassRefPtr<TypeBuilder::DOM::Node> InspectorDOMAgent::buildObjectForNode(Node* n
     if (node->isContainerNode()) {
         int nodeCount = innerChildNodeCount(node);
         value->setChildNodeCount(nodeCount);
-        if (nodesMap == &m_documentNodeToIdMap)
+        if (nodesMap == m_documentNodeToIdMap)
             m_cachedChildCount.set(id, nodeCount);
         if (forcePushChildren && !depth)
             depth = 1;
@@ -1569,12 +1600,12 @@ PassRefPtr<TypeBuilder::Array<String> > InspectorDOMAgent::buildArrayForElementA
     // Go through all attributes and serialize them.
     if (!element->hasAttributes())
         return attributesValue.release();
-    unsigned numAttrs = element->attributeCount();
-    for (unsigned i = 0; i < numAttrs; ++i) {
+    AttributeCollection attributes = element->attributes();
+    AttributeCollection::const_iterator end = attributes.end();
+    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
         // Add attribute pair
-        const Attribute& attribute = element->attributeItem(i);
-        attributesValue->addItem(attribute.name().toString());
-        attributesValue->addItem(attribute.value());
+        attributesValue->addItem(it->name().toString());
+        attributesValue->addItem(it->value());
     }
     return attributesValue.release();
 }
@@ -1716,7 +1747,7 @@ void InspectorDOMAgent::domContentLoadedEventFired(LocalFrame* frame)
 
     // Re-push document once it is loaded.
     discardFrontendBindings();
-    if (m_state->getBoolean(DOMAgentState::documentRequested))
+    if (enabled())
         m_frontend->documentUpdated();
 }
 
@@ -1726,18 +1757,18 @@ void InspectorDOMAgent::invalidateFrameOwnerElement(LocalFrame* frame)
     if (!frameOwner)
         return;
 
-    int frameOwnerId = m_documentNodeToIdMap.get(frameOwner);
+    int frameOwnerId = m_documentNodeToIdMap->get(frameOwner);
     if (!frameOwnerId)
         return;
 
     // Re-add frame owner element together with its new children.
-    int parentId = m_documentNodeToIdMap.get(innerParentNode(frameOwner));
+    int parentId = m_documentNodeToIdMap->get(innerParentNode(frameOwner));
     m_frontend->childNodeRemoved(parentId, frameOwnerId);
-    unbind(frameOwner, &m_documentNodeToIdMap);
+    unbind(frameOwner, m_documentNodeToIdMap.get());
 
-    RefPtr<TypeBuilder::DOM::Node> value = buildObjectForNode(frameOwner, 0, &m_documentNodeToIdMap);
+    RefPtr<TypeBuilder::DOM::Node> value = buildObjectForNode(frameOwner, 0, m_documentNodeToIdMap.get());
     Node* previousSibling = innerPreviousSibling(frameOwner);
-    int prevId = previousSibling ? m_documentNodeToIdMap.get(previousSibling) : 0;
+    int prevId = previousSibling ? m_documentNodeToIdMap->get(previousSibling) : 0;
     m_frontend->childNodeInserted(parentId, prevId, value.release());
 }
 
@@ -1746,7 +1777,9 @@ void InspectorDOMAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
     // FIXME: If "frame" is always guarenteed to be in the same Page as loader->frame()
     // then all we need to check here is loader->frame()->isMainFrame()
     // and we don't need "frame" at all.
-    LocalFrame* mainFrame = frame->page()->mainFrame();
+    if (!frame->page()->mainFrame()->isLocalFrame())
+        return;
+    LocalFrame* mainFrame = frame->page()->deprecatedLocalMainFrame();
     if (loader->frame() != mainFrame) {
         invalidateFrameOwnerElement(loader->frame());
         return;
@@ -1761,12 +1794,12 @@ void InspectorDOMAgent::didInsertDOMNode(Node* node)
         return;
 
     // We could be attaching existing subtree. Forget the bindings.
-    unbind(node, &m_documentNodeToIdMap);
+    unbind(node, m_documentNodeToIdMap.get());
 
     ContainerNode* parent = node->parentNode();
     if (!parent)
         return;
-    int parentId = m_documentNodeToIdMap.get(parent);
+    int parentId = m_documentNodeToIdMap->get(parent);
     // Return if parent is not mapped yet.
     if (!parentId)
         return;
@@ -1779,8 +1812,8 @@ void InspectorDOMAgent::didInsertDOMNode(Node* node)
     } else {
         // Children have been requested -> return value of a new child.
         Node* prevSibling = innerPreviousSibling(node);
-        int prevId = prevSibling ? m_documentNodeToIdMap.get(prevSibling) : 0;
-        RefPtr<TypeBuilder::DOM::Node> value = buildObjectForNode(node, 0, &m_documentNodeToIdMap);
+        int prevId = prevSibling ? m_documentNodeToIdMap->get(prevSibling) : 0;
+        RefPtr<TypeBuilder::DOM::Node> value = buildObjectForNode(node, 0, m_documentNodeToIdMap.get());
         m_frontend->childNodeInserted(parentId, prevId, value.release());
     }
 }
@@ -1793,10 +1826,10 @@ void InspectorDOMAgent::willRemoveDOMNode(Node* node)
     ContainerNode* parent = node->parentNode();
 
     // If parent is not mapped yet -> ignore the event.
-    if (!m_documentNodeToIdMap.contains(parent))
+    if (!m_documentNodeToIdMap->contains(parent))
         return;
 
-    int parentId = m_documentNodeToIdMap.get(parent);
+    int parentId = m_documentNodeToIdMap->get(parent);
 
     if (!m_childrenRequested.contains(parentId)) {
         // No children are mapped yet -> only notify on changes of child count.
@@ -1804,9 +1837,9 @@ void InspectorDOMAgent::willRemoveDOMNode(Node* node)
         m_cachedChildCount.set(parentId, count);
         m_frontend->childNodeCountUpdated(parentId, count);
     } else {
-        m_frontend->childNodeRemoved(parentId, m_documentNodeToIdMap.get(node));
+        m_frontend->childNodeRemoved(parentId, m_documentNodeToIdMap->get(node));
     }
-    unbind(node, &m_documentNodeToIdMap);
+    unbind(node, m_documentNodeToIdMap.get());
 }
 
 void InspectorDOMAgent::willModifyDOMAttr(Element*, const AtomicString& oldValue, const AtomicString& newValue)
@@ -1845,7 +1878,7 @@ void InspectorDOMAgent::didRemoveDOMAttr(Element* element, const AtomicString& n
     m_frontend->attributeRemoved(id, name);
 }
 
-void InspectorDOMAgent::styleAttributeInvalidated(const Vector<Element*>& elements)
+void InspectorDOMAgent::styleAttributeInvalidated(const WillBeHeapVector<RawPtrWillBeMember<Element> >& elements)
 {
     RefPtr<TypeBuilder::Array<int> > nodeIds = TypeBuilder::Array<int>::create();
     for (unsigned i = 0, size = elements.size(); i < size; ++i) {
@@ -1864,7 +1897,7 @@ void InspectorDOMAgent::styleAttributeInvalidated(const Vector<Element*>& elemen
 
 void InspectorDOMAgent::characterDataModified(CharacterData* characterData)
 {
-    int id = m_documentNodeToIdMap.get(characterData);
+    int id = m_documentNodeToIdMap->get(characterData);
     if (!id) {
         // Push text node if it is being created.
         didInsertDOMNode(characterData);
@@ -1875,7 +1908,7 @@ void InspectorDOMAgent::characterDataModified(CharacterData* characterData)
 
 void InspectorDOMAgent::didInvalidateStyleAttr(Node* node)
 {
-    int id = m_documentNodeToIdMap.get(node);
+    int id = m_documentNodeToIdMap->get(node);
     // If node is not mapped yet -> ignore the event.
     if (!id)
         return;
@@ -1890,12 +1923,12 @@ void InspectorDOMAgent::didPushShadowRoot(Element* host, ShadowRoot* root)
     if (!host->ownerDocument())
         return;
 
-    int hostId = m_documentNodeToIdMap.get(host);
+    int hostId = m_documentNodeToIdMap->get(host);
     if (!hostId)
         return;
 
     pushChildNodesToFrontend(hostId, 1);
-    m_frontend->shadowRootPushed(hostId, buildObjectForNode(root, 0, &m_documentNodeToIdMap));
+    m_frontend->shadowRootPushed(hostId, buildObjectForNode(root, 0, m_documentNodeToIdMap.get()));
 }
 
 void InspectorDOMAgent::willPopShadowRoot(Element* host, ShadowRoot* root)
@@ -1903,8 +1936,8 @@ void InspectorDOMAgent::willPopShadowRoot(Element* host, ShadowRoot* root)
     if (!host->ownerDocument())
         return;
 
-    int hostId = m_documentNodeToIdMap.get(host);
-    int rootId = m_documentNodeToIdMap.get(root);
+    int hostId = m_documentNodeToIdMap->get(host);
+    int rootId = m_documentNodeToIdMap->get(root);
     if (hostId && rootId)
         m_frontend->shadowRootPopped(hostId, rootId);
 }
@@ -1930,27 +1963,27 @@ void InspectorDOMAgent::pseudoElementCreated(PseudoElement* pseudoElement)
     Element* parent = pseudoElement->parentOrShadowHostElement();
     if (!parent)
         return;
-    int parentId = m_documentNodeToIdMap.get(parent);
+    int parentId = m_documentNodeToIdMap->get(parent);
     if (!parentId)
         return;
 
     pushChildNodesToFrontend(parentId, 1);
-    m_frontend->pseudoElementAdded(parentId, buildObjectForNode(pseudoElement, 0, &m_documentNodeToIdMap));
+    m_frontend->pseudoElementAdded(parentId, buildObjectForNode(pseudoElement, 0, m_documentNodeToIdMap.get()));
 }
 
 void InspectorDOMAgent::pseudoElementDestroyed(PseudoElement* pseudoElement)
 {
-    int pseudoElementId = m_documentNodeToIdMap.get(pseudoElement);
+    int pseudoElementId = m_documentNodeToIdMap->get(pseudoElement);
     if (!pseudoElementId)
         return;
 
     // If a PseudoElement is bound, its parent element must be bound, too.
     Element* parent = pseudoElement->parentOrShadowHostElement();
     ASSERT(parent);
-    int parentId = m_documentNodeToIdMap.get(parent);
+    int parentId = m_documentNodeToIdMap->get(parent);
     ASSERT(parentId);
 
-    unbind(pseudoElement, &m_documentNodeToIdMap);
+    unbind(pseudoElement, m_documentNodeToIdMap.get());
     m_frontend->pseudoElementRemoved(parentId, pseudoElementId);
 }
 
@@ -2061,7 +2094,8 @@ PassRefPtr<TypeBuilder::Runtime::RemoteObject> InspectorDOMAgent::resolveNode(No
 
 bool InspectorDOMAgent::pushDocumentUponHandlelessOperation(ErrorString* errorString)
 {
-    if (!m_documentNodeToIdMap.contains(m_document)) {
+    // FIXME: Oilpan: .get will be unnecessary if m_document is a Member<>.
+    if (!m_documentNodeToIdMap->contains(m_document.get())) {
         RefPtr<TypeBuilder::DOM::Node> root;
         getDocument(errorString, root);
         return errorString->isEmpty();

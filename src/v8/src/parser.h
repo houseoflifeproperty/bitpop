@@ -5,13 +5,13 @@
 #ifndef V8_PARSER_H_
 #define V8_PARSER_H_
 
-#include "allocation.h"
-#include "ast.h"
-#include "compiler.h"  // For CachedDataMode
-#include "preparse-data-format.h"
-#include "preparse-data.h"
-#include "scopes.h"
-#include "preparser.h"
+#include "src/allocation.h"
+#include "src/ast.h"
+#include "src/compiler.h"  // For CachedDataMode
+#include "src/preparse-data-format.h"
+#include "src/preparse-data.h"
+#include "src/scopes.h"
+#include "src/preparser.h"
 
 namespace v8 {
 class ScriptCompiler;
@@ -89,7 +89,7 @@ class ScriptData {
   Scanner::Location MessageLocation() const;
   bool IsReferenceError() const;
   const char* BuildMessage() const;
-  Vector<const char*> BuildArgs() const;
+  const char* BuildArg() const;
 
   int function_count() {
     int functions_size =
@@ -515,14 +515,14 @@ class ParserTraits {
   // Reporting errors.
   void ReportMessageAt(Scanner::Location source_location,
                        const char* message,
-                       Vector<const char*> args,
+                       const char* arg,
                        bool is_reference_error = false);
   void ReportMessage(const char* message,
-                     Vector<Handle<String> > args,
+                     MaybeHandle<String> arg,
                      bool is_reference_error = false);
   void ReportMessageAt(Scanner::Location source_location,
                        const char* message,
-                       Vector<Handle<String> > args,
+                       MaybeHandle<String> arg,
                        bool is_reference_error = false);
 
   // "null" return type creators.
@@ -578,6 +578,7 @@ class ParserTraits {
       bool is_generator,
       int function_token_position,
       FunctionLiteral::FunctionType type,
+      FunctionLiteral::ArityRestriction arity_restriction,
       bool* ok);
 
  private:
@@ -718,6 +719,10 @@ class Parser : public ParserBase<ParserTraits> {
                                   Expression* each,
                                   Expression* subject,
                                   Statement* body);
+  Statement* DesugarLetBindingsInForStatement(
+      Scope* inner_scope, ZoneStringList* names, ForStatement* loop,
+      Statement* init, Expression* cond, Statement* next, Statement* body,
+      bool* ok);
 
   FunctionLiteral* ParseFunctionLiteral(
       Handle<String> name,
@@ -726,6 +731,7 @@ class Parser : public ParserBase<ParserTraits> {
       bool is_generator,
       int function_token_position,
       FunctionLiteral::FunctionType type,
+      FunctionLiteral::ArityRestriction arity_restriction,
       bool* ok);
 
   // Magical syntax support.
@@ -781,6 +787,8 @@ class Parser : public ParserBase<ParserTraits> {
                                                bool is_generator,
                                                bool* ok);
 
+  void ThrowPendingError();
+
   Isolate* isolate_;
 
   Handle<Script> script_;
@@ -792,6 +800,14 @@ class Parser : public ParserBase<ParserTraits> {
   CachedDataMode cached_data_mode_;
 
   CompilationInfo* info_;
+
+  // Pending errors.
+  bool has_pending_error_;
+  Scanner::Location pending_error_location_;
+  const char* pending_error_message_;
+  MaybeHandle<String> pending_error_arg_;
+  const char* pending_error_char_arg_;
+  bool pending_error_is_reference_error_;
 };
 
 

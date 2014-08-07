@@ -33,7 +33,6 @@
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
 
 namespace WebCore {
 
@@ -65,8 +64,8 @@ public:
 
     Node* commonAncestorContainer() const;
     static Node* commonAncestorContainer(Node* containerA, Node* containerB);
-    void setStart(PassRefPtr<Node> container, int offset, ExceptionState& = ASSERT_NO_EXCEPTION);
-    void setEnd(PassRefPtr<Node> container, int offset, ExceptionState& = ASSERT_NO_EXCEPTION);
+    void setStart(PassRefPtrWillBeRawPtr<Node> container, int offset, ExceptionState& = ASSERT_NO_EXCEPTION);
+    void setEnd(PassRefPtrWillBeRawPtr<Node> container, int offset, ExceptionState& = ASSERT_NO_EXCEPTION);
     void collapse(bool toStart);
     bool isPointInRange(Node* refNode, int offset, ExceptionState&);
     short comparePoint(Node* refNode, int offset, ExceptionState&) const;
@@ -79,15 +78,15 @@ public:
     bool boundaryPointsValid() const;
     bool intersectsNode(Node* refNode, ExceptionState&);
     void deleteContents(ExceptionState&);
-    PassRefPtr<DocumentFragment> extractContents(ExceptionState&);
-    PassRefPtr<DocumentFragment> cloneContents(ExceptionState&);
-    void insertNode(PassRefPtr<Node>, ExceptionState&);
+    PassRefPtrWillBeRawPtr<DocumentFragment> extractContents(ExceptionState&);
+    PassRefPtrWillBeRawPtr<DocumentFragment> cloneContents(ExceptionState&);
+    void insertNode(PassRefPtrWillBeRawPtr<Node>, ExceptionState&);
     String toString() const;
 
     String toHTML() const;
     String text() const;
 
-    PassRefPtr<DocumentFragment> createContextualFragment(const String& html, ExceptionState&);
+    PassRefPtrWillBeRawPtr<DocumentFragment> createContextualFragment(const String& html, ExceptionState&);
 
     void detach();
     PassRefPtrWillBeRawPtr<Range> cloneRange() const;
@@ -97,7 +96,7 @@ public:
     void setEndAfter(Node*, ExceptionState& = ASSERT_NO_EXCEPTION);
     void selectNode(Node*, ExceptionState& = ASSERT_NO_EXCEPTION);
     void selectNodeContents(Node*, ExceptionState&);
-    void surroundContents(PassRefPtr<Node>, ExceptionState&);
+    void surroundContents(PassRefPtrWillBeRawPtr<Node>, ExceptionState&);
     void setStartBefore(Node*, ExceptionState& = ASSERT_NO_EXCEPTION);
 
     const Position startPosition() const { return m_start.toPosition(); }
@@ -133,6 +132,7 @@ public:
     void didRemoveText(Node*, unsigned offset, unsigned length);
     void didMergeTextNodes(const NodeWithIndex& oldNode, unsigned offset);
     void didSplitTextNode(Text& oldNode);
+    void updateOwnerDocumentIfNeeded();
 
     // Expand range to a unit (word or sentence or block or document) boundary.
     // Please refer to https://bugs.webkit.org/show_bug.cgi?id=27632 comment #5
@@ -159,13 +159,13 @@ private:
     void checkDeleteExtract(ExceptionState&);
 
     enum ActionType { DELETE_CONTENTS, EXTRACT_CONTENTS, CLONE_CONTENTS };
-    PassRefPtr<DocumentFragment> processContents(ActionType, ExceptionState&);
-    static PassRefPtr<Node> processContentsBetweenOffsets(ActionType, PassRefPtr<DocumentFragment>, Node*, unsigned startOffset, unsigned endOffset, ExceptionState&);
-    static void processNodes(ActionType, Vector<RefPtr<Node> >&, PassRefPtr<Node> oldContainer, PassRefPtr<Node> newContainer, ExceptionState&);
+    PassRefPtrWillBeRawPtr<DocumentFragment> processContents(ActionType, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<Node> processContentsBetweenOffsets(ActionType, PassRefPtrWillBeRawPtr<DocumentFragment>, Node*, unsigned startOffset, unsigned endOffset, ExceptionState&);
+    static void processNodes(ActionType, WillBeHeapVector<RefPtrWillBeMember<Node> >&, PassRefPtrWillBeRawPtr<Node> oldContainer, PassRefPtrWillBeRawPtr<Node> newContainer, ExceptionState&);
     enum ContentsProcessDirection { ProcessContentsForward, ProcessContentsBackward };
-    static PassRefPtr<Node> processAncestorsAndTheirSiblings(ActionType, Node* container, ContentsProcessDirection, PassRefPtr<Node> clonedContainer, Node* commonRoot, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<Node> processAncestorsAndTheirSiblings(ActionType, Node* container, ContentsProcessDirection, PassRefPtrWillBeRawPtr<Node> clonedContainer, Node* commonRoot, ExceptionState&);
 
-    RefPtr<Document> m_ownerDocument; // Cannot be null.
+    RefPtrWillBeMember<Document> m_ownerDocument; // Cannot be null.
     RangeBoundaryPoint m_start;
     RangeBoundaryPoint m_end;
 };

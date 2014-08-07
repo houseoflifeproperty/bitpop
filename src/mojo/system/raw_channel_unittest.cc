@@ -106,12 +106,13 @@ class WriteOnlyRawChannelDelegate : public RawChannel::Delegate {
 
   // |RawChannel::Delegate| implementation:
   virtual void OnReadMessage(
-      const MessageInTransit::View& /*message_view*/) OVERRIDE {
-    NOTREACHED();
+      const MessageInTransit::View& /*message_view*/,
+      embedder::ScopedPlatformHandleVectorPtr /*platform_handles*/) OVERRIDE {
+    CHECK(false);  // Should not get called.
   }
   virtual void OnFatalError(FatalError fatal_error) OVERRIDE {
     // We'll get a read error when the connection is closed.
-    CHECK_EQ(fatal_error, FATAL_ERROR_FAILED_READ);
+    CHECK_EQ(fatal_error, FATAL_ERROR_READ);
   }
 
  private:
@@ -225,7 +226,10 @@ class ReadCheckerRawChannelDelegate : public RawChannel::Delegate {
 
   // |RawChannel::Delegate| implementation (called on the I/O thread):
   virtual void OnReadMessage(
-      const MessageInTransit::View& message_view) OVERRIDE {
+      const MessageInTransit::View& message_view,
+      embedder::ScopedPlatformHandleVectorPtr platform_handles) OVERRIDE {
+    EXPECT_FALSE(platform_handles);
+
     size_t position;
     size_t expected_size;
     bool should_signal = false;
@@ -250,7 +254,7 @@ class ReadCheckerRawChannelDelegate : public RawChannel::Delegate {
   }
   virtual void OnFatalError(FatalError fatal_error) OVERRIDE {
     // We'll get a read error when the connection is closed.
-    CHECK_EQ(fatal_error, FATAL_ERROR_FAILED_READ);
+    CHECK_EQ(fatal_error, FATAL_ERROR_READ);
   }
 
   // Waits for all the messages (of sizes |expected_sizes_|) to be seen.
@@ -347,7 +351,10 @@ class ReadCountdownRawChannelDelegate : public RawChannel::Delegate {
 
   // |RawChannel::Delegate| implementation (called on the I/O thread):
   virtual void OnReadMessage(
-      const MessageInTransit::View& message_view) OVERRIDE {
+      const MessageInTransit::View& message_view,
+      embedder::ScopedPlatformHandleVectorPtr platform_handles) OVERRIDE {
+    EXPECT_FALSE(platform_handles);
+
     EXPECT_LT(count_, expected_count_);
     count_++;
 
@@ -359,7 +366,7 @@ class ReadCountdownRawChannelDelegate : public RawChannel::Delegate {
   }
   virtual void OnFatalError(FatalError fatal_error) OVERRIDE {
     // We'll get a read error when the connection is closed.
-    CHECK_EQ(fatal_error, FATAL_ERROR_FAILED_READ);
+    CHECK_EQ(fatal_error, FATAL_ERROR_READ);
   }
 
   // Waits for all the messages to have been seen.
@@ -436,16 +443,17 @@ class FatalErrorRecordingRawChannelDelegate
   virtual ~FatalErrorRecordingRawChannelDelegate() {}
 
   virtual void OnFatalError(FatalError fatal_error) OVERRIDE {
-    if (fatal_error == FATAL_ERROR_FAILED_READ) {
-      ASSERT_TRUE(expecting_read_error_);
-      expecting_read_error_ = false;
-      got_read_fatal_error_event_.Signal();
-    } else if (fatal_error == FATAL_ERROR_FAILED_WRITE) {
-      ASSERT_TRUE(expecting_write_error_);
-      expecting_write_error_ = false;
-      got_write_fatal_error_event_.Signal();
-    } else {
-      ASSERT_TRUE(false);
+    switch (fatal_error) {
+      case FATAL_ERROR_READ:
+        ASSERT_TRUE(expecting_read_error_);
+        expecting_read_error_ = false;
+        got_read_fatal_error_event_.Signal();
+        break;
+      case FATAL_ERROR_WRITE:
+        ASSERT_TRUE(expecting_write_error_);
+        expecting_write_error_ = false;
+        got_write_fatal_error_event_.Signal();
+        break;
     }
   }
 
@@ -559,7 +567,9 @@ class ShutdownOnReadMessageRawChannelDelegate : public RawChannel::Delegate {
 
   // |RawChannel::Delegate| implementation (called on the I/O thread):
   virtual void OnReadMessage(
-      const MessageInTransit::View& message_view) OVERRIDE {
+      const MessageInTransit::View& message_view,
+      embedder::ScopedPlatformHandleVectorPtr platform_handles) OVERRIDE {
+    EXPECT_FALSE(platform_handles);
     EXPECT_FALSE(did_shutdown_);
     EXPECT_TRUE(CheckMessageData(message_view.bytes(),
                 message_view.num_bytes()));
@@ -614,7 +624,8 @@ class ShutdownOnFatalErrorRawChannelDelegate : public RawChannel::Delegate {
 
   // |RawChannel::Delegate| implementation (called on the I/O thread):
   virtual void OnReadMessage(
-      const MessageInTransit::View& /*message_view*/) OVERRIDE {
+      const MessageInTransit::View& /*message_view*/,
+      embedder::ScopedPlatformHandleVectorPtr /*platform_handles*/) OVERRIDE {
     CHECK(false);  // Should not get called.
   }
   virtual void OnFatalError(FatalError fatal_error) OVERRIDE {
@@ -644,7 +655,7 @@ class ShutdownOnFatalErrorRawChannelDelegate : public RawChannel::Delegate {
 TEST_F(RawChannelTest, ShutdownOnFatalErrorRead) {
   scoped_ptr<RawChannel> rc(RawChannel::Create(handles[0].Pass()));
   ShutdownOnFatalErrorRawChannelDelegate delegate(
-      rc.get(), RawChannel::Delegate::FATAL_ERROR_FAILED_READ);
+      rc.get(), RawChannel::Delegate::FATAL_ERROR_READ);
   io_thread()->PostTaskAndWait(FROM_HERE,
                                base::Bind(&InitOnIOThread, rc.get(),
                                           base::Unretained(&delegate)));
@@ -659,7 +670,7 @@ TEST_F(RawChannelTest, ShutdownOnFatalErrorRead) {
 TEST_F(RawChannelTest, ShutdownOnFatalErrorWrite) {
   scoped_ptr<RawChannel> rc(RawChannel::Create(handles[0].Pass()));
   ShutdownOnFatalErrorRawChannelDelegate delegate(
-      rc.get(), RawChannel::Delegate::FATAL_ERROR_FAILED_WRITE);
+      rc.get(), RawChannel::Delegate::FATAL_ERROR_WRITE);
   io_thread()->PostTaskAndWait(FROM_HERE,
                                base::Bind(&InitOnIOThread, rc.get(),
                                           base::Unretained(&delegate)));

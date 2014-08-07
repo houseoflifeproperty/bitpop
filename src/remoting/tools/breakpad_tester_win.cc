@@ -34,20 +34,21 @@ void usage(const char* program_name) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
 
   base::AtExitManager exit_manager;
 
   remoting::InitHostLogging();
 
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(kHelpSwitchName) ||
       command_line->HasSwitch(kQuestionSwitchName)) {
     usage(argv[0]);
     return kSuccessExitCode;
   }
 
-  CommandLine::StringVector args = command_line->GetArgs();
+  base::CommandLine::StringVector args = command_line->GetArgs();
   if (args.size() != 1) {
     usage(argv[0]);
     return kUsageExitCode;
@@ -64,7 +65,7 @@ int main(int argc, char** argv) {
   base::win::ScopedHandle process;
   process.Set(OpenProcess(desired_access, FALSE, pid));
   if (!process.IsValid()) {
-    LOG_GETLASTERROR(ERROR) << "Failed to open the process " << pid;
+    PLOG(ERROR) << "Failed to open the process " << pid;
     return kErrorExitCode;
   }
 
@@ -73,7 +74,7 @@ int main(int argc, char** argv) {
   thread.Set(CreateRemoteThread(process.Get(), NULL, 0, NULL, NULL, 0,
                                 &thread_id));
   if (!thread.IsValid()) {
-    LOG_GETLASTERROR(ERROR) << "Failed to create a remote thread in " << pid;
+    PLOG(ERROR) << "Failed to create a remote thread in " << pid;
     return kErrorExitCode;
   }
 

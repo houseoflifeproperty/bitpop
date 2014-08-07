@@ -19,7 +19,6 @@
 #include "ui/accessibility/ax_enums.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
-#include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
@@ -88,54 +87,6 @@ namespace views {
 
 namespace internal {
 
-// This event handler receives events in the post-target phase and takes care of
-// the following:
-//   - Generates context menu, or initiates drag-and-drop, from gesture events.
-class PostEventDispatchHandler : public ui::EventHandler {
- public:
-  explicit PostEventDispatchHandler(View* owner)
-      : owner_(owner),
-        touch_dnd_enabled_(switches::IsTouchDragDropEnabled()) {
-  }
-  virtual ~PostEventDispatchHandler() {}
-
- private:
-  // Overridden from ui::EventHandler:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
-    DCHECK_EQ(ui::EP_POSTTARGET, event->phase());
-    if (event->handled())
-      return;
-
-    if (touch_dnd_enabled_) {
-      if (event->type() == ui::ET_GESTURE_LONG_PRESS &&
-          (!owner_->drag_controller() ||
-           owner_->drag_controller()->CanStartDragForView(
-              owner_, event->location(), event->location()))) {
-        if (owner_->DoDrag(*event, event->location(),
-            ui::DragDropTypes::DRAG_EVENT_SOURCE_TOUCH)) {
-          event->StopPropagation();
-          return;
-        }
-      }
-    }
-
-    if (owner_->context_menu_controller() &&
-        (event->type() == ui::ET_GESTURE_LONG_PRESS ||
-         event->type() == ui::ET_GESTURE_LONG_TAP ||
-         event->type() == ui::ET_GESTURE_TWO_FINGER_TAP)) {
-      gfx::Point location(event->location());
-      View::ConvertPointToScreen(owner_, &location);
-      owner_->ShowContextMenu(location, ui::MENU_SOURCE_TOUCH);
-      event->StopPropagation();
-    }
-  }
-
-  View* owner_;
-  bool touch_dnd_enabled_;
-
-  DISALLOW_COPY_AND_ASSIGN(PostEventDispatchHandler);
-};
-
 }  // namespace internal
 
 // static
@@ -158,6 +109,7 @@ View::View()
       enabled_(true),
       notify_enter_exit_on_child_(false),
       registered_for_visible_bounds_notification_(false),
+      root_bounds_dirty_(true),
       clip_insets_(0, 0, 0, 0),
       needs_layout_(true),
       flip_canvas_on_paint_for_rtl_ui_(false),
@@ -170,9 +122,7 @@ View::View()
       accessibility_focusable_(false),
       context_menu_controller_(NULL),
       drag_controller_(NULL),
-      post_dispatch_handler_(new internal::PostEventDispatchHandler(this)),
       native_view_accessibility_(NULL) {
-  AddPostTargetHandler(post_dispatch_handler_.get());
 }
 
 View::~View() {
@@ -233,6 +183,9 @@ void View::AddChildViewAt(View* view, int index) {
   // Let's insert the view.
   view->parent_ = this;
   children_.insert(children_.begin() + index, view);
+
+  // Instruct the view to recompute its root bounds on next Paint().
+  view->SetRootBoundsDirty(true);
 
   views::Widget* widget = GetWidget();
   if (widget) {
@@ -420,7 +373,7 @@ gfx::Rect View::GetBoundsInScreen() const {
   return gfx::Rect(origin, size());
 }
 
-gfx::Size View::GetPreferredSize() {
+gfx::Size View::GetPreferredSize() const {
   if (layout_manager_.get())
     return layout_manager_->GetPreferredSize(this);
   return gfx::Size();
@@ -436,15 +389,15 @@ void View::SizeToPreferredSize() {
     SetBounds(x(), y(), prefsize.width(), prefsize.height());
 }
 
-gfx::Size View::GetMinimumSize() {
+gfx::Size View::GetMinimumSize() const {
   return GetPreferredSize();
 }
 
-gfx::Size View::GetMaximumSize() {
+gfx::Size View::GetMaximumSize() const {
   return gfx::Size();
 }
 
-int View::GetHeightForWidth(int w) {
+int View::GetHeightForWidth(int w) const {
   if (layout_manager_.get())
     return layout_manager_->GetPreferredHeightForWidth(this, w);
   return GetPreferredSize().height();
@@ -512,6 +465,31 @@ void View::SetTransform(const gfx::Transform& transform) {
 }
 
 void View::SetPaintToLayer(bool paint_to_layer) {
+  if (paint_to_layer_ == paint_to_layer)
+    return;
+
+  // If this is a change in state we will also need to update bounds trees.
+  if (paint_to_layer) {
+    // Gaining a layer means becoming a paint root. We must remove ourselves
+    // from our old paint root, if we had one. Traverse up view tree to find old
+    // paint root.
+    View* old_paint_root = parent_;
+    while (old_paint_root && !old_paint_root->IsPaintRoot())
+      old_paint_root = old_paint_root->parent_;
+
+    // Remove our and our children's bounds from the old tree. This will also
+    // mark all of our bounds as dirty.
+    if (old_paint_root && old_paint_root->bounds_tree_)
+      RemoveRootBounds(old_paint_root->bounds_tree_.get());
+
+  } else {
+    // Losing a layer means we are no longer a paint root, so delete our
+    // bounds tree and mark ourselves as dirty for future insertion into our
+    // new paint root's bounds tree.
+    bounds_tree_.reset();
+    SetRootBoundsDirty(true);
+  }
+
   paint_to_layer_ = paint_to_layer;
   if (paint_to_layer_ && !layer()) {
     CreateLayer();
@@ -772,32 +750,66 @@ void View::SchedulePaintInRect(const gfx::Rect& rect) {
   }
 }
 
-void View::Paint(gfx::Canvas* canvas) {
-  TRACE_EVENT1("views", "View::Paint", "class", GetClassName());
+void View::Paint(gfx::Canvas* canvas, const CullSet& cull_set) {
+  // The cull_set may allow us to skip painting without canvas construction or
+  // even canvas rect intersection.
+  if (cull_set.ShouldPaint(this)) {
+    TRACE_EVENT1("views", "View::Paint", "class", GetClassName());
 
-  gfx::ScopedCanvas scoped_canvas(canvas);
+    gfx::ScopedCanvas scoped_canvas(canvas);
 
-  // Paint this View and its children, setting the clip rect to the bounds
-  // of this View and translating the origin to the local bounds' top left
-  // point.
-  //
-  // Note that the X (or left) position we pass to ClipRectInt takes into
-  // consideration whether or not the view uses a right-to-left layout so that
-  // we paint our view in its mirrored position if need be.
-  gfx::Rect clip_rect = bounds();
-  clip_rect.Inset(clip_insets_);
-  if (parent_)
-    clip_rect.set_x(parent_->GetMirroredXForRect(clip_rect));
-  canvas->ClipRect(clip_rect);
-  if (canvas->IsClipEmpty())
-    return;
+    // Paint this View and its children, setting the clip rect to the bounds
+    // of this View and translating the origin to the local bounds' top left
+    // point.
+    //
+    // Note that the X (or left) position we pass to ClipRectInt takes into
+    // consideration whether or not the view uses a right-to-left layout so that
+    // we paint our view in its mirrored position if need be.
+    gfx::Rect clip_rect = bounds();
+    clip_rect.Inset(clip_insets_);
+    if (parent_)
+      clip_rect.set_x(parent_->GetMirroredXForRect(clip_rect));
+    canvas->ClipRect(clip_rect);
+    if (canvas->IsClipEmpty())
+      return;
 
-  // Non-empty clip, translate the graphics such that 0,0 corresponds to
-  // where this view is located (related to its parent).
-  canvas->Translate(GetMirroredPosition().OffsetFromOrigin());
-  canvas->Transform(GetTransform());
+    // Non-empty clip, translate the graphics such that 0,0 corresponds to where
+    // this view is located (related to its parent).
+    canvas->Translate(GetMirroredPosition().OffsetFromOrigin());
+    canvas->Transform(GetTransform());
 
-  PaintCommon(canvas);
+    // If we are a paint root, we need to construct our own CullSet object for
+    // propagation to our children.
+    if (IsPaintRoot()) {
+      if (!bounds_tree_)
+        bounds_tree_.reset(new BoundsTree(2, 5));
+
+      // Recompute our bounds tree as needed.
+      UpdateRootBounds(bounds_tree_.get(), gfx::Vector2d());
+
+      // Grab the clip rect from the supplied canvas to use as the query rect.
+      gfx::Rect canvas_bounds;
+      if (!canvas->GetClipBounds(&canvas_bounds)) {
+        NOTREACHED() << "Failed to get clip bounds from the canvas!";
+        return;
+      }
+
+      // Now query our bounds_tree_ for a set of damaged views that intersect
+      // our canvas bounds.
+      scoped_ptr<base::hash_set<intptr_t> > damaged_views(
+          new base::hash_set<intptr_t>());
+      bounds_tree_->AppendIntersectingRecords(
+          canvas_bounds, damaged_views.get());
+      // Construct a CullSet to wrap the damaged views set, it will delete it
+      // for us on scope exit.
+      CullSet paint_root_cull_set(damaged_views.Pass());
+      // Paint all descendents using our new cull set.
+      PaintCommon(canvas, paint_root_cull_set);
+    } else {
+      // Not a paint root, so we can proceed as normal.
+      PaintCommon(canvas, cull_set);
+    }
+  }
 }
 
 void View::set_background(Background* b) {
@@ -837,6 +849,9 @@ View* View::GetEventHandlerForRect(const gfx::Rect& rect) {
 
   for (int i = child_count() - 1; i >= 0; --i) {
     View* child = child_at(i);
+
+    if (!child->CanProcessEventsWithinSubtree())
+      continue;
 
     // Ignore any children which are invisible or do not intersect |rect|.
     if (!child->visible())
@@ -893,8 +908,12 @@ View* View::GetEventHandlerForRect(const gfx::Rect& rect) {
   return rect_view ? rect_view : point_view;
 }
 
+bool View::CanProcessEventsWithinSubtree() const {
+  return true;
+}
+
 View* View::GetTooltipHandlerForPoint(const gfx::Point& point) {
-  if (!HitTestPoint(point))
+  if (!HitTestPoint(point) || !CanProcessEventsWithinSubtree())
     return NULL;
 
   // Walk the child Views recursively looking for the View that most
@@ -1044,6 +1063,8 @@ void View::OnMouseEvent(ui::MouseEvent* event) {
       break;
 
     case ui::ET_MOUSE_ENTERED:
+      if (event->flags() & ui::EF_TOUCH_ACCESSIBILITY)
+        NotifyAccessibilityEvent(ui::AX_EVENT_HOVER, true);
       OnMouseEntered(*event);
       break;
 
@@ -1101,6 +1122,10 @@ scoped_ptr<ui::EventTargetIterator> View::GetChildIterator() const {
 }
 
 ui::EventTargeter* View::GetEventTargeter() {
+  return targeter_.get();
+}
+
+const ui::EventTargeter* View::GetEventTargeter() const {
   return targeter_.get();
 }
 
@@ -1389,11 +1414,11 @@ void View::NativeViewHierarchyChanged() {
 
 // Painting --------------------------------------------------------------------
 
-void View::PaintChildren(gfx::Canvas* canvas) {
+void View::PaintChildren(gfx::Canvas* canvas, const CullSet& cull_set) {
   TRACE_EVENT1("views", "View::PaintChildren", "class", GetClassName());
   for (int i = 0, count = child_count(); i < count; ++i)
     if (!child_at(i)->layer())
-      child_at(i)->Paint(canvas);
+      child_at(i)->Paint(canvas, cull_set);
 }
 
 void View::OnPaint(gfx::Canvas* canvas) {
@@ -1418,6 +1443,10 @@ void View::OnPaintBorder(gfx::Canvas* canvas) {
                  "height", canvas->sk_canvas()->getDevice()->height());
     border_->Paint(*this, canvas);
   }
+}
+
+bool View::IsPaintRoot() {
+  return paint_to_layer_ || !parent_;
 }
 
 // Accelerated Painting --------------------------------------------------------
@@ -1502,7 +1531,7 @@ void View::UpdateChildLayerBounds(const gfx::Vector2d& offset) {
 void View::OnPaintLayer(gfx::Canvas* canvas) {
   if (!layer() || !layer()->fills_bounds_opaquely())
     canvas->DrawColor(SK_ColorBLACK, SkXfermode::kClear_Mode);
-  PaintCommon(canvas);
+  PaintCommon(canvas, CullSet());
 }
 
 void View::OnDeviceScaleFactorChanged(float device_scale_factor) {
@@ -1750,7 +1779,6 @@ std::string View::DoPrintViewGraph(bool first, View* view_with_children) {
 
   return result;
 }
-
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1787,7 +1815,7 @@ void View::SchedulePaintBoundsChanged(SchedulePaintType type) {
   }
 }
 
-void View::PaintCommon(gfx::Canvas* canvas) {
+void View::PaintCommon(gfx::Canvas* canvas, const CullSet& cull_set) {
   if (!visible_)
     return;
 
@@ -1806,7 +1834,7 @@ void View::PaintCommon(gfx::Canvas* canvas) {
     OnPaint(canvas);
   }
 
-  PaintChildren(canvas);
+  PaintChildren(canvas, cull_set);
 }
 
 // Tree operations -------------------------------------------------------------
@@ -1837,6 +1865,13 @@ void View::DoRemoveChildView(View* view,
         view->SchedulePaint();
       GetWidget()->NotifyWillRemoveView(view);
     }
+
+    // Remove the bounds of this child and any of its descendants from our
+    // paint root bounds tree.
+    BoundsTree* bounds_tree = GetBoundsTreeFromPaintRoot();
+    if (bounds_tree)
+      view->RemoveRootBounds(bounds_tree);
+
     view->PropagateRemoveNotifications(this, new_parent);
     view->parent_ = NULL;
     view->UpdateLayerVisibility();
@@ -1928,6 +1963,12 @@ void View::VisibilityChangedImpl(View* starting_from, bool is_visible) {
 }
 
 void View::BoundsChanged(const gfx::Rect& previous_bounds) {
+  // Mark our bounds as dirty for the paint root, also see if we need to
+  // recompute our children's bounds due to origin change.
+  bool origin_changed =
+      previous_bounds.OffsetFromOrigin() != bounds_.OffsetFromOrigin();
+  SetRootBoundsDirty(origin_changed);
+
   if (visible_) {
     // Paint the new bounds.
     SchedulePaintBoundsChanged(
@@ -2022,6 +2063,69 @@ void View::RemoveDescendantToNotify(View* view) {
 
 void View::SetLayerBounds(const gfx::Rect& bounds) {
   layer()->SetBounds(bounds);
+}
+
+void View::SetRootBoundsDirty(bool origin_changed) {
+  root_bounds_dirty_ = true;
+
+  if (origin_changed) {
+    // Inform our children that their root bounds are dirty, as their relative
+    // coordinates in paint root space have changed since ours have changed.
+    for (Views::const_iterator i(children_.begin()); i != children_.end();
+         ++i) {
+      if (!(*i)->IsPaintRoot())
+        (*i)->SetRootBoundsDirty(origin_changed);
+    }
+  }
+}
+
+void View::UpdateRootBounds(BoundsTree* tree, const gfx::Vector2d& offset) {
+  // No need to recompute bounds if we haven't flagged ours as dirty.
+  TRACE_EVENT1("views", "View::UpdateRootBounds", "class", GetClassName());
+
+  // Add our own offset to the provided offset, for our own bounds update and
+  // for propagation to our children if needed.
+  gfx::Vector2d view_offset = offset + GetMirroredBounds().OffsetFromOrigin();
+
+  // If our bounds have changed we must re-insert our new bounds to the tree.
+  if (root_bounds_dirty_) {
+    root_bounds_dirty_ = false;
+    gfx::Rect bounds(
+        view_offset.x(), view_offset.y(), bounds_.width(), bounds_.height());
+    tree->Insert(bounds, reinterpret_cast<intptr_t>(this));
+  }
+
+  // Update our children's bounds if needed.
+  for (Views::const_iterator i(children_.begin()); i != children_.end(); ++i) {
+    // We don't descend in to layer views for bounds recomputation, as they
+    // manage their own RTree as paint roots.
+    if (!(*i)->IsPaintRoot())
+      (*i)->UpdateRootBounds(tree, view_offset);
+  }
+}
+
+void View::RemoveRootBounds(BoundsTree* tree) {
+  tree->Remove(reinterpret_cast<intptr_t>(this));
+
+  root_bounds_dirty_ = true;
+
+  for (Views::const_iterator i(children_.begin()); i != children_.end(); ++i) {
+    if (!(*i)->IsPaintRoot())
+      (*i)->RemoveRootBounds(tree);
+  }
+}
+
+View::BoundsTree* View::GetBoundsTreeFromPaintRoot() {
+  BoundsTree* bounds_tree = bounds_tree_.get();
+  View* paint_root = this;
+  while (!bounds_tree && !paint_root->IsPaintRoot()) {
+    // Assumption is that if IsPaintRoot() is false then parent_ is valid.
+    DCHECK(paint_root);
+    paint_root = paint_root->parent_;
+    bounds_tree = paint_root->bounds_tree_.get();
+  }
+
+  return bounds_tree;
 }
 
 // Transformations -------------------------------------------------------------

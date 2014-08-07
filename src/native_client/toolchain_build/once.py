@@ -28,6 +28,10 @@ import command
 import substituter
 
 
+class UserError(Exception):
+  pass
+
+
 class HumanReadableSignature(object):
   """Accumator of signature information in human readable form.
 
@@ -53,7 +57,7 @@ class Once(object):
   """Class to memoize slow operations."""
 
   def __init__(self, storage, use_cached_results=True, cache_results=True,
-               print_url=None, system_summary=None):
+               print_url=None, system_summary=None, extra_paths={}):
     """Constructor.
 
     Args:
@@ -64,6 +68,7 @@ class Once(object):
                      written to the cache.
       print_url: Function that accepts an URL for printing the build result,
                  or None.
+      extra_paths: Extra substitution paths that can be used by commands.
     """
     self._storage = storage
     self._directory_storage = pynacl.directory_storage.DirectoryStorageAdapter(
@@ -75,6 +80,7 @@ class Once(object):
     self._print_url = print_url
     self._system_summary = system_summary
     self._path_hash_cache = {}
+    self._extra_paths = extra_paths
 
   def KeyForOutput(self, package, output_hash):
     """Compute the key to store a give output in the data-store.
@@ -203,7 +209,7 @@ class Once(object):
     """Returns cached directory item for package or None if not processed."""
     return self._cached_dir_items.get(package, None)
 
-  def Run(self, package, inputs, output, commands,
+  def Run(self, package, inputs, output, commands, cmd_options=None,
           working_dir=None, memoize=True, signature_file=None, subdir=None):
     """Run an operation once, possibly hitting cache.
 
@@ -246,12 +252,26 @@ class Once(object):
       if subdir:
         assert subdir.startswith(output)
 
+      # Filter out commands that have a run condition of False.
+      # This must be done before any commands are invoked in case the run
+      # conditions rely on any pre-existing states.
+      commands = [command for command in commands
+                  if command.CheckRunCond(cmd_options)]
+
       for command in commands:
         paths = inputs.copy()
+        paths.update(self._extra_paths)
         paths['output'] = subdir if subdir else output
         nonpath_subst['build_signature'] = build_signature
         subst = substituter.Substituter(work_dir, paths, nonpath_subst)
         command.Invoke(subst)
+
+    # Confirm that we aren't hitting something we've cached.
+    for path in self._path_hash_cache:
+      if not os.path.relpath(output, path).startswith(os.pardir + os.sep):
+        raise UserError(
+            'Package %s outputs to a directory already used as an input: %s' %
+            (package, path))
 
     if memoize:
       self.WriteResultToCache(package, build_signature, output)
@@ -262,26 +282,37 @@ class Once(object):
     Ideally this would capture anything relevant about the current machine that
     would cause build output to vary (other than build recipe + inputs).
     """
-    if self._system_summary is None:
-      # Note there is no attempt to canonicalize these values.  If two
-      # machines that would in fact produce identical builds differ in
-      # these values, it just means that a superfluous build will be
-      # done once to get the mapping from new input hash to preexisting
-      # output hash into the cache.
-      assert len(sys.platform) != 0, len(platform.machine()) != 0
-      # Use environment from command so we can access MinGW on windows.
-      env = command.PlatformEnvironment([])
-      gcc = pynacl.file_tools.Which('gcc', paths=env['PATH'].split(os.pathsep))
-      p = subprocess.Popen(
-          [gcc, '-v'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
-      _, gcc_version = p.communicate()
-      assert p.returncode == 0
-      items = [
-          ('platform', sys.platform),
-          ('machine', platform.machine()),
-          ('gcc-v', gcc_version),
-          ]
-      self._system_summary = str(items)
+    if self._system_summary is not None:
+      return self._system_summary
+
+    # Note there is no attempt to canonicalize these values.  If two
+    # machines that would in fact produce identical builds differ in
+    # these values, it just means that a superfluous build will be
+    # done once to get the mapping from new input hash to preexisting
+    # output hash into the cache.
+    assert len(sys.platform) != 0, len(platform.machine()) != 0
+    # Use environment from command so we can access MinGW on windows.
+    env = command.PlatformEnvironment([])
+
+    def GetCompilerVersion(compiler_name):
+      try:
+        compiler_file = pynacl.file_tools.Which(
+            compiler_name, paths=env['PATH'].split(os.pathsep))
+        p = subprocess.Popen([compiler_file, '-v'], stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, env=env)
+        _, compiler_version = p.communicate()
+        assert p.returncode == 0
+      except pynacl.file_tools.ExecutableNotFound:
+        compiler_version = 0
+      return compiler_version
+
+    items = [
+        ('platform', sys.platform),
+        ('machine', platform.machine()),
+        ('gcc-v', GetCompilerVersion('gcc')),
+        ('arm-gcc-v', GetCompilerVersion('arm-linux-gnueabihf-gcc')),
+        ]
+    self._system_summary = str(items)
     return self._system_summary
 
   def BuildSignature(self, package, inputs, commands, hasher=None):

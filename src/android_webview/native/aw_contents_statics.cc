@@ -9,7 +9,9 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
+#include "content/public/browser/android/synchronous_compositor.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/url_constants.h"
 #include "jni/AwContentsStatics_jni.h"
 #include "net/cert/cert_database.h"
 
@@ -54,13 +56,24 @@ void SetDataReductionProxyKey(JNIEnv* env, jclass, jstring key) {
   DCHECK(browser_context);
   DataReductionProxySettings* drp_settings =
       browser_context->GetDataReductionProxySettings();
-  DCHECK(drp_settings);
-  drp_settings->set_key(ConvertJavaStringToUTF8(env, key));
+  if (drp_settings)
+    drp_settings->params()->set_key(ConvertJavaStringToUTF8(env, key));
 }
 
 // static
 void SetDataReductionProxyEnabled(JNIEnv* env, jclass, jboolean enabled) {
   AwBrowserContext::SetDataReductionProxyEnabled(enabled);
+}
+
+// static
+jstring GetUnreachableWebDataUrl(JNIEnv* env, jclass) {
+  return base::android::ConvertUTF8ToJavaString(
+             env, content::kUnreachableWebDataURL).Release();
+}
+
+// static
+void SetRecordFullDocument(JNIEnv* env, jclass, jboolean record_full_document) {
+  content::SynchronousCompositor::SetRecordFullDocument(record_full_document);
 }
 
 bool RegisterAwContentsStatics(JNIEnv* env) {

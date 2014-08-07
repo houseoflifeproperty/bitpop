@@ -9,11 +9,9 @@
 #include "content/common/content_export.h"
 #include "third_party/WebKit/public/platform/WebURLLoader.h"
 
-namespace webkit_glue {
-struct ResourceResponseInfo;
-}
-
 namespace content {
+
+struct ResourceResponseInfo;
 
 class WebURLLoaderImpl : public blink::WebURLLoader {
  public:
@@ -25,7 +23,7 @@ class WebURLLoaderImpl : public blink::WebURLLoader {
                                         int reason);
   CONTENT_EXPORT static void PopulateURLResponse(
       const GURL& url,
-      const webkit_glue::ResourceResponseInfo& info,
+      const ResourceResponseInfo& info,
       blink::WebURLResponse* response);
 
   // WebURLLoader methods:
@@ -41,6 +39,8 @@ class WebURLLoaderImpl : public blink::WebURLLoader {
   virtual void setDefersLoading(bool value);
   virtual void didChangePriority(blink::WebURLRequest::Priority new_priority,
                                  int intra_priority_value);
+  virtual bool attachThreadedDataReceiver(
+      blink::WebThreadedDataReceiver* threaded_data_receiver);
 
  private:
   class Context;

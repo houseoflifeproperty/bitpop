@@ -17,7 +17,6 @@ namespace media {
 namespace cast {
 
 static const size_t kRtcpCastLogHeaderSize = 12;
-static const size_t kRtcpSenderFrameLogSize = 4;
 static const size_t kRtcpReceiverFrameLogSize = 8;
 static const size_t kRtcpReceiverEventLogSize = 4;
 
@@ -111,7 +110,7 @@ inline bool operator==(RtcpReceiverReferenceTimeReport lhs,
 
 // Struct used by raw event subscribers as an intermediate format before
 // sending off to the other side via RTCP.
-// (i.e., WindowedRtcpEventRtp{Sender,Receiver}Subscriber)
+// (i.e., {Sender,Receiver}RtcpEventSubscriber)
 struct RtcpEvent {
   RtcpEvent();
   ~RtcpEvent();
@@ -121,11 +120,10 @@ struct RtcpEvent {
   // Time of event logged.
   base::TimeTicks timestamp;
 
-  // Render/playout delay. Only set for kAudioPlayoutDelay and
-  // kVideoRenderDelay events.
+  // Render/playout delay. Only set for FRAME_PLAYOUT events.
   base::TimeDelta delay_delta;
 
-  // Only set for packet events. (kAudioPacketReceived, kVideoPacketReceived)
+  // Only set for packet events.
   uint16 packet_id;
 };
 

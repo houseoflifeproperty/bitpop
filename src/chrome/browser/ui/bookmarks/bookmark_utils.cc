@@ -21,7 +21,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
@@ -318,9 +318,9 @@ base::string16 FormatBookmarkURLForDisplay(const GURL& url,
 
 bool IsAppsShortcutEnabled(Profile* profile,
                            chrome::HostDesktopType host_desktop_type) {
-  // Managed users can not have apps installed currently so there's no need to
-  // show the apps shortcut.
-  if (profile->IsManaged())
+  // Supervised users can not have apps installed currently so there's no need
+  // to show the apps shortcut.
+  if (profile->IsSupervised())
     return false;
 
   // Don't show the apps shortcut in ash since the app launcher is enabled.

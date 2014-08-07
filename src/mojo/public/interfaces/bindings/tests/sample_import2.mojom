@@ -4,7 +4,7 @@
 
 import "sample_import.mojom"
 
-[JavaPackage="org.chromium.mojo.bindings.test"]
+[JavaPackage="org.chromium.mojo.bindings.test.imported"]
 module imported {
 
 // This sample adds more types and constants to the "imported" namespace,
@@ -23,7 +23,7 @@ struct Size {
 struct Thing {
   imported.Shape shape = SHAPE_RECTANGLE;
   int32 color = COLOR_BLACK;
-  Point location = {0, 0};
+  Point location;
   Size size;
 };
 

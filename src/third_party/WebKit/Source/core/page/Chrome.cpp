@@ -22,8 +22,7 @@
 #include "config.h"
 #include "core/page/Chrome.h"
 
-#include "public/platform/WebScreenInfo.h"
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLInputElement.h"
@@ -40,6 +39,7 @@
 #include "platform/FileChooser.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/network/DNS.h"
+#include "public/platform/WebScreenInfo.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 
@@ -141,8 +141,10 @@ bool Chrome::canRunModal() const
 
 static bool canRunModalIfDuringPageDismissal(Page* page, ChromeClient::DialogType dialog, const String& message)
 {
-    for (LocalFrame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        Document::PageDismissalType dismissal = frame->document()->pageDismissalEventBeingDispatched();
+    for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        if (!frame->isLocalFrame())
+            continue;
+        Document::PageDismissalType dismissal = toLocalFrame(frame)->document()->pageDismissalEventBeingDispatched();
         if (dismissal != Document::NoDismissal)
             return page->chrome().client().shouldRunModalDialogDuringPageDismissal(dialog, message, dismissal);
     }
@@ -339,7 +341,7 @@ PassOwnPtr<ColorChooser> Chrome::createColorChooser(LocalFrame* frame, ColorChoo
     return m_client->createColorChooser(frame, client, initialColor);
 }
 
-PassRefPtr<DateTimeChooser> Chrome::openDateTimeChooser(DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
+PassRefPtrWillBeRawPtr<DateTimeChooser> Chrome::openDateTimeChooser(DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
 {
     notifyPopupOpeningObservers();
     return m_client->openDateTimeChooser(client, parameters);

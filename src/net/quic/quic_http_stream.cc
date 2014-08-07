@@ -122,12 +122,9 @@ int QuicHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
     // was being called even if we didn't yet allocate raw_request_body_buf_.
     //   && (request_body_stream_->size() ||
     //       request_body_stream_->is_chunked()))
-    //
-    // Use kMaxPacketSize as the buffer size, since the request
-    // body data is written with this size at a time.
-    // TODO(rch): use a smarter value since we can't write an entire
-    // packet due to overhead.
-    raw_request_body_buf_ = new IOBufferWithSize(kMaxPacketSize);
+    // Use 10 packets as the body buffer size to give enough space to
+    // help ensure we don't often send out partial packets.
+    raw_request_body_buf_ = new IOBufferWithSize(10 * kMaxPacketSize);
     // The request body buffer is empty at first.
     request_body_buf_ = new DrainableIOBuffer(raw_request_body_buf_.get(), 0);
   }
@@ -165,10 +162,6 @@ int QuicHttpStream::ReadResponseHeaders(const CompletionCallback& callback) {
   CHECK(callback_.is_null());
   callback_ = callback;
   return ERR_IO_PENDING;
-}
-
-const HttpResponseInfo* QuicHttpStream::GetResponseInfo() const {
-  return response_info_;
 }
 
 int QuicHttpStream::ReadResponseBody(

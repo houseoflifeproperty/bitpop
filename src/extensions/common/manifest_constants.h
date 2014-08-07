@@ -10,6 +10,7 @@ namespace extensions {
 // Keys used in JSON representation of extensions.
 namespace manifest_keys {
 
+extern const char kAboutPage[];
 extern const char kAllFrames[];
 extern const char kAltKey[];
 extern const char kApp[];
@@ -83,8 +84,8 @@ extern const char kLaunchWebURL[];
 extern const char kLaunchWidth[];
 extern const char kLayouts[];
 extern const char kManifestVersion[];
+extern const char kMatchAboutBlank[];
 extern const char kMatches[];
-extern const char kMediaGalleriesHandlers[];
 extern const char kMIMETypes[];
 extern const char kMimeTypesHandler[];
 extern const char kMinimumChromeVersion[];
@@ -253,8 +254,10 @@ extern const char kCannotUninstallManagedExtension[];
 extern const char kChromeVersionTooLow[];
 extern const char kDevToolsExperimental[];
 extern const char kDisabledByPolicy[];
-extern const char kExperimentalFlagRequired[];
 extern const char kExpectString[];
+extern const char kExperimentalFlagRequired[];
+extern const char kInvalidAboutPage[];
+extern const char kInvalidAboutPageExpectRelativePath[];
 extern const char kInvalidAllFrames[];
 extern const char kInvalidBackground[];
 extern const char kInvalidBackgroundAllowJsAccess[];
@@ -294,7 +297,6 @@ extern const char kInvalidFileAccessList[];
 extern const char kInvalidFileAccessValue[];
 extern const char kInvalidFileBrowserHandler[];
 extern const char kInvalidFileBrowserHandlerMIMETypes[];
-extern const char kInvalidMediaGalleriesHandler[];
 extern const char kInvalidFileFiltersList[];
 extern const char kInvalidFileFilterValue[];
 extern const char kInvalidFileHandlers[];
@@ -358,6 +360,7 @@ extern const char kInvalidManifest[];
 extern const char kInvalidManifestVersion[];
 extern const char kInvalidManifestVersionOld[];
 extern const char kInvalidMatch[];
+extern const char kInvalidMatchAboutBlank[];
 extern const char kInvalidMatchCount[];
 extern const char kInvalidMatches[];
 extern const char kInvalidMIMETypes[];

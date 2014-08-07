@@ -37,6 +37,14 @@ extern const char kAppListModeId[];
 // launch_now = false. This associates the shim without launching the app.
 extern const char kLaunchedByChromeProcessId[];
 
+// Indicates to the shim that it was launched for a test, so don't attempt to
+// launch Chrome.
+extern const char kLaunchedForTest[];
+
+// Indicates to the shim that this Chrome has rebuilt it once already, i.e. if
+// it fails to launch again, don't trigger another rebuild.
+extern const char kLaunchedAfterRebuild[];
+
 // Path to an app shim bundle. Indicates to Chrome that this shim attempted to
 // launch but failed.
 extern const char kAppShimError[];
@@ -94,7 +102,7 @@ extern NSString* const kShortcutBrowserBundleIDPlaceholder;
 
 // Current major/minor version numbers of |ChromeAppModeInfo| (defined below).
 const unsigned kCurrentChromeAppModeInfoMajorVersion = 1;
-const unsigned kCurrentChromeAppModeInfoMinorVersion = 1;
+const unsigned kCurrentChromeAppModeInfoMinorVersion = 2;
 
 // The structure used to pass information from the app mode loader to the
 // (browser) framework. This is versioned using major and minor version numbers,

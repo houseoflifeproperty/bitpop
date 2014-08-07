@@ -125,8 +125,8 @@
                   '|chrome/browser/resources/bookmark_manager/' \
                   '|chrome/browser/ui/bookmarks/' \
                   '|chrome/browser/ui/cocoa/bookmarks/' \
-                  '|chrome/browser/ui/gtk/bookmarks/' \
-                  '|chrome/browser/ui/views/bookmarks/'
+                  '|chrome/browser/ui/views/bookmarks/' \
+                  '|components/bookmarks'
     },
     'browser': {
       'filepath': 'chrome/browser/',
@@ -298,6 +298,11 @@
     },
     'ftp': {
       'filepath': 'ftp',
+    },
+    'gcm': {
+      'filepath': 'chrome/browser/services/gcm/|'\
+                  'components/gcm_driver/|'\
+                  'google_apis/gcm/',
     },
     'geolocation': {
       'filepath': 'chrome/browser/geolocation/|'\
@@ -548,7 +553,7 @@
       'filepath': 'content/browser/streams/',
     },
     'sync': {
-      'filepath': 'chrome/browser/sync/|sync/',
+      'filepath': 'chrome/browser/sync/|sync/|components/sync_driver/',
     },
     'syncfs': {
       'filepath': 'sync_file_system',
@@ -791,13 +796,14 @@
     'events': ['tdresser+watch@chromium.org'],
     'extension': ['chromium-apps-reviews@chromium.org',
                   'extensions-reviews@chromium.org'],
-    'fileapi': ['kinuko+watch@chromium.org',
+    'fileapi': ['kinuko+fileapi@chromium.org',
                 'nhiroki@chromium.org',
                 'tzik@chromium.org'],
     'filebrowse': ['rginda+watch@chromium.org',
                    'yoshiki+watch@chromium.org'],
     'filesapp': ['mtomasz+watch@chromium.org'],
     'ftp': ['phajdan.jr@chromium.org'],
+    'gcm': ['zea+watch@chromium.org'],
     'geolocation': ['mvanouwerkerk@chromium.org'],
     'gfx_geometry': ['cc-bugs@chromium.org'],
     'gfx_image': ['rsesek+watch@chromium.org'],
@@ -828,10 +834,9 @@
     'media_galleries': ['gbillock@chromium.org', 'thestig@chromium.org',
                         'tommycli@chromium.org', 'vandebo@chromium.org'],
     'message_loop': ['sadrul@chromium.org'],
-    'metrics': ['jar@chromium.org',
-                'isherman@chromium.org',
+    'metrics': ['isherman@chromium.org',
                 'asvitkine+watch@chromium.org'],
-    'metrics_xml_files': ['jar@chromium.org', 'asvitkine+watch@chromium.org'],
+    'metrics_xml_files': ['asvitkine+watch@chromium.org'],
     'mojo': ['aa@chromium.org',
              'abarth@chromium.org',
              'ben+mojo@chromium.org',
@@ -859,7 +864,8 @@
               'rjkroege@chromium.org'],
     'panels': ['dimich@chromium.org', 'jennb@chromium.org',
                'dcheng@chromium.org', 'jianli@chromium.org'],
-    'password_manager': ['mkwst+watchlist@chromium.org'],
+    'password_manager': ['mkwst+watchlist@chromium.org',
+                         'gcasto+watchlist@chromium.org'],
     'pepper_api': ['piman+watch@chromium.org', 'ihf+watch@chromium.org',
                    'yusukes+watch@chromium.org', 'raymes+watch@chromium.org',
                    'noelallen@chromium.org', 'binji+watch@chromium.org',
@@ -878,7 +884,7 @@
     'remoting': ['chromoting-reviews@chromium.org'],
     'sessions': ['marja+watch@chromium.org'],
     'service_worker': ['tzik@chromium.org',
-                       'kinuko+watch@chromium.org',
+                       'kinuko+serviceworker@chromium.org',
                        'nhiroki@chromium.org',
                        'horo+watch@chromium.org',
                        'alecflett+watch@chromium.org',
@@ -893,8 +899,9 @@
     'streams': ['zork+watch@chromium.org'],
     'sync': ['haitaol+watch@chromium.org',
              'tim+watch@chromium.org',
-             'maniscalco+watch@chromium.org'],
-    'syncfs': ['kinuko+watch@chromium.org',
+             'maniscalco+watch@chromium.org',
+             'zea+watch@chromium.org'],
+    'syncfs': ['kinuko+fileapi@chromium.org',
                'nhiroki@chromium.org',
                'tzik@chromium.org'],
     'sync_proto': ['albertb+watch@chromium.org'],
@@ -912,8 +919,7 @@
     'textinput_chromeos': ['yusukes+watch@chromium.org',
                            'nona+watch@chromium.org',
                            'yukishiino+watch@chromium.org'],
-    'tools_emacs': ['fischman+watch@chromium.org',
-                    'dhollowa+watch@chromium.org'],
+    'tools_emacs': ['dhollowa+watch@chromium.org'],
     'tracing': ['dsinclair+watch@chromium.org'],
     'ui_compositor': ['cc-bugs@chromium.org'],
     'ui_resources': ['oshima+watch@chromium.org'],
@@ -929,8 +935,7 @@
     'virtual_keyboard': ['dfaden+virtualkb@google.com',
                          'groby+virtualkb@chromium.org'],
     'webkit': ['darin-cc@chromium.org'],
-    'webrtc_media': ['fischman+watch@chromium.org',
-                     'wjia+watch@chromium.org',
+    'webrtc_media': ['wjia+watch@chromium.org',
                      'mcasas+watch@chromium.org'],
     'website_settings': ['markusheintz@chromium.org'],
     'worker': ['jam@chromium.org'],

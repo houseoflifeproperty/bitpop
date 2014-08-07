@@ -32,6 +32,7 @@
 #define WebInputEvent_h
 
 #include "../platform/WebCommon.h"
+#include "../platform/WebGestureDevice.h"
 #include "../platform/WebRect.h"
 #include "WebTouchPoint.h"
 
@@ -408,16 +409,11 @@ public:
 
 class WebGestureEvent : public WebInputEvent {
 public:
-    enum SourceDevice {
-        Touchpad,
-        Touchscreen,
-    };
-
     int x;
     int y;
     int globalX;
     int globalY;
-    SourceDevice sourceDevice;
+    WebGestureDevice sourceDevice;
 
     union {
         // Tap information must be set for GestureTap, GestureTapUnconfirmed,

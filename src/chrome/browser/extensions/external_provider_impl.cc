@@ -36,8 +36,8 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/extensions/device_local_account_external_policy_loader.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/app_pack_updater.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
@@ -429,7 +429,7 @@ void ExternalProviderImpl::CreateExternalProviders(
 #endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  if (!profile->IsManaged()) {
+  if (!profile->IsSupervised()) {
     provider_list->push_back(
         linked_ptr<ExternalProviderInterface>(
             new ExternalProviderImpl(
@@ -446,8 +446,8 @@ void ExternalProviderImpl::CreateExternalProviders(
 
 #if defined(OS_CHROMEOS)
   if (!is_chromeos_demo_session && !is_chrome_os_public_session) {
-    int external_apps_path_id = profile->IsManaged() ?
-        chrome::DIR_MANAGED_USERS_DEFAULT_APPS :
+    int external_apps_path_id = profile->IsSupervised() ?
+        chrome::DIR_SUPERVISED_USERS_DEFAULT_APPS :
         chrome::DIR_STANDALONE_EXTERNAL_EXTENSIONS;
     provider_list->push_back(
         linked_ptr<ExternalProviderInterface>(new ExternalProviderImpl(
@@ -488,7 +488,7 @@ void ExternalProviderImpl::CreateExternalProviders(
   }
 #endif
 
-  if (!profile->IsManaged() && !is_chromeos_demo_session) {
+  if (!profile->IsSupervised() && !is_chromeos_demo_session) {
 #if !defined(OS_WIN)
     provider_list->push_back(
         linked_ptr<ExternalProviderInterface>(
@@ -539,7 +539,7 @@ void ExternalProviderImpl::CreateExternalProviders(
                 new ExternalPrefLoader(chrome::DIR_DEFAULT_APPS,
                                        ExternalPrefLoader::NONE),
                 Manifest::INTERNAL,
-                Manifest::INVALID_LOCATION,
+                Manifest::INTERNAL,
                 Extension::FROM_WEBSTORE |
                     Extension::WAS_INSTALLED_BY_DEFAULT)));
 #endif

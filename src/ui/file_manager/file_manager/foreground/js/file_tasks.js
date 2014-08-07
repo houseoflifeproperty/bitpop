@@ -351,7 +351,7 @@ FileTasks.prototype.executeDefaultInternal_ = function(entries, opt_callback) {
     var text = strf(textMessageId, webStoreUrl, str('NO_ACTION_FOR_FILE_URL'));
     var title = titleMessageId ? str(titleMessageId) : filename;
     this.fileManager_.alert.showHtml(title, text, function() {});
-    callback(false, urls);
+    callback(false, entries);
   }.bind(this);
 
   var onViewFilesFailure = function() {
@@ -474,7 +474,6 @@ FileTasks.prototype.checkAvailability_ = function(callback) {
       VolumeManagerCommon.DriveConnectionType.OFFLINE;
 
   if (fm.isOnDrive() && isDriveOffline) {
-    fm.metadataCache_.clear(entries, 'drive');
     fm.metadataCache_.get(entries, 'drive', function(props) {
       if (areAll(props, 'availableOffline')) {
         callback();
@@ -539,16 +538,15 @@ FileTasks.prototype.executeInternalTask_ = function(id, entries) {
   var fm = this.fileManager_;
 
   if (id === 'play') {
-    var position = 0;
+    var selectedEntry = entries[0];
     if (entries.length === 1) {
       // If just a single audio file is selected pass along every audio file
       // in the directory.
-      var selectedEntries = entries[0];
       entries = fm.getAllEntriesInCurrentDirectory().filter(FileType.isAudio);
-      position = entries.indexOf(selectedEntries);
     }
     // TODO(mtomasz): Pass entries instead.
     var urls = util.entriesToURLs(entries);
+    var position = urls.indexOf(selectedEntry.toURL());
     chrome.fileBrowserPrivate.getProfiles(function(profiles,
                                                    currentId,
                                                    displayedId) {

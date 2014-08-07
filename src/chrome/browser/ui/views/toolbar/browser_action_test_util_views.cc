@@ -44,8 +44,8 @@ void BrowserActionTestUtil::InspectPopup(int index) {
 }
 
 bool BrowserActionTestUtil::HasIcon(int index) {
-  return GetContainer(browser_)->GetBrowserActionViewAt(index)->button()->
-      HasIcon();
+  return !GetContainer(browser_)->GetBrowserActionViewAt(index)->button()->
+      GetImage(views::Button::STATE_NORMAL).isNull();
 }
 
 gfx::Image BrowserActionTestUtil::GetIcon(int index) {
@@ -69,6 +69,10 @@ std::string BrowserActionTestUtil::GetTooltip(int index) {
   GetContainer(browser_)->GetBrowserActionViewAt(index)->button()->
     GetTooltipText(gfx::Point(), &text);
   return base::UTF16ToUTF8(text);
+}
+
+gfx::NativeView BrowserActionTestUtil::GetPopupNativeView() {
+  return GetContainer(browser_)->TestGetPopup()->GetWidget()->GetNativeView();
 }
 
 bool BrowserActionTestUtil::HasPopup() {

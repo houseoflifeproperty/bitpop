@@ -152,6 +152,11 @@ PP_Resource ResourceCreationImpl::CreateAudioConfig(
   return 0;
 }
 
+PP_Resource ResourceCreationImpl::CreateCompositor(PP_Instance instance) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
 PP_Resource ResourceCreationImpl::CreateFileChooser(
     PP_Instance instance,
     PP_FileChooserMode_Dev mode,
@@ -286,6 +291,11 @@ PP_Resource ResourceCreationImpl::CreateUDPSocket(PP_Instance instance) {
 
 PP_Resource ResourceCreationImpl::CreateUDPSocketPrivate(
     PP_Instance instance) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
+PP_Resource ResourceCreationImpl::CreateVideoDecoder(PP_Instance instance) {
   NOTIMPLEMENTED();
   return 0;
 }

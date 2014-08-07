@@ -36,6 +36,8 @@
 #include "public/platform/WebString.h"
 
 namespace v8 {
+class Isolate;
+class Object;
 class Value;
 template <class T> class Handle;
 }
@@ -64,7 +66,7 @@ public:
     BLINK_EXPORT WebString name() const;
     BLINK_EXPORT WebString message() const;
 
-    BLINK_EXPORT v8::Handle<v8::Value> toV8Value();
+    BLINK_EXPORT v8::Handle<v8::Value> toV8Value(v8::Handle<v8::Object> creationContext, v8::Isolate*);
 
 #if BLINK_IMPLEMENTATION
     explicit WebDOMError(const PassRefPtrWillBeRawPtr<WebCore::DOMError>&);

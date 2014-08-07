@@ -46,7 +46,7 @@
 
 #include "core/rendering/RenderMarquee.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLMarqueeElement.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/UseCounter.h"
@@ -258,7 +258,7 @@ void RenderMarquee::styleDidChange(StyleDifference difference, const RenderStyle
     // Check the loop count to see if we should now stop.
     bool activate = (m_totalLoops <= 0 || m_currentLoop < m_totalLoops);
     if (activate && !m_timer.isActive())
-        setNeedsLayout();
+        setNeedsLayoutAndFullPaintInvalidation();
     else if (!activate && m_timer.isActive())
         m_timer.stop();
 }

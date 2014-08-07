@@ -25,10 +25,10 @@
 #include "config.h"
 #include "core/inspector/InspectorStyleSheet.h"
 
-#include "CSSPropertyNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptRegexp.h"
+#include "core/CSSPropertyNames.h"
 #include "core/css/CSSKeyframesRule.h"
 #include "core/css/CSSMediaRule.h"
 #include "core/css/parser/BisonCSSParser.h"
@@ -1000,7 +1000,7 @@ bool InspectorStyleSheet::setText(const String& text, ExceptionState& exceptionS
     if (listener())
         listener()->didReparseStyleSheet();
     fireStyleSheetChanged();
-    m_pageStyleSheet->ownerDocument()->styleResolverChanged(RecalcStyleImmediately, FullStyleUpdate);
+    m_pageStyleSheet->ownerDocument()->styleResolverChanged(FullStyleUpdate);
     return true;
 }
 
@@ -1385,6 +1385,12 @@ bool InspectorStyleSheet::findRuleBySelectorRange(const SourceRange& sourceRange
     return false;
 }
 
+const CSSRuleVector& InspectorStyleSheet::flatRules()
+{
+    ensureFlatRules();
+    return m_flatRules;
+}
+
 Document* InspectorStyleSheet::ownerDocument() const
 {
     return m_pageStyleSheet->ownerDocument();
@@ -1531,7 +1537,7 @@ bool InspectorStyleSheet::resourceStyleSheetText(String* result) const
 bool InspectorStyleSheet::inlineStyleSheetText(String* result) const
 {
     Node* ownerNode = m_pageStyleSheet->ownerNode();
-    if (!ownerNode || ownerNode->nodeType() != Node::ELEMENT_NODE)
+    if (!ownerNode || !ownerNode->isElementNode())
         return false;
     Element& ownerElement = toElement(*ownerNode);
 
@@ -1541,12 +1547,12 @@ bool InspectorStyleSheet::inlineStyleSheetText(String* result) const
     return true;
 }
 
-PassRefPtr<InspectorStyleSheetForInlineStyle> InspectorStyleSheetForInlineStyle::create(const String& id, PassRefPtr<Element> element, Listener* listener)
+PassRefPtr<InspectorStyleSheetForInlineStyle> InspectorStyleSheetForInlineStyle::create(const String& id, PassRefPtrWillBeRawPtr<Element> element, Listener* listener)
 {
     return adoptRef(new InspectorStyleSheetForInlineStyle(id, element, listener));
 }
 
-InspectorStyleSheetForInlineStyle::InspectorStyleSheetForInlineStyle(const String& id, PassRefPtr<Element> element, Listener* listener)
+InspectorStyleSheetForInlineStyle::InspectorStyleSheetForInlineStyle(const String& id, PassRefPtrWillBeRawPtr<Element> element, Listener* listener)
     : InspectorStyleSheetBase(id, listener)
     , m_element(element)
     , m_ruleSourceData(nullptr)

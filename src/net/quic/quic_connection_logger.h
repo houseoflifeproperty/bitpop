@@ -20,7 +20,7 @@ class CryptoHandshakeMessage;
 // This class is a debug visitor of a QuicConnection which logs
 // events to |net_log|.
 class NET_EXPORT_PRIVATE QuicConnectionLogger
-    : public QuicConnectionDebugVisitorInterface {
+    : public QuicConnectionDebugVisitor {
  public:
   explicit QuicConnectionLogger(const BoundNetLog& net_log);
 
@@ -51,6 +51,10 @@ class NET_EXPORT_PRIVATE QuicConnectionLogger
   virtual void OnRstStreamFrame(const QuicRstStreamFrame& frame) OVERRIDE;
   virtual void OnConnectionCloseFrame(
       const QuicConnectionCloseFrame& frame) OVERRIDE;
+  virtual void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) OVERRIDE;
+  virtual void OnBlockedFrame(const QuicBlockedFrame& frame) OVERRIDE;
+  virtual void OnGoAwayFrame(const QuicGoAwayFrame& frame) OVERRIDE;
+  virtual void OnPingFrame(const QuicPingFrame& frame) OVERRIDE;
   virtual void OnPublicResetPacket(
       const QuicPublicResetPacket& packet) OVERRIDE;
   virtual void OnVersionNegotiationPacket(

@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "components/domain_reliability/beacon.h"
 #include "components/domain_reliability/dispatcher.h"
 #include "components/domain_reliability/scheduler.h"
 #include "components/domain_reliability/test_util.h"
@@ -33,13 +34,11 @@ DomainReliabilityBeacon MakeBeacon(MockableTime* time) {
   return beacon;
 }
 
-}  // namespace
-
 class DomainReliabilityContextTest : public testing::Test {
  protected:
   DomainReliabilityContextTest()
       : dispatcher_(&time_),
-        params_(CreateParams()),
+        params_(MakeTestSchedulerParams()),
         uploader_(base::Bind(&DomainReliabilityContextTest::OnUploadRequest,
                              base::Unretained(this))),
         upload_reporter_string_("test-reporter"),
@@ -48,7 +47,7 @@ class DomainReliabilityContextTest : public testing::Test {
                  upload_reporter_string_,
                  &dispatcher_,
                  &uploader_,
-                 CreateConfig().Pass()),
+                 MakeTestConfig().Pass()),
         upload_pending_(false) {}
 
   TimeDelta min_delay() const { return params_.minimum_upload_delay; }
@@ -107,42 +106,6 @@ class DomainReliabilityContextTest : public testing::Test {
     upload_pending_ = true;
   }
 
-  static DomainReliabilityScheduler::Params CreateParams() {
-    DomainReliabilityScheduler::Params params;
-    params.minimum_upload_delay = base::TimeDelta::FromSeconds(60);
-    params.maximum_upload_delay = base::TimeDelta::FromSeconds(300);
-    params.upload_retry_interval = base::TimeDelta::FromSeconds(15);
-    return params;
-  }
-
-  static scoped_ptr<const DomainReliabilityConfig> CreateConfig() {
-    DomainReliabilityConfig* config = new DomainReliabilityConfig();
-    DomainReliabilityConfig::Resource* resource;
-
-    resource = new DomainReliabilityConfig::Resource();
-    resource->name = "always_report";
-    resource->url_patterns.push_back(
-        new std::string("http://example/always_report"));
-    resource->success_sample_rate = 1.0;
-    resource->failure_sample_rate = 1.0;
-    config->resources.push_back(resource);
-
-    resource = new DomainReliabilityConfig::Resource();
-    resource->name = "never_report";
-    resource->url_patterns.push_back(
-        new std::string("http://example/never_report"));
-    resource->success_sample_rate = 0.0;
-    resource->failure_sample_rate = 0.0;
-    config->resources.push_back(resource);
-
-    DomainReliabilityConfig::Collector* collector;
-    collector = new DomainReliabilityConfig::Collector();
-    collector->upload_url = GURL("https://example/upload");
-    config->collectors.push_back(collector);
-
-    return scoped_ptr<const DomainReliabilityConfig>(config);
-  }
-
   bool upload_pending_;
   std::string upload_report_;
   GURL upload_url_;
@@ -196,13 +159,13 @@ TEST_F(DomainReliabilityContextTest, ReportUpload) {
   DomainReliabilityBeacon beacon = MakeBeacon(&time_);
   context_.OnBeacon(url, beacon);
 
-  const char* kExpectedReport = "{\"reporter\":\"test-reporter\","
+  // N.B.: Assumes max_delay is 5 minutes.
+  const char* kExpectedReport = "{\"config_version\":\"1\","
+      "\"reporter\":\"test-reporter\","
       "\"resource_reports\":[{\"beacons\":[{\"http_response_code\":200,"
       "\"request_age_ms\":300250,\"request_elapsed_ms\":250,\"server_ip\":"
       "\"127.0.0.1\",\"status\":\"ok\"}],\"failed_requests\":0,"
-      "\"resource_name\":\"always_report\",\"successful_requests\":1},"
-      "{\"beacons\":[],\"failed_requests\":0,\"resource_name\":"
-      "\"never_report\",\"successful_requests\":0}]}";
+      "\"resource_name\":\"always_report\",\"successful_requests\":1}]}";
 
   time_.Advance(max_delay());
   EXPECT_TRUE(upload_pending());
@@ -211,4 +174,5 @@ TEST_F(DomainReliabilityContextTest, ReportUpload) {
   CallUploadCallback(true);
 }
 
+}  // namespace
 }  // namespace domain_reliability

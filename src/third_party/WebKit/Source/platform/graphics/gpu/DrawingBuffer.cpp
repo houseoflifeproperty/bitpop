@@ -32,6 +32,7 @@
 
 #include "platform/graphics/gpu/DrawingBuffer.h"
 
+#include "platform/RuntimeEnabledFeatures.h"
 #include <algorithm>
 #include "platform/TraceEvent.h"
 #include "platform/graphics/GraphicsLayer.h"
@@ -86,7 +87,7 @@ private:
 
 } // namespace
 
-PassRefPtr<DrawingBuffer> DrawingBuffer::create(PassOwnPtr<blink::WebGraphicsContext3D> context, const IntSize& size, PreserveDrawingBuffer preserve, PassRefPtr<ContextEvictionManager> contextEvictionManager)
+PassRefPtr<DrawingBuffer> DrawingBuffer::create(PassOwnPtr<blink::WebGraphicsContext3D> context, const IntSize& size, PreserveDrawingBuffer preserve, blink::WebGraphicsContext3D::Attributes requestedAttributes, PassRefPtr<ContextEvictionManager> contextEvictionManager)
 {
     ASSERT(context);
     OwnPtr<Extensions3DUtil> extensionsUtil = Extensions3DUtil::create(context.get());
@@ -104,7 +105,7 @@ PassRefPtr<DrawingBuffer> DrawingBuffer::create(PassOwnPtr<blink::WebGraphicsCon
     if (packedDepthStencilSupported)
         extensionsUtil->ensureExtensionEnabled("GL_OES_packed_depth_stencil");
 
-    RefPtr<DrawingBuffer> drawingBuffer = adoptRef(new DrawingBuffer(context, extensionsUtil.release(), multisampleSupported, packedDepthStencilSupported, preserve, contextEvictionManager));
+    RefPtr<DrawingBuffer> drawingBuffer = adoptRef(new DrawingBuffer(context, extensionsUtil.release(), multisampleSupported, packedDepthStencilSupported, preserve, requestedAttributes, contextEvictionManager));
     if (!drawingBuffer->initialize(size)) {
         drawingBuffer->beginDestruction();
         return PassRefPtr<DrawingBuffer>();
@@ -117,6 +118,7 @@ DrawingBuffer::DrawingBuffer(PassOwnPtr<blink::WebGraphicsContext3D> context,
     bool multisampleExtensionSupported,
     bool packedDepthStencilExtensionSupported,
     PreserveDrawingBuffer preserve,
+    blink::WebGraphicsContext3D::Attributes requestedAttributes,
     PassRefPtr<ContextEvictionManager> contextEvictionManager)
     : m_preserveDrawingBuffer(preserve)
     , m_scissorEnabled(false)
@@ -126,11 +128,10 @@ DrawingBuffer::DrawingBuffer(PassOwnPtr<blink::WebGraphicsContext3D> context,
     , m_context(context)
     , m_extensionsUtil(extensionsUtil)
     , m_size(-1, -1)
+    , m_requestedAttributes(requestedAttributes)
     , m_multisampleExtensionSupported(multisampleExtensionSupported)
     , m_packedDepthStencilExtensionSupported(packedDepthStencilExtensionSupported)
     , m_fbo(0)
-    , m_colorBuffer(0)
-    , m_frontColorBuffer(0)
     , m_depthStencilBuffer(0)
     , m_depthBuffer(0)
     , m_stencilBuffer(0)
@@ -213,7 +214,7 @@ bool DrawingBuffer::prepareMailbox(blink::WebExternalTextureMailbox* outMailbox,
         bitmap->setSize(size());
 
         unsigned char* pixels = bitmap->pixels();
-        bool needPremultiply = m_attributes.alpha && !m_attributes.premultipliedAlpha;
+        bool needPremultiply = m_actualAttributes.alpha && !m_actualAttributes.premultipliedAlpha;
         WebGLImageConversion::AlphaOp op = needPremultiply ? WebGLImageConversion::AlphaDoPremultiply : WebGLImageConversion::AlphaDoNothing;
         if (pixels)
             readBackFramebuffer(pixels, size().width(), size().height(), ReadbackSkia, op);
@@ -228,27 +229,29 @@ bool DrawingBuffer::prepareMailbox(blink::WebExternalTextureMailbox* outMailbox,
 
     // No buffer available to recycle, create a new one.
     if (!frontColorBufferMailbox) {
-        unsigned newColorBuffer = createColorTexture(m_size);
+        TextureInfo newTexture;
+        newTexture.textureId = createColorTexture();
+        allocateTextureMemory(&newTexture, m_size);
         // Bad things happened, abandon ship.
-        if (!newColorBuffer)
+        if (!newTexture.textureId)
             return false;
 
-        frontColorBufferMailbox = createNewMailbox(newColorBuffer);
+        frontColorBufferMailbox = createNewMailbox(newTexture);
     }
 
     if (m_preserveDrawingBuffer == Discard) {
-        swap(frontColorBufferMailbox->textureId, m_colorBuffer);
+        swap(frontColorBufferMailbox->textureInfo, m_colorBuffer);
         // It appears safe to overwrite the context's framebuffer binding in the Discard case since there will always be a
         // WebGLRenderingContext::clearIfComposited() call made before the next draw call which restores the framebuffer binding.
         // If this stops being true at some point, we should track the current framebuffer binding in the DrawingBuffer and restore
         // it after attaching the new back buffer here.
         m_context->bindFramebuffer(GL_FRAMEBUFFER, m_fbo);
         if (m_multisampleMode == ImplicitResolve)
-            m_context->framebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer, 0, m_sampleCount);
+            m_context->framebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer.textureId, 0, m_sampleCount);
         else
-            m_context->framebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer, 0);
+            m_context->framebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer.textureId, 0);
     } else {
-        m_context->copyTextureCHROMIUM(GL_TEXTURE_2D, m_colorBuffer, frontColorBufferMailbox->textureId, 0, GL_RGBA, GL_UNSIGNED_BYTE);
+        m_context->copyTextureCHROMIUM(GL_TEXTURE_2D, m_colorBuffer.textureId, frontColorBufferMailbox->textureInfo.textureId, 0, GL_RGBA, GL_UNSIGNED_BYTE);
     }
 
     if (m_multisampleMode != None && !m_framebufferBinding)
@@ -258,17 +261,18 @@ bool DrawingBuffer::prepareMailbox(blink::WebExternalTextureMailbox* outMailbox,
 
     m_contentsChanged = false;
 
-    m_context->bindTexture(GL_TEXTURE_2D, frontColorBufferMailbox->textureId);
+    m_context->bindTexture(GL_TEXTURE_2D, frontColorBufferMailbox->textureInfo.textureId);
     m_context->produceTextureCHROMIUM(GL_TEXTURE_2D, frontColorBufferMailbox->mailbox.name);
     m_context->flush();
     frontColorBufferMailbox->mailbox.syncPoint = m_context->insertSyncPoint();
+    frontColorBufferMailbox->mailbox.allowOverlay = frontColorBufferMailbox->textureInfo.imageId != 0;
     markLayerComposited();
 
     // set m_parentDrawingBuffer to make sure 'this' stays alive as long as it has live mailboxes
     ASSERT(!frontColorBufferMailbox->m_parentDrawingBuffer);
     frontColorBufferMailbox->m_parentDrawingBuffer = this;
     *outMailbox = frontColorBufferMailbox->mailbox;
-    m_frontColorBuffer = frontColorBufferMailbox->textureId;
+    m_frontColorBuffer = frontColorBufferMailbox->textureInfo;
     return true;
 }
 
@@ -322,19 +326,19 @@ PassRefPtr<DrawingBuffer::MailboxInfo> DrawingBuffer::recycledMailbox()
     }
 
     if (mailboxInfo->size != m_size) {
-        m_context->bindTexture(GL_TEXTURE_2D, mailboxInfo->textureId);
-        texImage2DResourceSafe(GL_TEXTURE_2D, 0, m_internalColorFormat, m_size.width(), m_size.height(), 0, m_colorFormat, GL_UNSIGNED_BYTE);
+        m_context->bindTexture(GL_TEXTURE_2D, mailboxInfo->textureInfo.textureId);
+        allocateTextureMemory(&mailboxInfo->textureInfo, m_size);
         mailboxInfo->size = m_size;
     }
 
     return mailboxInfo.release();
 }
 
-PassRefPtr<DrawingBuffer::MailboxInfo> DrawingBuffer::createNewMailbox(unsigned textureId)
+PassRefPtr<DrawingBuffer::MailboxInfo> DrawingBuffer::createNewMailbox(const TextureInfo& info)
 {
     RefPtr<MailboxInfo> returnMailbox = adoptRef(new MailboxInfo());
     m_context->genMailboxCHROMIUM(returnMailbox->mailbox.name);
-    returnMailbox->textureId = textureId;
+    returnMailbox->textureInfo = info;
     returnMailbox->size = m_size;
     m_textureMailboxes.append(returnMailbox);
     return returnMailbox.release();
@@ -346,7 +350,10 @@ void DrawingBuffer::deleteMailbox(const blink::WebExternalTextureMailbox& mailbo
         if (nameEquals(m_textureMailboxes[i]->mailbox, mailbox)) {
             if (mailbox.syncPoint)
                 m_context->waitSyncPoint(mailbox.syncPoint);
-            m_context->deleteTexture(m_textureMailboxes[i]->textureId);
+
+            deleteChromiumImageForTexture(&m_textureMailboxes[i]->textureInfo);
+
+            m_context->deleteTexture(m_textureMailboxes[i]->textureInfo.textureId);
             m_textureMailboxes.remove(i);
             return;
         }
@@ -367,9 +374,7 @@ bool DrawingBuffer::initialize(const IntSize& size)
         return false;
     }
 
-    m_attributes = m_context->getContextAttributes();
-
-    if (m_attributes.alpha) {
+    if (m_requestedAttributes.alpha) {
         m_internalColorFormat = GL_RGBA;
         m_colorFormat = GL_RGBA;
         m_internalRenderbufferFormat = GL_RGBA8_OES;
@@ -383,7 +388,7 @@ bool DrawingBuffer::initialize(const IntSize& size)
 
     int maxSampleCount = 0;
     m_multisampleMode = None;
-    if (m_attributes.antialias && m_multisampleExtensionSupported) {
+    if (m_requestedAttributes.antialias && m_multisampleExtensionSupported) {
         m_context->getIntegerv(GL_MAX_SAMPLES_ANGLE, &maxSampleCount);
         m_multisampleMode = ExplicitResolve;
         if (m_extensionsUtil->supportsExtension("GL_EXT_multisampled_render_to_texture"))
@@ -394,19 +399,45 @@ bool DrawingBuffer::initialize(const IntSize& size)
     m_fbo = m_context->createFramebuffer();
 
     m_context->bindFramebuffer(GL_FRAMEBUFFER, m_fbo);
-    m_colorBuffer = createColorTexture();
+    m_colorBuffer.textureId = createColorTexture();
     if (m_multisampleMode == ImplicitResolve)
-        m_context->framebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer, 0, m_sampleCount);
+        m_context->framebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer.textureId, 0, m_sampleCount);
     else
-        m_context->framebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer, 0);
+        m_context->framebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer.textureId, 0);
     createSecondaryBuffers();
-    return reset(size);
+    // We first try to initialize everything with the requested attributes.
+    if (!reset(size))
+        return false;
+    // If that succeeds, we then see what we actually got and update our actual attributes to reflect that.
+    m_actualAttributes = m_requestedAttributes;
+    if (m_requestedAttributes.alpha) {
+        blink::WGC3Dint alphaBits = 0;
+        m_context->getIntegerv(GL_ALPHA_BITS, &alphaBits);
+        m_actualAttributes.alpha = alphaBits > 0;
+    }
+    if (m_requestedAttributes.depth) {
+        blink::WGC3Dint depthBits = 0;
+        m_context->getIntegerv(GL_DEPTH_BITS, &depthBits);
+        m_actualAttributes.depth = depthBits > 0;
+    }
+    if (m_requestedAttributes.stencil) {
+        blink::WGC3Dint stencilBits = 0;
+        m_context->getIntegerv(GL_STENCIL_BITS, &stencilBits);
+        m_actualAttributes.stencil = stencilBits > 0;
+    }
+    m_actualAttributes.antialias = multisample();
+    return true;
 }
 
-bool DrawingBuffer::copyToPlatformTexture(blink::WebGraphicsContext3D* context, Platform3DObject texture, GLenum internalFormat, GLenum destType, GLint level, bool premultiplyAlpha, bool flipY)
+bool DrawingBuffer::copyToPlatformTexture(blink::WebGraphicsContext3D* context, Platform3DObject texture, GLenum internalFormat, GLenum destType, GLint level, bool premultiplyAlpha, bool flipY, bool fromFrontBuffer)
 {
     if (!m_context->makeContextCurrent())
         return false;
+
+    GLint textureId = m_colorBuffer.textureId;
+    if (fromFrontBuffer)
+        textureId = m_frontColorBuffer.textureId;
+
     if (m_contentsChanged) {
         if (m_multisampleMode != None) {
             commit();
@@ -424,8 +455,7 @@ bool DrawingBuffer::copyToPlatformTexture(blink::WebGraphicsContext3D* context, 
     // Contexts may be in a different share group. We must transfer the texture through a mailbox first
     RefPtr<MailboxInfo> bufferMailbox = adoptRef(new MailboxInfo());
     m_context->genMailboxCHROMIUM(bufferMailbox->mailbox.name);
-    m_context->bindTexture(GL_TEXTURE_2D, m_colorBuffer);
-    m_context->produceTextureCHROMIUM(GL_TEXTURE_2D, bufferMailbox->mailbox.name);
+    m_context->produceTextureDirectCHROMIUM(textureId, GL_TEXTURE_2D, bufferMailbox->mailbox.name);
     m_context->flush();
 
     bufferMailbox->mailbox.syncPoint = m_context->insertSyncPoint();
@@ -433,22 +463,14 @@ bool DrawingBuffer::copyToPlatformTexture(blink::WebGraphicsContext3D* context, 
     if (!context->makeContextCurrent())
         return false;
 
-    Platform3DObject sourceTexture = context->createTexture();
-
-    // TODO(bajones): Should be able to change the texture bindings here without reverting but
-    // something else in the system is depending on it. Failing to revert causes WebGL
-    // tests to fail. We should find out why and fix it.
-    GLint boundTexture = 0;
-    context->getIntegerv(GL_TEXTURE_BINDING_2D, &boundTexture);
-    context->bindTexture(GL_TEXTURE_2D, sourceTexture);
     context->waitSyncPoint(bufferMailbox->mailbox.syncPoint);
-    context->consumeTextureCHROMIUM(GL_TEXTURE_2D, bufferMailbox->mailbox.name);
+    Platform3DObject sourceTexture = context->createAndConsumeTextureCHROMIUM(GL_TEXTURE_2D, bufferMailbox->mailbox.name);
 
     bool unpackPremultiplyAlphaNeeded = false;
     bool unpackUnpremultiplyAlphaNeeded = false;
-    if (m_attributes.alpha && m_attributes.premultipliedAlpha && !premultiplyAlpha)
+    if (m_actualAttributes.alpha && m_actualAttributes.premultipliedAlpha && !premultiplyAlpha)
         unpackUnpremultiplyAlphaNeeded = true;
-    else if (m_attributes.alpha && !m_attributes.premultipliedAlpha && premultiplyAlpha)
+    else if (m_actualAttributes.alpha && !m_actualAttributes.premultipliedAlpha && premultiplyAlpha)
         unpackPremultiplyAlphaNeeded = true;
 
     context->pixelStorei(GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, unpackUnpremultiplyAlphaNeeded);
@@ -459,7 +481,6 @@ bool DrawingBuffer::copyToPlatformTexture(blink::WebGraphicsContext3D* context, 
     context->pixelStorei(GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, false);
     context->pixelStorei(GC3D_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM, false);
 
-    context->bindTexture(GL_TEXTURE_2D, boundTexture);
     context->deleteTexture(sourceTexture);
 
     context->flush();
@@ -478,9 +499,9 @@ blink::WebLayer* DrawingBuffer::platformLayer()
     if (!m_layer) {
         m_layer = adoptPtr(blink::Platform::current()->compositorSupport()->createExternalTextureLayer(this));
 
-        m_layer->setOpaque(!m_attributes.alpha);
-        m_layer->setBlendBackgroundColor(m_attributes.alpha);
-        m_layer->setPremultipliedAlpha(m_attributes.premultipliedAlpha);
+        m_layer->setOpaque(!m_actualAttributes.alpha);
+        m_layer->setBlendBackgroundColor(m_actualAttributes.alpha);
+        m_layer->setPremultipliedAlpha(m_actualAttributes.premultipliedAlpha);
         GraphicsLayer::registerContentsLayer(m_layer->layer());
     }
 
@@ -498,7 +519,7 @@ void DrawingBuffer::paintCompositedResultsToCanvas(ImageBuffer* imageBuffer)
     if (tex) {
         RefPtr<MailboxInfo> bufferMailbox = adoptRef(new MailboxInfo());
         m_context->genMailboxCHROMIUM(bufferMailbox->mailbox.name);
-        m_context->bindTexture(GL_TEXTURE_2D, m_frontColorBuffer);
+        m_context->bindTexture(GL_TEXTURE_2D, m_frontColorBuffer.textureId);
         m_context->produceTextureCHROMIUM(GL_TEXTURE_2D, bufferMailbox->mailbox.name);
         m_context->flush();
 
@@ -530,8 +551,9 @@ void DrawingBuffer::paintCompositedResultsToCanvas(ImageBuffer* imageBuffer)
     // We have to make a copy of it here and bind that copy instead.
     // FIXME: That's not true any more, provided we don't change texture
     // parameters.
-    unsigned sourceTexture = createColorTexture(m_size);
-    m_context->copyTextureCHROMIUM(GL_TEXTURE_2D, m_frontColorBuffer, sourceTexture, 0, GL_RGBA, GL_UNSIGNED_BYTE);
+    unsigned sourceTexture = createColorTexture();
+    texImage2DResourceSafe(GL_TEXTURE_2D, 0, m_internalColorFormat, m_size.width(), m_size.height(), 0, m_colorFormat, GL_UNSIGNED_BYTE);
+    m_context->copyTextureCHROMIUM(GL_TEXTURE_2D, m_frontColorBuffer.textureId, sourceTexture, 0, GL_RGBA, GL_UNSIGNED_BYTE);
 
     // Since we're using the same context as WebGL, we have to restore any state we change (in this case, just the framebuffer binding).
     // FIXME: The WebGLRenderingContext tracks the current framebuffer binding, it would be slightly more efficient to use this value
@@ -543,7 +565,7 @@ void DrawingBuffer::paintCompositedResultsToCanvas(ImageBuffer* imageBuffer)
     m_context->bindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     m_context->framebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sourceTexture, 0);
 
-    paintFramebufferToCanvas(framebuffer, size().width(), size().height(), !m_attributes.premultipliedAlpha, imageBuffer);
+    paintFramebufferToCanvas(framebuffer, size().width(), size().height(), !m_actualAttributes.premultipliedAlpha, imageBuffer);
     m_context->deleteFramebuffer(framebuffer);
     m_context->deleteTexture(sourceTexture);
 
@@ -588,13 +610,15 @@ void DrawingBuffer::beginDestruction()
     if (m_stencilBuffer)
         m_context->deleteRenderbuffer(m_stencilBuffer);
 
-    if (m_colorBuffer)
-        m_context->deleteTexture(m_colorBuffer);
+    if (m_colorBuffer.textureId) {
+        deleteChromiumImageForTexture(&m_colorBuffer);
+        m_context->deleteTexture(m_colorBuffer.textureId);
+    }
 
     setSize(IntSize());
 
-    m_colorBuffer = 0;
-    m_frontColorBuffer = 0;
+    m_colorBuffer = TextureInfo();
+    m_frontColorBuffer = TextureInfo();
     m_multisampleColorBuffer = 0;
     m_depthStencilBuffer = 0;
     m_depthBuffer = 0;
@@ -607,7 +631,7 @@ void DrawingBuffer::beginDestruction()
         GraphicsLayer::unregisterContentsLayer(m_layer->layer());
 }
 
-unsigned DrawingBuffer::createColorTexture(const IntSize& size)
+unsigned DrawingBuffer::createColorTexture()
 {
     unsigned offscreenColorTexture = m_context->createTexture();
     if (!offscreenColorTexture)
@@ -618,8 +642,6 @@ unsigned DrawingBuffer::createColorTexture(const IntSize& size)
     m_context->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     m_context->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     m_context->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    if (!size.isEmpty())
-        texImage2DResourceSafe(GL_TEXTURE_2D, 0, m_internalColorFormat, size.width(), size.height(), 0, m_colorFormat, GL_UNSIGNED_BYTE);
 
     return offscreenColorTexture;
 }
@@ -639,14 +661,14 @@ bool DrawingBuffer::resizeFramebuffer(const IntSize& size)
     // resize regular FBO
     m_context->bindFramebuffer(GL_FRAMEBUFFER, m_fbo);
 
-    m_context->bindTexture(GL_TEXTURE_2D, m_colorBuffer);
+    m_context->bindTexture(GL_TEXTURE_2D, m_colorBuffer.textureId);
 
-    texImage2DResourceSafe(GL_TEXTURE_2D, 0, m_internalColorFormat, size.width(), size.height(), 0, m_colorFormat, GL_UNSIGNED_BYTE);
+    allocateTextureMemory(&m_colorBuffer, size);
 
     if (m_multisampleMode == ImplicitResolve)
-        m_context->framebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer, 0, m_sampleCount);
+        m_context->framebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer.textureId, 0, m_sampleCount);
     else
-        m_context->framebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer, 0);
+        m_context->framebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_colorBuffer.textureId, 0);
 
     m_context->bindTexture(GL_TEXTURE_2D, 0);
 
@@ -680,7 +702,10 @@ bool DrawingBuffer::resizeMultisampleFramebuffer(const IntSize& size)
 
 void DrawingBuffer::resizeDepthStencil(const IntSize& size)
 {
-    if (m_attributes.depth && m_attributes.stencil && m_packedDepthStencilExtensionSupported) {
+    if (!m_requestedAttributes.depth && !m_requestedAttributes.stencil)
+        return;
+
+    if (m_packedDepthStencilExtensionSupported) {
         if (!m_depthStencilBuffer)
             m_depthStencilBuffer = m_context->createRenderbuffer();
         m_context->bindRenderbuffer(GL_RENDERBUFFER, m_depthStencilBuffer);
@@ -693,7 +718,7 @@ void DrawingBuffer::resizeDepthStencil(const IntSize& size)
         m_context->framebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_depthStencilBuffer);
         m_context->framebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthStencilBuffer);
     } else {
-        if (m_attributes.depth) {
+        if (m_requestedAttributes.depth) {
             if (!m_depthBuffer)
                 m_depthBuffer = m_context->createRenderbuffer();
             m_context->bindRenderbuffer(GL_RENDERBUFFER, m_depthBuffer);
@@ -705,7 +730,7 @@ void DrawingBuffer::resizeDepthStencil(const IntSize& size)
                 m_context->renderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, size.width(), size.height());
             m_context->framebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depthBuffer);
         }
-        if (m_attributes.stencil) {
+        if (m_requestedAttributes.stencil) {
             if (!m_stencilBuffer)
                 m_stencilBuffer = m_context->createRenderbuffer();
             m_context->bindRenderbuffer(GL_RENDERBUFFER, m_stencilBuffer);
@@ -834,12 +859,12 @@ bool DrawingBuffer::reset(const IntSize& newSize)
     m_context->colorMask(true, true, true, true);
 
     GLbitfield clearMask = GL_COLOR_BUFFER_BIT;
-    if (m_attributes.depth) {
+    if (m_actualAttributes.depth) {
         m_context->clearDepth(1.0f);
         clearMask |= GL_DEPTH_BUFFER_BIT;
         m_context->depthMask(true);
     }
-    if (m_attributes.stencil) {
+    if (m_actualAttributes.stencil) {
         m_context->clearStencil(0);
         clearMask |= GL_STENCIL_BUFFER_BIT;
         m_context->stencilMaskSeparate(GL_FRONT, 0xFFFFFFFF);
@@ -901,12 +926,12 @@ void DrawingBuffer::setPackAlignment(GLint param)
 
 void DrawingBuffer::paintRenderingResultsToCanvas(ImageBuffer* imageBuffer)
 {
-    paintFramebufferToCanvas(framebuffer(), size().width(), size().height(), !m_attributes.premultipliedAlpha, imageBuffer);
+    paintFramebufferToCanvas(framebuffer(), size().width(), size().height(), !m_actualAttributes.premultipliedAlpha, imageBuffer);
 }
 
 PassRefPtr<Uint8ClampedArray> DrawingBuffer::paintRenderingResultsToImageData(int& width, int& height)
 {
-    if (m_attributes.premultipliedAlpha)
+    if (m_actualAttributes.premultipliedAlpha)
         return nullptr;
 
     width = size().width();
@@ -1018,6 +1043,30 @@ void DrawingBuffer::texImage2DResourceSafe(GLenum target, GLint level, GLenum in
 {
     ASSERT(unpackAlignment == 1 || unpackAlignment == 2 || unpackAlignment == 4 || unpackAlignment == 8);
     m_context->texImage2D(target, level, internalformat, width, height, border, format, type, 0);
+}
+
+void DrawingBuffer::allocateTextureMemory(TextureInfo* info, const IntSize& size)
+{
+    if (RuntimeEnabledFeatures::webGLImageChromiumEnabled()) {
+        deleteChromiumImageForTexture(info);
+
+        info->imageId = m_context->createImageCHROMIUM(size.width(), size.height(), GL_RGBA8_OES, GC3D_IMAGE_SCANOUT_CHROMIUM);
+        if (info->imageId) {
+            m_context->bindTexImage2DCHROMIUM(GL_TEXTURE_2D, info->imageId);
+            return;
+        }
+    }
+
+    texImage2DResourceSafe(GL_TEXTURE_2D, 0, m_internalColorFormat, size.width(), size.height(), 0, m_colorFormat, GL_UNSIGNED_BYTE);
+}
+
+void DrawingBuffer::deleteChromiumImageForTexture(TextureInfo* info)
+{
+    if (info->imageId) {
+        m_context->releaseTexImage2DCHROMIUM(GL_TEXTURE_2D, info->imageId);
+        m_context->destroyImageCHROMIUM(info->imageId);
+        info->imageId = 0;
+    }
 }
 
 } // namespace WebCore

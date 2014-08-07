@@ -13,9 +13,8 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 
 namespace mojo {
-namespace services {
 namespace view_manager {
-
+namespace service {
 class Node;
 
 // Represents a view. A view may be associated with a single Node.
@@ -44,8 +43,8 @@ class MOJO_VIEW_MANAGER_EXPORT View {
   DISALLOW_COPY_AND_ASSIGN(View);
 };
 
+}  // namespace service
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_VIEW_H_

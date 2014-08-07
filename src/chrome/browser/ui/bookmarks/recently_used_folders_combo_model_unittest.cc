@@ -9,8 +9,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/models/combobox_model_observer.h"
@@ -114,7 +114,7 @@ TEST_F(RecentlyUsedFoldersComboModelTest, NotifyObserver) {
   EXPECT_LT(updated_count, initial_count);
 
   // Remove all, which should remove a folder too.
-  GetModel()->RemoveAll();
+  GetModel()->RemoveAllUserBookmarks();
   EXPECT_TRUE(observer.GetAndClearChanged());
   EXPECT_LT(model.GetItemCount(), updated_count);
 

@@ -4,10 +4,8 @@
 
 import logging
 import re
-import weakref
 
 from telemetry.core.backends.chrome import inspector_websocket
-from telemetry.core.backends.chrome import tracing_timeline_data
 
 
 # All tracing categories not disabled-by-default
@@ -17,9 +15,12 @@ DEFAULT_TRACE_CATEGORIES = None
 # Categories for absolute minimum overhead tracing. This contains no
 # sub-traces of thread tasks, so it's only useful for capturing the
 # cpu-time spent on threads (as well as needed benchmark traces)
+# FIXME: Remove webkit.console when blink.console lands in chromium and
+# the ref builds are updated. crbug.com/386847
 MINIMAL_TRACE_CATEGORIES = ("toplevel,"
                             "benchmark,"
                             "webkit.console,"
+                            "blink.console,"
                             "trace_event_overhead")
 
 
@@ -109,10 +110,6 @@ class TracingBackend(object):
     self._category_filter = None
     self._nesting = 0
     self._tracing_data = []
-    # Use a WeakKeyDictionary, because an ordinary dictionary could keep
-    # references to Tab objects around until it gets garbage collected.
-    # This would prevent telemetry from navigating to another page.
-    self._tab_to_marker_mapping = weakref.WeakKeyDictionary()
 
   @property
   def is_tracing_running(self):
@@ -164,14 +161,11 @@ class TracingBackend(object):
 
   def _GetTraceResult(self):
     assert not self.is_tracing_running
-    return tracing_timeline_data.TracingTimelineData(
-        self._tracing_data, self._tab_to_marker_mapping)
+    return self._tracing_data
 
   def _GetTraceResultAndReset(self):
     result = self._GetTraceResult()
-    # Reset tab to marker mapping for the next tracing run. Don't use clear(),
-    # because a TraceResult may still hold a reference to the dictionary object.
-    self._tab_to_marker_mapping = weakref.WeakKeyDictionary()
+
     self._tracing_data = []
     return result
 

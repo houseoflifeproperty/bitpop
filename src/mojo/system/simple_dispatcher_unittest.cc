@@ -3,8 +3,9 @@
 // found in the LICENSE file.
 
 // NOTE(vtl): Some of these tests are inherently flaky (e.g., if run on a
-// heavily-loaded system). Sorry. |kEpsilonMicros| may be increased to increase
-// tolerance and reduce observed flakiness.
+// heavily-loaded system). Sorry. |test::EpsilonTimeout()| may be increased to
+// increase tolerance and reduce observed flakiness (though doing so reduces the
+// meaningfulness of the test).
 
 #include "mojo/system/simple_dispatcher.h"
 
@@ -24,37 +25,39 @@ namespace mojo {
 namespace system {
 namespace {
 
-const int64_t kMicrosPerMs = 1000;
-const int64_t kEpsilonMicros = 30 * kMicrosPerMs;  // 30 ms.
-
 class MockSimpleDispatcher : public SimpleDispatcher {
  public:
   MockSimpleDispatcher()
-      : satisfied_flags_(MOJO_WAIT_FLAG_NONE),
-        satisfiable_flags_(MOJO_WAIT_FLAG_READABLE | MOJO_WAIT_FLAG_WRITABLE) {}
+      : state_(MOJO_HANDLE_SIGNAL_NONE,
+               MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE) {}
 
-  void SetSatisfiedFlags(MojoWaitFlags new_satisfied_flags) {
+  void SetSatisfiedSignals(MojoHandleSignals new_satisfied_signals) {
     base::AutoLock locker(lock());
 
-    // Any new flags that are set should be satisfiable.
-    CHECK_EQ(new_satisfied_flags & ~satisfied_flags_,
-             new_satisfied_flags & ~satisfied_flags_ & satisfiable_flags_);
+    // Any new signals that are set should be satisfiable.
+    CHECK_EQ(new_satisfied_signals & ~state_.satisfied_signals,
+             new_satisfied_signals & ~state_.satisfied_signals &
+                 state_.satisfiable_signals);
 
-    if (new_satisfied_flags == satisfied_flags_)
+    if (new_satisfied_signals == state_.satisfied_signals)
       return;
 
-    satisfied_flags_ = new_satisfied_flags;
-    StateChangedNoLock();
+    state_.satisfied_signals = new_satisfied_signals;
+    HandleSignalsStateChangedNoLock();
   }
 
-  void SetSatisfiableFlags(MojoWaitFlags new_satisfiable_flags) {
+  void SetSatisfiableSignals(MojoHandleSignals new_satisfiable_signals) {
     base::AutoLock locker(lock());
 
-    if (new_satisfiable_flags == satisfiable_flags_)
+    // Satisfied implies satisfiable.
+    CHECK_EQ(new_satisfiable_signals & state_.satisfied_signals,
+             state_.satisfied_signals);
+
+    if (new_satisfiable_signals == state_.satisfiable_signals)
       return;
 
-    satisfiable_flags_ = new_satisfiable_flags;
-    StateChangedNoLock();
+    state_.satisfiable_signals = new_satisfiable_signals;
+    HandleSignalsStateChangedNoLock();
   }
 
   virtual Type GetType() const OVERRIDE {
@@ -68,96 +71,90 @@ class MockSimpleDispatcher : public SimpleDispatcher {
   virtual scoped_refptr<Dispatcher>
       CreateEquivalentDispatcherAndCloseImplNoLock() OVERRIDE {
     scoped_refptr<MockSimpleDispatcher> rv(new MockSimpleDispatcher());
-    rv->satisfied_flags_ = satisfied_flags_;
-    rv->satisfiable_flags_ = satisfiable_flags_;
+    rv->state_ = state_;
     return scoped_refptr<Dispatcher>(rv.get());
   }
 
   // |SimpleDispatcher| implementation:
-  virtual MojoWaitFlags SatisfiedFlagsNoLock() const OVERRIDE {
+  virtual HandleSignalsState GetHandleSignalsStateNoLock() const OVERRIDE {
     lock().AssertAcquired();
-    return satisfied_flags_;
-  }
-
-  virtual MojoWaitFlags SatisfiableFlagsNoLock() const OVERRIDE {
-    lock().AssertAcquired();
-    return satisfiable_flags_;
+    return state_;
   }
 
   // Protected by |lock()|:
-  MojoWaitFlags satisfied_flags_;
-  MojoWaitFlags satisfiable_flags_;
+  HandleSignalsState state_;
 
   DISALLOW_COPY_AND_ASSIGN(MockSimpleDispatcher);
 };
 
 TEST(SimpleDispatcherTest, Basic) {
   test::Stopwatch stopwatch;
-  int64_t elapsed_micros;
 
   scoped_refptr<MockSimpleDispatcher> d(new MockSimpleDispatcher());
   Waiter w;
+  uint32_t context = 0;
 
   // Try adding a readable waiter when already readable.
   w.Init();
-  d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
+  d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            d->AddWaiter(&w, MOJO_WAIT_FLAG_READABLE, 0));
+            d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_READABLE, 0));
   // Shouldn't need to remove the waiter (it was not added).
 
   // Wait (forever) for writable when already writable.
   w.Init();
-  d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
-  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 1));
-  d->SetSatisfiedFlags(MOJO_WAIT_FLAG_WRITABLE);
+  d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
+  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 1));
+  d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_WRITABLE);
   stopwatch.Start();
-  EXPECT_EQ(1, w.Wait(MOJO_DEADLINE_INDEFINITE));
-  elapsed_micros = stopwatch.Elapsed();
-  EXPECT_LT(elapsed_micros, kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_OK, w.Wait(MOJO_DEADLINE_INDEFINITE, &context));
+  EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
+  EXPECT_EQ(1u, context);
   d->RemoveWaiter(&w);
 
   // Wait for zero time for writable when already writable.
   w.Init();
-  d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
-  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 2));
-  d->SetSatisfiedFlags(MOJO_WAIT_FLAG_WRITABLE);
+  d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
+  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 2));
+  d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_WRITABLE);
   stopwatch.Start();
-  EXPECT_EQ(2, w.Wait(0));
-  elapsed_micros = stopwatch.Elapsed();
-  EXPECT_LT(elapsed_micros, kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_OK, w.Wait(0, &context));
+  EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
+  EXPECT_EQ(2u, context);
   d->RemoveWaiter(&w);
 
   // Wait for non-zero, finite time for writable when already writable.
   w.Init();
-  d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
-  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 3));
-  d->SetSatisfiedFlags(MOJO_WAIT_FLAG_WRITABLE);
+  d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
+  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 3));
+  d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_WRITABLE);
   stopwatch.Start();
-  EXPECT_EQ(3, w.Wait(2 * kEpsilonMicros));
-  elapsed_micros = stopwatch.Elapsed();
-  EXPECT_LT(elapsed_micros, kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_OK,
+            w.Wait(2 * test::EpsilonTimeout().InMicroseconds(), &context));
+  EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
+  EXPECT_EQ(3u, context);
   d->RemoveWaiter(&w);
 
   // Wait for zero time for writable when not writable (will time out).
   w.Init();
-  d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
-  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 4));
+  d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
+  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 4));
   stopwatch.Start();
-  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, w.Wait(0));
-  elapsed_micros = stopwatch.Elapsed();
-  EXPECT_LT(elapsed_micros, kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, w.Wait(0, NULL));
+  EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
   d->RemoveWaiter(&w);
 
   // Wait for non-zero, finite time for writable when not writable (will time
   // out).
   w.Init();
-  d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
-  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 4));
+  d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
+  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 5));
   stopwatch.Start();
-  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, w.Wait(2 * kEpsilonMicros));
-  elapsed_micros = stopwatch.Elapsed();
-  EXPECT_GT(elapsed_micros, (2-1) * kEpsilonMicros);
-  EXPECT_LT(elapsed_micros, (2+1) * kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED,
+            w.Wait(2 * test::EpsilonTimeout().InMicroseconds(), NULL));
+  base::TimeDelta elapsed = stopwatch.Elapsed();
+  EXPECT_GT(elapsed, (2-1) * test::EpsilonTimeout());
+  EXPECT_LT(elapsed, (2+1) * test::EpsilonTimeout());
   d->RemoveWaiter(&w);
 
   EXPECT_EQ(MOJO_RESULT_OK, d->Close());
@@ -165,51 +162,56 @@ TEST(SimpleDispatcherTest, Basic) {
 
 TEST(SimpleDispatcherTest, BasicUnsatisfiable) {
   test::Stopwatch stopwatch;
-  int64_t elapsed_micros;
 
   scoped_refptr<MockSimpleDispatcher> d(new MockSimpleDispatcher());
   Waiter w;
+  uint32_t context = 0;
 
   // Try adding a writable waiter when it can never be writable.
   w.Init();
-  d->SetSatisfiableFlags(MOJO_WAIT_FLAG_READABLE);
-  d->SetSatisfiedFlags(0);
+  d->SetSatisfiableSignals(MOJO_HANDLE_SIGNAL_READABLE);
+  d->SetSatisfiedSignals(0);
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-            d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 5));
+            d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 1));
   // Shouldn't need to remove the waiter (it was not added).
 
   // Wait (forever) for writable and then it becomes never writable.
   w.Init();
-  d->SetSatisfiableFlags(MOJO_WAIT_FLAG_READABLE | MOJO_WAIT_FLAG_WRITABLE);
-  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 6));
-  d->SetSatisfiableFlags(MOJO_WAIT_FLAG_READABLE);
+  d->SetSatisfiableSignals(
+      MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
+  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 2));
+  d->SetSatisfiableSignals(MOJO_HANDLE_SIGNAL_READABLE);
   stopwatch.Start();
-  EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, w.Wait(MOJO_DEADLINE_INDEFINITE));
-  elapsed_micros = stopwatch.Elapsed();
-  EXPECT_LT(elapsed_micros, kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
+            w.Wait(MOJO_DEADLINE_INDEFINITE, &context));
+  EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
+  EXPECT_EQ(2u, context);
   d->RemoveWaiter(&w);
 
   // Wait for zero time for writable and then it becomes never writable.
   w.Init();
-  d->SetSatisfiableFlags(MOJO_WAIT_FLAG_READABLE | MOJO_WAIT_FLAG_WRITABLE);
-  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 6));
-  d->SetSatisfiableFlags(MOJO_WAIT_FLAG_READABLE);
+  d->SetSatisfiableSignals(
+      MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
+  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 3));
+  d->SetSatisfiableSignals(MOJO_HANDLE_SIGNAL_READABLE);
   stopwatch.Start();
-  EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, w.Wait(0));
-  elapsed_micros = stopwatch.Elapsed();
-  EXPECT_LT(elapsed_micros, kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, w.Wait(0, &context));
+  EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
+  EXPECT_EQ(3u, context);
   d->RemoveWaiter(&w);
 
   // Wait for non-zero, finite time for writable and then it becomes never
   // writable.
   w.Init();
-  d->SetSatisfiableFlags(MOJO_WAIT_FLAG_READABLE | MOJO_WAIT_FLAG_WRITABLE);
-  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 7));
-  d->SetSatisfiableFlags(MOJO_WAIT_FLAG_READABLE);
+  d->SetSatisfiableSignals(
+      MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_WRITABLE);
+  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 4));
+  d->SetSatisfiableSignals(MOJO_HANDLE_SIGNAL_READABLE);
   stopwatch.Start();
-  EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, w.Wait(2 * kEpsilonMicros));
-  elapsed_micros = stopwatch.Elapsed();
-  EXPECT_LT(elapsed_micros, kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
+            w.Wait(2 * test::EpsilonTimeout().InMicroseconds(), &context));
+  EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
+  EXPECT_EQ(4u, context);
   d->RemoveWaiter(&w);
 
   EXPECT_EQ(MOJO_RESULT_OK, d->Close());
@@ -217,51 +219,52 @@ TEST(SimpleDispatcherTest, BasicUnsatisfiable) {
 
 TEST(SimpleDispatcherTest, BasicClosed) {
   test::Stopwatch stopwatch;
-  int64_t elapsed_micros;
 
   scoped_refptr<MockSimpleDispatcher> d;
   Waiter w;
+  uint32_t context = 0;
 
   // Try adding a writable waiter when the dispatcher has been closed.
   d = new MockSimpleDispatcher();
   w.Init();
   EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-            d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 8));
+            d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 1));
   // Shouldn't need to remove the waiter (it was not added).
 
   // Wait (forever) for writable and then the dispatcher is closed.
   d = new MockSimpleDispatcher();
   w.Init();
-  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 9));
+  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 2));
   EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   stopwatch.Start();
-  EXPECT_EQ(MOJO_RESULT_CANCELLED, w.Wait(MOJO_DEADLINE_INDEFINITE));
-  elapsed_micros = stopwatch.Elapsed();
-  EXPECT_LT(elapsed_micros, kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_CANCELLED, w.Wait(MOJO_DEADLINE_INDEFINITE, &context));
+  EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
+  EXPECT_EQ(2u, context);
   // Don't need to remove waiters from closed dispatchers.
 
   // Wait for zero time for writable and then the dispatcher is closed.
   d = new MockSimpleDispatcher();
   w.Init();
-  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 10));
+  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 3));
   EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   stopwatch.Start();
-  EXPECT_EQ(MOJO_RESULT_CANCELLED, w.Wait(0));
-  elapsed_micros = stopwatch.Elapsed();
-  EXPECT_LT(elapsed_micros, kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_CANCELLED, w.Wait(0, &context));
+  EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
+  EXPECT_EQ(3u, context);
   // Don't need to remove waiters from closed dispatchers.
 
   // Wait for non-zero, finite time for writable and then the dispatcher is
   // closed.
   d = new MockSimpleDispatcher();
   w.Init();
-  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_WAIT_FLAG_WRITABLE, 11));
+  EXPECT_EQ(MOJO_RESULT_OK, d->AddWaiter(&w, MOJO_HANDLE_SIGNAL_WRITABLE, 4));
   EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   stopwatch.Start();
-  EXPECT_EQ(MOJO_RESULT_CANCELLED, w.Wait(2 * kEpsilonMicros));
-  elapsed_micros = stopwatch.Elapsed();
-  EXPECT_LT(elapsed_micros, kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_CANCELLED,
+            w.Wait(2 * test::EpsilonTimeout().InMicroseconds(), &context));
+  EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
+  EXPECT_EQ(4u, context);
   // Don't need to remove waiters from closed dispatchers.
 }
 
@@ -269,143 +272,144 @@ TEST(SimpleDispatcherTest, BasicThreaded) {
   test::Stopwatch stopwatch;
   bool did_wait;
   MojoResult result;
-  int64_t elapsed_micros;
+  uint32_t context;
 
   // Wait for readable (already readable).
   {
     scoped_refptr<MockSimpleDispatcher> d(new MockSimpleDispatcher());
     {
-      d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
+      d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
       test::WaiterThread thread(d,
-                                MOJO_WAIT_FLAG_READABLE,
+                                MOJO_HANDLE_SIGNAL_READABLE,
                                 MOJO_DEADLINE_INDEFINITE,
-                                0,
-                                &did_wait, &result);
+                                1,
+                                &did_wait, &result, &context);
       stopwatch.Start();
       thread.Start();
     }  // Joins the thread.
     // If we closed earlier, then probably we'd get a |MOJO_RESULT_CANCELLED|.
     EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   }
-  elapsed_micros = stopwatch.Elapsed();
+  EXPECT_LT(stopwatch.Elapsed(), test::EpsilonTimeout());
   EXPECT_FALSE(did_wait);
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS, result);
-  EXPECT_LT(elapsed_micros, kEpsilonMicros);
 
   // Wait for readable and becomes readable after some time.
   {
     scoped_refptr<MockSimpleDispatcher> d(new MockSimpleDispatcher());
     test::WaiterThread thread(d,
-                              MOJO_WAIT_FLAG_READABLE,
+                              MOJO_HANDLE_SIGNAL_READABLE,
                               MOJO_DEADLINE_INDEFINITE,
-                              1,
-                              &did_wait, &result);
+                              2,
+                              &did_wait, &result, &context);
     stopwatch.Start();
     thread.Start();
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMicroseconds(2 * kEpsilonMicros));
-    d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
+    base::PlatformThread::Sleep(2 * test::EpsilonTimeout());
+    d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
     EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   }  // Joins the thread.
-  elapsed_micros = stopwatch.Elapsed();
+  base::TimeDelta elapsed = stopwatch.Elapsed();
+  EXPECT_GT(elapsed, (2-1) * test::EpsilonTimeout());
+  EXPECT_LT(elapsed, (2+1) * test::EpsilonTimeout());
   EXPECT_TRUE(did_wait);
-  EXPECT_EQ(1, result);
-  EXPECT_GT(elapsed_micros, (2-1) * kEpsilonMicros);
-  EXPECT_LT(elapsed_micros, (2+1) * kEpsilonMicros);
+  EXPECT_EQ(MOJO_RESULT_OK, result);
+  EXPECT_EQ(2u, context);
 
   // Wait for readable and becomes never-readable after some time.
   {
     scoped_refptr<MockSimpleDispatcher> d(new MockSimpleDispatcher());
     test::WaiterThread thread(d,
-                              MOJO_WAIT_FLAG_READABLE,
+                              MOJO_HANDLE_SIGNAL_READABLE,
                               MOJO_DEADLINE_INDEFINITE,
-                              2,
-                              &did_wait, &result);
+                              3,
+                              &did_wait, &result, &context);
     stopwatch.Start();
     thread.Start();
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMicroseconds(2 * kEpsilonMicros));
-    d->SetSatisfiableFlags(MOJO_WAIT_FLAG_NONE);
+    base::PlatformThread::Sleep(2 * test::EpsilonTimeout());
+    d->SetSatisfiableSignals(MOJO_HANDLE_SIGNAL_NONE);
     EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   }  // Joins the thread.
-  elapsed_micros = stopwatch.Elapsed();
+  elapsed = stopwatch.Elapsed();
+  EXPECT_GT(elapsed, (2-1) * test::EpsilonTimeout());
+  EXPECT_LT(elapsed, (2+1) * test::EpsilonTimeout());
   EXPECT_TRUE(did_wait);
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, result);
-  EXPECT_GT(elapsed_micros, (2-1) * kEpsilonMicros);
-  EXPECT_LT(elapsed_micros, (2+1) * kEpsilonMicros);
+  EXPECT_EQ(3u, context);
 
   // Wait for readable and dispatcher gets closed.
   {
     scoped_refptr<MockSimpleDispatcher> d(new MockSimpleDispatcher());
     test::WaiterThread thread(d,
-                              MOJO_WAIT_FLAG_READABLE,
+                              MOJO_HANDLE_SIGNAL_READABLE,
                               MOJO_DEADLINE_INDEFINITE,
-                              3,
-                              &did_wait, &result);
+                              4,
+                              &did_wait, &result, &context);
     stopwatch.Start();
     thread.Start();
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMicroseconds(2 * kEpsilonMicros));
+    base::PlatformThread::Sleep(2 * test::EpsilonTimeout());
     EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   }  // Joins the thread.
-  elapsed_micros = stopwatch.Elapsed();
+  elapsed = stopwatch.Elapsed();
+  EXPECT_GT(elapsed, (2-1) * test::EpsilonTimeout());
+  EXPECT_LT(elapsed, (2+1) * test::EpsilonTimeout());
   EXPECT_TRUE(did_wait);
   EXPECT_EQ(MOJO_RESULT_CANCELLED, result);
-  EXPECT_GT(elapsed_micros, (2-1) * kEpsilonMicros);
-  EXPECT_LT(elapsed_micros, (2+1) * kEpsilonMicros);
+  EXPECT_EQ(4u, context);
 
   // Wait for readable and times out.
   {
     scoped_refptr<MockSimpleDispatcher> d(new MockSimpleDispatcher());
     {
       test::WaiterThread thread(d,
-                                MOJO_WAIT_FLAG_READABLE,
-                                2 * kEpsilonMicros,
-                                4,
-                                &did_wait, &result);
+                                MOJO_HANDLE_SIGNAL_READABLE,
+                                2 * test::EpsilonTimeout().InMicroseconds(),
+                                5,
+                                &did_wait, &result, &context);
       stopwatch.Start();
       thread.Start();
-      base::PlatformThread::Sleep(
-          base::TimeDelta::FromMicroseconds(1 * kEpsilonMicros));
+      base::PlatformThread::Sleep(1 * test::EpsilonTimeout());
       // Not what we're waiting for.
-      d->SetSatisfiedFlags(MOJO_WAIT_FLAG_WRITABLE);
+      d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_WRITABLE);
     }  // Joins the thread (after its wait times out).
     // If we closed earlier, then probably we'd get a |MOJO_RESULT_CANCELLED|.
     EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   }
-  elapsed_micros = stopwatch.Elapsed();
+  elapsed = stopwatch.Elapsed();
+  EXPECT_GT(elapsed, (2-1) * test::EpsilonTimeout());
+  EXPECT_LT(elapsed, (2+1) * test::EpsilonTimeout());
   EXPECT_TRUE(did_wait);
   EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, result);
-  EXPECT_GT(elapsed_micros, (2-1) * kEpsilonMicros);
-  EXPECT_LT(elapsed_micros, (2+1) * kEpsilonMicros);
 }
 
 TEST(SimpleDispatcherTest, MultipleWaiters) {
-  static const size_t kNumWaiters = 20;
+  static const uint32_t kNumWaiters = 20;
 
   bool did_wait[kNumWaiters];
   MojoResult result[kNumWaiters];
+  uint32_t context[kNumWaiters];
 
   // All wait for readable and becomes readable after some time.
   {
     scoped_refptr<MockSimpleDispatcher> d(new MockSimpleDispatcher());
     ScopedVector<test::WaiterThread> threads;
-    for (size_t i = 0; i < kNumWaiters; i++) {
+    for (uint32_t i = 0; i < kNumWaiters; i++) {
       threads.push_back(new test::WaiterThread(d,
-                                               MOJO_WAIT_FLAG_READABLE,
+                                               MOJO_HANDLE_SIGNAL_READABLE,
                                                MOJO_DEADLINE_INDEFINITE,
-                                               static_cast<MojoResult>(i),
-                                               &did_wait[i], &result[i]));
+                                               i,
+                                               &did_wait[i],
+                                               &result[i],
+                                               &context[i]));
       threads.back()->Start();
     }
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMicroseconds(2 * kEpsilonMicros));
-    d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
+    base::PlatformThread::Sleep(2 * test::EpsilonTimeout());
+    d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
     EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   }  // Joins the threads.
-  for (size_t i = 0; i < kNumWaiters; i++) {
+  for (uint32_t i = 0; i < kNumWaiters; i++) {
     EXPECT_TRUE(did_wait[i]);
-    EXPECT_EQ(static_cast<MojoResult>(i), result[i]);
+    EXPECT_EQ(MOJO_RESULT_OK, result[i]);
+    EXPECT_EQ(i, context[i]);
   }
 
   // Some wait for readable, some for writable, and becomes readable after some
@@ -413,35 +417,40 @@ TEST(SimpleDispatcherTest, MultipleWaiters) {
   {
     scoped_refptr<MockSimpleDispatcher> d(new MockSimpleDispatcher());
     ScopedVector<test::WaiterThread> threads;
-    for (size_t i = 0; i < kNumWaiters / 2; i++) {
+    for (uint32_t i = 0; i < kNumWaiters / 2; i++) {
       threads.push_back(new test::WaiterThread(d,
-                                               MOJO_WAIT_FLAG_READABLE,
+                                               MOJO_HANDLE_SIGNAL_READABLE,
                                                MOJO_DEADLINE_INDEFINITE,
-                                               static_cast<MojoResult>(i),
-                                               &did_wait[i], &result[i]));
+                                               i,
+                                               &did_wait[i],
+                                               &result[i],
+                                               &context[i]));
       threads.back()->Start();
     }
-    for (size_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
+    for (uint32_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
       threads.push_back(new test::WaiterThread(d,
-                                               MOJO_WAIT_FLAG_WRITABLE,
+                                               MOJO_HANDLE_SIGNAL_WRITABLE,
                                                MOJO_DEADLINE_INDEFINITE,
-                                               static_cast<MojoResult>(i),
-                                               &did_wait[i], &result[i]));
+                                               i,
+                                               &did_wait[i],
+                                               &result[i],
+                                               &context[i]));
       threads.back()->Start();
     }
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMicroseconds(2 * kEpsilonMicros));
-    d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
+    base::PlatformThread::Sleep(2 * test::EpsilonTimeout());
+    d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
     // This will wake up the ones waiting to write.
     EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   }  // Joins the threads.
-  for (size_t i = 0; i < kNumWaiters / 2; i++) {
+  for (uint32_t i = 0; i < kNumWaiters / 2; i++) {
     EXPECT_TRUE(did_wait[i]);
-    EXPECT_EQ(static_cast<MojoResult>(i), result[i]);
+    EXPECT_EQ(MOJO_RESULT_OK, result[i]);
+    EXPECT_EQ(i, context[i]);
   }
-  for (size_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
+  for (uint32_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
     EXPECT_TRUE(did_wait[i]);
     EXPECT_EQ(MOJO_RESULT_CANCELLED, result[i]);
+    EXPECT_EQ(i, context[i]);
   }
 
   // Some wait for readable, some for writable, and becomes readable and
@@ -449,37 +458,41 @@ TEST(SimpleDispatcherTest, MultipleWaiters) {
   {
     scoped_refptr<MockSimpleDispatcher> d(new MockSimpleDispatcher());
     ScopedVector<test::WaiterThread> threads;
-    for (size_t i = 0; i < kNumWaiters / 2; i++) {
+    for (uint32_t i = 0; i < kNumWaiters / 2; i++) {
       threads.push_back(new test::WaiterThread(d,
-                                               MOJO_WAIT_FLAG_READABLE,
+                                               MOJO_HANDLE_SIGNAL_READABLE,
                                                MOJO_DEADLINE_INDEFINITE,
-                                               static_cast<MojoResult>(i),
-                                               &did_wait[i], &result[i]));
+                                               i,
+                                               &did_wait[i],
+                                               &result[i],
+                                               &context[i]));
       threads.back()->Start();
     }
-    for (size_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
+    for (uint32_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
       threads.push_back(new test::WaiterThread(d,
-                                               MOJO_WAIT_FLAG_WRITABLE,
+                                               MOJO_HANDLE_SIGNAL_WRITABLE,
                                                MOJO_DEADLINE_INDEFINITE,
-                                               static_cast<MojoResult>(i),
-                                               &did_wait[i], &result[i]));
+                                               i,
+                                               &did_wait[i],
+                                               &result[i],
+                                               &context[i]));
       threads.back()->Start();
     }
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMicroseconds(1 * kEpsilonMicros));
-    d->SetSatisfiableFlags(MOJO_WAIT_FLAG_READABLE);
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMicroseconds(1 * kEpsilonMicros));
-    d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
+    base::PlatformThread::Sleep(1 * test::EpsilonTimeout());
+    d->SetSatisfiableSignals(MOJO_HANDLE_SIGNAL_READABLE);
+    base::PlatformThread::Sleep(1 * test::EpsilonTimeout());
+    d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
     EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   }  // Joins the threads.
-  for (size_t i = 0; i < kNumWaiters / 2; i++) {
+  for (uint32_t i = 0; i < kNumWaiters / 2; i++) {
     EXPECT_TRUE(did_wait[i]);
-    EXPECT_EQ(static_cast<MojoResult>(i), result[i]);
+    EXPECT_EQ(MOJO_RESULT_OK, result[i]);
+    EXPECT_EQ(i, context[i]);
   }
-  for (size_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
+  for (uint32_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
     EXPECT_TRUE(did_wait[i]);
     EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, result[i]);
+    EXPECT_EQ(i, context[i]);
   }
 
   // Some wait for readable, some for writable, and becomes readable after some
@@ -487,33 +500,35 @@ TEST(SimpleDispatcherTest, MultipleWaiters) {
   {
     scoped_refptr<MockSimpleDispatcher> d(new MockSimpleDispatcher());
     ScopedVector<test::WaiterThread> threads;
-    for (size_t i = 0; i < kNumWaiters / 2; i++) {
-      threads.push_back(new test::WaiterThread(d,
-                                               MOJO_WAIT_FLAG_READABLE,
-                                               3 * kEpsilonMicros,
-                                               static_cast<MojoResult>(i),
-                                               &did_wait[i], &result[i]));
+    for (uint32_t i = 0; i < kNumWaiters / 2; i++) {
+      threads.push_back(
+          new test::WaiterThread(d,
+                                 MOJO_HANDLE_SIGNAL_READABLE,
+                                 3 * test::EpsilonTimeout().InMicroseconds(),
+                                 i,
+                                 &did_wait[i], &result[i], &context[i]));
       threads.back()->Start();
     }
-    for (size_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
-      threads.push_back(new test::WaiterThread(d,
-                                               MOJO_WAIT_FLAG_WRITABLE,
-                                               1 * kEpsilonMicros,
-                                               static_cast<MojoResult>(i),
-                                               &did_wait[i], &result[i]));
+    for (uint32_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
+      threads.push_back(
+          new test::WaiterThread(d,
+                                 MOJO_HANDLE_SIGNAL_WRITABLE,
+                                 1 * test::EpsilonTimeout().InMicroseconds(),
+                                 i,
+                                 &did_wait[i], &result[i], &context[i]));
       threads.back()->Start();
     }
-    base::PlatformThread::Sleep(
-        base::TimeDelta::FromMicroseconds(2 * kEpsilonMicros));
-    d->SetSatisfiedFlags(MOJO_WAIT_FLAG_READABLE);
+    base::PlatformThread::Sleep(2 * test::EpsilonTimeout());
+    d->SetSatisfiedSignals(MOJO_HANDLE_SIGNAL_READABLE);
     // All those waiting for writable should have timed out.
     EXPECT_EQ(MOJO_RESULT_OK, d->Close());
   }  // Joins the threads.
-  for (size_t i = 0; i < kNumWaiters / 2; i++) {
+  for (uint32_t i = 0; i < kNumWaiters / 2; i++) {
     EXPECT_TRUE(did_wait[i]);
-    EXPECT_EQ(static_cast<MojoResult>(i), result[i]);
+    EXPECT_EQ(MOJO_RESULT_OK, result[i]);
+    EXPECT_EQ(i, context[i]);
   }
-  for (size_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
+  for (uint32_t i = kNumWaiters / 2; i < kNumWaiters; i++) {
     EXPECT_TRUE(did_wait[i]);
     EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, result[i]);
   }

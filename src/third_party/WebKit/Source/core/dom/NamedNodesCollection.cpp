@@ -34,11 +34,17 @@
 
 namespace WebCore {
 
-Node* NamedNodesCollection::item(unsigned index) const
+Element* NamedNodesCollection::item(unsigned index) const
 {
     if (index < m_nodes.size())
         return m_nodes[index].get();
     return 0;
+}
+
+void NamedNodesCollection::trace(Visitor* visitor)
+{
+    visitor->trace(m_nodes);
+    NodeList::trace(visitor);
 }
 
 } // namespace WebCore

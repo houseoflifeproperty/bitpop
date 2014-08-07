@@ -13,7 +13,8 @@
 
 namespace nacl_io {
 
-StreamEventEmitter::StreamEventEmitter() : stream_(NULL) {}
+StreamEventEmitter::StreamEventEmitter() : stream_(NULL) {
+}
 
 void StreamEventEmitter::AttachStream(StreamNode* stream) {
   AUTO_LOCK(GetLock());
@@ -37,14 +38,6 @@ void StreamEventEmitter::UpdateStatus_Locked() {
 
   ClearEvents_Locked(~status);
   RaiseEvents_Locked(status);
-}
-
-uint32_t StreamEventEmitter::BytesInOutputFIFO() {
-  return out_fifo()->ReadAvailable();
-}
-
-uint32_t StreamEventEmitter::SpaceInInputFIFO() {
-  return in_fifo()->WriteAvailable();
 }
 
 }  // namespace nacl_io

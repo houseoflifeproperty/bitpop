@@ -23,16 +23,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "build/build_config.h"
 #include "net/base/net_export.h"
+#include "net/base/network_delegate.h"
+#include "net/dns/host_resolver.h"
+#include "net/socket/next_proto.h"
 
 namespace net {
 
 class FtpTransactionFactory;
-class HostResolver;
 class HostMappingRules;
 class HttpAuthHandlerFactory;
 class ProxyConfigService;
 class URLRequestContext;
-class NetworkDelegate;
 
 class NET_EXPORT URLRequestContextBuilder {
  public:
@@ -63,10 +64,11 @@ class NET_EXPORT URLRequestContextBuilder {
     // These fields mirror those in net::HttpNetworkSession::Params;
     bool ignore_certificate_errors;
     HostMappingRules* host_mapping_rules;
-    bool http_pipelining_enabled;
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
+    NextProtoVector next_protos;
     std::string trusted_spdy_proxy;
+    bool use_alternate_protocols;
   };
 
   URLRequestContextBuilder();
@@ -142,10 +144,13 @@ class NET_EXPORT URLRequestContextBuilder {
     http_network_session_params_ = http_network_session_params;
   }
 
+  // Adjust |http_network_session_params_.next_protos| to enable SPDY and QUIC.
+  void SetSpdyAndQuicEnabled(bool spdy_enabled,
+                             bool quic_enabled);
+
   URLRequestContext* Build();
 
  private:
-
   struct SchemeFactory {
     SchemeFactory(const std::string& scheme,
                   net::HttpAuthHandlerFactory* factory);

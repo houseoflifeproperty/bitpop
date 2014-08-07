@@ -39,8 +39,6 @@ static const char* kTestConfigFlags[] = {
 class WebRtcWebcamBrowserTest : public WebRtcTestBase,
     public testing::WithParamInterface<const char*> {
  public:
-  WebRtcWebcamBrowserTest() : get_user_media_call_count_(0) {}
-
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     EXPECT_FALSE(command_line->HasSwitch(
         switches::kUseFakeDeviceForMediaStream));
@@ -57,17 +55,7 @@ class WebRtcWebcamBrowserTest : public WebRtcTestBase,
 
   std::string GetUserMediaAndGetStreamSize(content::WebContents* tab,
                                            const std::string& constraints) {
-    // We will get a permission prompt for the first getUserMedia call.
-    // Subsequent calls won't trigger a prompt.
-    if (get_user_media_call_count_ == 0) {
-      GetUserMediaWithSpecificConstraintsAndAccept(tab, constraints);
-    } else {
-      GetUserMedia(tab, constraints);
-      EXPECT_TRUE(test::PollingWaitUntil(
-          "obtainGetUserMediaResult()", "ok-got-stream", tab));
-    }
-
-    ++get_user_media_call_count_;
+    GetUserMediaWithSpecificConstraintsAndAccept(tab, constraints);
 
     StartDetectingVideo(tab, "local-view");
     WaitForVideoToPlay(tab);
@@ -76,7 +64,13 @@ class WebRtcWebcamBrowserTest : public WebRtcTestBase,
     return actual_stream_size;
   }
 
-  int get_user_media_call_count_;
+  bool IsOnQtKit() const {
+#if defined(OS_MACOSX)
+    return GetParam() && std::string(GetParam()) == switches::kForceQTKit;
+#else
+    return false;
+#endif
+  }
 };
 
 IN_PROC_BROWSER_TEST_P(WebRtcWebcamBrowserTest,
@@ -92,14 +86,23 @@ IN_PROC_BROWSER_TEST_P(WebRtcWebcamBrowserTest,
     return;
   }
 
+  if (!IsOnQtKit()) {
+    // Temporarily disabled on QtKit due to http://crbug.com/375185.
+    EXPECT_EQ("320x240",
+              GetUserMediaAndGetStreamSize(tab,
+                                           kAudioVideoCallConstraintsQVGA));
+  }
+
   EXPECT_EQ("640x480",
             GetUserMediaAndGetStreamSize(tab, kAudioVideoCallConstraintsVGA));
-  EXPECT_EQ("320x240",
-            GetUserMediaAndGetStreamSize(tab, kAudioVideoCallConstraintsQVGA));
   EXPECT_EQ("640x360",
             GetUserMediaAndGetStreamSize(tab, kAudioVideoCallConstraints360p));
   EXPECT_EQ("1280x720",
             GetUserMediaAndGetStreamSize(tab, kAudioVideoCallConstraints720p));
+
+  if (IsOnQtKit())
+    return;  // QTKit only supports up to 720p.
+
   EXPECT_EQ("1920x1080",
             GetUserMediaAndGetStreamSize(tab, kAudioVideoCallConstraints1080p));
 }

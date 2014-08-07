@@ -73,14 +73,14 @@ index ea42207..4aa307d 100644
               'doStepIf',
 +             'hideStepIf',
               ]
- 
+
      name = "generic"
 @@ -631,6 +632,7 @@ class BuildStep:
      progress = None
      # doStepIf can be False, True, or a function that returns False or True
      doStepIf = True
 +    hideStepIf = False
- 
+
      def __init__(self, **kwargs):
          self.factory = (self.__class__, dict(kwargs))
 @@ -920,6 +922,10 @@ class BuildStep:
@@ -93,7 +93,7 @@ index ea42207..4aa307d 100644
 +
          self.releaseLocks()
          self.deferred.callback(results)
- 
+
 @@ -938,6 +944,9 @@ class BuildStep:
              self.step_status.setText([self.name, "exception"])
              self.step_status.setText2([self.name])
@@ -107,13 +107,13 @@ index ea42207..4aa307d 100644
 @@ -1048,6 +1057,11 @@ class BuildStep:
          d = c.run(self, self.remote)
          return d
- 
+
 +    @staticmethod
 +    def _maybeEvaluate(value, *args, **kwargs):
 +        if callable(value):
 +            value = value(*args, **kwargs)
 +        return value
- 
+
  class OutputProgressObserver(LogObserver):
      length = 0
 @@ -1294,4 +1308,3 @@ def regex_log_evaluator(cmd, step_status, regexes):
@@ -128,18 +128,18 @@ index 781f7e8..264b599 100644
 @@ -46,7 +46,7 @@ class BuildStepStatus(styles.Versioned):
      # corresponding BuildStep has started.
      implements(interfaces.IBuildStepStatus, interfaces.IStatusEvent)
- 
+
 -    persistenceVersion = 3
 +    persistenceVersion = 4
      persistenceForgets = ( 'wasUpgraded', )
- 
+
      started = None
 @@ -60,6 +60,7 @@ class BuildStepStatus(styles.Versioned):
      finishedWatchers = []
      statistics = {}
      step_number = None
 +    hidden = False
- 
+
      def __init__(self, parent, step_number):
          assert interfaces.IBuildStatus(parent)
 @@ -67,6 +68,7 @@ class BuildStepStatus(styles.Versioned):
@@ -153,7 +153,7 @@ index 781f7e8..264b599 100644
 @@ -120,6 +122,9 @@ class BuildStepStatus(styles.Versioned):
      def isFinished(self):
          return (self.finished is not None)
- 
+
 +    def isHidden(self):
 +        return self.hidden
 +
@@ -163,7 +163,7 @@ index 781f7e8..264b599 100644
 @@ -214,6 +219,9 @@ class BuildStepStatus(styles.Versioned):
      def setProgress(self, stepprogress):
          self.progress = stepprogress
- 
+
 +    def setHidden(self, hidden):
 +        self.hidden = hidden
 +
@@ -173,7 +173,7 @@ index 781f7e8..264b599 100644
 @@ -354,6 +362,11 @@ class BuildStepStatus(styles.Versioned):
              self.step_number = 0
          self.wasUpgraded = True
- 
+
 +    def upgradeToVersion4(self):
 +        if not hasattr(self, "hidden"):
 +            self.hidden = False
@@ -195,11 +195,11 @@ index 907adc8..02e4b4d 100644
 --- a/third_party/buildbot_8_4p1/buildbot/status/web/build.py
 +++ b/third_party/buildbot_8_4p1/buildbot/status/web/build.py
 @@ -94,9 +94,11 @@ class StatusResourceBuild(HtmlResource):
- 
+
          for s in b.getSteps():
              step = {'name': s.getName() }
 -            cxt['steps'].append(step)
- 
+
              if s.isFinished():
 +                if s.isHidden():
 +                    continue
@@ -210,7 +210,7 @@ index 907adc8..02e4b4d 100644
 @@ -111,6 +113,8 @@ class StatusResourceBuild(HtmlResource):
                  step['css_class'] = "not_started"
                  step['time_to_run'] = ""
- 
+
 +            cxt['steps'].append(step)
 +
              step['link'] = req.childLink("steps/%s" % urllib.quote(s.getName()))
@@ -218,7 +218,7 @@ index 907adc8..02e4b4d 100644
              step['urls'] = map(lambda x:dict(url=x[1],logname=x[0]), s.getURLs().items())
 @@ -255,4 +259,3 @@ class BuildsResource(HtmlResource):
                  return StatusResourceBuild(build_status)
- 
+
          return HtmlResource.getChild(self, path, req)
 -
 diff --git a/third_party/buildbot_8_4p1/buildbot/status/web/waterfall.py b/third_party/buildbot_8_4p1/buildbot/status/web/waterfall.py
@@ -324,7 +324,7 @@ index b00b871..e513ec0 100644
 
 
 Port console caching from 0.8.3p1 to 0.8.4p1.
-    
+
 diff --git a/third_party/buildbot_8_4p1/buildbot/status/web/console.py b/third_party/buildbot_8_4p1/buildbot/status/web/console.py
 index 59cbc0e..c95ac7f 100644
 --- a/third_party/buildbot_8_4p1/buildbot/status/web/console.py
@@ -333,13 +333,13 @@ index 59cbc0e..c95ac7f 100644
          else:
              # The previous build also failed.
              return "warnings"
--  
+-
 +
      # Any other results? Like EXCEPTION?
      return "exception"
- 
+
  class ANYBRANCH: pass # a flag value, used below
- 
+
 +class CachedStatusBox(object):
 +    """Basic data class to remember the information for a box on the console."""
 +    def __init__(self, color, pageTitle, details, url, tag):
@@ -404,102 +404,102 @@ index 59cbc0e..c95ac7f 100644
 +
  class DevRevision:
      """Helper class that contains all the information we need for a revision."""
- 
+
 @@ -97,6 +159,7 @@ class ConsoleStatusResource(HtmlResource):
          HtmlResource.__init__(self)
- 
+
          self.status = None
 +        self.cache = CacheStatus()
- 
+
          if orderByTime:
              self.comparator = TimeRevisionComparator()
 @@ -133,22 +196,22 @@ class ConsoleStatusResource(HtmlResource):
      def fetchChangesFromHistory(self, status, max_depth, max_builds, debugInfo):
          """Look at the history of the builders and try to fetch as many changes
          as possible. We need this when the main source does not contain enough
--        sourcestamps. 
+-        sourcestamps.
 +        sourcestamps.
- 
+
          max_depth defines how many builds we will parse for a given builder.
          max_builds defines how many builds total we want to parse. This is to
              limit the amount of time we spend in this function.
--        
+-
 +
          This function is sub-optimal, but the information returned by this
          function is cached, so this function won't be called more than once.
          """
--        
+-
 +
          allChanges = list()
          build_count = 0
          for builderName in status.getBuilderNames()[:]:
              if build_count > max_builds:
                  break
--            
+-
 +
              builder = status.getBuilder(builderName)
              build = self.getHeadBuild(builder)
              depth = 0
 @@ -160,7 +223,7 @@ class ConsoleStatusResource(HtmlResource):
                  build = build.getPreviousBuild()
- 
+
          debugInfo["source_fetch_len"] = len(allChanges)
--        return allChanges                
+-        return allChanges
 +        return allChanges
- 
+
      @defer.deferredGenerator
      def getAllChanges(self, request, status, debugInfo):
 @@ -191,6 +254,7 @@ class ConsoleStatusResource(HtmlResource):
              prevChange = change
          allChanges = newChanges
- 
+
 +        debugInfo["source_len"] = len(allChanges)
          yield allChanges
- 
+
      def getBuildDetails(self, request, builderName, build):
 @@ -232,7 +296,7 @@ class ConsoleStatusResource(HtmlResource):
          build, and we go down until we find a build that was built prior to the
          last change we are interested in."""
- 
--        revision = lastRevision 
+
+-        revision = lastRevision
 +        revision = lastRevision
- 
+
          builds = []
          build = self.getHeadBuild(builder)
 @@ -299,7 +363,7 @@ class ConsoleStatusResource(HtmlResource):
          display the console page. The key is the builder name, and the value is
          an array of build we care about. We also returns a dictionary of
          builders we care about. The key is it's category.
-- 
+-
 +
          lastRevision is the last revision we want to display in the page.
          categories is a list of categories to display. It is coming from the
              HTTP GET parameters.
 @@ -364,7 +428,7 @@ class ConsoleStatusResource(HtmlResource):
-         
+
          cs = []
-         
--        for category in categories:            
+
+-        for category in categories:
 +        for category in categories:
              c = {}
- 
+
              c["name"] = category
 @@ -372,9 +436,9 @@ class ConsoleStatusResource(HtmlResource):
              # To be able to align the table correctly, we need to know
              # what percentage of space this category will be taking. This is
              # (#Builders in Category) / (#Builders Total) * 100.
--            c["size"] = (len(builderList[category]) * 100) / count            
+-            c["size"] = (len(builderList[category]) * 100) / count
 +            c["size"] = (len(builderList[category]) * 100) / count
              cs.append(c)
--            
+-
 +
          return cs
- 
+
      def displaySlaveLine(self, status, builderList, debugInfo):
 @@ -448,6 +512,23 @@ class ConsoleStatusResource(HtmlResource):
                  introducedIn = None
                  firstNotIn = None
- 
+
 +                cached_value = self.cache.get(builder, revision.revision)
 +                if cached_value:
 +                    debugInfo["from_cache"] += 1
@@ -523,7 +523,7 @@ index 59cbc0e..c95ac7f 100644
 @@ -504,6 +585,13 @@ class ConsoleStatusResource(HtmlResource):
                  if current_details and resultsClass == "failure":
                      details.append(current_details)
- 
+
 +                # Add this box to the cache if it's completed so we don't have
 +                # to compute it again.
 +                if resultsClass not in ("running", "notstarted"):
@@ -532,10 +532,10 @@ index 59cbc0e..c95ac7f 100644
 +                                    pageTitle, current_details, url, tag)
 +
          return (builds, details)
- 
+
      def filterRevisions(self, revisions, filter=None, max_revs=None):
 @@ -553,7 +641,8 @@ class ConsoleStatusResource(HtmlResource):
- 
+
          if builderList:
              subs["categories"] = self.displayCategories(builderList, debugInfo)
 -            subs['slaves'] = self.displaySlaveLine(status, builderList, debugInfo)
@@ -543,9 +543,9 @@ index 59cbc0e..c95ac7f 100644
 +                                                   debugInfo)
          else:
              subs["categories"] = []
- 
+
 @@ -574,14 +663,14 @@ class ConsoleStatusResource(HtmlResource):
- 
+
              # Display the status for all builders.
              (builds, details) = self.displayStatusLine(builderList,
 -                                            allBuilds,
@@ -556,16 +556,16 @@ index 59cbc0e..c95ac7f 100644
 +                                                       debugInfo)
              r['builds'] = builds
              r['details'] = details
- 
+
              # Calculate the td span for the comment and the details.
--            r["span"] = len(builderList) + 2            
+-            r["span"] = len(builderList) + 2
 +            r["span"] = len(builderList) + 2
- 
+
              subs['revisions'].append(r)
- 
+
 @@ -678,6 +767,13 @@ class ConsoleStatusResource(HtmlResource):
                                                      debugInfo)
- 
+
              debugInfo["added_blocks"] = 0
 +            debugInfo["from_cache"] = 0
 +
@@ -574,7 +574,7 @@ index 59cbc0e..c95ac7f 100644
 +                data += "\nGlobal Cache\n"
 +                data += self.cache.display()
 +                return data
- 
+
              cxt.update(self.displayPage(request, status, builderList,
                                          allBuilds, revisions, categories,
 @@ -686,6 +782,11 @@ class ConsoleStatusResource(HtmlResource):
@@ -596,10 +596,10 @@ Author: Nicolas Sylvain <nsylvain@chromium.org>
 Date:   Fri Nov 23 12:24:04 2012 -0500
 
     Optionally add revision to the waterfall display of changes.
-    
+
     Used in chromium's waterfalls extensively.
     publicly reviewed here: https://codereview.chromium.org/7276032
-    
+
     Modified to not change the look by default.
 
 diff --git a/master/buildbot/status/web/changes.py b/master/buildbot/status/web/changes.py
@@ -615,15 +615,15 @@ index 6be37b5..0971bea 100644
 +                                            revision=self.original.revision)
          return Box([text], class_="Change")
  components.registerAdapter(ChangeBox, Change, IBox)
- 
+
 diff --git a/master/buildbot/status/web/templates/change_macros.html b/master/buildbot/status/web/templates/change_macros.html
 index 9b46191..dc6a9b2 100644
 --- a/master/buildbot/status/web/templates/change_macros.html
 +++ b/master/buildbot/status/web/templates/change_macros.html
 @@ -71,6 +71,6 @@
- {% endif %} 
- {%- endmacro %} 
- 
+ {% endif %}
+ {%- endmacro %}
+
 -{% macro box_contents(who, url, pageTitle) -%}
 +{% macro box_contents(who, url, pageTitle, revision) -%}
  <a href="{{ url }}" title="{{ pageTitle|e }}">{{ who|user }}</a>
@@ -755,7 +755,7 @@ db schema (see buildbot/db/model.py:181).
 @@ -53,7 +53,7 @@
        string)
      """
- 
+
 -    def addChange(self, author=None, files=None, comments=None, is_dir=0,
 +    def addChange(self, author=None, files=None, comments='', is_dir=0,
              links=None, revision=None, when_timestamp=None, branch=None,
@@ -786,7 +786,7 @@ Index: buildbot/status/web/logs.py
              return self
 -        return HtmlResource.getChild(self, path, req)
 +        return Resource.getChild(self, path, req)
- 
+
      def content(self, entries):
          html_entries = []
 
@@ -834,7 +834,7 @@ index 1c7b4ab..7474c0d 100644
      @ivar misses: cache misses leading to re-fetches, so far
 +    @ivar max_size: maximum allowed size of the cache
      """
- 
+
      __slots__ = ('max_size max_queue miss_fn '
 @@ -72,7 +73,7 @@ class AsyncLRUCache(object):
          self.weakrefs = WeakValueDictionary()
@@ -842,7 +842,7 @@ index 1c7b4ab..7474c0d 100644
          self.hits = self.misses = self.refhits = 0
 -        self.refcount = defaultdict(default_factory = lambda : 0)
 +        self.refcount = defaultdict(lambda : 0)
- 
+
      def get(self, key, **miss_fn_kwargs):
          """
 @@ -99,7 +100,7 @@ class AsyncLRUCache(object):
@@ -851,30 +851,30 @@ index 1c7b4ab..7474c0d 100644
              queue.append(key)
 -            refcount[key] = refcount.get(key, 0) + 1
 +            refcount[key] = refcount[key] + 1
- 
+
              # periodically compact the queue by eliminating duplicate keys
              # while preserving order of most recent access.  Note that this
 @@ -151,11 +152,12 @@ class AsyncLRUCache(object):
                  cache[key] = result
                  weakrefs[key] = result
- 
+
 -            self._purge()
 +                # reference the key once, possibly standing in for multiple
 +                # concurrent accesses
 +                ref_key()
- 
+
 -            # reference the key once, possibly standing in for multiple
 -            # concurrent accesses
 -            ref_key()
 +            self.inv()
 +            self._purge()
- 
+
              # and fire all of the waiting Deferreds
              dlist = concurrent.pop(key)
 @@ -182,8 +184,8 @@ class AsyncLRUCache(object):
          queue = self.queue
          max_size = self.max_size
- 
+
 -        # purge least recently used entries, using refcount
 -        # to count repeatedly-used entries
 +        # purge least recently used entries, using refcount to count entries
@@ -948,7 +948,7 @@ Index: buildbot/changes/gitpoller.py
 +import urllib
  from twisted.python import log
  from twisted.internet import defer, utils
- 
+
 @@ -36,7 +37,7 @@
                   gitbin='git', usetimestamps=True,
                   category=None, project=None,
@@ -963,13 +963,13 @@ Index: buildbot/changes/gitpoller.py
          self.commitInfo  = {}
          self.initLock = defer.DeferredLock()
 +        self.revlinktmpl = revlinktmpl
-         
+
          if self.workdir == None:
              self.workdir = tempfile.gettempdir() + '/gitpoller_work'
 @@ -273,6 +275,10 @@
                  # just fail on the first error; they're probably all related!
                  raise failures[0]
- 
+
 +            revlink = ''
 +            if self.revlinktmpl and rev:
 +              revlink = self.revlinktmpl % urllib.quote_plus(rev)
@@ -1004,7 +1004,7 @@ Add limit query argument to /console
 +                master.db.changes.getRecentChanges(limit))
          yield wfd
          chdicts = wfd.getResult()
- 
+
 
 
 Also cache builderName used in console json-like data.
@@ -1073,7 +1073,7 @@ Index: buildbot/changes/changes.py
 @@ -25,6 +25,25 @@ from buildbot.util import datetime2epoch
  from buildbot import interfaces, util
  from buildbot.process.properties import Properties
- 
+
 +html_tmpl = """
 +<p>Changed by: <b>%(who)s</b><br />
 +Changed at: <b>%(at)s</b><br />
@@ -1099,7 +1099,7 @@ Index: buildbot/changes/changes.py
 @@ -181,6 +200,47 @@ class Change:
          result['project'] = getattr(self, 'project', None)
          return result
- 
+
 +    def asHTML(self):
 +        info = self.asDict()
 +        links = []
@@ -1143,7 +1143,7 @@ Index: buildbot/changes/changes.py
 +
      def getShortAuthor(self):
          return self.who
- 
+
 
 
 
@@ -1154,9 +1154,9 @@ Index: third_party/buildbot_8_4p1/buildbot/status/web/console.py
 --- third_party/buildbot_8_4p1/buildbot/status/web/console.py	(revision 105249)
 +++ third_party/buildbot_8_4p1/buildbot/status/web/console.py	(working copy)
 @@ -25,11 +25,27 @@
- 
+
  class DoesNotPassFilter(Exception): pass # Used for filtering revs
- 
+
 -def getResultsClass(results, prevResults, inProgress):
 +def isBuildGoingToFail(build):
 +    """Returns True if one of the step in the running build has failed."""
@@ -1175,17 +1175,17 @@ Index: third_party/buildbot_8_4p1/buildbot/status/web/console.py
 +def getResultsClass(results, prevResults, inProgress, inProgressResults=None):
      """Given the current and past results, return the class that will be used
      by the css to display the right color for a box."""
- 
+
      if inProgress:
 +        if inProgressResults == builder.FAILURE:
 +            return "running_failure"
          return "running"
- 
+
      if results is None:
 @@ -139,7 +155,7 @@
  class DevBuild:
      """Helper class that contains all the information we need for a build."""
- 
+
 -    def __init__(self, revision, build, details):
 +    def __init__(self, revision, build, details, inProgressResults=None):
          self.revision = revision
@@ -1196,8 +1196,8 @@ Index: third_party/buildbot_8_4p1/buildbot/status/web/console.py
          self.when = build.getTimes()[0]
          self.source = build.getSourceStamp()
 +        self.inProgressResults = inProgressResults
- 
- 
+
+
  class ConsoleStatusResource(HtmlResource):
 @@ -331,7 +348,8 @@
              # user that his change might have broken the source update.
@@ -1207,7 +1207,7 @@ Index: third_party/buildbot_8_4p1/buildbot/status/web/console.py
 +                devBuild = DevBuild(got_rev, build, details,
 +                                    getInProgressResults(build))
                  builds.append(devBuild)
- 
+
                  # Now break if we have enough builds.
 @@ -543,9 +561,11 @@
                  # Get the results of the first build with the revision, and the
@@ -1220,19 +1220,19 @@ Index: third_party/buildbot_8_4p1/buildbot/status/web/console.py
 +                    inProgressResults = introducedIn.inProgressResults
                  if firstNotIn:
                      previousResults = firstNotIn.results
- 
+
 @@ -573,7 +593,8 @@
                  if isRunning:
                      pageTitle += ' ETA: %ds' % (introducedIn.eta or 0)
-                     
+
 -                resultsClass = getResultsClass(results, previousResults, isRunning)
 +                resultsClass = getResultsClass(results, previousResults, isRunning,
 +                                               inProgressResults)
- 
-                 b = {}                
+
+                 b = {}
                  b["url"] = url
 @@ -591,7 +612,8 @@
- 
+
                  # Add this box to the cache if it's completed so we don't have
                  # to compute it again.
 -                if resultsClass not in ("running", "notstarted"):
@@ -1242,7 +1242,7 @@ Index: third_party/buildbot_8_4p1/buildbot/status/web/console.py
                    self.cache.insert(builder, revision.revision, resultsClass,
                                      pageTitle, current_details, url, tag)
 @@ -840,4 +862,3 @@
- 
+
      def getSortingKey(self):
          return operator.attrgetter('revision')
 -
@@ -1291,14 +1291,14 @@ Index: buildbot/db/buildsets.py
 +++ buildbot/db/buildsets.py	(working copy)
 @@ -131,7 +131,9 @@
                  complete_at=_reactor.seconds())
- 
+
              if res.rowcount != 1:
 -                raise KeyError
 +                raise KeyError(('"SELECT * FROM buildsets WHERE id=%d AND '
 +                                'complete != 1;" returned %d rows') % (
 +                                    bsid, res.rowcount))
          return self.db.pool.do(thd)
- 
+
      def getBuildset(self, bsid):
 @@ -291,4 +293,3 @@
                  complete=bool(row.complete),
@@ -1327,19 +1327,19 @@ Add back support for patch_subdir.
 --- buildbot/sourcestamp.py
 +++ buildbot/sourcestamp.py
 @@ -100,8 +100,8 @@ class SourceStamp(util.ComparableMixin, styles.Versioned):
- 
+
          sourcestamp.patch = None
          if ssdict['patch_body']:
 -            # note that this class does not store the patch_subdir
 -            sourcestamp.patch = (ssdict['patch_level'], ssdict['patch_body'])
 +            sourcestamp.patch = (ssdict['patch_level'], ssdict['patch_body'],
 +                ssdict.get('patch_subdir'))
- 
+
          if ssdict['changeids']:
              # sort the changeids in order, oldest to newest
 @@ -129,7 +129,7 @@ class SourceStamp(util.ComparableMixin, styles.Versioned):
              return
- 
+
          if patch is not None:
 -            assert len(patch) == 2
 +            assert 2 <= len(patch) <= 3
@@ -1378,13 +1378,13 @@ Changes with a patch must never be merged.
              return False
 +        if self.patch or other.patch:
 +            return False # you can't merge patched builds with anything
- 
+
          if self.changes and other.changes:
              return True
 @@ -170,8 +172,6 @@ class SourceStamp(util.ComparableMixin, styles.Versioned):
          elif not self.changes and other.changes:
              return False # they're using changes, we aren't
- 
+
 -        if self.patch or other.patch:
 -            return False # you can't merge patched builds with anything
          if self.revision == other.revision:
@@ -1399,7 +1399,7 @@ the commit queue.
 +++ buildbot/status/buildrequest.py
 @@ -143,10 +143,12 @@ class BuildRequestStatus:
          result = {}
- 
+
          wfd = defer.waitForDeferred(
 -                self.getSourceStamp())
 +                self._getBuildRequest())
@@ -1409,9 +1409,9 @@ the commit queue.
 +        ss = br.source
          result['source'] = ss.asDict()
 +        result['reason'] = br.reason
- 
+
          result['builderName'] = self.getBuilderName()
- 
+
 
 Fix exception on a race condition with slave disconnecting during a build trigger.
 
@@ -1433,17 +1433,17 @@ Fix exception on a race condition with slave disconnecting during a build trigge
 +++ third_party/buildbot_8_4p1/buildbot/process/builder.py
 @@ -439,7 +439,8 @@ class Builder(pb.Referenceable, service.MultiService):
                      "request" % (build, slavebuilder))
- 
+
              self.building.remove(build)
 -            slavebuilder.slave.releaseLocks()
 +            if slavebuilder.slave:
 +                slavebuilder.slave.releaseLocks()
- 
+
              # release the buildrequest claims
              wfd = defer.waitForDeferred(
 
 
-Cherry-pick command list flattening functionality from upstream buildbot - 
+Cherry-pick command list flattening functionality from upstream buildbot -
 726e9f81c103939d22bd18d53ca65c66cfb8aed7.
 
 --- buildbot/steps/shell.py
@@ -1451,7 +1451,7 @@ Cherry-pick command list flattening functionality from upstream buildbot -
 @@ -222,6 +222,13 @@
          # now prevent setupLogfiles() from adding them
          self.logfiles = {}
- 
+
 +    def _flattenList(self, mainlist, commands):
 +        for x in commands:
 +          if isinstance(x, (str, unicode)):
@@ -1463,20 +1463,20 @@ Cherry-pick command list flattening functionality from upstream buildbot -
          # this block is specific to ShellCommands. subclasses that don't need
          # to set up an argv array, an environment, or extra logfiles= (like
 @@ -231,8 +238,13 @@
- 
+
          # create the actual RemoteShellCommand instance now
          kwargs = self.remote_kwargs
 -        command = self.command
 -        kwargs['command'] = command
 +        tmp = []
 +        if isinstance(self.command, list):
-+           self._flattenList(tmp, self.command) 
++           self._flattenList(tmp, self.command)
 +        else:
 +           tmp = self.command
 +
-+        kwargs['command'] = tmp 
++        kwargs['command'] = tmp
          kwargs['logfiles'] = self.logfiles
- 
+
          # check for the usePTY flag
 
 
@@ -1523,21 +1523,21 @@ Index: buildbot/status/builder.py
          if buildmaster.buildCacheSize is not None:
              self.buildCacheSize = buildmaster.buildCacheSize
 +            self.buildCache.set_max_size(buildmaster.buildCacheSize)
- 
+
      def upgradeToVersion1(self):
          if hasattr(self, 'slavename'):
 @@ -186,33 +186,17 @@
          except:
              log.msg("unable to save builder %s" % self.name)
              log.err()
--        
- 
+-
+
 +
      # build cache management
- 
+
      def makeBuildFilename(self, number):
          return os.path.join(self.basedir, "%d" % number)
- 
+
 -    def touchBuildCache(self, build):
 -        self.buildCache[build.number] = build
 -        if build in self.buildCache_LRU:
@@ -1551,7 +1551,7 @@ Index: buildbot/status/builder.py
 -            if b.number == number:
 -                return self.touchBuildCache(b)
 +        return self.buildCache.get(number)
- 
+
 -        # then in the buildCache
 -        if number in self.buildCache:
 -            metrics.MetricCountEvent.log("buildCache.hits", 1)
@@ -1573,7 +1573,7 @@ Index: buildbot/status/builder.py
              raise IndexError("no such build %d" % number)
          except EOFError:
              raise IndexError("corrupted build pickle %d" % number)
- 
+
 +    def cacheMiss(self, number):
 +        # first look in currentBuilds
 +        for b in self.currentBuilds:
@@ -1587,11 +1587,11 @@ Index: buildbot/status/builder.py
          self.events = self.events[-self.eventHorizon:]
 @@ -287,7 +279,7 @@
                      is_logfile = True
- 
+
              if num is None: continue
 -            if num in self.buildCache: continue
 +            if num in self.buildCache.cache: continue
- 
+
              if (is_logfile and num < earliest_log) or num < earliest_build:
                  pathname = os.path.join(self.basedir, filename)
 @@ -510,7 +502,7 @@
@@ -1600,7 +1600,7 @@ Index: buildbot/status/builder.py
          self.currentBuilds.append(s)
 -        self.touchBuildCache(s)
 +        self.buildCache.put(s.number, s)
- 
+
          # now that the BuildStatus is prepared to answer queries, we can
          # announce the new build to all our watchers
 @@ -620,7 +612,7 @@
@@ -1619,7 +1619,7 @@ Index: buildbot/util/lru.py
 @@ -244,5 +244,82 @@
              log.msg("      got:", sorted(self.refcount.items()))
              inv_failed = True
- 
+
 +
 +class SyncLRUCache(AsyncLRUCache):
 +    """
@@ -1785,7 +1785,7 @@ Index: buildbot/status/builder.py
 @@ -239,8 +239,6 @@
          if events_only:
              return
- 
+
 -        gc.collect()
 -
          # get the horizons straight
@@ -1871,7 +1871,7 @@ Index: buildbot/status/master.py
 --- buildbot/status/master.py	(revision 132430)
 +++ buildbot/status/master.py	(working copy)
 @@ -124,7 +124,7 @@
- 
+
              logs = step.getLogs()
              for i in range(len(logs)):
 -                if loog is logs[i]:
@@ -1886,14 +1886,14 @@ Index: buildbot/status/buildstep.py
 @@ -13,7 +13,7 @@
  #
  # Copyright Buildbot Team Members
- 
+
 -import os
 +import os, weakref
  from zope.interface import implements
  from twisted.persisted import styles
  from twisted.python import log
 @@ -63,7 +63,9 @@
- 
+
      def __init__(self, parent, step_number):
          assert interfaces.IBuildStatus(parent)
 -        self.build = parent
@@ -1905,7 +1905,7 @@ Index: buildbot/status/buildstep.py
          self.urls = {}
 @@ -81,7 +83,12 @@
          return self.name
- 
+
      def getBuild(self):
 -        return self.build
 +        result = self.build()
@@ -1914,7 +1914,7 @@ Index: buildbot/status/buildstep.py
 +        result = self.builder.getBuildByNumber(self.build_number)
 +        self.build = weakref.ref(result)
 +        return result
- 
+
      def getTimes(self):
          return (self.started, self.finished)
 @@ -179,7 +186,7 @@
@@ -1927,7 +1927,7 @@ Index: buildbot/status/buildstep.py
          if receiver in self.watchers:
              self.updates[receiver] = reactor.callLater(updateInterval,
 @@ -209,19 +216,21 @@
- 
+
      def stepStarted(self):
          self.started = util.now()
 -        if self.build:
@@ -1935,7 +1935,7 @@ Index: buildbot/status/buildstep.py
 +        build = self.getBuild()
 +        if build:
 +            build.stepStarted(self)
- 
+
      def addLog(self, name):
          assert self.started # addLog before stepStarted won't notify watchers
 -        logfilename = self.build.generateLogfileName(self.name, name)
@@ -1956,7 +1956,7 @@ Index: buildbot/status/buildstep.py
                  log.subscribe(receiver, True)
                  d = log.waitUntilFinished()
 @@ -232,28 +241,32 @@
- 
+
      def addHTMLLog(self, name, html):
          assert self.started # addLog before stepStarted won't notify watchers
 -        logfilename = self.build.generateLogfileName(self.name, name)
@@ -1969,16 +1969,16 @@ Index: buildbot/status/buildstep.py
 -            w.logFinished(self.build, self, log)
 +            w.logStarted(build, self, log)
 +            w.logFinished(build, self, log)
- 
+
      def logFinished(self, log):
 +        build = self.getBuild()
          for w in self.watchers:
 -            w.logFinished(self.build, self, log)
 +            w.logFinished(build, self, log)
- 
+
      def addURL(self, name, url):
          self.urls[name] = url
- 
+
      def setText(self, text):
          self.text = text
 +        build = self.getBuild()
@@ -1991,7 +1991,7 @@ Index: buildbot/status/buildstep.py
          for w in self.watchers:
 -            w.stepText2Changed(self.build, self, text)
 +            w.stepText2Changed(build, self, text)
- 
+
      def setStatistic(self, name, value):
          """Set the given statistic.  Usually called by subclasses.
 @@ -267,7 +280,7 @@
@@ -2012,12 +2012,12 @@ Index: buildbot/status/buildstep.py
              del d['progress']
          del d['watchers']
 @@ -316,11 +330,11 @@
- 
+
      def __setstate__(self, d):
          styles.Versioned.__setstate__(self, d)
 -        # self.build must be filled in by our parent
 +        # self.build and self.builder must be filled in by our parent
- 
+
          # point the logs to this object
          for loog in self.logs:
 -            loog.step = self
@@ -2042,7 +2042,7 @@ Index: buildbot/status/build.py
 @@ -13,7 +13,7 @@
  #
  # Copyright Buildbot Team Members
- 
+
 -import os, shutil, re
 +import os, shutil, re, weakref
  from cPickle import dump
@@ -2069,9 +2069,9 @@ Index: buildbot/status/buildrequest.py
 --- buildbot/status/buildrequest.py	(revision 132430)
 +++ buildbot/status/buildrequest.py	(working copy)
 @@ -70,10 +70,6 @@
- 
+
          yield self._buildrequest
- 
+
 -    def buildStarted(self, build):
 -        self.status._buildrequest_buildStarted(build.status)
 -        self.builds.append(build.status)
@@ -2086,7 +2086,7 @@ Index: buildbot/status/logfile.py
 @@ -13,7 +13,7 @@
  #
  # Copyright Buildbot Team Members
- 
+
 -import os
 +import os, weakref
  from cStringIO import StringIO
@@ -2106,16 +2106,16 @@ Index: buildbot/status/logfile.py
          fn = self.getFilename()
 @@ -236,7 +239,7 @@
          self.tailBuffer = []
- 
+
      def getFilename(self):
 -        return os.path.join(self.step.build.builder.basedir, self.filename)
 +        return os.path.join(self.builder.basedir, self.filename)
- 
+
      def hasContents(self):
          return os.path.exists(self.getFilename() + '.bz2') or \
 @@ -247,7 +250,13 @@
          return self.name
- 
+
      def getStep(self):
 -        return self.step
 +        result = self.step()
@@ -2125,7 +2125,7 @@ Index: buildbot/status/logfile.py
 +        result = build.getSteps()[self.step_number]
 +        self.step = weakref.ref(result)
 +        return result
- 
+
      def isFinished(self):
          return self.finished
 @@ -368,7 +377,7 @@
@@ -2135,19 +2135,19 @@ Index: buildbot/status/logfile.py
 -                receiver.logChunk(self.step.build, self.step, self,
 +                receiver.logChunk(self.getStep().getBuild(), self.getStep(), self,
                                    channel, text)
- 
+
      def unsubscribe(self, receiver):
 @@ -439,8 +448,10 @@
          if self.runLength >= self.chunkSize:
              self.merge()
- 
+
 +        step = self.getStep()
 +        build = step.getBuild()
          for w in self.watchers:
 -            w.logChunk(self.step.build, self.step, self, channel, text)
 +            w.logChunk(build, step, self, channel, text)
          self.length += len(text)
- 
+
      def addStdout(self, text):
 @@ -526,6 +537,7 @@
      def __getstate__(self):
@@ -2164,11 +2164,11 @@ Index: buildbot/status/logfile.py
 -        # self.step must be filled in by our parent
 +        # self.step and self.builder must be filled in by our parent
          self.finished = True
- 
+
      def upgrade(self, logfilename):
 @@ -561,7 +573,10 @@
      filename = None
- 
+
      def __init__(self, parent, name, logfilename, html):
 -        self.step = parent
 +        self.step = weakref.ref(parent)
@@ -2190,7 +2190,7 @@ Index: buildbot/status/logfile.py
 +        result = build.getSteps()[self.step_number]
 +        self.step = weakref.ref(result)
 +        return result
- 
+
      def isFinished(self):
          return True
 @@ -596,6 +617,7 @@
@@ -2199,7 +2199,7 @@ Index: buildbot/status/logfile.py
          del d['step']
 +        del d['builder']
          return d
- 
+
      def upgrade(self, logfilename):
 @@ -617,4 +639,3 @@
          else:
@@ -2218,12 +2218,12 @@ Index: buildbot/status/builder.py
 +                step.builder = self
 +                for loog in step.getLogs():
 +                    loog.builder = self
- 
+
              # (bug #1068) if we need to upgrade, we probably need to rewrite
              # this pickle, too.  We determine this by looking at the list of
 
 
-Add nextSlaveAndBuilder to builder config 
+Add nextSlaveAndBuilder to builder config
 
 https://chromiumcodereview.appspot.com/10032026/
 
@@ -2285,9 +2285,9 @@ Index: buildbot/process/builder.py
              diffs.append('buildHorizon changed from %s to %s' % (self.buildHorizon, setup['buildHorizon']))
          if setup.get('logHorizon', None) != self.logHorizon:
 @@ -605,6 +615,26 @@
- 
+
      # Build Creation
- 
+
 +    def _checkSlaveBuilder(self, slavebuilder, available_slavebuilders):
 +        if slavebuilder not in available_slavebuilders:
 +            next_func = 'nextSlave'
@@ -2312,7 +2312,7 @@ Index: buildbot/process/builder.py
      def maybeStartBuild(self):
          # This method is called by the botmaster whenever this builder should
 @@ -645,34 +675,53 @@
- 
+
          # match them up until we're out of options
          while available_slavebuilders and unclaimed_requests:
 -            # first, choose a slave (using nextSlave)
@@ -2328,7 +2328,7 @@ Index: buildbot/process/builder.py
 +                                             for brdict in unclaimed_requests]))
 +                yield wfd
 +                breqs = wfd.getResult()
- 
+
 -            if not slavebuilder:
 -                break
 +                wfd = defer.waitForDeferred(defer.maybeDeferred(
@@ -2337,7 +2337,7 @@ Index: buildbot/process/builder.py
 +                        breqs))
 +                yield wfd
 +                slavebuilder, br = wfd.getResult()
- 
+
 -            if slavebuilder not in available_slavebuilders:
 -                log.msg(("nextSlave chose a nonexistent slave for builder "
 -                         "'%s'; cannot start build") % self.name)
@@ -2348,7 +2348,7 @@ Index: buildbot/process/builder.py
 +                       if brdict_i['brid'] == br.id:
 +                           brdict = brdict_i
 +                           break
- 
+
 -            # then choose a request (using nextBuild)
 -            wfd = defer.waitForDeferred(
 -                self._chooseBuild(unclaimed_requests))
@@ -2364,13 +2364,13 @@ Index: buildbot/process/builder.py
 +                    self._chooseSlave(available_slavebuilders))
 +                yield wfd
 +                slavebuilder = wfd.getResult()
- 
+
 -            if not brdict:
 -                break
 +                if not self._checkSlaveBuilder(slavebuilder,
 +                                               available_slavebuilders):
 +                    break
- 
+
 -            if brdict not in unclaimed_requests:
 -                log.msg(("nextBuild chose a nonexistent request for builder "
 -                         "'%s'; cannot start build") % self.name)
@@ -2380,7 +2380,7 @@ Index: buildbot/process/builder.py
 +                    self._chooseBuild(unclaimed_requests))
 +                yield wfd
 +                brdict = wfd.getResult()
- 
+
 +                if not self._checkBrDict(brdict, unclaimed_requests):
 +                    break
 +
@@ -2405,7 +2405,7 @@ Index: buildbot/status/web/status_json.py
 -                pageTitle = self.pageTitle + ' help'
 -            self.putChild('help',
 -                          HelpResource(self.help, pageTitle=pageTitle, parent_node=self))
- 
+
      def getChildWithDefault(self, path, request):
          """Adds transparent support for url ending with /"""
          if path == "" and len(request.postpath) == 0:
@@ -2425,7 +2425,7 @@ Index: buildbot/status/web/status_json.py
 -        self.parent_node = parent_node
 +        self.parent_level = parent_node.level
 +        self.parent_children = parent_node.children.keys()
- 
+
      def content(self, request, cxt):
 -        cxt['level'] = self.parent_node.level
 +        cxt['level'] = self.parent_level
@@ -2464,7 +2464,7 @@ Index: buildbot/status/web/status_json.py
 +                # mechanism in place for BuildStatus objects (in BuilderStatus).
 +                return BuildJsonResource(self.status, build_status)
          return JsonResource.getChild(self, path, request)
- 
+
      def asDict(self, request):
          results = {}
 -        # If max > buildCacheSize, it'll trash the cache...
@@ -2584,7 +2584,7 @@ index e70b72d..5bf2725 100644
              d.addErrback(self._stop_on_failure)
              return d
 @@ -169,7 +169,7 @@ class GitPoller(base.PollingChangeSource):
- 
+
      def _get_commit_comments(self, rev):
          args = ['log', rev, '--no-walk', r'--format=%s%n%b']
 -        d = utils.getProcessOutput(self.gitbin, args, path=self.workdir, env=dict(PATH=os.environ['PATH']), errortoo=False )
@@ -2602,7 +2602,7 @@ index e70b72d..5bf2725 100644
              stripped_output = git_output.strip()
              if self.usetimestamps:
 @@ -198,7 +198,7 @@ class GitPoller(base.PollingChangeSource):
- 
+
      def _get_commit_files(self, rev):
          args = ['log', rev, '--name-only', '--no-walk', r'--format=%n']
 -        d = utils.getProcessOutput(self.gitbin, args, path=self.workdir, env=dict(PATH=os.environ['PATH']), errortoo=False )
@@ -2611,7 +2611,7 @@ index e70b72d..5bf2725 100644
              fileList = git_output.split()
              return fileList
 @@ -207,7 +207,7 @@ class GitPoller(base.PollingChangeSource):
-             
+
      def _get_commit_name(self, rev):
          args = ['log', rev, '--no-walk', r'--format=%aE']
 -        d = utils.getProcessOutput(self.gitbin, args, path=self.workdir, env=dict(PATH=os.environ['PATH']), errortoo=False )
@@ -2625,9 +2625,9 @@ index e70b72d..5bf2725 100644
                      path=self.workdir,
 -                    env=dict(PATH=os.environ['PATH']), errortoo=True )
 +                    env=os.environ, errortoo=True )
- 
+
          return d
- 
+
 @@ -241,7 +241,7 @@ class GitPoller(base.PollingChangeSource):
          revListArgs = ['log', '%s..origin/%s' % (self.branch, self.branch), r'--format=%H']
          self.changeCount = 0
@@ -2645,7 +2645,7 @@ index e70b72d..5bf2725 100644
 +        d = utils.getProcessOutputAndValue(self.gitbin, args, path=self.workdir, env=os.environ)
          d.addCallback(self._convert_nonzero_to_failure)
          return d
- 
+
 diff --git a/third_party/buildbot_8_4p1/buildbot/test/unit/test_changes_gitpoller.py b/third_party/buildbot_8_4p1/buildbot/test/unit/test_changes_gitpoller.py
 index 9a47d41..c5e1960 100644
 --- a/third_party/buildbot_8_4p1/buildbot/test/unit/test_changes_gitpoller.py
@@ -2653,7 +2653,7 @@ index 9a47d41..c5e1960 100644
 @@ -13,6 +13,7 @@
  #
  # Copyright Buildbot Team Members
- 
+
 +import os
  from twisted.trial import unittest
  from twisted.internet import defer
@@ -2661,7 +2661,7 @@ index 9a47d41..c5e1960 100644
 @@ -20,6 +21,9 @@ from buildbot.changes import gitpoller
  from buildbot.test.util import changesource, gpo
  from buildbot.util import epoch2datetime
- 
+
 +# Test that environment variables get propagated to subprocesses (See #2116)
 +os.environ['TEST_THAT_ENVIRONMENT_GETS_PASSED_TO_SUBPROCESSES'] = 'TRUE'
 +
@@ -2670,7 +2670,7 @@ index 9a47d41..c5e1960 100644
      def setUp(self):
 @@ -120,6 +124,11 @@ class TestGitPoller(gpo.GetProcessOutputMixin,
          self.assertSubstring("GitPoller", self.poller.describe())
- 
+
      def test_poll(self):
 +        # Test that environment variables get propagated to subprocesses (See #2116)
 +        os.putenv('TEST_THAT_ENVIRONMENT_GETS_PASSED_TO_SUBPROCESSES', 'TRUE')
@@ -2690,11 +2690,11 @@ index a23bdb2..c9daf0c 100644
          self._gpoav_patterns = []
 +        self._gpo_expect_env = {}
 +        self._gpoav_expect_env = {}
- 
+
      def tearDownGetProcessOutput(self):
          pass
 @@ -54,11 +56,23 @@ class GetProcessOutputMixin:
- 
+
      # these can be overridden if necessary
      def patched_getProcessOutput(self, bin, args, env=None, **kwargs):
 +        for var, value in self._gpo_expect_env.items():
@@ -2702,14 +2702,14 @@ index a23bdb2..c9daf0c 100644
 +                self._flag_error('Expected environment to have %s = %r' % (var, value))
 +
          return self._patched(self._gpo_patterns, bin, args, env=env, **kwargs)
- 
+
      def patched_getProcessOutputAndValue(self, bin, args, env=None, **kwargs):
 +        for var, value in self._gpoav_expect_env.items():
 +            if env.get(var) != value:
 +                self._flag_error('Expected environment to have %s = %r' % (var, value))
 +
          return self._patched(self._gpoav_patterns, bin, args, env=env, **kwargs)
- 
+
 +    def _flag_error(self, msg):
 +        # print msg
 +        assert False, msg
@@ -2720,7 +2720,7 @@ index a23bdb2..c9daf0c 100644
 @@ -67,6 +81,12 @@ class GetProcessOutputMixin:
                              self.patched_getProcessOutputAndValue)
              self._gpo_patched = True
- 
+
 +    def addGetProcessOutputExpectEnv(self, d):
 +        self._gpo_expect_env.update(d)
 +
@@ -2756,13 +2756,13 @@ Author: Peter Mayo <petermayo@chromium.org>
 Date:   Fri Nov 23 12:37:00 2012 -0500
 
     Optionally add project to changes in waterfall display.
-    
+
     In some waterfalls it is useful to separate different change
     sources visually.  This allows an attribute to reflect that to
     be passed though from config to template.
-    
+
     Related reviews: https://codereview.chromium.org/11425002
-    
+
 diff --git a/master/buildbot/status/web/changes.py b/master/buildbot/status/web/changes.py
 index 0971bea..e579669 100644
 --- a/master/buildbot/status/web/changes.py
@@ -2776,20 +2776,20 @@ index 0971bea..e579669 100644
 +                                            project=self.original.project)
          return Box([text], class_="Change")
  components.registerAdapter(ChangeBox, Change, IBox)
- 
+
 diff --git a/master/buildbot/status/web/templates/change_macros.html b/master/buildbot/status/web/templates/change_macros.html
 index dc6a9b2..2ca01d9 100644
 --- a/master/buildbot/status/web/templates/change_macros.html
 +++ b/master/buildbot/status/web/templates/change_macros.html
 @@ -71,6 +71,6 @@
- {% endif %} 
- {%- endmacro %} 
- 
+ {% endif %}
+ {%- endmacro %}
+
 -{% macro box_contents(who, url, pageTitle, revision) -%}
 +{% macro box_contents(who, url, pageTitle, revision, project) -%}
  <a href="{{ url }}" title="{{ pageTitle|e }}">{{ who|user }}</a>
  {%- endmacro %}
-    
+
 
 
 Disable an assert that is causing internal inconsistent state because of
@@ -2808,8 +2808,8 @@ out-of-order build processing.
          self.currentBuilds.append(s)
          self.buildCache.put(s.number, s)
 
-Change buildbot to use the epoll reactor instead of the default select() 
-reaction.  Breaks compatability with non linux26 systems. 
+Change buildbot to use the epoll reactor instead of the default select()
+reaction.  Breaks compatability with non linux26 systems.
 diff --git a/third_party/buildbot_8_4p1/buildbot/master.py b/third_party/buildbot_8_4p1/buildbot/master.py
 index 28e46de..7ec0032 100644
 --- a/third_party/buildbot_8_4p1/buildbot/master.py
@@ -2817,7 +2817,7 @@ index 28e46de..7ec0032 100644
 @@ -19,6 +19,16 @@ import signal
  import time
  import textwrap
- 
+
 +try:
 +  import pyximport
 +  pyximport.install()
@@ -2826,7 +2826,7 @@ index 28e46de..7ec0032 100644
 +except ImportError:
 +  print 'Unable to load the epoll module, falling back to select.'
 +  print 'This may be caused by the lack of cython, python-dev, or'
-+  print 'you may be on a platform other than linux 2.6' 
++  print 'you may be on a platform other than linux 2.6'
 +
  from zope.interface import implements
  from twisted.python import log, components
@@ -2904,16 +2904,16 @@ index df80ca6..5304401 100644
  import time
  import textwrap
 +import twisted.internet.error
- 
+
  try:
    import pyximport
 @@ -28,6 +29,8 @@ except ImportError:
    print 'Unable to load the epoll module, falling back to select.'
    print 'This may be caused by the lack of cython, python-dev, or'
-   print 'you may be on a platform other than linux 2.6' 
+   print 'you may be on a platform other than linux 2.6'
 +except twisted.internet.error.ReactorAlreadyInstalledError:
 +  pass
- 
+
  from zope.interface import implements
  from twisted.python import log, components
 
@@ -3192,7 +3192,7 @@ Otherwise the default is 'Triggerable(%(name))' which is not very useful.
 @@ -28,7 +28,7 @@ class Triggerable(base.BaseScheduler):
          self._bsc_subscription = None
          self.reason = "Triggerable(%s)" % name
- 
+
 -    def trigger(self, ssid, set_props=None):
 +    def trigger(self, ssid, set_props=None, reason=None):
          """Trigger this scheduler with the given sourcestamp ID. Returns a
@@ -3220,7 +3220,7 @@ Otherwise the default is 'Triggerable(%(name))' which is not very useful.
 -                dl.append(sch.trigger(ssid, set_props=props_to_set))
 +                dl.append(sch.trigger(ssid, set_props=props_to_set, reason=self.build.reason))
              self.step_status.setText(['triggered'] + triggered_schedulers)
- 
+
              d = defer.DeferredList(dl, consumeErrors=1)
 
 Hard-disables shutdown hooks for https://code.google.com/p/chromium/issues/detail?id=309046
@@ -3229,7 +3229,7 @@ Hard-disables shutdown hooks for https://code.google.com/p/chromium/issues/detai
 +++ b/third_party/buildbot_8_4p1/buildbot/status/web/root.py
 @@ -25,17 +25,9 @@
          status = self.getStatus(request)
- 
+
          if request.path == '/shutdown':
 -            if self.getAuthz(request).actionAllowed("cleanShutdown", request):
 -                eventually(status.cleanShutdown)
@@ -3244,7 +3244,7 @@ Hard-disables shutdown hooks for https://code.google.com/p/chromium/issues/detai
 -            else:
 -                return redirectTo(path_to_authfail(request), request)
 +            return redirectTo(path_to_authfail(request), request)
- 
+
          cxt.update(
                  shutting_down = status.shuttingDown,
 
@@ -3263,7 +3263,7 @@ Provide support for messageFormatter to create custom subject lines.
              msgdict['type'] = tmp['type']
 +            if 'subject' in tmp:
 +              msgdict['subject'] = tmp['subject']
-             
+
          m = self.createEmail(msgdict, name, self.master_status.getTitle(),
                               results, builds, patches, logs)
 
@@ -3290,14 +3290,14 @@ Author: Pierre Tardy <pierre.tardy@intel.com>
 Date:   Mon Jul 15 18:48:35 2013 +0200
 
     logs: implement on the fly parsing of ansi code
-    
+
     grunt and js tools have the habit of using ansi
     code a lot, which are ugly inside python log window.
     http://en.wikipedia.org/wiki/ANSI_escape_code
-    
+
     This is a simple enough implementation of ansicode parser
     which integrates well into buildbot's way of displaying logs
-    
+
     Signed-off-by: Pierre Tardy <pierre.tardy@intel.com>
 
 diff --git a/master/buildbot/status/web/files/default.css b/master/buildbot/status/web/files/default.css
@@ -3332,7 +3332,7 @@ index d109be1..2d24c2b 100644
 +span.ansi37 {
 +	color: white;
 +}
- 
+
  /* revision & email */
  .revision .full {
 diff --git a/master/buildbot/status/web/logs.py b/master/buildbot/status/web/logs.py
@@ -3342,26 +3342,26 @@ index d7da811..b883dc2 100644
 @@ -24,6 +24,9 @@ from buildbot import interfaces
  from buildbot.status import logfile
  from buildbot.status.web.base import IHTMLLog, HtmlResource, path_to_root
- 
+
 +import re
 +
 +
  class ChunkConsumer:
      implements(interfaces.IStatusLogConsumer)
- 
+
 @@ -46,6 +49,7 @@ class ChunkConsumer:
      def finish(self):
          self.textlog.finished()
- 
+
 +ANSI_RE = re.compile(r"^(\d*)(;(\d+))?([a-zA-Z])")
- 
+
  # /builders/$builder/builds/$buildnum/steps/$stepname/logs/$logname
  class TextLog(Resource):
 @@ -80,9 +84,26 @@ class TextLog(Resource):
                  # jinja only works with unicode, or pure ascii, so assume utf-8 in logs
                  if not isinstance(entry, unicode):
                      entry = unicode(entry, 'utf-8', 'replace')
--                html_entries.append(dict(type = logfile.ChunkTypes[type], 
+-                html_entries.append(dict(type = logfile.ChunkTypes[type],
 -                                         text = entry,
 -                                         is_header = is_header))
 +                first_entry = True
@@ -3393,12 +3393,12 @@ Author: Pierre Tardy <pierre.tardy@intel.com>
 Date:   Thu Aug 22 11:48:31 2013 +0200
 
     ansi codes: add support for multiple sgr classes
-    
+
     Add some unit tests and factorize for potencial reuse
-    
+
     nine plan is to reuse the regex and overall idea, but probably
     rewrite this client side.
-    
+
     Signed-off-by: Pierre Tardy <pierre.tardy@intel.com>
 
 diff --git a/master/buildbot/status/web/logs.py b/master/buildbot/status/web/logs.py
@@ -3413,13 +3413,13 @@ index b883dc2..37eaf29 100644
 -import re
 -
 +from buildbot.util.ansicodes import parse_ansi_sgr
- 
+
  class ChunkConsumer:
      implements(interfaces.IStatusLogConsumer)
 @@ -49,8 +47,6 @@ class ChunkConsumer:
      def finish(self):
          self.textlog.finished()
- 
+
 -ANSI_RE = re.compile(r"^(\d*)(;(\d+))?([a-zA-Z])")
 -
  # /builders/$builder/builds/$buildnum/steps/$stepname/logs/$logname
@@ -3429,10 +3429,10 @@ index b883dc2..37eaf29 100644
              if type >= len(logfile.ChunkTypes) or type < 0:
                  # non-std channel, don't display
                  continue
--            
+-
 +
              is_header = type == logfile.HEADER
- 
+
              if not self.asText:
 @@ -89,16 +85,9 @@ class TextLog(Resource):
                  for ansi_entry in entry.split("\033["):
@@ -3653,13 +3653,13 @@ index ebcf95f..01054ae 100644
 --- a/master/buildbot/util/ansicodes.py
 +++ b/master/buildbot/util/ansicodes.py
 @@ -15,7 +15,7 @@
- 
+
  import re
- 
+
 -ANSI_RE = re.compile(r"^((\d+)(;\d+)*)([a-zA-Z])")
 +ANSI_RE = re.compile(r"^((\d+)(;\d+)*)?([a-zA-Z])")
- 
- 
+
+
  def parse_ansi_sgr(ansi_entry):
 @@ -29,7 +29,11 @@ def parse_ansi_sgr(ansi_entry):
          mode = res.group(4)
@@ -3754,7 +3754,7 @@ index 0b6d388..d5c18ba 100644
 +++ b/third_party/buildbot_8_4p1/buildbot/changes/gitpoller.py
 @@ -282,21 +282,31 @@ class GitPoller(base.PollingChangeSource):
                revlink = self.revlinktmpl % urllib.quote_plus(rev)
- 
+
              timestamp, name, files, comments = [ r[1] for r in results ]
 -            d = self.master.addChange(
 +            d = self.add_change(
@@ -3771,7 +3771,7 @@ index 0b6d388..d5c18ba 100644
              wfd = defer.waitForDeferred(d)
              yield wfd
              results = wfd.getResult()
- 
+
 +    def add_change(self, author, revision, files, comments, when_timestamp,
 +                   revlink):
 +        return self.master.addChange(
@@ -3798,21 +3798,186 @@ index c634060..711d36a 100644
 --- a/third_party/buildbot_8_4p1/buildbot/status/web/build.py
 +++ b/third_party/buildbot_8_4p1/buildbot/status/web/build.py
 @@ -115,7 +115,8 @@ class StatusResourceBuild(HtmlResource):
- 
+
              cxt['steps'].append(step)
- 
+
 -            step['link'] = req.childLink("steps/%s" % urllib.quote(s.getName()))
 +            step['link'] = req.childLink("steps/%s" % urllib.quote(s.getName(),
 +                                                                   safe=''))
              step['text'] = " ".join(s.getText())
              step['urls'] = map(lambda x:dict(url=x[1],logname=x[0]), s.getURLs().items())
- 
+
 @@ -123,7 +124,7 @@ class StatusResourceBuild(HtmlResource):
              for l in s.getLogs():
                  logname = l.getName()
                  step['logs'].append({ 'link': req.childLink("steps/%s/logs/%s" %
 -                                           (urllib.quote(s.getName()),
 +                                           (urllib.quote(s.getName(), safe=''),
-                                             urllib.quote(logname))), 
+                                             urllib.quote(logname))),
                                        'name': logname })
- 
+
+
+Backport BuildsetsConnectComponent.getRecentBuildsets from upstream
+(1ee6d421be2ea814c11757263eb43152f8c3928e).
+
+Index: third_party/buildbot_8_4p1/buildbot/db/buildsets.py
+diff --git a/third_party/buildbot_8_4p1/buildbot/db/buildsets.py b/third_party/buildbot_8_4p1/buildbot/db/buildsets.py
+index e70a51242ca09ba7ec7034e2092f4053c3d0332c..c90af5bec8eb57e5075858623fcc5d59a62eadd7 100644
+--- a/third_party/buildbot_8_4p1/buildbot/db/buildsets.py
++++ b/third_party/buildbot_8_4p1/buildbot/db/buildsets.py
+@@ -190,6 +190,35 @@ class BuildsetsConnectorComponent(base.DBConnectorComponent):
+             return [ self._row2dict(row) for row in res.fetchall() ]
+         return self.db.pool.do(thd)
+
++    def getRecentBuildsets(self, count, branch=None, repository=None,
++                           complete=None):
++        def thd(conn):
++            bs_tbl = self.db.model.buildsets
++            ch_tbl = self.db.model.changes
++            j = sa.join(self.db.model.buildsets,
++                        self.db.model.sourcestamps)
++            j = j.join(self.db.model.sourcestamp_changes)
++            j = j.join(ch_tbl)
++            q = sa.select(columns=[bs_tbl], from_obj=[j],
++                          distinct=True)
++            q = q.order_by(sa.desc(bs_tbl.c.id))
++            q = q.limit(count)
++
++            if complete is not None:
++                if complete:
++                    q = q.where(bs_tbl.c.complete != 0)
++                else:
++                    q = q.where((bs_tbl.c.complete == 0) |
++                                (bs_tbl.c.complete == None))
++            if branch:
++              q = q.where(ch_tbl.c.branch == branch)
++            if repository:
++              q = q.where(ch_tbl.c.repository == repository)
++            res = conn.execute(q)
++            return list(reversed([self._row2dict(row)
++                                  for row in res.fetchall()]))
++        return self.db.pool.do(thd)
++
+     def getBuildsetProperties(self, buildsetid):
+         """
+         Return the properties for a buildset, in the same format they were
+Index: third_party/buildbot_8_4p1/buildbot/test/unit/test_db_buildsets.py
+diff --git a/third_party/buildbot_8_4p1/buildbot/test/unit/test_db_buildsets.py b/third_party/buildbot_8_4p1/buildbot/test/unit/test_db_buildsets.py
+index a6d4253cae43572992eac8d73b24cead97f63d9e..d28bcc61a72fd875af51c533b4ae189172225041 100644
+--- a/third_party/buildbot_8_4p1/buildbot/test/unit/test_db_buildsets.py
++++ b/third_party/buildbot_8_4p1/buildbot/test/unit/test_db_buildsets.py
+@@ -441,3 +441,91 @@ class TestBuildsetsConnectorComponent(
+         d.addCallbacks(cb, eb)
+         return d
+
++    def insert_test_getRecentBuildsets_data(self):
++        return self.insertTestData([
++            fakedb.Change(changeid=91, branch='branch_a', repository='repo_a'),
++            fakedb.SourceStamp(id=91, branch='branch_a', repository='repo_a'),
++            fakedb.SourceStampChange(sourcestampid=91, changeid=91),
++
++            fakedb.Buildset(id=91, sourcestampid=91, complete=0,
++                    complete_at=298297875, results=-1, submitted_at=266761875,
++                    external_idstring='extid', reason='rsn1'),
++            fakedb.Buildset(id=92, sourcestampid=91, complete=1,
++                    complete_at=298297876, results=7, submitted_at=266761876,
++                    external_idstring='extid', reason='rsn2'),
++
++            # buildset unrelated to the change
++            fakedb.Buildset(id=93, sourcestampid=1, complete=1,
++                    complete_at=298297877, results=7, submitted_at=266761877,
++                    external_idstring='extid', reason='rsn2'),
++        ])
++
++    def test_getRecentBuildsets_all(self):
++        d = self.insert_test_getRecentBuildsets_data()
++        d.addCallback(lambda _ :
++                self.db.buildsets.getRecentBuildsets(2, branch='branch_a',
++                                                     repository='repo_a'))
++        def check(bsdictlist):
++            self.assertEqual(bsdictlist, [
++              dict(external_idstring='extid', reason='rsn1', sourcestampid=91,
++                submitted_at=datetime.datetime(1978, 6, 15, 12, 31, 15,
++                                               tzinfo=UTC),
++                complete_at=datetime.datetime(1979, 6, 15, 12, 31, 15,
++                                               tzinfo=UTC),
++                complete=False, results=-1, bsid=91),
++              dict(external_idstring='extid', reason='rsn2', sourcestampid=91,
++                submitted_at=datetime.datetime(1978, 6, 15, 12, 31, 16,
++                                               tzinfo=UTC),
++                complete_at=datetime.datetime(1979, 6, 15, 12, 31, 16,
++                                               tzinfo=UTC),
++                complete=True, results=7, bsid=92),
++            ])
++        d.addCallback(check)
++        return d
++
++    def test_getRecentBuildsets_one(self):
++        d = self.insert_test_getRecentBuildsets_data()
++        d.addCallback(lambda _ :
++                self.db.buildsets.getRecentBuildsets(1, branch='branch_a',
++                                                     repository='repo_a'))
++        def check(bsdictlist):
++            self.assertEqual(bsdictlist, [
++              dict(external_idstring='extid', reason='rsn2', sourcestampid=91,
++                submitted_at=datetime.datetime(1978, 6, 15, 12, 31, 16,
++                                               tzinfo=UTC),
++                complete_at=datetime.datetime(1979, 6, 15, 12, 31, 16,
++                                               tzinfo=UTC),
++                complete=True, results=7, bsid=92),
++            ])
++        d.addCallback(check)
++        return d
++
++    def test_getRecentBuildsets_zero(self):
++        d = self.insert_test_getRecentBuildsets_data()
++        d.addCallback(lambda _ :
++                self.db.buildsets.getRecentBuildsets(0, branch='branch_a',
++                                                     repository='repo_a'))
++        def check(bsdictlist):
++            self.assertEqual(bsdictlist, [])
++        d.addCallback(check)
++        return d
++
++    def test_getRecentBuildsets_noBranchMatch(self):
++        d = self.insert_test_getRecentBuildsets_data()
++        d.addCallback(lambda _ :
++                self.db.buildsets.getRecentBuildsets(2, branch='bad_branch',
++                                                     repository='repo_a'))
++        def check(bsdictlist):
++            self.assertEqual(bsdictlist, [])
++        d.addCallback(check)
++        return d
++
++    def test_getRecentBuildsets_noRepoMatch(self):
++          d = self.insert_test_getRecentBuildsets_data()
++          d.addCallback(lambda _ :
++                  self.db.buildsets.getRecentBuildsets(2, branch='branch_a',
++                                                       repository='bad_repo'))
++          def check(bsdictlist):
++              self.assertEqual(bsdictlist, [])
++          d.addCallback(check)
++          return d
+
+Date:   Mon Jun 9 15:17:46 2014 -0700
+
+Buildbot fix in triggerable.py
+
+The _waiters field is a dictionary, but it is treated as a list.
+
+R=agable@chromium.org
+BUG=382693
+
+diff --git a/third_party/buildbot_8_4p1/buildbot/schedulers/triggerable.py b/third_party/buildbot_8_4p1/buildbot/schedulers/triggerable.py
+index 0619977..19d6c4d 100644
+--- a/third_party/buildbot_8_4p1/buildbot/schedulers/triggerable.py
++++ b/third_party/buildbot_8_4p1/buildbot/schedulers/triggerable.py
+@@ -62,7 +62,7 @@ class Triggerable(base.BaseScheduler):
+         # and errback any outstanding deferreds
+         if self._waiters:
+             msg = 'Triggerable scheduler stopped before build was complete'
+-            for d in self._waiters:
++            for d in self._waiters.itervalues():
+                 d.errback(failure.Failure(RuntimeError(msg)))
+             self._waiters = {}
+

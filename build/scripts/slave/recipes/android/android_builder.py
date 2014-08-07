@@ -3,162 +3,89 @@
 # found in the LICENSE file.
 
 DEPS = [
-  'chromium',
   'chromium_android',
+  'bot_update',
+  'gclient',
   'properties',
-  'json',
-  'path',
-  'python',
+  'tryserver',
 ]
 
 BUILDERS = {
-  'Android ARM64 Builder (dbg)': {
-    'recipe_config': 'arm64_builder',
-    'kwargs': {
-      'BUILD_CONFIG': 'Debug',
-      'REPO_NAME': 'src',
-      'INTERNAL': False,
-      'REPO_URL': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src',
+  'chromium.fyi': {
+    'Android ARM64 Builder (dbg)': {
+      'recipe_config': 'arm64_builder',
     },
-    'custom': {
-      'deps_file': 'DEPS'
+    'Android x64 Builder (dbg)': {
+      'recipe_config': 'x64_builder',
+    },
+    'Android MIPS Builder (dbg)': {
+      'recipe_config': 'mipsel_builder',
     }
   },
-  'Android x64 Builder (dbg)': {
-    'recipe_config': 'x64_builder',
-    'kwargs': {
-      'BUILD_CONFIG': 'Debug',
-      'REPO_NAME': 'src',
-      'INTERNAL': False,
-      'REPO_URL': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'
-    },
-    'custom': {
-      'deps_file': 'DEPS'
+  'tryserver.chromium': {
+    'android_dbg_recipe': {
+      'recipe_config': 'android_shared',
+      'try': True,
+      'upload': {
+        'bucket': 'chromium-android',
+        'path': lambda api: ('android_try_dbg_recipe/full-build-linux_%s.zip'
+                             % api.properties['buildnumber']),
+      },
     }
   },
-  'Android MIPS Builder (dbg)': {
-    'recipe_config': 'mipsel_builder',
-    'kwargs': {
-      'BUILD_CONFIG': 'Debug',
-      'REPO_NAME': 'src',
-      'INTERNAL': False,
-      'REPO_URL': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'
-    },
-    'custom': {
-      'deps_file': 'DEPS'
-    }
-  }
 }
 
 def GenSteps(api):
-  buildername = api.properties.get('buildername')
-  bot_config = BUILDERS.get(buildername)
+  mastername = api.properties['mastername']
+  buildername = api.properties['buildername']
+  bot_config = BUILDERS[mastername][buildername]
   droid = api.chromium_android
 
-  bot_id = ''
-  internal = False
-  if bot_config:
-    default_kwargs = {
-      'REPO_URL': 'https://chromium.googlesource.com/chromium/src.git',
-      'INTERNAL': False,
-      'REPO_NAME': 'src',
-      'BUILD_CONFIG': 'Debug'
-    }
-    kwargs = bot_config.get('kwargs', {})
-    droid.configure_from_properties(bot_config['recipe_config'],
-      **dict(default_kwargs.items() + kwargs.items()))
-    droid.c.set_val(bot_config.get('custom', {}))
-  else:
-    # Bots that don't belong to BUILDERS. We want to move away from this.
-    internal = api.properties.get('internal')
-    bot_id = api.properties['android_bot_id']
-    droid.configure_from_properties(bot_id)
+  default_kwargs = {
+    'REPO_URL': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src',
+    'INTERNAL': False,
+    'REPO_NAME': 'src',
+    'BUILD_CONFIG': 'Debug'
+  }
+  droid.configure_from_properties(bot_config['recipe_config'], **default_kwargs)
+  droid.c.set_val({'deps_file': 'DEPS'})
 
-  yield droid.init_and_sync()
+  api.gclient.set_config('chromium')
+  api.gclient.apply_config('android')
+  api.gclient.apply_config('chrome_internal')
+
+  yield api.bot_update.ensure_checkout()
   yield droid.clean_local_files()
-  if internal and droid.c.run_tree_truth:
-    yield droid.run_tree_truth()
+  yield droid.runhooks()
 
-  # TODO(iannucci): Remove when dartium syncs chromium to >= crrev.com/252649
-  extra_env = {}
-  if bot_id == 'dartium_builder':
-    extra_env = {'GYP_CROSSCOMPILE': "1"}
-  yield droid.runhooks(extra_env)
+  if bot_config.get('try', False):
+    yield api.tryserver.maybe_apply_issue()
 
-  if bot_id in ['try_builder', 'x86_try_builder']:
-    yield droid.apply_svn_patch()
   yield droid.compile()
+  yield droid.check_webview_licenses()
+  yield droid.findbugs()
 
-  if bot_id in ['clang_builder', 'try_builder', 'x86_try_builder']:
-    yield droid.findbugs()
-    yield droid.lint()
-  if bot_id == 'clang_builder':
-    yield droid.checkdeps()
-
-  if bot_id == 'clang_release_builder':
-    yield droid.upload_clusterfuzz()
-  elif internal and droid.c.get_app_manifest_vars:
-    yield droid.upload_build_for_tester()
-
+  upload_config = bot_config.get('upload')
+  if upload_config:
+    yield droid.upload_build(upload_config['bucket'],
+                             upload_config['path'](api))
   yield droid.cleanup_build()
 
-  if api.properties.get('android_bot_id') == "dartium_builder":
-    yield api.python('dartium_test',
-                     api.path['slave_build'].join('src', 'dart', 'tools',
-                                                  'bots', 'dartium_android.py'),
-        args = ['--build-products-dir',
-                api.chromium.c.build_dir.join(api.chromium.c.build_config_fs)]
-    )
 
 def _sanitize_nonalpha(text):
   return ''.join(c if c.isalnum() else '_' for c in text)
 
 def GenTests(api):
-  # non BUILDER bots
-  bot_ids = ['main_builder', 'component_builder', 'clang_builder',
-             'clang_release_builder', 'x86_builder', 'arm_builder',
-             'try_builder', 'x86_try_builder', 'dartium_builder',
-             'mipsel_builder', 'arm_builder_rel']
-
-  def old_properties(bot_id):
-    return api.properties(
-      repo_name='src/repo',
-      repo_url='svn://svn.chromium.org/chrome/trunk/src',
-      revision='4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00',
-      android_bot_id=bot_id,
-      buildername=bot_id, # TODO(luqui): fix buildername to match master
-      buildnumber=1337,
-      internal=True,
-      deps_file='DEPS',
-      managed=True,
-    )
-
-  for bot_id in bot_ids:
-    props = old_properties(bot_id)
-    if 'try_builder' in bot_id:
-      props += api.properties(revision='refs/remotes/origin/master')
-      props += api.properties(patch_url='try_job_svn_patch')
-
-    # dartium_builder does not use any step_data
-    if bot_id == 'dartium_builder':
-      add_step_data = lambda p: p
-    else:
-      add_step_data = lambda p: p + api.chromium_android.default_step_data(api)
-
-    yield add_step_data(api.test(bot_id) + props)
-
-  yield (api.test('clang_builder_findbugs_failure') +
-         old_properties('clang_builder') +
-         api.step_data('findbugs internal', retcode=1) +
-         api.chromium_android.default_step_data(api))
-
   # tests bots in BUILDERS
-  for buildername in BUILDERS:
-    test = (
-      api.test('full_%s' % _sanitize_nonalpha(buildername)) +
-      api.properties.generic(buildername=buildername,
-          repository='svn://svn.chromium.org/chrome/trunk/src',
-          buildnumber=257,
-          mastername='chromium.fyi master',
-          revision='267739'))
-    yield test
+  for mastername, builders in BUILDERS.iteritems():
+    for buildername in builders:
+      yield (
+        api.test('full_%s_%s' % (_sanitize_nonalpha(mastername),
+                                 _sanitize_nonalpha(buildername))) +
+        api.properties.generic(buildername=buildername,
+            repository='svn://svn.chromium.org/chrome/trunk/src',
+            buildnumber=257,
+            mastername=mastername,
+            issue='8675309',
+            patchset='1',
+            revision='267739'))

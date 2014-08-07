@@ -30,7 +30,6 @@
             'tests/test_case.html.mock-http-headers',
             'tests/test_page.css',
             'tests/ppapi_nacl_tests_newlib.nmf',
-            'tests/ppapi_nacl_tests_pnacl_nonsfi.nmf',
           ],
         },
         {
@@ -176,7 +175,9 @@
         'proxy/raw_var_data_unittest.cc',
         'proxy/serialized_var_unittest.cc',
         'proxy/talk_resource_unittest.cc',
+        'proxy/video_decoder_resource_unittest.cc',
         'proxy/websocket_resource_unittest.cc',
+        'shared_impl/media_stream_audio_track_shared_unittest.cc',
         'shared_impl/media_stream_buffer_manager_unittest.cc',
         'shared_impl/media_stream_video_track_shared_unittest.cc',
         'shared_impl/proxy_lock_unittest.cc',
@@ -185,7 +186,6 @@
         'shared_impl/time_conversion_unittest.cc',
         'shared_impl/tracked_callback_unittest.cc',
         'shared_impl/var_tracker_unittest.cc',
-        'shared_impl/var_value_conversions_unittest.cc',
       ],
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
@@ -451,8 +451,7 @@
         'lib/gl/include',
       ],
       'sources': [
-        # TODO(bbudge) Change to new example when implementation lands.
-        'examples/video_decode/video_decode_dev.cc',
+        'examples/video_decode/video_decode.cc',
         'examples/video_decode/testdata.h',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
@@ -569,6 +568,22 @@
         'examples/gles2_spinning_cube/gles2_spinning_cube.cc',
         'examples/gles2_spinning_cube/spinning_cube.cc',
         'examples/gles2_spinning_cube/spinning_cube.h',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_compositor',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+        'ppapi.gyp:ppapi_gles2',
+      ],
+      'include_dirs': [
+        'lib/gl/include',
+      ],
+      'sources': [
+        'examples/compositor/compositor.cc',
+        'examples/compositor/spinning_cube.cc',
+        'examples/compositor/spinning_cube.h',
       ],
     },
   ],

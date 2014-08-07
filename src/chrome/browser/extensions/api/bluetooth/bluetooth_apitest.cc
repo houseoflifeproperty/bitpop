@@ -15,25 +15,19 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "device/bluetooth/bluetooth_adapter.h"
-#include "device/bluetooth/bluetooth_out_of_band_pairing_data.h"
 #include "device/bluetooth/bluetooth_uuid.h"
 #include "device/bluetooth/test/mock_bluetooth_adapter.h"
 #include "device/bluetooth/test/mock_bluetooth_device.h"
 #include "device/bluetooth/test/mock_bluetooth_discovery_session.h"
-#include "device/bluetooth/test/mock_bluetooth_profile.h"
-#include "device/bluetooth/test/mock_bluetooth_socket.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using device::BluetoothAdapter;
 using device::BluetoothDevice;
 using device::BluetoothDiscoverySession;
-using device::BluetoothOutOfBandPairingData;
-using device::BluetoothProfile;
 using device::BluetoothUUID;
 using device::MockBluetoothAdapter;
 using device::MockBluetoothDevice;
 using device::MockBluetoothDiscoverySession;
-using device::MockBluetoothProfile;
 using extensions::Extension;
 
 namespace utils = extension_function_test_utils;
@@ -52,8 +46,6 @@ class BluetoothApiTest : public ExtensionApiTest {
     ExtensionApiTest::SetUpOnMainThread();
     empty_extension_ = utils::CreateEmptyExtension();
     SetUpMockAdapter();
-    profile1_.reset(new testing::NiceMock<MockBluetoothProfile>());
-    profile2_.reset(new testing::NiceMock<MockBluetoothProfile>());
   }
 
   virtual void CleanUpOnMainThread() OVERRIDE {
@@ -100,8 +92,6 @@ class BluetoothApiTest : public ExtensionApiTest {
   scoped_ptr<testing::NiceMock<MockBluetoothDevice> > device1_;
   scoped_ptr<testing::NiceMock<MockBluetoothDevice> > device2_;
   scoped_ptr<testing::NiceMock<MockBluetoothDevice> > device3_;
-  scoped_ptr<testing::NiceMock<MockBluetoothProfile> > profile1_;
-  scoped_ptr<testing::NiceMock<MockBluetoothProfile> > profile2_;
 
   extensions::BluetoothEventRouter* event_router() {
     return bluetooth_api()->event_router();
@@ -115,127 +105,12 @@ class BluetoothApiTest : public ExtensionApiTest {
   scoped_refptr<Extension> empty_extension_;
 };
 
-class TestBluetoothAddProfileFunction
-    : public api::BluetoothAddProfileFunction {
- public:
-  explicit TestBluetoothAddProfileFunction(BluetoothProfile* profile)
-      : BluetoothAddProfileFunction(), profile_(profile) {
-  }
-
- protected:
-  virtual ~TestBluetoothAddProfileFunction() {
-  }
-
-  // BluetoothAddProfileFunction override.
-  virtual void RegisterProfile(
-      const device::BluetoothProfile::Options& options,
-      const device::BluetoothProfile::ProfileCallback& callback) OVERRIDE {
-    callback.Run(profile_);
-  }
-
- private:
-  // TestBluetoothAddProfileFunction does not own |profile_|.
-  BluetoothProfile* profile_;
-};
-
-// This is the canonical UUID for the short UUID 0010.
-static const char kOutOfBandPairingDataHash[] = "0123456789ABCDEh";
-static const char kOutOfBandPairingDataRandomizer[] = "0123456789ABCDEr";
-
-static BluetoothOutOfBandPairingData GetOutOfBandPairingData() {
-  BluetoothOutOfBandPairingData data;
-  memcpy(&(data.hash), kOutOfBandPairingDataHash,
-      device::kBluetoothOutOfBandPairingDataSize);
-  memcpy(&(data.randomizer), kOutOfBandPairingDataRandomizer,
-      device::kBluetoothOutOfBandPairingDataSize);
-  return data;
-}
-
-static bool CallClosure(const base::Closure& callback) {
-  callback.Run();
-  return true;
-}
-
-static bool CallErrorClosure(const BluetoothDevice::ErrorCallback& callback) {
-  callback.Run();
-  return true;
-}
-
 static void StopDiscoverySessionCallback(const base::Closure& callback,
                                          const base::Closure& error_callback) {
   callback.Run();
 }
 
-static void CallOutOfBandPairingDataCallback(
-    const BluetoothAdapter::BluetoothOutOfBandPairingDataCallback& callback,
-    const BluetoothAdapter::ErrorCallback& error_callback) {
-  callback.Run(GetOutOfBandPairingData());
-}
-
 }  // namespace
-
-IN_PROC_BROWSER_TEST_F(BluetoothApiTest, Profiles) {
-  // Run in context of an extension that has permissions for the profiles
-  // we intend to register.
-  scoped_refptr<const Extension> extension(
-      LoadExtension(test_data_dir_.AppendASCII("bluetooth/profiles")));
-  ASSERT_TRUE(extension.get());
-
-  EXPECT_CALL(*profile1_, SetConnectionCallback(testing::_));
-  scoped_refptr<TestBluetoothAddProfileFunction> add_profile_function;
-  add_profile_function = new TestBluetoothAddProfileFunction(profile1_.get());
-  add_profile_function->set_extension(extension.get());
-  add_profile_function->set_has_callback(true);
-  std::string error(utils::RunFunctionAndReturnError(
-      add_profile_function.get(), "[{\"uuid\": \"1234\"}]", browser()));
-  ASSERT_TRUE(error.empty());
-
-  // Registering the profile for the same uuid again will throw an error.
-  add_profile_function = new TestBluetoothAddProfileFunction(profile2_.get());
-  add_profile_function->set_extension(extension.get());
-  add_profile_function->set_has_callback(true);
-  error = utils::RunFunctionAndReturnError(
-      add_profile_function.get(), "[{\"uuid\": \"1234\"}]", browser());
-  ASSERT_FALSE(error.empty());
-
-  add_profile_function = new TestBluetoothAddProfileFunction(profile2_.get());
-  add_profile_function->set_extension(extension.get());
-  add_profile_function->set_has_callback(true);
-  error = utils::RunFunctionAndReturnError(
-      add_profile_function.get(), "[{\"uuid\": \"5678\"}]", browser());
-  ASSERT_TRUE(error.empty());
-
-  scoped_refptr<api::BluetoothRemoveProfileFunction> remove_profile_function;
-  remove_profile_function = new api::BluetoothRemoveProfileFunction();
-  remove_profile_function->set_extension(extension.get());
-  remove_profile_function->set_has_callback(true);
-  error = utils::RunFunctionAndReturnError(
-      remove_profile_function.get(), "[{\"uuid\": \"1234\"}]", browser());
-  ASSERT_TRUE(error.empty());
-
-  remove_profile_function = new api::BluetoothRemoveProfileFunction();
-  remove_profile_function->set_extension(extension.get());
-  remove_profile_function->set_has_callback(true);
-  error = utils::RunFunctionAndReturnError(
-      remove_profile_function.get(), "[{\"uuid\": \"5678\"}]", browser());
-  ASSERT_TRUE(error.empty());
-
-  // Removing the same profile again will throw an error.
-  remove_profile_function = new api::BluetoothRemoveProfileFunction();
-  remove_profile_function->set_extension(extension.get());
-  remove_profile_function->set_has_callback(true);
-  error = utils::RunFunctionAndReturnError(
-      remove_profile_function.get(), "[{\"uuid\": \"5678\"}]", browser());
-  ASSERT_FALSE(error.empty());
-
-  // Registering a profile we don't have permission for will throw an error.
-  add_profile_function = new TestBluetoothAddProfileFunction(profile1_.get());
-  add_profile_function->set_extension(extension.get());
-  add_profile_function->set_has_callback(true);
-  error = utils::RunFunctionAndReturnError(
-      add_profile_function.get(), "[{\"uuid\": \"9999\"}]", browser());
-  ASSERT_FALSE(error.empty());
-}
 
 IN_PROC_BROWSER_TEST_F(BluetoothApiTest, GetAdapterState) {
   EXPECT_CALL(*mock_adapter_, GetAddress())
@@ -263,81 +138,6 @@ IN_PROC_BROWSER_TEST_F(BluetoothApiTest, GetAdapterState) {
   EXPECT_FALSE(state.discovering);
   EXPECT_EQ(kName, state.name);
   EXPECT_EQ(kAdapterAddress, state.address);
-}
-
-IN_PROC_BROWSER_TEST_F(BluetoothApiTest, GetLocalOutOfBandPairingData) {
-  EXPECT_CALL(*mock_adapter_,
-              ReadLocalOutOfBandPairingData(testing::_, testing::_))
-      .WillOnce(testing::Invoke(CallOutOfBandPairingDataCallback));
-
-  scoped_refptr<api::BluetoothGetLocalOutOfBandPairingDataFunction>
-      get_oob_function(setupFunction(
-            new api::BluetoothGetLocalOutOfBandPairingDataFunction));
-
-  scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
-      get_oob_function.get(), "[]", browser()));
-
-  base::DictionaryValue* dict;
-  EXPECT_TRUE(result->GetAsDictionary(&dict));
-
-  base::BinaryValue* binary_value;
-  EXPECT_TRUE(dict->GetBinary("hash", &binary_value));
-  EXPECT_STREQ(kOutOfBandPairingDataHash,
-      std::string(binary_value->GetBuffer(), binary_value->GetSize()).c_str());
-  EXPECT_TRUE(dict->GetBinary("randomizer", &binary_value));
-  EXPECT_STREQ(kOutOfBandPairingDataRandomizer,
-      std::string(binary_value->GetBuffer(), binary_value->GetSize()).c_str());
-
-  // Try again with an error
-  testing::Mock::VerifyAndClearExpectations(mock_adapter_);
-  EXPECT_CALL(*mock_adapter_,
-              ReadLocalOutOfBandPairingData(
-                  testing::_,
-                  testing::Truly(CallClosure)));
-
-  get_oob_function =
-      setupFunction(new api::BluetoothGetLocalOutOfBandPairingDataFunction);
-
-  std::string error(utils::RunFunctionAndReturnError(
-      get_oob_function.get(), "[]", browser()));
-  EXPECT_FALSE(error.empty());
-}
-
-IN_PROC_BROWSER_TEST_F(BluetoothApiTest, SetOutOfBandPairingData) {
-  EXPECT_CALL(*mock_adapter_, GetDevice(device1_->GetAddress()))
-      .WillOnce(testing::Return(device1_.get()));
-  EXPECT_CALL(*device1_,
-              ClearOutOfBandPairingData(testing::Truly(CallClosure),
-                                        testing::_));
-
-  std::string params = base::StringPrintf(
-      "[{\"deviceAddress\":\"%s\"}]", device1_->GetAddress().c_str());
-
-  scoped_refptr<api::BluetoothSetOutOfBandPairingDataFunction> set_oob_function;
-  set_oob_function = setupFunction(
-      new api::BluetoothSetOutOfBandPairingDataFunction);
-  // There isn't actually a result.
-  (void) utils::RunFunctionAndReturnSingleResult(
-      set_oob_function.get(), params, browser());
-
-  // Try again with an error
-  testing::Mock::VerifyAndClearExpectations(mock_adapter_);
-  testing::Mock::VerifyAndClearExpectations(device1_.get());
-  EXPECT_CALL(*mock_adapter_, GetDevice(device1_->GetAddress()))
-      .WillOnce(testing::Return(device1_.get()));
-  EXPECT_CALL(
-      *device1_,
-      ClearOutOfBandPairingData(testing::_, testing::Truly(CallErrorClosure)));
-
-  set_oob_function = setupFunction(
-      new api::BluetoothSetOutOfBandPairingDataFunction);
-  std::string error(utils::RunFunctionAndReturnError(
-      set_oob_function.get(), params, browser()));
-  EXPECT_FALSE(error.empty());
-
-  // TODO(bryeung): Also test setting the data when there is support for
-  // ArrayBuffers in the arguments to the RunFunctionAnd* methods.
-  // crbug.com/132796
 }
 
 IN_PROC_BROWSER_TEST_F(BluetoothApiTest, DeviceEvents) {
@@ -553,37 +353,6 @@ IN_PROC_BROWSER_TEST_F(BluetoothApiTest, OnAdapterStateChanged) {
   listener.Reply("go");
 
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
-}
-
-IN_PROC_BROWSER_TEST_F(BluetoothApiTest, OnConnection) {
-  ResultCatcher catcher;
-  catcher.RestrictToProfile(browser()->profile());
-
-  // Load and wait for setup
-  ExtensionTestMessageListener listener("ready", true);
-  scoped_refptr<const Extension> extension(
-      LoadExtension(test_data_dir_.AppendASCII("bluetooth/on_connection")));
-  ASSERT_TRUE(extension.get());
-  EXPECT_TRUE(listener.WaitUntilSatisfied());
-
-  scoped_refptr<device::MockBluetoothSocket> socket =
-      new device::MockBluetoothSocket();
-
-  EXPECT_CALL(*mock_adapter_, GetDevice(device1_->GetAddress()))
-      .WillOnce(testing::Return(device1_.get()));
-
-  event_router()->AddProfile(
-      BluetoothUUID("1234"), extension->id(), profile1_.get());
-  bluetooth_api()->DispatchConnectionEvent(
-      extension->id(), BluetoothUUID("1234"), device1_.get(), socket);
-  // Connection events are dispatched using a couple of PostTask to the UI
-  // thread. Waiting until idle ensures the event is dispatched to the
-  // receiver(s).
-  base::RunLoop().RunUntilIdle();
-
-  listener.Reply("go");
-  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
-  event_router()->RemoveProfile(BluetoothUUID("1234"));
 }
 
 IN_PROC_BROWSER_TEST_F(BluetoothApiTest, GetDevices) {

@@ -32,7 +32,6 @@
 
 #include "modules/websockets/WebSocketChannel.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptCallStackFactory.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
@@ -45,6 +44,7 @@
 #include "modules/websockets/ThreadableWebSocketChannelClientWrapper.h"
 #include "modules/websockets/WebSocketChannelClient.h"
 #include "modules/websockets/WorkerThreadableWebSocketChannel.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -55,7 +55,7 @@ PassRefPtrWillBeRawPtr<WebSocketChannel> WebSocketChannel::create(ExecutionConte
 
     String sourceURL;
     unsigned lineNumber = 0;
-    RefPtr<ScriptCallStack> callStack = createScriptCallStack(1, true);
+    RefPtrWillBeRawPtr<ScriptCallStack> callStack = createScriptCallStack(1, true);
     if (callStack && callStack->size()) {
         sourceURL = callStack->at(0).sourceURL();
         lineNumber = callStack->at(0).lineNumber();

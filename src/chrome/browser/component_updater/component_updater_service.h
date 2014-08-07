@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/version.h"
 #include "url/gurl.h"
 
@@ -29,7 +30,7 @@ class ResourceThrottle;
 
 namespace component_updater {
 
-class OnDemandTester;
+class OnDemandUpdater;
 
 // Component specific installers must derive from this class and implement
 // OnUpdateError() and Install(). A valid instance of this class must be
@@ -78,16 +79,7 @@ struct CrxComponent {
   ~CrxComponent();
 };
 
-// Convenience structure to use with component listing / enumeration.
-struct CrxComponentInfo {
-  // |id| is currently derived from |CrxComponent.pk_hash|, see rest of the
-  // class implementation for details.
-  std::string id;
-  std::string version;
-  std::string name;
-  CrxComponentInfo();
-  ~CrxComponentInfo();
-};
+struct CrxUpdateItem;
 
 // The component update service is in charge of installing or upgrading
 // select parts of chrome. Each part is called a component and managed by
@@ -206,37 +198,59 @@ class ComponentUpdateService {
   virtual Status RegisterComponent(const CrxComponent& component) = 0;
 
   // Returns a list of registered components.
-  virtual void GetComponents(std::vector<CrxComponentInfo>* components) = 0;
+  virtual std::vector<std::string> GetComponentIDs() const = 0;
+
+  // Returns an interface for on-demand updates. On-demand updates are
+  // proactively triggered outside the normal component update service schedule.
+  virtual OnDemandUpdater& GetOnDemandUpdater() = 0;
+
+  virtual ~ComponentUpdateService() {}
+
+ private:
+  // Returns details about registered component in the |item| parameter. The
+  // function returns true in case of success and false in case of errors.
+  virtual bool GetComponentDetails(const std::string& component_id,
+                                   CrxUpdateItem* item) const = 0;
+
+  friend class ::ComponentsUI;
+  FRIEND_TEST_ALL_PREFIXES(ComponentUpdaterTest, ResourceThrottleLiveNoUpdate);
+};
+
+typedef ComponentUpdateService::Observer ServiceObserver;
+
+class OnDemandUpdater {
+ public:
+  virtual ~OnDemandUpdater() {}
 
   // Returns a network resource throttle. It means that a component will be
-  // downloaded and installed before the resource is unthrottled. This is the
-  // only function callable from the IO thread.
+  // downloaded and installed before the resource is unthrottled. This function
+  // can be called from the IO thread. The function implements a cooldown
+  // interval of 30 minutes. That means it will ineffective to call the
+  // function before the cooldown interval has passed. This behavior is intended
+  // to be defensive against programming bugs, usually triggered by web fetches,
+  // where the on-demand functionality is invoked too often.
   virtual content::ResourceThrottle* GetOnDemandResourceThrottle(
       net::URLRequest* request,
       const std::string& crx_id) = 0;
 
-  virtual ~ComponentUpdateService() {}
-
-  friend class ::ComponentsUI;
-  friend class OnDemandTester;
-
  private:
-  // Ask the component updater to do an update check for a previously
-  // registered component, immediately. If an update or check is already
-  // in progress, returns |kInProgress|.
-  // There is no guarantee that the item will actually be updated,
-  // since an update may not be available. Listeners for the component will
-  // know the outcome of the check.
-  virtual Status OnDemandUpdate(const std::string& component_id) = 0;
-};
+  friend class OnDemandTester;
+  friend class ::ComponentsUI;
 
-typedef ComponentUpdateService::Observer ServiceObserver;
+  // Triggers an update check for a component. |component_id| is a value
+  // returned by GetCrxComponentID(). If an update for this component is already
+  // in progress, the function returns |kInProgress|. If an update is available,
+  // the update will be applied. The caller can subscribe to component update
+  // service notifications to get an indication about the outcome of the
+  // on-demand update. The function does not implement any cooldown interval.
+  virtual ComponentUpdateService::Status OnDemandUpdate(
+      const std::string& component_id) = 0;
+};
 
 // Creates the component updater. You must pass a valid |config| allocated on
 // the heap which the component updater will own.
 ComponentUpdateService* ComponentUpdateServiceFactory(
     ComponentUpdateService::Configurator* config);
-
 }  // namespace component_updater
 
 #endif  // CHROME_BROWSER_COMPONENT_UPDATER_COMPONENT_UPDATER_SERVICE_H_

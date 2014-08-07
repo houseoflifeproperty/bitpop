@@ -20,6 +20,189 @@
 #include "content/child/webcrypto/webcrypto_util.h"
 #include "third_party/WebKit/public/platform/WebCryptoKeyAlgorithm.h"
 
+// JSON Web Key Format (JWK)
+// http://tools.ietf.org/html/draft-ietf-jose-json-web-key-21
+//
+// A JWK is a simple JSON dictionary with the following entries
+// - "kty" (Key Type) Parameter, REQUIRED
+// - <kty-specific parameters, see below>, REQUIRED
+// - "use" (Key Use) Parameter, OPTIONAL
+// - "key_ops" (Key Operations) Parameter, OPTIONAL
+// - "alg" (Algorithm) Parameter, OPTIONAL
+// - "ext" (Key Exportability), OPTIONAL
+// (all other entries are ignored)
+//
+// OPTIONAL here means that this code does not require the entry to be present
+// in the incoming JWK, because the method input parameters contain similar
+// information. If the optional JWK entry is present, it will be validated
+// against the corresponding input parameter for consistency and combined with
+// it according to rules defined below.
+//
+// Input 'key_data' contains the JWK. To build a Web Crypto Key, the JWK
+// values are parsed out and combined with the method input parameters to
+// build a Web Crypto Key:
+// Web Crypto Key type            <-- (deduced)
+// Web Crypto Key extractable     <-- JWK ext + input extractable
+// Web Crypto Key algorithm       <-- JWK alg + input algorithm
+// Web Crypto Key keyUsage        <-- JWK use, key_ops + input usage_mask
+// Web Crypto Key keying material <-- kty-specific parameters
+//
+// Values for each JWK entry are case-sensitive and defined in
+// http://tools.ietf.org/html/draft-ietf-jose-json-web-algorithms-18.
+// Note that not all values specified by JOSE are handled by this code. Only
+// handled values are listed.
+// - kty (Key Type)
+//   +-------+--------------------------------------------------------------+
+//   | "RSA" | RSA [RFC3447]                                                |
+//   | "oct" | Octet sequence (used to represent symmetric keys)            |
+//   +-------+--------------------------------------------------------------+
+//
+// - key_ops (Key Use Details)
+//   The key_ops field is an array that contains one or more strings from
+//   the table below, and describes the operations for which this key may be
+//   used.
+//   +-------+--------------------------------------------------------------+
+//   | "encrypt"    | encrypt operations                                    |
+//   | "decrypt"    | decrypt operations                                    |
+//   | "sign"       | sign (MAC) operations                                 |
+//   | "verify"     | verify (MAC) operations                               |
+//   | "wrapKey"    | key wrap                                              |
+//   | "unwrapKey"  | key unwrap                                            |
+//   | "deriveKey"  | key derivation                                        |
+//   | "deriveBits" | key derivation                                        |
+//   +-------+--------------------------------------------------------------+
+//
+// - use (Key Use)
+//   The use field contains a single entry from the table below.
+//   +-------+--------------------------------------------------------------+
+//   | "sig"     | equivalent to key_ops of [sign, verify]                  |
+//   | "enc"     | equivalent to key_ops of [encrypt, decrypt, wrapKey,     |
+//   |           | unwrapKey, deriveKey, deriveBits]                        |
+//   +-------+--------------------------------------------------------------+
+//
+//   NOTE: If both "use" and "key_ops" JWK members are present, the usages
+//   specified by them MUST be consistent.  In particular, the "use" value
+//   "sig" corresponds to "sign" and/or "verify".  The "use" value "enc"
+//   corresponds to all other values defined above.  If "key_ops" values
+//   corresponding to both "sig" and "enc" "use" values are present, the "use"
+//   member SHOULD NOT be present, and if present, its value MUST NOT be
+//   either "sig" or "enc".
+//
+// - ext (Key Exportability)
+//   +-------+--------------------------------------------------------------+
+//   | true  | Key may be exported from the trusted environment             |
+//   | false | Key cannot exit the trusted environment                      |
+//   +-------+--------------------------------------------------------------+
+//
+// - alg (Algorithm)
+//   See http://tools.ietf.org/html/draft-ietf-jose-json-web-algorithms-18
+//   +--------------+-------------------------------------------------------+
+//   | Digital Signature or MAC Algorithm                                   |
+//   +--------------+-------------------------------------------------------+
+//   | "HS1"        | HMAC using SHA-1 hash algorithm                       |
+//   | "HS256"      | HMAC using SHA-256 hash algorithm                     |
+//   | "HS384"      | HMAC using SHA-384 hash algorithm                     |
+//   | "HS512"      | HMAC using SHA-512 hash algorithm                     |
+//   | "RS1"        | RSASSA using SHA-1 hash algorithm
+//   | "RS256"      | RSASSA using SHA-256 hash algorithm                   |
+//   | "RS384"      | RSASSA using SHA-384 hash algorithm                   |
+//   | "RS512"      | RSASSA using SHA-512 hash algorithm                   |
+//   +--------------+-------------------------------------------------------|
+//   | Key Management Algorithm                                             |
+//   +--------------+-------------------------------------------------------+
+//   | "RSA-OAEP"   | RSAES using Optimal Asymmetric Encryption Padding     |
+//   |              | (OAEP) [RFC3447], with the default parameters         |
+//   |              | specified by RFC3447 in Section A.2.1                 |
+//   | "A128KW"     | Advanced Encryption Standard (AES) Key Wrap Algorithm |
+//   |              | [RFC3394] using 128 bit keys                          |
+//   | "A192KW"     | AES Key Wrap Algorithm using 192 bit keys             |
+//   | "A256KW"     | AES Key Wrap Algorithm using 256 bit keys             |
+//   | "A128GCM"    | AES in Galois/Counter Mode (GCM) [NIST.800-38D] using |
+//   |              | 128 bit keys                                          |
+//   | "A192GCM"    | AES GCM using 192 bit keys                            |
+//   | "A256GCM"    | AES GCM using 256 bit keys                            |
+//   | "A128CBC"    | AES in Cipher Block Chaining Mode (CBC) with PKCS #5  |
+//   |              | padding [NIST.800-38A]                                |
+//   | "A192CBC"    | AES CBC using 192 bit keys                            |
+//   | "A256CBC"    | AES CBC using 256 bit keys                            |
+//   +--------------+-------------------------------------------------------+
+//
+// kty-specific parameters
+// The value of kty determines the type and content of the keying material
+// carried in the JWK to be imported.
+// // - kty == "oct" (symmetric or other raw key)
+//   +-------+--------------------------------------------------------------+
+//   | "k"   | Contains the value of the symmetric (or other single-valued) |
+//   |       | key.  It is represented as the base64url encoding of the     |
+//   |       | octet sequence containing the key value.                     |
+//   +-------+--------------------------------------------------------------+
+// - kty == "RSA" (RSA public key)
+//   +-------+--------------------------------------------------------------+
+//   | "n"   | Contains the modulus value for the RSA public key.  It is    |
+//   |       | represented as the base64url encoding of the value's         |
+//   |       | unsigned big endian representation as an octet sequence.     |
+//   +-------+--------------------------------------------------------------+
+//   | "e"   | Contains the exponent value for the RSA public key.  It is   |
+//   |       | represented as the base64url encoding of the value's         |
+//   |       | unsigned big endian representation as an octet sequence.     |
+//   +-------+--------------------------------------------------------------+
+// - If key == "RSA" and the "d" parameter is present then it is a private key.
+//   All the parameters above for public keys apply, as well as the following.
+//   (Note that except for "d", all of these are optional):
+//   +-------+--------------------------------------------------------------+
+//   | "d"   | Contains the private exponent value for the RSA private key. |
+//   |       | It is represented as the base64url encoding of the value's   |
+//   |       | unsigned big endian representation as an octet sequence.     |
+//   +-------+--------------------------------------------------------------+
+//   | "p"   | Contains the first prime factor value for the RSA private    |
+//   |       | key.  It is represented as the base64url encoding of the     |
+//   |       | value's                                                      |
+//   |       | unsigned big endian representation as an octet sequence.     |
+//   +-------+--------------------------------------------------------------+
+//   | "q"   | Contains the second prime factor value for the RSA private   |
+//   |       | key.  It is represented as the base64url encoding of the     |
+//   |       | value's unsigned big endian representation as an octet       |
+//   |       | sequence.                                                    |
+//   +-------+--------------------------------------------------------------+
+//   | "dp"  | Contains the first factor CRT exponent value for the RSA     |
+//   |       | private key.  It is represented as the base64url encoding of |
+//   |       | the value's unsigned big endian representation as an octet   |
+//   |       | sequence.                                                    |
+//   +-------+--------------------------------------------------------------+
+//   | "dq"  | Contains the second factor CRT exponent value for the RSA    |
+//   |       | private key.  It is represented as the base64url encoding of |
+//   |       | the value's unsigned big endian representation as an octet   |
+//   |       | sequence.                                                    |
+//   +-------+--------------------------------------------------------------+
+//   | "dq"  | Contains the first CRT coefficient value for the RSA private |
+//   |       | key.  It is represented as the base64url encoding of the     |
+//   |       | value's unsigned big endian representation as an octet       |
+//   |       | sequence.                                                    |
+//   +-------+--------------------------------------------------------------+
+//
+// Consistency and conflict resolution
+// The 'algorithm', 'extractable', and 'usage_mask' input parameters
+// may be different than the corresponding values inside the JWK. The Web
+// Crypto spec says that if a JWK value is present but is inconsistent with
+// the input value, it is an error and the operation must fail. If no
+// inconsistency is found then the input parameters are used.
+//
+// algorithm
+//   If the JWK algorithm is provided, it must match the web crypto input
+//   algorithm (both the algorithm ID and inner hash if applicable).
+//
+// extractable
+//   If the JWK ext field is true but the input parameter is false, make the
+//   Web Crypto Key non-extractable. Conversely, if the JWK ext field is
+//   false but the input parameter is true, it is an inconsistency. If both
+//   are true or both are false, use that value.
+//
+// usage_mask
+//   The input usage_mask must be a strict subset of the interpreted JWK use
+//   value, else it is judged inconsistent. In all cases the input usage_mask
+//   is used as the final usage_mask.
+//
+
 namespace content {
 
 namespace webcrypto {
@@ -43,11 +226,10 @@ blink::WebCryptoAlgorithm CreateRsaOaepImportAlgorithm(
 }
 
 // Web Crypto equivalent usage mask for JWK 'use' = 'enc'.
-// TODO(padolph): Add 'deriveBits' once supported by Blink.
 const blink::WebCryptoKeyUsageMask kJwkEncUsage =
     blink::WebCryptoKeyUsageEncrypt | blink::WebCryptoKeyUsageDecrypt |
     blink::WebCryptoKeyUsageWrapKey | blink::WebCryptoKeyUsageUnwrapKey |
-    blink::WebCryptoKeyUsageDeriveKey;
+    blink::WebCryptoKeyUsageDeriveKey | blink::WebCryptoKeyUsageDeriveBits;
 // Web Crypto equivalent usage mask for JWK 'use' = 'sig'.
 const blink::WebCryptoKeyUsageMask kJwkSigUsage =
     blink::WebCryptoKeyUsageSign | blink::WebCryptoKeyUsageVerify;
@@ -124,12 +306,18 @@ class JwkAlgorithmRegistry {
     alg_to_info_["RS512"] =
         JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaSsaImportAlgorithm,
                                           blink::WebCryptoAlgorithmIdSha512>);
-    alg_to_info_["RSA1_5"] = JwkAlgorithmInfo(
-        &BindAlgorithmId<CreateAlgorithm,
-                         blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5>);
     alg_to_info_["RSA-OAEP"] =
         JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaOaepImportAlgorithm,
                                           blink::WebCryptoAlgorithmIdSha1>);
+    alg_to_info_["RSA-OAEP-256"] =
+        JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaOaepImportAlgorithm,
+                                          blink::WebCryptoAlgorithmIdSha256>);
+    alg_to_info_["RSA-OAEP-384"] =
+        JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaOaepImportAlgorithm,
+                                          blink::WebCryptoAlgorithmIdSha384>);
+    alg_to_info_["RSA-OAEP-512"] =
+        JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaOaepImportAlgorithm,
+                                          blink::WebCryptoAlgorithmIdSha512>);
     alg_to_info_["A128KW"] = JwkAlgorithmInfo(
         &BindAlgorithmId<CreateAlgorithm, blink::WebCryptoAlgorithmIdAesKw>,
         128);
@@ -276,6 +464,31 @@ Status GetJwkBytes(base::DictionaryValue* dict,
   return Status::Success();
 }
 
+// Extracts the optional string property with key |path| from |dict| and saves
+// the base64url-decoded bytes to |*result|. If the property exist and is not a
+// string, or could not be base64url-decoded, returns an error. In the case
+// where the property does not exist, |result| is guaranteed to be empty.
+Status GetOptionalJwkBytes(base::DictionaryValue* dict,
+                           const std::string& path,
+                           std::string* result,
+                           bool* property_exists) {
+  std::string base64_string;
+  Status status =
+      GetOptionalJwkString(dict, path, &base64_string, property_exists);
+  if (status.IsError())
+    return status;
+
+  if (!*property_exists) {
+    result->clear();
+    return Status::Success();
+  }
+
+  if (!Base64DecodeUrlSafe(base64_string, result))
+    return Status::ErrorJwkBase64Decode(path);
+
+  return Status::Success();
+}
+
 // Extracts the optional boolean property with key |path| from |dict| and saves
 // the result to |*result| if it was found. If the property exists and is not a
 // boolean, returns an error. Otherwise returns success, and sets
@@ -294,12 +507,6 @@ Status GetOptionalJwkBool(base::DictionaryValue* dict,
 
   *property_exists = true;
   return Status::Success();
-}
-
-// Returns true if the set bits in b make up a subset of the set bits in a.
-bool ContainsKeyUsages(blink::WebCryptoKeyUsageMask a,
-                       blink::WebCryptoKeyUsageMask b) {
-  return (a & b) == b;
 }
 
 // Writes a secret/symmetric key to a JWK dictionary.
@@ -324,6 +531,53 @@ void WriteRsaPublicKey(const std::vector<uint8>& modulus,
   jwk_dict->SetString("kty", "RSA");
   jwk_dict->SetString("n", Base64EncodeUrlSafe(modulus));
   jwk_dict->SetString("e", Base64EncodeUrlSafe(public_exponent));
+}
+
+// Writes an RSA private key to a JWK dictionary
+Status ExportRsaPrivateKeyJwk(const blink::WebCryptoKey& key,
+                              base::DictionaryValue* jwk_dict) {
+  platform::PrivateKey* private_key;
+  Status status = ToPlatformPrivateKey(key, &private_key);
+  if (status.IsError())
+    return status;
+
+  // TODO(eroman): Copying the key properties to temporary vectors is
+  // inefficient. Once there aren't two implementations of platform_crypto this
+  // and other code will be easier to streamline.
+  std::vector<uint8> modulus;
+  std::vector<uint8> public_exponent;
+  std::vector<uint8> private_exponent;
+  std::vector<uint8> prime1;
+  std::vector<uint8> prime2;
+  std::vector<uint8> exponent1;
+  std::vector<uint8> exponent2;
+  std::vector<uint8> coefficient;
+
+  status = platform::ExportRsaPrivateKey(private_key,
+                                         &modulus,
+                                         &public_exponent,
+                                         &private_exponent,
+                                         &prime1,
+                                         &prime2,
+                                         &exponent1,
+                                         &exponent2,
+                                         &coefficient);
+  if (status.IsError())
+    return status;
+
+  jwk_dict->SetString("kty", "RSA");
+  jwk_dict->SetString("n", Base64EncodeUrlSafe(modulus));
+  jwk_dict->SetString("e", Base64EncodeUrlSafe(public_exponent));
+  jwk_dict->SetString("d", Base64EncodeUrlSafe(private_exponent));
+  // Although these are "optional" in the JWA, WebCrypto spec requires them to
+  // be emitted.
+  jwk_dict->SetString("p", Base64EncodeUrlSafe(prime1));
+  jwk_dict->SetString("q", Base64EncodeUrlSafe(prime2));
+  jwk_dict->SetString("dp", Base64EncodeUrlSafe(exponent1));
+  jwk_dict->SetString("dq", Base64EncodeUrlSafe(exponent2));
+  jwk_dict->SetString("qi", Base64EncodeUrlSafe(coefficient));
+
+  return Status::Success();
 }
 
 // Writes a Web Crypto usage mask to a JWK dictionary.
@@ -400,33 +654,48 @@ Status WriteAlg(const blink::WebCryptoKeyAlgorithm& algorithm,
       }
       break;
     }
-    case blink::WebCryptoKeyAlgorithmParamsTypeRsa:
-      switch (algorithm.id()) {
-        case blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5:
-          jwk_dict->SetString("alg", "RSA1_5");
-          break;
-        default:
-          NOTREACHED();
-          return Status::ErrorUnexpected();
-      }
-      break;
     case blink::WebCryptoKeyAlgorithmParamsTypeRsaHashed:
-      switch (algorithm.rsaHashedParams()->hash().id()) {
-        case blink::WebCryptoAlgorithmIdRsaOaep:
-          jwk_dict->SetString("alg", "RSA-OAEP");
+      switch (algorithm.id()) {
+        case blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5: {
+          switch (algorithm.rsaHashedParams()->hash().id()) {
+            case blink::WebCryptoAlgorithmIdSha1:
+              jwk_dict->SetString("alg", "RS1");
+              break;
+            case blink::WebCryptoAlgorithmIdSha256:
+              jwk_dict->SetString("alg", "RS256");
+              break;
+            case blink::WebCryptoAlgorithmIdSha384:
+              jwk_dict->SetString("alg", "RS384");
+              break;
+            case blink::WebCryptoAlgorithmIdSha512:
+              jwk_dict->SetString("alg", "RS512");
+              break;
+            default:
+              NOTREACHED();
+              return Status::ErrorUnexpected();
+          }
           break;
-        case blink::WebCryptoAlgorithmIdSha1:
-          jwk_dict->SetString("alg", "RS1");
+        }
+        case blink::WebCryptoAlgorithmIdRsaOaep: {
+          switch (algorithm.rsaHashedParams()->hash().id()) {
+            case blink::WebCryptoAlgorithmIdSha1:
+              jwk_dict->SetString("alg", "RSA-OAEP");
+              break;
+            case blink::WebCryptoAlgorithmIdSha256:
+              jwk_dict->SetString("alg", "RSA-OAEP-256");
+              break;
+            case blink::WebCryptoAlgorithmIdSha384:
+              jwk_dict->SetString("alg", "RSA-OAEP-384");
+              break;
+            case blink::WebCryptoAlgorithmIdSha512:
+              jwk_dict->SetString("alg", "RSA-OAEP-512");
+              break;
+            default:
+              NOTREACHED();
+              return Status::ErrorUnexpected();
+          }
           break;
-        case blink::WebCryptoAlgorithmIdSha256:
-          jwk_dict->SetString("alg", "RS256");
-          break;
-        case blink::WebCryptoAlgorithmIdSha384:
-          jwk_dict->SetString("alg", "RS384");
-          break;
-        case blink::WebCryptoAlgorithmIdSha512:
-          jwk_dict->SetString("alg", "RS512");
-          break;
+        }
         default:
           NOTREACHED();
           return Status::ErrorUnexpected();
@@ -438,194 +707,116 @@ Status WriteAlg(const blink::WebCryptoKeyAlgorithm& algorithm,
   return Status::Success();
 }
 
-bool IsRsaPublicKey(const blink::WebCryptoKey& key) {
-  if (key.type() != blink::WebCryptoKeyTypePublic)
-    return false;
-  const blink::WebCryptoAlgorithmId algorithm_id = key.algorithm().id();
-  return algorithm_id == blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5 ||
-         algorithm_id == blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5 ||
-         algorithm_id == blink::WebCryptoAlgorithmIdRsaOaep;
+bool IsRsaKey(const blink::WebCryptoKey& key) {
+  return IsAlgorithmRsa(key.algorithm().id());
 }
 
-// TODO(padolph): This function is duplicated in shared_crypto.cc
-Status ToPlatformPublicKey(const blink::WebCryptoKey& key,
-                           platform::PublicKey** out) {
-  *out = static_cast<platform::Key*>(key.handle())->AsPublicKey();
-  if (!*out)
-    return Status::ErrorUnexpectedKeyType();
-  return Status::Success();
+Status ImportRsaKey(base::DictionaryValue* dict,
+                    const blink::WebCryptoAlgorithm& algorithm,
+                    bool extractable,
+                    blink::WebCryptoKeyUsageMask usage_mask,
+                    blink::WebCryptoKey* key) {
+  // An RSA public key must have an "n" (modulus) and an "e" (exponent) entry
+  // in the JWK, while an RSA private key must have those, plus at least a "d"
+  // (private exponent) entry.
+  // See http://tools.ietf.org/html/draft-ietf-jose-json-web-algorithms-18,
+  // section 6.3.
+  std::string jwk_n_value;
+  Status status = GetJwkBytes(dict, "n", &jwk_n_value);
+  if (status.IsError())
+    return status;
+  std::string jwk_e_value;
+  status = GetJwkBytes(dict, "e", &jwk_e_value);
+  if (status.IsError())
+    return status;
+
+  bool is_public_key = !dict->HasKey("d");
+
+  // Now that the key type is known, do an additional check on the usages to
+  // make sure they are all applicable for this algorithm + key type.
+  status = CheckKeyUsages(algorithm.id(),
+                          is_public_key ? blink::WebCryptoKeyTypePublic
+                                        : blink::WebCryptoKeyTypePrivate,
+                          usage_mask);
+
+  if (status.IsError())
+    return status;
+
+  if (is_public_key) {
+    return platform::ImportRsaPublicKey(algorithm,
+                                        extractable,
+                                        usage_mask,
+                                        CryptoData(jwk_n_value),
+                                        CryptoData(jwk_e_value),
+                                        key);
+  }
+
+  std::string jwk_d_value;
+  status = GetJwkBytes(dict, "d", &jwk_d_value);
+  if (status.IsError())
+    return status;
+
+  // The "p", "q", "dp", "dq", and "qi" properties are optional. Treat these
+  // properties the same if they are unspecified, as if they were specified-but
+  // empty, since ImportRsaPrivateKey() doesn't do validation checks anyway.
+
+  std::string jwk_p_value;
+  bool has_p;
+  status = GetOptionalJwkBytes(dict, "p", &jwk_p_value, &has_p);
+  if (status.IsError())
+    return status;
+
+  std::string jwk_q_value;
+  bool has_q;
+  status = GetOptionalJwkBytes(dict, "q", &jwk_q_value, &has_q);
+  if (status.IsError())
+    return status;
+
+  std::string jwk_dp_value;
+  bool has_dp;
+  status = GetOptionalJwkBytes(dict, "dp", &jwk_dp_value, &has_dp);
+  if (status.IsError())
+    return status;
+
+  std::string jwk_dq_value;
+  bool has_dq;
+  status = GetOptionalJwkBytes(dict, "dq", &jwk_dq_value, &has_dq);
+  if (status.IsError())
+    return status;
+
+  std::string jwk_qi_value;
+  bool has_qi;
+  status = GetOptionalJwkBytes(dict, "qi", &jwk_qi_value, &has_qi);
+  if (status.IsError())
+    return status;
+
+  int num_optional_properties = has_p + has_q + has_dp + has_dq + has_qi;
+  if (num_optional_properties != 0 && num_optional_properties != 5)
+    return Status::ErrorJwkIncompleteOptionalRsaPrivateKey();
+
+  return platform::ImportRsaPrivateKey(
+      algorithm,
+      extractable,
+      usage_mask,
+      CryptoData(jwk_n_value),   // modulus
+      CryptoData(jwk_e_value),   // public_exponent
+      CryptoData(jwk_d_value),   // private_exponent
+      CryptoData(jwk_p_value),   // prime1
+      CryptoData(jwk_q_value),   // prime2
+      CryptoData(jwk_dp_value),  // exponent1
+      CryptoData(jwk_dq_value),  // exponent2
+      CryptoData(jwk_qi_value),  // coefficient
+      key);
 }
 
 }  // namespace
 
+// TODO(eroman): Split this up into smaller functions.
 Status ImportKeyJwk(const CryptoData& key_data,
                     const blink::WebCryptoAlgorithm& algorithm,
                     bool extractable,
                     blink::WebCryptoKeyUsageMask usage_mask,
                     blink::WebCryptoKey* key) {
-  // TODO(padolph): Generalize this comment to include export, and move to top
-  // of file.
-
-  // The goal of this method is to extract key material and meta data from the
-  // incoming JWK, combine them with the input parameters, and ultimately import
-  // a Web Crypto Key.
-  //
-  // JSON Web Key Format (JWK)
-  // http://tools.ietf.org/html/draft-ietf-jose-json-web-key-21
-  //
-  // A JWK is a simple JSON dictionary with the following entries
-  // - "kty" (Key Type) Parameter, REQUIRED
-  // - <kty-specific parameters, see below>, REQUIRED
-  // - "use" (Key Use) Parameter, OPTIONAL
-  // - "key_ops" (Key Operations) Parameter, OPTIONAL
-  // - "alg" (Algorithm) Parameter, OPTIONAL
-  // - "ext" (Key Exportability), OPTIONAL
-  // (all other entries are ignored)
-  //
-  // OPTIONAL here means that this code does not require the entry to be present
-  // in the incoming JWK, because the method input parameters contain similar
-  // information. If the optional JWK entry is present, it will be validated
-  // against the corresponding input parameter for consistency and combined with
-  // it according to rules defined below. A special case is that the method
-  // input parameter 'algorithm' is also optional. If it is null, the JWK 'alg'
-  // value (if present) is used as a fallback.
-  //
-  // Input 'key_data' contains the JWK. To build a Web Crypto Key, the JWK
-  // values are parsed out and combined with the method input parameters to
-  // build a Web Crypto Key:
-  // Web Crypto Key type            <-- (deduced)
-  // Web Crypto Key extractable     <-- JWK ext + input extractable
-  // Web Crypto Key algorithm       <-- JWK alg + input algorithm
-  // Web Crypto Key keyUsage        <-- JWK use, key_ops + input usage_mask
-  // Web Crypto Key keying material <-- kty-specific parameters
-  //
-  // Values for each JWK entry are case-sensitive and defined in
-  // http://tools.ietf.org/html/draft-ietf-jose-json-web-algorithms-18.
-  // Note that not all values specified by JOSE are handled by this code. Only
-  // handled values are listed.
-  // - kty (Key Type)
-  //   +-------+--------------------------------------------------------------+
-  //   | "RSA" | RSA [RFC3447]                                                |
-  //   | "oct" | Octet sequence (used to represent symmetric keys)            |
-  //   +-------+--------------------------------------------------------------+
-  //
-  // - key_ops (Key Use Details)
-  //   The key_ops field is an array that contains one or more strings from
-  //   the table below, and describes the operations for which this key may be
-  //   used.
-  //   +-------+--------------------------------------------------------------+
-  //   | "encrypt"    | encrypt operations                                    |
-  //   | "decrypt"    | decrypt operations                                    |
-  //   | "sign"       | sign (MAC) operations                                 |
-  //   | "verify"     | verify (MAC) operations                               |
-  //   | "wrapKey"    | key wrap                                              |
-  //   | "unwrapKey"  | key unwrap                                            |
-  //   | "deriveKey"  | key derivation                                        |
-  //   | "deriveBits" | key derivation TODO(padolph): not currently supported |
-  //   +-------+--------------------------------------------------------------+
-  //
-  // - use (Key Use)
-  //   The use field contains a single entry from the table below.
-  //   +-------+--------------------------------------------------------------+
-  //   | "sig"     | equivalent to key_ops of [sign, verify]                  |
-  //   | "enc"     | equivalent to key_ops of [encrypt, decrypt, wrapKey,     |
-  //   |           | unwrapKey, deriveKey, deriveBits]                        |
-  //   +-------+--------------------------------------------------------------+
-  //
-  //   NOTE: If both "use" and "key_ops" JWK members are present, the usages
-  //   specified by them MUST be consistent.  In particular, the "use" value
-  //   "sig" corresponds to "sign" and/or "verify".  The "use" value "enc"
-  //   corresponds to all other values defined above.  If "key_ops" values
-  //   corresponding to both "sig" and "enc" "use" values are present, the "use"
-  //   member SHOULD NOT be present, and if present, its value MUST NOT be
-  //   either "sig" or "enc".
-  //
-  // - ext (Key Exportability)
-  //   +-------+--------------------------------------------------------------+
-  //   | true  | Key may be exported from the trusted environment             |
-  //   | false | Key cannot exit the trusted environment                      |
-  //   +-------+--------------------------------------------------------------+
-  //
-  // - alg (Algorithm)
-  //   See http://tools.ietf.org/html/draft-ietf-jose-json-web-algorithms-18
-  //   +--------------+-------------------------------------------------------+
-  //   | Digital Signature or MAC Algorithm                                   |
-  //   +--------------+-------------------------------------------------------+
-  //   | "HS1"        | HMAC using SHA-1 hash algorithm                       |
-  //   | "HS256"      | HMAC using SHA-256 hash algorithm                     |
-  //   | "HS384"      | HMAC using SHA-384 hash algorithm                     |
-  //   | "HS512"      | HMAC using SHA-512 hash algorithm                     |
-  //   | "RS1"        | RSASSA using SHA-1 hash algorithm
-  //   | "RS256"      | RSASSA using SHA-256 hash algorithm                   |
-  //   | "RS384"      | RSASSA using SHA-384 hash algorithm                   |
-  //   | "RS512"      | RSASSA using SHA-512 hash algorithm                   |
-  //   +--------------+-------------------------------------------------------|
-  //   | Key Management Algorithm                                             |
-  //   +--------------+-------------------------------------------------------+
-  //   | "RSA1_5"     | RSAES-PKCS1-V1_5 [RFC3447]                            |
-  //   | "RSA-OAEP"   | RSAES using Optimal Asymmetric Encryption Padding     |
-  //   |              | (OAEP) [RFC3447], with the default parameters         |
-  //   |              | specified by RFC3447 in Section A.2.1                 |
-  //   | "A128KW"     | Advanced Encryption Standard (AES) Key Wrap Algorithm |
-  //   |              | [RFC3394] using 128 bit keys                          |
-  //   | "A192KW"     | AES Key Wrap Algorithm using 192 bit keys             |
-  //   | "A256KW"     | AES Key Wrap Algorithm using 256 bit keys             |
-  //   | "A128GCM"    | AES in Galois/Counter Mode (GCM) [NIST.800-38D] using |
-  //   |              | 128 bit keys                                          |
-  //   | "A192GCM"    | AES GCM using 192 bit keys                            |
-  //   | "A256GCM"    | AES GCM using 256 bit keys                            |
-  //   | "A128CBC"    | AES in Cipher Block Chaining Mode (CBC) with PKCS #5  |
-  //   |              | padding [NIST.800-38A]                                |
-  //   | "A192CBC"    | AES CBC using 192 bit keys                            |
-  //   | "A256CBC"    | AES CBC using 256 bit keys                            |
-  //   +--------------+-------------------------------------------------------+
-  //
-  // kty-specific parameters
-  // The value of kty determines the type and content of the keying material
-  // carried in the JWK to be imported. Currently only two possibilities are
-  // supported: a raw key or an RSA public key. RSA private keys are not
-  // supported because typical applications seldom need to import a private key,
-  // and the large number of JWK parameters required to describe one.
-  // - kty == "oct" (symmetric or other raw key)
-  //   +-------+--------------------------------------------------------------+
-  //   | "k"   | Contains the value of the symmetric (or other single-valued) |
-  //   |       | key.  It is represented as the base64url encoding of the     |
-  //   |       | octet sequence containing the key value.                     |
-  //   +-------+--------------------------------------------------------------+
-  // - kty == "RSA" (RSA public key)
-  //   +-------+--------------------------------------------------------------+
-  //   | "n"   | Contains the modulus value for the RSA public key.  It is    |
-  //   |       | represented as the base64url encoding of the value's         |
-  //   |       | unsigned big endian representation as an octet sequence.     |
-  //   +-------+--------------------------------------------------------------+
-  //   | "e"   | Contains the exponent value for the RSA public key.  It is   |
-  //   |       | represented as the base64url encoding of the value's         |
-  //   |       | unsigned big endian representation as an octet sequence.     |
-  //   +-------+--------------------------------------------------------------+
-  //
-  // Consistency and conflict resolution
-  // The 'algorithm', 'extractable', and 'usage_mask' input parameters
-  // may be different than the corresponding values inside the JWK. The Web
-  // Crypto spec says that if a JWK value is present but is inconsistent with
-  // the input value, it is an error and the operation must fail. If no
-  // inconsistency is found then the input parameters are used.
-  //
-  // algorithm
-  //   If the JWK algorithm is provided, it must match the web crypto input
-  //   algorithm (both the algorithm ID and inner hash if applicable).
-  //
-  // extractable
-  //   If the JWK ext field is true but the input parameter is false, make the
-  //   Web Crypto Key non-extractable. Conversely, if the JWK ext field is
-  //   false but the input parameter is true, it is an inconsistency. If both
-  //   are true or both are false, use that value.
-  //
-  // usage_mask
-  //   The input usage_mask must be a strict subset of the interpreted JWK use
-  //   value, else it is judged inconsistent. In all cases the input usage_mask
-  //   is used as the final usage_mask.
-  //
-
   if (!key_data.byte_length())
     return Status::ErrorImportEmptyKeyData();
   DCHECK(key);
@@ -756,36 +947,9 @@ Status ImportKeyJwk(const CryptoData& key_data,
                      usage_mask,
                      key);
   }
-  if (jwk_kty_value == "RSA") {
-    // An RSA public key must have an "n" (modulus) and an "e" (exponent) entry
-    // in the JWK, while an RSA private key must have those, plus at least a "d"
-    // (private exponent) entry.
-    // See http://tools.ietf.org/html/draft-ietf-jose-json-web-algorithms-18,
-    // section 6.3.
 
-    // RSA private key import is not currently supported, so fail here if a "d"
-    // entry is found.
-    // TODO(padolph): Support RSA private key import.
-    if (dict_value->HasKey("d"))
-      return Status::ErrorJwkRsaPrivateKeyUnsupported();
-
-    std::string jwk_n_value;
-    status = GetJwkBytes(dict_value, "n", &jwk_n_value);
-    if (status.IsError())
-      return status;
-    std::string jwk_e_value;
-    status = GetJwkBytes(dict_value, "e", &jwk_e_value);
-    if (status.IsError())
-      return status;
-
-    return platform::ImportRsaPublicKey(algorithm,
-                                        extractable,
-                                        usage_mask,
-                                        CryptoData(jwk_n_value),
-                                        CryptoData(jwk_e_value),
-                                        key);
-
-  }
+  if (jwk_kty_value == "RSA")
+    return ImportRsaKey(dict_value, algorithm, extractable, usage_mask, key);
 
   return Status::ErrorJwkUnrecognizedKty();
 }
@@ -806,8 +970,8 @@ Status ExportKeyJwk(const blink::WebCryptoKey& key,
       break;
     }
     case blink::WebCryptoKeyTypePublic: {
-      // Currently only RSA public key export is supported.
-      if (!IsRsaPublicKey(key))
+      // TODO(eroman): Update when there are asymmetric keys other than RSA.
+      if (!IsRsaKey(key))
         return Status::ErrorUnsupported();
       platform::PublicKey* public_key;
       status = ToPlatformPublicKey(key, &public_key);
@@ -822,7 +986,17 @@ Status ExportKeyJwk(const blink::WebCryptoKey& key,
       WriteRsaPublicKey(modulus, public_exponent, &jwk_dict);
       break;
     }
-    case blink::WebCryptoKeyTypePrivate:  // TODO(padolph)
+    case blink::WebCryptoKeyTypePrivate: {
+      // TODO(eroman): Update when there are asymmetric keys other than RSA.
+      if (!IsRsaKey(key))
+        return Status::ErrorUnsupported();
+
+      status = ExportRsaPrivateKeyJwk(key, &jwk_dict);
+      if (status.IsError())
+        return status;
+      break;
+    }
+
     default:
       return Status::ErrorUnsupported();
   }

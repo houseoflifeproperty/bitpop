@@ -16,7 +16,8 @@ MEDIA_EXPORT extern const char kAudioBufferSize[];
 
 MEDIA_EXPORT extern const char kVideoThreads[];
 
-MEDIA_EXPORT extern const char kEnableADTSStreamParser[];
+MEDIA_EXPORT extern const char
+    kIgnoreResolutionLimitsForAcceleratedVideoDecode[];
 
 #if defined(OS_ANDROID)
 MEDIA_EXPORT extern const char kDisableInfobarForProtectedMediaIdentifier[];
@@ -46,6 +47,7 @@ MEDIA_EXPORT extern const char kWaveOutBuffers[];
 MEDIA_EXPORT extern const char kUseCras[];
 #endif
 
+MEDIA_EXPORT extern const char kUseFakeDeviceForMediaStream[];
 MEDIA_EXPORT extern const char kUseFileForFakeVideoCapture[];
 
 }  // namespace switches

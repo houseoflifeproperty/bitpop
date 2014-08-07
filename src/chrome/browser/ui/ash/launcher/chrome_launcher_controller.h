@@ -179,6 +179,14 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   // be pinned.
   bool IsPinnable(ash::ShelfID id) const;
 
+  // Installs the specified id. Only valid if the id corresponds to an ephemeral
+  // app.
+  void Install(ash::ShelfID id);
+
+  // Returns true if the specified item can be installed. Only true for
+  // ephemeral apps.
+  bool CanInstall(ash::ShelfID id);
+
   // If there is no shelf item in the shelf for application |app_id|, one
   // gets created. The (existing or created) shelf items get then locked
   // against a users un-pinning removal.
@@ -457,6 +465,11 @@ class ChromeLauncherController : public ash::ShelfDelegate,
 
   // Sets both of auto-hide behavior and alignment from prefs.
   void SetShelfBehaviorsFromPrefs();
+
+#if defined(OS_CHROMEOS)
+  // Sets whether the virtual keyboard is enabled from prefs.
+  void SetVirtualKeyboardBehaviorFromPrefs();
+#endif  // defined(OS_CHROMEOS)
 
   // Returns the shelf item status for the given |app_id|, which can be either
   // STATUS_ACTIVE (if the app is active), STATUS_RUNNING (if there is such an

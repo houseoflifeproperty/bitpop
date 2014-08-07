@@ -72,6 +72,10 @@ class ManageProfileHandler : public OptionsPageUIHandler,
   // This is used to detect duplicate profile names.
   void SendExistingProfileNames();
 
+  // Show disconnect managed profile dialog after generating domain and user
+  // specific strings.
+  void ShowDisconnectManagedProfileDialog(const base::ListValue* args);
+
   // Callback for the "setProfileIconAndName" message. Sets the name and icon
   // of a given profile.
   // |args| is of the form: [
@@ -100,13 +104,13 @@ class ManageProfileHandler : public OptionsPageUIHandler,
 
   // Callback for the "RequestCreateProfileUpdate" message.
   // Sends the email address of the signed-in user, or an empty string if the
-  // user is not signed in. Also sends information about whether managed users
-  // may be created.
+  // user is not signed in. Also sends information about whether supervised
+  // users may be created.
   void RequestCreateProfileUpdate(const base::ListValue* args);
 
-  // When the pref allowing managed-user creation changes, sends the new value
-  // to the UI.
-  void OnCreateManagedUserPrefChange();
+  // When the pref allowing supervised-user creation changes, sends the new
+  // value to the UI.
+  void OnCreateSupervisedUserPrefChange();
 
   // Callback invoked from the profile manager indicating whether the profile
   // being edited has any desktop shortcuts.
@@ -122,10 +126,14 @@ class ManageProfileHandler : public OptionsPageUIHandler,
   // shortcut" button. Removes the desktop shortcut for the profile.
   void RemoveProfileShortcut(const base::ListValue* args);
 
+  // Callback for the "refreshGaiaPicture" message, which is called when the
+  // user is editing an existing profile.
+  void RefreshGaiaPicture(const base::ListValue* args);
+
   // URL for the current profile's GAIA picture.
   std::string gaia_picture_url_;
 
-  // Used to observe the preference that allows creating managed users, which
+  // Used to observe the preference that allows creating supervised users, which
   // can be changed by policy.
   PrefChangeRegistrar pref_change_registrar_;
 

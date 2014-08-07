@@ -2,19 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "codegen.h"
-#include "compiler.h"
-#include "debug.h"
-#include "full-codegen.h"
-#include "liveedit.h"
-#include "macro-assembler.h"
-#include "prettyprinter.h"
-#include "scopes.h"
-#include "scopeinfo.h"
-#include "snapshot.h"
-#include "stub-cache.h"
+#include "src/codegen.h"
+#include "src/compiler.h"
+#include "src/debug.h"
+#include "src/full-codegen.h"
+#include "src/liveedit.h"
+#include "src/macro-assembler.h"
+#include "src/prettyprinter.h"
+#include "src/scopes.h"
+#include "src/scopeinfo.h"
+#include "src/snapshot.h"
+#include "src/stub-cache.h"
 
 namespace v8 {
 namespace internal {
@@ -402,7 +402,7 @@ void FullCodeGenerator::Initialize() {
   // we disable the production of debug code in the full compiler if we are
   // either generating a snapshot or we booted from a snapshot.
   generate_debug_code_ = FLAG_debug_code &&
-                         !Serializer::enabled(isolate()) &&
+                         !masm_->serializer_enabled() &&
                          !Snapshot::HaveASnapshotToStartFrom();
   masm_->set_emit_debug_code(generate_debug_code_);
   masm_->set_predictable_code_size(true);
@@ -452,9 +452,12 @@ void FullCodeGenerator::PrepareForBailoutForId(BailoutId id, State state) {
   unsigned pc_and_state =
       StateField::encode(state) | PcField::encode(masm_->pc_offset());
   ASSERT(Smi::IsValid(pc_and_state));
+#ifdef DEBUG
+  for (int i = 0; i < bailout_entries_.length(); ++i) {
+    ASSERT(bailout_entries_[i].id != id);
+  }
+#endif
   BailoutEntry entry = { id, pc_and_state };
-  ASSERT(!prepared_bailout_ids_.Contains(id.ToInt()));
-  prepared_bailout_ids_.Add(id.ToInt(), zone());
   bailout_entries_.Add(entry, zone());
 }
 
@@ -805,7 +808,7 @@ void FullCodeGenerator::SetReturnPosition(FunctionLiteral* fun) {
 
 
 void FullCodeGenerator::SetStatementPosition(Statement* stmt) {
-  if (!isolate()->debugger()->IsDebuggerActive()) {
+  if (!info_->is_debug()) {
     CodeGenerator::RecordPositions(masm_, stmt->position());
   } else {
     // Check if the statement will be breakable without adding a debug break
@@ -820,14 +823,14 @@ void FullCodeGenerator::SetStatementPosition(Statement* stmt) {
     // If the position recording did record a new position generate a debug
     // break slot to make the statement breakable.
     if (position_recorded) {
-      Debug::GenerateSlot(masm_);
+      DebugCodegen::GenerateSlot(masm_);
     }
   }
 }
 
 
 void FullCodeGenerator::SetExpressionPosition(Expression* expr) {
-  if (!isolate()->debugger()->IsDebuggerActive()) {
+  if (!info_->is_debug()) {
     CodeGenerator::RecordPositions(masm_, expr->position());
   } else {
     // Check if the expression will be breakable without adding a debug break
@@ -846,7 +849,7 @@ void FullCodeGenerator::SetExpressionPosition(Expression* expr) {
     // If the position recording did record a new position generate a debug
     // break slot to make the statement breakable.
     if (position_recorded) {
-      Debug::GenerateSlot(masm_);
+      DebugCodegen::GenerateSlot(masm_);
     }
   }
 }
@@ -1049,7 +1052,9 @@ void FullCodeGenerator::VisitBlock(Block* stmt) {
 
   Scope* saved_scope = scope();
   // Push a block context when entering a block with block scoped variables.
-  if (stmt->scope() != NULL) {
+  if (stmt->scope() == NULL) {
+    PrepareForBailoutForId(stmt->EntryId(), NO_REGISTERS);
+  } else {
     scope_ = stmt->scope();
     ASSERT(!scope_->is_module_scope());
     { Comment cmnt(masm_, "[ Extend block context");
@@ -1060,17 +1065,17 @@ void FullCodeGenerator::VisitBlock(Block* stmt) {
       // Replace the context stored in the frame.
       StoreToFrameField(StandardFrameConstants::kContextOffset,
                         context_register());
+      PrepareForBailoutForId(stmt->EntryId(), NO_REGISTERS);
     }
     { Comment cmnt(masm_, "[ Declarations");
       VisitDeclarations(scope_->declarations());
+      PrepareForBailoutForId(stmt->DeclsId(), NO_REGISTERS);
     }
   }
 
-  PrepareForBailoutForId(stmt->EntryId(), NO_REGISTERS);
   VisitStatements(stmt->statements());
   scope_ = saved_scope;
   __ bind(nested_block.break_label());
-  PrepareForBailoutForId(stmt->ExitId(), NO_REGISTERS);
 
   // Pop block context if necessary.
   if (stmt->scope() != NULL) {
@@ -1079,6 +1084,7 @@ void FullCodeGenerator::VisitBlock(Block* stmt) {
     StoreToFrameField(StandardFrameConstants::kContextOffset,
                       context_register());
   }
+  PrepareForBailoutForId(stmt->ExitId(), NO_REGISTERS);
 }
 
 

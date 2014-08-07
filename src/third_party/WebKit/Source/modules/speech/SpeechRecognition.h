@@ -28,13 +28,11 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventTargetModules.h"
 #include "modules/speech/SpeechGrammarList.h"
 #include "modules/speech/SpeechRecognitionResult.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Compiler.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -44,15 +42,16 @@ class ExecutionContext;
 class SpeechRecognitionController;
 class SpeechRecognitionError;
 
-class SpeechRecognition FINAL : public RefCountedWillBeRefCountedGarbageCollected<SpeechRecognition>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
-    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<SpeechRecognition>);
+class SpeechRecognition FINAL : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SpeechRecognition>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<SpeechRecognition>);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SpeechRecognition);
 public:
-    static PassRefPtrWillBeRawPtr<SpeechRecognition> create(ExecutionContext*);
+    static SpeechRecognition* create(ExecutionContext*);
     virtual ~SpeechRecognition();
 
     // Attributes.
-    SpeechGrammarList* grammars() { return m_grammars.get(); }
-    void setGrammars(PassRefPtrWillBeRawPtr<SpeechGrammarList> grammars) { m_grammars = grammars; }
+    SpeechGrammarList* grammars() { return m_grammars; }
+    void setGrammars(SpeechGrammarList* grammars) { m_grammars = grammars; }
     String lang() { return m_lang; }
     void setLang(const String& lang) { m_lang = lang; }
     bool continuous() { return m_continuous; }
@@ -74,8 +73,8 @@ public:
     void didEndSpeech();
     void didEndSound();
     void didEndAudio();
-    void didReceiveResults(const WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionResult> >& newFinalResults, const WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionResult> >& currentInterimResults);
-    void didReceiveNoMatch(PassRefPtrWillBeRawPtr<SpeechRecognitionResult>);
+    void didReceiveResults(const HeapVector<Member<SpeechRecognitionResult> >& newFinalResults, const HeapVector<Member<SpeechRecognitionResult> >& currentInterimResults);
+    void didReceiveNoMatch(SpeechRecognitionResult*);
     void didReceiveError(PassRefPtrWillBeRawPtr<SpeechRecognitionError>);
     void didStart();
     void didEnd();
@@ -100,24 +99,22 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(start);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(end);
 
-    void trace(Visitor*);
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    friend class RefCounted<SpeechRecognition>;
-
     explicit SpeechRecognition(ExecutionContext*);
 
-    RefPtrWillBeMember<SpeechGrammarList> m_grammars;
+    Member<SpeechGrammarList> m_grammars;
     String m_lang;
     bool m_continuous;
     bool m_interimResults;
     unsigned long m_maxAlternatives;
 
-    SpeechRecognitionController* m_controller;
+    RawPtrWillBeMember<SpeechRecognitionController> m_controller;
     bool m_stoppedByActiveDOMObject;
     bool m_started;
     bool m_stopping;
-    WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionResult> > m_finalResults;
+    HeapVector<Member<SpeechRecognitionResult> > m_finalResults;
 };
 
 } // namespace WebCore

@@ -23,7 +23,6 @@
 #include "core/svg/SVGLineElement.h"
 
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGLength.h"
 
 namespace WebCore {
@@ -43,10 +42,7 @@ inline SVGLineElement::SVGLineElement(Document& document)
     addToPropertyMap(m_y2);
 }
 
-PassRefPtr<SVGLineElement> SVGLineElement::create(Document& document)
-{
-    return adoptRef(new SVGLineElement(document));
-}
+DEFINE_NODE_FACTORY(SVGLineElement)
 
 bool SVGLineElement::isSupportedAttribute(const QualifiedName& attrName)
 {

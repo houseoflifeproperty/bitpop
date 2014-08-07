@@ -37,10 +37,9 @@ class ScreenshotSyncPage(page.Page):
     self.user_agent_type = 'desktop'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction({
-      'javascript': 'window.__testComplete',
-      'timeout': 120}))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'window.__testComplete', timeout=120)
 
 
 class ScreenshotSyncProcess(test.Test):
@@ -52,9 +51,6 @@ class ScreenshotSyncProcess(test.Test):
     return expectations.ScreenshotSyncExpectations()
 
   def CreatePageSet(self, options):
-    ps = page_set.PageSet(
-      file_path=data_path,
-      description='Test cases for screenshot synchronization',
-      serving_dirs=[''])
+    ps = page_set.PageSet(file_path=data_path, serving_dirs=[''])
     ps.AddPage(ScreenshotSyncPage(ps, ps.base_dir))
     return ps

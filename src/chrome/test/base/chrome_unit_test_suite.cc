@@ -6,7 +6,6 @@
 
 #include "base/path_service.h"
 #include "base/process/process_handle.h"
-#include "base/metrics/stats_table.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/common/chrome_content_client.h"
@@ -49,7 +48,7 @@ class ChromeUnitTestSuiteInitializer : public testing::EmptyTestEventListener {
 #if !defined(OS_IOS)
     browser_content_client_.reset(new chrome::ChromeContentBrowserClient());
     content::SetBrowserClientForTesting(browser_content_client_.get());
-    utility_content_client_.reset(new chrome::ChromeContentUtilityClient());
+    utility_content_client_.reset(new ChromeContentUtilityClient());
     content::SetUtilityClientForTesting(utility_content_client_.get());
 #endif
 
@@ -74,7 +73,7 @@ class ChromeUnitTestSuiteInitializer : public testing::EmptyTestEventListener {
   // TODO(ios): Bring this back once ChromeContentBrowserClient is building.
 #if !defined(OS_IOS)
   scoped_ptr<chrome::ChromeContentBrowserClient> browser_content_client_;
-  scoped_ptr<chrome::ChromeContentUtilityClient> utility_content_client_;
+  scoped_ptr<ChromeContentUtilityClient> utility_content_client_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(ChromeUnitTestSuiteInitializer);
@@ -98,12 +97,6 @@ void ChromeUnitTestSuite::Initialize() {
   InitializeProviders();
   RegisterInProcessThreads();
 
-  // Create an anonymous stats table since we don't need to share between
-  // processes.
-  stats_table_.reset(
-      new base::StatsTable(base::StatsTable::TableIdentifier(), 20, 200));
-  base::StatsTable::set_current(stats_table_.get());
-
   ChromeTestSuite::Initialize();
 
   // This needs to run after ChromeTestSuite::Initialize which calls content's
@@ -113,10 +106,6 @@ void ChromeUnitTestSuite::Initialize() {
 
 void ChromeUnitTestSuite::Shutdown() {
   ResourceBundle::CleanupSharedInstance();
-
-  base::StatsTable::set_current(NULL);
-  stats_table_.reset();
-
   ChromeTestSuite::Shutdown();
 }
 

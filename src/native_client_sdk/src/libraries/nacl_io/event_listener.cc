@@ -55,7 +55,7 @@ EventListener::~EventListener() {
 static void AbsoluteFromDeltaMS(struct timespec* timeout, int ms_timeout) {
   if (ms_timeout >= 0) {
     uint64_t usec = usec_since_epoch();
-    usec += ((int64_t) ms_timeout * 1000);
+    usec += ((int64_t)ms_timeout * 1000);
 
     timeout->tv_nsec = (usec % 1000000) * 1000;
     timeout->tv_sec = (usec / 1000000);
@@ -64,7 +64,6 @@ static void AbsoluteFromDeltaMS(struct timespec* timeout, int ms_timeout) {
     timeout->tv_nsec = 0;
   }
 }
-
 
 EventListenerLock::EventListenerLock(EventEmitter* emitter)
     : EventListener(),
@@ -77,8 +76,7 @@ EventListenerLock::~EventListenerLock() {
   delete lock_;
 }
 
-void EventListenerLock::ReceiveEvents(EventEmitter* emitter,
-                                      uint32_t events) {
+void EventListenerLock::ReceiveEvents(EventEmitter* emitter, uint32_t events) {
   // We are using the emitter's mutex, which is already locked.
   pthread_cond_signal(&signal_cond_);
 }
@@ -88,7 +86,7 @@ Error EventListenerLock::WaitOnEvent(uint32_t events, int ms_timeout) {
   AbsoluteFromDeltaMS(&timeout, ms_timeout);
 
   emitter_->RegisterListener_Locked(this, events);
-  while ((emitter_->GetEventStatus() & events) == 0) {
+  while ((emitter_->GetEventStatus_Locked() & events) == 0) {
     int return_code;
     if (ms_timeout >= 0) {
       return_code = pthread_cond_timedwait(&signal_cond_,
@@ -99,7 +97,7 @@ Error EventListenerLock::WaitOnEvent(uint32_t events, int ms_timeout) {
                                       emitter_->GetLock().mutex());
     }
 
-    if (emitter_->GetEventStatus() & POLLERR)
+    if (emitter_->GetEventStatus_Locked() & POLLERR)
       return_code = EINTR;
 
     // Return the failure, unlocked
@@ -113,8 +111,7 @@ Error EventListenerLock::WaitOnEvent(uint32_t events, int ms_timeout) {
   return 0;
 }
 
-void EventListenerPoll::ReceiveEvents(EventEmitter* emitter,
-                                      uint32_t events) {
+void EventListenerPoll::ReceiveEvents(EventEmitter* emitter, uint32_t events) {
   AUTO_LOCK(signal_lock_);
   emitters_[emitter]->events |= events;
   signaled_++;
@@ -124,7 +121,6 @@ void EventListenerPoll::ReceiveEvents(EventEmitter* emitter,
 Error EventListenerPoll::WaitOnAny(EventRequest* requests,
                                    size_t cnt,
                                    int ms_timeout) {
-
   signaled_ = 0;
 
   // Build a map of request emitters to request data before

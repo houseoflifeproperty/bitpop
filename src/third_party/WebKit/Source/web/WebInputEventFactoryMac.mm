@@ -965,11 +965,6 @@ static WebMouseWheelEvent::Phase momentumPhaseForEvent(NSEvent *event)
     return phaseForNSEventPhase(eventMomentumPhase);
 }
 
-WebMouseWheelEvent WebInputEventFactory::mouseWheelEvent(NSEvent* event, NSView* view)
-{
-    return mouseWheelEvent(event, view, true, true);
-}
-
 WebMouseWheelEvent WebInputEventFactory::mouseWheelEvent(NSEvent* event, NSView* view, bool canRubberbandLeft, bool canRubberbandRight)
 {
     WebMouseWheelEvent result;
@@ -1137,7 +1132,7 @@ WebGestureEvent WebInputEventFactory::gestureEvent(NSEvent *event, NSView *view)
     result.timeStampSeconds = [event timestamp];
 
     // MacOS X gestures are used only for pinch support.
-    result.sourceDevice = WebGestureEvent::Touchpad;
+    result.sourceDevice = WebGestureDeviceTouchpad;
     switch ([event type]) {
     case NSEventTypeMagnify:
         result.type = WebInputEvent::GesturePinchUpdate;

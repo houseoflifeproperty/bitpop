@@ -41,6 +41,10 @@ window.runTest = function(testName) {
   embedder.test.testList[testName]();
 };
 
+var LOG = function(msg) {
+  window.console.log(msg);
+};
+
 // Creates a <webview> tag in document.body and returns the reference to it.
 // It also sets a dummy src. The dummy src is significant because this makes
 // sure that the <object> shim is created (asynchronously at this point) for the
@@ -336,6 +340,58 @@ function testChromeExtensionRelativePath() {
   document.body.appendChild(webview);
 }
 
+// Tests that a <webview> that starts with "display: none" style loads
+// properly.
+function testDisplayNoneWebviewLoad() {
+  var webview = document.createElement('webview');
+  var visible = false;
+  webview.style.display = 'none';
+  // foobar is a privileged partition according to the manifest file.
+  webview.partition = 'foobar';
+  webview.addEventListener('loadabort', function(e) {
+    embedder.test.fail();
+  });
+  webview.addEventListener('loadstop', function(e) {
+    embedder.test.assertTrue(visible);
+    embedder.test.succeed();
+  });
+  // Set the .src while we are "display: none".
+  webview.setAttribute('src', 'about:blank');
+  document.body.appendChild(webview);
+
+  setTimeout(function() {
+    visible = true;
+    // This should trigger loadstop.
+    webview.style.display = '';
+  }, 0);
+}
+
+function testDisplayNoneWebviewRemoveChild() {
+  var webview = document.createElement('webview');
+  var visibleAndInDOM = false;
+  webview.style.display = 'none';
+  // foobar is a privileged partition according to the manifest file.
+  webview.partition = 'foobar';
+  webview.addEventListener('loadabort', function(e) {
+    embedder.test.fail();
+  });
+  webview.addEventListener('loadstop', function(e) {
+    embedder.test.assertTrue(visibleAndInDOM);
+    embedder.test.succeed();
+  });
+  // Set the .src while we are "display: none".
+  webview.setAttribute('src', 'about:blank');
+  document.body.appendChild(webview);
+
+  setTimeout(function() {
+    webview.parentNode.removeChild(webview);
+    webview.style.display = '';
+    visibleAndInDOM = true;
+    // This should trigger loadstop.
+    document.body.appendChild(webview);
+  }, 0);
+}
+
 // Makes sure inline scripts works inside guest that was loaded from
 // accessible_resources.
 function testInlineScriptFromAccessibleResources() {
@@ -503,7 +559,9 @@ function testDestroyOnEventListener() {
     if (url != e.url)
       return;
     ++loadCommitCount;
-    if (loadCommitCount == 1) {
+    if (loadCommitCount == 2) {
+      // Pass in a timeout so that we can catch if any additional loadcommit
+      // occurs.
       setTimeout(function() {
         embedder.test.succeed();
       }, 0);
@@ -514,10 +572,12 @@ function testDestroyOnEventListener() {
 
   // The test starts from here, by setting the src to |url|.
   webview.addEventListener('loadcommit', function(e) {
+    window.console.log('loadcommit1');
     webview.parentNode.removeChild(webview);
     loadCommitCommon(e);
   });
   webview.addEventListener('loadcommit', function(e) {
+    window.console.log('loadcommit2');
     loadCommitCommon(e);
   });
   webview.setAttribute('src', url);
@@ -575,17 +635,43 @@ function testCannotMutateEventName() {
 // been set raises an exception.
 function testPartitionRaisesException() {
   var webview = document.createElement('webview');
-  webview.setAttribute('partition', arguments.callee.name);
-  webview.setAttribute('src', 'data:text/html,trigger navigation');
-  document.body.appendChild(webview);
-  setTimeout(function() {
+  var partitionAttribute = arguments.callee.name;
+  webview.setAttribute('partition', partitionAttribute);
+
+  var loadstopHandler = function(e) {
     try {
       webview.partition = 'illegal';
       embedder.test.fail();
     } catch (e) {
+      embedder.test.assertEq(partitionAttribute, webview.partition);
       embedder.test.succeed();
     }
-  }, 0);
+  };
+  webview.addEventListener('loadstop', loadstopHandler);
+
+  document.body.appendChild(webview);
+  webview.setAttribute('src', 'data:text/html,trigger navigation');
+}
+
+// This test verifies that removing partition attribute after navigation does
+// not work, i.e. the partition remains the same.
+function testPartitionRemovalAfterNavigationFails() {
+  var webview = document.createElement('webview');
+  document.body.appendChild(webview);
+
+  var partition = 'testme';
+  webview.setAttribute('partition', partition);
+
+  var loadstopHandler = function(e) {
+    window.console.log('webview.loadstop');
+    // Removing after navigation should not change the partition.
+    webview.removeAttribute('partition');
+    embedder.test.assertEq('testme', webview.partition);
+    embedder.test.succeed();
+  };
+  webview.addEventListener('loadstop', loadstopHandler);
+
+  webview.setAttribute('src', 'data:text/html,<html><body>guest</body></html>');
 }
 
 function testExecuteScriptFail() {
@@ -799,25 +885,6 @@ function testRemoveSrcAttribute() {
   document.body.appendChild(webview);
 }
 
-// This test verifies that it is not possible to instantiate a browser plugin
-// directly within an app.
-function testBrowserPluginNotAllowed() {
-  var container = document.getElementById('object-container');
-  if (!container) {
-    embedder.test.fail('Container for object not found.');
-    return;
-  }
-  container.innerHTML = '<object type="application/browser-plugin"' +
-      ' id="object-plugin"' +
-      ' src="data:text/html,<body>You should not see this</body>">' +
-      '</object>';
-  var objectElement = document.getElementById('object-plugin');
-  // Check that bindings are not registered.
-  embedder.test.assertTrue(
-      objectElement['-internal-attach'] === undefined);
-  embedder.test.succeed();
-}
-
 function testPluginLoadPermission() {
   var pluginIdentifier = 'unknown platform';
   if (navigator.platform.match(/linux/i))
@@ -980,8 +1047,32 @@ function testDeclarativeWebRequestAPI() {
     webview.request.onRequest.removeRules();
     webview.reload();
   });
-  webview.addEventListener('loadcommit', function(e) {
+  webview.addEventListener('loadstop', function(e) {
     embedder.test.assertEq(2, step);
+    embedder.test.succeed();
+  });
+  webview.src = embedder.emptyGuestURL;
+  document.body.appendChild(webview);
+}
+
+function testDeclarativeWebRequestAPISendMessage() {
+  var webview = new WebView();
+  window.console.log(embedder.emptyGuestURL);
+  var rule = {
+    conditions: [
+      new chrome.webViewRequest.RequestMatcher(
+        {
+          url: { urlContains: 'guest' }
+        }
+      )
+    ],
+    actions: [
+      new chrome.webViewRequest.SendMessageToExtension({ message: 'bleep' })
+    ]
+  };
+  webview.request.onRequest.addRules([rule]);
+  webview.request.onMessage.addListener(function(e) {
+    embedder.test.assertEq('bleep', e.message);
     embedder.test.succeed();
   });
   webview.src = embedder.emptyGuestURL;
@@ -1036,6 +1127,48 @@ function testGetProcessId() {
     embedder.test.succeed();
   };
   webview.addEventListener('loadstop', firstLoad);
+  document.body.appendChild(webview);
+}
+
+function testHiddenBeforeNavigation() {
+  var webview = document.createElement('webview');
+  webview.style.visibility = 'hidden';
+
+  var postMessageHandler = function(e) {
+    var data = JSON.parse(e.data);
+    window.removeEventListener('message', postMessageHandler);
+    if (data[0] == 'visibilityState-response') {
+      embedder.test.assertEq('hidden', data[1]);
+      embedder.test.succeed();
+    } else {
+      LOG('Unexpected message: ' + data);
+      embedder.test.fail();
+    }
+  };
+
+  webview.addEventListener('loadstop', function(e) {
+    LOG('webview.loadstop');
+    window.addEventListener('message', postMessageHandler);
+    webview.addEventListener('consolemessage', function(e) {
+      LOG('g: ' + e.message);
+    });
+
+    webview.executeScript(
+      {file: 'inject_hidden_test.js'},
+      function(results) {
+        if (!results || !results.length) {
+          LOG('Failed to inject script: inject_hidden_test.js');
+          embedder.test.fail();
+          return;
+        }
+
+        LOG('script injection success');
+        webview.contentWindow.postMessage(
+            JSON.stringify(['visibilityState-request']), '*');
+      });
+  });
+
+  webview.setAttribute('src', 'data:text/html,<html><body></body></html>');
   document.body.appendChild(webview);
 }
 
@@ -1130,6 +1263,41 @@ function testLoadAbortIllegalJavaScriptURL() {
   document.body.appendChild(webview);
 }
 
+// Verifies that navigating to invalid URL (e.g. 'http:') doesn't cause a crash.
+function testLoadAbortInvalidNavigation() {
+  var webview = document.createElement('webview');
+  var validSchemeWithEmptyURL = 'http:';
+  webview.addEventListener('loadabort', function(e) {
+    embedder.test.assertEq('ERR_ABORTED', e.reason);
+    embedder.test.assertEq('', e.url);
+    embedder.test.succeed();
+  });
+  webview.addEventListener('exit', function(e) {
+    // We should not crash.
+    embedder.test.fail();
+  });
+  webview.setAttribute('src', validSchemeWithEmptyURL);
+  document.body.appendChild(webview);
+}
+
+// Verifies that navigation to a URL that is valid but not web-safe or
+// pseudo-scheme fires loadabort and doesn't cause a crash.
+function testLoadAbortNonWebSafeScheme() {
+  var webview = document.createElement('webview');
+  var chromeGuestURL = 'chrome-guest://abc123';
+  webview.addEventListener('loadabort', function(e) {
+    embedder.test.assertEq('ERR_ABORTED', e.reason);
+    embedder.test.assertEq('chrome-guest://abc123/', e.url);
+    embedder.test.succeed();
+  });
+  webview.addEventListener('exit', function(e) {
+    // We should not crash.
+    embedder.test.fail();
+  });
+  webview.setAttribute('src', chromeGuestURL);
+  document.body.appendChild(webview);
+};
+
 // This test verifies that the reload method on webview functions as expected.
 function testReload() {
   var triggerNavUrl = 'data:text/html,trigger navigation';
@@ -1208,6 +1376,54 @@ function testNavigationToExternalProtocol() {
     }, function(results) {});
   });
   webview.setAttribute('src', 'data:text/html,navigate to external protocol');
+  document.body.appendChild(webview);
+}
+
+// This test ensures if the guest isn't there and we resize the guest (from JS),
+// it remembers the size correctly.
+function testNavigateAfterResize() {
+  var webview = new WebView();
+
+  var postMessageHandler = function(e) {
+    var data = JSON.parse(e.data);
+    LOG('postMessageHandler: ' + data);
+    webview.removeEventListener('message', postMessageHandler);
+    if (data[0] == 'dimension-response') {
+      var actualWidth = data[1];
+      var actualHeight = data[2];
+      LOG('actualWidth: ' + actualWidth + ', actualHeight: ' + actualHeight);
+      embedder.test.assertEq(100, actualWidth);
+      embedder.test.assertEq(125, actualHeight);
+      embedder.test.succeed();
+    }
+  };
+  window.addEventListener('message', postMessageHandler);
+
+  webview.addEventListener('consolemessage', function(e) {
+    LOG('guest log: ' + e.message);
+  });
+
+  webview.addEventListener('loadstop', function(e) {
+    webview.executeScript(
+      {file: 'navigate_after_resize.js'},
+      function(results) {
+        if (!results || !results.length) {
+          LOG('Failed to inject navigate_after_resize.js');
+          embedder.test.fail();
+          return;
+        }
+        LOG('Inject success: navigate_after_resize.js');
+        var msg = ['dimension-request'];
+        webview.contentWindow.postMessage(JSON.stringify(msg), '*');
+      });
+  });
+
+  // First set size.
+  webview.style.width = '100px';
+  webview.style.height = '125px';
+
+  // Then navigate.
+  webview.src = 'about:blank';
   document.body.appendChild(webview);
 }
 
@@ -1521,6 +1737,8 @@ embedder.test.testList = {
   'testAPIMethodExistence': testAPIMethodExistence,
   'testChromeExtensionURL': testChromeExtensionURL,
   'testChromeExtensionRelativePath': testChromeExtensionRelativePath,
+  'testDisplayNoneWebviewLoad': testDisplayNoneWebviewLoad,
+  'testDisplayNoneWebviewRemoveChild': testDisplayNoneWebviewRemoveChild,
   'testInlineScriptFromAccessibleResources':
       testInlineScriptFromAccessibleResources,
   'testInvalidChromeExtensionURL': testInvalidChromeExtensionURL,
@@ -1531,6 +1749,8 @@ embedder.test.testList = {
   'testDestroyOnEventListener': testDestroyOnEventListener,
   'testCannotMutateEventName': testCannotMutateEventName,
   'testPartitionRaisesException': testPartitionRaisesException,
+  'testPartitionRemovalAfterNavigationFails':
+      testPartitionRemovalAfterNavigationFails,
   'testExecuteScriptFail': testExecuteScriptFail,
   'testExecuteScript': testExecuteScript,
   'testExecuteScriptIsAbortedWhenWebViewSourceIsChanged':
@@ -1542,7 +1762,6 @@ embedder.test.testList = {
   'testNavOnSrcAttributeChange': testNavOnSrcAttributeChange,
   'testReassignSrcAttribute': testReassignSrcAttribute,
   'testRemoveSrcAttribute': testRemoveSrcAttribute,
-  'testBrowserPluginNotAllowed': testBrowserPluginNotAllowed,
   'testPluginLoadPermission': testPluginLoadPermission,
   'testNewWindow': testNewWindow,
   'testNewWindowTwoListeners': testNewWindowTwoListeners,
@@ -1550,11 +1769,14 @@ embedder.test.testList = {
   'testNewWindowNoReferrerLink': testNewWindowNoReferrerLink,
   'testContentLoadEvent': testContentLoadEvent,
   'testDeclarativeWebRequestAPI': testDeclarativeWebRequestAPI,
+  'testDeclarativeWebRequestAPISendMessage':
+      testDeclarativeWebRequestAPISendMessage,
   'testWebRequestAPI': testWebRequestAPI,
   'testWebRequestAPIGoogleProperty': testWebRequestAPIGoogleProperty,
   'testWebRequestListenerSurvivesReparenting':
       testWebRequestListenerSurvivesReparenting,
   'testGetProcessId': testGetProcessId,
+  'testHiddenBeforeNavigation': testHiddenBeforeNavigation,
   'testLoadStartLoadRedirect': testLoadStartLoadRedirect,
   'testLoadAbortChromeExtensionURLWrongPartition':
       testLoadAbortChromeExtensionURLWrongPartition,
@@ -1562,6 +1784,9 @@ embedder.test.testList = {
   'testLoadAbortIllegalChromeURL': testLoadAbortIllegalChromeURL,
   'testLoadAbortIllegalFileURL': testLoadAbortIllegalFileURL,
   'testLoadAbortIllegalJavaScriptURL': testLoadAbortIllegalJavaScriptURL,
+  'testLoadAbortInvalidNavigation': testLoadAbortInvalidNavigation,
+  'testLoadAbortNonWebSafeScheme': testLoadAbortNonWebSafeScheme,
+  'testNavigateAfterResize': testNavigateAfterResize,
   'testNavigationToExternalProtocol': testNavigationToExternalProtocol,
   'testReload': testReload,
   'testRemoveWebviewOnExit': testRemoveWebviewOnExit,

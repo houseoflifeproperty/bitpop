@@ -128,6 +128,21 @@ remoting.ClientSession = function(accessCode, fetchPin, fetchThirdPartyToken,
   /** @type {HTMLMediaElement} @private */
   this.video_ = null;
 
+  /** @type {Element} @private */
+  this.container_ = document.getElementById('video-container');
+
+  /** @type {Element} @private */
+  this.mouseCursorOverlay_ =
+      this.container_.querySelector('.mouse-cursor-overlay');
+
+  /** @type {Element} */
+  var img = this.mouseCursorOverlay_;
+  /** @param {Event} event @private */
+  this.updateMouseCursorPosition_ = function(event) {
+    img.style.top = event.y + 'px';
+    img.style.left = event.x + 'px';
+  };
+
   /** @type {HTMLElement} @private */
   this.resizeToClientButton_ =
       document.getElementById('screen-resize-to-client');
@@ -176,28 +191,29 @@ remoting.ClientSession.prototype.updateScrollbarVisibility = function() {
   if (!this.shrinkToFit_) {
     // Determine whether or not horizontal or vertical scrollbars are
     // required, taking into account their width.
-    needsVerticalScroll = window.innerHeight < this.plugin_.desktopHeight;
-    needsHorizontalScroll = window.innerWidth < this.plugin_.desktopWidth;
+    var clientArea = this.getClientArea_();
+    needsVerticalScroll = clientArea.height < this.plugin_.desktopHeight;
+    needsHorizontalScroll = clientArea.width < this.plugin_.desktopWidth;
     var kScrollBarWidth = 16;
     if (needsHorizontalScroll && !needsVerticalScroll) {
       needsVerticalScroll =
-          window.innerHeight - kScrollBarWidth < this.plugin_.desktopHeight;
+          clientArea.height - kScrollBarWidth < this.plugin_.desktopHeight;
     } else if (!needsHorizontalScroll && needsVerticalScroll) {
       needsHorizontalScroll =
-          window.innerWidth - kScrollBarWidth < this.plugin_.desktopWidth;
+          clientArea.width - kScrollBarWidth < this.plugin_.desktopWidth;
     }
   }
 
-  var htmlNode = /** @type {HTMLElement} */ (document.documentElement);
+  var scroller = document.getElementById('scroller');
   if (needsHorizontalScroll) {
-    htmlNode.classList.remove('no-horizontal-scroll');
+    scroller.classList.remove('no-horizontal-scroll');
   } else {
-    htmlNode.classList.add('no-horizontal-scroll');
+    scroller.classList.add('no-horizontal-scroll');
   }
   if (needsVerticalScroll) {
-    htmlNode.classList.remove('no-vertical-scroll');
+    scroller.classList.remove('no-vertical-scroll');
   } else {
-    htmlNode.classList.add('no-vertical-scroll');
+    scroller.classList.add('no-vertical-scroll');
   }
 };
 
@@ -362,8 +378,17 @@ remoting.ClientSession.prototype.createClientPlugin_ =
       document.createElement('embed');
 
   plugin.id = id;
-  plugin.src = 'about://none';
-  plugin.type = 'application/vnd.chromium.remoting-viewer';
+  if (remoting.settings.CLIENT_PLUGIN_TYPE == 'pnacl') {
+    plugin.src = 'remoting_client_pnacl.nmf';
+    plugin.type = 'application/x-pnacl';
+  } else if (remoting.settings.CLIENT_PLUGIN_TYPE == 'nacl') {
+    plugin.src = 'remoting_client_nacl.nmf';
+    plugin.type = 'application/x-nacl';
+  } else {
+    plugin.src = 'about://none';
+    plugin.type = 'application/vnd.chromium.remoting-viewer';
+  }
+
   plugin.width = 0;
   plugin.height = 0;
   plugin.tabIndex = 0;  // Required, otherwise focus() doesn't work.
@@ -495,8 +520,11 @@ remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
     this.applyRemapKeys_(true);
   }
 
-  // Enable MediaSource-based rendering if available.
-  if (remoting.settings.USE_MEDIA_SOURCE_RENDERING &&
+
+  // Enable MediaSource-based rendering on Chrome 37 and above.
+  var chromeVersionMajor =
+      parseInt((remoting.getChromeVersion() || '0').split('.')[0], 10);
+  if (chromeVersionMajor >= 37 &&
       this.plugin_.hasFeature(
           remoting.ClientPlugin.Feature.MEDIA_SOURCE_RENDERING)) {
     this.video_ = /** @type {HTMLMediaElement} */(
@@ -519,19 +547,17 @@ remoting.ClientSession.prototype.onPluginInitialized_ = function(initialized) {
   this.plugin_.onOutgoingIqHandler = this.sendIq_.bind(this);
   /** @param {string} msg The message to log. */
   this.plugin_.onDebugMessageHandler = function(msg) {
-    console.log('plugin: ' + msg);
+    console.log('plugin: ' + msg.trimRight());
   };
 
   this.plugin_.onConnectionStatusUpdateHandler =
       this.onConnectionStatusUpdate_.bind(this);
-  this.plugin_.onConnectionReadyHandler =
-      this.onConnectionReady_.bind(this);
+  this.plugin_.onConnectionReadyHandler = this.onConnectionReady_.bind(this);
   this.plugin_.onDesktopSizeUpdateHandler =
       this.onDesktopSizeChanged_.bind(this);
-  this.plugin_.onSetCapabilitiesHandler =
-      this.onSetCapabilities_.bind(this);
-  this.plugin_.onGnubbyAuthHandler =
-      this.processGnubbyAuthMessage_.bind(this);
+  this.plugin_.onSetCapabilitiesHandler = this.onSetCapabilities_.bind(this);
+  this.plugin_.onGnubbyAuthHandler = this.processGnubbyAuthMessage_.bind(this);
+  this.plugin_.updateMouseCursorImage = this.updateMouseCursorImage_.bind(this);
   this.initiateConnection_();
 };
 
@@ -568,11 +594,18 @@ remoting.ClientSession.prototype.removePlugin = function() {
       function() {
         remoting.fullscreen.removeListener(listener);
       });
+  if (remoting.windowFrame) {
+    remoting.windowFrame.setConnected(false);
+  }
 
   // Remove mediasource-rendering class from video-contained - this will also
   // hide the <video> element.
   /** @type {HTMLElement} */(document.getElementById('video-container'))
       .classList.remove('mediasource-rendering');
+
+  this.container_.removeEventListener('mousemove',
+                                      this.updateMouseCursorPosition_,
+                                      true);
 };
 
 /**
@@ -705,6 +738,10 @@ remoting.ClientSession.prototype.applyRemapKeys_ = function(apply) {
     remapKeys = '0x0700e4>0x0700e7';
   }
 
+  if (remapKeys == '') {
+    return;
+  }
+
   var remappings = remapKeys.split(',');
   for (var i = 0; i < remappings.length; ++i) {
     var keyCodes = remappings[i].split('>');
@@ -766,9 +803,10 @@ remoting.ClientSession.prototype.onSetScreenMode_ = function(event) {
 remoting.ClientSession.prototype.setScreenMode_ =
     function(shrinkToFit, resizeToClient) {
   if (resizeToClient && !this.resizeToClient_) {
-    this.plugin_.notifyClientResolution(window.innerWidth,
-                                       window.innerHeight,
-                                       window.devicePixelRatio);
+    var clientArea = this.getClientArea_();
+    this.plugin_.notifyClientResolution(clientArea.width,
+                                        clientArea.height,
+                                        window.devicePixelRatio);
   }
 
   // If enabling shrink, reset bump-scroll offsets.
@@ -953,13 +991,22 @@ remoting.ClientSession.prototype.onConnectionStatusUpdate_ =
     this.setFocusHandlers_();
     this.onDesktopSizeChanged_();
     if (this.resizeToClient_) {
-      this.plugin_.notifyClientResolution(window.innerWidth,
-                                         window.innerHeight,
-                                         window.devicePixelRatio);
+      var clientArea = this.getClientArea_();
+      this.plugin_.notifyClientResolution(clientArea.width,
+                                          clientArea.height,
+                                          window.devicePixelRatio);
     }
-    // Start listening for full-screen related events.
+    // Activate full-screen related UX.
     remoting.fullscreen.addListener(this.callOnFullScreenChanged_);
     remoting.fullscreen.syncWithMaximize(true);
+    if (remoting.windowFrame) {
+      remoting.windowFrame.setConnected(true);
+    }
+
+    this.container_.addEventListener('mousemove',
+                                     this.updateMouseCursorPosition_,
+                                     true);
+
   } else if (status == remoting.ClientSession.State.FAILED) {
     switch (error) {
       case remoting.ClientSession.ConnectionError.HOST_IS_OFFLINE:
@@ -992,10 +1039,12 @@ remoting.ClientSession.prototype.onConnectionStatusUpdate_ =
  * @param {boolean} ready True if the connection is ready.
  */
 remoting.ClientSession.prototype.onConnectionReady_ = function(ready) {
+  var container = /** @type {HTMLMediaElement} */(
+      document.getElementById('video-container'));
   if (!ready) {
-    this.plugin_.element().classList.add("session-client-inactive");
+    container.classList.add('session-client-inactive');
   } else {
-    this.plugin_.element().classList.remove("session-client-inactive");
+    container.classList.remove('session-client-inactive');
   }
 
   this.raiseEvent(remoting.ClientSession.Events.videoChannelStateChanged,
@@ -1019,9 +1068,10 @@ remoting.ClientSession.prototype.onSetCapabilities_ = function(capabilities) {
   this.capabilities_ = capabilities;
   if (this.hasCapability_(
       remoting.ClientSession.Capability.SEND_INITIAL_RESOLUTION)) {
-    this.plugin_.notifyClientResolution(window.innerWidth,
-                                       window.innerHeight,
-                                       window.devicePixelRatio);
+    var clientArea = this.getClientArea_();
+    this.plugin_.notifyClientResolution(clientArea.width,
+                                        clientArea.height,
+                                        window.devicePixelRatio);
   }
 };
 
@@ -1080,10 +1130,11 @@ remoting.ClientSession.prototype.onResize = function() {
         remoting.ClientSession.Capability.RATE_LIMIT_RESIZE_REQUESTS)) {
       kResizeRateLimitMs = 250;
     }
+    var clientArea = this.getClientArea_();
     this.notifyClientResolutionTimer_ = window.setTimeout(
         this.plugin_.notifyClientResolution.bind(this.plugin_,
-                                                 window.innerWidth,
-                                                 window.innerHeight,
+                                                 clientArea.width,
+                                                 clientArea.height,
                                                  window.devicePixelRatio),
         kResizeRateLimitMs);
   }
@@ -1148,8 +1199,7 @@ remoting.ClientSession.prototype.updateDimensions = function() {
     return;
   }
 
-  var windowWidth = window.innerWidth;
-  var windowHeight = window.innerHeight;
+  var clientArea = this.getClientArea_();
   var desktopWidth = this.plugin_.desktopWidth;
   var desktopHeight = this.plugin_.desktopHeight;
 
@@ -1174,8 +1224,9 @@ remoting.ClientSession.prototype.updateDimensions = function() {
 
   if (this.shrinkToFit_) {
     // Reduce the scale, if necessary, to fit the whole desktop in the window.
-    var scaleFitWidth = Math.min(scale, 1.0 * windowWidth / desktopWidth);
-    var scaleFitHeight = Math.min(scale, 1.0 * windowHeight / desktopHeight);
+    var scaleFitWidth = Math.min(scale, 1.0 * clientArea.width / desktopWidth);
+    var scaleFitHeight =
+        Math.min(scale, 1.0 * clientArea.height / desktopHeight);
     scale = Math.min(scaleFitHeight, scaleFitWidth);
 
     // If we're running full-screen then try to handle common side-by-side
@@ -1334,12 +1385,13 @@ remoting.ClientSession.prototype.scroll_ = function(dx, dy) {
   };
 
   var stopX = { stop: false };
+  var clientArea = this.getClientArea_();
   style.marginLeft = adjustMargin(style.marginLeft, dx,
-                                  window.innerWidth, plugin.clientWidth, stopX);
+                                  clientArea.width, plugin.clientWidth, stopX);
 
   var stopY = { stop: false };
-  style.marginTop = adjustMargin(style.marginTop, dy,
-                                window.innerHeight, plugin.clientHeight, stopY);
+  style.marginTop = adjustMargin(
+      style.marginTop, dy, clientArea.height, plugin.clientHeight, stopY);
   return stopX.stop && stopY.stop;
 };
 
@@ -1396,8 +1448,9 @@ remoting.ClientSession.prototype.onMouseMove_ = function(event) {
     return 0;
   };
 
-  var dx = computeDelta(event.x, window.innerWidth);
-  var dy = computeDelta(event.y, window.innerHeight);
+  var clientArea = this.getClientArea_();
+  var dx = computeDelta(event.x, clientArea.width);
+  var dy = computeDelta(event.y, clientArea.height);
 
   if (dx != 0 || dy != 0) {
     /** @type {remoting.ClientSession} */
@@ -1475,3 +1528,30 @@ remoting.ClientSession.prototype.createGnubbyAuthHandler_ = function() {
     this.sendGnubbyAuthMessage({'type': 'control', 'option': 'auth-v1'});
   }
 };
+
+/**
+ * @return {{width: number, height: number}} The height of the window's client
+ *     area. This differs between apps v1 and apps v2 due to the custom window
+ *     borders used by the latter.
+ * @private
+ */
+remoting.ClientSession.prototype.getClientArea_ = function() {
+  return remoting.windowFrame ?
+      remoting.windowFrame.getClientArea() :
+      { 'width': window.innerWidth, 'height': window.innerHeight };
+};
+
+/**
+ * @param {string} url
+ * @param {number} hotspotX
+ * @param {number} hotspotY
+ */
+remoting.ClientSession.prototype.updateMouseCursorImage_ =
+    function(url, hotspotX, hotspotY) {
+  this.mouseCursorOverlay_.hidden = !url;
+  if (url) {
+    this.mouseCursorOverlay_.style.marginLeft = '-' + hotspotX + 'px';
+    this.mouseCursorOverlay_.style.marginTop = '-' + hotspotY + 'px';
+    this.mouseCursorOverlay_.src = url;
+  }
+ };

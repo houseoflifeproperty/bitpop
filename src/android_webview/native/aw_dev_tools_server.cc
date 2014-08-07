@@ -6,6 +6,7 @@
 
 #include "android_webview/native/aw_contents.h"
 #include "base/bind.h"
+#include "base/files/file_path.h"
 #include "base/json/json_writer.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -39,6 +40,7 @@ class Target : public content::DevToolsTarget {
   explicit Target(WebContents* web_contents);
 
   virtual std::string GetId() const OVERRIDE { return id_; }
+  virtual std::string GetParentId() const OVERRIDE { return std::string(); }
   virtual std::string GetType() const OVERRIDE { return kTargetTypePage; }
   virtual std::string GetTitle() const OVERRIDE { return title_; }
   virtual std::string GetDescription() const OVERRIDE { return description_; }
@@ -142,7 +144,7 @@ std::string GetViewDescription(WebContents* web_contents) {
           ->GetBrowserViewRenderer();
   if (!bvr) return "";
   base::DictionaryValue description;
-  description.SetBoolean("attached", bvr->IsAttachedToWindow());
+  description.SetBoolean("attached", bvr->attached_to_window());
   description.SetBoolean("visible", bvr->IsVisible());
   gfx::Rect screen_rect = bvr->GetScreenRect();
   description.SetInteger("screenX", screen_rect.x());
@@ -179,7 +181,8 @@ void AwDevToolsServer::Start() {
           "",
           base::Bind(&content::CanUserConnectToDevTools)),
       base::StringPrintf(kFrontEndURL, content::GetWebKitRevision().c_str()),
-      new AwDevToolsServerDelegate());
+      new AwDevToolsServerDelegate(),
+      base::FilePath());
 }
 
 void AwDevToolsServer::Stop() {

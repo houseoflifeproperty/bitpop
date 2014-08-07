@@ -9,7 +9,6 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "chrome/browser/drive/drive_api_service.h"
-#include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
@@ -28,47 +27,28 @@ namespace {
 ////////////////////////////////////////////////////////////////////////////////
 // Functions below are for wrapping the access to legacy GData WAPI classes.
 
-bool HasNoParents(const google_apis::ResourceEntry& entry) {
-  return !entry.GetLinkByType(google_apis::Link::LINK_PARENT);
+bool HasNoParents(const google_apis::FileResource& entry) {
+  return entry.parents().empty();
 }
 
-bool HasFolderAsParent(const google_apis::ResourceEntry& entry,
+bool HasFolderAsParent(const google_apis::FileResource& entry,
                        const std::string& parent_id) {
-  const ScopedVector<google_apis::Link>& links = entry.links();
-  for (ScopedVector<google_apis::Link>::const_iterator itr = links.begin();
-       itr != links.end(); ++itr) {
-    const google_apis::Link& link = **itr;
-    if (link.type() != google_apis::Link::LINK_PARENT)
-      continue;
-    if (drive::util::ExtractResourceIdFromUrl(link.href()) == parent_id)
+  for (size_t i = 0; i < entry.parents().size(); ++i) {
+    if (entry.parents()[i].file_id() == parent_id)
       return true;
   }
   return false;
 }
 
-bool LessOnCreationTime(const google_apis::ResourceEntry& left,
-                        const google_apis::ResourceEntry& right) {
-  return left.published_time() < right.published_time();
+bool LessOnCreationTime(const google_apis::FileResource& left,
+                        const google_apis::FileResource& right) {
+  return left.created_date() < right.created_date();
 }
 
 typedef base::Callback<void(scoped_ptr<SyncTaskToken> token,
                             google_apis::GDataErrorCode error,
                             scoped_ptr<google_apis::ResourceList> resources)>
     TokenAndResourceListCallback;
-
-ScopedVector<google_apis::FileResource> ConvertResourceEntriesToFileResources(
-    const ScopedVector<google_apis::ResourceEntry>& entries) {
-  ScopedVector<google_apis::FileResource> resources;
-  for (ScopedVector<google_apis::ResourceEntry>::const_iterator itr =
-           entries.begin();
-       itr != entries.end();
-       ++itr) {
-    resources.push_back(
-        drive::util::ConvertResourceEntryToFileResource(
-            **itr).release());
-  }
-  return resources.Pass();
-}
 
 // Functions above are for wrapping the access to legacy GData WAPI classes.
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,18 +57,15 @@ ScopedVector<google_apis::FileResource> ConvertResourceEntriesToFileResources(
 
 SyncEngineInitializer::SyncEngineInitializer(
     SyncEngineContext* sync_context,
-    base::SequencedTaskRunner* task_runner,
     const base::FilePath& database_path,
     leveldb::Env* env_override)
     : sync_context_(sync_context),
       env_override_(env_override),
-      task_runner_(task_runner),
       database_path_(database_path),
       find_sync_root_retry_count_(0),
       largest_change_id_(0),
       weak_ptr_factory_(this) {
   DCHECK(sync_context);
-  DCHECK(task_runner);
 }
 
 SyncEngineInitializer::~SyncEngineInitializer() {
@@ -109,13 +86,11 @@ void SyncEngineInitializer::RunPreflight(scoped_ptr<SyncTaskToken> token) {
     return;
   }
 
-  // TODO(tzik): Stop using MessageLoopProxy before moving out from UI thread.
-  scoped_refptr<base::SequencedTaskRunner> worker_task_runner(
-      base::MessageLoopProxy::current());
-
   MetadataDatabase::Create(
-      worker_task_runner.get(),
-      task_runner_.get(), database_path_, env_override_,
+      sync_context_->GetWorkerTaskRunner(),
+      sync_context_->GetFileTaskRunner(),
+      database_path_,
+      env_override_,
       base::Bind(&SyncEngineInitializer::DidCreateMetadataDatabase,
                  weak_ptr_factory_.GetWeakPtr(), base::Passed(&token)));
 }
@@ -197,7 +172,7 @@ void SyncEngineInitializer::FindSyncRoot(scoped_ptr<SyncTaskToken> token) {
 void SyncEngineInitializer::DidFindSyncRoot(
     scoped_ptr<SyncTaskToken> token,
     google_apis::GDataErrorCode error,
-    scoped_ptr<google_apis::ResourceList> resource_list) {
+    scoped_ptr<google_apis::FileList> file_list) {
   cancel_callback_.Reset();
 
   SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
@@ -208,7 +183,7 @@ void SyncEngineInitializer::DidFindSyncRoot(
     return;
   }
 
-  if (!resource_list) {
+  if (!file_list) {
     NOTREACHED();
     util::Log(logging::LOG_VERBOSE, FROM_HERE,
               "[Initialize] Got invalid resource list.");
@@ -216,15 +191,13 @@ void SyncEngineInitializer::DidFindSyncRoot(
     return;
   }
 
-  ScopedVector<google_apis::ResourceEntry>* entries =
-      resource_list->mutable_entries();
-  for (ScopedVector<google_apis::ResourceEntry>::iterator itr =
-           entries->begin();
-       itr != entries->end(); ++itr) {
-    google_apis::ResourceEntry* entry = *itr;
+  ScopedVector<google_apis::FileResource>* items = file_list->mutable_items();
+  for (ScopedVector<google_apis::FileResource>::iterator itr = items->begin();
+       itr != items->end(); ++itr) {
+    google_apis::FileResource* entry = *itr;
 
     // Ignore deleted folder.
-    if (entry->deleted())
+    if (entry->labels().is_trashed())
       continue;
 
     // Pick an orphaned folder or a direct child of the root folder and
@@ -241,10 +214,9 @@ void SyncEngineInitializer::DidFindSyncRoot(
 
   set_used_network(true);
   // If there are more results, retrieve them.
-  GURL next_url;
-  if (resource_list->GetNextFeedURL(&next_url)) {
+  if (!file_list->next_link().is_empty()) {
     cancel_callback_ = sync_context_->GetDriveService()->GetRemainingFileList(
-        next_url,
+        file_list->next_link(),
         base::Bind(&SyncEngineInitializer::DidFindSyncRoot,
                    weak_ptr_factory_.GetWeakPtr(),
                    base::Passed(&token)));
@@ -278,7 +250,7 @@ void SyncEngineInitializer::CreateSyncRoot(scoped_ptr<SyncTaskToken> token) {
 void SyncEngineInitializer::DidCreateSyncRoot(
     scoped_ptr<SyncTaskToken> token,
     google_apis::GDataErrorCode error,
-    scoped_ptr<google_apis::ResourceEntry> entry) {
+    scoped_ptr<google_apis::FileResource> entry) {
   DCHECK(!sync_root_folder_);
   cancel_callback_.Reset();
 
@@ -299,7 +271,7 @@ void SyncEngineInitializer::DetachSyncRoot(scoped_ptr<SyncTaskToken> token) {
   cancel_callback_ =
       sync_context_->GetDriveService()->RemoveResourceFromDirectory(
           root_folder_id_,
-          sync_root_folder_->resource_id(),
+          sync_root_folder_->file_id(),
           base::Bind(&SyncEngineInitializer::DidDetachSyncRoot,
                      weak_ptr_factory_.GetWeakPtr(),
                      base::Passed(&token)));
@@ -326,8 +298,8 @@ void SyncEngineInitializer::ListAppRootFolders(
   DCHECK(sync_root_folder_);
   set_used_network(true);
   cancel_callback_ =
-      sync_context_->GetDriveService()->GetResourceListInDirectory(
-          sync_root_folder_->resource_id(),
+      sync_context_->GetDriveService()->GetFileListInDirectory(
+          sync_root_folder_->file_id(),
           base::Bind(&SyncEngineInitializer::DidListAppRootFolders,
                      weak_ptr_factory_.GetWeakPtr(),
                      base::Passed(&token)));
@@ -336,7 +308,7 @@ void SyncEngineInitializer::ListAppRootFolders(
 void SyncEngineInitializer::DidListAppRootFolders(
     scoped_ptr<SyncTaskToken> token,
     google_apis::GDataErrorCode error,
-    scoped_ptr<google_apis::ResourceList> resource_list) {
+    scoped_ptr<google_apis::FileList> file_list) {
   cancel_callback_.Reset();
 
   SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
@@ -347,7 +319,7 @@ void SyncEngineInitializer::DidListAppRootFolders(
     return;
   }
 
-  if (!resource_list) {
+  if (!file_list) {
     NOTREACHED();
     util::Log(logging::LOG_VERBOSE, FROM_HERE,
               "[Initialize] Got invalid initial app-root list.");
@@ -355,18 +327,17 @@ void SyncEngineInitializer::DidListAppRootFolders(
     return;
   }
 
-  ScopedVector<google_apis::ResourceEntry>* new_entries =
-      resource_list->mutable_entries();
+  ScopedVector<google_apis::FileResource>* new_entries =
+      file_list->mutable_items();
   app_root_folders_.insert(app_root_folders_.end(),
                            new_entries->begin(), new_entries->end());
   new_entries->weak_clear();
 
   set_used_network(true);
-  GURL next_url;
-  if (resource_list->GetNextFeedURL(&next_url)) {
+  if (!file_list->next_link().is_empty()) {
     cancel_callback_ =
         sync_context_->GetDriveService()->GetRemainingFileList(
-            next_url,
+            file_list->next_link(),
             base::Bind(&SyncEngineInitializer::DidListAppRootFolders,
                        weak_ptr_factory_.GetWeakPtr(), base::Passed(&token)));
     return;
@@ -380,9 +351,8 @@ void SyncEngineInitializer::PopulateDatabase(
   DCHECK(sync_root_folder_);
   metadata_database_->PopulateInitialData(
       largest_change_id_,
-      *drive::util::ConvertResourceEntryToFileResource(
-          *sync_root_folder_),
-      ConvertResourceEntriesToFileResources(app_root_folders_),
+      *sync_root_folder_,
+      app_root_folders_,
       base::Bind(&SyncEngineInitializer::DidPopulateDatabase,
                  weak_ptr_factory_.GetWeakPtr(), base::Passed(&token)));
 }

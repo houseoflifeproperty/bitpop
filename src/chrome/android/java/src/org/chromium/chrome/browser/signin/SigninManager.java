@@ -13,6 +13,8 @@ import android.content.DialogInterface;
 import android.os.Handler;
 import android.util.Log;
 
+import org.chromium.base.ActivityState;
+import org.chromium.base.ApplicationStatus;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ObserverList;
 import org.chromium.base.ThreadUtils;
@@ -204,7 +206,7 @@ public class SigninManager {
             return;
         }
 
-        if (mSignInActivity.isDestroyed()) {
+        if (ApplicationStatus.getStateForActivity(mSignInActivity) == ActivityState.DESTROYED) {
             // The activity is no longer running, cancel sign in.
             cancelSignIn();
             return;
@@ -243,7 +245,8 @@ public class SigninManager {
                         mPolicyConfirmationDialog = null;
                     }
                 });
-        builder.setOnDismissListener(
+        mPolicyConfirmationDialog = builder.create();
+        mPolicyConfirmationDialog.setOnDismissListener(
                 new DialogInterface.OnDismissListener() {
                     @Override
                     public void onDismiss(DialogInterface dialog) {
@@ -254,7 +257,6 @@ public class SigninManager {
                         }
                     }
                 });
-        mPolicyConfirmationDialog = builder.create();
         mPolicyConfirmationDialog.show();
     }
 

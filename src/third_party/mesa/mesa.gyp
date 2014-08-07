@@ -74,12 +74,6 @@
           '-fPIC',
         ],
       }],
-      ['OS=="win"', {
-        # Pick up emulation headers not supported by Visual Studio.
-        'include_dirs': [
-          'src/include/c99',
-        ],
-      }],
     ],
   },
   'targets': [
@@ -731,6 +725,7 @@
           'xcode_settings': {
             'WARNING_CFLAGS': [
               '-Wno-tautological-constant-out-of-range-compare',
+              '-Wno-absolute-value',  # Fires on st_atom_array.c, might be a bug
             ],
             'WARNING_CFLAGS!': [
               # Don't warn about string->bool used in asserts.
@@ -739,6 +734,7 @@
           },
           'cflags': [
             '-Wno-tautological-constant-out-of-range-compare',
+            '-Wno-absolute-value',
           ],
           'cflags!': [
             '-Wstring-conversion',

@@ -45,11 +45,9 @@ class GmailPage(KeyDesktopSitesPage):
 
   def RunSmoothness(self, action_runner):
     action_runner.RunAction(ScrollAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript':
-        'window.gmonkey !== undefined && document.getElementById("gb") !== null'
-      }))
+    action_runner.WaitForJavaScriptCondition(
+        'window.gmonkey !== undefined && '
+        'document.getElementById("gb") !== null')
 
 
 class GoogleCalendarPage(KeyDesktopSitesPage):
@@ -81,11 +79,8 @@ class GoogleDrivePage(KeyDesktopSitesPage):
 
   def RunSmoothness(self, action_runner):
     action_runner.RunAction(ScrollAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript':
-        'document.getElementsByClassName("doclistview-list").length'
-      }))
+    action_runner.WaitForJavaScriptCondition(
+        'document.getElementsByClassName("doclistview-list").length')
 
 
 class GoogleDocPage(KeyDesktopSitesPage):
@@ -104,11 +99,8 @@ class GoogleDocPage(KeyDesktopSitesPage):
 
   def RunSmoothness(self, action_runner):
     action_runner.RunAction(ScrollAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript':
-        'document.getElementsByClassName("kix-appview-editor").length'
-      }))
+    action_runner.WaitForJavaScriptCondition(
+        'document.getElementsByClassName("kix-appview-editor").length')
 
 
 class KeyDesktopSitesPageSet(page_set_module.PageSet):
@@ -118,7 +110,8 @@ class KeyDesktopSitesPageSet(page_set_module.PageSet):
   def __init__(self):
     super(KeyDesktopSitesPageSet, self).__init__(
       credentials_path='data/credentials.json',
-      archive_data_file='data/key_desktop_sites.json')
+      archive_data_file='data/key_desktop_sites.json',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     self.AddPage(FacebookPage(self))
     self.AddPage(GmailPage(self))

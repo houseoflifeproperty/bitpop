@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "cc/animation/animation_events.h"
 #include "cc/base/completion_event.h"
+#include "cc/base/delayed_unique_notifier.h"
 #include "cc/resources/resource_update_controller.h"
 #include "cc/scheduler/scheduler.h"
 #include "cc/trees/layer_tree_host_impl.h"
@@ -31,10 +32,10 @@ class ResourceUpdateQueue;
 class Scheduler;
 class ScopedThreadProxy;
 
-class ThreadProxy : public Proxy,
-                    LayerTreeHostImplClient,
-                    SchedulerClient,
-                    ResourceUpdateControllerClient {
+class CC_EXPORT ThreadProxy : public Proxy,
+                    NON_EXPORTED_BASE(LayerTreeHostImplClient),
+                    NON_EXPORTED_BASE(SchedulerClient),
+                    NON_EXPORTED_BASE(ResourceUpdateControllerClient) {
  public:
   static scoped_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
@@ -42,14 +43,114 @@ class ThreadProxy : public Proxy,
 
   virtual ~ThreadProxy();
 
+  struct BeginMainFrameAndCommitState {
+    BeginMainFrameAndCommitState();
+    ~BeginMainFrameAndCommitState();
+
+    base::TimeTicks monotonic_frame_begin_time;
+    scoped_ptr<ScrollAndScaleSet> scroll_info;
+    size_t memory_allocation_limit_bytes;
+    int memory_allocation_priority_cutoff;
+    bool evicted_ui_resources;
+  };
+
+  struct MainThreadOnly {
+    MainThreadOnly(ThreadProxy* proxy, int layer_tree_host_id);
+    ~MainThreadOnly();
+
+    const int layer_tree_host_id;
+
+    // Set only when SetNeedsAnimate is called.
+    bool animate_requested;
+    // Set only when SetNeedsCommit is called.
+    bool commit_requested;
+    // Set by SetNeedsAnimate, SetNeedsUpdateLayers, and SetNeedsCommit.
+    bool commit_request_sent_to_impl_thread;
+
+    bool started;
+    bool manage_tiles_pending;
+    bool can_cancel_commit;
+    bool defer_commits;
+
+    RendererCapabilities renderer_capabilities_main_thread_copy;
+
+    scoped_ptr<BeginMainFrameAndCommitState> pending_deferred_commit;
+    base::WeakPtrFactory<ThreadProxy> weak_factory;
+  };
+
+  // Accessed on the main thread, or when main thread is blocked.
+  struct MainThreadOrBlockedMainThread {
+    explicit MainThreadOrBlockedMainThread(LayerTreeHost* host);
+    ~MainThreadOrBlockedMainThread();
+
+    PrioritizedResourceManager* contents_texture_manager();
+
+    LayerTreeHost* layer_tree_host;
+    bool commit_waits_for_activation;
+    bool main_thread_inside_commit;
+
+    base::TimeTicks last_monotonic_frame_begin_time;
+  };
+
+  struct ReadbackRequest;
+
+  struct CompositorThreadOnly {
+    CompositorThreadOnly(ThreadProxy* proxy, int layer_tree_host_id);
+    ~CompositorThreadOnly();
+
+    const int layer_tree_host_id;
+
+    // Copy of the main thread side contents texture manager for work
+    // that needs to be done on the compositor thread.
+    PrioritizedResourceManager* contents_texture_manager;
+
+    scoped_ptr<Scheduler> scheduler;
+
+    // Set when the main thread is waiting on a
+    // ScheduledActionSendBeginMainFrame to be issued.
+    CompletionEvent* begin_main_frame_sent_completion_event;
+
+    // Set when the main thread is waiting on a commit to complete.
+    CompletionEvent* commit_completion_event;
+
+    // Set when the main thread is waiting on a pending tree activation.
+    CompletionEvent* completion_event_for_commit_held_on_tree_activation;
+
+    scoped_ptr<ResourceUpdateController> current_resource_update_controller;
+
+    // Set when the next draw should post DidCommitAndDrawFrame to the main
+    // thread.
+    bool next_frame_is_newly_committed_frame;
+
+    bool inside_draw;
+
+    bool input_throttled_until_commit;
+
+    // Set when we freeze animations to avoid checkerboarding.
+    bool animations_frozen_until_next_draw;
+    base::TimeTicks animation_time;
+
+    // Whether a commit has been completed since the last time animations were
+    // ticked. If this happens, we need to animate again.
+    bool did_commit_after_animating;
+
+    DelayedUniqueNotifier smoothness_priority_expiration_notifier;
+
+    ProxyTimingHistory timing_history;
+
+    scoped_ptr<LayerTreeHostImpl> layer_tree_host_impl;
+    base::WeakPtrFactory<ThreadProxy> weak_factory;
+  };
+
+  const MainThreadOnly& main() const;
+  const MainThreadOrBlockedMainThread& blocked_main() const;
+  const CompositorThreadOnly& impl() const;
+
   // Proxy implementation
-  virtual bool CompositeAndReadback(void* pixels,
-                                    const gfx::Rect& rect) OVERRIDE;
   virtual void FinishAllRendering() OVERRIDE;
   virtual bool IsStarted() const OVERRIDE;
   virtual void SetLayerTreeHostClientReady() OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
-  virtual void CreateAndInitializeOutputSurface() OVERRIDE;
   virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
   virtual void SetNeedsAnimate() OVERRIDE;
   virtual void SetNeedsUpdateLayers() OVERRIDE;
@@ -68,7 +169,7 @@ class ThreadProxy : public Proxy,
   virtual void SetDebugState(const LayerTreeDebugState& debug_state) OVERRIDE;
   virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
   virtual bool CommitPendingForTesting() OVERRIDE;
-  virtual scoped_ptr<base::Value> SchedulerStateAsValueForTesting() OVERRIDE;
+  virtual scoped_ptr<base::Value> SchedulerAsValueForTesting() OVERRIDE;
 
   // LayerTreeHostImplClient implementation
   virtual void UpdateRendererCapabilitiesOnImplThread() OVERRIDE;
@@ -97,7 +198,6 @@ class ThreadProxy : public Proxy,
   virtual bool ReduceContentsTextureMemoryOnImplThread(size_t limit_bytes,
                                                        int priority_cutoff)
       OVERRIDE;
-  virtual void SendManagedMemoryStats() OVERRIDE;
   virtual bool IsInsideDraw() OVERRIDE;
   virtual void RenewTreePriority() OVERRIDE;
   virtual void PostDelayedScrollbarFadeOnImplThread(
@@ -110,10 +210,8 @@ class ThreadProxy : public Proxy,
   virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
   virtual void WillBeginImplFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void ScheduledActionSendBeginMainFrame() OVERRIDE;
-  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapIfPossible()
-      OVERRIDE;
-  virtual DrawSwapReadbackResult ScheduledActionDrawAndSwapForced() OVERRIDE;
-  virtual DrawSwapReadbackResult ScheduledActionDrawAndReadback() OVERRIDE;
+  virtual DrawResult ScheduledActionDrawAndSwapIfPossible() OVERRIDE;
+  virtual DrawResult ScheduledActionDrawAndSwapForced() OVERRIDE;
   virtual void ScheduledActionAnimate() OVERRIDE;
   virtual void ScheduledActionCommit() OVERRIDE;
   virtual void ScheduledActionUpdateVisibleTiles() OVERRIDE;
@@ -129,21 +227,11 @@ class ThreadProxy : public Proxy,
   // ResourceUpdateControllerClient implementation
   virtual void ReadyToFinalizeTextureUpdates() OVERRIDE;
 
- private:
+ protected:
   ThreadProxy(LayerTreeHost* layer_tree_host,
               scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
 
-  struct BeginMainFrameAndCommitState {
-    BeginMainFrameAndCommitState();
-    ~BeginMainFrameAndCommitState();
-
-    base::TimeTicks monotonic_frame_begin_time;
-    scoped_ptr<ScrollAndScaleSet> scroll_info;
-    size_t memory_allocation_limit_bytes;
-    int memory_allocation_priority_cutoff;
-    bool evicted_ui_resources;
-  };
-
+ private:
   // Called on main thread.
   void SetRendererCapabilitiesMainThreadCopy(
       const RendererCapabilities& capabilities);
@@ -152,21 +240,19 @@ class ThreadProxy : public Proxy,
   void DidCommitAndDrawFrame();
   void DidCompleteSwapBuffers();
   void SetAnimationEvents(scoped_ptr<AnimationEventsVector> queue);
-  void DoCreateAndInitializeOutputSurface();
+  void DidLoseOutputSurface();
+  void CreateAndInitializeOutputSurface();
+  void DidInitializeOutputSurface(bool success,
+                                  const RendererCapabilities& capabilities);
   void SendCommitRequestToImplThreadIfNeeded();
 
   // Called on impl thread.
-  struct ReadbackRequest;
   struct CommitPendingRequest;
   struct SchedulerStateRequest;
 
-  void ForceCommitForReadbackOnImplThread(
-      CompletionEvent* begin_main_frame_sent_completion,
-      ReadbackRequest* request);
   void StartCommitOnImplThread(CompletionEvent* completion,
                                ResourceUpdateQueue* queue);
   void BeginMainFrameAbortedOnImplThread(bool did_handle);
-  void RequestReadbackOnImplThread(ReadbackRequest* request);
   void FinishAllRenderingOnImplThread(CompletionEvent* completion);
   void InitializeImplOnImplThread(CompletionEvent* completion);
   void SetLayerTreeHostClientReadyOnImplThread();
@@ -175,24 +261,18 @@ class ThreadProxy : public Proxy,
   void HasInitializedOutputSurfaceOnImplThread(
       CompletionEvent* completion,
       bool* has_initialized_output_surface);
+  void DeleteContentsTexturesOnImplThread(CompletionEvent* completion);
   void InitializeOutputSurfaceOnImplThread(
-      CompletionEvent* completion,
-      scoped_ptr<OutputSurface> output_surface,
-      bool* success,
-      RendererCapabilities* capabilities);
+      scoped_ptr<OutputSurface> output_surface);
   void FinishGLOnImplThread(CompletionEvent* completion);
   void LayerTreeHostClosedOnImplThread(CompletionEvent* completion);
-  DrawSwapReadbackResult DrawSwapReadbackInternal(bool forced_draw,
-                                                  bool swap_requested,
-                                                  bool readback_requested);
+  DrawResult DrawSwapInternal(bool forced_draw);
   void ForceSerializeOnSwapBuffersOnImplThread(CompletionEvent* completion);
   void CheckOutputSurfaceStatusOnImplThread();
   void CommitPendingOnImplThreadForTesting(CommitPendingRequest* request);
-  void SchedulerStateAsValueOnImplThreadForTesting(
-      SchedulerStateRequest* request);
+  void SchedulerAsValueOnImplThreadForTesting(SchedulerStateRequest* request);
   void AsValueOnImplThread(CompletionEvent* completion,
                            base::DictionaryValue* state) const;
-  void RenewTreePriorityOnImplThread();
   void SetSwapUsedIncompleteTileOnImplThread(bool used_incomplete_tile);
   void MainThreadHasStoppedFlingingOnImplThread();
   void SetInputThrottledUntilCommitOnImplThread(bool is_throttled);
@@ -201,109 +281,17 @@ class ThreadProxy : public Proxy,
   LayerTreeHost* layer_tree_host();
   const LayerTreeHost* layer_tree_host() const;
 
-  struct MainThreadOnly {
-    MainThreadOnly(ThreadProxy* proxy, int layer_tree_host_id);
-    ~MainThreadOnly();
-
-    const int layer_tree_host_id;
-
-    // Set only when SetNeedsAnimate is called.
-    bool animate_requested;
-    // Set only when SetNeedsCommit is called.
-    bool commit_requested;
-    // Set by SetNeedsAnimate, SetNeedsUpdateLayers, and SetNeedsCommit.
-    bool commit_request_sent_to_impl_thread;
-
-    bool started;
-    bool in_composite_and_readback;
-    bool manage_tiles_pending;
-    bool can_cancel_commit;
-    bool defer_commits;
-
-    base::CancelableClosure output_surface_creation_callback;
-    RendererCapabilities renderer_capabilities_main_thread_copy;
-
-    scoped_ptr<BeginMainFrameAndCommitState> pending_deferred_commit;
-    base::WeakPtrFactory<ThreadProxy> weak_factory;
-  };
   // Use accessors instead of this variable directly.
   MainThreadOnly main_thread_only_vars_unsafe_;
   MainThreadOnly& main();
-  const MainThreadOnly& main() const;
 
-  // Accessed on the main thread, or when main thread is blocked.
-  struct MainThreadOrBlockedMainThread {
-    explicit MainThreadOrBlockedMainThread(LayerTreeHost* host);
-    ~MainThreadOrBlockedMainThread();
-
-    PrioritizedResourceManager* contents_texture_manager();
-
-    LayerTreeHost* layer_tree_host;
-    bool commit_waits_for_activation;
-    bool main_thread_inside_commit;
-
-    base::TimeTicks last_monotonic_frame_begin_time;
-  };
   // Use accessors instead of this variable directly.
   MainThreadOrBlockedMainThread main_thread_or_blocked_vars_unsafe_;
   MainThreadOrBlockedMainThread& blocked_main();
-  const MainThreadOrBlockedMainThread& blocked_main() const;
 
-  struct CompositorThreadOnly {
-    CompositorThreadOnly(ThreadProxy* proxy, int layer_tree_host_id);
-    ~CompositorThreadOnly();
-
-    const int layer_tree_host_id;
-
-    // Copy of the main thread side contents texture manager for work
-    // that needs to be done on the compositor thread.
-    PrioritizedResourceManager* contents_texture_manager;
-
-    scoped_ptr<Scheduler> scheduler;
-
-    // Set when the main thread is waiting on a
-    // ScheduledActionSendBeginMainFrame to be issued.
-    CompletionEvent* begin_main_frame_sent_completion_event;
-
-    // Set when the main thread is waiting on a readback.
-    ReadbackRequest* readback_request;
-
-    // Set when the main thread is waiting on a commit to complete.
-    CompletionEvent* commit_completion_event;
-
-    // Set when the main thread is waiting on a pending tree activation.
-    CompletionEvent* completion_event_for_commit_held_on_tree_activation;
-
-    scoped_ptr<ResourceUpdateController> current_resource_update_controller;
-
-    // Set when the next draw should post DidCommitAndDrawFrame to the main
-    // thread.
-    bool next_frame_is_newly_committed_frame;
-
-    bool inside_draw;
-
-    bool input_throttled_until_commit;
-
-    // Set when we freeze animations to avoid checkerboarding.
-    bool animations_frozen_until_next_draw;
-    base::TimeTicks animation_time;
-
-    // Whether a commit has been completed since the last time animations were
-    // ticked. If this happens, we need to animate again.
-    bool did_commit_after_animating;
-
-    base::TimeTicks smoothness_takes_priority_expiration_time;
-    bool renew_tree_priority_pending;
-
-    ProxyTimingHistory timing_history;
-
-    scoped_ptr<LayerTreeHostImpl> layer_tree_host_impl;
-    base::WeakPtrFactory<ThreadProxy> weak_factory;
-  };
   // Use accessors instead of this variable directly.
   CompositorThreadOnly compositor_thread_vars_unsafe_;
   CompositorThreadOnly& impl();
-  const CompositorThreadOnly& impl() const;
 
   base::WeakPtr<ThreadProxy> main_thread_weak_ptr_;
   base::WeakPtr<ThreadProxy> impl_thread_weak_ptr_;

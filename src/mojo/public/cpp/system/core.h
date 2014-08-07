@@ -107,7 +107,10 @@ class ScopedHandleBase {
   // Move-only constructor and operator=.
   ScopedHandleBase(RValue other) : handle_(other.object->release()) {}
   ScopedHandleBase& operator=(RValue other) {
-    handle_ = other.object->release();
+    if (other.object != this) {
+      CloseIfNecessary();
+      handle_ = other.object->release();
+    }
     return *this;
   }
 
@@ -199,21 +202,21 @@ MOJO_COMPILE_ASSERT(sizeof(ScopedHandle) == sizeof(Handle),
                     bad_size_for_cpp_ScopedHandle);
 
 inline MojoResult Wait(const Handle& handle,
-                       MojoWaitFlags flags,
+                       MojoHandleSignals signals,
                        MojoDeadline deadline) {
-  return MojoWait(handle.value(), flags, deadline);
+  return MojoWait(handle.value(), signals, deadline);
 }
 
 // |HandleVectorType| and |FlagsVectorType| should be similar enough to
-// |std::vector<Handle>| and |std::vector<MojoWaitFlags>|, respectively:
+// |std::vector<Handle>| and |std::vector<MojoHandleSignals>|, respectively:
 //  - They should have a (const) |size()| method that returns an unsigned type.
 //  - They must provide contiguous storage, with access via (const) reference to
 //    that storage provided by a (const) |operator[]()| (by reference).
 template <class HandleVectorType, class FlagsVectorType>
 inline MojoResult WaitMany(const HandleVectorType& handles,
-                           const FlagsVectorType& flags,
+                           const FlagsVectorType& signals,
                            MojoDeadline deadline) {
-  if (flags.size() != handles.size())
+  if (signals.size() != handles.size())
     return MOJO_RESULT_INVALID_ARGUMENT;
   if (handles.size() > std::numeric_limits<uint32_t>::max())
     return MOJO_RESULT_OUT_OF_RANGE;
@@ -222,11 +225,12 @@ inline MojoResult WaitMany(const HandleVectorType& handles,
     return MojoWaitMany(NULL, NULL, 0, deadline);
 
   const Handle& first_handle = handles[0];
-  const MojoWaitFlags& first_flag = flags[0];
-  return MojoWaitMany(reinterpret_cast<const MojoHandle*>(&first_handle),
-                      reinterpret_cast<const MojoWaitFlags*>(&first_flag),
-                      static_cast<uint32_t>(handles.size()),
-                      deadline);
+  const MojoHandleSignals& first_signals = signals[0];
+  return MojoWaitMany(
+      reinterpret_cast<const MojoHandle*>(&first_handle),
+      reinterpret_cast<const MojoHandleSignals*>(&first_signals),
+      static_cast<uint32_t>(handles.size()),
+      deadline);
 }
 
 // |Close()| takes ownership of the handle, since it'll invalidate it.
@@ -264,13 +268,15 @@ MOJO_COMPILE_ASSERT(sizeof(ScopedMessagePipeHandle) ==
                         sizeof(MessagePipeHandle),
                     bad_size_for_cpp_ScopedMessagePipeHandle);
 
-inline MojoResult CreateMessagePipe(ScopedMessagePipeHandle* message_pipe0,
+inline MojoResult CreateMessagePipe(const MojoCreateMessagePipeOptions* options,
+                                    ScopedMessagePipeHandle* message_pipe0,
                                     ScopedMessagePipeHandle* message_pipe1) {
   assert(message_pipe0);
   assert(message_pipe1);
   MessagePipeHandle handle0;
   MessagePipeHandle handle1;
-  MojoResult rv = MojoCreateMessagePipe(handle0.mutable_value(),
+  MojoResult rv = MojoCreateMessagePipe(options,
+                                        handle0.mutable_value(),
                                         handle1.mutable_value());
   // Reset even on failure (reduces the chances that a "stale"/incorrect handle
   // will be used).
@@ -307,6 +313,7 @@ inline MojoResult ReadMessageRaw(MessagePipeHandle message_pipe,
 class MessagePipe {
  public:
   MessagePipe();
+  explicit MessagePipe(const MojoCreateMessagePipeOptions& options);
   ~MessagePipe();
 
   ScopedMessagePipeHandle handle0;
@@ -314,7 +321,14 @@ class MessagePipe {
 };
 
 inline MessagePipe::MessagePipe() {
-  MojoResult result MOJO_ALLOW_UNUSED = CreateMessagePipe(&handle0, &handle1);
+  MojoResult result MOJO_ALLOW_UNUSED =
+      CreateMessagePipe(NULL, &handle0, &handle1);
+  assert(result == MOJO_RESULT_OK);
+}
+
+inline MessagePipe::MessagePipe(const MojoCreateMessagePipeOptions& options) {
+  MojoResult result MOJO_ALLOW_UNUSED =
+      CreateMessagePipe(&options, &handle0, &handle1);
   assert(result == MOJO_RESULT_OK);
 }
 

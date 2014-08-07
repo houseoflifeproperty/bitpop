@@ -21,7 +21,7 @@
 #ifndef SVGCircleElement_h
 #define SVGCircleElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGGeometryElement.h"
@@ -30,7 +30,7 @@ namespace WebCore {
 
 class SVGCircleElement FINAL : public SVGGeometryElement {
 public:
-    static PassRefPtr<SVGCircleElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGCircleElement);
 
     SVGAnimatedLength* cx() const { return m_cx.get(); }
     SVGAnimatedLength* cy() const { return m_cy.get(); }

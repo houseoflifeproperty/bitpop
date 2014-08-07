@@ -30,22 +30,21 @@
 #include "core/dom/StaticNodeList.h"
 
 #include "core/dom/Element.h"
+#include <v8.h>
 
 namespace WebCore {
 
-PassRefPtr<StaticNodeList> StaticNodeList::adopt(Vector<RefPtr<Node> >& nodes)
+PassRefPtrWillBeRawPtr<StaticNodeList> StaticNodeList::adopt(WillBeHeapVector<RefPtrWillBeMember<Node> >& nodes)
 {
-    RefPtr<StaticNodeList> nodeList = adoptRef(new StaticNodeList);
+    RefPtrWillBeRawPtr<StaticNodeList> nodeList = adoptRefWillBeNoop(new StaticNodeList);
     nodeList->m_nodes.swap(nodes);
-    if (nodeList->AllocationSize() > externalMemoryReportSizeLimit)
-        v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(nodeList->AllocationSize());
+    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(nodeList->AllocationSize());
     return nodeList.release();
 }
 
 StaticNodeList::~StaticNodeList()
 {
-    if (AllocationSize() > externalMemoryReportSizeLimit)
-        v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(-AllocationSize());
+    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(-AllocationSize());
 }
 
 unsigned StaticNodeList::length() const
@@ -58,6 +57,12 @@ Node* StaticNodeList::item(unsigned index) const
     if (index < m_nodes.size())
         return m_nodes[index].get();
     return 0;
+}
+
+void StaticNodeList::trace(Visitor* visitor)
+{
+    visitor->trace(m_nodes);
+    NodeList::trace(visitor);
 }
 
 } // namespace WebCore

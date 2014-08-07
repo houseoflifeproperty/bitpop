@@ -62,8 +62,10 @@ class TooltipController;
 }
 
 namespace wm {
+class AcceleratorFilter;
 class CompoundEventFilter;
 class InputMethodEventFilter;
+class NestedAcceleratorController;
 class ShadowController;
 class VisibilityController;
 class UserActivityDetector;
@@ -74,7 +76,6 @@ namespace ash {
 
 class AcceleratorController;
 class AccelerometerController;
-class AcceleratorFilter;
 class AccessibilityDelegate;
 class AppListController;
 class AshNativeCursorManager;
@@ -106,7 +107,6 @@ class MaximizeModeWindowManager;
 class MediaDelegate;
 class MouseCursorEventFilter;
 class MruWindowTracker;
-class NestedDispatcherController;
 class NewWindowDelegate;
 class OverlayEventFilter;
 class PartialMagnificationController;
@@ -126,6 +126,7 @@ class ShelfItemDelegateManager;
 class ShelfModel;
 class ShelfWindowWatcher;
 class ShellDelegate;
+struct ShellInitParams;
 class ShellObserver;
 class SlowAnimationEventFilter;
 class StatusAreaWidget;
@@ -174,7 +175,7 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   // A shell must be explicitly created so that it can call |Init()| with the
   // delegate set. |delegate| can be NULL (if not required for initialization).
   // Takes ownership of |delegate|.
-  static Shell* CreateInstance(ShellDelegate* delegate);
+  static Shell* CreateInstance(const ShellInitParams& init_params);
 
   // Should never be called before |CreateInstance()|.
   static Shell* GetInstance();
@@ -325,11 +326,13 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   void AddShellObserver(ShellObserver* observer);
   void RemoveShellObserver(ShellObserver* observer);
 
-  // Turn the always maximize mode window manager on or off.
-  void EnableMaximizeModeWindowManager(bool enable);
-
-  // Test if the MaximizeModeWindowManager is enabled or not.
-  bool IsMaximizeModeWindowManagerEnabled();
+#if defined(OS_CHROMEOS)
+  // Test if MaximizeModeWindowManager is not enabled, and if
+  // MaximizeModeController is not currently setting a display rotation. Or if
+  // the |resolution_notification_controller_| is not showing its confirmation
+  // dialog. If true then changes to display settings can be saved.
+  bool ShouldSaveDisplaySettings();
+#endif
 
   AcceleratorController* accelerator_controller() {
     return accelerator_controller_.get();
@@ -363,6 +366,9 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   }
   VideoDetector* video_detector() {
     return video_detector_.get();
+  }
+  WindowCycleController* window_cycle_controller() {
+    return window_cycle_controller_.get();
   }
   WindowSelectorController* window_selector_controller() {
     return window_selector_controller_.get();
@@ -445,7 +451,7 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   // Sets/gets shelf's alignment on |root_window|.
   void SetShelfAlignment(ShelfAlignment alignment,
                          aura::Window* root_window);
-  ShelfAlignment GetShelfAlignment(aura::Window* root_window);
+  ShelfAlignment GetShelfAlignment(const aura::Window* root_window);
 
   // Dims or undims the screen.
   void SetDimming(bool should_dim);
@@ -578,7 +584,7 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   explicit Shell(ShellDelegate* delegate);
   virtual ~Shell();
 
-  void Init();
+  void Init(const ShellInitParams& init_params);
 
   // Initializes virtual keyboard controller.
   void InitKeyboard();
@@ -619,7 +625,7 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   std::vector<WindowAndBoundsPair> to_restore_;
 
   scoped_ptr<UserMetricsRecorder> user_metrics_recorder_;
-  scoped_ptr<NestedDispatcherController> nested_dispatcher_controller_;
+  scoped_ptr< ::wm::NestedAcceleratorController> nested_accelerator_controller_;
   scoped_ptr<AcceleratorController> accelerator_controller_;
   scoped_ptr<ShellDelegate> delegate_;
   scoped_ptr<SystemTrayDelegate> system_tray_delegate_;
@@ -650,6 +656,7 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   scoped_ptr<MruWindowTracker> mru_window_tracker_;
   scoped_ptr< ::wm::UserActivityDetector> user_activity_detector_;
   scoped_ptr<VideoDetector> video_detector_;
+  scoped_ptr<WindowCycleController> window_cycle_controller_;
   scoped_ptr<WindowSelectorController> window_selector_controller_;
   scoped_ptr<FocusCycler> focus_cycler_;
   scoped_ptr<DisplayController> display_controller_;
@@ -680,7 +687,7 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
   scoped_ptr<SystemGestureEventFilter> system_gesture_filter_;
 
   // An event filter that pre-handles global accelerators.
-  scoped_ptr<AcceleratorFilter> accelerator_filter_;
+  scoped_ptr< ::wm::AcceleratorFilter> accelerator_filter_;
 
   // An event filter that pre-handles all key events to send them to an IME.
   scoped_ptr< ::wm::InputMethodEventFilter> input_method_filter_;
@@ -690,9 +697,6 @@ class ASH_EXPORT Shell : public SystemModalContainerEventFilterDelegate,
       weak_display_manager_factory_;
 
   scoped_ptr<LocaleNotificationController> locale_notification_controller_;
-
-  // The maximized window manager (if enabled).
-  scoped_ptr<MaximizeModeWindowManager> maximize_mode_window_manager_;
 
   scoped_ptr<AccelerometerController> accelerometer_controller_;
 

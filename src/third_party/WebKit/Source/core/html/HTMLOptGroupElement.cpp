@@ -25,7 +25,7 @@
 #include "config.h"
 #include "core/html/HTMLOptGroupElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/html/HTMLSelectElement.h"
@@ -42,10 +42,7 @@ inline HTMLOptGroupElement::HTMLOptGroupElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLOptGroupElement> HTMLOptGroupElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLOptGroupElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLOptGroupElement)
 
 bool HTMLOptGroupElement::isDisabledFormControl() const
 {

@@ -13,10 +13,12 @@
       'sources': [
         '../gm/gm_expectations.h',
         '../gm/gm_expectations.cpp',
+        '../tools/sk_tool_utils.cpp',
       ],
       'dependencies': [
-        'skia_lib.gyp:skia_lib',
+        'crash_handler.gyp:CrashHandler',
         'jsoncpp.gyp:jsoncpp',
+        'skia_lib.gyp:skia_lib',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -29,10 +31,10 @@
       'type': 'executable',
       'include_dirs' : [
         '../src/core',
-        '../src/images',
         '../src/effects',
-        '../src/pipe/utils/',
-        '../src/utils/',
+        '../src/images',
+        '../src/pipe/utils',
+        '../src/utils',
       ],
       'includes': [
         'gmslides.gypi',
@@ -45,13 +47,20 @@
         '../src/pipe/utils/SamplePipeControllers.cpp',
       ],
       'dependencies': [
-        'skia_lib.gyp:skia_lib',
+        'etc1.gyp:libetc1',
         'flags.gyp:flags',
         'gm.gyp:gm_expectations',
         'jsoncpp.gyp:jsoncpp',
         'pdf.gyp:pdf',
+        'resources.gyp:resources',
+        'skia_lib.gyp:skia_lib',
       ],
       'conditions': [
+        ['skia_android_framework', {
+          'libraries': [
+            '-lskia',
+          ],
+        }],
         ['skia_run_pdfviewer_in_gm or skia_poppler_enabled', {
           'sources': [
             '../src/utils/SkPDFRasterizer.cpp',
@@ -70,7 +79,7 @@
         }],
         ['skia_poppler_enabled', {
           'dependencies': [
-            'poppler.gyp:libpoppler-cpp-gpl',
+            'poppler.gyp:*',
           ],
           'defines': [
             'SK_BUILD_POPPLER',

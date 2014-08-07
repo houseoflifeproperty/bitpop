@@ -20,7 +20,6 @@
 #include "chrome/common/pref_names.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/drive/drive_api_parser.h"
-#include "google_apis/drive/gdata_wapi_parser.h"
 #include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -31,11 +30,11 @@ namespace {
 // Dummy value passed for the |expected_file_size| parameter of DownloadFile().
 const int64 kDummyDownloadFileSize = 0;
 
-void CopyTitleFromGetResourceEntryCallback(
+void CopyTitleFromFileResourceCallback(
     std::vector<std::string>* title_list_out,
     google_apis::GDataErrorCode error_in,
-    scoped_ptr<google_apis::ResourceEntry> resource_entry_in) {
-  title_list_out->push_back(resource_entry_in->title());
+    scoped_ptr<google_apis::FileResource> entry_in) {
+  title_list_out->push_back(entry_in->title());
 }
 
 class JobListLogger : public JobListObserver {
@@ -217,51 +216,48 @@ TEST_F(JobSchedulerTest, GetAppList) {
   ASSERT_TRUE(app_list);
 }
 
-TEST_F(JobSchedulerTest, GetAllResourceList) {
+TEST_F(JobSchedulerTest, GetAllFileList) {
   ConnectToWifi();
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceList> resource_list;
+  scoped_ptr<google_apis::FileList> file_list;
 
-  scheduler_->GetAllResourceList(
-      google_apis::test_util::CreateCopyResultCallback(
-          &error, &resource_list));
+  scheduler_->GetAllFileList(
+      google_apis::test_util::CreateCopyResultCallback(&error, &file_list));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
-  ASSERT_TRUE(resource_list);
+  ASSERT_TRUE(file_list);
 }
 
-TEST_F(JobSchedulerTest, GetResourceListInDirectory) {
+TEST_F(JobSchedulerTest, GetFileListInDirectory) {
   ConnectToWifi();
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceList> resource_list;
+  scoped_ptr<google_apis::FileList> file_list;
 
-  scheduler_->GetResourceListInDirectory(
+  scheduler_->GetFileListInDirectory(
       fake_drive_service_->GetRootResourceId(),
-      google_apis::test_util::CreateCopyResultCallback(
-          &error, &resource_list));
+      google_apis::test_util::CreateCopyResultCallback(&error, &file_list));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
-  ASSERT_TRUE(resource_list);
+  ASSERT_TRUE(file_list);
 }
 
 TEST_F(JobSchedulerTest, Search) {
   ConnectToWifi();
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceList> resource_list;
+  scoped_ptr<google_apis::FileList> file_list;
 
   scheduler_->Search(
       "File",  // search query
-      google_apis::test_util::CreateCopyResultCallback(
-          &error, &resource_list));
+      google_apis::test_util::CreateCopyResultCallback(&error, &file_list));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
-  ASSERT_TRUE(resource_list);
+  ASSERT_TRUE(file_list);
 }
 
 TEST_F(JobSchedulerTest, GetChangeList) {
@@ -274,27 +270,26 @@ TEST_F(JobSchedulerTest, GetChangeList) {
 
   // Create a new directory.
   {
-    scoped_ptr<google_apis::ResourceEntry> resource_entry;
+    scoped_ptr<google_apis::FileResource> entry;
     fake_drive_service_->AddNewDirectory(
         fake_drive_service_->GetRootResourceId(),
         "new directory",
         DriveServiceInterface::AddNewDirectoryOptions(),
         google_apis::test_util::CreateCopyResultCallback(
-            &error, &resource_entry));
+            &error, &entry));
     base::RunLoop().RunUntilIdle();
     ASSERT_EQ(google_apis::HTTP_CREATED, error);
   }
 
   error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceList> resource_list;
+  scoped_ptr<google_apis::ChangeList> change_list;
   scheduler_->GetChangeList(
       old_largest_change_id + 1,
-      google_apis::test_util::CreateCopyResultCallback(
-          &error, &resource_list));
+      google_apis::test_util::CreateCopyResultCallback(&error, &change_list));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
-  ASSERT_TRUE(resource_list);
+  ASSERT_TRUE(change_list);
 }
 
 TEST_F(JobSchedulerTest, GetRemainingChangeList) {
@@ -302,33 +297,29 @@ TEST_F(JobSchedulerTest, GetRemainingChangeList) {
   fake_drive_service_->set_default_max_results(2);
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceList> resource_list;
+  scoped_ptr<google_apis::ChangeList> change_list;
 
-  scheduler_->GetAllResourceList(
-      google_apis::test_util::CreateCopyResultCallback(
-          &error, &resource_list));
+  scheduler_->GetChangeList(
+      0,
+      google_apis::test_util::CreateCopyResultCallback(&error, &change_list));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
-  ASSERT_TRUE(resource_list);
+  ASSERT_TRUE(change_list);
 
-  const google_apis::Link* next_link =
-      resource_list->GetLinkByType(google_apis::Link::LINK_NEXT);
-  ASSERT_TRUE(next_link);
-  // Keep the next url before releasing the |resource_list|.
-  GURL next_url(next_link->href());
+  // Keep the next url before releasing the |change_list|.
+  GURL next_url(change_list->next_link());
 
   error = google_apis::GDATA_OTHER_ERROR;
-  resource_list.reset();
+  change_list.reset();
 
   scheduler_->GetRemainingChangeList(
       next_url,
-      google_apis::test_util::CreateCopyResultCallback(
-          &error, &resource_list));
+      google_apis::test_util::CreateCopyResultCallback(&error, &change_list));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
-  ASSERT_TRUE(resource_list);
+  ASSERT_TRUE(change_list);
 }
 
 TEST_F(JobSchedulerTest, GetRemainingFileList) {
@@ -336,43 +327,38 @@ TEST_F(JobSchedulerTest, GetRemainingFileList) {
   fake_drive_service_->set_default_max_results(2);
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceList> resource_list;
+  scoped_ptr<google_apis::FileList> file_list;
 
-  scheduler_->GetResourceListInDirectory(
+  scheduler_->GetFileListInDirectory(
       fake_drive_service_->GetRootResourceId(),
-      google_apis::test_util::CreateCopyResultCallback(
-          &error, &resource_list));
+      google_apis::test_util::CreateCopyResultCallback(&error, &file_list));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
-  ASSERT_TRUE(resource_list);
+  ASSERT_TRUE(file_list);
 
-  const google_apis::Link* next_link =
-      resource_list->GetLinkByType(google_apis::Link::LINK_NEXT);
-  ASSERT_TRUE(next_link);
-  // Keep the next url before releasing the |resource_list|.
-  GURL next_url(next_link->href());
+  // Keep the next url before releasing the |file_list|.
+  GURL next_url(file_list->next_link());
 
   error = google_apis::GDATA_OTHER_ERROR;
-  resource_list.reset();
+  file_list.reset();
 
   scheduler_->GetRemainingFileList(
       next_url,
-      google_apis::test_util::CreateCopyResultCallback(
-          &error, &resource_list));
+      google_apis::test_util::CreateCopyResultCallback(&error, &file_list));
   base::RunLoop().RunUntilIdle();
 
   ASSERT_EQ(google_apis::HTTP_SUCCESS, error);
-  ASSERT_TRUE(resource_list);
+  ASSERT_TRUE(file_list);
 }
 
-TEST_F(JobSchedulerTest, GetResourceEntry) {
+TEST_F(JobSchedulerTest, GetFileResource) {
   ConnectToWifi();
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
 
-  scheduler_->GetResourceEntry(
+  scheduler_->GetFileResource(
       "file:2_file_resource_id",  // resource ID
       ClientContext(USER_INITIATED),
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
@@ -417,7 +403,7 @@ TEST_F(JobSchedulerTest, CopyResource) {
   ConnectToWifi();
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
 
   scheduler_->CopyResource(
       "file:2_file_resource_id",  // resource ID
@@ -435,7 +421,7 @@ TEST_F(JobSchedulerTest, UpdateResource) {
   ConnectToWifi();
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
 
   scheduler_->UpdateResource(
       "file:2_file_resource_id",  // resource ID
@@ -498,7 +484,7 @@ TEST_F(JobSchedulerTest, AddNewDirectory) {
   ConnectToWifi();
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
 
   scheduler_->AddNewDirectory(
       fake_drive_service_->GetRootResourceId(),  // Root directory.
@@ -516,10 +502,10 @@ TEST_F(JobSchedulerTest, PriorityHandling) {
   // Saturate the metadata job queue with uninteresting jobs to prevent
   // following jobs from starting.
   google_apis::GDataErrorCode error_dontcare = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry_dontcare;
+  scoped_ptr<google_apis::FileResource> entry_dontcare;
   for (int i = 0; i < GetMetadataQueueMaxJobCount(); ++i) {
     std::string resource_id("file:2_file_resource_id");
-    scheduler_->GetResourceEntry(
+    scheduler_->GetFileResource(
         resource_id,
         ClientContext(USER_INITIATED),
         google_apis::test_util::CreateCopyResultCallback(&error_dontcare,
@@ -538,25 +524,25 @@ TEST_F(JobSchedulerTest, PriorityHandling) {
       title_1,
       DriveServiceInterface::AddNewDirectoryOptions(),
       ClientContext(USER_INITIATED),
-      base::Bind(&CopyTitleFromGetResourceEntryCallback, &titles));
+      base::Bind(&CopyTitleFromFileResourceCallback, &titles));
   scheduler_->AddNewDirectory(
       fake_drive_service_->GetRootResourceId(),
       title_2,
       DriveServiceInterface::AddNewDirectoryOptions(),
       ClientContext(BACKGROUND),
-      base::Bind(&CopyTitleFromGetResourceEntryCallback, &titles));
+      base::Bind(&CopyTitleFromFileResourceCallback, &titles));
   scheduler_->AddNewDirectory(
       fake_drive_service_->GetRootResourceId(),
       title_3,
       DriveServiceInterface::AddNewDirectoryOptions(),
       ClientContext(BACKGROUND),
-      base::Bind(&CopyTitleFromGetResourceEntryCallback, &titles));
+      base::Bind(&CopyTitleFromFileResourceCallback, &titles));
   scheduler_->AddNewDirectory(
       fake_drive_service_->GetRootResourceId(),
       title_4,
       DriveServiceInterface::AddNewDirectoryOptions(),
       ClientContext(USER_INITIATED),
-      base::Bind(&CopyTitleFromGetResourceEntryCallback, &titles));
+      base::Bind(&CopyTitleFromFileResourceCallback, &titles));
 
   base::RunLoop().RunUntilIdle();
 
@@ -573,8 +559,8 @@ TEST_F(JobSchedulerTest, NoConnectionUserInitiated) {
   std::string resource_id("file:2_file_resource_id");
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
-  scheduler_->GetResourceEntry(
+  scoped_ptr<google_apis::FileResource> entry;
+  scheduler_->GetFileResource(
       resource_id,
       ClientContext(USER_INITIATED),
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
@@ -589,8 +575,8 @@ TEST_F(JobSchedulerTest, NoConnectionBackground) {
   std::string resource_id("file:2_file_resource_id");
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
-  scheduler_->GetResourceEntry(
+  scoped_ptr<google_apis::FileResource> entry;
+  scheduler_->GetFileResource(
       resource_id,
       ClientContext(BACKGROUND),
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
@@ -815,7 +801,7 @@ TEST_F(JobSchedulerTest, JobInfo) {
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
   scoped_ptr<google_apis::AboutResource> about_resource;
   base::FilePath path;
 
@@ -958,7 +944,7 @@ TEST_F(JobSchedulerTest, JobInfoProgress) {
   ASSERT_TRUE(google_apis::test_util::WriteStringToFile(path, "Hello"));
   google_apis::GDataErrorCode upload_error =
       google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
 
   scheduler_->UploadNewFile(
       fake_drive_service_->GetRootResourceId(),
@@ -992,7 +978,7 @@ TEST_F(JobSchedulerTest, CancelPendingJob) {
 
   // Start the first job and record its job ID.
   google_apis::GDataErrorCode error1 = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
   scheduler_->UploadNewFile(
       fake_drive_service_->GetRootResourceId(),
       base::FilePath::FromUTF8Unsafe("dummy/path"),
@@ -1042,7 +1028,7 @@ TEST_F(JobSchedulerTest, CancelRunningJob) {
   // Run as a cancelable task.
   fake_drive_service_->set_upload_new_file_cancelable(true);
   google_apis::GDataErrorCode error1 = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
   scheduler_->UploadNewFile(
       fake_drive_service_->GetRootResourceId(),
       base::FilePath::FromUTF8Unsafe("dummy/path"),

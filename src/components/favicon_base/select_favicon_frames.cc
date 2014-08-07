@@ -4,13 +4,18 @@
 
 #include "components/favicon_base/select_favicon_frames.h"
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
+#include <map>
 #include <set>
 
+#include "components/favicon_base/favicon_util.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/gfx/image/image_skia_source.h"
 #include "ui/gfx/size.h"
 
 namespace {
@@ -44,58 +49,44 @@ SkBitmap SampleNearestNeighbor(const SkBitmap& contents, int desired_size) {
   return bitmap;
 }
 
-enum ResizeMethod { NONE, SAMPLE_NEAREST_NEIGHBOUR, LANCZOS };
-
 size_t GetCandidateIndexWithBestScore(
-    const std::vector<gfx::Size>& candidate_sizes_in_pixel,
-    ui::ScaleFactor scale_factor,
-    int desired_size_in_dip,
-    float* score,
-    ResizeMethod* resize_method) {
-  DCHECK_NE(desired_size_in_dip, 0);
-
-  float scale = ui::GetImageScale(scale_factor);
-  int desired_size_in_pixel =
-      static_cast<int>(desired_size_in_dip * scale + 0.5f);
+    const std::vector<gfx::Size>& candidate_sizes,
+    int desired_size,
+    float* score) {
+  DCHECK_NE(desired_size, 0);
 
   // Try to find an exact match.
-  for (size_t i = 0; i < candidate_sizes_in_pixel.size(); ++i) {
-    if (candidate_sizes_in_pixel[i].width() == desired_size_in_pixel &&
-        candidate_sizes_in_pixel[i].height() == desired_size_in_pixel) {
+  for (size_t i = 0; i < candidate_sizes.size(); ++i) {
+    if (candidate_sizes[i].width() == desired_size &&
+        candidate_sizes[i].height() == desired_size) {
       *score = 1;
-      *resize_method = NONE;
       return i;
     }
   }
 
   // Huge favicon bitmaps often have a completely different visual style from
-  // smaller favicon bitmaps. Avoid these favicon bitmaps when a favicon of
-  // gfx::kFaviconSize DIP is requested.
-  const int kHugeEdgeSizeInPixel = desired_size_in_pixel * 8;
+  // smaller favicon bitmaps. Avoid them.
+  const int kHugeEdgeSize = desired_size * 8;
 
   // Order of preference:
-  // 1) Bitmaps with width and height smaller than |kHugeEdgeSizeInPixel|.
+  // 1) Bitmaps with width and height smaller than |kHugeEdgeSize|.
   // 2) Bitmaps which need to be scaled down instead of up.
   // 3) Bitmaps which do not need to be scaled as much.
   size_t candidate_index = std::numeric_limits<size_t>::max();
   float candidate_score = 0;
-  for (size_t i = 0; i < candidate_sizes_in_pixel.size(); ++i) {
-    float average_edge_in_pixel = (candidate_sizes_in_pixel[i].width() +
-                                   candidate_sizes_in_pixel[i].height()) /
-                                  2.0f;
+  for (size_t i = 0; i < candidate_sizes.size(); ++i) {
+    float average_edge =
+        (candidate_sizes[i].width() + candidate_sizes[i].height()) / 2.0f;
 
     float score = 0;
-    if (candidate_sizes_in_pixel[i].width() >= kHugeEdgeSizeInPixel ||
-        candidate_sizes_in_pixel[i].height() >= kHugeEdgeSizeInPixel) {
-      score =
-          std::min(1.0f, desired_size_in_pixel / average_edge_in_pixel) * 0.01f;
-    } else if (candidate_sizes_in_pixel[i].width() >= desired_size_in_pixel &&
-               candidate_sizes_in_pixel[i].height() >= desired_size_in_pixel) {
-      score = desired_size_in_pixel / average_edge_in_pixel * 0.01f + 0.15f;
+    if (candidate_sizes[i].width() >= kHugeEdgeSize ||
+        candidate_sizes[i].height() >= kHugeEdgeSize) {
+      score = std::min(1.0f, desired_size / average_edge) * 0.01f;
+    } else if (candidate_sizes[i].width() >= desired_size &&
+               candidate_sizes[i].height() >= desired_size) {
+      score = desired_size / average_edge * 0.01f + 0.15f;
     } else {
-      score = std::min(1.0f, average_edge_in_pixel / desired_size_in_pixel) *
-                  0.01f +
-              0.1f;
+      score = std::min(1.0f, average_edge / desired_size) * 0.01f + 0.1f;
     }
 
     if (candidate_index == std::numeric_limits<size_t>::max() ||
@@ -106,53 +97,37 @@ size_t GetCandidateIndexWithBestScore(
   }
   *score = candidate_score;
 
-  // Integer multiples are built using nearest neighbor sampling. Otherwise,
-  // Lanczos scaling is used.
-  const gfx::Size& candidate_size_in_pixel =
-      candidate_sizes_in_pixel[candidate_index];
-  if (candidate_size_in_pixel.IsEmpty()) {
-    *resize_method = NONE;
-  } else if (desired_size_in_pixel % candidate_size_in_pixel.width() == 0 &&
-             desired_size_in_pixel % candidate_size_in_pixel.height() == 0) {
-    *resize_method = SAMPLE_NEAREST_NEIGHBOUR;
-  } else {
-    *resize_method = LANCZOS;
-  }
   return candidate_index;
 }
 
-// Represents the index of the best candidate for a |scale_factor| from the
+// Represents the index of the best candidate for |desired_size| from the
 // |candidate_sizes| passed into GetCandidateIndicesWithBestScores().
 struct SelectionResult {
   // index in |candidate_sizes| of the best candidate.
   size_t index;
 
-  // The ScaleFactor for which |index| is the best candidate.
-  ui::ScaleFactor scale_factor;
-
-  // How the bitmap data that the bitmap with |candidate_sizes[index]| should
-  // be resized for displaying in the UI.
-  ResizeMethod resize_method;
+  // The desired size for which |index| is the best candidate.
+  int desired_size;
 };
 
 void GetCandidateIndicesWithBestScores(
     const std::vector<gfx::Size>& candidate_sizes,
-    const std::vector<ui::ScaleFactor>& scale_factors,
-    int desired_size,
+    const std::vector<int>& desired_sizes,
     float* match_score,
     std::vector<SelectionResult>* results) {
-  if (candidate_sizes.empty()) {
+  if (candidate_sizes.empty() || desired_sizes.empty()) {
     if (match_score)
       *match_score = 0.0f;
     return;
   }
 
-  if (desired_size == 0) {
+  std::vector<int>::const_iterator zero_size_it =
+      std::find(desired_sizes.begin(), desired_sizes.end(), 0);
+  if (zero_size_it != desired_sizes.end()) {
     // Just return the biggest image available.
     SelectionResult result;
     result.index = BiggestCandidate(candidate_sizes);
-    result.scale_factor = ui::SCALE_FACTOR_100P;
-    result.resize_method = NONE;
+    result.desired_size = 0;
     results->push_back(result);
     if (match_score)
       *match_score = 1.0f;
@@ -160,83 +135,134 @@ void GetCandidateIndicesWithBestScores(
   }
 
   float total_score = 0;
-  for (size_t i = 0; i < scale_factors.size(); ++i) {
+  for (size_t i = 0; i < desired_sizes.size(); ++i) {
     float score;
     SelectionResult result;
-    result.scale_factor = scale_factors[i];
-    result.index = GetCandidateIndexWithBestScore(candidate_sizes,
-                                                  result.scale_factor,
-                                                  desired_size,
-                                                  &score,
-                                                  &result.resize_method);
+    result.desired_size = desired_sizes[i];
+    result.index = GetCandidateIndexWithBestScore(
+        candidate_sizes, result.desired_size, &score);
     results->push_back(result);
     total_score += score;
   }
 
   if (match_score)
-    *match_score = total_score / scale_factors.size();
+    *match_score = total_score / desired_sizes.size();
 }
 
-// Resize |source_bitmap| using |resize_method|.
+// Resize |source_bitmap|
 SkBitmap GetResizedBitmap(const SkBitmap& source_bitmap,
-                          int desired_size_in_dip,
-                          ui::ScaleFactor scale_factor,
-                          ResizeMethod resize_method) {
-  float scale = ui::GetImageScale(scale_factor);
-  int desired_size_in_pixel =
-      static_cast<int>(desired_size_in_dip * scale + 0.5f);
-
-  switch (resize_method) {
-    case NONE:
-      return source_bitmap;
-    case SAMPLE_NEAREST_NEIGHBOUR:
-      return SampleNearestNeighbor(source_bitmap, desired_size_in_pixel);
-    case LANCZOS:
-      return skia::ImageOperations::Resize(
-          source_bitmap,
-          skia::ImageOperations::RESIZE_LANCZOS3,
-          desired_size_in_pixel,
-          desired_size_in_pixel);
+                          gfx::Size original_size,
+                          int desired_size_in_pixel) {
+  if (desired_size_in_pixel == 0 ||
+      (original_size.width() == desired_size_in_pixel &&
+       original_size.height() == desired_size_in_pixel)) {
+    return source_bitmap;
   }
-  return source_bitmap;
+  if (desired_size_in_pixel % original_size.width() == 0 &&
+      desired_size_in_pixel % original_size.height() == 0) {
+    return SampleNearestNeighbor(source_bitmap, desired_size_in_pixel);
+  }
+  return skia::ImageOperations::Resize(source_bitmap,
+                                       skia::ImageOperations::RESIZE_LANCZOS3,
+                                       desired_size_in_pixel,
+                                       desired_size_in_pixel);
 }
+
+class FaviconImageSource : public gfx::ImageSkiaSource {
+ public:
+  FaviconImageSource() {}
+  virtual ~FaviconImageSource() {}
+
+  // gfx::ImageSkiaSource:
+  virtual gfx::ImageSkiaRep GetImageForScale(float scale) OVERRIDE {
+    const gfx::ImageSkiaRep* rep = NULL;
+    // gfx::ImageSkia passes one of the resource scale factors. The source
+    // should return:
+    // 1) The ImageSkiaRep with the highest scale if all available
+    // scales are smaller than |scale|.
+    // 2) The ImageSkiaRep with the smallest one that is larger than |scale|.
+    // Note: Keep this logic consistent with the PNGImageSource in
+    // ui/gfx/image.cc.
+    // TODO(oshima): consolidate these logic into one place.
+    for (std::vector<gfx::ImageSkiaRep>::const_iterator iter =
+             image_skia_reps_.begin();
+         iter != image_skia_reps_.end(); ++iter) {
+      if ((*iter).scale() == scale)
+        return (*iter);
+      if (!rep || rep->scale() < (*iter).scale())
+        rep = &(*iter);
+      if (rep->scale() >= scale)
+        break;
+    }
+    DCHECK(rep);
+    return rep ? *rep : gfx::ImageSkiaRep();
+  }
+
+  void AddImageSkiaRep(const gfx::ImageSkiaRep& rep) {
+    image_skia_reps_.push_back(rep);
+  }
+
+ private:
+  std::vector<gfx::ImageSkiaRep> image_skia_reps_;
+  DISALLOW_COPY_AND_ASSIGN(FaviconImageSource);
+};
 
 }  // namespace
 
 const float kSelectFaviconFramesInvalidScore = -1.0f;
 
-gfx::ImageSkia SelectFaviconFrames(
+gfx::ImageSkia CreateFaviconImageSkia(
     const std::vector<SkBitmap>& bitmaps,
     const std::vector<gfx::Size>& original_sizes,
-    const std::vector<ui::ScaleFactor>& scale_factors,
-    int desired_size,
-    float* match_score) {
-  std::vector<SelectionResult> results;
-  GetCandidateIndicesWithBestScores(
-      original_sizes, scale_factors, desired_size, match_score, &results);
+    int desired_size_in_dip,
+    float* score) {
 
-  gfx::ImageSkia multi_image;
-  for (size_t i = 0; i < results.size(); ++i) {
-    const SelectionResult& result = results[i];
-    SkBitmap resized_bitmap = GetResizedBitmap(bitmaps[result.index],
-                                               desired_size,
-                                               result.scale_factor,
-                                               result.resize_method);
-    multi_image.AddRepresentation(gfx::ImageSkiaRep(
-        resized_bitmap, ui::GetImageScale(result.scale_factor)));
+  const std::vector<float>& favicon_scales = favicon_base::GetFaviconScales();
+  std::vector<int> desired_sizes;
+
+  if (desired_size_in_dip == 0) {
+    desired_sizes.push_back(0);
+  } else {
+    for (std::vector<float>::const_iterator iter = favicon_scales.begin();
+         iter != favicon_scales.end(); ++iter) {
+      desired_sizes.push_back(ceil(desired_size_in_dip * (*iter)));
+    }
   }
-  return multi_image;
+
+  std::vector<SelectionResult> results;
+  GetCandidateIndicesWithBestScores(original_sizes,
+                                    desired_sizes,
+                                    score,
+                                    &results);
+  if (results.size() == 0)
+    return gfx::ImageSkia();
+
+  if (desired_size_in_dip == 0) {
+    size_t index = results[0].index;
+    return gfx::ImageSkia(gfx::ImageSkiaRep(bitmaps[index], 1.0f));
+  }
+
+  FaviconImageSource* image_source = new FaviconImageSource;
+
+  for (size_t i = 0; i < results.size(); ++i) {
+    size_t index = results[i].index;
+    image_source->AddImageSkiaRep(
+        gfx::ImageSkiaRep(GetResizedBitmap(bitmaps[index],
+                                           original_sizes[index],
+                                           desired_sizes[i]),
+                          favicon_scales[i]));
+  }
+  return gfx::ImageSkia(image_source,
+                        gfx::Size(desired_size_in_dip, desired_size_in_dip));
 }
 
-void SelectFaviconFrameIndices(
-    const std::vector<gfx::Size>& frame_pixel_sizes,
-    const std::vector<ui::ScaleFactor>& scale_factors,
-    int desired_size,
-    std::vector<size_t>* best_indices,
-    float* match_score) {
+void SelectFaviconFrameIndices(const std::vector<gfx::Size>& frame_pixel_sizes,
+                               const std::vector<int>& desired_sizes,
+                               std::vector<size_t>* best_indices,
+                               float* match_score) {
   std::vector<SelectionResult> results;
   GetCandidateIndicesWithBestScores(
-      frame_pixel_sizes, scale_factors, desired_size, match_score, &results);
+      frame_pixel_sizes, desired_sizes, match_score, &results);
 
   std::set<size_t> already_added;
   for (size_t i = 0; i < results.size(); ++i) {

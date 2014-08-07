@@ -14,17 +14,12 @@ class ToughCanvasCasesPage(page_module.Page):
     self.archive_data_file = 'data/tough_canvas_cases.json'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        "javascript": "document.readyState == 'complete'"
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        "document.readyState == 'complete'")
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction(
-      {
-        "seconds": 5
-      }))
+    action_runner.Wait(5)
 
 
 class MicrosofFirefliesPage(ToughCanvasCasesPage):
@@ -46,7 +41,8 @@ class ToughCanvasCasesPageSet(page_set_module.PageSet):
 
   def __init__(self):
     super(ToughCanvasCasesPageSet, self).__init__(
-      archive_data_file='data/tough_canvas_cases.json')
+      archive_data_file='data/tough_canvas_cases.json',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     self.AddPage(MicrosofFirefliesPage(self))
 

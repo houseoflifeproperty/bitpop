@@ -27,6 +27,7 @@
 #include "config.h"
 #include "core/fetch/FontResource.h"
 
+#include "core/dom/TagCollection.h"
 #include "core/fetch/ResourceClientWalker.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "platform/SharedBuffer.h"
@@ -36,7 +37,7 @@
 #include "wtf/CurrentTime.h"
 
 #if ENABLE(SVG_FONTS)
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/dom/XMLDocument.h"
 #include "core/html/HTMLCollection.h"
 #include "core/svg/SVGFontElement.h"
@@ -46,11 +47,37 @@ namespace WebCore {
 
 static const double fontLoadWaitLimitSec = 3.0;
 
+enum FontPackageFormat {
+    PackageFormatUnknown,
+    PackageFormatSFNT,
+    PackageFormatWOFF,
+    PackageFormatWOFF2,
+    PackageFormatSVG,
+    PackageFormatEnumMax
+};
+
+static FontPackageFormat packageFormatOf(SharedBuffer* buffer)
+{
+    if (buffer->size() < 4)
+        return PackageFormatUnknown;
+
+    const char* data = buffer->data();
+    if (data[0] == 'w' && data[1] == 'O' && data[2] == 'F' && data[3] == 'F')
+        return PackageFormatWOFF;
+    if (data[0] == 'w' && data[1] == 'O' && data[2] == 'F' && data[3] == '2')
+        return PackageFormatWOFF2;
+    return PackageFormatSFNT;
+}
+
+static void recordPackageFormatHistogram(FontPackageFormat format)
+{
+    blink::Platform::current()->histogramEnumeration("WebFont.PackageFormat", format, PackageFormatEnumMax);
+}
+
 FontResource::FontResource(const ResourceRequest& resourceRequest)
     : Resource(resourceRequest, Font)
     , m_loadInitiated(false)
     , m_exceedsFontLoadWaitLimit(false)
-    , m_corsFailed(false)
     , m_fontLoadWaitLimitTimer(this, &FontResource::fontLoadWaitLimitCallback)
 {
 }
@@ -92,8 +119,13 @@ bool FontResource::ensureCustomFontData()
     if (!m_fontData && !errorOccurred() && !isLoading()) {
         if (m_data)
             m_fontData = FontCustomPlatformData::create(m_data.get());
-        if (!m_fontData)
+
+        if (m_fontData) {
+            recordPackageFormatHistogram(packageFormatOf(m_data.get()));
+        } else {
             setStatus(DecodeError);
+            recordPackageFormatHistogram(PackageFormatUnknown);
+        }
     }
     return m_fontData;
 }
@@ -124,8 +156,12 @@ bool FontResource::ensureSVGFontData()
             if (decoder->sawError())
                 m_externalSVGDocument = nullptr;
         }
-        if (!m_externalSVGDocument)
+        if (m_externalSVGDocument) {
+            recordPackageFormatHistogram(PackageFormatSVG);
+        } else {
             setStatus(DecodeError);
+            recordPackageFormatHistogram(PackageFormatUnknown);
+        }
     }
 
     return m_externalSVGDocument;
@@ -133,7 +169,7 @@ bool FontResource::ensureSVGFontData()
 
 SVGFontElement* FontResource::getSVGFontById(const String& fontName) const
 {
-    RefPtr<HTMLCollection> collection = m_externalSVGDocument->getElementsByTagNameNS(SVGNames::fontTag.namespaceURI(), SVGNames::fontTag.localName());
+    RefPtrWillBeRawPtr<TagCollection> collection = m_externalSVGDocument->getElementsByTagNameNS(SVGNames::fontTag.namespaceURI(), SVGNames::fontTag.localName());
     if (!collection)
         return 0;
 
@@ -185,16 +221,9 @@ void FontResource::allClientsRemoved()
 void FontResource::checkNotify()
 {
     m_fontLoadWaitLimitTimer.stop();
-
     ResourceClientWalker<FontResourceClient> w(m_clients);
-    // FIXME: Remove this CORS fallback once we have enough UMA to make a decision.
-    if (m_corsFailed) {
-        while (FontResourceClient* client = w.next())
-            client->corsFailed(this);
-    } else {
-        while (FontResourceClient* c = w.next())
-            c->fontLoaded(this);
-    }
+    while (FontResourceClient* c = w.next())
+        c->fontLoaded(this);
 }
 
 }

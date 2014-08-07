@@ -235,16 +235,17 @@ void ThemeSyncableService::SetCurrentThemeFromThemeSpecifics(
       // so by adding it as a pending extension and then triggering an
       // auto-update cycle.
       const bool kInstallSilently = true;
+      const bool kRemoteInstall = false;
       if (!extensions_service->pending_extension_manager()->AddFromSync(
-              id, update_url, &IsTheme, kInstallSilently)) {
+              id, update_url, &IsTheme, kInstallSilently, kRemoteInstall)) {
         LOG(WARNING) << "Could not add pending extension for " << id;
         return;
       }
       extensions_service->CheckForUpdatesSoon();
     }
   } else if (theme_specifics.use_system_theme_by_default()) {
-    DVLOG(1) << "Switch to use native theme";
-    theme_service_->SetNativeTheme();
+    DVLOG(1) << "Switch to use system theme";
+    theme_service_->UseSystemTheme();
   } else {
     DVLOG(1) << "Switch to use default theme";
     theme_service_->UseDefaultTheme();
@@ -269,7 +270,7 @@ bool ThemeSyncableService::GetThemeSpecificsFromCurrentTheme(
     // On platform where system theme is different from default theme, set
     // use_system_theme_by_default to true if system theme is used, false
     // if default system theme is used. Otherwise restore it to value in sync.
-    if (theme_service_->UsingNativeTheme()) {
+    if (theme_service_->UsingSystemTheme()) {
       theme_specifics->set_use_system_theme_by_default(true);
     } else if (theme_service_->UsingDefaultTheme()) {
       theme_specifics->set_use_system_theme_by_default(false);

@@ -32,16 +32,19 @@ class AddressTrackerLinux;
 // destroyed on the same thread.
 class NET_EXPORT NetworkChangeNotifier {
  public:
-  // Using the terminology of the Network Information API:
-  // http://www.w3.org/TR/netinfo-api.
+  // This is a superset of the connection types in the NetInfo v3 specification:
+  // http://w3c.github.io/netinfo/.
   enum ConnectionType {
-    CONNECTION_UNKNOWN = 0, // A connection exists, but its type is unknown.
+    CONNECTION_UNKNOWN = 0,  // A connection exists, but its type is unknown.
+                             // Also used as a default value.
     CONNECTION_ETHERNET = 1,
     CONNECTION_WIFI = 2,
     CONNECTION_2G = 3,
     CONNECTION_3G = 4,
     CONNECTION_4G = 5,
-    CONNECTION_NONE = 6     // No connection.
+    CONNECTION_NONE = 6,     // No connection.
+    CONNECTION_BLUETOOTH = 7,
+    CONNECTION_LAST = CONNECTION_BLUETOOTH
   };
 
   class NET_EXPORT IPAddressObserver {

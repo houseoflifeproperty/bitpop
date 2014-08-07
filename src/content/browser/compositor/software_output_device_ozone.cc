@@ -5,18 +5,18 @@
 #include "content/browser/compositor/software_output_device_ozone.h"
 #include "third_party/skia/include/core/SkDevice.h"
 #include "ui/compositor/compositor.h"
-#include "ui/gfx/ozone/surface_factory_ozone.h"
-#include "ui/gfx/ozone/surface_ozone_canvas.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/vsync_provider.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
+#include "ui/ozone/public/surface_ozone_canvas.h"
 
 namespace content {
 
 SoftwareOutputDeviceOzone::SoftwareOutputDeviceOzone(ui::Compositor* compositor)
     : compositor_(compositor) {
-  gfx::SurfaceFactoryOzone* factory = gfx::SurfaceFactoryOzone::GetInstance();
+  ui::SurfaceFactoryOzone* factory = ui::SurfaceFactoryOzone::GetInstance();
 
-  if (factory->InitializeHardware() != gfx::SurfaceFactoryOzone::INITIALIZED)
+  if (factory->InitializeHardware() != ui::SurfaceFactoryOzone::INITIALIZED)
     LOG(FATAL) << "Failed to initialize hardware in OZONE";
 
   surface_ozone_ = factory->CreateCanvasForWidget(compositor_->widget());
@@ -30,17 +30,20 @@ SoftwareOutputDeviceOzone::SoftwareOutputDeviceOzone(ui::Compositor* compositor)
 SoftwareOutputDeviceOzone::~SoftwareOutputDeviceOzone() {
 }
 
-void SoftwareOutputDeviceOzone::Resize(const gfx::Size& viewport_size) {
-  if (viewport_size_ == viewport_size)
+void SoftwareOutputDeviceOzone::Resize(const gfx::Size& viewport_pixel_size,
+                                       float scale_factor) {
+  scale_factor_ = scale_factor;
+
+  if (viewport_pixel_size_ == viewport_pixel_size)
     return;
 
-  viewport_size_ = viewport_size;
+  viewport_pixel_size_ = viewport_pixel_size;
 
-  surface_ozone_->ResizeCanvas(viewport_size_);
+  surface_ozone_->ResizeCanvas(viewport_pixel_size_);
 }
 
 SkCanvas* SoftwareOutputDeviceOzone::BeginPaint(const gfx::Rect& damage_rect) {
-  DCHECK(gfx::Rect(viewport_size_).Contains(damage_rect));
+  DCHECK(gfx::Rect(viewport_pixel_size_).Contains(damage_rect));
 
   // Get canvas for next frame.
   canvas_ = surface_ozone_->GetCanvas();

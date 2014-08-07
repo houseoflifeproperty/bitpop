@@ -66,7 +66,6 @@ int main(int argc, char* argv[])
     ShHandle fragmentCompiler = 0;
     char* buffer = 0;
     size_t bufferLen = 0;
-    int numAttribs = 0, numUniforms = 0;
     ShShaderSpec spec = SH_GLES2_SPEC;
     ShShaderOutput output = SH_ESSL_OUTPUT;
 
@@ -126,6 +125,7 @@ int main(int argc, char* argv[])
                     case 'i': resources.OES_EGL_image_external = 1; break;
                     case 'd': resources.OES_standard_derivatives = 1; break;
                     case 'r': resources.ARB_texture_rectangle = 1; break;
+                    case 'l': resources.EXT_shader_texture_lod = 1; break;
                     default: failCode = EFailUsage;
                     }
                 } else {
@@ -231,7 +231,8 @@ void usage()
         "       -b=h11   : output HLSL11 code\n"
         "       -x=i     : enable GL_OES_EGL_image_external\n"
         "       -x=d     : enable GL_OES_EGL_standard_derivatives\n"
-        "       -x=r     : enable ARB_texture_rectangle\n");
+        "       -x=r     : enable ARB_texture_rectangle\n"
+        "       -x=l     : enable EXT_shader_texture_lod\n");
 }
 
 //
@@ -320,6 +321,10 @@ void PrintActiveVariables(ShHandle compiler, ShShaderInfo varType)
             case SH_INT_VEC2: typeName = "GL_INT_VEC2"; break;
             case SH_INT_VEC3: typeName = "GL_INT_VEC3"; break;
             case SH_INT_VEC4: typeName = "GL_INT_VEC4"; break;
+            case SH_UNSIGNED_INT: typeName = "GL_UNSIGNED_INT"; break;
+            case SH_UNSIGNED_INT_VEC2: typeName = "GL_UNSIGNED_INT_VEC2"; break;
+            case SH_UNSIGNED_INT_VEC3: typeName = "GL_UNSIGNED_INT_VEC3"; break;
+            case SH_UNSIGNED_INT_VEC4: typeName = "GL_UNSIGNED_INT_VEC4"; break;
             case SH_BOOL: typeName = "GL_BOOL"; break;
             case SH_BOOL_VEC2: typeName = "GL_BOOL_VEC2"; break;
             case SH_BOOL_VEC3: typeName = "GL_BOOL_VEC3"; break;
@@ -327,6 +332,12 @@ void PrintActiveVariables(ShHandle compiler, ShShaderInfo varType)
             case SH_FLOAT_MAT2: typeName = "GL_FLOAT_MAT2"; break;
             case SH_FLOAT_MAT3: typeName = "GL_FLOAT_MAT3"; break;
             case SH_FLOAT_MAT4: typeName = "GL_FLOAT_MAT4"; break;
+            case SH_FLOAT_MAT2x3: typeName = "GL_FLOAT_MAT2x3"; break;
+            case SH_FLOAT_MAT3x2: typeName = "GL_FLOAT_MAT3x2"; break;
+            case SH_FLOAT_MAT4x2: typeName = "GL_FLOAT_MAT4x2"; break;
+            case SH_FLOAT_MAT2x4: typeName = "GL_FLOAT_MAT2x4"; break;
+            case SH_FLOAT_MAT3x4: typeName = "GL_FLOAT_MAT3x4"; break;
+            case SH_FLOAT_MAT4x3: typeName = "GL_FLOAT_MAT4x3"; break;
             case SH_SAMPLER_2D: typeName = "GL_SAMPLER_2D"; break;
             case SH_SAMPLER_CUBE: typeName = "GL_SAMPLER_CUBE"; break;
             case SH_SAMPLER_EXTERNAL_OES: typeName = "GL_SAMPLER_EXTERNAL_OES"; break;
@@ -346,7 +357,7 @@ static bool ReadShaderSource(const char* fileName, ShaderSource& source) {
 
     // Obtain file size.
     fseek(in, 0, SEEK_END);
-    int count = ftell(in);
+    size_t count = ftell(in);
     rewind(in);
 
     int len = (int)ceil((float)count / (float)NUM_SOURCE_STRINGS);
@@ -356,7 +367,7 @@ static bool ReadShaderSource(const char* fileName, ShaderSource& source) {
     // string is added to vector.
     do {
         char* data = new char[len + 1];
-        int nread = static_cast<int>(fread(data, 1, len, in));
+        size_t nread = fread(data, 1, len, in);
         data[nread] = '\0';
         source.push_back(data);
 

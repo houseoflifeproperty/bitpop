@@ -5,7 +5,7 @@
 #ifndef V8_IC_H_
 #define V8_IC_H_
 
-#include "macro-assembler.h"
+#include "src/macro-assembler.h"
 
 namespace v8 {
 namespace internal {
@@ -20,6 +20,7 @@ const int kMaxKeyedPolymorphism = 4;
   ICU(LoadIC_Miss)                                    \
   ICU(KeyedLoadIC_Miss)                               \
   ICU(CallIC_Miss)                                    \
+  ICU(CallIC_Customization_Miss)                      \
   ICU(StoreIC_Miss)                                   \
   ICU(StoreIC_ArrayLength)                            \
   ICU(StoreIC_Slow)                                   \
@@ -29,8 +30,7 @@ const int kMaxKeyedPolymorphism = 4;
   /* Utilities for IC stubs. */                       \
   ICU(StoreCallbackProperty)                          \
   ICU(LoadPropertyWithInterceptorOnly)                \
-  ICU(LoadPropertyWithInterceptorForLoad)             \
-  ICU(LoadPropertyWithInterceptorForCall)             \
+  ICU(LoadPropertyWithInterceptor)                    \
   ICU(KeyedLoadPropertyWithInterceptor)               \
   ICU(StoreInterceptorProperty)                       \
   ICU(CompareIC_Miss)                                 \
@@ -338,12 +338,8 @@ class CallIC: public IC {
    public:
     explicit State(ExtraICState extra_ic_state);
 
-    static State DefaultCallState(int argc, CallType call_type) {
-      return State(argc, call_type);
-    }
-
-    static State MegamorphicCallState(int argc, CallType call_type) {
-      return State(argc, call_type);
+    State(int argc, CallType call_type)
+        : argc_(argc), call_type_(call_type) {
     }
 
     InlineCacheState GetICState() const { return ::v8::internal::GENERIC; }
@@ -360,22 +356,7 @@ class CallIC: public IC {
 
     void Print(StringStream* stream) const;
 
-    bool operator==(const State& other_state) const {
-      return (argc_ == other_state.argc_ &&
-              call_type_ == other_state.call_type_);
-    }
-
-    bool operator!=(const State& other_state) const {
-      return !(*this == other_state);
-    }
-
    private:
-    State(int argc,
-          CallType call_type)
-        : argc_(argc),
-        call_type_(call_type) {
-    }
-
     class ArgcBits: public BitField<int, 0, Code::kArgumentsBits> {};
     class CallTypeBits: public BitField<CallType, Code::kArgumentsBits, 1> {};
 
@@ -387,10 +368,19 @@ class CallIC: public IC {
       : IC(EXTRA_CALL_FRAME, isolate) {
   }
 
+  void PatchMegamorphic(Handle<FixedArray> vector, Handle<Smi> slot);
+
   void HandleMiss(Handle<Object> receiver,
                   Handle<Object> function,
                   Handle<FixedArray> vector,
                   Handle<Smi> slot);
+
+  // Returns true if a custom handler was installed.
+  bool DoCustomHandler(Handle<Object> receiver,
+                       Handle<Object> function,
+                       Handle<FixedArray> vector,
+                       Handle<Smi> slot,
+                       const State& state);
 
   // Code generator routines.
   static Handle<Code> initialize_stub(Isolate* isolate,
@@ -490,10 +480,7 @@ class LoadIC: public IC {
     return pre_monomorphic_stub(isolate(), extra_ic_state());
   }
 
-  Handle<Code> SimpleFieldLoad(int offset,
-                               bool inobject = true,
-                               Representation representation =
-                                    Representation::Tagged());
+  Handle<Code> SimpleFieldLoad(FieldIndex index);
 
   static void Clear(Isolate* isolate,
                     Address address,
@@ -538,12 +525,9 @@ class KeyedLoadIC: public LoadIC {
 
   Handle<Code> LoadElementStub(Handle<JSObject> receiver);
 
-  virtual Handle<Code> megamorphic_stub() {
-    return isolate()->builtins()->KeyedLoadIC_Generic();
-  }
-  virtual Handle<Code> generic_stub() const {
-    return isolate()->builtins()->KeyedLoadIC_Generic();
-  }
+  virtual Handle<Code> megamorphic_stub();
+  virtual Handle<Code> generic_stub() const;
+
   virtual Handle<Code> slow_stub() const {
     return isolate()->builtins()->KeyedLoadIC_Slow();
   }
@@ -893,14 +877,13 @@ class BinaryOpIC: public IC {
     STATIC_ASSERT(LAST_TOKEN - FIRST_TOKEN < (1 << 4));
     class OpField:                 public BitField<int, 0, 4> {};
     class OverwriteModeField:      public BitField<OverwriteMode, 4, 2> {};
-    class SSE2Field:               public BitField<bool, 6, 1> {};
-    class ResultKindField:         public BitField<Kind, 7, 3> {};
-    class LeftKindField:           public BitField<Kind, 10,  3> {};
+    class ResultKindField:         public BitField<Kind, 6, 3> {};
+    class LeftKindField:           public BitField<Kind, 9,  3> {};
     // When fixed right arg is set, we don't need to store the right kind.
     // Thus the two fields can overlap.
-    class HasFixedRightArgField:   public BitField<bool, 13, 1> {};
-    class FixedRightArgValueField: public BitField<int,  14, 4> {};
-    class RightKindField:          public BitField<Kind, 14, 3> {};
+    class HasFixedRightArgField:   public BitField<bool, 12, 1> {};
+    class FixedRightArgValueField: public BitField<int,  13, 4> {};
+    class RightKindField:          public BitField<Kind, 13, 3> {};
 
     Token::Value op_;
     OverwriteMode mode_;

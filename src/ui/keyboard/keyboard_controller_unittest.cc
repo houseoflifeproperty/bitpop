@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ui/keyboard/keyboard_controller.h"
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
@@ -18,12 +20,14 @@
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/input_method_factory.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/base/ime/text_input_focus_manager.h"
+#include "ui/base/ui_base_switches_util.h"
+#include "ui/compositor/compositor.h"
 #include "ui/compositor/layer_type.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/compositor/test/layer_animator_test_controller.h"
-#include "ui/gfx/rect.h"
-#include "ui/keyboard/keyboard_controller.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/keyboard/keyboard_controller_observer.h"
 #include "ui/keyboard/keyboard_controller_proxy.h"
 #include "ui/keyboard/keyboard_switches.h"
@@ -40,13 +44,13 @@ void RunAnimationForLayer(ui::Layer* layer) {
             ui::ScopedAnimationDurationScaleMode::ZERO_DURATION);
 
   ui::LayerAnimatorTestController controller(layer->GetAnimator());
-  gfx::AnimationContainerElement* element = layer->GetAnimator();
   // Multiple steps are required to complete complex animations.
   // TODO(vollick): This should not be necessary. crbug.com/154017
   while (controller.animator()->is_animating()) {
     controller.StartThreadedAnimationsIfNeeded();
     base::TimeTicks step_time = controller.animator()->last_step_time();
-    element->Step(step_time + base::TimeDelta::FromMilliseconds(1000));
+    controller.animator()->Step(step_time +
+                                base::TimeDelta::FromMilliseconds(1000));
   }
 }
 
@@ -80,12 +84,8 @@ class TestFocusController : public ui::EventHandler {
 class TestKeyboardControllerProxy : public KeyboardControllerProxy {
  public:
   TestKeyboardControllerProxy()
-      : window_(new aura::Window(&delegate_)),
-        input_method_(ui::CreateInputMethod(NULL,
-                                            gfx::kNullAcceleratedWidget)) {
-    window_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
-    window_->set_owned_by_parent(false);
-  }
+      : input_method_(
+            ui::CreateInputMethod(NULL, gfx::kNullAcceleratedWidget)) {}
 
   virtual ~TestKeyboardControllerProxy() {
     // Destroy the window before the delegate.
@@ -93,8 +93,15 @@ class TestKeyboardControllerProxy : public KeyboardControllerProxy {
   }
 
   // Overridden from KeyboardControllerProxy:
-  virtual bool HasKeyboardWindow() const OVERRIDE { return true; }
-  virtual aura::Window* GetKeyboardWindow() OVERRIDE { return window_.get(); }
+  virtual bool HasKeyboardWindow() const OVERRIDE { return window_; }
+  virtual aura::Window* GetKeyboardWindow() OVERRIDE {
+    if (!window_) {
+      window_.reset(new aura::Window(&delegate_));
+      window_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+      window_->set_owned_by_parent(false);
+    }
+    return window_.get();
+  }
   virtual content::BrowserContext* GetBrowserContext() OVERRIDE { return NULL; }
   virtual ui::InputMethod* GetInputMethod() OVERRIDE {
     return input_method_.get();
@@ -165,12 +172,15 @@ class KeyboardControllerTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     // The ContextFactory must exist before any Compositors are created.
     bool enable_pixel_output = false;
-    ui::InitializeContextFactoryForTests(enable_pixel_output);
+    ui::ContextFactory* context_factory =
+        ui::InitializeContextFactoryForTests(enable_pixel_output);
 
     aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
-    aura_test_helper_->SetUp();
+    aura_test_helper_->SetUp(context_factory);
     new wm::DefaultActivationClient(aura_test_helper_->root_window());
     ui::SetUpInputMethodFactoryForTesting();
+    if (::switches::IsTextInputFocusManagerEnabled())
+      ui::TextInputFocusManager::GetInstance()->FocusTextInputClient(NULL);
     focus_controller_.reset(new TestFocusController(root_window()));
     proxy_ = new TestKeyboardControllerProxy();
     controller_.reset(new KeyboardController(proxy_));
@@ -179,6 +189,8 @@ class KeyboardControllerTest : public testing::Test {
   virtual void TearDown() OVERRIDE {
     controller_.reset();
     focus_controller_.reset();
+    if (::switches::IsTextInputFocusManagerEnabled())
+      ui::TextInputFocusManager::GetInstance()->FocusTextInputClient(NULL);
     aura_test_helper_->TearDown();
     ui::TerminateContextFactoryForTests();
   }
@@ -196,7 +208,12 @@ class KeyboardControllerTest : public testing::Test {
  protected:
   void SetFocus(ui::TextInputClient* client) {
     ui::InputMethod* input_method = proxy()->GetInputMethod();
-    input_method->SetFocusedTextInputClient(client);
+    if (::switches::IsTextInputFocusManagerEnabled()) {
+      ui::TextInputFocusManager::GetInstance()->FocusTextInputClient(client);
+      input_method->OnTextInputTypeChanged(client);
+    } else {
+      input_method->SetFocusedTextInputClient(client);
+    }
     if (client && client->GetTextInputType() != ui::TEXT_INPUT_TYPE_NONE) {
       input_method->ShowImeIfNeeded();
       if (proxy_->GetKeyboardWindow()->bounds().height() == 0) {
@@ -325,11 +342,43 @@ TEST_F(KeyboardControllerTest, EventHitTestingInContainer) {
                         ui::EF_NONE);
   EXPECT_EQ(keyboard_window, targeter->FindTargetForEvent(root, &mouse1));
 
-
   location.set_y(keyboard_window->bounds().y() - 5);
   ui::MouseEvent mouse2(ui::ET_MOUSE_MOVED, location, location, ui::EF_NONE,
                         ui::EF_NONE);
   EXPECT_EQ(window.get(), targeter->FindTargetForEvent(root, &mouse2));
+}
+
+TEST_F(KeyboardControllerTest, KeyboardWindowCreation) {
+  const gfx::Rect& root_bounds = root_window()->bounds();
+  aura::test::EventCountDelegate delegate;
+  scoped_ptr<aura::Window> window(new aura::Window(&delegate));
+  window->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  window->SetBounds(root_bounds);
+  root_window()->AddChild(window.get());
+  window->Show();
+  window->Focus();
+
+  aura::Window* keyboard_container(controller()->GetContainerWindow());
+  keyboard_container->SetBounds(root_bounds);
+
+  root_window()->AddChild(keyboard_container);
+  keyboard_container->Show();
+
+  EXPECT_FALSE(proxy()->HasKeyboardWindow());
+
+  ui::EventTarget* root = root_window();
+  ui::EventTargeter* targeter = root->GetEventTargeter();
+  gfx::Point location(root_window()->bounds().width() / 2,
+                      root_window()->bounds().height() - 10);
+  ui::MouseEvent mouse(
+      ui::ET_MOUSE_MOVED, location, location, ui::EF_NONE, ui::EF_NONE);
+  EXPECT_EQ(window.get(), targeter->FindTargetForEvent(root, &mouse));
+  EXPECT_FALSE(proxy()->HasKeyboardWindow());
+
+  EXPECT_EQ(
+      controller()->GetContainerWindow(),
+      controller()->GetContainerWindow()->GetEventHandlerForPoint(location));
+  EXPECT_FALSE(proxy()->HasKeyboardWindow());
 }
 
 TEST_F(KeyboardControllerTest, VisibilityChangeWithTextInputTypeChange) {

@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/rendering/RenderThemeChromiumSkia.h"
 
-#include "UserAgentStyleSheets.h"
+#include "core/UserAgentStyleSheets.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderMediaControls.h"
@@ -477,7 +477,7 @@ RenderThemeChromiumSkia::DirectionFlippingScope::DirectionFlippingScope(RenderOb
         return;
     m_paintInfo.context->save();
     m_paintInfo.context->translate(2 * rect.x() + rect.width(), 0);
-    m_paintInfo.context->scale(FloatSize(-1, 1));
+    m_paintInfo.context->scale(-1, 1);
 }
 
 RenderThemeChromiumSkia::DirectionFlippingScope::~DirectionFlippingScope()

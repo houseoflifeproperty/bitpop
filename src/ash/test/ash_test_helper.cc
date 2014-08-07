@@ -7,6 +7,8 @@
 #include "ash/accelerators/accelerator_controller.h"
 #include "ash/ash_switches.h"
 #include "ash/shell.h"
+#include "ash/shell_init_params.h"
+#include "ash/test/ash_test_views_delegate.h"
 #include "ash/test/display_manager_test_api.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_screenshot_delegate.h"
@@ -22,7 +24,6 @@
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/message_center/message_center.h"
 #include "ui/wm/core/capture_controller.h"
-#include "ui/wm/core/wm_state.h"
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/audio/cras_audio_handler.h"
@@ -56,7 +57,7 @@ AshTestHelper::~AshTestHelper() {
 }
 
 void AshTestHelper::SetUp(bool start_session) {
-  wm_state_.reset(new wm::WMState);
+  views_delegate_.reset(new AshTestViewsDelegate);
 
   // Disable animations during tests.
   zero_duration_mode_.reset(new ui::ScopedAnimationDurationScaleMode(
@@ -64,7 +65,8 @@ void AshTestHelper::SetUp(bool start_session) {
   ui::InitializeInputMethodForTesting();
 
   bool enable_pixel_output = false;
-  ui::InitializeContextFactoryForTests(enable_pixel_output);
+  ui::ContextFactory* context_factory =
+      ui::InitializeContextFactoryForTests(enable_pixel_output);
 
   // Creates Shell and hook with Desktop.
   if (!test_shell_delegate_)
@@ -84,7 +86,10 @@ void AshTestHelper::SetUp(bool start_session) {
   // created in AshTestBase tests.
   chromeos::CrasAudioHandler::InitializeForTesting();
 #endif
-  ash::Shell::CreateInstance(test_shell_delegate_);
+  ShellInitParams init_params;
+  init_params.delegate = test_shell_delegate_;
+  init_params.context_factory = context_factory;
+  ash::Shell::CreateInstance(init_params);
   aura::test::EnvTestHelper(aura::Env::GetInstance()).SetInputStateLookup(
       scoped_ptr<aura::InputStateLookup>());
 
@@ -133,7 +138,7 @@ void AshTestHelper::TearDown() {
 
   CHECK(!wm::ScopedCaptureClient::IsActive());
 
-  wm_state_.reset();
+  views_delegate_.reset();
 }
 
 void AshTestHelper::RunAllPendingInMessageLoop() {

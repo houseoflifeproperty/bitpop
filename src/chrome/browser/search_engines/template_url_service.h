@@ -17,9 +17,10 @@
 #include "base/observer_list.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/search_engines/default_search_manager.h"
-#include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/browser/webdata/web_data_service.h"
+#include "components/google/core/browser/google_url_tracker.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "components/search_engines/template_url_id.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "sync/api/sync_change.h"
@@ -112,28 +113,9 @@ class TemplateURLService : public WebDataServiceConsumer,
       scoped_ptr<TemplateURLData>* default_provider_data,
       bool* is_managed);
 
-  // Generates a suitable keyword for the specified url, which must be valid.
-  // This is guaranteed not to return an empty string, since TemplateURLs should
-  // never have an empty keyword.
-  static base::string16 GenerateKeyword(const GURL& url);
-
   // Removes any unnecessary characters from a user input keyword.
   // This removes the leading scheme, "www." and any trailing slash.
   static base::string16 CleanUserInputKeyword(const base::string16& keyword);
-
-  // Returns the search url for t_url.  Returns an empty GURL if t_url has no
-  // url().
-  // NOTE: |t_url| is non-const in this version because of the need to access
-  // t_url->profile().
-  static GURL GenerateSearchURL(TemplateURL* t_url);
-
-  // Just like GenerateSearchURL except that it takes SearchTermsData to supply
-  // the data for some search terms, e.g. so this can be used on threads other
-  // than the UI thread.  See the various TemplateURLRef::XXXUsingTermsData()
-  // functions.
-  static GURL GenerateSearchURLUsingTermsData(
-      const TemplateURL* t_url,
-      const SearchTermsData& search_terms_data);
 
   // Saves enough of url to |prefs| so that it can be loaded from preferences on
   // start up.
@@ -180,7 +162,6 @@ class TemplateURLService : public WebDataServiceConsumer,
 
   // Like Add(), but overwrites the |template_url|'s values with the provided
   // ones.
-  void AddAndSetProfile(TemplateURL* template_url, Profile* profile);
   void AddWithOverrides(TemplateURL* template_url,
                         const base::string16& short_name,
                         const base::string16& keyword,
@@ -362,7 +343,16 @@ class TemplateURLService : public WebDataServiceConsumer,
                                 const TemplateURL* turl,
                                 syncer::SyncChange::SyncChangeType type);
 
+  // DEPRECATED: Profile will be removed from this class. crbug.com/371535
   Profile* profile() const { return profile_; }
+
+  // Returns a SearchTermsData which can be used to call TemplateURL methods.
+  // Note: Prefer using this method to instantiating UIThreadSearchTermsData on
+  // your own, especially when your code hasn't depended on Profile, to avoid
+  // adding a new dependency on Profile.
+  const SearchTermsData& search_terms_data() const {
+    return *search_terms_data_;
+  }
 
   // Returns a SyncData with a sync representation of the search engine data
   // from |turl|.
@@ -387,18 +377,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   static SyncDataMap CreateGUIDToSyncDataMap(
       const syncer::SyncDataList& sync_data);
 
-  // Indicates whether the pre-populated TemplateURLs should be disabled. May
-  // only be true in tests.
-  static bool fallback_search_engines_disabled() {
-    return g_fallback_search_engines_disabled;
-  }
-
 #if defined(UNIT_TEST)
-  // Disables the pre-populated TemplateURLs for testing purposes.
-  static void set_fallback_search_engines_disabled(bool disabled) {
-    g_fallback_search_engines_disabled = disabled;
-  }
-
   // Sets a different time provider function, such as
   // base::MockTimeProvider::StaticNow, for testing calls to base::Time::Now.
   void set_time_provider(TimeProvider* time_provider) {
@@ -431,6 +410,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest, PreSyncDeletes);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest, MergeInSyncTemplateURL);
 
+  friend class InstantUnitTestBase;
   friend class TemplateURLServiceTestUtilBase;
 
   typedef std::map<base::string16, TemplateURL*> KeywordToTemplateMap;
@@ -485,6 +465,9 @@ class TemplateURLService : public WebDataServiceConsumer,
 
   // Transitions to the loaded state.
   void ChangeToLoadedState();
+
+  // Callback that is called when the Google URL is updated.
+  void OnGoogleURLUpdated(GURL old_url, GURL new_url);
 
   // Called by DefaultSearchManager when the effective default search engine has
   // changed.
@@ -708,6 +691,8 @@ class TemplateURLService : public WebDataServiceConsumer,
   // obtained from the Profile. This allows us to lazily access the database.
   Profile* profile_;
 
+  scoped_ptr<SearchTermsData> search_terms_data_;
+
   // Whether the keywords have been loaded.
   bool loaded_;
 
@@ -777,8 +762,7 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Helper class to manage the default search engine.
   DefaultSearchManager default_search_manager_;
 
-  // Used to disable the prepopulated search engines in tests.
-  static bool g_fallback_search_engines_disabled;
+  scoped_ptr<GoogleURLTracker::Subscription> google_url_updated_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(TemplateURLService);
 };

@@ -13,9 +13,9 @@
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/task/cancelable_task_tracker.h"
-#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "content/public/common/favicon_url.h"
+#include "components/favicon/core/favicon_url.h"
+#include "components/favicon_base/favicon_callback.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image.h"
 #include "url/gurl.h"
@@ -28,11 +28,7 @@ namespace base {
 class RefCountedMemory;
 }
 
-namespace content {
-class NavigationEntry;
-}
-
-// FaviconHandler works with FaviconTabHelper to fetch the specific type of
+// FaviconHandler works with FaviconDriver to fetch the specific type of
 // favicon.
 //
 // FetchFavicon requests the favicon from the favicon service which in turn
@@ -40,7 +36,7 @@ class NavigationEntry;
 // we only know the URL of the page, and not necessarily the url of the
 // favicon. To ensure we handle reloading stale favicons as well as
 // reloading a favicon on page reload we always request the favicon from
-// history regardless of whether the NavigationEntry has a favicon.
+// history regardless of whether the active favicon is valid.
 //
 // After the navigation two types of events are delivered (which is
 // first depends upon who is faster): notification from the history
@@ -48,13 +44,13 @@ class NavigationEntry;
 // (OnFaviconDataForInitialURLFromFaviconService), or a message from the
 // renderer giving us the URL of the favicon for the page (SetFaviconURL).
 // . If the history db has a valid up to date favicon for the page, we update
-//   the NavigationEntry and use the favicon.
-// . When we receive the favicon url if it matches that of the NavigationEntry
-//   and the NavigationEntry's favicon is set, we do nothing (everything is
+//   the current page and use the favicon.
+// . When we receive the favicon url if it matches that of the current page
+//   and the current page's favicon is set, we do nothing (everything is
 //   ok).
 // . On the other hand if the database does not know the favicon for url, or
 //   the favicon is out date, or the URL from the renderer does not match that
-//   NavigationEntry we proceed to DownloadFaviconOrAskHistory. Before we
+//   of the current page we proceed to DownloadFaviconOrAskHistory. Before we
 //   invoke DownloadFaviconOrAskHistory we wait until we've received both
 //   the favicon url and the callback from history. We wait to ensure we
 //   truly know both the favicon url and the state of the database.
@@ -67,7 +63,7 @@ class NavigationEntry;
 //   possible for the db to already have the favicon, just not the mapping
 //   between page to favicon url. The callback for this is OnFaviconData.
 //
-// OnFaviconData either updates the favicon of the NavigationEntry (if the
+// OnFaviconData either updates the favicon of the current page (if the
 // db knew about the favicon), or requests the renderer to download the
 // favicon.
 //
@@ -76,8 +72,7 @@ class NavigationEntry;
 // favicon will be used, otherwise the one that best matches the preferred size
 // is chosen (or the first one if there is no preferred  size). Once the
 // matching favicon has been determined, SetFavicon is called which updates
-// the favicon of the NavigationEntry and notifies the database to save the
-// favicon.
+// the page's favicon and notifies the database to save the favicon.
 
 class FaviconHandler {
  public:
@@ -97,7 +92,7 @@ class FaviconHandler {
 
   // Message Handler.  Must be public, because also called from
   // PrerenderContents. Collects the |image_urls| list.
-  void OnUpdateFaviconURL(const std::vector<content::FaviconURL>& candidates);
+  void OnUpdateFaviconURL(const std::vector<favicon::FaviconURL>& candidates);
 
   // Processes the current image_irls_ entry, requesting the image from the
   // history / download service.
@@ -115,17 +110,13 @@ class FaviconHandler {
       const std::vector<gfx::Size>& original_bitmap_sizes);
 
   // For testing.
-  const std::vector<content::FaviconURL>& image_urls() const {
+  const std::vector<favicon::FaviconURL>& image_urls() const {
     return image_urls_;
   }
 
  protected:
   // These virtual methods make FaviconHandler testable and are overridden by
   // TestFaviconHandler.
-
-  // Return the NavigationEntry for the active entry, or NULL if the active
-  // entries URL does not match that of the URL last passed to FetchFavicon.
-  virtual content::NavigationEntry* GetEntry();
 
   // Asks the render to download favicon, returns the request id.
   virtual int DownloadFavicon(const GURL& image_url, int max_bitmap_size);
@@ -135,19 +126,19 @@ class FaviconHandler {
       const GURL& page_url,
       const GURL& icon_url,
       favicon_base::IconType icon_type,
-      const FaviconService::FaviconResultsCallback& callback,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   virtual void GetFaviconFromFaviconService(
       const GURL& icon_url,
       favicon_base::IconType icon_type,
-      const FaviconService::FaviconResultsCallback& callback,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   virtual void GetFaviconForURLFromFaviconService(
       const GURL& page_url,
       int icon_types,
-      const FaviconService::FaviconResultsCallback& callback,
+      const favicon_base::FaviconResultsCallback& callback,
       base::CancelableTaskTracker* tracker);
 
   virtual void SetHistoryFavicons(const GURL& page_url,
@@ -200,7 +191,7 @@ class FaviconHandler {
 
   // See description above class for details.
   void OnFaviconDataForInitialURLFromFaviconService(const std::vector<
-      favicon_base::FaviconBitmapResult>& favicon_bitmap_results);
+      favicon_base::FaviconRawBitmapResult>& favicon_bitmap_results);
 
   // If the favicon has expired, asks the renderer to download the favicon.
   // Otherwise asks history to update the mapping between page url and icon
@@ -210,7 +201,7 @@ class FaviconHandler {
                                           favicon_base::IconType icon_type);
 
   // See description above class for details.
-  void OnFaviconData(const std::vector<favicon_base::FaviconBitmapResult>&
+  void OnFaviconData(const std::vector<favicon_base::FaviconRawBitmapResult>&
                          favicon_bitmap_results);
 
   // Schedules a download for the specified entry. This adds the request to
@@ -232,20 +223,18 @@ class FaviconHandler {
                   const gfx::Image& image,
                   favicon_base::IconType icon_type);
 
-  // Sets the favicon's data on the NavigationEntry.
-  // If the WebContents has a delegate, it is invalidated (INVALIDATE_TYPE_TAB).
-  void SetFaviconOnNavigationEntry(
-      content::NavigationEntry* entry,
-      const std::vector<favicon_base::FaviconBitmapResult>&
-          favicon_bitmap_results);
-  void SetFaviconOnNavigationEntry(content::NavigationEntry* entry,
-                                   const GURL& icon_url,
-                                   const gfx::Image& image);
+  // Sets the favicon's data.
+  void SetFaviconOnActivePage(const std::vector<
+      favicon_base::FaviconRawBitmapResult>& favicon_bitmap_results);
+  void SetFaviconOnActivePage(const GURL& icon_url, const gfx::Image& image);
 
   // Return the current candidate if any.
-  content::FaviconURL* current_candidate() {
+  favicon::FaviconURL* current_candidate() {
     return (!image_urls_.empty()) ? &image_urls_.front() : NULL;
   }
+
+  // Returns whether the page's url changed since the favicon was requested.
+  bool PageChangedSinceFaviconWasRequested();
 
   // Returns the preferred size of the image. 0 means no preference (any size
   // will do).
@@ -286,10 +275,10 @@ class FaviconHandler {
   const bool download_largest_icon_;
 
   // The prioritized favicon candidates from the page back from the renderer.
-  std::vector<content::FaviconURL> image_urls_;
+  std::vector<favicon::FaviconURL> image_urls_;
 
-  // The FaviconBitmapResults from history.
-  std::vector<favicon_base::FaviconBitmapResult> history_results_;
+  // The FaviconRawBitmapResults from history.
+  std::vector<favicon_base::FaviconRawBitmapResult> history_results_;
 
   // The client which implements embedder-specific Favicon operations.
   FaviconClient* client_;  // weak
@@ -299,7 +288,7 @@ class FaviconHandler {
 
   // Best image we've seen so far.  As images are downloaded from the page they
   // are stored here. When there is an exact match, or no more images are
-  // available the favicon service and the NavigationEntry are updated (assuming
+  // available the favicon service and the current page are updated (assuming
   // the image is for a favicon).
   FaviconCandidate best_favicon_candidate_;
 

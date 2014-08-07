@@ -200,7 +200,7 @@ std::string SerializeSettingsReport(const ResettableSettingsSnapshot& snapshot,
          i != shortcuts.end(); ++i) {
       base::string16 arguments;
       // Replace "\"" to simplify server-side analysis.
-      base::ReplaceChars(i->second, base::ASCIIToUTF16("\"").c_str(),
+      base::ReplaceChars(i->second, base::ASCIIToUTF16("\""),
                          base::ASCIIToUTF16("\'"), &arguments);
       list->AppendString(arguments);
     }
@@ -313,7 +313,7 @@ scoped_ptr<base::ListValue> GetReadableFeedbackForSnapshot(
   if (dse) {
     AddPair(list.get(),
             l10n_util::GetStringUTF16(IDS_RESET_PROFILE_SETTINGS_DSE),
-            TemplateURLService::GenerateSearchURL(dse).host());
+            dse->GenerateSearchURL(service->search_terms_data()).host());
   }
 
   if (snapshot.shortcuts_determined()) {

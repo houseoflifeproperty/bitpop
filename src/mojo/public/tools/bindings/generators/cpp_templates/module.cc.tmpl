@@ -9,12 +9,22 @@
 
 #include "{{module.path}}.h"
 
+#include "mojo/public/cpp/bindings/lib/array_serialization.h"
 #include "mojo/public/cpp/bindings/lib/bindings_serialization.h"
+#include "mojo/public/cpp/bindings/lib/bounds_checker.h"
 #include "mojo/public/cpp/bindings/lib/message_builder.h"
+#include "mojo/public/cpp/bindings/lib/string_serialization.h"
+#include "mojo/public/cpp/bindings/lib/validation_errors.h"
 
 {%- for namespace in namespaces_as_array %}
 namespace {{namespace}} {
 {%- endfor %}
+
+{#--- Constants #}
+{%  for constant in module.constants %}
+const {{constant.kind|cpp_pod_type}} {{constant.name}} = {{constant.value|expression_to_text}};
+{%- endfor %}
+
 namespace internal {
 namespace {
 
@@ -38,11 +48,6 @@ const uint32_t {{method_name}} = {{method.ordinal}};
 
 }  // namespace
 
-{#--- Struct destructors #}
-{%- for struct in structs %}
-{%-   include "struct_destructor.tmpl" %}
-{%- endfor %}
-
 {#--- Struct definitions #}
 {%  for struct in structs %}
 {%-   include "struct_definition.tmpl" %}
@@ -50,15 +55,28 @@ const uint32_t {{method_name}} = {{method.ordinal}};
 
 }  // namespace internal
 
+{#--- Struct Constants #}
+{%- for struct in structs %}
+{%     for constant in struct.constants %}
+const {{constant.kind|cpp_pod_type}} {{struct.name}}::{{constant.name}} = {{constant.value|expression_to_text}};
+{%-   endfor %}
+{%- endfor %}
+
 {#--- Struct builder definitions #}
 {%- for struct in structs %}
-{%-   include "struct_builder_definition.tmpl" %}
+{%-   include "wrapper_class_definition.tmpl" %}
 {%- endfor %}
 
 {#--- Interface definitions #}
 {%- for interface in interfaces %}
 {%-   include "interface_definition.tmpl" %}
 {%- endfor %}
+
+{#--- Struct Serialization Helpers #}
+{%- for struct in structs %}
+{%-   include "struct_serialization_definition.tmpl" %}
+{%- endfor %}
+
 {%- for namespace in namespaces_as_array|reverse %}
 }  // namespace {{namespace}}
 {%- endfor %}

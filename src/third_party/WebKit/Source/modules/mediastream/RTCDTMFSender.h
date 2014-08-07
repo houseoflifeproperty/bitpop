@@ -28,7 +28,7 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventTargetModules.h"
 #include "platform/Timer.h"
 #include "public/platform/WebRTCDTMFSenderHandlerClient.h"
 #include "wtf/RefCounted.h"
@@ -43,10 +43,11 @@ namespace WebCore {
 class ExceptionState;
 class MediaStreamTrack;
 
-class RTCDTMFSender FINAL : public RefCounted<RTCDTMFSender>, public ScriptWrappable, public EventTargetWithInlineData, public blink::WebRTCDTMFSenderHandlerClient, public ActiveDOMObject {
+class RTCDTMFSender FINAL : public RefCountedWillBeRefCountedGarbageCollected<RTCDTMFSender>, public ScriptWrappable, public EventTargetWithInlineData, public blink::WebRTCDTMFSenderHandlerClient, public ActiveDOMObject {
     REFCOUNTED_EVENT_TARGET(RTCDTMFSender);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(RTCDTMFSender);
 public:
-    static PassRefPtr<RTCDTMFSender> create(ExecutionContext*, blink::WebRTCPeerConnectionHandler*, PassRefPtr<MediaStreamTrack>, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<RTCDTMFSender> create(ExecutionContext*, blink::WebRTCPeerConnectionHandler*, PassRefPtrWillBeRawPtr<MediaStreamTrack>, ExceptionState&);
     virtual ~RTCDTMFSender();
 
     bool canInsertDTMF() const;
@@ -68,8 +69,10 @@ public:
     // ActiveDOMObject
     virtual void stop() OVERRIDE;
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 private:
-    RTCDTMFSender(ExecutionContext*, PassRefPtr<MediaStreamTrack>, PassOwnPtr<blink::WebRTCDTMFSenderHandler>);
+    RTCDTMFSender(ExecutionContext*, PassRefPtrWillBeRawPtr<MediaStreamTrack>, PassOwnPtr<blink::WebRTCDTMFSenderHandler>);
 
     void scheduleDispatchEvent(PassRefPtrWillBeRawPtr<Event>);
     void scheduledEventTimerFired(Timer<RTCDTMFSender>*);
@@ -77,7 +80,7 @@ private:
     // blink::WebRTCDTMFSenderHandlerClient
     virtual void didPlayTone(const blink::WebString&) OVERRIDE;
 
-    RefPtr<MediaStreamTrack> m_track;
+    RefPtrWillBeMember<MediaStreamTrack> m_track;
     long m_duration;
     long m_interToneGap;
 
@@ -86,7 +89,7 @@ private:
     bool m_stopped;
 
     Timer<RTCDTMFSender> m_scheduledEventTimer;
-    WillBePersistentHeapVector<RefPtrWillBeMember<Event> > m_scheduledEvents;
+    WillBeHeapVector<RefPtrWillBeMember<Event> > m_scheduledEvents;
 };
 
 } // namespace WebCore

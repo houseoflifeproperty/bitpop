@@ -27,9 +27,9 @@
 #include "config.h"
 #include "core/dom/ContextFeatures.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
 #include "core/page/Page.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -58,13 +58,6 @@ bool ContextFeatures::dialogElementEnabled(Document* document)
     if (!document)
         return RuntimeEnabledFeatures::dialogElementEnabled();
     return document->contextFeatures().isEnabled(document, DialogElement, RuntimeEnabledFeatures::dialogElementEnabled());
-}
-
-bool ContextFeatures::styleScopedEnabled(Document* document)
-{
-    if (!document)
-        return RuntimeEnabledFeatures::styleScopedEnabled();
-    return document->contextFeatures().isEnabled(document, StyleScoped, RuntimeEnabledFeatures::styleScopedEnabled());
 }
 
 bool ContextFeatures::pagePopupEnabled(Document* document)

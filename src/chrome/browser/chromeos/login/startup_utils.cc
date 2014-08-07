@@ -50,7 +50,9 @@ namespace chromeos {
 // static
 void StartupUtils::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kOobeComplete, false);
+  registry->RegisterStringPref(prefs::kOobeScreenPending, "");
   registry->RegisterIntegerPref(prefs::kDeviceRegistered, -1);
+  registry->RegisterBooleanPref(prefs::kEnrollmentRecoveryRequired, false);
   registry->RegisterStringPref(prefs::kInitialLocale, "en-US");
 }
 
@@ -71,7 +73,18 @@ void StartupUtils::MarkEulaAccepted() {
 
 // static
 void StartupUtils::MarkOobeCompleted() {
+  // Forcing the second pref will force this one as well. Even if this one
+  // doesn't end up synced it is only going to eat up a couple of bytes with no
+  // side-effects.
+  g_browser_process->local_state()->ClearPref(prefs::kOobeScreenPending);
   SaveBoolPreferenceForced(prefs::kOobeComplete, true);
+
+  // Successful enrollment implies that recovery is not required.
+  SaveBoolPreferenceForced(prefs::kEnrollmentRecoveryRequired, false);
+}
+
+void StartupUtils::SaveOobePendingScreen(const std::string& screen) {
+  SaveStringPreferenceForced(prefs::kOobeScreenPending, screen);
 }
 
 // Returns the path to flag file indicating that both parts of OOBE were
@@ -128,12 +141,31 @@ bool StartupUtils::IsDeviceRegistered() {
 }
 
 // static
-void StartupUtils::MarkDeviceRegistered() {
+void StartupUtils::MarkDeviceRegistered(const base::Closure& done_callback) {
   SaveIntegerPreferenceForced(prefs::kDeviceRegistered, 1);
-  BrowserThread::PostTask(
-      BrowserThread::FILE,
-      FROM_HERE,
-      base::Bind(&CreateOobeCompleteFlagFile));
+  if (done_callback.is_null()) {
+    BrowserThread::PostTask(
+        BrowserThread::FILE,
+        FROM_HERE,
+        base::Bind(&CreateOobeCompleteFlagFile));
+  } else {
+    BrowserThread::PostTaskAndReply(
+        BrowserThread::FILE,
+        FROM_HERE,
+        base::Bind(&CreateOobeCompleteFlagFile),
+        done_callback);
+  }
+}
+
+// static
+bool StartupUtils::IsEnrollmentRecoveryRequired() {
+  return g_browser_process->local_state()
+      ->GetBoolean(prefs::kEnrollmentRecoveryRequired);
+}
+
+// static
+void StartupUtils::MarkEnrollmentRecoveryRequired() {
+  SaveBoolPreferenceForced(prefs::kEnrollmentRecoveryRequired, true);
 }
 
 // static

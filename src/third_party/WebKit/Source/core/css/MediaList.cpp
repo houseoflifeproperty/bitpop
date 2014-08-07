@@ -20,15 +20,15 @@
 #include "config.h"
 #include "core/css/MediaList.h"
 
-#include "MediaFeatureNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/MediaFeatureNames.h"
 #include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaQuery.h"
 #include "core/css/MediaQueryExp.h"
 #include "core/css/parser/MediaQueryParser.h"
 #include "core/dom/Document.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace WebCore {
@@ -253,7 +253,7 @@ void MediaList::trace(Visitor* visitor)
     visitor->trace(m_parentRule);
 }
 
-static void addResolutionWarningMessageToConsole(Document* document, const String& serializedExpression, CSSPrimitiveValue::UnitTypes type)
+static void addResolutionWarningMessageToConsole(Document* document, const String& serializedExpression, CSSPrimitiveValue::UnitType type)
 {
     ASSERT(document);
 
@@ -294,7 +294,7 @@ void reportMediaQueryWarningIfNeeded(Document* document, const MediaQuerySet* me
     if (!queryCount)
         return;
 
-    CSSPrimitiveValue::UnitTypes suspiciousType = CSSPrimitiveValue::CSS_UNKNOWN;
+    CSSPrimitiveValue::UnitType suspiciousType = CSSPrimitiveValue::CSS_UNKNOWN;
     bool dotsPerPixelUsed = false;
     for (size_t i = 0; i < queryCount; ++i) {
         const MediaQuery* query = mediaQueries[i].get();

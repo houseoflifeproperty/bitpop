@@ -26,7 +26,6 @@
 #include "core/svg/SVGMaskElement.h"
 
 #include "core/rendering/svg/RenderSVGResourceMasker.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
@@ -58,10 +57,7 @@ inline SVGMaskElement::SVGMaskElement(Document& document)
     addToPropertyMap(m_maskContentUnits);
 }
 
-PassRefPtr<SVGMaskElement> SVGMaskElement::create(Document& document)
-{
-    return adoptRef(new SVGMaskElement(document));
-}
+DEFINE_NODE_FACTORY(SVGMaskElement)
 
 bool SVGMaskElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -131,7 +127,7 @@ void SVGMaskElement::childrenChanged(bool changedByParser, Node* beforeChange, N
         return;
 
     if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+        object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
 RenderObject* SVGMaskElement::createRenderer(RenderStyle*)

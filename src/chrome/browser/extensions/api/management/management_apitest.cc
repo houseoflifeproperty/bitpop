@@ -141,12 +141,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, CreateAppShortcut) {
                                   "createAppShortcut.html"));
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest,
-                       CreateAppShortcutNotInStable) {
-  extensions::ScopedCurrentChannel channel(
-      chrome::VersionInfo::CHANNEL_STABLE);
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, GenerateAppForLink) {
+  LoadExtensions();
   ASSERT_TRUE(RunExtensionSubtest("management/test",
-                                  "createAppShortcutNotInStable.html"));
+                                  "generateAppForLink.html"));
 }
 
 // Fails often on Windows dbg bots. http://crbug.com/177163
@@ -324,4 +322,30 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, MAYBE_LaunchTabApp) {
   Browser* app_browser = FindOtherBrowser(browser());
   ASSERT_TRUE(app_browser->is_app());
 #endif
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiTest, LaunchType) {
+  LoadExtensions();
+  base::FilePath basedir = test_data_dir_.AppendASCII("management");
+  LoadNamedExtension(basedir, "packaged_app");
+
+  ASSERT_TRUE(RunExtensionSubtest("management/test", "launchType.html"));
+}
+
+class ExtensionManagementApiStreamlinedAppsTest
+    : public ExtensionManagementApiTest {
+ public:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    ExtensionManagementApiTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(switches::kEnableStreamlinedHostedApps);
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiStreamlinedAppsTest, LaunchType) {
+  LoadExtensions();
+  base::FilePath basedir = test_data_dir_.AppendASCII("management");
+  LoadNamedExtension(basedir, "packaged_app");
+
+  ASSERT_TRUE(RunExtensionSubtest("management/test",
+                                  "launchType.html?streamlined-hosted-apps"));
 }

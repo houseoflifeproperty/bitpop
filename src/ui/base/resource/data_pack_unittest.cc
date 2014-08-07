@@ -10,6 +10,7 @@
 #include "base/strings/string_piece.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/data_pack.h"
+#include "ui/base/ui_base_paths.h"
 
 namespace ui {
 
@@ -20,7 +21,9 @@ class DataPackTest
 };
 
 extern const char kSamplePakContents[];
+extern const char kSampleCorruptPakContents[];
 extern const size_t kSamplePakSize;
+extern const size_t kSampleCorruptPakSize;
 
 TEST(DataPackTest, LoadFromPath) {
   base::ScopedTempDir dir;
@@ -98,9 +101,8 @@ INSTANTIATE_TEST_CASE_P(WriteUTF16, DataPackTest, ::testing::Values(
 
 TEST(DataPackTest, LoadFileWithTruncatedHeader) {
   base::FilePath data_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &data_path);
-  data_path = data_path.Append(FILE_PATH_LITERAL(
-      "ui/base/test/data/data_pack_unittest/truncated-header.pak"));
+  ASSERT_TRUE(PathService::Get(UI_DIR_TEST_DATA, &data_path));
+  data_path = data_path.AppendASCII("data_pack_unittest/truncated-header.pak");
 
   DataPack pack(SCALE_FACTOR_100P);
   ASSERT_FALSE(pack.LoadFromPath(data_path));
@@ -142,5 +144,36 @@ TEST_P(DataPackTest, Write) {
   ASSERT_TRUE(pack.GetStringPiece(15, &data));
   EXPECT_EQ(fifteen, data);
 }
+
+#if defined(OS_POSIX)
+TEST(DataPackTest, ModifiedWhileUsed) {
+  base::ScopedTempDir dir;
+  ASSERT_TRUE(dir.CreateUniqueTempDir());
+  base::FilePath data_path = dir.path().Append(FILE_PATH_LITERAL("sample.pak"));
+
+  // Dump contents into the pak file.
+  ASSERT_EQ(base::WriteFile(data_path, kSamplePakContents, kSamplePakSize),
+            static_cast<int>(kSamplePakSize));
+
+  base::File file(data_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+  ASSERT_TRUE(file.IsValid());
+
+  // Load the file through the data pack API.
+  DataPack pack(SCALE_FACTOR_100P);
+  ASSERT_TRUE(pack.LoadFromFile(file.Pass()));
+
+  base::StringPiece data;
+  ASSERT_TRUE(pack.HasResource(10));
+  ASSERT_TRUE(pack.GetStringPiece(10, &data));
+
+  ASSERT_EQ(base::WriteFile(data_path, kSampleCorruptPakContents,
+                            kSampleCorruptPakSize),
+            static_cast<int>(kSampleCorruptPakSize));
+
+  // Reading asset #10 should now fail as it extends past the end of the file.
+  ASSERT_TRUE(pack.HasResource(10));
+  ASSERT_FALSE(pack.GetStringPiece(10, &data));
+}
+#endif
 
 }  // namespace ui

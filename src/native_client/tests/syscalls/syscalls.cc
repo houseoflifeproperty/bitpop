@@ -69,6 +69,17 @@ static char *split_name(char *full_name) {
   return basename + 1;
 }
 
+// In case a previous run of this test failed and left the file behind,
+// remove the file first.
+// TODO(mseaborn): It would be cleaner to create a guaranteed-empty temp
+// directory instead of doing this.
+static void ensure_file_is_absent(const char *filename) {
+  int result = unlink(filename);
+  if (result != 0) {
+    ASSERT_EQ(errno, ENOENT);
+  }
+}
+
 /*
  * function test*()
  *
@@ -253,6 +264,9 @@ bool test_link(const char *test_file) {
   snprintf(target_filename, PATH_MAX, "%s.target", test_file);
   snprintf(link_filename, PATH_MAX, "%s.link", test_file);
 
+  ensure_file_is_absent(target_filename);
+  ensure_file_is_absent(link_filename);
+
   // Create link target with some dummy data
   int fd = open(target_filename, O_WRONLY | O_CREAT, S_IRWXU);
   ASSERT(fd >= 0);
@@ -260,8 +274,12 @@ bool test_link(const char *test_file) {
   ASSERT_EQ(close(fd), 0);
 
   int rtn = link(target_filename, link_filename);
-  if (rtn != 0 || errno == ENOSYS)
+  if (rtn != 0 && errno == ENOSYS) {
+    // If we get ENOSYS, assume we are on Windows, where link() is expected
+    // to fail.
     return passed("test_link", "all");
+  }
+  ASSERT_EQ(rtn, 0);
 
   // Verify that the new file is a regular file and that changes to it are
   // mirrored in the original file.
@@ -292,9 +310,7 @@ bool test_link(const char *test_file) {
   return passed("test_link", "all");
 }
 
-// This tests symlink/readlink and lstat.  symlink and readlink
-// are expected to return ENOSYS on win32 so we handle this case
-// and bail out early.
+// This tests symlink/readlink and lstat.
 bool test_symlinks(const char *test_file) {
   char dirname[PATH_MAX];
   char link_filename[PATH_MAX];
@@ -310,11 +326,15 @@ bool test_symlinks(const char *test_file) {
 
   snprintf(link_filename, PATH_MAX, "%s.link", test_file);
 
+  ensure_file_is_absent(link_filename);
+
   // Create this link
   int rtn = symlink(basename, link_filename);
-  if (rtn != 0 || errno == ENOSYS)
+  if (rtn != 0 && errno == ENOSYS) {
+    // If we get ENOSYS, assume we are on Windows, where symlink() and
+    // readlink() are expected to fail.
     return passed("test_symlinks", "all");
-
+  }
   ASSERT_EQ(rtn, 0);
 
   // Check the lstat() and stat of the link
@@ -325,6 +345,24 @@ bool test_symlinks(const char *test_file) {
   ASSERT_EQ(stat(link_filename, &buf), 0);
   ASSERT_EQ_MSG(S_ISLNK(buf.st_mode), 0, "stat of symlink should not ISLNK");
   ASSERT_NE_MSG(S_ISREG(buf.st_mode), 0, "stat of symlink should report ISREG");
+
+  // Test readlink().
+  char link_dest[PATH_MAX];
+  memset(link_dest, 0x77, sizeof(link_dest));
+  ssize_t result = readlink(link_filename, link_dest, sizeof(link_dest));
+  ASSERT_EQ(result, (ssize_t) strlen(basename));
+  ASSERT_EQ(memcmp(link_dest, basename, result), 0);
+  // readlink() should not write a null terminator.
+  ASSERT_EQ(link_dest[result], 0x77);
+
+  // Test readlink() with a truncated result.
+  memset(link_dest, 0x77, sizeof(link_dest));
+  result = readlink(link_filename, link_dest, 1);
+  ASSERT_EQ(result, 1);
+  ASSERT_EQ(link_dest[0], basename[0]);
+  // The rest of the buffer should not be modified.
+  for (size_t i = 1; i < sizeof(link_dest); ++i)
+    ASSERT_EQ(link_dest[i], 0x77);
 
   // calling symlink again should yield EEXIST.
   ASSERT_EQ(symlink(test_file, link_filename), -1);
@@ -391,20 +429,17 @@ bool test_access(const char *test_file) {
 
 bool test_utimes(const char *test_file) {
   // TODO(mseaborn): Implement utimes for unsandboxed mode.
-  if (PNACL_UNSANDBOXED)
+  if (NONSFI_MODE)
     return true;
   struct timeval times[2];
   // utimes() is currently not implemented and should always
   // fail with ENOSYS
   ASSERT_EQ(utimes("dummy", times), -1);
   ASSERT_EQ(errno, ENOSYS);
-  return passed("test_access", "all");
+  return passed("test_utimes", "all");
 }
 
 bool test_truncate(const char *test_file) {
-  // TODO(mseaborn): Implement truncate for unsandboxed mode.
-  if (PNACL_UNSANDBOXED)
-    return true;
   char temp_file[PATH_MAX];
   snprintf(temp_file, PATH_MAX, "%s.tmp_truncate", test_file);
 
@@ -583,7 +618,7 @@ bool test_close(const char *test_file) {
   // directory OK
   // Linux's open() (unsandboxed) does not allow O_RDWR on a directory.
   // TODO(mseaborn): sel_ldr should reject O_RDWR on a directory too.
-  if (!PNACL_UNSANDBOXED) {
+  if (!NONSFI_MODE) {
     fd = open(".", O_RDWR);
     if (fd == -1)
       return failed(testname, "open(., O_RDWR)");
@@ -636,7 +671,7 @@ bool test_read(const char *test_file) {
   errno = 0;
   // fd OK, buffer OK, count not OK
   // Linux's read() (unsandboxed) does not reject this buffer size.
-  if (!PNACL_UNSANDBOXED) {
+  if (!NONSFI_MODE) {
     ret_val = read(fd, out_char, -1);
     if (ret_val != -1)
       return failed(testname, "read(fd, out_char, -1)");
@@ -652,8 +687,14 @@ bool test_read(const char *test_file) {
   if (ret_val != -1)
     return failed(testname, "read(-1, out_char, -1)");
   // bad descriptor
-  if (EBADF != errno)
-    return failed(testname, "EBADF != errno");
+  if (NONSFI_MODE) {
+    // Under qemu-arm, this read() call returns EFAULT.
+    if (EBADF != errno && EFAULT != errno)
+      return failed(testname, "errno is not EBADF or EFAULT");
+  } else {
+    if (EBADF != errno)
+      return failed(testname, "EBADF != errno");
+  }
 
   // fd OK, buffer OK, count 0
   ret_val = read(fd, out_char, 0);
@@ -693,7 +734,7 @@ bool test_write(const char *test_file) {
   errno = 0;
   // invalid count
   // Linux's write() (unsandboxed) does not reject this buffer size.
-  if (!PNACL_UNSANDBOXED) {
+  if (!NONSFI_MODE) {
     ret_val = write(fd, out_char, -1);
     if (ret_val != -1)
       return failed(testname, "write(fd, out_char, -1)");
@@ -802,7 +843,7 @@ bool test_lseek(const char *test_file) {
 
 bool test_readdir(const char *test_file) {
   // TODO(mseaborn): Implement listing directories for unsandboxed mode.
-  if (PNACL_UNSANDBOXED)
+  if (NONSFI_MODE)
     return true;
 
   // Read the directory containing the test file
@@ -843,7 +884,7 @@ bool test_readdir(const char *test_file) {
 // isatty returns 1 for TTY descriptors and 0 on error (setting errno)
 bool test_isatty(const char *test_file) {
   // TODO(mseaborn): Implement isatty() for unsandboxed mode.
-  if (PNACL_UNSANDBOXED)
+  if (NONSFI_MODE)
     return true;
 
   // TODO(sbc): isatty() in glibc is not yet hooked up to the IRT
@@ -930,13 +971,13 @@ bool testSuite(const char *test_file) {
   ret &= test_getcwd();
   ret &= test_mkdir_rmdir(test_file);
   ret &= test_isatty(test_file);
-  if (!PNACL_UNSANDBOXED) {
-    ret &= test_rename(test_file);
-    ret &= test_link(test_file);
+  ret &= test_rename(test_file);
+  ret &= test_link(test_file);
+  if (!NONSFI_MODE) {
     ret &= test_symlinks(test_file);
-    ret &= test_chmod(test_file);
-    ret &= test_access(test_file);
   }
+  ret &= test_chmod(test_file);
+  ret &= test_access(test_file);
 #endif
 // TODO(sbc): remove this restriction once glibc's truncate calls
 // is hooked up to the IRT dev-filename-0.2 interface:

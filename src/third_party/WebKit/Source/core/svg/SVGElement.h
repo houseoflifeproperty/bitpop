@@ -22,7 +22,7 @@
 #ifndef SVGElement_h
 #define SVGElement_h
 
-#include "SVGElementTypeHelpers.h"
+#include "core/SVGElementTypeHelpers.h"
 #include "core/dom/Element.h"
 #include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGParsingError.h"
@@ -49,6 +49,8 @@ void mapAttributeToCSSProperty(HashMap<StringImpl*, CSSPropertyID>* propertyName
 class SVGElement : public Element {
 public:
     virtual ~SVGElement();
+    virtual void attach(const AttachContext&) OVERRIDE;
+    virtual void detach(const AttachContext&) OVERRIDE;
 
     virtual short tabIndex() const OVERRIDE;
     virtual bool supportsFocus() const OVERRIDE { return false; }
@@ -158,25 +160,32 @@ public:
     bool inUseShadowTree() const;
 
     class InvalidationGuard {
+        STACK_ALLOCATED();
         WTF_MAKE_NONCOPYABLE(InvalidationGuard);
     public:
         InvalidationGuard(SVGElement* element) : m_element(element) { }
         ~InvalidationGuard() { m_element->invalidateInstances(); }
+
     private:
-        SVGElement* m_element;
+        RawPtrWillBeMember<SVGElement> m_element;
     };
 
     class InstanceUpdateBlocker {
+        STACK_ALLOCATED();
         WTF_MAKE_NONCOPYABLE(InstanceUpdateBlocker);
     public:
         InstanceUpdateBlocker(SVGElement* targetElement);
         ~InstanceUpdateBlocker();
 
     private:
-        SVGElement* m_targetElement;
+        RawPtrWillBeMember<SVGElement> m_targetElement;
     };
 
     void invalidateInstances();
+
+    virtual void trace(Visitor*) OVERRIDE;
+
+    static const AtomicString& eventParameterName();
 
 protected:
     SVGElement(const QualifiedName&, Document&, ConstructionType = CreateSVGElement);
@@ -199,12 +208,14 @@ protected:
 
     virtual bool selfHasRelativeLengths() const { return false; }
 
-    SVGElementRareData* svgRareData() const;
     SVGElementRareData* ensureSVGRareData();
 
-    bool hasSVGRareData() const { return m_hasSVGRareData; }
-    void setHasSVGRareData() { m_hasSVGRareData = true; }
-    void clearHasSVGRareData() { m_hasSVGRareData = false; }
+    inline bool hasSVGRareData() const { return m_SVGRareData; }
+    inline SVGElementRareData* svgRareData() const
+    {
+        ASSERT(m_SVGRareData);
+        return m_SVGRareData.get();
+    }
 
     // SVGFitToViewBox::parseAttribute uses reportAttributeParsingError.
     friend class SVGFitToViewBox;
@@ -224,17 +235,17 @@ private:
 
     bool supportsSpatialNavigationFocus() const;
 
-    HashSet<SVGElement*> m_elementsWithRelativeLengths;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> > m_elementsWithRelativeLengths;
 
     typedef HashMap<QualifiedName, RefPtr<SVGAnimatedPropertyBase> > AttributeToPropertyMap;
     AttributeToPropertyMap m_newAttributeToPropertyMap;
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool m_inRelativeLengthClientsInvalidation;
 #endif
     unsigned m_isContextElement : 1;
-    unsigned m_hasSVGRareData : 1;
 
+    OwnPtrWillBeMember<SVGElementRareData> m_SVGRareData;
     RefPtr<SVGAnimatedString> m_className;
 };
 

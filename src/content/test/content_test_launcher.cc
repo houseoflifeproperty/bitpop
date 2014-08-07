@@ -7,6 +7,7 @@
 #include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/debug/stack_trace.h"
+#include "base/i18n/icu_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/process/memory.h"
@@ -17,6 +18,7 @@
 #include "content/public/test/content_test_suite_base.h"
 #include "content/shell/app/shell_main_delegate.h"
 #include "content/shell/common/shell_switches.h"
+#include "media/base/media_switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_ANDROID)
@@ -50,6 +52,9 @@ class ContentBrowserTestSuite : public ContentTestSuiteBase {
   virtual void Initialize() OVERRIDE {
 
 #if defined(OS_ANDROID)
+    base::i18n::AllowMultipleInitializeCallsForTesting();
+    base::i18n::InitializeICU();
+
     // This needs to be done before base::TestSuite::Initialize() is called,
     // as it also tries to set MessagePumpForUIFactory.
     if (!base::MessageLoop::InitMessagePumpForUIFactory(
@@ -73,14 +78,6 @@ class ContentBrowserTestSuite : public ContentTestSuiteBase {
 #endif
 
     ContentTestSuiteBase::Initialize();
-  }
-
-  virtual void Shutdown() OVERRIDE {
-    ContentTestSuiteBase::Shutdown();
-
-#if defined(OS_ANDROID)
-    ShutdownMojo();
-#endif
   }
 
 #if defined(OS_ANDROID)

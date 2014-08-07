@@ -6,6 +6,7 @@
 
 #include "base/metrics/histogram.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
+#include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 
 namespace sync_file_system {
@@ -210,12 +211,42 @@ void MetadataDatabaseIndex::PromoteDemotedDirtyTrackers() {
   demoted_dirty_trackers_.clear();
 }
 
+size_t MetadataDatabaseIndex::CountDirtyTracker() const {
+  return dirty_trackers_.size() + demoted_dirty_trackers_.size();
+}
+
+size_t MetadataDatabaseIndex::CountFileMetadata() const {
+  return metadata_by_id_.size();
+}
+
+size_t MetadataDatabaseIndex::CountFileTracker() const {
+  return tracker_by_id_.size();
+}
+
 std::vector<std::string> MetadataDatabaseIndex::GetRegisteredAppIDs() const {
   std::vector<std::string> result;
   result.reserve(app_root_by_app_id_.size());
   for (TrackerIDByAppID::const_iterator itr = app_root_by_app_id_.begin();
        itr != app_root_by_app_id_.end(); ++itr)
     result.push_back(itr->first);
+  return result;
+}
+
+std::vector<int64> MetadataDatabaseIndex::GetAllTrackerIDs() const {
+  std::vector<int64> result;
+  for (TrackerByID::const_iterator itr = tracker_by_id_.begin();
+       itr != tracker_by_id_.end(); ++itr) {
+    result.push_back(itr->first);
+  }
+  return result;
+}
+
+std::vector<std::string> MetadataDatabaseIndex::GetAllMetadataIDs() const {
+  std::vector<std::string> result;
+  for (MetadataByID::const_iterator itr = metadata_by_id_.begin();
+       itr != metadata_by_id_.end(); ++itr) {
+    result.push_back(itr->first);
+  }
   return result;
 }
 
@@ -328,7 +359,8 @@ void MetadataDatabaseIndex::AddToPathIndexes(
 
   trackers_by_parent_and_title_[parent][title].Insert(new_tracker);
 
-  if (trackers_by_parent_and_title_[parent][title].size() > 1) {
+  if (trackers_by_parent_and_title_[parent][title].size() > 1 &&
+      !title.empty()) {
     DVLOG_IF(3, !ContainsKey(multi_backing_file_paths_,
                              ParentIDAndTitle(parent, title)))
         << "  Add to multi_backing_file_paths_: " << parent << " " << title;
@@ -369,15 +401,17 @@ void MetadataDatabaseIndex::UpdateInPathIndexes(
 
     (*trackers_by_title)[title].Insert(new_tracker);
 
-    if (trackers_by_parent_and_title_[parent][old_title].size() <= 1) {
+    if (trackers_by_parent_and_title_[parent][old_title].size() <= 1 &&
+        !old_title.empty()) {
       DVLOG_IF(3, ContainsKey(multi_backing_file_paths_,
-                              ParentIDAndTitle(parent, title)))
+                              ParentIDAndTitle(parent, old_title)))
           << "  Remove from multi_backing_file_paths_: "
-          << parent << " " << title;
-      multi_backing_file_paths_.erase(ParentIDAndTitle(parent, title));
+          << parent << " " << old_title;
+      multi_backing_file_paths_.erase(ParentIDAndTitle(parent, old_title));
     }
 
-    if (trackers_by_parent_and_title_[parent][title].size() > 1) {
+    if (trackers_by_parent_and_title_[parent][title].size() > 1 &&
+        !title.empty()) {
       DVLOG_IF(3, !ContainsKey(multi_backing_file_paths_,
                                ParentIDAndTitle(parent, title)))
           << "  Add to multi_backing_file_paths_: " << parent << " " << title;
@@ -407,7 +441,8 @@ void MetadataDatabaseIndex::RemoveFromPathIndexes(
 
   trackers_by_parent_and_title_[parent][title].Erase(tracker_id);
 
-  if (trackers_by_parent_and_title_[parent][title].size() <= 1) {
+  if (trackers_by_parent_and_title_[parent][title].size() <= 1 &&
+      !title.empty()) {
     DVLOG_IF(3, ContainsKey(multi_backing_file_paths_,
                             ParentIDAndTitle(parent, title)))
         << "  Remove from multi_backing_file_paths_: "

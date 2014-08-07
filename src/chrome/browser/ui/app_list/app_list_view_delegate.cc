@@ -41,6 +41,10 @@
 #include "ui/app_list/speech_ui_model.h"
 #include "ui/base/resource/resource_bundle.h"
 
+#if defined(TOOLKIT_VIEWS)
+#include "ui/views/controls/webview/webview.h"
+#endif
+
 #if defined(USE_AURA)
 #include "ui/keyboard/keyboard_util.h"
 #endif
@@ -84,14 +88,13 @@ void PopulateUsers(const ProfileInfoCache& profile_info,
   const size_t count = profile_info.GetNumberOfProfiles();
   for (size_t i = 0; i < count; ++i) {
     // Don't display managed users.
-    if (profile_info.ProfileIsManagedAtIndex(i))
+    if (profile_info.ProfileIsSupervisedAtIndex(i))
       continue;
 
     app_list::AppListViewDelegate::User user;
     user.name = profile_info.GetNameOfProfileAtIndex(i);
     user.email = profile_info.GetUserNameOfProfileAtIndex(i);
     user.profile_path = profile_info.GetPathOfProfileAtIndex(i);
-    user.signin_required = profile_info.ProfileIsSigninRequiredAtIndex(i);
     user.active = active_profile_path == user.profile_path;
     users->push_back(user);
   }
@@ -106,6 +109,9 @@ AppListViewDelegate::AppListViewDelegate(Profile* profile,
       model_(NULL),
       scoped_observer_(this) {
   CHECK(controller_);
+  // The SigninManagerFactor and the SigninManagers are observed to keep the
+  // profile switcher menu up to date, with the correct list of profiles and the
+  // correct email address (or none for signed out users) for each.
   SigninManagerFactory::GetInstance()->AddObserver(this);
 
   // Start observing all already-created SigninManagers.
@@ -205,8 +211,6 @@ void AppListViewDelegate::OnProfileChanged() {
       profile_, model_->search_box(), model_->results(),
       speech_ui_.get(), controller_));
 
-  signin_delegate_.SetProfile(profile_);
-
 #if defined(USE_ASH)
   app_sync_ui_state_watcher_.reset(new AppSyncUIStateWatcher(profile_, model_));
 #endif
@@ -246,10 +250,6 @@ void AppListViewDelegate::SetProfileByPath(const base::FilePath& profile_path) {
 
 app_list::AppListModel* AppListViewDelegate::GetModel() {
   return model_;
-}
-
-app_list::SigninDelegate* AppListViewDelegate::GetSigninDelegate() {
-  return &signin_delegate_;
 }
 
 app_list::SpeechUIModel* AppListViewDelegate::GetSpeechUI() {
@@ -434,22 +434,30 @@ void AppListViewDelegate::OnProfileNameChanged(
   OnProfileChanged();
 }
 
-content::WebContents* AppListViewDelegate::GetStartPageContents() {
+#if defined(TOOLKIT_VIEWS)
+views::View* AppListViewDelegate::CreateStartPageWebView(
+    const gfx::Size& size) {
   app_list::StartPageService* service =
       app_list::StartPageService::Get(profile_);
   if (!service)
     return NULL;
 
-  return service->GetStartPageContents();
+  content::WebContents* web_contents = service->GetStartPageContents();
+  if (!web_contents)
+    return NULL;
+
+  views::WebView* web_view = new views::WebView(
+      web_contents->GetBrowserContext());
+  web_view->SetPreferredSize(size);
+  web_view->SetWebContents(web_contents);
+  return web_view;
 }
+#endif
 
-content::WebContents* AppListViewDelegate::GetSpeechRecognitionContents() {
+bool AppListViewDelegate::IsSpeechRecognitionEnabled() {
   app_list::StartPageService* service =
       app_list::StartPageService::Get(profile_);
-  if (!service)
-    return NULL;
-
-  return service->GetSpeechRecognitionContents();
+  return service && service->GetSpeechRecognitionContents();
 }
 
 const app_list::AppListViewDelegate::Users&

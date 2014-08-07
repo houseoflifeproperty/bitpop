@@ -47,8 +47,9 @@
         'geometry/rect_conversions.h',
         'geometry/rect_f.cc',
         'geometry/rect_f.h',
-        'geometry/r_tree.cc',
         'geometry/r_tree.h',
+        'geometry/r_tree_base.cc',
+        'geometry/r_tree_base.h',
         'geometry/safe_integer_conversions.h',
         'geometry/size.cc',
         'geometry/size.h',
@@ -76,6 +77,7 @@
         '<(DEPTH)/base/base.gyp:base_static',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/harfbuzz-ng/harfbuzz.gyp:harfbuzz-ng',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
@@ -90,6 +92,9 @@
       ],
       'defines': [
         'GFX_IMPLEMENTATION',
+      ],
+      'include_dirs': [
+        '<(DEPTH)/third_party/icu/source/common'
       ],
       'sources': [
         'android/device_display_info.cc',
@@ -141,7 +146,7 @@
         'color_analysis.h',
         'color_profile.cc',
         'color_profile.h',
-        'color_profile_mac.cc',
+        'color_profile_mac.mm',
         'color_profile_win.cc',
         'color_utils.cc',
         'color_utils.h',
@@ -203,14 +208,6 @@
         'nine_image_painter.cc',
         'nine_image_painter.h',
         'overlay_transform.h',
-        'ozone/impl/file_surface_factory.cc',
-        'ozone/impl/file_surface_factory.h',
-        'ozone/surface_factory_ozone.cc',
-        'ozone/surface_factory_ozone.h',
-        'ozone/surface_ozone_egl.h',
-        'ozone/surface_ozone_canvas.h',
-        'ozone/overlay_candidates_ozone.cc',
-        'ozone/overlay_candidates_ozone.h',
         'pango_util.cc',
         'pango_util.h',
         'path.cc',
@@ -237,6 +234,8 @@
         'range/range_win.cc',
         'render_text.cc',
         'render_text.h',
+        'render_text_harfbuzz.cc',
+        'render_text_harfbuzz.h',
         'render_text_mac.cc',
         'render_text_mac.h',
         'render_text_ozone.cc',
@@ -375,12 +374,15 @@
           'sources!': [
             'render_text.cc',
             'render_text.h',
+            'render_text_harfbuzz.cc',
+            'render_text_harfbuzz.h',
             'text_utils_skia.cc',
           ],
         }],
         ['use_x11==1', {
           'dependencies': [
-            'gfx_x11',
+            '../../build/linux/system.gyp:x11',
+            'x/gfx_x11.gyp:gfx_x11',
           ],
         }],
         ['use_pango==1', {
@@ -446,87 +448,6 @@
         }],
       ],
     },
-    {
-      'target_name': 'gfx_unittests',
-      'type': '<(gtest_target_type)',
-      # iOS uses a small subset of ui. common_sources are the only files that
-      # are built on iOS.
-      'common_sources' : [
-        'image/image_family_unittest.cc',
-        'image/image_unittest.cc',
-        'image/image_unittest_util.cc',
-        'image/image_unittest_util.h',
-        'image/image_unittest_util_ios.mm',
-        'image/image_unittest_util_mac.mm',
-      ],
-      'all_sources': [
-        '<@(_common_sources)',
-        'animation/animation_container_unittest.cc',
-        'animation/animation_unittest.cc',
-        'animation/multi_animation_unittest.cc',
-        'animation/slide_animation_unittest.cc',
-        'animation/tween_unittest.cc',
-        'blit_unittest.cc',
-        'break_list_unittest.cc',
-        'codec/jpeg_codec_unittest.cc',
-        'codec/png_codec_unittest.cc',
-        'color_analysis_unittest.cc',
-        'color_utils_unittest.cc',
-        'display_unittest.cc',
-        'geometry/box_unittest.cc',
-        'geometry/cubic_bezier_unittest.cc',
-        'geometry/insets_unittest.cc',
-        'geometry/matrix3_unittest.cc',
-        'geometry/point_unittest.cc',
-        'geometry/point3_unittest.cc',
-        'geometry/quad_unittest.cc',
-        'geometry/r_tree_unittest.cc',
-        'geometry/rect_unittest.cc',
-        'geometry/safe_integer_conversions_unittest.cc',
-        'geometry/size_unittest.cc',
-        'geometry/vector2d_unittest.cc',
-        'geometry/vector3d_unittest.cc',
-        'image/image_mac_unittest.mm',
-        'image/image_util_unittest.cc',
-        'range/range_mac_unittest.mm',
-        'range/range_unittest.cc',
-        'range/range_win_unittest.cc',
-        'sequential_id_generator_unittest.cc',
-        'shadow_value_unittest.cc',
-        'skbitmap_operations_unittest.cc',
-        'skrect_conversion_unittest.cc',
-        'transform_util_unittest.cc',
-        'utf16_indexing_unittest.cc',
-      ],
-      'dependencies': [
-        '../../base/base.gyp:base',
-        '../../base/base.gyp:run_all_unittests',
-        '../../base/base.gyp:test_support_base',
-        '../../skia/skia.gyp:skia',
-        '../../testing/gtest.gyp:gtest',
-        '../../third_party/libpng/libpng.gyp:libpng',
-        'gfx',
-        'gfx_geometry',
-        'gfx_test_support',
-      ],
-      'conditions': [
-        ['OS == "ios"', {
-          'sources': ['<@(_common_sources)'],
-        }, {  # OS != "ios"
-          'sources': ['<@(_all_sources)'],
-        }],
-        ['OS == "win"', {
-          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-          'msvs_disabled_warnings': [ 4267, ],
-        }],
-        ['OS != "mac" and OS != "ios"', {
-          'sources': [
-            'transform_unittest.cc',
-            'interpolated_transform_unittest.cc',
-          ],
-        }],
-      ],
-    }
   ],
   'conditions': [
     ['OS=="android"' , {
@@ -541,55 +462,10 @@
          ],
          'variables': {
            'jni_gen_package': 'ui/gfx',
-           'jni_generator_ptr_type': 'long'
          },
          'includes': [ '../../build/jni_generator.gypi' ],
        },
      ],
-    }],
-    # Special target to wrap a gtest_target_type==shared_library
-    # gfx_unittests into an android apk for execution.
-    # See base.gyp for TODO(jrg)s about this strategy.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
-      'targets': [
-        {
-          'target_name': 'gfx_unittests_apk',
-          'type': 'none',
-          'dependencies': [
-            'gfx_unittests',
-          ],
-          'variables': {
-            'test_suite_name': 'gfx_unittests',
-          },
-          'includes': [ '../../build/apk_test.gypi' ],
-        },
-      ],
-    }],
-    ['use_x11 == 1', {
-      'targets': [
-        {
-          'target_name': 'gfx_x11',
-          'type': '<(component)',
-          'dependencies': [
-            '../../base/base.gyp:base',
-            '../../build/linux/system.gyp:x11',
-            'gfx_geometry',
-          ],
-          'defines': [
-            'GFX_IMPLEMENTATION',
-          ],
-          'sources': [
-            'x/x11_atom_cache.cc',
-            'x/x11_atom_cache.h',
-            'x/x11_connection.cc',
-            'x/x11_connection.h',
-            'x/x11_error_tracker.cc',
-            'x/x11_error_tracker.h',
-            'x/x11_types.cc',
-            'x/x11_types.h',
-          ],
-        },
-      ]
     }],
   ],
 }

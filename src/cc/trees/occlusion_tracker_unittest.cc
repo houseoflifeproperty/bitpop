@@ -90,8 +90,7 @@ class TestOcclusionTrackerWithClip : public TestOcclusionTracker<LayerType> {
   gfx::Rect UnoccludedLayerContentRect(const LayerType* layer,
                                        const gfx::Rect& content_rect) const {
     DCHECK(layer->visible_content_rect().Contains(content_rect));
-    return this->UnoccludedContentRect(
-        layer->render_target(), content_rect, layer->draw_transform());
+    return this->UnoccludedContentRect(content_rect, layer->draw_transform());
   }
 
   gfx::Rect UnoccludedSurfaceContentRect(const LayerType* layer,
@@ -101,8 +100,8 @@ class TestOcclusionTrackerWithClip : public TestOcclusionTracker<LayerType> {
     gfx::Transform draw_transform = for_replica
                                         ? surface->replica_draw_transform()
                                         : surface->draw_transform();
-    return this->UnoccludedContributingSurfaceContentRect(
-        layer, content_rect, draw_transform);
+    return this->UnoccludedContributingSurfaceContentRect(content_rect,
+                                                          draw_transform);
   }
 };
 
@@ -328,14 +327,6 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
         Types::TestLayerIterator::Begin(render_surface_layer_list_.get());
   }
 
-  void SetDrawsContent(LayerImpl* layer_impl, bool draws_content) {
-    layer_impl->SetDrawsContent(draws_content);
-  }
-
-  void SetDrawsContent(Layer* layer, bool draws_content) {
-    layer->SetIsDrawable(draws_content);
-  }
-
   void EnterLayer(typename Types::LayerType* layer,
                   typename Types::OcclusionTrackerType* occlusion) {
     ASSERT_EQ(layer, *layer_iterator_);
@@ -401,7 +392,6 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
                          const gfx::PointF& position,
                          const gfx::Size& bounds) {
     layer->SetTransform(transform);
-    layer->SetAnchorPoint(gfx::PointF());
     layer->SetPosition(position);
     layer->SetBounds(bounds);
   }
@@ -620,15 +610,14 @@ class OcclusionTrackerTestQuadsMismatchLayer
     gfx::Transform quad_transform;
     quad_transform.Translate(30.0, 30.0);
 
-    EXPECT_TRUE(occlusion.UnoccludedContentRect(parent,
-                                                gfx::Rect(0, 0, 10, 10),
+    EXPECT_TRUE(occlusion.UnoccludedContentRect(gfx::Rect(0, 0, 10, 10),
                                                 quad_transform).IsEmpty());
     EXPECT_RECT_EQ(gfx::Rect(40, 40, 10, 10),
-                   occlusion.UnoccludedContentRect(
-                       parent, gfx::Rect(40, 40, 10, 10), quad_transform));
+                   occlusion.UnoccludedContentRect(gfx::Rect(40, 40, 10, 10),
+                                                   quad_transform));
     EXPECT_RECT_EQ(gfx::Rect(40, 30, 5, 10),
-                   occlusion.UnoccludedContentRect(
-                       parent, gfx::Rect(35, 30, 10, 10), quad_transform));
+                   occlusion.UnoccludedContentRect(gfx::Rect(35, 30, 10, 10),
+                                                   quad_transform));
   }
 };
 
@@ -1914,9 +1903,9 @@ class OcclusionTrackerTestUnsorted3dLayers
                                  gfx::Size(100, 100),
                                  true);
     parent->SetShouldFlattenTransform(false);
-    parent->SetIs3dSorted(true);
-    child1->SetIs3dSorted(true);
-    child2->SetIs3dSorted(true);
+    parent->Set3dSortingContextId(1);
+    child1->Set3dSortingContextId(1);
+    child2->Set3dSortingContextId(1);
 
     this->CalcDrawEtc(parent);
 
@@ -1960,8 +1949,8 @@ class OcclusionTrackerTestPerspectiveTransform
                                  gfx::Size(200, 200),
                                  true);
     container->SetShouldFlattenTransform(false);
-    container->SetIs3dSorted(true);
-    layer->SetIs3dSorted(true);
+    container->Set3dSortingContextId(1);
+    layer->Set3dSortingContextId(1);
     layer->SetShouldFlattenTransform(false);
 
     this->CalcDrawEtc(parent);
@@ -2005,9 +1994,9 @@ class OcclusionTrackerTestPerspectiveTransformBehindCamera
     typename Types::ContentLayerType* layer = this->CreateDrawingLayer(
         container, transform, gfx::PointF(), gfx::Size(500, 500), true);
     container->SetShouldFlattenTransform(false);
-    container->SetIs3dSorted(true);
+    container->Set3dSortingContextId(1);
     layer->SetShouldFlattenTransform(false);
-    layer->SetIs3dSorted(true);
+    layer->Set3dSortingContextId(1);
     this->CalcDrawEtc(parent);
 
     TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
@@ -2048,9 +2037,9 @@ class OcclusionTrackerTestLayerBehindCameraDoesNotOcclude
     typename Types::ContentLayerType* layer = this->CreateDrawingLayer(
         parent, transform, gfx::PointF(), gfx::Size(100, 100), true);
     parent->SetShouldFlattenTransform(false);
-    parent->SetIs3dSorted(true);
+    parent->Set3dSortingContextId(1);
     layer->SetShouldFlattenTransform(false);
-    layer->SetIs3dSorted(true);
+    layer->Set3dSortingContextId(1);
     this->CalcDrawEtc(parent);
 
     TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
@@ -2089,9 +2078,9 @@ class OcclusionTrackerTestLargePixelsOccludeInsideClipRect
     typename Types::ContentLayerType* layer = this->CreateDrawingLayer(
         parent, transform, gfx::PointF(), gfx::Size(100, 100), true);
     parent->SetShouldFlattenTransform(false);
-    parent->SetIs3dSorted(true);
+    parent->Set3dSortingContextId(1);
     layer->SetShouldFlattenTransform(false);
-    layer->SetIs3dSorted(true);
+    layer->Set3dSortingContextId(1);
     this->CalcDrawEtc(parent);
 
     TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
@@ -3564,37 +3553,6 @@ class OcclusionTrackerTestHiddenCopyRequestDoesNotOcclude
 };
 
 ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestHiddenCopyRequestDoesNotOcclude)
-
-template <class Types>
-class OcclusionTrackerTestEmptyEventLayerDoesNotOcclude
-    : public OcclusionTrackerTest<Types> {
- protected:
-  explicit OcclusionTrackerTestEmptyEventLayerDoesNotOcclude(
-      bool opaque_layers)
-      : OcclusionTrackerTest<Types>(opaque_layers) {}
-  void RunMyTest() {
-    typename Types::ContentLayerType* root = this->CreateRoot(
-        this->identity_matrix, gfx::Point(), gfx::Size(400, 400));
-    typename Types::ContentLayerType* empty_layer = this->CreateDrawingLayer(
-        root, this->identity_matrix, gfx::Point(), gfx::Size(200, 200), true);
-    this->SetDrawsContent(empty_layer, false);
-    empty_layer->SetTouchEventHandlerRegion(gfx::Rect(10, 10, 10, 10));
-
-    this->CalcDrawEtc(root);
-
-    TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
-        gfx::Rect(0, 0, 1000, 1000));
-
-    this->VisitLayer(empty_layer, &occlusion);
-
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-  }
-};
-
-ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestEmptyEventLayerDoesNotOcclude)
 
 }  // namespace
 }  // namespace cc

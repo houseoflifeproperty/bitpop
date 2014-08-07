@@ -123,7 +123,9 @@ def GetBotStepMap():
   flakiness_server = (
       '--flakiness-server=%s' % constants.UPSTREAM_FLAKINESS_SERVER)
   experimental = ['--experimental']
-
+  bisect_chrome_output_dir = os.path.abspath(
+      os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir,
+                   os.pardir, 'bisect', 'src', 'out'))
   B = BotConfig
   H = (lambda steps, extra_args=None, extra_gyp=None, target_arch=None :
        HostConfig('build/android/buildbot/bb_host_steps.py', steps, extra_args,
@@ -149,7 +151,7 @@ def GetBotStepMap():
         T(std_tests, ['--asan', '--asan-symbolize'])),
       B('blink-try-builder', H(compile_step)),
       B('chromedriver-fyi-tests-dbg', H(std_test_steps),
-        T(['chromedriver'], ['--install=ChromeShell'])),
+        T(['chromedriver'], ['--install=ChromeShell', '--skip-wipe'])),
       B('fyi-x86-builder-dbg',
         H(compile_step + std_host_tests, experimental, target_arch='x86')),
       B('fyi-builder-dbg',
@@ -164,9 +166,13 @@ def GetBotStepMap():
       B('fyi-component-builder-tests-dbg',
         H(compile_step, extra_gyp='component=shared_library'),
         T(std_tests, ['--experimental', flakiness_server])),
-      B('gpu-builder-tests-dbg', H(compile_step), T(['gpu'])),
+      B('gpu-builder-tests-dbg',
+        H(compile_step),
+        T(['gpu'], ['--install=ContentShell'])),
       # Pass empty T([]) so that logcat monitor and device status check are run.
-      B('perf-bisect-builder-tests-dbg', H(['bisect_perf_regression']), T([])),
+      B('perf-bisect-builder-tests-dbg',
+        H(['bisect_perf_regression']),
+        T([], ['--chrome-output-dir', bisect_chrome_output_dir])),
       B('perf-tests-rel', H(std_test_steps),
         T([], ['--install=ChromeShell'])),
       B('webkit-latest-webkit-tests', H(std_test_steps),
@@ -273,6 +279,17 @@ def RunBotCommands(options, commands, env):
 
 
 def main(argv):
+  proc = subprocess.Popen(
+      ['/bin/hostname', '-f'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  hostname_stdout, hostname_stderr = proc.communicate()
+  if proc.returncode == 0:
+    print 'Running on: ' + hostname_stdout
+  else:
+    print >> sys.stderr, 'WARNING: failed to run hostname'
+    print >> sys.stderr, hostname_stdout
+    print >> sys.stderr, hostname_stderr
+    sys.exit(1)
+
   parser = GetRunBotOptParser()
   options, args = parser.parse_args(argv[1:])
   if args:

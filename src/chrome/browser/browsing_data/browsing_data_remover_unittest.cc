@@ -13,16 +13,16 @@
 #include "base/files/file_path.h"
 #include "base/guid.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/prefs/testing_pref_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover_test_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
@@ -43,6 +43,8 @@
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
+#include "components/domain_reliability/clear_mode.h"
+#include "components/domain_reliability/monitor.h"
 #include "content/public/browser/cookie_store_factory.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/local_storage_usage_info.h"
@@ -62,6 +64,10 @@
 
 using content::BrowserThread;
 using content::StoragePartition;
+using domain_reliability::CLEAR_BEACONS;
+using domain_reliability::CLEAR_CONTEXTS;
+using domain_reliability::DomainReliabilityClearMode;
+using domain_reliability::DomainReliabilityMonitor;
 using testing::_;
 using testing::Invoke;
 using testing::WithArgs;
@@ -379,9 +385,9 @@ class RemoveHistoryTester {
     history_service_->QueryURL(
         url,
         true,
-        &consumer_,
         base::Bind(&RemoveHistoryTester::SaveResultAndQuit,
-                   base::Unretained(this)));
+                   base::Unretained(this)),
+        &tracker_);
     message_loop_runner->Run();
     return query_url_success_;
   }
@@ -394,16 +400,15 @@ class RemoveHistoryTester {
 
  private:
   // Callback for HistoryService::QueryURL.
-  void SaveResultAndQuit(HistoryService::Handle,
-                         bool success,
-                         const history::URLRow*,
-                         history::VisitVector*) {
+  void SaveResultAndQuit(bool success,
+                         const history::URLRow&,
+                         const history::VisitVector&) {
     query_url_success_ = success;
     quit_closure_.Run();
   }
 
   // For History requests.
-  CancelableRequestConsumer consumer_;
+  base::CancelableTaskTracker tracker_;
   bool query_url_success_;
   base::Closure quit_closure_;
 
@@ -574,6 +579,29 @@ class RemoveLocalStorageTester {
   DISALLOW_COPY_AND_ASSIGN(RemoveLocalStorageTester);
 };
 
+class TestingProfileWithDomainReliabilityMonitor : public TestingProfile {
+ public:
+  TestingProfileWithDomainReliabilityMonitor() :
+      TestingProfile(),
+      upload_reporter_string_("test-reporter"),
+      monitor_(upload_reporter_string_) {
+    monitor_.Init(GetRequestContext());
+  }
+
+  virtual void ClearDomainReliabilityMonitor(
+      DomainReliabilityClearMode mode,
+      const base::Closure& completion) OVERRIDE {
+    monitor_.ClearBrowsingData(mode);
+    completion.Run();
+  }
+
+  DomainReliabilityMonitor* monitor() { return &monitor_; }
+
+ private:
+  std::string upload_reporter_string_;
+  DomainReliabilityMonitor monitor_;
+};
+
 // Test Class ----------------------------------------------------------------
 
 class BrowsingDataRemoverTest : public testing::Test,
@@ -679,8 +707,18 @@ class BrowsingDataRemoverTest : public testing::Test,
     registrar_.RemoveAll();
   }
 
- private:
+  DomainReliabilityMonitor *UseProfileWithDomainReliabilityMonitor() {
+    TestingProfileWithDomainReliabilityMonitor* new_profile =
+        new TestingProfileWithDomainReliabilityMonitor();
+    DomainReliabilityMonitor* monitor = new_profile->monitor();
+    profile_.reset(new_profile);
+    return monitor;
+  }
+
+ protected:
   scoped_ptr<BrowsingDataRemover::NotificationDetails> called_with_details_;
+
+ private:
   content::NotificationRegistrar registrar_;
 
   content::TestBrowserThreadBundle thread_bundle_;
@@ -1540,6 +1578,39 @@ TEST_F(BrowsingDataRemoverTest, AutofillOriginsRemovedWithHistory) {
   EXPECT_TRUE(tester.HasOrigin(kChromeOrigin));
 }
 
+TEST_F(BrowsingDataRemoverTest, CompletionInhibition) {
+  // The |completion_inhibitor| on the stack should prevent removal sessions
+  // from completing until after ContinueToCompletion() is called.
+  BrowsingDataRemoverCompletionInhibitor completion_inhibitor;
+
+  called_with_details_.reset(new BrowsingDataRemover::NotificationDetails());
+
+  // BrowsingDataRemover deletes itself when it completes.
+  BrowsingDataRemover* remover = BrowsingDataRemover::CreateForPeriod(
+      GetProfile(), BrowsingDataRemover::EVERYTHING);
+  remover->Remove(BrowsingDataRemover::REMOVE_HISTORY,
+                  BrowsingDataHelper::UNPROTECTED_WEB);
+
+  // Process messages until the inhibitor is notified, and then some, to make
+  // sure we do not complete asynchronously before ContinueToCompletion() is
+  // called.
+  completion_inhibitor.BlockUntilNearCompletion();
+  base::RunLoop().RunUntilIdle();
+
+  // Verify that the completion notification has not yet been broadcasted.
+  EXPECT_EQ(-1, GetRemovalMask());
+  EXPECT_EQ(-1, GetOriginSetMask());
+
+  // Now run the removal process until completion, and verify that observers are
+  // now notified, and the notifications is sent out.
+  BrowsingDataRemoverCompletionObserver completion_observer(remover);
+  completion_inhibitor.ContinueToCompletion();
+  completion_observer.BlockUntilCompletion();
+
+  EXPECT_EQ(BrowsingDataRemover::REMOVE_HISTORY, GetRemovalMask());
+  EXPECT_EQ(BrowsingDataHelper::UNPROTECTED_WEB, GetOriginSetMask());
+}
+
 TEST_F(BrowsingDataRemoverTest, ZeroSuggestCacheClear) {
   PrefService* prefs = GetProfile()->GetPrefs();
   prefs->SetString(prefs::kZeroSuggestCachedResults,
@@ -1583,3 +1654,44 @@ TEST_F(BrowsingDataRemoverTest, ContentProtectionPlatformKeysRemoval) {
   chromeos::DBusThreadManager::Shutdown();
 }
 #endif
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Null) {
+  DomainReliabilityMonitor* monitor = UseProfileWithDomainReliabilityMonitor();
+  EXPECT_FALSE(monitor->was_cleared_for_testing());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Beacons) {
+  DomainReliabilityMonitor* monitor = UseProfileWithDomainReliabilityMonitor();
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_HISTORY, false);
+  EXPECT_TRUE(monitor->was_cleared_for_testing());
+  EXPECT_EQ(CLEAR_BEACONS, monitor->cleared_mode_for_testing());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Beacons_ProtectedOrigins) {
+  DomainReliabilityMonitor* monitor = UseProfileWithDomainReliabilityMonitor();
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_HISTORY, true);
+  EXPECT_TRUE(monitor->was_cleared_for_testing());
+  EXPECT_EQ(CLEAR_BEACONS, monitor->cleared_mode_for_testing());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Contexts) {
+  DomainReliabilityMonitor* monitor = UseProfileWithDomainReliabilityMonitor();
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_COOKIES, false);
+  EXPECT_TRUE(monitor->was_cleared_for_testing());
+  EXPECT_EQ(CLEAR_CONTEXTS, monitor->cleared_mode_for_testing());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Contexts_ProtectedOrigins) {
+  DomainReliabilityMonitor* monitor = UseProfileWithDomainReliabilityMonitor();
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_COOKIES, true);
+  EXPECT_TRUE(monitor->was_cleared_for_testing());
+  EXPECT_EQ(CLEAR_CONTEXTS, monitor->cleared_mode_for_testing());
+}

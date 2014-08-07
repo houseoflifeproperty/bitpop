@@ -21,6 +21,7 @@
 #include "chrome/browser/ui/libgtk2ui/gtk2_event_loop.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_key_bindings_handler.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_signal_registrar.h"
+#include "chrome/browser/ui/libgtk2ui/gtk2_status_icon.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_util.h"
 #include "chrome/browser/ui/libgtk2ui/native_theme_gtk2.h"
 #include "chrome/browser/ui/libgtk2ui/print_dialog_gtk2.h"
@@ -44,6 +45,7 @@
 #include "ui/gfx/skbitmap_operations.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/linux_ui/window_button_order_observer.h"
 
 #if defined(USE_GCONF)
@@ -120,10 +122,17 @@ const color_utils::HSL kDefaultTintFrameIncognitoInactive = { -1, 0.3f, 0.6f };
 const color_utils::HSL kDefaultTintBackgroundTab = { -1, 0.5, 0.75 };
 
 // A list of images that we provide while in gtk mode.
+//
+// TODO(erg): We list both the normal and *_DESKTOP versions of some of these
+// images because in some contexts, we don't go through the
+// chrome::MapThemeImage interface. That should be fixed, but tracking that
+// down is Hard.
 const int kThemeImages[] = {
   IDR_THEME_TOOLBAR,
   IDR_THEME_TAB_BACKGROUND,
+  IDR_THEME_TAB_BACKGROUND_DESKTOP,
   IDR_THEME_TAB_BACKGROUND_INCOGNITO,
+  IDR_THEME_TAB_BACKGROUND_INCOGNITO_DESKTOP,
   IDR_FRAME,
   IDR_FRAME_INACTIVE,
   IDR_THEME_FRAME,
@@ -246,9 +255,12 @@ void PickButtonTintFromColors(const GdkColor& accent_gdk_color,
   // 125] will tint green instead of gray). Slight differences (+/-10 (4%) to
   // all color components) should be interpreted as this color being gray and
   // we should switch into a special grayscale mode.
-  int rb_diff = abs(SkColorGetR(accent_color) - SkColorGetB(accent_color));
-  int rg_diff = abs(SkColorGetR(accent_color) - SkColorGetG(accent_color));
-  int bg_diff = abs(SkColorGetB(accent_color) - SkColorGetG(accent_color));
+  int rb_diff = abs(static_cast<int>(SkColorGetR(accent_color)) -
+                    static_cast<int>(SkColorGetB(accent_color)));
+  int rg_diff = abs(static_cast<int>(SkColorGetR(accent_color)) -
+                    static_cast<int>(SkColorGetG(accent_color)));
+  int bg_diff = abs(static_cast<int>(SkColorGetB(accent_color)) -
+                    static_cast<int>(SkColorGetG(accent_color)));
   if (rb_diff < 10 && rg_diff < 10 && bg_diff < 10) {
     // Our accent is white/gray/black. Only the luminance of the accent color
     // matters.
@@ -494,7 +506,7 @@ void Gtk2UI::SetProgressFraction(float percentage) const {
 }
 
 bool Gtk2UI::IsStatusIconSupported() const {
-  return AppIndicatorIcon::CouldOpen();
+  return true;
 }
 
 scoped_ptr<views::StatusIconLinux> Gtk2UI::CreateLinuxStatusIcon(
@@ -507,7 +519,8 @@ scoped_ptr<views::StatusIconLinux> Gtk2UI::CreateLinuxStatusIcon(
         image,
         tool_tip));
   } else {
-    return scoped_ptr<views::StatusIconLinux>();
+    return scoped_ptr<views::StatusIconLinux>(new Gtk2StatusIcon(
+        image, tool_tip));
   }
 }
 
@@ -545,9 +558,9 @@ gfx::Image Gtk2UI::GetIconForContentType(
 
 scoped_ptr<views::Border> Gtk2UI::CreateNativeBorder(
     views::LabelButton* owning_button,
-    scoped_ptr<views::Border> border) {
+    scoped_ptr<views::LabelButtonBorder> border) {
   if (owning_button->GetNativeTheme() != NativeThemeGtk2::instance())
-    return border.Pass();
+    return border.PassAs<views::Border>();
 
   return scoped_ptr<views::Border>(
       new Gtk2Border(this, owning_button, border.Pass()));
@@ -739,7 +752,7 @@ void Gtk2UI::GetScrollbarColors(GdkColor* thumb_active_color,
   // Draw scrollbar thumb part and track into offscreen image
   const int kWidth  = 100;
   const int kHeight = 20;
-  GtkStyle*  style  = gtk_rc_get_style(scrollbar);
+  GtkStyle* style   = gtk_rc_get_style(scrollbar);
   GdkWindow* gdk_window = gtk_widget_get_window(window);
   GdkPixmap* pm     = gdk_pixmap_new(gdk_window, kWidth, kHeight, -1);
   GdkRectangle rect = { 0, 0, kWidth, kHeight };
@@ -1033,12 +1046,15 @@ SkBitmap Gtk2UI::GenerateGtkThemeBitmap(int id) const {
       bitmap.setConfig(SkBitmap::kARGB_8888_Config,
                        kToolbarImageWidth, kToolbarImageHeight);
       bitmap.allocPixels();
-      bitmap.eraseRGB(color->red >> 8, color->green >> 8, color->blue >> 8);
+      bitmap.eraseARGB(0xff, color->red >> 8, color->green >> 8,
+                       color->blue >> 8);
       return bitmap;
     }
     case IDR_THEME_TAB_BACKGROUND:
+    case IDR_THEME_TAB_BACKGROUND_DESKTOP:
       return GenerateTabImage(IDR_THEME_FRAME);
     case IDR_THEME_TAB_BACKGROUND_INCOGNITO:
+    case IDR_THEME_TAB_BACKGROUND_INCOGNITO_DESKTOP:
       return GenerateTabImage(IDR_THEME_FRAME_INCOGNITO);
     case IDR_FRAME:
     case IDR_THEME_FRAME:

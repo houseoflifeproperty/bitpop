@@ -12,13 +12,31 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/common/metrics/proto/chrome_experiments.pb.h"
+#include "components/google/core/browser/google_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/http/http_request_headers.h"
 #include "url/gurl.h"
 
 namespace chrome_variations {
+
+namespace {
+
+const char* kSuffixesToSetHeadersFor[] = {
+  ".android.com",
+  ".doubleclick.com",
+  ".doubleclick.net",
+  ".ggpht.com",
+  ".googleadservices.com",
+  ".googleapis.com",
+  ".googlesyndication.com",
+  ".googleusercontent.com",
+  ".googlevideo.com",
+  ".gstatic.com",
+  ".ytimg.com",
+};
+
+}  // namespace
 
 VariationsHttpHeaderProvider* VariationsHttpHeaderProvider::GetInstance() {
   return Singleton<VariationsHttpHeaderProvider>::get();
@@ -229,23 +247,13 @@ bool VariationsHttpHeaderProvider::ShouldAppendHeaders(const GURL& url) {
   // Some domains don't have international TLD extensions, so testing for them
   // is very straight forward.
   const std::string host = url.host();
-  if (EndsWith(host, ".doubleclick.net", false) ||
-      EndsWith(host, ".googlesyndication.com", false) ||
-      LowerCaseEqualsASCII(host, "www.googleadservices.com")) {
-    return true;
+  for (size_t i = 0; i < arraysize(kSuffixesToSetHeadersFor); ++i) {
+    if (EndsWith(host, kSuffixesToSetHeadersFor[i], false))
+      return true;
   }
 
-  // The below mirrors logic in IsGoogleDomainUrl(), but for youtube.<TLD>.
-  const size_t tld_length = net::registry_controlled_domains::GetRegistryLength(
-      host,
-      net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
-      net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
-  if ((tld_length == 0) || (tld_length == std::string::npos))
-    return false;
-
-  const std::string host_minus_tld(host, 0, host.length() - tld_length);
-  return LowerCaseEqualsASCII(host_minus_tld, "youtube.") ||
-      EndsWith(host_minus_tld, ".youtube.", false);
+  return google_util::IsYoutubeDomainUrl(url, google_util::ALLOW_SUBDOMAIN,
+                                         google_util::ALLOW_NON_STANDARD_PORTS);
 }
 
 }  // namespace chrome_variations

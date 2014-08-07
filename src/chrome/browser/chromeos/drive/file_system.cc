@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "base/platform_file.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chromeos/drive/change_list_loader.h"
 #include "chrome/browser/chromeos/drive/directory_loader.h"
@@ -63,13 +62,13 @@ FileError GetLocallyStoredResourceEntry(
     return FILE_ERROR_OK;
 
   // When cache is not found, use the original resource entry as is.
-  FileCacheEntry cache_entry;
-  if (!cache->GetCacheEntry(local_id, &cache_entry))
+  if (!entry->file_specific_info().has_cache_state())
     return FILE_ERROR_OK;
 
   // When cache is non-dirty and obsolete (old hash), use the original entry.
-  if (!cache_entry.is_dirty() &&
-      entry->file_specific_info().md5() != cache_entry.md5())
+  if (!entry->file_specific_info().cache_state().is_dirty() &&
+      entry->file_specific_info().md5() !=
+      entry->file_specific_info().cache_state().md5())
     return FILE_ERROR_OK;
 
   // If there's a valid cache, obtain the file info from the cache file itself.
@@ -82,7 +81,6 @@ FileError GetLocallyStoredResourceEntry(
   if (!base::GetFileInfo(local_cache_path, &file_info))
     return FILE_ERROR_NOT_FOUND;
 
-  // TODO(hashimoto): crbug.com/346625. Also reflect timestamps.
   entry->mutable_file_info()->set_size(file_info.size);
   return FILE_ERROR_OK;
 }
@@ -154,36 +152,17 @@ void RunMarkMountedCallback(const MarkMountedCallback& callback,
   callback.Run(error, *cache_file_path);
 }
 
-// Used to implement GetCacheEntry.
-bool GetCacheEntryInternal(internal::ResourceMetadata* resource_metadata,
-                                 internal::FileCache* cache,
-                                 const base::FilePath& drive_file_path,
-                                 FileCacheEntry* cache_entry) {
-  std::string id;
-  if (resource_metadata->GetIdByPath(drive_file_path, &id) != FILE_ERROR_OK)
-    return false;
-
-  return cache->GetCacheEntry(id, cache_entry);
-}
-
-// Runs the callback with arguments.
-void RunGetCacheEntryCallback(const GetCacheEntryCallback& callback,
-                              const FileCacheEntry* cache_entry,
-                              bool success) {
-  DCHECK(!callback.is_null());
-  callback.Run(success, *cache_entry);
-}
-
 // Callback for ResourceMetadata::GetLargestChangestamp.
 // |callback| must not be null.
 void OnGetLargestChangestamp(
     FileSystemMetadata metadata,  // Will be modified.
     const GetFilesystemMetadataCallback& callback,
-    int64 largest_changestamp) {
+    const int64* largest_changestamp,
+    FileError error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  metadata.largest_changestamp = largest_changestamp;
+  metadata.largest_changestamp = *largest_changestamp;
   callback.Run(metadata);
 }
 
@@ -215,9 +194,9 @@ FileError GetPathFromResourceIdOnBlockingPool(
   std::string local_id;
   const FileError error =
       resource_metadata->GetIdByResourceId(resource_id, &local_id);
-  *file_path = error == FILE_ERROR_OK ?
-      resource_metadata->GetFilePath(local_id) : base::FilePath();
-  return error;
+  if (error != FILE_ERROR_OK)
+    return error;
+  return resource_metadata->GetFilePath(local_id, file_path);
 }
 
 // Part of GetPathFromResourceId().
@@ -820,25 +799,29 @@ void FileSystem::OnEntryUpdatedByOperation(const std::string& local_id) {
 
 void FileSystem::OnDriveSyncError(file_system::DriveSyncErrorType type,
                                   const std::string& local_id) {
+  base::FilePath* file_path = new base::FilePath;
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_,
       FROM_HERE,
       base::Bind(&internal::ResourceMetadata::GetFilePath,
                  base::Unretained(resource_metadata_),
-                 local_id),
+                 local_id,
+                 file_path),
       base::Bind(&FileSystem::OnDriveSyncErrorAfterGetFilePath,
                  weak_ptr_factory_.GetWeakPtr(),
-                 type));
+                 type,
+                 base::Owned(file_path)));
 }
 
 void FileSystem::OnDriveSyncErrorAfterGetFilePath(
     file_system::DriveSyncErrorType type,
-    const base::FilePath& path) {
-  if (path.empty())
+    const base::FilePath* file_path,
+    FileError error) {
+  if (error != FILE_ERROR_OK)
     return;
   FOR_EACH_OBSERVER(FileSystemObserver,
                     observers_,
-                    OnDriveSyncError(type, path));
+                    OnDriveSyncError(type, *file_path));
 }
 
 void FileSystem::OnDirectoryChanged(const base::FilePath& directory_path) {
@@ -876,12 +859,14 @@ void FileSystem::GetMetadata(
   metadata.last_update_check_time = last_update_check_time_;
   metadata.last_update_check_error = last_update_check_error_;
 
+  int64* largest_changestamp = new int64(0);
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_,
       FROM_HERE,
       base::Bind(&internal::ResourceMetadata::GetLargestChangestamp,
-                 base::Unretained(resource_metadata_)),
-      base::Bind(&OnGetLargestChangestamp, metadata, callback));
+                 base::Unretained(resource_metadata_), largest_changestamp),
+      base::Bind(&OnGetLargestChangestamp, metadata, callback,
+                 base::Owned(largest_changestamp)));
 }
 
 void FileSystem::MarkCacheFileAsMounted(
@@ -922,26 +907,6 @@ void FileSystem::MarkCacheFileAsUnmounted(
                  base::Unretained(cache_),
                  cache_file_path),
       callback);
-}
-
-void FileSystem::GetCacheEntry(
-    const base::FilePath& drive_file_path,
-    const GetCacheEntryCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  FileCacheEntry* cache_entry = new FileCacheEntry;
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_,
-      FROM_HERE,
-      base::Bind(&GetCacheEntryInternal,
-                 resource_metadata_,
-                 cache_,
-                 drive_file_path,
-                 cache_entry),
-      base::Bind(&RunGetCacheEntryCallback,
-                 callback,
-                 base::Owned(cache_entry)));
 }
 
 void FileSystem::AddPermission(const base::FilePath& drive_file_path,

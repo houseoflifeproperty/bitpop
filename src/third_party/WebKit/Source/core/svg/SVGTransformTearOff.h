@@ -38,8 +38,6 @@
 
 namespace WebCore {
 
-class SVGMatrix;
-
 class SVGTransformTearOff FINAL : public SVGPropertyTearOff<SVGTransform>, public ScriptWrappable {
 public:
     enum SVGTransformType {
@@ -52,7 +50,7 @@ public:
         SVG_TRANSFORM_SKEWY = WebCore::SVG_TRANSFORM_SKEWY,
     };
 
-    static PassRefPtr<SVGTransformTearOff> create(PassRefPtr<SVGTransform> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = nullQName())
+    static PassRefPtr<SVGTransformTearOff> create(PassRefPtr<SVGTransform> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
     {
         return adoptRef(new SVGTransformTearOff(target, contextElement, propertyIsAnimVal, attributeName));
     }

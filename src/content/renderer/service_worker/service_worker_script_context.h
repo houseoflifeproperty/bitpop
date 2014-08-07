@@ -5,6 +5,7 @@
 #ifndef CONTENT_RENDERER_SERVICE_WORKER_SERVICE_WORKER_SCRIPT_CONTEXT_H_
 #define CONTENT_RENDERER_SERVICE_WORKER_SERVICE_WORKER_SCRIPT_CONTEXT_H_
 
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -12,6 +13,7 @@
 #include "base/strings/string16.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "third_party/WebKit/public/platform/WebMessagePortChannel.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerClientsInfo.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerEventResult.h"
 
@@ -50,9 +52,10 @@ class ServiceWorkerScriptContext {
   void DidHandleSyncEvent(int request_id);
   void GetClientDocuments(
       blink::WebServiceWorkerClientsCallbacks* callbacks);
-  void PostMessageToDocument(int client_id,
-                             const base::string16& message,
-                             const std::vector<int>& message_port_ids);
+  void PostMessageToDocument(
+      int client_id,
+      const base::string16& message,
+      scoped_ptr<blink::WebMessagePortChannelArray> channels);
 
  private:
   typedef IDMap<blink::WebServiceWorkerClientsCallbacks, IDMapOwnPointer>
@@ -65,6 +68,7 @@ class ServiceWorkerScriptContext {
   void OnInstallEvent(int request_id, int active_version_id);
   void OnFetchEvent(int request_id, const ServiceWorkerFetchRequest& request);
   void OnSyncEvent(int request_id);
+  void OnPushEvent(int request_id, const std::string& data);
   void OnPostMessage(const base::string16& message,
                      const std::vector<int>& sent_message_port_ids,
                      const std::vector<int>& new_routing_ids);

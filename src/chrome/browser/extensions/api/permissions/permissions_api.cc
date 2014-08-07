@@ -13,6 +13,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/permissions_parser.h"
 #include "extensions/common/permissions/permission_message_provider.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/permissions/permissions_info.h"
@@ -60,13 +61,14 @@ bool PermissionsContainsFunction::RunSync() {
     return false;
 
   results_ = Contains::Results::Create(
-      GetExtension()->GetActivePermissions()->Contains(*permissions.get()));
+      GetExtension()->permissions_data()->active_permissions()->Contains(
+          *permissions.get()));
   return true;
 }
 
 bool PermissionsGetAllFunction::RunSync() {
-  scoped_ptr<Permissions> permissions =
-      helpers::PackPermissionSet(GetExtension()->GetActivePermissions().get());
+  scoped_ptr<Permissions> permissions = helpers::PackPermissionSet(
+      GetExtension()->permissions_data()->active_permissions().get());
   results_ = GetAll::Results::Create(*permissions);
   return true;
 }
@@ -96,8 +98,8 @@ bool PermissionsRemoveFunction::RunSync() {
   }
 
   // Make sure we don't remove any required pemissions.
-  const PermissionSet* required =
-      PermissionsData::GetRequiredPermissions(extension);
+  scoped_refptr<const PermissionSet> required =
+      PermissionsParser::GetRequiredPermissions(extension);
   scoped_refptr<PermissionSet> intersection(
       PermissionSet::CreateIntersection(permissions.get(), required));
   if (!intersection->IsEmpty()) {
@@ -174,8 +176,8 @@ bool PermissionsRequestFunction::RunAsync() {
   }
 
   // The requested permissions must be defined as optional in the manifest.
-  if (!PermissionsData::GetOptionalPermissions(GetExtension())
-          ->Contains(*requested_permissions_.get())) {
+  if (!PermissionsParser::GetOptionalPermissions(GetExtension())
+           ->Contains(*requested_permissions_)) {
     error_ = kNotInOptionalPermissionsError;
     return false;
   }

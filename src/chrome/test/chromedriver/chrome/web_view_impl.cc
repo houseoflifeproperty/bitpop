@@ -21,6 +21,7 @@
 #include "chrome/test/chromedriver/chrome/heap_snapshot_taker.h"
 #include "chrome/test/chromedriver/chrome/javascript_dialog_manager.h"
 #include "chrome/test/chromedriver/chrome/js.h"
+#include "chrome/test/chromedriver/chrome/mobile_emulation_override_manager.h"
 #include "chrome/test/chromedriver/chrome/navigation_tracker.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/ui_events.h"
@@ -114,13 +115,16 @@ const char* GetAsString(KeyEventType type) {
 
 WebViewImpl::WebViewImpl(const std::string& id,
                          const BrowserInfo* browser_info,
-                         scoped_ptr<DevToolsClient> client)
+                         scoped_ptr<DevToolsClient> client,
+                         const DeviceMetrics* device_metrics)
     : id_(id),
       browser_info_(browser_info),
       dom_tracker_(new DomTracker(client.get())),
       frame_tracker_(new FrameTracker(client.get())),
       navigation_tracker_(new NavigationTracker(client.get(), browser_info)),
       dialog_manager_(new JavaScriptDialogManager(client.get())),
+      mobile_emulation_override_manager_(
+          new MobileEmulationOverrideManager(client.get(), device_metrics)),
       geolocation_override_manager_(
           new GeolocationOverrideManager(client.get())),
       heap_snapshot_taker_(new HeapSnapshotTaker(client.get())),
@@ -419,6 +423,72 @@ Status WebViewImpl::SetFileInputFiles(
 
 Status WebViewImpl::TakeHeapSnapshot(scoped_ptr<base::Value>* snapshot) {
   return heap_snapshot_taker_->TakeSnapshot(snapshot);
+}
+
+Status WebViewImpl::InitProfileInternal() {
+  base::DictionaryValue params;
+
+  // TODO: Remove Debugger.enable after Chrome 36 stable is released.
+  Status status_debug = client_->SendCommand("Debugger.enable", params);
+
+  if (status_debug.IsError())
+    return status_debug;
+
+  Status status_profiler = client_->SendCommand("Profiler.enable", params);
+
+  if (status_profiler.IsError()) {
+    Status status_debugger = client_->SendCommand("Debugger.disable", params);
+    if (status_debugger.IsError())
+      return status_debugger;
+
+    return status_profiler;
+  }
+
+  return Status(kOk);
+}
+
+Status WebViewImpl::StopProfileInternal() {
+  base::DictionaryValue params;
+  Status status_debug = client_->SendCommand("Debugger.disable", params);
+  Status status_profiler = client_->SendCommand("Profiler.disable", params);
+
+  if (status_debug.IsError()) {
+    return status_debug;
+  } else if (status_profiler.IsError()) {
+    return status_profiler;
+  }
+
+  return Status(kOk);
+}
+
+Status WebViewImpl::StartProfile() {
+  Status status_init = InitProfileInternal();
+
+  if (status_init.IsError())
+    return status_init;
+
+  base::DictionaryValue params;
+  return client_->SendCommand("Profiler.start", params);
+}
+
+Status WebViewImpl::EndProfile(scoped_ptr<base::Value>* profile_data) {
+  base::DictionaryValue params;
+  scoped_ptr<base::DictionaryValue> profile_result;
+
+  Status status = client_->SendCommandAndGetResult(
+      "Profiler.stop", params, &profile_result);
+
+  if (status.IsError()) {
+    Status disable_profile_status = StopProfileInternal();
+    if (disable_profile_status.IsError()) {
+      return disable_profile_status;
+    } else {
+      return status;
+    }
+  }
+
+  *profile_data = profile_result.PassAs<base::Value>();
+  return status;
 }
 
 Status WebViewImpl::CallAsyncFunctionInternal(const std::string& frame,

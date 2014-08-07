@@ -26,8 +26,8 @@
 #include "config.h"
 #include "bindings/v8/V8MutationCallback.h"
 
-#include "V8MutationObserver.h"
-#include "V8MutationRecord.h"
+#include "bindings/core/v8/V8MutationObserver.h"
+#include "bindings/core/v8/V8MutationRecord.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenValue.h"
@@ -36,12 +36,12 @@
 
 namespace WebCore {
 
-V8MutationCallback::V8MutationCallback(v8::Handle<v8::Function> callback, ExecutionContext* context, v8::Handle<v8::Object> owner, v8::Isolate* isolate)
-    : ActiveDOMCallback(context)
-    , m_callback(isolate, callback)
-    , m_scriptState(ScriptState::current(isolate))
+V8MutationCallback::V8MutationCallback(v8::Handle<v8::Function> callback, v8::Handle<v8::Object> owner, ScriptState* scriptState)
+    : ActiveDOMCallback(scriptState->executionContext())
+    , m_callback(scriptState->isolate(), callback)
+    , m_scriptState(scriptState)
 {
-    V8HiddenValue::setHiddenValue(isolate, owner, V8HiddenValue::callback(isolate), callback);
+    V8HiddenValue::setHiddenValue(scriptState->isolate(), owner, V8HiddenValue::callback(scriptState->isolate()), callback);
     m_callback.setWeak(this, &setWeakCallback);
 }
 
@@ -69,7 +69,7 @@ void V8MutationCallback::call(const WillBeHeapVector<RefPtrWillBeMember<Mutation
         return;
 
     v8::Handle<v8::Object> thisObject = v8::Handle<v8::Object>::Cast(observerHandle);
-    v8::Handle<v8::Value> argv[] = { v8Array(mutations, isolate), observerHandle };
+    v8::Handle<v8::Value> argv[] = { v8Array(mutations, m_scriptState->context()->Global(), isolate), observerHandle };
 
     v8::TryCatch exceptionCatcher;
     exceptionCatcher.SetVerbose(true);

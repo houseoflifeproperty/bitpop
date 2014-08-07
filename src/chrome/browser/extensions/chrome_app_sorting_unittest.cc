@@ -30,7 +30,6 @@ class ChromeAppSortingAppLocation : public ChromeAppSortingTest {
     // Non-apps should not have any app launch ordinal or page ordinal.
     prefs()->OnExtensionInstalled(extension_.get(),
                                   Extension::ENABLED,
-                                  false,
                                   syncer::StringOrdinal(),
                                   std::string());
   }
@@ -59,7 +58,6 @@ class ChromeAppSortingAppLaunchOrdinal : public ChromeAppSortingTest {
     EXPECT_FALSE(prefs()->IsExtensionDisabled(extension_->id()));
     prefs()->OnExtensionInstalled(extension_.get(),
                                   Extension::ENABLED,
-                                  false,
                                   syncer::StringOrdinal(),
                                   std::string());
   }
@@ -112,7 +110,6 @@ class ChromeAppSortingPageOrdinal : public ChromeAppSortingTest {
     first_page_ = syncer::StringOrdinal::CreateInitialOrdinal();
     prefs()->OnExtensionInstalled(extension_.get(),
                                   Extension::ENABLED,
-                                  false,
                                   first_page_,
                                   std::string());
     EXPECT_TRUE(first_page_.Equals(
@@ -123,7 +120,6 @@ class ChromeAppSortingPageOrdinal : public ChromeAppSortingTest {
     // Install without any page preference.
     prefs()->OnExtensionInstalled(extension2.get(),
                                   Extension::ENABLED,
-                                  false,
                                   syncer::StringOrdinal(),
                                   std::string());
     EXPECT_TRUE(first_page_.Equals(
@@ -639,7 +635,6 @@ class ChromeAppSortingPreinstalledAppsBase : public PrefsPrepopulatedTestBase {
         simple_dict, Extension::NO_FLAGS, &error);
     prefs()->OnExtensionInstalled(app1_scoped_.get(),
                                   Extension::ENABLED,
-                                  false,
                                   syncer::StringOrdinal(),
                                   std::string());
 
@@ -648,7 +643,6 @@ class ChromeAppSortingPreinstalledAppsBase : public PrefsPrepopulatedTestBase {
         simple_dict, Extension::NO_FLAGS, &error);
     prefs()->OnExtensionInstalled(app2_scoped_.get(),
                                   Extension::ENABLED,
-                                  false,
                                   syncer::StringOrdinal(),
                                   std::string());
 
@@ -835,7 +829,6 @@ class ChromeAppSortingDefaultOrdinalsBase : public ChromeAppSortingTest {
   virtual void InstallApps() {
     prefs()->OnExtensionInstalled(app_.get(),
                                   Extension::ENABLED,
-                                  false,
                                   syncer::StringOrdinal(),
                                   std::string());
   }
@@ -881,8 +874,10 @@ class ChromeAppSortingDefaultOrdinalOverriddenByInstallPage
  protected:
   virtual void InstallApps() OVERRIDE {
     install_page_ = default_page_ordinal_.CreateAfter();
-    prefs()->OnExtensionInstalled(
-        app_.get(), Extension::ENABLED, false, install_page_, std::string());
+    prefs()->OnExtensionInstalled(app_.get(),
+                                  Extension::ENABLED,
+                                  install_page_,
+                                  std::string());
   }
 
  private:

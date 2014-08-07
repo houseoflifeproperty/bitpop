@@ -54,6 +54,7 @@ WebInspector.FilteredItemSelectionDialog = function(delegate)
 
     this._filteredItems = [];
     this._viewportControl = new WebInspector.ViewportControl(this);
+    this._viewportControl.element.classList.add("fill");
     this._itemElementsContainer = this._viewportControl.element;
     this._itemElementsContainer.classList.add("container");
     this._itemElementsContainer.classList.add("monospace");
@@ -244,7 +245,7 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
                     break;
                 }
             }
-            this._viewportControl.refresh();
+            this._viewportControl.invalidate();
             if (!query)
                 this._selectedIndexInFiltered = 0;
             this._updateSelection(this._selectedIndexInFiltered, false);
@@ -272,6 +273,14 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
         this.element.style.height = shouldShowMatchingItems ? this._dialogHeight + "px" : "auto";
     },
 
+    /**
+     * @return {number}
+     */
+    _rowsPerViewport: function()
+    {
+        return Math.floor(this._viewportControl.element.clientHeight / this._rowHeight);
+    },
+
     _onKeyDown: function(event)
     {
         var newSelectedIndex = this._selectedIndexInFiltered;
@@ -290,12 +299,12 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
             event.consume(true);
             break;
         case WebInspector.KeyboardShortcut.Keys.PageDown.code:
-            newSelectedIndex = Math.min(newSelectedIndex + this._viewportControl.rowsPerViewport(), this._filteredItems.length - 1);
+            newSelectedIndex = Math.min(newSelectedIndex + this._rowsPerViewport(), this._filteredItems.length - 1);
             this._updateSelection(newSelectedIndex, true);
             event.consume(true);
             break;
         case WebInspector.KeyboardShortcut.Keys.PageUp.code:
-            newSelectedIndex = Math.max(newSelectedIndex - this._viewportControl.rowsPerViewport(), 0);
+            newSelectedIndex = Math.max(newSelectedIndex - this._rowsPerViewport(), 0);
             this._updateSelection(newSelectedIndex, false);
             event.consume(true);
             break;
@@ -345,7 +354,21 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
 
     /**
      * @param {number} index
-     * @return {!Element}
+     * @return {number}
+     */
+    fastHeight: function(index)
+    {
+        if (!this._rowHeight) {
+            var delegateIndex = this._filteredItems[index];
+            var element = this._createItemElement(delegateIndex);
+            this._rowHeight = element.measurePreferredSize(this._viewportControl.contentElement()).height;
+        }
+        return this._rowHeight;
+    },
+
+    /**
+     * @param {number} index
+     * @return {!WebInspector.ViewportElement}
      */
     itemElement: function(index)
     {
@@ -353,7 +376,7 @@ WebInspector.FilteredItemSelectionDialog.prototype = {
         var element = this._createItemElement(delegateIndex);
         if (index === this._selectedIndexInFiltered)
             element.classList.add("selected");
-        return element;
+        return new WebInspector.StaticViewportElement(element);
     },
 
     __proto__: WebInspector.DialogDelegate.prototype
@@ -515,7 +538,7 @@ WebInspector.JavaScriptOutlineDialog = function(uiSourceCode, selectItemCallback
 WebInspector.JavaScriptOutlineDialog.show = function(view, uiSourceCode, selectItemCallback)
 {
     if (WebInspector.Dialog.currentInstance())
-        return null;
+        return;
     var filteredItemSelectionDialog = new WebInspector.FilteredItemSelectionDialog(new WebInspector.JavaScriptOutlineDialog(uiSourceCode, selectItemCallback));
     WebInspector.Dialog.show(view.element, filteredItemSelectionDialog);
 }
@@ -616,11 +639,11 @@ WebInspector.SelectUISourceCodeDialog = function(defaultScores)
     this._defaultScores = defaultScores;
     this._scorer = new WebInspector.FilePathScoreFunction("");
     WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeAdded, this._uiSourceCodeAdded, this);
-    WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.ProjectWillReset, this._projectWillReset, this);
+    WebInspector.workspace.addEventListener(WebInspector.Workspace.Events.ProjectRemoved, this._projectRemoved, this);
 }
 
 WebInspector.SelectUISourceCodeDialog.prototype = {
-    _projectWillReset: function(event)
+    _projectRemoved: function(event)
     {
         var project = /** @type {!WebInspector.Project} */ (event.data);
         this._populate(project);
@@ -778,7 +801,7 @@ WebInspector.SelectUISourceCodeDialog.prototype = {
     dispose: function()
     {
         WebInspector.workspace.removeEventListener(WebInspector.Workspace.Events.UISourceCodeAdded, this._uiSourceCodeAdded, this);
-        WebInspector.workspace.removeEventListener(WebInspector.Workspace.Events.ProjectWillReset, this._projectWillReset, this);
+        WebInspector.workspace.removeEventListener(WebInspector.Workspace.Events.ProjectRemoved, this._projectRemoved, this);
     },
 
     __proto__: WebInspector.SelectionDialogContentProvider.prototype
@@ -888,6 +911,7 @@ WebInspector.SelectUISourceCodeForProjectTypesDialog.prototype = {
 }
 
 /**
+ * @param {string} name
  * @param {!Array.<string>} types
  * @param {function(!WebInspector.UISourceCode)} callback
  * @param {!Element} relativeToElement

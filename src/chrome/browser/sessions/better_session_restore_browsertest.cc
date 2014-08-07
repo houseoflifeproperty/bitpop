@@ -14,7 +14,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
@@ -36,6 +35,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
@@ -680,8 +680,7 @@ IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest, PRE_SessionCookies) {
 IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest, SessionCookies) {
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_EQ(std::string(content::kAboutBlankURL),
-            web_contents->GetURL().spec());
+  EXPECT_EQ(std::string(url::kAboutBlankURL), web_contents->GetURL().spec());
   // When we navigate to the page again, it doens't see the data previously
   // stored.
   StoreDataWithPage("session_cookies.html");
@@ -694,8 +693,7 @@ IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest, PRE_SessionStorage) {
 IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest, SessionStorage) {
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_EQ(std::string(content::kAboutBlankURL),
-            web_contents->GetURL().spec());
+  EXPECT_EQ(std::string(url::kAboutBlankURL), web_contents->GetURL().spec());
   StoreDataWithPage("session_storage.html");
 }
 
@@ -708,8 +706,7 @@ IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest, PRE_LocalStorageClearedOnExit) {
   // Normally localStorage is persisted.
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_EQ(std::string(content::kAboutBlankURL),
-            web_contents->GetURL().spec());
+  EXPECT_EQ(std::string(url::kAboutBlankURL), web_contents->GetURL().spec());
   NavigateAndCheckStoredData("local_storage.html");
   // ... but not if it's set to clear on exit.
   CookieSettings::Factory::GetForProfile(browser()->profile())->
@@ -719,8 +716,7 @@ IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest, PRE_LocalStorageClearedOnExit) {
 IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest, LocalStorageClearedOnExit) {
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_EQ(std::string(content::kAboutBlankURL),
-            web_contents->GetURL().spec());
+  EXPECT_EQ(std::string(url::kAboutBlankURL), web_contents->GetURL().spec());
   StoreDataWithPage("local_storage.html");
 }
 
@@ -732,8 +728,7 @@ IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest, PRE_CookiesClearedOnExit) {
   // Normally cookies are restored.
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_EQ(std::string(content::kAboutBlankURL),
-            web_contents->GetURL().spec());
+  EXPECT_EQ(std::string(url::kAboutBlankURL), web_contents->GetURL().spec());
   NavigateAndCheckStoredData("cookies.html");
   // ... but not if the content setting is set to clear on exit.
   CookieSettings::Factory::GetForProfile(browser()->profile())->
@@ -743,8 +738,7 @@ IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest, PRE_CookiesClearedOnExit) {
 IN_PROC_BROWSER_TEST_F(NoSessionRestoreTest, CookiesClearedOnExit) {
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_EQ(std::string(content::kAboutBlankURL),
-            web_contents->GetURL().spec());
+  EXPECT_EQ(std::string(url::kAboutBlankURL), web_contents->GetURL().spec());
   StoreDataWithPage("local_storage.html");
 }
 

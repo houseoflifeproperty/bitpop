@@ -11,16 +11,18 @@
 #include "base/values.h"
 #include "content/public/browser/browser_plugin_guest_delegate.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
 
-class AdViewGuest;
-class WebViewGuest;
 struct RendererContentSettingRules;
 
 // A GuestViewBase is the base class browser-side API implementation for a
 // <*view> tag. GuestViewBase maintains an association between a guest
 // WebContents and an embedder WebContents. It receives events issued from
 // the guest and relays them to the embedder.
-class GuestViewBase : public content::BrowserPluginGuestDelegate {
+class GuestViewBase : public content::BrowserPluginGuestDelegate,
+                      public content::WebContentsDelegate,
+                      public content::WebContentsObserver {
  public:
   class Event {
    public:
@@ -45,26 +47,16 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate {
     return NULL;
   }
 
-  static GuestViewBase* Create(content::WebContents* guest_web_contents,
+  static GuestViewBase* Create(int guest_instance_id,
+                               content::WebContents* guest_web_contents,
                                const std::string& embedder_extension_id,
-                               const std::string& view_type,
-                               const base::WeakPtr<GuestViewBase>& opener);
+                               const std::string& view_type);
 
   static GuestViewBase* FromWebContents(content::WebContents* web_contents);
 
   static GuestViewBase* From(int embedder_process_id, int instance_id);
 
-  // For GuestViewBases, we create special guest processes, which host the
-  // tag content separately from the main application that embeds the tag.
-  // A GuestViewBase can specify both the partition name and whether the storage
-  // for that partition should be persisted. Each tag gets a SiteInstance with
-  // a specially formatted URL, based on the application it is hosted by and
-  // the partition requested by it. The format for that URL is:
-  // chrome-guest://partition_domain/persist?partition_name
-  static bool GetGuestPartitionConfigForSite(const GURL& site,
-                                             std::string* partition_domain,
-                                             std::string* partition_name,
-                                             bool* in_memory);
+  static bool IsGuest(content::WebContents* web_contents);
 
   // By default, JavaScript and images are enabled in guest content.
   static void GetDefaultContentSettingRules(RendererContentSettingRules* rules,
@@ -72,14 +64,59 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate {
 
   virtual const char* GetViewType() const = 0;
 
+  // This method is called after the guest has been attached to an embedder and
+  // suspended resource loads have been resumed.
+  //
+  // This method can be overriden by subclasses. This gives the derived class
+  // an opportunity to perform setup actions after attachment.
+  virtual void DidAttachToEmbedder() {}
+
+  // This method can be overridden by subclasses. This method is called when
+  // the initial set of frames within the page have completed loading.
+  virtual void DidStopLoading() {}
+
+  // This method is called immediately before suspended resource loads have been
+  // resumed on attachment to an embedder.
+  //
+  // This method can be overriden by subclasses. This gives the derived class
+  // an opportunity to perform setup actions before attachment.
+  virtual void WillAttachToEmbedder() {}
+
+  // This method is called when the guest WebContents is about to be destroyed.
+  //
+  // This method can be overridden by subclasses. This gives the derived class
+  // an opportunity to perform some cleanup prior to destruction.
+  virtual void WillDestroy() {}
+
+  // This method is called when the guest's embedder WebContents has been
+  // destroyed and the guest will be destroyed shortly.
+  //
+  // This method can be overridden by subclasses. This gives the derived class
+  // an opportunity to perform some cleanup prior to destruction.
+  virtual void EmbedderDestroyed() {}
+
+  // This method is called when the guest WebContents has been destroyed. This
+  // object will be destroyed after this call returns.
+  //
+  // This method can be overridden by subclasses. This gives the derived class
+  // opportunity to perform some cleanup.
+  virtual void GuestDestroyed() {}
+
+  // This method queries whether drag-and-drop is enabled for this particular
+  // view. By default, drag-and-drop is disabled. Derived classes can override
+  // this behavior to enable drag-and-drop.
+  virtual bool IsDragAndDropEnabled() const;
+
+  // Once a guest WebContents is ready, this initiates the association of |this|
+  // GuestView with |guest_web_contents|.
+  void Init(content::WebContents* guest_web_contents,
+            const std::string& embedder_extension_id);
+
   bool IsViewType(const char* const view_type) const {
     return !strcmp(GetViewType(), view_type);
   }
 
   base::WeakPtr<GuestViewBase> AsWeakPtr();
-
-  virtual void Attach(content::WebContents* embedder_web_contents,
-                      const base::DictionaryValue& args);
 
   content::WebContents* embedder_web_contents() const {
     return embedder_web_contents_;
@@ -87,7 +124,13 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate {
 
   // Returns the guest WebContents.
   content::WebContents* guest_web_contents() const {
-    return guest_web_contents_;
+    return web_contents();
+  }
+
+  // Returns the extra parameters associated with this GuestView passed
+  // in from JavaScript.
+  base::DictionaryValue* extra_params() const {
+    return extra_params_.get();
   }
 
   // Returns whether this guest has an associated embedder.
@@ -113,27 +156,49 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate {
   // Returns the embedder's process ID.
   int embedder_render_process_id() const { return embedder_render_process_id_; }
 
+  GuestViewBase* GetOpener() const {
+    return opener_.get();
+  }
+
+  void SetOpener(GuestViewBase* opener);
+
   // BrowserPluginGuestDelegate implementation.
-  virtual content::WebContents* GetOpener() const OVERRIDE;
-  virtual void SetOpener(content::WebContents* opener) OVERRIDE;
+  virtual void Destroy() OVERRIDE FINAL;
+  virtual void DidAttach() OVERRIDE FINAL;
+  virtual void RegisterDestructionCallback(
+      const DestructionCallback& callback) OVERRIDE FINAL;
+  virtual void WillAttach(
+      content::WebContents* embedder_web_contents,
+      const base::DictionaryValue& extra_params) OVERRIDE FINAL;
 
  protected:
-  GuestViewBase(content::WebContents* guest_web_contents,
-                const std::string& embedder_extension_id,
-                const base::WeakPtr<GuestViewBase>& opener);
+  explicit GuestViewBase(int guest_instance_id);
+
   virtual ~GuestViewBase();
 
   // Dispatches an event |event_name| to the embedder with the |event| fields.
   void DispatchEvent(Event* event);
 
  private:
+  class EmbedderWebContentsObserver;
+
   void SendQueuedEvents();
 
-  content::WebContents* const guest_web_contents_;
+  // WebContentsObserver implementation.
+  virtual void DidStopLoading(
+      content::RenderViewHost* render_view_host) OVERRIDE FINAL;
+  virtual void WebContentsDestroyed() OVERRIDE FINAL;
+
+  // WebContentsDelegate implementation.
+  virtual bool ShouldFocusPageAfterCrash() OVERRIDE FINAL;
+  virtual bool PreHandleGestureEvent(
+      content::WebContents* source,
+      const blink::WebGestureEvent& event) OVERRIDE FINAL;
+
   content::WebContents* embedder_web_contents_;
-  const std::string embedder_extension_id_;
+  std::string embedder_extension_id_;
   int embedder_render_process_id_;
-  content::BrowserContext* const browser_context_;
+  content::BrowserContext* browser_context_;
   // |guest_instance_id_| is a profile-wide unique identifier for a guest
   // WebContents.
   const int guest_instance_id_;
@@ -141,12 +206,24 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate {
   // embedder RenderViewHost for a particular <*view> instance.
   int view_instance_id_;
 
+  bool initialized_;
+
   // This is a queue of Events that are destined to be sent to the embedder once
   // the guest is attached to a particular embedder.
   std::deque<linked_ptr<Event> > pending_events_;
 
   // The opener guest view.
   base::WeakPtr<GuestViewBase> opener_;
+
+  DestructionCallback destruction_callback_;
+
+  // The extra parameters associated with this GuestView passed
+  // in from JavaScript. This will typically be the view instance ID,
+  // the API to use, and view-specific parameters. These parameters
+  // are passed along to new guests that are created from this guest.
+  scoped_ptr<base::DictionaryValue> extra_params_;
+
+  scoped_ptr<EmbedderWebContentsObserver> embedder_web_contents_observer_;
 
   // This is used to ensure pending tasks will not fire after this object is
   // destroyed.

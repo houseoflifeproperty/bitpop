@@ -52,4 +52,4 @@ class GerritStatusPush(StatusReceiverMultiService):
     verified = '+1' if (result == 0) else '-1'
     path = '/changes/%s/revisions/%s/review' % (change_number, revision)
     body = {'message': message, 'labels': {'Verified': verified}}
-    self.agent.request('POST', path, None, body)
+    self.agent.request('POST', path, body=body)

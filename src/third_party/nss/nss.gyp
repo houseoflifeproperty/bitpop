@@ -560,6 +560,7 @@
         'nss/lib/freebl/dsa.c',
         'nss/lib/freebl/ec.c',
         'nss/lib/freebl/ec.h',
+        'nss/lib/freebl/ecdecode.c',
         'nss/lib/freebl/ecl/ec2.h',
         'nss/lib/freebl/ecl/ecl-curve.h',
         'nss/lib/freebl/ecl/ecl-exp.h',
@@ -874,7 +875,6 @@
         'nss/lib/smime/cmsreclist.h',
         'nss/lib/smime/cmst.h',
         'nss/lib/smime/smime.h',
-        'nss/lib/softoken/ecdecode.c',
         'nss/lib/softoken/fipsaudt.c',
         'nss/lib/softoken/fipstest.c',
         'nss/lib/softoken/fipstokn.c',
@@ -1172,6 +1172,7 @@
                 'MP_USE_UINT_DIGIT',
                 'MP_NO_MP_WORD',
                 'USE_HW_AES',
+                'INTEL_GCM',
               ],
               'msvs_settings': {
                 'MASM': {

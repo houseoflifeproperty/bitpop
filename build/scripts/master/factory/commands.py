@@ -925,7 +925,8 @@ class FactoryCommands(object):
         doStepIf=do_step_if,
         command=cmd)
 
-  def AddBotUpdateStep(self, env, gclient_specs, revision_mapping, server=None):
+  def AddBotUpdateStep(self, env, gclient_specs, revision_mapping,
+                       server=None, blink_config=False):
     """Add a step to force checkout to some state.
 
     This is meant to replace all gclient revert/sync steps.
@@ -938,24 +939,52 @@ class FactoryCommands(object):
       if 'gyp' in env_key.lower():
         cmd.extend(['--gyp_env', '%s=%s' % (env_key, env_value)])
 
+    # HACK(hinoka): Because WebKit schedulers watch both the Chromium and Blink
+    #               repositories, the revision could be either a blink or
+    #               chromium revision. We need to differentiate them.
+    def resolve_blink_revision(build):
+      # Ahem, so when WithProperties() is resolved with getRenderingFor(),
+      # if you pass in keyword arguments to WithProperties(), it will actually
+      # call the value (it expects a lambda/function) with "build" as the
+      # only argument, where the output is then passed to the format string.
+      properties = build.getProperties()
+      if (properties.getProperty('branch') == 'trunk'
+          or properties.getProperty('parent_branch') == 'trunk'):
+        revision = properties.getProperty('parent_wk_revision')
+        if not revision:
+          revision = properties.getProperty('revision')
+        return 'src/third_party/WebKit@%s' % revision
+      else:
+        return properties.getProperty('revision')
+
     PROPERTIES = {
         'root': '%(root:-)s',
         'issue': '%(issue:-)s',
         'patchset': '%(patchset:-)s',
         'master': '%(mastername:-)s',
-        'revision': '%(revision:-)s',
+        'revision': {
+            'fmtstring': '%(resolved_revision:-)s',
+            'resolved_revision': resolve_blink_revision
+        } if blink_config else '%(revision:-)s',
         'patch_url': '%(patch_url:-)s',
         'slave_name': '%(slavename:-)s',
         'builder_name': '%(buildername:-)s',
     }
 
     for property_name, property_expr in PROPERTIES.iteritems():
-      property_value = WithProperties(property_expr)
+      if isinstance(property_expr, dict):
+        property_value = WithProperties(**property_expr)
+      else:
+        property_value = WithProperties(property_expr)
       if property_value:
         cmd.extend(['--%s' % property_name, property_value])
 
     if server:
       cmd.extend(['--rietveld_server', server])
+
+    # Add "--bot_update_clobber" flag to the command-line if the
+    # 'bot_update_clobber' property is set.
+    cmd.append(WithProperties('%s', 'bot_update_clobber:+--bot_update_clobber'))
 
     if revision_mapping:
       cmd.extend(['--revision_mapping=%s' % json.dumps(revision_mapping)])
@@ -1048,9 +1077,12 @@ class FactoryCommands(object):
   # Zip / Extract commands.
   def AddZipBuild(self, halt_on_failure=False, factory_properties=None):
     factory_properties = factory_properties or {}
+    revision = factory_properties.get('got_revision')
 
     cmd = [self._python, self._zip_tool,
            '--target', self._target]
+    if revision:
+      cmd.extend(['--build_revision', revision])
 
     if 'webkit_dir' in factory_properties:
       cmd += ['--webkit-dir', factory_properties['webkit_dir']]
@@ -1073,10 +1105,14 @@ class FactoryCommands(object):
     contains the actual build.
     """
     factory_properties = factory_properties or {}
+    revision = (factory_properties.get('parent_got_revision')
+                or factory_properties.get('got_revision'))
 
     cmd = [self._python, self._extract_tool,
            '--target', self._target,
            '--build-url', build_url]
+    if revision:
+      cmd.extend(['--build_revision', revision])
 
     if 'webkit_dir' in factory_properties:
       cmd += ['--webkit-dir', factory_properties['webkit_dir']]

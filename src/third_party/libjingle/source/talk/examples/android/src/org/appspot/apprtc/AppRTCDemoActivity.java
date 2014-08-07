@@ -31,6 +31,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Point;
 import android.media.AudioManager;
@@ -49,7 +50,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.webrtc.DataChannel;
 import org.webrtc.IceCandidate;
-import org.webrtc.Logging;
 import org.webrtc.MediaConstraints;
 import org.webrtc.MediaStream;
 import org.webrtc.PeerConnection;
@@ -60,11 +60,10 @@ import org.webrtc.StatsObserver;
 import org.webrtc.StatsReport;
 import org.webrtc.VideoCapturer;
 import org.webrtc.VideoRenderer;
-import org.webrtc.VideoRenderer.I420Frame;
+import org.webrtc.VideoRendererGui;
 import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
 
-import java.util.EnumSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -87,7 +86,9 @@ public class AppRTCDemoActivity extends Activity
   private final SDPObserver sdpObserver = new SDPObserver();
   private final GAEChannelClient.MessageHandler gaeHandler = new GAEHandler();
   private AppRTCClient appRtcClient = new AppRTCClient(this, gaeHandler, this);
-  private VideoStreamsView vsv;
+  private AppRTCGLView vsv;
+  private VideoRenderer.Callbacks localRender;
+  private VideoRenderer.Callbacks remoteRender;
   private Toast logToast;
   private final LayoutParams hudLayout =
       new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
@@ -109,23 +110,32 @@ public class AppRTCDemoActivity extends Activity
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
     Point displaySize = new Point();
-    getWindowManager().getDefaultDisplay().getSize(displaySize);
-    vsv = new VideoStreamsView(this, displaySize);
+    getWindowManager().getDefaultDisplay().getRealSize(displaySize);
+
+    vsv = new AppRTCGLView(this, displaySize);
+    VideoRendererGui.setView(vsv);
+    remoteRender = VideoRendererGui.create(0, 0, 100, 100);
+    localRender = VideoRendererGui.create(70, 5, 25, 25);
+
     vsv.setOnClickListener(new View.OnClickListener() {
         @Override public void onClick(View v) {
           toggleHUD();
         }
       });
     setContentView(vsv);
+    logAndToast("Tap the screen to toggle stats visibility");
+
     hudView = new TextView(this);
     hudView.setTextColor(Color.BLACK);
     hudView.setBackgroundColor(Color.WHITE);
     hudView.setAlpha(0.4f);
     hudView.setTextSize(TypedValue.COMPLEX_UNIT_PT, 5);
+    hudView.setVisibility(View.INVISIBLE);
     addContentView(hudView, hudLayout);
 
     if (!factoryStaticInitialized) {
-      abortUnless(PeerConnectionFactory.initializeAndroidGlobals(this),
+      abortUnless(PeerConnectionFactory.initializeAndroidGlobals(
+          this, true, true),
         "Failed to initializeAndroidGlobals");
       factoryStaticInitialized = true;
     }
@@ -188,9 +198,6 @@ public class AppRTCDemoActivity extends Activity
 
   // Update the heads-up display with information from |reports|.
   private void updateHUD(StatsReport[] reports) {
-    if (hudView.getText().length() == 0) {
-      logAndToast("Tap the screen to toggle stats visibility");
-    }
     StringBuilder builder = new StringBuilder();
     for (StatsReport report : reports) {
       if (!report.id.equals("bweforvideo")) {
@@ -225,6 +232,13 @@ public class AppRTCDemoActivity extends Activity
     }
   }
 
+  @Override
+  public void onConfigurationChanged (Configuration newConfig) {
+    Point displaySize = new Point();
+    getWindowManager().getDefaultDisplay().getSize(displaySize);
+    vsv.updateDisplaySize(displaySize);
+    super.onConfigurationChanged(newConfig);
+  }
 
   // Just for fun (and to regression-test bug 2302) make sure that DataChannels
   // can be created, queried, and disposed.
@@ -263,6 +277,10 @@ public class AppRTCDemoActivity extends Activity
                 return;
               }
               final Runnable runnableThis = this;
+              if (hudView.getVisibility() == View.INVISIBLE) {
+                vsv.postDelayed(runnableThis, 1000);
+                return;
+              }
               boolean success = finalPC.getStats(new StatsObserver() {
                   public void onComplete(final StatsReport[] reports) {
                     runOnUiThread(new Runnable() {
@@ -294,8 +312,7 @@ public class AppRTCDemoActivity extends Activity
             capturer, appRtcClient.videoConstraints());
         VideoTrack videoTrack =
             factory.createVideoTrack("ARDAMSv0", videoSource);
-        videoTrack.addRenderer(new VideoRenderer(new VideoCallbacks(
-            vsv, VideoStreamsView.Endpoint.LOCAL)));
+        videoTrack.addRenderer(new VideoRenderer(localRender));
         lMS.addTrack(videoTrack);
       }
       if (appRtcClient.audioConstraints() != null) {
@@ -458,8 +475,8 @@ public class AppRTCDemoActivity extends Activity
                 stream.videoTracks.size() <= 1,
                 "Weird-looking stream: " + stream);
             if (stream.videoTracks.size() == 1) {
-              stream.videoTracks.get(0).addRenderer(new VideoRenderer(
-                  new VideoCallbacks(vsv, VideoStreamsView.Endpoint.REMOTE)));
+              stream.videoTracks.get(0).addRenderer(
+                  new VideoRenderer(remoteRender));
             }
           }
         });
@@ -649,30 +666,4 @@ public class AppRTCDemoActivity extends Activity
     }
   }
 
-  // Implementation detail: bridge the VideoRenderer.Callbacks interface to the
-  // VideoStreamsView implementation.
-  private class VideoCallbacks implements VideoRenderer.Callbacks {
-    private final VideoStreamsView view;
-    private final VideoStreamsView.Endpoint stream;
-
-    public VideoCallbacks(
-        VideoStreamsView view, VideoStreamsView.Endpoint stream) {
-      this.view = view;
-      this.stream = stream;
-    }
-
-    @Override
-    public void setSize(final int width, final int height) {
-      view.queueEvent(new Runnable() {
-          public void run() {
-            view.setSize(stream, width, height);
-          }
-        });
-    }
-
-    @Override
-    public void renderFrame(I420Frame frame) {
-      view.queueFrame(stream, frame);
-    }
-  }
 }

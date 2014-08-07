@@ -13,10 +13,14 @@ class Oobe(web_contents.WebContents):
     super(Oobe, self).__init__(inspector_backend, backend_list)
 
   def _GaiaLoginContext(self):
-    for gaia_context in range(15):
+    max_context_id = self.EnableAllContexts()
+    logging.debug('%d contexts in Gaia page' % max_context_id)
+    for gaia_context in range(max_context_id + 1):
       try:
         if self.EvaluateJavaScriptInContext(
-            "document.getElementById('Email') != null", gaia_context):
+            "document.readyState == 'complete' && "
+            "document.getElementById('Email') != null",
+            gaia_context):
           return gaia_context
       except exceptions.EvaluateException:
         pass
@@ -24,8 +28,7 @@ class Oobe(web_contents.WebContents):
 
   def _ExecuteOobeApi(self, api, *args):
     logging.info('Invoking %s' % api)
-    util.WaitFor(lambda: self.EvaluateJavaScript(
-        "typeof Oobe !== 'undefined'"), 10)
+    self.WaitForJavaScriptExpression("typeof Oobe == 'function'", 20)
 
     if self.EvaluateJavaScript("typeof %s == 'undefined'" % api):
       raise exceptions.LoginException('%s js api missing' % api)

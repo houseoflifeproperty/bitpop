@@ -23,7 +23,7 @@
 #include "config.h"
 #include "core/html/HTMLParamElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 
@@ -37,10 +37,7 @@ inline HTMLParamElement::HTMLParamElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLParamElement> HTMLParamElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLParamElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLParamElement)
 
 const AtomicString& HTMLParamElement::name() const
 {

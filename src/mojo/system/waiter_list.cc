@@ -5,6 +5,7 @@
 #include "mojo/system/waiter_list.h"
 
 #include "base/logging.h"
+#include "mojo/system/handle_signals_state.h"
 #include "mojo/system/waiter.h"
 
 namespace mojo {
@@ -17,29 +18,28 @@ WaiterList::~WaiterList() {
   DCHECK(waiters_.empty());
 }
 
-void WaiterList::AwakeWaitersForStateChange(MojoWaitFlags satisfied_flags,
-                                            MojoWaitFlags satisfiable_flags) {
+void WaiterList::AwakeWaitersForStateChange(const HandleSignalsState& state) {
   for (WaiterInfoList::iterator it = waiters_.begin(); it != waiters_.end();
        ++it) {
-    if (it->flags & satisfied_flags)
-      it->waiter->Awake(it->wake_result);
-    else if (!(it->flags & satisfiable_flags))
-      it->waiter->Awake(MOJO_RESULT_FAILED_PRECONDITION);
+    if (state.satisfies(it->signals))
+      it->waiter->Awake(MOJO_RESULT_OK, it->context);
+    else if (!state.can_satisfy(it->signals))
+      it->waiter->Awake(MOJO_RESULT_FAILED_PRECONDITION, it->context);
   }
 }
 
 void WaiterList::CancelAllWaiters() {
   for (WaiterInfoList::iterator it = waiters_.begin(); it != waiters_.end();
        ++it) {
-    it->waiter->Awake(MOJO_RESULT_CANCELLED);
+    it->waiter->Awake(MOJO_RESULT_CANCELLED, it->context);
   }
   waiters_.clear();
 }
 
 void WaiterList::AddWaiter(Waiter* waiter,
-                           MojoWaitFlags flags,
-                           MojoResult wake_result) {
-  waiters_.push_back(WaiterInfo(waiter, flags, wake_result));
+                           MojoHandleSignals signals,
+                           uint32_t context) {
+  waiters_.push_back(WaiterInfo(waiter, signals, context));
 }
 
 void WaiterList::RemoveWaiter(Waiter* waiter) {

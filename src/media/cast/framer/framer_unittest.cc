@@ -33,39 +33,44 @@ class FramerTest : public ::testing::Test {
 };
 
 TEST_F(FramerTest, EmptyState) {
-  transport::EncodedVideoFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  bool multiple = false;
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
 }
 
 TEST_F(FramerTest, AlwaysStartWithKey) {
-  transport::EncodedVideoFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
   bool complete = false;
+  bool multiple = false;
   bool duplicate = false;
 
   // Insert non key first frame.
   complete = framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_TRUE(complete);
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   rtp_header_.frame_id = 1;
   rtp_header_.reference_frame_id = 1;
   rtp_header_.is_key_frame = true;
   complete = framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_TRUE(complete);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_TRUE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(1u, frame.frame_id);
-  EXPECT_TRUE(frame.key_frame);
+  EXPECT_EQ(1u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
 }
 
 TEST_F(FramerTest, CompleteFrame) {
-  transport::EncodedVideoFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
   bool complete = false;
+  bool multiple = false;
   bool duplicate = false;
 
   // Start with a complete key frame.
@@ -73,10 +78,12 @@ TEST_F(FramerTest, CompleteFrame) {
   complete = framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_TRUE(complete);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(0u, frame.frame_id);
-  EXPECT_TRUE(frame.key_frame);
+  EXPECT_EQ(0u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
 
   // Incomplete delta.
@@ -87,7 +94,7 @@ TEST_F(FramerTest, CompleteFrame) {
   complete = framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_FALSE(complete);
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
 
   // Complete delta - can't skip, as incomplete sequence.
   ++rtp_header_.frame_id;
@@ -96,13 +103,14 @@ TEST_F(FramerTest, CompleteFrame) {
   complete = framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_TRUE(complete);
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
 }
 
 TEST_F(FramerTest, DuplicatePackets) {
-  transport::EncodedVideoFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
   bool complete = false;
+  bool multiple = false;
   bool duplicate = false;
 
   // Start with an incomplete key frame.
@@ -113,7 +121,7 @@ TEST_F(FramerTest, DuplicatePackets) {
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_FALSE(complete);
   EXPECT_FALSE(duplicate);
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
 
   // Add same packet again in incomplete key frame.
   duplicate = false;
@@ -121,7 +129,7 @@ TEST_F(FramerTest, DuplicatePackets) {
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_FALSE(complete);
   EXPECT_TRUE(duplicate);
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
 
   // Complete key frame.
   rtp_header_.packet_id = 1;
@@ -130,8 +138,10 @@ TEST_F(FramerTest, DuplicatePackets) {
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_TRUE(complete);
   EXPECT_FALSE(duplicate);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
-  EXPECT_EQ(0u, frame.frame_id);
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(0u, frame.referenced_frame_id);
 
   // Add same packet again in complete key frame.
   duplicate = false;
@@ -139,8 +149,11 @@ TEST_F(FramerTest, DuplicatePackets) {
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_FALSE(complete);
   EXPECT_TRUE(duplicate);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(0u, frame.frame_id);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(0u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
 
   // Incomplete delta frame.
@@ -153,7 +166,7 @@ TEST_F(FramerTest, DuplicatePackets) {
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_FALSE(complete);
   EXPECT_FALSE(duplicate);
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
 
   // Add same packet again in incomplete delta frame.
   duplicate = false;
@@ -161,7 +174,7 @@ TEST_F(FramerTest, DuplicatePackets) {
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_FALSE(complete);
   EXPECT_TRUE(duplicate);
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
 
   // Complete delta frame.
   rtp_header_.packet_id = 1;
@@ -170,8 +183,11 @@ TEST_F(FramerTest, DuplicatePackets) {
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_TRUE(complete);
   EXPECT_FALSE(duplicate);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
+  EXPECT_EQ(transport::EncodedFrame::DEPENDENT, frame.dependency);
   EXPECT_EQ(1u, frame.frame_id);
+  EXPECT_EQ(0u, frame.referenced_frame_id);
+  EXPECT_FALSE(multiple);
 
   // Add same packet again in complete delta frame.
   duplicate = false;
@@ -179,14 +195,18 @@ TEST_F(FramerTest, DuplicatePackets) {
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_FALSE(complete);
   EXPECT_TRUE(duplicate);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
+  EXPECT_EQ(transport::EncodedFrame::DEPENDENT, frame.dependency);
   EXPECT_EQ(1u, frame.frame_id);
+  EXPECT_EQ(0u, frame.referenced_frame_id);
+  EXPECT_FALSE(multiple);
 }
 
 TEST_F(FramerTest, ContinuousSequence) {
-  transport::EncodedVideoFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
   bool complete = false;
+  bool multiple = false;
   bool duplicate = false;
 
   // Start with a complete key frame.
@@ -194,10 +214,12 @@ TEST_F(FramerTest, ContinuousSequence) {
   complete = framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_TRUE(complete);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(0u, frame.frame_id);
-  EXPECT_TRUE(frame.key_frame);
+  EXPECT_EQ(0u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
 
   // Complete - not continuous.
@@ -207,13 +229,14 @@ TEST_F(FramerTest, ContinuousSequence) {
   complete = framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_TRUE(complete);
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
 }
 
 TEST_F(FramerTest, Wrap) {
   // Insert key frame, frame_id = 255 (will jump to that)
-  transport::EncodedVideoFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
+  bool multiple = true;
   bool duplicate = false;
 
   // Start with a complete key frame.
@@ -222,9 +245,12 @@ TEST_F(FramerTest, Wrap) {
   rtp_header_.reference_frame_id = 255;
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(255u, frame.frame_id);
+  EXPECT_EQ(255u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
 
   // Insert wrapped delta frame - should be continuous.
@@ -232,16 +258,20 @@ TEST_F(FramerTest, Wrap) {
   rtp_header_.frame_id = 256;
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::DEPENDENT, frame.dependency);
   EXPECT_EQ(256u, frame.frame_id);
+  EXPECT_EQ(255u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
 }
 
 TEST_F(FramerTest, Reset) {
-  transport::EncodedVideoFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
   bool complete = false;
+  bool multiple = true;
   bool duplicate = false;
 
   // Start with a complete key frame.
@@ -250,12 +280,13 @@ TEST_F(FramerTest, Reset) {
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
   EXPECT_TRUE(complete);
   framer_.Reset();
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
 }
 
 TEST_F(FramerTest, RequireKeyAfterReset) {
-  transport::EncodedVideoFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
+  bool multiple = false;
   bool duplicate = false;
 
   framer_.Reset();
@@ -265,19 +296,21 @@ TEST_F(FramerTest, RequireKeyAfterReset) {
   rtp_header_.frame_id = 0;
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   rtp_header_.frame_id = 1;
   rtp_header_.reference_frame_id = 1;
   rtp_header_.is_key_frame = true;
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_TRUE(multiple);
 }
 
 TEST_F(FramerTest, BasicNonLastReferenceId) {
-  transport::EncodedVideoFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
+  bool multiple = false;
   bool duplicate = false;
 
   rtp_header_.is_key_frame = true;
@@ -285,7 +318,8 @@ TEST_F(FramerTest, BasicNonLastReferenceId) {
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
 
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
+  EXPECT_FALSE(multiple);
   framer_.ReleaseFrame(frame.frame_id);
 
   rtp_header_.is_key_frame = false;
@@ -294,14 +328,16 @@ TEST_F(FramerTest, BasicNonLastReferenceId) {
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
 
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_FALSE(next_frame);
+  EXPECT_FALSE(multiple);
 }
 
 TEST_F(FramerTest, InOrderReferenceFrameSelection) {
   // Create pattern: 0, 1, 4, 5.
-  transport::EncodedVideoFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
+  bool multiple = false;
   bool duplicate = false;
 
   rtp_header_.is_key_frame = true;
@@ -323,38 +359,51 @@ TEST_F(FramerTest, InOrderReferenceFrameSelection) {
   rtp_header_.reference_frame_id = 0;
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(0u, frame.frame_id);
+  EXPECT_EQ(0u, frame.referenced_frame_id);
+  EXPECT_FALSE(multiple);
   framer_.ReleaseFrame(frame.frame_id);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_TRUE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::DEPENDENT, frame.dependency);
   EXPECT_EQ(1u, frame.frame_id);
+  EXPECT_EQ(0u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_FALSE(next_frame);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::DEPENDENT, frame.dependency);
   EXPECT_EQ(4u, frame.frame_id);
+  EXPECT_EQ(0u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
   // Insert remaining packet of frame #2 - should no be continuous.
   rtp_header_.frame_id = 2;
   rtp_header_.packet_id = 1;
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
-  EXPECT_FALSE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_FALSE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   rtp_header_.frame_id = 5;
   rtp_header_.reference_frame_id = rtp_header_.frame_id - 1;
   rtp_header_.packet_id = 0;
   rtp_header_.max_packet_id = 0;
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
-  EXPECT_TRUE(framer_.GetEncodedVideoFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::DEPENDENT, frame.dependency);
   EXPECT_EQ(5u, frame.frame_id);
+  EXPECT_EQ(4u, frame.referenced_frame_id);
 }
 
 TEST_F(FramerTest, AudioWrap) {
   // All audio frames are marked as key frames.
-  transport::EncodedAudioFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
+  bool multiple = false;
   bool duplicate = false;
 
   rtp_header_.is_key_frame = true;
@@ -363,9 +412,12 @@ TEST_F(FramerTest, AudioWrap) {
 
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
-  EXPECT_TRUE(framer_.GetEncodedAudioFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(254u, frame.frame_id);
+  EXPECT_EQ(254u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
 
   rtp_header_.frame_id = 255;
@@ -379,21 +431,28 @@ TEST_F(FramerTest, AudioWrap) {
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
 
-  EXPECT_TRUE(framer_.GetEncodedAudioFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_TRUE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(255u, frame.frame_id);
+  EXPECT_EQ(255u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
 
-  EXPECT_TRUE(framer_.GetEncodedAudioFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(256u, frame.frame_id);
+  EXPECT_EQ(256u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
 }
 
 TEST_F(FramerTest, AudioWrapWithMissingFrame) {
   // All audio frames are marked as key frames.
-  transport::EncodedAudioFrame frame;
+  transport::EncodedFrame frame;
   bool next_frame = false;
+  bool multiple = true;
   bool duplicate = false;
 
   // Insert and get first packet.
@@ -402,9 +461,12 @@ TEST_F(FramerTest, AudioWrapWithMissingFrame) {
   rtp_header_.reference_frame_id = 253;
   framer_.InsertPacket(
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
-  EXPECT_TRUE(framer_.GetEncodedAudioFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(253u, frame.frame_id);
+  EXPECT_EQ(253u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
 
   // Insert third and fourth packets.
@@ -418,13 +480,19 @@ TEST_F(FramerTest, AudioWrapWithMissingFrame) {
       payload_.data(), payload_.size(), rtp_header_, &duplicate);
 
   // Get third and fourth packets.
-  EXPECT_TRUE(framer_.GetEncodedAudioFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_FALSE(next_frame);
+  EXPECT_TRUE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(255u, frame.frame_id);
+  EXPECT_EQ(255u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
-  EXPECT_TRUE(framer_.GetEncodedAudioFrame(&frame, &next_frame));
+  EXPECT_TRUE(framer_.GetEncodedFrame(&frame, &next_frame, &multiple));
   EXPECT_TRUE(next_frame);
+  EXPECT_FALSE(multiple);
+  EXPECT_EQ(transport::EncodedFrame::KEY, frame.dependency);
   EXPECT_EQ(256u, frame.frame_id);
+  EXPECT_EQ(256u, frame.referenced_frame_id);
   framer_.ReleaseFrame(frame.frame_id);
 }
 

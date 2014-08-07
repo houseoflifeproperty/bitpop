@@ -171,20 +171,22 @@ const base::FilePath::CharType kJumpListIconDirname[] = FPL("JumpListIcons");
 const base::FilePath::CharType kLocalStateFilename[] = FPL("Local State");
 const base::FilePath::CharType kLocalStorePoolName[] = FPL("LocalStorePool");
 const base::FilePath::CharType kLoginDataFileName[] = FPL("Login Data");
-const base::FilePath::CharType kManagedUserSettingsFilename[] =
+const base::FilePath::CharType kSupervisedUserSettingsFilename[] =
     FPL("Managed Mode Settings");
 const base::FilePath::CharType kMediaCacheDirname[] = FPL("Media Cache");
 const base::FilePath::CharType kNewTabThumbnailsFilename[] =
     FPL("Top Thumbnails");
 const base::FilePath::CharType kOBCertFilename[] = FPL("Origin Bound Certs");
 const base::FilePath::CharType kPreferencesFilename[] = FPL("Preferences");
-const base::FilePath::CharType kProtectedPreferencesFilename[] =
+const base::FilePath::CharType kProtectedPreferencesFilenameDeprecated[] =
     FPL("Protected Preferences");
 const base::FilePath::CharType kReadmeFilename[] = FPL("README");
 const base::FilePath::CharType kResetPromptMementoFilename[] =
     FPL("Reset Prompt Memento");
 const base::FilePath::CharType kSafeBrowsingBaseFilename[] =
     FPL("Safe Browsing");
+const base::FilePath::CharType kSecurePreferencesFilename[] =
+    FPL("Secure Preferences");
 const base::FilePath::CharType kServiceStateFileName[] = FPL("Service State");
 const base::FilePath::CharType kShortcutsDatabaseName[] = FPL("Shortcuts");
 const base::FilePath::CharType kSingletonCookieFilename[] =

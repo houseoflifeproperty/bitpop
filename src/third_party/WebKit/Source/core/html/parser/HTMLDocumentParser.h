@@ -65,14 +65,16 @@ class ScriptSourceCode;
 
 class PumpSession;
 
-class HTMLDocumentParser :  public ScriptableDocumentParser, HTMLScriptRunnerHost, ResourceClient {
-    WTF_MAKE_FAST_ALLOCATED;
+class HTMLDocumentParser :  public ScriptableDocumentParser, private HTMLScriptRunnerHost {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLDocumentParser);
 public:
-    static PassRefPtr<HTMLDocumentParser> create(HTMLDocument* document, bool reportErrors)
+    static PassRefPtrWillBeRawPtr<HTMLDocumentParser> create(HTMLDocument& document, bool reportErrors)
     {
-        return adoptRef(new HTMLDocumentParser(document, reportErrors));
+        return adoptRefWillBeNoop(new HTMLDocumentParser(document, reportErrors));
     }
     virtual ~HTMLDocumentParser();
+    virtual void trace(Visitor*) OVERRIDE;
 
     // Exposed for HTMLParserScheduler
     void resumeParsingAfterYield();
@@ -110,7 +112,7 @@ protected:
     virtual void append(PassRefPtr<StringImpl>) OVERRIDE;
     virtual void finish() OVERRIDE FINAL;
 
-    HTMLDocumentParser(HTMLDocument*, bool reportErrors);
+    HTMLDocumentParser(HTMLDocument&, bool reportErrors);
     HTMLDocumentParser(DocumentFragment*, Element* contextElement, ParserContentPolicy);
 
     HTMLTreeBuilder* treeBuilder() const { return m_treeBuilder.get(); }
@@ -118,9 +120,9 @@ protected:
     void forcePlaintextForTextDocument();
 
 private:
-    static PassRefPtr<HTMLDocumentParser> create(DocumentFragment* fragment, Element* contextElement, ParserContentPolicy parserContentPolicy)
+    static PassRefPtrWillBeRawPtr<HTMLDocumentParser> create(DocumentFragment* fragment, Element* contextElement, ParserContentPolicy parserContentPolicy)
     {
-        return adoptRef(new HTMLDocumentParser(fragment, contextElement, parserContentPolicy));
+        return adoptRefWillBeNoop(new HTMLDocumentParser(fragment, contextElement, parserContentPolicy));
     }
 
     // DocumentParser
@@ -135,14 +137,10 @@ private:
     virtual void executeScriptsWaitingForResources() OVERRIDE FINAL;
 
     // HTMLScriptRunnerHost
-    virtual void watchForLoad(Resource*) OVERRIDE FINAL;
-    virtual void stopWatchingForLoad(Resource*) OVERRIDE FINAL;
+    virtual void notifyScriptLoaded(Resource*) OVERRIDE FINAL;
     virtual HTMLInputStream& inputStream() OVERRIDE FINAL { return m_input; }
     virtual bool hasPreloadScanner() const OVERRIDE FINAL { return m_preloadScanner.get() && !shouldUseThreading(); }
     virtual void appendCurrentInputStreamToPreloadScannerAndScan() OVERRIDE FINAL;
-
-    // ResourceClient
-    virtual void notifyFinished(Resource*) OVERRIDE FINAL;
 
     void startBackgroundParser();
     void stopBackgroundParser();
@@ -185,8 +183,8 @@ private:
 
     OwnPtr<HTMLToken> m_token;
     OwnPtr<HTMLTokenizer> m_tokenizer;
-    OwnPtr<HTMLScriptRunner> m_scriptRunner;
-    OwnPtr<HTMLTreeBuilder> m_treeBuilder;
+    OwnPtrWillBeMember<HTMLScriptRunner> m_scriptRunner;
+    OwnPtrWillBeMember<HTMLTreeBuilder> m_treeBuilder;
     OwnPtr<HTMLPreloadScanner> m_preloadScanner;
     OwnPtr<HTMLPreloadScanner> m_insertionPreloadScanner;
     OwnPtr<HTMLParserScheduler> m_parserScheduler;

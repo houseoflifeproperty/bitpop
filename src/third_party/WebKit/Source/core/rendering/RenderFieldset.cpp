@@ -24,8 +24,8 @@
 #include "config.h"
 #include "core/rendering/RenderFieldset.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLLegendElement.h"
 #include "core/rendering/PaintInfo.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
@@ -66,7 +66,7 @@ RenderObject* RenderFieldset::layoutSpecialExcludedChild(bool relayoutChildren, 
     RenderBox* legend = findLegend();
     if (legend) {
         if (relayoutChildren)
-            legend->setNeedsLayout();
+            legend->setNeedsLayoutAndFullPaintInvalidation();
         legend->layoutIfNeeded();
 
         LayoutUnit logicalLeft;

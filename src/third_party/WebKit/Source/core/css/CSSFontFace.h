@@ -65,12 +65,9 @@ public:
 
     bool isValid() const { return !m_sources.isEmpty(); }
 
-    // FIXME: Should not be exposed (used by tentative CORS fallback code).
-    CSSFontSelector* fontSelector() const;
+    void addSource(PassOwnPtrWillBeRawPtr<CSSFontFaceSource>);
 
-    void addSource(PassOwnPtr<CSSFontFaceSource>);
-
-    void beginLoadIfNeeded(CSSFontFaceSource*, CSSFontSelector* = 0);
+    void didBeginLoad();
     void fontLoaded(RemoteFontFaceSource*);
     void fontLoadWaitLimitExceeded(RemoteFontFaceSource*);
 
@@ -108,7 +105,8 @@ public:
 
     FontFace::LoadStatus loadStatus() const { return m_fontFace->loadStatus(); }
     bool maybeScheduleFontLoad(const FontDescription&, UChar32);
-    void load(const FontDescription&, CSSFontSelector* = 0);
+    void load();
+    void load(const FontDescription&);
 
     bool hadBlankText() { return isValid() && m_sources.first()->hadBlankText(); }
 
@@ -119,7 +117,7 @@ private:
 
     UnicodeRangeSet m_ranges;
     RawPtrWillBeMember<CSSSegmentedFontFace> m_segmentedFontFace;
-    Deque<OwnPtr<CSSFontFaceSource> > m_sources;
+    WillBeHeapDeque<OwnPtrWillBeMember<CSSFontFaceSource> > m_sources;
     RawPtrWillBeMember<FontFace> m_fontFace;
 };
 

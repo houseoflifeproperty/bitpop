@@ -17,6 +17,8 @@
   },
   'rules': [
     {
+      # GN version: //build/json_schema.gni
+      #             (json_schema_compile template)
       'rule_name': 'genapi',
       'msvs_external_rule': 1,
       'extension': 'json',
@@ -39,8 +41,8 @@
         # '<@(schema_files)',
       ],
       'outputs': [
-        '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/<(RULE_INPUT_ROOT).cc',
-        '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/<(RULE_INPUT_ROOT).h',
+        '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).cc',
+        '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).h',
       ],
       'action': [
         'python',
@@ -78,8 +80,8 @@
         # '<@(schema_files)',
       ],
       'outputs': [
-        '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/<(RULE_INPUT_ROOT).cc',
-        '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/<(RULE_INPUT_ROOT).h',
+        '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).cc',
+        '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).h',
       ],
       'action': [
         'python',

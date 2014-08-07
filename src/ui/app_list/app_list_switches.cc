@@ -9,17 +9,20 @@
 namespace app_list {
 namespace switches {
 
+// If set, the app info context menu item is not available in the app list UI.
+const char kDisableAppInfo[] = "disable-app-list-app-info";
+
 // Disables syncing of the app list independent of extensions.
 const char kDisableSyncAppList[] = "disable-sync-app-list";
 
 // If set, the voice search is disabled in app list UI.
 const char kDisableVoiceSearch[] = "disable-app-list-voice-search";
 
-// If set, the app info context menu item is available in the app list UI.
-const char kEnableAppInfo[] = "enable-app-list-app-info";
-
 // If set, the app list will be centered and wide instead of tall.
 const char kEnableCenteredAppList[] = "enable-centered-app-list";
+
+// If set, Drive apps of the user shows side-by-side with Chrome apps.
+const char kEnableDriveAppsInAppList[] = "enable-drive-apps-in-app-list";
 
 // If set, the experimental app list will be used. Implies
 // --enable-centered-app-list.
@@ -37,8 +40,8 @@ bool IsAppListSyncEnabled() {
 }
 
 bool IsFolderUIEnabled() {
-#if defined(OS_MACOSX)
-  return false;  // Folder UI not implemented for OSX
+#if !defined(TOOLKIT_VIEWS)
+  return false;  // Folder UI not implemented for Cocoa.
 #endif
   // Folder UI is available only when AppList sync is enabled, and should
   // not be disabled separately.
@@ -55,7 +58,11 @@ bool IsVoiceSearchEnabled() {
 }
 
 bool IsAppInfoEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(kEnableAppInfo);
+#if defined(TOOLKIT_VIEWS)
+  return !CommandLine::ForCurrentProcess()->HasSwitch(kDisableAppInfo);
+#else
+  return false;
+#endif
 }
 
 bool IsExperimentalAppListEnabled() {
@@ -66,6 +73,10 @@ bool IsExperimentalAppListEnabled() {
 bool IsCenteredAppListEnabled() {
   return CommandLine::ForCurrentProcess()->HasSwitch(kEnableCenteredAppList) ||
          IsExperimentalAppListEnabled();
+}
+
+bool IsDriveAppsInAppListEnabled() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(kEnableDriveAppsInAppList);
 }
 
 }  // namespace switches

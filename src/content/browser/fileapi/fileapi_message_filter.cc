@@ -11,7 +11,6 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread.h"
@@ -145,11 +144,9 @@ base::TaskRunner* FileAPIMessageFilter::OverrideTaskRunnerForMessage(
   return NULL;
 }
 
-bool FileAPIMessageFilter::OnMessageReceived(
-    const IPC::Message& message, bool* message_was_ok) {
-  *message_was_ok = true;
+bool FileAPIMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(FileAPIMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(FileAPIMessageFilter, message)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_OpenFileSystem, OnOpenFileSystem)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_ResolveURL, OnResolveURL)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_DeleteFileSystem, OnDeleteFileSystem)
@@ -193,7 +190,7 @@ bool FileAPIMessageFilter::OnMessageReceived(
     IPC_MESSAGE_HANDLER(StreamHostMsg_Clone, OnCloneStream)
     IPC_MESSAGE_HANDLER(StreamHostMsg_Remove, OnRemoveStream)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 

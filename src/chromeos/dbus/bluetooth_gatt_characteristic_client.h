@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "chromeos/chromeos_export.h"
 #include "chromeos/dbus/dbus_client.h"
 #include "dbus/object_path.h"
@@ -28,9 +29,9 @@ class CHROMEOS_EXPORT BluetoothGattCharacteristicClient : public DBusClient {
     // [read-only]
     dbus::Property<dbus::ObjectPath> service;
 
-    // Characteristic value read from the remote Bluetooth device. Setting the
-    // value sends a write request to the remote device. [read-write]
-    dbus::Property<std::vector<uint8> > value;
+    // Whether or not this characteristic is currently sending ValueUpdated
+    // signals.
+    dbus::Property<bool> notifying;
 
     // List of flags representing the GATT "Characteristic Properties bit field"
     // and properties read from the GATT "Characteristic Extended Properties"
@@ -62,7 +63,19 @@ class CHROMEOS_EXPORT BluetoothGattCharacteristicClient : public DBusClient {
     virtual void GattCharacteristicPropertyChanged(
         const dbus::ObjectPath& object_path,
         const std::string& property_name) {}
+
+    // Called when a "ValueUpdated" signal is received from the remote GATT
+    // characteristic with object path |object_path| with characteristic value
+    // |value|.
+    virtual void GattCharacteristicValueUpdated(
+        const dbus::ObjectPath& object_path,
+        const std::vector<uint8>& value) {}
   };
+
+  // Callbacks used to report the result of asynchronous methods.
+  typedef base::Callback<void(const std::string& error_name,
+                              const std::string& error_message)> ErrorCallback;
+  typedef base::Callback<void(const std::vector<uint8>& value)> ValueCallback;
 
   virtual ~BluetoothGattCharacteristicClient();
 
@@ -79,8 +92,41 @@ class CHROMEOS_EXPORT BluetoothGattCharacteristicClient : public DBusClient {
   // |object_path|. Values should be copied if needed.
   virtual Properties* GetProperties(const dbus::ObjectPath& object_path) = 0;
 
+  // Issues a request to read the value of GATT characteristic with object path
+  // |object_path| and returns the value in |callback| on success. On error,
+  // invokes |error_callback|.
+  virtual void ReadValue(const dbus::ObjectPath& object_path,
+                         const ValueCallback& callback,
+                         const ErrorCallback& error_callback) = 0;
+
+  // Issues a request to write the value of GATT characteristic with object path
+  // |object_path| with value |value|. Invokes |callback| on success and
+  // |error_callback| on failure.
+  virtual void WriteValue(const dbus::ObjectPath& object_path,
+                          const std::vector<uint8>& value,
+                          const base::Closure& callback,
+                          const ErrorCallback& error_callback) = 0;
+
+  // Starts a notification session from this characteristic with object path
+  // |object_path| if it supports value notifications or indications. Invokes
+  // |callback| on success and |error_callback| on failure.
+  virtual void StartNotify(const dbus::ObjectPath& object_path,
+                           const base::Closure& callback,
+                           const ErrorCallback& error_callback) = 0;
+
+  // Cancels any previous StartNotify transaction for characteristic with
+  // object path |object_path|. Invokes |callback| on success and
+  // |error_callback| on failure.
+  virtual void StopNotify(const dbus::ObjectPath& object_path,
+                          const base::Closure& callback,
+                          const ErrorCallback& error_callback) = 0;
+
   // Creates the instance.
   static BluetoothGattCharacteristicClient* Create();
+
+  // Constants used to indicate exceptional error conditions.
+  static const char kNoResponseError[];
+  static const char kUnknownCharacteristicError[];
 
  protected:
   BluetoothGattCharacteristicClient();

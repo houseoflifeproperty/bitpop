@@ -5,12 +5,12 @@
 #ifndef V8_PREPARSER_H
 #define V8_PREPARSER_H
 
-#include "func-name-inferrer.h"
-#include "hashmap.h"
-#include "scopes.h"
-#include "token.h"
-#include "scanner.h"
-#include "v8.h"
+#include "src/func-name-inferrer.h"
+#include "src/hashmap.h"
+#include "src/scopes.h"
+#include "src/token.h"
+#include "src/scanner.h"
+#include "src/v8.h"
 
 namespace v8 {
 namespace internal {
@@ -348,16 +348,15 @@ class ParserBase : public Traits {
   bool is_generator() const { return function_state_->is_generator(); }
 
   // Report syntax errors.
-  void ReportMessage(const char* message, Vector<const char*> args,
+  void ReportMessage(const char* message, const char* arg = NULL,
                      bool is_reference_error = false) {
     Scanner::Location source_location = scanner()->location();
-    Traits::ReportMessageAt(source_location, message, args, is_reference_error);
+    Traits::ReportMessageAt(source_location, message, arg, is_reference_error);
   }
 
   void ReportMessageAt(Scanner::Location location, const char* message,
                        bool is_reference_error = false) {
-    Traits::ReportMessageAt(location, message, Vector<const char*>::empty(),
-                            is_reference_error);
+    Traits::ReportMessageAt(location, message, NULL, is_reference_error);
   }
 
   void ReportUnexpectedToken(Token::Value token);
@@ -968,16 +967,12 @@ class PreParserTraits {
   // Reporting errors.
   void ReportMessageAt(Scanner::Location location,
                        const char* message,
-                       Vector<const char*> args,
-                       bool is_reference_error = false);
-  void ReportMessageAt(Scanner::Location location,
-                       const char* type,
-                       const char* name_opt,
+                       const char* arg = NULL,
                        bool is_reference_error = false);
   void ReportMessageAt(int start_pos,
                        int end_pos,
-                       const char* type,
-                       const char* name_opt,
+                       const char* message,
+                       const char* arg = NULL,
                        bool is_reference_error = false);
 
   // "null" return type creators.
@@ -1049,6 +1044,7 @@ class PreParserTraits {
       bool is_generator,
       int function_token_position,
       FunctionLiteral::FunctionType type,
+      FunctionLiteral::ArityRestriction arity_restriction,
       bool* ok);
 
  private:
@@ -1178,6 +1174,7 @@ class PreParser : public ParserBase<PreParserTraits> {
       bool is_generator,
       int function_token_pos,
       FunctionLiteral::FunctionType function_type,
+      FunctionLiteral::ArityRestriction arity_restriction,
       bool* ok);
   void ParseLazyFunctionLiteralBody(bool* ok);
 
@@ -1239,8 +1236,7 @@ void ParserBase<Traits>::ReportUnexpectedToken(Token::Value token) {
     default:
       const char* name = Token::String(token);
       ASSERT(name != NULL);
-      Traits::ReportMessageAt(
-          source_location, "unexpected_token", Vector<const char*>(&name, 1));
+      Traits::ReportMessageAt(source_location, "unexpected_token", name);
   }
 }
 
@@ -1254,7 +1250,7 @@ typename ParserBase<Traits>::IdentifierT ParserBase<Traits>::ParseIdentifier(
     IdentifierT name = this->GetSymbol(scanner());
     if (allow_eval_or_arguments == kDontAllowEvalOrArguments &&
         strict_mode() == STRICT && this->IsEvalOrArguments(name)) {
-      ReportMessageAt(scanner()->location(), "strict_eval_arguments");
+      ReportMessage("strict_eval_arguments");
       *ok = false;
     }
     return name;
@@ -1321,7 +1317,7 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseRegExpLiteral(
   int pos = peek_position();
   if (!scanner()->ScanRegExpPattern(seen_equal)) {
     Next();
-    ReportMessage("unterminated_regexp", Vector<const char*>::empty());
+    ReportMessage("unterminated_regexp");
     *ok = false;
     return Traits::EmptyExpression();
   }
@@ -1331,7 +1327,7 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseRegExpLiteral(
   IdentifierT js_pattern = this->NextLiteralString(scanner(), TENURED);
   if (!scanner()->ScanRegExpFlags()) {
     Next();
-    ReportMessageAt(scanner()->location(), "invalid_regexp_flags");
+    ReportMessage("invalid_regexp_flags");
     *ok = false;
     return Traits::EmptyExpression();
   }
@@ -1558,9 +1554,9 @@ typename ParserBase<Traits>::ExpressionT ParserBase<Traits>::ParseObjectLiteral(
                   false,  // reserved words are allowed here
                   false,  // not a generator
                   RelocInfo::kNoPosition, FunctionLiteral::ANONYMOUS_EXPRESSION,
+                  is_getter ? FunctionLiteral::GETTER_ARITY
+                            : FunctionLiteral::SETTER_ARITY,
                   CHECK_OK);
-          // Allow any number of parameters for compatibilty with JSC.
-          // Specification only allows zero parameters for get and one for set.
           typename Traits::Type::ObjectLiteralProperty property =
               factory()->NewObjectLiteralProperty(is_getter, value, next_pos);
           if (this->IsBoilerplateProperty(property)) {
@@ -1674,7 +1670,7 @@ typename Traits::Type::ExpressionList ParserBase<Traits>::ParseArguments(
         true, CHECK_OK_CUSTOM(NullExpressionList));
     result->Add(argument, zone_);
     if (result->length() > Code::kMaxArguments) {
-      ReportMessageAt(scanner()->location(), "too_many_arguments");
+      ReportMessage("too_many_arguments");
       *ok = false;
       return this->NullExpressionList();
     }
@@ -1864,7 +1860,7 @@ ParserBase<Traits>::ParseUnaryExpression(bool* ok) {
     // "delete identifier" is a syntax error in strict mode.
     if (op == Token::DELETE && strict_mode() == STRICT &&
         this->IsIdentifier(expression)) {
-      ReportMessage("strict_delete", Vector<const char*>::empty());
+      ReportMessage("strict_delete");
       *ok = false;
       return this->EmptyExpression();
     }
@@ -2062,6 +2058,7 @@ ParserBase<Traits>::ParseMemberExpression(bool* ok) {
                                         is_generator,
                                         function_token_position,
                                         function_type,
+                                        FunctionLiteral::NORMAL_ARITY,
                                         CHECK_OK);
   } else {
     result = ParsePrimaryExpression(CHECK_OK);
@@ -2157,17 +2154,14 @@ void ParserBase<Traits>::ObjectLiteralChecker::CheckProperty(
     if (IsDataDataConflict(old_type, type)) {
       // Both are data properties.
       if (strict_mode_ == SLOPPY) return;
-      parser()->ReportMessageAt(scanner()->location(),
-                               "strict_duplicate_property");
+      parser()->ReportMessage("strict_duplicate_property");
     } else if (IsDataAccessorConflict(old_type, type)) {
       // Both a data and an accessor property with the same name.
-      parser()->ReportMessageAt(scanner()->location(),
-                               "accessor_data_property");
+      parser()->ReportMessage("accessor_data_property");
     } else {
       ASSERT(IsAccessorAccessorConflict(old_type, type));
       // Both accessors of the same type.
-      parser()->ReportMessageAt(scanner()->location(),
-                               "accessor_get_set");
+      parser()->ReportMessage("accessor_get_set");
     }
     *ok = false;
   }

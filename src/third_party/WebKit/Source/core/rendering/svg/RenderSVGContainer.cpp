@@ -29,6 +29,7 @@
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGRenderingContext.h"
 #include "core/rendering/svg/SVGResources.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
@@ -53,7 +54,7 @@ void RenderSVGContainer::layout()
     ASSERT(needsLayout());
 
     // RenderSVGRoot disables layoutState for the SVG rendering tree.
-    ASSERT(!view()->layoutStateEnabled());
+    ASSERT(!view()->layoutStateCachedOffsetsEnabled());
 
     LayoutRepainter repainter(*this, SVGRenderSupport::checkForSVGRepaintDuringLayout(this) || selfWillPaint());
 
@@ -116,7 +117,7 @@ void RenderSVGContainer::paint(PaintInfo& paintInfo, const LayoutPoint&)
     if (!firstChild() && !selfWillPaint())
         return;
 
-    FloatRect repaintRect = repaintRectInLocalCoordinates();
+    FloatRect repaintRect = paintInvalidationRectInLocalCoordinates();
     if (!SVGRenderSupport::paintInfoIntersectsRepaintRect(repaintRect, localToParentTransform(), paintInfo))
         return;
 
@@ -137,7 +138,7 @@ void RenderSVGContainer::paint(PaintInfo& paintInfo, const LayoutPoint&)
             continueRendering = renderingContext.isRenderingPrepared();
 
             if (continueRendering && document().settings()->containerCullingEnabled())
-                cullSaver.cull(repaintRectInLocalCoordinates());
+                cullSaver.cull(paintInvalidationRectInLocalCoordinates());
         }
 
         if (continueRendering) {
@@ -148,11 +149,11 @@ void RenderSVGContainer::paint(PaintInfo& paintInfo, const LayoutPoint&)
     }
 
     // FIXME: This really should be drawn from local coordinates, but currently we hack it
-    // to avoid our clip killing our outline rect.  Thus we translate our
+    // to avoid our clip killing our outline rect. Thus we translate our
     // outline rect into parent coords before drawing.
     // FIXME: This means our focus ring won't share our rotation like it should.
     // We should instead disable our clip during PaintPhaseOutline
-    if ((paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) && style()->outlineWidth() && style()->visibility() == VISIBLE) {
+    if (paintInfo.phase == PaintPhaseForeground && style()->outlineWidth() && style()->visibility() == VISIBLE) {
         IntRect paintRectInParent = enclosingIntRect(localToParentTransform().mapRect(repaintRect));
         paintOutline(paintInfo, paintRectInParent);
     }
@@ -161,7 +162,7 @@ void RenderSVGContainer::paint(PaintInfo& paintInfo, const LayoutPoint&)
 // addFocusRingRects is called from paintOutline and needs to be in the same coordinates as the paintOuline call
 void RenderSVGContainer::addFocusRingRects(Vector<IntRect>& rects, const LayoutPoint&, const RenderLayerModelObject*)
 {
-    IntRect paintRectInParent = enclosingIntRect(localToParentTransform().mapRect(repaintRectInLocalCoordinates()));
+    IntRect paintRectInParent = enclosingIntRect(localToParentTransform().mapRect(paintInvalidationRectInLocalCoordinates()));
     if (!paintRectInParent.isEmpty())
         rects.append(paintRectInParent);
 }

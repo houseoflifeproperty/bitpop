@@ -17,6 +17,7 @@
 #include "components/password_manager/core/browser/password_generation_manager.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/password_manager/core/browser/stub_password_manager_client.h"
+#include "components/password_manager/core/browser/stub_password_manager_driver.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -27,7 +28,7 @@ namespace password_manager {
 
 namespace {
 
-class TestPasswordManagerDriver : public PasswordManagerDriver {
+class TestPasswordManagerDriver : public StubPasswordManagerDriver {
  public:
   TestPasswordManagerDriver(PasswordManagerClient* client)
       : password_manager_(client),
@@ -37,9 +38,6 @@ class TestPasswordManagerDriver : public PasswordManagerDriver {
   virtual ~TestPasswordManagerDriver() {}
 
   // PasswordManagerDriver implementation.
-  virtual void FillPasswordForm(const autofill::PasswordFormFillData& form_data)
-      OVERRIDE {}
-  virtual bool DidLastPageLoadEncounterSSLErrors() OVERRIDE { return false; }
   virtual bool IsOffTheRecord() OVERRIDE { return is_off_the_record_; }
   virtual PasswordGenerationManager* GetPasswordGenerationManager() OVERRIDE {
     return &password_generation_manager_;
@@ -47,22 +45,13 @@ class TestPasswordManagerDriver : public PasswordManagerDriver {
   virtual PasswordManager* GetPasswordManager() OVERRIDE {
     return &password_manager_;
   }
-  virtual autofill::AutofillManager* GetAutofillManager() OVERRIDE {
-    return NULL;
-  }
   virtual PasswordAutofillManager* GetPasswordAutofillManager() OVERRIDE {
     return &password_autofill_manager_;
   }
-  virtual void AllowPasswordGenerationForForm(autofill::PasswordForm* form)
-      OVERRIDE {}
   virtual void AccountCreationFormsFound(
       const std::vector<autofill::FormData>& forms) OVERRIDE {
     found_account_creation_forms_.insert(
         found_account_creation_forms_.begin(), forms.begin(), forms.end());
-  }
-  virtual void AcceptPasswordAutofillSuggestion(
-      const base::string16& username,
-      const base::string16& password) OVERRIDE {
   }
 
   const std::vector<autofill::FormData>& GetFoundAccountCreationForms() {

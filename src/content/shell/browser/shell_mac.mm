@@ -8,6 +8,7 @@
 
 #include "base/logging.h"
 #import "base/mac/scoped_nsobject.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/sys_string_conversions.h"
 #include "content/public/browser/native_web_keyboard_event.h"
@@ -15,16 +16,6 @@
 #include "content/shell/app/resource.h"
 #import "ui/base/cocoa/underlay_opengl_hosting_window.h"
 #include "url/gurl.h"
-
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-enum {
-  NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7,
-  NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
-};
-
-#endif // MAC_OS_X_VERSION_10_7
 
 // Receives notification that the window is closing so that it can start the
 // tear-down process. Is responsible for deleting itself when done.
@@ -287,6 +278,16 @@ bool Shell::PlatformHandleContextMenu(
     const content::ContextMenuParams& params) {
   return false;
 }
+
+#if defined(TOOLKIT_VIEWS)
+void Shell::PlatformWebContentsFocused(WebContents* contents) {
+  if (headless_)
+    return;
+
+  NOTIMPLEMENTED();
+  return;
+}
+#endif
 
 void Shell::Close() {
   if (headless_)

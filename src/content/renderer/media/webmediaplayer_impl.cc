@@ -24,6 +24,7 @@
 #include "cc/layers/video_layer.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_frame.h"
+#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/media/buffered_data_source.h"
 #include "content/renderer/media/crypto/key_systems.h"
 #include "content/renderer/media/render_media_log.h"
@@ -71,7 +72,6 @@
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
-#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 #if defined(ENABLE_PEPPER_CDMS)
 #include "content/renderer/media/crypto/pepper_cdm_wrapper_impl.h"
@@ -167,9 +167,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       accelerated_compositing_reported_(false),
       incremented_externally_allocated_memory_(false),
       gpu_factories_(RenderThreadImpl::current()->GetGpuFactories()),
-      is_local_source_(false),
       supports_save_(true),
-      starting_(false),
       chunk_demuxer_(NULL),
       // Threaded compositing isn't enabled universally yet.
       compositor_task_runner_(
@@ -244,42 +242,10 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
   }
 }
 
-namespace {
-
-// Helper enum for reporting scheme histograms.
-enum URLSchemeForHistogram {
-  kUnknownURLScheme,
-  kMissingURLScheme,
-  kHttpURLScheme,
-  kHttpsURLScheme,
-  kFtpURLScheme,
-  kChromeExtensionURLScheme,
-  kJavascriptURLScheme,
-  kFileURLScheme,
-  kBlobURLScheme,
-  kDataURLScheme,
-  kFileSystemScheme,
-  kMaxURLScheme = kFileSystemScheme  // Must be equal to highest enum value.
-};
-
-URLSchemeForHistogram URLScheme(const GURL& url) {
-  if (!url.has_scheme()) return kMissingURLScheme;
-  if (url.SchemeIs("http")) return kHttpURLScheme;
-  if (url.SchemeIs("https")) return kHttpsURLScheme;
-  if (url.SchemeIs("ftp")) return kFtpURLScheme;
-  if (url.SchemeIs("chrome-extension")) return kChromeExtensionURLScheme;
-  if (url.SchemeIs("javascript")) return kJavascriptURLScheme;
-  if (url.SchemeIs("file")) return kFileURLScheme;
-  if (url.SchemeIs("blob")) return kBlobURLScheme;
-  if (url.SchemeIs("data")) return kDataURLScheme;
-  if (url.SchemeIs("filesystem")) return kFileSystemScheme;
-  return kUnknownURLScheme;
-}
-
-}  // namespace
-
 void WebMediaPlayerImpl::load(LoadType load_type, const blink::WebURL& url,
                               CORSMode cors_mode) {
+  DVLOG(1) << __FUNCTION__ << "(" << load_type << ", " << url << ", "
+           << cors_mode << ")";
   if (!defer_load_cb_.is_null()) {
     defer_load_cb_.Run(base::Bind(
         &WebMediaPlayerImpl::DoLoad, AsWeakPtr(), load_type, url, cors_mode));
@@ -294,7 +260,7 @@ void WebMediaPlayerImpl::DoLoad(LoadType load_type,
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   GURL gurl(url);
-  UMA_HISTOGRAM_ENUMERATION("Media.URLScheme", URLScheme(gurl), kMaxURLScheme);
+  ReportMediaSchemeUma(gurl);
 
   // Set subresource URL for crash reporting.
   base::debug::SetCrashKeyValue("subresource_url", gurl.spec());
@@ -318,21 +284,19 @@ void WebMediaPlayerImpl::DoLoad(LoadType load_type,
 
   // Otherwise it's a regular request which requires resolving the URL first.
   data_source_.reset(new BufferedDataSource(
+      url,
+      static_cast<BufferedResourceLoader::CORSMode>(cors_mode),
       main_loop_,
       frame_,
       media_log_.get(),
       &buffered_data_source_host_,
       base::Bind(&WebMediaPlayerImpl::NotifyDownloading, AsWeakPtr())));
   data_source_->Initialize(
-      url, static_cast<BufferedResourceLoader::CORSMode>(cors_mode),
-      base::Bind(
-          &WebMediaPlayerImpl::DataSourceInitialized,
-          AsWeakPtr(), gurl));
-
-  is_local_source_ = !gurl.SchemeIsHTTPOrHTTPS();
+      base::Bind(&WebMediaPlayerImpl::DataSourceInitialized, AsWeakPtr()));
 }
 
 void WebMediaPlayerImpl::play() {
+  DVLOG(1) << __FUNCTION__;
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   paused_ = false;
@@ -347,6 +311,7 @@ void WebMediaPlayerImpl::play() {
 }
 
 void WebMediaPlayerImpl::pause() {
+  DVLOG(1) << __FUNCTION__;
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   paused_ = true;
@@ -367,6 +332,7 @@ bool WebMediaPlayerImpl::supportsSave() const {
 }
 
 void WebMediaPlayerImpl::seek(double seconds) {
+  DVLOG(1) << __FUNCTION__ << "(" << seconds << ")";
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   if (ready_state_ > WebMediaPlayer::ReadyStateHaveMetadata)
@@ -374,7 +340,7 @@ void WebMediaPlayerImpl::seek(double seconds) {
 
   base::TimeDelta seek_time = ConvertSecondsToTimestamp(seconds);
 
-  if (starting_ || seeking_) {
+  if (seeking_) {
     pending_seek_ = true;
     pending_seek_seconds_ = seconds;
     if (chunk_demuxer_)
@@ -400,6 +366,7 @@ void WebMediaPlayerImpl::seek(double seconds) {
 }
 
 void WebMediaPlayerImpl::setRate(double rate) {
+  DVLOG(1) << __FUNCTION__ << "(" << rate << ")";
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   // TODO(kylep): Remove when support for negatives is added. Also, modify the
@@ -424,6 +391,7 @@ void WebMediaPlayerImpl::setRate(double rate) {
 }
 
 void WebMediaPlayerImpl::setVolume(double volume) {
+  DVLOG(1) << __FUNCTION__ << "(" << volume << ")";
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   pipeline_.SetVolume(volume);
@@ -439,6 +407,7 @@ COMPILE_ASSERT_MATCHING_ENUM(PreloadAuto, AUTO);
 #undef COMPILE_ASSERT_MATCHING_ENUM
 
 void WebMediaPlayerImpl::setPreload(WebMediaPlayer::Preload preload) {
+  DVLOG(1) << __FUNCTION__ << "(" << preload << ")";
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   if (data_source_)
@@ -511,16 +480,13 @@ WebMediaPlayer::ReadyState WebMediaPlayerImpl::readyState() const {
   return ready_state_;
 }
 
-const blink::WebTimeRanges& WebMediaPlayerImpl::buffered() {
+blink::WebTimeRanges WebMediaPlayerImpl::buffered() const {
   DCHECK(main_loop_->BelongsToCurrentThread());
   media::Ranges<base::TimeDelta> buffered_time_ranges =
       pipeline_.GetBufferedTimeRanges();
   buffered_data_source_host_.AddBufferedTimeRanges(
       &buffered_time_ranges, pipeline_.GetMediaDuration());
-  blink::WebTimeRanges buffered_web_time_ranges(
-      ConvertToWebTimeRanges(buffered_time_ranges));
-  buffered_web_time_ranges_.swap(buffered_web_time_ranges);
-  return buffered_web_time_ranges_;
+  return ConvertToWebTimeRanges(buffered_time_ranges);
 }
 
 double WebMediaPlayerImpl::maxTimeSeekable() const {
@@ -537,7 +503,7 @@ double WebMediaPlayerImpl::maxTimeSeekable() const {
   return duration();
 }
 
-bool WebMediaPlayerImpl::didLoadingProgress() const {
+bool WebMediaPlayerImpl::didLoadingProgress() {
   DCHECK(main_loop_->BelongsToCurrentThread());
   bool pipeline_progress = pipeline_.DidLoadingProgress();
   bool data_progress = buffered_data_source_host_.DidLoadingProgress();
@@ -795,6 +761,8 @@ WebMediaPlayerImpl::GenerateKeyRequestInternal(const std::string& key_system,
           // Create() must be called synchronously as |frame_| may not be
           // valid afterwards.
           base::Bind(&PepperCdmWrapperImpl::Create, frame_),
+#elif defined(ENABLE_BROWSER_CDMS)
+#error Browser side CDM in WMPI for prefixed EME API not supported yet.
 #endif
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnKeyAdded),
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnKeyError),
@@ -931,8 +899,8 @@ void WebMediaPlayerImpl::InvalidateOnMainThread() {
 }
 
 void WebMediaPlayerImpl::OnPipelineSeek(PipelineStatus status) {
+  DVLOG(1) << __FUNCTION__ << "(" << status << ")";
   DCHECK(main_loop_->BelongsToCurrentThread());
-  starting_ = false;
   seeking_ = false;
   if (pending_seek_) {
     pending_seek_ = false;
@@ -953,6 +921,7 @@ void WebMediaPlayerImpl::OnPipelineSeek(PipelineStatus status) {
 }
 
 void WebMediaPlayerImpl::OnPipelineEnded() {
+  DVLOG(1) << __FUNCTION__;
   DCHECK(main_loop_->BelongsToCurrentThread());
   client_->timeChanged();
 }
@@ -984,7 +953,7 @@ void WebMediaPlayerImpl::OnPipelineError(PipelineStatus error) {
 
 void WebMediaPlayerImpl::OnPipelineMetadata(
     media::PipelineMetadata metadata) {
-  DVLOG(1) << "OnPipelineMetadata";
+  DVLOG(1) << __FUNCTION__;
 
   pipeline_metadata_ = metadata;
 
@@ -993,7 +962,7 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
   if (hasVideo()) {
     DCHECK(!video_weblayer_);
     video_weblayer_.reset(
-        new webkit::WebLayerImpl(cc::VideoLayer::Create(compositor_)));
+        new WebLayerImpl(cc::VideoLayer::Create(compositor_)));
     video_weblayer_->setOpaque(opaque_);
     client_->setWebLayer(video_weblayer_.get());
   }
@@ -1004,7 +973,7 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
 }
 
 void WebMediaPlayerImpl::OnPipelinePrerollCompleted() {
-  DVLOG(1) << "OnPipelinePrerollCompleted";
+  DVLOG(1) << __FUNCTION__;
 
   // Only transition to ReadyStateHaveEnoughData if we don't have
   // any pending seeks because the transition can cause Blink to
@@ -1102,22 +1071,20 @@ void WebMediaPlayerImpl::OnKeyError(const std::string& session_id,
 
 void WebMediaPlayerImpl::OnKeyMessage(const std::string& session_id,
                                       const std::vector<uint8>& message,
-                                      const std::string& default_url) {
+                                      const GURL& destination_url) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
-  const GURL default_url_gurl(default_url);
-  DLOG_IF(WARNING, !default_url.empty() && !default_url_gurl.is_valid())
-      << "Invalid URL in default_url: " << default_url;
+  DCHECK(destination_url.is_empty() || destination_url.is_valid());
 
   client_->keyMessage(
       WebString::fromUTF8(GetPrefixedKeySystemName(current_key_system_)),
       WebString::fromUTF8(session_id),
       message.empty() ? NULL : &message[0],
       message.size(),
-      default_url_gurl);
+      destination_url);
 }
 
-void WebMediaPlayerImpl::DataSourceInitialized(const GURL& gurl, bool success) {
+void WebMediaPlayerImpl::DataSourceInitialized(bool success) {
   DCHECK(main_loop_->BelongsToCurrentThread());
 
   if (!success) {
@@ -1230,7 +1197,7 @@ void WebMediaPlayerImpl::StartPipeline() {
   }
 
   // ... and we're ready to go!
-  starting_ = true;
+  seeking_ = true;
   pipeline_.Start(
       filter_collection.Pass(),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineEnded),
@@ -1242,19 +1209,19 @@ void WebMediaPlayerImpl::StartPipeline() {
 }
 
 void WebMediaPlayerImpl::SetNetworkState(WebMediaPlayer::NetworkState state) {
+  DVLOG(1) << __FUNCTION__ << "(" << state << ")";
   DCHECK(main_loop_->BelongsToCurrentThread());
-  DVLOG(1) << "SetNetworkState: " << state;
   network_state_ = state;
   // Always notify to ensure client has the latest value.
   client_->networkStateChanged();
 }
 
 void WebMediaPlayerImpl::SetReadyState(WebMediaPlayer::ReadyState state) {
+  DVLOG(1) << __FUNCTION__ << "(" << state << ")";
   DCHECK(main_loop_->BelongsToCurrentThread());
-  DVLOG(1) << "SetReadyState: " << state;
 
-  if (state == WebMediaPlayer::ReadyStateHaveEnoughData &&
-      is_local_source_ &&
+  if (state == WebMediaPlayer::ReadyStateHaveEnoughData && data_source_ &&
+      data_source_->assume_fully_buffered() &&
       network_state_ == WebMediaPlayer::NetworkStateLoading)
     SetNetworkState(WebMediaPlayer::NetworkStateLoaded);
 

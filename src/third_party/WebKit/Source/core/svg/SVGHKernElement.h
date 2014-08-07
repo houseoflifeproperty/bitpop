@@ -23,14 +23,14 @@
 #define SVGHKernElement_h
 
 #if ENABLE(SVG_FONTS)
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGFontElement.h"
 
 namespace WebCore {
 
 class SVGHKernElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGHKernElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGHKernElement);
 
     void buildHorizontalKerningPair(KerningPairVector&);
 

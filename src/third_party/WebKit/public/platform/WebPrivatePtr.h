@@ -114,6 +114,7 @@ public:
     }
 
     void assign(T* ptr) { assign(RawPtr<T>(ptr)); }
+    template<typename U> void assign(const RawPtr<U>& val) { assign(RawPtr<T>(val)); }
 
     void assign(const PtrStorageImpl& other) { assign(other.get()); }
 
@@ -132,7 +133,7 @@ private:
 template<typename T>
 class PtrStorageImpl<T, RefCountedGarbageCollectedLifetime> : public PtrStorageImpl<T, GarbageCollectedLifetime> {
 public:
-    void assign(const PassRefPtr<T>& val) { PtrStorageImpl<T, GarbageCollectedLifetime>::assign(val.get()); }
+    void assign(const PassRefPtrWillBeRawPtr<T>& val) { PtrStorageImpl<T, GarbageCollectedLifetime>::assign(val.get()); }
 
     void assign(const PtrStorageImpl& other) { PtrStorageImpl<T, GarbageCollectedLifetime>::assign(other.get()); }
 };

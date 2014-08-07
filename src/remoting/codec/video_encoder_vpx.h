@@ -28,14 +28,13 @@ class VideoEncoderVpx : public VideoEncoder {
   virtual ~VideoEncoderVpx();
 
   // VideoEncoder interface.
+  virtual void SetLosslessEncode(bool want_lossless) OVERRIDE;
+  virtual void SetLosslessColor(bool want_lossless) OVERRIDE;
   virtual scoped_ptr<VideoPacket> Encode(
       const webrtc::DesktopFrame& frame) OVERRIDE;
 
  private:
-  typedef base::Callback<ScopedVpxCodec(const webrtc::DesktopSize&)>
-      InitializeCodecCallback;
-
-  VideoEncoderVpx(const InitializeCodecCallback& init_codec);
+  explicit VideoEncoderVpx(bool use_vp9);
 
   // Initializes the codec for frames of |size|. Returns true if successful.
   bool Initialize(const webrtc::DesktopSize& size);
@@ -49,17 +48,25 @@ class VideoEncoderVpx : public VideoEncoder {
   // given to the encoder to speed up encoding.
   void PrepareActiveMap(const webrtc::DesktopRegion& updated_region);
 
-  InitializeCodecCallback init_codec_;
+  // True if the encoder should generate VP9, false for VP8.
+  bool use_vp9_;
+
+  // Options controlling VP9 encode quantization and color space.
+  // These are always off (false) for VP8.
+  bool lossless_encode_;
+  bool lossless_color_;
 
   ScopedVpxCodec codec_;
+  base::TimeTicks timestamp_base_;
+
+  // VPX image and buffer to hold the actual YUV planes.
   scoped_ptr<vpx_image_t> image_;
+  scoped_ptr<uint8[]> image_buffer_;
+
+  // Active map used to optimize out processing of un-changed macroblocks.
   scoped_ptr<uint8[]> active_map_;
   int active_map_width_;
   int active_map_height_;
-  base::TimeTicks timestamp_base_;
-
-  // Buffer for storing the yuv image.
-  scoped_ptr<uint8[]> yuv_image_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoEncoderVpx);
 };

@@ -19,7 +19,8 @@ class ContextProvider;
 class LayerTreeHost;
 class LayerTreeHostSingleThreadClient;
 
-class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
+class CC_EXPORT SingleThreadProxy : public Proxy,
+                    NON_EXPORTED_BASE(LayerTreeHostImplClient) {
  public:
   static scoped_ptr<Proxy> Create(
       LayerTreeHost* layer_tree_host,
@@ -27,13 +28,10 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual ~SingleThreadProxy();
 
   // Proxy implementation
-  virtual bool CompositeAndReadback(void* pixels,
-                                    const gfx::Rect& rect) OVERRIDE;
   virtual void FinishAllRendering() OVERRIDE;
   virtual bool IsStarted() const OVERRIDE;
   virtual void SetLayerTreeHostClientReady() OVERRIDE;
   virtual void SetVisible(bool visible) OVERRIDE;
-  virtual void CreateAndInitializeOutputSurface() OVERRIDE;
   virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
   virtual void SetNeedsAnimate() OVERRIDE;
   virtual void SetNeedsUpdateLayers() OVERRIDE;
@@ -76,7 +74,6 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual bool ReduceContentsTextureMemoryOnImplThread(
       size_t limit_bytes,
       int priority_cutoff) OVERRIDE;
-  virtual void SendManagedMemoryStats() OVERRIDE;
   virtual bool IsInsideDraw() OVERRIDE;
   virtual void RenewTreePriority() OVERRIDE {}
   virtual void PostDelayedScrollbarFadeOnImplThread(
@@ -86,6 +83,10 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   virtual void DidManageTiles() OVERRIDE {}
   virtual void SetDebugState(const LayerTreeDebugState& debug_state) OVERRIDE {}
 
+  // Attempts to create the context and renderer synchronously. Calls
+  // LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted with the result.
+  void CreateAndInitializeOutputSurface();
+
   // Called by the legacy path where RenderWidget does the scheduling.
   void CompositeImmediately(base::TimeTicks frame_begin_time);
 
@@ -93,14 +94,8 @@ class SingleThreadProxy : public Proxy, LayerTreeHostImplClient {
   SingleThreadProxy(LayerTreeHost* layer_tree_host,
                     LayerTreeHostSingleThreadClient* client);
 
-  bool CommitAndComposite(base::TimeTicks frame_begin_time,
-                          const gfx::Rect& device_viewport_damage_rect,
-                          bool for_readback,
-                          LayerTreeHostImpl::FrameData* frame);
   void DoCommit(scoped_ptr<ResourceUpdateQueue> queue);
   bool DoComposite(base::TimeTicks frame_begin_time,
-                   const gfx::Rect& device_viewport_damage_rect,
-                   bool for_readback,
                    LayerTreeHostImpl::FrameData* frame);
   void DidSwapFrame();
 

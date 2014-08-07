@@ -39,8 +39,8 @@ class DesktopThemeProvider : public ui::ThemeProvider {
       : delegate_(delegate) {
   }
 
-  virtual bool UsingNativeTheme() const OVERRIDE {
-    return delegate_->UsingNativeTheme();
+  virtual bool UsingSystemTheme() const OVERRIDE {
+    return delegate_->UsingSystemTheme();
   }
   virtual gfx::ImageSkia* GetImageSkiaNamed(int id) const OVERRIDE {
     return delegate_->GetImageSkiaNamed(
@@ -58,7 +58,6 @@ class DesktopThemeProvider : public ui::ThemeProvider {
   virtual bool HasCustomImage(int id) const OVERRIDE {
     return delegate_->HasCustomImage(
         chrome::MapThemeImage(chrome::HOST_DESKTOP_TYPE_NATIVE, id));
-
   }
   virtual base::RefCountedMemory* GetRawData(
       int id,

@@ -20,22 +20,13 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "base/mac/scoped_ioobject.h"
 #include "base/mac/scoped_nsobject.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/sys_string_conversions.h"
 
 namespace base {
 namespace mac {
-
-// Replicate specific 10.7 SDK declarations for building with prior SDKs.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-enum {
-  NSApplicationPresentationFullScreen = 1 << 10
-};
-
-#endif  // MAC_OS_X_VERSION_10_7
 
 namespace {
 
@@ -383,6 +374,30 @@ bool WasLaunchedAsLoginOrResumeItem() {
       [[parent_info objectForKey:@"FileCreator"] isEqualToString:@"lgnw"];
 
   return result == YES;
+}
+
+bool WasLaunchedAsLoginItemRestoreState() {
+  // "Reopen windows..." option was added for Lion.  Prior OS versions should
+  // not have this behavior.
+  if (IsOSSnowLeopard() || !WasLaunchedAsLoginOrResumeItem())
+    return false;
+
+  CFStringRef app = CFSTR("com.apple.loginwindow");
+  CFStringRef save_state = CFSTR("TALLogoutSavesState");
+  ScopedCFTypeRef<CFPropertyListRef> plist(
+      CFPreferencesCopyAppValue(save_state, app));
+  // According to documentation, com.apple.loginwindow.plist does not exist on a
+  // fresh installation until the user changes a login window setting.  The
+  // "reopen windows" option is checked by default, so the plist would exist had
+  // the user unchecked it.
+  // https://developer.apple.com/library/mac/documentation/macosx/conceptual/bpsystemstartup/chapters/CustomLogin.html
+  if (!plist)
+    return true;
+
+  if (CFBooleanRef restore_state = base::mac::CFCast<CFBooleanRef>(plist))
+    return CFBooleanGetValue(restore_state);
+
+  return false;
 }
 
 bool WasLaunchedAsHiddenLoginItem() {

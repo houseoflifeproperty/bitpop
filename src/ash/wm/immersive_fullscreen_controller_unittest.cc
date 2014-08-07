@@ -5,11 +5,13 @@
 #include "ash/wm/immersive_fullscreen_controller.h"
 
 #include "ash/display/display_manager.h"
+#include "ash/display/mouse_cursor_event_filter.h"
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/wm/window_state.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/env.h"
@@ -540,8 +542,12 @@ TEST_F(ImmersiveFullscreenControllerTest, MouseEventsVerticalDisplayLayout) {
   // edge even though the mouse is warped to the secondary display.
   event_generator.MoveMouseTo(x, y_top_edge);
   EXPECT_TRUE(top_edge_hover_timer_running());
-  EXPECT_NE(y_top_edge,
-            aura::Env::GetInstance()->last_mouse_location().y());
+
+  // TODO(oshima): Provide a test API to handle mouse warp more easily.
+  if (!MouseCursorEventFilter::IsMouseWarpInNativeCoordsEnabled()) {
+    EXPECT_NE(y_top_edge,
+              aura::Env::GetInstance()->last_mouse_location().y());
+  }
 
   // The timer should continue running if the user overshoots the top edge
   // a bit.
@@ -772,6 +778,20 @@ TEST_F(ImmersiveFullscreenControllerTest, EventsDoNotLeakToWindowUnderneath) {
                         ui::EventTimeForNow());
   // The event should still be targeted to window().
   EXPECT_EQ(window(), targeter->FindTargetForEvent(root, &touch2));
+}
+
+// Check that the window state gets properly marked for immersive fullscreen.
+TEST_F(ImmersiveFullscreenControllerTest, WindowStateImmersiveFullscreen) {
+  ash::wm::WindowState* window_state = ash::wm::GetWindowState(window());
+
+  EXPECT_FALSE(window_state->in_immersive_fullscreen());
+  SetEnabled(true);
+  ASSERT_TRUE(controller()->IsEnabled());
+  EXPECT_TRUE(window_state->in_immersive_fullscreen());
+
+  SetEnabled(false);
+  ASSERT_FALSE(controller()->IsEnabled());
+  EXPECT_FALSE(window_state->in_immersive_fullscreen());
 }
 
 // Do not test under windows because focus testing is not reliable on

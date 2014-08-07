@@ -110,7 +110,6 @@ AudioContext::AudioContext(Document* document)
     , m_isStopScheduled(false)
     , m_isCleared(false)
     , m_isInitialized(false)
-    , m_isAudioThreadFinished(false)
     , m_destinationNode(nullptr)
     , m_isDeletionScheduled(false)
     , m_automaticPullNodesNeedUpdating(false)
@@ -119,9 +118,11 @@ AudioContext::AudioContext(Document* document)
     , m_graphOwnerThread(UndefinedThreadIdentifier)
     , m_isOfflineContext(false)
 {
-    constructCommon();
+    ScriptWrappable::init(this);
 
     m_destinationNode = DefaultAudioDestinationNode::create(this);
+
+    initialize();
 }
 
 // Constructor for offline (non-realtime) rendering.
@@ -130,7 +131,6 @@ AudioContext::AudioContext(Document* document, unsigned numberOfChannels, size_t
     , m_isStopScheduled(false)
     , m_isCleared(false)
     , m_isInitialized(false)
-    , m_isAudioThreadFinished(false)
     , m_destinationNode(nullptr)
     , m_automaticPullNodesNeedUpdating(false)
     , m_connectionCount(0)
@@ -138,21 +138,14 @@ AudioContext::AudioContext(Document* document, unsigned numberOfChannels, size_t
     , m_graphOwnerThread(UndefinedThreadIdentifier)
     , m_isOfflineContext(true)
 {
-    constructCommon();
+    ScriptWrappable::init(this);
 
     // Create a new destination for offline rendering.
     m_renderTarget = AudioBuffer::create(numberOfChannels, numberOfFrames, sampleRate);
     if (m_renderTarget.get())
         m_destinationNode = OfflineAudioDestinationNode::create(this, m_renderTarget.get());
-}
 
-void AudioContext::constructCommon()
-{
-    ScriptWrappable::init(this);
-
-    FFTFrame::initialize();
-
-    m_listener = AudioListener::create();
+    initialize();
 }
 
 AudioContext::~AudioContext()
@@ -171,29 +164,27 @@ AudioContext::~AudioContext()
     ASSERT(!m_renderingAutomaticPullNodes.size());
 }
 
-void AudioContext::lazyInitialize()
+void AudioContext::initialize()
 {
-    if (!m_isInitialized) {
-        // Don't allow the context to initialize a second time after it's already been explicitly uninitialized.
-        ASSERT(!m_isAudioThreadFinished);
-        if (!m_isAudioThreadFinished) {
-            // Creation of a destination node should not start the audio HW. The
-            // creation of any other AudioNode will initialize the audio HW and start processing
-            if (m_destinationNode.get()) {
-                m_destinationNode->initialize();
+    if (isInitialized())
+        return;
 
-                if (!isOfflineContext()) {
-                    // This starts the audio thread. The destination node's provideInput() method will now be called repeatedly to render audio.
-                    // Each time provideInput() is called, a portion of the audio stream is rendered. Let's call this time period a "render quantum".
-                    // NOTE: for now default AudioContext does not need an explicit startRendering() call from JavaScript.
-                    // We may want to consider requiring it for symmetry with OfflineAudioContext.
-                    m_destinationNode->startRendering();
-                    ++s_hardwareContextCount;
-                }
+    FFTFrame::initialize();
+    m_listener = AudioListener::create();
 
-                m_isInitialized = true;
-            }
+    if (m_destinationNode.get()) {
+        m_destinationNode->initialize();
+
+        if (!isOfflineContext()) {
+            // This starts the audio thread. The destination node's provideInput() method will now be called repeatedly to render audio.
+            // Each time provideInput() is called, a portion of the audio stream is rendered. Let's call this time period a "render quantum".
+            // NOTE: for now default AudioContext does not need an explicit startRendering() call from JavaScript.
+            // We may want to consider requiring it for symmetry with OfflineAudioContext.
+            m_destinationNode->startRendering();
+            ++s_hardwareContextCount;
         }
+
+        m_isInitialized = true;
     }
 }
 
@@ -217,14 +208,11 @@ void AudioContext::uninitialize()
 {
     ASSERT(isMainThread());
 
-    if (!m_isInitialized)
+    if (!isInitialized())
         return;
 
     // This stops the audio thread and all audio rendering.
     m_destinationNode->uninitialize();
-
-    // Don't allow the context to initialize a second time after it's already been explicitly uninitialized.
-    m_isAudioThreadFinished = true;
 
     if (!isOfflineContext()) {
         ASSERT(s_hardwareContextCount);
@@ -235,11 +223,6 @@ void AudioContext::uninitialize()
     derefUnfinishedSourceNodes();
 
     m_isInitialized = false;
-}
-
-bool AudioContext::isInitialized() const
-{
-    return m_isInitialized;
 }
 
 void AudioContext::stopDispatch(void* userData)
@@ -348,7 +331,7 @@ PassRefPtrWillBeRawPtr<MediaStreamAudioSourceNode> AudioContext::createMediaStre
     }
 
     // Use the first audio track in the media stream.
-    RefPtr<MediaStreamTrack> audioTrack = audioTracks[0];
+    RefPtrWillBeRawPtr<MediaStreamTrack> audioTrack = audioTracks[0];
     OwnPtr<AudioSourceProvider> provider = audioTrack->createWebAudioSource();
     RefPtrWillBeRawPtr<MediaStreamAudioSourceNode> node = MediaStreamAudioSourceNode::create(this, mediaStream, audioTrack.get(), provider.release());
 
@@ -591,7 +574,7 @@ void AudioContext::notifyNodeFinishedProcessing(AudioNode* node)
 void AudioContext::derefFinishedSourceNodes()
 {
     ASSERT(isGraphOwner());
-    ASSERT(isAudioThread() || isAudioThreadFinished());
+    ASSERT(isAudioThread());
     for (unsigned i = 0; i < m_finishedNodes.size(); i++)
         derefNode(m_finishedNodes[i]);
 
@@ -623,7 +606,7 @@ void AudioContext::derefNode(AudioNode* node)
 
 void AudioContext::derefUnfinishedSourceNodes()
 {
-    ASSERT(isMainThread() && isAudioThreadFinished());
+    ASSERT(isMainThread());
     for (unsigned i = 0; i < m_referencedNodes.size(); ++i)
         m_referencedNodes[i]->deref(AudioNode::RefTypeConnection);
 
@@ -654,7 +637,7 @@ bool AudioContext::tryLock(bool& mustReleaseLock)
     bool isAudioThread = thisThread == audioThread();
 
     // Try to catch cases of using try lock on main thread - it should use regular lock.
-    ASSERT(isAudioThread || isAudioThreadFinished());
+    ASSERT(isAudioThread);
 
     if (!isAudioThread) {
         // In release build treat tryLock() as lock() (since above ASSERT(isAudioThread) never fires) - this is the best we can do.
@@ -769,7 +752,7 @@ void AudioContext::markForDeletion(AudioNode* node)
 {
     ASSERT(isGraphOwner());
 
-    if (isAudioThreadFinished())
+    if (!isInitialized())
         m_nodesToDelete.append(node);
     else
         m_nodesMarkedForDeletion.append(node);
@@ -783,7 +766,7 @@ void AudioContext::markForDeletion(AudioNode* node)
 
 void AudioContext::scheduleNodeDeletion()
 {
-    bool isGood = m_isInitialized && isGraphOwner();
+    bool isGood = isInitialized() && isGraphOwner();
     ASSERT(isGood);
     if (!isGood)
         return;
@@ -973,6 +956,7 @@ void AudioContext::trace(Visitor* visitor)
     visitor->trace(m_destinationNode);
     visitor->trace(m_listener);
     visitor->trace(m_dirtySummingJunctions);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

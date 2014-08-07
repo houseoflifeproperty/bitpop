@@ -15,6 +15,7 @@
 #ifndef I18N_ADDRESSINPUT_REGION_DATA_CONSTANTS_H_
 #define I18N_ADDRESSINPUT_REGION_DATA_CONSTANTS_H_
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -23,9 +24,11 @@ namespace addressinput {
 
 class RegionDataConstants {
  public:
+  static const bool IsSupported(const std::string& region_code);
   static const std::vector<std::string>& GetRegionCodes();
   static const std::string& GetRegionData(const std::string& region_code);
   static const std::string& GetDefaultRegionData();
+  static size_t GetMaxLookupKeyDepth(const std::string& region_code);
 };
 
 }  // namespace addressinput

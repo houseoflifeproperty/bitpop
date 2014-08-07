@@ -60,10 +60,21 @@
         }],
         ['OS=="linux"', {
           'dependencies': [
-            '../build/linux/system.gyp:udev',
             '../device/media_transfer_protocol/media_transfer_protocol.gyp:device_media_transfer_protocol',
             '../device/media_transfer_protocol/media_transfer_protocol.gyp:mtp_file_entry_proto',
             '../device/media_transfer_protocol/media_transfer_protocol.gyp:mtp_storage_info_proto',
+          ],
+        }],
+        ['use_udev==1', {
+          'dependencies': [
+            '../device/udev_linux/udev.gyp:udev_linux',
+          ],
+        }, {  # use_udev==0
+          'sources!': [
+            'storage_monitor/storage_monitor_linux.cc',
+            'storage_monitor/storage_monitor_linux.h',
+            'storage_monitor/udev_util_linux.cc',
+            'storage_monitor/udev_util_linux.h',
           ],
         }],
         ['chromeos==1', {

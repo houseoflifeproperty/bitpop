@@ -58,6 +58,8 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/session_storage_namespace.h"
+#include "content/public/browser/site_instance.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/url_constants.h"
@@ -127,7 +129,8 @@ bool NeedMatchCompleteDummyForFinalStatus(FinalStatus final_status) {
       final_status != FINAL_STATUS_DEVTOOLS_ATTACHED &&
       final_status != FINAL_STATUS_CROSS_SITE_NAVIGATION_PENDING &&
       final_status != FINAL_STATUS_PAGE_BEING_CAPTURED &&
-      final_status != FINAL_STATUS_NAVIGATION_UNCOMMITTED;
+      final_status != FINAL_STATUS_NAVIGATION_UNCOMMITTED &&
+      final_status != FINAL_STATUS_NON_EMPTY_BROWSING_INSTANCE;
 }
 
 void CheckIfCookiesExistForDomainResultOnUIThread(
@@ -245,7 +248,8 @@ PrerenderManager::PrerenderManager(Profile* profile,
       prerender_history_(new PrerenderHistory(kHistoryLength)),
       histograms_(new PrerenderHistograms()),
       profile_network_bytes_(0),
-      last_recorded_profile_network_bytes_(0) {
+      last_recorded_profile_network_bytes_(0),
+      cookie_store_loaded_(false) {
   // There are some assumptions that the PrerenderManager is on the UI thread.
   // Any other checks simply make sure that the PrerenderManager is accessed on
   // the same thread that it was created on.
@@ -303,6 +307,13 @@ PrerenderManager::~PrerenderManager() {
   // emptied these vectors already.
   DCHECK(active_prerenders_.empty());
   DCHECK(to_delete_prerenders_.empty());
+
+  for (PrerenderProcessSet::const_iterator it =
+           prerender_process_hosts_.begin();
+       it != prerender_process_hosts_.end();
+       ++it) {
+    (*it)->RemoveObserver(this);
+  }
 }
 
 void PrerenderManager::Shutdown() {
@@ -528,6 +539,16 @@ WebContents* PrerenderManager::SwapInternal(
     }
   }
 
+  // Do not swap if the target WebContents is not the only WebContents in its
+  // current BrowsingInstance.
+  if (web_contents->GetSiteInstance()->GetRelatedActiveContentsCount() != 1u) {
+    DCHECK_GT(
+        web_contents->GetSiteInstance()->GetRelatedActiveContentsCount(), 1u);
+    prerender_data->contents()->Destroy(
+        FINAL_STATUS_NON_EMPTY_BROWSING_INSTANCE);
+    return NULL;
+  }
+
   // Do not use the prerendered version if there is an opener object.
   if (web_contents->HasOpener()) {
     prerender_data->contents()->Destroy(FINAL_STATUS_WINDOW_OPENER);
@@ -577,6 +598,14 @@ WebContents* PrerenderManager::SwapInternal(
   }
 
   // At this point, we've determined that we will use the prerender.
+  content::RenderProcessHost* process_host =
+      prerender_data->contents()->GetRenderViewHost()->GetProcess();
+  prerender_process_hosts_.erase(process_host);
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&PrerenderTracker::RemovePrerenderCookieStoreOnIOThread,
+                 base::Unretained(prerender_tracker()), process_host->GetID(),
+                 true));
   if (!prerender_data->contents()->load_start_time().is_null()) {
     histograms_->RecordTimeUntilUsed(
         prerender_data->contents()->origin(),
@@ -748,7 +777,7 @@ const char* PrerenderManager::GetModeString() {
     default:
       NOTREACHED() << "Invalid PrerenderManager mode.";
       break;
-  };
+  }
   return "";
 }
 
@@ -897,7 +926,7 @@ bool PrerenderManager::DoesURLHaveValidScheme(const GURL& url) {
 
 // static
 bool PrerenderManager::DoesSubresourceURLHaveValidScheme(const GURL& url) {
-  return DoesURLHaveValidScheme(url) || url == GURL(content::kAboutBlankURL);
+  return DoesURLHaveValidScheme(url) || url == GURL(url::kAboutBlankURL);
 }
 
 base::DictionaryValue* PrerenderManager::GetAsValue() const {
@@ -1216,6 +1245,12 @@ void PrerenderManager::SourceNavigatedAway(PrerenderData* prerender_data) {
   SortActivePrerenders();
 }
 
+net::URLRequestContextGetter* PrerenderManager::GetURLRequestContext() {
+  return content::BrowserContext::GetDefaultStoragePartition(profile_)->
+      GetURLRequestContext();
+}
+
+
 // private
 PrerenderHandle* PrerenderManager::AddPrerender(
     Origin origin,
@@ -1249,7 +1284,8 @@ PrerenderHandle* PrerenderManager::AddPrerender(
 
   if (PrerenderData* preexisting_prerender_data =
           FindPrerenderData(url, session_storage_namespace)) {
-    RecordFinalStatus(origin, experiment, FINAL_STATUS_DUPLICATE);
+    RecordFinalStatusWithoutCreatingPrerenderContents(
+        url, origin, experiment, FINAL_STATUS_DUPLICATE);
     return new PrerenderHandle(preexisting_prerender_data);
   }
 
@@ -1267,7 +1303,8 @@ PrerenderHandle* PrerenderManager::AddPrerender(
   if (content::RenderProcessHost::ShouldTryToUseExistingProcessHost(
           profile_, url) &&
       !content::RenderProcessHost::run_renderer_in_process()) {
-    RecordFinalStatus(origin, experiment, FINAL_STATUS_TOO_MANY_PROCESSES);
+    RecordFinalStatusWithoutCreatingPrerenderContents(
+        url, origin, experiment, FINAL_STATUS_TOO_MANY_PROCESSES);
     return NULL;
   }
 
@@ -1276,7 +1313,16 @@ PrerenderHandle* PrerenderManager::AddPrerender(
     // Cancel the prerender. We could add it to the pending prerender list but
     // this doesn't make sense as the next prerender request will be triggered
     // by a navigation and is unlikely to be the same site.
-    RecordFinalStatus(origin, experiment, FINAL_STATUS_RATE_LIMIT_EXCEEDED);
+    RecordFinalStatusWithoutCreatingPrerenderContents(
+        url, origin, experiment, FINAL_STATUS_RATE_LIMIT_EXCEEDED);
+    return NULL;
+  }
+
+  if (IsPrerenderCookieStoreEnabled() && !cookie_store_loaded()) {
+    // Only prerender if the cookie store for this profile has been loaded.
+    // This is required by PrerenderCookieMonster.
+    RecordFinalStatusWithoutCreatingPrerenderContents(
+        url, origin, experiment, FINAL_STATUS_COOKIE_STORE_NOT_LOADED);
     return NULL;
   }
 
@@ -1304,11 +1350,17 @@ PrerenderHandle* PrerenderManager::AddPrerender(
   gfx::Size contents_size =
       size.IsEmpty() ? config_.default_tab_bounds.size() : size;
 
+  net::URLRequestContextGetter* request_context =
+      (IsPrerenderCookieStoreEnabled() ? GetURLRequestContext() : NULL);
+
   prerender_contents->StartPrerendering(process_id, contents_size,
-                                        session_storage_namespace);
+                                        session_storage_namespace,
+                                        request_context);
 
   DCHECK(IsControlGroup(experiment) ||
-         prerender_contents->prerendering_has_started());
+         prerender_contents->prerendering_has_started() ||
+         (origin == ORIGIN_LOCAL_PREDICTOR &&
+          IsLocalPredictorPrerenderAlwaysControlEnabled()));
 
   if (GetMode() == PRERENDER_MODE_EXPERIMENT_MULTI_PRERENDER_GROUP)
     histograms_->RecordConcurrency(active_prerenders_.size());
@@ -1321,11 +1373,11 @@ PrerenderHandle* PrerenderManager::AddPrerender(
     history_service->QueryURL(
         url,
         false,
-        &query_url_consumer_,
         base::Bind(&PrerenderManager::OnHistoryServiceDidQueryURL,
                    base::Unretained(this),
                    origin,
-                   experiment));
+                   experiment),
+        &query_url_tracker_);
   }
 
   StartSchedulingPeriodicCleanups();
@@ -1481,6 +1533,10 @@ bool PrerenderManager::DoesRateLimitAllowPrerender(Origin origin) const {
   histograms_->RecordTimeBetweenPrerenderRequests(origin, elapsed_time);
   if (!config_.rate_limit_enabled)
     return true;
+  // The LocalPredictor may issue multiple prerenders simultaneously (if so
+  // configured), so no throttling.
+  if (origin == ORIGIN_LOCAL_PREDICTOR)
+    return true;
   return elapsed_time >=
       base::TimeDelta::FromMilliseconds(kMinTimeBetweenPrerendersMs);
 }
@@ -1563,28 +1619,15 @@ void PrerenderManager::DestroyAndMarkMatchCompleteAsUsed(
   prerender_contents->Destroy(final_status);
 }
 
-void PrerenderManager::RecordFinalStatus(Origin origin,
-                                         uint8 experiment_id,
-                                         FinalStatus final_status) const {
+void PrerenderManager::RecordFinalStatusWithoutCreatingPrerenderContents(
+    const GURL& url, Origin origin, uint8 experiment_id,
+    FinalStatus final_status) const {
+  PrerenderHistory::Entry entry(url, final_status, origin, base::Time::Now());
+  prerender_history_->AddEntry(entry);
   RecordFinalStatusWithMatchCompleteStatus(
       origin, experiment_id,
       PrerenderContents::MATCH_COMPLETE_DEFAULT,
       final_status);
-}
-
-bool PrerenderManager::IsEnabled() const {
-  DCHECK(CalledOnValidThread());
-  if (!enabled_)
-    return false;
-  for (std::list<const PrerenderCondition*>::const_iterator it =
-           prerender_conditions_.begin();
-       it != prerender_conditions_.end();
-       ++it) {
-    const PrerenderCondition* condition = *it;
-    if (!condition->CanPrerender())
-      return false;
-  }
-  return true;
 }
 
 void PrerenderManager::Observe(int type,
@@ -1798,10 +1841,9 @@ void PrerenderManager::RecordCookieSendType(Origin origin,
 void PrerenderManager::OnHistoryServiceDidQueryURL(
     Origin origin,
     uint8 experiment_id,
-    CancelableRequestProvider::Handle handle,
     bool success,
-    const history::URLRow* url_row,
-    history::VisitVector* visists) {
+    const history::URLRow& url_row,
+    const history::VisitVector& /*visits*/) {
   histograms_->RecordPrerenderPageVisitedStatus(origin, experiment_id, success);
 }
 
@@ -1810,20 +1852,74 @@ void PrerenderManager::HangSessionStorageMergesForTesting() {
   g_hang_session_storage_merges_for_testing = true;
 }
 
-void PrerenderManager::RecordNetworkBytes(bool used, int64 prerender_bytes) {
+void PrerenderManager::RecordNetworkBytes(Origin origin,
+                                          bool used,
+                                          int64 prerender_bytes) {
   if (!ActuallyPrerendering())
     return;
   int64 recent_profile_bytes =
       profile_network_bytes_ - last_recorded_profile_network_bytes_;
   last_recorded_profile_network_bytes_ = profile_network_bytes_;
   DCHECK_GE(recent_profile_bytes, 0);
-  histograms_->RecordNetworkBytes(used, prerender_bytes, recent_profile_bytes);
+  histograms_->RecordNetworkBytes(
+      origin, used, prerender_bytes, recent_profile_bytes);
+}
+
+bool PrerenderManager::IsEnabled() const {
+  DCHECK(CalledOnValidThread());
+  if (!enabled_)
+    return false;
+  for (std::list<const PrerenderCondition*>::const_iterator it =
+           prerender_conditions_.begin();
+       it != prerender_conditions_.end();
+       ++it) {
+    const PrerenderCondition* condition = *it;
+    if (!condition->CanPrerender())
+      return false;
+  }
+  return true;
 }
 
 void PrerenderManager::AddProfileNetworkBytesIfEnabled(int64 bytes) {
   DCHECK_GE(bytes, 0);
   if (IsEnabled() && ActuallyPrerendering())
     profile_network_bytes_ += bytes;
+}
+
+void PrerenderManager::OnCookieStoreLoaded() {
+  cookie_store_loaded_ = true;
+  if (!on_cookie_store_loaded_cb_for_testing_.is_null())
+    on_cookie_store_loaded_cb_for_testing_.Run();
+}
+
+void PrerenderManager::AddPrerenderProcessHost(
+    content::RenderProcessHost* process_host) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(prerender_process_hosts_.find(process_host) ==
+         prerender_process_hosts_.end());
+  prerender_process_hosts_.insert(process_host);
+  process_host->AddObserver(this);
+}
+
+bool PrerenderManager::MayReuseProcessHost(
+    content::RenderProcessHost* process_host) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  // If prerender cookie stores are disabled, there is no need to require
+  // isolated prerender processes.
+  if (!IsPrerenderCookieStoreEnabled())
+    return true;
+  return (prerender_process_hosts_.find(process_host) ==
+          prerender_process_hosts_.end());
+}
+
+void PrerenderManager::RenderProcessHostDestroyed(
+    content::RenderProcessHost* host) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  prerender_process_hosts_.erase(host);
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&PrerenderTracker::RemovePrerenderCookieStoreOnIOThread,
+                 base::Unretained(prerender_tracker()), host->GetID(), false));
 }
 
 }  // namespace prerender

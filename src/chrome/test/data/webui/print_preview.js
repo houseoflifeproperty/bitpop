@@ -87,6 +87,18 @@ PrintPreviewWebUITest.prototype = {
     }.bind(this));
   },
 
+  setUpPreview: function() {
+    var initialSettingsSetEvent =
+        new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+    initialSettingsSetEvent.initialSettings = this.initialSettings_;
+    this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
+
+    var localDestsSetEvent =
+        new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+    localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
+    this.nativeLayer_.dispatchEvent(localDestsSetEvent);
+  },
+
   /**
    * Generate a real C++ class; don't typedef.
    * @type {?string}
@@ -224,6 +236,49 @@ function checkElementDisplayed(el, isDisplayed) {
   expectEquals(isDisplayed, !el.hidden);
 }
 
+function getCddTemplate(printerId) {
+  return {
+    printerId: printerId,
+    capabilities: {
+      version: '1.0',
+      printer: {
+        supported_content_type: [{content_type: 'application/pdf'}],
+        collate: {},
+        color: {
+          option: [
+            {type: 'STANDARD_COLOR', is_default: true},
+            {type: 'STANDARD_MONOCHROME'}
+          ]
+        },
+        copies: {},
+        duplex: {
+          option: [
+            {type: 'NO_DUPLEX', is_default: true},
+            {type: 'LONG_EDGE'},
+            {type: 'SHORT_EDGE'}
+          ]
+        },
+        page_orientation: {
+          option: [
+            {type: 'PORTRAIT', is_default: true},
+            {type: 'LANDSCAPE'},
+            {type: 'AUTO'}
+          ]
+        },
+        media_size: {
+          option: [
+            { name: 'NA_LETTER',
+              width_microns: 215900,
+              height_microns: 279400,
+              is_default: true
+            }
+          ]
+        }
+      }
+    }
+  };
+}
+
 // Test that disabled settings hide the disabled sections.
 TEST_F('PrintPreviewWebUITest', 'TestSectionsDisabled', function() {
   checkSectionVisible($('layout-settings'), false);
@@ -242,14 +297,13 @@ TEST_F('PrintPreviewWebUITest', 'TestSectionsDisabled', function() {
 
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': true,
-    'setColorAsDefault': true,
-    'disableCopiesOption': true,
-    'disableLandscapeOption': false,
-    'printerDefaultDuplexValue': 0
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
+  capsSetEvent.settingsInfo.capabilities.printer.color = {
+    "option": [
+      {"is_default": true, "type": "STANDARD_COLOR"}
+    ]
   };
+  delete capsSetEvent.settingsInfo.capabilities.printer.copies;
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkSectionVisible($('layout-settings'), true);
@@ -259,44 +313,56 @@ TEST_F('PrintPreviewWebUITest', 'TestSectionsDisabled', function() {
 
 // When the source is 'PDF' and 'Save as PDF' option is selected, we hide the
 // fit to page option.
-TEST_F('PrintPreviewWebUITest',
-       'PrintToPDFSelectedHideFitToPageOption',
-       function() {
+TEST_F('PrintPreviewWebUITest', 'PrintToPDFSelectedCapabilities', function() {
   // Add PDF printer.
   this.initialSettings_.isDocumentModifiable_ = false;
   this.initialSettings_.systemDefaultDestinationId_ = 'Save as PDF';
-  this.localDestinationInfos_.push(
-      {printerName: 'Save as PDF', deviceName: 'Save as PDF'});
 
   var initialSettingsSetEvent =
       new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
   this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
 
-  var localDestsSetEvent =
-      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
-  localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
-  this.nativeLayer_.dispatchEvent(localDestsSetEvent);
-
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
   capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': false,
-    'setColorAsDefault': true,
-    'disableCopiesOption': true,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
+    printerId: 'Save as PDF',
+    capabilities: {
+      version: '1.0',
+      printer: {
+        page_orientation: {
+          option: [
+            {type: 'AUTO', is_default: true},
+            {type: 'PORTRAIT'},
+            {type: 'LANDSCAPE'}
+          ]
+        },
+        color: {
+          option: [
+            {type: 'STANDARD_COLOR', is_default: true}
+          ]
+        },
+        media_size: {
+          option: [
+            { name: 'NA_LETTER',
+              width_microns: 0,
+              height_microns: 0,
+              is_default: true
+            }
+          ]
+        }
+      }
+    }
   };
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
-  checkElementDisplayed(
-      $('other-options-settings').querySelector('.fit-to-page-container'),
-      false);
+  checkSectionVisible($('other-options-settings'), false);
+  checkSectionVisible($('media-size-settings'), false);
 });
 
-// When the source is 'HTML', we always hide the fit to page option.
-TEST_F('PrintPreviewWebUITest', 'SourceIsHTMLHideFitToPageOption', function() {
+// When the source is 'HTML', we always hide the fit to page option and show
+// media size option.
+TEST_F('PrintPreviewWebUITest', 'SourceIsHTMLCapabilities', function() {
   var initialSettingsSetEvent =
       new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
   initialSettingsSetEvent.initialSettings = this.initialSettings_;
@@ -309,24 +375,18 @@ TEST_F('PrintPreviewWebUITest', 'SourceIsHTMLHideFitToPageOption', function() {
 
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': false,
-    'setColorAsDefault': true,
-    'disableCopiesOption': true,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
-  };
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkElementDisplayed(
       $('other-options-settings').querySelector('.fit-to-page-container'),
       false);
+  checkSectionVisible($('media-size-settings'), true);
 });
 
 // When the source is "PDF", depending on the selected destination printer, we
-// show/hide the fit to page option.
-TEST_F('PrintPreviewWebUITest', 'SourceIsPDFShowFitToPageOption', function() {
+// show/hide the fit to page option and hide media size selection.
+TEST_F('PrintPreviewWebUITest', 'SourceIsPDFCapabilities', function() {
   this.initialSettings_.isDocumentModifiable_ = false;
 
   var initialSettingsSetEvent =
@@ -341,14 +401,7 @@ TEST_F('PrintPreviewWebUITest', 'SourceIsPDFShowFitToPageOption', function() {
 
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': false,
-    'setColorAsDefault': true,
-    'disableCopiesOption': true,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
-  };
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkElementDisplayed(
@@ -357,6 +410,7 @@ TEST_F('PrintPreviewWebUITest', 'SourceIsPDFShowFitToPageOption', function() {
   expectTrue(
       $('other-options-settings').querySelector('.fit-to-page-checkbox').
           checked);
+  checkSectionVisible($('media-size-settings'), true);
 });
 
 // When the print scaling is disabled for the source "PDF", we show the fit
@@ -376,14 +430,7 @@ TEST_F('PrintPreviewWebUITest', 'PrintScalingDisabledForPlugin', function() {
 
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': false,
-    'setColorAsDefault': true,
-    'disableCopiesOption': true,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
-  };
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   // Indicate that the PDF does not support scaling by default.
@@ -396,6 +443,35 @@ TEST_F('PrintPreviewWebUITest', 'PrintScalingDisabledForPlugin', function() {
   expectFalse(
       $('other-options-settings').querySelector('.fit-to-page-checkbox').
           checked);
+});
+
+// Make sure that custom margins controls are properly set up.
+TEST_F('PrintPreviewWebUITest', 'CustomMarginsControlsCheck', function() {
+  var initialSettingsSetEvent =
+      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
+  initialSettingsSetEvent.initialSettings = this.initialSettings_;
+  this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
+
+  var localDestsSetEvent =
+      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
+  localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
+  this.nativeLayer_.dispatchEvent(localDestsSetEvent);
+
+  var capsSetEvent =
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
+  this.nativeLayer_.dispatchEvent(capsSetEvent);
+
+  printPreview.printTicketStore_.marginsType.updateValue(
+      print_preview.ticket_items.MarginsType.Value.CUSTOM);
+
+  ['left', 'top', 'right', 'bottom'].forEach(function(margin) {
+    var control = $('preview-area').querySelector('.margin-control-' + margin);
+    assertNotEquals(null, control);
+    var input = control.querySelector('.margin-control-textbox');
+    assertTrue(input.hasAttribute('aria-label'));
+    assertNotEquals('undefined', input.getAttribute('aria-label'));
+  });
 });
 
 // Page layout has zero margins. Hide header and footer option.
@@ -414,14 +490,7 @@ TEST_F('PrintPreviewWebUITest',
 
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': false,
-    'setColorAsDefault': true,
-    'disableCopiesOption': true,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
-  };
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkElementDisplayed(
@@ -454,14 +523,7 @@ TEST_F('PrintPreviewWebUITest',
 
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': false,
-    'setColorAsDefault': true,
-    'disableCopiesOption': true,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
-  };
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkElementDisplayed(
@@ -494,14 +556,7 @@ TEST_F('PrintPreviewWebUITest',
 
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': false,
-    'setColorAsDefault': true,
-    'disableCopiesOption': true,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
-  };
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkElementDisplayed(
@@ -535,14 +590,7 @@ TEST_F('PrintPreviewWebUITest',
 
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': false,
-    'setColorAsDefault': true,
-    'disableCopiesOption': true,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
-  };
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkElementDisplayed(
@@ -559,68 +607,139 @@ TEST_F('PrintPreviewWebUITest',
       true);
 });
 
-// Test that the color settings are set according to the printer capabilities.
-TEST_F('PrintPreviewWebUITest', 'TestColorSettingsTrue', function() {
-  var initialSettingsSetEvent =
-      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
-  initialSettingsSetEvent.initialSettings = this.initialSettings_;
-  this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
+// Test that the color settings, one option, standard monochrome.
+TEST_F('PrintPreviewWebUITest', 'TestColorSettingsMonochrome', function() {
+  this.setUpPreview();
 
-  var localDestsSetEvent =
-      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
-  localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
-  this.nativeLayer_.dispatchEvent(localDestsSetEvent);
-
+  // Only one option, standard monochrome.
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': false,
-    'setColorAsDefault': true,
-    'disableCopiesOption': false,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
-  };
-  this.nativeLayer_.dispatchEvent(capsSetEvent);
-
-  checkSectionVisible($('color-settings'), true);
-
-  var colorOption = $('color-settings').querySelector('.color-option');
-  var bwOption = $('color-settings').querySelector('.bw-option');
-  expectTrue(colorOption.checked);
-  expectFalse(bwOption.checked);
-});
-
-//Test that the color settings are set according to the printer capabilities.
-TEST_F('PrintPreviewWebUITest', 'TestColorSettingsFalse', function() {
-  var initialSettingsSetEvent =
-      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
-  initialSettingsSetEvent.initialSettings = this.initialSettings_;
-  this.nativeLayer_.dispatchEvent(initialSettingsSetEvent);
-
-  var localDestsSetEvent =
-      new Event(print_preview.NativeLayer.EventType.LOCAL_DESTINATIONS_SET);
-  localDestsSetEvent.destinationInfos = this.localDestinationInfos_;
-  this.nativeLayer_.dispatchEvent(localDestsSetEvent);
-
-  var capsSetEvent =
-      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': true,
-    'setColorAsDefault': false,
-    'disableCopiesOption': false,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
+  capsSetEvent.settingsInfo.capabilities.printer.color = {
+    "option": [
+      {"is_default": true, "type": "STANDARD_MONOCHROME"}
+    ]
   };
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkSectionVisible($('color-settings'), false);
+});
 
-  var colorOption = $('color-settings').querySelector('.color-option');
-  var bwOption = $('color-settings').querySelector('.bw-option');
-  expectFalse(colorOption.checked);
-  expectTrue(bwOption.checked);
+// Test that the color settings, one option, custom monochrome.
+TEST_F('PrintPreviewWebUITest', 'TestColorSettingsCustomMonochrome',
+    function() {
+  this.setUpPreview();
+
+  // Only one option, standard monochrome.
+  var capsSetEvent =
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
+  capsSetEvent.settingsInfo.capabilities.printer.color = {
+    "option": [
+      {"is_default": true, "type": "CUSTOM_MONOCHROME", "vendor_id": "42"}
+    ]
+  };
+  this.nativeLayer_.dispatchEvent(capsSetEvent);
+
+  checkSectionVisible($('color-settings'), false);
+});
+
+// Test that the color settings, one option, standard color.
+TEST_F('PrintPreviewWebUITest', 'TestColorSettingsColor', function() {
+  this.setUpPreview();
+
+  var capsSetEvent =
+    new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
+  capsSetEvent.settingsInfo.capabilities.printer.color = {
+  "option": [
+    {"is_default": true, "type": "STANDARD_COLOR"}
+  ]
+  };
+  this.nativeLayer_.dispatchEvent(capsSetEvent);
+
+  checkSectionVisible($('color-settings'), false);
+});
+
+// Test that the color settings, one option, custom color.
+TEST_F('PrintPreviewWebUITest', 'TestColorSettingsCustomColor', function() {
+  this.setUpPreview();
+
+  var capsSetEvent =
+     new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
+  capsSetEvent.settingsInfo.capabilities.printer.color = {
+   "option": [
+     {"is_default": true, "type": "CUSTOM_COLOR", "vendor_id": "42"}
+   ]
+  };
+  this.nativeLayer_.dispatchEvent(capsSetEvent);
+
+  checkSectionVisible($('color-settings'), false);
+});
+
+// Test that the color settings, two options, both standard, defaults to color.
+TEST_F('PrintPreviewWebUITest', 'TestColorSettingsBothStandardDefaultColor',
+    function() {
+  this.setUpPreview();
+
+  var capsSetEvent =
+      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
+  capsSetEvent.settingsInfo.capabilities.printer.color = {
+    "option": [
+      {"type": "STANDARD_MONOCHROME"},
+      {"is_default": true, "type": "STANDARD_COLOR"}
+    ]
+  };
+  this.nativeLayer_.dispatchEvent(capsSetEvent);
+
+  checkSectionVisible($('color-settings'), true);
+  expectTrue($('color-settings').querySelector('.color-option').checked);
+  expectFalse($('color-settings').querySelector('.bw-option').checked);
+});
+
+// Test that the color settings, two options, both standard, defaults to
+// monochrome.
+TEST_F('PrintPreviewWebUITest',
+    'TestColorSettingsBothStandardDefaultMonochrome', function() {
+  this.setUpPreview();
+
+  var capsSetEvent =
+     new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
+  capsSetEvent.settingsInfo.capabilities.printer.color = {
+   "option": [
+     {"is_default": true, "type": "STANDARD_MONOCHROME"},
+     {"type": "STANDARD_COLOR"}
+   ]
+  };
+  this.nativeLayer_.dispatchEvent(capsSetEvent);
+
+  checkSectionVisible($('color-settings'), true);
+  expectFalse($('color-settings').querySelector('.color-option').checked);
+  expectTrue($('color-settings').querySelector('.bw-option').checked);
+});
+
+// Test that the color settings, two options, both custom, defaults to color.
+TEST_F('PrintPreviewWebUITest',
+    'TestColorSettingsBothCustomDefaultColor', function() {
+  this.setUpPreview();
+
+  var capsSetEvent =
+    new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
+  capsSetEvent.settingsInfo.capabilities.printer.color = {
+  "option": [
+    {"type": "CUSTOM_MONOCHROME", "vendor_id": "42"},
+    {"is_default": true, "type": "CUSTOM_COLOR", "vendor_id": "43"}
+  ]
+  };
+  this.nativeLayer_.dispatchEvent(capsSetEvent);
+
+  checkSectionVisible($('color-settings'), true);
+  expectTrue($('color-settings').querySelector('.color-option').checked);
+  expectFalse($('color-settings').querySelector('.bw-option').checked);
 });
 
 // Test to verify that duplex settings are set according to the printer
@@ -642,15 +761,7 @@ TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsTrue', function() {
 
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': false,
-    'setColorAsDefault': true,
-    'disableCopiesOption': false,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0,
-    'setDuplexAsDefault': false
-  };
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkSectionVisible(otherOptionsDiv, true);
@@ -658,8 +769,8 @@ TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsTrue', function() {
   expectFalse(duplexCheckbox.checked);
 });
 
-//Test to verify that duplex settings are set according to the printer
-//capabilities.
+// Test to verify that duplex settings are set according to the printer
+// capabilities.
 TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsFalse', function() {
   var initialSettingsSetEvent =
      new Event(print_preview.NativeLayer.EventType.INITIAL_SETTINGS_SET);
@@ -676,15 +787,8 @@ TEST_F('PrintPreviewWebUITest', 'TestDuplexSettingsFalse', function() {
 
   var capsSetEvent =
      new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-   'printerId': 'FooDevice',
-   'disableColorOption': false,
-   'setColorAsDefault': true,
-   'disableCopiesOption': false,
-   'disableLandscapeOption': true,
-   'printerDefaultDuplexValue': -1,
-   'setDuplexAsDefault': false
-  };
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
+  delete capsSetEvent.settingsInfo.capabilities.printer.duplex;
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   checkSectionVisible(otherOptionsDiv, true);
@@ -706,14 +810,7 @@ TEST_F('PrintPreviewWebUITest', 'TestPrinterChangeUpdatesPreview', function() {
 
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'FooDevice',
-    'disableColorOption': false,
-    'setColorAsDefault': true,
-    'disableCopiesOption': true,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
-  };
+  capsSetEvent.settingsInfo = getCddTemplate("FooDevice");
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 
   var previewGenerator = mock(print_preview.PreviewGenerator);
@@ -733,13 +830,11 @@ TEST_F('PrintPreviewWebUITest', 'TestPrinterChangeUpdatesPreview', function() {
 
   var capsSetEvent =
       new Event(print_preview.NativeLayer.EventType.CAPABILITIES_SET);
-  capsSetEvent.settingsInfo = {
-    'printerId': 'BarDevice',
-    'disableColorOption': true,
-    'setColorAsDefault': false,
-    'disableCopiesOption': true,
-    'disableLandscapeOption': true,
-    'printerDefaultDuplexValue': 0
+  capsSetEvent.settingsInfo = getCddTemplate("BarDevice");
+  capsSetEvent.settingsInfo.capabilities.printer.color = {
+    "option": [
+      {"is_default": true, "type": "STANDARD_MONOCHROME"}
+    ]
   };
   this.nativeLayer_.dispatchEvent(capsSetEvent);
 });

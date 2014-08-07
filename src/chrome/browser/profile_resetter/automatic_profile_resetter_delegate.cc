@@ -17,7 +17,7 @@
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/profile_resetter/brandcode_config_fetcher.h"
 #include "chrome/browser/profile_resetter/profile_reset_global_error.h"
 #include "chrome/browser/profile_resetter/profile_resetter.h"
@@ -193,7 +193,7 @@ void AutomaticProfileResetterDelegateImpl::
     return;
 
   std::string brandcode;
-  google_util::GetBrand(&brandcode);
+  google_brand::GetBrand(&brandcode);
   if (brandcode.empty()) {
     brandcoded_defaults_.reset(new BrandcodedDefaultSettings);
     brandcoded_defaults_fetched_event_.Signal();
@@ -258,7 +258,7 @@ scoped_ptr<base::ListValue> AutomaticProfileResetterDelegateImpl::
   scoped_ptr<base::ListValue> engines_details_list(new base::ListValue);
   for (ScopedVector<TemplateURLData>::const_iterator it = engines.begin();
        it != engines.end(); ++it) {
-    TemplateURL template_url(profile_, **it);
+    TemplateURL template_url(**it);
     engines_details_list->Append(
         BuildSubTreeFromTemplateURL(&template_url).release());
   }
@@ -356,14 +356,14 @@ void AutomaticProfileResetterDelegateImpl::RunProfileSettingsReset(
     old_settings_snapshot.reset(new ResettableSettingsSnapshot(profile_));
     old_settings_snapshot->RequestShortcuts(base::Closure());
   }
-  profile_resetter_->Reset(
-      resettable_aspects_,
-      brandcoded_defaults_.Pass(),
-      base::Bind(&AutomaticProfileResetterDelegateImpl::
-                     OnProfileSettingsResetCompleted,
-                 AsWeakPtr(),
-                 completion,
-                 base::Passed(&old_settings_snapshot)));
+  profile_resetter_->Reset(resettable_aspects_,
+                           brandcoded_defaults_.Pass(),
+                           send_feedback,
+                           base::Bind(&AutomaticProfileResetterDelegateImpl::
+                                          OnProfileSettingsResetCompleted,
+                                      AsWeakPtr(),
+                                      completion,
+                                      base::Passed(&old_settings_snapshot)));
 }
 
 void AutomaticProfileResetterDelegateImpl::

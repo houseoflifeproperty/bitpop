@@ -63,15 +63,19 @@ class WebCookieJar;
 class WebDataSource;
 class WebDOMEvent;
 class WebFormElement;
+class WebGeolocationClient;
 class WebInputEvent;
 class WebMediaPlayer;
 class WebMediaPlayerClient;
+class WebMIDIClient;
 class WebNotificationPresenter;
 class WebServiceWorkerProvider;
 class WebServiceWorkerProviderClient;
+class WebSocketHandle;
 class WebNode;
 class WebPlugin;
 class WebRTCPeerConnectionHandler;
+class WebScreenOrientationClient;
 class WebSharedWorker;
 class WebSharedWorkerClient;
 class WebSocketStreamHandle;
@@ -226,10 +230,7 @@ public:
     // The window object for the frame has been cleared of any extra
     // properties that may have been set by script from the previously
     // loaded document.
-    virtual void didClearWindowObject(WebLocalFrame* frame) { didClearWindowObject(frame, 0); }
-
-    // Deprecated.
-    virtual void didClearWindowObject(WebLocalFrame* frame, int worldId) { }
+    virtual void didClearWindowObject(WebLocalFrame* frame) { }
 
     // The document element has been created.
     virtual void didCreateDocumentElement(WebLocalFrame*) { }
@@ -265,6 +266,11 @@ public:
     // The frame's manifest has changed.
     virtual void didChangeManifest(WebLocalFrame*) { }
 
+    // TODO: Remove when chromium is changed to use didChangeThemeColor().
+    virtual void didChangeBrandColor() { }
+
+    // The frame's theme color has changed.
+    virtual void didChangeThemeColor() { }
 
     // Misc ----------------------------------------------------------------
 
@@ -396,9 +402,6 @@ public:
     // The frame's document finished the initial non-empty layout of a page.
     virtual void didFirstVisuallyNonEmptyLayout(WebLocalFrame*) { }
 
-    // The size of the content area changed.
-    virtual void didChangeContentsSize(WebLocalFrame*, const WebSize&) { }
-
     // The main frame scrolled.
     virtual void didChangeScrollOffset(WebLocalFrame*) { }
 
@@ -442,8 +445,19 @@ public:
 
     // WebSocket -----------------------------------------------------
 
-    // A WebSocket object is going to open new stream connection.
+    // A WebSocket object is going to open a new socket stream connection. Used
+    // by the old WebSocket implementation.
     virtual void willOpenSocketStream(WebSocketStreamHandle*) { }
+
+    // A WebSocket object is going to open a new WebSocket connection. Used by
+    // the new WebSocket implementation.
+    virtual void willOpenWebSocket(WebSocketHandle*) { }
+
+
+    // Geolocation ---------------------------------------------------------
+
+    // Access the embedder API for (client-based) geolocation client .
+    virtual WebGeolocationClient* geolocationClient() { return 0; }
 
 
     // MediaStream -----------------------------------------------------
@@ -452,6 +466,11 @@ public:
     virtual void willStartUsingPeerConnectionHandler(WebLocalFrame*, WebRTCPeerConnectionHandler*) { }
 
     virtual WebUserMediaClient* userMediaClient() { return 0; }
+
+
+    // Web MIDI -------------------------------------------------------------
+
+    virtual WebMIDIClient* webMIDIClient() { return 0; }
 
 
     // Messages ------------------------------------------------------
@@ -495,8 +514,14 @@ public:
     // Send initial drawing parameters to a child frame that is being rendered out of process.
     virtual void initializeChildFrame(const WebRect& frameRect, float scaleFactor) { }
 
+
+    // Screen Orientation --------------------------------------------------
+
+    // Access the embedder API for (client-based) screen orientation client .
+    virtual WebScreenOrientationClient* webScreenOrientationClient() { return 0; }
+
 protected:
-    ~WebFrameClient() { }
+    virtual ~WebFrameClient() { }
 };
 
 } // namespace blink

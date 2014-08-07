@@ -33,21 +33,22 @@ CastTransportVideoConfig::CastTransportVideoConfig() : codec(kVp8) {}
 
 CastTransportVideoConfig::~CastTransportVideoConfig() {}
 
-EncodedVideoFrame::EncodedVideoFrame()
-    : codec(kVp8),
-      key_frame(false),
+EncodedFrame::EncodedFrame()
+    : dependency(UNKNOWN_DEPENDENCY),
       frame_id(0),
-      last_referenced_frame_id(0),
+      referenced_frame_id(0),
       rtp_timestamp(0) {}
-EncodedVideoFrame::~EncodedVideoFrame() {}
 
-EncodedAudioFrame::EncodedAudioFrame()
-    : codec(kOpus), frame_id(0), rtp_timestamp(0) {}
-EncodedAudioFrame::~EncodedAudioFrame() {}
+EncodedFrame::~EncodedFrame() {}
 
-RtcpSenderFrameLogMessage::RtcpSenderFrameLogMessage()
-    : frame_status(kRtcpSenderFrameStatusUnknown), rtp_timestamp(0) {}
-RtcpSenderFrameLogMessage::~RtcpSenderFrameLogMessage() {}
+void EncodedFrame::CopyMetadataTo(EncodedFrame* dest) const {
+  DCHECK(dest);
+  dest->dependency = this->dependency;
+  dest->frame_id = this->frame_id;
+  dest->referenced_frame_id = this->referenced_frame_id;
+  dest->rtp_timestamp = this->rtp_timestamp;
+  dest->reference_time = this->reference_time;
+}
 
 RtcpSenderInfo::RtcpSenderInfo()
     : ntp_seconds(0),

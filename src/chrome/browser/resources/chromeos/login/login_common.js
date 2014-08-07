@@ -7,6 +7,7 @@
  */
 
 <include src="../../login/screen.js"></include>
+<include src="screen_context.js"></include>
 <include src="../user_images_grid.js"></include>
 <include src="apps_menu.js"></include>
 <include src="../../login/bubble.js"></include>
@@ -194,17 +195,6 @@ cr.define('cr.ui', function() {
    */
   Oobe.animateOnceFullyDisplayed = function() {
     login.HeaderBar.animateIn();
-  };
-
-  /**
-   * Handles login success notification.
-   */
-  Oobe.onLoginSuccess = function(username) {
-    if (Oobe.getInstance().currentScreen.id == SCREEN_ACCOUNT_PICKER) {
-      // TODO(nkostylev): Enable animation back when session start jank
-      // is reduced. See http://crosbug.com/11116 http://crosbug.com/18307
-      // $('pod-row').startAuthenticatedAnimation();
-    }
   };
 
   /**

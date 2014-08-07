@@ -12,9 +12,6 @@ class GitApi(recipe_api.RecipeApi):
   def __call__(self, *args, **kwargs):
     """Return a git command step."""
     name = kwargs.pop('name', 'git '+args[0])
-    # Distinguish 'git config' commands by the variable they are setting.
-    if args[0] == 'config' and not args[1].startswith('-'):
-      name += ' ' + args[1]
     if 'cwd' not in kwargs:
       kwargs.setdefault('cwd', self.m.path['checkout'])
     git_cmd = 'git'
@@ -28,7 +25,8 @@ class GitApi(recipe_api.RecipeApi):
     return self('fetch', 'origin', '--tags', **kwargs)
 
   def checkout(self, url, ref=None, dir_path=None, recursive=False,
-               submodules=True, keep_paths=None, step_suffix=None):
+               submodules=True, keep_paths=None, step_suffix=None,
+               curl_trace_file=None):
     """Returns an iterable of steps to perform a full git checkout.
     Args:
       url (string): url of remote repo to use as upstream
@@ -39,6 +37,9 @@ class GitApi(recipe_api.RecipeApi):
       keep_paths (iterable of strings): paths to ignore during git-clean;
           paths are gitignore-style patterns relative to checkout_path.
       step_suffix (string): suffix to add to a each step name
+      curl_trace_file (Path): if not None, dump GIT_CURL_VERBOSE=1 trace to that
+          file. Useful for debugging git issue reproducible only on bots. It has
+          a side effect of all stderr output of 'git fetch' going to that file.
     """
     if not dir_path:
       dir_path = url.rsplit('/', 1)[-1]
@@ -98,10 +99,20 @@ class GitApi(recipe_api.RecipeApi):
     if recursive:
       fetch_args.append('--recurse-submodules')
 
+    fetch_env = {}
+    fetch_stderr = None
+    if curl_trace_file:
+      fetch_env['GIT_CURL_VERBOSE'] = '1'
+      fetch_stderr = self.m.raw_io.output(leak_to=curl_trace_file)
+
     steps.append([
-      self('fetch', *fetch_args, cwd=dir_path,
-           name='git fetch%s' % step_suffix),
-      self('checkout', '-f', checkout_ref, cwd=dir_path,
+      self('fetch', *fetch_args,
+           cwd=dir_path,
+           name='git fetch%s' % step_suffix,
+           env=fetch_env,
+           stderr=fetch_stderr),
+      self('checkout', '-f', checkout_ref,
+           cwd=dir_path,
            name='git checkout%s' % step_suffix),
     ])
 

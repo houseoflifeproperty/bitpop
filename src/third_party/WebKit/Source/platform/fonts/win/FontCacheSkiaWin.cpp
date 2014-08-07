@@ -32,9 +32,9 @@
 #include "config.h"
 #include "platform/fonts/FontCache.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "SkFontMgr.h"
 #include "SkTypeface_win.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/fonts/harfbuzz/FontPlatformDataHarfbuzz.h"
@@ -85,7 +85,7 @@ static bool fontContainsCharacter(const FontPlatformData* fontData, const wchar_
 
 // Given the desired base font, this will create a SimpleFontData for a specific
 // font that can be used to render the given range of characters.
-PassRefPtr<SimpleFontData> FontCache::platformFallbackForCharacter(const FontDescription& fontDescription, UChar32 character, const SimpleFontData*)
+PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescription& fontDescription, UChar32 character, const SimpleFontData*)
 {
     // FIXME: Consider passing fontDescription.dominantScript()
     // to GetFallbackFamily here.
@@ -224,6 +224,24 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
         fontDescription.style() == FontStyleItalic && !tf->isItalic() || fontDescription.isSyntheticItalic(),
         fontDescription.orientation(),
         s_useSubpixelPositioning);
+
+    struct FamilyMinSize {
+        const wchar_t* family;
+        unsigned minSize;
+    };
+    const static FamilyMinSize minAntiAliasSizeForFont[] = {
+        { L"simsun", 16 },
+        { L"dotum", 12 },
+        { L"gulim", 12 }
+    };
+    size_t numFonts = WTF_ARRAY_LENGTH(minAntiAliasSizeForFont);
+    for (size_t i = 0; i < numFonts; i++) {
+        FamilyMinSize entry = minAntiAliasSizeForFont[i];
+        if (typefacesMatchesFamily(tf.get(), entry.family)) {
+            result->setMinSizeForAntiAlias(entry.minSize);
+            break;
+        }
+    }
 
     return result;
 }

@@ -22,10 +22,10 @@
 
 #include "core/html/HTMLMeterElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -49,7 +49,7 @@ HTMLMeterElement::~HTMLMeterElement()
 
 PassRefPtrWillBeRawPtr<HTMLMeterElement> HTMLMeterElement::create(Document& document)
 {
-    RefPtrWillBeRawPtr<HTMLMeterElement> meter = adoptRefWillBeRefCountedGarbageCollected(new HTMLMeterElement(document));
+    RefPtrWillBeRawPtr<HTMLMeterElement> meter = adoptRefWillBeNoop(new HTMLMeterElement(document));
     meter->ensureUserAgentShadowRoot();
     return meter.release();
 }
@@ -199,10 +199,10 @@ void HTMLMeterElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 {
     ASSERT(!m_value);
 
-    RefPtr<MeterInnerElement> inner = MeterInnerElement::create(document());
+    RefPtrWillBeRawPtr<MeterInnerElement> inner = MeterInnerElement::create(document());
     root.appendChild(inner);
 
-    RefPtr<MeterBarElement> bar = MeterBarElement::create(document());
+    RefPtrWillBeRawPtr<MeterBarElement> bar = MeterBarElement::create(document());
     m_value = MeterValueElement::create(document());
     m_value->setWidthPercentage(0);
     m_value->updatePseudo();

@@ -9,8 +9,10 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/i18n/break_iterator.h"
 #include "base/i18n/case_conversion.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
@@ -19,7 +21,6 @@
 #include "chrome/renderer/safe_browsing/features.h"
 #include "chrome/renderer/safe_browsing/murmurhash3_util.h"
 #include "crypto/sha2.h"
-#include "third_party/icu/source/common/unicode/ubrk.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace safe_browsing {
@@ -37,13 +38,18 @@ const int PhishingTermFeatureExtractor::kClockCheckGranularity = 5;
 // actual phishing page.
 const int PhishingTermFeatureExtractor::kMaxTotalTimeMs = 500;
 
-// The maximum size of the negative word cache.
-const int PhishingTermFeatureExtractor::kMaxNegativeWordCacheSize = 1000;
-
 // All of the state pertaining to the current feature extraction.
 struct PhishingTermFeatureExtractor::ExtractionState {
   // Stores up to max_words_per_term_ previous words separated by spaces.
   std::string previous_words;
+
+  // Stores the current shingle after a new word is processed and added in.
+  std::string current_shingle;
+
+  // Stores the sizes of the words in current_shingle. Note: the size includes
+  // the space after each word. In other words, the sum of all sizes in this
+  // list is equal to the length of current_shingle.
+  std::list<size_t> shingle_word_sizes;
 
   // Stores the sizes of the words in previous_words.  Note: the size includes
   // the space after each word.  In other words, the sum of all sizes in this
@@ -51,15 +57,7 @@ struct PhishingTermFeatureExtractor::ExtractionState {
   std::list<size_t> previous_word_sizes;
 
   // An iterator for word breaking.
-  UBreakIterator* iterator;
-
-  // Our current position in the text that was passed to the ExtractionState
-  // constructor, speciailly, the most recent break position returned by our
-  // iterator.
-  int position;
-
-  // True if position has been initialized.
-  bool position_initialized;
+  scoped_ptr<base::i18n::BreakIterator> iterator;
 
   // The time at which we started feature extraction for the current page.
   base::TimeTicks start_time;
@@ -68,24 +66,17 @@ struct PhishingTermFeatureExtractor::ExtractionState {
   int num_iterations;
 
   ExtractionState(const base::string16& text, base::TimeTicks start_time_ticks)
-      : position(-1),
-        position_initialized(false),
-        start_time(start_time_ticks),
+      : start_time(start_time_ticks),
         num_iterations(0) {
-    UErrorCode status = U_ZERO_ERROR;
-    // TODO(bryner): We should pass in the language for the document.
-    iterator = ubrk_open(UBRK_WORD, NULL,
-                         text.data(), text.size(),
-                         &status);
-    if (U_FAILURE(status)) {
-      DLOG(ERROR) << "ubrk_open failed: " << status;
-      iterator = NULL;
-    }
-  }
 
-  ~ExtractionState() {
-    if (iterator) {
-      ubrk_close(iterator);
+    scoped_ptr<base::i18n::BreakIterator> i(
+        new base::i18n::BreakIterator(
+            text, base::i18n::BreakIterator::BREAK_WORD));
+
+    if (i->Init()) {
+      iterator = i.Pass();
+    } else {
+      DLOG(ERROR) << "failed to open iterator";
     }
   }
 };
@@ -95,12 +86,15 @@ PhishingTermFeatureExtractor::PhishingTermFeatureExtractor(
     const base::hash_set<uint32>* page_word_hashes,
     size_t max_words_per_term,
     uint32 murmurhash3_seed,
+    size_t max_shingles_per_page,
+    size_t shingle_size,
     FeatureExtractorClock* clock)
     : page_term_hashes_(page_term_hashes),
       page_word_hashes_(page_word_hashes),
       max_words_per_term_(max_words_per_term),
       murmurhash3_seed_(murmurhash3_seed),
-      negative_word_cache_(kMaxNegativeWordCacheSize),
+      max_shingles_per_page_(max_shingles_per_page),
+      shingle_size_(shingle_size),
       clock_(clock),
       weak_factory_(this) {
   Clear();
@@ -115,6 +109,7 @@ PhishingTermFeatureExtractor::~PhishingTermFeatureExtractor() {
 void PhishingTermFeatureExtractor::ExtractFeatures(
     const base::string16* page_text,
     FeatureMap* features,
+    std::set<uint32>* shingle_hashes,
     const DoneCallback& done_callback) {
   // The RenderView should have called CancelPendingExtraction() before
   // starting a new extraction, so DCHECK this.
@@ -125,6 +120,7 @@ void PhishingTermFeatureExtractor::ExtractFeatures(
 
   page_text_ = page_text;
   features_ = features;
+  shingle_hashes_ = shingle_hashes,
   done_callback_ = done_callback;
 
   state_.reset(new ExtractionState(*page_text_, clock_->Now()));
@@ -145,33 +141,21 @@ void PhishingTermFeatureExtractor::ExtractFeaturesWithTimeout() {
   ++state_->num_iterations;
   base::TimeTicks current_chunk_start_time = clock_->Now();
 
-  if (!state_->iterator) {
+  if (!state_->iterator.get()) {
     // We failed to initialize the break iterator, so stop now.
     UMA_HISTOGRAM_COUNTS("SBClientPhishing.TermFeatureBreakIterError", 1);
     RunCallback(false);
     return;
   }
 
-  if (!state_->position_initialized) {
-    state_->position = ubrk_first(state_->iterator);
-    if (state_->position == UBRK_DONE) {
-      // No words present, so we're done.
-      RunCallback(true);
-      return;
-    }
-    state_->position_initialized = true;
-  }
-
   int num_words = 0;
-  for (int next = ubrk_next(state_->iterator);
-       next != UBRK_DONE; next = ubrk_next(state_->iterator)) {
-    if (ubrk_getRuleStatus(state_->iterator) != UBRK_WORD_NONE) {
-      // next is now positioned at the end of a word.
-      HandleWord(base::StringPiece16(page_text_->data() + state_->position,
-                                     next - state_->position));
+  while (state_->iterator->Advance()) {
+    if (state_->iterator->IsWord()) {
+      const size_t start = state_->iterator->prev();
+      const size_t length = state_->iterator->pos() - start;
+      HandleWord(base::StringPiece16(page_text_->data() + start, length));
       ++num_words;
     }
-    state_->position = next;
 
     if (num_words >= kClockCheckGranularity) {
       num_words = 0;
@@ -210,18 +194,24 @@ void PhishingTermFeatureExtractor::ExtractFeaturesWithTimeout() {
 
 void PhishingTermFeatureExtractor::HandleWord(
     const base::StringPiece16& word) {
-  // Quickest out if we have seen this word before and know that it's not
-  // part of any term. This avoids the lowercasing and UTF conversion, both of
-  // which are relatively expensive.
-  if (negative_word_cache_.Get(word) != negative_word_cache_.end()) {
-    // We know we're no longer in a possible n-gram, so clear the previous word
-    // state.
-    state_->previous_words.clear();
-    state_->previous_word_sizes.clear();
-    return;
+  // First, extract shingle hashes.
+  const std::string& word_lower = base::UTF16ToUTF8(base::i18n::ToLower(word));
+  state_->current_shingle.append(word_lower + " ");
+  state_->shingle_word_sizes.push_back(word_lower.size() + 1);
+  if (state_->shingle_word_sizes.size() == shingle_size_) {
+    shingle_hashes_->insert(
+        MurmurHash3String(state_->current_shingle, murmurhash3_seed_));
+    state_->current_shingle.erase(0, state_->shingle_word_sizes.front());
+    state_->shingle_word_sizes.pop_front();
+  }
+  // Check if the size of shingle hashes is over the limit.
+  if (shingle_hashes_->size() > max_shingles_per_page_) {
+    // Pop the largest one.
+    std::set<uint32>::iterator it = shingle_hashes_->end();
+    shingle_hashes_->erase(--it);
   }
 
-  std::string word_lower = base::UTF16ToUTF8(base::i18n::ToLower(word));
+  // Next, extract page terms.
   uint32 word_hash = MurmurHash3String(word_lower, murmurhash3_seed_);
 
   // Quick out if the word is not part of any term, which is the common case.
@@ -229,8 +219,6 @@ void PhishingTermFeatureExtractor::HandleWord(
     // Word doesn't exist in our terms so we can clear the n-gram state.
     state_->previous_words.clear();
     state_->previous_word_sizes.clear();
-    // Insert into negative cache so that we don't try this again.
-    negative_word_cache_.Put(word, true);
     return;
   }
 
@@ -302,9 +290,9 @@ void PhishingTermFeatureExtractor::RunCallback(bool success) {
 void PhishingTermFeatureExtractor::Clear() {
   page_text_ = NULL;
   features_ = NULL;
+  shingle_hashes_ = NULL;
   done_callback_.Reset();
   state_.reset(NULL);
-  negative_word_cache_.Clear();
 }
 
 }  // namespace safe_browsing

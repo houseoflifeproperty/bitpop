@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/rendering/RenderIFrame.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLIFrameElement.h"
@@ -53,14 +53,9 @@ bool RenderIFrame::isInlineBlockOrInlineTable() const
 
 LayerType RenderIFrame::layerTypeRequired() const
 {
-    LayerType type = RenderPart::layerTypeRequired();
-    if (type != NoLayer)
-        return type;
-
     if (style()->resize() != RESIZE_NONE)
         return NormalLayer;
-
-    return ForcedLayer;
+    return RenderPart::layerTypeRequired();
 }
 
 void RenderIFrame::layout()
@@ -73,7 +68,7 @@ void RenderIFrame::layout()
 
     m_overflow.clear();
     addVisualEffectOverflow();
-    updateLayerTransform();
+    updateLayerTransformAfterLayout();
 
     clearNeedsLayout();
 }

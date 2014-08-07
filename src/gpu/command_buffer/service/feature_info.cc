@@ -16,10 +16,6 @@
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "ui/gl/gl_implementation.h"
 
-#if defined(OS_MACOSX)
-#include "ui/gl/io_surface_support_mac.h"
-#endif
-
 namespace gpu {
 namespace gles2 {
 
@@ -670,9 +666,7 @@ void FeatureInfo::InitializeFeatures() {
   }
 
 #if defined(OS_MACOSX)
-  if (IOSurfaceSupport::Initialize()) {
-    AddExtensionString("GL_CHROMIUM_iosurface");
-  }
+  AddExtensionString("GL_CHROMIUM_iosurface");
 #endif
 
   // TODO(gman): Add support for these extensions.
@@ -777,6 +771,13 @@ void FeatureInfo::InitializeFeatures() {
     }
   }
 
+  if (extensions.Contains("GL_EXT_blend_minmax") ||
+      gfx::HasDesktopGLFeatures()) {
+    AddExtensionString("GL_EXT_blend_minmax");
+    validators_.equation.AddValue(GL_MIN_EXT);
+    validators_.equation.AddValue(GL_MAX_EXT);
+  }
+
   if (extensions.Contains("GL_EXT_frag_depth") || gfx::HasDesktopGLFeatures()) {
     AddExtensionString("GL_EXT_frag_depth");
     feature_flags_.ext_frag_depth = true;
@@ -795,8 +796,10 @@ void FeatureInfo::InitializeFeatures() {
   }
   egl_khr_fence_sync = gfx::g_driver_egl.ext.b_EGL_KHR_fence_sync;
 #endif
+  if (workarounds_.disable_arb_sync)
+    gfx::g_driver_gl.ext.b_GL_ARB_sync = false;
   bool ui_gl_fence_works = is_es3 || extensions.Contains("GL_NV_fence") ||
-                           extensions.Contains("GL_ARB_sync") ||
+                           gfx::g_driver_gl.ext.b_GL_ARB_sync ||
                            egl_khr_fence_sync;
   UMA_HISTOGRAM_BOOLEAN("GPU.FenceSupport", ui_gl_fence_works);
 

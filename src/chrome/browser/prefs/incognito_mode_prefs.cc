@@ -10,7 +10,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
@@ -19,6 +19,14 @@
 #if defined(OS_ANDROID)
 #include "chrome/browser/android/chromium_application.h"
 #endif  // OS_ANDROID
+
+#if defined(OS_WIN)
+namespace {
+
+bool g_parental_control_on = false;
+
+} // empty namespace
+#endif  // OS_WIN
 
 // static
 bool IncognitoModePrefs::IntToAvailability(int in_value,
@@ -102,3 +110,20 @@ bool IncognitoModePrefs::ArePlatformParentalControlsEnabled() {
   return false;
 #endif
 }
+
+#if defined(OS_WIN)
+void IncognitoModePrefs::InitializePlatformParentalControls() {
+  g_parental_control_on = base::win::IsParentalControlActivityLoggingOn();
+}
+#endif // OS_WIN
+
+bool IncognitoModePrefs::ArePlatformParentalControlsEnabledCached() {
+#if defined(OS_WIN)
+  return g_parental_control_on;
+#elif defined(OS_ANDROID)
+  return chrome::android::ChromiumApplication::AreParentalControlsEnabled();
+#else
+  return false;
+#endif
+}
+

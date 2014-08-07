@@ -52,9 +52,14 @@ namespace WebCore {
 // placed in between the column sets that come before and after the span.
 class RenderMultiColumnSet FINAL : public RenderRegion {
 public:
+    enum BalancedHeightCalculation { GuessFromFlowThreadPortion, StretchBySpaceShortage };
+
     static RenderMultiColumnSet* createAnonymous(RenderFlowThread*, RenderStyle* parentStyle);
 
     virtual bool isRenderMultiColumnSet() const OVERRIDE { return true; }
+
+    virtual LayoutUnit pageLogicalWidth() const OVERRIDE FINAL { return flowThread()->logicalWidth(); }
+    virtual LayoutUnit pageLogicalHeight() const OVERRIDE FINAL { return m_columnHeight; }
 
     RenderBlockFlow* multiColumnBlockFlow() const { return toRenderBlockFlow(parent()); }
     RenderMultiColumnFlowThread* multiColumnFlowThread() const
@@ -64,18 +69,15 @@ public:
     }
 
     RenderMultiColumnSet* nextSiblingMultiColumnSet() const;
+    RenderMultiColumnSet* previousSiblingMultiColumnSet() const;
 
+    LayoutUnit logicalTopInFlowThread() const { return isHorizontalWritingMode() ? flowThreadPortionRect().y() : flowThreadPortionRect().x(); }
     LayoutUnit logicalBottomInFlowThread() const { return isHorizontalWritingMode() ? flowThreadPortionRect().maxY() : flowThreadPortionRect().maxX(); }
 
-    unsigned computedColumnCount() const { return m_computedColumnCount; }
-    LayoutUnit computedColumnWidth() const { return m_computedColumnWidth; }
-    LayoutUnit computedColumnHeight() const { return m_computedColumnHeight; }
+    LayoutUnit logicalHeightInFlowThread() const { return isHorizontalWritingMode() ? flowThreadPortionRect().height() : flowThreadPortionRect().width(); }
 
-    void setComputedColumnWidthAndCount(LayoutUnit width, unsigned count)
-    {
-        m_computedColumnWidth = width;
-        m_computedColumnCount = count;
-    }
+    // The used CSS value of column-count, i.e. how many columns there are room for without overflowing.
+    unsigned usedColumnCount() const { return multiColumnFlowThread()->columnCount(); }
 
     // Find the column that contains the given block offset, and return the translation needed to
     // get from flow thread coordinates to visual coordinates.
@@ -86,14 +88,14 @@ public:
     void updateMinimumColumnHeight(LayoutUnit height) { m_minimumColumnHeight = std::max(height, m_minimumColumnHeight); }
     LayoutUnit minimumColumnHeight() const { return m_minimumColumnHeight; }
 
-    unsigned forcedBreaksCount() const { return m_contentRuns.size(); }
-    void clearForcedBreaks();
-    void addForcedBreak(LayoutUnit offsetFromFirstPage);
+    // Add a content run, specified by its end position. A content run is appended at every
+    // forced/explicit break and at the end of the column set. The content runs are used to
+    // determine where implicit/soft breaks will occur, in order to calculate an initial column
+    // height.
+    void addContentRun(LayoutUnit endOffsetFromFirstPage);
 
-    // (Re-)calculate the column height if it's auto. If 'initial' is set, guess an initial column
-    // height; otherwise, stretch the column height a tad. Return true if column height changed and
-    // another layout pass is required.
-    bool recalculateColumnHeight(bool initial);
+    // (Re-)calculate the column height if it's auto.
+    bool recalculateColumnHeight(BalancedHeightCalculation);
 
     // Record space shortage (the amount of space that would have been enough to prevent some
     // element from being moved to the next column) at a column break. The smallest amount of space
@@ -101,9 +103,8 @@ public:
     // after layout that the columns weren't tall enough.
     void recordSpaceShortage(LayoutUnit spaceShortage);
 
-    virtual void updateLogicalWidth() OVERRIDE;
-
-    void prepareForLayout();
+    // Reset previously calculated column height. Will mark for layout if needed.
+    void resetColumnHeight();
 
     // Expand this set's flow thread portion rectangle to contain all trailing flow thread
     // overflow. Only to be called on the last set.
@@ -116,25 +117,26 @@ private:
 
     virtual void paintObject(PaintInfo&, const LayoutPoint& paintOffset) OVERRIDE;
 
-    virtual LayoutUnit pageLogicalWidth() const OVERRIDE { return m_computedColumnWidth; }
-    virtual LayoutUnit pageLogicalHeight() const OVERRIDE { return m_computedColumnHeight; }
-
     virtual LayoutUnit pageLogicalTopForOffset(LayoutUnit offset) const OVERRIDE;
 
-    // FIXME: This will change once we have column sets constrained by enclosing pages, etc.
-    virtual LayoutUnit logicalHeightOfAllFlowThreadContent() const OVERRIDE { return m_computedColumnHeight; }
+    virtual LayoutUnit logicalHeightOfAllFlowThreadContent() const OVERRIDE { return logicalHeightInFlowThread(); }
 
     virtual void repaintFlowThreadContent(const LayoutRect& repaintRect) const OVERRIDE;
 
     virtual void collectLayerFragments(LayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect) OVERRIDE;
 
+    virtual void addOverflowFromChildren() OVERRIDE;
+
     virtual const char* renderName() const OVERRIDE;
 
     void paintColumnRules(PaintInfo&, const LayoutPoint& paintOffset);
 
+    LayoutUnit calculateMaxColumnHeight() const;
     LayoutUnit columnGap() const;
     LayoutRect columnRectAt(unsigned index) const;
-    unsigned columnCount() const;
+
+    // The "CSS actual" value of column-count. This includes overflowing columns, if any.
+    unsigned actualColumnCount() const;
 
     LayoutRect flowThreadPortionRectAt(unsigned index) const;
     LayoutRect flowThreadPortionOverflowRect(const LayoutRect& flowThreadPortion, unsigned index, unsigned colCount, LayoutUnit colGap) const;
@@ -156,11 +158,9 @@ private:
     // and store the results. This is needed in order to balance the columns.
     void distributeImplicitBreaks();
 
-    LayoutUnit calculateColumnHeight(bool initial) const;
+    LayoutUnit calculateColumnHeight(BalancedHeightCalculation) const;
 
-    unsigned m_computedColumnCount; // Used column count (the resulting 'N' from the pseudo-algorithm in the multicol spec)
-    LayoutUnit m_computedColumnWidth; // Used column width (the resulting 'W' from the pseudo-algorithm in the multicol spec)
-    LayoutUnit m_computedColumnHeight;
+    LayoutUnit m_columnHeight;
 
     // The following variables are used when balancing the column set.
     LayoutUnit m_maxColumnHeight; // Maximum column height allowed.
@@ -169,11 +169,11 @@ private:
 
     // A run of content without explicit (forced) breaks; i.e. a flow thread portion between two
     // explicit breaks, between flow thread start and an explicit break, between an explicit break
-    // and flow thread end, or, in cases when there are no explicit breaks at all: between flow flow
-    // thread start and flow thread end. We need to know where the explicit breaks are, in order to
-    // figure out where the implicit breaks will end up, so that we get the columns properly
-    // balanced. A content run starts out as representing one single column, and will represent one
-    // additional column for each implicit break "inserted" there.
+    // and flow thread end, or, in cases when there are no explicit breaks at all: between flow
+    // thread portion start and flow thread portion end. We need to know where the explicit breaks
+    // are, in order to figure out where the implicit breaks will end up, so that we get the columns
+    // properly balanced. A content run starts out as representing one single column, and will
+    // represent one additional column for each implicit break "inserted" there.
     class ContentRun {
     public:
         ContentRun(LayoutUnit breakOffset)

@@ -29,8 +29,6 @@
 
 namespace WebCore {
 
-using namespace std;
-
 ScopedPageLoadDeferrer::ScopedPageLoadDeferrer(Page* exclusion)
 {
     const HashSet<Page*>& pages = Page::ordinaryPages();
@@ -41,16 +39,20 @@ ScopedPageLoadDeferrer::ScopedPageLoadDeferrer(Page* exclusion)
         if (page == exclusion || page->defersLoading())
             continue;
 
-        m_deferredFrames.append(page->mainFrame());
+        if (page->mainFrame()->isLocalFrame()) {
+            m_deferredFrames.append(page->deprecatedLocalMainFrame());
 
-        // Ensure that we notify the client if the initial empty document is accessed before
-        // showing anything modal, to prevent spoofs while the modal window or sheet is visible.
-        page->mainFrame()->loader().notifyIfInitialDocumentAccessed();
+            // Ensure that we notify the client if the initial empty document is accessed before
+            // showing anything modal, to prevent spoofs while the modal window or sheet is visible.
+            page->deprecatedLocalMainFrame()->loader().notifyIfInitialDocumentAccessed();
+        }
 
         // This code is not logically part of load deferring, but we do not want JS code executed
         // beneath modal windows or sheets, which is exactly when ScopedPageLoadDeferrer is used.
-        for (LocalFrame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext())
-            frame->document()->suspendScheduledTasks();
+        for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+            if (frame->isLocalFrame())
+                toLocalFrame(frame)->document()->suspendScheduledTasks();
+        }
     }
 
     size_t count = m_deferredFrames.size();
@@ -66,8 +68,10 @@ ScopedPageLoadDeferrer::~ScopedPageLoadDeferrer()
         if (Page* page = m_deferredFrames[i]->page()) {
             page->setDefersLoading(false);
 
-            for (LocalFrame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext())
-                frame->document()->resumeScheduledTasks();
+            for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+                if (frame->isLocalFrame())
+                    toLocalFrame(frame)->document()->resumeScheduledTasks();
+            }
         }
     }
 }

@@ -38,7 +38,8 @@ bool V8ValueConverter::Strategy::FromV8Array(
 }
 
 bool V8ValueConverter::Strategy::FromV8ArrayBuffer(v8::Handle<v8::Object> value,
-                                                   base::Value** out) const {
+                                                   base::Value** out,
+                                                   v8::Isolate* isolate) const {
   return false;
 }
 
@@ -152,7 +153,8 @@ v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Value(
     const base::Value* value, v8::Handle<v8::Context> context) const {
   v8::Context::Scope context_scope(context);
   v8::EscapableHandleScope handle_scope(context->GetIsolate());
-  return handle_scope.Escape(ToV8ValueImpl(context->GetIsolate(), value));
+  return handle_scope.Escape(
+      ToV8ValueImpl(context->GetIsolate(), context->Global(), value));
 }
 
 base::Value* V8ValueConverterImpl::FromV8Value(
@@ -166,6 +168,7 @@ base::Value* V8ValueConverterImpl::FromV8Value(
 
 v8::Local<v8::Value> V8ValueConverterImpl::ToV8ValueImpl(
     v8::Isolate* isolate,
+    v8::Handle<v8::Object> creation_context,
     const base::Value* value) const {
   CHECK(value);
   switch (value->GetType()) {
@@ -198,14 +201,19 @@ v8::Local<v8::Value> V8ValueConverterImpl::ToV8ValueImpl(
     }
 
     case base::Value::TYPE_LIST:
-      return ToV8Array(isolate, static_cast<const base::ListValue*>(value));
+      return ToV8Array(isolate,
+                       creation_context,
+                       static_cast<const base::ListValue*>(value));
 
     case base::Value::TYPE_DICTIONARY:
       return ToV8Object(isolate,
+                        creation_context,
                         static_cast<const base::DictionaryValue*>(value));
 
     case base::Value::TYPE_BINARY:
-      return ToArrayBuffer(static_cast<const base::BinaryValue*>(value));
+      return ToArrayBuffer(isolate,
+                           creation_context,
+                           static_cast<const base::BinaryValue*>(value));
 
     default:
       LOG(ERROR) << "Unexpected value type: " << value->GetType();
@@ -215,6 +223,7 @@ v8::Local<v8::Value> V8ValueConverterImpl::ToV8ValueImpl(
 
 v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Array(
     v8::Isolate* isolate,
+    v8::Handle<v8::Object> creation_context,
     const base::ListValue* val) const {
   v8::Handle<v8::Array> result(v8::Array::New(isolate, val->GetSize()));
 
@@ -222,7 +231,8 @@ v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Array(
     const base::Value* child = NULL;
     CHECK(val->Get(i, &child));
 
-    v8::Handle<v8::Value> child_v8 = ToV8ValueImpl(isolate, child);
+    v8::Handle<v8::Value> child_v8 =
+        ToV8ValueImpl(isolate, creation_context, child);
     CHECK(!child_v8.IsEmpty());
 
     v8::TryCatch try_catch;
@@ -236,13 +246,15 @@ v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Array(
 
 v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Object(
     v8::Isolate* isolate,
+    v8::Handle<v8::Object> creation_context,
     const base::DictionaryValue* val) const {
   v8::Handle<v8::Object> result(v8::Object::New(isolate));
 
   for (base::DictionaryValue::Iterator iter(*val);
        !iter.IsAtEnd(); iter.Advance()) {
     const std::string& key = iter.key();
-    v8::Handle<v8::Value> child_v8 = ToV8ValueImpl(isolate, &iter.value());
+    v8::Handle<v8::Value> child_v8 =
+        ToV8ValueImpl(isolate, creation_context, &iter.value());
     CHECK(!child_v8.IsEmpty());
 
     v8::TryCatch try_catch;
@@ -260,11 +272,14 @@ v8::Handle<v8::Value> V8ValueConverterImpl::ToV8Object(
 }
 
 v8::Handle<v8::Value> V8ValueConverterImpl::ToArrayBuffer(
+    v8::Isolate* isolate,
+    v8::Handle<v8::Object> creation_context,
     const base::BinaryValue* value) const {
   blink::WebArrayBuffer buffer =
       blink::WebArrayBuffer::create(value->GetSize(), 1);
   memcpy(buffer.data(), value->GetBuffer(), value->GetSize());
-  return blink::WebArrayBufferConverter::toV8Value(&buffer);
+  return blink::WebArrayBufferConverter::toV8Value(
+      &buffer, creation_context, isolate);
 }
 
 base::Value* V8ValueConverterImpl::FromV8ValueImpl(
@@ -342,7 +357,7 @@ base::Value* V8ValueConverterImpl::FromV8ValueImpl(
   }
 
   if (val->IsArrayBuffer() || val->IsArrayBufferView())
-    return FromV8ArrayBuffer(val->ToObject());
+    return FromV8ArrayBuffer(val->ToObject(), isolate);
 
   if (val->IsObject())
     return FromV8Object(val->ToObject(), state, isolate);
@@ -405,10 +420,11 @@ base::Value* V8ValueConverterImpl::FromV8Array(
 }
 
 base::Value* V8ValueConverterImpl::FromV8ArrayBuffer(
-    v8::Handle<v8::Object> val) const {
+    v8::Handle<v8::Object> val,
+    v8::Isolate* isolate) const {
   if (strategy_) {
     base::Value* out = NULL;
-    if (strategy_->FromV8ArrayBuffer(val, &out))
+    if (strategy_->FromV8ArrayBuffer(val, &out, isolate))
       return out;
   }
 
@@ -416,7 +432,7 @@ base::Value* V8ValueConverterImpl::FromV8ArrayBuffer(
   size_t length = 0;
 
   scoped_ptr<blink::WebArrayBuffer> array_buffer(
-      blink::WebArrayBufferConverter::createFromV8Value(val));
+      blink::WebArrayBufferConverter::createFromV8Value(val, isolate));
   scoped_ptr<blink::WebArrayBufferView> view;
   if (array_buffer) {
     data = reinterpret_cast<char*>(array_buffer->data());

@@ -12,8 +12,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/info_map.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 namespace {
 
@@ -75,7 +78,7 @@ void RulesCacheDelegate::Init(RulesRegistry* registry) {
   rules_registry_thread_ = registry->owner_thread();
 
   ExtensionSystem& system = *ExtensionSystem::Get(profile_);
-  extensions::StateStore* store = system.rules_store();
+  StateStore* store = system.rules_store();
   if (store)
     store->RegisterKey(storage_key_);
 
@@ -136,8 +139,10 @@ void RulesCacheDelegate::ReadRulesForInstalledExtensions() {
          i != extensions->end();
          ++i) {
       bool needs_apis_storing_rules =
-          (*i)->HasAPIPermission(APIPermission::kDeclarativeContent) ||
-          (*i)->HasAPIPermission(APIPermission::kDeclarativeWebRequest);
+          (*i)->permissions_data()->HasAPIPermission(
+              APIPermission::kDeclarativeContent) ||
+          (*i)->permissions_data()->HasAPIPermission(
+              APIPermission::kDeclarativeWebRequest);
       bool respects_off_the_record =
           !(profile_->IsOffTheRecord()) ||
           util::IsIncognitoEnabled((*i)->id(), profile_);
@@ -162,7 +167,7 @@ void RulesCacheDelegate::ReadFromStorage(const std::string& extension_id) {
     return;
   }
 
-  extensions::StateStore* store = ExtensionSystem::Get(profile_)->rules_store();
+  StateStore* store = ExtensionSystem::Get(profile_)->rules_store();
   if (!store)
     return;
   waiting_for_extensions_.insert(extension_id);
@@ -213,10 +218,9 @@ void RulesCacheDelegate::SetDeclarativeRulesStored(
     const std::string& extension_id,
     bool rules_stored) {
   CHECK(profile_);
-  ExtensionSystem& system = *ExtensionSystem::Get(profile_);
-  ExtensionService* extension_service = system.extension_service();
-  DCHECK(extension_service);
-  DCHECK(extension_service->GetInstalledExtension(extension_id));
+  DCHECK(ExtensionRegistry::Get(profile_)
+             ->GetExtensionById(extension_id, ExtensionRegistry::EVERYTHING));
+
   ExtensionScopedPrefs* extension_prefs = ExtensionPrefs::Get(profile_);
   extension_prefs->UpdateExtensionPref(
       extension_id,

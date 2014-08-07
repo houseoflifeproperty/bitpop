@@ -9,7 +9,9 @@
 #include "base/debug/stack_trace.h"
 #include "base/i18n/icu_util.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/sys_info.h"
+#include "base/test/test_timeouts.h"
 #include "content/public/app/content_main.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/public/browser/browser_thread.h"
@@ -123,7 +125,9 @@ class LocalHostResolverProc : public net::HostResolverProc {
 extern int BrowserMain(const MainFunctionParams&);
 
 BrowserTestBase::BrowserTestBase()
-    : enable_pixel_output_(false), use_software_compositing_(false) {
+    : expected_exit_code_(0),
+      enable_pixel_output_(false),
+      use_software_compositing_(false) {
 #if defined(OS_MACOSX)
   base::mac::SetOverrideAmIBundled(true);
 #endif
@@ -154,6 +158,12 @@ BrowserTestBase::~BrowserTestBase() {
 
 void BrowserTestBase::SetUp() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
+
+  // Override the child process connection timeout since tests can exceed that
+  // when sharded.
+  command_line->AppendSwitchASCII(
+      switches::kIPCConnectionTimeout,
+      base::IntToString(TestTimeouts::action_max_timeout().InSeconds()));
 
   // The tests assume that file:// URIs can freely access other file:// URIs.
   command_line->AppendSwitch(switches::kAllowFileAccessFromFiles);
@@ -236,17 +246,11 @@ void BrowserTestBase::SetUp() {
 #if defined(OS_ANDROID)
   MainFunctionParams params(*command_line);
   params.ui_task = ui_task;
-  BrowserMainRunner::Create()->Initialize(params);
-  // We are done running the test by now. During teardown we
-  // need to be able to perform IO.
-  base::ThreadRestrictions::SetIOAllowed(true);
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(base::IgnoreResult(&base::ThreadRestrictions::SetIOAllowed),
-                 true));
+  // TODO(phajdan.jr): Check return code, http://crbug.com/374738 .
+  BrowserMain(params);
 #else
   GetContentMainParams()->ui_task = ui_task;
-  ContentMain(*GetContentMainParams());
+  EXPECT_EQ(expected_exit_code_, ContentMain(*GetContentMainParams()));
 #endif
   TearDownInProcessBrowserTestFixture();
 }

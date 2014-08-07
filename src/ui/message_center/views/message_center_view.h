@@ -48,7 +48,8 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
                     MessageCenterTray* tray,
                     int max_height,
                     bool initially_settings_visible,
-                    bool top_down);
+                    bool top_down,
+                    const base::string16& title);
   virtual ~MessageCenterView();
 
   void SetNotifications(const NotificationList::Notifications& notifications);
@@ -68,8 +69,8 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
  protected:
   // Overridden from views::View:
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual int GetHeightForWidth(int width) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual int GetHeightForWidth(int width) const OVERRIDE;
   virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
 

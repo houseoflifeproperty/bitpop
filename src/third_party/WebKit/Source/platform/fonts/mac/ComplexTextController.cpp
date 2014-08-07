@@ -25,14 +25,15 @@
 #include "config.h"
 #include "platform/fonts/mac/ComplexTextController.h"
 
-#include <ApplicationServices/ApplicationServices.h>
 #include "platform/fonts/Character.h"
 #include "platform/fonts/Font.h"
+#include "platform/fonts/GlyphBuffer.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/text/TextBreakIterator.h"
 #include "platform/text/TextRun.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/unicode/CharacterNames.h"
+#include <ApplicationServices/ApplicationServices.h>
 
 using namespace std;
 
@@ -83,9 +84,9 @@ ComplexTextController::ComplexTextController(const Font* font, const TextRun& ru
         bool isAfterExpansion = m_afterExpansion;
         unsigned expansionOpportunityCount;
         if (m_run.is8Bit())
-            expansionOpportunityCount = Character::expansionOpportunityCount(m_run.characters8(), m_end, m_run.ltr() ? LTR : RTL, isAfterExpansion);
+            expansionOpportunityCount = Character::expansionOpportunityCount(m_run.characters8(), m_end, m_run.direction(), isAfterExpansion);
          else
-            expansionOpportunityCount = Character::expansionOpportunityCount(m_run.characters16(), m_end, m_run.ltr() ? LTR : RTL, isAfterExpansion);
+            expansionOpportunityCount = Character::expansionOpportunityCount(m_run.characters16(), m_end, m_run.direction(), isAfterExpansion);
         if (isAfterExpansion && !m_run.allowsTrailingExpansion())
             expansionOpportunityCount--;
 
@@ -244,7 +245,7 @@ void ComplexTextController::collectComplexTextRuns()
     } else
         cp = m_run.characters16();
 
-    if (m_font.fontDescription().variant())
+    if (m_font.fontDescription().variant() == FontVariantSmallCaps)
         m_smallCapsBuffer.resize(m_end);
 
     unsigned indexOfFontTransition = 0;
@@ -265,7 +266,7 @@ void ComplexTextController::collectComplexTextRuns()
     UChar uppercaseCharacter = 0;
 
     bool isSmallCaps;
-    bool nextIsSmallCaps = m_font.fontDescription().variant() && !(U_GET_GC_MASK(baseCharacter) & U_GC_M_MASK) && (uppercaseCharacter = u_toupper(baseCharacter)) != baseCharacter;
+    bool nextIsSmallCaps = m_font.fontDescription().variant() == FontVariantSmallCaps && !(U_GET_GC_MASK(baseCharacter) & U_GC_M_MASK) && (uppercaseCharacter = u_toupper(baseCharacter)) != baseCharacter;
 
     if (nextIsSmallCaps) {
         m_smallCapsBuffer[sequenceStart - cp] = uppercaseCharacter;
@@ -470,7 +471,7 @@ void ComplexTextController::advance(unsigned offset, GlyphBuffer* glyphBuffer, G
                 return;
 
             if (glyphBuffer && !m_characterInCurrentGlyph)
-                glyphBuffer->add(m_adjustedGlyphs[k], complexTextRun.fontData(), adjustedAdvance);
+                glyphBuffer->add(m_adjustedGlyphs[k], complexTextRun.fontData(), FloatSize(adjustedAdvance));
 
             unsigned oldCharacterInCurrentGlyph = m_characterInCurrentGlyph;
             m_characterInCurrentGlyph = min(m_currentCharacter - complexTextRun.stringLocation(), glyphEndOffset) - glyphStartOffset;
@@ -525,7 +526,7 @@ void ComplexTextController::adjustGlyphsAndAdvances()
         const CGSize* advances = complexTextRun.advances();
 
         bool lastRun = r + 1 == runCount;
-        bool roundsAdvances = !m_font.fontDescription().usePrinterFont() && fontData->platformData().roundsGlyphAdvances();
+        bool roundsAdvances = fontData->platformData().roundsGlyphAdvances();
         float spaceWidth = fontData->spaceWidth() - fontData->syntheticBoldOffset();
         CGFloat roundedSpaceWidth = roundCGFloat(spaceWidth);
         const UChar* cp = complexTextRun.characters();

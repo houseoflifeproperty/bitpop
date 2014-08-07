@@ -21,14 +21,14 @@
 #ifndef SVGFEFuncBElement_h
 #define SVGFEFuncBElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGComponentTransferFunctionElement.h"
 
 namespace WebCore {
 
 class SVGFEFuncBElement FINAL : public SVGComponentTransferFunctionElement {
 public:
-    static PassRefPtr<SVGFEFuncBElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFEFuncBElement);
 
 private:
     explicit SVGFEFuncBElement(Document&);

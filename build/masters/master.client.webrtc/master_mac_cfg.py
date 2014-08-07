@@ -25,12 +25,18 @@ def Update(c):
       ]),
   ])
 
-  # Recipe based builders.
+  # 'slavebuilddir' below is used to reduce the number of checkouts since some
+  # of the builders are pooled over multiple slave machines.
   specs = [
     {'name': 'Mac32 Debug', 'slavebuilddir': 'mac32'},
     {'name': 'Mac32 Release', 'slavebuilddir': 'mac32'},
     {'name': 'Mac64 Debug', 'slavebuilddir': 'mac64'},
     {'name': 'Mac64 Release', 'slavebuilddir': 'mac64'},
+    {
+      'name': 'Mac32 Release [large tests]',
+      'category': 'compile|baremetal',
+      'slavebuilddir': 'mac_baremetal',
+    },
     {'name': 'Mac Asan', 'slavebuilddir': 'mac_asan'},
     {'name': 'iOS Debug', 'slavebuilddir': 'ios'},
     {'name': 'iOS Release', 'slavebuilddir': 'ios'},
@@ -41,44 +47,7 @@ def Update(c):
         'name': spec['name'],
         'factory': m_annotator.BaseFactory('webrtc/standalone'),
         'notify_on_missing': True,
-        'category': 'compile|testers',
-        'slavebuilddir': spec.get('slavebuilddir'),
+        'category': spec.get('category', 'compile|testers'),
+        'slavebuilddir': spec['slavebuilddir'],
       } for spec in specs
-  ])
-
-  # Builders not-yet-switched to recipes.
-  from master.factory import webrtc_factory
-  def mac():
-    return webrtc_factory.WebRTCFactory('src/out', 'darwin')
-
-  f_mac32_largetests = mac().WebRTCFactory(
-      target='Release',
-      options=['--compiler=goma-clang'],
-      tests=[
-        'audio_device_tests',
-        'video_capture_tests',
-        'vie_auto_test',
-        'voe_auto_test',
-        'webrtc_perf_tests',
-      ],
-      factory_properties={
-        'virtual_webcam': True,
-        'show_perf_results': True,
-        'expectations': True,
-        'perf_id': 'webrtc-mac-large-tests',
-        'perf_config': {'a_default_rev': 'r_webrtc_rev'},
-        'perf_measuring_tests': ['vie_auto_test',
-                                 'webrtc_perf_tests'],
-        'custom_cmd_line_tests': ['vie_auto_test',
-                                  'voe_auto_test'],
-      })
-  b_mac32_largetests = {
-    'name': 'Mac32 Release [large tests]',
-    'factory': f_mac32_largetests,
-    'category': 'compile|baremetal',
-    'auto_reboot' : True,
-  }
-
-  c['builders'].extend([
-      b_mac32_largetests,
   ])

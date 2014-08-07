@@ -6,14 +6,17 @@
 
 #include <cups/ppd.h>
 
+#include "base/base_paths.h"
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "printing/backend/print_backend.h"
 #include "printing/backend/print_backend_consts.h"
+#include "printing/units.h"
 #include "url/gurl.h"
 
 namespace printing {
@@ -31,6 +34,9 @@ const char kHighGray[] = "High.Gray";
 
 const char kDuplex[] = "Duplex";
 const char kDuplexNone[] = "None";
+const char kPageSize[] = "PageSize";
+
+const double kMicronsPerPoint = 10.0f * kHundrethsMMPerInch / kPointsPerInch;
 
 #if !defined(OS_MACOSX)
 void ParseLpOptions(const base::FilePath& filepath,
@@ -99,8 +105,9 @@ void MarkLpOptions(const std::string& printer_name, ppd_file_t** ppd) {
 
   std::vector<base::FilePath> file_locations;
   file_locations.push_back(base::FilePath(kSystemLpOptionPath));
-  file_locations.push_back(base::FilePath(
-      base::GetHomeDir().Append(kUserLpOptionPath)));
+  base::FilePath homedir;
+  PathService::Get(base::DIR_HOME, &homedir);
+  file_locations.push_back(base::FilePath(homedir.Append(kUserLpOptionPath)));
 
   for (std::vector<base::FilePath>::const_iterator it = file_locations.begin();
        it != file_locations.end(); ++it) {
@@ -355,13 +362,22 @@ bool ParsePpdCapabilities(
   }
 
   ppd_file_t* ppd = ppdOpenFile(ppd_file_path.value().c_str());
-  if (!ppd)
+  if (!ppd) {
+    int line = 0;
+    ppd_status_t ppd_status = ppdLastError(&line);
+    LOG(ERROR) << "Failed to open PDD file: error " << ppd_status << " at line "
+               << line << ", " << ppdErrorString(ppd_status);
     return false;
+  }
 
   printing::PrinterSemanticCapsAndDefaults caps;
 #if !defined(OS_MACOSX)
   MarkLpOptions(printer_name, &ppd);
 #endif
+  caps.collate_capable = true;
+  caps.collate_default = true;
+  caps.copies_capable = true;
+
   ppd_choice_t* duplex_choice = ppdFindMarkedChoice(ppd, kDuplex);
   if (!duplex_choice) {
     ppd_option_t* option = ppdFindOption(ppd, kDuplex);
@@ -389,6 +405,34 @@ bool ParsePpdCapabilities(
   caps.color_default = is_color;
   caps.color_model = cm_color;
   caps.bw_model = cm_black;
+
+  if (ppd->num_sizes > 0 && ppd->sizes) {
+    VLOG(1) << "Paper list size - " << ppd->num_sizes;
+    ppd_option_t* paper_option = ppdFindOption(ppd, kPageSize);
+    for (int i = 0; i < ppd->num_sizes; ++i) {
+      gfx::Size paper_size_microns(
+          static_cast<int>(ppd->sizes[i].width * kMicronsPerPoint + 0.5),
+          static_cast<int>(ppd->sizes[i].length * kMicronsPerPoint + 0.5));
+      if (paper_size_microns.width() > 0 && paper_size_microns.height() > 0) {
+        PrinterSemanticCapsAndDefaults::Paper paper;
+        paper.size_um = paper_size_microns;
+        paper.vendor_id = ppd->sizes[i].name;
+        if (paper_option) {
+          ppd_choice_t* paper_choice =
+              ppdFindChoice(paper_option, ppd->sizes[i].name);
+          // Human readable paper name should be UTF-8 encoded, but some PPDs
+          // do not follow this standard.
+          if (paper_choice && base::IsStringUTF8(paper_choice->text)) {
+            paper.display_name = paper_choice->text;
+          }
+        }
+        caps.papers.push_back(paper);
+        if (i == 0 || ppd->sizes[i].marked) {
+          caps.default_paper = paper;
+        }
+      }
+    }
+  }
 
   ppdClose(ppd);
   base::DeleteFile(ppd_file_path, false);

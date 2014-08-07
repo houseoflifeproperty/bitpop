@@ -914,4 +914,8 @@ void VaapiVideoDecodeAccelerator::Destroy() {
   delete this;
 }
 
+bool VaapiVideoDecodeAccelerator::CanDecodeOnIOThread() {
+  return false;
+}
+
 }  // namespace content

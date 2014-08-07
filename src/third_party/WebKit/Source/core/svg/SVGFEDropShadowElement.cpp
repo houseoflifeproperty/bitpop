@@ -21,10 +21,9 @@
 
 #include "core/svg/SVGFEDropShadowElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/SVGRenderStyle.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
@@ -45,10 +44,7 @@ inline SVGFEDropShadowElement::SVGFEDropShadowElement(Document& document)
     addToPropertyMap(m_in1);
 }
 
-PassRefPtr<SVGFEDropShadowElement> SVGFEDropShadowElement::create(Document& document)
-{
-    return adoptRef(new SVGFEDropShadowElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEDropShadowElement)
 
 void SVGFEDropShadowElement::setStdDeviation(float x, float y)
 {

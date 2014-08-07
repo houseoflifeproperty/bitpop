@@ -27,14 +27,12 @@ NativeAppWindowViews::NativeAppWindowViews()
       web_view_(NULL),
       widget_(NULL),
       frameless_(false),
-      transparent_background_(false),
       resizable_(false) {}
 
 void NativeAppWindowViews::Init(AppWindow* app_window,
                                 const AppWindow::CreateParams& create_params) {
   app_window_ = app_window;
   frameless_ = create_params.frame == AppWindow::FRAME_NONE;
-  transparent_background_ = create_params.transparent_background;
   resizable_ = create_params.resizable;
   size_constraints_.set_minimum_size(
       create_params.GetContentMinimumSize(gfx::Insets()));
@@ -53,13 +51,16 @@ NativeAppWindowViews::~NativeAppWindowViews() {
   web_view_->SetWebContents(NULL);
 }
 
+void NativeAppWindowViews::OnCanHaveAlphaEnabledChanged() {
+  app_window_->OnNativeWindowChanged();
+}
+
 void NativeAppWindowViews::InitializeWindow(
     AppWindow* app_window,
     const AppWindow::CreateParams& create_params) {
   // Stub implementation. See also ChromeNativeAppWindowViews.
   views::Widget::InitParams init_params(views::Widget::InitParams::TYPE_WINDOW);
   init_params.delegate = this;
-  init_params.top_level = true;
   init_params.keep_on_top = create_params.always_on_top;
   widget_->Init(init_params);
   widget_->CenterWindow(
@@ -261,16 +262,11 @@ void NativeAppWindowViews::OnWidgetActivationChanged(views::Widget* widget,
 
 void NativeAppWindowViews::RenderViewCreated(
     content::RenderViewHost* render_view_host) {
-  if (transparent_background_) {
-    // Use a background with transparency to trigger transparency in Webkit.
-    SkBitmap background;
-    background.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
-    background.allocPixels();
-    background.eraseARGB(0x00, 0x00, 0x00, 0x00);
-
+  if (app_window_->requested_transparent_background() &&
+      CanHaveAlphaEnabled()) {
     content::RenderWidgetHostView* view = render_view_host->GetView();
     DCHECK(view);
-    view->SetBackground(background);
+    view->SetBackgroundOpaque(false);
   }
 }
 
@@ -297,11 +293,11 @@ void NativeAppWindowViews::ViewHierarchyChanged(
   }
 }
 
-gfx::Size NativeAppWindowViews::GetMinimumSize() {
+gfx::Size NativeAppWindowViews::GetMinimumSize() const {
   return size_constraints_.GetMinimumSize();
 }
 
-gfx::Size NativeAppWindowViews::GetMaximumSize() {
+gfx::Size NativeAppWindowViews::GetMaximumSize() const {
   return size_constraints_.GetMaximumSize();
 }
 
@@ -403,6 +399,10 @@ void NativeAppWindowViews::SetContentSizeConstraints(
     const gfx::Size& min_size, const gfx::Size& max_size) {
   size_constraints_.set_minimum_size(min_size);
   size_constraints_.set_maximum_size(max_size);
+}
+
+bool NativeAppWindowViews::CanHaveAlphaEnabled() const {
+  return widget_->IsTranslucentWindowOpacitySupported();
 }
 
 }  // namespace apps

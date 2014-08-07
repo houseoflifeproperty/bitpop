@@ -28,11 +28,11 @@
 #include "config.h"
 #include "core/editing/Editor.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 #include "core/clipboard/Pasteboard.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/StylePropertySet.h"
@@ -135,7 +135,7 @@ static bool executeApplyStyle(LocalFrame& frame, EditorCommandSource source, Edi
 //        until https://bugs.webkit.org/show_bug.cgi?id=27818 is resolved.
 static bool executeToggleStyleInList(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, CSSValue* value)
 {
-    RefPtr<EditingStyle> selectionStyle = EditingStyle::styleAtSelectionStart(frame.selection().selection());
+    RefPtrWillBeRawPtr<EditingStyle> selectionStyle = EditingStyle::styleAtSelectionStart(frame.selection().selection());
     if (!selectionStyle || !selectionStyle->style())
         return false;
 
@@ -169,7 +169,7 @@ static bool executeToggleStyle(LocalFrame& frame, EditorCommandSource source, Ed
     else
         styleIsPresent = frame.editor().selectionHasStyle(propertyID, onValue) == TrueTriState;
 
-    RefPtr<EditingStyle> style = EditingStyle::create(propertyID, styleIsPresent ? offValue : onValue);
+    RefPtrWillBeRawPtr<EditingStyle> style = EditingStyle::create(propertyID, styleIsPresent ? offValue : onValue);
     return applyCommandToFrame(frame, source, action, style->style());
 }
 
@@ -191,17 +191,17 @@ static bool executeApplyParagraphStyle(LocalFrame& frame, EditorCommandSource so
     return false;
 }
 
-static bool executeInsertFragment(LocalFrame& frame, PassRefPtr<DocumentFragment> fragment)
+static bool executeInsertFragment(LocalFrame& frame, PassRefPtrWillBeRawPtr<DocumentFragment> fragment)
 {
     ASSERT(frame.document());
     ReplaceSelectionCommand::create(*frame.document(), fragment, ReplaceSelectionCommand::PreventNesting, EditActionUnspecified)->apply();
     return true;
 }
 
-static bool executeInsertNode(LocalFrame& frame, PassRefPtr<Node> content)
+static bool executeInsertNode(LocalFrame& frame, PassRefPtrWillBeRawPtr<Node> content)
 {
     ASSERT(frame.document());
-    RefPtr<DocumentFragment> fragment = DocumentFragment::create(*frame.document());
+    RefPtrWillBeRawPtr<DocumentFragment> fragment = DocumentFragment::create(*frame.document());
     TrackExceptionState exceptionState;
     fragment->appendChild(content, exceptionState);
     if (exceptionState.hadException())
@@ -219,7 +219,7 @@ static bool expandSelectionToGranularity(LocalFrame& frame, TextGranularity gran
     if (newRange->collapsed())
         return false;
     EAffinity affinity = frame.selection().affinity();
-    frame.selection().setSelectedRange(newRange.get(), affinity, FrameSelection::CloseTyping);
+    frame.selection().setSelectedRange(newRange.get(), affinity, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
     return true;
 }
 
@@ -381,7 +381,7 @@ static bool executeDeleteToMark(LocalFrame& frame, Event*, EditorCommandSource, 
 {
     RefPtrWillBeRawPtr<Range> mark = frame.editor().mark().toNormalizedRange();
     if (mark) {
-        bool selected = frame.selection().setSelectedRange(unionDOMRanges(mark.get(), frame.editor().selectedRange().get()).get(), DOWNSTREAM, FrameSelection::CloseTyping);
+        bool selected = frame.selection().setSelectedRange(unionDOMRanges(mark.get(), frame.editor().selectedRange().get()).get(), DOWNSTREAM, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
         ASSERT(selected);
         if (!selected)
             return false;
@@ -443,7 +443,7 @@ static bool executeFormatBlock(LocalFrame& frame, Event*, EditorCommandSource, c
     QualifiedName qualifiedTagName(prefix, localName, xhtmlNamespaceURI);
 
     ASSERT(frame.document());
-    RefPtr<FormatBlockCommand> command = FormatBlockCommand::create(*frame.document(), qualifiedTagName);
+    RefPtrWillBeRawPtr<FormatBlockCommand> command = FormatBlockCommand::create(*frame.document(), qualifiedTagName);
     command->apply();
     return command->didApply();
 }
@@ -488,7 +488,7 @@ static bool executeInsertBacktab(LocalFrame& frame, Event* event, EditorCommandS
 static bool executeInsertHorizontalRule(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     ASSERT(frame.document());
-    RefPtr<HTMLHRElement> rule = HTMLHRElement::create(*frame.document());
+    RefPtrWillBeRawPtr<HTMLHRElement> rule = HTMLHRElement::create(*frame.document());
     if (!value.isEmpty())
         rule->setIdAttribute(AtomicString(value));
     return executeInsertNode(frame, rule.release());
@@ -504,7 +504,7 @@ static bool executeInsertImage(LocalFrame& frame, Event*, EditorCommandSource, c
 {
     // FIXME: If userInterface is true, we should display a dialog box and let the user choose a local image.
     ASSERT(frame.document());
-    RefPtr<HTMLImageElement> image = HTMLImageElement::create(*frame.document());
+    RefPtrWillBeRawPtr<HTMLImageElement> image = HTMLImageElement::create(*frame.document());
     image->setSrc(value);
     return executeInsertNode(frame, image.release());
 }
@@ -1031,7 +1031,7 @@ static bool executeSelectToMark(LocalFrame& frame, Event*, EditorCommandSource, 
     RefPtrWillBeRawPtr<Range> selection = frame.editor().selectedRange();
     if (!mark || !selection)
         return false;
-    frame.selection().setSelectedRange(unionDOMRanges(mark.get(), selection.get()).get(), DOWNSTREAM, FrameSelection::CloseTyping);
+    frame.selection().setSelectedRange(unionDOMRanges(mark.get(), selection.get()).get(), DOWNSTREAM, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
     return true;
 }
 
@@ -1626,14 +1626,14 @@ static const CommandMap& createCommandMap()
     // Unbookmark (not supported)
 
     CommandMap& commandMap = *new CommandMap;
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     HashSet<int> idSet;
 #endif
     for (size_t i = 0; i < WTF_ARRAY_LENGTH(commands); ++i) {
         const CommandEntry& command = commands[i];
         ASSERT(!commandMap.get(command.name));
         commandMap.set(command.name, &command.command);
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
         ASSERT(!idSet.contains(command.command.idForUserMetrics));
         idSet.add(command.command.idForUserMetrics);
 #endif

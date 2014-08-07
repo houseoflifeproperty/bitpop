@@ -239,6 +239,10 @@ class Builder(object):
     self.goma_burst = goma_config.get('burst', False)
     self.goma_threads = goma_config.get('threads', 1)
 
+    # Define NDEBUG for Release builds.
+    if options.build_config == 'Release':
+      self.compile_options.append('-DNDEBUG')
+
     # Use unoptimized native objects for debug IRT builds for faster compiles.
     if (self.is_pnacl_toolchain
         and (self.outtype == 'nlib'
@@ -364,13 +368,15 @@ class Builder(object):
                            define.startswith('NACL_WINDOWS=') or
                            define.startswith('NACL_OSX=') or
                            define.startswith('NACL_LINUX=') or
+                           define.startswith('NACL_ANDROID=') or
                            define == 'COMPONENT_BUILD' or
                            'WIN32' in define or
                            'WINDOWS' in define or
                            'WINVER' in define)]
     define_list.extend(['NACL_WINDOWS=0',
                         'NACL_OSX=0',
-                        'NACL_LINUX=0'])
+                        'NACL_LINUX=0',
+                        'NACL_ANDROID=0'])
     options += ['-D' + define for define in define_list]
     self.compile_options = options + ['-I' + name for name in self.inc_paths]
 
@@ -413,7 +419,7 @@ class Builder(object):
       runner = subprocess.call
       if get_output:
         runner = subprocess.check_output
-      if self.is_pnacl_toolchain:
+      if self.is_pnacl_toolchain and pynacl.platform.IsWindows():
         # PNaCl toolchain executable is a script, not a binary, so it doesn't
         # want to run on Windows without a shell
         result = runner(' '.join(cmd_line), shell=True, **kwargs)
@@ -465,13 +471,14 @@ class Builder(object):
 
     # Start goma support from os/arch/toolname that have been tested.
     # Set NO_NACL_GOMA=true to force to avoid using goma.
+    default_no_nacl_goma = True if pynacl.platform.IsWindows() else False
     if (arch not in ['x86-32', 'x86-64', 'pnacl']
         or toolname not in ['newlib', 'glibc']
-        or IsEnvFlagTrue('NO_NACL_GOMA', default=False)):
+        or IsEnvFlagTrue('NO_NACL_GOMA', default=default_no_nacl_goma)):
       return {}
 
     goma_config = {}
-    gomacc_base = 'gomacc.exe' if self.osname == 'win' else 'gomacc'
+    gomacc_base = 'gomacc.exe' if pynacl.platform.IsWindows() else 'gomacc'
     # Search order of gomacc:
     # --gomadir command argument -> GOMA_DIR env. -> PATH env.
     search_path = []
@@ -505,7 +512,7 @@ class Builder(object):
 
     if goma_config:
       goma_config['burst'] = IsEnvFlagTrue('NACL_GOMA_BURST')
-      default_threads = 100 if self.osname == 'linux' else 1
+      default_threads = 100 if pynacl.platform.IsLinux() else 1
       goma_config['threads'] = GetIntegerEnv('NACL_GOMA_THREADS',
                                              default=default_threads)
     return goma_config
@@ -578,20 +585,25 @@ class Builder(object):
   def Compile(self, src):
     """Compile the source with pre-determined options."""
 
+    compile_options = self.compile_options[:]
     _, ext = os.path.splitext(src)
     if ext in ['.c', '.S']:
       bin_name = self.GetCCompiler()
-      extra = ['-std=gnu99']
+      compile_options.append('-std=gnu99')
       if self.is_pnacl_toolchain and ext == '.S':
-        extra.append('-arch')
-        extra.append(self.arch)
+        compile_options.append('-arch')
+        compile_options.append(self.arch)
     elif ext in ['.cc', '.cpp']:
       bin_name = self.GetCXXCompiler()
-      extra = []
     else:
       if ext != '.h':
         self.Log('Skipping unknown type %s for %s.' % (ext, src))
       return None
+
+    # This option is only applicable to C, and C++ compilers warn if
+    # it is present, so remove it for C++ to avoid the warning.
+    if ext != '.c' and '-Wstrict-prototypes' in compile_options:
+      compile_options.remove('-Wstrict-prototypes')
 
     self.Log('\nCompile %s' % src)
 
@@ -606,7 +618,7 @@ class Builder(object):
     self.CleanOutput(out)
     self.CleanOutput(outd)
     cmd_line = [bin_name, '-c', src, '-o', out,
-                '-MD', '-MF', outd] + extra + self.compile_options
+                '-MD', '-MF', outd] + compile_options
     if self.gomacc:
       cmd_line.insert(0, self.gomacc)
     err = self.Run(cmd_line, out)
@@ -630,8 +642,11 @@ class Builder(object):
       * current data/text top addrs
     """
     cmd_line = [self.GetReadElf(), '-W', '--segments', irt_file]
+    # Put LC_ALL=C in the environment for readelf, so that its messages
+    # will reliably match what we're looking for rather than being in some
+    # other language and/or character set.
     env = dict(os.environ)
-    env.update({'LANG': 'en_US.UTF-8'})
+    env['LC_ALL'] = 'C'
     seginfo = self.Run(cmd_line, get_output=True, env=env)
     lines = seginfo.splitlines()
     ph_start = -1

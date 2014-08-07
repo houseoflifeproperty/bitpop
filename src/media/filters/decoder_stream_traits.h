@@ -28,18 +28,21 @@ struct DecoderStreamTraits<DemuxerStream::AUDIO> {
   typedef AudioDecoderConfig DecoderConfigType;
   typedef DecryptingAudioDecoder DecryptingDecoderType;
   typedef base::Callback<void(bool success)> StreamInitCB;
+  typedef base::Callback<void(const scoped_refptr<OutputType>&)> OutputCB;
 
   static std::string ToString();
   static void Initialize(DecoderType* decoder,
                          const DecoderConfigType& config,
                          bool low_delay,
-                         const PipelineStatusCB& status_cb);
+                         const PipelineStatusCB& status_cb,
+                         const OutputCB& output_cb);
   static bool FinishInitialization(const StreamInitCB& init_cb,
                                    DecoderType* decoder,
                                    DemuxerStream* stream);
   static void ReportStatistics(const StatisticsCB& statistics_cb,
                                int bytes_decoded);
   static DecoderConfigType GetDecoderConfig(DemuxerStream& stream);
+  static scoped_refptr<OutputType> CreateEOSOutput();
 };
 
 template <>
@@ -49,18 +52,21 @@ struct DecoderStreamTraits<DemuxerStream::VIDEO> {
   typedef VideoDecoderConfig DecoderConfigType;
   typedef DecryptingVideoDecoder DecryptingDecoderType;
   typedef base::Callback<void(bool success)> StreamInitCB;
+  typedef base::Callback<void(const scoped_refptr<OutputType>&)> OutputCB;
 
   static std::string ToString();
   static void Initialize(DecoderType* decoder,
                          const DecoderConfigType& config,
                          bool low_delay,
-                         const PipelineStatusCB& status_cb);
+                         const PipelineStatusCB& status_cb,
+                         const OutputCB& output_cb);
   static bool FinishInitialization(const StreamInitCB& init_cb,
                                    DecoderType* decoder,
                                    DemuxerStream* stream);
   static void ReportStatistics(const StatisticsCB& statistics_cb,
                                int bytes_decoded);
   static DecoderConfigType GetDecoderConfig(DemuxerStream& stream);
+  static scoped_refptr<OutputType> CreateEOSOutput();
 };
 
 }  // namespace media

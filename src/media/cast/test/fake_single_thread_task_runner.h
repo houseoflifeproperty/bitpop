@@ -24,6 +24,9 @@ class FakeSingleThreadTaskRunner : public base::SingleThreadTaskRunner {
 
   void RunTasks();
 
+  // Note: Advances |clock_|.
+  void Sleep(base::TimeDelta t);
+
   // base::SingleThreadTaskRunner implementation.
   virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
                                const base::Closure& task,
@@ -43,6 +46,7 @@ class FakeSingleThreadTaskRunner : public base::SingleThreadTaskRunner {
  private:
   base::SimpleTestTickClock* const clock_;
   std::multimap<base::TimeTicks, PostedTask> tasks_;
+  bool fail_on_next_task_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeSingleThreadTaskRunner);
 };

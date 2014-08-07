@@ -25,8 +25,8 @@
 #include "config.h"
 #include "core/html/HTMLTableColElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/rendering/RenderTableCol.h"
 
@@ -41,10 +41,7 @@ inline HTMLTableColElement::HTMLTableColElement(const QualifiedName& tagName, Do
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLTableColElement> HTMLTableColElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLTableColElement(tagName, document));
-}
+DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLTableColElement)
 
 bool HTMLTableColElement::isPresentationAttribute(const QualifiedName& name) const
 {
@@ -76,7 +73,7 @@ void HTMLTableColElement::parseAttribute(const QualifiedName& name, const Atomic
                 RenderTableCol* col = toRenderTableCol(renderer());
                 int newWidth = width().toInt();
                 if (newWidth != col->width())
-                    col->setNeedsLayoutAndPrefWidthsRecalc();
+                    col->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
             }
         }
     } else

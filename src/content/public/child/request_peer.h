@@ -16,11 +16,9 @@ namespace base {
 class TimeTicks;
 }
 
-namespace webkit_glue {
-struct ResourceResponseInfo;
-}
-
 namespace content {
+
+struct ResourceResponseInfo;
 
 // This is implemented by our custom resource loader within content. The Peer
 // and it's bridge should have identical lifetimes as they represent each end of
@@ -37,20 +35,16 @@ class CONTENT_EXPORT RequestPeer {
 
   // Called when a redirect occurs.  The implementation may return false to
   // suppress the redirect.  The given ResponseInfo provides complete
-  // information about the redirect, and new_url is the URL that will be
-  // loaded if this method returns true.  If this method returns true, the
-  // output parameter *has_new_first_party_for_cookies indicates whether the
-  // output parameter *new_first_party_for_cookies contains the new URL that
-  // should be consulted for the third-party cookie blocking policy.
+  // information about the redirect, and new_url is the URL that will be loaded
+  // if this method returns true. new_first_party_for_cookies is the new
+  // first-party URL for cookies should that have changed.
   virtual bool OnReceivedRedirect(const GURL& new_url,
-                                  const webkit_glue::ResourceResponseInfo& info,
-                                  bool* has_new_first_party_for_cookies,
-                                  GURL* new_first_party_for_cookies) = 0;
+                                  const GURL& new_first_party_for_cookies,
+                                  const ResourceResponseInfo& info) = 0;
 
   // Called when response headers are available (after all redirects have
   // been followed).
-  virtual void OnReceivedResponse(
-      const webkit_glue::ResourceResponseInfo& info) = 0;
+  virtual void OnReceivedResponse(const ResourceResponseInfo& info) = 0;
 
   // Called when a chunk of response data is downloaded.  This method may be
   // called multiple times or not at all if an error occurs.  This method is

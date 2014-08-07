@@ -37,12 +37,9 @@
 
 namespace WebCore {
 
-class CSSStyleSheet;
 class Element;
 class FileList;
 class HTMLInputElement;
-class PopupMenu;
-class RenderMenuList;
 class RenderMeter;
 class RenderProgress;
 
@@ -65,7 +62,7 @@ public:
     // metrics and defaults given the contents of the style.  This includes sophisticated operations like
     // selection of control size based off the font, the disabling of appearance when certain other properties like
     // "border" are set, or if the appearance is not supported by the theme.
-    void adjustStyle(RenderStyle*, Element*,  const CachedUAStyle&);
+    void adjustStyle(RenderStyle*, Element*, const CachedUAStyle*);
 
     // This method is called to paint the widget as a background of the RenderObject.  A widget's foreground, e.g., the
     // text of a button, is always rendered by the engine itself.  The boolean return value indicates
@@ -97,7 +94,7 @@ public:
     virtual bool controlSupportsTints(const RenderObject*) const { return false; }
 
     // Whether or not the control has been styled enough by the author to disable the native appearance.
-    virtual bool isControlStyled(const RenderStyle*, const CachedUAStyle&) const;
+    virtual bool isControlStyled(const RenderStyle*, const CachedUAStyle*) const;
 
     // A general method asking if any control tinting is supported at all.
     virtual bool supportsControlTints() const { return false; }
@@ -141,6 +138,7 @@ public:
     void setCustomFocusRingColor(const Color&);
     static Color tapHighlightColor();
     virtual Color platformTapHighlightColor() const { return RenderTheme::defaultTapHighlightColor; }
+    virtual Color platformDefaultCompositionBackgroundColor() const { return defaultCompositionBackgroundColor; }
     virtual void platformColorsDidChange();
 
     virtual double caretBlinkInterval() const { return 0.5; }
@@ -305,6 +303,8 @@ private:
     // This color is expected to be drawn on a semi-transparent overlay,
     // making it more transparent than its alpha value indicates.
     static const RGBA32 defaultTapHighlightColor = 0x66000000;
+
+    static const RGBA32 defaultCompositionBackgroundColor = 0xFFFFDD55;
 
 #if USE(NEW_THEME)
     Theme* m_platformTheme; // The platform-specific theme.

@@ -35,9 +35,11 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
 
     self.wpr_port_pairs = forwarders.PortPairs(
         http=forwarders.PortPair(self.wpr_port_pairs.http.local_port,
-                                 self._cri.GetRemotePort()),
+                                 self.GetRemotePort(
+                                     self.wpr_port_pairs.http.local_port)),
         https=forwarders.PortPair(self.wpr_port_pairs.https.local_port,
-                                  self._cri.GetRemotePort()),
+                                  self.GetRemotePort(
+                                      self.wpr_port_pairs.http.local_port)),
         dns=None)
     self._remote_debugging_port = self._cri.GetRemotePort()
     self._port = self._remote_debugging_port
@@ -46,8 +48,8 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
     # Note that we also perform this copy locally to ensure that
     # the owner of the extensions is set to chronos.
     for e in extensions_to_load:
-      output = cri.RunCmdOnDevice(['mktemp', '-d', '/tmp/extension_XXXXX'])
-      extension_dir = output[0].rstrip()
+      extension_dir = cri.RunCmdOnDevice(
+          ['mktemp', '-d', '/tmp/extension_XXXXX'])[0].rstrip()
       cri.PushFile(e.path, extension_dir)
       cri.Chown(extension_dir)
       e.local_path = os.path.join(extension_dir, os.path.basename(e.path))
@@ -141,33 +143,27 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
               https=None,
               dns=None), forwarding_flag='L')
 
-    try:
-      self._WaitForBrowserToComeUp(wait_for_extensions=False)
-      self._PostBrowserStartupInitialization()
-    except:
-      import traceback
-      traceback.print_exc()
-      self.Close()
-      raise
-
+    # Wait for oobe.
+    self._WaitForBrowserToComeUp(wait_for_extensions=False)
+    self._PostBrowserStartupInitialization()
     util.WaitFor(lambda: self.oobe_exists, 10)
 
     if self.browser_options.auto_login:
-      if self._is_guest:
-        pid = self.pid
-        self.oobe.NavigateGuestLogin()
-        # Guest browsing shuts down the current browser and launches an
-        # incognito browser in a separate process, which we need to wait for.
-        util.WaitFor(lambda: pid != self.pid, 10)
-      elif self.browser_options.gaia_login:
-        try:
+      try:
+        if self._is_guest:
+          pid = self.pid
+          self.oobe.NavigateGuestLogin()
+          # Guest browsing shuts down the current browser and launches an
+          # incognito browser in a separate process, which we need to wait for.
+          util.WaitFor(lambda: pid != self.pid, 10)
+        elif self.browser_options.gaia_login:
           self.oobe.NavigateGaiaLogin(self._username, self._password)
-        except util.TimeoutException:
-          self._cri.TakeScreenShot('gaia-login')
-          raise
-      else:
-        self.oobe.NavigateFakeLogin(self._username, self._password)
-      self._WaitForLogin()
+        else:
+          self.oobe.NavigateFakeLogin(self._username, self._password)
+        self._WaitForLogin()
+      except util.TimeoutException:
+        self._cri.TakeScreenShot('login-screen')
+        raise exceptions.LoginException('Timed out going through login screen')
 
     logging.info('Browser is up!')
 
@@ -237,28 +233,16 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
             not self.oobe_exists)
 
   def _WaitForLogin(self):
-    if self._is_guest:
-      self._WaitForBrowserToComeUp()
-      util.WaitFor(self._IsCryptohomeMounted, 30)
-      return
-
-    try:
-      util.WaitFor(self._IsLoggedIn, 60)
-    except util.TimeoutException:
-      self._cri.TakeScreenShot('login-screen')
-      raise exceptions.LoginException('Timed out going through login screen')
+    # Wait for cryptohome to mount.
+    util.WaitFor(self._IsLoggedIn, 60)
 
     # Wait for extensions to load.
-    try:
-      self._WaitForBrowserToComeUp()
-    except util.TimeoutException:
-      logging.error('Chrome args: %s' % self._cri.GetChromeProcess()['args'])
-      self._cri.TakeScreenShot('extension-timeout')
-      raise
+    self._WaitForBrowserToComeUp()
 
-    # Workaround for crbug.com/329271, crbug.com/334726.
+    # Workaround for crbug.com/374462 - the bug doesn't manifest in the guest
+    # session, which also starts with an open browser tab.
     retries = 3
-    while True:
+    while not self._is_guest:
       try:
         # Open a new window/tab.
         tab = self.tab_list_backend.New(timeout=30)
@@ -267,8 +251,8 @@ class CrOSBrowserBackend(chrome_browser_backend.ChromeBrowserBackend):
       except (exceptions.TabCrashException, util.TimeoutException,
               IndexError):
         retries -= 1
-        logging.warn('TabCrashException/TimeoutException in '
-                     'new tab creation/navigation, '
-                     'remaining retries %d' % retries)
+        logging.warning('TabCrashException/TimeoutException in '
+                        'new tab creation/navigation, '
+                        'remaining retries %d', retries)
         if not retries:
           raise

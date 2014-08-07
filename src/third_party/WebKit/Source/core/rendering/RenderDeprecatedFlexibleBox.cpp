@@ -26,6 +26,7 @@
 #include "core/rendering/RenderDeprecatedFlexibleBox.h"
 
 #include "core/frame/UseCounter.h"
+#include "core/rendering/FastTextAutosizer.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
@@ -259,16 +260,18 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren)
     if (!relayoutChildren && simplifiedLayout())
         return;
 
-    LayoutRepainter repainter(*this, checkForRepaintDuringLayout());
+    LayoutRepainter repainter(*this, checkForPaintInvalidationDuringLayout());
 
     {
-        // LayoutStateMaintainer needs this deliberate scope to pop before repaint
-        LayoutStateMaintainer statePusher(*this, locationOffset());
+        // LayoutState needs this deliberate scope to pop before repaint
+        LayoutState state(*this, locationOffset());
 
         LayoutSize previousSize = size();
 
         updateLogicalWidth();
         updateLogicalHeight();
+
+        FastTextAutosizer::LayoutScope fastTextAutosizerLayoutScope(this);
 
         if (previousSize != size()
             || (parent()->isDeprecatedFlexibleBox() && parent()->style()->boxOrient() == HORIZONTAL
@@ -297,7 +300,7 @@ void RenderDeprecatedFlexibleBox::layoutBlock(bool relayoutChildren)
         computeOverflow(oldClientAfterEdge);
     }
 
-    updateLayerTransform();
+    updateLayerTransformAfterLayout();
 
     if (view()->layoutState()->pageLogicalHeight())
         setPageLogicalOffset(view()->layoutState()->pageLogicalOffset(*this, logicalTop()));
@@ -1000,7 +1003,7 @@ void RenderDeprecatedFlexibleBox::placeChild(RenderBox* child, const LayoutPoint
     LayoutRect oldRect = child->frameRect();
 
     // FIXME Investigate if this can be removed based on other flags. crbug.com/370010
-    child->setMayNeedInvalidation(true);
+    child->setMayNeedPaintInvalidation(true);
 
     // Place the child.
     child->setLocation(location);
@@ -1008,7 +1011,7 @@ void RenderDeprecatedFlexibleBox::placeChild(RenderBox* child, const LayoutPoint
     // If the child moved, we have to repaint it as well as any floating/positioned
     // descendants.  An exception is if we need a layout.  In this case, we know we're going to
     // repaint ourselves (and the child) anyway.
-    if (!selfNeedsLayout() && child->checkForRepaintDuringLayout())
+    if (!selfNeedsLayout() && child->checkForPaintInvalidationDuringLayout())
         child->repaintDuringLayoutIfMoved(oldRect);
 }
 

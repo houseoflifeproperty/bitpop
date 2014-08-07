@@ -4,10 +4,8 @@
 
 #include "ui/app_list/views/contents_switcher_view.h"
 
-#include "grit/ui_resources.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/views/contents_view.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/layout/box_layout.h"
@@ -27,23 +25,22 @@ ContentsSwitcherView::ContentsSwitcherView(ContentsView* contents_view)
 
   buttons_->SetLayoutManager(new views::BoxLayout(
       views::BoxLayout::kHorizontal, 0, 0, kButtonSpacing));
-  AddSwitcherButton(IDR_APP_LIST_SEARCH_ICON,
-                    ContentsView::SHOW_SEARCH_RESULTS);
-  AddSwitcherButton(IDR_APP_LIST_APPS_ICON, ContentsView::SHOW_APPS);
 }
 
 ContentsSwitcherView::~ContentsSwitcherView() {}
 
-void ContentsSwitcherView::AddSwitcherButton(int resource_id, int tag) {
+void ContentsSwitcherView::AddSwitcherButton(int resource_id, int page_index) {
   views::ImageButton* button = new views::ImageButton(this);
-  button->SetImage(
-      views::CustomButton::STATE_NORMAL,
-      ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(resource_id));
-  button->set_tag(tag);
+  if (resource_id) {
+    button->SetImage(
+        views::CustomButton::STATE_NORMAL,
+        ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(resource_id));
+  }
+  button->set_tag(page_index);
   buttons_->AddChildView(button);
 }
 
-gfx::Size ContentsSwitcherView::GetPreferredSize() {
+gfx::Size ContentsSwitcherView::GetPreferredSize() const {
   return gfx::Size(buttons_->GetPreferredSize().width(), kPreferredHeight);
 }
 
@@ -61,8 +58,7 @@ void ContentsSwitcherView::Layout() {
 
 void ContentsSwitcherView::ButtonPressed(views::Button* sender,
                                          const ui::Event& event) {
-  contents_view_->SetShowState(
-      static_cast<ContentsView::ShowState>(sender->tag()));
+  contents_view_->SetActivePage(sender->tag());
 }
 
 }  // namespace app_list

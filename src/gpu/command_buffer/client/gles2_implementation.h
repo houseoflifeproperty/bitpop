@@ -110,6 +110,12 @@ namespace gles2 {
 class ImageFactory;
 class VertexArrayObjectManager;
 
+class GLES2ImplementationErrorMessageCallback {
+ public:
+  virtual ~GLES2ImplementationErrorMessageCallback() { }
+  virtual void OnErrorMessage(const char* msg, int id) = 0;
+};
+
 // This class emulates GLES2 over command buffers. It can be used by a client
 // program so that the program does not need deal with shared memory and command
 // buffer management. See gl2_lib.h.  Note that there is a performance gain to
@@ -122,11 +128,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation
  public:
   enum MappedMemoryLimit {
     kNoLimit = MappedMemoryManager::kNoLimit,
-  };
-  class ErrorMessageCallback {
-   public:
-    virtual ~ErrorMessageCallback() { }
-    virtual void OnErrorMessage(const char* msg, int id) = 0;
   };
 
   // Stores GL state that never changes.
@@ -246,10 +247,9 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   virtual void SignalQuery(uint32 query,
                            const base::Closure& callback) OVERRIDE;
   virtual void SetSurfaceVisible(bool visible) OVERRIDE;
-  virtual void SendManagedMemoryStats(const ManagedMemoryStats& stats)
-      OVERRIDE;
 
-  void SetErrorMessageCallback(ErrorMessageCallback* callback) {
+  void SetErrorMessageCallback(
+      GLES2ImplementationErrorMessageCallback* callback) {
     error_message_callback_ = callback;
   }
 
@@ -769,7 +769,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
 
   scoped_ptr<GpuMemoryBufferTracker> gpu_memory_buffer_tracker_;
 
-  ErrorMessageCallback* error_message_callback_;
+  GLES2ImplementationErrorMessageCallback* error_message_callback_;
 
   scoped_ptr<std::string> current_trace_name_;
 

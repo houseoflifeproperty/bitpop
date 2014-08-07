@@ -25,12 +25,13 @@
 #ifndef LiveNodeListBase_h
 #define LiveNodeListBase_h
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/html/CollectionType.h"
+#include "platform/heap/Handle.h"
 
 namespace WebCore {
 
@@ -39,7 +40,7 @@ enum NodeListRootType {
     NodeListIsRootedAtDocument
 };
 
-class LiveNodeListBase {
+class LiveNodeListBase : public WillBeGarbageCollectedMixin {
 public:
     LiveNodeListBase(ContainerNode& ownerNode, NodeListRootType rootType, NodeListInvalidationType invalidationType,
         CollectionType collectionType)
@@ -57,7 +58,9 @@ public:
 
     virtual ~LiveNodeListBase()
     {
+#if !ENABLE(OILPAN)
         document().unregisterNodeList(this);
+#endif
     }
 
     ContainerNode& rootNode() const;
@@ -91,8 +94,10 @@ protected:
     template <class NodeListType>
     static Element* traverseMatchingElementsBackwardToOffset(const NodeListType&, unsigned offset, Element& currentElement, unsigned& currentOffset);
 
+    void trace(Visitor* visitor) { visitor->trace(m_ownerNode); }
+
 private:
-    RefPtr<ContainerNode> m_ownerNode; // Cannot be null.
+    RefPtrWillBeMember<ContainerNode> m_ownerNode; // Cannot be null.
     const unsigned m_rootType : 1;
     const unsigned m_invalidationType : 4;
     const unsigned m_collectionType : 5;

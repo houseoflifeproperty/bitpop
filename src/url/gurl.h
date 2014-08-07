@@ -12,6 +12,7 @@
 #include "base/strings/string16.h"
 #include "url/url_canon.h"
 #include "url/url_canon_stdstring.h"
+#include "url/url_constants.h"
 #include "url/url_export.h"
 #include "url/url_parse.h"
 
@@ -221,17 +222,17 @@ class URL_EXPORT GURL {
   // We often need to know if this is a file URL. File URLs are "standard", but
   // are often treated separately by some programs.
   bool SchemeIsFile() const {
-    return SchemeIs("file");
+    return SchemeIs(url::kFileScheme);
   }
 
   // FileSystem URLs need to be treated differently in some cases.
   bool SchemeIsFileSystem() const {
-    return SchemeIs("filesystem");
+    return SchemeIs(url::kFileSystemScheme);
   }
 
   // If the scheme indicates a secure connection
   bool SchemeIsSecure() const {
-    return SchemeIs("https") || SchemeIs("wss") ||
+    return SchemeIs(url::kHttpsScheme) || SchemeIs(url::kWssScheme) ||
         (SchemeIsFileSystem() && inner_url() && inner_url()->SchemeIsSecure());
   }
 

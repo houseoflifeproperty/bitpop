@@ -1,13 +1,13 @@
 Name: Network Security Services (NSS)
 Short Name: nss
 URL: http://www.mozilla.org/projects/security/pki/nss/
-Version: 3.16
+Version: 3.16.2 Beta 3
 License: MPL 2
 License File: nss/COPYING
 Security Critical: yes
 
 Description:
-NSS 3.16 with NSPR 4.10.4
+NSS 3.16.2 Beta 3 with NSPR 4.10.4
 
 This copy of NSS has been customized for Chromium.  NSPR is also put here
 rather than in a separate directory to emphasize the fact that Chromium is
@@ -21,7 +21,7 @@ Linux.
 
 The source code was checked out from the mozilla.org CVS or hg repository using
 the nspr-checkout.sh and nss-checkout.sh scripts in the scripts directory.
-The current source code was checked out with the hg tag NSS_3_16_RTM
+The current source code was checked out with the hg tag NSS_3_16_2_BETA3
 and the hg tag NSPR_4_10_4_RTM.
 
 Local Modifications:
@@ -60,7 +60,7 @@ We made the following local changes to NSS.
   (http://crbug.com/122592).
 - nss/lib/freebl/mpi/mpi_arm_mac.c: a wrapper file for mpi_arm.c for iOS
   and Mac OS X. This works around the inability to specify target arch
-  specific source files in Xcode. 
+  specific source files in Xcode.
 - patches/nss-remove-fortezza.patch: remove Fortezza certificate support
   from PK11_ImportPublicKey.  See NSS bug 668397
   (https://bugzilla.mozilla.org/show_bug.cgi?id=668397).
@@ -69,12 +69,9 @@ We made the following local changes to NSS.
 - patches/nss-chacha20-poly1305.patch: Support ChaCha20+Poly1305 cipher
   suites.  See NSS bug 917571
   (https://bugzilla.mozilla.org/show_bug.cgi?id=917571).
-- patches/nss-export-private-key-info.patch: Add the
-  PK11_ExportDERPrivateKeyInfo and PK11_ExportPrivKeyInfo functions. See
-  NSS bug 519255 (https://bugzilla.mozilla.org/show_bug.cgi?id=519255).
-- patches/nss-intel-aes-windows.patch: Implement AES in different modes
-  of operation, using AES-NI and PCLMULQDQ-NI, for WIN32 and WIN64
-  platforms. See NSS bug 979703
-  (https://bugzilla.mozilla.org/show_bug.cgi?id=979703). Note: when we
-  upgrade to NSS 3.16.1, we also need to define the macro INTEL_GCM in
-  nss.gyp. 
+- patches/nss-genname-warnings.patch: Fix compiler warnings in
+  lib/certdb/genname.c that are treated as errors by -Werror,-Wpointer-sign.
+  Will be fixed in NSS 3.16.2.
+- patches/nss-rsa-key-check.patch: RSA_PrivateKeyCheck should not swap
+  members of the input RSAPrivateKey.
+  https://bugzilla.mozilla.org/show_bug.cgi?id=1021102

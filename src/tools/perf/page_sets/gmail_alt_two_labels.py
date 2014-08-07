@@ -7,6 +7,15 @@ from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
 
 
+def _GetCurrentLocation(action_runner):
+  return action_runner.EvaluateJavaScript('document.location.href')
+
+
+def _WaitForLocationChange(action_runner, old_href):
+  action_runner.WaitForJavaScriptCondition(
+      'document.location.href != "%s"' % old_href)
+
+
 class GmailAltTwoLabelsPage(page_module.Page):
 
   """ Why: Alternate between Inbox and Sent Mail """
@@ -23,26 +32,22 @@ class GmailAltTwoLabelsPage(page_module.Page):
     self.archive_data_file = 'data/gmail_alt_two_labels.json'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript':
-        'window.gmonkey !== undefined && document.getElementById("gb") !== null'
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'window.gmonkey !== undefined && '
+        'document.getElementById("gb") !== null')
 
   def RunEndure(self, action_runner):
-    action_runner.RunAction(ClickElementAction(
-      {
-        'wait_until': {'condition': 'href_change'},
-        'selector': 'a[href="https://mail.google.com/mail/u/0/?shva=1#sent"]'
-      }))
-    action_runner.RunAction(WaitAction({'seconds': 1}))
-    action_runner.RunAction(ClickElementAction(
-      {
-        'wait_until': {'condition': 'href_change'},
-        'selector': 'a[href="https://mail.google.com/mail/u/0/?shva=1#inbox"]'
-      }))
-    action_runner.RunAction(WaitAction({'seconds': 1}))
+    old_href = _GetCurrentLocation(action_runner)
+    action_runner.ClickElement(
+        'a[href="https://mail.google.com/mail/u/0/?shva=1#sent"]')
+    _WaitForLocationChange(action_runner, old_href)
+    action_runner.Wait(1)
+    old_href = _GetCurrentLocation(action_runner)
+    action_runner.ClickElement(
+        'a[href="https://mail.google.com/mail/u/0/?shva=1#inbox"]')
+    _WaitForLocationChange(action_runner, old_href)
+    action_runner.Wait(1)
 
 
 class GmailAltTwoLabelsPageSet(page_set_module.PageSet):
@@ -53,6 +58,7 @@ class GmailAltTwoLabelsPageSet(page_set_module.PageSet):
     super(GmailAltTwoLabelsPageSet, self).__init__(
       credentials_path='data/credentials.json',
       user_agent_type='desktop',
-      archive_data_file='data/gmail_alt_two_labels.json')
+      archive_data_file='data/gmail_alt_two_labels.json',
+      bucket=page_set_module.PUBLIC_BUCKET)
 
     self.AddPage(GmailAltTwoLabelsPage(self))

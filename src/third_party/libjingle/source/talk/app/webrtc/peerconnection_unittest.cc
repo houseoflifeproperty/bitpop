@@ -84,8 +84,14 @@ using webrtc::SessionDescriptionInterface;
 using webrtc::StreamCollectionInterface;
 
 static const int kMaxWaitMs = 2000;
+// Disable for TSan v2, see
+// https://code.google.com/p/webrtc/issues/detail?id=1205 for details.
+// This declaration is also #ifdef'd as it causes uninitialized-variable
+// warnings.
+#if !defined(THREAD_SANITIZER)
 static const int kMaxWaitForStatsMs = 3000;
-static const int kMaxWaitForFramesMs = 5000;
+#endif
+static const int kMaxWaitForFramesMs = 10000;
 static const int kEndAudioFrameCount = 3;
 static const int kEndVideoFrameCount = 3;
 
@@ -1003,6 +1009,16 @@ class P2PTestConductor : public testing::Test {
                      kMaxWaitForFramesMs);
   }
 
+  void SendRtpData(webrtc::DataChannelInterface* dc, const std::string& data) {
+    // Messages may get lost on the unreliable DataChannel, so we send multiple
+    // times to avoid test flakiness.
+    static const size_t kSendAttempts = 5;
+
+    for (size_t i = 0; i < kSendAttempts; ++i) {
+      dc->Send(DataBuffer(data));
+    }
+  }
+
   SignalingClass* initializing_client() { return initiating_client_.get(); }
   SignalingClass* receiving_client() { return receiving_client_.get(); }
 
@@ -1131,7 +1147,9 @@ TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestAnswerNone) {
 // runs for a while (10 frames), the caller sends an update offer with video
 // being rejected. Once the re-negotiation is done, the video flow should stop
 // and the audio flow should continue.
-TEST_F(JsepPeerConnectionP2PTestClient, UpdateOfferWithRejectedContent) {
+// Disabled due to b/14955157.
+TEST_F(JsepPeerConnectionP2PTestClient,
+       DISABLED_UpdateOfferWithRejectedContent) {
   ASSERT_TRUE(CreateTestClients());
   LocalP2PTest();
   TestUpdateOfferWithRejectedContent();
@@ -1139,7 +1157,8 @@ TEST_F(JsepPeerConnectionP2PTestClient, UpdateOfferWithRejectedContent) {
 
 // This test sets up a Jsep call between two parties. The MSID is removed from
 // the SDP strings from the caller.
-TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestWithoutMsid) {
+// Disabled due to b/14955157.
+TEST_F(JsepPeerConnectionP2PTestClient, DISABLED_LocalP2PTestWithoutMsid) {
   ASSERT_TRUE(CreateTestClients());
   receiving_client()->RemoveMsidFromReceivedSdp(true);
   // TODO(perkj): Currently there is a bug that cause audio to stop playing if
@@ -1242,12 +1261,7 @@ TEST_F(JsepPeerConnectionP2PTestClient, GetBytesSentStats) {
 }
 
 // This test sets up a call between two parties with audio, video and data.
-// TODO(jiayl): fix the flakiness on Windows and reenable. Issue 2891.
-#if defined(WIN32)
-TEST_F(JsepPeerConnectionP2PTestClient, DISABLED_LocalP2PTestDataChannel) {
-#else
 TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestDataChannel) {
-#endif
   FakeConstraints setup_constraints;
   setup_constraints.SetAllowRtpDataChannels();
   ASSERT_TRUE(CreateTestClients(&setup_constraints, &setup_constraints));
@@ -1261,10 +1275,12 @@ TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestDataChannel) {
                    kMaxWaitMs);
 
   std::string data = "hello world";
-  initializing_client()->data_channel()->Send(DataBuffer(data));
+
+  SendRtpData(initializing_client()->data_channel(), data);
   EXPECT_EQ_WAIT(data, receiving_client()->data_observer()->last_message(),
                  kMaxWaitMs);
-  receiving_client()->data_channel()->Send(DataBuffer(data));
+
+  SendRtpData(receiving_client()->data_channel(), data);
   EXPECT_EQ_WAIT(data, initializing_client()->data_observer()->last_message(),
                  kMaxWaitMs);
 
@@ -1298,8 +1314,10 @@ TEST_F(JsepPeerConnectionP2PTestClient, RegisterDataChannelObserver) {
 
   // Unregister the existing observer.
   receiving_client()->data_channel()->UnregisterObserver();
+
   std::string data = "hello world";
-  initializing_client()->data_channel()->Send(DataBuffer(data));
+  SendRtpData(initializing_client()->data_channel(), data);
+
   // Wait a while to allow the sent data to arrive before an observer is
   // registered..
   talk_base::Thread::Current()->ProcessMessages(100);

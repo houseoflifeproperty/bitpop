@@ -36,51 +36,51 @@
 #include "core/animation/ActiveAnimations.h"
 #include "core/animation/AnimationHelpers.h"
 #include "core/animation/AnimationPlayer.h"
+#include "core/animation/AnimationTimeline.h"
 #include "core/animation/CompositorAnimations.h"
-#include "core/animation/DocumentTimeline.h"
-#include "core/animation/Interpolation.h"
 #include "core/animation/KeyframeEffectModel.h"
+#include "core/animation/interpolation/Interpolation.h"
 #include "core/dom/Element.h"
 #include "core/frame/UseCounter.h"
 #include "core/rendering/RenderLayer.h"
 
 namespace WebCore {
 
-PassRefPtr<Animation> Animation::create(Element* target, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, Priority priority, PassOwnPtr<EventDelegate> eventDelegate)
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* target, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, Priority priority, PassOwnPtr<EventDelegate> eventDelegate)
 {
-    return adoptRef(new Animation(target, effect, timing, priority, eventDelegate));
+    return adoptRefWillBeNoop(new Animation(target, effect, timing, priority, eventDelegate));
 }
 
-PassRefPtr<Animation> Animation::create(Element* element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Dictionary& timingInputDictionary)
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Dictionary& timingInputDictionary)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     return create(element, effect, TimingInput::convert(timingInputDictionary));
 }
-PassRefPtr<Animation> Animation::create(Element* element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, double duration)
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, double duration)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     return create(element, effect, TimingInput::convert(duration));
 }
-PassRefPtr<Animation> Animation::create(Element* element, PassRefPtrWillBeRawPtr<AnimationEffect> effect)
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, PassRefPtrWillBeRawPtr<AnimationEffect> effect)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     return create(element, effect, Timing());
 }
-PassRefPtr<Animation> Animation::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, const Dictionary& timingInputDictionary, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, const Dictionary& timingInputDictionary, ExceptionState& exceptionState)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     if (element)
         UseCounter::count(element->document(), UseCounter::AnimationConstructorKeyframeListEffectObjectTiming);
     return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), TimingInput::convert(timingInputDictionary));
 }
-PassRefPtr<Animation> Animation::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState& exceptionState)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     if (element)
         UseCounter::count(element->document(), UseCounter::AnimationConstructorKeyframeListEffectDoubleTiming);
     return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), TimingInput::convert(duration));
 }
-PassRefPtr<Animation> Animation::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
 {
     ASSERT(RuntimeEnabledFeatures::webAnimationsAPIEnabled());
     if (element)
@@ -89,36 +89,42 @@ PassRefPtr<Animation> Animation::create(Element* element, const Vector<Dictionar
 }
 
 Animation::Animation(Element* target, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, Priority priority, PassOwnPtr<EventDelegate> eventDelegate)
-    : TimedItem(timing, eventDelegate)
+    : AnimationNode(timing, eventDelegate)
     , m_target(target)
     , m_effect(effect)
-    , m_sampledEffect(0)
+    , m_sampledEffect(nullptr)
     , m_priority(priority)
 {
+#if !ENABLE(OILPAN)
     if (m_target)
         m_target->ensureActiveAnimations().addAnimation(this);
+#endif
 }
 
 Animation::~Animation()
 {
+#if !ENABLE(OILPAN)
     if (m_target)
         m_target->activeAnimations()->notifyAnimationDestroyed(this);
+#endif
 }
 
-void Animation::didAttach()
+void Animation::attach(AnimationPlayer* player)
 {
     if (m_target) {
-        m_target->ensureActiveAnimations().addPlayer(player());
+        m_target->ensureActiveAnimations().addPlayer(player);
         m_target->setNeedsAnimationStyleRecalc();
     }
+    AnimationNode::attach(player);
 }
 
-void Animation::willDetach()
+void Animation::detach()
 {
     if (m_target)
         m_target->activeAnimations()->removePlayer(player());
     if (m_sampledEffect)
         clearEffects();
+    AnimationNode::detach();
 }
 
 void Animation::specifiedTimingChanged()
@@ -150,7 +156,7 @@ void Animation::applyEffects()
     if (m_sampledEffect) {
         m_sampledEffect->setInterpolations(interpolations.release());
     } else if (!interpolations->isEmpty()) {
-        OwnPtr<SampledEffect> sampledEffect = SampledEffect::create(this, interpolations.release());
+        OwnPtrWillBeRawPtr<SampledEffect> sampledEffect = SampledEffect::create(this, interpolations.release());
         m_sampledEffect = sampledEffect.get();
         ensureAnimationStack(m_target).add(sampledEffect.release());
     } else {
@@ -166,7 +172,7 @@ void Animation::clearEffects()
     ASSERT(m_sampledEffect);
 
     m_sampledEffect->clear();
-    m_sampledEffect = 0;
+    m_sampledEffect = nullptr;
     cancelAnimationOnCompositor();
     m_target->setNeedsAnimationStyleRecalc();
     invalidate();
@@ -213,9 +219,6 @@ double Animation::calculateTimeToEffectChange(bool forwards, double localTime, d
         return forwards
             ? std::numeric_limits<double>::infinity()
             : localTime - end;
-    case PhaseNone:
-        ASSERT(player() && player()->timeline() && !player()->timeline()->hasStarted());
-        return std::numeric_limits<double>::infinity();
     default:
         ASSERT_NOT_REACHED();
         return std::numeric_limits<double>::infinity();
@@ -225,21 +228,23 @@ double Animation::calculateTimeToEffectChange(bool forwards, double localTime, d
 void Animation::notifySampledEffectRemovedFromAnimationStack()
 {
     ASSERT(m_sampledEffect);
-    m_sampledEffect = 0;
+    m_sampledEffect = nullptr;
 }
 
+#if !ENABLE(OILPAN)
 void Animation::notifyElementDestroyed()
 {
     // If our player is kept alive just by the sampledEffect, we might get our
     // destructor called when we call SampledEffect::clear(), so we need to
     // clear m_sampledEffect first.
-    m_target = 0;
+    m_target = nullptr;
     clearEventDelegate();
     SampledEffect* sampledEffect = m_sampledEffect;
-    m_sampledEffect = 0;
+    m_sampledEffect = nullptr;
     if (sampledEffect)
         sampledEffect->clear();
 }
+#endif
 
 bool Animation::isCandidateForAnimationOnCompositor() const
 {
@@ -298,6 +303,14 @@ void Animation::pauseAnimationForTestingOnCompositor(double pauseTime)
         return;
     for (size_t i = 0; i < m_compositorAnimationIds.size(); ++i)
         CompositorAnimations::instance()->pauseAnimationForTestingOnCompositor(*m_target, m_compositorAnimationIds[i], pauseTime);
+}
+
+void Animation::trace(Visitor* visitor)
+{
+    visitor->trace(m_target);
+    visitor->trace(m_effect);
+    visitor->trace(m_sampledEffect);
+    AnimationNode::trace(visitor);
 }
 
 } // namespace WebCore

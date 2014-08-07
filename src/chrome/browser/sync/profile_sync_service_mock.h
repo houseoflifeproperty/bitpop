@@ -57,7 +57,7 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   MOCK_METHOD2(OnUnrecoverableError,
                void(const tracked_objects::Location& location,
                const std::string& message));
-  MOCK_METHOD3(DisableBrokenDatatype, void(syncer::ModelType,
+  MOCK_METHOD3(DisableDatatype, void(syncer::ModelType,
                const tracked_objects::Location&,
                std::string message));
   MOCK_CONST_METHOD0(GetUserShare, syncer::UserShare*());
@@ -127,6 +127,8 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   MOCK_METHOD1(SetDecryptionPassphrase, bool(const std::string& passphrase));
   MOCK_METHOD2(SetEncryptionPassphrase, void(const std::string& passphrase,
                                              PassphraseType type));
+
+  MOCK_METHOD1(StartUpSlowBackendComponents, void(BackendMode));
 };
 
 #endif  // CHROME_BROWSER_SYNC_PROFILE_SYNC_SERVICE_MOCK_H_

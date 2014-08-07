@@ -23,6 +23,7 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/settings_window_manager.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/extensions/extension_constants.h"
@@ -103,8 +104,14 @@ void BrowserShortcutLauncherItemController::UpdateBrowserItemState() {
 void BrowserShortcutLauncherItemController::SetShelfIDForBrowserWindowContents(
     Browser* browser,
     content::WebContents* web_contents) {
-  if (!IsBrowserRepresentedInBrowserList(browser))
+  // We need to call SetShelfIDForWindow for V1 applications since they are
+  // content which might change and as such change the application type.
+  if (!browser ||
+      !launcher_controller()->IsBrowserFromActiveUser(browser) ||
+      browser->host_desktop_type() != chrome::HOST_DESKTOP_TYPE_ASH ||
+      chrome::IsTrustedPopupWindowWithScheme(browser, content::kChromeUIScheme))
     return;
+
   ash::SetShelfIDForWindow(
       launcher_controller()->GetShelfIDForWebContents(web_contents),
       browser->window()->GetNativeWindow());

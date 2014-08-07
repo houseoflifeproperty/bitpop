@@ -116,11 +116,29 @@ public class MostVisitedSites {
         nativeBlacklistUrl(mNativeMostVisitedSites, url);
     }
 
+    /**
+     * Called when the loading of the Most Visited page is complete.
+     */
+    public void onLoadingComplete() {
+        nativeOnLoadingComplete(mNativeMostVisitedSites);
+    }
+
+    /**
+     * Record the opening of a Most Visited Item.
+     * @param index The index of the item that was opened.
+     */
+    public void recordOpenedMostVisitedItem(int index) {
+        nativeRecordOpenedMostVisitedItem(mNativeMostVisitedSites, index);
+    }
+
     private native long nativeInit(Profile profile);
     private native void nativeDestroy(long nativeMostVisitedSites);
+    private native void nativeOnLoadingComplete(long nativeMostVisitedSites);
     private native void nativeSetMostVisitedURLsObserver(long nativeMostVisitedSites,
             MostVisitedURLsObserver observer, int numSites);
     private native void nativeGetURLThumbnail(long nativeMostVisitedSites, String url,
             ThumbnailCallback callback);
     private native void nativeBlacklistUrl(long nativeMostVisitedSites, String url);
+    private native void nativeRecordOpenedMostVisitedItem(long nativeMostVisitedSites, int index);
+
 }

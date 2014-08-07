@@ -9,10 +9,10 @@
 #include "chrome/browser/undo/bookmark_renumber_observer.h"
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
 #include "chrome/browser/undo/undo_operation.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_node_data.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
-#include "components/bookmarks/core/browser/scoped_group_bookmark_actions.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_node_data.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/scoped_group_bookmark_actions.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -433,8 +433,8 @@ void BookmarkUndoService::OnWillRemoveBookmarks(BookmarkModel* model,
   undo_manager()->AddUndoOperation(op.Pass());
 }
 
-void BookmarkUndoService::OnWillRemoveAllBookmarks(BookmarkModel* model) {
-  ScopedGroupBookmarkActions merge_removes(model);
+void BookmarkUndoService::OnWillRemoveAllUserBookmarks(BookmarkModel* model) {
+  bookmarks::ScopedGroupBookmarkActions merge_removes(model);
   for (int i = 0; i < model->root_node()->child_count(); ++i) {
     const BookmarkNode* permanent_node = model->root_node()->GetChild(i);
     for (int j = permanent_node->child_count() - 1; j >= 0; --j) {

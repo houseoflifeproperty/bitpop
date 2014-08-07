@@ -12,14 +12,17 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/history_provider.h"
-#include "chrome/browser/autocomplete/url_prefix.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
-#include "components/bookmarks/core/browser/bookmark_match.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/autocomplete/url_prefix.h"
+#include "components/bookmarks/browser/bookmark_match.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "net/base/net_util.h"
+
+using bookmarks::BookmarkMatch;
 
 typedef std::vector<BookmarkMatch> BookmarkMatches;
 
@@ -45,7 +48,7 @@ void BookmarkProvider::Start(const AutocompleteInput& input,
   matches_.clear();
 
   if (input.text().empty() ||
-      (input.type() == AutocompleteInput::FORCED_QUERY))
+      (input.type() == metrics::OmniboxInputType::FORCED_QUERY))
     return;
 
   DoAutocomplete(input);
@@ -86,8 +89,7 @@ void BookmarkProvider::DoAutocomplete(const AutocompleteInput& input) {
                                         &matches);
   if (matches.empty())
     return;  // There were no matches.
-  AutocompleteInput fixed_up_input(input);
-  FixupUserInput(&fixed_up_input);
+  const base::string16 fixed_up_input(FixupUserInput(input).second);
   for (BookmarkMatches::const_iterator i = matches.begin(); i != matches.end();
        ++i) {
     // Create and score the AutocompleteMatch. If its score is 0 then the
@@ -138,7 +140,7 @@ class ScoringFunctor {
 
 AutocompleteMatch BookmarkProvider::BookmarkMatchToACMatch(
     const AutocompleteInput& input,
-    const AutocompleteInput& fixed_up_input,
+    const base::string16& fixed_up_input_text,
     const BookmarkMatch& bookmark_match) {
   // The AutocompleteMatch we construct is non-deletable because the only
   // way to support this would be to delete the underlying bookmark, which is
@@ -149,7 +151,7 @@ AutocompleteMatch BookmarkProvider::BookmarkMatchToACMatch(
   const GURL& url(bookmark_match.node->url());
   const base::string16& url_utf16 = base::UTF8ToUTF16(url.spec());
   size_t inline_autocomplete_offset = URLPrefix::GetInlineAutocompleteOffset(
-      input, fixed_up_input, false, url_utf16);
+      input.text(), fixed_up_input_text, false, url_utf16);
   match.destination_url = url;
   const size_t match_start = bookmark_match.url_match_positions.empty() ?
       0 : bookmark_match.url_match_positions[0].first;

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 DEPS = [
+  'bot_update',
   'chromium',
   'gclient',
   'generator_script',
@@ -13,5 +14,6 @@ DEPS = [
   'python',
   'raw_io',
   'step',
-  'step_history'
+  'step_history',
+  'test_utils',
 ]

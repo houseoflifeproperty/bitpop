@@ -11,6 +11,7 @@
 #include "chromeos/dbus/power_policy_controller.h"
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
 #include "components/policy/core/common/cloud/cloud_policy_service.h"
+#include "components/policy/core/common/cloud/component_cloud_policy_service.h"
 #include "components/policy/core/common/policy_bundle.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_namespace.h"
@@ -98,6 +99,10 @@ bool DeviceLocalAccountPolicyProvider::IsInitializationComplete(
     PolicyDomain domain) const {
   if (domain == POLICY_DOMAIN_CHROME)
     return store_initialized_;
+  if (ComponentCloudPolicyService::SupportsDomain(domain) &&
+      GetBroker() && GetBroker()->component_policy_service()) {
+    return GetBroker()->component_policy_service()->is_initialized();
+  }
   return true;
 }
 
@@ -123,7 +128,8 @@ void DeviceLocalAccountPolicyProvider::OnDeviceLocalAccountsChanged() {
   UpdateFromBroker();
 }
 
-DeviceLocalAccountPolicyBroker* DeviceLocalAccountPolicyProvider::GetBroker() {
+DeviceLocalAccountPolicyBroker* DeviceLocalAccountPolicyProvider::GetBroker()
+    const {
   return service_->GetBrokerForUser(user_id_);
 }
 
@@ -142,6 +148,9 @@ void DeviceLocalAccountPolicyProvider::UpdateFromBroker() {
       bundle->Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
           .CopyFrom(broker->core()->store()->policy_map());
       external_data_manager_ = broker->external_data_manager();
+
+      if (broker->component_policy_service())
+        bundle->MergeFrom(broker->component_policy_service()->policy());
     } else {
       // Wait for the refresh to finish.
       return;

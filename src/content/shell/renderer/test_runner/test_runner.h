@@ -12,8 +12,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "content/shell/renderer/test_runner/WebTask.h"
-#include "content/shell/renderer/test_runner/WebTestRunner.h"
+#include "content/shell/renderer/test_runner/web_test_runner.h"
 #include "v8/include/v8.h"
+
+class SkBitmap;
 
 namespace blink {
 class WebFrame;
@@ -51,7 +53,7 @@ class TestRunner : public WebTestRunner,
 
   void Reset();
 
-  WebTaskList* taskList() { return &task_list_; }
+  WebTaskList* mutable_task_list() { return &task_list_; }
 
   void SetTestIsRunning(bool);
   bool TestIsRunning() const { return test_is_running_; }
@@ -61,12 +63,12 @@ class TestRunner : public WebTestRunner,
   void InvokeCallback(scoped_ptr<InvokeCallbackTask> callback);
 
   // WebTestRunner implementation.
-  virtual bool shouldGeneratePixelResults() OVERRIDE;
-  virtual bool shouldDumpAsAudio() const OVERRIDE;
-  virtual void getAudioData(std::vector<unsigned char>* bufferView) const
-      OVERRIDE;
-  virtual bool shouldDumpBackForwardList() const OVERRIDE;
-  virtual blink::WebPermissionClient* webPermissions() const OVERRIDE;
+  virtual bool ShouldGeneratePixelResults() OVERRIDE;
+  virtual bool ShouldDumpAsAudio() const OVERRIDE;
+  virtual void GetAudioData(
+      std::vector<unsigned char>* buffer_view) const OVERRIDE;
+  virtual bool ShouldDumpBackForwardList() const OVERRIDE;
+  virtual blink::WebPermissionClient* GetWebPermissions() const OVERRIDE;
 
   // Methods used by WebTestProxyBase.
   bool shouldDumpSelectionRect() const;
@@ -77,6 +79,7 @@ class TestRunner : public WebTestRunner,
   std:: string customDumpText() const;
   bool shouldDumpAsMarkup();
   bool shouldDumpChildFrameScrollPositions() const;
+  bool shouldDumpChildFramesAsMarkup() const;
   bool shouldDumpChildFramesAsText() const;
   void showDevTools(const std::string& settings,
                     const std::string& frontend_url);
@@ -150,7 +153,7 @@ class TestRunner : public WebTestRunner,
 
     void set_frozen(bool frozen) { frozen_ = frozen; }
     bool is_empty() { return queue_.empty(); }
-    WebTaskList* taskList() { return &task_list_; }
+    WebTaskList* mutable_task_list() { return &task_list_; }
 
    private:
     void ProcessWork();
@@ -300,6 +303,12 @@ class TestRunner : public WebTestRunner,
 
   void SetMockScreenOrientation(const std::string& orientation);
 
+  void DidChangeBatteryStatus(bool charging,
+                              double chargingTime,
+                              double dischargingTime,
+                              double level);
+  void ResetBatteryStatus();
+
   void DidAcquirePointerLock();
   void DidNotAcquirePointerLock();
   void DidLosePointerLock();
@@ -318,6 +327,9 @@ class TestRunner : public WebTestRunner,
   void SetAllowFileAccessFromFileURLs(bool allow);
   void OverridePreference(const std::string key, v8::Handle<v8::Value> value);
 
+  // Modify accept_languages in RendererPreferences.
+  void SetAcceptLanguages(const std::string& accept_languages);
+
   // Enable or disable plugins.
   void SetPluginsEnabled(bool enabled);
 
@@ -335,6 +347,11 @@ class TestRunner : public WebTestRunner,
   void DumpAsText();
 
   // This function sets a flag that tells the test_shell to dump pages as
+  // the DOM contents, rather than as a text representation of the renderer's
+  // state. The pixel results will not be generated for this test.
+  void DumpAsMarkup();
+
+  // This function sets a flag that tells the test_shell to dump pages as
   // plain text, rather than as a text representation of the renderer's state.
   // It will also generate a pixel dump for the test.
   void DumpAsTextWithPixelResults();
@@ -347,6 +364,11 @@ class TestRunner : public WebTestRunner,
   // dump all frames as plain text if the DumpAsText flag is set.
   // It takes no arguments, and ignores any that may be present.
   void DumpChildFramesAsText();
+
+  // This function sets a flag that tells the test_shell to recursively
+  // dump all frames as the DOM contents if the DumpAsMarkup flag is set.
+  // It takes no arguments, and ignores any that may be present.
+  void DumpChildFramesAsMarkup();
 
   // This function sets a flag that tells the test_shell to print out the
   // information about icon changes notifications from WebKit.
@@ -396,6 +418,7 @@ class TestRunner : public WebTestRunner,
 
   // WebPermissionClient related.
   void SetImagesAllowed(bool allowed);
+  void SetMediaAllowed(bool allowed);
   void SetScriptsAllowed(bool allowed);
   void SetStorageAllowed(bool allowed);
   void SetPluginsAllowed(bool allowed);
@@ -510,8 +533,20 @@ class TestRunner : public WebTestRunner,
   void DisplayAsync();
   void DisplayAsyncThen(v8::Handle<v8::Function> callback);
 
+  // Similar to DisplayAsyncThen(), but pass parameters of the captured
+  // snapshot (width, height, snapshot) to the callback.
+  void CapturePixelsAsyncThen(v8::Handle<v8::Function> callback);
+
+  void SetMockPushClientSuccess(const std::string& end_point,
+                                const std::string& registration_id);
+  void SetMockPushClientError(const std::string& message);
+
   ///////////////////////////////////////////////////////////////////////////
   // Internal helpers
+
+  void CapturePixelsCallback(scoped_ptr<InvokeCallbackTask> task,
+                             const SkBitmap& snapshot);
+
   void CheckResponseMimeType();
   void CompleteNotifyDone();
 
@@ -591,6 +626,11 @@ class TestRunner : public WebTestRunner,
   // If true, the test_shell will produce a dump of the DOM rather than a text
   // representation of the renderer.
   bool dump_as_markup_;
+
+  // If true and if dump_as_markup_ is true, the test_shell will recursively
+  // produce a dump of the DOM rather than a text representation of the
+  // renderer.
+  bool dump_child_frames_as_markup_;
 
   // If true, the test_shell will print out the child frame scroll offsets as
   // well.

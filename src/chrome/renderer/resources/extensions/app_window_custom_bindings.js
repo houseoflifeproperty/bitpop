@@ -213,6 +213,7 @@ appWindow.registerCustomHook(function(bindingsAPI) {
     AppWindow.prototype.resizeTo = $Function.bind(window.resizeTo, window);
     AppWindow.prototype.contentWindow = window;
     AppWindow.prototype.onClosed = new Event();
+    AppWindow.prototype.onWindowFirstShownForTests = new Event();
     AppWindow.prototype.close = function() {
       this.contentWindow.close();
     };
@@ -240,6 +241,18 @@ appWindow.registerCustomHook(function(bindingsAPI) {
     AppWindow.prototype.isAlwaysOnTop = function() {
       return appWindowData.alwaysOnTop;
     };
+    AppWindow.prototype.alphaEnabled = function() {
+      return appWindowData.alphaEnabled;
+    }
+    AppWindow.prototype.handleWindowFirstShownForTests = function(callback) {
+      // This allows test apps to get have their callback run even if they
+      // call this after the first show has happened.
+      if (this.firstShowHasHappened) {
+        callback();
+        return;
+      }
+      this.onWindowFirstShownForTests.addListener(callback);
+    }
 
     Object.defineProperty(AppWindow.prototype, 'id', {get: function() {
       return appWindowData.id;
@@ -291,7 +304,8 @@ appWindow.registerCustomHook(function(bindingsAPI) {
       alwaysOnTop: params.alwaysOnTop,
       hasFrameColor: params.hasFrameColor,
       activeFrameColor: params.activeFrameColor,
-      inactiveFrameColor: params.inactiveFrameColor
+      inactiveFrameColor: params.inactiveFrameColor,
+      alphaEnabled: params.alphaEnabled
     };
     currentAppWindow = new AppWindow;
   });
@@ -338,7 +352,20 @@ function updateAppWindowProperties(update) {
       (oldData.minimized && !update.minimized) ||
       (oldData.maximized && !update.maximized))
     dispatchEventIfExists(currentWindow, "onRestored");
+
+  if (oldData.alphaEnabled !== update.alphaEnabled)
+    dispatchEventIfExists(currentWindow, "onAlphaEnabledChanged");
 };
+
+function onAppWindowShownForTests() {
+  if (!currentAppWindow)
+    return;
+
+  if (!currentAppWindow.firstShowHasHappened)
+    dispatchEventIfExists(currentAppWindow, "onWindowFirstShownForTests");
+
+  currentAppWindow.firstShowHasHappened = true;
+}
 
 function onAppWindowClosed() {
   if (!currentAppWindow)
@@ -371,3 +398,4 @@ function updateSizeConstraints(boundsType, constraints) {
 exports.binding = appWindow.generate();
 exports.onAppWindowClosed = onAppWindowClosed;
 exports.updateAppWindowProperties = updateAppWindowProperties;
+exports.appWindowShownForTests = onAppWindowShownForTests;

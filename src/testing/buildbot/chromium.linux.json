@@ -13,6 +13,7 @@
       "compositor_unittests",
       "crypto_unittests",
       "dbus_unittests",
+      "display_unittests",
       "gcm_unit_tests",
       "gfx_unittests",
       "google_apis_unittests",
@@ -37,6 +38,7 @@
       "sql_unittests",
       "browser_tests",
       "content_browsertests",
+      "app_shell_browsertests",
       "webkit_compositor_bindings_unittests",
       "mojo_apps_js_unittests",
       "mojo_common_unittests",
@@ -99,7 +101,8 @@
     "gtest_tests": [
       "net_unittests",
       "browser_tests",
-      "content_browsertests"
+      "content_browsertests",
+      "app_shell_browsertests"
     ]
   },
   "Linux Tests (dbg)(2)(32)": {
@@ -116,6 +119,7 @@
       "compositor_unittests",
       "crypto_unittests",
       "dbus_unittests",
+      "display_unittests",
       "gcm_unit_tests",
       "gfx_unittests",
       "gpu_unittests",
@@ -154,7 +158,8 @@
     "gtest_tests": [
       "net_unittests",
       "browser_tests",
-      "content_browsertests"
+      "content_browsertests",
+      "app_shell_browsertests"
     ]
   },
   "Linux Tests (dbg)(2)": {
@@ -171,6 +176,7 @@
       "compositor_unittests",
       "crypto_unittests",
       "dbus_unittests",
+      "display_unittests",
       "gcm_unit_tests",
       "gfx_unittests",
       "google_apis_unittests",
@@ -214,6 +220,7 @@
       "google_apis_unittests",
       "content_unittests",
       "device_unittests",
+      "display_unittests",
       "sandbox_linux_unittests",
       "ui_unittests",
       "ipc_tests",

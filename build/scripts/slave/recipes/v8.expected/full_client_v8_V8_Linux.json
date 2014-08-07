@@ -6,7 +6,7 @@
       "[DEPOT_TOOLS]/gclient.py",
       "config",
       "--spec",
-      "cache_dir = None\nsolutions = [{'custom_deps': {'v8/test/mozilla/data': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/deps/third_party/mozilla-tests'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+      "cache_dir = None\nsolutions = [{'custom_deps': {'v8/test/mozilla/data': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/deps/third_party/mozilla-tests'}, 'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
     ],
     "name": "gclient setup"
   },
@@ -21,6 +21,8 @@
       "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--revision",
+      "v8@20123",
       "--output-json",
       "/path/to/tmp/json"
     ],
@@ -88,9 +90,9 @@
       "--src-dir",
       "v8",
       "--factory-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"V8 Linux\", \"buildnumber\": 571, \"mastername\": \"client.v8\", \"parent_buildername\": \"V8 Linux - builder\", \"recipe\": \"v8\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"V8 Linux\", \"buildnumber\": 571, \"mastername\": \"client.v8\", \"parent_buildername\": \"V8 Linux - builder\", \"recipe\": \"v8\", \"revision\": \"20123\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}",
       "--build-properties",
-      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"V8 Linux\", \"buildnumber\": 571, \"mastername\": \"client.v8\", \"parent_buildername\": \"V8 Linux - builder\", \"recipe\": \"v8\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}"
+      "{\"blamelist\": [\"cool_dev1337@chromium.org\", \"hax@chromium.org\"], \"buildername\": \"V8 Linux\", \"buildnumber\": 571, \"mastername\": \"client.v8\", \"parent_buildername\": \"V8 Linux - builder\", \"recipe\": \"v8\", \"revision\": \"20123\", \"slavename\": \"TestSlavename\", \"workdir\": \"/path/to/workdir/TestSlavename\"}"
     ],
     "name": "extract build"
   },
@@ -107,15 +109,7 @@
     "seed_steps": [
       "Presubmit",
       "Static-Initializers",
-      "Check",
-      "Check - flaky",
-      "OptimizeForSize",
-      "OptimizeForSize - flaky",
-      "Webkit",
-      "Webkit - flaky",
-      "Benchmarks",
-      "Test262",
-      "Mozilla"
+      "Check"
     ]
   },
   {
@@ -128,6 +122,7 @@
     "name": "Static-Initializers"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -139,13 +134,16 @@
       "--testname",
       "mjsunit fuzz-natives cctest message preparser",
       "--flaky-tests",
-      "skip"
+      "skip",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Check"
   },
   {
-    "abort_on_failure": false,
+    "always_run": true,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -157,12 +155,15 @@
       "--testname",
       "mjsunit fuzz-natives cctest message preparser",
       "--flaky-tests",
-      "run"
+      "run",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Check - flaky"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -176,13 +177,16 @@
       "--no-variants",
       "--shell_flags=\"--optimize-for-size\"",
       "--flaky-tests",
-      "skip"
+      "skip",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "OptimizeForSize"
   },
   {
-    "abort_on_failure": false,
+    "always_run": true,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -196,12 +200,15 @@
       "--no-variants",
       "--shell_flags=\"--optimize-for-size\"",
       "--flaky-tests",
-      "run"
+      "run",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "OptimizeForSize - flaky"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -213,13 +220,16 @@
       "--testname",
       "webkit",
       "--flaky-tests",
-      "skip"
+      "skip",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Webkit"
   },
   {
-    "abort_on_failure": false,
+    "always_run": true,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -231,12 +241,15 @@
       "--testname",
       "webkit",
       "--flaky-tests",
-      "run"
+      "run",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Webkit - flaky"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -246,12 +259,15 @@
       "--arch",
       "ia32",
       "--testname",
-      "benchmarks"
+      "benchmarks",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Benchmarks"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -261,12 +277,15 @@
       "--arch",
       "ia32",
       "--testname",
-      "test262"
+      "test262",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Test262"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -276,9 +295,37 @@
       "--arch",
       "ia32",
       "--testname",
-      "mozilla"
+      "mozilla",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Mozilla"
+  },
+  {
+    "always_run": true,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/v8/tools/run_benchmarks.py",
+      "--arch",
+      "ia32",
+      "--buildbot",
+      "--json-test-results",
+      "/path/to/tmp/json",
+      "benchmarks/v8.json"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Experimental"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/perf_dashboard/resources/post_json.py"
+    ],
+    "name": "perf dashboard post",
+    "stdin": "{\"data\": [{\"bot\": \"TestSlavename\", \"buildername\": \"V8 Linux\", \"buildnumber\": 571, \"error\": \"8.16496580928\", \"master\": \"client.v8\", \"masterid\": \"client.v8\", \"revision\": 50110, \"test\": \"v8/v8/Richards\", \"units\": \"score\", \"value\": \"20.0\"}, {\"bot\": \"TestSlavename\", \"buildername\": \"V8 Linux\", \"buildnumber\": 571, \"error\": \"0.0\", \"master\": \"client.v8\", \"masterid\": \"client.v8\", \"revision\": 50110, \"test\": \"v8/v8/DeltaBlue\", \"units\": \"ms\", \"value\": \"1.2\"}], \"url\": \"https://chrome-perf.googleplex.com/add_point\"}"
   }
 ]

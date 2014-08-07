@@ -9,7 +9,6 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "cc/output/copy_output_result.h"
-#include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
@@ -47,8 +46,9 @@ CopyOutputRequest::~CopyOutputRequest() {
 }
 
 void CopyOutputRequest::SendResult(scoped_ptr<CopyOutputResult> result) {
+  bool success = !result->IsEmpty();
   base::ResetAndReturn(&result_callback_).Run(result.Pass());
-  TRACE_EVENT_ASYNC_END0("cc", "CopyOutputRequest", this);
+  TRACE_EVENT_ASYNC_END1("cc", "CopyOutputRequest", this, "success", success);
 }
 
 void CopyOutputRequest::SendEmptyResult() {

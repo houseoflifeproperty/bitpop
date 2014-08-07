@@ -31,7 +31,7 @@
 #include "config.h"
 #include "bindings/v8/V8NodeFilterCondition.h"
 
-#include "V8Node.h"
+#include "bindings/core/v8/V8Node.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8HiddenValue.h"
 #include "core/dom/Node.h"
@@ -40,15 +40,15 @@
 
 namespace WebCore {
 
-V8NodeFilterCondition::V8NodeFilterCondition(v8::Handle<v8::Value> filter, v8::Handle<v8::Object> owner, v8::Isolate* isolate)
-    : m_scriptState(ScriptState::current(isolate))
+V8NodeFilterCondition::V8NodeFilterCondition(v8::Handle<v8::Value> filter, v8::Handle<v8::Object> owner, ScriptState* scriptState)
+    : m_scriptState(scriptState)
 {
     // ..acceptNode(..) will only dispatch m_filter if m_filter->IsObject().
     // We'll make sure m_filter is either usable by acceptNode or empty.
     // (See the fast/dom/node-filter-gc test for a case where 'empty' happens.)
     if (!filter.IsEmpty() && filter->IsObject()) {
-        V8HiddenValue::setHiddenValue(isolate, owner, V8HiddenValue::condition(isolate), filter);
-        m_filter.set(isolate, filter);
+        V8HiddenValue::setHiddenValue(scriptState->isolate(), owner, V8HiddenValue::condition(scriptState->isolate()), filter);
+        m_filter.set(scriptState->isolate(), filter);
         m_filter.setWeak(this, &setWeakCallback);
     }
 }
@@ -76,17 +76,17 @@ short V8NodeFilterCondition::acceptNode(Node* node, ExceptionState& exceptionSta
     else {
         v8::Local<v8::Value> value = filter->ToObject()->Get(v8AtomicString(isolate, "acceptNode"));
         if (value.IsEmpty() || !value->IsFunction()) {
-            throwTypeError("NodeFilter object does not have an acceptNode function", isolate);
+            exceptionState.throwTypeError("NodeFilter object does not have an acceptNode function");
             return NodeFilter::FILTER_REJECT;
         }
         callback = v8::Handle<v8::Function>::Cast(value);
     }
 
     OwnPtr<v8::Handle<v8::Value>[]> info = adoptArrayPtr(new v8::Handle<v8::Value>[1]);
-    info[0] = toV8(node, v8::Handle<v8::Object>(), isolate);
+    v8::Handle<v8::Object> context = m_scriptState->context()->Global();
+    info[0] = toV8(node, context, isolate);
 
-    v8::Handle<v8::Object> object = m_scriptState->context()->Global();
-    v8::Handle<v8::Value> result = ScriptController::callFunction(m_scriptState->executionContext(), callback, object, 1, info.get(), isolate);
+    v8::Handle<v8::Value> result = ScriptController::callFunction(m_scriptState->executionContext(), callback, context, 1, info.get(), isolate);
 
     if (exceptionCatcher.HasCaught()) {
         exceptionState.rethrowV8Exception(exceptionCatcher.Exception());

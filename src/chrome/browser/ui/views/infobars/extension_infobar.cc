@@ -7,9 +7,9 @@
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/extensions/extension_infobar_delegate.h"
 #include "chrome/browser/extensions/extension_view_host.h"
-#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "extensions/browser/image_loader.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
@@ -169,9 +169,10 @@ void ExtensionInfoBar::ViewHierarchyChanged(
                  weak_ptr_factory_.GetWeakPtr()));
 }
 
-int ExtensionInfoBar::ContentMinimumWidth() {
+int ExtensionInfoBar::ContentMinimumWidth() const {
   return NonExtensionViewWidth() +
-      GetDelegate()->extension_view_host()->view()->GetMinimumSize().width();
+      delegate()->AsExtensionInfoBarDelegate()->extension_view_host()->
+      view()->GetMinimumSize().width();
 }
 
 void ExtensionInfoBar::OnMenuButtonClicked(views::View* source,
@@ -207,7 +208,7 @@ void ExtensionInfoBar::OnImageLoaded(const gfx::Image& image) {
 
     gfx::CanvasImageSource* source = new MenuImageSource(*icon, *drop_image);
     gfx::ImageSkia menu_image = gfx::ImageSkia(source, source->size());
-    icon_as_menu_->SetIcon(menu_image);
+    icon_as_menu_->SetImage(views::Button::STATE_NORMAL, menu_image);
   } else {
     icon_as_image_->SetImage(*icon);
   }
@@ -219,6 +220,10 @@ void ExtensionInfoBar::OnImageLoaded(const gfx::Image& image) {
 }
 
 ExtensionInfoBarDelegate* ExtensionInfoBar::GetDelegate() {
+  return delegate()->AsExtensionInfoBarDelegate();
+}
+
+const ExtensionInfoBarDelegate* ExtensionInfoBar::GetDelegate() const {
   return delegate()->AsExtensionInfoBarDelegate();
 }
 

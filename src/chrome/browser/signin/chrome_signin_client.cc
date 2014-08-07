@@ -18,11 +18,11 @@
 #include "url/gurl.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_constants.h"
+#include "chrome/browser/supervised_user/supervised_user_constants.h"
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 
 using content::ChildProcessHost;
@@ -117,7 +117,7 @@ bool ChromeSigninClient::CanRevokeCredentials() {
 #else
   // Don't allow revoking credentials for supervised users.
   // See http://crbug.com/332032
-  if (profile_->IsManaged()) {
+  if (profile_->IsSupervised()) {
     LOG(ERROR) << "Attempt to revoke supervised user refresh "
                << "token detected, ignoring.";
     return false;

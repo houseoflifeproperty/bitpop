@@ -49,30 +49,27 @@ const unsigned int kInitialRandSeed = 0xC0DE533D;
 
 
 /*
- * Given a count of cells in a 3x3 grid where cells are worth 1 except for
- * the center which is worth 9, this is a color representation of how
- * "alive" that cell is making for a more interesting representation than
- * a binary alive or dead.
+ * Convert a count value into a live (green) or dead color value.
  */
 const uint32_t kNeighborColors[] = {
-    MakeBGRA(0x00, 0x00, 0x00, 0xff),
-    MakeBGRA(0x00, 0x40, 0x00, 0xff),
-    MakeBGRA(0x00, 0x60, 0x00, 0xff),
-    MakeBGRA(0x00, 0x80, 0x00, 0xff),
-    MakeBGRA(0x00, 0xA0, 0x00, 0xff),
-    MakeBGRA(0x00, 0xC0, 0x00, 0xff),
-    MakeBGRA(0x00, 0xE0, 0x00, 0xff),
-    MakeBGRA(0x00, 0x00, 0x00, 0xff),
-    MakeBGRA(0x00, 0x40, 0x00, 0xff),
-    MakeBGRA(0x00, 0x60, 0x00, 0xff),
-    MakeBGRA(0x00, 0x80, 0x00, 0xff),
-    MakeBGRA(0x00, 0xA0, 0x00, 0xff),
-    MakeBGRA(0x00, 0xC0, 0x00, 0xff),
-    MakeBGRA(0x00, 0xE0, 0x00, 0xff),
-    MakeBGRA(0x00, 0xFF, 0x00, 0xff),
-    MakeBGRA(0x00, 0xFF, 0x00, 0xff),
-    MakeBGRA(0x00, 0xFF, 0x00, 0xff),
-    MakeBGRA(0x00, 0xFF, 0x00, 0xff),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0xFF, 0x00, 0xFF),
+    MakeBGRA(0x00, 0xFF, 0x00, 0xFF),
+    MakeBGRA(0x00, 0xFF, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
+    MakeBGRA(0x00, 0x00, 0x00, 0xFF),
 };
 
 /*
@@ -80,8 +77,8 @@ const uint32_t kNeighborColors[] = {
  * values.  The health is binary: either alive or dead.
  */
 const uint8_t kIsAlive[] = {
-      0, 0, 0, 1, 0, 0, 0, 0, 0,  /* Values if the center cell is dead. */
-      0, 0, 1, 1, 0, 0, 0, 0, 0   /* Values if the center cell is alive. */
+      0, 0, 0, 0, 0, 1, 1, 1, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
 void UpdateContext(uint32_t width, uint32_t height) {
@@ -252,12 +249,14 @@ void Render() {
     uint32_t *pixel_line =  (uint32_t*) (pixels + y * desc.stride);
 
     for (x = 1; x < (desc.size.width - 1); ++x) {
-      /* Build sum, weight center by 9x. */
-      count = src0[-1] + src0[0] +     src0[1] +
-              src1[-1] + src1[0] * 9 + src1[1] +
-              src2[-1] + src2[0] +     src2[1];
+      /* Jitter and sum neighbors. */
+      count = src0[-1] + src0[0] + src0[1] +
+              src1[-1] +         + src1[1] +
+              src2[-1] + src2[0] + src2[1];
+      /* Include center cell. */
+      count = count + count + src1[0];
+      /* Use table lookup indexed by count to determine pixel & alive state. */
       color = kNeighborColors[count];
-
       *pixel_line++ = color;
       *dst++ = kIsAlive[count];
       ++src0;

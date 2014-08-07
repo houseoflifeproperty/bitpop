@@ -32,27 +32,27 @@
 #define InertAnimation_h
 
 #include "core/animation/AnimationEffect.h"
-#include "core/animation/TimedItem.h"
+#include "core/animation/AnimationNode.h"
 #include "wtf/RefPtr.h"
 
 namespace WebCore {
 
-class InertAnimation FINAL : public TimedItem {
-
+class InertAnimation FINAL : public AnimationNode {
 public:
-    static PassRefPtr<InertAnimation> create(PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, bool paused);
+    static PassRefPtrWillBeRawPtr<InertAnimation> create(PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, bool paused);
     PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > sample(double inheritedTime);
     AnimationEffect* effect() const { return m_effect.get(); }
     bool paused() const { return m_paused; }
 
+    virtual void trace(Visitor*);
+
 protected:
     virtual void updateChildrenAndEffects() const OVERRIDE { }
-    virtual void willDetach() OVERRIDE { }
     virtual double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const OVERRIDE;
 
 private:
     InertAnimation(PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, bool paused);
-    RefPtrWillBePersistent<AnimationEffect> m_effect;
+    RefPtrWillBeMember<AnimationEffect> m_effect;
     bool m_paused;
 };
 

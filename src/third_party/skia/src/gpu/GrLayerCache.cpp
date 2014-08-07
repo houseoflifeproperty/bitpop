@@ -58,7 +58,7 @@ void GrLayerCache::init() {
     // The layer cache only gets 1 plot
     SkISize textureSize = SkISize::Make(kAtlasTextureWidth, kAtlasTextureHeight);
     fAtlasMgr.reset(SkNEW_ARGS(GrAtlasMgr, (fGpu, kSkia8888_GrPixelConfig,
-                                            textureSize, 1, 1)));
+                                            textureSize, 1, 1, false)));
 }
 
 void GrLayerCache::freeAll() {
@@ -66,7 +66,7 @@ void GrLayerCache::freeAll() {
     fAtlasMgr.free();
 }
 
-GrCachedLayer* GrLayerCache::createLayer(SkPicture* picture, int layerID) {
+GrCachedLayer* GrLayerCache::createLayer(const SkPicture* picture, int layerID) {
     GrCachedLayer* layer = fLayerPool.alloc();
 
     SkASSERT(picture->uniqueID() != SK_InvalidGenID);
@@ -76,7 +76,7 @@ GrCachedLayer* GrLayerCache::createLayer(SkPicture* picture, int layerID) {
 }
 
 
-GrCachedLayer* GrLayerCache::findLayerOrCreate(SkPicture* picture, int layerID) {
+GrCachedLayer* GrLayerCache::findLayerOrCreate(const SkPicture* picture, int layerID) {
     SkASSERT(picture->uniqueID() != SK_InvalidGenID);
     GrCachedLayer* layer = fLayerHash.find(PictureLayerKey(picture->uniqueID(), layerID));
     if (NULL == layer) {

@@ -64,7 +64,7 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
                int modifiers,
                KeyLocationCode location);
 
-  WebTaskList* taskList() { return &task_list_; }
+  WebTaskList* mutable_task_list() { return &task_list_; }
 
  private:
   friend class EventSenderBindings;
@@ -103,7 +103,7 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
 
   void ClearTouchPoints();
   void ReleaseTouchPoint(unsigned index);
-  void UpdateTouchPoint(unsigned index, int x, int y);
+  void UpdateTouchPoint(unsigned index, float x, float y);
   void CancelTouchPoint(unsigned index);
   void SetTouchModifier(const std::string& key_name, bool set_mask);
   void SetTouchCancelable(bool cancelable);
@@ -128,7 +128,6 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
 
   void MouseDragBegin();
   void MouseDragEnd();
-  void MouseMomentumBegin();
 
   void GestureScrollBegin(gin::Arguments* args);
   void GestureScrollEnd(gin::Arguments* args);
@@ -144,7 +143,12 @@ class EventSender : public base::SupportsWeakPtr<EventSender> {
 
   void ContinuousMouseScrollBy(gin::Arguments* args);
   void MouseMoveTo(gin::Arguments* args);
+  void TrackpadScrollBegin();
+  void TrackpadScroll(gin::Arguments* args);
+  void TrackpadScrollEnd();
   void MouseScrollBy(gin::Arguments* args);
+  void MouseMomentumBegin();
+  void MouseMomentumBegin2(gin::Arguments* args);
   void MouseMomentumScrollBy(gin::Arguments* args);
   void MouseMomentumEnd();
   void ScheduleAsynchronousClick(int button_number, int modifiers);

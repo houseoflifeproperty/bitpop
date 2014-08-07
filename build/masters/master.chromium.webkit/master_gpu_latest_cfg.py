@@ -66,7 +66,6 @@ gpu_slave_info = [
     'build_config': 'Release',
     'perf_id': 'gpu-webkit-mac',
     'triggered_by': 'GPU Mac Builder',
-    'auto_reboot': False,
   },
   {
     'builder': 'GPU Mac10.7 (dbg)',
@@ -74,7 +73,6 @@ gpu_slave_info = [
     'recipe': 'gpu/download_and_test',
     'build_config': 'Debug',
     'triggered_by': 'GPU Mac Builder (dbg)',
-    'auto_reboot': False,
   },
   {
     'builder': 'GPU Linux Builder',

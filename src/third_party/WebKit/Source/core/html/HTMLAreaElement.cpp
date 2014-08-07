@@ -22,7 +22,7 @@
 #include "config.h"
 #include "core/html/HTMLAreaElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLMapElement.h"
 #include "core/rendering/HitTestResult.h"
@@ -31,8 +31,6 @@
 #include "platform/LengthFunctions.h"
 #include "platform/graphics/Path.h"
 #include "platform/transforms/AffineTransform.h"
-
-using namespace std;
 
 namespace WebCore {
 
@@ -46,10 +44,7 @@ inline HTMLAreaElement::HTMLAreaElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLAreaElement> HTMLAreaElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLAreaElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLAreaElement)
 
 void HTMLAreaElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
@@ -155,7 +150,7 @@ Path HTMLAreaElement::getRegion(const LayoutSize& size) const
         case Circle:
             if (m_coords.size() >= 3) {
                 Length radius = m_coords[2];
-                float r = min(minimumValueForLength(radius, width).toFloat(), minimumValueForLength(radius, height).toFloat());
+                float r = std::min(minimumValueForLength(radius, width).toFloat(), minimumValueForLength(radius, height).toFloat());
                 path.addEllipse(FloatRect(minimumValueForLength(m_coords[0], width).toFloat() - r, minimumValueForLength(m_coords[1], height).toFloat() - r, 2 * r, 2 * r));
             }
             break;

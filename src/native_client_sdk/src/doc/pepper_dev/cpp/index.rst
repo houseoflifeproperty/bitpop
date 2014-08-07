@@ -6,8 +6,8 @@
 Pepper C++ API Reference (Dev)
 ############################################
 
-This page lists the C++ API for Pepper 36. Apps that use this API can
-run in Chrome 36 or higher.
+This page lists the C++ API for Pepper 37. Apps that use this API can
+run in Chrome 37 or higher.
 
 `Classes <inherits.html>`_
 ==========================
@@ -23,6 +23,10 @@ run in Chrome 36 or higher.
 
   * `CompletionCallbackWithOutput <classpp_1_1_completion_callback_with_output.html>`_
 
+  * `Compositor <classpp_1_1_compositor.html>`_
+
+  * `CompositorLayer <classpp_1_1_compositor_layer.html>`_
+
   * `Core <classpp_1_1_core.html>`_
 
   * `DirectoryEntry <classpp_1_1_directory_entry.html>`_
@@ -34,6 +38,10 @@ run in Chrome 36 or higher.
   * `FileSystem <classpp_1_1_file_system.html>`_
 
   * `FloatPoint <classpp_1_1_float_point.html>`_
+
+  * `FloatRect <classpp_1_1_float_rect.html>`_
+
+  * `FloatSize <classpp_1_1_float_size.html>`_
 
   * `Fullscreen <classpp_1_1_fullscreen.html>`_
 
@@ -113,6 +121,8 @@ run in Chrome 36 or higher.
 
   * `VarDictionary <classpp_1_1_var_dictionary.html>`_
 
+  * `VideoDecoder <classpp_1_1_video_decoder.html>`_
+
   * `VideoFrame <classpp_1_1_video_frame.html>`_
 
   * `View <classpp_1_1_view.html>`_
@@ -120,10 +130,6 @@ run in Chrome 36 or higher.
   * `WebSocket <classpp_1_1_web_socket.html>`_
 
   * `WheelInputEvent <classpp_1_1_wheel_input_event.html>`_
-
-  * `Ext::ExtCompletionCallbackWithOutput <classpp_1_1ext_1_1_ext_completion_callback_with_output.html>`_
-
-  * `Internal::CompletionCallbackWithOutputBase <classpp_1_1internal_1_1_completion_callback_with_output_base.html>`_
 
   * `Internal::DirectoryEntryArrayOutputAdapterWithStorage <classpp_1_1internal_1_1_directory_entry_array_output_adapter_with_storage.html>`_
 
@@ -139,6 +145,10 @@ Files
   * `completion_callback.h <completion__callback_8h.html>`_
 
   * `completion_callback_factory.h <completion__callback__factory_8h.html>`_
+
+  * `compositor.h <compositor_8h.html>`_
+
+  * `compositor_layer.h <compositor__layer_8h.html>`_
 
   * `core.h <core_8h.html>`_
 
@@ -225,6 +235,8 @@ Files
   * `var_array_buffer.h <var__array__buffer_8h.html>`_
 
   * `var_dictionary.h <var__dictionary_8h.html>`_
+
+  * `video_decoder.h <video__decoder_8h.html>`_
 
   * `video_frame.h <video__frame_8h.html>`_
 

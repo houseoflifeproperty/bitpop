@@ -96,14 +96,14 @@ const RenderObject* RenderSVGBlock::pushMappingToContainer(const RenderLayerMode
     return SVGRenderSupport::pushMappingToContainer(this, ancestorToStopAt, geometryMap);
 }
 
-LayoutRect RenderSVGBlock::clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const
+LayoutRect RenderSVGBlock::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
 {
-    return SVGRenderSupport::clippedOverflowRectForRepaint(this, repaintContainer);
+    return SVGRenderSupport::clippedOverflowRectForRepaint(this, paintInvalidationContainer);
 }
 
-void RenderSVGBlock::computeFloatRectForRepaint(const RenderLayerModelObject* repaintContainer, FloatRect& repaintRect, bool fixed) const
+void RenderSVGBlock::computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect& paintInvalidationRect, bool fixed) const
 {
-    SVGRenderSupport::computeFloatRectForRepaint(this, repaintContainer, repaintRect, fixed);
+    SVGRenderSupport::computeFloatRectForRepaint(this, paintInvalidationContainer, paintInvalidationRect, fixed);
 }
 
 bool RenderSVGBlock::nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation&, const LayoutPoint&, HitTestAction)
@@ -112,13 +112,13 @@ bool RenderSVGBlock::nodeAtPoint(const HitTestRequest&, HitTestResult&, const Hi
     return false;
 }
 
-void RenderSVGBlock::repaintTreeAfterLayout()
+void RenderSVGBlock::invalidateTreeAfterLayout(const RenderLayerModelObject& paintInvalidationContainer)
 {
-    if (!shouldCheckForInvalidationAfterLayout())
+    if (!shouldCheckForPaintInvalidationAfterLayout())
         return;
 
-    LayoutStateDisabler layoutStateDisabler(*this);
-    RenderBlockFlow::repaintTreeAfterLayout();
+    ForceHorriblySlowRectMapping slowRectMapping(*this);
+    RenderBlockFlow::invalidateTreeAfterLayout(paintInvalidationContainer);
 }
 
 }

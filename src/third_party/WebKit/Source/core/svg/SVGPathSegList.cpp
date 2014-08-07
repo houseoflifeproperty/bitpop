@@ -24,7 +24,7 @@
 
 #include "core/svg/SVGPathSegList.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimationElement.h"
 #include "core/svg/SVGPathBlender.h"
 #include "core/svg/SVGPathByteStreamBuilder.h"
@@ -159,7 +159,7 @@ void SVGPathSegList::setValueAsString(const String& string, ExceptionState& exce
         exceptionState.throwDOMException(SyntaxError, "Problem parsing path \"" + string + "\"");
 }
 
-void SVGPathSegList::add(PassRefPtr<SVGPropertyBase> other, SVGElement*)
+void SVGPathSegList::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement*)
 {
     RefPtr<SVGPathSegList> otherList = toSVGPathSegList(other);
     if (length() != otherList->length())

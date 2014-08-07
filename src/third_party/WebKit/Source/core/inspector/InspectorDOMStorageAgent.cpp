@@ -30,15 +30,15 @@
 #include "config.h"
 #include "core/inspector/InspectorDOMStorageAgent.h"
 
-#include "InspectorFrontend.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/InspectorFrontend.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/page/Page.h"
 #include "core/storage/Storage.h"
@@ -87,6 +87,12 @@ void InspectorDOMStorageAgent::clearFrontend()
 {
     m_frontend = 0;
     disable(0);
+}
+
+void InspectorDOMStorageAgent::restore()
+{
+    if (isEnabled())
+        enable(0);
 }
 
 bool InspectorDOMStorageAgent::isEnabled() const

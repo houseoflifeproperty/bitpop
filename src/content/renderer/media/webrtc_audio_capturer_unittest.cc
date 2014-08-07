@@ -84,9 +84,9 @@ class WebRtcAudioCapturerTest : public testing::Test {
 #endif
   }
 
-  void EnableAudioTrackProcessing() {
+  void DisableAudioTrackProcessing() {
     CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnableAudioTrackProcessing);
+        switches::kDisableAudioTrackProcessing);
   }
 
   void VerifyAudioParams(const blink::WebMediaConstraints& constraints,
@@ -156,19 +156,36 @@ class WebRtcAudioCapturerTest : public testing::Test {
 
 // Pass the delay value, volume and key_pressed info via capture callback, and
 // those values should be correctly stored and passed to the track.
-TEST_F(WebRtcAudioCapturerTest, VerifyAudioParams) {
+TEST_F(WebRtcAudioCapturerTest, VerifyAudioParamsWithoutAudioProcessing) {
+  DisableAudioTrackProcessing();
   // Use constraints with default settings.
-  blink::WebMediaConstraints constraints;
-  VerifyAudioParams(constraints, true);
+  MockMediaConstraintFactory constraint_factory;
+  VerifyAudioParams(constraint_factory.CreateWebMediaConstraints(), true);
 }
 
 TEST_F(WebRtcAudioCapturerTest, VerifyAudioParamsWithAudioProcessing) {
-  EnableAudioTrackProcessing();
   // Turn off the default constraints to verify that the sink will get packets
   // with a buffer size smaller than 10ms.
   MockMediaConstraintFactory constraint_factory;
   constraint_factory.DisableDefaultAudioConstraints();
   VerifyAudioParams(constraint_factory.CreateWebMediaConstraints(), false);
 }
+
+TEST_F(WebRtcAudioCapturerTest, FailToCreateCapturerWithWrongConstraints) {
+  MockMediaConstraintFactory constraint_factory;
+  const std::string dummy_constraint = "dummy";
+  constraint_factory.AddMandatory(dummy_constraint, true);
+
+  scoped_refptr<WebRtcAudioCapturer> capturer(
+      WebRtcAudioCapturer::CreateCapturer(
+          0, StreamDeviceInfo(MEDIA_DEVICE_AUDIO_CAPTURE,
+                               "", "", params_.sample_rate(),
+                               params_.channel_layout(),
+                               params_.frames_per_buffer()),
+          constraint_factory.CreateWebMediaConstraints(), NULL, NULL)
+  );
+  EXPECT_TRUE(capturer == NULL);
+}
+
 
 }  // namespace content

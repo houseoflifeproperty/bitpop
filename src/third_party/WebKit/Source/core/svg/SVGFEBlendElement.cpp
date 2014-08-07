@@ -22,9 +22,8 @@
 
 #include "core/svg/SVGFEBlendElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
 namespace WebCore {
@@ -54,10 +53,7 @@ inline SVGFEBlendElement::SVGFEBlendElement(Document& document)
     addToPropertyMap(m_mode);
 }
 
-PassRefPtr<SVGFEBlendElement> SVGFEBlendElement::create(Document& document)
-{
-    return adoptRef(new SVGFEBlendElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEBlendElement)
 
 bool SVGFEBlendElement::isSupportedAttribute(const QualifiedName& attrName)
 {

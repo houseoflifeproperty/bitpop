@@ -27,8 +27,7 @@
 #include "config.h"
 #include "core/page/FocusController.h"
 
-#include <limits>
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
@@ -41,7 +40,7 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/htmlediting.h" // For firstPositionInOrBeforeNode
 #include "core/events/Event.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLAreaElement.h"
@@ -58,6 +57,7 @@
 #include "core/page/SpatialNavigation.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderLayer.h"
+#include <limits>
 
 namespace WebCore {
 
@@ -88,8 +88,9 @@ Element* FocusNavigationScope::owner() const
         ShadowRoot* shadowRoot = toShadowRoot(root);
         return shadowRoot->isYoungest() ? shadowRoot->host() : shadowRoot->shadowInsertionPointOfYoungerShadowRoot();
     }
+    // FIXME: Figure out the right thing for OOPI here.
     if (Frame* frame = root->document().frame())
-        return frame->ownerElement();
+        return frame->deprecatedLocalOwner();
     return 0;
 }
 
@@ -144,7 +145,7 @@ static inline void dispatchEventsOnWindowAndFocusedNode(Document* document, bool
     }
 
     if (!focused && document->focusedElement()) {
-        RefPtr<Element> focusedElement(document->focusedElement());
+        RefPtrWillBeRawPtr<Element> focusedElement(document->focusedElement());
         focusedElement->setFocus(false);
         focusedElement->dispatchBlurEvent(0);
         if (focusedElement == document->focusedElement()) {
@@ -154,10 +155,10 @@ static inline void dispatchEventsOnWindowAndFocusedNode(Document* document, bool
         }
     }
 
-    if (DOMWindow* window = document->domWindow())
+    if (LocalDOMWindow* window = document->domWindow())
         window->dispatchEvent(Event::create(focused ? EventTypeNames::focus : EventTypeNames::blur));
     if (focused && document->focusedElement()) {
-        RefPtr<Element> focusedElement(document->focusedElement());
+        RefPtrWillBeRawPtr<Element> focusedElement(document->focusedElement());
         focusedElement->setFocus(true);
         focusedElement->dispatchFocusEvent(0, FocusTypePage);
         if (focusedElement == document->focusedElement()) {
@@ -173,7 +174,7 @@ static inline bool hasCustomFocusLogic(Element* element)
     return element->isHTMLElement() && toHTMLElement(element)->hasCustomFocusLogic();
 }
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 static inline bool isNonFocusableShadowHost(Node* node)
 {
     ASSERT(node);
@@ -270,7 +271,7 @@ void FocusController::focusDocumentView(PassRefPtr<Frame> frame)
 
     RefPtr<LocalFrame> focusedFrame = (m_focusedFrame && m_focusedFrame->isLocalFrame()) ? toLocalFrame(m_focusedFrame.get()) : 0;
     if (focusedFrame && focusedFrame->view()) {
-        RefPtr<Document> document = focusedFrame->document();
+        RefPtrWillBeRawPtr<Document> document = focusedFrame->document();
         Element* focusedElement = document ? document->focusedElement() : 0;
         if (focusedElement) {
             focusedElement->dispatchBlurEvent(0);
@@ -284,7 +285,7 @@ void FocusController::focusDocumentView(PassRefPtr<Frame> frame)
 
     RefPtr<LocalFrame> newFocusedFrame = (frame && frame->isLocalFrame()) ? toLocalFrame(frame.get()) : 0;
     if (newFocusedFrame && newFocusedFrame->view()) {
-        RefPtr<Document> document = newFocusedFrame->document();
+        RefPtrWillBeRawPtr<Document> document = newFocusedFrame->document();
         Element* focusedElement = document ? document->focusedElement() : 0;
         if (focusedElement) {
             focusedElement->dispatchFocusEvent(0, FocusTypePage);
@@ -398,7 +399,7 @@ bool FocusController::advanceFocusInDocumentOrder(FocusType type, bool initialFo
 
     document->updateLayoutIgnorePendingStylesheets();
 
-    RefPtr<Node> node = findFocusableNodeAcrossFocusScope(type, FocusNavigationScope::focusNavigationScopeOf(currentNode ? currentNode : document), currentNode);
+    RefPtrWillBeRawPtr<Node> node = findFocusableNodeAcrossFocusScope(type, FocusNavigationScope::focusNavigationScopeOf(currentNode ? currentNode : document), currentNode);
 
     if (!node) {
         // We didn't find a node to focus, so we should try to pass focus to Chrome.
@@ -410,7 +411,9 @@ bool FocusController::advanceFocusInDocumentOrder(FocusType type, bool initialFo
         }
 
         // Chrome doesn't want focus, so we should wrap focus.
-        node = findFocusableNodeRecursively(type, FocusNavigationScope::focusNavigationScopeOf(m_page->mainFrame()->document()), 0);
+        if (!m_page->mainFrame()->isLocalFrame())
+            return false;
+        node = findFocusableNodeRecursively(type, FocusNavigationScope::focusNavigationScopeOf(m_page->deprecatedLocalMainFrame()->document()), 0);
         node = findFocusableNodeDecendingDownIntoFrameDocument(type, node.get());
 
         if (!node)
@@ -669,7 +672,7 @@ static void clearSelectionIfNeeded(LocalFrame* oldFocusedFrame, LocalFrame* newF
 bool FocusController::setFocusedElement(Element* element, PassRefPtr<Frame> newFocusedFrame, FocusType type)
 {
     RefPtr<LocalFrame> oldFocusedFrame = toLocalFrame(focusedFrame());
-    RefPtr<Document> oldDocument = oldFocusedFrame ? oldFocusedFrame->document() : 0;
+    RefPtrWillBeRawPtr<Document> oldDocument = oldFocusedFrame ? oldFocusedFrame->document() : 0;
 
     Element* oldFocusedElement = oldDocument ? oldDocument->focusedElement() : 0;
     if (element && oldFocusedElement == element)
@@ -681,7 +684,7 @@ bool FocusController::setFocusedElement(Element* element, PassRefPtr<Frame> newF
 
     m_page->chrome().client().willSetInputMethodState();
 
-    RefPtr<Document> newDocument;
+    RefPtrWillBeRawPtr<Document> newDocument = nullptr;
     if (element)
         newDocument = &element->document();
     else if (newFocusedFrame && newFocusedFrame->isLocalFrame())
@@ -702,7 +705,7 @@ bool FocusController::setFocusedElement(Element* element, PassRefPtr<Frame> newF
     setFocusedFrame(newFocusedFrame);
 
     // Setting the focused node can result in losing our last reft to node when JS event handlers fire.
-    RefPtr<Element> protect = element;
+    RefPtrWillBeRawPtr<Element> protect ALLOW_UNUSED = element;
     if (newDocument) {
         bool successfullyFocused = newDocument->setFocusedElement(element, type);
         if (!successfullyFocused)
@@ -719,8 +722,10 @@ void FocusController::setActive(bool active)
 
     m_isActive = active;
 
-    if (FrameView* view = m_page->mainFrame()->view())
-        view->updateControlTints();
+    if (m_page->mainFrame()->isLocalFrame()) {
+        if (FrameView* view = m_page->deprecatedLocalMainFrame()->view())
+            view->updateControlTints();
+    }
 
     toLocalFrame(focusedOrMainFrame())->selection().pageActivationChanged();
 }
@@ -756,7 +761,9 @@ static void updateFocusCandidateIfNeeded(FocusType type, const FocusCandidate& c
         // If 2 nodes are intersecting, do hit test to find which node in on top.
         LayoutUnit x = intersectionRect.x() + intersectionRect.width() / 2;
         LayoutUnit y = intersectionRect.y() + intersectionRect.height() / 2;
-        HitTestResult result = candidate.visibleNode->document().page()->mainFrame()->eventHandler().hitTestResultAtPoint(IntPoint(x, y), HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::IgnoreClipping | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent);
+        if (!candidate.visibleNode->document().page()->mainFrame()->isLocalFrame())
+            return;
+        HitTestResult result = candidate.visibleNode->document().page()->deprecatedLocalMainFrame()->eventHandler().hitTestResultAtPoint(IntPoint(x, y), HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::IgnoreClipping | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent);
         if (candidate.visibleNode->contains(result.innerNode())) {
             closest = candidate;
             return;

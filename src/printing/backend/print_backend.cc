@@ -13,16 +13,16 @@ PrinterBasicInfo::PrinterBasicInfo()
 PrinterBasicInfo::~PrinterBasicInfo() {}
 
 PrinterSemanticCapsAndDefaults::PrinterSemanticCapsAndDefaults()
-    : color_changeable(false),
-      color_default(false),
-#if defined (OS_WIN)
-      collate_capable(false),
+    : collate_capable(false),
       collate_default(false),
       copies_capable(false),
-#endif
       duplex_capable(false),
-      duplex_default(UNKNOWN_DUPLEX_MODE) {
-}
+      duplex_default(UNKNOWN_DUPLEX_MODE),
+      color_changeable(false),
+      color_default(false),
+      color_model(UNKNOWN_COLOR_MODEL),
+      bw_model(UNKNOWN_COLOR_MODEL)
+{}
 
 PrinterSemanticCapsAndDefaults::~PrinterSemanticCapsAndDefaults() {}
 

@@ -93,19 +93,10 @@ bool GestureEventQueue::ShouldForwardForBounceReduction(
 bool GestureEventQueue::ShouldForward(
     const GestureEventWithLatencyInfo& gesture_event) {
   TRACE_EVENT0("input", "GestureEventQueue::ShouldForward");
-  return ShouldForwardForZeroVelocityFlingStart(gesture_event) &&
-      ShouldForwardForBounceReduction(gesture_event) &&
-      ShouldForwardForGFCFiltering(gesture_event) &&
-      ShouldForwardForTapSuppression(gesture_event) &&
-      ShouldForwardForCoalescing(gesture_event);
-}
-
-bool GestureEventQueue::ShouldForwardForZeroVelocityFlingStart(
-    const GestureEventWithLatencyInfo& gesture_event) const {
-  return gesture_event.event.type != WebInputEvent::GestureFlingStart ||
-      gesture_event.event.sourceDevice != WebGestureEvent::Touchpad ||
-      gesture_event.event.data.flingStart.velocityX != 0 ||
-      gesture_event.event.data.flingStart.velocityY != 0;
+  return ShouldForwardForBounceReduction(gesture_event) &&
+         ShouldForwardForGFCFiltering(gesture_event) &&
+         ShouldForwardForTapSuppression(gesture_event) &&
+         ShouldForwardForCoalescing(gesture_event);
 }
 
 bool GestureEventQueue::ShouldForwardForGFCFiltering(
@@ -118,7 +109,8 @@ bool GestureEventQueue::ShouldForwardForTapSuppression(
     const GestureEventWithLatencyInfo& gesture_event) {
   switch (gesture_event.event.type) {
     case WebInputEvent::GestureFlingCancel:
-      if (gesture_event.event.sourceDevice == WebGestureEvent::Touchscreen)
+      if (gesture_event.event.sourceDevice ==
+          blink::WebGestureDeviceTouchscreen)
         touchscreen_tap_suppression_controller_.GestureFlingCancel();
       else
         touchpad_tap_suppression_controller_.GestureFlingCancel();
@@ -129,7 +121,8 @@ bool GestureEventQueue::ShouldForwardForTapSuppression(
     case WebInputEvent::GestureTapCancel:
     case WebInputEvent::GestureTap:
     case WebInputEvent::GestureDoubleTap:
-      if (gesture_event.event.sourceDevice == WebGestureEvent::Touchscreen) {
+      if (gesture_event.event.sourceDevice ==
+          blink::WebGestureDeviceTouchscreen) {
         return !touchscreen_tap_suppression_controller_.FilterTapEvent(
             gesture_event);
       }
@@ -191,7 +184,8 @@ void GestureEventQueue::ProcessGestureAck(InputEventAckState ack_result,
 
   const bool processed = (INPUT_EVENT_ACK_STATE_CONSUMED == ack_result);
   if (type == WebInputEvent::GestureFlingCancel) {
-    if (event_with_latency.event.sourceDevice == WebGestureEvent::Touchscreen)
+    if (event_with_latency.event.sourceDevice ==
+        blink::WebGestureDeviceTouchscreen)
       touchscreen_tap_suppression_controller_.GestureFlingCancelAck(processed);
     else
       touchpad_tap_suppression_controller_.GestureFlingCancelAck(processed);

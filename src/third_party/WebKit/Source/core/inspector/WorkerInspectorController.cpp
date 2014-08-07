@@ -32,13 +32,14 @@
 
 #include "core/inspector/WorkerInspectorController.h"
 
-#include "InspectorBackendDispatcher.h"
-#include "InspectorFrontend.h"
+#include "core/InspectorBackendDispatcher.h"
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorConsoleAgent.h"
 #include "core/inspector/InspectorFrontendChannel.h"
 #include "core/inspector/InspectorHeapProfilerAgent.h"
+#include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorProfilerAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InspectorStateClient.h"
@@ -124,6 +125,7 @@ void WorkerInspectorController::connectFrontend()
     m_backendDispatcher = InspectorBackendDispatcher::create(m_frontendChannel.get());
     m_agents.registerInDispatcher(m_backendDispatcher.get());
     m_agents.setFrontend(m_frontend.get());
+    InspectorInstrumentation::frontendCreated();
 }
 
 void WorkerInspectorController::disconnectFrontend()
@@ -137,6 +139,7 @@ void WorkerInspectorController::disconnectFrontend()
     m_state->mute();
     m_agents.clearFrontend();
     m_frontend.clear();
+    InspectorInstrumentation::frontendDeleted();
     m_frontendChannel.clear();
 }
 

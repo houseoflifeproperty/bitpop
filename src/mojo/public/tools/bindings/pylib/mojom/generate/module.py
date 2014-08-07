@@ -60,18 +60,31 @@ PRIMITIVES = (
 )
 
 
-class Constant(object):
-  def __init__(self, module, enum, field):
+class NamedValue(object):
+  def __init__(self, module, parent_kind, name):
     self.module = module
     self.namespace = module.namespace
-    self.parent_kind = enum.parent_kind
-    self.name = [enum.name, field.name]
+    self.parent_kind = parent_kind
+    self.name = name
     self.imported_from = None
 
   def GetSpec(self):
     return (self.namespace + '.' +
-        (self.parent_kind and (self.parent_kind.name + '.') or "") + \
-        self.name[1])
+        (self.parent_kind and (self.parent_kind.name + '.') or "") +
+        self.name)
+
+
+class EnumValue(NamedValue):
+  def __init__(self, module, enum, field):
+    NamedValue.__init__(self, module, enum.parent_kind, field.name)
+    self.enum_name = enum.name
+
+
+class Constant(object):
+  def __init__(self, name=None, kind=None, value=None):
+    self.name = name
+    self.kind = kind
+    self.value = value
 
 
 class Field(object):
@@ -109,6 +122,15 @@ class Array(Kind):
       Kind.__init__(self)
 
 
+class InterfaceRequest(Kind):
+  def __init__(self, kind=None):
+    self.kind = kind
+    if kind != None:
+      Kind.__init__(self, 'r:' + kind.spec)
+    else:
+      Kind.__init__(self)
+
+
 class Parameter(object):
   def __init__(self, name=None, kind=None, ordinal=None, default=None):
     self.name = name
@@ -142,6 +164,7 @@ class Interface(Kind):
   def __init__(self, name=None, client=None, module=None):
     self.module = module
     self.name = name
+    self.imported_from = None
     if name != None:
       spec = 'x:' + name
     else:

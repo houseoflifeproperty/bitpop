@@ -16,14 +16,13 @@
         <!-- User Click Authentication -->
         <div class="password-label"></div>
       </div>
-      <button class="custom-button custom-appearance" hidden>
-        <img class="custom-button-icon"></img>
-      </button>
+      <div class="custom-icon" hidden></div>
     </div>
     <button class="signin-button" i18n-content="signinButton"></button>
     <button class="launch-app-button" i18n-content="launchAppButton" hidden>
     </button>
     <div class="locked-indicator" hidden></div>
+    <div class="supervised-indicator" hidden></div>
   </div>
   <div class="action-box-area">
     <div class="custom-appearance action-box-button"></div>
@@ -41,7 +40,9 @@
     </div>
     <div class="action-box-remove-user-warning" hidden>
       <div class="action-box-remove-user-warning-text"
-          i18n-content="removeUserWarningText"></div>
+          i18n-content="removeUserWarningText" hidden></div>
+      <div class="action-box-remove-supervised-user-warning-text"
+          i18n-content="removeSupervisedUserWarningText"></div>
       <button class="remove-warning-button
                      custom-appearance button-fancy button-red"
           i18n-content="removeUserWarningButtonTitle"></button>
@@ -57,6 +58,8 @@
           i18n-content="multiProfilesNotAllowedPolicyMsg" hidden></span>
       <span class="mp-policy-primary-only-msg"
           i18n-content="multiProfilesPrimaryOnlyPolicyMsg" hidden></span>
+      <span class="mp-owner-primary-only-msg"
+          i18n-content="multiProfilesOwnerPrimaryOnlyMsg" hidden></span>
     </div>
   </div>
 </div>

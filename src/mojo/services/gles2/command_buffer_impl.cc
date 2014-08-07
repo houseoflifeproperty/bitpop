@@ -16,7 +16,6 @@
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
-#include "mojo/public/cpp/bindings/allocation_scope.h"
 #include "mojo/services/gles2/command_buffer_type_conversions.h"
 #include "mojo/services/gles2/mojo_buffer_backing.h"
 #include "ui/gl/gl_context.h"
@@ -53,7 +52,7 @@ CommandBufferImpl::CommandBufferImpl(gfx::AcceleratedWidget widget,
     : widget_(widget), size_(size) {}
 
 CommandBufferImpl::~CommandBufferImpl() {
-  client_->DidDestroy();
+  client()->DidDestroy();
   if (decoder_.get()) {
     bool have_context = decoder_->MakeCurrent();
     decoder_->Destroy(have_context);
@@ -62,10 +61,6 @@ CommandBufferImpl::~CommandBufferImpl() {
 
 void CommandBufferImpl::OnConnectionError() {
   // TODO(darin): How should we handle this error?
-}
-
-void CommandBufferImpl::SetClient(CommandBufferClient* client) {
-  client_ = client;
 }
 
 void CommandBufferImpl::Initialize(
@@ -156,8 +151,8 @@ void CommandBufferImpl::Flush(int32_t put_offset) {
 
 void CommandBufferImpl::MakeProgress(int32_t last_get_offset) {
   // TODO(piman): handle out-of-order.
-  AllocationScope scope;
-  sync_client_->DidMakeProgress(command_buffer_->GetLastState());
+  sync_client_->DidMakeProgress(
+      CommandBufferState::From(command_buffer_->GetLastState()));
 }
 
 void CommandBufferImpl::RegisterTransferBuffer(
@@ -194,10 +189,10 @@ void CommandBufferImpl::CancelAnimationFrames() { timer_.Stop(); }
 
 void CommandBufferImpl::OnParseError() {
   gpu::CommandBuffer::State state = command_buffer_->GetLastState();
-  client_->LostContext(state.context_lost_reason);
+  client()->LostContext(state.context_lost_reason);
 }
 
-void CommandBufferImpl::DrawAnimationFrame() { client_->DrawAnimationFrame(); }
+void CommandBufferImpl::DrawAnimationFrame() { client()->DrawAnimationFrame(); }
 
 }  // namespace services
 }  // namespace mojo

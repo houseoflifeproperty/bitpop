@@ -31,6 +31,7 @@
 #include "core/frame/Settings.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
+#include "platform/fonts/FontDescription.h"
 #include "platform/text/LocaleToScriptMapping.h"
 
 namespace WebCore {
@@ -61,18 +62,16 @@ private:
 
 FontBuilder::FontBuilder()
     : m_document(0)
-    , m_useSVGZoomRules(false)
     , m_fontSizehasViewportUnits(false)
     , m_style(0)
     , m_fontDirty(false)
 {
 }
 
-void FontBuilder::initForStyleResolve(const Document& document, RenderStyle* style, bool useSVGZoomRules)
+void FontBuilder::initForStyleResolve(const Document& document, RenderStyle* style)
 {
     ASSERT(document.frame());
     m_document = &document;
-    m_useSVGZoomRules = useSVGZoomRules;
     m_style = style;
     m_fontDirty = false;
 }
@@ -101,7 +100,6 @@ void FontBuilder::setInitial(float effectiveZoom)
     FontDescriptionChangeScope scope(this);
 
     scope.reset();
-    scope.fontDescription().setUsePrinterFont(m_document->printing());
     setFontFamilyToStandard(scope.fontDescription(), m_document);
     scope.fontDescription().setKeywordSize(CSSValueMedium - CSSValueXxSmall + 1);
     setSize(scope.fontDescription(), effectiveZoom, FontSize::fontSizeForKeyword(m_document, CSSValueMedium, false));
@@ -135,7 +133,6 @@ void FontBuilder::fromSystemFont(CSSValueID valueId, float effectiveZoom)
     ASSERT(settings); // If we're doing style resolution, this document should always be in a frame and thus have settings
     if (!settings)
         return;
-    fontDescription.setUsePrinterFont(m_document->printing());
 
     // Handle the zoom factor.
     fontDescription.setComputedSize(getComputedSizeFromSpecifiedSize(fontDescription, effectiveZoom, fontDescription.specifiedSize()));
@@ -442,7 +439,7 @@ void FontBuilder::setFontVariantLigaturesValue(CSSValue* value)
             }
         }
     }
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     else {
         ASSERT_WITH_SECURITY_IMPLICATION(value->isPrimitiveValue());
         ASSERT(toCSSPrimitiveValue(value)->getValueID() == CSSValueNormal);
@@ -459,6 +456,7 @@ void FontBuilder::setScript(const String& locale)
 {
     FontDescriptionChangeScope scope(this);
 
+    scope.fontDescription().setLocale(locale);
     scope.fontDescription().setScript(localeToScriptCodeForFontSelection(locale));
 }
 
@@ -530,13 +528,10 @@ void FontBuilder::setSize(FontDescription& fontDescription, float effectiveZoom,
 
 float FontBuilder::getComputedSizeFromSpecifiedSize(FontDescription& fontDescription, float effectiveZoom, float specifiedSize)
 {
-    float zoomFactor = 1.0f;
-    if (!m_useSVGZoomRules) {
-        zoomFactor = effectiveZoom;
-        // FIXME: Why is this here!!!!?!
-        if (LocalFrame* frame = m_document->frame())
-            zoomFactor *= frame->textZoomFactor();
-    }
+    float zoomFactor = effectiveZoom;
+    // FIXME: Why is this here!!!!?!
+    if (LocalFrame* frame = m_document->frame())
+        zoomFactor *= frame->textZoomFactor();
 
     return FontSize::getComputedSizeFromSpecifiedSize(m_document, zoomFactor, fontDescription.isAbsoluteSize(), specifiedSize);
 }
@@ -655,7 +650,6 @@ void FontBuilder::createFontForDocument(PassRefPtrWillBeRawPtr<FontSelector> fon
 {
     FontDescription fontDescription = FontDescription();
     fontDescription.setScript(localeToScriptCodeForFontSelection(documentStyle->locale()));
-    fontDescription.setUsePrinterFont(m_document->printing());
 
     setFontFamilyToStandard(fontDescription, m_document);
     fontDescription.setKeywordSize(CSSValueMedium - CSSValueXxSmall + 1);

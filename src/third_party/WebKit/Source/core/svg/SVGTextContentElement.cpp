@@ -21,19 +21,18 @@
 #include "config.h"
 #include "core/svg/SVGTextContentElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "SVGNames.h"
-#include "XMLNames.h"
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/SVGNames.h"
+#include "core/XMLNames.h"
 #include "core/editing/FrameSelection.h"
 #include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGTextQuery.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
@@ -79,8 +78,6 @@ SVGTextContentElement::SVGTextContentElement(const QualifiedName& tagName, Docum
     , m_textLengthIsSpecifiedByUser(false)
     , m_lengthAdjust(SVGAnimatedEnumeration<SVGLengthAdjustType>::create(this, SVGNames::lengthAdjustAttr, SVGLengthAdjustSpacing))
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_textLength);
     addToPropertyMap(m_lengthAdjust);
 }

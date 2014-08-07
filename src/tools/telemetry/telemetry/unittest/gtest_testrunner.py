@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -13,7 +13,7 @@ import sys
 import time
 import unittest
 
-from telemetry.page import gtest_test_results
+from telemetry.unittest import gtest_unittest_results
 
 
 class GTestTestSuite(unittest.TestSuite):
@@ -36,16 +36,12 @@ class GTestTestSuite(unittest.TestSuite):
 
 
 class GTestTestRunner(object):
-  def __init__(self, print_result_after_run=True, runner=None):
+  def __init__(self, print_result_after_run=True):
     self.print_result_after_run = print_result_after_run
-    self.result = None
-    if runner:
-      self.result = runner.result
+    self.result = gtest_unittest_results.GTestUnittestResults(sys.stdout)
 
   def run(self, test):
     "Run the given test case or test suite."
-    if not self.result:
-      self.result = gtest_test_results.GTestTestResults(sys.stdout)
     test(self.result)
     if self.print_result_after_run:
       self.result.PrintSummary()

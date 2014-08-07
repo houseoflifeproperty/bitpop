@@ -5,9 +5,9 @@
 #ifndef V8_PREPARSE_DATA_H_
 #define V8_PREPARSE_DATA_H_
 
-#include "allocation.h"
-#include "hashmap.h"
-#include "utils-inl.h"
+#include "src/allocation.h"
+#include "src/hashmap.h"
+#include "src/utils-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -58,7 +58,7 @@ class SingletonLogger : public ParserRecorder {
     literals_ = literals;
     properties_ = properties;
     strict_mode_ = strict_mode;
-  };
+  }
 
   // Logs an error message and marks the log as containing an error.
   // Further logging will be ignored, and ExtractData will return a vector

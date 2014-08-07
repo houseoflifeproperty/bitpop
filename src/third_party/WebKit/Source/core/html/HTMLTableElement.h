@@ -38,7 +38,7 @@ class HTMLTableSectionElement;
 
 class HTMLTableElement FINAL : public HTMLElement {
 public:
-    static PassRefPtrWillBeRawPtr<HTMLTableElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLTableElement);
 
     HTMLTableCaptionElement* caption() const;
     void setCaption(PassRefPtrWillBeRawPtr<HTMLTableCaptionElement>, ExceptionState&);
@@ -60,8 +60,8 @@ public:
     PassRefPtrWillBeRawPtr<HTMLElement> insertRow(int index, ExceptionState&);
     void deleteRow(int index, ExceptionState&);
 
-    PassRefPtr<HTMLCollection> rows();
-    PassRefPtr<HTMLCollection> tBodies();
+    PassRefPtrWillBeRawPtr<HTMLTableRowsCollection> rows();
+    PassRefPtrWillBeRawPtr<HTMLCollection> tBodies();
 
     const AtomicString& rules() const;
     const AtomicString& summary() const;

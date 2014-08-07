@@ -73,10 +73,6 @@ static const GLenum valid_face_type_table[] = {
     GL_FRONT, GL_BACK, GL_FRONT_AND_BACK,
 };
 
-static const GLboolean valid_false_only_table[] = {
-    false,
-};
-
 static const GLenum valid_frame_buffer_parameter_table[] = {
     GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
     GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,
@@ -153,17 +149,10 @@ static const GLenum valid_g_l_state_table[] = {
     GL_CULL_FACE_MODE,
     GL_DEPTH_FUNC,
     GL_DEPTH_WRITEMASK,
-    GL_DEPTH_RANGE,
     GL_FRONT_FACE,
-    GL_GENERATE_MIPMAP_HINT,
     GL_LINE_WIDTH,
-    GL_PACK_ALIGNMENT,
-    GL_UNPACK_ALIGNMENT,
     GL_POLYGON_OFFSET_FACTOR,
     GL_POLYGON_OFFSET_UNITS,
-    GL_SAMPLE_COVERAGE_VALUE,
-    GL_SAMPLE_COVERAGE_INVERT,
-    GL_SCISSOR_BOX,
     GL_STENCIL_FUNC,
     GL_STENCIL_REF,
     GL_STENCIL_VALUE_MASK,
@@ -178,7 +167,6 @@ static const GLenum valid_g_l_state_table[] = {
     GL_STENCIL_BACK_FAIL,
     GL_STENCIL_BACK_PASS_DEPTH_FAIL,
     GL_STENCIL_BACK_PASS_DEPTH_PASS,
-    GL_VIEWPORT,
     GL_BLEND,
     GL_CULL_FACE,
     GL_DEPTH_TEST,
@@ -323,10 +311,6 @@ static const GLenum valid_texture_bind_target_table[] = {
     GL_TEXTURE_2D, GL_TEXTURE_CUBE_MAP,
 };
 
-static const GLint valid_texture_border_table[] = {
-    0,
-};
-
 static const GLenum valid_texture_format_table[] = {
     GL_ALPHA, GL_LUMINANCE, GL_LUMINANCE_ALPHA, GL_RGB, GL_RGBA,
 };
@@ -393,10 +377,6 @@ static const GLenum valid_vertex_pointer_table[] = {
     GL_VERTEX_ATTRIB_ARRAY_POINTER,
 };
 
-static const GLint valid_zero_only_table[] = {
-    0,
-};
-
 Validators::Validators()
     : attachment(valid_attachment_table, arraysize(valid_attachment_table)),
       backbuffer_attachment(valid_backbuffer_attachment_table,
@@ -418,7 +398,6 @@ Validators::Validators()
       equation(valid_equation_table, arraysize(valid_equation_table)),
       face_mode(valid_face_mode_table, arraysize(valid_face_mode_table)),
       face_type(valid_face_type_table, arraysize(valid_face_type_table)),
-      false_only(valid_false_only_table, arraysize(valid_false_only_table)),
       frame_buffer_parameter(valid_frame_buffer_parameter_table,
                              arraysize(valid_frame_buffer_parameter_table)),
       frame_buffer_target(valid_frame_buffer_target_table,
@@ -467,8 +446,6 @@ Validators::Validators()
       string_type(valid_string_type_table, arraysize(valid_string_type_table)),
       texture_bind_target(valid_texture_bind_target_table,
                           arraysize(valid_texture_bind_target_table)),
-      texture_border(valid_texture_border_table,
-                     arraysize(valid_texture_border_table)),
       texture_format(valid_texture_format_table,
                      arraysize(valid_texture_format_table)),
       texture_internal_format(valid_texture_internal_format_table,
@@ -497,8 +474,7 @@ Validators::Validators()
       vertex_attribute(valid_vertex_attribute_table,
                        arraysize(valid_vertex_attribute_table)),
       vertex_pointer(valid_vertex_pointer_table,
-                     arraysize(valid_vertex_pointer_table)),
-      zero_only(valid_zero_only_table, arraysize(valid_zero_only_table)) {
+                     arraysize(valid_vertex_pointer_table)) {
 }
 
 #endif  // GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_VALIDATION_IMPLEMENTATION_AUTOGEN_H_

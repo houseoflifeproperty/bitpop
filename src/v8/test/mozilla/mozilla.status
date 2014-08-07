@@ -113,7 +113,7 @@
   'js1_5/Regress/regress-360969-04': [PASS, ['mode == debug', TIMEOUT, NO_VARIANTS]],
   'js1_5/Regress/regress-360969-05': [PASS, ['mode == debug', TIMEOUT, NO_VARIANTS]],
   'js1_5/Regress/regress-360969-06': [PASS, ['mode == debug', TIMEOUT, NO_VARIANTS]],
-  'js1_5/extensions/regress-365527': [PASS, ['mode == debug', TIMEOUT, NO_VARIANTS]],
+  'js1_5/extensions/regress-365527': [PASS, SLOW, ['mode == debug', TIMEOUT, NO_VARIANTS]],
 
   'js1_5/Regress/regress-280769-3': [PASS, ['mode == debug', FAIL]],
   'js1_5/Regress/regress-203278-1': [PASS, ['mode == debug', FAIL]],
@@ -718,6 +718,13 @@
   'js1_5/extensions/regress-361964': [FAIL_OK],
   'js1_5/extensions/regress-363988': [FAIL_OK],
   'js1_5/extensions/regress-365869': [FAIL_OK],
+
+  # Uses non ES5 compatible syntax for setter
+  'js1_5/extensions/regress-367501-01': [FAIL_OK],
+  'js1_5/extensions/regress-367501-02': [FAIL_OK],
+  'js1_5/extensions/regress-367501-03': [FAIL_OK],
+  'js1_5/extensions/regress-367501-04': [FAIL_OK],
+
   'js1_5/extensions/regress-367630': [FAIL_OK],
   'js1_5/extensions/regress-367923': [FAIL_OK],
   'js1_5/extensions/regress-368859': [FAIL_OK],

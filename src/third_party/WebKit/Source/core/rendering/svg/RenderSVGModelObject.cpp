@@ -29,12 +29,12 @@
  */
 
 #include "config.h"
-
 #include "core/rendering/svg/RenderSVGModelObject.h"
 
-#include "SVGNames.h"
+#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
+#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/svg/SVGGraphicsElement.h"
 
@@ -50,14 +50,14 @@ bool RenderSVGModelObject::isChildAllowed(RenderObject* child, RenderStyle*) con
     return child->isSVG() && !(child->isSVGInline() || child->isSVGInlineText());
 }
 
-LayoutRect RenderSVGModelObject::clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const
+LayoutRect RenderSVGModelObject::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
 {
-    return SVGRenderSupport::clippedOverflowRectForRepaint(this, repaintContainer);
+    return SVGRenderSupport::clippedOverflowRectForRepaint(this, paintInvalidationContainer);
 }
 
-void RenderSVGModelObject::computeFloatRectForRepaint(const RenderLayerModelObject* repaintContainer, FloatRect& repaintRect, bool fixed) const
+void RenderSVGModelObject::computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect& paintInvalidationRect, bool fixed) const
 {
-    SVGRenderSupport::computeFloatRectForRepaint(this, repaintContainer, repaintRect, fixed);
+    SVGRenderSupport::computeFloatRectForRepaint(this, paintInvalidationContainer, paintInvalidationRect, fixed);
 }
 
 void RenderSVGModelObject::mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState& transformState, MapCoordinatesFlags, bool* wasFixed) const
@@ -121,41 +121,49 @@ bool RenderSVGModelObject::nodeAtPoint(const HitTestRequest&, HitTestResult&, co
 // returns incorrect values for SVG objects. Overriding this method provides access to the absolute bounds.
 void RenderSVGModelObject::absoluteFocusRingQuads(Vector<FloatQuad>& quads)
 {
-    quads.append(localToAbsoluteQuad(FloatQuad(repaintRectInLocalCoordinates())));
+    quads.append(localToAbsoluteQuad(FloatQuad(paintInvalidationRectInLocalCoordinates())));
 }
 
-void RenderSVGModelObject::repaintTreeAfterLayout()
+void RenderSVGModelObject::invalidateTreeAfterLayout(const RenderLayerModelObject& paintInvalidationContainer)
 {
-    // Note: This is a reduced version of RenderBox::repaintTreeAfterLayout().
-    // FIXME: Should share code with RenderBox::repaintTreeAfterLayout().
+    // Note: This is a reduced version of RenderBox::invalidateTreeAfterLayout().
+    // FIXME: Should share code with RenderBox::invalidateTreeAfterLayout().
     ASSERT(RuntimeEnabledFeatures::repaintAfterLayoutEnabled());
     ASSERT(!needsLayout());
 
-    if (!shouldCheckForInvalidationAfterLayout())
+    if (!shouldCheckForPaintInvalidationAfterLayout())
         return;
 
-    LayoutStateDisabler layoutStateDisabler(*this);
+    ForceHorriblySlowRectMapping slowRectMapping(*this);
 
-    const LayoutRect oldRepaintRect = previousRepaintRect();
-    const LayoutPoint oldPositionFromRepaintContainer = previousPositionFromRepaintContainer();
-    const RenderLayerModelObject* repaintContainer = containerForRepaint();
-    setPreviousRepaintRect(clippedOverflowRectForRepaint(repaintContainer));
-    setPreviousPositionFromRepaintContainer(positionFromRepaintContainer(repaintContainer));
+    const LayoutRect oldPaintInvalidationRect = previousPaintInvalidationRect();
+    const LayoutPoint oldPositionFromPaintInvalidationContainer = previousPositionFromPaintInvalidationContainer();
+    const RenderLayerModelObject& newPaintInvalidationContainer = *containerForPaintInvalidation();
+    setPreviousPaintInvalidationRect(clippedOverflowRectForPaintInvalidation(&newPaintInvalidationContainer));
+    setPreviousPositionFromPaintInvalidationContainer(RenderLayer::positionFromPaintInvalidationContainer(this, &newPaintInvalidationContainer));
 
-    // If we are set to do a full repaint that means the RenderView will be
-    // invalidated. We can then skip issuing of invalidations for the child
+    // If an ancestor container had its transform changed, then we just
+    // need to update the RenderSVGModelObject's repaint rect above. The invalidation
+    // will be handled by the container where the transform changed. This essentially
+    // means that we prune the entire branch for performance.
+    if (!SVGRenderSupport::parentTransformDidChange(this))
+        return;
+
+    // If we are set to do a full paint invalidation that means the RenderView will be
+    // issue paint invalidations. We can then skip issuing of paint invalidations for the child
     // renderers as they'll be covered by the RenderView.
     if (view()->doingFullRepaint()) {
-        RenderObject::repaintTreeAfterLayout();
+        RenderObject::invalidateTreeAfterLayout(newPaintInvalidationContainer);
         return;
     }
 
-    const LayoutRect& newRepaintRect = previousRepaintRect();
-    const LayoutPoint& newPositionFromRepaintContainer = previousPositionFromRepaintContainer();
-    repaintAfterLayoutIfNeeded(containerForRepaint(),
-        shouldDoFullRepaintAfterLayout(), oldRepaintRect, oldPositionFromRepaintContainer, &newRepaintRect, &newPositionFromRepaintContainer);
+    const LayoutRect& newPaintInvalidationRect = previousPaintInvalidationRect();
+    const LayoutPoint& newPositionFromPaintInvalidationContainer = previousPositionFromPaintInvalidationContainer();
+    invalidatePaintAfterLayoutIfNeeded(containerForPaintInvalidation(),
+        shouldDoFullPaintInvalidationAfterLayout(), oldPaintInvalidationRect, oldPositionFromPaintInvalidationContainer,
+        &newPaintInvalidationRect, &newPositionFromPaintInvalidationContainer);
 
-    RenderObject::repaintTreeAfterLayout();
+    RenderObject::invalidateTreeAfterLayout(newPaintInvalidationContainer);
 }
 
 } // namespace WebCore

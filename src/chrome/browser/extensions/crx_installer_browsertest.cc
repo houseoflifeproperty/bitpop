@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/at_exit.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/download/download_crx_util.h"
 #include "chrome/browser/extensions/browser_action_test_util.h"
@@ -9,16 +10,19 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/fake_safe_browsing_database_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/download_test_observer.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/feature_switch.h"
@@ -29,8 +33,10 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/fake_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/extensions/extension_assets_manager_chromeos.h"
+#include "chromeos/chromeos_switches.h"
 #endif
 
 class SkBitmap;
@@ -45,8 +51,7 @@ class MockInstallPrompt;
 // MockInstallPrompt. We create the MockInstallPrompt but need to pass
 // ownership of it to CrxInstaller, so it isn't safe to hang this data on
 // MockInstallPrompt itself becuase we can't guarantee it's lifetime.
-class MockPromptProxy :
-      public base::RefCountedThreadSafe<MockPromptProxy> {
+class MockPromptProxy : public base::RefCountedThreadSafe<MockPromptProxy> {
  public:
   explicit MockPromptProxy(content::WebContents* web_contents);
 
@@ -111,10 +116,8 @@ class MockInstallPrompt : public ExtensionInstallPrompt {
   scoped_refptr<MockPromptProxy> proxy_;
 };
 
-
-MockPromptProxy::MockPromptProxy(content::WebContents* web_contents) :
-    web_contents_(web_contents),
-    confirmation_requested_(false) {
+MockPromptProxy::MockPromptProxy(content::WebContents* web_contents)
+    : web_contents_(web_contents), confirmation_requested_(false) {
 }
 
 MockPromptProxy::~MockPromptProxy() {}
@@ -361,7 +364,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, HiDpiThemeTest) {
   base::FilePath crx_path = test_data_dir_.AppendASCII("theme_hidpi_crx");
   crx_path = crx_path.AppendASCII("theme_hidpi.crx");
 
-  ASSERT_TRUE(InstallExtension(crx_path,1));
+  ASSERT_TRUE(InstallExtension(crx_path, 1));
 
   const std::string extension_id("gllekhaobjnhgeagipipnkpmmmpchacm");
   ExtensionService* service = extensions::ExtensionSystem::Get(
@@ -423,7 +426,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest,
   ASSERT_EQ("1.0", extension->version()->GetString());
 
   // Make the extension idle again by closing the popup. This should not trigger
-  //the delayed install.
+  // the delayed install.
   content::RenderProcessHostWatcher terminated_observer(
       extension_host->render_process_host(),
       content::RenderProcessHostWatcher::WATCH_FOR_HOST_DESTRUCTION);
@@ -492,6 +495,59 @@ IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, KioskOnlyTest) {
   chromeos::ScopedUserManagerEnabler scoped_user_manager(fake_user_manager);
   EXPECT_TRUE(InstallExtension(crx_path, 1));
 #endif
+}
+
+#if defined(OS_CHROMEOS)
+IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, InstallToSharedLocation) {
+  base::ShadowingAtExitManager at_exit_manager;
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      chromeos::switches::kEnableExtensionAssetsSharing);
+  base::ScopedTempDir cache_dir;
+  ASSERT_TRUE(cache_dir.CreateUniqueTempDir());
+  ExtensionAssetsManagerChromeOS::SetSharedInstallDirForTesting(
+      cache_dir.path());
+
+  base::FilePath crx_path = test_data_dir_.AppendASCII("crx_installer/v1.crx");
+  const extensions::Extension* extension = InstallExtension(
+      crx_path, 1, extensions::Manifest::EXTERNAL_PREF);
+  base::FilePath extension_path = extension->path();
+  EXPECT_TRUE(cache_dir.path().IsParent(extension_path));
+  EXPECT_TRUE(base::PathExists(extension_path));
+
+  std::string extension_id = extension->id();
+  UninstallExtension(extension_id);
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+      browser()->profile())->extension_service();
+  EXPECT_FALSE(service->GetExtensionById(extension_id, false));
+
+  // In the worst case you need to repeat this up to 3 times to make sure that
+  // all pending tasks we sent from UI thread to task runner and back to UI.
+  for (int i = 0; i < 3; i++) {
+    // Wait for background task completion that sends replay to UI thread.
+    content::BrowserThread::GetBlockingPool()->FlushForTesting();
+    // Wait for UI thread task completion.
+    base::RunLoop().RunUntilIdle();
+  }
+
+  EXPECT_FALSE(base::PathExists(extension_path));
+}
+#endif
+
+IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, DoNotSync) {
+  ExtensionService* service = extensions::ExtensionSystem::Get(
+                                  browser()->profile())->extension_service();
+  scoped_refptr<CrxInstaller> crx_installer(
+      CrxInstaller::CreateSilent(service));
+  crx_installer->set_do_not_sync(true);
+  crx_installer->InstallCrx(test_data_dir_.AppendASCII("good.crx"));
+  EXPECT_TRUE(WaitForCrxInstallerDone());
+  ASSERT_TRUE(crx_installer->extension());
+
+  const ExtensionPrefs* extension_prefs =
+      ExtensionPrefs::Get(browser()->profile());
+  EXPECT_TRUE(extension_prefs->DoNotSync(crx_installer->extension()->id()));
+  EXPECT_FALSE(extensions::util::ShouldSyncApp(crx_installer->extension(),
+                                               browser()->profile()));
 }
 
 }  // namespace extensions

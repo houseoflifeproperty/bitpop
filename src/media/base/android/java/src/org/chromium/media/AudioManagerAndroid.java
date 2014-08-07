@@ -163,6 +163,13 @@ class AudioManagerAndroid {
     private final Context mContext;
     private final long mNativeAudioManagerAndroid;
 
+    // Enabled during initialization if MODIFY_AUDIO_SETTINGS permission is
+    // granted. Required to shift system-wide audio settings.
+    private boolean mHasModifyAudioSettingsPermission = false;
+
+    // Enabled during initialization if RECORD_AUDIO permission is granted.
+    private boolean mHasRecordAudioPermission = false;
+
     // Enabled during initialization if BLUETOOTH permission is granted.
     private boolean mHasBluetoothPermission = false;
 
@@ -237,6 +244,19 @@ class AudioManagerAndroid {
         if (mIsInitialized)
             return;
 
+        // Check if process has MODIFY_AUDIO_SETTINGS and RECORD_AUDIO
+        // permissions. Both are required for full functionality.
+        mHasModifyAudioSettingsPermission = hasPermission(
+                android.Manifest.permission.MODIFY_AUDIO_SETTINGS);
+        if (DEBUG && !mHasModifyAudioSettingsPermission) {
+            logd("MODIFY_AUDIO_SETTINGS permission is missing");
+        }
+        mHasRecordAudioPermission = hasPermission(
+                android.Manifest.permission.RECORD_AUDIO);
+        if (DEBUG && !mHasRecordAudioPermission) {
+            logd("RECORD_AUDIO permission is missing");
+        }
+
         // Initialize audio device list with things we know is always available.
         mAudioDevices[DEVICE_EARPIECE] = hasEarpiece();
         mAudioDevices[DEVICE_WIRED_HEADSET] = hasWiredHeadset();
@@ -277,15 +297,23 @@ class AudioManagerAndroid {
      * Saves current audio mode and sets audio mode to MODE_IN_COMMUNICATION
      * if input parameter is true. Restores saved audio mode if input parameter
      * is false.
+     * Required permission: android.Manifest.permission.MODIFY_AUDIO_SETTINGS.
      */
     @CalledByNative
     private void setCommunicationAudioModeOn(boolean on) {
         if (DEBUG) logd("setCommunicationAudioModeOn(" + on + ")");
 
+        // The MODIFY_AUDIO_SETTINGS permission is required to allow an
+        // application to modify global audio settings.
+        if (!mHasModifyAudioSettingsPermission) {
+            Log.w(TAG, "MODIFY_AUDIO_SETTINGS is missing => client will run " +
+                    "with reduced functionality");
+            return;
+        }
+
         if (on) {
             if (mSavedAudioMode != AudioManager.MODE_INVALID) {
-                Log.wtf(TAG, "Audio mode has already been set!");
-                return;
+                throw new IllegalStateException("Audio mode has already been set");
             }
 
             // Store the current audio mode the first time we try to
@@ -293,8 +321,9 @@ class AudioManagerAndroid {
             try {
                 mSavedAudioMode = mAudioManager.getMode();
             } catch (SecurityException e) {
-                Log.wtf(TAG, "getMode exception: ", e);
                 logDeviceInfo();
+                throw e;
+
             }
 
             // Store microphone mute state and speakerphone state so it can
@@ -305,8 +334,8 @@ class AudioManagerAndroid {
             try {
                 mAudioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
             } catch (SecurityException e) {
-                Log.wtf(TAG, "setMode exception: ", e);
                 logDeviceInfo();
+                throw e;
             }
 
             // Start observing volume changes to detect when the
@@ -318,8 +347,7 @@ class AudioManagerAndroid {
 
         } else {
             if (mSavedAudioMode == AudioManager.MODE_INVALID) {
-                Log.wtf(TAG, "Audio mode has not yet been set!");
-                return;
+                throw new IllegalStateException("Audio mode has not yet been set");
             }
 
             stopObservingVolumeChanges();
@@ -333,8 +361,8 @@ class AudioManagerAndroid {
             try {
                 mAudioManager.setMode(mSavedAudioMode);
             } catch (SecurityException e) {
-                Log.wtf(TAG, "setMode exception: ", e);
                 logDeviceInfo();
+                throw e;
             }
             mSavedAudioMode = AudioManager.MODE_INVALID;
         }
@@ -346,12 +374,20 @@ class AudioManagerAndroid {
      * @param deviceId Unique device ID (integer converted to string)
      * representing the selected device. This string is empty if the so-called
      * default device is requested.
+     * Required permissions: android.Manifest.permission.MODIFY_AUDIO_SETTINGS
+     * and android.Manifest.permission.RECORD_AUDIO.
      */
     @CalledByNative
     private boolean setDevice(String deviceId) {
         if (DEBUG) logd("setDevice: " + deviceId);
         if (!mIsInitialized)
             return false;
+        if (!mHasModifyAudioSettingsPermission || !mHasRecordAudioPermission) {
+            Log.w(TAG, "Requires MODIFY_AUDIO_SETTINGS and RECORD_AUDIO");
+            Log.w(TAG, "Selected device will not be available for recording");
+            return false;
+        }
+
         int intDeviceId = deviceId.isEmpty() ?
             DEVICE_DEFAULT : Integer.parseInt(deviceId);
 
@@ -383,12 +419,20 @@ class AudioManagerAndroid {
      * @return the current list of available audio devices.
      * Note that this call does not trigger any update of the list of devices,
      * it only copies the current state in to the output array.
+     * Required permissions: android.Manifest.permission.MODIFY_AUDIO_SETTINGS
+     * and android.Manifest.permission.RECORD_AUDIO.
      */
     @CalledByNative
     private AudioDeviceName[] getAudioInputDeviceNames() {
         if (DEBUG) logd("getAudioInputDeviceNames");
         if (!mIsInitialized)
             return null;
+        if (!mHasModifyAudioSettingsPermission || !mHasRecordAudioPermission) {
+            Log.w(TAG, "Requires MODIFY_AUDIO_SETTINGS and RECORD_AUDIO");
+            Log.w(TAG, "No audio device will be available for recording");
+            return null;
+        }
+
         boolean devices[] = null;
         synchronized (mLock) {
             devices = mAudioDevices.clone();
@@ -496,12 +540,12 @@ class AudioManagerAndroid {
     }
 
     /**
-     * Helper method for debugging purposes. Logs message if method is not
+     * Helper method for debugging purposes. Ensures that method is
      * called on same thread as this object was created on.
      */
     private void checkIfCalledOnValidThread() {
         if (DEBUG && !mNonThreadSafe.calledOnValidThread()) {
-            Log.wtf(TAG, "Method is not called on valid thread!");
+            throw new IllegalStateException("Method is not called on valid thread");
         }
     }
 
@@ -511,7 +555,8 @@ class AudioManagerAndroid {
      */
     private void registerBluetoothIntentsIfNeeded() {
         // Check if this process has the BLUETOOTH permission or not.
-        mHasBluetoothPermission = hasBluetoothPermission();
+        mHasBluetoothPermission = hasPermission(
+                android.Manifest.permission.BLUETOOTH);
 
         // Add a Bluetooth headset to the list of available devices if a BT
         // headset is detected and if we have the BLUETOOTH permission.
@@ -520,6 +565,7 @@ class AudioManagerAndroid {
         // is not sticky and will only be received if a BT headset is connected
         // after this method has been called.
         if (!mHasBluetoothPermission) {
+            Log.w(TAG, "Requires BLUETOOTH permission");
             return;
         }
         mAudioDevices[DEVICE_BLUETOOTH_HEADSET] = hasBluetoothHeadset();
@@ -580,16 +626,12 @@ class AudioManagerAndroid {
         return mAudioManager.isWiredHeadsetOn();
     }
 
-    /** Checks if the process has BLUETOOTH permission or not. */
-    private boolean hasBluetoothPermission() {
-        boolean hasBluetooth = mContext.checkPermission(
-            android.Manifest.permission.BLUETOOTH,
-            Process.myPid(),
-            Process.myUid()) == PackageManager.PERMISSION_GRANTED;
-        if (DEBUG && !hasBluetooth) {
-            logd("BLUETOOTH permission is missing!");
-        }
-        return hasBluetooth;
+    /** Checks if the process has as specified permission or not. */
+    private boolean hasPermission(String permission) {
+        return mContext.checkPermission(
+                permission,
+                Process.myPid(),
+                Process.myUid()) == PackageManager.PERMISSION_GRANTED;
     }
 
     /**
@@ -599,7 +641,7 @@ class AudioManagerAndroid {
      */
     private boolean hasBluetoothHeadset() {
         if (!mHasBluetoothPermission) {
-            Log.wtf(TAG, "hasBluetoothHeadset() requires BLUETOOTH permission!");
+            Log.w(TAG, "hasBluetoothHeadset() requires BLUETOOTH permission");
             return false;
         }
 
@@ -612,35 +654,19 @@ class AudioManagerAndroid {
         if (runningOnJellyBeanMR2OrHigher()) {
             // Use BluetoothManager to get the BluetoothAdapter for
             // Android 4.3 and above.
-            try {
-                BluetoothManager btManager =
-                        (BluetoothManager)mContext.getSystemService(
-                                Context.BLUETOOTH_SERVICE);
-                btAdapter = btManager.getAdapter();
-            } catch (Exception e) {
-                Log.wtf(TAG, "BluetoothManager.getAdapter exception", e);
-                return false;
-            }
+            BluetoothManager btManager =
+                    (BluetoothManager)mContext.getSystemService(
+                            Context.BLUETOOTH_SERVICE);
+            btAdapter = btManager.getAdapter();
         } else {
             // Use static method for Android 4.2 and below to get the
             // BluetoothAdapter.
-            try {
-                btAdapter = BluetoothAdapter.getDefaultAdapter();
-            } catch (Exception e) {
-                Log.wtf(TAG, "BluetoothAdapter.getDefaultAdapter exception", e);
-                return false;
-            }
+            btAdapter = BluetoothAdapter.getDefaultAdapter();
         }
 
         int profileConnectionState;
-        try {
-            profileConnectionState = btAdapter.getProfileConnectionState(
+        profileConnectionState = btAdapter.getProfileConnectionState(
                 android.bluetooth.BluetoothProfile.HEADSET);
-        } catch (Exception e) {
-            Log.wtf(TAG, "BluetoothAdapter.getProfileConnectionState exception", e);
-            profileConnectionState =
-                android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
-        }
 
         // Ensure that Bluetooth is enabled and that a device which supports the
         // headset and handsfree profile is connected.
@@ -695,7 +721,7 @@ class AudioManagerAndroid {
                         }
                         break;
                     default:
-                        loge("Invalid state!");
+                        loge("Invalid state");
                         break;
                 }
 
@@ -770,7 +796,7 @@ class AudioManagerAndroid {
                         // Bluetooth service is switching from on to off.
                         break;
                     default:
-                        loge("Invalid state!");
+                        loge("Invalid state");
                         break;
                 }
 
@@ -824,7 +850,7 @@ class AudioManagerAndroid {
                         // do nothing
                         break;
                     default:
-                        loge("Invalid state!");
+                        loge("Invalid state");
                 }
                 if (DEBUG) {
                     reportUpdate();
@@ -875,7 +901,7 @@ class AudioManagerAndroid {
         }
         if (!mAudioManager.isBluetoothScoOn()) {
             // TODO(henrika): can we do anything else than logging here?
-            loge("Unable to stop BT SCO since it is already disabled!");
+            loge("Unable to stop BT SCO since it is already disabled");
             return;
         }
 
@@ -913,7 +939,7 @@ class AudioManagerAndroid {
                 setSpeakerphoneOn(false);
                 break;
             default:
-                loge("Invalid audio device selection!");
+                loge("Invalid audio device selection");
                 break;
         }
         reportUpdate();
@@ -955,7 +981,7 @@ class AudioManagerAndroid {
             devices = mAudioDevices.clone();
         }
         if (requested == DEVICE_INVALID) {
-            loge("Unable to activate device since no device is selected!");
+            loge("Unable to activate device since no device is selected");
             return;
         }
 
@@ -1045,8 +1071,8 @@ class AudioManagerAndroid {
 
                     // Ensure that the observer is activated during communication mode.
                     if (mAudioManager.getMode() != AudioManager.MODE_IN_COMMUNICATION) {
-                        Log.wtf(TAG, "Only enable SettingsObserver in COMM mode!");
-                        return;
+                        throw new IllegalStateException(
+                                "Only enable SettingsObserver in COMM mode");
                     }
 
                     // Get stream volume for the voice stream and deliver callback if
@@ -1077,7 +1103,7 @@ class AudioManagerAndroid {
         try {
             mSettingsObserverThread.join();
         } catch (InterruptedException e) {
-            Log.wtf(TAG, "Thread.join() exception: ", e);
+            Log.e(TAG, "Thread.join() exception: ", e);
         }
         mSettingsObserverThread = null;
     }

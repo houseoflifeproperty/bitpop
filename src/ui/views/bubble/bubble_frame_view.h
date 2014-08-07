@@ -12,6 +12,10 @@
 #include "ui/views/controls/button/button.h"
 #include "ui/views/window/non_client_view.h"
 
+namespace gfx {
+class FontList;
+}
+
 namespace views {
 
 class Label;
@@ -43,10 +47,14 @@ class VIEWS_EXPORT BubbleFrameView : public NonClientFrameView,
   virtual void UpdateWindowIcon() OVERRIDE;
   virtual void UpdateWindowTitle() OVERRIDE;
 
+  // Set the FontList to be used for the title of the bubble.
+  // Caller must arrange to update the layout to have the call take effect.
+  void SetTitleFontList(const gfx::FontList& font_list);
+
   // View overrides:
   virtual gfx::Insets GetInsets() const OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
@@ -90,7 +98,7 @@ class VIEWS_EXPORT BubbleFrameView : public NonClientFrameView,
                               const gfx::Size& client_size);
 
   // Calculates the size needed to accommodate the given client area.
-  gfx::Size GetSizeForClientSize(const gfx::Size& client_size);
+  gfx::Size GetSizeForClientSize(const gfx::Size& client_size) const;
 
   // The bubble border.
   BubbleBorder* bubble_border_;

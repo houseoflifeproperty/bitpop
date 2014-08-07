@@ -26,9 +26,7 @@ NinjaTargetWriter::NinjaTargetWriter(const Target* target,
       target_(target),
       toolchain_(toolchain),
       out_(out),
-      path_output_(settings_->build_settings()->build_dir(),
-                   ESCAPE_NINJA,
-                   false),
+      path_output_(settings_->build_settings()->build_dir(), ESCAPE_NINJA),
       helper_(settings_->build_settings()) {
 }
 
@@ -90,8 +88,13 @@ std::string NinjaTargetWriter::WriteInputDepsStampAndGetDep(
   // as the source prereqs.
   bool list_sources_as_input_deps = target_->output_type() == Target::ACTION;
 
-  if (extra_hard_deps.empty() &&
-      target_->source_prereqs().empty() &&
+  // Actions get implicit dependencies on the script itself.
+  bool add_script_source_as_dep = target_->output_type() == Target::ACTION ||
+    target_->output_type() == Target::ACTION_FOREACH;
+
+  if (!add_script_source_as_dep &&
+      extra_hard_deps.empty() &&
+      target_->inputs().empty() &&
       target_->recursive_hard_deps().empty() &&
       (!list_sources_as_input_deps || target_->sources().empty()))
     return std::string();  // No input/hard deps.
@@ -111,10 +114,17 @@ std::string NinjaTargetWriter::WriteInputDepsStampAndGetDep(
   path_output_.WriteFile(stamp_file_stream, input_stamp_file);
   std::string stamp_file_string = stamp_file_stream.str();
 
-  out_ << "build " << stamp_file_string << ": stamp";
+  out_ << "build " << stamp_file_string << ": " +
+      helper_.GetRulePrefix(settings_) + "stamp";
+
+  // Script file (if applicable).
+  if (add_script_source_as_dep) {
+    out_ << " ";
+    path_output_.WriteFile(out_, target_->action_values().script());
+  }
 
   // Input files are order-only deps.
-  const Target::FileList& prereqs = target_->source_prereqs();
+  const Target::FileList& prereqs = target_->inputs();
   for (size_t i = 0; i < prereqs.size(); i++) {
     out_ << " ";
     path_output_.WriteFile(out_, prereqs[i]);
@@ -155,5 +165,5 @@ FileTemplate NinjaTargetWriter::GetOutputTemplate() const {
         RemovePrefix(outputs[i].value(),
                      settings_->build_settings()->build_dir().value()));
   }
-  return FileTemplate(output_template_args);
+  return FileTemplate(target_->settings(), output_template_args);
 }

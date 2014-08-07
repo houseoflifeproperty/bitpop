@@ -35,10 +35,6 @@
 
 namespace WebCore {
 
-class FloatRect;
-class IntRect;
-class RenderObject;
-
 class SVGRenderStyle : public RefCounted<SVGRenderStyle> {
 public:
     static PassRefPtr<SVGRenderStyle> create() { return adoptRef(new SVGRenderStyle); }
@@ -428,7 +424,7 @@ private:
     SVGRenderStyle(const SVGRenderStyle&);
     SVGRenderStyle(CreateDefaultType); // Used to create the default style.
 
-    bool diffNeedsLayout(const SVGRenderStyle* other) const;
+    bool diffNeedsLayoutAndRepaint(const SVGRenderStyle* other) const;
     bool diffNeedsRepaint(const SVGRenderStyle* other) const;
 
     void setBitDefaults()

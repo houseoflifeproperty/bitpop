@@ -4,6 +4,7 @@
 
 #include "mojo/shell/app_child_process_host.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "mojo/embedder/embedder.h"
@@ -36,7 +37,7 @@ void AppChildProcessHost::WillStart() {
       base::MessageLoop::current()->message_loop_proxy()));
 
   controller_.Bind(handle.Pass());
-  controller_->SetClient(controller_client_);
+  controller_.set_client(controller_client_);
 }
 
 void AppChildProcessHost::DidStart(bool success) {

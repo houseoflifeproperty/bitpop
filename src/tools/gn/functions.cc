@@ -61,8 +61,10 @@ bool FillTargetBlockScope(const Scope* scope,
   // the block in.
   const Scope* default_scope = scope->GetTargetDefaults(target_type);
   if (default_scope) {
-    if (!default_scope->NonRecursiveMergeTo(block_scope, false, function,
-                                            "target defaults", err))
+    Scope::MergeOptions merge_options;
+    merge_options.skip_private_vars = true;
+    if (!default_scope->NonRecursiveMergeTo(block_scope, merge_options,
+                                            function, "target defaults", err))
       return false;
   }
 
@@ -446,6 +448,10 @@ const char kImport_Help[] =
     "  different value), a runtime error will be thrown. Therefore, it's good\n"
     "  practice to minimize the stuff that an imported file defines.\n"
     "\n"
+    "  Variables and templates beginning with an underscore '_' are\n"
+    "  considered private and will not be imported. Imported files can use\n"
+    "  such variables for internal computation without affecting other files.\n"
+    "\n"
     "Examples:\n"
     "\n"
     "  import(\"//build/rules/idl_compilation_rule.gni\")\n"
@@ -638,6 +644,7 @@ struct FunctionInfoInitializer {
     INSERT_FUNCTION(Action, true)
     INSERT_FUNCTION(ActionForEach, true)
     INSERT_FUNCTION(Component, true)
+    INSERT_FUNCTION(Copy, true)
     INSERT_FUNCTION(Executable, true)
     INSERT_FUNCTION(Group, true)
     INSERT_FUNCTION(SharedLibrary, true)
@@ -647,11 +654,13 @@ struct FunctionInfoInitializer {
 
     INSERT_FUNCTION(Assert, false)
     INSERT_FUNCTION(Config, false)
-    INSERT_FUNCTION(Copy, false)
     INSERT_FUNCTION(DeclareArgs, false)
     INSERT_FUNCTION(Defined, false)
     INSERT_FUNCTION(ExecScript, false)
+    INSERT_FUNCTION(ForEach, false)
     INSERT_FUNCTION(GetEnv, false)
+    INSERT_FUNCTION(GetLabelInfo, false)
+    INSERT_FUNCTION(GetPathInfo, false)
     INSERT_FUNCTION(GetTargetOutputs, false)
     INSERT_FUNCTION(Import, false)
     INSERT_FUNCTION(Print, false)

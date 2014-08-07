@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/HTMLButtonElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/html/FormDataList.h"
@@ -48,7 +48,7 @@ inline HTMLButtonElement::HTMLButtonElement(Document& document, HTMLFormElement*
 
 PassRefPtrWillBeRawPtr<HTMLButtonElement> HTMLButtonElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLButtonElement(document, form));
+    return adoptRefWillBeNoop(new HTMLButtonElement(document, form));
 }
 
 void HTMLButtonElement::setType(const AtomicString& type)

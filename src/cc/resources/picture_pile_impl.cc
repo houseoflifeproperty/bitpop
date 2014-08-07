@@ -98,6 +98,7 @@ void PicturePileImpl::RasterToBitmap(
     const gfx::Rect& canvas_rect,
     float contents_scale,
     RenderingStatsInstrumentation* rendering_stats_instrumentation) {
+  canvas->discard();
   if (clear_canvas_with_debug_color_) {
     // Any non-painted areas in the content bounds will be left in this color.
     canvas->clear(DebugColors::NonPaintedFillColor());
@@ -347,10 +348,7 @@ skia::RefPtr<SkPicture> PicturePileImpl::GetFlattenedPicture() {
   gfx::Rect tiling_rect(tiling_.tiling_rect());
   SkPictureRecorder recorder;
   SkCanvas* canvas =
-      recorder.beginRecording(tiling_rect.width(),
-                              tiling_rect.height(),
-                              NULL,
-                              SkPicture::kUsePathBoundsForClip_RecordingFlag);
+      recorder.beginRecording(tiling_rect.width(), tiling_rect.height());
   if (!tiling_rect.IsEmpty())
     RasterToBitmap(canvas, tiling_rect, 1.0, NULL);
   skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
@@ -383,14 +381,14 @@ void PicturePileImpl::AnalyzeInRect(
   RasterForAnalysis(&canvas, layer_rect, 1.0f, stats_instrumentation);
 
   analysis->is_solid_color = canvas.GetColorIfSolid(&analysis->solid_color);
-  analysis->has_text = canvas.HasText();
 }
 
 // Since there are situations when we can skip analysis, the variables have to
 // be set to their safest values. That is, we have to assume that the tile is
 // not solid color. As well, we have to assume that the tile has text so we
 // don't early out incorrectly.
-PicturePileImpl::Analysis::Analysis() : is_solid_color(false), has_text(true) {}
+PicturePileImpl::Analysis::Analysis() : is_solid_color(false) {
+}
 
 PicturePileImpl::Analysis::~Analysis() {
 }

@@ -31,6 +31,7 @@ import logging
 import re
 import time
 
+from webkitpy.layout_tests.controllers import repaint_overlay
 from webkitpy.layout_tests.controllers import test_result_writer
 from webkitpy.layout_tests.port.driver import DeviceFailure, DriverInput, DriverOutput
 from webkitpy.layout_tests.models import test_expectations
@@ -111,6 +112,8 @@ class SingleTestRunner(object):
         return DriverInput(test_name, self._timeout, image_hash, self._should_run_pixel_test, args)
 
     def run(self):
+        if self._options.enable_sanitizer:
+            return self._run_sanitized_test()
         if self._reference_files:
             if self._options.reset_results:
                 reftest_type = set([reference_file[0] for reference_file in self._reference_files])
@@ -121,6 +124,16 @@ class SingleTestRunner(object):
         if self._options.reset_results:
             return self._run_rebaseline()
         return self._run_compare_test()
+
+    def _run_sanitized_test(self):
+        # running a sanitized test means that we ignore the actual test output and just look
+        # for timeouts and crashes (real or forced by the driver). Most crashes should
+        # indicate problems found by a sanitizer (ASAN, LSAN, etc.), but we will report
+        # on other crashes and timeouts as well in order to detect at least *some* basic failures.
+        driver_output = self._driver.run_test(self._driver_input(), self._stop_when_done)
+        failures = self._handle_error(driver_output)
+        return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(),
+                          pid=driver_output.pid)
 
     def _run_compare_test(self):
         driver_output = self._driver.run_test(self._driver_input(), self._stop_when_done)
@@ -249,7 +262,8 @@ class SingleTestRunner(object):
             if self._should_run_pixel_test:
                 failures.extend(self._compare_image(expected_driver_output, driver_output))
         return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(),
-                          pid=driver_output.pid)
+                          pid=driver_output.pid,
+                          has_repaint_overlay=repaint_overlay.result_contains_repaint_rects(expected_driver_output.text))
 
     def _compare_testharness_test(self, driver_output, expected_driver_output):
         if expected_driver_output.image or expected_driver_output.audio or expected_driver_output.text:
@@ -262,6 +276,7 @@ class SingleTestRunner(object):
         found_a_pass = False
         text = driver_output.text or ''
         lines = text.strip().splitlines()
+        lines = [line.strip() for line in lines]
         header = 'This is a testharness.js-based test.'
         footer = 'Harness: the test ran to completion.'
         if not lines or not header in lines:
@@ -270,12 +285,17 @@ class SingleTestRunner(object):
             return True, [test_failures.FailureTestHarnessAssertion()]
 
         for line in lines:
+            if line == header or line == footer or line.startswith('PASS'):
+                continue
+            # CONSOLE output can happen during tests and shouldn't break them.
+            if line.startswith('CONSOLE'):
+                continue
+
             if line.startswith('FAIL') or line.startswith('TIMEOUT'):
                 return True, [test_failures.FailureTestHarnessAssertion()]
 
             # Fail the test if there is any unrecognized output.
-            if line != header and line != footer and not line.startswith('PASS'):
-                return True, [test_failures.FailureTestHarnessAssertion()]
+            return True, [test_failures.FailureTestHarnessAssertion()]
         return True, []
 
     def _is_render_tree(self, text):

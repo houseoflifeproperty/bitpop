@@ -48,6 +48,9 @@
   # This test non-deterministically runs out of memory on Windows ia32.
   'regress/regress-crbug-160010': [SKIP],
 
+  # Issue 3389: deopt_every_n_garbage_collections is unsafe
+  'regress/regress-2653': [SKIP],
+
   ##############################################################################
   # Too slow in debug mode with --stress-opt mode.
   'compiler/regress-stacktrace-methods': [PASS, ['mode == debug', SKIP]],
@@ -68,10 +71,6 @@
   'd8-performance-now': [PASS, NO_VARIANTS],
 
   ##############################################################################
-  # These use a built-in that's only present in debug mode. They take
-  # too long to run in debug mode on ARM and MIPS.
-  'fuzz-natives-part*': [PASS, ['mode == release or arch == arm or arch == android_arm or arch == android_arm64 or arch == mipsel or arch == mips', SKIP]],
-
   'big-object-literal': [PASS, ['arch == arm or arch == android_arm or arch == android_arm64', SKIP]],
 
   # Issue 488: this test sometimes times out.
@@ -121,7 +120,7 @@
 
   # BUG(v8:2989). PASS/FAIL on linux32 because crankshaft is turned off for
   # nosse2. Also for arm novfp3.
-  'regress/regress-2989': [FAIL, NO_VARIANTS, ['system == linux and arch == ia32 or arch == arm and simulator == True', PASS]],
+  'regress/regress-2989': [FAIL, NO_VARIANTS, ['system == linux and arch == x87 or arch == arm and simulator == True', PASS]],
 
   # Skip endain dependent test for mips due to different typed views of the same
   # array buffer.
@@ -145,6 +144,33 @@
   'regress/regress-2249': [SKIP],
   'debug-stepout-scope-part8': [PASS, ['arch == arm ', FAIL]],
 }],  # 'gc_stress == True'
+
+##############################################################################
+['no_i18n', {
+  # Don't call runtime functions that don't exist without i18n support.
+  'runtime-gen/availablelocalesof': [SKIP],
+  'runtime-gen/breakiteratoradopttext': [SKIP],
+  'runtime-gen/breakiteratorbreaktype': [SKIP],
+  'runtime-gen/breakiteratorbreaktype': [SKIP],
+  'runtime-gen/breakiteratorcurrent': [SKIP],
+  'runtime-gen/breakiteratorfirst': [SKIP],
+  'runtime-gen/breakiteratornext': [SKIP],
+  'runtime-gen/canonicalizelanguagetag': [SKIP],
+  'runtime-gen/createbreakiterator': [SKIP],
+  'runtime-gen/createcollator': [SKIP],
+  'runtime-gen/getdefaulticulocale': [SKIP],
+  'runtime-gen/getimplfrominitializedintlobject': [SKIP],
+  'runtime-gen/getlanguagetagvariants': [SKIP],
+  'runtime-gen/internalcompare': [SKIP],
+  'runtime-gen/internaldateformat': [SKIP],
+  'runtime-gen/internaldateparse': [SKIP],
+  'runtime-gen/internalnumberformat': [SKIP],
+  'runtime-gen/internalnumberparse': [SKIP],
+  'runtime-gen/isinitializedintlobject': [SKIP],
+  'runtime-gen/isinitializedintlobjectoftype': [SKIP],
+  'runtime-gen/markasinitializedintlobjectoftype': [SKIP],
+  'runtime-gen/stringnormalize': [SKIP],
+}],
 
 ##############################################################################
 ['arch == arm64 or arch == android_arm64', {
@@ -183,6 +209,7 @@
   'debug-liveedit-stack-padding': [SKIP],
   'debug-liveedit-restart-frame': [SKIP],
   'debug-liveedit-double-call': [SKIP],
+  'harmony/generators-debug-liveedit': [SKIP],
 
   # BUG(v8:3147). It works on other architectures by accident.
   'regress/regress-conditional-position': [FAIL],
@@ -279,6 +306,7 @@
   'debug-liveedit-stack-padding': [SKIP],
   'debug-liveedit-restart-frame': [SKIP],
   'debug-liveedit-double-call': [SKIP],
+  'harmony/generators-debug-liveedit': [SKIP],
 
   # Currently always deopt on minus zero
   'math-floor-of-div-minus-zero': [SKIP],
@@ -330,6 +358,7 @@
   'debug-liveedit-stack-padding': [SKIP],
   'debug-liveedit-restart-frame': [SKIP],
   'debug-liveedit-double-call': [SKIP],
+  'harmony/generators-debug-liveedit': [SKIP],
 
   # Currently always deopt on minus zero
   'math-floor-of-div-minus-zero': [SKIP],
@@ -350,11 +379,7 @@
   'debug-liveedit-stack-padding': [SKIP],
   'debug-liveedit-restart-frame': [SKIP],
   'debug-liveedit-double-call': [SKIP],
-
-  # This test dumps core for arm.debug, so no reason to expect it to work
-  # for NaCl. The other three fuzz-natives tests seem to run fine.
-  # As noted above none of them are run in the arm.debug case.
-  'fuzz-natives-part4': [SKIP],
+  'harmony/generators-debug-liveedit': [SKIP],
 
   # NaCl builds have problems with this test since Pepper_28.
   # V8 Issue 2786

@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/dom/shadow/InsertionPoint.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/QualifiedName.h"
 #include "core/dom/StaticNodeList.h"
@@ -122,7 +122,7 @@ void InsertionPoint::willRecalcStyle(StyleRecalcChange change)
     if (change < Inherit)
         return;
     for (size_t i = 0; i < m_distribution.size(); ++i)
-        m_distribution.at(i)->setNeedsStyleRecalc(LocalStyleChange);
+        m_distribution.at(i)->setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 bool InsertionPoint::shouldUseFallbackElements() const
@@ -152,7 +152,7 @@ bool InsertionPoint::isActive() const
         return true;
 
     // Slow path only when there are more than one shadow elements in a shadow tree. That should be a rare case.
-    const Vector<RefPtr<InsertionPoint> >& insertionPoints = shadowRoot->descendantInsertionPoints();
+    const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> >& insertionPoints = shadowRoot->descendantInsertionPoints();
     for (size_t i = 0; i < insertionPoints.size(); ++i) {
         InsertionPoint* point = insertionPoints[i].get();
         if (isHTMLShadowElement(*point))
@@ -171,11 +171,11 @@ bool InsertionPoint::isContentInsertionPoint() const
     return isHTMLContentElement(*this) && isActive();
 }
 
-PassRefPtr<NodeList> InsertionPoint::getDistributedNodes()
+PassRefPtrWillBeRawPtr<StaticNodeList> InsertionPoint::getDistributedNodes()
 {
     document().updateDistributionForNodeIfNeeded(this);
 
-    Vector<RefPtr<Node> > nodes;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > nodes;
     nodes.reserveInitialCapacity(m_distribution.size());
     for (size_t i = 0; i < m_distribution.size(); ++i)
         nodes.uncheckedAppend(m_distribution.at(i));
@@ -245,6 +245,12 @@ void InsertionPoint::removedFrom(ContainerNode* insertionPoint)
     HTMLElement::removedFrom(insertionPoint);
 }
 
+void InsertionPoint::trace(Visitor* visitor)
+{
+    visitor->trace(m_distribution);
+    HTMLElement::trace(visitor);
+}
+
 const InsertionPoint* resolveReprojection(const Node* projectedNode)
 {
     ASSERT(projectedNode);
@@ -266,7 +272,7 @@ const InsertionPoint* resolveReprojection(const Node* projectedNode)
     return insertionPoint;
 }
 
-void collectDestinationInsertionPoints(const Node& node, Vector<InsertionPoint*, 8>& results)
+void collectDestinationInsertionPoints(const Node& node, WillBeHeapVector<RawPtrWillBeMember<InsertionPoint>, 8>& results)
 {
     const Node* current = &node;
     ElementShadow* lastElementShadow = 0;

@@ -131,6 +131,7 @@ class ExamplesWindowContents : public WidgetDelegateView,
     instance_ = this;
     combobox_->set_listener(this);
     combobox_model_.SetExamples(examples.Pass());
+    combobox_->ModelChanged();
 
     set_background(Background::CreateStandardPanelBackground());
     GridLayout* layout = new GridLayout(this);
@@ -209,7 +210,7 @@ class ExamplesWindowContents : public WidgetDelegateView,
 ExamplesWindowContents* ExamplesWindowContents::instance_ = NULL;
 
 void ShowExamplesWindow(Operation operation,
-                        aura::Window* window_context,
+                        gfx::NativeView window_context,
                         ScopedExamples extra_examples) {
   if (ExamplesWindowContents::instance()) {
     ExamplesWindowContents::instance()->GetWidget()->Activate();
@@ -220,7 +221,7 @@ void ShowExamplesWindow(Operation operation,
     params.delegate = new ExamplesWindowContents(operation, examples.Pass());
     params.context = window_context;
     params.bounds = gfx::Rect(0, 0, 850, 300);
-    params.top_level = true;
+    params.remove_standard_frame = true;
     widget->Init(params);
     widget->Show();
   }

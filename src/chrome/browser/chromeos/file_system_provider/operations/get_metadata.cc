@@ -34,10 +34,11 @@ bool ConvertRequestValueToFileInfo(scoped_ptr<RequestValue> value,
           "value", &input_modification_time)) {
     return false;
   }
-  if (!base::Time::FromString(input_modification_time.c_str(),
-                              &output->last_modified)) {
-    return false;
-  }
+
+  // Allow to pass invalid modification time, since there is no way to verify
+  // it easily on any earlier stage.
+  base::Time::FromString(input_modification_time.c_str(),
+                         &output->last_modified);
 
   return true;
 }
@@ -47,10 +48,10 @@ bool ConvertRequestValueToFileInfo(scoped_ptr<RequestValue> value,
 GetMetadata::GetMetadata(
     extensions::EventRouter* event_router,
     const ProvidedFileSystemInfo& file_system_info,
-    const base::FilePath& directory_path,
+    const base::FilePath& entry_path,
     const fileapi::AsyncFileUtil::GetFileInfoCallback& callback)
     : Operation(event_router, file_system_info),
-      directory_path_(directory_path),
+      entry_path_(entry_path),
       callback_(callback) {
 }
 
@@ -58,8 +59,8 @@ GetMetadata::~GetMetadata() {
 }
 
 bool GetMetadata::Execute(int request_id) {
-  scoped_ptr<base::ListValue> values(new base::ListValue);
-  values->AppendString(directory_path_.AsUTF8Unsafe());
+  scoped_ptr<base::DictionaryValue> values(new base::DictionaryValue);
+  values->SetString("entryPath", entry_path_.AsUTF8Unsafe());
   return SendEvent(
       request_id,
       extensions::api::file_system_provider::OnGetMetadataRequested::kEventName,
@@ -68,7 +69,7 @@ bool GetMetadata::Execute(int request_id) {
 
 void GetMetadata::OnSuccess(int /* request_id */,
                             scoped_ptr<RequestValue> result,
-                            bool has_next) {
+                            bool has_more) {
   base::File::Info file_info;
   const bool convert_result =
       ConvertRequestValueToFileInfo(result.Pass(), &file_info);

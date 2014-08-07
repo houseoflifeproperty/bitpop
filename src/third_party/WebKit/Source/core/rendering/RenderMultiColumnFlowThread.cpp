@@ -32,7 +32,6 @@ namespace WebCore {
 
 RenderMultiColumnFlowThread::RenderMultiColumnFlowThread()
     : m_columnCount(1)
-    , m_columnWidth(0)
     , m_columnHeightAvailable(0)
     , m_inBalancingPass(false)
     , m_needsColumnHeightsRecalculation(false)
@@ -137,74 +136,48 @@ LayoutSize RenderMultiColumnFlowThread::columnOffset(const LayoutPoint& point) c
     return toRenderMultiColumnSet(renderRegion)->flowThreadTranslationAtOffset(blockOffset);
 }
 
+bool RenderMultiColumnFlowThread::needsNewWidth() const
+{
+    LayoutUnit newWidth;
+    unsigned dummyColumnCount; // We only care if used column-width changes.
+    calculateColumnCountAndWidth(newWidth, dummyColumnCount);
+    return newWidth != logicalWidth();
+}
+
 void RenderMultiColumnFlowThread::layoutColumns(bool relayoutChildren, SubtreeLayoutScope& layoutScope)
 {
-    // Update the dimensions of our regions before we lay out the flow thread.
-    // FIXME: Eventually this is going to get way more complicated, and we will be destroying regions
-    // instead of trying to keep them around.
-    bool shouldInvalidateRegions = false;
-    for (RenderMultiColumnSet* columnSet = firstMultiColumnSet(); columnSet; columnSet = columnSet->nextSiblingMultiColumnSet()) {
-        if (relayoutChildren || columnSet->needsLayout()) {
-            if (!m_inBalancingPass)
-                columnSet->prepareForLayout();
-            shouldInvalidateRegions = true;
-        }
-    }
-
-    if (shouldInvalidateRegions)
-        invalidateRegions();
-
     if (relayoutChildren)
         layoutScope.setChildNeedsLayout(this);
 
-    if (requiresBalancing()) {
-        // At the end of multicol layout, relayoutForPagination() is called unconditionally, but if
-        // no children are to be laid out (e.g. fixed width with layout already being up-to-date),
-        // we want to prevent it from doing any work, so that the column balancing machinery doesn't
-        // kick in and trigger additional unnecessary layout passes. Actually, it's not just a good
-        // idea in general to not waste time on balancing content that hasn't been re-laid out; we
-        // are actually required to guarantee this. The calculation of implicit breaks needs to be
-        // preceded by a proper layout pass, since it's layout that sets up content runs, and the
-        // runs get deleted right after every pass.
-        m_needsColumnHeightsRecalculation = shouldInvalidateRegions || needsLayout();
+    if (!needsLayout()) {
+        // Just before the multicol container (our parent RenderBlockFlow) finishes laying out, it
+        // will call recalculateColumnHeights() on us unconditionally, but we only want that method
+        // to do any work if we actually laid out the flow thread. Otherwise, the balancing
+        // machinery would kick in needlessly, and trigger additional layout passes. Furthermore, we
+        // actually depend on a proper flowthread layout pass in order to do balancing, since it's
+        // flowthread layout that sets up content runs.
+        m_needsColumnHeightsRecalculation = false;
+        return;
     }
 
-    layoutIfNeeded();
-}
-
-bool RenderMultiColumnFlowThread::computeColumnCountAndWidth()
-{
-    RenderBlock* columnBlock = multiColumnBlockFlow();
-    LayoutUnit oldColumnWidth = m_columnWidth;
-
-    // Calculate our column width and column count.
-    m_columnCount = 1;
-    m_columnWidth = columnBlock->contentLogicalWidth();
-
-    const RenderStyle* columnStyle = columnBlock->style();
-    ASSERT(!columnStyle->hasAutoColumnCount() || !columnStyle->hasAutoColumnWidth());
-
-    LayoutUnit availWidth = m_columnWidth;
-    LayoutUnit colGap = columnBlock->columnGap();
-    LayoutUnit colWidth = max<LayoutUnit>(1, LayoutUnit(columnStyle->columnWidth()));
-    int colCount = max<int>(1, columnStyle->columnCount());
-
-    if (columnStyle->hasAutoColumnWidth() && !columnStyle->hasAutoColumnCount()) {
-        m_columnCount = colCount;
-        m_columnWidth = std::max<LayoutUnit>(0, (availWidth - ((m_columnCount - 1) * colGap)) / m_columnCount);
-    } else if (!columnStyle->hasAutoColumnWidth() && columnStyle->hasAutoColumnCount()) {
-        m_columnCount = std::max<LayoutUnit>(1, (availWidth + colGap) / (colWidth + colGap));
-        m_columnWidth = ((availWidth + colGap) / m_columnCount) - colGap;
-    } else {
-        m_columnCount = std::max<LayoutUnit>(std::min<LayoutUnit>(colCount, (availWidth + colGap) / (colWidth + colGap)), 1);
-        m_columnWidth = ((availWidth + colGap) / m_columnCount) - colGap;
+    for (RenderMultiColumnSet* columnSet = firstMultiColumnSet(); columnSet; columnSet = columnSet->nextSiblingMultiColumnSet()) {
+        if (!m_inBalancingPass) {
+            // This is the initial layout pass. We need to reset the column height, because contents
+            // typically have changed.
+            columnSet->resetColumnHeight();
+        }
     }
 
-    return m_columnWidth != oldColumnWidth;
+    invalidateRegions();
+    m_needsColumnHeightsRecalculation = requiresBalancing();
+    layout();
 }
 
 bool RenderMultiColumnFlowThread::recalculateColumnHeights()
 {
+    // All column sets that needed layout have now been laid out, so we can finally validate them.
+    validateRegions();
+
     if (!m_needsColumnHeightsRecalculation)
         return false;
 
@@ -215,9 +188,13 @@ bool RenderMultiColumnFlowThread::recalculateColumnHeights()
     // columns, unless we have a bug.
     bool needsRelayout = false;
     for (RenderMultiColumnSet* multicolSet = firstMultiColumnSet(); multicolSet; multicolSet = multicolSet->nextSiblingMultiColumnSet()) {
-        if (multicolSet->recalculateColumnHeight(!m_inBalancingPass)) {
+        needsRelayout |= multicolSet->recalculateColumnHeight(m_inBalancingPass ? RenderMultiColumnSet::StretchBySpaceShortage : RenderMultiColumnSet::GuessFromFlowThreadPortion);
+        if (needsRelayout) {
+            // Once a column set gets a new column height, that column set and all successive column
+            // sets need to be laid out over again, since their logical top will be affected by
+            // this, and therefore their column heights may change as well, at least if the multicol
+            // height is constrained.
             multicolSet->setChildNeedsLayout(MarkOnlyThis);
-            needsRelayout = true;
         }
     }
 
@@ -226,6 +203,28 @@ bool RenderMultiColumnFlowThread::recalculateColumnHeights()
 
     m_inBalancingPass = needsRelayout;
     return needsRelayout;
+}
+
+void RenderMultiColumnFlowThread::calculateColumnCountAndWidth(LayoutUnit& width, unsigned& count) const
+{
+    RenderBlock* columnBlock = multiColumnBlockFlow();
+    const RenderStyle* columnStyle = columnBlock->style();
+    LayoutUnit availableWidth = columnBlock->contentLogicalWidth();
+    LayoutUnit columnGap = columnBlock->columnGap();
+    LayoutUnit computedColumnWidth = max<LayoutUnit>(1, LayoutUnit(columnStyle->columnWidth()));
+    unsigned computedColumnCount = max<int>(1, columnStyle->columnCount());
+
+    ASSERT(!columnStyle->hasAutoColumnCount() || !columnStyle->hasAutoColumnWidth());
+    if (columnStyle->hasAutoColumnWidth() && !columnStyle->hasAutoColumnCount()) {
+        count = computedColumnCount;
+        width = std::max<LayoutUnit>(0, (availableWidth - ((count - 1) * columnGap)) / count);
+    } else if (!columnStyle->hasAutoColumnWidth() && columnStyle->hasAutoColumnCount()) {
+        count = std::max<LayoutUnit>(1, (availableWidth + columnGap) / (computedColumnWidth + columnGap));
+        width = ((availableWidth + columnGap) / count) - columnGap;
+    } else {
+        count = std::max<LayoutUnit>(std::min<LayoutUnit>(computedColumnCount, (availableWidth + columnGap) / (computedColumnWidth + columnGap)), 1);
+        width = ((availableWidth + columnGap) / count) - columnGap;
+    }
 }
 
 const char* RenderMultiColumnFlowThread::renderName() const
@@ -266,7 +265,9 @@ void RenderMultiColumnFlowThread::computeLogicalHeight(LayoutUnit logicalHeight,
 
 void RenderMultiColumnFlowThread::updateLogicalWidth()
 {
-    setLogicalWidth(columnWidth());
+    LayoutUnit columnWidth;
+    calculateColumnCountAndWidth(columnWidth, m_columnCount);
+    setLogicalWidth(columnWidth);
 }
 
 void RenderMultiColumnFlowThread::layout()
@@ -278,6 +279,13 @@ void RenderMultiColumnFlowThread::layout()
 
 void RenderMultiColumnFlowThread::setPageBreak(LayoutUnit offset, LayoutUnit spaceShortage)
 {
+    // Only positive values are interesting (and allowed) here. Zero space shortage may be reported
+    // when we're at the top of a column and the element has zero height. Ignore this, and also
+    // ignore any negative values, which may occur when we set an early break in order to honor
+    // widows in the next column.
+    if (spaceShortage <= 0)
+        return;
+
     if (RenderMultiColumnSet* multicolSet = toRenderMultiColumnSet(regionAtBlockOffset(offset)))
         multicolSet->recordSpaceShortage(spaceShortage);
 }
@@ -297,7 +305,7 @@ RenderRegion* RenderMultiColumnFlowThread::regionAtBlockOffset(LayoutUnit /*offs
 bool RenderMultiColumnFlowThread::addForcedRegionBreak(LayoutUnit offset, RenderObject* /*breakChild*/, bool /*isBefore*/, LayoutUnit* offsetBreakAdjustment)
 {
     if (RenderMultiColumnSet* multicolSet = toRenderMultiColumnSet(regionAtBlockOffset(offset))) {
-        multicolSet->addForcedBreak(offset);
+        multicolSet->addContentRun(offset);
         if (offsetBreakAdjustment)
             *offsetBreakAdjustment = pageLogicalHeightForOffset(offset) ? pageRemainingLogicalHeightForOffset(offset, IncludePageBoundary) : LayoutUnit();
         return true;
@@ -308,7 +316,7 @@ bool RenderMultiColumnFlowThread::addForcedRegionBreak(LayoutUnit offset, Render
 bool RenderMultiColumnFlowThread::isPageLogicalHeightKnown() const
 {
     if (RenderMultiColumnSet* columnSet = lastMultiColumnSet())
-        return columnSet->computedColumnHeight();
+        return columnSet->pageLogicalHeight();
     return false;
 }
 

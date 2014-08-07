@@ -18,14 +18,16 @@
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "chrome/browser/media_galleries/media_scan_manager_observer.h"
 #include "chrome/common/extensions/api/media_galleries.h"
+#include "chrome/common/media_galleries/metadata_types.h"
 #include "components/storage_monitor/media_storage_util.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
 
 namespace MediaGalleries = extensions::api::media_galleries;
 
-class MediaGalleriesScanResultDialogController;
+class MediaGalleriesScanResultController;
 
 namespace content {
+class BlobHandle;
 class WebContents;
 }
 
@@ -235,7 +237,7 @@ class MediaGalleriesAddScanResultsFunction
   virtual bool RunAsync() OVERRIDE;
 
   // Pulled out for testing.
-  virtual MediaGalleriesScanResultDialogController* MakeDialog(
+  virtual MediaGalleriesScanResultController* MakeDialog(
       content::WebContents* web_contents,
       const extensions::Extension& extension,
       const base::Closure& on_finish);
@@ -263,15 +265,23 @@ class MediaGalleriesGetMetadataFunction : public ChromeAsyncExtensionFunction {
 
  private:
   // Bottom half for RunAsync, invoked after the preferences is initialized.
-  void OnPreferencesInit(bool mime_type_only, const std::string& blob_uuid);
+  void OnPreferencesInit(MediaGalleries::GetMetadataType metadata_type,
+                         const std::string& blob_uuid);
 
-  void SniffMimeType(bool mime_type_only,
-                     const std::string& blob_uuid,
-                     scoped_ptr<std::string> blob_header,
-                     int64 total_blob_length);
+  void GetMetadata(MediaGalleries::GetMetadataType metadata_type,
+                   const std::string& blob_uuid,
+                   scoped_ptr<std::string> blob_header,
+                   int64 total_blob_length);
 
   void OnSafeMediaMetadataParserDone(
-      bool parse_success, base::DictionaryValue* metadata_dictionary);
+      bool parse_success, scoped_ptr<base::DictionaryValue> result_dictionary,
+      scoped_ptr<std::vector<metadata::AttachedImage> > attached_images);
+
+  void ConstructNextBlob(
+      scoped_ptr<base::DictionaryValue> result_dictionary,
+      scoped_ptr<std::vector<metadata::AttachedImage> > attached_images,
+      scoped_ptr<std::vector<std::string> > blob_uuids,
+      scoped_ptr<content::BlobHandle> current_blob);
 };
 
 }  // namespace extensions

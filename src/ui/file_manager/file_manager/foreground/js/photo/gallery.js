@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
  * Called from the main frame when unloading.
  * @param {boolean=} opt_exiting True if the app is exiting.
  */
-function unload(opt_exiting) { Gallery.instance.onUnload(opt_exiting) }
+function unload(opt_exiting) { Gallery.instance.onUnload(opt_exiting); }
 
 /**
  * Gallery for viewing and editing image files.
@@ -69,14 +69,14 @@ Gallery.open = function(context, volumeManager, entries, selectedEntries) {
 };
 
 /**
- * Tools fade-out timeout im milliseconds.
+ * Tools fade-out timeout in milliseconds.
  * @const
  * @type {number}
  */
 Gallery.FADE_TIMEOUT = 3000;
 
 /**
- * First time tools fade-out timeout im milliseconds.
+ * First time tools fade-out timeout in milliseconds.
  * @const
  * @type {number}
  */
@@ -124,7 +124,7 @@ Gallery.prototype.initListeners_ = function() {
 
 /**
  * Closes gallery when a volume containing the selected item is unmounted.
- * @param {Event} event The unmount event.
+ * @param {!Event} event The unmount event.
  * @private
  */
 Gallery.prototype.onExternallyUnmounted_ = function(event) {
@@ -261,7 +261,7 @@ Gallery.prototype.initDom_ = function() {
  *
  * @param {string} className Class to add.
  * @param {string} title Button title.
- * @return {HTMLElement} Newly created button.
+ * @return {!HTMLElement} Newly created button.
  * @private
  */
 Gallery.prototype.createToolbarButton_ = function(className, title) {
@@ -273,8 +273,8 @@ Gallery.prototype.createToolbarButton_ = function(className, title) {
 /**
  * Loads the content.
  *
- * @param {Array.<Entry>} entries Array of entries.
- * @param {Array.<Entry>} selectedEntries Array of selected entries.
+ * @param {!Array.<Entry>} entries Array of entries.
+ * @param {!Array.<Entry>} selectedEntries Array of selected entries.
  */
 Gallery.prototype.load = function(entries, selectedEntries) {
   var items = [];
@@ -313,7 +313,7 @@ Gallery.prototype.load = function(entries, selectedEntries) {
   var mostlyImages = imagesCount > (selectedEntries.length / 2.0);
 
   var forcedMosaic = (this.context_.pageState &&
-       this.context_.pageState.gallery === 'mosaic');
+      this.context_.pageState.gallery === 'mosaic');
 
   var showMosaic = (mostlyImages && selectedEntries.length > 1) || forcedMosaic;
   if (mosaic && showMosaic) {
@@ -462,7 +462,8 @@ Gallery.prototype.toggleMode_ = function(opt_callback, opt_event) {
     this.setCurrentMode_(this.mosaicMode_);
     mosaic.transform(
         tileRect, this.slideMode_.getSelectedImageRect(), true /* instant */);
-    this.slideMode_.leave(tileRect,
+    this.slideMode_.leave(
+        tileRect,
         function() {
           // Animate back to normal position.
           mosaic.transform();
@@ -471,7 +472,8 @@ Gallery.prototype.toggleMode_ = function(opt_callback, opt_event) {
         }.bind(this));
   } else {
     this.setCurrentMode_(this.slideMode_);
-    this.slideMode_.enter(tileRect,
+    this.slideMode_.enter(
+        tileRect,
         function() {
           // Animate to zoomed position.
           mosaic.transform(tileRect, this.slideMode_.getSelectedImageRect());
@@ -518,6 +520,7 @@ Gallery.prototype.delete_ = function() {
 
 
   var confirm = new cr.ui.dialogs.ConfirmDialog(this.container_);
+  confirm.setOkLabel(str('DELETE_BUTTON_LABEL'));
   confirm.show(strf(plural ?
       'GALLERY_CONFIRM_DELETE_SOME' : 'GALLERY_CONFIRM_DELETE_ONE', param),
       function() {
@@ -554,12 +557,14 @@ Gallery.prototype.getSelectedEntries = function() {
 };
 
 /**
- * @return {Gallery.Item} Current single selection.
+ * @return {?Gallery.Item} Current single selection.
  */
 Gallery.prototype.getSingleSelectedItem = function() {
   var items = this.getSelectedItems();
-  if (items.length > 1)
-    throw new Error('Unexpected multiple selection');
+  if (items.length > 1) {
+    console.error('Unexpected multiple selection');
+    return null;
+  }
   return items[0];
 };
 
@@ -703,25 +708,27 @@ Gallery.prototype.onFilenameEditBlur_ = function(event) {
   }
 
   var item = this.getSingleSelectedItem();
-  var oldEntry = item.getEntry();
+  if (item) {
+    var oldEntry = item.getEntry();
 
-  var onFileExists = function() {
-    this.prompt_.show('GALLERY_FILE_EXISTS', 3000);
-    this.filenameEdit_.value = name;
-    this.filenameEdit_.focus();
-  }.bind(this);
+    var onFileExists = function() {
+      this.prompt_.show('GALLERY_FILE_EXISTS', 3000);
+      this.filenameEdit_.value = name;
+      this.filenameEdit_.focus();
+    }.bind(this);
 
-  var onSuccess = function() {
-    var event = new Event('content');
-    event.item = item;
-    event.oldEntry = oldEntry;
-    event.metadata = null;  // Metadata unchanged.
-    this.dataModel_.dispatchEvent(event);
-  }.bind(this);
+    var onSuccess = function() {
+      var event = new Event('content');
+      event.item = item;
+      event.oldEntry = oldEntry;
+      event.metadata = null;  // Metadata unchanged.
+      this.dataModel_.dispatchEvent(event);
+    }.bind(this);
 
-  if (this.filenameEdit_.value) {
-    this.getSingleSelectedItem().rename(
-        this.filenameEdit_.value, onSuccess, onFileExists);
+    if (this.filenameEdit_.value) {
+      item.rename(
+          this.filenameEdit_.value, onSuccess, onFileExists);
+    }
   }
 
   ImageUtil.setAttribute(this.filenameSpacer_, 'renaming', false);

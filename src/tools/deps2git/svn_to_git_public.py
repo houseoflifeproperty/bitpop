@@ -15,14 +15,6 @@ BLINK_TRUNK_RE = re.compile(
 BLINK_TRUNK_PUBLIC_RE = re.compile(
     '^https?://src.chromium.org/blink/trunk/public$')
 
-# Used by deps2git.ConvertDepsToGit() as overrides for SVN DEPS.  Each entry
-# maps a DEPS path to a DEPS variable identifying the Git hash for its
-# respective repository.  Variables are automatically transferred from SVN DEPS
-# to .DEPS.git and converted into variables by deps_utils.Varify().
-DEPS_OVERRIDES = {
-  'src/third_party/ffmpeg': 'ffmpeg_hash'
-}
-
 
 def SvnUrlToGitUrl(path, svn_url):
   """Convert a chromium SVN URL to a chromium Git URL."""
@@ -65,9 +57,6 @@ def SvnUrlToGitUrl(path, svn_url):
 
   if svn_url == 'svn://svn.chromium.org/jsoncpp/trunk/jsoncpp':
     return (path, GIT_HOST + 'external/jsoncpp/jsoncpp.git', GIT_HOST)
-
-  if svn_url == '/trunk/deps/third_party/ffmpeg':
-    return (path, GIT_HOST + 'chromium/third_party/ffmpeg.git', GIT_HOST)
 
   if svn_url == '/trunk/deps/cdm':
     return (path, GIT_HOST + 'chromium/cdm.git', GIT_HOST)

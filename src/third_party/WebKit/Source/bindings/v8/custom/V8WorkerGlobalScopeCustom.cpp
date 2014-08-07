@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "V8WorkerGlobalScope.h"
+#include "bindings/core/v8/V8WorkerGlobalScope.h"
 
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScheduledAction.h"
@@ -46,7 +46,7 @@
 
 namespace WebCore {
 
-void setTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& info, bool singleShot)
+static void setTimeoutOrInterval(const v8::FunctionCallbackInfo<v8::Value>& info, bool singleShot)
 {
     WorkerGlobalScope* workerGlobalScope = V8WorkerGlobalScope::toNative(info.Holder());
     ASSERT(workerGlobalScope);

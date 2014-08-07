@@ -93,7 +93,7 @@ void PageActionImageView::ExecuteAction(
   LocationBarController* controller =
       extensions_tab_helper->location_bar_controller();
 
-  switch (controller->OnClicked(page_action_->extension_id(), 1)) {
+  switch (controller->OnClicked(page_action_)) {
     case LocationBarController::ACTION_NONE:
       break;
 
@@ -227,8 +227,9 @@ void PageActionImageView::OnIconUpdated() {
     UpdateVisibility(web_contents, current_url_);
 }
 
-void PageActionImageView::PaintChildren(gfx::Canvas* canvas) {
-  View::PaintChildren(canvas);
+void PageActionImageView::PaintChildren(gfx::Canvas* canvas,
+                                        const views::CullSet& cull_set) {
+  View::PaintChildren(canvas, cull_set);
   if (current_tab_id_ >= 0)
     page_action_->PaintBadge(canvas, GetLocalBounds(), current_tab_id_);
 }

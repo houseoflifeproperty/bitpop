@@ -25,6 +25,10 @@
 #include "sync/api/fake_sync_change_processor.h"
 #include "sync/api/sync_error_factory_mock.h"
 
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
+
 namespace utils = extension_function_test_utils;
 
 namespace extensions {
@@ -78,6 +82,7 @@ void BuildTabSpecifics(const std::string& tag, int window_id, int tab_id,
 
 class ExtensionSessionsTest : public InProcessBrowserTest {
  public:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
   virtual void SetUpOnMainThread() OVERRIDE;
  protected:
   void CreateTestProfileSyncService();
@@ -95,6 +100,13 @@ class ExtensionSessionsTest : public InProcessBrowserTest {
   Browser* browser_;
   scoped_refptr<extensions::Extension> extension_;
 };
+
+void ExtensionSessionsTest::SetUpCommandLine(CommandLine* command_line) {
+#if defined(OS_CHROMEOS)
+  command_line->AppendSwitch(
+      chromeos::switches::kIgnoreUserProfileMappingForTests);
+#endif
+}
 
 void ExtensionSessionsTest::SetUpOnMainThread() {
   CreateTestProfileSyncService();
@@ -214,6 +226,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionSessionsTest, GetDevices) {
   for (size_t i = 0; i < devices->GetSize(); ++i) {
     EXPECT_TRUE(devices->GetDictionary(i, &device));
     EXPECT_EQ(kSessionTags[i], utils::GetString(device, "info"));
+    EXPECT_EQ(kSessionTags[i], utils::GetString(device, "deviceName"));
     EXPECT_TRUE(device->GetList("sessions", &sessions));
     EXPECT_EQ(0u, sessions->GetSize());
   }
@@ -235,6 +248,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionSessionsTest, GetDevicesMaxResults) {
   for (size_t i = 0; i < devices->GetSize(); ++i) {
     EXPECT_TRUE(devices->GetDictionary(i, &device));
     EXPECT_EQ(kSessionTags[i], utils::GetString(device, "info"));
+    EXPECT_EQ(kSessionTags[i], utils::GetString(device, "deviceName"));
     EXPECT_TRUE(device->GetList("sessions", &sessions));
     EXPECT_EQ(1u, sessions->GetSize());
   }

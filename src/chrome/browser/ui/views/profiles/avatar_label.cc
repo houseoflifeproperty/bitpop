@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/profiles/avatar_label.h"
 
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "grit/generated_resources.h"
@@ -13,11 +14,12 @@
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
+#include "ui/views/border.h"
 #include "ui/views/painter.h"
 
 namespace {
 
-// A custom border for the managed user avatar label.
+// A custom border for the supervised user avatar label.
 class AvatarLabelBorder : public views::Border {
  public:
   explicit AvatarLabelBorder(bool label_on_right);
@@ -63,7 +65,7 @@ void AvatarLabelBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
   SkPaint paint;
   int kRadius = 2;
   SkColor background_color = view.GetThemeProvider()->GetColor(
-      ThemeProperties::COLOR_MANAGED_USER_LABEL_BACKGROUND);
+      ThemeProperties::COLOR_SUPERVISED_USER_LABEL_BACKGROUND);
   paint.setStyle(SkPaint::kFill_Style);
 
   // Paint the inner border with a color slightly darker than the background.
@@ -105,7 +107,8 @@ bool AvatarLabel::OnMousePressed(const ui::MouseEvent& event) {
     return false;
 
   browser_view_->ShowAvatarBubbleFromAvatarButton(
-      BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT);
+      BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT,
+      signin::ManageAccountsParams());
   return true;
 }
 
@@ -115,7 +118,7 @@ void AvatarLabel::UpdateLabelStyle() {
     return;
 
   SkColor color_label = browser_view_->frame()->GetThemeProvider()->GetColor(
-      ThemeProperties::COLOR_MANAGED_USER_LABEL);
+      ThemeProperties::COLOR_SUPERVISED_USER_LABEL);
   for (size_t state = 0; state < STATE_COUNT; ++state)
     SetTextColor(static_cast<ButtonState>(state), color_label);
   SchedulePaint();

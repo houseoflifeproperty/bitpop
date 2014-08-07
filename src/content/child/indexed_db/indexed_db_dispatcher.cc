@@ -310,7 +310,7 @@ void IndexedDBDispatcher::RequestIDBDatabaseGet(
     WebIDBCallbacks* callbacks) {
   ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   IndexedDBHostMsg_DatabaseGet_Params params;
-  init_params(params, callbacks);
+  init_params(&params, callbacks);
   params.ipc_database_id = ipc_database_id;
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
@@ -345,7 +345,7 @@ void IndexedDBDispatcher::RequestIDBDatabasePut(
 
   ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   IndexedDBHostMsg_DatabasePut_Params params;
-  init_params(params, callbacks);
+  init_params(&params, callbacks);
   params.ipc_database_id = ipc_database_id;
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
@@ -374,9 +374,9 @@ void IndexedDBDispatcher::RequestIDBDatabasePut(
     if (info.isFile()) {
       blob_or_file_info.file_path = info.filePath();
       blob_or_file_info.file_name = info.fileName();
-    } else {
-      blob_or_file_info.size = info.size();
+      blob_or_file_info.last_modified = info.lastModified();
     }
+    blob_or_file_info.size = info.size();
     blob_or_file_info.uuid = info.uuid().latin1();
     DCHECK(blob_or_file_info.uuid.size());
     blob_or_file_info.mime_type = info.type();
@@ -397,7 +397,7 @@ void IndexedDBDispatcher::RequestIDBDatabaseOpenCursor(
     WebIDBCallbacks* callbacks) {
   ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   IndexedDBHostMsg_DatabaseOpenCursor_Params params;
-  init_params(params, callbacks);
+  init_params(&params, callbacks);
   params.ipc_database_id = ipc_database_id;
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
@@ -422,7 +422,7 @@ void IndexedDBDispatcher::RequestIDBDatabaseCount(
     WebIDBCallbacks* callbacks) {
   ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   IndexedDBHostMsg_DatabaseCount_Params params;
-  init_params(params, callbacks);
+  init_params(&params, callbacks);
   params.ipc_database_id = ipc_database_id;
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;
@@ -439,7 +439,7 @@ void IndexedDBDispatcher::RequestIDBDatabaseDeleteRange(
     WebIDBCallbacks* callbacks) {
   ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   IndexedDBHostMsg_DatabaseDeleteRange_Params params;
-  init_params(params, callbacks);
+  init_params(&params, callbacks);
   params.ipc_database_id = ipc_database_id;
   params.transaction_id = transaction_id;
   params.object_store_id = object_store_id;

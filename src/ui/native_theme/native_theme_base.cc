@@ -20,6 +20,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/native_theme/common_theme.h"
 
 namespace {
 
@@ -89,6 +90,10 @@ namespace ui {
 gfx::Size NativeThemeBase::GetPartSize(Part part,
                                        State state,
                                        const ExtraParams& extra) const {
+  gfx::Size size = CommonThemeGetPartSize(part, state, extra);
+  if (!size.IsEmpty())
+    return size;
+
   switch (part) {
     // Please keep these in the order of NativeTheme::Part.
     case kCheckbox:
@@ -156,6 +161,31 @@ gfx::Size NativeThemeBase::GetPartSize(Part part,
   return gfx::Size();
 }
 
+void NativeThemeBase::PaintStateTransition(SkCanvas* canvas,
+                                           Part part,
+                                           State startState,
+                                           State endState,
+                                           double progress,
+                                           const gfx::Rect& rect) const {
+  if (rect.IsEmpty())
+    return;
+
+  // Currently state transition is animation only working for overlay scrollbars
+  // on Aura platforms.
+  switch (part) {
+    case kScrollbarHorizontalThumb:
+    case kScrollbarVerticalThumb:
+      PaintScrollbarThumbStateTransition(
+          canvas, startState, endState, progress, rect);
+      break;
+    default:
+      NOTREACHED() << "Does not support state transition for this part:"
+                   << part;
+      break;
+  }
+  return;
+}
+
 void NativeThemeBase::Paint(SkCanvas* canvas,
                             Part part,
                             State state,
@@ -166,6 +196,9 @@ void NativeThemeBase::Paint(SkCanvas* canvas,
 
   switch (part) {
     // Please keep these in the order of NativeTheme::Part.
+    case kComboboxArrow:
+      CommonThemePaintComboboxArrow(canvas, rect);
+      break;
     case kCheckbox:
       PaintCheckbox(canvas, state, rect, extra.button);
       break;
@@ -250,16 +283,6 @@ NativeThemeBase::NativeThemeBase()
 }
 
 NativeThemeBase::~NativeThemeBase() {
-}
-
-// static
-scoped_ptr<gfx::Canvas> NativeThemeBase::CreateCanvas(SkCanvas* sk_canvas) {
-  // TODO(pkotwicz): Do something better and don't infer device
-  // scale factor from canvas scale.
-  SkMatrix m = sk_canvas->getTotalMatrix();
-  float device_scale = static_cast<float>(SkScalarAbs(m.getScaleX()));
-  return scoped_ptr<gfx::Canvas>(
-      gfx::Canvas::CreateCanvasWithoutScaling(sk_canvas, device_scale));
 }
 
 void NativeThemeBase::PaintArrowButton(
@@ -605,7 +628,7 @@ SkRect NativeThemeBase::PaintCheckboxRadioCommon(
   SkColor colors[3] = {startEndColors[0], startEndColors[0], startEndColors[1]};
   skia::RefPtr<SkShader> shader = skia::AdoptRef(
       SkGradientShader::CreateLinear(
-          gradient_bounds, colors, NULL, 3, SkShader::kClamp_TileMode, NULL));
+          gradient_bounds, colors, NULL, 3, SkShader::kClamp_TileMode));
   SkPaint paint;
   paint.setAntiAlias(true);
   paint.setShader(shader.get());
@@ -692,7 +715,7 @@ void NativeThemeBase::PaintButton(SkCanvas* canvas,
 
   skia::RefPtr<SkShader> shader = skia::AdoptRef(
       SkGradientShader::CreateLinear(
-          gradient_bounds, colors, NULL, 2, SkShader::kClamp_TileMode, NULL));
+          gradient_bounds, colors, NULL, 2, SkShader::kClamp_TileMode));
   paint.setStyle(SkPaint::kFill_Style);
   paint.setAntiAlias(true);
   paint.setShader(shader.get());
@@ -959,7 +982,7 @@ void NativeThemeBase::DrawImageInt(
     SkCanvas* sk_canvas, const gfx::ImageSkia& image,
     int src_x, int src_y, int src_w, int src_h,
     int dest_x, int dest_y, int dest_w, int dest_h) const {
-  scoped_ptr<gfx::Canvas> canvas(CreateCanvas(sk_canvas));
+  scoped_ptr<gfx::Canvas> canvas(CommonThemeCreateCanvas(sk_canvas));
   canvas->DrawImageInt(image, src_x, src_y, src_w, src_h,
       dest_x, dest_y, dest_w, dest_h, true);
 }
@@ -968,7 +991,7 @@ void NativeThemeBase::DrawTiledImage(SkCanvas* sk_canvas,
     const gfx::ImageSkia& image,
     int src_x, int src_y, float tile_scale_x, float tile_scale_y,
     int dest_x, int dest_y, int w, int h) const {
-  scoped_ptr<gfx::Canvas> canvas(CreateCanvas(sk_canvas));
+  scoped_ptr<gfx::Canvas> canvas(CommonThemeCreateCanvas(sk_canvas));
   canvas->TileImageInt(image, src_x, src_y, tile_scale_x,
       tile_scale_y, dest_x, dest_y, w, h);
 }

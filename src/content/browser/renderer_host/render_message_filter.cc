@@ -10,7 +10,6 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
-#include "base/numerics/safe_math.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
@@ -35,8 +34,6 @@
 #include "content/common/cookie_data.h"
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/frame_messages.h"
-#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
-#include "content/common/gpu/client/gpu_memory_buffer_impl_shm.h"
 #include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/media/media_param_traits.h"
 #include "content/common/view_messages.h"
@@ -73,9 +70,7 @@
 #include "ui/gfx/color_profile.h"
 
 #if defined(OS_MACOSX)
-#include "content/common/gpu/client/gpu_memory_buffer_impl_io_surface.h"
 #include "content/common/mac/font_descriptor.h"
-#include "ui/gl/io_surface_support_mac.h"
 #else
 #include "gpu/GLES2/gl2extchromium.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -89,8 +84,6 @@
 #include "content/common/sandbox_win.h"
 #endif
 #if defined(OS_ANDROID)
-#include "content/browser/renderer_host/compositor_impl_android.h"
-#include "content/common/gpu/client/gpu_memory_buffer_impl_surface_texture.h"
 #include "media/base/android/webaudio_media_codec_bridge.h"
 #endif
 
@@ -222,23 +215,6 @@ class OpenChannelToPpapiBrokerCallback
   int routing_id_;
 };
 
-#if defined(OS_MACOSX)
-void AddBooleanValue(CFMutableDictionaryRef dictionary,
-                     const CFStringRef key,
-                     bool value) {
-  CFDictionaryAddValue(
-      dictionary, key, value ? kCFBooleanTrue : kCFBooleanFalse);
-}
-
-void AddIntegerValue(CFMutableDictionaryRef dictionary,
-                     const CFStringRef key,
-                     int32 value) {
-  base::ScopedCFTypeRef<CFNumberRef> number(
-      CFNumberCreate(NULL, kCFNumberSInt32Type, &value));
-  CFDictionaryAddValue(dictionary, key, number.get());
-}
-#endif
-
 }  // namespace
 
 class RenderMessageFilter::OpenChannelToNpapiPluginCallback
@@ -325,7 +301,6 @@ class RenderMessageFilter::OpenChannelToNpapiPluginCallback
 
 RenderMessageFilter::RenderMessageFilter(
     int render_process_id,
-    bool is_guest,
     PluginServiceImpl* plugin_service,
     BrowserContext* browser_context,
     net::URLRequestContextGetter* request_context,
@@ -344,7 +319,6 @@ RenderMessageFilter::RenderMessageFilter(
       incognito_(browser_context->IsOffTheRecord()),
       dom_storage_context_(dom_storage_context),
       render_process_id_(render_process_id),
-      is_guest_(is_guest),
       cpu_usage_(0),
       audio_manager_(audio_manager),
       media_internals_(media_internals) {
@@ -357,10 +331,10 @@ RenderMessageFilter::~RenderMessageFilter() {
   // This function should be called on the IO thread.
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(plugin_host_clients_.empty());
+  HostSharedBitmapManager::current()->ProcessRemoved(PeerHandle());
 }
 
 void RenderMessageFilter::OnChannelClosing() {
-  HostSharedBitmapManager::current()->ProcessRemoved(PeerHandle());
 #if defined(ENABLE_PLUGINS)
   for (std::set<OpenChannelToNpapiPluginCallback*>::iterator it =
        plugin_host_clients_.begin(); it != plugin_host_clients_.end(); ++it) {
@@ -378,9 +352,6 @@ void RenderMessageFilter::OnChannelClosing() {
   }
 #endif  // defined(ENABLE_PLUGINS)
   plugin_host_clients_.clear();
-#if defined(OS_ANDROID)
-  CompositorImpl::DestroyAllSurfaceTextures(render_process_id_);
-#endif
 }
 
 void RenderMessageFilter::OnChannelConnected(int32 peer_id) {
@@ -395,10 +366,9 @@ void RenderMessageFilter::OnChannelConnected(int32 peer_id) {
   cpu_usage_sample_time_ = base::TimeTicks::Now();
 }
 
-bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                            bool* message_was_ok) {
+bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(RenderMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(RenderMessageFilter, message)
 #if defined(OS_WIN)
     IPC_MESSAGE_HANDLER(ViewHostMsg_PreCacheFontCharacters,
                         OnPreCacheFontCharacters)
@@ -433,17 +403,16 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_OpenChannelToPpapiBroker,
                         OnOpenChannelToPpapiBroker)
 #endif
+    IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
+        render_widget_helper_->DidReceiveBackingStoreMsg(message))
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_UpdateRect,
         render_widget_helper_->DidReceiveBackingStoreMsg(message))
-    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnUpdateIsDelayed)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_CheckPermission,
                         OnCheckNotificationPermission)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedMemory,
                         OnAllocateSharedMemory)
-    IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedBitmap,
-                        OnAllocateSharedBitmap)
-    IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
-                        OnAllocateGpuMemoryBuffer)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(
+        ChildProcessHostMsg_SyncAllocateSharedBitmap, OnAllocateSharedBitmap)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_AllocatedSharedBitmap,
                         OnAllocatedSharedBitmap)
     IPC_MESSAGE_HANDLER(ChildProcessHostMsg_DeletedSharedBitmap,
@@ -469,7 +438,7 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunWebAudioMediaCodec, OnWebAudioMediaCodec)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -528,7 +497,6 @@ void RenderMessageFilter::OnCreateWindow(
           params.opener_suppressed,
           resource_context_,
           render_process_id_,
-          is_guest_,
           params.opener_id,
           &no_javascript_access);
 
@@ -667,6 +635,7 @@ void RenderMessageFilter::OnDeleteCookie(const GURL& url,
 }
 
 void RenderMessageFilter::OnCookiesEnabled(
+    int render_frame_id,
     const GURL& url,
     const GURL& first_party_for_cookies,
     bool* cookies_enabled) {
@@ -675,7 +644,7 @@ void RenderMessageFilter::OnCookiesEnabled(
   // host.
   *cookies_enabled = GetContentClient()->browser()->AllowGetCookie(
       url, first_party_for_cookies, net::CookieList(), resource_context_,
-      render_process_id_, MSG_ROUTING_CONTROL);
+      render_process_id_, render_frame_id);
 }
 
 #if defined(OS_MACOSX)
@@ -882,7 +851,7 @@ void RenderMessageFilter::OnGetMonitorColorProfile(std::vector<char>* profile) {
 }
 #endif
 
-void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
+void RenderMessageFilter::OnDownloadUrl(int render_view_id,
                                         const GURL& url,
                                         const Referrer& referrer,
                                         const base::string16& suggested_name,
@@ -908,7 +877,7 @@ void RenderMessageFilter::OnDownloadUrl(const IPC::Message& message,
       true,  // is_content_initiated
       resource_context_,
       render_process_id_,
-      message.routing_id(),
+      render_view_id,
       false,
       save_info.Pass(),
       content::DownloadItem::kInvalidId,
@@ -933,12 +902,29 @@ void RenderMessageFilter::OnAllocateSharedMemory(
       buffer_size, PeerHandle(), handle);
 }
 
-void RenderMessageFilter::OnAllocateSharedBitmap(
+void RenderMessageFilter::AllocateSharedBitmapOnFileThread(
     uint32 buffer_size,
     const cc::SharedBitmapId& id,
-    base::SharedMemoryHandle* handle) {
+    IPC::Message* reply_msg) {
+  base::SharedMemoryHandle handle;
   HostSharedBitmapManager::current()->AllocateSharedBitmapForChild(
-      PeerHandle(), buffer_size, id, handle);
+      PeerHandle(), buffer_size, id, &handle);
+  ChildProcessHostMsg_SyncAllocateSharedBitmap::WriteReplyParams(reply_msg,
+                                                                 handle);
+  Send(reply_msg);
+}
+
+void RenderMessageFilter::OnAllocateSharedBitmap(uint32 buffer_size,
+                                                 const cc::SharedBitmapId& id,
+                                                 IPC::Message* reply_msg) {
+  BrowserThread::PostTask(
+      BrowserThread::FILE_USER_BLOCKING,
+      FROM_HERE,
+      base::Bind(&RenderMessageFilter::AllocateSharedBitmapOnFileThread,
+                 this,
+                 buffer_size,
+                 id,
+                 reply_msg));
 }
 
 void RenderMessageFilter::OnAllocatedSharedBitmap(
@@ -1138,19 +1124,6 @@ void RenderMessageFilter::OnCompletedOpenChannelToNpapiPlugin(
   plugin_host_clients_.erase(client);
 }
 
-void RenderMessageFilter::OnUpdateIsDelayed(const IPC::Message& msg) {
-  // When not in accelerated compositing mode, in certain cases (e.g. waiting
-  // for a resize or if no backing store) the RenderWidgetHost is blocking the
-  // UI thread for some time, waiting for an UpdateRect from the renderer. If we
-  // are going to switch to accelerated compositing, the GPU process may need
-  // round-trips to the UI thread before finishing the frame, causing deadlocks
-  // if we delay the UpdateRect until we receive the OnSwapBuffersComplete. So
-  // the renderer sent us this message, so that we can unblock the UI thread.
-  // We will simply re-use the UpdateRect unblock mechanism, just with a
-  // different message.
-  render_widget_helper_->DidReceiveBackingStoreMsg(msg);
-}
-
 void RenderMessageFilter::OnAre3DAPIsBlocked(int render_view_id,
                                              const GURL& top_origin_url,
                                              ThreeDAPIType requester,
@@ -1200,9 +1173,11 @@ void RenderMessageFilter::OnDidLose3DContext(
 #if defined(OS_WIN)
 void RenderMessageFilter::OnPreCacheFontCharacters(const LOGFONT& font,
                                                    const base::string16& str) {
-  // TODO(scottmg): Move this to FontCacheDispatcher, http://crbug.com/356346.
-  if (!ShouldUseDirectWrite())
-    return;
+  // TODO(scottmg): pdf/ppapi still require the renderer to be able to precache
+  // GDI fonts (http://crbug.com/383227), even when using DirectWrite.
+  // Eventually this shouldn't be added and should be moved to
+  // FontCacheDispatcher too. http://crbug.com/356346.
+
   // First, comments from FontCacheDispatcher::OnPreCacheFont do apply here too.
   // Except that for True Type fonts,
   // GetTextMetrics will not load the font in memory.
@@ -1244,97 +1219,5 @@ void RenderMessageFilter::OnWebAudioMediaCodec(
       true);
 }
 #endif
-
-void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
-    uint32 width,
-    uint32 height,
-    uint32 internalformat,
-    uint32 usage,
-    gfx::GpuMemoryBufferHandle* handle) {
-  if (!GpuMemoryBufferImpl::IsFormatValid(internalformat) ||
-      !GpuMemoryBufferImpl::IsUsageValid(usage)) {
-    handle->type = gfx::EMPTY_BUFFER;
-    return;
-  }
-  base::CheckedNumeric<int> size = width;
-  size *= height;
-  if (!size.IsValid()) {
-    handle->type = gfx::EMPTY_BUFFER;
-    return;
-  }
-
-#if defined(OS_MACOSX)
-  // TODO(reveman): This should be moved to
-  // GpuMemoryBufferImpl::AllocateForChildProcess and
-  // GpuMemoryBufferImplIOSurface. crbug.com/325045, crbug.com/323304
-  if (GpuMemoryBufferImplIOSurface::IsConfigurationSupported(internalformat,
-                                                             usage)) {
-    IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
-    if (io_surface_support) {
-      base::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
-      properties.reset(
-          CFDictionaryCreateMutable(kCFAllocatorDefault,
-                                    0,
-                                    &kCFTypeDictionaryKeyCallBacks,
-                                    &kCFTypeDictionaryValueCallBacks));
-      AddIntegerValue(properties,
-                      io_surface_support->GetKIOSurfaceWidth(),
-                      width);
-      AddIntegerValue(properties,
-                      io_surface_support->GetKIOSurfaceHeight(),
-                      height);
-      AddIntegerValue(properties,
-                      io_surface_support->GetKIOSurfaceBytesPerElement(),
-                      GpuMemoryBufferImpl::BytesPerPixel(internalformat));
-      AddIntegerValue(properties,
-                      io_surface_support->GetKIOSurfacePixelFormat(),
-                      GpuMemoryBufferImplIOSurface::PixelFormat(
-                          internalformat));
-      // TODO(reveman): Remove this when using a mach_port_t to transfer
-      // IOSurface to renderer process. crbug.com/323304
-      AddBooleanValue(properties,
-                      io_surface_support->GetKIOSurfaceIsGlobal(),
-                      true);
-
-      base::ScopedCFTypeRef<CFTypeRef> io_surface(
-          io_surface_support->IOSurfaceCreate(properties));
-      if (io_surface) {
-        handle->type = gfx::IO_SURFACE_BUFFER;
-        handle->io_surface_id = io_surface_support->IOSurfaceGetID(io_surface);
-
-        // TODO(reveman): This makes the assumption that the renderer will
-        // grab a reference to the surface before sending another message.
-        // crbug.com/325045
-        last_io_surface_ = io_surface;
-        return;
-      }
-    }
-  }
-#endif
-
-#if defined(OS_ANDROID)
-  // TODO(reveman): This should be moved to
-  // GpuMemoryBufferImpl::AllocateForChildProcess and
-  // GpuMemoryBufferImplSurfaceTexture when adding support for out-of-process
-  // GPU service. crbug.com/368716
-  if (GpuMemoryBufferImplSurfaceTexture::IsConfigurationSupported(
-          internalformat, usage)) {
-    // Each surface texture is associated with a render process id. This allows
-    // the GPU service and Java Binder IPC to verify that a renderer is not
-    // trying to use a surface texture it doesn't own.
-    int surface_texture_id =
-        CompositorImpl::CreateSurfaceTexture(render_process_id_);
-    if (surface_texture_id != -1) {
-      handle->type = gfx::SURFACE_TEXTURE_BUFFER;
-      handle->surface_texture_id =
-          gfx::SurfaceTextureId(surface_texture_id, render_process_id_);
-      return;
-    }
-  }
-#endif
-
-  GpuMemoryBufferImpl::AllocateForChildProcess(
-      gfx::Size(width, height), internalformat, usage, PeerHandle(), handle);
-}
 
 }  // namespace content

@@ -14,7 +14,7 @@
 #include "chrome/browser/ui/sad_tab.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/pref_names.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 
@@ -121,7 +121,7 @@ void BookmarkTabHelper::BookmarkNodeRemoved(
   UpdateStarredStateForCurrentURL();
 }
 
-void BookmarkTabHelper::BookmarkAllNodesRemoved(
+void BookmarkTabHelper::BookmarkAllUserNodesRemoved(
     BookmarkModel* model,
     const std::set<GURL>& removed_urls) {
   UpdateStarredStateForCurrentURL();

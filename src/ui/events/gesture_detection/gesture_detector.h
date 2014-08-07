@@ -56,6 +56,16 @@ class GestureDetector {
     // (0, 45] degrees. The closer this is to 0, the closer the dominant
     // direction of the swipe must be to up, down left or right.
     float maximum_swipe_deviation_angle;
+
+    // Whether |OnTwoFingerTap| should be called for two finger tap
+    // gestures. Defaults to false.
+    bool two_finger_tap_enabled;
+
+    // Maximum distance between pointers for a two finger tap.
+    float two_finger_tap_max_separation;
+
+    // Maximum time the second pointer can be active for a two finger tap.
+    base::TimeDelta two_finger_tap_timeout;
   };
 
   class GestureListener {
@@ -64,7 +74,7 @@ class GestureDetector {
     virtual bool OnDown(const MotionEvent& e) = 0;
     virtual void OnShowPress(const MotionEvent& e) = 0;
     virtual bool OnSingleTapUp(const MotionEvent& e) = 0;
-    virtual bool OnLongPress(const MotionEvent& e) = 0;
+    virtual void OnLongPress(const MotionEvent& e) = 0;
     virtual bool OnScroll(const MotionEvent& e1,
                           const MotionEvent& e2,
                           float distance_x,
@@ -78,6 +88,8 @@ class GestureDetector {
                          const MotionEvent& e2,
                          float velocity_x,
                          float velocity_y) = 0;
+    virtual bool OnTwoFingerTap(const MotionEvent& e1,
+                                const MotionEvent& e2) = 0;
   };
 
   class DoubleTapListener {
@@ -99,7 +111,7 @@ class GestureDetector {
     virtual bool OnDown(const MotionEvent& e) OVERRIDE;
     virtual void OnShowPress(const MotionEvent& e) OVERRIDE;
     virtual bool OnSingleTapUp(const MotionEvent& e) OVERRIDE;
-    virtual bool OnLongPress(const MotionEvent& e) OVERRIDE;
+    virtual void OnLongPress(const MotionEvent& e) OVERRIDE;
     virtual bool OnScroll(const MotionEvent& e1,
                           const MotionEvent& e2,
                           float distance_x,
@@ -112,6 +124,8 @@ class GestureDetector {
                          const MotionEvent& e2,
                          float velocity_x,
                          float velocity_y) OVERRIDE;
+    virtual bool OnTwoFingerTap(const MotionEvent& e1,
+                                const MotionEvent& e2) OVERRIDE;
 
     // DoubleTapListener implementation.
     virtual bool OnSingleTapConfirmed(const MotionEvent& e) OVERRIDE;
@@ -147,6 +161,7 @@ class GestureDetector {
   bool IsConsideredDoubleTap(const MotionEvent& first_down,
                              const MotionEvent& first_up,
                              const MotionEvent& second_down) const;
+  bool HandleSwipeIfNeeded(const MotionEvent& up, float vx, float vy);
 
   class TimeoutGestureHandler;
   scoped_ptr<TimeoutGestureHandler> timeout_handler_;
@@ -156,21 +171,24 @@ class GestureDetector {
   float touch_slop_square_;
   float double_tap_touch_slop_square_;
   float double_tap_slop_square_;
+  float two_finger_tap_distance_square_;
   float min_fling_velocity_;
   float max_fling_velocity_;
   float min_swipe_velocity_;
   float min_swipe_direction_component_ratio_;
   base::TimeDelta double_tap_timeout_;
+  base::TimeDelta two_finger_tap_timeout_;
   base::TimeDelta double_tap_min_time_;
 
   bool still_down_;
   bool defer_confirm_single_tap_;
-  bool in_longpress_;
   bool always_in_tap_region_;
   bool always_in_bigger_tap_region_;
+  bool two_finger_tap_allowed_for_gesture_;
 
   scoped_ptr<MotionEvent> current_down_event_;
   scoped_ptr<MotionEvent> previous_up_event_;
+  scoped_ptr<MotionEvent> secondary_pointer_down_event_;
 
   // True when the user is still touching for the second tap (down, move, and
   // up events). Can only be true if there is a double tap listener attached.
@@ -183,6 +201,7 @@ class GestureDetector {
 
   bool longpress_enabled_;
   bool swipe_enabled_;
+  bool two_finger_tap_enabled_;
 
   // Determines speed during touch scrolling.
   VelocityTrackerState velocity_tracker_;

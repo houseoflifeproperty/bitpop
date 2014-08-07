@@ -18,181 +18,7 @@
 #include "chrome/browser/prefs/tracked/tracked_preferences_migration.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
-
-namespace {
-
-// An adaptor that allows a PrefHashStoreImpl to access a preference store
-// directly as a dictionary. Uses an equivalent layout to
-// PrefStoreHashStoreContents.
-class DictionaryHashStoreContents : public HashStoreContents {
- public:
-  // Instantiates a HashStoreContents that is a copy of |to_copy|. The copy is
-  // mutable but does not affect the original, nor is it persisted to disk in
-  // any other way.
-  explicit DictionaryHashStoreContents(const HashStoreContents& to_copy)
-      : hash_store_id_(to_copy.hash_store_id()),
-        super_mac_(to_copy.GetSuperMac()) {
-    if (to_copy.IsInitialized())
-      dictionary_.reset(to_copy.GetContents()->DeepCopy());
-    int version = 0;
-    if (to_copy.GetVersion(&version))
-      version_.reset(new int(version));
-  }
-
-  // HashStoreContents implementation
-  virtual std::string hash_store_id() const OVERRIDE { return hash_store_id_; }
-
-  virtual void Reset() OVERRIDE {
-    dictionary_.reset();
-    super_mac_.clear();
-    version_.reset();
-  }
-
-  virtual bool IsInitialized() const OVERRIDE {
-    return dictionary_;
-  }
-
-  virtual const base::DictionaryValue* GetContents() const OVERRIDE{
-    return dictionary_.get();
-  }
-
-  virtual scoped_ptr<MutableDictionary> GetMutableContents() OVERRIDE {
-    return scoped_ptr<MutableDictionary>(
-        new SimpleMutableDictionary(this));
-  }
-
-  virtual std::string GetSuperMac() const OVERRIDE { return super_mac_; }
-
-  virtual void SetSuperMac(const std::string& super_mac) OVERRIDE {
-    super_mac_ = super_mac;
-  }
-
-  virtual bool GetVersion(int* version) const OVERRIDE {
-    if (!version_)
-      return false;
-    *version = *version_;
-    return true;
-  }
-
-  virtual void SetVersion(int version) OVERRIDE {
-    version_.reset(new int(version));
-  }
-
-  virtual void CommitPendingWrite() OVERRIDE {}
-
- private:
-  class SimpleMutableDictionary
-      : public HashStoreContents::MutableDictionary {
-   public:
-    explicit SimpleMutableDictionary(DictionaryHashStoreContents* outer)
-        : outer_(outer) {}
-
-    virtual ~SimpleMutableDictionary() {}
-
-    // MutableDictionary implementation
-    virtual base::DictionaryValue* operator->() OVERRIDE {
-      if (!outer_->dictionary_)
-        outer_->dictionary_.reset(new base::DictionaryValue);
-      return outer_->dictionary_.get();
-    }
-
-   private:
-    DictionaryHashStoreContents* outer_;
-
-    DISALLOW_COPY_AND_ASSIGN(SimpleMutableDictionary);
-  };
-
-  const std::string hash_store_id_;
-  std::string super_mac_;
-  scoped_ptr<int> version_;
-  scoped_ptr<base::DictionaryValue> dictionary_;
-
-  DISALLOW_COPY_AND_ASSIGN(DictionaryHashStoreContents);
-};
-
-// An in-memory PrefStore backed by an immutable DictionaryValue.
-class DictionaryPrefStore : public PrefStore {
- public:
-  explicit DictionaryPrefStore(const base::DictionaryValue* dictionary)
-      : dictionary_(dictionary) {}
-
-  virtual bool GetValue(const std::string& key,
-                        const base::Value** result) const OVERRIDE {
-    const base::Value* tmp = NULL;
-    if (!dictionary_->Get(key, &tmp))
-      return false;
-
-    if (result)
-      *result = tmp;
-    return true;
-  }
-
- private:
-  virtual ~DictionaryPrefStore() {}
-
-  const base::DictionaryValue* dictionary_;
-
-  DISALLOW_COPY_AND_ASSIGN(DictionaryPrefStore);
-};
-
-// Waits for a PrefStore to be initialized and then initializes the
-// corresponding PrefHashStore.
-// The observer deletes itself when its work is completed.
-class InitializeHashStoreObserver : public PrefStore::Observer {
- public:
-  // Creates an observer that will initialize |pref_hash_store| with the
-  // contents of |pref_store| when the latter is fully loaded.
-  InitializeHashStoreObserver(
-      const std::vector<PrefHashFilter::TrackedPreferenceMetadata>&
-          tracking_configuration,
-      size_t reporting_ids_count,
-      const scoped_refptr<PrefStore>& pref_store,
-      scoped_ptr<PrefHashStoreImpl> pref_hash_store_impl)
-      : tracking_configuration_(tracking_configuration),
-        reporting_ids_count_(reporting_ids_count),
-        pref_store_(pref_store),
-        pref_hash_store_impl_(pref_hash_store_impl.Pass()) {}
-
-  virtual ~InitializeHashStoreObserver();
-
-  // PrefStore::Observer implementation.
-  virtual void OnPrefValueChanged(const std::string& key) OVERRIDE;
-  virtual void OnInitializationCompleted(bool succeeded) OVERRIDE;
-
- private:
-  const std::vector<PrefHashFilter::TrackedPreferenceMetadata>
-      tracking_configuration_;
-  const size_t reporting_ids_count_;
-  scoped_refptr<PrefStore> pref_store_;
-  scoped_ptr<PrefHashStoreImpl> pref_hash_store_impl_;
-
-  DISALLOW_COPY_AND_ASSIGN(InitializeHashStoreObserver);
-};
-
-InitializeHashStoreObserver::~InitializeHashStoreObserver() {}
-
-void InitializeHashStoreObserver::OnPrefValueChanged(const std::string& key) {}
-
-void InitializeHashStoreObserver::OnInitializationCompleted(bool succeeded) {
-  // If we successfully loaded the preferences _and_ the PrefHashStoreImpl
-  // hasn't been initialized by someone else in the meantime, initialize it now.
-  const PrefHashStoreImpl::StoreVersion pre_update_version =
-      pref_hash_store_impl_->GetCurrentVersion();
-  if (succeeded && pre_update_version < PrefHashStoreImpl::VERSION_LATEST) {
-    PrefHashFilter(pref_hash_store_impl_.PassAs<PrefHashStore>(),
-                   tracking_configuration_,
-                   reporting_ids_count_).Initialize(*pref_store_);
-    UMA_HISTOGRAM_ENUMERATION(
-        "Settings.TrackedPreferencesAlternateStoreVersionUpdatedFrom",
-        pre_update_version,
-        PrefHashStoreImpl::VERSION_LATEST + 1);
-  }
-  pref_store_->RemoveObserver(this);
-  delete this;
-}
-
-}  // namespace
+#include "components/pref_registry/pref_registry_syncable.h"
 
 // TODO(erikwright): Enable this on Chrome OS and Android once MACs are moved
 // out of Local State. This will resolve a race condition on Android and a
@@ -253,13 +79,9 @@ void ProfilePrefStoreManager::ClearResetTime(PrefService* pref_service) {
   PrefHashFilter::ClearResetTime(pref_service);
 }
 
-void ProfilePrefStoreManager::ResetPrefHashStore() {
-  if (kPlatformSupportsPreferenceTracking)
-    GetPrefHashStoreImpl()->Reset();
-}
-
 PersistentPrefStore* ProfilePrefStoreManager::CreateProfilePrefStore(
-    const scoped_refptr<base::SequencedTaskRunner>& io_task_runner) {
+    const scoped_refptr<base::SequencedTaskRunner>& io_task_runner,
+    TrackedPreferenceValidationDelegate* validation_delegate) {
   scoped_ptr<PrefFilter> pref_filter;
   if (!kPlatformSupportsPreferenceTracking) {
     return new JsonPrefStore(GetPrefFilePathFromProfilePath(profile_path_),
@@ -287,13 +109,17 @@ PersistentPrefStore* ProfilePrefStoreManager::CreateProfilePrefStore(
   }
 
   scoped_ptr<PrefHashFilter> unprotected_pref_hash_filter(
-      new PrefHashFilter(GetPrefHashStoreImpl().PassAs<PrefHashStore>(),
+      new PrefHashFilter(GetPrefHashStore(false),
                          unprotected_configuration,
-                         reporting_ids_count_));
+                         validation_delegate,
+                         reporting_ids_count_,
+                         false));
   scoped_ptr<PrefHashFilter> protected_pref_hash_filter(
-      new PrefHashFilter(GetPrefHashStoreImpl().PassAs<PrefHashStore>(),
+      new PrefHashFilter(GetPrefHashStore(true),
                          protected_configuration,
-                         reporting_ids_count_));
+                         validation_delegate,
+                         reporting_ids_count_,
+                         true));
 
   PrefHashFilter* raw_unprotected_pref_hash_filter =
       unprotected_pref_hash_filter.get();
@@ -304,8 +130,11 @@ PersistentPrefStore* ProfilePrefStoreManager::CreateProfilePrefStore(
       new JsonPrefStore(GetPrefFilePathFromProfilePath(profile_path_),
                         io_task_runner,
                         unprotected_pref_hash_filter.PassAs<PrefFilter>()));
+  // TODO(gab): Remove kDeprecatedProtectedPreferencesFilename as an alternate
+  // file in M40+.
   scoped_refptr<JsonPrefStore> protected_pref_store(new JsonPrefStore(
-      profile_path_.Append(chrome::kProtectedPreferencesFilename),
+      profile_path_.Append(chrome::kSecurePreferencesFilename),
+      profile_path_.Append(chrome::kProtectedPreferencesFilenameDeprecated),
       io_task_runner,
       protected_pref_hash_filter.PassAs<PrefFilter>()));
 
@@ -320,37 +149,15 @@ PersistentPrefStore* ProfilePrefStoreManager::CreateProfilePrefStore(
                  unprotected_pref_store->AsWeakPtr()),
       base::Bind(&JsonPrefStore::RegisterOnNextSuccessfulWriteCallback,
                  protected_pref_store->AsWeakPtr()),
+      GetPrefHashStore(false),
+      GetPrefHashStore(true),
+      scoped_ptr<HashStoreContents>(new PrefServiceHashStoreContents(
+          profile_path_.AsUTF8Unsafe(), local_state_)),
       raw_unprotected_pref_hash_filter,
       raw_protected_pref_hash_filter);
 
   return new SegregatedPrefStore(unprotected_pref_store, protected_pref_store,
                                  protected_pref_names);
-}
-
-void ProfilePrefStoreManager::UpdateProfileHashStoreIfRequired(
-    const scoped_refptr<base::SequencedTaskRunner>& io_task_runner) {
-  if (!kPlatformSupportsPreferenceTracking)
-    return;
-  scoped_ptr<PrefHashStoreImpl> pref_hash_store_impl(GetPrefHashStoreImpl());
-  const PrefHashStoreImpl::StoreVersion current_version =
-      pref_hash_store_impl->GetCurrentVersion();
-  UMA_HISTOGRAM_ENUMERATION("Settings.TrackedPreferencesAlternateStoreVersion",
-                            current_version,
-                            PrefHashStoreImpl::VERSION_LATEST + 1);
-
-  // Update the pref hash store if it's not at the latest version.
-  if (current_version != PrefHashStoreImpl::VERSION_LATEST) {
-    scoped_refptr<JsonPrefStore> pref_store =
-        new JsonPrefStore(GetPrefFilePathFromProfilePath(profile_path_),
-                          io_task_runner,
-                          scoped_ptr<PrefFilter>());
-    pref_store->AddObserver(
-        new InitializeHashStoreObserver(tracking_configuration_,
-                                        reporting_ids_count_,
-                                        pref_store,
-                                        pref_hash_store_impl.Pass()));
-    pref_store->ReadPrefsAsync(NULL);
-  }
 }
 
 bool ProfilePrefStoreManager::InitializePrefsFromMasterPrefs(
@@ -359,6 +166,19 @@ bool ProfilePrefStoreManager::InitializePrefsFromMasterPrefs(
   // first run).
   if (!base::CreateDirectory(profile_path_))
     return false;
+
+  const base::DictionaryValue* to_serialize = &master_prefs;
+  scoped_ptr<base::DictionaryValue> copy;
+
+  if (kPlatformSupportsPreferenceTracking) {
+    copy.reset(master_prefs.DeepCopy());
+    to_serialize = copy.get();
+    PrefHashFilter(GetPrefHashStore(false),
+                   tracking_configuration_,
+                   NULL,
+                   reporting_ids_count_,
+                   false).Initialize(copy.get());
+  }
 
   // This will write out to a single combined file which will be immediately
   // migrated to two files on load.
@@ -370,15 +190,7 @@ bool ProfilePrefStoreManager::InitializePrefsFromMasterPrefs(
   // complete before Chrome can start (as master preferences seed the Local
   // State and Preferences files). This won't trip ThreadIORestrictions as they
   // won't have kicked in yet on the main thread.
-  bool success = serializer.Serialize(master_prefs);
-
-  if (success && kPlatformSupportsPreferenceTracking) {
-    scoped_refptr<const PrefStore> pref_store(
-        new DictionaryPrefStore(&master_prefs));
-    PrefHashFilter(GetPrefHashStoreImpl().PassAs<PrefHashStore>(),
-                   tracking_configuration_,
-                   reporting_ids_count_).Initialize(*pref_store);
-  }
+  bool success = serializer.Serialize(*to_serialize);
 
   UMA_HISTOGRAM_BOOLEAN("Settings.InitializedFromMasterPrefs", success);
   return success;
@@ -389,22 +201,29 @@ ProfilePrefStoreManager::CreateDeprecatedCombinedProfilePrefStore(
     const scoped_refptr<base::SequencedTaskRunner>& io_task_runner) {
   scoped_ptr<PrefFilter> pref_filter;
   if (kPlatformSupportsPreferenceTracking) {
+    scoped_ptr<PrefHashStoreImpl> pref_hash_store_impl(
+        new PrefHashStoreImpl(seed_, device_id_, true));
+    pref_hash_store_impl->set_legacy_hash_store_contents(
+        scoped_ptr<HashStoreContents>(new PrefServiceHashStoreContents(
+            profile_path_.AsUTF8Unsafe(), local_state_)));
     pref_filter.reset(
-        new PrefHashFilter(GetPrefHashStoreImpl().PassAs<PrefHashStore>(),
+        new PrefHashFilter(pref_hash_store_impl.PassAs<PrefHashStore>(),
                            tracking_configuration_,
-                           reporting_ids_count_));
+                           NULL,
+                           reporting_ids_count_,
+                           false));
   }
   return new JsonPrefStore(GetPrefFilePathFromProfilePath(profile_path_),
                            io_task_runner,
                            pref_filter.Pass());
 }
 
-scoped_ptr<PrefHashStoreImpl> ProfilePrefStoreManager::GetPrefHashStoreImpl() {
+scoped_ptr<PrefHashStore> ProfilePrefStoreManager::GetPrefHashStore(
+    bool use_super_mac) {
   DCHECK(kPlatformSupportsPreferenceTracking);
 
-  return make_scoped_ptr(new PrefHashStoreImpl(
+  return scoped_ptr<PrefHashStore>(new PrefHashStoreImpl(
       seed_,
       device_id_,
-      scoped_ptr<HashStoreContents>(new PrefServiceHashStoreContents(
-          profile_path_.AsUTF8Unsafe(), local_state_))));
+      use_super_mac));
 }

@@ -6,15 +6,16 @@
 
 #include "base/command_line.h"
 #include "base/files/file_path.h"
-#include "ui/base/cursor/ozone/cursor_factory_ozone.h"
+#include "ui/events/ozone/device/device_manager.h"
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
-#include "ui/gfx/ozone/impl/file_surface_factory.h"
-#include "ui/ozone/ime/input_method_context_factory_ozone.h"
 #include "ui/ozone/ozone_platform.h"
 #include "ui/ozone/ozone_switches.h"
+#include "ui/ozone/platform/test/file_surface_factory.h"
+#include "ui/ozone/public/cursor_factory_ozone.h"
 
 #if defined(OS_CHROMEOS)
 #include "ui/ozone/common/chromeos/native_display_delegate_ozone.h"
+#include "ui/ozone/common/chromeos/touchscreen_device_manager_ozone.h"
 #endif
 
 namespace ui {
@@ -26,38 +27,54 @@ namespace {
 // This platform dumps images to a file for testing purposes.
 class OzonePlatformTest : public OzonePlatform {
  public:
-  OzonePlatformTest(const base::FilePath& dump_file)
-      : surface_factory_ozone_(dump_file) {}
+  OzonePlatformTest(const base::FilePath& dump_file) : file_path_(dump_file) {}
   virtual ~OzonePlatformTest() {}
 
   // OzonePlatform:
-  virtual gfx::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE {
-    return &surface_factory_ozone_;
+  virtual ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE {
+    return surface_factory_ozone_.get();
   }
-  virtual ui::EventFactoryOzone* GetEventFactoryOzone() OVERRIDE {
-    return &event_factory_ozone_;
+  virtual EventFactoryOzone* GetEventFactoryOzone() OVERRIDE {
+    return event_factory_ozone_.get();
   }
-  virtual ui::InputMethodContextFactoryOzone*
-  GetInputMethodContextFactoryOzone() OVERRIDE {
-    return &input_method_context_factory_ozone_;
+  virtual CursorFactoryOzone* GetCursorFactoryOzone() OVERRIDE {
+    return cursor_factory_ozone_.get();
   }
-  virtual ui::CursorFactoryOzone* GetCursorFactoryOzone() OVERRIDE {
-    return &cursor_factory_ozone_;
+  virtual GpuPlatformSupport* GetGpuPlatformSupport() OVERRIDE {
+    return NULL;  // no GPU support
+  }
+  virtual GpuPlatformSupportHost* GetGpuPlatformSupportHost() OVERRIDE {
+    return NULL;  // no GPU support
   }
 
 #if defined(OS_CHROMEOS)
-  virtual scoped_ptr<ui::NativeDisplayDelegate> CreateNativeDisplayDelegate()
+  virtual scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate()
       OVERRIDE {
-    return scoped_ptr<ui::NativeDisplayDelegate>(
-        new NativeDisplayDelegateOzone());
+    return scoped_ptr<NativeDisplayDelegate>(new NativeDisplayDelegateOzone());
+  }
+  virtual scoped_ptr<TouchscreenDeviceManager>
+      CreateTouchscreenDeviceManager() OVERRIDE {
+    return scoped_ptr<TouchscreenDeviceManager>(
+        new TouchscreenDeviceManagerOzone());
   }
 #endif
 
+  virtual void InitializeUI() OVERRIDE {
+    device_manager_ = CreateDeviceManager();
+    surface_factory_ozone_.reset(new FileSurfaceFactory(file_path_));
+    event_factory_ozone_.reset(
+        new EventFactoryEvdev(NULL, device_manager_.get()));
+    cursor_factory_ozone_.reset(new CursorFactoryOzone());
+  }
+
+  virtual void InitializeGPU() OVERRIDE {}
+
  private:
-  gfx::FileSurfaceFactory surface_factory_ozone_;
-  ui::EventFactoryEvdev event_factory_ozone_;
-  ui::InputMethodContextFactoryOzone input_method_context_factory_ozone_;
-  ui::CursorFactoryOzone cursor_factory_ozone_;
+  scoped_ptr<DeviceManager> device_manager_;
+  scoped_ptr<FileSurfaceFactory> surface_factory_ozone_;
+  scoped_ptr<EventFactoryEvdev> event_factory_ozone_;
+  scoped_ptr<CursorFactoryOzone> cursor_factory_ozone_;
+  base::FilePath file_path_;
 
   DISALLOW_COPY_AND_ASSIGN(OzonePlatformTest);
 };

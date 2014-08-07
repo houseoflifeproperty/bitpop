@@ -50,7 +50,7 @@ WebInspector.SASSSourceMapping = function(cssModel, workspace, networkWorkspaceB
     this._cssModel.addEventListener(WebInspector.CSSStyleModel.Events.StyleSheetChanged, this._styleSheetChanged, this);
     this._workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeAdded, this._uiSourceCodeAdded, this);
     this._workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeContentCommitted, this._uiSourceCodeContentCommitted, this);
-    this._workspace.addEventListener(WebInspector.Workspace.Events.ProjectWillReset, this._reset, this);
+    this._workspace.addEventListener(WebInspector.Workspace.Events.ProjectRemoved, this._reset, this);
 }
 
 WebInspector.SASSSourceMapping.prototype = {
@@ -141,7 +141,7 @@ WebInspector.SASSSourceMapping.prototype = {
 
         var etagMessage = this._headerValue("etag", headers) ? ", \"ETag\" response header found instead" : "";
         var message = String.sprintf("The \"Last-Modified\" response header is missing or invalid for %s%s. The CSS auto-reload functionality will not work correctly.", url, etagMessage);
-        WebInspector.console.log(message);
+        this._cssModel.target().consoleModel.log(message);
         return null;
     },
 
@@ -242,7 +242,7 @@ WebInspector.SASSSourceMapping.prototype = {
     {
         var cssUISourceCode = this._workspace.uiSourceCodeForURL(cssURL);
         if (!cssUISourceCode) {
-            WebInspector.console.log(WebInspector.UIString("%s resource missing. Please reload the page.", cssURL));
+            WebInspector.messageSink.addMessage(WebInspector.UIString("%s resource missing. Please reload the page.", cssURL));
             callback(cssURL, sassURL, true);
             return;
         }
@@ -570,6 +570,14 @@ WebInspector.SASSSourceMapping.prototype = {
     isIdentity: function()
     {
         return false;
+    },
+
+    /**
+     * @return {!WebInspector.Target}
+     */
+    target: function()
+    {
+        return this._cssModel.target();
     },
 
     /**

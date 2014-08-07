@@ -33,10 +33,7 @@ inline SVGHKernElement::SVGHKernElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGHKernElement> SVGHKernElement::create(Document& document)
-{
-    return adoptRef(new SVGHKernElement(document));
-}
+DEFINE_NODE_FACTORY(SVGHKernElement)
 
 Node::InsertionNotificationRequest SVGHKernElement::insertedInto(ContainerNode* rootParent)
 {

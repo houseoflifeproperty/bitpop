@@ -40,11 +40,25 @@
 
 namespace blink {
 
+enum WebCryptoOperation {
+    WebCryptoOperationEncrypt,
+    WebCryptoOperationDecrypt,
+    WebCryptoOperationSign,
+    WebCryptoOperationVerify,
+    WebCryptoOperationDigest,
+    WebCryptoOperationGenerateKey,
+    WebCryptoOperationImportKey,
+    WebCryptoOperationDeriveKey,
+    WebCryptoOperationDeriveBits,
+    WebCryptoOperationWrapKey,
+    WebCryptoOperationUnwrapKey,
+    WebCryptoOperationLast = WebCryptoOperationUnwrapKey,
+};
+
 enum WebCryptoAlgorithmId {
     WebCryptoAlgorithmIdAesCbc,
     WebCryptoAlgorithmIdHmac,
     WebCryptoAlgorithmIdRsaSsaPkcs1v1_5,
-    WebCryptoAlgorithmIdRsaEsPkcs1v1_5,
     WebCryptoAlgorithmIdSha1,
     WebCryptoAlgorithmIdSha256,
     WebCryptoAlgorithmIdSha384,
@@ -64,7 +78,6 @@ enum WebCryptoAlgorithmParamsType {
     WebCryptoAlgorithmParamsTypeAesKeyGenParams,
     WebCryptoAlgorithmParamsTypeHmacImportParams,
     WebCryptoAlgorithmParamsTypeHmacKeyGenParams,
-    WebCryptoAlgorithmParamsTypeRsaKeyGenParams,
     WebCryptoAlgorithmParamsTypeRsaHashedKeyGenParams,
     WebCryptoAlgorithmParamsTypeRsaHashedImportParams,
     WebCryptoAlgorithmParamsTypeAesGcmParams,
@@ -72,11 +85,24 @@ enum WebCryptoAlgorithmParamsType {
     WebCryptoAlgorithmParamsTypeAesCtrParams,
 };
 
+struct WebCryptoAlgorithmInfo {
+    typedef char ParamsTypeOrUndefined;
+    static const ParamsTypeOrUndefined Undefined = -1;
+
+    // The canonical (case-sensitive) name for the algorithm as a
+    // null-terminated C-string literal.
+    const char* name;
+
+    // A map from the operation to the expected parameter type of the algorithm.
+    // If an operation is not applicable for the algorithm, set to Undefined.
+    const ParamsTypeOrUndefined operationToParamsType[WebCryptoOperationLast + 1];
+};
+
+
 class WebCryptoAesCbcParams;
 class WebCryptoAesKeyGenParams;
 class WebCryptoHmacImportParams;
 class WebCryptoHmacKeyGenParams;
-class WebCryptoRsaKeyGenParams;
 class WebCryptoAesGcmParams;
 class WebCryptoRsaOaepParams;
 class WebCryptoAesCtrParams;
@@ -103,6 +129,11 @@ public:
     BLINK_PLATFORM_EXPORT static WebCryptoAlgorithm createNull();
     BLINK_PLATFORM_EXPORT static WebCryptoAlgorithm adoptParamsAndCreate(WebCryptoAlgorithmId, WebCryptoAlgorithmParams*);
 
+    // Returns a WebCryptoAlgorithmInfo for the algorithm with the given ID. If
+    // the ID is invalid, return 0. The caller can assume the pointer will be
+    // valid for the program's entire runtime.
+    BLINK_PLATFORM_EXPORT static const WebCryptoAlgorithmInfo* lookupAlgorithmInfo(WebCryptoAlgorithmId);
+
     ~WebCryptoAlgorithm() { reset(); }
 
     WebCryptoAlgorithm(const WebCryptoAlgorithm& other) { assign(other); }
@@ -124,7 +155,6 @@ public:
     BLINK_PLATFORM_EXPORT const WebCryptoAesKeyGenParams* aesKeyGenParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoHmacImportParams* hmacImportParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoHmacKeyGenParams* hmacKeyGenParams() const;
-    BLINK_PLATFORM_EXPORT const WebCryptoRsaKeyGenParams* rsaKeyGenParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoAesGcmParams* aesGcmParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoRsaOaepParams* rsaOaepParams() const;
     BLINK_PLATFORM_EXPORT const WebCryptoAesCtrParams* aesCtrParams() const;

@@ -8,17 +8,21 @@
 #include "base/stl_util.h"
 #include "chrome/browser/devtools/devtools_target_impl.h"
 #include "chrome/browser/devtools/devtools_targets_ui.h"
+#include "chrome/browser/devtools/devtools_ui_bindings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/devtools_agent_host.h"
+#include "content/public/browser/devtools_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
@@ -35,6 +39,8 @@ const char kActivateCommand[]  = "activate";
 const char kCloseCommand[]  = "close";
 const char kReloadCommand[]  = "reload";
 const char kOpenCommand[]  = "open";
+const char kInspectBrowser[] = "inspect-browser";
+const char kLocalHost[] = "localhost";
 
 const char kDiscoverUsbDevicesEnabledCommand[] =
     "set-discover-usb-devices-enabled";
@@ -61,6 +67,7 @@ class InspectMessageHandler : public WebUIMessageHandler {
   void HandleCloseCommand(const base::ListValue* args);
   void HandleReloadCommand(const base::ListValue* args);
   void HandleOpenCommand(const base::ListValue* args);
+  void HandleInspectBrowserCommand(const base::ListValue* args);
   void HandleBooleanPrefChanged(const char* pref_name,
                                 const base::ListValue* args);
   void HandlePortForwardingConfigCommand(const base::ListValue* args);
@@ -99,6 +106,9 @@ void InspectMessageHandler::RegisterMessages() {
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(kOpenCommand,
       base::Bind(&InspectMessageHandler::HandleOpenCommand,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(kInspectBrowser,
+      base::Bind(&InspectMessageHandler::HandleInspectBrowserCommand,
                  base::Unretained(this)));
 }
 
@@ -150,6 +160,17 @@ void InspectMessageHandler::HandleOpenCommand(const base::ListValue* args) {
   std::string url;
   if (ParseStringArgs(args, &source_id, &browser_id, &url))
     inspect_ui_->Open(source_id, browser_id, url);
+}
+
+void InspectMessageHandler::HandleInspectBrowserCommand(
+    const base::ListValue* args) {
+  std::string source_id;
+  std::string browser_id;
+  std::string front_end;
+  if (ParseStringArgs(args, &source_id, &browser_id, &front_end)) {
+    inspect_ui_->InspectBrowserWithCustomFrontend(
+        source_id, browser_id, GURL(front_end));
+  }
 }
 
 void InspectMessageHandler::HandleBooleanPrefChanged(
@@ -238,6 +259,45 @@ void InspectUI::Open(const std::string& source_id,
     handler->Open(browser_id, url, base::Bind(&NoOp));
 }
 
+void InspectUI::InspectBrowserWithCustomFrontend(
+    const std::string& source_id,
+    const std::string& browser_id,
+    const GURL& frontend_url) {
+  if (!frontend_url.SchemeIs(content::kChromeUIScheme) &&
+      !frontend_url.SchemeIs(content::kChromeDevToolsScheme) &&
+      frontend_url.host() != kLocalHost) {
+    return;
+  }
+
+  DevToolsTargetsUIHandler* handler = FindTargetHandler(source_id);
+  if (!handler)
+    return;
+
+  // Fetch agent host from remote browser.
+  scoped_refptr<content::DevToolsAgentHost> agent_host =
+      handler->GetBrowserAgentHost(browser_id);
+  if (agent_host->IsAttached())
+    return;
+
+  // Create web contents for the front-end.
+  WebContents* inspect_ui = web_ui()->GetWebContents();
+  WebContents* front_end = inspect_ui->GetDelegate()->OpenURLFromTab(
+      inspect_ui,
+      content::OpenURLParams(GURL(url::kAboutBlankURL),
+                             content::Referrer(),
+                             NEW_FOREGROUND_TAB,
+                             content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+                             false));
+
+  // Install devtools bindings.
+  DevToolsUIBindings* bindings = new DevToolsUIBindings(front_end,
+                                                        frontend_url);
+
+  // Engage remote debugging between front-end and agent host.
+  content::DevToolsManager::GetInstance()->RegisterDevToolsClientHostFor(
+      agent_host, bindings->frontend_host());
+}
+
 void InspectUI::InspectDevices(Browser* browser) {
   content::RecordAction(base::UserMetricsAction("InspectDevices"));
   chrome::NavigateParams params(chrome::GetSingletonTabNavigateParams(
@@ -266,8 +326,12 @@ void InspectUI::StartListeningNotifications() {
       DevToolsTargetsUIHandler::CreateForRenderers(callback));
   AddTargetUIHandler(
       DevToolsTargetsUIHandler::CreateForWorkers(callback));
-  AddTargetUIHandler(
-      DevToolsTargetsUIHandler::CreateForAdb(callback, profile));
+  if (profile->IsOffTheRecord()) {
+    ShowIncognitoWarning();
+  } else {
+    AddTargetUIHandler(
+        DevToolsTargetsUIHandler::CreateForAdb(callback, profile));
+  }
 
   port_status_serializer_.reset(
       new PortForwardingStatusSerializer(
@@ -308,7 +372,32 @@ content::WebUIDataSource* InspectUI::CreateInspectUIHTMLSource() {
   source->AddResourcePath("inspect.css", IDR_INSPECT_CSS);
   source->AddResourcePath("inspect.js", IDR_INSPECT_JS);
   source->SetDefaultResource(IDR_INSPECT_HTML);
+  source->OverrideContentSecurityPolicyFrameSrc(
+      "frame-src chrome://serviceworker-internals;");
+  serviceworker_webui_.reset(web_ui()->GetWebContents()->CreateWebUI(
+      GURL(content::kChromeUIServiceWorkerInternalsURL)));
+  serviceworker_webui_->OverrideJavaScriptFrame(
+      content::kChromeUIServiceWorkerInternalsHost);
   return source;
+}
+
+void InspectUI::RenderViewCreated(content::RenderViewHost* render_view_host) {
+  serviceworker_webui_->GetController()->RenderViewCreated(render_view_host);
+}
+
+void InspectUI::RenderViewReused(content::RenderViewHost* render_view_host) {
+  serviceworker_webui_->GetController()->RenderViewReused(render_view_host);
+}
+
+bool InspectUI::OverrideHandleWebUIMessage(const GURL& source_url,
+                                           const std::string& message,
+                                           const base::ListValue& args) {
+  if (source_url.SchemeIs(content::kChromeUIScheme) &&
+      source_url.host() == content::kChromeUIServiceWorkerInternalsHost) {
+    serviceworker_webui_->ProcessWebUIMessage(source_url, message, args);
+    return true;
+  }
+  return false;
 }
 
 void InspectUI::UpdateDiscoverUsbDevicesEnabled() {
@@ -397,4 +486,8 @@ void InspectUI::PopulateTargets(const std::string& source,
 
 void InspectUI::PopulatePortStatus(const base::Value& status) {
   web_ui()->CallJavascriptFunction("populatePortStatus", status);
+}
+
+void InspectUI::ShowIncognitoWarning() {
+  web_ui()->CallJavascriptFunction("showIncognitoWarning");
 }

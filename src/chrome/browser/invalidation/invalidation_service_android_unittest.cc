@@ -6,11 +6,10 @@
 
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/invalidation/invalidation_controller_android.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
-#include "chrome/browser/invalidation/invalidation_service_test_template.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/invalidation/fake_invalidation_handler.h"
+#include "components/invalidation/invalidation_service_test_template.h"
 #include "content/public/browser/notification_service.h"
-#include "sync/notifier/fake_invalidation_handler.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace invalidation {
@@ -29,11 +28,9 @@ class MockInvalidationControllerAndroid : public InvalidationControllerAndroid {
 
 class InvalidationServiceAndroidTestDelegate {
  public:
-  InvalidationServiceAndroidTestDelegate() { }
+  InvalidationServiceAndroidTestDelegate() {}
 
-  ~InvalidationServiceAndroidTestDelegate() {
-    DestroyInvalidationService();
-  }
+  ~InvalidationServiceAndroidTestDelegate() {}
 
   void CreateInvalidationService() {
     profile_.reset(new TestingProfile());
@@ -48,7 +45,7 @@ class InvalidationServiceAndroidTestDelegate {
   }
 
   void DestroyInvalidationService() {
-    invalidation_service_android_->Shutdown();
+    invalidation_service_android_.reset();
   }
 
   void TriggerOnInvalidatorStateChange(syncer::InvalidatorState state) {
@@ -78,9 +75,7 @@ class InvalidationServiceAndroidRegistrationTest : public testing::Test {
       : invalidation_controller_(new MockInvalidationControllerAndroid()),
         invalidation_service_(&profile_, invalidation_controller_) {}
 
-  virtual ~InvalidationServiceAndroidRegistrationTest() {
-    invalidation_service_.Shutdown();
-  }
+  virtual ~InvalidationServiceAndroidRegistrationTest() {}
 
   // Get the invalidation service being tested.
   InvalidationService& invalidation_service() {

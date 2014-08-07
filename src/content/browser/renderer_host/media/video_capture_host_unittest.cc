@@ -27,6 +27,7 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/test/test_content_browser_client.h"
 #include "media/audio/audio_manager.h"
+#include "media/base/media_switches.h"
 #include "media/base/video_frame.h"
 #include "media/video/capture/video_capture_types.h"
 #include "net/url_request/url_request_context.h"
@@ -308,7 +309,7 @@ class VideoCaptureHostTest : public testing::Test {
 
     CloseSession();
 
-    // Simulate closing the IPC channel.
+    // Simulate closing the IPC sender.
     host_->OnChannelClosing();
 
     // Release the reference to the mock object. The object will be destructed
@@ -335,7 +336,8 @@ class VideoCaptureHostTest : public testing::Test {
           browser_context_.GetResourceContext()->GetMediaDeviceIDSalt(),
           page_request_id,
           MEDIA_DEVICE_VIDEO_CAPTURE,
-          security_origin);
+          security_origin,
+          true);
       EXPECT_CALL(stream_requester_, DevicesEnumerated(render_view_id,
                                                        page_request_id,
                                                        label,

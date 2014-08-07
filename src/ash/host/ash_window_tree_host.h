@@ -14,18 +14,21 @@ class WindowTreeHost;
 }
 
 namespace gfx {
+class Insets;
 class Rect;
 }
 
 namespace ash {
+struct AshWindowTreeHostInitParams;
 class RootWindowTransformer;
 
 class ASH_EXPORT AshWindowTreeHost {
  public:
-  // Creates a new AshWindowTreeHost. The caller owns the returned value.
-  static AshWindowTreeHost* Create(const gfx::Rect& initial_bounds);
-
   virtual ~AshWindowTreeHost() {}
+
+  // Creates a new AshWindowTreeHost. The caller owns the returned value.
+  static AshWindowTreeHost* Create(
+      const AshWindowTreeHostInitParams& init_params);
 
   // Toggles the host's full screen state.
   virtual void ToggleFullScreen() = 0;
@@ -41,6 +44,8 @@ class ASH_EXPORT AshWindowTreeHost {
   virtual void SetRootWindowTransformer(
       scoped_ptr<RootWindowTransformer> transformer) = 0;
 
+  virtual gfx::Insets GetHostInsets() const = 0;
+
   virtual aura::WindowTreeHost* AsWindowTreeHost() = 0;
 
   // Updates the display IDs associated with this root window.
@@ -48,7 +53,10 @@ class ASH_EXPORT AshWindowTreeHost {
   // mode dual monitors case). If the root window is only associated with one
   // display id, then the other id should be set to
   // gfx::Display::kInvalidDisplayID.
-  virtual void UpdateDisplayID(int64 id1, int64 id2) {};
+  virtual void UpdateDisplayID(int64 id1, int64 id2) {}
+
+  // Stop listening for events in preparation for shutdown.
+  virtual void PrepareForShutdown() {}
 };
 
 }  // namespace ash

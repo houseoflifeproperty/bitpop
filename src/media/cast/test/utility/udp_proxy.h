@@ -18,6 +18,10 @@ namespace net {
 class NetLog;
 };
 
+namespace base {
+class TickClock;
+};
+
 namespace media {
 namespace cast {
 namespace test {
@@ -29,12 +33,14 @@ class PacketPipe {
   virtual void Send(scoped_ptr<transport::Packet> packet) = 0;
   // Allows injection of fake test runner for testing.
   virtual void InitOnIOThread(
-      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      base::TickClock* clock);
   virtual void AppendToPipe(scoped_ptr<PacketPipe> pipe);
  protected:
   scoped_ptr<PacketPipe> pipe_;
   // Allows injection of fake task runner for testing.
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+  base::TickClock* clock_;
 };
 
 // A UDPProxy will set up a UDP socket and bind to |local_port|.
@@ -90,16 +96,16 @@ scoped_ptr<PacketPipe> NewNetworkGlitchPipe(double average_work_time,
                                             double average_outage_time);
 
 // This method builds a stack of PacketPipes to emulate a reasonably
-// good wifi network. ~5mbit, 1% packet loss, ~3ms latency.
+// good wifi network. ~20mbit, 1% packet loss, ~3ms latency.
 scoped_ptr<PacketPipe> WifiNetwork();
 
 // This method builds a stack of PacketPipes to emulate a
-// bad wifi network. ~2mbit, 5% packet loss, ~7ms latency
+// bad wifi network. ~5mbit, 5% packet loss, ~7ms latency
 // 40ms dropouts every ~2 seconds. Can reorder packets.
 scoped_ptr<PacketPipe> BadNetwork();
 
 // This method builds a stack of PacketPipes to emulate a crappy wifi network.
-// ~1mbit, 20% packet loss, ~40ms latency and packets can get reordered.
+// ~2mbit, 20% packet loss, ~40ms latency and packets can get reordered.
 // 300ms drouputs every ~2 seconds.
 scoped_ptr<PacketPipe> EvilNetwork();
 

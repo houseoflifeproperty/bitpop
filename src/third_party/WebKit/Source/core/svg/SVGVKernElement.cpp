@@ -32,10 +32,7 @@ inline SVGVKernElement::SVGVKernElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGVKernElement> SVGVKernElement::create(Document& document)
-{
-    return adoptRef(new SVGVKernElement(document));
-}
+DEFINE_NODE_FACTORY(SVGVKernElement)
 
 Node::InsertionNotificationRequest SVGVKernElement::insertedInto(ContainerNode* rootParent)
 {

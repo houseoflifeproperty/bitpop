@@ -24,17 +24,17 @@
 #include "core/rendering/style/RenderStyle.h"
 
 #include <algorithm>
-#include "RuntimeEnabledFeatures.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/TextAutosizer.h"
+#include "core/rendering/style/AppliedTextDecoration.h"
 #include "core/rendering/style/ContentData.h"
-#include "core/rendering/style/CursorList.h"
 #include "core/rendering/style/QuotesData.h"
 #include "core/rendering/style/ShadowList.h"
 #include "core/rendering/style/StyleImage.h"
 #include "core/rendering/style/StyleInheritedData.h"
 #include "platform/LengthFunctions.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontSelector.h"
 #include "platform/geometry/FloatRoundedRect.h"
@@ -376,6 +376,11 @@ StyleDifference RenderStyle::visualInvalidationDiff(const RenderStyle& other, un
     if (m_svgStyle.get() != other.m_svgStyle.get())
         diff = m_svgStyle->diff(other.m_svgStyle.get());
 
+    if ((!diff.needsFullLayout() || !diff.needsRepaint()) && diffNeedsFullLayoutAndRepaint(other)) {
+        diff.setNeedsFullLayout();
+        diff.setNeedsRepaintObject();
+    }
+
     if (!diff.needsFullLayout() && diffNeedsFullLayout(other))
         diff.setNeedsFullLayout();
 
@@ -411,8 +416,14 @@ StyleDifference RenderStyle::visualInvalidationDiff(const RenderStyle& other, un
     return diff;
 }
 
-bool RenderStyle::diffNeedsFullLayout(const RenderStyle& other) const
+bool RenderStyle::diffNeedsFullLayoutAndRepaint(const RenderStyle& other) const
 {
+    // FIXME: Not all cases in this method need both full layout and repaint.
+    // Should move cases into diffNeedsFullLayout() if
+    // - don't need repaint at all;
+    // - or the renderer knows how to exactly repaint caused by the layout change
+    //   instead of forced full repaint.
+
     if (m_box.get() != other.m_box.get()) {
         if (m_box->width() != other.m_box->width()
             || m_box->minWidth() != other.m_box->minWidth()
@@ -535,7 +546,7 @@ bool RenderStyle::diffNeedsFullLayout(const RenderStyle& other) const
             return true;
     }
 
-    if (visual->m_textAutosizingMultiplier != other.visual->m_textAutosizingMultiplier)
+    if (inherited->textAutosizingMultiplier != other.inherited->textAutosizingMultiplier)
         return true;
 
     if (inherited.get() != other.inherited.get()) {
@@ -600,6 +611,11 @@ bool RenderStyle::diffNeedsFullLayout(const RenderStyle& other) const
 
     // Movement of non-static-positioned object is special cased in RenderStyle::visualInvalidationDiff().
 
+    return false;
+}
+
+bool RenderStyle::diffNeedsFullLayout(const RenderStyle& other) const
+{
     return false;
 }
 
@@ -687,7 +703,7 @@ unsigned RenderStyle::computeChangedContextSensitiveProperties(const RenderStyle
 
     if (!diff.needsRepaint()) {
         if (inherited->color != other.inherited->color
-            || inherited_flags._text_decorations != other.inherited_flags._text_decorations
+            || inherited_flags.m_textUnderline != other.inherited_flags.m_textUnderline
             || visual->textDecoration != other.visual->textDecoration) {
             changedContextSensitiveProperties |= ContextSensitivePropertyTextOrColor;
         } else if (rareNonInheritedData.get() != other.rareNonInheritedData.get()) {
@@ -698,7 +714,8 @@ unsigned RenderStyle::computeChangedContextSensitiveProperties(const RenderStyle
             if (rareInheritedData->textFillColor() != other.rareInheritedData->textFillColor()
                 || rareInheritedData->textStrokeColor() != other.rareInheritedData->textStrokeColor()
                 || rareInheritedData->textEmphasisColor() != other.rareInheritedData->textEmphasisColor()
-                || rareInheritedData->textEmphasisFill != other.rareInheritedData->textEmphasisFill)
+                || rareInheritedData->textEmphasisFill != other.rareInheritedData->textEmphasisFill
+                || rareInheritedData->appliedTextDecorations != other.rareInheritedData->appliedTextDecorations)
                 changedContextSensitiveProperties |= ContextSensitivePropertyTextOrColor;
         }
     }
@@ -706,7 +723,7 @@ unsigned RenderStyle::computeChangedContextSensitiveProperties(const RenderStyle
     return changedContextSensitiveProperties;
 }
 
-void RenderStyle::setClip(Length top, Length right, Length bottom, Length left)
+void RenderStyle::setClip(const Length& top, const Length& right, const Length& bottom, const Length& left)
 {
     StyleVisualData* data = visual.access();
     data->clip.m_top = top;
@@ -869,6 +886,10 @@ bool RenderStyle::hasWillChangeCompositingHint() const
         case CSSPropertyOpacity:
         case CSSPropertyTransform:
         case CSSPropertyWebkitTransform:
+        case CSSPropertyTop:
+        case CSSPropertyLeft:
+        case CSSPropertyBottom:
+        case CSSPropertyRight:
             return true;
         default:
             break;
@@ -1099,76 +1120,18 @@ const AtomicString& RenderStyle::textEmphasisMarkString() const
     return nullAtom;
 }
 
-void RenderStyle::adjustAnimations()
-{
-    CSSAnimationDataList* animationList = rareNonInheritedData->m_animations.get();
-    if (!animationList)
-        return;
-
-    // Get rid of empty animations and anything beyond them
-    for (size_t i = 0; i < animationList->size(); ++i) {
-        if (animationList->animation(i)->isEmpty()) {
-            animationList->resize(i);
-            break;
-        }
-    }
-
-    if (animationList->isEmpty()) {
-        clearAnimations();
-        return;
-    }
-
-    // Repeat patterns into layers that don't have some properties set.
-    animationList->fillUnsetProperties();
-}
-
-void RenderStyle::adjustTransitions()
-{
-    CSSAnimationDataList* transitionList = rareNonInheritedData->m_transitions.get();
-    if (!transitionList)
-        return;
-
-    // Get rid of empty transitions and anything beyond them
-    for (size_t i = 0; i < transitionList->size(); ++i) {
-        if (transitionList->animation(i)->isEmpty()) {
-            transitionList->resize(i);
-            break;
-        }
-    }
-
-    if (transitionList->isEmpty()) {
-        clearTransitions();
-        return;
-    }
-
-    // Repeat patterns into layers that don't have some properties set.
-    transitionList->fillUnsetProperties();
-
-    // Make sure there are no duplicate properties. This is an O(n^2) algorithm
-    // but the lists tend to be very short, so it is probably ok
-    for (size_t i = 0; i < transitionList->size(); ++i) {
-        for (size_t j = i+1; j < transitionList->size(); ++j) {
-            if (transitionList->animation(i)->property() == transitionList->animation(j)->property()) {
-                // toss i
-                transitionList->remove(i);
-                j = i;
-            }
-        }
-    }
-}
-
-CSSAnimationDataList* RenderStyle::accessAnimations()
+CSSAnimationData& RenderStyle::accessAnimations()
 {
     if (!rareNonInheritedData.access()->m_animations)
-        rareNonInheritedData.access()->m_animations = adoptPtrWillBeNoop(new CSSAnimationDataList());
-    return rareNonInheritedData->m_animations.get();
+        rareNonInheritedData.access()->m_animations = CSSAnimationData::create();
+    return *rareNonInheritedData->m_animations;
 }
 
-CSSAnimationDataList* RenderStyle::accessTransitions()
+CSSTransitionData& RenderStyle::accessTransitions()
 {
     if (!rareNonInheritedData.access()->m_transitions)
-        rareNonInheritedData.access()->m_transitions = adoptPtrWillBeNoop(new CSSAnimationDataList());
-    return rareNonInheritedData->m_transitions.get();
+        rareNonInheritedData.access()->m_transitions = CSSTransitionData::create();
+    return *rareNonInheritedData->m_transitions;
 }
 
 const Font& RenderStyle::font() const { return inherited->font; }
@@ -1178,6 +1141,32 @@ float RenderStyle::specifiedFontSize() const { return fontDescription().specifie
 float RenderStyle::computedFontSize() const { return fontDescription().computedSize(); }
 int RenderStyle::fontSize() const { return fontDescription().computedPixelSize(); }
 FontWeight RenderStyle::fontWeight() const { return fontDescription().weight(); }
+
+TextDecoration RenderStyle::textDecorationsInEffect() const
+{
+    int decorations = 0;
+
+    const Vector<AppliedTextDecoration>& applied = appliedTextDecorations();
+
+    for (size_t i = 0; i < applied.size(); ++i)
+        decorations |= applied[i].line();
+
+    return static_cast<TextDecoration>(decorations);
+}
+
+const Vector<AppliedTextDecoration>& RenderStyle::appliedTextDecorations() const
+{
+    if (!inherited_flags.m_textUnderline && !rareInheritedData->appliedTextDecorations) {
+        DEFINE_STATIC_LOCAL(Vector<AppliedTextDecoration>, empty, ());
+        return empty;
+    }
+    if (inherited_flags.m_textUnderline) {
+        DEFINE_STATIC_LOCAL(Vector<AppliedTextDecoration>, underline, (1, AppliedTextDecoration(TextDecorationUnderline)));
+        return underline;
+    }
+
+    return rareInheritedData->appliedTextDecorations->vector();
+}
 
 float RenderStyle::wordSpacing() const { return fontDescription().wordSpacing(); }
 float RenderStyle::letterSpacing() const { return fontDescription().letterSpacing(); }
@@ -1205,7 +1194,8 @@ Length RenderStyle::lineHeight() const
 
     return lh;
 }
-void RenderStyle::setLineHeight(Length specifiedLineHeight) { SET_VAR(inherited, line_height, specifiedLineHeight); }
+
+void RenderStyle::setLineHeight(const Length& specifiedLineHeight) { SET_VAR(inherited, line_height, specifiedLineHeight); }
 
 int RenderStyle::computedLineHeight() const
 {
@@ -1272,6 +1262,57 @@ void RenderStyle::setFontWeight(FontWeight weight)
     desc.setWeight(weight);
     setFontDescription(desc);
     font().update(currentFontSelector);
+}
+
+void RenderStyle::addAppliedTextDecoration(const AppliedTextDecoration& decoration)
+{
+    RefPtr<AppliedTextDecorationList>& list = rareInheritedData.access()->appliedTextDecorations;
+
+    if (!list)
+        list = AppliedTextDecorationList::create();
+    else if (!list->hasOneRef())
+        list = list->copy();
+
+    if (inherited_flags.m_textUnderline) {
+        inherited_flags.m_textUnderline = false;
+        list->append(AppliedTextDecoration(TextDecorationUnderline));
+    }
+
+    list->append(decoration);
+}
+
+void RenderStyle::applyTextDecorations()
+{
+    if (textDecoration() == TextDecorationNone)
+        return;
+
+    TextDecorationStyle style = textDecorationStyle();
+    StyleColor styleColor = visitedDependentDecorationStyleColor();
+
+    int decorations = textDecoration();
+
+    if (decorations & TextDecorationUnderline) {
+        // To save memory, we don't use AppliedTextDecoration objects in the
+        // common case of a single simple underline.
+        AppliedTextDecoration underline(TextDecorationUnderline, style, styleColor);
+
+        if (!rareInheritedData->appliedTextDecorations && underline.isSimpleUnderline())
+            inherited_flags.m_textUnderline = true;
+        else
+            addAppliedTextDecoration(underline);
+    }
+    if (decorations & TextDecorationOverline)
+        addAppliedTextDecoration(AppliedTextDecoration(TextDecorationOverline, style, styleColor));
+    if (decorations & TextDecorationLineThrough)
+        addAppliedTextDecoration(AppliedTextDecoration(TextDecorationLineThrough, style, styleColor));
+}
+
+void RenderStyle::clearAppliedTextDecorations()
+{
+    inherited_flags.m_textUnderline = false;
+
+    if (rareInheritedData->appliedTextDecorations)
+        rareInheritedData.access()->appliedTextDecorations = nullptr;
 }
 
 void RenderStyle::getShadowExtent(const ShadowList* shadowList, LayoutUnit &top, LayoutUnit &right, LayoutUnit &bottom, LayoutUnit &left) const
@@ -1351,10 +1392,29 @@ void RenderStyle::getShadowVerticalExtent(const ShadowList* shadowList, LayoutUn
     }
 }
 
-StyleColor RenderStyle::visitedDependentDecorationColor() const
+StyleColor RenderStyle::visitedDependentDecorationStyleColor() const
 {
-    // Text decoration color fallback is handled in RenderObject::decorationColor.
-    return insideLink() == InsideVisitedLink ? visitedLinkTextDecorationColor() : textDecorationColor();
+    bool isVisited = insideLink() == InsideVisitedLink;
+
+    StyleColor styleColor = isVisited ? visitedLinkTextDecorationColor() : textDecorationColor();
+
+    if (!styleColor.isCurrentColor())
+        return styleColor;
+
+    if (textStrokeWidth()) {
+        // Prefer stroke color if possible, but not if it's fully transparent.
+        StyleColor textStrokeStyleColor = isVisited ? visitedLinkTextStrokeColor() : textStrokeColor();
+        if (!textStrokeStyleColor.isCurrentColor() && textStrokeStyleColor.color().alpha())
+            return textStrokeStyleColor;
+    }
+
+    return isVisited ? visitedLinkTextFillColor() : textFillColor();
+}
+
+Color RenderStyle::visitedDependentDecorationColor() const
+{
+    bool isVisited = insideLink() == InsideVisitedLink;
+    return visitedDependentDecorationStyleColor().resolve(isVisited ? visitedLinkColor() : color());
 }
 
 Color RenderStyle::colorIncludingFallback(int colorProperty, bool visitedLink) const
@@ -1538,7 +1598,7 @@ unsigned short RenderStyle::borderEndWidth() const
     return isLeftToRightDirection() ? borderBottomWidth() : borderTopWidth();
 }
 
-void RenderStyle::setMarginStart(Length margin)
+void RenderStyle::setMarginStart(const Length& margin)
 {
     if (isHorizontalWritingMode()) {
         if (isLeftToRightDirection())
@@ -1553,7 +1613,7 @@ void RenderStyle::setMarginStart(Length margin)
     }
 }
 
-void RenderStyle::setMarginEnd(Length margin)
+void RenderStyle::setMarginEnd(const Length& margin)
 {
     if (isHorizontalWritingMode()) {
         if (isLeftToRightDirection())
@@ -1600,7 +1660,7 @@ void RenderStyle::setBorderImageSource(PassRefPtr<StyleImage> image)
     surround.access()->border.m_image.setImage(image);
 }
 
-void RenderStyle::setBorderImageSlices(LengthBox slices)
+void RenderStyle::setBorderImageSlices(const LengthBox& slices)
 {
     if (surround->border.m_image.imageSlices() == slices)
         return;

@@ -96,11 +96,11 @@ class LayerTreeHostContextTest : public LayerTreeTest {
       return FakeOutputSurface::Create3d(context3d.Pass());
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
-    EXPECT_EQ(DrawSwapReadbackResult::DRAW_SUCCESS, draw_result);
+      DrawResult draw_result) OVERRIDE {
+    EXPECT_EQ(DRAW_SUCCESS, draw_result);
     if (!times_to_lose_during_draw_)
       return draw_result;
 
@@ -308,12 +308,10 @@ class LayerTreeHostContextTestLostContextSucceedsWithContent
   virtual void SetupTree() OVERRIDE {
     root_ = Layer::Create();
     root_->SetBounds(gfx::Size(10, 10));
-    root_->SetAnchorPoint(gfx::PointF());
     root_->SetIsDrawable(true);
 
     content_ = FakeContentLayer::Create(&client_);
     content_->SetBounds(gfx::Size(10, 10));
-    content_->SetAnchorPoint(gfx::PointF());
     content_->SetIsDrawable(true);
 
     root_->AddChild(content_);
@@ -729,25 +727,21 @@ class LayerTreeHostContextTestDontUseLostResources
 
     scoped_refptr<Layer> root = Layer::Create();
     root->SetBounds(gfx::Size(10, 10));
-    root->SetAnchorPoint(gfx::PointF());
     root->SetIsDrawable(true);
 
     scoped_refptr<FakeDelegatedRendererLayer> delegated =
         FakeDelegatedRendererLayer::Create(delegated_frame_provider_.get());
     delegated->SetBounds(gfx::Size(10, 10));
-    delegated->SetAnchorPoint(gfx::PointF());
     delegated->SetIsDrawable(true);
     root->AddChild(delegated);
 
     scoped_refptr<ContentLayer> content = ContentLayer::Create(&client_);
     content->SetBounds(gfx::Size(10, 10));
-    content->SetAnchorPoint(gfx::PointF());
     content->SetIsDrawable(true);
     root->AddChild(content);
 
     scoped_refptr<TextureLayer> texture = TextureLayer::CreateForMailbox(NULL);
     texture->SetBounds(gfx::Size(10, 10));
-    texture->SetAnchorPoint(gfx::PointF());
     texture->SetIsDrawable(true);
     texture->SetTextureMailbox(
         TextureMailbox(mailbox, GL_TEXTURE_2D, sync_point),
@@ -758,12 +752,10 @@ class LayerTreeHostContextTestDontUseLostResources
 
     scoped_refptr<ContentLayer> mask = ContentLayer::Create(&client_);
     mask->SetBounds(gfx::Size(10, 10));
-    mask->SetAnchorPoint(gfx::PointF());
 
     scoped_refptr<ContentLayer> content_with_mask =
         ContentLayer::Create(&client_);
     content_with_mask->SetBounds(gfx::Size(10, 10));
-    content_with_mask->SetAnchorPoint(gfx::PointF());
     content_with_mask->SetIsDrawable(true);
     content_with_mask->SetMaskLayer(mask.get());
     root->AddChild(content_with_mask);
@@ -771,21 +763,18 @@ class LayerTreeHostContextTestDontUseLostResources
     scoped_refptr<VideoLayer> video_color =
         VideoLayer::Create(&color_frame_provider_);
     video_color->SetBounds(gfx::Size(10, 10));
-    video_color->SetAnchorPoint(gfx::PointF());
     video_color->SetIsDrawable(true);
     root->AddChild(video_color);
 
     scoped_refptr<VideoLayer> video_hw =
         VideoLayer::Create(&hw_frame_provider_);
     video_hw->SetBounds(gfx::Size(10, 10));
-    video_hw->SetAnchorPoint(gfx::PointF());
     video_hw->SetIsDrawable(true);
     root->AddChild(video_hw);
 
     scoped_refptr<VideoLayer> video_scaled_hw =
         VideoLayer::Create(&scaled_hw_frame_provider_);
     video_scaled_hw->SetBounds(gfx::Size(10, 10));
-    video_scaled_hw->SetAnchorPoint(gfx::PointF());
     video_scaled_hw->SetIsDrawable(true);
     root->AddChild(video_scaled_hw);
 
@@ -818,7 +807,6 @@ class LayerTreeHostContextTestDontUseLostResources
       // TODO(danakj): IOSurface layer can not be transported. crbug.com/239335
       scoped_refptr<IOSurfaceLayer> io_surface = IOSurfaceLayer::Create();
       io_surface->SetBounds(gfx::Size(10, 10));
-      io_surface->SetAnchorPoint(gfx::PointF());
       io_surface->SetIsDrawable(true);
       io_surface->SetIOSurfaceProperties(1, gfx::Size(10, 10));
       root->AddChild(io_surface);
@@ -833,7 +821,6 @@ class LayerTreeHostContextTestDontUseLostResources
         PaintedScrollbarLayer::Create(
             scoped_ptr<Scrollbar>(new FakeScrollbar).Pass(), content->id());
     scrollbar->SetBounds(gfx::Size(10, 10));
-    scrollbar->SetAnchorPoint(gfx::PointF());
     scrollbar->SetIsDrawable(true);
     root->AddChild(scrollbar);
 
@@ -855,10 +842,10 @@ class LayerTreeHostContextTestDontUseLostResources
     }
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+      DrawResult draw_result) OVERRIDE {
     if (host_impl->active_tree()->source_frame_number() == 2) {
       // Lose the context during draw on the second commit. This will cause
       // a third commit to recover.
@@ -915,237 +902,6 @@ class LayerTreeHostContextTestDontUseLostResources
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostContextTestDontUseLostResources);
 
-class LayerTreeHostContextTestCompositeAndReadbackBeforeOutputSurfaceInit
-    : public LayerTreeHostContextTest {
- public:
-  virtual void BeginTest() OVERRIDE {
-    // This must be called immediately after creating LTH, before the first
-    // OutputSurface is initialized.
-    ASSERT_TRUE(layer_tree_host()->output_surface_lost());
-
-    times_output_surface_created_ = 0;
-
-    // Post the SetNeedsCommit before the readback to make sure it is run
-    // on the main thread before the readback's replacement commit when
-    // we have a threaded compositor.
-    PostSetNeedsCommitToMainThread();
-
-    char pixels[4];
-    bool result =
-        layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(1, 1));
-    EXPECT_EQ(!delegating_renderer(), result);
-    EXPECT_EQ(1, times_output_surface_created_);
-  }
-
-  virtual void DidInitializeOutputSurface() OVERRIDE {
-    ++times_output_surface_created_;
-  }
-
-  virtual void DidCommitAndDrawFrame() OVERRIDE { EndTest(); }
-
-  virtual void AfterTest() OVERRIDE {
-    // Should not try to create output surface again after successfully
-    // created by CompositeAndReadback.
-    EXPECT_EQ(1, times_output_surface_created_);
-  }
-
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
-      LayerTreeHostImpl* host_impl,
-      LayerTreeHostImpl::FrameData* frame_data,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
-    EXPECT_GE(host_impl->active_tree()->source_frame_number(), 0);
-    EXPECT_LE(host_impl->active_tree()->source_frame_number(), 1);
-    return draw_result;
-  }
-
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    // We should only draw for the readback and the replacement commit.
-    // The replacement commit will also be the first commit after output
-    // surface initialization.
-    EXPECT_GE(host_impl->active_tree()->source_frame_number(), 0);
-    EXPECT_LE(host_impl->active_tree()->source_frame_number(), 1);
-  }
-
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
-    // We should only swap for the replacement commit.
-    EXPECT_EQ(host_impl->active_tree()->source_frame_number(), 1);
-    EndTest();
-  }
-
- private:
-  int times_output_surface_created_;
-};
-
-SINGLE_AND_MULTI_THREAD_TEST_F(
-    LayerTreeHostContextTestCompositeAndReadbackBeforeOutputSurfaceInit);
-
-// This test verifies that losing an output surface during a
-// simultaneous readback and forced redraw works and does not deadlock.
-class LayerTreeHostContextTestLoseOutputSurfaceDuringReadbackAndForcedDraw
-    : public LayerTreeHostContextTest {
- protected:
-  static const int kFirstOutputSurfaceInitSourceFrameNumber = 0;
-  static const int kReadbackSourceFrameNumber = 1;
-  static const int kReadbackReplacementSourceFrameNumber = 2;
-  static const int kSecondOutputSurfaceInitSourceFrameNumber = 3;
-
-  LayerTreeHostContextTestLoseOutputSurfaceDuringReadbackAndForcedDraw()
-      : did_react_to_first_commit_(false) {}
-
-  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    // This enables forced draws after a single prepare to draw failure.
-    settings->timeout_and_draw_when_animation_checkerboards = true;
-    settings->maximum_number_of_failed_draws_before_draw_is_forced_ = 1;
-  }
-
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
-
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
-      LayerTreeHostImpl* host_impl,
-      LayerTreeHostImpl::FrameData* frame_data,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kFirstOutputSurfaceInitSourceFrameNumber ||
-                sfn == kSecondOutputSurfaceInitSourceFrameNumber ||
-                sfn == kReadbackSourceFrameNumber)
-        << sfn;
-
-    // Before we react to the failed draw by initiating the forced draw
-    // sequence, start a readback on the main thread and then lose the context
-    // to start output surface initialization all at the same time.
-    if (sfn == kFirstOutputSurfaceInitSourceFrameNumber &&
-        !did_react_to_first_commit_) {
-      did_react_to_first_commit_ = true;
-      PostReadbackToMainThread();
-      LoseContext();
-    }
-
-    return DrawSwapReadbackResult::DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
-  }
-
-  virtual void InitializedRendererOnThread(LayerTreeHostImpl* host_impl,
-                                           bool success) OVERRIDE {
-    // -1 is for the first output surface initialization.
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == -1 || sfn == kReadbackReplacementSourceFrameNumber)
-        << sfn;
-  }
-
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    // We should only draw the first commit after output surface initialization
-    // and attempt to draw the readback commit (which will fail).
-    // All others should abort because the output surface is lost.
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kSecondOutputSurfaceInitSourceFrameNumber ||
-                sfn == kReadbackSourceFrameNumber)
-        << sfn;
-  }
-
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
-    // We should only swap the first commit after the second output surface
-    // initialization.
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kSecondOutputSurfaceInitSourceFrameNumber) << sfn;
-    EndTest();
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-
-  int did_react_to_first_commit_;
-};
-
-MULTI_THREAD_TEST_F(
-    LayerTreeHostContextTestLoseOutputSurfaceDuringReadbackAndForcedDraw);
-
-// This test verifies that losing an output surface right before a
-// simultaneous readback and forced redraw works and does not deadlock.
-class LayerTreeHostContextTestReadbackWithForcedDrawAndOutputSurfaceInit
-    : public LayerTreeHostContextTest {
- protected:
-  static const int kFirstOutputSurfaceInitSourceFrameNumber = 0;
-  static const int kReadbackSourceFrameNumber = 1;
-  static const int kForcedDrawCommitSourceFrameNumber = 2;
-  static const int kSecondOutputSurfaceInitSourceFrameNumber = 2;
-
-  LayerTreeHostContextTestReadbackWithForcedDrawAndOutputSurfaceInit()
-      : did_lose_context_(false) {}
-
-  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
-    // This enables forced draws after a single prepare to draw failure.
-    settings->timeout_and_draw_when_animation_checkerboards = true;
-    settings->maximum_number_of_failed_draws_before_draw_is_forced_ = 1;
-  }
-
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
-
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
-      LayerTreeHostImpl* host_impl,
-      LayerTreeHostImpl::FrameData* frame_data,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kFirstOutputSurfaceInitSourceFrameNumber ||
-                sfn == kSecondOutputSurfaceInitSourceFrameNumber ||
-                sfn == kReadbackSourceFrameNumber)
-        << sfn;
-
-    // Before we react to the failed draw by initiating the forced draw
-    // sequence, start a readback on the main thread and then lose the context
-    // to start output surface initialization all at the same time.
-    if (sfn == kFirstOutputSurfaceInitSourceFrameNumber && !did_lose_context_) {
-      did_lose_context_ = true;
-      LoseContext();
-    }
-
-    // Returning false will result in a forced draw.
-    return DrawSwapReadbackResult::DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
-  }
-
-  virtual void DidInitializeOutputSurface() OVERRIDE {
-    if (layer_tree_host()->source_frame_number() > 0) {
-      // Perform a readback right after the second output surface
-      // initialization.
-      char pixels[4];
-      layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(0, 0, 1, 1));
-    }
-  }
-
-  virtual void InitializedRendererOnThread(LayerTreeHostImpl* host_impl,
-                                           bool success) OVERRIDE {
-    // -1 is for the first output surface initialization.
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == -1 || sfn == kFirstOutputSurfaceInitSourceFrameNumber)
-        << sfn;
-  }
-
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
-    // We should only draw the first commit after output surface initialization
-    // and attempt to draw the readback commit (which will fail).
-    // All others should abort because the output surface is lost.
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kForcedDrawCommitSourceFrameNumber ||
-                sfn == kReadbackSourceFrameNumber)
-        << sfn;
-  }
-
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
-    // We should only swap the first commit after the second output surface
-    // initialization.
-    int sfn = host_impl->active_tree()->source_frame_number();
-    EXPECT_TRUE(sfn == kForcedDrawCommitSourceFrameNumber) << sfn;
-    EndTest();
-  }
-
-  virtual void AfterTest() OVERRIDE {}
-
-  int did_lose_context_;
-};
-
-MULTI_THREAD_TEST_F(
-    LayerTreeHostContextTestReadbackWithForcedDrawAndOutputSurfaceInit);
-
 class ImplSidePaintingLayerTreeHostContextTest
     : public LayerTreeHostContextTest {
  public:
@@ -1160,12 +916,10 @@ class LayerTreeHostContextTestImplSidePainting
   virtual void SetupTree() OVERRIDE {
     scoped_refptr<Layer> root = Layer::Create();
     root->SetBounds(gfx::Size(10, 10));
-    root->SetAnchorPoint(gfx::PointF());
     root->SetIsDrawable(true);
 
     scoped_refptr<PictureLayer> picture = PictureLayer::Create(&client_);
     picture->SetBounds(gfx::Size(10, 10));
-    picture->SetAnchorPoint(gfx::PointF());
     picture->SetIsDrawable(true);
     root->AddChild(picture);
 
@@ -1718,6 +1472,65 @@ class LayerTreeHostContextTestSurfaceCreateCallback
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostContextTestSurfaceCreateCallback);
+
+class LayerTreeHostContextTestLoseAfterSendingBeginMainFrame
+    : public LayerTreeHostContextTest {
+ protected:
+  virtual void BeginTest() OVERRIDE {
+    deferred_ = false;
+    PostSetNeedsCommitToMainThread();
+  }
+
+  virtual void ScheduledActionWillSendBeginMainFrame() OVERRIDE {
+    if (deferred_)
+      return;
+    deferred_ = true;
+
+    // Defer commits before the BeginFrame arrives, causing it to be delayed.
+    MainThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&LayerTreeHostContextTestLoseAfterSendingBeginMainFrame::
+                       DeferCommitsOnMainThread,
+                   base::Unretained(this),
+                   true));
+    // Meanwhile, lose the context while we are in defer commits.
+    ImplThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&LayerTreeHostContextTestLoseAfterSendingBeginMainFrame::
+                       LoseContextOnImplThread,
+                   base::Unretained(this)));
+  }
+
+  void LoseContextOnImplThread() {
+    LoseContext();
+
+    // After losing the context, stop deferring commits.
+    MainThreadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&LayerTreeHostContextTestLoseAfterSendingBeginMainFrame::
+                       DeferCommitsOnMainThread,
+                   base::Unretained(this),
+                   false));
+  }
+
+  void DeferCommitsOnMainThread(bool defer_commits) {
+    layer_tree_host()->SetDeferCommits(defer_commits);
+  }
+
+  virtual void WillBeginMainFrame() OVERRIDE {
+    // Don't begin a frame with a lost surface.
+    EXPECT_FALSE(layer_tree_host()->output_surface_lost());
+  }
+
+  virtual void DidCommitAndDrawFrame() OVERRIDE { EndTest(); }
+
+  virtual void AfterTest() OVERRIDE {}
+
+  bool deferred_;
+};
+
+// TODO(danakj): We don't use scheduler with SingleThreadProxy yet.
+MULTI_THREAD_TEST_F(LayerTreeHostContextTestLoseAfterSendingBeginMainFrame);
 
 }  // namespace
 }  // namespace cc

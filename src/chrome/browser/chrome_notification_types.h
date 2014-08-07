@@ -131,12 +131,6 @@ enum NotificationType {
   // Details<InfoBar::RemovedDetails>.
   NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
 
-  // This message is sent when an InfoBar is replacing another infobar in an
-  // InfoBarService.  The source is a Source<InfoBarService> with a pointer to
-  // the InfoBarService the InfoBar was removed from.  The details is a
-  // Details<InfoBar::ReplacedDetails>.
-  NOTIFICATION_TAB_CONTENTS_INFOBAR_REPLACED,
-
   // Used to fire notifications about how long various events took to
   // complete.  E.g., this is used to get more fine grained timings from the
   // new tab page.  The source is a WebContents and the details is a
@@ -293,6 +287,12 @@ enum NotificationType {
   // The details are none and the source is the new profile.
   NOTIFICATION_PROFILE_ADDED,
 
+  // Sent early in the process of destroying a Profile, at the time a user
+  // initiates the deletion of a profile versus the much later time when the
+  // profile object is actually destroyed (use NOTIFICATION_PROFILE_DESTROYED).
+  // The details are none and the source is a Profile*.
+  NOTIFICATION_PROFILE_DESTRUCTION_STARTED,
+
   // Sent before a Profile is destroyed. This notification is sent both for
   // normal and OTR profiles.
   // The details are none and the source is a Profile*.
@@ -326,10 +326,6 @@ enum NotificationType {
   // Profile, and the details the id of the TemplateURL being removed.
   NOTIFICATION_TEMPLATE_URL_REMOVED,
 
-  // Sent when the prefs relating to the default search engine have changed due
-  // to policy.  Source and details are unused.
-  NOTIFICATION_DEFAULT_SEARCH_POLICY_CHANGED,
-
   // The state of a web resource has been changed. A resource may have been
   // added, removed, or altered. Source is WebResourceService, and the
   // details are NoDetails.
@@ -352,18 +348,6 @@ enum NotificationType {
 
   // This is sent from Instant when the omnibox focus state changes.
   NOTIFICATION_OMNIBOX_FOCUS_CHANGED,
-
-  // Sent when the Google URL for a profile has been updated.  Some services
-  // cache this value and need to update themselves when it changes.  See
-  // google_util::GetGoogleURLAndUpdateIfNecessary().  The source is the
-  // Profile, the details a GoogleURLTracker::UpdatedDetails containing the old
-  // and new URLs.
-  //
-  // Note that because incognito mode requests for the GoogleURLTracker are
-  // redirected to the non-incognito profile's copy, this notification will only
-  // ever fire on non-incognito profiles; thus listeners should use
-  // GetOriginalProfile() when constructing a Source to filter against.
-  NOTIFICATION_GOOGLE_URL_UPDATED,
 
   // Printing ----------------------------------------------------------------
 
@@ -400,11 +384,6 @@ enum NotificationType {
   // unloaded and reloaded. The source is a Profile.
   NOTIFICATION_EXTENSIONS_READY,
 
-  // Sent when an extension icon being displayed in the location bar is updated.
-  // The source is the Profile and the details are the WebContents for
-  // the tab.
-  NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
-
   // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
   //
   // Sent when a new extension is loaded. The details are an Extension, and
@@ -430,17 +409,21 @@ enum NotificationType {
   // UpdatedExtensionPermissionsInfo, and the source is a Profile.
   NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
 
+  // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
+  //
   // Sent when new extensions are installed, or existing extensions are updated.
   // The details are an InstalledExtensionInfo, and the source is a Profile.
-  NOTIFICATION_EXTENSION_INSTALLED,
+  NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
 
   // An error occured during extension install. The details are a string with
   // details about why the install failed.
   NOTIFICATION_EXTENSION_INSTALL_ERROR,
 
+  // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
+  //
   // Sent when an extension has been uninstalled. The details are an Extension,
   // and the source is a Profile.
-  NOTIFICATION_EXTENSION_UNINSTALLED,
+  NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
 
   // Sent when an extension uninstall is not allowed because the extension is
   // not user manageable.  The details are an Extension, and the source is a

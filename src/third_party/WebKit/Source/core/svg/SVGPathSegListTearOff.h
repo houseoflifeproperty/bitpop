@@ -31,6 +31,7 @@
 #ifndef SVGPathSegListTearOff_h
 #define SVGPathSegListTearOff_h
 
+#include "core/SVGNames.h"
 #include "core/svg/SVGPathSegList.h"
 #include "core/svg/properties/SVGListPropertyTearOffHelper.h"
 
@@ -43,9 +44,12 @@ public:
     // FIXME: Currently SVGPathSegitself is a tear-off.
     typedef SVGPathSeg ItemTearOffType;
 
-    static PassRefPtr<ItemPropertyType> getValueForInsertionFromTearOff(PassRefPtr<ItemTearOffType> passNewItem)
+    static PassRefPtr<ItemPropertyType> getValueForInsertionFromTearOff(PassRefPtr<ItemTearOffType> passNewItem, SVGElement* contextElement, const QualifiedName& attributeName)
     {
-        return passNewItem;
+        ASSERT(attributeName == SVGNames::dAttr);
+        RefPtr<ItemTearOffType> newItem = passNewItem;
+        newItem->setContextElement(contextElement);
+        return newItem.release();
     }
 
     static PassRefPtr<ItemTearOffType> createTearOff(PassRefPtr<ItemPropertyType> passValue, SVGElement* contextElement, PropertyIsAnimValType, const QualifiedName&)
@@ -60,13 +64,13 @@ class SVGPathSegListTearOff FINAL :
     public SVGListPropertyTearOffHelper<SVGPathSegListTearOff, SVGPathSegList>,
     public ScriptWrappable {
 public:
-    static PassRefPtr<SVGPathSegListTearOff> create(PassRefPtr<SVGPathSegList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = nullQName())
+    static PassRefPtr<SVGPathSegListTearOff> create(PassRefPtr<SVGPathSegList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
     {
         return adoptRef(new SVGPathSegListTearOff(target, contextElement, propertyIsAnimVal, attributeName));
     }
 
 private:
-    SVGPathSegListTearOff(PassRefPtr<SVGPathSegList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = nullQName())
+    SVGPathSegListTearOff(PassRefPtr<SVGPathSegList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
         : SVGListPropertyTearOffHelper<SVGPathSegListTearOff, SVGPathSegList>(target, contextElement, propertyIsAnimVal, attributeName)
     {
         ScriptWrappable::init(this);

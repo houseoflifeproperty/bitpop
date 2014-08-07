@@ -63,6 +63,22 @@ F('win_x64_full', win_out().ChromiumFactory(
       'gs_acl': 'public-read',
     }))
 
+# ASan/Win supports neither the component build nor NaCL at the moment.
+asan_win_gyp = 'clang=1 asan=1 component=static_library disable_nacl=1'
+
+# Clang is not stable enough on Windows to use a gatekeeper yet.
+B('Win ASan Release', 'win_asan_rel', scheduler='chromium_lkgr')
+F('win_asan_rel', win_out().ChromiumASANFactory(
+    compile_timeout=8*3600,  # We currently use a VM, which is extremely slow.
+    clobber=True,
+    options=['--build-tool=ninja', '--', 'chromium_builder_asan'],
+    factory_properties={
+       'cf_archive_build': ActiveMaster.is_production_host,
+       'cf_archive_name': 'asan',
+       'gs_bucket': 'gs://chromium-browser-asan',
+       'gs_acl': 'public-read',
+       'gclient_env': {'GYP_DEFINES': asan_win_gyp}}))
+
 ################################################################################
 ## Mac
 ################################################################################
@@ -250,6 +266,26 @@ F('linux_tsan_dbg', linux().ChromiumFactory(
        'gs_acl': 'public-read',
        'tsan': True,
        'gclient_env': {'GYP_DEFINES': tsan_gyp}}))
+
+# The build process for MSan is described at
+# http://dev.chromium.org/developers/testing/memorysanitizer
+# NOTE: building targets other than pdfium_test (which has no DSO dependencies)
+# won't make sense until we can add instrumented_libraries=1 here (i.e. until
+# that option is sufficiently stable).
+msan_gyp = ('msan=1 use_allocator=none '
+            'use_custom_libcxx=1 v8_target_arch=arm64 ')
+
+B('MSAN Release', 'linux_msan_rel', 'compile', 'chromium_lkgr')
+F('linux_msan_rel', linux().ChromiumFactory(
+    clobber=True,
+    target='Release',
+    options=['--compiler=goma-clang', 'pdfium_test'],
+    factory_properties={
+       'cf_archive_build': ActiveMaster.is_production_host,
+       'cf_archive_name': 'msan',
+       'gs_bucket': 'gs://chromium-browser-msan',
+       'gs_acl': 'public-read',
+       'gclient_env': {'GYP_DEFINES': msan_gyp}}))
 
 # This is a bot that uploads LKGR telemetry harnesses to Google Storage.
 B('Telemetry Harness Upload', 'telemetry_harness_upload', None, 'chromium_lkgr')

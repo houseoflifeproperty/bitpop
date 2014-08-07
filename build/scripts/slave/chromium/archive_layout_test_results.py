@@ -172,7 +172,7 @@ def archive_layout(options, args):
   build_name = re.sub('[ .()]', '_', build_name)
 
   wc_dir = os.path.dirname(chrome_dir)
-  last_change = str(slave_utils.SubversionRevision(wc_dir))
+  last_change = slave_utils.GetHashOrRevision(wc_dir)
 
   # TODO(dpranke): Is it safe to assume build_number is not blank? Should we
   # assert() this ?
@@ -182,10 +182,6 @@ def archive_layout(options, args):
   print 'build number: %s' % build_number
   print 'host name: %s' % socket.gethostname()
 
-  # Where to save layout test results.
-  dest_parent_dir = os.path.join(archive_utils.Config.www_dir_base,
-      results_dir_basename.replace('-','_'), build_name)
-  dest_dir = os.path.join(dest_parent_dir, last_change)
 
   if options.gs_bucket:
     # Copy the results to a directory archived by build number.
@@ -205,13 +201,21 @@ def archive_layout(options, args):
     slave_utils.GSUtilCopyFile(failing_results_json, gs_base, gs_acl=gs_acl,
       cache_control=cache_control)
 
-    # And also to the 'results' directory to provide the 'latest' results.
+    # And also to the 'results' directory to provide the 'latest' results
+    # and make sure they are not cached at all (Cloud Storage defaults to
+    # caching w/ a max-age=3600).
     gs_base = '/'.join([options.gs_bucket, build_name, 'results'])
+    cache_control = 'no-cache'
     slave_utils.GSUtilCopyFile(zip_file, gs_base, gs_base, gs_acl=gs_acl,
-      cache_control=cache_control)
+        cache_control=cache_control)
     slave_utils.GSUtilCopyDir(options.results_dir, gs_base, gs_acl=gs_acl,
-      cache_control=cache_control)
+        cache_control=cache_control)
   else:
+    # Where to save layout test results.
+    dest_parent_dir = os.path.join(archive_utils.Config.www_dir_base,
+        results_dir_basename.replace('-','_'), build_name)
+    dest_dir = os.path.join(dest_parent_dir, last_change)
+
     _MaybeMakeDirectoryOnArchiveHost(dest_dir)
     _CopyFileToArchiveHost(zip_file, dest_dir)
     _CopyFileToArchiveHost(full_results_json, dest_dir)

@@ -76,7 +76,6 @@ extern const char kChromeUISettingsFrameURL[];
 extern const char kChromeUISuggestions[];
 extern const char kChromeUISuggestionsInternalsURL[];
 extern const char kChromeUISSLClientCertificateSelectorURL[];
-extern const char kChromeUITaskManagerURL[];
 extern const char kChromeUITermsURL[];
 extern const char kChromeUIThemeURL[];
 extern const char kChromeUIThumbnailURL[];
@@ -200,6 +199,7 @@ extern const char kChromeUIPluginsHost[];
 extern const char kChromeUIComponentsHost[];
 extern const char kChromeUIPolicyHost[];
 extern const char kChromeUIProfileSigninConfirmationHost[];
+extern const char kChromeUIProvidedFileSystemsHost[];
 extern const char kChromeUIUserManagerHost[];
 extern const char kChromeUIPredictorsHost[];
 extern const char kChromeUIPrintHost[];
@@ -308,7 +308,7 @@ extern const char kExtensionsSubPage[];
 extern const char kHandlerSettingsSubPage[];
 extern const char kImportDataSubPage[];
 extern const char kLanguageOptionsSubPage[];
-extern const char kManagedUserSettingsSubPage[];
+extern const char kSupervisedUserSettingsSubPage[];
 extern const char kManageProfileSubPage[];
 extern const char kPasswordManagerSubPage[];
 extern const char kResetProfileSettingsSubPage[];
@@ -380,9 +380,6 @@ extern const char kSupervisedUserManagementDisplayURL[];
 
 // Help URL for the settings page's search feature.
 extern const char kSettingsSearchHelpURL[];
-
-// "About" URL for the translate bar's options menu.
-extern const char kAboutGoogleTranslateURL[];
 
 // Help URL for the Omnibox setting.
 extern const char kOmniboxLearnMoreURL[];

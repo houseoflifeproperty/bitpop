@@ -29,7 +29,9 @@
 #include "core/frame/LocalFrame.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/InlineFlowBox.h"
+#include "core/rendering/PaintInfo.h"
 #include "core/rendering/PointerEventsHitRules.h"
+#include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/style/ShadowList.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
@@ -286,8 +288,9 @@ void SVGInlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
                 hasFill = svgSelectionStyle->hasFill();
             if (!hasVisibleStroke)
                 hasVisibleStroke = svgSelectionStyle->hasVisibleStroke();
-        } else
+        } else {
             selectionStyle = style;
+        }
     }
 
     if (textRenderer.frame() && textRenderer.frame()->view() && textRenderer.frame()->view()->paintBehavior() & PaintBehaviorRenderingSVGMask) {
@@ -344,6 +347,10 @@ void SVGInlineTextBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffse
         if (decorations & TextDecorationLineThrough)
             paintDecoration(paintInfo.context, TextDecorationLineThrough, fragment);
     }
+
+    // finally, paint the outline if any
+    if (style->hasOutline() && parentRenderer.isRenderInline())
+        toRenderInline(parentRenderer).paintOutline(paintInfo, paintOffset);
 
     ASSERT(!m_paintingResource);
 }
@@ -589,7 +596,7 @@ void SVGInlineTextBox::paintDecorationWithStyle(GraphicsContext* context, TextDe
         stateSaver.save();
         width *= scalingFactor;
         decorationOrigin.scale(scalingFactor, scalingFactor);
-        context->scale(FloatSize(1 / scalingFactor, 1 / scalingFactor));
+        context->scale(1 / scalingFactor, 1 / scalingFactor);
     }
 
     decorationOrigin.move(0, -scaledFontMetrics.floatAscent() + positionOffsetForDecoration(decoration, scaledFontMetrics, thickness));
@@ -625,7 +632,7 @@ void SVGInlineTextBox::paintTextWithShadows(GraphicsContext* context, RenderStyl
         textOrigin.scale(scalingFactor, scalingFactor);
         textSize.scale(scalingFactor);
         context->save();
-        context->scale(FloatSize(1 / scalingFactor, 1 / scalingFactor));
+        context->scale(1 / scalingFactor, 1 / scalingFactor);
     }
 
     if (hasShadow) {

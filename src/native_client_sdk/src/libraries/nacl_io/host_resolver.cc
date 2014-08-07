@@ -2,9 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef __STDC_LIMIT_MACROS
+#define __STDC_LIMIT_MACROS
+#endif
+
 #include "nacl_io/host_resolver.h"
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -58,8 +63,7 @@ void CreateAddrInfo(const addrinfo* hints,
       break;
     }
     case AF_INET: {
-      sockaddr_in* in =
-          static_cast<sockaddr_in*>(malloc(sizeof(sockaddr_in)));
+      sockaddr_in* in = static_cast<sockaddr_in*>(malloc(sizeof(sockaddr_in)));
       *in = *(sockaddr_in*)addr;
       ai->ai_family = AF_INET;
       ai->ai_addr = reinterpret_cast<sockaddr*>(in);
@@ -196,10 +200,17 @@ struct hostent* HostResolver::gethostbyname(const char* name) {
   }
 
   freeaddrinfo(ai);
+
+#if !defined(h_addr)
+  // Copy element zero of h_addr_list to h_addr when h_addr is not defined
+  // as in some libc's h_addr may be a separate member instead of a macro.
+  hostent_.h_addr = hostent_.h_addr_list[0];
+#endif
+
   return &hostent_;
 }
 
-void HostResolver::freeaddrinfo(struct addrinfo *res) {
+void HostResolver::freeaddrinfo(struct addrinfo* res) {
   while (res) {
     struct addrinfo* cur = res;
     res = res->ai_next;
@@ -209,7 +220,8 @@ void HostResolver::freeaddrinfo(struct addrinfo *res) {
   }
 }
 
-int HostResolver::getaddrinfo(const char* node, const char* service,
+int HostResolver::getaddrinfo(const char* node,
+                              const char* service,
                               const struct addrinfo* hints_in,
                               struct addrinfo** result) {
   *result = NULL;
@@ -224,7 +236,7 @@ int HostResolver::getaddrinfo(const char* node, const char* service,
   if (service != NULL) {
     char* cp;
     port = strtol(service, &cp, 10);
-    if (port > 0 && port <= 65535 && *cp == '\0') {
+    if (port >= 0 && port <= UINT16_MAX && *cp == '\0') {
       port = htons(port);
     } else {
       return EAI_SERVICE;
@@ -336,7 +348,7 @@ int HostResolver::getaddrinfo(const char* node, const char* service,
       // TODO(sbc): investigate this issue with PPAPI team.
       if (len > 0) {
         // Copy and NULL-terminate the UTF8 string var.
-        canon_name = static_cast<char*>(malloc(len+1));
+        canon_name = static_cast<char*>(malloc(len + 1));
         strncpy(canon_name, tmp, len);
         canon_name[len] = '\0';
       }
@@ -374,8 +386,7 @@ int HostResolver::getaddrinfo(const char* node, const char* service,
           assert(false);
           break;
         }
-        memcpy(&addr_in6.sin6_addr.s6_addr, pp_addr.addr,
-               sizeof(in6_addr));
+        memcpy(&addr_in6.sin6_addr.s6_addr, pp_addr.addr, sizeof(in6_addr));
         sockaddr = (struct sockaddr*)&addr_in6;
         break;
       }
@@ -402,13 +413,13 @@ void HostResolver::hostent_cleanup() {
     free(hostent_.h_name);
   }
   if (NULL != hostent_.h_aliases) {
-    for (int i = 0;  NULL != hostent_.h_aliases[i]; i++) {
+    for (int i = 0; NULL != hostent_.h_aliases[i]; i++) {
       free(hostent_.h_aliases[i]);
     }
     free(hostent_.h_aliases);
   }
   if (NULL != hostent_.h_addr_list) {
-    for (int i = 0;  NULL != hostent_.h_addr_list[i]; i++) {
+    for (int i = 0; NULL != hostent_.h_addr_list[i]; i++) {
       free(hostent_.h_addr_list[i]);
     }
     free(hostent_.h_addr_list);
@@ -416,6 +427,10 @@ void HostResolver::hostent_cleanup() {
   hostent_.h_name = NULL;
   hostent_.h_aliases = NULL;
   hostent_.h_addr_list = NULL;
+#if !defined(h_addr)
+  // Initialize h_addr separately in the case where it is not a macro.
+  hostent_.h_addr = NULL;
+#endif
 }
 
 }  // namespace nacl_io

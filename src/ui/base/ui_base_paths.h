@@ -8,8 +8,8 @@
 #include "build/build_config.h"
 #include "ui/base/ui_base_export.h"
 
-// This file declares path keys for the app module.  These can be used with
-// the PathService to access various special directories and files.
+// This file declares path keys for various special directories. These can be
+// used with the PathService to access these directories and files.
 
 namespace ui {
 
@@ -19,11 +19,13 @@ enum {
   DIR_LOCALES,              // Directory where locale resources are stored.
 
   // Valid only in development environment; TODO(darin): move this
-  DIR_TEST_DATA,            // Directory where unit test data resides.
+  UI_DIR_TEST_DATA,            // Directory where unit test data resides.
 
 #if defined(OS_ANDROID)
   DIR_RESOURCE_PAKS_ANDROID,
 #endif
+
+  UI_TEST_PAK,
 
   PATH_END
 };

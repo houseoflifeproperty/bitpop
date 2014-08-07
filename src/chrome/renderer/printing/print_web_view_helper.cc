@@ -1016,9 +1016,8 @@ void PrintWebViewHelper::OnPrintPreview(const base::DictionaryValue& settings) {
     if (print_preview_context_.last_error() != PREVIEW_ERROR_BAD_SETTING) {
       Send(new PrintHostMsg_PrintPreviewInvalidPrinterSettings(
           routing_id(),
-          print_pages_params_.get()
-              ? print_pages_params_->params.document_cookie
-              : 0));
+          print_pages_params_ ?
+              print_pages_params_->params.document_cookie : 0));
       notify_browser_of_print_failure_ = false;  // Already sent.
     }
     DidFinishPrinting(FAIL_PREVIEW);
@@ -1294,7 +1293,7 @@ void PrintWebViewHelper::DidFinishPrinting(PrintingResult result) {
       break;
 
     case FAIL_PRINT:
-      if (notify_browser_of_print_failure_ && print_pages_params_.get()) {
+      if (notify_browser_of_print_failure_ && print_pages_params_) {
         int cookie = print_pages_params_->params.document_cookie;
         Send(new PrintHostMsg_PrintingFailed(routing_id(), cookie));
       }
@@ -1302,7 +1301,7 @@ void PrintWebViewHelper::DidFinishPrinting(PrintingResult result) {
 
     case FAIL_PREVIEW:
       DCHECK(is_preview_enabled_);
-      int cookie = print_pages_params_.get() ?
+      int cookie = print_pages_params_ ?
           print_pages_params_->params.document_cookie : 0;
       if (notify_browser_of_print_failure_) {
         LOG(ERROR) << "CreatePreviewDocument failed";
@@ -1368,7 +1367,8 @@ void PrintWebViewHelper::FinishFramePrinting() {
   prep_frame_view_.reset();
 }
 
-#if defined(OS_MACOSX) || defined(OS_WIN)
+#if defined(OS_MACOSX) || \
+    (defined(OS_WIN) && !defined(WIN_PDF_METAFILE_FOR_PRINTING))
 bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
                                           int page_count,
                                           const gfx::Size& canvas_size) {
@@ -1393,7 +1393,7 @@ bool PrintWebViewHelper::PrintPagesNative(blink::WebFrame* frame,
   return true;
 }
 
-#endif  // OS_MACOSX || OS_WIN
+#endif  // OS_MACOSX || !WIN_PDF_METAFILE_FOR_PRINTING
 
 // static - Not anonymous so that platform implementations can use it.
 void PrintWebViewHelper::ComputePageLayoutInPointsForCss(
@@ -1496,7 +1496,7 @@ bool PrintWebViewHelper::UpdatePrintSettings(
 
   // Send the cookie so that UpdatePrintSettings can reuse PrinterQuery when
   // possible.
-  int cookie = print_pages_params_.get() ?
+  int cookie = print_pages_params_ ?
       print_pages_params_->params.document_cookie : 0;
   PrintMsg_PrintPages_Params settings;
   Send(new PrintHostMsg_UpdatePrintSettings(routing_id(), cookie, *job_settings,
@@ -1617,15 +1617,13 @@ bool PrintWebViewHelper::CopyMetafileDataToSharedMem(
       content::RenderThread::Get()->HostAllocateSharedMemoryBuffer(
           buf_size).release());
 
-  if (shared_buf.get()) {
+  if (shared_buf) {
     if (shared_buf->Map(buf_size)) {
       metafile->GetData(shared_buf->memory(), buf_size);
-      shared_buf->GiveToProcess(base::GetCurrentProcessHandle(),
-                                shared_mem_handle);
-      return true;
+      return shared_buf->GiveToProcess(base::GetCurrentProcessHandle(),
+                                       shared_mem_handle);
     }
   }
-  NOTREACHED();
   return false;
 }
 #endif  // defined(OS_POSIX)
@@ -1705,13 +1703,10 @@ void PrintWebViewHelper::RequestPrintPreview(PrintPreviewRequestType type) {
         // |is_modifiable| value until they are fully loaded, which occurs when
         // DidStopLoading() is called. Defer showing the preview until then.
       } else {
-        // TODO(japhet): This delay is a terrible hack. See crbug.com/376969
-        // for the motivation.
-        base::MessageLoop::current()->PostDelayedTask(
+        base::MessageLoop::current()->PostTask(
             FROM_HERE,
             base::Bind(&PrintWebViewHelper::ShowScriptedPrintPreview,
-                       weak_ptr_factory_.GetWeakPtr()),
-            base::TimeDelta::FromMilliseconds(100));
+                       weak_ptr_factory_.GetWeakPtr()));
       }
       IPC::SyncMessage* msg =
           new PrintHostMsg_SetupScriptedPrintPreview(routing_id());

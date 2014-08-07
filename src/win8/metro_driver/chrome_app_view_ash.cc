@@ -23,6 +23,8 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
 #include "ui/events/gestures/gesture_sequence.h"
+#include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/win/dpi.h"
 #include "ui/metro_viewer/metro_viewer_messages.h"
 #include "win8/metro_driver/file_picker_ash.h"
 #include "win8/metro_driver/ime/ime_popup_monitor.h"
@@ -73,6 +75,8 @@ struct Globals {
   winapp::Core::ICoreApplicationExit* app_exit;
   BreakpadExceptionHandler breakpad_exception_handler;
 } globals;
+
+extern float GetModernUIScale();
 
 namespace {
 
@@ -360,7 +364,7 @@ bool LaunchChromeBrowserProcess(const wchar_t* additional_parameters,
 // This class helps decoding the pointer properties of an event.
 class ChromeAppViewAsh::PointerInfoHandler {
  public:
-  PointerInfoHandler()
+  PointerInfoHandler(float metro_dpi_scale, float win32_dpi_scale)
       : x_(0),
         y_(0),
         wheel_delta_(0),
@@ -368,7 +372,9 @@ class ChromeAppViewAsh::PointerInfoHandler {
         timestamp_(0),
         pointer_id_(0),
         mouse_down_flags_(0),
-        is_horizontal_wheel_(0) {}
+        is_horizontal_wheel_(0),
+        metro_dpi_scale_(metro_dpi_scale),
+        win32_dpi_scale_(win32_dpi_scale) {}
 
   HRESULT Init(winui::Core::IPointerEventArgs* args) {
     HRESULT hr = args->get_CurrentPoint(&pointer_point_);
@@ -396,8 +402,18 @@ class ChromeAppViewAsh::PointerInfoHandler {
     is_horizontal_wheel_ = 0;
     properties->get_IsHorizontalMouseWheel(&is_horizontal_wheel_);
 
-    x_ = point.X;
-    y_ = point.Y;
+    // The input coordinates are in DIP based on the metro scale factor.
+    // We want to convert it to DIP based on the win32 scale factor.
+    // We scale the point by the metro scale factor and then scale down
+    // via the win32 scale factor which achieves the needful.
+    gfx::Point dip_point_metro(point.X, point.Y);
+    gfx::Point scaled_point_metro =
+      gfx::ToCeiledPoint(gfx::ScalePoint(dip_point_metro, metro_dpi_scale_));
+    gfx::Point dip_point_win32 =
+        gfx::ToCeiledPoint(gfx::ScalePoint(scaled_point_metro,
+                                           1.0 / win32_dpi_scale_));
+    x_ = dip_point_win32.x();
+    y_ = dip_point_win32.y();
 
     pointer_point_->get_Timestamp(&timestamp_);
     pointer_point_->get_PointerId(&pointer_id_);
@@ -500,13 +516,21 @@ class ChromeAppViewAsh::PointerInfoHandler {
   // Set to true for a horizontal wheel message.
   boolean is_horizontal_wheel_;
 
+  // The metro device scale factor as reported by the winrt interfaces.
+  float metro_dpi_scale_;
+  // The win32 dpi scale which is queried via GetDeviceCaps. Please refer to
+  // ui/gfx/win/dpi.cc for more information.
+  float win32_dpi_scale_;
+
   DISALLOW_COPY_AND_ASSIGN(PointerInfoHandler);
 };
 
 ChromeAppViewAsh::ChromeAppViewAsh()
     : mouse_down_flags_(ui::EF_NONE),
       ui_channel_(nullptr),
-      core_window_hwnd_(NULL) {
+      core_window_hwnd_(NULL),
+      metro_dpi_scale_(0),
+      win32_dpi_scale_(0) {
   DVLOG(1) << __FUNCTION__;
   globals.previous_state =
       winapp::Activation::ApplicationExecutionState_NotRunning;
@@ -625,6 +649,16 @@ ChromeAppViewAsh::SetWindow(winui::Core::ICoreWindow* window) {
   // we can now directly blit to it from the browser process.
   direct3d_helper_.Initialize(window);
   DVLOG(1) << "Initialized Direct3D.";
+
+  // On Windows 8+ the WinRT interface IDisplayProperties which we use to get
+  // device scale factor does not return the correct values in metro mode.
+  // To workaround this we retrieve the device scale factor via the win32 way
+  // and scale input coordinates accordingly to pass them in DIP to chrome.
+  // TODO(ananta). Investigate and fix.
+  metro_dpi_scale_ = GetModernUIScale();
+  win32_dpi_scale_ = gfx::GetDPIScale();
+  DVLOG(1) << "Metro Scale is " << metro_dpi_scale_;
+  DVLOG(1) << "Win32 Scale is " << win32_dpi_scale_;
   return S_OK;
 }
 
@@ -660,16 +694,17 @@ ChromeAppViewAsh::Run() {
   // In Aura mode we create an IPC channel to the browser, then ask it to
   // connect to us.
   ChromeChannelListener ui_channel_listener(&ui_loop_, this);
-  IPC::ChannelProxy ui_channel(win8::kMetroViewerIPCChannelName,
-                               IPC::Channel::MODE_NAMED_CLIENT,
-                               &ui_channel_listener,
-                               io_thread.message_loop_proxy());
-  ui_channel_ = &ui_channel;
+  scoped_ptr<IPC::ChannelProxy> channel =
+      IPC::ChannelProxy::Create(win8::kMetroViewerIPCChannelName,
+                                IPC::Channel::MODE_NAMED_CLIENT,
+                                &ui_channel_listener,
+                                io_thread.message_loop_proxy());
+  ui_channel_ = channel.get();
 
   // Upon receipt of the MetroViewerHostMsg_SetTargetSurface message the
   // browser will use D3D from the browser process to present to our Window.
   ui_channel_->Send(new MetroViewerHostMsg_SetTargetSurface(
-                    gfx::NativeViewId(core_window_hwnd_)));
+                    gfx::NativeViewId(core_window_hwnd_), win32_dpi_scale_));
   DVLOG(1) << "ICoreWindow sent " << core_window_hwnd_;
 
   // Send an initial size message so that the Ash root window host gets sized
@@ -1041,7 +1076,7 @@ HRESULT ChromeAppViewAsh::OnActivate(
 
 HRESULT ChromeAppViewAsh::OnPointerMoved(winui::Core::ICoreWindow* sender,
                                          winui::Core::IPointerEventArgs* args) {
-  PointerInfoHandler pointer;
+  PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
     return hr;
@@ -1071,7 +1106,7 @@ HRESULT ChromeAppViewAsh::OnPointerMoved(winui::Core::ICoreWindow* sender,
 HRESULT ChromeAppViewAsh::OnPointerPressed(
     winui::Core::ICoreWindow* sender,
     winui::Core::IPointerEventArgs* args) {
-  PointerInfoHandler pointer;
+  PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
     return hr;
@@ -1094,7 +1129,7 @@ HRESULT ChromeAppViewAsh::OnPointerPressed(
 HRESULT ChromeAppViewAsh::OnPointerReleased(
     winui::Core::ICoreWindow* sender,
     winui::Core::IPointerEventArgs* args) {
-  PointerInfoHandler pointer;
+  PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
     return hr;
@@ -1119,7 +1154,7 @@ HRESULT ChromeAppViewAsh::OnPointerReleased(
 HRESULT ChromeAppViewAsh::OnWheel(
     winui::Core::ICoreWindow* sender,
     winui::Core::IPointerEventArgs* args) {
-  PointerInfoHandler pointer;
+  PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
     return hr;

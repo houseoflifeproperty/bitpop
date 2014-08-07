@@ -11,7 +11,7 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -59,22 +59,9 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_RegularFile) {
   // TransferFileFromLocalToRemote stores a copy of the local file in the cache,
   // marks it dirty and requests the observer to upload the file.
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_dest_path, &entry));
-  EXPECT_EQ(1U, observer()->updated_local_ids().count(
-      GetLocalId(remote_dest_path)));
-  FileCacheEntry cache_entry;
-  bool found = false;
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner(),
-      FROM_HERE,
-      base::Bind(&internal::FileCache::GetCacheEntry,
-                 base::Unretained(cache()),
-                 GetLocalId(remote_dest_path),
-                 &cache_entry),
-      google_apis::test_util::CreateCopyResultCallback(&found));
-  test_util::RunBlockingPoolTask();
-  EXPECT_TRUE(found);
-  EXPECT_TRUE(cache_entry.is_present());
-  EXPECT_TRUE(cache_entry.is_dirty());
+  EXPECT_EQ(1U, observer()->updated_local_ids().count(entry.local_id()));
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_dirty());
 
   EXPECT_EQ(1U, observer()->get_changed_paths().size());
   EXPECT_TRUE(observer()->get_changed_paths().count(
@@ -106,18 +93,8 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_Overwrite) {
   // marks it dirty and requests the observer to upload the file.
   EXPECT_EQ(FILE_ERROR_OK, GetLocalResourceEntry(remote_dest_path, &entry));
   EXPECT_EQ(1U, observer()->updated_local_ids().count(entry.local_id()));
-  FileCacheEntry cache_entry;
-  bool found = false;
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner(),
-      FROM_HERE,
-      base::Bind(&internal::FileCache::GetCacheEntry,
-                 base::Unretained(cache()), entry.local_id(), &cache_entry),
-      google_apis::test_util::CreateCopyResultCallback(&found));
-  test_util::RunBlockingPoolTask();
-  EXPECT_TRUE(found);
-  EXPECT_TRUE(cache_entry.is_present());
-  EXPECT_TRUE(cache_entry.is_dirty());
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_present());
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_dirty());
 
   EXPECT_EQ(1U, observer()->get_changed_paths().size());
   EXPECT_TRUE(observer()->get_changed_paths().count(
@@ -202,7 +179,7 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_NewHostedDocument) {
 
   // Create a hosted document on the server that is not synced to local yet.
   google_apis::GDataErrorCode gdata_error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> new_gdoc_entry;
+  scoped_ptr<google_apis::FileResource> new_gdoc_entry;
   fake_service()->AddNewFile(
       "application/vnd.google-apps.document", "", "", "title", true,
       google_apis::test_util::CreateCopyResultCallback(&gdata_error,
@@ -213,8 +190,8 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_NewHostedDocument) {
   // Prepare a local file, which is a json file of the added hosted document.
   ASSERT_TRUE(util::CreateGDocFile(
       local_src_path,
-      GURL("https://3_document_self_link/" + new_gdoc_entry->resource_id()),
-      new_gdoc_entry->resource_id()));
+      GURL("https://3_document_self_link/" + new_gdoc_entry->file_id()),
+      new_gdoc_entry->file_id()));
 
   ResourceEntry entry;
   ASSERT_EQ(FILE_ERROR_NOT_FOUND,
@@ -235,7 +212,7 @@ TEST_F(CopyOperationTest, TransferFileFromLocalToRemote_NewHostedDocument) {
   EXPECT_TRUE(
       observer()->get_changed_paths().count(remote_dest_path.DirName()));
   // The original document got new parent.
-  EXPECT_EQ(new_gdoc_entry->resource_id(), entry.resource_id());
+  EXPECT_EQ(new_gdoc_entry->file_id(), entry.resource_id());
 }
 
 TEST_F(CopyOperationTest, CopyNotExistingFile) {
@@ -351,19 +328,7 @@ TEST_F(CopyOperationTest, CopyDirtyFile) {
   EXPECT_TRUE(observer()->get_changed_paths().count(dest_path.DirName()));
 
   // Copied cache file should be dirty.
-  bool success = false;
-  FileCacheEntry cache_entry;
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner(),
-      FROM_HERE,
-      base::Bind(&internal::FileCache::GetCacheEntry,
-                 base::Unretained(cache()),
-                 dest_entry.local_id(),
-                 &cache_entry),
-      google_apis::test_util::CreateCopyResultCallback(&success));
-  test_util::RunBlockingPoolTask();
-  EXPECT_TRUE(success);
-  EXPECT_TRUE(cache_entry.is_dirty());
+  EXPECT_TRUE(dest_entry.file_specific_info().cache_state().is_dirty());
 
   // File contents should match.
   base::FilePath cache_file_path;

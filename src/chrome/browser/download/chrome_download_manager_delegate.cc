@@ -17,6 +17,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_runner.h"
+#include "base/task_runner_util.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
@@ -33,9 +34,6 @@
 #include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/download/download_target_determiner.h"
 #include "chrome/browser/download/save_package_file_picker.h"
-#include "chrome/browser/extensions/api/downloads/downloads_api.h"
-#include "chrome/browser/extensions/crx_installer.h"
-#include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
@@ -44,18 +42,24 @@
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/page_navigator.h"
-#include "extensions/common/constants.h"
 #include "net/base/filename_util.h"
 #include "net/base/mime_util.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/download_handler.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/api/downloads/downloads_api.h"
+#include "chrome/browser/extensions/crx_installer.h"
+#include "chrome/browser/extensions/webstore_installer.h"
+#include "extensions/common/constants.h"
 #endif
 
 using content::BrowserThread;
@@ -174,36 +178,10 @@ void CheckDownloadUrlDone(
 #endif  // FULL_SAFE_BROWSING
 
 // Called on the blocking pool to determine the MIME type for |path|.
-void GetMimeTypeAndReplyOnUIThread(
-    const base::FilePath& path,
-    const base::Callback<void(const std::string&)>& callback) {
+std::string GetMimeType(const base::FilePath& path) {
   std::string mime_type;
   net::GetMimeTypeFromFile(path, &mime_type);
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE, base::Bind(callback, mime_type));
-}
-
-bool IsOpenInBrowserPreferreredForFile(const base::FilePath& path) {
-  // On Android, always prefer opening with an external app. On ChromeOS, there
-  // are no external apps so just allow all opens to be handled by the "System."
-#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && defined(ENABLE_PLUGINS)
-  // TODO(asanka): Consider other file types and MIME types.
-  // http://crbug.com/323561
-  if (path.MatchesExtension(FILE_PATH_LITERAL(".pdf")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".htm")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".html")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".shtm")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".shtml")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".svg")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".xht")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".xhtm")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".xhtml")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".xsl")) ||
-      path.MatchesExtension(FILE_PATH_LITERAL(".xslt"))) {
-    return true;
-  }
-#endif
-  return false;
+  return mime_type;
 }
 
 }  // namespace
@@ -295,11 +273,13 @@ bool ChromeDownloadManagerDelegate::ShouldOpenFileBasedOnExtension(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (path.Extension().empty())
     return false;
+#if defined(ENABLE_EXTENSIONS)
   // TODO(asanka): This determination is done based on |path|, while
   // ShouldOpenDownload() detects extension downloads based on the
   // characteristics of the download. Reconcile this. http://crbug.com/167702
   if (path.MatchesExtension(extensions::kExtensionFileExtension))
     return false;
+#endif
   return download_prefs_->IsAutoOpenEnabledBasedOnExtension(path);
 }
 
@@ -370,6 +350,7 @@ bool ChromeDownloadManagerDelegate::ShouldCompleteDownload(
 
 bool ChromeDownloadManagerDelegate::ShouldOpenDownload(
     DownloadItem* item, const content::DownloadOpenDelayedCallback& callback) {
+#if defined(ENABLE_EXTENSIONS)
   if (download_crx_util::IsExtensionDownload(*item) &&
       !extensions::WebstoreInstaller::GetAssociatedApproval(*item)) {
     scoped_refptr<extensions::CrxInstaller> crx_installer =
@@ -389,6 +370,7 @@ bool ChromeDownloadManagerDelegate::ShouldOpenDownload(
     item->UpdateObservers();
     return false;
   }
+#endif
 
   return true;
 }
@@ -535,7 +517,7 @@ void ChromeDownloadManagerDelegate::NotifyExtensions(
     const base::FilePath& virtual_path,
     const NotifyExtensionsCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_EXTENSIONS)
   extensions::ExtensionDownloadsEventRouter* router =
       DownloadServiceFactory::GetForBrowserContext(profile_)
           ->GetExtensionEventRouter();
@@ -629,9 +611,11 @@ void ChromeDownloadManagerDelegate::CheckDownloadUrl(
 void ChromeDownloadManagerDelegate::GetFileMimeType(
     const base::FilePath& path,
     const GetFileMimeTypeCallback& callback) {
-  BrowserThread::PostBlockingPoolTask(
-      FROM_HERE,
-      base::Bind(&GetMimeTypeAndReplyOnUIThread, path, callback));
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  base::PostTaskAndReplyWithResult(BrowserThread::GetBlockingPool(),
+                                   FROM_HERE,
+                                   base::Bind(&GetMimeType, path),
+                                   callback);
 }
 
 #if defined(FULL_SAFE_BROWSING)
@@ -684,6 +668,7 @@ void ChromeDownloadManagerDelegate::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
+#if defined(ENABLE_EXTENSIONS)
   DCHECK(type == chrome::NOTIFICATION_CRX_INSTALLER_DONE);
 
   registrar_.Remove(this,
@@ -696,6 +681,7 @@ void ChromeDownloadManagerDelegate::Observe(
       crx_installers_[installer.get()];
   crx_installers_.erase(installer.get());
   callback.Run(installer->did_handle_successfully());
+#endif
 }
 
 void ChromeDownloadManagerDelegate::OnDownloadTargetDetermined(
@@ -712,4 +698,36 @@ void ChromeDownloadManagerDelegate::OnDownloadTargetDetermined(
                target_info->target_disposition,
                target_info->danger_type,
                target_info->intermediate_path);
+}
+
+bool ChromeDownloadManagerDelegate::IsOpenInBrowserPreferreredForFile(
+    const base::FilePath& path) {
+  // On Windows, PDFs should open in Acrobat Reader if the user chooses.
+#if defined(OS_WIN)
+  if (path.MatchesExtension(FILE_PATH_LITERAL(".pdf")) &&
+      DownloadTargetDeterminer::IsAdobeReaderUpToDate()) {
+    return !download_prefs_->ShouldOpenPdfInAdobeReader();
+  }
+#endif
+
+  // On Android, always prefer opening with an external app. On ChromeOS, there
+  // are no external apps so just allow all opens to be handled by the "System."
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS) && defined(ENABLE_PLUGINS)
+  // TODO(asanka): Consider other file types and MIME types.
+  // http://crbug.com/323561
+  if (path.MatchesExtension(FILE_PATH_LITERAL(".pdf")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".htm")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".html")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".shtm")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".shtml")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".svg")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xht")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xhtm")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xhtml")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xsl")) ||
+      path.MatchesExtension(FILE_PATH_LITERAL(".xslt"))) {
+    return true;
+  }
+#endif
+  return false;
 }

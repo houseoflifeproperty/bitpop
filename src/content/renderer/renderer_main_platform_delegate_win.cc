@@ -18,6 +18,7 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/renderer/render_thread_impl.h"
 #include "sandbox/win/src/sandbox.h"
+#include "skia/ext/fontmgr_default_win.h"
 #include "skia/ext/vector_platform_device_emf_win.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/win/WebFontRendering.h"
@@ -60,6 +61,7 @@ void WarmupDirectWrite() {
   SkTypeface* typeface =
       GetPreSandboxWarmupFontMgr()->legacyCreateTypeface("Times New Roman", 0);
   DoPreSandboxWarmupForTypeface(typeface);
+  SetDefaultSkiaFactory(GetPreSandboxWarmupFontMgr());
 }
 
 }  // namespace
@@ -112,28 +114,6 @@ void RendererMainPlatformDelegate::PlatformInitialize() {
 void RendererMainPlatformDelegate::PlatformUninitialize() {
 }
 
-bool RendererMainPlatformDelegate::InitSandboxTests(bool no_sandbox) {
-  const CommandLine& command_line = parameters_.command_line;
-
-  DVLOG(1) << "Started renderer with " << command_line.GetCommandLineString();
-
-  sandbox::TargetServices* target_services =
-      parameters_.sandbox_info->target_services;
-
-  if (target_services && !no_sandbox) {
-      std::wstring test_dll_name =
-          command_line.GetSwitchValueNative(switches::kTestSandbox);
-    if (!test_dll_name.empty()) {
-      sandbox_test_module_ = LoadLibrary(test_dll_name.c_str());
-      DCHECK(sandbox_test_module_);
-      if (!sandbox_test_module_) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
 bool RendererMainPlatformDelegate::EnableSandbox() {
   sandbox::TargetServices* target_services =
       parameters_.sandbox_info->target_services;
@@ -150,21 +130,6 @@ bool RendererMainPlatformDelegate::EnableSandbox() {
     return true;
   }
   return false;
-}
-
-void RendererMainPlatformDelegate::RunSandboxTests(bool no_sandbox) {
-  if (sandbox_test_module_) {
-    RunRendererTests run_security_tests =
-        reinterpret_cast<RunRendererTests>(GetProcAddress(sandbox_test_module_,
-                                                          kRenderTestCall));
-    DCHECK(run_security_tests);
-    if (run_security_tests) {
-      int test_count = 0;
-      DVLOG(1) << "Running renderer security tests";
-      BOOL result = run_security_tests(&test_count);
-      CHECK(result) << "Test number " << test_count << " has failed.";
-    }
-  }
 }
 
 }  // namespace content

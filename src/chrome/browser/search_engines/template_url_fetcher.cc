@@ -14,6 +14,7 @@
 #include "chrome/browser/search_engines/template_url_parser.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
@@ -136,7 +137,9 @@ void TemplateURLFetcher::RequestDelegate::OnURLFetchComplete(
 
   template_url_.reset(TemplateURLParser::Parse(fetcher_->profile(), false,
       data.data(), data.length(), NULL));
-  if (!template_url_.get() || !template_url_->url_ref().SupportsReplacement()) {
+  if (!template_url_.get() ||
+      !template_url_->url_ref().SupportsReplacement(
+          UIThreadSearchTermsData(fetcher_->profile()))) {
     fetcher_->RequestCompleted(this);
     // WARNING: RequestCompleted deletes us.
     return;
@@ -193,7 +196,7 @@ void TemplateURLFetcher::RequestDelegate::AddSearchProvider() {
     case AUTODETECTED_PROVIDER:
       // Mark the keyword as replaceable so it can be removed if necessary.
       data.safe_for_autoreplace = true;
-      model->Add(new TemplateURL(profile, data));
+      model->Add(new TemplateURL(data));
       break;
 
     case EXPLICIT_PROVIDER:
@@ -203,8 +206,7 @@ void TemplateURLFetcher::RequestDelegate::AddSearchProvider() {
       // The source WebContents' delegate takes care of adding the URL to the
       // model, which takes ownership, or of deleting it if the add is
       // cancelled.
-      callbacks_->ConfirmAddSearchProvider(new TemplateURL(profile, data),
-                                           profile);
+      callbacks_->ConfirmAddSearchProvider(new TemplateURL(data), profile);
       break;
 
     default:

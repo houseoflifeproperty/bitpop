@@ -33,17 +33,17 @@ typedef (CanvasRenderingContext2D or WebGLRenderingContext) RenderingContext;
 
     [CustomElementCallbacks, PerWorldBindings, LogActivity, RaisesException] Element createElement(DOMString tagName);
     DocumentFragment createDocumentFragment();
-    [PerWorldBindings] Text createTextNode(DOMString data);
+    Text createTextNode(DOMString data);
     Comment createComment(DOMString data);
     [RaisesException, MeasureAs=DocumentCreateCDATASection] CDATASection createCDATASection([Default=Undefined] optional DOMString data); // Removed from DOM4.
     [RaisesException] ProcessingInstruction createProcessingInstruction(DOMString target, DOMString data);
     [RaisesException, MeasureAs=DocumentCreateAttribute] Attr createAttribute([Default=Undefined] optional DOMString name); // Removed from DOM4.
-    [PerWorldBindings] HTMLCollection getElementsByTagName(DOMString localName);
+    HTMLCollection getElementsByTagName(DOMString localName);
 
     // Introduced in DOM Level 2:
 
-    [CustomElementCallbacks, PerWorldBindings, LogActivity, RaisesException] Node importNode(Node node, optional boolean deep);
-    [CustomElementCallbacks, PerWorldBindings, LogActivity, RaisesException] Element createElementNS([TreatNullAs=NullString] DOMString namespaceURI, DOMString qualifiedName);
+    [CustomElementCallbacks, LogActivity, RaisesException] Node importNode(Node node, optional boolean deep);
+    [CustomElementCallbacks, LogActivity, RaisesException] Element createElementNS([TreatNullAs=NullString] DOMString namespaceURI, DOMString qualifiedName);
     [RaisesException, DeprecateAs=DocumentCreateAttributeNS] Attr createAttributeNS([TreatNullAs=NullString,Default=Undefined] optional DOMString namespaceURI,
                                                                                   [TreatNullAs=NullString,Default=Undefined] optional DOMString qualifiedName); // Removed from DOM4.
     HTMLCollection getElementsByTagNameNS([TreatNullAs=NullString] DOMString namespaceURI, DOMString localName);
@@ -131,11 +131,11 @@ typedef (CanvasRenderingContext2D or WebGLRenderingContext) RenderingContext;
 
     [PerWorldBindings] NodeList getElementsByName([Default=Undefined] optional DOMString elementName);
 
-    [PerWorldBindings, LogActivity, PutForwards=href] readonly attribute Location location;
+    [LogActivity, PutForwards=href] readonly attribute Location location;
 
     // IE extensions
     [MeasureAs=DocumentCharset, TreatReturnedNullStringAs=Undefined, TreatNullAs=NullString] attribute DOMString charset;
-    [MeasureAs=DocumentCharset, TreatReturnedNullStringAs=Undefined] readonly attribute DOMString defaultCharset;
+    [MeasureAs=DocumentDefaultCharset, TreatReturnedNullStringAs=Undefined] readonly attribute DOMString defaultCharset;
     [TreatReturnedNullStringAs=Undefined] readonly attribute DOMString readyState;
 
     Element            elementFromPoint([Default=Undefined] optional long x,
@@ -162,8 +162,10 @@ typedef (CanvasRenderingContext2D or WebGLRenderingContext) RenderingContext;
 
     readonly attribute DOMString compatMode;
 
-    [MeasureAs=PrefixedDocumentExitPointerLock] void webkitExitPointerLock();
-    [MeasureAs=PrefixedDocumentPointerLockElement] readonly attribute Element webkitPointerLockElement;
+    [MeasureAs=DocumentExitPointerLock] void exitPointerLock();
+    [MeasureAs=DocumentPointerLockElement] readonly attribute Element pointerLockElement;
+    [MeasureAs=PrefixedDocumentExitPointerLock, ImplementedAs=exitPointerLock] void webkitExitPointerLock();
+    [MeasureAs=PrefixedDocumentPointerLockElement, ImplementedAs=pointerLockElement] readonly attribute Element webkitPointerLockElement;
 
     // Event handler attributes
     attribute EventHandler onbeforecopy;
@@ -187,24 +189,24 @@ typedef (CanvasRenderingContext2D or WebGLRenderingContext) RenderingContext;
     attribute EventHandler onwebkitfullscreenerror;
     attribute EventHandler onwebkitpointerlockchange;
     attribute EventHandler onwebkitpointerlockerror;
-    [PerWorldBindings, LogActivity=SetterOnly] attribute EventHandler onwheel;
+    [LogActivity=SetterOnly] attribute EventHandler onwheel;
 
     [RuntimeEnabled=Touch] Touch createTouch([Default=Undefined] optional Window window,
                                                [Default=Undefined] optional EventTarget target,
                                                [Default=Undefined] optional long identifier,
-                                               [Default=Undefined] optional long pageX,
-                                               [Default=Undefined] optional long pageY,
-                                               [Default=Undefined] optional long screenX,
-                                               [Default=Undefined] optional long screenY,
-                                               [Default=Undefined] optional long webkitRadiusX,
-                                               [Default=Undefined] optional long webkitRadiusY,
+                                               [Default=Undefined] optional double pageX,
+                                               [Default=Undefined] optional double pageY,
+                                               [Default=Undefined] optional double screenX,
+                                               [Default=Undefined] optional double screenY,
+                                               [Default=Undefined] optional double webkitRadiusX,
+                                               [Default=Undefined] optional double webkitRadiusY,
                                                [Default=Undefined] optional float webkitRotationAngle,
                                                [Default=Undefined] optional float webkitForce);
     [RuntimeEnabled=Touch] TouchList createTouchList(Touch... touches);
 
-    [CallWith=ScriptState, CustomElementCallbacks, RaisesException] CustomElementConstructor registerElement(DOMString name, optional Dictionary options);
+    [CallWith=ScriptState, CustomElementCallbacks, RaisesException, MeasureAs=DocumentRegisterElement] CustomElementConstructor registerElement(DOMString name, optional Dictionary options);
     [CustomElementCallbacks, PerWorldBindings, LogActivity, RaisesException] Element createElement(DOMString localName, [TreatNullAs=NullString] DOMString typeExtension);
-    [CustomElementCallbacks, PerWorldBindings, LogActivity, RaisesException] Element createElementNS([TreatNullAs=NullString] DOMString namespaceURI, DOMString qualifiedName,
+    [CustomElementCallbacks, LogActivity, RaisesException] Element createElementNS([TreatNullAs=NullString] DOMString namespaceURI, DOMString qualifiedName,
                             [TreatNullAs=NullString] DOMString typeExtension);
 
     // Page visibility API.
@@ -222,4 +224,3 @@ typedef (CanvasRenderingContext2D or WebGLRenderingContext) RenderingContext;
 
 Document implements GlobalEventHandlers;
 Document implements ParentNode;
-

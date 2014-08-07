@@ -1,5 +1,6 @@
 [
   {
+    "abort_on_failure": true,
     "cmd": [
       "svn",
       "export",
@@ -9,23 +10,25 @@
     ],
     "name": "download patch",
     "~followup_annotations": [
-      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff contents@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 1)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 2)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@@@@",
       "@@@STEP_LOG_END@patch.diff@@@"
     ]
   },
   {
+    "abort_on_failure": true,
     "cmd": [
       "patch",
       "--dir",
       "[SLAVE_BUILD]",
       "--force",
       "--forward",
-      "--input",
-      "fake patch.diff contents",
       "--remove-empty-files",
       "--strip",
       "0"
     ],
-    "name": "apply patch"
+    "name": "apply patch",
+    "stdin": "fake patch.diff content (line 1)\nfake patch.diff content (line 2)\n"
   }
 ]

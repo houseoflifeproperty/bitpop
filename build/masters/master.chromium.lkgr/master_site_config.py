@@ -12,3 +12,4 @@ class ChromiumLKGR(Master.Master1):
   slave_port = 8118
   master_port_alt = 8218
   poll_url = 'https://chromium-status.appspot.com/lkgr'
+  buildbot_url = 'http://build.chromium.org/p/chromium.lkgr/'

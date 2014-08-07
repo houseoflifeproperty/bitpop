@@ -112,6 +112,7 @@ const OncFieldSignature openvpn_fields[] = {
     { ::onc::vpn::kClientCertType, &kStringSignature},
     { ::onc::openvpn::kCompLZO, &kStringSignature},
     { ::onc::openvpn::kCompNoAdapt, &kBoolSignature},
+    { ::onc::openvpn::kIgnoreDefaultRoute, &kBoolSignature},
     { ::onc::openvpn::kKeyDirection, &kStringSignature},
     { ::onc::openvpn::kNsCertType, &kStringSignature},
     { ::onc::vpn::kPassword, &kStringSignature},
@@ -224,12 +225,13 @@ const OncFieldSignature cellular_apn_fields[] = {
 const OncFieldSignature cellular_fields[] = {
     { ::onc::kRecommended, &kRecommendedSignature},
     { ::onc::cellular::kAPN, &kCellularApnSignature },
-    { ::onc::cellular::kAPNList, &kCellularApnListSignature}, {NULL}};
+    { ::onc::cellular::kAPNList, &kCellularApnListSignature},
+    {NULL}};
 
 const OncFieldSignature cellular_with_state_fields[] = {
     { ::onc::cellular::kActivateOverNonCellularNetwork, &kBoolSignature},
     { ::onc::cellular::kActivationState, &kStringSignature},
-    { ::onc::cellular::kAllowRoaming, &kStringSignature},
+    { ::onc::cellular::kAllowRoaming, &kBoolSignature},
     { ::onc::cellular::kCarrier, &kStringSignature},
     { ::onc::cellular::kESN, &kStringSignature},
     { ::onc::cellular::kFamily, &kStringSignature},
@@ -247,11 +249,13 @@ const OncFieldSignature cellular_with_state_fields[] = {
     { ::onc::cellular::kModelID, &kStringSignature},
     { ::onc::cellular::kNetworkTechnology, &kStringSignature},
     { ::onc::cellular::kPRLVersion, &kStringSignature},
-    { ::onc::cellular::kProviderRequiresRoaming, &kStringSignature},
+    { ::onc::cellular::kProviderRequiresRoaming, &kBoolSignature},
     { ::onc::cellular::kRoamingState, &kStringSignature},
     { ::onc::cellular::kSelectedNetwork, &kStringSignature},
     { ::onc::cellular::kServingOperator, &kCellularProviderSignature},
+    { ::onc::cellular::kSIMLockEnabled, &kBoolSignature},
     { ::onc::cellular::kSIMLockStatus, &kStringSignature},
+    { ::onc::cellular::kSIMLockType, &kStringSignature},
     { ::onc::cellular::kSIMPresent, &kStringSignature},
     { ::onc::cellular::kSupportedCarriers, &kStringSignature},
     { ::onc::cellular::kSupportNetworkScan, &kStringSignature},
@@ -281,6 +285,7 @@ const OncFieldSignature network_with_state_fields[] = {
     { ::onc::network_config::kConnectionState, &kStringSignature},
     { ::onc::network_config::kConnectable, &kBoolSignature},
     { ::onc::network_config::kErrorState, &kStringSignature},
+    { ::onc::network_config::kMacAddress, &kStringSignature},
     { ::onc::network_config::kWiFi, &kWiFiWithStateSignature},
     {NULL}};
 

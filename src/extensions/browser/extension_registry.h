@@ -74,6 +74,26 @@ class ExtensionRegistry : public KeyedService {
   void TriggerOnUnloaded(const Extension* extension,
                          UnloadedExtensionInfo::Reason reason);
 
+  // If this is a fresh install then |is_update| is false and there must not be
+  // any installed extension with |extension|'s ID. If this is an update then
+  // |is_update| is true and must be an installed extension with |extension|'s
+  // ID, and |old_name| must be non-empty.
+  // If true, |from_ephemeral| indicates that the extension was previously
+  // installed ephemerally and has been promoted to a regular installed
+  // extension. |is_update| should also be true.
+  void TriggerOnWillBeInstalled(const Extension* extension,
+                                bool is_update,
+                                bool from_ephemeral,
+                                const std::string& old_name);
+
+  // Invokes the observer method OnExtensionInstalled(). The extension must be
+  // contained in one of the registry's extension sets.
+  void TriggerOnInstalled(const Extension* extension);
+
+  // Invokes the observer method OnExtensionUninstalled(). The extension must
+  // not be any installed extension with |extension|'s ID.
+  void TriggerOnUninstalled(const Extension* extension);
+
   // Find an extension by ID using |include_mask| to pick the sets to search:
   //  * enabled_extensions()     --> ExtensionRegistry::ENABLED
   //  * disabled_extensions()    --> ExtensionRegistry::DISABLED

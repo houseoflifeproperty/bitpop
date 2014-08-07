@@ -14,10 +14,14 @@ class CertificateType:
     openpgp = 1
 
 class ClientCertificateType:
+    # http://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-parameters-2
     rsa_sign = 1
     dss_sign = 2
     rsa_fixed_dh = 3
     dss_fixed_dh = 4
+    ecdsa_sign = 64
+    rsa_fixed_ecdh = 65
+    ecdsa_fixed_ecdh = 66
  
 class HandshakeType:
     hello_request = 0
@@ -52,7 +56,7 @@ class ExtensionType:    # RFC 6066 / 4366
     signed_cert_timestamps = 18  # RFC 6962
     tack = 0xF300
     supports_npn = 13172
-    channel_id = 30031
+    channel_id = 30032
     
 class NameType:
     host_name = 0

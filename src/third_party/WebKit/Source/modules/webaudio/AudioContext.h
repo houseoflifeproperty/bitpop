@@ -28,7 +28,7 @@
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventListener.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventTargetModules.h"
 #include "modules/webaudio/AsyncAudioDecoder.h"
 #include "modules/webaudio/AudioDestinationNode.h"
 #include "platform/audio/AudioBus.h"
@@ -76,18 +76,16 @@ class WaveShaperNode;
 
 class AudioContext : public ThreadSafeRefCountedWillBeThreadSafeRefCountedGarbageCollected<AudioContext>, public ActiveDOMObject, public ScriptWrappable, public EventTargetWithInlineData {
     DEFINE_EVENT_TARGET_REFCOUNTING(ThreadSafeRefCountedWillBeThreadSafeRefCountedGarbageCollected<AudioContext>);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(AudioContext);
 public:
     // Create an AudioContext for rendering to the audio hardware.
     static PassRefPtrWillBeRawPtr<AudioContext> create(Document&, ExceptionState&);
 
     virtual ~AudioContext();
 
-    virtual void trace(Visitor*);
+    virtual void trace(Visitor*) OVERRIDE;
 
-    bool isInitialized() const;
-    // The constructor of an AudioNode must call this to initialize the context.
-    void lazyInitialize();
-
+    bool isInitialized() const { return m_isInitialized; }
     bool isOfflineContext() { return m_isOfflineContext; }
 
     // Document notification
@@ -172,9 +170,6 @@ public:
     ThreadIdentifier audioThread() const { return m_audioThread; }
     bool isAudioThread() const;
 
-    // Returns true only after the audio thread has been started and then shutdown.
-    bool isAudioThreadFinished() { return m_isAudioThreadFinished; }
-
     // mustReleaseLock is set to true if we acquired the lock in this method call and caller must unlock(), false if it was previously acquired.
     void lock(bool& mustReleaseLock);
 
@@ -240,8 +235,7 @@ protected:
     static bool isSampleRateRangeGood(float sampleRate);
 
 private:
-    void constructCommon();
-
+    void initialize();
     void uninitialize();
 
     // ExecutionContext calls stop twice.
@@ -256,7 +250,6 @@ private:
 
     // Set to true when the destination node has been initialized and is ready to process data.
     bool m_isInitialized;
-    bool m_isAudioThreadFinished;
 
     // The context itself keeps a reference to all source nodes.  The source nodes, then reference all nodes they're connected to.
     // In turn, these nodes reference all nodes they're connected to.  All nodes are ultimately connected to the AudioDestinationNode.

@@ -13,9 +13,10 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
@@ -101,6 +102,22 @@ void AssertWillHandle(
                                      expected,
                                      base::Unretained(interceptor)));
   base::MessageLoop::current()->RunUntilIdle();
+}
+
+base::DictionaryValue* GetProtocolHandlerValue(std::string protocol,
+                                               std::string url) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  value->SetString("protocol", protocol);
+  value->SetString("url", url);
+  return value;
+}
+
+base::DictionaryValue* GetProtocolHandlerValueWithDefault(std::string protocol,
+                                                          std::string url,
+                                                          bool is_default) {
+  base::DictionaryValue* value = GetProtocolHandlerValue(protocol, url);
+  value->SetBoolean("default", is_default);
+  return value;
 }
 
 class FakeDelegate : public ProtocolHandlerRegistry::Delegate {
@@ -320,21 +337,48 @@ class ProtocolHandlerRegistryTest : public testing::Test {
   }
 
   ProtocolHandler CreateProtocolHandler(const std::string& protocol,
-                                        const GURL& url,
-                                        const std::string& title) {
-    return ProtocolHandler::CreateProtocolHandler(protocol, url,
-        base::UTF8ToUTF16(title));
+                                        const GURL& url) {
+    return ProtocolHandler::CreateProtocolHandler(protocol, url);
   }
 
   ProtocolHandler CreateProtocolHandler(const std::string& protocol,
-      const std::string& name) {
-    return CreateProtocolHandler(protocol, GURL("http://" + name + "/%s"),
-        name);
+                                        const std::string& name) {
+    return CreateProtocolHandler(protocol, GURL("http://" + name + "/%s"));
   }
 
   void RecreateRegistry(bool initialize) {
     TeadDownRegistry();
     SetUpRegistry(initialize);
+  }
+
+  int InPrefHandlerCount() {
+    const base::ListValue* in_pref_handlers =
+        profile()->GetPrefs()->GetList(prefs::kRegisteredProtocolHandlers);
+    return static_cast<int>(in_pref_handlers->GetSize());
+  }
+
+  int InMemoryHandlerCount() {
+    int in_memory_handler_count = 0;
+    ProtocolHandlerRegistry::ProtocolHandlerMultiMap::iterator it =
+        registry()->protocol_handlers_.begin();
+    for (; it != registry()->protocol_handlers_.end(); ++it)
+      in_memory_handler_count += it->second.size();
+    return in_memory_handler_count;
+  }
+
+  int InPrefIgnoredHandlerCount() {
+    const base::ListValue* in_pref_ignored_handlers =
+        profile()->GetPrefs()->GetList(prefs::kIgnoredProtocolHandlers);
+    return static_cast<int>(in_pref_ignored_handlers->GetSize());
+  }
+
+  int InMemoryIgnoredHandlerCount() {
+    int in_memory_ignored_handler_count = 0;
+    ProtocolHandlerRegistry::ProtocolHandlerList::iterator it =
+        registry()->ignored_protocol_handlers_.begin();
+    for (; it != registry()->ignored_protocol_handlers_.end(); ++it)
+      in_memory_ignored_handler_count++;
+    return in_memory_ignored_handler_count;
   }
 
   // Returns a new registry, initializing it if |initialize| is true.
@@ -356,7 +400,7 @@ class ProtocolHandlerRegistryTest : public testing::Test {
     CHECK(profile_->GetPrefs());
     SetUpRegistry(true);
     test_protocol_handler_ =
-        CreateProtocolHandler("test", GURL("http://test.com/%s"), "Test");
+        CreateProtocolHandler("test", GURL("http://test.com/%s"));
   }
 
   virtual void TearDown() {
@@ -448,10 +492,8 @@ TEST_F(ProtocolHandlerRegistryTest, IgnoreProtocolHandler) {
 }
 
 TEST_F(ProtocolHandlerRegistryTest, IgnoreEquivalentProtocolHandler) {
-  ProtocolHandler ph1 = CreateProtocolHandler("test", GURL("http://test/%s"),
-                                              "test1");
-  ProtocolHandler ph2 = CreateProtocolHandler("test", GURL("http://test/%s"),
-                                              "test2");
+  ProtocolHandler ph1 = CreateProtocolHandler("test", GURL("http://test/%s"));
+  ProtocolHandler ph2 = CreateProtocolHandler("test", GURL("http://test/%s"));
 
   registry()->OnIgnoreRegisterProtocolHandler(ph1);
   ASSERT_TRUE(registry()->IsIgnored(ph1));
@@ -588,10 +630,8 @@ TEST_F(ProtocolHandlerRegistryTest, TestIsRegistered) {
 }
 
 TEST_F(ProtocolHandlerRegistryTest, TestIsEquivalentRegistered) {
-  ProtocolHandler ph1 = CreateProtocolHandler("test", GURL("http://test/%s"),
-                                              "test1");
-  ProtocolHandler ph2 = CreateProtocolHandler("test", GURL("http://test/%s"),
-                                              "test2");
+  ProtocolHandler ph1 = CreateProtocolHandler("test", GURL("http://test/%s"));
+  ProtocolHandler ph2 = CreateProtocolHandler("test", GURL("http://test/%s"));
   registry()->OnAcceptRegisterProtocolHandler(ph1);
 
   ASSERT_TRUE(registry()->IsRegistered(ph1));
@@ -599,14 +639,10 @@ TEST_F(ProtocolHandlerRegistryTest, TestIsEquivalentRegistered) {
 }
 
 TEST_F(ProtocolHandlerRegistryTest, TestSilentlyRegisterHandler) {
-  ProtocolHandler ph1 = CreateProtocolHandler("test", GURL("http://test/%s"),
-                                              "test1");
-  ProtocolHandler ph2 = CreateProtocolHandler("test", GURL("http://test/%s"),
-                                              "test2");
-  ProtocolHandler ph3 = CreateProtocolHandler("ignore", GURL("http://test/%s"),
-                                              "ignore1");
-  ProtocolHandler ph4 = CreateProtocolHandler("ignore", GURL("http://test/%s"),
-                                              "ignore2");
+  ProtocolHandler ph1 = CreateProtocolHandler("test", GURL("http://test/1/%s"));
+  ProtocolHandler ph2 = CreateProtocolHandler("test", GURL("http://test/2/%s"));
+  ProtocolHandler ph3 = CreateProtocolHandler("ignore", GURL("http://test/%s"));
+  ProtocolHandler ph4 = CreateProtocolHandler("ignore", GURL("http://test/%s"));
 
   ASSERT_FALSE(registry()->SilentlyHandleRegisterHandlerRequest(ph1));
   ASSERT_FALSE(registry()->IsRegistered(ph1));
@@ -859,10 +895,10 @@ TEST_F(ProtocolHandlerRegistryTest, TestLoadEnabledGetsPropogatedToIO) {
 }
 
 TEST_F(ProtocolHandlerRegistryTest, TestReplaceHandler) {
-  ProtocolHandler ph1 = CreateProtocolHandler("mailto",
-      GURL("http://test.com/%s"), "test1");
-  ProtocolHandler ph2 = CreateProtocolHandler("mailto",
-      GURL("http://test.com/updated-url/%s"), "test2");
+  ProtocolHandler ph1 =
+      CreateProtocolHandler("mailto", GURL("http://test.com/%s"));
+  ProtocolHandler ph2 =
+      CreateProtocolHandler("mailto", GURL("http://test.com/updated-url/%s"));
   registry()->OnAcceptRegisterProtocolHandler(ph1);
   ASSERT_TRUE(registry()->AttemptReplace(ph2));
   const ProtocolHandler& handler(registry()->GetHandlerFor("mailto"));
@@ -870,12 +906,12 @@ TEST_F(ProtocolHandlerRegistryTest, TestReplaceHandler) {
 }
 
 TEST_F(ProtocolHandlerRegistryTest, TestReplaceNonDefaultHandler) {
-  ProtocolHandler ph1 = CreateProtocolHandler("mailto",
-      GURL("http://test.com/%s"), "test1");
-  ProtocolHandler ph2 = CreateProtocolHandler("mailto",
-      GURL("http://test.com/updated-url/%s"), "test2");
-  ProtocolHandler ph3 = CreateProtocolHandler("mailto",
-      GURL("http://else.com/%s"), "test3");
+  ProtocolHandler ph1 =
+      CreateProtocolHandler("mailto", GURL("http://test.com/%s"));
+  ProtocolHandler ph2 =
+      CreateProtocolHandler("mailto", GURL("http://test.com/updated-url/%s"));
+  ProtocolHandler ph3 =
+      CreateProtocolHandler("mailto", GURL("http://else.com/%s"));
   registry()->OnAcceptRegisterProtocolHandler(ph1);
   registry()->OnAcceptRegisterProtocolHandler(ph3);
   ASSERT_TRUE(registry()->AttemptReplace(ph2));
@@ -884,12 +920,12 @@ TEST_F(ProtocolHandlerRegistryTest, TestReplaceNonDefaultHandler) {
 }
 
 TEST_F(ProtocolHandlerRegistryTest, TestReplaceRemovesStaleHandlers) {
-  ProtocolHandler ph1 = CreateProtocolHandler("mailto",
-      GURL("http://test.com/%s"), "test1");
-  ProtocolHandler ph2 = CreateProtocolHandler("mailto",
-      GURL("http://test.com/updated-url/%s"), "test2");
-  ProtocolHandler ph3 = CreateProtocolHandler("mailto",
-      GURL("http://test.com/third/%s"), "test");
+  ProtocolHandler ph1 =
+      CreateProtocolHandler("mailto", GURL("http://test.com/%s"));
+  ProtocolHandler ph2 =
+      CreateProtocolHandler("mailto", GURL("http://test.com/updated-url/%s"));
+  ProtocolHandler ph3 =
+      CreateProtocolHandler("mailto", GURL("http://test.com/third/%s"));
   registry()->OnAcceptRegisterProtocolHandler(ph1);
   registry()->OnAcceptRegisterProtocolHandler(ph2);
 
@@ -902,12 +938,12 @@ TEST_F(ProtocolHandlerRegistryTest, TestReplaceRemovesStaleHandlers) {
 }
 
 TEST_F(ProtocolHandlerRegistryTest, TestIsSameOrigin) {
-  ProtocolHandler ph1 = CreateProtocolHandler("mailto",
-      GURL("http://test.com/%s"), "test1");
-  ProtocolHandler ph2 = CreateProtocolHandler("mailto",
-      GURL("http://test.com/updated-url/%s"), "test2");
-  ProtocolHandler ph3 = CreateProtocolHandler("mailto",
-      GURL("http://other.com/%s"), "test");
+  ProtocolHandler ph1 =
+      CreateProtocolHandler("mailto", GURL("http://test.com/%s"));
+  ProtocolHandler ph2 =
+      CreateProtocolHandler("mailto", GURL("http://test.com/updated-url/%s"));
+  ProtocolHandler ph3 =
+      CreateProtocolHandler("mailto", GURL("http://other.com/%s"));
   ASSERT_EQ(ph1.url().GetOrigin() == ph2.url().GetOrigin(),
       ph1.IsSameOrigin(ph2));
   ASSERT_EQ(ph1.url().GetOrigin() == ph2.url().GetOrigin(),
@@ -920,10 +956,169 @@ TEST_F(ProtocolHandlerRegistryTest, TestIsSameOrigin) {
 
 TEST_F(ProtocolHandlerRegistryTest, MAYBE_TestInstallDefaultHandler) {
   RecreateRegistry(false);
-  registry()->AddPredefinedHandler(CreateProtocolHandler(
-      "test", GURL("http://test.com/%s"), "Test"));
+  registry()->AddPredefinedHandler(
+      CreateProtocolHandler("test", GURL("http://test.com/%s")));
   registry()->InitProtocolSettings();
   std::vector<std::string> protocols;
   registry()->GetRegisteredProtocols(&protocols);
   ASSERT_EQ(static_cast<size_t>(1), protocols.size());
+}
+
+#define URL_p1u1 "http://p1u1.com/%s"
+#define URL_p1u2 "http://p1u2.com/%s"
+#define URL_p1u3 "http://p1u3.com/%s"
+#define URL_p2u1 "http://p2u1.com/%s"
+#define URL_p2u2 "http://p2u2.com/%s"
+#define URL_p3u1 "http://p3u1.com/%s"
+
+TEST_F(ProtocolHandlerRegistryTest, TestPrefPolicyOverlapRegister) {
+  base::ListValue handlers_registered_by_pref;
+  base::ListValue handlers_registered_by_policy;
+
+  handlers_registered_by_pref.Append(
+      GetProtocolHandlerValueWithDefault("p1", URL_p1u2, true));
+  handlers_registered_by_pref.Append(
+      GetProtocolHandlerValueWithDefault("p1", URL_p1u1, true));
+  handlers_registered_by_pref.Append(
+      GetProtocolHandlerValueWithDefault("p1", URL_p1u2, false));
+
+  handlers_registered_by_policy.Append(
+      GetProtocolHandlerValueWithDefault("p1", URL_p1u1, false));
+  handlers_registered_by_policy.Append(
+      GetProtocolHandlerValueWithDefault("p3", URL_p3u1, true));
+
+  profile()->GetPrefs()->Set(prefs::kRegisteredProtocolHandlers,
+                             handlers_registered_by_pref);
+  profile()->GetPrefs()->Set(prefs::kPolicyRegisteredProtocolHandlers,
+                             handlers_registered_by_policy);
+  registry()->InitProtocolSettings();
+
+  // Duplicate p1u2 eliminated in memory but not yet saved in pref
+  ProtocolHandler p1u1 = CreateProtocolHandler("p1", GURL(URL_p1u1));
+  ProtocolHandler p1u2 = CreateProtocolHandler("p1", GURL(URL_p1u2));
+  ASSERT_EQ(InPrefHandlerCount(), 3);
+  ASSERT_EQ(InMemoryHandlerCount(), 3);
+  ASSERT_TRUE(registry()->IsDefault(p1u1));
+  ASSERT_FALSE(registry()->IsDefault(p1u2));
+
+  ProtocolHandler p2u1 = CreateProtocolHandler("p2", GURL(URL_p2u1));
+  registry()->OnDenyRegisterProtocolHandler(p2u1);
+
+  // Duplicate p1u2 saved in pref and a new handler added to pref and memory
+  ASSERT_EQ(InPrefHandlerCount(), 3);
+  ASSERT_EQ(InMemoryHandlerCount(), 4);
+  ASSERT_FALSE(registry()->IsDefault(p2u1));
+
+  registry()->RemoveHandler(p1u1);
+
+  // p1u1 removed from user pref but not from memory due to policy.
+  ASSERT_EQ(InPrefHandlerCount(), 2);
+  ASSERT_EQ(InMemoryHandlerCount(), 4);
+  ASSERT_TRUE(registry()->IsDefault(p1u1));
+
+  ProtocolHandler p3u1 = CreateProtocolHandler("p3", GURL(URL_p3u1));
+  registry()->RemoveHandler(p3u1);
+
+  // p3u1 not removed from memory due to policy and it was never in pref.
+  ASSERT_EQ(InPrefHandlerCount(), 2);
+  ASSERT_EQ(InMemoryHandlerCount(), 4);
+  ASSERT_TRUE(registry()->IsDefault(p3u1));
+
+  registry()->RemoveHandler(p1u2);
+
+  // p1u2 removed from user pref and memory.
+  ASSERT_EQ(InPrefHandlerCount(), 1);
+  ASSERT_EQ(InMemoryHandlerCount(), 3);
+  ASSERT_TRUE(registry()->IsDefault(p1u1));
+
+  ProtocolHandler p1u3 = CreateProtocolHandler("p1", GURL(URL_p1u3));
+  registry()->OnAcceptRegisterProtocolHandler(p1u3);
+
+  // p1u3 added to pref and memory.
+  ASSERT_EQ(InPrefHandlerCount(), 2);
+  ASSERT_EQ(InMemoryHandlerCount(), 4);
+  ASSERT_FALSE(registry()->IsDefault(p1u1));
+  ASSERT_TRUE(registry()->IsDefault(p1u3));
+
+  registry()->RemoveHandler(p1u3);
+
+  // p1u3 the default handler for p1 removed from user pref and memory.
+  ASSERT_EQ(InPrefHandlerCount(), 1);
+  ASSERT_EQ(InMemoryHandlerCount(), 3);
+  ASSERT_FALSE(registry()->IsDefault(p1u3));
+  ASSERT_TRUE(registry()->IsDefault(p1u1));
+  ASSERT_TRUE(registry()->IsDefault(p3u1));
+  ASSERT_FALSE(registry()->IsDefault(p2u1));
+}
+
+TEST_F(ProtocolHandlerRegistryTest, TestPrefPolicyOverlapIgnore) {
+  base::ListValue handlers_ignored_by_pref;
+  base::ListValue handlers_ignored_by_policy;
+
+  handlers_ignored_by_pref.Append(GetProtocolHandlerValue("p1", URL_p1u1));
+  handlers_ignored_by_pref.Append(GetProtocolHandlerValue("p1", URL_p1u2));
+  handlers_ignored_by_pref.Append(GetProtocolHandlerValue("p1", URL_p1u2));
+  handlers_ignored_by_pref.Append(GetProtocolHandlerValue("p3", URL_p3u1));
+
+  handlers_ignored_by_policy.Append(GetProtocolHandlerValue("p1", URL_p1u2));
+  handlers_ignored_by_policy.Append(GetProtocolHandlerValue("p1", URL_p1u3));
+  handlers_ignored_by_policy.Append(GetProtocolHandlerValue("p2", URL_p2u1));
+
+  profile()->GetPrefs()->Set(prefs::kIgnoredProtocolHandlers,
+                             handlers_ignored_by_pref);
+  profile()->GetPrefs()->Set(prefs::kPolicyIgnoredProtocolHandlers,
+                             handlers_ignored_by_policy);
+  registry()->InitProtocolSettings();
+
+  // Duplicate p1u2 eliminated in memory but not yet saved in pref
+  ASSERT_EQ(InPrefIgnoredHandlerCount(), 4);
+  ASSERT_EQ(InMemoryIgnoredHandlerCount(), 5);
+
+  ProtocolHandler p2u2 = CreateProtocolHandler("p2", GURL(URL_p2u2));
+  registry()->OnIgnoreRegisterProtocolHandler(p2u2);
+
+  // Duplicate p1u2 eliminated in pref, p2u2 added to pref and memory.
+  ASSERT_EQ(InPrefIgnoredHandlerCount(), 4);
+  ASSERT_EQ(InMemoryIgnoredHandlerCount(), 6);
+
+  ProtocolHandler p2u1 = CreateProtocolHandler("p2", GURL(URL_p2u1));
+  registry()->RemoveIgnoredHandler(p2u1);
+
+  // p2u1 installed by policy so cant be removed.
+  ASSERT_EQ(InPrefIgnoredHandlerCount(), 4);
+  ASSERT_EQ(InMemoryIgnoredHandlerCount(), 6);
+
+  ProtocolHandler p1u2 = CreateProtocolHandler("p1", GURL(URL_p1u2));
+  registry()->RemoveIgnoredHandler(p1u2);
+
+  // p1u2 installed by policy and pref so it is removed from pref and not from
+  // memory.
+  ASSERT_EQ(InPrefIgnoredHandlerCount(), 3);
+  ASSERT_EQ(InMemoryIgnoredHandlerCount(), 6);
+
+  ProtocolHandler p1u1 = CreateProtocolHandler("p1", GURL(URL_p1u1));
+  registry()->RemoveIgnoredHandler(p1u1);
+
+  // p1u1 installed by pref so it is removed from pref and memory.
+  ASSERT_EQ(InPrefIgnoredHandlerCount(), 2);
+  ASSERT_EQ(InMemoryIgnoredHandlerCount(), 5);
+
+  registry()->RemoveIgnoredHandler(p2u2);
+
+  // p2u2 installed by user so it is removed from pref and memory.
+  ASSERT_EQ(InPrefIgnoredHandlerCount(), 1);
+  ASSERT_EQ(InMemoryIgnoredHandlerCount(), 4);
+
+  registry()->OnIgnoreRegisterProtocolHandler(p2u1);
+
+  // p2u1 installed by user but it is already installed by policy, so it is
+  // added to pref.
+  ASSERT_EQ(InPrefIgnoredHandlerCount(), 2);
+  ASSERT_EQ(InMemoryIgnoredHandlerCount(), 4);
+
+  registry()->RemoveIgnoredHandler(p2u1);
+
+  // p2u1 installed by user and policy, so it is removed from pref alone.
+  ASSERT_EQ(InPrefIgnoredHandlerCount(), 1);
+  ASSERT_EQ(InMemoryIgnoredHandlerCount(), 4);
 }

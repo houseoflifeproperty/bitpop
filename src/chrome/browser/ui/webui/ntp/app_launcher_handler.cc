@@ -21,6 +21,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -46,6 +47,7 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/favicon_url.h"
 #include "extensions/browser/app_sorting.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
@@ -71,14 +73,6 @@ using extensions::ExtensionSet;
 using extensions::UnloadedExtensionInfo;
 
 namespace {
-
-bool ShouldDisplayInNewTabPage(const Extension* app, PrefService* prefs) {
-  bool blocked_by_policy =
-    (app->id() == extension_misc::kWebStoreAppId ||
-     app->id() == extension_misc::kEnterpriseWebStoreAppId) &&
-    prefs->GetBoolean(prefs::kHideWebStoreIcon);
-  return app->ShouldDisplayInNewTabPage() && !blocked_by_policy;
-}
 
 void RecordAppLauncherPromoHistogram(
       apps::AppLauncherPromoHistogramValues value) {
@@ -266,9 +260,10 @@ void AppLauncherHandler::Observe(int type,
       if (!extension->is_app())
         return;
 
-      PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
-      if (!ShouldDisplayInNewTabPage(extension, prefs))
+      if (!extensions::ui_util::ShouldDisplayInNewTabPage(
+              extension, Profile::FromWebUI(web_ui()))) {
         return;
+      }
 
       scoped_ptr<base::DictionaryValue> app_info(GetAppInfo(extension));
       if (app_info.get()) {
@@ -288,16 +283,17 @@ void AppLauncherHandler::Observe(int type,
       break;
     }
     case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED: {
       const Extension* extension = NULL;
       bool uninstalled = false;
-      if (type == chrome::NOTIFICATION_EXTENSION_UNINSTALLED) {
+      if (type == chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED) {
         extension = content::Details<const Extension>(details).ptr();
         uninstalled = true;
       } else {  // NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED
         if (content::Details<UnloadedExtensionInfo>(details)->reason ==
             UnloadedExtensionInfo::REASON_UNINSTALL) {
-          // Uninstalls are tracked by NOTIFICATION_EXTENSION_UNINSTALLED.
+          // Uninstalls are tracked by
+          // NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED.
           return;
         }
         extension = content::Details<extensions::UnloadedExtensionInfo>(
@@ -307,9 +303,10 @@ void AppLauncherHandler::Observe(int type,
       if (!extension->is_app())
         return;
 
-      PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
-      if (!ShouldDisplayInNewTabPage(extension, prefs))
+      if (!extensions::ui_util::ShouldDisplayInNewTabPage(
+              extension, Profile::FromWebUI(web_ui()))) {
         return;
+      }
 
       scoped_ptr<base::DictionaryValue> app_info(GetAppInfo(extension));
       if (app_info.get()) {
@@ -368,32 +365,20 @@ void AppLauncherHandler::FillAppDictionary(base::DictionaryValue* dictionary) {
   base::AutoReset<bool> auto_reset(&ignore_changes_, true);
 
   base::ListValue* list = new base::ListValue();
-  PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
+  Profile* profile = Profile::FromWebUI(web_ui());
+  PrefService* prefs = profile->GetPrefs();
 
   for (std::set<std::string>::iterator it = visible_apps_.begin();
        it != visible_apps_.end(); ++it) {
     const Extension* extension = extension_service_->GetInstalledExtension(*it);
-    if (extension && ShouldDisplayInNewTabPage(extension, prefs)) {
+    if (extension && extensions::ui_util::ShouldDisplayInNewTabPage(
+            extension, profile)) {
       base::DictionaryValue* app_info = GetAppInfo(extension);
       list->Append(app_info);
     }
   }
 
   dictionary->Set("apps", list);
-
-  // TODO(estade): remove these settings when the old NTP is removed. The new
-  // NTP does it in js.
-#if defined(OS_MACOSX)
-  // App windows are not yet implemented on mac.
-  dictionary->SetBoolean("disableAppWindowLaunch", true);
-  dictionary->SetBoolean("disableCreateAppShortcut", true);
-#endif
-
-#if defined(OS_CHROMEOS)
-  // Making shortcut does not make sense on ChromeOS because it does not have
-  // a desktop.
-  dictionary->SetBoolean("disableCreateAppShortcut", true);
-#endif
 
   const base::ListValue* app_page_names =
       prefs->GetList(prefs::kNtpAppPageNames);
@@ -478,8 +463,9 @@ void AppLauncherHandler::HandleGetApps(const base::ListValue* args) {
                    content::Source<Profile>(profile));
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
         content::Source<Profile>(profile));
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
-        content::Source<Profile>(profile));
+    registrar_.Add(this,
+                   chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
+                   content::Source<Profile>(profile));
     registrar_.Add(this,
                    chrome::NOTIFICATION_EXTENSION_LAUNCHER_REORDERED,
                    content::Source<AppSorting>(
@@ -714,8 +700,8 @@ void AppLauncherHandler::HandleGenerateAppForLink(const base::ListValue* args) {
   install_info->app_url = launch_url;
   install_info->page_ordinal = page_ordinal;
 
-  favicon_service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(
+  favicon_service->GetFaviconImageForPageURL(
+      FaviconService::FaviconForPageURLParams(
           launch_url, favicon_base::FAVICON, gfx::kFaviconSize),
       base::Bind(&AppLauncherHandler::OnFaviconForApp,
                  base::Unretained(this),
@@ -838,9 +824,9 @@ void AppLauncherHandler::ExtensionEnableFlowAborted(bool user_initiated) {
   // called when the extension uninstall dialog is canceled.
   const Extension* extension =
       extension_service_->GetExtensionById(extension_id_prompting_, true);
-  std::string histogram_name = user_initiated ?
-      "Extensions.Permissions_ReEnableCancel" :
-      "Extensions.Permissions_ReEnableAbort";
+  std::string histogram_name = user_initiated
+                                   ? "Extensions.Permissions_ReEnableCancel2"
+                                   : "Extensions.Permissions_ReEnableAbort2";
   ExtensionService::RecordPermissionMessagesHistogram(
       extension, histogram_name.c_str());
 
@@ -848,13 +834,14 @@ void AppLauncherHandler::ExtensionEnableFlowAborted(bool user_initiated) {
   CleanupAfterUninstall();
 }
 
-ExtensionUninstallDialog* AppLauncherHandler::GetExtensionUninstallDialog() {
+extensions::ExtensionUninstallDialog*
+AppLauncherHandler::GetExtensionUninstallDialog() {
   if (!extension_uninstall_dialog_.get()) {
     Browser* browser = chrome::FindBrowserWithWebContents(
         web_ui()->GetWebContents());
     extension_uninstall_dialog_.reset(
-        ExtensionUninstallDialog::Create(extension_service_->profile(),
-                                         browser, this));
+        extensions::ExtensionUninstallDialog::Create(
+            extension_service_->profile(), browser, this));
   }
   return extension_uninstall_dialog_.get();
 }

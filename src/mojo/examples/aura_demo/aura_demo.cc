@@ -5,17 +5,19 @@
 #include <stdio.h>
 #include <string>
 
-#include "base/at_exit.h"
-#include "base/command_line.h"
-#include "base/message_loop/message_loop.h"
+#include "base/bind.h"
+#include "mojo/aura/context_factory_mojo.h"
 #include "mojo/aura/screen_mojo.h"
 #include "mojo/aura/window_tree_host_mojo.h"
-#include "mojo/public/cpp/bindings/allocation_scope.h"
-#include "mojo/public/cpp/gles2/gles2.h"
-#include "mojo/public/cpp/shell/application.h"
+#include "mojo/aura/window_tree_host_mojo_delegate.h"
+#include "mojo/public/cpp/application/application.h"
 #include "mojo/public/cpp/system/core.h"
-#include "mojo/public/interfaces/shell/shell.mojom.h"
-#include "mojo/services/native_viewport/native_viewport.mojom.h"
+#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
+#include "mojo/services/public/cpp/view_manager/node.h"
+#include "mojo/services/public/cpp/view_manager/view.h"
+#include "mojo/services/public/cpp/view_manager/view_manager.h"
+#include "mojo/services/public/cpp/view_manager/view_manager_delegate.h"
+#include "mojo/services/public/interfaces/native_viewport/native_viewport.mojom.h"
 #include "ui/aura/client/default_capture_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
@@ -23,16 +25,7 @@
 #include "ui/aura/window_delegate.h"
 #include "ui/base/hit_test.h"
 #include "ui/gfx/canvas.h"
-
-#if defined(WIN32)
-#if !defined(CDECL)
-#define CDECL __cdecl
-#endif
-#define AURA_DEMO_EXPORT __declspec(dllexport)
-#else
-#define CDECL
-#define AURA_DEMO_EXPORT __attribute__((visibility("default")))
-#endif
+#include "ui/gfx/codec/png_codec.h"
 
 namespace mojo {
 namespace examples {
@@ -77,7 +70,7 @@ class DemoWindowDelegate : public aura::WindowDelegate {
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {}
 
  private:
-  SkColor color_;
+  const SkColor color_;
 
   DISALLOW_COPY_AND_ASSIGN(DemoWindowDelegate);
 };
@@ -105,29 +98,33 @@ class DemoWindowTreeClient : public aura::client::WindowTreeClient {
 
  private:
   aura::Window* window_;
-
   scoped_ptr<aura::client::DefaultCaptureClient> capture_client_;
 
   DISALLOW_COPY_AND_ASSIGN(DemoWindowTreeClient);
 };
 
-class AuraDemo : public Application {
+class AuraDemo : public Application,
+                 public WindowTreeHostMojoDelegate,
+                 public view_manager::ViewManagerDelegate {
  public:
-  explicit AuraDemo(MojoHandle shell_handle) : Application(shell_handle) {
-    screen_.reset(ScreenMojo::Create());
-    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
-
-    NativeViewportPtr native_viewport;
-    ConnectTo("mojo:mojo_native_viewport_service", &native_viewport);
-
-    window_tree_host_.reset(new WindowTreeHostMojo(
-        native_viewport.Pass(),
-        gfx::Rect(800, 600),
-        base::Bind(&AuraDemo::HostContextCreated, base::Unretained(this))));
+  AuraDemo()
+      : window1_(NULL),
+        window2_(NULL),
+        window21_(NULL),
+        view_(NULL) {
+    view_manager::ViewManager::Create(this, this);
   }
+  virtual ~AuraDemo() {}
 
  private:
-  void HostContextCreated() {
+  // Overridden from view_manager::ViewManagerDelegate:
+  virtual void OnRootAdded(view_manager::ViewManager* view_manager,
+                           view_manager::Node* root) OVERRIDE {
+    // TODO(beng): this function could be called multiple times!
+    view_ = view_manager::View::Create(view_manager);
+    root->SetActiveView(view_);
+
+    window_tree_host_.reset(new WindowTreeHostMojo(root, this));
     window_tree_host_->InitHost();
 
     window_tree_client_.reset(
@@ -157,9 +154,24 @@ class AuraDemo : public Application {
     window_tree_host_->Show();
   }
 
-  scoped_ptr<ScreenMojo> screen_;
+  // WindowTreeHostMojoDelegate:
+  virtual void CompositorContentsChanged(const SkBitmap& bitmap) OVERRIDE {
+    view_->SetContents(bitmap);
+  }
+
+  virtual void Initialize() OVERRIDE {
+    aura::Env::CreateInstance(true);
+    context_factory_.reset(new ContextFactoryMojo);
+    aura::Env::GetInstance()->set_context_factory(context_factory_.get());
+    screen_.reset(ScreenMojo::Create());
+    gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
+  }
 
   scoped_ptr<DemoWindowTreeClient> window_tree_client_;
+
+  scoped_ptr<ui::ContextFactory> context_factory_;
+
+  scoped_ptr<ScreenMojo> screen_;
 
   scoped_ptr<DemoWindowDelegate> delegate1_;
   scoped_ptr<DemoWindowDelegate> delegate2_;
@@ -169,25 +181,18 @@ class AuraDemo : public Application {
   aura::Window* window2_;
   aura::Window* window21_;
 
+  view_manager::View* view_;
+
   scoped_ptr<aura::WindowTreeHost> window_tree_host_;
+
+  DISALLOW_COPY_AND_ASSIGN(AuraDemo);
 };
 
 }  // namespace examples
-}  // namespace mojo
 
-extern "C" AURA_DEMO_EXPORT MojoResult CDECL MojoMain(
-    MojoHandle shell_handle) {
-  CommandLine::Init(0, NULL);
-  base::AtExitManager at_exit;
-  base::MessageLoop loop;
-  mojo::GLES2Initializer gles2;
-
-  // TODO(beng): This crashes in a DCHECK on X11 because this thread's
-  //             MessageLoop is not of TYPE_UI. I think we need a way to build
-  //             Aura that doesn't define platform-specific stuff.
-  aura::Env::CreateInstance(true);
-  mojo::examples::AuraDemo app(shell_handle);
-  loop.Run();
-
-  return MOJO_RESULT_OK;
+// static
+Application* Application::Create() {
+  return new examples::AuraDemo();
 }
+
+}  // namespace mojo

@@ -16,6 +16,9 @@
         'spreadsortlib',
         '../interface',
       ],
+      'dependencies': [
+        '../../base/base.gyp:webrtc_base',
+      ],
       'direct_dependent_settings': {
         'include_dirs': [
           '../interface',
@@ -35,6 +38,7 @@
         '../interface/data_log_impl.h',
         '../interface/event_tracer.h',
         '../interface/event_wrapper.h',
+        '../interface/field_trial.h',
         '../interface/file_wrapper.h',
         '../interface/fix_interlocked_exchange_pointer_win.h',
         '../interface/logcat_trace_context.h',
@@ -191,6 +195,15 @@
         4267,  # size_t to int truncation.
         4334,  # Ignore warning on shift operator promotion.
       ],
+    }, {
+      'target_name': 'field_trial_default',
+      'type': 'static_library',
+      'sources': [
+        'field_trial_default.cc',
+      ],
+      'dependencies': [
+        'system_wrappers',
+      ]
     },
   ], # targets
   'conditions': [

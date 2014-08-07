@@ -16,10 +16,10 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/devtools/devtools_window.h"
+#include "chrome/browser/dom_distiller/tab_utils.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
@@ -30,7 +30,8 @@
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_delegate.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/signin/signin_header_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/accelerator_utils.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
@@ -59,8 +60,10 @@
 #include "chrome/common/content_restriction.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/pref_names.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/translate/core/browser/language_state.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/navigation_controller.h"
@@ -172,19 +175,22 @@ void BookmarkCurrentPageInternal(Browser* browser) {
   WebContents* web_contents =
       browser->tab_strip_model()->GetActiveWebContents();
   GetURLAndTitleToBookmark(web_contents, &url, &title);
-  bool was_bookmarked = model->IsBookmarked(url);
-  if (!was_bookmarked && web_contents->GetBrowserContext()->IsOffTheRecord()) {
+  bool is_bookmarked_by_any = model->IsBookmarked(url);
+  if (!is_bookmarked_by_any &&
+      web_contents->GetBrowserContext()->IsOffTheRecord()) {
     // If we're incognito the favicon may not have been saved. Save it now
     // so that bookmarks have an icon for the page.
     FaviconTabHelper::FromWebContents(web_contents)->SaveFavicon();
   }
+  bool was_bookmarked_by_user = bookmark_utils::IsBookmarkedByUser(model, url);
   bookmark_utils::AddIfNotBookmarked(model, url, title);
+  bool is_bookmarked_by_user = bookmark_utils::IsBookmarkedByUser(model, url);
   // Make sure the model actually added a bookmark before showing the star. A
   // bookmark isn't created if the url is invalid.
-  if (browser->window()->IsActive() && model->IsBookmarked(url)) {
+  if (browser->window()->IsActive() && is_bookmarked_by_user) {
     // Only show the bubble if the window is active, otherwise we may get into
     // weird situations where the bubble is deleted as soon as it is shown.
-    browser->window()->ShowBookmarkBubble(url, was_bookmarked);
+    browser->window()->ShowBookmarkBubble(url, was_bookmarked_by_user);
   }
 }
 
@@ -311,11 +317,10 @@ int GetContentRestrictions(const Browser* browser) {
     CoreTabHelper* core_tab_helper =
         CoreTabHelper::FromWebContents(current_tab);
     content_restrictions = core_tab_helper->content_restrictions();
-    NavigationEntry* active_entry =
-        current_tab->GetController().GetActiveEntry();
-    // See comment in UpdateCommandsForTabState about why we call url().
+    NavigationEntry* last_committed_entry =
+        current_tab->GetController().GetLastCommittedEntry();
     if (!content::IsSavableURL(
-            active_entry ? active_entry->GetURL() : GURL()) ||
+            last_committed_entry ? last_committed_entry->GetURL() : GURL()) ||
         current_tab->ShowingInterstitialPage())
       content_restrictions |= CONTENT_RESTRICTION_SAVE;
     if (current_tab->ShowingInterstitialPage())
@@ -446,7 +451,7 @@ void Home(Browser* browser, WindowOpenDisposition disposition) {
     if (google_util::IsGoogleHomePageUrl(
         GURL(pref_service->GetString(prefs::kHomePage)))) {
       extra_headers = RLZTracker::GetAccessPointHttpHeader(
-          RLZTracker::CHROME_HOME_PAGE);
+          RLZTracker::ChromeHomePage());
     }
   }
 #endif  // defined(ENABLE_RLZ) && !defined(OS_IOS)
@@ -735,7 +740,7 @@ void BookmarkCurrentPage(Browser* browser) {
       case extensions::CommandService::PAGE_ACTION:
         browser->window()->ShowPageActionPopup(extension);
         return;
-    };
+    }
   }
 
   BookmarkCurrentPageInternal(browser);
@@ -761,14 +766,14 @@ void Translate(Browser* browser) {
 
   WebContents* web_contents =
       browser->tab_strip_model()->GetActiveWebContents();
-  TranslateTabHelper* translate_tab_helper =
-      TranslateTabHelper::FromWebContents(web_contents);
+  ChromeTranslateClient* chrome_translate_client =
+      ChromeTranslateClient::FromWebContents(web_contents);
 
   translate::TranslateStep step = translate::TRANSLATE_STEP_BEFORE_TRANSLATE;
-  if (translate_tab_helper) {
-    if (translate_tab_helper->GetLanguageState().translation_pending())
+  if (chrome_translate_client) {
+    if (chrome_translate_client->GetLanguageState().translation_pending())
       step = translate::TRANSLATE_STEP_TRANSLATING;
-    else if (translate_tab_helper->GetLanguageState().IsPageTranslated())
+    else if (chrome_translate_client->GetLanguageState().IsPageTranslated())
       step = translate::TRANSLATE_STEP_AFTER_TRANSLATE;
   }
   browser->window()->ShowTranslateBubble(
@@ -1041,7 +1046,8 @@ void ShowAppMenu(Browser* browser) {
 
 void ShowAvatarMenu(Browser* browser) {
   browser->window()->ShowAvatarBubbleFromAvatarButton(
-      BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT);
+      BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT,
+      signin::ManageAccountsParams());
 }
 
 void OpenUpdateChromeDialog(Browser* browser) {
@@ -1070,10 +1076,13 @@ void ToggleSpeechInput(Browser* browser) {
     search_tab_helper->ToggleVoiceSearch();
 }
 
+void DistillCurrentPage(Browser* browser) {
+  DistillCurrentPageAndView(browser->tab_strip_model()->GetActiveWebContents());
+}
+
 bool CanRequestTabletSite(WebContents* current_tab) {
-  if (!current_tab)
-    return false;
-  return current_tab->GetController().GetActiveEntry() != NULL;
+  return current_tab &&
+      current_tab->GetController().GetLastCommittedEntry() != NULL;
 }
 
 bool IsRequestingTabletSite(Browser* browser) {
@@ -1081,7 +1090,7 @@ bool IsRequestingTabletSite(Browser* browser) {
   if (!current_tab)
     return false;
   content::NavigationEntry* entry =
-      current_tab->GetController().GetActiveEntry();
+      current_tab->GetController().GetLastCommittedEntry();
   if (!entry)
     return false;
   return entry->GetIsOverridingUserAgent();
@@ -1092,7 +1101,7 @@ void ToggleRequestTabletSite(Browser* browser) {
   if (!current_tab)
     return;
   NavigationController& controller = current_tab->GetController();
-  NavigationEntry* entry = controller.GetActiveEntry();
+  NavigationEntry* entry = controller.GetLastCommittedEntry();
   if (!entry)
     return;
   if (entry->GetIsOverridingUserAgent()) {
@@ -1147,25 +1156,23 @@ void ViewSource(Browser* browser,
   content::RecordAction(UserMetricsAction("ViewSource"));
   DCHECK(contents);
 
-  // Note that Clone does not copy the pending or transient entries, so the
-  // active entry in view_source_contents will be the last committed entry.
   WebContents* view_source_contents = contents->Clone();
   DCHECK(view_source_contents->GetController().CanPruneAllButLastCommitted());
   view_source_contents->GetController().PruneAllButLastCommitted();
-  NavigationEntry* active_entry =
-      view_source_contents->GetController().GetActiveEntry();
-  if (!active_entry)
+  NavigationEntry* last_committed_entry =
+      view_source_contents->GetController().GetLastCommittedEntry();
+  if (!last_committed_entry)
     return;
 
   GURL view_source_url =
       GURL(content::kViewSourceScheme + std::string(":") + url.spec());
-  active_entry->SetVirtualURL(view_source_url);
+  last_committed_entry->SetVirtualURL(view_source_url);
 
   // Do not restore scroller position.
-  active_entry->SetPageState(page_state.RemoveScrollOffset());
+  last_committed_entry->SetPageState(page_state.RemoveScrollOffset());
 
   // Do not restore title, derive it from the url.
-  active_entry->SetTitle(base::string16());
+  last_committed_entry->SetTitle(base::string16());
 
   // Now show view-source entry.
   if (browser->CanSupportWindowFeature(Browser::FEATURE_TABSTRIP)) {
@@ -1243,7 +1250,7 @@ bool CanCreateBookmarkApp(const Browser* browser) {
 
 void ConvertTabToAppWindow(Browser* browser,
                            content::WebContents* contents) {
-  const GURL& url = contents->GetController().GetActiveEntry()->GetURL();
+  const GURL& url = contents->GetController().GetLastCommittedEntry()->GetURL();
   std::string app_name = web_app::GenerateApplicationNameFromURL(url);
 
   int index = browser->tab_strip_model()->GetIndexOfWebContents(contents);

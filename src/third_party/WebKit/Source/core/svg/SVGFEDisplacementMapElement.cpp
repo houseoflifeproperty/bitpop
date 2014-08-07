@@ -21,9 +21,8 @@
 
 #include "core/svg/SVGFEDisplacementMapElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
 namespace WebCore {
@@ -57,10 +56,7 @@ inline SVGFEDisplacementMapElement::SVGFEDisplacementMapElement(Document& docume
     addToPropertyMap(m_yChannelSelector);
 }
 
-PassRefPtr<SVGFEDisplacementMapElement> SVGFEDisplacementMapElement::create(Document& document)
-{
-    return adoptRef(new SVGFEDisplacementMapElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEDisplacementMapElement)
 
 bool SVGFEDisplacementMapElement::isSupportedAttribute(const QualifiedName& attrName)
 {

@@ -6,6 +6,7 @@ import collections
 
 from metrics import Metric
 from telemetry.core import bitmap
+from telemetry.value import scalar
 
 
 class SpeedIndexMetric(Metric):
@@ -51,7 +52,8 @@ class SpeedIndexMetric(Metric):
     index = self._impl.CalculateSpeedIndex(tab)
     # Release the tab so that it can be disconnected.
     self._impl = None
-    results.Add('speed_index', 'ms', index, chart_name=chart_name)
+    results.AddValue(scalar.ScalarValue(
+        results.current_page, '%s.speed_index' % chart_name, 'ms', index))
 
   def IsFinished(self, tab):
     """Decide whether the timeline recording should be stopped.
@@ -138,9 +140,10 @@ class VideoSpeedIndexImpl(SpeedIndexImpl):
     # previous page to white. The tolerance of 8 experimentally does well with
     # video capture at 4mbps. We should keep this as low as possible with
     # supported video compression settings.
+    video_capture = tab.StopVideoCapture()
     histograms = [(time, bmp.ColorHistogram(ignore_color=bitmap.WHITE,
                                             tolerance=8))
-                  for time, bmp in tab.StopVideoCapture()]
+                  for time, bmp in video_capture.GetVideoFrameIter()]
 
     start_histogram = histograms[0][1]
     final_histogram = histograms[-1][1]

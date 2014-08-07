@@ -22,7 +22,7 @@
 
 #include "core/svg/SVGDefsElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/svg/RenderSVGHiddenContainer.h"
 
 namespace WebCore {
@@ -33,10 +33,7 @@ inline SVGDefsElement::SVGDefsElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGDefsElement> SVGDefsElement::create(Document& document)
-{
-    return adoptRef(new SVGDefsElement(document));
-}
+DEFINE_NODE_FACTORY(SVGDefsElement)
 
 RenderObject* SVGDefsElement::createRenderer(RenderStyle*)
 {

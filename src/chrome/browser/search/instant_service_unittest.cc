@@ -106,9 +106,10 @@ TEST_F(InstantServiceEnabledTest, SendsSearchURLsToRenderer) {
   EXPECT_EQ(1U, rph->sink().message_count());
   const IPC::Message* msg = rph->sink().GetMessageAt(0);
   ASSERT_TRUE(msg);
-  std::vector<GURL> search_urls;
-  GURL new_tab_page_url;
-  ChromeViewMsg_SetSearchURLs::Read(msg, &search_urls, &new_tab_page_url);
+  ChromeViewMsg_SetSearchURLs::Param params;
+  ChromeViewMsg_SetSearchURLs::Read(msg, &params);
+  std::vector<GURL> search_urls = params.a;
+  GURL new_tab_page_url = params.b;
   EXPECT_EQ(2U, search_urls.size());
   EXPECT_EQ("https://www.google.com/alt#quux=", search_urls[0].spec());
   EXPECT_EQ("https://www.google.com/url?bar=", search_urls[1].spec());
@@ -130,7 +131,7 @@ TEST_F(InstantServiceEnabledTest,
   // Set a default search provider that doesn't support Instant.
   TemplateURLData data;
   data.SetURL("https://foobar.com/url?bar={searchTerms}");
-  TemplateURL* template_url = new TemplateURL(profile(), data);
+  TemplateURL* template_url = new TemplateURL(data);
   // Takes ownership of |template_url|.
   template_url_service_->Add(template_url);
   template_url_service_->SetUserSelectedDefaultSearchProvider(template_url);

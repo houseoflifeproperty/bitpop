@@ -11,8 +11,9 @@ namespace WebCore {
 
 struct RegistrationOptionList  {
     explicit RegistrationOptionList(const Dictionary& options)
-        : scope("*")
+        : scope("/*")
     {
+        // FIXME: Should be ScalarValueString. http://crbug.com/379009
         options.get("scope", scope);
     }
 

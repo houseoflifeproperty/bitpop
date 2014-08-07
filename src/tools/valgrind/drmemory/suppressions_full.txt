@@ -1455,12 +1455,6 @@ name=bug_145244
 *!WebCore::StyleSheetContents::requestImportedStyleSheets
 
 UNINITIALIZED READ
-name=bug_158510
-*!WebCore::RenderTable::layout
-...
-*!WebCore::RenderBlock::layout
-
-UNINITIALIZED READ
 name=bug_159005
 *!WebCore::RenderMarquee::updateMarqueeStyle
 *!WebCore::RenderLayer::styleChanged
@@ -2063,16 +2057,6 @@ blink_web.dll!WebCore::FrameView::updateLayoutAndStyleForPainting
 blink_web.dll!WebCore::PageAnimator::updateLayoutAndStyleForPainting
 
 UNINITIALIZED READ
-name=bug_364675
-blink_web.dll!WebCore::AutoTableLayout::layout
-blink_web.dll!WebCore::RenderTable::layout
-blink_web.dll!WebCore::RenderBlockFlow::layoutBlockChild
-blink_web.dll!WebCore::RenderBlockFlow::layoutBlockChildren
-blink_web.dll!WebCore::RenderBlockFlow::layoutBlockFlow
-blink_web.dll!WebCore::RenderBlockFlow::layoutBlock
-blink_web.dll!WebCore::RenderBlock::layout
-
-UNINITIALIZED READ
 name=bug_365101
 *!device::BluetoothAdapterWin::AdapterStateChanged
 
@@ -2129,11 +2113,6 @@ cc.dll!cc::VideoResourceUpdater::CreateExternalResourcesFromVideoFrame
 cc.dll!cc::VideoLayerImpl::WillDraw
 
 UNINITIALIZED READ
-name=drm-i#1534
-system call NtUserSetKeyboardState parameter #0
-*!content::MockKeyboardDriverWin::~MockKeyboardDriverWin
-
-UNINITIALIZED READ
 name=bug_371959
 content.dll!webrtc::PeerConnection::DoInitialize
 content.dll!webrtc::PeerConnection::Initialize
@@ -2142,3 +2121,57 @@ content.dll!webrtc::PeerConnectionFactory::OnMessage
 content.dll!jingle_glue::JingleThreadWrapper::Send
 content.dll!webrtc::PeerConnectionFactory::CreatePeerConnection
 content.dll!webrtc::PeerConnectionFactoryInterface::CreatePeerConnection
+
+# This suppression is deliberately general, as bugs reported in
+# ProcessOutgoingMessages are difficult to track down until we
+# get our annotations in place.
+# TODO(bruening): add annotations once we have the infrastructure.
+UNINITIALIZED READ
+name=bug_371991
+system call NtWriteFile parameter #5
+KERNELBASE.dll!WriteFile
+KERNEL32.dll!WriteFile*
+*!IPC::Channel*::ProcessOutgoingMessages
+
+UNINITIALIZED READ
+name=bug_372254
+*!content::*::NotifyPluginProcessHostHelper
+
+UNINITIALIZED READ
+name=drm_i#1546
+*!testing::internal::CmpHelperEQ<>
+*!testing::internal::EqHelper<>::Compare<>
+*!content::BrowserPluginTest_ResizeFlowControl_Test::TestBody
+
+UNINITIALIZED READ
+name=bug_374105a
+...
+gpu.dll!gpu::gles2::ShaderTranslatorCache::GetTranslator
+gpu.dll!gpu::gles2::GLES2DecoderImpl::InitializeShaderTranslator
+gpu.dll!gpu::gles2::GLES2DecoderImpl::Initialize
+
+UNINITIALIZED READ
+name=bug_374105b
+...
+gpu.dll!gpu::gles2::ShaderTranslator::GetStringForOptionsThatWouldAffectCompilation
+*!gpu::gles2::ShaderTranslatorTest_OptionsString_Test::TestBody
+
+UNINITIALIZED READ
+name=bug_374410
+*!ui::NativeThemeWin::PaintScrollbarTrack
+*!ui::NativeThemeWin::PaintDirect
+
+UNINITIALIZED READ
+name=bug_377728
+...
+*!Hunspell::suggest
+*!HunspellEngine::FillSuggestionList
+*!SpellcheckLanguage::SpellCheckWord
+*!SpellCheck::SpellCheckWord
+
+UNINITIALIZED READ
+name=bug_382921
+...
+*!LocationBarView::OnChanged
+*!OmniboxEditModel::OnChanged
+*!OmniboxViewViews::SetWindowTextAndCaretPos

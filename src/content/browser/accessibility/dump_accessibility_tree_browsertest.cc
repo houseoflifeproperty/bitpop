@@ -135,7 +135,7 @@ class DumpAccessibilityTreeTest : public ContentBrowserTest {
 
 void DumpAccessibilityTreeTest::RunTest(
     const base::FilePath::CharType* file_path) {
-  NavigateToURL(shell(), GURL(kAboutBlankURL));
+  NavigateToURL(shell(), GURL(url::kAboutBlankURL));
 
   // Setup test paths.
   base::FilePath dir_test_data;
@@ -286,6 +286,11 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaInvalid) {
   RunTest(FILE_PATH_LITERAL("aria-invalid.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityAriaLabelledByHeading) {
+  RunTest(FILE_PATH_LITERAL("aria-labelledby-heading.html"));
 }
 
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaLevel) {

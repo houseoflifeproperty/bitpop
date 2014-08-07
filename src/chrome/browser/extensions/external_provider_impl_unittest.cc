@@ -13,10 +13,12 @@
 #include "base/strings/stringprintf.h"
 #include "base/test/scoped_path_override.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/extensions/updater/extension_cache_fake.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
@@ -28,6 +30,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/customization_document.h"
+#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
 #include "chromeos/system/mock_statistics_provider.h"
 #include "chromeos/system/statistics_provider.h"
 #endif
@@ -51,6 +54,10 @@ class ExternalProviderImplTest : public ExtensionServiceTestBase {
   virtual ~ExternalProviderImplTest() {}
 
   void InitServiceWithExternalProviders() {
+#if defined(OS_CHROMEOS)
+    chromeos::ScopedUserManagerEnabler scoped_user_manager(
+        new chromeos::FakeUserManager);
+#endif
     InitializeExtensionServiceWithUpdater();
 
     ProviderCollection providers;

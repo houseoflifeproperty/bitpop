@@ -4,8 +4,6 @@
 
 #include "base/i18n/icu_util.h"
 
-#include "build/build_config.h"
-
 #if defined(OS_WIN)
 #include <windows.h>
 #endif
@@ -55,6 +53,33 @@ bool g_check_called_once = true;
 #endif
 }
 
+
+#if defined(OS_ANDROID)
+bool InitializeICUWithFileDescriptor(int data_fd) {
+#if !defined(NDEBUG)
+  DCHECK(!g_check_called_once || !g_called_once);
+  g_called_once = true;
+#endif
+
+#if (ICU_UTIL_DATA_IMPL == ICU_UTIL_DATA_STATIC)
+  // The ICU data is statically linked.
+  return true;
+#elif (ICU_UTIL_DATA_IMPL == ICU_UTIL_DATA_FILE)
+  CR_DEFINE_STATIC_LOCAL(base::MemoryMappedFile, mapped_file, ());
+  if (!mapped_file.IsValid()) {
+    if (!mapped_file.Initialize(base::File(data_fd))) {
+      LOG(ERROR) << "Couldn't mmap icu data file";
+      return false;
+    }
+  }
+  UErrorCode err = U_ZERO_ERROR;
+  udata_setCommonData(const_cast<uint8*>(mapped_file.data()), &err);
+  return err == U_ZERO_ERROR;
+#endif // ICU_UTIL_DATA_FILE
+}
+#endif
+
+
 bool InitializeICU() {
 #if !defined(NDEBUG)
   DCHECK(!g_check_called_once || !g_called_once);
@@ -69,13 +94,13 @@ bool InitializeICU() {
 
   HMODULE module = LoadLibrary(data_path.value().c_str());
   if (!module) {
-    DLOG(ERROR) << "Failed to load " << ICU_UTIL_DATA_SHARED_MODULE_NAME;
+    LOG(ERROR) << "Failed to load " << ICU_UTIL_DATA_SHARED_MODULE_NAME;
     return false;
   }
 
   FARPROC addr = GetProcAddress(module, ICU_UTIL_DATA_SYMBOL);
   if (!addr) {
-    DLOG(ERROR) << ICU_UTIL_DATA_SYMBOL << ": not found in "
+    LOG(ERROR) << ICU_UTIL_DATA_SYMBOL << ": not found in "
                << ICU_UTIL_DATA_SHARED_MODULE_NAME;
     return false;
   }
@@ -116,12 +141,12 @@ bool InitializeICU() {
     FilePath data_path =
       base::mac::PathForFrameworkBundleResource(CFSTR(ICU_UTIL_DATA_FILE_NAME));
     if (data_path.empty()) {
-      DLOG(ERROR) << ICU_UTIL_DATA_FILE_NAME << " not found in bundle";
+      LOG(ERROR) << ICU_UTIL_DATA_FILE_NAME << " not found in bundle";
       return false;
     }
 #endif  // OS check
     if (!mapped_file.Initialize(data_path)) {
-      DLOG(ERROR) << "Couldn't mmap " << data_path.AsUTF8Unsafe();
+      LOG(ERROR) << "Couldn't mmap " << data_path.AsUTF8Unsafe();
       return false;
     }
   }

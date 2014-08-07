@@ -22,20 +22,42 @@ SCRIPTS_DIR = os.path.abspath(os.path.dirname(__file__))
 FFMPEG_DIR = os.path.abspath(os.path.join(SCRIPTS_DIR, '..', '..'))
 
 
-USAGE = """Usage: %prog TARGET_OS TARGET_ARCH [options]
+USAGE = """Usage: %prog TARGET_OS TARGET_ARCH [options] -- [configure_args]
 
 Valid combinations are linux       [ia32|x64|mipsel|arm|arm-neon]
                        linux-noasm [ia32|x64]
                        mac         [ia32|x64]
+                       win         [ia32|x64]
 
- linux ia32/x64 - script can be run on a normal Ubuntu box.
- linux mipsel - script can be run on a normal Ubuntu box with MIPS
- cross-toolchain in $PATH.
- linux arm/arm-neon should be run inside of CrOS chroot.
- mac has to be run on Mac
+Platform specific build notes:
+  linux ia32/x64:
+    Script can run on a normal Ubuntu box.
 
- mac - ensure the Chromium (not Apple) version of clang is in the path,
- usually found under src/third_party/llvm-build/Release+Asserts/bin
+  linux mipsel:
+    Script can run on a normal Ubuntu box with MIPS cross-toolchain in $PATH.
+
+  linux arm/arm-neon:
+    Script must be run inside of ChromeOS chroot with BOARD=arm-generic.
+
+  mac:
+    Script must be run on OSX.  Additionally, ensure the Chromium (not Apple)
+    version of clang is in the path; usually found under
+    src/third_party/llvm-build/Release+Asserts/bin
+
+  win:
+    Script must be run on Windows with VS2013 or higher under Cygwin (or MinGW,
+    but as of 1.0.11, it has serious performance issues with make which makes
+    building take hours).
+
+    Additionall, ensure you have the correct toolchain environment for building.
+    The x86 toolchain environment is required for ia32 builds and the x64 one
+    for x64 builds.  This can be verified by running "cl.exe" and checking if
+    the version string ends with "for x64" or "for x86."
+
+    Building on Windows also requires some additional Cygwin packages plus a
+    wrapper script for converting Cygwin paths to DOS paths.
+      - Add these packages at install time: diffutils, yasm, make, python.
+      - Copy chromium/scripts/cygwin-wrapper to /usr/local/bin
 
 Resulting binaries will be placed in:
   build.TARGET_ARCH.TARGET_OS/Chromium/out/
@@ -54,12 +76,14 @@ def DetermineHostOsAndArch():
     host_os = 'linux'
   elif platform.system() == 'Darwin':
     host_os = 'mac'
+  elif platform.system() == 'Windows' or platform.system() == 'CYGWIN_NT-6.1':
+    host_os = 'win'
   else:
     return None
 
   if re.match(r'i.86', platform.machine()):
     host_arch = 'ia32'
-  elif platform.machine() == 'x86_64':
+  elif platform.machine() == 'x86_64' or platform.machine() == 'AMD64':
     host_arch = 'x64'
   elif platform.machine().startswith('arm'):
     host_arch = 'arm'
@@ -74,6 +98,8 @@ def GetDsoName(target_os, dso_name, dso_version):
     return 'lib%s.so.%s' % (dso_name, dso_version)
   elif target_os == 'mac':
     return 'lib%s.%s.dylib' % (dso_name, dso_version)
+  elif target_os == 'win':
+    return '%s-%s.dll' % (dso_name, dso_version)
   else:
     raise ValueError('Unexpected target_os %s' % target_os)
 
@@ -144,12 +170,13 @@ def main(argv):
                     'is not necessary for generate_gyp.py')
   options, args = parser.parse_args(argv)
 
-  if len(args) != 2:
+  if len(args) < 2:
     parser.print_help()
     return 1
 
   target_os = args[0]
   target_arch = args[1]
+  configure_args = args[2:]
 
   if target_os not in ('linux', 'linux-noasm', 'win', 'win-vs2013', 'mac'):
     parser.print_help()
@@ -177,21 +204,25 @@ def main(argv):
   # everything, just non-library components such as decoders and demuxers.
   configure_flags['Common'].extend([
       '--disable-everything',
-      '--disable-avdevice',
-      '--disable-avfilter',
-      '--disable-bzlib',
+      '--disable-all',
       '--disable-doc',
-      '--disable-ffprobe',
-      '--disable-lzo',
-      '--disable-network',
-      '--disable-postproc',
-      '--disable-swresample',
-      '--disable-swscale',
-      '--disable-zlib',
+      '--disable-static',
+      '--enable-avcodec',
+      '--enable-avformat',
+      '--enable-avutil',
       '--enable-fft',
       '--enable-rdft',
       '--enable-shared',
+
+      # Disable features.
+      '--disable-bzlib',
+      '--disable-error-resilience',
       '--disable-iconv',
+      '--disable-lzo',
+      '--disable-network',
+      '--disable-symver',
+      '--disable-xlib',
+      '--disable-zlib',
 
       # Disable hardware decoding options which will sometimes turn on
       # via autodetect.
@@ -205,7 +236,7 @@ def main(argv):
       '--enable-decoder=pcm_u8,pcm_s16le,pcm_s24le,pcm_f32le',
       '--enable-decoder=pcm_s16be,pcm_s24be,pcm_mulaw,pcm_alaw',
       '--enable-demuxer=ogg,matroska,wav',
-      '--enable-parser=vp3,vorbis,vp8',
+      '--enable-parser=opus,vp3,vorbis,vp8',
   ])
 
   # --optflags doesn't append multiple entries, so set all at once.
@@ -338,15 +369,30 @@ def main(argv):
       print('Error: Unknown target arch %r for target OS %r!' % (
           target_arch, target_os), file=sys.stderr)
 
-  # Chromium & ChromiumOS specific configuration.
-  # Though CONFIG_ERROR_RESILIENCE should already be disabled for Chromium[OS],
-  # forcing disable here to help ensure it remains this way.
-  configure_flags['Chromium'].append('--disable-error-resilience')
+  # Should be run on Windows.
+  if target_os == 'win':
+    if host_os != 'win':
+      print('Script should be run on a Windows host.\n', file=sys.stderr)
+      return 1
+
+    configure_flags['Common'].extend([
+        '--toolchain=msvc',
+        '--enable-yasm',
+        '--extra-cflags=-I' + os.path.join(FFMPEG_DIR, 'chromium/include/win'),
+    ])
+
+    if platform.system() == 'CYGWIN_NT-6.1':
+      configure_flags['Common'].extend([
+          '--cc=cygwin-wrapper cl',
+          '--ld=cygwin-wrapper link',
+          '--nm=cygwin-wrapper dumpbin -symbols',
+          '--ar=cygwin-wrapper lib',
+      ])
 
   # Google Chrome & ChromeOS specific configuration.
   configure_flags['Chrome'].extend([
       '--enable-decoder=aac,h264,mp3',
-      '--enable-demuxer=mp3,mov',
+      '--enable-demuxer=aac,mp3,mov',
       '--enable-parser=aac,h264,mpegaudio',
   ])
 
@@ -383,20 +429,29 @@ def main(argv):
   do_build_ffmpeg = functools.partial(
       BuildFFmpeg, target_os, target_arch, host_os, host_arch, parallel_jobs,
       options.config_only)
-  do_build_ffmpeg(
-      'Chromium', configure_flags['Common'] + configure_flags['Chromium'])
-  do_build_ffmpeg(
-      'Chrome', configure_flags['Common'] + configure_flags['Chrome'])
+  do_build_ffmpeg('Chromium',
+                  configure_flags['Common'] +
+                  configure_flags['Chromium'] +
+                  configure_args)
+  do_build_ffmpeg('Chrome',
+                  configure_flags['Common'] +
+                  configure_flags['Chrome'] +
+                  configure_args)
 
   if target_os == 'linux':
     do_build_ffmpeg('ChromiumOS',
                     configure_flags['Common'] +
                     configure_flags['Chromium'] +
-                    configure_flags['ChromiumOS'])
-    do_build_ffmpeg('ChromeOS',
-                    configure_flags['Common'] +
-                    configure_flags['Chrome'] +
-                    configure_flags['ChromeOS'])
+                    configure_flags['ChromiumOS'] +
+                    configure_args)
+
+    # ChromeOS enables MPEG4 which requires error resilience :(
+    chrome_os_flags = (configure_flags['Common'] +
+                       configure_flags['Chrome'] +
+                       configure_flags['ChromeOS'] +
+                       configure_args)
+    chrome_os_flags.remove('--disable-error-resilience')
+    do_build_ffmpeg('ChromeOS', chrome_os_flags)
 
   print('Done. If desired you may copy config.h/config.asm into the '
         'source/config tree using copy_config.sh.')

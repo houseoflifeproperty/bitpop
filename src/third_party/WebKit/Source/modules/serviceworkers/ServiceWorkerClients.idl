@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// https://slightlyoff.github.io/ServiceWorker/spec/service_worker/index.html#service-worker-clients-interface
 [
     Exposed=ServiceWorker,
     RuntimeEnabled=ServiceWorker
 ] interface ServiceWorkerClients {
-
-    [CallWith=ExecutionContext] Promise getServiced();
+    [CallWith=ScriptState] Promise getServiced();
 };

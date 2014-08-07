@@ -106,9 +106,10 @@ def check_builds(master_builds, master_jsons, gatekeeper_config):
       close_tree = gatekeeper.get('close_tree', True)
       respect_build_status = gatekeeper.get('respect_build_status', False)
 
+      # We ignore EXCEPTION and RETRY here since those are usually
+      # infrastructure-related instead of actual test errors.
       successful_steps = set(s['name'] for s in finished
-                             if (s.get('results', [FAILURE])[0] == SUCCESS or
-                                 s.get('results', [FAILURE])[0] == WARNINGS))
+                             if s.get('results', [FAILURE])[0] != FAILURE)
 
       finished_steps = set(s['name'] for s in finished)
 
@@ -128,7 +129,7 @@ def check_builds(master_builds, master_jsons, gatekeeper_config):
 
       # If the entire build failed.
       if (not unsatisfied_steps and 'results' in build_json and
-          build_json['results'] != SUCCESS and respect_build_status):
+          build_json['results'] == FAILURE and respect_build_status):
         unsatisfied_steps.add('[overall build status]')
 
       buildbot_url = master_jsons[master_url]['project']['buildbotURL']
@@ -154,16 +155,108 @@ def check_builds(master_builds, master_jsons, gatekeeper_config):
   return failed_builds
 
 
+def get_build_properties(build_json, properties):
+  """Obtains multiple build_properties from a build.
+
+  Sets a property to None if it's not in the build.
+  """
+
+  result = dict.fromkeys(properties)  # Populates dict with {key: None}.
+  for p in build_json.get('properties', []):
+    if p[0] in properties:
+      result[p[0]] = p[1]
+  return result
+
+
+@contextmanager
+def log_section(url, builder, buildnum, section_hash=None):
+  """Wraps a code block with information about a build it operates on."""
+  logging.debug('%sbuilders/%s/builds/%d ----', url, builder, buildnum)
+  if section_hash:
+    logging.debug('  section hash: %s', section_hash)
+  yield
+  logging.debug('----')
+
+
+def reject_old_revisions(failure_tuples, build_db):
+  """Ignore builds which triggered on revisions older than the current.
+
+  triggered_revisions has the format: {'revision': 500,
+                                       'got_webkit_revision': 15,
+                                      }
+  Each key is a buildproperty that was previously triggered on, and each value
+  was the value of that key. Note that all keys present in triggered_revisions
+  are used for the comparison. Only builds where at least one number is greater
+  than and all numbers are greater than or equal are considered 'new' and are
+  not rejected by this function. Any change in the set of keys triggers a full
+  reset of the recorded data. In the common case, triggered_revisions only has
+  one key ('revision') and rejects all builds where revision is less than or
+  equal to the last triggered revision.
+  """
+
+  triggered_revisions = build_db.aux.get('triggered_revisions', {})
+  if not triggered_revisions:
+    # There was no previous revision information, so by default keep all
+    # failing builds.
+    logging.debug('no previous revision tracking information, '
+                  'keeping all failures.')
+    return failure_tuples
+
+  def tuple_start_time(tup):
+    """Sorting key that returns a tuple's negative build start time.
+
+    By using negative start time, we sort such that the latest builds come
+    first. This gives us a crude approximation of revision order, which means
+    we can update triggered_revisions with the highest revision first. Note that
+    this isn't perfect, but the likelihood of multiple failures occurring in the
+    same minute is low and multi-revision sorting is potentially error-prone. An
+    action-log based approach would obviate this hack.
+    """
+    return tup[0]['build'].get('times', [None])[0]
+
+  kept_tuples = []
+  for tup in sorted(failure_tuples, key=tuple_start_time, reverse=True):
+    build, _, builder, buildnum, _ = tup
+    with log_section(build['base_url'], builder, buildnum):
+      # get_build_properties will return a dict with all the keys given to it.
+      # Since we're giving it triggered_revisions.keys(), revisions is
+      # guaranteed to have the same keys as triggered_revisions.
+      revisions = get_build_properties(
+          build['build'], triggered_revisions.keys())
+
+      logging.debug('previous revision information: %s',
+                    str(triggered_revisions))
+      logging.debug('current revision information: %s', str(revisions))
+
+      if any(x is None for x in revisions.itervalues()):
+        # The revisions aren't in this build, err on the side of noisy.
+        logging.debug('Nones detected in revision tracking information, '
+                      'keeping build.')
+        triggered_revisions = revisions
+        kept_tuples.append(tup)
+        continue
+
+      paired = []
+      for k in revisions:
+        paired.append((triggered_revisions[k], revisions[k]))
+
+      if all(l <= r for l, r in paired) and any(l < r for l, r in paired):
+        # At least one revision is greater and all the others are >=, so let
+        # this revision through.
+        # TODO(stip): evaluate the greatest revision if we see a stream of
+        # failures at once.
+        logging.debug('keeping build')
+        kept_tuples.append(tup)
+        triggered_revisions = revisions
+        continue
+      logging.debug('rejecting build')
+
+  build_db.aux['triggered_revisions'] = triggered_revisions
+  return kept_tuples
+
+
 def debounce_failures(failed_builds, build_db):
   """Using trigger information in build_db, make sure we don't double-fire."""
-
-  @contextmanager
-  def log_section(url, builder, buildnum, section_hash):
-    """Wraps each build with a log."""
-    logging.debug('%sbuilders/%s/builds/%d ----', url, builder, buildnum)
-    logging.debug('  section hash: %s', section_hash)
-    yield
-    logging.debug('----')
 
   @contextmanager
   def save_build_failures(master_url, builder, buildnum, section_hash,
@@ -438,6 +531,11 @@ def get_options():
   parser.add_option('--status-url',
                     default='https://chromium-status.appspot.com',
                     help='URL for root of the status app')
+  parser.add_option('--track-revisions', action='store_true',
+                    help='only close on increasing revisions')
+  parser.add_option('--revision-properties', default='revision',
+                    help='comma-separated list of buildproperties to compare '
+                         'revision on.')
   parser.add_option('--status-user', default='buildbot@chromium.org',
                     help='username for the status app')
   parser.add_option('--disable-domain-filter', action='store_true',
@@ -556,6 +654,16 @@ def main():
     failing_builds = [b[0] for b in failure_tuples]
     open_tree_if_possible(failing_builds, options.status_user, options.password,
                           options.status_url, options.set_status)
+
+  if options.track_revisions:
+    properties = options.revision_properties.split(',')
+    triggered_revisions = build_db.aux.get('triggered_revisions', {})
+    if not triggered_revisions or (
+        sorted(triggered_revisions) != sorted(properties)):
+      logging.info('revision properties have changed from %s to %s. '
+                   'clearing previous data.', triggered_revisions, properties)
+      build_db.aux['triggered_revisions'] = dict.fromkeys(properties)
+    failure_tuples = reject_old_revisions(failure_tuples, build_db)
 
   # debounce_failures does 3 things:
   # 1. Groups logging by builder

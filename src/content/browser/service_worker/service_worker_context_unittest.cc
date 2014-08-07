@@ -13,6 +13,7 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_storage.h"
+#include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
@@ -28,6 +29,7 @@ void SaveResponseCallback(bool* called,
                           ServiceWorkerStatusCode status,
                           int64 registration_id,
                           int64 version_id) {
+  EXPECT_EQ(SERVICE_WORKER_OK, status) << ServiceWorkerStatusToString(status);
   *called = true;
   *store_registration_id = registration_id;
   *store_version_id = version_id;
@@ -54,7 +56,7 @@ ServiceWorkerContextCore::UnregistrationCallback MakeUnregisteredCallback(
 void ExpectRegisteredWorkers(
     ServiceWorkerStatusCode expect_status,
     int64 expect_version_id,
-    bool expect_pending,
+    bool expect_waiting,
     bool expect_active,
     ServiceWorkerStatusCode status,
     const scoped_refptr<ServiceWorkerRegistration>& registration) {
@@ -64,12 +66,12 @@ void ExpectRegisteredWorkers(
     return;
   }
 
-  if (expect_pending) {
-    EXPECT_TRUE(registration->pending_version());
+  if (expect_waiting) {
+    EXPECT_TRUE(registration->waiting_version());
     EXPECT_EQ(expect_version_id,
-              registration->pending_version()->version_id());
+              registration->waiting_version()->version_id());
   } else {
-    EXPECT_FALSE(registration->pending_version());
+    EXPECT_FALSE(registration->waiting_version());
   }
 
   if (expect_active) {
@@ -150,11 +152,15 @@ TEST_F(ServiceWorkerContextTest, Register) {
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
 
-  EXPECT_EQ(3UL, helper_->ipc_sink()->message_count());
+  EXPECT_EQ(4UL, helper_->ipc_sink()->message_count());
+  EXPECT_TRUE(helper_->ipc_sink()->GetUniqueMessageMatching(
+      EmbeddedWorkerMsg_StartWorker::ID));
   EXPECT_TRUE(helper_->inner_ipc_sink()->GetUniqueMessageMatching(
       ServiceWorkerMsg_InstallEvent::ID));
   EXPECT_TRUE(helper_->inner_ipc_sink()->GetUniqueMessageMatching(
       ServiceWorkerMsg_ActivateEvent::ID));
+  EXPECT_TRUE(helper_->ipc_sink()->GetUniqueMessageMatching(
+      EmbeddedWorkerMsg_StopWorker::ID));
   EXPECT_NE(kInvalidServiceWorkerRegistrationId, registration_id);
   EXPECT_NE(kInvalidServiceWorkerVersionId, version_id);
 
@@ -164,13 +170,13 @@ TEST_F(ServiceWorkerContextTest, Register) {
       base::Bind(&ExpectRegisteredWorkers,
                  SERVICE_WORKER_OK,
                  version_id,
-                 false /* expect_pending */,
+                 false /* expect_waiting */,
                  true /* expect_active */));
   base::RunLoop().RunUntilIdle();
 }
 
 // Test registration when the service worker rejects the install event. The
-// registration callback should indicate success, but there should be no pending
+// registration callback should indicate success, but there should be no waiting
 // or active worker in the registration.
 TEST_F(ServiceWorkerContextTest, Register_RejectInstall) {
   helper_.reset();  // Make sure the process lookups stay overridden.
@@ -189,11 +195,15 @@ TEST_F(ServiceWorkerContextTest, Register_RejectInstall) {
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
 
-  EXPECT_EQ(2UL, helper_->ipc_sink()->message_count());
+  EXPECT_EQ(3UL, helper_->ipc_sink()->message_count());
+  EXPECT_TRUE(helper_->ipc_sink()->GetUniqueMessageMatching(
+      EmbeddedWorkerMsg_StartWorker::ID));
   EXPECT_TRUE(helper_->inner_ipc_sink()->GetUniqueMessageMatching(
       ServiceWorkerMsg_InstallEvent::ID));
   EXPECT_FALSE(helper_->inner_ipc_sink()->GetUniqueMessageMatching(
       ServiceWorkerMsg_ActivateEvent::ID));
+  EXPECT_TRUE(helper_->ipc_sink()->GetUniqueMessageMatching(
+      EmbeddedWorkerMsg_StopWorker::ID));
   EXPECT_NE(kInvalidServiceWorkerRegistrationId, registration_id);
   EXPECT_NE(kInvalidServiceWorkerVersionId, version_id);
 
@@ -203,13 +213,13 @@ TEST_F(ServiceWorkerContextTest, Register_RejectInstall) {
       base::Bind(&ExpectRegisteredWorkers,
                  SERVICE_WORKER_ERROR_NOT_FOUND,
                  kInvalidServiceWorkerVersionId,
-                 false /* expect_pending */,
+                 false /* expect_waiting */,
                  false /* expect_active */));
   base::RunLoop().RunUntilIdle();
 }
 
 // Test registration when the service worker rejects the activate event. The
-// registration callback should indicate success, but there should be no pending
+// registration callback should indicate success, but there should be no waiting
 // or active worker in the registration.
 TEST_F(ServiceWorkerContextTest, Register_RejectActivate) {
   helper_.reset();  // Make sure the process lookups stay overridden.
@@ -228,11 +238,15 @@ TEST_F(ServiceWorkerContextTest, Register_RejectActivate) {
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(called);
 
-  EXPECT_EQ(3UL, helper_->ipc_sink()->message_count());
+  EXPECT_EQ(4UL, helper_->ipc_sink()->message_count());
+  EXPECT_TRUE(helper_->ipc_sink()->GetUniqueMessageMatching(
+      EmbeddedWorkerMsg_StartWorker::ID));
   EXPECT_TRUE(helper_->inner_ipc_sink()->GetUniqueMessageMatching(
       ServiceWorkerMsg_InstallEvent::ID));
   EXPECT_TRUE(helper_->inner_ipc_sink()->GetUniqueMessageMatching(
       ServiceWorkerMsg_ActivateEvent::ID));
+  EXPECT_TRUE(helper_->ipc_sink()->GetUniqueMessageMatching(
+      EmbeddedWorkerMsg_StopWorker::ID));
   EXPECT_NE(kInvalidServiceWorkerRegistrationId, registration_id);
   EXPECT_NE(kInvalidServiceWorkerVersionId, version_id);
 
@@ -242,7 +256,7 @@ TEST_F(ServiceWorkerContextTest, Register_RejectActivate) {
       base::Bind(&ExpectRegisteredWorkers,
                  SERVICE_WORKER_ERROR_NOT_FOUND,
                  kInvalidServiceWorkerVersionId,
-                 false /* expect_pending */,
+                 false /* expect_waiting */,
                  false /* expect_active */));
   base::RunLoop().RunUntilIdle();
 }
@@ -281,7 +295,7 @@ TEST_F(ServiceWorkerContextTest, Unregister) {
       base::Bind(&ExpectRegisteredWorkers,
                  SERVICE_WORKER_ERROR_NOT_FOUND,
                  kInvalidServiceWorkerVersionId,
-                 false /* expect_pending */,
+                 false /* expect_waiting */,
                  false /* expect_active */));
   base::RunLoop().RunUntilIdle();
 }

@@ -47,8 +47,8 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher : public Dispatcher {
   virtual MojoResult EndWriteDataImplNoLock(
       uint32_t num_bytes_written) OVERRIDE;
   virtual MojoResult AddWaiterImplNoLock(Waiter* waiter,
-                                         MojoWaitFlags flags,
-                                         MojoResult wake_result) OVERRIDE;
+                                         MojoHandleSignals signals,
+                                         uint32_t context) OVERRIDE;
   virtual void RemoveWaiterImplNoLock(Waiter* waiter) OVERRIDE;
   virtual bool IsBusyNoLock() const OVERRIDE;
 

@@ -12,3 +12,4 @@ class PushCanary(Master.Base):
   master_port = 8081
   slave_port = 8181
   master_port_alt = 8281
+  buildbot_url = 'http://localhost:8080/'

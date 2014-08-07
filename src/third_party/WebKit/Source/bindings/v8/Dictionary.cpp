@@ -26,37 +26,34 @@
 #include "config.h"
 #include "bindings/v8/Dictionary.h"
 
-#include "V8DOMError.h"
-#include "V8EventTarget.h"
-#include "V8Gamepad.h"
-#include "V8IDBKeyRange.h"
-#include "V8MIDIPort.h"
-#include "V8MediaKeyError.h"
-#include "V8MessagePort.h"
-#include "V8SpeechRecognitionError.h"
-#include "V8SpeechRecognitionResult.h"
-#include "V8SpeechRecognitionResultList.h"
-#include "V8Storage.h"
-#include "V8VoidCallback.h"
-#include "V8Window.h"
+#include "bindings/core/v8/V8DOMError.h"
+#include "bindings/core/v8/V8EventTarget.h"
+#include "bindings/core/v8/V8MediaKeyError.h"
+#include "bindings/core/v8/V8MessagePort.h"
+#include "bindings/core/v8/V8Storage.h"
+#include "bindings/core/v8/V8TextTrack.h"
+#include "bindings/core/v8/V8VoidCallback.h"
+#include "bindings/core/v8/V8Window.h"
+#include "bindings/modules/v8/V8Gamepad.h"
+#include "bindings/modules/v8/V8HeaderMap.h"
+#include "bindings/modules/v8/V8IDBKeyRange.h"
+#include "bindings/modules/v8/V8MIDIPort.h"
+#include "bindings/modules/v8/V8MediaStream.h"
+#include "bindings/modules/v8/V8SpeechRecognitionResult.h"
+#include "bindings/modules/v8/V8SpeechRecognitionResultList.h"
 #include "bindings/v8/ArrayValue.h"
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
 #include "bindings/v8/custom/V8Uint8ArrayCustom.h"
+#include "core/html/track/TrackBase.h"
 #include "modules/gamepad/Gamepad.h"
 #include "modules/indexeddb/IDBKeyRange.h"
-#include "modules/speech/SpeechRecognitionError.h"
+#include "modules/mediastream/MediaStream.h"
 #include "modules/speech/SpeechRecognitionResult.h"
 #include "modules/speech/SpeechRecognitionResultList.h"
 #include "wtf/MathExtras.h"
-
-#include "V8TextTrack.h"
-#include "core/html/track/TrackBase.h"
-
-#include "V8MediaStream.h"
-#include "modules/mediastream/MediaStream.h"
 
 namespace WebCore {
 
@@ -320,7 +317,7 @@ bool Dictionary::get(const String& key, unsigned long long& value) const
     return true;
 }
 
-bool Dictionary::get(const String& key, RefPtrWillBeMember<DOMWindow>& value) const
+bool Dictionary::get(const String& key, RefPtrWillBeMember<LocalDOMWindow>& value) const
 {
     v8::Local<v8::Value> v8Value;
     if (!getKey(key, v8Value))
@@ -440,7 +437,7 @@ bool Dictionary::get(const String& key, RefPtr<ArrayBufferView>& value) const
     return true;
 }
 
-bool Dictionary::get(const String& key, RefPtr<MIDIPort>& value) const
+bool Dictionary::get(const String& key, RefPtrWillBeMember<MIDIPort>& value) const
 {
     v8::Local<v8::Value> v8Value;
     if (!getKey(key, v8Value))
@@ -480,17 +477,7 @@ bool Dictionary::get(const String& key, RefPtrWillBeMember<TrackBase>& value) co
     return true;
 }
 
-bool Dictionary::get(const String& key, RefPtrWillBeMember<SpeechRecognitionError>& value) const
-{
-    v8::Local<v8::Value> v8Value;
-    if (!getKey(key, v8Value))
-        return false;
-
-    value = V8SpeechRecognitionError::toNativeWithTypeCheck(m_isolate, v8Value);
-    return true;
-}
-
-bool Dictionary::get(const String& key, RefPtrWillBeMember<SpeechRecognitionResult>& value) const
+bool Dictionary::get(const String& key, Member<SpeechRecognitionResult>& value) const
 {
     v8::Local<v8::Value> v8Value;
     if (!getKey(key, v8Value))
@@ -500,7 +487,7 @@ bool Dictionary::get(const String& key, RefPtrWillBeMember<SpeechRecognitionResu
     return true;
 }
 
-bool Dictionary::get(const String& key, RefPtrWillBeMember<SpeechRecognitionResultList>& value) const
+bool Dictionary::get(const String& key, Member<SpeechRecognitionResultList>& value) const
 {
     v8::Local<v8::Value> v8Value;
     if (!getKey(key, v8Value))
@@ -530,14 +517,14 @@ bool Dictionary::get(const String& key, RefPtr<MediaStream>& value) const
     return true;
 }
 
-bool Dictionary::get(const String& key, RefPtr<EventTarget>& value) const
+bool Dictionary::get(const String& key, RefPtrWillBeMember<EventTarget>& value) const
 {
     v8::Local<v8::Value> v8Value;
     if (!getKey(key, v8Value))
         return false;
 
     value = nullptr;
-    // We need to handle a DOMWindow specially, because a DOMWindow wrapper
+    // We need to handle a LocalDOMWindow specially, because a LocalDOMWindow wrapper
     // exists on a prototype chain of v8Value.
     if (v8Value->IsObject()) {
         v8::Handle<v8::Object> wrapper = v8::Handle<v8::Object>::Cast(v8Value);
@@ -567,6 +554,16 @@ bool Dictionary::get(const String& key, Dictionary& value) const
         value = Dictionary(v8Value, m_isolate);
     }
 
+    return true;
+}
+
+bool Dictionary::get(const String& key, RefPtr<HeaderMap>& value) const
+{
+    v8::Local<v8::Value> v8Value;
+    if (!getKey(key, v8Value))
+        return false;
+
+    value = V8HeaderMap::toNativeWithTypeCheck(m_isolate, v8Value);
     return true;
 }
 
@@ -667,19 +664,6 @@ bool Dictionary::get(const String& key, RefPtrWillBeMember<DOMError>& value) con
         return false;
 
     value = V8DOMError::toNativeWithTypeCheck(m_isolate, v8Value);
-    return true;
-}
-
-bool Dictionary::get(const String& key, OwnPtr<VoidCallback>& value) const
-{
-    v8::Local<v8::Value> v8Value;
-    if (!getKey(key, v8Value))
-        return false;
-
-    if (!v8Value->IsFunction())
-        return false;
-
-    value = V8VoidCallback::create(v8::Handle<v8::Function>::Cast(v8Value), currentExecutionContext(m_isolate));
     return true;
 }
 

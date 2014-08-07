@@ -3,13 +3,15 @@
 // found in the LICENSE file.
 
 // The <code>chrome.bluetoothLowEnergy</code> API is used to communicate with
-// Bluetooth Smart (Low Energy) devices.
+// Bluetooth Smart (Low Energy) devices using the
+// <a href="https://developer.bluetooth.org/TechnologyOverview/Pages/GATT.aspx">
+// Generic Attribute Profile (GATT)</a>.
 namespace bluetoothLowEnergy {
   // Values representing the possible properties of a characteristic.
   enum CharacteristicProperty {broadcast, read, writeWithoutResponse, write,
                                notify, indicate, authenticatedSignedWrites,
                                extendedProperties, reliableWrite,
-                               writeableAuxiliaries};
+                               writableAuxiliaries};
 
   // Represents a peripheral's Bluetooth GATT Service, a collection of
   // characteristics and relationships to other services that encapsulate
@@ -24,7 +26,7 @@ namespace bluetoothLowEnergy {
     // Indicates whether this service represents a local service hosted by the
     // application and available to other peripherals, or a remote service
     // hosted and received from a remote peripheral.
-    boolean isLocal;
+    [nodoc] boolean isLocal;
 
     // Returns the identifier assigned to this service. Use the instance ID to
     // distinguish between services from a peripheral with the same UUID and
@@ -47,7 +49,7 @@ namespace bluetoothLowEnergy {
     // Indicates whether this characteristic represents a local characteristic
     // hosted by the application and available to other peripherals, or a remote
     // characteristic hosted and received from a remote peripheral.
-    boolean isLocal;
+    [nodoc] boolean isLocal;
 
     // The GATT service this characteristic belongs to.
     Service service;
@@ -62,9 +64,8 @@ namespace bluetoothLowEnergy {
     DOMString? instanceId;
 
     // The currently cached characteristic value. This value gets updated when
-    // the value of the characteristic is read, written, or updated via a
-    // notification or indication. For local characteristics, this is the value
-    // that will be returned upon requests from remote peripherals by default.
+    // the value of the characteristic is read or updated via a notification
+    // or indication.
     ArrayBuffer? value;
   };
 
@@ -78,7 +79,7 @@ namespace bluetoothLowEnergy {
     // Indicates whether this descriptor represents a local descriptor
     // hosted by the application and available to other peripherals, or a remote
     // descriptor hosted and received from a remote peripheral.
-    boolean isLocal;
+    [nodoc] boolean isLocal;
 
     // The GATT characteristic this descriptor belongs to.
     Characteristic characteristic;
@@ -90,10 +91,27 @@ namespace bluetoothLowEnergy {
     DOMString? instanceId;
 
     // The currently cached descriptor value. This value gets updated when
-    // the value of the descriptor is read or written. For local descriptors,
-    // this is the value that will be returned upon requests from remote
-    // peripherals by default.
+    // the value of the descriptor is read.
     ArrayBuffer? value;
+  };
+
+  // The connection properties specified during a call to $(ref:connect).
+  dictionary ConnectProperties {
+    // Flag indicating whether a connection to the device is left open when the
+    // event page of the application is unloaded (see <a
+    // href="http://developer.chrome.com/apps/app_lifecycle.html">Manage App
+    // Lifecycle</a>). The default value is <code>false.</code>
+    boolean persistent;
+  };
+
+  // Optional characteristic notification session properties specified during a
+  // call to $(ref:startCharacteristicNotifications).
+  dictionary NotificationProperties {
+    // Flag indicating whether the app should receive notifications when the
+    // event page of the application is unloaded (see <a
+    // href="http://developer.chrome.com/apps/app_lifecycle.html">Manage App
+    // Lifecycle</a>). The default value is <code>false</code>.
+    boolean persistent;
   };
 
   callback CharacteristicCallback = void(Characteristic result);
@@ -106,6 +124,29 @@ namespace bluetoothLowEnergy {
 
   // These functions all report failures via chrome.runtime.lastError.
   interface Functions {
+    // Establishes a connection between the application and the device with the
+    // given address. A device may be already connected and its GATT services
+    // available without calling <code>connect</code>, however, an app that
+    // wants to access GATT services of a device should call this function to
+    // make sure that a connection to the device is maintained. If the device
+    // is not connected, all GATT services of the device will be discovered
+    // after a successful call to <code>connect</code>.
+    // |deviceAddress| : The Bluetooth address of the remote device to which a
+    // GATT connection should be opened.
+    // |properties| : Connection properties (optional).
+    // |callback| : Called when the connect request has completed.
+    static void connect(DOMString deviceAddress,
+                        optional ConnectProperties properties,
+                        ResultCallback callback);
+
+    // Closes the app's connection to the device with the given address. Note
+    // that this will not always destroy the physical link itself, since there
+    // may be other apps with open connections.
+    // |deviceAddress| : The Bluetooth address of the remote device.
+    // |callback| : Called when the disconnect request has completed.
+    static void disconnect(DOMString deviceAddress,
+                           optional ResultCallback callback);
+
     // Get the GATT service with the given instance ID.
     // |serviceId| : The instance ID of the requested GATT service.
     // |callback| : Called with the requested Service object.
@@ -113,7 +154,7 @@ namespace bluetoothLowEnergy {
 
     // Get all the GATT services that were discovered on the remote device with
     // the given device address.
-    // |deviceAddress| : The Bluetooth Address of the remote device whose GATT
+    // |deviceAddress| : The Bluetooth address of the remote device whose GATT
     // services should be returned.
     // |callback| : Called with the list of requested Service objects.
     static void getServices(DOMString deviceAddress, ServicesCallback callback);
@@ -160,7 +201,7 @@ namespace bluetoothLowEnergy {
                                DescriptorsCallback callback);
 
     // Retrieve the value of a specified characteristic from a remote
-    // peripheral. This function will fail if the characteristic is local.
+    // peripheral.
     // |characteristicId| : The instance ID of the GATT characteristic whose
     // value should be read from the remote device.
     // |callback| : Called with the Characteristic object whose value was
@@ -170,7 +211,6 @@ namespace bluetoothLowEnergy {
                                         CharacteristicCallback callback);
 
     // Write the value of a specified characteristic from a remote peripheral.
-    // This function will fail if the characteristic is local.
     // |characteristicId| : The instance ID of the GATT characteristic whose
     // value should be written to.
     // |value| : The value that should be sent to the remote characteristic as
@@ -180,8 +220,30 @@ namespace bluetoothLowEnergy {
                                          ArrayBuffer value,
                                          ResultCallback callback);
 
+    // Enable value notifications/indications from the specified characteristic.
+    // Once enabled, an application can listen to notifications using the
+    // $(ref:onCharacteristicValueChanged) event.
+    // |characteristicId| : The instance ID of the GATT characteristic that
+    // notifications should be enabled on.
+    // |properties| : Notification session properties (optional).
+    // |callback| : Called when the request has completed.
+    static void startCharacteristicNotifications(
+        DOMString characteristicId,
+        optional NotificationProperties properties,
+        ResultCallback callback);
+
+    // Disable value notifications/indications from the specified
+    // characteristic. After a successful call, the application will stop
+    // receiving notifications/indications from this characteristic.
+    // |characteristicId| : The instance ID of the GATT characteristic on which
+    // this app's notification session should be stopped.
+    // |callback| : Called when the request has completed (optional).
+    static void stopCharacteristicNotifications(
+        DOMString characteristicId,
+        optional ResultCallback callback);
+
     // Retrieve the value of a specified characteristic descriptor from a remote
-    // peripheral. This function will fail if the descriptor is local.
+    // peripheral.
     // |descriptorId| : The instance ID of the GATT characteristic descriptor
     // whose value should be read from the remote device.
     // |callback| : Called with the Descriptor object whose value was requested.
@@ -191,7 +253,7 @@ namespace bluetoothLowEnergy {
                                     DescriptorCallback callback);
 
     // Write the value of a specified characteristic descriptor from a remote
-    // peripheral. This function will fail if the descriptor is local.
+    // peripheral.
     // |descriptorId| : The instance ID of the GATT characteristic descriptor
     // whose value should be written to.
     // |value| : The value that should be sent to the remote descriptor as part
@@ -220,9 +282,18 @@ namespace bluetoothLowEnergy {
     static void onServiceRemoved(Service service);
 
     // Fired when the value of a remote GATT characteristic changes, either as
-    // a result of a read or write request, or a value change notification or
-    // indication.
+    // a result of a read request, or a value change notification/indication
+    // This event will only be sent if the app has enabled notifications by
+    // calling $(ref:startCharacteristicNotifications).
     // |characteristic| : The GATT characteristic whose value has changed.
     static void onCharacteristicValueChanged(Characteristic characteristic);
+
+    // Fired when the value of a remote GATT characteristic descriptor changes,
+    // usually as a result of a read request. This event exists
+    // mostly for convenience and will always be sent after a successful
+    // call to $(ref:readDescriptorValue).
+    // |descriptor| : The GATT characteristic descriptor whose value has
+    // changed.
+    static void onDescriptorValueChanged(Descriptor descriptor);
   };
 };

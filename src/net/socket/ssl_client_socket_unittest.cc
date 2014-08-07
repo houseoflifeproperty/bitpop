@@ -7,6 +7,7 @@
 #include "base/callback_helpers.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
+#include "base/time/time.h"
 #include "net/base/address_list.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -22,6 +23,7 @@
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/tcp_client_socket.h"
+#include "net/ssl/default_server_bound_cert_store.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/test/cert_test_util.h"
@@ -528,6 +530,38 @@ void FakeBlockingStreamSocket::OnReadCompleted(int result) {
   }
 }
 
+// CountingStreamSocket wraps an existing StreamSocket and maintains a count of
+// reads and writes on the socket.
+class CountingStreamSocket : public WrappedStreamSocket {
+ public:
+  explicit CountingStreamSocket(scoped_ptr<StreamSocket> transport)
+      : WrappedStreamSocket(transport.Pass()),
+        read_count_(0),
+        write_count_(0) {}
+  virtual ~CountingStreamSocket() {}
+
+  // Socket implementation:
+  virtual int Read(IOBuffer* buf,
+                   int buf_len,
+                   const CompletionCallback& callback) OVERRIDE {
+    read_count_++;
+    return transport_->Read(buf, buf_len, callback);
+  }
+  virtual int Write(IOBuffer* buf,
+                    int buf_len,
+                    const CompletionCallback& callback) OVERRIDE {
+    write_count_++;
+    return transport_->Write(buf, buf_len, callback);
+  }
+
+  int read_count() const { return read_count_; }
+  int write_count() const { return write_count_; }
+
+ private:
+  int read_count_;
+  int write_count_;
+};
+
 // CompletionCallback that will delete the associated StreamSocket when
 // the callback is invoked.
 class DeleteSocketCallback : public TestCompletionCallbackBase {
@@ -557,6 +591,35 @@ class DeleteSocketCallback : public TestCompletionCallbackBase {
   DISALLOW_COPY_AND_ASSIGN(DeleteSocketCallback);
 };
 
+// A ServerBoundCertStore that always returns an error when asked for a
+// certificate.
+class FailingServerBoundCertStore : public ServerBoundCertStore {
+  virtual int GetServerBoundCert(const std::string& server_identifier,
+                                 base::Time* expiration_time,
+                                 std::string* private_key_result,
+                                 std::string* cert_result,
+                                 const GetCertCallback& callback) OVERRIDE {
+    return ERR_UNEXPECTED;
+  }
+  virtual void SetServerBoundCert(const std::string& server_identifier,
+                                  base::Time creation_time,
+                                  base::Time expiration_time,
+                                  const std::string& private_key,
+                                  const std::string& cert) OVERRIDE {}
+  virtual void DeleteServerBoundCert(const std::string& server_identifier,
+                                     const base::Closure& completion_callback)
+      OVERRIDE {}
+  virtual void DeleteAllCreatedBetween(base::Time delete_begin,
+                                       base::Time delete_end,
+                                       const base::Closure& completion_callback)
+      OVERRIDE {}
+  virtual void DeleteAll(const base::Closure& completion_callback) OVERRIDE {}
+  virtual void GetAllServerBoundCerts(const GetCertListCallback& callback)
+      OVERRIDE {}
+  virtual int GetCertCount() OVERRIDE { return 0; }
+  virtual void SetForceKeepSessionState() OVERRIDE {}
+};
+
 class SSLClientSocketTest : public PlatformTest {
  public:
   SSLClientSocketTest()
@@ -569,6 +632,44 @@ class SSLClientSocketTest : public PlatformTest {
   }
 
  protected:
+  // The address of the spawned test server, after calling StartTestServer().
+  const AddressList& addr() const { return addr_; }
+
+  // The SpawnedTestServer object, after calling StartTestServer().
+  const SpawnedTestServer* test_server() const { return test_server_.get(); }
+
+  // Starts the test server with SSL configuration |ssl_options|. Returns true
+  // on success.
+  bool StartTestServer(const SpawnedTestServer::SSLOptions& ssl_options) {
+    test_server_.reset(new SpawnedTestServer(
+        SpawnedTestServer::TYPE_HTTPS, ssl_options, base::FilePath()));
+    if (!test_server_->Start()) {
+      LOG(ERROR) << "Could not start SpawnedTestServer";
+      return false;
+    }
+
+    if (!test_server_->GetAddressList(&addr_)) {
+      LOG(ERROR) << "Could not get SpawnedTestServer address list";
+      return false;
+    }
+    return true;
+  }
+
+  // Sets up a TCP connection to a HTTPS server. To actually do the SSL
+  // handshake, follow up with call to CreateAndConnectSSLClientSocket() below.
+  bool ConnectToTestServer(const SpawnedTestServer::SSLOptions& ssl_options) {
+    if (!StartTestServer(ssl_options))
+      return false;
+
+    transport_.reset(new TCPClientSocket(addr_, &log_, NetLog::Source()));
+    int rv = callback_.GetResult(transport_->Connect(callback_.callback()));
+    if (rv != OK) {
+      LOG(ERROR) << "Could not connect to SpawnedTestServer";
+      return false;
+    }
+    return true;
+  }
+
   scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
       scoped_ptr<StreamSocket> transport_socket,
       const HostPortPair& host_and_port,
@@ -579,10 +680,39 @@ class SSLClientSocketTest : public PlatformTest {
         connection.Pass(), host_and_port, ssl_config, context_);
   }
 
+  // Create an SSLClientSocket object and use it to connect to a test
+  // server, then wait for connection results. This must be called after
+  // a successful ConnectToTestServer() call.
+  // |ssl_config| the SSL configuration to use.
+  // |result| will retrieve the ::Connect() result value.
+  // Returns true on success, false otherwise. Success means that the socket
+  // could be created and its Connect() was called, not that the connection
+  // itself was a success.
+  bool CreateAndConnectSSLClientSocket(SSLConfig& ssl_config, int* result) {
+    sock_ = CreateSSLClientSocket(
+        transport_.Pass(), test_server_->host_port_pair(), ssl_config);
+
+    if (sock_->IsConnected()) {
+      LOG(ERROR) << "SSL Socket prematurely connected";
+      return false;
+    }
+
+    *result = callback_.GetResult(sock_->Connect(callback_.callback()));
+    return true;
+  }
+
   ClientSocketFactory* socket_factory_;
   scoped_ptr<MockCertVerifier> cert_verifier_;
   scoped_ptr<TransportSecurityState> transport_security_state_;
   SSLClientSocketContext context_;
+  scoped_ptr<SSLClientSocket> sock_;
+  CapturingNetLog log_;
+
+ private:
+  scoped_ptr<StreamSocket> transport_;
+  scoped_ptr<SpawnedTestServer> test_server_;
+  TestCompletionCallback callback_;
+  AddressList addr_;
 };
 
 // Verifies the correctness of GetSSLCertRequestInfo.
@@ -621,6 +751,8 @@ class SSLClientSocketCertRequestInfoTest : public SSLClientSocketTest {
     sock->GetSSLCertRequestInfo(request_info.get());
     sock->Disconnect();
     EXPECT_FALSE(sock->IsConnected());
+    EXPECT_TRUE(
+        test_server.host_port_pair().Equals(request_info->host_and_port));
 
     return request_info;
   }
@@ -628,58 +760,82 @@ class SSLClientSocketCertRequestInfoTest : public SSLClientSocketTest {
 
 class SSLClientSocketFalseStartTest : public SSLClientSocketTest {
  protected:
-  void TestFalseStart(const SpawnedTestServer::SSLOptions& server_options,
-                      const SSLConfig& client_config,
-                      bool expect_false_start) {
-    SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
-                                  server_options,
-                                  base::FilePath());
-    ASSERT_TRUE(test_server.Start());
+  // Creates an SSLClientSocket with |client_config| attached to a
+  // FakeBlockingStreamSocket, returning both in |*out_raw_transport| and
+  // |*out_sock|. The FakeBlockingStreamSocket is owned by the SSLClientSocket,
+  // so |*out_raw_transport| is a raw pointer.
+  //
+  // The client socket will begin a connect using |callback| but stop before the
+  // server's finished message is received. The finished message will be blocked
+  // in |*out_raw_transport|. To complete the handshake and successfully read
+  // data, the caller must unblock reads on |*out_raw_transport|. (Note that, if
+  // the client successfully false started, |callback.WaitForResult()| will
+  // return OK without unblocking transport reads. But Read() will still block.)
+  //
+  // Must be called after StartTestServer is called.
+  void CreateAndConnectUntilServerFinishedReceived(
+      const SSLConfig& client_config,
+      TestCompletionCallback* callback,
+      FakeBlockingStreamSocket** out_raw_transport,
+      scoped_ptr<SSLClientSocket>* out_sock) {
+    CHECK(test_server());
 
-    AddressList addr;
-    ASSERT_TRUE(test_server.GetAddressList(&addr));
-
-    TestCompletionCallback callback;
     scoped_ptr<StreamSocket> real_transport(
-        new TCPClientSocket(addr, NULL, NetLog::Source()));
+        new TCPClientSocket(addr(), NULL, NetLog::Source()));
     scoped_ptr<FakeBlockingStreamSocket> transport(
         new FakeBlockingStreamSocket(real_transport.Pass()));
-    int rv = callback.GetResult(transport->Connect(callback.callback()));
+    int rv = callback->GetResult(transport->Connect(callback->callback()));
     EXPECT_EQ(OK, rv);
 
     FakeBlockingStreamSocket* raw_transport = transport.get();
-    scoped_ptr<SSLClientSocket> sock(
+    scoped_ptr<SSLClientSocket> sock =
         CreateSSLClientSocket(transport.PassAs<StreamSocket>(),
-                              test_server.host_port_pair(),
-                              client_config));
+                              test_server()->host_port_pair(),
+                              client_config);
 
     // Connect. Stop before the client processes the first server leg
     // (ServerHello, etc.)
     raw_transport->BlockReadResult();
-    rv = sock->Connect(callback.callback());
+    rv = sock->Connect(callback->callback());
     EXPECT_EQ(ERR_IO_PENDING, rv);
     raw_transport->WaitForReadResult();
 
     // Release the ServerHello and wait for the client to write
     // ClientKeyExchange, etc. (A proxy for waiting for the entirety of the
     // server's leg to complete, since it may span multiple reads.)
-    EXPECT_FALSE(callback.have_result());
+    EXPECT_FALSE(callback->have_result());
     raw_transport->BlockWrite();
     raw_transport->UnblockReadResult();
     raw_transport->WaitForWrite();
 
     // And, finally, release that and block the next server leg
-    // (ChangeCipherSpec, Finished). Note: callback.have_result() may or may not
-    // be true at this point depending on whether the SSL implementation waits
-    // for the client second leg to clear the internal write buffer and hit the
-    // network.
+    // (ChangeCipherSpec, Finished).
     raw_transport->BlockReadResult();
     raw_transport->UnblockWrite();
+
+    *out_raw_transport = raw_transport;
+    *out_sock = sock.Pass();
+  }
+
+  void TestFalseStart(const SpawnedTestServer::SSLOptions& server_options,
+                      const SSLConfig& client_config,
+                      bool expect_false_start) {
+    ASSERT_TRUE(StartTestServer(server_options));
+
+    TestCompletionCallback callback;
+    FakeBlockingStreamSocket* raw_transport = NULL;
+    scoped_ptr<SSLClientSocket> sock;
+    ASSERT_NO_FATAL_FAILURE(CreateAndConnectUntilServerFinishedReceived(
+        client_config, &callback, &raw_transport, &sock));
 
     if (expect_false_start) {
       // When False Starting, the handshake should complete before receiving the
       // Change Cipher Spec and Finished messages.
-      rv = callback.GetResult(rv);
+      //
+      // Note: callback.have_result() may not be true without waiting. The NSS
+      // state machine sometimes lives on a separate thread, so this thread may
+      // not yet have processed the signal that the handshake has completed.
+      int rv = callback.WaitForResult();
       EXPECT_EQ(OK, rv);
       EXPECT_TRUE(sock->IsConnected());
 
@@ -711,6 +867,25 @@ class SSLClientSocketFalseStartTest : public SSLClientSocketTest {
       EXPECT_FALSE(callback.have_result());
     }
   }
+};
+
+class SSLClientSocketChannelIDTest : public SSLClientSocketTest {
+ protected:
+  void EnableChannelID() {
+    cert_service_.reset(
+        new ServerBoundCertService(new DefaultServerBoundCertStore(NULL),
+                                   base::MessageLoopProxy::current()));
+    context_.server_bound_cert_service = cert_service_.get();
+  }
+
+  void EnableFailingChannelID() {
+    cert_service_.reset(new ServerBoundCertService(
+        new FailingServerBoundCertStore(), base::MessageLoopProxy::current()));
+    context_.server_bound_cert_service = cert_service_.get();
+  }
+
+ private:
+  scoped_ptr<ServerBoundCertService> cert_service_;
 };
 
 //-----------------------------------------------------------------------------
@@ -1175,6 +1350,75 @@ TEST_F(SSLClientSocketTest, Write_WithSynchronousError) {
   // SSLClientSocketOpenSSL treats any errors as a simple EOF.
   EXPECT_EQ(0, rv);
 #endif
+}
+
+// If there is a Write failure at the transport with no follow-up Read, although
+// the write error will not be returned to the client until a future Read or
+// Write operation, SSLClientSocket should not spin attempting to re-write on
+// the socket. This is a regression test for part of https://crbug.com/381160.
+TEST_F(SSLClientSocketTest, Write_WithSynchronousErrorNoRead) {
+  SpawnedTestServer test_server(SpawnedTestServer::TYPE_HTTPS,
+                                SpawnedTestServer::kLocalhost,
+                                base::FilePath());
+  ASSERT_TRUE(test_server.Start());
+
+  AddressList addr;
+  ASSERT_TRUE(test_server.GetAddressList(&addr));
+
+  TestCompletionCallback callback;
+  scoped_ptr<StreamSocket> real_transport(
+      new TCPClientSocket(addr, NULL, NetLog::Source()));
+  // Note: intermediate sockets' ownership are handed to |sock|, but a pointer
+  // is retained in order to query them.
+  scoped_ptr<SynchronousErrorStreamSocket> error_socket(
+      new SynchronousErrorStreamSocket(real_transport.Pass()));
+  SynchronousErrorStreamSocket* raw_error_socket = error_socket.get();
+  scoped_ptr<CountingStreamSocket> counting_socket(
+      new CountingStreamSocket(error_socket.PassAs<StreamSocket>()));
+  CountingStreamSocket* raw_counting_socket = counting_socket.get();
+  int rv = callback.GetResult(counting_socket->Connect(callback.callback()));
+  ASSERT_EQ(OK, rv);
+
+  // Disable TLS False Start to avoid handshake non-determinism.
+  SSLConfig ssl_config;
+  ssl_config.false_start_enabled = false;
+
+  scoped_ptr<SSLClientSocket> sock(
+      CreateSSLClientSocket(counting_socket.PassAs<StreamSocket>(),
+                            test_server.host_port_pair(),
+                            ssl_config));
+
+  rv = callback.GetResult(sock->Connect(callback.callback()));
+  ASSERT_EQ(OK, rv);
+  ASSERT_TRUE(sock->IsConnected());
+
+  // Simulate an unclean/forcible shutdown on the underlying socket.
+  raw_error_socket->SetNextWriteError(ERR_CONNECTION_RESET);
+
+  const char request_text[] = "GET / HTTP/1.0\r\n\r\n";
+  static const int kRequestTextSize =
+      static_cast<int>(arraysize(request_text) - 1);
+  scoped_refptr<IOBuffer> request_buffer(new IOBuffer(kRequestTextSize));
+  memcpy(request_buffer->data(), request_text, kRequestTextSize);
+
+  // This write should complete synchronously, because the TLS ciphertext
+  // can be created and placed into the outgoing buffers independent of the
+  // underlying transport.
+  rv = callback.GetResult(
+      sock->Write(request_buffer.get(), kRequestTextSize, callback.callback()));
+  ASSERT_EQ(kRequestTextSize, rv);
+
+  // Let the event loop spin for a little bit of time. Even on platforms where
+  // pumping the state machine involve thread hops, there should be no further
+  // writes on the transport socket.
+  //
+  // TODO(davidben): Avoid the arbitrary timeout?
+  int old_write_count = raw_counting_socket->write_count();
+  base::RunLoop loop;
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE, loop.QuitClosure(), base::TimeDelta::FromMilliseconds(100));
+  loop.Run();
+  EXPECT_EQ(old_write_count, raw_counting_socket->write_count());
 }
 
 // Test the full duplex mode, with Read and Write pending at the same time.
@@ -2117,6 +2361,21 @@ TEST_F(SSLClientSocketCertRequestInfoTest, TwoAuthorities) {
       request_info->cert_authorities[1]);
 }
 
+// cert_key_types is currently only populated on OpenSSL.
+#if defined(USE_OPENSSL)
+TEST_F(SSLClientSocketCertRequestInfoTest, CertKeyTypes) {
+  SpawnedTestServer::SSLOptions ssl_options;
+  ssl_options.request_client_certificate = true;
+  ssl_options.client_cert_types.push_back(CLIENT_CERT_RSA_SIGN);
+  ssl_options.client_cert_types.push_back(CLIENT_CERT_ECDSA_SIGN);
+  scoped_refptr<SSLCertRequestInfo> request_info = GetCertRequest(ssl_options);
+  ASSERT_TRUE(request_info.get());
+  ASSERT_EQ(2u, request_info->cert_key_types.size());
+  EXPECT_EQ(CLIENT_CERT_RSA_SIGN, request_info->cert_key_types[0]);
+  EXPECT_EQ(CLIENT_CERT_ECDSA_SIGN, request_info->cert_key_types[1]);
+}
+#endif  // defined(USE_OPENSSL)
+
 TEST_F(SSLClientSocketTest, ConnectSignedCertTimestampsEnabledTLSExtension) {
   SpawnedTestServer::SSLOptions ssl_options;
   ssl_options.signed_cert_timestamps_tls_ext = "test";
@@ -2339,7 +2598,8 @@ TEST_F(SSLClientSocketFalseStartTest, FalseStartEnabled) {
   server_options.enable_npn = true;
   SSLConfig client_config;
   client_config.next_protos.push_back("http/1.1");
-  TestFalseStart(server_options, client_config, true);
+  ASSERT_NO_FATAL_FAILURE(
+      TestFalseStart(server_options, client_config, true));
 }
 
 // Test that False Start is disabled without NPN.
@@ -2349,7 +2609,8 @@ TEST_F(SSLClientSocketFalseStartTest, NoNPN) {
       SpawnedTestServer::SSLOptions::KEY_EXCHANGE_DHE_RSA;
   SSLConfig client_config;
   client_config.next_protos.clear();
-  TestFalseStart(server_options, client_config, false);
+  ASSERT_NO_FATAL_FAILURE(
+      TestFalseStart(server_options, client_config, false));
 }
 
 // Test that False Start is disabled without a forward-secret cipher suite.
@@ -2360,7 +2621,123 @@ TEST_F(SSLClientSocketFalseStartTest, NoForwardSecrecy) {
   server_options.enable_npn = true;
   SSLConfig client_config;
   client_config.next_protos.push_back("http/1.1");
-  TestFalseStart(server_options, client_config, false);
+  ASSERT_NO_FATAL_FAILURE(
+      TestFalseStart(server_options, client_config, false));
+}
+
+// Test that sessions are resumable after receiving the server Finished message.
+TEST_F(SSLClientSocketFalseStartTest, SessionResumption) {
+  // Start a server.
+  SpawnedTestServer::SSLOptions server_options;
+  server_options.key_exchanges =
+      SpawnedTestServer::SSLOptions::KEY_EXCHANGE_DHE_RSA;
+  server_options.enable_npn = true;
+  SSLConfig client_config;
+  client_config.next_protos.push_back("http/1.1");
+
+  // Let a full handshake complete with False Start.
+  ASSERT_NO_FATAL_FAILURE(
+      TestFalseStart(server_options, client_config, true));
+
+  // Make a second connection.
+  TestCompletionCallback callback;
+  scoped_ptr<StreamSocket> transport2(
+      new TCPClientSocket(addr(), &log_, NetLog::Source()));
+  EXPECT_EQ(OK, callback.GetResult(transport2->Connect(callback.callback())));
+  scoped_ptr<SSLClientSocket> sock2 = CreateSSLClientSocket(
+      transport2.Pass(), test_server()->host_port_pair(), client_config);
+  ASSERT_TRUE(sock2.get());
+  EXPECT_EQ(OK, callback.GetResult(sock2->Connect(callback.callback())));
+
+  // It should resume the session.
+  SSLInfo ssl_info;
+  EXPECT_TRUE(sock2->GetSSLInfo(&ssl_info));
+  EXPECT_EQ(SSLInfo::HANDSHAKE_RESUME, ssl_info.handshake_type);
+}
+
+// Test that sessions are not resumable before receiving the server Finished
+// message.
+TEST_F(SSLClientSocketFalseStartTest, NoSessionResumptionBeforeFinish) {
+  // Start a server.
+  SpawnedTestServer::SSLOptions server_options;
+  server_options.key_exchanges =
+      SpawnedTestServer::SSLOptions::KEY_EXCHANGE_DHE_RSA;
+  server_options.enable_npn = true;
+  ASSERT_TRUE(StartTestServer(server_options));
+
+  SSLConfig client_config;
+  client_config.next_protos.push_back("http/1.1");
+
+  // Start a handshake up to the server Finished message.
+  TestCompletionCallback callback;
+  FakeBlockingStreamSocket* raw_transport1;
+  scoped_ptr<SSLClientSocket> sock1;
+  ASSERT_NO_FATAL_FAILURE(CreateAndConnectUntilServerFinishedReceived(
+      client_config, &callback, &raw_transport1, &sock1));
+  // Although raw_transport1 has the server Finished blocked, the handshake
+  // still completes.
+  EXPECT_EQ(OK, callback.WaitForResult());
+
+  // Drop the old socket. This is needed because the Python test server can't
+  // service two sockets in parallel.
+  sock1.reset();
+
+  // Start a second connection.
+  scoped_ptr<StreamSocket> transport2(
+      new TCPClientSocket(addr(), &log_, NetLog::Source()));
+  EXPECT_EQ(OK, callback.GetResult(transport2->Connect(callback.callback())));
+  scoped_ptr<SSLClientSocket> sock2 = CreateSSLClientSocket(
+      transport2.Pass(), test_server()->host_port_pair(), client_config);
+  EXPECT_EQ(OK, callback.GetResult(sock2->Connect(callback.callback())));
+
+  // No session resumption because the first connection never received a server
+  // Finished message.
+  SSLInfo ssl_info;
+  EXPECT_TRUE(sock2->GetSSLInfo(&ssl_info));
+  EXPECT_EQ(SSLInfo::HANDSHAKE_FULL, ssl_info.handshake_type);
+}
+
+// Connect to a server using channel id. It should allow the connection.
+TEST_F(SSLClientSocketChannelIDTest, SendChannelID) {
+  SpawnedTestServer::SSLOptions ssl_options;
+
+  ASSERT_TRUE(ConnectToTestServer(ssl_options));
+
+  EnableChannelID();
+  SSLConfig ssl_config = kDefaultSSLConfig;
+  ssl_config.channel_id_enabled = true;
+
+  int rv;
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
+
+  EXPECT_EQ(OK, rv);
+  EXPECT_TRUE(sock_->IsConnected());
+  EXPECT_TRUE(sock_->WasChannelIDSent());
+
+  sock_->Disconnect();
+  EXPECT_FALSE(sock_->IsConnected());
+}
+
+// Connect to a server using channel id but without sending a key. It should
+// fail.
+TEST_F(SSLClientSocketChannelIDTest, FailingChannelID) {
+  SpawnedTestServer::SSLOptions ssl_options;
+
+  ASSERT_TRUE(ConnectToTestServer(ssl_options));
+
+  EnableFailingChannelID();
+  SSLConfig ssl_config = kDefaultSSLConfig;
+  ssl_config.channel_id_enabled = true;
+
+  int rv;
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
+
+  // TODO(haavardm@opera.com): Due to differences in threading, Linux returns
+  // ERR_UNEXPECTED while Mac and Windows return ERR_PROTOCOL_ERROR. Accept all
+  // error codes for now.
+  // http://crbug.com/373670
+  EXPECT_NE(OK, rv);
+  EXPECT_FALSE(sock_->IsConnected());
 }
 
 }  // namespace net

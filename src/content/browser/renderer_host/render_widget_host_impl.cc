@@ -26,6 +26,7 @@
 #include "cc/output/compositor_frame_ack.h"
 #include "content/browser/accessibility/accessibility_mode_helper.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
+#include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
@@ -38,7 +39,6 @@
 #include "content/browser/renderer_host/input/synthetic_gesture_target.h"
 #include "content/browser/renderer_host/input/timeout_monitor.h"
 #include "content/browser/renderer_host/input/touch_emulator.h"
-#include "content/browser/renderer_host/overscroll_controller.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
@@ -171,7 +171,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       is_loading_(false),
       is_hidden_(hidden),
       is_fullscreen_(false),
-      is_accelerated_compositing_active_(false),
       repaint_ack_pending_(false),
       resize_ack_pending_(false),
       screen_info_out_of_date_(false),
@@ -183,8 +182,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       is_unresponsive_(false),
       in_flight_event_count_(0),
       in_get_backing_store_(false),
-      abort_get_backing_store_(false),
-      view_being_painted_(false),
       ignore_input_events_(false),
       input_method_active_(false),
       text_direction_updated_(false),
@@ -235,13 +232,10 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
 
   touch_emulator_.reset();
 
-#if defined(USE_AURA)
-  bool overscroll_enabled = CommandLine::ForCurrentProcess()->
-      GetSwitchValueASCII(switches::kOverscrollHistoryNavigation) != "0";
-  SetOverscrollControllerEnabled(overscroll_enabled);
-#endif
-
-  if (GetProcess()->IsGuest() || !CommandLine::ForCurrentProcess()->HasSwitch(
+  RenderViewHostImpl* rvh = static_cast<RenderViewHostImpl*>(
+      IsRenderView() ? RenderViewHost::From(this) : NULL);
+  if (BrowserPluginGuest::IsGuest(rvh) ||
+      !CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableHangMonitor)) {
     hang_monitor_timeout_.reset(new TimeoutMonitor(
         base::Bind(&RenderWidgetHostImpl::RendererIsUnresponsive,
@@ -393,13 +387,6 @@ void RenderWidgetHostImpl::SendScreenRects() {
   waiting_for_screen_rects_ack_ = true;
 }
 
-void RenderWidgetHostImpl::SetOverscrollControllerEnabled(bool enabled) {
-  if (!enabled)
-    overscroll_controller_.reset();
-  else if (!overscroll_controller_)
-    overscroll_controller_.reset(new OverscrollController());
-}
-
 void RenderWidgetHostImpl::SuppressNextCharEvents() {
   suppress_next_char_events_ = true;
 }
@@ -452,8 +439,7 @@ bool RenderWidgetHostImpl::IsRenderView() const {
 
 bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
   bool handled = true;
-  bool msg_is_ok = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(RenderWidgetHostImpl, msg, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(RenderWidgetHostImpl, msg)
     IPC_MESSAGE_HANDLER(InputHostMsg_QueueSyntheticGesture,
                         OnQueueSyntheticGesture)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewReady, OnRenderViewReady)
@@ -464,21 +450,18 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(ViewHostMsg_RequestMove, OnRequestMove)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetTooltipText, OnSetTooltipText)
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
-                                msg_is_ok = OnSwapCompositorFrame(msg))
+                                OnSwapCompositorFrame(msg))
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidStopFlinging, OnFlingingStopped)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateIsDelayed, OnUpdateIsDelayed)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Focus, OnFocus)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Blur, OnBlur)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetCursor, OnSetCursor)
     IPC_MESSAGE_HANDLER(ViewHostMsg_SetTouchEventEmulationEnabled,
                         OnSetTouchEventEmulationEnabled)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputTypeChanged,
-                        OnTextInputTypeChanged)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
+                        OnTextInputStateChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCancelComposition,
                         OnImeCancelComposition)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_DidActivateAcceleratedCompositing,
-                        OnDidActivateAcceleratedCompositing)
     IPC_MESSAGE_HANDLER(ViewHostMsg_LockMouse, OnLockMouse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UnlockMouse, OnUnlockMouse)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowDisambiguationPopup,
@@ -501,7 +484,7 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnImeCompositionRangeChanged)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   if (!handled && input_router_ && input_router_->OnMessageReceived(msg))
     return true;
@@ -509,11 +492,6 @@ bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
   if (!handled && view_ && view_->OnMessageReceived(msg))
     return true;
 
-  if (!msg_is_ok) {
-    // The message de-serialization failed. Kill the renderer process.
-    RecordAction(base::UserMetricsAction("BadMessageTerminate_RWH"));
-    GetProcess()->ReceivedBadMessage();
-  }
   return handled;
 }
 
@@ -593,8 +571,7 @@ void RenderWidgetHostImpl::WasResized() {
     return;
   }
 
-  gfx::Rect view_bounds = view_->GetViewBounds();
-  gfx::Size new_size(view_bounds.size());
+  gfx::Size new_size(view_->GetRequestedRendererSize());
 
   gfx::Size old_physical_backing_size = physical_backing_size_;
   physical_backing_size_ = view_->GetPhysicalBackingSize();
@@ -660,10 +637,6 @@ void RenderWidgetHostImpl::Blur() {
   if (IsMouseLocked())
     view_->UnlockMouse();
 
-  // If there is a pending overscroll, then that should be cancelled.
-  if (overscroll_controller_)
-    overscroll_controller_->Cancel();
-
   if (touch_emulator_)
     touch_emulator_->CancelTouch();
 
@@ -705,7 +678,7 @@ void RenderWidgetHostImpl::CopyFromBackingStore(
     const gfx::Size& accelerated_dst_size,
     const base::Callback<void(bool, const SkBitmap&)>& callback,
     const SkBitmap::Config& bitmap_config) {
-  if (view_ && is_accelerated_compositing_active_) {
+  if (view_) {
     TRACE_EVENT0("browser",
         "RenderWidgetHostImpl::CopyFromBackingStore::FromCompositingSurface");
     gfx::Rect accelerated_copy_rect = src_subrect.IsEmpty() ?
@@ -752,7 +725,7 @@ bool RenderWidgetHostImpl::CanPauseForPendingResizeOrRepaints() {
     return false;
 
   // Do not pause if there is not a paint or resize already coming.
-  if (!repaint_ack_pending_ && !resize_ack_pending_ && !view_being_painted_)
+  if (!repaint_ack_pending_ && !resize_ack_pending_)
     return false;
 
   return true;
@@ -801,7 +774,7 @@ void RenderWidgetHostImpl::WaitForSurface() {
 
   // We do not have a suitable backing store in the cache, so send out a
   // request to the renderer to paint the view if required.
-  if (!repaint_ack_pending_ && !resize_ack_pending_ && !view_being_painted_) {
+  if (!repaint_ack_pending_ && !resize_ack_pending_) {
     repaint_start_time_ = TimeTicks::Now();
     repaint_ack_pending_ = true;
     TRACE_EVENT_ASYNC_BEGIN0(
@@ -828,10 +801,8 @@ void RenderWidgetHostImpl::WaitForSurface() {
 
       // Break now if we got a backing store or accelerated surface of the
       // correct size.
-      if (view_->HasAcceleratedSurface(view_size) || abort_get_backing_store_) {
-        abort_get_backing_store_ = false;
+      if (view_->HasAcceleratedSurface(view_size))
         return;
-      }
     } else {
       TRACE_EVENT0("renderer_host", "WaitForSurface::Timeout");
       break;
@@ -846,9 +817,8 @@ void RenderWidgetHostImpl::WaitForSurface() {
 }
 
 bool RenderWidgetHostImpl::ScheduleComposite() {
-  if (is_hidden_ || !is_accelerated_compositing_active_ ||
-      current_size_.IsEmpty() || repaint_ack_pending_ ||
-      resize_ack_pending_ || view_being_painted_) {
+  if (is_hidden_ || current_size_.IsEmpty() || repaint_ack_pending_ ||
+      resize_ack_pending_) {
     return false;
   }
 
@@ -1223,17 +1193,13 @@ void RenderWidgetHostImpl::RendererExited(base::TerminationStatus status,
   input_router_.reset(new InputRouterImpl(
       process_, this, this, routing_id_, GetInputRouterConfigForPlatform()));
 
-  if (overscroll_controller_)
-    overscroll_controller_->Reset();
-
- // Must reset these to ensure that keyboard events work with a new renderer.
+  // Must reset these to ensure that keyboard events work with a new renderer.
   suppress_next_char_events_ = false;
 
   // Reset some fields in preparation for recovering from a crash.
   ResetSizeAndRepaintPendingFlags();
   current_size_.SetSize(0, 0);
   is_hidden_ = false;
-  is_accelerated_compositing_active_ = false;
 
   // Reset this to ensure the hung renderer mechanism is working properly.
   in_flight_event_count_ = 0;
@@ -1574,11 +1540,6 @@ void RenderWidgetHostImpl::OnUpdateRect(
   UMA_HISTOGRAM_TIMES("MPArch.RWH_OnMsgUpdateRect", delta);
 }
 
-void RenderWidgetHostImpl::OnUpdateIsDelayed() {
-  if (in_get_backing_store_)
-    abort_get_backing_store_ = true;
-}
-
 void RenderWidgetHostImpl::DidUpdateBackingStore(
     const ViewHostMsg_UpdateRect_Params& params,
     const TimeTicks& paint_start) {
@@ -1650,6 +1611,9 @@ void RenderWidgetHostImpl::OnSetCursor(const WebCursor& cursor) {
 
 void RenderWidgetHostImpl::OnSetTouchEventEmulationEnabled(
     bool enabled, bool allow_pinch) {
+  if (delegate_)
+    delegate_->OnTouchEmulationEnabled(enabled);
+
   if (enabled) {
     if (!touch_emulator_)
       touch_emulator_.reset(new TouchEmulator(this));
@@ -1660,12 +1624,10 @@ void RenderWidgetHostImpl::OnSetTouchEventEmulationEnabled(
   }
 }
 
-void RenderWidgetHostImpl::OnTextInputTypeChanged(
-    ui::TextInputType type,
-    ui::TextInputMode input_mode,
-    bool can_compose_inline) {
+void RenderWidgetHostImpl::OnTextInputStateChanged(
+    const ViewHostMsg_TextInputState_Params& params) {
   if (view_)
-    view_->TextInputTypeChanged(type, input_mode, can_compose_inline);
+    view_->TextInputStateChanged(params);
 }
 
 #if defined(OS_MACOSX) || defined(USE_AURA)
@@ -1680,15 +1642,6 @@ void RenderWidgetHostImpl::OnImeCompositionRangeChanged(
 void RenderWidgetHostImpl::OnImeCancelComposition() {
   if (view_)
     view_->ImeCancelComposition();
-}
-
-void RenderWidgetHostImpl::OnDidActivateAcceleratedCompositing(bool activated) {
-  TRACE_EVENT1("renderer_host",
-               "RenderWidgetHostImpl::OnDidActivateAcceleratedCompositing",
-               "activated", activated);
-  is_accelerated_compositing_active_ = activated;
-  if (view_)
-    view_->OnAcceleratedCompositingStateChange();
 }
 
 void RenderWidgetHostImpl::OnLockMouse(bool user_gesture,
@@ -1837,7 +1790,7 @@ void RenderWidgetHostImpl::IncrementInFlightEventCount() {
 }
 
 void RenderWidgetHostImpl::DecrementInFlightEventCount() {
-  DCHECK(in_flight_event_count_ >= 0);
+  DCHECK_GE(in_flight_event_count_, 0);
   // Cancel pending hung renderer checks since the renderer is responsive.
   if (decrement_in_flight_event_count() <= 0)
     StopHangMonitorTimeout();
@@ -1847,15 +1800,16 @@ void RenderWidgetHostImpl::OnHasTouchEventHandlers(bool has_handlers) {
   has_touch_handler_ = has_handlers;
 }
 
-OverscrollController* RenderWidgetHostImpl::GetOverscrollController() const {
-  return overscroll_controller_.get();
-}
-
 void RenderWidgetHostImpl::DidFlush() {
   if (synthetic_gesture_controller_)
     synthetic_gesture_controller_->OnDidFlushInput();
   if (view_)
     view_->OnDidFlushInput();
+}
+
+void RenderWidgetHostImpl::DidOverscroll(const DidOverscrollParams& params) {
+  if (view_)
+    view_->DidOverscroll(params);
 }
 
 void RenderWidgetHostImpl::OnKeyboardEventAck(
@@ -1891,10 +1845,12 @@ void RenderWidgetHostImpl::OnWheelEventAck(
         ui::INPUT_EVENT_LATENCY_TERMINATED_MOUSE_COMPONENT, 0, 0);
   }
 
-  const bool processed = (INPUT_EVENT_ACK_STATE_CONSUMED == ack_result);
-  if (!processed && !is_hidden() && view_) {
-    if (!delegate_->HandleWheelEvent(wheel_event.event))
-      view_->UnhandledWheelEvent(wheel_event.event);
+  if (!is_hidden() && view_) {
+    if (ack_result != INPUT_EVENT_ACK_STATE_CONSUMED &&
+        delegate_->HandleWheelEvent(wheel_event.event)) {
+      ack_result = INPUT_EVENT_ACK_STATE_CONSUMED;
+    }
+    view_->WheelEventAck(wheel_event.event, ack_result);
   }
 }
 
@@ -1974,8 +1930,8 @@ void RenderWidgetHostImpl::Stop() {
   Send(new ViewMsg_Stop(GetRoutingID()));
 }
 
-void RenderWidgetHostImpl::SetBackground(const SkBitmap& background) {
-  Send(new ViewMsg_SetBackground(GetRoutingID(), background));
+void RenderWidgetHostImpl::SetBackgroundOpaque(bool opaque) {
+  Send(new ViewMsg_SetBackgroundOpaque(GetRoutingID(), opaque));
 }
 
 void RenderWidgetHostImpl::SetEditCommandsForNextKeyEvent(
@@ -2045,6 +2001,10 @@ gfx::Rect RenderWidgetHostImpl::AccessibilityGetViewBounds() const {
 gfx::Point RenderWidgetHostImpl::AccessibilityOriginInScreen(
     const gfx::Rect& bounds) const {
   return view_->AccessibilityOriginInScreen(bounds);
+}
+
+void RenderWidgetHostImpl::AccessibilityHitTest(const gfx::Point& point) {
+  Send(new AccessibilityMsg_HitTest(GetRoutingID(), point));
 }
 
 void RenderWidgetHostImpl::AccessibilityFatalError() {

@@ -7,163 +7,37 @@
 #include <algorithm>
 
 #include "base/message_loop/message_loop.h"
-#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_plugin/browser_plugin_embedder.h"
-#include "content/browser/browser_plugin/browser_plugin_guest_manager.h"
-#include "content/browser/browser_plugin/browser_plugin_host_factory.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
-#include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/web_contents/web_contents_view_guest.h"
-#include "content/common/browser_plugin/browser_plugin_constants.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/drag_messages.h"
 #include "content/common/input_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_plugin_guest_manager.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/common/context_menu_params.h"
 #include "content/public/common/drop_data.h"
-#include "content/public/common/media_stream_request.h"
-#include "content/public/common/result_codes.h"
-#include "content/public/common/url_constants.h"
-#include "content/public/common/url_utils.h"
-#include "net/url_request/url_request.h"
 #include "third_party/WebKit/public/platform/WebCursorInfo.h"
-#include "ui/events/keycodes/keyboard_codes.h"
-#include "webkit/common/resource_type.h"
 
 #if defined(OS_MACOSX)
 #include "content/browser/browser_plugin/browser_plugin_popup_menu_helper_mac.h"
 #endif
 
 namespace content {
-
-// static
-BrowserPluginHostFactory* BrowserPluginGuest::factory_ = NULL;
-
-// Parent class for the various types of permission requests, each of which
-// should be able to handle the response to their permission request.
-class BrowserPluginGuest::PermissionRequest :
-    public base::RefCounted<BrowserPluginGuest::PermissionRequest> {
- public:
-  void Respond(bool should_allow, const std::string& user_input) {
-    if (!guest_)
-      return;
-    RespondImpl(should_allow, user_input);
-  }
-  virtual bool AllowedByDefault() const {
-    return false;
-  }
- protected:
-  explicit PermissionRequest(const base::WeakPtr<BrowserPluginGuest>& guest)
-      : guest_(guest) {
-    RecordAction(
-        base::UserMetricsAction("BrowserPlugin.Guest.PermissionRequest"));
-  }
-  virtual ~PermissionRequest() {}
-
-  virtual void RespondImpl(bool should_allow,
-                           const std::string& user_input) = 0;
-  // Friend RefCounted so that the dtor can be non-public.
-  friend class base::RefCounted<BrowserPluginGuest::PermissionRequest>;
-
-  base::WeakPtr<BrowserPluginGuest> guest_;
-};
-
-class BrowserPluginGuest::NewWindowRequest : public PermissionRequest {
- public:
-  NewWindowRequest(const base::WeakPtr<BrowserPluginGuest>& guest,
-                   int instance_id)
-      : PermissionRequest(guest),
-        instance_id_(instance_id) {
-    RecordAction(
-        base::UserMetricsAction("BrowserPlugin.Guest.PermissionRequest.NewWindow"));
-  }
-
-  virtual void RespondImpl(bool should_allow,
-                           const std::string& user_input) OVERRIDE {
-    int embedder_render_process_id =
-        guest_->embedder_web_contents()->GetRenderProcessHost()->GetID();
-    guest_->GetBrowserPluginGuestManager()->
-        MaybeGetGuestByInstanceIDOrKill(
-            instance_id_,
-            embedder_render_process_id,
-            base::Bind(&BrowserPluginGuest::NewWindowRequest::RespondInternal,
-                       base::Unretained(this),
-                       should_allow));
-  }
-
- private:
-  virtual ~NewWindowRequest() {}
-
-  void RespondInternal(bool should_allow,
-                       BrowserPluginGuest* guest) {
-    if (!guest) {
-      VLOG(0) << "Guest not found. Instance ID: " << instance_id_;
-      return;
-    }
-
-    // If we do not destroy the guest then we allow the new window.
-    if (!should_allow)
-      guest->Destroy();
-  }
-
-  int instance_id_;
-};
-
-namespace {
-std::string WindowOpenDispositionToString(
-  WindowOpenDisposition window_open_disposition) {
-  switch (window_open_disposition) {
-    case IGNORE_ACTION:
-      return "ignore";
-    case SAVE_TO_DISK:
-      return "save_to_disk";
-    case CURRENT_TAB:
-      return "current_tab";
-    case NEW_BACKGROUND_TAB:
-      return "new_background_tab";
-    case NEW_FOREGROUND_TAB:
-      return "new_foreground_tab";
-    case NEW_WINDOW:
-      return "new_window";
-    case NEW_POPUP:
-      return "new_popup";
-    default:
-      NOTREACHED() << "Unknown Window Open Disposition";
-      return "ignore";
-  }
-}
-
-// Called on IO thread.
-static GURL RetrieveDownloadURLFromRequestId(
-    int render_process_id,
-    int url_request_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  GlobalRequestID global_id(render_process_id, url_request_id);
-  net::URLRequest* url_request =
-      ResourceDispatcherHostImpl::Get()->GetURLRequest(global_id);
-  if (url_request)
-    return url_request->url();
-  return GURL();
-}
-
-}  // namespace
 
 class BrowserPluginGuest::EmbedderWebContentsObserver
     : public WebContentsObserver {
@@ -176,11 +50,7 @@ class BrowserPluginGuest::EmbedderWebContentsObserver
   virtual ~EmbedderWebContentsObserver() {
   }
 
-  // WebContentsObserver:
-  virtual void WebContentsDestroyed() OVERRIDE {
-    browser_plugin_guest_->EmbedderDestroyed();
-  }
-
+  // WebContentsObserver implementation.
   virtual void WasShown() OVERRIDE {
     browser_plugin_guest_->EmbedderVisibilityChanged(true);
   }
@@ -203,165 +73,46 @@ BrowserPluginGuest::BrowserPluginGuest(
       embedder_web_contents_(NULL),
       instance_id_(instance_id),
       guest_device_scale_factor_(1.0f),
-      guest_hang_timeout_(
-          base::TimeDelta::FromMilliseconds(kHungRendererDelayMs)),
       focused_(false),
       mouse_locked_(false),
       pending_lock_request_(false),
+      guest_visible_(false),
+      guest_opaque_(true),
       embedder_visible_(true),
       auto_size_enabled_(false),
       copy_request_id_(0),
-      next_permission_request_id_(browser_plugin::kInvalidPermissionRequestID),
       has_render_view_(has_render_view),
       last_seen_auto_size_enabled_(false),
       is_in_destruction_(false),
       last_text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
       last_input_mode_(ui::TEXT_INPUT_MODE_DEFAULT),
       last_can_compose_inline_(true),
+      delegate_(NULL),
       weak_ptr_factory_(this) {
   DCHECK(web_contents);
-  web_contents->SetDelegate(this);
-  GetBrowserPluginGuestManager()->AddGuest(instance_id_, GetWebContents());
 }
 
-bool BrowserPluginGuest::AddMessageToConsole(WebContents* source,
-                                             int32 level,
-                                             const base::string16& message,
-                                             int32 line_no,
-                                             const base::string16& source_id) {
-  if (!delegate_)
-    return false;
-
-  delegate_->AddMessageToConsole(level, message, line_no, source_id);
-  return true;
-}
-
-void BrowserPluginGuest::DestroyUnattachedWindows() {
-  // Destroy() reaches in and removes the BrowserPluginGuest from its opener's
-  // pending_new_windows_ set. To avoid mutating the set while iterating, we
-  // create a copy of the pending new windows set and iterate over the copy.
-  PendingWindowMap pending_new_windows(pending_new_windows_);
-  // Clean up unattached new windows opened by this guest.
-  for (PendingWindowMap::const_iterator it = pending_new_windows.begin();
-       it != pending_new_windows.end(); ++it) {
-    it->first->Destroy();
-  }
-  // All pending windows should be removed from the set after Destroy() is
-  // called on all of them.
-  DCHECK(pending_new_windows_.empty());
-}
-
-void BrowserPluginGuest::LoadURLWithParams(const GURL& url,
-                                           const Referrer& referrer,
-                                           PageTransition transition_type,
-                                           WebContents* web_contents) {
-  NavigationController::LoadURLParams load_url_params(url);
-  load_url_params.referrer = referrer;
-  load_url_params.transition_type = transition_type;
-  load_url_params.extra_headers = std::string();
-  if (delegate_ && delegate_->IsOverridingUserAgent()) {
-    load_url_params.override_user_agent =
-        NavigationController::UA_OVERRIDE_TRUE;
-  }
-  web_contents->GetController().LoadURLWithParams(load_url_params);
-}
-
-void BrowserPluginGuest::RespondToPermissionRequest(
-    int request_id,
-    bool should_allow,
-    const std::string& user_input) {
-  RequestMap::iterator request_itr = permission_request_map_.find(request_id);
-  if (request_itr == permission_request_map_.end()) {
-    VLOG(0) << "Not a valid request ID.";
-    return;
-  }
-  request_itr->second->Respond(should_allow, user_input);
-  permission_request_map_.erase(request_itr);
-}
-
-void BrowserPluginGuest::RequestPermission(
-    BrowserPluginPermissionType permission_type,
-    scoped_refptr<BrowserPluginGuest::PermissionRequest> request,
-    const base::DictionaryValue& request_info) {
-  if (!delegate_) {
-    // Let the stack unwind before we deny the permission request so that
-    // objects held by the permission request are not destroyed immediately
-    // after creation. This is to allow those same objects to be accessed again
-    // in the same scope without fear of use after freeing.
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&BrowserPluginGuest::PermissionRequest::Respond,
-                   request, false, ""));
-  }
-
-  int request_id = ++next_permission_request_id_;
-  permission_request_map_[request_id] = request;
-
-  BrowserPluginGuestDelegate::PermissionResponseCallback callback =
-      base::Bind(&BrowserPluginGuest::RespondToPermissionRequest,
-                  AsWeakPtr(),
-                  request_id);
-  delegate_->RequestPermission(
-      permission_type, request_info, callback, request->AllowedByDefault());
-}
-
-BrowserPluginGuest* BrowserPluginGuest::CreateNewGuestWindow(
-    const OpenURLParams& params) {
-  BrowserPluginGuestManager* guest_manager = GetBrowserPluginGuestManager();
-
-  // Allocate a new instance ID for the new guest.
-  int instance_id = guest_manager->GetNextInstanceID();
-
-  // Set the attach params to use the same partition as the opener.
-  // We pull the partition information from the site's URL, which is of the form
-  // guest://site/{persist}?{partition_name}.
-  const GURL& site_url = GetWebContents()->GetSiteInstance()->GetSiteURL();
-  BrowserPluginHostMsg_Attach_Params attach_params;
-  attach_params.storage_partition_id = site_url.query();
-  attach_params.persist_storage =
-      site_url.path().find("persist") != std::string::npos;
-
-  // The new guest gets a copy of this guest's extra params so that the content
-  // embedder exposes the same API for this guest as its opener.
-  scoped_ptr<base::DictionaryValue> extra_params(
-      extra_attach_params_->DeepCopy());
-  BrowserPluginGuest* new_guest =
-      guest_manager->CreateGuest(GetWebContents()->GetSiteInstance(),
-                                 instance_id,
-                                 attach_params,
-                                 extra_params.Pass());
-  if (new_guest->delegate_)
-    new_guest->delegate_->SetOpener(GetWebContents());
-
-  // Take ownership of |new_guest|.
-  pending_new_windows_.insert(
-      std::make_pair(new_guest, NewWindowInfo(params.url, std::string())));
-
-  // Request permission to show the new window.
-  RequestNewWindowPermission(params.disposition, gfx::Rect(),
-                             params.user_gesture, new_guest->GetWebContents());
-
-  return new_guest;
+void BrowserPluginGuest::WillDestroy() {
+  is_in_destruction_ = true;
+  embedder_web_contents_ = NULL;
+  delegate_ = NULL;
 }
 
 base::WeakPtr<BrowserPluginGuest> BrowserPluginGuest::AsWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-void BrowserPluginGuest::EmbedderDestroyed() {
-  embedder_web_contents_ = NULL;
-  if (delegate_)
-    delegate_->EmbedderDestroyed();
-  Destroy();
+bool BrowserPluginGuest::LockMouse(bool allowed) {
+  if (!attached() || (mouse_locked_ == allowed))
+    return false;
+
+  return embedder_web_contents()->GotResponseToLockMouseRequest(allowed);
 }
 
 void BrowserPluginGuest::Destroy() {
-  is_in_destruction_ = true;
-  if (!attached() && GetOpener())
-    GetOpener()->pending_new_windows_.erase(this);
-  DestroyUnattachedWindows();
-  GetBrowserPluginGuestManager()->RemoveGuest(instance_id_);
-  delete GetWebContents();
+  if (!delegate_)
+    return;
+  delegate_->Destroy();
 }
 
 bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
@@ -385,16 +136,14 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ImeSetComposition,
                         OnImeSetComposition)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_LockMouse_ACK, OnLockMouseAck)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_NavigateGuest, OnNavigateGuest)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_PluginDestroyed, OnPluginDestroyed)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ReclaimCompositorResources,
                         OnReclaimCompositorResources)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_ResizeGuest, OnResizeGuest)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetAutoSize, OnSetSize)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetAutoSize, OnSetAutoSize)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetEditCommandsForNextKeyEvent,
                         OnSetEditCommandsForNextKeyEvent)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetFocus, OnSetFocus)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetName, OnSetName)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetContentsOpaque,
                         OnSetContentsOpaque)
     IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_SetVisibility, OnSetVisibility)
@@ -407,14 +156,14 @@ bool BrowserPluginGuest::OnMessageReceivedFromEmbedder(
 
 void BrowserPluginGuest::Initialize(
     const BrowserPluginHostMsg_Attach_Params& params,
-    WebContentsImpl* embedder_web_contents) {
+    WebContentsImpl* embedder_web_contents,
+    const base::DictionaryValue& extra_params) {
   focused_ = params.focused;
   guest_visible_ = params.visible;
   guest_opaque_ = params.opaque;
-  guest_window_rect_ = params.resize_guest_params.view_rect;
+  guest_window_rect_ = gfx::Rect(params.origin,
+                                 params.resize_guest_params.view_size);
 
-  if (!params.name.empty())
-    name_ = params.name;
   auto_size_enabled_ = params.auto_size_params.enable;
   max_auto_size_ = params.auto_size_params.max_size;
   min_auto_size_ = params.auto_size_params.min_size;
@@ -451,7 +200,8 @@ void BrowserPluginGuest::Initialize(
 
   embedder_web_contents_observer_.reset(new EmbedderWebContentsObserver(this));
 
-  OnSetSize(instance_id_, params.auto_size_params, params.resize_guest_params);
+  OnSetAutoSize(
+      instance_id_, params.auto_size_params, params.resize_guest_params);
 
   // Create a swapped out RenderView for the guest in the embedder render
   // process, so that the embedder can access the guest's window object.
@@ -461,13 +211,6 @@ void BrowserPluginGuest::Initialize(
   SendMessageToEmbedder(
       new BrowserPluginMsg_GuestContentWindowReady(instance_id_,
                                                    guest_routing_id));
-
-  if (!params.src.empty()) {
-    // params.src will be validated in BrowserPluginGuest::OnNavigateGuest.
-    OnNavigateGuest(instance_id_, params.src);
-  }
-
-  has_render_view_ = true;
 
   WebPreferences prefs = GetWebContents()->GetWebkitPrefs();
   prefs.navigate_on_drag_drop = false;
@@ -481,27 +224,11 @@ void BrowserPluginGuest::Initialize(
     guest_rvh->SetInputMethodActive(true);
   }
 
-  // Inform the embedder of the guest's information.
-  // We pull the partition information from the site's URL, which is of the form
-  // guest://site/{persist}?{partition_name}.
-  const GURL& site_url = GetWebContents()->GetSiteInstance()->GetSiteURL();
-  BrowserPluginMsg_Attach_ACK_Params ack_params;
-  ack_params.storage_partition_id = site_url.query();
-  ack_params.persist_storage =
-      site_url.path().find("persist") != std::string::npos;
-  ack_params.name = name_;
-  SendMessageToEmbedder(
-      new BrowserPluginMsg_Attach_ACK(instance_id_, ack_params));
-
-  if (delegate_)
-    delegate_->DidAttach();
+  // Inform the embedder of the guest's attachment.
+  SendMessageToEmbedder(new BrowserPluginMsg_Attach_ACK(instance_id_));
 }
 
 BrowserPluginGuest::~BrowserPluginGuest() {
-  while (!pending_messages_.empty()) {
-    delete pending_messages_.front();
-    pending_messages_.pop();
-  }
 }
 
 // static
@@ -509,57 +236,50 @@ BrowserPluginGuest* BrowserPluginGuest::Create(
     int instance_id,
     SiteInstance* guest_site_instance,
     WebContentsImpl* web_contents,
-    scoped_ptr<base::DictionaryValue> extra_params) {
+    scoped_ptr<base::DictionaryValue> extra_params,
+    BrowserPluginGuest* opener) {
   RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Create"));
-  BrowserPluginGuest* guest = NULL;
-  if (factory_) {
-    guest = factory_->CreateBrowserPluginGuest(instance_id, web_contents);
-  } else {
-    guest = new BrowserPluginGuest(instance_id, false, web_contents);
-  }
-  guest->extra_attach_params_.reset(extra_params->DeepCopy());
+  BrowserPluginGuest* guest = new BrowserPluginGuest(
+      instance_id, web_contents->opener() != NULL, web_contents);
   web_contents->SetBrowserPluginGuest(guest);
+  WebContents* opener_web_contents = NULL;
+  if (opener) {
+    opener_web_contents = opener->GetWebContents();
+    guest_site_instance = opener_web_contents->GetSiteInstance();
+  }
   BrowserPluginGuestDelegate* delegate = NULL;
   GetContentClient()->browser()->GuestWebContentsCreated(
-      guest_site_instance, web_contents, NULL, &delegate, extra_params.Pass());
-  guest->SetDelegate(delegate);
+      instance_id,
+      guest_site_instance,
+      web_contents,
+      opener_web_contents,
+      &delegate,
+      extra_params.Pass());
+  if (delegate) {
+    delegate->RegisterDestructionCallback(
+        base::Bind(&BrowserPluginGuest::WillDestroy,
+                   base::Unretained(guest)));
+    guest->set_delegate(delegate);
+  }
   return guest;
 }
 
 // static
-BrowserPluginGuest* BrowserPluginGuest::CreateWithOpener(
-    int instance_id,
-    bool has_render_view,
-    WebContentsImpl* web_contents,
-    BrowserPluginGuest* opener) {
-  BrowserPluginGuest* guest =
-      new BrowserPluginGuest(
-          instance_id, has_render_view, web_contents);
-  web_contents->SetBrowserPluginGuest(guest);
-  BrowserPluginGuestDelegate* delegate = NULL;
-  GetContentClient()->browser()->GuestWebContentsCreated(
-      opener->GetWebContents()->GetSiteInstance(),
-      web_contents, opener->GetWebContents(), &delegate,
-      scoped_ptr<base::DictionaryValue>());
-  guest->SetDelegate(delegate);
-  return guest;
+bool BrowserPluginGuest::IsGuest(WebContentsImpl* web_contents) {
+  return web_contents && web_contents->GetBrowserPluginGuest();
+}
+
+// static
+bool BrowserPluginGuest::IsGuest(RenderViewHostImpl* render_view_host) {
+  return render_view_host && IsGuest(
+      static_cast<WebContentsImpl*>(WebContents::FromRenderViewHost(
+          render_view_host)));
 }
 
 RenderWidgetHostView* BrowserPluginGuest::GetEmbedderRenderWidgetHostView() {
   if (!attached())
     return NULL;
   return embedder_web_contents_->GetRenderWidgetHostView();
-}
-
-BrowserPluginGuest* BrowserPluginGuest::GetOpener() const {
-  if (!delegate_)
-    return NULL;
-
-  WebContents* opener = delegate_->GetOpener();
-  if (!opener)
-    return NULL;
-
-  return static_cast<WebContentsImpl*>(opener)->GetBrowserPluginGuest();
 }
 
 void BrowserPluginGuest::UpdateVisibility() {
@@ -578,8 +298,7 @@ void BrowserPluginGuest::CopyFromCompositingSurface(
 
 BrowserPluginGuestManager*
 BrowserPluginGuest::GetBrowserPluginGuestManager() const {
-  return BrowserPluginGuestManager::FromBrowserContext(
-      GetWebContents()->GetBrowserContext());
+  return GetWebContents()->GetBrowserContext()->GetGuestManager();
 }
 
 // screen.
@@ -594,206 +313,9 @@ void BrowserPluginGuest::EmbedderVisibilityChanged(bool visible) {
   UpdateVisibility();
 }
 
-void BrowserPluginGuest::AddNewContents(WebContents* source,
-                                        WebContents* new_contents,
-                                        WindowOpenDisposition disposition,
-                                        const gfx::Rect& initial_pos,
-                                        bool user_gesture,
-                                        bool* was_blocked) {
-  if (was_blocked)
-    *was_blocked = false;
-  RequestNewWindowPermission(disposition, initial_pos, user_gesture,
-                             static_cast<WebContentsImpl*>(new_contents));
-}
-
-void BrowserPluginGuest::CanDownload(
-    RenderViewHost* render_view_host,
-    int request_id,
-    const std::string& request_method,
-    const base::Callback<void(bool)>& callback) {
-  if (!delegate_) {
-    callback.Run(false);
-    return;
-  }
-
-  BrowserThread::PostTaskAndReplyWithResult(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&RetrieveDownloadURLFromRequestId,
-                 render_view_host->GetProcess()->GetID(), request_id),
-      base::Bind(&BrowserPluginGuest::DidRetrieveDownloadURLFromRequestId,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 request_method,
-                 callback));
-}
-
-void BrowserPluginGuest::LoadProgressChanged(WebContents* contents,
-                                             double progress) {
-  if (delegate_)
-    delegate_->LoadProgressed(progress);
-}
-
-void BrowserPluginGuest::CloseContents(WebContents* source) {
-  if (!delegate_)
-    return;
-
-  delegate_->Close();
-}
-
-JavaScriptDialogManager* BrowserPluginGuest::GetJavaScriptDialogManager() {
-  if (!delegate_)
-    return NULL;
-  return delegate_->GetJavaScriptDialogManager();
-}
-
-ColorChooser* BrowserPluginGuest::OpenColorChooser(
-    WebContents* web_contents,
-    SkColor color,
-    const std::vector<ColorSuggestion>& suggestions) {
-  if (!embedder_web_contents_ || !embedder_web_contents_->GetDelegate())
-    return NULL;
-  return embedder_web_contents_->GetDelegate()->OpenColorChooser(
-      web_contents, color, suggestions);
-}
-
-bool BrowserPluginGuest::HandleContextMenu(const ContextMenuParams& params) {
-  if (delegate_) {
-    WebContentsViewGuest* view_guest =
-        static_cast<WebContentsViewGuest*>(GetWebContents()->GetView());
-    ContextMenuParams context_menu_params =
-        view_guest->ConvertContextMenuParams(params);
-
-    return delegate_->HandleContextMenu(context_menu_params);
-  }
-
-  // Will be handled by WebContentsViewGuest.
-  return false;
-}
-
-void BrowserPluginGuest::HandleKeyboardEvent(
-    WebContents* source,
-    const NativeWebKeyboardEvent& event) {
-  if (!attached())
-    return;
-
-  if (UnlockMouseIfNecessary(event))
-    return;
-
-  if (delegate_ && delegate_->HandleKeyboardEvent(event))
-    return;
-
-  if (!embedder_web_contents_->GetDelegate())
-    return;
-
-  // Send the unhandled keyboard events back to the embedder to reprocess them.
-  // TODO(fsamuel): This introduces the possibility of out-of-order keyboard
-  // events because the guest may be arbitrarily delayed when responding to
-  // keyboard events. In that time, the embedder may have received and processed
-  // additional key events. This needs to be fixed as soon as possible.
-  // See http://crbug.com/229882.
-  embedder_web_contents_->GetDelegate()->HandleKeyboardEvent(
-      web_contents(), event);
-}
-
-void BrowserPluginGuest::SetZoom(double zoom_factor) {
-  if (delegate_)
-    delegate_->SetZoom(zoom_factor);
-}
-
 void BrowserPluginGuest::PointerLockPermissionResponse(bool allow) {
   SendMessageToEmbedder(
       new BrowserPluginMsg_SetMouseLock(instance_id(), allow));
-}
-
-void BrowserPluginGuest::FindReply(WebContents* contents,
-                                   int request_id,
-                                   int number_of_matches,
-                                   const gfx::Rect& selection_rect,
-                                   int active_match_ordinal,
-                                   bool final_update) {
-  if (!delegate_)
-    return;
-
-  // |selection_rect| is updated to incorporate embedder coordinates.
-  delegate_->FindReply(request_id, number_of_matches,
-                       ToGuestRect(selection_rect),
-                       active_match_ordinal, final_update);
-}
-
-WebContents* BrowserPluginGuest::OpenURLFromTab(WebContents* source,
-                                                const OpenURLParams& params) {
-  // If the guest wishes to navigate away prior to attachment then we save the
-  // navigation to perform upon attachment. Navigation initializes a lot of
-  // state that assumes an embedder exists, such as RenderWidgetHostViewGuest.
-  // Navigation also resumes resource loading which we don't want to allow
-  // until attachment.
-  if (!attached()) {
-    PendingWindowMap::iterator it =
-        GetOpener()->pending_new_windows_.find(this);
-    if (it == GetOpener()->pending_new_windows_.end())
-      return NULL;
-    const NewWindowInfo& old_target_url = it->second;
-    NewWindowInfo new_window_info(params.url, old_target_url.name);
-    new_window_info.changed = new_window_info.url != old_target_url.url;
-    it->second = new_window_info;
-    return NULL;
-  }
-  if (params.disposition == CURRENT_TAB) {
-    // This can happen for cross-site redirects.
-    LoadURLWithParams(params.url, params.referrer, params.transition, source);
-    return source;
-  }
-
-  return CreateNewGuestWindow(params)->GetWebContents();
-}
-
-void BrowserPluginGuest::WebContentsCreated(WebContents* source_contents,
-                                            int opener_render_frame_id,
-                                            const base::string16& frame_name,
-                                            const GURL& target_url,
-                                            WebContents* new_contents) {
-  WebContentsImpl* new_contents_impl =
-      static_cast<WebContentsImpl*>(new_contents);
-  BrowserPluginGuest* guest = new_contents_impl->GetBrowserPluginGuest();
-  if (guest->delegate_)
-    guest->delegate_->SetOpener(GetWebContents());
-  std::string guest_name = base::UTF16ToUTF8(frame_name);
-  guest->name_ = guest_name;
-  // Take ownership of the new guest until it is attached to the embedder's DOM
-  // tree to avoid leaking a guest if this guest is destroyed before attaching
-  // the new guest.
-  pending_new_windows_.insert(
-      std::make_pair(guest, NewWindowInfo(target_url, guest_name)));
-}
-
-void BrowserPluginGuest::RendererUnresponsive(WebContents* source) {
-  RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Hung"));
-  if (!delegate_)
-    return;
-  delegate_->RendererUnresponsive();
-}
-
-void BrowserPluginGuest::RendererResponsive(WebContents* source) {
-  RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Responsive"));
-  if (!delegate_)
-    return;
-  delegate_->RendererResponsive();
-}
-
-void BrowserPluginGuest::RunFileChooser(WebContents* web_contents,
-                                        const FileChooserParams& params) {
-  if (!attached())
-    return;
-
-  if (!embedder_web_contents_->GetDelegate())
-    return;
-
-  embedder_web_contents_->GetDelegate()->RunFileChooser(web_contents, params);
-}
-
-bool BrowserPluginGuest::ShouldFocusPageAfterCrash() {
-  // Rather than managing focus in WebContentsImpl::RenderViewReady, we will
-  // manage the focus ourselves.
-  return false;
 }
 
 WebContentsImpl* BrowserPluginGuest::GetWebContents() const {
@@ -812,47 +334,6 @@ bool BrowserPluginGuest::InAutoSizeBounds(const gfx::Size& size) const {
       size.height() <= max_auto_size_.height();
 }
 
-void BrowserPluginGuest::RequestNewWindowPermission(
-    WindowOpenDisposition disposition,
-    const gfx::Rect& initial_bounds,
-    bool user_gesture,
-    WebContentsImpl* new_contents) {
-  BrowserPluginGuest* guest = new_contents->GetBrowserPluginGuest();
-  PendingWindowMap::iterator it = pending_new_windows_.find(guest);
-  if (it == pending_new_windows_.end())
-    return;
-  const NewWindowInfo& new_window_info = it->second;
-
-  base::DictionaryValue request_info;
-  request_info.Set(browser_plugin::kInitialHeight,
-                   base::Value::CreateIntegerValue(initial_bounds.height()));
-  request_info.Set(browser_plugin::kInitialWidth,
-                   base::Value::CreateIntegerValue(initial_bounds.width()));
-  request_info.Set(browser_plugin::kTargetURL,
-                   base::Value::CreateStringValue(new_window_info.url.spec()));
-  request_info.Set(browser_plugin::kName,
-                   base::Value::CreateStringValue(new_window_info.name));
-  request_info.Set(browser_plugin::kWindowID,
-                   base::Value::CreateIntegerValue(guest->instance_id()));
-  request_info.Set(browser_plugin::kWindowOpenDisposition,
-                   base::Value::CreateStringValue(
-                       WindowOpenDispositionToString(disposition)));
-
-  RequestPermission(BROWSER_PLUGIN_PERMISSION_TYPE_NEW_WINDOW,
-                    new NewWindowRequest(weak_ptr_factory_.GetWeakPtr(),
-                                         guest->instance_id()),
-                    request_info);
-}
-
-bool BrowserPluginGuest::UnlockMouseIfNecessary(
-    const NativeWebKeyboardEvent& event) {
-  if (!mouse_locked_)
-    return false;
-
-  embedder_web_contents()->GotResponseToLockMouseRequest(false);
-  return true;
-}
-
 void BrowserPluginGuest::SendMessageToEmbedder(IPC::Message* msg) {
   if (!attached()) {
     // Some pages such as data URLs, javascript URLs, and about:blank
@@ -860,7 +341,7 @@ void BrowserPluginGuest::SendMessageToEmbedder(IPC::Message* msg) {
     // As a result, we must save all these IPCs until attachment and then
     // forward them so that the embedder gets a chance to see and process
     // the load events.
-    pending_messages_.push(msg);
+    pending_messages_.push_back(linked_ptr<IPC::Message>(msg));
     return;
   }
   msg->set_routing_id(embedder_web_contents_->GetRoutingID());
@@ -879,19 +360,14 @@ void BrowserPluginGuest::EndSystemDrag() {
   guest_rvh->DragSourceSystemDragEnded();
 }
 
-void BrowserPluginGuest::SetDelegate(BrowserPluginGuestDelegate* delegate) {
-  DCHECK(!delegate_);
-  delegate_.reset(delegate);
-}
-
 void BrowserPluginGuest::SendQueuedMessages() {
   if (!attached())
     return;
 
   while (!pending_messages_.empty()) {
-    IPC::Message* message = pending_messages_.front();
-    pending_messages_.pop();
-    SendMessageToEmbedder(message);
+    linked_ptr<IPC::Message> message_ptr = pending_messages_.front();
+    pending_messages_.pop_front();
+    SendMessageToEmbedder(message_ptr.release());
   }
 }
 
@@ -905,24 +381,8 @@ void BrowserPluginGuest::DidCommitProvisionalLoadForFrame(
   RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.DidNavigate"));
 }
 
-void BrowserPluginGuest::DidStopLoading(RenderViewHost* render_view_host) {
-  bool enable_dragdrop = delegate_ && delegate_->IsDragAndDropEnabled();
-  if (!enable_dragdrop) {
-    // Initiating a drag from inside a guest is currently not supported without
-    // the kEnableBrowserPluginDragDrop flag on a linux platform. So inject some
-    // JS to disable it. http://crbug.com/161112
-    const char script[] = "window.addEventListener('dragstart', function() { "
-                          "  window.event.preventDefault(); "
-                          "});";
-    render_view_host->GetMainFrame()->ExecuteJavaScript(
-        base::ASCIIToUTF16(script));
-  }
-}
-
 void BrowserPluginGuest::RenderViewReady() {
   RenderViewHost* rvh = GetWebContents()->GetRenderViewHost();
-  // The guest RenderView should always live in a guest process.
-  CHECK(rvh->GetProcess()->IsGuest());
   // TODO(fsamuel): Investigate whether it's possible to update state earlier
   // here (see http://crbug.com/158151).
   Send(new InputMsg_SetFocus(routing_id(), focused_));
@@ -932,11 +392,10 @@ void BrowserPluginGuest::RenderViewReady() {
   else
     rvh->DisableAutoResize(full_size_);
 
-  Send(new ViewMsg_SetName(routing_id(), name_));
   OnSetContentsOpaque(instance_id_, guest_opaque_);
 
-  RenderWidgetHostImpl::From(rvh)->
-      set_hung_renderer_delay_ms(guest_hang_timeout_);
+  RenderWidgetHostImpl::From(rvh)->set_hung_renderer_delay_ms(
+      base::TimeDelta::FromMilliseconds(kHungRendererDelayMs));
 }
 
 void BrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
@@ -955,10 +414,6 @@ void BrowserPluginGuest::RenderProcessGone(base::TerminationStatus status) {
     default:
       break;
   }
-  // TODO(fsamuel): Consider whether we should be clearing
-  // |permission_request_map_| here.
-  if (delegate_)
-    delegate_->GuestProcessGone(status);
 }
 
 // static
@@ -974,14 +429,12 @@ bool BrowserPluginGuest::ShouldForwardToBrowserPluginGuest(
     case BrowserPluginHostMsg_ImeConfirmComposition::ID:
     case BrowserPluginHostMsg_ImeSetComposition::ID:
     case BrowserPluginHostMsg_LockMouse_ACK::ID:
-    case BrowserPluginHostMsg_NavigateGuest::ID:
     case BrowserPluginHostMsg_PluginDestroyed::ID:
     case BrowserPluginHostMsg_ReclaimCompositorResources::ID:
     case BrowserPluginHostMsg_ResizeGuest::ID:
     case BrowserPluginHostMsg_SetAutoSize::ID:
     case BrowserPluginHostMsg_SetEditCommandsForNextKeyEvent::ID:
     case BrowserPluginHostMsg_SetFocus::ID:
-    case BrowserPluginHostMsg_SetName::ID:
     case BrowserPluginHostMsg_SetContentsOpaque::ID:
     case BrowserPluginHostMsg_SetVisibility::ID:
     case BrowserPluginHostMsg_UnlockMouse_ACK::ID:
@@ -1007,8 +460,8 @@ bool BrowserPluginGuest::OnMessageReceived(const IPC::Message& message) {
  #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowWidget, OnShowWidget)
     IPC_MESSAGE_HANDLER(ViewHostMsg_TakeFocus, OnTakeFocus)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputTypeChanged,
-                        OnTextInputTypeChanged)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
+                        OnTextInputStateChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ImeCancelComposition,
                         OnImeCancelComposition)
 #if defined(OS_MACOSX) || defined(USE_AURA)
@@ -1016,7 +469,6 @@ bool BrowserPluginGuest::OnMessageReceived(const IPC::Message& message) {
                         OnImeCompositionRangeChanged)
 #endif
     IPC_MESSAGE_HANDLER(ViewHostMsg_UnlockMouse, OnUnlockMouse)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateFrameName, OnUpdateFrameName)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -1025,17 +477,13 @@ bool BrowserPluginGuest::OnMessageReceived(const IPC::Message& message) {
 
 void BrowserPluginGuest::Attach(
     WebContentsImpl* embedder_web_contents,
-    BrowserPluginHostMsg_Attach_Params params,
+    const BrowserPluginHostMsg_Attach_Params& params,
     const base::DictionaryValue& extra_params) {
   if (attached())
     return;
 
-  extra_attach_params_.reset(extra_params.DeepCopy());
-
-  // Clear parameters that get inherited from the opener.
-  params.storage_partition_id.clear();
-  params.persist_storage = false;
-  params.src.clear();
+  if (delegate_)
+    delegate_->WillAttach(embedder_web_contents, extra_params);
 
   // If a RenderView has already been created for this new window, then we need
   // to initialize the browser-side state now so that the RenderFrameHostManager
@@ -1048,32 +496,12 @@ void BrowserPluginGuest::Attach(
     new_view->CreateViewForWidget(web_contents()->GetRenderViewHost());
   }
 
-  // We need to do a navigation here if the target URL has changed between
-  // the time the WebContents was created and the time it was attached.
-  // We also need to do an initial navigation if a RenderView was never
-  // created for the new window in cases where there is no referrer.
-  PendingWindowMap::iterator it = GetOpener()->pending_new_windows_.find(this);
-  if (it != GetOpener()->pending_new_windows_.end()) {
-    const NewWindowInfo& new_window_info = it->second;
-    if (new_window_info.changed || !has_render_view_)
-      params.src = it->second.url.spec();
-  } else {
-    NOTREACHED();
-  }
-
-  // Once a new guest is attached to the DOM of the embedder page, then the
-  // lifetime of the new guest is no longer managed by the opener guest.
-  GetOpener()->pending_new_windows_.erase(this);
-
-  // The guest's frame name takes precedence over the BrowserPlugin's name.
-  // The guest's frame name is assigned in
-  // BrowserPluginGuest::WebContentsCreated.
-  if (!name_.empty())
-    params.name.clear();
-
-  Initialize(params, embedder_web_contents);
+  Initialize(params, embedder_web_contents, extra_params);
 
   SendQueuedMessages();
+
+  if (delegate_)
+    delegate_->DidAttach();
 
   RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Attached"));
 }
@@ -1244,40 +672,6 @@ void BrowserPluginGuest::OnLockMouseAck(int instance_id, bool succeeded) {
     mouse_locked_ = true;
 }
 
-void BrowserPluginGuest::OnNavigateGuest(
-    int instance_id,
-    const std::string& src) {
-  GURL url = delegate_ ? delegate_->ResolveURL(src) : GURL(src);
-
-  // Do not allow navigating a guest to schemes other than known safe schemes.
-  // This will block the embedder trying to load unwanted schemes, e.g.
-  // chrome://settings.
-  bool scheme_is_blocked =
-      (!ChildProcessSecurityPolicyImpl::GetInstance()->IsWebSafeScheme(
-          url.scheme()) &&
-      !ChildProcessSecurityPolicyImpl::GetInstance()->IsPseudoScheme(
-          url.scheme())) ||
-      url.SchemeIs(kJavaScriptScheme);
-  if (scheme_is_blocked || !url.is_valid()) {
-    if (delegate_) {
-      std::string error_type;
-      base::RemoveChars(net::ErrorToString(net::ERR_ABORTED), "net::",
-                        &error_type);
-      delegate_->LoadAbort(true /* is_top_level */, url, error_type);
-    }
-    return;
-  }
-
-  GURL validated_url(url);
-  GetWebContents()->GetRenderProcessHost()->FilterURL(false, &validated_url);
-  // As guests do not swap processes on navigation, only navigations to
-  // normal web URLs are supported.  No protocol handlers are installed for
-  // other schemes (e.g., WebUI or extensions), and no permissions or bindings
-  // can be granted to the guest process.
-  LoadURLWithParams(validated_url, Referrer(), PAGE_TRANSITION_AUTO_TOPLEVEL,
-                    GetWebContents());
-}
-
 void BrowserPluginGuest::OnPluginDestroyed(int instance_id) {
   Destroy();
 }
@@ -1304,16 +698,16 @@ void BrowserPluginGuest::OnResizeGuest(
   // When autosize is turned off and as a result there is a layout change, we
   // send a sizechanged event.
   if (!auto_size_enabled_ && last_seen_auto_size_enabled_ &&
-      !params.view_rect.size().IsEmpty() && delegate_) {
-    delegate_->SizeChanged(last_seen_view_size_, params.view_rect.size());
+      !params.view_size.IsEmpty() && delegate_) {
+    delegate_->SizeChanged(last_seen_view_size_, params.view_size);
     last_seen_auto_size_enabled_ = false;
   }
   // Just resize the WebContents and repaint if needed.
-  full_size_ = params.view_rect.size();
-  if (!params.view_rect.size().IsEmpty())
-    GetWebContents()->GetView()->SizeContents(params.view_rect.size());
+  full_size_ = params.view_size;
+  if (!params.view_size.IsEmpty())
+    GetWebContents()->GetView()->SizeContents(params.view_size);
   if (params.repaint)
-    Send(new ViewMsg_Repaint(routing_id(), params.view_rect.size()));
+    Send(new ViewMsg_Repaint(routing_id(), params.view_size));
 }
 
 void BrowserPluginGuest::OnSetFocus(int instance_id, bool focused) {
@@ -1326,19 +720,15 @@ void BrowserPluginGuest::OnSetFocus(int instance_id, bool focused) {
   RenderWidgetHostViewBase* rwhv = static_cast<RenderWidgetHostViewBase*>(
       web_contents()->GetRenderWidgetHostView());
   if (rwhv) {
-    rwhv->TextInputTypeChanged(last_text_input_type_, last_input_mode_,
-                               last_can_compose_inline_);
+    ViewHostMsg_TextInputState_Params params;
+    params.type = last_text_input_type_;
+    params.mode = last_input_mode_;
+    params.can_compose_inline = last_can_compose_inline_;
+    rwhv->TextInputStateChanged(params);
   }
 }
 
-void BrowserPluginGuest::OnSetName(int instance_id, const std::string& name) {
-  if (name == name_)
-    return;
-  name_ = name;
-  Send(new ViewMsg_SetName(routing_id(), name));
-}
-
-void BrowserPluginGuest::OnSetSize(
+void BrowserPluginGuest::OnSetAutoSize(
     int instance_id,
     const BrowserPluginHostMsg_AutoSize_Params& auto_size_params,
     const BrowserPluginHostMsg_ResizeGuest_Params& resize_guest_params) {
@@ -1364,7 +754,7 @@ void BrowserPluginGuest::OnSetSize(
     Send(new ViewMsg_Repaint(routing_id(), max_auto_size_));
   } else if (!auto_size_enabled_ && old_auto_size_enabled) {
     GetWebContents()->GetRenderViewHost()->DisableAutoResize(
-        resize_guest_params.view_rect.size());
+        resize_guest_params.view_size);
   }
   OnResizeGuest(instance_id_, resize_guest_params);
 }
@@ -1378,14 +768,7 @@ void BrowserPluginGuest::OnSetEditCommandsForNextKeyEvent(
 
 void BrowserPluginGuest::OnSetContentsOpaque(int instance_id, bool opaque) {
   guest_opaque_ = opaque;
-
-  SkBitmap background;
-  if (!guest_opaque_) {
-    background.setConfig(SkBitmap::kARGB_8888_Config, 1, 1);
-    unsigned int color = 0;
-    background.setPixels(&color);
-  }
-  Send(new ViewMsg_SetBackground(routing_id(), background));
+  Send(new ViewMsg_SetBackgroundOpaque(routing_id(), guest_opaque_));
 }
 
 void BrowserPluginGuest::OnSetVisibility(int instance_id, bool visible) {
@@ -1470,37 +853,6 @@ void BrowserPluginGuest::OnTakeFocus(bool reverse) {
       new BrowserPluginMsg_AdvanceFocus(instance_id(), reverse));
 }
 
-void BrowserPluginGuest::OnUpdateFrameName(int frame_id,
-                                           bool is_top_level,
-                                           const std::string& name) {
-  if (!is_top_level)
-    return;
-
-  name_ = name;
-  SendMessageToEmbedder(new BrowserPluginMsg_UpdatedName(instance_id_, name));
-}
-
-void BrowserPluginGuest::RequestMediaAccessPermission(
-    WebContents* web_contents,
-    const MediaStreamRequest& request,
-    const MediaResponseCallback& callback) {
-  if (!delegate_) {
-    callback.Run(MediaStreamDevices(),
-                 MEDIA_DEVICE_INVALID_STATE,
-                 scoped_ptr<MediaStreamUI>());
-    return;
-  }
-
-  delegate_->RequestMediaAccessPermission(request, callback);
-}
-
-bool BrowserPluginGuest::PreHandleGestureEvent(
-    WebContents* source, const blink::WebGestureEvent& event) {
-  return event.type == blink::WebGestureEvent::GesturePinchBegin ||
-      event.type == blink::WebGestureEvent::GesturePinchUpdate ||
-      event.type == blink::WebGestureEvent::GesturePinchEnd;
-}
-
 void BrowserPluginGuest::OnUpdateRect(
     const ViewHostMsg_UpdateRect_Params& params) {
   BrowserPluginMsg_UpdateRect_Params relay_params;
@@ -1523,17 +875,15 @@ void BrowserPluginGuest::OnUpdateRect(
       new BrowserPluginMsg_UpdateRect(instance_id(), relay_params));
 }
 
-void BrowserPluginGuest::OnTextInputTypeChanged(ui::TextInputType type,
-                                                ui::TextInputMode input_mode,
-                                                bool can_compose_inline) {
+void BrowserPluginGuest::OnTextInputStateChanged(
+    const ViewHostMsg_TextInputState_Params& params) {
   // Save the state of text input so we can restore it on focus.
-  last_text_input_type_ = type;
-  last_input_mode_ = input_mode;
-  last_can_compose_inline_ = can_compose_inline;
+  last_text_input_type_ = params.type;
+  last_input_mode_ = params.mode;
+  last_can_compose_inline_ = params.can_compose_inline;
 
   static_cast<RenderWidgetHostViewBase*>(
-      web_contents()->GetRenderWidgetHostView())->TextInputTypeChanged(
-          type, input_mode, can_compose_inline);
+      web_contents()->GetRenderWidgetHostView())->TextInputStateChanged(params);
 }
 
 void BrowserPluginGuest::OnImeCancelComposition() {
@@ -1550,17 +900,5 @@ void BrowserPluginGuest::OnImeCompositionRangeChanged(
           range, character_bounds);
 }
 #endif
-
-void BrowserPluginGuest::DidRetrieveDownloadURLFromRequestId(
-    const std::string& request_method,
-    const base::Callback<void(bool)>& callback,
-    const GURL& url) {
-  if (!url.is_valid()) {
-    callback.Run(false);
-    return;
-  }
-
-  delegate_->CanDownload(request_method, url, callback);
-}
 
 }  // namespace content

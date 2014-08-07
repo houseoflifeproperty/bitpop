@@ -18,15 +18,20 @@
                         '.',
                         '../include',
                         'libGLESv2',
-                        '<(SHARED_INTERMEDIATE_DIR)',
                     ],
                     'sources':
                     [
-                        '<!@(python <(angle_build_scripts_path)/enumerate_files.py \
+                        '<!@(python <(angle_path)/enumerate_files.py \
                              -dirs common libEGL ../include \
                              -types *.cpp *.h *.def *.rc)',
                     ],
-                    'msvs_disabled_warnings': [ 4267 ],
+                    'defines':
+                    [
+                        'GL_APICALL=',
+                        'GL_GLEXT_PROTOTYPES=',
+                        'EGLAPI=',
+                    ],
+                    'includes': [ '../build/common_defines.gypi', ],
                     'msvs_settings':
                     {
                         'VCLinkerTool':

@@ -7,7 +7,7 @@
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/common/pref_names.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/sync_driver/pref_names.h"
@@ -65,7 +65,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest, Race) {
   ASSERT_TRUE(StringPrefMatches(prefs::kHomePage));
 
   ChangeStringPref(0, prefs::kHomePage, "http://www.google.com/0");
-  ChangeStringPref(1, prefs::kHomePage,"http://www.google.com/1");
+  ChangeStringPref(1, prefs::kHomePage, "http://www.google.com/1");
   ASSERT_TRUE(AwaitQuiescence());
   ASSERT_TRUE(StringPrefMatches(prefs::kHomePage));
 }
@@ -390,14 +390,14 @@ IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest,
   ChangeBooleanPref(0, autofill::prefs::kAutofillAuxiliaryProfilesEnabled);
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
 
-  // kAutofillAuxiliaryProfilesEnabled is only synced on Mac.
-#if defined(OS_MACOSX)
+  // kAutofillAuxiliaryProfilesEnabled is only synced on Mac and Android.
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
   ASSERT_TRUE(
       BooleanPrefMatches(autofill::prefs::kAutofillAuxiliaryProfilesEnabled));
 #else
   ASSERT_FALSE(
       BooleanPrefMatches(autofill::prefs::kAutofillAuxiliaryProfilesEnabled));
-#endif  // OS_MACOSX
+#endif  // defined(OS_MACOSX) || defined(OS_ANDROID)
 }
 
 // TCM ID - 3717298.
@@ -417,9 +417,9 @@ IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest,
   ASSERT_TRUE(BooleanPrefMatches(prefs::kEnableTranslate));
 
   scoped_ptr<TranslatePrefs> translate_client0_prefs(
-      TranslateTabHelper::CreateTranslatePrefs(GetPrefs(0)));
+      ChromeTranslateClient::CreateTranslatePrefs(GetPrefs(0)));
   scoped_ptr<TranslatePrefs> translate_client1_prefs(
-      TranslateTabHelper::CreateTranslatePrefs(GetPrefs(1)));
+      ChromeTranslateClient::CreateTranslatePrefs(GetPrefs(1)));
   ASSERT_FALSE(translate_client0_prefs->IsBlockedLanguage("fr"));
   translate_client0_prefs->BlockLanguage("fr");
   ASSERT_TRUE(translate_client0_prefs->IsBlockedLanguage("fr"));
@@ -441,9 +441,9 @@ IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest,
   ASSERT_TRUE(BooleanPrefMatches(prefs::kEnableTranslate));
 
   scoped_ptr<TranslatePrefs> translate_client0_prefs(
-      TranslateTabHelper::CreateTranslatePrefs(GetPrefs(0)));
+      ChromeTranslateClient::CreateTranslatePrefs(GetPrefs(0)));
   scoped_ptr<TranslatePrefs> translate_client1_prefs(
-      TranslateTabHelper::CreateTranslatePrefs(GetPrefs(1)));
+      ChromeTranslateClient::CreateTranslatePrefs(GetPrefs(1)));
   ASSERT_FALSE(translate_client0_prefs->IsLanguagePairWhitelisted("en", "bg"));
   translate_client0_prefs->WhitelistLanguagePair("en", "bg");
   ASSERT_TRUE(translate_client0_prefs->IsLanguagePairWhitelisted("en", "bg"));
@@ -467,9 +467,9 @@ IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest,
   GURL url("http://www.google.com");
   std::string host(url.host());
   scoped_ptr<TranslatePrefs> translate_client0_prefs(
-      TranslateTabHelper::CreateTranslatePrefs(GetPrefs(0)));
+      ChromeTranslateClient::CreateTranslatePrefs(GetPrefs(0)));
   scoped_ptr<TranslatePrefs> translate_client1_prefs(
-      TranslateTabHelper::CreateTranslatePrefs(GetPrefs(1)));
+      ChromeTranslateClient::CreateTranslatePrefs(GetPrefs(1)));
   ASSERT_FALSE(translate_client0_prefs->IsSiteBlacklisted(host));
   translate_client0_prefs->BlacklistSite(host);
   ASSERT_TRUE(translate_client0_prefs->IsSiteBlacklisted(host));
@@ -515,22 +515,11 @@ IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest, kAcceptLanguages) {
   ASSERT_TRUE(StringPrefMatches(prefs::kAcceptLanguages));
 }
 
-// TCM ID - 7590682
-#if defined(TOOLKIT_GTK)
-IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest, kUsesSystemTheme) {
-  ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
-  ASSERT_TRUE(BooleanPrefMatches(prefs::kUsesSystemTheme));
-
-  ChangeBooleanPref(0, prefs::kUsesSystemTheme);
-  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-  ASSERT_FALSE(BooleanPrefMatches(prefs::kUsesSystemTheme));
-}
-#endif  // TOOLKIT_GTK
-
 // TCM ID - 6473347.
 #if defined(OS_CHROMEOS)
 // Disabled, http://crbug.com/351159 .
-IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest, DISABLED_kTapToClickEnabled) {
+IN_PROC_BROWSER_TEST_F(TwoClientPreferencesSyncTest,
+                       DISABLED_kTapToClickEnabled) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
   ASSERT_TRUE(BooleanPrefMatches(prefs::kTapToClickEnabled));
 

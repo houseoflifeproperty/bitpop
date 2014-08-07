@@ -27,26 +27,15 @@
 #include "config.h"
 #include "core/dom/DocumentStyleSheetCollection.h"
 
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
-#include "SVGNames.h"
-#include "core/css/CSSStyleSheet.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentStyleSheetCollector.h"
-#include "core/dom/Element.h"
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/StyleEngine.h"
 #include "core/dom/StyleSheetCandidate.h"
-#include "core/html/HTMLIFrameElement.h"
-#include "core/html/HTMLLinkElement.h"
-#include "core/html/HTMLStyleElement.h"
-#include "core/frame/Settings.h"
-#include "core/svg/SVGStyleElement.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
-
-using namespace HTMLNames;
 
 DocumentStyleSheetCollection::DocumentStyleSheetCollection(TreeScope& treeScope)
     : TreeScopeStyleSheetCollection(treeScope)
@@ -62,21 +51,7 @@ void DocumentStyleSheetCollection::collectStyleSheetsFromCandidates(StyleEngine*
         Node* n = *it;
         StyleSheetCandidate candidate(*n);
 
-        if (candidate.isXSL()) {
-            // Processing instruction (XML documents only).
-            // We don't support linking to embedded CSS stylesheets, see <https://bugs.webkit.org/show_bug.cgi?id=49281> for discussion.
-            // Don't apply XSL transforms to already transformed documents -- <rdar://problem/4132806>
-            if (RuntimeEnabledFeatures::xsltEnabled() && !document().transformSourceDocument()) {
-                ProcessingInstruction* pi = toProcessingInstruction(n);
-                // Don't apply XSL transforms until loading is finished.
-                if (!document().parsing() && !pi->isLoading())
-                    document().applyXSLTransform(pi);
-                return;
-            }
-
-            continue;
-        }
-
+        ASSERT(!candidate.isXSL());
         if (candidate.isImport()) {
             Document* document = candidate.importedDocument();
             if (!document)
@@ -115,7 +90,7 @@ void DocumentStyleSheetCollection::collectStyleSheets(StyleEngine* engine, Docum
     collectStyleSheetsFromCandidates(engine, collector);
 }
 
-bool DocumentStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine, StyleResolverUpdateMode updateMode)
+void DocumentStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine, StyleResolverUpdateMode updateMode)
 {
     StyleSheetCollection collection;
     ActiveDocumentStyleSheetCollector collector(collection);
@@ -143,13 +118,14 @@ bool DocumentStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine, 
             styleResolver->lazyAppendAuthorStyleSheets(m_activeAuthorStyleSheets.size(), collection.activeAuthorStyleSheets());
         }
     }
+    if (change.requiresFullStyleRecalc)
+        document().setNeedsStyleRecalc(SubtreeStyleChange);
+
     m_scopingNodesForStyleScoped.didRemoveScopingNodes();
 
     collection.swap(*this);
 
     updateUsesRemUnits();
-
-    return change.requiresFullStyleRecalc;
 }
 
 }

@@ -6,34 +6,36 @@ var assertEq = chrome.test.assertEq;
 var assertFalse = chrome.test.assertFalse;
 var assertTrue = chrome.test.assertTrue;
 
-var tree = null;
+var EventType = chrome.automation.EventType;
+var RoleType = chrome.automation.RoleType;
+var StateType = chrome.automation.StateType;
+
+var rootNode = null;
 
 function createTab(url, callback) {
   chrome.tabs.create({"url": url}, function(tab) {
-      chrome.runtime.onMessage.addListener(
-        function listener(message, sender) {
-          if (!sender.tab)
-            return;
-          assertEq(tab.id, sender.tab.id);
-          assertTrue(message['loaded']);
-          callback();
-          chrome.runtime.onMessage.removeListener(listener);
-        });
-      });
+    callback(tab);
+  });
 }
 
 function setUpAndRunTests(allTests) {
-  chrome.test.getConfig(function(config) {
-    assertTrue('testServer' in config, 'Expected testServer in config');
-    var url = "http://a.com:PORT/index.html"
-        .replace(/PORT/, config.testServer.port);
-    function gotTree(returnedTree) {
-      tree = returnedTree;
-      chrome.test.runTests(allTests);
-    }
-    createTab(url, function() {
-      chrome.automation.getTree(gotTree);
+  getUrlFromConfig(function(url) {
+    createTab(url, function(unused_tab) {
+      chrome.automation.getTree(function (returnedRootNode) {
+        rootNode = returnedRootNode;
+        rootNode.addEventListener('loadComplete', function() {
+          chrome.test.runTests(allTests);
+        });
+      });
     });
   });
 }
 
+function getUrlFromConfig(callback) {
+  chrome.test.getConfig(function(config) {
+    assertTrue('testServer' in config, 'Expected testServer in config');
+    var url = 'http://a.com:PORT/index.html'
+        .replace(/PORT/, config.testServer.port);
+    callback(url)
+  });
+}

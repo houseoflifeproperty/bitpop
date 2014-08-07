@@ -5,6 +5,9 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_PLUGIN_MANAGER_H_
 #define CHROME_BROWSER_EXTENSIONS_PLUGIN_MANAGER_H_
 
+#include <set>
+#include <string>
+
 #include "base/scoped_observer.h"
 #include "chrome/common/extensions/manifest_handlers/nacl_modules_handler.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"

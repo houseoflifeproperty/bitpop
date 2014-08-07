@@ -6,57 +6,41 @@
 #include <string>
 
 #include "mojo/examples/sample_app/gles2_client_impl.h"
-#include "mojo/public/cpp/bindings/allocation_scope.h"
-#include "mojo/public/cpp/environment/environment.h"
+#include "mojo/public/cpp/application/application.h"
 #include "mojo/public/cpp/gles2/gles2.h"
-#include "mojo/public/cpp/shell/application.h"
 #include "mojo/public/cpp/system/core.h"
 #include "mojo/public/cpp/system/macros.h"
 #include "mojo/public/cpp/utility/run_loop.h"
-#include "mojo/public/interfaces/shell/shell.mojom.h"
-#include "mojo/services/native_viewport/native_viewport.mojom.h"
-
-#if defined(WIN32)
-#if !defined(CDECL)
-#define CDECL __cdecl
-#endif
-#define SAMPLE_APP_EXPORT __declspec(dllexport)
-#else
-#define CDECL
-#define SAMPLE_APP_EXPORT __attribute__((visibility("default")))
-#endif
+#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
+#include "mojo/services/public/interfaces/native_viewport/native_viewport.mojom.h"
 
 namespace mojo {
 namespace examples {
 
 class SampleApp : public Application, public NativeViewportClient {
  public:
-  explicit SampleApp(MojoHandle shell_handle) : Application(shell_handle) {
-    ConnectTo("mojo:mojo_native_viewport_service", &viewport_);
-    viewport_->SetClient(this);
-
-    AllocationScope scope;
-
-    Rect::Builder rect;
-    Point::Builder point;
-    point.set_x(10);
-    point.set_y(10);
-    rect.set_position(point.Finish());
-    Size::Builder size;
-    size.set_width(800);
-    size.set_height(600);
-    rect.set_size(size.Finish());
-    viewport_->Create(rect.Finish());
-    viewport_->Show();
-
-    MessagePipe gles2_pipe;
-    viewport_->CreateGLES2Context(gles2_pipe.handle0.Pass());
-    gles2_client_.reset(new GLES2ClientImpl(gles2_pipe.handle1.Pass()));
-  }
+  SampleApp() {}
 
   virtual ~SampleApp() {
     // TODO(darin): Fix shutdown so we don't need to leak this.
     MOJO_ALLOW_UNUSED GLES2ClientImpl* leaked = gles2_client_.release();
+  }
+
+  virtual void Initialize() MOJO_OVERRIDE {
+    ConnectTo("mojo:mojo_native_viewport_service", &viewport_);
+    viewport_.set_client(this);
+
+    RectPtr rect(Rect::New());
+    rect->x = 10;
+    rect->y = 10;
+    rect->width = 800;
+    rect->height = 600;
+    viewport_->Create(rect.Pass());
+    viewport_->Show();
+
+    CommandBufferPtr command_buffer;
+    viewport_->CreateGLES2Context(Get(&command_buffer));
+    gles2_client_.reset(new GLES2ClientImpl(command_buffer.Pass()));
   }
 
   virtual void OnCreated() MOJO_OVERRIDE {
@@ -66,32 +50,35 @@ class SampleApp : public Application, public NativeViewportClient {
     RunLoop::current()->Quit();
   }
 
-  virtual void OnBoundsChanged(const Rect& bounds) MOJO_OVERRIDE {
-    gles2_client_->SetSize(bounds.size());
+  virtual void OnBoundsChanged(RectPtr bounds) MOJO_OVERRIDE {
+    assert(bounds);
+    SizePtr size(Size::New());
+    size->width = bounds->width;
+    size->height = bounds->height;
+    gles2_client_->SetSize(*size);
   }
 
-  virtual void OnEvent(const Event& event,
+  virtual void OnEvent(EventPtr event,
                        const Callback<void()>& callback) MOJO_OVERRIDE {
-    if (!event.location().is_null())
-      gles2_client_->HandleInputEvent(event);
+    assert(event);
+    if (event->location)
+      gles2_client_->HandleInputEvent(*event);
     callback.Run();
   }
 
  private:
+  mojo::GLES2Initializer gles2;
   scoped_ptr<GLES2ClientImpl> gles2_client_;
   NativeViewportPtr viewport_;
+
+  DISALLOW_COPY_AND_ASSIGN(SampleApp);
 };
 
 }  // namespace examples
-}  // namespace mojo
 
-extern "C" SAMPLE_APP_EXPORT MojoResult CDECL MojoMain(
-    MojoHandle shell_handle) {
-  mojo::Environment env;
-  mojo::RunLoop loop;
-  mojo::GLES2Initializer gles2;
-
-  mojo::examples::SampleApp app(shell_handle);
-  loop.Run();
-  return MOJO_RESULT_OK;
+// static
+Application* Application::Create() {
+  return new examples::SampleApp();
 }
+
+}  // namespace mojo

@@ -57,12 +57,14 @@ const QuicByteCount kDefaultMaxPacketSize = 1200;
 // additional 8 bytes.  This is a total overhead of 48 bytes.  Ethernet's
 // max packet size is 1500 bytes,  1500 - 48 = 1452.
 const QuicByteCount kMaxPacketSize = 1452;
+// Default maximum packet size used in Linux TCP implementations.
+const QuicByteCount kDefaultTCPMSS = 1460;
 
 // Maximum size of the initial congestion window in packets.
 const size_t kDefaultInitialWindow = 10;
 const uint32 kMaxInitialWindow = 100;
 
-// Default size of initial flow control window.
+// Default size of initial flow control window, for both stream and session.
 const uint32 kDefaultFlowControlSendWindow = 16 * 1024;  // 16 KB
 
 // Maximum size of the congestion window, in packets, for TCP congestion control
@@ -151,6 +153,18 @@ enum HasRetransmittableData {
 enum IsHandshake {
   NOT_HANDSHAKE,
   IS_HANDSHAKE
+};
+
+// Indicates FEC protection level for data being written.
+enum FecProtection {
+  MUST_FEC_PROTECT,  // Callee must FEC protect this data.
+  MAY_FEC_PROTECT    // Callee does not have to but may FEC protect this data.
+};
+
+// Indicates FEC policy.
+enum FecPolicy {
+  FEC_PROTECT_ALWAYS,   // All data in the stream should be FEC protected.
+  FEC_PROTECT_OPTIONAL  // Data in the stream does not need FEC protection.
 };
 
 enum QuicFrameType {
@@ -265,7 +279,8 @@ enum QuicVersion {
   QUIC_VERSION_16 = 16,
   QUIC_VERSION_17 = 17,
   QUIC_VERSION_18 = 18,
-  QUIC_VERSION_19 = 19,  // Current version.
+  QUIC_VERSION_19 = 19,
+  QUIC_VERSION_20 = 20,  // Current version.
 };
 
 // This vector contains QUIC versions which we currently support.
@@ -275,7 +290,9 @@ enum QuicVersion {
 //
 // IMPORTANT: if you are addding to this list, follow the instructions at
 // http://sites/quic/adding-and-removing-versions
-static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_18,
+static const QuicVersion kSupportedQuicVersions[] = {QUIC_VERSION_20,
+                                                     QUIC_VERSION_19,
+                                                     QUIC_VERSION_18,
                                                      QUIC_VERSION_17,
                                                      QUIC_VERSION_16,
                                                      QUIC_VERSION_15};
@@ -314,6 +331,9 @@ NET_EXPORT_PRIVATE std::string QuicVersionVectorToString(
 // MakeQuicTag returns a value given the four bytes. For example:
 //   MakeQuicTag('C', 'H', 'L', 'O');
 NET_EXPORT_PRIVATE QuicTag MakeQuicTag(char a, char b, char c, char d);
+
+// Returns true if the tag vector contains the specified tag.
+bool ContainsQuicTag(const QuicTagVector& tag_vector, QuicTag tag);
 
 // Size in bytes of the data or fec packet header.
 NET_EXPORT_PRIVATE size_t GetPacketHeaderSize(const QuicPacketHeader& header);
@@ -448,8 +468,14 @@ enum QuicErrorCode {
   QUIC_INVALID_STREAM_FRAME = 50,
   // We received invalid data on the headers stream.
   QUIC_INVALID_HEADERS_STREAM_DATA = 56,
-  // The peer violated the flow control protocol.
-  QUIC_FLOW_CONTROL_ERROR = 59,
+  // The peer received too much data, violating flow control.
+  QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA = 59,
+  // The peer sent too much data, violating flow control.
+  QUIC_FLOW_CONTROL_SENT_TOO_MUCH_DATA = 63,
+  // The peer received an invalid flow control window.
+  QUIC_FLOW_CONTROL_INVALID_WINDOW = 64,
+  // The connection has been IP pooled into an existing connection.
+  QUIC_CONNECTION_IP_POOLED = 62,
 
   // Crypto errors.
 
@@ -505,7 +531,7 @@ enum QuicErrorCode {
   QUIC_VERSION_NEGOTIATION_MISMATCH = 55,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 62,
+  QUIC_LAST_ERROR = 65,
 };
 
 struct NET_EXPORT_PRIVATE QuicPacketPublicHeader {
@@ -688,6 +714,7 @@ enum CongestionFeedbackType {
   kTCP,  // Used to mimic TCP.
   kInterArrival,  // Use additional inter arrival information.
   kFixRate,  // Provided for testing.
+  kTCPBBR,  // BBR implementation based on TCP congestion feedback.
 };
 
 enum LossDetectionType {
@@ -1021,6 +1048,7 @@ struct NET_EXPORT_PRIVATE TransmissionInfo {
   TransmissionInfo(RetransmittableFrames* retransmittable_frames,
                    QuicPacketSequenceNumber sequence_number,
                    QuicSequenceNumberLength sequence_number_length,
+                   TransmissionType transmission_type,
                    SequenceNumberSet* all_transmissions);
 
   RetransmittableFrames* retransmittable_frames;
@@ -1030,48 +1058,13 @@ struct NET_EXPORT_PRIVATE TransmissionInfo {
   // Zero when the packet is serialized, non-zero once it's sent.
   QuicByteCount bytes_sent;
   size_t nack_count;
+  // Reason why this packet was transmitted.
+  TransmissionType transmission_type;
   // Stores the sequence numbers of all transmissions of this packet.
   // Can never be null.
   SequenceNumberSet* all_transmissions;
-  // Pending packets have not been abandoned or lost.
-  bool pending;
-};
-
-// A struct for functions which consume data payloads and fins.
-struct NET_EXPORT_PRIVATE QuicConsumedData {
-  QuicConsumedData(size_t bytes_consumed, bool fin_consumed);
-
-  // By default, gtest prints the raw bytes of an object. The bool data
-  // member causes this object to have padding bytes, which causes the
-  // default gtest object printer to read uninitialize memory. So we need
-  // to teach gtest how to print this object.
-  NET_EXPORT_PRIVATE friend std::ostream& operator<<(
-      std::ostream& os, const QuicConsumedData& s);
-
-  // How many bytes were consumed.
-  size_t bytes_consumed;
-
-  // True if an incoming fin was consumed.
-  bool fin_consumed;
-};
-
-enum WriteStatus {
-  WRITE_STATUS_OK,
-  WRITE_STATUS_BLOCKED,
-  WRITE_STATUS_ERROR,
-};
-
-// A struct used to return the result of write calls including either the number
-// of bytes written or the error code, depending upon the status.
-struct NET_EXPORT_PRIVATE WriteResult {
-  WriteResult(WriteStatus status, int bytes_written_or_error_code);
-  WriteResult();
-
-  WriteStatus status;
-  union {
-    int bytes_written;  // only valid when status is OK
-    int error_code;  // only valid when status is ERROR
-  };
+  // In flight packets have not been abandoned or lost.
+  bool in_flight;
 };
 
 }  // namespace net

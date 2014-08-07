@@ -20,7 +20,7 @@ class DriveServiceInterface;
 }
 
 namespace google_apis {
-class ResourceEntry;
+class FileResource;
 }
 
 namespace sync_file_system {
@@ -36,33 +36,34 @@ class TrackerIDSet;
 // of the active tracker.
 // If multiple trackers have the same local path or the same remote file,
 // ConflictResolver picks up one of them and delete others.
-class ConflictResolver : public ExclusiveTask {
+class ConflictResolver : public SyncTask {
  public:
   typedef std::vector<std::string> FileIDList;
 
   explicit ConflictResolver(SyncEngineContext* sync_context);
   virtual ~ConflictResolver();
-  virtual void RunExclusive(const SyncStatusCallback& callback) OVERRIDE;
+  virtual void RunPreflight(scoped_ptr<SyncTaskToken> token) OVERRIDE;
+  void RunExclusive(scoped_ptr<SyncTaskToken> token);
 
  private:
   typedef std::pair<std::string, std::string> FileIDAndETag;
 
-  void DetachFromNonPrimaryParents(const SyncStatusCallback& callback);
-  void DidDetachFromParent(const SyncStatusCallback& callback,
+  void DetachFromNonPrimaryParents(scoped_ptr<SyncTaskToken> token);
+  void DidDetachFromParent(scoped_ptr<SyncTaskToken> token,
                            google_apis::GDataErrorCode error);
 
   std::string PickPrimaryFile(const TrackerIDSet& trackers);
-  void RemoveNonPrimaryFiles(const SyncStatusCallback& callback);
-  void DidRemoveFile(const SyncStatusCallback& callback,
+  void RemoveNonPrimaryFiles(scoped_ptr<SyncTaskToken> token);
+  void DidRemoveFile(scoped_ptr<SyncTaskToken> token,
                      const std::string& file_id,
                      google_apis::GDataErrorCode error);
 
   void UpdateFileMetadata(const std::string& file_id,
-                          const SyncStatusCallback& callback);
+                          scoped_ptr<SyncTaskToken> token);
   void DidGetRemoteMetadata(const std::string& file_id,
-                            const SyncStatusCallback& callback,
+                            scoped_ptr<SyncTaskToken> token,
                             google_apis::GDataErrorCode error,
-                            scoped_ptr<google_apis::ResourceEntry> entry);
+                            scoped_ptr<google_apis::FileResource> entry);
 
   std::string target_file_id_;
   std::vector<std::string> parents_to_remove_;

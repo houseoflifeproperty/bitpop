@@ -124,7 +124,7 @@ WebInspector.UISourceCodeFrame.prototype = {
     _didEditContent: function(error)
     {
         if (error) {
-            WebInspector.console.log(error, WebInspector.ConsoleMessage.MessageLevel.Error, true);
+            WebInspector.messageSink.addErrorMessage(error, true);
             return;
         }
     },
@@ -181,6 +181,8 @@ WebInspector.UISourceCodeFrame.prototype = {
 
     dispose: function()
     {
+        WebInspector.settings.textEditorAutocompletion.removeChangeListener(this._enableAutocompletionIfNeeded, this);
+        this._textEditor.dispose();
         this.detach();
     },
 

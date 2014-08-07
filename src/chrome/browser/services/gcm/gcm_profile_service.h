@@ -10,7 +10,10 @@
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/services/gcm/gcm_service.h"
+#include "chrome/browser/services/gcm/push_messaging_service_impl.h"
+// TODO(jianli): include needed for obsolete methods that are going to be
+// removed soon.
+#include "components/gcm_driver/gcm_driver.h"
 #include "components/keyed_service/core/keyed_service.h"
 
 class Profile;
@@ -21,49 +24,68 @@ class PrefRegistrySyncable;
 
 namespace gcm {
 
-// A specialization of GCMService that is tied to a Profile.
-class GCMProfileService : public GCMService, public KeyedService {
+class GCMClientFactory;
+class GCMDriver;
+
+// Providing GCM service, via GCMDriver, to a profile.
+class GCMProfileService : public KeyedService {
  public:
-  // Any change made to this enum should have corresponding change in the
-  // GetGCMEnabledStateString(...) function.
-  enum GCMEnabledState {
-    // GCM is always enabled. GCMClient will always load and connect with GCM.
-    ALWAYS_ENABLED,
-    // GCM is only enabled for apps. GCMClient will start to load and connect
-    // with GCM only when GCM API is used.
-    ENABLED_FOR_APPS,
-    // GCM is always disabled. GCMClient will never load and connect with GCM.
-    ALWAYS_DISABLED
-  };
-
-  // Returns the GCM enabled state.
-  static GCMEnabledState GetGCMEnabledState(Profile* profile);
-
-  // Returns text representation of a GCMEnabledState enum entry.
-  static std::string GetGCMEnabledStateString(GCMEnabledState state);
+  // Returns whether GCM is enabled for |profile|.
+  static bool IsGCMEnabled(Profile* profile);
 
   // Register profile-specific prefs for GCM.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
+#if defined(OS_ANDROID)
   explicit GCMProfileService(Profile* profile);
+#else
+  GCMProfileService(Profile* profile,
+                    scoped_ptr<GCMClientFactory> gcm_client_factory);
+#endif
   virtual ~GCMProfileService();
+
+  // TODO(jianli): obsolete methods that are going to be removed soon.
+  void AddAppHandler(const std::string& app_id, GCMAppHandler* handler);
+  void RemoveAppHandler(const std::string& app_id);
+  void Register(const std::string& app_id,
+                const std::vector<std::string>& sender_ids,
+                const GCMDriver::RegisterCallback& callback);
 
   // KeyedService:
   virtual void Shutdown() OVERRIDE;
 
-  // Returns the user name if the profile is signed in.
+  // Returns the user name if the profile is signed in or an empty string
+  // otherwise.
+  // TODO(jianli): To be removed when sign-in enforcement is dropped.
   std::string SignedInUserName() const;
 
+  // For testing purpose.
+  void SetDriverForTesting(GCMDriver* driver);
+
+  GCMDriver* driver() const { return driver_.get(); }
+
+  content::PushMessagingService* push_messaging_service() {
+    return &push_messaging_service_;
+  }
+
  protected:
-  // Overridden from GCMService:
-  virtual bool ShouldStartAutomatically() const OVERRIDE;
-  virtual base::FilePath GetStorePath() const OVERRIDE;
-  virtual scoped_refptr<net::URLRequestContextGetter>
-      GetURLRequestContextGetter() const OVERRIDE;
+  // Used for constructing fake GCMProfileService for testing purpose.
+  GCMProfileService();
 
  private:
   // The profile which owns this object.
   Profile* profile_;
+
+  scoped_ptr<GCMDriver> driver_;
+
+  // Implementation of content::PushMessagingService using GCMProfileService.
+  PushMessagingServiceImpl push_messaging_service_;
+
+  // TODO(jianli): To be removed when sign-in enforcement is dropped.
+#if !defined(OS_ANDROID)
+  class IdentityObserver;
+  scoped_ptr<IdentityObserver> identity_observer_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(GCMProfileService);
 };

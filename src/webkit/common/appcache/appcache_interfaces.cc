@@ -24,9 +24,9 @@ const base::FilePath::CharType kAppCacheDatabaseName[] =
     FILE_PATH_LITERAL("Index");
 
 AppCacheInfo::AppCacheInfo()
-    : cache_id(kNoCacheId),
+    : cache_id(kAppCacheNoCacheId),
       group_id(0),
-      status(UNCACHED),
+      status(APPCACHE_STATUS_UNCACHED),
       size(0),
       is_complete(false) {
 }
@@ -43,22 +43,22 @@ AppCacheResourceInfo::AppCacheResourceInfo()
       is_fallback(false),
       is_foreign(false),
       is_explicit(false),
-      response_id(kNoResponseId) {
+      response_id(kAppCacheNoResponseId) {
 }
 
 AppCacheResourceInfo::~AppCacheResourceInfo() {
 }
 
-ErrorDetails::ErrorDetails()
+AppCacheErrorDetails::AppCacheErrorDetails()
     : message(),
-      reason(UNKNOWN_ERROR),
+      reason(APPCACHE_UNKNOWN_ERROR),
       url(),
       status(0),
       is_cross_origin(false) {}
 
-ErrorDetails::ErrorDetails(
+AppCacheErrorDetails::AppCacheErrorDetails(
     std::string in_message,
-    ErrorReason in_reason,
+    AppCacheErrorReason in_reason,
     GURL in_url,
     int in_status,
     bool in_is_cross_origin)
@@ -68,16 +68,17 @@ ErrorDetails::ErrorDetails(
       status(in_status),
       is_cross_origin(in_is_cross_origin) {}
 
-ErrorDetails::~ErrorDetails() {}
+AppCacheErrorDetails::~AppCacheErrorDetails() {}
 
 Namespace::Namespace()
-    : type(FALLBACK_NAMESPACE),
+    : type(APPCACHE_FALLBACK_NAMESPACE),
       is_pattern(false),
       is_executable(false) {
 }
 
 Namespace::Namespace(
-    NamespaceType type, const GURL& url, const GURL& target, bool is_pattern)
+    AppCacheNamespaceType type, const GURL& url, const GURL& target,
+    bool is_pattern)
     : type(type),
       namespace_url(url),
       target_url(target),
@@ -86,7 +87,7 @@ Namespace::Namespace(
 }
 
 Namespace::Namespace(
-    NamespaceType type, const GURL& url, const GURL& target,
+    AppCacheNamespaceType type, const GURL& url, const GURL& target,
     bool is_pattern, bool is_executable)
     : type(type),
       namespace_url(url),

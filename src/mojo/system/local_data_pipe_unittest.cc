@@ -26,7 +26,7 @@ TEST(LocalDataPipeTest, Creation) {
     // Get default options.
     MojoCreateDataPipeOptions default_options = { 0 };
     EXPECT_EQ(MOJO_RESULT_OK,
-              DataPipe::ValidateOptions(NULL, &default_options));
+              DataPipe::ValidateCreateOptions(NULL, &default_options));
     scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(default_options));
     dp->ProducerClose();
     dp->ConsumerClose();
@@ -42,7 +42,7 @@ TEST(LocalDataPipeTest, Creation) {
     };
     MojoCreateDataPipeOptions validated_options = { 0 };
     EXPECT_EQ(MOJO_RESULT_OK,
-              DataPipe::ValidateOptions(&options, &validated_options));
+              DataPipe::ValidateCreateOptions(&options, &validated_options));
     scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
     dp->ProducerClose();
     dp->ConsumerClose();
@@ -56,7 +56,7 @@ TEST(LocalDataPipeTest, Creation) {
     };
     MojoCreateDataPipeOptions validated_options = { 0 };
     EXPECT_EQ(MOJO_RESULT_OK,
-              DataPipe::ValidateOptions(&options, &validated_options));
+              DataPipe::ValidateCreateOptions(&options, &validated_options));
     scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
     dp->ProducerClose();
     dp->ConsumerClose();
@@ -70,7 +70,7 @@ TEST(LocalDataPipeTest, Creation) {
     };
     MojoCreateDataPipeOptions validated_options = { 0 };
     EXPECT_EQ(MOJO_RESULT_OK,
-              DataPipe::ValidateOptions(&options, &validated_options));
+              DataPipe::ValidateCreateOptions(&options, &validated_options));
     scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
     dp->ProducerClose();
     dp->ConsumerClose();
@@ -85,7 +85,7 @@ TEST(LocalDataPipeTest, Creation) {
     };
     MojoCreateDataPipeOptions validated_options = { 0 };
     EXPECT_EQ(MOJO_RESULT_OK,
-              DataPipe::ValidateOptions(&options, &validated_options));
+              DataPipe::ValidateCreateOptions(&options, &validated_options));
     scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
     dp->ProducerClose();
     dp->ConsumerClose();
@@ -101,7 +101,7 @@ TEST(LocalDataPipeTest, SimpleReadWrite) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
 
@@ -197,20 +197,21 @@ TEST(LocalDataPipeTest, BasicProducerWaiting) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
   Waiter waiter;
+  uint32_t context = 0;
 
   // Never readable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 12));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 12));
 
   // Already writable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 34));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 34));
 
   // Write two elements.
   int32_t elements[2] = { 123, 456 };
@@ -221,15 +222,15 @@ TEST(LocalDataPipeTest, BasicProducerWaiting) {
   // Adding a waiter should now succeed.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_OK,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 56));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 56));
   // And it shouldn't be writable yet.
-  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0));
+  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0, NULL));
   dp->ProducerRemoveWaiter(&waiter);
 
   // Do it again.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_OK,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 78));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 78));
 
   // Read one element.
   elements[0] = -1;
@@ -241,7 +242,8 @@ TEST(LocalDataPipeTest, BasicProducerWaiting) {
   EXPECT_EQ(-1, elements[1]);
 
   // Waiting should now succeed.
-  EXPECT_EQ(78, waiter.Wait(1000));
+  EXPECT_EQ(MOJO_RESULT_OK, waiter.Wait(1000, &context));
+  EXPECT_EQ(78u, context);
   dp->ProducerRemoveWaiter(&waiter);
 
   // Try writing, using a two-phase write.
@@ -260,7 +262,7 @@ TEST(LocalDataPipeTest, BasicProducerWaiting) {
   // Add a waiter.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_OK,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 90));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 90));
 
   // Read one element, using a two-phase read.
   const void* read_buffer = NULL;
@@ -278,7 +280,8 @@ TEST(LocalDataPipeTest, BasicProducerWaiting) {
                 static_cast<uint32_t>(1u * sizeof(elements[0]))));
 
   // Waiting should succeed.
-  EXPECT_EQ(90, waiter.Wait(1000));
+  EXPECT_EQ(MOJO_RESULT_OK, waiter.Wait(1000, &context));
+  EXPECT_EQ(90u, context);
   dp->ProducerRemoveWaiter(&waiter);
 
   // Write one element.
@@ -290,13 +293,14 @@ TEST(LocalDataPipeTest, BasicProducerWaiting) {
   // Add a waiter.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_OK,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 12));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 12));
 
   // Close the consumer.
   dp->ConsumerClose();
 
   // It should now be never-writable.
-  EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, waiter.Wait(1000));
+  EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, waiter.Wait(1000, &context));
+  EXPECT_EQ(12u, context);
   dp->ProducerRemoveWaiter(&waiter);
 
   dp->ProducerClose();
@@ -311,22 +315,23 @@ TEST(LocalDataPipeTest, BasicConsumerWaiting) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   {
     scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
     Waiter waiter;
+    uint32_t context = 0;
 
     // Never writable.
     waiter.Init();
     EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-              dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 12));
+              dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 12));
 
     // Not yet readable.
     waiter.Init();
     EXPECT_EQ(MOJO_RESULT_OK,
-              dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 34));
-    EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0));
+              dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 34));
+    EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0, NULL));
     dp->ConsumerRemoveWaiter(&waiter);
 
     // Write two elements.
@@ -338,7 +343,7 @@ TEST(LocalDataPipeTest, BasicConsumerWaiting) {
     // Should already be readable.
     waiter.Init();
     EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-              dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 56));
+              dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 56));
 
     // Discard one element.
     num_bytes = static_cast<uint32_t>(1u * sizeof(elements[0]));
@@ -348,7 +353,7 @@ TEST(LocalDataPipeTest, BasicConsumerWaiting) {
     // Should still be readable.
     waiter.Init();
     EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-              dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 78));
+              dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 78));
 
     // Read one element.
     elements[0] = -1;
@@ -362,7 +367,7 @@ TEST(LocalDataPipeTest, BasicConsumerWaiting) {
     // Adding a waiter should now succeed.
     waiter.Init();
     EXPECT_EQ(MOJO_RESULT_OK,
-              dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 90));
+              dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 90));
 
     // Write one element.
     elements[0] = 789;
@@ -372,7 +377,8 @@ TEST(LocalDataPipeTest, BasicConsumerWaiting) {
               dp->ProducerWriteData(elements, &num_bytes, true));
 
     // Waiting should now succeed.
-    EXPECT_EQ(90, waiter.Wait(1000));
+    EXPECT_EQ(MOJO_RESULT_OK, waiter.Wait(1000, &context));
+    EXPECT_EQ(90u, context);
     dp->ConsumerRemoveWaiter(&waiter);
 
     // Close the producer.
@@ -381,7 +387,7 @@ TEST(LocalDataPipeTest, BasicConsumerWaiting) {
     // Should still be readable.
     waiter.Init();
     EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-              dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 12));
+              dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 12));
 
     // Read one element.
     elements[0] = -1;
@@ -395,7 +401,7 @@ TEST(LocalDataPipeTest, BasicConsumerWaiting) {
     // Should be never-readable.
     waiter.Init();
     EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-              dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 34));
+              dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 34));
 
     dp->ConsumerClose();
   }
@@ -405,6 +411,7 @@ TEST(LocalDataPipeTest, BasicConsumerWaiting) {
   {
     scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
     Waiter waiter;
+    uint32_t context = 0;
 
     // Write two elements.
     int32_t* elements = NULL;
@@ -425,7 +432,7 @@ TEST(LocalDataPipeTest, BasicConsumerWaiting) {
     // Should already be readable.
     waiter.Init();
     EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-              dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 12));
+              dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 12));
 
     // Read one element.
     // Request two in all-or-none mode, but only read one.
@@ -444,7 +451,7 @@ TEST(LocalDataPipeTest, BasicConsumerWaiting) {
     // Should still be readable.
     waiter.Init();
     EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-              dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 34));
+              dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 34));
 
     // Read one element.
     // Request three, but not in all-or-none mode.
@@ -463,13 +470,14 @@ TEST(LocalDataPipeTest, BasicConsumerWaiting) {
     // Adding a waiter should now succeed.
     waiter.Init();
     EXPECT_EQ(MOJO_RESULT_OK,
-              dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 56));
+              dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 56));
 
     // Close the producer.
     dp->ProducerClose();
 
     // Should be never-readable.
-    EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, waiter.Wait(1000));
+    EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION, waiter.Wait(1000, &context));
+    EXPECT_EQ(56u, context);
     dp->ConsumerRemoveWaiter(&waiter);
 
     dp->ConsumerClose();
@@ -486,7 +494,7 @@ TEST(LocalDataPipeTest, BasicTwoPhaseWaiting) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
   Waiter waiter;
@@ -494,7 +502,7 @@ TEST(LocalDataPipeTest, BasicTwoPhaseWaiting) {
   // It should be writable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 0));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 0));
 
   uint32_t num_bytes = static_cast<uint32_t>(1u * sizeof(int32_t));
   void* write_ptr = NULL;
@@ -506,15 +514,15 @@ TEST(LocalDataPipeTest, BasicTwoPhaseWaiting) {
   // At this point, it shouldn't be writable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_OK,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 1));
-  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 1));
+  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0, NULL));
   dp->ProducerRemoveWaiter(&waiter);
 
   // It shouldn't be readable yet either.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_OK,
-            dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 2));
-  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0));
+            dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 2));
+  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0, NULL));
   dp->ConsumerRemoveWaiter(&waiter);
 
   static_cast<int32_t*>(write_ptr)[0] = 123;
@@ -525,12 +533,12 @@ TEST(LocalDataPipeTest, BasicTwoPhaseWaiting) {
   // It should be writable again.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 3));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 3));
 
   // And readable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 4));
+            dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 4));
 
   // Start another two-phase write and check that it's readable even in the
   // middle of it.
@@ -544,7 +552,7 @@ TEST(LocalDataPipeTest, BasicTwoPhaseWaiting) {
   // It should be readable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 5));
+            dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 5));
 
   // End the two-phase write without writing anything.
   EXPECT_EQ(MOJO_RESULT_OK, dp->ProducerEndWriteData(0u));
@@ -560,13 +568,13 @@ TEST(LocalDataPipeTest, BasicTwoPhaseWaiting) {
   // At this point, it should still be writable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 6));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 6));
 
   // But not readable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_OK,
-            dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 7));
-  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0));
+            dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 7));
+  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0, NULL));
   dp->ConsumerRemoveWaiter(&waiter);
 
   // End the two-phase read without reading anything.
@@ -575,7 +583,7 @@ TEST(LocalDataPipeTest, BasicTwoPhaseWaiting) {
   // It should be readable again.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 8));
+            dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 8));
 
   dp->ProducerClose();
   dp->ConsumerClose();
@@ -591,7 +599,7 @@ TEST(LocalDataPipeTest, BasicMayDiscardWaiting) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
   Waiter waiter;
@@ -599,13 +607,13 @@ TEST(LocalDataPipeTest, BasicMayDiscardWaiting) {
   // Writable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 0));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 0));
 
   // Not readable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_OK,
-            dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 1));
-  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0));
+            dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 1));
+  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0, NULL));
   dp->ConsumerRemoveWaiter(&waiter);
 
   uint32_t num_bytes = static_cast<uint32_t>(sizeof(int32_t));
@@ -617,12 +625,12 @@ TEST(LocalDataPipeTest, BasicMayDiscardWaiting) {
   // Still writable (even though it's full).
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 2));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 2));
 
   // Now readable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 3));
+            dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 3));
 
   // Overwrite that element.
   num_bytes = static_cast<uint32_t>(sizeof(int32_t));
@@ -634,12 +642,12 @@ TEST(LocalDataPipeTest, BasicMayDiscardWaiting) {
   // Still writable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 4));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 4));
 
   // And still readable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 5));
+            dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 5));
 
   // Read that element.
   num_bytes = static_cast<uint32_t>(sizeof(int32_t));
@@ -652,13 +660,13 @@ TEST(LocalDataPipeTest, BasicMayDiscardWaiting) {
   // Still writable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_ALREADY_EXISTS,
-            dp->ProducerAddWaiter(&waiter, MOJO_WAIT_FLAG_WRITABLE, 6));
+            dp->ProducerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_WRITABLE, 6));
 
   // No longer readable.
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_OK,
-            dp->ConsumerAddWaiter(&waiter, MOJO_WAIT_FLAG_READABLE, 7));
-  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0));
+            dp->ConsumerAddWaiter(&waiter, MOJO_HANDLE_SIGNAL_READABLE, 7));
+  EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED, waiter.Wait(0, NULL));
   dp->ConsumerRemoveWaiter(&waiter);
 
   dp->ProducerClose();
@@ -679,7 +687,7 @@ TEST(LocalDataPipeTest, MayDiscard) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
 
@@ -851,7 +859,7 @@ TEST(LocalDataPipeTest, AllOrNone) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
 
@@ -994,7 +1002,7 @@ TEST(LocalDataPipeTest, AllOrNoneMayDiscard) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
 
@@ -1080,7 +1088,7 @@ TEST(LocalDataPipeTest, TwoPhaseAllOrNone) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
 
@@ -1207,9 +1215,9 @@ TEST(LocalDataPipeTest, WrapAround) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
-  // This test won't be valid if |ValidateOptions()| decides to give the pipe
-  // more space.
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
+  // This test won't be valid if |ValidateCreateOptions()| decides to give the
+  // pipe more space.
   ASSERT_EQ(100u, validated_options.capacity_num_bytes);
 
   scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
@@ -1285,7 +1293,7 @@ TEST(LocalDataPipeTest, CloseWriteRead) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   // Close producer first, then consumer.
   {
@@ -1455,7 +1463,7 @@ TEST(LocalDataPipeTest, TwoPhaseMoreInvalidArguments) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
 
@@ -1575,7 +1583,7 @@ TEST(LocalDataPipeTest, DISABLED_MayDiscardTwoPhaseConsistent) {
   };
   MojoCreateDataPipeOptions validated_options = { 0 };
   EXPECT_EQ(MOJO_RESULT_OK,
-            DataPipe::ValidateOptions(&options, &validated_options));
+            DataPipe::ValidateCreateOptions(&options, &validated_options));
 
   scoped_refptr<LocalDataPipe> dp(new LocalDataPipe(validated_options));
 

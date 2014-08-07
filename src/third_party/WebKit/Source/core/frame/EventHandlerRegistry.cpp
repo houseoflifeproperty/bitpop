@@ -6,6 +6,8 @@
 #include "core/frame/EventHandlerRegistry.h"
 
 #include "core/events/ThreadLocalEventNames.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
@@ -26,6 +28,8 @@ bool EventHandlerRegistry::eventTypeToClass(const AtomicString& eventType, Event
 {
     if (eventType == EventTypeNames::scroll) {
         *result = ScrollEvent;
+    } else if (eventType == EventTypeNames::wheel || eventType == EventTypeNames::mousewheel) {
+        *result = WheelEvent;
 #if ASSERT_ENABLED
     } else if (eventType == EventTypeNames::load || eventType == EventTypeNames::mousemove || eventType == EventTypeNames::touchstart) {
         *result = EventsForTesting;
@@ -159,6 +163,10 @@ void EventHandlerRegistry::notifyHasHandlersChanged(EventHandlerClass handlerCla
         if (scrollingCoordinator)
             scrollingCoordinator->updateHaveScrollEventHandlers();
         break;
+    case WheelEvent:
+        if (scrollingCoordinator)
+            scrollingCoordinator->updateHaveWheelEventHandlers();
+        break;
 #if ASSERT_ENABLED
     case EventsForTesting:
         break;
@@ -176,18 +184,22 @@ void EventHandlerRegistry::trace(Visitor* visitor)
 
 void EventHandlerRegistry::clearWeakMembers(Visitor* visitor)
 {
-    Vector<EventTarget*> deadNodeTargets;
+    Vector<EventTarget*> deadTargets;
     for (size_t i = 0; i < EventHandlerClassCount; ++i) {
         EventHandlerClass handlerClass = static_cast<EventHandlerClass>(i);
         const EventTargetSet* targets = &m_targets[handlerClass];
         for (EventTargetSet::const_iterator it = targets->begin(); it != targets->end(); ++it) {
             Node* node = it->key->toNode();
-            if (node && !visitor->isAlive(node))
-                deadNodeTargets.append(node);
+            LocalDOMWindow* window = it->key->toDOMWindow();
+            if (node && !visitor->isAlive(node)) {
+                deadTargets.append(node);
+            } else if (window && !visitor->isAlive(window)) {
+                deadTargets.append(window);
+            }
         }
     }
-    for (size_t i = 0; i < deadNodeTargets.size(); ++i)
-        didRemoveAllEventHandlers(*deadNodeTargets[i]);
+    for (size_t i = 0; i < deadTargets.size(); ++i)
+        didRemoveAllEventHandlers(*deadTargets[i]);
 }
 
 void EventHandlerRegistry::documentDetached(Document& document)
@@ -205,6 +217,11 @@ void EventHandlerRegistry::documentDetached(Document& document)
                         break;
                     }
                 }
+            } else if (iter->key->toDOMWindow()) {
+                // DOMWindows may outlive their documents, so we shouldn't remove their handlers
+                // here.
+            } else {
+                ASSERT_NOT_REACHED();
             }
         }
         for (size_t i = 0; i < targetsToRemove.size(); ++i)
@@ -223,6 +240,12 @@ void EventHandlerRegistry::checkConsistency() const
                 // See the comment for |documentDetached| if either of these assertions fails.
                 ASSERT(node->document().frameHost());
                 ASSERT(node->document().frameHost() == &m_frameHost);
+            } else if (LocalDOMWindow* window = iter->key->toDOMWindow()) {
+                // If any of these assertions fail, LocalDOMWindow failed to unregister its handlers
+                // properly.
+                ASSERT(window->frame());
+                ASSERT(window->frame()->host());
+                ASSERT(window->frame()->host() == &m_frameHost);
             }
         }
     }

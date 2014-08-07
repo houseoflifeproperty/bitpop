@@ -214,118 +214,129 @@ class GpuBenchmarkingWrapper : public v8::Extension {
  public:
   GpuBenchmarkingWrapper() :
       v8::Extension(kGpuBenchmarkingExtensionName,
-          "if (typeof(chrome) == 'undefined') {"
-          "  chrome = {};"
-          "};"
-          "if (typeof(chrome.gpuBenchmarking) == 'undefined') {"
-          "  chrome.gpuBenchmarking = {};"
-          "};"
-          "chrome.gpuBenchmarking.setNeedsDisplayOnAllLayers = function() {"
-          "  native function SetNeedsDisplayOnAllLayers();"
-          "  return SetNeedsDisplayOnAllLayers();"
-          "};"
-          "chrome.gpuBenchmarking.setRasterizeOnlyVisibleContent = function() {"
-          "  native function SetRasterizeOnlyVisibleContent();"
-          "  return SetRasterizeOnlyVisibleContent();"
-          "};"
-          "chrome.gpuBenchmarking.printToSkPicture = function(dirname) {"
-          "  native function PrintToSkPicture();"
-          "  return PrintToSkPicture(dirname);"
-          "};"
-          "chrome.gpuBenchmarking.DEFAULT_INPUT = 0;"
-          "chrome.gpuBenchmarking.TOUCH_INPUT = 1;"
-          "chrome.gpuBenchmarking.MOUSE_INPUT = 2;"
-          "chrome.gpuBenchmarking.gestureSourceTypeSupported = "
-          "    function(gesture_source_type) {"
-          "  native function GestureSourceTypeSupported();"
-          "  return GestureSourceTypeSupported(gesture_source_type);"
-          "};"
-          "chrome.gpuBenchmarking.smoothScrollBy = "
-          "    function(pixels_to_scroll, opt_callback, opt_start_x,"
-          "             opt_start_y, opt_gesture_source_type,"
-          "             opt_direction, opt_speed_in_pixels_s) {"
-          "  pixels_to_scroll = pixels_to_scroll || 0;"
-          "  callback = opt_callback || function() { };"
-          "  gesture_source_type = opt_gesture_source_type ||"
-          "      chrome.gpuBenchmarking.DEFAULT_INPUT;"
-          "  direction = opt_direction || 'down';"
-          "  speed_in_pixels_s = opt_speed_in_pixels_s || 800;"
-          "  native function BeginSmoothScroll();"
-          "  return BeginSmoothScroll(pixels_to_scroll, callback,"
-          "                           gesture_source_type, direction,"
-          "                           speed_in_pixels_s, true,"
-          "                           opt_start_x, opt_start_y);"
-          "};"
-          "chrome.gpuBenchmarking.swipe = "
-          "    function(direction, distance, opt_callback,"
-          "             opt_start_x, opt_start_y,"
-          "             opt_speed_in_pixels_s) {"
-          "  direction = direction || 'up';"
-          "  distance = distance || 0;"
-          "  callback = opt_callback || function() { };"
-          "  speed_in_pixels_s = opt_speed_in_pixels_s || 800;"
-          "  native function BeginSmoothScroll();"
-          "  return BeginSmoothScroll(-distance, callback,"
-          "                           chrome.gpuBenchmarking.TOUCH_INPUT,"
-          "                           direction, speed_in_pixels_s, false,"
-          "                           opt_start_x, opt_start_y);"
-          "};"
-          "chrome.gpuBenchmarking.scrollBounce = "
-          "    function(direction, distance, overscroll, opt_repeat_count,"
-          "             opt_callback, opt_start_x, opt_start_y,"
-          "             opt_speed_in_pixels_s) {"
-          "  direction = direction || 'down';"
-          "  distance = distance || 0;"
-          "  overscroll = overscroll || 0;"
-          "  repeat_count = opt_repeat_count || 1;"
-          "  callback = opt_callback || function() { };"
-          "  speed_in_pixels_s = opt_speed_in_pixels_s || 800;"
-          "  native function BeginScrollBounce();"
-          "  return BeginScrollBounce(direction, distance, overscroll,"
-          "                           repeat_count, callback,"
-          "                           speed_in_pixels_s,"
-          "                           opt_start_x, opt_start_y);"
-          "};"
-          "chrome.gpuBenchmarking.pinchBy = "
-          "    function(zoom_in, pixels_to_cover, anchor_x, anchor_y,"
-          "             opt_callback, opt_relative_pointer_speed_in_pixels_s) {"
-          "  callback = opt_callback || function() { };"
-          "  relative_pointer_speed_in_pixels_s ="
-          "      opt_relative_pointer_speed_in_pixels_s || 800;"
-          "  native function BeginPinch();"
-          "  return BeginPinch(zoom_in, pixels_to_cover,"
-          "                    anchor_x, anchor_y, callback,"
-          "                    relative_pointer_speed_in_pixels_s);"
-          "};"
-          "chrome.gpuBenchmarking.tap = "
-          "    function(position_x, position_y, opt_callback, opt_duration_ms,"
-          "             opt_gesture_source_type) {"
-          "  callback = opt_callback || function() { };"
-          "  duration_ms = opt_duration_ms || 50;"
-          "  gesture_source_type = opt_gesture_source_type ||"
-          "      chrome.gpuBenchmarking.DEFAULT_INPUT;"
-          "  native function BeginTap();"
-          "  return BeginTap(position_x, position_y, callback, duration_ms,"
-          "                  gesture_source_type);"
-          "};"
-          "chrome.gpuBenchmarking.beginWindowSnapshotPNG = function(callback) {"
-          "  native function BeginWindowSnapshotPNG();"
-          "  BeginWindowSnapshotPNG(callback);"
-          "};"
-          "chrome.gpuBenchmarking.clearImageCache = function() {"
-          "  native function ClearImageCache();"
-          "  ClearImageCache();"
-          "};"
-          "chrome.gpuBenchmarking.runMicroBenchmark ="
-          "    function(name, callback, opt_arguments) {"
-          "  arguments = opt_arguments || {};"
-          "  native function RunMicroBenchmark();"
-          "  return RunMicroBenchmark(name, callback, arguments);"
-          "};"
-          "chrome.gpuBenchmarking.hasGpuProcess = function() {"
-          "  native function HasGpuProcess();"
-          "  return HasGpuProcess();"
-          "};") {}
+            "if (typeof(chrome) == 'undefined') {"
+            "  chrome = {};"
+            "};"
+            "if (typeof(chrome.gpuBenchmarking) == 'undefined') {"
+            "  chrome.gpuBenchmarking = {};"
+            "};"
+            "chrome.gpuBenchmarking.setNeedsDisplayOnAllLayers = function() {"
+            "  native function SetNeedsDisplayOnAllLayers();"
+            "  return SetNeedsDisplayOnAllLayers();"
+            "};"
+            "chrome.gpuBenchmarking.setRasterizeOnlyVisibleContent = "
+            "function() {"
+            "  native function SetRasterizeOnlyVisibleContent();"
+            "  return SetRasterizeOnlyVisibleContent();"
+            "};"
+            "chrome.gpuBenchmarking.printToSkPicture = function(dirname) {"
+            "  native function PrintToSkPicture();"
+            "  return PrintToSkPicture(dirname);"
+            "};"
+            "chrome.gpuBenchmarking.DEFAULT_INPUT = 0;"
+            "chrome.gpuBenchmarking.TOUCH_INPUT = 1;"
+            "chrome.gpuBenchmarking.MOUSE_INPUT = 2;"
+            "chrome.gpuBenchmarking.gestureSourceTypeSupported = "
+            "    function(gesture_source_type) {"
+            "  native function GestureSourceTypeSupported();"
+            "  return GestureSourceTypeSupported(gesture_source_type);"
+            "};"
+            "chrome.gpuBenchmarking.smoothScrollBy = "
+            "    function(pixels_to_scroll, opt_callback, opt_start_x,"
+            "             opt_start_y, opt_gesture_source_type,"
+            "             opt_direction, opt_speed_in_pixels_s) {"
+            "  pixels_to_scroll = pixels_to_scroll || 0;"
+            "  callback = opt_callback || function() { };"
+            "  gesture_source_type = opt_gesture_source_type ||"
+            "      chrome.gpuBenchmarking.DEFAULT_INPUT;"
+            "  direction = opt_direction || 'down';"
+            "  speed_in_pixels_s = opt_speed_in_pixels_s || 800;"
+            "  native function BeginSmoothScroll();"
+            "  return BeginSmoothScroll(pixels_to_scroll, callback,"
+            "                           gesture_source_type, direction,"
+            "                           speed_in_pixels_s, true,"
+            "                           opt_start_x, opt_start_y);"
+            "};"
+            "chrome.gpuBenchmarking.swipe = "
+            "    function(direction, distance, opt_callback,"
+            "             opt_start_x, opt_start_y,"
+            "             opt_speed_in_pixels_s) {"
+            "  direction = direction || 'up';"
+            "  distance = distance || 0;"
+            "  callback = opt_callback || function() { };"
+            "  speed_in_pixels_s = opt_speed_in_pixels_s || 800;"
+            "  native function BeginSmoothScroll();"
+            "  return BeginSmoothScroll(-distance, callback,"
+            "                           chrome.gpuBenchmarking.TOUCH_INPUT,"
+            "                           direction, speed_in_pixels_s, false,"
+            "                           opt_start_x, opt_start_y);"
+            "};"
+            "chrome.gpuBenchmarking.scrollBounce = "
+            "    function(direction, distance, overscroll, opt_repeat_count,"
+            "             opt_callback, opt_start_x, opt_start_y,"
+            "             opt_speed_in_pixels_s) {"
+            "  direction = direction || 'down';"
+            "  distance = distance || 0;"
+            "  overscroll = overscroll || 0;"
+            "  repeat_count = opt_repeat_count || 1;"
+            "  callback = opt_callback || function() { };"
+            "  speed_in_pixels_s = opt_speed_in_pixels_s || 800;"
+            "  native function BeginScrollBounce();"
+            "  return BeginScrollBounce(direction, distance, overscroll,"
+            "                           repeat_count, callback,"
+            "                           speed_in_pixels_s,"
+            "                           opt_start_x, opt_start_y);"
+            "};"
+            // TODO(dominikg): Remove once JS interface changes have rolled into
+            //                 stable.
+            "chrome.gpuBenchmarking.newPinchInterface = true;"
+            "chrome.gpuBenchmarking.pinchBy = "
+            "    function(scale_factor, anchor_x, anchor_y,"
+            "             opt_callback, "
+            "opt_relative_pointer_speed_in_pixels_s) {"
+            "  callback = opt_callback || function() { };"
+            "  relative_pointer_speed_in_pixels_s ="
+            "      opt_relative_pointer_speed_in_pixels_s || 800;"
+            "  native function BeginPinch();"
+            "  return BeginPinch(scale_factor, anchor_x, anchor_y, callback,"
+            "                    relative_pointer_speed_in_pixels_s);"
+            "};"
+            "chrome.gpuBenchmarking.tap = "
+            "    function(position_x, position_y, opt_callback, "
+            "opt_duration_ms,"
+            "             opt_gesture_source_type) {"
+            "  callback = opt_callback || function() { };"
+            "  duration_ms = opt_duration_ms || 50;"
+            "  gesture_source_type = opt_gesture_source_type ||"
+            "      chrome.gpuBenchmarking.DEFAULT_INPUT;"
+            "  native function BeginTap();"
+            "  return BeginTap(position_x, position_y, callback, duration_ms,"
+            "                  gesture_source_type);"
+            "};"
+            "chrome.gpuBenchmarking.beginWindowSnapshotPNG = "
+            "function(callback) {"
+            "  native function BeginWindowSnapshotPNG();"
+            "  BeginWindowSnapshotPNG(callback);"
+            "};"
+            "chrome.gpuBenchmarking.clearImageCache = function() {"
+            "  native function ClearImageCache();"
+            "  ClearImageCache();"
+            "};"
+            "chrome.gpuBenchmarking.runMicroBenchmark ="
+            "    function(name, callback, opt_arguments) {"
+            "  arguments = opt_arguments || {};"
+            "  native function RunMicroBenchmark();"
+            "  return RunMicroBenchmark(name, callback, arguments);"
+            "};"
+            "chrome.gpuBenchmarking.sendMessageToMicroBenchmark ="
+            "    function(id, arguments) {"
+            "  native function SendMessageToMicroBenchmark();"
+            "  return SendMessageToMicroBenchmark(id, arguments);"
+            "};"
+            "chrome.gpuBenchmarking.hasGpuProcess = function() {"
+            "  native function HasGpuProcess();"
+            "  return HasGpuProcess();"
+            "};") {}
 
   virtual v8::Handle<v8::FunctionTemplate> GetNativeFunctionTemplate(
       v8::Isolate* isolate,
@@ -356,6 +367,9 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       return v8::FunctionTemplate::New(isolate, ClearImageCache);
     if (name->Equals(v8::String::NewFromUtf8(isolate, "RunMicroBenchmark")))
       return v8::FunctionTemplate::New(isolate, RunMicroBenchmark);
+    if (name->Equals(
+            v8::String::NewFromUtf8(isolate, "SendMessageToMicroBenchmark")))
+      return v8::FunctionTemplate::New(isolate, SendMessageToMicroBenchmark);
     if (name->Equals(v8::String::NewFromUtf8(isolate, "HasGpuProcess")))
       return v8::FunctionTemplate::New(isolate, HasGpuProcess);
 
@@ -640,13 +654,12 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       return;
 
     int arglen = args.Length();
-    if (arglen < 6 ||
-        !args[0]->IsBoolean() ||
+    if (arglen < 5 ||
+        !args[0]->IsNumber() ||
         !args[1]->IsNumber() ||
         !args[2]->IsNumber() ||
-        !args[3]->IsNumber() ||
-        !args[4]->IsFunction() ||
-        !args[5]->IsNumber()) {
+        !args[3]->IsFunction() ||
+        !args[4]->IsNumber()) {
       args.GetReturnValue().Set(false);
       return;
     }
@@ -657,17 +670,15 @@ class GpuBenchmarkingWrapper : public v8::Extension {
     // Convert coordinates from CSS pixels to density independent pixels (DIPs).
     float page_scale_factor = context.web_view()->pageScaleFactor();
 
-    gesture_params->zoom_in = args[0]->BooleanValue();
-    gesture_params->total_num_pixels_covered =
-        args[1]->IntegerValue() * page_scale_factor;
+    gesture_params->scale_factor = args[0]->NumberValue();
     gesture_params->anchor.SetPoint(
-        args[2]->IntegerValue() * page_scale_factor,
-        args[3]->IntegerValue() * page_scale_factor);
+        args[1]->IntegerValue() * page_scale_factor,
+        args[2]->IntegerValue() * page_scale_factor);
     gesture_params->relative_pointer_speed_in_pixels_s =
-        args[5]->IntegerValue();
+        args[4]->IntegerValue();
 
     v8::Local<v8::Function> callback_local =
-        v8::Local<v8::Function>::Cast(args[4]);
+        v8::Local<v8::Function>::Cast(args[3]);
 
     scoped_refptr<CallbackAndContext> callback_and_context =
         new CallbackAndContext(args.GetIsolate(),
@@ -843,7 +854,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
       const v8::FunctionCallbackInfo<v8::Value>& args) {
     GpuBenchmarkingContext context;
     if (!context.Init(true)) {
-      args.GetReturnValue().Set(false);
+      args.GetReturnValue().Set(0);
       return;
     }
 
@@ -851,7 +862,7 @@ class GpuBenchmarkingWrapper : public v8::Extension {
         !args[0]->IsString() ||
         !args[1]->IsFunction() ||
         !args[2]->IsObject()) {
-      args.GetReturnValue().Set(false);
+      args.GetReturnValue().Set(0);
       return;
     }
 
@@ -875,6 +886,32 @@ class GpuBenchmarkingWrapper : public v8::Extension {
         std::string(*benchmark),
         value.Pass(),
         base::Bind(&OnMicroBenchmarkCompleted, callback_and_context)));
+  }
+
+  static void SendMessageToMicroBenchmark(
+      const v8::FunctionCallbackInfo<v8::Value>& args) {
+    GpuBenchmarkingContext context;
+    if (!context.Init(true)) {
+      args.GetReturnValue().Set(0);
+      return;
+    }
+
+    if (args.Length() != 2 || !args[0]->IsNumber() || !args[1]->IsObject()) {
+      args.GetReturnValue().Set(0);
+      return;
+    }
+
+    scoped_ptr<V8ValueConverter> converter =
+        make_scoped_ptr(V8ValueConverter::create());
+    v8::Handle<v8::Context> v8_context =
+        context.web_frame()->mainWorldScriptContext();
+    scoped_ptr<base::Value> value =
+        make_scoped_ptr(converter->FromV8Value(args[1], v8_context));
+
+    int id = 0;
+    converter->FromV8Value(args[0], v8_context)->GetAsInteger(&id);
+    args.GetReturnValue().Set(
+        context.compositor()->SendMessageToMicroBenchmark(id, value.Pass()));
   }
 
   static void HasGpuProcess(const v8::FunctionCallbackInfo<v8::Value>& args) {

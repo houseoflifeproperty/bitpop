@@ -34,7 +34,7 @@ class GSUtilApi(recipe_api.RecipeApi):
     if use_retry_wrapper:
       # We pass the real gsutil_path to the wrapper so it doesn't have to do
       # brittle path logic.
-      cmd_prefix = [gsutil_path]
+      cmd_prefix = ['--', gsutil_path]
       gsutil_path = self.resource('gsutil_wrapper.py')
 
     return self.m.python(full_name, gsutil_path, cmd_prefix + cmd, **kwargs)

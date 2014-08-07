@@ -150,9 +150,7 @@ class HiddenEntryClassifier {
 // the entries with shared-with-me label will be tested. If
 // SEARCH_METADATA_OFFLINE is requested, only hosted documents and cached files
 // match with the query. This option can not be used with other options.
-bool IsEligibleEntry(const ResourceEntry& entry,
-                     ResourceMetadata::Iterator* it,
-                     int options) {
+bool IsEligibleEntry(const ResourceEntry& entry, int options) {
   if ((options & SEARCH_METADATA_EXCLUDE_HOSTED_DOCUMENTS) &&
       entry.file_specific_info().is_hosted_document())
     return false;
@@ -179,9 +177,7 @@ bool IsEligibleEntry(const ResourceEntry& entry,
           return false;
       }
     } else {
-      FileCacheEntry cache_entry;
-      it->GetCacheEntry(&cache_entry);
-      return cache_entry.is_present();
+      return entry.file_specific_info().cache_state().is_present();
     }
   }
 
@@ -216,7 +212,7 @@ FileError MaybeAddEntryToResult(
   // |options| and matches the query. The base name of the entry must
   // contain |query| to match the query.
   std::string highlighted;
-  if (!IsEligibleEntry(entry, it, options) ||
+  if (!IsEligibleEntry(entry, options) ||
       (query && !FindAndHighlight(entry.base_name(), query, &highlighted)))
     return FILE_ERROR_OK;
 
@@ -274,9 +270,10 @@ FileError SearchMetadataOnBlockingPool(ResourceMetadata* resource_metadata,
     // The path field of entries in result_candidates are empty at this point,
     // because we don't want to run the expensive metadata DB look up except for
     // the final results. Hence, here we fill the part.
-    base::FilePath path = resource_metadata->GetFilePath(candidate.local_id);
-    if (path.empty())
-      return FILE_ERROR_FAILED;
+    base::FilePath path;
+    error = resource_metadata->GetFilePath(candidate.local_id, &path);
+    if (error != FILE_ERROR_OK)
+      return error;
     bool is_directory = candidate.entry.file_info().is_directory();
     results->push_back(MetadataSearchResult(
         path, is_directory, candidate.highlighted_base_name));

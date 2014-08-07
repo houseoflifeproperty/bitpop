@@ -29,8 +29,8 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/test/chromedriver/chrome/chrome_android_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_desktop_impl.h"
-#include "chrome/test/chromedriver/chrome/chrome_existing_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_finder.h"
+#include "chrome/test/chromedriver/chrome/chrome_remote_impl.h"
 #include "chrome/test/chromedriver/chrome/device_manager.h"
 #include "chrome/test/chromedriver/chrome/devtools_http_client.h"
 #include "chrome/test/chromedriver/chrome/embedded_automation_extension.h"
@@ -112,10 +112,11 @@ Status PrepareCommandLine(int port,
   switches.SetSwitch("disable-component-update");
   switches.SetSwitch("disable-default-apps");
   switches.SetSwitch("enable-logging");
-  switches.SetSwitch("logging-level", "1");
+  switches.SetSwitch("log-level", "0");
   switches.SetSwitch("password-store", "basic");
   switches.SetSwitch("use-mock-keychain");
   switches.SetSwitch("remote-debugging-port", base::IntToString(port));
+  switches.SetSwitch("test-type", "webdriver");
 
   for (std::set<std::string>::const_iterator iter =
            capabilities.exclude_switches.begin();
@@ -157,9 +158,14 @@ Status WaitForDevToolsAndCheckVersion(
     const NetAddress& address,
     URLRequestContextGetter* context_getter,
     const SyncWebSocketFactory& socket_factory,
+    const Capabilities* capabilities,
     scoped_ptr<DevToolsHttpClient>* user_client) {
+  scoped_ptr<DeviceMetrics> device_metrics;
+  if (capabilities && capabilities->device_metrics)
+    device_metrics.reset(new DeviceMetrics(*capabilities->device_metrics));
+
   scoped_ptr<DevToolsHttpClient> client(new DevToolsHttpClient(
-      address, context_getter, socket_factory));
+      address, context_getter, socket_factory, device_metrics.Pass()));
   base::TimeTicks deadline =
       base::TimeTicks::Now() + base::TimeDelta::FromSeconds(60);
   Status status = client->Init(deadline - base::TimeTicks::Now());
@@ -184,7 +190,7 @@ Status WaitForDevToolsAndCheckVersion(
   return Status(kUnknownError, "unable to discover open pages");
 }
 
-Status LaunchExistingChromeSession(
+Status LaunchRemoteChromeSession(
     URLRequestContextGetter* context_getter,
     const SyncWebSocketFactory& socket_factory,
     const Capabilities& capabilities,
@@ -194,14 +200,14 @@ Status LaunchExistingChromeSession(
   scoped_ptr<DevToolsHttpClient> devtools_client;
   status = WaitForDevToolsAndCheckVersion(
       capabilities.debugger_address, context_getter, socket_factory,
-      &devtools_client);
+      NULL, &devtools_client);
   if (status.IsError()) {
     return Status(kUnknownError, "cannot connect to chrome at " +
                       capabilities.debugger_address.ToString(),
                   status);
   }
-  chrome->reset(new ChromeExistingImpl(devtools_client.Pass(),
-                                       devtools_event_listeners));
+  chrome->reset(new ChromeRemoteImpl(devtools_client.Pass(),
+                                     devtools_event_listeners));
   return Status(kOk);
 }
 
@@ -278,7 +284,8 @@ Status LaunchDesktopChrome(
 
   scoped_ptr<DevToolsHttpClient> devtools_client;
   status = WaitForDevToolsAndCheckVersion(
-      NetAddress(port), context_getter, socket_factory, &devtools_client);
+      NetAddress(port), context_getter, socket_factory, &capabilities,
+      &devtools_client);
 
   if (status.IsError()) {
     int exit_code;
@@ -378,6 +385,7 @@ Status LaunchAndroidChrome(
   status = WaitForDevToolsAndCheckVersion(NetAddress(port),
                                           context_getter,
                                           socket_factory,
+                                          &capabilities,
                                           &devtools_client);
   if (status.IsError()) {
     device->TearDown();
@@ -402,8 +410,8 @@ Status LaunchChrome(
     const Capabilities& capabilities,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
     scoped_ptr<Chrome>* chrome) {
-  if (capabilities.IsExistingBrowser()) {
-    return LaunchExistingChromeSession(
+  if (capabilities.IsRemoteBrowser()) {
+    return LaunchRemoteChromeSession(
         context_getter, socket_factory,
         capabilities, devtools_event_listeners, chrome);
   }

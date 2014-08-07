@@ -40,6 +40,7 @@
 #include "extensions/common/constants.h"
 #include "net/base/net_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/hit_test.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/screen.h"
 
@@ -1400,7 +1401,7 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest,
 
   // Create a panel with a non-extension host.
   CreatePanelParams params1(extension_app_name, gfx::Rect(), SHOW_AS_ACTIVE);
-  params1.url = GURL(content::kAboutBlankURL);
+  params1.url = GURL(url::kAboutBlankURL);
   Panel* panel1 = CreatePanelWithParams(params1);
   EXPECT_EQ(2, panel_manager->num_panels());
 
@@ -1579,7 +1580,7 @@ IN_PROC_BROWSER_TEST_F(PanelBrowserTest,
   gfx::Point mouse_location = panel->GetBounds().origin();
   panel_manager->StartResizingByMouse(panel,
                                       mouse_location,
-                                      panel::RESIZE_TOP_LEFT);
+                                      HTTOPLEFT);
   mouse_location.Offset(panel->GetBounds().width() - bigger_size.width(),
                         panel->GetBounds().height() - bigger_size.height());
   panel_manager->ResizeByMouse(mouse_location);

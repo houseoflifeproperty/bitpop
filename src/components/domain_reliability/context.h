@@ -14,8 +14,6 @@
 #include "components/domain_reliability/config.h"
 #include "components/domain_reliability/domain_reliability_export.h"
 #include "components/domain_reliability/scheduler.h"
-#include "components/domain_reliability/uploader.h"
-#include "components/domain_reliability/util.h"
 
 class GURL;
 
@@ -23,6 +21,7 @@ namespace domain_reliability {
 
 struct DomainReliabilityBeacon;
 class DomainReliabilityDispatcher;
+class DomainReliabilityUploader;
 class MockableTime;
 
 // The per-domain context for the Domain Reliability client; includes the
@@ -43,13 +42,16 @@ class DOMAIN_RELIABILITY_EXPORT DomainReliabilityContext {
   // but will increment one of the request counters in any case.
   void OnBeacon(const GURL& url, const DomainReliabilityBeacon& beacon);
 
+  // Called to clear browsing data, since beacons are like browsing history.
+  void ClearBeacons();
+
   void GetQueuedDataForTesting(
       size_t resource_index,
       std::vector<DomainReliabilityBeacon>* beacons_out,
       uint32* successful_requests_out,
       uint32* failed_requests_out) const;
 
-  const DomainReliabilityConfig& config() { return *config_.get(); }
+  const DomainReliabilityConfig& config() const { return *config_.get(); }
 
   // Maximum number of beacons queued per context; if more than this many are
   // queued; the oldest beacons will be removed.

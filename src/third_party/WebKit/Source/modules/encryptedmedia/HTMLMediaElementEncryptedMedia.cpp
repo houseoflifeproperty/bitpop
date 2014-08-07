@@ -5,7 +5,6 @@
 #include "config.h"
 #include "modules/encryptedmedia/HTMLMediaElementEncryptedMedia.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLMediaElement.h"
@@ -14,6 +13,7 @@
 #include "modules/encryptedmedia/MediaKeyNeededEvent.h"
 #include "modules/encryptedmedia/MediaKeys.h"
 #include "platform/Logging.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -86,12 +86,7 @@ void HTMLMediaElementEncryptedMedia::setMediaKeysInternal(HTMLMediaElement& elem
         return;
 
     ASSERT(m_emeMode == EmeModeUnprefixed);
-
-    if (m_mediaKeys)
-        m_mediaKeys->setMediaElement(0);
     m_mediaKeys = mediaKeys;
-    if (m_mediaKeys)
-        m_mediaKeys->setMediaElement(&element);
 
     // If a player is connected, tell it that the CDM has changed.
     if (element.webMediaPlayer())
@@ -338,6 +333,12 @@ void HTMLMediaElementEncryptedMedia::keyNeeded(HTMLMediaElement& element, const 
 
 void HTMLMediaElementEncryptedMedia::playerDestroyed(HTMLMediaElement& element)
 {
+#if ENABLE(OILPAN)
+    // FIXME: Oilpan: remove this once the media player is on the heap. crbug.com/378229
+    if (element.isFinalizing())
+        return;
+#endif
+
     HTMLMediaElementEncryptedMedia& thisElement = HTMLMediaElementEncryptedMedia::from(element);
     thisElement.setMediaKeysInternal(element, 0);
 }

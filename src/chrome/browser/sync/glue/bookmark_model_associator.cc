@@ -11,6 +11,7 @@
 #include "base/containers/hash_tables.h"
 #include "base/format_macros.h"
 #include "base/location.h"
+#include "base/macros.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -21,7 +22,8 @@
 #include "chrome/browser/undo/bookmark_undo_service.h"
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
 #include "chrome/browser/undo/bookmark_undo_utils.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_client.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/delete_journal.h"
@@ -233,9 +235,20 @@ void BookmarkModelAssociator::UpdatePermanentNodeVisibility() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(bookmark_model_->loaded());
 
-  bookmark_model_->SetPermanentNodeVisible(
-      BookmarkNode::MOBILE,
-      id_map_.find(bookmark_model_->mobile_node()->id()) != id_map_.end());
+  BookmarkNode::Type bookmark_node_types[] = {
+    BookmarkNode::BOOKMARK_BAR,
+    BookmarkNode::OTHER_NODE,
+    BookmarkNode::MOBILE,
+  };
+  for (size_t i = 0; i < arraysize(bookmark_node_types); ++i) {
+    int64 id = bookmark_model_->PermanentNode(bookmark_node_types[i])->id();
+    bookmark_model_->SetPermanentNodeVisible(
+      bookmark_node_types[i],
+      id_map_.find(id) != id_map_.end());
+  }
+
+  // Note: the root node may have additional extra nodes. Currently their
+  // visibility is not affected by sync.
 }
 
 syncer::SyncError BookmarkModelAssociator::DisassociateModels() {
@@ -377,7 +390,8 @@ bool BookmarkModelAssociator::GetSyncIdForTaggedNode(const std::string& tag,
                                                      int64* sync_id) {
   syncer::ReadTransaction trans(FROM_HERE, user_share_);
   syncer::ReadNode sync_node(&trans);
-  if (sync_node.InitByTagLookup(tag.c_str()) != syncer::BaseNode::INIT_OK)
+  if (sync_node.InitByTagLookupForBookmarks(
+      tag.c_str()) != syncer::BaseNode::INIT_OK)
     return false;
   *sync_id = sync_node.GetId();
   return true;
@@ -452,6 +466,9 @@ syncer::SyncError BookmarkModelAssociator::BuildAssociations(
         model_type());
   }
 
+  // Note: the root node may have additional extra nodes. Currently none of
+  // them are meant to sync.
+
   int64 bookmark_bar_sync_id = GetSyncIdFromChromeId(
       bookmark_model_->bookmark_bar_node()->id());
   DCHECK_NE(bookmark_bar_sync_id, syncer::kInvalidId);
@@ -474,8 +491,7 @@ syncer::SyncError BookmarkModelAssociator::BuildAssociations(
 
   syncer::WriteTransaction trans(FROM_HERE, user_share_);
   syncer::ReadNode bm_root(&trans);
-  if (bm_root.InitByTagLookup(syncer::ModelTypeToRootTag(syncer::BOOKMARKS)) ==
-      syncer::BaseNode::INIT_OK) {
+  if (bm_root.InitTypeRoot(syncer::BOOKMARKS) == syncer::BaseNode::INIT_OK) {
     syncer_merge_result->set_num_items_before_association(
         bm_root.GetTotalNodeCount());
   }
@@ -605,6 +621,8 @@ int64 BookmarkModelAssociator::ApplyDeletesFromSyncJournal(
   dfs_stack.push(bookmark_model_->other_node());
   if (expect_mobile_bookmarks_folder_)
     dfs_stack.push(bookmark_model_->mobile_node());
+  // Note: the root node may have additional extra nodes. Currently none of
+  // them are meant to sync.
 
   // Remember folders that match delete journals in first pass but don't delete
   // them in case there are bookmarks left under them. After non-folder

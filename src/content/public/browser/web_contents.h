@@ -30,6 +30,7 @@
 #endif
 
 namespace base {
+class DictionaryValue;
 class TimeTicks;
 }
 
@@ -82,6 +83,7 @@ class WebContents : public PageNavigator,
  public:
   struct CONTENT_EXPORT CreateParams {
     explicit CreateParams(BrowserContext* context);
+    ~CreateParams();
     CreateParams(BrowserContext* context, SiteInstance* site);
 
     BrowserContext* browser_context;
@@ -91,7 +93,13 @@ class WebContents : public PageNavigator,
     // privileged process.
     SiteInstance* site_instance;
 
+    // The opener WebContents is the WebContents that initiated this request,
+    // if any.
     WebContents* opener;
+
+    // If the opener is suppressed, then the new WebContents doesn't hold a
+    // reference to its opener.
+    bool opener_suppressed;
     int routing_id;
     int main_frame_routing_id;
 
@@ -100,6 +108,14 @@ class WebContents : public PageNavigator,
 
     // True if the contents should be initially hidden.
     bool initially_hidden;
+
+    // If this instance ID is non-zero then it indicates that this WebContents
+    // should behave as a guest.
+    int guest_instance_id;
+
+    // TODO(fsamuel): This is temporary. Remove this once all guests are created
+    // from the content embedder.
+    scoped_ptr<base::DictionaryValue> guest_extra_params;
 
     // Used to specify the location context which display the new view should
     // belong. This can be NULL if not needed.
@@ -159,7 +175,7 @@ class WebContents : public PageNavigator,
   virtual const GURL& GetVisibleURL() const = 0;
 
   // Gets the last committed URL. It represents the current page that is
-  // displayed in  this WebContents. It represents the current security
+  // displayed in this WebContents. It represents the current security
   // context.
   virtual const GURL& GetLastCommittedURL() const = 0;
 
@@ -183,15 +199,6 @@ class WebContents : public PageNavigator,
 
   // Gets the current RenderViewHost for this tab.
   virtual RenderViewHost* GetRenderViewHost() const = 0;
-
-  // Returns the WebContents embedding this WebContents, if any.
-  // If this is a top-level WebContents then it returns NULL.
-  virtual WebContents* GetEmbedderWebContents() const = 0;
-
-  // Gets the instance ID of the current WebContents if it is embedded
-  // within a BrowserPlugin. The instance ID of a WebContents uniquely
-  // identifies it within its embedder WebContents.
-  virtual int GetEmbeddedInstanceID() const = 0;
 
   // Gets the current RenderViewHost's routing id. Returns
   // MSG_ROUTING_NONE when there is no RenderViewHost.
@@ -248,25 +255,30 @@ class WebContents : public PageNavigator,
   // returns the current SiteInstance.
   virtual SiteInstance* GetPendingSiteInstance() const = 0;
 
-  // Return whether this WebContents is loading a resource.
+  // Returns whether this WebContents is loading a resource.
   virtual bool IsLoading() const = 0;
+
+  // Returns whether this WebContents is loading and and the load is to a
+  // different top-level document (rather than being a navigation within the
+  // same document). This being true implies that IsLoading() is also true.
+  virtual bool IsLoadingToDifferentDocument() const = 0;
 
   // Returns whether this WebContents is waiting for a first-response for the
   // main resource of the page.
   virtual bool IsWaitingForResponse() const = 0;
 
-  // Return the current load state and the URL associated with it.
+  // Returns the current load state and the URL associated with it.
   virtual const net::LoadStateWithParam& GetLoadState() const = 0;
   virtual const base::string16& GetLoadStateHost() const = 0;
 
-  // Return the upload progress.
+  // Returns the upload progress.
   virtual uint64 GetUploadSize() const = 0;
   virtual uint64 GetUploadPosition() const = 0;
 
   // Returns a set of the site URLs currently committed in this tab.
   virtual std::set<GURL> GetSitesInTab() const = 0;
 
-  // Return the character encoding of the page.
+  // Returns the character encoding of the page.
   virtual const std::string& GetEncoding() const = 0;
 
   // True if this is a secure page which displayed insecure content.
@@ -440,9 +452,6 @@ class WebContents : public PageNavigator,
       const base::Callback<void(
           int64 /* size of the file */)>& callback) = 0;
 
-  // Returns true if the active NavigationEntry's page_id equals page_id.
-  virtual bool IsActiveEntry(int32 page_id) = 0;
-
   // Returns the contents MIME type after a navigation.
   virtual const std::string& GetContentsMimeType() const = 0;
 
@@ -482,9 +491,6 @@ class WebContents : public PageNavigator,
   // the getter only useful from within TAB_CLOSED notification
   virtual void SetClosedByUserGesture(bool value) = 0;
   virtual bool GetClosedByUserGesture() const = 0;
-
-  // Gets the zoom level for this tab.
-  virtual double GetZoomLevel() const = 0;
 
   // Gets the zoom percent for this tab.
   virtual int GetZoomPercent(bool* enable_increment,
@@ -552,10 +558,6 @@ class WebContents : public PageNavigator,
   // TODO: this doesn't really belong here. With site isolation, this should be
   // removed since we can then embed iframes in different processes.
   virtual bool IsSubframe() const = 0;
-
-  // Sets the zoom level for the current page and all BrowserPluginGuests
-  // within the page.
-  virtual void SetZoomLevel(double level) = 0;
 
   // Finds text on a page.
   virtual void Find(int request_id,

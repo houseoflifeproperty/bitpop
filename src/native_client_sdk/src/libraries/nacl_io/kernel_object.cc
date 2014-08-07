@@ -24,7 +24,9 @@
 
 namespace nacl_io {
 
-KernelObject::KernelObject() { cwd_ = "/"; }
+KernelObject::KernelObject() {
+  cwd_ = "/";
+}
 
 KernelObject::~KernelObject() {};
 
@@ -40,7 +42,8 @@ Error KernelObject::AttachFsAtPath(const ScopedFilesystem& fs,
   return 0;
 }
 
-Error KernelObject::DetachFsAtPath(const std::string& path) {
+Error KernelObject::DetachFsAtPath(const std::string& path,
+                                   ScopedFilesystem* out_fs) {
   std::string abs_path = GetAbsParts(path).Join();
 
   AUTO_LOCK(fs_lock_);
@@ -51,6 +54,8 @@ Error KernelObject::DetachFsAtPath(const std::string& path) {
   // It is only legal to unmount if there are no open references
   if (it->second->RefCount() != 1)
     return EBUSY;
+
+  *out_fs = it->second;
 
   filesystems_.erase(it);
   return 0;
@@ -180,8 +185,9 @@ Error KernelObject::AcquireHandle(int fd, ScopedKernelHandle* out_handle) {
   return 0;
 }
 
-Error KernelObject::AcquireHandleAndPath(int fd, ScopedKernelHandle* out_handle,
-                                         std::string* out_path){
+Error KernelObject::AcquireHandleAndPath(int fd,
+                                         ScopedKernelHandle* out_handle,
+                                         std::string* out_path) {
   out_handle->reset(NULL);
 
   AUTO_LOCK(handle_lock_);
@@ -220,7 +226,8 @@ int KernelObject::AllocateFD(const ScopedKernelHandle& handle,
   return id;
 }
 
-void KernelObject::FreeAndReassignFD(int fd, const ScopedKernelHandle& handle,
+void KernelObject::FreeAndReassignFD(int fd,
+                                     const ScopedKernelHandle& handle,
                                      const std::string& path) {
   if (NULL == handle) {
     FreeFD(fd);

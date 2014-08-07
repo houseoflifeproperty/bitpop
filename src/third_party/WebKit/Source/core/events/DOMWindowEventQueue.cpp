@@ -29,30 +29,33 @@
 
 #include "core/dom/Document.h"
 #include "core/events/Event.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/SuspendableTimer.h"
+#include "core/inspector/InspectorInstrumentation.h"
 
 namespace WebCore {
 
-class DOMWindowEventQueueTimer : public SuspendableTimer {
+class DOMWindowEventQueueTimer : public NoBaseWillBeGarbageCollectedFinalized<DOMWindowEventQueueTimer>, public SuspendableTimer {
     WTF_MAKE_NONCOPYABLE(DOMWindowEventQueueTimer);
 public:
     DOMWindowEventQueueTimer(DOMWindowEventQueue* eventQueue, ExecutionContext* context)
         : SuspendableTimer(context)
         , m_eventQueue(eventQueue) { }
+    void trace(Visitor* visitor) { visitor->trace(m_eventQueue); }
 
 private:
     virtual void fired() { m_eventQueue->pendingEventTimerFired(); }
-    DOMWindowEventQueue* m_eventQueue;
+
+    RawPtrWillBeMember<DOMWindowEventQueue> m_eventQueue;
 };
 
-PassRefPtr<DOMWindowEventQueue> DOMWindowEventQueue::create(ExecutionContext* context)
+PassRefPtrWillBeRawPtr<DOMWindowEventQueue> DOMWindowEventQueue::create(ExecutionContext* context)
 {
-    return adoptRef(new DOMWindowEventQueue(context));
+    return adoptRefWillBeNoop(new DOMWindowEventQueue(context));
 }
 
 DOMWindowEventQueue::DOMWindowEventQueue(ExecutionContext* context)
-    : m_pendingEventTimer(adoptPtr(new DOMWindowEventQueueTimer(this, context)))
+    : m_pendingEventTimer(adoptPtrWillBeNoop(new DOMWindowEventQueueTimer(this, context)))
     , m_isClosed(false)
 {
     m_pendingEventTimer->suspendIfNeeded();
@@ -62,12 +65,21 @@ DOMWindowEventQueue::~DOMWindowEventQueue()
 {
 }
 
+void DOMWindowEventQueue::trace(Visitor* visitor)
+{
+    visitor->trace(m_pendingEventTimer);
+    visitor->trace(m_queuedEvents);
+    EventQueue::trace(visitor);
+}
+
 bool DOMWindowEventQueue::enqueueEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
     if (m_isClosed)
         return false;
 
     ASSERT(event->target());
+    InspectorInstrumentation::didEnqueueEvent(event->target(), event.get());
+
     bool wasAdded = m_queuedEvents.add(event).isNewEntry;
     ASSERT_UNUSED(wasAdded, wasAdded); // It should not have already been in the list.
 
@@ -79,10 +91,12 @@ bool DOMWindowEventQueue::enqueueEvent(PassRefPtrWillBeRawPtr<Event> event)
 
 bool DOMWindowEventQueue::cancelEvent(Event* event)
 {
-    ListHashSet<RefPtrWillBePersistent<Event>, 16>::iterator it = m_queuedEvents.find(event);
+    WillBeHeapListHashSet<RefPtrWillBeMember<Event>, 16>::iterator it = m_queuedEvents.find(event);
     bool found = it != m_queuedEvents.end();
-    if (found)
+    if (found) {
+        InspectorInstrumentation::didRemoveEvent(event->target(), event);
         m_queuedEvents.remove(it);
+    }
     if (m_queuedEvents.isEmpty())
         m_pendingEventTimer->stop();
     return found;
@@ -92,6 +106,11 @@ void DOMWindowEventQueue::close()
 {
     m_isClosed = true;
     m_pendingEventTimer->stop();
+    if (InspectorInstrumentation::hasFrontends()) {
+        WillBeHeapListHashSet<RefPtrWillBeMember<Event>, 16>::iterator it = m_queuedEvents.begin();
+        for (; it != m_queuedEvents.end(); ++it)
+            InspectorInstrumentation::didRemoveEvent((*it)->target(), it->get());
+    }
     m_queuedEvents.clear();
 }
 
@@ -105,15 +124,16 @@ void DOMWindowEventQueue::pendingEventTimerFired()
     bool wasAdded = m_queuedEvents.add(nullptr).isNewEntry;
     ASSERT_UNUSED(wasAdded, wasAdded); // It should not have already been in the list.
 
-    RefPtr<DOMWindowEventQueue> protector(this);
+    RefPtrWillBeRawPtr<DOMWindowEventQueue> protector(this);
 
     while (!m_queuedEvents.isEmpty()) {
-        ListHashSet<RefPtrWillBePersistent<Event>, 16>::iterator iter = m_queuedEvents.begin();
+        WillBeHeapListHashSet<RefPtrWillBeMember<Event>, 16>::iterator iter = m_queuedEvents.begin();
         RefPtrWillBeRawPtr<Event> event = *iter;
         m_queuedEvents.remove(iter);
         if (!event)
             break;
         dispatchEvent(event.get());
+        InspectorInstrumentation::didRemoveEvent(event->target(), event.get());
     }
 }
 

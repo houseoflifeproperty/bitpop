@@ -22,7 +22,6 @@
 #include "core/svg/SVGFEDiffuseLightingElement.h"
 
 #include "core/rendering/style/RenderStyle.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 #include "platform/graphics/filters/FEDiffuseLighting.h"
@@ -45,10 +44,7 @@ inline SVGFEDiffuseLightingElement::SVGFEDiffuseLightingElement(Document& docume
     addToPropertyMap(m_in1);
 }
 
-PassRefPtr<SVGFEDiffuseLightingElement> SVGFEDiffuseLightingElement::create(Document& document)
-{
-    return adoptRef(new SVGFEDiffuseLightingElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEDiffuseLightingElement)
 
 bool SVGFEDiffuseLightingElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -172,8 +168,8 @@ PassRefPtr<FilterEffect> SVGFEDiffuseLightingElement::build(SVGFilterBuilder* fi
     if (!input1)
         return nullptr;
 
-    RefPtr<LightSource> lightSource = SVGFELightElement::findLightSource(*this);
-    if (!lightSource)
+    SVGFELightElement* lightNode = SVGFELightElement::findLightElement(*this);
+    if (!lightNode)
         return nullptr;
 
     RenderObject* renderer = this->renderer();
@@ -183,6 +179,7 @@ PassRefPtr<FilterEffect> SVGFEDiffuseLightingElement::build(SVGFilterBuilder* fi
     ASSERT(renderer->style());
     Color color = renderer->style()->svgStyle()->lightingColor();
 
+    RefPtr<LightSource> lightSource = lightNode->lightSource(filter);
     RefPtr<FilterEffect> effect = FEDiffuseLighting::create(filter, color, m_surfaceScale->currentValue()->value(), m_diffuseConstant->currentValue()->value(),
         kernelUnitLengthX()->currentValue()->value(), kernelUnitLengthY()->currentValue()->value(), lightSource.release());
     effect->inputEffects().append(input1);

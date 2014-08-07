@@ -45,7 +45,7 @@ import os
 import posixpath
 import sys
 
-from utilities import get_file_contents, write_file, get_interface_extended_attributes_from_idl
+from utilities import get_file_contents, read_file_to_list, write_file, get_interface_extended_attributes_from_idl
 
 EXPORTED_EXTENDED_ATTRIBUTES = (
     'Conditional',
@@ -61,6 +61,7 @@ def parse_options():
     parser.add_option('--event-idl-files-list', help='file listing event IDL files')
     parser.add_option('--event-interfaces-file', help='output file')
     parser.add_option('--write-file-only-if-changed', type='int', help='if true, do not write an output file if it would be identical to the existing one, which avoids unnecessary rebuilds in ninja')
+    parser.add_option('--suffix', help='specify a suffix to the namespace, i.e., "Modules". Default is None.')
 
     options, args = parser.parse_args()
     if options.event_idl_files_list is None:
@@ -75,7 +76,7 @@ def parse_options():
     return options
 
 
-def write_event_interfaces_file(event_idl_files, destination_filename, only_if_changed):
+def write_event_interfaces_file(event_idl_files, destination_filename, only_if_changed, suffix):
     def extended_attribute_string(name, value):
         if name == 'RuntimeEnabled':
             value += 'Enabled'
@@ -95,8 +96,10 @@ def write_event_interfaces_file(event_idl_files, destination_filename, only_if_c
         return '%s %s\n' % (relative_path_posix,
                             ', '.join(extended_attributes_list))
 
-    lines = ['namespace="Event"\n',
-             '\n']
+    lines = ['namespace="Event"\n']
+    if suffix:
+        lines.append('suffix="' + suffix + '"\n')
+    lines.append('\n')
     interface_lines = [interface_line(event_idl_file)
                        for event_idl_file in event_idl_files]
     interface_lines.sort()
@@ -108,11 +111,11 @@ def write_event_interfaces_file(event_idl_files, destination_filename, only_if_c
 
 def main():
     options = parse_options()
-    with open(options.event_idl_files_list) as event_idl_files_list:
-        event_idl_files = [line.rstrip('\n') for line in event_idl_files_list]
+    event_idl_files = read_file_to_list(options.event_idl_files_list)
     write_event_interfaces_file(event_idl_files,
                                 options.event_interfaces_file,
-                                options.write_file_only_if_changed)
+                                options.write_file_only_if_changed,
+                                options.suffix)
 
 
 if __name__ == '__main__':

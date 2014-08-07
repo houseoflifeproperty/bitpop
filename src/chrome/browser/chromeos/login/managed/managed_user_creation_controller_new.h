@@ -13,13 +13,15 @@
 #include "base/strings/string16.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/extended_authenticator.h"
+#include "chrome/browser/chromeos/login/auth/extended_authenticator.h"
 #include "chrome/browser/chromeos/login/managed/managed_user_creation_controller.h"
-#include "chrome/browser/managed_mode/managed_user_registration_utility.h"
+#include "chrome/browser/supervised_user/supervised_user_registration_utility.h"
 
 class Profile;
 
 namespace chromeos {
+
+class UserContext;
 
 // LMU Creation process:
 // 0. Manager is logged in
@@ -140,7 +142,7 @@ class ManagedUserCreationControllerNew
     base::DictionaryValue password_data;
 
     Profile* manager_profile;
-    scoped_ptr<ManagedUserRegistrationUtility> registration_utility;
+    scoped_ptr<SupervisedUserRegistrationUtility> registration_utility;
   };
 
   // ManagedUserAuthenticator::StatusConsumer overrides.
@@ -150,13 +152,13 @@ class ManagedUserCreationControllerNew
   // Authenticator success callbacks.
   void OnMountSuccess(const std::string& mount_hash);
   void OnAddKeySuccess();
-  void OnPasswordHashingSuccess(const std::string& password_hash);
+  void OnKeyTransformedIfNeeded(const UserContext& user_context);
 
   void StartCreationImpl();
 
   // Guard timer callback.
   void CreationTimedOut();
-  // ManagedUserRegistrationUtility callback.
+  // SupervisedUserRegistrationUtility callback.
   void RegistrationCallback(const GoogleServiceAuthError& error,
                             const std::string& token);
 

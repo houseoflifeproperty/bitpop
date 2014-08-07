@@ -95,6 +95,8 @@ public:
         LoadTypeMediaStream,
     };
 
+    typedef unsigned TrackId;
+
     virtual ~WebMediaPlayer() { }
 
     virtual void load(LoadType, const WebURL&, CORSMode) = 0;
@@ -107,7 +109,7 @@ public:
     virtual void setRate(double) = 0;
     virtual void setVolume(double) = 0;
     virtual void setPreload(Preload) { };
-    virtual const WebTimeRanges& buffered() = 0;
+    virtual WebTimeRanges buffered() const = 0;
     virtual double maxTimeSeekable() const = 0;
 
     virtual void paint(WebCanvas*, const WebRect&, unsigned char alpha) = 0;
@@ -129,7 +131,7 @@ public:
     virtual NetworkState networkState() const = 0;
     virtual ReadyState readyState() const = 0;
 
-    virtual bool didLoadingProgress() const = 0;
+    virtual bool didLoadingProgress() = 0;
 
     virtual bool hasSingleSecurityOrigin() const = 0;
     virtual bool didPassCORSAccessCheck() const = 0;
@@ -162,6 +164,10 @@ public:
     virtual void exitFullscreen() { }
     // Returns true if the player can enter fullscreen.
     virtual bool canEnterFullscreen() const { return false; }
+
+    virtual void enabledAudioTracksChanged(const WebVector<TrackId>& enabledTrackIds) { }
+    // |selectedTrackId| is null if no track is selected.
+    virtual void selectedVideoTrackChanged(TrackId* selectedTrackId) { }
 };
 
 } // namespace blink

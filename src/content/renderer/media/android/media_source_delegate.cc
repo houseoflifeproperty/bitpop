@@ -184,10 +184,8 @@ void MediaSourceDelegate::InitializeDemuxer() {
                              false);
 }
 
-const blink::WebTimeRanges& MediaSourceDelegate::Buffered() {
-  buffered_web_time_ranges_ =
-      ConvertToWebTimeRanges(buffered_time_ranges_);
-  return buffered_web_time_ranges_;
+blink::WebTimeRanges MediaSourceDelegate::Buffered() const {
+  return ConvertToWebTimeRanges(buffered_time_ranges_);
 }
 
 size_t MediaSourceDelegate::DecodedFrameCount() const {
@@ -398,14 +396,11 @@ void MediaSourceDelegate::OnBufferReady(
       break;
 
     case DemuxerStream::kConfigChanged:
-      // In case of kConfigChanged, need to read decoder_config once
-      // for the next reads.
-      // TODO(kjyoun): Investigate if we need to use this new config. See
-      // http://crbug.com/255783
-      if (is_audio) {
-        audio_stream_->audio_decoder_config();
-      } else {
-        gfx::Size size = video_stream_->video_decoder_config().coded_size();
+      CHECK((is_audio && audio_stream_) || (!is_audio && video_stream_));
+      data->demuxer_configs.resize(1);
+      CHECK(GetDemuxerConfigFromStream(&data->demuxer_configs[0], is_audio));
+      if (!is_audio) {
+        gfx::Size size = data->demuxer_configs[0].video_size;
         DVLOG(1) << "Video config is changed: " << size.width() << "x"
                  << size.height();
       }
@@ -514,8 +509,7 @@ void MediaSourceDelegate::OnDemuxerInitDone(media::PipelineStatus status) {
 
   // Notify demuxer ready when both streams are not encrypted.
   is_demuxer_ready_ = true;
-  if (CanNotifyDemuxerReady())
-    NotifyDemuxerReady();
+  NotifyDemuxerReady();
 }
 
 void MediaSourceDelegate::InitAudioDecryptingDemuxerStream() {
@@ -563,8 +557,7 @@ void MediaSourceDelegate::OnAudioDecryptingDemuxerStreamInitDone(
   // Try to notify demuxer ready when audio DDS initialization finished and
   // video is not encrypted.
   is_demuxer_ready_ = true;
-  if (CanNotifyDemuxerReady())
-    NotifyDemuxerReady();
+  NotifyDemuxerReady();
 }
 
 void MediaSourceDelegate::OnVideoDecryptingDemuxerStreamInitDone(
@@ -580,8 +573,7 @@ void MediaSourceDelegate::OnVideoDecryptingDemuxerStreamInitDone(
 
   // Try to notify demuxer ready when video DDS initialization finished.
   is_demuxer_ready_ = true;
-  if (CanNotifyDemuxerReady())
-    NotifyDemuxerReady();
+  NotifyDemuxerReady();
 }
 
 void MediaSourceDelegate::OnDemuxerSeekDone(media::PipelineStatus status) {
@@ -649,42 +641,14 @@ void MediaSourceDelegate::DeleteSelf() {
   delete this;
 }
 
-void MediaSourceDelegate::OnMediaConfigRequest() {
-  DCHECK(media_loop_->BelongsToCurrentThread());
-  DVLOG(1) << __FUNCTION__ << " : " << demuxer_client_id_;
-  if (CanNotifyDemuxerReady())
-    NotifyDemuxerReady();
-}
-
-bool MediaSourceDelegate::CanNotifyDemuxerReady() {
-  DCHECK(media_loop_->BelongsToCurrentThread());
-  return is_demuxer_ready_;
-}
-
 void MediaSourceDelegate::NotifyDemuxerReady() {
   DCHECK(media_loop_->BelongsToCurrentThread());
   DVLOG(1) << __FUNCTION__ << " : " << demuxer_client_id_;
-  DCHECK(CanNotifyDemuxerReady());
+  DCHECK(is_demuxer_ready_);
 
   scoped_ptr<DemuxerConfigs> configs(new DemuxerConfigs());
-  if (audio_stream_) {
-    media::AudioDecoderConfig config = audio_stream_->audio_decoder_config();
-    configs->audio_codec = config.codec();
-    configs->audio_channels =
-        media::ChannelLayoutToChannelCount(config.channel_layout());
-    configs->audio_sampling_rate = config.samples_per_second();
-    configs->is_audio_encrypted = config.is_encrypted();
-    configs->audio_extra_data = std::vector<uint8>(
-        config.extra_data(), config.extra_data() + config.extra_data_size());
-  }
-  if (video_stream_) {
-    media::VideoDecoderConfig config = video_stream_->video_decoder_config();
-    configs->video_codec = config.codec();
-    configs->video_size = config.natural_size();
-    configs->is_video_encrypted = config.is_encrypted();
-    configs->video_extra_data = std::vector<uint8>(
-        config.extra_data(), config.extra_data() + config.extra_data_size());
-  }
+  GetDemuxerConfigFromStream(configs.get(), true);
+  GetDemuxerConfigFromStream(configs.get(), false);
   configs->duration = GetDuration();
 
   if (demuxer_client_)
@@ -768,6 +732,34 @@ base::TimeDelta MediaSourceDelegate::FindBufferedBrowserSeekTime_Locked(
   // player stall by replaying cached data since last keyframe in browser player
   // rather than issuing browser seek. See http://crbug.com/304234.
   return seek_time;
+}
+
+bool MediaSourceDelegate::GetDemuxerConfigFromStream(
+    media::DemuxerConfigs* configs, bool is_audio) {
+  DCHECK(media_loop_->BelongsToCurrentThread());
+  if (!is_demuxer_ready_)
+    return false;
+  if (is_audio && audio_stream_) {
+    media::AudioDecoderConfig config = audio_stream_->audio_decoder_config();
+    configs->audio_codec = config.codec();
+    configs->audio_channels =
+        media::ChannelLayoutToChannelCount(config.channel_layout());
+    configs->audio_sampling_rate = config.samples_per_second();
+    configs->is_audio_encrypted = config.is_encrypted();
+    configs->audio_extra_data = std::vector<uint8>(
+        config.extra_data(), config.extra_data() + config.extra_data_size());
+    return true;
+  }
+  if (!is_audio && video_stream_) {
+    media::VideoDecoderConfig config = video_stream_->video_decoder_config();
+    configs->video_codec = config.codec();
+    configs->video_size = config.natural_size();
+    configs->is_video_encrypted = config.is_encrypted();
+    configs->video_extra_data = std::vector<uint8>(
+        config.extra_data(), config.extra_data() + config.extra_data_size());
+    return true;
+  }
+  return false;
 }
 
 }  // namespace content

@@ -42,7 +42,6 @@
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/debug/leak_annotations.h"
-#include "base/platform_file.h"
 #include "components/breakpad/app/breakpad_linux.h"
 #include "components/breakpad/browser/crash_handler_host_linux.h"
 #include "content/public/common/content_descriptors.h"
@@ -162,11 +161,11 @@ void ShellContentBrowserClient::RenderProcessWillLaunch(
 net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
     BrowserContext* content_browser_context,
     ProtocolHandlerMap* protocol_handlers,
-    ProtocolHandlerScopedVector protocol_interceptors) {
+    URLRequestInterceptorScopedVector request_interceptors) {
   ShellBrowserContext* shell_browser_context =
       ShellBrowserContextForBrowserContext(content_browser_context);
   return shell_browser_context->CreateRequestContext(
-      protocol_handlers, protocol_interceptors.Pass());
+      protocol_handlers, request_interceptors.Pass());
 }
 
 net::URLRequestContextGetter*
@@ -175,14 +174,14 @@ ShellContentBrowserClient::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
     ProtocolHandlerMap* protocol_handlers,
-    ProtocolHandlerScopedVector protocol_interceptors) {
+    URLRequestInterceptorScopedVector request_interceptors) {
   ShellBrowserContext* shell_browser_context =
       ShellBrowserContextForBrowserContext(content_browser_context);
   return shell_browser_context->CreateRequestContextForStoragePartition(
       partition_path,
       in_memory,
       protocol_handlers,
-      protocol_interceptors.Pass());
+      request_interceptors.Pass());
 }
 
 bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -192,12 +191,12 @@ bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
   // Keep in sync with ProtocolHandlers added by
   // ShellURLRequestContextGetter::GetURLRequestContext().
   static const char* const kProtocolList[] = {
-      kBlobScheme,
-      kFileSystemScheme,
+      url::kBlobScheme,
+      url::kFileSystemScheme,
       kChromeUIScheme,
       kChromeDevToolsScheme,
-      kDataScheme,
-      kFileScheme,
+      url::kDataScheme,
+      url::kFileScheme,
   };
   for (size_t i = 0; i < arraysize(kProtocolList); ++i) {
     if (url.scheme() == kProtocolList[i])
@@ -294,9 +293,9 @@ bool ShellContentBrowserClient::ShouldSwapProcessesForRedirect(
 void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     const CommandLine& command_line,
     int child_process_id,
-    std::vector<content::FileDescriptorInfo>* mappings) {
+    std::vector<FileDescriptorInfo>* mappings) {
 #if defined(OS_ANDROID)
-  int flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ;
+  int flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
   base::FilePath pak_file;
   bool r = PathService::Get(base::DIR_ANDROID_APP_DATA, &pak_file);
   CHECK(r);
@@ -309,8 +308,7 @@ void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
                  << "content_shell.pak";
   }
   mappings->push_back(
-      content::FileDescriptorInfo(kShellPakDescriptor,
-                                  base::FileDescriptor(f.Pass())));
+      FileDescriptorInfo(kShellPakDescriptor, base::FileDescriptor(f.Pass())));
 
   if (breakpad::IsCrashReporterEnabled()) {
     f = breakpad::CrashDumpManager::GetInstance()->CreateMinidumpFile(

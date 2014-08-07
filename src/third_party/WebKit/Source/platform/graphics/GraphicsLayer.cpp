@@ -32,6 +32,7 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/GraphicsLayerFactory.h"
+#include "platform/graphics/Image.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/graphics/skia/NativeImageSkia.h"
 #include "platform/scroll/ScrollableArea.h"
@@ -50,6 +51,8 @@
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/text/WTFString.h"
+
+#include <algorithm>
 
 #ifndef NDEBUG
 #include <stdio.h>
@@ -77,11 +80,10 @@ PassOwnPtr<GraphicsLayer> GraphicsLayer::create(GraphicsLayerFactory* factory, G
 
 GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     : m_client(client)
-    , m_anchorPoint(0.5f, 0.5f, 0)
     , m_backgroundColor(Color::transparent)
     , m_opacity(1)
-    , m_zPosition(0)
     , m_blendMode(blink::WebBlendModeNormal)
+    , m_hasTransformOrigin(false)
     , m_contentsOpaque(false)
     , m_shouldFlattenTransform(true)
     , m_backfaceVisibility(true)
@@ -92,7 +94,6 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_hasScrollParent(false)
     , m_hasClipParent(false)
     , m_paintingPhase(GraphicsLayerPaintAllWithOverflowClip)
-    , m_contentsOrientation(CompositingCoordinatesTopDown)
     , m_parent(0)
     , m_maskLayer(0)
     , m_contentsClippingMaskLayer(0)
@@ -146,6 +147,8 @@ void GraphicsLayer::setParent(GraphicsLayer* layer)
     m_parent = layer;
 }
 
+#if ASSERT_ENABLED
+
 bool GraphicsLayer::hasAncestor(GraphicsLayer* ancestor) const
 {
     for (GraphicsLayer* curr = parent(); curr; curr = curr->parent()) {
@@ -155,6 +158,8 @@ bool GraphicsLayer::hasAncestor(GraphicsLayer* ancestor) const
 
     return false;
 }
+
+#endif
 
 bool GraphicsLayer::setChildren(const GraphicsLayerVector& newChildren)
 {
@@ -332,11 +337,6 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
     m_client->paintContents(this, context, m_paintingPhase, clip);
 }
 
-void GraphicsLayer::setZPosition(float position)
-{
-    m_zPosition = position;
-}
-
 void GraphicsLayer::updateChildList()
 {
     WebLayer* childHost = m_layer->layer();
@@ -447,7 +447,7 @@ void GraphicsLayer::setupContentsLayer(WebLayer* contentsLayer)
     m_contentsLayerId = m_contentsLayer->id();
 
     m_contentsLayer->setWebLayerClient(this);
-    m_contentsLayer->setAnchorPoint(FloatPoint(0, 0));
+    m_contentsLayer->setTransformOrigin(FloatPoint3D());
     m_contentsLayer->setUseParentBackfaceVisibility(true);
 
     // It is necessary to call setDrawsContent as soon as we receive the new contentsLayer, for
@@ -538,6 +538,17 @@ void GraphicsLayer::dumpLayer(TextStream& ts, int indent, LayerTreeFlags flags, 
     ts << ")\n";
 }
 
+static bool compareFloatRects(const FloatRect& a, const FloatRect& b)
+{
+    if (a.x() != b.x())
+        return a.x() > b.x();
+    if (a.y() != b.y())
+        return a.y() > b.y();
+    if (a.width() != b.width())
+        return a.width() > b.width();
+    return a.height() > b.height();
+}
+
 void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags flags, RenderingContextMap& renderingContextMap) const
 {
     if (m_position != FloatPoint()) {
@@ -550,9 +561,9 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         ts << "(bounds origin " << m_boundsOrigin.x() << " " << m_boundsOrigin.y() << ")\n";
     }
 
-    if (m_anchorPoint != FloatPoint3D(0.5f, 0.5f, 0)) {
+    if (m_hasTransformOrigin && m_transformOrigin != FloatPoint3D(m_size.width() * 0.5f, m_size.height() * 0.5f, 0)) {
         writeIndent(ts, indent + 1);
-        ts << "(anchor " << m_anchorPoint.x() << " " << m_anchorPoint.y() << ")\n";
+        ts << "(transformOrigin " << m_transformOrigin.x() << " " << m_transformOrigin.y() << ")\n";
     }
 
     if (m_size != IntSize()) {
@@ -654,47 +665,49 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
     }
 
     if ((flags & LayerTreeIncludesRepaintRects) && repaintRectMap().contains(this) && !repaintRectMap().get(this).isEmpty()) {
+        Vector<FloatRect> repaintRectsCopy = repaintRectMap().get(this);
+        std::sort(repaintRectsCopy.begin(), repaintRectsCopy.end(), &compareFloatRects);
         writeIndent(ts, indent + 1);
         ts << "(repaint rects\n";
-        for (size_t i = 0; i < repaintRectMap().get(this).size(); ++i) {
-            if (repaintRectMap().get(this)[i].isEmpty())
+        for (size_t i = 0; i < repaintRectsCopy.size(); ++i) {
+            if (repaintRectsCopy[i].isEmpty())
                 continue;
             writeIndent(ts, indent + 2);
             ts << "(rect ";
-            ts << repaintRectMap().get(this)[i].x() << " ";
-            ts << repaintRectMap().get(this)[i].y() << " ";
-            ts << repaintRectMap().get(this)[i].width() << " ";
-            ts << repaintRectMap().get(this)[i].height();
+            ts << repaintRectsCopy[i].x() << " ";
+            ts << repaintRectsCopy[i].y() << " ";
+            ts << repaintRectsCopy[i].width() << " ";
+            ts << repaintRectsCopy[i].height();
             ts << ")\n";
         }
         writeIndent(ts, indent + 1);
         ts << ")\n";
     }
 
-    if ((flags & LayerTreeIncludesPaintingPhases) && paintingPhase()) {
+    if ((flags & LayerTreeIncludesPaintingPhases) && m_paintingPhase) {
         writeIndent(ts, indent + 1);
         ts << "(paintingPhases\n";
-        if (paintingPhase() & GraphicsLayerPaintBackground) {
+        if (m_paintingPhase & GraphicsLayerPaintBackground) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintBackground\n";
         }
-        if (paintingPhase() & GraphicsLayerPaintForeground) {
+        if (m_paintingPhase & GraphicsLayerPaintForeground) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintForeground\n";
         }
-        if (paintingPhase() & GraphicsLayerPaintMask) {
+        if (m_paintingPhase & GraphicsLayerPaintMask) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintMask\n";
         }
-        if (paintingPhase() & GraphicsLayerPaintChildClippingMask) {
+        if (m_paintingPhase & GraphicsLayerPaintChildClippingMask) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintChildClippingMask\n";
         }
-        if (paintingPhase() & GraphicsLayerPaintOverflowContents) {
+        if (m_paintingPhase & GraphicsLayerPaintOverflowContents) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintOverflowContents\n";
         }
-        if (paintingPhase() & GraphicsLayerPaintCompositedScroll) {
+        if (m_paintingPhase & GraphicsLayerPaintCompositedScroll) {
             writeIndent(ts, indent + 2);
             ts << "GraphicsLayerPaintCompositedScroll\n";
         }
@@ -778,17 +791,15 @@ void GraphicsLayer::setCompositingReasons(CompositingReasons reasons)
     m_debugInfo.setCompositingReasons(reasons);
 }
 
+void GraphicsLayer::setOwnerNodeId(int nodeId)
+{
+    m_debugInfo.setOwnerNodeId(nodeId);
+}
+
 void GraphicsLayer::setPosition(const FloatPoint& point)
 {
     m_position = point;
     platformLayer()->setPosition(m_position);
-}
-
-void GraphicsLayer::setAnchorPoint(const FloatPoint3D& point)
-{
-    m_anchorPoint = point;
-    platformLayer()->setAnchorPoint(FloatPoint(m_anchorPoint.x(), m_anchorPoint.y()));
-    platformLayer()->setAnchorPointZ(m_anchorPoint.z());
 }
 
 void GraphicsLayer::setSize(const FloatSize& size)
@@ -813,6 +824,13 @@ void GraphicsLayer::setTransform(const TransformationMatrix& transform)
 {
     m_transform = transform;
     platformLayer()->setTransform(TransformationMatrix::toSkMatrix44(m_transform));
+}
+
+void GraphicsLayer::setTransformOrigin(const FloatPoint3D& transformOrigin)
+{
+    m_hasTransformOrigin = true;
+    m_transformOrigin = transformOrigin;
+    platformLayer()->setTransformOrigin(transformOrigin);
 }
 
 void GraphicsLayer::setShouldFlattenTransform(bool shouldFlatten)
@@ -950,7 +968,7 @@ void GraphicsLayer::setContentsNeedsDisplay()
 {
     if (WebLayer* contentsLayer = contentsLayerIfRegistered()) {
         contentsLayer->invalidate();
-        addRepaintRect(contentsRect());
+        addRepaintRect(m_contentsRect);
     }
 }
 

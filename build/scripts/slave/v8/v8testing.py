@@ -65,6 +65,8 @@ def main():
   option_parser.add_option('--buildbot',
                            default='True',
                            help='Resolve paths to executables for buildbots')
+  option_parser.add_option('--json-test-results',
+                           help='File to write json results.')
   option_parser.add_option('--no-presubmit',
                            default=False, action='store_true',
                            help='Skip presubmit checks')
@@ -152,6 +154,8 @@ def main():
       cmd.extend(['--gc-stress'])
     if options.quickcheck:
       cmd.extend(['--quickcheck'])
+    if options.json_test_results:
+      cmd.extend(['--json-test-results', options.json_test_results])
 
   if options.shard_count > 1:
     cmd.extend(['--shard-count=%s' % options.shard_count,

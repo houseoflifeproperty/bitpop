@@ -30,17 +30,15 @@
 
 /**
  * @constructor
- * @param {!WebInspector.LayerTreeModel} model
- * @param {!WebInspector.Layers3DView} layers3DView
- * @extends {WebInspector.VBox}
+ * @param {function(string=)} showImageCallback
+ * @extends {WebInspector.HBox}
  */
-WebInspector.PaintProfilerView = function(model, layers3DView)
+WebInspector.PaintProfilerView = function(showImageCallback)
 {
-    WebInspector.VBox.call(this);
+    WebInspector.View.call(this);
     this.element.classList.add("paint-profiler-view");
 
-    this._model = model;
-    this._layers3DView = layers3DView;
+    this._showImageCallback = showImageCallback;
 
     this._canvas = this.element.createChild("canvas", "fill");
     this._context = this._canvas.getContext("2d");
@@ -55,10 +53,38 @@ WebInspector.PaintProfilerView = function(model, layers3DView)
     this._reset();
 }
 
+WebInspector.PaintProfilerView.Events = {
+    WindowChanged: "WindowChanged"
+};
+
 WebInspector.PaintProfilerView.prototype = {
     onResize: function()
     {
         this._update();
+    },
+
+    /**
+     * @param {?WebInspector.PaintProfilerSnapshot} snapshot
+     */
+    setSnapshot: function(snapshot)
+    {
+        this._reset();
+        this._snapshot = snapshot;
+        if (!this._snapshot) {
+            this._update();
+            return;
+        }
+        snapshot.requestImage(null, null, this._showImageCallback);
+        snapshot.profile(onProfileDone.bind(this));
+        /**
+         * @param {!Array.<!LayerTreeAgent.PaintProfile>=} profiles
+         * @this {WebInspector.PaintProfilerView}
+         */
+        function onProfileDone(profiles)
+        {
+            this._profiles = profiles;
+            this._update();
+        }
     },
 
     _update: function()
@@ -113,6 +139,22 @@ WebInspector.PaintProfilerView.prototype = {
         if (this._updateImageTimer)
             return;
         this._updateImageTimer = setTimeout(this._updateImage.bind(this), 100);
+        this.dispatchEventToListeners(WebInspector.PaintProfilerView.Events.WindowChanged);
+    },
+
+    /**
+     * @return {{left: number, right: number}}
+     */
+    windowBoundaries: function()
+    {
+        var screenLeft = this._selectionWindow.windowLeft * this._canvas.width;
+        var screenRight = this._selectionWindow.windowRight * this._canvas.width;
+        var barLeft = Math.floor((screenLeft - this._barPaddingWidth) / this._outerBarWidth);
+        var barRight = Math.floor((screenRight - this._barPaddingWidth + this._innerBarWidth)/ this._outerBarWidth);
+        var stepLeft = Math.max(0, barLeft * this._samplesPerBar);
+        var stepRight = Math.min(barRight * this._samplesPerBar, this._profiles[0].length);
+
+        return {left: stepLeft, right: stepRight};
     },
 
     _updateImage: function()
@@ -121,15 +163,8 @@ WebInspector.PaintProfilerView.prototype = {
         if (!this._profiles || !this._profiles.length)
             return;
 
-        var screenLeft = this._selectionWindow.windowLeft * this._canvas.width;
-        var screenRight = this._selectionWindow.windowRight * this._canvas.width;
-
-        var barLeft = Math.floor((screenLeft - this._barPaddingWidth) / this._outerBarWidth);
-        var barRight = Math.floor((screenRight - this._barPaddingWidth + this._innerBarWidth)/ this._outerBarWidth);
-
-        var stepLeft = Math.max(0, barLeft * this._samplesPerBar);
-        var stepRight = Math.min(barRight * this._samplesPerBar, this._profiles[0].length);
-        this._snapshot.requestImage(stepLeft, stepRight, this._layers3DView.showImageForLayer.bind(this._layers3DView, this._layer));
+        var window = this.windowBoundaries();
+        this._snapshot.requestImage(window.left, window.right, this._showImageCallback);
     },
 
     _reset: function()
@@ -139,41 +174,163 @@ WebInspector.PaintProfilerView.prototype = {
         this._selectionWindow.reset();
     },
 
+    __proto__: WebInspector.HBox.prototype
+};
+
+/**
+ * @constructor
+ * @extends {WebInspector.VBox}
+ */
+WebInspector.PaintProfilerCommandLogView = function()
+{
+    WebInspector.VBox.call(this);
+    this.setMinimumSize(100, 25);
+    this.element.classList.add("outline-disclosure");
+    var sidebarTreeElement = this.element.createChild("ol", "sidebar-tree");
+    this.sidebarTree = new TreeOutline(sidebarTreeElement);
+    this._popoverHelper = new WebInspector.ObjectPopoverHelper(this.element, this._getHoverAnchor.bind(this), this._resolveObjectForPopover.bind(this), undefined, true);
+    this._reset();
+}
+
+WebInspector.PaintProfilerCommandLogView.prototype = {
     /**
-     * @param {!WebInspector.Layer} layer
+     * @param {?WebInspector.PaintProfilerSnapshot} snapshot
      */
-    profile: function(layer)
+    setSnapshot: function(snapshot)
     {
         this._reset();
-        this._layer = layer;
-        this._layer.requestSnapshot(onSnapshotDone.bind(this));
-
-        /**
-         * @param {!WebInspector.PaintProfilerSnapshot=} snapshot
-         * @this {WebInspector.PaintProfilerView}
-         */
-        function onSnapshotDone(snapshot)
-        {
-            this._snapshot = snapshot;
-            if (!snapshot) {
-                this._profiles = null;
-                this._update();
-                return;
-            }
-            snapshot.requestImage(null, null, this._layers3DView.showImageForLayer.bind(this._layers3DView, this._layer));
-            snapshot.profile(onProfileDone.bind(this));
+        if (!snapshot) {
+            this.updateWindow();
+            return;
         }
+        snapshot.commandLog(onCommandLogDone.bind(this));
 
         /**
-         * @param {!Array.<!LayerTreeAgent.PaintProfile>=} profiles
-         * @this {WebInspector.PaintProfilerView}
+         * @param {!Array.<!Object>=} log
+         * @this {WebInspector.PaintProfilerCommandLogView}
          */
-        function onProfileDone(profiles)
+        function onCommandLogDone(log)
         {
-            this._profiles = profiles;
-            this._update();
+            this._log = log;
+            this.updateWindow();
         }
     },
 
+    /**
+     * @param {number=} stepLeft
+     * @param {number=} stepRight
+     */
+    updateWindow: function(stepLeft, stepRight)
+    {
+        var log = this._log;
+        stepLeft = stepLeft || 0;
+        stepRight = stepRight || log.length - 1;
+        this.sidebarTree.removeChildren();
+        for (var i = stepLeft; i <= stepRight; ++i) {
+            var node = new WebInspector.LogTreeElement(log[i]);
+            this.sidebarTree.appendChild(node);
+        }
+    },
+
+    _reset: function()
+    {
+        this._log = [];
+    },
+
+    /**
+     * @param {!Element} target
+     * @return {!Element}
+     */
+    _getHoverAnchor: function(target)
+    {
+        return /** @type {!Element} */ (target.enclosingNodeOrSelfWithNodeName("span"));
+    },
+
+    /**
+     * @param {!Element} element
+     * @param {function(!WebInspector.RemoteObject, boolean, !Element=):undefined} showCallback
+     */
+    _resolveObjectForPopover: function(element, showCallback)
+    {
+        var liElement = element.enclosingNodeOrSelfWithNodeName("li");
+        var logItem = liElement.treeElement.representedObject;
+        var obj = {"method": logItem.method};
+        if (logItem.params)
+            obj.params = logItem.params;
+        showCallback(WebInspector.RemoteObject.fromLocalObject(obj), false);
+    },
+
     __proto__: WebInspector.VBox.prototype
+};
+
+/**
+  * @constructor
+  * @param {!Object} logItem
+  * @extends {TreeElement}
+  */
+WebInspector.LogTreeElement = function(logItem)
+{
+    TreeElement.call(this, "", logItem);
+    this._update();
+}
+
+WebInspector.LogTreeElement.prototype = {
+    /**
+      * @param {!Object} param
+      * @param {string} name
+      * @return {string}
+      */
+    _paramToString: function(param, name)
+    {
+        if (typeof param !== "object")
+            return typeof param === "string" && param.length > 100 ? name : JSON.stringify(param);
+        var str = "";
+        var keyCount = 0;
+        for (var key in param) {
+            if (++keyCount > 4 || typeof param[key] === "object" || (typeof param[key] === "string" && param[key].length > 100))
+                return name;
+            if (str)
+                str += ", ";
+            str += param[key];
+        }
+        return str;
+    },
+
+    /**
+      * @param {!Object} params
+      * @return {string}
+      */
+    _paramsToString: function(params)
+    {
+        var str = "";
+        for (var key in params) {
+            if (str)
+                str += ", ";
+            str += this._paramToString(params[key], key);
+        }
+        return str;
+    },
+
+    _update: function()
+    {
+        var logItem = this.representedObject;
+        var title = document.createDocumentFragment();
+        title.createChild("div", "selection");
+        var span = title.createChild("span");
+        var textContent = logItem.method;
+        if (logItem.params)
+            textContent += "(" + this._paramsToString(logItem.params) + ")";
+        span.textContent = textContent;
+        this.title = title;
+    },
+
+    /**
+     * @param {boolean} hovered
+     */
+    setHovered: function(hovered)
+    {
+        this.listItemElement.classList.toggle("hovered", hovered);
+    },
+
+    __proto__: TreeElement.prototype
 };

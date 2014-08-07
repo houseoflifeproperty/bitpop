@@ -99,11 +99,13 @@ P2PSocketDispatcherHost::P2PSocketDispatcherHost(
     : BrowserMessageFilter(P2PMsgStart),
       resource_context_(resource_context),
       url_context_(url_context),
-      monitoring_networks_(false) {
+      monitoring_networks_(false),
+      dump_incoming_rtp_packet_(false),
+      dump_outgoing_rtp_packet_(false) {
 }
 
 void P2PSocketDispatcherHost::OnChannelClosing() {
-  // Since the IPC channel is gone, close pending connections.
+  // Since the IPC sender is gone, close pending connections.
   STLDeleteContainerPairSecondPointers(sockets_.begin(), sockets_.end());
   sockets_.clear();
 
@@ -120,10 +122,9 @@ void P2PSocketDispatcherHost::OnDestruct() const {
   BrowserThread::DeleteOnIOThread::Destruct(this);
 }
 
-bool P2PSocketDispatcherHost::OnMessageReceived(const IPC::Message& message,
-                                                bool* message_was_ok) {
+bool P2PSocketDispatcherHost::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(P2PSocketDispatcherHost, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(P2PSocketDispatcherHost, message)
     IPC_MESSAGE_HANDLER(P2PHostMsg_StartNetworkNotifications,
                         OnStartNetworkNotifications)
     IPC_MESSAGE_HANDLER(P2PHostMsg_StopNetworkNotifications,
@@ -136,7 +137,7 @@ bool P2PSocketDispatcherHost::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(P2PHostMsg_SetOption, OnSetOption)
     IPC_MESSAGE_HANDLER(P2PHostMsg_DestroySocket, OnDestroySocket)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
@@ -145,6 +146,38 @@ void P2PSocketDispatcherHost::OnIPAddressChanged() {
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE, base::Bind(
           &P2PSocketDispatcherHost::DoGetNetworkList, this));
+}
+
+void P2PSocketDispatcherHost::StartRtpDump(
+    bool incoming,
+    bool outgoing,
+    const RenderProcessHost::WebRtcRtpPacketCallback& packet_callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  if ((!dump_incoming_rtp_packet_ && incoming) ||
+      (!dump_outgoing_rtp_packet_ && outgoing)) {
+    if (incoming)
+      dump_incoming_rtp_packet_ = true;
+
+    if (outgoing)
+      dump_outgoing_rtp_packet_ = true;
+
+    packet_callback_ = packet_callback;
+    for (SocketsMap::iterator it = sockets_.begin(); it != sockets_.end(); ++it)
+      it->second->StartRtpDump(incoming, outgoing, packet_callback);
+  }
+}
+
+void P2PSocketDispatcherHost::StopRtpDumpOnUIThread(bool incoming,
+                                                    bool outgoing) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&P2PSocketDispatcherHost::StopRtpDumpOnIOThread,
+                 this,
+                 incoming,
+                 outgoing));
 }
 
 P2PSocketDispatcherHost::~P2PSocketDispatcherHost() {
@@ -160,8 +193,7 @@ P2PSocketHost* P2PSocketDispatcherHost::LookupSocket(int socket_id) {
   return (it == sockets_.end()) ? NULL : it->second;
 }
 
-void P2PSocketDispatcherHost::OnStartNetworkNotifications(
-    const IPC::Message& msg) {
+void P2PSocketDispatcherHost::OnStartNetworkNotifications() {
   if (!monitoring_networks_) {
     net::NetworkChangeNotifier::AddIPAddressObserver(this);
     monitoring_networks_ = true;
@@ -172,8 +204,7 @@ void P2PSocketDispatcherHost::OnStartNetworkNotifications(
           &P2PSocketDispatcherHost::DoGetNetworkList, this));
 }
 
-void P2PSocketDispatcherHost::OnStopNetworkNotifications(
-    const IPC::Message& msg) {
+void P2PSocketDispatcherHost::OnStopNetworkNotifications() {
   if (monitoring_networks_) {
     net::NetworkChangeNotifier::RemoveIPAddressObserver(this);
     monitoring_networks_ = false;
@@ -210,6 +241,12 @@ void P2PSocketDispatcherHost::OnCreateSocket(
 
   if (socket->Init(local_address, remote_address)) {
     sockets_[socket_id] = socket.release();
+
+    if (dump_incoming_rtp_packet_ || dump_outgoing_rtp_packet_) {
+      sockets_[socket_id]->StartRtpDump(dump_incoming_rtp_packet_,
+                                        dump_outgoing_rtp_packet_,
+                                        packet_callback_);
+    }
   }
 }
 
@@ -295,6 +332,24 @@ void P2PSocketDispatcherHost::OnAddressResolved(
 
   dns_requests_.erase(request);
   delete request;
+}
+
+void P2PSocketDispatcherHost::StopRtpDumpOnIOThread(bool incoming,
+                                                    bool outgoing) {
+  if ((dump_incoming_rtp_packet_ && incoming) ||
+      (dump_outgoing_rtp_packet_ && outgoing)) {
+    if (incoming)
+      dump_incoming_rtp_packet_ = false;
+
+    if (outgoing)
+      dump_outgoing_rtp_packet_ = false;
+
+    if (!dump_incoming_rtp_packet_ && !dump_outgoing_rtp_packet_)
+      packet_callback_.Reset();
+
+    for (SocketsMap::iterator it = sockets_.begin(); it != sockets_.end(); ++it)
+      it->second->StopRtpDump(incoming, outgoing);
+  }
 }
 
 }  // namespace content

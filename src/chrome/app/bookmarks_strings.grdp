@@ -12,17 +12,16 @@
     </message>
 
     <!-- The special folders created when importing from other other browsers. -->
-    <message name="IDS_BOOKMARK_GROUP_FROM_IE" desc="The group name of bookmarks from Internet Explorer">
-      Imported From IE
-    </message>
+    <if expr="is_win">
+      <message name="IDS_BOOKMARK_GROUP_FROM_IE" desc="The group name of bookmarks from Internet Explorer">
+        Imported From IE
+      </message>
+    </if>
     <message name="IDS_BOOKMARK_GROUP_FROM_FIREFOX" desc="The group name of bookmarks from Firefox">
       Imported From Firefox
     </message>
     <message name="IDS_BOOKMARK_GROUP_FROM_SAFARI" desc="The group name of bookmarks from Safari">
       Imported From Safari
-    </message>
-    <message name="IDS_BOOKMARK_GROUP_FROM_GOOGLE_TOOLBAR" desc="The group name of bookmarks from Google Toolbar">
-      Imported From Google Toolbar
     </message>
     <message name="IDS_BOOKMARK_GROUP" desc="The group name of bookmarks imported from a file">
       Imported
@@ -30,13 +29,25 @@
   </if>
 
   <if expr="not use_titlecase">
-    <message name="IDS_BOOKMARK_BAR_SHOW_APPS_SHORTCUT" desc="Name shown in the context menu to hide/show the apps shortcut in the bookmakr bar">
+    <message name="IDS_BOOKMARK_BAR_SHOW_APPS_SHORTCUT" desc="Name shown in the context menu to hide/show the apps shortcut in the bookmark bar">
       Show apps shortcut
+    </message>
+    <message name="IDS_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS_DEFAULT_NAME" desc="Name shown in the context menu to hide/show the managed bookmarks in the bookmark bar">
+      Show managed bookmarks
+    </message>
+    <message name="IDS_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS" desc="Name shown in the context menu to hide/show the managed bookmarks in the bookmark bar">
+      Show <ph name="FOLDER_NAME">$1<ex>managed bookmarks</ex></ph>
     </message>
   </if>
   <if expr="use_titlecase">
-    <message name="IDS_BOOKMARK_BAR_SHOW_APPS_SHORTCUT" desc="In Title Case: Name shown in the context menu to hide/show the apps shortcut in the bookmakr bar">
+    <message name="IDS_BOOKMARK_BAR_SHOW_APPS_SHORTCUT" desc="In Title Case: Name shown in the context menu to hide/show the apps shortcut in the bookmark bar">
       Show Apps Shortcut
+    </message>
+    <message name="IDS_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS_DEFAULT_NAME" desc="In Title Case: Name shown in the context menu to hide/show the managed bookmarks in the bookmark bar">
+      Show Managed Bookmarks
+    </message>
+    <message name="IDS_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS" desc="In Title Case: Name shown in the context menu to hide/show the managed bookmarks in the bookmark bar">
+      Show <ph name="FOLDER_NAME">$1<ex>Managed Bookmarks</ex></ph>
     </message>
   </if>
   <message name="IDS_BOOKMARK_BAR_APPS_SHORTCUT_NAME" desc="Name shown in the bookmark bar for the apps page shortcut">
@@ -268,9 +279,11 @@
   <message name="IDS_BOOKMARK_AX_EDITOR_NAME_LABEL" desc="Spoken text for bookmark name text field in edit folder dialog">
     Bookmark name
   </message>
-  <message name="IDS_BOOKMARK_BAR_EDIT_FOLDER_LABEL" desc="Title of label before text field in edit folder dialog">
-    Name:
-  </message>
+  <if expr="is_macosx">
+    <message name="IDS_BOOKMARK_BAR_EDIT_FOLDER_LABEL" desc="Title of label before text field in edit folder dialog">
+      Name:
+    </message>
+  </if>
   <message name="IDS_BOOKMARK_AX_EDITOR_URL_LABEL" desc="Spoken text for bookmark URL text field in edit folder dialog.">
     Bookmark URL
   </message>

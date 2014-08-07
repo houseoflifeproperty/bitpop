@@ -5,6 +5,7 @@
 #ifndef CHROME_RENDERER_CHROME_RENDER_FRAME_OBSERVER_H_
 #define CHROME_RENDERER_CHROME_RENDER_FRAME_OBSERVER_H_
 
+#include "base/basictypes.h"
 #include "content/public/renderer/render_frame_observer.h"
 
 namespace gfx {
@@ -21,6 +22,7 @@ class ChromeRenderFrameObserver : public content::RenderFrameObserver {
  private:
   // RenderFrameObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void DidChangeName(const base::string16& name) OVERRIDE;
 
   // IPC handlers
   void OnSetIsPrerendering(bool is_prerendering);

@@ -81,6 +81,11 @@ DirOpenResult SyncableDirectoryTest::ReopenDirectory() {
 
   DirOpenResult open_result =
       dir_->Open(kDirectoryName, &delegate_, NullTransactionObserver());
+
+  if (open_result != OPENED) {
+    dir_.reset();
+  }
+
   return open_result;
 }
 
@@ -1221,6 +1226,38 @@ TEST_F(SyncableDirectoryTest, PositionWithNullSurvivesSaveAndReload) {
   }
 }
 
+// Any item with BOOKMARKS in their local specifics should have a valid local
+// unique position.  If there is an item in the loaded DB that does not match
+// this criteria, we consider the whole DB to be corrupt.
+TEST_F(SyncableDirectoryTest, BadPositionCountsAsCorruption) {
+  TestIdFactory id_factory;
+
+  {
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir().get());
+
+    MutableEntry parent(&trans, CREATE, BOOKMARKS, id_factory.root(), "parent");
+    parent.PutIsDir(true);
+    parent.PutIsUnsynced(true);
+
+    // The code is littered with DCHECKs that try to stop us from doing what
+    // we're about to do.  Our work-around is to create a bookmark based on
+    // a server update, then update its local specifics without updating its
+    // local unique position.
+
+    MutableEntry child(
+        &trans, CREATE_NEW_UPDATE_ITEM, id_factory.MakeServer("child"));
+    sync_pb::EntitySpecifics specifics;
+    AddDefaultFieldValue(BOOKMARKS, &specifics);
+    child.PutIsUnappliedUpdate(true);
+    child.PutSpecifics(specifics);
+
+    EXPECT_TRUE(child.ShouldMaintainPosition());
+    EXPECT_TRUE(!child.GetUniquePosition().IsValid());
+  }
+
+  EXPECT_EQ(FAILED_DATABASE_CORRUPT, SimulateSaveAndReloadDir());
+}
+
 TEST_F(SyncableDirectoryTest, General) {
   int64 written_metahandle;
   const Id id = TestIdFactory::FromNumber(99);
@@ -1562,19 +1599,62 @@ TEST_F(SyncableDirectoryTest, MutableEntry_PutAttachmentMetadata) {
         &trans, CREATE, PREFERENCES, trans.root_id(), "some entry");
     entry.PutId(TestIdFactory::FromNumber(-1));
     entry.PutIsUnsynced(true);
+
+    Directory::Metahandles metahandles;
     ASSERT_FALSE(dir()->IsAttachmentLinked(attachment_id_proto));
+    dir()->GetMetahandlesByAttachmentId(
+        &trans, attachment_id_proto, &metahandles);
+    ASSERT_TRUE(metahandles.empty());
 
     // Now add the attachment metadata and see that Directory believes it is
     // linked.
     entry.PutAttachmentMetadata(attachment_metadata);
     ASSERT_TRUE(dir()->IsAttachmentLinked(attachment_id_proto));
+    dir()->GetMetahandlesByAttachmentId(
+        &trans, attachment_id_proto, &metahandles);
+    ASSERT_FALSE(metahandles.empty());
+    ASSERT_EQ(metahandles[0], entry.GetMetahandle());
 
     // Clear out the attachment metadata and see that it's no longer linked.
     sync_pb::AttachmentMetadata empty_attachment_metadata;
     entry.PutAttachmentMetadata(empty_attachment_metadata);
     ASSERT_FALSE(dir()->IsAttachmentLinked(attachment_id_proto));
+    dir()->GetMetahandlesByAttachmentId(
+        &trans, attachment_id_proto, &metahandles);
+    ASSERT_TRUE(metahandles.empty());
   }
   ASSERT_FALSE(dir()->IsAttachmentLinked(attachment_id_proto));
+}
+
+// Verify that UpdateAttachmentId updates attachment_id and is_on_server flag.
+TEST_F(SyncableDirectoryTest, MutableEntry_UpdateAttachmentId) {
+  sync_pb::AttachmentMetadata attachment_metadata;
+  sync_pb::AttachmentMetadataRecord* r1 = attachment_metadata.add_record();
+  sync_pb::AttachmentMetadataRecord* r2 = attachment_metadata.add_record();
+  *r1->mutable_id() = syncer::CreateAttachmentIdProto();
+  *r2->mutable_id() = syncer::CreateAttachmentIdProto();
+  sync_pb::AttachmentIdProto attachment_id_proto = r1->id();
+
+  WriteTransaction trans(FROM_HERE, UNITTEST, dir().get());
+
+  MutableEntry entry(
+      &trans, CREATE, PREFERENCES, trans.root_id(), "some entry");
+  entry.PutId(TestIdFactory::FromNumber(-1));
+  entry.PutAttachmentMetadata(attachment_metadata);
+
+  const sync_pb::AttachmentMetadata& entry_metadata =
+      entry.GetAttachmentMetadata();
+  ASSERT_EQ(2, entry_metadata.record_size());
+  ASSERT_FALSE(entry_metadata.record(0).is_on_server());
+  ASSERT_FALSE(entry_metadata.record(1).is_on_server());
+  ASSERT_FALSE(entry.GetIsUnsynced());
+
+  // TODO(pavely): When we add server info to proto, add test for it here.
+  entry.UpdateAttachmentIdWithServerInfo(attachment_id_proto);
+
+  ASSERT_TRUE(entry_metadata.record(0).is_on_server());
+  ASSERT_FALSE(entry_metadata.record(1).is_on_server());
+  ASSERT_TRUE(entry.GetIsUnsynced());
 }
 
 // Verify that deleted entries with attachments will retain the attachments.

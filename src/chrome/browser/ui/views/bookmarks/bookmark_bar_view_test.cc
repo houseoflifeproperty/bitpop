@@ -28,12 +28,15 @@
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/base/view_event_test_base.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/test/test_browser_thread.h"
 #include "grit/generated_resources.h"
+#include "ui/aura/env.h"
+#include "ui/aura/env_observer.h"
+#include "ui/aura/window.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/test/ui_controls.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -51,6 +54,140 @@ using content::PageNavigator;
 using content::WebContents;
 
 namespace {
+
+// Waits for a views::Widget dialog to show up.
+class DialogWaiter : public aura::EnvObserver,
+                     public views::WidgetObserver {
+ public:
+  DialogWaiter()
+      : dialog_created_(false),
+        dialog_(NULL) {
+    aura::Env::GetInstance()->AddObserver(this);
+  }
+
+  virtual ~DialogWaiter() {
+    aura::Env::GetInstance()->RemoveObserver(this);
+  }
+
+  views::Widget* WaitForDialog() {
+    if (dialog_created_)
+      return dialog_;
+    base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
+    base::MessageLoopForUI::ScopedNestableTaskAllower allow_nested(loop);
+    base::RunLoop run_loop;
+    quit_closure_ = run_loop.QuitClosure();
+    run_loop.Run();
+    return dialog_;
+  }
+
+ private:
+  // aura::EnvObserver:
+  virtual void OnWindowInitialized(aura::Window* window) OVERRIDE {
+    if (dialog_)
+      return;
+    views::Widget* widget = views::Widget::GetWidgetForNativeView(window);
+    if (!widget || !widget->IsDialogBox())
+      return;
+    dialog_ = widget;
+    dialog_->AddObserver(this);
+  }
+
+  // views::WidgetObserver:
+  virtual void OnWidgetVisibilityChanged(views::Widget* widget,
+                                         bool visible) OVERRIDE {
+    CHECK_EQ(dialog_, widget);
+    if (visible) {
+      dialog_created_ = true;
+      dialog_->RemoveObserver(this);
+      if (!quit_closure_.is_null())
+        quit_closure_.Run();
+    }
+  }
+
+  bool dialog_created_;
+  views::Widget* dialog_;
+  base::Closure quit_closure_;
+
+  DISALLOW_COPY_AND_ASSIGN(DialogWaiter);
+};
+
+// Waits for a dialog to terminate.
+class DialogCloseWaiter : public views::WidgetObserver {
+ public:
+  explicit DialogCloseWaiter(views::Widget* dialog)
+      : dialog_closed_(false) {
+    dialog->AddObserver(this);
+  }
+
+  virtual ~DialogCloseWaiter() {
+    // It is not necessary to remove |this| from the dialog's observer, since
+    // the dialog is destroyed before this waiter.
+  }
+
+  void WaitForDialogClose() {
+    if (dialog_closed_)
+      return;
+    base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
+    base::MessageLoopForUI::ScopedNestableTaskAllower allow_nested(loop);
+    base::RunLoop run_loop;
+    quit_closure_ = run_loop.QuitClosure();
+    run_loop.Run();
+  }
+
+ private:
+  // views::WidgetObserver:
+  virtual void OnWidgetDestroyed(views::Widget* widget) OVERRIDE {
+    dialog_closed_ = true;
+    if (!quit_closure_.is_null())
+      quit_closure_.Run();
+  }
+
+  bool dialog_closed_;
+  base::Closure quit_closure_;
+
+  DISALLOW_COPY_AND_ASSIGN(DialogCloseWaiter);
+};
+
+// Waits for a views::Widget to receive a Tab key.
+class TabKeyWaiter : public ui::EventHandler {
+ public:
+  explicit TabKeyWaiter(views::Widget* widget)
+      : widget_(widget),
+        received_tab_(false) {
+    widget_->GetNativeView()->AddPreTargetHandler(this);
+  }
+
+  virtual ~TabKeyWaiter() {
+    widget_->GetNativeView()->RemovePreTargetHandler(this);
+  }
+
+  void WaitForTab() {
+    if (received_tab_)
+      return;
+    base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
+    base::MessageLoopForUI::ScopedNestableTaskAllower allow_nested(loop);
+    base::RunLoop run_loop;
+    quit_closure_ = run_loop.QuitClosure();
+    run_loop.Run();
+  }
+
+ private:
+  // ui::EventHandler:
+  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE {
+    if (event->type() == ui::ET_KEY_RELEASED &&
+        event->key_code() == ui::VKEY_TAB) {
+      received_tab_ = true;
+      if (!quit_closure_.is_null())
+        quit_closure_.Run();
+    }
+  }
+
+  views::Widget* widget_;
+  bool received_tab_;
+  base::Closure quit_closure_;
+
+  DISALLOW_COPY_AND_ASSIGN(TabKeyWaiter);
+};
 
 void MoveMouseAndPress(const gfx::Point& screen_pos,
                        ui_controls::MouseButton button,
@@ -163,7 +300,7 @@ class BookmarkBarViewEventTestBase : public ViewEventTestBase {
 
     bb_view_pref_ = bb_view_->GetPreferredSize();
     bb_view_pref_.set_width(1000);
-    views::TextButton* button = GetBookmarkButton(6);
+    views::LabelButton* button = GetBookmarkButton(6);
     while (button->visible()) {
       bb_view_pref_.set_width(bb_view_pref_.width() - 25);
       bb_view_->SetBounds(0, 0, bb_view_pref_.width(), bb_view_pref_.height());
@@ -184,9 +321,11 @@ class BookmarkBarViewEventTestBase : public ViewEventTestBase {
     profile_.reset();
 
     // Run the message loop to ensure we delete allTasks and fully shut down.
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::MessageLoop::QuitClosure());
-    base::MessageLoop::current()->Run();
+    base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
+    base::MessageLoopForUI::ScopedNestableTaskAllower allow_nested(loop);
+    base::RunLoop run_loop;
+    loop->PostTask(FROM_HERE, run_loop.QuitClosure());
+    run_loop.Run();
 
     ViewEventTestBase::TearDown();
     BookmarkBarView::DisableAnimationsForTesting(false);
@@ -201,9 +340,9 @@ class BookmarkBarViewEventTestBase : public ViewEventTestBase {
     return bb_view_.get();
   }
 
-  virtual gfx::Size GetPreferredSize() OVERRIDE { return bb_view_pref_; }
+  virtual gfx::Size GetPreferredSize() const OVERRIDE { return bb_view_pref_; }
 
-  views::TextButton* GetBookmarkButton(int view_index) {
+  views::LabelButton* GetBookmarkButton(int view_index) {
     return bb_view_->GetBookmarkButton(view_index);
   }
 
@@ -262,7 +401,7 @@ class BookmarkBarViewTest1 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the first folder on the bookmark bar and press the
     // mouse.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest1::Step2));
@@ -276,7 +415,7 @@ class BookmarkBarViewTest1 : public BookmarkBarViewEventTestBase {
     ASSERT_TRUE(menu->GetSubmenu()->IsShowing());
 
     // Button should be depressed.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ASSERT_TRUE(button->state() == views::CustomButton::STATE_PRESSED);
 
     // Click on the 2nd menu item (A URL).
@@ -295,7 +434,7 @@ class BookmarkBarViewTest1 : public BookmarkBarViewEventTestBase {
                 model_->bookmark_bar_node()->GetChild(0)->GetChild(0)->url());
 
     // Make sure button is no longer pushed.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ASSERT_TRUE(button->state() == views::CustomButton::STATE_NORMAL);
 
     views::MenuItemView* menu = bb_view_->GetMenu();
@@ -313,7 +452,7 @@ class BookmarkBarViewTest2 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the first folder on the bookmark bar and press the
     // mouse.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest2::Step2));
@@ -351,7 +490,7 @@ class BookmarkBarViewTest2 : public BookmarkBarViewEventTestBase {
     ASSERT_TRUE(menu == NULL || !menu->GetSubmenu()->IsShowing());
 
     // Make sure button is no longer pushed.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ASSERT_TRUE(button->state() == views::CustomButton::STATE_NORMAL);
 
     Done();
@@ -481,7 +620,7 @@ class BookmarkBarViewTest4 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the first folder on the bookmark bar and press the
     // mouse.
-    views::TextButton* button = bb_view_->other_bookmarked_button();
+    views::LabelButton* button = bb_view_->other_bookmarked_button();
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest4::Step2));
@@ -537,7 +676,7 @@ class BookmarkBarViewTest5 : public BookmarkBarViewEventTestBase {
 
     // Move the mouse to the first folder on the bookmark bar and press the
     // mouse.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest5::Step2));
@@ -604,7 +743,7 @@ class BookmarkBarViewTest6 : public BookmarkBarViewEventTestBase {
  protected:
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Press the mouse button on the overflow button. Don't release it though.
-    views::TextButton* button = bb_view_->overflow_button();
+    views::LabelButton* button = bb_view_->overflow_button();
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN, CreateEventTask(this, &BookmarkBarViewTest6::Step2));
   }
@@ -645,7 +784,7 @@ class BookmarkBarViewTest7 : public BookmarkBarViewEventTestBase {
 
     // Move the mouse to the first folder on the bookmark bar and press the
     // mouse.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest7::Step2));
@@ -670,7 +809,7 @@ class BookmarkBarViewTest7 : public BookmarkBarViewEventTestBase {
 
   void Step3() {
     // Drag over other button.
-    views::TextButton* other_button =
+    views::LabelButton* other_button =
         bb_view_->other_bookmarked_button();
     gfx::Point loc(other_button->width() / 2, other_button->height() / 2);
     views::View::ConvertPointToScreen(other_button, &loc);
@@ -692,7 +831,7 @@ class BookmarkBarViewTest7 : public BookmarkBarViewEventTestBase {
 
   void Step3A() {
     // Drag over other button.
-    views::TextButton* other_button =
+    views::LabelButton* other_button =
         bb_view_->other_bookmarked_button();
     gfx::Point loc(other_button->width() / 2, other_button->height() / 2);
     views::View::ConvertPointToScreen(other_button, &loc);
@@ -745,7 +884,7 @@ class BookmarkBarViewTest8 : public BookmarkBarViewEventTestBase {
 
     // Move the mouse to the first folder on the bookmark bar and press the
     // mouse.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest8::Step2));
@@ -770,7 +909,7 @@ class BookmarkBarViewTest8 : public BookmarkBarViewEventTestBase {
 
   void Step3() {
     // Drag over other button.
-    views::TextButton* other_button =
+    views::LabelButton* other_button =
         bb_view_->other_bookmarked_button();
     gfx::Point loc(other_button->width() / 2, other_button->height() / 2);
     views::View::ConvertPointToScreen(other_button, &loc);
@@ -791,7 +930,7 @@ class BookmarkBarViewTest8 : public BookmarkBarViewEventTestBase {
 
   void Step3A() {
     // Drag over other button.
-    views::TextButton* other_button =
+    views::LabelButton* other_button =
         bb_view_->other_bookmarked_button();
     gfx::Point loc(other_button->width() / 2, other_button->height() / 2);
     views::View::ConvertPointToScreen(other_button, &loc);
@@ -806,7 +945,7 @@ class BookmarkBarViewTest8 : public BookmarkBarViewEventTestBase {
     ASSERT_TRUE(drop_menu->GetSubmenu()->IsShowing());
 
     // Now drag back over first menu.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     gfx::Point loc(button->width() / 2, button->height() / 2);
     views::View::ConvertPointToScreen(button, &loc);
     ui_controls::SendMouseMoveNotifyWhenDone(loc.x(), loc.y(),
@@ -852,7 +991,7 @@ class BookmarkBarViewTest9 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the first folder on the bookmark bar and press the
     // mouse.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest9::Step2));
@@ -921,7 +1060,7 @@ class BookmarkBarViewTest10 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the first folder on the bookmark bar and press the
     // mouse.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest10::Step2));
@@ -1035,7 +1174,7 @@ class BookmarkBarViewTest11 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the first folder on the bookmark bar and press the
     // mouse.
-    views::TextButton* button = bb_view_->other_bookmarked_button();
+    views::LabelButton* button = bb_view_->other_bookmarked_button();
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest11::Step2));
@@ -1110,7 +1249,7 @@ class BookmarkBarViewTest12 : public BookmarkBarViewEventTestBase {
  protected:
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Open up the other folder.
-    views::TextButton* button = bb_view_->other_bookmarked_button();
+    views::LabelButton* button = bb_view_->other_bookmarked_button();
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest12::Step2));
@@ -1147,43 +1286,47 @@ class BookmarkBarViewTest12 : public BookmarkBarViewEventTestBase {
     views::MenuItemView* child_menu =
         menu->GetSubmenu()->GetMenuItemAt(0);
     ASSERT_TRUE(child_menu != NULL);
-    ui_test_utils::MoveMouseToCenterAndPress(child_menu, ui_controls::LEFT,
-        ui_controls::DOWN | ui_controls::UP, base::Closure());
 
-    // Delay until we send tab, otherwise the message box doesn't appear
-    // correctly.
-    base::MessageLoop::current()->PostDelayedTask(
-        FROM_HERE,
-        CreateEventTask(this, &BookmarkBarViewTest12::Step4),
-        base::TimeDelta::FromSeconds(1));
+    // Click and wait until the dialog box appears.
+    scoped_ptr<DialogWaiter> dialog_waiter(new DialogWaiter());
+    ui_test_utils::MoveMouseToCenterAndPress(
+        child_menu,
+        ui_controls::LEFT,
+        ui_controls::DOWN | ui_controls::UP,
+        base::Bind(
+            &BookmarkBarViewTest12::Step4, this, base::Passed(&dialog_waiter)));
   }
 
-  void Step4() {
-    // Press tab to give focus to the cancel button.
+  void Step4(scoped_ptr<DialogWaiter> waiter) {
+    views::Widget* dialog = waiter->WaitForDialog();
+    waiter.reset();
+
+    // Press tab to give focus to the cancel button. Wait until the widget
+    // receives the tab key.
+    TabKeyWaiter tab_waiter(dialog);
     ui_controls::SendKeyPress(
         window_->GetNativeWindow(), ui::VKEY_TAB, false, false, false, false);
+    tab_waiter.WaitForTab();
 
     // For some reason return isn't processed correctly unless we delay.
     base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
-        CreateEventTask(this, &BookmarkBarViewTest12::Step5),
+        base::Bind(
+            &BookmarkBarViewTest12::Step5, this, base::Unretained(dialog)),
         base::TimeDelta::FromSeconds(1));
   }
 
-  void Step5() {
+  void Step5(views::Widget* dialog) {
+    DialogCloseWaiter waiter(dialog);
     // And press enter so that the cancel button is selected.
-    ui_controls::SendKeyPressNotifyWhenDone(
-        window_->GetNativeWindow(), ui::VKEY_RETURN, false, false, false, false,
-        CreateEventTask(this, &BookmarkBarViewTest12::Step6));
-  }
-
-  void Step6() {
-    // Do a delayed task to give the dialog time to exit.
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE, CreateEventTask(this, &BookmarkBarViewTest12::Step7));
-  }
-
-  void Step7() {
+    ui_controls::SendKeyPressNotifyWhenDone(window_->GetNativeWindow(),
+                                            ui::VKEY_RETURN,
+                                            false,
+                                            false,
+                                            false,
+                                            false,
+                                            base::Closure());
+    waiter.WaitForDialogClose();
     Done();
   }
 };
@@ -1209,7 +1352,7 @@ class BookmarkBarViewTest13 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the first folder on the bookmark bar and press the
     // mouse.
-    views::TextButton* button = bb_view_->other_bookmarked_button();
+    views::LabelButton* button = bb_view_->other_bookmarked_button();
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest13::Step2));
@@ -1293,7 +1436,7 @@ class BookmarkBarViewTest14 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the first folder on the bookmark bar and press the
     // right mouse button.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::RIGHT,
         ui_controls::DOWN | ui_controls::UP, base::Closure());
     // Step2 will be invoked by BookmarkContextMenuNotificationObserver.
@@ -1332,7 +1475,7 @@ class BookmarkBarViewTest15 : public BookmarkBarViewEventTestBase {
  protected:
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Show the other bookmarks.
-    views::TextButton* button = bb_view_->other_bookmarked_button();
+    views::LabelButton* button = bb_view_->other_bookmarked_button();
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest15::Step2));
@@ -1404,7 +1547,7 @@ class BookmarkBarViewTest16 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the first folder on the bookmark bar and press the
     // mouse.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest16::Step2));
@@ -1418,7 +1561,7 @@ class BookmarkBarViewTest16 : public BookmarkBarViewEventTestBase {
     ASSERT_TRUE(menu->GetSubmenu()->IsShowing());
 
     // Button should be depressed.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ASSERT_TRUE(button->state() == views::CustomButton::STATE_PRESSED);
 
     // Close the window.
@@ -1451,7 +1594,7 @@ class BookmarkBarViewTest17 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the other folder on the bookmark bar and press the
     // left mouse button.
-    views::TextButton* button = bb_view_->other_bookmarked_button();
+    views::LabelButton* button = bb_view_->other_bookmarked_button();
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest17::Step2));
@@ -1535,7 +1678,7 @@ class BookmarkBarViewTest18 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the other folder on the bookmark bar and press the
     // left mouse button.
-    views::TextButton* button = bb_view_->other_bookmarked_button();
+    views::LabelButton* button = bb_view_->other_bookmarked_button();
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest18::Step2));
@@ -1549,7 +1692,7 @@ class BookmarkBarViewTest18 : public BookmarkBarViewEventTestBase {
     ASSERT_TRUE(menu->GetSubmenu()->IsShowing());
 
     // Move the mouse to the first folder on the bookmark bar
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     gfx::Point button_center(button->width() / 2, button->height() / 2);
     views::View::ConvertPointToScreen(button, &button_center);
     ui_controls::SendMouseMoveNotifyWhenDone(
@@ -1592,7 +1735,7 @@ class BookmarkBarViewTest19 : public BookmarkBarViewEventTestBase {
   virtual void DoTestOnMessageLoop() OVERRIDE {
     // Move the mouse to the other folder on the bookmark bar and press the
     // left mouse button.
-    views::TextButton* button = bb_view_->other_bookmarked_button();
+    views::LabelButton* button = bb_view_->other_bookmarked_button();
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest19::Step2));
@@ -1621,7 +1764,7 @@ class BookmarkBarViewTest19 : public BookmarkBarViewEventTestBase {
     ASSERT_TRUE(menu->GetSubmenu()->IsShowing());
 
     // Move the mouse back to the other bookmark button.
-    views::TextButton* button = bb_view_->other_bookmarked_button();
+    views::LabelButton* button = bb_view_->other_bookmarked_button();
     gfx::Point button_center(button->width() / 2, button->height() / 2);
     views::View::ConvertPointToScreen(button, &button_center);
     ui_controls::SendMouseMoveNotifyWhenDone(
@@ -1691,7 +1834,7 @@ class BookmarkBarViewTest20 : public BookmarkBarViewEventTestBase {
 
     // Move the mouse to the first folder on the bookmark bar and press the
     // left mouse button.
-    views::TextButton* button = GetBookmarkButton(0);
+    views::LabelButton* button = GetBookmarkButton(0);
     ui_test_utils::MoveMouseToCenterAndPress(
         button, ui_controls::LEFT, ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest20::Step2));
@@ -1778,7 +1921,7 @@ class BookmarkBarViewTest21 : public BookmarkBarViewEventTestBase {
   // Move the mouse to the empty folder on the bookmark bar and press the
   // left mouse button.
   virtual void DoTestOnMessageLoop() OVERRIDE {
-    views::TextButton* button = GetBookmarkButton(5);
+    views::LabelButton* button = GetBookmarkButton(5);
     ui_test_utils::MoveMouseToCenterAndPress(button, ui_controls::LEFT,
         ui_controls::DOWN | ui_controls::UP,
         CreateEventTask(this, &BookmarkBarViewTest21::Step2));
@@ -1825,9 +1968,9 @@ class BookmarkBarViewTest21 : public BookmarkBarViewEventTestBase {
 
   // Confirm that the empty folder gets removed and menu doesn't show.
   void Step4() {
-    views::TextButton* button = GetBookmarkButton(5);
+    views::LabelButton* button = GetBookmarkButton(5);
     ASSERT_TRUE(button);
-    EXPECT_EQ(ASCIIToUTF16("d"), button->text());
+    EXPECT_EQ(ASCIIToUTF16("d"), button->GetText());
     EXPECT_TRUE(bb_view_->GetContextMenu() == NULL);
     EXPECT_TRUE(bb_view_->GetMenu() == NULL);
 

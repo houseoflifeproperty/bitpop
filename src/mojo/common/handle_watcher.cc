@@ -9,13 +9,13 @@
 #include "base/atomic_sequence_num.h"
 #include "base/bind.h"
 #include "base/lazy_instance.h"
+#include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
-#include "mojo/common/environment_data.h"
 #include "mojo/common/message_pump_mojo.h"
 #include "mojo/common/message_pump_mojo_handler.h"
 #include "mojo/common/time_helper.h"
@@ -28,8 +28,6 @@ typedef int WatcherID;
 namespace {
 
 const char kWatcherThreadName[] = "handle-watcher-thread";
-
-const char kWatcherThreadManagerKey[] = "watcher-thread-manager";
 
 // TODO(sky): this should be unnecessary once MessageLoop has been refactored.
 MessagePumpMojo* message_pump_mojo = NULL;
@@ -48,12 +46,12 @@ base::TimeTicks MojoDeadlineToTimeTicks(MojoDeadline deadline) {
 struct WatchData {
   WatchData()
       : id(0),
-        wait_flags(MOJO_WAIT_FLAG_NONE),
+        handle_signals(MOJO_HANDLE_SIGNAL_NONE),
         message_loop(NULL) {}
 
   WatcherID id;
   Handle handle;
-  MojoWaitFlags wait_flags;
+  MojoHandleSignals handle_signals;
   base::TimeTicks deadline;
   base::Callback<void(MojoResult)> callback;
   scoped_refptr<base::MessageLoopProxy> message_loop;
@@ -105,7 +103,7 @@ void WatcherBackend::StartWatching(const WatchData& data) {
 
   handle_to_data_[data.handle] = data;
   message_pump_mojo->AddHandler(this, data.handle,
-                                data.wait_flags,
+                                data.handle_signals,
                                 data.deadline);
 }
 
@@ -167,7 +165,7 @@ class WatcherThreadManager {
   // on the thread StartWatching() was invoked on.
   // This may be invoked on any thread.
   WatcherID StartWatching(const Handle& handle,
-                          MojoWaitFlags wait_flags,
+                          MojoHandleSignals handle_signals,
                           base::TimeTicks deadline,
                           const base::Callback<void(MojoResult)>& callback);
 
@@ -176,6 +174,7 @@ class WatcherThreadManager {
   void StopWatching(WatcherID watcher_id);
 
  private:
+  friend struct DefaultSingletonTraits<WatcherThreadManager>;
   WatcherThreadManager();
 
   base::Thread thread_;
@@ -187,41 +186,24 @@ class WatcherThreadManager {
   DISALLOW_COPY_AND_ASSIGN(WatcherThreadManager);
 };
 
-struct WatcherThreadManagerData : EnvironmentData::Data {
-  scoped_ptr<WatcherThreadManager> thread_manager;
-};
-
 WatcherThreadManager::~WatcherThreadManager() {
   thread_.Stop();
 }
 
-static base::LazyInstance<base::Lock> thread_lookup_lock =
-    LAZY_INSTANCE_INITIALIZER;
-
 WatcherThreadManager* WatcherThreadManager::GetInstance() {
-  base::AutoLock auto_lock(thread_lookup_lock.Get());
-  WatcherThreadManagerData* data = static_cast<WatcherThreadManagerData*>(
-      EnvironmentData::GetInstance()->GetData(kWatcherThreadManagerKey));
-  if (!data) {
-    data = new WatcherThreadManagerData;
-    data->thread_manager.reset(new WatcherThreadManager);
-    EnvironmentData::GetInstance()->SetData(
-        kWatcherThreadManagerKey,
-        scoped_ptr<EnvironmentData::Data>(data));
-  }
-  return data->thread_manager.get();
+  return Singleton<WatcherThreadManager>::get();
 }
 
 WatcherID WatcherThreadManager::StartWatching(
     const Handle& handle,
-    MojoWaitFlags wait_flags,
+    MojoHandleSignals handle_signals,
     base::TimeTicks deadline,
     const base::Callback<void(MojoResult)>& callback) {
   WatchData data;
   data.id = watcher_id_generator_.GetNext();
   data.handle = handle;
   data.callback = callback;
-  data.wait_flags = wait_flags;
+  data.handle_signals = handle_signals;
   data.deadline = deadline;
   data.message_loop = base::MessageLoopProxy::current();
   DCHECK_NE(static_cast<base::MessageLoopProxy*>(NULL),
@@ -253,29 +235,55 @@ WatcherThreadManager::WatcherThreadManager()
 
 }  // namespace
 
-// HandleWatcher::StartState ---------------------------------------------------
+// HandleWatcher::State --------------------------------------------------------
 
-// Contains the information passed to Start().
-struct HandleWatcher::StartState {
-  explicit StartState(HandleWatcher* watcher) : weak_factory(watcher) {
+// Represents the state of the HandleWatcher. Owns the user's callback and
+// monitors the current thread's MessageLoop to know when to force the callback
+// to run (with an error) even though the pipe hasn't been signaled yet.
+class HandleWatcher::State : public base::MessageLoop::DestructionObserver {
+ public:
+  State(HandleWatcher* watcher,
+        const Handle& handle,
+        MojoHandleSignals handle_signals,
+        MojoDeadline deadline,
+        const base::Callback<void(MojoResult)>& callback)
+      : watcher_(watcher),
+        callback_(callback),
+        weak_factory_(this) {
+    base::MessageLoop::current()->AddDestructionObserver(this);
+
+    watcher_id_ = WatcherThreadManager::GetInstance()->StartWatching(
+        handle,
+        handle_signals,
+        MojoDeadlineToTimeTicks(deadline),
+        base::Bind(&State::OnHandleReady, weak_factory_.GetWeakPtr()));
   }
 
-  ~StartState() {
+  virtual ~State() {
+    base::MessageLoop::current()->RemoveDestructionObserver(this);
+
+    WatcherThreadManager::GetInstance()->StopWatching(watcher_id_);
   }
 
-  // ID assigned by WatcherThreadManager.
-  WatcherID watcher_id;
+ private:
+  virtual void WillDestroyCurrentMessageLoop() OVERRIDE {
+    // The current thread is exiting. Simulate a watch error.
+    OnHandleReady(MOJO_RESULT_ABORTED);
+  }
 
-  // Callback to notify when done.
-  base::Callback<void(MojoResult)> callback;
+  void OnHandleReady(MojoResult result) {
+    base::Callback<void(MojoResult)> callback = callback_;
+    watcher_->Stop();  // Destroys |this|.
 
-  // When Start() is invoked a callback is passed to WatcherThreadManager
-  // using a WeakRef from |weak_refactory_|. The callback invokes
-  // OnHandleReady() (on the thread Start() is invoked from) which in turn
-  // notifies |callback_|. Doing this allows us to reset state when the handle
-  // is ready, and then notify the callback. Doing this also means Stop()
-  // cancels any pending callbacks that may be inflight.
-  base::WeakPtrFactory<HandleWatcher> weak_factory;
+    callback.Run(result);
+  }
+
+  HandleWatcher* watcher_;
+  WatcherID watcher_id_;
+  base::Callback<void(MojoResult)> callback_;
+
+  // Used to weakly bind |this| to the WatcherThreadManager.
+  base::WeakPtrFactory<State> weak_factory_;
 };
 
 // HandleWatcher ---------------------------------------------------------------
@@ -284,43 +292,20 @@ HandleWatcher::HandleWatcher() {
 }
 
 HandleWatcher::~HandleWatcher() {
-  Stop();
 }
 
 void HandleWatcher::Start(const Handle& handle,
-                          MojoWaitFlags wait_flags,
+                          MojoHandleSignals handle_signals,
                           MojoDeadline deadline,
                           const base::Callback<void(MojoResult)>& callback) {
   DCHECK(handle.is_valid());
-  DCHECK_NE(MOJO_WAIT_FLAG_NONE, wait_flags);
+  DCHECK_NE(MOJO_HANDLE_SIGNAL_NONE, handle_signals);
 
-  Stop();
-
-  start_state_.reset(new StartState(this));
-  start_state_->callback = callback;
-  start_state_->watcher_id =
-      WatcherThreadManager::GetInstance()->StartWatching(
-          handle,
-          wait_flags,
-          MojoDeadlineToTimeTicks(deadline),
-          base::Bind(&HandleWatcher::OnHandleReady,
-                     start_state_->weak_factory.GetWeakPtr()));
+  state_.reset(new State(this, handle, handle_signals, deadline, callback));
 }
 
 void HandleWatcher::Stop() {
-  if (!start_state_.get())
-    return;
-
-  scoped_ptr<StartState> old_state(start_state_.Pass());
-  WatcherThreadManager::GetInstance()->StopWatching(old_state->watcher_id);
-}
-
-void HandleWatcher::OnHandleReady(MojoResult result) {
-  DCHECK(start_state_.get());
-  scoped_ptr<StartState> old_state(start_state_.Pass());
-  old_state->callback.Run(result);
-
-  // NOTE: We may have been deleted during callback execution.
+  state_.reset();
 }
 
 }  // namespace common

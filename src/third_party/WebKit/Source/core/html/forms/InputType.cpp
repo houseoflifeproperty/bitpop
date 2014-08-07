@@ -28,10 +28,9 @@
 #include "config.h"
 #include "core/html/forms/InputType.h"
 
-#include "InputTypeNames.h"
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/InputTypeNames.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/events/KeyboardEvent.h"
@@ -66,6 +65,8 @@
 #include "core/html/forms/WeekInputType.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderTheme.h"
+#include "platform/ColorChooser.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/text/PlatformLocale.h"
 #include "platform/text/TextBreakIterator.h"
 
@@ -73,7 +74,6 @@ namespace WebCore {
 
 using blink::WebLocalizedString;
 using namespace HTMLNames;
-using namespace std;
 
 typedef PassRefPtrWillBeRawPtr<InputType> (*InputTypeFactoryFunction)(HTMLInputElement&);
 typedef HashMap<AtomicString, InputTypeFactoryFunction, CaseFoldingHash> InputTypeFactoryMap;
@@ -200,7 +200,7 @@ void InputType::setValueAsDate(double, ExceptionState& exceptionState) const
 
 double InputType::valueAsDouble() const
 {
-    return numeric_limits<double>::quiet_NaN();
+    return std::numeric_limits<double>::quiet_NaN();
 }
 
 void InputType::setValueAsDouble(double doubleValue, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState) const
@@ -603,10 +603,6 @@ String InputType::droppedFileSystemId()
     return String();
 }
 
-void InputType::copyNonAttributeProperties(const HTMLInputElement&)
-{
-}
-
 bool InputType::shouldRespectListAttribute()
 {
     return false;
@@ -764,7 +760,7 @@ bool InputType::hasLegalLinkAttribute(const QualifiedName&) const
 
 const QualifiedName& InputType::subResourceAttributeName() const
 {
-    return nullQName();
+    return QualifiedName::null();
 }
 
 bool InputType::supportsIndeterminateAppearance() const

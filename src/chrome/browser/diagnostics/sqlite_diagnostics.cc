@@ -4,6 +4,7 @@
 
 #include "chrome/browser/diagnostics/sqlite_diagnostics.h"
 
+#include "base/base_paths.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -23,7 +24,6 @@
 #include "sql/statement.h"
 #include "third_party/sqlite/sqlite3.h"
 #include "webkit/browser/database/database_tracker.h"
-#include "webkit/common/appcache/appcache_interfaces.h"
 
 namespace diagnostics {
 
@@ -200,15 +200,6 @@ class SqliteIntegrityTest : public DiagnosticsTest {
 
 }  // namespace
 
-DiagnosticsTest* MakeSqliteAppCacheDbTest() {
-  base::FilePath appcache_dir(content::kAppCacheDirname);
-  base::FilePath appcache_db =
-      appcache_dir.Append(appcache::kAppCacheDatabaseName);
-  return new SqliteIntegrityTest(SqliteIntegrityTest::NO_FLAGS_SET,
-                                 DIAGNOSTICS_SQLITE_INTEGRITY_APP_CACHE_TEST,
-                                 appcache_db);
-}
-
 DiagnosticsTest* MakeSqliteArchivedHistoryDbTest() {
   return new SqliteIntegrityTest(
       SqliteIntegrityTest::NO_FLAGS_SET,
@@ -240,14 +231,16 @@ DiagnosticsTest* MakeSqliteHistoryDbTest() {
 
 #if defined(OS_CHROMEOS)
 DiagnosticsTest* MakeSqliteNssCertDbTest() {
-  base::FilePath home_dir = base::GetHomeDir();
+  base::FilePath home_dir;
+  PathService::Get(base::DIR_HOME, &home_dir);
   return new SqliteIntegrityTest(SqliteIntegrityTest::REMOVE_IF_CORRUPT,
                                  DIAGNOSTICS_SQLITE_INTEGRITY_NSS_CERT_TEST,
                                  home_dir.Append(chromeos::kNssCertDbPath));
 }
 
 DiagnosticsTest* MakeSqliteNssKeyDbTest() {
-  base::FilePath home_dir = base::GetHomeDir();
+  base::FilePath home_dir;
+  PathService::Get(base::DIR_HOME, &home_dir);
   return new SqliteIntegrityTest(SqliteIntegrityTest::REMOVE_IF_CORRUPT,
                                  DIAGNOSTICS_SQLITE_INTEGRITY_NSS_KEY_TEST,
                                  home_dir.Append(chromeos::kNssKeyDbPath));

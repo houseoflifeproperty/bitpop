@@ -9,10 +9,20 @@
 #ifndef CHROME_COMMON_PROFILE_MANAGEMENT_SWITCHES_H_
 #define CHROME_COMMON_PROFILE_MANAGEMENT_SWITCHES_H_
 
+namespace base {
+class CommandLine;
+}
+
 namespace switches {
+
+// Checks whether account consistency is enabled.
+bool IsEnableAccountConsistency();
 
 // Enables the web-based sign in flow on Chrome desktop.
 bool IsEnableWebBasedSignin();
+
+// Whether the chrome.identity API should be multi-account.
+bool IsExtensionsMultiAccount();
 
 // Checks whether the flag for fast user switching is enabled.
 bool IsFastUserSwitching();
@@ -30,6 +40,10 @@ bool IsNewProfileManagement();
 
 // Whether the new profile management preview has been enabled.
 bool IsNewProfileManagementPreviewEnabled();
+
+// Called in tests to force enabling different modes.
+void EnableNewProfileManagementForTesting(base::CommandLine* command_line);
+void EnableAccountConsistencyForTesting(base::CommandLine* command_line);
 
 }  // namespace switches
 

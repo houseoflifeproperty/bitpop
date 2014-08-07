@@ -41,10 +41,6 @@ class MockTranslateDriver : public TranslateDriver {
     return false;
   }
 
-  virtual LanguageState& GetLanguageState() OVERRIDE {
-    return language_state_;
-  }
-
   virtual void TranslatePage(const std::string& translate_script,
                              const std::string& source_lang,
                              const std::string& target_lang) OVERRIDE {}
@@ -68,6 +64,8 @@ class MockTranslateDriver : public TranslateDriver {
   virtual bool HasCurrentPage() OVERRIDE { return true; }
 
   virtual int GetCurrentPageID() OVERRIDE { return 0; }
+
+  virtual void OpenUrlInNewTab(const GURL& url) OVERRIDE {}
 
   bool on_is_page_translated_changed_called() const {
     return on_is_page_translated_changed_called_;

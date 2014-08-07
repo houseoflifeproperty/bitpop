@@ -237,7 +237,8 @@ extern "C" {
 
 // The following are available on Neon platforms:
 #if !defined(LIBYUV_DISABLE_NEON) && \
-    (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
+    (defined(__ARM_NEON__) || defined(LIBYUV_NEON)) && \
+    !defined(__native_client__)
 #define HAS_ABGRTOUVROW_NEON
 #define HAS_ABGRTOYROW_NEON
 #define HAS_ARGB1555TOARGBROW_NEON
@@ -312,7 +313,6 @@ extern "C" {
 #define HAS_ARGBADDROW_NEON
 #define HAS_ARGBATTENUATEROW_NEON
 #define HAS_ARGBBLENDROW_NEON
-#define HAS_ARGBCOLORMATRIXROW_NEON
 #define HAS_ARGBGRAYROW_NEON
 #define HAS_ARGBMIRRORROW_NEON
 #define HAS_ARGBMULTIPLYROW_NEON
@@ -326,6 +326,8 @@ extern "C" {
 #define HAS_SOBELXROW_NEON
 #define HAS_SOBELYROW_NEON
 #define HAS_INTERPOLATEROW_NEON
+// TODO(fbarchard): Investigate neon unittest failure.
+// #define HAS_ARGBCOLORMATRIXROW_NEON
 #endif
 
 // The following are available on Mips platforms:
@@ -771,6 +773,8 @@ void CopyRow_X86(const uint8* src, uint8* dst, int count);
 void CopyRow_NEON(const uint8* src, uint8* dst, int count);
 void CopyRow_MIPS(const uint8* src, uint8* dst, int count);
 void CopyRow_C(const uint8* src, uint8* dst, int count);
+
+void CopyRow_16_C(const uint16* src, uint16* dst, int count);
 
 void ARGBCopyAlphaRow_C(const uint8* src_argb, uint8* dst_argb, int width);
 void ARGBCopyAlphaRow_SSE2(const uint8* src_argb, uint8* dst_argb, int width);
@@ -1457,6 +1461,9 @@ void HalfRow_AVX2(const uint8* src_uv, int src_uv_stride,
 void HalfRow_NEON(const uint8* src_uv, int src_uv_stride,
                   uint8* dst_uv, int pix);
 
+void HalfRow_16_C(const uint16* src_uv, int src_uv_stride,
+                  uint16* dst_uv, int pix);
+
 void ARGBToBayerRow_C(const uint8* src_argb, uint8* dst_bayer,
                       uint32 selector, int pix);
 void ARGBToBayerRow_SSSE3(const uint8* src_argb, uint8* dst_bayer,
@@ -1637,6 +1644,10 @@ void InterpolateRow_Any_AVX2(uint8* dst_ptr, const uint8* src_ptr,
 void InterpolateRows_Any_MIPS_DSPR2(uint8* dst_ptr, const uint8* src_ptr,
                                     ptrdiff_t src_stride_ptr, int width,
                                     int source_y_fraction);
+
+void InterpolateRow_16_C(uint16* dst_ptr, const uint16* src_ptr,
+                         ptrdiff_t src_stride_ptr,
+                         int width, int source_y_fraction);
 
 // Sobel images.
 void SobelXRow_C(const uint8* src_y0, const uint8* src_y1, const uint8* src_y2,

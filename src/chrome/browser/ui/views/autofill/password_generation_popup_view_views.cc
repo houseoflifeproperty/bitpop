@@ -18,11 +18,6 @@ namespace autofill {
 
 namespace {
 
-const SkColor kExplanatoryTextBackground = SkColorSetRGB(0xF5, 0xF5, 0xF5);
-const SkColor kExplanatoryTextColor = SkColorSetRGB(0x66, 0x66, 0x66);
-const SkColor kDividerColor = SkColorSetRGB(0xE9, 0xE9, 0xE9);
-const SkColor kLinkColor = SkColorSetRGB(0x55, 0x59, 0xFE);
-
 // The amount of whitespace that is present when there is no padding. Used
 // to get the proper spacing in the help section.
 const int kHelpVerticalOffset = 3;
@@ -39,7 +34,8 @@ class PasswordRow : public views::View {
         PasswordGenerationPopupView::kPasswordVerticalInset, 0));
     views::BoxLayout* box_layout = new views::BoxLayout(
         views::BoxLayout::kHorizontal, horizontal_border, 0, 0);
-    box_layout->set_spread_blank_space(true);
+    box_layout->set_main_axis_alignment(
+        views::BoxLayout::MAIN_AXIS_ALIGNMENT_FILL);
     SetLayoutManager(box_layout);
 
     password_label_ = new views::Label(password, font_list);
@@ -48,13 +44,15 @@ class PasswordRow : public views::View {
 
     suggestion_label_ = new views::Label(suggestion, font_list);
     suggestion_label_->SetHorizontalAlignment(gfx::ALIGN_RIGHT);
-    suggestion_label_->SetEnabledColor(kExplanatoryTextColor);
+    suggestion_label_->SetEnabledColor(
+        PasswordGenerationPopupView::kExplanatoryTextColor);
     AddChildView(suggestion_label_);
   }
   virtual ~PasswordRow() {}
 
-  virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE {
-    // Have parent do event handling.
+  // views::View:
+  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE {
+    // Send events to the parent view for handling.
     return false;
   }
 
@@ -90,7 +88,8 @@ PasswordGenerationPopupViewViews::PasswordGenerationPopupViewViews(
 
   help_label_->SetBoundsRect(controller_->help_bounds());
   help_label_->set_background(
-      views::Background::CreateSolidBackground(kExplanatoryTextBackground));
+      views::Background::CreateSolidBackground(
+          kExplanatoryTextBackgroundColor));
   help_label_->SetBorder(views::Border::CreateEmptyBorder(
       controller_->kHelpVerticalPadding - kHelpVerticalOffset,
       controller_->kHorizontalPadding,

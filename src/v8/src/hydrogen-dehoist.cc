@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "hydrogen-dehoist.h"
+#include "src/hydrogen-dehoist.h"
 
 namespace v8 {
 namespace internal {
@@ -30,12 +30,13 @@ static void DehoistArrayIndex(ArrayInstructionInterface* array_operation) {
   int32_t value = constant->Integer32Value() * sign;
   // We limit offset values to 30 bits because we want to avoid the risk of
   // overflows when the offset is added to the object header size.
-  if (value >= 1 << array_operation->MaxIndexOffsetBits() || value < 0) return;
+  if (value >= 1 << array_operation->MaxBaseOffsetBits() || value < 0) return;
   array_operation->SetKey(subexpression);
   if (binary_operation->HasNoUses()) {
     binary_operation->DeleteAndReplaceWith(NULL);
   }
-  array_operation->SetIndexOffset(static_cast<uint32_t>(value));
+  value <<= ElementsKindToShiftSize(array_operation->elements_kind());
+  array_operation->IncreaseBaseOffset(static_cast<uint32_t>(value));
   array_operation->SetDehoisted(true);
 }
 

@@ -112,6 +112,7 @@ static void parititonAllocBaseInit(PartitionRootBase* root)
     spinLockUnlock(&PartitionRootBase::gInitializedLock);
 
     root->initialized = true;
+    root->totalSizeOfCommittedPages = 0;
     root->totalSizeOfSuperPages = 0;
     root->nextSuperPage = 0;
     root->nextPartitionPage = 0;
@@ -308,12 +309,26 @@ static NEVER_INLINE void partitionFull()
     IMMEDIATE_CRASH();
 }
 
-static ALWAYS_INLINE void* partitionAllocPartitionPages(PartitionRootBase* root, size_t numPartitionPages)
+static ALWAYS_INLINE void partitionDecommitSystemPages(PartitionRootBase* root, void* addr, size_t len)
+{
+    decommitSystemPages(addr, len);
+    ASSERT(root->totalSizeOfCommittedPages > len);
+    root->totalSizeOfCommittedPages -= len;
+}
+
+static ALWAYS_INLINE void partitionRecommitSystemPages(PartitionRootBase* root, void* addr, size_t len)
+{
+    recommitSystemPages(addr, len);
+    root->totalSizeOfCommittedPages += len;
+}
+
+static ALWAYS_INLINE void* partitionAllocPartitionPages(PartitionRootBase* root, int flags, size_t numPartitionPages)
 {
     ASSERT(!(reinterpret_cast<uintptr_t>(root->nextPartitionPage) % kPartitionPageSize));
     ASSERT(!(reinterpret_cast<uintptr_t>(root->nextPartitionPageEnd) % kPartitionPageSize));
     RELEASE_ASSERT(numPartitionPages <= kNumPartitionPagesPerSuperPage);
     size_t totalSize = kPartitionPageSize * numPartitionPages;
+    root->totalSizeOfCommittedPages += totalSize;
     size_t numPartitionPagesLeft = (root->nextPartitionPageEnd - root->nextPartitionPage) >> kPartitionPageShift;
     if (LIKELY(numPartitionPagesLeft >= numPartitionPages)) {
         // In this case, we can still hand out pages from the current super page
@@ -329,9 +344,11 @@ static ALWAYS_INLINE void* partitionAllocPartitionPages(PartitionRootBase* root,
         partitionFull();
     char* requestedAddress = root->nextSuperPage;
     char* superPage = reinterpret_cast<char*>(allocPages(requestedAddress, kSuperPageSize, kSuperPageSize));
-    // TODO: handle allocation failure here with PartitionAllocReturnNull.
-    if (!superPage)
+    if (UNLIKELY(!superPage)) {
+        if (flags & PartitionAllocReturnNull)
+            return 0;
         partitionOutOfMemory();
+    }
     root->nextSuperPage = superPage + kSuperPageSize;
     char* ret = superPage + kPartitionPageSize;
     root->nextPartitionPage = ret + totalSize;
@@ -380,11 +397,11 @@ static ALWAYS_INLINE void* partitionAllocPartitionPages(PartitionRootBase* root,
     return ret;
 }
 
-static ALWAYS_INLINE void partitionUnusePage(PartitionPage* page)
+static ALWAYS_INLINE void partitionUnusePage(PartitionRootBase* root, PartitionPage* page)
 {
     ASSERT(page->bucket->numSystemPagesPerSlotSpan);
     void* addr = partitionPageToPointer(page);
-    decommitSystemPages(addr, page->bucket->numSystemPagesPerSlotSpan * kSystemPageSize);
+    partitionDecommitSystemPages(root, addr, page->bucket->numSystemPagesPerSlotSpan * kSystemPageSize);
 }
 
 static ALWAYS_INLINE size_t partitionBucketSlots(const PartitionBucket* bucket)
@@ -672,10 +689,16 @@ void* partitionAllocSlowPath(PartitionRootBase* root, int flags, size_t size, Pa
         ASSERT(!newPage->numUnprovisionedSlots);
         ASSERT(newPage->freeCacheIndex == -1);
         bucket->freePagesHead = newPage->nextPage;
+        void* addr = partitionPageToPointer(newPage);
+        partitionRecommitSystemPages(root, addr, newPage->bucket->numSystemPagesPerSlotSpan * kSystemPageSize);
     } else {
         // Third. If we get here, we need a brand new page.
         size_t numPartitionPages = partitionBucketPartitionPages(bucket);
-        void* rawNewPage = partitionAllocPartitionPages(root, numPartitionPages);
+        void* rawNewPage = partitionAllocPartitionPages(root, flags, numPartitionPages);
+        if (UNLIKELY(!rawNewPage)) {
+            ASSERT(returnNull);
+            return 0;
+        }
         // Skip the alignment check because it depends on page->bucket, which is not yet set.
         newPage = partitionPointerToPageNoAlignmentCheck(rawNewPage);
     }
@@ -685,11 +708,11 @@ void* partitionAllocSlowPath(PartitionRootBase* root, int flags, size_t size, Pa
     return partitionPageAllocAndFillFreelist(newPage);
 }
 
-static ALWAYS_INLINE void partitionFreePage(PartitionPage* page)
+static ALWAYS_INLINE void partitionFreePage(PartitionRootBase* root, PartitionPage* page)
 {
     ASSERT(page->freelistHead);
     ASSERT(!page->numAllocatedSlots);
-    partitionUnusePage(page);
+    partitionUnusePage(root, page);
     // We actually leave the freed page in the active list. We'll sweep it on
     // to the free page list when we next walk the active page list. Pulling
     // this trick enables us to use a singly-linked page list for all cases,
@@ -702,6 +725,7 @@ static ALWAYS_INLINE void partitionFreePage(PartitionPage* page)
 static ALWAYS_INLINE void partitionRegisterEmptyPage(PartitionPage* page)
 {
     PartitionRootBase* root = partitionPageToRoot(page);
+
     // If the page is already registered as empty, give it another life.
     if (page->freeCacheIndex != -1) {
         ASSERT(page->freeCacheIndex >= 0);
@@ -721,7 +745,7 @@ static ALWAYS_INLINE void partitionRegisterEmptyPage(PartitionPage* page)
         ASSERT(pageToFree == root->globalEmptyPageRing[pageToFree->freeCacheIndex]);
         if (!pageToFree->numAllocatedSlots && pageToFree->freelistHead) {
             // The page is still empty, and not freed, so _really_ free it.
-            partitionFreePage(pageToFree);
+            partitionFreePage(root, pageToFree);
         }
         pageToFree->freeCacheIndex = -1;
     }
@@ -749,7 +773,7 @@ void partitionFreeSlowPath(PartitionPage* page)
             partitionDirectUnmap(page);
             return;
         }
-        // If it's the current page, attempt to change it. We'd prefer to leave
+        // If it's the current active page, attempt to change it. We'd prefer to leave
         // the page empty as a gentle force towards defragmentation.
         if (LIKELY(page == bucket->activePagesHead) && page->nextPage) {
             if (partitionSetNewActivePage(page->nextPage)) {
@@ -819,13 +843,14 @@ bool partitionReallocDirectMappedInPlace(PartitionRootGeneric* root, PartitionPa
 
         // Shrink by decommitting unneeded pages and making them inaccessible.
         size_t decommitSize = currentSize - newSize;
-        decommitSystemPages(charPtr + newSize, decommitSize);
+        partitionDecommitSystemPages(root, charPtr + newSize, decommitSize);
         setSystemPagesInaccessible(charPtr + newSize, decommitSize);
     } else if (newSize <= partitionPageToDirectMapExtent(page)->mapSize) {
         // Grow within the actually allocated memory. Just need to make the
         // pages accessible again.
         size_t recommitSize = newSize - currentSize;
         setSystemPagesAccessible(charPtr + currentSize, recommitSize);
+        partitionRecommitSystemPages(root, charPtr + currentSize, recommitSize);
 
 #ifndef NDEBUG
         memset(charPtr + currentSize, kUninitializedByte, recommitSize);
@@ -926,8 +951,12 @@ void partitionDumpStats(const PartitionRoot& root)
         size_t numFreeableBytes = 0;
         size_t numActivePages = 0;
         const PartitionPage* page = bucket.activePagesHead;
-        do {
-            if (page != &PartitionRootGeneric::gSeedPage) {
+        while (page) {
+            ASSERT(page != &PartitionRootGeneric::gSeedPage);
+            // A page may be on the active list but freed and not yet swept.
+            if (!page->freelistHead && !page->numUnprovisionedSlots && !page->numAllocatedSlots) {
+                ++numFreePages;
+            } else {
                 ++numActivePages;
                 numActiveBytes += (page->numAllocatedSlots * bucketSlotSize);
                 size_t pageBytesResident = (bucketNumSlots - page->numUnprovisionedSlots) * bucketSlotSize;
@@ -938,7 +967,7 @@ void partitionDumpStats(const PartitionRoot& root)
                     numFreeableBytes += pageBytesResident;
             }
             page = page->nextPage;
-        } while (page != bucket.activePagesHead);
+        }
         totalLive += numActiveBytes;
         totalResident += numResidentBytes;
         totalFreeable += numFreeableBytes;

@@ -29,15 +29,15 @@
  */
 
 #include "config.h"
-#include "V8InjectedScriptHost.h"
+#include "bindings/core/v8/V8InjectedScriptHost.h"
 
-#include "V8Database.h"
-#include "V8EventTarget.h"
-#include "V8HTMLAllCollection.h"
-#include "V8HTMLCollection.h"
-#include "V8Node.h"
-#include "V8NodeList.h"
-#include "V8Storage.h"
+#include "bindings/core/v8/V8EventTarget.h"
+#include "bindings/core/v8/V8HTMLAllCollection.h"
+#include "bindings/core/v8/V8HTMLCollection.h"
+#include "bindings/core/v8/V8Node.h"
+#include "bindings/core/v8/V8NodeList.h"
+#include "bindings/core/v8/V8Storage.h"
+#include "bindings/modules/v8/V8Database.h"
 #include "bindings/v8/BindingSecurity.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptDebugServer.h"
@@ -55,7 +55,7 @@
 #include "bindings/v8/custom/V8Uint8ArrayCustom.h"
 #include "bindings/v8/custom/V8Uint8ClampedArrayCustom.h"
 #include "core/events/EventTarget.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorDOMAgent.h"
@@ -64,9 +64,9 @@
 
 namespace WebCore {
 
-Node* InjectedScriptHost::scriptValueAsNode(ScriptValue value)
+Node* InjectedScriptHost::scriptValueAsNode(ScriptState* scriptState, ScriptValue value)
 {
-    v8::HandleScope scope(value.isolate());
+    ScriptState::Scope scope(scriptState);
     if (!value.isObject() || value.isNull())
         return 0;
     return V8Node::toNative(v8::Handle<v8::Object>::Cast(value.v8Value()));
@@ -74,15 +74,12 @@ Node* InjectedScriptHost::scriptValueAsNode(ScriptValue value)
 
 ScriptValue InjectedScriptHost::nodeAsScriptValue(ScriptState* scriptState, Node* node)
 {
+    ScriptState::Scope scope(scriptState);
     v8::Isolate* isolate = scriptState->isolate();
-    v8::HandleScope scope(isolate);
-    v8::Local<v8::Context> context = scriptState->context();
-    v8::Context::Scope contextScope(context);
-
-    ExceptionState exceptionState(ExceptionState::ExecutionContext, "nodeAsScriptValue", "InjectedScriptHost", v8::Handle<v8::Object>(), isolate);
+    ExceptionState exceptionState(ExceptionState::ExecutionContext, "nodeAsScriptValue", "InjectedScriptHost", scriptState->context()->Global(), isolate);
     if (!BindingSecurity::shouldAllowAccessToNode(isolate, node, exceptionState))
         return ScriptValue(scriptState, v8::Null(isolate));
-    return ScriptValue(scriptState, toV8(node, v8::Handle<v8::Object>(), isolate));
+    return ScriptValue(scriptState, toV8(node, scriptState->context()->Global(), isolate));
 }
 
 void V8InjectedScriptHost::inspectedObjectMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
@@ -283,7 +280,7 @@ void V8InjectedScriptHost::getEventListenersMethodCustom(const v8::FunctionCallb
     v8::Local<v8::Value> value = info[0];
     EventTarget* target = V8EventTarget::toNativeWithTypeCheck(info.GetIsolate(), value);
 
-    // We need to handle a DOMWindow specially, because a DOMWindow wrapper exists on a prototype chain.
+    // We need to handle a LocalDOMWindow specially, because a LocalDOMWindow wrapper exists on a prototype chain.
     if (!target)
         target = toDOMWindow(value, info.GetIsolate());
 
@@ -312,9 +309,9 @@ void V8InjectedScriptHost::inspectMethodCustom(const v8::FunctionCallbackInfo<v8
         return;
 
     InjectedScriptHost* host = V8InjectedScriptHost::toNative(info.Holder());
-    ScriptValue object(info[0], info.GetIsolate());
-    ScriptValue hints(info[1], info.GetIsolate());
     ScriptState* scriptState = ScriptState::current(info.GetIsolate());
+    ScriptValue object(scriptState, info[0]);
+    ScriptValue hints(scriptState, info[1]);
     host->inspectImpl(object.toJSONValue(scriptState), hints.toJSONValue(scriptState));
 }
 
@@ -332,7 +329,7 @@ void V8InjectedScriptHost::evaluateMethodCustom(const v8::FunctionCallbackInfo<v
         return;
     }
 
-    ASSERT(!isolate->GetCurrentContext().IsEmpty());
+    ASSERT(isolate->InContext());
     v8::TryCatch tryCatch;
     v8::Handle<v8::Value> result = V8ScriptRunner::compileAndRunInternalScript(expression, info.GetIsolate());
     if (tryCatch.HasCaught()) {

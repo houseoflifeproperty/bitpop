@@ -49,8 +49,8 @@
   if (device == nil)
     return;
   for (CrAVCaptureDeviceFormat* format in device.formats) {
-    // MediaSubType comes is a CMPixelFormatType but can be used as
-    // CVPixelFormatType as well according to CMFormatDescription.h
+    // MediaSubType is a CMPixelFormatType but can be used as CVPixelFormatType
+    // as well according to CMFormatDescription.h
     media::VideoPixelFormat pixelFormat = media::PIXEL_FORMAT_UNKNOWN;
     switch (CoreMediaGlue::CMFormatDescriptionGetMediaSubType(
                 [format formatDescription])) {
@@ -129,7 +129,8 @@
   // Look for input device with requested name.
   captureDevice_ = [AVCaptureDeviceGlue deviceWithUniqueID:deviceId];
   if (!captureDevice_) {
-    DLOG(ERROR) << "Could not open video capture device.";
+    [self sendErrorString:[NSString
+        stringWithUTF8String:"Could not open video capture device."]];
     return NO;
   }
 
@@ -140,8 +141,10 @@
                       error:&error];
   if (!captureDeviceInput_) {
     captureDevice_ = nil;
-    DLOG(ERROR) << "Could not create video capture input: "
-                << [[error localizedDescription] UTF8String];
+    [self sendErrorString:[NSString
+        stringWithFormat:@"Could not create video capture input (%@): %@",
+                         [error localizedDescription],
+                         [error localizedFailureReason]]];
     return NO;
   }
   [captureSession_ addInput:captureDeviceInput_];
@@ -152,7 +155,8 @@
       [[AVFoundationGlue::AVCaptureVideoDataOutputClass() alloc] init]);
   if (!captureVideoDataOutput_) {
     [captureSession_ removeInput:captureDeviceInput_];
-    DLOG(ERROR) << "Could not create video data output.";
+    [self sendErrorString:[NSString
+        stringWithUTF8String:"Could not create video data output."]];
     return NO;
   }
   [captureVideoDataOutput_
@@ -194,17 +198,20 @@
       connectionWithMediaType:AVFoundationGlue::AVMediaTypeVideo()];
   // Check selector existence, related to bugs http://crbug.com/327532 and
   // http://crbug.com/328096.
+  // CMTimeMake accepts integer argumenst but |frameRate| is float, round it.
   if ([captureConnection
            respondsToSelector:@selector(isVideoMinFrameDurationSupported)] &&
       [captureConnection isVideoMinFrameDurationSupported]) {
     [captureConnection setVideoMinFrameDuration:
-        CoreMediaGlue::CMTimeMake(1, frameRate)];
+        CoreMediaGlue::CMTimeMake(media::kFrameRatePrecision,
+                                  frameRate * media::kFrameRatePrecision)];
   }
   if ([captureConnection
            respondsToSelector:@selector(isVideoMaxFrameDurationSupported)] &&
       [captureConnection isVideoMaxFrameDurationSupported]) {
     [captureConnection setVideoMaxFrameDuration:
-        CoreMediaGlue::CMTimeMake(1, frameRate)];
+        CoreMediaGlue::CMTimeMake(media::kFrameRatePrecision,
+                                  frameRate * media::kFrameRatePrecision)];
   }
   return YES;
 }
@@ -270,14 +277,17 @@
 - (void)onVideoError:(NSNotification*)errorNotification {
   NSError* error = base::mac::ObjCCast<NSError>([[errorNotification userInfo]
       objectForKey:AVFoundationGlue::AVCaptureSessionErrorKey()]);
-  NSString* str_error =
-      [NSString stringWithFormat:@"%@: %@",
-                                 [error localizedDescription],
-                                 [error localizedFailureReason]];
+  [self sendErrorString:[NSString
+      stringWithFormat:@"%@: %@",
+                       [error localizedDescription],
+                       [error localizedFailureReason]]];
+}
 
+- (void)sendErrorString:(NSString*)error {
+  DLOG(ERROR) << [error UTF8String];
   base::AutoLock lock(lock_);
   if (frameReceiver_)
-    frameReceiver_->ReceiveError([str_error UTF8String]);
+    frameReceiver_->ReceiveError([error UTF8String]);
 }
 
 @end

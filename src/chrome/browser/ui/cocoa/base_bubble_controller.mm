@@ -8,6 +8,7 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsobject.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/strings/string_util.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
@@ -25,6 +26,7 @@
 - (void)recordAnchorOffset;
 - (void)parentWindowDidResize:(NSNotification*)notification;
 - (void)parentWindowWillClose:(NSNotification*)notification;
+- (void)parentWindowWillBecomeFullScreen:(NSNotification*)notification;
 - (void)closeCleanup;
 @end
 
@@ -119,6 +121,11 @@
              selector:@selector(parentWindowWillClose:)
                  name:NSWindowWillCloseNotification
                object:parentWindow_];
+  // Watch for the full screen event, if so, close the bubble
+  [center addObserver:self
+             selector:@selector(parentWindowWillBecomeFullScreen:)
+                 name:NSWindowWillEnterFullScreenNotification
+               object:parentWindow_];
   // Watch for parent window's resizing, to ensure this one is always
   // anchored correctly.
   [center addObserver:self
@@ -141,7 +148,7 @@
   anchorOffset_.y -= anchor_.y;
 }
 
-- (NSBox*)separatorWithFrame:(NSRect)frame {
+- (NSBox*)horizontalSeparatorWithFrame:(NSRect)frame {
   frame.size.height = 1.0;
   base::scoped_nsobject<NSBox> spacer([[NSBox alloc] initWithFrame:frame]);
   [spacer setBoxType:NSBoxSeparator];
@@ -150,7 +157,19 @@
   return [spacer.release() autorelease];
 }
 
+- (NSBox*)verticalSeparatorWithFrame:(NSRect)frame {
+  frame.size.width = 1.0;
+  base::scoped_nsobject<NSBox> spacer([[NSBox alloc] initWithFrame:frame]);
+  [spacer setBoxType:NSBoxSeparator];
+  [spacer setBorderType:NSLineBorder];
+  [spacer setAlphaValue:0.2];
+  return [spacer.release() autorelease];
+}
+
 - (void)parentWindowDidResize:(NSNotification*)notification {
+  if (!parentWindow_)
+    return;
+
   DCHECK_EQ(parentWindow_, [notification object]);
   NSPoint newOrigin = NSMakePoint(NSMinX([parentWindow_ frame]),
                                   NSMaxY([parentWindow_ frame]));
@@ -160,6 +179,11 @@
 }
 
 - (void)parentWindowWillClose:(NSNotification*)notification {
+  parentWindow_ = nil;
+  [self close];
+}
+
+- (void)parentWindowWillBecomeFullScreen:(NSNotification*)notification {
   parentWindow_ = nil;
   [self close];
 }
@@ -241,14 +265,16 @@
   // The eventTap_ catches clicks within the application that are outside the
   // window.
   eventTap_ = [NSEvent
-      addLocalMonitorForEventsMatchingMask:NSLeftMouseDownMask
+      addLocalMonitorForEventsMatchingMask:NSLeftMouseDownMask |
+                                           NSRightMouseDownMask
       handler:^NSEvent* (NSEvent* event) {
           if (event.window != window) {
-            // Call via the runloop because this block is called in the
-            // middle of event dispatch.
-            [self performSelector:@selector(windowDidResignKey:)
-                       withObject:note
-                       afterDelay:0];
+            // Do it right now, because if this event is right mouse event,
+            // it may pop up a menu. windowDidResignKey: will not run until
+            // the menu is closed.
+            if ([self respondsToSelector:@selector(windowDidResignKey:)]) {
+              [self windowDidResignKey:note];
+            }
           }
           return event;
       }];

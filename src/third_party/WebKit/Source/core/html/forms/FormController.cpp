@@ -334,7 +334,9 @@ static inline String formSignature(const HTMLFormElement& form)
     KURL actionURL = form.getURLAttribute(actionAttr);
     // Remove the query part because it might contain volatile parameters such
     // as a session key.
-    actionURL.setQuery(String());
+    if (!actionURL.isEmpty())
+        actionURL.setQuery(String());
+
     StringBuilder builder;
     if (!actionURL.isEmpty())
         builder.append(actionURL.string());
@@ -413,7 +415,7 @@ Vector<String> DocumentState::toStateVector()
     OwnPtrWillBeRawPtr<FormKeyGenerator> keyGenerator = FormKeyGenerator::create();
     OwnPtr<SavedFormStateMap> stateMap = adoptPtr(new SavedFormStateMap);
     for (FormElementListHashSet::const_iterator it = m_formControls.begin(); it != m_formControls.end(); ++it) {
-        HTMLFormControlElementWithState* control = (*it).get();
+        HTMLFormControlElementWithState* control = it->get();
         ASSERT(control->inDocument());
         if (!control->shouldSaveAndRestoreFormControlState())
             continue;
@@ -449,6 +451,7 @@ FormController::~FormController()
 
 void FormController::trace(Visitor* visitor)
 {
+    visitor->trace(m_radioButtonGroupScope);
     visitor->trace(m_documentState);
     visitor->trace(m_formKeyGenerator);
 }

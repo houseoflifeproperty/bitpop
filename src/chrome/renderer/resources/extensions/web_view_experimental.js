@@ -10,7 +10,7 @@
 
 var ContextMenusSchema =
     requireNative('schema_registry').GetSchema('contextMenus');
-var CreateEvent = require('webView').CreateEvent;
+var CreateEvent = require('webViewEvents').CreateEvent;
 var EventBindings = require('event_bindings');
 var MessagingNatives = requireNative('messaging_natives');
 var WebView = require('webView').WebView;
@@ -121,21 +121,6 @@ WebViewContextMenusImpl.prototype.update = function() {
 var WebViewContextMenus = utils.expose(
     'WebViewContextMenus', WebViewContextMenusImpl,
     { functions: ['create', 'remove', 'removeAll', 'update'] });
-
-/**
- * @private
- */
-WebViewInternal.prototype.maybeAttachWebRequestEventToObject =
-    function(obj, eventName, webRequestEvent) {
-  Object.defineProperty(
-      obj,
-      eventName,
-      {
-        get: webRequestEvent,
-        enumerable: true
-      }
-  );
-};
 
 /** @private */
 WebViewInternal.prototype.maybeHandleContextMenu = function(e, webViewEvent) {
@@ -260,7 +245,7 @@ WebViewInternal.maybeRegisterExperimentalAPIs = function(proto) {
 };
 
 /** @private */
-WebViewInternal.prototype.setupExperimentalContextMenus_ = function() {
+WebViewInternal.prototype.setupExperimentalContextMenus = function() {
   var self = this;
   var createContextMenus = function() {
     return function() {

@@ -57,73 +57,37 @@ scoped_ptr<NetworkUIData> GetUIDataFromProperties(
 void SetUIData(const NetworkUIData& ui_data,
                base::DictionaryValue* shill_dictionary);
 
-// Copy configuration properties required by Shill to identify a network.
-// Only WiFi, VPN, Ethernet and EthernetEAP are supported. WiMax and Cellular
-// are not supported. Returns true only if all required properties could be
-// copied.
+// Copy configuration properties required by Shill to identify a network in the
+// format that Shill expects on writes.
+// Only WiFi, VPN, Ethernet and EthernetEAP are supported. Wimax and Cellular
+// are not supported.
+// If |properties_read_from_shill| is true, it is assumed that
+// |service_properties| has the format that Shill exposes on reads, as opposed
+// to property dictionaries which are sent to Shill. Returns true only if all
+// required properties could be copied.
 bool CopyIdentifyingProperties(const base::DictionaryValue& service_properties,
+                               const bool properties_read_from_shill,
                                base::DictionaryValue* dest);
 
-// Compares the identifying configuration properties of |properties_a| and
-// |properties_b|, returns true if they are identical. See also
-// CopyIdentifyingProperties. Only WiFi, VPN, Ethernet and EthernetEAP are
-// supported. WiMax and Cellular are not supported.
-bool DoIdentifyingPropertiesMatch(const base::DictionaryValue& properties_a,
-                                  const base::DictionaryValue& properties_b);
+// Compares the identifying configuration properties of |new_properties| and
+// |old_properties|, returns true if they are identical. |new_properties| must
+// have the form that Shill expects on writes. |old_properties| must have the
+// form that Shill exposes on reads. See also CopyIdentifyingProperties. Only
+// WiFi, VPN, Ethernet and EthernetEAP are supported. Wimax and Cellular are not
+// supported.
+bool DoIdentifyingPropertiesMatch(
+    const base::DictionaryValue& new_properties,
+    const base::DictionaryValue& old_properties);
 
 // Returns true if |key| corresponds to a passphrase property.
 bool IsPassphraseKey(const std::string& key);
 
+// Parses |value| (which should be a Dictionary). Returns true and sets
+// |home_provider_id| if |value| was succesfully parsed.
+bool GetHomeProviderFromProperty(const base::Value& value,
+                                 std::string* home_provider_id);
+
 }  // namespace shill_property_util
-
-class CHROMEOS_EXPORT NetworkTypePattern {
- public:
-  // Matches any network.
-  static NetworkTypePattern Default();
-
-  // Matches wireless (WiFi, cellular, etc.) networks
-  static NetworkTypePattern Wireless();
-
-  // Matches cellular or wimax networks.
-  static NetworkTypePattern Mobile();
-
-  // Matches non virtual networks.
-  static NetworkTypePattern NonVirtual();
-
-  // Matches ethernet networks (with or without EAP).
-  static NetworkTypePattern Ethernet();
-
-  static NetworkTypePattern WiFi();
-  static NetworkTypePattern Cellular();
-  static NetworkTypePattern VPN();
-  static NetworkTypePattern Wimax();
-
-  // Matches only networks of exactly the type |shill_network_type|, which must
-  // be one of the types defined in service_constants.h (e.g.
-  // shill::kTypeWifi).
-  // Note: Shill distinguishes Ethernet without EAP from Ethernet with EAP. If
-  // unsure, better use one of the matchers above.
-  static NetworkTypePattern Primitive(const std::string& shill_network_type);
-
-  bool Equals(const NetworkTypePattern& other) const;
-  bool MatchesType(const std::string& shill_network_type) const;
-
-  // Returns true if this pattern matches at least one network type that
-  // |other_pattern| matches (according to MatchesType). Thus MatchesPattern is
-  // symmetric and reflexive but not transitive.
-  // See the unit test for examples.
-  bool MatchesPattern(const NetworkTypePattern& other_pattern) const;
-
-  std::string ToDebugString() const;
-
- private:
-  explicit NetworkTypePattern(int pattern);
-
-  // The bit array of the matching network types.
-  int pattern_;
-
-  DISALLOW_ASSIGN(NetworkTypePattern);
-};
 
 }  // namespace chromeos
 

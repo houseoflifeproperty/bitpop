@@ -8,10 +8,7 @@
 #include "base/logging.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/render_messages.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/browser/render_view_host.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
@@ -31,12 +28,10 @@ SearchProviderInstallStateMessageFilter(
 }
 
 bool SearchProviderInstallStateMessageFilter::OnMessageReceived(
-    const IPC::Message& message,
-    bool* message_was_ok) {
+    const IPC::Message& message) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(SearchProviderInstallStateMessageFilter, message,
-                           *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(SearchProviderInstallStateMessageFilter, message)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(
         ChromeViewHostMsg_GetSearchProviderInstallState,
         OnGetSearchProviderInstallState)

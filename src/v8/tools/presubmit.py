@@ -59,7 +59,9 @@ build/printf_format
 build/storage_class
 legal/copyright
 readability/boost
+readability/braces
 readability/casting
+readability/check
 readability/constructors
 readability/fn_size
 readability/function
@@ -78,6 +80,7 @@ runtime/mutex
 runtime/nonconf
 runtime/printf
 runtime/printf_format
+runtime/references
 runtime/rtti
 runtime/sizeof
 runtime/string
@@ -88,6 +91,7 @@ whitespace/braces
 whitespace/comma
 whitespace/comments
 whitespace/ending_newline
+whitespace/indent
 whitespace/labels
 whitespace/line_length
 whitespace/newline
@@ -196,7 +200,7 @@ class SourceFileProcessor(object):
 
   def IgnoreDir(self, name):
     return (name.startswith('.') or
-            name in ('data', 'kraken', 'octane', 'sunspider'))
+            name in ('buildtools', 'data', 'kraken', 'octane', 'sunspider'))
 
   def IgnoreFile(self, name):
     return name.startswith('.')
@@ -301,7 +305,8 @@ class SourceProcessor(SourceFileProcessor):
           if self.IgnoreDir(dir_part):
             break
         else:
-          if self.IsRelevant(file) and not self.IgnoreFile(file):
+          if (self.IsRelevant(file) and os.path.exists(file)
+              and not self.IgnoreFile(file)):
             result.append(join(path, file))
       if output.wait() == 0:
         return result
@@ -411,6 +416,13 @@ class SourceProcessor(SourceFileProcessor):
     return success
 
 
+def CheckGeneratedRuntimeTests(workspace):
+  code = subprocess.call(
+      [sys.executable, join(workspace, "tools", "generate-runtime-tests.py"),
+       "check"])
+  return code == 0
+
+
 def GetOptions():
   result = optparse.OptionParser()
   result.add_option('--no-lint', help="Do not run cpplint", default=False,
@@ -429,6 +441,7 @@ def Main():
   print "Running copyright header, trailing whitespaces and " \
         "two empty lines between declarations check..."
   success = SourceProcessor().Run(workspace) and success
+  success = CheckGeneratedRuntimeTests(workspace) and success
   if success:
     return 0
   else:

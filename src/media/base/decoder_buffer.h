@@ -66,17 +66,16 @@ class MEDIA_EXPORT DecoderBuffer
     return timestamp_;
   }
 
-  void set_timestamp(const base::TimeDelta& timestamp) {
-    DCHECK(!end_of_stream());
-    timestamp_ = timestamp;
-  }
+  // TODO(dalecurtis): This should be renamed at some point, but to avoid a yak
+  // shave keep as a virtual with hacker_style() for now.
+  virtual void set_timestamp(base::TimeDelta timestamp);
 
   base::TimeDelta duration() const {
     DCHECK(!end_of_stream());
     return duration_;
   }
 
-  void set_duration(const base::TimeDelta& duration) {
+  void set_duration(base::TimeDelta duration) {
     DCHECK(!end_of_stream());
     duration_ = duration;
   }
@@ -108,7 +107,9 @@ class MEDIA_EXPORT DecoderBuffer
 
   // A discard window indicates the amount of data which should be discard from
   // this buffer after decoding.  The first value is the amount of the front and
-  // the second the amount off the back.
+  // the second the amount off the back.  A value of kInfiniteDuration() for the
+  // first value indicates the entire buffer should be discarded; the second
+  // value must be base::TimeDelta() in this case.
   typedef std::pair<base::TimeDelta, base::TimeDelta> DiscardPadding;
   const DiscardPadding& discard_padding() const {
     DCHECK(!end_of_stream());

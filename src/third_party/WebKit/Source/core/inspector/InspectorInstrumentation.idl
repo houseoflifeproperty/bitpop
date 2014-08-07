@@ -113,7 +113,7 @@ interface InspectorInstrumentation {
     void activeStyleSheetsUpdated([Keep] Document*);
 
     [Console, PageRuntime]
-    void frameWindowDiscarded(LocalFrame*, DOMWindow* domWindow);
+    void frameWindowDiscarded(LocalFrame*, LocalDOMWindow* domWindow);
 
     [CSS, Inline=FastReturn]
     void mediaQueryResultChanged(Document*);
@@ -155,19 +155,25 @@ interface InspectorInstrumentation {
     void didDispatchXHRReadyStateChangeEvent(const InspectorInstrumentationCookie&);
 
     [Timeline, Inline=FastReturn]
-    InspectorInstrumentationCookie willDispatchEvent([Keep] Document*, const Event&, DOMWindow*, Node*, const EventPath&);
+    InspectorInstrumentationCookie willDispatchEvent([Keep] Document*, const Event&, LocalDOMWindow*, Node*, const EventPath&);
 
     [Timeline, Inline=FastReturn]
     void didDispatchEvent(const InspectorInstrumentationCookie&);
 
+    [Debugger, Inline=FastReturn]
+    void didEnqueueEvent([Keep] EventTarget*, Event*);
+
+    [Debugger, Inline=FastReturn]
+    void didRemoveEvent([Keep] EventTarget*, Event*);
+
     [Debugger, DOMDebugger, Inline=FastReturn]
-    InspectorInstrumentationCookie willHandleEvent([Keep] EventTarget*, const AtomicString& eventType, EventListener* listener, bool useCapture);
+    InspectorInstrumentationCookie willHandleEvent([Keep] EventTarget*, Event*, EventListener* listener, bool useCapture);
 
     [Debugger, Inline=FastReturn]
     void didHandleEvent(const InspectorInstrumentationCookie&);
 
     [Timeline, Inline=FastReturn]
-    InspectorInstrumentationCookie willDispatchEventOnWindow(LocalFrame*, const Event&, DOMWindow*);
+    InspectorInstrumentationCookie willDispatchEventOnWindow(LocalFrame*, const Event&, LocalDOMWindow*);
 
     [Timeline, Inline=FastReturn]
     void didDispatchEventOnWindow(const InspectorInstrumentationCookie&);
@@ -443,17 +449,17 @@ interface InspectorConsoleInstrumentation {
     // FIXME: Convert to ScriptArguments to match non-worker context.
     // Use the same implementation as above as a similar method dispatched on Page.
     [Console]
-    void addMessageToConsole(ExecutionContext* context, MessageSource source, MessageType type, MessageLevel level, const String& message, PassRefPtr<ScriptCallStack> callStack, unsigned long requestIdentifier = 0);
+    void addMessageToConsole(ExecutionContext* context, MessageSource source, MessageType type, MessageLevel level, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack, unsigned long requestIdentifier = 0);
 
     // Use the same implementation as above as a similar method dispatched on Page.
     [Console]
     void addMessageToConsole(ExecutionContext* context, MessageSource source, MessageType type, MessageLevel level, const String& message, const String& scriptId, unsigned lineNumber, unsigned columnNumber, ScriptState* state, unsigned long requestIdentifier = 0);
 
     [Console, Debugger]
-    void addMessageToConsole(ExecutionContext* context, MessageSource source, MessageType type, MessageLevel level, const String& message, ScriptState* state, PassRefPtr<ScriptArguments> arguments, unsigned long requestIdentifier = 0);
+    void addMessageToConsole(ExecutionContext* context, MessageSource source, MessageType type, MessageLevel level, const String& message, ScriptState* state, PassRefPtrWillBeRawPtr<ScriptArguments> arguments, unsigned long requestIdentifier = 0);
 
     [Console]
-    void consoleCount(ExecutionContext* context, ScriptState* state, PassRefPtr<ScriptArguments> arguments);
+    void consoleCount(ExecutionContext* context, ScriptState* state, PassRefPtrWillBeRawPtr<ScriptArguments> arguments);
 
     [Timeline, Console]
     void consoleTime([Keep] ExecutionContext* context, const String& title);
@@ -474,7 +480,7 @@ interface InspectorConsoleInstrumentation {
     void consoleProfile(ExecutionContext* context, const String& title, ScriptState* state);
 
     [Profiler, Inline=FastReturn]
-    void consoleProfileEnd(ExecutionContext* context, const String& title);
+    void consoleProfileEnd(ExecutionContext* context, const String& title, ScriptState* state);
 }
 
 interface InspectorOverrides {
@@ -488,39 +494,11 @@ interface InspectorOverrides {
 
 interface InspectorCanvasInstrumentation {
 
-#include "bindings/v8/ScriptObject.h"
+#include "bindings/v8/ScriptValue.h"
 
     [Canvas]
-    ScriptObject wrapCanvas2DRenderingContextForInstrumentation(Document*, const ScriptObject&);
+    ScriptValue wrapCanvas2DRenderingContextForInstrumentation(Document*, const ScriptValue&);
 
     [Canvas]
-    ScriptObject wrapWebGLRenderingContextForInstrumentation(Document*, const ScriptObject&);
-}
-
-
-interface InspectorPromiseInstrumentation {
-
-#include "bindings/v8/custom/V8PromiseCustom.h"
-#include "bindings/v8/ScriptObject.h"
-
-    [Debugger, Inline=FastReturn]
-    void didPostPromiseTask([Keep] ExecutionContext*, ExecutionContextTask*, bool isResolved);
-
-    [Debugger, Inline=FastReturn]
-    InspectorInstrumentationCookie willPerformPromiseTask([Keep] ExecutionContext*, ExecutionContextTask*);
-
-    [Debugger, Inline=FastReturn]
-    void didPerformPromiseTask(const InspectorInstrumentationCookie&);
-
-    [Debugger, Inline=FastReturn]
-    bool isPromiseTrackerEnabled(ExecutionContext*);
-
-    [Debugger, Inline=FastReturn]
-    void didCreatePromise(ExecutionContext*, const ScriptObject& promise);
-
-    [Debugger, Inline=FastReturn]
-    void didUpdatePromiseParent(ExecutionContext*, const ScriptObject& promise, const ScriptObject& parentPromise);
-
-    [Debugger, Inline=FastReturn]
-    void didUpdatePromiseState(ExecutionContext*, const ScriptObject& promise, V8PromiseCustom::PromiseState, const ScriptValue& result);
+    ScriptValue wrapWebGLRenderingContextForInstrumentation(Document*, const ScriptValue&);
 }

@@ -22,7 +22,7 @@
 #include "config.h"
 #include "core/svg/SVGDocumentExtensions.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
@@ -39,7 +39,7 @@ namespace WebCore {
 SVGDocumentExtensions::SVGDocumentExtensions(Document* document)
     : m_document(document)
     , m_resourcesCache(adoptPtr(new SVGResourcesCache))
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     , m_inRelativeLengthSVGRootsInvalidation(false)
 #endif
 {
@@ -95,10 +95,10 @@ void SVGDocumentExtensions::serviceOnAnimationFrame(Document& document, double m
 
 void SVGDocumentExtensions::serviceAnimations(double monotonicAnimationStartTime)
 {
-    Vector<RefPtr<SVGSVGElement> > timeContainers;
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> > timeContainers;
     timeContainers.appendRange(m_timeContainers.begin(), m_timeContainers.end());
-    Vector<RefPtr<SVGSVGElement> >::iterator end = timeContainers.end();
-    for (Vector<RefPtr<SVGSVGElement> >::iterator itr = timeContainers.begin(); itr != end; ++itr)
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator end = timeContainers.end();
+    for (WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator itr = timeContainers.begin(); itr != end; ++itr)
         (*itr)->timeContainer()->serviceAnimations(monotonicAnimationStartTime);
 }
 
@@ -108,28 +108,31 @@ void SVGDocumentExtensions::startAnimations()
     // starting animations for a document will do this "latching"
     // FIXME: We hold a ref pointers to prevent a shadow tree from getting removed out from underneath us.
     // In the future we should refactor the use-element to avoid this. See https://webkit.org/b/53704
-    Vector<RefPtr<SVGSVGElement> > timeContainers;
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> > timeContainers;
     timeContainers.appendRange(m_timeContainers.begin(), m_timeContainers.end());
-    Vector<RefPtr<SVGSVGElement> >::iterator end = timeContainers.end();
-    for (Vector<RefPtr<SVGSVGElement> >::iterator itr = timeContainers.begin(); itr != end; ++itr)
-        (*itr)->timeContainer()->begin();
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator end = timeContainers.end();
+    for (WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator itr = timeContainers.begin(); itr != end; ++itr) {
+        SMILTimeContainer* timeContainer = (*itr)->timeContainer();
+        if (!timeContainer->isStarted())
+            timeContainer->begin();
+    }
 }
 
 void SVGDocumentExtensions::pauseAnimations()
 {
-    HashSet<SVGSVGElement*>::iterator end = m_timeContainers.end();
-    for (HashSet<SVGSVGElement*>::iterator itr = m_timeContainers.begin(); itr != end; ++itr)
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> >::iterator end = m_timeContainers.end();
+    for (WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> >::iterator itr = m_timeContainers.begin(); itr != end; ++itr)
         (*itr)->pauseAnimations();
 }
 
 void SVGDocumentExtensions::dispatchSVGLoadEventToOutermostSVGElements()
 {
-    Vector<RefPtr<SVGSVGElement> > timeContainers;
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> > timeContainers;
     timeContainers.appendRange(m_timeContainers.begin(), m_timeContainers.end());
 
-    Vector<RefPtr<SVGSVGElement> >::iterator end = timeContainers.end();
-    for (Vector<RefPtr<SVGSVGElement> >::iterator it = timeContainers.begin(); it != end; ++it) {
-        SVGSVGElement* outerSVG = (*it).get();
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator end = timeContainers.end();
+    for (WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> >::iterator it = timeContainers.begin(); it != end; ++it) {
+        SVGSVGElement* outerSVG = it->get();
         if (!outerSVG->isOutermostSVGSVGElement())
             continue;
 
@@ -304,10 +307,10 @@ Element* SVGDocumentExtensions::removeElementFromPendingResourcesForRemoval(cons
     return element;
 }
 
-HashSet<SVGElement*>* SVGDocumentExtensions::setOfElementsReferencingTarget(SVGElement* referencedElement) const
+SVGElementSet* SVGDocumentExtensions::setOfElementsReferencingTarget(SVGElement* referencedElement) const
 {
     ASSERT(referencedElement);
-    const HashMap<SVGElement*, OwnPtr<HashSet<SVGElement*> > >::const_iterator it = m_elementDependencies.find(referencedElement);
+    const ElementDependenciesMap::const_iterator it = m_elementDependencies.find(referencedElement);
     if (it == m_elementDependencies.end())
         return 0;
     return it->value.get();
@@ -318,25 +321,25 @@ void SVGDocumentExtensions::addElementReferencingTarget(SVGElement* referencingE
     ASSERT(referencingElement);
     ASSERT(referencedElement);
 
-    if (HashSet<SVGElement*>* elements = m_elementDependencies.get(referencedElement)) {
+    if (SVGElementSet* elements = m_elementDependencies.get(referencedElement)) {
         elements->add(referencingElement);
         return;
     }
 
-    OwnPtr<HashSet<SVGElement*> > elements = adoptPtr(new HashSet<SVGElement*>);
+    OwnPtrWillBeRawPtr<SVGElementSet> elements = adoptPtrWillBeNoop(new SVGElementSet);
     elements->add(referencingElement);
     m_elementDependencies.set(referencedElement, elements.release());
 }
 
 void SVGDocumentExtensions::removeAllTargetReferencesForElement(SVGElement* referencingElement)
 {
-    Vector<SVGElement*> toBeRemoved;
+    WillBeHeapVector<RawPtrWillBeMember<SVGElement> > toBeRemoved;
 
-    HashMap<SVGElement*, OwnPtr<HashSet<SVGElement*> > >::iterator end = m_elementDependencies.end();
-    for (HashMap<SVGElement*, OwnPtr<HashSet<SVGElement*> > >::iterator it = m_elementDependencies.begin(); it != end; ++it) {
+    ElementDependenciesMap::iterator end = m_elementDependencies.end();
+    for (ElementDependenciesMap::iterator it = m_elementDependencies.begin(); it != end; ++it) {
         SVGElement* referencedElement = it->key;
-        HashSet<SVGElement*>* referencingElements = it->value.get();
-        HashSet<SVGElement*>::iterator setIt = referencingElements->find(referencingElement);
+        SVGElementSet* referencingElements = it->value.get();
+        SVGElementSet::iterator setIt = referencingElements->find(referencingElement);
         if (setIt == referencingElements->end())
             continue;
 
@@ -351,22 +354,20 @@ void SVGDocumentExtensions::removeAllTargetReferencesForElement(SVGElement* refe
 void SVGDocumentExtensions::rebuildAllElementReferencesForTarget(SVGElement* referencedElement)
 {
     ASSERT(referencedElement);
-    HashMap<SVGElement*, OwnPtr<HashSet<SVGElement*> > >::iterator it = m_elementDependencies.find(referencedElement);
+    ElementDependenciesMap::iterator it = m_elementDependencies.find(referencedElement);
     if (it == m_elementDependencies.end())
         return;
     ASSERT(it->key == referencedElement);
-    Vector<SVGElement*> toBeNotified;
 
-    HashSet<SVGElement*>* referencingElements = it->value.get();
-    HashSet<SVGElement*>::iterator setEnd = referencingElements->end();
-    for (HashSet<SVGElement*>::iterator setIt = referencingElements->begin(); setIt != setEnd; ++setIt)
-        toBeNotified.append(*setIt);
+    WillBeHeapVector<RawPtrWillBeMember<SVGElement> > toBeNotified;
+    SVGElementSet* referencingElements = it->value.get();
+    copyToVector(*referencingElements, toBeNotified);
 
     // Force rebuilding the referencingElement so it knows about this change.
-    Vector<SVGElement*>::iterator vectorEnd = toBeNotified.end();
-    for (Vector<SVGElement*>::iterator vectorIt = toBeNotified.begin(); vectorIt != vectorEnd; ++vectorIt) {
+    WillBeHeapVector<RawPtrWillBeMember<SVGElement> >::iterator vectorEnd = toBeNotified.end();
+    for (WillBeHeapVector<RawPtrWillBeMember<SVGElement> >::iterator vectorIt = toBeNotified.begin(); vectorIt != vectorEnd; ++vectorIt) {
         // Before rebuilding referencingElement ensure it was not removed from under us.
-        if (HashSet<SVGElement*>* referencingElements = setOfElementsReferencingTarget(referencedElement)) {
+        if (SVGElementSet* referencingElements = setOfElementsReferencingTarget(referencedElement)) {
             if (referencingElements->contains(*vectorIt))
                 (*vectorIt)->svgAttributeChanged(XLinkNames::hrefAttr);
         }
@@ -376,7 +377,7 @@ void SVGDocumentExtensions::rebuildAllElementReferencesForTarget(SVGElement* ref
 void SVGDocumentExtensions::removeAllElementReferencesForTarget(SVGElement* referencedElement)
 {
     ASSERT(referencedElement);
-    HashMap<SVGElement*, OwnPtr<HashSet<SVGElement*> > >::iterator it = m_elementDependencies.find(referencedElement);
+    ElementDependenciesMap::iterator it = m_elementDependencies.find(referencedElement);
     if (it == m_elementDependencies.end())
         return;
     ASSERT(it->key == referencedElement);
@@ -404,12 +405,12 @@ bool SVGDocumentExtensions::isSVGRootWithRelativeLengthDescendents(SVGSVGElement
 void SVGDocumentExtensions::invalidateSVGRootsWithRelativeLengthDescendents(SubtreeLayoutScope* scope)
 {
     ASSERT(!m_inRelativeLengthSVGRootsInvalidation);
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     TemporaryChange<bool> inRelativeLengthSVGRootsChange(m_inRelativeLengthSVGRootsInvalidation, true);
 #endif
 
-    HashSet<SVGSVGElement*>::iterator end = m_relativeLengthSVGRoots.end();
-    for (HashSet<SVGSVGElement*>::iterator it = m_relativeLengthSVGRoots.begin(); it != end; ++it)
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> >::iterator end = m_relativeLengthSVGRoots.end();
+    for (WillBeHeapHashSet<RawPtrWillBeMember<SVGSVGElement> >::iterator it = m_relativeLengthSVGRoots.begin(); it != end; ++it)
         (*it)->invalidateRelativeLengthClients(scope);
 }
 
@@ -425,7 +426,7 @@ void SVGDocumentExtensions::unregisterSVGFontFaceElement(SVGFontFaceElement* ele
     m_svgFontFaceElements.remove(element);
 }
 
-void SVGDocumentExtensions::registerPendingSVGFontFaceElementsForRemoval(PassRefPtr<SVGFontFaceElement> font)
+void SVGDocumentExtensions::registerPendingSVGFontFaceElementsForRemoval(PassRefPtrWillBeRawPtr<SVGFontFaceElement> font)
 {
     m_pendingSVGFontFaceElementsForRemoval.add(font);
 }
@@ -473,6 +474,18 @@ SVGSVGElement* SVGDocumentExtensions::rootElement() const
 {
     ASSERT(m_document);
     return rootElement(*m_document);
+}
+
+void SVGDocumentExtensions::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+    visitor->trace(m_timeContainers);
+#if ENABLE(SVG_FONTS)
+    visitor->trace(m_svgFontFaceElements);
+    visitor->trace(m_pendingSVGFontFaceElementsForRemoval);
+#endif
+    visitor->trace(m_elementDependencies);
+    visitor->trace(m_relativeLengthSVGRoots);
 }
 
 }

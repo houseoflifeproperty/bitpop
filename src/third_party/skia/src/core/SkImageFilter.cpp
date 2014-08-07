@@ -122,6 +122,16 @@ bool SkImageFilter::filterBounds(const SkIRect& src, const SkMatrix& ctm,
                                  SkIRect* dst) const {
     SkASSERT(&src);
     SkASSERT(dst);
+    if (SkImageFilter::GetExternalCache()) {
+        /*
+         *  When the external cache is active, do not intersect the saveLayer
+         *  bounds with the clip bounds. This is so that the cached result
+         *  is always the full size of the primitive's bounds,
+         *  regardless of the clip active on first draw.
+         */
+        *dst = SkIRect::MakeLargest();
+        return true;
+    }
     return this->onFilterBounds(src, ctm, dst);
 }
 
@@ -309,7 +319,7 @@ SkImageFilter::Cache* SkImageFilter::GetExternalCache() {
 
 void SkImageFilter::WrapTexture(GrTexture* texture, int width, int height, SkBitmap* result) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
-    result->setConfig(info);
+    result->setInfo(info);
     result->setPixelRef(SkNEW_ARGS(SkGrPixelRef, (info, texture)))->unref();
 }
 
@@ -326,8 +336,8 @@ bool SkImageFilter::getInputResultGPU(SkImageFilter::Proxy* proxy,
     } else {
         if (this->filterImage(proxy, src, ctx, result, offset)) {
             if (!result->getTexture()) {
-                SkImageInfo info;
-                if (!result->asImageInfo(&info)) {
+                const SkImageInfo info = result->info();
+                if (kUnknown_SkColorType == info.colorType()) {
                     return false;
                 }
                 GrTexture* resultTex = GrLockAndRefCachedBitmapTexture(context, *result, NULL);

@@ -3,9 +3,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Enable 'with' statements in Python 2.5
-from __future__ import with_statement
-
 import optparse
 import os.path
 import shutil
@@ -42,6 +39,7 @@ def GetHostPlatform():
   else:
     raise Exception('Can not determine the platform!')
 
+
 def SetDefaultContextAttributes(context):
   """
   Set default values for the attributes needed by the SCons function, so that
@@ -53,6 +51,7 @@ def SetDefaultContextAttributes(context):
   context['default_scons_mode'] = ['opt-host', 'nacl']
   context['default_scons_platform'] = ('x86-64' if platform == 'win'
                                        else 'x86-32')
+  context['android'] = False
   context['clang'] = False
   context['asan'] = False
   context['pnacl'] = False
@@ -60,6 +59,82 @@ def SetDefaultContextAttributes(context):
   context['use_breakpad_tools'] = False
   context['max_jobs'] = 8
   context['scons_args'] = []
+
+
+# Windows-specific environment manipulation
+def SetupWindowsEnvironment(context):
+  # Poke around looking for MSVC.  We should do something more principled in
+  # the future.
+
+  # The name of Program Files can differ, depending on the bittage of Windows.
+  program_files = r'c:\Program Files (x86)'
+  if not os.path.exists(program_files):
+    program_files = r'c:\Program Files'
+    if not os.path.exists(program_files):
+      raise Exception('Cannot find the Program Files directory!')
+
+  # The location of MSVC can differ depending on the version.
+  msvc_locs = [
+      ('Microsoft Visual Studio 12.0', 'VS120COMNTOOLS', '2013'),
+      ('Microsoft Visual Studio 10.0', 'VS100COMNTOOLS', '2010'),
+      ('Microsoft Visual Studio 9.0', 'VS90COMNTOOLS', '2008'),
+      ('Microsoft Visual Studio 8.0', 'VS80COMNTOOLS', '2005'),
+  ]
+
+  for dirname, comntools_var, gyp_msvs_version in msvc_locs:
+    msvc = os.path.join(program_files, dirname)
+    context.SetEnv('GYP_MSVS_VERSION', gyp_msvs_version)
+    if os.path.exists(msvc):
+      break
+  else:
+    # The break statement did not execute.
+    raise Exception('Cannot find MSVC!')
+
+  # Put MSVC in the path.
+  vc = os.path.join(msvc, 'VC')
+  comntools = os.path.join(msvc, 'Common7', 'Tools')
+  perf = os.path.join(msvc, 'Team Tools', 'Performance Tools')
+  context.SetEnv('PATH', os.pathsep.join([
+      context.GetEnv('PATH'),
+      vc,
+      comntools,
+      perf]))
+
+  # SCons needs this variable to find vsvars.bat.
+  # The end slash is needed because the batch files expect it.
+  context.SetEnv(comntools_var, comntools + '\\')
+
+  # This environment variable will SCons to print debug info while it searches
+  # for MSVC.
+  context.SetEnv('SCONS_MSCOMMON_DEBUG', '-')
+
+  # Needed for finding devenv.
+  context['msvc'] = msvc
+
+  # The context on other systems has GYP_DEFINES set, set it for windows to be
+  # able to save and restore without KeyError.
+  context.SetEnv('GYP_DEFINES', '')
+
+
+def SetupGypDefines(context, extra_vars=[]):
+  context.SetEnv('GYP_DEFINES', ' '.join(context['gyp_vars'] + extra_vars))
+
+
+def SetupLinuxEnvironment(context):
+  SetupGypDefines(context, ['target_arch='+context['gyp_arch']])
+  context.SetEnv('GYP_GENERATORS', 'ninja')
+
+
+def SetupMacEnvironment(context):
+  SetupGypDefines(context, ['target_arch='+context['gyp_arch']])
+  context.SetEnv('GYP_GENERATORS', 'ninja')
+
+
+def SetupAndroidEnvironment(context):
+  SetupGypDefines(context, ['OS=android', 'target_arch='+context['gyp_arch']])
+  context.SetEnv('GYP_GENERATORS', 'ninja')
+  context.SetEnv('GYP_CROSSCOMPILE', '1')
+
 
 def ParseStandardCommandLine(context):
   """
@@ -76,6 +151,8 @@ def ParseStandardCommandLine(context):
   parser.add_option('--inside-toolchain', dest='inside_toolchain',
                     default=bool(os.environ.get('INSIDE_TOOLCHAIN')),
                     action='store_true', help='Inside toolchain build.')
+  parser.add_option('--android', dest='android', default=False,
+                    action='store_true', help='Build for Android.')
   parser.add_option('--clang', dest='clang', default=False,
                     action='store_true', help='Build trusted code with Clang.')
   parser.add_option('--coverage', dest='coverage', default=False,
@@ -118,6 +195,7 @@ def ParseStandardCommandLine(context):
   context['platform'] = platform
   context['mode'] = mode
   context['arch'] = arch
+  context['android'] = options.android
   # ASan is Clang, so set the flag to simplify other checks.
   context['clang'] = options.clang or options.asan
   context['validator'] = options.validator
@@ -352,6 +430,8 @@ def SCons(context, mode=None, platform=None, parallel=False, browser_test=False,
   if context['pnacl']: cmd.append('bitcode=1')
   if context['use_breakpad_tools']:
     cmd.append('breakpad_tools_dir=breakpad-out')
+  if context['android']:
+    cmd.append('android=1')
   # Append used-specified arguments.
   cmd.extend(args)
   Command(context, cmd, cwd)
@@ -520,8 +600,8 @@ class BuildContext(object):
   def Mac(self):
     return self.config['platform'] == 'mac'
 
-  def GetEnv(self, name):
-    return self.global_env[name]
+  def GetEnv(self, name, default=None):
+    return self.global_env.get(name, default)
 
   def SetEnv(self, name, value):
     self.global_env[name] = str(value)

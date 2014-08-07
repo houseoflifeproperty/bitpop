@@ -10,8 +10,8 @@
 #include "core/animation/KeyframeEffectModel.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-
 #include <gtest/gtest.h>
+#include <v8.h>
 
 using namespace WebCore;
 
@@ -23,17 +23,17 @@ protected:
         : document(Document::create())
         , element(document->createElement("foo", ASSERT_NO_EXCEPTION))
         , m_isolate(v8::Isolate::GetCurrent())
-        , m_scope(V8ExecutionScope::create(m_isolate))
+        , m_scope(m_isolate)
     {
     }
 
-    RefPtr<Document> document;
-    RefPtr<Element> element;
+    RefPtrWillBePersistent<Document> document;
+    RefPtrWillBePersistent<Element> element;
     TrackExceptionState exceptionState;
     v8::Isolate* m_isolate;
 
 private:
-    OwnPtr<V8ExecutionScope> m_scope;
+    V8TestingScope m_scope;
 };
 
 TEST_F(AnimationEffectInputTest, SortedOffsets)
@@ -50,7 +50,7 @@ TEST_F(AnimationEffectInputTest, SortedOffsets)
     jsKeyframes.append(Dictionary(keyframe1, m_isolate));
     jsKeyframes.append(Dictionary(keyframe2, m_isolate));
 
-    RefPtrWillBeRawPtr<AnimationEffect> animationEffect = EffectInput::convert(element.get(), jsKeyframes, exceptionState, true);
+    RefPtrWillBeRawPtr<AnimationEffect> animationEffect = EffectInput::convert(element.get(), jsKeyframes, exceptionState);
     EXPECT_FALSE(exceptionState.hadException());
     const KeyframeEffectModelBase& keyframeEffect = *toKeyframeEffectModelBase(animationEffect.get());
     EXPECT_EQ(1.0, keyframeEffect.getFrames()[1]->offset());
@@ -70,7 +70,7 @@ TEST_F(AnimationEffectInputTest, UnsortedOffsets)
     jsKeyframes.append(Dictionary(keyframe1, m_isolate));
     jsKeyframes.append(Dictionary(keyframe2, m_isolate));
 
-    RefPtrWillBeRawPtr<AnimationEffect> animationEffect = EffectInput::convert(element.get(), jsKeyframes, exceptionState, true);
+    RefPtrWillBeRawPtr<AnimationEffect> animationEffect = EffectInput::convert(element.get(), jsKeyframes, exceptionState);
     EXPECT_FALSE(exceptionState.hadException());
     const KeyframeEffectModelBase& keyframeEffect = *toKeyframeEffectModelBase(animationEffect.get());
     EXPECT_EQ(1.0, keyframeEffect.getFrames()[1]->offset());
@@ -93,7 +93,7 @@ TEST_F(AnimationEffectInputTest, LooslySorted)
     jsKeyframes.append(Dictionary(keyframe2, m_isolate));
     jsKeyframes.append(Dictionary(keyframe3, m_isolate));
 
-    RefPtrWillBeRawPtr<AnimationEffect> animationEffect = EffectInput::convert(element.get(), jsKeyframes, exceptionState, true);
+    RefPtrWillBeRawPtr<AnimationEffect> animationEffect = EffectInput::convert(element.get(), jsKeyframes, exceptionState);
     EXPECT_FALSE(exceptionState.hadException());
     const KeyframeEffectModelBase& keyframeEffect = *toKeyframeEffectModelBase(animationEffect.get());
     EXPECT_EQ(1, keyframeEffect.getFrames()[2]->offset());
@@ -117,7 +117,7 @@ TEST_F(AnimationEffectInputTest, Invalid)
     jsKeyframes.append(Dictionary(keyframe2, m_isolate));
     jsKeyframes.append(Dictionary(keyframe3, m_isolate));
 
-    RefPtrWillBeRawPtr<AnimationEffect> animationEffect ALLOW_UNUSED = EffectInput::convert(element.get(), jsKeyframes, exceptionState, true);
+    RefPtrWillBeRawPtr<AnimationEffect> animationEffect ALLOW_UNUSED = EffectInput::convert(element.get(), jsKeyframes, exceptionState);
     EXPECT_TRUE(exceptionState.hadException());
     EXPECT_EQ(InvalidModificationError, exceptionState.code());
 }

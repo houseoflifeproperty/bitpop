@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
 
+#include "base/command_line.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -20,8 +21,12 @@
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
+#include "ui/base/ime/text_input_focus_manager.h"
 #include "ui/base/test/ui_controls.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/events/event_processor.h"
+#include "ui/events/event_utils.h"
+#include "ui/views/controls/textfield/textfield_test_api.h"
 
 class OmniboxViewViewsTest : public InProcessBrowserTest {
  protected:
@@ -77,13 +82,22 @@ class OmniboxViewViewsTest : public InProcessBrowserTest {
     ui::EventProcessor* dispatcher =
         browser()->window()->GetNativeWindow()->GetHost()->event_processor();
 
-    ui::TouchEvent press(ui::ET_TOUCH_PRESSED, press_location,
-                         5, base::TimeDelta::FromMilliseconds(0));
+    base::TimeDelta timestamp = ui::EventTimeForNow();
+    ui::TouchEvent press(
+        ui::ET_TOUCH_PRESSED, press_location, 5, timestamp);
     ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&press);
     ASSERT_FALSE(details.dispatcher_destroyed);
 
-    ui::TouchEvent release(ui::ET_TOUCH_RELEASED, release_location,
-                           5, base::TimeDelta::FromMilliseconds(50));
+    if (press_location != release_location) {
+      timestamp += base::TimeDelta::FromMilliseconds(10);
+      ui::TouchEvent move(
+          ui::ET_TOUCH_MOVED, release_location, 5, timestamp);
+      details = dispatcher->OnEventFromSource(&move);
+    }
+
+    timestamp += base::TimeDelta::FromMilliseconds(50);
+    ui::TouchEvent release(
+        ui::ET_TOUCH_RELEASED, release_location, 5, timestamp);
     details = dispatcher->OnEventFromSource(&release);
     ASSERT_FALSE(details.dispatcher_destroyed);
   }
@@ -288,4 +302,53 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewViewsTest, BackgroundIsOpaque) {
   OmniboxViewViews* view = window->GetLocationBarView()->omnibox_view();
   ASSERT_TRUE(view);
   EXPECT_FALSE(view->GetRenderText()->background_is_transparent());
+}
+
+// Tests if executing a command hides touch editing handles.
+IN_PROC_BROWSER_TEST_F(OmniboxViewViewsTest,
+                       DeactivateTouchEditingOnExecuteCommand) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableTouchEditing);
+
+  OmniboxView* view = NULL;
+  ASSERT_NO_FATAL_FAILURE(GetOmniboxViewForBrowser(browser(), &view));
+  OmniboxViewViews* omnibox_view_views = static_cast<OmniboxViewViews*>(view);
+  views::TextfieldTestApi textfield_test_api(omnibox_view_views);
+
+  // Put a URL on the clipboard. It is written to the clipboard upon destruction
+  // of the writer.
+  {
+    ui::ScopedClipboardWriter clipboard_writer(
+        ui::Clipboard::GetForCurrentThread(),
+        ui::CLIPBOARD_TYPE_COPY_PASTE);
+    clipboard_writer.WriteURL(base::ASCIIToUTF16("http://www.example.com/"));
+  }
+
+  // Tap to activate touch editing.
+  gfx::Point omnibox_center =
+      omnibox_view_views->GetBoundsInScreen().CenterPoint();
+  Tap(omnibox_center, omnibox_center);
+  EXPECT_TRUE(textfield_test_api.touch_selection_controller());
+
+  // Execute a command and check if it deactivate touch editing. Paste & Go is
+  // chosen since it is specific to Omnibox and its execution wouldn't be
+  // delgated to the base Textfield class.
+  omnibox_view_views->ExecuteCommand(IDS_PASTE_AND_GO, ui::EF_NONE);
+  EXPECT_FALSE(textfield_test_api.touch_selection_controller());
+}
+
+IN_PROC_BROWSER_TEST_F(OmniboxViewViewsTest, FocusedTextInputClient) {
+  base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
+  cmd_line->AppendSwitch(switches::kEnableTextInputFocusManager);
+
+  // TODO(yukishiino): The following call to FocusLocationBar is not necessary
+  // if the flag is enabled by default.  Remove the call once the transition to
+  // TextInputFocusManager completes.
+  chrome::FocusLocationBar(browser());
+  OmniboxView* view = NULL;
+  ASSERT_NO_FATAL_FAILURE(GetOmniboxViewForBrowser(browser(), &view));
+  OmniboxViewViews* omnibox_view_views = static_cast<OmniboxViewViews*>(view);
+  ui::TextInputFocusManager* text_input_focus_manager =
+      ui::TextInputFocusManager::GetInstance();
+  EXPECT_EQ(omnibox_view_views->GetTextInputClient(),
+            text_input_focus_manager->GetFocusedTextInputClient());
 }

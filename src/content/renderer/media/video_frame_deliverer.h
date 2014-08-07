@@ -13,6 +13,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/thread_checker.h"
 #include "content/common/media/video_capture.h"
+#include "content/public/renderer/media_stream_video_sink.h"
 #include "media/base/video_frame.h"
 
 namespace content {
@@ -20,7 +21,7 @@ namespace content {
 // VideoFrameDeliverer is a helper class used for registering
 // VideoCaptureDeliverFrameCB on the main render thread to receive video frames
 // on the IO-thread.
-// Its used by MediaStreamVideoTrack and MediaStreamVideoSource.
+// Its used by MediaStreamVideoTrack.
 class VideoFrameDeliverer
     : public base::RefCountedThreadSafe<VideoFrameDeliverer> {
  public:
@@ -37,11 +38,12 @@ class VideoFrameDeliverer
   // Must be called on the main render thread.
   void RemoveCallback(void* id);
 
-  // Triggers all registered callbacks with |frame| and |format| as parameters.
-  // Must be called on the IO-thread.
+  // Triggers all registered callbacks with |frame|, |format| and
+  // |estimated_capture_time| as parameters. Must be called on the IO-thread.
   virtual void DeliverFrameOnIO(
       const scoped_refptr<media::VideoFrame>& frame,
-      const media::VideoCaptureFormat& format);
+      const media::VideoCaptureFormat& format,
+      const base::TimeTicks& estimated_capture_time);
 
   const scoped_refptr<base::MessageLoopProxy>& io_message_loop() const {
     return io_message_loop_;

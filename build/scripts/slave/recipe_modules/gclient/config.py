@@ -34,6 +34,11 @@ def BaseConfig(USE_MIRROR=True, GIT_MODE=False, CACHE_DIR=None, **_kwargs):
     # Maps 'solution' -> build_property
     got_revision_mapping = Dict(hidden=True),
 
+    # Addition revisions we want to pass in.  For now theres a duplication
+    # of code here of setting custom vars AND passing in --revision. We hope
+    # to remove custom vars later.
+    revisions = Dict(value_type=basestring, hidden=True),
+
     # TODO(iannucci): HACK! The use of None here to indicate that we apply this
     #   to the solution.revision field is really terrible. I mostly blame
     #   gclient.
@@ -142,6 +147,9 @@ def chromium_lkcr(c):
                   'crbug.com/349277 crbug.com/109191')
   s = c.solutions[0]
   s.safesync_url = 'https://build.chromium.org/p/chromium/lkcr-status/lkgr'
+  # TODO(hinoka): Once lkcr exists and is a tag, it should just be lkcr
+  #               rather than origin/lkcr.
+  s.revision = 'origin/lkcr'
 
 @config_ctx(includes=['chromium'])
 def chromium_lkgr(c):
@@ -152,8 +160,12 @@ def chromium_lkgr(c):
     raise BadConf('Git has problems with safesync_url, crbug.com/109191.')
   s.safesync_url = safesync_url
 
-@config_ctx()
+@config_ctx(includes=['chromium_bare'])
 def android_bare(c):
+  # We inherit from chromium_bare to get the got_revision mapping.
+  # NOTE: We don't set a specific got_revision mapping for src/repo.
+  del c.solutions[0]
+  c.got_revision_mapping['src'] = 'got_src_revision'
   s = c.solutions.add()
   s.deps_file = '.DEPS.git'
 
@@ -190,12 +202,17 @@ def chrome_internal(c):
 
 @config_ctx(includes=['chromium'])
 def blink(c):
+  c.solutions[0].revision = 'HEAD'
   del c.solutions[0].custom_deps
-  c.solutions[0].custom_vars['webkit_revision'] = 'HEAD'
+  c.revisions['src/third_party/WebKit'] = 'HEAD'
 
 @config_ctx()
 def android(c):
   c.target_os.add('android')
+
+@config_ctx(includes=['chromium', 'chrome_internal'])
+def android_shared(c):
+  pass
 
 @config_ctx(includes=['chromium'])
 def show_v8_revision(c):
@@ -205,11 +222,15 @@ def show_v8_revision(c):
   # Needed to get the testers to properly sync the right revision.
   c.parent_got_revision_mapping['parent_got_revision'] = 'got_revision'
 
-@config_ctx(includes=['blink'])
+@config_ctx(includes=['chromium'])
+def v8_bleeding_edge(c):
+  c.solutions[0].revision = 'HEAD'
+  c.solutions[0].custom_vars['v8_branch'] = 'branches/bleeding_edge'
+  c.revisions['src/v8'] = 'HEAD'
+
+@config_ctx(includes=['blink', 'v8_bleeding_edge'])
 def v8_blink_flavor(c):
-    del c.solutions[0].custom_vars['webkit_revision']
-    c.solutions[0].custom_vars['v8_branch'] = 'branches/bleeding_edge'
-    c.solutions[0].custom_vars['v8_revision'] = 'HEAD'
+  del c.revisions['src/third_party/WebKit']
 
 @config_ctx(includes=['chromium'])
 def oilpan(c):
@@ -224,7 +245,7 @@ def oilpan(c):
     'svn://svn.chromium.org/%(repo)s'
   )
 
-  c.solutions[0].custom_vars['webkit_revision'] = 'HEAD'
+  c.revisions['src/third_party/WebKit'] = 'HEAD'
   c.solutions[0].revision = '197341'
 
   c.solutions[0].custom_deps = {
@@ -289,11 +310,3 @@ def tools_build(c):
   s.url = ChromiumGitURL(c, 'chromium', 'tools', 'build.git')
   m = c.got_revision_mapping
   m['build'] = 'got_revision'
-
-@config_ctx()
-def drmemory(c):
-  s = c.solutions.add()
-  s.name = 'drmemory.DEPS'
-  s.deps_file = 'DEPS'
-  s.url = ChromiumSvnSubURL(c, 'chrome', 'trunk', 'deps', 'third_party',
-                            'drmemory', 'drmemory.DEPS')

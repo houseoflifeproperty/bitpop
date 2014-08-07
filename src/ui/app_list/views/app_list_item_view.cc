@@ -12,7 +12,6 @@
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/app_list_item.h"
-#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/views/apps_grid_view.h"
 #include "ui/app_list/views/cached_label.h"
 #include "ui/app_list/views/progress_bar_view.h"
@@ -340,17 +339,13 @@ void AppListItemView::OnPaint(gfx::Canvas* canvas) {
   if (item_->highlighted() && !item_->is_installing()) {
     canvas->FillRect(rect, kHighlightedColor);
     return;
-  } else if (apps_grid_view_->IsSelectedView(this)) {
-      canvas->FillRect(rect, kSelectedColor);
   }
+  if (apps_grid_view_->IsSelectedView(this))
+    canvas->FillRect(rect, kSelectedColor);
 
-  if (!switches::IsFolderUIEnabled()) {
-    if (apps_grid_view_->IsSelectedView(this)) {
-      canvas->FillRect(rect, kSelectedColor);
-    } else if (state() == STATE_HOVERED || state() == STATE_PRESSED) {
-      canvas->FillRect(rect, kHighlightedColor);
-    }
-  } else if (ui_state_ == UI_STATE_DROPPING_IN_FOLDER) {
+  if (ui_state_ == UI_STATE_DROPPING_IN_FOLDER) {
+    DCHECK(apps_grid_view_->model()->folders_enabled());
+
     // Draw folder dropping preview circle.
     gfx::Point center = gfx::Point(icon_->x() + icon_->size().width() / 2,
                                    icon_->y() + icon_->size().height() / 2);
@@ -382,7 +377,7 @@ void AppListItemView::ShowContextMenuForView(views::View* source,
 }
 
 void AppListItemView::StateChanged() {
-  const bool is_folder_ui_enabled = switches::IsFolderUIEnabled();
+  const bool is_folder_ui_enabled = apps_grid_view_->model()->folders_enabled();
   if (is_folder_ui_enabled)
     apps_grid_view_->ClearAnySelectedView();
 

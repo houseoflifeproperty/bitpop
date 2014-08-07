@@ -192,13 +192,17 @@ class GClientFactory(object):
     if gclient_deps == 'ios':
       gclient_spec += ';target_os = [\'ios\'];target_os_only = True'
 
+    # Do we need to operate in magic blink mode?
+    blink_config = factory_properties.get('blink_config')
+
     # Force the build checkout to be at some revision.  This may or may not
     # activate depending on its own criteria, but the expectation is that if
     # this does activate, it will emit a BOT_UPDATED file in the build/
     # directory to signal to the other gclient update steps to no-op.
     code_review_site = config.Master.Master4.code_review_site
     factory_cmd_obj.AddBotUpdateStep(env, gclient_spec, self._revision_mapping,
-                                     server=code_review_site)
+                                     server=code_review_site,
+                                     blink_config=blink_config)
 
 
     # svn timeout is 2 min; we allow 5
@@ -214,7 +218,8 @@ class GClientFactory(object):
       if not delay_compile_step:
         self.AddUpdateStep(gclient_spec, factory_properties, factory,
                            slave_type, sudo_for_remove,
-                           gclient_deps=gclient_deps, options=options)
+                           gclient_deps=gclient_deps, options=options,
+                           blink_config=blink_config)
     return factory
 
   def BuildFactory(self, target='Release', clobber=False, tests=None, mode=None,
@@ -318,7 +323,7 @@ class GClientFactory(object):
 
   def AddUpdateStep(self, gclient_spec, factory_properties, factory,
                     slave_type, sudo_for_remove=False, gclient_deps=None,
-                    options=None):
+                    options=None, blink_config=False):
     if gclient_spec is None:
       gclient_spec = self.BuildGClientSpec()
     factory_properties = factory_properties or {}
@@ -337,7 +342,6 @@ class GClientFactory(object):
     gclient_transitive = factory_properties.get('gclient_transitive', False)
     primary_repo = factory_properties.get('primary_repo', '')
     gclient_jobs = factory_properties.get('gclient_jobs')
-    blink_config = factory_properties.get('blink_config')
 
     # Do not run gyp_chromium on testers.
     if slave_type in ('Tester',):

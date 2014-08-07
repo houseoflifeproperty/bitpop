@@ -27,12 +27,13 @@
 #include "config.h"
 #include "core/editing/MarkupAccumulator.h"
 
-#include "HTMLNames.h"
-#include "XLinkNames.h"
-#include "XMLNSNames.h"
-#include "XMLNames.h"
+#include "core/HTMLNames.h"
+#include "core/XLinkNames.h"
+#include "core/XMLNSNames.h"
+#include "core/XMLNames.h"
 #include "core/dom/CDATASection.h"
 #include "core/dom/Comment.h"
+#include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/ProcessingInstruction.h"
@@ -96,7 +97,7 @@ void MarkupAccumulator::appendCharactersReplacingEntities(StringBuilder& result,
         appendCharactersReplacingEntitiesInternal(result, source.characters16() + offset, length, entityMaps, WTF_ARRAY_LENGTH(entityMaps), entityMask);
 }
 
-MarkupAccumulator::MarkupAccumulator(Vector<Node*>* nodes, EAbsoluteURLs resolveUrlsMethod, const Range* range, SerializationType serializationType)
+MarkupAccumulator::MarkupAccumulator(WillBeHeapVector<RawPtrWillBeMember<Node> >* nodes, EAbsoluteURLs resolveUrlsMethod, const Range* range, SerializationType serializationType)
     : m_nodes(nodes)
     , m_range(range)
     , m_resolveURLsMethod(resolveUrlsMethod)
@@ -367,11 +368,6 @@ void MarkupAccumulator::appendDocumentType(StringBuilder& result, const Document
         result.append(n.systemId());
         result.append('"');
     }
-    if (!n.internalSubset().isEmpty()) {
-        result.appendLiteral(" [");
-        result.append(n.internalSubset());
-        result.append(']');
-    }
     result.append('>');
 }
 
@@ -390,9 +386,10 @@ void MarkupAccumulator::appendElement(StringBuilder& result, Element& element, N
     appendOpenTag(result, element, namespaces);
 
     if (element.hasAttributes()) {
-        unsigned length = element.attributeCount();
-        for (unsigned i = 0; i < length; i++)
-            appendAttribute(result, element, element.attributeItem(i), namespaces);
+        AttributeCollection attributes = element.attributes();
+        AttributeCollection::const_iterator end = attributes.end();
+        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it)
+            appendAttribute(result, element, *it, namespaces);
     }
 
     // Give an opportunity to subclasses to add their own attributes.

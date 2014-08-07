@@ -35,6 +35,7 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/ScriptForbiddenScope.h"
 #include "wtf/Noncopyable.h"
+#include <v8.h>
 
 namespace WebCore {
 
@@ -64,6 +65,9 @@ public:
     {
         V8PerIsolateData::from(m_isolate)->incrementRecursionLevel();
         ASSERT(!ScriptForbiddenScope::isScriptForbidden());
+        // If you want V8 to autorun microtasks, this class needs to have a
+        // v8::Isolate::SuppressMicrotaskExecutionScope member.
+        ASSERT(!isolate->WillAutorunMicrotasks());
     }
 
     ~V8RecursionScope()

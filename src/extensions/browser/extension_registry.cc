@@ -53,6 +53,34 @@ void ExtensionRegistry::TriggerOnUnloaded(
                     OnExtensionUnloaded(browser_context_, extension, reason));
 }
 
+void ExtensionRegistry::TriggerOnWillBeInstalled(const Extension* extension,
+                                                 bool is_update,
+                                                 bool from_ephemeral,
+                                                 const std::string& old_name) {
+  DCHECK(is_update ==
+         GenerateInstalledExtensionsSet()->Contains(extension->id()));
+  DCHECK(is_update == !old_name.empty());
+  FOR_EACH_OBSERVER(
+      ExtensionRegistryObserver,
+      observers_,
+      OnExtensionWillBeInstalled(
+          browser_context_, extension, is_update, from_ephemeral, old_name));
+}
+
+void ExtensionRegistry::TriggerOnInstalled(const Extension* extension) {
+  DCHECK(GenerateInstalledExtensionsSet()->Contains(extension->id()));
+  FOR_EACH_OBSERVER(ExtensionRegistryObserver,
+                    observers_,
+                    OnExtensionInstalled(browser_context_, extension));
+}
+
+void ExtensionRegistry::TriggerOnUninstalled(const Extension* extension) {
+  DCHECK(!GenerateInstalledExtensionsSet()->Contains(extension->id()));
+  FOR_EACH_OBSERVER(ExtensionRegistryObserver,
+                    observers_,
+                    OnExtensionUninstalled(browser_context_, extension));
+}
+
 const Extension* ExtensionRegistry::GetExtensionById(const std::string& id,
                                                      int include_mask) const {
   std::string lowercase_id = StringToLowerASCII(id);
@@ -130,6 +158,7 @@ void ExtensionRegistry::SetDisabledModificationCallback(
 void ExtensionRegistry::Shutdown() {
   // Release references to all Extension objects in the sets.
   ClearAll();
+  FOR_EACH_OBSERVER(ExtensionRegistryObserver, observers_, OnShutdown(this));
 }
 
 }  // namespace extensions

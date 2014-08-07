@@ -106,7 +106,7 @@ GYP_CONDITIONAL_ITEM_STANZA_END = """        ],
 """
 
 GN_HEADER = """import("//build/config/arm.gni")
-import("ffmpeg_config.gni")
+import("ffmpeg_options.gni")
 
 # Declare empty versions of each variable for easier +=ing later.
 ffmpeg_c_sources = []
@@ -152,6 +152,7 @@ def CleanObjectFiles(object_files):
       'libavcodec/inverse.o',  # Includes libavutil/inverse.c
       'libavcodec/file_open.o', # Includes libavutil/file_open.c
       'libavcodec/log2_tab.o',  # Includes libavutil/log2_tab.c
+      'libavformat/golomb_tab.o',  # Includes libavcodec/golomb.c
       'libavformat/log2_tab.o',  # Includes libavutil/log2_tab.c
       'libavformat/file_open.o', # Includes libavutil/file_open.c
 

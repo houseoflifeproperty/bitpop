@@ -99,12 +99,6 @@ Status Status::ErrorJwkUseAndKeyopsInconsistent() {
                 "but are inconsistent with each other.");
 }
 
-Status Status::ErrorJwkRsaPrivateKeyUnsupported() {
-  return Status(blink::WebCryptoErrorTypeNotSupported,
-                "JWK RSA key contained \"d\" property: Private key import is "
-                "not yet supported");
-}
-
 Status Status::ErrorJwkUnrecognizedKty() {
   return Status(blink::WebCryptoErrorTypeData,
                 "The JWK \"kty\" property was unrecognized");
@@ -116,6 +110,12 @@ Status Status::ErrorJwkIncorrectKeyLength() {
                 "of key data for the given algorithm.");
 }
 
+Status Status::ErrorJwkIncompleteOptionalRsaPrivateKey() {
+  return Status(blink::WebCryptoErrorTypeData,
+                "The optional JWK properties p, q, dp, dq, qi must either all "
+                "be provided, or none provided");
+}
+
 Status Status::ErrorImportEmptyKeyData() {
   return Status(blink::WebCryptoErrorTypeData, "No key data was provided");
 }
@@ -123,6 +123,11 @@ Status Status::ErrorImportEmptyKeyData() {
 Status Status::ErrorImportAesKeyLength() {
   return Status(blink::WebCryptoErrorTypeData,
                 "AES key data must be 128, 192 or 256 bits");
+}
+
+Status Status::ErrorAes192BitUnsupported() {
+  return Status(blink::WebCryptoErrorTypeNotSupported,
+                "192-bit AES keys are not supported");
 }
 
 Status Status::ErrorUnexpectedKeyType() {
@@ -146,8 +151,11 @@ Status Status::ErrorDataTooSmall() {
 }
 
 Status Status::ErrorUnsupported() {
-  return Status(blink::WebCryptoErrorTypeNotSupported,
-                "The requested operation is unsupported");
+  return ErrorUnsupported("The requested operation is unsupported");
+}
+
+Status Status::ErrorUnsupported(const std::string& message) {
+  return Status(blink::WebCryptoErrorTypeNotSupported, message);
 }
 
 Status Status::ErrorUnexpected() {
@@ -170,7 +178,7 @@ Status Status::ErrorInvalidAesKwDataLength() {
 
 Status Status::ErrorGenerateKeyPublicExponent() {
   return Status(blink::WebCryptoErrorTypeData,
-                "The \"publicExponent\" is either empty, zero, or too large");
+                "The \"publicExponent\" must be either 3 or 65537");
 }
 
 Status Status::ErrorImportRsaEmptyModulus() {
@@ -196,6 +204,11 @@ Status Status::ErrorGenerateKeyLength() {
   return Status(blink::WebCryptoErrorTypeData,
                 "Invalid key length: it is either zero or not a multiple of 8 "
                 "bits");
+}
+
+Status Status::ErrorCreateKeyBadUsages() {
+  return Status(blink::WebCryptoErrorTypeData,
+                "Cannot create a key using the specified key usages.");
 }
 
 Status::Status(blink::WebCryptoErrorType error_type,

@@ -11,13 +11,15 @@
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
 #include "chrome/browser/ui/webui/signin/inline_login_handler.h"
+#include "content/public/browser/web_contents_delegate.h"
 
 class GaiaAuthFetcher;
 
 // Implementation for the inline login WebUI handler on desktop Chrome. Once
 // CrOS migrates to the same webview approach as desktop Chrome, much of the
 // code in this class should move to its base class |InlineLoginHandler|.
-class InlineLoginHandlerImpl : public InlineLoginHandler {
+class InlineLoginHandlerImpl : public InlineLoginHandler,
+                               public content::WebContentsDelegate {
  public:
   InlineLoginHandlerImpl();
   virtual ~InlineLoginHandlerImpl();
@@ -30,17 +32,19 @@ class InlineLoginHandlerImpl : public InlineLoginHandler {
 
   Browser* GetDesktopBrowser();
   void SyncStarterCallback(OneClickSigninSyncStarter::SyncSetupResult result);
-  void CloseTab();
+  // Closes the current tab and shows the account management view of the avatar
+  // bubble if |show_account_management| is true.
+  void CloseTab(bool show_account_management);
   void HandleLoginError(const std::string& error_msg);
 
  private:
   // InlineLoginHandler overrides:
-  virtual void RegisterMessages() OVERRIDE;
   virtual void SetExtraInitParams(base::DictionaryValue& params) OVERRIDE;
   virtual void CompleteLogin(const base::ListValue* args) OVERRIDE;
 
-  // JS callback to switch the UI from a constrainted dialog to a full tab.
-  void HandleSwitchToFullTabMessage(const base::ListValue* args);
+  // Overridden from content::WebContentsDelegate.
+  virtual bool HandleContextMenu(
+      const content::ContextMenuParams& params) OVERRIDE;
 
   base::WeakPtrFactory<InlineLoginHandlerImpl> weak_factory_;
   std::string email_;

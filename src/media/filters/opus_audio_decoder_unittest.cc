@@ -24,20 +24,7 @@ class OpusAudioDecoderTest : public testing::Test {
   OpusAudioDecoderTest()
       : decoder_(new OpusAudioDecoder(message_loop_.message_loop_proxy())),
         pending_decode_(false),
-        pending_reset_(false) {
-    // Load the test data file.
-    data_ = ReadTestDataFile("bear-opus.ogg");
-    protocol_.reset(
-        new InMemoryUrlProtocol(data_->data(), data_->data_size(), false));
-    reader_.reset(new AudioFileReader(protocol_.get()));
-    reader_->Open();
-
-    AudioDecoderConfig config;
-    AVCodecContextToAudioDecoderConfig(
-        reader_->codec_context_for_testing(), false, &config, false);
-    decoder_->Initialize(config, NewExpectedStatusCB(PIPELINE_OK));
-    base::RunLoop().RunUntilIdle();
-  }
+        pending_reset_(false) {}
 
   virtual ~OpusAudioDecoderTest() {
     EXPECT_FALSE(pending_decode_);
@@ -52,6 +39,28 @@ class OpusAudioDecoderTest : public testing::Test {
     decoder_->Decode(DecoderBuffer::CreateEOSBuffer(),
                      base::Bind(&OpusAudioDecoderTest::DecodeFinished,
                                 base::Unretained(this)));
+    base::RunLoop().RunUntilIdle();
+  }
+
+  void Initialize() {
+    // Load the test data file.
+    data_ = ReadTestDataFile("bear-opus.ogg");
+    protocol_.reset(
+        new InMemoryUrlProtocol(data_->data(), data_->data_size(), false));
+    reader_.reset(new AudioFileReader(protocol_.get()));
+    reader_->Open();
+
+    AudioDecoderConfig config;
+    AVCodecContextToAudioDecoderConfig(
+        reader_->codec_context_for_testing(), false, &config, false);
+    InitializeDecoder(config);
+  }
+
+  void InitializeDecoder(const AudioDecoderConfig& config) {
+    decoder_->Initialize(config,
+                         NewExpectedStatusCB(PIPELINE_OK),
+                         base::Bind(&OpusAudioDecoderTest::OnDecoderOutput,
+                                    base::Unretained(this)));
     base::RunLoop().RunUntilIdle();
   }
 
@@ -85,22 +94,16 @@ class OpusAudioDecoderTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  void DecodeFinished(AudioDecoder::Status status,
-                      const scoped_refptr<AudioBuffer>& buffer) {
+  void OnDecoderOutput(const scoped_refptr<AudioBuffer>& buffer) {
+    decoded_audio_.push_back(buffer);
+  }
+
+  void DecodeFinished(AudioDecoder::Status status) {
     EXPECT_TRUE(pending_decode_);
     pending_decode_ = false;
 
-    if (status == AudioDecoder::kNotEnoughData) {
-      EXPECT_TRUE(buffer.get() == NULL);
-      Decode();
-      return;
-    }
-
-    decoded_audio_.push_back(buffer);
-
-    // If we hit a NULL buffer or have a pending reset, we expect an abort.
-    if (buffer.get() == NULL || pending_reset_) {
-      EXPECT_TRUE(buffer.get() == NULL);
+    // If we have a pending reset, we expect an abort.
+    if (pending_reset_) {
       EXPECT_EQ(status, AudioDecoder::kAborted);
       return;
     }
@@ -123,11 +126,6 @@ class OpusAudioDecoderTest : public testing::Test {
     EXPECT_FALSE(decoded_audio_[i]->end_of_stream());
   }
 
-  void ExpectEndOfStream(size_t i) {
-    EXPECT_LT(i, decoded_audio_.size());
-    EXPECT_TRUE(decoded_audio_[i]->end_of_stream());
-  }
-
   size_t decoded_audio_size() const {
     return decoded_audio_.size();
   }
@@ -148,10 +146,32 @@ class OpusAudioDecoderTest : public testing::Test {
 };
 
 TEST_F(OpusAudioDecoderTest, Initialize) {
+  Initialize();
+  Stop();
+}
+
+TEST_F(OpusAudioDecoderTest, InitializeWithNoCodecDelay) {
+  const uint8_t kOpusExtraData[] = {
+      0x4f, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64, 0x01, 0x02,
+      // The next two bytes represent the codec delay.
+      0x00, 0x00, 0x80, 0xbb, 0x00, 0x00, 0x00, 0x00, 0x00};
+  AudioDecoderConfig decoder_config;
+  decoder_config.Initialize(kCodecOpus,
+                            kSampleFormatF32,
+                            CHANNEL_LAYOUT_STEREO,
+                            48000,
+                            kOpusExtraData,
+                            ARRAYSIZE_UNSAFE(kOpusExtraData),
+                            false,
+                            false,
+                            base::TimeDelta::FromMilliseconds(80),
+                            0);
+  InitializeDecoder(decoder_config);
   Stop();
 }
 
 TEST_F(OpusAudioDecoderTest, ProduceAudioSamples) {
+  Initialize();
   Decode();
   Decode();
   Decode();
@@ -161,25 +181,27 @@ TEST_F(OpusAudioDecoderTest, ProduceAudioSamples) {
   ExpectDecodedAudio(1, 3500, 10000);
   ExpectDecodedAudio(2, 13500, 10000);
 
-  // Call one more time to trigger EOS.
+  // Call one more time with EOS.
   SendEndOfStream();
-  ASSERT_EQ(4u, decoded_audio_size());
-  ExpectEndOfStream(3);
+  ASSERT_EQ(3u, decoded_audio_size());
   Stop();
 }
 
 TEST_F(OpusAudioDecoderTest, DecodeAbort) {
+  Initialize();
   Decode();
   Stop();
 }
 
 TEST_F(OpusAudioDecoderTest, PendingDecode_Stop) {
+  Initialize();
   Decode();
   Stop();
   SatisfyPendingDecode();
 }
 
 TEST_F(OpusAudioDecoderTest, PendingDecode_Reset) {
+  Initialize();
   Decode();
   Reset();
   SatisfyPendingDecode();
@@ -187,6 +209,7 @@ TEST_F(OpusAudioDecoderTest, PendingDecode_Reset) {
 }
 
 TEST_F(OpusAudioDecoderTest, PendingDecode_ResetStop) {
+  Initialize();
   Decode();
   Reset();
   Stop();

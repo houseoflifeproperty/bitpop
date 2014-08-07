@@ -31,23 +31,21 @@
 #include "config.h"
 #include "core/html/HTMLNoScriptElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ScriptController.h"
+#include "core/HTMLNames.h"
+#include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLNoScriptElement::HTMLNoScriptElement(Document& document)
+inline HTMLNoScriptElement::HTMLNoScriptElement(Document& document)
     : HTMLElement(noscriptTag, document)
 {
 }
 
-PassRefPtrWillBeRawPtr<HTMLNoScriptElement> HTMLNoScriptElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLNoScriptElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLNoScriptElement)
 
 bool HTMLNoScriptElement::rendererIsNeeded(const RenderStyle& style)
 {

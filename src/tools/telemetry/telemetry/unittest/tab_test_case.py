@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -22,7 +22,7 @@ class TabTestCase(unittest.TestCase):
     self._tab = None
     options = options_for_unittests.GetCopy()
 
-    self.CustomizeBrowserOptions(options)
+    self.CustomizeBrowserOptions(options.browser_options)
 
     if self._extra_browser_args:
       options.AppendExtraBrowserArgs(self._extra_browser_args)

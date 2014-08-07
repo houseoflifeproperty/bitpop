@@ -41,7 +41,7 @@ class CommandBufferClientImpl : public CommandBufferClient,
  public:
   explicit CommandBufferClientImpl(
       CommandBufferDelegate* delegate,
-      MojoAsyncWaiter* async_waiter,
+      const MojoAsyncWaiter* async_waiter,
       ScopedMessagePipeHandle command_buffer_handle);
   virtual ~CommandBufferClientImpl();
 
@@ -71,8 +71,6 @@ class CommandBufferClientImpl : public CommandBufferClient,
   virtual void SignalQuery(uint32 query,
                            const base::Closure& callback) OVERRIDE;
   virtual void SetSurfaceVisible(bool visible) OVERRIDE;
-  virtual void SendManagedMemoryStats(const gpu::ManagedMemoryStats& stats)
-      OVERRIDE;
   virtual void Echo(const base::Closure& callback) OVERRIDE;
   virtual uint32 CreateStreamTexture(uint32 texture_id) OVERRIDE;
 
@@ -82,7 +80,7 @@ class CommandBufferClientImpl : public CommandBufferClient,
  private:
   // CommandBufferClient implementation:
   virtual void DidInitialize(bool success) OVERRIDE;
-  virtual void DidMakeProgress(const CommandBufferState& state) OVERRIDE;
+  virtual void DidMakeProgress(CommandBufferStatePtr state) OVERRIDE;
   virtual void DidDestroy() OVERRIDE;
   virtual void LostContext(int32_t lost_reason) OVERRIDE;
 
@@ -107,6 +105,7 @@ class CommandBufferClientImpl : public CommandBufferClient,
   int32 next_transfer_buffer_id_;
 
   bool initialize_result_;
+  const MojoAsyncWaiter* async_waiter_;
 };
 
 }  // gles2

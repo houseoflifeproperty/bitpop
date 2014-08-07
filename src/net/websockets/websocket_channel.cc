@@ -176,6 +176,15 @@ class WebSocketChannel::ConnectDelegate
     creator_->OnFinishOpeningHandshake(response.Pass());
   }
 
+  virtual void OnSSLCertificateError(
+      scoped_ptr<WebSocketEventInterface::SSLErrorCallbacks>
+          ssl_error_callbacks,
+      const SSLInfo& ssl_info,
+      bool fatal) OVERRIDE {
+    creator_->OnSSLCertificateError(
+        ssl_error_callbacks.Pass(), ssl_info, fatal);
+  }
+
  private:
   // A pointer to the WebSocketChannel that created this object. There is no
   // danger of this pointer being stale, because deleting the WebSocketChannel
@@ -564,6 +573,9 @@ void WebSocketChannel::OnConnectSuccess(scoped_ptr<WebSocketStream> stream) {
 void WebSocketChannel::OnConnectFailure(const std::string& message) {
   DCHECK_EQ(CONNECTING, state_);
 
+  // Copy the message before we delete its owner.
+  std::string message_copy = message;
+
   SetState(CLOSED);
   stream_request_.reset();
 
@@ -572,8 +584,16 @@ void WebSocketChannel::OnConnectFailure(const std::string& message) {
     // |this| has been deleted.
     return;
   }
-  AllowUnused(event_interface_->OnFailChannel(message));
+  AllowUnused(event_interface_->OnFailChannel(message_copy));
   // |this| has been deleted.
+}
+
+void WebSocketChannel::OnSSLCertificateError(
+    scoped_ptr<WebSocketEventInterface::SSLErrorCallbacks> ssl_error_callbacks,
+    const SSLInfo& ssl_info,
+    bool fatal) {
+  AllowUnused(event_interface_->OnSSLCertificateError(
+      ssl_error_callbacks.Pass(), socket_url_, ssl_info, fatal));
 }
 
 void WebSocketChannel::OnStartOpeningHandshake(

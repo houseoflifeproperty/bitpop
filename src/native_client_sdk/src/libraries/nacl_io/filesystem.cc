@@ -6,6 +6,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <stdarg.h>
+
 #include <string>
 
 #include "nacl_io/dir_node.h"
@@ -21,9 +23,11 @@
 
 namespace nacl_io {
 
-Filesystem::Filesystem() : dev_(0) {}
+Filesystem::Filesystem() : dev_(0) {
+}
 
-Filesystem::~Filesystem() {}
+Filesystem::~Filesystem() {
+}
 
 Error Filesystem::Init(const FsInitArgs& args) {
   dev_ = args.dev;
@@ -31,7 +35,8 @@ Error Filesystem::Init(const FsInitArgs& args) {
   return 0;
 }
 
-void Filesystem::Destroy() {}
+void Filesystem::Destroy() {
+}
 
 Error Filesystem::OpenResource(const Path& path, ScopedNode* out_node) {
   out_node->reset(NULL);
@@ -46,6 +51,18 @@ void Filesystem::OnNodeCreated(Node* node) {
 void Filesystem::OnNodeDestroyed(Node* node) {
   if (node->stat_.st_ino)
     inode_pool_.Release(node->stat_.st_ino);
+}
+
+Error Filesystem::Filesystem_VIoctl(int request, va_list args) {
+  return EINVAL;
+}
+
+Error Filesystem::Filesystem_Ioctl(int request, ...) {
+  va_list args;
+  va_start(args, request);
+  Error error = Filesystem_VIoctl(request, args);
+  va_end(args);
+  return error;
 }
 
 }  // namespace nacl_io

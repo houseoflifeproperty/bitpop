@@ -4,12 +4,12 @@
 
 // The common functionality when building with or without snapshots.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "api.h"
-#include "serialize.h"
-#include "snapshot.h"
-#include "platform.h"
+#include "src/api.h"
+#include "src/serialize.h"
+#include "src/snapshot.h"
+#include "src/platform.h"
 
 namespace v8 {
 namespace internal {
@@ -19,7 +19,7 @@ static void ReserveSpaceForSnapshot(Deserializer* deserializer,
                                     const char* file_name) {
   int file_name_length = StrLength(file_name) + 10;
   Vector<char> name = Vector<char>::New(file_name_length + 1);
-  OS::SNPrintF(name, "%s.size", file_name);
+  SNPrintF(name, "%s.size", file_name);
   FILE* fp = OS::FOpen(name.start(), "r");
   CHECK_NE(NULL, fp);
   int new_size, pointer_size, data_size, code_size, map_size, cell_size,

@@ -5,6 +5,8 @@
 #ifndef CONTENT_ZYGOTE_ZYGOTE_H_
 #define CONTENT_ZYGOTE_ZYGOTE_H_
 
+#include <stddef.h>
+
 #include <string>
 
 #include "base/containers/small_map.h"
@@ -26,8 +28,9 @@ class ZygoteForkDelegate;
 // runs it.
 class Zygote {
  public:
-  Zygote(int sandbox_flags,
-         ZygoteForkDelegate* helper);
+  Zygote(int sandbox_flags, ScopedVector<ZygoteForkDelegate> helpers,
+         const std::vector<base::ProcessHandle>& extra_children,
+         const std::vector<int>& extra_fds);
   ~Zygote();
 
   bool ProcessRequests();
@@ -36,9 +39,8 @@ class Zygote {
   struct ZygoteProcessInfo {
     // Pid from inside the Zygote's PID namespace.
     base::ProcessHandle internal_pid;
-    // Keeps track of whether or not a process was started from a fork
-    // delegate helper.
-    bool started_from_helper;
+    // Keeps track of which fork delegate helper the process was started from.
+    ZygoteForkDelegate* started_from_helper;
   };
   typedef base::SmallMap< std::map<base::ProcessHandle, ZygoteProcessInfo> >
       ZygoteProcessMap;
@@ -119,13 +121,21 @@ class Zygote {
   ZygoteProcessMap process_info_map_;
 
   const int sandbox_flags_;
-  ZygoteForkDelegate* helper_;
+  ScopedVector<ZygoteForkDelegate> helpers_;
 
-  // These might be set by helper_->InitialUMA. They supply a UMA enumeration
-  // sample we should report on the first fork.
-  std::string initial_uma_name_;
-  int initial_uma_sample_;
-  int initial_uma_boundary_value_;
+  // Count of how many fork delegates for which we've invoked InitialUMA().
+  size_t initial_uma_index_;
+
+  // This vector contains the PIDs of any child processes which have been
+  // created prior to the construction of the Zygote object, and must be reaped
+  // before the Zygote exits. The Zygote will perform a blocking wait on these
+  // children, so they must be guaranteed to be exiting by the time the Zygote
+  // exits.
+  std::vector<base::ProcessHandle> extra_children_;
+
+  // This vector contains the FDs that must be closed before reaping the extra
+  // children.
+  std::vector<int> extra_fds_;
 };
 
 }  // namespace content

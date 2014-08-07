@@ -5,21 +5,20 @@
 #include "chrome/browser/ui/webui/options/create_profile_handler.h"
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/metrics/histogram.h"
 #include "base/prefs/pref_service.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/managed_mode/managed_user_registration_utility.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
-#include "chrome/browser/managed_mode/managed_user_sync_service.h"
-#include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/supervised_user/supervised_user_registration_utility.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_sync_service.h"
+#include "chrome/browser/supervised_user/supervised_user_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/webui/options/options_handlers_helper.h"
@@ -54,10 +53,11 @@ void CreateProfileHandler::RegisterMessages() {
 }
 
 void CreateProfileHandler::CreateProfile(const base::ListValue* args) {
-  // This handler could have been called in managed mode, for example because
-  // the user fiddled with the web inspector. Silently return in this case.
+  // This handler could have been called for a supervised user, for example
+  // because the user fiddled with the web inspector. Silently return in this
+  // case.
   Profile* current_profile = Profile::FromWebUI(web_ui());
-  if (current_profile->IsManaged())
+  if (current_profile->IsSupervised())
     return;
 
   if (!profiles::IsMultipleProfilesEnabled())
@@ -76,27 +76,27 @@ void CreateProfileHandler::CreateProfile(const base::ListValue* args) {
 
   base::string16 name;
   base::string16 icon;
-  std::string managed_user_id;
+  std::string supervised_user_id;
   bool create_shortcut = false;
-  bool managed_user = false;
+  bool supervised_user = false;
   if (args->GetString(0, &name) && args->GetString(1, &icon)) {
     if (args->GetBoolean(2, &create_shortcut)) {
-      bool success = args->GetBoolean(3, &managed_user);
+      bool success = args->GetBoolean(3, &supervised_user);
       DCHECK(success);
-      success = args->GetString(4, &managed_user_id);
+      success = args->GetString(4, &supervised_user_id);
       DCHECK(success);
     }
   }
 
-  if (managed_user) {
-    if (!IsValidExistingManagedUserId(managed_user_id))
+  if (supervised_user) {
+    if (!IsValidExistingSupervisedUserId(supervised_user_id))
       return;
 
     profile_creation_type_ = SUPERVISED_PROFILE_IMPORT;
-    if (managed_user_id.empty()) {
+    if (supervised_user_id.empty()) {
       profile_creation_type_ = SUPERVISED_PROFILE_CREATION;
-      managed_user_id =
-          ManagedUserRegistrationUtility::GenerateNewManagedUserId();
+      supervised_user_id =
+          SupervisedUserRegistrationUtility::GenerateNewSupervisedUserId();
 
       // If sync is not yet fully initialized, the creation may take extra time,
       // so show a message. Import doesn't wait for an acknowledgement, so it
@@ -121,14 +121,14 @@ void CreateProfileHandler::CreateProfile(const base::ListValue* args) {
                  weak_ptr_factory_.GetWeakPtr(),
                  create_shortcut,
                  helper::GetDesktopType(web_ui()),
-                 managed_user_id),
-      managed_user_id);
+                 supervised_user_id),
+      supervised_user_id);
 }
 
 void CreateProfileHandler::OnProfileCreated(
     bool create_shortcut,
     chrome::HostDesktopType desktop_type,
-    const std::string& managed_user_id,
+    const std::string& supervised_user_id,
     Profile* profile,
     Profile::CreateStatus status) {
   if (status != Profile::CREATE_STATUS_CREATED)
@@ -146,14 +146,14 @@ void CreateProfileHandler::OnProfileCreated(
     }
     case Profile::CREATE_STATUS_INITIALIZED: {
       HandleProfileCreationSuccess(create_shortcut, desktop_type,
-                                   managed_user_id, profile);
+                                   supervised_user_id, profile);
       break;
     }
     // User-initiated cancellation is handled in CancelProfileRegistration and
     // does not call this callback.
     case Profile::CREATE_STATUS_CANCELED:
-    // Managed user registration errors are handled in
-    // OnManagedUserRegistered().
+    // Supervised user registration errors are handled in
+    // OnSupervisedUserRegistered().
     case Profile::CREATE_STATUS_REMOTE_FAIL:
     case Profile::MAX_CREATE_STATUS: {
       NOTREACHED();
@@ -165,18 +165,18 @@ void CreateProfileHandler::OnProfileCreated(
 void CreateProfileHandler::HandleProfileCreationSuccess(
     bool create_shortcut,
     chrome::HostDesktopType desktop_type,
-    const std::string& managed_user_id,
+    const std::string& supervised_user_id,
     Profile* profile) {
   switch (profile_creation_type_) {
     case NON_SUPERVISED_PROFILE_CREATION: {
-      DCHECK(managed_user_id.empty());
+      DCHECK(supervised_user_id.empty());
       CreateShortcutAndShowSuccess(create_shortcut, desktop_type, profile);
       break;
     }
     case SUPERVISED_PROFILE_CREATION:
     case SUPERVISED_PROFILE_IMPORT:
-      RegisterManagedUser(create_shortcut, desktop_type,
-                          managed_user_id, profile);
+      RegisterSupervisedUser(create_shortcut, desktop_type,
+                             supervised_user_id, profile);
       break;
     case NO_CREATION_IN_PROGRESS:
       NOTREACHED();
@@ -184,32 +184,32 @@ void CreateProfileHandler::HandleProfileCreationSuccess(
   }
 }
 
-void CreateProfileHandler::RegisterManagedUser(
+void CreateProfileHandler::RegisterSupervisedUser(
     bool create_shortcut,
     chrome::HostDesktopType desktop_type,
-    const std::string& managed_user_id,
+    const std::string& supervised_user_id,
     Profile* new_profile) {
   DCHECK_EQ(profile_path_being_created_.value(),
             new_profile->GetPath().value());
 
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(new_profile);
+  SupervisedUserService* supervised_user_service =
+      SupervisedUserServiceFactory::GetForProfile(new_profile);
 
-  // Register the managed user using the profile of the custodian.
-  managed_user_registration_utility_ =
-      ManagedUserRegistrationUtility::Create(Profile::FromWebUI(web_ui()));
-  managed_user_service->RegisterAndInitSync(
-      managed_user_registration_utility_.get(),
+  // Register the supervised user using the profile of the custodian.
+  supervised_user_registration_utility_ =
+      SupervisedUserRegistrationUtility::Create(Profile::FromWebUI(web_ui()));
+  supervised_user_service->RegisterAndInitSync(
+      supervised_user_registration_utility_.get(),
       Profile::FromWebUI(web_ui()),
-      managed_user_id,
-      base::Bind(&CreateProfileHandler::OnManagedUserRegistered,
+      supervised_user_id,
+      base::Bind(&CreateProfileHandler::OnSupervisedUserRegistered,
                  weak_ptr_factory_.GetWeakPtr(),
                  create_shortcut,
                  desktop_type,
                  new_profile));
 }
 
-void CreateProfileHandler::OnManagedUserRegistered(
+void CreateProfileHandler::OnSupervisedUserRegistered(
     bool create_shortcut,
     chrome::HostDesktopType desktop_type,
     Profile* profile,
@@ -252,10 +252,10 @@ void CreateProfileHandler::CreateShortcutAndShowSuccess(
   dict.SetString("name",
                  profile->GetPrefs()->GetString(prefs::kProfileName));
   dict.Set("filePath", base::CreateFilePathValue(profile->GetPath()));
-  bool is_managed =
+  bool is_supervised =
       profile_creation_type_ == SUPERVISED_PROFILE_CREATION ||
       profile_creation_type_ == SUPERVISED_PROFILE_IMPORT;
-  dict.SetBoolean("isManaged", is_managed);
+  dict.SetBoolean("isManaged", is_supervised);
   web_ui()->CallJavascriptFunction(
       GetJavascriptMethodName(PROFILE_CREATION_SUCCESS), dict);
 
@@ -307,10 +307,10 @@ void CreateProfileHandler::CancelProfileRegistration(bool user_initiated) {
   if (!new_profile)
     return;
 
-  // Non-managed user creation cannot be canceled. (Creating a non-managed
+  // Non-supervised user creation cannot be canceled. (Creating a non-supervised
   // profile shouldn't take significant time, and it can easily be deleted
   // afterward.)
-  if (!new_profile->IsManaged())
+  if (!new_profile->IsSupervised())
     return;
 
   if (user_initiated) {
@@ -320,8 +320,8 @@ void CreateProfileHandler::CancelProfileRegistration(bool user_initiated) {
     RecordProfileCreationMetrics(Profile::CREATE_STATUS_CANCELED);
   }
 
-  DCHECK(managed_user_registration_utility_.get());
-  managed_user_registration_utility_.reset();
+  DCHECK(supervised_user_registration_utility_.get());
+  supervised_user_registration_utility_.reset();
 
   DCHECK_NE(NO_CREATION_IN_PROGRESS, profile_creation_type_);
   profile_creation_type_ = NO_CREATION_IN_PROGRESS;
@@ -406,22 +406,24 @@ std::string CreateProfileHandler::GetJavascriptMethodName(
   return std::string();
 }
 
-bool CreateProfileHandler::IsValidExistingManagedUserId(
-    const std::string& existing_managed_user_id) const {
-  if (existing_managed_user_id.empty())
+bool CreateProfileHandler::IsValidExistingSupervisedUserId(
+    const std::string& existing_supervised_user_id) const {
+  if (existing_supervised_user_id.empty())
     return true;
 
   Profile* profile = Profile::FromWebUI(web_ui());
   const base::DictionaryValue* dict =
-      ManagedUserSyncServiceFactory::GetForProfile(profile)->GetManagedUsers();
-  if (!dict->HasKey(existing_managed_user_id))
+      SupervisedUserSyncServiceFactory::GetForProfile(profile)->
+          GetSupervisedUsers();
+  if (!dict->HasKey(existing_supervised_user_id))
     return false;
 
-  // Check if this managed user already exists on this machine.
+  // Check if this supervised user already exists on this machine.
   const ProfileInfoCache& cache =
       g_browser_process->profile_manager()->GetProfileInfoCache();
   for (size_t i = 0; i < cache.GetNumberOfProfiles(); ++i) {
-    if (existing_managed_user_id == cache.GetManagedUserIdOfProfileAtIndex(i))
+    if (existing_supervised_user_id ==
+            cache.GetSupervisedUserIdOfProfileAtIndex(i))
       return false;
   }
   return true;

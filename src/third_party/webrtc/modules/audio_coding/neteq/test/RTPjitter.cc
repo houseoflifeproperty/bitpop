@@ -11,9 +11,10 @@
 //TODO(hlundin): Reformat file to meet style guide.
 
 /* header includes */
-#include "typedefs.h"
+#include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #ifdef WIN32
 #include <winsock2.h>
 #include <io.h>
@@ -21,16 +22,17 @@
 #ifdef WEBRTC_LINUX
 #include <netinet/in.h>
 #endif
-#include <float.h>
+
+#include <assert.h>
 
 #include "gtest/gtest.h"
+#include "webrtc/typedefs.h"
 
 /*********************/
 /* Misc. definitions */
 /*********************/
 
 #define FIRSTLINELEN 40
-#define CHECK_ZERO(a) {int errCode = a; if((errCode)!=0){fprintf(stderr,"\n %s \n line: %d \n error at %s\n Error Code = %d\n",__FILE__,__LINE__,#a, WebRtcNetEQ_GetErrorCode(inst)); exit(0);}}
 #define CHECK_NOT_NULL(a) if((a)==NULL){fprintf(stderr,"\n %s \n line: %d \nerror at %s\n",__FILE__,__LINE__,#a );return(-1);}
 
 struct arr_time {
@@ -62,7 +64,9 @@ int main(int argc, char* argv[])
 	unsigned int	dat_len, rtp_len, Npack, k;
 	arr_time		*time_vec;
 	char			firstline[FIRSTLINELEN];
-	unsigned char	*rtp_vec = NULL, **packet_ptr, *temp_packet;
+	unsigned char* rtp_vec = NULL;
+        unsigned char** packet_ptr = NULL;
+        unsigned char* temp_packet = NULL;
 	const unsigned int kRtpDumpHeaderSize = 4 + 4 + 4 + 2 + 2;
 	uint16_t			len;
 	uint32_t			*offset;
@@ -111,6 +115,11 @@ int main(int argc, char* argv[])
 		dat_len++;
 	}
 	
+  if (dat_len == 0) {
+    fprintf(stderr, "Error: dat_file is empty, no arrival time is given.\n");
+    goto closing;
+  }
+
 	qsort(time_vec,dat_len,sizeof(arr_time),compare_arr_time);
 
 
@@ -142,6 +151,11 @@ int main(int argc, char* argv[])
 		rtp_len += len-2;
 		Npack++;
 		len=(uint16_t) fread(&rtp_vec[rtp_len], sizeof(unsigned char), 2, in_file); // read length of next packet
+	}
+
+	if (Npack == 0) {
+	  fprintf(stderr, "Error: No RTP packet found.\n");
+	  goto closing;
 	}
 
 	packet_ptr = (unsigned char **) malloc(Npack*sizeof(unsigned char*));
@@ -180,7 +194,10 @@ int main(int argc, char* argv[])
 closing:
 	free(time_vec);
 	free(rtp_vec);
-	fclose(in_file);
+        if (packet_ptr != NULL) {
+	  free(packet_ptr);
+        }
+        fclose(in_file);
 	fclose(dat_file);
 	fclose(out_file);
 

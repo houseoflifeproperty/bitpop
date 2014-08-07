@@ -33,6 +33,10 @@
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -205,7 +209,7 @@ void MessageCenterSettingsController::GetNotifierList(
   DesktopNotificationService* notification_service =
       DesktopNotificationServiceFactory::GetForProfile(profile);
 
-  UErrorCode error;
+  UErrorCode error = U_ZERO_ERROR;
   scoped_ptr<icu::Collator> collator(icu::Collator::createInstance(error));
   scoped_ptr<NotifierComparator> comparator;
   if (!U_FAILURE(error))
@@ -225,13 +229,13 @@ void MessageCenterSettingsController::GetNotifierList(
        iter != extension_set->end();
        ++iter) {
     const extensions::Extension* extension = iter->get();
-    if (!extension->HasAPIPermission(
+    if (!extension->permissions_data()->HasAPIPermission(
             extensions::APIPermission::kNotification)) {
       continue;
     }
 
     // Exclude cached ephemeral apps that are not currently running.
-    if (extension->is_ephemeral() &&
+    if (extensions::util::IsEphemeralApp(extension->id(), profile) &&
         extensions::util::IsExtensionIdle(extension->id(), profile)) {
       continue;
     }
@@ -284,17 +288,18 @@ void MessageCenterSettingsController::GetNotifierList(
         name,
         notification_service->IsNotifierEnabled(notifier_id)));
     patterns_[name] = iter->primary_pattern;
-    FaviconService::FaviconForURLParams favicon_params(
+    FaviconService::FaviconForPageURLParams favicon_params(
         url,
         favicon_base::FAVICON | favicon_base::TOUCH_ICON,
         message_center::kSettingsIconSize);
     // Note that favicon service obtains the favicon from history. This means
     // that it will fail to obtain the image if there are no history data for
     // that URL.
-    favicon_service->GetFaviconImageForURL(
+    favicon_service->GetFaviconImageForPageURL(
         favicon_params,
         base::Bind(&MessageCenterSettingsController::OnFaviconLoaded,
-                   base::Unretained(this), url),
+                   base::Unretained(this),
+                   url),
         favicon_tracker_.get());
   }
 
@@ -371,6 +376,9 @@ void MessageCenterSettingsController::SetNotifierEnabled(
           notifier.notifier_id.id, enabled);
     }
   }
+  FOR_EACH_OBSERVER(message_center::NotifierSettingsObserver,
+                    observers_,
+                    NotifierEnabledChanged(notifier.notifier_id, enabled));
 }
 
 void MessageCenterSettingsController::OnNotifierSettingsClosing() {

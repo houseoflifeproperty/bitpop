@@ -6,6 +6,15 @@ import("//build/config/android/config.gni")
 if (cpu_arch == "arm") {
   import("//build/config/arm.gni")
 }
+if (is_posix) {
+  import("//build/config/gcc/gcc_version.gni")
+}
+
+declare_args() {
+  # Normally, Android builds are lightly optimized, even for debug builds, to
+  # keep binary size down. Setting this flag to true disables such optimization
+  android_full_debug = false
+}
 
 # compiler ---------------------------------------------------------------------
 #
@@ -34,10 +43,14 @@ config("compiler") {
     cflags += [
       "/Gy",  # Enable function-level linking.
       "/GS",  # Enable buffer security checking.
-      "/EHsc",  # Assume C functions can't throw exceptions and don't catch
-                # structured exceptions (only C++ ones).
       "/FS",  # Preserve previous PDB behavior.
     ]
+    if (is_component_build) {
+      cflags += [
+        "/EHsc",  # Assume C functions can't throw exceptions and don't catch
+                  # structured exceptions (only C++ ones).
+      ]
+    }
   } else {
     # Common GCC compiler flags setup.
     # --------------------------------
@@ -45,7 +58,6 @@ config("compiler") {
       "-fno-strict-aliasing",  # See http://crbug.com/32204
     ]
     cflags_cc += [
-      "-fno-exceptions",
       "-fno-threadsafe-statics",
       # Not exporting C++ inline functions can generally be applied anywhere
       # so we do so here. Normal function visibility is controlled by
@@ -59,6 +71,12 @@ config("compiler") {
     } else if (is_linux) {
       cflags += [ "-fstack-protector", "--param=ssp-buffer-size=4" ]
     }
+
+    # Linker warnings.
+    if (!(is_chromeos && cpu_arch == "arm") && !is_mac) {
+      # TODO(jochen): Enable this on chromeos on arm. http://crbug.com/356580
+      ldflags += [ "-Wl,--fatal-warnings" ]
+    }
   }
 
   # Mac-specific compiler flags setup.
@@ -69,9 +87,9 @@ config("compiler") {
 
     # CPU architecture.
     if (cpu_arch == "x64") {
-      common_mac_flags += [ "-arch x86_64" ]
+      common_mac_flags += [ "-arch", "x86_64" ]
     } else if (cpu_arch == "x86") {
-      common_mac_flags += [ "-arch i386" ]
+      common_mac_flags += [ "-arch", "i386" ]
     }
 
     cflags += common_mac_flags
@@ -131,16 +149,26 @@ config("compiler") {
     }
   }
 
-  # Linux-specific compiler flags setup.
-  # ------------------------------------
-  if (is_linux) {
+  # Linux/Android common flags setup.
+  # ---------------------------------
+  if (is_linux || is_android) {
     cflags += [
       "-fPIC",
       "-pipe",  # Use pipes for communicating between sub-processes. Faster.
     ]
-    if (!is_android) {
-      cflags += [ "-pthread" ]
-    }
+
+    ldflags += [
+      "-fPIC",
+      "-Wl,-z,noexecstack",
+      "-Wl,-z,now",
+      "-Wl,-z,relro",
+    ]
+  }
+
+  # Linux-specific compiler flags setup.
+  # ------------------------------------
+  if (is_linux) {
+    cflags += [ "-pthread" ]
 
     if (cpu_arch == "x64") {
       # Use gold for linking on 64-bit Linux only (on 32-bit it runs out of
@@ -152,7 +180,7 @@ config("compiler") {
 
         # There seems to be a conflict of --icf and -pie in gold which can
         # generate crashy binaries. As a security measure, -pie takes
-        # precendence for now.
+        # precedence for now.
         # TODO(brettw) common.gypi has this only for target toolset.
         #"-Wl,--icf=safe",
         "-Wl,--icf=none",
@@ -170,11 +198,7 @@ config("compiler") {
     }
 
     ldflags += [
-      "-fPIC",
       "-pthread",
-      "-Wl,-z,noexecstack",
-      "-Wl,-z,now",
-      "-Wl,-z,relro",
     ]
   }
 
@@ -198,8 +222,19 @@ config("compiler") {
       "-fno-short-enums",
     ]
     if (!is_clang) {
-      # Clang doesn't support this one.
-      cflags += [ "-finline-limit=64" ]
+      # Clang doesn't support these flags.
+      cflags += [
+        "-finline-limit=64",
+        # The following 6 options are disabled to save on
+        # binary size in gcc 4.8.
+        # TODO(fdegans) Reevaluate when we upgrade GCC.
+        "-fno-partial-inlining",
+        "-fno-early-inlining",
+        "-fno-tree-copy-prop",
+        "-fno-tree-loop-optimize",
+        "-fno-move-loop-invariants",
+        "-fno-caller-saves",
+      ]
     }
     if (is_android_webview_build) {
       # Android predefines this as 1; undefine it here so Chromium can redefine
@@ -223,6 +258,20 @@ config("compiler") {
       # The NDK has these things, but doesn't define the constants
       # to say that it does. Define them here instead.
       defines += [ "HAVE_SYS_UIO_H" ]
+    }
+
+    # Use gold for Android for most CPU architectures.
+    if (cpu_arch == "x86" || cpu_arch == "x64" || cpu_arch == "arm") {
+      if (is_clang) {
+        # Clang does not support -fuse-ld to invoke the built-in gold linker,
+        # so use the -B option which requires us to specify the path.
+        ldflags += [
+          "-B" + rebase_path("//build/android/arm-linux-androideabi-gold",
+                             root_build_dir)
+        ]
+      } else {
+        ldflags += [ "-fuse-ld=gold" ]
+      }
     }
 
     ldflags += [
@@ -322,9 +371,9 @@ config("runtime_library") {
     ]
 
     ldflags += [
+      "-Wl,--warn-shared-textrel",
       "-nostdlib",
     ]
-
 
     # NOTE: The stlport header include paths below are specified in cflags
     # rather than include_dirs because they need to come after include_dirs.
@@ -335,8 +384,9 @@ config("runtime_library") {
     if (use_system_stlport) {
       cflags += [
         # For libstdc++/include, which is used by stlport.
-        "-I$android_src/bionic",
-        "-I$android_src/external/stlport/stlport",
+        "-I" + rebase_path("$android_src/bionic", root_build_dir),
+        "-I" + rebase_path("$android_src/external/stlport/stlport",
+                           root_build_dir),
       ]
       libs += [
         "stlport",
@@ -344,7 +394,9 @@ config("runtime_library") {
     } else {
       android_stlport_root = "$android_ndk_root/sources/cxx-stl/stlport"
 
-      cflags += [ "-I$android_stlport_root/stlport" ]
+      cflags += [
+        "-I" + rebase_path("$android_stlport_root/stlport", root_build_dir)
+      ]
       lib_dirs += [ "$android_stlport_root/libs/$android_app_abi" ]
 
       if (component_mode == "shared_library") {
@@ -353,6 +405,16 @@ config("runtime_library") {
         libs += [ "stlport_static" ]
       }
     }
+
+    libs += [
+      # Manually link the libgcc.a that the cross compiler uses. This is
+      # absolute because the linker will look inside the sysroot if it's not.
+      rebase_path(android_libgcc_file),
+      "c",
+      "dl",
+      "m",
+    ]
+
   }
 }
 
@@ -544,6 +606,12 @@ config("default_warnings") {
       ]
     }
 
+    # Suppress warnings about ABI changes on ARM (Clang doesn't give this
+    # warning).
+    if (cpu_arch == "arm" && !is_clang) {
+      cflags += [ "-Wno-psabi" ]
+    }
+
     if (is_android) {
       # Disable any additional warnings enabled by the Android build system but
       # which chromium does not build cleanly with (when treating warning as
@@ -562,6 +630,15 @@ config("default_warnings") {
         # Other things unrelated to -Wextra:
         "-Wno-non-virtual-dtor",
         "-Wno-sign-promo",
+      ]
+    }
+
+    if (gcc_version >= 48) {
+      # Don't warn about the "typedef 'foo' locally defined but not used"
+      # for gcc 4.8.
+      # TODO: remove this flag once all builds work. See crbug.com/227506
+      cflags += [
+        "-Wno-unused-local-typedefs",
       ]
     }
   }
@@ -587,23 +664,72 @@ config("wexit_time_destructors") {
 #   configs -= default_optimization_config
 #   configs += [ "//build/config/compiler/optimize_max" ]
 
+# Shared settings for both "optimize" and "optimize_max" configs.
+if (is_win) {
+  common_optimize_on_cflags = [
+    "/O2",
+    "/Ob2",  # both explicit and auto inlining.
+    "/Oy-",  # disable omitting frame pointers, must be after /o2.
+    "/Os",   # favor size over speed.
+  ]
+  common_optimize_on_ldflags = []
+} else {
+  common_optimize_on_cflags = [
+    # Don't emit the GCC version ident directives, they just end up in the
+    # .comment section taking up binary size.
+    "-fno-ident",
+    # Put data and code in their own sections, so that unused symbols
+    # can be removed at link time with --gc-sections.
+    "-fdata-sections",
+    "-ffunction-sections",
+  ]
+  common_optimize_on_ldflags = []
+
+  if (is_android) {
+    common_optimize_on_cflags += [
+      "-fomit-frame-pointer",
+    ]
+    common_optimize_on_ldflags += [
+      # Warn in case of text relocations.
+      "-Wl,--warn-shared-textrel",
+    ]
+  }
+
+  if (is_mac) {
+    if (symbol_level == 2) {
+      # Mac dead code stripping requires symbols.
+      common_optimize_on_ldflags += [
+        "-Wl,-dead_strip",
+      ]
+    }
+  } else {
+    # Non-Mac Posix linker flags.
+    common_optimize_on_ldflags += [
+      # Specifically tell the linker to perform optimizations.
+      # See http://lwn.net/Articles/192624/ .
+      "-Wl,-O1",
+      "-Wl,--as-needed",
+      "-Wl,--gc-sections",
+    ]
+  }
+}
+
 # Default "optimization on" config. On Windows, this favors size over speed.
-#
-# IF YOU CHANGE THIS also consider whether optimize_max should be updated.
 config("optimize") {
+  cflags = common_optimize_on_cflags
+  ldflags = common_optimize_on_ldflags
   if (is_win) {
-    cflags = [
-      "/O2",
-      "/Ob2",  # Both explicit and auto inlining.
-      "/Oy-",  # Disable omitting frame pointers, must be after /O2.
-      "/Os",   # Favor size over speed.
+    cflags += [
+      "/Os",   # favor size over speed.
+    ]
+  } else if (is_android || is_ios) {
+    cflags += [
+      "-Os",  # Favor size over speed.
     ]
   } else {
-    if (is_ios) {
-      cflags = [ "-Os" ]
-    } else {
-      cflags = [ "-O2" ]
-    }
+    cflags += [
+      "-O2",
+    ]
   }
 }
 
@@ -615,6 +741,16 @@ config("no_optimize") {
       "/Ob0",  # Disable all inlining (on by default).
       "/RTC1",  # Runtime checks for stack frame and uninitialized variables.
     ]
+  } else if (is_android && !android_full_debug) {
+    # On Android we kind of optimize some things that don't affect debugging
+    # much even when optimization is disabled to get the binary size down.
+    cflags = [
+      "-Os",
+      "-fomit-frame-pointer",
+      "-fdata-sections",
+      "-ffunction-sections",
+    ]
+    ldflags = common_optimize_on_ldflags
   } else {
     cflags = [ "-O0" ]
   }
@@ -624,31 +760,27 @@ config("no_optimize") {
 # optimization and link-time code generation which is very expensive and should
 # be used sparingly. For non-Windows, this is the same as "optimize".
 config("optimize_max") {
+  cflags = common_optimize_on_cflags
+  ldflags = common_optimize_on_ldflags
   if (is_win) {
-    cflags = [
-      "/O2",
-      "/Ob2",  # Both explicit and auto inlining.
-      "/Oy-",  # Disable omitting frame pointers, must be after /O2.
+    cflags += [
       "/Ot",   # Favor speed over size.
       "/GL",   # Whole program optimization.
+      # Disable Warning 4702 ("Unreachable code") for the WPO/PGO builds.
+      # Probably anything that this would catch that wouldn't be caught in a
+      # normal build isn't going to actually be a bug, so the incremental value
+      # of C4702 for PGO builds is likely very small.
+      "/wd4702",
     ]
   } else {
-    if (is_ios) {
-      cflags = [ "-Os" ]
-    } else {
-      cflags = [ "-O2" ]
-    }
+    cflags += [
+      "-O2",
+    ]
   }
 }
 
 # Symbols ----------------------------------------------------------------------
 
-# TODO(brettw) Since this sets ldflags on Windows which is inherited across
-# static library boundaries, if you want to remove the default symbol config
-# and set a different one on a target, you also have to do it for all static
-# libraries that go into that target, which is messed up. Either we need a
-# more flexible system for defining linker flags, or we need to separate this
-# out into a "symbols_linker" config that is only applied to DLLs and EXEs.
 config("symbols") {
   if (is_win) {
     cflags = [ "/Zi" ]  # Produce PDB file, no edit and continue.
@@ -672,4 +804,3 @@ config("no_symbols") {
     cflags = [ "-g0" ]
   }
 }
-

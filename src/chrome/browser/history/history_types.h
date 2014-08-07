@@ -17,11 +17,11 @@
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
-#include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/ref_counted_util.h"
-#include "chrome/common/thumbnail_score.h"
 #include "components/favicon_base/favicon_types.h"
+#include "components/history/core/common/thumbnail_score.h"
 #include "components/query_parser/snippet.h"
+#include "components/search_engines/template_url_id.h"
 #include "content/public/common/page_transition_types.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/size.h"
@@ -45,6 +45,9 @@ typedef std::vector<GURL> RedirectList;
 typedef int64 FaviconBitmapID; // Identifier for a bitmap in a favicon.
 typedef int64 SegmentID;  // URL segments for the most visited view.
 typedef int64 IconMappingID; // For page url and icon mapping.
+
+// Identifier for a context to scope page ids.
+typedef const void* ContextID;
 
 // URLRow ---------------------------------------------------------------------
 
@@ -568,7 +571,7 @@ struct HistoryAddPageArgs {
   HistoryAddPageArgs();
   HistoryAddPageArgs(const GURL& url,
                      base::Time time,
-                     const void* id_scope,
+                     ContextID context_id,
                      int32 page_id,
                      const GURL& referrer,
                      const history::RedirectList& redirects,
@@ -580,7 +583,7 @@ struct HistoryAddPageArgs {
   GURL url;
   base::Time time;
 
-  const void* id_scope;
+  ContextID context_id;
   int32 page_id;
 
   GURL referrer;

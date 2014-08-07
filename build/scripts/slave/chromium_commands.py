@@ -585,6 +585,7 @@ class GClient(SourceBaseCommand):
 
   def writeSourcedata(self, res):
     """Write the sourcedata file and remove any dead source directory."""
+    d = None
     dead_dir = os.path.join(self.builder.basedir, self.srcdir + '.dead')
     if os.path.isdir(dead_dir):
       msg = 'Removing dead source dir'
@@ -599,7 +600,7 @@ class GClient(SourceBaseCommand):
       d = c.start()
       d.addCallback(self._abandonOnFailure)
     open(self.sourcedatafile, 'w').write(self.sourcedata)
-    return res
+    return d
 
   def parseGotRevision(self):
     if not hasattr(self.command, 'stdout'):

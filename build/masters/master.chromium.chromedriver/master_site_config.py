@@ -11,3 +11,4 @@ class ChromiumChromeDriver(Master.Master1):
   master_port = 8016
   slave_port = 8116
   master_port_alt = 8216
+  buildbot_url = 'http://build.chromium.org/p/chromium.chromedriver/'

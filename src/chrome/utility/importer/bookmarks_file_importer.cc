@@ -9,9 +9,9 @@
 #include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/importer/importer_bridge.h"
 #include "chrome/common/importer/importer_data_types.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/utility/importer/bookmark_html_reader.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/common/url_constants.h"
 #include "grit/generated_resources.h"
 
@@ -40,18 +40,18 @@ bool CanImportURL(const GURL& url) {
   }
 
   // Check if |url| is about:blank.
-  if (url == GURL(content::kAboutBlankURL))
+  if (url == GURL(url::kAboutBlankURL))
     return true;
 
   // If |url| starts with chrome:// or about:, check if it's one of the URLs
   // that we support.
   if (url.SchemeIs(content::kChromeUIScheme) ||
-      url.SchemeIs(content::kAboutScheme)) {
+      url.SchemeIs(url::kAboutScheme)) {
     if (url.host() == chrome::kChromeUIUberHost ||
         url.host() == chrome::kChromeUIAboutHost)
       return true;
 
-    GURL fixed_url(URLFixerUpper::FixupURL(url.spec(), std::string()));
+    GURL fixed_url(url_fixer::FixupURL(url.spec(), std::string()));
     for (size_t i = 0; i < chrome::kNumberOfChromeHostURLs; ++i) {
       if (fixed_url.DomainIs(chrome::kChromeHostURLs[i]))
         return true;

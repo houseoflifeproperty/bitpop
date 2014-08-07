@@ -21,9 +21,12 @@
       'dependencies': [
         '../../base/base.gyp:base',
         '../events/events.gyp:events',
+        '../events/ozone/events_ozone.gyp:events_ozone_evdev',
         '../gfx/gfx.gyp:gfx',
       ],
       'sources': [
+        'file_surface_factory.cc',
+        'file_surface_factory.h',
         'ozone_platform_test.cc',
         'ozone_platform_test.h',
       ],

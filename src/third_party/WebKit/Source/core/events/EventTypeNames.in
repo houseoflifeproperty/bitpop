@@ -58,6 +58,7 @@ cuechange
 cut
 datachannel
 dblclick
+devicelight
 devicemotion
 deviceorientation
 dischargingtimechange
@@ -102,6 +103,7 @@ invalid
 keydown
 keypress
 keyup
+languagechange
 levelchange
 load
 loadeddata
@@ -143,6 +145,7 @@ pointerlockchange
 pointerlockerror
 popstate
 progress
+push
 ratechange
 ready
 readystatechange
@@ -189,6 +192,7 @@ touchend
 touchmove
 touchstart
 transitionend
+typechange
 unload
 unmute
 update

@@ -19,6 +19,7 @@
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_server_id.h"
 #include "net/tools/balsa/balsa_headers.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 #include "net/tools/quic/quic_socket_utils.h"
 #include "net/tools/quic/quic_spdy_client_stream.h"
@@ -36,38 +37,39 @@ QuicClient::QuicClient(IPEndPoint server_address,
                        const QuicServerId& server_id,
                        const QuicVersionVector& supported_versions,
                        bool print_response,
-                       uint32 initial_flow_control_window)
+                       EpollServer* epoll_server)
     : server_address_(server_address),
       server_id_(server_id),
       local_port_(0),
+      epoll_server_(epoll_server),
       fd_(-1),
       helper_(CreateQuicConnectionHelper()),
       initialized_(false),
       packets_dropped_(0),
       overflow_supported_(false),
       supported_versions_(supported_versions),
-      print_response_(print_response),
-      initial_flow_control_window_(initial_flow_control_window) {
+      print_response_(print_response) {
   config_.SetDefaults();
 }
 
 QuicClient::QuicClient(IPEndPoint server_address,
                        const QuicServerId& server_id,
-                       const QuicConfig& config,
                        const QuicVersionVector& supported_versions,
-                       uint32 initial_flow_control_window)
+                       bool print_response,
+                       const QuicConfig& config,
+                       EpollServer* epoll_server)
     : server_address_(server_address),
       server_id_(server_id),
       config_(config),
       local_port_(0),
+      epoll_server_(epoll_server),
       fd_(-1),
       helper_(CreateQuicConnectionHelper()),
       initialized_(false),
       packets_dropped_(0),
       overflow_supported_(false),
       supported_versions_(supported_versions),
-      print_response_(false),
-      initial_flow_control_window_(initial_flow_control_window) {
+      print_response_(print_response) {
 }
 
 QuicClient::~QuicClient() {
@@ -75,14 +77,27 @@ QuicClient::~QuicClient() {
     session()->connection()->SendConnectionClosePacket(
         QUIC_PEER_GOING_AWAY, "");
   }
+  if (fd_ > 0) {
+    epoll_server_->UnregisterFD(fd_);
+  }
 }
 
 bool QuicClient::Initialize() {
   DCHECK(!initialized_);
 
-  epoll_server_.set_timeout_in_us(50 * 1000);
+  epoll_server_->set_timeout_in_us(50 * 1000);
   crypto_config_.SetDefaults();
 
+  if (!CreateUDPSocket()) {
+    return false;
+  }
+
+  epoll_server_->RegisterFD(fd_, this, kEpollFlags);
+  initialized_ = true;
+  return true;
+}
+
+bool QuicClient::CreateUDPSocket() {
   int address_family = server_address_.GetSockAddrFamily();
   fd_ = socket(address_family, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
   if (fd_ < 0) {
@@ -153,8 +168,6 @@ bool QuicClient::Initialize() {
     LOG(ERROR) << "Unable to get self address.  Error: " << strerror(errno);
   }
 
-  epoll_server_.RegisterFD(fd_, this, kEpollFlags);
-  initialized_ = true;
   return true;
 }
 
@@ -181,8 +194,7 @@ bool QuicClient::StartConnect() {
       server_id_,
       config_,
       new QuicConnection(GenerateConnectionId(), server_address_, helper_.get(),
-                         writer_.get(), false, supported_versions_,
-                         initial_flow_control_window_),
+                         writer_.get(), false, supported_versions_),
       &crypto_config_));
   return session_->CryptoConnect();
 }
@@ -198,23 +210,24 @@ void QuicClient::Disconnect() {
   if (connected()) {
     session()->connection()->SendConnectionClose(QUIC_PEER_GOING_AWAY);
   }
-  epoll_server_.UnregisterFD(fd_);
+  epoll_server_->UnregisterFD(fd_);
   close(fd_);
   fd_ = -1;
   initialized_ = false;
 }
 
 void QuicClient::SendRequestsAndWaitForResponse(
-    const CommandLine::StringVector& args) {
+    const base::CommandLine::StringVector& args) {
   for (size_t i = 0; i < args.size(); ++i) {
     BalsaHeaders headers;
     headers.SetRequestFirstlineFromStringPieces("GET", args[i], "HTTP/1.1");
     QuicSpdyClientStream* stream = CreateReliableClientStream();
+    DCHECK(stream != NULL);
     stream->SendRequest(headers, "", true);
     stream->set_visitor(this);
   }
 
-  while (WaitForEvents()) { }
+  while (WaitForEvents()) {}
 }
 
 QuicSpdyClientStream* QuicClient::CreateReliableClientStream() {
@@ -228,23 +241,23 @@ QuicSpdyClientStream* QuicClient::CreateReliableClientStream() {
 void QuicClient::WaitForStreamToClose(QuicStreamId id) {
   DCHECK(connected());
 
-  while (!session_->IsClosedStream(id)) {
-    epoll_server_.WaitForEventsAndExecuteCallbacks();
+  while (connected() && !session_->IsClosedStream(id)) {
+    epoll_server_->WaitForEventsAndExecuteCallbacks();
   }
 }
 
 void QuicClient::WaitForCryptoHandshakeConfirmed() {
   DCHECK(connected());
 
-  while (!session_->IsCryptoHandshakeConfirmed()) {
-    epoll_server_.WaitForEventsAndExecuteCallbacks();
+  while (connected() && !session_->IsCryptoHandshakeConfirmed()) {
+    epoll_server_->WaitForEventsAndExecuteCallbacks();
   }
 }
 
 bool QuicClient::WaitForEvents() {
   DCHECK(connected());
 
-  epoll_server_.WaitForEventsAndExecuteCallbacks();
+  epoll_server_->WaitForEventsAndExecuteCallbacks();
   return session_->num_active_requests() != 0;
 }
 
@@ -287,13 +300,6 @@ void QuicClient::OnClose(QuicDataStream* stream) {
   printf("%s\n", client_stream->data().c_str());
 }
 
-QuicPacketCreator::Options* QuicClient::options() {
-  if (session() == NULL) {
-    return NULL;
-  }
-  return session_->options();
-}
-
 bool QuicClient::connected() const {
   return session_.get() && session_->connection() &&
       session_->connection()->connected();
@@ -304,7 +310,7 @@ QuicConnectionId QuicClient::GenerateConnectionId() {
 }
 
 QuicEpollConnectionHelper* QuicClient::CreateQuicConnectionHelper() {
-  return new QuicEpollConnectionHelper(&epoll_server_);
+  return new QuicEpollConnectionHelper(epoll_server_);
 }
 
 QuicPacketWriter* QuicClient::CreateQuicPacketWriter() {

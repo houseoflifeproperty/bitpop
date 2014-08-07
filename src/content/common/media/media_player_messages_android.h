@@ -42,6 +42,7 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(media::DemuxerData)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(access_units)
+  IPC_STRUCT_TRAITS_MEMBER(demuxer_configs)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(media::AccessUnit)
@@ -60,6 +61,17 @@ IPC_STRUCT_TRAITS_BEGIN(media::SubsampleEntry)
 IPC_STRUCT_TRAITS_END()
 
 IPC_ENUM_TRAITS(MediaPlayerHostMsg_Initialize_Type)
+
+// Parameters to describe a media player
+IPC_STRUCT_BEGIN(MediaPlayerHostMsg_Initialize_Params)
+  IPC_STRUCT_MEMBER(MediaPlayerHostMsg_Initialize_Type, type)
+  IPC_STRUCT_MEMBER(base::SharedMemoryHandle, metafile_data_handle)
+  IPC_STRUCT_MEMBER(int, player_id)
+  IPC_STRUCT_MEMBER(int, demuxer_client_id)
+  IPC_STRUCT_MEMBER(GURL, url)
+  IPC_STRUCT_MEMBER(GURL, first_party_for_cookies)
+  IPC_STRUCT_MEMBER(GURL, frame_url)
+IPC_STRUCT_END()
 
 // Chrome for Android seek message sequence is:
 // 1. Renderer->Browser MediaPlayerHostMsg_Seek
@@ -175,10 +187,6 @@ IPC_MESSAGE_CONTROL2(MediaPlayerMsg_ReadFromDemuxer,
                      int /* demuxer_client_id */,
                      media::DemuxerStream::Type /* type */)
 
-// The player needs new config data
-IPC_MESSAGE_CONTROL1(MediaPlayerMsg_MediaConfigRequest,
-                     int /* demuxer_client_id */)
-
 // Clank has connected to the remote device.
 IPC_MESSAGE_ROUTED2(MediaPlayerMsg_ConnectedToRemoteDevice,
                     int /* player_id */,
@@ -192,31 +200,19 @@ IPC_MESSAGE_ROUTED1(MediaPlayerMsg_DisconnectedFromRemoteDevice,
 IPC_MESSAGE_ROUTED1(MediaPlayerMsg_RequestFullscreen,
                     int /*player_id */)
 
+// Pauses all video playback.
+IPC_MESSAGE_ROUTED0(MediaPlayerMsg_PauseVideo)
+
 // Messages for controlling the media playback in browser process ----------
 
 // Destroy the media player object.
 IPC_MESSAGE_ROUTED1(MediaPlayerHostMsg_DestroyMediaPlayer,
                     int /* player_id */)
 
-// Destroy all the players.
-IPC_MESSAGE_ROUTED0(MediaPlayerHostMsg_DestroyAllMediaPlayers)
-
-// Initialize a media player object with the given type and player_id. The other
-// parameters are used depending on the type of player.
-//
-// url: the URL to load when initializing a URL player.
-//
-// first_party_for_cookies: the cookie store to use when loading a URL.
-//
-// demuxer_client_id: the demuxer associated with this player when initializing
-// a media source player.
-IPC_MESSAGE_ROUTED5(
+// Initialize a media player object.
+IPC_MESSAGE_ROUTED1(
     MediaPlayerHostMsg_Initialize,
-    MediaPlayerHostMsg_Initialize_Type /* type */,
-    int /* player_id */,
-    GURL /* url */,
-    GURL /* first_party_for_cookies */,
-    int /* demuxer_client_id */)
+    MediaPlayerHostMsg_Initialize_Params);
 
 // Pause the player.
 IPC_MESSAGE_ROUTED2(MediaPlayerHostMsg_Pause,

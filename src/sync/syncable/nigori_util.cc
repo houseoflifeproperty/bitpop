@@ -100,8 +100,7 @@ bool VerifyDataTypeEncryptionForTest(
     NOTREACHED();
     return true;
   }
-  std::string type_tag = ModelTypeToRootTag(type);
-  Entry type_root(trans, GET_BY_SERVER_TAG, type_tag);
+  Entry type_root(trans, GET_TYPE_ROOT, type);
   if (!type_root.good()) {
     NOTREACHED();
     return false;
@@ -155,7 +154,9 @@ bool UpdateEntryWithEncryption(
   ModelType type = GetModelTypeFromSpecifics(new_specifics);
   DCHECK_GE(type, FIRST_REAL_MODEL_TYPE);
   const sync_pb::EntitySpecifics& old_specifics = entry->GetSpecifics();
-  const ModelTypeSet encrypted_types = nigori_handler->GetEncryptedTypes(trans);
+  const ModelTypeSet encrypted_types =
+      nigori_handler?
+          nigori_handler->GetEncryptedTypes(trans) : ModelTypeSet();
   // It's possible the nigori lost the set of encrypted types. If the current
   // specifics are already encrypted, we want to ensure we continue encrypting.
   bool was_encrypted = old_specifics.has_encrypted();
@@ -166,7 +167,7 @@ bool UpdateEntryWithEncryption(
   }
   if ((!SpecificsNeedsEncryption(encrypted_types, new_specifics) &&
        !was_encrypted) ||
-      !cryptographer->is_initialized()) {
+      !cryptographer || !cryptographer->is_initialized()) {
     // No encryption required or we are unable to encrypt.
     generated_specifics.CopyFrom(new_specifics);
   } else {

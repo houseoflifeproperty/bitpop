@@ -51,6 +51,28 @@ class ChromiumApi(recipe_api.RecipeApi):
     """Return the path to the built executable directory."""
     return self.c.build_dir.join(self.c.build_config_fs)
 
+  @property
+  def version(self):
+    """Returns a version dictionary (after get_version()), e.g.
+
+    { 'MAJOR'": '37', 'MINOR': '0', 'BUILD': '2021', 'PATCH': '0' }
+    """
+    text = self.m.step_history['get version'].stdout
+    output = {}
+    for line in text.splitlines():
+      [k,v] = line.split('=', 1)
+      output[k] = v
+    return output
+
+  def get_version(self):
+    yield self.m.step(
+        'get version',
+        ['cat', self.m.path['checkout'].join('chrome', 'VERSION')],
+        stdout=self.m.raw_io.output('version'),
+        step_test_data=(
+            lambda: self.m.raw_io.test_api.stream_output(
+                "MAJOR=37\nMINOR=0\nBUILD=2021\nPATCH=0\n")))
+
   def compile(self, targets=None, name=None, abort_on_failure=True,
               force_clobber=False, **kwargs):
     """Return a compile.py invocation."""
@@ -92,7 +114,7 @@ class ChromiumApi(recipe_api.RecipeApi):
               python_mode=False, spawn_dbus=True, parallel=False,
               revision=None, webkit_revision=None, master_class_name=None,
               test_launcher_summary_output=None, flakiness_dash=None,
-              perf_id=None, **kwargs):
+              perf_id=None, perf_config=None, **kwargs):
     """Return a runtest.py invocation."""
     args = args or []
     assert isinstance(args, list)
@@ -119,6 +141,8 @@ class ChromiumApi(recipe_api.RecipeApi):
       full_args.append('--perf-dashboard-id=%s' % perf_dashboard_id)
     if perf_id:
       full_args.append('--perf-id=%s' % perf_id)
+    if perf_config:
+      full_args.extend(['--perf-config', perf_config])
     # This replaces the step_name that used to be sent via factory_properties.
     if test_type:
       full_args.append('--test-type=%s' % test_type)
@@ -135,7 +159,6 @@ class ChromiumApi(recipe_api.RecipeApi):
       full_args.extend([
         '--generate-json-file',
         '-o', 'gtest-results/%s' % test,
-        '--test-type', test,
       ])
       # The flakiness dashboard needs the buildnumber, so we assert it here.
       assert self.m.properties.get('buildnumber')
@@ -165,14 +188,28 @@ class ChromiumApi(recipe_api.RecipeApi):
     if master_class_name:
       full_args.append('--master-class-name=%s' % master_class_name)
 
-    if self.c.memory_tool:
+    if self.c.gyp_env.GYP_DEFINES.get('asan', 0) == 1:
+      full_args.append('--enable-asan')
+    if self.c.gyp_env.GYP_DEFINES.get('lsan', 0) == 1:  # pragma: no cover
+      full_args.append('--enable-lsan')
+      full_args.append('--lsan-suppressions-file=%s' %
+                       self.c.runtests.lsan_suppressions_file)
+    if self.c.gyp_env.GYP_DEFINES.get('msan', 0) == 1:
+      full_args.append('--enable-msan')
+    if self.c.gyp_env.GYP_DEFINES.get('tsan', 0) == 1:
+      full_args.append('--enable-tsan')
+      full_args.append('--tsan-suppressions-file=%s' %
+                       self.c.runtests.tsan_suppressions_file)
+    if self.c.gyp_env.GYP_DEFINES.get('syzyasan', 0) == 1:
+      full_args.append('--use-syzyasan-logger')
+    if self.c.runtests.memory_tool:
       full_args.extend([
         '--pass-build-dir',
         '--pass-target',
         '--run-shell-script',
-        self.c.memory_tests_runner,
-        '--test', test,
-        '--tool', self.c.memory_tool,
+        self.c.runtests.memory_tests_runner,
+        '--test', t_name,
+        '--tool', self.c.runtests.memory_tool,
       ])
     else:
       full_args.append(test)
@@ -305,7 +342,31 @@ class ChromiumApi(recipe_api.RecipeApi):
       'cleanup_temp',
       self.m.path['build'].join('scripts', 'slave', 'cleanup_temp.py'))
 
-  def archive_build(self, step_name, gs_bucket, **kwargs):
+  def crash_handler(self):
+    return self.m.python(
+        'start_crash_service',
+        self.m.path['build'].join('scripts', 'slave', 'chromium',
+                                  'run_crash_handler.py'),
+        ['--target', self.c.build_config_fs])
+
+  def process_dumps(self, **kwargs):
+    # Dumps are especially useful when other steps (e.g. tests) are failing.
+    kwargs.setdefault('always_run', True)
+    return self.m.python(
+        'process_dumps',
+        self.m.path['build'].join('scripts', 'slave', 'process_dumps.py'),
+        ['--target', self.c.build_config_fs],
+        **kwargs)
+
+  def apply_syzyasan(self):
+    args = ['--target', self.c.BUILD_CONFIG]
+    return self.m.python(
+      'apply_syzyasan',
+      self.m.path['build'].join('scripts', 'slave', 'chromium',
+                                'win_apply_syzyasan.py'),
+      args)
+
+  def archive_build(self, step_name, gs_bucket, gs_acl=None, **kwargs):
     """Returns a step invoking archive_build.py to archive a Chromium build."""
 
     # archive_build.py insists on inspecting factory properties. For now just
@@ -314,6 +375,8 @@ class ChromiumApi(recipe_api.RecipeApi):
         'gclient_env': self.c.gyp_env.as_jsonish(),
         'gs_bucket': 'gs://%s' % gs_bucket,
     }
+    if gs_acl is not None:
+      fake_factory_properties['gs_acl'] = gs_acl
 
     args = [
         '--target', self.c.BUILD_CONFIG,
@@ -332,16 +395,38 @@ class ChromiumApi(recipe_api.RecipeApi):
       name += ' (%s)' % suffix
     return self.m.python(
         name,
-        self.m.path['checkout'].join('tools', 'checkdeps', 'checkdeps.py'),
+        self.m.path['checkout'].join('buildtools', 'checkdeps', 'checkdeps.py'),
         args=['--json', self.m.json.output()],
         step_test_data=lambda: self.m.json.test_api.output([]),
         **kwargs)
 
-  def checkperms(self, **kwargs):
+  def checkperms(self, suffix=None, **kwargs):
+    name = 'checkperms'
+    if suffix:
+      name += ' (%s)' % suffix
     return self.m.python(
-        'checkperms',
+        name,
         self.m.path['checkout'].join('tools', 'checkperms', 'checkperms.py'),
-        args=['--root', self.m.path['checkout']],
+        args=[
+            '--root', self.m.path['checkout'],
+            '--json', self.m.json.output(),
+        ],
+        step_test_data=lambda: self.m.json.test_api.output([]),
+        **kwargs)
+
+  def checklicenses(self, suffix=None, **kwargs):
+    name = 'checklicenses'
+    if suffix:
+      name += ' (%s)' % suffix
+    return self.m.python(
+        name,
+        self.m.path['checkout'].join(
+            'tools', 'checklicenses', 'checklicenses.py'),
+        args=[
+            '--root', self.m.path['checkout'],
+            '--json', self.m.json.output(),
+        ],
+        step_test_data=lambda: self.m.json.test_api.output([]),
         **kwargs)
 
   def deps2git(self, suffix=None, **kwargs):
@@ -364,3 +449,15 @@ class ChromiumApi(recipe_api.RecipeApi):
         self.m.path['checkout'].join('tools', 'deps2git', 'deps2submodules.py'),
         args=['--gitless', self.m.path['checkout'].join('.DEPS.git')],
         **kwargs)
+
+  def setup_tests(self, bot_type, test_steps):
+    steps = []
+    if bot_type in ['tester', 'builder_tester'] and test_steps:
+      if self.m.platform.is_win:
+        steps.append(self.crash_handler())
+
+      steps.extend(test_steps)
+
+      if self.m.platform.is_win:
+        steps.append(self.process_dumps())
+    return steps

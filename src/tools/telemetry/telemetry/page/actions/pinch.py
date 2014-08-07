@@ -10,7 +10,7 @@ class PinchAction(GestureAction):
   def __init__(self, attributes=None):
     super(PinchAction, self).__init__(attributes)
 
-  def WillRunAction(self, page, tab):
+  def WillRunAction(self, tab):
     for js_file in ['gesture_common.js', 'pinch.js']:
       with open(os.path.join(os.path.dirname(__file__), js_file)) as f:
         js = f.read()
@@ -20,6 +20,12 @@ class PinchAction(GestureAction):
     if not tab.EvaluateJavaScript('window.__PinchAction_SupportedByBrowser()'):
       raise page_action.PageActionNotSupported(
           'Synthetic pinch not supported for this browser')
+
+    # TODO(dominikg): Remove once JS interface changes have rolled into stable.
+    if not tab.EvaluateJavaScript('chrome.gpuBenchmarking.newPinchInterface'):
+      raise page_action.PageActionNotSupported(
+          'This version of the browser doesn\'t support the new JS interface '
+          'for pinch gestures.')
 
     if (GestureAction.GetGestureSourceTypeFromOptions(tab) ==
         'chrome.gpuBenchmarking.MOUSE_INPUT'):
@@ -36,11 +42,17 @@ class PinchAction(GestureAction):
         window.__pinchAction = new __PinchAction(%s);"""
         % done_callback)
 
-  def RunGesture(self, page, tab):
+  @staticmethod
+  def _GetDefaultScaleFactorForPage(tab):
+    current_scale_factor = tab.EvaluateJavaScript(
+        'window.outerWidth / window.innerWidth')
+    return 3.0 / current_scale_factor
+
+  def RunGesture(self, tab):
     left_anchor_percentage = getattr(self, 'left_anchor_percentage', 0.5)
     top_anchor_percentage = getattr(self, 'top_anchor_percentage', 0.5)
-    zoom_in = getattr(self, 'zoom_in', True)
-    pixels_to_cover = getattr(self, 'pixels_to_cover', 500)
+    scale_factor = getattr(self, 'scale_factor',
+                           PinchAction._GetDefaultScaleFactorForPage(tab))
     speed = getattr(self, 'speed', 800)
 
     if hasattr(self, 'element_function'):
@@ -49,14 +61,12 @@ class PinchAction(GestureAction):
              { element: element,
                left_anchor_percentage: %s,
                top_anchor_percentage: %s,
-               zoom_in: %s,
-               pixels_to_cover: %s,
+               scale_factor: %s,
                speed: %s })
              });""" % (self.element_function,
                        left_anchor_percentage,
                        top_anchor_percentage,
-                       'true' if zoom_in else 'false',
-                       pixels_to_cover,
+                       scale_factor,
                        speed))
     else:
       tab.ExecuteJavaScript("""
@@ -64,23 +74,11 @@ class PinchAction(GestureAction):
           { element: document.body,
             left_anchor_percentage: %s,
             top_anchor_percentage: %s,
-            zoom_in: %s,
-            pixels_to_cover: %s,
+            scale_factor: %s,
             speed: %s });"""
         % (left_anchor_percentage,
            top_anchor_percentage,
-           'true' if zoom_in else 'false',
-           pixels_to_cover,
+           scale_factor,
            speed))
 
     tab.WaitForJavaScriptExpression('window.__pinchActionDone', 60)
-
-  def CanBeBound(self):
-    return True
-
-  def BindMeasurementJavaScript(self, tab, start_js, stop_js):
-    # Make the pinch action start and stop measurement automatically.
-    tab.ExecuteJavaScript("""
-        window.__pinchAction.beginMeasuringHook = function() { %s };
-        window.__pinchAction.endMeasuringHook = function() { %s };
-    """ % (start_js, stop_js))

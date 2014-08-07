@@ -30,6 +30,7 @@
 
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "bindings/v8/ScriptValue.h"
+#include "core/animation/AnimationClock.h"
 #include "core/animation/CompositorPendingAnimations.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/DocumentEncodingData.h"
@@ -64,7 +65,6 @@
 namespace WebCore {
 
 class AXObjectCache;
-class AnimationClock;
 class Attr;
 class CDATASection;
 class CSSFontSelector;
@@ -80,7 +80,7 @@ class ContextFeatures;
 class CustomElementRegistrationContext;
 class DOMImplementation;
 class DOMSelection;
-class DOMWindow;
+class LocalDOMWindow;
 class Database;
 class DatabaseThread;
 class DocumentFragment;
@@ -90,11 +90,12 @@ class DocumentLoader;
 class DocumentMarkerController;
 class DocumentParser;
 class DocumentState;
-class DocumentTimeline;
+class AnimationTimeline;
 class DocumentType;
 class Element;
 class ElementDataCache;
 class Event;
+class EventFactoryBase;
 class EventListener;
 class ExceptionState;
 class FastTextAutosizer;
@@ -102,7 +103,7 @@ class FloatQuad;
 class FloatRect;
 class FontFaceSet;
 class FormController;
-class LocalFrame;
+class Frame;
 class FrameHost;
 class FrameView;
 class HTMLAllCollection;
@@ -117,6 +118,7 @@ class HTMLIFrameElement;
 class HTMLImport;
 class HTMLImportLoader;
 class HTMLImportsController;
+class HTMLLinkElement;
 class HTMLMapElement;
 class HTMLNameCollection;
 class HTMLScriptElement;
@@ -128,6 +130,7 @@ class LayoutPoint;
 class LayoutRect;
 class LiveNodeListBase;
 class Locale;
+class LocalFrame;
 class Location;
 class MainThreadTaskRunner;
 class MediaQueryList;
@@ -173,11 +176,6 @@ class XMLHttpRequest;
 struct AnnotatedRegionValue;
 
 typedef int ExceptionCode;
-
-enum RecalcStyleTime {
-    RecalcStyleImmediately, // synchronous
-    RecalcStyleDeferred // asynchronous
-};
 
 enum StyleResolverUpdateMode {
     // Discards the StyleResolver and rebuilds it.
@@ -227,19 +225,23 @@ public:
     // DocumentVisibilityObserver::setDocument
     void setObservedDocument(Document&);
 
+protected:
+    void trace(Visitor*);
+
 private:
     void registerObserver(Document&);
     void unregisterObserver();
-    Document* m_document;
+
+    RawPtrWillBeMember<Document> m_document;
 };
 
 class Document : public ContainerNode, public TreeScope, public SecurityContext, public ExecutionContext, public ExecutionContextClient
     , public DocumentSupplementable, public LifecycleContext<Document> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Document);
 public:
-    static PassRefPtr<Document> create(const DocumentInit& initializer = DocumentInit())
+    static PassRefPtrWillBeRawPtr<Document> create(const DocumentInit& initializer = DocumentInit())
     {
-        return adoptRef(new Document(initializer));
+        return adoptRefWillBeNoop(new Document(initializer));
     }
     virtual ~Document();
 
@@ -247,8 +249,10 @@ public:
 
     void mediaQueryAffectingValueChanged();
 
+#if !ENABLE(OILPAN)
     using ContainerNode::ref;
     using ContainerNode::deref;
+#endif
     using SecurityContext::securityOrigin;
     using SecurityContext::contentSecurityPolicy;
     using ExecutionContextClient::addConsoleMessage;
@@ -304,7 +308,7 @@ public:
     String outgoingReferrer();
     String outgoingOrigin() const;
 
-    void setDoctype(PassRefPtr<DocumentType>);
+    void setDoctype(PassRefPtrWillBeRawPtr<DocumentType>);
     DocumentType* doctype() const { return m_docType.get(); }
 
     DOMImplementation& implementation();
@@ -314,39 +318,26 @@ public:
         return m_documentElement.get();
     }
 
-    bool hasManifest() const;
+    // Returns whether the Document has an AppCache manifest.
+    bool hasAppCacheManifest() const;
 
     Location* location() const;
 
-    PassRefPtr<Element> createElement(const AtomicString& name, ExceptionState&);
-    PassRefPtr<DocumentFragment> createDocumentFragment();
-    PassRefPtr<Text> createTextNode(const String& data);
-    PassRefPtr<Comment> createComment(const String& data);
-    PassRefPtr<CDATASection> createCDATASection(const String& data, ExceptionState&);
-    PassRefPtr<ProcessingInstruction> createProcessingInstruction(const String& target, const String& data, ExceptionState&);
-    PassRefPtr<Attr> createAttribute(const AtomicString& name, ExceptionState&);
-    PassRefPtr<Attr> createAttributeNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, ExceptionState&, bool shouldIgnoreNamespaceChecks = false);
-    PassRefPtr<Node> importNode(Node* importedNode, ExceptionState&);
-    PassRefPtr<Node> importNode(Node* importedNode, bool deep, ExceptionState&);
-    PassRefPtr<Element> createElementNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, ExceptionState&);
-    PassRefPtr<Element> createElement(const QualifiedName&, bool createdByParser);
+    PassRefPtrWillBeRawPtr<Element> createElement(const AtomicString& name, ExceptionState&);
+    PassRefPtrWillBeRawPtr<DocumentFragment> createDocumentFragment();
+    PassRefPtrWillBeRawPtr<Text> createTextNode(const String& data);
+    PassRefPtrWillBeRawPtr<Comment> createComment(const String& data);
+    PassRefPtrWillBeRawPtr<CDATASection> createCDATASection(const String& data, ExceptionState&);
+    PassRefPtrWillBeRawPtr<ProcessingInstruction> createProcessingInstruction(const String& target, const String& data, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Attr> createAttribute(const AtomicString& name, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Attr> createAttributeNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, ExceptionState&, bool shouldIgnoreNamespaceChecks = false);
+    PassRefPtrWillBeRawPtr<Node> importNode(Node* importedNode, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Node> importNode(Node* importedNode, bool deep, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Element> createElementNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Element> createElement(const QualifiedName&, bool createdByParser);
 
     bool regionBasedColumnsEnabled() const;
 
-    /**
-     * Retrieve all nodes that intersect a rect in the window's document, until it is fully enclosed by
-     * the boundaries of a node.
-     *
-     * @param centerX x reference for the rectangle in CSS pixels
-     * @param centerY y reference for the rectangle in CSS pixels
-     * @param topPadding How much to expand the top of the rectangle
-     * @param rightPadding How much to expand the right of the rectangle
-     * @param bottomPadding How much to expand the bottom of the rectangle
-     * @param leftPadding How much to expand the left of the rectangle
-     */
-    PassRefPtr<NodeList> nodesFromRect(int centerX, int centerY,
-        unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding,
-        HitTestRequest::HitTestRequestType hitType = HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent) const;
     Element* elementFromPoint(int x, int y) const;
     PassRefPtrWillBeRawPtr<Range> caretRangeFromPoint(int x, int y);
 
@@ -389,20 +380,20 @@ public:
     bool hidden() const;
     void didChangeVisibilityState();
 
-    PassRefPtr<Node> adoptNode(PassRefPtr<Node> source, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Node> adoptNode(PassRefPtrWillBeRawPtr<Node> source, ExceptionState&);
 
-    PassRefPtr<HTMLCollection> images();
-    PassRefPtr<HTMLCollection> embeds();
-    PassRefPtr<HTMLCollection> applets();
-    PassRefPtr<HTMLCollection> links();
-    PassRefPtr<HTMLCollection> forms();
-    PassRefPtr<HTMLCollection> anchors();
-    PassRefPtr<HTMLCollection> scripts();
-    PassRefPtr<HTMLAllCollection> allForBinding();
-    PassRefPtr<HTMLAllCollection> all();
+    PassRefPtrWillBeRawPtr<HTMLCollection> images();
+    PassRefPtrWillBeRawPtr<HTMLCollection> embeds();
+    PassRefPtrWillBeRawPtr<HTMLCollection> applets();
+    PassRefPtrWillBeRawPtr<HTMLCollection> links();
+    PassRefPtrWillBeRawPtr<HTMLCollection> forms();
+    PassRefPtrWillBeRawPtr<HTMLCollection> anchors();
+    PassRefPtrWillBeRawPtr<HTMLCollection> scripts();
+    PassRefPtrWillBeRawPtr<HTMLAllCollection> allForBinding();
+    PassRefPtrWillBeRawPtr<HTMLAllCollection> all();
 
-    PassRefPtr<HTMLCollection> windowNamedItems(const AtomicString& name);
-    PassRefPtr<HTMLCollection> documentNamedItems(const AtomicString& name);
+    PassRefPtrWillBeRawPtr<HTMLCollection> windowNamedItems(const AtomicString& name);
+    PassRefPtrWillBeRawPtr<HTMLCollection> documentNamedItems(const AtomicString& name);
 
     bool isHTMLDocument() const { return m_documentClasses & HTMLDocumentClass; }
     bool isXHTMLDocument() const { return m_documentClasses & XHTMLDocumentClass; }
@@ -419,6 +410,9 @@ public:
     bool isSrcdocDocument() const { return m_isSrcdocDocument; }
     bool isMobileDocument() const { return m_isMobileDocument; }
 
+    bool isTransitionDocument() const { return m_isTransitionDocument; }
+    void setIsTransitionDocument() { m_isTransitionDocument = true; }
+
     StyleResolver* styleResolver() const;
     StyleResolver& ensureStyleResolver() const;
 
@@ -426,8 +420,6 @@ public:
     void setIsViewSource(bool);
 
     bool sawElementsInKnownNamespaces() const { return m_sawElementsInKnownNamespaces; }
-
-    void notifyRemovePendingSheetIfNeeded();
 
     bool isRenderingReady() const { return haveImportsLoaded() && haveStylesheetsLoaded(); }
     bool isScriptExecutionReady() const { return isRenderingReady(); }
@@ -441,24 +433,23 @@ public:
     void setGotoAnchorNeededAfterStylesheetsLoad(bool b) { m_gotoAnchorNeededAfterStylesheetsLoad = b; }
 
     // Called when one or more stylesheets in the document may have been added, removed, or changed.
-    void styleResolverChanged(RecalcStyleTime, StyleResolverUpdateMode = FullStyleUpdate);
+    void styleResolverChanged(StyleResolverUpdateMode = FullStyleUpdate);
     void styleResolverMayHaveChanged();
 
     // FIXME: Switch all callers of styleResolverChanged to these or better ones and then make them
     // do something smarter.
-    void removedStyleSheet(StyleSheet*, RecalcStyleTime when = RecalcStyleDeferred, StyleResolverUpdateMode = FullStyleUpdate);
-    void addedStyleSheet(StyleSheet*, RecalcStyleTime when = RecalcStyleDeferred) { styleResolverChanged(when); }
-    void modifiedStyleSheet(StyleSheet*, RecalcStyleTime when = RecalcStyleDeferred, StyleResolverUpdateMode = FullStyleUpdate);
-    void changedSelectorWatch() { styleResolverChanged(RecalcStyleDeferred); }
+    void removedStyleSheet(StyleSheet*, StyleResolverUpdateMode = FullStyleUpdate);
+    void addedStyleSheet(StyleSheet*) { styleResolverChanged(); }
+    void modifiedStyleSheet(StyleSheet*, StyleResolverUpdateMode = FullStyleUpdate);
+    void changedSelectorWatch() { styleResolverChanged(); }
 
     void scheduleUseShadowTreeUpdate(SVGUseElement&);
     void unscheduleUseShadowTreeUpdate(SVGUseElement&);
 
-    // FIXME: This should be eliminated and elements that use it should be made to
-    // always have a layer so they don't need to go about creating one from reasons
-    // external to style.
-    void scheduleLayerUpdate(Element&);
-    void unscheduleLayerUpdate(Element&);
+    // FIXME: SVG filters should change to store the filter on the RenderStyle
+    // instead of the RenderObject so we can get rid of this hack.
+    void scheduleSVGFilterLayerUpdateHack(Element&);
+    void unscheduleSVGFilterLayerUpdateHack(Element&);
 
     void evaluateMediaQueryList();
 
@@ -476,16 +467,16 @@ public:
 
     PassRefPtrWillBeRawPtr<Range> createRange();
 
-    PassRefPtr<NodeIterator> createNodeIterator(Node* root, ExceptionState&);
-    PassRefPtr<NodeIterator> createNodeIterator(Node* root, unsigned whatToShow, ExceptionState&);
-    PassRefPtr<NodeIterator> createNodeIterator(Node* root, unsigned whatToShow, PassRefPtr<NodeFilter>, ExceptionState&);
+    PassRefPtrWillBeRawPtr<NodeIterator> createNodeIterator(Node* root, ExceptionState&);
+    PassRefPtrWillBeRawPtr<NodeIterator> createNodeIterator(Node* root, unsigned whatToShow, ExceptionState&);
+    PassRefPtrWillBeRawPtr<NodeIterator> createNodeIterator(Node* root, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter>, ExceptionState&);
 
-    PassRefPtr<TreeWalker> createTreeWalker(Node* root, ExceptionState&);
-    PassRefPtr<TreeWalker> createTreeWalker(Node* root, unsigned whatToShow, ExceptionState&);
-    PassRefPtr<TreeWalker> createTreeWalker(Node* root, unsigned whatToShow, PassRefPtr<NodeFilter>, ExceptionState&);
+    PassRefPtrWillBeRawPtr<TreeWalker> createTreeWalker(Node* root, ExceptionState&);
+    PassRefPtrWillBeRawPtr<TreeWalker> createTreeWalker(Node* root, unsigned whatToShow, ExceptionState&);
+    PassRefPtrWillBeRawPtr<TreeWalker> createTreeWalker(Node* root, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter>, ExceptionState&);
 
     // Special support for editing
-    PassRefPtr<Text> createEditingTextNode(const String&);
+    PassRefPtrWillBeRawPtr<Text> createEditingTextNode(const String&);
 
     void setupFontBuilder(RenderStyle* documentStyle);
 
@@ -517,6 +508,9 @@ public:
     virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
     void prepareForDestruction();
 
+    // If you have a Document, use renderView() instead which is faster.
+    void renderer() const WTF_DELETED_FUNCTION;
+
     RenderView* renderView() const { return m_renderView; }
 
     AXObjectCache* existingAXObjectCache() const;
@@ -529,7 +523,7 @@ public:
     DocumentLoader* loader() const;
 
     void open(Document* ownerDocument = 0, ExceptionState& = ASSERT_NO_EXCEPTION);
-    PassRefPtr<DocumentParser> implicitOpen();
+    PassRefPtrWillBeRawPtr<DocumentParser> implicitOpen();
 
     // close() is the DOM API document.close()
     void close(ExceptionState& = ASSERT_NO_EXCEPTION);
@@ -577,12 +571,12 @@ public:
     virtual String userAgent(const KURL&) const OVERRIDE FINAL;
     virtual void disableEval(const String& errorMessage) OVERRIDE FINAL;
 
-    bool canNavigate(LocalFrame* targetFrame);
+    bool canNavigate(const Frame& targetFrame);
     LocalFrame* findUnsafeParentScrollPropagationBoundary();
 
     CSSStyleSheet& elementSheet();
 
-    virtual PassRefPtr<DocumentParser> createParser();
+    virtual PassRefPtrWillBeRawPtr<DocumentParser> createParser();
     DocumentParser* parser() const { return m_parser.get(); }
     ScriptableDocumentParser* scriptableDocumentParser() const;
 
@@ -632,7 +626,7 @@ public:
     String selectedStylesheetSet() const;
     void setSelectedStylesheetSet(const String&);
 
-    bool setFocusedElement(PassRefPtr<Element>, FocusType = FocusTypeNone);
+    bool setFocusedElement(PassRefPtrWillBeRawPtr<Element>, FocusType = FocusTypeNone);
     Element* focusedElement() const { return m_focusedElement.get(); }
     UserActionElementSet& userActionElements()  { return m_userActionElements; }
     const UserActionElementSet& userActionElements() const { return m_userActionElements; }
@@ -640,10 +634,7 @@ public:
     void setAutofocusElement(Element*);
     Element* autofocusElement() const { return m_autofocusElement.get(); }
 
-    void setHoverNode(PassRefPtr<Node>);
-    Node* hoverNode() const { return m_hoverNode.get(); }
-
-    void setActiveHoverElement(PassRefPtr<Element>);
+    void setActiveHoverElement(PassRefPtrWillBeRawPtr<Element>);
     Element* activeHoverElement() const { return m_activeHoverElement.get(); }
 
     void removeFocusedElementOfSubtree(Node*, bool amongChildrenOnly = false);
@@ -659,10 +650,10 @@ public:
     void scheduleRenderTreeUpdateIfNeeded();
     bool hasPendingForcedStyleRecalc() const;
 
-    void registerNodeList(LiveNodeListBase*);
-    void unregisterNodeList(LiveNodeListBase*);
-    void incrementNodeListWithIdNameCacheCount();
-    void decrementNodeListWithIdNameCacheCount();
+    void registerNodeList(const LiveNodeListBase*);
+    void unregisterNodeList(const LiveNodeListBase*);
+    void registerNodeListWithIdNameCache(const LiveNodeListBase*);
+    void unregisterNodeListWithIdNameCache(const LiveNodeListBase*);
     bool shouldInvalidateNodeListCaches(const QualifiedName* attrName = 0) const;
     void invalidateNodeListCaches(const QualifiedName* attrName);
 
@@ -674,6 +665,7 @@ public:
     void detachRange(Range*);
 
     void updateRangesAfterChildrenChanged(ContainerNode*);
+    void updateRangesAfterNodeMovedToAnotherDocument(const Node&);
     // nodeChildrenWillBeRemoved is used when removing all node children at once.
     void nodeChildrenWillBeRemoved(ContainerNode&);
     // nodeWillBeRemoved is only safe when removing one node at a time.
@@ -685,14 +677,15 @@ public:
     void didMergeTextNodes(Text& oldNode, unsigned offset);
     void didSplitTextNode(Text& oldNode);
 
-    void clearDOMWindow() { m_domWindow = 0; }
-    DOMWindow* domWindow() const { return m_domWindow; }
+    void clearDOMWindow() { m_domWindow = nullptr; }
+    LocalDOMWindow* domWindow() const { return m_domWindow; }
 
-    // Helper functions for forwarding DOMWindow event related tasks to the DOMWindow if it exists.
+    // Helper functions for forwarding LocalDOMWindow event related tasks to the LocalDOMWindow if it exists.
     void setWindowAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>);
     EventListener* getWindowAttributeEventListener(const AtomicString& eventType);
 
-    PassRefPtrWillBeRawPtr<Event> createEvent(const String& eventType, ExceptionState&);
+    static void registerEventFactory(PassOwnPtr<EventFactoryBase>);
+    static PassRefPtrWillBeRawPtr<Event> createEvent(const String& eventType, ExceptionState&);
 
     // keep track of what types of event listeners are registered, so we don't
     // dispatch events unnecessarily
@@ -792,9 +785,9 @@ public:
     static bool hasValidNamespaceForAttributes(const QualifiedName&);
 
     HTMLElement* body() const;
-    void setBody(PassRefPtr<HTMLElement>, ExceptionState&);
+    void setBody(PassRefPtrWillBeRawPtr<HTMLElement>, ExceptionState&);
 
-    HTMLHeadElement* head();
+    HTMLHeadElement* head() const;
 
     // Decide which element is to define the viewport's overflow policy. If |rootStyle| is set, use
     // that as the style for the root element, rather than obtaining it on our own. The reason for
@@ -828,12 +821,12 @@ public:
 
     Document* parentDocument() const;
     Document& topDocument() const;
-    WeakPtr<Document> contextDocument();
+    WeakPtrWillBeRawPtr<Document> contextDocument();
 
     ScriptRunner* scriptRunner() { return m_scriptRunner.get(); }
 
     HTMLScriptElement* currentScript() const { return !m_currentScriptStack.isEmpty() ? m_currentScriptStack.last().get() : 0; }
-    void pushCurrentScript(PassRefPtr<HTMLScriptElement>);
+    void pushCurrentScript(PassRefPtrWillBeRawPtr<HTMLScriptElement>);
     void popCurrentScript();
 
     void applyXSLTransform(ProcessingInstruction* pi);
@@ -849,11 +842,18 @@ public:
     enum PendingSheetLayout { NoLayoutWithPendingSheets, DidLayoutWithPendingSheets, IgnoreLayoutWithPendingSheets };
 
     bool didLayoutWithPendingStylesheets() const { return m_pendingSheetLayout == DidLayoutWithPendingSheets; }
+    bool ignoreLayoutWithPendingStylesheets() const { return m_pendingSheetLayout == IgnoreLayoutWithPendingSheets; }
 
     bool hasNodesWithPlaceholderStyle() const { return m_hasNodesWithPlaceholderStyle; }
     void setHasNodesWithPlaceholderStyle() { m_hasNodesWithPlaceholderStyle = true; }
 
     Vector<IconURL> iconURLs(int iconTypesMask);
+
+    Color themeColor() const;
+
+    // Returns the HTMLLinkElement currently in use for the Web Manifest.
+    // Returns null if there is no such element.
+    HTMLLinkElement* linkManifest() const;
 
     void setUseSecureKeyboardEntryWhenActive(bool);
     bool useSecureKeyboardEntryWhenActive() const;
@@ -868,7 +868,7 @@ public:
     bool isDNSPrefetchEnabled() const { return m_isDNSPrefetchEnabled; }
     void parseDNSPrefetchControlHeader(const String&);
 
-    // FIXME(crbug.com/305497): This should be removed once DOMWindow is an ExecutionContext.
+    // FIXME(crbug.com/305497): This should be removed once LocalDOMWindow is an ExecutionContext.
     virtual void postTask(PassOwnPtr<ExecutionContextTask>) OVERRIDE; // Executes the task on context's thread asynchronously.
 
     virtual void tasksWereSuspended() OVERRIDE FINAL;
@@ -938,8 +938,8 @@ public:
     bool hasFullscreenElementStack() const { return m_hasFullscreenElementStack; }
     void setHasFullscreenElementStack() { m_hasFullscreenElementStack = true; }
 
-    void webkitExitPointerLock();
-    Element* webkitPointerLockElement() const;
+    void exitPointerLock();
+    Element* pointerLockElement() const;
 
     // Used to allow element that loads data without going through a FrameLoader to delay the 'load' event.
     void incrementLoadEventDelayCount() { ++m_loadEventDelayCount; }
@@ -948,7 +948,7 @@ public:
     bool isDelayingLoadEvent();
     void loadPluginsSoon();
 
-    PassRefPtrWillBeRawPtr<Touch> createTouch(DOMWindow*, EventTarget*, int identifier, int pageX, int pageY, int screenX, int screenY, int radiusX, int radiusY, float rotationAngle, float force) const;
+    PassRefPtrWillBeRawPtr<Touch> createTouch(LocalDOMWindow*, EventTarget*, int identifier, double pageX, double pageY, double screenX, double screenY, double radiusX, double radiusY, float rotationAngle, float force) const;
     PassRefPtrWillBeRawPtr<TouchList> createTouchList(WillBeHeapVector<RefPtrWillBeMember<Touch> >&) const;
 
     const DocumentTiming& timing() const { return m_documentTiming; }
@@ -958,7 +958,7 @@ public:
     void serviceScriptedAnimations(double monotonicAnimationStartTime);
 
     virtual EventTarget* errorEventTarget() OVERRIDE FINAL;
-    virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtr<ScriptCallStack>) OVERRIDE FINAL;
+    virtual void logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) OVERRIDE FINAL;
 
     void initDNSPrefetch();
 
@@ -967,7 +967,7 @@ public:
     // Called when a single touch event handler has been added or removed for a node.
     // The Node should always be in this Document, except for child Documents which report
     // themselves to their parent exactly once if they have any touch handlers.
-    // Handlers added/removed from the DOMWindow are reported as the Document.
+    // Handlers added/removed from the LocalDOMWindow are reported as the Document.
     void didAddTouchEventHandler(Node*);
     void didRemoveTouchEventHandler(Node* handler) { didRemoveTouchEventHandler(handler, false); }
 
@@ -986,8 +986,8 @@ public:
     TextAutosizer* textAutosizer();
     FastTextAutosizer* fastTextAutosizer();
 
-    PassRefPtr<Element> createElement(const AtomicString& localName, const AtomicString& typeExtension, ExceptionState&);
-    PassRefPtr<Element> createElementNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, const AtomicString& typeExtension, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Element> createElement(const AtomicString& localName, const AtomicString& typeExtension, ExceptionState&);
+    PassRefPtrWillBeRawPtr<Element> createElementNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, const AtomicString& typeExtension, ExceptionState&);
     ScriptValue registerElement(WebCore::ScriptState*, const AtomicString& name, ExceptionState&);
     ScriptValue registerElement(WebCore::ScriptState*, const AtomicString& name, const Dictionary& options, ExceptionState&, CustomElement::NameSet validNames = CustomElement::StandardNames);
     CustomElementRegistrationContext* registrationContext() { return m_registrationContext.get(); }
@@ -1014,7 +1014,6 @@ public:
 
     void didLoadAllScriptBlockingResources();
     void didRemoveAllPendingStylesheet();
-    void setNeedsNotifyRemoveAllPendingStylesheet() { m_needsNotifyRemoveAllPendingStylesheet = true; }
     void clearStyleResolver();
 
     bool inStyleRecalc() const { return m_lifecycle.state() == DocumentLifecycle::InStyleRecalc; }
@@ -1022,9 +1021,8 @@ public:
     // Return a Locale for the default locale if the argument is null or empty.
     Locale& getCachedLocale(const AtomicString& locale = nullAtom);
 
-    AnimationClock& animationClock() { return *m_animationClock; }
-    DocumentTimeline& timeline() const { return *m_timeline; }
-    DocumentTimeline& transitionTimeline() const { return *m_transitionTimeline; }
+    AnimationClock& animationClock() { return m_animationClock; }
+    AnimationTimeline& timeline() const { return *m_timeline; }
     CompositorPendingAnimations& compositorPendingAnimations() { return m_compositorPendingAnimations; }
 
     void addToTopLayer(Element*, const Element* before = 0);
@@ -1041,7 +1039,7 @@ public:
 
     void addConsoleMessageWithRequestIdentifier(MessageSource, MessageLevel, const String& message, unsigned long requestIdentifier);
 
-    virtual DOMWindow* executingWindow() OVERRIDE FINAL;
+    virtual LocalDOMWindow* executingWindow() OVERRIDE FINAL;
     LocalFrame* executingFrame();
 
     DocumentLifecycleNotifier& lifecycleNotifier();
@@ -1070,7 +1068,7 @@ public:
 
     virtual void trace(Visitor*) OVERRIDE;
 
-    bool hasElementsRequiringLayerUpdate() const { return m_layerUpdateElements.size(); }
+    bool hasSVGFilterElementsRequiringLayerUpdate() const { return m_layerUpdateSVGFilterElements.size(); }
     void didRecalculateStyleForElement() { ++m_styleRecalcElementCounter; }
 
 protected:
@@ -1080,11 +1078,13 @@ protected:
 
     void clearXMLVersion() { m_xmlVersion = String(); }
 
+#if !ENABLE(OILPAN)
     virtual void dispose() OVERRIDE;
+#endif
 
-    virtual PassRefPtr<Document> cloneDocumentWithoutChildren();
+    virtual PassRefPtrWillBeRawPtr<Document> cloneDocumentWithoutChildren();
 
-    bool importContainerNodeChildren(ContainerNode* oldContainerNode, PassRefPtr<ContainerNode> newContainerNode, ExceptionState&);
+    bool importContainerNodeChildren(ContainerNode* oldContainerNode, PassRefPtrWillBeRawPtr<ContainerNode> newContainerNode, ExceptionState&);
     void lockCompatibilityMode() { m_compatibilityModeLocked = true; }
 
 private:
@@ -1125,18 +1125,20 @@ private:
     virtual String nodeName() const OVERRIDE FINAL;
     virtual NodeType nodeType() const OVERRIDE FINAL;
     virtual bool childTypeAllowed(NodeType) const OVERRIDE FINAL;
-    virtual PassRefPtr<Node> cloneNode(bool deep = true) OVERRIDE FINAL;
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) OVERRIDE FINAL;
     void cloneDataFromDocument(const Document&);
 
+#if !ENABLE(OILPAN)
     virtual void refExecutionContext() OVERRIDE FINAL { ref(); }
     virtual void derefExecutionContext() OVERRIDE FINAL { deref(); }
+#endif
 
     virtual const KURL& virtualURL() const OVERRIDE FINAL; // Same as url(), but needed for ExecutionContext to implement it without a performance loss for direct calls.
     virtual KURL virtualCompleteURL(const String&) const OVERRIDE FINAL; // Same as completeURL() for the same reason as above.
 
     virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) OVERRIDE FINAL;
     virtual void addMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, ScriptState*) OVERRIDE FINAL;
-    void internalAddMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack>, ScriptState*);
+    void internalAddMessage(MessageSource, MessageLevel, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>, ScriptState*);
 
     virtual double timerAlignmentInterval() const OVERRIDE FINAL;
 
@@ -1144,19 +1146,17 @@ private:
     void updateFocusAppearanceTimerFired(Timer<Document>*);
     void updateBaseURL();
 
-    void executeScriptsWaitingForResourcesIfNeeded();
-
-    PassRefPtr<NodeList> handleZeroPadding(const HitTestRequest&, HitTestResult&) const;
+    void executeScriptsWaitingForResourcesTimerFired(Timer<Document>*);
 
     void loadEventDelayTimerFired(Timer<Document>*);
     void pluginLoadingTimerFired(Timer<Document>*);
 
     PageVisibilityState pageVisibilityState() const;
 
-    PassRefPtr<HTMLCollection> ensureCachedCollection(CollectionType);
+    PassRefPtrWillBeRawPtr<HTMLCollection> ensureCachedCollection(CollectionType);
 
-    // Note that dispatching a window load event may cause the DOMWindow to be detached from
-    // the LocalFrame, so callers should take a reference to the DOMWindow (which owns us) to
+    // Note that dispatching a window load event may cause the LocalDOMWindow to be detached from
+    // the LocalFrame, so callers should take a reference to the LocalDOMWindow (which owns us) to
     // prevent the Document from getting blown away from underneath them.
     void dispatchWindowLoadEvent();
 
@@ -1178,10 +1178,15 @@ private:
 
     bool haveStylesheetsLoaded() const;
 
+    void setHoverNode(PassRefPtrWillBeRawPtr<Node>);
+    Node* hoverNode() const { return m_hoverNode.get(); }
+
+    typedef HashSet<OwnPtr<EventFactoryBase> > EventFactorySet;
+    static EventFactorySet& eventFactories();
+
     DocumentLifecycle m_lifecycle;
 
     bool m_hasNodesWithPlaceholderStyle;
-    bool m_needsNotifyRemoveAllPendingStylesheet;
     bool m_evaluateMediaQueriesOnStyleRecalc;
 
     // If we do ignore the pending stylesheet count, then we need to add a boolean
@@ -1190,11 +1195,14 @@ private:
     PendingSheetLayout m_pendingSheetLayout;
 
     LocalFrame* m_frame;
-    DOMWindow* m_domWindow;
-    HTMLImportsController* m_importsController;
+    RawPtrWillBeMember<LocalDOMWindow> m_domWindow;
+    // FIXME: oilpan: when we get rid of the transition types change the
+    // HTMLImportsController to not be a DocumentSupplement since it is
+    // redundant with oilpan.
+    RawPtrWillBeMember<HTMLImportsController> m_importsController;
 
     RefPtrWillBeMember<ResourceFetcher> m_fetcher;
-    RefPtr<DocumentParser> m_parser;
+    RefPtrWillBeMember<DocumentParser> m_parser;
     unsigned m_activeParserCount;
     RefPtrWillBeMember<ContextFeatures> m_contextFeatures;
 
@@ -1223,6 +1231,8 @@ private:
     CompatibilityMode m_compatibilityMode;
     bool m_compatibilityModeLocked; // This is cheaper than making setCompatibilityMode virtual.
 
+    Timer<Document> m_executeScriptsWaitingForResourcesTimer;
+
     bool m_hasAutofocused;
     Timer<Document> m_clearFocusedElementTimer;
     RefPtrWillBeMember<Element> m_autofocusElement;
@@ -1235,8 +1245,9 @@ private:
     uint64_t m_domTreeVersion;
     static uint64_t s_globalTreeVersion;
 
-    HashSet<NodeIterator*> m_nodeIterators;
-    HashSet<Range*> m_ranges;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<NodeIterator> > m_nodeIterators;
+    typedef WillBeHeapHashSet<RawPtrWillBeWeakMember<Range> > AttachedRangeSet;
+    AttachedRangeSet m_ranges;
 
     unsigned short m_listenerTypes;
 
@@ -1270,17 +1281,17 @@ private:
     RefPtrWillBeMember<Element> m_titleElement;
 
     OwnPtr<AXObjectCache> m_axObjectCache;
-    OwnPtr<DocumentMarkerController> m_markers;
+    OwnPtrWillBeMember<DocumentMarkerController> m_markers;
 
     Timer<Document> m_updateFocusAppearanceTimer;
 
-    Element* m_cssTarget;
+    RawPtrWillBeMember<Element> m_cssTarget;
 
     LoadEventProgress m_loadEventProgress;
 
     double m_startTime;
 
-    OwnPtr<ScriptRunner> m_scriptRunner;
+    OwnPtrWillBeMember<ScriptRunner> m_scriptRunner;
 
     WillBeHeapVector<RefPtrWillBeMember<HTMLScriptElement> > m_currentScriptStack;
 
@@ -1298,10 +1309,18 @@ private:
 
     InheritedBool m_designMode;
 
-    HashSet<LiveNodeListBase*> m_listsInvalidatedAtDocument;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<const LiveNodeListBase> > m_listsInvalidatedAtDocument;
+#if ENABLE(OILPAN)
+    // Oilpan keeps track of all registered NodeLists.
+    //
+    // FIXME: Oilpan: improve - only need to know if a NodeList
+    // is currently alive or not for the different types.
+    HeapHashSet<WeakMember<const LiveNodeListBase> > m_nodeLists[numNodeListInvalidationTypes];
+#else
     unsigned m_nodeListCounts[numNodeListInvalidationTypes];
+#endif
 
-    OwnPtr<SVGDocumentExtensions> m_svgExtensions;
+    OwnPtrWillBeMember<SVGDocumentExtensions> m_svgExtensions;
 
     Vector<AnnotatedRegionValue> m_annotatedRegions;
     bool m_hasAnnotatedRegions;
@@ -1319,12 +1338,14 @@ private:
     bool m_sawElementsInKnownNamespaces;
     bool m_isSrcdocDocument;
     bool m_isMobileDocument;
+    bool m_isTransitionDocument;
 
     RenderView* m_renderView;
 
-    // FIXME: Oilpan: We should use a real weak pointer here.
+#if !ENABLE(OILPAN)
     WeakPtrFactory<Document> m_weakFactory;
-    WeakPtr<Document> m_contextDocument;
+#endif
+    WeakPtrWillBeWeakMember<Document> m_contextDocument;
 
     bool m_hasFullscreenElementStack; // For early return in FullscreenElementStack::fromIfExists()
 
@@ -1350,12 +1371,12 @@ private:
 
     OwnPtr<TouchEventTargetSet> m_touchEventTargets;
 
-    RefPtr<ScriptedAnimationController> m_scriptedAnimationController;
+    RefPtrWillBeMember<ScriptedAnimationController> m_scriptedAnimationController;
     OwnPtr<MainThreadTaskRunner> m_taskRunner;
     OwnPtr<TextAutosizer> m_textAutosizer;
     OwnPtr<FastTextAutosizer> m_fastTextAutosizer;
 
-    RefPtr<CustomElementRegistrationContext> m_registrationContext;
+    RefPtrWillBeMember<CustomElementRegistrationContext> m_registrationContext;
 
     void elementDataCacheClearTimerFired(Timer<Document>*);
     Timer<Document> m_elementDataCacheClearTimer;
@@ -1369,9 +1390,8 @@ private:
     typedef HashMap<AtomicString, OwnPtr<Locale> > LocaleIdentifierToLocaleMap;
     LocaleIdentifierToLocaleMap m_localeCache;
 
-    OwnPtr<AnimationClock> m_animationClock;
-    RefPtr<DocumentTimeline> m_timeline;
-    RefPtr<DocumentTimeline> m_transitionTimeline;
+    AnimationClock m_animationClock;
+    RefPtrWillBeMember<AnimationTimeline> m_timeline;
     CompositorPendingAnimations m_compositorPendingAnimations;
 
     RefPtrWillBeMember<Document> m_templateDocument;
@@ -1383,8 +1403,8 @@ private:
     Timer<Document> m_didAssociateFormControlsTimer;
     WillBeHeapHashSet<RefPtrWillBeMember<Element> > m_associatedFormControls;
 
-    HashSet<SVGUseElement*> m_useElementsNeedingUpdate;
-    HashSet<Element*> m_layerUpdateElements;
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGUseElement> > m_useElementsNeedingUpdate;
+    WillBeHeapHashSet<RawPtrWillBeMember<Element> > m_layerUpdateSVGFilterElements;
 
     bool m_hasViewportUnits;
 
@@ -1394,29 +1414,12 @@ private:
     int m_styleRecalcElementCounter;
 };
 
-inline void Document::notifyRemovePendingSheetIfNeeded()
-{
-    if (m_needsNotifyRemoveAllPendingStylesheet)
-        didRemoveAllPendingStylesheet();
-}
-
 inline bool Document::shouldOverrideLegacyDescription(ViewportDescription::Type origin)
 {
     // The different (legacy) meta tags have different priorities based on the type
     // regardless of which order they appear in the DOM. The priority is given by the
     // ViewportDescription::Type enum.
     return origin >= m_legacyViewportDescription.type;
-}
-
-inline void Document::incrementNodeListWithIdNameCacheCount()
-{
-    m_nodeListCounts[InvalidateOnIdNameAttrChange]++;
-}
-
-inline void Document::decrementNodeListWithIdNameCacheCount()
-{
-    ASSERT(m_nodeListCounts[InvalidateOnIdNameAttrChange] > 0);
-    m_nodeListCounts[InvalidateOnIdNameAttrChange]--;
 }
 
 inline void Document::scheduleRenderTreeUpdateIfNeeded()

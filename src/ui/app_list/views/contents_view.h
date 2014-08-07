@@ -5,17 +5,17 @@
 #ifndef UI_APP_LIST_VIEWS_CONTENTS_VIEW_H_
 #define UI_APP_LIST_VIEWS_CONTENTS_VIEW_H_
 
+#include <map>
+
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "ui/app_list/app_list_export.h"
+#include "ui/app_list/pagination_model.h"
+#include "ui/app_list/pagination_model_observer.h"
 #include "ui/views/view.h"
 
-namespace content {
-class WebContents;
-}
-
 namespace views {
-class BoundsAnimator;
 class ViewModel;
 }
 
@@ -28,21 +28,34 @@ class AppListMainView;
 class AppListModel;
 class AppListViewDelegate;
 class AppsContainerView;
+class ContentsSwitcherView;
 class PaginationModel;
+class SearchResultListView;
+class StartPageView;
 
-// A view to manage sub views under the search box (apps grid view + page
-// switcher and search results). The two sets of sub views are mutually
-// exclusive. ContentsView manages a show state to choose one set to show
-// and animates the transition between show states.
-class ContentsView : public views::View {
+// A view to manage launcher pages within the Launcher (eg. start page, apps
+// grid view, search results). There can be any number of launcher pages, only
+// one of which can be active at a given time. ContentsView provides the user
+// interface for switching between launcher pages, and animates the transition
+// between them.
+class APP_LIST_EXPORT ContentsView : public views::View,
+                                     public PaginationModelObserver {
  public:
-  enum ShowState { SHOW_APPS, SHOW_SEARCH_RESULTS, };
+  // Values of this enum denote special launcher pages that require hard-coding.
+  // Launcher pages are not required to have a NamedPage enum value.
+  enum NamedPage {
+    NAMED_PAGE_APPS,
+    NAMED_PAGE_SEARCH_RESULTS,
+    NAMED_PAGE_START,
+  };
 
-  ContentsView(AppListMainView* app_list_main_view,
-               PaginationModel* pagination_model,
-               AppListModel* model,
-               AppListViewDelegate* view_delegate);
+  ContentsView(AppListMainView* app_list_main_view);
   virtual ~ContentsView();
+
+  // Initialize the named (special) pages of the launcher. In the experimental
+  // launcher, should be called after set_contents_switcher_view(), or switcher
+  // buttons will not be created.
+  void InitNamedPages(AppListModel* model, AppListViewDelegate* view_delegate);
 
   // The app list gets closed and drag and drop operations need to be cancelled.
   void CancelDrag();
@@ -52,40 +65,99 @@ class ContentsView : public views::View {
   void SetDragAndDropHostOfCurrentAppList(
       ApplicationDragAndDropHost* drag_and_drop_host);
 
+  void set_contents_switcher_view(
+      ContentsSwitcherView* contents_switcher_view) {
+    contents_switcher_view_ = contents_switcher_view;
+  }
+
   void ShowSearchResults(bool show);
   void ShowFolderContent(AppListFolderItem* folder);
+  bool IsShowingSearchResults() const;
 
-  // Sets show state and animates the subviews to match the show state.
-  void SetShowState(ShowState show_state);
+  // Sets the active launcher page and animates the pages into place.
+  void SetActivePage(int page_index);
+
+  // The index of the currently active launcher page.
+  int GetActivePageIndex() const;
+
+  // True if |named_page| is the current active laucher page.
+  bool IsNamedPageActive(NamedPage named_page) const;
+
+  // Gets the index of a launcher page in |view_model_|, by NamedPage.
+  int GetPageIndexForNamedPage(NamedPage named_page) const;
+
+  int NumLauncherPages() const;
 
   void Prerender();
 
   AppsContainerView* apps_container_view() { return apps_container_view_; }
+  StartPageView* start_page_view() { return start_page_view_; }
+  SearchResultListView* search_results_view() { return search_results_view_; }
+  views::View* GetPageView(int index);
+
+  // Adds a blank launcher page. For use in tests only.
+  void AddBlankPageForTesting();
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
 
- private:
-  // Invoked when show state is changed.
-  void ShowStateChanged();
+  // Overridden from PaginationModelObserver:
+  virtual void TotalPagesChanged() OVERRIDE;
+  virtual void SelectedPageChanged(int old_selected, int new_selected) OVERRIDE;
+  virtual void TransitionStarted() OVERRIDE;
+  virtual void TransitionChanged() OVERRIDE;
 
-  void CalculateIdealBounds();
-  void AnimateToIdealBounds();
+ private:
+  // Sets the active launcher page, accounting for whether the change is for
+  // search results.
+  void SetActivePageInternal(int page_index, bool show_search_results);
+
+  // Invoked when active view is changed.
+  void ActivePageChanged(bool show_search_results);
+
+  // Calculates and sets the bounds for the subviews. If there is currently an
+  // animation, this positions the views as appropriate for the current frame.
+  void UpdatePageBounds();
+
+  // Adds |view| as a new page to the end of the list of launcher pages. The
+  // view is inserted as a child of the ContentsView, and a button with
+  // |resource_id| is added to the ContentsSwitcherView. There is no name
+  // associated with the page. Returns the index of the new page.
+  int AddLauncherPage(views::View* view, int resource_id);
+
+  // Adds |view| as a new page to the end of the list of launcher pages. The
+  // view is inserted as a child of the ContentsView, and a button with
+  // |resource_id| is added to the ContentsSwitcherView. The page is associated
+  // with the name |named_page|. Returns the index of the new page.
+  int AddLauncherPage(views::View* view, int resource_id, NamedPage named_page);
+
+  // Gets the PaginationModel owned by the AppsGridView.
+  // Note: This is different to |pagination_model_|, which manages top-level
+  // launcher-page pagination.
+  PaginationModel* GetAppsPaginationModel();
 
   // Overridden from ui::EventHandler:
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
 
-  ShowState show_state_;
-  PaginationModel* pagination_model_;  // Owned by AppListController.
+  // Special sub views of the ContentsView. All owned by the views hierarchy.
+  AppsContainerView* apps_container_view_;
+  SearchResultListView* search_results_view_;
+  StartPageView* start_page_view_;
 
-  AppsContainerView* apps_container_view_;  // Owned by the views hierarchy.
+  AppListMainView* app_list_main_view_;     // Parent view, owns this.
+  // Sibling view, owned by |app_list_main_view_|.
+  ContentsSwitcherView* contents_switcher_view_;
 
   scoped_ptr<views::ViewModel> view_model_;
-  scoped_ptr<views::BoundsAnimator> bounds_animator_;
+  // Maps NamedPage onto |view_model_| indices.
+  std::map<NamedPage, int> named_page_to_view_;
+
+  // Manages the pagination for the launcher pages.
+  PaginationModel pagination_model_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentsView);
 };

@@ -12,13 +12,13 @@
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_instant_controller.h"
 #include "chrome/browser/ui/browser_iterator.h"
@@ -27,8 +27,9 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/search_urls.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/sessions/serialized_navigation_entry.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
@@ -36,9 +37,9 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode_url_filter.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_url_filter.h"
 #endif
 
 namespace chrome {
@@ -66,14 +67,22 @@ const uint64 kEmbeddedPageVersionDefault = 2;
 const char kHideVerbatimFlagName[] = "hide_verbatim";
 const char kPrefetchSearchResultsFlagName[] = "prefetch_results";
 const char kPrefetchSearchResultsOnSRP[] = "prefetch_results_srp";
+const char kAllowPrefetchNonDefaultMatch[] = "allow_prefetch_non_default_match";
+const char kPrerenderInstantUrlOnOmniboxFocus[] =
+    "prerender_instant_url_on_omnibox_focus";
 
 // Controls whether to reuse prerendered Instant Search base page to commit any
 // search query.
 const char kReuseInstantSearchBasePage[] = "reuse_instant_search_base_page";
 
+// Controls whether to use the alternate Instant search base URL. This allows
+// experimentation of Instant search.
+const char kUseAltInstantURL[] = "use_alternate_instant_url";
+const char kAltInstantURLPath[] = "search";
+const char kAltInstantURLQueryParams[] = "&qbp=1";
+
 const char kDisplaySearchButtonFlagName[] = "display_search_button";
 const char kOriginChipFlagName[] = "origin_chip";
-const char kOriginChipV2FlagName[] = "origin_chip_v2";
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
 const char kEnableQueryExtractionFlagName[] = "query_extraction";
 #endif
@@ -160,6 +169,7 @@ TemplateURL* GetDefaultSearchProviderTemplateURL(Profile* profile) {
 }
 
 GURL TemplateURLRefToGURL(const TemplateURLRef& ref,
+                          const SearchTermsData& search_terms_data,
                           int start_margin,
                           bool append_extra_query_params,
                           bool force_instant_results) {
@@ -168,13 +178,15 @@ GURL TemplateURLRefToGURL(const TemplateURLRef& ref,
   search_terms_args.omnibox_start_margin = start_margin;
   search_terms_args.append_extra_query_params = append_extra_query_params;
   search_terms_args.force_instant_results = force_instant_results;
-  return GURL(ref.ReplaceSearchTerms(search_terms_args));
+  return GURL(ref.ReplaceSearchTerms(search_terms_args, search_terms_data));
 }
 
-bool MatchesAnySearchURL(const GURL& url, TemplateURL* template_url) {
+bool MatchesAnySearchURL(const GURL& url,
+                         TemplateURL* template_url,
+                         const SearchTermsData& search_terms_data) {
   GURL search_url =
-      TemplateURLRefToGURL(template_url->url_ref(), kDisableStartMargin, false,
-                           false);
+      TemplateURLRefToGURL(template_url->url_ref(), search_terms_data,
+                           kDisableStartMargin, false, false);
   if (search_url.is_valid() &&
       search::MatchesOriginAndPath(url, search_url))
     return true;
@@ -182,7 +194,8 @@ bool MatchesAnySearchURL(const GURL& url, TemplateURL* template_url) {
   // "URLCount() - 1" because we already tested url_ref above.
   for (size_t i = 0; i < template_url->URLCount() - 1; ++i) {
     TemplateURLRef ref(template_url, i);
-    search_url = TemplateURLRefToGURL(ref, kDisableStartMargin, false, false);
+    search_url = TemplateURLRefToGURL(ref, search_terms_data,
+                                      kDisableStartMargin, false, false);
     if (search_url.is_valid() &&
         search::MatchesOriginAndPath(url, search_url))
       return true;
@@ -191,22 +204,7 @@ bool MatchesAnySearchURL(const GURL& url, TemplateURL* template_url) {
   return false;
 }
 
-// Returns true if |contents| is rendered inside the Instant process for
-// |profile|.
-bool IsRenderedInInstantProcess(const content::WebContents* contents,
-                                Profile* profile) {
-  const content::RenderProcessHost* process_host =
-      contents->GetRenderProcessHost();
-  if (!process_host)
-    return false;
 
-  const InstantService* instant_service =
-      InstantServiceFactory::GetForProfile(profile);
-  if (!instant_service)
-    return false;
-
-  return instant_service->IsInstantProcess(process_host->GetID());
-}
 
 // |url| should either have a secure scheme or have a non-HTTPS base URL that
 // the user specified using --google-base-url. (This allows testers to use
@@ -238,15 +236,17 @@ bool IsInstantURL(const GURL& url, Profile* profile) {
     return false;
 
   const TemplateURLRef& instant_url_ref = template_url->instant_url_ref();
-  const GURL instant_url =
-      TemplateURLRefToGURL(instant_url_ref, kDisableStartMargin, false, false);
+  UIThreadSearchTermsData search_terms_data(profile);
+  const GURL instant_url = TemplateURLRefToGURL(
+      instant_url_ref, search_terms_data, kDisableStartMargin, false, false);
   if (!instant_url.is_valid())
     return false;
 
   if (search::MatchesOriginAndPath(url, instant_url))
     return true;
 
-  return IsQueryExtractionEnabled() && MatchesAnySearchURL(url, template_url);
+  return IsQueryExtractionEnabled() &&
+      MatchesAnySearchURL(url, template_url, search_terms_data);
 }
 
 base::string16 GetSearchTermsImpl(const content::WebContents* contents,
@@ -281,12 +281,12 @@ base::string16 GetSearchTermsImpl(const content::WebContents* contents,
 
 bool IsURLAllowedForSupervisedUser(const GURL& url, Profile* profile) {
 #if defined(ENABLE_MANAGED_USERS)
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(profile);
-  ManagedModeURLFilter* url_filter =
-      managed_user_service->GetURLFilterForUIThread();
+  SupervisedUserService* supervised_user_service =
+      SupervisedUserServiceFactory::GetForProfile(profile);
+  SupervisedUserURLFilter* url_filter =
+      supervised_user_service->GetURLFilterForUIThread();
   if (url_filter->GetFilteringBehaviorForURL(url) ==
-          ManagedModeURLFilter::BLOCK) {
+          SupervisedUserURLFilter::BLOCK) {
     return false;
   }
 #endif
@@ -320,7 +320,8 @@ struct NewTabURLDetails {
       return NewTabURLDetails(local_url, NEW_TAB_URL_BAD);
 
     GURL search_provider_url = TemplateURLRefToGURL(
-        template_url->new_tab_url_ref(), kDisableStartMargin, false, false);
+        template_url->new_tab_url_ref(), UIThreadSearchTermsData(profile),
+        kDisableStartMargin, false, false);
     NewTabURLState state = IsValidNewTabURL(profile, search_provider_url);
     switch (state) {
       case NEW_TAB_URL_VALID:
@@ -332,7 +333,7 @@ struct NewTabURLDetails {
       default:
         // Use the local New Tab otherwise.
         return NewTabURLDetails(local_url, state);
-    };
+    }
   }
 
   GURL url;
@@ -417,7 +418,8 @@ base::string16 ExtractSearchTermsFromURL(Profile* profile, const GURL& url) {
   TemplateURL* template_url = GetDefaultSearchProviderTemplateURL(profile);
   base::string16 search_terms;
   if (template_url)
-    template_url->ExtractSearchTermsFromURL(url, &search_terms);
+    template_url->ExtractSearchTermsFromURL(
+        url, UIThreadSearchTermsData(profile), &search_terms);
   return search_terms;
 }
 
@@ -459,6 +461,21 @@ bool ShouldAssignURLToInstantRenderer(const GURL& url, Profile* profile) {
          IsInstantExtendedAPIEnabled() &&
          (url.SchemeIs(chrome::kChromeSearchScheme) ||
           IsInstantURL(url, profile));
+}
+
+bool IsRenderedInInstantProcess(const content::WebContents* contents,
+                                Profile* profile) {
+  const content::RenderProcessHost* process_host =
+      contents->GetRenderProcessHost();
+  if (!process_host)
+    return false;
+
+  const InstantService* instant_service =
+      InstantServiceFactory::GetForProfile(profile);
+  if (!instant_service)
+    return false;
+
+  return instant_service->IsInstantProcess(process_host->GetID());
 }
 
 bool ShouldUseProcessPerSiteForInstantURL(const GURL& url, Profile* profile) {
@@ -519,9 +536,9 @@ GURL GetInstantURL(Profile* profile, int start_margin,
   if (!template_url)
     return GURL();
 
-  GURL instant_url =
-      TemplateURLRefToGURL(template_url->instant_url_ref(), start_margin, true,
-                           force_instant_results);
+  GURL instant_url = TemplateURLRefToGURL(
+      template_url->instant_url_ref(), UIThreadSearchTermsData(profile),
+      start_margin, true, force_instant_results);
   if (!instant_url.is_valid() ||
       !template_url->HasSearchTermsReplacementKey(instant_url))
     return GURL();
@@ -540,6 +557,15 @@ GURL GetInstantURL(Profile* profile, int start_margin,
   if (!IsURLAllowedForSupervisedUser(instant_url, profile))
     return GURL();
 
+  if (ShouldUseAltInstantURL()) {
+    GURL::Replacements replacements;
+    const std::string path(kAltInstantURLPath);
+    replacements.SetPathStr(path);
+    const std::string query(
+        instant_url.query() + std::string(kAltInstantURLQueryParams));
+    replacements.SetQueryStr(query);
+    instant_url = instant_url.ReplaceComponents(replacements);
+  }
   return instant_url;
 }
 
@@ -551,8 +577,8 @@ std::vector<GURL> GetSearchURLs(Profile* profile) {
     return result;
   for (size_t i = 0; i < template_url->URLCount(); ++i) {
     TemplateURLRef ref(template_url, i);
-    result.push_back(TemplateURLRefToGURL(ref, kDisableStartMargin, false,
-                                          false));
+    result.push_back(TemplateURLRefToGURL(ref, UIThreadSearchTermsData(profile),
+                                          kDisableStartMargin, false, false));
   }
   return result;
 }
@@ -567,6 +593,9 @@ GURL GetSearchResultPrefetchBaseURL(Profile* profile) {
 }
 
 bool ShouldPrefetchSearchResults() {
+  if (!IsInstantExtendedAPIEnabled())
+    return false;
+
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kPrefetchSearchResults)) {
     return true;
@@ -577,12 +606,25 @@ bool ShouldPrefetchSearchResults() {
       kPrefetchSearchResultsFlagName, false, flags);
 }
 
-bool ShouldReuseInstantSearchBasePage() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kPrefetchSearchResults)) {
-    return true;
-  }
+bool ShouldAllowPrefetchNonDefaultMatch() {
+  if (!ShouldPrefetchSearchResults())
+    return false;
 
+  FieldTrialFlags flags;
+  return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
+      kAllowPrefetchNonDefaultMatch, false, flags);
+}
+
+bool ShouldPrerenderInstantUrlOnOmniboxFocus() {
+  if (!ShouldPrefetchSearchResults())
+    return false;
+
+  FieldTrialFlags flags;
+  return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
+      kPrerenderInstantUrlOnOmniboxFocus, false, flags);
+}
+
+bool ShouldReuseInstantSearchBasePage() {
   if (!ShouldPrefetchSearchResults())
     return false;
 
@@ -623,23 +665,17 @@ DisplaySearchButtonConditions GetDisplaySearchButtonConditions() {
 }
 
 bool ShouldDisplayOriginChip() {
-  return GetOriginChipPosition() != ORIGIN_CHIP_DISABLED;
+  return GetOriginChipCondition() != ORIGIN_CHIP_DISABLED;
 }
 
-OriginChipPosition GetOriginChipPosition() {
-  if (ShouldDisplayOriginChipV2())
-    return ORIGIN_CHIP_DISABLED;
-
+OriginChipCondition GetOriginChipCondition() {
   const CommandLine* cl = CommandLine::ForCurrentProcess();
   if (cl->HasSwitch(switches::kDisableOriginChip))
     return ORIGIN_CHIP_DISABLED;
-  if (cl->HasSwitch(switches::kEnableOriginChipLeadingLocationBar))
-    return ORIGIN_CHIP_LEADING_LOCATION_BAR;
-  if (cl->HasSwitch(switches::kEnableOriginChip) ||
-      cl->HasSwitch(switches::kEnableOriginChipTrailingLocationBar))
-    return ORIGIN_CHIP_TRAILING_LOCATION_BAR;
-  if (cl->HasSwitch(switches::kEnableOriginChipLeadingMenuButton))
-    return ORIGIN_CHIP_LEADING_MENU_BUTTON;
+  if (cl->HasSwitch(switches::kEnableOriginChipAlways))
+    return ORIGIN_CHIP_ALWAYS;
+  if (cl->HasSwitch(switches::kEnableOriginChipOnSrp))
+    return ORIGIN_CHIP_ON_SRP;
 
   FieldTrialFlags flags;
   if (!GetFieldTrialInfo(&flags))
@@ -647,33 +683,7 @@ OriginChipPosition GetOriginChipPosition() {
   uint64 value =
       GetUInt64ValueForFlagWithDefault(kOriginChipFlagName, 0, flags);
   return (value < ORIGIN_CHIP_NUM_VALUES) ?
-      static_cast<OriginChipPosition>(value) :
-      ORIGIN_CHIP_DISABLED;
-}
-
-bool ShouldDisplayOriginChipV2() {
-  return GetOriginChipV2Condition() != ORIGIN_CHIP_V2_DISABLED;
-}
-
-OriginChipV2Condition GetOriginChipV2Condition() {
-  const CommandLine* cl = CommandLine::ForCurrentProcess();
-  if (cl->HasSwitch(switches::kDisableOriginChipV2))
-    return ORIGIN_CHIP_V2_DISABLED;
-  if (cl->HasSwitch(switches::kEnableOriginChipV2HideOnMouseRelease))
-    return ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE;
-  if (cl->HasSwitch(switches::kEnableOriginChipV2HideOnUserInput))
-    return ORIGIN_CHIP_V2_HIDE_ON_USER_INPUT;
-  if (cl->HasSwitch(switches::kEnableOriginChipV2OnSrp))
-    return ORIGIN_CHIP_V2_ON_SRP;
-
-  FieldTrialFlags flags;
-  if (!GetFieldTrialInfo(&flags))
-    return ORIGIN_CHIP_V2_DISABLED;
-  uint64 value =
-      GetUInt64ValueForFlagWithDefault(kOriginChipV2FlagName, 0, flags);
-  return (value < ORIGIN_CHIP_V2_NUM_VALUES) ?
-      static_cast<OriginChipV2Condition>(value) :
-      ORIGIN_CHIP_V2_DISABLED;
+      static_cast<OriginChipCondition>(value) : ORIGIN_CHIP_DISABLED;
 }
 
 bool ShouldShowGoogleLocalNTP() {
@@ -847,6 +857,12 @@ bool GetBoolValueForFlagWithDefault(const std::string& flag,
                                     bool default_value,
                                     const FieldTrialFlags& flags) {
   return !!GetUInt64ValueForFlagWithDefault(flag, default_value ? 1 : 0, flags);
+}
+
+bool ShouldUseAltInstantURL() {
+  FieldTrialFlags flags;
+  return GetFieldTrialInfo(&flags) && GetBoolValueForFlagWithDefault(
+      kUseAltInstantURL, false, flags);
 }
 
 }  // namespace chrome

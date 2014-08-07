@@ -23,15 +23,26 @@ bool FLAGS_enable_quic_pacing = true;
 // If true, turns on stream flow control in QUIC.
 // If this is disabled, all in flight QUIC connections talking QUIC_VERSION_17
 // or higher will timeout. New connections will be fine.
-// If disabling this flag, also disable enable_quic_connection_flow_control.
+// If disabling this flag, also disable enable_quic_connection_flow_control_2.
 bool FLAGS_enable_quic_stream_flow_control_2 = true;
 
 // Do not remove this flag until b/11792453 is marked as Fixed.
 // If true, turns on connection level flow control in QUIC.
 // If this is disabled, all in flight QUIC connections talking QUIC_VERSION_19
 // or higher will timeout. New connections will be fine.
-bool FLAGS_enable_quic_connection_flow_control = true;
+bool FLAGS_enable_quic_connection_flow_control_2 = true;
 
 bool FLAGS_quic_allow_oversized_packets_for_test = false;
+
 // When true, the use time based loss detection instead of nack.
 bool FLAGS_quic_use_time_loss_detection = false;
+
+// If true, allow peer port migration of established QUIC connections.
+bool FLAGS_quic_allow_port_migration = true;
+
+// If true, it will return as soon as an error is detected while validating
+// CHLO.
+bool FLAGS_use_early_return_when_verifying_chlo = true;
+
+// If true, QUIC crypto reject message will include the reasons for rejection.
+bool FLAGS_send_quic_crypto_reject_reason = false;

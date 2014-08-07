@@ -21,7 +21,7 @@
 #include "device/hid/hid_device_info.h"
 #include "device/hid/hid_report_descriptor.h"
 #include "device/hid/hid_service_linux.h"
-#include "device/hid/udev_common.h"
+#include "device/udev_linux/udev.h"
 
 namespace device {
 
@@ -33,7 +33,7 @@ const char kHIDID[] = "HID_ID";
 const char kHIDName[] = "HID_NAME";
 const char kHIDUnique[] = "HID_UNIQ";
 
-} // namespace
+}  // namespace
 
 HidServiceLinux::HidServiceLinux() {
   DeviceMonitorLinux* monitor = DeviceMonitorLinux::GetInstance();
@@ -114,7 +114,7 @@ void HidServiceLinux::OnDeviceAdded(udev_device* device) {
 
   std::string dev_node;
   if (!FindHidrawDevNode(device, &dev_node)) {
-    LOG(ERROR) << "Cannot open HID device as hidraw device.";
+    LOG(ERROR) << "Cannot find device node for HID device.";
     return;
   }
 
@@ -122,7 +122,8 @@ void HidServiceLinux::OnDeviceAdded(udev_device* device) {
 
   base::File device_file(base::FilePath(dev_node), flags);
   if (!device_file.IsValid()) {
-    LOG(ERROR) << device_file.error_details();
+    LOG(ERROR) << "Cannot open '" << dev_node << "': "
+        << base::File::ErrorToString(device_file.error_details());
     return;
   }
 
@@ -198,4 +199,4 @@ bool HidServiceLinux::FindHidrawDevNode(udev_device* parent,
   return false;
 }
 
-} // namespace dev
+}  // namespace device

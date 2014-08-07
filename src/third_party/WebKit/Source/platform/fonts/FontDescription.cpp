@@ -30,7 +30,7 @@
 #include "config.h"
 #include "platform/fonts/FontDescription.h"
 
-#include "RuntimeEnabledFeatures.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/text/AtomicStringHash.h"
 #include "wtf/text/StringHash.h"
 
@@ -39,6 +39,7 @@ namespace WebCore {
 struct SameSizeAsFontDescription {
     FontFamily familyList;
     RefPtr<FontFeatureSettings> m_featureSettings;
+    String locale;
     float sizes[4];
     // FXIME: Make them fit into one word.
     uint32_t bitfields;
@@ -133,15 +134,14 @@ FontCacheKey FontDescription::cacheKey(const AtomicString& familyName, FontTrait
         : traits();
 
     unsigned options =
-        static_cast<unsigned>(m_syntheticItalic) << 8 | // bit 9
-        static_cast<unsigned>(m_syntheticBold) << 7 | // bit 8
-        static_cast<unsigned>(m_fontSmoothing) << 5 | // bits 6-7
-        static_cast<unsigned>(m_textRendering) << 3 | // bits 4-5
-        static_cast<unsigned>(m_orientation) << 2 | // bit 3
-        static_cast<unsigned>(m_usePrinterFont) << 1 | // bit 2
+        static_cast<unsigned>(m_syntheticItalic) << 7 | // bit 8
+        static_cast<unsigned>(m_syntheticBold) << 6 | // bit 7
+        static_cast<unsigned>(m_fontSmoothing) << 4 | // bits 5-6
+        static_cast<unsigned>(m_textRendering) << 2 | // bits 3-4
+        static_cast<unsigned>(m_orientation) << 1 | // bit 2
         static_cast<unsigned>(m_subpixelTextPosition); // bit 1
 
-    return FontCacheKey(familyName, effectiveFontSize(), options | fontTraits.mask() << 9);
+    return FontCacheKey(familyName, effectiveFontSize(), options | fontTraits.mask() << 8);
 }
 
 
@@ -182,21 +182,27 @@ void FontDescription::updateTypesettingFeatures() const
         break;
     }
 
-    switch (commonLigaturesState()) {
-    case FontDescription::DisabledLigaturesState:
-        m_typesettingFeatures &= ~Ligatures;
-        break;
-    case FontDescription::EnabledLigaturesState:
-        m_typesettingFeatures |= Ligatures;
-        break;
-    case FontDescription::NormalLigaturesState:
-        break;
-    }
+    // As per CSS (http://dev.w3.org/csswg/css-text-3/#letter-spacing-property),
+    // When the effective letter-spacing between two characters is not zero (due to
+    // either justification or non-zero computed letter-spacing), user agents should
+    // not apply optional ligatures.
+    if (m_letterSpacing == 0) {
+        switch (commonLigaturesState()) {
+        case FontDescription::DisabledLigaturesState:
+            m_typesettingFeatures &= ~Ligatures;
+            break;
+        case FontDescription::EnabledLigaturesState:
+            m_typesettingFeatures |= Ligatures;
+            break;
+        case FontDescription::NormalLigaturesState:
+            break;
+        }
 
-    if (discretionaryLigaturesState() == FontDescription::EnabledLigaturesState
-        || historicalLigaturesState() == FontDescription::EnabledLigaturesState
-        || contextualLigaturesState() == FontDescription::EnabledLigaturesState) {
-        m_typesettingFeatures |= WebCore::Ligatures;
+        if (discretionaryLigaturesState() == FontDescription::EnabledLigaturesState
+            || historicalLigaturesState() == FontDescription::EnabledLigaturesState
+            || contextualLigaturesState() == FontDescription::EnabledLigaturesState) {
+            m_typesettingFeatures |= WebCore::Ligatures;
+        }
     }
 }
 

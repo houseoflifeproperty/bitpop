@@ -32,7 +32,6 @@
 #define RenderSVGModelObject_h
 
 #include "core/rendering/RenderObject.h"
-#include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/svg/SVGElement.h"
 #include "platform/geometry/FloatRect.h"
 
@@ -52,8 +51,8 @@ public:
     virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
     virtual bool canHaveWhitespaceChildren() const OVERRIDE { return false; }
 
-    virtual LayoutRect clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const OVERRIDE;
-    virtual void computeFloatRectForRepaint(const RenderLayerModelObject* repaintContainer, FloatRect&, bool fixed = false) const OVERRIDE FINAL;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE;
+    virtual void computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect&, bool fixed = false) const OVERRIDE FINAL;
 
     virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const OVERRIDE FINAL;
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const OVERRIDE;
@@ -68,7 +67,7 @@ public:
 
     virtual bool isSVG() const OVERRIDE FINAL { return true; }
 
-    virtual void repaintTreeAfterLayout() OVERRIDE;
+    virtual void invalidateTreeAfterLayout(const RenderLayerModelObject&) OVERRIDE;
 
 protected:
     virtual void addLayerHitTestRects(LayerHitTestRects&, const RenderLayer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const OVERRIDE FINAL;

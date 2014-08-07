@@ -36,7 +36,7 @@ function ImageLoader() {
     });
     initPromises.push(new Promise(this.cache_.initialize.bind(this.cache_)));
 
-    // After all initializatino promises are done, start the worker.
+    // After all initialization promises are done, start the worker.
     Promise.all(initPromises).then(this.worker_.start.bind(this.worker_));
 
     // Listen for mount events, and grant permissions to volumes being mounted.
@@ -75,8 +75,10 @@ function ImageLoader() {
  * @const
  * @type {Array.<string>}
  */
-ImageLoader.ALLOWED_CLIENTS =
-    ['hhaomjibdihmijegdhdafkllkbggdgoj'];  // File Manager's extension id.
+ImageLoader.ALLOWED_CLIENTS = [
+  'hhaomjibdihmijegdhdafkllkbggdgoj',  // File Manager's extension id.
+  'nlkncpkkdoccmpiclbokaimcnedabhhm'  // Gallery extension id.
+];
 
 /**
  * Handles a request. Depending on type of the request, starts or stops

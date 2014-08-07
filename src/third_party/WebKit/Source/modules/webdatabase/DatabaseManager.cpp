@@ -49,17 +49,12 @@ namespace WebCore {
 
 DatabaseManager& DatabaseManager::manager()
 {
-    static DatabaseManager* dbManager = 0;
-    // FIXME: The following is vulnerable to a race between threads. Need to
-    // implement a thread safe on-first-use static initializer.
-    if (!dbManager)
-        dbManager = new DatabaseManager();
-
+    AtomicallyInitializedStatic(DatabaseManager*, dbManager = new DatabaseManager);
     return *dbManager;
 }
 
 DatabaseManager::DatabaseManager()
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     : m_databaseContextRegisteredCount(0)
     , m_databaseContextInstanceCount(0)
 #endif
@@ -129,7 +124,7 @@ void DatabaseManager::registerDatabaseContext(DatabaseContext* databaseContext)
 #else
     m_contextMap.set(context, databaseContext);
 #endif
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     m_databaseContextRegisteredCount++;
 #endif
 }
@@ -139,13 +134,13 @@ void DatabaseManager::unregisterDatabaseContext(DatabaseContext* databaseContext
     MutexLocker locker(m_contextMapLock);
     ExecutionContext* context = databaseContext->executionContext();
     ASSERT(m_contextMap.get(context));
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     m_databaseContextRegisteredCount--;
 #endif
     m_contextMap.remove(context);
 }
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
 void DatabaseManager::didConstructDatabaseContext()
 {
     MutexLocker lock(m_contextMapLock);

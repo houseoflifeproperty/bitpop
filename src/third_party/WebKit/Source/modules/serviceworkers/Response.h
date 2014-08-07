@@ -7,41 +7,40 @@
 
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ScriptWrappable.h"
+#include "modules/serviceworkers/HeaderMap.h"
+#include "platform/blob/BlobData.h"
 #include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink { class WebServiceWorkerResponse; }
 
 namespace WebCore {
 
+class Blob;
 struct ResponseInit;
 
 class Response FINAL : public ScriptWrappable, public RefCounted<Response> {
 public:
-    static PassRefPtr<Response> create();
-    static PassRefPtr<Response> create(const Dictionary& responseInit);
+    static PassRefPtr<Response> create(Blob* body, const Dictionary& responseInit);
     ~Response() { };
 
-    unsigned short statusCode() { return m_statusCode; }
-    void setStatusCode(unsigned short statusCode) { m_statusCode = statusCode; }
+    unsigned short status() const { return m_status; }
+    void setStatus(unsigned short value) { m_status = value; }
 
-    String statusText() { return m_statusText; }
-    void setStatusText(const String& statusText) { m_statusText = statusText; }
+    String statusText() const { return m_statusText; }
+    void setStatusText(const String& value) { m_statusText = value; }
 
-    String method() { return m_method; }
-    void setMethod(const String& method) { m_method = method; }
-
-    Dictionary* headers();
-    void headers(const Dictionary&);
+    PassRefPtr<HeaderMap> headers() const;
 
     void populateWebServiceWorkerResponse(blink::WebServiceWorkerResponse&);
 
 private:
-    explicit Response(const ResponseInit&);
-    unsigned short m_statusCode;
+    Response(PassRefPtr<BlobDataHandle>, const ResponseInit&);
+    unsigned short m_status;
     String m_statusText;
-    String m_method;
-    Dictionary m_headers;
+    RefPtr<HeaderMap> m_headers;
+    RefPtr<BlobDataHandle> m_blobDataHandle;
 };
 
 } // namespace WebCore

@@ -5,8 +5,8 @@
 #ifndef V8_CONTEXTS_H_
 #define V8_CONTEXTS_H_
 
-#include "heap.h"
-#include "objects.h"
+#include "src/heap.h"
+#include "src/objects.h"
 
 namespace v8 {
 namespace internal {
@@ -123,11 +123,14 @@ enum BindingFlags {
       uint8_clamped_array_external_map) \
   V(DATA_VIEW_FUN_INDEX, JSFunction, data_view_fun) \
   V(SLOPPY_FUNCTION_MAP_INDEX, Map, sloppy_function_map) \
+  V(SLOPPY_FUNCTION_WITH_READONLY_PROTOTYPE_MAP_INDEX, Map, \
+    sloppy_function_with_readonly_prototype_map) \
   V(STRICT_FUNCTION_MAP_INDEX, Map, strict_function_map) \
   V(SLOPPY_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX, Map, \
     sloppy_function_without_prototype_map) \
   V(STRICT_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX, Map, \
     strict_function_without_prototype_map) \
+  V(BOUND_FUNCTION_MAP_INDEX, Map, bound_function_map) \
   V(REGEXP_RESULT_MAP_INDEX, Map, regexp_result_map)\
   V(SLOPPY_ARGUMENTS_BOILERPLATE_INDEX, JSObject, \
     sloppy_arguments_boilerplate) \
@@ -154,14 +157,13 @@ enum BindingFlags {
   V(ALLOW_CODE_GEN_FROM_STRINGS_INDEX, Object, allow_code_gen_from_strings) \
   V(ERROR_MESSAGE_FOR_CODE_GEN_FROM_STRINGS_INDEX, Object, \
     error_message_for_code_gen_from_strings) \
-  V(RUN_MICROTASKS_INDEX, JSFunction, run_microtasks) \
-  V(ENQUEUE_MICROTASK_INDEX, JSFunction, enqueue_microtask) \
   V(IS_PROMISE_INDEX, JSFunction, is_promise) \
   V(PROMISE_CREATE_INDEX, JSFunction, promise_create) \
   V(PROMISE_RESOLVE_INDEX, JSFunction, promise_resolve) \
   V(PROMISE_REJECT_INDEX, JSFunction, promise_reject) \
   V(PROMISE_CHAIN_INDEX, JSFunction, promise_chain) \
   V(PROMISE_CATCH_INDEX, JSFunction, promise_catch) \
+  V(PROMISE_THEN_INDEX, JSFunction, promise_then) \
   V(TO_COMPLETE_PROPERTY_DESCRIPTOR_INDEX, JSFunction, \
     to_complete_property_descriptor) \
   V(DERIVED_HAS_TRAP_INDEX, JSFunction, derived_has_trap) \
@@ -186,7 +188,8 @@ enum BindingFlags {
     generator_object_prototype_map) \
   V(ITERATOR_RESULT_MAP_INDEX, Map, iterator_result_map) \
   V(MAP_ITERATOR_MAP_INDEX, Map, map_iterator_map) \
-  V(SET_ITERATOR_MAP_INDEX, Map, set_iterator_map)
+  V(SET_ITERATOR_MAP_INDEX, Map, set_iterator_map) \
+  V(ITERATOR_SYMBOL_INDEX, Symbol, iterator_symbol)
 
 // JSFunctions are pairs (context, function code), sometimes also called
 // closures. A Context object is used to represent function contexts and
@@ -265,9 +268,11 @@ class Context: public FixedArray {
     STRICT_ARGUMENTS_BOILERPLATE_INDEX,
     REGEXP_RESULT_MAP_INDEX,
     SLOPPY_FUNCTION_MAP_INDEX,
+    SLOPPY_FUNCTION_WITH_READONLY_PROTOTYPE_MAP_INDEX,
     STRICT_FUNCTION_MAP_INDEX,
     SLOPPY_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX,
     STRICT_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX,
+    BOUND_FUNCTION_MAP_INDEX,
     INITIAL_OBJECT_PROTOTYPE_INDEX,
     INITIAL_ARRAY_PROTOTYPE_INDEX,
     BOOLEAN_FUNCTION_INDEX,
@@ -339,6 +344,7 @@ class Context: public FixedArray {
     PROMISE_REJECT_INDEX,
     PROMISE_CHAIN_INDEX,
     PROMISE_CATCH_INDEX,
+    PROMISE_THEN_INDEX,
     TO_COMPLETE_PROPERTY_DESCRIPTOR_INDEX,
     DERIVED_HAS_TRAP_INDEX,
     DERIVED_GET_TRAP_INDEX,
@@ -357,6 +363,7 @@ class Context: public FixedArray {
     ITERATOR_RESULT_MAP_INDEX,
     MAP_ITERATOR_MAP_INDEX,
     SET_ITERATOR_MAP_INDEX,
+    ITERATOR_SYMBOL_INDEX,
 
     // Properties from here are treated as weak references by the full GC.
     // Scavenge treats them as strong references.
@@ -446,6 +453,11 @@ class Context: public FixedArray {
   bool IsGlobalContext() {
     Map* map = this->map();
     return map == map->GetHeap()->global_context_map();
+  }
+
+  bool HasSameSecurityTokenAs(Context* that) {
+    return this->global_object()->native_context()->security_token() ==
+        that->global_object()->native_context()->security_token();
   }
 
   // A native context holds a list of all functions with optimized code.
@@ -539,8 +551,8 @@ class Context: public FixedArray {
   static bool IsBootstrappingOrGlobalObject(Isolate* isolate, Object* object);
 #endif
 
-  STATIC_CHECK(kHeaderSize == Internals::kContextHeaderSize);
-  STATIC_CHECK(EMBEDDER_DATA_INDEX == Internals::kContextEmbedderDataIndex);
+  STATIC_ASSERT(kHeaderSize == Internals::kContextHeaderSize);
+  STATIC_ASSERT(EMBEDDER_DATA_INDEX == Internals::kContextEmbedderDataIndex);
 };
 
 } }  // namespace v8::internal

@@ -18,6 +18,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/message_loop/message_loop_proxy_impl.h"
 #include "base/message_loop/message_pump.h"
+#include "base/message_loop/timer_slack.h"
 #include "base/observer_list.h"
 #include "base/pending_task.h"
 #include "base/sequenced_task_runner_helpers.h"
@@ -207,6 +208,18 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // live until the next run of the MessageLoop, or if the object needs to be
   // released on a particular thread.
   //
+  // A common pattern is to manually increment the object's reference count
+  // (AddRef), clear the pointer, then issue a ReleaseSoon.  The reference count
+  // is incremented manually to ensure clearing the pointer does not trigger a
+  // delete and to account for the upcoming decrement (ReleaseSoon).  For
+  // example:
+  //
+  // scoped_refptr<Foo> foo = ...
+  // foo->AddRef();
+  // Foo* raw_foo = foo.get();
+  // foo = NULL;
+  // message_loop->ReleaseSoon(raw_foo);
+  //
   // NOTE: This method may be called on any thread.  The object will be
   // released (and thus possibly deleted) on the thread that executes
   // MessageLoop::Run().  If this is not the same as the thread that calls
@@ -261,6 +274,11 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // Construct a Closure that will call QuitWhenIdle(). Useful to schedule an
   // arbitrary MessageLoop to QuitWhenIdle.
   static Closure QuitWhenIdleClosure();
+
+  // Set the timer slack for this message loop.
+  void SetTimerSlack(TimerSlack timer_slack) {
+    pump_->SetTimerSlack(timer_slack);
+  }
 
   // Returns true if this loop is |type|. This allows subclasses (especially
   // those in tests) to specialize how they are identified.

@@ -38,6 +38,8 @@
 #include "content/public/browser/browser_ppapi_host.h"
 #include "content/public/browser/child_process_data.h"
 #include "content/public/browser/plugin_service.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/process_type.h"
@@ -228,16 +230,6 @@ bool ShareHandleToSelLdr(
   return true;
 }
 
-ppapi::PpapiPermissions GetNaClPermissions(uint32 permission_bits) {
-  // Only allow NaCl plugins to request certain permissions. We don't want
-  // a compromised renderer to be able to start a nacl plugin with e.g. Flash
-  // permissions which may expand the surface area of the sandbox.
-  uint32 masked_bits = permission_bits & ppapi::PERMISSION_DEV;
-  if (content::PluginService::GetInstance()->PpapiDevChannelSupported())
-    masked_bits |= ppapi::PERMISSION_DEV_CHANNEL;
-  return ppapi::PpapiPermissions::GetForCommandLine(masked_bits);
-}
-
 }  // namespace
 
 namespace nacl {
@@ -257,6 +249,7 @@ unsigned NaClProcessHost::keepalive_throttle_interval_milliseconds_ =
     ppapi::kKeepaliveThrottleIntervalDefaultMilliseconds;
 
 NaClProcessHost::NaClProcessHost(const GURL& manifest_url,
+                                 ppapi::PpapiPermissions permissions,
                                  int render_view_id,
                                  uint32 permission_bits,
                                  bool uses_irt,
@@ -267,7 +260,7 @@ NaClProcessHost::NaClProcessHost(const GURL& manifest_url,
                                  bool off_the_record,
                                  const base::FilePath& profile_directory)
     : manifest_url_(manifest_url),
-      permissions_(GetNaClPermissions(permission_bits)),
+      permissions_(permissions),
 #if defined(OS_WIN)
       process_launched_by_broker_(false),
 #endif
@@ -312,6 +305,7 @@ NaClProcessHost::~NaClProcessHost() {
     } else {
       LOG(ERROR) << message;
     }
+    NaClBrowser::GetInstance()->OnProcessEnd(process_->GetData().id);
   }
 
   if (internal_->socket_for_renderer != NACL_INVALID_HANDLE) {
@@ -351,6 +345,7 @@ void NaClProcessHost::OnProcessCrashed(int exit_status) {
 // static
 void NaClProcessHost::EarlyStartup() {
   NaClBrowser::GetInstance()->EarlyStartup();
+  // Inform NaClBrowser that we exist and will have a debug port at some point.
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Open the IRT file early to make sure that it isn't replaced out from
   // under us by autoupdate.
@@ -491,6 +486,7 @@ void NaClProcessHost::OnChannelConnected(int32 peer_pid) {
 void NaClProcessHost::OnProcessLaunchedByBroker(base::ProcessHandle handle) {
   process_launched_by_broker_ = true;
   process_->SetHandle(handle);
+  SetDebugStubPort(nacl::kGdbDebugStubPortUnknown);
   if (!StartWithLaunchedProcess())
     delete this;
 }
@@ -663,6 +659,8 @@ bool NaClProcessHost::OnMessageReceived(const IPC::Message& msg) {
       IPC_MESSAGE_HANDLER_DELAY_REPLY(
           NaClProcessMsg_AttachDebugExceptionHandler,
           OnAttachDebugExceptionHandler)
+      IPC_MESSAGE_HANDLER(NaClProcessHostMsg_DebugStubPortSelected,
+                          OnDebugStubPortSelected)
 #endif
       IPC_MESSAGE_HANDLER(NaClProcessHostMsg_PpapiChannelsCreated,
                           OnPpapiChannelsCreated)
@@ -764,12 +762,16 @@ void NaClProcessHost::SendMessageToRenderer(
   }
 }
 
+void NaClProcessHost::SetDebugStubPort(int port) {
+  NaClBrowser* nacl_browser = NaClBrowser::GetInstance();
+  nacl_browser->SetProcessGdbDebugStubPort(process_->GetData().id, port);
+}
+
+#if defined(OS_POSIX)
 // TCP port we chose for NaCl debug stub. It can be any other number.
 static const int kInitialDebugStubPort = 4014;
 
-#if defined(OS_POSIX)
 net::SocketDescriptor NaClProcessHost::GetDebugStubSocketHandle() {
-  NaClBrowser* nacl_browser = NaClBrowser::GetInstance();
   net::SocketDescriptor s = net::kInvalidSocket;
   // We always try to allocate the default port first. If this fails, we then
   // allocate any available port.
@@ -781,12 +783,8 @@ net::SocketDescriptor NaClProcessHost::GetDebugStubSocketHandle() {
     s = net::TCPListenSocket::CreateAndBindAnyPort("127.0.0.1", &port);
   }
   if (s != net::kInvalidSocket) {
-    if (nacl_browser->HasGdbDebugStubPortListener()) {
-      nacl_browser->FireGdbDebugStubPortOpened(port);
-    }
+    SetDebugStubPort(port);
   }
-  // Set debug stub port on the process object.
-  process_->SetNaClDebugStubPort(port);
   if (s == net::kInvalidSocket) {
     LOG(ERROR) << "failed to open socket for debug stub";
     return net::kInvalidSocket;
@@ -800,6 +798,13 @@ net::SocketDescriptor NaClProcessHost::GetDebugStubSocketHandle() {
     return net::kInvalidSocket;
   }
   return s;
+}
+#endif
+
+#if defined(OS_WIN)
+void NaClProcessHost::OnDebugStubPortSelected(uint16_t debug_stub_port) {
+  CHECK(!uses_nonsfi_mode_);
+  SetDebugStubPort(debug_stub_port);
 }
 #endif
 
@@ -893,11 +898,11 @@ void NaClProcessHost::OnPpapiChannelsCreated(
   if (!ipc_proxy_channel_.get()) {
     DCHECK_EQ(PROCESS_TYPE_NACL_LOADER, process_->GetData().process_type);
 
-    ipc_proxy_channel_.reset(
-        new IPC::ChannelProxy(browser_channel_handle,
-                              IPC::Channel::MODE_CLIENT,
-                              NULL,
-                              base::MessageLoopProxy::current().get()));
+    ipc_proxy_channel_ =
+        IPC::ChannelProxy::Create(browser_channel_handle,
+                                  IPC::Channel::MODE_CLIENT,
+                                  NULL,
+                                  base::MessageLoopProxy::current().get());
     // Create the browser ppapi host and enable PPAPI message dispatching to the
     // browser process.
     ppapi_host_.reset(content::BrowserPpapiHost::CreateExternalPluginProcess(

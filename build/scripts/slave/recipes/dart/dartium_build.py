@@ -49,6 +49,10 @@ def GenSteps(api):
 
   yield api.chromium.runhooks()
   yield api.chromium.compile()
+  yield api.python('archive_build',
+                   api.path['slave_build'].join(
+                       'src', 'dart', 'tools', 'dartium', 'multivm_archive.py'),
+                   [s.revision])
 
 
 def GenTests(api):

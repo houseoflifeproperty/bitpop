@@ -15,13 +15,15 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
+#include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_cache.h"
 #include "chrome/browser/ui/options/options_util.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/dbus/cryptohome_client.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/settings/cros_settings_names.h"
-#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "policy/proto/device_management_backend.pb.h"
 
 using google::protobuf::RepeatedField;
@@ -149,6 +151,7 @@ void DeviceSettingsProvider::OwnershipStatusChanged() {
     // immediate.
     DCHECK(!store_callback_factory_.HasWeakPtrs());
 
+    trusted_status_ = TEMPORARILY_UNTRUSTED;
     // Apply the locally-accumulated device settings on top of the initial
     // settings from the service and write back the result.
     if (device_settings_service_->device_settings()) {
@@ -213,6 +216,14 @@ void DeviceSettingsProvider::SetInPolicy() {
     bool guest_value;
     if (value->GetAsBoolean(&guest_value))
       guest->set_guest_mode_enabled(guest_value);
+    else
+      NOTREACHED();
+  } else if (prop == kAccountsPrefSupervisedUsersEnabled) {
+    em::SupervisedUsersSettingsProto* supervised =
+        device_settings_.mutable_supervised_users_settings();
+    bool supervised_value;
+    if (value->GetAsBoolean(&supervised_value))
+      supervised->set_supervised_users_enabled(supervised_value);
     else
       NOTREACHED();
   } else if (prop == kAccountsPrefShowUserNamesOnSignIn) {
@@ -386,7 +397,6 @@ void DeviceSettingsProvider::SetInPolicy() {
   } else {
     // The remaining settings don't support Set(), since they are not
     // intended to be customizable by the user:
-    //   kAccountsPrefSupervisedUsersEnabled
     //   kAppPack
     //   kDeviceAttestationEnabled
     //   kDeviceOwner
@@ -436,6 +446,8 @@ void DeviceSettingsProvider::DecodeLoginPolicies(
   // true is default permissive value and false is safe prohibitive value.
   // Exceptions:
   //   kAccountsPrefEphemeralUsersEnabled has a default value of false.
+  //   kAccountsPrefSupervisedUsersEnabled has a default value of false
+  //     for enterprise devices and true for consumer devices.
   if (policy.has_allow_new_users() &&
       policy.allow_new_users().has_allow_new_users()) {
     if (policy.allow_new_users().allow_new_users()) {
@@ -459,6 +471,23 @@ void DeviceSettingsProvider::DecodeLoginPolicies(
       !policy.guest_mode_enabled().has_guest_mode_enabled() ||
       policy.guest_mode_enabled().guest_mode_enabled());
 
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  bool supervised_users_enabled = false;
+  if (connector->IsEnterpriseManaged()) {
+    supervised_users_enabled =
+        policy.has_supervised_users_settings() &&
+        policy.supervised_users_settings().has_supervised_users_enabled() &&
+        policy.supervised_users_settings().supervised_users_enabled();
+  } else {
+    supervised_users_enabled =
+        !policy.has_supervised_users_settings() ||
+        !policy.supervised_users_settings().has_supervised_users_enabled() ||
+        policy.supervised_users_settings().supervised_users_enabled();
+  }
+  new_values_cache->SetBoolean(
+      kAccountsPrefSupervisedUsersEnabled, supervised_users_enabled);
+
   new_values_cache->SetBoolean(
       kAccountsPrefShowUserNamesOnSignIn,
       !policy.has_show_user_names() ||
@@ -470,11 +499,6 @@ void DeviceSettingsProvider::DecodeLoginPolicies(
       policy.has_ephemeral_users_enabled() &&
       policy.ephemeral_users_enabled().has_ephemeral_users_enabled() &&
       policy.ephemeral_users_enabled().ephemeral_users_enabled());
-
-  new_values_cache->SetBoolean(
-      kAccountsPrefSupervisedUsersEnabled,
-      policy.has_supervised_users_settings() &&
-      policy.supervised_users_settings().supervised_users_enabled());
 
   base::ListValue* list = new base::ListValue();
   const em::UserWhitelistProto& whitelist_proto = policy.user_whitelist();

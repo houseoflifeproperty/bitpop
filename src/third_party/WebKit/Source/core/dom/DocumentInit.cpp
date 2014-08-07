@@ -28,20 +28,21 @@
 #include "config.h"
 #include "core/dom/DocumentInit.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
 #include "core/dom/custom/CustomElementRegistrationContext.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/imports/HTMLImportsController.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
+// FIXME: Broken with OOPI.
 static Document* parentDocument(LocalFrame* frame)
 {
     if (!frame)
         return 0;
-    Element* ownerElement = frame->ownerElement();
+    Element* ownerElement = frame->deprecatedLocalOwner();
     if (!ownerElement)
         return 0;
     return &ownerElement->document();
@@ -53,15 +54,15 @@ static Document* ownerDocument(LocalFrame* frame)
     if (!frame)
         return 0;
 
-    LocalFrame* ownerFrame = frame->tree().parent();
+    Frame* ownerFrame = frame->tree().parent();
     if (!ownerFrame)
         ownerFrame = frame->loader().opener();
-    if (!ownerFrame)
+    if (!ownerFrame || !ownerFrame->isLocalFrame())
         return 0;
-    return ownerFrame->document();
+    return toLocalFrame(ownerFrame)->document();
 }
 
-DocumentInit::DocumentInit(const KURL& url, LocalFrame* frame, WeakPtr<Document> contextDocument, HTMLImportsController* importsController)
+DocumentInit::DocumentInit(const KURL& url, LocalFrame* frame, WeakPtrWillBeRawPtr<Document> contextDocument, HTMLImportsController* importsController)
     : m_url(url)
     , m_frame(frame)
     , m_parent(parentDocument(frame))
@@ -91,7 +92,7 @@ DocumentInit::~DocumentInit()
 bool DocumentInit::shouldSetURL() const
 {
     LocalFrame* frame = frameForSecurityContext();
-    return (frame && frame->ownerElement()) || !m_url.isEmpty();
+    return (frame && frame->owner()) || !m_url.isEmpty();
 }
 
 bool DocumentInit::shouldTreatURLAsSrcdocDocument() const
@@ -104,7 +105,7 @@ LocalFrame* DocumentInit::frameForSecurityContext() const
     if (m_frame)
         return m_frame;
     if (m_importsController)
-        return m_importsController->frame();
+        return m_importsController->master()->frame();
     return 0;
 }
 
@@ -139,7 +140,7 @@ DocumentInit& DocumentInit::withNewRegistrationContext()
     return *this;
 }
 
-PassRefPtr<CustomElementRegistrationContext> DocumentInit::registrationContext(Document* document) const
+PassRefPtrWillBeRawPtr<CustomElementRegistrationContext> DocumentInit::registrationContext(Document* document) const
 {
     if (!document->isHTMLDocument() && !document->isXHTMLDocument())
         return nullptr;
@@ -150,12 +151,12 @@ PassRefPtr<CustomElementRegistrationContext> DocumentInit::registrationContext(D
     return m_registrationContext.get();
 }
 
-WeakPtr<Document> DocumentInit::contextDocument() const
+WeakPtrWillBeRawPtr<Document> DocumentInit::contextDocument() const
 {
     return m_contextDocument;
 }
 
-DocumentInit DocumentInit::fromContext(WeakPtr<Document> contextDocument, const KURL& url)
+DocumentInit DocumentInit::fromContext(WeakPtrWillBeRawPtr<Document> contextDocument, const KURL& url)
 {
     return DocumentInit(url, 0, contextDocument, 0);
 }

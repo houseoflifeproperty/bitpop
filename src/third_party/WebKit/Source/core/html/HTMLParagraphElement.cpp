@@ -23,9 +23,9 @@
 #include "config.h"
 #include "core/html/HTMLParagraphElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
@@ -37,10 +37,7 @@ inline HTMLParagraphElement::HTMLParagraphElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLParagraphElement> HTMLParagraphElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLParagraphElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLParagraphElement)
 
 void HTMLParagraphElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
 {

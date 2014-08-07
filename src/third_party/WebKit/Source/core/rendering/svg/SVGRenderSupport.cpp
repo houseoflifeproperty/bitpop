@@ -23,9 +23,9 @@
  */
 
 #include "config.h"
-
 #include "core/rendering/svg/SVGRenderSupport.h"
 
+#include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderGeometryMap.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/SubtreeLayoutScope.h"
@@ -51,8 +51,8 @@ LayoutRect SVGRenderSupport::clippedOverflowRectForRepaint(const RenderObject* o
 
     // Pass our local paint rect to computeRectForRepaint() which will
     // map to parent coords and recurse up the parent chain.
-    FloatRect repaintRect = object->repaintRectInLocalCoordinates();
-    object->computeFloatRectForRepaint(repaintContainer, repaintRect);
+    FloatRect repaintRect = object->paintInvalidationRectInLocalCoordinates();
+    object->computeFloatRectForPaintInvalidation(repaintContainer, repaintRect);
     return enclosingLayoutRect(repaintRect);
 }
 
@@ -60,9 +60,9 @@ void SVGRenderSupport::computeFloatRectForRepaint(const RenderObject* object, co
 {
     repaintRect.inflate(object->style()->outlineWidth());
 
-    // Translate to coords in our parent renderer, and then call computeFloatRectForRepaint() on our parent.
+    // Translate to coords in our parent renderer, and then call computeFloatRectForPaintInvalidation() on our parent.
     repaintRect = object->localToParentTransform().mapRect(repaintRect);
-    object->parent()->computeFloatRectForRepaint(repaintContainer, repaintRect, fixed);
+    object->parent()->computeFloatRectForPaintInvalidation(repaintContainer, repaintRect, fixed);
 }
 
 void SVGRenderSupport::mapLocalToContainer(const RenderObject* object, const RenderLayerModelObject* repaintContainer, TransformState& transformState, bool* wasFixed)
@@ -100,18 +100,24 @@ const RenderObject* SVGRenderSupport::pushMappingToContainer(const RenderObject*
     return parent;
 }
 
-bool SVGRenderSupport::checkForSVGRepaintDuringLayout(RenderObject* object)
+bool SVGRenderSupport::parentTransformDidChange(RenderObject* object)
 {
-    if (!object->checkForRepaintDuringLayout())
-        return false;
     // When a parent container is transformed in SVG, all children will be painted automatically
     // so we are able to skip redundant repaint checks.
     RenderObject* parent = object->parent();
     return !(parent && parent->isSVGContainer() && toRenderSVGContainer(parent)->didTransformToRootUpdate());
 }
 
+bool SVGRenderSupport::checkForSVGRepaintDuringLayout(RenderObject* object)
+{
+    if (!object->checkForPaintInvalidationDuringLayout())
+        return false;
+
+    return parentTransformDidChange(object);
+}
+
 // Update a bounding box taking into account the validity of the other bounding box.
-static inline void updateObjectBoundingBox(FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, RenderObject* other, FloatRect otherBoundingBox)
+inline void SVGRenderSupport::updateObjectBoundingBox(FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, RenderObject* other, FloatRect otherBoundingBox)
 {
     bool otherValid = other->isSVGContainer() ? toRenderSVGContainer(other)->isObjectBoundingBoxValid() : true;
     if (!otherValid)
@@ -135,14 +141,14 @@ void SVGRenderSupport::computeContainerBoundingBoxes(const RenderObject* contain
     // When computing the strokeBoundingBox, we use the repaintRects of the container's children so that the container's stroke includes
     // the resources applied to the children (such as clips and filters). This allows filters applied to containers to correctly bound
     // the children, and also improves inlining of SVG content, as the stroke bound is used in that situation also.
-    for (RenderObject* current = container->firstChild(); current; current = current->nextSibling()) {
+    for (RenderObject* current = container->slowFirstChild(); current; current = current->nextSibling()) {
         if (current->isSVGHiddenContainer())
             continue;
 
         const AffineTransform& transform = current->localToParentTransform();
         updateObjectBoundingBox(objectBoundingBox, objectBoundingBoxValid, current,
             transform.mapRect(current->objectBoundingBox()));
-        strokeBoundingBox.unite(transform.mapRect(current->repaintRectInLocalCoordinates()));
+        strokeBoundingBox.unite(transform.mapRect(current->paintInvalidationRectInLocalCoordinates()));
     }
 
     repaintBoundingBox = strokeBoundingBox;
@@ -163,17 +169,17 @@ const RenderSVGRoot* SVGRenderSupport::findTreeRootObject(const RenderObject* st
     return toRenderSVGRoot(start);
 }
 
-static inline void invalidateResourcesOfChildren(RenderObject* start)
+inline void SVGRenderSupport::invalidateResourcesOfChildren(RenderObject* start)
 {
     ASSERT(!start->needsLayout());
     if (SVGResources* resources = SVGResourcesCache::cachedResourcesForRenderObject(start))
         resources->removeClientFromCache(start, false);
 
-    for (RenderObject* child = start->firstChild(); child; child = child->nextSibling())
+    for (RenderObject* child = start->slowFirstChild(); child; child = child->nextSibling())
         invalidateResourcesOfChildren(child);
 }
 
-static inline bool layoutSizeOfNearestViewportChanged(const RenderObject* start)
+inline bool SVGRenderSupport::layoutSizeOfNearestViewportChanged(const RenderObject* start)
 {
     while (start && !start->isSVGRoot() && !start->isSVGViewportContainer())
         start = start->parent();
@@ -205,7 +211,7 @@ void SVGRenderSupport::layoutChildren(RenderObject* start, bool selfNeedsLayout)
     bool transformChanged = transformToRootChanged(start);
     HashSet<RenderObject*> notlayoutedObjects;
 
-    for (RenderObject* child = start->firstChild(); child; child = child->nextSibling()) {
+    for (RenderObject* child = start->slowFirstChild(); child; child = child->nextSibling()) {
         bool needsLayout = selfNeedsLayout;
         bool childEverHadLayout = child->everHadLayout();
 
@@ -221,9 +227,9 @@ void SVGRenderSupport::layoutChildren(RenderObject* start, bool selfNeedsLayout)
             if (SVGElement* element = child->node()->isSVGElement() ? toSVGElement(child->node()) : 0) {
                 if (element->hasRelativeLengths()) {
                     // When the layout size changed and when using relative values tell the RenderSVGShape to update its shape object
-                    if (child->isSVGShape())
+                    if (child->isSVGShape()) {
                         toRenderSVGShape(child)->setNeedsShapeUpdate();
-                    else if (child->isSVGText()) {
+                    } else if (child->isSVGText()) {
                         toRenderSVGText(child)->setNeedsTextMetricsUpdate();
                         toRenderSVGText(child)->setNeedsPositioningValuesUpdate();
                     }
@@ -250,9 +256,10 @@ void SVGRenderSupport::layoutChildren(RenderObject* start, bool selfNeedsLayout)
             // We could handle this in the individual objects, but for now it's easier to have
             // parent containers call repaint().  (RenderBlock::layout* has similar logic.)
             if (!childEverHadLayout && !RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
-                child->repaint();
-        } else if (layoutSizeChanged)
+                child->paintInvalidationForWholeRenderer();
+        } else if (layoutSizeChanged) {
             notlayoutedObjects.add(child);
+        }
     }
 
     if (!layoutSizeChanged) {

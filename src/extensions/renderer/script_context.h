@@ -45,7 +45,7 @@ class ScriptContext : public RequestSender::Source {
   bool is_valid() const { return !v8_context_.IsEmpty(); }
 
   v8::Handle<v8::Context> v8_context() const {
-    return v8_context_.NewHandle(v8::Isolate::GetCurrent());
+    return v8_context_.NewHandle(isolate());
   }
 
   const Extension* extension() const { return extension_.get(); }
@@ -66,7 +66,7 @@ class ScriptContext : public RequestSender::Source {
 
   // Returns the ID of the extension associated with this context, or empty
   // string if there is no such extension.
-  std::string GetExtensionID() const;
+  const std::string& GetExtensionID() const;
 
   // Returns the RenderView associated with this context. Can return NULL if the
   // context is in the process of being destroyed.
@@ -104,6 +104,13 @@ class ScriptContext : public RequestSender::Source {
   // Utility to get the URL we will match against for a frame. If the frame has
   // committed, this is the commited URL. Otherwise it is the provisional URL.
   static GURL GetDataSourceURLForFrame(const blink::WebFrame* frame);
+
+  // Returns the first non-about:-URL in the document hierarchy above and
+  // including |frame|. The document hierarchy is only traversed if
+  // |document_url| is an about:-URL and if |match_about_blank| is true.
+  static GURL GetEffectiveDocumentURL(const blink::WebFrame* frame,
+                                      const GURL& document_url,
+                                      bool match_about_blank);
 
   // RequestSender::Source implementation.
   virtual ScriptContext* GetContext() OVERRIDE;

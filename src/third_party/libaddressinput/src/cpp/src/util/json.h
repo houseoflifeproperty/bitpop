@@ -19,18 +19,7 @@
 #include <libaddressinput/util/scoped_ptr.h>
 
 #include <string>
-
-// Forward declaration for |Document|.
-namespace rapidjson {
-
-class CrtAllocator;
-template <typename> class MemoryPoolAllocator;
-template <typename> struct UTF8;
-template <typename, typename> class GenericDocument;
-typedef GenericDocument<UTF8<char>, MemoryPoolAllocator<CrtAllocator> >
-    Document;
-
-}  // namespace rapidjson
+#include <vector>
 
 namespace i18n {
 namespace addressinput {
@@ -50,6 +39,10 @@ class Json {
   // object.
   bool ParseObject(const std::string& json);
 
+  // Returns the list of keys in the parsed JSON. The JSON object must be parsed
+  // successfully in ParseObject() before invoking this method.
+  const std::vector<std::string>& GetKeys() const;
+
   // Returns true if the parsed JSON contains a string value for |key|. The JSON
   // object must be parsed successfully in ParseObject() before invoking this
   // method.
@@ -60,12 +53,19 @@ class Json {
   // true before invoking this method.
   std::string GetStringValueForKey(const std::string& key) const;
 
- private:
-  // JSON document.
-  scoped_ptr<rapidjson::Document> document_;
+  // Returns true if the parsed JSON contains a dictionary value for |key|. The
+  // JSON object must be parsed successfully in ParseObject() before invoking
+  // this method.
+  bool HasDictionaryValueForKey(const std::string& key) const;
 
-  // True if the parsed string is a valid JSON object.
-  bool valid_;
+  // Returns the dictionary value for the |key|. The |key| must be present and
+  // its value must be of the dictionary type, i.e., HasDictionaryValueForKey()
+  // must return true before invoking this method.
+  const Json& GetDictionaryValueForKey(const std::string& key) const;
+
+ private:
+  class JsonImpl;
+  scoped_ptr<JsonImpl> impl_;
 
   DISALLOW_COPY_AND_ASSIGN(Json);
 };

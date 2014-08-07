@@ -17,6 +17,7 @@
 #include "content/browser/renderer_host/media/audio_input_sync_writer.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "media/audio/audio_manager_base.h"
+#include "media/base/audio_bus.h"
 
 namespace content {
 
@@ -70,7 +71,7 @@ AudioInputRendererHost::~AudioInputRendererHost() {
 }
 
 void AudioInputRendererHost::OnChannelClosing() {
-  // Since the IPC channel is gone, close all requested audio streams.
+  // Since the IPC sender is gone, close all requested audio streams.
   DeleteEntries();
 }
 
@@ -113,8 +114,7 @@ void AudioInputRendererHost::OnError(media::AudioInputController* controller,
 }
 
 void AudioInputRendererHost::OnData(media::AudioInputController* controller,
-                                    const uint8* data,
-                                    uint32 size) {
+                                    const media::AudioBus* data) {
   NOTREACHED() << "Only low-latency mode is supported.";
 }
 
@@ -230,16 +230,15 @@ void AudioInputRendererHost::DoLog(media::AudioInputController* controller,
   DVLOG(1) << log_string;
 }
 
-bool AudioInputRendererHost::OnMessageReceived(const IPC::Message& message,
-                                               bool* message_was_ok) {
+bool AudioInputRendererHost::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(AudioInputRendererHost, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(AudioInputRendererHost, message)
     IPC_MESSAGE_HANDLER(AudioInputHostMsg_CreateStream, OnCreateStream)
     IPC_MESSAGE_HANDLER(AudioInputHostMsg_RecordStream, OnRecordStream)
     IPC_MESSAGE_HANDLER(AudioInputHostMsg_CloseStream, OnCloseStream)
     IPC_MESSAGE_HANDLER(AudioInputHostMsg_SetVolume, OnSetVolume)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -293,8 +292,9 @@ void AudioInputRendererHost::OnCreateStream(
   // Create a new AudioEntry structure.
   scoped_ptr<AudioEntry> entry(new AudioEntry());
 
-  const uint32 segment_size = (sizeof(media::AudioInputBufferParameters) +
-                               audio_params.GetBytesPerBuffer());
+  const uint32 segment_size =
+      (sizeof(media::AudioInputBufferParameters) +
+       media::AudioBus::CalculateMemorySize(audio_params));
   entry->shared_memory_segment_count = config.shared_memory_count;
 
   // Create the shared memory and share it with the renderer process
@@ -308,9 +308,8 @@ void AudioInputRendererHost::OnCreateStream(
     return;
   }
 
-  scoped_ptr<AudioInputSyncWriter> writer(
-      new AudioInputSyncWriter(&entry->shared_memory,
-                               entry->shared_memory_segment_count));
+  scoped_ptr<AudioInputSyncWriter> writer(new AudioInputSyncWriter(
+      &entry->shared_memory, entry->shared_memory_segment_count, audio_params));
 
   if (!writer->Init()) {
     SendErrorMessage(stream_id, SYNC_WRITER_INIT_FAILED);

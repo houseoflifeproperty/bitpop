@@ -22,9 +22,8 @@
 #include "config.h"
 #include "core/rendering/HitTestResult.h"
 
-#include "HTMLNames.h"
-#include "SVGNames.h"
-#include "XLinkNames.h"
+#include "core/HTMLNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -89,7 +88,7 @@ HitTestResult::HitTestResult(const HitTestResult& other)
     , m_isFirstLetter(other.m_isFirstLetter)
 {
     // Only copy the NodeSet in case of rect hit test.
-    m_rectBasedTestResult = adoptPtr(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
+    m_rectBasedTestResult = adoptPtrWillBeNoop(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
 }
 
 HitTestResult::~HitTestResult()
@@ -110,9 +109,20 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
     m_isOverWidget = other.isOverWidget();
 
     // Only copy the NodeSet in case of rect hit test.
-    m_rectBasedTestResult = adoptPtr(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
+    m_rectBasedTestResult = adoptPtrWillBeNoop(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
 
     return *this;
+}
+
+void HitTestResult::trace(Visitor* visitor)
+{
+    visitor->trace(m_innerNode);
+    visitor->trace(m_innerPossiblyPseudoNode);
+    visitor->trace(m_innerNonSharedNode);
+    visitor->trace(m_innerURLElement);
+#if ENABLE(OILPAN)
+    visitor->trace(m_rectBasedTestResult);
+#endif
 }
 
 RenderObject* HitTestResult::renderer() const
@@ -457,14 +467,14 @@ void HitTestResult::append(const HitTestResult& other)
 const HitTestResult::NodeSet& HitTestResult::rectBasedTestResult() const
 {
     if (!m_rectBasedTestResult)
-        m_rectBasedTestResult = adoptPtr(new NodeSet);
+        m_rectBasedTestResult = adoptPtrWillBeNoop(new NodeSet);
     return *m_rectBasedTestResult;
 }
 
 HitTestResult::NodeSet& HitTestResult::mutableRectBasedTestResult()
 {
     if (!m_rectBasedTestResult)
-        m_rectBasedTestResult = adoptPtr(new NodeSet);
+        m_rectBasedTestResult = adoptPtrWillBeNoop(new NodeSet);
     return *m_rectBasedTestResult;
 }
 

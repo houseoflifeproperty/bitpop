@@ -8,13 +8,13 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/google_update_constants.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -146,11 +146,11 @@ class TestRLZTracker : public RLZTracker {
 
     // Set new access points RLZ string, like the actual server ping would have
     // done.
-    rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_OMNIBOX,
+    rlz_lib::SetAccessPointRlz(RLZTracker::ChromeOmnibox(),
                                kNewOmniboxRlzString);
-    rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_HOME_PAGE,
+    rlz_lib::SetAccessPointRlz(RLZTracker::ChromeHomePage(),
                                kNewHomepageRlzString);
-    rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_APP_LIST,
+    rlz_lib::SetAccessPointRlz(RLZTracker::ChromeAppList(),
                                kNewAppListRlzString);
     return true;
   }
@@ -182,7 +182,7 @@ class RlzLibTest : public RlzLibTestNoMachineState {
 
   TestRLZTracker tracker_;
 #if defined(OS_POSIX)
-  scoped_ptr<google_util::BrandForTesting> brand_override_;
+  scoped_ptr<google_brand::BrandForTesting> brand_override_;
 #endif
 };
 
@@ -199,10 +199,10 @@ void RlzLibTest::SetMainBrand(const char* brand) {
 #if defined(OS_WIN)
   SetRegistryBrandValue(google_update::kRegRLZBrandField, brand);
 #elif defined(OS_POSIX)
-  brand_override_.reset(new google_util::BrandForTesting(brand));
+  brand_override_.reset(new google_brand::BrandForTesting(brand));
 #endif
   std::string check_brand;
-  google_util::GetBrand(&check_brand);
+  google_brand::GetBrand(&check_brand);
   EXPECT_EQ(brand, check_brand);
 }
 
@@ -211,7 +211,7 @@ void RlzLibTest::SetReactivationBrand(const char* brand) {
 #if defined(OS_WIN)
   SetRegistryBrandValue(google_update::kRegRLZReactivationBrandField, brand);
   std::string check_brand;
-  google_util::GetReactivationBrand(&check_brand);
+  google_brand::GetReactivationBrand(&check_brand);
   EXPECT_EQ(brand, check_brand);
 #endif
 }
@@ -237,9 +237,9 @@ void RlzLibTest::SimulateOmniboxUsage() {
   // true to trigger record of the first search. All other fields are passed in
   // with empty or invalid values.
   AutocompleteResult empty_result;
-  OmniboxLog dummy(base::string16(), false, AutocompleteInput::INVALID,
+  OmniboxLog dummy(base::string16(), false, metrics::OmniboxInputType::INVALID,
                    true, 0, false, -1,
-                   AutocompleteInput::INVALID_SPEC,
+                   metrics::OmniboxEventProto::INVALID_SPEC,
                    base::TimeDelta::FromSeconds(0), 0,
                    base::TimeDelta::FromSeconds(0),
                    AutocompleteResult());
@@ -278,13 +278,13 @@ void RlzLibTest::ExpectEventRecorded(const char* event_name, bool expected) {
 
 void RlzLibTest::ExpectRlzPingSent(bool expected) {
   std::string brand;
-  google_util::GetBrand(&brand);
+  google_brand::GetBrand(&brand);
   EXPECT_EQ(expected, tracker_.was_ping_sent_for_brand(brand.c_str()));
 }
 
 void RlzLibTest::ExpectReactivationRlzPingSent(bool expected) {
   std::string brand;
-  google_util::GetReactivationBrand(&brand);
+  google_brand::GetReactivationBrand(&brand);
   EXPECT_EQ(expected, tracker_.was_ping_sent_for_brand(brand.c_str()));
 }
 
@@ -366,7 +366,7 @@ const char kAppListFirstSearch[] = "CCF";
 const base::TimeDelta kDelay = base::TimeDelta::FromMilliseconds(20);
 
 TEST_F(RlzLibTest, RecordProductEvent) {
-  RLZTracker::RecordProductEvent(rlz_lib::CHROME, RLZTracker::CHROME_OMNIBOX,
+  RLZTracker::RecordProductEvent(rlz_lib::CHROME, RLZTracker::ChromeOmnibox(),
                                  rlz_lib::FIRST_SEARCH);
 
   ExpectEventRecorded(kOmniboxFirstSearch, true);
@@ -484,9 +484,9 @@ TEST_F(RlzLibTest, DelayedInitOnlyNoFirstRunNoRlzStringsGoogleAsStartup) {
 TEST_F(RlzLibTest, DelayedInitOnlyNoFirstRun) {
   // Set some dummy RLZ strings to simulate that we already ran before and
   // performed a successful ping to the RLZ server.
-  rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, kOmniboxRlzString);
-  rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_HOME_PAGE, kHomepageRlzString);
-  rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_APP_LIST, kAppListRlzString);
+  rlz_lib::SetAccessPointRlz(RLZTracker::ChromeOmnibox(), kOmniboxRlzString);
+  rlz_lib::SetAccessPointRlz(RLZTracker::ChromeHomePage(), kHomepageRlzString);
+  rlz_lib::SetAccessPointRlz(RLZTracker::ChromeAppList(), kAppListRlzString);
 
   TestRLZTracker::InitRlzDelayed(false, false, kDelay, true, true, true);
   InvokeDelayedInit();
@@ -737,71 +737,73 @@ TEST_F(RlzLibTest, AppListUsageDoesNotSendPingWhenSendPingImmediately) {
 
 TEST_F(RlzLibTest, GetAccessPointRlzOnIoThread) {
   // Set dummy RLZ string.
-  rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, kOmniboxRlzString);
+  rlz_lib::SetAccessPointRlz(RLZTracker::ChromeOmnibox(), kOmniboxRlzString);
 
   base::string16 rlz;
 
   tracker_.set_assume_not_ui_thread(true);
-  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz));
+  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::ChromeOmnibox(), &rlz));
   EXPECT_STREQ(kOmniboxRlzString, base::UTF16ToUTF8(rlz).c_str());
 }
 
 TEST_F(RlzLibTest, GetAccessPointRlzNotOnIoThread) {
   // Set dummy RLZ string.
-  rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, kOmniboxRlzString);
+  rlz_lib::SetAccessPointRlz(RLZTracker::ChromeOmnibox(), kOmniboxRlzString);
 
   base::string16 rlz;
 
   tracker_.set_assume_not_ui_thread(false);
-  EXPECT_FALSE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz));
+  EXPECT_FALSE(
+      RLZTracker::GetAccessPointRlz(RLZTracker::ChromeOmnibox(), &rlz));
 }
 
 TEST_F(RlzLibTest, GetAccessPointRlzIsCached) {
   // Set dummy RLZ string.
-  rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, kOmniboxRlzString);
+  rlz_lib::SetAccessPointRlz(RLZTracker::ChromeOmnibox(), kOmniboxRlzString);
 
   base::string16 rlz;
 
   tracker_.set_assume_not_ui_thread(false);
-  EXPECT_FALSE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz));
+  EXPECT_FALSE(
+      RLZTracker::GetAccessPointRlz(RLZTracker::ChromeOmnibox(), &rlz));
 
   tracker_.set_assume_not_ui_thread(true);
-  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz));
+  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::ChromeOmnibox(), &rlz));
   EXPECT_STREQ(kOmniboxRlzString, base::UTF16ToUTF8(rlz).c_str());
 
   tracker_.set_assume_not_ui_thread(false);
-  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz));
+  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::ChromeOmnibox(), &rlz));
   EXPECT_STREQ(kOmniboxRlzString, base::UTF16ToUTF8(rlz).c_str());
 }
 
 TEST_F(RlzLibTest, PingUpdatesRlzCache) {
   // Set dummy RLZ string.
-  rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, kOmniboxRlzString);
-  rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_HOME_PAGE, kHomepageRlzString);
-  rlz_lib::SetAccessPointRlz(RLZTracker::CHROME_APP_LIST, kAppListRlzString);
+  rlz_lib::SetAccessPointRlz(RLZTracker::ChromeOmnibox(), kOmniboxRlzString);
+  rlz_lib::SetAccessPointRlz(RLZTracker::ChromeHomePage(), kHomepageRlzString);
+  rlz_lib::SetAccessPointRlz(RLZTracker::ChromeAppList(), kAppListRlzString);
 
   base::string16 rlz;
 
   // Prime the cache.
   tracker_.set_assume_not_ui_thread(true);
 
-  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz));
+  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::ChromeOmnibox(), &rlz));
   EXPECT_STREQ(kOmniboxRlzString, base::UTF16ToUTF8(rlz).c_str());
   EXPECT_TRUE(RLZTracker::GetAccessPointRlz(
-        RLZTracker::CHROME_HOME_PAGE, &rlz));
+        RLZTracker::ChromeHomePage(), &rlz));
   EXPECT_STREQ(kHomepageRlzString, base::UTF16ToUTF8(rlz).c_str());
-  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_APP_LIST, &rlz));
+  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::ChromeAppList(), &rlz));
   EXPECT_STREQ(kAppListRlzString, base::UTF16ToUTF8(rlz).c_str());
 
   // Make sure cache is valid.
   tracker_.set_assume_not_ui_thread(false);
 
-  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz));
+  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::ChromeOmnibox(), &rlz));
   EXPECT_STREQ(kOmniboxRlzString, base::UTF16ToUTF8(rlz).c_str());
   EXPECT_TRUE(RLZTracker::GetAccessPointRlz(
-        RLZTracker::CHROME_HOME_PAGE, &rlz));
+        RLZTracker::ChromeHomePage(), &rlz));
   EXPECT_STREQ(kHomepageRlzString, base::UTF16ToUTF8(rlz).c_str());
-  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_APP_LIST, &rlz));
+  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::ChromeAppList(), &rlz));
   EXPECT_STREQ(kAppListRlzString, base::UTF16ToUTF8(rlz).c_str());
 
   // Perform ping.
@@ -813,12 +815,12 @@ TEST_F(RlzLibTest, PingUpdatesRlzCache) {
   // Make sure cache is now updated.
   tracker_.set_assume_not_ui_thread(false);
 
-  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz));
+  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::ChromeOmnibox(), &rlz));
   EXPECT_STREQ(kNewOmniboxRlzString, base::UTF16ToUTF8(rlz).c_str());
   EXPECT_TRUE(RLZTracker::GetAccessPointRlz(
-        RLZTracker::CHROME_HOME_PAGE, &rlz));
+        RLZTracker::ChromeHomePage(), &rlz));
   EXPECT_STREQ(kNewHomepageRlzString, base::UTF16ToUTF8(rlz).c_str());
-  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_APP_LIST, &rlz));
+  EXPECT_TRUE(RLZTracker::GetAccessPointRlz(RLZTracker::ChromeAppList(), &rlz));
   EXPECT_STREQ(kNewAppListRlzString, base::UTF16ToUTF8(rlz).c_str());
 }
 
@@ -882,7 +884,7 @@ TEST_F(RlzLibTest, ReactivationOrganicOrganic) {
 
 #if defined(OS_CHROMEOS)
 TEST_F(RlzLibTest, ClearRlzState) {
-  RLZTracker::RecordProductEvent(rlz_lib::CHROME, RLZTracker::CHROME_OMNIBOX,
+  RLZTracker::RecordProductEvent(rlz_lib::CHROME, RLZTracker::ChromeOmnibox(),
                                  rlz_lib::FIRST_SEARCH);
 
   ExpectEventRecorded(kOmniboxFirstSearch, true);

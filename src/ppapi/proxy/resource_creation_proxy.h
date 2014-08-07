@@ -106,6 +106,7 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreateAudioConfig(PP_Instance instance,
                                         PP_AudioSampleRate sample_rate,
                                         uint32_t sample_frame_count) OVERRIDE;
+  virtual PP_Resource CreateCompositor(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateFileChooser(PP_Instance instance,
                                         PP_FileChooserMode_Dev mode,
                                         const PP_Var& accept_types) OVERRIDE;
@@ -151,6 +152,7 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateUDPSocket(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateVideoDecoder(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateVideoDestination(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateVideoSource(PP_Instance instance) OVERRIDE;
   virtual PP_Resource CreateWebSocket(PP_Instance instance) OVERRIDE;

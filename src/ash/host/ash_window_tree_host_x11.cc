@@ -12,15 +12,18 @@
 #include <string>
 #include <vector>
 
+#include "ash/host/ash_window_tree_host_init_params.h"
 #include "ash/host/root_window_transformer.h"
 #include "base/basictypes.h"
 #include "base/sys_info.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/platform/platform_event_source.h"
 #include "ui/events/x/device_data_manager.h"
 #include "ui/events/x/device_list_cache_x.h"
 #include "ui/events/x/touch_factory_x11.h"
@@ -117,11 +120,20 @@ void AshWindowTreeHostX11::SetRootWindowTransformer(
   }
 }
 
+gfx::Insets AshWindowTreeHostX11::GetHostInsets() const {
+  return transformer_helper_.GetHostInsets();
+}
+
 aura::WindowTreeHost* AshWindowTreeHostX11::AsWindowTreeHost() { return this; }
 
 void AshWindowTreeHostX11::UpdateDisplayID(int64 id1, int64 id2) {
   display_ids_.first = id1;
   display_ids_.second = id2;
+}
+
+void AshWindowTreeHostX11::PrepareForShutdown() {
+  if (ui::PlatformEventSource::GetInstance())
+    ui::PlatformEventSource::GetInstance()->RemovePlatformEventDispatcher(this);
 }
 
 void AshWindowTreeHostX11::SetBounds(const gfx::Rect& bounds) {
@@ -149,7 +161,9 @@ void AshWindowTreeHostX11::UpdateRootWindowSize(const gfx::Size& host_size) {
 }
 
 void AshWindowTreeHostX11::OnCursorVisibilityChangedNative(bool show) {
+#if defined(OS_CHROMEOS)
   SetCrOSTapPaused(!show);
+#endif
 }
 
 void AshWindowTreeHostX11::OnWindowInitialized(aura::Window* window) {}
@@ -158,9 +172,11 @@ void AshWindowTreeHostX11::OnHostInitialized(aura::WindowTreeHost* host) {
   if (host != AsWindowTreeHost())
     return;
 
+#if defined(OS_CHROMEOS)
   // We have to enable Tap-to-click by default because the cursor is set to
   // visible in Shell::InitRootWindowController.
   SetCrOSTapPaused(false);
+#endif
 }
 
 void AshWindowTreeHostX11::OnConfigureNotify() {
@@ -176,7 +192,6 @@ bool AshWindowTreeHostX11::CanDispatchEvent(const ui::PlatformEvent& event) {
   if(!WindowTreeHostX11::CanDispatchEvent(event))
     return false;
   XEvent* xev = event;
-  XIDeviceEvent* xiev = static_cast<XIDeviceEvent*>(xev->xcookie.data);
   ui::EventType type = ui::EventTypeFromNative(xev);
   // For touch event, check if the root window is residing on the according
   // touch display.
@@ -186,6 +201,7 @@ bool AshWindowTreeHostX11::CanDispatchEvent(const ui::PlatformEvent& event) {
     case ui::ET_TOUCH_CANCELLED:
     case ui::ET_TOUCH_RELEASED: {
 #if defined(OS_CHROMEOS)
+      XIDeviceEvent* xiev = static_cast<XIDeviceEvent*>(xev->xcookie.data);
       int64 touch_display_id =
           ui::DeviceDataManager::GetInstance()->GetDisplayForTouchDevice(
               xiev->deviceid);
@@ -215,6 +231,7 @@ void AshWindowTreeHostX11::TranslateAndDispatchLocatedEvent(
     aura::client::ScreenPositionClient* screen_position_client =
         aura::client::GetScreenPositionClient(root_window);
     gfx::Rect local(bounds().size());
+    local.Inset(transformer_helper_.GetHostInsets());
 
     if (screen_position_client && !local.Contains(event->location())) {
       gfx::Point location(event->location());
@@ -233,6 +250,7 @@ void AshWindowTreeHostX11::TranslateAndDispatchLocatedEvent(
   SendEventToProcessor(event);
 }
 
+#if defined(OS_CHROMEOS)
 void AshWindowTreeHostX11::SetCrOSTapPaused(bool state) {
   if (!ui::IsXInput2Available())
     return;
@@ -275,9 +293,11 @@ void AshWindowTreeHostX11::SetCrOSTapPaused(bool state) {
     }
   }
 }
+#endif
 
-AshWindowTreeHost* AshWindowTreeHost::Create(const gfx::Rect& initial_bounds) {
-  return new AshWindowTreeHostX11(initial_bounds);
+AshWindowTreeHost* AshWindowTreeHost::Create(
+    const AshWindowTreeHostInitParams& init_params) {
+  return new AshWindowTreeHostX11(init_params.initial_bounds);
 }
 
 }  // namespace ash

@@ -24,14 +24,6 @@ CHROMIUM_SWARMING_OSES = {
 }
 
 
-ISOLATE_OSES = {
-    'darwin': 'mac',
-    'cygwin': 'win',
-    'linux2': 'linux',
-    'win32': 'win',
-}
-
-
 def parse_args(use_isolate_server, use_swarming):
   """Process arguments for the example scripts."""
   os.chdir(ROOT_DIR)
@@ -44,6 +36,9 @@ def parse_args(use_isolate_server, use_swarming):
         metavar='URL', default=os.environ.get('ISOLATE_SERVER', ''),
         help='Isolate server to use')
   if use_swarming:
+    task_name = '%s-%s-hello_world' % (
+      getpass.getuser(),
+      datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S'))
     parser.add_option(
         '-S', '--swarming',
         metavar='URL', default=os.environ.get('SWARMING_SERVER', ''),
@@ -53,7 +48,12 @@ def parse_args(use_isolate_server, use_swarming):
         help='Swarming slave OS to request. Should be one of the valid '
              'sys.platform values like darwin, linux2 or win32 default: '
              '%default.')
+    parser.add_option(
+        '-t', '--task-name', default=task_name,
+        help='Swarming task name, default is based on time: %default')
   parser.add_option('-v', '--verbose', action='count', default=0)
+  parser.add_option(
+      '--priority', metavar='INT', type='int', help='Priority to use')
   options, args = parser.parse_args()
 
   if args:
@@ -63,18 +63,10 @@ def parse_args(use_isolate_server, use_swarming):
   if use_swarming:
     if not options.swarming:
       parser.error('--swarming is required.')
-    options.isolate_os = ISOLATE_OSES[options.os]
     options.swarming_os = CHROMIUM_SWARMING_OSES[options.os]
     del options.os
 
   return options
-
-
-def unique_task_name():
-  """Makes sure this gets run as an unique task run."""
-  return '%s-%s-hello_world' % (
-      getpass.getuser(),
-      datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S'))
 
 
 def note(text):

@@ -22,9 +22,8 @@
 
 #include "core/svg/SVGFEColorMatrixElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
 namespace WebCore {
@@ -54,10 +53,7 @@ inline SVGFEColorMatrixElement::SVGFEColorMatrixElement(Document& document)
     addToPropertyMap(m_type);
 }
 
-PassRefPtr<SVGFEColorMatrixElement> SVGFEColorMatrixElement::create(Document& document)
-{
-    return adoptRef(new SVGFEColorMatrixElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEColorMatrixElement)
 
 bool SVGFEColorMatrixElement::isSupportedAttribute(const QualifiedName& attrName)
 {

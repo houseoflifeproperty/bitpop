@@ -108,6 +108,7 @@ CPP_SPECIAL_CONVERSION_RULES = {
     'Dictionary': 'Dictionary',
     'EventHandler': 'EventListener*',
     'MediaQueryListListener': 'RefPtrWillBeRawPtr<MediaQueryListListener>',
+    'NodeFilter': 'RefPtrWillBeRawPtr<NodeFilter>',
     'Promise': 'ScriptPromise',
     'ScriptValue': 'ScriptValue',
     # FIXME: Eliminate custom bindings for XPathNSResolver  http://crbug.com/345529
@@ -118,7 +119,7 @@ CPP_SPECIAL_CONVERSION_RULES = {
 }
 
 
-def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, used_in_cpp_sequence=False):
+def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, used_as_variadic_argument=False, used_in_cpp_sequence=False):
     """Returns C++ type corresponding to IDL type.
 
     |idl_type| argument is of type IdlType, while return value is a string
@@ -144,7 +145,10 @@ def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, used_in
     idl_type = idl_type.preprocessed_type
 
     # Composite types
-    array_or_sequence_type = idl_type.array_or_sequence_type
+    if used_as_variadic_argument:
+        array_or_sequence_type = idl_type
+    else:
+        array_or_sequence_type = idl_type.array_or_sequence_type
     if array_or_sequence_type:
         vector_type = cpp_ptr_type('Vector', 'HeapVector', array_or_sequence_type.gc_type)
         return cpp_template_type(vector_type, array_or_sequence_type.cpp_type_args(used_in_cpp_sequence=True))
@@ -163,7 +167,7 @@ def cpp_type(idl_type, extended_attributes=None, used_as_argument=False, used_in
 
     if base_idl_type in NON_WRAPPER_TYPES:
         return 'RefPtr<%s>' % base_idl_type
-    if base_idl_type == 'DOMString':
+    if base_idl_type in ('DOMString', 'ByteString', 'ScalarValueString'):
         if not used_as_argument:
             return 'String'
         return 'V8StringResource<%s>' % string_mode()
@@ -224,6 +228,7 @@ def v8_type(interface_name):
 # This data is external to Foo.idl, and hence computed as global information in
 # compute_interfaces_info.py to avoid having to parse IDLs of all used interfaces.
 IdlType.implemented_as_interfaces = {}
+
 
 def implemented_as(idl_type):
     base_idl_type = idl_type.base_type
@@ -287,8 +292,19 @@ INCLUDES_FOR_TYPE = {
                          'bindings/v8/V8EventListenerList.h']),
     'EventListener': set(['bindings/v8/BindingSecurity.h',
                           'bindings/v8/V8EventListenerList.h',
-                          'core/frame/DOMWindow.h']),
+                          'core/frame/LocalDOMWindow.h']),
+    'HTMLCollection': set(['bindings/core/v8/V8HTMLCollection.h',
+                           'core/dom/ClassCollection.h',
+                           'core/dom/TagCollection.h',
+                           'core/html/HTMLCollection.h',
+                           'core/html/HTMLFormControlsCollection.h',
+                           'core/html/HTMLTableRowsCollection.h']),
     'MediaQueryListListener': set(['core/css/MediaQueryListListener.h']),
+    'NodeList': set(['bindings/core/v8/V8NodeList.h',
+                     'core/dom/NameNodeList.h',
+                     'core/dom/NodeList.h',
+                     'core/dom/StaticNodeList.h',
+                     'core/html/LabelsNodeList.h']),
     'Promise': set(['bindings/v8/ScriptPromise.h']),
     'SerializedScriptValue': set(['bindings/v8/SerializedScriptValue.h']),
     'ScriptValue': set(['bindings/v8/ScriptValue.h']),
@@ -321,7 +337,8 @@ def includes_for_type(idl_type):
     if base_idl_type.endswith('Constructor'):
         # FIXME: replace with a [ConstructorAttribute] extended attribute
         base_idl_type = idl_type.constructor_type_name
-    return set(['V8%s.h' % base_idl_type])
+    return set(['bindings/%s/v8/V8%s.h' % (component_dir[base_idl_type],
+                                           base_idl_type)])
 
 IdlType.includes_for_type = property(includes_for_type)
 IdlUnionType.includes_for_type = property(
@@ -343,6 +360,12 @@ def includes_for_interface(interface_name):
 def add_includes_for_interface(interface_name):
     includes.update(includes_for_interface(interface_name))
 
+component_dir = {}
+
+
+def set_component_dirs(new_component_dirs):
+        component_dir.update(new_component_dirs)
+
 
 ################################################################################
 # V8 -> C++
@@ -352,6 +375,8 @@ V8_VALUE_TO_CPP_VALUE = {
     # Basic
     'Date': 'toCoreDate({v8_value})',
     'DOMString': '{v8_value}',
+    'ByteString': 'toByteString({arguments})',
+    'ScalarValueString': 'toScalarValueString({arguments})',
     'boolean': '{v8_value}->BooleanValue()',
     'float': 'static_cast<float>({v8_value}->NumberValue())',
     'unrestricted float': 'static_cast<float>({v8_value}->NumberValue())',
@@ -369,9 +394,9 @@ V8_VALUE_TO_CPP_VALUE = {
     'CompareHow': 'static_cast<Range::CompareHow>({v8_value}->Int32Value())',
     'Dictionary': 'Dictionary({v8_value}, info.GetIsolate())',
     'EventTarget': 'V8DOMWrapper::isDOMWrapper({v8_value}) ? toWrapperTypeInfo(v8::Handle<v8::Object>::Cast({v8_value}))->toEventTarget(v8::Handle<v8::Object>::Cast({v8_value})) : 0',
-    'MediaQueryListListener': 'MediaQueryListListener::create(ScriptValue(ScriptState::current(info.GetIsolate()), {v8_value}))',
-    'NodeFilter': 'toNodeFilter({v8_value}, info.GetIsolate())',
-    'Promise': 'ScriptPromise(ScriptState::current(info.GetIsolate()), {v8_value})',
+    'MediaQueryListListener': 'MediaQueryListListener::create(ScriptState::current(info.GetIsolate()), ScriptValue(ScriptState::current(info.GetIsolate()), {v8_value}))',
+    'NodeFilter': 'toNodeFilter({v8_value}, info.Holder(), ScriptState::current(info.GetIsolate()))',
+    'Promise': 'ScriptPromise::cast(ScriptState::current(info.GetIsolate()), {v8_value})',
     'SerializedScriptValue': 'SerializedScriptValue::create({v8_value}, info.GetIsolate())',
     'ScriptValue': 'ScriptValue(ScriptState::current(info.GetIsolate()), {v8_value})',
     'Window': 'toDOMWindow({v8_value}, info.GetIsolate())',
@@ -392,7 +417,8 @@ def v8_value_to_cpp_value(idl_type, extended_attributes, v8_value, index):
 
     if 'EnforceRange' in extended_attributes:
         arguments = ', '.join([v8_value, 'EnforceRange', 'exceptionState'])
-    elif idl_type.is_integer_type:  # NormalConversion
+    elif (idl_type.is_integer_type or  # NormalConversion
+          idl_type.name in ('ByteString', 'ScalarValueString')):
         arguments = ', '.join([v8_value, 'exceptionState'])
     else:
         arguments = v8_value
@@ -431,22 +457,33 @@ def v8_value_to_cpp_value_array_or_sequence(array_or_sequence_type, v8_value, in
     return expression
 
 
-def v8_value_to_local_cpp_value(idl_type, extended_attributes, v8_value, variable_name, index=None):
+def v8_value_to_local_cpp_value(idl_type, extended_attributes, v8_value, variable_name, index=None, declare_variable=True):
     """Returns an expression that converts a V8 value to a C++ value and stores it as a local value."""
     this_cpp_type = idl_type.cpp_type_args(extended_attributes=extended_attributes, used_as_argument=True)
 
     idl_type = idl_type.preprocessed_type
     cpp_value = v8_value_to_cpp_value(idl_type, extended_attributes, v8_value, index)
-    args = [this_cpp_type, variable_name, cpp_value]
+    args = [variable_name, cpp_value]
     if idl_type.base_type == 'DOMString' and not idl_type.array_or_sequence_type:
         macro = 'TOSTRING_VOID'
-    elif idl_type.is_integer_type:
+    elif (idl_type.is_integer_type or
+          idl_type.name in ('ByteString', 'ScalarValueString')):
         macro = 'TONATIVE_VOID_EXCEPTIONSTATE'
         args.append('exceptionState')
     else:
         macro = 'TONATIVE_VOID'
 
-    return '%s(%s)' % (macro, ', '.join(args))
+    # Macros come in several variants, to minimize expensive creation of
+    # v8::TryCatch.
+    suffix = ''
+
+    if declare_variable:
+        args.insert(0, this_cpp_type)
+    else:
+        suffix += '_INTERNAL'
+
+    return '%s(%s)' % (macro + suffix, ', '.join(args))
+
 
 IdlType.v8_value_to_local_cpp_value = v8_value_to_local_cpp_value
 IdlUnionType.v8_value_to_local_cpp_value = v8_value_to_local_cpp_value
@@ -513,9 +550,9 @@ def v8_conversion_type(idl_type, extended_attributes):
         return 'int'
     if base_idl_type in CPP_UNSIGNED_TYPES:
         return 'unsigned'
-    if base_idl_type == 'DOMString':
+    if base_idl_type in ('DOMString', 'ByteString', 'ScalarValueString'):
         if 'TreatReturnedNullStringAs' not in extended_attributes:
-            return 'DOMString'
+            return base_idl_type
         treat_returned_null_string_as = extended_attributes['TreatReturnedNullStringAs']
         if treat_returned_null_string_as == 'Null':
             return 'StringOrNull'
@@ -541,6 +578,8 @@ V8_SET_RETURN_VALUE = {
     'int': 'v8SetReturnValueInt(info, {cpp_value})',
     'unsigned': 'v8SetReturnValueUnsigned(info, {cpp_value})',
     'DOMString': 'v8SetReturnValueString(info, {cpp_value}, info.GetIsolate())',
+    'ByteString': 'v8SetReturnValueString(info, {cpp_value}, info.GetIsolate())',
+    'ScalarValueString': 'v8SetReturnValueString(info, {cpp_value}, info.GetIsolate())',
     # [TreatNullReturnValueAs]
     'StringOrNull': 'v8SetReturnValueStringOrNull(info, {cpp_value}, info.GetIsolate())',
     'StringOrUndefined': 'v8SetReturnValueStringOrUndefined(info, {cpp_value}, info.GetIsolate())',
@@ -620,6 +659,8 @@ CPP_VALUE_TO_V8_VALUE = {
     # Built-in types
     'Date': 'v8DateOrNaN({cpp_value}, {isolate})',
     'DOMString': 'v8String({isolate}, {cpp_value})',
+    'ByteString': 'v8String({isolate}, {cpp_value})',
+    'ScalarValueString': 'v8String({isolate}, {cpp_value})',
     'boolean': 'v8Boolean({cpp_value}, {isolate})',
     'int': 'v8::Integer::New({isolate}, {cpp_value})',
     'unsigned': 'v8::Integer::NewFromUnsigned({isolate}, {cpp_value})',
@@ -633,12 +674,12 @@ CPP_VALUE_TO_V8_VALUE = {
     'ScriptValue': '{cpp_value}.v8Value()',
     'SerializedScriptValue': '{cpp_value} ? {cpp_value}->deserialize() : v8::Handle<v8::Value>(v8::Null({isolate}))',
     # General
-    'array': 'v8Array({cpp_value}, {isolate})',
+    'array': 'v8Array({cpp_value}, {creation_context}, {isolate})',
     'DOMWrapper': 'toV8({cpp_value}, {creation_context}, {isolate})',
 }
 
 
-def cpp_value_to_v8_value(idl_type, cpp_value, isolate='info.GetIsolate()', creation_context='', extended_attributes=None):
+def cpp_value_to_v8_value(idl_type, cpp_value, isolate='info.GetIsolate()', creation_context='info.Holder()', extended_attributes=None):
     """Returns an expression that converts a C++ value to a V8 value."""
     # the isolate parameter is needed for callback interfaces
     idl_type, cpp_value = preprocess_idl_type_and_value(idl_type, cpp_value, extended_attributes)

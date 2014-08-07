@@ -44,21 +44,21 @@ PassOwnPtr<CSPDirectiveList> CSPDirectiveList::create(ContentSecurityPolicy* pol
 void CSPDirectiveList::reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL) const
 {
     String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
-    m_policy->client()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message);
+    m_policy->executionContext()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message);
     m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header);
 }
 
 void CSPDirectiveList::reportViolationWithLocation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const String& contextURL, const WTF::OrdinalNumber& contextLine) const
 {
     String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
-    m_policy->client()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message, contextURL, contextLine.oneBasedInt());
+    m_policy->executionContext()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message, contextURL, contextLine.oneBasedInt());
     m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header);
 }
 
 void CSPDirectiveList::reportViolationWithState(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, ScriptState* scriptState) const
 {
     String message = m_reportOnly ? "[Report Only] " + consoleMessage : consoleMessage;
-    m_policy->client()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message, scriptState);
+    m_policy->executionContext()->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, message, scriptState);
     m_policy->reportViolation(directiveText, effectiveDirective, message, blockedURL, m_reportURIs, m_header);
 }
 
@@ -92,8 +92,9 @@ bool CSPDirectiveList::checkAncestors(SourceListDirective* directive, LocalFrame
     if (!frame || !directive)
         return true;
 
-    for (LocalFrame* current = frame->tree().parent(); current; current = current->tree().parent()) {
-        if (!directive->allows(current->document()->url()))
+    for (Frame* current = frame->tree().parent(); current; current = current->tree().parent()) {
+        // FIXME: To make this work for out-of-process iframes, we need to propagate URL information of ancestor frames across processes.
+        if (!current->isLocalFrame() || !directive->allows(toLocalFrame(current)->document()->url()))
             return false;
     }
     return true;
@@ -676,4 +677,3 @@ void CSPDirectiveList::addDirective(const String& name, const String& value)
 
 
 } // namespace WebCore
-

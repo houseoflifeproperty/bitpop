@@ -12,6 +12,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "ui/ozone/ozone_export.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
 
@@ -21,7 +22,7 @@ class Point;
 
 namespace ui {
 
-class DriSurface;
+class ScanoutSurface;
 
 // The HDCOz will handle modesettings and scannout operations for hardware
 // devices.
@@ -80,7 +81,8 @@ class DriSurface;
 //
 // TODO(dnicoara) Need to have a way to detect events (such as monitor
 // connected or disconnected).
-class OZONE_EXPORT HardwareDisplayController {
+class OZONE_EXPORT HardwareDisplayController
+    : public base::SupportsWeakPtr<HardwareDisplayController> {
  public:
   HardwareDisplayController(DriWrapper* drm,
                             uint32_t connector_id,
@@ -89,10 +91,16 @@ class OZONE_EXPORT HardwareDisplayController {
   ~HardwareDisplayController();
 
   // Associate the HDCO with a surface implementation and initialize it.
-  bool BindSurfaceToController(scoped_ptr<DriSurface> surface,
+  bool BindSurfaceToController(scoped_ptr<ScanoutSurface> surface,
                                drmModeModeInfo mode);
 
   void UnbindSurfaceFromController();
+
+  // Reconfigures the CRTC with the current surface and mode.
+  bool Enable();
+
+  // Disables the CRTC.
+  void Disable();
 
   // Schedules the |surface_|'s framebuffer to be displayed on the next vsync
   // event. The event will be posted on the graphics card file descriptor |fd_|
@@ -112,6 +120,10 @@ class OZONE_EXPORT HardwareDisplayController {
   // Returns true if the page flip was successfully registered, false otherwise.
   bool SchedulePageFlip();
 
+  // TODO(dnicoara) This should be on the MessageLoop when Ozone can have
+  // BeginFrame can be triggered explicitly by Ozone.
+  void WaitForPageFlipEvent();
+
   // Called when the page flip event occurred. The event is provided by the
   // kernel when a VBlank event finished. This allows the controller to
   // update internal state and propagate the update to the surface.
@@ -123,28 +135,25 @@ class OZONE_EXPORT HardwareDisplayController {
                        unsigned int useconds);
 
   // Set the hardware cursor to show the contents of |surface|.
-  bool SetCursor(DriSurface* surface);
+  bool SetCursor(ScanoutSurface* surface);
 
   bool UnsetCursor();
 
   // Moves the hardware cursor to |location|.
   bool MoveCursor(const gfx::Point& location);
 
-  int get_fd() const { return drm_->get_fd(); };
-
   const drmModeModeInfo& get_mode() const { return mode_; };
   uint32_t connector_id() const { return connector_id_; }
   uint32_t crtc_id() const { return crtc_id_; }
-  DriSurface* get_surface() const { return surface_.get(); };
+  ScanoutSurface* surface() const {
+    return surface_.get();
+  };
 
   uint64_t get_time_of_last_flip() const {
     return time_of_last_flip_;
   };
 
  private:
-  bool RegisterFramebuffers(DriSurface* surface, drmModeModeInfo mode);
-  void UnregisterFramebuffers(DriSurface* surface);
-
   // Object containing the connection to the graphics device and wraps the API
   // calls to control it.
   DriWrapper* drm_;
@@ -157,9 +166,13 @@ class OZONE_EXPORT HardwareDisplayController {
   // TODO(dnicoara) Need to store all the modes.
   drmModeModeInfo mode_;
 
-  scoped_ptr<DriSurface> surface_;
+  scoped_ptr<ScanoutSurface> surface_;
 
   uint64_t time_of_last_flip_;
+
+  // Keeps track of the CRTC state. If a surface has been bound, then the value
+  // is set to false. Otherwise it is true.
+  bool is_disabled_;
 
   DISALLOW_COPY_AND_ASSIGN(HardwareDisplayController);
 };

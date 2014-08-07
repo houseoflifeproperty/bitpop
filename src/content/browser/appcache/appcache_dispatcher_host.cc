@@ -37,10 +37,9 @@ void AppCacheDispatcherHost::OnChannelConnected(int32 peer_pid) {
   }
 }
 
-bool AppCacheDispatcherHost::OnMessageReceived(const IPC::Message& message,
-                                               bool* message_was_ok) {
+bool AppCacheDispatcherHost::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(AppCacheDispatcherHost, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(AppCacheDispatcherHost, message)
     IPC_MESSAGE_HANDLER(AppCacheHostMsg_RegisterHost, OnRegisterHost)
     IPC_MESSAGE_HANDLER(AppCacheHostMsg_UnregisterHost, OnUnregisterHost)
     IPC_MESSAGE_HANDLER(AppCacheHostMsg_SetSpawningHostId, OnSetSpawningHostId)
@@ -56,7 +55,7 @@ bool AppCacheDispatcherHost::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER_DELAY_REPLY(AppCacheHostMsg_StartUpdate, OnStartUpdate)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(AppCacheHostMsg_SwapCache, OnSwapCache)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -163,7 +162,7 @@ void AppCacheDispatcherHost::OnGetStatus(int host_id, IPC::Message* reply_msg) {
     return;
   }
 
-  GetStatusCallback(appcache::UNCACHED, reply_msg);
+  GetStatusCallback(appcache::APPCACHE_STATUS_UNCACHED, reply_msg);
 }
 
 void AppCacheDispatcherHost::OnStartUpdate(int host_id,
@@ -206,7 +205,7 @@ void AppCacheDispatcherHost::OnSwapCache(int host_id, IPC::Message* reply_msg) {
 }
 
 void AppCacheDispatcherHost::GetStatusCallback(
-    appcache::Status status, void* param) {
+    appcache::AppCacheStatus status, void* param) {
   IPC::Message* reply_msg = reinterpret_cast<IPC::Message*>(param);
   DCHECK_EQ(pending_reply_msg_.get(), reply_msg);
   AppCacheHostMsg_GetStatus::WriteReplyParams(reply_msg, status);

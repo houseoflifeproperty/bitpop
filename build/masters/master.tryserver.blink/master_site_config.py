@@ -11,6 +11,7 @@ class BlinkTryServer(Master.Master4):
   master_port = 8009
   slave_port = 8109
   master_port_alt = 8209
+  buildbot_url = 'http://build.chromium.org/p/tryserver.blink/'
   # Select tree status urls and codereview location.
   reply_to = 'chrome-troopers+tryserver@google.com'
   base_app_url = 'https://chromium-status.appspot.com'

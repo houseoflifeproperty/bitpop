@@ -7,10 +7,12 @@
 #include "android_webview/common/aw_resource.h"
 #include "android_webview/common/render_view_messages.h"
 #include "android_webview/common/url_constants.h"
+#include "android_webview/renderer/aw_execution_termination_filter.h"
 #include "android_webview/renderer/aw_key_systems.h"
 #include "android_webview/renderer/aw_permission_client.h"
-#include "android_webview/renderer/aw_render_frame_observer.h"
+#include "android_webview/renderer/aw_render_frame_ext.h"
 #include "android_webview/renderer/aw_render_view_ext.h"
+#include "android_webview/renderer/print_render_frame_observer.h"
 #include "android_webview/renderer/print_web_view_helper.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -30,6 +32,7 @@
 #include "third_party/WebKit/public/platform/WebURLError.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "third_party/WebKit/public/web/WebSecurityPolicy.h"
 #include "url/gurl.h"
@@ -60,6 +63,17 @@ void AwContentRendererClient::RenderThreadStarted() {
 
   visited_link_slave_.reset(new visitedlink::VisitedLinkSlave);
   thread->AddObserver(visited_link_slave_.get());
+
+  execution_termination_filter_ = new AwExecutionTerminationFilter(
+      thread->GetIOMessageLoopProxy(),
+      thread->GetMessageLoop()->message_loop_proxy());
+  thread->AddFilter(execution_termination_filter_.get());
+  thread->AddObserver(this);
+}
+
+void AwContentRendererClient::WebKitInitialized() {
+  execution_termination_filter_->SetRenderThreadIsolate(
+      blink::mainThreadIsolate());
 }
 
 bool AwContentRendererClient::HandleNavigation(
@@ -96,9 +110,9 @@ bool AwContentRendererClient::HandleNavigation(
   // For HTTP schemes, only top-level navigations can be overridden. Similarly,
   // WebView Classic lets app override only top level about:blank navigations.
   // So we filter out non-top about:blank navigations here.
-  if (frame->parent() && (gurl.SchemeIs(url::kHttpScheme) ||
-                          gurl.SchemeIs(url::kHttpsScheme) ||
-                          gurl.SchemeIs(content::kAboutScheme)))
+  if (frame->parent() &&
+      (gurl.SchemeIs(url::kHttpScheme) || gurl.SchemeIs(url::kHttpsScheme) ||
+       gurl.SchemeIs(url::kAboutScheme)))
     return false;
 
   // use NavigationInterception throttle to handle the call as that can
@@ -119,7 +133,8 @@ bool AwContentRendererClient::HandleNavigation(
 void AwContentRendererClient::RenderFrameCreated(
     content::RenderFrame* render_frame) {
   new AwPermissionClient(render_frame);
-  new AwRenderFrameObserver(render_frame);
+  new PrintRenderFrameObserver(render_frame);
+  new AwRenderFrameExt(render_frame);
 
   // TODO(jam): when the frame tree moves into content and parent() works at
   // RenderFrame construction, simplify this by just checking parent().

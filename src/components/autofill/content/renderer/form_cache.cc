@@ -15,15 +15,18 @@
 #include "grit/components_strings.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFormControlElement.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/WebKit/public/web/WebNodeList.h"
 #include "third_party/WebKit/public/web/WebSelectElement.h"
 #include "third_party/WebKit/public/web/WebTextAreaElement.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using blink::WebConsoleMessage;
 using blink::WebDocument;
 using blink::WebFormControlElement;
 using blink::WebFormElement;
@@ -68,30 +71,23 @@ FormCache::FormCache() {
 FormCache::~FormCache() {
 }
 
-void FormCache::ExtractForms(const WebFrame& frame,
-                             std::vector<FormData>* forms) {
-  ExtractFormsAndFormElements(frame, kRequiredAutofillFields, forms, NULL);
-}
-
-bool FormCache::ExtractFormsAndFormElements(
-    const WebFrame& frame,
-    size_t minimum_required_fields,
-    std::vector<FormData>* forms,
-    std::vector<WebFormElement>* web_form_elements) {
-  // Reset the cache for this frame.
-  ResetFrame(frame);
-
+void FormCache::ExtractNewForms(const WebFrame& frame,
+                                std::vector<FormData>* forms) {
   WebDocument document = frame.document();
   if (document.isNull())
-    return false;
+    return;
 
   web_documents_.insert(document);
 
   WebVector<WebFormElement> web_forms;
   document.forms(web_forms);
 
+  // Log an error message for deprecated attributes, but only the first time
+  // the form is parsed.
+  bool log_deprecation_messages =
+      parsed_forms_.find(&frame) == parsed_forms_.end();
+
   size_t num_fields_seen = 0;
-  bool has_skipped_forms = false;
   for (size_t i = 0; i < web_forms.size(); ++i) {
     WebFormElement form_element = web_forms[i];
 
@@ -102,6 +98,23 @@ bool FormCache::ExtractFormsAndFormElements(
     size_t num_editable_elements = 0;
     for (size_t j = 0; j < control_elements.size(); ++j) {
       WebFormControlElement element = control_elements[j];
+
+      if (log_deprecation_messages) {
+        std::string autocomplete_attribute =
+            base::UTF16ToUTF8(element.getAttribute("autocomplete"));
+
+        static const char* const deprecated[] = { "region", "locality" };
+        for (size_t i = 0; i < arraysize(deprecated); ++i) {
+          if (autocomplete_attribute.find(deprecated[i]) != std::string::npos) {
+            WebConsoleMessage console_message = WebConsoleMessage(
+                WebConsoleMessage::LevelWarning,
+                WebString(base::ASCIIToUTF16(std::string("autocomplete='") +
+                    deprecated[i] + "' is deprecated and will soon be ignored. "
+                    "See http://goo.gl/YjeSsW")));
+            element.document().frame()->addMessageToConsole(console_message);
+          }
+        }
+      }
 
       // Save original values of <select> elements so we can restore them
       // when |ClearFormWithNode()| is invoked.
@@ -128,9 +141,8 @@ bool FormCache::ExtractFormsAndFormElements(
     // To avoid overly expensive computation, we impose a minimum number of
     // allowable fields.  The corresponding maximum number of allowable fields
     // is imposed by WebFormElementToFormData().
-    if (num_editable_elements < minimum_required_fields &&
+    if (num_editable_elements < kRequiredAutofillFields &&
         control_elements.size() > 0) {
-      has_skipped_forms = true;
       continue;
     }
 
@@ -147,17 +159,12 @@ bool FormCache::ExtractFormsAndFormElements(
     if (num_fields_seen > kMaxParseableFields)
       break;
 
-    if (form.fields.size() >= minimum_required_fields) {
+    if (form.fields.size() >= kRequiredAutofillFields &&
+        !parsed_forms_[&frame].count(form)) {
       forms->push_back(form);
-      if (web_form_elements)
-        web_form_elements->push_back(form_element);
-    } else {
-      has_skipped_forms = true;
+      parsed_forms_[&frame].insert(form);
     }
   }
-
-  // Return true if there are any WebFormElements skipped, else false.
-  return has_skipped_forms;
 }
 
 void FormCache::ResetFrame(const WebFrame& frame) {
@@ -175,6 +182,7 @@ void FormCache::ResetFrame(const WebFrame& frame) {
     web_documents_.erase(*it);
   }
 
+  parsed_forms_[&frame].clear();
   RemoveOldElements(frame, &initial_select_values_);
   RemoveOldElements(frame, &initial_checked_state_);
 }
@@ -191,6 +199,10 @@ bool FormCache::ClearFormWithElement(const WebFormControlElement& element) {
     WebFormControlElement control_element = control_elements[i];
     // Don't modify the value of disabled fields.
     if (!control_element.isEnabled())
+      continue;
+
+    // Don't clear field that was not autofilled
+    if (!control_element.isAutofilled())
       continue;
 
     control_element.setAutofilled(false);

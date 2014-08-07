@@ -108,7 +108,7 @@ class WEBVIEW_EXPORT WebView : public View,
   virtual void AboutToRequestFocusFromTabTraversal(bool reverse) OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   // Overridden from content::WebContentsDelegate:
   virtual void WebContentsFocused(content::WebContents* web_contents) OVERRIDE;
@@ -127,6 +127,7 @@ class WEBVIEW_EXPORT WebView : public View,
   // instantiation of the inline IPC::Listener methods in all translation units.
   virtual void OnChannelConnected(int32 peer_id) OVERRIDE {}
   virtual void OnChannelError() OVERRIDE {}
+  virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE {}
 
  private:
   void AttachWebContents();

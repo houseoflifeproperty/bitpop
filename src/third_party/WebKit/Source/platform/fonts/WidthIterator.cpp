@@ -59,7 +59,7 @@ WidthIterator::WidthIterator(const Font* font, const TextRun& run, HashSet<const
         m_expansionPerOpportunity = 0;
     else {
         bool isAfterExpansion = m_isAfterExpansion;
-        unsigned expansionOpportunityCount = m_run.is8Bit() ? Character::expansionOpportunityCount(m_run.characters8(), m_run.length(), m_run.ltr() ? LTR : RTL, isAfterExpansion) : Character::expansionOpportunityCount(m_run.characters16(), m_run.length(), m_run.ltr() ? LTR : RTL, isAfterExpansion);
+        unsigned expansionOpportunityCount = m_run.is8Bit() ? Character::expansionOpportunityCount(m_run.characters8(), m_run.length(), m_run.direction(), isAfterExpansion) : Character::expansionOpportunityCount(m_run.characters16(), m_run.length(), m_run.direction(), isAfterExpansion);
         if (isAfterExpansion && !m_run.allowsTrailingExpansion())
             expansionOpportunityCount--;
 
@@ -98,7 +98,7 @@ public:
 
 typedef Vector<pair<int, OriginalAdvancesForCharacterTreatedAsSpace>, 64> CharactersTreatedAsSpace;
 
-static inline float applyFontTransforms(GlyphBuffer* glyphBuffer, bool ltr, unsigned& lastGlyphCount, const SimpleFontData* fontData, TypesettingFeatures typesettingFeatures, CharactersTreatedAsSpace& charactersTreatedAsSpace)
+static inline float applyFontTransforms(GlyphBuffer* glyphBuffer, unsigned& lastGlyphCount, TypesettingFeatures typesettingFeatures, CharactersTreatedAsSpace& charactersTreatedAsSpace)
 {
     ASSERT(typesettingFeatures & (Kerning | Ligatures));
 
@@ -109,18 +109,10 @@ static inline float applyFontTransforms(GlyphBuffer* glyphBuffer, bool ltr, unsi
     if (glyphBuffer->size() <= lastGlyphCount + 1)
         return 0;
 
-    GlyphBufferAdvance* advances = glyphBuffer->advances(0);
+    FloatSize* advances = glyphBuffer->advances(0);
     float widthDifference = 0;
     for (unsigned i = lastGlyphCount; i < glyphBufferSize; ++i)
         widthDifference -= advances[i].width();
-
-    if (!ltr)
-        glyphBuffer->reverse(lastGlyphCount, glyphBufferSize - lastGlyphCount);
-
-    fontData->applyTransforms(glyphBuffer->glyphs(lastGlyphCount), advances + lastGlyphCount, glyphBufferSize - lastGlyphCount, typesettingFeatures);
-
-    if (!ltr)
-        glyphBuffer->reverse(lastGlyphCount, glyphBufferSize - lastGlyphCount);
 
     for (size_t i = 0; i < charactersTreatedAsSpace.size(); ++i) {
         int spaceOffset = charactersTreatedAsSpace[i].first;
@@ -186,15 +178,16 @@ inline unsigned WidthIterator::advanceInternal(TextIterator& textIterator, Glyph
 
         if (fontData != lastFontData && width) {
             if (shouldApplyFontTransforms())
-                m_runWidthSoFar += applyFontTransforms(glyphBuffer, m_run.ltr(), lastGlyphCount, lastFontData, m_typesettingFeatures, charactersTreatedAsSpace);
+                m_runWidthSoFar += applyFontTransforms(glyphBuffer, lastGlyphCount, m_typesettingFeatures, charactersTreatedAsSpace);
 
             lastFontData = fontData;
             if (m_fallbackFonts && fontData != primaryFont) {
                 // FIXME: This does a little extra work that could be avoided if
                 // glyphDataForCharacter() returned whether it chose to use a small caps font.
-                if (!m_font->fontDescription().variant() || character == toUpper(character))
+                if (m_font->fontDescription().variant() == FontVariantNormal || character == toUpper(character))
                     m_fallbackFonts->add(fontData);
                 else {
+                    ASSERT(m_font->fontDescription().variant() == FontVariantSmallCaps);
                     const GlyphData& uppercaseGlyphData = m_font->glyphDataForCharacter(toUpper(character), rtl);
                     if (uppercaseGlyphData.fontData != primaryFont)
                         m_fallbackFonts->add(uppercaseGlyphData.fontData);
@@ -306,7 +299,7 @@ inline unsigned WidthIterator::advanceInternal(TextIterator& textIterator, Glyph
     }
 
     if (shouldApplyFontTransforms())
-        m_runWidthSoFar += applyFontTransforms(glyphBuffer, m_run.ltr(), lastGlyphCount, lastFontData, m_typesettingFeatures, charactersTreatedAsSpace);
+        m_runWidthSoFar += applyFontTransforms(glyphBuffer, lastGlyphCount, m_typesettingFeatures, charactersTreatedAsSpace);
 
     unsigned consumedCharacters = textIterator.currentCharacter() - m_currentCharacter;
     m_currentCharacter = textIterator.currentCharacter();

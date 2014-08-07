@@ -29,7 +29,7 @@
  */
 
 #include "config.h"
-#include "PinchViewport.h"
+#include "core/frame/PinchViewport.h"
 
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
@@ -65,6 +65,7 @@ namespace WebCore {
 
 PinchViewport::PinchViewport(FrameHost& owner)
     : m_frameHost(owner)
+    , m_scale(1)
 {
     reset();
 }
@@ -114,6 +115,37 @@ FloatRect PinchViewport::visibleRect() const
     FloatSize scaledSize(m_size);
     scaledSize.scale(1 / m_scale);
     return FloatRect(m_offset, scaledSize);
+}
+
+FloatRect PinchViewport::visibleRectInDocument() const
+{
+    if (!mainFrame() || !mainFrame()->view())
+        return FloatRect();
+
+    FloatRect viewRect = mainFrame()->view()->visibleContentRect();
+    FloatRect pinchRect = visibleRect();
+    pinchRect.moveBy(viewRect.location());
+    return pinchRect;
+}
+
+void PinchViewport::scrollIntoView(const FloatRect& rect)
+{
+    if (!mainFrame() || !mainFrame()->view())
+        return;
+
+    FrameView* view = mainFrame()->view();
+
+    float centeringOffsetX = (visibleRect().width() - rect.width()) / 2;
+    float centeringOffsetY = (visibleRect().height() - rect.height()) / 2;
+
+    FloatPoint targetOffset(
+        rect.x() - centeringOffsetX - visibleRect().x(),
+        rect.y() - centeringOffsetY - visibleRect().y());
+
+    view->setScrollPosition(flooredIntPoint(targetOffset));
+
+    FloatPoint remainder = FloatPoint(targetOffset - view->scrollPosition());
+    move(remainder);
 }
 
 void PinchViewport::setLocation(const FloatPoint& newLocation)
@@ -281,9 +313,10 @@ void PinchViewport::registerLayersWithTreeView(WebLayerTreeView* layerTreeView) 
     TRACE_EVENT0("webkit", "PinchViewport::registerLayersWithTreeView");
     ASSERT(layerTreeView);
     ASSERT(m_frameHost.page().mainFrame());
-    ASSERT(m_frameHost.page().mainFrame()->contentRenderer());
+    ASSERT(m_frameHost.page().mainFrame()->isLocalFrame());
+    ASSERT(m_frameHost.page().deprecatedLocalMainFrame()->contentRenderer());
 
-    RenderLayerCompositor* compositor = m_frameHost.page().mainFrame()->contentRenderer()->compositor();
+    RenderLayerCompositor* compositor = m_frameHost.page().deprecatedLocalMainFrame()->contentRenderer()->compositor();
     // Get the outer viewport scroll layer.
     WebLayer* scrollLayer = compositor->scrollLayer()->platformLayer();
 
@@ -386,7 +419,7 @@ void PinchViewport::paintContents(const GraphicsLayer*, GraphicsContext&, Graphi
 
 LocalFrame* PinchViewport::mainFrame() const
 {
-    return m_frameHost.page().mainFrame();
+    return m_frameHost.page().mainFrame() && m_frameHost.page().mainFrame()->isLocalFrame() ? m_frameHost.page().deprecatedLocalMainFrame() : 0;
 }
 
 FloatPoint PinchViewport::clampOffsetToBoundaries(const FloatPoint& offset)

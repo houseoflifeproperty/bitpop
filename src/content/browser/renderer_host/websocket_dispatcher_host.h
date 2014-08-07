@@ -56,8 +56,7 @@ class CONTENT_EXPORT WebSocketDispatcherHost : public BrowserMessageFilter {
                           const WebSocketHostFactory& websocket_host_factory);
 
   // BrowserMessageFilter:
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // The following methods are used by WebSocketHost::EventInterface to send
   // IPCs from the browser to the renderer or child process. Any of them may
@@ -111,6 +110,8 @@ class CONTENT_EXPORT WebSocketDispatcherHost : public BrowserMessageFilter {
 
   // Returns whether the associated renderer process can read raw cookies.
   bool CanReadRawCookies() const;
+
+  int render_process_id() const { return process_id_; }
 
  private:
   typedef base::hash_map<int, WebSocketHost*> WebSocketHostTable;

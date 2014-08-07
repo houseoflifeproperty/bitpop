@@ -319,6 +319,7 @@ class SystemTrayDelegateWin : public ash::SystemTrayDelegate,
       ash::UpdateObserver::UpdateSeverity severity =
           ash::UpdateObserver::UPDATE_NORMAL;
       switch (detector->upgrade_notification_stage()) {
+        case UpgradeDetector::UPGRADE_ANNOYANCE_CRITICAL:
         case UpgradeDetector::UPGRADE_ANNOYANCE_SEVERE:
           severity = ash::UpdateObserver::UPDATE_SEVERE_RED;
           break;
@@ -329,6 +330,7 @@ class SystemTrayDelegateWin : public ash::SystemTrayDelegate,
           severity = ash::UpdateObserver::UPDATE_LOW_GREEN;
           break;
         case UpgradeDetector::UPGRADE_ANNOYANCE_LOW:
+        case UpgradeDetector::UPGRADE_ANNOYANCE_NONE:
           severity = ash::UpdateObserver::UPDATE_NORMAL;
           break;
       }

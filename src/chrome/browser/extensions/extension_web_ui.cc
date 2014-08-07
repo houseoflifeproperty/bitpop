@@ -16,19 +16,20 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/image_loader.h"
-#include "chrome/browser/favicon/favicon_util.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/favicon_base/favicon_util.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/page_transition_types.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/image_loader.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_resource.h"
@@ -87,10 +88,10 @@ void UnregisterAndReplaceOverrideForWebContents(const std::string& page,
 // Run favicon callbck with image result. If no favicon was available then
 // |image| will be empty.
 void RunFaviconCallbackAsync(
-    const FaviconService::FaviconResultsCallback& callback,
+    const favicon_base::FaviconResultsCallback& callback,
     const gfx::Image& image) {
-  std::vector<favicon_base::FaviconBitmapResult>* favicon_bitmap_results =
-      new std::vector<favicon_base::FaviconBitmapResult>();
+  std::vector<favicon_base::FaviconRawBitmapResult>* favicon_bitmap_results =
+      new std::vector<favicon_base::FaviconRawBitmapResult>();
 
   const std::vector<gfx::ImageSkiaRep>& image_reps =
       image.AsImageSkia().image_reps();
@@ -101,7 +102,7 @@ void RunFaviconCallbackAsync(
     if (gfx::PNGCodec::EncodeBGRASkBitmap(image_rep.sk_bitmap(),
                                           false,
                                           &bitmap_data->data())) {
-      favicon_base::FaviconBitmapResult bitmap_result;
+      favicon_base::FaviconRawBitmapResult bitmap_result;
       bitmap_result.bitmap_data = bitmap_data;
       bitmap_result.pixel_size = gfx::Size(image_rep.pixel_width(),
                                             image_rep.pixel_height());
@@ -405,7 +406,7 @@ void ExtensionWebUI::UnregisterChromeURLOverrides(
 void ExtensionWebUI::GetFaviconForURL(
     Profile* profile,
     const GURL& page_url,
-    const FaviconService::FaviconResultsCallback& callback) {
+    const favicon_base::FaviconResultsCallback& callback) {
   // Even when the extensions service is enabled by default, it's still
   // disabled in incognito mode.
   ExtensionService* service = profile->GetExtensionService();
@@ -423,23 +424,22 @@ void ExtensionWebUI::GetFaviconForURL(
   // resources. Load image reps for all supported scale factors (in addition to
   // 1x) immediately instead of in an as needed fashion to be consistent with
   // how favicons are requested for chrome:// and page URLs.
-  const std::vector<ui::ScaleFactor>& scale_factors =
-      FaviconUtil::GetFaviconScaleFactors();
+  const std::vector<float>& favicon_scales = favicon_base::GetFaviconScales();
   std::vector<extensions::ImageLoader::ImageRepresentation> info_list;
-  for (size_t i = 0; i < scale_factors.size(); ++i) {
-    float scale = ui::GetImageScale(scale_factors[i]);
+  for (size_t i = 0; i < favicon_scales.size(); ++i) {
+    float scale = favicon_scales[i];
     int pixel_size = static_cast<int>(gfx::kFaviconSize * scale);
     extensions::ExtensionResource icon_resource =
         extensions::IconsInfo::GetIconResource(extension,
                                                pixel_size,
                                                ExtensionIconSet::MATCH_BIGGER);
 
-    info_list.push_back(
-        extensions::ImageLoader::ImageRepresentation(
-            icon_resource,
-            extensions::ImageLoader::ImageRepresentation::ALWAYS_RESIZE,
-            gfx::Size(pixel_size, pixel_size),
-            scale_factors[i]));
+    ui::ScaleFactor resource_scale_factor = ui::GetSupportedScaleFactor(scale);
+    info_list.push_back(extensions::ImageLoader::ImageRepresentation(
+        icon_resource,
+        extensions::ImageLoader::ImageRepresentation::ALWAYS_RESIZE,
+        gfx::Size(pixel_size, pixel_size),
+        resource_scale_factor));
   }
 
   // LoadImagesAsync actually can run callback synchronously. We want to force

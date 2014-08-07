@@ -21,7 +21,7 @@
 #define SVGFontFaceSrcElement_h
 
 #if ENABLE(SVG_FONTS)
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGElement.h"
 
 namespace WebCore {
@@ -30,7 +30,7 @@ class CSSValueList;
 
 class SVGFontFaceSrcElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGFontFaceSrcElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFontFaceSrcElement);
 
     PassRefPtrWillBeRawPtr<CSSValueList> srcValue() const;
 

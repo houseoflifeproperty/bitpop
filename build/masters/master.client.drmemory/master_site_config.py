@@ -11,3 +11,4 @@ class DrMemory(Master.Master3):
   master_port = 8058
   slave_port = 8158
   master_port_alt = 8258
+  buildbot_url = 'http://build.chromium.org/p/client.drmemory/'

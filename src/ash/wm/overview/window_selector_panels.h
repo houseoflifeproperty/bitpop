@@ -9,6 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_vector.h"
 #include "ui/gfx/rect.h"
+#include "ui/views/controls/button/button.h"
 
 namespace ash {
 
@@ -19,7 +20,7 @@ class ScopedTransformOverviewWindow;
 // overview mode and the callout arrows are hidden at this point.
 class WindowSelectorPanels : public WindowSelectorItem {
  public:
-  WindowSelectorPanels();
+  explicit WindowSelectorPanels(aura::Window* panels_root_window);
   virtual ~WindowSelectorPanels();
 
   // Adds |window| to the selector item. This window should be an attached
@@ -29,7 +30,7 @@ class WindowSelectorPanels : public WindowSelectorItem {
   // WindowSelectorItem:
   virtual aura::Window* GetRootWindow() OVERRIDE;
   virtual bool HasSelectableWindow(const aura::Window* window) OVERRIDE;
-  virtual aura::Window* TargetedWindow(const aura::Window* target) OVERRIDE;
+  virtual bool Contains(const aura::Window* target) OVERRIDE;
   virtual void RestoreWindowOnExit(aura::Window* window) OVERRIDE;
   virtual aura::Window* SelectionWindow() OVERRIDE;
   virtual void RemoveWindow(const aura::Window* window) OVERRIDE;
@@ -42,6 +43,9 @@ class WindowSelectorPanels : public WindowSelectorItem {
  private:
   typedef ScopedVector<ScopedTransformOverviewWindow> WindowList;
   WindowList transform_windows_;
+
+  // The root window of the panels this item contains.
+  aura::Window* panels_root_window_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowSelectorPanels);
 };

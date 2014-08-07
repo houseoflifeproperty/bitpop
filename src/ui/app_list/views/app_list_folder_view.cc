@@ -11,7 +11,6 @@
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/app_list_model.h"
-#include "ui/app_list/pagination_model.h"
 #include "ui/app_list/views/app_list_item_view.h"
 #include "ui/app_list/views/app_list_main_view.h"
 #include "ui/app_list/views/apps_container_view.h"
@@ -51,13 +50,11 @@ AppListFolderView::AppListFolderView(AppsContainerView* container_view,
       view_model_(new views::ViewModel),
       model_(model),
       folder_item_(NULL),
-      pagination_model_(new PaginationModel),
       hide_for_reparent_(false) {
   AddChildView(folder_header_view_);
   view_model_->Add(folder_header_view_, kIndexFolderHeader);
 
-  items_grid_view_ =
-      new AppsGridView(app_list_main_view_, pagination_model_.get());
+  items_grid_view_ = new AppsGridView(app_list_main_view_);
   items_grid_view_->set_folder_delegate(this);
   items_grid_view_->SetLayout(
       kPreferredIconDimension,
@@ -67,18 +64,14 @@ AppListFolderView::AppListFolderView(AppsContainerView* container_view,
   AddChildView(items_grid_view_);
   view_model_->Add(items_grid_view_, kIndexChildItems);
 
-#if defined(USE_AURA)
   SetPaintToLayer(true);
   SetFillsBoundsOpaquely(false);
-#endif
 
   model_->AddObserver(this);
 }
 
 AppListFolderView::~AppListFolderView() {
   model_->RemoveObserver(this);
-  // Make sure |items_grid_view_| is deleted before |pagination_model_|.
-  RemoveAllChildViews(true);
 }
 
 void AppListFolderView::SetAppListFolderItem(AppListFolderItem* folder) {
@@ -117,7 +110,7 @@ void AppListFolderView::ScheduleShowHideAnimation(bool show,
   layer()->SetOpacity(show ? 1.0f : 0.0f);
 }
 
-gfx::Size AppListFolderView::GetPreferredSize() {
+gfx::Size AppListFolderView::GetPreferredSize() const {
   const gfx::Size header_size = folder_header_view_->GetPreferredSize();
   const gfx::Size grid_size = items_grid_view_->GetPreferredSize();
   int width = std::max(header_size.width(), grid_size.width());

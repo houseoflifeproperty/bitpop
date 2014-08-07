@@ -50,7 +50,7 @@ const int kUploadDataSize = arraysize(kUploadData)-1;
 
 // SpdyNextProtos returns a vector of next protocols for negotiating
 // SPDY.
-std::vector<NextProto> SpdyNextProtos();
+NextProtoVector SpdyNextProtos();
 
 // Chop a frame into an array of MockWrites.
 // |data| is the frame to chop.
@@ -218,13 +218,20 @@ struct SpdySessionDependencies {
   NextProto protocol;
   size_t stream_initial_recv_window_size;
   SpdySession::TimeFunc time_func;
+  NextProtoVector next_protos;
   std::string trusted_spdy_proxy;
+  bool force_spdy_over_ssl;
+  bool force_spdy_always;
+  bool use_alternate_protocols;
+  bool enable_websocket_over_spdy;
   NetLog* net_log;
 };
 
 class SpdyURLRequestContext : public URLRequestContext {
  public:
-  explicit SpdyURLRequestContext(NextProto protocol);
+  SpdyURLRequestContext(NextProto protocol,
+                        bool force_spdy_over_ssl,
+                        bool force_spdy_always);
   virtual ~SpdyURLRequestContext();
 
   MockClientSocketFactory& socket_factory() { return socket_factory_; }
@@ -366,6 +373,10 @@ class SpdyTestUtil {
   // Returns the constructed frame.  The caller takes ownership of the frame.
   SpdyFrame* ConstructSpdySettings(const SettingsMap& settings) const;
 
+  // Constructs an expected SPDY SETTINGS acknowledgement frame, if the protocol
+  // version is SPDY4 or higher, or an empty placeholder frame otherwise.
+  SpdyFrame* ConstructSpdySettingsAck() const;
+
   // Construct a SPDY PING frame.
   // Returns the constructed frame.  The caller takes ownership of the frame.
   SpdyFrame* ConstructSpdyPing(uint32 ping_id, bool is_ack) const;
@@ -377,6 +388,13 @@ class SpdyTestUtil {
   // Construct a SPDY GOAWAY frame with the specified last_good_stream_id.
   // Returns the constructed frame.  The caller takes ownership of the frame.
   SpdyFrame* ConstructSpdyGoAway(SpdyStreamId last_good_stream_id) const;
+
+  // Construct a SPDY GOAWAY frame with the specified last_good_stream_id,
+  // status, and description. Returns the constructed frame. The caller takes
+  // ownership of the frame.
+  SpdyFrame* ConstructSpdyGoAway(SpdyStreamId last_good_stream_id,
+                                 SpdyGoAwayStatus status,
+                                 const std::string& desc) const;
 
   // Construct a SPDY WINDOW_UPDATE frame.
   // Returns the constructed frame.  The caller takes ownership of the frame.
@@ -390,7 +408,7 @@ class SpdyTestUtil {
                                     SpdyRstStreamStatus status) const;
 
   // Constructs a standard SPDY GET SYN frame, optionally compressed
-  // for the url |url|.
+  // for |url|.
   // |extra_headers| are the extra header-value pairs, which typically
   // will vary the most between calls.
   // Returns a SpdyFrame.
@@ -438,6 +456,10 @@ class SpdyTestUtil {
                                const char* url,
                                const char* status,
                                const char* location);
+
+  SpdyFrame* ConstructInitialSpdyPushFrame(scoped_ptr<SpdyHeaderBlock> headers,
+                                           int stream_id,
+                                           int associated_stream_id);
 
   SpdyFrame* ConstructSpdyPushHeaders(int stream_id,
                                       const char* const extra_headers[],

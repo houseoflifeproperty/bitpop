@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
@@ -17,7 +16,6 @@
 #include "chrome/browser/chromeos/login/screens/update_screen_actor.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/network/network_state.h"
 #include "content/public/browser/browser_thread.h"
@@ -190,8 +188,6 @@ void UpdateScreen::UpdateStatusChanged(
       break;
     case UpdateEngineClient::UPDATE_STATUS_UPDATED_NEED_REBOOT:
       MakeSureScreenIsShown();
-      // Make sure that first OOBE stage won't be shown after reboot.
-      StartupUtils::MarkOobeCompleted();
       actor_->SetProgress(kProgressComplete);
       actor_->ShowEstimatedTimeLeft(false);
       if (HasCriticalUpdate()) {
@@ -206,13 +202,15 @@ void UpdateScreen::UpdateStatusChanged(
         ExitUpdate(REASON_UPDATE_NON_CRITICAL);
       }
       break;
+    case UpdateEngineClient::UPDATE_STATUS_ATTEMPTING_ROLLBACK:
+      VLOG(1) << "Attempting rollback";
+      break;
     case UpdateEngineClient::UPDATE_STATUS_IDLE:
       if (ignore_idle_status_) {
         // It is first IDLE status that is sent before we initiated the check.
         break;
       }
       // else no break
-
     case UpdateEngineClient::UPDATE_STATUS_ERROR:
     case UpdateEngineClient::UPDATE_STATUS_REPORTING_ERROR_EVENT:
       ExitUpdate(REASON_UPDATE_ENDED);
@@ -331,6 +329,8 @@ void UpdateScreen::ExitUpdate(UpdateScreen::ExitReason reason) {
         UpdateEngineClient* update_engine_client =
             DBusThreadManager::Get()->GetUpdateEngineClient();
         switch (update_engine_client->GetLastStatus().status) {
+          case UpdateEngineClient::UPDATE_STATUS_ATTEMPTING_ROLLBACK:
+            break;
           case UpdateEngineClient::UPDATE_STATUS_UPDATE_AVAILABLE:
           case UpdateEngineClient::UPDATE_STATUS_UPDATED_NEED_REBOOT:
           case UpdateEngineClient::UPDATE_STATUS_DOWNLOADING:

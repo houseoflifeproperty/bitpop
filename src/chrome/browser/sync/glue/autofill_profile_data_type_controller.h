@@ -8,8 +8,11 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/scoped_observer.h"
-#include "chrome/browser/sync/glue/non_ui_data_type_controller.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
+#include "components/sync_driver/non_ui_data_type_controller.h"
+
+class Profile;
+class ProfileSyncComponentsFactory;
 
 namespace autofill {
 class PersonalDataManager;
@@ -24,7 +27,7 @@ class AutofillProfileDataTypeController
   AutofillProfileDataTypeController(
       ProfileSyncComponentsFactory* profile_sync_factory,
       Profile* profile,
-      ProfileSyncService* sync_service);
+      const DisableTypeCallback& disable_callback);
 
   // NonUIDataTypeController implementation.
   virtual syncer::ModelType type() const OVERRIDE;
@@ -47,6 +50,7 @@ class AutofillProfileDataTypeController
   // Callback to notify that WebDatabase has loaded.
   void WebDatabaseLoaded();
 
+  Profile* const profile_;
   autofill::PersonalDataManager* personal_data_;
   bool callback_registered_;
 

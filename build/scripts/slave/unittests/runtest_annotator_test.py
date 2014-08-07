@@ -3,7 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Unit tests for annotated log parsers used by runtest.py.
+"""Unit tests for annotated log parsers (aka log processors) used by runtest.py.
 
 The classes tested here reside in process_log_utils.py.
 
@@ -31,13 +31,24 @@ class LogProcessorTest(unittest.TestCase):
   """Base class for log processor unit tests. Contains common operations."""
 
   def setUp(self):
+    """Set up for all test method of each test method below."""
     super(LogProcessorTest, self).setUp()
     self._revision = 12345
     self._webkit_revision = 67890
 
-  def _ConstructDefaultProcessor(self, log_processor_class,
-                                 factory_properties=None,
-                                 perf_expectations_path=None):
+  def _ConstructDefaultProcessor(
+      self, log_processor_class, factory_properties=None,
+      perf_expectations_path=None):
+    """Creates a log processor instance.
+
+    Args:
+      log_processor_class: A sub-class of PerformanceLogProcessor.
+      factory_properties: A dictionary of properties (optional).
+      perf_expectations_path: Expectations file path (optional).
+
+    Returns:
+      An instance of the given log processor class.
+    """
     factory_properties = factory_properties or {}
     factory_properties['perf_filename'] = perf_expectations_path
     factory_properties['perf_name'] = 'test-system'
@@ -55,18 +66,38 @@ class LogProcessorTest(unittest.TestCase):
     return processor
 
   def _ProcessLog(self, log_processor, logfile):  # pylint: disable=R0201
+    """Reads in a input log file and processes it.
+
+    This changes the state of the log processor object; the output is stored
+    in the object and can be gotten using the PerformanceLogs() method.
+
+    Args:
+      log_processor: An PerformanceLogProcessor instance.
+      logfile: File name of an input performance results log file.
+    """
     for line in open(os.path.join(test_env.DATA_PATH, logfile)):
       log_processor.ProcessLine(line)
 
   def _CheckFileExistsWithData(self, logs, targetfile):
+    """Asserts that |targetfile| exists in the |logs| dict and is non-empty."""
     self.assertTrue(targetfile in logs, 'File %s was not output.' % targetfile)
     self.assertTrue(logs[targetfile], 'File %s did not contain data.' %
                     targetfile)
 
-  def _ConstructParseAndCheckLogfiles(self, inputfiles, logfiles,
-                                      log_processor_class, *args, **kwargs):
-    parser = self._ConstructDefaultProcessor(log_processor_class, *args,
-                                             **kwargs)
+  def _ConstructParseAndCheckLogfiles(
+      self, inputfiles, logfiles, log_processor_class, *args, **kwargs):
+    """Uses a log processor to process the given input files.
+
+    Args:
+      inputfiles: A list of input performance results log file names.
+      logfiles: List of expected output ".dat" file names.
+      log_processor_class: The log processor class to use.
+
+    Returns:
+      A dictionary mapping output file name to output file lines.
+    """
+    parser = self._ConstructDefaultProcessor(
+        log_processor_class, *args, **kwargs)
     for inputfile in inputfiles:
       self._ProcessLog(parser, inputfile)
 
@@ -76,12 +107,18 @@ class LogProcessorTest(unittest.TestCase):
 
     return logs
 
-  def _ConstructParseAndCheckJSON(self, inputfiles, logfiles, subdir,
-                                  log_processor_class, *args, **kwargs):
+  def _ConstructParseAndCheckJSON(
+      self, inputfiles, logfiles, subdir, log_processor_class, *args, **kwargs):
+    """Processes input with a log processor and checks against expectations.
 
-    logs = self._ConstructParseAndCheckLogfiles(inputfiles, logfiles,
-                                                log_processor_class, *args,
-                                                **kwargs)
+    Args:
+      inputfiles: A list of input performance result log file names.
+      logfiles: A list of expected output ".dat" file names.
+      subdir: Subdirectory containing expected output files.
+      log_processor_class: A log processor class.
+    """
+    logs = self._ConstructParseAndCheckLogfiles(
+        inputfiles, logfiles, log_processor_class, *args, **kwargs)
     for filename in logfiles:
       actual = json.loads('\n'.join(logs[filename]))
       if subdir:
@@ -97,6 +134,7 @@ class GraphingLogProcessorTest(LogProcessorTest):
   """Test case for basic functionality of GraphingLogProcessor class."""
 
   def testSummary(self):
+    """Tests the output of "summary" files, which contain per-graph data."""
     input_files = ['graphing_processor.log']
     output_files = ['%s-summary.dat' % graph for graph in ('commit_charge',
         'ws_final_total', 'vm_final_browser', 'vm_final_total',
@@ -106,6 +144,7 @@ class GraphingLogProcessorTest(LogProcessorTest):
         process_log_utils.GraphingLogProcessor)
 
   def testGraphList(self):
+    """Tests the output of "graphs.dat" files, which contains a graph list."""
     input_files = ['graphing_processor.log']
     graphfile = 'graphs.dat'
     output_files = [graphfile]

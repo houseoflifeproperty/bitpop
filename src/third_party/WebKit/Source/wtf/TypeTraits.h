@@ -72,6 +72,11 @@ namespace WTF {
 
     template<typename T> struct IsWeak              { static const bool value = false; };
 
+    enum WeakHandlingFlag {
+        NoWeakHandlingInCollections,
+        WeakHandlingInCollections
+    };
+
     // IsPod is misnamed as it doesn't cover all plain old data (pod) types.
     // Specifically, it doesn't allow for enums or for structs.
     template <typename T> struct IsPod              { static const bool value = IsArithmetic<T>::value; };
@@ -270,6 +275,11 @@ namespace WTF {
 
     template <typename T, size_t N> struct RemoveExtent<T[N]> {
         typedef T Type;
+    };
+
+    // Determines whether this type has a vtable.
+    template <typename T> struct IsPolymorphic {
+        static const bool value = __is_polymorphic(T);
     };
 
 #define EnsurePtrConvertibleArgDecl(From, To) \

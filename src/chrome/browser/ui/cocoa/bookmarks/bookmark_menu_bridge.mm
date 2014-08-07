@@ -8,13 +8,15 @@
 #include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_cocoa_controller.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -73,13 +75,23 @@ void BookmarkMenuBridge::UpdateMenuInternal(NSMenu* bookmark_menu,
 
   ClearBookmarkMenu(bookmark_menu);
 
-  // Add bookmark bar items, if any.
+  // Add at most one separator for the bookmark bar and the managed bookmarks
+  // folder.
+  ChromeBookmarkClient* client =
+      ChromeBookmarkClientFactory::GetForProfile(profile_);
   const BookmarkNode* barNode = model->bookmark_bar_node();
-  CHECK(barNode);
-  if (!barNode->empty()) {
+  const BookmarkNode* managedNode = client->managed_node();
+  if (!barNode->empty() || !managedNode->empty())
     [bookmark_menu addItem:[NSMenuItem separatorItem]];
-    AddNodeToMenu(barNode, bookmark_menu, !is_submenu);
+  if (!managedNode->empty()) {
+    // Most users never see this node, so the image is only loaded if needed.
+    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    NSImage* image =
+        rb.GetNativeImageNamed(IDR_BOOKMARK_BAR_FOLDER_MANAGED).ToNSImage();
+    AddNodeAsSubmenu(bookmark_menu, managedNode, image, !is_submenu);
   }
+  if (!barNode->empty())
+    AddNodeToMenu(barNode, bookmark_menu, !is_submenu);
 
   // If the "Other Bookmarks" folder has any content, make a submenu for it and
   // fill it in.
@@ -87,6 +99,7 @@ void BookmarkMenuBridge::UpdateMenuInternal(NSMenu* bookmark_menu,
     [bookmark_menu addItem:[NSMenuItem separatorItem]];
     AddNodeAsSubmenu(bookmark_menu,
                      model->other_node(),
+                     folder_image_,
                      !is_submenu);
   }
 
@@ -100,6 +113,7 @@ void BookmarkMenuBridge::UpdateMenuInternal(NSMenu* bookmark_menu,
 
     AddNodeAsSubmenu(bookmark_menu,
                      model->mobile_node(),
+                     folder_image_,
                      !is_submenu);
   }
 
@@ -137,7 +151,7 @@ void BookmarkMenuBridge::BookmarkNodeRemoved(
   InvalidateMenu();
 }
 
-void BookmarkMenuBridge::BookmarkAllNodesRemoved(
+void BookmarkMenuBridge::BookmarkAllUserNodesRemoved(
     BookmarkModel* model,
     const std::set<GURL>& removed_urls) {
   InvalidateMenu();
@@ -215,13 +229,14 @@ void BookmarkMenuBridge::ClearBookmarkMenu(NSMenu* menu) {
 
 void BookmarkMenuBridge::AddNodeAsSubmenu(NSMenu* menu,
                                           const BookmarkNode* node,
+                                          NSImage* image,
                                           bool add_extra_items) {
   NSString* title = SysUTF16ToNSString(node->GetTitle());
   NSMenuItem* items = [[[NSMenuItem alloc]
                             initWithTitle:title
                                    action:nil
                             keyEquivalent:@""] autorelease];
-  [items setImage:folder_image_];
+  [items setImage:image];
   [menu addItem:items];
   NSMenu* submenu = [[[NSMenu alloc] initWithTitle:title] autorelease];
   [menu setSubmenu:submenu forItem:items];

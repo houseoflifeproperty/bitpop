@@ -31,15 +31,15 @@
 #ifndef ConsoleMessage_h
 #define ConsoleMessage_h
 
-#include "InspectorFrontend.h"
 #include "bindings/v8/ScriptState.h"
+#include "core/InspectorFrontend.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/frame/ConsoleTypes.h"
 #include "wtf/Forward.h"
 
 namespace WebCore {
 
-class DOMWindow;
+class LocalDOMWindow;
 class InjectedScriptManager;
 class InspectorFrontend;
 class ScriptArguments;
@@ -52,8 +52,8 @@ class ConsoleMessage {
 public:
     ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message);
     ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, const String& url, unsigned line, unsigned column, ScriptState*, unsigned long requestIdentifier);
-    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, PassRefPtr<ScriptCallStack>, unsigned long requestIdentifier);
-    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, PassRefPtr<ScriptArguments>, ScriptState*, unsigned long requestIdentifier);
+    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack>, unsigned long requestIdentifier);
+    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptArguments>, ScriptState*, unsigned long requestIdentifier);
     ~ConsoleMessage();
 
     void addToFrontend(InspectorFrontend::Console*, InjectedScriptManager*, bool generatePreview);
@@ -61,7 +61,7 @@ public:
 
     MessageType type() const { return m_type; }
 
-    void windowCleared(DOMWindow*);
+    void windowCleared(LocalDOMWindow*);
 
     unsigned argumentCount();
 
@@ -73,8 +73,8 @@ private:
     MessageLevel m_level;
     String m_message;
     ScriptStateProtectingContext m_scriptState;
-    RefPtr<ScriptArguments> m_arguments;
-    RefPtr<ScriptCallStack> m_callStack;
+    RefPtrWillBePersistent<ScriptArguments> m_arguments;
+    RefPtrWillBePersistent<ScriptCallStack> m_callStack;
     String m_url;
     unsigned m_line;
     unsigned m_column;

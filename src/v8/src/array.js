@@ -45,7 +45,7 @@ function GetSortedArrayKeys(array, indices) {
 }
 
 
-function SparseJoinWithSeparator(array, len, convert, separator) {
+function SparseJoinWithSeparatorJS(array, len, convert, separator) {
   var keys = GetSortedArrayKeys(array, %GetArrayKeys(array, len));
   var totalLength = 0;
   var elements = new InternalArray(keys.length * 2);
@@ -111,7 +111,7 @@ function Join(array, length, separator, convert) {
       if (separator.length == 0) {
         return SparseJoin(array, length, convert);
       } else {
-        return SparseJoinWithSeparator(array, length, convert, separator);
+        return SparseJoinWithSeparatorJS(array, length, convert, separator);
       }
     }
 
@@ -271,7 +271,7 @@ function SmartMove(array, start_i, del_count, len, num_additional_args) {
 function SimpleSlice(array, start_i, del_count, len, deleted_elements) {
   for (var i = 0; i < del_count; i++) {
     var index = start_i + i;
-    // The spec could also be interpreted such that %HasLocalProperty
+    // The spec could also be interpreted such that %HasOwnProperty
     // would be the appropriate test.  We follow KJS in consulting the
     // prototype.
     var current = array[index];
@@ -291,7 +291,7 @@ function SimpleMove(array, start_i, del_count, len, num_additional_args) {
         var from_index = i + del_count - 1;
         var to_index = i + num_additional_args - 1;
         // The spec could also be interpreted such that
-        // %HasLocalProperty would be the appropriate test.  We follow
+        // %HasOwnProperty would be the appropriate test.  We follow
         // KJS in consulting the prototype.
         var current = array[from_index];
         if (!IS_UNDEFINED(current) || from_index in array) {
@@ -305,7 +305,7 @@ function SimpleMove(array, start_i, del_count, len, num_additional_args) {
         var from_index = i + del_count;
         var to_index = i + num_additional_args;
         // The spec could also be interpreted such that
-        // %HasLocalProperty would be the appropriate test.  We follow
+        // %HasOwnProperty would be the appropriate test.  We follow
         // KJS in consulting the prototype.
         var current = array[from_index];
         if (!IS_UNDEFINED(current) || from_index in array) {
@@ -457,7 +457,7 @@ function ArrayPush() {
 // Returns an array containing the array elements of the object followed
 // by the array elements of each argument in order. See ECMA-262,
 // section 15.4.4.7.
-function ArrayConcat(arg1) {  // length == 1
+function ArrayConcatJS(arg1) {  // length == 1
   CHECK_OBJECT_COERCIBLE(this, "Array.prototype.concat");
 
   var array = ToObject(this);
@@ -628,7 +628,7 @@ function ArrayUnshift(arg1) {  // length == 1
   var num_arguments = %_ArgumentsLength();
   var is_sealed = ObjectIsSealed(array);
 
-  if (IS_ARRAY(array) && !is_sealed) {
+  if (IS_ARRAY(array) && !is_sealed && len > 0) {
     SmartMove(array, 0, 0, len, num_arguments);
   } else {
     SimpleMove(array, 0, 0, len, num_arguments);
@@ -1075,7 +1075,7 @@ function ArraySort(comparefn) {
     // For compatibility with JSC, we also sort elements inherited from
     // the prototype chain on non-Array objects.
     // We do this by copying them to this object and sorting only
-    // local elements. This is not very efficient, but sorting with
+    // own elements. This is not very efficient, but sorting with
     // inherited elements happens very, very rarely, if at all.
     // The specification allows "implementation dependent" behavior
     // if an element on the prototype chain has an element that
@@ -1469,7 +1469,7 @@ function SetUpArray() {
     "isArray", ArrayIsArray
   ));
 
-  var specialFunctions = %SpecialArrayFunctions({});
+  var specialFunctions = %SpecialArrayFunctions();
 
   var getFunction = function(name, jsBuiltin, len) {
     var f = jsBuiltin;
@@ -1492,7 +1492,7 @@ function SetUpArray() {
     "join", getFunction("join", ArrayJoin),
     "pop", getFunction("pop", ArrayPop),
     "push", getFunction("push", ArrayPush, 1),
-    "concat", getFunction("concat", ArrayConcat, 1),
+    "concat", getFunction("concat", ArrayConcatJS, 1),
     "reverse", getFunction("reverse", ArrayReverse),
     "shift", getFunction("shift", ArrayShift),
     "unshift", getFunction("unshift", ArrayUnshift, 1),
@@ -1516,7 +1516,7 @@ function SetUpArray() {
   // exposed to user code.
   // Adding only the functions that are actually used.
   SetUpLockedPrototype(InternalArray, $Array(), $Array(
-    "concat", getFunction("concat", ArrayConcat),
+    "concat", getFunction("concat", ArrayConcatJS),
     "indexOf", getFunction("indexOf", ArrayIndexOf),
     "join", getFunction("join", ArrayJoin),
     "pop", getFunction("pop", ArrayPop),

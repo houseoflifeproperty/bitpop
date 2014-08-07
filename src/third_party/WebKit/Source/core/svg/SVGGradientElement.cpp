@@ -23,13 +23,11 @@
 
 #include "core/svg/SVGGradientElement.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/Attribute.h"
-#include "core/rendering/svg/RenderSVGHiddenContainer.h"
 #include "core/rendering/svg/RenderSVGPath.h"
 #include "core/rendering/svg/RenderSVGResourceLinearGradient.h"
 #include "core/rendering/svg/RenderSVGResourceRadialGradient.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGStopElement.h"
 #include "core/svg/SVGTransformList.h"
 
@@ -53,7 +51,6 @@ SVGGradientElement::SVGGradientElement(const QualifiedName& tagName, Document& d
     , m_spreadMethod(SVGAnimatedEnumeration<SVGSpreadMethodType>::create(this, SVGNames::spreadMethodAttr, SVGSpreadMethodPad))
     , m_gradientUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::gradientUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX))
 {
-    ScriptWrappable::init(this);
     addToPropertyMap(m_gradientTransform);
     addToPropertyMap(m_spreadMethod);
     addToPropertyMap(m_gradientUnits);
@@ -115,7 +112,7 @@ void SVGGradientElement::childrenChanged(bool changedByParser, Node* beforeChang
         return;
 
     if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+        object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
 Vector<Gradient::ColorStop> SVGGradientElement::buildStops()

@@ -27,7 +27,6 @@
 #include "modules/encryptedmedia/MediaKeySession.h"
 
 #include "bindings/v8/ExceptionState.h"
-#include "core/events/Event.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/events/GenericEventQueue.h"
 #include "core/html/MediaKeyError.h"
@@ -61,14 +60,14 @@ MediaKeySession::PendingAction::~PendingAction()
 {
 }
 
-PassRefPtrWillBeRawPtr<MediaKeySession> MediaKeySession::create(ExecutionContext* context, blink::WebContentDecryptionModule* cdm, WeakPtrWillBeRawPtr<MediaKeys> keys)
+MediaKeySession* MediaKeySession::create(ExecutionContext* context, blink::WebContentDecryptionModule* cdm, MediaKeys* keys)
 {
-    RefPtrWillBeRawPtr<MediaKeySession> session(adoptRefWillBeRefCountedGarbageCollected(new MediaKeySession(context, cdm, keys)));
+    MediaKeySession* session = adoptRefCountedGarbageCollectedWillBeNoop(new MediaKeySession(context, cdm, keys));
     session->suspendIfNeeded();
-    return session.release();
+    return session;
 }
 
-MediaKeySession::MediaKeySession(ExecutionContext* context, blink::WebContentDecryptionModule* cdm, WeakPtrWillBeRawPtr<MediaKeys> keys)
+MediaKeySession::MediaKeySession(ExecutionContext* context, blink::WebContentDecryptionModule* cdm, MediaKeys* keys)
     : ActiveDOMObject(context)
     , m_keySystem(keys->keySystem())
     , m_asyncEventQueue(GenericEventQueue::create(this))
@@ -85,7 +84,12 @@ MediaKeySession::MediaKeySession(ExecutionContext* context, blink::WebContentDec
 MediaKeySession::~MediaKeySession()
 {
     m_session.clear();
+#if !ENABLE(OILPAN)
+    // MediaKeySession and m_asyncEventQueue always become unreachable
+    // together. So MediaKeySession and m_asyncEventQueue are destructed in the
+    // same GC. We don't need to call cancelAllEvents explicitly in Oilpan.
     m_asyncEventQueue->cancelAllEvents();
+#endif
 }
 
 void MediaKeySession::setError(MediaKeyError* error)
@@ -239,6 +243,27 @@ void MediaKeySession::error(MediaKeyErrorCode errorCode, unsigned long systemCod
     m_asyncEventQueue->enqueueEvent(event.release());
 }
 
+void MediaKeySession::error(blink::WebContentDecryptionModuleException exception, unsigned long systemCode, const blink::WebString& errorMessage)
+{
+    WTF_LOG(Media, "MediaKeySession::error: exception=%d, systemCode=%lu", exception, systemCode);
+
+    // FIXME: EME-WD MediaKeyError now derives from DOMException. Figure out how
+    // to implement this without breaking prefixed EME, which has a totally
+    // different definition. The spec may also change to be just a DOMException.
+    // For now, simply generate an existing MediaKeyError.
+    MediaKeyErrorCode errorCode;
+    switch (exception) {
+    case blink::WebContentDecryptionModuleExceptionClientError:
+        errorCode = MediaKeyErrorCodeClient;
+        break;
+    default:
+        // All other exceptions get converted into Unknown.
+        errorCode = MediaKeyErrorCodeUnknown;
+        break;
+    }
+    error(errorCode, systemCode);
+}
+
 const AtomicString& MediaKeySession::interfaceName() const
 {
     return EventTargetNames::MediaKeySession;
@@ -273,7 +298,9 @@ void MediaKeySession::stop()
 
 void MediaKeySession::trace(Visitor* visitor)
 {
+    visitor->trace(m_asyncEventQueue);
     visitor->trace(m_keys);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 }

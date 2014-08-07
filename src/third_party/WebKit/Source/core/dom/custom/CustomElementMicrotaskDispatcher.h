@@ -5,34 +5,36 @@
 #ifndef CustomElementMicrotaskDispatcher_h
 #define CustomElementMicrotaskDispatcher_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
-class CustomElementAsyncImportMicrotaskQueue;
 class CustomElementCallbackQueue;
 class CustomElementMicrotaskImportStep;
-class CustomElementMicrotaskQueue;
 class CustomElementMicrotaskStep;
+class CustomElementMicrotaskStepDispatcher;
 class HTMLImportLoader;
 
-class CustomElementMicrotaskDispatcher {
+class CustomElementMicrotaskDispatcher FINAL : public NoBaseWillBeGarbageCollected<CustomElementMicrotaskDispatcher> {
     WTF_MAKE_NONCOPYABLE(CustomElementMicrotaskDispatcher);
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(CustomElementMicrotaskDispatcher);
 public:
-    ~CustomElementMicrotaskDispatcher();
-
     static CustomElementMicrotaskDispatcher& instance();
 
-    void enqueue(HTMLImportLoader* parentLoader, PassOwnPtr<CustomElementMicrotaskStep>);
-    void enqueue(HTMLImportLoader* parentLoader, PassOwnPtr<CustomElementMicrotaskImportStep>, bool importIsSync);
+    void enqueue(HTMLImportLoader* parentLoader, PassOwnPtrWillBeRawPtr<CustomElementMicrotaskStep>);
+    void enqueue(HTMLImportLoader* parentLoader, PassOwnPtrWillBeRawPtr<CustomElementMicrotaskImportStep>, bool importIsSync);
+
     void enqueue(CustomElementCallbackQueue*);
 
 
     void importDidFinish(CustomElementMicrotaskImportStep*);
 
     bool elementQueueIsEmpty() { return m_elements.isEmpty(); }
+
+    void trace(Visitor*);
 
 #if !defined(NDEBUG)
     void show();
@@ -55,9 +57,8 @@ private:
         DispatchingCallbacks
     } m_phase;
 
-    RefPtr<CustomElementMicrotaskQueue> m_resolutionAndImports;
-    RefPtr<CustomElementAsyncImportMicrotaskQueue> m_asyncImports;
-    Vector<CustomElementCallbackQueue*> m_elements;
+    RefPtrWillBeMember<CustomElementMicrotaskStepDispatcher> m_steps;
+    WillBeHeapVector<RawPtrWillBeMember<CustomElementCallbackQueue> > m_elements;
 };
 
 }

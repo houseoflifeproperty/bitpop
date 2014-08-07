@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/html/LabelsNodeList.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Element.h"
 #include "core/dom/NodeRareData.h"
 #include "core/html/HTMLLabelElement.h"
@@ -40,7 +40,9 @@ LabelsNodeList::LabelsNodeList(ContainerNode& ownerNode)
 
 LabelsNodeList::~LabelsNodeList()
 {
+#if !ENABLE(OILPAN)
     ownerNode().nodeLists()->removeCache(this, LabelsNodeListType);
+#endif
 }
 
 bool LabelsNodeList::elementMatches(const Element& element) const

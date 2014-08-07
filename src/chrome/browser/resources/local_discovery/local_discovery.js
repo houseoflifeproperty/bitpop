@@ -98,8 +98,9 @@ cr.define('local_discovery', function() {
 
       this.registerButton = fillDeviceDescription(
         this.domElement,
-        this.info.human_readable_name,
+        this.info.display_name,
         this.info.description,
+        this.info.type,
         loadTimeData.getString('serviceRegister'),
         this.showRegister.bind(this));
 
@@ -129,7 +130,7 @@ cr.define('local_discovery', function() {
       recordUmaEvent(DEVICES_PAGE_EVENTS.REGISTER_CLICKED);
       $('register-message').textContent = loadTimeData.getStringF(
         'registerConfirmMessage',
-        this.info.human_readable_name);
+        this.info.display_name);
       $('register-continue-button').onclick = this.register.bind(this);
       showRegisterOverlay();
     },
@@ -183,17 +184,20 @@ cr.define('local_discovery', function() {
    * @param {HTMLElement} device_dom_element Element to be filled.
    * @param {string} name Name of device.
    * @param {string} description Description of device.
+   * @param {string} type Type of device.
    * @param {string} button_text Text to appear on button.
    * @param {function()} button_action Action for button.
    * @return {HTMLElement} The button (for enabling/disabling/rebinding)
    */
   function fillDeviceDescription(device_dom_element,
-                                name,
-                                description,
-                                button_text,
-                                button_action) {
+                                 name,
+                                 description,
+                                 type,
+                                 button_text,
+                                 button_action) {
     device_dom_element.classList.add('device');
-    device_dom_element.classList.add('printer');
+    if (type == 'printer')
+      device_dom_element.classList.add('printer');
 
     var deviceInfo = document.createElement('div');
     deviceInfo.className = 'device-info';
@@ -325,13 +329,17 @@ cr.define('local_discovery', function() {
 
     var description;
     if (device.description == '') {
-        description = loadTimeData.getString('noDescription');
-      } else {
-        description = device.description;
-      }
+      if (device.type == 'printer')
+        description = loadTimeData.getString('noDescriptionPrinter');
+      else
+        description = loadTimeData.getString('noDescriptionDevice');
+    } else {
+      description = device.description;
+    }
 
     fillDeviceDescription(devicesDomElement, device.display_name,
-                          description, 'Manage' /*Localize*/,
+                          description, device.type,
+                          loadTimeData.getString('manageDevice'),
                           manageCloudDevice.bind(null, device.id));
     return devicesDomElement;
   }
@@ -426,15 +434,15 @@ cr.define('local_discovery', function() {
   }
 
   /**
-   * Request the printer list.
+   * Request the device list.
    */
-  function requestPrinterList() {
+  function requestDeviceList() {
     if (isUserLoggedIn) {
       clearElement($('cloud-devices'));
       $('cloud-devices-loading').hidden = false;
       $('cloud-devices-unavailable').hidden = true;
 
-      chrome.send('requestPrinterList');
+      chrome.send('requestDeviceList');
     }
   }
 
@@ -470,7 +478,7 @@ cr.define('local_discovery', function() {
    * Retry loading the devices from Google Cloud Print.
    */
   function retryLoadCloudDevices() {
-    requestPrinterList();
+    requestDeviceList();
   }
 
   /**
@@ -484,7 +492,7 @@ cr.define('local_discovery', function() {
     $('register-continue-button').disabled = !isUserLoggedIn;
 
     if (isUserLoggedIn) {
-      requestPrinterList();
+      requestDeviceList();
       $('register-login-promo').hidden = true;
     } else {
       $('cloud-devices-loading').hidden = true;
@@ -547,7 +555,7 @@ cr.define('local_discovery', function() {
       } else {
         $('cloudPrintConnectorSetupButton').onclick = function(event) {
           chrome.send('disableCloudPrintConnector');
-          requestPrinterList();
+          requestDeviceList();
         };
       }
     }
@@ -596,6 +604,13 @@ cr.define('local_discovery', function() {
     $('register-overlay-login-button').addEventListener(
       'click',
       registerOverlayLoginButtonClicked);
+
+    if (loadTimeData.valueExists('backButtonURL')) {
+      $('back-button').hidden = false;
+      $('back-button').addEventListener('click', function() {
+        window.location.href = loadTimeData.getString('backButtonURL');
+      });
+    }
 
     updateVisibility();
     document.addEventListener('visibilitychange', updateVisibility, false);

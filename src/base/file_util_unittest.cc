@@ -632,6 +632,17 @@ TEST_F(FileUtilTest, DeleteNonExistent) {
   ASSERT_FALSE(PathExists(non_existent));
 }
 
+TEST_F(FileUtilTest, DeleteNonExistentWithNonExistentParent) {
+  FilePath non_existent = temp_dir_.path().AppendASCII("bogus_topdir");
+  non_existent = non_existent.AppendASCII("bogus_subdir");
+  ASSERT_FALSE(PathExists(non_existent));
+
+  EXPECT_TRUE(DeleteFile(non_existent, false));
+  ASSERT_FALSE(PathExists(non_existent));
+  EXPECT_TRUE(DeleteFile(non_existent, true));
+  ASSERT_FALSE(PathExists(non_existent));
+}
+
 TEST_F(FileUtilTest, DeleteFile) {
   // Create a file
   FilePath file_name = temp_dir_.path().Append(FPL("Test DeleteFile 1.txt"));
@@ -1672,6 +1683,21 @@ TEST_F(FileUtilTest, CreateAndOpenTemporaryFileTest) {
     EXPECT_TRUE(CloseFile(fps[i]));
     EXPECT_TRUE(DeleteFile(names[i], false));
   }
+}
+
+TEST_F(FileUtilTest, FileToFILE) {
+  File file;
+  FILE* stream = FileToFILE(file.Pass(), "w");
+  EXPECT_FALSE(stream);
+
+  FilePath file_name = temp_dir_.path().Append(FPL("The file.txt"));
+  file = File(file_name, File::FLAG_CREATE | File::FLAG_WRITE);
+  EXPECT_TRUE(file.IsValid());
+
+  stream = FileToFILE(file.Pass(), "w");
+  EXPECT_TRUE(stream);
+  EXPECT_FALSE(file.IsValid());
+  EXPECT_TRUE(CloseFile(stream));
 }
 
 TEST_F(FileUtilTest, CreateNewTempDirectoryTest) {

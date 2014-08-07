@@ -357,7 +357,7 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       id_generator_(0),
       needs_scroll_styles_(false),
       in_size_loop_(false),
-      touch_down_context_(false),
+      touch_down_contexts_(0),
       last_mouse_hwheel_time_(0),
       msg_handled_(FALSE) {
 }
@@ -525,13 +525,24 @@ void HWNDMessageHandler::GetWindowPlacement(
   }
 }
 
-void HWNDMessageHandler::SetBounds(const gfx::Rect& bounds_in_pixels) {
+void HWNDMessageHandler::SetBounds(const gfx::Rect& bounds_in_pixels,
+                                   bool force_size_changed) {
   LONG style = GetWindowLong(hwnd(), GWL_STYLE);
   if (style & WS_MAXIMIZE)
     SetWindowLong(hwnd(), GWL_STYLE, style & ~WS_MAXIMIZE);
+
+  gfx::Size old_size = GetClientAreaBounds().size();
   SetWindowPos(hwnd(), NULL, bounds_in_pixels.x(), bounds_in_pixels.y(),
                bounds_in_pixels.width(), bounds_in_pixels.height(),
                SWP_NOACTIVATE | SWP_NOZORDER);
+
+  // If HWND size is not changed, we will not receive standard size change
+  // notifications. If |force_size_changed| is |true|, we should pretend size is
+  // changed.
+  if (old_size == bounds_in_pixels.size() && force_size_changed) {
+    delegate_->HandleClientSizeChanged(GetClientAreaBounds().size());
+    ResetWindowRegion(false, true);
+  }
 }
 
 void HWNDMessageHandler::SetSize(const gfx::Size& size) {
@@ -911,10 +922,9 @@ LRESULT HWNDMessageHandler::OnWndProc(UINT message,
   if (!::IsWindow(window))
     return result;
 
-  if (delegate_)
+  if (delegate_) {
     delegate_->PostHandleMSG(message, w_param, l_param);
-  if (message == WM_NCDESTROY) {
-    if (delegate_)
+    if (message == WM_NCDESTROY)
       delegate_->HandleDestroyed();
   }
 
@@ -1406,8 +1416,12 @@ LRESULT HWNDMessageHandler::OnGetObject(UINT message,
                                         LPARAM l_param) {
   LRESULT reference_result = static_cast<LRESULT>(0L);
 
+  // Only the lower 32 bits of l_param are valid when checking the object id
+  // because it sometimes gets sign-extended incorrectly (but not always).
+  DWORD obj_id = static_cast<DWORD>(static_cast<DWORD_PTR>(l_param));
+
   // Accessibility readers will send an OBJID_CLIENT message
-  if (OBJID_CLIENT == l_param) {
+  if (OBJID_CLIENT == obj_id) {
     // Retrieve MSAA dispatch object for the root view.
     base::win::ScopedComPtr<IAccessible> root(
         delegate_->GetNativeViewAccessible());
@@ -1476,9 +1490,9 @@ void HWNDMessageHandler::OnKillFocus(HWND focused_window) {
 LRESULT HWNDMessageHandler::OnMouseActivate(UINT message,
                                             WPARAM w_param,
                                             LPARAM l_param) {
-  // Please refer to the comments in the header for the touch_down_context_
+  // Please refer to the comments in the header for the touch_down_contexts_
   // member for the if statement below.
-  if (touch_down_context_)
+  if (touch_down_contexts_)
     return MA_NOACTIVATE;
 
   // On Windows, if we select the menu item by touch and if the window at the
@@ -2080,10 +2094,8 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
     TouchEvents touch_events;
     for (int i = 0; i < num_points; ++i) {
       POINT point;
-      point.x = TOUCH_COORD_TO_PIXEL(input[i].x) /
-                gfx::win::GetUndocumentedDPITouchScale();
-      point.y = TOUCH_COORD_TO_PIXEL(input[i].y) /
-                gfx::win::GetUndocumentedDPITouchScale();
+      point.x = TOUCH_COORD_TO_PIXEL(input[i].x);
+      point.y = TOUCH_COORD_TO_PIXEL(input[i].y);
 
       if (base::win::GetVersion() == base::win::VERSION_WIN7) {
         // Windows 7 sends touch events for touches in the non-client area,
@@ -2105,7 +2117,7 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
       if (input[i].dwFlags & TOUCHEVENTF_DOWN) {
         touch_ids_.insert(input[i].dwID);
         touch_event_type = ui::ET_TOUCH_PRESSED;
-        touch_down_context_ = true;
+        touch_down_contexts_++;
         base::MessageLoop::current()->PostDelayedTask(
             FROM_HERE,
             base::Bind(&HWNDMessageHandler::ResetTouchDownContext,
@@ -2263,7 +2275,7 @@ void HWNDMessageHandler::HandleTouchEvents(const TouchEvents& touch_events) {
 }
 
 void HWNDMessageHandler::ResetTouchDownContext() {
-  touch_down_context_ = false;
+  touch_down_contexts_--;
 }
 
 LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,

@@ -6,8 +6,9 @@
 
 namespace net {
 
-QuicClientSessionBase::QuicClientSessionBase(QuicConnection* connection,
-                                             const QuicConfig& config)
+QuicClientSessionBase::QuicClientSessionBase(
+    QuicConnection* connection,
+    const QuicConfig& config)
     : QuicSession(connection, config) {}
 
 QuicClientSessionBase::~QuicClientSessionBase() {}

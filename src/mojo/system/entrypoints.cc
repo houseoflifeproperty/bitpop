@@ -2,6 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "mojo/system/entrypoints.h"
+
+#include "mojo/public/c/system/buffer.h"
+#include "mojo/public/c/system/data_pipe.h"
+#include "mojo/public/c/system/functions.h"
+#include "mojo/public/c/system/message_pipe.h"
 #include "mojo/system/core.h"
 
 static mojo::system::Core* g_core = NULL;
@@ -34,21 +40,23 @@ MojoResult MojoClose(MojoHandle handle) {
 }
 
 MojoResult MojoWait(MojoHandle handle,
-                    MojoWaitFlags flags,
+                    MojoHandleSignals signals,
                     MojoDeadline deadline) {
-  return g_core->Wait(handle, flags, deadline);
+  return g_core->Wait(handle, signals, deadline);
 }
 
 MojoResult MojoWaitMany(const MojoHandle* handles,
-                        const MojoWaitFlags* flags,
+                        const MojoHandleSignals* signals,
                         uint32_t num_handles,
                         MojoDeadline deadline) {
-  return g_core->WaitMany(handles, flags, num_handles, deadline);
+  return g_core->WaitMany(handles, signals, num_handles, deadline);
 }
 
-MojoResult MojoCreateMessagePipe(MojoHandle* message_pipe_handle0,
+MojoResult MojoCreateMessagePipe(const MojoCreateMessagePipeOptions* options,
+                                 MojoHandle* message_pipe_handle0,
                                  MojoHandle* message_pipe_handle1) {
-  return g_core->CreateMessagePipe(message_pipe_handle0, message_pipe_handle1);
+  return g_core->CreateMessagePipe(
+      options, message_pipe_handle0, message_pipe_handle1);
 }
 
 MojoResult MojoWriteMessage(MojoHandle message_pipe_handle,

@@ -5,10 +5,10 @@
 #ifndef Keyframe_h
 #define Keyframe_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 #include "core/animation/AnimatableValue.h"
 #include "core/animation/AnimationEffect.h"
-#include "core/animation/TimedItem.h"
+#include "core/animation/AnimationNode.h"
 
 namespace WebCore {
 

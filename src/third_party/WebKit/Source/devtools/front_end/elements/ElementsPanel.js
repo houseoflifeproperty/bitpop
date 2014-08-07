@@ -28,6 +28,7 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+importScript("Spectrum.js");
 importScript("DOMSyntaxHighlighter.js");
 importScript("ElementsTreeOutline.js");
 importScript("EventListenersSidebarPane.js");
@@ -492,6 +493,7 @@ WebInspector.ElementsPanel.prototype = {
 
     /**
      * @param {!WebInspector.DOMNode} node
+     * @param {function()} callback
      */
     _loadDimensionsForNode: function(node, callback)
     {
@@ -644,6 +646,7 @@ WebInspector.ElementsPanel.prototype = {
     },
 
     /**
+     * @param {!WebInspector.DOMNode} node
      * @param {boolean=} focus
      */
     selectDOMNode: function(node, focus)
@@ -1209,6 +1212,7 @@ WebInspector.ElementsPanel.prototype = {
     },
 
     /**
+     * @param {!Event} event
      * @param {!WebInspector.ContextMenu} contextMenu
      * @param {!Object} object
      */
@@ -1226,7 +1230,7 @@ WebInspector.ElementsPanel.prototype = {
         if (!commandCallback)
             return;
         // Skip adding "Reveal..." menu item for our own tree outline.
-        if (this.element.isAncestor(event.target))
+        if (this.element.isAncestor(/** @type {!Node} */ (event.target)))
             return;
         contextMenu.appendItem(WebInspector.useLowerCaseMenuTitles() ? "Reveal in Elements panel" : "Reveal in Elements Panel", commandCallback);
     },

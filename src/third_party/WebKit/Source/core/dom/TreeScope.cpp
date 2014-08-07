@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/dom/TreeScope.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
@@ -346,11 +346,13 @@ void TreeScope::adoptIfNeeded(Node& node)
         adopter.execute();
 }
 
-static Element* focusedFrameOwnerElement(LocalFrame* focusedFrame, LocalFrame* currentFrame)
+static Element* focusedFrameOwnerElement(Frame* focusedFrame, Frame* currentFrame)
 {
     for (; focusedFrame; focusedFrame = focusedFrame->tree().parent()) {
-        if (focusedFrame->tree().parent() == currentFrame)
-            return focusedFrame->ownerElement();
+        if (focusedFrame->tree().parent() == currentFrame) {
+            // FIXME: This won't work for OOPI.
+            return focusedFrame->deprecatedLocalOwner();
+        }
     }
     return 0;
 }
@@ -359,10 +361,8 @@ Element* TreeScope::adjustedFocusedElement() const
 {
     Document& document = rootNode().document();
     Element* element = document.focusedElement();
-    // FIXME(kenrb): The toLocalFrame() cast should be removed when RemoteFrames can have FrameTrees.
-    // At that point, focusedFrameOwnerElement should take a Frame instead of a LocalFrame.
     if (!element && document.page())
-        element = focusedFrameOwnerElement(toLocalFrameTemporary(document.page()->focusController().focusedFrame()), document.frame());
+        element = focusedFrameOwnerElement(document.page()->focusController().focusedFrame(), document.frame());
     if (!element)
         return 0;
 

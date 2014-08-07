@@ -32,6 +32,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/signin/core/browser/signin_manager.h"
+#include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
@@ -156,7 +157,8 @@ void NTPLoginHandler::HandleShowSyncLoginUI(const base::ListValue* args) {
     success = args->GetDouble(3, &height);
     DCHECK(success);
 
-    double zoom = content::ZoomLevelToZoomFactor(web_contents->GetZoomLevel());
+    double zoom = content::ZoomLevelToZoomFactor(
+        content::HostZoomMap::GetZoomLevel(web_contents));
     gfx::Rect rect(x * zoom, y * zoom, width * zoom, height * zoom);
 
     browser->window()->ShowAvatarBubble(web_ui()->GetWebContents(), rect);
@@ -225,7 +227,7 @@ void NTPLoginHandler::UpdateLogin() {
     // Chromeos does not show this status header.
     SigninManager* signin = SigninManagerFactory::GetForProfile(
         profile->GetOriginalProfile());
-    if (!profile->IsManaged() && signin->IsSigninAllowed()) {
+    if (!profile->IsSupervised() && signin->IsSigninAllowed()) {
       base::string16 signed_in_link = l10n_util::GetStringUTF16(
           IDS_SYNC_PROMO_NOT_SIGNED_IN_STATUS_LINK);
       signed_in_link = CreateSpanWithClass(signed_in_link, "link-span");

@@ -10,7 +10,6 @@
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "mojo/public/c/system/core.h"
 #include "mojo/system/message_in_transit.h"
 #include "mojo/system/message_in_transit_queue.h"
 #include "mojo/system/message_pipe_endpoint.h"
@@ -70,7 +69,7 @@ class MOJO_SYSTEM_IMPL_EXPORT ProxyMessagePipeEndpoint
 #endif
 
   bool is_attached() const {
-    return !!channel_.get();
+    return !!channel_;
   }
 
   bool is_running() const {

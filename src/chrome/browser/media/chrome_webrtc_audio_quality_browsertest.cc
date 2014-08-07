@@ -10,7 +10,6 @@
 #include "base/process/launch.h"
 #include "base/scoped_native_library.h"
 #include "base/strings/stringprintf.h"
-#include "base/win/windows_version.h"
 #include "chrome/browser/media/webrtc_browsertest_base.h"
 #include "chrome/browser/media/webrtc_browsertest_common.h"
 #include "chrome/browser/profiles/profile.h"
@@ -21,6 +20,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/browser_test_utils.h"
+#include "media/base/media_switches.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/perf/perf_test.h"
 
@@ -99,8 +99,8 @@ class WebRtcAudioQualityBrowserTest : public WebRtcTestBase,
         switches::kUseFakeUIForMediaStream));
 
     bool enable_audio_track_processing = GetParam();
-    if (enable_audio_track_processing)
-      command_line->AppendSwitch(switches::kEnableAudioTrackProcessing);
+    if (!enable_audio_track_processing)
+      command_line->AppendSwitch(switches::kDisableAudioTrackProcessing);
   }
 
   void AddAudioFile(const std::string& input_file_relative_url,
@@ -349,13 +349,15 @@ INSTANTIATE_TEST_CASE_P(WebRtcAudioQualityBrowserTests,
 
 IN_PROC_BROWSER_TEST_P(WebRtcAudioQualityBrowserTest,
                        MAYBE_MANUAL_TestAudioQuality) {
-#if defined(OS_WIN)
-  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
-    // It would take work to implement this on XP; not prioritized right now.
+  if (OnWinXp()) {
     LOG(ERROR) << "This test is not implemented for Windows XP.";
     return;
   }
-#endif
+  if (OnWin8()) {
+    // http://crbug.com/379798.
+    LOG(ERROR) << "Temporarily disabled for Win 8.";
+    return;
+  }
   ASSERT_TRUE(test::HasReferenceFilesInCheckout());
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 

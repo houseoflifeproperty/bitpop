@@ -7,9 +7,9 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
@@ -140,8 +140,7 @@ bool MediaStreamInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
   InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
       content::OpenURLParams(
-          google_util::AppendGoogleLocaleParam(
-              GURL(chrome::kMediaAccessLearnMoreUrl)),
+          GURL(chrome::kMediaAccessLearnMoreUrl),
           content::Referrer(),
           (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
           content::PAGE_TRANSITION_LINK, false));

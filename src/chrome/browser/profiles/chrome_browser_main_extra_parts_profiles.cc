@@ -12,12 +12,13 @@
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/dom_distiller/dom_distiller_service_factory.h"
+#include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
+#include "chrome/browser/geolocation/geolocation_permission_context_factory.h"
 #include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences_factory.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
@@ -31,6 +32,7 @@
 #include "chrome/browser/profiles/gaia_info_update_service_factory.h"
 #include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/browser/search/instant_service_factory.h"
+#include "chrome/browser/search/suggestions/suggestions_service_factory.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sessions/session_service_factory.h"
@@ -65,6 +67,7 @@
 #include "chrome/browser/policy/cloud/user_cloud_policy_invalidator_factory.h"
 #include "chrome/browser/policy/schema_registry_service_factory.h"
 #if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/ownership/owner_settings_service_factory.h"
 #include "chrome/browser/chromeos/policy/policy_cert_service_factory.h"
 #include "chrome/browser/chromeos/policy/recommendation_restorer_factory.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
@@ -79,11 +82,11 @@
 #endif
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
-#include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_sync_service_factory.h"
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/managed_mode/chromeos/managed_user_password_service_factory.h"
-#include "chrome/browser/managed_mode/chromeos/manager_password_service_factory.h"
+#include "chrome/browser/supervised_user/chromeos/manager_password_service_factory.h"
+#include "chrome/browser/supervised_user/chromeos/supervised_user_password_service_factory.h"
 #endif
 #endif
 
@@ -94,7 +97,6 @@
 #if defined(OS_ANDROID)
 #include "chrome/browser/media/protected_media_identifier_permission_context_factory.h"
 #else
-#include "chrome/browser/media_galleries/media_galleries_preferences_factory.h"
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service_factory.h"
 #include "chrome/browser/notifications/sync_notifier/synced_notification_app_info_service_factory.h"
 #include "chrome/browser/profile_resetter/automatic_profile_resetter_factory.h"
@@ -162,7 +164,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
   CaptivePortalServiceFactory::GetInstance();
 #endif
-  ChromeGeolocationPermissionContextFactory::GetInstance();
+  GeolocationPermissionContextFactory::GetInstance();
 #if defined(OS_ANDROID)
   ProtectedMediaIdentifierPermissionContextFactory::GetInstance();
 #endif
@@ -174,6 +176,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   DesktopNotificationServiceFactory::GetInstance();
 #endif
   dom_distiller::DomDistillerServiceFactory::GetInstance();
+  domain_reliability::DomainReliabilityServiceFactory::GetInstance();
   DownloadServiceFactory::GetInstance();
   FaviconServiceFactory::GetInstance();
   FindBarStateFactory::GetInstance();
@@ -185,18 +188,18 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   GoogleURLTrackerFactory::GetInstance();
   HistoryServiceFactory::GetInstance();
   HotwordServiceFactory::GetInstance();
-  invalidation::InvalidationServiceFactory::GetInstance();
+  invalidation::ProfileInvalidationProviderFactory::GetInstance();
   InstantServiceFactory::GetInstance();
 #if defined(ENABLE_SERVICE_DISCOVERY)
   local_discovery::PrivetNotificationServiceFactory::GetInstance();
 #endif
 #if defined(ENABLE_MANAGED_USERS)
 #if defined(OS_CHROMEOS)
-  chromeos::ManagedUserPasswordServiceFactory::GetInstance();
+  chromeos::SupervisedUserPasswordServiceFactory::GetInstance();
   chromeos::ManagerPasswordServiceFactory::GetInstance();
 #endif
-  ManagedUserServiceFactory::GetInstance();
-  ManagedUserSyncServiceFactory::GetInstance();
+  SupervisedUserServiceFactory::GetInstance();
+  SupervisedUserSyncServiceFactory::GetInstance();
 #endif
 #if !defined(OS_ANDROID)
   MediaGalleriesPreferencesFactory::GetInstance();
@@ -214,6 +217,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   policy::ProfilePolicyConnectorFactory::GetInstance();
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #if defined(OS_CHROMEOS)
+  chromeos::OwnerSettingsServiceFactory::GetInstance();
   policy::PolicyCertServiceFactory::GetInstance();
   policy::RecommendationRestorerFactory::GetInstance();
   policy::UserCloudPolicyManagerFactoryChromeOS::GetInstance();
@@ -243,6 +247,7 @@ EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 #if defined(ENABLE_SPELLCHECK)
   SpellcheckServiceFactory::GetInstance();
 #endif
+  suggestions::SuggestionsServiceFactory::GetInstance();
   ThumbnailServiceFactory::GetInstance();
   TabRestoreServiceFactory::GetInstance();
   TemplateURLFetcherFactory::GetInstance();

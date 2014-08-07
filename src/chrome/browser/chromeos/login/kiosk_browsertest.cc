@@ -15,15 +15,16 @@
 #include "base/strings/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/app_mode/fake_cws.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_launch_error.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/login/app_launch_controller.h"
-#include "chrome/browser/chromeos/login/fake_user_manager.h"
-#include "chrome/browser/chromeos/login/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/oobe_base_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
 #include "chrome/browser/chromeos/login/test/app_window_waiter.h"
+#include "chrome/browser/chromeos/login/test/oobe_base_test.h"
 #include "chrome/browser/chromeos/login/test/oobe_screen_waiter.h"
+#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/mock_user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
 #include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
@@ -33,10 +34,10 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile_impl.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/ui/webui/chromeos/login/kiosk_app_menu_handler.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/cryptohome_client.h"
@@ -45,18 +46,11 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
-#include "crypto/sha2.h"
 #include "extensions/browser/extension_system.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_switches.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-#include "net/test/embedded_test_server/http_request.h"
-#include "net/test/embedded_test_server/http_response.h"
-
-using net::test_server::BasicHttpResponse;
-using net::test_server::HttpRequest;
-using net::test_server::HttpResponse;
 
 namespace em = enterprise_management;
 
@@ -234,7 +228,7 @@ class JsConditionWaiter {
 
 class KioskTest : public OobeBaseTest {
  public:
-  KioskTest() {
+  KioskTest() : fake_cws_(new FakeCWS) {
     set_exit_when_last_browser_closes(false);
   }
 
@@ -263,26 +257,7 @@ class KioskTest : public OobeBaseTest {
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     OobeBaseTest::SetUpCommandLine(command_line);
-
-    // Create gaia and webstore URL from test server url but using different
-    // host names. This is to avoid gaia response being tagged as from
-    // webstore in chrome_resource_dispatcher_host_delegate.cc.
-    GURL webstore_url = GetTestWebstoreUrl();
-    command_line->AppendSwitchASCII(
-        ::switches::kAppsGalleryURL,
-        webstore_url.Resolve("/chromeos/app_mode/webstore").spec());
-    command_line->AppendSwitchASCII(
-        ::switches::kAppsGalleryDownloadURL,
-        webstore_url.Resolve(
-            "/chromeos/app_mode/webstore/downloads/%s.crx").spec());
-  }
-
-  GURL GetTestWebstoreUrl() {
-    const GURL& server_url = embedded_test_server()->base_url();
-    std::string webstore_host("webstore");
-    GURL::Replacements replace_webstore_host;
-    replace_webstore_host.SetHostStr(webstore_host);
-    return server_url.ReplaceComponents(replace_webstore_host);
+    fake_cws_->Init(embedded_test_server());
   }
 
   void LaunchApp(const std::string& app_id, bool diagnostic_mode) {
@@ -456,19 +431,12 @@ class KioskTest : public OobeBaseTest {
   // run. Note this must be called before app profile is loaded.
   void SetupAppProfile(const std::string& relative_app_profile_dir) {
     base::FilePath app_profile_dir;
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            ::switches::kMultiProfiles)) {
-      KioskAppManager::App app_data;
-      CHECK(KioskAppManager::Get()->GetApp(test_app_id(), &app_data));
-      std::string app_user_id_hash =
-          CryptohomeClient::GetStubSanitizedUsername(app_data.user_id);
-      app_profile_dir =
-          ProfileHelper::GetProfilePathByUserIdHash(app_user_id_hash);
-    } else {
-      ASSERT_TRUE(PathService::Get(chrome::DIR_USER_DATA, &app_profile_dir));
-      app_profile_dir = app_profile_dir.Append(
-          ProfileHelper::GetProfileDirByLegacyLoginProfileSwitch());
-    }
+    KioskAppManager::App app_data;
+    CHECK(KioskAppManager::Get()->GetApp(test_app_id(), &app_data));
+    std::string app_user_id_hash =
+        CryptohomeClient::GetStubSanitizedUsername(app_data.user_id);
+    app_profile_dir =
+        ProfileHelper::GetProfilePathByUserIdHash(app_user_id_hash);
     ASSERT_TRUE(base::CreateDirectory(app_profile_dir));
 
     base::FilePath test_data_dir;
@@ -484,6 +452,9 @@ class KioskTest : public OobeBaseTest {
   }
 
   void RunAppLaunchNetworkDownTest() {
+    mock_user_manager()->SetActiveUser(kTestOwnerEmail);
+    AppLaunchSigninScreen::SetUserManagerForTesting(mock_user_manager());
+
     // Mock network could be configured with owner's password.
     ScopedCanConfigureNetwork can_configure_network(true, true);
 
@@ -497,8 +468,6 @@ class KioskTest : public OobeBaseTest {
     JsExpect("$('splash-config-network').hidden == false");
 
     // Set up fake user manager with an owner for the test.
-    mock_user_manager()->SetActiveUser(kTestOwnerEmail);
-    AppLaunchSigninScreen::SetUserManagerForTesting(mock_user_manager());
     static_cast<LoginDisplayHostImpl*>(LoginDisplayHostImpl::default_host())
         ->GetOobeUI()->ShowOobeUI(false);
 
@@ -509,7 +478,7 @@ class KioskTest : public OobeBaseTest {
     lock_screen_waiter.Wait();
 
     // There should be only one owner pod on this screen.
-    JsExpect("$('pod-row').isSinglePod");
+    JsExpect("$('pod-row').alwaysFocusSinglePod");
 
     // A network error screen should be shown after authenticating.
     OobeScreenWaiter error_screen_waiter(OobeDisplay::SCREEN_ERROR_MESSAGE);
@@ -534,9 +503,11 @@ class KioskTest : public OobeBaseTest {
     test_app_id_ = test_app_id;
   }
   const std::string& test_app_id() const { return test_app_id_; }
+  FakeCWS* fake_cws() { return fake_cws_.get(); }
 
  private:
   std::string test_app_id_;
+  scoped_ptr<FakeCWS> fake_cws_;
   scoped_ptr<MockUserManager> mock_user_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(KioskTest);
@@ -899,8 +870,7 @@ IN_PROC_BROWSER_TEST_F(KioskTest, KioskEnableAfter2ndSigninScreen) {
       content::NotificationService::AllSources()).Wait();
 }
 
-class KioskUpdateTest : public KioskTest,
-                        public testing::WithParamInterface<bool> {
+class KioskUpdateTest : public KioskTest {
  public:
   KioskUpdateTest() {}
   virtual ~KioskUpdateTest() {}
@@ -909,102 +879,19 @@ class KioskUpdateTest : public KioskTest,
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     // Needs background networking so that ExtensionDownloader works.
     needs_background_networking_ = true;
-
     KioskTest::SetUpCommandLine(command_line);
-    if (GetParam())
-      command_line->AppendSwitch(::switches::kMultiProfiles);
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
     KioskTest::SetUpOnMainThread();
-
-    GURL webstore_url = GetTestWebstoreUrl();
-    CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-        ::switches::kAppsGalleryUpdateURL,
-        webstore_url.Resolve("/update_check.xml").spec());
-
-    embedded_test_server()->RegisterRequestHandler(
-        base::Bind(&KioskUpdateTest::HandleRequest,
-                   base::Unretained(this)));
-  }
-
-  void SetNoUpdate() {
-    SetUpdateCheckContent(
-        "chromeos/app_mode/webstore/update_check/no_update.xml",
-        GURL(),
-        "",
-        "",
-        "");
-  }
-
-  void SetUpdateCrx(const std::string& crx_file, const std::string& version) {
-    GURL webstore_url = GetTestWebstoreUrl();
-    GURL crx_download_url = webstore_url.Resolve(
-        "/chromeos/app_mode/webstore/downloads/" + crx_file);
-    base::FilePath test_data_dir;
-    PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir);
-    base::FilePath crx_file_path =
-        test_data_dir.AppendASCII("chromeos/app_mode/webstore/downloads")
-            .AppendASCII(crx_file);
-
-    std::string crx_content;
-    ASSERT_TRUE(base::ReadFileToString(crx_file_path, &crx_content));
-
-    const std::string sha256 = crypto::SHA256HashString(crx_content);
-    const std::string sha256_hex =
-        base::HexEncode(sha256.c_str(), sha256.size());
-
-    SetUpdateCheckContent(
-        "chromeos/app_mode/webstore/update_check/has_update.xml",
-        crx_download_url,
-        sha256_hex,
-        base::UintToString(crx_content.size()),
-        version);
   }
 
  private:
-  void SetUpdateCheckContent(const std::string& update_check_file,
-                             const GURL& crx_download_url,
-                             const std::string& crx_fp,
-                             const std::string& crx_size,
-                             const std::string& version) {
-    base::FilePath test_data_dir;
-    PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir);
-    base::FilePath update_file =
-        test_data_dir.AppendASCII(update_check_file.c_str());
-    ASSERT_TRUE(base::ReadFileToString(update_file, &update_check_content_));
-
-    ReplaceSubstringsAfterOffset(
-        &update_check_content_, 0, "$AppId", test_app_id());
-    ReplaceSubstringsAfterOffset(
-        &update_check_content_, 0, "$CrxDownloadUrl", crx_download_url.spec());
-    ReplaceSubstringsAfterOffset(&update_check_content_, 0, "$FP", crx_fp);
-    ReplaceSubstringsAfterOffset(&update_check_content_, 0, "$Size", crx_size);
-    ReplaceSubstringsAfterOffset(
-        &update_check_content_, 0, "$Version", version);
-  }
-
-  scoped_ptr<HttpResponse> HandleRequest(const HttpRequest& request) {
-    GURL request_url = GURL("http://localhost").Resolve(request.relative_url);
-    std::string request_path = request_url.path();
-    if (!update_check_content_.empty() &&
-        request_path == "/update_check.xml") {
-      scoped_ptr<BasicHttpResponse> http_response(new BasicHttpResponse());
-      http_response->set_code(net::HTTP_OK);
-      http_response->set_content_type("text/xml");
-      http_response->set_content(update_check_content_);
-      return http_response.PassAs<HttpResponse>();
-    }
-
-    return scoped_ptr<HttpResponse>();
-  }
-
-  std::string update_check_content_;
 
   DISALLOW_COPY_AND_ASSIGN(KioskUpdateTest);
 };
 
-IN_PROC_BROWSER_TEST_P(KioskUpdateTest, LaunchOfflineEnabledAppNoNetwork) {
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, LaunchOfflineEnabledAppNoNetwork) {
   set_test_app_id(kTestOfflineEnabledKioskApp);
 
   PrepareAppLaunch();
@@ -1015,10 +902,10 @@ IN_PROC_BROWSER_TEST_P(KioskUpdateTest, LaunchOfflineEnabledAppNoNetwork) {
   WaitForAppLaunchSuccess();
 }
 
-IN_PROC_BROWSER_TEST_P(KioskUpdateTest, LaunchOfflineEnabledAppNoUpdate) {
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, LaunchOfflineEnabledAppNoUpdate) {
   set_test_app_id(kTestOfflineEnabledKioskApp);
 
-  SetNoUpdate();
+  fake_cws()->SetNoUpdate(test_app_id());
 
   PrepareAppLaunch();
   SimulateNetworkOnline();
@@ -1030,10 +917,11 @@ IN_PROC_BROWSER_TEST_P(KioskUpdateTest, LaunchOfflineEnabledAppNoUpdate) {
   EXPECT_EQ("1.0.0", GetInstalledAppVersion().GetString());
 }
 
-IN_PROC_BROWSER_TEST_P(KioskUpdateTest, LaunchOfflineEnabledAppHasUpdate) {
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, LaunchOfflineEnabledAppHasUpdate) {
   set_test_app_id(kTestOfflineEnabledKioskApp);
 
-  SetUpdateCrx("ajoggoflpgplnnjkjamcmbepjdjdnpdp.crx", "2.0.0");
+  fake_cws()->SetUpdateCrx(
+      test_app_id(), "ajoggoflpgplnnjkjamcmbepjdjdnpdp.crx", "2.0.0");
 
   PrepareAppLaunch();
   SimulateNetworkOnline();
@@ -1045,11 +933,13 @@ IN_PROC_BROWSER_TEST_P(KioskUpdateTest, LaunchOfflineEnabledAppHasUpdate) {
   EXPECT_EQ("2.0.0", GetInstalledAppVersion().GetString());
 }
 
-IN_PROC_BROWSER_TEST_P(KioskUpdateTest, PermissionChange) {
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, PermissionChange) {
   set_test_app_id(kTestOfflineEnabledKioskApp);
 
-  SetUpdateCrx("ajoggoflpgplnnjkjamcmbepjdjdnpdp_v2_permission_change.crx",
-               "2.0.0");
+  fake_cws()->SetUpdateCrx(
+      test_app_id(),
+      "ajoggoflpgplnnjkjamcmbepjdjdnpdp_v2_permission_change.crx",
+      "2.0.0");
 
   PrepareAppLaunch();
   SimulateNetworkOnline();
@@ -1061,7 +951,7 @@ IN_PROC_BROWSER_TEST_P(KioskUpdateTest, PermissionChange) {
   EXPECT_EQ("2.0.0", GetInstalledAppVersion().GetString());
 }
 
-IN_PROC_BROWSER_TEST_P(KioskUpdateTest, PRE_PreserveLocalData) {
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, PRE_PreserveLocalData) {
   // Installs v1 app and writes some local data.
   set_test_app_id(kTestLocalFsKioskApp);
 
@@ -1071,13 +961,15 @@ IN_PROC_BROWSER_TEST_P(KioskUpdateTest, PRE_PreserveLocalData) {
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_P(KioskUpdateTest, PreserveLocalData) {
+IN_PROC_BROWSER_TEST_F(KioskUpdateTest, PreserveLocalData) {
   // Update existing v1 app installed in PRE_PreserveLocalData to v2
   // that reads and verifies the local data.
   set_test_app_id(kTestLocalFsKioskApp);
 
-  SetUpdateCrx("bmbpicmpniaclbbpdkfglgipkkebnbjf_v2_read_and_verify_data.crx",
-               "2.0.0");
+  fake_cws()->SetUpdateCrx(
+      test_app_id(),
+      "bmbpicmpniaclbbpdkfglgipkkebnbjf_v2_read_and_verify_data.crx",
+      "2.0.0");
 
   ResultCatcher catcher;
   StartAppLaunchFromLoginScreen(SimulateNetworkOnlineClosure());
@@ -1086,11 +978,6 @@ IN_PROC_BROWSER_TEST_P(KioskUpdateTest, PreserveLocalData) {
   EXPECT_EQ("2.0.0", GetInstalledAppVersion().GetString());
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
-
-// TODO(xiyuan): Remove this after multi profile is turned on by default.
-INSTANTIATE_TEST_CASE_P(KioskUpdateTestInstantiation,
-                        KioskUpdateTest,
-                        testing::Bool());
 
 class KioskEnterpriseTest : public KioskTest {
  protected:
@@ -1247,7 +1134,7 @@ class KioskHiddenWebUITest : public KioskTest,
     KioskTest::SetUpOnMainThread();
     ash::Shell::GetInstance()->desktop_background_controller()
         ->AddObserver(this);
-    StartupUtils::MarkDeviceRegistered();
+    StartupUtils::MarkDeviceRegistered(base::Closure());
   }
 
   virtual void TearDownOnMainThread() OVERRIDE {

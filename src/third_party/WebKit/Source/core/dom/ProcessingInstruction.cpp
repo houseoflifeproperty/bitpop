@@ -21,7 +21,7 @@
 #include "config.h"
 #include "core/dom/ProcessingInstruction.h"
 
-#include "FetchInitiatorTypeNames.h"
+#include "core/FetchInitiatorTypeNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaList.h"
 #include "core/css/StyleSheetContents.h"
@@ -48,9 +48,9 @@ inline ProcessingInstruction::ProcessingInstruction(Document& document, const St
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<ProcessingInstruction> ProcessingInstruction::create(Document& document, const String& target, const String& data)
+PassRefPtrWillBeRawPtr<ProcessingInstruction> ProcessingInstruction::create(Document& document, const String& target, const String& data)
 {
-    return adoptRef(new ProcessingInstruction(document, target, data));
+    return adoptRefWillBeNoop(new ProcessingInstruction(document, target, data));
 }
 
 ProcessingInstruction::~ProcessingInstruction()
@@ -59,8 +59,15 @@ ProcessingInstruction::~ProcessingInstruction()
     if (m_sheet)
         m_sheet->clearOwnerNode();
 
-    if (inDocument())
-        document().styleEngine()->removeStyleSheetCandidateNode(this);
+    // FIXME: ProcessingInstruction should not be in document here.
+    // However, if we add ASSERT(!inDocument()), fast/xsl/xslt-entity.xml
+    // crashes. We need to investigate ProcessingInstruction lifetime.
+    if (inDocument()) {
+        if (m_isCSS)
+            document().styleEngine()->removeStyleSheetCandidateNode(this);
+        else if (m_isXSL)
+            document().styleEngine()->removeXSLStyleSheet(this);
+    }
 #endif
 }
 
@@ -74,7 +81,7 @@ Node::NodeType ProcessingInstruction::nodeType() const
     return PROCESSING_INSTRUCTION_NODE;
 }
 
-PassRefPtr<Node> ProcessingInstruction::cloneNode(bool /*deep*/)
+PassRefPtrWillBeRawPtr<Node> ProcessingInstruction::cloneNode(bool /*deep*/)
 {
     // FIXME: Is it a problem that this does not copy m_localHref?
     // What about other data members?
@@ -242,11 +249,11 @@ Node::InsertionNotificationRequest ProcessingInstruction::insertedInto(Container
 
     String href;
     String charset;
-    // To make it possible for us to see isXSL in
-    // StyleEngine::addStyleSheetCandidateNode, split checkStyleSheet
-    // into two methods, checkStyleSheet and process.
     bool isValid = checkStyleSheet(href, charset);
-    document().styleEngine()->addStyleSheetCandidateNode(this, m_createdByParser);
+    if (m_isCSS)
+        document().styleEngine()->addStyleSheetCandidateNode(this, m_createdByParser);
+    else if (m_isXSL)
+        document().styleEngine()->addXSLStyleSheet(this, m_createdByParser);
     if (isValid)
         process(href, charset);
     return InsertionDone;
@@ -258,7 +265,10 @@ void ProcessingInstruction::removedFrom(ContainerNode* insertionPoint)
     if (!insertionPoint->inDocument())
         return;
 
-    document().styleEngine()->removeStyleSheetCandidateNode(this);
+    if (m_isCSS)
+        document().styleEngine()->removeStyleSheetCandidateNode(this);
+    else if (m_isXSL)
+        document().styleEngine()->removeXSLStyleSheet(this);
 
     RefPtrWillBeRawPtr<StyleSheet> removedSheet = m_sheet;
 

@@ -23,6 +23,7 @@
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/mac/scoped_nsobject.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
@@ -38,16 +39,6 @@
 #include "ipc/ipc_message.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/l10n/l10n_util.h"
-
-// Replicate specific 10.7 SDK declarations for building with prior SDKs.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-@interface NSApplication (LionSDKDeclarations)
-- (void)disableRelaunchOnLogin;
-@end
-
-#endif  // MAC_OS_X_VERSION_10_7
 
 namespace {
 
@@ -164,7 +155,7 @@ AppShimController::AppShimController()
 
 AppShimController::~AppShimController() {
   // Un-set the delegate since NSApplication does not retain it.
-  [NSApp setDelegate:nil];
+  [[NSApplication sharedApplication] setDelegate:nil];
 }
 
 void AppShimController::OnPingChromeReply(bool success) {
@@ -214,11 +205,10 @@ void AppShimController::Init() {
 void AppShimController::CreateChannelAndSendLaunchApp(
     const base::FilePath& socket_path) {
   IPC::ChannelHandle handle(socket_path.value());
-  channel_.reset(
-      new IPC::ChannelProxy(handle,
-                            IPC::Channel::MODE_NAMED_CLIENT,
-                            this,
-                            g_io_thread->message_loop_proxy().get()));
+  channel_ = IPC::ChannelProxy::Create(handle,
+                                       IPC::Channel::MODE_NAMED_CLIENT,
+                                       this,
+                                       g_io_thread->message_loop_proxy().get());
 
   bool launched_by_chrome =
       CommandLine::ForCurrentProcess()->HasSwitch(
@@ -621,7 +611,11 @@ int ChromeAppModeStart(const app_mode::ChromeAppModeInfo* info) {
   main_message_loop.set_thread_name("MainThread");
   base::PlatformThread::SetName("CrAppShimMain");
 
-  if (pid == -1) {
+  // In tests, launching Chrome does nothing, and we won't get a ping response,
+  // so just assume the socket exists.
+  if (pid == -1 &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          app_mode::kLaunchedForTest)) {
     // Launch Chrome if it isn't already running.
     ProcessSerialNumber psn;
     CommandLine command_line(CommandLine::NO_PROGRAM);

@@ -21,10 +21,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
+#include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_data_model.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_field.h"
-#include "components/autofill/core/browser/autofill_manager_delegate.h"
 #include "components/autofill/core/browser/autofill_manager_test_delegate.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/autofill_profile.h"
@@ -42,7 +42,7 @@
 #include "components/autofill/core/common/form_data_predictions.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/rect.h"
@@ -140,7 +140,7 @@ void DeterminePossibleFieldTypesForUpload(
 
     // If it's a password field, set the type directly.
     if (field->form_control_type == "password") {
-      matching_types.insert(autofill::PASSWORD);
+      matching_types.insert(PASSWORD);
     } else {
       base::string16 value;
       base::TrimWhitespace(field->value, base::TRIM_ALL, &value);
@@ -165,15 +165,15 @@ void DeterminePossibleFieldTypesForUpload(
 
 AutofillManager::AutofillManager(
     AutofillDriver* driver,
-    autofill::AutofillManagerDelegate* delegate,
+    AutofillClient* client,
     const std::string& app_locale,
     AutofillDownloadManagerState enable_download_manager)
     : driver_(driver),
-      manager_delegate_(delegate),
+      client_(client),
       app_locale_(app_locale),
-      personal_data_(delegate->GetPersonalDataManager()),
+      personal_data_(client->GetPersonalDataManager()),
       autocomplete_history_manager_(
-          new AutocompleteHistoryManager(driver, delegate)),
+          new AutocompleteHistoryManager(driver, client)),
       metric_logger_(new AutofillMetrics),
       has_logged_autofill_enabled_(false),
       has_logged_address_suggestions_count_(false),
@@ -186,9 +186,7 @@ AutofillManager::AutofillManager(
       weak_ptr_factory_(this) {
   if (enable_download_manager == ENABLE_AUTOFILL_DOWNLOAD_MANAGER) {
     download_manager_.reset(
-        new AutofillDownloadManager(driver,
-                                    manager_delegate_->GetPrefs(),
-                                    this));
+        new AutofillDownloadManager(driver, client_->GetPrefs(), this));
   }
 }
 
@@ -214,7 +212,7 @@ void AutofillManager::RegisterProfilePrefs(
 #endif  // defined(OS_MACOSX) || defined(OS_ANDROID)
 #if defined(OS_MACOSX)
   registry->RegisterBooleanPref(
-      prefs::kAutofillAuxiliaryProfilesQueried,
+      prefs::kAutofillMacAddressBookQueried,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif  // defined(OS_MACOSX)
@@ -226,7 +224,50 @@ void AutofillManager::RegisterProfilePrefs(
       prefs::kAutofillNegativeUploadRate,
       kAutofillNegativeUploadRateDefaultValue,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  registry->RegisterBooleanPref(
+      prefs::kAutofillUseMacAddressBook,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 }
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+void AutofillManager::MigrateUserPrefs(PrefService* prefs) {
+  const PrefService::Preference* pref =
+      prefs->FindPreference(prefs::kAutofillUseMacAddressBook);
+
+  // If the pref is not its default value, then the migration has already been
+  // performed.
+  if (!pref->IsDefaultValue())
+    return;
+
+  // Whether Chrome has already tried to access the user's Address Book.
+  const PrefService::Preference* pref_accessed =
+      prefs->FindPreference(prefs::kAutofillMacAddressBookQueried);
+  // Whether the user wants to use the Address Book to populate Autofill.
+  const PrefService::Preference* pref_enabled =
+      prefs->FindPreference(prefs::kAutofillAuxiliaryProfilesEnabled);
+
+  if (pref_accessed->IsDefaultValue() && pref_enabled->IsDefaultValue()) {
+    // This is likely a new user. Reset the default value to prevent the
+    // migration from happening again.
+    prefs->SetBoolean(prefs::kAutofillUseMacAddressBook,
+                      prefs->GetBoolean(prefs::kAutofillUseMacAddressBook));
+    return;
+  }
+
+  bool accessed;
+  bool enabled;
+  bool success = pref_accessed->GetValue()->GetAsBoolean(&accessed);
+  DCHECK(success);
+  success = pref_enabled->GetValue()->GetAsBoolean(&enabled);
+  DCHECK(success);
+
+  prefs->SetBoolean(prefs::kAutofillUseMacAddressBook, accessed && enabled);
+}
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
 void AutofillManager::SetExternalDelegate(AutofillExternalDelegate* delegate) {
   // TODO(jrg): consider passing delegate into the ctor.  That won't
@@ -237,8 +278,30 @@ void AutofillManager::SetExternalDelegate(AutofillExternalDelegate* delegate) {
 }
 
 void AutofillManager::ShowAutofillSettings() {
-  manager_delegate_->ShowAutofillSettings();
+  client_->ShowAutofillSettings();
 }
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+bool AutofillManager::ShouldShowAccessAddressBookSuggestion(
+    const FormData& form,
+    const FormFieldData& field) {
+  if (!personal_data_)
+    return false;
+  FormStructure* form_structure = NULL;
+  AutofillField* autofill_field = NULL;
+  if (!GetCachedFormAndField(form, field, &form_structure, &autofill_field))
+    return false;
+
+  return personal_data_->ShouldShowAccessAddressBookSuggestion(
+      autofill_field->Type());
+}
+
+bool AutofillManager::AccessAddressBook() {
+  if (!personal_data_)
+    return false;
+  return personal_data_->AccessAddressBook();
+}
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
 bool AutofillManager::OnFormSubmitted(const FormData& form,
                                       const TimeTicks& timestamp) {
@@ -303,7 +366,7 @@ bool AutofillManager::OnFormSubmitted(const FormData& form,
         base::Bind(&AutofillManager::UploadFormDataAsyncCallback,
                    weak_ptr_factory_.GetWeakPtr(),
                    base::Owned(submitted_form.release()),
-                   forms_loaded_timestamp_,
+                   forms_loaded_timestamps_[form],
                    initial_interaction_timestamp_,
                    timestamp));
   }
@@ -312,15 +375,9 @@ bool AutofillManager::OnFormSubmitted(const FormData& form,
 }
 
 void AutofillManager::OnFormsSeen(const std::vector<FormData>& forms,
-                                  const TimeTicks& timestamp,
-                                  autofill::FormsSeenState state) {
+                                  const TimeTicks& timestamp) {
   if (!IsValidFormDataVector(forms))
     return;
-
-  bool is_post_document_load = state == autofill::DYNAMIC_FORMS_SEEN;
-  // If new forms were added dynamically, treat as a new page.
-  if (is_post_document_load)
-    Reset();
 
   if (!driver_->RendererIsAvailable())
     return;
@@ -334,7 +391,10 @@ void AutofillManager::OnFormsSeen(const std::vector<FormData>& forms,
   if (!enabled)
     return;
 
-  forms_loaded_timestamp_ = timestamp;
+  for (size_t i = 0; i < forms.size(); ++i) {
+    forms_loaded_timestamps_[forms[i]] = timestamp;
+  }
+
   ParseForms(forms);
 }
 
@@ -509,8 +569,13 @@ void AutofillManager::FillOrPreviewForm(
           // user edits an autofilled field (for metrics).
           autofill_field->is_autofilled = true;
 
+          // Mark the field as autofilled when a non-empty value is assigned to
+          // it. This allows the renderer to distinguish autofilled fields from
+          // fields with non-empty values, such as select-one fields.
+          iter->is_autofilled = true;
+
           if (!is_credit_card && !value.empty())
-            manager_delegate_->DidFillOrPreviewField(value, profile_full_name);
+            client_->DidFillOrPreviewField(value, profile_full_name);
         }
         break;
       }
@@ -561,8 +626,13 @@ void AutofillManager::FillOrPreviewForm(
         // user edits an autofilled field (for metrics).
         form_structure->field(i)->is_autofilled = true;
 
+        // Mark the field as autofilled when a non-empty value is assigned to
+        // it. This allows the renderer to distinguish autofilled fields from
+        // fields with non-empty values, such as select-one fields.
+        result.fields[i].is_autofilled = true;
+
         if (should_notify)
-          manager_delegate_->DidFillOrPreviewField(value, profile_full_name);
+          client_->DidFillOrPreviewField(value, profile_full_name);
       }
     }
   }
@@ -614,7 +684,7 @@ void AutofillManager::OnHidePopup() {
   if (!IsAutofillEnabled())
     return;
 
-  manager_delegate_->HideAutofillPopup();
+  client_->HideAutofillPopup();
 }
 
 void AutofillManager::RemoveAutofillProfileOrCreditCard(int unique_id) {
@@ -645,8 +715,7 @@ const std::vector<FormStructure*>& AutofillManager::GetFormStructures() {
   return form_structures_.get();
 }
 
-void AutofillManager::SetTestDelegate(
-    autofill::AutofillManagerTestDelegate* delegate) {
+void AutofillManager::SetTestDelegate(AutofillManagerTestDelegate* delegate) {
   test_delegate_ = delegate;
 }
 
@@ -669,7 +738,7 @@ void AutofillManager::OnLoadedServerPredictions(
 
   // Forward form structures to the password generation manager to detect
   // account creation forms.
-  manager_delegate_->DetectAccountCreationForms(form_structures_.get());
+  client_->DetectAccountCreationForms(form_structures_.get());
 
   // If the corresponding flag is set, annotate forms with the predicted types.
   driver_->SendAutofillTypePredictionsToRenderer(form_structures_.get());
@@ -680,7 +749,7 @@ void AutofillManager::OnDidEndTextFieldEditing() {
 }
 
 bool AutofillManager::IsAutofillEnabled() const {
-  return manager_delegate_->GetPrefs()->GetBoolean(prefs::kAutofillEnabled);
+  return client_->GetPrefs()->GetBoolean(prefs::kAutofillEnabled);
 }
 
 void AutofillManager::ImportFormData(const FormStructure& submitted_form) {
@@ -691,11 +760,12 @@ void AutofillManager::ImportFormData(const FormStructure& submitted_form) {
   // If credit card information was submitted, we need to confirm whether to
   // save it.
   if (imported_credit_card) {
-    manager_delegate_->ConfirmSaveCreditCard(
+    client_->ConfirmSaveCreditCard(
         *metric_logger_,
         base::Bind(
             base::IgnoreResult(&PersonalDataManager::SaveImportedCreditCard),
-            base::Unretained(personal_data_), *imported_credit_card));
+            base::Unretained(personal_data_),
+            *imported_credit_card));
   }
 }
 
@@ -738,7 +808,7 @@ void AutofillManager::UploadFormData(const FormStructure& submitted_form) {
   // contains a password field it will be uploaded to the server. If
   // |submitted_form| doesn't contain a password field, there is no side
   // effect from adding PASSWORD to |non_empty_types|.
-  non_empty_types.insert(autofill::PASSWORD);
+  non_empty_types.insert(PASSWORD);
 
   download_manager_->StartUploadRequest(submitted_form, was_autofilled,
                                         non_empty_types);
@@ -797,20 +867,20 @@ void AutofillManager::Reset() {
   user_did_type_ = false;
   user_did_autofill_ = false;
   user_did_edit_autofilled_field_ = false;
-  forms_loaded_timestamp_ = TimeTicks();
+  forms_loaded_timestamps_.clear();
   initial_interaction_timestamp_ = TimeTicks();
   external_delegate_->Reset();
 }
 
 AutofillManager::AutofillManager(AutofillDriver* driver,
-                                 autofill::AutofillManagerDelegate* delegate,
+                                 AutofillClient* client,
                                  PersonalDataManager* personal_data)
     : driver_(driver),
-      manager_delegate_(delegate),
+      client_(client),
       app_locale_("en-US"),
       personal_data_(personal_data),
       autocomplete_history_manager_(
-          new AutocompleteHistoryManager(driver, delegate)),
+          new AutocompleteHistoryManager(driver, client)),
       metric_logger_(new AutofillMetrics),
       has_logged_autofill_enabled_(false),
       has_logged_address_suggestions_count_(false),
@@ -822,7 +892,7 @@ AutofillManager::AutofillManager(AutofillDriver* driver,
       test_delegate_(NULL),
       weak_ptr_factory_(this) {
   DCHECK(driver_);
-  DCHECK(manager_delegate_);
+  DCHECK(client_);
 }
 
 void AutofillManager::set_metric_logger(const AutofillMetrics* metric_logger) {

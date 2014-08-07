@@ -9,7 +9,6 @@
 
 #include <string>
 
-#include "base/platform_file.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_base.h"
 
@@ -26,6 +25,7 @@ class FileSystemContext;
 namespace file_manager {
 namespace util {
 struct EntryDefinition;
+typedef std::vector<EntryDefinition> EntryDefinitionList;
 }  // namespace util
 }  // namespace file_manager
 
@@ -205,6 +205,26 @@ class FileBrowserPrivateCancelCopyFunction
 
   // AsyncExtensionFunction overrides.
   virtual bool RunAsync() OVERRIDE;
+};
+
+// Implements the chrome.fileBrowserPrivateInternal.resolveIsolatedEntries
+// method.
+class FileBrowserPrivateInternalResolveIsolatedEntriesFunction
+    : public ChromeAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION(
+      "fileBrowserPrivateInternal.resolveIsolatedEntries",
+      FILEBROWSERPRIVATE_RESOLVEISOLATEDENTRIES)
+
+ protected:
+  virtual ~FileBrowserPrivateInternalResolveIsolatedEntriesFunction() {}
+
+  // AsyncExtensionFunction overrides.
+  virtual bool RunAsync() OVERRIDE;
+
+ private:
+  void RunAsyncAfterConvertFileDefinitionListToEntryDefinitionList(scoped_ptr<
+      file_manager::util::EntryDefinitionList> entry_definition_list);
 };
 
 }  // namespace extensions

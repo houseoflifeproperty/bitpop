@@ -34,7 +34,6 @@
 #include "platform/HostWindow.h"
 #include "platform/PopupMenu.h"
 #include "platform/PopupMenuClient.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
@@ -57,6 +56,7 @@ class Element;
 class FileChooser;
 class FloatRect;
 class Frame;
+class GraphicsContext;
 class GraphicsLayer;
 class GraphicsLayerFactory;
 class HitTestResult;
@@ -151,8 +151,6 @@ public:
     virtual void scheduleAnimation() = 0;
     // End methods used by HostWindow.
 
-    virtual bool isCompositorFramePending() const = 0;
-
     virtual void dispatchViewportPropertiesDidChange(const ViewportDescription&) const { }
 
     virtual void contentsSizeChanged(LocalFrame*, const IntSize&) const = 0;
@@ -164,7 +162,6 @@ public:
     virtual void setToolTip(const String&, TextDirection) = 0;
 
     virtual void print(LocalFrame*) = 0;
-    virtual bool shouldRubberBandInDirection(ScrollDirection) const = 0;
 
     virtual void annotatedRegionsChanged() = 0;
 
@@ -178,7 +175,7 @@ public:
     //    returns true, if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     //  - <datalist> UI for date/time input types regardless of
     //    ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) = 0;
+    virtual PassRefPtrWillBeRawPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) = 0;
 
     virtual void openTextDataListChooser(HTMLInputElement&) = 0;
 
@@ -207,10 +204,6 @@ public:
     virtual void setPagePopupDriver(PagePopupDriver*) = 0;
     virtual void resetPagePopupDriver() = 0;
 
-    // FIXME: Should these be on a different client interface?
-    virtual bool isPasswordGenerationEnabled() const { return false; }
-    virtual void openPasswordGenerator(HTMLInputElement*) { }
-
     virtual void postAccessibilityNotification(AXObject*, AXObjectCache::AXNotification) { }
     virtual String acceptLanguages() = 0;
 
@@ -222,8 +215,6 @@ public:
     };
     virtual bool shouldRunModalDialogDuringPageDismissal(const DialogType&, const String&, Document::PageDismissalType) const { return true; }
 
-    virtual void numWheelEventHandlersChanged(unsigned) = 0;
-
     virtual bool isSVGImageChromeClient() const { return false; }
 
     virtual bool requestPointerLock() { return false; }
@@ -233,7 +224,7 @@ public:
 
     virtual bool isChromeClientImpl() const { return false; }
 
-    virtual void didAssociateFormControls(const Vector<RefPtr<Element> >&) { };
+    virtual void didAssociateFormControls(const WillBeHeapVector<RefPtrWillBeMember<Element> >&) { };
     virtual void didChangeValueInTextField(HTMLFormControlElement&) { }
     virtual void didEndEditingOnTextField(HTMLInputElement&) { }
     virtual void handleKeyboardEventOnTextField(HTMLInputElement&, KeyboardEvent&) { }
@@ -246,6 +237,8 @@ public:
     virtual void didCancelCompositionOnSelectionChange() { }
     virtual void willSetInputMethodState() { }
     virtual void didUpdateTextOfFocusedElementByNonUserInput() { }
+
+    virtual bool usesGpuRasterization() = 0;
 
 protected:
     virtual ~ChromeClient() { }

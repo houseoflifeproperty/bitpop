@@ -132,6 +132,8 @@ class VIEWS_EXPORT NativeWidgetAura
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) OVERRIDE;
   virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
   virtual void OnRootViewLayout() const OVERRIDE;
+  virtual bool IsTranslucentWindowOpacitySupported() const OVERRIDE;
+  virtual void RepostNativeEvent(gfx::NativeEvent native_event) OVERRIDE;
 
   // Overridden from views::InputMethodDelegate:
   virtual void DispatchKeyEventPostIME(const ui::KeyEvent& key) OVERRIDE;
@@ -179,9 +181,6 @@ class VIEWS_EXPORT NativeWidgetAura
   virtual void OnDragExited() OVERRIDE;
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
 
-  // Overridden from NativeWidget:
-  virtual ui::EventHandler* GetEventHandler() OVERRIDE;
-
  protected:
   virtual ~NativeWidgetAura();
 
@@ -205,9 +204,6 @@ class VIEWS_EXPORT NativeWidgetAura
   // The following factory is used for calls to close the NativeWidgetAura
   // instance.
   base::WeakPtrFactory<NativeWidgetAura> close_widget_factory_;
-
-  // Can we be made active?
-  bool can_activate_;
 
   // Are we in the destructor?
   bool destroying_;

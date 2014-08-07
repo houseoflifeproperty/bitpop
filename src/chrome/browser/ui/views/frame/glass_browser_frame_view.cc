@@ -10,6 +10,7 @@
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/profiles/avatar_menu_button.h"
@@ -162,7 +163,7 @@ void GlassBrowserFrameView::UpdateThrobber(bool running) {
   }
 }
 
-gfx::Size GlassBrowserFrameView::GetMinimumSize() {
+gfx::Size GlassBrowserFrameView::GetMinimumSize() const {
   gfx::Size min_size(browser_view()->GetMinimumSize());
 
   // Account for the client area insets.
@@ -234,9 +235,10 @@ int GlassBrowserFrameView::NonClientHitTest(const gfx::Point& point) {
   // See if we're in the sysmenu region.  We still have to check the tabstrip
   // first so that clicks in a tab don't get treated as sysmenu clicks.
   int nonclient_border_thickness = NonClientBorderThickness();
-  if (gfx::Rect(nonclient_border_thickness, GetSystemMetrics(SM_CXSIZEFRAME),
-                GetSystemMetrics(SM_CXSMICON),
-                GetSystemMetrics(SM_CYSMICON)).Contains(point))
+  if (gfx::Rect(nonclient_border_thickness,
+                gfx::win::GetSystemMetricsInDIP(SM_CXSIZEFRAME),
+                gfx::win::GetSystemMetricsInDIP(SM_CXSMICON),
+                gfx::win::GetSystemMetricsInDIP(SM_CYSMICON)).Contains(point))
     return (frame_component == HTCLIENT) ? HTCLIENT : HTSYSMENU;
 
   if (frame_component != HTNOWHERE)
@@ -286,7 +288,8 @@ void GlassBrowserFrameView::ButtonPressed(views::Button* sender,
                                           const ui::Event& event) {
   if (sender == new_avatar_button()) {
     browser_view()->ShowAvatarBubbleFromAvatarButton(
-        BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT);
+        BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT,
+        signin::ManageAccountsParams());
   }
 }
 
@@ -295,7 +298,7 @@ void GlassBrowserFrameView::ButtonPressed(views::Button* sender,
 
 int GlassBrowserFrameView::FrameBorderThickness() const {
   return (frame()->IsMaximized() || frame()->IsFullscreen()) ?
-      0 : GetSystemMetrics(SM_CXSIZEFRAME);
+      0 : gfx::win::GetSystemMetricsInDIP(SM_CXSIZEFRAME);
 }
 
 int GlassBrowserFrameView::NonClientBorderThickness() const {
@@ -444,25 +447,24 @@ void GlassBrowserFrameView::LayoutNewStyleAvatar() {
     return;
 
   gfx::Size label_size = new_avatar_button()->GetPreferredSize();
-  int button_size_with_offset = kNewAvatarButtonOffset + label_size.width();
 
   int button_x = frame()->GetMinimizeButtonOffset() -
       kNewAvatarButtonOffset - label_size.width();
   if (base::i18n::IsRTL())
     button_x = width() - frame()->GetMinimizeButtonOffset() +
         kNewAvatarButtonOffset;
-  int button_y = frame()->IsMaximized() ? NonClientTopBorderHeight() : 1;
 
-  // If the window is maximized, the button is 2 pixels too tall. Determined
-  // via visual inspection.
-  int height_to_subtract = frame()->IsMaximized() ? 2 : 0;
+  // We need to offset the button correctly in maximized mode, so that the
+  // custom glass style aligns with the native control glass style. The
+  // glass shadow is off by 1px, which was determined by visual inspection.
+  int button_y = !frame()->IsMaximized() ? 1 :
+      NonClientTopBorderHeight() + kTabstripTopShadowThickness - 1;
 
   new_avatar_button()->SetBounds(
       button_x,
       button_y,
       label_size.width(),
-      button_y + gfx::win::GetSystemMetricsInDIP(SM_CXMENUSIZE) -
-          height_to_subtract);
+      gfx::win::GetSystemMetricsInDIP(SM_CYMENUSIZE) + 1);
 }
 
 void GlassBrowserFrameView::LayoutAvatar() {

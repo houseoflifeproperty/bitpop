@@ -109,8 +109,7 @@ class NetworkPortalDetectorImplBrowserTest
                              kWifi,
                              shill::kTypeEthernet,
                              shill::kStateIdle,
-                             true /* add_to_visible */,
-                             true /* add_to_watchlist */);
+                             true /* add_to_visible */);
     DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
         dbus::ObjectPath(kWifi),
         shill::kStateProperty,
@@ -173,13 +172,13 @@ IN_PROC_BROWSER_TEST_F(NetworkPortalDetectorImplBrowserTest,
   ASSERT_EQ(PortalDetectorStrategy::STRATEGY_ID_SESSION, strategy()->Id());
 
   // No notification until portal detection is completed.
-  ASSERT_FALSE(message_center()->HasNotification(kNotificationId));
+  ASSERT_FALSE(message_center()->FindVisibleNotificationById(kNotificationId));
   RestartDetection();
   CompleteURLFetch(net::OK, 200, NULL);
 
   // Check that wifi is marked as behind the portal and that notification
   // is displayed.
-  ASSERT_TRUE(message_center()->HasNotification(kNotificationId));
+  ASSERT_TRUE(message_center()->FindVisibleNotificationById(kNotificationId));
   ASSERT_EQ(NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_PORTAL,
             NetworkPortalDetector::Get()->GetCaptivePortalState(kWifi).status);
 

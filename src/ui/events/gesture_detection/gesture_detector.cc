@@ -49,7 +49,10 @@ GestureDetector::Config::Config()
       maximum_fling_velocity(8000),
       swipe_enabled(false),
       minimum_swipe_velocity(20),
-      maximum_swipe_deviation_angle(20.f) {
+      maximum_swipe_deviation_angle(20.f),
+      two_finger_tap_enabled(false),
+      two_finger_tap_max_separation(300),
+      two_finger_tap_timeout(base::TimeDelta::FromMilliseconds(700)) {
 }
 
 GestureDetector::Config::~Config() {}
@@ -66,8 +69,7 @@ bool GestureDetector::SimpleGestureListener::OnSingleTapUp(
   return false;
 }
 
-bool GestureDetector::SimpleGestureListener::OnLongPress(const MotionEvent& e) {
-  return false;
+void GestureDetector::SimpleGestureListener::OnLongPress(const MotionEvent& e) {
 }
 
 bool GestureDetector::SimpleGestureListener::OnScroll(const MotionEvent& e1,
@@ -88,6 +90,12 @@ bool GestureDetector::SimpleGestureListener::OnSwipe(const MotionEvent& e1,
                                                      const MotionEvent& e2,
                                                      float velocity_x,
                                                      float velocity_y) {
+  return false;
+}
+
+bool GestureDetector::SimpleGestureListener::OnTwoFingerTap(
+    const MotionEvent& e1,
+    const MotionEvent& e2) {
   return false;
 }
 
@@ -163,19 +171,24 @@ GestureDetector::GestureDetector(
       touch_slop_square_(0),
       double_tap_touch_slop_square_(0),
       double_tap_slop_square_(0),
+      two_finger_tap_distance_square_(0),
       min_fling_velocity_(1),
       max_fling_velocity_(1),
+      min_swipe_velocity_(0),
+      min_swipe_direction_component_ratio_(0),
       still_down_(false),
       defer_confirm_single_tap_(false),
-      in_longpress_(false),
       always_in_tap_region_(false),
       always_in_bigger_tap_region_(false),
+      two_finger_tap_allowed_for_gesture_(false),
       is_double_tapping_(false),
       last_focus_x_(0),
       last_focus_y_(0),
       down_focus_x_(0),
       down_focus_y_(0),
-      longpress_enabled_(true) {
+      longpress_enabled_(true),
+      swipe_enabled_(false),
+      two_finger_tap_enabled_(false) {
   DCHECK(listener_);
   Init(config);
 }
@@ -206,70 +219,67 @@ bool GestureDetector::OnTouchEvent(const MotionEvent& ev) {
   bool handled = false;
 
   switch (action) {
-    case MotionEvent::ACTION_POINTER_DOWN:
+    case MotionEvent::ACTION_POINTER_DOWN: {
       down_focus_x_ = last_focus_x_ = focus_x;
       down_focus_y_ = last_focus_y_ = focus_y;
       // Cancel long press and taps.
       CancelTaps();
-      break;
 
-    case MotionEvent::ACTION_POINTER_UP:
+      if (!two_finger_tap_allowed_for_gesture_)
+        break;
+
+      const int action_index = ev.GetActionIndex();
+      const float dx = ev.GetX(action_index) - current_down_event_->GetX();
+      const float dy = ev.GetY(action_index) - current_down_event_->GetY();
+
+      if (ev.GetPointerCount() == 2 &&
+          dx * dx + dy * dy < two_finger_tap_distance_square_) {
+        secondary_pointer_down_event_ = ev.Clone();
+      } else {
+        two_finger_tap_allowed_for_gesture_ = false;
+      }
+    } break;
+
+    case MotionEvent::ACTION_POINTER_UP: {
       down_focus_x_ = last_focus_x_ = focus_x;
       down_focus_y_ = last_focus_y_ = focus_y;
 
       // Check the dot product of current velocities.
       // If the pointer that left was opposing another velocity vector, clear.
       velocity_tracker_.ComputeCurrentVelocity(1000, max_fling_velocity_);
-      {
-        const int up_index = ev.GetActionIndex();
-        const int id1 = ev.GetPointerId(up_index);
-        const float vx1 = velocity_tracker_.GetXVelocity(id1);
-        const float vy1 = velocity_tracker_.GetYVelocity(id1);
-        float vx_total = vx1;
-        float vy_total = vy1;
-        for (int i = 0; i < count; i++) {
-          if (i == up_index)
-            continue;
+      const int up_index = ev.GetActionIndex();
+      const int id1 = ev.GetPointerId(up_index);
+      const float vx1 = velocity_tracker_.GetXVelocity(id1);
+      const float vy1 = velocity_tracker_.GetYVelocity(id1);
+      float vx_total = vx1;
+      float vy_total = vy1;
+      for (int i = 0; i < count; i++) {
+        if (i == up_index)
+          continue;
 
-          const int id2 = ev.GetPointerId(i);
-          const float vx2 = velocity_tracker_.GetXVelocity(id2);
-          const float vy2 = velocity_tracker_.GetYVelocity(id2);
-          const float dot = vx1 * vx2 + vy1 * vy2;
-          if (dot < 0) {
-            vx_total = 0;
-            vy_total = 0;
-            velocity_tracker_.Clear();
-            break;
-          }
-          vx_total += vx2;
-          vy_total += vy2;
+        const int id2 = ev.GetPointerId(i);
+        const float vx2 = velocity_tracker_.GetXVelocity(id2);
+        const float vy2 = velocity_tracker_.GetYVelocity(id2);
+        const float dot = vx1 * vx2 + vy1 * vy2;
+        if (dot < 0) {
+          vx_total = 0;
+          vy_total = 0;
+          velocity_tracker_.Clear();
+          break;
         }
-
-        if (swipe_enabled_ && (vx_total || vy_total)) {
-          float vx = vx_total / count;
-          float vy = vy_total / count;
-          float vx_abs = std::abs(vx);
-          float vy_abs = std::abs(vy);
-
-          if (vx_abs < min_swipe_velocity_)
-            vx_abs = vx = 0;
-          if (vy_abs < min_swipe_velocity_)
-            vy_abs = vy = 0;
-
-          // Note that the ratio will be 0 if both velocites are below the min.
-          float ratio = vx_abs > vy_abs ? vx_abs / std::max(vy_abs, 0.001f)
-                                        : vy_abs / std::max(vx_abs, 0.001f);
-          if (ratio > min_swipe_direction_component_ratio_) {
-            if (vx_abs > vy_abs)
-              vy = 0;
-            else
-              vx = 0;
-
-            handled = listener_->OnSwipe(*current_down_event_, ev, vx, vy);
-          }
-        }
+        vx_total += vx2;
+        vy_total += vy2;
       }
-      break;
+
+      handled = HandleSwipeIfNeeded(ev, vx_total / count, vy_total / count);
+
+      if (two_finger_tap_allowed_for_gesture_ && ev.GetPointerCount() == 2 &&
+          (ev.GetEventTime() - secondary_pointer_down_event_->GetEventTime() <=
+           two_finger_tap_timeout_)) {
+        handled = listener_->OnTwoFingerTap(*current_down_event_, ev);
+      }
+      two_finger_tap_allowed_for_gesture_ = false;
+    } break;
 
     case MotionEvent::ACTION_DOWN:
       if (double_tap_listener_) {
@@ -296,11 +306,12 @@ bool GestureDetector::OnTouchEvent(const MotionEvent& ev) {
       down_focus_y_ = last_focus_y_ = focus_y;
       current_down_event_ = ev.Clone();
 
+      secondary_pointer_down_event_.reset();
       always_in_tap_region_ = true;
       always_in_bigger_tap_region_ = true;
       still_down_ = true;
-      in_longpress_ = false;
       defer_confirm_single_tap_ = false;
+      two_finger_tap_allowed_for_gesture_ = two_finger_tap_enabled_;
 
       // Always start the SHOW_PRESS timer before the LONG_PRESS timer to ensure
       // proper timeout ordering.
@@ -311,9 +322,6 @@ bool GestureDetector::OnTouchEvent(const MotionEvent& ev) {
       break;
 
     case MotionEvent::ACTION_MOVE:
-      if (in_longpress_)
-        break;
-
       {
         const float scroll_x = last_focus_x_ - focus_x;
         const float scroll_y = last_focus_y_ - focus_y;
@@ -342,6 +350,31 @@ bool GestureDetector::OnTouchEvent(const MotionEvent& ev) {
           last_focus_x_ = focus_x;
           last_focus_y_ = focus_y;
         }
+
+        if (!two_finger_tap_allowed_for_gesture_)
+          break;
+
+        // Two-finger tap should be prevented if either pointer exceeds its
+        // (independent) slop region.
+        const int id0 = current_down_event_->GetPointerId(0);
+        const int ev_idx0 = ev.GetPointerId(0) == id0 ? 0 : 1;
+
+        // Check if the primary pointer exceeded the slop region.
+        float dx = current_down_event_->GetX() - ev.GetX(ev_idx0);
+        float dy = current_down_event_->GetY() - ev.GetY(ev_idx0);
+        if (dx * dx + dy * dy > touch_slop_square_) {
+          two_finger_tap_allowed_for_gesture_ = false;
+          break;
+        }
+        if (ev.GetPointerCount() == 2) {
+          // Check if the secondary pointer exceeded the slop region.
+          const int ev_idx1 = ev_idx0 == 0 ? 1 : 0;
+          const int idx1 = secondary_pointer_down_event_->GetActionIndex();
+          dx = secondary_pointer_down_event_->GetX(idx1) - ev.GetX(ev_idx1);
+          dy = secondary_pointer_down_event_->GetY(idx1) - ev.GetY(ev_idx1);
+          if (dx * dx + dy * dy > touch_slop_square_)
+            two_finger_tap_allowed_for_gesture_ = false;
+        }
       }
       break;
 
@@ -352,9 +385,6 @@ bool GestureDetector::OnTouchEvent(const MotionEvent& ev) {
           // Finally, give the up event of the double-tap.
           DCHECK(double_tap_listener_);
           handled |= double_tap_listener_->OnDoubleTapEvent(ev);
-        } else if (in_longpress_) {
-          timeout_handler_->StopTimeout(TAP);
-          in_longpress_ = false;
         } else if (always_in_tap_region_) {
           handled = listener_->OnSingleTapUp(ev);
           if (defer_confirm_single_tap_ && double_tap_listener_ != NULL) {
@@ -373,6 +403,8 @@ bool GestureDetector::OnTouchEvent(const MotionEvent& ev) {
             handled = listener_->OnFling(
                 *current_down_event_, ev, velocity_x, velocity_y);
           }
+
+          handled |= HandleSwipeIfNeeded(ev, velocity_x, velocity_y);
         }
 
         previous_up_event_ = ev.Clone();
@@ -434,6 +466,11 @@ void GestureDetector::Init(const Config& config) {
       std::min(45.f, std::max(0.001f, config.maximum_swipe_deviation_angle));
   min_swipe_direction_component_ratio_ =
       1.f / tan(maximum_swipe_deviation_angle * kDegreesToRadians);
+
+  two_finger_tap_enabled_ = config.two_finger_tap_enabled;
+  two_finger_tap_distance_square_ = config.two_finger_tap_max_separation *
+                                    config.two_finger_tap_max_separation;
+  two_finger_tap_timeout_ = config.two_finger_tap_timeout;
 }
 
 void GestureDetector::OnShowPressTimeout() {
@@ -443,7 +480,7 @@ void GestureDetector::OnShowPressTimeout() {
 void GestureDetector::OnLongPressTimeout() {
   timeout_handler_->StopTimeout(TAP);
   defer_confirm_single_tap_ = false;
-  in_longpress_ = listener_->OnLongPress(*current_down_event_);
+  listener_->OnLongPress(*current_down_event_);
 }
 
 void GestureDetector::OnTapTimeout() {
@@ -456,14 +493,9 @@ void GestureDetector::OnTapTimeout() {
 }
 
 void GestureDetector::Cancel() {
-  timeout_handler_->Stop();
+  CancelTaps();
   velocity_tracker_.Clear();
-  is_double_tapping_ = false;
   still_down_ = false;
-  always_in_tap_region_ = false;
-  always_in_bigger_tap_region_ = false;
-  defer_confirm_single_tap_ = false;
-  in_longpress_ = false;
 }
 
 void GestureDetector::CancelTaps() {
@@ -472,7 +504,6 @@ void GestureDetector::CancelTaps() {
   always_in_tap_region_ = false;
   always_in_bigger_tap_region_ = false;
   defer_confirm_single_tap_ = false;
-  in_longpress_ = false;
 }
 
 bool GestureDetector::IsConsideredDoubleTap(
@@ -490,6 +521,33 @@ bool GestureDetector::IsConsideredDoubleTap(
   const float delta_x = first_down.GetX() - second_down.GetX();
   const float delta_y = first_down.GetY() - second_down.GetY();
   return (delta_x * delta_x + delta_y * delta_y < double_tap_slop_square_);
+}
+
+bool GestureDetector::HandleSwipeIfNeeded(const MotionEvent& up,
+                                          float vx,
+                                          float vy) {
+  if (!swipe_enabled_ || (!vx && !vy))
+    return false;
+  float vx_abs = std::abs(vx);
+  float vy_abs = std::abs(vy);
+
+  if (vx_abs < min_swipe_velocity_)
+    vx_abs = vx = 0;
+  if (vy_abs < min_swipe_velocity_)
+    vy_abs = vy = 0;
+
+  // Note that the ratio will be 0 if both velocites are below the min.
+  float ratio = vx_abs > vy_abs ? vx_abs / std::max(vy_abs, 0.001f)
+                                : vy_abs / std::max(vx_abs, 0.001f);
+
+  if (ratio < min_swipe_direction_component_ratio_)
+    return false;
+
+  if (vx_abs > vy_abs)
+    vy = 0;
+  else
+    vx = 0;
+  return listener_->OnSwipe(*current_down_event_, up, vx, vy);
 }
 
 }  // namespace ui

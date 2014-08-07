@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 /* Given an interface like this:
  *
  *   struct PPB_Frob_1_1 {
@@ -68,6 +67,7 @@ END_INTERFACE(FileRefInterface, PPB_FileRef_1_1)
 /* Chrome M14 required */
 BEGIN_INTERFACE(FileSystemInterface, PPB_FileSystem_1_0,
                 PPB_FILESYSTEM_INTERFACE_1_0)
+  METHOD1(FileSystemInterface, PP_Bool, IsFileSystem, PP_Resource)
   METHOD2(FileSystemInterface, PP_Resource, Create, PP_Instance,
           PP_FileSystemType)
   METHOD3(FileSystemInterface, int32_t, Open, PP_Resource, int64_t,

@@ -16,6 +16,7 @@
 #include "ui/base/win/internal_constants.h"
 #include "ui/base/win/window_event_target.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/win/dpi.h"
 
 namespace content {
 
@@ -79,8 +80,9 @@ void LegacyRenderWidgetHostHWND::Hide() {
 }
 
 void LegacyRenderWidgetHostHWND::SetBounds(const gfx::Rect& bounds) {
-  ::SetWindowPos(hwnd(), NULL, bounds.x(), bounds.y(), bounds.width(),
-                  bounds.height(), 0);
+  gfx::Rect bounds_in_pixel = gfx::win::DIPToScreenRect(bounds);
+  ::SetWindowPos(hwnd(), NULL, bounds_in_pixel.x(), bounds_in_pixel.y(),
+                 bounds_in_pixel.width(), bounds_in_pixel.height(), 0);
 }
 
 void LegacyRenderWidgetHostHWND::OnFinalMessage(HWND hwnd) {
@@ -133,14 +135,18 @@ LRESULT LegacyRenderWidgetHostHWND::OnEraseBkGnd(UINT message,
 LRESULT LegacyRenderWidgetHostHWND::OnGetObject(UINT message,
                                                 WPARAM w_param,
                                                 LPARAM l_param) {
-  if (kIdScreenReaderHoneyPot == l_param) {
+  // Only the lower 32 bits of l_param are valid when checking the object id
+  // because it sometimes gets sign-extended incorrectly (but not always).
+  DWORD obj_id = static_cast<DWORD>(static_cast<DWORD_PTR>(l_param));
+
+  if (kIdScreenReaderHoneyPot == obj_id) {
     // When an MSAA client has responded to our fake event on this id,
     // enable screen reader support.
     BrowserAccessibilityState::GetInstance()->OnScreenReaderDetected();
     return static_cast<LRESULT>(0L);
   }
 
-  if (OBJID_CLIENT != l_param || !manager_)
+  if (OBJID_CLIENT != obj_id || !manager_)
     return static_cast<LRESULT>(0L);
 
   base::win::ScopedComPtr<IAccessible> root(

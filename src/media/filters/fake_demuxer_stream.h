@@ -35,6 +35,8 @@ class FakeDemuxerStream : public DemuxerStream {
   virtual void EnableBitstreamConverter() OVERRIDE;
   virtual bool SupportsConfigChanges() OVERRIDE;
 
+  void Initialize();
+
   int num_buffers_returned() const { return num_buffers_returned_; }
 
   // Upon the next read, holds the read callback until SatisfyRead() or Reset()
@@ -56,16 +58,27 @@ class FakeDemuxerStream : public DemuxerStream {
   // always clears |hold_next_read_|.
   void Reset();
 
+  // Reset() this demuxer stream and set the reading position to the start of
+  // the stream.
+  void SeekToStart();
+
+  // Sets the splice timestamp for all furture buffers returned via Read().
+  void set_splice_timestamp(base::TimeDelta splice_timestamp) {
+    splice_timestamp_ = splice_timestamp;
+  }
+
  private:
   void UpdateVideoDecoderConfig();
   void DoRead();
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
+  const int num_configs_;
+  const int num_buffers_in_one_config_;
+  const bool config_changes_;
+  const bool is_encrypted_;
+
   int num_configs_left_;
-  int num_buffers_in_one_config_;
-  bool config_changes_;
-  bool is_encrypted_;
 
   // Number of frames left with the current decoder config.
   int num_buffers_left_in_current_config_;
@@ -74,6 +87,7 @@ class FakeDemuxerStream : public DemuxerStream {
 
   base::TimeDelta current_timestamp_;
   base::TimeDelta duration_;
+  base::TimeDelta splice_timestamp_;
 
   gfx::Size next_coded_size_;
   VideoDecoderConfig video_decoder_config_;

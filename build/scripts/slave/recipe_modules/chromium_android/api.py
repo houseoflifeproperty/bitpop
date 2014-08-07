@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import os
+import urllib
 
 from slave import recipe_api
 
@@ -71,9 +72,11 @@ class AndroidApi(recipe_api.RecipeApi):
     """
     archive_args = ['--target', self.m.chromium.c.BUILD_CONFIG,
                     '--name', archive_name]
-    if files:
+
+    # TODO(luqui): Clean up when these are covered by the external builders.
+    if files:              # pragma: no cover
       archive_args.extend(['--files', ','.join(files)])
-    if not preserve_paths:
+    if not preserve_paths: # pragma: no cover
       archive_args.append('--ignore-subfolder-names')
 
     yield self.m.python(
@@ -98,46 +101,17 @@ class AndroidApi(recipe_api.RecipeApi):
     s.custom_vars = self.c.gclient_custom_vars or {}
     s.managed = self.c.managed
     s.revision = self.c.revision
+    spec.revisions = self.c.revisions
 
-    yield self.m.gclient.checkout(spec)
+    yield self.m.gclient.break_locks()
+    yield self.m.bot_update.ensure_checkout(spec)
+    if not self.m.step_history.last_step().json.output['did_run']:
+      yield self.m.gclient.checkout(spec)
 
     # TODO(sivachandra): Manufacture gclient spec such that it contains "src"
     # solution + repo_name solution. Then checkout will be automatically
     # correctly set by gclient.checkout
     self.m.path['checkout'] = self.m.path['slave_build'].join('src')
-
-    gyp_defs = self.m.chromium.c.gyp_env.GYP_DEFINES
-
-    if self.c.INTERNAL and self.c.get_app_manifest_vars:
-      yield self.m.step(
-          'get app_manifest_vars',
-          [self.internal_dir.join('build', 'dump_app_manifest_vars.py'),
-           '-b', self.m.properties['buildername'],
-           '-v', self.m.path['checkout'].join('chrome', 'VERSION'),
-           '--output-json', self.m.json.output()]
-      )
-
-      app_manifest_vars = self.m.step_history.last_step().json.output
-      gyp_defs = self.m.chromium.c.gyp_env.GYP_DEFINES
-      gyp_defs['app_manifest_version_code'] = app_manifest_vars['version_code']
-      gyp_defs['app_manifest_version_name'] = app_manifest_vars['version_name']
-      gyp_defs['chrome_build_id'] = app_manifest_vars['build_id']
-
-      yield self.m.step(
-          'get_internal_names',
-          [self.internal_dir.join('build', 'dump_internal_names.py'),
-           '--output-json', self.m.json.output()]
-      )
-
-      self._internal_names = self.m.step_history.last_step().json.output
-
-  @property
-  def version_name(self):
-    app_manifest_vars = self.m.step_history['get app_manifest_vars']
-    return app_manifest_vars.json.output['version_name']
-
-  def dump_version(self):
-    yield self.m.step('Version: %s' % str(self.version_name), ['true'])
 
   def envsetup(self):
     # TODO(luqui): remove once no recipes call anymore
@@ -174,16 +148,12 @@ class AndroidApi(recipe_api.RecipeApi):
     yield self.m.step('tree truth steps',
                       [self.m.path['checkout'].join('build', 'tree_truth.sh'),
                        self.m.path['checkout']] + repos,
-                      allow_subannotations=False)
+                      allow_subannotations=False,
+                      can_fail_build=False)
 
-  def runhooks(self, extra_env=None):
-    run_hooks_env = self.get_env()
-    if self.c.INTERNAL:
-      run_hooks_env['EXTRA_LANDMINES_SCRIPT'] = self.internal_dir.join(
-        'build', 'get_internal_landmines.py')
-    if extra_env:
-      run_hooks_env.update(extra_env)
-    return self.m.chromium.runhooks(env=run_hooks_env)
+  def runhooks(self, extra_env={}):
+    return self.m.chromium.runhooks(env=dict(self.get_env().items() +
+                                             extra_env.items()))
 
   def apply_svn_patch(self):
     # TODO(sivachandra): We should probably pull this into its own module
@@ -200,37 +170,28 @@ class AndroidApi(recipe_api.RecipeApi):
     kwargs['env'] = self.get_env()
     return self.m.chromium.compile(**kwargs)
 
-  def findbugs(self):
-    assert self.c.INTERNAL, 'findbugs is only available on internal builds'
-    cmd = [
-        self.m.path['checkout'].join('build', 'android', 'findbugs_diff.py'),
-        '-b', self.internal_dir.join('bin', 'findbugs_filter'),
-        '-o', 'com.google.android.apps.chrome.-,org.chromium.-',
-    ]
-    yield self.m.step('findbugs internal', cmd, env=self.get_env())
+  def findbugs(self, findbugs_options=[]):
+    cmd = [self.m.path['checkout'].join('build', 'android', 'findbugs_diff.py')]
+    cmd.extend(findbugs_options)
 
-    # If findbugs fails, there could be stale class files. Delete them, and
-    # next run maybe we'll do better.
-    if self.m.step_history.last_step().retcode != 0:
-      yield self.m.path.rmwildcard(
-          '*.class',
-          self.m.path['checkout'].join('out'),
-          always_run=True)
+    if self.m.chromium.c.BUILD_CONFIG == 'Release':
+      cmd.append('--release-build')
 
-  def checkdeps(self):
-    assert self.c.INTERNAL, 'checkdeps is only available on internal builds'
+    yield self.m.step('findbugs', cmd, env=self.get_env())
+
+    cmd = [self.m.path['checkout'].join('tools', 'android', 'findbugs_plugin',
+               'test', 'run_findbugs_plugin_tests.py')]
+    if self.m.chromium.c.BUILD_CONFIG == 'Release':
+      cmd.append('--release-build')
+    yield self.m.step('findbugs_tests', cmd, env=self.get_env())
+
+  def checklicenses(self):
     yield self.m.step(
-      'checkdeps',
-      [self.m.path['checkout'].join('tools', 'checkdeps', 'checkdeps.py'),
-       '--root=%s' % self.internal_dir],
+      'check_licenses',
+      [self.m.path['checkout'].join('android_webview', 'tools',
+                                    'webview_licenses.py'),
+       'scan'],
       env=self.get_env())
-
-  def lint(self):
-    assert self.c.INTERNAL, 'lint is only available on internal builds'
-    yield self.m.step(
-        'lint',
-        [self.internal_dir.join('bin', 'lint.py')],
-        env=self.get_env())
 
   def git_number(self):
     yield self.m.step(
@@ -243,7 +204,16 @@ class AndroidApi(recipe_api.RecipeApi):
         ),
         cwd=self.m.path['checkout'])
 
-  def _upload_build(self, bucket, path):
+  def check_webview_licenses(self):
+    yield self.m.python(
+        'check licenses',
+        self.m.path['checkout'].join('android_webview',
+                                     'tools',
+                                     'webview_licenses.py'),
+        args=['scan'],
+        can_fail_build=False)
+
+  def upload_build(self, bucket, path):
     archive_name = 'build_product.zip'
 
     zipfile = self.m.path['checkout'].join('out', archive_name)
@@ -263,62 +233,7 @@ class AndroidApi(recipe_api.RecipeApi):
         dest=path
     )
 
-  def upload_clusterfuzz(self):
-    revision = self.m.properties['revision']
-    # When unpacking, ".." will be stripped from the path and the library will
-    # end up in ./third_party/llvm-build/...
-    files = ['apks/*', 'lib/*.so',
-             '../../third_party/llvm-build/Release+Asserts/lib/clang/*/lib/' +
-             'linux/libclang_rt.asan-arm-android.so']
-
-    archive_name = 'clusterfuzz.zip'
-    zipfile = self.m.path['checkout'].join('out', archive_name)
-    self._cleanup_list.append(zipfile)
-
-    yield self.git_number()
-    git_number = str.strip(self.m.step_history['git_number'].stdout)
-
-    yield self.make_zip_archive(
-      'zip_clusterfuzz',
-      archive_name,
-      files=files,
-      preserve_paths=False,
-      cwd=self.m.path['checkout']
-    )
-    yield self.m.python(
-        'git_revisions',
-        self.m.path['checkout'].join(self.c.internal_dir_name, 'build',
-                                     'clusterfuzz_generate_revision.py'),
-        ['--file', git_number],
-        always_run=True,
-    )
-    yield self.m.gsutil.upload(
-        name='upload_revision_data',
-        source=self.m.path['checkout'].join('out', git_number),
-        bucket='%s/revisions' % self.c.storage_bucket,
-        dest=git_number
-    )
-    yield self.m.gsutil.upload(
-        name='upload_clusterfuzz',
-        source=zipfile,
-        bucket=self.c.storage_bucket,
-        dest='%s%s.zip' % (self.c.upload_dest_prefix, git_number)
-    )
-
-  def upload_build(self):
-    assert self.c.storage_bucket, 'upload_build needs storage bucket'
-    upload_tag = self.m.properties.get('revision')
-    yield self._upload_build(
-        bucket=self.c.storage_bucket,
-        path='%s%s.zip' % (self.c.upload_dest_prefix, upload_tag))
-
-  def upload_build_for_tester(self):
-    return self._upload_build(
-        bucket=self._internal_names['BUILD_BUCKET'],
-        path='%s/build_product_%s.zip' % (
-            self.m.properties['buildername'], self.m.properties['revision']))
-
-  def _download_build(self, bucket, path):
+  def download_build(self, bucket, path):
     base_path = path.split('/')[-1]
     zipfile = self.m.path['checkout'].join('out', base_path)
     self._cleanup_list.append(zipfile)
@@ -335,14 +250,6 @@ class AndroidApi(recipe_api.RecipeApi):
       abort_on_failure=True
     )
 
-  def download_build(self):
-    return self._download_build(
-        bucket=self._internal_names['BUILD_BUCKET'],
-        path='%s/build_product_%s.zip' % (
-            self.m.properties['parent_buildername'],
-            self.m.properties['revision']))
-
-
   def spawn_logcat_monitor(self):
     return self.m.step(
         'spawn_logcat_monitor',
@@ -351,7 +258,25 @@ class AndroidApi(recipe_api.RecipeApi):
          self.m.chromium.c.build_dir.join('logcat')],
         env=self.get_env(), can_fail_build=False)
 
-  def device_status_check(self, restart_usb=False):
+  def device_status_check(self, restart_usb=False, **kwargs):
+    def followup_fn(step_result):
+      if not step_result.retcode == 0:
+        params = {
+          'summary': ('Device Offline on %s %s' %
+            (self.m.properties['mastername'], self.m.properties['slavename'])),
+          'comment': ('Buildbot: %s\n(Please do not change any labels)' %
+            self.m.properties['buildername']),
+          'labels': 'Restrict-View-Google,OS-Android,Infra,Infra-Labs',
+        }
+        link = ('https://code.google.com/p/chromium/issues/entry?%s' %
+          urllib.urlencode(params))
+        step_result.presentation.links.update({
+          'report a bug': link
+        })
+      # Purple this step if no online device is found.
+      if step_result.retcode == 1:
+        step_result.presentation.status = 'EXCEPTION'
+
     args = []
     if restart_usb:
       args = ['--restart-usb']
@@ -359,59 +284,43 @@ class AndroidApi(recipe_api.RecipeApi):
         'device_status_check',
         [self.m.path['checkout'].join('build', 'android', 'buildbot',
                               'bb_device_status_check.py')] + args,
-        env=self.get_env())
+        env=self.get_env(),
+        followup_fn=followup_fn,
+        **kwargs)
 
-  def provision_devices(self):
+  def provision_devices(self, skip_wipe=False, disable_location=False,
+                        **kwargs):
+    args = ['-t', self.m.chromium.c.BUILD_CONFIG]
+    if skip_wipe:
+      args.append('--skip-wipe')
+    if disable_location:
+      args.append('--disable-location')
     yield self.m.python(
         'provision_devices',
         self.m.path['checkout'].join(
             'build', 'android', 'provision_devices.py'),
-        args=['-t', self.m.chromium.c.BUILD_CONFIG],
-        can_fail_build=False)
+        args=args,
+        can_fail_build=False,
+        **kwargs)
 
-  def detect_and_setup_devices(self):
-    yield self.device_status_check()
-    yield self.provision_devices()
+  def detect_and_setup_devices(self, restart_usb=False, skip_wipe=False,
+                               disable_location=False):
+    yield self.device_status_check(restart_usb=restart_usb)
+    yield self.provision_devices(skip_wipe=skip_wipe,
+                                 disable_location=disable_location)
 
-    if self.c.INTERNAL:
-      yield self.m.step(
-          'setup_devices_for_testing',
-          [self.internal_dir.join('build',  'setup_device_testing.py')],
-          env=self.get_env(), can_fail_build=False)
-      deploy_cmd = [
-          self.internal_dir.join('build', 'full_deploy.py'),
-          '-v', '--%s' % self.m.chromium.c.BUILD_CONFIG.lower()]
-      if self.c.extra_deploy_opts:
-        deploy_cmd.extend(self.c.extra_deploy_opts)
-      yield self.m.step('deploy_on_devices', deploy_cmd, env=self.get_env())
-
-  def instrumentation_tests(self):
-    dev_status_step = self.m.step_history.get('device_status_check')
-    setup_success = dev_status_step and dev_status_step.retcode == 0
-    if self.c.INTERNAL:
-      deploy_step = self.m.step_history.get('deploy_on_devices')
-      setup_success = deploy_step and deploy_step.retcode == 0
-    if setup_success:
-      install_cmd = [
-          self.m.path['checkout'].join('build',
-                                       'android',
-                                       'adb_install_apk.py'),
-          '--apk', 'ChromeTest.apk',
-          '--apk_package', 'com.google.android.apps.chrome.tests'
-      ]
-      # TODO(sivachandra): Add --release option to install_cmd when those
-      # testers are added.
-      yield self.m.step('install ChromeTest.apk', install_cmd,
-                        env=self.get_env(),  always_run=True)
-      if self.m.step_history.last_step().retcode == 0:
-        args = (['--test=%s' % s for s in self.c.tests] +
-                ['--checkout-dir', self.m.path['checkout'],
-                 '--target', self.m.chromium.c.BUILD_CONFIG])
-        yield self.m.generator_script(
-            self.internal_dir.join('build', 'buildbot', 'tests_generator.py'),
-            *args,
-            env=self.get_env()
-        )
+  def adb_install_apk(self, apk, apk_package):
+    install_cmd = [
+        self.m.path['checkout'].join('build',
+                                     'android',
+                                     'adb_install_apk.py'),
+        '--apk', apk,
+        '--apk_package', apk_package
+    ]
+    if self.m.chromium.c.BUILD_CONFIG == 'Release':
+      install_cmd.append('--release')
+    yield self.m.step('install ' + apk, install_cmd,
+                      env=self.get_env(), always_run=True)
 
   def monkey_test(self, **kwargs):
     args = [
@@ -441,61 +350,84 @@ class AndroidApi(recipe_api.RecipeApi):
         self.m.path['checkout'].join('build', 'android', 'test_runner.py'),
         args,
         cwd=self.m.path['checkout'],
+        always_run=True,
         **kwargs)
 
   def run_sharded_perf_tests(self, config, flaky_config=None, perf_id=None,
-                             **kwargs):
+                             perf_dashboard_id_transform=lambda x: x, **kwargs):
+    """Run the perf tests from the given config file.
+
+    config: the path of the config file containing perf tests.
+    flaky_config: optional file of tests to avoid.
+    perf_id: the id of the builder running these tests
+    perf_dashboard_id_transform: a lambda transforming the test name to the
+      perf dashboard id to upload to.
+
+    returns: a step generator to run and upload the tests.
+    """
     # test_runner.py actually runs the tests and records the results
     yield self._run_sharded_tests(config=config, flaky_config=flaky_config,
                                   **kwargs)
 
-    # now we run runtest.py on each test to cat and upload its result
-    config_name = str(config).split('/')[-1]
-    yield self.m.json.read(
-        'Read test config %s' % config_name, config,
+    # now obtain the list of tests that were executed.
+    yield self.m.step(
+        'get perf test list',
+        [self.m.path['checkout'].join('build', 'android', 'test_runner.py'),
+         'perf', '--steps', config, '--output-json-list', self.m.json.output()],
         step_test_data=lambda: self.m.json.test_api.output([
-            [ "perf-test-1", "tools/perf/run_benchmark -v perf-test-1" ],
-            [ "perf-test-2", "tools/perf/run_benchmark -v perf-test-2" ] ]))
+            'perf-test-1', 'perf-test-2']),
+        always_run=True
+    )
     perf_tests = self.m.step_history.last_step().json.output
 
-    for [test_name, test_cmd] in perf_tests:
+    for test_name in perf_tests:
       test_name = str(test_name)  # un-unicode
-      test_cmd = str(test_cmd)
+      dashboard_id = perf_dashboard_id_transform(test_name)
+
       yield self.m.chromium.runtest(
           self.m.path['checkout'].join('build', 'android', 'test_runner.py'),
           ['perf', '--print-step', test_name, '--verbose'],
           name=test_name,
-          perf_dashboard_id=test_name,
+          perf_dashboard_id=dashboard_id,
           annotate='graphing',
           results_url='https://chromeperf.appspot.com',
           perf_id=perf_id,
-          test_type=test_name)
+          test_type=test_name,
+          always_run=True)
 
-  def run_instrumentation_suite(self, test_apk, test_data, flakiness_dashboard,
+  def run_instrumentation_suite(self, test_apk, test_data=None,
+                                flakiness_dashboard=None,
                                 annotation=None, except_annotation=None,
-                                screenshot=False):
-    args = ['--test-apk', test_apk,
-            '--test_data', test_data,
-            '--flakiness-dashboard-server', flakiness_dashboard]
+                                screenshot=False, verbose=False,
+                                apk_package=None, host_driven_root=None,
+                                **kwargs):
+    args = ['--test-apk', test_apk]
+    if test_data:
+      args.extend(['--test_data', test_data])
+    if flakiness_dashboard:
+      args.extend(['--flakiness-dashboard-server', flakiness_dashboard])
     if annotation:
       args.extend(['-A', annotation])
     if except_annotation:
       args.extend(['-E', except_annotation])
     if screenshot:
       args.append('--screenshot')
+    if verbose:
+      args.append('--verbose')
     if self.m.chromium.c.BUILD_CONFIG == 'Release':
       args.append('--release')
     if self.c.coverage:
       args.extend(['--coverage-dir', self.coverage_dir,
                    '--python-only'])
-      if self.c.INTERNAL:
-        args.extend(['--host-driven-root', self.internal_dir.join('test')])
+    if host_driven_root:
+      args.extend(['--host-driven-root', host_driven_root])
 
     yield self.m.python(
-        'Instrumentation test %s' % (annotation or test_data),
+        'Instrumentation test %s' % (annotation or test_apk),
         self.m.path['checkout'].join('build', 'android', 'test_runner.py'),
         args=['instrumentation'] + args,
-        always_run=True)
+        always_run=True,
+        **kwargs)
 
   def logcat_dump(self):
     if self.m.step_history.get('spawn_logcat_monitor'):
@@ -510,26 +442,25 @@ class AndroidApi(recipe_api.RecipeApi):
           always_run=True)
 
   def stack_tool_steps(self):
-    if self.c.run_stack_tool_steps:
-      log_file = self.m.path['checkout'].join('out',
-                                              self.m.chromium.c.BUILD_CONFIG,
-                                              'full_log')
+    log_file = self.m.path['checkout'].join('out',
+                                            self.m.chromium.c.BUILD_CONFIG,
+                                            'full_log')
+    yield self.m.step(
+        'stack_tool_with_logcat_dump',
+        [self.m.path['checkout'].join('third_party', 'android_platform',
+                              'development', 'scripts', 'stack'),
+         '--more-info', log_file], always_run=True, env=self.get_env())
+    yield self.m.step(
+        'stack_tool_for_tombstones',
+        [self.m.path['checkout'].join('build', 'android', 'tombstones.py'),
+         '-a', '-s', '-w'], always_run=True, env=self.get_env())
+    if self.c.asan_symbolize:
       yield self.m.step(
-          'stack_tool_with_logcat_dump',
-          [self.m.path['checkout'].join('third_party', 'android_platform',
-                                'development', 'scripts', 'stack'),
-           '--more-info', log_file], always_run=True, env=self.get_env())
-      yield self.m.step(
-          'stack_tool_for_tombstones',
-          [self.m.path['checkout'].join('build', 'android', 'tombstones.py'),
-           '-a', '-s', '-w'], always_run=True, env=self.get_env())
-      if self.c.asan_symbolize:
-        yield self.m.step(
-            'stack_tool_for_asan',
-            [self.m.path['checkout'].join('build',
-                                          'android',
-                                          'asan_symbolize.py'),
-             '-l', log_file], always_run=True, env=self.get_env())
+          'stack_tool_for_asan',
+          [self.m.path['checkout'].join('build',
+                                        'android',
+                                        'asan_symbolize.py'),
+           '-l', log_file], always_run=True, env=self.get_env())
 
   def test_report(self):
     return self.m.python.inline(
@@ -554,13 +485,6 @@ class AndroidApi(recipe_api.RecipeApi):
         'cleanup_build',
         ['rm', '-rf'] + self._cleanup_list,
         always_run=True)
-
-  def common_tree_setup_steps(self):
-    yield self.init_and_sync()
-    yield self.envsetup()
-    yield self.clean_local_files()
-    if self.c.INTERNAL and self.c.run_tree_truth:
-      yield self.run_tree_truth()
 
   def common_tests_setup_steps(self):
     yield self.spawn_logcat_monitor()
@@ -587,7 +511,20 @@ class AndroidApi(recipe_api.RecipeApi):
                                       'run-bisect-perf-regression.py'),
          '-w', self.m.path['slave_build']] + args)
 
-  def run_test_suite(self, suite, args=[]):
+  def run_test_suite(self, suite, verbose=True, isolate_file_path=None,
+                     gtest_filter=None, tool=None):
+    args = []
+    if verbose:
+      args.append('--verbose')
+    if self.c.BUILD_CONFIG == 'Release':
+      args.append('--release')
+    if isolate_file_path:
+      args.append('--isolate_file_path=%s' % isolate_file_path)
+    if gtest_filter:
+      args.append('--gtest_filter=%s' % gtest_filter)
+    if tool:
+      args.append('--tool=%s' % tool)
+
     yield self.m.python(
         str(suite),
         self.m.path['checkout'].join('build', 'android', 'test_runner.py'),
@@ -609,7 +546,9 @@ class AndroidApi(recipe_api.RecipeApi):
               '--metadata-dir', self.out_path.join(self.c.BUILD_CONFIG),
               '--cleanup',
               '--output', self.coverage_dir.join('coverage_html',
-                                                 'index.html')])
+                                                 'index.html')],
+        always_run=True,
+        **kwargs)
 
     yield self.m.gsutil.upload(
         source=self.coverage_dir.join('coverage_html'),
@@ -618,4 +557,5 @@ class AndroidApi(recipe_api.RecipeApi):
         args=['-R'],
         name='upload coverage report',
         link_name='Coverage report',
+        always_run=True,
         **kwargs)

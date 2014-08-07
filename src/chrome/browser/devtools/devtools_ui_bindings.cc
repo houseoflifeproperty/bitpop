@@ -17,7 +17,6 @@
 #include "chrome/browser/devtools/devtools_target_impl.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_properties.h"
@@ -31,6 +30,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/url_constants.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/devtools_client_host.h"
 #include "content/public/browser/devtools_manager.h"
@@ -49,6 +49,7 @@
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -57,14 +58,13 @@ using content::BrowserThread;
 
 namespace {
 
-typedef std::vector<DevToolsUIBindings*> DevToolsUIBindingsList;
-base::LazyInstance<DevToolsUIBindingsList>::Leaky g_instances =
-    LAZY_INSTANCE_INITIALIZER;
-
 static const char kFrontendHostId[] = "id";
 static const char kFrontendHostMethod[] = "method";
 static const char kFrontendHostParams[] = "params";
 static const char kTitleFormat[] = "Developer Tools - %s";
+
+static const char kDevicesChanged[] = "DevicesChanged";
+static const char kDeviceCountChanged[] = "DeviceCountChanged";
 
 std::string SkColorToRGBAString(SkColor color) {
   // We avoid StringPrintf because it will use locale specific formatters for
@@ -185,8 +185,7 @@ class DefaultBindingsDelegate : public DevToolsUIBindings::Delegate {
 
   virtual void ActivateWindow() OVERRIDE;
   virtual void CloseWindow() OVERRIDE {}
-  virtual void SetContentsInsets(
-      int left, int top, int right, int bottom) OVERRIDE {}
+  virtual void SetInspectedPageBounds(const gfx::Rect& rect) OVERRIDE {}
   virtual void SetContentsResizingStrategy(
       const gfx::Insets& insets, const gfx::Size& min_size) OVERRIDE {}
   virtual void InspectElementCompleted() OVERRIDE {}
@@ -232,11 +231,12 @@ InfoBarService* DefaultBindingsDelegate::GetInfoBarService() {
 class DevToolsUIBindings::FrontendWebContentsObserver
     : public content::WebContentsObserver {
  public:
-  explicit FrontendWebContentsObserver(DevToolsUIBindings* window);
+  explicit FrontendWebContentsObserver(DevToolsUIBindings* ui_bindings);
   virtual ~FrontendWebContentsObserver();
 
  private:
   // contents::WebContentsObserver:
+  virtual void WebContentsDestroyed() OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
   virtual void AboutToNavigateRenderView(
       content::RenderViewHost* render_view_host) OVERRIDE;
@@ -247,13 +247,17 @@ class DevToolsUIBindings::FrontendWebContentsObserver
 };
 
 DevToolsUIBindings::FrontendWebContentsObserver::FrontendWebContentsObserver(
-    DevToolsUIBindings* devtools_window)
-    : WebContentsObserver(devtools_window->web_contents()),
-      devtools_bindings_(devtools_window) {
+    DevToolsUIBindings* devtools_ui_bindings)
+    : WebContentsObserver(devtools_ui_bindings->web_contents()),
+      devtools_bindings_(devtools_ui_bindings) {
 }
 
 DevToolsUIBindings::FrontendWebContentsObserver::
     ~FrontendWebContentsObserver() {
+}
+
+void DevToolsUIBindings::FrontendWebContentsObserver::WebContentsDestroyed() {
+  delete devtools_bindings_;
 }
 
 void DevToolsUIBindings::FrontendWebContentsObserver::RenderProcessGone(
@@ -263,7 +267,12 @@ void DevToolsUIBindings::FrontendWebContentsObserver::RenderProcessGone(
 
 void DevToolsUIBindings::FrontendWebContentsObserver::AboutToNavigateRenderView(
     content::RenderViewHost* render_view_host) {
-  content::DevToolsClientHost::SetupDevToolsFrontendClient(render_view_host);
+  content::NavigationEntry* entry =
+      web_contents()->GetController().GetActiveEntry();
+  if (devtools_bindings_->url_ == entry->GetURL())
+    content::DevToolsClientHost::SetupDevToolsFrontendClient(render_view_host);
+  else
+    delete devtools_bindings_;
 }
 
 void DevToolsUIBindings::FrontendWebContentsObserver::
@@ -272,18 +281,6 @@ void DevToolsUIBindings::FrontendWebContentsObserver::
 }
 
 // DevToolsUIBindings ---------------------------------------------------------
-
-// static
-DevToolsUIBindings* DevToolsUIBindings::ForWebContents(
-    content::WebContents* web_contents) {
-  DevToolsUIBindingsList* instances = g_instances.Pointer();
-  for (DevToolsUIBindingsList::iterator it(instances->begin());
-       it != instances->end(); ++it) {
-    if ((*it)->web_contents() == web_contents)
-      return *it;
-  }
-  return NULL;
-}
 
 // static
 GURL DevToolsUIBindings::ApplyThemeToURL(Profile* profile,
@@ -305,13 +302,14 @@ GURL DevToolsUIBindings::ApplyThemeToURL(Profile* profile,
   return GURL(url_string);
 }
 
-DevToolsUIBindings::DevToolsUIBindings(content::WebContents* web_contents)
+DevToolsUIBindings::DevToolsUIBindings(content::WebContents* web_contents,
+                                       const GURL& url)
     : profile_(Profile::FromBrowserContext(web_contents->GetBrowserContext())),
       web_contents_(web_contents),
       delegate_(new DefaultBindingsDelegate(web_contents_)),
       device_listener_enabled_(false),
+      url_(url),
       weak_factory_(this) {
-  g_instances.Get().push_back(this);
   frontend_contents_observer_.reset(new FrontendWebContentsObserver(this));
   web_contents_->GetMutableRendererPrefs()->can_accept_load_drops = false;
 
@@ -321,6 +319,10 @@ DevToolsUIBindings::DevToolsUIBindings(content::WebContents* web_contents)
   file_system_indexer_ = new DevToolsFileSystemIndexer();
   extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
       web_contents_);
+
+  web_contents_->GetController().LoadURL(
+      url, content::Referrer(),
+      content::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
 
   // Wipe out page icon so that the default application icon is used.
   content::NavigationEntry* entry =
@@ -347,15 +349,9 @@ DevToolsUIBindings::~DevToolsUIBindings() {
     jobs_it->second->Stop();
   }
   indexing_jobs_.clear();
-  if (device_listener_enabled_)
-    EnableRemoteDeviceCounter(false);
 
-  // Remove self from global list.
-  DevToolsUIBindingsList* instances = g_instances.Pointer();
-  DevToolsUIBindingsList::iterator it(
-      std::find(instances->begin(), instances->end(), this));
-  DCHECK(it != instances->end());
-  instances->erase(it);
+  while (!subscribers_.empty())
+    Unsubscribe(*subscribers_.begin());
 }
 
 void DevToolsUIBindings::InspectedContentsClosing() {
@@ -406,9 +402,8 @@ void DevToolsUIBindings::CloseWindow() {
   delegate_->CloseWindow();
 }
 
-void DevToolsUIBindings::SetContentsInsets(
-    int top, int left, int bottom, int right) {
-  delegate_->SetContentsInsets(top, left, bottom, right);
+void DevToolsUIBindings::SetInspectedPageBounds(const gfx::Rect& rect) {
+  delegate_->SetInspectedPageBounds(rect);
 }
 
 void DevToolsUIBindings::SetContentsResizingStrategy(
@@ -576,15 +571,41 @@ void DevToolsUIBindings::OpenUrlOnRemoteDeviceAndInspect(
   }
 }
 
-void DevToolsUIBindings::StartRemoteDevicesListener() {
-  remote_targets_handler_ = DevToolsTargetsUIHandler::CreateForAdb(
-      base::Bind(&DevToolsUIBindings::PopulateRemoteDevices,
-                 base::Unretained(this)),
-      profile_);
+void DevToolsUIBindings::Subscribe(const std::string& event_type) {
+  if (subscribers_.find(event_type) != subscribers_.end()) {
+    LOG(ERROR) << "Already subscribed for [" << event_type << "].";
+    return;
+  }
+
+  subscribers_.insert(event_type);
+
+  if (event_type == kDevicesChanged) {
+    remote_targets_handler_ = DevToolsTargetsUIHandler::CreateForAdb(
+        base::Bind(&DevToolsUIBindings::PopulateRemoteDevices,
+                   base::Unretained(this)),
+        profile_);
+  } else if (event_type == kDeviceCountChanged) {
+    EnableRemoteDeviceCounter(true);
+  } else {
+    LOG(ERROR) << "Attempt to start unknown event listener " << event_type;
+  }
 }
 
-void DevToolsUIBindings::StopRemoteDevicesListener() {
-  remote_targets_handler_.reset();
+void DevToolsUIBindings::Unsubscribe(const std::string& event_type) {
+  if (subscribers_.find(event_type) == subscribers_.end()) {
+    LOG(ERROR) << "Not yet subscribed for [" << event_type << "]";
+    return;
+  }
+
+  if (event_type == kDevicesChanged) {
+    remote_targets_handler_.reset();
+  } else if (event_type == kDeviceCountChanged) {
+    EnableRemoteDeviceCounter(false);
+  } else {
+    LOG(ERROR) << "Attempt to stop unknown event listener " << event_type;
+  }
+
+  subscribers_.erase(event_type);
 }
 
 void DevToolsUIBindings::EnableRemoteDeviceCounter(bool enable) {
@@ -603,15 +624,13 @@ void DevToolsUIBindings::EnableRemoteDeviceCounter(bool enable) {
 
 void DevToolsUIBindings::DeviceCountChanged(int count) {
   base::FundamentalValue value(count);
-  CallClientFunction(
-      "InspectorFrontendAPI.setRemoteDeviceCount", &value, NULL, NULL);
+  DispatchEventOnFrontend(kDeviceCountChanged, &value);
 }
 
 void DevToolsUIBindings::PopulateRemoteDevices(
     const std::string& source,
     scoped_ptr<base::ListValue> targets) {
-  CallClientFunction(
-      "InspectorFrontendAPI.populateRemoteDevices", targets.get(), NULL, NULL);
+  DispatchEventOnFrontend(kDevicesChanged, targets.get());
 }
 
 void DevToolsUIBindings::FileSavedAs(const std::string& url) {
@@ -739,10 +758,10 @@ void DevToolsUIBindings::AddDevToolsExtensionsToClient() {
             extensions::ManifestURL::GetDevToolsPage(
                 extension->get()).spec()));
     extension_info->Set("name", new base::StringValue((*extension)->name()));
-    extension_info->Set(
-        "exposeExperimentalAPIs",
-        new base::FundamentalValue((*extension)->HasAPIPermission(
-            extensions::APIPermission::kExperimental)));
+    extension_info->Set("exposeExperimentalAPIs",
+                        new base::FundamentalValue(
+                            (*extension)->permissions_data()->HasAPIPermission(
+                                extensions::APIPermission::kExperimental)));
     results.Append(extension_info);
   }
   CallClientFunction("WebInspector.addExtensions", &results, NULL, NULL);
@@ -773,6 +792,18 @@ void DevToolsUIBindings::CallClientFunction(const std::string& function_name,
   base::string16 javascript =
       base::UTF8ToUTF16(function_name + "(" + params + ");");
   web_contents_->GetMainFrame()->ExecuteJavaScript(javascript);
+}
+
+void DevToolsUIBindings::DispatchEventOnFrontend(
+    const std::string& event_type,
+    const base::Value* event_data) {
+  if (subscribers_.find(event_type) == subscribers_.end())
+    return;
+  base::StringValue event_type_value = base::StringValue(event_type);
+  CallClientFunction("InspectorFrontendAPI.dispatchEventToListeners",
+                     &event_type_value,
+                     event_data,
+                     NULL);
 }
 
 void DevToolsUIBindings::DocumentOnLoadCompletedInMainFrame() {

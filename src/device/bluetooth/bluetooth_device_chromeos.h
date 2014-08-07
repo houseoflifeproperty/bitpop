@@ -67,21 +67,13 @@ class BluetoothDeviceChromeOS
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
   virtual void Forget(const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ConnectToProfile(
-      device::BluetoothProfile* profile,
-      const base::Closure& callback,
-      const ConnectToProfileErrorCallback& error_callback) OVERRIDE;
   virtual void ConnectToService(
       const device::BluetoothUUID& uuid,
       const ConnectToServiceCallback& callback,
       const ConnectToServiceErrorCallback& error_callback) OVERRIDE;
-  virtual void SetOutOfBandPairingData(
-      const device::BluetoothOutOfBandPairingData& data,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void ClearOutOfBandPairingData(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+  virtual void CreateGattConnection(
+      const GattConnectionCallback& callback,
+      const ConnectErrorCallback& error_callback) OVERRIDE;
   virtual void StartConnectionMonitor(
       const base::Closure& callback,
       const ErrorCallback& error_callback) OVERRIDE;
@@ -98,6 +90,9 @@ class BluetoothDeviceChromeOS
 
   // Returns the current pairing object or NULL if no pairing is in progress.
   BluetoothPairingChromeOS* GetPairing() const;
+
+  // Returns the object path of the device.
+  const dbus::ObjectPath& object_path() const { return object_path_; }
 
  protected:
    // BluetoothDevice override
@@ -124,6 +119,7 @@ class BluetoothDeviceChromeOS
                        const ConnectErrorCallback& error_callback);
   void OnConnect(bool after_pairing,
                  const base::Closure& callback);
+  void OnCreateGattConnection(const GattConnectionCallback& callback);
   void OnConnectError(bool after_pairing,
                       const ConnectErrorCallback& error_callback,
                       const std::string& error_name,
@@ -163,25 +159,12 @@ class BluetoothDeviceChromeOS
                      const std::string& error_name,
                      const std::string& error_message);
 
-  // Called by dbus:: on completion of the D-Bus method call to
-  // connect a peofile.
-  void OnConnectProfile(device::BluetoothProfile* profile,
-                        const base::Closure& callback);
-  void OnConnectProfileError(
-      device::BluetoothProfile* profile,
-      const ConnectToProfileErrorCallback& error_callback,
-      const std::string& error_name,
-      const std::string& error_message);
-
   // Called by dbus:: on completion of the D-Bus method call to start the
   // connection monitor.
   void OnStartConnectionMonitor(const base::Closure& callback);
   void OnStartConnectionMonitorError(const ErrorCallback& error_callback,
                                      const std::string& error_name,
                                      const std::string& error_message);
-
-  // Returns the object path of the device; used by BluetoothAdapterChromeOS
-  const dbus::ObjectPath& object_path() const { return object_path_; }
 
   // The adapter that owns this device instance.
   BluetoothAdapterChromeOS* adapter_;

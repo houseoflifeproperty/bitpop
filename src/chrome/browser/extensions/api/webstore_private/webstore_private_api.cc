@@ -18,7 +18,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/gpu/gpu_feature_checker.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -42,7 +41,9 @@
 #include "content/public/common/referrer.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_l10n_util.h"
@@ -508,7 +509,7 @@ void WebstorePrivateBeginInstallWithManifest3Function::InstallUIProceed() {
   // for all extension installs, so we only need to record the web store
   // specific histogram here.
   ExtensionService::RecordPermissionMessagesHistogram(
-      dummy_extension_.get(), "Extensions.Permissions_WebStoreInstall");
+      dummy_extension_.get(), "Extensions.Permissions_WebStoreInstall2");
 
   // Matches the AddRef in RunAsync().
   Release();
@@ -524,15 +525,14 @@ void WebstorePrivateBeginInstallWithManifest3Function::InstallUIAbort(
   // The web store install histograms are a subset of the install histograms.
   // We need to record both histograms here since CrxInstaller::InstallUIAbort
   // is never called for web store install cancellations.
-  std::string histogram_name = user_initiated ?
-      "Extensions.Permissions_WebStoreInstallCancel" :
-      "Extensions.Permissions_WebStoreInstallAbort";
+  std::string histogram_name =
+      user_initiated ? "Extensions.Permissions_WebStoreInstallCancel2"
+                     : "Extensions.Permissions_WebStoreInstallAbort2";
   ExtensionService::RecordPermissionMessagesHistogram(dummy_extension_.get(),
                                                       histogram_name.c_str());
 
-  histogram_name = user_initiated ?
-      "Extensions.Permissions_InstallCancel" :
-      "Extensions.Permissions_InstallAbort";
+  histogram_name = user_initiated ? "Extensions.Permissions_InstallCancel2"
+                                  : "Extensions.Permissions_InstallAbort2";
   ExtensionService::RecordPermissionMessagesHistogram(dummy_extension_.get(),
                                                       histogram_name.c_str());
 
@@ -564,8 +564,6 @@ bool WebstorePrivateCompleteInstallFunction::RunAsync() {
     return false;
   }
 
-  // Balanced in OnExtensionInstallSuccess() or OnExtensionInstallFailure().
-  AddRef();
   AppListService* app_list_service =
       AppListService::Get(GetCurrentBrowser()->host_desktop_type());
 
@@ -583,6 +581,22 @@ bool WebstorePrivateCompleteInstallFunction::RunAsync() {
       app_list_service->AutoShowForProfile(GetProfile());
   }
 
+  // If the target extension has already been installed ephemerally, it can
+  // be promoted to a regular installed extension and downloading from the Web
+  // Store is not necessary.
+  const Extension* extension = ExtensionRegistry::Get(GetProfile())->
+      GetExtensionById(params->expected_id, ExtensionRegistry::EVERYTHING);
+  if (extension && util::IsEphemeralApp(extension->id(), GetProfile())) {
+    ExtensionService* extension_service =
+        ExtensionSystem::Get(GetProfile())->extension_service();
+    extension_service->PromoteEphemeralApp(extension, false);
+    OnInstallSuccess(extension->id());
+    return true;
+  }
+
+  // Balanced in OnExtensionInstallSuccess() or OnExtensionInstallFailure().
+  AddRef();
+
   // The extension will install through the normal extension install flow, but
   // the whitelist entry will bypass the normal permissions install dialog.
   scoped_refptr<WebstoreInstaller> installer = new WebstoreInstaller(
@@ -599,13 +613,7 @@ bool WebstorePrivateCompleteInstallFunction::RunAsync() {
 
 void WebstorePrivateCompleteInstallFunction::OnExtensionInstallSuccess(
     const std::string& id) {
-  if (test_webstore_installer_delegate)
-    test_webstore_installer_delegate->OnExtensionInstallSuccess(id);
-
-  VLOG(1) << "Install success, sending response";
-  g_pending_installs.Get().EraseInstall(GetProfile(), id);
-  SendResponse(true);
-
+  OnInstallSuccess(id);
   RecordWebstoreExtensionInstallResult(true);
 
   // Matches the AddRef in RunAsync().
@@ -630,6 +638,16 @@ void WebstorePrivateCompleteInstallFunction::OnExtensionInstallFailure(
 
   // Matches the AddRef in RunAsync().
   Release();
+}
+
+void WebstorePrivateCompleteInstallFunction::OnInstallSuccess(
+    const std::string& id) {
+  if (test_webstore_installer_delegate)
+    test_webstore_installer_delegate->OnExtensionInstallSuccess(id);
+
+  VLOG(1) << "Install success, sending response";
+  g_pending_installs.Get().EraseInstall(GetProfile(), id);
+  SendResponse(true);
 }
 
 WebstorePrivateEnableAppLauncherFunction::

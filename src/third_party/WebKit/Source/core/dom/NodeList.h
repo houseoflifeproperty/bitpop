@@ -25,14 +25,13 @@
 #define NodeList_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
 
 class Node;
 
-class NodeList : public ScriptWrappable, public RefCounted<NodeList> {
+class NodeList : public RefCountedWillBeGarbageCollectedFinalized<NodeList>, public ScriptWrappable {
 public:
     virtual ~NodeList() { }
 
@@ -45,6 +44,8 @@ public:
     virtual bool isChildNodeList() const { return false; }
 
     virtual Node* virtualOwnerNode() const { return 0; }
+
+    virtual void trace(Visitor*) { }
 
 protected:
     NodeList()

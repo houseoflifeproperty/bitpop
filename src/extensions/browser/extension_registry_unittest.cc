@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
+#include "base/strings/string_util.h"
 #include "extensions/browser/extension_registry_observer.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/test_util.h"
@@ -37,10 +38,14 @@ class TestObserver : public ExtensionRegistryObserver {
   void Reset() {
     loaded_.clear();
     unloaded_.clear();
+    installed_.clear();
+    uninstalled_.clear();
   }
 
   const ExtensionList& loaded() { return loaded_; }
   const ExtensionList& unloaded() { return unloaded_; }
+  const ExtensionList& installed() { return installed_; }
+  const ExtensionList& uninstalled() { return uninstalled_; }
 
  private:
   virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
@@ -55,8 +60,28 @@ class TestObserver : public ExtensionRegistryObserver {
     unloaded_.push_back(extension);
   }
 
+  virtual void OnExtensionWillBeInstalled(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      bool is_update,
+      bool from_ephemeral,
+      const std::string& old_name) OVERRIDE {
+    installed_.push_back(extension);
+  }
+
+  virtual void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                                      const Extension* extension) OVERRIDE {
+    uninstalled_.push_back(extension);
+  }
+
+  virtual void OnShutdown(extensions::ExtensionRegistry* registry) OVERRIDE {
+    Reset();
+  }
+
   ExtensionList loaded_;
   ExtensionList unloaded_;
+  ExtensionList installed_;
+  ExtensionList uninstalled_;
 };
 
 TEST_F(ExtensionRegistryTest, FillAndClearRegistry) {
@@ -215,23 +240,34 @@ TEST_F(ExtensionRegistryTest, Observer) {
 
   EXPECT_TRUE(observer.loaded().empty());
   EXPECT_TRUE(observer.unloaded().empty());
+  EXPECT_TRUE(observer.installed().empty());
 
   scoped_refptr<const Extension> extension =
       test_util::CreateExtensionWithID("id");
 
+  registry.TriggerOnWillBeInstalled(
+      extension, false, false, base::EmptyString());
+  EXPECT_TRUE(HasSingleExtension(observer.installed(), extension.get()));
+
   registry.AddEnabled(extension);
   registry.TriggerOnLoaded(extension);
 
+  registry.TriggerOnWillBeInstalled(extension, true, false, "foo");
+
   EXPECT_TRUE(HasSingleExtension(observer.loaded(), extension.get()));
   EXPECT_TRUE(observer.unloaded().empty());
-  observer.Reset();
+  registry.Shutdown();
 
   registry.RemoveEnabled(extension->id());
   registry.TriggerOnUnloaded(extension, UnloadedExtensionInfo::REASON_DISABLE);
 
   EXPECT_TRUE(observer.loaded().empty());
   EXPECT_TRUE(HasSingleExtension(observer.unloaded(), extension.get()));
-  observer.Reset();
+  registry.Shutdown();
+
+  registry.TriggerOnUninstalled(extension);
+  EXPECT_TRUE(observer.installed().empty());
+  EXPECT_TRUE(HasSingleExtension(observer.uninstalled(), extension.get()));
 
   registry.RemoveObserver(&observer);
 }

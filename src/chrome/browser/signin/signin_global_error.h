@@ -8,6 +8,7 @@
 #include <set>
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "chrome/browser/ui/global_error/global_error.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/signin/core/browser/signin_error_controller.h"
@@ -22,6 +23,18 @@ class SigninGlobalError : public GlobalErrorWithStandardBubble,
   SigninGlobalError(SigninErrorController* error_controller,
                     Profile* profile);
   virtual ~SigninGlobalError();
+
+  // Returns true if there is an authentication error.
+  bool HasError();
+
+  // Shows re-authentication UI to the user in an attempt to fix the error.
+  // The re-authentication UI will be shown in |browser|.
+  void AttemptToFixError(Browser* browser);
+
+ private:
+  FRIEND_TEST_ALL_PREFIXES(SigninGlobalErrorTest, NoErrorAuthStatusProviders);
+  FRIEND_TEST_ALL_PREFIXES(SigninGlobalErrorTest, ErrorAuthStatusProvider);
+  FRIEND_TEST_ALL_PREFIXES(SigninGlobalErrorTest, AuthStatusEnumerateAllErrors);
 
   // KeyedService:
   virtual void Shutdown() OVERRIDE;
@@ -43,12 +56,14 @@ class SigninGlobalError : public GlobalErrorWithStandardBubble,
   // SigninErrorController::Observer:
   virtual void OnErrorChanged() OVERRIDE;
 
- private:
   // The Profile this service belongs to.
   Profile* profile_;
 
   // The SigninErrorController that provides auth status.
   SigninErrorController* error_controller_;
+
+  // True if signin global error was added to the global error service.
+  bool is_added_to_global_error_service_;
 
   DISALLOW_COPY_AND_ASSIGN(SigninGlobalError);
 };

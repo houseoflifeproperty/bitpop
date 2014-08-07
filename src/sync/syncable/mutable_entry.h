@@ -35,7 +35,7 @@ class SYNC_EXPORT_PRIVATE MutableEntry : public ModelNeutralMutableEntry {
   MutableEntry(WriteTransaction* trans, GetByHandle, int64);
   MutableEntry(WriteTransaction* trans, GetById, const Id&);
   MutableEntry(WriteTransaction* trans, GetByClientTag, const std::string& tag);
-  MutableEntry(WriteTransaction* trans, GetByServerTag, const std::string& tag);
+  MutableEntry(WriteTransaction* trans, GetTypeRoot, ModelType type);
 
   inline WriteTransaction* write_transaction() const {
     return write_transaction_;
@@ -61,6 +61,12 @@ class SYNC_EXPORT_PRIVATE MutableEntry : public ModelNeutralMutableEntry {
 
   void PutAttachmentMetadata(
       const sync_pb::AttachmentMetadata& attachment_metadata);
+
+  // Update attachment metadata, replace all records matching attachment id's
+  // unique id with updated attachment id that contains server info.
+  // Set is_in_server for corresponding records.
+  void UpdateAttachmentIdWithServerInfo(
+      const sync_pb::AttachmentIdProto& updated_attachment_id);
 
  private:
   // Kind of redundant. We should reduce the number of pointers

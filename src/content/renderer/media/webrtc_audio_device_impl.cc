@@ -126,7 +126,8 @@ void WebRtcAudioDeviceImpl::OnSetFormat(
 
 void WebRtcAudioDeviceImpl::RenderData(media::AudioBus* audio_bus,
                                        int sample_rate,
-                                       int audio_delay_milliseconds) {
+                                       int audio_delay_milliseconds,
+                                       base::TimeDelta* current_time) {
   render_buffer_.resize(audio_bus->frames() * audio_bus->channels());
 
   {
@@ -150,6 +151,8 @@ void WebRtcAudioDeviceImpl::RenderData(media::AudioBus* audio_bus,
   int16* audio_data = &render_buffer_[0];
   while (accumulated_audio_frames < audio_bus->frames()) {
     // Get 10ms and append output to temporary byte buffer.
+    int64_t elapsed_time_ms = -1;
+    int64_t ntp_time_ms = -1;
     if (is_audio_track_processing_enabled_) {
       // When audio processing is enabled in the audio track, we use
       // PullRenderData() instead of NeedMorePlayData() to avoid passing the
@@ -160,7 +163,9 @@ void WebRtcAudioDeviceImpl::RenderData(media::AudioBus* audio_bus,
                                                 sample_rate,
                                                 audio_bus->channels(),
                                                 frames_per_10_ms,
-                                                audio_data);
+                                                audio_data,
+                                                &elapsed_time_ms,
+                                                &ntp_time_ms);
       accumulated_audio_frames += frames_per_10_ms;
     } else {
       // TODO(xians): Remove the following code after the APM in WebRTC is
@@ -170,10 +175,14 @@ void WebRtcAudioDeviceImpl::RenderData(media::AudioBus* audio_bus,
                                                   audio_bus->channels(),
                                                   sample_rate,
                                                   audio_data,
-                                                  num_audio_frames);
+                                                  num_audio_frames,
+                                                  &elapsed_time_ms,
+                                                  &ntp_time_ms);
       accumulated_audio_frames += num_audio_frames;
     }
-
+    if (elapsed_time_ms >= 0) {
+      *current_time = base::TimeDelta::FromMilliseconds(elapsed_time_ms);
+    }
     audio_data += bytes_per_10_ms;
   }
 
@@ -240,9 +249,16 @@ int32_t WebRtcAudioDeviceImpl::Terminate() {
   DCHECK(!renderer_.get() || !renderer_->IsStarted())
       << "The shared audio renderer shouldn't be running";
 
-  DisableAecDump();
-
-  capturers_.clear();
+  // Stop all the capturers to ensure no further OnData() and
+  // RemoveAudioCapturer() callback.
+  // Cache the capturers in a local list since WebRtcAudioCapturer::Stop()
+  // will trigger RemoveAudioCapturer() callback.
+  CapturerList capturers;
+  capturers.swap(capturers_);
+  for (CapturerList::const_iterator iter = capturers.begin();
+       iter != capturers.end(); ++iter) {
+    (*iter)->Stop();
+  }
 
   initialized_ = false;
   return 0;
@@ -459,11 +475,6 @@ void WebRtcAudioDeviceImpl::AddAudioCapturer(
         capturers_.end());
     capturers_.push_back(capturer);
   }
-
-  // Start the Aec dump if the Aec dump has been enabled and has not been
-  // started.
-  if (aec_dump_file_.IsValid())
-    MaybeStartAecDump();
 }
 
 void WebRtcAudioDeviceImpl::RemoveAudioCapturer(
@@ -513,43 +524,6 @@ bool WebRtcAudioDeviceImpl::GetAuthorizedDeviceInfoForAudioRenderer(
 
   return GetDefaultCapturer()->GetPairedOutputParameters(
       session_id, output_sample_rate, output_frames_per_buffer);
-}
-
-void WebRtcAudioDeviceImpl::EnableAecDump(base::File aec_dump_file) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(aec_dump_file.IsValid());
-  DCHECK(!aec_dump_file_.IsValid());
-  aec_dump_file_ = aec_dump_file.Pass();
-  MaybeStartAecDump();
-}
-
-void WebRtcAudioDeviceImpl::DisableAecDump() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  // Simply invalidate the |aec_dump_file_| if we have not pass the ownership
-  // to WebRtc.
-  if (aec_dump_file_.IsValid()) {
-    aec_dump_file_.Close();
-    return;
-  }
-
-  // We might have call StartAecDump() on one of the capturer. Loop
-  // through all the capturers and call StopAecDump() on each of them.
-  for (CapturerList::const_iterator iter = capturers_.begin();
-       iter != capturers_.end(); ++iter) {
-    (*iter)->StopAecDump();
-  }
-}
-
-void WebRtcAudioDeviceImpl::MaybeStartAecDump() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(aec_dump_file_.IsValid());
-
-  // Start the Aec dump on the current default capturer.
-  scoped_refptr<WebRtcAudioCapturer> default_capturer(GetDefaultCapturer());
-  if (!default_capturer)
-    return;
-
-  default_capturer->StartAecDump(aec_dump_file_.Pass());
 }
 
 }  // namespace content

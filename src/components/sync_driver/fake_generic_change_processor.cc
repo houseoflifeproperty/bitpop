@@ -6,17 +6,18 @@
 
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"
-#include "sync/api/attachments/fake_attachment_service.h"
+#include "sync/api/attachments/attachment_service_impl.h"
 #include "sync/api/syncable_service.h"
 
 namespace browser_sync {
 
-FakeGenericChangeProcessor::FakeGenericChangeProcessor()
+FakeGenericChangeProcessor::FakeGenericChangeProcessor(
+    SyncApiComponentFactory* sync_factory)
     : GenericChangeProcessor(NULL,
                              base::WeakPtr<syncer::SyncableService>(),
                              base::WeakPtr<syncer::SyncMergeResult>(),
                              NULL,
-                             syncer::FakeAttachmentService::CreateForTest()),
+                             sync_factory),
       sync_model_has_user_created_nodes_(true),
       sync_model_has_user_created_nodes_success_(true) {}
 
@@ -75,7 +76,7 @@ FakeGenericChangeProcessorFactory::CreateGenericChangeProcessor(
     browser_sync::DataTypeErrorHandler* error_handler,
     const base::WeakPtr<syncer::SyncableService>& local_service,
     const base::WeakPtr<syncer::SyncMergeResult>& merge_result,
-    scoped_ptr<syncer::AttachmentService> attachment_service) {
+    SyncApiComponentFactory* sync_factory) {
   return processor_.PassAs<GenericChangeProcessor>();
 }
 

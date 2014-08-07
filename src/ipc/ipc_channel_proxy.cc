@@ -52,7 +52,7 @@ void ChannelProxy::Context::CreateChannel(const IPC::ChannelHandle& handle,
                                           const Channel::Mode& mode) {
   DCHECK(!channel_);
   channel_id_ = handle.name;
-  channel_.reset(new Channel(handle, mode, this));
+  channel_ = Channel::Create(handle, mode, this);
 }
 
 bool ChannelProxy::Context::TryFilters(const Message& message) {
@@ -64,6 +64,10 @@ bool ChannelProxy::Context::TryFilters(const Message& message) {
 #endif
 
   if (message_filter_router_->TryFilters(message)) {
+    if (message.dispatch_error()) {
+      listener_task_runner_->PostTask(
+          FROM_HERE, base::Bind(&Context::OnDispatchBadMessage, this, message));
+    }
 #ifdef IPC_MESSAGE_LOG_ENABLED
     if (logger->Enabled())
       logger->OnPostDispatchMessage(message, channel_id_);
@@ -91,7 +95,7 @@ bool ChannelProxy::Context::OnMessageReceivedNoFilter(const Message& message) {
 // Called on the IPC::Channel thread
 void ChannelProxy::Context::OnChannelConnected(int32 peer_pid) {
   // We cache off the peer_pid so it can be safely accessed from both threads.
-  peer_pid_ = channel_->peer_pid();
+  peer_pid_ = channel_->GetPeerPID();
 
   // Add any pending filters.  This avoids a race condition where someone
   // creates a ChannelProxy, calls AddFilter, and then right after starts the
@@ -267,6 +271,8 @@ void ChannelProxy::Context::OnDispatchMessage(const Message& message) {
 #endif
 
   listener_->OnMessageReceived(message);
+  if (message.dispatch_error())
+    listener_->OnBadMessageReceived(message);
 
 #ifdef IPC_MESSAGE_LOG_ENABLED
   if (logger->Enabled())
@@ -290,20 +296,33 @@ void ChannelProxy::Context::OnDispatchError() {
     listener_->OnChannelError();
 }
 
+// Called on the listener's thread
+void ChannelProxy::Context::OnDispatchBadMessage(const Message& message) {
+  if (listener_)
+    listener_->OnBadMessageReceived(message);
+}
+
 //-----------------------------------------------------------------------------
 
-ChannelProxy::ChannelProxy(const IPC::ChannelHandle& channel_handle,
-                           Channel::Mode mode,
-                           Listener* listener,
-                           base::SingleThreadTaskRunner* ipc_task_runner)
-    : context_(new Context(listener, ipc_task_runner)),
-      did_init_(false) {
-  Init(channel_handle, mode, true);
+// static
+scoped_ptr<ChannelProxy> ChannelProxy::Create(
+    const IPC::ChannelHandle& channel_handle,
+    Channel::Mode mode,
+    Listener* listener,
+    base::SingleThreadTaskRunner* ipc_task_runner) {
+  scoped_ptr<ChannelProxy> channel(new ChannelProxy(listener, ipc_task_runner));
+  channel->Init(channel_handle, mode, true);
+  return channel.Pass();
 }
 
 ChannelProxy::ChannelProxy(Context* context)
     : context_(context),
       did_init_(false) {
+}
+
+ChannelProxy::ChannelProxy(Listener* listener,
+                           base::SingleThreadTaskRunner* ipc_task_runner)
+    : context_(new Context(listener, ipc_task_runner)), did_init_(false) {
 }
 
 ChannelProxy::~ChannelProxy() {
@@ -416,15 +435,6 @@ int ChannelProxy::TakeClientFileDescriptor() {
   // Channel must have been created first.
   DCHECK(channel) << context_.get()->channel_id_;
   return channel->TakeClientFileDescriptor();
-}
-
-bool ChannelProxy::GetPeerEuid(uid_t* peer_euid) const {
-  DCHECK(CalledOnValidThread());
-
-  Channel* channel = context_.get()->channel_.get();
-  // Channel must have been created first.
-  DCHECK(channel) << context_.get()->channel_id_;
-  return channel->GetPeerEuid(peer_euid);
 }
 #endif
 

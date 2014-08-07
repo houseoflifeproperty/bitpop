@@ -24,7 +24,7 @@ class WebRTCDataChannelHandler;
 
 namespace content {
 
-class MediaStreamDependencyFactory;
+class PeerConnectionDependencyFactory;
 class PeerConnectionTracker;
 class RemoteMediaStreamImpl;
 class WebRtcMediaStreamAdapter;
@@ -85,8 +85,11 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
  public:
   RTCPeerConnectionHandler(
       blink::WebRTCPeerConnectionHandlerClient* client,
-      MediaStreamDependencyFactory* dependency_factory);
+      PeerConnectionDependencyFactory* dependency_factory);
   virtual ~RTCPeerConnectionHandler();
+
+  // Destroy all existing RTCPeerConnectionHandler objects.
+  static void DestructAllHandlers();
 
   void associateWithFrame(blink::WebFrame* frame);
 
@@ -189,7 +192,7 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
 
   // |dependency_factory_| is a raw pointer, and is valid for the lifetime of
   // RenderThreadImpl.
-  MediaStreamDependencyFactory* dependency_factory_;
+  PeerConnectionDependencyFactory* dependency_factory_;
 
   blink::WebFrame* frame_;
 
@@ -208,6 +211,7 @@ class CONTENT_EXPORT RTCPeerConnectionHandler
   typedef std::map<webrtc::MediaStreamInterface*,
       content::RemoteMediaStreamImpl*> RemoteStreamMap;
   RemoteStreamMap remote_streams_;
+  scoped_refptr<webrtc::UMAObserver> uma_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(RTCPeerConnectionHandler);
 };

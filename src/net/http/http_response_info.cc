@@ -113,6 +113,7 @@ HttpResponseInfo::HttpResponseInfo(const HttpResponseInfo& rhs)
       was_fetched_via_spdy(rhs.was_fetched_via_spdy),
       was_npn_negotiated(rhs.was_npn_negotiated),
       was_fetched_via_proxy(rhs.was_fetched_via_proxy),
+      proxy_server(rhs.proxy_server),
       did_use_http_auth(rhs.did_use_http_auth),
       socket_address(rhs.socket_address),
       npn_negotiated_protocol(rhs.npn_negotiated_protocol),
@@ -135,6 +136,7 @@ HttpResponseInfo& HttpResponseInfo::operator=(const HttpResponseInfo& rhs) {
   server_data_unavailable = rhs.server_data_unavailable;
   network_accessed = rhs.network_accessed;
   was_fetched_via_spdy = rhs.was_fetched_via_spdy;
+  proxy_server = rhs.proxy_server;
   was_npn_negotiated = rhs.was_npn_negotiated;
   was_fetched_via_proxy = rhs.was_fetched_via_proxy;
   did_use_http_auth = rhs.did_use_http_auth;
@@ -394,9 +396,9 @@ std::string HttpResponseInfo::ConnectionInfoToString(
     case CONNECTION_INFO_SPDY3:
       return "spdy/3";
     case CONNECTION_INFO_SPDY4:
-      // This is the HTTP/2 draft 11 identifier. For internal
+      // This is the HTTP/2 draft 12 identifier. For internal
       // consistency, HTTP/2 is named SPDY4 within Chromium.
-      return "h2-11";
+      return "h2-12";
     case CONNECTION_INFO_QUIC1_SPDY3:
       return "quic/1+spdy/3";
     case NUM_OF_CONNECTION_INFOS:

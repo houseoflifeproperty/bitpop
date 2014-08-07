@@ -27,11 +27,6 @@ class MessageAccumulator : public MessageReceiver {
     return true;
   }
 
-  virtual bool AcceptWithResponder(Message* message, MessageReceiver* responder)
-      MOJO_OVERRIDE {
-    return false;
-  }
-
   bool IsEmpty() const {
     return queue_.IsEmpty();
   }
@@ -50,7 +45,7 @@ class ConnectorTest : public testing::Test {
   }
 
   virtual void SetUp() MOJO_OVERRIDE {
-    CreateMessagePipe(&handle0_, &handle1_);
+    CreateMessagePipe(NULL, &handle0_, &handle1_);
   }
 
   virtual void TearDown() MOJO_OVERRIDE {
@@ -185,7 +180,6 @@ TEST_F(ConnectorTest, WriteToClosedPipe) {
   EXPECT_TRUE(connector0.encountered_error());
 }
 
-// Enable this test once MojoWriteMessage supports passing handles.
 TEST_F(ConnectorTest, MessageWithHandles) {
   internal::Connector connector0(handle0_.Pass());
   internal::Connector connector1(handle1_.Pass());
@@ -195,9 +189,8 @@ TEST_F(ConnectorTest, MessageWithHandles) {
   Message message1;
   AllocMessage(kText, &message1);
 
-  ScopedMessagePipeHandle handles[2];
-  CreateMessagePipe(&handles[0], &handles[1]);
-  message1.mutable_handles()->push_back(handles[0].release());
+  MessagePipe pipe;
+  message1.mutable_handles()->push_back(pipe.handle0.release());
 
   connector0.Accept(&message1);
 
@@ -228,7 +221,7 @@ TEST_F(ConnectorTest, MessageWithHandles) {
   // |smph| now owns this handle.
 
   internal::Connector connector_received(smph.Pass());
-  internal::Connector connector_original(handles[1].Pass());
+  internal::Connector connector_original(pipe.handle1.Pass());
 
   Message message2;
   AllocMessage(kText, &message2);

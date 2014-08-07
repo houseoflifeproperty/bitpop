@@ -154,6 +154,11 @@ class CHROMEOS_EXPORT InputMethodManager {
   // Sets current input method to login default (first owners, then hardware).
   virtual void SetInputMethodLoginDefault() = 0;
 
+  // Sets current input method to login default with the given locale and
+  // layout info from VPD.
+  virtual void SetInputMethodLoginDefaultFromVPD(
+      const std::string& locale, const std::string& layout) = 0;
+
   // Gets the descriptor of the input method which is currently selected.
   virtual InputMethodDescriptor GetCurrentInputMethod() const = 0;
 
@@ -185,10 +190,8 @@ class CHROMEOS_EXPORT InputMethodManager {
   // If keyboard layout can be uset at login screen
   virtual bool IsLoginKeyboard(const std::string& layout) const = 0;
 
-  // Migrates the xkb id to extension-xkb id.
-  // TODO(shuchen): Remove this function after few milestones are passed.
-  // See: http://crbug.com/345604
-  virtual bool MigrateXkbInputMethods(
+  // Migrates the input method id to extension-based input method id.
+  virtual bool MigrateInputMethods(
       std::vector<std::string>* input_method_ids) = 0;
 };
 

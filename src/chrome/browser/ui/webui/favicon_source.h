@@ -88,13 +88,13 @@ class FaviconSource : public content::URLDataSource {
     IconRequest(const content::URLDataSource::GotDataCallback& cb,
                 const GURL& path,
                 int size,
-                ui::ScaleFactor scale);
+                float scale);
     ~IconRequest();
 
     content::URLDataSource::GotDataCallback callback;
     GURL request_path;
     int size_in_dip;
-    ui::ScaleFactor scale_factor;
+    float device_scale_factor;
   };
 
   // Called when the favicon data is missing to perform additional checks to
@@ -120,7 +120,7 @@ class FaviconSource : public content::URLDataSource {
   // Called when favicon data is available from the history backend.
   void OnFaviconDataAvailable(
       const IconRequest& request,
-      const favicon_base::FaviconBitmapResult& bitmap_result);
+      const favicon_base::FaviconRawBitmapResult& bitmap_result);
 
   // Sends the 16x16 DIP 1x default favicon.
   void SendDefaultResponse(

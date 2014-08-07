@@ -9,16 +9,15 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process/process.h"
-#include "base/synchronization/waitable_event.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
-#include "ipc/ipc_channel_handle.h"
+#include "content/common/gpu/client/gpu_memory_buffer_factory_host.h"
 #include "ipc/message_filter.h"
 
 namespace content {
 
 class CONTENT_EXPORT BrowserGpuChannelHostFactory
-    : public GpuChannelHostFactory {
+    : public GpuChannelHostFactory,
+      public GpuMemoryBufferFactoryHost {
  public:
   static void Initialize(bool establish_gpu_channel);
   static void Terminate();
@@ -45,6 +44,16 @@ class CONTENT_EXPORT BrowserGpuChannelHostFactory
       unsigned internalformat,
       unsigned usage) OVERRIDE;
 
+  // GpuMemoryBufferFactoryHost implementation.
+  virtual void CreateGpuMemoryBuffer(
+      const gfx::GpuMemoryBufferHandle& handle,
+      const gfx::Size& size,
+      unsigned internalformat,
+      unsigned usage,
+      const CreateGpuMemoryBufferCallback& callback) OVERRIDE;
+  virtual void DestroyGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
+                                      int32 sync_point) OVERRIDE;
+
   // Specify a task runner and callback to be used for a set of messages. The
   // callback will be set up on the current GpuProcessHost, identified by
   // GpuProcessHostId().
@@ -65,48 +74,10 @@ class CONTENT_EXPORT BrowserGpuChannelHostFactory
   static bool CanUseForTesting();
 
  private:
-  struct CreateRequest {
-    CreateRequest();
-    ~CreateRequest();
-    base::WaitableEvent event;
-    int gpu_host_id;
-    int32 route_id;
-    bool succeeded;
-  };
+  struct CreateRequest;
+  class EstablishRequest;
 
-  class EstablishRequest : public base::RefCountedThreadSafe<EstablishRequest> {
-   public:
-    explicit EstablishRequest(CauseForGpuLaunch cause,
-                              int gpu_client_id,
-                              int gpu_host_id);
-    void Wait();
-    void Cancel();
-
-    int gpu_host_id() { return gpu_host_id_; }
-    IPC::ChannelHandle& channel_handle() { return channel_handle_; }
-    gpu::GPUInfo gpu_info() { return gpu_info_; }
-
-   private:
-    friend class base::RefCountedThreadSafe<EstablishRequest>;
-    ~EstablishRequest();
-    void EstablishOnIO();
-    void OnEstablishedOnIO(const IPC::ChannelHandle& channel_handle,
-                           const gpu::GPUInfo& gpu_info);
-    void FinishOnIO();
-    void FinishOnMain();
-
-    base::WaitableEvent event_;
-    CauseForGpuLaunch cause_for_gpu_launch_;
-    const int gpu_client_id_;
-    int gpu_host_id_;
-    bool reused_gpu_process_;
-    IPC::ChannelHandle channel_handle_;
-    gpu::GPUInfo gpu_info_;
-    bool finished_;
-    scoped_refptr<base::MessageLoopProxy> main_loop_;
-  };
-
-  explicit BrowserGpuChannelHostFactory(bool establish_gpu_channel);
+  BrowserGpuChannelHostFactory();
   virtual ~BrowserGpuChannelHostFactory();
 
   void GpuChannelEstablished();
@@ -127,12 +98,31 @@ class CONTENT_EXPORT BrowserGpuChannelHostFactory
   static void AddFilterOnIO(int gpu_host_id,
                             scoped_refptr<IPC::MessageFilter> filter);
 
+  void CreateGpuMemoryBufferOnIO(const gfx::GpuMemoryBufferHandle& handle,
+                                 const gfx::Size& size,
+                                 unsigned internalformat,
+                                 unsigned usage,
+                                 uint32 request_id);
+  void GpuMemoryBufferCreatedOnIO(
+      uint32 request_id,
+      const gfx::GpuMemoryBufferHandle& handle);
+  void OnGpuMemoryBufferCreated(
+      uint32 request_id,
+      const gfx::GpuMemoryBufferHandle& handle);
+  void DestroyGpuMemoryBufferOnIO(const gfx::GpuMemoryBufferHandle& handle,
+                                  int32 sync_point);
+
   const int gpu_client_id_;
   scoped_ptr<base::WaitableEvent> shutdown_event_;
   scoped_refptr<GpuChannelHost> gpu_channel_;
   int gpu_host_id_;
   scoped_refptr<EstablishRequest> pending_request_;
   std::vector<base::Closure> established_callbacks_;
+
+  uint32 next_create_gpu_memory_buffer_request_id_;
+  typedef std::map<uint32, CreateGpuMemoryBufferCallback>
+      CreateGpuMemoryBufferCallbackMap;
+  CreateGpuMemoryBufferCallbackMap create_gpu_memory_buffer_requests_;
 
   static BrowserGpuChannelHostFactory* instance_;
 

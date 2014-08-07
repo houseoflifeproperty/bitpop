@@ -29,7 +29,7 @@
             ],
           }],
           ['target_arch=="arm64"', {
-            'target_arch_full': 'generic',
+            'target_arch_full': 'arm64',
           }],
         ],
       }],
@@ -53,7 +53,7 @@
     'variables': {
       'conditions': [
         ['OS=="win" and buildtype=="Official"', {
-          # Do not set to 'size', as it results in an error on win64. 
+          # Do not set to 'size', as it results in an error on win64.
           'optimize' :'speed',
         }],
       ],
@@ -132,7 +132,7 @@
               ],
             }],
             ['target_arch=="arm64"', {
-              'includes': [ 'libvpx_srcs_generic.gypi', ],
+              'includes': [ 'libvpx_srcs_arm64.gypi', ],
             }],
             ['target_arch=="x64"', {
               'conditions': [
@@ -280,14 +280,6 @@
             'ads2gas_script_path': '<(libvpx_source)/build/make/<(ads2gas_script)',
             'ads2gas_script_include': '<(libvpx_source)/build/make/thumb.pm',
           },
-          # We need to explicitly tell the assembler to look for
-          # .include directive files from the place where they're
-          # generated to.
-          'cflags': [
-             '-Wa,-I,<!(pwd)/source/config/<(OS_CATEGORY)/<(target_arch_full)',
-             '-Wa,-I,<!(pwd)/source/config',
-             '-Wa,-I,<(shared_generated_dir)',
-          ],
           'xcode_settings': {
             'OTHER_CFLAGS': [
               '-I<!(pwd)/source/config/<(OS_CATEGORY)/<(target_arch_full)',
@@ -305,7 +297,21 @@
               '<(libvpx_source)',
             ],
           },
+          # We need to explicitly tell the assembler to look for
+          # .include directive files from the place where they're
+          # generated to.
+          'cflags': [
+             '-Wa,-I,<(shared_generated_dir)',
+          ],
           'conditions': [
+            # For Android WebView, the following pathc are not required and not
+            # allowed, because they generate the absolute path.
+            ['android_webview_build!=1', {
+              'cflags': [
+                '-Wa,-I,<!(pwd)/source/config/<(OS_CATEGORY)/<(target_arch_full)',
+                '-Wa,-I,<!(pwd)/source/config',
+              ],
+            }],
             # Libvpx optimizations for ARMv6 or ARMv7 without NEON.
             ['arm_neon==0', {
               'conditions': [
@@ -457,7 +463,7 @@
           ['android_webview_build==1', {
             # pass the empty string for 3rd and 4th arguments of
             # intermediates-dir-for macro.
-            'lib_intermediate_name' : '$(realpath $(call intermediates-dir-for, STATIC_LIBRARIES, libvpx_asm_offsets_vp8,,, $(GYP_VAR_PREFIX)))/libvpx_asm_offsets_vp8.a',
+            'lib_intermediate_name' : '$(abspath $(call intermediates-dir-for,STATIC_LIBRARIES,libvpx_asm_offsets_vp8,,,$(gyp_var_prefix)))/libvpx_asm_offsets_vp8.a',
           }],
           ['(target_arch=="arm" or target_arch=="armv7")', {
             'output_format': 'gas',
@@ -530,7 +536,7 @@
           ['android_webview_build==1', {
             # pass the empty string for 3rd and 4th arguments of
             # intermediates-dir-for macro.
-            'lib_intermediate_name' : '<(android_src)/$(call intermediates-dir-for, STATIC_LIBRARIES, libvpx_asm_offsets_vpx_scale,,, $(GYP_VAR_PREFIX))/libvpx_asm_offsets_vpx_scale.a',
+            'lib_intermediate_name' : '$(abspath $(call intermediates-dir-for,STATIC_LIBRARIES,libvpx_asm_offsets_vpx_scale,,,$(gyp_var_prefix)))/libvpx_asm_offsets_vpx_scale.a',
           }],
           ['(target_arch=="arm" or target_arch=="armv7")', {
             'output_format': 'gas',

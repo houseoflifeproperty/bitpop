@@ -22,7 +22,7 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGGlyphRefElement.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "wtf/text/AtomicString.h"
 
@@ -39,10 +39,7 @@ inline SVGGlyphRefElement::SVGGlyphRefElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGGlyphRefElement> SVGGlyphRefElement::create(Document& document)
-{
-    return adoptRef(new SVGGlyphRefElement(document));
-}
+DEFINE_NODE_FACTORY(SVGGlyphRefElement)
 
 bool SVGGlyphRefElement::hasValidGlyphElement(AtomicString& glyphName) const
 {

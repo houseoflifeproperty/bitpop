@@ -31,8 +31,8 @@
 #include "config.h"
 #include "modules/mediasource/SourceBufferList.h"
 
-#include "core/events/Event.h"
 #include "core/events/GenericEventQueue.h"
+#include "modules/EventModules.h"
 #include "modules/mediasource/SourceBuffer.h"
 
 namespace WebCore {
@@ -49,7 +49,7 @@ SourceBufferList::~SourceBufferList()
     ASSERT(m_list.isEmpty());
 }
 
-void SourceBufferList::add(SourceBuffer* buffer)
+void SourceBufferList::add(PassRefPtrWillBeRawPtr<SourceBuffer> buffer)
 {
     m_list.append(buffer);
     scheduleEvent(EventTypeNames::addsourcebuffer);
@@ -93,6 +93,7 @@ ExecutionContext* SourceBufferList::executionContext() const
 void SourceBufferList::trace(Visitor* visitor)
 {
     visitor->trace(m_list);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

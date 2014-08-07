@@ -136,7 +136,7 @@ class NativeAppWindowStateDelegate : public ash::wm::WindowStateDelegate,
     window_state_->AddObserver(this);
     window_state_->window()->AddObserver(this);
   }
-  virtual ~NativeAppWindowStateDelegate(){
+  virtual ~NativeAppWindowStateDelegate() {
     if (window_state_) {
       window_state_->RemoveObserver(this);
       window_state_->window()->RemoveObserver(this);
@@ -212,9 +212,6 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
   init_params.delegate = this;
   init_params.remove_standard_frame = IsFrameless() || has_frame_color_;
   init_params.use_system_default_icon = true;
-  // TODO(erg): Conceptually, these are toplevel windows, but we theoretically
-  // could plumb context through to here in some cases.
-  init_params.top_level = true;
   if (create_params.transparent_background)
     init_params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   init_params.keep_on_top = create_params.always_on_top;
@@ -223,7 +220,7 @@ void ChromeNativeAppWindowViews::InitializeDefaultWindow(
   // Set up a custom WM_CLASS for app windows. This allows task switchers in
   // X11 environments to distinguish them from main browser windows.
   init_params.wm_class_name = web_app::GetWMClassFromAppName(app_name);
-  init_params.wm_class_class = ShellIntegrationLinux::GetProgramClassName();
+  init_params.wm_class_class = shell_integration_linux::GetProgramClassName();
   const char kX11WindowRoleApp[] = "app";
   init_params.wm_role_name = std::string(kX11WindowRoleApp);
 #endif
@@ -317,9 +314,6 @@ void ChromeNativeAppWindowViews::InitializePanelWindow(
 #else
   params.bounds = gfx::Rect(preferred_size_);
 #endif
-  // TODO(erg): Conceptually, these are toplevel windows, but we theoretically
-  // could plumb context through to here in some cases.
-  params.top_level = true;
   widget()->Init(params);
   widget()->set_focus_on_creation(create_params.focused);
 
@@ -553,15 +547,8 @@ views::NonClientFrameView* ChromeNativeAppWindowViews::CreateNonClientFrameView(
     return custom_frame_view;
   }
 #endif
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  // Linux always uses the non standard frame view because the OS draws the
-  // frame (if a frame is needed).
-  return CreateNonStandardAppFrame();
-#else
-  if (IsFrameless() || has_frame_color_)
-    return CreateNonStandardAppFrame();
-#endif
-  return CreateStandardDesktopAppFrame();
+  return (IsFrameless() || has_frame_color_) ?
+      CreateNonStandardAppFrame() : CreateStandardDesktopAppFrame();
 }
 
 bool ChromeNativeAppWindowViews::WidgetHasHitTestMask() const {
@@ -574,7 +561,7 @@ void ChromeNativeAppWindowViews::GetWidgetHitTestMask(gfx::Path* mask) const {
 
 // views::View implementation.
 
-gfx::Size ChromeNativeAppWindowViews::GetPreferredSize() {
+gfx::Size ChromeNativeAppWindowViews::GetPreferredSize() const {
   if (!preferred_size_.IsEmpty())
     return preferred_size_;
   return NativeAppWindowViews::GetPreferredSize();

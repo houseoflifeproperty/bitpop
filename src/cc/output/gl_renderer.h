@@ -65,14 +65,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   virtual void DoNoOp() OVERRIDE;
   virtual void SwapBuffers(const CompositorFrameMetadata& metadata) OVERRIDE;
 
-  virtual void GetFramebufferPixels(void* pixels,
-                                    const gfx::Rect& rect) OVERRIDE;
-
   virtual bool IsContextLost() OVERRIDE;
-
-  virtual void SendManagedMemoryStats(size_t bytes_visible,
-                                      size_t bytes_visible_and_nearby,
-                                      size_t bytes_allocated) OVERRIDE;
 
   static void DebugGLCall(gpu::gles2::GLES2Interface* gl,
                           const char* command,
@@ -90,7 +83,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   virtual void DidChangeVisibility() OVERRIDE;
 
   bool IsBackbufferDiscarded() const { return is_backbuffer_discarded_; }
-  void InitializeGrContext();
 
   const gfx::QuadF& SharedGeometryQuad() const { return shared_geometry_quad_; }
   const GeometryBinding* SharedGeometry() const {
@@ -202,20 +194,9 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   typedef base::Callback<void(scoped_ptr<CopyOutputRequest> copy_request,
                               bool success)>
       AsyncGetFramebufferPixelsCleanupCallback;
-  void DoGetFramebufferPixels(
-      uint8* pixels,
-      const gfx::Rect& window_rect,
-      const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback);
-  void FinishedReadback(
-      const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback,
-      unsigned source_buffer,
-      unsigned query,
-      uint8_t* dest_pixels,
-      const gfx::Size& size);
-  void PassOnSkBitmap(scoped_ptr<SkBitmap> bitmap,
-                      scoped_ptr<SkAutoLockPixels> lock,
-                      scoped_ptr<CopyOutputRequest> request,
-                      bool success);
+  void FinishedReadback(unsigned source_buffer,
+                        unsigned query,
+                        const gfx::Size& size);
 
   void ReinitializeGLState();
   void RestoreGLState();

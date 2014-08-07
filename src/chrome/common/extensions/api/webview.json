@@ -151,7 +151,7 @@
                 "type": "array",
                 "items": {"type": "string"},
                 "optional": true,
-                "description": "Lets you restrict the item to apply only to documents whose URL matches one of the given patterns. (This applies to frames as well.) For details on the format of a pattern, see <a href='match_patterns.html'>Match Patterns</a>."
+                "description": "Lets you restrict the item to apply only to documents whose URL matches one of the given patterns. (This applies to frames as well.) For details on the format of a pattern, see <a href='match_patterns'>Match Patterns</a>."
               },
               "targetUrlPatterns": {
                 "type": "array",
@@ -345,7 +345,7 @@
           {
             "type": "string",
             "name": "src",
-            "description": "The src of the guest <webview> process."
+            "description": "The src of the guest <webview> tag."
           },
           {
             "$ref": "tabs.InjectDetails",
@@ -372,7 +372,7 @@
       {
         "name": "insertCSS",
         "type": "function",
-        "description": "Injects JavaScript code into a <webview> page.",
+        "description": "Injects CSS into a <webview> page. For details, see the <a href='/extensions/content_scripts#pi'>programmatic injection</a> section of the content scripts doc.",
         "parameters": [
           {
             "type": "integer",
@@ -382,27 +382,19 @@
           {
             "type": "string",
             "name": "src",
-            "description": "The src of the guest <webview> process."
+            "description": "The src of the guest <webview> tag."
           },
           {
             "$ref": "tabs.InjectDetails",
             "name": "details",
-            "description": "Details of the script to run."
+            "description": "Details of the CSS text to insert."
           },
           {
             "type": "function",
             "name": "callback",
             "optional": true,
-            "description": "Called after all the JavaScript has been executed.",
-            "parameters": [
-              {
-                "name": "result",
-                "optional": true,
-                "type": "array",
-                "items": {"type": "any", "minimum": 0},
-                "description": "The result of the script in every injected frame."
-              }
-            ]
+            "description": "Called when all the CSS has been inserted.",
+            "parameters": []
           }
         ]
       },
@@ -611,6 +603,20 @@
         ]
       },
       {
+        "name": "setName",
+        "type": "function",
+        "parameters": [
+          {
+            "type": "integer",
+            "name": "instanceId"
+          },
+          {
+            "type": "string",
+            "name": "frameName"
+          }
+        ]
+      },
+      {
         "name": "setPermission",
         "type": "function",
         "parameters": [
@@ -642,6 +648,20 @@
                 "type": "boolean"
               }
             ]
+          }
+        ]
+      },
+      {
+        "name": "navigate",
+        "type": "function",
+        "parameters": [
+          {
+            "type": "integer",
+            "name": "instanceId"
+          },
+          {
+            "type": "string",
+            "name": "src"
           }
         ]
       },
@@ -699,4 +719,3 @@
     ]
   }
 ]
-

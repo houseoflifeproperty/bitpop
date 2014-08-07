@@ -27,26 +27,15 @@ namespace test {
 
 static const QuicConnectionId kTestConnectionId = 42;
 static const int kTestPort = 123;
-static const uint32 kInitialFlowControlWindowForTest = 32 * 1024;  // 32 KB
+static const uint32 kInitialStreamFlowControlWindowForTest =
+    32 * 1024;  // 32 KB
+static const uint32 kInitialSessionFlowControlWindowForTest =
+    64 * 1024;  // 64 KB
 
-// Simple random number generator used to compute random numbers suitable
-// for pseudo-randomly dropping packets in tests.  It works by computing
-// the sha1 hash of the current seed, and using the first 64 bits as
-// the next random number, and the next seed.
-class SimpleRandom {
- public:
-  SimpleRandom() : seed_(0) {}
-
-  // Returns a random number in the range [0, kuint64max].
-  uint64 RandUint64();
-
-  void set_seed(uint64 seed) { seed_ = seed; }
-
- private:
-  uint64 seed_;
-
-  DISALLOW_COPY_AND_ASSIGN(SimpleRandom);
-};
+// Testing convenience method to construct a QuicAckFrame with |num_nack_ranges|
+// nack ranges of width 1 packet, starting from |least_unacked|.
+QuicAckFrame MakeAckFrameWithNackRanges(size_t num_nack_ranges,
+                                        QuicPacketSequenceNumber least_unacked);
 
 class MockConnection : public QuicConnection {
  public:

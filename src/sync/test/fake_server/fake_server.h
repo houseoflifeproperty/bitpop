@@ -32,7 +32,9 @@ class FakeServer {
 
     // Called after FakeServer has processed a successful commit. The types
     // updated as part of the commit are passed in |committed_model_types|.
-    virtual void OnCommit(syncer::ModelTypeSet committed_model_types) = 0;
+    virtual void OnCommit(
+        const std::string& committer_id,
+        syncer::ModelTypeSet committed_model_types) = 0;
   };
 
   FakeServer();
@@ -55,6 +57,22 @@ class FakeServer {
   // result in successful server operations.
   void InjectEntity(scoped_ptr<FakeServerEntity> entity);
 
+  // Sets a new store birthday so that tests may trigger a NOT_MY_BIRTHDAY
+  // error. If |store_birthday| is the same as |store_birthday_|, false is
+  // returned and this method has no effect.
+  bool SetNewStoreBirthday(const std::string& store_birthday);
+
+  // Puts the server in a state where it acts as if authentication has
+  // succeeded.
+  void SetAuthenticated();
+
+  // Puts the server in a state where all commands will fail with an
+  // authentication error.
+  void SetUnauthenticated();
+
+  // Return |error_type| on next sync request.
+  void TriggerError(const sync_pb::SyncEnums::ErrorType& error_type);
+
   // Adds |observer| to FakeServer's observer list. This should be called
   // before the Profile associated with |observer| is connected to the server.
   void AddObserver(Observer* observer);
@@ -71,7 +89,8 @@ class FakeServer {
                                sync_pb::GetUpdatesResponse* response);
 
   // Processes a Commit call.
-  bool HandleCommitRequest(const sync_pb::CommitMessage& commit,
+  bool HandleCommitRequest(const sync_pb::CommitMessage& message,
+                           const std::string& invalidator_client_id,
                            sync_pb::CommitResponse* response);
 
   // Inserts the default permanent items in |entities_|.
@@ -112,8 +131,12 @@ class FakeServer {
   // have a version number of version_ + 1.
   int64 version_;
 
-  // The current birthday value.
-  std::string birthday_;
+  // The current store birthday value.
+  std::string store_birthday_;
+
+  // Whether the server should act as if incoming connections are properly
+  // authenticated.
+  bool authenticated_;
 
   // All SyncEntity objects saved by the server. The key value is the entity's
   // id string.
@@ -121,6 +144,8 @@ class FakeServer {
 
   // All Keystore keys known to the server.
   std::vector<std::string> keystore_keys_;
+
+  sync_pb::SyncEnums::ErrorType error_type_;
 
   // FakeServer's observers.
   ObserverList<Observer, true> observers_;

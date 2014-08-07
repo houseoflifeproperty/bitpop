@@ -19,8 +19,10 @@
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/network/network_handler.h"
+#include "chromeos/network/network_state.h"
+#include "chromeos/network/network_state_handler.h"
 #include "chromeos/system/mock_statistics_provider.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
@@ -94,9 +96,6 @@ const char kGoodServicesManifest[] =
     "}";
 
 const char kDummyCustomizationID[] = "test-dummy";
-
-// Note the path name must be the same as in shill stub.
-const char kStubEthernetServicePath[] = "eth1";
 
 }  // anonymous namespace
 
@@ -229,15 +228,21 @@ class ServicesCustomizationDocumentTest : public testing::Test {
 
     DBusThreadManager::InitializeWithStub();
     NetworkHandler::Initialize();
+    RunUntilIdle();
+    const NetworkState* default_network =
+        NetworkHandler::Get()->network_state_handler()->DefaultNetwork();
+    std::string default_network_path =
+        default_network ? default_network->path() : "";
 
     NetworkPortalDetector::InitializeForTesting(&network_portal_detector_);
     NetworkPortalDetector::CaptivePortalState online_state;
     online_state.status = NetworkPortalDetector::CAPTIVE_PORTAL_STATUS_ONLINE;
     online_state.response_code = 204;
     network_portal_detector_.SetDefaultNetworkPathForTesting(
-        kStubEthernetServicePath);
+        default_network_path,
+        default_network ? default_network->guid() : "");
     network_portal_detector_.SetDetectionResultsForTesting(
-        kStubEthernetServicePath, online_state);
+        default_network_path, online_state);
 
     TestingBrowserProcess::GetGlobal()->SetLocalState(&local_state_);
     ServicesCustomizationDocument::RegisterPrefs(local_state_.registry());

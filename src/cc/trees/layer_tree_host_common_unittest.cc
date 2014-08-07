@@ -11,7 +11,6 @@
 #include "cc/base/math_util.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/content_layer_client.h"
-#include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_client.h"
 #include "cc/layers/layer_impl.h"
@@ -25,182 +24,17 @@
 #include "cc/test/fake_layer_tree_host.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
+#include "cc/test/layer_tree_host_common_test.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/proxy.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/quad_f.h"
-#include "ui/gfx/size_conversions.h"
 #include "ui/gfx/transform.h"
 
 namespace cc {
 namespace {
-
-class LayerTreeHostCommonTestBase {
- protected:
-  LayerTreeHostCommonTestBase() : render_surface_layer_list_count_(0) {}
-
-  template <typename LayerType>
-  void SetLayerPropertiesForTestingInternal(
-      LayerType* layer,
-      const gfx::Transform& transform,
-      const gfx::PointF& anchor,
-      const gfx::PointF& position,
-      const gfx::Size& bounds,
-      bool flatten_transform,
-      bool is_3d_sorted) {
-    layer->SetTransform(transform);
-    layer->SetAnchorPoint(anchor);
-    layer->SetPosition(position);
-    layer->SetBounds(bounds);
-    layer->SetShouldFlattenTransform(flatten_transform);
-    layer->SetIs3dSorted(is_3d_sorted);
-  }
-
-  void SetLayerPropertiesForTesting(Layer* layer,
-                                    const gfx::Transform& transform,
-                                    const gfx::PointF& anchor,
-                                    const gfx::PointF& position,
-                                    const gfx::Size& bounds,
-                                    bool flatten_transform,
-                                    bool is_3d_sorted) {
-    SetLayerPropertiesForTestingInternal<Layer>(layer,
-                                                transform,
-                                                anchor,
-                                                position,
-                                                bounds,
-                                                flatten_transform,
-                                                is_3d_sorted);
-  }
-
-  void SetLayerPropertiesForTesting(LayerImpl* layer,
-                                    const gfx::Transform& transform,
-                                    const gfx::PointF& anchor,
-                                    const gfx::PointF& position,
-                                    const gfx::Size& bounds,
-                                    bool flatten_transform,
-                                    bool is_3d_sorted) {
-    SetLayerPropertiesForTestingInternal<LayerImpl>(layer,
-                                                    transform,
-                                                    anchor,
-                                                    position,
-                                                    bounds,
-                                                    flatten_transform,
-                                                    is_3d_sorted);
-    layer->SetContentBounds(bounds);
-  }
-
-  void ExecuteCalculateDrawProperties(Layer* root_layer,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      Layer* page_scale_application_layer,
-                                      bool can_use_lcd_text) {
-    EXPECT_TRUE(page_scale_application_layer || (page_scale_factor == 1.f));
-    gfx::Transform identity_matrix;
-    gfx::Size device_viewport_size =
-        gfx::Size(root_layer->bounds().width() * device_scale_factor,
-                  root_layer->bounds().height() * device_scale_factor);
-
-    render_surface_layer_list_.reset(new RenderSurfaceLayerList);
-
-    // We are probably not testing what is intended if the root_layer bounds are
-    // empty.
-    DCHECK(!root_layer->bounds().IsEmpty());
-    LayerTreeHostCommon::CalcDrawPropsMainInputsForTesting inputs(
-        root_layer, device_viewport_size, render_surface_layer_list_.get());
-    inputs.device_scale_factor = device_scale_factor;
-    inputs.page_scale_factor = page_scale_factor;
-    inputs.page_scale_application_layer = page_scale_application_layer;
-    inputs.can_use_lcd_text = can_use_lcd_text;
-    inputs.can_adjust_raster_scales = true;
-    LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-  }
-
-  void ExecuteCalculateDrawProperties(LayerImpl* root_layer,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      LayerImpl* page_scale_application_layer,
-                                      bool can_use_lcd_text) {
-    gfx::Transform identity_matrix;
-    gfx::Size device_viewport_size =
-        gfx::Size(root_layer->bounds().width() * device_scale_factor,
-                  root_layer->bounds().height() * device_scale_factor);
-
-    render_surface_layer_list_impl_.reset(new LayerImplList);
-
-    // We are probably not testing what is intended if the root_layer bounds are
-    // empty.
-    DCHECK(!root_layer->bounds().IsEmpty());
-    LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-        root_layer,
-        device_viewport_size,
-        render_surface_layer_list_impl_.get());
-    inputs.device_scale_factor = device_scale_factor;
-    inputs.page_scale_factor = page_scale_factor;
-    inputs.page_scale_application_layer = page_scale_application_layer;
-    inputs.can_use_lcd_text = can_use_lcd_text;
-    inputs.can_adjust_raster_scales = true;
-
-    ++render_surface_layer_list_count_;
-    inputs.current_render_surface_layer_list_id =
-        render_surface_layer_list_count_;
-
-    LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-  }
-
-  template <class LayerType>
-  void ExecuteCalculateDrawProperties(LayerType* root_layer) {
-    LayerType* page_scale_application_layer = NULL;
-    ExecuteCalculateDrawProperties(
-        root_layer, 1.f, 1.f, page_scale_application_layer, false);
-  }
-
-  template <class LayerType>
-  void ExecuteCalculateDrawProperties(LayerType* root_layer,
-                                      float device_scale_factor) {
-    LayerType* page_scale_application_layer = NULL;
-    ExecuteCalculateDrawProperties(root_layer,
-                                   device_scale_factor,
-                                   1.f,
-                                   page_scale_application_layer,
-                                   false);
-  }
-
-  template <class LayerType>
-  void ExecuteCalculateDrawProperties(LayerType* root_layer,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      LayerType* page_scale_application_layer) {
-    ExecuteCalculateDrawProperties(root_layer,
-                                   device_scale_factor,
-                                   page_scale_factor,
-                                   page_scale_application_layer,
-                                   false);
-  }
-
-  RenderSurfaceLayerList* render_surface_layer_list() const {
-    return render_surface_layer_list_.get();
-  }
-
-  LayerImplList* render_surface_layer_list_impl() const {
-    return render_surface_layer_list_impl_.get();
-  }
-
-  int render_surface_layer_list_count() const {
-    return render_surface_layer_list_count_;
-  }
-
- private:
-  scoped_ptr<RenderSurfaceLayerList> render_surface_layer_list_;
-  scoped_ptr<LayerImplList> render_surface_layer_list_impl_;
-
-  int render_surface_layer_list_count_;
-};
-
-class LayerTreeHostCommonTest : public LayerTreeHostCommonTestBase,
-                                public testing::Test {
-};
 
 class LayerWithForcedDrawsContent : public Layer {
  public:
@@ -291,21 +125,21 @@ TEST_F(LayerTreeHostCommonTest, TransformsForNoOpLayer) {
   gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(),
                                true,
@@ -322,6 +156,52 @@ TEST_F(LayerTreeHostCommonTest, TransformsForNoOpLayer) {
                                   grand_child->screen_space_transform());
 }
 
+TEST_F(LayerTreeHostCommonTest, DoNotSkipLayersWithHandlers) {
+  scoped_refptr<Layer> parent = Layer::Create();
+  scoped_refptr<Layer> child = Layer::Create();
+  scoped_refptr<Layer> grand_child = Layer::Create();
+  parent->AddChild(child);
+  child->AddChild(grand_child);
+
+  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create();
+  host->SetRootLayer(parent);
+
+  gfx::Transform identity_matrix;
+  SetLayerPropertiesForTesting(parent.get(),
+                               identity_matrix,
+                               gfx::Point3F(),
+                               gfx::PointF(),
+                               gfx::Size(100, 100),
+                               true,
+                               false);
+  SetLayerPropertiesForTesting(child.get(),
+                               identity_matrix,
+                               gfx::Point3F(),
+                               gfx::PointF(10, 10),
+                               gfx::Size(100, 100),
+                               true,
+                               false);
+  // This would have previously caused us to skip our subtree, but this would be
+  // wrong; we need up-to-date draw properties to do hit testing on the layers
+  // with handlers.
+  child->SetOpacity(0.f);
+  SetLayerPropertiesForTesting(grand_child.get(),
+                               identity_matrix,
+                               gfx::Point3F(),
+                               gfx::PointF(10, 10),
+                               gfx::Size(100, 100),
+                               true,
+                               false);
+  grand_child->SetTouchEventHandlerRegion(gfx::Rect(0, 0, 100, 100));
+
+  ExecuteCalculateDrawProperties(parent.get());
+
+  // Check that we've computed draw properties for the subtree rooted at
+  // |child|.
+  EXPECT_FALSE(child->draw_transform().IsIdentity());
+  EXPECT_FALSE(grand_child->draw_transform().IsIdentity());
+}
+
 TEST_F(LayerTreeHostCommonTest, TransformsForSingleLayer) {
   gfx::Transform identity_matrix;
   scoped_refptr<Layer> layer = Layer::Create();
@@ -329,7 +209,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSingleLayer) {
   scoped_refptr<Layer> root = Layer::Create();
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
@@ -345,7 +225,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSingleLayer) {
   translation_to_center.Translate(5.0, 6.0);
   SetLayerPropertiesForTesting(layer.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 12),
                                true,
@@ -359,7 +239,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSingleLayer) {
   // no effect on the transforms.
   SetLayerPropertiesForTesting(layer.get(),
                                identity_matrix,
-                               gfx::PointF(0.25f, 0.25f),
+                               gfx::Point3F(2.5f, 3.0f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 12),
                                true,
@@ -375,7 +255,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSingleLayer) {
   position_transform.Translate(0.f, 1.2f);
   SetLayerPropertiesForTesting(layer.get(),
                                identity_matrix,
-                               gfx::PointF(0.25f, 0.25f),
+                               gfx::Point3F(2.5f, 3.0f, 0.f),
                                gfx::PointF(0.f, 1.2f),
                                gfx::Size(10, 12),
                                true,
@@ -392,7 +272,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSingleLayer) {
   layer_transform.Scale3d(2.0, 2.0, 1.0);
   SetLayerPropertiesForTesting(layer.get(),
                                layer_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 12),
                                true,
@@ -409,7 +289,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSingleLayer) {
       translation_to_anchor * layer_transform * Inverse(translation_to_anchor);
   SetLayerPropertiesForTesting(layer.get(),
                                layer_transform,
-                               gfx::PointF(0.5f, 0.f),
+                               gfx::Point3F(5.0f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 12),
                                true,
@@ -426,7 +306,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSingleLayer) {
                     layer_transform * Inverse(translation_to_anchor);
   SetLayerPropertiesForTesting(layer.get(),
                                layer_transform,
-                               gfx::PointF(0.5f, 0.f),
+                               gfx::Point3F(5.0f, 0.f, 0.f),
                                gfx::PointF(0.f, 1.2f),
                                gfx::Size(10, 12),
                                true,
@@ -458,7 +338,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsAboutScrollOffset) {
                              kPageScale * kDeviceScale);
   SetLayerPropertiesForTesting(sublayer,
                                identity_matrix,
-                               gfx::Point(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(500, 500),
                                true,
@@ -469,7 +349,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsAboutScrollOffset) {
   LayerImpl* scroll_layer = scroll_layer_scoped_ptr.get();
   SetLayerPropertiesForTesting(scroll_layer,
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 20),
                                true,
@@ -493,7 +373,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsAboutScrollOffset) {
   scoped_ptr<LayerImpl> root(LayerImpl::Create(host_impl.active_tree(), 3));
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(3, 4),
                                true,
@@ -518,7 +398,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsAboutScrollOffset) {
   arbitrary_translate.Translate(kTranslateX, kTranslateY);
   SetLayerPropertiesForTesting(scroll_layer,
                                arbitrary_translate,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 20),
                                true,
@@ -551,7 +431,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSimpleHierarchy) {
   // One-time setup of root layer
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
@@ -560,21 +440,21 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSimpleHierarchy) {
   // Case 1: parent's anchor point should not affect child or grand_child.
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(0.25f, 0.25f),
+                               gfx::Point3F(2.5f, 3.0f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 12),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(16, 18),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(76, 78),
                                true,
@@ -593,21 +473,21 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSimpleHierarchy) {
   parent_position_transform.Translate(0.f, 1.2f);
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(0.25f, 0.25f),
+                               gfx::Point3F(2.5f, 3.0f, 0.f),
                                gfx::PointF(0.f, 1.2f),
                                gfx::Size(10, 12),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(16, 18),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(76, 78),
                                true,
@@ -632,21 +512,21 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSimpleHierarchy) {
       Inverse(parent_translation_to_anchor);
   SetLayerPropertiesForTesting(parent.get(),
                                parent_layer_transform,
-                               gfx::PointF(0.25f, 0.25f),
+                               gfx::Point3F(2.5f, 3.0f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 12),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(16, 18),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(76, 78),
                                true,
@@ -679,7 +559,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSingleRenderSurface) {
   gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
@@ -711,21 +591,21 @@ TEST_F(LayerTreeHostCommonTest, TransformsForSingleRenderSurface) {
 
   SetLayerPropertiesForTesting(parent.get(),
                                parent_layer_transform,
-                               gfx::PointF(0.25f, 0.25f),
+                               gfx::Point3F(25.0f, 30.0f, 0.f),
                                gfx::PointF(),
                                gfx::Size(100, 120),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(16, 18),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(8, 10),
                                true,
@@ -776,7 +656,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForReplica) {
   gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
@@ -809,28 +689,28 @@ TEST_F(LayerTreeHostCommonTest, TransformsForReplica) {
 
   SetLayerPropertiesForTesting(parent.get(),
                                parent_layer_transform,
-                               gfx::PointF(0.25f, 0.25f),
+                               gfx::Point3F(2.5f, 3.0f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 12),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(16, 18),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(-0.5f, -0.5f),
                                gfx::Size(1, 1),
                                true,
                                false);
   SetLayerPropertiesForTesting(child_replica.get(),
                                replica_layer_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(),
                                true,
@@ -902,7 +782,7 @@ TEST_F(LayerTreeHostCommonTest, TransformsForRenderSurfaceHierarchy) {
   gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
@@ -949,77 +829,77 @@ TEST_F(LayerTreeHostCommonTest, TransformsForRenderSurfaceHierarchy) {
 
   SetLayerPropertiesForTesting(parent.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(2.5f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(2.5f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface2.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(2.5f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(child_of_root.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(2.5f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(child_of_rs1.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(2.5f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(child_of_rs2.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(2.5f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child_of_root.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(2.5f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child_of_rs1.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(2.5f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child_of_rs2.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(2.5f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(replica_of_rs1.get(),
                                replica_layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(2.5f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(),
                                true,
                                false);
   SetLayerPropertiesForTesting(replica_of_rs2.get(),
                                replica_layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(2.5f, 0.f, 0.f),
                                gfx::PointF(),
                                gfx::Size(),
                                true,
@@ -1161,21 +1041,21 @@ TEST_F(LayerTreeHostCommonTest, TransformsForFlatteningLayer) {
   const gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                rotation_about_y_axis,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                rotation_about_y_axis,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
@@ -1240,21 +1120,21 @@ TEST_F(LayerTreeHostCommonTest, TransformsForDegenerateIntermediateLayer) {
   const gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 0),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
@@ -1294,14 +1174,14 @@ TEST_F(LayerTreeHostCommonTest, TransformAboveRootLayer) {
 
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
@@ -1441,21 +1321,21 @@ TEST_F(LayerTreeHostCommonTest,
   const gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(30.f, 30.f),
                                gfx::Size(10, 10),
                                true,
@@ -1495,14 +1375,14 @@ TEST_F(LayerTreeHostCommonTest, RenderSurfaceListForTransparentChild) {
   const gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
@@ -1542,21 +1422,21 @@ TEST_F(LayerTreeHostCommonTest, ForceRenderSurface) {
   const gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
@@ -1636,42 +1516,42 @@ TEST_F(LayerTreeHostCommonTest, ClipRectCullsRenderSurfaces) {
 
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(500, 500),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(45.f, 45.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(great_grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(leaf_node1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(500, 500),
                                true,
                                false);
   SetLayerPropertiesForTesting(leaf_node2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
@@ -1728,28 +1608,28 @@ TEST_F(LayerTreeHostCommonTest, ClipRectCullsSurfaceWithoutVisibleContent) {
 
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(200.f, 200.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(leaf_node.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
@@ -1832,49 +1712,49 @@ TEST_F(LayerTreeHostCommonTest, IsClippedIsSetCorrectly) {
 
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(leaf_node1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(leaf_node2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -1988,42 +1868,42 @@ TEST_F(LayerTreeHostCommonTest, DrawableContentRectForLayers) {
 
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(500, 500),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(15.f, 15.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child3.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(15.f, 15.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child4.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(45.f, 45.f),
                                gfx::Size(10, 10),
                                true,
@@ -2096,70 +1976,70 @@ TEST_F(LayerTreeHostCommonTest, ClipRectIsPropagatedCorrectlyToSurfaces) {
 
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(500, 500),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(15.f, 15.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child3.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(15.f, 15.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child4.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(45.f, 45.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(leaf_node1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(leaf_node2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(leaf_node3.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(leaf_node4.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
@@ -2233,63 +2113,63 @@ TEST_F(LayerTreeHostCommonTest, AnimationsForRenderSurfaceHierarchy) {
 
   SetLayerPropertiesForTesting(parent.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(0.25f, 0.f, 0.f),
                                gfx::PointF(2.5f, 0.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(0.25f, 0.f, 0.f),
                                gfx::PointF(2.5f, 0.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface2.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(0.25f, 0.f, 0.f),
                                gfx::PointF(2.5f, 0.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(child_of_root.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(0.25f, 0.f, 0.f),
                                gfx::PointF(2.5f, 0.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(child_of_rs1.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(0.25f, 0.f, 0.f),
                                gfx::PointF(2.5f, 0.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(child_of_rs2.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(0.25f, 0.f, 0.f),
                                gfx::PointF(2.5f, 0.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child_of_root.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(0.25f, 0.f, 0.f),
                                gfx::PointF(2.5f, 0.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child_of_rs1.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(0.25f, 0.f, 0.f),
                                gfx::PointF(2.5f, 0.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child_of_rs2.get(),
                                layer_transform,
-                               gfx::PointF(0.25f, 0.f),
+                               gfx::Point3F(0.25f, 0.f, 0.f),
                                gfx::PointF(2.5f, 0.f),
                                gfx::Size(10, 10),
                                true,
@@ -2715,28 +2595,28 @@ TEST_F(LayerTreeHostCommonTest, DrawableAndVisibleContentRectsForSimpleLayers) {
   gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(child2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(75.f, 75.f),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(child3.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(125.f, 125.f),
                                gfx::Size(50, 50),
                                true,
@@ -2783,35 +2663,35 @@ TEST_F(LayerTreeHostCommonTest,
   gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(75.f, 75.f),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child3.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(125.f, 125.f),
                                gfx::Size(50, 50),
                                true,
@@ -2864,35 +2744,35 @@ TEST_F(LayerTreeHostCommonTest,
   gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(3, 4),
                                true,
                                false);
   SetLayerPropertiesForTesting(child1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(child2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(75.f, 75.f),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(child3.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(125.f, 125.f),
                                gfx::Size(50, 50),
                                true,
@@ -2944,14 +2824,14 @@ TEST_F(LayerTreeHostCommonTest,
 
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                uninvertible_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(50, 50),
                                true,
@@ -2970,7 +2850,7 @@ TEST_F(LayerTreeHostCommonTest,
 
   SetLayerPropertiesForTesting(child.get(),
                                uninvertible_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(50, 50),
                                true,
@@ -2989,7 +2869,7 @@ TEST_F(LayerTreeHostCommonTest,
 
   SetLayerPropertiesForTesting(child.get(),
                                uninvertible_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(50, 50),
                                true,
@@ -3017,14 +2897,14 @@ TEST_F(LayerTreeHostCommonTest,
 
   SetLayerPropertiesForTesting(root.get(),
                                uninvertible_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(50, 50),
                                true,
@@ -3061,7 +2941,7 @@ TEST_F(LayerTreeHostCommonTest,
 
   SetLayerPropertiesForTesting(root.get(),
                                uninvertible_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -3097,35 +2977,35 @@ TEST_F(LayerTreeHostCommonTest,
   gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(3, 4),
                                true,
                                false);
   SetLayerPropertiesForTesting(child1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(child2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(75.f, 75.f),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(child3.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(125.f, 125.f),
                                gfx::Size(50, 50),
                                true,
@@ -3187,42 +3067,42 @@ TEST_F(LayerTreeHostCommonTest,
   gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(3, 4),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(7, 13),
                                true,
                                false);
   SetLayerPropertiesForTesting(child1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(child2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(75.f, 75.f),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(child3.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(125.f, 125.f),
                                gfx::Size(50, 50),
                                true,
@@ -3289,21 +3169,21 @@ TEST_F(LayerTreeHostCommonTest,
   child_rotation.Rotate(45.0);
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(3, 4),
                                true,
                                false);
   SetLayerPropertiesForTesting(child1.get(),
                                child_rotation,
-                               gfx::PointF(0.5f, 0.5f),
+                               gfx::Point3F(25, 25, 0.f),
                                gfx::PointF(25.f, 25.f),
                                gfx::Size(50, 50),
                                true,
@@ -3360,21 +3240,22 @@ TEST_F(LayerTreeHostCommonTest,
   child_rotation.Rotate(45.0);
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(3, 4),
                                true,
                                false);
+
   SetLayerPropertiesForTesting(child1.get(),
                                child_rotation,
-                               gfx::PointF(0.5f, 0.5f),
+                               gfx::Point3F(25, 25, 0.f),
                                gfx::PointF(25.f, 25.f),
                                gfx::Size(50, 50),
                                true,
@@ -3432,42 +3313,42 @@ TEST_F(LayerTreeHostCommonTest, DrawableAndVisibleContentRectsInHighDPI) {
   gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(3, 4),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(7, 13),
                                true,
                                false);
   SetLayerPropertiesForTesting(child1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5.f, 5.f),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(child2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(75.f, 75.f),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(child3.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(125.f, 125.f),
                                gfx::Size(50, 50),
                                true,
@@ -3580,63 +3461,63 @@ TEST_F(LayerTreeHostCommonTest, BackFaceCullingWithoutPreserves3d) {
   // back-face culling.
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(front_facing_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(back_facing_child.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(front_facing_surface.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(back_facing_surface.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(front_facing_child_of_front_facing_surface.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(back_facing_child_of_front_facing_surface.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(front_facing_child_of_back_facing_surface.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(back_facing_child_of_back_facing_surface.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -3790,21 +3671,21 @@ TEST_F(LayerTreeHostCommonTest, BackFaceCullingWithPreserves3d) {
   // and (b) the layer's transform style is preserve-3d.
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);  // parent transform style is flat.
   SetLayerPropertiesForTesting(front_facing_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(back_facing_child.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -3812,7 +3693,7 @@ TEST_F(LayerTreeHostCommonTest, BackFaceCullingWithPreserves3d) {
   // surface transform style is preserve-3d.
   SetLayerPropertiesForTesting(front_facing_surface.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                false,
@@ -3820,35 +3701,35 @@ TEST_F(LayerTreeHostCommonTest, BackFaceCullingWithPreserves3d) {
   // surface transform style is preserve-3d.
   SetLayerPropertiesForTesting(back_facing_surface.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                false,
                                true);
   SetLayerPropertiesForTesting(front_facing_child_of_front_facing_surface.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                true);
   SetLayerPropertiesForTesting(back_facing_child_of_front_facing_surface.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                true);
   SetLayerPropertiesForTesting(front_facing_child_of_back_facing_surface.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                true);
   SetLayerPropertiesForTesting(back_facing_child_of_back_facing_surface.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -3952,42 +3833,42 @@ TEST_F(LayerTreeHostCommonTest, BackFaceCullingWithAnimatingTransforms) {
 
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(animating_surface.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child_of_animating_surface.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(animating_child.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -4085,42 +3966,42 @@ TEST_F(LayerTreeHostCommonTest,
 
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                false,
                                true);  // parent transform style is preserve3d.
   SetLayerPropertiesForTesting(front_facing_surface.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                true);  // surface transform style is flat.
   SetLayerPropertiesForTesting(back_facing_surface.get(),
                                backface_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                true);  // surface transform style is flat.
   SetLayerPropertiesForTesting(child1.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child2.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
 
-  front_facing_surface->SetIs3dSorted(true);
-  back_facing_surface->SetIs3dSorted(true);
+  front_facing_surface->Set3dSortingContextId(1);
+  back_facing_surface->Set3dSortingContextId(1);
 
   RenderSurfaceLayerList render_surface_layer_list;
   LayerTreeHostCommon::CalcDrawPropsMainInputsForTesting inputs(
@@ -4159,1972 +4040,6 @@ TEST_F(LayerTreeHostCommonTest,
   EXPECT_EQ(child1->id(),
             render_surface_layer_list.at(1)
                 ->render_surface()->layer_list().at(1)->id());
-}
-
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForEmptyLayerList) {
-  // Hit testing on an empty render_surface_layer_list should return a null
-  // pointer.
-  LayerImplList render_surface_layer_list;
-
-  gfx::Point test_point(0, 0);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(10, 20);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForSingleLayer) {
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root =
-      LayerImpl::Create(host_impl.active_tree(), 12345);
-
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-  gfx::PointF position;
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetDrawsContent(true);
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-
-  // Hit testing for a point outside the layer should return a null pointer.
-  gfx::Point test_point(101, 101);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(-1, -1);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit testing for a point inside should return the root layer.
-  test_point = gfx::Point(1, 1);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-
-  test_point = gfx::Point(99, 99);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForSingleLayerAndHud) {
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root =
-      LayerImpl::Create(host_impl.active_tree(), 12345);
-  scoped_ptr<HeadsUpDisplayLayerImpl> hud =
-      HeadsUpDisplayLayerImpl::Create(host_impl.active_tree(), 11111);
-
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-  gfx::PointF position;
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetDrawsContent(true);
-
-  // Create hud and add it as a child of root.
-  gfx::Size hud_bounds(200, 200);
-  SetLayerPropertiesForTesting(hud.get(),
-                               identity_matrix,
-                               anchor,
-                               position,
-                               hud_bounds,
-                               true,
-                               false);
-  hud->SetDrawsContent(true);
-
-  host_impl.active_tree()->set_hud_layer(hud.get());
-  root->AddChild(hud.PassAs<LayerImpl>());
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), hud_bounds, &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(2u, root->render_surface()->layer_list().size());
-
-  // Hit testing for a point inside HUD, but outside root should return null
-  gfx::Point test_point(101, 101);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(-1, -1);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit testing for a point inside should return the root layer, never the HUD
-  // layer.
-  test_point = gfx::Point(1, 1);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-
-  test_point = gfx::Point(99, 99);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForUninvertibleTransform) {
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root =
-      LayerImpl::Create(host_impl.active_tree(), 12345);
-
-  gfx::Transform uninvertible_transform;
-  uninvertible_transform.matrix().set(0, 0, 0.0);
-  uninvertible_transform.matrix().set(1, 1, 0.0);
-  uninvertible_transform.matrix().set(2, 2, 0.0);
-  uninvertible_transform.matrix().set(3, 3, 0.0);
-  ASSERT_FALSE(uninvertible_transform.IsInvertible());
-
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-  gfx::PointF position;
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               uninvertible_transform,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetDrawsContent(true);
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-  ASSERT_FALSE(root->screen_space_transform().IsInvertible());
-
-  // Hit testing any point should not hit the layer. If the invertible matrix is
-  // accidentally ignored and treated like an identity, then the hit testing
-  // will incorrectly hit the layer when it shouldn't.
-  gfx::Point test_point(1, 1);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(10, 10);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(10, 30);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(50, 50);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(67, 48);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(99, 99);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(-1, -1);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForSinglePositionedLayer) {
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root =
-      LayerImpl::Create(host_impl.active_tree(), 12345);
-
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-  // this layer is positioned, and hit testing should correctly know where the
-  // layer is located.
-  gfx::PointF position(50.f, 50.f);
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetDrawsContent(true);
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-
-  // Hit testing for a point outside the layer should return a null pointer.
-  gfx::Point test_point(49, 49);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Even though the layer exists at (101, 101), it should not be visible there
-  // since the root render surface would clamp it.
-  test_point = gfx::Point(101, 101);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit testing for a point inside should return the root layer.
-  test_point = gfx::Point(51, 51);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-
-  test_point = gfx::Point(99, 99);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForSingleRotatedLayer) {
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root =
-      LayerImpl::Create(host_impl.active_tree(), 12345);
-
-  gfx::Transform identity_matrix;
-  gfx::Transform rotation45_degrees_about_center;
-  rotation45_degrees_about_center.Translate(50.0, 50.0);
-  rotation45_degrees_about_center.RotateAboutZAxis(45.0);
-  rotation45_degrees_about_center.Translate(-50.0, -50.0);
-  gfx::PointF anchor;
-  gfx::PointF position;
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               rotation45_degrees_about_center,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetDrawsContent(true);
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-
-  // Hit testing for points outside the layer.
-  // These corners would have been inside the un-transformed layer, but they
-  // should not hit the correctly transformed layer.
-  gfx::Point test_point(99, 99);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(1, 1);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit testing for a point inside should return the root layer.
-  test_point = gfx::Point(1, 50);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-
-  // Hit testing the corners that would overlap the unclipped layer, but are
-  // outside the clipped region.
-  test_point = gfx::Point(50, -1);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_FALSE(result_layer);
-
-  test_point = gfx::Point(-1, 50);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_FALSE(result_layer);
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForSinglePerspectiveLayer) {
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root =
-      LayerImpl::Create(host_impl.active_tree(), 12345);
-
-  gfx::Transform identity_matrix;
-
-  // perspective_projection_about_center * translation_by_z is designed so that
-  // the 100 x 100 layer becomes 50 x 50, and remains centered at (50, 50).
-  gfx::Transform perspective_projection_about_center;
-  perspective_projection_about_center.Translate(50.0, 50.0);
-  perspective_projection_about_center.ApplyPerspectiveDepth(1.0);
-  perspective_projection_about_center.Translate(-50.0, -50.0);
-  gfx::Transform translation_by_z;
-  translation_by_z.Translate3d(0.0, 0.0, -1.0);
-
-  gfx::PointF anchor;
-  gfx::PointF position;
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(
-      root.get(),
-      perspective_projection_about_center * translation_by_z,
-      anchor,
-      position,
-      bounds,
-      true,
-      false);
-  root->SetDrawsContent(true);
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-
-  // Hit testing for points outside the layer.
-  // These corners would have been inside the un-transformed layer, but they
-  // should not hit the correctly transformed layer.
-  gfx::Point test_point(24, 24);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(76, 76);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit testing for a point inside should return the root layer.
-  test_point = gfx::Point(26, 26);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-
-  test_point = gfx::Point(74, 74);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForSingleLayerWithScaledContents) {
-  // A layer's visible content rect is actually in the layer's content space.
-  // The screen space transform converts from the layer's origin space to screen
-  // space. This test makes sure that hit testing works correctly accounts for
-  // the contents scale.  A contents scale that is not 1 effectively forces a
-  // non-identity transform between layer's content space and layer's origin
-  // space. The hit testing code must take this into account.
-  //
-  // To test this, the layer is positioned at (25, 25), and is size (50, 50). If
-  // contents scale is ignored, then hit testing will mis-interpret the visible
-  // content rect as being larger than the actual bounds of the layer.
-  //
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 1);
-
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               gfx::PointF(),
-                               gfx::Size(100, 100),
-                               true,
-                               false);
-  {
-    gfx::PointF position(25.f, 25.f);
-    gfx::Size bounds(50, 50);
-    scoped_ptr<LayerImpl> test_layer =
-        LayerImpl::Create(host_impl.active_tree(), 12345);
-    SetLayerPropertiesForTesting(test_layer.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-
-    // override content bounds and contents scale
-    test_layer->SetContentBounds(gfx::Size(100, 100));
-    test_layer->SetContentsScale(2, 2);
-
-    test_layer->SetDrawsContent(true);
-    root->AddChild(test_layer.Pass());
-  }
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  // The visible content rect for test_layer is actually 100x100, even though
-  // its layout size is 50x50, positioned at 25x25.
-  LayerImpl* test_layer = root->children()[0];
-  EXPECT_RECT_EQ(gfx::Rect(0, 0, 100, 100),
-                 test_layer->visible_content_rect());
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-
-  // Hit testing for a point outside the layer should return a null pointer (the
-  // root layer does not draw content, so it will not be hit tested either).
-  gfx::Point test_point(101, 101);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(24, 24);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(76, 76);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit testing for a point inside should return the test layer.
-  test_point = gfx::Point(26, 26);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-
-  test_point = gfx::Point(74, 74);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForSimpleClippedLayer) {
-  // Test that hit-testing will only work for the visible portion of a layer,
-  // and not the entire layer bounds. Here we just test the simple axis-aligned
-  // case.
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 1);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               gfx::PointF(),
-                               gfx::Size(100, 100),
-                               true,
-                               false);
-  {
-    scoped_ptr<LayerImpl> clipping_layer =
-        LayerImpl::Create(host_impl.active_tree(), 123);
-    // this layer is positioned, and hit testing should correctly know where the
-    // layer is located.
-    gfx::PointF position(25.f, 25.f);
-    gfx::Size bounds(50, 50);
-    SetLayerPropertiesForTesting(clipping_layer.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    clipping_layer->SetMasksToBounds(true);
-
-    scoped_ptr<LayerImpl> child =
-        LayerImpl::Create(host_impl.active_tree(), 456);
-    position = gfx::PointF(-50.f, -50.f);
-    bounds = gfx::Size(300, 300);
-    SetLayerPropertiesForTesting(child.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    child->SetDrawsContent(true);
-    clipping_layer->AddChild(child.Pass());
-    root->AddChild(clipping_layer.Pass());
-  }
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-  ASSERT_EQ(456, root->render_surface()->layer_list().at(0)->id());
-
-  // Hit testing for a point outside the layer should return a null pointer.
-  // Despite the child layer being very large, it should be clipped to the root
-  // layer's bounds.
-  gfx::Point test_point(24, 24);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Even though the layer exists at (101, 101), it should not be visible there
-  // since the clipping_layer would clamp it.
-  test_point = gfx::Point(76, 76);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit testing for a point inside should return the child layer.
-  test_point = gfx::Point(26, 26);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(456, result_layer->id());
-
-  test_point = gfx::Point(74, 74);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(456, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForMultiClippedRotatedLayer) {
-  // This test checks whether hit testing correctly avoids hit testing with
-  // multiple ancestors that clip in non axis-aligned ways. To pass this test,
-  // the hit testing algorithm needs to recognize that multiple parent layers
-  // may clip the layer, and should not actually hit those clipped areas.
-  //
-  // The child and grand_child layers are both initialized to clip the
-  // rotated_leaf. The child layer is rotated about the top-left corner, so that
-  // the root + child clips combined create a triangle. The rotated_leaf will
-  // only be visible where it overlaps this triangle.
-  //
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 123);
-
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-  gfx::PointF position;
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetMasksToBounds(true);
-  {
-    scoped_ptr<LayerImpl> child =
-        LayerImpl::Create(host_impl.active_tree(), 456);
-    scoped_ptr<LayerImpl> grand_child =
-        LayerImpl::Create(host_impl.active_tree(), 789);
-    scoped_ptr<LayerImpl> rotated_leaf =
-        LayerImpl::Create(host_impl.active_tree(), 2468);
-
-    position = gfx::PointF(10.f, 10.f);
-    bounds = gfx::Size(80, 80);
-    SetLayerPropertiesForTesting(child.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    child->SetMasksToBounds(true);
-
-    gfx::Transform rotation45_degrees_about_corner;
-    rotation45_degrees_about_corner.RotateAboutZAxis(45.0);
-
-    // remember, positioned with respect to its parent which is already at 10,
-    // 10
-    position = gfx::PointF();
-    bounds =
-        gfx::Size(200, 200);  // to ensure it covers at least sqrt(2) * 100.
-    SetLayerPropertiesForTesting(grand_child.get(),
-                                 rotation45_degrees_about_corner,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    grand_child->SetMasksToBounds(true);
-
-    // Rotates about the center of the layer
-    gfx::Transform rotated_leaf_transform;
-    rotated_leaf_transform.Translate(
-        -10.0, -10.0);  // cancel out the grand_parent's position
-    rotated_leaf_transform.RotateAboutZAxis(
-        -45.0);  // cancel out the corner 45-degree rotation of the parent.
-    rotated_leaf_transform.Translate(50.0, 50.0);
-    rotated_leaf_transform.RotateAboutZAxis(45.0);
-    rotated_leaf_transform.Translate(-50.0, -50.0);
-    position = gfx::PointF();
-    bounds = gfx::Size(100, 100);
-    SetLayerPropertiesForTesting(rotated_leaf.get(),
-                                 rotated_leaf_transform,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    rotated_leaf->SetDrawsContent(true);
-
-    grand_child->AddChild(rotated_leaf.Pass());
-    child->AddChild(grand_child.Pass());
-    root->AddChild(child.Pass());
-  }
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  // The grand_child is expected to create a render surface because it
-  // MasksToBounds and is not axis aligned.
-  ASSERT_EQ(2u, render_surface_layer_list.size());
-  ASSERT_EQ(
-      1u,
-      render_surface_layer_list.at(0)->render_surface()->layer_list().size());
-  ASSERT_EQ(789,
-            render_surface_layer_list.at(0)->render_surface()->layer_list().at(
-                0)->id());  // grand_child's surface.
-  ASSERT_EQ(
-      1u,
-      render_surface_layer_list.at(1)->render_surface()->layer_list().size());
-  ASSERT_EQ(
-      2468,
-      render_surface_layer_list[1]->render_surface()->layer_list().at(0)->id());
-
-  // (11, 89) is close to the the bottom left corner within the clip, but it is
-  // not inside the layer.
-  gfx::Point test_point(11, 89);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Closer inwards from the bottom left will overlap the layer.
-  test_point = gfx::Point(25, 75);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(2468, result_layer->id());
-
-  // (4, 50) is inside the unclipped layer, but that corner of the layer should
-  // be clipped away by the grandparent and should not get hit. If hit testing
-  // blindly uses visible content rect without considering how parent may clip
-  // the layer, then hit testing would accidentally think that the point
-  // successfully hits the layer.
-  test_point = gfx::Point(4, 50);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // (11, 50) is inside the layer and within the clipped area.
-  test_point = gfx::Point(11, 50);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(2468, result_layer->id());
-
-  // Around the middle, just to the right and up, would have hit the layer
-  // except that that area should be clipped away by the parent.
-  test_point = gfx::Point(51, 49);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Around the middle, just to the left and down, should successfully hit the
-  // layer.
-  test_point = gfx::Point(49, 51);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(2468, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForNonClippingIntermediateLayer) {
-  // This test checks that hit testing code does not accidentally clip to layer
-  // bounds for a layer that actually does not clip.
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 1);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               gfx::PointF(),
-                               gfx::Size(100, 100),
-                               true,
-                               false);
-  {
-    scoped_ptr<LayerImpl> intermediate_layer =
-        LayerImpl::Create(host_impl.active_tree(), 123);
-    // this layer is positioned, and hit testing should correctly know where the
-    // layer is located.
-    gfx::PointF position(10.f, 10.f);
-    gfx::Size bounds(50, 50);
-    SetLayerPropertiesForTesting(intermediate_layer.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    // Sanity check the intermediate layer should not clip.
-    ASSERT_FALSE(intermediate_layer->masks_to_bounds());
-    ASSERT_FALSE(intermediate_layer->mask_layer());
-
-    // The child of the intermediate_layer is translated so that it does not
-    // overlap intermediate_layer at all.  If child is incorrectly clipped, we
-    // would not be able to hit it successfully.
-    scoped_ptr<LayerImpl> child =
-        LayerImpl::Create(host_impl.active_tree(), 456);
-    position = gfx::PointF(60.f, 60.f);  // 70, 70 in screen space
-    bounds = gfx::Size(20, 20);
-    SetLayerPropertiesForTesting(child.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    child->SetDrawsContent(true);
-    intermediate_layer->AddChild(child.Pass());
-    root->AddChild(intermediate_layer.Pass());
-  }
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-  ASSERT_EQ(456, root->render_surface()->layer_list().at(0)->id());
-
-  // Hit testing for a point outside the layer should return a null pointer.
-  gfx::Point test_point(69, 69);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(91, 91);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit testing for a point inside should return the child layer.
-  test_point = gfx::Point(71, 71);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(456, result_layer->id());
-
-  test_point = gfx::Point(89, 89);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(456, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForMultipleLayers) {
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 1);
-
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-  gfx::PointF position;
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetDrawsContent(true);
-  {
-    // child 1 and child2 are initialized to overlap between x=50 and x=60.
-    // grand_child is set to overlap both child1 and child2 between y=50 and
-    // y=60.  The expected stacking order is: (front) child2, (second)
-    // grand_child, (third) child1, and (back) the root layer behind all other
-    // layers.
-
-    scoped_ptr<LayerImpl> child1 =
-        LayerImpl::Create(host_impl.active_tree(), 2);
-    scoped_ptr<LayerImpl> child2 =
-        LayerImpl::Create(host_impl.active_tree(), 3);
-    scoped_ptr<LayerImpl> grand_child1 =
-        LayerImpl::Create(host_impl.active_tree(), 4);
-
-    position = gfx::PointF(10.f, 10.f);
-    bounds = gfx::Size(50, 50);
-    SetLayerPropertiesForTesting(child1.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    child1->SetDrawsContent(true);
-
-    position = gfx::PointF(50.f, 10.f);
-    bounds = gfx::Size(50, 50);
-    SetLayerPropertiesForTesting(child2.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    child2->SetDrawsContent(true);
-
-    // Remember that grand_child is positioned with respect to its parent (i.e.
-    // child1).  In screen space, the intended position is (10, 50), with size
-    // 100 x 50.
-    position = gfx::PointF(0.f, 40.f);
-    bounds = gfx::Size(100, 50);
-    SetLayerPropertiesForTesting(grand_child1.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    grand_child1->SetDrawsContent(true);
-
-    child1->AddChild(grand_child1.Pass());
-    root->AddChild(child1.Pass());
-    root->AddChild(child2.Pass());
-  }
-
-  LayerImpl* child1 = root->children()[0];
-  LayerImpl* child2 = root->children()[1];
-  LayerImpl* grand_child1 = child1->children()[0];
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_TRUE(child1);
-  ASSERT_TRUE(child2);
-  ASSERT_TRUE(grand_child1);
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-
-  RenderSurfaceImpl* root_render_surface = root->render_surface();
-  ASSERT_EQ(4u, root_render_surface->layer_list().size());
-  ASSERT_EQ(1, root_render_surface->layer_list().at(0)->id());  // root layer
-  ASSERT_EQ(2, root_render_surface->layer_list().at(1)->id());  // child1
-  ASSERT_EQ(4, root_render_surface->layer_list().at(2)->id());  // grand_child1
-  ASSERT_EQ(3, root_render_surface->layer_list().at(3)->id());  // child2
-
-  // Nothing overlaps the root_layer at (1, 1), so hit testing there should find
-  // the root layer.
-  gfx::Point test_point = gfx::Point(1, 1);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(1, result_layer->id());
-
-  // At (15, 15), child1 and root are the only layers. child1 is expected to be
-  // on top.
-  test_point = gfx::Point(15, 15);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(2, result_layer->id());
-
-  // At (51, 20), child1 and child2 overlap. child2 is expected to be on top.
-  test_point = gfx::Point(51, 20);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(3, result_layer->id());
-
-  // At (80, 51), child2 and grand_child1 overlap. child2 is expected to be on
-  // top.
-  test_point = gfx::Point(80, 51);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(3, result_layer->id());
-
-  // At (51, 51), all layers overlap each other. child2 is expected to be on top
-  // of all other layers.
-  test_point = gfx::Point(51, 51);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(3, result_layer->id());
-
-  // At (20, 51), child1 and grand_child1 overlap. grand_child1 is expected to
-  // be on top.
-  test_point = gfx::Point(20, 51);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(4, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForMultipleLayerLists) {
-  //
-  // The geometry is set up similarly to the previous case, but
-  // all layers are forced to be render surfaces now.
-  //
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 1);
-
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-  gfx::PointF position;
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetDrawsContent(true);
-  {
-    // child 1 and child2 are initialized to overlap between x=50 and x=60.
-    // grand_child is set to overlap both child1 and child2 between y=50 and
-    // y=60.  The expected stacking order is: (front) child2, (second)
-    // grand_child, (third) child1, and (back) the root layer behind all other
-    // layers.
-
-    scoped_ptr<LayerImpl> child1 =
-        LayerImpl::Create(host_impl.active_tree(), 2);
-    scoped_ptr<LayerImpl> child2 =
-        LayerImpl::Create(host_impl.active_tree(), 3);
-    scoped_ptr<LayerImpl> grand_child1 =
-        LayerImpl::Create(host_impl.active_tree(), 4);
-
-    position = gfx::PointF(10.f, 10.f);
-    bounds = gfx::Size(50, 50);
-    SetLayerPropertiesForTesting(child1.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    child1->SetDrawsContent(true);
-    child1->SetForceRenderSurface(true);
-
-    position = gfx::PointF(50.f, 10.f);
-    bounds = gfx::Size(50, 50);
-    SetLayerPropertiesForTesting(child2.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    child2->SetDrawsContent(true);
-    child2->SetForceRenderSurface(true);
-
-    // Remember that grand_child is positioned with respect to its parent (i.e.
-    // child1).  In screen space, the intended position is (10, 50), with size
-    // 100 x 50.
-    position = gfx::PointF(0.f, 40.f);
-    bounds = gfx::Size(100, 50);
-    SetLayerPropertiesForTesting(grand_child1.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    grand_child1->SetDrawsContent(true);
-    grand_child1->SetForceRenderSurface(true);
-
-    child1->AddChild(grand_child1.Pass());
-    root->AddChild(child1.Pass());
-    root->AddChild(child2.Pass());
-  }
-
-  LayerImpl* child1 = root->children()[0];
-  LayerImpl* child2 = root->children()[1];
-  LayerImpl* grand_child1 = child1->children()[0];
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_TRUE(child1);
-  ASSERT_TRUE(child2);
-  ASSERT_TRUE(grand_child1);
-  ASSERT_TRUE(child1->render_surface());
-  ASSERT_TRUE(child2->render_surface());
-  ASSERT_TRUE(grand_child1->render_surface());
-  ASSERT_EQ(4u, render_surface_layer_list.size());
-  // The root surface has the root layer, and child1's and child2's render
-  // surfaces.
-  ASSERT_EQ(3u, root->render_surface()->layer_list().size());
-  // The child1 surface has the child1 layer and grand_child1's render surface.
-  ASSERT_EQ(2u, child1->render_surface()->layer_list().size());
-  ASSERT_EQ(1u, child2->render_surface()->layer_list().size());
-  ASSERT_EQ(1u, grand_child1->render_surface()->layer_list().size());
-  ASSERT_EQ(1, render_surface_layer_list.at(0)->id());  // root layer
-  ASSERT_EQ(2, render_surface_layer_list[1]->id());  // child1
-  ASSERT_EQ(4, render_surface_layer_list.at(2)->id());  // grand_child1
-  ASSERT_EQ(3, render_surface_layer_list[3]->id());  // child2
-
-  // Nothing overlaps the root_layer at (1, 1), so hit testing there should find
-  // the root layer.
-  gfx::Point test_point = gfx::Point(1, 1);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(1, result_layer->id());
-
-  // At (15, 15), child1 and root are the only layers. child1 is expected to be
-  // on top.
-  test_point = gfx::Point(15, 15);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(2, result_layer->id());
-
-  // At (51, 20), child1 and child2 overlap. child2 is expected to be on top.
-  test_point = gfx::Point(51, 20);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(3, result_layer->id());
-
-  // At (80, 51), child2 and grand_child1 overlap. child2 is expected to be on
-  // top.
-  test_point = gfx::Point(80, 51);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(3, result_layer->id());
-
-  // At (51, 51), all layers overlap each other. child2 is expected to be on top
-  // of all other layers.
-  test_point = gfx::Point(51, 51);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(3, result_layer->id());
-
-  // At (20, 51), child1 and grand_child1 overlap. grand_child1 is expected to
-  // be on top.
-  test_point = gfx::Point(20, 51);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(4, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest, HitTestingForEmptyLayers) {
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-
-  // Layer 1 - root
-  scoped_ptr<LayerImpl> root =
-      LayerImpl::Create(host_impl.active_tree(), 1);
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-  gfx::PointF position;
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetDrawsContent(true);
-
-  {
-    // Layer 2 - empty: drawsContent=false
-    gfx::PointF position(10.f, 10.f);
-    gfx::Size bounds(30, 30);
-    scoped_ptr<LayerImpl> empty_layer =
-        LayerImpl::Create(host_impl.active_tree(), 2);
-    SetLayerPropertiesForTesting(empty_layer.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-
-    empty_layer->SetDrawsContent(false);
-    root->AddChild(empty_layer.Pass());
-  }
-
-  {
-    // Layer 3 - empty, but has touch handler
-    gfx::PointF position(10.f, 60.f);
-    gfx::Size bounds(30, 30);
-    scoped_ptr<LayerImpl> test_layer =
-        LayerImpl::Create(host_impl.active_tree(), 3);
-    SetLayerPropertiesForTesting(test_layer.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-
-    test_layer->SetDrawsContent(false);
-    Region touch_handler_region(gfx::Rect(10, 10, 10, 10));
-    test_layer->SetTouchEventHandlerRegion(touch_handler_region);
-    root->AddChild(test_layer.Pass());
-  }
-
-  {
-    // Layer 4 - empty, but has mousewheel handler
-    gfx::PointF position(60.f, 60.f);
-    gfx::Size bounds(30, 30);
-    scoped_ptr<LayerImpl> test_layer =
-        LayerImpl::Create(host_impl.active_tree(), 4);
-    SetLayerPropertiesForTesting(test_layer.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-
-    test_layer->SetDrawsContent(false);
-    test_layer->SetHaveWheelEventHandlers(true);
-    root->AddChild(test_layer.Pass());
-  }
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Verify that the root layer and empty layers with touch/wheel handlers
-  // (but not the empty layer without a touch handler) are in the RSSL.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  EXPECT_EQ(1, render_surface_layer_list[0]->id());
-  ASSERT_EQ(3u, root->render_surface()->layer_list().size());
-  EXPECT_EQ(1, root->render_surface()->layer_list().at(0)->id());
-  EXPECT_EQ(3, root->render_surface()->layer_list().at(1)->id());
-  EXPECT_EQ(4, root->render_surface()->layer_list().at(2)->id());
-
-  // Hit testing for a point inside the empty no-handlers layer should return
-  // the root layer.
-  gfx::Point test_point = gfx::Point(15, 15);
-  LayerImpl* result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-      test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(1, result_layer->id());
-
-  // Hit testing for a point inside the touch handler layer should return it.
-  test_point = gfx::Point(15, 75);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(3, result_layer->id());
-
-  // Hit testing for a point inside the mousewheel layer should return it.
-  test_point = gfx::Point(75, 75);
-  result_layer = LayerTreeHostCommon::FindLayerThatIsHitByPoint(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(4, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest,
-       HitCheckingTouchHandlerRegionsForEmptyLayerList) {
-  // Hit checking on an empty render_surface_layer_list should return a null
-  // pointer.
-  LayerImplList render_surface_layer_list;
-
-  gfx::Point test_point(0, 0);
-  LayerImpl* result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(10, 20);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-}
-
-TEST_F(LayerTreeHostCommonTest, HitCheckingTouchHandlerRegionsForSingleLayer) {
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root =
-      LayerImpl::Create(host_impl.active_tree(), 12345);
-
-  gfx::Transform identity_matrix;
-  Region touch_handler_region(gfx::Rect(10, 10, 50, 50));
-  gfx::PointF anchor;
-  gfx::PointF position;
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetDrawsContent(true);
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-
-  // Hit checking for any point should return a null pointer for a layer without
-  // any touch event handler regions.
-  gfx::Point test_point(11, 11);
-  LayerImpl* result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  root->SetTouchEventHandlerRegion(touch_handler_region);
-  // Hit checking for a point outside the layer should return a null pointer.
-  test_point = gfx::Point(101, 101);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(-1, -1);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit checking for a point inside the layer, but outside the touch handler
-  // region should return a null pointer.
-  test_point = gfx::Point(1, 1);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(99, 99);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit checking for a point inside the touch event handler region should
-  // return the root layer.
-  test_point = gfx::Point(11, 11);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-
-  test_point = gfx::Point(59, 59);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest,
-     HitCheckingTouchHandlerRegionsForUninvertibleTransform) {
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root =
-      LayerImpl::Create(host_impl.active_tree(), 12345);
-
-  gfx::Transform uninvertible_transform;
-  uninvertible_transform.matrix().set(0, 0, 0.0);
-  uninvertible_transform.matrix().set(1, 1, 0.0);
-  uninvertible_transform.matrix().set(2, 2, 0.0);
-  uninvertible_transform.matrix().set(3, 3, 0.0);
-  ASSERT_FALSE(uninvertible_transform.IsInvertible());
-
-  gfx::Transform identity_matrix;
-  Region touch_handler_region(gfx::Rect(10, 10, 50, 50));
-  gfx::PointF anchor;
-  gfx::PointF position;
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               uninvertible_transform,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetDrawsContent(true);
-  root->SetTouchEventHandlerRegion(touch_handler_region);
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-  ASSERT_FALSE(root->screen_space_transform().IsInvertible());
-
-  // Hit checking any point should not hit the touch handler region on the
-  // layer. If the invertible matrix is accidentally ignored and treated like an
-  // identity, then the hit testing will incorrectly hit the layer when it
-  // shouldn't.
-  gfx::Point test_point(1, 1);
-  LayerImpl* result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(10, 10);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(10, 30);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(50, 50);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(67, 48);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(99, 99);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(-1, -1);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-}
-
-TEST_F(LayerTreeHostCommonTest,
-     HitCheckingTouchHandlerRegionsForSinglePositionedLayer) {
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root =
-      LayerImpl::Create(host_impl.active_tree(), 12345);
-
-  gfx::Transform identity_matrix;
-  Region touch_handler_region(gfx::Rect(10, 10, 50, 50));
-  gfx::PointF anchor;
-  // this layer is positioned, and hit testing should correctly know where the
-  // layer is located.
-  gfx::PointF position(50.f, 50.f);
-  gfx::Size bounds(100, 100);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               position,
-                               bounds,
-                               true,
-                               false);
-  root->SetDrawsContent(true);
-  root->SetTouchEventHandlerRegion(touch_handler_region);
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-
-  // Hit checking for a point outside the layer should return a null pointer.
-  gfx::Point test_point(49, 49);
-  LayerImpl* result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Even though the layer has a touch handler region containing (101, 101), it
-  // should not be visible there since the root render surface would clamp it.
-  test_point = gfx::Point(101, 101);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit checking for a point inside the layer, but outside the touch handler
-  // region should return a null pointer.
-  test_point = gfx::Point(51, 51);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit checking for a point inside the touch event handler region should
-  // return the root layer.
-  test_point = gfx::Point(61, 61);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-
-  test_point = gfx::Point(99, 99);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest,
-     HitCheckingTouchHandlerRegionsForSingleLayerWithScaledContents) {
-  // A layer's visible content rect is actually in the layer's content space.
-  // The screen space transform converts from the layer's origin space to screen
-  // space. This test makes sure that hit testing works correctly accounts for
-  // the contents scale.  A contents scale that is not 1 effectively forces a
-  // non-identity transform between layer's content space and layer's origin
-  // space. The hit testing code must take this into account.
-  //
-  // To test this, the layer is positioned at (25, 25), and is size (50, 50). If
-  // contents scale is ignored, then hit checking will mis-interpret the visible
-  // content rect as being larger than the actual bounds of the layer.
-  //
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 1);
-
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               gfx::PointF(),
-                               gfx::Size(100, 100),
-                               true,
-                               false);
-  {
-    Region touch_handler_region(gfx::Rect(10, 10, 30, 30));
-    gfx::PointF position(25.f, 25.f);
-    gfx::Size bounds(50, 50);
-    scoped_ptr<LayerImpl> test_layer =
-        LayerImpl::Create(host_impl.active_tree(), 12345);
-    SetLayerPropertiesForTesting(test_layer.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-
-    // override content bounds and contents scale
-    test_layer->SetContentBounds(gfx::Size(100, 100));
-    test_layer->SetContentsScale(2, 2);
-
-    test_layer->SetDrawsContent(true);
-    test_layer->SetTouchEventHandlerRegion(touch_handler_region);
-    root->AddChild(test_layer.Pass());
-  }
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  // The visible content rect for test_layer is actually 100x100, even though
-  // its layout size is 50x50, positioned at 25x25.
-  LayerImpl* test_layer = root->children()[0];
-  EXPECT_RECT_EQ(gfx::Rect(0, 0, 100, 100), test_layer->visible_content_rect());
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-
-  // Hit checking for a point outside the layer should return a null pointer
-  // (the root layer does not draw content, so it will not be tested either).
-  gfx::Point test_point(76, 76);
-  LayerImpl* result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit checking for a point inside the layer, but outside the touch handler
-  // region should return a null pointer.
-  test_point = gfx::Point(26, 26);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(34, 34);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(65, 65);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(74, 74);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit checking for a point inside the touch event handler region should
-  // return the root layer.
-  test_point = gfx::Point(35, 35);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-
-  test_point = gfx::Point(64, 64);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest,
-     HitCheckingTouchHandlerRegionsForSingleLayerWithDeviceScale) {
-  // The layer's device_scale_factor and page_scale_factor should scale the
-  // content rect and we should be able to hit the touch handler region by
-  // scaling the points accordingly.
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 1);
-
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-  // Set the bounds of the root layer big enough to fit the child when scaled.
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               gfx::PointF(),
-                               gfx::Size(100, 100),
-                               true,
-                               false);
-  {
-    Region touch_handler_region(gfx::Rect(10, 10, 30, 30));
-    gfx::PointF position(25.f, 25.f);
-    gfx::Size bounds(50, 50);
-    scoped_ptr<LayerImpl> test_layer =
-        LayerImpl::Create(host_impl.active_tree(), 12345);
-    SetLayerPropertiesForTesting(test_layer.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-
-    test_layer->SetDrawsContent(true);
-    test_layer->SetTouchEventHandlerRegion(touch_handler_region);
-    root->AddChild(test_layer.Pass());
-  }
-
-  LayerImplList render_surface_layer_list;
-  float device_scale_factor = 3.f;
-  float page_scale_factor = 5.f;
-  gfx::Size scaled_bounds_for_root = gfx::ToCeiledSize(
-      gfx::ScaleSize(root->bounds(), device_scale_factor * page_scale_factor));
-
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), scaled_bounds_for_root, &render_surface_layer_list);
-  inputs.device_scale_factor = device_scale_factor;
-  inputs.page_scale_factor = page_scale_factor;
-  inputs.page_scale_application_layer = root.get();
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  // The visible content rect for test_layer is actually 100x100, even though
-  // its layout size is 50x50, positioned at 25x25.
-  LayerImpl* test_layer = root->children()[0];
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-
-  // Check whether the child layer fits into the root after scaled.
-  EXPECT_RECT_EQ(gfx::Rect(test_layer->content_bounds()),
-                 test_layer->visible_content_rect());
-
-  // Hit checking for a point outside the layer should return a null pointer
-  // (the root layer does not draw content, so it will not be tested either).
-  gfx::PointF test_point(76.f, 76.f);
-  test_point =
-      gfx::ScalePoint(test_point, device_scale_factor * page_scale_factor);
-  LayerImpl* result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit checking for a point inside the layer, but outside the touch handler
-  // region should return a null pointer.
-  test_point = gfx::Point(26, 26);
-  test_point =
-      gfx::ScalePoint(test_point, device_scale_factor * page_scale_factor);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(34, 34);
-  test_point =
-      gfx::ScalePoint(test_point, device_scale_factor * page_scale_factor);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(65, 65);
-  test_point =
-      gfx::ScalePoint(test_point, device_scale_factor * page_scale_factor);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(74, 74);
-  test_point =
-      gfx::ScalePoint(test_point, device_scale_factor * page_scale_factor);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit checking for a point inside the touch event handler region should
-  // return the root layer.
-  test_point = gfx::Point(35, 35);
-  test_point =
-      gfx::ScalePoint(test_point, device_scale_factor * page_scale_factor);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-
-  test_point = gfx::Point(64, 64);
-  test_point =
-      gfx::ScalePoint(test_point, device_scale_factor * page_scale_factor);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(12345, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest,
-     HitCheckingTouchHandlerRegionsForSimpleClippedLayer) {
-  // Test that hit-checking will only work for the visible portion of a layer,
-  // and not the entire layer bounds. Here we just test the simple axis-aligned
-  // case.
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 1);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               gfx::PointF(),
-                               gfx::Size(100, 100),
-                               true,
-                               false);
-  {
-    scoped_ptr<LayerImpl> clipping_layer =
-        LayerImpl::Create(host_impl.active_tree(), 123);
-    // this layer is positioned, and hit testing should correctly know where the
-    // layer is located.
-    gfx::PointF position(25.f, 25.f);
-    gfx::Size bounds(50, 50);
-    SetLayerPropertiesForTesting(clipping_layer.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    clipping_layer->SetMasksToBounds(true);
-
-    scoped_ptr<LayerImpl> child =
-        LayerImpl::Create(host_impl.active_tree(), 456);
-    Region touch_handler_region(gfx::Rect(10, 10, 50, 50));
-    position = gfx::PointF(-50.f, -50.f);
-    bounds = gfx::Size(300, 300);
-    SetLayerPropertiesForTesting(child.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    child->SetDrawsContent(true);
-    child->SetTouchEventHandlerRegion(touch_handler_region);
-    clipping_layer->AddChild(child.Pass());
-    root->AddChild(clipping_layer.Pass());
-  }
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(1u, root->render_surface()->layer_list().size());
-  ASSERT_EQ(456, root->render_surface()->layer_list().at(0)->id());
-
-  // Hit checking for a point outside the layer should return a null pointer.
-  // Despite the child layer being very large, it should be clipped to the root
-  // layer's bounds.
-  gfx::Point test_point(24, 24);
-  LayerImpl* result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit checking for a point inside the layer, but outside the touch handler
-  // region should return a null pointer.
-  test_point = gfx::Point(35, 35);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(74, 74);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  // Hit checking for a point inside the touch event handler region should
-  // return the root layer.
-  test_point = gfx::Point(25, 25);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(456, result_layer->id());
-
-  test_point = gfx::Point(34, 34);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(456, result_layer->id());
-}
-
-TEST_F(LayerTreeHostCommonTest,
-       HitCheckingTouchHandlerOverlappingRegions) {
-  gfx::Transform identity_matrix;
-  gfx::PointF anchor;
-
-  FakeImplProxy proxy;
-  TestSharedBitmapManager shared_bitmap_manager;
-  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
-  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 1);
-  SetLayerPropertiesForTesting(root.get(),
-                               identity_matrix,
-                               anchor,
-                               gfx::PointF(),
-                               gfx::Size(100, 100),
-                               true,
-                               false);
-  {
-    scoped_ptr<LayerImpl> touch_layer =
-        LayerImpl::Create(host_impl.active_tree(), 123);
-    // this layer is positioned, and hit testing should correctly know where the
-    // layer is located.
-    gfx::PointF position;
-    gfx::Size bounds(50, 50);
-    SetLayerPropertiesForTesting(touch_layer.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    touch_layer->SetDrawsContent(true);
-    touch_layer->SetTouchEventHandlerRegion(gfx::Rect(0, 0, 50, 50));
-    root->AddChild(touch_layer.Pass());
-  }
-
-  {
-    scoped_ptr<LayerImpl> notouch_layer =
-        LayerImpl::Create(host_impl.active_tree(), 1234);
-    // this layer is positioned, and hit testing should correctly know where the
-    // layer is located.
-    gfx::PointF position(0, 25);
-    gfx::Size bounds(50, 50);
-    SetLayerPropertiesForTesting(notouch_layer.get(),
-                                 identity_matrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
-    notouch_layer->SetDrawsContent(true);
-    root->AddChild(notouch_layer.Pass());
-  }
-
-  LayerImplList render_surface_layer_list;
-  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
-      root.get(), root->bounds(), &render_surface_layer_list);
-  inputs.can_adjust_raster_scales = true;
-  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-  // Sanity check the scenario we just created.
-  ASSERT_EQ(1u, render_surface_layer_list.size());
-  ASSERT_EQ(2u, root->render_surface()->layer_list().size());
-  ASSERT_EQ(123, root->render_surface()->layer_list().at(0)->id());
-  ASSERT_EQ(1234, root->render_surface()->layer_list().at(1)->id());
-
-  gfx::Point test_point(35, 35);
-  LayerImpl* result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
-
-  test_point = gfx::Point(35, 15);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  ASSERT_TRUE(result_layer);
-  EXPECT_EQ(123, result_layer->id());
-
-  test_point = gfx::Point(35, 65);
-  result_layer =
-      LayerTreeHostCommon::FindLayerThatIsHitByPointInTouchHandlerRegion(
-          test_point, render_surface_layer_list);
-  EXPECT_FALSE(result_layer);
 }
 
 class NoScaleContentLayer : public ContentLayer {
@@ -6174,7 +4089,7 @@ TEST_F(LayerTreeHostCommonTest, LayerTransformsInHighDPI) {
   scoped_refptr<ContentLayer> parent = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                false,
@@ -6183,7 +4098,7 @@ TEST_F(LayerTreeHostCommonTest, LayerTransformsInHighDPI) {
   scoped_refptr<ContentLayer> child = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -6193,7 +4108,7 @@ TEST_F(LayerTreeHostCommonTest, LayerTransformsInHighDPI) {
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child_empty.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(),
                                false,
@@ -6203,7 +4118,7 @@ TEST_F(LayerTreeHostCommonTest, LayerTransformsInHighDPI) {
       CreateNoScaleDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child_no_scale.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -6318,7 +4233,7 @@ TEST_F(LayerTreeHostCommonTest, SurfaceLayerTransformsInHighDPI) {
   scoped_refptr<ContentLayer> parent = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                false,
@@ -6328,7 +4243,7 @@ TEST_F(LayerTreeHostCommonTest, SurfaceLayerTransformsInHighDPI) {
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(perspective_surface.get(),
                                perspective_matrix * scale_small_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -6338,7 +4253,7 @@ TEST_F(LayerTreeHostCommonTest, SurfaceLayerTransformsInHighDPI) {
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(scale_surface.get(),
                                scale_small_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -6422,7 +4337,7 @@ TEST_F(LayerTreeHostCommonTest,
   scoped_refptr<ContentLayer> parent = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(133, 133),
                                false,
@@ -6431,7 +4346,7 @@ TEST_F(LayerTreeHostCommonTest,
   scoped_refptr<ContentLayer> child = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(13, 13),
                                false,
@@ -6441,7 +4356,7 @@ TEST_F(LayerTreeHostCommonTest,
       CreateNoScaleDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child_no_scale.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(13, 13),
                                false,
@@ -6546,7 +4461,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScale) {
   scoped_refptr<ContentLayer> parent = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(parent.get(),
                                parent_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                false,
@@ -6556,7 +4471,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScale) {
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -6566,7 +4481,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScale) {
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child_empty.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(),
                                false,
@@ -6576,7 +4491,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScale) {
       CreateNoScaleDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child_no_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(12.f, 12.f),
                                gfx::Size(10, 10),
                                false,
@@ -6730,7 +4645,7 @@ TEST_F(LayerTreeHostCommonTest,
   scoped_refptr<ContentLayer> parent = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(parent.get(),
                                parent_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                false,
@@ -6740,7 +4655,7 @@ TEST_F(LayerTreeHostCommonTest,
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -6750,7 +4665,7 @@ TEST_F(LayerTreeHostCommonTest,
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child_empty.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(),
                                false,
@@ -6760,7 +4675,7 @@ TEST_F(LayerTreeHostCommonTest,
       CreateNoScaleDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child_no_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(12.f, 12.f),
                                gfx::Size(10, 10),
                                false,
@@ -6834,7 +4749,7 @@ TEST_F(LayerTreeHostCommonTest, SmallContentsScale) {
   scoped_refptr<ContentLayer> parent = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(parent.get(),
                                parent_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                false,
@@ -6844,7 +4759,7 @@ TEST_F(LayerTreeHostCommonTest, SmallContentsScale) {
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -6923,7 +4838,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScaleForSurfaces) {
   scoped_refptr<ContentLayer> parent = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(parent.get(),
                                parent_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                false,
@@ -6933,7 +4848,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScaleForSurfaces) {
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -6943,7 +4858,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScaleForSurfaces) {
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_scale_child_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                false,
@@ -6953,7 +4868,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScaleForSurfaces) {
       CreateNoScaleDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_scale_child_no_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                false,
@@ -6963,7 +4878,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScaleForSurfaces) {
       CreateNoScaleDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_no_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(12.f, 12.f),
                                gfx::Size(10, 10),
                                false,
@@ -6973,7 +4888,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScaleForSurfaces) {
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_no_scale_child_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                false,
@@ -6983,7 +4898,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScaleForSurfaces) {
       CreateNoScaleDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_no_scale_child_no_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                false,
@@ -7124,7 +5039,7 @@ TEST_F(LayerTreeHostCommonTest,
   scoped_refptr<ContentLayer> parent = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(parent.get(),
                                parent_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                false,
@@ -7134,7 +5049,7 @@ TEST_F(LayerTreeHostCommonTest,
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -7144,7 +5059,7 @@ TEST_F(LayerTreeHostCommonTest,
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_scale_child_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                false,
@@ -7154,7 +5069,7 @@ TEST_F(LayerTreeHostCommonTest,
       CreateNoScaleDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_scale_child_no_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                false,
@@ -7164,7 +5079,7 @@ TEST_F(LayerTreeHostCommonTest,
       CreateNoScaleDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_no_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(12.f, 12.f),
                                gfx::Size(10, 10),
                                false,
@@ -7174,7 +5089,7 @@ TEST_F(LayerTreeHostCommonTest,
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_no_scale_child_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                false,
@@ -7184,7 +5099,7 @@ TEST_F(LayerTreeHostCommonTest,
       CreateNoScaleDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(surface_no_scale_child_no_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                false,
@@ -7326,7 +5241,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScaleForAnimatingLayer) {
   scoped_refptr<ContentLayer> parent = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(parent.get(),
                                parent_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                false,
@@ -7336,7 +5251,7 @@ TEST_F(LayerTreeHostCommonTest, ContentsScaleForAnimatingLayer) {
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child_scale.get(),
                                child_scale_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -7397,14 +5312,14 @@ TEST_F(LayerTreeHostCommonTest,
   gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -7443,7 +5358,7 @@ TEST_F(LayerTreeHostCommonTest, RenderSurfaceTransformsInHighDPI) {
   scoped_refptr<ContentLayer> parent = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                false,
@@ -7452,7 +5367,7 @@ TEST_F(LayerTreeHostCommonTest, RenderSurfaceTransformsInHighDPI) {
   scoped_refptr<ContentLayer> child = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -7463,7 +5378,7 @@ TEST_F(LayerTreeHostCommonTest, RenderSurfaceTransformsInHighDPI) {
   scoped_refptr<ContentLayer> replica = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(replica.get(),
                                replica_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(2.f, 2.f),
                                gfx::Size(10, 10),
                                false,
@@ -7475,7 +5390,7 @@ TEST_F(LayerTreeHostCommonTest, RenderSurfaceTransformsInHighDPI) {
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(duplicate_child_non_owner.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                false,
@@ -7578,7 +5493,7 @@ TEST_F(LayerTreeHostCommonTest,
   scoped_refptr<ContentLayer> parent = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(33, 31),
                                false,
@@ -7587,7 +5502,7 @@ TEST_F(LayerTreeHostCommonTest,
   scoped_refptr<ContentLayer> child = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(13, 11),
                                false,
@@ -7598,7 +5513,7 @@ TEST_F(LayerTreeHostCommonTest,
   scoped_refptr<ContentLayer> replica = CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(replica.get(),
                                replica_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(13, 11),
                                false,
@@ -7610,7 +5525,7 @@ TEST_F(LayerTreeHostCommonTest,
       CreateDrawableContentLayer(&delegate);
   SetLayerPropertiesForTesting(duplicate_child_non_owner.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(13, 11),
                                false,
@@ -7715,21 +5630,21 @@ TEST_F(LayerTreeHostCommonTest, TransparentChildRenderSurfaceCreation) {
   const gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
@@ -7757,7 +5672,7 @@ TEST_F(LayerTreeHostCommonTest, OpacityAnimatingOnPendingTree) {
   const gfx::Transform identity_matrix;
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(100, 100),
                                true,
@@ -7767,7 +5682,7 @@ TEST_F(LayerTreeHostCommonTest, OpacityAnimatingOnPendingTree) {
   scoped_ptr<LayerImpl> child = LayerImpl::Create(host_impl.pending_tree(), 2);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -7810,21 +5725,21 @@ class LCDTextTest
     gfx::Transform identity_matrix;
     SetLayerPropertiesForTesting(root_.get(),
                                  identity_matrix,
-                                 gfx::PointF(),
+                                 gfx::Point3F(),
                                  gfx::PointF(),
                                  gfx::Size(1, 1),
                                  true,
                                  false);
     SetLayerPropertiesForTesting(child_.get(),
                                  identity_matrix,
-                                 gfx::PointF(),
+                                 gfx::Point3F(),
                                  gfx::PointF(),
                                  gfx::Size(1, 1),
                                  true,
                                  false);
     SetLayerPropertiesForTesting(grand_child_.get(),
                                  identity_matrix,
-                                 gfx::PointF(),
+                                 gfx::Point3F(),
                                  gfx::PointF(),
                                  gfx::Size(1, 1),
                                  true,
@@ -7957,7 +5872,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_SingleLayer) {
   scoped_refptr<Layer> root = Layer::Create();
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -7967,7 +5882,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_SingleLayer) {
   scoped_refptr<Layer> child = Layer::Create();
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
@@ -7977,7 +5892,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_SingleLayer) {
   scoped_refptr<Layer> grand_child = Layer::Create();
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
@@ -8015,7 +5930,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_SingleLayerImpl) {
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.pending_tree(), 1);
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -8025,7 +5940,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_SingleLayerImpl) {
   scoped_ptr<LayerImpl> child = LayerImpl::Create(host_impl.pending_tree(), 2);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
@@ -8036,7 +5951,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_SingleLayerImpl) {
       LayerImpl::Create(host_impl.pending_tree(), 3);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
@@ -8071,7 +5986,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_TwoLayers) {
   scoped_refptr<Layer> root = Layer::Create();
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -8081,7 +5996,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_TwoLayers) {
   scoped_refptr<Layer> child = Layer::Create();
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
@@ -8092,7 +6007,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_TwoLayers) {
   scoped_refptr<Layer> grand_child = Layer::Create();
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
@@ -8128,7 +6043,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_TwoLayersImpl) {
   scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.pending_tree(), 1);
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -8138,7 +6053,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_TwoLayersImpl) {
   scoped_ptr<LayerImpl> child = LayerImpl::Create(host_impl.pending_tree(), 2);
   SetLayerPropertiesForTesting(child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
@@ -8150,7 +6065,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHidden_TwoLayersImpl) {
       LayerImpl::Create(host_impl.pending_tree(), 3);
   SetLayerPropertiesForTesting(grand_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
@@ -8185,7 +6100,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHiddenWithCopyRequest) {
   scoped_refptr<Layer> root = Layer::Create();
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -8195,7 +6110,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHiddenWithCopyRequest) {
   scoped_refptr<Layer> copy_grand_parent = Layer::Create();
   SetLayerPropertiesForTesting(copy_grand_parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
@@ -8205,7 +6120,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHiddenWithCopyRequest) {
   scoped_refptr<Layer> copy_parent = Layer::Create();
   SetLayerPropertiesForTesting(copy_parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
@@ -8216,7 +6131,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHiddenWithCopyRequest) {
   scoped_refptr<Layer> copy_layer = Layer::Create();
   SetLayerPropertiesForTesting(copy_layer.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
@@ -8226,7 +6141,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHiddenWithCopyRequest) {
   scoped_refptr<Layer> copy_child = Layer::Create();
   SetLayerPropertiesForTesting(copy_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
@@ -8236,7 +6151,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHiddenWithCopyRequest) {
   scoped_refptr<Layer> copy_grand_parent_sibling_before = Layer::Create();
   SetLayerPropertiesForTesting(copy_grand_parent_sibling_before.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
@@ -8246,7 +6161,7 @@ TEST_F(LayerTreeHostCommonTest, SubtreeHiddenWithCopyRequest) {
   scoped_refptr<Layer> copy_grand_parent_sibling_after = Layer::Create();
   SetLayerPropertiesForTesting(copy_grand_parent_sibling_after.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
@@ -8332,7 +6247,7 @@ TEST_F(LayerTreeHostCommonTest, ClippedOutCopyRequest) {
   scoped_refptr<Layer> root = Layer::Create();
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -8342,7 +6257,7 @@ TEST_F(LayerTreeHostCommonTest, ClippedOutCopyRequest) {
   scoped_refptr<Layer> copy_parent = Layer::Create();
   SetLayerPropertiesForTesting(copy_parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(),
                                true,
@@ -8353,7 +6268,7 @@ TEST_F(LayerTreeHostCommonTest, ClippedOutCopyRequest) {
   scoped_refptr<Layer> copy_layer = Layer::Create();
   SetLayerPropertiesForTesting(copy_layer.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
@@ -8363,7 +6278,7 @@ TEST_F(LayerTreeHostCommonTest, ClippedOutCopyRequest) {
   scoped_refptr<Layer> copy_child = Layer::Create();
   SetLayerPropertiesForTesting(copy_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
@@ -8407,7 +6322,7 @@ TEST_F(LayerTreeHostCommonTest, VisibleContentRectInsideSurface) {
   scoped_refptr<Layer> root = Layer::Create();
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -8418,7 +6333,7 @@ TEST_F(LayerTreeHostCommonTest, VisibleContentRectInsideSurface) {
   scoped_refptr<Layer> surface = Layer::Create();
   SetLayerPropertiesForTesting(surface.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(-10, -20),
                                gfx::Size(),
                                true,
@@ -8428,7 +6343,7 @@ TEST_F(LayerTreeHostCommonTest, VisibleContentRectInsideSurface) {
   scoped_refptr<Layer> surface_child = Layer::Create();
   SetLayerPropertiesForTesting(surface_child.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -8491,35 +6406,35 @@ TEST_F(LayerTreeHostCommonTest, TransformedClipParent) {
 
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(clip_parent.get(),
                                scale_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(1.f, 1.f),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(intervening.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(1.f, 1.f),
                                gfx::Size(5, 5),
                                true,
                                false);
   SetLayerPropertiesForTesting(clip_child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(1.f, 1.f),
                                gfx::Size(10, 10),
                                true,
@@ -8595,42 +6510,42 @@ TEST_F(LayerTreeHostCommonTest, ClipParentWithInterveningRenderSurface) {
   gfx::Transform identity_transform;
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(clip_parent.get(),
                                translation_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(1.f, 1.f),
                                gfx::Size(40, 40),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(intervening.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(1.f, 1.f),
                                gfx::Size(5, 5),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface2.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(clip_child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(-10.f, -10.f),
                                gfx::Size(60, 60),
                                true,
@@ -8724,42 +6639,42 @@ TEST_F(LayerTreeHostCommonTest, ClipParentScrolledInterveningLayer) {
   gfx::Transform identity_transform;
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(clip_parent.get(),
                                translation_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(1.f, 1.f),
                                gfx::Size(40, 40),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(intervening.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(1.f, 1.f),
                                gfx::Size(5, 5),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface2.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(clip_child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(-10.f, -10.f),
                                gfx::Size(60, 60),
                                true,
@@ -8840,35 +6755,35 @@ TEST_F(LayerTreeHostCommonTest, DescendantsOfClipChildren) {
   gfx::Transform identity_transform;
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(clip_parent.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
                                false);
   SetLayerPropertiesForTesting(intervening.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(5, 5),
                                true,
                                false);
   SetLayerPropertiesForTesting(clip_child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(60, 60),
                                true,
                                false);
   SetLayerPropertiesForTesting(child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(60, 60),
                                true,
@@ -8927,42 +6842,42 @@ TEST_F(LayerTreeHostCommonTest,
   gfx::Transform identity_transform;
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(15, 15),
                                true,
                                false);
   SetLayerPropertiesForTesting(clip_parent.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(5, 5),
                                gfx::Size(5, 5),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface2.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(5, 5),
                                true,
                                false);
   SetLayerPropertiesForTesting(clip_child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(-1, 1),
                                gfx::Size(10, 10),
                                true,
                                false);
   SetLayerPropertiesForTesting(non_clip_child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(5, 5),
                                true,
@@ -9022,12 +6937,12 @@ TEST_F(LayerTreeHostCommonTest, CanRenderToSeparateSurface) {
       LayerImpl::Create(host_impl.active_tree(), 12345678);
 
   gfx::Transform identity_matrix;
-  gfx::PointF anchor;
+  gfx::Point3F transform_origin;
   gfx::PointF position;
   gfx::Size bounds(100, 100);
   SetLayerPropertiesForTesting(root.get(),
                                identity_matrix,
-                               anchor,
+                               transform_origin,
                                position,
                                bounds,
                                true,
@@ -9038,7 +6953,7 @@ TEST_F(LayerTreeHostCommonTest, CanRenderToSeparateSurface) {
   // behavior.
   SetLayerPropertiesForTesting(child1.get(),
                                identity_matrix,
-                               anchor,
+                               transform_origin,
                                position,
                                bounds,
                                false,
@@ -9046,7 +6961,7 @@ TEST_F(LayerTreeHostCommonTest, CanRenderToSeparateSurface) {
   child1->SetDrawsContent(true);
   SetLayerPropertiesForTesting(child2.get(),
                                identity_matrix,
-                               anchor,
+                               transform_origin,
                                position,
                                bounds,
                                true,
@@ -9054,15 +6969,15 @@ TEST_F(LayerTreeHostCommonTest, CanRenderToSeparateSurface) {
   child2->SetDrawsContent(true);
   SetLayerPropertiesForTesting(child3.get(),
                                identity_matrix,
-                               anchor,
+                               transform_origin,
                                position,
                                bounds,
                                true,
                                false);
   child3->SetDrawsContent(true);
 
-  child2->SetIs3dSorted(true);
-  child3->SetIs3dSorted(true);
+  child2->Set3dSortingContextId(1);
+  child3->Set3dSortingContextId(1);
 
   child2->AddChild(child3.Pass());
   child1->AddChild(child2.Pass());
@@ -9101,28 +7016,28 @@ TEST_F(LayerTreeHostCommonTest, DoNotIncludeBackfaceInvisibleSurfaces) {
   gfx::Transform identity_transform;
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                false,
                                true);
   SetLayerPropertiesForTesting(child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
                                false);
 
   root->SetShouldFlattenTransform(false);
-  root->SetIs3dSorted(true);
+  root->Set3dSortingContextId(1);
   render_surface->SetDoubleSided(false);
   render_surface->SetForceRenderSurface(true);
 
@@ -9183,35 +7098,35 @@ TEST_F(LayerTreeHostCommonTest, ClippedByScrollParent) {
   gfx::Transform identity_transform;
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent_border.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent_clip.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -9243,7 +7158,7 @@ TEST_F(LayerTreeHostCommonTest, SingularTransformSubtreesDoNotDraw) {
   gfx::Transform identity_transform;
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -9251,7 +7166,7 @@ TEST_F(LayerTreeHostCommonTest, SingularTransformSubtreesDoNotDraw) {
   root->SetForceRenderSurface(true);
   SetLayerPropertiesForTesting(parent.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
@@ -9259,7 +7174,7 @@ TEST_F(LayerTreeHostCommonTest, SingularTransformSubtreesDoNotDraw) {
   parent->SetForceRenderSurface(true);
   SetLayerPropertiesForTesting(child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
@@ -9324,35 +7239,35 @@ TEST_F(LayerTreeHostCommonTest, ClippedByOutOfOrderScrollParent) {
   gfx::Transform identity_transform;
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent_border.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent_clip.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -9416,56 +7331,56 @@ TEST_F(LayerTreeHostCommonTest, ClippedByOutOfOrderScrollGrandparent) {
   gfx::Transform identity_transform;
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_grandparent_border.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_grandparent_clip.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_grandparent.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent_border.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent_clip.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -9551,70 +7466,70 @@ TEST_F(LayerTreeHostCommonTest, OutOfOrderClippingRequiresRSLLSorting) {
   gfx::Transform identity_transform;
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_grandparent_border.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_grandparent_clip.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(20, 20),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_grandparent.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface1.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent_border.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent_clip.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(render_surface2.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -9701,56 +7616,56 @@ TEST_F(LayerTreeHostCommonTest, DoNotClobberSorting) {
 
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent_border.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent_clip.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_parent.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroll_child.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(top_content.get(),
                                top_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                false,
                                true);
   SetLayerPropertiesForTesting(bottom_content.get(),
                                bottom_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                false,
                                true);
 
   scroll_child->SetShouldFlattenTransform(false);
-  scroll_child->SetIs3dSorted(true);
+  scroll_child->Set3dSortingContextId(1);
 
   scroll_child->AddChild(top_content.Pass());
   scroll_child->AddChild(bottom_content.Pass());
@@ -9819,28 +7734,28 @@ TEST_F(LayerTreeHostCommonTest, ScrollCompensationWithRounding) {
 
   SetLayerPropertiesForTesting(root.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
                                false);
   SetLayerPropertiesForTesting(container.get(),
                                container_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(40, 40),
                                true,
                                false);
   SetLayerPropertiesForTesting(scroller.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(30, 30),
                                true,
                                false);
   SetLayerPropertiesForTesting(fixed.get(),
                                identity_transform,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(50, 50),
                                true,
@@ -9951,37 +7866,12 @@ class AnimationScaleFactorTrackingLayerImpl : public LayerImpl {
 
   virtual ~AnimationScaleFactorTrackingLayerImpl() {}
 
-  virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      float maximum_animation_contents_scale,
-                                      bool animating_transform_to_screen,
-                                      float* contents_scale_x,
-                                      float* contents_scale_y,
-                                      gfx::Size* content_bounds) OVERRIDE {
-    last_maximum_animation_contents_scale_ = maximum_animation_contents_scale;
-    LayerImpl::CalculateContentsScale(ideal_contents_scale,
-                                      device_scale_factor,
-                                      page_scale_factor,
-                                      maximum_animation_contents_scale,
-                                      animating_transform_to_screen,
-                                      contents_scale_x,
-                                      contents_scale_y,
-                                      content_bounds);
-  }
-
-  float last_maximum_animation_contents_scale() {
-    return last_maximum_animation_contents_scale_;
-  }
-
  private:
   explicit AnimationScaleFactorTrackingLayerImpl(LayerTreeImpl* tree_impl,
                                                  int id)
-      : LayerImpl(tree_impl, id), last_maximum_animation_contents_scale_(0.f) {
+      : LayerImpl(tree_impl, id) {
     SetDrawsContent(true);
   }
-
-  float last_maximum_animation_contents_scale_;
 };
 
 TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
@@ -10008,28 +7898,28 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
 
   SetLayerPropertiesForTesting(grand_parent.get(),
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
                                false);
   SetLayerPropertiesForTesting(parent_raw,
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
                                false);
   SetLayerPropertiesForTesting(child_raw,
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child_raw,
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
@@ -10038,10 +7928,13 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // No layers have animations.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   TransformOperations translation;
   translation.AppendTranslate(1.f, 2.f, 3.f);
@@ -10050,10 +7943,13 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
       parent_raw, 1.0, TransformOperations(), translation);
 
   // No layers have scale-affecting animations.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   TransformOperations scale;
   scale.AppendScale(5.f, 4.f, 3.f);
@@ -10062,31 +7958,40 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // Only |child| has a scale-affecting animation.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(5.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(5.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(5.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      5.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   AddAnimatedTransformToLayer(
       grand_parent.get(), 1.0, TransformOperations(), scale);
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // |grand_parent| and |child| have scale-affecting animations.
-  EXPECT_EQ(5.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(5.f, parent_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(5.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(5.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
   // We don't support combining animated scales from two nodes; 0.f means
   // that the maximum scale could not be computed.
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   AddAnimatedTransformToLayer(parent_raw, 1.0, TransformOperations(), scale);
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // |grand_parent|, |parent|, and |child| have scale-affecting animations.
-  EXPECT_EQ(5.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(5.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   grand_parent->layer_animation_controller()->AbortAnimations(
       Animation::Transform);
@@ -10104,10 +8009,13 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
 
   // |child| has a scale-affecting animation but computing the maximum of this
   // animation is not supported.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   child_raw->layer_animation_controller()->AbortAnimations(
       Animation::Transform);
@@ -10121,10 +8029,15 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
 
   // |grand_parent| and |parent| each have scale 2.f. |parent| has a  scale
   // animation with maximum scale 5.f.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(10.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(10.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(10.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(10.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(10.f,
+            child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      10.f,
+      grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   gfx::Transform perspective_matrix;
   perspective_matrix.ApplyPerspectiveDepth(2.f);
@@ -10132,20 +8045,26 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // |child| has a transform that's neither a translation nor a scale.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(10.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(10.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   parent_raw->SetTransform(perspective_matrix);
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // |parent| and |child| have transforms that are neither translations nor
   // scales.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 
   parent_raw->SetTransform(identity_matrix);
   child_raw->SetTransform(identity_matrix);
@@ -10154,10 +8073,13 @@ TEST_F(LayerTreeHostCommonTest, MaximumAnimationScaleFactor) {
   ExecuteCalculateDrawProperties(grand_parent.get());
 
   // |grand_parent| has a transform that's neither a translation nor a scale.
-  EXPECT_EQ(0.f, grand_parent->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, parent_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, child_raw->last_maximum_animation_contents_scale());
-  EXPECT_EQ(0.f, grand_child_raw->last_maximum_animation_contents_scale());
+  EXPECT_EQ(0.f,
+            grand_parent->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f,
+            parent_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(0.f, child_raw->draw_properties().maximum_animation_contents_scale);
+  EXPECT_EQ(
+      0.f, grand_child_raw->draw_properties().maximum_animation_contents_scale);
 }
 
 static int membership_id(LayerImpl* layer) {
@@ -10212,35 +8134,35 @@ TEST_F(LayerTreeHostCommonTest, RenderSurfaceLayerListMembership) {
 
   SetLayerPropertiesForTesting(grand_parent_raw,
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
                                false);
   SetLayerPropertiesForTesting(parent_raw,
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
                                false);
   SetLayerPropertiesForTesting(child_raw,
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child1_raw,
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
                                false);
   SetLayerPropertiesForTesting(grand_child2_raw,
                                identity_matrix,
-                               gfx::PointF(),
+                               gfx::Point3F(),
                                gfx::PointF(),
                                gfx::Size(1, 2),
                                true,
@@ -10443,5 +8365,238 @@ TEST_F(LayerTreeHostCommonTest, RenderSurfaceLayerListMembership) {
   GatherDrawnLayers(render_surface_layer_list_impl(), &actual);
   EXPECT_EQ(expected, actual);
 }
+
+TEST_F(LayerTreeHostCommonTest, DrawPropertyScales) {
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+
+  scoped_ptr<LayerImpl> root = LayerImpl::Create(host_impl.active_tree(), 1);
+  LayerImpl* root_layer = root.get();
+  scoped_ptr<LayerImpl> child1 = LayerImpl::Create(host_impl.active_tree(), 2);
+  LayerImpl* child1_layer = child1.get();
+  scoped_ptr<LayerImpl> child2 = LayerImpl::Create(host_impl.active_tree(), 3);
+  LayerImpl* child2_layer = child2.get();
+
+  root->AddChild(child1.Pass());
+  root->AddChild(child2.Pass());
+
+  gfx::Transform identity_matrix, scale_transform_child1,
+      scale_transform_child2;
+  scale_transform_child1.Scale(2, 3);
+  scale_transform_child2.Scale(4, 5);
+
+  SetLayerPropertiesForTesting(root_layer,
+                               identity_matrix,
+                               gfx::Point3F(),
+                               gfx::PointF(),
+                               gfx::Size(1, 1),
+                               true,
+                               false);
+  SetLayerPropertiesForTesting(child1_layer,
+                               scale_transform_child1,
+                               gfx::Point3F(),
+                               gfx::PointF(),
+                               gfx::Size(),
+                               true,
+                               false);
+
+  child1_layer->SetMaskLayer(
+      LayerImpl::Create(host_impl.active_tree(), 4).Pass());
+
+  scoped_ptr<LayerImpl> replica_layer =
+      LayerImpl::Create(host_impl.active_tree(), 5);
+  replica_layer->SetMaskLayer(LayerImpl::Create(host_impl.active_tree(), 6));
+  child1_layer->SetReplicaLayer(replica_layer.Pass());
+
+  ExecuteCalculateDrawProperties(root_layer);
+
+  TransformOperations scale;
+  scale.AppendScale(5.f, 8.f, 3.f);
+
+  AddAnimatedTransformToLayer(child2_layer, 1.0, TransformOperations(), scale);
+  SetLayerPropertiesForTesting(child2_layer,
+                               scale_transform_child2,
+                               gfx::Point3F(),
+                               gfx::PointF(),
+                               gfx::Size(),
+                               true,
+                               false);
+
+  ExecuteCalculateDrawProperties(root_layer);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(3.f, child1_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(
+      3.f, child1_layer->mask_layer()->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(3.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .ideal_contents_scale);
+  EXPECT_FLOAT_EQ(5.f, child2_layer->draw_properties().ideal_contents_scale);
+
+  EXPECT_FLOAT_EQ(
+      0.f, root_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      0.f, child1_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      8.f, child2_layer->draw_properties().maximum_animation_contents_scale);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child1_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(
+      1.f, child1_layer->mask_layer()->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(1.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .page_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child2_layer->draw_properties().page_scale_factor);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child1_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(
+      1.f, child1_layer->mask_layer()->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child2_layer->draw_properties().device_scale_factor);
+
+  // Changing page-scale would affect ideal_contents_scale and
+  // maximum_animation_contents_scale.
+
+  float page_scale_factor = 3.f;
+  float device_scale_factor = 1.0f;
+  std::vector<LayerImpl*> render_surface_layer_list;
+  gfx::Size device_viewport_size =
+      gfx::Size(root_layer->bounds().width() * device_scale_factor,
+                root_layer->bounds().height() * device_scale_factor);
+  LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
+      root_layer, device_viewport_size, &render_surface_layer_list);
+
+  inputs.page_scale_factor = page_scale_factor;
+  inputs.can_adjust_raster_scales = true;
+  inputs.page_scale_application_layer = root_layer;
+  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(9.f, child1_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(
+      9.f, child1_layer->mask_layer()->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(9.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .ideal_contents_scale);
+  EXPECT_FLOAT_EQ(15.f, child2_layer->draw_properties().ideal_contents_scale);
+
+  EXPECT_FLOAT_EQ(
+      0.f, root_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      0.f, child1_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      24.f, child2_layer->draw_properties().maximum_animation_contents_scale);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f, child1_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(
+      3.f, child1_layer->mask_layer()->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f, child2_layer->draw_properties().page_scale_factor);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child1_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(
+      1.f, child1_layer->mask_layer()->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .device_scale_factor);
+  EXPECT_FLOAT_EQ(1.f, child2_layer->draw_properties().device_scale_factor);
+
+  // Changing device-scale would affect ideal_contents_scale and
+  // maximum_animation_contents_scale.
+
+  device_scale_factor = 4.0f;
+  inputs.device_scale_factor = device_scale_factor;
+  inputs.can_adjust_raster_scales = true;
+  LayerTreeHostCommon::CalculateDrawProperties(&inputs);
+
+  EXPECT_FLOAT_EQ(4.f, root_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(36.f, child1_layer->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(
+      36.f, child1_layer->mask_layer()->draw_properties().ideal_contents_scale);
+  EXPECT_FLOAT_EQ(36.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .ideal_contents_scale);
+  EXPECT_FLOAT_EQ(60.f, child2_layer->draw_properties().ideal_contents_scale);
+
+  EXPECT_FLOAT_EQ(
+      0.f, root_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      0.f, child1_layer->draw_properties().maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(0.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .maximum_animation_contents_scale);
+  EXPECT_FLOAT_EQ(
+      96.f, child2_layer->draw_properties().maximum_animation_contents_scale);
+
+  EXPECT_FLOAT_EQ(1.f, root_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f, child1_layer->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(
+      3.f, child1_layer->mask_layer()->draw_properties().page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .page_scale_factor);
+  EXPECT_FLOAT_EQ(3.f, child2_layer->draw_properties().page_scale_factor);
+
+  EXPECT_FLOAT_EQ(4.f, root_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(4.f, child1_layer->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(
+      4.f, child1_layer->mask_layer()->draw_properties().device_scale_factor);
+  EXPECT_FLOAT_EQ(4.f,
+                  child1_layer->replica_layer()
+                      ->mask_layer()
+                      ->draw_properties()
+                      .device_scale_factor);
+  EXPECT_FLOAT_EQ(4.f, child2_layer->draw_properties().device_scale_factor);
+}
+
 }  // namespace
 }  // namespace cc

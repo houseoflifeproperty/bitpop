@@ -14,7 +14,6 @@
 #include "content/common/cursors/webcursor.h"
 #include "content/common/edit_command.h"
 #include "content/common/frame_param_macros.h"
-#include "content/public/common/browser_plugin_permission_type.h"
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/drop_data.h"
 #include "ipc/ipc_channel_handle.h"
@@ -46,8 +45,8 @@ IPC_STRUCT_END()
 IPC_STRUCT_BEGIN(BrowserPluginHostMsg_ResizeGuest_Params)
   // Indicates whether the parameters have been populated or not.
   IPC_STRUCT_MEMBER(bool, size_changed)
-  // The new rect of the guest view area.
-  IPC_STRUCT_MEMBER(gfx::Rect, view_rect)
+  // The new size of guest view.
+  IPC_STRUCT_MEMBER(gfx::Size, view_size)
   // Indicates the scale factor of the embedder WebView.
   IPC_STRUCT_MEMBER(float, scale_factor)
   // Indicates a request for a full repaint of the page.
@@ -57,23 +56,14 @@ IPC_STRUCT_BEGIN(BrowserPluginHostMsg_ResizeGuest_Params)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(BrowserPluginHostMsg_Attach_Params)
-  IPC_STRUCT_MEMBER(std::string, storage_partition_id)
-  IPC_STRUCT_MEMBER(bool, persist_storage)
   IPC_STRUCT_MEMBER(bool, focused)
   IPC_STRUCT_MEMBER(bool, visible)
   IPC_STRUCT_MEMBER(bool, opaque)
-  IPC_STRUCT_MEMBER(std::string, name)
-  IPC_STRUCT_MEMBER(std::string, src)
   IPC_STRUCT_MEMBER(GURL, embedder_frame_url)
   IPC_STRUCT_MEMBER(BrowserPluginHostMsg_AutoSize_Params, auto_size_params)
   IPC_STRUCT_MEMBER(BrowserPluginHostMsg_ResizeGuest_Params,
                     resize_guest_params)
-IPC_STRUCT_END()
-
-IPC_STRUCT_BEGIN(BrowserPluginMsg_Attach_ACK_Params)
-  IPC_STRUCT_MEMBER(std::string, storage_partition_id)
-  IPC_STRUCT_MEMBER(bool, persist_storage)
-  IPC_STRUCT_MEMBER(std::string, name)
+  IPC_STRUCT_MEMBER(gfx::Point, origin)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(BrowserPluginMsg_UpdateRect_Params)
@@ -96,12 +86,6 @@ IPC_STRUCT_END()
 
 // -----------------------------------------------------------------------------
 // These messages are from the embedder to the browser process.
-
-// This message is sent to the browser process to request an instance ID.
-// |request_id| is used by BrowserPluginEmbedder to route the response back
-// to its origin.
-IPC_MESSAGE_ROUTED1(BrowserPluginHostMsg_AllocateInstanceID,
-                    int /* request_id */)
 
 // This message is sent from BrowserPlugin to BrowserPluginGuest to issue an
 // edit command.
@@ -167,15 +151,6 @@ IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_HandleInputEvent,
                     gfx::Rect /* guest_window_rect */,
                     IPC::WebInputEventPointer /* event */)
 
-// A BrowserPlugin sends this to BrowserPluginEmbedder (browser process) when it
-// wants to navigate to a given src URL. If a guest WebContents already exists,
-// it will navigate that WebContents. If not, it will create the WebContents,
-// associate it with the BrowserPluginGuest, and navigate it to the requested
-// URL.
-IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_NavigateGuest,
-                    int /* instance_id*/,
-                    std::string /* src */)
-
 IPC_MESSAGE_ROUTED3(BrowserPluginHostMsg_CopyFromCompositingSurfaceAck,
                     int /* instance_id */,
                     int /* request_id */,
@@ -210,11 +185,6 @@ IPC_MESSAGE_ROUTED5(BrowserPluginHostMsg_DragStatusUpdate,
                     blink::WebDragOperationsMask /* operation_mask */,
                     gfx::Point /* plugin_location */)
 
-// Sets the name of the guest window to the provided |name|.
-IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_SetName,
-                    int /* instance_id */,
-                    std::string /* name */)
-
 // Sends a PointerLock Lock ACK to the BrowserPluginGuest.
 IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_LockMouse_ACK,
                     int /* instance_id */,
@@ -241,19 +211,9 @@ IPC_MESSAGE_ROUTED2(BrowserPluginHostMsg_ResizeGuest,
 // -----------------------------------------------------------------------------
 // These messages are from the browser process to the embedder.
 
-// This message is sent from the browser process to the embedder render process
-// in response to a request to allocate an instance ID. The |request_id| is used
-// to route the response to the requestor.
-IPC_MESSAGE_ROUTED2(BrowserPluginMsg_AllocateInstanceID_ACK,
-                    int /* request_id */,
-                    int /* instance_id */)
-
 // This message is sent in response to a completed attachment of a guest
-// to a BrowserPlugin. This message carries information about the guest
-// that is used to update the attributes of the browser plugin.
-IPC_MESSAGE_CONTROL2(BrowserPluginMsg_Attach_ACK,
-                     int /* instance_id */,
-                     BrowserPluginMsg_Attach_ACK_Params /* params */)
+// to a BrowserPlugin.
+IPC_MESSAGE_CONTROL1(BrowserPluginMsg_Attach_ACK, int /* instance_id */);
 
 // Once the swapped out guest RenderView has been created in the embedder render
 // process, the browser process informs the embedder of its routing ID.
@@ -294,11 +254,6 @@ IPC_MESSAGE_CONTROL4(BrowserPluginMsg_CopyFromCompositingSurface,
                      int /* request_id */,
                      gfx::Rect  /* source_rect */,
                      gfx::Size  /* dest_size */)
-
-// Informs BrowserPlugin of a new name set for the top-level guest frame.
-IPC_MESSAGE_CONTROL2(BrowserPluginMsg_UpdatedName,
-                     int /* instance_id */,
-                     std::string /* name */)
 
 // Guest renders into an FBO with textures provided by the embedder.
 // BrowserPlugin shares mostly the same logic as out-of-process RenderFrames but

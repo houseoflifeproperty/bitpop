@@ -16,30 +16,30 @@
     "256": "common/images/icon256.png"
   },
   "permissions": [
-    "contextMenus",
-    "experimental",
-    "echoPrivate",
-    "storage",
-    "fileBrowserHandler",
-    "fileBrowserPrivate",
-    "fullscreen",
-    "mediaPlayerPrivate",
-    "mediaGalleriesPrivate",
-    "metricsPrivate",
-    "notifications",
-    "commandLinePrivate",
-    "unlimitedStorage",
-    "webview",
     // Comment out chrome:// permissions to debug on a desktop browser.
     "chrome://extension-icon/",
     "chrome://resources/",
     "chrome://theme/",
-    "clipboardWrite",
     "clipboardRead",
-    "power",
-    "https://docs.google.com/",
+    "clipboardWrite",
+    "commandLinePrivate",
+    "contextMenus",
+    "echoPrivate",
+    "experimental",
+    "fileBrowserHandler",
+    "fileBrowserPrivate",
+    "fullscreen",
     "https://*.googleusercontent.com/",
-    "https://drive.google.com/"
+    "https://docs.google.com/",
+    "https://drive.google.com/",
+    "mediaGalleriesPrivate",
+    "mediaPlayerPrivate",
+    "metricsPrivate",
+    "notifications",
+    "power",
+    "storage",
+    "unlimitedStorage",
+    "webview"
   ],
   "file_browser_handlers": [
     {
@@ -110,28 +110,6 @@
       ]
     },
     {
-      "id": "gallery-video",
-      "default_title": "__MSG_OPEN_ACTION__",
-      "default_icon": "common/images/file_types/200/image.png",
-      "file_filters": [
-        // Video formats
-        "filesystem:*.3gp",
-        "filesystem:*.avi",
-        "filesystem:*.m4v",
-        "filesystem:*.mkv",
-        "filesystem:*.mov",
-        "filesystem:*.mp4",
-        "filesystem:*.mpeg",
-        "filesystem:*.mpeg4",
-        "filesystem:*.mpg",
-        "filesystem:*.mpg4",
-        "filesystem:*.ogm",
-        "filesystem:*.ogv",
-        "filesystem:*.ogx",
-        "filesystem:*.webm"
-      ]
-    },
-    {
       "id": "open-hosted-generic",
       "default_title": "__MSG_HOSTED__",
       "default_icon": "common/images/file_types/200generic.png",
@@ -199,6 +177,8 @@
     "common/js/error_util.js",
     "common/js/path_util.js",
     "common/js/util.js",
+    "common/js/volume_manager_common.js",
+    "foreground/js/file_type.js",
     "foreground/js/metadata/byte_reader.js",
     "foreground/js/metadata/exif_parser.js",
     "foreground/js/metadata/function_parallel.js",

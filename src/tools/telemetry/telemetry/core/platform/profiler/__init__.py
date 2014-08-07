@@ -1,8 +1,10 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import collections
+
+from telemetry.core import exceptions
 
 class Profiler(object):
   """A sampling profiler provided by the platform.
@@ -49,12 +51,16 @@ class Profiler(object):
     process_name_counts = collections.defaultdict(int)
     process_output_file_map = {}
     for pid in all_pids:
-      cmd_line = self._platform_backend.GetCommandLine(pid)
-      process_name = self._browser_backend.GetProcessName(cmd_line)
-      output_file = '%s.%s%s' % (self._output_path, process_name,
-                                 process_name_counts[process_name])
-      process_name_counts[process_name] += 1
-      process_output_file_map[pid] = output_file
+      try:
+        cmd_line = self._platform_backend.GetCommandLine(pid)
+        process_name = self._browser_backend.GetProcessName(cmd_line)
+        output_file = '%s.%s%s' % (self._output_path, process_name,
+                                   process_name_counts[process_name])
+        process_name_counts[process_name] += 1
+        process_output_file_map[pid] = output_file
+      except exceptions.ProcessGoneException:
+        # Ignore processes that disappeared since calling GetChildPids().
+        continue
     return process_output_file_map
 
   def CollectProfile(self):

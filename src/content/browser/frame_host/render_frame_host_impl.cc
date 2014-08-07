@@ -15,9 +15,11 @@
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/render_frame_host_delegate.h"
+#include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/renderer_host/input/input_router.h"
 #include "content/browser/renderer_host/input/timeout_monitor.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/input_messages.h"
@@ -29,6 +31,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
+#include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "url/gurl.h"
@@ -106,6 +109,20 @@ class DesktopNotificationDelegateImpl : public DesktopNotificationDelegate {
   int notification_id_;
 };
 
+// Translate a WebKit text direction into a base::i18n one.
+base::i18n::TextDirection WebTextDirectionToChromeTextDirection(
+    blink::WebTextDirection dir) {
+  switch (dir) {
+    case blink::WebTextDirectionLeftToRight:
+      return base::i18n::LEFT_TO_RIGHT;
+    case blink::WebTextDirectionRightToLeft:
+      return base::i18n::RIGHT_TO_LEFT;
+    default:
+      NOTREACHED();
+      return base::i18n::UNKNOWN_DIRECTION;
+  }
+}
+
 }  // namespace
 
 RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
@@ -133,6 +150,7 @@ RenderFrameHostImpl::RenderFrameHostImpl(
     : render_view_host_(render_view_host),
       delegate_(delegate),
       cross_process_frame_connector_(NULL),
+      render_frame_proxy_host_(NULL),
       frame_tree_(frame_tree),
       frame_tree_node_(frame_tree_node),
       routing_id_(routing_id),
@@ -229,6 +247,11 @@ bool RenderFrameHostImpl::Send(IPC::Message* message) {
         make_scoped_ptr(message));
   }
 
+  if (render_view_host_->IsSwappedOut()) {
+    DCHECK(render_frame_proxy_host_);
+    return render_frame_proxy_host_->Send(message);
+  }
+
   return GetProcess()->Send(message);
 }
 
@@ -256,13 +279,14 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
   if (delegate_->OnMessageReceived(this, msg))
     return true;
 
-  if (cross_process_frame_connector_ &&
-      cross_process_frame_connector_->OnMessageReceived(msg))
+  RenderFrameProxyHost* proxy =
+      frame_tree_node_->render_manager()->GetProxyToParent();
+  if (proxy && proxy->cross_process_frame_connector() &&
+      proxy->cross_process_frame_connector()->OnMessageReceived(msg))
     return true;
 
   bool handled = true;
-  bool msg_is_ok = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(RenderFrameHostImpl, msg, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(RenderFrameHostImpl, msg)
     IPC_MESSAGE_HANDLER(FrameHostMsg_AddMessageToConsole, OnAddMessageToConsole)
     IPC_MESSAGE_HANDLER(FrameHostMsg_Detach, OnDetach)
     IPC_MESSAGE_HANDLER(FrameHostMsg_FrameFocused, OnFrameFocused)
@@ -276,8 +300,6 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
                         OnDidFailLoadWithError)
     IPC_MESSAGE_HANDLER_GENERIC(FrameHostMsg_DidCommitProvisionalLoad,
                                 OnNavigate(msg))
-    IPC_MESSAGE_HANDLER(FrameHostMsg_DidStartLoading, OnDidStartLoading)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_DidStopLoading, OnDidStopLoading)
     IPC_MESSAGE_HANDLER(FrameHostMsg_OpenURL, OnOpenURL)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DocumentOnLoadCompleted,
                         OnDocumentOnLoadCompleted)
@@ -293,20 +315,17 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidAccessInitialDocument,
                         OnDidAccessInitialDocument)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidDisownOpener, OnDidDisownOpener)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateTitle, OnUpdateTitle)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateEncoding, OnUpdateEncoding)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_RequestPermission,
                         OnRequestDesktopNotificationPermission)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Show,
                         OnShowDesktopNotification)
     IPC_MESSAGE_HANDLER(DesktopNotificationHostMsg_Cancel,
                         OnCancelDesktopNotification)
-  IPC_END_MESSAGE_MAP_EX()
-
-  if (!msg_is_ok) {
-    // The message had a handler, but its de-serialization failed.
-    // Kill the renderer.
-    RecordAction(base::UserMetricsAction("BadMessageTerminate_RFH"));
-    GetProcess()->ReceivedBadMessage();
-  }
+    IPC_MESSAGE_HANDLER(FrameHostMsg_TextSurroundingSelectionResponse,
+                        OnTextSurroundingSelectionResponse)
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -442,7 +461,7 @@ void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
   // should be killed.
   if (!CanCommitURL(validated_params.url)) {
     VLOG(1) << "Blocked URL " << validated_params.url.spec();
-    validated_params.url = GURL(kAboutBlankURL);
+    validated_params.url = GURL(url::kAboutBlankURL);
     RecordAction(base::UserMetricsAction("CanCommitURL_BlockedAndKilled"));
     // Kills the process.
     process->ReceivedBadMessage();
@@ -474,6 +493,10 @@ void RenderFrameHostImpl::OnNavigate(const IPC::Message& msg) {
   frame_tree_node()->navigator()->DidNavigate(this, validated_params);
 }
 
+RenderWidgetHostImpl* RenderFrameHostImpl::GetRenderWidgetHost() {
+  return static_cast<RenderWidgetHostImpl*>(render_view_host_);
+}
+
 int RenderFrameHostImpl::GetEnabledBindings() {
   return render_view_host_->GetEnabledBindings();
 }
@@ -491,7 +514,7 @@ void RenderFrameHostImpl::OnCrossSiteResponse(
       should_replace_current_entry);
 }
 
-void RenderFrameHostImpl::SwapOut() {
+void RenderFrameHostImpl::SwapOut(RenderFrameProxyHost* proxy) {
   // TODO(creis): Move swapped out state to RFH.  Until then, only update it
   // when swapping out the main frame.
   if (!GetParent()) {
@@ -507,22 +530,16 @@ void RenderFrameHostImpl::SwapOut() {
             RenderViewHostImpl::kUnloadTimeoutMS));
   }
 
+  set_render_frame_proxy_host(proxy);
+
   if (render_view_host_->IsRenderViewLive())
-    Send(new FrameMsg_SwapOut(routing_id_));
+    Send(new FrameMsg_SwapOut(routing_id_, proxy->GetRoutingID()));
 
   if (!GetParent())
     delegate_->SwappedOut(this);
 
   // Allow the navigation to proceed.
   frame_tree_node_->render_manager()->SwappedOut(this);
-}
-
-void RenderFrameHostImpl::OnDidStartLoading(bool to_different_document) {
-  delegate_->DidStartLoading(this, to_different_document);
-}
-
-void RenderFrameHostImpl::OnDidStopLoading() {
-  delegate_->DidStopLoading(this);
 }
 
 void RenderFrameHostImpl::OnBeforeUnloadACK(
@@ -685,6 +702,14 @@ void RenderFrameHostImpl::OnCancelDesktopNotification(int notification_id) {
   cancel_notification_callbacks_.erase(notification_id);
 }
 
+void RenderFrameHostImpl::OnTextSurroundingSelectionResponse(
+    const base::string16& content,
+    size_t start_offset,
+    size_t end_offset) {
+  render_view_host_->OnTextSurroundingSelectionResponse(
+      content, start_offset, end_offset);
+}
+
 void RenderFrameHostImpl::OnDidAccessInitialDocument() {
   delegate_->DidAccessInitialDocument();
 }
@@ -693,6 +718,28 @@ void RenderFrameHostImpl::OnDidDisownOpener() {
   // This message is only sent for top-level frames. TODO(avi): when frame tree
   // mirroring works correctly, add a check here to enforce it.
   delegate_->DidDisownOpener(this);
+}
+
+void RenderFrameHostImpl::OnUpdateTitle(
+    int32 page_id,
+    const base::string16& title,
+    blink::WebTextDirection title_direction) {
+  // This message is only sent for top-level frames. TODO(avi): when frame tree
+  // mirroring works correctly, add a check here to enforce it.
+  if (title.length() > kMaxTitleChars) {
+    NOTREACHED() << "Renderer sent too many characters in title.";
+    return;
+  }
+
+  delegate_->UpdateTitle(this, page_id, title,
+                         WebTextDirectionToChromeTextDirection(
+                             title_direction));
+}
+
+void RenderFrameHostImpl::OnUpdateEncoding(const std::string& encoding_name) {
+  // This message is only sent for top-level frames. TODO(avi): when frame tree
+  // mirroring works correctly, add a check here to enforce it.
+  delegate_->UpdateEncoding(this, encoding_name);
 }
 
 void RenderFrameHostImpl::SetPendingShutdown(const base::Closure& on_swap_out) {
@@ -712,11 +759,11 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
   TRACE_EVENT0("frame_host", "RenderFrameHostImpl::Navigate");
   // Browser plugin guests are not allowed to navigate outside web-safe schemes,
   // so do not grant them the ability to request additional URLs.
-  if (!GetProcess()->IsGuest()) {
+  if (!GetProcess()->IsIsolatedGuest()) {
     ChildProcessSecurityPolicyImpl::GetInstance()->GrantRequestURL(
         GetProcess()->GetID(), params.url);
-    if (params.url.SchemeIs(kDataScheme) &&
-        params.base_url_for_data_url.SchemeIs(kFileScheme)) {
+    if (params.url.SchemeIs(url::kDataScheme) &&
+        params.base_url_for_data_url.SchemeIs(url::kFileScheme)) {
       // If 'data:' is used, and we have a 'file:' base url, grant access to
       // local files.
       ChildProcessSecurityPolicyImpl::GetInstance()->GrantRequestURL(
@@ -753,7 +800,7 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
   //
   // Blink doesn't send throb notifications for JavaScript URLs, so we
   // don't want to either.
-  if (!params.url.SchemeIs(kJavaScriptScheme))
+  if (!params.url.SchemeIs(url::kJavaScriptScheme))
     delegate_->DidStartLoading(this, true);
 }
 

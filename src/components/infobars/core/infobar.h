@@ -39,7 +39,6 @@ class InfoBar : public gfx::AnimationDelegate {
   // These are the types passed as Details for infobar-related notifications.
   typedef InfoBar AddedDetails;
   typedef std::pair<InfoBar*, bool> RemovedDetails;
-  typedef std::pair<InfoBar*, InfoBar*> ReplacedDetails;
 
   // Platforms must define these.
   static const int kDefaultBarTargetHeight;
@@ -58,8 +57,7 @@ class InfoBar : public gfx::AnimationDelegate {
   static SkColor GetBottomColor(InfoBarDelegate::Type infobar_type);
 
   InfoBarManager* owner() { return owner_; }
-  InfoBarDelegate* delegate() { return delegate_.get(); }
-  const InfoBarDelegate* delegate() const { return delegate_.get(); }
+  InfoBarDelegate* delegate() const { return delegate_.get(); }
   void set_container(InfoBarContainer* container) { container_ = container; }
 
   // Sets |owner_|.  This also calls StoreActiveEntryUniqueID() on |delegate_|.

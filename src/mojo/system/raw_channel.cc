@@ -58,7 +58,7 @@ bool RawChannel::WriteBuffer::HavePlatformHandlesToSend() const {
   if (!transport_data)
     return false;
 
-  const std::vector<embedder::PlatformHandle>* all_platform_handles =
+  const embedder::PlatformHandleVector* all_platform_handles =
       transport_data->platform_handles();
   if (!all_platform_handles) {
     DCHECK_EQ(platform_handles_offset_, 0u);
@@ -79,7 +79,7 @@ void RawChannel::WriteBuffer::GetPlatformHandlesToSend(
   DCHECK(HavePlatformHandlesToSend());
 
   TransportData* transport_data = message_queue_.front()->transport_data();
-  std::vector<embedder::PlatformHandle>* all_platform_handles =
+  embedder::PlatformHandleVector* all_platform_handles =
       transport_data->platform_handles();
   *num_platform_handles =
       all_platform_handles->size() - platform_handles_offset_;
@@ -129,6 +129,10 @@ void RawChannel::WriteBuffer::GetBuffers(std::vector<Buffer>* buffers) const {
     buffers->push_back(buffer);
     return;
   }
+
+  // TODO(vtl): We could actually send out buffers from multiple messages, with
+  // the "stopping" condition being reaching a message with platform handles
+  // attached.
 
   // Write from both buffers.
   DCHECK_EQ(bytes_to_write, message->main_buffer_size() - data_offset_ +
@@ -190,7 +194,18 @@ bool RawChannel::Init(Delegate* delegate) {
     return false;
   }
 
-  return ScheduleRead() == IO_PENDING;
+  if (ScheduleRead() != IO_PENDING) {
+    // This will notify the delegate about the read failure. Although we're on
+    // the I/O thread, don't call it in the nested context.
+    message_loop_for_io_->PostTask(
+        FROM_HERE,
+        base::Bind(&RawChannel::OnReadCompleted, weak_ptr_factory_.GetWeakPtr(),
+                   false, 0));
+  }
+
+  // ScheduleRead() failure is treated as a read failure (by notifying the
+  // delegate), not as an init failure.
+  return true;
 }
 
 void RawChannel::Shutdown() {
@@ -219,11 +234,11 @@ bool RawChannel::WriteMessage(scoped_ptr<MessageInTransit> message) {
     return false;
 
   if (!write_buffer_->message_queue_.empty()) {
-    write_buffer_->message_queue_.push_back(message.release());
+    EnqueueMessageNoLock(message.Pass());
     return true;
   }
 
-  write_buffer_->message_queue_.push_front(message.release());
+  EnqueueMessageNoLock(message.Pass());
   DCHECK_EQ(write_buffer_->data_offset_, 0u);
 
   size_t platform_handles_written = 0;
@@ -242,7 +257,7 @@ bool RawChannel::WriteMessage(scoped_ptr<MessageInTransit> message) {
         FROM_HERE,
         base::Bind(&RawChannel::CallOnFatalError,
                    weak_ptr_factory_.GetWeakPtr(),
-                   Delegate::FATAL_ERROR_FAILED_WRITE));
+                   Delegate::FATAL_ERROR_WRITE));
   }
 
   return result;
@@ -252,16 +267,6 @@ bool RawChannel::WriteMessage(scoped_ptr<MessageInTransit> message) {
 bool RawChannel::IsWriteBufferEmpty() {
   base::AutoLock locker(write_lock_);
   return write_buffer_->message_queue_.empty();
-}
-
-RawChannel::ReadBuffer* RawChannel::read_buffer() {
-  DCHECK_EQ(base::MessageLoop::current(), message_loop_for_io_);
-  return read_buffer_.get();
-}
-
-RawChannel::WriteBuffer* RawChannel::write_buffer_no_lock() {
-  write_lock_.AssertAcquired();
-  return write_buffer_.get();
 }
 
 void RawChannel::OnReadCompleted(bool result, size_t bytes_read) {
@@ -282,7 +287,7 @@ void RawChannel::OnReadCompleted(bool result, size_t bytes_read) {
   do {
     if (io_result != IO_SUCCEEDED) {
       read_stopped_ = true;
-      CallOnFatalError(Delegate::FATAL_ERROR_FAILED_READ);
+      CallOnFatalError(Delegate::FATAL_ERROR_READ);
       return;
     }
 
@@ -311,14 +316,58 @@ void RawChannel::OnReadCompleted(bool result, size_t bytes_read) {
           message_view(message_size, &read_buffer_->buffer_[read_buffer_start]);
       DCHECK_EQ(message_view.total_size(), message_size);
 
-      // Dispatch the message.
-      DCHECK(delegate_);
-      delegate_->OnReadMessage(message_view);
-      if (read_stopped_) {
-        // |Shutdown()| was called in |OnReadMessage()|.
-        // TODO(vtl): Add test for this case.
+      const char* error_message = NULL;
+      if (!message_view.IsValid(GetSerializedPlatformHandleSize(),
+                                &error_message)) {
+        DCHECK(error_message);
+        LOG(WARNING) << "Received invalid message: " << error_message;
+        read_stopped_ = true;
+        CallOnFatalError(Delegate::FATAL_ERROR_READ);
         return;
       }
+
+      if (message_view.type() == MessageInTransit::kTypeRawChannel) {
+        if (!OnReadMessageForRawChannel(message_view)) {
+          read_stopped_ = true;
+          CallOnFatalError(Delegate::FATAL_ERROR_READ);
+          return;
+        }
+      } else {
+        embedder::ScopedPlatformHandleVectorPtr platform_handles;
+        if (message_view.transport_data_buffer()) {
+          size_t num_platform_handles;
+          const void* platform_handle_table;
+          TransportData::GetPlatformHandleTable(
+              message_view.transport_data_buffer(),
+              &num_platform_handles,
+              &platform_handle_table);
+
+          if (num_platform_handles > 0) {
+            platform_handles =
+                GetReadPlatformHandles(num_platform_handles,
+                                       platform_handle_table).Pass();
+            if (!platform_handles) {
+              LOG(WARNING) << "Invalid number of platform handles received";
+              read_stopped_ = true;
+              CallOnFatalError(Delegate::FATAL_ERROR_READ);
+              return;
+            }
+          }
+        }
+
+        // TODO(vtl): In the case that we aren't expecting any platform handles,
+        // for the POSIX implementation, we should confirm that none are stored.
+
+        // Dispatch the message.
+        DCHECK(delegate_);
+        delegate_->OnReadMessage(message_view, platform_handles.Pass());
+        if (read_stopped_) {
+          // |Shutdown()| was called in |OnReadMessage()|.
+          // TODO(vtl): Add test for this case.
+          return;
+        }
+      }
+
       did_dispatch_message = true;
 
       // Update our state.
@@ -385,7 +434,20 @@ void RawChannel::OnWriteCompleted(bool result,
   }
 
   if (did_fail)
-    CallOnFatalError(Delegate::FATAL_ERROR_FAILED_WRITE);
+    CallOnFatalError(Delegate::FATAL_ERROR_WRITE);
+}
+
+void RawChannel::EnqueueMessageNoLock(scoped_ptr<MessageInTransit> message) {
+  write_lock_.AssertAcquired();
+  write_buffer_->message_queue_.push_back(message.release());
+}
+
+bool RawChannel::OnReadMessageForRawChannel(
+    const MessageInTransit::View& message_view) {
+  // No non-implementation specific |RawChannel| control messages.
+  LOG(ERROR) << "Invalid control message (subtype " << message_view.subtype()
+             << ")";
+  return false;
 }
 
 void RawChannel::CallOnFatalError(Delegate::FatalError fatal_error) {

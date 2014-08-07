@@ -70,15 +70,6 @@ class WebRTCFactory(chromium_factory.ChromiumFactory):
       self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_VALGRIND]
     elif factory_properties.get('needs_tsan_win'):
       self._solutions[0].custom_deps_list = [self.CUSTOM_DEPS_TSAN_WIN]
-    elif factory_properties.get('needs_drmemory'):
-      if 'drmemory.DEPS' not in [s.name for s in self._solutions]:
-        self._solutions.append(gclient_factory.GClientSolution(
-            config.Master.trunk_url +
-            '/deps/third_party/drmemory/drmemory.DEPS',
-            'drmemory.DEPS'))
-
-    # Ensure GYP errors out if files referenced in .gyp files are missing.
-    self.ForceMissingFilesToBeFatal(project, factory_properties['gclient_env'])
 
     factory = self.BuildFactory(target, clobber, tests, mode, slave_type,
                                 options, compile_timeout, build_url, project,

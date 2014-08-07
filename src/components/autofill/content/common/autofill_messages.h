@@ -14,7 +14,6 @@
 #include "components/autofill/core/common/form_data_predictions.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/autofill/core/common/form_field_data_predictions.h"
-#include "components/autofill/core/common/forms_seen_state.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/autofill/core/common/web_element_descriptor.h"
@@ -28,8 +27,6 @@
 
 #define IPC_MESSAGE_START AutofillMsgStart
 
-IPC_ENUM_TRAITS_MAX_VALUE(autofill::FormsSeenState,
-                          autofill::FORMS_SEEN_STATE_NUM_STATES - 1)
 IPC_ENUM_TRAITS_MAX_VALUE(base::i18n::TextDirection,
                           base::i18n::TEXT_DIRECTION_NUM_DIRECTIONS - 1)
 
@@ -97,6 +94,11 @@ IPC_ENUM_TRAITS_MAX_VALUE(
 
 // Autofill messages sent from the browser to the renderer.
 
+// Instructs the renderer to immediately return an IPC acknowledging the ping.
+// This is used to correctly sequence events, since IPCs are guaranteed to be
+// processed in order.
+IPC_MESSAGE_ROUTED0(AutofillMsg_Ping)
+
 // Instructs the renderer to fill the active form with the given form data.
 IPC_MESSAGE_ROUTED2(AutofillMsg_FillForm,
                     int /* query_id */,
@@ -115,7 +117,7 @@ IPC_MESSAGE_ROUTED1(AutofillMsg_FillPasswordForm,
 
 // Notification to start (|active| == true) or stop (|active| == false) logging
 // the decisions made about saving the password.
-IPC_MESSAGE_ROUTED1(AutofillMsg_ChangeLoggingState, bool /* active */)
+IPC_MESSAGE_ROUTED1(AutofillMsg_SetLoggingState, bool /* active */)
 
 // Send the heuristic and server field type predictions to the renderer.
 IPC_MESSAGE_ROUTED1(
@@ -145,9 +147,15 @@ IPC_MESSAGE_ROUTED1(AutofillMsg_AcceptDataListSuggestion,
 IPC_MESSAGE_ROUTED1(AutofillMsg_GeneratedPasswordAccepted,
                     base::string16 /* generated_password */)
 
-// Tells the renderer that the user accepted a password autofill suggestion,
-// and that renderer should set the username and password to the given values.
-IPC_MESSAGE_ROUTED2(AutofillMsg_AcceptPasswordAutofillSuggestion,
+// Tells the renderer to fill the username and password with with given
+// values.
+IPC_MESSAGE_ROUTED2(AutofillMsg_FillPasswordSuggestion,
+                    base::string16 /* username */,
+                    base::string16 /* password */)
+
+// Tells the renderer to preview the username and password with the given
+// values.
+IPC_MESSAGE_ROUTED2(AutofillMsg_PreviewPasswordSuggestion,
                     base::string16 /* username */,
                     base::string16 /* password */)
 
@@ -177,10 +185,9 @@ IPC_MESSAGE_ROUTED1(AutofillMsg_AccountCreationFormsDetected,
 
 // Notification that forms have been seen that are candidates for
 // filling/submitting by the AutofillManager.
-IPC_MESSAGE_ROUTED3(AutofillHostMsg_FormsSeen,
+IPC_MESSAGE_ROUTED2(AutofillHostMsg_FormsSeen,
                     std::vector<autofill::FormData> /* forms */,
-                    base::TimeTicks /* timestamp */,
-                    autofill::FormsSeenState /* state */)
+                    base::TimeTicks /* timestamp */)
 
 // Notification that password forms have been seen that are candidates for
 // filling/submitting by the password manager.
@@ -191,6 +198,11 @@ IPC_MESSAGE_ROUTED1(AutofillHostMsg_PasswordFormsParsed,
 // forms are visible on the page (e.g. not set to display:none.)
 IPC_MESSAGE_ROUTED1(AutofillHostMsg_PasswordFormsRendered,
                     std::vector<autofill::PasswordForm> /* forms */)
+
+// A ping to the browser that PasswordAutofillAgent was constructed. As a
+// consequence, the browser sends AutofillMsg_SetLoggingState with the current
+// state of the logging activity.
+IPC_MESSAGE_ROUTED0(AutofillHostMsg_PasswordAutofillAgentConstructed);
 
 // Notification that this password form was submitted by the user.
 IPC_MESSAGE_ROUTED1(AutofillHostMsg_PasswordFormSubmitted,
@@ -224,6 +236,9 @@ IPC_MESSAGE_ROUTED5(AutofillHostMsg_QueryFormFieldAutofill,
 
 // Sent when a form is previewed with Autofill suggestions.
 IPC_MESSAGE_ROUTED0(AutofillHostMsg_DidPreviewAutofillFormData)
+
+// Sent immediately after the renderer receives a ping IPC.
+IPC_MESSAGE_ROUTED0(AutofillHostMsg_PingAck)
 
 // Sent when a form is filled with Autofill suggestions.
 IPC_MESSAGE_ROUTED1(AutofillHostMsg_DidFillAutofillFormData,

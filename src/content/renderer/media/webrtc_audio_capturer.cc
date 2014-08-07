@@ -165,6 +165,11 @@ bool WebRtcAudioCapturer::Initialize() {
     return true;
   }
 
+  MediaAudioConstraints audio_constraints(constraints_,
+                                          device_info_.device.input.effects);
+  if (!audio_constraints.IsValid())
+    return false;
+
   media::ChannelLayout channel_layout = static_cast<media::ChannelLayout>(
       device_info_.device.input.channel_layout);
   DVLOG(1) << "Audio input hardware channel layout: " << channel_layout;
@@ -224,8 +229,7 @@ WebRtcAudioCapturer::WebRtcAudioCapturer(
     : constraints_(constraints),
       audio_processor_(
           new talk_base::RefCountedObject<MediaStreamAudioProcessor>(
-              constraints, device_info.device.input.effects,
-              device_info.device.type, audio_device)),
+              constraints, device_info.device.input.effects, audio_device)),
       running_(false),
       render_view_id_(render_view_id),
       device_info_(device_info),
@@ -332,8 +336,9 @@ void WebRtcAudioCapturer::SetCapturerSource(
     // Notify the |audio_processor_| of the new format.
     audio_processor_->OnCaptureFormatChanged(params);
 
-    need_audio_processing_ = NeedsAudioProcessing(
-        constraints_, device_info_.device.input.effects);
+    MediaAudioConstraints audio_constraints(constraints_,
+                                            device_info_.device.input.effects);
+    need_audio_processing_ = audio_constraints.NeedsAudioProcessing();
     // Notify all tracks about the new format.
     tracks_.TagAll();
   }
@@ -412,9 +417,6 @@ void WebRtcAudioCapturer::Stop() {
   if (audio_device_)
     audio_device_->RemoveAudioCapturer(this);
 
-  // Stop the Aec dump.
-  StopAecDump();
-
   for (TrackList::ItemList::const_iterator it = tracks.begin();
        it != tracks.end();
        ++it) {
@@ -423,6 +425,9 @@ void WebRtcAudioCapturer::Stop() {
 
   if (source.get())
     source->Stop();
+
+  // Stop the audio processor to avoid feeding render data into the processor.
+  audio_processor_->Stop();
 }
 
 void WebRtcAudioCapturer::SetVolume(int volume) {
@@ -443,7 +448,7 @@ int WebRtcAudioCapturer::MaxVolume() const {
   return WebRtcAudioDeviceImpl::kMaxVolumeLevel;
 }
 
-void WebRtcAudioCapturer::Capture(media::AudioBus* audio_source,
+void WebRtcAudioCapturer::Capture(const media::AudioBus* audio_source,
                                   int audio_delay_milliseconds,
                                   double volume,
                                   bool key_pressed) {
@@ -452,7 +457,7 @@ void WebRtcAudioCapturer::Capture(media::AudioBus* audio_source,
 // CaptureCallback.
 #if defined(OS_WIN) || defined(OS_MACOSX)
   DCHECK_LE(volume, 1.0);
-#elif defined(OS_LINUX) || defined(OS_OPENBSD)
+#elif (defined(OS_LINUX) && !defined(OS_CHROMEOS)) || defined(OS_OPENBSD)
   // We have a special situation on Linux where the microphone volume can be
   // "higher than maximum". The input volume slider in the sound preference
   // allows the user to set a scaling that is higher than 100%. It means that
@@ -608,17 +613,6 @@ void WebRtcAudioCapturer::SetCapturerSourceForTesting(
   // Create a new audio stream as source which uses the new source.
   SetCapturerSource(source, params.channel_layout(),
                     static_cast<float>(params.sample_rate()));
-}
-
-void WebRtcAudioCapturer::StartAecDump(base::File aec_dump_file) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(aec_dump_file.IsValid());
-  audio_processor_->StartAecDump(aec_dump_file.Pass());
-}
-
-void WebRtcAudioCapturer::StopAecDump() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  audio_processor_->StopAecDump();
 }
 
 }  // namespace content

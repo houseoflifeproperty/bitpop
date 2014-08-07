@@ -54,6 +54,8 @@ _TEST_CODE_EXCLUDED_PATHS = (
     r'chrome[/\\]browser[/\\]automation[/\\].*',
     # Non-production example code.
     r'mojo[/\\]examples[/\\].*',
+    # Launcher for running iOS tests on the simulator.
+    r'testing[/\\]iossim[/\\]iossim\.mm$',
 )
 
 _TEST_ONLY_WARNING = (
@@ -165,11 +167,13 @@ _BANNED_CPP_FUNCTIONS = (
       ),
       True,
       (
+        r"^chrome[\\\/]browser[\\\/]chromeos[\\\/]boot_times_loader\.cc$",
         r"^components[\\\/]breakpad[\\\/]app[\\\/]breakpad_mac\.mm$",
         r"^content[\\\/]shell[\\\/]browser[\\\/]shell_browser_main\.cc$",
         r"^content[\\\/]shell[\\\/]browser[\\\/]shell_message_filter\.cc$",
         r"^mojo[\\\/]system[\\\/]raw_shared_buffer_posix\.cc$",
         r"^net[\\\/]disk_cache[\\\/]cache_util\.cc$",
+        r"^net[\\\/]url_request[\\\/]test_url_fetcher_factory\.cc$",
       ),
     ),
     (
@@ -278,9 +282,9 @@ def _CheckNoProductionCodeUsingTestOnlyFunctions(input_api, output_api):
   # calls to such functions without a proper C++ parser.
   file_inclusion_pattern = r'.+%s' % _IMPLEMENTATION_EXTENSIONS
 
-  base_function_pattern = r'ForTest(ing)?|for_test(ing)?'
+  base_function_pattern = r'[ :]test::[^\s]+|ForTest(ing)?|for_test(ing)?'
   inclusion_pattern = input_api.re.compile(r'(%s)\s*\(' % base_function_pattern)
-  comment_pattern = input_api.re.compile(r'//.*%s' % base_function_pattern)
+  comment_pattern = input_api.re.compile(r'//.*(%s)' % base_function_pattern)
   exclusion_pattern = input_api.re.compile(
     r'::[A-Za-z0-9_]+(%s)|(%s)[^;]+\{' % (
       base_function_pattern, base_function_pattern))
@@ -498,7 +502,7 @@ def _CheckUnwantedDependencies(input_api, output_api):
   original_sys_path = sys.path
   try:
     sys.path = sys.path + [input_api.os_path.join(
-        input_api.PresubmitLocalPath(), 'tools', 'checkdeps')]
+        input_api.PresubmitLocalPath(), 'buildtools', 'checkdeps')]
     import checkdeps
     from cpp_checker import CppChecker
     from rules import Rule
@@ -1062,6 +1066,106 @@ def _CheckUserActionUpdate(input_api, output_api):
   return []
 
 
+def _GetJSONParseError(input_api, filename, eat_comments=True):
+  try:
+    contents = input_api.ReadFile(filename)
+    if eat_comments:
+      json_comment_eater = input_api.os_path.join(
+          input_api.PresubmitLocalPath(),
+          'tools', 'json_comment_eater', 'json_comment_eater.py')
+      process = input_api.subprocess.Popen(
+          [input_api.python_executable, json_comment_eater],
+          stdin=input_api.subprocess.PIPE,
+          stdout=input_api.subprocess.PIPE,
+          universal_newlines=True)
+      (contents, _) = process.communicate(input=contents)
+
+    input_api.json.loads(contents)
+  except ValueError as e:
+    return e
+  return None
+
+
+def _GetIDLParseError(input_api, filename):
+  try:
+    contents = input_api.ReadFile(filename)
+    idl_schema = input_api.os_path.join(
+        input_api.PresubmitLocalPath(),
+        'tools', 'json_schema_compiler', 'idl_schema.py')
+    process = input_api.subprocess.Popen(
+        [input_api.python_executable, idl_schema],
+        stdin=input_api.subprocess.PIPE,
+        stdout=input_api.subprocess.PIPE,
+        stderr=input_api.subprocess.PIPE,
+        universal_newlines=True)
+    (_, error) = process.communicate(input=contents)
+    return error or None
+  except ValueError as e:
+    return e
+
+
+def _CheckParseErrors(input_api, output_api):
+  """Check that IDL and JSON files do not contain syntax errors."""
+  actions = {
+    '.idl': _GetIDLParseError,
+    '.json': _GetJSONParseError,
+  }
+  # These paths contain test data and other known invalid JSON files.
+  excluded_patterns = [
+    'test/data/',
+    '^components/policy/resources/policy_templates.json$',
+  ]
+  # Most JSON files are preprocessed and support comments, but these do not.
+  json_no_comments_patterns = [
+    '^testing/',
+  ]
+  # Only run IDL checker on files in these directories.
+  idl_included_patterns = [
+    '^chrome/common/extensions/api/',
+    '^extensions/common/api/',
+  ]
+
+  def get_action(affected_file):
+    filename = affected_file.LocalPath()
+    return actions.get(input_api.os_path.splitext(filename)[1])
+
+  def MatchesFile(patterns, path):
+    for pattern in patterns:
+      if input_api.re.search(pattern, path):
+        return True
+    return False
+
+  def FilterFile(affected_file):
+    action = get_action(affected_file)
+    if not action:
+      return False
+    path = affected_file.LocalPath()
+
+    if MatchesFile(excluded_patterns, path):
+      return False
+
+    if (action == _GetIDLParseError and
+        not MatchesFile(idl_included_patterns, path)):
+      return False
+    return True
+
+  results = []
+  for affected_file in input_api.AffectedFiles(
+      file_filter=FilterFile, include_deletes=False):
+    action = get_action(affected_file)
+    kwargs = {}
+    if (action == _GetJSONParseError and
+        MatchesFile(json_no_comments_patterns, affected_file.LocalPath())):
+      kwargs['eat_comments'] = False
+    parse_error = action(input_api,
+                         affected_file.AbsoluteLocalPath(),
+                         **kwargs)
+    if parse_error:
+      results.append(output_api.PresubmitError('%s could not be parsed: %s' %
+          (affected_file.LocalPath(), parse_error)))
+  return results
+
+
 def _CheckJavaStyle(input_api, output_api):
   """Runs checkstyle on changed java files and returns errors if any exist."""
   original_sys_path = sys.path
@@ -1103,9 +1207,19 @@ _DEPRECATED_CSS = [
 
 def _CheckNoDeprecatedCSS(input_api, output_api):
   """ Make sure that we don't use deprecated CSS
-      properties, functions or values. """
+      properties, functions or values. Our external
+      documentation is ignored by the hooks as it
+      needs to be consumed by WebKit. """
   results = []
-  file_filter = lambda f: f.LocalPath().endswith('.css')
+  file_inclusion_pattern = (r".+\.css$")
+  black_list = (_EXCLUDED_PATHS +
+                _TEST_CODE_EXCLUDED_PATHS +
+                input_api.DEFAULT_BLACK_LIST +
+                (r"^chrome/common/extensions/docs",
+                 r"^chrome/docs",
+                 r"^native_client_sdk"))
+  file_filter = lambda f: input_api.FilterSourceFile(
+      f, white_list=file_inclusion_pattern, black_list=black_list)
   for fpath in input_api.AffectedFiles(file_filter=file_filter):
     for line_num, line in fpath.ChangedContents():
       for (deprecated_value, value) in _DEPRECATED_CSS:
@@ -1151,6 +1265,7 @@ def _CommonChecks(input_api, output_api):
   results.extend(_CheckCygwinShell(input_api, output_api))
   results.extend(_CheckUserActionUpdate(input_api, output_api))
   results.extend(_CheckNoDeprecatedCSS(input_api, output_api))
+  results.extend(_CheckParseErrors(input_api, output_api))
 
   if any('PRESUBMIT.py' == f.LocalPath() for f in input_api.AffectedFiles()):
     results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
@@ -1384,70 +1499,17 @@ def GetDefaultTryConfigs(bots=None):
       'linux_chromium_clang_dbg': ['defaulttests'],
       'linux_gpu': ['defaulttests'],
       'linux_nacl_sdk_build': ['compile'],
-      'linux_rel': [
-          'telemetry_perf_unittests',
-          'telemetry_unittests',
-      ],
       'mac_chromium_compile_dbg': ['defaulttests'],
       'mac_chromium_rel': ['defaulttests'],
       'mac_gpu': ['defaulttests'],
       'mac_nacl_sdk_build': ['compile'],
-      'mac_rel': [
-          'telemetry_perf_unittests',
-          'telemetry_unittests',
-      ],
-      'win': ['compile'],
       'win_chromium_compile_dbg': ['defaulttests'],
       'win_chromium_dbg': ['defaulttests'],
       'win_chromium_rel': ['defaulttests'],
       'win_chromium_x64_rel': ['defaulttests'],
       'win_gpu': ['defaulttests'],
       'win_nacl_sdk_build': ['compile'],
-      'win_rel': standard_tests + [
-          'app_list_unittests',
-          'ash_unittests',
-          'aura_unittests',
-          'cc_unittests',
-          'chrome_elf_unittests',
-          'chromedriver_unittests',
-          'components_unittests',
-          'compositor_unittests',
-          'events_unittests',
-          'gfx_unittests',
-          'google_apis_unittests',
-          'installer_util_unittests',
-          'mini_installer_test',
-          'nacl_integration',
-          'remoting_unittests',
-          'sync_integration_tests',
-          'telemetry_perf_unittests',
-          'telemetry_unittests',
-          'views_unittests',
-      ],
-      'win_x64_rel': [
-          'base_unittests',
-      ],
   }
-
-  swarm_enabled_builders = (
-  # http://crbug.com/354263
-  #    'linux_rel',
-  #    'mac_rel',
-  #    'win_rel',
-  )
-
-  swarm_enabled_tests = (
-      'base_unittests',
-      'browser_tests',
-      'interactive_ui_tests',
-      'net_unittests',
-      'unit_tests',
-  )
-
-  for bot in builders_and_tests:
-    if bot in swarm_enabled_builders:
-      builders_and_tests[bot] = [x + '_swarm' if x in swarm_enabled_tests else x
-                                 for x in builders_and_tests[bot]]
 
   if bots:
     filtered_builders_and_tests = dict((bot, set(builders_and_tests[bot]))

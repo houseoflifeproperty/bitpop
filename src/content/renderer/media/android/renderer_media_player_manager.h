@@ -7,15 +7,12 @@
 
 #include <map>
 #include <string>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/time/time.h"
-#include "content/common/media/cdm_messages_enums.h"
 #include "content/common/media/media_player_messages_enums_android.h"
-#include "content/public/renderer/render_view_observer.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "media/base/android/media_player_android.h"
-#include "media/base/media_keys.h"
 #include "url/gurl.h"
 
 namespace blink {
@@ -26,22 +23,20 @@ namespace gfx {
 class RectF;
 }
 
-namespace content {
+struct MediaPlayerHostMsg_Initialize_Params;
 
-class ProxyMediaKeys;
+namespace content {
 class WebMediaPlayerAndroid;
 
 // Class for managing all the WebMediaPlayerAndroid objects in the same
-// RenderView.
-class RendererMediaPlayerManager : public RenderViewObserver {
+// RenderFrame.
+class RendererMediaPlayerManager : public RenderFrameObserver {
  public:
-  static const int kInvalidCdmId = 0;
-
-  // Constructs a RendererMediaPlayerManager object for the |render_view|.
-  RendererMediaPlayerManager(RenderView* render_view);
+  // Constructs a RendererMediaPlayerManager object for the |render_frame|.
+  explicit RendererMediaPlayerManager(RenderFrame* render_frame);
   virtual ~RendererMediaPlayerManager();
 
-  // RenderViewObserver overrides.
+  // RenderFrameObserver overrides.
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
 
   // Initializes a MediaPlayerAndroid object in browser process.
@@ -49,7 +44,8 @@ class RendererMediaPlayerManager : public RenderViewObserver {
                   int player_id,
                   const GURL& url,
                   const GURL& first_party_for_cookies,
-                  int demuxer_client_id);
+                  int demuxer_client_id,
+                  const GURL& frame_url);
 
   // Starts the player.
   void Start(int player_id);
@@ -91,7 +87,7 @@ class RendererMediaPlayerManager : public RenderViewObserver {
   // Requests an external surface for out-of-band compositing.
   void RequestExternalSurface(int player_id, const gfx::RectF& geometry);
 
-  // RenderViewObserver overrides.
+  // RenderFrameObserver overrides.
   virtual void DidCommitCompositorFrame() OVERRIDE;
 
   // Returns true if a media player should use video-overlay for the embedded
@@ -99,34 +95,9 @@ class RendererMediaPlayerManager : public RenderViewObserver {
   bool ShouldUseVideoOverlayForEmbeddedEncryptedVideo();
 #endif  // defined(VIDEO_HOLE)
 
-  // Encrypted media related methods.
-  void InitializeCdm(int cdm_id,
-                     ProxyMediaKeys* media_keys,
-                     const std::string& key_system,
-                     const GURL& security_origin);
-  void CreateSession(int cdm_id,
-                     uint32 session_id,
-                     CdmHostMsg_CreateSession_ContentType conent_type,
-                     const std::vector<uint8>& init_data);
-  void UpdateSession(int cdm_id,
-                     uint32 session_id,
-                     const std::vector<uint8>& response);
-  void ReleaseSession(int cdm_id, uint32 session_id);
-  void DestroyCdm(int cdm_id);
-
   // Registers and unregisters a WebMediaPlayerAndroid object.
   int RegisterMediaPlayer(WebMediaPlayerAndroid* player);
   void UnregisterMediaPlayer(int player_id);
-
-  // Registers a ProxyMediaKeys object. There must be a WebMediaPlayerAndroid
-  // object already registered for this id, and it is unregistered when the
-  // player is unregistered. For now |cdm_id| is the same as player_id
-  // used in other methods.
-  void RegisterMediaKeys(int cdm_id, ProxyMediaKeys* media_keys);
-
-  // Releases the media resources managed by this object when a video
-  // is playing.
-  void ReleaseVideoResources();
 
   // Checks whether a player can enter fullscreen.
   bool CanEnterFullscreen(blink::WebFrame* frame);
@@ -143,9 +114,6 @@ class RendererMediaPlayerManager : public RenderViewObserver {
 
   // Gets the pointer to WebMediaPlayerAndroid given the |player_id|.
   WebMediaPlayerAndroid* GetMediaPlayer(int player_id);
-
-  // Gets the pointer to ProxyMediaKeys given the |cdm_id|.
-  ProxyMediaKeys* GetMediaKeys(int cdm_id);
 
 #if defined(VIDEO_HOLE)
   // Gets the list of media players with video geometry changes.
@@ -175,27 +143,17 @@ class RendererMediaPlayerManager : public RenderViewObserver {
   void OnPlayerPlay(int player_id);
   void OnPlayerPause(int player_id);
   void OnRequestFullscreen(int player_id);
-  void OnSessionCreated(int cdm_id,
-                        uint32 session_id,
-                        const std::string& web_session_id);
-  void OnSessionMessage(int cdm_id,
-                        uint32 session_id,
-                        const std::vector<uint8>& message,
-                        const GURL& destination_url);
-  void OnSessionReady(int cdm_id, uint32 session_id);
-  void OnSessionClosed(int cdm_id, uint32 session_id);
-  void OnSessionError(int cdm_id,
-                      uint32 session_id,
-                      media::MediaKeys::KeyError error_code,
-                      uint32 system_code);
+  void OnPauseVideo();
+
+  // Release all video player resources.
+  // If something is in progress the resource will not be freed. It will
+  // only be freed once the tab is destroyed or if the user navigates away
+  // via WebMediaPlayerAndroid::Destroy.
+  void ReleaseVideoResources();
 
   // Info for all available WebMediaPlayerAndroid on a page; kept so that
   // we can enumerate them to send updates about tab focus and visibility.
   std::map<int, WebMediaPlayerAndroid*> media_players_;
-
-  // Info for all available ProxyMediaKeys. There must be at most one
-  // ProxyMediaKeys for each available WebMediaPlayerAndroid.
-  std::map<int, ProxyMediaKeys*> media_keys_;
 
   int next_media_player_id_;
 

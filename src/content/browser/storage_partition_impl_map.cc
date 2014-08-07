@@ -40,7 +40,7 @@
 #include "webkit/browser/fileapi/file_system_url_request_job_factory.h"
 #include "webkit/common/blob/blob_data.h"
 
-using appcache::AppCacheService;
+using appcache::AppCacheServiceImpl;
 using fileapi::FileSystemContext;
 using webkit_blob::BlobStorageContext;
 
@@ -266,6 +266,27 @@ void BlockingObliteratePath(
   }
 }
 
+// Ensures each path in |active_paths| is a direct child of storage_root.
+void NormalizeActivePaths(const base::FilePath& storage_root,
+                          base::hash_set<base::FilePath>* active_paths) {
+  base::hash_set<base::FilePath> normalized_active_paths;
+
+  for (base::hash_set<base::FilePath>::iterator iter = active_paths->begin();
+       iter != active_paths->end(); ++iter) {
+    base::FilePath relative_path;
+    if (!storage_root.AppendRelativePath(*iter, &relative_path))
+      continue;
+
+    std::vector<base::FilePath::StringType> components;
+    relative_path.GetComponents(&components);
+
+    DCHECK(!relative_path.empty());
+    normalized_active_paths.insert(storage_root.Append(components.front()));
+  }
+
+  active_paths->swap(normalized_active_paths);
+}
+
 // Deletes all entries inside the |storage_root| that are not in the
 // |active_paths|.  Deletion is done in 2 steps:
 //
@@ -288,6 +309,8 @@ void BlockingGarbageCollect(
     const scoped_refptr<base::TaskRunner>& file_access_runner,
     scoped_ptr<base::hash_set<base::FilePath> > active_paths) {
   CHECK(storage_root.IsAbsolute());
+
+  NormalizeActivePaths(storage_root, active_paths.get());
 
   base::FileEnumerator enumerator(storage_root, false, kAllFileTypes);
   base::FilePath trash_directory;
@@ -377,12 +400,12 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
       ChromeBlobStorageContext::GetFor(browser_context_);
   StreamContext* stream_context = StreamContext::GetFor(browser_context_);
   ProtocolHandlerMap protocol_handlers;
-  protocol_handlers[kBlobScheme] =
+  protocol_handlers[url::kBlobScheme] =
       linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
           new BlobProtocolHandler(blob_storage_context,
                                   stream_context,
                                   partition->GetFileSystemContext()));
-  protocol_handlers[kFileSystemScheme] =
+  protocol_handlers[url::kFileSystemScheme] =
       linked_ptr<net::URLRequestJobFactory::ProtocolHandler>(
           CreateFileSystemProtocolHandler(partition_domain,
                                           partition->GetFileSystemContext()));
@@ -413,8 +436,8 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
           CreateDevToolsProtocolHandler(browser_context_->GetResourceContext(),
                                         browser_context_->IsOffTheRecord()));
 
-  ProtocolHandlerScopedVector protocol_interceptors;
-  protocol_interceptors.push_back(
+  URLRequestInterceptorScopedVector request_interceptors;
+  request_interceptors.push_back(
       ServiceWorkerRequestHandler::CreateInterceptor().release());
 
   // These calls must happen after StoragePartitionImpl::Create().
@@ -423,7 +446,7 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
         GetContentClient()->browser()->CreateRequestContext(
             browser_context_,
             &protocol_handlers,
-            protocol_interceptors.Pass()));
+            request_interceptors.Pass()));
   } else {
     partition->SetURLRequestContext(
         GetContentClient()->browser()->CreateRequestContextForStoragePartition(
@@ -431,7 +454,7 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
             partition->GetPath(),
             in_memory,
             &protocol_handlers,
-            protocol_interceptors.Pass()));
+            request_interceptors.Pass()));
   }
   partition->SetMediaURLRequestContext(
       partition_domain.empty() ?

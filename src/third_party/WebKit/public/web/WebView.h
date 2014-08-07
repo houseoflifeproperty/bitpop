@@ -58,7 +58,6 @@ class WebRange;
 class WebSettings;
 class WebSpellCheckClient;
 class WebString;
-class WebPasswordGeneratorClient;
 class WebViewClient;
 struct WebActiveWheelFlingParameters;
 struct WebMediaPlayerAction;
@@ -99,7 +98,6 @@ public:
     virtual void setDevToolsAgentClient(WebDevToolsAgentClient*) = 0;
     virtual void setPrerendererClient(WebPrerendererClient*) = 0;
     virtual void setSpellCheckClient(WebSpellCheckClient*) = 0;
-    virtual void setPasswordGeneratorClient(WebPasswordGeneratorClient*) = 0;
 
     // Options -------------------------------------------------------------
 
@@ -491,6 +489,13 @@ public:
     virtual void addPageOverlay(WebPageOverlay*, int /*z-order*/) = 0;
     virtual void removePageOverlay(WebPageOverlay*) = 0;
 
+
+    // i18n -----------------------------------------------------------------
+
+    // Inform the WebView that the accept languages have changed.
+    // If the WebView wants to get the accept languages value, it will have
+    // to call the WebViewClient::acceptLanguages().
+    virtual void acceptLanguagesChanged() = 0;
 
     // Testing functionality for TestRunner ---------------------------------
 

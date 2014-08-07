@@ -19,8 +19,9 @@
  */
 
 #include "config.h"
-#include "SVGNames.h"
 #include "core/svg/SVGDescElement.h"
+
+#include "core/SVGNames.h"
 
 namespace WebCore {
 
@@ -30,9 +31,6 @@ inline SVGDescElement::SVGDescElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGDescElement> SVGDescElement::create(Document& document)
-{
-    return adoptRef(new SVGDescElement(document));
-}
+DEFINE_NODE_FACTORY(SVGDescElement)
 
 }

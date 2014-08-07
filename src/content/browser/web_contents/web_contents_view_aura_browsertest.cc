@@ -17,12 +17,14 @@
 #include "content/browser/frame_host/navigation_entry_screenshot_manager.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/browser/web_contents/web_contents_view.h"
+#include "content/common/view_messages.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/test_renderer_host.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "ui/aura/test/event_generator.h"
@@ -30,6 +32,7 @@
 #include "ui/aura/window_tree_host.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event_processor.h"
+#include "ui/events/event_utils.h"
 
 namespace content {
 
@@ -159,9 +162,6 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
         static_cast<WebContentsImpl*>(shell()->web_contents());
     NavigationController& controller = web_contents->GetController();
     RenderFrameHost* main_frame = web_contents->GetMainFrame();
-    WebContentsViewAura* view_aura = static_cast<WebContentsViewAura*>(
-        web_contents->GetView());
-    view_aura->SetupOverlayWindowForTesting();
 
     EXPECT_FALSE(controller.CanGoBack());
     EXPECT_FALSE(controller.CanGoForward());
@@ -267,17 +267,14 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(WebContentsViewAuraTest);
 };
 
-// Flaky on Windows (perhaps just Win-Aura): http://crbug.com/305722
-#if defined(OS_WIN)
-#define MAYBE_OverscrollNavigation DISABLED_OverscrollNavigation
-#else
-#define MAYBE_OverscrollNavigation OverscrollNavigation
-#endif
-IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollNavigation) {
+// Flaky on Windows and ChromeOS: http://crbug.com/305722
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
+    DISABLED_OverscrollNavigation) {
   TestOverscrollNavigation(false);
 }
 
-// Flaky on Windows (perhaps just Win-Aura): http://crbug.com/305722
+// Flaky on Windows (might be related to the above test):
+// http://crbug.com/305722
 #if defined(OS_WIN)
 #define MAYBE_OverscrollNavigationWithTouchHandler \
         DISABLED_OverscrollNavigationWithTouchHandler
@@ -323,7 +320,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   ui::EventProcessor* dispatcher = content->GetHost()->event_processor();
   gfx::Rect bounds = content->GetBoundsInRootWindow();
 
-  base::TimeDelta timestamp;
+  base::TimeDelta timestamp = ui::EventTimeForNow();
   ui::TouchEvent press(ui::ET_TOUCH_PRESSED,
       gfx::Point(bounds.x() + bounds.width() / 2, bounds.y() + 5),
       0, timestamp);
@@ -380,13 +377,9 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 //  - interactively, when user does an overscroll gesture
 //  - interactively, when user navigates in history without the overscroll
 //    gesture.
-#if defined(OS_WIN)
-// http://crbug.com/357311
-#define MAYBE_OverscrollScreenshot DISABLED_OverscrollScreenshot
-#else
-#define MAYBE_OverscrollScreenshot OverscrollScreenshot
-#endif
-IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, MAYBE_OverscrollScreenshot) {
+// Flaky on Windows and ChromeOS (http://crbug.com/357311). Might be related to
+// OverscrollNavigation test.
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, DISABLED_OverscrollScreenshot) {
   // Disable the test for WinXP.  See http://crbug/294116.
 #if defined(OS_WIN)
   if (base::win::GetVersion() < base::win::VERSION_VISTA) {
@@ -562,6 +555,34 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   EXPECT_EQ(NULL, screenshot_manager()->screenshot_taken_for());
 }
 
+// Tests that navigations resulting from reloads and history.replaceState
+// do not capture screenshots while navigations resulting from
+// histrory.pushState do.
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, ReplaceStateReloadPushState) {
+  ASSERT_NO_FATAL_FAILURE(
+      StartTestWithPage("files/overscroll_navigation.html"));
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  RenderFrameHost* main_frame = web_contents->GetMainFrame();
+
+  set_min_screenshot_interval(0);
+  screenshot_manager()->Reset();
+  ExecuteSyncJSFunction(main_frame, "use_replace_state()");
+  screenshot_manager()->WaitUntilScreenshotIsReady();
+  // history.replaceState shouldn't capture a screenshot
+  EXPECT_FALSE(screenshot_manager()->screenshot_taken_for());
+  screenshot_manager()->Reset();
+  web_contents->GetController().Reload(true);
+  WaitForLoadStop(web_contents);
+  // reloading the page shouldn't capture a screenshot
+  EXPECT_FALSE(screenshot_manager()->screenshot_taken_for());
+  screenshot_manager()->Reset();
+  ExecuteSyncJSFunction(main_frame, "use_push_state()");
+  screenshot_manager()->WaitUntilScreenshotIsReady();
+  // pushing a state should capture a screenshot
+  EXPECT_TRUE(screenshot_manager()->screenshot_taken_for());
+}
+
 // TODO(sadrul): This test is disabled because it reparents in a way the
 //               FocusController does not support. This code would crash in
 //               a production build. It only passed prior to this revision
@@ -594,8 +615,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   window->AddChild(shell()->web_contents()->GetContentNativeView());
 }
 
-IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
-                       ContentWindowClose) {
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, ContentWindowClose) {
   ASSERT_NO_FATAL_FAILURE(
       StartTestWithPage("files/overscroll_navigation.html"));
 
@@ -617,10 +637,11 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 }
 
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
 // This appears to be flaky in the same was as the other overscroll
 // tests. Enabling for non-Windows platforms.
 // See http://crbug.com/369871.
+// For linux, see http://crbug.com/381294
 #define MAYBE_RepeatedQuickOverscrollGestures DISABLED_RepeatedQuickOverscrollGestures
 #else
 #define MAYBE_RepeatedQuickOverscrollGestures RepeatedQuickOverscrollGestures
@@ -635,9 +656,6 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
       static_cast<WebContentsImpl*>(shell()->web_contents());
   NavigationController& controller = web_contents->GetController();
   RenderFrameHost* main_frame = web_contents->GetMainFrame();
-  WebContentsViewAura* view_aura = static_cast<WebContentsViewAura*>(
-      web_contents->GetView());
-  view_aura->SetupOverlayWindowForTesting();
   ExecuteSyncJSFunction(main_frame, "install_touch_handler()");
 
   // Navigate twice, then navigate back in history once.
@@ -682,6 +700,19 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   EXPECT_EQ(2, GetCurrentIndex());
   EXPECT_TRUE(controller.CanGoBack());
   EXPECT_FALSE(controller.CanGoForward());
+}
+
+// Verify that hiding a parent of the renderer will hide the content too.
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, HideContentOnParenHide) {
+  ASSERT_NO_FATAL_FAILURE(StartTestWithPage("files/title1.html"));
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  aura::Window* content = web_contents->GetNativeView()->parent();
+  EXPECT_TRUE(web_contents->should_normally_be_visible());
+  content->Hide();
+  EXPECT_FALSE(web_contents->should_normally_be_visible());
+  content->Show();
+  EXPECT_TRUE(web_contents->should_normally_be_visible());
 }
 
 }  // namespace content

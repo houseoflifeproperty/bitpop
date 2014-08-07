@@ -35,6 +35,7 @@
 #include "core/dom/Attribute.h"
 #include "core/dom/Element.h"
 #include "core/html/HTMLInputElement.h"
+#include "platform/Timer.h"
 #include "wtf/HashFunctions.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/CString.h"
@@ -123,17 +124,17 @@ static void makePresentationAttributeCacheKey(Element& element, PresentationAttr
     // Interpretation of the size attributes on <input> depends on the type attribute.
     if (isHTMLInputElement(element))
         return;
-    unsigned size = element.attributeCount();
-    for (unsigned i = 0; i < size; ++i) {
-        const Attribute& attribute = element.attributeItem(i);
-        if (!element.isPresentationAttribute(attribute.name()))
+    AttributeCollection attributes = element.attributes();
+    AttributeCollection::const_iterator end = attributes.end();
+    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+        if (!element.isPresentationAttribute(it->name()))
             continue;
-        if (!attribute.namespaceURI().isNull())
+        if (!it->namespaceURI().isNull())
             return;
         // FIXME: Background URL may depend on the base URL and can't be shared. Disallow caching.
-        if (attribute.name() == backgroundAttr)
+        if (it->name() == backgroundAttr)
             return;
-        result.attributesAndValues.append(std::make_pair(attribute.localName().impl(), attribute.value()));
+        result.attributesAndValues.append(std::make_pair(it->localName().impl(), it->value()));
     }
     if (result.attributesAndValues.isEmpty())
         return;
@@ -178,11 +179,10 @@ PassRefPtr<StylePropertySet> computePresentationAttributeStyle(Element& element)
         cacheCleaner.didHitPresentationAttributeCache();
     } else {
         style = MutableStylePropertySet::create(element.isSVGElement() ? SVGAttributeMode : HTMLAttributeMode);
-        unsigned size = element.attributeCount();
-        for (unsigned i = 0; i < size; ++i) {
-            const Attribute& attribute = element.attributeItem(i);
-            element.collectStyleForPresentationAttribute(attribute.name(), attribute.value(), toMutableStylePropertySet(style));
-        }
+        AttributeCollection attributes = element.attributes();
+        AttributeCollection::const_iterator end = attributes.end();
+        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it)
+            element.collectStyleForPresentationAttribute(it->name(), it->value(), toMutableStylePropertySet(style));
     }
 
     if (!cacheHash || cacheValue->value)

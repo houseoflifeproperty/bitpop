@@ -10,25 +10,36 @@ namespace switches {
 // expiration of credentials during testing.
 const char kClearTokenService[] = "clear-token-service";
 
+// Disables consistent identity features.
+const char kDisableAccountConsistency[] = "disable-account-consistency";
+
+// Disables new profile management system, including new profile chooser UI.
+const char kDisableNewProfileManagement[] = "disable-new-profile-management";
+
+// Enables consistent identity features.
+const char kEnableAccountConsistency[] = "enable-account-consistency";
+
+// Enables new profile management system, including new profile chooser UI.
+const char kEnableNewProfileManagement[] = "new-profile-management";
+
 // Enables the pure web-based flow for sign in on first run/NTP/wrench menu/
 // settings page.
-const char kEnableWebBasedSignin[]            = "enable-web-based-signin";
+const char kEnableWebBasedSignin[] = "enable-web-based-signin";
+
+// Enables multiple account versions of chrome.identity APIs.
+const char kExtensionsMultiAccount[] = "extensions-multi-account";
 
 // Allows displaying the list of existing profiles in the avatar bubble for
 // fast switching between profiles.
-const char kFastUserSwitching[]             = "fast-user-switching";
+const char kFastUserSwitching[] = "fast-user-switching";
 
 // Enables using GAIA information to populate profile name and icon.
-const char kGoogleProfileInfo[]             = "google-profile-info";
+const char kGoogleProfileInfo[] = "google-profile-info";
 
 // Use new avatar menu. When combined with new-profile-management, it simply
 // shows the new profile management avatar menu. Otherwise it shows a redesigned
 // avatar menu with the same functionality as the old one, plus a tutorial card
 // at the top prompting the user to try out the new profile management UI.
-const char kNewAvatarMenu[]                 = "new-avatar-menu";
-
-// Use new profile management system, including profile sign-out and new
-// choosers.
-const char kNewProfileManagement[]          = "new-profile-management";
+const char kNewAvatarMenu[] = "new-avatar-menu";
 
 }  // namespace switches

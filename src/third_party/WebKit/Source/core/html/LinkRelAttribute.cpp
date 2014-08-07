@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/html/LinkRelAttribute.h"
 
-#include "RuntimeEnabledFeatures.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -47,6 +47,7 @@ LinkRelAttribute::LinkRelAttribute(const String& rel)
     , m_isLinkNext(false)
     , m_isImport(false)
     , m_isManifest(false)
+    , m_isTransitionExitingStylesheet(false)
 {
     if (rel.isEmpty())
         return;
@@ -87,6 +88,9 @@ LinkRelAttribute::LinkRelAttribute(const String& rel)
                 m_iconType = TouchPrecomposedIcon;
         } else if (equalIgnoringCase(*it, "manifest")) {
             m_isManifest = true;
+        } else if (equalIgnoringCase(rel, "transition-exiting-stylesheet")) {
+            if (RuntimeEnabledFeatures::navigationTransitionsEnabled())
+                m_isTransitionExitingStylesheet = true;
         }
     }
 }

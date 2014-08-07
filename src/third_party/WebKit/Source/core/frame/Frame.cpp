@@ -32,7 +32,7 @@
 
 #include "core/dom/DocumentType.h"
 #include "core/events/Event.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameDestructionObserver.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/Settings.h"
@@ -54,24 +54,13 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-namespace {
-
-int64_t generateFrameID()
-{
-    // Initialize to the current time to reduce the likelihood of generating
-    // identifiers that overlap with those from past/future browser sessions.
-    static int64_t next = static_cast<int64_t>(currentTime() * 1000000.0);
-    return ++next;
-}
-
-} // namespace
-
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, frameCounter, ("Frame"));
 
-Frame::Frame(FrameHost* host, HTMLFrameOwnerElement* ownerElement)
-    : m_host(host)
-    , m_ownerElement(ownerElement)
-    , m_frameID(generateFrameID())
+Frame::Frame(FrameClient* client, FrameHost* host, FrameOwner* owner)
+    : m_treeNode(this)
+    , m_host(host)
+    , m_owner(owner)
+    , m_client(client)
     , m_remotePlatformLayer(0)
 {
     ASSERT(page());
@@ -80,9 +69,12 @@ Frame::Frame(FrameHost* host, HTMLFrameOwnerElement* ownerElement)
     frameCounter.increment();
 #endif
 
-    if (this->ownerElement()) {
+    if (m_owner) {
         page()->incrementSubframeCount();
-        this->ownerElement()->setContentFrame(*this);
+        if (m_owner->isLocal())
+            toHTMLFrameOwnerElement(m_owner)->setContentFrame(*this);
+    } else {
+        page()->setMainFrame(this);
     }
 }
 
@@ -131,7 +123,7 @@ Settings* Frame::settings() const
     return 0;
 }
 
-void Frame::setDOMWindow(PassRefPtrWillBeRawPtr<DOMWindow> domWindow)
+void Frame::setDOMWindow(PassRefPtrWillBeRawPtr<LocalDOMWindow> domWindow)
 {
     if (m_domWindow)
         m_domWindow->reset();
@@ -153,9 +145,9 @@ ChromeClient& Frame::chromeClient() const
 
 RenderPart* Frame::ownerRenderer() const
 {
-    if (!ownerElement())
+    if (!deprecatedLocalOwner())
         return 0;
-    RenderObject* object = ownerElement()->renderer();
+    RenderObject* object = deprecatedLocalOwner()->renderer();
     if (!object)
         return 0;
     // FIXME: If <object> is ever fixed to disassociate itself from frames
@@ -194,12 +186,18 @@ bool Frame::isMainFrame() const
 
 void Frame::disconnectOwnerElement()
 {
-    if (ownerElement()) {
-        ownerElement()->clearContentFrame();
+    if (m_owner) {
+        if (m_owner->isLocal())
+            toHTMLFrameOwnerElement(m_owner)->clearContentFrame();
         if (page())
             page()->decrementSubframeCount();
     }
-    m_ownerElement = 0;
+    m_owner = 0;
+}
+
+HTMLFrameOwnerElement* Frame::deprecatedLocalOwner() const
+{
+    return m_owner && m_owner->isLocal() ? toHTMLFrameOwnerElement(m_owner) : 0;
 }
 
 } // namespace WebCore

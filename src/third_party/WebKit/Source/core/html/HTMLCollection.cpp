@@ -24,13 +24,15 @@
 #include "config.h"
 #include "core/html/HTMLCollection.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ClassCollection.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeRareData.h"
+#include "core/html/DocumentNameCollection.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/HTMLOptionElement.h"
+#include "core/html/WindowNameCollection.h"
 #include "wtf/HashSet.h"
 
 namespace WebCore {
@@ -166,18 +168,20 @@ HTMLCollection::HTMLCollection(ContainerNode& ownerNode, CollectionType type, It
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLCollection> HTMLCollection::create(ContainerNode& base, CollectionType type)
+PassRefPtrWillBeRawPtr<HTMLCollection> HTMLCollection::create(ContainerNode& base, CollectionType type)
 {
-    return adoptRef(new HTMLCollection(base, type, DoesNotOverrideItemAfter));
+    return adoptRefWillBeNoop(new HTMLCollection(base, type, DoesNotOverrideItemAfter));
 }
 
 HTMLCollection::~HTMLCollection()
 {
+#if !ENABLE(OILPAN)
     if (hasValidIdNameCache())
         unregisterIdNameCacheFromDocument(document());
     // Named HTMLCollection types remove cache by themselves.
     if (isUnnamedHTMLCollectionType(type()))
         ownerNode().nodeLists()->removeCache(this, type());
+#endif
 }
 
 void HTMLCollection::invalidateCache(Document* oldDocument) const
@@ -199,11 +203,15 @@ template <> inline bool isMatchingElement(const HTMLCollection& htmlCollection, 
     case NodeChildren:
         return true;
     case ClassCollectionType:
-        return static_cast<const ClassCollection&>(htmlCollection).elementMatches(element);
+        return toClassCollection(htmlCollection).elementMatches(element);
     case TagCollectionType:
-        return static_cast<const TagCollection&>(htmlCollection).elementMatches(element);
+        return toTagCollection(htmlCollection).elementMatches(element);
     case HTMLTagCollectionType:
-        return static_cast<const HTMLTagCollection&>(htmlCollection).elementMatches(element);
+        return toHTMLTagCollection(htmlCollection).elementMatches(element);
+    case DocumentNamedItems:
+        return toDocumentNameCollection(htmlCollection).elementMatches(element);
+    case WindowNamedItems:
+        return toWindowNameCollection(htmlCollection).elementMatches(element);
     default:
         break;
     }
@@ -337,9 +345,9 @@ Element* HTMLCollection::traverseToFirstElement() const
 {
     switch (type()) {
     case HTMLTagCollectionType:
-        return firstMatchingElement(static_cast<const HTMLTagCollection&>(*this));
+        return firstMatchingElement(toHTMLTagCollection(*this));
     case ClassCollectionType:
-        return firstMatchingElement(static_cast<const ClassCollection&>(*this));
+        return firstMatchingElement(toClassCollection(*this));
     default:
         if (overridesItemAfter())
             return virtualItemAfter(0);
@@ -357,23 +365,14 @@ Element* HTMLCollection::traverseToLastElement() const
     return lastMatchingElement(*this);
 }
 
-inline Element* HTMLCollection::traverseNextElement(Element& previous) const
-{
-    if (overridesItemAfter())
-        return virtualItemAfter(&previous);
-    if (shouldOnlyIncludeDirectChildren())
-        return nextMatchingChildElement(*this, previous);
-    return nextMatchingElement(*this, previous);
-}
-
 Element* HTMLCollection::traverseForwardToOffset(unsigned offset, Element& currentElement, unsigned& currentOffset) const
 {
     ASSERT(currentOffset < offset);
     switch (type()) {
     case HTMLTagCollectionType:
-        return traverseMatchingElementsForwardToOffset(static_cast<const HTMLTagCollection&>(*this), offset, currentElement, currentOffset);
+        return traverseMatchingElementsForwardToOffset(toHTMLTagCollection(*this), offset, currentElement, currentOffset);
     case ClassCollectionType:
-        return traverseMatchingElementsForwardToOffset(static_cast<const ClassCollection&>(*this), offset, currentElement, currentOffset);
+        return traverseMatchingElementsForwardToOffset(toClassCollection(*this), offset, currentElement, currentOffset);
     default:
         if (overridesItemAfter()) {
             Element* next = &currentElement;
@@ -420,11 +419,11 @@ Element* HTMLCollection::namedItem(const AtomicString& name) const
     updateIdNameCache();
 
     const NamedItemCache& cache = namedItemCache();
-    Vector<Element*>* idResults = cache.getElementsById(name);
+    WillBeHeapVector<RawPtrWillBeMember<Element> >* idResults = cache.getElementsById(name);
     if (idResults && !idResults->isEmpty())
         return idResults->first();
 
-    Vector<Element*>* nameResults = cache.getElementsByName(name);
+    WillBeHeapVector<RawPtrWillBeMember<Element> >* nameResults = cache.getElementsByName(name);
     if (nameResults && !nameResults->isEmpty())
         return nameResults->first();
 
@@ -447,7 +446,9 @@ void HTMLCollection::supportedPropertyNames(Vector<String>& names)
     //      nor is in result, append element's name attribute value to result.
     // 3. Return result.
     HashSet<AtomicString> existingNames;
-    for (Element* element = traverseToFirstElement(); element; element = traverseNextElement(*element)) {
+    unsigned length = this->length();
+    for (unsigned i = 0; i < length; ++i) {
+        Element* element = item(i);
         const AtomicString& idAttribute = element->getIdAttribute();
         if (!idAttribute.isEmpty()) {
             HashSet<AtomicString>::AddResult addResult = existingNames.add(idAttribute);
@@ -475,8 +476,10 @@ void HTMLCollection::updateIdNameCache() const
     if (hasValidIdNameCache())
         return;
 
-    OwnPtr<NamedItemCache> cache = NamedItemCache::create();
-    for (Element* element = traverseToFirstElement(); element; element = traverseNextElement(*element)) {
+    OwnPtrWillBeRawPtr<NamedItemCache> cache = NamedItemCache::create();
+    unsigned length = this->length();
+    for (unsigned i = 0; i < length; ++i) {
+        Element* element = item(i);
         const AtomicString& idAttrVal = element->getIdAttribute();
         if (!idAttrVal.isEmpty())
             cache->addElementWithId(idAttrVal, element);
@@ -490,7 +493,7 @@ void HTMLCollection::updateIdNameCache() const
     setNamedItemCache(cache.release());
 }
 
-void HTMLCollection::namedItems(const AtomicString& name, Vector<RefPtr<Element> >& result) const
+void HTMLCollection::namedItems(const AtomicString& name, WillBeHeapVector<RefPtrWillBeMember<Element> >& result) const
 {
     ASSERT(result.isEmpty());
     if (name.isEmpty())
@@ -499,18 +502,25 @@ void HTMLCollection::namedItems(const AtomicString& name, Vector<RefPtr<Element>
     updateIdNameCache();
 
     const NamedItemCache& cache = namedItemCache();
-    Vector<Element*>* idResults = cache.getElementsById(name);
-    Vector<Element*>* nameResults = cache.getElementsByName(name);
-
-    for (unsigned i = 0; idResults && i < idResults->size(); ++i)
-        result.append(idResults->at(i));
-
-    for (unsigned i = 0; nameResults && i < nameResults->size(); ++i)
-        result.append(nameResults->at(i));
+    if (WillBeHeapVector<RawPtrWillBeMember<Element> >* idResults = cache.getElementsById(name)) {
+        for (unsigned i = 0; i < idResults->size(); ++i)
+            result.append(idResults->at(i));
+    }
+    if (WillBeHeapVector<RawPtrWillBeMember<Element> >* nameResults = cache.getElementsByName(name)) {
+        for (unsigned i = 0; i < nameResults->size(); ++i)
+            result.append(nameResults->at(i));
+    }
 }
 
 HTMLCollection::NamedItemCache::NamedItemCache()
 {
+}
+
+void HTMLCollection::trace(Visitor* visitor)
+{
+    visitor->trace(m_namedItemCache);
+    visitor->trace(m_collectionIndexCache);
+    LiveNodeListBase::trace(visitor);
 }
 
 } // namespace WebCore

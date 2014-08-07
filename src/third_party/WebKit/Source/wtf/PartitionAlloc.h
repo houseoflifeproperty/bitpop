@@ -254,6 +254,7 @@ struct PartitionSuperPageExtentEntry {
 };
 
 struct WTF_EXPORT PartitionRootBase {
+    size_t totalSizeOfCommittedPages;
     size_t totalSizeOfSuperPages;
     unsigned numBuckets;
     unsigned maxAllocation;
@@ -307,6 +308,10 @@ WTF_EXPORT bool partitionAllocGenericShutdown(PartitionRootGeneric*);
 WTF_EXPORT NEVER_INLINE void* partitionAllocSlowPath(PartitionRootBase*, int, size_t, PartitionBucket*);
 WTF_EXPORT NEVER_INLINE void partitionFreeSlowPath(PartitionPage*);
 WTF_EXPORT NEVER_INLINE void* partitionReallocGeneric(PartitionRootGeneric*, void*, size_t);
+
+#ifndef NDEBUG
+WTF_EXPORT void partitionDumpStats(const PartitionRoot&);
+#endif
 
 ALWAYS_INLINE PartitionFreelistEntry* partitionFreelistMask(PartitionFreelistEntry* ptr)
 {

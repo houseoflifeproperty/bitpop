@@ -33,14 +33,13 @@
 
 #include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventTargetModules.h"
 #include "modules/notifications/NotificationClient.h"
 #include "platform/AsyncMethodRunner.h"
 #include "platform/heap/Handle.h"
 #include "platform/text/TextDirection.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
@@ -49,9 +48,9 @@ class Dictionary;
 class ExecutionContext;
 class NotificationPermissionCallback;
 
-class Notification : public RefCountedGarbageCollected<Notification>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
-    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedGarbageCollected<Notification>);
-
+class Notification : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<Notification>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<Notification>);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Notification);
 public:
     static Notification* create(ExecutionContext*, const String& title, const Dictionary& options);
 
@@ -91,8 +90,6 @@ public:
     // ActiveDOMObject interface.
     virtual void stop() OVERRIDE;
     virtual bool hasPendingActivity() const OVERRIDE;
-
-    void trace(Visitor*) { }
 
 private:
     Notification(const String& title, ExecutionContext*, NotificationClient*);

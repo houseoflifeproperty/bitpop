@@ -13,9 +13,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
@@ -55,6 +55,12 @@ void ClearBrowserDataHandler::InitializeHandler() {
 void ClearBrowserDataHandler::InitializePage() {
   UpdateInfoBannerVisibility();
   OnBrowsingHistoryPrefChanged();
+  bool removal_in_progress = !!remover_;
+  web_ui()->CallJavascriptFunction("ClearBrowserDataOverlay.setClearing",
+                                   base::FundamentalValue(removal_in_progress));
+
+  web_ui()->CallJavascriptFunction(
+      "ClearBrowserDataOverlay.markInitializationComplete");
 }
 
 void ClearBrowserDataHandler::UpdateInfoBannerVisibility() {
@@ -97,10 +103,8 @@ void ClearBrowserDataHandler::GetLocalizedValues(
   RegisterStrings(localized_strings, resources, arraysize(resources));
   RegisterTitle(localized_strings, "clearBrowserDataOverlay",
                 IDS_CLEAR_BROWSING_DATA_TITLE);
-  localized_strings->SetString(
-      "clearBrowsingDataLearnMoreUrl",
-      google_util::StringAppendGoogleLocaleParam(
-          kClearBrowsingDataLearnMoreUrl));
+  localized_strings->SetString("clearBrowsingDataLearnMoreUrl",
+                               kClearBrowsingDataLearnMoreUrl);
 
   ui::Accelerator acc(ui::VKEY_N, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN);
   localized_strings->SetString(
@@ -136,7 +140,7 @@ void ClearBrowserDataHandler::GetLocalizedValues(
   }
   localized_strings->Set("clearBrowserDataTimeList", time_list);
   localized_strings->SetBoolean("showDeleteBrowsingHistoryCheckboxes",
-                                !Profile::FromWebUI(web_ui())->IsManaged());
+                                !Profile::FromWebUI(web_ui())->IsSupervised());
 }
 
 void ClearBrowserDataHandler::RegisterMessages() {
@@ -148,9 +152,8 @@ void ClearBrowserDataHandler::RegisterMessages() {
 
 void ClearBrowserDataHandler::HandleClearBrowserData(
     const base::ListValue* value) {
-  // TODO(engedy): change this back to a DCHECK once we have updated the UI.
-  if (remover_)
-    return;
+  // We should never be called when the previous clearing has not yet finished.
+  CHECK(!remover_);
 
   Profile* profile = Profile::FromWebUI(web_ui());
   PrefService* prefs = profile->GetPrefs();
@@ -213,7 +216,7 @@ void ClearBrowserDataHandler::OnBrowsingDataRemoverDone() {
 
 void ClearBrowserDataHandler::OnBrowsingHistoryPrefChanged() {
   web_ui()->CallJavascriptFunction(
-      "ClearBrowserDataOverlay.updateHistoryCheckboxes",
+      "ClearBrowserDataOverlay.setAllowDeletingHistory",
       base::FundamentalValue(*allow_deleting_browser_history_));
 }
 

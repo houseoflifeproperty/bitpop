@@ -139,12 +139,15 @@ ContentSettingBubbleContents::MediaMenuParts::~MediaMenuParts() {}
 
 ContentSettingBubbleContents::ContentSettingBubbleContents(
     ContentSettingBubbleModel* content_setting_bubble_model,
+    content::WebContents* web_contents,
     views::View* anchor_view,
     views::BubbleBorder::Arrow arrow)
-    : BubbleDelegateView(anchor_view, arrow),
+    : content::WebContentsObserver(web_contents),
+      BubbleDelegateView(anchor_view, arrow),
       content_setting_bubble_model_(content_setting_bubble_model),
       custom_link_(NULL),
       manage_link_(NULL),
+      learn_more_link_(NULL),
       close_button_(NULL) {
   // Compensate for built-in vertical padding in the anchor view's image.
   set_anchor_view_insets(gfx::Insets(5, 0, 5, 0));
@@ -154,7 +157,7 @@ ContentSettingBubbleContents::~ContentSettingBubbleContents() {
   STLDeleteValues(&media_menus_);
 }
 
-gfx::Size ContentSettingBubbleContents::GetPreferredSize() {
+gfx::Size ContentSettingBubbleContents::GetPreferredSize() const {
   gfx::Size preferred_size(views::View::GetPreferredSize());
   int preferred_width =
       (!content_setting_bubble_model_->bubble_content().domain_lists.empty() &&
@@ -187,6 +190,9 @@ void ContentSettingBubbleContents::Init() {
   views::ColumnSet* column_set = layout->AddColumnSet(kSingleColumnSetId);
   column_set->AddColumn(GridLayout::LEADING, GridLayout::FILL, 1,
                         GridLayout::USE_PREF, 0, 0);
+  column_set->AddPaddingColumn(0, views::kRelatedControlHorizontalSpacing);
+  column_set->AddColumn(GridLayout::LEADING, GridLayout::FILL, 1,
+                        GridLayout::USE_PREF, 0, 0);
 
   const ContentSettingBubbleModel::BubbleContent& bubble_content =
       content_setting_bubble_model_->bubble_content();
@@ -199,6 +205,15 @@ void ContentSettingBubbleContents::Init() {
     title_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
     layout->StartRow(0, kSingleColumnSetId);
     layout->AddView(title_label);
+    bubble_content_empty = false;
+  }
+
+  if (!bubble_content.learn_more_link.empty()) {
+    learn_more_link_ =
+        new views::Link(base::UTF8ToUTF16(bubble_content.learn_more_link));
+    learn_more_link_->set_listener(this);
+    learn_more_link_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+    layout->AddView(learn_more_link_);
     bubble_content_empty = false;
   }
 
@@ -223,7 +238,7 @@ void ContentSettingBubbleContents::Init() {
 
       views::Link* link = new views::Link(base::UTF8ToUTF16(i->title));
       link->set_listener(this);
-      link->SetElideBehavior(views::Label::ELIDE_IN_MIDDLE);
+      link->SetElideBehavior(gfx::ELIDE_MIDDLE);
       popup_links_[link] = i - bubble_content.popup_items.begin();
       layout->AddView(new Favicon(i->image, this, link));
       layout->AddView(link);
@@ -291,9 +306,8 @@ void ContentSettingBubbleContents::Init() {
       views::MenuButton* menu_button = new views::MenuButton(
           NULL, base::UTF8ToUTF16((i->second.selected_device.name)),
           this, true);
-      menu_button->set_alignment(views::TextButton::ALIGN_LEFT);
-      menu_button->SetBorder(scoped_ptr<views::Border>(
-          new views::TextButtonNativeThemeBorder(menu_button)));
+      menu_button->SetStyle(views::Button::STYLE_BUTTON);
+      menu_button->SetHorizontalAlignment(gfx::ALIGN_LEFT);
       menu_button->set_animate_on_state_change(false);
 
       MediaMenuParts* menu_view = new MediaMenuParts(i->first);
@@ -335,8 +349,8 @@ void ContentSettingBubbleContents::Init() {
     // Set all the menu buttons to the width we calculated above.
     for (MediaMenuPartsMap::const_iterator i = media_menus_.begin();
          i != media_menus_.end(); ++i) {
-      i->first->set_min_width(menu_width);
-      i->first->set_max_width(menu_width);
+      i->first->set_min_size(gfx::Size(menu_width, 0));
+      i->first->set_max_size(gfx::Size(menu_width, 0));
     }
   }
 
@@ -401,6 +415,15 @@ void ContentSettingBubbleContents::Init() {
     layout->AddView(close_button_);
 }
 
+void ContentSettingBubbleContents::DidNavigateMainFrame(
+    const content::LoadCommittedDetails& details,
+    const content::FrameNavigateParams& params) {
+  // Content settings are based on the main frame, so if it switches then
+  // close up shop.
+  content_setting_bubble_model_->OnDoneClicked();
+  GetWidget()->Close();
+}
+
 void ContentSettingBubbleContents::ButtonPressed(views::Button* sender,
                                                  const ui::Event& event) {
   RadioGroup::const_iterator i(
@@ -416,6 +439,11 @@ void ContentSettingBubbleContents::ButtonPressed(views::Button* sender,
 
 void ContentSettingBubbleContents::LinkClicked(views::Link* source,
                                                int event_flags) {
+  if (source == learn_more_link_) {
+    content_setting_bubble_model_->OnLearnMoreLinkClicked();
+    GetWidget()->Close();
+    return;
+  }
   if (source == custom_link_) {
     content_setting_bubble_model_->OnCustomLinkClicked();
     GetWidget()->Close();
@@ -456,7 +484,7 @@ void ContentSettingBubbleContents::OnMenuButtonClicked(
 int ContentSettingBubbleContents::GetPreferredMediaMenuWidth(
     views::MenuButton* button,
     ui::SimpleMenuModel* menu_model) {
-  base::string16 title = button->text();
+  base::string16 title = button->GetText();
 
   int width = button->GetPreferredSize().width();
   for (int i = 0; i < menu_model->GetItemCount(); ++i) {

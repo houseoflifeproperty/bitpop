@@ -27,7 +27,7 @@ from master import master_utils
 
 import config
 
-v8_stable_branch = '3.25'
+v8_stable_branch = '3.26'
 android_tools_rev = '@b12d410c0ee23385da78e6c9f353d28fd992e0bd'
 android_resources_rev = '@3855'
 
@@ -50,6 +50,8 @@ linux_clang_env =  {'BUILDBOT_JAVA_HOME': 'third_party/java/linux/j2sdk',
                     'CXX': 'third_party/clang/linux/bin/clang++'}
 windows_env = {'BUILDBOT_JAVA_HOME': 'third_party\\java\\windows\\j2sdk',
                'LOGONSERVER': '\\\\AD1'}
+dart2dart_backend_env = {'BUILDBOT_JAVA_HOME': 'third_party/java/linux/j2sdk',
+                         'DART_VM_OPTIONS': '-DUSE_NEW_BACKEND=true'}
 
 dart_revision_url = "http://code.google.com/p/dart/source/detail?r=%s"
 

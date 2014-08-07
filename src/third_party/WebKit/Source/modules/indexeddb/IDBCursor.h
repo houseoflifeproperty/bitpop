@@ -32,8 +32,8 @@
 #include "modules/indexeddb/IDBRequest.h"
 #include "modules/indexeddb/IndexedDB.h"
 #include "public/platform/WebIDBCursor.h"
+#include "public/platform/WebIDBTypes.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
@@ -50,23 +50,17 @@ class IDBTransaction;
 class ExecutionContext;
 class SharedBuffer;
 
-#if ENABLE(OILPAN)
-typedef GarbageCollectedFinalized<IDBCursor> IDBCursorBase;
-#else
-typedef WTF::RefCountedBase IDBCursorBase;
-#endif
-
-class IDBCursor : public IDBCursorBase, public ScriptWrappable {
+class IDBCursor : public GarbageCollectedFinalized<IDBCursor>, public ScriptWrappable {
 public:
     static const AtomicString& directionNext();
     static const AtomicString& directionNextUnique();
     static const AtomicString& directionPrev();
     static const AtomicString& directionPrevUnique();
 
-    static blink::WebIDBCursor::Direction stringToDirection(const String& modeString, ExceptionState&);
+    static blink::WebIDBCursorDirection stringToDirection(const String& modeString, ExceptionState&);
     static const AtomicString& directionToString(unsigned short mode);
 
-    static PassRefPtrWillBeRawPtr<IDBCursor> create(PassOwnPtr<blink::WebIDBCursor>, blink::WebIDBCursor::Direction, IDBRequest*, IDBAny* source, IDBTransaction*);
+    static IDBCursor* create(PassOwnPtr<blink::WebIDBCursor>, blink::WebIDBCursorDirection, IDBRequest*, IDBAny* source, IDBTransaction*);
     virtual ~IDBCursor();
     void trace(Visitor*);
     void contextWillBeDestroyed() { m_backend.clear(); }
@@ -78,58 +72,44 @@ public:
     ScriptValue value(ScriptState*);
     ScriptValue source(ScriptState*) const;
 
-    PassRefPtrWillBeRawPtr<IDBRequest> update(ExecutionContext*, ScriptValue&, ExceptionState&);
+    IDBRequest* update(ScriptState*, ScriptValue&, ExceptionState&);
     void advance(unsigned long, ExceptionState&);
-    void continueFunction(ExecutionContext*, const ScriptValue& key, ExceptionState&);
-    void continuePrimaryKey(ExecutionContext*, const ScriptValue& key, const ScriptValue& primaryKey, ExceptionState&);
-    PassRefPtrWillBeRawPtr<IDBRequest> deleteFunction(ExecutionContext*, ExceptionState&);
+    void continueFunction(ScriptState*, const ScriptValue& key, ExceptionState&);
+    void continuePrimaryKey(ScriptState*, const ScriptValue& key, const ScriptValue& primaryKey, ExceptionState&);
+    IDBRequest* deleteFunction(ScriptState*, ExceptionState&);
 
     bool isKeyDirty() const { return m_keyDirty; }
     bool isPrimaryKeyDirty() const { return m_primaryKeyDirty; }
     bool isValueDirty() const { return m_valueDirty; }
 
-    void continueFunction(PassRefPtrWillBeRawPtr<IDBKey>, PassRefPtrWillBeRawPtr<IDBKey> primaryKey, ExceptionState&);
+    void continueFunction(IDBKey*, IDBKey* primaryKey, ExceptionState&);
     void postSuccessHandlerCallback();
     bool isDeleted() const;
     void close();
-    void setValueReady(PassRefPtrWillBeRawPtr<IDBKey>, PassRefPtrWillBeRawPtr<IDBKey> primaryKey, PassRefPtr<SharedBuffer> value, PassOwnPtr<Vector<blink::WebBlobInfo> >);
-    PassRefPtrWillBeRawPtr<IDBKey> idbPrimaryKey() const { return m_primaryKey; }
+    void setValueReady(IDBKey*, IDBKey* primaryKey, PassRefPtr<SharedBuffer> value, PassOwnPtr<Vector<blink::WebBlobInfo> >);
+    IDBKey* idbPrimaryKey() const { return m_primaryKey; }
     IDBRequest* request() const { return m_request.get(); }
     virtual bool isKeyCursor() const { return true; }
     virtual bool isCursorWithValue() const { return false; }
 
-#if !ENABLE(OILPAN)
-    void deref()
-    {
-        if (derefBase())
-            delete this;
-        else if (hasOneRef())
-            checkForReferenceCycle();
-    }
-#endif
-
 protected:
-    IDBCursor(PassOwnPtr<blink::WebIDBCursor>, blink::WebIDBCursor::Direction, IDBRequest*, IDBAny* source, IDBTransaction*);
+    IDBCursor(PassOwnPtr<blink::WebIDBCursor>, blink::WebIDBCursorDirection, IDBRequest*, IDBAny* source, IDBTransaction*);
 
 private:
-    PassRefPtrWillBeRawPtr<IDBObjectStore> effectiveObjectStore() const;
+    IDBObjectStore* effectiveObjectStore() const;
     void handleBlobAcks();
 
-#if !ENABLE(OILPAN)
-    void checkForReferenceCycle();
-#endif
-
     OwnPtr<blink::WebIDBCursor> m_backend;
-    RefPtrWillBeMember<IDBRequest> m_request;
-    const blink::WebIDBCursor::Direction m_direction;
-    RefPtrWillBeMember<IDBAny> m_source;
-    RefPtrWillBeMember<IDBTransaction> m_transaction;
+    Member<IDBRequest> m_request;
+    const blink::WebIDBCursorDirection m_direction;
+    Member<IDBAny> m_source;
+    Member<IDBTransaction> m_transaction;
     bool m_gotValue;
     bool m_keyDirty;
     bool m_primaryKeyDirty;
     bool m_valueDirty;
-    RefPtrWillBeMember<IDBKey> m_key;
-    RefPtrWillBeMember<IDBKey> m_primaryKey;
+    Member<IDBKey> m_key;
+    Member<IDBKey> m_primaryKey;
     RefPtr<SharedBuffer> m_value;
     OwnPtr<Vector<blink::WebBlobInfo> > m_blobInfo;
 };

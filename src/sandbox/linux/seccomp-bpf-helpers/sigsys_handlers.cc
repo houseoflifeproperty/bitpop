@@ -193,6 +193,10 @@ const char* GetIoctlErrorMessageContentForTests() {
   return SECCOMP_MESSAGE_IOCTL_CONTENT;
 }
 
+const char* GetKillErrorMessageContentForTests() {
+  return SECCOMP_MESSAGE_KILL_CONTENT;
+}
+
 const char* GetFutexErrorMessageContentForTests() {
   return SECCOMP_MESSAGE_FUTEX_CONTENT;
 }

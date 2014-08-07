@@ -1,0 +1,184 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_deps': {'v8/test/mozilla/data': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/deps/third_party/mozilla-tests'}, 'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/3.26'}]"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "sync",
+      "--nohooks",
+      "--delete_unversioned_trees",
+      "--force",
+      "--verbose",
+      "--revision",
+      "v8@20123",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"v8/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 50110@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@50110@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "GYP_DEFINES": "target_arch=x64 v8_optimized_debug=0 v8_target_arch=x64"
+    },
+    "name": "gclient runhooks"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/cleanup_temp.py"
+    ],
+    "name": "cleanup_temp"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/compile.py",
+      "--target",
+      "Debug",
+      "--src-dir",
+      "[SLAVE_BUILD]/v8",
+      "--build-tool",
+      "make",
+      "--"
+    ],
+    "name": "compile"
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Debug",
+      "--arch",
+      "x64",
+      "--testname",
+      "mjsunit fuzz-natives cctest message preparser",
+      "--flaky-tests",
+      "skip"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Check"
+  },
+  {
+    "always_run": true,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Debug",
+      "--arch",
+      "x64",
+      "--testname",
+      "mjsunit fuzz-natives cctest message preparser",
+      "--flaky-tests",
+      "run"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Check - flaky"
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Debug",
+      "--arch",
+      "x64",
+      "--testname",
+      "webkit",
+      "--flaky-tests",
+      "skip"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Webkit"
+  },
+  {
+    "always_run": true,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Debug",
+      "--arch",
+      "x64",
+      "--testname",
+      "webkit",
+      "--flaky-tests",
+      "run"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Webkit - flaky"
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Debug",
+      "--arch",
+      "x64",
+      "--testname",
+      "test262"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Test262"
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Debug",
+      "--arch",
+      "x64",
+      "--testname",
+      "mozilla"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Mozilla"
+  }
+]

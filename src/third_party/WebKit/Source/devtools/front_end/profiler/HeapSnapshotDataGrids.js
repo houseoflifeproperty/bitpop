@@ -1001,7 +1001,7 @@ WebInspector.HeapSnapshotDominatorsDataGrid.prototype = {
     {
         this.snapshot = snapshot;
 
-        var fakeNode = { nodeIndex: this.snapshot.rootNodeIndex };
+        var fakeNode = new WebInspector.HeapSnapshotCommon.Node(-1, "", 0, this.snapshot.rootNodeIndex, 0, 0, "");
         this.setRootNode(new WebInspector.HeapSnapshotDominatorObjectNode(this, fakeNode));
         this.rootNode().sort();
 
@@ -1035,7 +1035,7 @@ WebInspector.HeapSnapshotDominatorsDataGrid.prototype = {
         function didGetDominators(dominatorIds)
         {
             if (!dominatorIds) {
-                WebInspector.console.log(WebInspector.UIString("Cannot find corresponding heap snapshot node"));
+                console.error("Cannot find corresponding heap snapshot node");
                 callback(false);
                 return;
             }

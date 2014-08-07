@@ -19,6 +19,8 @@
   ],
   'variables': {
     'webrtc_all_dependencies': [
+      'base/base.gyp:*',
+      'common.gyp:*',
       'common_audio/common_audio.gyp:*',
       'common_video/common_video.gyp:*',
       'modules/modules.gyp:*',
@@ -39,6 +41,7 @@
       'conditions': [
         ['include_tests==1', {
           'dependencies': [
+            'base/base_tests.gyp:*',
             'common_video/common_video_unittests.gyp:*',
             'system_wrappers/source/system_wrappers_tests.gyp:*',
             'test/metrics.gyp:*',
@@ -73,6 +76,7 @@
         '<@(webrtc_video_sources)',
       ],
       'dependencies': [
+        'common.gyp:*',
         '<@(webrtc_video_dependencies)',
       ],
     },

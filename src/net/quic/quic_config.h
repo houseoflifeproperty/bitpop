@@ -215,6 +215,42 @@ class NET_EXPORT_PRIVATE QuicFixedTag : public QuicConfigValue {
   bool has_receive_value_;
 };
 
+// Stores tag from CHLO or SHLO messages that are not negotiated.
+class NET_EXPORT_PRIVATE QuicFixedTagVector : public QuicConfigValue {
+ public:
+  QuicFixedTagVector(QuicTag name, QuicConfigPresence presence);
+  virtual ~QuicFixedTagVector();
+
+  bool HasSendValues() const;
+
+  QuicTagVector GetSendValues() const;
+
+  void SetSendValues(const QuicTagVector& values);
+
+  bool HasReceivedValues() const;
+
+  QuicTagVector GetReceivedValues() const;
+
+  void SetReceivedValues(const QuicTagVector& values);
+
+  // If has_send_value is true, serialises |tag_vector_| and |send_value_| to
+  // |out|.
+  virtual void ToHandshakeMessage(CryptoHandshakeMessage* out) const OVERRIDE;
+
+  // Sets |receive_values_| to the corresponding value from |client_hello_| if
+  // it exists.
+  virtual QuicErrorCode ProcessPeerHello(
+      const CryptoHandshakeMessage& peer_hello,
+      HelloType hello_type,
+      std::string* error_details) OVERRIDE;
+
+ private:
+  QuicTagVector send_values_;
+  bool has_send_values_;
+  QuicTagVector receive_values_;
+  bool has_receive_values_;
+};
+
 // QuicConfig contains non-crypto configuration options that are negotiated in
 // the crypto handshake.
 class NET_EXPORT_PRIVATE QuicConfig {
@@ -222,10 +258,16 @@ class NET_EXPORT_PRIVATE QuicConfig {
   QuicConfig();
   ~QuicConfig();
 
-  void set_congestion_control(const QuicTagVector& congestion_control,
-                              QuicTag default_congestion_control);
+  void set_congestion_feedback(const QuicTagVector& congestion_feedback,
+                               QuicTag default_congestion_feedback);
 
-  QuicTag congestion_control() const;
+  QuicTag congestion_feedback() const;
+
+  void SetCongestionOptionsToSend(const QuicTagVector& congestion_options);
+
+  bool HasReceivedCongestionOptions() const;
+
+  QuicTagVector ReceivedCongestionOptions() const;
 
   void SetLossDetectionToSend(QuicTag loss_detection);
 
@@ -265,12 +307,34 @@ class NET_EXPORT_PRIVATE QuicConfig {
 
   uint32 ReceivedInitialRoundTripTimeUs() const;
 
-  // Sets an initial flow control window size to transmit to the peer.
+  // TODO(rjshade): Remove all InitialFlowControlWindow methods when removing
+  // QUIC_VERSION_19.
+  // Sets an initial stream flow control window size to transmit to the peer.
   void SetInitialFlowControlWindowToSend(uint32 window_bytes);
+
+  uint32 GetInitialFlowControlWindowToSend() const;
 
   bool HasReceivedInitialFlowControlWindowBytes() const;
 
   uint32 ReceivedInitialFlowControlWindowBytes() const;
+
+  // Sets an initial stream flow control window size to transmit to the peer.
+  void SetInitialStreamFlowControlWindowToSend(uint32 window_bytes);
+
+  uint32 GetInitialStreamFlowControlWindowToSend() const;
+
+  bool HasReceivedInitialStreamFlowControlWindowBytes() const;
+
+  uint32 ReceivedInitialStreamFlowControlWindowBytes() const;
+
+  // Sets an initial session flow control window size to transmit to the peer.
+  void SetInitialSessionFlowControlWindowToSend(uint32 window_bytes);
+
+  uint32 GetInitialSessionFlowControlWindowToSend() const;
+
+  bool HasReceivedInitialSessionFlowControlWindowBytes() const;
+
+  uint32 ReceivedInitialSessionFlowControlWindowBytes() const;
 
   bool negotiated();
 
@@ -294,7 +358,9 @@ class NET_EXPORT_PRIVATE QuicConfig {
   friend class test::QuicConfigPeer;
 
   // Congestion control feedback type.
-  QuicNegotiableTag congestion_control_;
+  QuicNegotiableTag congestion_feedback_;
+  // Congestion control option.
+  QuicFixedTagVector congestion_options_;
   // Loss detection feedback type.
   QuicFixedTag loss_detection_;
   // Idle connection state lifetime
@@ -310,8 +376,15 @@ class NET_EXPORT_PRIVATE QuicConfig {
   QuicFixedUint32 initial_congestion_window_;
   // Initial round trip time estimate in microseconds.
   QuicFixedUint32 initial_round_trip_time_us_;
+
+  // TODO(rjshade): Remove when removing QUIC_VERSION_19.
   // Initial flow control receive window in bytes.
   QuicFixedUint32 initial_flow_control_window_bytes_;
+
+  // Initial stream flow control receive window in bytes.
+  QuicFixedUint32 initial_stream_flow_control_window_bytes_;
+  // Initial session flow control receive window in bytes.
+  QuicFixedUint32 initial_session_flow_control_window_bytes_;
 };
 
 }  // namespace net

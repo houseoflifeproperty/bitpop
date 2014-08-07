@@ -50,7 +50,7 @@
       "runhooks"
     ],
     "env": {
-      "GYP_DEFINES": "clang=1 component=static_library gomadir='[BUILD]/goma' target_arch=x64 use_goma=1"
+      "GYP_DEFINES": "clang=1 component=static_library gomadir='[BUILD]/goma' mac_sdk=10.7 target_arch=x64 use_goma=1"
     },
     "name": "gclient runhooks",
     "seed_steps": [

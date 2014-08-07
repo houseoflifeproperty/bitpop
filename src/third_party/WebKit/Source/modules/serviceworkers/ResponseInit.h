@@ -6,24 +6,25 @@
 #define ResponseInit_h
 
 #include "bindings/v8/Dictionary.h"
+#include "modules/serviceworkers/HeaderMap.h"
+#include "wtf/RefPtr.h"
 
 namespace WebCore {
 
 struct ResponseInit {
     explicit ResponseInit(const Dictionary& options)
-        : statusCode(200)
+        : status(200)
         , statusText("OK")
     {
-        options.get("statusCode", statusCode);
-        options.get("statusTest", statusText);
-        options.get("method", method);
+        options.get("status", status);
+        // FIXME: Spec uses ByteString for statusText. http://crbug.com/347426
+        options.get("statusText", statusText);
         options.get("headers", headers);
     }
 
-    unsigned short statusCode;
+    unsigned short status;
     String statusText;
-    String method;
-    Dictionary headers;
+    RefPtr<HeaderMap> headers;
 };
 
 }

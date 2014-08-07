@@ -9,112 +9,14 @@
 #include "ui/ozone/platform/dri/dri_buffer.h"
 #include "ui/ozone/platform/dri/dri_surface.h"
 #include "ui/ozone/platform/dri/hardware_display_controller.h"
+#include "ui/ozone/platform/dri/test/mock_dri_surface.h"
+#include "ui/ozone/platform/dri/test/mock_dri_wrapper.h"
 
 namespace {
 
 // Create a basic mode for a 6x4 screen.
 const drmModeModeInfo kDefaultMode =
     {0, 6, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, {'\0'}};
-
-// Mock file descriptor ID.
-const int kFd = 3;
-
-// Mock connector ID.
-const uint32_t kConnectorId = 1;
-
-// Mock CRTC ID.
-const uint32_t kCrtcId = 1;
-
-class MockDriWrapper : public ui::DriWrapper {
- public:
-  MockDriWrapper() : DriWrapper(""), id_(1) { fd_ = kFd; }
-  virtual ~MockDriWrapper() { fd_ = -1; }
-
-  virtual drmModeCrtc* GetCrtc(uint32_t crtc_id) OVERRIDE { return NULL; }
-  virtual void FreeCrtc(drmModeCrtc* crtc) OVERRIDE {}
-  virtual bool SetCrtc(uint32_t crtc_id,
-                       uint32_t framebuffer,
-                       uint32_t* connectors,
-                       drmModeModeInfo* mode) OVERRIDE { return true; }
-  virtual bool SetCrtc(drmModeCrtc* crtc, uint32_t* connectors) OVERRIDE {
-    return true;
-  }
-  virtual bool AddFramebuffer(const drmModeModeInfo& mode,
-                              uint8_t depth,
-                              uint8_t bpp,
-                              uint32_t stride,
-                              uint32_t handle,
-                              uint32_t* framebuffer) OVERRIDE {
-    *framebuffer = id_++;
-    return true;
-  }
-  virtual bool RemoveFramebuffer(uint32_t framebuffer) OVERRIDE { return true; }
-  virtual bool PageFlip(uint32_t crtc_id,
-                        uint32_t framebuffer,
-                        void* data) OVERRIDE {
-    return true;
-  }
-  virtual bool SetProperty(uint32_t connector_id,
-                           uint32_t property_id,
-                           uint64_t value) OVERRIDE { return true; }
-  virtual void FreeProperty(drmModePropertyRes* prop) OVERRIDE { delete prop; }
-  virtual drmModePropertyBlobRes* GetPropertyBlob(drmModeConnector* connector,
-                                                  const char* name) OVERRIDE {
-    return new drmModePropertyBlobRes;
-  }
-  virtual void FreePropertyBlob(drmModePropertyBlobRes* blob) OVERRIDE {
-    delete blob;
-  }
-
- private:
-  int id_;
-  DISALLOW_COPY_AND_ASSIGN(MockDriWrapper);
-};
-
-class MockDriBuffer : public ui::DriBuffer {
- public:
-  MockDriBuffer(ui::DriWrapper* dri, bool initialize_expectation)
-      : DriBuffer(dri), initialize_expectation_(initialize_expectation) {}
-  virtual ~MockDriBuffer() {
-    surface_.clear();
-  }
-
-  virtual bool Initialize(const SkImageInfo& info) OVERRIDE {
-    if (!initialize_expectation_)
-      return false;
-
-    surface_ = skia::AdoptRef(SkSurface::NewRaster(info));
-    surface_->getCanvas()->clear(SK_ColorBLACK);
-
-    return true;
-  }
-
- private:
-  bool initialize_expectation_;
-
-  DISALLOW_COPY_AND_ASSIGN(MockDriBuffer);
-};
-
-class MockDriSurface : public ui::DriSurface {
- public:
-  MockDriSurface(ui::DriWrapper* dri, const gfx::Size& size)
-      : DriSurface(dri, size), dri_(dri), initialize_expectation_(true) {}
-  virtual ~MockDriSurface() {}
-
-  void set_initialize_expectation(bool state) {
-    initialize_expectation_ = state;
-  }
-
- private:
-  virtual ui::DriBuffer* CreateBuffer() OVERRIDE {
-    return new MockDriBuffer(dri_, initialize_expectation_);
-  }
-
-  ui::DriWrapper* dri_;
-  bool initialize_expectation_;
-
-  DISALLOW_COPY_AND_ASSIGN(MockDriSurface);
-};
 
 }  // namespace
 
@@ -126,22 +28,20 @@ class DriSurfaceTest : public testing::Test {
   virtual void TearDown() OVERRIDE;
 
  protected:
-  scoped_ptr<MockDriWrapper> drm_;
+  scoped_ptr<ui::MockDriWrapper> drm_;
   scoped_ptr<ui::HardwareDisplayController> controller_;
-  scoped_ptr<MockDriSurface> surface_;
+  scoped_ptr<ui::MockDriSurface> surface_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DriSurfaceTest);
 };
 
 void DriSurfaceTest::SetUp() {
-  drm_.reset(new MockDriWrapper());
-  controller_.reset(new ui::HardwareDisplayController(
-      drm_.get(), kConnectorId, kCrtcId));
+  drm_.reset(new ui::MockDriWrapper(3));
+  controller_.reset(new ui::HardwareDisplayController(drm_.get(), 1, 1));
 
-  surface_.reset(new MockDriSurface(drm_.get(),
-                                    gfx::Size(kDefaultMode.hdisplay,
-                                              kDefaultMode.vdisplay)));
+  surface_.reset(new ui::MockDriSurface(
+      drm_.get(), gfx::Size(kDefaultMode.hdisplay, kDefaultMode.vdisplay)));
 }
 
 void DriSurfaceTest::TearDown() {
@@ -161,15 +61,15 @@ TEST_F(DriSurfaceTest, SuccessfulInitialization) {
 
 TEST_F(DriSurfaceTest, CheckFBIDOnSwap) {
   EXPECT_TRUE(surface_->Initialize());
-  controller_->BindSurfaceToController(surface_.PassAs<ui::DriSurface>(),
+  controller_->BindSurfaceToController(surface_.PassAs<ui::ScanoutSurface>(),
                                        kDefaultMode);
 
   // Check that the framebuffer ID is correct.
-  EXPECT_EQ(2u, controller_->get_surface()->GetFramebufferId());
+  EXPECT_EQ(2u, controller_->surface()->GetFramebufferId());
 
-  controller_->get_surface()->SwapBuffers();
+  controller_->surface()->SwapBuffers();
 
-  EXPECT_EQ(1u, controller_->get_surface()->GetFramebufferId());
+  EXPECT_EQ(1u, controller_->surface()->GetFramebufferId());
 }
 
 TEST_F(DriSurfaceTest, CheckPixelPointerOnSwap) {

@@ -15,20 +15,28 @@
 #ifndef I18N_ADDRESSINPUT_LOCALIZATION_H_
 #define I18N_ADDRESSINPUT_LOCALIZATION_H_
 
+#include <libaddressinput/address_field.h>
+#include <libaddressinput/address_problem.h>
+
 #include <string>
+#include <vector>
 
 namespace i18n {
 namespace addressinput {
 
-// The object to retrieve localized strings based on message IDs. Sample usage:
+struct AddressData;
+
+// The object to retrieve localized strings based on message IDs. It returns
+// English by default. Sample usage:
 //    Localization localization;
-//    localization.SetLanguage("en");
-//    Process(BuildComponents("CA", localization));
+//    std::string best_language_tag;
+//    Process(BuildComponents("CA", localization, "en-US", &best_language_tag));
 //
 // Alternative usage:
 //    Localization localization;
 //    localization.SetGetter(&MyStringGetter);
-//    Process(BuildComponents("CA", localization));
+//    std::string best_language_tag;
+//    Process(BuildComponents("CA", localization, "fr-CA", &best_language_tag));
 class Localization {
  public:
   // Initializes with English messages by default.
@@ -39,15 +47,41 @@ class Localization {
   // there's no message with this identifier.
   std::string GetString(int message_id) const;
 
-  // Sets the language for the strings. The only supported language is "en"
-  // until we have translations.
-  void SetLanguage(const std::string& language_code);
+  // Returns the error message. If |enable_examples| is false, then the error
+  // message will not contain examples of valid input. If |enable_links| is
+  // false, then the error message will not contain HTML links. (Some error
+  // messages contain postal code examples or link to post office websites to
+  // look up the postal code for an address). Vector field values (e.g. for
+  // street address) should not be empty if problem is UNKNOWN_VALUE. The
+  // POSTAL_CODE field should only be used with MISSING_REQUIRED_FIELD,
+  // INVALID_FORMAT, and MISMATCHING_VALUE problem codes. All other fields
+  // should only be used with MISSING_REQUIRED_FIELD, UNKNOWN_VALUE, and
+  // USES_P_O_BOX problem codes.
+  std::string GetErrorMessage(const AddressData& address,
+                              AddressField field,
+                              AddressProblem problem,
+                              bool enable_examples,
+                              bool enable_links) const;
 
   // Sets the string getter that takes a message identifier and returns the
-  // corresponding localized string.
+  // corresponding localized string. For example, in Chromium there is
+  // l10n_util::GetStringUTF8 which always returns strings in the current
+  // application locale.
   void SetGetter(std::string (*getter)(int));
 
  private:
+  // Returns the error message where the address field is a postal code. Helper
+  // to |GetErrorMessage|. If |postal_code_example| is empty, then the error
+  // message will not contain examples of valid postal codes. If
+  // |post_service_url| is empty, then the error message will not contain a post
+  // service URL. The problem should only be one of MISSING_REQUIRED_FIELD,
+  // INVALID_FORMAT, or MISMATCHING_VALUE.
+  std::string GetErrorMessageForPostalCode(const AddressData& address,
+                                           AddressProblem problem,
+                                           bool uses_postal_code_as_label,
+                                           std::string postal_code_example,
+                                           std::string post_service_url) const;
+
   // The string getter.
   std::string (*get_string_)(int);
 };

@@ -27,9 +27,8 @@
 #include "config.h"
 #include "core/events/EventPath.h"
 
-#include "EventNames.h"
-#include "RuntimeEnabledFeatures.h"
-#include "SVGNames.h"
+#include "core/EventNames.h"
+#include "core/SVGNames.h"
 #include "core/dom/FullscreenElementStack.h"
 #include "core/dom/Touch.h"
 #include "core/dom/TouchList.h"
@@ -39,18 +38,10 @@
 #include "core/events/MouseEvent.h"
 #include "core/events/TouchEvent.h"
 #include "core/events/TouchEventContext.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGUseElement.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
-
-// SVG1.1 specified that the <use> instance tree would expose the target
-// element for events. This has been deprecated and will be removed.
-// See: crbug.com/313438
-static bool usesDeprecatedSVGUseTreeEventRules(Node* node)
-{
-    return node->isSVGElement() && toSVGElement(node)->inUseShadowTree();
-}
 
 EventTarget* EventPath::eventTargetRespectingTargetRules(Node* referenceNode)
 {
@@ -58,20 +49,6 @@ EventTarget* EventPath::eventTargetRespectingTargetRules(Node* referenceNode)
 
     if (referenceNode->isPseudoElement())
         return referenceNode->parentNode();
-
-    if (!usesDeprecatedSVGUseTreeEventRules(referenceNode))
-        return referenceNode;
-
-    // Spec: The event handling for the non-exposed tree works as if the referenced element had been textually included
-    // as a deeply cloned child of the 'use' element, except that events are dispatched to the SVGElementInstance objects.
-    Node& rootNode = referenceNode->treeScope().rootNode();
-    Element* shadowHostElement = rootNode.isShadowRoot() ? toShadowRoot(rootNode).host() : 0;
-    // At this time, SVG nodes are not supported in non-<use> shadow trees.
-    if (!isSVGUseElement(shadowHostElement))
-        return referenceNode;
-    SVGUseElement& useElement = toSVGUseElement(*shadowHostElement);
-    if (SVGElementInstance* instance = useElement.instanceForShadowTreeElement(referenceNode))
-        return instance;
 
     return referenceNode;
 }
@@ -103,7 +80,7 @@ static inline EventDispatchBehavior determineDispatchBehavior(Event* event, Shad
 }
 
 EventPath::EventPath(Event* event)
-    : m_node(0)
+    : m_node(nullptr)
     , m_event(event)
 {
 }
@@ -123,8 +100,7 @@ void EventPath::resetWith(Node* node)
     m_treeScopeEventContexts.clear();
     calculatePath();
     calculateAdjustedTargets();
-    if (!usesDeprecatedSVGUseTreeEventRules(node))
-        calculateTreeScopePrePostOrderNumbers();
+    calculateTreeScopePrePostOrderNumbers();
 }
 
 void EventPath::addNodeEventContext(Node* node)
@@ -136,7 +112,7 @@ void EventPath::calculatePath()
 {
     ASSERT(m_node);
     ASSERT(m_nodeEventContexts.isEmpty());
-    m_node->document().updateDistributionForNodeIfNeeded(const_cast<Node*>(m_node));
+    m_node->document().updateDistributionForNodeIfNeeded(const_cast<Node*>(m_node.get()));
 
     Node* current = m_node;
     addNodeEventContext(current);
@@ -145,7 +121,7 @@ void EventPath::calculatePath()
     while (current) {
         if (current->isShadowRoot() && m_event && determineDispatchBehavior(m_event, toShadowRoot(current), m_node) == StayInsideShadowDOM)
             break;
-        Vector<InsertionPoint*, 8> insertionPoints;
+        WillBeHeapVector<RawPtrWillBeMember<InsertionPoint>, 8> insertionPoints;
         collectDestinationInsertionPoints(*current, insertionPoints);
         if (!insertionPoints.isEmpty()) {
             for (size_t i = 0; i < insertionPoints.size(); ++i) {
@@ -177,7 +153,7 @@ void EventPath::calculateTreeScopePrePostOrderNumbers()
     // Precondition:
     //   - TreeScopes in m_treeScopeEventContexts must be *connected* in the same tree of trees.
     //   - The root tree must be included.
-    HashMap<const TreeScope*, TreeScopeEventContext*> treeScopeEventContextMap;
+    WillBeHeapHashMap<RawPtrWillBeMember<const TreeScope>, RawPtrWillBeMember<TreeScopeEventContext> > treeScopeEventContextMap;
     for (size_t i = 0; i < m_treeScopeEventContexts.size(); ++i)
         treeScopeEventContextMap.add(&m_treeScopeEventContexts[i]->treeScope(), m_treeScopeEventContexts[i].get());
     TreeScopeEventContext* rootTree = 0;
@@ -226,7 +202,6 @@ TreeScopeEventContext* EventPath::ensureTreeScopeEventContext(Node* currentTarge
 void EventPath::calculateAdjustedTargets()
 {
     const TreeScope* lastTreeScope = 0;
-    bool useDeprecatedSVGUseTreeEventRules = usesDeprecatedSVGUseTreeEventRules(at(0).node());
 
     TreeScopeEventContextMap treeScopeEventContextMap;
     TreeScopeEventContext* lastTreeScopeEventContext = 0;
@@ -235,16 +210,7 @@ void EventPath::calculateAdjustedTargets()
         Node* currentNode = at(i).node();
         TreeScope& currentTreeScope = currentNode->treeScope();
         if (lastTreeScope != &currentTreeScope) {
-            if (!useDeprecatedSVGUseTreeEventRules) {
-                lastTreeScopeEventContext = ensureTreeScopeEventContext(currentNode, &currentTreeScope, treeScopeEventContextMap);
-            } else {
-                TreeScopeEventContextMap::AddResult addResult = treeScopeEventContextMap.add(&currentTreeScope, TreeScopeEventContext::create(currentTreeScope));
-                lastTreeScopeEventContext = addResult.storedValue->value.get();
-                if (addResult.isNewEntry) {
-                    // Don't adjust an event target for SVG.
-                    lastTreeScopeEventContext->setTarget(eventTargetRespectingTargetRules(at(0).node()));
-                }
-            }
+            lastTreeScopeEventContext = ensureTreeScopeEventContext(currentNode, &currentTreeScope, treeScopeEventContextMap);
         }
         ASSERT(lastTreeScopeEventContext);
         at(i).setTreeScopeEventContext(lastTreeScopeEventContext);
@@ -264,7 +230,7 @@ void EventPath::buildRelatedNodeMap(const Node* relatedNode, RelatedTargetMap& r
 
 EventTarget* EventPath::findRelatedNode(TreeScope* scope, RelatedTargetMap& relatedTargetMap)
 {
-    Vector<TreeScope*, 32> parentTreeScopes;
+    WillBeHeapVector<RawPtrWillBeMember<TreeScope>, 32> parentTreeScopes;
     EventTarget* relatedNode = 0;
     while (scope) {
         parentTreeScopes.append(scope);
@@ -276,7 +242,7 @@ EventTarget* EventPath::findRelatedNode(TreeScope* scope, RelatedTargetMap& rela
         scope = scope->olderShadowRootOrParentTreeScope();
     }
     ASSERT(relatedNode);
-    for (Vector<TreeScope*, 32>::iterator iter = parentTreeScopes.begin(); iter < parentTreeScopes.end(); ++iter)
+    for (WillBeHeapVector<RawPtrWillBeMember<TreeScope>, 32>::iterator iter = parentTreeScopes.begin(); iter < parentTreeScopes.end(); ++iter)
         relatedTargetMap.add(*iter, relatedNode);
     return relatedNode;
 }
@@ -332,7 +298,7 @@ void EventPath::adjustForTouchEvent(Node* node, TouchEvent& touchEvent)
     WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTouches;
     WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTargetTouches;
     WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedChangedTouches;
-    Vector<TreeScope*> treeScopes;
+    WillBeHeapVector<RawPtrWillBeMember<TreeScope> > treeScopes;
 
     for (size_t i = 0; i < m_treeScopeEventContexts.size(); ++i) {
         TouchEventContext* touchEventContext = m_treeScopeEventContexts[i]->ensureTouchEventContext();
@@ -357,7 +323,7 @@ void EventPath::adjustForTouchEvent(Node* node, TouchEvent& touchEvent)
 #endif
 }
 
-void EventPath::adjustTouchList(const Node* node, const TouchList* touchList, WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTouchList, const Vector<TreeScope*>& treeScopes)
+void EventPath::adjustTouchList(const Node* node, const TouchList* touchList, WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTouchList, const WillBeHeapVector<RawPtrWillBeMember<TreeScope> >& treeScopes)
 {
     if (!touchList)
         return;
@@ -381,7 +347,10 @@ void EventPath::checkReachability(TreeScope& treeScope, TouchList& touchList)
 
 void EventPath::trace(Visitor* visitor)
 {
+    visitor->trace(m_nodeEventContexts);
+    visitor->trace(m_node);
     visitor->trace(m_event);
+    visitor->trace(m_treeScopeEventContexts);
 }
 
 } // namespace

@@ -19,6 +19,7 @@
 #include "base/win/windows_version.h"
 #include "chrome/common/chrome_icon_resources_win.h"
 #include "chrome/common/net/test_server_locations.h"
+#include "chrome/installer/util/app_registration_data.h"
 #include "chrome/installer/util/channel_info.h"
 #include "chrome/installer/util/google_update_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
@@ -26,6 +27,7 @@
 #include "chrome/installer/util/install_util.h"
 #include "chrome/installer/util/l10n_string_util.h"
 #include "chrome/installer/util/uninstall_metrics.h"
+#include "chrome/installer/util/updating_app_registration_data.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/wmi.h"
 #include "content/public/common/result_codes.h"
@@ -60,8 +62,14 @@ base::string16 GetUninstallSurveyUrl() {
 }  // namespace
 
 GoogleChromeDistribution::GoogleChromeDistribution()
-    : BrowserDistribution(CHROME_BROWSER),
-      product_guid_(kChromeGuid) {
+    : BrowserDistribution(CHROME_BROWSER,
+          make_scoped_ptr(
+              new UpdatingAppRegistrationData(kChromeGuid))) {
+}
+
+GoogleChromeDistribution::GoogleChromeDistribution(
+    scoped_ptr<AppRegistrationData> app_reg_data)
+    : BrowserDistribution(CHROME_BROWSER, app_reg_data.Pass()) {
 }
 
 void GoogleChromeDistribution::DoPostUninstallOperations(
@@ -114,11 +122,7 @@ void GoogleChromeDistribution::DoPostUninstallOperations(
 }
 
 base::string16 GoogleChromeDistribution::GetActiveSetupGuid() {
-  return product_guid();
-}
-
-base::string16 GoogleChromeDistribution::GetAppGuid() {
-  return product_guid();
+  return GetAppGuid();
 }
 
 base::string16 GoogleChromeDistribution::GetBaseAppName() {
@@ -188,34 +192,17 @@ std::string GoogleChromeDistribution::GetSafeBrowsingName() {
   return "googlechrome";
 }
 
-base::string16 GoogleChromeDistribution::GetStateKey() {
-  base::string16 key(google_update::kRegPathClientState);
-  key.append(L"\\");
-  key.append(product_guid());
-  return key;
-}
-
-base::string16 GoogleChromeDistribution::GetStateMediumKey() {
-  base::string16 key(google_update::kRegPathClientStateMedium);
-  key.append(L"\\");
-  key.append(product_guid());
-  return key;
-}
-
 std::string GoogleChromeDistribution::GetNetworkStatsServer() const {
   return chrome_common_net::kEchoTestServerLocation;
-}
-
-std::string GoogleChromeDistribution::GetHttpPipeliningTestServer() const {
-  return chrome_common_net::kPipelineTestServerBaseUrl;
 }
 
 base::string16 GoogleChromeDistribution::GetDistributionData(HKEY root_key) {
   base::string16 sub_key(google_update::kRegPathClientState);
   sub_key.append(L"\\");
-  sub_key.append(product_guid());
+  sub_key.append(GetAppGuid());
 
-  base::win::RegKey client_state_key(root_key, sub_key.c_str(), KEY_READ);
+  base::win::RegKey client_state_key(
+      root_key, sub_key.c_str(), KEY_READ | KEY_WOW64_32KEY);
   base::string16 result;
   base::string16 brand_value;
   if (client_state_key.ReadValue(google_update::kRegRLZBrandField,
@@ -257,13 +244,6 @@ base::string16 GoogleChromeDistribution::GetUninstallRegPath() {
          L"Google Chrome";
 }
 
-base::string16 GoogleChromeDistribution::GetVersionKey() {
-  base::string16 key(google_update::kRegPathClients);
-  key.append(L"\\");
-  key.append(product_guid());
-  return key;
-}
-
 base::string16 GoogleChromeDistribution::GetIconFilename() {
   return installer::kChromeExe;
 }
@@ -292,7 +272,7 @@ void GoogleChromeDistribution::UpdateInstallStatus(bool system_install,
     installer::InstallStatus install_status) {
   GoogleUpdateSettings::UpdateInstallStatus(system_install,
       archive_type, InstallUtil::GetInstallReturnCode(install_status),
-      product_guid());
+      GetAppGuid());
 }
 
 bool GoogleChromeDistribution::ShouldSetExperimentLabels() {

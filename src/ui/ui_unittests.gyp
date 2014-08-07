@@ -19,13 +19,13 @@
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../url/url.gyp:url_lib',
-        'base/strings/ui_strings.gyp:ui_strings',
         'base/ui_base.gyp:ui_base',
         'base/ui_base.gyp:ui_base_test_support',
         'events/events.gyp:events_base',
         'gfx/gfx.gyp:gfx_test_support',
         'resources/ui_resources.gyp:ui_resources',
         'resources/ui_resources.gyp:ui_test_pak',
+        'strings/ui_strings.gyp:ui_strings',
       ],
       # iOS uses a small subset of ui. common_sources are the only files that
       # are built on iOS.
@@ -40,17 +40,12 @@
         'base/resource/data_pack_unittest.cc',
         'base/resource/resource_bundle_unittest.cc',
         'base/test/run_all_unittests.cc',
-        'gfx/font_unittest.cc',
-        'gfx/image/image_skia_unittest.cc',
         'gfx/screen_unittest.cc',
-        'gfx/text_elider_unittest.cc',
-        'gfx/text_utils_unittest.cc',
       ],
       'all_sources': [
         '<@(_common_sources)',
         'base/accelerators/accelerator_manager_unittest.cc',
         'base/accelerators/menu_label_accelerator_util_linux_unittest.cc',
-        'base/clipboard/clipboard_unittest.cc',
         'base/clipboard/custom_data_helper_unittest.cc',
         'base/cocoa/base_view_unittest.mm',
         'base/cocoa/cocoa_base_utils_unittest.mm',
@@ -71,15 +66,12 @@
         'base/text/bytes_formatting_unittest.cc',
         'base/view_prop_unittest.cc',
         'base/webui/web_ui_util_unittest.cc',
-        'gfx/canvas_unittest.cc',
         'gfx/canvas_unittest_mac.mm',
-        'gfx/font_list_unittest.cc',
         'gfx/platform_font_mac_unittest.mm',
         'gfx/render_text_unittest.cc',
       ],
       'includes': [
         'display/display_unittests.gypi',
-        'ozone/ozone_unittests.gypi',
       ],
       'include_dirs': [
         '../',
@@ -100,11 +92,24 @@
           'mac_bundle_resources': [
             '<(PRODUCT_DIR)/ui/en.lproj/locale.pak',
           ],
+          'actions': [
+            {
+              'action_name': 'copy_test_data',
+              'variables': {
+                'test_data_files': [
+                  'base/test/data',
+                ],
+                'test_data_prefix' : 'ui',
+              },
+              'includes': [ '../build/copy_test_data_ios.gypi' ],
+            },
+          ],
         }],
         ['OS == "win"', {
           'sources': [
             'base/dragdrop/os_exchange_data_win_unittest.cc',
             'base/win/hwnd_subclass_unittest.cc',
+            'gfx/color_profile_win_unittest.cc',
             'gfx/font_fallback_win_unittest.cc',
             'gfx/icon_util_unittest.cc',
             'gfx/icon_util_unittests.rc',
@@ -136,22 +141,13 @@
           'msvs_disabled_warnings': [ 4267, ],
         }],
         ['OS == "android"', {
-          'sources': [
-            'gfx/android/scroller_unittest.cc',
-          ],
-        }],
-        ['OS == "android" and gtest_target_type == "shared_library"', {
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
         ['use_pango == 1', {
           'dependencies': [
-            '../build/linux/system.gyp:fontconfig',
             '../build/linux/system.gyp:pangocairo',
-          ],
-          'sources': [
-            'gfx/platform_font_pango_unittest.cc',
           ],
           'conditions': [
             ['use_allocator!="none"', {
@@ -164,6 +160,7 @@
         ['use_x11==1', {
           'dependencies': [
             '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
+            'events/platform/x11/x11_events_platform.gyp:x11_events_platform',
           ],
         }],
         ['OS=="android" or OS=="ios"', {
@@ -196,6 +193,7 @@
             'events/events.gyp:events',
             'events/events.gyp:events_base',
             'events/events.gyp:events_test_support',
+            'events/platform/events_platform.gyp:events_platform',
           ],
         }],
         ['use_aura==1', {
@@ -206,11 +204,7 @@
         }],
         ['use_ozone==1 and use_pango==0', {
           'sources!': [
-            'gfx/text_elider_unittest.cc',
-            'gfx/font_unittest.cc',
-            'gfx/font_list_unittest.cc',
             'gfx/render_text_unittest.cc',
-            'gfx/canvas_unittest.cc',
           ],
         }],
         ['chromeos==1', {
@@ -218,6 +212,7 @@
             '../chromeos/chromeos.gyp:chromeos',
             'aura/aura.gyp:aura_test_support',
             'chromeos/ui_chromeos.gyp:ui_chromeos',
+            'events/events.gyp:gesture_detection',
           ],
           'sources': [
             'chromeos/touch_exploration_controller_unittest.cc'
@@ -252,10 +247,7 @@
         },
       ],
     }],
-    # Special target to wrap a gtest_target_type==shared_library
-    # ui_unittests into an android apk for execution.
-    # See base.gyp for TODO(jrg)s about this strategy.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
+    ['OS == "android"', {
       'targets': [
         {
           'target_name': 'ui_unittests_apk',

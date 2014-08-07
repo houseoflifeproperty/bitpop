@@ -173,7 +173,8 @@ struct OpusExtraData {
         channel_mapping(0),
         num_streams(0),
         num_coupled(0),
-        gain_db(0) {
+        gain_db(0),
+        stream_map() {
     memcpy(stream_map,
            kDefaultOpusChannelLayout,
            kMaxChannelsWithDefaultLayout);
@@ -249,11 +250,13 @@ OpusAudioDecoder::OpusAudioDecoder(
       start_input_timestamp_(kNoTimestamp()) {}
 
 void OpusAudioDecoder::Initialize(const AudioDecoderConfig& config,
-                                  const PipelineStatusCB& status_cb) {
+                                  const PipelineStatusCB& status_cb,
+                                  const OutputCB& output_cb) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   PipelineStatusCB initialize_cb = BindToCurrentLoop(status_cb);
 
   config_ = config;
+  output_cb_ = BindToCurrentLoop(output_cb);
 
   if (!ConfigureDecoder()) {
     initialize_cb.Run(DECODER_ERROR_NOT_SUPPORTED);
@@ -264,7 +267,7 @@ void OpusAudioDecoder::Initialize(const AudioDecoderConfig& config,
 }
 
 void OpusAudioDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
-            const DecodeCB& decode_cb) {
+                              const DecodeCB& decode_cb) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(!decode_cb.is_null());
 
@@ -303,7 +306,7 @@ void OpusAudioDecoder::DecodeBuffer(
   // Libopus does not buffer output. Decoding is complete when an end of stream
   // input buffer is received.
   if (input->end_of_stream()) {
-    decode_cb.Run(kOk, AudioBuffer::CreateEOSBuffer());
+    decode_cb.Run(kOk);
     return;
   }
 
@@ -311,7 +314,7 @@ void OpusAudioDecoder::DecodeBuffer(
   // occurs with some damaged files.
   if (input->timestamp() == kNoTimestamp()) {
     DLOG(ERROR) << "Received a buffer without timestamps!";
-    decode_cb.Run(kDecodeError, NULL);
+    decode_cb.Run(kDecodeError);
     return;
   }
 
@@ -326,17 +329,15 @@ void OpusAudioDecoder::DecodeBuffer(
   scoped_refptr<AudioBuffer> output_buffer;
 
   if (!Decode(input, &output_buffer)) {
-    decode_cb.Run(kDecodeError, NULL);
+    decode_cb.Run(kDecodeError);
     return;
   }
 
-  if (output_buffer.get()) {
-    // Execute callback to return the decoded audio.
-    decode_cb.Run(kOk, output_buffer);
-  } else {
-    // We exhausted the input data, but it wasn't enough for a frame.
-    decode_cb.Run(kNotEnoughData, NULL);
+  if (output_buffer) {
+    output_cb_.Run(output_buffer);
   }
+
+  decode_cb.Run(kOk);
 }
 
 bool OpusAudioDecoder::ConfigureDecoder() {
@@ -372,7 +373,7 @@ bool OpusAudioDecoder::ConfigureDecoder() {
                           &opus_extra_data))
     return false;
 
-  if (config_.codec_delay() <= 0) {
+  if (config_.codec_delay() < 0) {
     DLOG(ERROR) << "Invalid file. Incorrect value for codec delay: "
                 << config_.codec_delay();
     return false;

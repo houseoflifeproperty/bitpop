@@ -113,8 +113,6 @@ public:
     bool isTimeField() const;
     bool isWeekField() const;
 
-    HTMLElement* passwordGeneratorButtonElement() const;
-
     bool checked() const { return m_isChecked; }
     void setChecked(bool, TextFieldEventBehavior = DispatchNoEvent);
 
@@ -199,7 +197,7 @@ public:
 
     bool multiple() const;
 
-    FileList* files() const;
+    FileList* files();
     void setFiles(PassRefPtrWillBeRawPtr<FileList>);
 
     // Returns true if the given DragData has more than one dropped files.
@@ -231,7 +229,7 @@ public:
     bool valueAttributeWasUpdatedAfterParsing() const { return m_valueAttributeWasUpdatedAfterParsing; }
     void updateView();
     bool needsToUpdateViewValue() const { return m_needsToUpdateViewValue; }
-    virtual void setInnerTextValue(const String&) OVERRIDE;
+    virtual void setInnerEditorValue(const String&) OVERRIDE;
 
     void cacheSelectionInResponseToSetValue(int caretOffset) { cacheSelection(caretOffset, caretOffset, SelectionHasNoDirection); }
 
@@ -239,10 +237,6 @@ public:
     void selectColorInColorChooser(const Color&);
 
     String defaultToolTip() const;
-
-#if ENABLE(MEDIA_CAPTURE)
-    bool capture() const;
-#endif
 
     static const int maximumLength;
 
@@ -347,7 +341,7 @@ private:
 
     virtual bool supportsPlaceholder() const OVERRIDE FINAL;
     virtual void updatePlaceholderText() OVERRIDE FINAL;
-    virtual bool isEmptyValue() const OVERRIDE FINAL { return innerTextValue().isEmpty(); }
+    virtual bool isEmptyValue() const OVERRIDE FINAL { return innerEditorValue().isEmpty(); }
     virtual bool isEmptySuggestedValue() const OVERRIDE FINAL { return suggestedValue().isEmpty(); }
     virtual void handleFocusEvent(Element* oldFocusedElement, FocusType) OVERRIDE FINAL;
     virtual void handleBlurEvent() OVERRIDE FINAL;
@@ -400,7 +394,7 @@ private:
     // The ImageLoader must be owned by this element because the loader code assumes
     // that it lives as long as its owning element lives. If we move the loader into
     // the ImageInput object we may delete the loader while this element lives on.
-    OwnPtr<HTMLImageLoader> m_imageLoader;
+    OwnPtrWillBeMember<HTMLImageLoader> m_imageLoader;
     OwnPtrWillBeMember<ListAttributeTargetObserver> m_listAttributeTargetObserver;
 };
 

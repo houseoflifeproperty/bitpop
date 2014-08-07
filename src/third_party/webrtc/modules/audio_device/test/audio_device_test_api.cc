@@ -116,7 +116,9 @@ class AudioTransportAPI: public AudioTransport {
       const uint8_t nChannels,
       const uint32_t sampleRate,
       void* audioSamples,
-      uint32_t& nSamplesOut) {
+      uint32_t& nSamplesOut,
+      int64_t* elapsed_time_ms,
+      int64_t* ntp_time_ms) {
     play_count_++;
     if (play_count_ % 100 == 0) {
       if (nChannels == 1) {
@@ -149,7 +151,9 @@ class AudioTransportAPI: public AudioTransport {
 
   virtual void PullRenderData(int bits_per_sample, int sample_rate,
                               int number_of_channels, int number_of_frames,
-                              void* audio_data) {}
+                              void* audio_data,
+                              int64_t* elapsed_time_ms,
+                              int64_t* ntp_time_ms) {}
  private:
   uint32_t rec_count_;
   uint32_t play_count_;

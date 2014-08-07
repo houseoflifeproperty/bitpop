@@ -27,7 +27,6 @@ using fileapi::ExternalMountPoints;
 using fileapi::FileSystemBackend;
 using fileapi::FileSystemContext;
 using fileapi::FileSystemMountOption;
-using fileapi::FileSystemType;
 using fileapi::FileSystemURL;
 using fileapi::IsolatedContext;
 
@@ -81,8 +80,8 @@ class FileSystemContextTest : public testing::Test {
   // Verifies a *valid* filesystem url has expected values.
   void ExpectFileSystemURLMatches(const FileSystemURL& url,
                                   const GURL& expect_origin,
-                                  FileSystemType expect_mount_type,
-                                  FileSystemType expect_type,
+                                  fileapi::FileSystemType expect_mount_type,
+                                  fileapi::FileSystemType expect_type,
                                   const base::FilePath& expect_path,
                                   const base::FilePath& expect_virtual_path,
                                   const std::string& expect_filesystem_id) {
@@ -115,6 +114,7 @@ TEST_F(FileSystemContextTest, NullExternalMountPoints) {
   std::string isolated_id =
       IsolatedContext::GetInstance()->RegisterFileSystemForPath(
           fileapi::kFileSystemTypeNativeLocal,
+          std::string(),
           base::FilePath(DRIVE FPL("/test/isolated/root")),
           &isolated_name);
   // Register system external mount point.
@@ -204,6 +204,7 @@ TEST_F(FileSystemContextTest, CrackFileSystemURL) {
   const std::string kIsolatedFileSystemID =
       IsolatedContext::GetInstance()->RegisterFileSystemForPath(
           fileapi::kFileSystemTypeNativeLocal,
+          std::string(),
           base::FilePath(DRIVE FPL("/test/isolated/root")),
           &isolated_file_system_name);
   // Register system external mount point.
@@ -242,8 +243,8 @@ TEST_F(FileSystemContextTest, CrackFileSystemURL) {
 
     // Expected test results.
     bool expect_is_valid;
-    FileSystemType expect_mount_type;
-    FileSystemType expect_type;
+    fileapi::FileSystemType expect_mount_type;
+    fileapi::FileSystemType expect_type;
     const base::FilePath::CharType* expect_path;
     std::string expect_filesystem_id;
   };
@@ -358,6 +359,7 @@ TEST_F(FileSystemContextTest, CanServeURLRequest) {
   std::string isolated_fs_id =
       IsolatedContext::GetInstance()->RegisterFileSystemForPath(
           fileapi::kFileSystemTypeNativeLocal,
+          std::string(),
           base::FilePath(DRIVE FPL("/test/isolated/root")),
           &isolated_fs_name);
   cracked_url = context->CrackURL(

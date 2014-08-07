@@ -77,7 +77,8 @@ class ASH_EXPORT ShelfView : public views::View,
   void SchedulePaintForAllButtons();
 
   // Returns the ideal bounds of the specified item, or an empty rect if id
-  // isn't know.
+  // isn't know. If the item is in an overflow shelf, the overflow icon location
+  // will be returned.
   gfx::Rect GetIdealBoundsOfItemIcon(ShelfID id);
 
   // Repositions the icon for the specified item by the midpoint of the window.
@@ -172,7 +173,7 @@ class ASH_EXPORT ShelfView : public views::View,
 
   // Calculates the ideal bounds. The bounds of each button corresponding to an
   // item in the model is set in |view_model_|.
-  void CalculateIdealBounds(IdealBounds* bounds);
+  void CalculateIdealBounds(IdealBounds* bounds) const;
 
   // Returns the index of the last view whose max primary axis coordinate is
   // less than |max_value|. Returns -1 if nothing fits, or there are no views.
@@ -206,7 +207,7 @@ class ASH_EXPORT ShelfView : public views::View,
   void FinalizeRipOffDrag(bool cancel);
 
   // Check if an item can be ripped off or not.
-  RemovableState RemovableByRipOff(int index);
+  RemovableState RemovableByRipOff(int index) const;
 
   // Returns true if |typea| and |typeb| should be in the same drag range.
   bool SameDragType(ShelfItemType typea, ShelfItemType typeb) const;
@@ -241,10 +242,10 @@ class ASH_EXPORT ShelfView : public views::View,
   void StartFadeInLastVisibleItem();
 
   // Updates the visible range of overflow items in |overflow_view|.
-  void UpdateOverflowRange(ShelfView* overflow_view);
+  void UpdateOverflowRange(ShelfView* overflow_view) const;
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
   virtual FocusTraversable* GetPaneFocusTraversable() OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
@@ -337,7 +338,7 @@ class ASH_EXPORT ShelfView : public views::View,
 
   // Last index of a launcher button that is visible
   // (does not go into overflow).
-  int last_visible_index_;
+  mutable int last_visible_index_;
 
   scoped_ptr<views::BoundsAnimator> bounds_animator_;
 
@@ -357,8 +358,8 @@ class ASH_EXPORT ShelfView : public views::View,
   // |dragging_| is set only if the mouse is dragged far enough.
   views::View* drag_view_;
 
-  // X coordinate of the mouse down event in |drag_view_|s coordinates.
-  int drag_offset_;
+  // Position of the mouse down event in |drag_view_|'s coordinates.
+  gfx::Point drag_origin_;
 
   // Index |drag_view_| was initially at.
   int start_drag_index_;
@@ -387,7 +388,7 @@ class ASH_EXPORT ShelfView : public views::View,
 
   // Index of the last hidden launcher item. If there are no hidden items this
   // will be equal to last_visible_index_ + 1.
-  int last_hidden_index_;
+  mutable int last_hidden_index_;
 
   // The timestamp of the event which closed the last menu - or 0.
   base::TimeDelta closing_event_time_;

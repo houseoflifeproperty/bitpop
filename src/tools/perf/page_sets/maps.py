@@ -17,11 +17,11 @@ class MapsPage(page_module.Page):
     self.archive_data_file = 'data/maps.json'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction({'seconds': 3}))
+    action_runner.NavigateToPage(self)
+    action_runner.Wait(3)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'javascript': 'window.testDone'}))
+    action_runner.WaitForJavaScriptCondition('window.testDone')
 
 
 class MapsPageSet(page_set_module.PageSet):
@@ -30,6 +30,7 @@ class MapsPageSet(page_set_module.PageSet):
 
   def __init__(self):
     super(MapsPageSet, self).__init__(
-        archive_data_file='data/maps.json')
+        archive_data_file='data/maps.json',
+        bucket=page_set_module.INTERNAL_BUCKET)
 
     self.AddPage(MapsPage(self))

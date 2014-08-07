@@ -33,6 +33,7 @@
     ],
     'targets': [
         {
+            # GN version: //third_party/WebKit/public:blink
             'target_name': 'blink',
             'type': 'none',
             'dependencies': [
@@ -52,6 +53,8 @@
             # places that cannot link against the full Blink library.
             # FIXME: We really shouldn't have this at all and should instead remove all uses
             # of Blink's API types from places that can't link against Blink. crbug.com/248653
+            #
+            # GN version: //third_party/WebKit/public:blink_minimal
             'target_name': 'blink_minimal',
             'type': 'none',
             'dependencies': [
@@ -62,23 +65,14 @@
             ],
         },
         {
+            # GN version: //third_party/WebKit/public:test_support
             'target_name': 'blink_test_support',
             'type': 'none',
             'dependencies': [
-                '../Source/web/web.gyp:webkit_test_support',
+                '../Source/web/web.gyp:blink_web_test_support',
             ],
             'export_dependent_settings': [
-                '../Source/web/web.gyp:webkit_test_support',
-            ],
-        },
-        {
-            'target_name': 'blink_web_test_support',
-            'type': 'none',
-            'dependencies': [
-                'blink_test_support',
-            ],
-            'export_dependent_settings': [
-                'blink_test_support',
+                '../Source/web/web.gyp:blink_web_test_support',
             ],
         },
     ],

@@ -18,11 +18,16 @@
 #include <libaddressinput/address_ui_component.h>
 #include <libaddressinput/localization.h>
 
+#include <cassert>
+#include <cstddef>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "address_field_util.h"
+#include "format_element.h"
 #include "grit.h"
+#include "language.h"
 #include "messages.h"
 #include "region_data_constants.h"
 #include "rule.h"
@@ -32,54 +37,40 @@ namespace addressinput {
 
 namespace {
 
-// Parses the default region data into the static Rule object and returns a
-// constant reference to this object. Cannot return a copy of the object,
-// because Rule objects are not copyable.
-const Rule& InitDefaultRule() {
-  static Rule rule;
-  rule.ParseSerializedRule(RegionDataConstants::GetDefaultRegionData());
-  return rule;
-}
-
-// Returns the constant reference to the Rule object from InitDefaultRule(). The
-// static object is in InitDefaultRule(), but this function maintains a constant
-// static reference to it. The constant static reference avoids re-parsing the
-// default region data.
-const Rule& GetDefaultRule() {
-  static const Rule& kDefaultRule(InitDefaultRule());
-  return kDefaultRule;
-}
-
-int GetMessageIdForField(AddressField field,
-                         int admin_area_name_message_id,
-                         int postal_code_name_message_id) {
+std::string GetLabelForField(const Localization& localization,
+                             AddressField field,
+                             int admin_area_name_message_id,
+                             int postal_code_name_message_id) {
+  int messageId;
   switch (field) {
-    case COUNTRY:
-      return IDS_LIBADDRESSINPUT_I18N_COUNTRY_LABEL;
-    case ADMIN_AREA:
-      return admin_area_name_message_id;
-    case LOCALITY:
-      return IDS_LIBADDRESSINPUT_I18N_LOCALITY_LABEL;
-    case DEPENDENT_LOCALITY:
-      return IDS_LIBADDRESSINPUT_I18N_DEPENDENT_LOCALITY_LABEL;
     case SORTING_CODE:
-      return IDS_LIBADDRESSINPUT_I18N_CEDEX_LABEL;
+      // This needs no translation as it's used only in one locale.
+      return "CEDEX";
+    case COUNTRY:
+      messageId = IDS_LIBADDRESSINPUT_COUNTRY_OR_REGION_LABEL;
+      break;
+    case ADMIN_AREA:
+      messageId = admin_area_name_message_id;
+      break;
+    case LOCALITY:
+      messageId = IDS_LIBADDRESSINPUT_LOCALITY_LABEL;
+      break;
+    case DEPENDENT_LOCALITY:
+      messageId = IDS_LIBADDRESSINPUT_DISTRICT;
+      break;
     case POSTAL_CODE:
-      return postal_code_name_message_id;
+      messageId = postal_code_name_message_id;
+      break;
     case STREET_ADDRESS:
-      return IDS_LIBADDRESSINPUT_I18N_ADDRESS_LINE1_LABEL;
-    case ORGANIZATION:
-      return IDS_LIBADDRESSINPUT_I18N_ORGANIZATION_LABEL;
+      messageId = IDS_LIBADDRESSINPUT_ADDRESS_LINE_1_LABEL;
+      break;
     case RECIPIENT:
-      return IDS_LIBADDRESSINPUT_I18N_RECIPIENT_LABEL;
+      messageId = IDS_LIBADDRESSINPUT_RECIPIENT_LABEL;
+      break;
     default:
-      return INVALID_MESSAGE_ID;
+      messageId = INVALID_MESSAGE_ID;
   }
-}
-
-bool IsNewline(AddressField field) {
-  // NEWLINE is an extension for AddressField enum that's used only internally.
-  return field == static_cast<AddressField>(NEWLINE);
+  return localization.GetString(messageId);
 }
 
 }  // namespace
@@ -90,37 +81,54 @@ const std::vector<std::string>& GetRegionCodes() {
 
 std::vector<AddressUiComponent> BuildComponents(
     const std::string& region_code,
-    const Localization& localization) {
+    const Localization& localization,
+    const std::string& ui_language_tag,
+    std::string* best_address_language_tag) {
+  assert(best_address_language_tag != NULL);
   std::vector<AddressUiComponent> result;
 
   Rule rule;
-  rule.CopyFrom(GetDefaultRule());
+  rule.CopyFrom(Rule::GetDefault());
   if (!rule.ParseSerializedRule(
-           RegionDataConstants::GetRegionData(region_code))) {
+          RegionDataConstants::GetRegionData(region_code))) {
     return result;
   }
 
-  bool previous_field_is_newline = true;
-  bool next_field_is_newline = true;
-  for (std::vector<AddressField>::const_iterator field_it =
-       rule.GetFormat().begin();
-       field_it != rule.GetFormat().end(); ++field_it) {
-    if (IsNewline(*field_it)) {
-      previous_field_is_newline = true;
+  const Language& best_address_language =
+      ChooseBestAddressLanguage(rule, Language(ui_language_tag));
+  *best_address_language_tag = best_address_language.tag;
+
+  const std::vector<FormatElement>& format =
+      !rule.GetLatinFormat().empty() &&
+      best_address_language.has_latin_script
+          ? rule.GetLatinFormat() : rule.GetFormat();
+
+  // For avoiding showing an input field twice, when the field is displayed
+  // twice on an envelope.
+  std::set<AddressField> fields;
+
+  bool preceded_by_newline = true;
+  bool followed_by_newline = true;
+  for (std::vector<FormatElement>::const_iterator format_it = format.begin();
+       format_it != format.end(); ++format_it) {
+    if (format_it->IsNewline()) {
+      preceded_by_newline = true;
+      continue;
+    } else if (!format_it->IsField() ||
+               !fields.insert(format_it->GetField()).second) {
       continue;
     }
     AddressUiComponent component;
-    std::vector<AddressField>::const_iterator next_field_it = field_it + 1;
-    next_field_is_newline =
-        next_field_it == rule.GetFormat().end() || IsNewline(*next_field_it);
-    component.length_hint = previous_field_is_newline && next_field_is_newline
+    std::vector<FormatElement>::const_iterator next_format_it = format_it + 1;
+    followed_by_newline =
+        next_format_it == format.end() || next_format_it->IsNewline();
+    component.length_hint = preceded_by_newline && followed_by_newline
                                 ? AddressUiComponent::HINT_LONG
                                 : AddressUiComponent::HINT_SHORT;
-    previous_field_is_newline = false;
-    component.field = *field_it;
-    component.name = localization.GetString(
-        GetMessageIdForField(*field_it, rule.GetAdminAreaNameMessageId(),
-                             rule.GetPostalCodeNameMessageId()));
+    preceded_by_newline = false;
+    component.field = format_it->GetField();
+    component.name = GetLabelForField(localization, format_it->GetField(),
+        rule.GetAdminAreaNameMessageId(), rule.GetPostalCodeNameMessageId());
     result.push_back(component);
   }
 

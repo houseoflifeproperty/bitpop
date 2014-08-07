@@ -21,10 +21,8 @@
 #include "base/threading/platform_thread.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
-#include "chrome/browser/invalidation/p2p_invalidation_service.h"
+#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -50,7 +48,14 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/google/core/browser/google_url_tracker.h"
+#include "components/invalidation/invalidation_service.h"
+#include "components/invalidation/invalidation_switches.h"
+#include "components/invalidation/p2p_invalidation_service.h"
+#include "components/invalidation/p2p_invalidator.h"
+#include "components/invalidation/profile_invalidation_provider.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "components/os_crypt/os_crypt.h"
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/web_contents.h"
@@ -69,14 +74,16 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "sync/engine/sync_scheduler_impl.h"
-#include "sync/notifier/p2p_invalidator.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/test/fake_server/fake_server.h"
 #include "sync/test/fake_server/fake_server_network_resources.h"
 #include "url/gurl.h"
 
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
+
 using content::BrowserThread;
-using invalidation::InvalidationServiceFactory;
 
 namespace switches {
 const char kPasswordFileForTest[] = "password-file-for-test";
@@ -137,27 +144,36 @@ void SetProxyConfigCallback(
   done->Signal();
 }
 
-KeyedService* BuildP2PInvalidationService(
+KeyedService* BuildFakeServerProfileInvalidationProvider(
+    content::BrowserContext* context) {
+  return new invalidation::ProfileInvalidationProvider(
+      scoped_ptr<invalidation::InvalidationService>(
+          new fake_server::FakeServerInvalidationService));
+}
+
+KeyedService* BuildP2PProfileInvalidationProvider(
     content::BrowserContext* context,
     syncer::P2PNotificationTarget notification_target) {
   Profile* profile = static_cast<Profile*>(context);
-  return new invalidation::P2PInvalidationService(
-      scoped_ptr<IdentityProvider>(new ProfileIdentityProvider(
-          SigninManagerFactory::GetForProfile(profile),
-          ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
-          LoginUIServiceFactory::GetForProfile(profile))),
-      profile->GetRequestContext(),
-      notification_target);
+  return new invalidation::ProfileInvalidationProvider(
+      scoped_ptr<invalidation::InvalidationService>(
+          new invalidation::P2PInvalidationService(
+              scoped_ptr<IdentityProvider>(new ProfileIdentityProvider(
+                  SigninManagerFactory::GetForProfile(profile),
+                  ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
+                  LoginUIServiceFactory::GetForProfile(profile))),
+              profile->GetRequestContext(),
+              notification_target)));
 }
 
-KeyedService* BuildSelfNotifyingP2PInvalidationService(
+KeyedService* BuildSelfNotifyingP2PProfileInvalidationProvider(
     content::BrowserContext* context) {
-  return BuildP2PInvalidationService(context, syncer::NOTIFY_ALL);
+  return BuildP2PProfileInvalidationProvider(context, syncer::NOTIFY_ALL);
 }
 
-KeyedService* BuildRealisticP2PInvalidationService(
+KeyedService* BuildRealisticP2PProfileInvalidationProvider(
     content::BrowserContext* context) {
-  return BuildP2PInvalidationService(context, syncer::NOTIFY_OTHERS);
+  return BuildP2PProfileInvalidationProvider(context, syncer::NOTIFY_OTHERS);
 }
 
 }  // namespace
@@ -242,6 +258,10 @@ void SyncTest::TearDown() {
 void SyncTest::SetUpCommandLine(base::CommandLine* cl) {
   AddTestSwitches(cl);
   AddOptionalTypesToCommandLine(cl);
+
+#if defined(OS_CHROMEOS)
+  cl->AppendSwitch(chromeos::switches::kIgnoreUserProfileMappingForTests);
+#endif
 }
 
 void SyncTest::AddTestSwitches(base::CommandLine* cl) {
@@ -392,19 +412,30 @@ void SyncTest::InitializeInvalidations(int index) {
     CHECK(fake_server_.get());
     fake_server::FakeServerInvalidationService* invalidation_service =
         static_cast<fake_server::FakeServerInvalidationService*>(
-            InvalidationServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-                GetProfile(index),
-                fake_server::FakeServerInvalidationService::Build));
+            static_cast<invalidation::ProfileInvalidationProvider*>(
+                invalidation::ProfileInvalidationProviderFactory::
+                    GetInstance()->SetTestingFactoryAndUse(
+                        GetProfile(index),
+                        BuildFakeServerProfileInvalidationProvider))->
+                            GetInvalidationService());
     fake_server_->AddObserver(invalidation_service);
+    if (TestUsesSelfNotifications()) {
+      invalidation_service->EnableSelfNotifications();
+    } else {
+      invalidation_service->DisableSelfNotifications();
+    }
     fake_server_invalidation_services_[index] = invalidation_service;
   } else {
     invalidation::P2PInvalidationService* p2p_invalidation_service =
         static_cast<invalidation::P2PInvalidationService*>(
-            InvalidationServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-                GetProfile(index),
-                TestUsesSelfNotifications() ?
-                    BuildSelfNotifyingP2PInvalidationService
-                    : BuildRealisticP2PInvalidationService));
+            static_cast<invalidation::ProfileInvalidationProvider*>(
+                invalidation::ProfileInvalidationProviderFactory::
+                    GetInstance()->SetTestingFactoryAndUse(
+                        GetProfile(index),
+                        TestUsesSelfNotifications() ?
+                            BuildSelfNotifyingP2PProfileInvalidationProvider :
+                            BuildRealisticP2PProfileInvalidationProvider))->
+                                GetInvalidationService());
     p2p_invalidation_service->UpdateCredentials(username_, password_);
     // Start listening for and emitting notifications of commits.
     invalidation_forwarders_[index] =
@@ -594,8 +625,15 @@ void SyncTest::DecideServerType() {
       // one that makes sense for most developers. FakeServer is the
       // current solution but some scenarios are only supported by the
       // legacy python server.
-        server_type_ = test_type_ == SINGLE_CLIENT || test_type_ == TWO_CLIENT ?
-              IN_PROCESS_FAKE_SERVER : LOCAL_PYTHON_SERVER;
+      switch (test_type_) {
+        case SINGLE_CLIENT:
+        case TWO_CLIENT:
+        case MULTIPLE_CLIENT:
+          server_type_ = IN_PROCESS_FAKE_SERVER;
+          break;
+        default:
+          server_type_ = LOCAL_PYTHON_SERVER;
+      }
     } else if (cl->HasSwitch(switches::kSyncServiceURL) &&
                cl->HasSwitch(switches::kSyncServerCommandLine)) {
       // If a sync server URL and a sync server command line are provided,
@@ -665,11 +703,11 @@ bool SyncTest::SetUpLocalPythonTestServer() {
   xmpp_host_port_pair.set_port(xmpp_port);
   xmpp_port_.reset(new net::ScopedPortException(xmpp_port));
 
-  if (!cl->HasSwitch(switches::kSyncNotificationHostPort)) {
-    cl->AppendSwitchASCII(switches::kSyncNotificationHostPort,
+  if (!cl->HasSwitch(invalidation::switches::kSyncNotificationHostPort)) {
+    cl->AppendSwitchASCII(invalidation::switches::kSyncNotificationHostPort,
                           xmpp_host_port_pair.ToString());
     // The local XMPP server only supports insecure connections.
-    cl->AppendSwitch(switches::kSyncAllowInsecureXmppConnection);
+    cl->AppendSwitch(invalidation::switches::kSyncAllowInsecureXmppConnection);
   }
   DVLOG(1) << "Started local python XMPP server at "
            << xmpp_host_port_pair.ToString();
@@ -893,16 +931,6 @@ void SyncTest::TriggerMigrationDoneError(syncer::ModelTypeSet model_types) {
                     GetTitle()));
 }
 
-void SyncTest::TriggerBirthdayError() {
-  ASSERT_TRUE(ServerSupportsErrorTriggering());
-  std::string path = "chromiumsync/birthdayerror";
-  ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
-  ASSERT_EQ("Birthday error",
-            base::UTF16ToASCII(
-                browser()->tab_strip_model()->GetActiveWebContents()->
-                    GetTitle()));
-}
-
 void SyncTest::TriggerTransientError() {
   ASSERT_TRUE(ServerSupportsErrorTriggering());
   std::string path = "chromiumsync/transienterror";
@@ -911,14 +939,6 @@ void SyncTest::TriggerTransientError() {
             base::UTF16ToASCII(
                 browser()->tab_strip_model()->GetActiveWebContents()->
                     GetTitle()));
-}
-
-void SyncTest::TriggerAuthState(PythonServerAuthState auth_state) {
-  ASSERT_TRUE(ServerSupportsErrorTriggering());
-  std::string path = "chromiumsync/cred";
-  path.append(auth_state == AUTHENTICATED_TRUE ? "?valid=True" :
-                                                 "?valid=False");
-  ui_test_utils::NavigateToURL(browser(), sync_server_.GetURL(path));
 }
 
 void SyncTest::TriggerXmppAuthError() {
@@ -976,6 +996,7 @@ sync_pb::SyncEnums::Action GetClientToServerResponseAction(
       return sync_pb::SyncEnums::DISABLE_SYNC_ON_CLIENT;
     case syncer::STOP_SYNC_FOR_DISABLED_ACCOUNT:
     case syncer::DISABLE_SYNC_AND_ROLLBACK:
+    case syncer::ROLLBACK_DONE:
       NOTREACHED();   // No corresponding proto action for these. Shouldn't
                       // test.
       return sync_pb::SyncEnums::UNKNOWN_ACTION;

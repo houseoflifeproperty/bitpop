@@ -198,14 +198,8 @@ void MediaStreamSignaling::TearDown() {
 bool MediaStreamSignaling::IsSctpSidAvailable(int sid) const {
   if (sid < 0 || sid > static_cast<int>(cricket::kMaxSctpSid))
     return false;
-  for (SctpDataChannels::const_iterator iter = sctp_data_channels_.begin();
-       iter != sctp_data_channels_.end();
-       ++iter) {
-    if ((*iter)->id() == sid) {
-      return false;
-    }
-  }
-  return true;
+
+  return FindDataChannelBySid(sid) < 0;
 }
 
 // Gets the first unused odd/even id based on the DTLS role. If |role| is
@@ -278,6 +272,23 @@ bool MediaStreamSignaling::AddDataChannelFromOpenMessage(
   sctp_data_channels_.push_back(channel);
   stream_observer_->OnAddDataChannel(channel);
   return true;
+}
+
+void MediaStreamSignaling::RemoveSctpDataChannel(int sid) {
+  for (SctpDataChannels::iterator iter = sctp_data_channels_.begin();
+       iter != sctp_data_channels_.end();
+       ++iter) {
+    if ((*iter)->id() == sid) {
+      sctp_data_channels_.erase(iter);
+
+      if (talk_base::IsEven(sid) && sid <= last_allocated_sctp_even_sid_) {
+        last_allocated_sctp_even_sid_ = sid - 2;
+      } else if (talk_base::IsOdd(sid) && sid <= last_allocated_sctp_odd_sid_) {
+        last_allocated_sctp_odd_sid_ = sid - 2;
+      }
+      return;
+    }
+  }
 }
 
 bool MediaStreamSignaling::AddLocalStream(MediaStreamInterface* local_stream) {
@@ -487,12 +498,19 @@ void MediaStreamSignaling::OnVideoChannelClose() {
 }
 
 void MediaStreamSignaling::OnDataChannelClose() {
-  RtpDataChannels::iterator it1 = rtp_data_channels_.begin();
-  for (; it1 != rtp_data_channels_.end(); ++it1) {
+  // Use a temporary copy of the RTP/SCTP DataChannel list because the
+  // DataChannel may callback to us and try to modify the list.
+  RtpDataChannels temp_rtp_dcs;
+  temp_rtp_dcs.swap(rtp_data_channels_);
+  RtpDataChannels::iterator it1 = temp_rtp_dcs.begin();
+  for (; it1 != temp_rtp_dcs.end(); ++it1) {
     it1->second->OnDataEngineClose();
   }
-  SctpDataChannels::iterator it2 = sctp_data_channels_.begin();
-  for (; it2 != sctp_data_channels_.end(); ++it2) {
+
+  SctpDataChannels temp_sctp_dcs;
+  temp_sctp_dcs.swap(sctp_data_channels_);
+  SctpDataChannels::iterator it2 = temp_sctp_dcs.begin();
+  for (; it2 != temp_sctp_dcs.end(); ++it2) {
     (*it2)->OnDataEngineClose();
   }
 }
@@ -953,6 +971,17 @@ void MediaStreamSignaling::OnDtlsRoleReadyForSctp(talk_base::SSLRole role) {
   }
 }
 
+
+void MediaStreamSignaling::OnRemoteSctpDataChannelClosed(uint32 sid) {
+  int index = FindDataChannelBySid(sid);
+  if (index < 0) {
+    LOG(LS_WARNING) << "Unexpected sid " << sid
+                    << " of the remotely closed DataChannel.";
+    return;
+  }
+  sctp_data_channels_[index]->Close();
+}
+
 const MediaStreamSignaling::TrackInfo*
 MediaStreamSignaling::FindTrackInfo(
     const MediaStreamSignaling::TrackInfos& infos,
@@ -965,6 +994,15 @@ MediaStreamSignaling::FindTrackInfo(
       return &*it;
   }
   return NULL;
+}
+
+int MediaStreamSignaling::FindDataChannelBySid(int sid) const {
+  for (size_t i = 0; i < sctp_data_channels_.size(); ++i) {
+    if (sctp_data_channels_[i]->id() == sid) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
 }
 
 }  // namespace webrtc

@@ -21,10 +21,10 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using net::test::BuildUnsizedDataPacket;
 using net::test::NoOpFramerVisitor;
 using net::test::QuicVersionMax;
 using net::test::QuicVersionMin;
-using testing::_;
 using testing::Args;
 using testing::Assign;
 using testing::DoAll;
@@ -36,6 +36,7 @@ using testing::ReturnPointee;
 using testing::SetArgPointee;
 using testing::StrictMock;
 using testing::Truly;
+using testing::_;
 
 namespace net {
 namespace tools {
@@ -44,7 +45,7 @@ namespace test {
 class FramerVisitorCapturingPublicReset : public NoOpFramerVisitor {
  public:
   FramerVisitorCapturingPublicReset() {}
-  virtual ~FramerVisitorCapturingPublicReset() {}
+  virtual ~FramerVisitorCapturingPublicReset() OVERRIDE {}
 
   virtual void OnPublicResetPacket(
       const QuicPublicResetPacket& public_reset) OVERRIDE {
@@ -95,9 +96,9 @@ class QuicTimeWaitListManagerTest : public ::testing::Test {
         client_address_(net::test::TestPeerIPAddress(), kTestPort),
         writer_is_blocked_(false) {}
 
-  virtual ~QuicTimeWaitListManagerTest() {}
+  virtual ~QuicTimeWaitListManagerTest() OVERRIDE {}
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     EXPECT_CALL(writer_, IsWriteBlocked())
         .WillRepeatedly(ReturnPointee(&writer_is_blocked_));
     EXPECT_CALL(writer_, IsWriteBlockedDataBuffered())
@@ -150,7 +151,7 @@ class QuicTimeWaitListManagerTest : public ::testing::Test {
     QuicFrames frames;
     frames.push_back(frame);
     scoped_ptr<QuicPacket> packet(
-        framer_.BuildUnsizedDataPacket(header, frames).packet);
+        BuildUnsizedDataPacket(&framer_, header, frames).packet);
     EXPECT_TRUE(packet != NULL);
     QuicEncryptedPacket* encrypted = framer_.EncryptPacket(ENCRYPTION_NONE,
                                                            sequence_number,
@@ -180,7 +181,7 @@ class ValidatePublicResetPacketPredicate
 
   virtual bool MatchAndExplain(
       const std::tr1::tuple<const char*, int> packet_buffer,
-      testing::MatchResultListener* /* listener */) const {
+      testing::MatchResultListener* /* listener */) const OVERRIDE {
     FramerVisitorCapturingPublicReset visitor;
     QuicFramer framer(QuicSupportedVersions(),
                       QuicTime::Zero(),
@@ -197,9 +198,9 @@ class ValidatePublicResetPacketPredicate
         kTestPort == packet.client_address.port();
   }
 
-  virtual void DescribeTo(::std::ostream* os) const { }
+  virtual void DescribeTo(::std::ostream* os) const OVERRIDE {}
 
-  virtual void DescribeNegationTo(::std::ostream* os) const { }
+  virtual void DescribeNegationTo(::std::ostream* os) const OVERRIDE {}
 
  private:
   QuicConnectionId connection_id_;

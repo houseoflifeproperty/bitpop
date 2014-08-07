@@ -66,7 +66,6 @@ class MEDIA_EXPORT VideoRendererImpl
                           const TimeDeltaCB& get_time_cb,
                           const TimeDeltaCB& get_duration_cb) OVERRIDE;
   virtual void Play(const base::Closure& callback) OVERRIDE;
-  virtual void Pause(const base::Closure& callback) OVERRIDE;
   virtual void Flush(const base::Closure& callback) OVERRIDE;
   virtual void Preroll(base::TimeDelta time,
                        const PipelineStatusCB& cb) OVERRIDE;
@@ -154,7 +153,7 @@ class MEDIA_EXPORT VideoRendererImpl
   base::ConditionVariable frame_available_;
 
   // State transition Diagram of this class:
-  //       [kUninitialized] -------> [kError]
+  //       [kUninitialized]
   //              |
   //              | Initialize()
   //        [kInitializing]
@@ -164,29 +163,27 @@ class MEDIA_EXPORT VideoRendererImpl
   //   |          | Preroll() or upon               ^
   //   |          V got first frame            [kFlushing]
   //   |      [kPrerolling]                         ^
-  //   |          |                                 | Flush()
+  //   |          |                                 |
   //   |          V Got enough frames               |
-  //   |      [kPrerolled]---------------------->[kPaused]
-  //   |          |                Pause()          ^
+  //   |      [kPrerolled]--------------------------|
+  //   |          |                Flush()          ^
   //   |          V Play()                          |
   //   |       [kPlaying]---------------------------|
-  //   |                           Pause()          ^ Pause()
+  //   |                           Flush()          ^ Flush()
   //   |                                            |
   //   +-----> [kStopped]                 [Any state other than]
-  //                                      [kUninitialized/kError]
+  //                                      [   kUninitialized   ]
 
   // Simple state tracking variable.
   enum State {
     kUninitialized,
     kInitializing,
     kPrerolled,
-    kPaused,
     kFlushing,
     kFlushed,
     kPrerolling,
     kPlaying,
     kStopped,
-    kError,
   };
   State state_;
 

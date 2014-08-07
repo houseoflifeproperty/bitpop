@@ -4,7 +4,9 @@
 
 // Use the <code>chrome.app.window</code> API to create windows. Windows
 // have an optional frame with title bar and size controls. They are not
-// associated with any Chrome browser windows.
+// associated with any Chrome browser windows. See the <a
+// href="https://github.com/GoogleChrome/chrome-app-samples/tree/master/window-state">
+// Window State Sample</a> for a demonstration of these options.
 namespace app.window {
 
   // Previously named Bounds.
@@ -343,10 +345,15 @@ namespace app.window {
     [nodoc] boolean hasFrameColor;
     [nodoc] long activeFrameColor;
     [nodoc] long inactiveFrameColor;
+    [nodoc] boolean? firstShowHasHappened;
 
     // Set whether the window should stay above most other windows. Requires the
     // <code>"alwaysOnTopWindows"</code> permission.
     static void setAlwaysOnTop(boolean alwaysOnTop);
+
+    // Can the window use alpha transparency?
+    // TODO(jackhou): Document this properly before going to stable.
+    [nodoc] static boolean alphaEnabled();
 
     // The JavaScript 'window' object for the created child.
     [instanceOf=Window] object contentWindow;
@@ -411,7 +418,11 @@ namespace app.window {
     // Fired when the window is resized.
     [nocompile] static void onBoundsChanged();
 
-    // Fired when the window is closed.
+    // Fired when the window is closed. Note, this should be listened to from
+    // a window other than the window being closed, for example from the
+    // background page. This is because the window being closed will be in the
+    // process of being torn down when the event is fired, which means not all
+    // APIs in the window's script context will be functional.
     [nocompile] static void onClosed();
 
     // Fired when the window is fullscreened.
@@ -425,5 +436,11 @@ namespace app.window {
 
     // Fired when the window is restored from being minimized or maximized.
     [nocompile] static void onRestored();
+
+    // Fired when the window's ability to use alpha transparency changes.
+    [nocompile, nodoc] static void onAlphaEnabledChanged();
+
+    // Event for testing. Lets tests wait until a window has been shown.
+    [nocompile, nodoc] static void onWindowFirstShown();
   };
 };

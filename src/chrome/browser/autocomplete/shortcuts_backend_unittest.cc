@@ -103,7 +103,7 @@ void ShortcutsBackendTest::SetSearchProvider() {
   data.SetURL("http://foo.com/search?bar={searchTerms}");
   data.SetKeyword(base::UTF8ToUTF16("foo"));
 
-  TemplateURL* template_url = new TemplateURL(&profile_, data);
+  TemplateURL* template_url = new TemplateURL(data);
   // Takes ownership of |template_url|.
   template_url_service->Add(template_url);
   template_url_service->SetUserSelectedDefaultSearchProvider(template_url);
@@ -198,6 +198,8 @@ TEST_F(ShortcutsBackendTest, SanitizeMatchCore) {
     { "0,1",     "0,0",      AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED,
       "",        "",         AutocompleteMatchType::SEARCH_HISTORY },
     { "0,1",     "0,0",      AutocompleteMatchType::SEARCH_SUGGEST_PROFILE,
+      "",        "",         AutocompleteMatchType::SEARCH_HISTORY },
+    { "0,1",     "0,0",      AutocompleteMatchType::SEARCH_SUGGEST_ANSWER,
       "",        "",         AutocompleteMatchType::SEARCH_HISTORY },
   };
 

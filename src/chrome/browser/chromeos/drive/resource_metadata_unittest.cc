@@ -11,6 +11,8 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chromeos/drive/drive.pb.h"
+#include "chrome/browser/chromeos/drive/fake_free_disk_space_getter.h"
+#include "chrome/browser/chromeos/drive/file_cache.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -139,8 +141,16 @@ class ResourceMetadataTest : public testing::Test {
         temp_dir_.path(), base::MessageLoopProxy::current().get()));
     ASSERT_TRUE(metadata_storage_->Initialize());
 
+    fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
+    cache_.reset(new FileCache(metadata_storage_.get(),
+                               temp_dir_.path(),
+                               base::MessageLoopProxy::current().get(),
+                               fake_free_disk_space_getter_.get()));
+    ASSERT_TRUE(cache_->Initialize());
+
     resource_metadata_.reset(new ResourceMetadata(
-        metadata_storage_.get(), base::MessageLoopProxy::current()));
+        metadata_storage_.get(), cache_.get(),
+        base::MessageLoopProxy::current()));
 
     ASSERT_EQ(FILE_ERROR_OK, resource_metadata_->Initialize());
 
@@ -151,6 +161,8 @@ class ResourceMetadataTest : public testing::Test {
   content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<ResourceMetadataStorage, test_util::DestroyHelperForTests>
       metadata_storage_;
+  scoped_ptr<FakeFreeDiskSpaceGetter> fake_free_disk_space_getter_;
+  scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache_;
   scoped_ptr<ResourceMetadata, test_util::DestroyHelperForTests>
       resource_metadata_;
 };
@@ -159,7 +171,10 @@ TEST_F(ResourceMetadataTest, LargestChangestamp) {
   const int64 kChangestamp = 123456;
   EXPECT_EQ(FILE_ERROR_OK,
             resource_metadata_->SetLargestChangestamp(kChangestamp));
-  EXPECT_EQ(kChangestamp, resource_metadata_->GetLargestChangestamp());
+  int64 changestamp = 0;
+  EXPECT_EQ(FILE_ERROR_OK,
+            resource_metadata_->GetLargestChangestamp(&changestamp));
+  EXPECT_EQ(kChangestamp, changestamp);
 }
 
 TEST_F(ResourceMetadataTest, GetResourceEntryByPath) {
@@ -227,8 +242,9 @@ TEST_F(ResourceMetadataTest, RefreshEntry) {
   EXPECT_EQ(FILE_ERROR_OK,
             resource_metadata_->RefreshEntry(file_entry));
 
-  EXPECT_EQ("drive/root/dir1/dir3/file100",
-            resource_metadata_->GetFilePath(file_id).AsUTF8Unsafe());
+  base::FilePath path;
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetFilePath(file_id, &path));
+  EXPECT_EQ("drive/root/dir1/dir3/file100", path.AsUTF8Unsafe());
   entry.Clear();
   EXPECT_EQ(FILE_ERROR_OK,
             resource_metadata_->GetResourceEntryById(file_id, &entry));
@@ -243,8 +259,8 @@ TEST_F(ResourceMetadataTest, RefreshEntry) {
   EXPECT_EQ(FILE_ERROR_OK,
             resource_metadata_->RefreshEntry(file_entry));
 
-  EXPECT_EQ("drive/root/dir1/dir3/file100",
-            resource_metadata_->GetFilePath(file_id).AsUTF8Unsafe());
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetFilePath(file_id, &path));
+  EXPECT_EQ("drive/root/dir1/dir3/file100", path.AsUTF8Unsafe());
   entry.Clear();
   EXPECT_EQ(FILE_ERROR_OK,
             resource_metadata_->GetResourceEntryById(file_id, &entry));
@@ -281,8 +297,8 @@ TEST_F(ResourceMetadataTest, RefreshEntry) {
   dir_entry.set_parent_local_id(dir3_id);
   EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->RefreshEntry(dir_entry));
 
-  EXPECT_EQ("drive/root/dir1/dir3/dir100",
-            resource_metadata_->GetFilePath(dir_id).AsUTF8Unsafe());
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetFilePath(dir_id, &path));
+  EXPECT_EQ("drive/root/dir1/dir3/dir100", path.AsUTF8Unsafe());
   entry.Clear();
   EXPECT_EQ(FILE_ERROR_OK,
             resource_metadata_->GetResourceEntryById(dir_id, &entry));
@@ -336,6 +352,35 @@ TEST_F(ResourceMetadataTest, RefreshEntry_ResourceIDCheck) {
             resource_metadata_->RefreshEntry(new_entry));
 }
 
+TEST_F(ResourceMetadataTest, RefreshEntry_DoNotOverwriteCacheState) {
+  ResourceEntry entry;
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetResourceEntryByPath(
+      base::FilePath::FromUTF8Unsafe("drive/root/dir1/file4"), &entry));
+
+  // Try to set MD5 with RefreshEntry.
+  entry.mutable_file_specific_info()->mutable_cache_state()->set_md5("md5");
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->RefreshEntry(entry));
+
+  // Cache state is unchanged.
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetResourceEntryByPath(
+      base::FilePath::FromUTF8Unsafe("drive/root/dir1/file4"), &entry));
+  EXPECT_TRUE(entry.file_specific_info().cache_state().md5().empty());
+
+  // Pin the file.
+  EXPECT_EQ(FILE_ERROR_OK, cache_->Pin(entry.local_id()));
+
+  // Try to clear the cache state with RefreshEntry.
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetResourceEntryByPath(
+      base::FilePath::FromUTF8Unsafe("drive/root/dir1/file4"), &entry));
+  entry.mutable_file_specific_info()->clear_cache_state();
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->RefreshEntry(entry));
+
+  // Cache state is not cleared.
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetResourceEntryByPath(
+      base::FilePath::FromUTF8Unsafe("drive/root/dir1/file4"), &entry));
+  EXPECT_TRUE(entry.file_specific_info().cache_state().is_pinned());
+}
+
 TEST_F(ResourceMetadataTest, GetSubDirectoriesRecursively) {
   std::set<base::FilePath> sub_directories;
 
@@ -343,20 +388,23 @@ TEST_F(ResourceMetadataTest, GetSubDirectoriesRecursively) {
   std::string local_id;
   EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetIdByPath(
       base::FilePath::FromUTF8Unsafe("drive/root/dir1/dir3/file9"), &local_id));
-  resource_metadata_->GetSubDirectoriesRecursively(local_id, &sub_directories);
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetSubDirectoriesRecursively(
+      local_id, &sub_directories));
   EXPECT_TRUE(sub_directories.empty());
 
   // dir2: no child directories.
   EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetIdByPath(
       base::FilePath::FromUTF8Unsafe("drive/root/dir2"), &local_id));
-  resource_metadata_->GetSubDirectoriesRecursively(local_id, &sub_directories);
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetSubDirectoriesRecursively(
+      local_id, &sub_directories));
   EXPECT_TRUE(sub_directories.empty());
   const std::string dir2_id = local_id;
 
   // dir1: dir3 is the only child
   EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetIdByPath(
       base::FilePath::FromUTF8Unsafe("drive/root/dir1"), &local_id));
-  resource_metadata_->GetSubDirectoriesRecursively(local_id, &sub_directories);
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetSubDirectoriesRecursively(
+      local_id, &sub_directories));
   EXPECT_EQ(1u, sub_directories.size());
   EXPECT_EQ(1u, sub_directories.count(
       base::FilePath::FromUTF8Unsafe("drive/root/dir1/dir3")));
@@ -389,7 +437,8 @@ TEST_F(ResourceMetadataTest, GetSubDirectoriesRecursively) {
   EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->AddEntry(
       CreateDirectoryEntry("dir107", local_id), &local_id));
 
-  resource_metadata_->GetSubDirectoriesRecursively(dir2_id, &sub_directories);
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetSubDirectoriesRecursively(
+      dir2_id, &sub_directories));
   EXPECT_EQ(8u, sub_directories.size());
   EXPECT_EQ(1u, sub_directories.count(base::FilePath::FromUTF8Unsafe(
       "drive/root/dir2/dir101")));
@@ -400,24 +449,23 @@ TEST_F(ResourceMetadataTest, GetSubDirectoriesRecursively) {
 }
 
 TEST_F(ResourceMetadataTest, AddEntry) {
-  base::FilePath drive_file_path;
-
   // Add a file to dir3.
   std::string local_id;
   EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetIdByPath(
       base::FilePath::FromUTF8Unsafe("drive/root/dir1/dir3"), &local_id));
   ResourceEntry file_entry = CreateFileEntry("file100", local_id);
   EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->AddEntry(file_entry, &local_id));
-  EXPECT_EQ("drive/root/dir1/dir3/file100",
-            resource_metadata_->GetFilePath(local_id).AsUTF8Unsafe());
+  base::FilePath path;
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetFilePath(local_id, &path));
+  EXPECT_EQ("drive/root/dir1/dir3/file100", path.AsUTF8Unsafe());
 
   // Add a directory.
   EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetIdByPath(
       base::FilePath::FromUTF8Unsafe("drive/root/dir1"), &local_id));
   ResourceEntry dir_entry = CreateDirectoryEntry("dir101", local_id);
   EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->AddEntry(dir_entry, &local_id));
-  EXPECT_EQ("drive/root/dir1/dir101",
-            resource_metadata_->GetFilePath(local_id).AsUTF8Unsafe());
+  EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->GetFilePath(local_id, &path));
+  EXPECT_EQ("drive/root/dir1/dir101", path.AsUTF8Unsafe());
 
   // Add to an invalid parent.
   ResourceEntry file_entry3 = CreateFileEntry("file103", "id:invalid");
@@ -622,7 +670,10 @@ TEST_F(ResourceMetadataTest, Reset) {
   EXPECT_EQ(FILE_ERROR_OK, resource_metadata_->Reset());
 
   // change stamp should be reset.
-  EXPECT_EQ(0, resource_metadata_->GetLargestChangestamp());
+  int64 changestamp = 0;
+  EXPECT_EQ(FILE_ERROR_OK,
+            resource_metadata_->GetLargestChangestamp(&changestamp));
+  EXPECT_EQ(0, changestamp);
 
   // root should continue to exist.
   ResourceEntry entry;

@@ -21,6 +21,7 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/sync/backend_unrecoverable_error_handler.h"
+#include "chrome/browser/sync/backup_rollback_controller.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
 #include "chrome/browser/sync/profile_sync_service_base.h"
@@ -54,6 +55,10 @@ class Profile;
 class ProfileOAuth2TokenService;
 class ProfileSyncComponentsFactory;
 class SyncErrorController;
+
+namespace base {
+class CommandLine;
+};
 
 namespace browser_sync {
 class BackendMigrator;
@@ -241,7 +246,16 @@ class ProfileSyncService : public ProfileSyncServiceBase,
     SETUP_INCOMPLETE,
     DATATYPES_NOT_INITIALIZED,
     INITIALIZED,
+    BACKUP_USER_DATA,
+    ROLLBACK_USER_DATA,
     UNKNOWN_ERROR,
+  };
+
+  enum BackendMode {
+    IDLE,       // No backend.
+    SYNC,       // Backend for syncing.
+    BACKUP,     // Backend for backup.
+    ROLLBACK    // Backend for rollback.
   };
 
   // Default sync server URL.
@@ -253,7 +267,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   ProfileSyncService(
       ProfileSyncComponentsFactory* factory,
       Profile* profile,
-      ManagedUserSigninManagerWrapper* signin_wrapper,
+      scoped_ptr<ManagedUserSigninManagerWrapper> signin_wrapper,
       ProfileOAuth2TokenService* oauth2_token_service,
       browser_sync::ProfileSyncServiceStartBehavior start_behavior);
   virtual ~ProfileSyncService();
@@ -535,12 +549,16 @@ class ProfileSyncService : public ProfileSyncServiceBase,
       const tracked_objects::Location& from_here,
       const std::string& message) OVERRIDE;
 
-  // Called when a datatype wishes to disable itself due to having hit an
-  // unrecoverable error.
-  virtual void DisableBrokenDatatype(
-      syncer::ModelType type,
-      const tracked_objects::Location& from_here,
-      std::string message);
+  // Called when a datatype wishes to disable itself. Note, this does not change
+  // preferred state of a datatype and is not persisted across restarts.
+  virtual void DisableDatatype(syncer::ModelType type,
+                               const tracked_objects::Location& from_here,
+                               std::string message);
+
+  // Called to re-enable a type disabled by DisableDatatype(..). Note, this does
+  // not change the preferred state of a datatype, and is not persisted across
+  // restarts.
+  void ReenableDatatype(syncer::ModelType type);
 
   // The functions below (until ActivateDataType()) should only be
   // called if sync_initialized() is true.
@@ -581,9 +599,9 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // [ {"name": <name>, "value": <value>, "status": <status> }, ... ]
   // where <name> is a type's name, <value> is a string providing details for
   // the type's status, and <status> is one of "error", "warning" or "ok"
-  // dpending on the type's current status.
+  // depending on the type's current status.
   //
-  // This function is used by sync_ui_util.cc to help populate the about:sync
+  // This function is used by about_sync_util.cc to help populate the about:sync
   // page.  It returns a ListValue rather than a DictionaryValue in part to make
   // it easier to iterate over its elements when constructing that page.
   base::Value* GetTypeStatusMap() const;
@@ -750,6 +768,18 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   virtual bool IsSessionsDataTypeControllerRunning() const;
 
+  void SetBackupStartDelayForTest(base::TimeDelta delay);
+
+  BackendMode backend_mode() const {
+    return backend_mode_;
+  }
+
+  void SetClearingBrowseringDataForTesting(
+      base::Callback<void(Profile*, base::Time, base::Time)> c);
+
+  // Return the base URL of the Sync Server.
+  static GURL GetSyncServiceURL(const base::CommandLine& command_line);
+
  protected:
   // Helper to configure the priority data types.
   void ConfigurePriorityDataTypes();
@@ -848,6 +878,9 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   // token.
   virtual void RequestAccessToken();
 
+  // Return true if backend should start from a fresh sync DB.
+  bool ShouldDeleteSyncFolder();
+
   // If |delete_sync_data_folder| is true, then this method will delete all
   // previous "Sync Data" folders. (useful if the folder is partial/corrupt).
   void InitializeBackend(bool delete_sync_data_folder);
@@ -865,8 +898,9 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   void ClearUnrecoverableError();
 
-  // Starts up the backend sync components.
-  void StartUpSlowBackendComponents();
+  // Starts up the backend sync components. |mode| specifies the kind of
+  // backend to start, one of SYNC, BACKUP or ROLLBACK.
+  virtual void StartUpSlowBackendComponents(BackendMode mode);
 
   // About-flags experiment names for datatypes that aren't enabled by default
   // yet.
@@ -903,6 +937,24 @@ class ProfileSyncService : public ProfileSyncServiceBase,
                                     bool delete_sync_database,
                                     UnrecoverableErrorReason reason);
 
+  // Returns the type of manager to use according to |backend_mode_|.
+  syncer::SyncManagerFactory::MANAGER_TYPE GetManagerType() const;
+
+  // Update UMA for syncing backend.
+  void UpdateBackendInitUMA(bool success);
+
+  // Various setup following backend initialization, mostly for syncing backend.
+  void PostBackendInitialization();
+
+  // True if a syncing backend exists.
+  bool HasSyncingBackend() const;
+
+  // Update first sync time stored in preferences
+  void UpdateFirstSyncTimePref();
+
+  // Clear browsing data since first sync during rollback.
+  void ClearBrowsingDataSinceFirstSync();
+
  // Factory used to create various dependent objects.
   scoped_ptr<ProfileSyncComponentsFactory> factory_;
 
@@ -915,7 +967,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // TODO(ncarter): Put this in a profile, once there is UI for it.
   // This specifies where to find the sync server.
-  GURL sync_service_url_;
+  const GURL sync_service_url_;
 
   // The last time we detected a successful transition from SYNCING state.
   // Our backend notifies us whenever we should take a new snapshot.
@@ -947,7 +999,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
 
   // Encapsulates user signin - used to set/get the user's authenticated
   // email address.
-  scoped_ptr<ManagedUserSigninManagerWrapper> signin_;
+  const scoped_ptr<ManagedUserSigninManagerWrapper> signin_;
 
   // Information describing an unrecoverable error.
   UnrecoverableErrorReason unrecoverable_error_reason_;
@@ -1019,7 +1071,7 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   scoped_ptr<base::Thread> sync_thread_;
 
   // ProfileSyncService uses this service to get access tokens.
-  ProfileOAuth2TokenService* oauth2_token_service_;
+  ProfileOAuth2TokenService* const oauth2_token_service_;
 
   // ProfileSyncService needs to remember access token in order to invalidate it
   // with OAuth2TokenService.
@@ -1052,11 +1104,23 @@ class ProfileSyncService : public ProfileSyncServiceBase,
   GoogleServiceAuthError last_get_token_error_;
   base::Time next_token_request_time_;
 
+  // Locally owned SyncableService implementations.
   scoped_ptr<SessionsSyncManager> sessions_sync_manager_;
 
   scoped_ptr<syncer::NetworkResources> network_resources_;
 
   browser_sync::StartupController startup_controller_;
+
+  browser_sync::BackupRollbackController backup_rollback_controller_;
+
+  // Mode of current backend.
+  BackendMode backend_mode_;
+
+  // When browser starts, delay sync backup/rollback backend start for this
+  // time.
+  base::TimeDelta backup_start_delay_;
+
+  base::Callback<void(Profile*, base::Time, base::Time)> clear_browsing_data_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncService);
 };

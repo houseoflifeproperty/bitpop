@@ -62,6 +62,7 @@ def GenSteps(api):
   s.name = deps_name
   s.custom_deps = api.properties.get('gclient_custom_deps') or {}
   s.revision = api.properties.get('revision')
+  s.revision = api.properties.get('parent_revision', s.revision)
   api.gclient.c.got_revision_mapping.pop('src', None)
   api.gclient.c.got_revision_mapping['src/dart'] = 'got_revision'
   if USE_MIRROR:
@@ -78,15 +79,13 @@ def GenSteps(api):
   yield api.python('fetch_reference_build',
                    api.path['checkout'].join('dart', 'tools', 'bots',
                                      'fetch_reference_build.py'))
-  yield api.chromium.compile()
 
-  results_dir = api.path['slave_build'].join('layout-test-results')
-  test = api.path['build'].join('scripts', 'slave', 'chromium',
-                        'layout_test_wrapper.py')
-  args = ['--target', api.chromium.c.BUILD_CONFIG,
-          '-o', results_dir,
-          '--build-dir', api.chromium.c.build_dir]
-  yield api.chromium.runtest(test, args, name='webkit_tests')
+  download_target = api.chromium.c.build_dir.join(
+                        api.chromium.c.build_config_fs)
+  yield api.python('download_archived_build',
+                   api.path['checkout']
+                      .join('dart', 'tools', 'dartium', 'download_multivm.py'),
+                   [s.revision, download_target])
 
   dashboard_upload_url = 'https://chromeperf.appspot.com'
   build_exe = api.chromium.c.build_dir.join(api.chromium.c.build_config_fs)
@@ -123,7 +122,6 @@ def GenSteps(api):
         results_url=dashboard_upload_url,
         annotate='graphing', perf_dashboard_id=test, test_type=test,
         revision=s.revision,
-        perf_id='dartium-linux-release',
     )
 
 

@@ -32,34 +32,40 @@ class MathCalculatorImpl : public InterfaceImpl<math::Calculator> {
  public:
   virtual ~MathCalculatorImpl() {}
 
-  MathCalculatorImpl() : total_(0.0) {
+  MathCalculatorImpl()
+      : total_(0.0),
+        got_connection_(false) {
+  }
+
+  virtual void OnConnectionEstablished() MOJO_OVERRIDE {
+    got_connection_ = true;
   }
 
   virtual void OnConnectionError() MOJO_OVERRIDE {
     delete this;
   }
 
-  virtual void SetClient(math::CalculatorUI* ui) MOJO_OVERRIDE {
-    ui_ = ui;
-  }
-
   virtual void Clear() MOJO_OVERRIDE {
-    ui_->Output(total_);
+    client()->Output(total_);
   }
 
   virtual void Add(double value) MOJO_OVERRIDE {
     total_ += value;
-    ui_->Output(total_);
+    client()->Output(total_);
   }
 
   virtual void Multiply(double value) MOJO_OVERRIDE {
     total_ *= value;
-    ui_->Output(total_);
+    client()->Output(total_);
   }
 
- private:
-  math::CalculatorUI* ui_;
+  bool got_connection() const {
+    return got_connection_;
+  }
+
+private:
   double total_;
+  bool got_connection_;
 };
 
 class MathCalculatorUIImpl : public math::CalculatorUI {
@@ -67,7 +73,7 @@ class MathCalculatorUIImpl : public math::CalculatorUI {
   explicit MathCalculatorUIImpl(math::CalculatorPtr calculator)
       : calculator_(calculator.Pass()),
         output_(0.0) {
-    calculator_->SetClient(this);
+    calculator_.set_client(this);
   }
 
   bool encountered_error() const {
@@ -104,6 +110,45 @@ class MathCalculatorUIImpl : public math::CalculatorUI {
   double output_;
 };
 
+class SelfDestructingMathCalculatorUIImpl : public math::CalculatorUI {
+ public:
+  explicit SelfDestructingMathCalculatorUIImpl(math::CalculatorPtr calculator)
+      : calculator_(calculator.Pass()),
+        nesting_level_(0) {
+    ++num_instances_;
+    calculator_.set_client(this);
+  }
+
+  void BeginTest(bool nested) {
+    nesting_level_ = nested ? 2 : 1;
+    calculator_->Add(1.0);
+  }
+
+  static int num_instances() { return num_instances_; }
+
+ private:
+  virtual ~SelfDestructingMathCalculatorUIImpl() {
+    --num_instances_;
+  }
+
+  virtual void Output(double value) MOJO_OVERRIDE {
+    if (--nesting_level_ > 0) {
+      // Add some more and wait for re-entrant call to Output!
+      calculator_->Add(1.0);
+      RunLoop::current()->RunUntilIdle();
+    } else {
+      delete this;
+    }
+  }
+
+  math::CalculatorPtr calculator_;
+  int nesting_level_;
+  static int num_instances_;
+};
+
+// static
+int SelfDestructingMathCalculatorUIImpl::num_instances_ = 0;
+
 class InterfacePtrTest : public testing::Test {
  public:
   virtual ~InterfacePtrTest() {
@@ -121,7 +166,8 @@ class InterfacePtrTest : public testing::Test {
 
 TEST_F(InterfacePtrTest, EndToEnd) {
   math::CalculatorPtr calc;
-  BindToProxy(new MathCalculatorImpl(), &calc);
+  MathCalculatorImpl* impl = BindToProxy(new MathCalculatorImpl(), &calc);
+  EXPECT_TRUE(impl->got_connection());
 
   // Suppose this is instantiated in a process that has pipe1_.
   MathCalculatorUIImpl calculator_ui(calc.Pass());
@@ -236,6 +282,36 @@ TEST_F(InterfacePtrTest, NoClientAttribute) {
   sample::PortPtr port;
   MessagePipe pipe;
   port.Bind(pipe.handle0.Pass());
+}
+
+TEST_F(InterfacePtrTest, DestroyInterfacePtrOnClientMethod) {
+  math::CalculatorPtr proxy;
+  BindToProxy(new MathCalculatorImpl(), &proxy);
+
+  EXPECT_EQ(0, SelfDestructingMathCalculatorUIImpl::num_instances());
+
+  SelfDestructingMathCalculatorUIImpl* impl =
+      new SelfDestructingMathCalculatorUIImpl(proxy.Pass());
+  impl->BeginTest(false);
+
+  PumpMessages();
+
+  EXPECT_EQ(0, SelfDestructingMathCalculatorUIImpl::num_instances());
+}
+
+TEST_F(InterfacePtrTest, NestedDestroyInterfacePtrOnClientMethod) {
+  math::CalculatorPtr proxy;
+  BindToProxy(new MathCalculatorImpl(), &proxy);
+
+  EXPECT_EQ(0, SelfDestructingMathCalculatorUIImpl::num_instances());
+
+  SelfDestructingMathCalculatorUIImpl* impl =
+      new SelfDestructingMathCalculatorUIImpl(proxy.Pass());
+  impl->BeginTest(true);
+
+  PumpMessages();
+
+  EXPECT_EQ(0, SelfDestructingMathCalculatorUIImpl::num_instances());
 }
 
 }  // namespace

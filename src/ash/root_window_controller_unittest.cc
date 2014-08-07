@@ -28,6 +28,8 @@
 #include "ui/base/ime/dummy_text_input_client.h"
 #include "ui/base/ime/input_method.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/base/ime/text_input_focus_manager.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/events/test/test_event_handler.h"
 #include "ui/keyboard/keyboard_controller_proxy.h"
 #include "ui/keyboard/keyboard_switches.h"
@@ -586,6 +588,13 @@ typedef test::NoSessionAshTestBase NoSessionRootWindowControllerTest;
 
 // Make sure that an event handler exists for entire display area.
 TEST_F(NoSessionRootWindowControllerTest, Event) {
+  // Hide the shelf since it might otherwise get an event target.
+  RootWindowController* controller = Shell::GetPrimaryRootWindowController();
+  ShelfLayoutManager* shelf_layout_manager =
+      controller->GetShelfLayoutManager();
+  shelf_layout_manager->SetAutoHideBehavior(
+      ash::SHELF_AUTO_HIDE_ALWAYS_HIDDEN);
+
   aura::Window* root = Shell::GetPrimaryRootWindow();
   const gfx::Size size = root->bounds().size();
   aura::Window* event_target = root->GetEventHandlerForPoint(gfx::Point(0, 0));
@@ -798,7 +807,12 @@ TEST_F(VirtualKeyboardRootWindowControllerTest, EnsureCaretInWorkArea) {
   MockTextInputClient text_input_client;
   ui::InputMethod* input_method = proxy->GetInputMethod();
   ASSERT_TRUE(input_method);
-  input_method->SetFocusedTextInputClient(&text_input_client);
+  if (switches::IsTextInputFocusManagerEnabled()) {
+    ui::TextInputFocusManager::GetInstance()->FocusTextInputClient(
+        &text_input_client);
+  } else {
+    input_method->SetFocusedTextInputClient(&text_input_client);
+  }
 
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
   aura::Window* keyboard_container =
@@ -818,6 +832,13 @@ TEST_F(VirtualKeyboardRootWindowControllerTest, EnsureCaretInWorkArea) {
             text_input_client.visible_rect().width());
   ASSERT_EQ(keyboard_container->bounds().height() - keyboard_height,
             text_input_client.visible_rect().height());
+
+  if (switches::IsTextInputFocusManagerEnabled()) {
+    ui::TextInputFocusManager::GetInstance()->BlurTextInputClient(
+        &text_input_client);
+  } else {
+    input_method->SetFocusedTextInputClient(NULL);
+  }
 }
 
 }  // namespace test

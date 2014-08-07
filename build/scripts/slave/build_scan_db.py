@@ -5,7 +5,7 @@
 
 """Contains configuration and setup of a build scan database.
 
-The databse is a versioned JSON file built of NamedTuples.
+The database is a versioned JSON file built of NamedTuples.
 """
 
 import collections
@@ -23,13 +23,15 @@ DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 # Bump each time there is an incompatible change in build_db.
-BUILD_DB_VERSION = 2
+BUILD_DB_VERSION = 3
 
 
 _BuildDB = collections.namedtuple('BuildDB', [
     'build_db_version',  # An int representing the build_db version.
-    'masters',  # {mastername: {buildername: {buildnumber: BuildDBBuild}}}}
+    'masters',   # {mastername: {buildername: {buildnumber: BuildDBBuild}}}}
     'sections',  # {section_hash: human_readable_json_of_gatekeeper_section}
+    'aux',       # Dictionary to keep auxiliary information such as triggered
+                 # revisions.
 ])
 
 
@@ -69,9 +71,12 @@ class BadConf(Exception):
 
 def gen_db(**kwargs):
   """Helper function to generate a default database."""
-  defaults = [('build_db_version', BUILD_DB_VERSION),
-              ('masters', {}),
-              ('sections', {})]
+  defaults = [
+      ('build_db_version', BUILD_DB_VERSION),
+      ('masters', {}),
+      ('sections', {}),
+      ('aux', {}),
+  ]
 
   for key, default in defaults:
     kwargs.setdefault(key, default)
@@ -91,8 +96,6 @@ def gen_build(**kwargs):
 
 def load_from_json(f):
   """Load a build from a JSON stream."""
-  build_db = gen_db()
-
   json_build_db = json.load(f)
 
   if json_build_db.get('build_db_version') != BUILD_DB_VERSION:
@@ -112,6 +115,9 @@ def load_from_json(f):
         # BuildDBBuild will be written as a value list (tuple).
         build_db.masters[mastername][buildername][
             int(buildnumber)] = BuildDBBuild(*build)
+
+  if 'aux' in json_build_db:
+    build_db.aux.update(json_build_db['aux'])
 
   return build_db
 
@@ -154,8 +160,7 @@ def convert_db_to_json(build_db_data, gatekeeper_config, f):
         max_finished = max(finished, key=lambda x: x[0])
         builders[builder][max_finished[0]] = max_finished[1]
 
-
-  build_db = gen_db(masters=build_db_data.masters)
+  build_db = gen_db(masters=build_db_data.masters, aux=build_db_data.aux)
 
   # Output the gatekeeper sections we're operating with, so a human reading the
   # file can debug issues. This is discarded by the parser in get_build_db.

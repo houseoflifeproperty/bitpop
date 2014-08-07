@@ -36,6 +36,7 @@ DirectoryItemTreeBaseMethods.updateSubElementsFromList = function(recursive) {
       this.add(item);
       index++;
     } else if (util.isSameEntry(currentEntry, currentElement.entry)) {
+      currentElement.updateSharedStatusIcon();
       if (recursive && this.expanded)
         currentElement.updateSubDirectories(true /* recursive */);
 
@@ -173,7 +174,7 @@ DirectoryItem.prototype.decorate = function(
       '<div class="tree-row">' +
       ' <span class="expand-icon"></span>' +
       ' <span class="icon"></span>' +
-      ' <span class="label"></span>' +
+      ' <span class="label entry-name"></span>' +
       '</div>' +
       '<div class="tree-children"></div>';
 
@@ -192,10 +193,12 @@ DirectoryItem.prototype.decorate = function(
   var icon = this.querySelector('.icon');
   icon.classList.add('volume-icon');
   var location = tree.volumeManager.getLocationInfo(dirEntry);
-  if (location && location.rootType && location.isRootEntry)
+  if (location && location.rootType && location.isRootEntry) {
     icon.setAttribute('volume-type-icon', location.rootType);
-  else
+  } else {
     icon.setAttribute('file-type-icon', 'folder');
+    this.updateSharedStatusIcon();
+  }
 
   if (this.parentTree_.contextMenuForSubitems)
     this.setContextMenu(this.parentTree_.contextMenuForSubitems);
@@ -323,11 +326,25 @@ DirectoryItem.prototype.updateItemByEntry = function(changedDirectoryEntry) {
   // Traverse the entire subtree to find the changed element.
   for (var i = 0; i < this.items.length; i++) {
     var item = this.items[i];
-    if (util.isDescendantEntry(item.entry, changedDirectoryEntry)) {
+    if (util.isDescendantEntry(item.entry, changedDirectoryEntry) ||
+        util.isSameEntry(item.entry, changedDirectoryEntry)) {
       item.updateItemByEntry(changedDirectoryEntry);
       break;
     }
   }
+};
+
+/**
+ * Update the icon based on whether the folder is shared on Drive.
+ */
+DirectoryItem.prototype.updateSharedStatusIcon = function() {
+  var icon = this.querySelector('.icon');
+  this.parentTree_.metadataCache.getOne(
+      this.dirEntry_,
+      'drive',
+      function(metadata) {
+        icon.classList.toggle('shared', metadata && metadata.shared);
+      });
 };
 
 /**
@@ -394,10 +411,13 @@ function DirectoryTree() {}
  * @param {HTMLElement} el Element to be DirectoryTree.
  * @param {DirectoryModel} directoryModel Current DirectoryModel.
  * @param {VolumeManagerWrapper} volumeManager VolumeManager of the system.
+ * @param {MetadataCache} metadataCache Shared MetadataCache instance.
  */
-DirectoryTree.decorate = function(el, directoryModel, volumeManager) {
+DirectoryTree.decorate = function(
+    el, directoryModel, volumeManager, metadataCache) {
   el.__proto__ = DirectoryTree.prototype;
-  (/** @type {DirectoryTree} */ el).decorate(directoryModel, volumeManager);
+  (/** @type {DirectoryTree} */ el).decorate(
+      directoryModel, volumeManager, metadataCache);
 };
 
 DirectoryTree.prototype = {
@@ -435,6 +455,14 @@ DirectoryTree.prototype = {
   get volumeManager() {
     return this.volumeManager_;
   },
+
+  /**
+   * The reference to shared MetadataCache instance.
+   * @type {MetadataCache}
+   */
+  get metadataCache() {
+    return this.metadataCache_;
+  },
 };
 
 cr.defineProperty(DirectoryTree, 'contextMenuForSubitems', cr.PropertyKind.JS);
@@ -465,13 +493,16 @@ DirectoryTree.prototype.searchAndSelectByEntry = function(entry) {
  * Decorates an element.
  * @param {DirectoryModel} directoryModel Current DirectoryModel.
  * @param {VolumeManagerWrapper} volumeManager VolumeManager of the system.
+ * @param {MetadataCache} metadataCache Shared MetadataCache instance.
  */
-DirectoryTree.prototype.decorate = function(directoryModel, volumeManager) {
+DirectoryTree.prototype.decorate = function(
+    directoryModel, volumeManager, metadataCache) {
   cr.ui.Tree.prototype.decorate.call(this);
 
   this.sequence_ = 0;
   this.directoryModel_ = directoryModel;
   this.volumeManager_ = volumeManager;
+  this.metadataCache_ = metadataCache;
   this.entries_ = [];
   this.currentVolumeInfo_ = null;
 

@@ -24,11 +24,11 @@ namespace password_manager {
 ContentPasswordManagerDriver::ContentPasswordManagerDriver(
     content::WebContents* web_contents,
     PasswordManagerClient* client,
-    autofill::AutofillManagerDelegate* autofill_manager_delegate)
+    autofill::AutofillClient* autofill_client)
     : WebContentsObserver(web_contents),
       password_manager_(client),
       password_generation_manager_(client),
-      password_autofill_manager_(client, autofill_manager_delegate) {
+      password_autofill_manager_(client, autofill_client) {
   DCHECK(web_contents);
 }
 
@@ -54,14 +54,30 @@ void ContentPasswordManagerDriver::AccountCreationFormsFound(
                                                           forms));
 }
 
-void ContentPasswordManagerDriver::AcceptPasswordAutofillSuggestion(
+void ContentPasswordManagerDriver::FillSuggestion(
     const base::string16& username,
     const base::string16& password) {
   content::RenderViewHost* host = web_contents()->GetRenderViewHost();
   host->Send(
-      new AutofillMsg_AcceptPasswordAutofillSuggestion(host->GetRoutingID(),
-                                                       username,
-                                                       password));
+      new AutofillMsg_FillPasswordSuggestion(host->GetRoutingID(),
+                                             username,
+                                             password));
+}
+
+void ContentPasswordManagerDriver::PreviewSuggestion(
+    const base::string16& username,
+    const base::string16& password) {
+  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
+  host->Send(
+      new AutofillMsg_PreviewPasswordSuggestion(host->GetRoutingID(),
+                                                username,
+                                                password));
+}
+
+void ContentPasswordManagerDriver::ClearPreviewedForm() {
+  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
+  host->Send(
+      new AutofillMsg_ClearPreviewedForm(host->GetRoutingID()));
 }
 
 bool ContentPasswordManagerDriver::DidLastPageLoadEncounterSSLErrors() {

@@ -4,6 +4,7 @@
 
 import json
 import re
+import urllib
 
 from twisted.internet import defer
 from twisted.python import log
@@ -57,6 +58,7 @@ class _TryJobGerritPoller(GerritPoller):
   """
 
   change_category = 'tryjob'
+  label_name = 'Tryjob-Request'
 
   MESSAGE_REGEX_TRYJOB = re.compile('^!tryjob(.*)$', re.I | re.M)
 
@@ -73,7 +75,7 @@ class _TryJobGerritPoller(GerritPoller):
   def getChangeQuery(self):
     query = GerritPoller.getChangeQuery(self)
     # Request only issues with TryJob=+1 label.
-    query += '+label:TryJob=%2B1'
+    query += '+label:%s=%s' % (self.label_name, urllib.quote('+1'))
     return query
 
   def parseJob(self, message):

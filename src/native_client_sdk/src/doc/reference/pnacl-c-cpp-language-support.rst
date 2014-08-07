@@ -194,6 +194,10 @@ PNaCl this barrier is only guaranteed to order ``volatile`` and atomic
 memory accesses, though in practice the implementation attempts to also
 prevent reordering of memory accesses to objects which may escape.
 
+PNaCl supports :ref:`Portable SIMD Vectors <portable_simd_vectors>`,
+which are traditionally expressed through target-specific intrinsics or
+inline assembly.
+
 NaCl supports a fairly wide subset of inline assembly through GCC's
 inline assembly syntax, with the restriction that the sandboxing model
 for the target architecture has to be respected.
@@ -209,9 +213,9 @@ of SIMD vector datatypes and operations which map well to modern
 architectures and offer performance which matches or approaches
 hardware-specific uses.
 
-SIMD vector support was added to Portable Native Client for version 36
-of Chrome, and more features are expected to be added in subsequent
-releases.
+SIMD vector support was added to Portable Native Client for version 37
+of Chrome and more features, including performance enhancements, are
+expected to be added in subsequent releases.
 
 Hand-Coding Vector Extensions
 -----------------------------
@@ -232,9 +236,8 @@ Vector types can be used through the ``vector_size`` attribute:
   v4s a = {1,2,3,4};
   v4s b = {5,6,7,8};
   v4s c, d, e;
-  c = b + 1;  /* c = b + {1,1,1,1}; */
-  d = 2 * b;  /* d = {2,2,2,2} * b; */
-  e = c + d;
+  c = a + b;  /* c = {6,8,10,12} */
+  d = b >> a; /* d = {2,1,0,0} */
 
 Vector comparisons are represented as a bitmask as wide as the compared
 elements of all ``0`` or all ``1``:
@@ -335,20 +338,31 @@ to the number of indices specified.
   // identity operation - return 4-element vector v1.
   __builtin_shufflevector(v1, v1, 0, 1, 2, 3)
 
-  // "Splat" element 0 of V1 into a 4-element result.
-  __builtin_shufflevector(V1, V1, 0, 0, 0, 0)
+  // "Splat" element 0 of v1 into a 4-element result.
+  __builtin_shufflevector(v1, v1, 0, 0, 0, 0)
 
-  // Reverse 4-element vector V1.
-  __builtin_shufflevector(V1, V1, 3, 2, 1, 0)
+  // Reverse 4-element vector v1.
+  __builtin_shufflevector(v1, v1, 3, 2, 1, 0)
 
-  // Concatenate every other element of 4-element vectors V1 and V2.
-  __builtin_shufflevector(V1, V2, 0, 2, 4, 6)
+  // Concatenate every other element of 4-element vectors v1 and v2.
+  __builtin_shufflevector(v1, v2, 0, 2, 4, 6)
 
-  // Concatenate every other element of 8-element vectors V1 and V2.
-  __builtin_shufflevector(V1, V2, 0, 2, 4, 6, 8, 10, 12, 14)
+  // Concatenate every other element of 8-element vectors v1 and v2.
+  __builtin_shufflevector(v1, v2, 0, 2, 4, 6, 8, 10, 12, 14)
 
   // Shuffle v1 with some elements being undefined
   __builtin_shufflevector(v1, v1, 3, -1, 1, -1)
+
+One common use of ``__builtin_shufflevector`` is to perform
+vector-scalar operations:
+
+.. naclcode::
+
+  typedef int v4s __attribute__((vector_size(16)));
+  v4s shift_right_by(v4s shift_me, int shift_amount) {
+    v4s tmp = {shift_amount};
+    return shift_me >> __builtin_shuffle_vector(tmp, tmp, 0, 0, 0, 0);
+  }
 
 Auto-Vectorization
 ------------------

@@ -28,7 +28,7 @@ class VirtualKeyboardButton : public views::ImageButton {
   virtual ~VirtualKeyboardButton();
 
   // Overridden from views::ImageButton:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(VirtualKeyboardButton);
@@ -41,7 +41,7 @@ VirtualKeyboardButton::VirtualKeyboardButton(views::ButtonListener* listener)
 VirtualKeyboardButton::~VirtualKeyboardButton() {
 }
 
-gfx::Size VirtualKeyboardButton::GetPreferredSize() {
+gfx::Size VirtualKeyboardButton::GetPreferredSize() const {
   const int virtual_keyboard_button_height = kShelfSize;
   gfx::Size size = ImageButton::GetPreferredSize();
   int padding = virtual_keyboard_button_height - size.height();
@@ -64,7 +64,6 @@ VirtualKeyboardTray::VirtualKeyboardTray(StatusAreaWidget* status_area_widget)
 
   tray_container()->AddChildView(button_);
   SetContentsBackground();
-  SetVisible(false);
   // The Shell may not exist in some unit tests.
   if (Shell::HasInstance()) {
     Shell::GetInstance()->system_tray_notifier()->

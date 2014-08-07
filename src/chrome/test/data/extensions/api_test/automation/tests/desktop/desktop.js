@@ -4,12 +4,32 @@
 
 var allTests = [
   function testGetDesktop() {
-    chrome.automation.getDesktop(function(tree) {
-      tree.addEventListener('load_complete', function(e) {
-        assertEq('desktop', tree.root.role);
-        assertEq('window', tree.root.firstChild().role);
+    chrome.automation.getDesktop(function(rootNode) {
+      assertEq(RoleType.desktop, rootNode.role);
+      assertEq(RoleType.window, rootNode.firstChild().role);
+      chrome.test.succeed();
+    });
+  },
+
+  function testGetDesktopTwice() {
+    var desktop = null;
+    chrome.automation.getDesktop(function(rootNode) {
+      desktop = rootNode;
+    });
+    chrome.automation.getDesktop(function(rootNode) {
+      assertEq(rootNode, desktop);
+      chrome.test.succeed();
+    });
+  },
+
+  function testGetDesktopNested() {
+    var desktop = null;
+    chrome.automation.getDesktop(function(rootNode) {
+      desktop = rootNode;
+      chrome.automation.getDesktop(function(rootNode2) {
+        assertEq(rootNode2, desktop);
         chrome.test.succeed();
-      }, true);
+      });
     });
   }
 ];

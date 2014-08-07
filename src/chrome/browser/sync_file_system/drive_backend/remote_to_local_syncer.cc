@@ -13,6 +13,7 @@
 #include "base/task_runner_util.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_service_interface.h"
+#include "chrome/browser/sync_file_system/drive_backend/callback_helper.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
@@ -113,7 +114,7 @@ void RemoteToLocalSyncer::RunExclusive(const SyncStatusCallback& callback) {
 
   util::Log(logging::LOG_VERBOSE, FROM_HERE,
             "[Remote -> Local] Nothing to do.");
-  base::MessageLoopProxy::current()->PostTask(
+  sync_context_->GetWorkerTaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(callback, SYNC_STATUS_NO_CHANGE_TO_SYNC));
 }
@@ -285,7 +286,7 @@ void RemoteToLocalSyncer::HandleMissingRemoteMetadata(
     const SyncStatusCallback& callback) {
   DCHECK(dirty_tracker_);
 
-  drive_service()->GetResourceEntry(
+  drive_service()->GetFileResource(
       dirty_tracker_->file_id(),
       base::Bind(&RemoteToLocalSyncer::DidGetRemoteMetadata,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -295,7 +296,9 @@ void RemoteToLocalSyncer::HandleMissingRemoteMetadata(
 void RemoteToLocalSyncer::DidGetRemoteMetadata(
     const SyncStatusCallback& callback,
     google_apis::GDataErrorCode error,
-    scoped_ptr<google_apis::ResourceEntry> entry) {
+    scoped_ptr<google_apis::FileResource> entry) {
+  DCHECK(sync_context_->GetWorkerTaskRunner()->RunsTasksOnCurrentThread());
+
   SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
   if (status != SYNC_STATUS_OK &&
       error != google_apis::HTTP_NOT_FOUND) {
@@ -316,7 +319,7 @@ void RemoteToLocalSyncer::DidGetRemoteMetadata(
   }
 
   metadata_database()->UpdateByFileResource(
-      *drive::util::ConvertResourceEntryToFileResource(*entry),
+      *entry,
       base::Bind(&RemoteToLocalSyncer::DidUpdateDatabaseForRemoteMetadata,
                  weak_ptr_factory_.GetWeakPtr(), callback));
 }
@@ -531,7 +534,7 @@ void RemoteToLocalSyncer::ListFolderContent(
   DCHECK(!remote_metadata_->details().missing());
 
   // TODO(tzik): Replace this call with ChildList version.
-  drive_service()->GetResourceListInDirectory(
+  drive_service()->GetFileListInDirectory(
       dirty_tracker_->file_id(),
       base::Bind(&RemoteToLocalSyncer::DidListFolderContent,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -543,31 +546,30 @@ void RemoteToLocalSyncer::DidListFolderContent(
     const SyncStatusCallback& callback,
     scoped_ptr<FileIDList> children,
     google_apis::GDataErrorCode error,
-    scoped_ptr<google_apis::ResourceList> resource_list) {
+    scoped_ptr<google_apis::FileList> file_list) {
   SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
   if (status != SYNC_STATUS_OK) {
     callback.Run(status);
     return;
   }
 
-  if (!resource_list) {
+  if (!file_list) {
     NOTREACHED();
     callback.Run(SYNC_STATUS_FAILED);
     return;
   }
 
-  children->reserve(children->size() + resource_list->entries().size());
-  for (ScopedVector<google_apis::ResourceEntry>::const_iterator itr =
-           resource_list->entries().begin();
-       itr != resource_list->entries().end();
+  children->reserve(children->size() + file_list->items().size());
+  for (ScopedVector<google_apis::FileResource>::const_iterator itr =
+           file_list->items().begin();
+       itr != file_list->items().end();
        ++itr) {
-    children->push_back((*itr)->resource_id());
+    children->push_back((*itr)->file_id());
   }
 
-  GURL next_feed;
-  if (resource_list->GetNextFeedURL(&next_feed)) {
+  if (!file_list->next_link().is_empty()) {
     drive_service()->GetRemainingFileList(
-        next_feed,
+        file_list->next_link(),
         base::Bind(&RemoteToLocalSyncer::DidListFolderContent,
                    weak_ptr_factory_.GetWeakPtr(),
                    callback, base::Passed(&children)));
@@ -670,17 +672,26 @@ void RemoteToLocalSyncer::DeleteLocalFile(const SyncStatusCallback& callback) {
 }
 
 void RemoteToLocalSyncer::DownloadFile(const SyncStatusCallback& callback) {
-  base::PostTaskAndReplyWithResult(
-      sync_context_->GetFileTaskRunner(), FROM_HERE,
-      base::Bind(&sync_file_system::drive_backend::CreateTemporaryFile,
-                 make_scoped_refptr(sync_context_->GetFileTaskRunner())),
+  DCHECK(sync_context_->GetWorkerTaskRunner()->RunsTasksOnCurrentThread());
+
+  base::Callback<void(webkit_blob::ScopedFile)> did_create_callback =
       base::Bind(&RemoteToLocalSyncer::DidCreateTemporaryFileForDownload,
-                 weak_ptr_factory_.GetWeakPtr(), callback));
+                 weak_ptr_factory_.GetWeakPtr(), callback);
+
+  sync_context_->GetFileTaskRunner()->PostTask(
+      FROM_HERE,
+      CreateComposedFunction(
+          base::Bind(&CreateTemporaryFile,
+                     make_scoped_refptr(sync_context_->GetFileTaskRunner())),
+          RelayCallbackToTaskRunner(
+              sync_context_->GetWorkerTaskRunner(), FROM_HERE,
+              did_create_callback)));
 }
 
 void RemoteToLocalSyncer::DidCreateTemporaryFileForDownload(
     const SyncStatusCallback& callback,
     webkit_blob::ScopedFile file) {
+  DCHECK(sync_context_->GetWorkerTaskRunner()->RunsTasksOnCurrentThread());
   base::FilePath path = file.path();
   drive_service()->DownloadFile(
       path, remote_metadata_->file_id(),
@@ -695,6 +706,8 @@ void RemoteToLocalSyncer::DidDownloadFile(const SyncStatusCallback& callback,
                                           webkit_blob::ScopedFile file,
                                           google_apis::GDataErrorCode error,
                                           const base::FilePath&) {
+  DCHECK(sync_context_->GetWorkerTaskRunner()->RunsTasksOnCurrentThread());
+
   SyncStatusCode status = GDataErrorCodeToSyncStatusCode(error);
   if (status != SYNC_STATUS_OK) {
     callback.Run(status);
@@ -702,12 +715,18 @@ void RemoteToLocalSyncer::DidDownloadFile(const SyncStatusCallback& callback,
   }
 
   base::FilePath path = file.path();
-  base::PostTaskAndReplyWithResult(
-      sync_context_->GetFileTaskRunner(), FROM_HERE,
-      base::Bind(&drive::util::GetMd5Digest, path),
+  base::Callback<void(const std::string&)> did_calculate_callback =
       base::Bind(&RemoteToLocalSyncer::DidCalculateMD5ForDownload,
                  weak_ptr_factory_.GetWeakPtr(),
-                 callback, base::Passed(&file)));
+                 callback, base::Passed(&file));
+
+  sync_context_->GetFileTaskRunner()->PostTask(
+      FROM_HERE,
+      CreateComposedFunction(
+          base::Bind(&drive::util::GetMd5Digest, path),
+          RelayCallbackToTaskRunner(
+              sync_context_->GetWorkerTaskRunner(), FROM_HERE,
+              did_calculate_callback)));
 }
 
 void RemoteToLocalSyncer::DidCalculateMD5ForDownload(

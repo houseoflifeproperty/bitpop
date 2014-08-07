@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_validator.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
+#include "net/cert/x509_util_nss.h"
 
 namespace enterprise_management {
 class ChromeDeviceSettingsProto;
@@ -38,7 +39,7 @@ class SessionManagerOperation {
   // Starts the operation.
   void Start(SessionManagerClient* session_manager_client,
              scoped_refptr<OwnerKeyUtil> owner_key_util,
-             scoped_refptr<OwnerKey> owner_key);
+             scoped_refptr<PublicKey> public_key);
 
   // Restarts a load operation (if that part is already in progress).
   void RestartLoad(bool key_changed);
@@ -52,26 +53,29 @@ class SessionManagerOperation {
     return device_settings_;
   }
 
-  // Owner key as configured/loaded from disk.
-  scoped_refptr<OwnerKey> owner_key() {
-    return owner_key_;
-  }
+  // Public part of the owner key as configured/loaded from disk.
+  scoped_refptr<PublicKey> public_key() { return public_key_; }
 
   // Whether the load operation is underway.
-  bool is_loading() const {
-    return is_loading_;
-  }
+  bool is_loading() const { return is_loading_; }
 
   void set_force_key_load(bool force_key_load) {
     force_key_load_ = force_key_load;
+  }
+
+  void set_username(const std::string& username) { username_ = username; }
+
+  void set_delegate(const base::WeakPtr<
+      DeviceSettingsService::PrivateKeyDelegate>& delegate) {
+    delegate_ = delegate;
   }
 
  protected:
   // Runs the operation. The result is reported through |callback_|.
   virtual void Run() = 0;
 
-  // Ensures the owner key is loaded.
-  void EnsureOwnerKey(const base::Closure& callback);
+  // Ensures the public key is loaded.
+  void EnsurePublicKey(const base::Closure& callback);
 
   // Starts a load operation.
   void StartLoading();
@@ -84,15 +88,17 @@ class SessionManagerOperation {
     return session_manager_client_;
   }
 
+  base::WeakPtr<DeviceSettingsService::PrivateKeyDelegate> delegate_;
+
  private:
   // Loads the owner key from disk. Must be run on a thread that can do I/O.
-  static scoped_refptr<OwnerKey> LoadOwnerKey(
+  static scoped_refptr<PublicKey> LoadPublicKey(
       scoped_refptr<OwnerKeyUtil> util,
-      scoped_refptr<OwnerKey> current_key);
+      scoped_refptr<PublicKey> current_key);
 
   // Stores the owner key loaded by LoadOwnerKey and calls |callback|.
-  void StoreOwnerKey(const base::Closure& callback,
-                     scoped_refptr<OwnerKey> new_key);
+  void StorePublicKey(const base::Closure& callback,
+                      scoped_refptr<PublicKey> new_key);
 
   // Triggers a device settings load.
   void RetrieveDeviceSettings();
@@ -110,8 +116,9 @@ class SessionManagerOperation {
 
   Callback callback_;
 
-  scoped_refptr<OwnerKey> owner_key_;
+  scoped_refptr<PublicKey> public_key_;
   bool force_key_load_;
+  std::string username_;
 
   bool is_loading_;
   scoped_ptr<enterprise_management::PolicyData> policy_data_;
@@ -174,13 +181,7 @@ class SignAndStoreSettingsOperation : public SessionManagerOperation {
   virtual void Run() OVERRIDE;
 
  private:
-  // Given an owner key, starts the signing operation.
-  void StartSigning();
-
-  // Builds the policy blob and signs it using the owner key.
-  static std::string AssembleAndSignPolicy(
-      scoped_ptr<enterprise_management::PolicyData> policy,
-      scoped_refptr<OwnerKey> owner_key);
+  void StartSigning(bool has_private_key);
 
   // Stores the signed device settings blob.
   void StoreDeviceSettingsBlob(std::string device_settings_blob);

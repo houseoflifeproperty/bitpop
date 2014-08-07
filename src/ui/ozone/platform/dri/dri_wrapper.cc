@@ -6,6 +6,7 @@
 
 #include <fcntl.h>
 #include <unistd.h>
+#include <xf86drm.h>
 #include <xf86drmMode.h>
 
 #include "base/logging.h"
@@ -55,16 +56,17 @@ bool DriWrapper::DisableCrtc(uint32_t crtc_id) {
   return !drmModeSetCrtc(fd_, crtc_id, 0, 0, 0, NULL, 0, NULL);
 }
 
-bool DriWrapper::AddFramebuffer(const drmModeModeInfo& mode,
-                                     uint8_t depth,
-                                     uint8_t bpp,
-                                     uint32_t stride,
-                                     uint32_t handle,
-                                     uint32_t* framebuffer) {
+bool DriWrapper::AddFramebuffer(uint32_t width,
+                                uint32_t height,
+                                uint8_t depth,
+                                uint8_t bpp,
+                                uint32_t stride,
+                                uint32_t handle,
+                                uint32_t* framebuffer) {
   CHECK(fd_ >= 0);
   return !drmModeAddFB(fd_,
-                       mode.hdisplay,
-                       mode.vdisplay,
+                       width,
+                       height,
                        depth,
                        bpp,
                        stride,
@@ -78,8 +80,8 @@ bool DriWrapper::RemoveFramebuffer(uint32_t framebuffer) {
 }
 
 bool DriWrapper::PageFlip(uint32_t crtc_id,
-                               uint32_t framebuffer,
-                               void* data) {
+                          uint32_t framebuffer,
+                          void* data) {
   CHECK(fd_ >= 0);
   return !drmModePageFlip(fd_,
                           crtc_id,
@@ -152,6 +154,11 @@ bool DriWrapper::SetCursor(uint32_t crtc_id,
 bool DriWrapper::MoveCursor(uint32_t crtc_id, int x, int y) {
   CHECK(fd_ >= 0);
   return !drmModeMoveCursor(fd_, crtc_id, x, y);
+}
+
+void DriWrapper::HandleEvent(drmEventContext& event) {
+  CHECK(fd_ >= 0);
+  drmHandleEvent(fd_, &event);
 }
 
 }  // namespace ui

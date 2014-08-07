@@ -63,9 +63,9 @@ static PassRefPtr<TypeBuilder::Profiler::CPUProfile> createCPUProfile(const Scri
     return profile.release();
 }
 
-static PassRefPtr<TypeBuilder::Debugger::Location> currentDebugLocation()
+static PassRefPtr<TypeBuilder::Debugger::Location> currentDebugLocation(ScriptState* scriptState)
 {
-    RefPtr<ScriptCallStack> callStack(createScriptCallStackForConsole(1));
+    RefPtrWillBeRawPtr<ScriptCallStack> callStack(createScriptCallStackForConsole(scriptState, 1));
     const ScriptCallFrame& lastCaller = callStack->at(0);
     RefPtr<TypeBuilder::Debugger::Location> location = TypeBuilder::Debugger::Location::create()
         .setScriptId(lastCaller.scriptId())
@@ -103,16 +103,16 @@ InspectorProfilerAgent::~InspectorProfilerAgent()
 {
 }
 
-void InspectorProfilerAgent::consoleProfile(const String& title, ScriptState*)
+void InspectorProfilerAgent::consoleProfile(const String& title, ScriptState* scriptState)
 {
     ASSERT(m_frontend && enabled());
     String id = nextProfileId();
     m_startedProfiles.append(ProfileDescriptor(id, title));
     ScriptProfiler::start(id);
-    m_frontend->consoleProfileStarted(id, currentDebugLocation(), title.isNull() ? 0 : &title);
+    m_frontend->consoleProfileStarted(id, currentDebugLocation(scriptState), title.isNull() ? 0 : &title);
 }
 
-void InspectorProfilerAgent::consoleProfileEnd(const String& title)
+void InspectorProfilerAgent::consoleProfileEnd(const String& title, ScriptState* scriptState)
 {
     ASSERT(m_frontend && enabled());
     String id;
@@ -136,10 +136,10 @@ void InspectorProfilerAgent::consoleProfileEnd(const String& title)
         if (id.isEmpty())
             return;
     }
-    RefPtr<ScriptProfile> profile = ScriptProfiler::stop(id);
+    RefPtrWillBeRawPtr<ScriptProfile> profile = ScriptProfiler::stop(id);
     if (!profile)
         return;
-    RefPtr<TypeBuilder::Debugger::Location> location = currentDebugLocation();
+    RefPtr<TypeBuilder::Debugger::Location> location = currentDebugLocation(scriptState);
     m_frontend->consoleProfileFinished(id, location, createCPUProfile(*profile), resolvedTitle.isNull() ? 0 : &resolvedTitle);
 }
 
@@ -236,7 +236,7 @@ void InspectorProfilerAgent::stop(ErrorString* errorString, RefPtr<TypeBuilder::
     m_recordingCPUProfile = false;
     if (m_overlay)
         m_overlay->finishedRecordingProfile();
-    RefPtr<ScriptProfile> scriptProfile = ScriptProfiler::stop(m_frontendInitiatedProfileId);
+    RefPtrWillBeRawPtr<ScriptProfile> scriptProfile = ScriptProfiler::stop(m_frontendInitiatedProfileId);
     m_frontendInitiatedProfileId = String();
     if (scriptProfile && profile)
         *profile = createCPUProfile(*scriptProfile);

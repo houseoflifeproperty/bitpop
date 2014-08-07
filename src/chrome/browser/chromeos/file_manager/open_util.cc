@@ -21,7 +21,6 @@
 #include "chrome/browser/ui/simple_message_box.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/user_metrics.h"
-#include "google_apis/drive/task_util.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "webkit/browser/fileapi/file_system_backend.h"
@@ -91,8 +90,6 @@ void OpenFileManagerWithInternalActionId(Profile* profile,
 // Opens the file specified by |url| by finding and executing a file
 // task for the file. Returns false if failed to open the file (i.e. no file
 // task is found).
-// TODO(fukino): curbug.com/352250. Currently |path| is used only for retrieving
-// file extension, but we might want to sniff file contents and infer mime type.
 bool OpenFile(Profile* profile, const base::FilePath& path, const GURL& url) {
   // The file is opened per the file extension, hence extension-less files
   // cannot be opened properly.
@@ -130,7 +127,7 @@ void ContinueOpenItem(Profile* profile,
                       const base::FilePath& file_path,
                       const GURL& url,
                       base::File::Error error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (error == base::File::FILE_OK) {
     // A directory exists at |url|. Open it with the file manager.
@@ -142,40 +139,6 @@ void ContinueOpenItem(Profile* profile,
                             IDS_FILE_BROWSER_ERROR_VIEWING_FILE);
     }
   }
-}
-
-// Used to implement CheckIfDirectoryExists().
-void CheckIfDirectoryExistsOnIOThread(
-    scoped_refptr<fileapi::FileSystemContext> file_system_context,
-    const GURL& url,
-    const fileapi::FileSystemOperationRunner::StatusCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  fileapi::FileSystemURL file_system_url = file_system_context->CrackURL(url);
-  file_system_context->operation_runner()->DirectoryExists(
-      file_system_url, callback);
-}
-
-// Checks if a directory exists at |url|.
-void CheckIfDirectoryExists(
-    scoped_refptr<fileapi::FileSystemContext> file_system_context,
-    const GURL& url,
-    const fileapi::FileSystemOperationRunner::StatusCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // Check the existence of directory using file system API implementation on
-  // behalf of the file manager app. We need to grant access beforehand.
-  fileapi::ExternalFileSystemBackend* backend =
-      file_system_context->external_backend();
-  DCHECK(backend);
-  backend->GrantFullAccessToExtension(kFileManagerAppId);
-
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&CheckIfDirectoryExistsOnIOThread,
-                 file_system_context,
-                 url,
-                 google_apis::CreateRelayCallback(callback)));
 }
 
 // Converts the |given_path| passed from external callers to the form that the
@@ -205,7 +168,7 @@ bool ConvertPath(Profile* profile,
 }  // namespace
 
 void OpenRemovableDrive(Profile* profile, const base::FilePath& file_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   base::FilePath converted_path;
   GURL url;
@@ -216,7 +179,7 @@ void OpenRemovableDrive(Profile* profile, const base::FilePath& file_path) {
 }
 
 void OpenItem(Profile* profile, const base::FilePath& file_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   base::FilePath converted_path;
   GURL url;
@@ -230,7 +193,7 @@ void OpenItem(Profile* profile, const base::FilePath& file_path) {
 }
 
 void ShowItemInFolder(Profile* profile, const base::FilePath& file_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   base::FilePath converted_path;
   GURL url;

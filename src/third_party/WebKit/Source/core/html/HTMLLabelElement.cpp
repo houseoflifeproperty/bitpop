@@ -25,9 +25,12 @@
 #include "config.h"
 #include "core/html/HTMLLabelElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
+#include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/events/Event.h"
+#include "core/editing/FrameSelection.h"
+#include "core/events/MouseEvent.h"
+#include "core/frame/LocalFrame.h"
 #include "core/html/FormAssociatedElement.h"
 
 namespace WebCore {
@@ -49,10 +52,7 @@ inline HTMLLabelElement::HTMLLabelElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLLabelElement> HTMLLabelElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLLabelElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLLabelElement)
 
 bool HTMLLabelElement::rendererIsFocusable() const
 {
@@ -136,7 +136,19 @@ void HTMLLabelElement::defaultEventHandler(Event* evt)
     static bool processingClick = false;
 
     if (evt->type() == EventTypeNames::click && !processingClick) {
-        RefPtr<HTMLElement> element = control();
+        // If the click is not simulated and the text of label element is
+        // selected, do not pass the event to control element.
+        // Note: a click event may be not a mouse event if created by
+        // document.createEvent().
+        if (evt->isMouseEvent() && !toMouseEvent(evt)->isSimulated()) {
+            if (LocalFrame* frame = document().frame()) {
+                if (frame->selection().selection().isRange())
+                    return;
+            }
+        }
+
+
+        RefPtrWillBeRawPtr<HTMLElement> element = control();
 
         // If we can't find a control or if the control received the click
         // event, then there's no need for us to do anything.

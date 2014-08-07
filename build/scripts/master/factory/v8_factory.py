@@ -68,7 +68,6 @@ class V8Factory(gclient_factory.GClientFactory):
       f.AddV8TestTC('cctest mjsunit webkit', 'OptimizeForSize',
                     options=['--no-variants',
                              '--shell_flags="--optimize-for-size"'])
-    if R('fuzz'): f.AddFuzzer()
     if R('deopt'): f.AddDeoptFuzzer()
     if R('webkit'): f.AddV8TestTC('webkit', 'Webkit')
     if R('benchmarks'): f.AddV8Test('benchmarks', 'Benchmarks')

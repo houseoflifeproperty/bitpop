@@ -33,16 +33,16 @@ namespace WebCore {
 // Collection that limits to a particular tag.
 class TagCollection : public HTMLCollection {
 public:
-    static PassRefPtr<TagCollection> create(ContainerNode& rootNode, const AtomicString& namespaceURI, const AtomicString& localName)
+    static PassRefPtrWillBeRawPtr<TagCollection> create(ContainerNode& rootNode, const AtomicString& namespaceURI, const AtomicString& localName)
     {
         ASSERT(namespaceURI != starAtom);
-        return adoptRef(new TagCollection(rootNode, TagCollectionType, namespaceURI, localName));
+        return adoptRefWillBeNoop(new TagCollection(rootNode, TagCollectionType, namespaceURI, localName));
     }
 
-    static PassRefPtr<TagCollection> create(ContainerNode& rootNode, CollectionType type, const AtomicString& localName)
+    static PassRefPtrWillBeRawPtr<TagCollection> create(ContainerNode& rootNode, CollectionType type, const AtomicString& localName)
     {
         ASSERT_UNUSED(type, type == TagCollectionType);
-        return adoptRef(new TagCollection(rootNode, TagCollectionType, starAtom, localName));
+        return adoptRefWillBeNoop(new TagCollection(rootNode, TagCollectionType, starAtom, localName));
     }
 
     virtual ~TagCollection();
@@ -56,12 +56,14 @@ protected:
     AtomicString m_localName;
 };
 
+DEFINE_TYPE_CASTS(TagCollection, LiveNodeListBase, collection, collection->type() == TagCollectionType, collection.type() == TagCollectionType);
+
 class HTMLTagCollection FINAL : public TagCollection {
 public:
-    static PassRefPtr<HTMLTagCollection> create(ContainerNode& rootNode, CollectionType type, const AtomicString& localName)
+    static PassRefPtrWillBeRawPtr<HTMLTagCollection> create(ContainerNode& rootNode, CollectionType type, const AtomicString& localName)
     {
         ASSERT_UNUSED(type, type == HTMLTagCollectionType);
-        return adoptRef(new HTMLTagCollection(rootNode, localName));
+        return adoptRefWillBeNoop(new HTMLTagCollection(rootNode, localName));
     }
 
     bool elementMatches(const Element&) const;
@@ -71,6 +73,8 @@ private:
 
     AtomicString m_loweredLocalName;
 };
+
+DEFINE_TYPE_CASTS(HTMLTagCollection, LiveNodeListBase, collection, collection->type() == HTMLTagCollectionType, collection.type() == HTMLTagCollectionType);
 
 inline bool HTMLTagCollection::elementMatches(const Element& testElement) const
 {

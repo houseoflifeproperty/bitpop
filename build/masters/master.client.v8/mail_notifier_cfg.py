@@ -14,6 +14,7 @@ categories_steps = {
   '': [
     'update',
     'runhooks',
+    'gn',
     'compile',
     'Presubmit',
     'Static-Initializers',
@@ -42,18 +43,18 @@ categories_steps = {
 
 exclusions = {
   'V8 Linux - mips - sim': ['compile'],
-  'V8 Linux - recipe': [],
+  'V8 Linux - x87 - nosnap - debug': [],
   'NaCl V8 Linux': ['Check'],
   'NaCl V8 Linux64 - stable': ['Check'],
   'NaCl V8 Linux64 - canary': ['Check'],
   'Webkit - dbg': ['webkit_tests'],
   'Webkit Mac - dbg': ['webkit_tests'],
-  'V8 Win32 - nosnap - shared': [],
 }
 
 forgiving_steps = ['update_scripts', 'update', 'svnkill', 'taskkill',
                    'gclient_revert']
 
+x87_categories_steps = {'x87': ['runhooks', 'compile', 'Check']}
 
 class V8Notifier(chromium_notifier.ChromiumNotifier):
   def isInterestingStep(self, build_status, step_status, results):
@@ -68,6 +69,16 @@ def Update(config, active_master, c):
       exclusions=exclusions,
       relayhost=config.Master.smtp,
       sendToInterestedUsers=True,
+      status_header='buildbot failure in %(project)s on %(builder)s, %(steps)s',
+      lookup=master_utils.FilterDomain(),
+      forgiving_steps=forgiving_steps))
+  c['status'].append(V8Notifier(
+      fromaddr=active_master.from_address,
+      categories_steps=x87_categories_steps,
+      exclusions={},
+      relayhost=config.Master.smtp,
+      sendToInterestedUsers=False,
+      extraRecipients=['weiliang.lin@intel.com', 'chunyang.dai@intel.com'],
       status_header='buildbot failure in %(project)s on %(builder)s, %(steps)s',
       lookup=master_utils.FilterDomain(),
       forgiving_steps=forgiving_steps))

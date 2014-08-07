@@ -20,14 +20,19 @@ graph data.
 with the step results previously saved. The buildbot will then process the graph
 data accordingly.
 
-
 The JSON steps file contains a dictionary in the format:
-[
-  ["step_name_foo", "script_to_execute foo"],
-  ["step_name_bar", "script_to_execute bar"]
-]
-
-This preserves the order in which the steps are executed.
+{ "version": int,
+  "steps": {
+    "foo": {
+      "device_affinity": int,
+      "cmd": "script_to_execute foo"
+    },
+    "bar": {
+      "device_affinity": int,
+      "cmd": "script_to_execute bar"
+    }
+  }
+}
 
 The JSON flaky steps file contains a list with step names which results should
 be ignored:
@@ -41,7 +46,9 @@ option:
   --device: the serial number to be passed to all adb commands.
 """
 
+import collections
 import datetime
+import json
 import logging
 import os
 import pickle
@@ -49,11 +56,20 @@ import sys
 import threading
 import time
 
+from pylib import cmd_helper
 from pylib import constants
 from pylib import forwarder
-from pylib import pexpect
 from pylib.base import base_test_result
 from pylib.base import base_test_runner
+
+
+def OutputJsonList(json_input, json_output):
+  with file(json_input, 'r') as i:
+    all_steps = json.load(i)
+  step_names = all_steps['steps'].keys()
+  with file(json_output, 'w') as o:
+    o.write(json.dumps(step_names))
+  return 0
 
 
 def PrintTestOutput(test_name):
@@ -84,7 +100,7 @@ def PrintTestOutput(test_name):
 def PrintSummary(test_names):
   logging.info('*' * 80)
   logging.info('Sharding summary')
-  total_time = 0
+  device_total_time = collections.defaultdict(int)
   for test_name in test_names:
     file_name = os.path.join(constants.PERF_OUTPUT_DIR, test_name)
     if not os.path.exists(file_name):
@@ -95,8 +111,10 @@ def PrintSummary(test_names):
     logging.info('%s : exit_code=%d in %d secs at %s',
                  result['name'], result['exit_code'], result['total_time'],
                  result['device'])
-    total_time += result['total_time']
-  logging.info('Total steps time: %d secs', total_time)
+    device_total_time[result['device']] += result['total_time']
+  for device, device_time in device_total_time.iteritems():
+    logging.info('Total for device %s : %d secs', device, device_time)
+  logging.info('Total steps time: %d secs', sum(device_total_time.values()))
 
 
 class _HeartBeatLogger(object):
@@ -131,17 +149,22 @@ class _HeartBeatLogger(object):
 
 
 class TestRunner(base_test_runner.BaseTestRunner):
-  def __init__(self, test_options, device, tests, flaky_tests):
+  def __init__(self, test_options, device, shard_index, max_shard, tests,
+      flaky_tests):
     """A TestRunner instance runs a perf test on a single device.
 
     Args:
       test_options: A PerfOptions object.
       device: Device to run the tests.
+      shard_index: the index of this device.
+      max_shards: the maximum shard index.
       tests: a dict mapping test_name to command.
       flaky_tests: a list of flaky test_name.
     """
     super(TestRunner, self).__init__(device, None, 'Release')
     self._options = test_options
+    self._shard_index = shard_index
+    self._max_shard = max_shard
     self._tests = tests
     self._flaky_tests = flaky_tests
 
@@ -164,6 +187,16 @@ class TestRunner(base_test_runner.BaseTestRunner):
                              result['name']), 'w') as f:
         f.write(pickle.dumps(result))
 
+  def _CheckDeviceAffinity(self, test_name):
+    """Returns True if test_name has affinity for this shard."""
+    affinity = (self._tests['steps'][test_name]['device_affinity'] %
+                self._max_shard)
+    if self._shard_index == affinity:
+      return True
+    logging.info('Skipping %s on %s (affinity is %s, device is %s)',
+                 test_name, self.device_serial, affinity, self._shard_index)
+    return False
+
   def _LaunchPerfTest(self, test_name):
     """Runs a perf test.
 
@@ -173,6 +206,9 @@ class TestRunner(base_test_runner.BaseTestRunner):
     Returns:
       A tuple containing (Output, base_test_result.ResultType)
     """
+    if not self._CheckDeviceAffinity(test_name):
+      return '', base_test_result.ResultType.PASS
+
     try:
       logging.warning('Unmapping device ports')
       forwarder.Forwarder.UnmapAllDevicePorts(self.device)
@@ -181,7 +217,8 @@ class TestRunner(base_test_runner.BaseTestRunner):
       logging.error('Exception when tearing down device %s', e)
 
     cmd = ('%s --device %s' %
-           (self._tests[test_name], self.device.old_interface.GetDevice()))
+           (self._tests['steps'][test_name]['cmd'],
+            self.device_serial))
     logging.info('%s : %s', test_name, cmd)
     start_time = datetime.datetime.now()
 
@@ -200,19 +237,18 @@ class TestRunner(base_test_runner.BaseTestRunner):
     cwd = os.path.abspath(constants.DIR_SOURCE_ROOT)
     if full_cmd.startswith('src/'):
       cwd = os.path.abspath(os.path.join(constants.DIR_SOURCE_ROOT, os.pardir))
-    output, exit_code = pexpect.run(
-        full_cmd, cwd=cwd,
-        withexitstatus=True, logfile=logfile, timeout=timeout,
-        env=os.environ)
-    if self._options.single_step:
-      # Stop the logger.
-      logfile.stop()
+    try:
+      exit_code, output = cmd_helper.GetCmdStatusAndOutputWithTimeout(
+          full_cmd, timeout, cwd=cwd, shell=True, logfile=logfile)
+    finally:
+      if self._options.single_step:
+        logfile.stop()
     end_time = datetime.datetime.now()
     if exit_code is None:
       exit_code = -1
     logging.info('%s : exit_code=%d in %d secs at %s',
                  test_name, exit_code, (end_time - start_time).seconds,
-                 self.device.old_interface.GetDevice())
+                 self.device_serial)
     result_type = base_test_result.ResultType.FAIL
     if exit_code == 0:
       result_type = base_test_result.ResultType.PASS
@@ -231,7 +267,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
         'actual_exit_code': actual_exit_code,
         'result_type': result_type,
         'total_time': (end_time - start_time).seconds,
-        'device': self.device.old_interface.GetDevice(),
+        'device': self.device_serial,
         'cmd': cmd,
     }
     self._SaveResult(persisted_result)

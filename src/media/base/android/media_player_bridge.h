@@ -49,7 +49,8 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
                     bool hide_url_log,
                     MediaPlayerManager* manager,
                     const RequestMediaResourcesCB& request_media_resources_cb,
-                    const ReleaseMediaResourcesCB& release_media_resources_cb);
+                    const ReleaseMediaResourcesCB& release_media_resources_cb,
+                    const GURL& frame_url);
   virtual ~MediaPlayerBridge();
 
   // Initialize this object and extract the metadata from the media.
@@ -175,6 +176,9 @@ class MEDIA_EXPORT MediaPlayerBridge : public MediaPlayerAndroid {
 
   // Whether player is currently using a surface.
   bool is_surface_in_use_;
+
+  // Volume of playback.
+  double volume_;
 
   // Weak pointer passed to |listener_| for callbacks.
   // NOTE: Weak pointers must be invalidated before all other member variables.

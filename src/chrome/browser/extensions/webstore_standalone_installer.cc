@@ -13,7 +13,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
 #include "url/gurl.h"
 
@@ -96,11 +98,14 @@ WebstoreStandaloneInstaller::CreateApproval() const {
 }
 
 void WebstoreStandaloneInstaller::OnWebstoreRequestFailure() {
+  OnWebStoreDataFetcherDone();
   CompleteInstall(kWebstoreRequestError);
 }
 
 void WebstoreStandaloneInstaller::OnWebstoreResponseParseSuccess(
     scoped_ptr<base::DictionaryValue> webstore_data) {
+  OnWebStoreDataFetcherDone();
+
   if (!CheckRequestorAlive()) {
     CompleteInstall(std::string());
     return;
@@ -181,6 +186,7 @@ void WebstoreStandaloneInstaller::OnWebstoreResponseParseSuccess(
 
 void WebstoreStandaloneInstaller::OnWebstoreResponseParseFailure(
     const std::string& error) {
+  OnWebStoreDataFetcherDone();
   CompleteInstall(error);
 }
 
@@ -210,9 +216,6 @@ void WebstoreStandaloneInstaller::OnWebstoreParseSuccess(
     ShowInstallUI();
     // Control flow finishes up in InstallUIProceed or InstallUIAbort.
   } else {
-    // Balanced in InstallUIAbort or indirectly in InstallUIProceed via
-    // OnExtensionInstallSuccess or OnExtensionInstallFailure.
-    AddRef();
     InstallUIProceed();
   }
 }
@@ -230,31 +233,33 @@ void WebstoreStandaloneInstaller::InstallUIProceed() {
     return;
   }
 
+  scoped_ptr<WebstoreInstaller::Approval> approval = CreateApproval();
+
   ExtensionService* extension_service =
       ExtensionSystem::Get(profile_)->extension_service();
   const Extension* extension =
       extension_service->GetExtensionById(id_, true /* include disabled */);
   if (extension) {
     std::string install_result;  // Empty string for install success.
-    if (!extension_service->IsExtensionEnabled(id_)) {
-      if (!ExtensionPrefs::Get(profile_)->IsExtensionBlacklisted(id_)) {
-        // If the extension is installed but disabled, and not blacklisted,
-        // enable it.
-        extension_service->EnableExtension(id_);
-      } else {  // Don't install a blacklisted extension.
-        install_result = kExtensionIsBlacklisted;
-      }
-    } else if (!extension->is_ephemeral()) {
-      // else extension is installed and enabled; no work to be done.
-      CompleteInstall(install_result);
-      return;
-    }
 
-    // TODO(tmdiep): Optimize installation of ephemeral apps. For now we just
-    // reinstall the app.
+    if (ExtensionPrefs::Get(profile_)->IsExtensionBlacklisted(id_)) {
+      // Don't install a blacklisted extension.
+      install_result = kExtensionIsBlacklisted;
+    } else if (util::IsEphemeralApp(extension->id(), profile_) &&
+               !approval->is_ephemeral) {
+      // If the target extension has already been installed ephemerally, it can
+      // be promoted to a regular installed extension and downloading from the
+      // Web Store is not necessary.
+      extension_service->PromoteEphemeralApp(extension, false);
+    } else if (!extension_service->IsExtensionEnabled(id_)) {
+      // If the extension is installed but disabled, and not blacklisted,
+      // enable it.
+      extension_service->EnableExtension(id_);
+    }  // else extension is installed and enabled; no work to be done.
+
+    CompleteInstall(install_result);
+    return;
   }
-
-  scoped_ptr<WebstoreInstaller::Approval> approval = CreateApproval();
 
   scoped_refptr<WebstoreInstaller> installer = new WebstoreInstaller(
       profile_,
@@ -268,14 +273,12 @@ void WebstoreStandaloneInstaller::InstallUIProceed() {
 
 void WebstoreStandaloneInstaller::InstallUIAbort(bool user_initiated) {
   CompleteInstall(kUserCancelledError);
-  Release();  // Balanced in ShowInstallUI.
 }
 
 void WebstoreStandaloneInstaller::OnExtensionInstallSuccess(
     const std::string& id) {
   CHECK_EQ(id_, id);
   CompleteInstall(std::string());
-  Release();  // Balanced in ShowInstallUI.
 }
 
 void WebstoreStandaloneInstaller::OnExtensionInstallFailure(
@@ -284,7 +287,6 @@ void WebstoreStandaloneInstaller::OnExtensionInstallFailure(
     WebstoreInstaller::FailureReason cancelled) {
   CHECK_EQ(id_, id);
   CompleteInstall(error);
-  Release();  // Balanced in ShowInstallUI.
 }
 
 void WebstoreStandaloneInstaller::AbortInstall() {
@@ -306,8 +308,7 @@ void WebstoreStandaloneInstaller::CompleteInstall(const std::string& error) {
   Release();  // Matches the AddRef in BeginInstall.
 }
 
-void
-WebstoreStandaloneInstaller::ShowInstallUI() {
+void WebstoreStandaloneInstaller::ShowInstallUI() {
   std::string error;
   localized_extension_for_display_ =
       ExtensionInstallPrompt::GetLocalizedExtensionForDisplay(
@@ -322,14 +323,18 @@ WebstoreStandaloneInstaller::ShowInstallUI() {
     return;
   }
 
-  // Keep this alive as long as the install prompt lives.
-  // Balanced in InstallUIAbort or indirectly in InstallUIProceed via
-  // OnExtensionInstallSuccess or OnExtensionInstallFailure.
-  AddRef();
-
   install_ui_ = CreateInstallUI();
   install_ui_->ConfirmStandaloneInstall(
-      this, localized_extension_for_display_.get(), &icon_, *install_prompt_);
+      this, localized_extension_for_display_.get(), &icon_, install_prompt_);
+}
+
+void WebstoreStandaloneInstaller::OnWebStoreDataFetcherDone() {
+  // An instance of this class is passed in as a delegate for the
+  // WebstoreInstallHelper, ExtensionInstallPrompt and WebstoreInstaller, and
+  // therefore needs to remain alive until they are done. Clear the webstore
+  // data fetcher to avoid calling Release in AbortInstall while any of these
+  // operations are in progress.
+  webstore_data_fetcher_.reset();
 }
 
 }  // namespace extensions

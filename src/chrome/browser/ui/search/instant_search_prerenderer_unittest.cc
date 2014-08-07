@@ -59,7 +59,8 @@ class DummyPrerenderContents : public PrerenderContents {
   virtual void StartPrerendering(
       int ALLOW_UNUSED creator_child_id,
       const gfx::Size& ALLOW_UNUSED size,
-      content::SessionStorageNamespace* session_storage_namespace) OVERRIDE;
+      content::SessionStorageNamespace* session_storage_namespace,
+      net::URLRequestContextGetter* request_context) OVERRIDE;
   virtual bool GetChildId(int* child_id) const OVERRIDE;
   virtual bool GetRouteId(int* route_id) const OVERRIDE;
 
@@ -115,7 +116,8 @@ DummyPrerenderContents::DummyPrerenderContents(
 void DummyPrerenderContents::StartPrerendering(
     int ALLOW_UNUSED creator_child_id,
     const gfx::Size& ALLOW_UNUSED size,
-    content::SessionStorageNamespace* session_storage_namespace) {
+    content::SessionStorageNamespace* session_storage_namespace,
+    net::URLRequestContextGetter* request_context) {
   prerender_contents_.reset(content::WebContents::CreateWithSessionStorage(
       content::WebContents::CreateParams(profile_),
       session_storage_namespace_map_));
@@ -171,7 +173,7 @@ class InstantSearchPrerendererTest : public InstantUnitTestBase {
 
   void Init(bool prerender_search_results_base_page,
             bool call_did_finish_load) {
-    AddTab(browser(), GURL(content::kAboutBlankURL));
+    AddTab(browser(), GURL(url::kAboutBlankURL));
 
     content::SessionStorageNamespaceMap session_storage_namespace_map;
     session_storage_namespace_map[std::string()] =
@@ -181,7 +183,8 @@ class InstantSearchPrerendererTest : public InstantUnitTestBase {
         SetPrerenderContentsFactory(
             new DummyPrerenderContentsFactory(call_did_finish_load,
                                               session_storage_namespace_map));
-
+    PrerenderManagerFactory::GetForProfile(browser()->profile())->
+        OnCookieStoreLoaded();
     if (prerender_search_results_base_page) {
       InstantSearchPrerenderer* prerenderer = GetInstantSearchPrerenderer();
       prerenderer->Init(session_storage_namespace_map, gfx::Size(640, 480));
@@ -301,7 +304,7 @@ TEST_F(InstantSearchPrerendererTest, CancelPrerenderRequestOnTabChangeEvent) {
   EXPECT_NE(static_cast<PrerenderHandle*>(NULL), prerender_handle());
 
   // Add a new tab to deactivate the current tab.
-  AddTab(browser(), GURL(content::kAboutBlankURL));
+  AddTab(browser(), GURL(url::kAboutBlankURL));
   EXPECT_EQ(2, browser()->tab_strip_model()->count());
 
   // Make sure the pending prerender request is cancelled.
@@ -321,7 +324,7 @@ TEST_F(InstantSearchPrerendererTest, PrerenderingAllowed) {
   Init(true, true);
   InstantSearchPrerenderer* prerenderer = GetInstantSearchPrerenderer();
   content::WebContents* active_tab = GetActiveWebContents();
-  EXPECT_EQ(GURL(content::kAboutBlankURL), active_tab->GetURL());
+  EXPECT_EQ(GURL(url::kAboutBlankURL), active_tab->GetURL());
 
   // Allow prerendering only for search type AutocompleteMatch suggestions.
   AutocompleteMatch search_type_match(NULL, 1100, false,
@@ -404,6 +407,23 @@ TEST_F(InstantSearchPrerendererTest,
                                             false));
   EXPECT_NE(GetPrerenderURL(), GetActiveWebContents()->GetURL());
   EXPECT_EQ(url, GetActiveWebContents()->GetURL());
+  EXPECT_EQ(static_cast<PrerenderHandle*>(NULL), prerender_handle());
+}
+
+TEST_F(InstantSearchPrerendererTest,
+       CancelPrerenderRequest_UnsupportedDispositions) {
+  PrerenderSearchQuery(ASCIIToUTF16("pen"));
+
+  // Open a search results page. Make sure the InstantSearchPrerenderer cancels
+  // the active prerender request for unsupported window dispositions.
+  GURL url("https://www.google.com/alt#quux=pen&strk");
+  browser()->OpenURL(content::OpenURLParams(url, Referrer(), NEW_FOREGROUND_TAB,
+                                            content::PAGE_TRANSITION_TYPED,
+                                            false));
+  content::WebContents* new_tab =
+      browser()->tab_strip_model()->GetWebContentsAt(1);
+  EXPECT_NE(GetPrerenderURL(), new_tab->GetURL());
+  EXPECT_EQ(url, new_tab->GetURL());
   EXPECT_EQ(static_cast<PrerenderHandle*>(NULL), prerender_handle());
 }
 

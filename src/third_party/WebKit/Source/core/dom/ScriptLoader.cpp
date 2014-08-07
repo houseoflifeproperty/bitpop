@@ -24,10 +24,10 @@
 #include "config.h"
 #include "core/dom/ScriptLoader.h"
 
-#include "HTMLNames.h"
-#include "SVGNames.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/ScriptSourceCode.h"
+#include "core/HTMLNames.h"
+#include "core/SVGNames.h"
 #include "core/dom/Document.h"
 #include "core/events/Event.h"
 #include "core/dom/IgnoreDestructiveWriteCountIncrementer.h"
@@ -296,8 +296,8 @@ void ScriptLoader::executeScript(const ScriptSourceCode& sourceCode)
     if (sourceCode.isEmpty())
         return;
 
-    RefPtr<Document> elementDocument(m_element->document());
-    RefPtr<Document> contextDocument = elementDocument->contextDocument().get();
+    RefPtrWillBeRawPtr<Document> elementDocument(m_element->document());
+    RefPtrWillBeRawPtr<Document> contextDocument = elementDocument->contextDocument().get();
     if (!contextDocument)
         return;
 
@@ -367,8 +367,8 @@ void ScriptLoader::notifyFinished(Resource* resource)
 {
     ASSERT(!m_willBeParserExecuted);
 
-    RefPtr<Document> elementDocument(m_element->document());
-    RefPtr<Document> contextDocument = elementDocument->contextDocument().get();
+    RefPtrWillBeRawPtr<Document> elementDocument(m_element->document());
+    RefPtrWillBeRawPtr<Document> contextDocument = elementDocument->contextDocument().get();
     if (!contextDocument)
         return;
 

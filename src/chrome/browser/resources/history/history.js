@@ -996,6 +996,10 @@ HistoryView.prototype.positionNotificationBar = function() {
  * @private
  */
 HistoryView.prototype.clear_ = function() {
+  var alertOverlay = $('alertOverlay');
+  if (alertOverlay && alertOverlay.classList.contains('showing'))
+    hideConfirmationOverlay();
+
   this.resultDiv_.textContent = '';
 
   this.currentVisits_.forEach(function(visit) {
@@ -1571,8 +1575,7 @@ function load() {
     $('filter-controls').hidden = false;
   }
 
-  var title = loadTimeData.getString('title');
-  uber.invokeMethodOnParent('setTitle', {title: title});
+  uber.setTitle(loadTimeData.getString('title'));
 
   // Adjust the position of the notification bar when the window size changes.
   window.addEventListener('resize',

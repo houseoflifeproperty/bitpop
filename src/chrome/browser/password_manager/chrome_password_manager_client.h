@@ -53,17 +53,16 @@ class ChromePasswordManagerClient
   virtual base::FieldTrial::Probability GetProbabilityForExperiment(
       const std::string& experiment_name) OVERRIDE;
   virtual bool IsPasswordSyncEnabled() OVERRIDE;
-  virtual void SetLogger(password_manager::PasswordManagerLogger* logger)
-      OVERRIDE;
+  virtual void OnLogRouterAvailabilityChanged(bool router_can_be_used) OVERRIDE;
   virtual void LogSavePasswordProgress(const std::string& text) OVERRIDE;
   virtual bool IsLoggingActive() const OVERRIDE;
 
   // Hides any visible generation UI.
   void HidePasswordGenerationPopup();
 
-  static void CreateForWebContentsWithAutofillManagerDelegate(
+  static void CreateForWebContentsWithAutofillClient(
       content::WebContents* contents,
-      autofill::AutofillManagerDelegate* delegate);
+      autofill::AutofillClient* autofill_client);
 
   // Convenience method to allow //chrome code easy access to a PasswordManager
   // from a WebContents instance.
@@ -78,10 +77,13 @@ class ChromePasswordManagerClient
   // Observer for PasswordGenerationPopup events. Used for testing.
   void SetTestObserver(autofill::PasswordGenerationPopupObserver* observer);
 
+  // Returns true if the bubble UI is enabled, and false if we're still using
+  // the sad old Infobar UI.
+  static bool IsTheHotNewBubbleUIEnabled();
+
  private:
-  ChromePasswordManagerClient(
-      content::WebContents* web_contents,
-      autofill::AutofillManagerDelegate* autofill_manager_delegate);
+  ChromePasswordManagerClient(content::WebContents* web_contents,
+                              autofill::AutofillClient* autofill_client);
   friend class content::WebContentsUserData<ChromePasswordManagerClient>;
 
   // content::WebContentsObserver overrides.
@@ -107,7 +109,11 @@ class ChromePasswordManagerClient
   void ShowPasswordEditingPopup(
       const gfx::RectF& bounds, const autofill::PasswordForm& form);
 
-  Profile* GetProfile();
+  // Sends a message to the renderer with the current value of
+  // |can_use_log_router_|.
+  void NotifyRendererOfLoggingAvailability();
+
+  Profile* const profile_;
 
   password_manager::ContentPasswordManagerDriver driver_;
 
@@ -121,10 +127,8 @@ class ChromePasswordManagerClient
   // Allows authentication callbacks to be destroyed when this client is gone.
   base::WeakPtrFactory<ChromePasswordManagerClient> weak_factory_;
 
-  // Points to an active logger instance to use for, e.g., reporting progress on
-  // saving passwords. If there is no active logger (most of the time), the
-  // pointer will be NULL.
-  password_manager::PasswordManagerLogger* logger_;
+  // True if |this| is registered with some LogRouter which can accept logs.
+  bool can_use_log_router_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromePasswordManagerClient);
 };

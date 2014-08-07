@@ -21,8 +21,6 @@ class SequencedTaskRunner;
 
 namespace drive {
 
-class FileCacheEntry;
-
 namespace internal {
 
 // Interface class used for getting the free disk space. Tests can inject an
@@ -45,8 +43,6 @@ class FileCache {
     FILE_OPERATION_COPY,
   };
 
-  typedef ResourceMetadataStorage::CacheEntryIterator Iterator;
-
   // |cache_file_directory| stores cached files.
   //
   // |blocking_task_runner| indicates the blocking worker pool for cache
@@ -67,13 +63,6 @@ class FileCache {
   //
   // Can be called on any thread.
   bool IsUnderFileCacheDirectory(const base::FilePath& path) const;
-
-  // Gets the cache entry for file corresponding to |id| and returns true if
-  // entry exists in cache map.
-  bool GetCacheEntry(const std::string& id, FileCacheEntry* entry);
-
-  // Returns an object to iterate over entries.
-  scoped_ptr<Iterator> GetIterator();
 
   // Frees up disk space to store a file with |num_bytes| size content, while
   // keeping cryptohome::kMinFreeSpaceInBytes bytes on the disk, if needed.
@@ -125,7 +114,7 @@ class FileCache {
   // Removes the specified cache entry and delete cache files if available.
   FileError Remove(const std::string& id);
 
-  // Removes all the files in the cache directory and cache entries in DB.
+  // Removes all the files in the cache directory.
   bool ClearAll();
 
   // Initializes the cache. Returns true on success.

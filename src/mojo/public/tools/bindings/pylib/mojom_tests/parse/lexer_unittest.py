@@ -63,16 +63,10 @@ class LexerTest(unittest.TestCase):
     # Clone all lexer instances from this one, since making a lexer is slow.
     self._zygote_lexer = lex.lex(mojom.parse.lexer.Lexer("my_file.mojom"))
 
-  def testValidSingleKeywords(self):
-    """Tests valid, single keywords."""
+  def testValidKeywords(self):
+    """Tests valid keywords."""
     self.assertEquals(self._SingleTokenForInput("handle"),
                       _MakeLexTokenForKeyword("handle"))
-    self.assertEquals(self._SingleTokenForInput("data_pipe_consumer"),
-                      _MakeLexTokenForKeyword("data_pipe_consumer"))
-    self.assertEquals(self._SingleTokenForInput("data_pipe_producer"),
-                      _MakeLexTokenForKeyword("data_pipe_producer"))
-    self.assertEquals(self._SingleTokenForInput("message_pipe"),
-                      _MakeLexTokenForKeyword("message_pipe"))
     self.assertEquals(self._SingleTokenForInput("import"),
                       _MakeLexTokenForKeyword("import"))
     self.assertEquals(self._SingleTokenForInput("module"),
@@ -83,17 +77,52 @@ class LexerTest(unittest.TestCase):
                       _MakeLexTokenForKeyword("interface"))
     self.assertEquals(self._SingleTokenForInput("enum"),
                       _MakeLexTokenForKeyword("enum"))
+    self.assertEquals(self._SingleTokenForInput("const"),
+                      _MakeLexTokenForKeyword("const"))
+    self.assertEquals(self._SingleTokenForInput("true"),
+                      _MakeLexTokenForKeyword("true"))
+    self.assertEquals(self._SingleTokenForInput("false"),
+                      _MakeLexTokenForKeyword("false"))
+    self.assertEquals(self._SingleTokenForInput("default"),
+                      _MakeLexTokenForKeyword("default"))
 
-  def testValidSingleTokens(self):
-    """Tests valid, single (non-keyword) tokens."""
-    self.assertEquals(self._SingleTokenForInput("asdf"),
-                      _MakeLexToken("NAME", "asdf"))
+  def testValidIdentifiers(self):
+    """Tests identifiers."""
+    self.assertEquals(self._SingleTokenForInput("abcd"),
+                      _MakeLexToken("NAME", "abcd"))
+    self.assertEquals(self._SingleTokenForInput("AbC_d012_"),
+                      _MakeLexToken("NAME", "AbC_d012_"))
+    self.assertEquals(self._SingleTokenForInput("_0123"),
+                      _MakeLexToken("NAME", "_0123"))
+
+  def testInvalidIdentifiers(self):
+    with self.assertRaisesRegexp(
+        mojom.parse.lexer.LexError,
+        r"^my_file\.mojom:1: Error: Illegal character '\$'$"):
+      self._TokensForInput("$abc")
+    with self.assertRaisesRegexp(
+        mojom.parse.lexer.LexError,
+        r"^my_file\.mojom:1: Error: Illegal character '\$'$"):
+      self._TokensForInput("a$bc")
+
+  def testDecimalIntegerConstants(self):
+    self.assertEquals(self._SingleTokenForInput("0"),
+                      _MakeLexToken("INT_CONST_DEC", "0"))
+    self.assertEquals(self._SingleTokenForInput("1"),
+                      _MakeLexToken("INT_CONST_DEC", "1"))
+    self.assertEquals(self._SingleTokenForInput("123"),
+                      _MakeLexToken("INT_CONST_DEC", "123"))
+    self.assertEquals(self._SingleTokenForInput("10"),
+                      _MakeLexToken("INT_CONST_DEC", "10"))
+
+  def testValidTokens(self):
+    """Tests valid tokens (which aren't tested elsewhere)."""
+    # Keywords tested in |testValidKeywords|.
+    # NAME tested in |testValidIdentifiers|.
     self.assertEquals(self._SingleTokenForInput("@123"),
                       _MakeLexToken("ORDINAL", "@123"))
     self.assertEquals(self._SingleTokenForInput("456"),
                       _MakeLexToken("INT_CONST_DEC", "456"))
-    self.assertEquals(self._SingleTokenForInput("0765"),
-                      _MakeLexToken("INT_CONST_OCT", "0765"))
     self.assertEquals(self._SingleTokenForInput("0x01aB2eF3"),
                       _MakeLexToken("INT_CONST_HEX", "0x01aB2eF3"))
     self.assertEquals(self._SingleTokenForInput("123.456"),
@@ -106,22 +135,8 @@ class LexerTest(unittest.TestCase):
                       _MakeLexToken("PLUS", "+"))
     self.assertEquals(self._SingleTokenForInput("-"),
                       _MakeLexToken("MINUS", "-"))
-    self.assertEquals(self._SingleTokenForInput("*"),
-                      _MakeLexToken("TIMES", "*"))
-    self.assertEquals(self._SingleTokenForInput("/"),
-                      _MakeLexToken("DIVIDE", "/"))
-    self.assertEquals(self._SingleTokenForInput("%"),
-                      _MakeLexToken("MOD", "%"))
-    self.assertEquals(self._SingleTokenForInput("|"),
-                      _MakeLexToken("OR", "|"))
-    self.assertEquals(self._SingleTokenForInput("~"),
-                      _MakeLexToken("NOT", "~"))
-    self.assertEquals(self._SingleTokenForInput("^"),
-                      _MakeLexToken("XOR", "^"))
-    self.assertEquals(self._SingleTokenForInput("<<"),
-                      _MakeLexToken("LSHIFT", "<<"))
-    self.assertEquals(self._SingleTokenForInput(">>"),
-                      _MakeLexToken("RSHIFT", ">>"))
+    self.assertEquals(self._SingleTokenForInput("&"),
+                      _MakeLexToken("AMP", "&"))
     self.assertEquals(self._SingleTokenForInput("="),
                       _MakeLexToken("EQUALS", "="))
     self.assertEquals(self._SingleTokenForInput("=>"),

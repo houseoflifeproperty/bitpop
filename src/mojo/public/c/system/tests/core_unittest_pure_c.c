@@ -42,7 +42,7 @@ const char* MinimalCTest(void) {
   // at the top. (MSVS 2013 is more reasonable.)
   MojoTimeTicks ticks;
   MojoHandle handle0, handle1;
-  MojoWaitFlags wait_flags;
+  MojoHandleSignals signals;
   const char kHello[] = "hello";
   char buffer[200] = { 0 };
   uint32_t num_bytes;
@@ -54,22 +54,22 @@ const char* MinimalCTest(void) {
   EXPECT_NE(MOJO_RESULT_OK, MojoClose(handle0));
 
   EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-            MojoWait(handle0, MOJO_WAIT_FLAG_EVERYTHING,
+            MojoWait(handle0, ~MOJO_HANDLE_SIGNAL_NONE,
                      MOJO_DEADLINE_INDEFINITE));
 
   handle1 = MOJO_HANDLE_INVALID;
-  EXPECT_EQ(MOJO_RESULT_OK, MojoCreateMessagePipe(&handle0, &handle1));
+  EXPECT_EQ(MOJO_RESULT_OK, MojoCreateMessagePipe(NULL, &handle0, &handle1));
 
-  wait_flags = MOJO_WAIT_FLAG_READABLE;
+  signals = MOJO_HANDLE_SIGNAL_READABLE;
   EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED,
-            MojoWaitMany(&handle0, &wait_flags, 1, 1));
+            MojoWaitMany(&handle0, &signals, 1, 1));
 
   EXPECT_EQ(MOJO_RESULT_OK,
             MojoWriteMessage(handle0, kHello, (uint32_t) sizeof(kHello), NULL,
                              0u, MOJO_WRITE_DATA_FLAG_NONE));
 
   EXPECT_EQ(MOJO_RESULT_OK,
-            MojoWait(handle1, MOJO_WAIT_FLAG_READABLE,
+            MojoWait(handle1, MOJO_HANDLE_SIGNAL_READABLE,
                      MOJO_DEADLINE_INDEFINITE));
 
   num_bytes = (uint32_t) sizeof(buffer);

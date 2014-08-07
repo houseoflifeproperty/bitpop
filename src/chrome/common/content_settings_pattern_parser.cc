@@ -70,10 +70,10 @@ void PatternParser::Parse(const std::string& pattern_spec,
 
   // Test if a scheme pattern is in the spec.
   current_pos = pattern_spec.find(
-      std::string(content::kStandardSchemeSeparator), start);
+      std::string(url::kStandardSchemeSeparator), start);
   if (current_pos != std::string::npos) {
     scheme_component = Component(start, current_pos);
-    start = current_pos + strlen(content::kStandardSchemeSeparator);
+    start = current_pos + strlen(url::kStandardSchemeSeparator);
     current_pos = start;
   } else {
     current_pos = start;
@@ -173,7 +173,7 @@ void PatternParser::Parse(const std::string& pattern_spec,
     }
   } else {
     if (scheme != std::string(extensions::kExtensionScheme) &&
-        scheme != std::string(content::kFileScheme))
+        scheme != std::string(url::kFileScheme))
       builder->WithPortWildcard();
   }
 
@@ -200,9 +200,9 @@ std::string PatternParser::ToString(
 
   std::string str;
   if (!parts.is_scheme_wildcard)
-    str += parts.scheme + content::kStandardSchemeSeparator;
+    str += parts.scheme + url::kStandardSchemeSeparator;
 
-  if (parts.scheme == content::kFileScheme) {
+  if (parts.scheme == url::kFileScheme) {
     if (parts.is_path_wildcard)
       return str + kUrlPathSeparator + kPathWildcard;
     else

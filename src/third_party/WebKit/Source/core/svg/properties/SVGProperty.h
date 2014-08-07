@@ -32,6 +32,7 @@
 #define SVGProperty_h
 
 #include "core/svg/properties/SVGPropertyInfo.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -40,11 +41,10 @@
 namespace WebCore {
 
 class ExceptionState;
-class QualifiedName;
 class SVGElement;
 class SVGAnimationElement;
 
-class SVGPropertyBase : public RefCounted<SVGPropertyBase> {
+class SVGPropertyBase : public RefCountedWillBeRefCountedGarbageCollected<SVGPropertyBase> {
     WTF_MAKE_NONCOPYABLE(SVGPropertyBase);
 
 public:
@@ -63,7 +63,7 @@ public:
     virtual String valueAsString() const = 0;
 
     // FIXME: remove below and just have this inherit AnimatableValue in WebAnimations transition.
-    virtual void add(PassRefPtr<SVGPropertyBase>, SVGElement*) = 0;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) = 0;
     virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) = 0;
     virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement*) = 0;
 
@@ -85,18 +85,22 @@ public:
         m_ownerList = ownerList;
     }
 
+    virtual void trace(Visitor* visitor)
+    {
+        visitor->trace(m_ownerList);
+    }
+
 protected:
     explicit SVGPropertyBase(AnimatedPropertyType type)
         : m_type(type)
-        , m_ownerList(0)
+        , m_ownerList(nullptr)
     {
     }
 
 private:
     const AnimatedPropertyType m_type;
 
-    // FIXME: oilpan: This is kept as a raw ptr to break reference cycle. Should be Member in oilpan.
-    SVGPropertyBase* m_ownerList;
+    RawPtrWillBeMember<SVGPropertyBase> m_ownerList;
 };
 
 }

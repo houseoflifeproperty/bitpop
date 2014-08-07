@@ -29,7 +29,6 @@
 #include "content/renderer/pepper/ppb_video_decoder_impl.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
 #include "content/renderer/render_view_impl.h"
-#include "ppapi/c/dev/ppb_alarms_dev.h"
 #include "ppapi/c/dev/ppb_audio_input_dev.h"
 #include "ppapi/c/dev/ppb_buffer_dev.h"
 #include "ppapi/c/dev/ppb_char_set_dev.h"
@@ -59,6 +58,8 @@
 #include "ppapi/c/ppb_audio.h"
 #include "ppapi/c/ppb_audio_buffer.h"
 #include "ppapi/c/ppb_audio_config.h"
+#include "ppapi/c/ppb_compositor.h"
+#include "ppapi/c/ppb_compositor_layer.h"
 #include "ppapi/c/ppb_console.h"
 #include "ppapi/c/ppb_core.h"
 #include "ppapi/c/ppb_file_io.h"
@@ -91,6 +92,7 @@
 #include "ppapi/c/ppb_var_array.h"
 #include "ppapi/c/ppb_var_array_buffer.h"
 #include "ppapi/c/ppb_var_dictionary.h"
+#include "ppapi/c/ppb_video_decoder.h"
 #include "ppapi/c/ppb_video_frame.h"
 #include "ppapi/c/ppb_view.h"
 #include "ppapi/c/ppp.h"
@@ -110,6 +112,7 @@
 #include "ppapi/c/private/ppb_flash_message_loop.h"
 #include "ppapi/c/private/ppb_flash_print.h"
 #include "ppapi/c/private/ppb_host_resolver_private.h"
+#include "ppapi/c/private/ppb_input_event_private.h"
 #include "ppapi/c/private/ppb_instance_private.h"
 #include "ppapi/c/private/ppb_isolated_file_system_private.h"
 #include "ppapi/c/private/ppb_output_protection_private.h"
@@ -396,7 +399,7 @@ PluginModule::PluginModule(const std::string& name,
       library_(NULL),
       name_(name),
       path_(path),
-      permissions_(perms),
+      permissions_(ppapi::PpapiPermissions::GetForCommandLine(perms.GetBits())),
       reserve_instance_id_(NULL) {
   // Ensure the globals object is created.
   if (!host_globals)
@@ -645,7 +648,9 @@ bool PluginModule::InitializeModule(
   DCHECK(entry_points.initialize_module != NULL);
   int retval = entry_points.initialize_module(pp_module(), &GetInterface);
   if (retval != 0) {
+#if !defined(DISABLE_NACL)
     LOG(WARNING) << "PPP_InitializeModule returned failure " << retval;
+#endif  // !defined(DISABLE_NACL)
     return false;
   }
   return true;
@@ -684,9 +689,6 @@ scoped_refptr<PluginModule> PluginModule::Create(
     return scoped_refptr<PluginModule>();
   }
 
-  ppapi::PpapiPermissions permissions =
-      ppapi::PpapiPermissions::GetForCommandLine(info->permissions);
-
   // Out of process: have the browser start the plugin process for us.
   IPC::ChannelHandle channel_handle;
   base::ProcessId peer_pid;
@@ -697,6 +699,8 @@ scoped_refptr<PluginModule> PluginModule::Create(
     // Couldn't be initialized.
     return scoped_refptr<PluginModule>();
   }
+
+  ppapi::PpapiPermissions permissions(info->permissions);
 
   // AddLiveModule must be called before any early returns since the
   // module's destructor will remove itself.

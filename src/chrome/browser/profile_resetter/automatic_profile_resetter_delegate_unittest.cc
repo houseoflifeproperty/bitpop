@@ -20,8 +20,9 @@
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service_unittest.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_service_test_base.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/profile_resetter/brandcoded_default_settings.h"
 #include "chrome/browser/profile_resetter/profile_reset_global_error.h"
 #include "chrome/browser/search_engines/default_search_manager.h"
@@ -161,14 +162,14 @@ void ServicePendingBrancodedConfigFetch(net::TestURLFetcher* fetcher,
 // ExtensionServiceTestBase sets up a TestingProfile with the ExtensionService,
 // we then add the TemplateURLService, so the ProfileResetter can be exercised.
 class AutomaticProfileResetterDelegateTest
-    : public ExtensionServiceTestBase,
+    : public extensions::ExtensionServiceTestBase,
       public TemplateURLServiceTestUtilBase {
  protected:
   AutomaticProfileResetterDelegateTest() {}
   virtual ~AutomaticProfileResetterDelegateTest() {}
 
   virtual void SetUp() OVERRIDE {
-    ExtensionServiceTestBase::SetUp();
+    extensions::ExtensionServiceTestBase::SetUp();
     ExtensionServiceInitParams params = CreateDefaultInitParams();
     params.pref_file.clear();  // Prescribes a TestingPrefService to be created.
     InitializeExtensionService(params);
@@ -179,7 +180,7 @@ class AutomaticProfileResetterDelegateTest
 
   virtual void TearDown() OVERRIDE {
     resetter_delegate_.reset();
-    ExtensionServiceTestBase::TearDown();
+    extensions::ExtensionServiceTestBase::TearDown();
   }
 
   scoped_ptr<TemplateURL> CreateTestTemplateURL() {
@@ -205,7 +206,7 @@ class AutomaticProfileResetterDelegateTest
     data.input_encodings.push_back("UTF-8");
     data.safe_for_autoreplace = true;
 
-    return scoped_ptr<TemplateURL>(new TemplateURL(profile(), data));
+    return scoped_ptr<TemplateURL>(new TemplateURL(data));
   }
 
   void ExpectNoPendingBrandcodedConfigFetch() {
@@ -441,7 +442,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
 
 TEST_F(AutomaticProfileResetterDelegateTest,
        FetchAndWaitOnDefaultSettingsVanilla) {
-  google_util::BrandForTesting scoped_brand_for_testing((std::string()));
+  google_brand::BrandForTesting scoped_brand_for_testing((std::string()));
 
   // Expect ready_callback to be called just after empty brandcoded settings
   // are loaded, given this is a vanilla build. Fail if it is not called, or
@@ -473,7 +474,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
 
 TEST_F(AutomaticProfileResetterDelegateTest,
        FetchAndWaitOnDefaultSettingsBranded) {
-  google_util::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
+  google_brand::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
 
   // Expect ready_callback to be called just after the brandcoded settings are
   // downloaded. Fail if it is not called, or called too early.
@@ -506,7 +507,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
 
 TEST_F(AutomaticProfileResetterDelegateTest,
        FetchAndWaitOnDefaultSettingsBrandedFailure) {
-  google_util::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
+  google_brand::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
 
   // Expect ready_callback to be called just after the brandcoded settings have
   // failed to download. Fail if it is not called, or called too early.
@@ -532,7 +533,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
 }
 
 TEST_F(AutomaticProfileResetterDelegateTest, TriggerReset) {
-  google_util::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
+  google_brand::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
 
   PrefService* prefs = profile()->GetPrefs();
   DCHECK(prefs);
@@ -551,7 +552,7 @@ TEST_F(AutomaticProfileResetterDelegateTest, TriggerReset) {
 
 TEST_F(AutomaticProfileResetterDelegateTest,
        TriggerResetWithDefaultSettingsAlreadyLoaded) {
-  google_util::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
+  google_brand::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
 
   PrefService* prefs = profile()->GetPrefs();
   DCHECK(prefs);
@@ -573,7 +574,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
 
 TEST_F(AutomaticProfileResetterDelegateTest,
        TriggerResetAndSendFeedback) {
-  google_util::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
+  google_brand::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
 
   PrefService* prefs = profile()->GetPrefs();
   DCHECK(prefs);

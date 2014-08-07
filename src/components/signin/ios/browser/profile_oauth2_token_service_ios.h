@@ -23,7 +23,7 @@ class ProfileOAuth2TokenServiceIOSProvider;
 // See |ProfileOAuth2TokenService| for usage details.
 //
 // Note: Requests should be started from the UI thread. To start a
-// request from aother thread, please use ProfileOAuth2TokenServiceRequest.
+// request from aother thread, please use OAuth2TokenServiceRequest.
 class ProfileOAuth2TokenServiceIOS : public MutableProfileOAuth2TokenService {
  public:
   ProfileOAuth2TokenServiceIOS();
@@ -114,6 +114,7 @@ class ProfileOAuth2TokenServiceIOS : public MutableProfileOAuth2TokenService {
 
     // SigninErrorController::AuthStatusProvider implementation.
     virtual std::string GetAccountId() const OVERRIDE;
+    virtual std::string GetUsername() const OVERRIDE;
     virtual GoogleServiceAuthError GetAuthStatus() const OVERRIDE;
 
    private:

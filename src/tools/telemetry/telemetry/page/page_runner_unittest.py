@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -136,10 +136,10 @@ class PageRunnerTests(unittest.TestCase):
 
     class CrashyMeasurement(page_measurement.PageMeasurement):
       has_crashed = False
-      def MeasurePage(self, *_):
+      def MeasurePage(self, _, tab, __):
         if not self.has_crashed:
           self.has_crashed = True
-          raise exceptions.BrowserGoneException()
+          raise exceptions.BrowserGoneException(tab.browser)
 
     options = options_for_unittests.GetCopy()
     options.output_format = 'csv'
@@ -234,8 +234,8 @@ class PageRunnerTests(unittest.TestCase):
       self.assertEquals(0, len(results.failures))
       with open(output_file) as f:
         stdout = f.read()
-      self.assertIn('RESULT metric_by_url: blank.html= [1,3] unit', stdout)
-      self.assertIn('RESULT metric_by_url: green_rect.html= [2,4] unit', stdout)
+      self.assertIn('RESULT metric: blank.html= [1,3] unit', stdout)
+      self.assertIn('RESULT metric: green_rect.html= [2,4] unit', stdout)
       self.assertIn('*RESULT metric: metric= [1,2,3,4] unit', stdout)
     finally:
       results._output_stream.close()  # pylint: disable=W0212
@@ -426,7 +426,7 @@ class PageRunnerTests(unittest.TestCase):
         self.did_call_clean_up = False
 
       def ValidatePage(self, *_):
-        raise Exception('Intentional failure')
+        raise exceptions.IntentionalException
 
       def CleanUpAfterPage(self, page, tab):
         self.did_call_clean_up = True
@@ -438,3 +438,86 @@ class PageRunnerTests(unittest.TestCase):
     SetUpPageRunnerArguments(options)
     page_runner.Run(test, ps, expectations, options)
     assert test.did_call_clean_up
+
+  # Ensure skipping the test if page cannot be run on the browser
+  def testPageCannotRunOnBrowser(self):
+    ps = page_set.PageSet()
+    expectations = test_expectations.TestExpectations()
+
+    class PageThatCannotRunOnBrowser(page_module.Page):
+
+      def __init__(self):
+        super(PageThatCannotRunOnBrowser, self).__init__(
+            url='file://blank.html', page_set=ps,
+            base_dir=util.GetUnittestDataDir())
+
+      def CanRunOnBrowser(self, _):
+        return False
+
+      def ValidatePage(self, _):
+        pass
+
+    class Test(page_test.PageTest):
+      def __init__(self, *args, **kwargs):
+        super(Test, self).__init__(*args, **kwargs)
+        self.will_navigate_to_page_called = False
+
+      def ValidatePage(self, *args):
+        pass
+
+      def WillNavigateToPage(self, _1, _2):
+        self.will_navigate_to_page_called = True
+
+    test = Test()
+    options = options_for_unittests.GetCopy()
+    options.output_format = 'none'
+    SetUpPageRunnerArguments(options)
+    results = page_runner.Run(test, ps, expectations, options)
+    self.assertFalse(test.will_navigate_to_page_called)
+    self.assertEquals(0, len(results.successes))
+    self.assertEquals(0, len(results.failures))
+    self.assertEquals(0, len(results.errors))
+
+  def TestUseLiveSitesFlag(self, options, expect_from_archive):
+    ps = page_set.PageSet(
+      file_path=util.GetUnittestDataDir(),
+      archive_data_file='data/archive_blank.json')
+    ps.pages.append(page_module.Page(
+      'file://blank.html', ps, base_dir=ps.base_dir))
+    expectations = test_expectations.TestExpectations()
+
+    class ArchiveTest(page_measurement.PageMeasurement):
+      def __init__(self):
+        super(ArchiveTest, self).__init__()
+        self.is_page_from_archive = False
+        self.archive_path_exist = True
+
+      def WillNavigateToPage(self, page, tab):
+        self.archive_path_exist = (page.archive_path
+                                   and os.path.isfile(page.archive_path))
+        self.is_page_from_archive = (
+          tab.browser._wpr_server is not None) # pylint: disable=W0212
+
+      def MeasurePage(self, _, __, results):
+        pass
+
+    test = ArchiveTest()
+    page_runner.Run(test, ps, expectations, options)
+    if expect_from_archive and not test.archive_path_exist:
+      logging.warning('archive path did not exist, asserting that page '
+                      'is from archive is skipped.')
+      return
+    self.assertEquals(expect_from_archive, test.is_page_from_archive)
+
+  def testUseLiveSitesFlagSet(self):
+    options = options_for_unittests.GetCopy()
+    options.output_format = 'none'
+    options.use_live_sites = True
+    SetUpPageRunnerArguments(options)
+    self.TestUseLiveSitesFlag(options, expect_from_archive=False)
+
+  def testUseLiveSitesFlagUnset(self):
+    options = options_for_unittests.GetCopy()
+    options.output_format = 'none'
+    SetUpPageRunnerArguments(options)
+    self.TestUseLiveSitesFlag(options, expect_from_archive=True)

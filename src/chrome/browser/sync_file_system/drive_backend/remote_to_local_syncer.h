@@ -24,9 +24,9 @@ class DriveServiceInterface;
 }
 
 namespace google_apis {
+class FileList;
 class FileResource;
 class ResourceEntry;
-class ResourceList;
 }
 
 namespace webkit_blob {
@@ -108,7 +108,7 @@ class RemoteToLocalSyncer : public ExclusiveTask {
   void HandleMissingRemoteMetadata(const SyncStatusCallback& callback);
   void DidGetRemoteMetadata(const SyncStatusCallback& callback,
                             google_apis::GDataErrorCode error,
-                            scoped_ptr<google_apis::ResourceEntry> entry);
+                            scoped_ptr<google_apis::FileResource> entry);
   void DidUpdateDatabaseForRemoteMetadata(const SyncStatusCallback& callback,
                                           SyncStatusCode status);
 
@@ -159,7 +159,7 @@ class RemoteToLocalSyncer : public ExclusiveTask {
       const SyncStatusCallback& callback,
       scoped_ptr<FileIDList> children,
       google_apis::GDataErrorCode error,
-      scoped_ptr<google_apis::ResourceList> resource_list);
+      scoped_ptr<google_apis::FileList> file_list);
 
   void SyncCompleted(const SyncStatusCallback& callback, SyncStatusCode status);
   void FinalizeSync(const SyncStatusCallback& callback, SyncStatusCode status);

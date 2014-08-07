@@ -19,7 +19,8 @@ struct SYNC_EXPORT_PRIVATE StatusCounters {
   scoped_ptr<base::DictionaryValue> ToValue() const;
   std::string ToString() const;
 
-  size_t num_total_entries;
+  size_t num_entries;
+  size_t num_entries_and_tombstones;
 };
 
 }  // namespace syncer

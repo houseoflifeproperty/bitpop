@@ -18,6 +18,7 @@ class MockLoader : public Loader {
 
   // Loader implementation:
   virtual void Load(const SourceFile& file,
+                    const LocationRange& origin,
                     const Label& toolchain_name) OVERRIDE {
     files_.push_back(file);
   }
@@ -45,7 +46,7 @@ class MockLoader : public Loader {
 
     bool match = (
         (files_[0] == a && files_[1] == b) ||
-        (files_[0] == b && files_[0] == a));
+        (files_[0] == b && files_[1] == a));
     files_.clear();
     return match;
   }
@@ -178,7 +179,7 @@ TEST_F(BuilderTest, ShouldGenerate) {
   DefineToolchain();
 
   // Define a secondary toolchain.
-  Settings settings2(&build_settings_, "secondary");
+  Settings settings2(&build_settings_, "secondary/");
   Label toolchain_label2(SourceDir("//tc/"), "secondary");
   settings2.set_toolchain_label(toolchain_label2);
   Toolchain* tc2 = new Toolchain(&settings2, toolchain_label2);

@@ -52,20 +52,12 @@ public:
 
     virtual ~ScriptValue();
 
-    // FIXME: This method is deprecated and will be removed soon.
-    // We should always pass a ScriptState when creating a new ScriptValue.
-    ScriptValue(v8::Handle<v8::Value> value, v8::Isolate* isolate)
-        : m_isolate(isolate)
-        , m_scriptState(nullptr)
-        , m_value(value.IsEmpty() ? nullptr : SharedPersistent<v8::Value>::create(value, isolate))
-    {
-    }
-
     ScriptValue(ScriptState* scriptState, v8::Handle<v8::Value> value)
         : m_isolate(scriptState->isolate())
         , m_scriptState(scriptState)
         , m_value(value.IsEmpty() ? nullptr : SharedPersistent<v8::Value>::create(value, scriptState->isolate()))
     {
+        ASSERT(isEmpty() || m_scriptState);
     }
 
     ScriptValue(const ScriptValue& value)
@@ -73,6 +65,7 @@ public:
         , m_scriptState(value.m_scriptState)
         , m_value(value.m_value)
     {
+        ASSERT(isEmpty() || m_scriptState);
     }
 
     ScriptState* scriptState() const
@@ -153,18 +146,13 @@ public:
         m_value = nullptr;
     }
 
-    v8::Handle<v8::Value> v8Value() const
-    {
-        return m_value.get() ? m_value->newLocal(isolate()) : v8::Handle<v8::Value>();
-    }
+    v8::Handle<v8::Value> v8Value() const;
 
     bool toString(String&) const;
     PassRefPtr<JSONValue> toJSONValue(ScriptState*) const;
 
 private:
     mutable v8::Isolate* m_isolate;
-    // FIXME: m_scriptState is not yet used.
-    // We will start using it once we remove ScriptValue(v8::Handle<v8::Value> value, v8::Isolate* isolate).
     mutable RefPtr<ScriptState> m_scriptState;
     RefPtr<SharedPersistent<v8::Value> > m_value;
 };

@@ -144,6 +144,8 @@ inline Position lastPositionInOrAfterNode(Node* node)
     return editingIgnoresContent(node) ? positionAfterNode(node) : lastPositionInNode(node);
 }
 
+Position lastEditablePositionBeforePositionInRoot(const Position&, Node*);
+
 // comparision functions on Position
 
 int comparePositions(const Position&, const Position&);
@@ -173,8 +175,8 @@ void updatePositionForNodeRemoval(Position&, Node&);
 
 // Functions returning VisiblePosition
 
-VisiblePosition firstEditablePositionAfterPositionInRoot(const Position&, Node*);
-VisiblePosition lastEditablePositionBeforePositionInRoot(const Position&, Node*);
+VisiblePosition firstEditableVisiblePositionAfterPositionInRoot(const Position&, Node*);
+VisiblePosition lastEditableVisiblePositionBeforePositionInRoot(const Position&, Node*);
 VisiblePosition visiblePositionBeforeNode(Node&);
 VisiblePosition visiblePositionAfterNode(Node&);
 
@@ -182,7 +184,7 @@ bool lineBreakExistsAtVisiblePosition(const VisiblePosition&);
 
 int comparePositions(const VisiblePosition&, const VisiblePosition&);
 
-int indexForVisiblePosition(const VisiblePosition&, RefPtr<ContainerNode>& scope);
+int indexForVisiblePosition(const VisiblePosition&, RefPtrWillBeRawPtr<ContainerNode>& scope);
 VisiblePosition visiblePositionForIndex(int index, ContainerNode* scope);
 
 // -------------------------------------------------------------------------
@@ -199,13 +201,13 @@ PassRefPtrWillBeRawPtr<Range> createRange(Document&, const VisiblePosition& star
 
 // Functions returning HTMLElement
 
-PassRefPtr<HTMLElement> createDefaultParagraphElement(Document&);
-PassRefPtr<HTMLElement> createBreakElement(Document&);
-PassRefPtr<HTMLElement> createOrderedListElement(Document&);
-PassRefPtr<HTMLElement> createUnorderedListElement(Document&);
-PassRefPtr<HTMLElement> createListItemElement(Document&);
-PassRefPtr<HTMLElement> createHTMLElement(Document&, const QualifiedName&);
-PassRefPtr<HTMLElement> createHTMLElement(Document&, const AtomicString&);
+PassRefPtrWillBeRawPtr<HTMLElement> createDefaultParagraphElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLElement> createBreakElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLElement> createOrderedListElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLElement> createUnorderedListElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLElement> createListItemElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document&, const QualifiedName&);
+PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document&, const AtomicString&);
 
 HTMLElement* enclosingList(Node*);
 HTMLElement* outermostEnclosingList(Node*, Node* rootList = 0);
@@ -217,10 +219,10 @@ Node* enclosingListChild(Node*);
 
 // Functions returning Element
 
-PassRefPtr<Element> createTabSpanElement(Document&);
-PassRefPtr<Element> createTabSpanElement(Document&, PassRefPtr<Node> tabTextNode);
-PassRefPtr<Element> createTabSpanElement(Document&, const String& tabText);
-PassRefPtr<Element> createBlockPlaceholderElement(Document&);
+PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document&);
+PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document&, PassRefPtrWillBeRawPtr<Node> tabTextNode);
+PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document&, const String& tabText);
+PassRefPtrWillBeRawPtr<Element> createBlockPlaceholderElement(Document&);
 
 Element* editableRootForPosition(const Position&, EditableType = ContentIsEditable);
 Element* unsplittableElementForPosition(const Position&);

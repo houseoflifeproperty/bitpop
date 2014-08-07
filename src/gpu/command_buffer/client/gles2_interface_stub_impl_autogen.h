@@ -779,8 +779,18 @@ void GLES2InterfaceStub::GenMailboxCHROMIUM(GLbyte* /* mailbox */) {
 void GLES2InterfaceStub::ProduceTextureCHROMIUM(GLenum /* target */,
                                                 const GLbyte* /* mailbox */) {
 }
+void GLES2InterfaceStub::ProduceTextureDirectCHROMIUM(
+    GLuint /* texture */,
+    GLenum /* target */,
+    const GLbyte* /* mailbox */) {
+}
 void GLES2InterfaceStub::ConsumeTextureCHROMIUM(GLenum /* target */,
                                                 const GLbyte* /* mailbox */) {
+}
+GLuint GLES2InterfaceStub::CreateAndConsumeTextureCHROMIUM(
+    GLenum /* target */,
+    const GLbyte* /* mailbox */) {
+  return 0;
 }
 void GLES2InterfaceStub::BindUniformLocationCHROMIUM(GLuint /* program */,
                                                      GLint /* location */,
@@ -808,7 +818,7 @@ void GLES2InterfaceStub::AsyncTexSubImage2DCHROMIUM(GLenum /* target */,
 }
 void GLES2InterfaceStub::AsyncTexImage2DCHROMIUM(GLenum /* target */,
                                                  GLint /* level */,
-                                                 GLint /* internalformat */,
+                                                 GLenum /* internalformat */,
                                                  GLsizei /* width */,
                                                  GLsizei /* height */,
                                                  GLint /* border */,

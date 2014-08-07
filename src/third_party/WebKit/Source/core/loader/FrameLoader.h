@@ -75,7 +75,7 @@ bool isBackForwardLoadType(FrameLoadType);
 class FrameLoader {
     WTF_MAKE_NONCOPYABLE(FrameLoader);
 public:
-    FrameLoader(LocalFrame*, FrameLoaderClient*);
+    FrameLoader(LocalFrame*);
     ~FrameLoader();
 
     void init();
@@ -133,7 +133,7 @@ public:
 
     static void addHTTPOriginIfNeeded(ResourceRequest&, const AtomicString& origin);
 
-    FrameLoaderClient* client() const { return m_client; }
+    FrameLoaderClient* client() const;
 
     void setDefersLoading(bool);
 
@@ -182,7 +182,7 @@ public:
 
     bool allowPlugins(ReasonForCallingAllowPlugins);
 
-    void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource, PassRefPtr<SerializedScriptValue>, UpdateBackForwardListPolicy);
+    void updateForSameDocumentNavigation(const KURL&, SameDocumentNavigationSource, PassRefPtr<SerializedScriptValue>, FrameLoadType);
 
     HistoryItem* currentItem() const { return m_currentItem.get(); }
     void saveScrollState();
@@ -216,18 +216,16 @@ private:
 
     void detachFromParent();
     void detachChildren();
-    void closeAndRemoveChild(LocalFrame*);
     void detachClient();
 
     void setHistoryItemStateForCommit(HistoryCommitType, bool isPushOrReplaceState = false, PassRefPtr<SerializedScriptValue> = nullptr);
 
-    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, UpdateBackForwardListPolicy, ClientRedirectPolicy);
+    void loadInSameDocument(const KURL&, PassRefPtr<SerializedScriptValue> stateObject, FrameLoadType, ClientRedirectPolicy);
 
     void scheduleCheckCompleted();
     void startCheckCompleteTimer();
 
     LocalFrame* m_frame;
-    FrameLoaderClient* m_client;
 
     // FIXME: These should be OwnPtr<T> to reduce build times and simplify
     // header dependencies unless performance testing proves otherwise.
@@ -281,6 +279,8 @@ private:
     Timer<FrameLoader> m_didAccessInitialDocumentTimer;
 
     SandboxFlags m_forcedSandboxFlags;
+
+    bool m_willDetachClient;
 };
 
 } // namespace WebCore

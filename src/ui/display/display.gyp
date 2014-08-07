@@ -24,6 +24,9 @@
         'types/chromeos/display_snapshot.h',
         'types/chromeos/native_display_delegate.h',
         'types/chromeos/native_display_observer.h',
+        'types/chromeos/touchscreen_device.cc',
+        'types/chromeos/touchscreen_device.h',
+        'types/chromeos/touchscreen_device_manager.h',
         'types/display_constants.h',
         'types/display_types_export.h',
       ],
@@ -43,9 +46,9 @@
       'sources': [
         'chromeos/display_configurator.cc',
         'chromeos/display_configurator.h',
+        'chromeos/touchscreen_delegate_impl.cc',
+        'chromeos/touchscreen_delegate_impl.h',
         'chromeos/ozone/display_configurator_ozone.cc',
-        'chromeos/ozone/touchscreen_delegate_ozone.cc',
-        'chromeos/ozone/touchscreen_delegate_ozone.h',
         'chromeos/x11/display_configurator_x11.cc',
         'chromeos/x11/display_mode_x11.cc',
         'chromeos/x11/display_mode_x11.h',
@@ -57,8 +60,8 @@
         'chromeos/x11/native_display_delegate_x11.h',
         'chromeos/x11/native_display_event_dispatcher_x11.cc',
         'chromeos/x11/native_display_event_dispatcher_x11.h',
-        'chromeos/x11/touchscreen_delegate_x11.cc',
-        'chromeos/x11/touchscreen_delegate_x11.h',
+        'chromeos/x11/touchscreen_device_manager_x11.cc',
+        'chromeos/x11/touchscreen_device_manager_x11.h',
         'display_export.h',
         'display_switches.cc',
         'display_switches.h',
@@ -107,7 +110,7 @@
         ['use_x11 == 1', {
           'dependencies': [
             '../../build/linux/system.gyp:xrandr',
-            '../../ui/gfx/gfx.gyp:gfx',
+            '../../ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
         ['chromeos == 1', {
@@ -138,6 +141,21 @@
             'display_types',
           ],
         }],
+      ],
+    },
+    {
+      'target_name': 'display_unittests',
+      'type': 'executable',
+      'dependencies': [
+        '../../base/base.gyp:run_all_unittests',
+        '../../testing/gtest.gyp:gtest',
+        'display_util',
+      ],
+      'include_dirs': [
+        '../..',
+      ],
+      'sources': [
+        'util/edid_parser_unittest.cc',
       ],
     },
   ],

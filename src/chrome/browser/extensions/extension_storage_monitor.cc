@@ -10,9 +10,10 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_storage_monitor_factory.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/image_loader.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -21,8 +22,11 @@
 #include "content/public/browser/storage_partition.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/image_loader.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/message_center/message_center.h"
@@ -53,6 +57,29 @@ const int64 kExtensionInitialThreshold = 1000 * kMBytes;
 // Notifications have an ID so that we can update them.
 const char kNotificationIdFormat[] = "ExtensionStorageMonitor-$1-$2";
 const char kSystemNotifierId[] = "ExtensionStorageMonitor";
+
+// A preference that stores the next threshold for displaying a notification
+// when an extension or app consumes excessive disk space. This will not be
+// set until the extension/app reaches the initial threshold.
+const char kPrefNextStorageThreshold[] = "next_storage_threshold";
+
+// If this preference is set to true, notifications will be suppressed when an
+// extension or app consumes excessive disk space.
+const char kPrefDisableStorageNotifications[] = "disable_storage_notifications";
+
+bool ShouldMonitorStorageFor(const Extension* extension) {
+  // Only monitor storage for extensions that are granted unlimited storage.
+  // Do not monitor storage for component extensions.
+  return extension->permissions_data()->HasAPIPermission(
+             APIPermission::kUnlimitedStorage) &&
+         extension->location() != Manifest::COMPONENT;
+}
+
+const Extension* GetExtensionById(content::BrowserContext* context,
+                                  const std::string& extension_id) {
+  return ExtensionRegistry::Get(context)->GetExtensionById(
+      extension_id, ExtensionRegistry::EVERYTHING);
+}
 
 }  // namespace
 
@@ -92,6 +119,21 @@ class StorageEventObserver
         base::TimeDelta::FromSeconds(rate),
         false);
     quota_manager->AddStorageObserver(this, params);
+  }
+
+  // Updates the threshold for an extension already being monitored.
+  void UpdateThresholdForExtension(const std::string& extension_id,
+                                   int64 next_threshold) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+    for (OriginStorageStateMap::iterator it = origin_state_map_.begin();
+         it != origin_state_map_.end();
+         ++it) {
+      if (it->second.extension_id == extension_id) {
+        it->second.next_threshold = next_threshold;
+        break;
+      }
+    }
   }
 
   // Deregister as an observer for the extension's storage events.
@@ -181,15 +223,15 @@ ExtensionStorageMonitor::ExtensionStorageMonitor(
       initial_ephemeral_threshold_(kEphemeralAppInitialThreshold),
       observer_rate_(kStorageEventRateSec),
       context_(context),
+      extension_prefs_(ExtensionPrefs::Get(context)),
+      extension_registry_observer_(this),
       weak_ptr_factory_(this) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
-                 content::Source<content::BrowserContext>(context_));
+  DCHECK(extension_prefs_);
+
   registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
                  content::Source<content::BrowserContext>(context_));
 
-  ExtensionRegistry* registry = ExtensionRegistry::Get(context_);
-  DCHECK(registry);
-  registry->AddObserver(this);
+  extension_registry_observer_.Add(ExtensionRegistry::Get(context_));
 }
 
 ExtensionStorageMonitor::~ExtensionStorageMonitor() {}
@@ -199,25 +241,18 @@ void ExtensionStorageMonitor::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
-      const Extension* extension =
-          content::Details<const Extension>(details).ptr();
-      RemoveNotificationForExtension(extension->id());
-      break;
-    }
     case chrome::NOTIFICATION_PROFILE_DESTROYED: {
       StopMonitoringAll();
       break;
     }
     default:
       NOTREACHED();
-  };
+  }
 }
 
 void ExtensionStorageMonitor::OnExtensionLoaded(
     content::BrowserContext* browser_context,
     const Extension* extension) {
-  DCHECK(extension);
   StartMonitoringStorage(extension);
 }
 
@@ -225,8 +260,70 @@ void ExtensionStorageMonitor::OnExtensionUnloaded(
     content::BrowserContext* browser_context,
     const Extension* extension,
     UnloadedExtensionInfo::Reason reason) {
-  DCHECK(extension);
   StopMonitoringStorage(extension->id());
+}
+
+void ExtensionStorageMonitor::OnExtensionWillBeInstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    bool is_update,
+    bool from_ephemeral,
+    const std::string& old_name) {
+  // If an ephemeral app was promoted to a regular installed app, we may need to
+  // increase its next threshold.
+  if (!from_ephemeral || !ShouldMonitorStorageFor(extension))
+    return;
+
+  if (!enable_for_all_extensions_) {
+    // If monitoring is not enabled for installed extensions, just stop
+    // monitoring.
+    SetNextStorageThreshold(extension->id(), 0);
+    StopMonitoringStorage(extension->id());
+    return;
+  }
+
+  int64 next_threshold = GetNextStorageThresholdFromPrefs(extension->id());
+  if (next_threshold <= initial_extension_threshold_) {
+    // Clear the next threshold in the prefs. This effectively raises it to
+    // |initial_extension_threshold_|. If the current threshold is already
+    // higher than this, leave it as is.
+    SetNextStorageThreshold(extension->id(), 0);
+
+    if (storage_observer_.get()) {
+      BrowserThread::PostTask(
+          BrowserThread::IO,
+          FROM_HERE,
+          base::Bind(&StorageEventObserver::UpdateThresholdForExtension,
+                     storage_observer_,
+                     extension->id(),
+                     initial_extension_threshold_));
+    }
+  }
+}
+
+void ExtensionStorageMonitor::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  RemoveNotificationForExtension(extension->id());
+}
+
+void ExtensionStorageMonitor::ExtensionUninstallAccepted() {
+  DCHECK(!uninstall_extension_id_.empty());
+
+  const Extension* extension = GetExtensionById(context_,
+                                                uninstall_extension_id_);
+  uninstall_extension_id_.clear();
+  if (!extension)
+    return;
+
+  ExtensionService* service =
+      ExtensionSystem::Get(context_)->extension_service();
+  DCHECK(service);
+  service->UninstallExtension(extension->id(), false, NULL);
+}
+
+void ExtensionStorageMonitor::ExtensionUninstallCanceled() {
+  uninstall_extension_id_.clear();
 }
 
 std::string ExtensionStorageMonitor::GetNotificationId(
@@ -244,14 +341,12 @@ void ExtensionStorageMonitor::OnStorageThresholdExceeded(
     int64 current_usage) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  const Extension* extension = ExtensionRegistry::Get(context_)->
-      GetExtensionById(extension_id, ExtensionRegistry::EVERYTHING);
+  const Extension* extension = GetExtensionById(context_, extension_id);
   if (!extension)
     return;
 
-  ExtensionPrefs* prefs = ExtensionPrefs::Get(context_);
-  DCHECK(prefs);
-  prefs->SetNextStorageThreshold(extension->id(), next_threshold);
+  if (GetNextStorageThreshold(extension->id()) < next_threshold)
+    SetNextStorageThreshold(extension->id(), next_threshold);
 
   const int kIconSize = message_center::kNotificationIconSize;
   ExtensionResource resource =  IconsInfo::GetIconResource(
@@ -268,8 +363,7 @@ void ExtensionStorageMonitor::OnImageLoaded(
     const std::string& extension_id,
     int64 current_usage,
     const gfx::Image& image) {
-  const Extension* extension = ExtensionRegistry::Get(context_)->
-      GetExtensionById(extension_id, ExtensionRegistry::EVERYTHING);
+  const Extension* extension = GetExtensionById(context_, extension_id);
   if (!extension)
     return;
 
@@ -283,6 +377,10 @@ void ExtensionStorageMonitor::OnImageLoaded(
       l10n_util::GetStringUTF16(extension->is_app() ?
           IDS_EXTENSION_STORAGE_MONITOR_BUTTON_DISMISS_APP :
           IDS_EXTENSION_STORAGE_MONITOR_BUTTON_DISMISS_EXTENSION)));
+  notification_data.buttons.push_back(message_center::ButtonInfo(
+      l10n_util::GetStringUTF16(extension->is_app() ?
+          IDS_EXTENSION_STORAGE_MONITOR_BUTTON_UNINSTALL_APP :
+          IDS_EXTENSION_STORAGE_MONITOR_BUTTON_UNINSTALL_EXTENSION)));
 
   gfx::Image notification_image(image);
   if (notification_image.IsEmpty()) {
@@ -322,18 +420,20 @@ void ExtensionStorageMonitor::OnNotificationButtonClick(
       DisableStorageMonitoring(extension_id);
       break;
     }
+    case BUTTON_UNINSTALL: {
+      ShowUninstallPrompt(extension_id);
+      break;
+    }
     default:
       NOTREACHED();
-  };
+  }
 }
 
 void ExtensionStorageMonitor::DisableStorageMonitoring(
     const std::string& extension_id) {
   StopMonitoringStorage(extension_id);
 
-  ExtensionPrefs* prefs = ExtensionPrefs::Get(context_);
-  DCHECK(prefs);
-  prefs->SetStorageNotificationEnabled(extension_id, false);
+  SetStorageNotificationEnabled(extension_id, false);
 
   message_center::MessageCenter::Get()->RemoveNotification(
       GetNotificationId(extension_id), false);
@@ -341,21 +441,17 @@ void ExtensionStorageMonitor::DisableStorageMonitoring(
 
 void ExtensionStorageMonitor::StartMonitoringStorage(
     const Extension* extension) {
-  if (!extension->HasAPIPermission(APIPermission::kUnlimitedStorage))
-    return;
-
-  // Do not monitor storage for component extensions.
-  if (extension->location() == Manifest::COMPONENT)
+  if (!ShouldMonitorStorageFor(extension))
     return;
 
   // First apply this feature only to experimental ephemeral apps. If it works
   // well, roll it out to all extensions and apps.
-  if (!extension->is_ephemeral() && !enable_for_all_extensions_)
+  if (!enable_for_all_extensions_ &&
+      !extension_prefs_->IsEphemeralApp(extension->id())) {
     return;
+  }
 
-  ExtensionPrefs* prefs = ExtensionPrefs::Get(context_);
-  DCHECK(prefs);
-  if (!prefs->IsStorageNotificationEnabled(extension->id()))
+  if (!IsStorageNotificationEnabled(extension->id()))
     return;
 
   // Lazily create the storage monitor proxy on the IO thread.
@@ -376,14 +472,6 @@ void ExtensionStorageMonitor::StartMonitoringStorage(
   if (extension->is_hosted_app())
     storage_origin = AppLaunchInfo::GetLaunchWebURL(extension).GetOrigin();
 
-  int next_threshold = prefs->GetNextStorageThreshold(extension->id());
-  if (next_threshold == 0) {
-    // The next threshold is written to the prefs after the initial threshold is
-    // exceeded.
-    next_threshold = extension->is_ephemeral() ? initial_ephemeral_threshold_
-                                               : initial_extension_threshold_;
-  }
-
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
@@ -392,7 +480,7 @@ void ExtensionStorageMonitor::StartMonitoringStorage(
                  quota_manager,
                  extension->id(),
                  storage_origin,
-                 next_threshold,
+                 GetNextStorageThreshold(extension->id()),
                  observer_rate_));
 }
 
@@ -410,9 +498,7 @@ void ExtensionStorageMonitor::StopMonitoringStorage(
 }
 
 void ExtensionStorageMonitor::StopMonitoringAll() {
-  ExtensionRegistry* registry = ExtensionRegistry::Get(context_);
-  DCHECK(registry);
-  registry->RemoveObserver(this);
+  extension_registry_observer_.RemoveAll();
 
   RemoveAllNotifications();
 
@@ -449,6 +535,81 @@ void ExtensionStorageMonitor::RemoveAllNotifications() {
     center->RemoveNotification(GetNotificationId(*it), false);
   }
   notified_extension_ids_.clear();
+}
+
+void ExtensionStorageMonitor::ShowUninstallPrompt(
+    const std::string& extension_id) {
+  const Extension* extension = GetExtensionById(context_, extension_id);
+  if (!extension)
+    return;
+
+  if (!uninstall_dialog_.get()) {
+    uninstall_dialog_.reset(ExtensionUninstallDialog::Create(
+        Profile::FromBrowserContext(context_), NULL, this));
+  }
+
+  uninstall_extension_id_ = extension->id();
+  uninstall_dialog_->ConfirmUninstall(extension);
+}
+
+int64 ExtensionStorageMonitor::GetNextStorageThreshold(
+    const std::string& extension_id) const {
+  int next_threshold = GetNextStorageThresholdFromPrefs(extension_id);
+  if (next_threshold == 0) {
+    // The next threshold is written to the prefs after the initial threshold is
+    // exceeded.
+    next_threshold = extension_prefs_->IsEphemeralApp(extension_id)
+                         ? initial_ephemeral_threshold_
+                         : initial_extension_threshold_;
+  }
+  return next_threshold;
+}
+
+void ExtensionStorageMonitor::SetNextStorageThreshold(
+    const std::string& extension_id,
+    int64 next_threshold) {
+  extension_prefs_->UpdateExtensionPref(
+      extension_id,
+      kPrefNextStorageThreshold,
+      next_threshold > 0
+          ? new base::StringValue(base::Int64ToString(next_threshold))
+          : NULL);
+}
+
+int64 ExtensionStorageMonitor::GetNextStorageThresholdFromPrefs(
+    const std::string& extension_id) const {
+  std::string next_threshold_str;
+  if (extension_prefs_->ReadPrefAsString(
+          extension_id, kPrefNextStorageThreshold, &next_threshold_str)) {
+    int64 next_threshold;
+    if (base::StringToInt64(next_threshold_str, &next_threshold))
+      return next_threshold;
+  }
+
+  // A return value of zero indicates that the initial threshold has not yet
+  // been reached.
+  return 0;
+}
+
+bool ExtensionStorageMonitor::IsStorageNotificationEnabled(
+    const std::string& extension_id) const {
+  bool disable_notifications;
+  if (extension_prefs_->ReadPrefAsBoolean(extension_id,
+                                          kPrefDisableStorageNotifications,
+                                          &disable_notifications)) {
+    return !disable_notifications;
+  }
+
+  return true;
+}
+
+void ExtensionStorageMonitor::SetStorageNotificationEnabled(
+    const std::string& extension_id,
+    bool enable_notifications) {
+  extension_prefs_->UpdateExtensionPref(
+      extension_id,
+      kPrefDisableStorageNotifications,
+      enable_notifications ? NULL : new base::FundamentalValue(true));
 }
 
 }  // namespace extensions

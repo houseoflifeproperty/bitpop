@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/plugins/PluginOcclusionSupport.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Element.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -100,7 +100,7 @@ static bool iframeIsAbovePlugin(const Vector<const RenderObject*>& iframeZstack,
                 return false;
             ASSERT(parent == ro2->parent());
 
-            for (const RenderObject* ro = parent->firstChild(); ro; ro = ro->nextSibling()) {
+            for (const RenderObject* ro = parent->slowFirstChild(); ro; ro = ro->nextSibling()) {
                 if (ro == ro1)
                     return false;
                 if (ro == ro2)
@@ -132,7 +132,7 @@ static void addTreeToOcclusions(const RenderObject* renderer, const IntRect& fra
         return;
     if (renderer->isBox() && intersectsRect(renderer, frameRect))
         addToOcclusions(toRenderBox(renderer), occlusions);
-    for (RenderObject* child = renderer->firstChild(); child; child = child->nextSibling())
+    for (RenderObject* child = renderer->slowFirstChild(); child; child = child->nextSibling())
         addTreeToOcclusions(child, frameRect, occlusions);
 }
 
@@ -173,7 +173,8 @@ void getPluginOcclusions(Element* element, Widget* parentWidget, const IntRect& 
         const FrameView* frameView = toFrameView((*it).get());
         // Check to make sure we can get both the element and the RenderObject
         // for this FrameView, if we can't just move on to the next object.
-        HTMLElement* element = frameView->frame().ownerElement();
+        // FIXME: Plugin occlusion by remote frames is probably broken.
+        HTMLElement* element = frameView->frame().deprecatedLocalOwner();
         if (!element || !element->renderer())
             continue;
 

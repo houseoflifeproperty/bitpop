@@ -14,8 +14,6 @@ from master.factory import build_factory
 from master.factory import chromeos_build_factory
 
 
-DEFAULT = object()
-
 class ChromiteFactory(object):
   """
   Create a build factory that runs a chromite script.
@@ -41,15 +39,17 @@ class ChromiteFactory(object):
       show_gclient_output: Set to False to hide the output of 'gclient sync'.
           Used by external masters to prevent leaking sensitive information,
           since both external and internal slaves use internal.DEPS/.
+      max_time: Max overall time from the start before the command is killed.
   """
   _default_git_base = 'https://chromium.googlesource.com/chromiumos'
   _default_chromite = _default_git_base + '/chromite.git'
+  _default_max_time = 16 * 60 * 60
 
   def __init__(self, script, params=None, b_params=None, timeout=9000,
                branch='master', chromite_repo=_default_chromite,
                factory=None, use_chromeos_factory=False, slave_manager=True,
                chromite_patch=None, sleep_sync=None,
-               show_gclient_output=True, max_time=DEFAULT):
+               show_gclient_output=True, max_time=_default_max_time):
     if chromite_patch:
       assert ('url' in chromite_patch and 'ref' in chromite_patch)
 
@@ -61,9 +61,7 @@ class ChromiteFactory(object):
     self.slave_manager = slave_manager
     self.sleep_sync = sleep_sync
     self.step_args = {}
-
-    if max_time is not DEFAULT:
-      self.step_args['maxTime'] = max_time
+    self.step_args['maxTime'] = max_time
 
     if factory:
       self.f_cbuild = factory

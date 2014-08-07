@@ -32,12 +32,14 @@
 #include "config.h"
 #include "core/events/EventTarget.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionState.h"
-#include "core/events/Event.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/NoEventDispatchAssertion.h"
+#include "core/editing/Editor.h"
+#include "core/events/Event.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 
@@ -62,7 +64,7 @@ Node* EventTarget::toNode()
     return 0;
 }
 
-DOMWindow* EventTarget::toDOMWindow()
+LocalDOMWindow* EventTarget::toDOMWindow()
 {
     return 0;
 }
@@ -72,7 +74,7 @@ MessagePort* EventTarget::toMessagePort()
     return 0;
 }
 
-inline DOMWindow* EventTarget::executingWindow()
+inline LocalDOMWindow* EventTarget::executingWindow()
 {
     if (ExecutionContext* context = executionContext())
         return context->executingWindow();
@@ -231,7 +233,7 @@ void EventTarget::countLegacyEvents(const AtomicString& legacyTypeName, EventLis
     }
 
     if (shouldCount) {
-        if (DOMWindow* executingWindow = this->executingWindow()) {
+        if (LocalDOMWindow* executingWindow = this->executingWindow()) {
             if (legacyListenersVector) {
                 if (listenersVector)
                     UseCounter::count(executingWindow->document(), prefixedAndUnprefixedFeature);
@@ -276,13 +278,14 @@ bool EventTarget::fireEventListeners(Event* event)
         event->setType(unprefixedTypeName);
     }
 
+    Editor::countEvent(executionContext(), event);
     countLegacyEvents(legacyTypeName, listenersVector, legacyListenersVector);
     return !event->defaultPrevented();
 }
 
 void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventListenerVector& entry)
 {
-    RefPtr<EventTarget> protect = this;
+    RefPtrWillBeRawPtr<EventTarget> protect(this);
 
     // Fire all listeners registered for this event. Don't fire listeners removed
     // during event dispatch. Also, don't fire event listeners added during event
@@ -291,14 +294,20 @@ void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventList
     // new event listeners.
 
     if (event->type() == EventTypeNames::beforeunload) {
-        if (DOMWindow* executingWindow = this->executingWindow()) {
+        if (LocalDOMWindow* executingWindow = this->executingWindow()) {
             if (executingWindow->top())
                 UseCounter::count(executingWindow->document(), UseCounter::SubFrameBeforeUnloadFired);
             UseCounter::count(executingWindow->document(), UseCounter::DocumentBeforeUnloadFired);
         }
     } else if (event->type() == EventTypeNames::unload) {
-        if (DOMWindow* executingWindow = this->executingWindow())
+        if (LocalDOMWindow* executingWindow = this->executingWindow())
             UseCounter::count(executingWindow->document(), UseCounter::DocumentUnloadFired);
+    } else if (event->type() == EventTypeNames::DOMFocusIn || event->type() == EventTypeNames::DOMFocusOut) {
+        if (LocalDOMWindow* executingWindow = this->executingWindow())
+            UseCounter::count(executingWindow->document(), UseCounter::DOMFocusInOutEvent);
+    } else if (event->type() == EventTypeNames::focusin || event->type() == EventTypeNames::focusout) {
+        if (LocalDOMWindow* executingWindow = this->executingWindow())
+            UseCounter::count(executingWindow->document(), UseCounter::FocusInOutEvent);
     }
 
     size_t i = 0;
@@ -322,7 +331,7 @@ void EventTarget::fireEventListeners(Event* event, EventTargetData* d, EventList
         if (!context)
             break;
 
-        InspectorInstrumentationCookie cookie = InspectorInstrumentation::willHandleEvent(this, event->type(), registeredListener.listener.get(), registeredListener.useCapture);
+        InspectorInstrumentationCookie cookie = InspectorInstrumentation::willHandleEvent(this, event, registeredListener.listener.get(), registeredListener.useCapture);
         // To match Mozilla, the AT_TARGET phase fires both capturing and bubbling
         // event listeners, even though that violates some versions of the DOM spec.
         registeredListener.listener->handleEvent(context, event);

@@ -57,7 +57,7 @@ CYGTAR = os.path.join(BUILD_DIR, 'cygtar.py')
 PKGVER = os.path.join(BUILD_DIR, 'package_version', 'package_version.py')
 
 NACLPORTS_URL = 'https://naclports.googlecode.com/svn/trunk/src'
-NACLPORTS_REV = 1226
+NACLPORTS_REV = 1293
 
 GYPBUILD_DIR = 'gypbuild'
 
@@ -242,7 +242,6 @@ NACL_HEADER_MAP = {
       ('native_client/src/untrusted/irt/irt_dev.h', ''),
       ('native_client/src/untrusted/nacl/nacl_dyncode.h', 'nacl/'),
       ('native_client/src/untrusted/nacl/nacl_startup.h', 'nacl/'),
-      ('native_client/src/untrusted/nacl/nacl_thread.h', 'nacl/'),
       ('native_client/src/untrusted/pthread/pthread.h', ''),
       ('native_client/src/untrusted/pthread/semaphore.h', ''),
       ('native_client/src/untrusted/valgrind/dynamic_annotations.h', 'nacl/'),
@@ -255,7 +254,6 @@ NACL_HEADER_MAP = {
       ('native_client/src/untrusted/irt/irt_dev.h', ''),
       ('native_client/src/untrusted/nacl/nacl_dyncode.h', 'nacl/'),
       ('native_client/src/untrusted/nacl/nacl_startup.h', 'nacl/'),
-      ('native_client/src/untrusted/nacl/nacl_thread.h', 'nacl/'),
       ('native_client/src/untrusted/valgrind/dynamic_annotations.h', 'nacl/'),
       ('ppapi/nacl_irt/public/irt_ppapi.h', ''),
   ],

@@ -41,7 +41,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
 #include "core/events/Event.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/inspector/InspectorController.h"
@@ -121,7 +121,7 @@ void WebDevToolsFrontendImpl::resume()
 void WebDevToolsFrontendImpl::maybeDispatch(WebCore::Timer<WebDevToolsFrontendImpl>*)
 {
     while (!m_messages.isEmpty()) {
-        Document* document = m_webViewImpl->page()->mainFrame()->document();
+        Document* document = m_webViewImpl->page()->deprecatedLocalMainFrame()->document();
         if (document->activeDOMObjectsAreSuspended()) {
             m_inspectorFrontendResumeObserver = adoptPtr(new InspectorFrontendResumeObserver(this, document));
             return;
@@ -137,12 +137,9 @@ void WebDevToolsFrontendImpl::doDispatchOnInspectorFrontend(const WebString& mes
     if (!frame->frame())
         return;
     v8::Isolate* isolate = toIsolate(frame->frame());
-    v8::HandleScope scope(isolate);
-    v8::Handle<v8::Context> frameContext = toV8Context(isolate, frame->frame(), DOMWrapperWorld::mainWorld());
-    if (frameContext.IsEmpty())
-        return;
-    v8::Context::Scope contextScope(frameContext);
-    v8::Handle<v8::Value> inspectorFrontendApiValue = frameContext->Global()->Get(v8::String::NewFromUtf8(isolate, "InspectorFrontendAPI"));
+    ScriptState* scriptState = ScriptState::forMainWorld(frame->frame());
+    ScriptState::Scope scope(scriptState);
+    v8::Handle<v8::Value> inspectorFrontendApiValue = scriptState->context()->Global()->Get(v8::String::NewFromUtf8(isolate, "InspectorFrontendAPI"));
     if (!inspectorFrontendApiValue->IsObject())
         return;
     v8::Handle<v8::Object> dispatcherObject = v8::Handle<v8::Object>::Cast(inspectorFrontendApiValue);
@@ -151,7 +148,7 @@ void WebDevToolsFrontendImpl::doDispatchOnInspectorFrontend(const WebString& mes
     // OR the older version of frontend might have a dispatch method in a different place.
     // FIXME(kaznacheev): Remove when Chrome for Android M18 is retired.
     if (!dispatchFunction->IsFunction()) {
-        v8::Handle<v8::Value> inspectorBackendApiValue = frameContext->Global()->Get(v8::String::NewFromUtf8(isolate, "InspectorBackend"));
+        v8::Handle<v8::Value> inspectorBackendApiValue = scriptState->context()->Global()->Get(v8::String::NewFromUtf8(isolate, "InspectorBackend"));
         if (!inspectorBackendApiValue->IsObject())
             return;
         dispatcherObject = v8::Handle<v8::Object>::Cast(inspectorBackendApiValue);

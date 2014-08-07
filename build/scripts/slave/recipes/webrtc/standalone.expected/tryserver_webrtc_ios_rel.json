@@ -54,21 +54,36 @@
     ]
   },
   {
+    "abort_on_failure": true,
     "cmd": [
-      "python",
-      "-u",
-      "[BUILD]/scripts/slave/apply_svn_patch.py",
-      "-p",
+      "svn",
+      "export",
+      "--force",
       "try_job_svn_patch",
-      "-r",
-      "[SLAVE_BUILD]/src"
+      "/path/to/tmp/diff"
     ],
-    "name": "apply_patch",
-    "seed_steps": [
-      "apply_patch",
-      "gclient runhooks",
-      "compile"
+    "name": "download patch",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 1)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 2)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@@@@",
+      "@@@STEP_LOG_END@patch.diff@@@"
     ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "patch",
+      "--dir",
+      "[SLAVE_BUILD]/src",
+      "--force",
+      "--forward",
+      "--remove-empty-files",
+      "--strip",
+      "0"
+    ],
+    "name": "apply patch",
+    "stdin": "fake patch.diff content (line 1)\nfake patch.diff content (line 2)\n"
   },
   {
     "cmd": [
@@ -82,7 +97,11 @@
       "GYP_DEFINES": "OS=ios build_with_libjingle=1 chromium_ios_signing=0 clang=1 component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' key_id='' target_arch=armv7 use_goma=1",
       "GYP_GENERATORS": "ninja"
     },
-    "name": "gclient runhooks"
+    "name": "gclient runhooks",
+    "seed_steps": [
+      "gclient runhooks",
+      "compile"
+    ]
   },
   {
     "abort_on_failure": true,

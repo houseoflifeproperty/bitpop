@@ -21,7 +21,7 @@
 #include "webkit/browser/appcache/appcache.h"
 #include "webkit/browser/appcache/appcache_host.h"
 #include "webkit/browser/appcache/appcache_response.h"
-#include "webkit/browser/appcache/appcache_service.h"
+#include "webkit/browser/appcache/appcache_service_impl.h"
 #include "webkit/browser/appcache/appcache_storage.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
@@ -40,16 +40,16 @@ class HostNotifier;
 class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
     : public AppCacheStorage::Delegate,
       public AppCacheHost::Observer,
-      public AppCacheService::Observer {
+      public AppCacheServiceImpl::Observer {
  public:
   // Used for uma stats only for now, so new values are append only.
   enum ResultType {
-    UPDATE_OK, DB_ERROR, DISKCACHE_ERROR, QUOTA_ERROR, REDIRECT_ERROR,
-    MANIFEST_ERROR, NETWORK_ERROR, SERVER_ERROR, CANCELLED_ERROR,
+    UPDATE_OK, DB_ERROR, DISKCACHE_ERROR, APPCACHE_QUOTA_ERROR, REDIRECT_ERROR,
+    APPCACHE_MANIFEST_ERROR, NETWORK_ERROR, SERVER_ERROR, CANCELLED_ERROR,
     NUM_UPDATE_JOB_RESULT_TYPES
   };
 
-  AppCacheUpdateJob(AppCacheService* service, AppCacheGroup* group);
+  AppCacheUpdateJob(AppCacheServiceImpl* service, AppCacheGroup* group);
   virtual ~AppCacheUpdateJob();
 
   // Triggers the update process or adds more info if this update is already
@@ -183,11 +183,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   virtual void OnCacheSelectionComplete(AppCacheHost* host) OVERRIDE {}  // N/A
   virtual void OnDestructionImminent(AppCacheHost* host) OVERRIDE;
 
-  // Methods for AppCacheService::Observer.
+  // Methods for AppCacheServiceImpl::Observer.
   virtual void OnServiceReinitialized(
       AppCacheStorageReference* old_storage) OVERRIDE;
 
-  void HandleCacheFailure(const ErrorDetails& details,
+  void HandleCacheFailure(const AppCacheErrorDetails& details,
                           ResultType result,
                           const GURL& failed_resource_url);
 
@@ -204,11 +204,11 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
 
   void StoreGroupAndCache();
 
-  void NotifySingleHost(AppCacheHost* host, EventID event_id);
-  void NotifyAllAssociatedHosts(EventID event_id);
+  void NotifySingleHost(AppCacheHost* host, AppCacheEventID event_id);
+  void NotifyAllAssociatedHosts(AppCacheEventID event_id);
   void NotifyAllProgress(const GURL& url);
   void NotifyAllFinalProgress();
-  void NotifyAllError(const ErrorDetails& detals);
+  void NotifyAllError(const AppCacheErrorDetails& detals);
   void LogConsoleMessageToAll(const std::string& message);
   void AddAllAssociatedHostsToNotifier(HostNotifier* notifier);
 
@@ -236,7 +236,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   void AddMasterEntryToFetchList(AppCacheHost* host, const GURL& url,
                                  bool is_new);
   void FetchMasterEntries();
-  void CancelAllMasterEntryFetches(const ErrorDetails& details);
+  void CancelAllMasterEntryFetches(const AppCacheErrorDetails& details);
 
   // Asynchronously loads the entry from the newest complete cache if the
   // HTTP caching semantics allow.
@@ -269,7 +269,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheUpdateJob
   bool IsTerminating() { return internal_state_ >= REFETCH_MANIFEST ||
                                 stored_state_ != UNSTORED; }
 
-  AppCacheService* service_;
+  AppCacheServiceImpl* service_;
   const GURL manifest_url_;  // here for easier access
 
   // Defined prior to refs to AppCaches and Groups because destruction

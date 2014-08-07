@@ -9,7 +9,6 @@
 #include "chrome/common/extensions/api/extension_action/browser_action_handler.h"
 #include "chrome/common/extensions/api/extension_action/page_action_handler.h"
 #include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
-#include "chrome/common/extensions/api/file_handlers/file_handlers_parser.h"
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
 #include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
 #include "chrome/common/extensions/api/storage/storage_schema_manifest_handler.h"
@@ -17,7 +16,6 @@
 #include "chrome/common/extensions/api/input_ime/input_components_handler.h"
 #endif
 #include "chrome/common/extensions/api/managed_mode_private/managed_mode_handler.h"
-#include "chrome/common/extensions/api/media_galleries_private/media_galleries_handler.h"
 #include "chrome/common/extensions/api/omnibox/omnibox_handler.h"
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
 #include "chrome/common/extensions/api/speech/tts_engine_manifest_handler.h"
@@ -37,7 +35,6 @@
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "extensions/common/api/sockets/sockets_manifest_handler.h"
 #include "extensions/common/manifest_handlers/externally_connectable.h"
-#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/manifest_handlers/requirements_info.h"
 
 namespace extensions {
@@ -45,6 +42,7 @@ namespace extensions {
 void RegisterChromeManifestHandlers() {
   DCHECK(!ManifestHandler::IsRegistrationFinalized());
 #if defined(ENABLE_EXTENSIONS)
+  (new AboutPageHandler)->Register();
   (new AppIsolationHandler)->Register();
   (new AppLaunchManifestHandler)->Register();
   (new AutomationHandler)->Register();
@@ -56,14 +54,11 @@ void RegisterChromeManifestHandlers() {
   (new DevToolsPageHandler)->Register();
   (new ExternallyConnectableHandler)->Register();
   (new FileBrowserHandlerParser)->Register();
-  (new FileHandlersParser)->Register();
   (new HomepageURLHandler)->Register();
-  (new IconsHandler)->Register();
 #if defined(OS_CHROMEOS)
   (new InputComponentsHandler)->Register();
 #endif
   (new ManagedModeHandler)->Register();
-  (new MediaGalleriesHandlerParser)->Register();
   (new MimeTypesHandlerParser)->Register();
   (new MinimumChromeVersionChecker)->Register();
   (new NaClModulesHandler)->Register();

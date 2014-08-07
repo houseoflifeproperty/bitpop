@@ -10,10 +10,14 @@
 #include "content/child/blink_platform_impl.h"
 #include "content/child/simple_webmimeregistry_impl.h"
 #include "content/child/webfileutilities_impl.h"
+#include "content/renderer/compositor_bindings/web_compositor_support_impl.h"
 #include "content/test/mock_webclipboard_impl.h"
 #include "content/test/weburl_loader_mock_factory.h"
 #include "third_party/WebKit/public/platform/WebUnitTestSupport.h"
-#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
+
+namespace base {
+class StatsTable;
+}
 
 namespace blink {
 class WebLayerTreeView;
@@ -64,9 +68,9 @@ class TestWebKitPlatformSupport
   }
 
   virtual blink::WebGestureCurve* createFlingAnimationCurve(
-      int device_source,
+      blink::WebGestureDevice device_source,
       const blink::WebFloatPoint& velocity,
-      const blink::WebSize& cumulative_scroll);
+      const blink::WebSize& cumulative_scroll) OVERRIDE;
 
   virtual blink::WebUnitTestSupport* unitTestSupport();
 
@@ -82,8 +86,6 @@ class TestWebKitPlatformSupport
   virtual void serveAsynchronousMockedRequests();
   virtual blink::WebString webKitRootDir();
   virtual blink::WebLayerTreeView* createLayerTreeViewForTesting();
-  virtual blink::WebLayerTreeView* createLayerTreeViewForTesting(
-      TestViewType type);
   virtual blink::WebData readFromFile(const blink::WebString& path);
 
  private:
@@ -92,7 +94,8 @@ class TestWebKitPlatformSupport
   WebFileUtilitiesImpl file_utilities_;
   base::ScopedTempDir file_system_root_;
   scoped_ptr<WebURLLoaderMockFactory> url_loader_factory_;
-  webkit::WebCompositorSupportImpl compositor_support_;
+  WebCompositorSupportImpl compositor_support_;
+  scoped_ptr<base::StatsTable> stats_table_;
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
   blink::WebThemeEngine* active_theme_engine_;

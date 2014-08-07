@@ -69,32 +69,26 @@ public:
     }
     virtual ~MainThreadWebSocketChannel();
 
-    bool send(const char* data, int length);
-
     // WebSocketChannel functions.
     virtual bool connect(const KURL&, const String& protocol) OVERRIDE;
-    virtual String subprotocol() OVERRIDE;
-    virtual String extensions() OVERRIDE;
     virtual WebSocketChannel::SendResult send(const String& message) OVERRIDE;
     virtual WebSocketChannel::SendResult send(const ArrayBuffer&, unsigned byteOffset, unsigned byteLength) OVERRIDE;
     virtual WebSocketChannel::SendResult send(PassRefPtr<BlobDataHandle>) OVERRIDE;
-    virtual unsigned long bufferedAmount() const OVERRIDE;
+    virtual WebSocketChannel::SendResult send(PassOwnPtr<Vector<char> > data) OVERRIDE;
     // Start closing handshake. Use the CloseEventCodeNotSpecified for the code
     // argument to omit payload.
     virtual void close(int code, const String& reason) OVERRIDE;
     virtual void fail(const String& reason, MessageLevel, const String&, unsigned lineNumber) OVERRIDE;
-    using WebSocketChannel::fail;
     virtual void disconnect() OVERRIDE;
 
     virtual void suspend() OVERRIDE;
     virtual void resume() OVERRIDE;
 
     // SocketStreamHandleClient functions.
-    virtual void willOpenSocketStream(SocketStreamHandle*) OVERRIDE;
     virtual void didOpenSocketStream(SocketStreamHandle*) OVERRIDE;
     virtual void didCloseSocketStream(SocketStreamHandle*) OVERRIDE;
     virtual void didReceiveSocketStreamData(SocketStreamHandle*, const char*, int) OVERRIDE;
-    virtual void didUpdateBufferedAmount(SocketStreamHandle*, size_t bufferedAmount) OVERRIDE;
+    virtual void didConsumeBufferedAmount(SocketStreamHandle*, size_t consumed) OVERRIDE;
     virtual void didFailSocketStream(SocketStreamHandle*, const SocketStreamError&) OVERRIDE;
 
     // FileReaderLoaderClient functions.
@@ -105,6 +99,25 @@ public:
 
 private:
     MainThreadWebSocketChannel(Document*, WebSocketChannelClient*, const String&, unsigned);
+
+    class FramingOverhead {
+    public:
+        FramingOverhead(WebSocketFrame::OpCode opcode, size_t frameDataSize, size_t originalPayloadLength)
+            : m_opcode(opcode)
+            , m_frameDataSize(frameDataSize)
+            , m_originalPayloadLength(originalPayloadLength)
+        {
+        }
+
+        WebSocketFrame::OpCode opcode() const { return m_opcode; }
+        size_t frameDataSize() const { return m_frameDataSize; }
+        size_t originalPayloadLength() const { return m_originalPayloadLength; }
+
+    private:
+        WebSocketFrame::OpCode m_opcode;
+        size_t m_frameDataSize;
+        size_t m_originalPayloadLength;
+    };
 
     void clearDocument();
 
@@ -149,6 +162,7 @@ private:
     };
     void enqueueTextFrame(const CString&);
     void enqueueRawFrame(WebSocketFrame::OpCode, const char* data, size_t dataLength);
+    void enqueueVector(WebSocketFrame::OpCode, PassOwnPtr<Vector<char> >);
     void enqueueBlobFrame(WebSocketFrame::OpCode, PassRefPtr<BlobDataHandle>);
 
     void failAsError(const String& reason) { fail(reason, ErrorMessageLevel, m_sourceURLAtConstruction, m_lineNumberAtConstruction); }
@@ -200,7 +214,6 @@ private:
     Timer<MainThreadWebSocketChannel> m_closingTimer;
     ChannelState m_state;
     bool m_shouldDiscardReceivedData;
-    unsigned long m_unhandledBufferedAmount;
 
     unsigned long m_identifier; // m_identifier == 0 means that we could not obtain a valid identifier.
 
@@ -213,6 +226,10 @@ private:
 
     Deque<OwnPtr<QueuedFrame> > m_outgoingFrameQueue;
     OutgoingFrameQueueStatus m_outgoingFrameQueueStatus;
+    Deque<FramingOverhead> m_framingOverheadQueue;
+    // The number of bytes that are already consumed (i.e. sent) in the
+    // current frame.
+    size_t m_numConsumedBytesInCurrentFrame;
 
     // FIXME: Load two or more Blobs simultaneously for better performance.
     OwnPtr<FileReaderLoader> m_blobLoader;

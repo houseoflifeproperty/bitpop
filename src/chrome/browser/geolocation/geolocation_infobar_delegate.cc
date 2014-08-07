@@ -6,8 +6,8 @@
 
 #include "base/metrics/histogram.h"
 #include "chrome/browser/content_settings/permission_queue_controller.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
@@ -179,7 +179,7 @@ bool GeolocationInfoBarDelegate::LinkClicked(
 
   InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
       content::OpenURLParams(
-          google_util::AppendGoogleLocaleParam(GURL(kGeolocationLearnMoreUrl)),
+          GURL(kGeolocationLearnMoreUrl),
           content::Referrer(),
           (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
           content::PAGE_TRANSITION_LINK, false));

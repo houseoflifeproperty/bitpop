@@ -54,10 +54,10 @@
 #define BACKTRACE_DISABLED ASSERTIONS_DISABLED_DEFAULT
 #endif
 
-#ifndef ASSERT_DISABLED
-#define ASSERT_DISABLED ASSERTIONS_DISABLED_DEFAULT
+#ifndef ASSERT_ENABLED
+// Notice the not below:
+#define ASSERT_ENABLED !ASSERTIONS_DISABLED_DEFAULT
 #endif
-#define ASSERT_ENABLED !ASSERT_DISABLED
 
 #ifndef ASSERT_MSG_DISABLED
 #define ASSERT_MSG_DISABLED ASSERTIONS_DISABLED_DEFAULT
@@ -120,6 +120,23 @@ WTF_EXPORT void WTFInstallReportBacktraceOnCrashHook();
 
 #ifdef __cplusplus
 }
+
+namespace WTF {
+
+class WTF_EXPORT FrameToNameScope {
+public:
+    explicit FrameToNameScope(void*);
+    ~FrameToNameScope();
+    const char* nullableName() { return m_name; }
+
+private:
+    const char* m_name;
+    char* m_cxaDemangled;
+};
+
+} // namespace WTF
+
+using WTF::FrameToNameScope;
 #endif
 
 /* IMMEDIATE_CRASH() - Like CRASH() below but crashes in the fastest, simplest possible way with no attempt at logging. */
@@ -179,16 +196,7 @@ WTF_EXPORT void WTFInstallReportBacktraceOnCrashHook();
 #undef ASSERT
 #endif
 
-#if ASSERT_DISABLED
-
-#define ASSERT(assertion) ((void)0)
-#define ASSERT_AT(assertion, file, line, function) ((void)0)
-#define ASSERT_NOT_REACHED() ((void)0)
-#define NO_RETURN_DUE_TO_ASSERT
-
-#define ASSERT_UNUSED(variable, assertion) ((void)variable)
-
-#else
+#if ASSERT_ENABLED
 
 #define ASSERT(assertion) \
     (!(assertion) ? \
@@ -210,6 +218,15 @@ WTF_EXPORT void WTFInstallReportBacktraceOnCrashHook();
 #define ASSERT_UNUSED(variable, assertion) ASSERT(assertion)
 
 #define NO_RETURN_DUE_TO_ASSERT NO_RETURN_DUE_TO_CRASH
+
+#else
+
+#define ASSERT(assertion) ((void)0)
+#define ASSERT_AT(assertion, file, line, function) ((void)0)
+#define ASSERT_NOT_REACHED() ((void)0)
+#define NO_RETURN_DUE_TO_ASSERT
+
+#define ASSERT_UNUSED(variable, assertion) ((void)variable)
 
 #endif
 
@@ -352,15 +369,33 @@ static inline void UNREACHABLE_FOR_PLATFORM()
       http://code.google.com/p/chromium/issues/entry?template=Security%20Bug
 */
 
-#if ASSERT_DISABLED
-#define RELEASE_ASSERT(assertion) (UNLIKELY(!(assertion)) ? (IMMEDIATE_CRASH()) : (void)0)
-#define RELEASE_ASSERT_WITH_MESSAGE(assertion, ...) RELEASE_ASSERT(assertion)
-#define RELEASE_ASSERT_NOT_REACHED() IMMEDIATE_CRASH()
-#else
+#if ASSERT_ENABLED
 #define RELEASE_ASSERT(assertion) ASSERT(assertion)
 #define RELEASE_ASSERT_WITH_MESSAGE(assertion, ...) ASSERT_WITH_MESSAGE(assertion, __VA_ARGS__)
 #define RELEASE_ASSERT_NOT_REACHED() ASSERT_NOT_REACHED()
+#else
+#define RELEASE_ASSERT(assertion) (UNLIKELY(!(assertion)) ? (IMMEDIATE_CRASH()) : (void)0)
+#define RELEASE_ASSERT_WITH_MESSAGE(assertion, ...) RELEASE_ASSERT(assertion)
+#define RELEASE_ASSERT_NOT_REACHED() IMMEDIATE_CRASH()
 #endif
+
+/* DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES */
+
+// Allow equality comparisons of Objects by reference or pointer, interchangeably.
+#define DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES(thisType) \
+    inline bool operator==(const thisType& a, const thisType& b) { return &a == &b; } \
+    inline bool operator==(const thisType& a, const thisType* b) { return &a == b; } \
+    inline bool operator==(const thisType* a, const thisType& b) { return a == &b; } \
+    inline bool operator!=(const thisType& a, const thisType& b) { return !(a == b); } \
+    inline bool operator!=(const thisType& a, const thisType* b) { return !(a == b); } \
+    inline bool operator!=(const thisType* a, const thisType& b) { return !(a == b); }
+
+#define DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES_REFCOUNTED(thisType) \
+    DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES(thisType) \
+    inline bool operator==(const PassRefPtr<thisType>& a, const thisType& b) { return a.get() == &b; } \
+    inline bool operator==(const thisType& a, const PassRefPtr<thisType>& b) { return &a == b.get(); } \
+    inline bool operator!=(const PassRefPtr<thisType>& a, const thisType& b) { return !(a == b); } \
+    inline bool operator!=(const thisType& a, const PassRefPtr<thisType>& b) { return !(a == b); }
 
 /* DEFINE_TYPE_CASTS */
 

@@ -106,6 +106,9 @@ class CodeGeneratorV8(object):
             interface_name
             for interface_name, interface_info in interfaces_info.iteritems()
             if 'WillBeGarbageCollected' in interface_info['inherited_extended_attributes']))
+        v8_types.set_component_dirs(dict(
+            (interface_name, interface_info['component_dir'])
+            for interface_name, interface_info in interfaces_info.iteritems()))
 
     def generate_code(self, definitions, interface_name):
         """Returns .h/.cpp code as (header_text, cpp_text)."""
@@ -184,8 +187,9 @@ def runtime_enabled_if(code, runtime_enabled_function_name):
         return code
     # Indent if statement to level of original code
     indent = re.match(' *', code).group(0)
-    return ('%sif (%s())\n' % (indent, runtime_enabled_function_name) +
-            '    %s' % code)
+    return ('%sif (%s()) {\n' % (indent, runtime_enabled_function_name) +
+            '    %s\n' % '\n    '.join(code.splitlines()) +
+            '%s}\n' % indent)
 
 
 ################################################################################
@@ -196,7 +200,7 @@ def main(argv):
         cache_dir = argv[1]
         dummy_filename = argv[2]
     except IndexError as err:
-        print 'Usage: %s OUTPUT_DIR DUMMY_FILENAME' % argv[0]
+        print 'Usage: %s CACHE_DIR DUMMY_FILENAME' % argv[0]
         return 1
 
     # Cache templates

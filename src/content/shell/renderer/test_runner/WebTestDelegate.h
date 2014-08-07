@@ -15,6 +15,7 @@
 #define WEBTESTRUNNER_NEW_HISTORY_CAPTURE
 
 namespace blink {
+class WebBatteryStatus;
 class WebDeviceMotionData;
 class WebDeviceOrientationData;
 class WebFrame;
@@ -28,6 +29,7 @@ struct WebURLError;
 
 namespace content {
 
+class RendererGamepadProvider;
 class WebTask;
 class WebTestProxyBase;
 struct TestPreferences;
@@ -39,14 +41,8 @@ public:
     virtual void clearEditCommand() = 0;
     virtual void setEditCommand(const std::string& name, const std::string& value) = 0;
 
-    // Set the gamepads to return from Platform::sampleGamepads().
-    virtual void setGamepadData(const blink::WebGamepads&) = 0;
-
-    // Notifies blink about a new gamepad.
-    virtual void didConnectGamepad(int index, const blink::WebGamepad&) = 0;
-
-    // Notifies blink that a gamepad has been disconnected.
-    virtual void didDisconnectGamepad(int index, const blink::WebGamepad&) = 0;
+    // Sets gamepad provider to be used for tests.
+    virtual void setGamepadProvider(RendererGamepadProvider*) = 0;
 
     // Set data to return when registering via Platform::setDeviceMotionListener().
     virtual void setDeviceMotionData(const blink::WebDeviceMotionData&) = 0;
@@ -55,6 +51,12 @@ public:
 
     // Set orientation to set when registering via Platform::setScreenOrientationListener().
     virtual void setScreenOrientation(const blink::WebScreenOrientationType&) = 0;
+
+    // Reset the screen orientation data used for testing.
+    virtual void resetScreenOrientation() = 0;
+
+    // Notifies blink about a change in battery status.
+    virtual void didChangeBatteryStatus(const blink::WebBatteryStatus&) = 0;
 
     // Add a message to the text dump for the layout test.
     virtual void printMessage(const std::string& message) = 0;

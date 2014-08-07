@@ -11,6 +11,8 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 
+struct ViewHostMsg_TextInputState_Params;
+
 namespace content {
 class CrossProcessFrameConnector;
 class RenderWidgetHost;
@@ -50,7 +52,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
-  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
+  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
   virtual gfx::Size GetPhysicalBackingSize() const OVERRIDE;
 
   // RenderWidgetHostViewBase implementation.
@@ -65,9 +67,8 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    ui::TextInputMode input_mode,
-                                    bool can_compose_inline) OVERRIDE;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
 #if defined(OS_MACOSX) || defined(USE_AURA)
   virtual void ImeCompositionRangeChanged(
@@ -94,7 +95,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
       const scoped_refptr<media::VideoFrame>& target,
       const base::Callback<void(bool)>& callback) OVERRIDE;
   virtual bool CanCopyToVideoFrame() const OVERRIDE;
-  virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
@@ -112,8 +112,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
-  virtual void SetScrollOffsetPinning(
-      bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
 #if defined(USE_AURA)
   virtual void ProcessAckedTouchEvent(
       const TouchEventWithLatencyInfo& touch,
@@ -141,7 +139,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
 #if defined(OS_ANDROID)
   // RenderWidgetHostViewBase implementation.
-  virtual void SelectionRootBoundsChanged(const gfx::Rect& bounds) OVERRIDE;
   virtual void ShowDisambiguationPopup(
       const gfx::Rect& target_rect,
       const SkBitmap& zoomed_bitmap) OVERRIDE;

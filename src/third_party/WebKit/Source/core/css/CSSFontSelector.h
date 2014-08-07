@@ -27,9 +27,7 @@
 #define CSSFontSelector_h
 
 #include "core/css/FontFaceCache.h"
-#include "core/fetch/ResourceLoader.h"
-#include "core/fetch/ResourcePtr.h"
-#include "platform/Timer.h"
+#include "core/css/FontLoader.h"
 #include "platform/fonts/FontSelector.h"
 #include "platform/fonts/GenericFontFamilySettings.h"
 #include "platform/heap/Handle.h"
@@ -45,33 +43,7 @@ class CSSFontSelectorClient;
 class CSSSegmentedFontFace;
 class Document;
 class FontDescription;
-class FontResource;
 class StyleRuleFontFace;
-
-class FontLoader {
-    DISALLOW_ALLOCATION();
-public:
-    explicit FontLoader(ResourceFetcher*);
-    ~FontLoader();
-
-    void addFontToBeginLoading(FontResource*);
-    void loadPendingFonts();
-
-#if !ENABLE(OILPAN)
-    void clearResourceFetcher();
-#endif
-
-    void trace(Visitor*);
-
-private:
-    void beginLoadTimerFired(Timer<FontLoader>*);
-
-    Timer<FontLoader> m_beginLoadingTimer;
-
-    typedef Vector<std::pair<ResourcePtr<FontResource>, ResourceLoader::RequestCountTracker> > FontsToLoadVector;
-    FontsToLoadVector m_fontsToBeginLoading;
-    RawPtrWillBeMember<ResourceFetcher> m_resourceFetcher;
-};
 
 class CSSFontSelector FINAL : public FontSelector {
 public:
@@ -85,12 +57,13 @@ public:
 
     virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&) OVERRIDE;
     virtual void willUseFontData(const FontDescription&, const AtomicString& family, UChar32) OVERRIDE;
+    bool isPlatformFontAvailable(const FontDescription&, const AtomicString& family);
 
 #if !ENABLE(OILPAN)
     void clearDocument();
 #endif
 
-    void fontLoaded();
+    void fontFaceInvalidated();
 
     // FontCacheClient implementation
     virtual void fontCacheInvalidated() OVERRIDE;
@@ -102,12 +75,10 @@ public:
 
     Document* document() const { return m_document; }
     FontFaceCache* fontFaceCache() { return &m_fontFaceCache; }
+    FontLoader* fontLoader() { return m_fontLoader.get(); }
 
     const GenericFontFamilySettings& genericFontFamilySettings() const { return m_genericFontFamilySettings; }
     void updateGenericFontFamilySettings(Document&);
-
-    void beginLoadingFontSoon(FontResource*);
-    void loadPendingFonts();
 
     virtual void trace(Visitor*);
 
@@ -116,12 +87,15 @@ private:
 
     void dispatchInvalidationCallbacks();
 
-    RawPtrWillBeMember<Document> m_document;
+    // FIXME: Oilpan: Ideally this should just be a traced Member but that will
+    // currently leak because RenderStyle and its data are not on the heap.
+    // See crbug.com/383860 for details.
+    RawPtrWillBeWeakMember<Document> m_document;
     // FIXME: Move to Document or StyleEngine.
     FontFaceCache m_fontFaceCache;
     WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSFontSelectorClient> > m_clients;
 
-    FontLoader m_fontLoader;
+    RefPtrWillBeMember<FontLoader> m_fontLoader;
     GenericFontFamilySettings m_genericFontFamilySettings;
 };
 

@@ -1,4 +1,5 @@
 DEPS = [
+  'archive',
   'chromium',
   'chromium_android',
   'gclient',

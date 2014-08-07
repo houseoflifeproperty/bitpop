@@ -7,10 +7,12 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "net/base/io_buffer.h"
+#include "net/base/net_errors.h"
 #include "ppapi/cpp/net_address.h"
 #include "ppapi/cpp/udp_socket.h"
 #include "ppapi/utility/completion_callback_factory.h"
 #include "remoting/client/plugin/pepper_util.h"
+#include "remoting/jingle_glue/socket_util.h"
 #include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
 
 namespace remoting {
@@ -25,6 +27,59 @@ const int kReceiveBufferSize = 65536;
 // Pepper's UDP API can handle it. This maximum should never be
 // reached under normal conditions.
 const int kMaxSendBufferSize = 256 * 1024;
+
+int PepperErrorToNetError(int error) {
+  switch (error) {
+    case PP_OK:
+      return net::OK;
+    case PP_OK_COMPLETIONPENDING:
+      return net::ERR_IO_PENDING;
+    case PP_ERROR_ABORTED:
+      return net::ERR_ABORTED;
+    case PP_ERROR_BADARGUMENT:
+      return net::ERR_INVALID_ARGUMENT;
+    case PP_ERROR_FILENOTFOUND:
+      return net::ERR_FILE_NOT_FOUND;
+    case PP_ERROR_TIMEDOUT:
+      return net::ERR_TIMED_OUT;
+    case PP_ERROR_FILETOOBIG:
+      return net::ERR_FILE_TOO_BIG;
+    case PP_ERROR_NOTSUPPORTED:
+      return net::ERR_NOT_IMPLEMENTED;
+    case PP_ERROR_NOMEMORY:
+      return net::ERR_OUT_OF_MEMORY;
+    case PP_ERROR_FILEEXISTS:
+      return net::ERR_FILE_EXISTS;
+    case PP_ERROR_NOSPACE:
+      return net::ERR_FILE_NO_SPACE;
+    case PP_ERROR_CONNECTION_CLOSED:
+      return net::ERR_CONNECTION_CLOSED;
+    case PP_ERROR_CONNECTION_RESET:
+      return net::ERR_CONNECTION_RESET;
+    case PP_ERROR_CONNECTION_REFUSED:
+      return net::ERR_CONNECTION_REFUSED;
+    case PP_ERROR_CONNECTION_ABORTED:
+      return net::ERR_CONNECTION_ABORTED;
+    case PP_ERROR_CONNECTION_FAILED:
+      return net::ERR_CONNECTION_FAILED;
+    case PP_ERROR_NAME_NOT_RESOLVED:
+      return net::ERR_NAME_NOT_RESOLVED;
+    case PP_ERROR_ADDRESS_INVALID:
+      return net::ERR_ADDRESS_INVALID;
+    case PP_ERROR_ADDRESS_UNREACHABLE:
+      return net::ERR_ADDRESS_UNREACHABLE;
+    case PP_ERROR_CONNECTION_TIMEDOUT:
+      return net::ERR_CONNECTION_TIMED_OUT;
+    case PP_ERROR_NOACCESS:
+      return net::ERR_NETWORK_ACCESS_DENIED;
+    case PP_ERROR_MESSAGE_TOO_BIG:
+      return net::ERR_MSG_TOO_BIG;
+    case PP_ERROR_ADDRESS_IN_USE:
+      return net::ERR_ADDRESS_IN_USE;
+    default:
+      return net::ERR_FAILED;
+  }
+}
 
 class UdpPacketSocket : public talk_base::AsyncPacketSocket {
  public:
@@ -61,6 +116,7 @@ class UdpPacketSocket : public talk_base::AsyncPacketSocket {
 
     scoped_refptr<net::IOBufferWithSize> data;
     pp::NetAddress address;
+    bool retried;
   };
 
   void OnBindCompleted(int error);
@@ -102,7 +158,8 @@ UdpPacketSocket::PendingPacket::PendingPacket(
     int buffer_size,
     const pp::NetAddress& address)
     : data(new net::IOBufferWithSize(buffer_size)),
-      address(address) {
+      address(address),
+      retried(true) {
   memcpy(data->data(), buffer, buffer_size);
 }
 
@@ -177,7 +234,8 @@ void UdpPacketSocket::OnBindCompleted(int result) {
       DCHECK_EQ(result, PP_OK_COMPLETIONPENDING);
     }
   } else {
-    LOG(ERROR) << "Failed to bind UDP socket: " << result;
+    LOG(ERROR) << "Failed to bind UDP socket to " << local_address_.ToString()
+               << ", error: " << result;
   }
 }
 
@@ -281,25 +339,26 @@ void UdpPacketSocket::OnSendCompleted(int result) {
   send_pending_ = false;
 
   if (result < 0) {
-    LOG(ERROR) << "Send failed on a UDP socket: " << result;
+    int net_error = PepperErrorToNetError(result);
+    SocketErrorAction action = GetSocketErrorAction(net_error);
+    switch (action) {
+      case SOCKET_ERROR_ACTION_FAIL:
+        LOG(ERROR) << "Send failed on a UDP socket: " << result;
+        error_ = EINVAL;
+        return;
 
-    // OS (e.g. OSX) may return EHOSTUNREACH when the peer has the
-    // same subnet address as the local host but connected to a
-    // different network. That error must be ingored because the
-    // socket may still be useful for other ICE canidadates (e.g. for
-    // STUN candidates with a different address). Unfortunately pepper
-    // interface currently returns PP_ERROR_FAILED for any error (see
-    // crbug.com/136406). It's not possible to distinguish that case
-    // from other errors and so we have to ingore all of them. This
-    // behavior matchers the libjingle's AsyncUDPSocket used by the
-    // host.
-    //
-    // TODO(sergeyu): Once implementation of the Pepper UDP interface
-    // is fixed, uncomment the code below, but ignore
-    // host-unreacheable error.
+      case SOCKET_ERROR_ACTION_RETRY:
+        // Retry resending only once.
+        if (!send_queue_.front().retried) {
+          send_queue_.front().retried = true;
+          DoSend();
+          return;
+        }
+        break;
 
-    // error_ = EINVAL;
-    // return;
+      case SOCKET_ERROR_ACTION_IGNORE:
+        break;
+    }
   }
 
   send_queue_size_ -= send_queue_.front().data->size();
@@ -324,7 +383,7 @@ void UdpPacketSocket::OnReadCompleted(int result, pp::NetAddress address) {
   }
 }
 
-  void UdpPacketSocket::HandleReadResult(int result, pp::NetAddress address) {
+void UdpPacketSocket::HandleReadResult(int result, pp::NetAddress address) {
   if (result > 0) {
     talk_base::SocketAddress socket_address;
     PpNetAddressToSocketAddress(address, &socket_address);

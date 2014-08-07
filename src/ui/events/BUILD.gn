@@ -22,6 +22,8 @@ component("events_base") {
     "events_base_export.h",
     "gesture_event_details.cc",
     "gesture_event_details.h",
+    "gestures/gesture_configuration.cc",
+    "gestures/gesture_configuration.h",
     "keycodes/keyboard_code_conversion.cc",
     "keycodes/keyboard_code_conversion.h",
     "keycodes/keyboard_code_conversion_android.cc",
@@ -42,6 +44,7 @@ component("events_base") {
     "//base",
     "//base/third_party/dynamic_annotations",
     "//skia",
+    "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",
   ]
@@ -66,6 +69,7 @@ component("events") {
   deps = [
     ":dom4_keycode_converter",
     ":events_base",
+    ":gesture_detection",
     "//skia",
     "//ui/gfx",
     "//ui/gfx/geometry",
@@ -96,26 +100,19 @@ component("events") {
     "event_utils.h",
     "events_export.h",
     "events_stub.cc",
-    "gestures/gesture_configuration.cc",
-    "gestures/gesture_configuration.h",
     "gestures/gesture_point.cc",
     "gestures/gesture_point.h",
     "gestures/gesture_recognizer.h",
     "gestures/gesture_recognizer_impl.cc",
     "gestures/gesture_recognizer_impl.h",
+    "gestures/gesture_recognizer_impl_mac.cc",
     "gestures/gesture_sequence.cc",
     "gestures/gesture_sequence.h",
     "gestures/gesture_types.h",
+    "gestures/unified_gesture_detector_enabled.cc",
+    "gestures/unified_gesture_detector_enabled.h",
     "gestures/velocity_calculator.cc",
     "gestures/velocity_calculator.h",
-    "platform/platform_event_dispatcher.h",
-    "platform/platform_event_observer.h",
-    "platform/platform_event_source.cc",
-    "platform/platform_event_source.h",
-    "platform/platform_event_source_stub.cc",
-    "platform/platform_event_types.h",
-    "platform/scoped_event_dispatcher.cc",
-    "platform/scoped_event_dispatcher.h",
     "platform/x11/x11_event_source.cc",
     "platform/x11/x11_event_source.h",
     "win/events_win.cc",
@@ -146,10 +143,8 @@ component("events") {
 
   if (use_ozone) {
     sources += [
-      "ozone/evdev/device_manager_evdev.cc",
-      "ozone/evdev/device_manager_evdev.h",
-      "ozone/evdev/device_manager_udev.cc",
-      "ozone/evdev/device_manager_udev.h",
+      "ozone/device/udev/device_manager_udev.cc",
+      "ozone/device/udev/device_manager_udev.h",
       "ozone/evdev/event_converter_evdev.cc",
       "ozone/evdev/event_converter_evdev.h",
       "ozone/evdev/event_device_info.cc",
@@ -165,6 +160,15 @@ component("events") {
       "ozone/event_factory_ozone.cc",
       "ozone/event_factory_ozone.h",
       "ozone/events_ozone.cc",
+    ]
+  }
+
+  if (use_aura) {
+    sources += [
+      "gestures/gesture_provider_aura.cc",
+      "gestures/gesture_provider_aura.h",
+      "gestures/motion_event_aura.cc",
+      "gestures/motion_event_aura.h",
     ]
   }
 
@@ -186,8 +190,6 @@ component("gesture_detection") {
     "gesture_detection/gesture_event_data_packet.cc",
     "gesture_detection/gesture_event_data_packet.h",
     "gesture_detection/gesture_config_helper.h",
-    "gesture_detection/gesture_config_helper_aura.cc",
-    "gesture_detection/gesture_config_helper_android.cc",
     "gesture_detection/gesture_provider.cc",
     "gesture_detection/gesture_provider.h",
     "gesture_detection/motion_event.h",
@@ -212,12 +214,12 @@ component("gesture_detection") {
 
   defines = [ "GESTURE_DETECTION_IMPLEMENTATION" ]
 
-  if (use_aura) {
-    deps += [ ":events" ]
-  }
-
-  if (!use_aura && !is_android) {
-    sources -= [ "gesture_detection/gesture_config_helper_aura.cc" ]
+  if (is_android) {
+    sources += [ "gesture_detection/gesture_config_helper_android.cc" ]
+  } else if (use_aura) {
+    sources += [ "gesture_detection/gesture_config_helper_aura.cc" ]
+  } else {
+    sources += [ "gesture_detection/gesture_config_helper.cc" ]
   }
 }
 
@@ -264,7 +266,7 @@ source_set("events_test_support") {
 
 test("events_unittests") {
   sources = [
-    "cocoa/cocoa_event_utils_unittest.mm",
+    "cocoa/events_mac_unittest.mm",
     "event_dispatcher_unittest.cc",
     "event_processor_unittest.cc",
     "event_rewriter_unittest.cc",

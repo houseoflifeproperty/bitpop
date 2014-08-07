@@ -15,12 +15,12 @@ class ToughAnimationCasesPage(page_module.Page):
     self._need_measurement_ready = need_measurement_ready
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
     if self._need_measurement_ready:
-      action_runner.RunAction(WaitAction({"javascript": "measurementReady"}))
+      action_runner.WaitForJavaScriptCondition('measurementReady')
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({"seconds": 10}))
+    action_runner.Wait(10)
 
 class ToughAnimationCasesPageSet(page_set_module.PageSet):
 
@@ -30,7 +30,8 @@ class ToughAnimationCasesPageSet(page_set_module.PageSet):
 
   def __init__(self):
     super(ToughAnimationCasesPageSet, self).__init__(
-      archive_data_file='data/tough_animation_cases.json')
+      archive_data_file='data/tough_animation_cases.json',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     urls_list_one = [
       # Why: Tests the balls animation implemented with SVG animations.

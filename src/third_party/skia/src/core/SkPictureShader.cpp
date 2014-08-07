@@ -56,11 +56,7 @@ SkShader* SkPictureShader::refBitmapShader(const SkMatrix& matrix, const SkMatri
     SkASSERT(fPicture && fPicture->width() > 0 && fPicture->height() > 0);
 
     SkMatrix m;
-    if (this->hasLocalMatrix()) {
-        m.setConcat(matrix, this->getLocalMatrix());
-    } else {
-        m = matrix;
-    }
+    m.setConcat(matrix, this->getLocalMatrix());
     if (localM) {
         m.preConcat(*localM);
     }
@@ -96,7 +92,7 @@ SkShader* SkPictureShader::refBitmapShader(const SkMatrix& matrix, const SkMatri
 
         SkCanvas canvas(bm);
         canvas.scale(tileScale.width(), tileScale.height());
-        canvas.drawPicture(*fPicture);
+        canvas.drawPicture(fPicture);
 
         fCachedTileScale = tileScale;
         fCachedLocalMatrix = this->getLocalMatrix();
@@ -192,11 +188,20 @@ void SkPictureShader::toString(SkString* str) const {
 #endif
 
 #if SK_SUPPORT_GPU
-GrEffectRef* SkPictureShader::asNewEffect(GrContext* context, const SkPaint& paint) const {
-    SkAutoTUnref<SkShader> bitmapShader(this->refBitmapShader(context->getMatrix(), NULL));
+bool SkPictureShader::asNewEffect(GrContext* context, const SkPaint& paint,
+                                  const SkMatrix* localMatrix, GrColor* grColor,
+                                  GrEffectRef** grEffect) const {
+    SkAutoTUnref<SkShader> bitmapShader(this->refBitmapShader(context->getMatrix(), localMatrix));
     if (!bitmapShader) {
-        return NULL;
+        return false;
     }
-    return bitmapShader->asNewEffect(context, paint);
+    return bitmapShader->asNewEffect(context, paint, NULL, grColor, grEffect);
+}
+#else
+bool SkPictureShader::asNewEffect(GrContext* context, const SkPaint& paint,
+                                  const SkMatrix* localMatrix, GrColor* grColor,
+                                  GrEffectRef** grEffect) const {
+    SkDEBUGFAIL("Should not call in GPU-less build");
+    return false;
 }
 #endif

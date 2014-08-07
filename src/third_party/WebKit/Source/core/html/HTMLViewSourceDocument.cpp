@@ -25,7 +25,7 @@
 #include "config.h"
 #include "core/html/HTMLViewSourceDocument.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/StyleEngine.h"
 #include "core/dom/Text.h"
 #include "core/html/HTMLAnchorElement.h"
@@ -47,6 +47,12 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
+namespace {
+
+const char kXSSDetected[] = "Token contains a reflected XSS vector";
+
+} // namespace
+
 HTMLViewSourceDocument::HTMLViewSourceDocument(const DocumentInit& initializer, const String& mimeType)
     : HTMLDocument(initializer)
     , m_type(mimeType)
@@ -58,9 +64,9 @@ HTMLViewSourceDocument::HTMLViewSourceDocument(const DocumentInit& initializer, 
     lockCompatibilityMode();
 }
 
-PassRefPtr<DocumentParser> HTMLViewSourceDocument::createParser()
+PassRefPtrWillBeRawPtr<DocumentParser> HTMLViewSourceDocument::createParser()
 {
-    return HTMLViewSourceParser::create(this, m_type);
+    return HTMLViewSourceParser::create(*this, m_type);
 }
 
 void HTMLViewSourceDocument::createContainingTable()
@@ -86,7 +92,7 @@ void HTMLViewSourceDocument::createContainingTable()
     m_lineNumber = 0;
 }
 
-void HTMLViewSourceDocument::addSource(const String& source, HTMLToken& token)
+void HTMLViewSourceDocument::addSource(const String& source, HTMLToken& token, SourceAnnotation annotation)
 {
     if (!m_current)
         createContainingTable();
@@ -103,13 +109,13 @@ void HTMLViewSourceDocument::addSource(const String& source, HTMLToken& token)
         break;
     case HTMLToken::StartTag:
     case HTMLToken::EndTag:
-        processTagToken(source, token);
+        processTagToken(source, token, annotation);
         break;
     case HTMLToken::Comment:
         processCommentToken(source, token);
         break;
     case HTMLToken::Character:
-        processCharacterToken(source, token);
+        processCharacterToken(source, token, annotation);
         break;
     }
 }
@@ -128,8 +134,9 @@ void HTMLViewSourceDocument::processEndOfFileToken(const String& source, HTMLTok
     m_current = m_td;
 }
 
-void HTMLViewSourceDocument::processTagToken(const String& source, HTMLToken& token)
+void HTMLViewSourceDocument::processTagToken(const String& source, HTMLToken& token, SourceAnnotation annotation)
 {
+    maybeAddSpanForAnnotation(annotation);
     m_current = addSpanWithClassName("webkit-html-tag");
 
     AtomicString tagName(token.name());
@@ -170,12 +177,12 @@ void HTMLViewSourceDocument::processCommentToken(const String& source, HTMLToken
     m_current = m_td;
 }
 
-void HTMLViewSourceDocument::processCharacterToken(const String& source, HTMLToken&)
+void HTMLViewSourceDocument::processCharacterToken(const String& source, HTMLToken&, SourceAnnotation annotation)
 {
-    addText(source, "");
+    addText(source, "", annotation);
 }
 
-PassRefPtr<Element> HTMLViewSourceDocument::addSpanWithClassName(const AtomicString& className)
+PassRefPtrWillBeRawPtr<Element> HTMLViewSourceDocument::addSpanWithClassName(const AtomicString& className)
 {
     if (m_current == m_tbody) {
         addLine(className);
@@ -223,7 +230,7 @@ void HTMLViewSourceDocument::finishLine()
     m_current = m_tbody;
 }
 
-void HTMLViewSourceDocument::addText(const String& text, const AtomicString& className)
+void HTMLViewSourceDocument::addText(const String& text, const AtomicString& className, SourceAnnotation annotation)
 {
     if (text.isEmpty())
         return;
@@ -242,8 +249,10 @@ void HTMLViewSourceDocument::addText(const String& text, const AtomicString& cla
             finishLine();
             continue;
         }
-        RefPtr<Text> t = Text::create(*this, substring);
-        m_current->parserAppendChild(t);
+        RefPtrWillBeRawPtr<Element> oldElement = m_current;
+        maybeAddSpanForAnnotation(annotation);
+        m_current->parserAppendChild(Text::create(*this, substring));
+        m_current = oldElement;
         if (i < size - 1)
             finishLine();
     }
@@ -268,7 +277,7 @@ int HTMLViewSourceDocument::addRange(const String& source, int start, int end, c
     return end;
 }
 
-PassRefPtr<Element> HTMLViewSourceDocument::addBase(const AtomicString& href)
+PassRefPtrWillBeRawPtr<Element> HTMLViewSourceDocument::addBase(const AtomicString& href)
 {
     RefPtrWillBeRawPtr<HTMLBaseElement> base = HTMLBaseElement::create(*this);
     base->setAttribute(hrefAttr, href);
@@ -276,7 +285,7 @@ PassRefPtr<Element> HTMLViewSourceDocument::addBase(const AtomicString& href)
     return base.release();
 }
 
-PassRefPtr<Element> HTMLViewSourceDocument::addLink(const AtomicString& url, bool isAnchor)
+PassRefPtrWillBeRawPtr<Element> HTMLViewSourceDocument::addLink(const AtomicString& url, bool isAnchor)
 {
     if (m_current == m_tbody)
         addLine("webkit-html-tag");
@@ -293,6 +302,14 @@ PassRefPtr<Element> HTMLViewSourceDocument::addLink(const AtomicString& url, boo
     anchor->setAttribute(hrefAttr, url);
     m_current->parserAppendChild(anchor);
     return anchor.release();
+}
+
+void HTMLViewSourceDocument::maybeAddSpanForAnnotation(SourceAnnotation annotation)
+{
+    if (annotation == AnnotateSourceAsXSS) {
+        m_current = addSpanWithClassName("webkit-highlight");
+        m_current->setAttribute(titleAttr, kXSSDetected);
+    }
 }
 
 void HTMLViewSourceDocument::trace(Visitor* visitor)

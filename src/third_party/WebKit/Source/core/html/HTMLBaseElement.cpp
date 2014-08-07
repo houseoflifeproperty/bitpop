@@ -23,7 +23,7 @@
 #include "config.h"
 #include "core/html/HTMLBaseElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -39,10 +39,7 @@ inline HTMLBaseElement::HTMLBaseElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLBaseElement> HTMLBaseElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLBaseElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLBaseElement)
 
 void HTMLBaseElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {

@@ -31,7 +31,7 @@
 #include "config.h"
 #include "modules/webmidi/MIDIController.h"
 
-#include "modules/webmidi/MIDIAccess.h"
+#include "modules/webmidi/MIDIAccessInitializer.h"
 #include "modules/webmidi/MIDIClient.h"
 
 namespace WebCore {
@@ -56,19 +56,19 @@ PassOwnPtrWillBeRawPtr<MIDIController> MIDIController::create(PassOwnPtr<MIDICli
     return adoptPtrWillBeNoop(new MIDIController(client));
 }
 
-void MIDIController::requestSysexPermission(PassRefPtrWillBeRawPtr<MIDIAccess> access)
+void MIDIController::requestSysexPermission(MIDIAccessInitializer* initializer)
 {
-    m_client->requestSysexPermission(access);
+    m_client->requestSysexPermission(initializer);
 }
 
-void MIDIController::cancelSysexPermissionRequest(MIDIAccess* access)
+void MIDIController::cancelSysexPermissionRequest(MIDIAccessInitializer* initializer)
 {
-    m_client->cancelSysexPermissionRequest(access);
+    m_client->cancelSysexPermissionRequest(initializer);
 }
 
-void provideMIDITo(Page& page, PassOwnPtr<MIDIClient> client)
+void provideMIDITo(LocalFrame& frame, PassOwnPtr<MIDIClient> client)
 {
-    MIDIController::provideTo(page, MIDIController::supplementName(), MIDIController::create(client));
+    MIDIController::provideTo(frame, MIDIController::supplementName(), MIDIController::create(client));
 }
 
 } // namespace WebCore

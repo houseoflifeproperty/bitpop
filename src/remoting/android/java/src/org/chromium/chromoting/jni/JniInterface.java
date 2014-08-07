@@ -21,6 +21,7 @@ import android.widget.TextView;
 
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+import org.chromium.chromoting.Chromoting;
 import org.chromium.chromoting.R;
 
 import java.nio.ByteBuffer;
@@ -321,16 +322,16 @@ public class JniInterface {
     private static native void nativeSendMouseWheelEvent(int deltaX, int deltaY);
 
     /** Presses or releases the specified (nonnegative) key. Called on the UI thread. */
-    public static void sendKeyEvent(int keyCode, boolean keyDown) {
+    public static boolean sendKeyEvent(int keyCode, boolean keyDown) {
         if (!sConnected) {
-            return;
+            return false;
         }
 
-        nativeSendKeyEvent(keyCode, keyDown);
+        return nativeSendKeyEvent(keyCode, keyDown);
     }
 
     /** Passes key press information to the native handling code. */
-    private static native void nativeSendKeyEvent(int keyCode, boolean keyDown);
+    private static native boolean nativeSendKeyEvent(int keyCode, boolean keyDown);
 
     /** Sends TextEvent to the host. Called on the UI thread. */
     public static void sendTextEvent(String text) {
@@ -433,4 +434,20 @@ public class JniInterface {
 
     /** Returns the current cursor shape. Called on the graphics thread. */
     public static Bitmap getCursorBitmap() { return sCursorBitmap; }
+
+    //
+    // Third Party Authentication
+    //
+
+    /** Pops up a third party login page to fetch the token required for authentication. */
+    @CalledByNative
+    public static void fetchThirdPartyToken(String tokenUrl, String clientId, String scope) {
+        Chromoting app = (Chromoting) sContext;
+        app.fetchThirdPartyToken(tokenUrl, clientId, scope);
+    }
+
+    /**
+     * Notify the native code to continue authentication with the |token| and the |sharedSecret|.
+     */
+    public static native void nativeOnThirdPartyTokenFetched(String token, String sharedSecret);
 }

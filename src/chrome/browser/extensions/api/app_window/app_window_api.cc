@@ -15,6 +15,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/devtools/devtools_window.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/app_window.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "content/public/browser/notification_registrar.h"
@@ -25,6 +26,7 @@
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/image_util.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/switches.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/ui_base_types.h"
@@ -48,6 +50,10 @@ const char kInactiveColorWithoutColor[] =
     "frame.inactiveColor must be used with frame.color.";
 const char kConflictingBoundsOptions[] =
     "The $1 property cannot be specified for both inner and outer bounds.";
+const char kAlwaysOnTopPermission[] =
+    "The \"app.window.alwaysOnTop\" permission is required.";
+const char kInvalidUrlParameter[] =
+    "The URL used for window creation must be local for security reasons.";
 }  // namespace app_window_constants
 
 const char kNoneFrameOption[] = "none";
@@ -148,10 +154,15 @@ bool AppWindowCreateFunction::RunAsync() {
   GURL url = GetExtension()->GetResourceURL(params->url);
   // Allow absolute URLs for component apps, otherwise prepend the extension
   // path.
-  if (GetExtension()->location() == extensions::Manifest::COMPONENT) {
-    GURL absolute = GURL(params->url);
-    if (absolute.has_scheme())
+  GURL absolute = GURL(params->url);
+  if (absolute.has_scheme()) {
+    if (GetExtension()->location() == extensions::Manifest::COMPONENT) {
       url = absolute;
+    } else {
+      // Show error when url passed isn't local.
+      error_ = app_window_constants::kInvalidUrlParameter;
+      return false;
+    }
   }
 
   // TODO(jeremya): figure out a way to pass the opening WebContents through to
@@ -222,7 +233,8 @@ bool AppWindowCreateFunction::RunAsync() {
       return false;
 
     if (options->transparent_background.get() &&
-        (GetExtension()->HasAPIPermission(APIPermission::kExperimental) ||
+        (GetExtension()->permissions_data()->HasAPIPermission(
+             APIPermission::kExperimental) ||
          CommandLine::ForCurrentProcess()->HasSwitch(
              switches::kEnableExperimentalExtensionApis))) {
       create_params.transparent_background = *options->transparent_background;
@@ -234,9 +246,16 @@ bool AppWindowCreateFunction::RunAsync() {
     if (options->resizable.get())
       create_params.resizable = *options->resizable.get();
 
-    if (options->always_on_top.get() &&
-        GetExtension()->HasAPIPermission(APIPermission::kAlwaysOnTopWindows))
+    if (options->always_on_top.get()) {
       create_params.always_on_top = *options->always_on_top.get();
+
+      if (create_params.always_on_top &&
+          !GetExtension()->permissions_data()->HasAPIPermission(
+              APIPermission::kAlwaysOnTopWindows)) {
+        error_ = app_window_constants::kAlwaysOnTopPermission;
+        return false;
+      }
+    }
 
     if (options->focused.get())
       create_params.focused = *options->focused.get();
@@ -291,6 +310,8 @@ bool AppWindowCreateFunction::RunAsync() {
   }
 
   SendResponse(true);
+  app_window->WindowEventsReady();
+
   return true;
 }
 
@@ -408,10 +429,11 @@ bool AppWindowCreateFunction::GetBoundsSpec(
 
 AppWindow::Frame AppWindowCreateFunction::GetFrameFromString(
     const std::string& frame_string) {
-   if (frame_string == kHtmlFrameOption &&
-       (GetExtension()->HasAPIPermission(APIPermission::kExperimental) ||
-        CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableExperimentalExtensionApis))) {
+  if (frame_string == kHtmlFrameOption &&
+      (GetExtension()->permissions_data()->HasAPIPermission(
+           APIPermission::kExperimental) ||
+       CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kEnableExperimentalExtensionApis))) {
      inject_html_titlebar_ = true;
      return AppWindow::FRAME_NONE;
    }

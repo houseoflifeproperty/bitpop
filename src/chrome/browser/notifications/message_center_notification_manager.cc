@@ -78,7 +78,7 @@ MessageCenterNotificationManager::MessageCenterNotificationManager(
   blockers_.push_back(new FullscreenNotificationBlocker(message_center));
 
 #if defined(OS_WIN) || defined(OS_MACOSX) \
-  || (defined(USE_AURA) && !defined(USE_ASH))
+  || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
   // On Windows, Linux and Mac, the notification manager owns the tray icon and
   // views.Other platforms have global ownership and Create will return NULL.
   tray_.reset(message_center::CreateMessageCenterTray());
@@ -89,6 +89,7 @@ MessageCenterNotificationManager::MessageCenterNotificationManager(
 }
 
 MessageCenterNotificationManager::~MessageCenterNotificationManager() {
+  message_center_->SetNotifierSettingsProvider(NULL);
   message_center_->RemoveObserver(this);
 }
 
@@ -136,8 +137,8 @@ bool MessageCenterNotificationManager::Update(const Notification& notification,
       // Changing the type from non-progress to progress does not count towards
       // the immediate update allowed in the message center.
       std::string old_id =
-          old_notification->notification().notification_id();
-      DCHECK(message_center_->HasNotification(old_id));
+          old_notification->notification().delegate_id();
+      DCHECK(message_center_->FindVisibleNotificationById(old_id));
 
       // Add/remove notification in the local list but just update the same
       // one in MessageCenter.
@@ -145,7 +146,7 @@ bool MessageCenterNotificationManager::Update(const Notification& notification,
       profile_notifications_.erase(old_id);
       ProfileNotification* new_notification =
           new ProfileNotification(profile, notification, message_center_);
-      profile_notifications_[notification.notification_id()] = new_notification;
+      profile_notifications_[notification.delegate_id()] = new_notification;
 
       // Now pass a copy to message center.
       scoped_ptr<message_center::Notification> message_center_notification(
@@ -322,7 +323,7 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloads(
       notification.icon_url(),
       base::Bind(&message_center::MessageCenter::SetNotificationIcon,
                  base::Unretained(message_center_),
-                 notification.notification_id()));
+                 notification.delegate_id()));
 
   // Notification image.
   StartDownloadWithImage(
@@ -331,7 +332,7 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloads(
       notification.image_url(),
       base::Bind(&message_center::MessageCenter::SetNotificationImage,
                  base::Unretained(message_center_),
-                 notification.notification_id()));
+                 notification.delegate_id()));
 
   // Notification button icons.
   StartDownloadWithImage(
@@ -340,7 +341,7 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloads(
       notification.button_one_icon_url(),
       base::Bind(&message_center::MessageCenter::SetNotificationButtonIcon,
                  base::Unretained(message_center_),
-                 notification.notification_id(),
+                 notification.delegate_id(),
                  0));
   StartDownloadWithImage(
       notification,
@@ -348,7 +349,7 @@ void MessageCenterNotificationManager::ImageDownloads::StartDownloads(
       notification.button_two_icon_url(),
       base::Bind(&message_center::MessageCenter::SetNotificationButtonIcon,
                  base::Unretained(message_center_),
-                 notification.notification_id(),
+                 notification.delegate_id(),
                  1));
 
   // This should tell the observer we're done if everything was synchronous.
@@ -471,7 +472,7 @@ std::string
 void MessageCenterNotificationManager::AddProfileNotification(
     ProfileNotification* profile_notification) {
   const Notification& notification = profile_notification->notification();
-  std::string id = notification.notification_id();
+  std::string id = notification.delegate_id();
   // Notification ids should be unique.
   DCHECK(profile_notifications_.find(id) == profile_notifications_.end());
   profile_notifications_[id] = profile_notification;
@@ -486,7 +487,7 @@ void MessageCenterNotificationManager::AddProfileNotification(
 
 void MessageCenterNotificationManager::RemoveProfileNotification(
     ProfileNotification* profile_notification) {
-  std::string id = profile_notification->notification().notification_id();
+  std::string id = profile_notification->notification().delegate_id();
   profile_notifications_.erase(id);
   delete profile_notification;
 }

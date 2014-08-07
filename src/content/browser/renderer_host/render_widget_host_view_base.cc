@@ -367,6 +367,7 @@ const int kFlushInputRateInUs = 16666;
 
 RenderWidgetHostViewBase::RenderWidgetHostViewBase()
     : popup_type_(blink::WebPopupTypeNone),
+      background_opaque_(true),
       mouse_locked_(false),
       showing_context_menu_(false),
       selection_text_offset_(0),
@@ -385,19 +386,19 @@ bool RenderWidgetHostViewBase::OnMessageReceived(const IPC::Message& msg){
   return false;
 }
 
-void RenderWidgetHostViewBase::SetBackground(const SkBitmap& background) {
-  background_ = background;
+void RenderWidgetHostViewBase::SetBackgroundOpaque(bool opaque) {
+  background_opaque_ = opaque;
 }
 
-const SkBitmap& RenderWidgetHostViewBase::GetBackground() {
-  return background_;
+bool RenderWidgetHostViewBase::GetBackgroundOpaque() {
+  return background_opaque_;
 }
 
 gfx::Size RenderWidgetHostViewBase::GetPhysicalBackingSize() const {
   gfx::NativeView view = GetNativeView();
   gfx::Display display =
       gfx::Screen::GetScreenFor(view)->GetDisplayNearestWindow(view);
-  return gfx::ToCeiledSize(gfx::ScaleSize(GetViewBounds().size(),
+  return gfx::ToCeiledSize(gfx::ScaleSize(GetRequestedRendererSize(),
                                           display.device_scale_factor()));
 }
 
@@ -412,6 +413,10 @@ void RenderWidgetHostViewBase::SelectionChanged(const base::string16& text,
   selection_text_offset_ = offset;
   selection_range_.set_start(range.start());
   selection_range_.set_end(range.end());
+}
+
+gfx::Size RenderWidgetHostViewBase::GetRequestedRendererSize() const {
+  return GetViewBounds().size();
 }
 
 ui::TextInputClient* RenderWidgetHostViewBase::GetTextInputClient() {
@@ -440,11 +445,6 @@ bool RenderWidgetHostViewBase::IsMouseLocked() {
   return mouse_locked_;
 }
 
-void RenderWidgetHostViewBase::UnhandledWheelEvent(
-    const blink::WebMouseWheelEvent& event) {
-  // Most implementations don't need to do anything here.
-}
-
 InputEventAckState RenderWidgetHostViewBase::FilterInputEvent(
     const blink::WebInputEvent& input_event) {
   // By default, input events are simply forwarded to the renderer.
@@ -464,6 +464,11 @@ void RenderWidgetHostViewBase::OnSetNeedsFlushInput() {
       base::TimeDelta::FromMicroseconds(kFlushInputRateInUs),
       this,
       &RenderWidgetHostViewBase::FlushInput);
+}
+
+void RenderWidgetHostViewBase::WheelEventAck(
+    const blink::WebMouseWheelEvent& event,
+    InputEventAckState ack_result) {
 }
 
 void RenderWidgetHostViewBase::GestureEventAck(

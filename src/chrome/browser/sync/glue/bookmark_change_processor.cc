@@ -23,8 +23,8 @@
 #include "chrome/browser/undo/bookmark_undo_service.h"
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
 #include "chrome/browser/undo/bookmark_undo_utils.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/read_node.h"
@@ -149,6 +149,8 @@ void BookmarkChangeProcessor::RemoveAllSyncNodes() {
             syncer::kInvalidId) {
       RemoveAllChildNodes(&trans, bookmark_model_->mobile_node()->id());
     }
+    // Note: the root node may have additional extra nodes. Currently none of
+    // them are meant to sync.
   }
 
   // Don't need to update versions of deleted nodes.
@@ -293,7 +295,7 @@ void BookmarkChangeProcessor::BookmarkNodeRemoved(
   RemoveSyncNodeHierarchy(node);
 }
 
-void BookmarkChangeProcessor::BookmarkAllNodesRemoved(
+void BookmarkChangeProcessor::BookmarkAllUserNodesRemoved(
     BookmarkModel* model,
     const std::set<GURL>& removed_urls) {
   RemoveAllSyncNodes();
@@ -551,7 +553,7 @@ void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
 
   syncer::ReadNode synced_bookmarks(trans);
   int64 synced_bookmarks_id = syncer::kInvalidId;
-  if (synced_bookmarks.InitByTagLookup(kMobileBookmarksTag) ==
+  if (synced_bookmarks.InitByTagLookupForBookmarks(kMobileBookmarksTag) ==
       syncer::BaseNode::INIT_OK) {
     synced_bookmarks_id = synced_bookmarks.GetId();
   }

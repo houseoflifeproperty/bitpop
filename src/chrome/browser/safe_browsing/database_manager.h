@@ -76,7 +76,7 @@ class SafeBrowsingDatabaseManager
     safe_browsing_util::ListType check_type;  // See comment in constructor.
     std::vector<SBThreatType> expected_threats;
     std::vector<SBPrefix> prefix_hits;
-    std::vector<SBFullHashResult> full_hits;
+    std::vector<SBFullHashResult> cache_hits;
 
     // Vends weak pointers for TimeoutCallback().  If the response is
     // received before the timeout fires, factory is destructed and
@@ -173,16 +173,18 @@ class SafeBrowsingDatabaseManager
   // Check if the CSD malware IP matching kill switch is turned on.
   virtual bool IsMalwareKillSwitchOn();
 
+  // Check if the CSD whitelist kill switch is turned on.
+  virtual bool IsCsdWhitelistKillSwitchOn();
+
   // Called on the IO thread to cancel a pending check if the result is no
   // longer needed.
   void CancelCheck(Client* client);
 
   // Called on the IO thread when the SafeBrowsingProtocolManager has received
   // the full hash results for prefix hits detected in the database.
-  void HandleGetHashResults(
-      SafeBrowsingCheck* check,
-      const std::vector<SBFullHashResult>& full_hashes,
-      bool can_cache);
+  void HandleGetHashResults(SafeBrowsingCheck* check,
+                            const std::vector<SBFullHashResult>& full_hashes,
+                            const base::TimeDelta& cache_lifetime);
 
   // Log the user perceived delay caused by SafeBrowsing. This delay is the time
   // delta starting from when we would have started reading data from the
@@ -212,6 +214,7 @@ class SafeBrowsingDatabaseManager
   friend class SafeBrowsingServiceTest;
   friend class SafeBrowsingServiceTestHelper;
   friend class SafeBrowsingDatabaseManagerTest;
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingDatabaseManagerTest, GetUrlThreatType);
 
   typedef std::set<SafeBrowsingCheck*> CurrentChecks;
   typedef std::vector<SafeBrowsingCheck*> GetHashRequestors;
@@ -231,6 +234,19 @@ class SafeBrowsingDatabaseManager
     std::vector<SBThreatType> expected_threats;
     base::TimeTicks start;  // When check was queued.
   };
+
+  // Return the threat type from the first result in |full_hashes| which matches
+  // |hash|, or SAFE if none match.
+  static SBThreatType GetHashThreatType(
+      const SBFullHash& hash,
+      const std::vector<SBFullHashResult>& full_hashes);
+
+  // Given a URL, compare all the possible host + path full hashes to the set of
+  // provided full hashes.  Returns the threat type of the matching result from
+  // |full_hashes|, or SAFE if none match.
+  static SBThreatType GetUrlThreatType(
+      const GURL& url,
+      const std::vector<SBFullHashResult>& full_hashes);
 
   // Called to stop operations on the io_thread. This may be called multiple
   // times during the life of the DatabaseManager. Should be called on IO
@@ -271,11 +287,12 @@ class SafeBrowsingDatabaseManager
   void DatabaseLoadComplete();
 
   // Called on the database thread to add/remove chunks and host keys.
-  // Callee will free the data when it's done.
-  void AddDatabaseChunks(const std::string& list, SBChunkList* chunks,
+  void AddDatabaseChunks(const std::string& list,
+                         scoped_ptr<ScopedVector<SBChunkData> > chunks,
                          AddChunksCallback callback);
 
-  void DeleteDatabaseChunks(std::vector<SBChunkDelete>* chunk_deletes);
+  void DeleteDatabaseChunks(
+      scoped_ptr<std::vector<SBChunkDelete> > chunk_deletes);
 
   void NotifyClientBlockingComplete(Client* client, bool proceed);
 
@@ -287,10 +304,6 @@ class SafeBrowsingDatabaseManager
   // Runs on the db thread to reset the database. We assume that resetting the
   // database is a synchronous operation.
   void OnResetDatabase();
-
-  // Store in-memory the GetHash response. Runs on the database thread.
-  void CacheHashResults(const std::vector<SBPrefix>& prefixes,
-                        const std::vector<SBFullHashResult>& full_hashes);
 
   // Internal worker function for processing full hashes.
   void OnHandleGetHashResults(SafeBrowsingCheck* check,
@@ -329,10 +342,11 @@ class SafeBrowsingDatabaseManager
   virtual void UpdateStarted() OVERRIDE;
   virtual void UpdateFinished(bool success) OVERRIDE;
   virtual void GetChunks(GetChunksCallback callback) OVERRIDE;
-  virtual void AddChunks(const std::string& list, SBChunkList* chunks,
+  virtual void AddChunks(const std::string& list,
+                         scoped_ptr<ScopedVector<SBChunkData> > chunks,
                          AddChunksCallback callback) OVERRIDE;
   virtual void DeleteChunks(
-      std::vector<SBChunkDelete>* delete_chunks) OVERRIDE;
+      scoped_ptr<std::vector<SBChunkDelete> > chunk_deletes) OVERRIDE;
 
   scoped_refptr<SafeBrowsingService> sb_service_;
 

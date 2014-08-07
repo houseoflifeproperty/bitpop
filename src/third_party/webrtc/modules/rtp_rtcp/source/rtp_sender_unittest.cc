@@ -444,7 +444,7 @@ TEST_F(RtpSenderTest, TrafficSmoothingWithExtensions) {
       kRtpExtensionTransmissionTimeOffset, kTransmissionTimeOffsetExtensionId));
   EXPECT_EQ(0, rtp_sender_->RegisterRtpHeaderExtension(
       kRtpExtensionAbsoluteSendTime, kAbsoluteSendTimeExtensionId));
-  rtp_sender_->SetTargetSendBitrate(300000);
+  rtp_sender_->SetTargetBitrate(300000);
   int64_t capture_time_ms = fake_clock_.TimeInMilliseconds();
   int32_t rtp_length = rtp_sender_->BuildRTPheader(packet_,
                                                    kPayload,
@@ -498,7 +498,7 @@ TEST_F(RtpSenderTest, TrafficSmoothingRetransmits) {
       kRtpExtensionTransmissionTimeOffset, kTransmissionTimeOffsetExtensionId));
   EXPECT_EQ(0, rtp_sender_->RegisterRtpHeaderExtension(
       kRtpExtensionAbsoluteSendTime, kAbsoluteSendTimeExtensionId));
-  rtp_sender_->SetTargetSendBitrate(300000);
+  rtp_sender_->SetTargetBitrate(300000);
   int64_t capture_time_ms = fake_clock_.TimeInMilliseconds();
   int32_t rtp_length = rtp_sender_->BuildRTPheader(packet_,
                                                    kPayload,
@@ -580,7 +580,7 @@ TEST_F(RtpSenderTest, SendPadding) {
                                          kAbsoluteSendTimeExtensionId);
   webrtc::RTPHeader rtp_header;
 
-  rtp_sender_->SetTargetSendBitrate(300000);
+  rtp_sender_->SetTargetBitrate(300000);
   int64_t capture_time_ms = fake_clock_.TimeInMilliseconds();
   int32_t rtp_length = rtp_sender_->BuildRTPheader(packet_,
                                                    kPayload,
@@ -687,8 +687,8 @@ TEST_F(RtpSenderTest, SendRedundantPayloads) {
   rtp_header_len += 4;  // 4 bytes extension.
   rtp_header_len += 4;  // 4 extra bytes common to all extension headers.
 
-  rtp_sender_->SetRTXStatus(kRtxRetransmitted | kRtxRedundantPayloads, true,
-                            1234);
+  rtp_sender_->SetRTXStatus(kRtxRetransmitted | kRtxRedundantPayloads);
+  rtp_sender_->SetRtxSsrc(1234);
 
   // Create and set up parser.
   scoped_ptr<webrtc::RtpHeaderParser> rtp_parser(
@@ -698,7 +698,7 @@ TEST_F(RtpSenderTest, SendRedundantPayloads) {
                                          kTransmissionTimeOffsetExtensionId);
   rtp_parser->RegisterRtpHeaderExtension(kRtpExtensionAbsoluteSendTime,
                                          kAbsoluteSendTimeExtensionId);
-  rtp_sender_->SetTargetSendBitrate(300000);
+  rtp_sender_->SetTargetBitrate(300000);
   const size_t kNumPayloadSizes = 10;
   const int kPayloadSizes[kNumPayloadSizes] = {500, 550, 600, 650, 700, 750,
       800, 850, 900, 950};

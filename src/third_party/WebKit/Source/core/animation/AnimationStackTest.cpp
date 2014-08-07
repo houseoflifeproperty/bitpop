@@ -8,8 +8,9 @@
 #include "core/animation/ActiveAnimations.h"
 #include "core/animation/AnimatableDouble.h"
 #include "core/animation/AnimationClock.h"
-#include "core/animation/DocumentTimeline.h"
+#include "core/animation/AnimationTimeline.h"
 #include "core/animation/KeyframeEffectModel.h"
+#include "core/animation/interpolation/LegacyStyleInterpolation.h"
 #include <gtest/gtest.h>
 
 namespace WebCore {
@@ -20,8 +21,7 @@ protected:
     {
         document = Document::create();
         document->animationClock().resetTimeForTesting();
-        timeline = DocumentTimeline::create(document.get());
-        timeline->setZeroTime(0);
+        timeline = AnimationTimeline::create(document.get());
         element = document->createElement("foo", ASSERT_NO_EXCEPTION);
     }
 
@@ -39,7 +39,7 @@ protected:
         timeline->serviceAnimations(TimingUpdateForAnimationFrame);
     }
 
-    const Vector<OwnPtr<SampledEffect> >& effects()
+    const WillBeHeapVector<OwnPtrWillBeMember<SampledEffect> >& effects()
     {
         return element->ensureActiveAnimations().defaultStack().m_effects;
     }
@@ -56,14 +56,14 @@ protected:
         return AnimatableValueKeyframeEffectModel::create(keyframes);
     }
 
-    PassRefPtr<InertAnimation> makeInertAnimation(PassRefPtrWillBeRawPtr<AnimationEffect> effect)
+    PassRefPtrWillBeRawPtr<InertAnimation> makeInertAnimation(PassRefPtrWillBeRawPtr<AnimationEffect> effect)
     {
         Timing timing;
         timing.fillMode = Timing::FillModeBoth;
         return InertAnimation::create(effect, timing, false);
     }
 
-    PassRefPtr<Animation> makeAnimation(PassRefPtrWillBeRawPtr<AnimationEffect> effect, double duration = 10)
+    PassRefPtrWillBeRawPtr<Animation> makeAnimation(PassRefPtrWillBeRawPtr<AnimationEffect> effect, double duration = 10)
     {
         Timing timing;
         timing.fillMode = Timing::FillModeBoth;
@@ -76,9 +76,9 @@ protected:
         return toLegacyStyleInterpolation(interpolation)->currentValue().get();
     }
 
-    RefPtr<Document> document;
-    RefPtr<DocumentTimeline> timeline;
-    RefPtr<Element> element;
+    RefPtrWillBePersistent<Document> document;
+    RefPtrWillBePersistent<AnimationTimeline> timeline;
+    RefPtrWillBePersistent<Element> element;
 };
 
 TEST_F(AnimationAnimationStackTest, ActiveAnimationsSorted)
@@ -95,9 +95,9 @@ TEST_F(AnimationAnimationStackTest, NewAnimations)
 {
     play(makeAnimation(makeAnimationEffect(CSSPropertyFontSize, AnimatableDouble::create(1))).get(), 15);
     play(makeAnimation(makeAnimationEffect(CSSPropertyZIndex, AnimatableDouble::create(2))).get(), 10);
-    Vector<InertAnimation*> newAnimations;
-    RefPtr<InertAnimation> inert1 = makeInertAnimation(makeAnimationEffect(CSSPropertyFontSize, AnimatableDouble::create(3)));
-    RefPtr<InertAnimation> inert2 = makeInertAnimation(makeAnimationEffect(CSSPropertyZIndex, AnimatableDouble::create(4)));
+    WillBeHeapVector<RawPtrWillBeMember<InertAnimation> > newAnimations;
+    RefPtrWillBeRawPtr<InertAnimation> inert1 = makeInertAnimation(makeAnimationEffect(CSSPropertyFontSize, AnimatableDouble::create(3)));
+    RefPtrWillBeRawPtr<InertAnimation> inert2 = makeInertAnimation(makeAnimationEffect(CSSPropertyZIndex, AnimatableDouble::create(4)));
     newAnimations.append(inert1.get());
     newAnimations.append(inert2.get());
     WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> > result = AnimationStack::activeInterpolations(&element->activeAnimations()->defaultStack(), &newAnimations, 0, Animation::DefaultPriority, 10);
@@ -108,8 +108,8 @@ TEST_F(AnimationAnimationStackTest, NewAnimations)
 
 TEST_F(AnimationAnimationStackTest, CancelledAnimationPlayers)
 {
-    HashSet<const AnimationPlayer*> cancelledAnimationPlayers;
-    RefPtr<AnimationPlayer> player = play(makeAnimation(makeAnimationEffect(CSSPropertyFontSize, AnimatableDouble::create(1))).get(), 0);
+    WillBeHeapHashSet<RawPtrWillBeMember<const AnimationPlayer> > cancelledAnimationPlayers;
+    RefPtrWillBeRawPtr<AnimationPlayer> player = play(makeAnimation(makeAnimationEffect(CSSPropertyFontSize, AnimatableDouble::create(1))).get(), 0);
     cancelledAnimationPlayers.add(player.get());
     play(makeAnimation(makeAnimationEffect(CSSPropertyZIndex, AnimatableDouble::create(2))).get(), 0);
     WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> > result = AnimationStack::activeInterpolations(&element->activeAnimations()->defaultStack(), 0, &cancelledAnimationPlayers, Animation::DefaultPriority, 0);
@@ -126,6 +126,7 @@ TEST_F(AnimationAnimationStackTest, ForwardsFillDiscarding)
     WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> > interpolations;
 
     updateTimeline(11);
+    Heap::collectAllGarbage();
     interpolations = AnimationStack::activeInterpolations(&element->activeAnimations()->defaultStack(), 0, 0, Animation::DefaultPriority, 0);
     EXPECT_TRUE(interpolationValue(interpolations.get(CSSPropertyFontSize))->equals(AnimatableDouble::create(2).get()));
     EXPECT_EQ(3u, effects().size());
@@ -135,6 +136,7 @@ TEST_F(AnimationAnimationStackTest, ForwardsFillDiscarding)
     EXPECT_EQ(6, effects()[2]->sortInfo().startTime());
 
     updateTimeline(13);
+    Heap::collectAllGarbage();
     interpolations = AnimationStack::activeInterpolations(&element->activeAnimations()->defaultStack(), 0, 0, Animation::DefaultPriority, 0);
     EXPECT_TRUE(interpolationValue(interpolations.get(CSSPropertyFontSize))->equals(AnimatableDouble::create(2).get()));
     EXPECT_EQ(3u, effects().size());
@@ -143,6 +145,7 @@ TEST_F(AnimationAnimationStackTest, ForwardsFillDiscarding)
     EXPECT_EQ(6, effects()[2]->sortInfo().startTime());
 
     updateTimeline(15);
+    Heap::collectAllGarbage();
     interpolations = AnimationStack::activeInterpolations(&element->activeAnimations()->defaultStack(), 0, 0, Animation::DefaultPriority, 0);
     EXPECT_TRUE(interpolationValue(interpolations.get(CSSPropertyFontSize))->equals(AnimatableDouble::create(2).get()));
     EXPECT_EQ(2u, effects().size());
@@ -150,6 +153,7 @@ TEST_F(AnimationAnimationStackTest, ForwardsFillDiscarding)
     EXPECT_EQ(6, effects()[1]->sortInfo().startTime());
 
     updateTimeline(17);
+    Heap::collectAllGarbage();
     interpolations = AnimationStack::activeInterpolations(&element->activeAnimations()->defaultStack(), 0, 0, Animation::DefaultPriority, 0);
     EXPECT_TRUE(interpolationValue(interpolations.get(CSSPropertyFontSize))->equals(AnimatableDouble::create(2).get()));
     EXPECT_EQ(1u, effects().size());

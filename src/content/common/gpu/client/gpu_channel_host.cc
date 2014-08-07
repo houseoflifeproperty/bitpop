@@ -73,12 +73,12 @@ void GpuChannelHost::Connect(const IPC::ChannelHandle& channel_handle,
   // Open a channel to the GPU process. We pass NULL as the main listener here
   // since we need to filter everything to route it to the right thread.
   scoped_refptr<base::MessageLoopProxy> io_loop = factory_->GetIOLoopProxy();
-  channel_.reset(new IPC::SyncChannel(channel_handle,
+  channel_ = IPC::SyncChannel::Create(channel_handle,
                                       IPC::Channel::MODE_CLIENT,
                                       NULL,
                                       io_loop.get(),
                                       true,
-                                      shutdown_event));
+                                      shutdown_event);
 
   sync_filter_ = new IPC::SyncMessageFilter(shutdown_event);
 
@@ -144,6 +144,19 @@ CommandBufferProxyImpl* GpuChannelHost::CreateViewCommandBuffer(
   int32 route_id = GenerateRouteID();
   if (!factory_->CreateViewCommandBuffer(surface_id, init_params, route_id)) {
     LOG(ERROR) << "GpuChannelHost::CreateViewCommandBuffer failed.";
+
+    // The most likely reason CreateViewCommandBuffer will fail is
+    // that the GPU process crashed. In this case the GPU channel
+    // needs to be considered lost. The caller will then set up a new
+    // connection, and the GPU channel and any view command buffers
+    // will all be associated with the same GPU process.
+    DCHECK(MessageLoopProxy::current().get());
+
+    scoped_refptr<base::MessageLoopProxy> io_loop = factory_->GetIOLoopProxy();
+    io_loop->PostTask(FROM_HERE,
+                      base::Bind(&GpuChannelHost::MessageFilter::OnChannelError,
+                                 channel_filter_.get()));
+
     return NULL;
   }
 
@@ -253,7 +266,7 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
   // Windows needs to explicitly duplicate the handle out to another process.
   base::SharedMemoryHandle target_handle;
   if (!BrokerDuplicateHandle(source_handle,
-                             channel_->peer_pid(),
+                             channel_->GetPeerPID(),
                              &target_handle,
                              FILE_GENERIC_READ | FILE_GENERIC_WRITE,
                              0)) {

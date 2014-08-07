@@ -7,7 +7,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/scoped_observer.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "extensions/browser/extension_registry_observer.h"
@@ -45,6 +45,10 @@ class ExtensionInfoBarDelegate : public infobars::InfoBarDelegate,
   extensions::ExtensionViewHost* extension_view_host() {
     return extension_view_host_.get();
   }
+  const extensions::ExtensionViewHost* extension_view_host() const {
+    return extension_view_host_.get();
+  }
+
   int height() { return height_; }
 
   bool closing() const { return closing_; }

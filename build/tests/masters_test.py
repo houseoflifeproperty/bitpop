@@ -21,6 +21,9 @@ import time
 BUILD_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BUILD_DIR, 'scripts'))
 
+from tools import runit
+runit.add_build_paths(sys.path)
+
 import masters_util
 from common import chromium_utils
 from common import master_cfg_utils
@@ -219,6 +222,7 @@ def main(argv):
       'master.chromium.webrtc.fyi': 'ChromiumWebRTCFYI',
       'master.chromium.win': 'ChromiumWin',
       'master.chromiumos': 'ChromiumOS',
+      'master.chromiumos.chromium': 'ChromiumOSChromium',
       'master.chromiumos.tryserver': 'ChromiumOSTryServer',
       'master.client.dart': 'Dart',
       'master.client.dart.fyi': 'DartFYI',
@@ -233,7 +237,6 @@ def main(argv):
       'master.client.nacl.sdk.addin': 'NativeClientSDKAddIn',
       'master.client.nacl.sdk.mono': 'NativeClientSDKMono',
       'master.client.nacl.toolchain': 'NativeClientToolchain',
-      'master.client.oilpan': 'Oilpan',
       'master.client.pagespeed': 'PageSpeed',
       'master.client.polymer': 'Polymer',
       'master.client.sfntly': 'Sfntly',
@@ -247,6 +250,7 @@ def main(argv):
       'master.push.canary': 'PushCanary',
       'master.tryserver.chromium': 'TryServer',
       'master.tryserver.chromium.gpu': 'GpuTryServer',
+      'master.tryserver.chromium.perf': 'ChromiumPerfTryServer',
       'master.tryserver.blink': 'BlinkTryServer',
       'master.tryserver.libyuv': 'LibyuvTryServer',
       'master.tryserver.nacl': 'NativeClientTryServer',

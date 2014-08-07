@@ -9,8 +9,8 @@
 
 #include "chrome/browser/undo/bookmark_renumber_observer.h"
 #include "chrome/browser/undo/undo_manager.h"
-#include "components/bookmarks/core/browser/base_bookmark_model_observer.h"
-#include "components/bookmarks/core/browser/bookmark_node_data.h"
+#include "components/bookmarks/browser/base_bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_node_data.h"
 #include "components/keyed_service/core/keyed_service.h"
 
 class Profile;
@@ -49,7 +49,7 @@ class BookmarkUndoService : public BaseBookmarkModelObserver,
                                      const BookmarkNode* parent,
                                      int old_index,
                                      const BookmarkNode* node) OVERRIDE;
-  virtual void OnWillRemoveAllBookmarks(BookmarkModel* model) OVERRIDE;
+  virtual void OnWillRemoveAllUserBookmarks(BookmarkModel* model) OVERRIDE;
   virtual void OnWillChangeBookmarkNode(BookmarkModel* model,
                                         const BookmarkNode* node) OVERRIDE;
   virtual void OnWillReorderBookmarkNode(BookmarkModel* model,

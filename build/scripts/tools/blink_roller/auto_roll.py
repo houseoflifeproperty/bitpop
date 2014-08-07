@@ -46,6 +46,7 @@ BLINK_SHERIFF_URL = (
 CHROMIUM_SHERIFF_URL = (
   'http://build.chromium.org/p/chromium.webkit/sheriff.js')
 
+CQ_EXTRA_TRYBOTS = 'CQ_EXTRA_TRYBOTS='
 
 # Does not support unicode or special characters.
 VALID_EMAIL_REGEXP = re.compile(r'^[A-Za-z0-9\.&\'\+-/=_]+@'
@@ -87,6 +88,7 @@ def _filter_emails(emails):
       rv.append(email)
     else:
       print 'WARNING: Not including %s (invalid email address)' % email
+  return rv
 
 
 def _emails_from_url(sheriff_url):
@@ -110,14 +112,16 @@ PROJECT_CONFIGS = {
     'revision_link_fn': lambda before_rev, after_rev: (
         'http://build.chromium.org/f/chromium/perf/dashboard/ui/'
         'changelog_blink.html?url=/trunk&range=%s:%s&mode=html') % (
-            before_rev, after_rev),
+            str(int(before_rev) + 1), after_rev),
   },
   'skia': {
+    'cq_extra_trybots': ['tryserver.chromium:linux_layout_rel'],
     'extra_emails_fn': lambda: [_get_skia_sheriff()],
-    'path_to_project': os.path.join('third_party', 'skia', 'src'),
+    'git_mode': True,
+    'path_to_project': os.path.join('third_party', 'skia'),
     'revision_link_fn': lambda before_rev, after_rev: (
-        'https://code.google.com/p/skia/source/list?num=%d&start=%s') % (
-            int(after_rev) - int(before_rev) - 1, after_rev),
+        'https://skia.googlesource.com/skia/+log/%s..%s' % (
+            before_rev, after_rev)),
   },
 }
 
@@ -173,6 +177,12 @@ class AutoRoller(object):
     self._path_to_project = project_config['path_to_project']
     self._get_revision_link = project_config['revision_link_fn']
     self._get_extra_emails = project_config.get('extra_emails_fn', lambda: [])
+    self._git_mode = project_config.get('git_mode', False)
+    self._cq_extra_trybots = project_config.get('cq_extra_trybots', [])
+
+    self._chromium_git_dir = self._path_from_chromium_root('.git')
+    self._project_git_dir = self._path_from_chromium_root(
+        self._path_to_project, '.git')
 
   def _parse_time(self, time_string):
     return datetime.datetime.strptime(time_string, self.RIETVELD_TIME_FORMAT)
@@ -218,31 +228,42 @@ class AutoRoller(object):
     return os.path.join(self._path_to_chrome, *components)
 
   def _last_roll_revision(self):
+    """Returns the revision of the last roll.
+
+    Returns:
+        revision of the last roll; either a 40-character Git commit hash or an
+        SVN revision number.
+    """
     if not self._cached_last_roll_revision:
-      git_dir = self._path_from_chromium_root('.git')
-      subprocess2.check_call(['git', '--git-dir', git_dir, 'fetch'])
-      git_show_cmd = ['git', '--git-dir', git_dir, 'show', 'origin/master:DEPS']
+      subprocess2.check_call(['git', '--git-dir', self._chromium_git_dir,
+                              'fetch'])
+      git_show_cmd = ['git', '--git-dir', self._chromium_git_dir, 'show',
+                      'origin/master:DEPS']
       deps_contents = subprocess2.check_output(git_show_cmd)
       pattern = self.REVISION_REGEXP % self._project_alias
       match = re.search(pattern, deps_contents, re.MULTILINE)
       self._cached_last_roll_revision = match.group('revision')
+    if self._git_mode:
+      assert len(self._cached_last_roll_revision) == 40
     return self._cached_last_roll_revision
 
   def _current_revision(self):
-    git_dir = self._path_from_chromium_root(self._path_to_project, '.git')
-    subprocess2.check_call(['git', '--git-dir', git_dir, 'fetch'])
-    git_show_cmd = ['git', '--git-dir', git_dir, 'show', '-s',
-                    'origin/master']
-    git_log = subprocess2.check_output(git_show_cmd)
-    match = re.search('^\s*git-svn-id:.*@(?P<svn_revision>\d+)\ ',
-      git_log, re.MULTILINE)
-    if match:
-      return int(match.group('svn_revision'))
-    else:
-      # If it's not git-svn, fall back on git.
-      git_revparse_cmd = ['git', '--git-dir', git_dir, 'rev-parse',
-                          'origin/master']
+    subprocess2.check_call(['git', '--git-dir', self._project_git_dir,
+                            'fetch'])
+    if self._git_mode:
+      git_revparse_cmd = ['git', '--git-dir', self._project_git_dir,
+                          'rev-parse', 'origin/master']
       return subprocess2.check_output(git_revparse_cmd).rstrip()
+    else:
+      git_show_cmd = ['git', '--git-dir', self._project_git_dir, 'show', '-s',
+                      'origin/master']
+      git_log = subprocess2.check_output(git_show_cmd)
+      match = re.search('^\s*git-svn-id:.*@(?P<svn_revision>\d+)\ ',
+                        git_log, re.MULTILINE)
+      if match:
+        return match.group('svn_revision')
+      else:
+        raise AutoRollException('Could not determine the current SVN revision.')
 
   def _emails_to_cc_on_rolls(self):
     return _filter_emails(self._get_extra_emails())
@@ -255,7 +276,7 @@ class AutoRoller(object):
 
     emails = self._emails_to_cc_on_rolls()
     if emails:
-      safely_roll_args.extend(['--cc', ','.join(emails)])
+      safely_roll_args.extend(['--reviewers', ','.join(emails)])
     subprocess2.check_call(map(str, safely_roll_args))
 
     # FIXME: It's easier to pull the issue id from rietveld rather than
@@ -288,6 +309,8 @@ class AutoRoller(object):
       return True
 
     last_roll_revision = self._last_roll_revision()
+    if self._git_mode:
+      last_roll_revision = self._short_rev(last_roll_revision)
     match = re.match(
         self.ROLL_DESCRIPTION_REGEXP % {'project': self._project.title()},
         issue['description'])
@@ -307,12 +330,11 @@ class AutoRoller(object):
         AutoRollException if new_roll_revision is not newer than than
         last_roll_revision.
     """
-    git_dir = self._path_from_chromium_root(self._path_to_project, '.git')
-    if (scm.GIT.IsValidRevision(git_dir, last_roll_revision) and
-        scm.GIT.IsValidRevision(git_dir, new_roll_revision)):
+    if self._git_mode:
       # Ensure that new_roll_revision is not an ancestor of old_roll_revision.
       try:
-        subprocess2.check_call(['git', 'merge-base', '--is-ancestor',
+        subprocess2.check_call(['git', '--git-dir', self._project_git_dir,
+                                'merge-base', '--is-ancestor',
                                 new_roll_revision, last_roll_revision])
         raise AutoRollException('Already at %s refusing to roll backwards to '
                                 '%s.' % (last_roll_revision, new_roll_revision))
@@ -324,6 +346,12 @@ class AutoRoller(object):
         raise AutoRollException(
             'Already at %s refusing to roll backwards to %s.' % (
                 last_roll_revision, new_roll_revision))
+
+  def _short_rev(self, revision):
+    """Shorten a Git commit hash."""
+    return subprocess2.check_output(['git', '--git-dir', self._project_git_dir,
+                                     'rev-parse', '--short', revision]
+                                    ).rstrip()
 
   def main(self):
     search_result = self._search_for_active_roll()
@@ -345,14 +373,23 @@ class AutoRoller(object):
     new_roll_revision = self._current_revision()
     self._compare_revisions(last_roll_revision, new_roll_revision)
 
+    display_from_rev = (
+        self._short_rev(last_roll_revision) if self._git_mode
+        else last_roll_revision)
+    display_to_rev = (
+        self._short_rev(new_roll_revision) if self._git_mode
+        else new_roll_revision)
     commit_msg = self.ROLL_DESCRIPTION_STR % {
         'project': self._project.title(),
-        'from_revision': last_roll_revision,
-        'to_revision': new_roll_revision
+        'from_revision': display_from_rev,
+        'to_revision': display_to_rev,
     }
     revlink = self._get_revision_link(last_roll_revision, new_roll_revision)
     if revlink:
       commit_msg += '\n\n' + revlink
+
+    if self._cq_extra_trybots:
+      commit_msg += '\n\n' + CQ_EXTRA_TRYBOTS + ','.join(self._cq_extra_trybots)
 
     self._start_roll(new_roll_revision, commit_msg)
     return 0
@@ -382,4 +419,3 @@ def main():
 
 if __name__ == '__main__':
   sys.exit(main())
-

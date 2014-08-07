@@ -11,3 +11,4 @@ class DynamoRIO(Master.Master3):
   master_port = 8059
   slave_port = 8159
   master_port_alt = 8259
+  buildbot_url = 'http://build.chromium.org/p/client.dynamorio/'

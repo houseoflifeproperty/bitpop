@@ -6,11 +6,10 @@
 
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/path_service.h"
 #include "base/sys_info.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -33,16 +32,18 @@ const base::FilePath::CharType kBuggyDriveFolderPath[] =
 }  // namespace
 
 base::FilePath GetDownloadsFolderForProfile(Profile* profile) {
+  // On non-ChromeOS system (test+development), the primary profile uses
+  // $HOME/Downloads for ease for accessing local files for debugging.
   if (!base::SysInfo::IsRunningOnChromeOS() &&
-      !chromeos::UserManager::IsMultipleProfilesAllowed()) {
-    // On the developer run on Linux desktop build, if multiple profiles are
-    // not enabled, use $HOME/Downloads for ease for accessing local files for
-    // debugging.
-    base::FilePath path;
-    CHECK(PathService::Get(base::DIR_HOME, &path));
-    return path.AppendASCII(kDownloadsFolderName);
+      chromeos::UserManager::IsInitialized()) {
+    const chromeos::User* const user =
+        chromeos::UserManager::Get()->GetUserByProfile(
+            profile->GetOriginalProfile());
+    const chromeos::User* const primary_user =
+        chromeos::UserManager::Get()->GetPrimaryUser();
+    if (user == primary_user)
+      return DownloadPrefs::GetDefaultDownloadDirectory();
   }
-
   return profile->GetPath().AppendASCII(kDownloadsFolderName);
 }
 

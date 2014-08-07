@@ -10,7 +10,7 @@
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/google/google_util.h"
+#include "components/google/core/browser/google_util.h"
 #include "net/cookies/canonical_cookie.h"
 
 namespace chrome_browser_net {
@@ -109,6 +109,11 @@ void EvictedDomainCookieCounter::OnCookieChanged(
 
   if (next_cookie_monster_delegate_.get())
     next_cookie_monster_delegate_->OnCookieChanged(cookie, removed, cause);
+}
+
+void EvictedDomainCookieCounter::OnLoaded() {
+  if (next_cookie_monster_delegate_.get())
+    next_cookie_monster_delegate_->OnLoaded();
 }
 
 // static

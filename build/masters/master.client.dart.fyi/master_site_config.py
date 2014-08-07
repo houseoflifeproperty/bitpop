@@ -14,3 +14,4 @@ class DartFYI(Master.Master3):
   slave_port = 8155
   # Enable when there's a public waterfall.
   master_port_alt = 8255
+  buildbot_url = 'http://build.chromium.org/p/client.dart.fyi/'

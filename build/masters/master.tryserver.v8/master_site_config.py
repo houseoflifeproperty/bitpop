@@ -12,6 +12,7 @@ class V8TryServer(Master.Master4):
   slave_port = 8174
   master_port_alt = 8274
   try_job_port = 8374
+  buildbot_url = 'http://build.chromium.org/p/tryserver.v8/'
   from_address = 'v8-dev@googlegroups.com'
   reply_to = 'chrome-troopers+tryserver@google.com'
   svn_url = 'svn://svn-mirror.golo.chromium.org/chrome-try-v8'

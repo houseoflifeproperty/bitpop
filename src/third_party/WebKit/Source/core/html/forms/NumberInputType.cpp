@@ -32,9 +32,9 @@
 #include "config.h"
 #include "core/html/forms/NumberInputType.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/html/HTMLInputElement.h"
@@ -49,7 +49,6 @@ namespace WebCore {
 
 using blink::WebLocalizedString;
 using namespace HTMLNames;
-using namespace std;
 
 static const int numberDefaultStep = 1;
 static const int numberDefaultStepBase = 0;
@@ -111,7 +110,7 @@ const AtomicString& NumberInputType::formControlType() const
 
 void NumberInputType::setValue(const String& sanitizedValue, bool valueChanged, TextFieldEventBehavior eventBehavior)
 {
-    if (!valueChanged && sanitizedValue.isEmpty() && !element().innerTextValue().isEmpty())
+    if (!valueChanged && sanitizedValue.isEmpty() && !element().innerEditorValue().isEmpty())
         element().updateView();
     TextFieldInputType::setValue(sanitizedValue, valueChanged, eventBehavior);
 }
@@ -145,7 +144,7 @@ bool NumberInputType::typeMismatch() const
 StepRange NumberInputType::createStepRange(AnyStepHandling anyStepHandling) const
 {
     DEFINE_STATIC_LOCAL(const StepRange::StepDescription, stepDescription, (numberDefaultStep, numberDefaultStepBase, numberStepScaleFactor));
-    const Decimal doubleMax = Decimal::fromDouble(numeric_limits<double>::max());
+    const Decimal doubleMax = Decimal::fromDouble(std::numeric_limits<double>::max());
     return InputType::createStepRange(anyStepHandling, numberDefaultStepBase, -doubleMax, doubleMax, stepDescription);
 }
 
@@ -238,7 +237,7 @@ String NumberInputType::sanitizeValue(const String& proposedValue) const
 
 bool NumberInputType::hasBadInput() const
 {
-    String standardValue = convertFromVisibleValue(element().innerTextValue());
+    String standardValue = convertFromVisibleValue(element().innerEditorValue());
     return !standardValue.isEmpty() && !std::isfinite(parseToDoubleForNumberType(standardValue));
 }
 
@@ -277,7 +276,7 @@ void NumberInputType::minOrMaxAttributeChanged()
     InputType::minOrMaxAttributeChanged();
 
     if (element().renderer())
-        element().renderer()->setNeedsLayoutAndPrefWidthsRecalc();
+        element().renderer()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
 }
 
 void NumberInputType::stepAttributeChanged()
@@ -285,7 +284,7 @@ void NumberInputType::stepAttributeChanged()
     InputType::stepAttributeChanged();
 
     if (element().renderer())
-        element().renderer()->setNeedsLayoutAndPrefWidthsRecalc();
+        element().renderer()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
 }
 
 bool NumberInputType::supportsSelectionAPI() const

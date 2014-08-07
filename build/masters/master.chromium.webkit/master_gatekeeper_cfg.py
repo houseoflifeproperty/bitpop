@@ -27,6 +27,7 @@ exclusions = {
 
   'WebKit Linux Leak': [],
   'WebKit Linux Oilpan Leak': [],
+  'WebKit Linux Oilpan ASAN': [],
 }
 
 forgiving_steps = ['update_scripts', 'update', 'gclient_revert']

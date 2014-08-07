@@ -7,9 +7,10 @@
 
 #include <stdint.h>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "ui/ozone/ozone_export.h"
 
+typedef struct _drmEventContext drmEventContext;
 typedef struct _drmModeConnector drmModeConnector;
 typedef struct _drmModeCrtc drmModeCrtc;
 typedef struct _drmModeModeInfo drmModeModeInfo;
@@ -52,7 +53,8 @@ class OZONE_EXPORT DriWrapper {
 
   // Register a buffer with the CRTC. On successful registration, the CRTC will
   // assign a framebuffer ID to |framebuffer|.
-  virtual bool AddFramebuffer(const drmModeModeInfo& mode,
+  virtual bool AddFramebuffer(uint32_t width,
+                              uint32_t height,
                               uint8_t depth,
                               uint8_t bpp,
                               uint32_t stride,
@@ -106,6 +108,8 @@ class OZONE_EXPORT DriWrapper {
 
   // Move the cursor on CRTC |crtc_id| to (x, y);
   virtual bool MoveCursor(uint32_t crtc_id, int x, int y);
+
+  virtual void HandleEvent(drmEventContext& event);
 
   int get_fd() const { return fd_; }
 

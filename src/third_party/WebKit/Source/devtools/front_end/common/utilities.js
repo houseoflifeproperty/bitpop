@@ -452,6 +452,19 @@ Object.defineProperty(Array.prototype, "keySet",
     }
 });
 
+Object.defineProperty(Array.prototype, "pushAll",
+{
+    /**
+     * @param {!Array.<!T>} array
+     * @this {Array.<!T>}
+     * @template T
+     */
+    value: function(array)
+    {
+        Array.prototype.push.apply(this, array);
+    }
+});
+
 Object.defineProperty(Array.prototype, "rotate",
 {
     /**
@@ -466,6 +479,27 @@ Object.defineProperty(Array.prototype, "rotate",
         for (var i = index; i < index + this.length; ++i)
             result.push(this[i % this.length]);
         return result;
+    }
+});
+
+Object.defineProperty(Array.prototype, "sortNumbers",
+{
+    /**
+     * @this {Array.<number>}
+     */
+    value: function()
+    {
+        /**
+         * @param {number} a
+         * @param {number} b
+         * @return {number}
+         */
+        function numericComparator(a, b)
+        {
+            return a - b;
+        }
+
+        this.sort(numericComparator);
     }
 });
 
@@ -763,6 +797,7 @@ Object.defineProperty(Array.prototype, "peekLast",
  * @param {!Array.<T>} array1
  * @param {!Array.<T>} array2
  * @param {function(T,T):number} comparator
+ * @param {boolean} mergeNotIntersect
  * @return {!Array.<T>}
  * @template T
  */
@@ -848,6 +883,11 @@ String.sprintf = function(format, var_arg)
     return String.vsprintf(format, Array.prototype.slice.call(arguments, 1));
 }
 
+/**
+ * @param {string} format
+ * @param {!Object.<string, function(string, ...):*>} formatters
+ * @return {!Array.<!Object>}
+ */
 String.tokenizeFormatString = function(format, formatters)
 {
     var tokens = [];
@@ -962,6 +1002,15 @@ String.vsprintf = function(format, substitutions)
     return String.format(format, substitutions, String.standardFormatters, "", function(a, b) { return a + b; }).formattedResult;
 }
 
+/**
+ * @param {string} format
+ * @param {?Array.<string>} substitutions
+ * @param {!Object.<string, function(string, ...):string>} formatters
+ * @param {!T} initialValue
+ * @param {function(T, string): T|undefined} append
+ * @return {!{formattedResult: T, unusedSubstitutions: ?Array.<string>}};
+ * @template T
+ */
 String.format = function(format, substitutions, formatters, initialValue, append)
 {
     if (!format || !substitutions || !substitutions.length)
@@ -1171,7 +1220,7 @@ Set.prototype = {
     /**
      * @return {!Array.<!T>}
      */
-    items: function()
+    values: function()
     {
         var result = new Array(this._size);
         var i = 0;
@@ -1462,6 +1511,50 @@ StringMultimap.prototype = {
             this._map[key] = new Set();
         }
         this._map[key].add(value);
+    },
+
+    /**
+     * @param {string} key
+     * @return {!Set.<!T>}
+     */
+    get: function(key)
+    {
+        var result = StringMap.prototype.get.call(this, key);
+        if (!result)
+            result = new Set();
+        return result;
+    },
+
+    /**
+     * @param {string} key
+     * @param {T} value
+     */
+    remove: function(key, value)
+    {
+        var values = this.get(key);
+        values.remove(value);
+        if (!values.size())
+            StringMap.prototype.remove.call(this, key)
+    },
+
+    /**
+     * @param {string} key
+     */
+    removeAll: function(key)
+    {
+        StringMap.prototype.remove.call(this, key);
+    },
+
+    /**
+     * @return {!Array.<!T>}
+     */
+    values: function()
+    {
+        var result = [];
+        var keys = this.keys();
+        for (var i = 0; i < keys.length; ++i)
+            result.pushAll(this.get(keys[i]).values());
+        return result;
     },
 
     __proto__: StringMap.prototype

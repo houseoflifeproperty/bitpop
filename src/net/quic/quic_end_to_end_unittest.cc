@@ -17,12 +17,13 @@
 #include "net/http/http_network_session.h"
 #include "net/http/http_network_transaction.h"
 #include "net/http/http_server_properties_impl.h"
-#include "net/http/http_transaction_unittest.h"
+#include "net/http/http_transaction_test_util.h"
 #include "net/http/transport_security_state.h"
 #include "net/proxy/proxy_service.h"
 #include "net/quic/test_tools/quic_test_utils.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "net/tools/quic/quic_in_memory_cache.h"
+#include "net/tools/quic/quic_server.h"
 #include "net/tools/quic/test_tools/quic_in_memory_cache_peer.h"
 #include "net/tools/quic/test_tools/server_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -30,6 +31,7 @@
 
 using base::StringPiece;
 using net::tools::QuicInMemoryCache;
+using net::tools::QuicServer;
 using net::tools::test::QuicInMemoryCachePeer;
 using net::tools::test::ServerThread;
 
@@ -133,10 +135,16 @@ class QuicEndToEndTest : public PlatformTest {
     CHECK(net::ParseIPLiteralToNumber("127.0.0.1", &ip));
     server_address_ = IPEndPoint(ip, 0);
     server_config_.SetDefaults();
-    server_thread_.reset(new ServerThread(server_address_, server_config_,
-                                          QuicSupportedVersions(),
-                                          strike_register_no_startup_period_,
-                                          kInitialFlowControlWindowForTest));
+    server_config_.SetInitialFlowControlWindowToSend(
+        kInitialSessionFlowControlWindowForTest);
+    server_config_.SetInitialStreamFlowControlWindowToSend(
+        kInitialStreamFlowControlWindowForTest);
+    server_config_.SetInitialSessionFlowControlWindowToSend(
+        kInitialSessionFlowControlWindowForTest);
+    server_thread_.reset(new ServerThread(
+         new QuicServer(server_config_, QuicSupportedVersions()),
+         server_address_,
+         strike_register_no_startup_period_));
     server_thread_->Initialize();
     server_address_ = IPEndPoint(server_address_.address(),
                                  server_thread_->GetPort());

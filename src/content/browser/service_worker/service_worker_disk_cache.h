@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISK_CACHE_
-#define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISK_CACHE_
+#ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISK_CACHE_H_
+#define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISK_CACHE_H_
 
 #include "content/common/content_export.h"
 #include "webkit/browser/appcache/appcache_disk_cache.h"
@@ -16,11 +16,11 @@ namespace content {
 // TODO(michaeln): If this reuse sticks, refactor/move the
 // resused classes to a more common location.
 
-class ServiceWorkerDiskCache
+class CONTENT_EXPORT ServiceWorkerDiskCache
     : public appcache::AppCacheDiskCache {
 };
 
-class ServiceWorkerResponseReader
+class CONTENT_EXPORT ServiceWorkerResponseReader
     : public appcache::AppCacheResponseReader {
  protected:
   // Should only be constructed by the storage class.
@@ -30,7 +30,7 @@ class ServiceWorkerResponseReader
       ServiceWorkerDiskCache* disk_cache);
 };
 
-class ServiceWorkerResponseWriter
+class CONTENT_EXPORT ServiceWorkerResponseWriter
     : public appcache::AppCacheResponseWriter {
  protected:
   // Should only be constructed by the storage class.
@@ -40,12 +40,16 @@ class ServiceWorkerResponseWriter
       ServiceWorkerDiskCache* disk_cache);
 };
 
-struct HttpResponseInfoIOBuffer
+struct CONTENT_EXPORT HttpResponseInfoIOBuffer
     : public appcache::HttpResponseInfoIOBuffer {
+ public:
+  HttpResponseInfoIOBuffer() : appcache::HttpResponseInfoIOBuffer() {}
+  explicit HttpResponseInfoIOBuffer(net::HttpResponseInfo* info)
+      : appcache::HttpResponseInfoIOBuffer(info) {}
  protected:
   virtual ~HttpResponseInfoIOBuffer();
 };
 
 }  // namespace content
 
-#endif  // CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISK_CACHE_
+#endif  // CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_DISK_CACHE_H_

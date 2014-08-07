@@ -291,7 +291,7 @@ WebInspector.DOMNode.prototype = {
 
     /**
      * @param {string} name
-     * @param {function(?Protocol.Error)=} callback
+     * @param {function(?Protocol.Error, number)=} callback
      */
     setNodeName: function(name, callback)
     {
@@ -432,7 +432,7 @@ WebInspector.DOMNode.prototype = {
     },
 
     /**
-     * @param {function(?Protocol.Error)=} callback
+     * @param {function(?Protocol.Error, string)=} callback
      */
     getOuterHTML: function(callback)
     {
@@ -903,6 +903,7 @@ WebInspector.DOMModel = function(target) {
 
     this._defaultHighlighter = new WebInspector.DefaultDOMNodeHighlighter(this._agent);
     this._highlighter = this._defaultHighlighter;
+    this._agent.enable();
 }
 
 WebInspector.DOMModel.Events = {
@@ -1014,11 +1015,12 @@ WebInspector.DOMModel.prototype = {
          * @param {!T=} result
          * @template T
          */
-        return function(error, result)
+        var wrapper = function(error, result)
         {
             // Caller is responsible for handling the actual error.
             callback(error ? null : result);
-        }
+        };
+        return wrapper;
     },
 
     /**
@@ -1455,7 +1457,8 @@ WebInspector.DOMModel.prototype = {
     _buildHighlightConfig: function(mode)
     {
         mode = mode || "all";
-        var highlightConfig = { showInfo: mode === "all", showRulers: WebInspector.settings.showMetricsRulers.get() };
+        // FIXME: split show rulers and show extension lines.
+        var highlightConfig = { showInfo: mode === "all", showRulers: WebInspector.overridesSupport.showMetricsRulers() };
         if (mode === "all" || mode === "content")
             highlightConfig.contentColor = WebInspector.Color.PageHighlight.Content.toProtocolRGBA();
 
@@ -1476,9 +1479,9 @@ WebInspector.DOMModel.prototype = {
 
     /**
      * @param {!WebInspector.DOMNode} node
-     * @param {function(?Protocol.Error, !A=, !B=)=} callback
-     * @return {function(?Protocol.Error, !A=, !B=)}
-     * @template A,B
+     * @param {function(?Protocol.Error, ...)=} callback
+     * @return {function(...)}
+     * @template T
      */
     _markRevision: function(node, callback)
     {

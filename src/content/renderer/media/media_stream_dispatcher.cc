@@ -134,10 +134,12 @@ void MediaStreamDispatcher::EnumerateDevices(
     int request_id,
     const base::WeakPtr<MediaStreamDispatcherEventHandler>& event_handler,
     MediaStreamType type,
-    const GURL& security_origin) {
+    const GURL& security_origin,
+    bool hide_labels_if_no_access) {
   DCHECK(main_loop_->BelongsToCurrentThread());
   DCHECK(type == MEDIA_DEVICE_AUDIO_CAPTURE ||
-         type == MEDIA_DEVICE_VIDEO_CAPTURE);
+         type == MEDIA_DEVICE_VIDEO_CAPTURE ||
+         type == MEDIA_DEVICE_AUDIO_OUTPUT);
   DVLOG(1) << "MediaStreamDispatcher::EnumerateDevices("
            << request_id << ")";
 
@@ -150,7 +152,8 @@ void MediaStreamDispatcher::EnumerateDevices(
   Send(new MediaStreamHostMsg_EnumerateDevices(routing_id(),
                                                next_ipc_id_++,
                                                type,
-                                               security_origin));
+                                               security_origin,
+                                               hide_labels_if_no_access));
 }
 
 void MediaStreamDispatcher::StopEnumerateDevices(
@@ -298,7 +301,7 @@ void MediaStreamDispatcher::OnDeviceStopped(
     return;
   }
   Stream* stream = &it->second;
-  if (IsAudioMediaType(device_info.device.type))
+  if (IsAudioInputMediaType(device_info.device.type))
     RemoveStreamDeviceFromArray(device_info, &stream->audio_array);
   else
     RemoveStreamDeviceFromArray(device_info, &stream->video_array);
@@ -336,7 +339,7 @@ void MediaStreamDispatcher::OnDeviceOpened(
     if (request.ipc_request == request_id) {
       Stream new_stream;
       new_stream.handler = request.handler;
-      if (IsAudioMediaType(device_info.device.type)) {
+      if (IsAudioInputMediaType(device_info.device.type)) {
         new_stream.audio_array.push_back(device_info);
       } else if (IsVideoMediaType(device_info.device.type)) {
         new_stream.video_array.push_back(device_info);

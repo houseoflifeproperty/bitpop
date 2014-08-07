@@ -311,7 +311,7 @@ GrIndexBuffer* GrAARectRenderer::aaFillRectIndexBuffer(GrGpu* gpu) {
     if (NULL == fAAFillRectIndexBuffer) {
         fAAFillRectIndexBuffer = gpu->createIndexBuffer(kAAFillRectIndexBufferSize, false);
         if (NULL != fAAFillRectIndexBuffer) {
-            uint16_t* data = (uint16_t*) fAAFillRectIndexBuffer->lock();
+            uint16_t* data = (uint16_t*) fAAFillRectIndexBuffer->map();
             bool useTempData = (NULL == data);
             if (useTempData) {
                 data = SkNEW_ARRAY(uint16_t, kNumAAFillRectsInIndexBuffer * kIndicesPerAAFillRect);
@@ -331,7 +331,7 @@ GrIndexBuffer* GrAARectRenderer::aaFillRectIndexBuffer(GrGpu* gpu) {
                 }
                 SkDELETE_ARRAY(data);
             } else {
-                fAAFillRectIndexBuffer->unlock();
+                fAAFillRectIndexBuffer->unmap();
             }
         }
     }
@@ -726,10 +726,10 @@ void GrAARectRenderer::strokeAARect(GrGpu* gpu,
                                     const SkRect& rect,
                                     const SkMatrix& combinedMatrix,
                                     const SkRect& devRect,
-                                    const SkStrokeRec* stroke,
+                                    const SkStrokeRec& stroke,
                                     bool useVertexCoverage) {
     SkVector devStrokeSize;
-    SkScalar width = stroke->getWidth();
+    SkScalar width = stroke.getWidth();
     if (width > 0) {
         devStrokeSize.set(width, width);
         combinedMatrix.mapVectors(&devStrokeSize, 1);
@@ -763,7 +763,7 @@ void GrAARectRenderer::strokeAARect(GrGpu* gpu,
 
     bool miterStroke = true;
     // small miter limit means right angles show bevel...
-    if (stroke->getJoin() != SkPaint::kMiter_Join || stroke->getMiter() < SK_ScalarSqrt2) {
+    if (stroke.getJoin() != SkPaint::kMiter_Join || stroke.getMiter() < SK_ScalarSqrt2) {
         miterStroke = false;
     }
 

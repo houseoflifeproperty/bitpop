@@ -305,6 +305,10 @@ void QuicCryptoClientConfig::FillInchoateClientHello(
   }
   out->SetValue(kVER, QuicVersionToQuicTag(preferred_version));
 
+  if (!user_agent_id_.empty()) {
+    out->SetStringPiece(kUAID, user_agent_id_);
+  }
+
   if (!cached->source_address_token().empty()) {
     out->SetStringPiece(kSourceAddressTokenTag, cached->source_address_token());
   }
@@ -342,10 +346,10 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
     const QuicServerId& server_id,
     QuicConnectionId connection_id,
     const QuicVersion preferred_version,
-    uint32 initial_flow_control_window_bytes,
     const CachedState* cached,
     QuicWallTime now,
     QuicRandom* rand,
+    const ChannelIDKey* channel_id_key,
     QuicCryptoNegotiatedParameters* out_params,
     CryptoHandshakeMessage* out,
     string* error_details) const {
@@ -353,9 +357,6 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
 
   FillInchoateClientHello(server_id, preferred_version, cached,
                           out_params, out);
-
-  // Set initial receive window for flow control.
-  out->SetValue(kIFCW, initial_flow_control_window_bytes);
 
   const CryptoHandshakeMessage* scfg = cached->GetServerConfig();
   if (!scfg) {
@@ -443,22 +444,7 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
   }
   out->SetStringPiece(kPUBS, out_params->client_key_exchange->public_value());
 
-  bool do_channel_id = false;
-  if (channel_id_signer_.get()) {
-    const QuicTag* their_proof_demands;
-    size_t num_their_proof_demands;
-    if (scfg->GetTaglist(kPDMD, &their_proof_demands,
-                         &num_their_proof_demands) == QUIC_NO_ERROR) {
-      for (size_t i = 0; i < num_their_proof_demands; i++) {
-        if (their_proof_demands[i] == kCHID) {
-          do_channel_id = true;
-          break;
-        }
-      }
-    }
-  }
-
-  if (do_channel_id) {
+  if (channel_id_key) {
     // In order to calculate the encryption key for the CETV block we need to
     // serialise the client hello as it currently is (i.e. without the CETV
     // block). For this, the client hello is serialized without padding.
@@ -478,9 +464,9 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
                       client_hello_serialized.length());
     hkdf_input.append(cached->server_config());
 
-    string key, signature;
-    if (!channel_id_signer_->Sign(server_id.host(), hkdf_input,
-                                  &key, &signature)) {
+    string key = channel_id_key->SerializeKey();
+    string signature;
+    if (!channel_id_key->Sign(hkdf_input, &signature)) {
       *error_details = "Channel ID signature failed";
       return QUIC_INVALID_CHANNEL_ID_SIGNATURE;
     }
@@ -513,6 +499,10 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
     out->set_minimum_size(orig_min_size);
   }
 
+  // Derive the symmetric keys and set up the encrypters and decrypters.
+  // Set the following members of out_params:
+  //   out_params->hkdf_input_suffix
+  //   out_params->initial_crypters
   out_params->hkdf_input_suffix.clear();
   out_params->hkdf_input_suffix.append(reinterpret_cast<char*>(&connection_id),
                                        sizeof(connection_id));
@@ -595,6 +585,17 @@ QuicErrorCode QuicCryptoClientConfig::ProcessRejection(
       *error_details = "Proof missing";
       return QUIC_INVALID_CRYPTO_MESSAGE_PARAMETER;
     }
+  }
+
+  const QuicTag* reject_reasons;
+  size_t num_reject_reasons;
+  if (rej.GetTaglist(kRREJ, &reject_reasons,
+                     &num_reject_reasons) == QUIC_NO_ERROR) {
+#if defined(DEBUG)
+    for (size_t i = 0; i < num_reject_reasons; ++i) {
+      DVLOG(1) << "Reasons for rejection: " << reject_reasons[i];
+    }
+#endif
   }
 
   return QUIC_NO_ERROR;
@@ -683,12 +684,12 @@ void QuicCryptoClientConfig::SetProofVerifier(ProofVerifier* verifier) {
   proof_verifier_.reset(verifier);
 }
 
-ChannelIDSigner* QuicCryptoClientConfig::channel_id_signer() const {
-  return channel_id_signer_.get();
+ChannelIDSource* QuicCryptoClientConfig::channel_id_source() const {
+  return channel_id_source_.get();
 }
 
-void QuicCryptoClientConfig::SetChannelIDSigner(ChannelIDSigner* signer) {
-  channel_id_signer_.reset(signer);
+void QuicCryptoClientConfig::SetChannelIDSource(ChannelIDSource* source) {
+  channel_id_source_.reset(source);
 }
 
 void QuicCryptoClientConfig::InitializeFrom(

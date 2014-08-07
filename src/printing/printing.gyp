@@ -53,7 +53,6 @@
         'page_range.h',
         'page_setup.cc',
         'page_setup.h',
-        'page_size_margins.cc',
         'page_size_margins.h',
         'pdf_metafile_cg_mac.cc',
         'pdf_metafile_cg_mac.h',
@@ -66,8 +65,8 @@
         'print_job_constants.h',
         'print_settings.cc',
         'print_settings.h',
-        'print_settings_initializer.cc',
-        'print_settings_initializer.h',
+        'print_settings_conversion.cc',
+        'print_settings_conversion.h',
         'print_settings_initializer_mac.cc',
         'print_settings_initializer_mac.h',
         'print_settings_initializer_win.cc',
@@ -143,11 +142,6 @@
             'cups_version': '<!(cups-config --api-version)',
           },
           'conditions': [
-            ['OS!="mac"', {
-              'dependencies': [
-                '../build/linux/system.gyp:libgcrypt',
-              ],
-            }],
             ['cups_version in ["1.6", "1.7"]', {
               'cflags': [
                 # CUPS 1.6 deprecated the PPD APIs, but we will stay with this
@@ -281,7 +275,7 @@
                   ],
                 },
               }],
-              [ 'os_bsd==1', {
+              ['os_bsd==1', {
                 'cflags': [
                   '<!@(python cups_config_helper.py --cflags)',
                 ],
@@ -303,7 +297,6 @@
           ],
           'variables': {
             'jni_gen_package': 'printing',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },

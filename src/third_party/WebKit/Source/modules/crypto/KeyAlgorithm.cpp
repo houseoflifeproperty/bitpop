@@ -36,6 +36,7 @@
 #include "modules/crypto/NormalizeAlgorithm.h"
 #include "modules/crypto/RsaHashedKeyAlgorithm.h"
 #include "modules/crypto/RsaKeyAlgorithm.h"
+#include "public/platform/WebCryptoAlgorithm.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -53,8 +54,6 @@ KeyAlgorithm* KeyAlgorithm::create(const blink::WebCryptoKeyAlgorithm& algorithm
         return AesKeyAlgorithm::create(algorithm);
     case blink::WebCryptoKeyAlgorithmParamsTypeHmac:
         return HmacKeyAlgorithm::create(algorithm);
-    case blink::WebCryptoKeyAlgorithmParamsTypeRsa:
-        return RsaKeyAlgorithm::create(algorithm);
     case blink::WebCryptoKeyAlgorithmParamsTypeRsaHashed:
         return RsaHashedKeyAlgorithm::create(algorithm);
     }
@@ -77,7 +76,8 @@ KeyAlgorithm::KeyAlgorithm(const blink::WebCryptoKeyAlgorithm& algorithm)
 
 String KeyAlgorithm::name()
 {
-    return algorithmIdToName(m_algorithm.id());
+    const blink::WebCryptoAlgorithmInfo* info = blink::WebCryptoAlgorithm::lookupAlgorithmInfo(m_algorithm.id());
+    return info->name;
 }
 
 bool KeyAlgorithm::isAesKeyAlgorithm() const
@@ -93,11 +93,6 @@ bool KeyAlgorithm::isHmacKeyAlgorithm() const
 bool KeyAlgorithm::isRsaHashedKeyAlgorithm() const
 {
     return m_algorithm.paramsType() == blink::WebCryptoKeyAlgorithmParamsTypeRsaHashed;
-}
-
-bool KeyAlgorithm::isRsaKeyAlgorithm() const
-{
-    return m_algorithm.paramsType() == blink::WebCryptoKeyAlgorithmParamsTypeRsa;
 }
 
 void KeyAlgorithm::trace(Visitor*)

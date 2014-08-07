@@ -20,6 +20,8 @@ const char kInvalidIndexError[] = "Index out of bounds.";
 const char kInvalidUrlError[] = "Invalid URL.";
 const char kModifySpecialError[] = "Can't modify the root bookmark folders.";
 const char kEditBookmarksDisabled[] = "Bookmark editing is disabled.";
+const char kModifyManagedError[] = "Can't modify managed bookmarks.";
+const char kInvalidParamError[] = "Parameter 'key' is invalid.";
 
 }  // namespace bookmark_api_constants
 }  // namespace extensions

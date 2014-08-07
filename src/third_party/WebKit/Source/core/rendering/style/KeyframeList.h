@@ -25,7 +25,7 @@
 #ifndef KeyframeList_h
 #define KeyframeList_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 #include "core/rendering/style/StyleInheritedData.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefPtr.h"
@@ -36,8 +36,6 @@ namespace WebCore {
 
 class RenderObject;
 class RenderStyle;
-class StylePropertySet;
-class TimingFunction;
 
 class KeyframeValue {
 public:
@@ -56,8 +54,6 @@ public:
 
     const RenderStyle* style() const { return m_style.get(); }
     void setStyle(PassRefPtr<RenderStyle> style) { m_style = style; }
-
-    static TimingFunction* timingFunction(const RenderStyle& keyframeStyle);
 
 private:
     double m_key;

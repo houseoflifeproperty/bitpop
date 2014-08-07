@@ -22,10 +22,9 @@
 #include "config.h"
 #include "core/html/forms/FileInputType.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/Event.h"
 #include "core/fileapi/File.h"
@@ -37,6 +36,7 @@
 #include "core/page/DragData.h"
 #include "core/rendering/RenderFileUploadControl.h"
 #include "platform/FileMetadata.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
@@ -158,7 +158,7 @@ void FileInputType::handleDOMActivateEvent(Event* event)
         settings.acceptFileExtensions = input.acceptFileExtensions();
         settings.selectedFiles = m_fileList->paths();
 #if ENABLE(MEDIA_CAPTURE)
-        settings.useMediaCapture = input.capture();
+        settings.useMediaCapture = input.isFileUpload() && input.fastHasAttribute(captureAttr);
 #endif
         chrome->runOpenPanel(input.document().frame(), newFileChooser(settings));
     }
@@ -257,7 +257,7 @@ bool FileInputType::isFileUpload() const
 void FileInputType::createShadowSubtree()
 {
     ASSERT(element().shadow());
-    RefPtr<HTMLInputElement> button = HTMLInputElement::create(element().document(), 0, false);
+    RefPtrWillBeRawPtr<HTMLInputElement> button = HTMLInputElement::create(element().document(), 0, false);
     button->setType(InputTypeNames::button);
     button->setAttribute(valueAttr, AtomicString(locale().queryString(element().multiple() ? WebLocalizedString::FileButtonChooseMultipleFilesLabel : WebLocalizedString::FileButtonChooseFileLabel)));
     button->setShadowPseudoId(AtomicString("-webkit-file-upload-button", AtomicString::ConstructFromLiteral));
@@ -283,7 +283,7 @@ void FileInputType::setFiles(PassRefPtrWillBeRawPtr<FileList> files)
     if (!files)
         return;
 
-    RefPtr<HTMLInputElement> input(element());
+    RefPtrWillBeRawPtr<HTMLInputElement> input(element());
 
     bool pathsChanged = false;
     if (files->length() != m_fileList->length()) {
@@ -303,7 +303,7 @@ void FileInputType::setFiles(PassRefPtrWillBeRawPtr<FileList> files)
     input->setNeedsValidityCheck();
 
     if (input->renderer())
-        input->renderer()->repaint();
+        input->renderer()->paintInvalidationForWholeRenderer();
 
     if (pathsChanged) {
         // This call may cause destruction of this instance.
@@ -364,18 +364,6 @@ bool FileInputType::receiveDroppedFiles(const DragData* dragData)
 String FileInputType::droppedFileSystemId()
 {
     return m_droppedFileSystemId;
-}
-
-void FileInputType::copyNonAttributeProperties(const HTMLInputElement& sourceElement)
-{
-    RefPtrWillBeRawPtr<FileList> fileList(FileList::create());
-    FileList* sourceFileList = sourceElement.files();
-    unsigned size = sourceFileList->length();
-    for (unsigned i = 0; i < size; ++i) {
-        File* file = sourceFileList->item(i);
-        fileList->append(File::createWithRelativePath(file->path(), file->webkitRelativePath()));
-    }
-    setFiles(fileList.release());
 }
 
 String FileInputType::defaultToolTip() const

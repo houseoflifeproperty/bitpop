@@ -57,11 +57,7 @@ const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
         prefs::kAllowCrossOriginAuthPrompt, true },
       { switches::kDisableSSLFalseStart, prefs::kDisableSSLRecordSplitting,
           true },
-#if defined(GOOGLE_CHROME_BUILD)
       { switches::kDisablePrintPreview, prefs::kPrintPreviewDisabled, true },
-#else
-      { switches::kEnablePrintPreview, prefs::kPrintPreviewDisabled, false },
-#endif
 #if defined(OS_CHROMEOS)
       { chromeos::switches::kEnableTouchpadThreeFingerClick,
           prefs::kEnableTouchpadThreeFingerClick, true },
@@ -174,8 +170,7 @@ void CommandLinePrefStore::ApplySSLSwitches() {
 }
 
 void CommandLinePrefStore::ApplyBackgroundModeSwitches() {
-  if (command_line_->HasSwitch(switches::kDisableBackgroundMode) ||
-      command_line_->HasSwitch(switches::kDisableExtensions)) {
+  if (command_line_->HasSwitch(switches::kDisableExtensions)) {
     base::Value* value = base::Value::CreateBooleanValue(false);
     SetValue(prefs::kBackgroundModeEnabled, value);
   }

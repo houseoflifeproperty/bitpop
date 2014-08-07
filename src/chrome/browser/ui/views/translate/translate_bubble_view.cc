@@ -15,8 +15,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/translate/translate_service.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/translate/translate_bubble_model_impl.h"
 #include "chrome/common/url_constants.h"
@@ -27,6 +27,7 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/combobox_model.h"
+#include "ui/base/models/simple_combobox_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/label_button.h"
@@ -39,6 +40,12 @@
 #include "ui/views/widget/widget.h"
 
 namespace {
+
+enum DenialComboboxIndexes {
+  INDEX_NOPE = 0,
+  INDEX_NEVER_TRANSLATE_LANGUAGE = 2,
+  INDEX_NEVER_TRANSLATE_SITE = 4,
+};
 
 views::LabelButton* CreateLabelButton(views::ButtonListener* listener,
                                       const base::string16& label,
@@ -58,47 +65,6 @@ views::Link* CreateLink(views::LinkListener* listener,
   link->set_id(id);
   return link;
 }
-
-class TranslateDenialComboboxModel : public ui::ComboboxModel {
- public:
-  enum {
-    INDEX_NOPE = 0,
-    INDEX_NEVER_TRANSLATE_LANGUAGE = 2,
-    INDEX_NEVER_TRANSLATE_SITE = 4,
-  };
-
-  explicit TranslateDenialComboboxModel(
-      const base::string16& original_language_name) {
-    items_.push_back(l10n_util::GetStringUTF16(IDS_TRANSLATE_BUBBLE_DENY));
-    items_.push_back(base::string16());
-    items_.push_back(l10n_util::GetStringFUTF16(
-        IDS_TRANSLATE_BUBBLE_NEVER_TRANSLATE_LANG,
-        original_language_name));
-    items_.push_back(base::string16());
-    items_.push_back(l10n_util::GetStringUTF16(
-        IDS_TRANSLATE_BUBBLE_NEVER_TRANSLATE_SITE));
-  }
-  virtual ~TranslateDenialComboboxModel() {}
-
- private:
-  // Overridden from ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE {
-    return items_.size();
-  }
-  virtual base::string16 GetItemAt(int index) OVERRIDE {
-    return items_[index];
-  }
-  virtual bool IsItemSeparatorAt(int index) OVERRIDE {
-    return items_[index].empty();
-  }
-  virtual int GetDefaultIndex() const OVERRIDE {
-    return 0;
-  }
-
-  std::vector<base::string16> items_;
-
-  DISALLOW_COPY_AND_ASSIGN(TranslateDenialComboboxModel);
-};
 
 }  // namespace
 
@@ -138,12 +104,12 @@ void TranslateBubbleView::ShowBubble(views::View* anchor_view,
 
   std::string source_language;
   std::string target_language;
-  TranslateTabHelper::GetTranslateLanguages(web_contents,
-                                            &source_language, &target_language);
+  ChromeTranslateClient::GetTranslateLanguages(
+      web_contents, &source_language, &target_language);
 
   scoped_ptr<TranslateUIDelegate> ui_delegate(new TranslateUIDelegate(
-      TranslateTabHelper::FromWebContents(web_contents),
-      TranslateTabHelper::GetManagerFromWebContents(web_contents),
+      ChromeTranslateClient::GetManagerFromWebContents(web_contents)
+          ->GetWeakPtr(),
       source_language,
       target_language));
   scoped_ptr<TranslateBubbleModel> model(
@@ -243,10 +209,10 @@ bool TranslateBubbleView::AcceleratorPressed(
   return BubbleDelegateView::AcceleratorPressed(accelerator);
 }
 
-gfx::Size TranslateBubbleView::GetPreferredSize() {
+gfx::Size TranslateBubbleView::GetPreferredSize() const {
   int width = 0;
   for (int i = 0; i < child_count(); i++) {
-    views::View* child = child_at(i);
+    const views::View* child = child_at(i);
     width = std::max(width, child->GetPreferredSize().width());
   }
   int height = GetCurrentView()->GetPreferredSize().height();
@@ -305,7 +271,7 @@ TranslateBubbleView::TranslateBubbleView(
   translate_bubble_view_ = this;
 }
 
-views::View* TranslateBubbleView::GetCurrentView() {
+views::View* TranslateBubbleView::GetCurrentView() const {
   switch (model_->GetViewState()) {
     case TranslateBubbleModel::VIEW_STATE_BEFORE_TRANSLATE:
       return before_translate_view_;
@@ -395,12 +361,12 @@ void TranslateBubbleView::HandleComboboxPerformAction(
       denial_button_clicked_ = true;
       int index = denial_combobox_->selected_index();
       switch (index) {
-        case TranslateDenialComboboxModel::INDEX_NOPE:
+        case INDEX_NOPE:
           break;
-        case TranslateDenialComboboxModel::INDEX_NEVER_TRANSLATE_LANGUAGE:
+        case INDEX_NEVER_TRANSLATE_LANGUAGE:
           model_->SetNeverTranslateLanguage(true);
           break;
-        case TranslateDenialComboboxModel::INDEX_NEVER_TRANSLATE_SITE:
+        case INDEX_NEVER_TRANSLATE_SITE:
           model_->SetNeverTranslateSite(true);
           break;
         default:
@@ -446,8 +412,19 @@ views::View* TranslateBubbleView::CreateViewBeforeTranslate() {
 
   base::string16 original_language_name =
       model_->GetLanguageNameAt(model_->GetOriginalLanguageIndex());
-  denial_combobox_ = new views::Combobox(
-      new TranslateDenialComboboxModel(original_language_name));
+
+  std::vector<base::string16> items;
+  items.push_back(l10n_util::GetStringUTF16(IDS_TRANSLATE_BUBBLE_DENY));
+  items.push_back(base::string16());
+  items.push_back(l10n_util::GetStringFUTF16(
+      IDS_TRANSLATE_BUBBLE_NEVER_TRANSLATE_LANG,
+      original_language_name));
+  items.push_back(base::string16());
+  items.push_back(l10n_util::GetStringUTF16(
+      IDS_TRANSLATE_BUBBLE_NEVER_TRANSLATE_SITE));
+
+  denial_combobox_model_.reset(new ui::SimpleComboboxModel(items));
+  denial_combobox_ = new views::Combobox(denial_combobox_model_.get());
   denial_combobox_->set_id(COMBOBOX_ID_DENIAL);
   denial_combobox_->set_listener(this);
   denial_combobox_->SetStyle(views::Combobox::STYLE_ACTION);

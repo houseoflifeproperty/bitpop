@@ -29,6 +29,12 @@
  */
 
 /**
+ * FIXME: ES5 strict mode check is suppressed due to multiple uses of arguments.callee.
+ * @fileoverview
+ * @suppress {es5Strict}
+ */
+
+/**
  * @constructor
  * @extends {WebInspector.VBox}
  * @param {!WebInspector.ProfileType.DataDisplayDelegate} dataDisplayDelegate
@@ -79,7 +85,7 @@ WebInspector.HeapSnapshotView = function(dataDisplayDelegate, profile)
     this._dominatorDataGrid.show(this._dominatorView.element);
     this._dominatorDataGrid.addEventListener(WebInspector.DataGrid.Events.SelectedNode, this._selectionChanged, this);
 
-    if (WebInspector.experimentsSettings.allocationProfiler.isEnabled() && profile.profileType() === WebInspector.ProfileTypeRegistry.instance.trackingHeapSnapshotProfileType) {
+    if (WebInspector.experimentsSettings.heapAllocationProfiler.isEnabled() && profile.profileType() === WebInspector.ProfileTypeRegistry.instance.trackingHeapSnapshotProfileType) {
         this._allocationView = new WebInspector.VBox();
         this._allocationView.setMinimumSize(50, 25);
         this._allocationDataGrid = new WebInspector.AllocationDataGrid(dataDisplayDelegate);
@@ -945,7 +951,7 @@ WebInspector.HeapSnapshotView.prototype = {
         function didHighlightObject(found)
         {
             if (!found)
-                WebInspector.console.log("Cannot find corresponding heap snapshot node", WebInspector.ConsoleMessage.MessageLevel.Error, true);
+                WebInspector.messageSink.addErrorMessage("Cannot find corresponding heap snapshot node", true);
         }
     },
 
@@ -1198,7 +1204,7 @@ WebInspector.HeapSnapshotProfileType.prototype = {
 
     /**
      * @override
-     * @param {!string} title
+     * @param {string} title
      * @return {!WebInspector.ProfileHeader}
      */
     createProfileLoadedFromFile: function(title)
@@ -1375,7 +1381,7 @@ WebInspector.TrackingHeapSnapshotProfileType.prototype = {
         if (this.profileBeingRecorded())
             return;
         this._addNewProfile();
-        HeapProfilerAgent.startTrackingHeapObjects(WebInspector.experimentsSettings.allocationProfiler.isEnabled());
+        HeapProfilerAgent.startTrackingHeapObjects(WebInspector.experimentsSettings.heapAllocationProfiler.isEnabled());
     },
 
     _addNewProfile: function()
@@ -1676,8 +1682,7 @@ WebInspector.HeapProfileHeader.prototype = {
             if (!accepted)
                 return;
             if (this._failedToCreateTempFile) {
-                WebInspector.console.log("Failed to open temp file with heap snapshot",
-                                 WebInspector.ConsoleMessage.MessageLevel.Error);
+                WebInspector.messageSink.addErrorMessage("Failed to open temp file with heap snapshot");
                 fileOutputStream.close();
             } else if (this._tempFile) {
                 var delegate = new WebInspector.SaveSnapshotOutputStreamDelegate(this);
@@ -1745,6 +1750,7 @@ WebInspector.HeapSnapshotLoadFromFileDelegate.prototype = {
 
     /**
      * @param {!WebInspector.ChunkedReader} reader
+     * @param {?Event} e
      */
     onError: function (reader, e)
     {
@@ -1796,11 +1802,11 @@ WebInspector.SaveSnapshotOutputStreamDelegate.prototype = {
 
     /**
      * @param {!WebInspector.ChunkedReader} reader
+     * @param {?Event} event
      */
     onError: function(reader, event)
     {
-        WebInspector.console.log("Failed to read heap snapshot from temp file: " + event.message,
-                         WebInspector.ConsoleMessage.MessageLevel.Error);
+        WebInspector.messageSink.addErrorMessage("Failed to read heap snapshot from temp file: " + /** @type {!ErrorEvent} */ (event).message);
         this.onTransferFinished();
     }
 }

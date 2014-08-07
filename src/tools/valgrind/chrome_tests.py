@@ -384,7 +384,7 @@ class ChromeTests:
 
   def TestMojoPublicUtility(self):
     return self.SimpleTest("mojo_public_utility",
-                           "mojo_public_unittests_unittests")
+                           "mojo_public_utility_unittests")
 
   def TestMojoPublicBindings(self):
     return self.SimpleTest("mojo_public_bindings",
@@ -413,6 +413,13 @@ class ChromeTests:
 
   def TestMojoViewManager(self):
     return self.SimpleTest("mojo_view_manager", "mojo_view_manager_unittests")
+
+  def TestMojoViewManagerLib(self):
+    return self.SimpleTest("mojo_view_manager_lib",
+                           "mojo_view_manager_lib_unittests")
+
+  def TestDisplay(self):
+    return self.SimpleTest("display", "display_unittests")
 
   # Valgrind timeouts are in seconds.
   UI_VALGRIND_ARGS = ["--timeout=14400", "--trace_children", "--indirect"]
@@ -656,6 +663,8 @@ class ChromeTests:
     "mojo_js": TestMojoJS,
     "mojo_service_manager": TestMojoServiceManager,
     "mojo_view_manager": TestMojoViewManager,
+    "mojo_view_manager_lib": TestMojoViewManagerLib,
+    "display": TestDisplay,
   }
 
 

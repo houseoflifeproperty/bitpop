@@ -27,14 +27,15 @@
 //
 // Tests of profiles generator and utilities.
 
-#include "v8.h"
-#include "cpu-profiler-inl.h"
-#include "cctest.h"
-#include "platform.h"
-#include "profiler-extension.h"
-#include "smart-pointers.h"
-#include "utils.h"
-#include "../include/v8-profiler.h"
+#include "src/v8.h"
+
+#include "include/v8-profiler.h"
+#include "src/cpu-profiler-inl.h"
+#include "src/platform.h"
+#include "src/smart-pointers.h"
+#include "src/utils.h"
+#include "test/cctest/cctest.h"
+#include "test/cctest/profiler-extension.h"
 using i::CodeEntry;
 using i::CpuProfile;
 using i::CpuProfiler;
@@ -104,9 +105,9 @@ i::Code* CreateCode(LocalContext* env) {
   i::EmbeddedVector<char, 256> script;
   i::EmbeddedVector<char, 32> name;
 
-  i::OS::SNPrintF(name, "function_%d", ++counter);
+  i::SNPrintF(name, "function_%d", ++counter);
   const char* name_start = name.start();
-  i::OS::SNPrintF(script,
+  i::SNPrintF(script,
       "function %s() {\n"
            "var counter = 0;\n"
            "for (var i = 0; i < %d; ++i) counter += i;\n"
@@ -469,8 +470,8 @@ static const v8::CpuProfileNode* GetChild(v8::Isolate* isolate,
   const v8::CpuProfileNode* result = FindChild(isolate, node, name);
   if (!result) {
     char buffer[100];
-    i::OS::SNPrintF(Vector<char>(buffer, ARRAY_SIZE(buffer)),
-                    "Failed to GetChild: %s", name);
+    i::SNPrintF(Vector<char>(buffer, ARRAY_SIZE(buffer)),
+                "Failed to GetChild: %s", name);
     FATAL(buffer);
   }
   return result;
@@ -582,6 +583,72 @@ TEST(CollectCpuProfile) {
   const char* delayBranch[] = { "delay", "loop" };
   CheckSimpleBranch(env->GetIsolate(), fooNode, delayBranch,
                     ARRAY_SIZE(delayBranch));
+
+  profile->Delete();
+}
+
+
+static const char* hot_deopt_no_frame_entry_test_source =
+"function foo(a, b) {\n"
+"    try {\n"
+"      return a + b;\n"
+"    } catch (e) { }\n"
+"}\n"
+"function start(timeout) {\n"
+"  var start = Date.now();\n"
+"  do {\n"
+"    for (var i = 1; i < 1000; ++i) foo(1, i);\n"
+"    var duration = Date.now() - start;\n"
+"  } while (duration < timeout);\n"
+"  return duration;\n"
+"}\n";
+
+// Check that the profile tree for the script above will look like the
+// following:
+//
+// [Top down]:
+//  1062     0  (root) [-1]
+//  1054     0    start [-1]
+//  1054     1      foo [-1]
+//     2     2    (program) [-1]
+//     6     6    (garbage collector) [-1]
+//
+// The test checks no FP ranges are present in a deoptimized funcion.
+// If 'foo' has no ranges the samples falling into the prologue will miss the
+// 'start' function on the stack, so 'foo' will be attached to the (root).
+TEST(HotDeoptNoFrameEntry) {
+  LocalContext env;
+  v8::HandleScope scope(env->GetIsolate());
+
+  v8::Script::Compile(v8::String::NewFromUtf8(
+      env->GetIsolate(),
+      hot_deopt_no_frame_entry_test_source))->Run();
+  v8::Local<v8::Function> function = v8::Local<v8::Function>::Cast(
+      env->Global()->Get(v8::String::NewFromUtf8(env->GetIsolate(), "start")));
+
+  int32_t profiling_interval_ms = 200;
+  v8::Handle<v8::Value> args[] = {
+    v8::Integer::New(env->GetIsolate(), profiling_interval_ms)
+  };
+  v8::CpuProfile* profile =
+      RunProfiler(env.local(), function, args, ARRAY_SIZE(args), 200);
+  function->Call(env->Global(), ARRAY_SIZE(args), args);
+
+  const v8::CpuProfileNode* root = profile->GetTopDownRoot();
+
+  ScopedVector<v8::Handle<v8::String> > names(3);
+  names[0] = v8::String::NewFromUtf8(
+      env->GetIsolate(), ProfileGenerator::kGarbageCollectorEntryName);
+  names[1] = v8::String::NewFromUtf8(env->GetIsolate(),
+                                     ProfileGenerator::kProgramEntryName);
+  names[2] = v8::String::NewFromUtf8(env->GetIsolate(), "start");
+  CheckChildrenNames(root, names);
+
+  const v8::CpuProfileNode* startNode =
+      GetChild(env->GetIsolate(), root, "start");
+  CHECK_EQ(1, startNode->GetChildrenCount());
+
+  GetChild(env->GetIsolate(), startNode, "foo");
 
   profile->Delete();
 }
@@ -1158,9 +1225,12 @@ TEST(FunctionApplySample) {
     const v8::CpuProfileNode* testNode =
         FindChild(env->GetIsolate(), startNode, "test");
     if (testNode) {
-      ScopedVector<v8::Handle<v8::String> > names(2);
+      ScopedVector<v8::Handle<v8::String> > names(3);
       names[0] = v8::String::NewFromUtf8(env->GetIsolate(), "bar");
       names[1] = v8::String::NewFromUtf8(env->GetIsolate(), "apply");
+      // apply calls "get length" before invoking the function itself
+      // and we may get hit into it.
+      names[2] = v8::String::NewFromUtf8(env->GetIsolate(), "get length");
       CheckChildrenNames(testNode, names);
     }
 
@@ -1343,7 +1413,11 @@ TEST(JsNativeJsRuntimeJsSample) {
   const v8::CpuProfileNode* barNode =
       GetChild(env->GetIsolate(), nativeFunctionNode, "bar");
 
-  CHECK_EQ(1, barNode->GetChildrenCount());
+  // The child is in fact a bound foo.
+  // A bound function has a wrapper that may make calls to
+  // other functions e.g. "get length".
+  CHECK_LE(1, barNode->GetChildrenCount());
+  CHECK_GE(2, barNode->GetChildrenCount());
   GetChild(env->GetIsolate(), barNode, "foo");
 
   profile->Delete();
@@ -1549,16 +1623,16 @@ TEST(FunctionDetails) {
       ProfileGenerator::kAnonymousFunctionName);
   CheckFunctionDetails(env->GetIsolate(), script,
                        ProfileGenerator::kAnonymousFunctionName, "script_b",
-                       script_b->GetId(), 1, 1);
+                       script_b->GetUnboundScript()->GetId(), 1, 1);
   const v8::CpuProfileNode* baz = GetChild(env->GetIsolate(), script, "baz");
   CheckFunctionDetails(env->GetIsolate(), baz, "baz", "script_b",
-                       script_b->GetId(), 3, 16);
+                       script_b->GetUnboundScript()->GetId(), 3, 16);
   const v8::CpuProfileNode* foo = GetChild(env->GetIsolate(), baz, "foo");
   CheckFunctionDetails(env->GetIsolate(), foo, "foo", "script_a",
-                       script_a->GetId(), 2, 1);
+                       script_a->GetUnboundScript()->GetId(), 2, 1);
   const v8::CpuProfileNode* bar = GetChild(env->GetIsolate(), foo, "bar");
   CheckFunctionDetails(env->GetIsolate(), bar, "bar", "script_a",
-                       script_a->GetId(), 3, 14);
+                       script_a->GetUnboundScript()->GetId(), 3, 14);
 }
 
 

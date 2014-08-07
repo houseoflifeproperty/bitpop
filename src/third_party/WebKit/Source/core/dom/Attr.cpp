@@ -25,6 +25,7 @@
 
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Text.h"
 #include "core/events/ScopedEventQueue.h"
@@ -47,24 +48,24 @@ Attr::Attr(Element& element, const QualifiedName& name)
 
 Attr::Attr(Document& document, const QualifiedName& name, const AtomicString& standaloneValue)
     : ContainerNode(&document)
-    , m_element(0)
+    , m_element(nullptr)
     , m_name(name)
-    , m_standaloneValue(standaloneValue)
+    , m_standaloneValueOrAttachedLocalName(standaloneValue)
     , m_ignoreChildrenChanged(0)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<Attr> Attr::create(Element& element, const QualifiedName& name)
+PassRefPtrWillBeRawPtr<Attr> Attr::create(Element& element, const QualifiedName& name)
 {
-    RefPtr<Attr> attr = adoptRef(new Attr(element, name));
+    RefPtrWillBeRawPtr<Attr> attr = adoptRefWillBeNoop(new Attr(element, name));
     attr->createTextChild();
     return attr.release();
 }
 
-PassRefPtr<Attr> Attr::create(Document& document, const QualifiedName& name, const AtomicString& value)
+PassRefPtrWillBeRawPtr<Attr> Attr::create(Document& document, const QualifiedName& name, const AtomicString& value)
 {
-    RefPtr<Attr> attr = adoptRef(new Attr(document, name, value));
+    RefPtrWillBeRawPtr<Attr> attr = adoptRefWillBeNoop(new Attr(document, name, value));
     attr->createTextChild();
     return attr.release();
 }
@@ -73,13 +74,26 @@ Attr::~Attr()
 {
 }
 
+const QualifiedName Attr::qualifiedName() const
+{
+    if (m_element && !m_standaloneValueOrAttachedLocalName.isNull()) {
+        // In the unlikely case the Element attribute has a local name
+        // that differs by case, construct the qualified name based on
+        // it. This is the qualified name that must be used when
+        // looking up the attribute on the element.
+        return QualifiedName(m_name.prefix(), m_standaloneValueOrAttachedLocalName, m_name.namespaceURI());
+    }
+
+    return m_name;
+}
+
 void Attr::createTextChild()
 {
 #if !ENABLE(OILPAN)
     ASSERT(refCount());
 #endif
     if (!value().isEmpty()) {
-        RefPtr<Text> textNode = document().createTextNode(value().string());
+        RefPtrWillBeRawPtr<Text> textNode = document().createTextNode(value().string());
 
         // This does everything appendChild() would do in this situation (assuming m_ignoreChildrenChanged was set),
         // but much more efficiently.
@@ -98,11 +112,12 @@ void Attr::setValue(const AtomicString& value)
     if (m_element)
         elementAttribute().setValue(value);
     else
-        m_standaloneValue = value;
+        m_standaloneValueOrAttachedLocalName = value;
     createTextChild();
     m_ignoreChildrenChanged--;
 
-    invalidateNodeListCachesInAncestors(&m_name, m_element);
+    QualifiedName name = qualifiedName();
+    invalidateNodeListCachesInAncestors(&name, m_element);
 }
 
 void Attr::setValueInternal(const AtomicString& value)
@@ -137,9 +152,9 @@ void Attr::setNodeValue(const String& v)
     setValueInternal(AtomicString(v));
 }
 
-PassRefPtr<Node> Attr::cloneNode(bool /*deep*/)
+PassRefPtrWillBeRawPtr<Node> Attr::cloneNode(bool /*deep*/)
 {
-    RefPtr<Attr> clone = adoptRef(new Attr(document(), qualifiedName(), value()));
+    RefPtrWillBeRawPtr<Attr> clone = adoptRefWillBeNoop(new Attr(document(), m_name, value()));
     cloneChildNodes(clone.get());
     return clone.release();
 }
@@ -155,7 +170,8 @@ void Attr::childrenChanged(bool, Node*, Node*, int)
     if (m_ignoreChildrenChanged > 0)
         return;
 
-    invalidateNodeListCachesInAncestors(&qualifiedName(), m_element);
+    QualifiedName name = qualifiedName();
+    invalidateNodeListCachesInAncestors(&name, m_element);
 
     StringBuilder valueBuilder;
     for (Node *n = firstChild(); n; n = n->nextSibling()) {
@@ -170,7 +186,7 @@ void Attr::childrenChanged(bool, Node*, Node*, int)
     if (m_element)
         elementAttribute().setValue(newValue);
     else
-        m_standaloneValue = newValue;
+        m_standaloneValueOrAttachedLocalName = newValue;
 
     if (m_element)
         m_element->attributeChanged(qualifiedName(), newValue);
@@ -180,29 +196,34 @@ const AtomicString& Attr::value() const
 {
     if (m_element)
         return m_element->getAttribute(qualifiedName());
-    return m_standaloneValue;
+    return m_standaloneValueOrAttachedLocalName;
 }
 
 Attribute& Attr::elementAttribute()
 {
     ASSERT(m_element);
     ASSERT(m_element->elementData());
-    return *m_element->ensureUniqueElementData().getAttributeItem(qualifiedName());
+    return *m_element->ensureUniqueElementData().findAttributeByName(qualifiedName());
 }
 
 void Attr::detachFromElementWithValue(const AtomicString& value)
 {
     ASSERT(m_element);
-    ASSERT(m_standaloneValue.isNull());
-    m_standaloneValue = value;
-    m_element = 0;
+    m_standaloneValueOrAttachedLocalName = value;
+    m_element = nullptr;
 }
 
-void Attr::attachToElement(Element* element)
+void Attr::attachToElement(Element* element, const AtomicString& attachedLocalName)
 {
     ASSERT(!m_element);
     m_element = element;
-    m_standaloneValue = nullAtom;
+    m_standaloneValueOrAttachedLocalName = attachedLocalName;
+}
+
+void Attr::trace(Visitor* visitor)
+{
+    visitor->trace(m_element);
+    ContainerNode::trace(visitor);
 }
 
 }

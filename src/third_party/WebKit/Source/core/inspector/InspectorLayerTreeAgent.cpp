@@ -119,10 +119,17 @@ static PassRefPtr<TypeBuilder::LayerTree::Layer> buildObjectForLayer(GraphicsLay
         for (size_t i = 0; i < WTF_ARRAY_LENGTH(flattenedMatrix); ++i)
             transformArray->addItem(flattenedMatrix[i]);
         layerObject->setTransform(transformArray);
-        const FloatPoint3D& anchor = graphicsLayer->anchorPoint();
-        layerObject->setAnchorX(anchor.x());
-        layerObject->setAnchorY(anchor.y());
-        layerObject->setAnchorZ(anchor.z());
+        const FloatPoint3D& transformOrigin = graphicsLayer->transformOrigin();
+        // FIXME: rename these to setTransformOrigin*
+        if (webLayer->bounds().width > 0)
+            layerObject->setAnchorX(transformOrigin.x() / webLayer->bounds().width);
+        else
+            layerObject->setAnchorX(0.0);
+        if (webLayer->bounds().height > 0)
+            layerObject->setAnchorY(transformOrigin.y() / webLayer->bounds().height);
+        else
+            layerObject->setAnchorY(0.0);
+        layerObject->setAnchorZ(transformOrigin.z());
     }
     RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::ScrollRect> > scrollRects = buildScrollRectsForLayer(graphicsLayer);
     if (scrollRects)
@@ -162,7 +169,7 @@ void InspectorLayerTreeAgent::restore()
 void InspectorLayerTreeAgent::enable(ErrorString*)
 {
     m_instrumentingAgents->setInspectorLayerTreeAgent(this);
-    if (LocalFrame* frame = m_page->mainFrame()) {
+    if (LocalFrame* frame = m_page->deprecatedLocalMainFrame()) {
         Document* document = frame->document();
         if (document && document->lifecycle().state() >= DocumentLifecycle::CompositingClean)
             layerTreeDidChange();
@@ -246,7 +253,7 @@ int InspectorLayerTreeAgent::idForNode(Node* node)
 
 RenderLayerCompositor* InspectorLayerTreeAgent::renderLayerCompositor()
 {
-    RenderView* renderView = m_page->mainFrame()->contentRenderer();
+    RenderView* renderView = m_page->deprecatedLocalMainFrame()->contentRenderer();
     RenderLayerCompositor* compositor = renderView ? renderView->compositor() : 0;
     return compositor;
 }

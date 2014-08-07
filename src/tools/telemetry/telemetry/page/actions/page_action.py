@@ -1,7 +1,8 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-from telemetry.page.actions import wait_until
+
+import re
 
 class PageActionNotSupported(Exception):
   pass
@@ -17,48 +18,99 @@ class PageAction(object):
     if attributes:
       for k, v in attributes.iteritems():
         setattr(self, k, v)
-    if hasattr(self, 'wait_until'):
-      self.wait_until = wait_until.WaitUntil(self, self.wait_until)
-    else:
-      self.wait_until = None
 
-  def WillRunAction(self, page, tab):
+  def WillRunAction(self, tab):
     """Override to do action-specific setup before
     Test.WillRunAction is called."""
     pass
 
-  def WillWaitAfterRun(self):
-    return self.wait_until is not None
-
-  def RunActionAndMaybeWait(self, page, tab):
-    if self.wait_until:
-      self.wait_until.RunActionAndWait(page, tab)
-    else:
-      self.RunAction(page, tab)
-
-  def RunAction(self, page, tab):
+  def RunAction(self, tab):
     raise NotImplementedError()
 
-  def CleanUp(self, page, tab):
+  def CleanUp(self, tab):
     pass
 
-  def CanBeBound(self):
-    """If this class implements BindMeasurementJavaScript, override CanBeBound
-    to return True so that a test knows it can bind measurements."""
-    return False
 
-  def BindMeasurementJavaScript(
-      self, tab, start_js, stop_js):  # pylint: disable=W0613
-    """Let this action determine when measurements should start and stop.
+def EvaluateCallbackWithElement(
+    tab, callback_js, selector=None, text=None, element_function=None,
+    wait=False, timeout=60):
+  """Evaluates the JavaScript callback with the given element.
 
-    A measurement can call this method to provide the action
-    with JavaScript code that starts and stops measurements. The action
-    determines when to execute the provided JavaScript code, for more accurate
-    timings.
+  The element may be selected via selector, text, or element_function.
+  Only one of these arguments must be specified.
 
-    Args:
-      tab: The tab to do everything on.
-      start_js: JavaScript code that starts measurements.
-      stop_js: JavaScript code that stops measurements.
-    """
-    raise Exception('This action cannot be bound.')
+  Returns:
+    The callback's return value, if any. The return value must be
+    convertible to JSON.
+
+  Args:
+    tab: A telemetry.core.Tab object.
+    callback_js: The JavaScript callback to call (as string).
+        The callback receive 2 parameters: the element, and information
+        string about what method was used to retrieve the element.
+        Example: '''
+          function(element, info) {
+            if (!element) {
+              throw Error('Can not find element: ' + info);
+            }
+            element.click()
+          }'''
+    selector: A CSS selector describing the element.
+    text: The element must contains this exact text.
+    element_function: A JavaScript function (as string) that is used
+        to retrieve the element. For example:
+        '(function() { return foo.element; })()'.
+    wait: Whether to wait for the return value to be true.
+    timeout: The timeout for wait (if waiting).
+  """
+  count = 0
+  info_msg = ''
+  if element_function is not None:
+    count = count + 1
+    info_msg = 'using element_function "%s"' % re.escape(element_function)
+  if selector is not None:
+    count = count + 1
+    info_msg = 'using selector "%s"' % _EscapeSelector(selector)
+    element_function = 'document.querySelector(\'%s\')' % _EscapeSelector(
+        selector)
+  if text is not None:
+    count = count + 1
+    info_msg = 'using exact text match "%s"' % re.escape(text)
+    element_function = '''
+        (function() {
+          function _findElement(element, text) {
+            if (element.innerHTML == text) {
+              return element;
+            }
+
+            var childNodes = element.childNodes;
+            for (var i = 0, len = childNodes.length; i < len; ++i) {
+              var found = _findElement(childNodes[i], text);
+              if (found) {
+                return found;
+              }
+            }
+            return null;
+          }
+          return _findElement(document, '%s');
+        })()''' % text
+
+  if count != 1:
+    raise PageActionFailed(
+        'Must specify 1 way to retrieve element, but %s was specified.' % count)
+
+  code = '''
+      (function() {
+        var element = %s;
+        var callback = %s;
+        return callback(element, '%s');
+      })()''' % (element_function, callback_js, info_msg)
+
+  if wait:
+    tab.WaitForJavaScriptExpression(code, timeout)
+    return True
+  else:
+    return tab.EvaluateJavaScript(code)
+
+def _EscapeSelector(selector):
+  return selector.replace('\'', '\\\'')

@@ -34,6 +34,11 @@
 #include "sandbox/linux/services/yama.h"
 #include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+     defined(LEAK_SANITIZER)
+#include <sanitizer/common_interface_defs.h>
+#endif
+
 using sandbox::Yama;
 
 namespace {
@@ -109,10 +114,16 @@ LinuxSandbox::LinuxSandbox()
       pre_initialized_(false),
       seccomp_bpf_supported_(false),
       yama_is_enforcing_(false),
-      setuid_sandbox_client_(sandbox::SetuidSandboxClient::Create()) {
+      setuid_sandbox_client_(sandbox::SetuidSandboxClient::Create())
+{
   if (setuid_sandbox_client_ == NULL) {
     LOG(FATAL) << "Failed to instantiate the setuid sandbox client.";
   }
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(LEAK_SANITIZER)
+  sanitizer_args_ = make_scoped_ptr(new __sanitizer_sandbox_arguments);
+  *sanitizer_args_ = {0};
+#endif
 }
 
 LinuxSandbox::~LinuxSandbox() {
@@ -124,20 +135,15 @@ LinuxSandbox* LinuxSandbox::GetInstance() {
   return instance;
 }
 
-#if (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
-     defined(LEAK_SANITIZER))  && defined(OS_LINUX)
-// Sanitizer API call to notify the tool the sandbox is going to be turned on.
-extern "C" void __sanitizer_sandbox_on_notify(void *reserved);
-#endif
-
 void LinuxSandbox::PreinitializeSandbox() {
   CHECK(!pre_initialized_);
   seccomp_bpf_supported_ = false;
-#if (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
-     defined(LEAK_SANITIZER))  && defined(OS_LINUX)
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+     defined(LEAK_SANITIZER)
   // Sanitizers need to open some resources before the sandbox is enabled.
   // This should not fork, not launch threads, not open a directory.
-  __sanitizer_sandbox_on_notify(/*reserved*/ NULL);
+  __sanitizer_sandbox_on_notify(sanitizer_args());
+  sanitizer_args_.reset();
 #endif
 
 #if !defined(NDEBUG)

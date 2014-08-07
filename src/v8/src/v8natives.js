@@ -244,7 +244,7 @@ function ObjectHasOwnProperty(V) {
     var handler = %GetHandler(this);
     return CallTrap1(handler, "hasOwn", DerivedHasOwnTrap, ToName(V));
   }
-  return %HasLocalProperty(TO_OBJECT_INLINE(this), ToName(V));
+  return %HasOwnProperty(TO_OBJECT_INLINE(this), ToName(V));
 }
 
 
@@ -263,7 +263,7 @@ function ObjectPropertyIsEnumerable(V) {
     // TODO(rossberg): adjust once there is a story for symbols vs proxies.
     if (IS_SYMBOL(V)) return false;
 
-    var desc = GetOwnProperty(this, P);
+    var desc = GetOwnPropertyJS(this, P);
     return IS_UNDEFINED(desc) ? false : desc.isEnumerable();
   }
   return %IsPropertyEnumerable(ToObject(this), P);
@@ -332,7 +332,7 @@ function ObjectKeys(obj) {
     var names = CallTrap0(handler, "keys", DerivedKeysTrap);
     return ToNameArray(names, "keys", false);
   }
-  return %LocalKeys(obj);
+  return %OwnKeys(obj);
 }
 
 
@@ -627,7 +627,7 @@ function CallTrap2(handler, name, defaultTrap, x, y) {
 
 
 // ES5 section 8.12.1.
-function GetOwnProperty(obj, v) {
+function GetOwnPropertyJS(obj, v) {
   var p = ToName(v);
   if (%IsJSProxy(obj)) {
     // TODO(rossberg): adjust once there is a story for symbols vs proxies.
@@ -659,7 +659,7 @@ function GetOwnProperty(obj, v) {
 
 // ES5 section 8.12.7.
 function Delete(obj, p, should_throw) {
-  var desc = GetOwnProperty(obj, p);
+  var desc = GetOwnPropertyJS(obj, p);
   if (IS_UNDEFINED(desc)) return true;
   if (desc.isConfigurable()) {
     %DeleteProperty(obj, p, 0);
@@ -866,7 +866,7 @@ function DefineArrayProperty(obj, p, desc, should_throw) {
     if (new_length != ToNumber(desc.getValue())) {
       throw new $RangeError('defineProperty() array length out of range');
     }
-    var length_desc = GetOwnProperty(obj, "length");
+    var length_desc = GetOwnPropertyJS(obj, "length");
     if (new_length != length && !length_desc.isWritable()) {
       if (should_throw) {
         throw MakeTypeError("redefine_disallowed", [p]);
@@ -888,7 +888,7 @@ function DefineArrayProperty(obj, p, desc, should_throw) {
     while (new_length < length--) {
       var index = ToString(length);
       if (emit_splice) {
-        var deletedDesc = GetOwnProperty(obj, index);
+        var deletedDesc = GetOwnPropertyJS(obj, index);
         if (deletedDesc && deletedDesc.hasValue())
           removed[length - new_length] = deletedDesc.getValue();
       }
@@ -935,7 +935,7 @@ function DefineArrayProperty(obj, p, desc, should_throw) {
       BeginPerformSplice(obj);
     }
 
-    var length_desc = GetOwnProperty(obj, "length");
+    var length_desc = GetOwnPropertyJS(obj, "length");
     if ((index >= length && !length_desc.isWritable()) ||
         !DefineObjectProperty(obj, p, desc, true)) {
       if (emit_splice)
@@ -1007,7 +1007,7 @@ function ObjectGetOwnPropertyDescriptor(obj, p) {
     throw MakeTypeError("called_on_non_object",
                         ["Object.getOwnPropertyDescriptor"]);
   }
-  var desc = GetOwnProperty(obj, p);
+  var desc = GetOwnPropertyJS(obj, p);
   return FromPropertyDescriptor(desc);
 }
 
@@ -1025,7 +1025,7 @@ function ToNameArray(obj, trap, includeSymbols) {
     var s = ToName(obj[index]);
     // TODO(rossberg): adjust once there is a story for symbols vs proxies.
     if (IS_SYMBOL(s) && !includeSymbols) continue;
-    if (%HasLocalProperty(names, s)) {
+    if (%HasOwnProperty(names, s)) {
       throw MakeTypeError("proxy_repeated_prop_name", [obj, trap, s]);
     }
     array[index] = s;
@@ -1045,13 +1045,13 @@ function ObjectGetOwnPropertyKeys(obj, symbolsOnly) {
 
   // Find all the indexed properties.
 
-  // Only get the local element names if we want to include string keys.
+  // Only get own element names if we want to include string keys.
   if (!symbolsOnly) {
-    var localElementNames = %GetLocalElementNames(obj);
-    for (var i = 0; i < localElementNames.length; ++i) {
-      localElementNames[i] = %_NumberToString(localElementNames[i]);
+    var ownElementNames = %GetOwnElementNames(obj);
+    for (var i = 0; i < ownElementNames.length; ++i) {
+      ownElementNames[i] = %_NumberToString(ownElementNames[i]);
     }
-    nameArrays.push(localElementNames);
+    nameArrays.push(ownElementNames);
 
     // Get names for indexed interceptor properties.
     var interceptorInfo = %GetInterceptorInfo(obj);
@@ -1065,8 +1065,8 @@ function ObjectGetOwnPropertyKeys(obj, symbolsOnly) {
 
   // Find all the named properties.
 
-  // Get the local property names.
-  nameArrays.push(%GetLocalPropertyNames(obj, filter));
+  // Get own property names.
+  nameArrays.push(%GetOwnPropertyNames(obj, filter));
 
   // Get names for named interceptor properties if any.
   if ((interceptorInfo & 2) != 0) {
@@ -1156,8 +1156,8 @@ function ObjectDefineProperty(obj, p, attributes) {
       {value: 0, writable: 0, get: 0, set: 0, enumerable: 0, configurable: 0};
     for (var i = 0; i < names.length; i++) {
       var N = names[i];
-      if (!(%HasLocalProperty(standardNames, N))) {
-        var attr = GetOwnProperty(attributes, N);
+      if (!(%HasOwnProperty(standardNames, N))) {
+        var attr = GetOwnPropertyJS(attributes, N);
         DefineOwnProperty(descObj, N, attr, true);
       }
     }
@@ -1176,7 +1176,7 @@ function ObjectDefineProperty(obj, p, attributes) {
 function GetOwnEnumerablePropertyNames(properties) {
   var names = new InternalArray();
   for (var key in properties) {
-    if (%HasLocalProperty(properties, key)) {
+    if (%HasOwnProperty(properties, key)) {
       names.push(key);
     }
   }
@@ -1242,7 +1242,7 @@ function ObjectSeal(obj) {
   var names = ObjectGetOwnPropertyNames(obj);
   for (var i = 0; i < names.length; i++) {
     var name = names[i];
-    var desc = GetOwnProperty(obj, name);
+    var desc = GetOwnPropertyJS(obj, name);
     if (desc.isConfigurable()) {
       desc.setConfigurable(false);
       DefineOwnProperty(obj, name, desc, true);
@@ -1254,7 +1254,7 @@ function ObjectSeal(obj) {
 
 
 // ES5 section 15.2.3.9.
-function ObjectFreeze(obj) {
+function ObjectFreezeJS(obj) {
   if (!IS_SPEC_OBJECT(obj)) {
     throw MakeTypeError("called_on_non_object", ["Object.freeze"]);
   }
@@ -1266,7 +1266,7 @@ function ObjectFreeze(obj) {
     var names = ObjectGetOwnPropertyNames(obj);
     for (var i = 0; i < names.length; i++) {
       var name = names[i];
-      var desc = GetOwnProperty(obj, name);
+      var desc = GetOwnPropertyJS(obj, name);
       if (desc.isWritable() || desc.isConfigurable()) {
         if (IsDataDescriptor(desc)) desc.setWritable(false);
         desc.setConfigurable(false);
@@ -1310,7 +1310,7 @@ function ObjectIsSealed(obj) {
   var names = ObjectGetOwnPropertyNames(obj);
   for (var i = 0; i < names.length; i++) {
     var name = names[i];
-    var desc = GetOwnProperty(obj, name);
+    var desc = GetOwnPropertyJS(obj, name);
     if (desc.isConfigurable()) return false;
   }
   return true;
@@ -1331,7 +1331,7 @@ function ObjectIsFrozen(obj) {
   var names = ObjectGetOwnPropertyNames(obj);
   for (var i = 0; i < names.length; i++) {
     var name = names[i];
-    var desc = GetOwnProperty(obj, name);
+    var desc = GetOwnPropertyJS(obj, name);
     if (IsDataDescriptor(desc) && desc.isWritable()) return false;
     if (desc.isConfigurable()) return false;
   }
@@ -1396,7 +1396,6 @@ function SetUpObject() {
 
   %SetNativeFlag($Object);
   %SetCode($Object, ObjectConstructor);
-  %SetExpectedNumberOfProperties($Object, 4);
 
   %SetProperty($Object.prototype, "constructor", $Object, DONT_ENUM);
 
@@ -1422,7 +1421,7 @@ function SetUpObject() {
     "create", ObjectCreate,
     "defineProperty", ObjectDefineProperty,
     "defineProperties", ObjectDefineProperties,
-    "freeze", ObjectFreeze,
+    "freeze", ObjectFreezeJS,
     "getPrototypeOf", ObjectGetPrototypeOf,
     "setPrototypeOf", ObjectSetPrototypeOf,
     "getOwnPropertyDescriptor", ObjectGetOwnPropertyDescriptor,
@@ -1554,7 +1553,7 @@ function NumberValueOf() {
 
 
 // ECMA-262 section 15.7.4.5
-function NumberToFixed(fractionDigits) {
+function NumberToFixedJS(fractionDigits) {
   var x = this;
   if (!IS_NUMBER(this)) {
     if (!IS_NUMBER_WRAPPER(this)) {
@@ -1579,7 +1578,7 @@ function NumberToFixed(fractionDigits) {
 
 
 // ECMA-262 section 15.7.4.6
-function NumberToExponential(fractionDigits) {
+function NumberToExponentialJS(fractionDigits) {
   var x = this;
   if (!IS_NUMBER(this)) {
     if (!IS_NUMBER_WRAPPER(this)) {
@@ -1605,7 +1604,7 @@ function NumberToExponential(fractionDigits) {
 
 
 // ECMA-262 section 15.7.4.7
-function NumberToPrecision(precision) {
+function NumberToPrecisionJS(precision) {
   var x = this;
   if (!IS_NUMBER(this)) {
     if (!IS_NUMBER_WRAPPER(this)) {
@@ -1694,9 +1693,9 @@ function SetUpNumber() {
     "toString", NumberToString,
     "toLocaleString", NumberToLocaleString,
     "valueOf", NumberValueOf,
-    "toFixed", NumberToFixed,
-    "toExponential", NumberToExponential,
-    "toPrecision", NumberToPrecision
+    "toFixed", NumberToFixedJS,
+    "toExponential", NumberToExponentialJS,
+    "toPrecision", NumberToPrecisionJS
   ));
 
   // Harmony Number constructor additions
@@ -1782,19 +1781,15 @@ function FunctionBind(this_arg) { // Length is 1.
     return %Apply(bindings[0], bindings[1], argv, 0, bound_argc + argc);
   };
 
-  %FunctionRemovePrototype(boundFunction);
   var new_length = 0;
-  if (%_ClassOf(this) == "Function") {
-    // Function or FunctionProxy.
-    var old_length = this.length;
-    // FunctionProxies might provide a non-UInt32 value. If so, ignore it.
-    if ((typeof old_length === "number") &&
-        ((old_length >>> 0) === old_length)) {
-      var argc = %_ArgumentsLength();
-      if (argc > 0) argc--;  // Don't count the thisArg as parameter.
-      new_length = old_length - argc;
-      if (new_length < 0) new_length = 0;
-    }
+  var old_length = this.length;
+  // FunctionProxies might provide a non-UInt32 value. If so, ignore it.
+  if ((typeof old_length === "number") &&
+      ((old_length >>> 0) === old_length)) {
+    var argc = %_ArgumentsLength();
+    if (argc > 0) argc--;  // Don't count the thisArg as parameter.
+    new_length = old_length - argc;
+    if (new_length < 0) new_length = 0;
   }
   // This runtime function finds any remaining arguments on the stack,
   // so we don't pass the arguments object.
@@ -1823,7 +1818,7 @@ function NewFunctionString(arguments, function_token) {
     // If the formal parameters string include ) - an illegal
     // character - it may make the combined function expression
     // compile. We avoid this problem by checking for this early on.
-    if (%_CallFunction(p, ')', StringIndexOf) != -1) {
+    if (%_CallFunction(p, ')', StringIndexOfJS) != -1) {
       throw MakeSyntaxError('paren_in_arg_string', []);
     }
     // If the formal parameters include an unbalanced block comment, the
@@ -1841,7 +1836,9 @@ function FunctionConstructor(arg1) {  // length == 1
   var global_receiver = %GlobalReceiver(global);
   // Compile the string in the constructor and not a helper so that errors
   // appear to come from here.
-  var f = %_CallFunction(global_receiver, %CompileString(source, true));
+  var f = %CompileString(source, true);
+  if (!IS_FUNCTION(f)) return f;
+  f = %_CallFunction(global_receiver, f);
   %FunctionMarkNameShouldPrintAsAnonymous(f);
   return f;
 }
@@ -1862,34 +1859,3 @@ function SetUpFunction() {
 }
 
 SetUpFunction();
-
-
-//----------------------------------------------------------------------------
-
-// TODO(rossberg): very simple abstraction for generic microtask queue.
-// Eventually, we should move to a real event queue that allows to maintain
-// relative ordering of different kinds of tasks.
-
-function RunMicrotasks() {
-  while (%SetMicrotaskPending(false)) {
-    var microtaskState = %GetMicrotaskState();
-    if (IS_UNDEFINED(microtaskState.queue))
-      return;
-
-    var microtasks = microtaskState.queue;
-    microtaskState.queue = null;
-
-    for (var i = 0; i < microtasks.length; i++) {
-      microtasks[i]();
-    }
-  }
-}
-
-function EnqueueMicrotask(fn) {
-  var microtaskState = %GetMicrotaskState();
-  if (IS_UNDEFINED(microtaskState.queue) || IS_NULL(microtaskState.queue)) {
-    microtaskState.queue = new InternalArray;
-  }
-  microtaskState.queue.push(fn);
-  %SetMicrotaskPending(true);
-}

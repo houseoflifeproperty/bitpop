@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/html/HTMLFormControlsCollection.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLFieldSetElement.h"
 #include "core/html/HTMLFormElement.h"
@@ -40,16 +40,17 @@ using namespace HTMLNames;
 
 HTMLFormControlsCollection::HTMLFormControlsCollection(ContainerNode& ownerNode)
     : HTMLCollection(ownerNode, FormControls, OverridesItemAfter)
-    , m_cachedElement(0)
+    , m_cachedElement(nullptr)
     , m_cachedElementOffsetInArray(0)
 {
     ASSERT(isHTMLFormElement(ownerNode) || isHTMLFieldSetElement(ownerNode));
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<HTMLFormControlsCollection> HTMLFormControlsCollection::create(ContainerNode& ownerNode, CollectionType)
+PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> HTMLFormControlsCollection::create(ContainerNode& ownerNode, CollectionType type)
 {
-    return adoptRef(new HTMLFormControlsCollection(ownerNode));
+    ASSERT_UNUSED(type, type == FormControls);
+    return adoptRefWillBeNoop(new HTMLFormControlsCollection(ownerNode));
 }
 
 HTMLFormControlsCollection::~HTMLFormControlsCollection()
@@ -64,7 +65,7 @@ const FormAssociatedElement::List& HTMLFormControlsCollection::formControlElemen
     return toHTMLFieldSetElement(ownerNode()).associatedElements();
 }
 
-const Vector<HTMLImageElement*>& HTMLFormControlsCollection::formImageElements() const
+const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >& HTMLFormControlsCollection::formImageElements() const
 {
     return toHTMLFormElement(ownerNode()).imageElements();
 }
@@ -105,12 +106,12 @@ Element* HTMLFormControlsCollection::virtualItemAfter(Element* previous) const
 void HTMLFormControlsCollection::invalidateCache(Document* oldDocument) const
 {
     HTMLCollection::invalidateCache(oldDocument);
-    m_cachedElement = 0;
+    m_cachedElement = nullptr;
     m_cachedElementOffsetInArray = 0;
 }
 
 static HTMLElement* firstNamedItem(const FormAssociatedElement::List& elementsArray,
-    const Vector<HTMLImageElement*>* imageElementsArray, const QualifiedName& attrName, const String& name)
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >* imageElementsArray, const QualifiedName& attrName, const String& name)
 {
     ASSERT(attrName == idAttr || attrName == nameAttr);
 
@@ -141,7 +142,7 @@ Element* HTMLFormControlsCollection::namedItem(const AtomicString& name) const
     // attribute. If a match is not found, the method then searches for an
     // object with a matching name attribute, but only on those elements
     // that are allowed a name attribute.
-    const Vector<HTMLImageElement*>* imagesElements = isHTMLFieldSetElement(ownerNode()) ? 0 : &formImageElements();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >* imagesElements = isHTMLFieldSetElement(ownerNode()) ? 0 : &formImageElements();
     if (HTMLElement* item = firstNamedItem(formControlElements(), imagesElements, idAttr, name))
         return item;
 
@@ -153,7 +154,7 @@ void HTMLFormControlsCollection::updateIdNameCache() const
     if (hasValidIdNameCache())
         return;
 
-    OwnPtr<NamedItemCache> cache = NamedItemCache::create();
+    OwnPtrWillBeRawPtr<NamedItemCache> cache = NamedItemCache::create();
     HashSet<StringImpl*> foundInputElements;
 
     const FormAssociatedElement::List& elementsArray = formControlElements();
@@ -176,7 +177,7 @@ void HTMLFormControlsCollection::updateIdNameCache() const
     }
 
     if (isHTMLFormElement(ownerNode())) {
-        const Vector<HTMLImageElement*>& imageElementsArray = formImageElements();
+        const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >& imageElementsArray = formImageElements();
         for (unsigned i = 0; i < imageElementsArray.size(); ++i) {
             HTMLImageElement* element = imageElementsArray[i];
             const AtomicString& idAttrVal = element->getIdAttribute();
@@ -192,9 +193,9 @@ void HTMLFormControlsCollection::updateIdNameCache() const
     setNamedItemCache(cache.release());
 }
 
-void HTMLFormControlsCollection::namedGetter(const AtomicString& name, bool& radioNodeListEnabled, RefPtr<RadioNodeList>& radioNodeList, bool& elementEnabled, RefPtr<Element>& element)
+void HTMLFormControlsCollection::namedGetter(const AtomicString& name, bool& radioNodeListEnabled, RefPtrWillBeRawPtr<RadioNodeList>& radioNodeList, bool& elementEnabled, RefPtrWillBeRawPtr<Element>& element)
 {
-    Vector<RefPtr<Element> > namedItems;
+    WillBeHeapVector<RefPtrWillBeMember<Element> > namedItems;
     this->namedItems(name, namedItems);
 
     if (namedItems.isEmpty())
@@ -202,7 +203,7 @@ void HTMLFormControlsCollection::namedGetter(const AtomicString& name, bool& rad
 
     if (namedItems.size() == 1) {
         elementEnabled = true;
-        element = namedItems.first();
+        element = namedItems.at(0);
         return;
     }
 
@@ -235,6 +236,12 @@ void HTMLFormControlsCollection::supportedPropertyNames(Vector<String>& names)
                 names.append(nameAttribute);
         }
     }
+}
+
+void HTMLFormControlsCollection::trace(Visitor* visitor)
+{
+    visitor->trace(m_cachedElement);
+    HTMLCollection::trace(visitor);
 }
 
 }

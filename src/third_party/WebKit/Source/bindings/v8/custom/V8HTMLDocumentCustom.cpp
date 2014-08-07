@@ -29,15 +29,15 @@
  */
 
 #include "config.h"
-#include "V8HTMLDocument.h"
+#include "bindings/core/v8/V8HTMLDocument.h"
 
-#include "HTMLNames.h"
-#include "V8HTMLAllCollection.h"
-#include "V8HTMLCollection.h"
-#include "V8Node.h"
-#include "V8Window.h"
+#include "bindings/core/v8/V8HTMLAllCollection.h"
+#include "bindings/core/v8/V8HTMLCollection.h"
+#include "bindings/core/v8/V8Node.h"
+#include "bindings/core/v8/V8Window.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
+#include "core/HTMLNames.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLAllCollection.h"
 #include "core/html/HTMLCollection.h"
@@ -58,7 +58,7 @@ void V8HTMLDocument::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>&
     if (info.Length() > 2) {
         if (RefPtr<LocalFrame> frame = htmlDocument->frame()) {
             // Fetch the global object for the frame.
-            v8::Local<v8::Context> context = toV8Context(info.GetIsolate(), frame.get(), DOMWrapperWorld::current(info.GetIsolate()));
+            v8::Local<v8::Context> context = toV8Context(frame.get(), DOMWrapperWorld::current(info.GetIsolate()));
             // Bail out if we cannot get the context.
             if (context.IsEmpty())
                 return;

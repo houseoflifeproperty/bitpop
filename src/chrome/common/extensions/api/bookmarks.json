@@ -5,7 +5,7 @@
 [
   {
     "namespace": "bookmarks",
-    "description": "Use the <code>chrome.bookmarks</code> API to create, organize, and otherwise manipulate bookmarks. Also see <a href='override.html'>Override Pages</a>, which you can use to create a custom Bookmark Manager page.",
+    "description": "Use the <code>chrome.bookmarks</code> API to create, organize, and otherwise manipulate bookmarks. Also see <a href='override'>Override Pages</a>, which you can use to create a custom Bookmark Manager page.",
     "properties": {
       "MAX_WRITE_OPERATIONS_PER_HOUR": {
         "value": 100,
@@ -56,6 +56,12 @@
             "type": "number",
             "optional": true,
             "description": "When the contents of this folder last changed, in milliseconds since the epoch."
+          },
+          "unmodifiable": {
+            "type": "string",
+            "enum": ["managed"],
+            "optional": true,
+            "description": "Indicates the reason why this node is unmodifiable. The <var>managed</var> value indicates that this node was configured by the system administrator. Omitted if the node can be modified by the user and the extension (default)."
           },
           "children": {
             "type": "array",

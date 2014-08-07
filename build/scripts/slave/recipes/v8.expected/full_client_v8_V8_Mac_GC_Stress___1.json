@@ -6,7 +6,7 @@
       "[DEPOT_TOOLS]/gclient.py",
       "config",
       "--spec",
-      "cache_dir = None\nsolutions = [{'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+      "cache_dir = None\nsolutions = [{'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
     ],
     "name": "gclient setup"
   },
@@ -21,6 +21,8 @@
       "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--revision",
+      "v8@20123",
       "--output-json",
       "/path/to/tmp/json"
     ],
@@ -74,6 +76,7 @@
     "name": "compile"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -88,19 +91,16 @@
       "--shard_count=3",
       "--shard_run=1",
       "--flaky-tests",
-      "skip"
+      "skip",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
-    "name": "Mjsunit",
-    "seed_steps": [
-      "Mjsunit",
-      "Mjsunit - flaky",
-      "Webkit",
-      "Webkit - flaky"
-    ]
+    "name": "Mjsunit"
   },
   {
-    "abort_on_failure": false,
+    "always_run": true,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -115,12 +115,15 @@
       "--shard_count=3",
       "--shard_run=1",
       "--flaky-tests",
-      "run"
+      "run",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Mjsunit - flaky"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -135,13 +138,16 @@
       "--shard_count=3",
       "--shard_run=1",
       "--flaky-tests",
-      "skip"
+      "skip",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Webkit"
   },
   {
-    "abort_on_failure": false,
+    "always_run": true,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -156,7 +162,9 @@
       "--shard_count=3",
       "--shard_run=1",
       "--flaky-tests",
-      "run"
+      "run",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Webkit - flaky"

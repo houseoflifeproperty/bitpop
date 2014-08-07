@@ -5,6 +5,7 @@
 package org.chromium.chrome.shell;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.drawable.ClipDrawable;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
@@ -23,6 +24,7 @@ import org.chromium.chrome.browser.Tab;
 import org.chromium.chrome.browser.TabObserver;
 import org.chromium.chrome.browser.appmenu.AppMenuButtonHelper;
 import org.chromium.chrome.browser.appmenu.AppMenuHandler;
+import org.chromium.chrome.shell.omnibox.SuggestionPopup;
 
 /**
  * A Toolbar {@link View} that shows the URL and navigation buttons.
@@ -45,6 +47,8 @@ public class ChromeShellToolbar extends LinearLayout {
 
     private AppMenuHandler mMenuHandler;
     private AppMenuButtonHelper mAppMenuButtonHelper;
+
+    private SuggestionPopup mSuggestionPopup;
 
     /**
      * @param context The Context the view is running in.
@@ -73,6 +77,13 @@ public class ChromeShellToolbar extends LinearLayout {
         removeCallbacks(mClearProgressRunnable);
         mProgressDrawable.setLevel(100 * progress);
         if (progress == 100) postDelayed(mClearProgressRunnable, COMPLETED_PROGRESS_TIMEOUT_MS);
+    }
+
+    /**
+     * Closes the suggestion popup.
+     */
+    public void hideSuggestions() {
+        if (mSuggestionPopup != null) mSuggestionPopup.hideSuggestions();
     }
 
     @Override
@@ -104,7 +115,7 @@ public class ChromeShellToolbar extends LinearLayout {
                 mTab.loadUrlWithSanitization(mUrlTextView.getText().toString());
                 mUrlTextView.clearFocus();
                 setKeyboardVisibilityForUrl(false);
-                mTab.getContentView().requestFocus();
+                mTab.getView().requestFocus();
                 return true;
             }
         });
@@ -114,9 +125,13 @@ public class ChromeShellToolbar extends LinearLayout {
                 setKeyboardVisibilityForUrl(hasFocus);
                 if (!hasFocus) {
                     mUrlTextView.setText(mTab.getContentViewCore().getUrl());
+                    mSuggestionPopup.dismissPopup();
                 }
             }
         });
+
+        mSuggestionPopup = new SuggestionPopup(getContext(), mUrlTextView, this);
+        mUrlTextView.addTextChangedListener(mSuggestionPopup);
     }
 
     private void initializeMenuButton() {
@@ -135,7 +150,18 @@ public class ChromeShellToolbar extends LinearLayout {
         });
     }
 
-    private void setKeyboardVisibilityForUrl(boolean visible) {
+    /**
+     * @return Current tab that is shown by ChromeShell.
+     */
+    public ChromeShellTab getCurrentTab() {
+        return mTab;
+    }
+
+    /**
+     * Change the visibility of the software keyboard.
+     * @param visible Whether the keyboard should be shown or hidden.
+     */
+    public void setKeyboardVisibilityForUrl(boolean visible) {
         InputMethodManager imm = (InputMethodManager) getContext().getSystemService(
                 Context.INPUT_METHOD_SERVICE);
         if (visible) {
@@ -143,6 +169,12 @@ public class ChromeShellToolbar extends LinearLayout {
         } else {
             imm.hideSoftInputFromWindow(mUrlTextView.getWindowToken(), 0);
         }
+    }
+
+    @Override
+    protected void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (mMenuHandler != null) mMenuHandler.hideAppMenu();
     }
 
     private class TabObserverImpl extends EmptyTabObserver {

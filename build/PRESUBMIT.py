@@ -67,8 +67,10 @@ def CommonChecks(input_api, output_api):
     sys.path = sys_path_backup
 
   whitelist = [r'.+_test\.py$']
+  blacklist = [r'bot_update_test.py$']
   tests.extend(input_api.canned_checks.GetUnitTestsInDirectory(
-      input_api, output_api, 'tests', whitelist=whitelist))
+      input_api, output_api, 'tests', whitelist=whitelist,
+      blacklist=blacklist))
   tests.extend(input_api.canned_checks.GetUnitTestsInDirectory(
       input_api,
       output_api,
@@ -118,6 +120,24 @@ def CommonChecks(input_api, output_api):
     sys.path = sys_path_backup
 
 
+def ConditionalChecks(input_api, output_api):
+  """Pre-commit tests only to be run if specific files have changed.
+
+  Typically, this is used to avoid running lengthy tests when possible.
+  """
+  tests_to_run = []
+  conditional_tests = {
+      'scripts/slave/bot_update.py': ['tests/bot_update_test.py'],
+  }
+  affected_files = set([
+      f.LocalPath() for f in input_api.change.AffectedFiles()])
+  for key, val in conditional_tests.iteritems():
+    if key in affected_files:
+      tests_to_run.extend(val)
+  return input_api.RunTests(input_api.canned_checks.GetUnitTests(
+      input_api, output_api, tests_to_run))
+
+
 def BuildInternalCheck(output, input_api, output_api):
   if output:
     b_i = input_api.os_path.join(input_api.PresubmitLocalPath(), '..',
@@ -136,4 +156,7 @@ def CheckChangeOnUpload(input_api, output_api):
 
 
 def CheckChangeOnCommit(input_api, output_api):
-  return CheckChangeOnUpload(input_api, output_api)
+  output = CommonChecks(input_api, output_api)
+  output.extend(ConditionalChecks(input_api, output_api))
+  output.extend(BuildInternalCheck(output, input_api, output_api))
+  return output

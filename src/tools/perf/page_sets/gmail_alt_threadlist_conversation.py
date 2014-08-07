@@ -1,10 +1,31 @@
 # Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
+import re
+
 # pylint: disable=W0401,W0614
 from telemetry.page.actions.all_page_actions import *
 from telemetry.page import page as page_module
 from telemetry.page import page_set as page_set_module
+
+
+def _CreateXpathFunction(xpath):
+  return ('document.evaluate("%s",'
+                             'document,'
+                             'null,'
+                             'XPathResult.FIRST_ORDERED_NODE_TYPE,'
+                             'null)'
+          '.singleNodeValue' % re.escape(xpath))
+
+
+def _GetCurrentLocation(action_runner):
+  return action_runner.EvaluateJavaScript('document.location.href')
+
+
+def _WaitForLocationChange(action_runner, old_href):
+  action_runner.WaitForJavaScriptCondition(
+      'document.location.href != "%s"' % old_href)
 
 
 class GmailAltThreadlistConversationPage(
@@ -23,26 +44,22 @@ class GmailAltThreadlistConversationPage(
     self.credentials = 'google'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript':
-        'window.gmonkey !== undefined && document.getElementById("gb") !== null'
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'window.gmonkey !== undefined && '
+        'document.getElementById("gb") !== null')
 
   def RunEndure(self, action_runner):
-    action_runner.RunAction(ClickElementAction(
-      {
-        'xpath': '//span[@email]',
-        'wait_until': {'condition': 'href_change'}
-      }))
-    action_runner.RunAction(WaitAction({'seconds': 1}))
-    action_runner.RunAction(ClickElementAction(
-      {
-        'wait_until': {'condition': 'href_change'},
-        'selector': 'a[href="https://mail.google.com/mail/u/0/?shva=1#inbox"]'
-      }))
-    action_runner.RunAction(WaitAction({'seconds': 1}))
+    old_href = _GetCurrentLocation(action_runner)
+    action_runner.ClickElement(
+        element_function=_CreateXpathFunction('//span[@email]'))
+    _WaitForLocationChange(action_runner, old_href)
+    action_runner.Wait(1)
+    old_href = _GetCurrentLocation(action_runner)
+    action_runner.ClickElement(
+        'a[href="https://mail.google.com/mail/u/0/?shva=1#inbox"]')
+    _WaitForLocationChange(action_runner, old_href)
+    action_runner.Wait(1)
 
 
 class GmailAltThreadlistConversationPageSet(page_set_module.PageSet):
@@ -53,6 +70,7 @@ class GmailAltThreadlistConversationPageSet(page_set_module.PageSet):
     super(GmailAltThreadlistConversationPageSet, self).__init__(
       credentials_path='data/credentials.json',
       user_agent_type='desktop',
-      archive_data_file='data/gmail_alt_threadlist_conversation.json')
+      archive_data_file='data/gmail_alt_threadlist_conversation.json',
+      bucket=page_set_module.PUBLIC_BUCKET)
 
     self.AddPage(GmailAltThreadlistConversationPage(self))

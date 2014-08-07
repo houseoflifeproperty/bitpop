@@ -22,8 +22,8 @@
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/url_constants.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
@@ -166,10 +166,9 @@ base::DictionaryValue* ExtensionTabUtil::OpenTab(
   // -title
   // -favIconUrl
 
-  std::string url_string;
   GURL url;
   if (params.url.get()) {
-    url_string = *params.url;
+    std::string url_string= *params.url;
     url = ExtensionTabUtil::ResolvePossiblyRelativeURL(
         url_string, function->GetExtension());
     if (!url.is_valid()) {
@@ -177,6 +176,8 @@ base::DictionaryValue* ExtensionTabUtil::OpenTab(
           ErrorUtils::FormatErrorMessage(keys::kInvalidUrlError, url_string);
       return NULL;
     }
+  } else {
+    url = GURL(chrome::kChromeUINewTabURL);
   }
 
   // Don't let extensions crash the browser or renderers.
@@ -286,7 +287,7 @@ int ExtensionTabUtil::GetWindowIdOfTabStripModel(
   return -1;
 }
 
-int ExtensionTabUtil::GetTabId(WebContents* web_contents) {
+int ExtensionTabUtil::GetTabId(const WebContents* web_contents) {
   return SessionID::IdForTab(web_contents);
 }
 
@@ -388,10 +389,9 @@ void ExtensionTabUtil::ScrubTabValueForExtension(
     WebContents* contents,
     const Extension* extension,
     base::DictionaryValue* tab_info) {
-  bool has_permission =
-      extension &&
-      PermissionsData::HasAPIPermissionForTab(
-          extension, GetTabId(contents), APIPermission::kTab);
+  bool has_permission = extension &&
+                        extension->permissions_data()->HasAPIPermissionForTab(
+                            GetTabId(contents), APIPermission::kTab);
 
   if (!has_permission) {
     tab_info->Remove(keys::kUrlKey, NULL);
@@ -402,8 +402,9 @@ void ExtensionTabUtil::ScrubTabValueForExtension(
 
 void ExtensionTabUtil::ScrubTabForExtension(const Extension* extension,
                                             api::tabs::Tab* tab) {
-  bool has_permission = extension && extension->HasAPIPermission(
-      APIPermission::kTab);
+  bool has_permission =
+      extension &&
+      extension->permissions_data()->HasAPIPermission(APIPermission::kTab);
 
   if (!has_permission) {
     tab->url.reset();
@@ -494,7 +495,7 @@ GURL ExtensionTabUtil::ResolvePossiblyRelativeURL(const std::string& url_string,
 bool ExtensionTabUtil::IsCrashURL(const GURL& url) {
   // Check a fixed-up URL, to normalize the scheme and parse hosts correctly.
   GURL fixed_url =
-      URLFixerUpper::FixupURL(url.possibly_invalid_spec(), std::string());
+      url_fixer::FixupURL(url.possibly_invalid_spec(), std::string());
   return (fixed_url.SchemeIs(content::kChromeUIScheme) &&
           (fixed_url.host() == content::kChromeUIBrowserCrashHost ||
            fixed_url.host() == chrome::kChromeUICrashHost));

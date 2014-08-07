@@ -27,7 +27,7 @@
 #ifndef InternalSettings_h
 #define InternalSettings_h
 
-#include "InternalSettingsGenerated.h"
+#include "core/InternalSettingsGenerated.h"
 #include "core/editing/EditingBehaviorTypes.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/heap/Handle.h"
@@ -57,7 +57,6 @@ public:
 
         bool m_originalCSSExclusionsEnabled;
         bool m_originalAuthorShadowDOMForAnyElementEnabled;
-        bool m_originalStyleScoped;
         bool m_originalCSP;
         bool m_originalOverlayScrollbarsEnabled;
         EditingBehaviorType m_originalEditingBehavior;
@@ -69,9 +68,8 @@ public:
         bool m_langAttributeAwareFormControlUIEnabled;
         bool m_imagesEnabled;
         String m_defaultVideoPosterURL;
-        bool m_originalCompositorDrivenAcceleratedScrollEnabled;
         bool m_originalLayerSquashingEnabled;
-        bool m_originalPasswordGenerationDecorationEnabled;
+        bool m_originalPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled;
     };
 
     static PassRefPtrWillBeRawPtr<InternalSettings> create(Page& page)
@@ -100,15 +98,10 @@ public:
     void setImagesEnabled(bool, ExceptionState&);
     void setMediaTypeOverride(const String& mediaType, ExceptionState&);
     void setMockScrollbarsEnabled(bool, ExceptionState&);
-    void setPasswordGenerationDecorationEnabled(bool, ExceptionState&);
     void setTextAutosizingEnabled(bool, ExceptionState&);
     void setAccessibilityFontScaleFactor(float fontScaleFactor, ExceptionState&);
     void setTextAutosizingWindowSizeOverride(int width, int height, ExceptionState&);
     void setViewportEnabled(bool, ExceptionState&);
-
-    // FIXME: This is a temporary flag and should be removed once accelerated
-    // overflow scroll is ready (crbug.com/254111).
-    void setCompositorDrivenAcceleratedScrollingEnabled(bool, ExceptionState&);
 
     // FIXME: This is a temporary flag and should be removed once squashing is
     // ready (crbug.com/261605).
@@ -121,8 +114,8 @@ public:
     void setCSSExclusionsEnabled(bool);
     void setLangAttributeAwareFormControlUIEnabled(bool);
     void setOverlayScrollbarsEnabled(bool);
-    void setStyleScopedEnabled(bool);
     void setExperimentalContentSecurityPolicyFeaturesEnabled(bool);
+    void setPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled(bool);
 
     virtual void trace(Visitor*) OVERRIDE;
 

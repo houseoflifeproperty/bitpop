@@ -30,13 +30,16 @@ class SettingsWindowManager {
   void AddObserver(SettingsWindowManagerObserver* observer);
   void RemoveObserver(SettingsWindowManagerObserver* observer);
 
-  // Shows a chrome:// page (e.g. Settings, History) in an an existing system
+  // Shows a chrome:// page (e.g. Settings, About) in an an existing system
   // Browser window for |profile| or creates a new one.
   void ShowChromePageForProfile(Profile* profile, const GURL& gurl);
 
   // If a Browser settings window for |profile| has already been created,
   // returns it, otherwise returns NULL.
   Browser* FindBrowserForProfile(Profile* profile);
+
+  // Returns true if |browser| is a settings window.
+  bool IsSettingsBrowser(Browser* browser) const;
 
  private:
   friend struct DefaultSingletonTraits<SettingsWindowManager>;

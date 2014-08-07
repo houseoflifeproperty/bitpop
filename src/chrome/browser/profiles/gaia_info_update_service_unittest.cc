@@ -117,8 +117,6 @@ TEST_F(GAIAInfoUpdateServiceTest, DownloadSuccess) {
   EXPECT_EQ(name, GetCache()->GetNameOfProfileAtIndex(index));
   EXPECT_EQ(name, GetCache()->GetGAIANameOfProfileAtIndex(index));
   EXPECT_TRUE(gfx::test::IsEqual(
-      image, GetCache()->GetAvatarIconOfProfileAtIndex(index)));
-  EXPECT_TRUE(gfx::test::IsEqual(
       image, *GetCache()->GetGAIAPictureOfProfileAtIndex(index)));
   EXPECT_EQ(url, service()->GetCachedPictureURL());
 }
@@ -175,7 +173,7 @@ TEST_F(GAIAInfoUpdateServiceTest, LogOut) {
   EXPECT_FALSE(service()->GetCachedPictureURL().empty());
 
   // Log out.
-  signin_manager->SignOut();
+  signin_manager->SignOut(signin_metrics::SIGNOUT_TEST);
   // Verify that the GAIA name and picture, and picture URL are unset.
   EXPECT_TRUE(GetCache()->GetGAIANameOfProfileAtIndex(0).empty());
   EXPECT_EQ(NULL, GetCache()->GetGAIAPictureOfProfileAtIndex(0));

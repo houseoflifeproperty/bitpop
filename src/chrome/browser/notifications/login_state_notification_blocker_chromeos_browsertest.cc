@@ -7,9 +7,8 @@
 #include "base/command_line.h"
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user_adding_screen.h"
+#include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
 #include "chrome/browser/notifications/login_state_notification_blocker_chromeos.h"
-#include "chrome/common/chrome_switches.h"
 #include "content/public/test/test_utils.h"
 #include "ui/message_center/message_center.h"
 
@@ -31,14 +30,9 @@ class LoginStateNotificationBlockerChromeOSBrowserTest
         state_changed_count_(0) {}
   virtual ~LoginStateNotificationBlockerChromeOSBrowserTest() {}
 
-  // InProcessBrowserTest overrides:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    LoginManagerTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(::switches::kMultiProfiles);
-  }
-
   virtual void SetUpOnMainThread() OVERRIDE {
     chromeos::LoginState::Get()->set_always_logged_in(false);
+    chromeos::LoginManagerTest::SetUpOnMainThread();
   }
 
   virtual void CleanUpOnMainThread() OVERRIDE {

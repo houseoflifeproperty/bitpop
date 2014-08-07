@@ -7,7 +7,6 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "base/run_loop.h"
 #include "content/public/test/test_file_system_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -48,6 +47,7 @@ class TransientFileUtilTest : public testing::Test {
     std::string name = "tmp";
     std::string fsid = isolated_context->RegisterFileSystemForPath(
         fileapi::kFileSystemTypeForTransientFile,
+        std::string(),
         *file_path,
         &name);
     ASSERT_TRUE(!fsid.empty());

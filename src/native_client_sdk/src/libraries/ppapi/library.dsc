@@ -22,6 +22,8 @@
         'ppb_audio_buffer.h',
         'ppb_audio_config.h',
         'ppb_audio.h',
+        'ppb_compositor.h',
+        'ppb_compositor_layer.h',
         'ppb_console.h',
         'ppb_core.h',
         'ppb_file_io.h',
@@ -77,6 +79,7 @@
         'ppp.h',
         'ppp_input_event.h',
         'ppp_instance.h',
+        'ppp_message_handler.h',
         'ppp_messaging.h',
         'ppp_mouse_lock.h',
         'pp_point.h',
@@ -93,7 +96,6 @@
     {
       'FILES': [
         'deprecated_bool.h',
-        'ppb_alarms_dev.h',
         'ppb_cursor_control_dev.h',
         'ppb_file_chooser_dev.h',
         'ppb_font_dev.h',
@@ -106,7 +108,6 @@
         'ppb_view_dev.h',
         'ppb_zoom_dev.h',
         'pp_cursor_type_dev.h',
-        'pp_optional_structs_dev.h',
         'ppp_class_deprecated.h',
         'ppp_network_state_dev.h',
         'ppp_printing_dev.h',

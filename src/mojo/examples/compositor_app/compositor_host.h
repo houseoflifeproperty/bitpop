@@ -23,10 +23,10 @@ class GLES2ClientImpl;
 
 class CompositorHost : public cc::LayerTreeHostClient {
  public:
-  explicit CompositorHost(ScopedMessagePipeHandle gl_pipe);
+  explicit CompositorHost(ScopedMessagePipeHandle command_buffer_handle);
   virtual ~CompositorHost();
 
-  void SetSize(gfx::Size viewport_size);
+  void SetSize(const gfx::Size& viewport_size);
 
   // cc::LayerTreeHostClient implementation.
   virtual void WillBeginMainFrame(int frame_id) OVERRIDE;
@@ -46,7 +46,7 @@ class CompositorHost : public cc::LayerTreeHostClient {
  private:
   void SetupScene();
 
-  ScopedMessagePipeHandle gl_pipe_;
+  ScopedMessagePipeHandle command_buffer_handle_;
   scoped_ptr<cc::LayerTreeHost> tree_;
   scoped_refptr<cc::Layer> child_layer_;
   base::Thread compositor_thread_;

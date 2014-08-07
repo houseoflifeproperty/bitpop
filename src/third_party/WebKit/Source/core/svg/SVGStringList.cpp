@@ -92,7 +92,7 @@ void SVGStringList::parseInternal(const CharType*& ptr, const CharType* end)
 
     while (ptr < end) {
         const CharType* start = ptr;
-        while (ptr < end && *ptr != delimiter && !isSVGSpace(*ptr))
+        while (ptr < end && *ptr != delimiter && !isHTMLSpace<CharType>(*ptr))
             ptr++;
         if (ptr == start)
             break;
@@ -161,7 +161,7 @@ bool SVGStringList::checkIndexBound(size_t index, ExceptionState& exceptionState
     return true;
 }
 
-void SVGStringList::add(PassRefPtr<SVGPropertyBase> other, SVGElement* contextElement)
+void SVGStringList::add(PassRefPtrWillBeRawPtr<SVGPropertyBase> other, SVGElement* contextElement)
 {
     // SVGStringList is never animated.
     ASSERT_NOT_REACHED();

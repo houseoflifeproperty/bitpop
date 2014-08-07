@@ -31,9 +31,10 @@
 #include "config.h"
 #include "core/testing/DummyPageHolder.h"
 
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "wtf/Assertions.h"
 
 namespace WebCore {
@@ -45,14 +46,12 @@ PassOwnPtr<DummyPageHolder> DummyPageHolder::create(const IntSize& initialViewSi
 
 DummyPageHolder::DummyPageHolder(const IntSize& initialViewSize)
 {
-    m_pageClients.chromeClient = &m_chromeClient;
-    m_pageClients.contextMenuClient = &m_contextMenuClient;
-    m_pageClients.editorClient = &m_editorClient;
-    m_pageClients.dragClient = &m_dragClient;
-    m_pageClients.inspectorClient = &m_inspectorClient;
-    m_pageClients.backForwardClient = &m_backForwardClient;
-
+    fillWithEmptyClients(m_pageClients);
     m_page = adoptPtrWillBeNoop(new Page(m_pageClients));
+    Settings& settings = m_page->settings();
+    // FIXME: http://crbug.com/363843. This needs to find a better way to
+    // not create graphics layers.
+    settings.setAcceleratedCompositingEnabled(false);
 
     m_frame = LocalFrame::create(&m_frameLoaderClient, &m_page->frameHost(), 0);
     m_frame->setView(FrameView::create(m_frame.get(), initialViewSize));

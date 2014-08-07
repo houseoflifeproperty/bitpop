@@ -30,6 +30,7 @@ namespace addressinput {
 
 class Downloader;
 class Storage;
+class ValidatingStorage;
 
 // Retrieves data. Sample usage:
 //    Storage* storage = ...;
@@ -41,7 +42,8 @@ class Storage;
 //    retriever.Retrieve("data/CA/AB--fr", *retrieved);
 class Retriever {
  public:
-  typedef i18n::addressinput::Callback<std::string, std::string> Callback;
+  typedef i18n::addressinput::Callback<const std::string&,
+                                       const std::string&> Callback;
 
   // Takes ownership of |downloader| and |storage|.
   Retriever(const std::string& validation_data_url,
@@ -51,13 +53,17 @@ class Retriever {
 
   // Retrieves the data for |key| and invokes the |retrieved| callback. Checks
   // for the data in storage first. If storage does not have the data for |key|,
-  // then downloads the data and places it in storage.
+  // then downloads the data and places it in storage. If the data in storage is
+  // corrupted, then it's discarded and redownloaded. If the data is stale, then
+  // it's redownloaded. If the download fails, then stale data will be returned
+  // this one time. The next call to Retrieve() will attempt to download fresh
+  // data again.
   void Retrieve(const std::string& key, const Callback& retrieved) const;
 
  private:
   const LookupKeyUtil lookup_key_util_;
   scoped_ptr<const Downloader> downloader_;
-  scoped_ptr<Storage> storage_;
+  scoped_ptr<ValidatingStorage> storage_;
 
   DISALLOW_COPY_AND_ASSIGN(Retriever);
 };

@@ -30,12 +30,6 @@ class ResponderThunk : public MessageReceiver {
     return result;
   }
 
-  virtual bool AcceptWithResponder(Message* message,
-                                   MessageReceiver* responder) MOJO_OVERRIDE {
-    assert(false);  // not reached!
-    return false;
-  }
-
  private:
   SharedData<Router*> router_;
 };
@@ -53,22 +47,20 @@ bool Router::HandleIncomingMessageThunk::Accept(Message* message) {
   return router_->HandleIncomingMessage(message);
 }
 
-bool Router::HandleIncomingMessageThunk::AcceptWithResponder(
-    Message* message,
-    MessageReceiver* responder) {
-  assert(false);  // not reached!
-  return false;
-}
-
 // ----------------------------------------------------------------------------
 
-Router::Router(ScopedMessagePipeHandle message_pipe, MojoAsyncWaiter* waiter)
-    : connector_(message_pipe.Pass(), waiter),
+Router::Router(ScopedMessagePipeHandle message_pipe,
+               FilterChain filters,
+               const MojoAsyncWaiter* waiter)
+    : thunk_(this),
+      filters_(filters.Pass()),
+      connector_(message_pipe.Pass(), waiter),
       weak_self_(this),
       incoming_receiver_(NULL),
-      thunk_(this),
-      next_request_id_(0) {
-  connector_.set_incoming_receiver(&thunk_);
+      next_request_id_(0),
+      testing_mode_(false) {
+  filters_.SetSink(&thunk_);
+  connector_.set_incoming_receiver(filters_.GetHead());
 }
 
 Router::~Router() {
@@ -103,6 +95,11 @@ bool Router::AcceptWithResponder(Message* message,
   return true;
 }
 
+void Router::EnableTestingMode() {
+  testing_mode_ = true;
+  connector_.set_enforce_errors_from_incoming_receiver(false);
+}
+
 bool Router::HandleIncomingMessage(Message* message) {
   if (message->has_flag(kMessageExpectsResponse)) {
     if (incoming_receiver_) {
@@ -120,7 +117,7 @@ bool Router::HandleIncomingMessage(Message* message) {
     uint64_t request_id = message->request_id();
     ResponderMap::iterator it = responders_.find(request_id);
     if (it == responders_.end()) {
-      assert(false);
+      assert(testing_mode_);
       return false;
     }
     MessageReceiver* responder = it->second;

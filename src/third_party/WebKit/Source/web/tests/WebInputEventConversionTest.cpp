@@ -41,6 +41,7 @@
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/rendering/RenderView.h"
 #include "public/web/WebFrame.h"
 #include "public/web/WebSettings.h"
 #include "web/WebViewImpl.h"
@@ -107,10 +108,10 @@ TEST(WebInputEventConversionTest, InputEventsScaling)
 
     webViewImpl->setPageScaleFactor(2);
 
-    FrameView* view = webViewImpl->page()->mainFrame()->view();
-    RefPtr<Document> document = webViewImpl->page()->mainFrame()->document();
-    DOMWindow* domWindow = webViewImpl->page()->mainFrame()->document()->domWindow();
-    RenderObject* docRenderer = webViewImpl->page()->mainFrame()->document()->renderer();
+    FrameView* view = toLocalFrame(webViewImpl->page()->mainFrame())->view();
+    RefPtrWillBeRawPtr<Document> document = toLocalFrame(webViewImpl->page()->mainFrame())->document();
+    LocalDOMWindow* domWindow = document->domWindow();
+    RenderView* documentRenderView = document->renderView();
 
     {
         WebMouseEvent webMouseEvent;
@@ -238,12 +239,12 @@ TEST(WebInputEventConversionTest, InputEventsScaling)
         EXPECT_FLOAT_EQ(10.4f, webTouchEvent.touches[0].radiusY);
 
         PlatformTouchEventBuilder platformTouchBuilder(view, webTouchEvent);
-        EXPECT_EQ(10, platformTouchBuilder.touchPoints()[0].screenPos().x());
-        EXPECT_EQ(10, platformTouchBuilder.touchPoints()[0].screenPos().y());
-        EXPECT_EQ(5, platformTouchBuilder.touchPoints()[0].pos().x());
-        EXPECT_EQ(5, platformTouchBuilder.touchPoints()[0].pos().y());
-        EXPECT_EQ(5, platformTouchBuilder.touchPoints()[0].radiusX());
-        EXPECT_EQ(5, platformTouchBuilder.touchPoints()[0].radiusY());
+        EXPECT_FLOAT_EQ(10.6f, platformTouchBuilder.touchPoints()[0].screenPos().x());
+        EXPECT_FLOAT_EQ(10.4f, platformTouchBuilder.touchPoints()[0].screenPos().y());
+        EXPECT_FLOAT_EQ(5.3f, platformTouchBuilder.touchPoints()[0].pos().x());
+        EXPECT_FLOAT_EQ(5.2f, platformTouchBuilder.touchPoints()[0].pos().y());
+        EXPECT_FLOAT_EQ(5.3f, platformTouchBuilder.touchPoints()[0].radius().width());
+        EXPECT_FLOAT_EQ(5.2f, platformTouchBuilder.touchPoints()[0].radius().height());
     }
 
     // Reverse builders should *not* go back to physical pixels, as they are used for plugins
@@ -251,7 +252,7 @@ TEST(WebInputEventConversionTest, InputEventsScaling)
     {
         PlatformMouseEvent platformMouseEvent(IntPoint(10, 10), IntPoint(10, 10), LeftButton, PlatformEvent::MouseMoved, 1, false, false, false, false, 0);
         RefPtrWillBeRawPtr<MouseEvent> mouseEvent = MouseEvent::create(WebCore::EventTypeNames::mousemove, domWindow, platformMouseEvent, 0, document);
-        WebMouseEventBuilder webMouseBuilder(view, docRenderer, *mouseEvent);
+        WebMouseEventBuilder webMouseBuilder(view, documentRenderView, *mouseEvent);
 
         EXPECT_EQ(10, webMouseBuilder.x);
         EXPECT_EQ(10, webMouseBuilder.y);
@@ -264,14 +265,14 @@ TEST(WebInputEventConversionTest, InputEventsScaling)
     {
         PlatformMouseEvent platformMouseEvent(IntPoint(10, 10), IntPoint(10, 10), NoButton, PlatformEvent::MouseMoved, 1, false, false, false, false, 0);
         RefPtrWillBeRawPtr<MouseEvent> mouseEvent = MouseEvent::create(WebCore::EventTypeNames::mousemove, domWindow, platformMouseEvent, 0, document);
-        WebMouseEventBuilder webMouseBuilder(view, docRenderer, *mouseEvent);
+        WebMouseEventBuilder webMouseBuilder(view, documentRenderView, *mouseEvent);
         EXPECT_EQ(WebMouseEvent::ButtonNone, webMouseBuilder.button);
     }
 
     {
         PlatformGestureEvent platformGestureEvent(PlatformEvent::GestureScrollUpdate, IntPoint(10, 10), IntPoint(10, 10), IntSize(10, 10), 0, false, false, false, false, 10, 10, 10, 10);
         RefPtrWillBeRawPtr<GestureEvent> gestureEvent = GestureEvent::create(domWindow, platformGestureEvent);
-        WebGestureEventBuilder webGestureBuilder(view, docRenderer, *gestureEvent);
+        WebGestureEventBuilder webGestureBuilder(view, documentRenderView, *gestureEvent);
 
         EXPECT_EQ(10, webGestureBuilder.x);
         EXPECT_EQ(10, webGestureBuilder.y);
@@ -282,19 +283,19 @@ TEST(WebInputEventConversionTest, InputEventsScaling)
     }
 
     {
-        RefPtrWillBeRawPtr<Touch> touch = Touch::create(webViewImpl->page()->mainFrame(), document.get(), 0, 10, 10, 10, 10, 10, 10, 0, 0);
+        RefPtrWillBeRawPtr<Touch> touch = Touch::create(toLocalFrame(webViewImpl->page()->mainFrame()), document.get(), 0, FloatPoint(10, 9.5), FloatPoint(3.5, 2), FloatSize(4, 4.5), 0, 0);
         RefPtrWillBeRawPtr<TouchList> touchList = TouchList::create();
         touchList->append(touch);
-        RefPtrWillBeRawPtr<TouchEvent> touchEvent = TouchEvent::create(touchList.get(), touchList.get(), touchList.get(), WebCore::EventTypeNames::touchmove, domWindow, 10, 10, 10, 10, false, false, false, false, false);
+        RefPtrWillBeRawPtr<TouchEvent> touchEvent = TouchEvent::create(touchList.get(), touchList.get(), touchList.get(), WebCore::EventTypeNames::touchmove, domWindow, false, false, false, false, false);
 
-        WebTouchEventBuilder webTouchBuilder(view, docRenderer, *touchEvent);
+        WebTouchEventBuilder webTouchBuilder(view, documentRenderView, *touchEvent);
         ASSERT_EQ(1u, webTouchBuilder.touchesLength);
         EXPECT_EQ(10, webTouchBuilder.touches[0].screenPosition.x);
-        EXPECT_EQ(10, webTouchBuilder.touches[0].screenPosition.y);
-        EXPECT_EQ(10, webTouchBuilder.touches[0].position.x);
-        EXPECT_EQ(10, webTouchBuilder.touches[0].position.y);
-        EXPECT_EQ(10, webTouchBuilder.touches[0].radiusX);
-        EXPECT_EQ(10, webTouchBuilder.touches[0].radiusY);
+        EXPECT_FLOAT_EQ(9.5, webTouchBuilder.touches[0].screenPosition.y);
+        EXPECT_FLOAT_EQ(3.5, webTouchBuilder.touches[0].position.x);
+        EXPECT_FLOAT_EQ(2, webTouchBuilder.touches[0].position.y);
+        EXPECT_FLOAT_EQ(4, webTouchBuilder.touches[0].radiusX);
+        EXPECT_FLOAT_EQ(4.5, webTouchBuilder.touches[0].radiusY);
         EXPECT_FALSE(webTouchBuilder.cancelable);
     }
 }
@@ -316,8 +317,7 @@ TEST(WebInputEventConversionTest, InputEventsTransform)
     webViewImpl->setPageScaleFactor(2);
     webViewImpl->setRootLayerTransform(WebSize(10, 20), 1.5);
 
-    FrameView* view = webViewImpl->page()->mainFrame()->view();
-    RefPtr<Document> document = webViewImpl->page()->mainFrame()->document();
+    FrameView* view = toLocalFrame(webViewImpl->page()->mainFrame())->view();
 
     {
         WebMouseEvent webMouseEvent;
@@ -438,12 +438,12 @@ TEST(WebInputEventConversionTest, InputEventsTransform)
         webTouchEvent.touches[0].radiusY = 30;
 
         PlatformTouchEventBuilder platformTouchBuilder(view, webTouchEvent);
-        EXPECT_EQ(100, platformTouchBuilder.touchPoints()[0].screenPos().x());
-        EXPECT_EQ(110, platformTouchBuilder.touchPoints()[0].screenPos().y());
-        EXPECT_EQ(30, platformTouchBuilder.touchPoints()[0].pos().x());
-        EXPECT_EQ(30, platformTouchBuilder.touchPoints()[0].pos().y());
-        EXPECT_EQ(10, platformTouchBuilder.touchPoints()[0].radiusX());
-        EXPECT_EQ(10, platformTouchBuilder.touchPoints()[0].radiusY());
+        EXPECT_FLOAT_EQ(100, platformTouchBuilder.touchPoints()[0].screenPos().x());
+        EXPECT_FLOAT_EQ(110, platformTouchBuilder.touchPoints()[0].screenPos().y());
+        EXPECT_FLOAT_EQ(30, platformTouchBuilder.touchPoints()[0].pos().x());
+        EXPECT_FLOAT_EQ(30, platformTouchBuilder.touchPoints()[0].pos().y());
+        EXPECT_FLOAT_EQ(10, platformTouchBuilder.touchPoints()[0].radius().width());
+        EXPECT_FLOAT_EQ(10, platformTouchBuilder.touchPoints()[0].radius().height());
     }
 }
 
@@ -460,10 +460,10 @@ TEST(WebInputEventConversionTest, InputEventsConversions)
     webViewImpl->resize(WebSize(pageWidth, pageHeight));
     webViewImpl->layout();
 
-    FrameView* view = webViewImpl->page()->mainFrame()->view();
-    RefPtr<Document> document = webViewImpl->page()->mainFrame()->document();
-    DOMWindow* domWindow = webViewImpl->page()->mainFrame()->document()->domWindow();
-    RenderObject* docRenderer = webViewImpl->page()->mainFrame()->document()->renderer();
+    FrameView* view = toLocalFrame(webViewImpl->page()->mainFrame())->view();
+    RefPtrWillBeRawPtr<Document> document = toLocalFrame(webViewImpl->page()->mainFrame())->document();
+    LocalDOMWindow* domWindow = document->domWindow();
+    RenderView* documentRenderView = document->renderView();
 
     {
         WebGestureEvent webGestureEvent;
@@ -477,14 +477,14 @@ TEST(WebInputEventConversionTest, InputEventsConversions)
         webGestureEvent.data.tap.height = 10;
 
         PlatformGestureEventBuilder platformGestureBuilder(view, webGestureEvent);
-        EXPECT_EQ(10, platformGestureBuilder.position().x());
-        EXPECT_EQ(10, platformGestureBuilder.position().y());
-        EXPECT_EQ(10, platformGestureBuilder.globalPosition().x());
-        EXPECT_EQ(10, platformGestureBuilder.globalPosition().y());
+        EXPECT_EQ(10.f, platformGestureBuilder.position().x());
+        EXPECT_EQ(10.f, platformGestureBuilder.position().y());
+        EXPECT_EQ(10.f, platformGestureBuilder.globalPosition().x());
+        EXPECT_EQ(10.f, platformGestureBuilder.globalPosition().y());
         EXPECT_EQ(1, platformGestureBuilder.tapCount());
 
         RefPtrWillBeRawPtr<WebCore::GestureEvent> coreGestureEvent = WebCore::GestureEvent::create(domWindow, platformGestureBuilder);
-        WebGestureEventBuilder recreatedWebGestureEvent(view, docRenderer, *coreGestureEvent);
+        WebGestureEventBuilder recreatedWebGestureEvent(view, documentRenderView, *coreGestureEvent);
         EXPECT_EQ(webGestureEvent.type, recreatedWebGestureEvent.type);
         EXPECT_EQ(webGestureEvent.x, recreatedWebGestureEvent.x);
         EXPECT_EQ(webGestureEvent.y, recreatedWebGestureEvent.y);
@@ -518,7 +518,7 @@ TEST(WebInputEventConversionTest, PinchViewportOffset)
     IntPoint pinchOffset(35, 60);
     webViewImpl->page()->frameHost().pinchViewport().setLocation(pinchOffset);
 
-    FrameView* view = webViewImpl->page()->mainFrame()->view();
+    FrameView* view = toLocalFrame(webViewImpl->page()->mainFrame())->view();
 
     {
         WebMouseEvent webMouseEvent;
@@ -585,10 +585,10 @@ TEST(WebInputEventConversionTest, PinchViewportOffset)
         EXPECT_FLOAT_EQ(10.4f, webTouchEvent.touches[0].position.y);
 
         PlatformTouchEventBuilder platformTouchBuilder(view, webTouchEvent);
-        EXPECT_EQ(10, platformTouchBuilder.touchPoints()[0].screenPos().x());
-        EXPECT_EQ(10, platformTouchBuilder.touchPoints()[0].screenPos().y());
-        EXPECT_EQ(5 + pinchOffset.x(), platformTouchBuilder.touchPoints()[0].pos().x());
-        EXPECT_EQ(5 + pinchOffset.y(), platformTouchBuilder.touchPoints()[0].pos().y());
+        EXPECT_FLOAT_EQ(10.6f, platformTouchBuilder.touchPoints()[0].screenPos().x());
+        EXPECT_FLOAT_EQ(10.4f, platformTouchBuilder.touchPoints()[0].screenPos().y());
+        EXPECT_FLOAT_EQ(5.3f + pinchOffset.x(), platformTouchBuilder.touchPoints()[0].pos().x());
+        EXPECT_FLOAT_EQ(5.2f + pinchOffset.y(), platformTouchBuilder.touchPoints()[0].pos().y());
     }
 }
 

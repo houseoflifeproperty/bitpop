@@ -22,9 +22,8 @@
 
 #include "core/svg/SVGSymbolElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/svg/RenderSVGHiddenContainer.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
@@ -35,10 +34,7 @@ inline SVGSymbolElement::SVGSymbolElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGSymbolElement> SVGSymbolElement::create(Document& document)
-{
-    return adoptRef(new SVGSymbolElement(document));
-}
+DEFINE_NODE_FACTORY(SVGSymbolElement)
 
 bool SVGSymbolElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -72,16 +68,7 @@ void SVGSymbolElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
-    // Every other property change is ignored.
-    if (attrName == SVGNames::viewBoxAttr)
-        updateRelativeLengthsInformation();
-}
-
-bool SVGSymbolElement::selfHasRelativeLengths() const
-{
-    return hasAttribute(SVGNames::viewBoxAttr);
+    invalidateInstances();
 }
 
 RenderObject* SVGSymbolElement::createRenderer(RenderStyle*)

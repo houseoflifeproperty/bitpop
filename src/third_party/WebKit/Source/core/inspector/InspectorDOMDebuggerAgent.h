@@ -33,6 +33,7 @@
 
 
 #include "core/inspector/InspectorBaseAgent.h"
+#include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
@@ -42,6 +43,7 @@ namespace WebCore {
 
 class Document;
 class Element;
+class Event;
 class EventListener;
 class EventTarget;
 class InspectorDOMAgent;
@@ -53,7 +55,11 @@ class Node;
 
 typedef String ErrorString;
 
-class InspectorDOMDebuggerAgent FINAL : public InspectorBaseAgent<InspectorDOMDebuggerAgent>, public InspectorDebuggerAgent::Listener, public InspectorBackendDispatcher::DOMDebuggerCommandHandler {
+class InspectorDOMDebuggerAgent FINAL :
+    public InspectorBaseAgent<InspectorDOMDebuggerAgent>,
+    public InspectorDebuggerAgent::Listener,
+    public InspectorDOMAgent::Listener,
+    public InspectorBackendDispatcher::DOMDebuggerCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorDOMDebuggerAgent);
 public:
     static PassOwnPtr<InspectorDOMDebuggerAgent> create(InspectorDOMAgent*, InspectorDebuggerAgent*);
@@ -63,8 +69,8 @@ public:
     // DOMDebugger API for InspectorFrontend
     virtual void setXHRBreakpoint(ErrorString*, const String& url) OVERRIDE;
     virtual void removeXHRBreakpoint(ErrorString*, const String& url) OVERRIDE;
-    virtual void setEventListenerBreakpoint(ErrorString*, const String& eventName) OVERRIDE;
-    virtual void removeEventListenerBreakpoint(ErrorString*, const String& eventName) OVERRIDE;
+    virtual void setEventListenerBreakpoint(ErrorString*, const String& eventName, const String* targetName) OVERRIDE;
+    virtual void removeEventListenerBreakpoint(ErrorString*, const String& eventName, const String* targetName) OVERRIDE;
     virtual void setInstrumentationBreakpoint(ErrorString*, const String& eventName) OVERRIDE;
     virtual void removeInstrumentationBreakpoint(ErrorString*, const String& eventName) OVERRIDE;
     virtual void setDOMBreakpoint(ErrorString*, int nodeId, const String& type) OVERRIDE;
@@ -84,7 +90,7 @@ public:
     void didRequestAnimationFrame(Document*, int callbackId);
     void didCancelAnimationFrame(Document*, int callbackId);
     void willFireAnimationFrame(Document*, int callbackId);
-    void willHandleEvent(EventTarget*, const AtomicString& eventType, EventListener*, bool useCapture);
+    void willHandleEvent(EventTarget*, Event*, EventListener*, bool useCapture);
     void didFireWebGLError(const String& errorName);
     void didFireWebGLWarning();
     void didFireWebGLErrorOrWarning(const String& message);
@@ -99,7 +105,11 @@ private:
     InspectorDOMDebuggerAgent(InspectorDOMAgent*, InspectorDebuggerAgent*);
 
     void pauseOnNativeEventIfNeeded(PassRefPtr<JSONObject> eventData, bool synchronous);
-    PassRefPtr<JSONObject> preparePauseOnNativeEventData(bool isDOMEvent, const String& eventName);
+    PassRefPtr<JSONObject> preparePauseOnNativeEventData(const String& eventName, const AtomicString* targetName);
+
+    // InspectorDOMAgent::Listener implementation.
+    virtual void domAgentWasEnabled() OVERRIDE;
+    virtual void domAgentWasDisabled() OVERRIDE;
 
     // InspectorDebuggerAgent::Listener implementation.
     virtual void debuggerWasEnabled() OVERRIDE;
@@ -111,8 +121,8 @@ private:
     void descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, JSONObject* description);
     void updateSubtreeBreakpoints(Node*, uint32_t rootMask, bool set);
     bool hasBreakpoint(Node*, int type);
-    void setBreakpoint(ErrorString*, const String& eventName);
-    void removeBreakpoint(ErrorString*, const String& eventName);
+    void setBreakpoint(ErrorString*, const String& eventName, const String* targetName);
+    void removeBreakpoint(ErrorString*, const String& eventName, const String* targetName);
 
     void clear();
 

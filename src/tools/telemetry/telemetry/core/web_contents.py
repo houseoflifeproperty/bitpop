@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -19,6 +19,11 @@ class WebContents(object):
     with open(os.path.join(os.path.dirname(__file__),
         'network_quiescence.js')) as f:
       self._quiescence_js = f.read()
+
+  @property
+  def id(self):
+    """Return the unique id string for this tab object."""
+    return self._inspector_backend.id
 
   def WaitForDocumentReadyStateToBeComplete(self,
       timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
@@ -44,7 +49,24 @@ class WebContents(object):
         # may time out here early. Instead, we want to wait for the full
         # timeout of this method.
         return False
-    util.WaitFor(IsJavaScriptExpressionTrue, timeout)
+    try:
+      util.WaitFor(IsJavaScriptExpressionTrue, timeout)
+    except util.TimeoutException as e:
+      # Try to make timeouts a little more actionable by dumping |this|.
+      raise util.TimeoutException(e.message + '\n\nJavaScript |this|:\n' +
+                                  self.EvaluateJavaScript("""
+        (function() {
+          var error = '';
+          for (name in this) {
+            try {
+              error += '\\t' + name + ': ' + this[name] + '\\n';
+            } catch (e) {
+              error += '\\t' + name + ': ???\\n';
+            }
+          }
+          return error;
+        })();
+      """))
 
   def HasReachedQuiescence(self):
     """Determine whether the page has reached quiescence after loading.
@@ -62,13 +84,13 @@ class WebContents(object):
             "window.__telemetry_testHasReachedNetworkQuiescence()"))
     return has_reached_quiescence
 
-  def ExecuteJavaScript(self, expr, timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
-    """Executes expr in JavaScript. Does not return the result.
+  def ExecuteJavaScript(self, statement, timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
+    """Executes statement in JavaScript. Does not return the result.
 
-    If the expression failed to evaluate, EvaluateException will be raised.
+    If the statement failed to evaluate, EvaluateException will be raised.
     """
     return self.ExecuteJavaScriptInContext(
-        expr, context_id=None, timeout=timeout)
+        statement, context_id=None, timeout=timeout)
 
   def EvaluateJavaScript(self, expr, timeout=DEFAULT_WEB_CONTENTS_TIMEOUT):
     """Evalutes expr in JavaScript and returns the JSONized result.
@@ -100,6 +122,11 @@ class WebContents(object):
     """
     return self._inspector_backend.EvaluateJavaScript(
         expr, context_id=context_id, timeout=timeout)
+
+  def EnableAllContexts(self):
+    """Enable all contexts in a page. Returns the number of available contexts.
+    """
+    return self._inspector_backend.EnableAllContexts()
 
   @property
   def message_output_stream(self):

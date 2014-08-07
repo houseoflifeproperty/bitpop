@@ -11,16 +11,18 @@
 #include "base/debug/alias.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/lazy_instance.h"
+#include "base/metrics/field_trial.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
-#include "chrome/browser/metrics/metrics_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/logging_chrome.h"
+#include "content/public/browser/notification_service.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -655,6 +657,12 @@ void ThreadWatcherList::InitializeAndStartWatching(
     const CrashOnHangThreadMap& crash_on_hang_threads) {
   DCHECK(WatchDogThread::CurrentlyOnWatchDogThread());
 
+  // Disarm the startup timebomb, even if stop has been called.
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&StartupTimeBomb::DisarmStartupTimeBomb));
+
   // This method is deferred in relationship to its StopWatchingAll()
   // counterpart. If a previous initialization has already happened, or if
   // stop has been called, there's nothing left to do here.
@@ -663,11 +671,6 @@ void ThreadWatcherList::InitializeAndStartWatching(
 
   ThreadWatcherList* thread_watcher_list = new ThreadWatcherList();
   CHECK(thread_watcher_list);
-
-  BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(&StartupTimeBomb::DisarmStartupTimeBomb));
 
   const base::TimeDelta kSleepTime =
       base::TimeDelta::FromSeconds(kSleepSeconds);
@@ -783,7 +786,34 @@ void ThreadWatcherObserver::SetupNotifications(
     const base::TimeDelta& wakeup_interval) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   ThreadWatcherObserver* observer = new ThreadWatcherObserver(wakeup_interval);
-  MetricsService::SetUpNotifications(&observer->registrar_, observer);
+  observer->registrar_.Add(
+      observer,
+      chrome::NOTIFICATION_BROWSER_OPENED,
+      content::NotificationService::AllBrowserContextsAndSources());
+  observer->registrar_.Add(observer,
+                           chrome::NOTIFICATION_BROWSER_CLOSED,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           chrome::NOTIFICATION_TAB_PARENTED,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           chrome::NOTIFICATION_TAB_CLOSING,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           content::NOTIFICATION_LOAD_START,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           content::NOTIFICATION_LOAD_STOP,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           content::NOTIFICATION_RENDER_WIDGET_HOST_HANG,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
+                           content::NotificationService::AllSources());
 }
 
 // static
@@ -910,13 +940,13 @@ class StartupWatchDogThread : public base::Watchdog {
     return;
 #else  // Android release: gather stats to figure out when to crash.
     // TODO(rtenneti): Delete this code, after getting data.
-    UMA_HISTOGRAM_TIMES("StartupTimebomm.Alarm.TimeDuration",
+    UMA_HISTOGRAM_TIMES("StartupTimeBomb.Alarm.TimeDuration",
                         base::Time::Now() - start_time_clock_);
-    UMA_HISTOGRAM_TIMES("StartupTimebomm.Alarm.TimeTicksDuration",
+    UMA_HISTOGRAM_TIMES("StartupTimeBomb.Alarm.TimeTicksDuration",
                         base::TimeTicks::Now() - start_time_monotonic_);
     if (base::TimeTicks::IsThreadNowSupported()) {
       UMA_HISTOGRAM_TIMES(
-          "StartupTimebomm.Alarm.ThreadNowDuration",
+          "StartupTimeBomb.Alarm.ThreadNowDuration",
           base::TimeTicks::ThreadNow() - start_time_thread_now_);
     }
     return;

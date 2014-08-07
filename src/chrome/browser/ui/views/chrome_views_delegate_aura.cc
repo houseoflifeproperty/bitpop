@@ -9,14 +9,13 @@
 views::Widget::InitParams::WindowOpacity
 ChromeViewsDelegate::GetOpacityForInitParams(
     const views::Widget::InitParams& params) {
-#if defined(USE_ASH)
   gfx::NativeView native_view = params.parent ? params.parent : params.context;
   if (native_view && chrome::IsNativeViewInAsh(native_view))
     return views::Widget::InitParams::TRANSLUCENT_WINDOW;
-#endif
+
   // We want translucent windows when either we are in ASH or we are
   // a top level window which is not of type TYPE_WINDOW.
-  if (params.top_level && params.type != views::Widget::InitParams::TYPE_WINDOW)
+  if (!params.child && params.type != views::Widget::InitParams::TYPE_WINDOW)
     return views::Widget::InitParams::TRANSLUCENT_WINDOW;
 
   return views::Widget::InitParams::OPAQUE_WINDOW;

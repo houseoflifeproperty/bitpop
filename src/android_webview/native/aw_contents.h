@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 
+#include "android_webview/browser/aw_browser_permission_request_delegate.h"
 #include "android_webview/browser/browser_view_renderer.h"
 #include "android_webview/browser/browser_view_renderer_client.h"
 #include "android_webview/browser/find_helper.h"
@@ -57,7 +58,8 @@ class AwContents : public FindHelper::Listener,
                    public IconHelper::Listener,
                    public AwRenderViewHostExtClient,
                    public BrowserViewRendererClient,
-                   public PermissionRequestHandlerClient {
+                   public PermissionRequestHandlerClient,
+                   public AwBrowserPermissionRequestDelegate {
  public:
   // Returns the AwContents instance associated with |web_contents|, or NULL.
   static AwContents* FromWebContents(content::WebContents* web_contents);
@@ -118,23 +120,17 @@ class AwContents : public FindHelper::Listener,
               jint visible_left,
               jint visible_top,
               jint visible_right,
-              jint visible_bottom,
-              jint clip_left,
-              jint clip_top,
-              jint clip_right,
-              jint clip_bottom);
+              jint visible_bottom);
   jlong GetAwDrawGLViewContext(JNIEnv* env, jobject obj);
   jlong CapturePicture(JNIEnv* env, jobject obj, int width, int height);
   void EnableOnNewPicture(JNIEnv* env, jobject obj, jboolean enabled);
   void ClearView(JNIEnv* env, jobject obj);
   void SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
                              jstring url, jstring extra_headers);
+  void SendCheckRenderThreadResponsiveness(JNIEnv* env, jobject obj);
 
   void DrawGL(AwDrawGLInfo* draw_info);
 
-  // Geolocation API support
-  void ShowGeolocationPrompt(const GURL& origin, base::Callback<void(bool)>);
-  void HideGeolocationPrompt(const GURL& origin);
   void InvokeGeolocationCallback(JNIEnv* env,
                                  jobject obj,
                                  jboolean value,
@@ -154,11 +150,27 @@ class AwContents : public FindHelper::Listener,
                               jstring origin,
                               jlong resources);
 
+  // AwBrowserPermissionRequestDelegate implementation.
+  virtual void RequestProtectedMediaIdentifierPermission(
+      const GURL& origin,
+      const base::Callback<void(bool)>& callback) OVERRIDE;
+  virtual void CancelProtectedMediaIdentifierPermissionRequests(
+      const GURL& origin) OVERRIDE;
+  virtual void RequestGeolocationPermission(
+      const GURL& origin,
+      const base::Callback<void(bool)>& callback) OVERRIDE;
+  virtual void CancelGeolocationPermissionRequests(
+      const GURL& origin) OVERRIDE;
+
+
   // Find-in-page API and related methods.
   void FindAllAsync(JNIEnv* env, jobject obj, jstring search_string);
   void FindNext(JNIEnv* env, jobject obj, jboolean forward);
   void ClearMatches(JNIEnv* env, jobject obj);
   FindHelper* GetFindHelper();
+
+  // Per WebView Cookie Policy
+  bool AllowThirdPartyCookies();
 
   // FindHelper::Listener implementation.
   virtual void OnFindResultReceived(int active_ordinal,
@@ -182,15 +194,13 @@ class AwContents : public FindHelper::Listener,
   virtual void PostInvalidate() OVERRIDE;
   virtual void OnNewPicture() OVERRIDE;
   virtual gfx::Point GetLocationOnScreen() OVERRIDE;
-  virtual void SetMaxContainerViewScrollOffset(
-      gfx::Vector2d new_value) OVERRIDE;
   virtual void ScrollContainerViewTo(gfx::Vector2d new_value) OVERRIDE;
   virtual bool IsFlingActive() const OVERRIDE;
-  virtual void SetPageScaleFactorAndLimits(
-      float page_scale_factor,
-      float min_page_scale_factor,
-      float max_page_scale_factor) OVERRIDE;
-  virtual void SetContentsSize(gfx::SizeF contents_size_dip) OVERRIDE;
+  virtual void UpdateScrollState(gfx::Vector2d max_scroll_offset,
+                                 gfx::SizeF contents_size_dip,
+                                 float page_scale_factor,
+                                 float min_page_scale_factor,
+                                 float max_page_scale_factor) OVERRIDE;
   virtual void DidOverscroll(gfx::Vector2d overscroll_delta) OVERRIDE;
 
   const BrowserViewRenderer* GetBrowserViewRenderer() const;
@@ -207,8 +217,8 @@ class AwContents : public FindHelper::Listener,
                           jint height_dip);
   void SetSaveFormData(bool enabled);
 
-  // Sets the java delegate
-  void SetAwAutofillManagerDelegate(jobject delegate);
+  // Sets the java client
+  void SetAwAutofillClient(jobject client);
 
   void SetJsOnlineProperty(JNIEnv* env, jobject obj, jboolean network_up);
   void TrimMemory(JNIEnv* env, jobject obj, jint level, jboolean visible);
@@ -218,6 +228,10 @@ class AwContents : public FindHelper::Listener,
   void InitAutofillIfNecessary(bool enabled);
 
   void InitializeHardwareDrawIfNeeded();
+
+  // Geolocation API support
+  void ShowGeolocationPrompt(const GURL& origin, base::Callback<void(bool)>);
+  void HideGeolocationPrompt(const GURL& origin);
 
   JavaObjectWeakGlobalRef java_ref_;
   scoped_ptr<content::WebContents> web_contents_;

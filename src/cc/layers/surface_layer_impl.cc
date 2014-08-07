@@ -11,7 +11,8 @@
 namespace cc {
 
 SurfaceLayerImpl::SurfaceLayerImpl(LayerTreeImpl* tree_impl, int id)
-    : LayerImpl(tree_impl, id), surface_id_(0) {}
+    : LayerImpl(tree_impl, id) {
+}
 
 SurfaceLayerImpl::~SurfaceLayerImpl() {}
 
@@ -20,7 +21,7 @@ scoped_ptr<LayerImpl> SurfaceLayerImpl::CreateLayerImpl(
   return SurfaceLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
 }
 
-void SurfaceLayerImpl::SetSurfaceId(int surface_id) {
+void SurfaceLayerImpl::SetSurfaceId(SurfaceId surface_id) {
   if (surface_id_ == surface_id)
     return;
 
@@ -40,9 +41,10 @@ void SurfaceLayerImpl::AppendQuads(QuadSink* quad_sink,
   SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
   PopulateSharedQuadState(shared_quad_state);
 
-  AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
+  AppendDebugBorderQuad(
+      quad_sink, content_bounds(), shared_quad_state, append_quads_data);
 
-  if (!surface_id_)
+  if (surface_id_.is_null())
     return;
 
   scoped_ptr<SurfaceDrawQuad> quad = SurfaceDrawQuad::Create();
@@ -63,7 +65,7 @@ void SurfaceLayerImpl::GetDebugBorderProperties(SkColor* color,
 
 void SurfaceLayerImpl::AsValueInto(base::DictionaryValue* dict) const {
   LayerImpl::AsValueInto(dict);
-  dict->SetInteger("surface_id", surface_id_);
+  dict->SetInteger("surface_id", surface_id_.id);
 }
 
 const char* SurfaceLayerImpl::LayerTypeAsString() const {

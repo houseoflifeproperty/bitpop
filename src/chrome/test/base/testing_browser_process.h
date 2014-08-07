@@ -34,6 +34,10 @@ namespace extensions {
 class ExtensionsBrowserClient;
 }
 
+namespace gcm {
+class GCMDriver;
+}
+
 namespace policy {
 class BrowserPolicyConnector;
 class PolicyService;
@@ -56,6 +60,7 @@ class TestingBrowserProcess : public BrowserProcess {
 
   virtual void ResourceDispatcherHostCreated() OVERRIDE;
   virtual void EndSession() OVERRIDE;
+  virtual MetricsServicesManager* GetMetricsServicesManager() OVERRIDE;
   virtual MetricsService* metrics_service() OVERRIDE;
   virtual rappor::RapporService* rappor_service() OVERRIDE;
   virtual IOThread* io_thread() OVERRIDE;
@@ -118,6 +123,10 @@ class TestingBrowserProcess : public BrowserProcess {
   virtual WebRtcLogUploader* webrtc_log_uploader() OVERRIDE;
 #endif
 
+  virtual network_time::NetworkTimeTracker* network_time_tracker() OVERRIDE;
+
+  virtual gcm::GCMDriver* gcm_driver() OVERRIDE;
+
   // Set the local state for tests. Consumer is responsible for cleaning it up
   // afterwards (using ScopedTestingLocalState, for example).
   void SetLocalState(PrefService* local_state);
@@ -160,6 +169,8 @@ class TestingBrowserProcess : public BrowserProcess {
 #if !defined(OS_IOS) && !defined(OS_ANDROID)
   scoped_ptr<MediaFileSystemRegistry> media_file_system_registry_;
 #endif
+
+  scoped_ptr<network_time::NetworkTimeTracker> network_time_tracker_;
 
   // The following objects are not owned by TestingBrowserProcess:
   PrefService* local_state_;

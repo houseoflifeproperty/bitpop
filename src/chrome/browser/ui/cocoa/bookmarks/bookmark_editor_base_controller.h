@@ -10,7 +10,7 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/bookmarks/bookmark_editor.h"
-#include "components/bookmarks/core/browser/bookmark_expanded_state_tracker.h"
+#include "components/bookmarks/browser/bookmark_expanded_state_tracker.h"
 
 class BookmarkEditorBaseControllerBridge;
 class BookmarkModel;
@@ -97,10 +97,11 @@ class BookmarkModel;
 - (const BookmarkNode*)selectedNode;
 
 // Expands the set of BookmarkNodes in |nodes|.
-- (void)expandNodes:(const BookmarkExpandedStateTracker::Nodes&)nodes;
+- (void)expandNodes:(
+    const bookmarks::BookmarkExpandedStateTracker::Nodes&)nodes;
 
 // Returns the set of expanded BookmarkNodes.
-- (BookmarkExpandedStateTracker::Nodes)getExpandedNodes;
+- (bookmarks::BookmarkExpandedStateTracker::Nodes)getExpandedNodes;
 
 // Select/highlight the given node within the browser tree view.  If the
 // node is nil then select the bookmark bar node.  Exposed for unit test.

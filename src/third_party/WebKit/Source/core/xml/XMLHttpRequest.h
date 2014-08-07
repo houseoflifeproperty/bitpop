@@ -53,9 +53,15 @@ class ThreadableLoader;
 
 typedef int ExceptionCode;
 
-class XMLHttpRequest FINAL : public RefCountedWillBeRefCountedGarbageCollected<XMLHttpRequest>, public ScriptWrappable, public XMLHttpRequestEventTarget, private ThreadableLoaderClient, public ActiveDOMObject {
+class XMLHttpRequest FINAL
+    : public RefCountedWillBeRefCountedGarbageCollected<XMLHttpRequest>
+    , public ScriptWrappable
+    , public XMLHttpRequestEventTarget
+    , private ThreadableLoaderClient
+    , public ActiveDOMObject {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
-    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<XMLHttpRequest>);
+    REFCOUNTED_EVENT_TARGET(XMLHttpRequest);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(XMLHttpRequest);
 public:
     static PassRefPtrWillBeRawPtr<XMLHttpRequest> create(ExecutionContext*, PassRefPtr<SecurityOrigin> = nullptr);
     virtual ~XMLHttpRequest();
@@ -133,6 +139,8 @@ public:
     String responseType();
     ResponseTypeCode responseTypeCode() const { return m_responseTypeCode; }
 
+    String responseURL();
+
     // response attribute has custom getter.
     ArrayBuffer* responseArrayBuffer();
 
@@ -143,7 +151,7 @@ public:
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange);
 
-    void trace(Visitor*);
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     XMLHttpRequest(ExecutionContext*, PassRefPtr<SecurityOrigin>);
@@ -154,6 +162,9 @@ private:
     virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
     virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&) OVERRIDE;
     virtual void didReceiveData(const char* data, int dataLength) OVERRIDE;
+    // When responseType is set to "blob", didDownloadData() is called instead
+    // of didReceiveData().
+    virtual void didDownloadData(int dataLength) OVERRIDE;
     virtual void didFinishLoading(unsigned long identifier, double finishTime) OVERRIDE;
     virtual void didFail(const ResourceError&) OVERRIDE;
     virtual void didFailRedirectCheck() OVERRIDE;
@@ -185,17 +196,13 @@ private:
     void clearResponse();
     void clearRequest();
 
-    void createRequest(ExceptionState&);
+    void createRequest(PassRefPtr<FormData>, ExceptionState&);
 
-    // Dispatches an event of the specified type to m_progressEventThrottle.
-    void dispatchEventAndLoadEnd(const AtomicString&, long long, long long);
-
-    // Dispatches a response progress event to m_progressEventThrottle.
-    void dispatchThrottledProgressEvent(const AtomicString&, long long, long long);
-
-    // Dispatches a response progress event using values sampled from
+    // Dispatches a response ProgressEvent.
+    void dispatchProgressEvent(const AtomicString&, long long, long long);
+    // Dispatches a response ProgressEvent using values sampled from
     // m_receivedLength and m_response.
-    void dispatchThrottledProgressEventSnapshot(const AtomicString&);
+    void dispatchProgressEventFromSnapshot(const AtomicString&);
 
     // Does clean up common for all kind of didFail() call.
     void handleDidFailGeneric();
@@ -208,12 +215,11 @@ private:
 
     void handleRequestError(ExceptionCode, const AtomicString&, long long, long long);
 
-    OwnPtr<XMLHttpRequestUpload> m_upload;
+    OwnPtrWillBeMember<XMLHttpRequestUpload> m_upload;
 
     KURL m_url;
     AtomicString m_method;
     HTTPHeaderMap m_requestHeaders;
-    RefPtr<FormData> m_requestEntityBody;
     AtomicString m_mimeTypeOverride;
     bool m_async;
     bool m_includeCredentials;
@@ -233,9 +239,11 @@ private:
     // Used to skip m_responseDocument creation if it's done previously. We need
     // this separate flag since m_responseDocument can be 0 for some cases.
     bool m_createdDocument;
-    RefPtr<Document> m_responseDocument;
+    RefPtrWillBeMember<Document> m_responseDocument;
 
     RefPtr<SharedBuffer> m_binaryResponseBuilder;
+    long long m_downloadedBlobLength;
+
     RefPtr<ArrayBuffer> m_responseArrayBuffer;
 
     bool m_error;

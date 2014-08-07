@@ -5,6 +5,7 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/memory/scoped_ptr.h"
 #include "ppapi/c/private/ppb_nacl_private.h"
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 
@@ -20,11 +21,20 @@ namespace nacl {
 // caller through a callback.
 class ManifestDownloader : public blink::WebURLLoaderClient {
  public:
-  typedef base::Callback<void(PP_NaClError, const std::string&)>
-      ManifestDownloaderCallback;
+  typedef base::Callback<void(PP_NaClError, const std::string&)> Callback;
 
-  ManifestDownloader(bool is_installed, ManifestDownloaderCallback cb);
+  // This is a pretty arbitrary limit on the byte size of the NaCl manifest
+  // file.
+  // Note that the resulting string object has to have at least one byte extra
+  // for the null termination character.
+  static const size_t kNaClManifestMaxFileBytes = 1024 * 1024;
+
+  ManifestDownloader(scoped_ptr<blink::WebURLLoader> url_loader,
+                     bool is_installed,
+                     Callback cb);
   virtual ~ManifestDownloader();
+
+  void Load(const blink::WebURLRequest& request);
 
  private:
   // WebURLLoaderClient implementation.
@@ -40,8 +50,9 @@ class ManifestDownloader : public blink::WebURLLoaderClient {
   virtual void didFail(blink::WebURLLoader* loader,
                        const blink::WebURLError& error);
 
+  scoped_ptr<blink::WebURLLoader> url_loader_;
   bool is_installed_;
-  ManifestDownloaderCallback cb_;
+  Callback cb_;
   std::string buffer_;
   int status_code_;
   PP_NaClError pp_nacl_error_;

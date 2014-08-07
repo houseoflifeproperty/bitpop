@@ -19,6 +19,10 @@ namespace gfx {
 class Image;
 }
 
+namespace content {
+struct FaviconStatus;
+}
+
 class GURL;
 class FaviconHandler;
 class Profile;
@@ -31,7 +35,6 @@ class SkBitmap;
 // downloaded and saved in the history backend.
 //
 class FaviconTabHelper : public content::WebContentsObserver,
-                         public FaviconClient,
                          public FaviconDriver,
                          public content::WebContentsUserData<FaviconTabHelper> {
  public:
@@ -68,10 +71,16 @@ class FaviconTabHelper : public content::WebContentsObserver,
   void SaveFavicon();
 
   // FaviconDriver methods.
-  virtual content::NavigationEntry* GetActiveEntry() OVERRIDE;
   virtual int StartDownload(const GURL& url, int max_bitmap_size) OVERRIDE;
   virtual void NotifyFaviconUpdated(bool icon_url_changed) OVERRIDE;
   virtual bool IsOffTheRecord() OVERRIDE;
+  virtual const gfx::Image GetActiveFaviconImage() OVERRIDE;
+  virtual const GURL GetActiveFaviconURL() OVERRIDE;
+  virtual bool GetActiveFaviconValidity() OVERRIDE;
+  virtual const GURL GetActiveURL() OVERRIDE;
+  virtual void SetActiveFaviconImage(gfx::Image image) OVERRIDE;
+  virtual void SetActiveFaviconURL(GURL url) OVERRIDE;
+  virtual void SetActiveFaviconValidity(bool validity) OVERRIDE;
 
   // Favicon download callback.
   void DidDownloadFavicon(
@@ -80,10 +89,6 @@ class FaviconTabHelper : public content::WebContentsObserver,
       const GURL& image_url,
       const std::vector<SkBitmap>& bitmaps,
       const std::vector<gfx::Size>& original_bitmap_sizes);
-
-  // FaviconClient implementation:
-  virtual FaviconService* GetFaviconService() OVERRIDE;
-  virtual bool IsBookmarked(const GURL& url) OVERRIDE;
 
  private:
   explicit FaviconTabHelper(content::WebContents* web_contents);
@@ -97,7 +102,12 @@ class FaviconTabHelper : public content::WebContentsObserver,
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
 
+  // Helper method that returns the active navigation entry's favicon.
+  content::FaviconStatus& GetFaviconStatus();
+
   Profile* profile_;
+
+  scoped_ptr<FaviconClient> client_;
 
   std::vector<content::FaviconURL> favicon_urls_;
 

@@ -19,8 +19,8 @@ from telemetry.core.backends.chrome import inspector_timeline
 from telemetry.core.backends.chrome import inspector_websocket
 from telemetry.core.backends.chrome import websocket
 from telemetry.core.heap import model
-from telemetry.core.timeline import model as timeline_model
-from telemetry.core.timeline import recording_options
+from telemetry.timeline import model as timeline_model
+from telemetry.timeline import recording_options
 
 
 class InspectorException(Exception):
@@ -36,17 +36,17 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
     self._context = context
     self._domain_handlers = {}
 
-    logging.debug('InspectorBackend._Connect() to %s' % self.debugger_url)
+    logging.debug('InspectorBackend._Connect() to %s', self.debugger_url)
     try:
       self.Connect(self.debugger_url)
     except (websocket.WebSocketException, util.TimeoutException):
       err_msg = sys.exc_info()[1]
       if not self._browser_backend.IsBrowserRunning():
-        raise exceptions.BrowserGoneException(err_msg)
+        raise exceptions.BrowserGoneException(self.browser, err_msg)
       elif not self._browser_backend.HasBrowserFinishedLaunching():
-        raise exceptions.BrowserConnectionGoneException(err_msg)
+        raise exceptions.BrowserConnectionGoneException(self.browser, err_msg)
       else:
-        raise exceptions.TabCrashException(err_msg)
+        raise exceptions.TabCrashException(self.browser, err_msg)
 
     self._console = inspector_console.InspectorConsole(self)
     self._memory = inspector_memory.InspectorMemory(self)
@@ -74,13 +74,13 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
   @property
   def url(self):
     for c in self._browser_backend.ListInspectableContexts():
-      if c['id'] == self.id:
+      if c['id'] == self._context['id']:
         return c['url']
     return None
 
   @property
   def id(self):
-    return self._context['id']
+    return self.debugger_url
 
   @property
   def debugger_url(self):
@@ -158,8 +158,8 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
 
   # Page public methods.
 
-  def PerformActionAndWaitForNavigate(self, action_function, timeout):
-    self._page.PerformActionAndWaitForNavigate(action_function, timeout)
+  def WaitForNavigate(self, timeout):
+    self._page.WaitForNavigate(timeout)
 
   def Navigate(self, url, script_to_evaluate_on_commit, timeout):
     self._page.Navigate(url, script_to_evaluate_on_commit, timeout)
@@ -174,6 +174,9 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
 
   def EvaluateJavaScript(self, expr, context_id=None, timeout=60):
     return self._runtime.Evaluate(expr, context_id, timeout)
+
+  def EnableAllContexts(self):
+    return self._runtime.EnableAllContexts()
 
   # Timeline public methods.
 
@@ -216,15 +219,15 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
 
   def _IsInspectable(self):
     contexts = self._browser_backend.ListInspectableContexts()
-    return self.id in [c['id'] for c in contexts]
+    return self._context['id'] in [c['id'] for c in contexts]
 
   def _HandleNotification(self, res):
     if (res['method'] == 'Inspector.detached' and
-        res.get('params', {}).get('reason','') == 'replaced_with_devtools'):
+        res.get('params', {}).get('reason', '') == 'replaced_with_devtools'):
       self._WaitForInspectorToGoAwayAndReconnect()
       return
     if res['method'] == 'Inspector.targetCrashed':
-      raise exceptions.TabCrashException()
+      raise exceptions.TabCrashException(self.browser)
 
     mname = res['method']
     dot_pos = mname.find('.')
@@ -244,7 +247,7 @@ class InspectorBackend(inspector_websocket.InspectorWebsocket):
           'Received a socket error in the browser connection and the tab '
           'still exists, assuming it timed out. '
           'Elapsed=%ds Error=%s' % (elapsed_time, sys.exc_info()[1]))
-    raise exceptions.TabCrashException(
+    raise exceptions.TabCrashException(self.browser,
         'Received a socket error in the browser connection and the tab no '
         'longer exists, assuming it crashed. Error=%s' % sys.exc_info()[1])
 

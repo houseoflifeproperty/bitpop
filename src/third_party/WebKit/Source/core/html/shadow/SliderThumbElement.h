@@ -32,7 +32,7 @@
 #ifndef SliderThumbElement_h
 #define SliderThumbElement_h
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/rendering/RenderBlockFlow.h"
 #include "wtf/Forward.h"
@@ -63,7 +63,7 @@ public:
 private:
     SliderThumbElement(Document&);
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual PassRefPtr<Element> cloneElementWithoutAttributesAndChildren() OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Element> cloneElementWithoutAttributesAndChildren() OVERRIDE;
     virtual bool isDisabledFormControl() const OVERRIDE;
     virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
     virtual bool matchesReadWritePseudoClass() const OVERRIDE;
@@ -73,7 +73,7 @@ private:
     bool m_inDragMode;
 };
 
-inline PassRefPtr<Element> SliderThumbElement::cloneElementWithoutAttributesAndChildren()
+inline PassRefPtrWillBeRawPtr<Element> SliderThumbElement::cloneElementWithoutAttributesAndChildren()
 {
     return create(document());
 }
@@ -96,10 +96,10 @@ private:
 
 class SliderContainerElement FINAL : public HTMLDivElement {
 public:
-    static PassRefPtrWillBeRawPtr<SliderContainerElement> create(Document&);
+    DECLARE_NODE_FACTORY(SliderContainerElement);
 
 private:
-    SliderContainerElement(Document&);
+    explicit SliderContainerElement(Document&);
     virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
     virtual const AtomicString& shadowPseudoId() const OVERRIDE;
 };

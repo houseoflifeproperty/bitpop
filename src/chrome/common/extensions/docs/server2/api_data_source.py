@@ -8,6 +8,7 @@ import os
 import posixpath
 
 from data_source import DataSource
+from docs_server_utils import StringIdentity
 from environment import IsPreviewServer
 from extensions_paths import JSON_TEMPLATES, PRIVATE_TEMPLATES
 from file_system import FileNotFoundError
@@ -114,12 +115,12 @@ class _JSCModel(object):
     as_dict['byName'] = _GetByNameDict(as_dict)
     return as_dict
 
-  def _GetApiAvailability(self):
-    return self._availability_finder.GetApiAvailability(self._namespace.name)
+  def _GetAPIAvailability(self):
+    return self._availability_finder.GetAPIAvailability(self._namespace.name)
 
   def _GetChannelWarning(self):
     if not self._IsExperimental():
-      return { self._GetApiAvailability().channel_info.channel: True }
+      return { self._GetAPIAvailability().channel_info.channel: True }
     return None
 
   def _IsExperimental(self):
@@ -353,7 +354,7 @@ class _JSCModel(object):
       version = None
       scheduled = None
     else:
-      availability = self._GetApiAvailability()
+      availability = self._GetAPIAvailability()
       status = availability.channel_info.channel
       version = availability.channel_info.version
       scheduled = availability.scheduled
@@ -478,7 +479,12 @@ class APIDataSource(DataSource):
     self._api_models = server_instance.api_models
     self._features_bundle = server_instance.features_bundle
     self._model_cache = server_instance.object_store_creator.Create(
-        APIDataSource)
+        APIDataSource,
+        # Update the models when any of templates, APIs, or Features change.
+        category=StringIdentity(self._json_cache.GetIdentity(),
+                                self._template_cache.GetIdentity(),
+                                self._api_models.GetIdentity(),
+                                self._features_bundle.GetIdentity()))
 
     # This caches the result of _LoadEventByName.
     self._event_byname = None

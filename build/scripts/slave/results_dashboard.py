@@ -81,7 +81,16 @@ def SendResults(logname, lines, system, test_name, url, masterid,
       continue
     print 'Submitting result %d of %d to dashboard...' % (
         index + 1, total_results)
+
+    # Check that the line that was read from the file is valid JSON. If not,
+    # don't try to send it, and don't re-try it later; just print an error.
+    if not _CanParseJSON(line):
+      errors.append('Could not parse JSON:', line)
+      continue
+
     error = _SendResultsJson(url, line)
+
+    # If the dashboard returned an error, we will re-try next time.
     if error:
       if index != len(cache_lines) - 1:
         # The very last item in the cache_lines list is the new results line.
@@ -120,6 +129,15 @@ def _GetCacheFileName(build_dir):
     # Create the file.
     open(cache_filename, 'wb').close()
   return cache_filename
+
+
+def _CanParseJSON(my_json):
+  """Returns True if the input can be parsed as JSON, False otherwise."""
+  try:
+    json.loads(my_json)
+  except ValueError:
+    return False
+  return True
 
 
 def _GetResultsJson(logname, lines, system, test_name, url, masterid,

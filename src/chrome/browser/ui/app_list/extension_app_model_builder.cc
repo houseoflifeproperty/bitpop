@@ -10,8 +10,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/prefs/pref_service.h"
-#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -20,10 +19,8 @@
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 #include "chrome/browser/ui/app_list/extension_app_item.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/pref_names.h"
-#include "content/public/browser/notification_service.h"
 #include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/pref_names.h"
@@ -33,20 +30,6 @@
 
 using extensions::Extension;
 
-namespace {
-
-bool ShouldDisplayInAppLauncher(Profile* profile,
-                                scoped_refptr<const Extension> app) {
-  // If it's the web store, check the policy.
-  bool blocked_by_policy =
-      (app->id() == extension_misc::kWebStoreAppId ||
-       app->id() == extension_misc::kEnterpriseWebStoreAppId) &&
-      profile->GetPrefs()->GetBoolean(prefs::kHideWebStoreIcon);
-  return app->ShouldDisplayInAppLauncher() && !blocked_by_policy;
-}
-
-}  // namespace
-
 ExtensionAppModelBuilder::ExtensionAppModelBuilder(
     AppListControllerDelegate* controller)
     : service_(NULL),
@@ -54,11 +37,13 @@ ExtensionAppModelBuilder::ExtensionAppModelBuilder(
       controller_(controller),
       model_(NULL),
       highlighted_app_pending_(false),
-      tracker_(NULL) {
+      tracker_(NULL),
+      extension_registry_(NULL) {
 }
 
 ExtensionAppModelBuilder::~ExtensionAppModelBuilder() {
   OnShutdown();
+  OnShutdown(extension_registry_);
   if (!service_)
     model_->top_level_item_list()->RemoveObserver(this);
 }
@@ -140,8 +125,10 @@ void ExtensionAppModelBuilder::OnInstallFailure(
   model_->DeleteItem(extension_id);
 }
 
-void ExtensionAppModelBuilder::OnExtensionLoaded(const Extension* extension) {
-  if (!extension->ShouldDisplayInAppLauncher())
+void ExtensionAppModelBuilder::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension) {
+  if (!extensions::ui_util::ShouldDisplayInAppLauncher(extension, profile_))
     return;
 
   DVLOG(2) << service_ << ": OnExtensionLoaded: "
@@ -161,7 +148,10 @@ void ExtensionAppModelBuilder::OnExtensionLoaded(const Extension* extension) {
   UpdateHighlight();
 }
 
-void ExtensionAppModelBuilder::OnExtensionUnloaded(const Extension* extension) {
+void ExtensionAppModelBuilder::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension,
+    extensions::UnloadedExtensionInfo::Reason reason) {
   ExtensionAppItem* item = GetExtensionAppItem(extension->id());
   if (!item)
     return;
@@ -169,7 +159,8 @@ void ExtensionAppModelBuilder::OnExtensionUnloaded(const Extension* extension) {
 }
 
 void ExtensionAppModelBuilder::OnExtensionUninstalled(
-    const Extension* extension) {
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension) {
   if (service_) {
     DVLOG(2) << service_ << ": OnExtensionUninstalled: "
              << extension->id().substr(0, 8);
@@ -181,7 +172,7 @@ void ExtensionAppModelBuilder::OnExtensionUninstalled(
 
 void ExtensionAppModelBuilder::OnDisabledExtensionUpdated(
     const Extension* extension) {
-  if (!extension->ShouldDisplayInAppLauncher())
+  if (!extensions::ui_util::ShouldDisplayInAppLauncher(extension, profile_))
     return;
 
   ExtensionAppItem* existing_item = GetExtensionAppItem(extension->id());
@@ -199,6 +190,16 @@ void ExtensionAppModelBuilder::OnShutdown() {
     tracker_->RemoveObserver(this);
     tracker_ = NULL;
   }
+}
+
+void ExtensionAppModelBuilder::OnShutdown(
+    extensions::ExtensionRegistry* registry) {
+  if (!extension_registry_)
+    return;
+
+  DCHECK_EQ(extension_registry_, registry);
+  extension_registry_->RemoveObserver(this);
+  extension_registry_ = NULL;
 }
 
 scoped_ptr<ExtensionAppItem> ExtensionAppModelBuilder::CreateAppItem(
@@ -219,6 +220,7 @@ scoped_ptr<ExtensionAppItem> ExtensionAppModelBuilder::CreateAppItem(
 void ExtensionAppModelBuilder::BuildModel() {
   DCHECK(!tracker_);
   tracker_ = controller_->GetInstallTrackerFor(profile_);
+  extension_registry_ = extensions::ExtensionRegistry::Get(profile_);
 
   PopulateApps();
   UpdateHighlight();
@@ -226,6 +228,9 @@ void ExtensionAppModelBuilder::BuildModel() {
   // Start observing after model is built.
   if (tracker_)
     tracker_->AddObserver(this);
+
+  if (extension_registry_)
+    extension_registry_->AddObserver(this);
 }
 
 void ExtensionAppModelBuilder::PopulateApps() {
@@ -234,7 +239,7 @@ void ExtensionAppModelBuilder::PopulateApps() {
 
   for (extensions::ExtensionSet::const_iterator app = extensions.begin();
        app != extensions.end(); ++app) {
-    if (!ShouldDisplayInAppLauncher(profile_, *app))
+    if (!extensions::ui_util::ShouldDisplayInAppLauncher(*app, profile_))
       continue;
     InsertApp(CreateAppItem((*app)->id(),
                             "",

@@ -26,7 +26,7 @@ class PerfDashboardApi(recipe_api.RecipeApi):
   
   def set_default_config(self):
     """If in golo, use real perf server, otherwise use testing perf server."""
-    if self.m.properties.get('use_mirror', False):  # We're on a bot
+    if self.m.properties.get('use_mirror', True):  # We're on a bot
       self.set_config('production')
     else:
       self.set_config('testing')

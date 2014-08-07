@@ -452,7 +452,7 @@ void Planet::wRenderPixelSpan(int x0, int x1, int y) {
     float dp = planet_equator_x_ * nx +
                planet_equator_y_ * ny +
                planet_equator_z_ * nz;
-    float w = dp / sin(ang);
+    float w = dp / sinf(ang);
     if (w > 1.0f) w = 1.0f;
     if (w < -1.0f) w = -1.0f;
     float th = acos_.TableLerp(w) * kOneOver2PI;

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "cpu.h"
+#include "src/cpu.h"
 
 #if V8_LIBC_MSVCRT
 #include <intrin.h>  // __cpuid()
@@ -21,9 +21,9 @@
 #include <string.h>
 #include <algorithm>
 
-#include "checks.h"
+#include "src/checks.h"
 #if V8_OS_WIN
-#include "win32-headers.h"
+#include "src/base/win32-headers.h"
 #endif
 
 namespace v8 {
@@ -56,7 +56,7 @@ static V8_INLINE void __cpuid(int cpu_info[4], int info_type) {
 
 #endif  // !V8_LIBC_MSVCRT
 
-#elif V8_HOST_ARCH_ARM || V8_HOST_ARCH_MIPS
+#elif V8_HOST_ARCH_ARM || V8_HOST_ARCH_ARM64 || V8_HOST_ARCH_MIPS
 
 #if V8_OS_LINUX
 
@@ -206,6 +206,7 @@ class CPUInfo V8_FINAL BASE_EMBEDDED {
   size_t datalen_;
 };
 
+#if V8_HOST_ARCH_ARM || V8_HOST_ARCH_MIPS
 
 // Checks that a space-separated list of items contains one given 'item'.
 static bool HasListItem(const char* list, const char* item) {
@@ -230,6 +231,8 @@ static bool HasListItem(const char* list, const char* item) {
   }
   return false;
 }
+
+#endif  // V8_HOST_ARCH_ARM || V8_HOST_ARCH_MIPS
 
 #endif  // V8_OS_LINUX
 
@@ -256,7 +259,7 @@ CPU::CPU() : stepping_(0),
              has_sse42_(false),
              has_idiva_(false),
              has_neon_(false),
-             has_thumbee_(false),
+             has_thumb2_(false),
              has_vfp_(false),
              has_vfp3_(false),
              has_vfp3_d32_(false) {
@@ -297,6 +300,10 @@ CPU::CPU() : stepping_(0),
     has_sse42_ = (cpu_info[2] & 0x00100000) != 0;
   }
 
+#if V8_HOST_ARCH_IA32
+  // SAHF is always available in compat/legacy mode,
+  has_sahf_ = true;
+#else
   // Query extended IDs.
   __cpuid(cpu_info, 0x80000000);
   unsigned num_ext_ids = cpu_info[0];
@@ -304,14 +311,10 @@ CPU::CPU() : stepping_(0),
   // Interpret extended CPU feature information.
   if (num_ext_ids > 0x80000000) {
     __cpuid(cpu_info, 0x80000001);
-    // SAHF is always available in compat/legacy mode,
-    // but must be probed in long mode.
-#if V8_HOST_ARCH_IA32
-    has_sahf_ = true;
-#else
+    // SAHF must be probed in long mode.
     has_sahf_ = (cpu_info[2] & 0x00000001) != 0;
-#endif
   }
+#endif
 
 #elif V8_HOST_ARCH_ARM
 
@@ -380,7 +383,6 @@ CPU::CPU() : stepping_(0),
   if (hwcaps != 0) {
     has_idiva_ = (hwcaps & HWCAP_IDIVA) != 0;
     has_neon_ = (hwcaps & HWCAP_NEON) != 0;
-    has_thumbee_ = (hwcaps & HWCAP_THUMBEE) != 0;
     has_vfp_ = (hwcaps & HWCAP_VFP) != 0;
     has_vfp3_ = (hwcaps & (HWCAP_VFPv3 | HWCAP_VFPv3D16 | HWCAP_VFPv4)) != 0;
     has_vfp3_d32_ = (has_vfp3_ && ((hwcaps & HWCAP_VFPv3D16) == 0 ||
@@ -390,13 +392,13 @@ CPU::CPU() : stepping_(0),
     char* features = cpu_info.ExtractField("Features");
     has_idiva_ = HasListItem(features, "idiva");
     has_neon_ = HasListItem(features, "neon");
-    has_thumbee_ = HasListItem(features, "thumbee");
+    has_thumb2_ = HasListItem(features, "thumb2");
     has_vfp_ = HasListItem(features, "vfp");
-    if (HasListItem(features, "vfpv3")) {
+    if (HasListItem(features, "vfpv3d16")) {
+      has_vfp3_ = true;
+    } else if (HasListItem(features, "vfpv3")) {
       has_vfp3_ = true;
       has_vfp3_d32_ = true;
-    } else if (HasListItem(features, "vfpv3d16")) {
-      has_vfp3_ = true;
     }
     delete[] features;
   }
@@ -414,13 +416,13 @@ CPU::CPU() : stepping_(0),
     architecture_ = 7;
   }
 
-  // ARMv7 implies ThumbEE.
+  // ARMv7 implies Thumb2.
   if (architecture_ >= 7) {
-    has_thumbee_ = true;
+    has_thumb2_ = true;
   }
 
-  // The earliest architecture with ThumbEE is ARMv6T2.
-  if (has_thumbee_ && architecture_ < 6) {
+  // The earliest architecture with Thumb2 is ARMv6T2.
+  if (has_thumb2_ && architecture_ < 6) {
     architecture_ = 6;
   }
 
@@ -432,10 +434,10 @@ CPU::CPU() : stepping_(0),
   uint32_t cpu_flags = SYSPAGE_ENTRY(cpuinfo)->flags;
   if (cpu_flags & ARM_CPU_FLAG_V7) {
     architecture_ = 7;
-    has_thumbee_ = true;
+    has_thumb2_ = true;
   } else if (cpu_flags & ARM_CPU_FLAG_V6) {
     architecture_ = 6;
-    // QNX doesn't say if ThumbEE is available.
+    // QNX doesn't say if Thumb2 is available.
     // Assume false for the architectures older than ARMv7.
   }
   ASSERT(architecture_ >= 6);
@@ -464,18 +466,32 @@ CPU::CPU() : stepping_(0),
   has_fpu_ = HasListItem(cpu_model, "FPU");
   delete[] cpu_model;
 
-#endif
-}
+#elif V8_HOST_ARCH_ARM64
 
+  CPUInfo cpu_info;
 
-// static
-int CPU::NumberOfProcessorsOnline() {
-#if V8_OS_WIN
-  SYSTEM_INFO info;
-  GetSystemInfo(&info);
-  return info.dwNumberOfProcessors;
-#else
-  return static_cast<int>(sysconf(_SC_NPROCESSORS_ONLN));
+  // Extract implementor from the "CPU implementer" field.
+  char* implementer = cpu_info.ExtractField("CPU implementer");
+  if (implementer != NULL) {
+    char* end ;
+    implementer_ = strtol(implementer, &end, 0);
+    if (end == implementer) {
+      implementer_ = 0;
+    }
+    delete[] implementer;
+  }
+
+  // Extract part number from the "CPU part" field.
+  char* part = cpu_info.ExtractField("CPU part");
+  if (part != NULL) {
+    char* end ;
+    part_ = strtol(part, &end, 0);
+    if (end == part) {
+      part_ = 0;
+    }
+    delete[] part;
+  }
+
 #endif
 }
 

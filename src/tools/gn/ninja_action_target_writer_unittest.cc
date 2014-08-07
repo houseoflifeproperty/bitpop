@@ -29,39 +29,7 @@ TEST(NinjaActionTargetWriter, WriteOutputFilesForBuildLine) {
   std::vector<OutputFile> output_files;
   writer.WriteOutputFilesForBuildLine(output_template, source, &output_files);
 
-  std::string out_str = out.str();
-#if defined(OS_WIN)
-  std::replace(out_str.begin(), out_str.end(), '\\', '/');
-#endif
-  EXPECT_EQ(" gen/a$ bbar.h gen/bar.cc", out_str);
-}
-
-TEST(NinjaActionTargetWriter, WriteOutputFilesForBuildLineWithDepfile) {
-  TestWithScope setup;
-  setup.build_settings()->SetBuildDir(SourceDir("//out/Debug/"));
-  Target target(setup.settings(), Label(SourceDir("//foo/"), "bar"));
-
-  target.action_values().set_depfile(
-      SourceFile("//out/Debug/gen/{{source_name_part}}.d"));
-  target.action_values().outputs().push_back(
-      SourceFile("//out/Debug/gen/{{source_name_part}}.h"));
-  target.action_values().outputs().push_back(
-      SourceFile("//out/Debug/gen/{{source_name_part}}.cc"));
-
-  std::ostringstream out;
-  NinjaActionTargetWriter writer(&target, setup.toolchain(), out);
-
-  FileTemplate output_template = writer.GetOutputTemplate();
-
-  SourceFile source("//foo/bar.in");
-  std::vector<OutputFile> output_files;
-  writer.WriteOutputFilesForBuildLine(output_template, source, &output_files);
-
-  std::string out_str = out.str();
-#if defined(OS_WIN)
-  std::replace(out_str.begin(), out_str.end(), '\\', '/');
-#endif
-  EXPECT_EQ(" gen/bar.d gen/bar.h gen/bar.cc", out_str);
+  EXPECT_EQ(" gen/a$ bbar.h gen/bar.cc", out.str());
 }
 
 TEST(NinjaActionTargetWriter, WriteArgsSubstitutions) {
@@ -76,21 +44,22 @@ TEST(NinjaActionTargetWriter, WriteArgsSubstitutions) {
   args.push_back("-i");
   args.push_back("{{source}}");
   args.push_back("--out=foo bar{{source_name_part}}.o");
-  FileTemplate args_template(args);
+  FileTemplate args_template(setup.settings(), args);
 
   writer.WriteArgsSubstitutions(SourceFile("//foo/b ar.in"), args_template);
-
-  std::string out_str = out.str();
 #if defined(OS_WIN)
-  std::replace(out_str.begin(), out_str.end(), '\\', '/');
+  EXPECT_EQ("  source = \"../../foo/b$ ar.in\"\n"
+            "  source_name_part = \"b$ ar\"\n",
+            out.str());
+#else
+  EXPECT_EQ("  source = ../../foo/b\\$ ar.in\n"
+            "  source_name_part = b\\$ ar\n",
+            out.str());
 #endif
-  EXPECT_EQ("  source = ../../foo/b$ ar.in\n  source_name_part = b$ ar\n",
-            out_str);
 }
 
 // Makes sure that we write sources as input dependencies for actions with
-// both sources and source_prereqs (ACTION_FOREACH treats the sources
-// differently).
+// both sources and inputs (ACTION_FOREACH treats the sources differently).
 TEST(NinjaActionTargetWriter, ActionWithSources) {
   TestWithScope setup;
   setup.build_settings()->SetBuildDir(SourceDir("//out/Debug/"));
@@ -100,7 +69,7 @@ TEST(NinjaActionTargetWriter, ActionWithSources) {
   target.action_values().set_script(SourceFile("//foo/script.py"));
 
   target.sources().push_back(SourceFile("//foo/source.txt"));
-  target.source_prereqs().push_back(SourceFile("//foo/included.txt"));
+  target.inputs().push_back(SourceFile("//foo/included.txt"));
 
   target.action_values().outputs().push_back(
       SourceFile("//out/Debug/foo.out"));
@@ -120,17 +89,13 @@ TEST(NinjaActionTargetWriter, ActionWithSources) {
         "  command = /usr/bin/python ../../foo/script.py\n"
         "  description = ACTION //foo:bar()\n"
         "  restat = 1\n"
-        "build obj/foo/bar.inputdeps.stamp: "
-            "stamp ../../foo/included.txt ../../foo/source.txt\n"
+        "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
+            "../../foo/included.txt ../../foo/source.txt\n"
         "\n"
         "build foo.out: __foo_bar___rule | obj/foo/bar.inputdeps.stamp\n"
         "\n"
         "build obj/foo/bar.stamp: stamp foo.out\n";
-    std::string out_str = out.str();
-#if defined(OS_WIN)
-    std::replace(out_str.begin(), out_str.end(), '\\', '/');
-#endif
-    EXPECT_EQ(expected_linux, out_str);
+    EXPECT_EQ(expected_linux, out.str());
   }
 
   // Windows.
@@ -145,8 +110,6 @@ TEST(NinjaActionTargetWriter, ActionWithSources) {
     NinjaActionTargetWriter writer(&target, setup.toolchain(), out);
     writer.Run();
 
-    // TODO(brettw) I think we'll need to worry about backslashes here
-    // depending if we're on actual Windows or Linux pretending to be Windows.
     const char expected_win[] =
         "rule __foo_bar___rule\n"
         "  command = C$:/python/python.exe gyp-win-tool action-wrapper environment.x86 __foo_bar___rule.$unique_name.rsp\n"
@@ -154,17 +117,13 @@ TEST(NinjaActionTargetWriter, ActionWithSources) {
         "  restat = 1\n"
         "  rspfile = __foo_bar___rule.$unique_name.rsp\n"
         "  rspfile_content = C$:/python/python.exe ../../foo/script.py\n"
-        "build obj/foo/bar.inputdeps.stamp: "
-            "stamp ../../foo/included.txt ../../foo/source.txt\n"
+        "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
+            "../../foo/included.txt ../../foo/source.txt\n"
         "\n"
         "build foo.out: __foo_bar___rule | obj/foo/bar.inputdeps.stamp\n"
         "\n"
         "build obj/foo/bar.stamp: stamp foo.out\n";
-    std::string out_str = out.str();
-#if defined(OS_WIN)
-    std::replace(out_str.begin(), out_str.end(), '\\', '/');
-#endif
-    EXPECT_EQ(expected_win, out_str);
+    EXPECT_EQ(expected_win, out.str());
   }
 }
 
@@ -199,7 +158,7 @@ TEST(NinjaActionTargetWriter, ForEach) {
   target.action_values().outputs().push_back(
       SourceFile("//out/Debug/{{source_name_part}}.out"));
 
-  target.source_prereqs().push_back(SourceFile("//foo/included.txt"));
+  target.inputs().push_back(SourceFile("//foo/included.txt"));
 
   // Posix.
   {
@@ -214,11 +173,16 @@ TEST(NinjaActionTargetWriter, ForEach) {
     const char expected_linux[] =
         "rule __foo_bar___rule\n"
         "  command = /usr/bin/python ../../foo/script.py -i ${source} "
+            // Escaping is different between Windows and Posix.
+#if defined(OS_WIN)
             "\"--out=foo$ bar${source_name_part}.o\"\n"
+#else
+            "--out=foo\\$ bar${source_name_part}.o\n"
+#endif
         "  description = ACTION //foo:bar()\n"
         "  restat = 1\n"
-        "build obj/foo/bar.inputdeps.stamp: "
-            "stamp ../../foo/included.txt obj/foo/dep.stamp\n"
+        "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
+            "../../foo/included.txt obj/foo/dep.stamp\n"
         "\n"
         "build input1.out: __foo_bar___rule ../../foo/input1.txt | "
             "obj/foo/bar.inputdeps.stamp\n"
@@ -241,8 +205,6 @@ TEST(NinjaActionTargetWriter, ForEach) {
 
   // Windows.
   {
-    // Note: we use forward slashes here so that the output will be the same on
-    // Linux and Windows.
     setup.build_settings()->set_python_path(base::FilePath(FILE_PATH_LITERAL(
         "C:/python/python.exe")));
     setup.settings()->set_target_os(Settings::WIN);
@@ -251,8 +213,6 @@ TEST(NinjaActionTargetWriter, ForEach) {
     NinjaActionTargetWriter writer(&target, setup.toolchain(), out);
     writer.Run();
 
-    // TODO(brettw) I think we'll need to worry about backslashes here
-    // depending if we're on actual Windows or Linux pretending to be Windows.
     const char expected_win[] =
         "rule __foo_bar___rule\n"
         "  command = C$:/python/python.exe gyp-win-tool action-wrapper "
@@ -261,9 +221,13 @@ TEST(NinjaActionTargetWriter, ForEach) {
         "  restat = 1\n"
         "  rspfile = __foo_bar___rule.$unique_name.rsp\n"
         "  rspfile_content = C$:/python/python.exe ../../foo/script.py -i "
+#if defined(OS_WIN)
             "${source} \"--out=foo$ bar${source_name_part}.o\"\n"
-        "build obj/foo/bar.inputdeps.stamp: "
-            "stamp ../../foo/included.txt obj/foo/dep.stamp\n"
+#else
+            "${source} --out=foo\\$ bar${source_name_part}.o\n"
+#endif
+        "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
+            "../../foo/included.txt obj/foo/dep.stamp\n"
         "\n"
         "build input1.out: __foo_bar___rule ../../foo/input1.txt | "
             "obj/foo/bar.inputdeps.stamp\n"
@@ -278,11 +242,7 @@ TEST(NinjaActionTargetWriter, ForEach) {
         "\n"
         "build obj/foo/bar.stamp: "
             "stamp input1.out input2.out obj/foo/datadep.stamp\n";
-    std::string out_str = out.str();
-#if defined(OS_WIN)
-    std::replace(out_str.begin(), out_str.end(), '\\', '/');
-#endif
-    EXPECT_EQ(expected_win, out_str);
+    EXPECT_EQ(expected_win, out.str());
   }
 }
 
@@ -307,7 +267,7 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
   target.action_values().outputs().push_back(
       SourceFile("//out/Debug/{{source_name_part}}.out"));
 
-  target.source_prereqs().push_back(SourceFile("//foo/included.txt"));
+  target.inputs().push_back(SourceFile("//foo/included.txt"));
 
   // Posix.
   {
@@ -322,35 +282,33 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
     const char expected_linux[] =
         "rule __foo_bar___rule\n"
         "  command = /usr/bin/python ../../foo/script.py -i ${source} "
+#if defined(OS_WIN)
             "\"--out=foo$ bar${source_name_part}.o\"\n"
+#else
+            "--out=foo\\$ bar${source_name_part}.o\n"
+#endif
         "  description = ACTION //foo:bar()\n"
         "  restat = 1\n"
-        "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/included.txt\n"
+        "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
+            "../../foo/included.txt\n"
         "\n"
-        "build gen/input1.d input1.out: __foo_bar___rule ../../foo/input1.txt"
+        "build input1.out: __foo_bar___rule ../../foo/input1.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
         "  source = ../../foo/input1.txt\n"
         "  source_name_part = input1\n"
         "  depfile = gen/input1.d\n"
-        "build gen/input2.d input2.out: __foo_bar___rule ../../foo/input2.txt"
+        "build input2.out: __foo_bar___rule ../../foo/input2.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
         "  source = ../../foo/input2.txt\n"
         "  source_name_part = input2\n"
         "  depfile = gen/input2.d\n"
         "\n"
         "build obj/foo/bar.stamp: stamp input1.out input2.out\n";
-
-    std::string out_str = out.str();
-#if defined(OS_WIN)
-    std::replace(out_str.begin(), out_str.end(), '\\', '/');
-#endif
-    EXPECT_EQ(expected_linux, out_str);
+    EXPECT_EQ(expected_linux, out.str());
   }
 
   // Windows.
   {
-    // Note: we use forward slashes here so that the output will be the same on
-    // Linux and Windows.
     setup.build_settings()->set_python_path(base::FilePath(FILE_PATH_LITERAL(
         "C:/python/python.exe")));
     setup.settings()->set_target_os(Settings::WIN);
@@ -359,8 +317,6 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
     NinjaActionTargetWriter writer(&target, setup.toolchain(), out);
     writer.Run();
 
-    // TODO(brettw) I think we'll need to worry about backslashes here
-    // depending if we're on actual Windows or Linux pretending to be Windows.
     const char expected_win[] =
         "rule __foo_bar___rule\n"
         "  command = C$:/python/python.exe gyp-win-tool action-wrapper "
@@ -369,16 +325,21 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
         "  restat = 1\n"
         "  rspfile = __foo_bar___rule.$unique_name.rsp\n"
         "  rspfile_content = C$:/python/python.exe ../../foo/script.py -i "
+#if defined(OS_WIN)
             "${source} \"--out=foo$ bar${source_name_part}.o\"\n"
-        "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/included.txt\n"
+#else
+            "${source} --out=foo\\$ bar${source_name_part}.o\n"
+#endif
+        "build obj/foo/bar.inputdeps.stamp: stamp ../../foo/script.py "
+            "../../foo/included.txt\n"
         "\n"
-        "build gen/input1.d input1.out: __foo_bar___rule ../../foo/input1.txt"
+        "build input1.out: __foo_bar___rule ../../foo/input1.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
         "  unique_name = 0\n"
         "  source = ../../foo/input1.txt\n"
         "  source_name_part = input1\n"
         "  depfile = gen/input1.d\n"
-        "build gen/input2.d input2.out: __foo_bar___rule ../../foo/input2.txt"
+        "build input2.out: __foo_bar___rule ../../foo/input2.txt"
             " | obj/foo/bar.inputdeps.stamp\n"
         "  unique_name = 1\n"
         "  source = ../../foo/input2.txt\n"
@@ -386,10 +347,6 @@ TEST(NinjaActionTargetWriter, ForEachWithDepfile) {
         "  depfile = gen/input2.d\n"
         "\n"
         "build obj/foo/bar.stamp: stamp input1.out input2.out\n";
-    std::string out_str = out.str();
-#if defined(OS_WIN)
-    std::replace(out_str.begin(), out_str.end(), '\\', '/');
-#endif
-    EXPECT_EQ(expected_win, out_str);
+    EXPECT_EQ(expected_win, out.str());
   }
 }

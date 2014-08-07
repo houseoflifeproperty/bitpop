@@ -30,14 +30,13 @@
 #ifndef InspectorDebuggerAgent_h
 #define InspectorDebuggerAgent_h
 
-#include "InspectorFrontend.h"
 #include "bindings/v8/ScriptState.h"
+#include "core/InspectorFrontend.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/inspector/AsyncCallStackTracker.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include "core/inspector/PromiseTracker.h"
 #include "core/inspector/ScriptBreakpoint.h"
 #include "core/inspector/ScriptDebugListener.h"
 #include "wtf/Forward.h"
@@ -49,14 +48,15 @@
 namespace WebCore {
 
 class Document;
+class Event;
 class EventListener;
 class EventTarget;
-class ExecutionContextTask;
 class FormData;
 class HTTPHeaderMap;
 class InjectedScriptManager;
 class InspectorFrontend;
 class InstrumentingAgents;
+class JavaScriptCallFrame;
 class JSONObject;
 class KURL;
 class MutationObserver;
@@ -93,8 +93,8 @@ public:
 
     bool isPaused();
     bool runningNestedMessageLoop();
-    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String&, ScriptCallStack*, unsigned long);
-    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String&, ScriptState*, ScriptArguments*, unsigned long);
+    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String&, PassRefPtrWillBeRawPtr<ScriptCallStack>, unsigned long);
+    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String&, ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>, unsigned long);
 
     String preprocessEventListener(LocalFrame*, const String& source, const String& url, const String& functionName);
     PassOwnPtr<ScriptSourceCode> preprocess(LocalFrame*, const ScriptSourceCode&);
@@ -119,9 +119,9 @@ public:
     virtual void getFunctionDetails(ErrorString*, const String& functionId, RefPtr<TypeBuilder::Debugger::FunctionDetails>&) OVERRIDE FINAL;
     virtual void pause(ErrorString*) OVERRIDE FINAL;
     virtual void resume(ErrorString*) OVERRIDE FINAL;
-    virtual void stepOver(ErrorString*, const String* callFrameId) OVERRIDE FINAL;
+    virtual void stepOver(ErrorString*) OVERRIDE FINAL;
     virtual void stepInto(ErrorString*) OVERRIDE FINAL;
-    virtual void stepOut(ErrorString*, const String* callFrameId) OVERRIDE FINAL;
+    virtual void stepOut(ErrorString*) OVERRIDE FINAL;
     virtual void setPauseOnExceptions(ErrorString*, const String& pauseState) OVERRIDE FINAL;
     virtual void evaluateOnCallFrame(ErrorString*,
         const String& callFrameId,
@@ -133,8 +133,8 @@ public:
         const bool* generatePreview,
         RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
         TypeBuilder::OptOutput<bool>* wasThrown) OVERRIDE FINAL;
-    virtual void compileScript(ErrorString*, const String& expression, const String& sourceURL, const int* executionContextId, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, TypeBuilder::OptOutput<String>* syntaxErrorMessage) OVERRIDE;
-    virtual void runScript(ErrorString*, const TypeBuilder::Debugger::ScriptId&, const int* executionContextId, const String* objectGroup, const bool* doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown) OVERRIDE;
+    virtual void compileScript(ErrorString*, const String& expression, const String& sourceURL, const int* executionContextId, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) OVERRIDE;
+    virtual void runScript(ErrorString*, const TypeBuilder::Debugger::ScriptId&, const int* executionContextId, const String* objectGroup, const bool* doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) OVERRIDE;
     virtual void setOverlayMessage(ErrorString*, const String*) OVERRIDE;
     virtual void setVariableValue(ErrorString*, int in_scopeNumber, const String& in_variableName, const RefPtr<JSONObject>& in_newValue, const String* in_callFrame, const String* in_functionObjectId) OVERRIDE FINAL;
     virtual void skipStackFrames(ErrorString*, const String* pattern) OVERRIDE FINAL;
@@ -149,20 +149,15 @@ public:
     void didCancelAnimationFrame(Document*, int callbackId);
     bool willFireAnimationFrame(Document*, int callbackId);
     void didFireAnimationFrame();
-    void willHandleEvent(EventTarget*, const AtomicString& eventType, EventListener*, bool useCapture);
+    void didEnqueueEvent(EventTarget*, Event*);
+    void didRemoveEvent(EventTarget*, Event*);
+    void willHandleEvent(EventTarget*, Event*, EventListener*, bool useCapture);
     void didHandleEvent();
     void willLoadXHR(XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString& method, const KURL&, bool async, FormData* body, const HTTPHeaderMap& headers, bool includeCrendentials);
     void didEnqueueMutationRecord(ExecutionContext*, MutationObserver*);
     void didClearAllMutationRecords(ExecutionContext*, MutationObserver*);
     void willDeliverMutationRecords(ExecutionContext*, MutationObserver*);
     void didDeliverMutationRecords();
-    void didPostPromiseTask(ExecutionContext*, ExecutionContextTask*, bool isResolved);
-    void willPerformPromiseTask(ExecutionContext*, ExecutionContextTask*);
-    void didPerformPromiseTask();
-    bool isPromiseTrackerEnabled();
-    void didCreatePromise(const ScriptObject& promise);
-    void didUpdatePromiseParent(const ScriptObject& promise, const ScriptObject& parentPromise);
-    void didUpdatePromiseState(const ScriptObject& promise, V8PromiseCustom::PromiseState, const ScriptValue& result);
     bool canBreakProgram();
     void breakProgram(InspectorFrontend::Debugger::Reason::Enum breakReason, PassRefPtr<JSONObject> data);
     void scriptExecutionBlockedByCSP(const String& directiveText);
@@ -177,14 +172,12 @@ public:
     };
     void setListener(Listener* listener) { m_listener = listener; }
 
+    bool enabled();
+
     virtual ScriptDebugServer& scriptDebugServer() = 0;
 
     void setBreakpoint(const String& scriptId, int lineNumber, int columnNumber, BreakpointSource, const String& condition = String());
     void removeBreakpoint(const String& scriptId, int lineNumber, int columnNumber, BreakpointSource);
-
-    virtual SkipPauseRequest shouldSkipExceptionPause(RefPtr<JavaScriptCallFrame>& topFrame) OVERRIDE FINAL;
-    virtual SkipPauseRequest shouldSkipBreakpointPause(RefPtr<JavaScriptCallFrame>& topFrame) OVERRIDE FINAL;
-    virtual SkipPauseRequest shouldSkipStepPause(RefPtr<JavaScriptCallFrame>& topFrame) OVERRIDE FINAL;
 
 protected:
     explicit InspectorDebuggerAgent(InjectedScriptManager*);
@@ -198,16 +191,17 @@ protected:
 
     virtual void enable();
     virtual void disable();
-    virtual void didPause(ScriptState*, const ScriptValue& callFrames, const ScriptValue& exception, const Vector<String>& hitBreakpoints) OVERRIDE FINAL;
+    virtual SkipPauseRequest didPause(ScriptState*, const ScriptValue& callFrames, const ScriptValue& exception, const Vector<String>& hitBreakpoints) OVERRIDE FINAL;
     virtual void didContinue() OVERRIDE FINAL;
     void reset();
     void pageDidCommitLoad();
 
 private:
+    SkipPauseRequest shouldSkipExceptionPause();
+    SkipPauseRequest shouldSkipStepPause();
+
     void cancelPauseOnNextStatement();
     void addMessageToConsole(MessageSource, MessageType);
-
-    bool enabled();
 
     PassRefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> > currentCallFrames();
     PassRefPtr<TypeBuilder::Debugger::StackTrace> currentAsyncStackTrace();
@@ -227,8 +221,6 @@ private:
 
     String scriptURL(JavaScriptCallFrame*);
 
-    ScriptValue resolveCallFrame(ErrorString*, const String* callFrameId);
-
     typedef HashMap<String, Script> ScriptsMap;
     typedef HashMap<String, Vector<String> > BreakpointIdToDebugServerBreakpointIdsMap;
     typedef HashMap<String, std::pair<String, BreakpointSource> > DebugServerBreakpointToBreakpointIdAndSourceMap;
@@ -244,13 +236,15 @@ private:
     InspectorFrontend::Debugger::Reason::Enum m_breakReason;
     RefPtr<JSONObject> m_breakAuxData;
     bool m_javaScriptPauseScheduled;
+    bool m_debuggerStepScheduled;
+    bool m_pausingOnNativeEvent;
     Listener* m_listener;
 
-    int m_skipStepInCount;
+    int m_skippedStepInCount;
+    int m_minFrameCountForSkip;
     bool m_skipAllPauses;
     OwnPtr<ScriptRegexp> m_cachedSkipStackRegExp;
     AsyncCallStackTracker m_asyncCallStackTracker;
-    PromiseTracker m_promiseTracker;
 };
 
 } // namespace WebCore

@@ -7,10 +7,8 @@
 #include "config.h"
 #include "V8TestInterface2.h"
 
-#include "RuntimeEnabledFeatures.h"
-#include "V8Interface1.h"
-#include "V8Interface2.h"
-#include "V8TestInterfaceEmpty.h"
+#include "bindings/tests/v8/V8TestInterface.h"
+#include "bindings/tests/v8/V8TestInterfaceEmpty.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/V8DOMConfiguration.h"
 #include "bindings/v8/V8GCController.h"
@@ -19,7 +17,8 @@
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "wtf/GetPtr.h"
 #include "wtf/RefPtr.h"
@@ -52,14 +51,21 @@ static void itemMethod(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "item", "TestInterface2", info.Holder(), info.GetIsolate());
     if (UNLIKELY(info.Length() < 1)) {
-        throwArityTypeError(exceptionState, 1, info.Length());
+        throwMinimumArityTypeError(exceptionState, 1, info.Length());
         return;
     }
     TestInterface2* impl = V8TestInterface2::toNative(info.Holder());
-    TONATIVE_VOID_EXCEPTIONSTATE(unsigned, index, toUInt32(info[0], exceptionState), exceptionState);
+    unsigned index;
+    {
+        v8::TryCatch block;
+        V8RethrowTryCatchScope rethrow(block);
+        TONATIVE_VOID_EXCEPTIONSTATE_INTERNAL(index, toUInt32(info[0], exceptionState), exceptionState);
+    }
     RefPtr<TestInterfaceEmpty> result = impl->item(index, exceptionState);
-    if (exceptionState.throwIfNeeded())
+    if (exceptionState.hadException()) {
+        exceptionState.throwIfNeeded();
         return;
+    }
     v8SetReturnValue(info, result.release());
 }
 
@@ -74,15 +80,23 @@ static void setItemMethod(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "setItem", "TestInterface2", info.Holder(), info.GetIsolate());
     if (UNLIKELY(info.Length() < 2)) {
-        throwArityTypeError(exceptionState, 2, info.Length());
+        throwMinimumArityTypeError(exceptionState, 2, info.Length());
         return;
     }
     TestInterface2* impl = V8TestInterface2::toNative(info.Holder());
-    TONATIVE_VOID_EXCEPTIONSTATE(unsigned, index, toUInt32(info[0], exceptionState), exceptionState);
-    TOSTRING_VOID(V8StringResource<>, value, info[1]);
+    unsigned index;
+    V8StringResource<> value;
+    {
+        v8::TryCatch block;
+        V8RethrowTryCatchScope rethrow(block);
+        TONATIVE_VOID_EXCEPTIONSTATE_INTERNAL(index, toUInt32(info[0], exceptionState), exceptionState);
+        TOSTRING_VOID_INTERNAL(value, info[1]);
+    }
     String result = impl->setItem(index, value, exceptionState);
-    if (exceptionState.throwIfNeeded())
+    if (exceptionState.hadException()) {
+        exceptionState.throwIfNeeded();
         return;
+    }
     v8SetReturnValueString(info, result, info.GetIsolate());
 }
 
@@ -97,14 +111,21 @@ static void deleteItemMethod(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "deleteItem", "TestInterface2", info.Holder(), info.GetIsolate());
     if (UNLIKELY(info.Length() < 1)) {
-        throwArityTypeError(exceptionState, 1, info.Length());
+        throwMinimumArityTypeError(exceptionState, 1, info.Length());
         return;
     }
     TestInterface2* impl = V8TestInterface2::toNative(info.Holder());
-    TONATIVE_VOID_EXCEPTIONSTATE(unsigned, index, toUInt32(info[0], exceptionState), exceptionState);
+    unsigned index;
+    {
+        v8::TryCatch block;
+        V8RethrowTryCatchScope rethrow(block);
+        TONATIVE_VOID_EXCEPTIONSTATE_INTERNAL(index, toUInt32(info[0], exceptionState), exceptionState);
+    }
     bool result = impl->deleteItem(index, exceptionState);
-    if (exceptionState.throwIfNeeded())
+    if (exceptionState.hadException()) {
+        exceptionState.throwIfNeeded();
         return;
+    }
     v8SetReturnValueBool(info, result);
 }
 
@@ -119,14 +140,19 @@ static void namedItemMethod(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "namedItem", "TestInterface2", info.Holder(), info.GetIsolate());
     if (UNLIKELY(info.Length() < 1)) {
-        throwArityTypeError(exceptionState, 1, info.Length());
+        throwMinimumArityTypeError(exceptionState, 1, info.Length());
         return;
     }
     TestInterface2* impl = V8TestInterface2::toNative(info.Holder());
-    TOSTRING_VOID(V8StringResource<>, name, info[0]);
+    V8StringResource<> name;
+    {
+        TOSTRING_VOID_INTERNAL(name, info[0]);
+    }
     RefPtr<TestInterfaceEmpty> result = impl->namedItem(name, exceptionState);
-    if (exceptionState.throwIfNeeded())
+    if (exceptionState.hadException()) {
+        exceptionState.throwIfNeeded();
         return;
+    }
     v8SetReturnValue(info, result.release());
 }
 
@@ -141,15 +167,21 @@ static void setNamedItemMethod(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "setNamedItem", "TestInterface2", info.Holder(), info.GetIsolate());
     if (UNLIKELY(info.Length() < 2)) {
-        throwArityTypeError(exceptionState, 2, info.Length());
+        throwMinimumArityTypeError(exceptionState, 2, info.Length());
         return;
     }
     TestInterface2* impl = V8TestInterface2::toNative(info.Holder());
-    TOSTRING_VOID(V8StringResource<>, name, info[0]);
-    TOSTRING_VOID(V8StringResource<>, value, info[1]);
+    V8StringResource<> name;
+    V8StringResource<> value;
+    {
+        TOSTRING_VOID_INTERNAL(name, info[0]);
+        TOSTRING_VOID_INTERNAL(value, info[1]);
+    }
     String result = impl->setNamedItem(name, value, exceptionState);
-    if (exceptionState.throwIfNeeded())
+    if (exceptionState.hadException()) {
+        exceptionState.throwIfNeeded();
         return;
+    }
     v8SetReturnValueString(info, result, info.GetIsolate());
 }
 
@@ -164,14 +196,19 @@ static void deleteNamedItemMethod(const v8::FunctionCallbackInfo<v8::Value>& inf
 {
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "deleteNamedItem", "TestInterface2", info.Holder(), info.GetIsolate());
     if (UNLIKELY(info.Length() < 1)) {
-        throwArityTypeError(exceptionState, 1, info.Length());
+        throwMinimumArityTypeError(exceptionState, 1, info.Length());
         return;
     }
     TestInterface2* impl = V8TestInterface2::toNative(info.Holder());
-    TOSTRING_VOID(V8StringResource<>, name, info[0]);
+    V8StringResource<> name;
+    {
+        TOSTRING_VOID_INTERNAL(name, info[0]);
+    }
     bool result = impl->deleteNamedItem(name, exceptionState);
-    if (exceptionState.throwIfNeeded())
+    if (exceptionState.hadException()) {
+        exceptionState.throwIfNeeded();
         return;
+    }
     v8SetReturnValueBool(info, result);
 }
 
@@ -426,16 +463,7 @@ static void configureV8TestInterface2Template(v8::Handle<v8::FunctionTemplate> f
 
 v8::Handle<v8::FunctionTemplate> V8TestInterface2::domTemplate(v8::Isolate* isolate)
 {
-    V8PerIsolateData* data = V8PerIsolateData::from(isolate);
-    v8::Local<v8::FunctionTemplate> result = data->existingDOMTemplate(const_cast<WrapperTypeInfo*>(&wrapperTypeInfo));
-    if (!result.IsEmpty())
-        return result;
-
-    TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "BuildDOMTemplate");
-    result = v8::FunctionTemplate::New(isolate, V8ObjectConstructor::isValidConstructorMode);
-    configureV8TestInterface2Template(result, isolate);
-    data->setDOMTemplate(const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), result);
-    return result;
+    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), configureV8TestInterface2Template);
 }
 
 bool V8TestInterface2::hasInstance(v8::Handle<v8::Value> v8Value, v8::Isolate* isolate)
@@ -456,10 +484,10 @@ TestInterface2* V8TestInterface2::toNativeWithTypeCheck(v8::Isolate* isolate, v8
 v8::Handle<v8::Object> wrap(TestInterface2* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     ASSERT(impl);
-    if (impl->isInterface1())
-        return wrap(toInterface1(impl), creationContext, isolate);
-    if (impl->isInterface2())
-        return wrap(toInterface2(impl), creationContext, isolate);
+    if (impl->isTestInterface())
+        return wrap(toTestInterface(impl), creationContext, isolate);
+    if (impl->isTestInterfaceEmpty())
+        return wrap(toTestInterfaceEmpty(impl), creationContext, isolate);
     v8::Handle<v8::Object> wrapper = V8TestInterface2::createWrapper(impl, creationContext, isolate);
     return wrapper;
 }

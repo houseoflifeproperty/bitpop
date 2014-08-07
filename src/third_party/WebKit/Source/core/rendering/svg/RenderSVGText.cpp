@@ -31,8 +31,10 @@
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/LayoutRepainter.h"
+#include "core/rendering/PaintInfo.h"
 #include "core/rendering/PointerEventsHitRules.h"
 #include "core/rendering/style/ShadowList.h"
+#include "core/rendering/svg/RenderSVGInline.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
@@ -92,10 +94,10 @@ const RenderSVGText* RenderSVGText::locateRenderSVGTextAncestor(const RenderObje
     return toRenderSVGText(start);
 }
 
-void RenderSVGText::computeRectForRepaint(const RenderLayerModelObject* repaintContainer, LayoutRect& rect, bool fixed) const
+void RenderSVGText::mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect& rect, bool fixed) const
 {
     FloatRect repaintRect = rect;
-    computeFloatRectForRepaint(repaintContainer, repaintRect, fixed);
+    computeFloatRectForPaintInvalidation(paintInvalidationContainer, repaintRect, fixed);
     rect = enclosingLayoutRect(repaintRect);
 }
 
@@ -107,7 +109,7 @@ static inline void collectLayoutAttributes(RenderObject* text, Vector<SVGTextLay
     }
 }
 
-static inline bool findPreviousAndNextAttributes(RenderObject* root, RenderSVGInlineText* locateElement, SVGTextLayoutAttributes*& previous, SVGTextLayoutAttributes*& next)
+static inline bool findPreviousAndNextAttributes(RenderSVGText* root, RenderSVGInlineText* locateElement, SVGTextLayoutAttributes*& previous, SVGTextLayoutAttributes*& next)
 {
     ASSERT(root);
     ASSERT(locateElement);
@@ -128,7 +130,7 @@ static inline bool findPreviousAndNextAttributes(RenderObject* root, RenderSVGIn
             }
         } else if (current->isSVGInline()) {
             // Descend into text content (if possible).
-            if (RenderObject* child = current->firstChild()) {
+            if (RenderObject* child = toRenderSVGInline(current)->firstChild()) {
                 current = child;
                 continue;
             }
@@ -472,7 +474,6 @@ void RenderSVGText::paint(PaintInfo& paintInfo, const LayoutPoint&)
         return;
 
     if (paintInfo.phase != PaintPhaseForeground
-     && paintInfo.phase != PaintPhaseSelfOutline
      && paintInfo.phase != PaintPhaseSelection)
          return;
 
@@ -484,6 +485,12 @@ void RenderSVGText::paint(PaintInfo& paintInfo, const LayoutPoint&)
         blockInfo.applyTransform(localTransform, false);
     }
     RenderBlock::paint(blockInfo, LayoutPoint());
+
+    // Paint the outlines, if any
+    if (paintInfo.phase == PaintPhaseForeground) {
+        blockInfo.phase = PaintPhaseSelfOutline;
+        RenderBlock::paint(blockInfo, LayoutPoint());
+    }
 }
 
 FloatRect RenderSVGText::strokeBoundingBox() const
@@ -500,7 +507,7 @@ FloatRect RenderSVGText::strokeBoundingBox() const
     return strokeBoundaries;
 }
 
-FloatRect RenderSVGText::repaintRectInLocalCoordinates() const
+FloatRect RenderSVGText::paintInvalidationRectInLocalCoordinates() const
 {
     FloatRect repaintRect = strokeBoundingBox();
     SVGRenderSupport::intersectRepaintRectWithResources(this, repaintRect);

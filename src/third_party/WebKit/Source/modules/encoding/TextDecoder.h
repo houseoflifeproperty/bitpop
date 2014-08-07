@@ -50,17 +50,20 @@ public:
 
     // Implement the IDL
     String encoding() const;
+    bool fatal() const { return m_fatal; }
+    bool ignoreBOM() const { return m_ignoreBOM; }
     String decode(ArrayBufferView*, const Dictionary&, ExceptionState&);
     String decode(ExceptionState& exceptionState) { return decode(0, Dictionary(), exceptionState); }
 
     void trace(Visitor*) { }
 
 private:
-    TextDecoder(const String& encoding, bool fatal);
+    TextDecoder(const WTF::TextEncoding&, bool fatal, bool ignoreBOM);
 
     WTF::TextEncoding m_encoding;
     OwnPtr<WTF::TextCodec> m_codec;
     bool m_fatal;
+    bool m_ignoreBOM;
     bool m_bomSeen;
 };
 

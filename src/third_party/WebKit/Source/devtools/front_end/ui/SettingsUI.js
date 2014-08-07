@@ -88,14 +88,17 @@ WebInspector.SettingsUI.bindCheckbox = function(input, setting)
  * @param {number=} maxLength
  * @param {string=} width
  * @param {function(string):?string=} validatorCallback
+ * @param {boolean=} instant
+ * @param {boolean=} clearForZero
+ * @param {string=} placeholder
+ * @return {!Element}
  */
-WebInspector.SettingsUI.createSettingInputField = function(label, setting, numeric, maxLength, width, validatorCallback)
+WebInspector.SettingsUI.createSettingInputField = function(label, setting, numeric, maxLength, width, validatorCallback, instant, clearForZero, placeholder)
 {
     var p = document.createElement("p");
     var labelElement = p.createChild("label");
     labelElement.textContent = label;
     var inputElement = p.createChild("input");
-    inputElement.value = setting.get();
     inputElement.type = "text";
     if (numeric)
         inputElement.className = "numeric";
@@ -103,32 +106,75 @@ WebInspector.SettingsUI.createSettingInputField = function(label, setting, numer
         inputElement.maxLength = maxLength;
     if (width)
         inputElement.style.width = width;
+    inputElement.placeholder = placeholder || "";
+
+    if (validatorCallback || instant) {
+        inputElement.addEventListener("change", onInput, false);
+        inputElement.addEventListener("input", onInput, false);
+    }
+    inputElement.addEventListener("keydown", onKeyDown, false);
 
     var errorMessageLabel;
     if (validatorCallback) {
         errorMessageLabel = p.createChild("div");
         errorMessageLabel.classList.add("field-error-message");
-        inputElement.oninput = onInput;
-        onInput();
+        validate();
     }
 
     function onInput()
     {
+        if (validatorCallback)
+            validate();
+        if (instant)
+            apply();
+    }
+
+    function onKeyDown(event)
+    {
+        if (isEnterKey(event))
+            apply();
+    }
+
+    function validate()
+    {
         var error = validatorCallback(inputElement.value);
         if (!error)
             error = "";
+        inputElement.classList.toggle("error-input", !!error);
         errorMessageLabel.textContent = error;
     }
 
-    function onBlur()
+    if (!instant)
+        inputElement.addEventListener("blur", apply, false);
+
+    function apply()
     {
+        if (validatorCallback && validatorCallback(inputElement.value))
+            return;
+        setting.removeChangeListener(onSettingChange);
         setting.set(numeric ? Number(inputElement.value) : inputElement.value);
+        setting.addChangeListener(onSettingChange);
     }
-    inputElement.addEventListener("blur", onBlur, false);
+
+    setting.addChangeListener(onSettingChange);
+
+    function onSettingChange()
+    {
+        var value = setting.get();
+        if (clearForZero && !value)
+            value = "";
+        inputElement.value = value;
+    }
+    onSettingChange();
 
     return p;
 }
 
+/**
+ * @param {string} name
+ * @param {!Element} element
+ * @return {!Element}
+ */
 WebInspector.SettingsUI.createCustomSetting = function(name, element)
 {
     var p = document.createElement("p");
@@ -168,6 +214,37 @@ WebInspector.SettingsUI.regexValidator = function(text)
     } catch (e) {
     }
     return regex ? null : WebInspector.UIString("Invalid pattern");
+}
+
+/**
+ * Creates an input element under the parentElement with the given id and defaultText.
+ * @param {!Element} parentElement
+ * @param {string} id
+ * @param {string} defaultText
+ * @param {function(*)} eventListener
+ * @param {boolean=} numeric
+ * @param {string=} size
+ * @return {!Element} element
+ */
+WebInspector.SettingsUI.createInput = function(parentElement, id, defaultText, eventListener, numeric, size)
+{
+    var element = parentElement.createChild("input");
+    element.id = id;
+    element.type = "text";
+    element.maxLength = 12;
+    element.style.width = size || "80px";
+    element.value = defaultText;
+    element.align = "right";
+    if (numeric)
+        element.className = "numeric";
+    element.addEventListener("input", eventListener, false);
+    element.addEventListener("keydown", keyDownListener, false);
+    function keyDownListener(event)
+    {
+        if (isEnterKey(event))
+            eventListener(event);
+    }
+    return element;
 }
 
 /**

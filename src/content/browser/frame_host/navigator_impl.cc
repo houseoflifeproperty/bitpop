@@ -368,7 +368,7 @@ bool NavigatorImpl::NavigateToEntry(
     // do not generate content.  What we really need is a message from the
     // renderer telling us that a new page was not created.  The same message
     // could be used for mailto: URLs and the like.
-    if (entry.GetURL().SchemeIs(kJavaScriptScheme))
+    if (entry.GetURL().SchemeIs(url::kJavaScriptScheme))
       return false;
   }
 
@@ -543,7 +543,7 @@ void NavigatorImpl::DidNavigate(
 bool NavigatorImpl::ShouldAssignSiteForURL(const GURL& url) {
   // about:blank should not "use up" a new SiteInstance.  The SiteInstance can
   // still be used for a normal web site.
-  if (url == GURL(kAboutBlankURL))
+  if (url == GURL(url::kAboutBlankURL))
     return false;
 
   // The embedder will then have the opportunity to determine if the URL
@@ -596,7 +596,7 @@ void NavigatorImpl::RequestTransferURL(
           GetSiteInstance();
   if (!GetContentClient()->browser()->ShouldAllowOpenURL(
           current_site_instance, url)) {
-    dest_url = GURL(kAboutBlankURL);
+    dest_url = GURL(url::kAboutBlankURL);
   }
 
   int64 frame_tree_node_id = -1;

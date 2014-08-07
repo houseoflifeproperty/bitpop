@@ -10,7 +10,7 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_test_util.h"
@@ -18,8 +18,10 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using extension_test_util::LoadManifest;
@@ -108,8 +110,7 @@ void AddPattern(URLPatternSet* extent, const std::string& pattern) {
 
 // Test that the PermissionUpdater can correctly add and remove active
 // permissions. This tests all of PermissionsUpdater's public methods because
-// GrantActivePermissions and UpdateActivePermissions are used by
-// AddPermissions.
+// GrantActivePermissions and SetActivePermissions are used by AddPermissions.
 TEST_F(PermissionsUpdaterTest, AddAndRemovePermissions) {
   InitializeEmptyExtensionService();
 
@@ -129,9 +130,9 @@ TEST_F(PermissionsUpdaterTest, AddAndRemovePermissions) {
 
   // Make sure it loaded properly.
   scoped_refptr<const PermissionSet> permissions =
-      extension->GetActivePermissions();
+      extension->permissions_data()->active_permissions();
   ASSERT_EQ(*default_permissions.get(),
-            *extension->GetActivePermissions().get());
+            *extension->permissions_data()->active_permissions().get());
 
   // Add a few permissions.
   APIPermissionSet apis;
@@ -160,7 +161,7 @@ TEST_F(PermissionsUpdaterTest, AddAndRemovePermissions) {
   scoped_refptr<PermissionSet> active_permissions =
       PermissionSet::CreateUnion(default_permissions.get(), delta.get());
   ASSERT_EQ(*active_permissions.get(),
-            *extension->GetActivePermissions().get());
+            *extension->permissions_data()->active_permissions().get());
 
   // Verify that the new granted and active permissions were also stored
   // in the extension preferences. In this case, the granted permissions should
@@ -196,7 +197,7 @@ TEST_F(PermissionsUpdaterTest, AddAndRemovePermissions) {
   active_permissions =
       PermissionSet::CreateDifference(active_permissions.get(), delta.get());
   ASSERT_EQ(*active_permissions.get(),
-            *extension->GetActivePermissions().get());
+            *extension->permissions_data()->active_permissions().get());
 
   // Verify that the extension prefs hold the new active permissions and the
   // same granted permissions.

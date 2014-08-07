@@ -13,6 +13,18 @@ namespace content {
 struct AXEventNotificationDetails;
 }  // namespace content
 
+namespace extensions {
+class AutomationActionAdapter;
+
+namespace api {
+namespace automation_internal {
+namespace PerformAction {
+struct Params;
+}  // namespace PerformAction
+}  // namespace automation_internal
+}  // namespace api
+}  // namespace extensions
+
 namespace ui {
 struct AXNodeData;
 }
@@ -20,34 +32,40 @@ struct AXNodeData;
 namespace extensions {
 
 // Implementation of the chrome.automation API.
-class AutomationInternalEnableCurrentTabFunction
-    : public ChromeAsyncExtensionFunction {
-  DECLARE_EXTENSION_FUNCTION("automationInternal.enableCurrentTab",
-                             AUTOMATIONINTERNAL_ENABLECURRENTTAB)
+class AutomationInternalEnableTabFunction
+    : public ChromeUIThreadExtensionFunction {
+  DECLARE_EXTENSION_FUNCTION("automationInternal.enableTab",
+                             AUTOMATIONINTERNAL_ENABLETAB)
  protected:
-  virtual ~AutomationInternalEnableCurrentTabFunction() {}
+  virtual ~AutomationInternalEnableTabFunction() {}
 
-  virtual bool RunAsync() OVERRIDE;
+  virtual ExtensionFunction::ResponseAction Run() OVERRIDE;
 };
 
 class AutomationInternalPerformActionFunction
-    : public ChromeAsyncExtensionFunction {
+    : public UIThreadExtensionFunction {
   DECLARE_EXTENSION_FUNCTION("automationInternal.performAction",
                              AUTOMATIONINTERNAL_PERFORMACTION)
  protected:
   virtual ~AutomationInternalPerformActionFunction() {}
 
-  virtual bool RunAsync() OVERRIDE;
+  virtual ExtensionFunction::ResponseAction Run() OVERRIDE;
+
+ private:
+  // Helper function to route an action to an action adapter.
+  ExtensionFunction::ResponseAction RouteActionToAdapter(
+      api::automation_internal::PerformAction::Params* params,
+      AutomationActionAdapter* adapter);
 };
 
 class AutomationInternalEnableDesktopFunction
-    : public ChromeAsyncExtensionFunction {
+    : public UIThreadExtensionFunction {
   DECLARE_EXTENSION_FUNCTION("automationInternal.enableDesktop",
                              AUTOMATIONINTERNAL_ENABLEDESKTOP)
  protected:
   virtual ~AutomationInternalEnableDesktopFunction() {}
 
-  virtual bool RunAsync() OVERRIDE;
+  virtual ResponseAction Run() OVERRIDE;
 };
 
 }  // namespace extensions

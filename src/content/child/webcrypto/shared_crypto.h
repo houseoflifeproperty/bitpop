@@ -22,6 +22,7 @@ class CryptoData;
 class Status;
 
 // Do one-time initialization. It is safe to call this multiple times.
+// May be called concurrently from multiple threads.
 CONTENT_EXPORT void Init();
 
 // The functions exported by shared_crypto.h provide a common entry point for
@@ -131,8 +132,8 @@ CONTENT_EXPORT Status
 
 CONTENT_EXPORT Status
     WrapKey(blink::WebCryptoKeyFormat format,
-            const blink::WebCryptoKey& wrapping_key,
             const blink::WebCryptoKey& key_to_wrap,
+            const blink::WebCryptoKey& wrapping_key,
             const blink::WebCryptoAlgorithm& wrapping_algorithm,
             std::vector<uint8>* buffer);
 
@@ -158,6 +159,26 @@ CONTENT_EXPORT bool DeserializeKeyForClone(
     blink::WebCryptoKeyUsageMask usage_mask,
     const CryptoData& key_data,
     blink::WebCryptoKey* key);
+
+namespace platform {
+class SymKey;
+class PublicKey;
+class PrivateKey;
+}
+
+Status ToPlatformSymKey(const blink::WebCryptoKey& key, platform::SymKey** out);
+
+Status ToPlatformPublicKey(const blink::WebCryptoKey& key,
+                           platform::PublicKey** out);
+
+Status ToPlatformPrivateKey(const blink::WebCryptoKey& key,
+                            platform::PrivateKey** out);
+
+// Returns Staus::Success() if |usages| is valid for |key_type| and |algorithm|.
+// Otherwise returns a failure
+Status CheckKeyUsages(blink::WebCryptoAlgorithmId algorithm,
+                      blink::WebCryptoKeyType key_type,
+                      blink::WebCryptoKeyUsageMask usages);
 
 }  // namespace webcrypto
 

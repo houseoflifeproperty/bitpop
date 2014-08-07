@@ -2,72 +2,46 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from master import master_config
-from master.factory import chromium_factory
+from buildbot.scheduler import Periodic
+from buildbot.scheduler import Triggerable
+from buildbot.schedulers.basic import SingleBranchScheduler
 
-defaults = {}
+from master.factory import annotator_factory
 
-helper = master_config.Helper(defaults)
-B = helper.Builder
-F = helper.Factory
-S = helper.Scheduler
-T = helper.Triggerable
-P = helper.Periodic
+m_annotator = annotator_factory.AnnotatorFactory()
 
+def Update(c):
+  buildernames_list = ['Android Builder (dbg)']
+  c['schedulers'].extend([
+      SingleBranchScheduler(name='android_webrtc_scheduler',
+                            branch='trunk',
+                            treeStableTimer=0,
+                            builderNames=buildernames_list),
+      Periodic(name='android_periodic_scheduler',
+               periodicBuildTimer=30*60,
+               builderNames=buildernames_list),
+      Triggerable(name='android_trigger_dbg', builderNames=[
+          'Android Tests (dbg) (KK Nexus5)',
+          'Android Tests (dbg) (JB Nexus7.2)',
+      ]),
+  ])
 
-def android():
-  return chromium_factory.ChromiumFactory('', 'linux2', nohooks_on_update=True,
-                                          target_os='android')
+  specs = [
+    {
+      'name': 'Android Builder (dbg)',
+      'triggers': ['android_trigger_dbg'],
+    },
+    {'name': 'Android Tests (dbg) (KK Nexus5)'},
+    {'name': 'Android Tests (dbg) (JB Nexus7.2)'},
+  ]
 
-S('android_webrtc_scheduler', branch='trunk', treeStableTimer=0)
-P('android_periodic_scheduler', periodicBuildTimer=30*60)
-T('android_trigger_dbg')
-
-defaults['category'] = 'android'
-
-android_dbg_archive = master_config.GetGSUtilUrl('chromium-webrtc',
-                                                 'android_chromium_trunk_dbg')
-
-# Builders.
-B('Android Builder (dbg)', 'android_builder_dbg_factory',
-  scheduler='android_webrtc_scheduler|android_periodic_scheduler',
-  notify_on_missing=True)
-F('android_builder_dbg_factory', android().ChromiumWebRTCAndroidLatestFactory(
-    target='Debug',
-    annotation_script='src/build/android/buildbot/bb_run_bot.py',
-    factory_properties={
-        'android_bot_id': 'webrtc-chromium-builder-dbg',
-        'build_url': android_dbg_archive,
-        'trigger': 'android_trigger_dbg',
-    }))
-
-# Testers.
-B('Android Tests (dbg) (KK Nexus5)', 'android_tests_n5_dbg_factory',
-  scheduler='android_trigger_dbg', notify_on_missing=True)
-F('android_tests_n5_dbg_factory', android().ChromiumWebRTCAndroidLatestFactory(
-    target='Debug',
-    annotation_script='src/build/android/buildbot/bb_run_bot.py',
-    factory_properties={
-      'android_bot_id': 'webrtc-chromium-tests-dbg',
-      'build_url': android_dbg_archive,
-      'perf_id': 'chromium-webrtc-trunk-tot-dbg-android-nexus5',
-      'show_perf_results': True,
-      'test_platform': 'android',
-    }))
-
-B('Android Tests (dbg) (JB Nexus7.2)', 'android_tests_dbg_factory',
-  scheduler='android_trigger_dbg', notify_on_missing=True)
-F('android_tests_dbg_factory', android().ChromiumWebRTCAndroidLatestFactory(
-    target='Debug',
-    annotation_script='src/build/android/buildbot/bb_run_bot.py',
-    factory_properties={
-      'android_bot_id': 'webrtc-chromium-tests-dbg',
-      'build_url': android_dbg_archive,
-      'perf_id': 'chromium-webrtc-trunk-tot-dbg-android-nexus72',
-      'show_perf_results': True,
-      'test_platform': 'android',
-    }))
-
-
-def Update(config, active_master, c):
-  helper.Update(c)
+  c['builders'].extend([
+      {
+        'name': spec['name'],
+        'factory': m_annotator.BaseFactory(
+            'webrtc/chromium',
+            triggers=spec.get('triggers')),
+        'category': 'android',
+        'notify_on_missing': True,
+      } for spec in specs
+  ])

@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
+#include "third_party/dom_distiller_js/dom_distiller.pb.h"
 #include "url/gurl.h"
 
 namespace dom_distiller {
@@ -26,6 +27,11 @@ struct DistilledPageInfo {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DistilledPageInfo);
+};
+
+class SourcePageHandle {
+ public:
+  virtual ~SourcePageHandle() {}
 };
 
 // Injects JavaScript into a page, and uses it to extract and return long-form
@@ -44,9 +50,11 @@ class DistillerPage {
 
   // Loads a URL. |OnDistillationDone| is called when the load completes or
   // fails. May be called when the distiller is idle. Callers can assume that,
-  // for a given |url|, any DistillerPage implementation will extract the same
-  // content.
-  void DistillPage(const GURL& url, const DistillerPageCallback& callback);
+  // for a given |url| and |options|, any DistillerPage implementation will
+  // extract the same content.
+  void DistillPage(const GURL& url,
+                   const dom_distiller::proto::DomDistillerOptions options,
+                   const DistillerPageCallback& callback);
 
   // Called when the JavaScript execution completes. |page_url| is the url of
   // the distilled page. |value| contains data returned by the script.
@@ -58,10 +66,6 @@ class DistillerPage {
   // and distill the |url| using the provided |script|. The extracted content
   // should be the same regardless of the DistillerPage implementation.
   virtual void DistillPageImpl(const GURL& url, const std::string& script) = 0;
-
-  // Called by |ExecuteJavaScript| to carry out platform-specific instructions
-  // to inject and execute JavaScript within the context of the loaded page.
-  //virtual void ExecuteJavaScriptImpl() = 0;
 
  private:
   bool ready_;
@@ -78,6 +82,8 @@ class DistillerPageFactory {
   // should be very cheap, since the pages can be thrown away without being
   // used.
   virtual scoped_ptr<DistillerPage> CreateDistillerPage() const = 0;
+  virtual scoped_ptr<DistillerPage> CreateDistillerPageWithHandle(
+      scoped_ptr<SourcePageHandle> handle) const = 0;
 };
 
 }  // namespace dom_distiller

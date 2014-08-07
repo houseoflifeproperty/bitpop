@@ -25,7 +25,6 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -52,13 +51,14 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/instant_types.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/thumbnail_score.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/google/core/browser/google_url_tracker.h"
+#include "components/history/core/common/thumbnail_score.h"
 #include "components/sessions/serialized_navigation_entry.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -209,7 +209,9 @@ class InstantExtendedTest : public InProcessBrowserTest,
     HistoryService* history = HistoryServiceFactory::GetForProfile(
         browser()->profile(), Profile::EXPLICIT_ACCESS);
     GURL search(template_url->url_ref().ReplaceSearchTerms(
-        TemplateURLRef::SearchTermsArgs(term)));
+        TemplateURLRef::SearchTermsArgs(term),
+        TemplateURLServiceFactory::GetForProfile(
+            browser()->profile())->search_terms_data()));
     history->AddPageWithDetails(
         search, base::string16(), visit_count, visit_count,
         base::Time::Now(), false, history::SOURCE_BROWSED);
@@ -359,7 +361,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, SearchReusesInstantTab) {
       chrome::NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
       content::NotificationService::AllSources());
   SetOmniboxText("flowers");
-  PressEnterAndWaitForNavigation();
+  PressEnterAndWaitForFrameLoad();
   observer.Wait();
 
   // Just did a regular search.
@@ -407,7 +409,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest,
       chrome::NOTIFICATION_INSTANT_TAB_SUPPORT_DETERMINED,
       content::NotificationService::AllSources());
   SetOmniboxText("flowers");
-  PressEnterAndWaitForNavigation();
+  PressEnterAndWaitForFrameLoad();
   observer_1.Wait();
 
   // Just did a regular search.
@@ -962,7 +964,7 @@ IN_PROC_BROWSER_TEST_F(InstantExtendedTest, Referrer) {
 
   // Type a query and press enter to get results.
   SetOmniboxText("query");
-  PressEnterAndWaitForNavigation();
+  PressEnterAndWaitForFrameLoad();
 
   // Simulate going to a result.
   content::WebContents* contents =

@@ -31,6 +31,7 @@
 #include "config.h"
 #include "core/rendering/RenderFlexibleBox.h"
 
+#include "core/rendering/FastTextAutosizer.h"
 #include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
@@ -231,7 +232,7 @@ void RenderFlexibleBox::layoutBlock(bool relayoutChildren)
     if (!relayoutChildren && simplifiedLayout())
         return;
 
-    LayoutRepainter repainter(*this, checkForRepaintDuringLayout());
+    LayoutRepainter repainter(*this, checkForPaintInvalidationDuringLayout());
 
     if (updateLogicalWidthAndColumnWidth())
         relayoutChildren = true;
@@ -240,7 +241,8 @@ void RenderFlexibleBox::layoutBlock(bool relayoutChildren)
     setLogicalHeight(borderAndPaddingLogicalHeight() + scrollbarLogicalHeight());
 
     {
-        LayoutStateMaintainer statePusher(*this, locationOffset());
+        FastTextAutosizer::LayoutScope fastTextAutosizerLayoutScope(this);
+        LayoutState state(*this, locationOffset());
 
         m_numberOfInFlowChildrenOnFirstLine = -1;
 
@@ -267,7 +269,7 @@ void RenderFlexibleBox::layoutBlock(bool relayoutChildren)
         computeOverflow(clientLogicalBottomAfterRepositioning());
     }
 
-    updateLayerTransform();
+    updateLayerTransformAfterLayout();
 
     // Update our scroll information if we're overflow:auto/scroll/hidden now that we know if
     // we overflow or not.
@@ -296,7 +298,7 @@ void RenderFlexibleBox::repaintChildrenDuringLayoutIfMoved(const ChildFrameRects
         // If the child moved, we have to repaint it as well as any floating/positioned
         // descendants. An exception is if we need a layout. In this case, we know we're going to
         // repaint ourselves (and the child) anyway.
-        if (!selfNeedsLayout() && child->checkForRepaintDuringLayout())
+        if (!selfNeedsLayout() && child->checkForPaintInvalidationDuringLayout())
             child->repaintDuringLayoutIfMoved(oldChildRects[childIndex]);
         ++childIndex;
     }
@@ -314,10 +316,6 @@ void RenderFlexibleBox::repositionLogicalHeightDependentFlexItems(Vector<LineCon
     LayoutUnit crossAxisStartEdge = lineContexts.isEmpty() ? LayoutUnit() : lineContexts[0].crossAxisOffset;
     alignFlexLines(lineContexts);
 
-    // If we have a single line flexbox, the line height is all the available space.
-    // For flex-direction: row, this means we need to use the height, so we do this after calling updateLogicalHeight.
-    if (!isMultiline() && lineContexts.size() == 1)
-        lineContexts[0].crossAxisExtent = crossAxisContentExtent();
     alignChildren(lineContexts);
 
     if (style()->flexWrap() == FlexWrapReverse)
@@ -1111,7 +1109,7 @@ void RenderFlexibleBox::layoutAndPlaceChildren(LayoutUnit& crossAxisOffset, cons
         }
 
         // FIXME Investigate if this can be removed based on other flags. crbug.com/370010
-        child->setMayNeedInvalidation(true);
+        child->setMayNeedPaintInvalidation(true);
 
         LayoutUnit childPreferredSize = childSizes[i] + mainAxisBorderAndPaddingExtentForChild(child);
         setLogicalOverrideSize(child, childPreferredSize);
@@ -1209,6 +1207,8 @@ void RenderFlexibleBox::layoutColumnReverse(const OrderedFlexItemList& children,
 
 static LayoutUnit initialAlignContentOffset(LayoutUnit availableFreeSpace, EAlignContent alignContent, unsigned numberOfLines)
 {
+    if (numberOfLines <= 1)
+        return 0;
     if (alignContent == AlignContentFlexEnd)
         return availableFreeSpace;
     if (alignContent == AlignContentCenter)
@@ -1235,7 +1235,15 @@ static LayoutUnit alignContentSpaceBetweenChildren(LayoutUnit availableFreeSpace
 
 void RenderFlexibleBox::alignFlexLines(Vector<LineContext>& lineContexts)
 {
-    if (!isMultiline() || style()->alignContent() == AlignContentFlexStart)
+    // If we have a single line flexbox or a multiline line flexbox with only one flex line,
+    // the line height is all the available space.
+    // For flex-direction: row, this means we need to use the height, so we do this after calling updateLogicalHeight.
+    if (lineContexts.size() == 1) {
+        lineContexts[0].crossAxisExtent = crossAxisContentExtent();
+        return;
+    }
+
+    if (style()->alignContent() == AlignContentFlexStart)
         return;
 
     LayoutUnit availableCrossAxisSpace = crossAxisContentExtent();

@@ -29,9 +29,9 @@
 
 #include "platform/PlatformGestureEvent.h"
 #include "platform/PlatformWheelEvent.h"
-#include "platform/geometry/FloatPoint.h"
+#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/IntRect.h"
 #include "platform/mac/BlockExceptions.h"
-#include "platform/mac/EmptyProtocolDefinitions.h"
 #include "platform/mac/NSScrollerImpDetails.h"
 #include "platform/scroll/ScrollView.h"
 #include "platform/scroll/ScrollableArea.h"
@@ -693,6 +693,18 @@ FloatPoint ScrollAnimatorMac::adjustScrollPositionIfNecessary(const FloatPoint& 
     return FloatPoint(newX, newY);
 }
 
+void ScrollAnimatorMac::adjustScrollPositionToBoundsIfNecessary()
+{
+    bool currentlyConstrainsToContentEdge = m_scrollableArea->constrainsScrollingToContentEdge();
+    m_scrollableArea->setConstrainsScrollingToContentEdge(true);
+
+    IntPoint currentScrollPosition = absoluteScrollPosition();
+    FloatPoint nearestPointWithinBounds = adjustScrollPositionIfNecessary(absoluteScrollPosition());
+    immediateScrollBy(nearestPointWithinBounds - currentScrollPosition);
+
+    m_scrollableArea->setConstrainsScrollingToContentEdge(currentlyConstrainsToContentEdge);
+}
+
 void ScrollAnimatorMac::immediateScrollTo(const FloatPoint& newPosition)
 {
     FloatPoint adjustedPosition = adjustScrollPositionIfNecessary(newPosition);
@@ -1107,11 +1119,6 @@ bool ScrollAnimatorMac::canScrollVertically()
     if (!scrollbar)
         return false;
     return scrollbar->enabled();
-}
-
-bool ScrollAnimatorMac::shouldRubberBandInDirection(ScrollDirection direction)
-{
-    return m_scrollableArea->shouldRubberBandInDirection(direction);
 }
 
 IntPoint ScrollAnimatorMac::absoluteScrollPosition()

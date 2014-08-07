@@ -7,9 +7,9 @@
 #include "base/command_line.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "components/autofill/content/common/autofill_messages.h"
+#include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager.h"
-#include "components/autofill/core/browser/autofill_manager_delegate.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "content/public/browser/browser_context.h"
@@ -33,7 +33,7 @@ const char kContentAutofillDriverWebContentsUserDataKey[] =
 // static
 void ContentAutofillDriver::CreateForWebContentsAndDelegate(
     content::WebContents* contents,
-    autofill::AutofillManagerDelegate* delegate,
+    AutofillClient* client,
     const std::string& app_locale,
     AutofillManager::AutofillDownloadManagerState enable_download_manager) {
   if (FromWebContents(contents))
@@ -42,7 +42,7 @@ void ContentAutofillDriver::CreateForWebContentsAndDelegate(
   contents->SetUserData(
       kContentAutofillDriverWebContentsUserDataKey,
       new ContentAutofillDriver(
-          contents, delegate, app_locale, enable_download_manager));
+          contents, client, app_locale, enable_download_manager));
 }
 
 // static
@@ -54,12 +54,12 @@ ContentAutofillDriver* ContentAutofillDriver::FromWebContents(
 
 ContentAutofillDriver::ContentAutofillDriver(
     content::WebContents* web_contents,
-    autofill::AutofillManagerDelegate* delegate,
+    AutofillClient* client,
     const std::string& app_locale,
     AutofillManager::AutofillDownloadManagerState enable_download_manager)
     : content::WebContentsObserver(web_contents),
       autofill_manager_(new AutofillManager(this,
-                                            delegate,
+                                            client,
                                             app_locale,
                                             enable_download_manager)),
       autofill_external_delegate_(autofill_manager_.get(), this),
@@ -106,6 +106,13 @@ void ContentAutofillDriver::SendFormDataToRenderer(
           new AutofillMsg_PreviewForm(host->GetRoutingID(), query_id, data));
       break;
   }
+}
+
+void ContentAutofillDriver::PingRenderer() {
+  if (!RendererIsAvailable())
+    return;
+  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
+  host->Send(new AutofillMsg_Ping(host->GetRoutingID()));
 }
 
 void ContentAutofillDriver::SendAutofillTypePredictionsToRenderer(
@@ -181,6 +188,9 @@ bool ContentAutofillDriver::OnMessageReceived(const IPC::Message& message) {
   IPC_MESSAGE_FORWARD(AutofillHostMsg_DidPreviewAutofillFormData,
                       autofill_manager_.get(),
                       AutofillManager::OnDidPreviewAutofillFormData)
+  IPC_MESSAGE_FORWARD(AutofillHostMsg_PingAck,
+                      &autofill_external_delegate_,
+                      AutofillExternalDelegate::OnPingAck)
   IPC_MESSAGE_FORWARD(AutofillHostMsg_DidFillAutofillFormData,
                       autofill_manager_.get(),
                       AutofillManager::OnDidFillAutofillFormData)
@@ -219,11 +229,11 @@ void ContentAutofillDriver::SetAutofillManager(
 
 void ContentAutofillDriver::NavigationEntryCommitted(
     const content::LoadCommittedDetails& load_details) {
-  autofill_manager_->delegate()->HideAutofillPopup();
+  autofill_manager_->client()->HideAutofillPopup();
 }
 
 void ContentAutofillDriver::WasHidden() {
-  autofill_manager_->delegate()->HideAutofillPopup();
+  autofill_manager_->client()->HideAutofillPopup();
 }
 
 }  // namespace autofill

@@ -151,19 +151,14 @@ MojoResult LocalDataPipe::ProducerEndWriteDataImplNoLock(
   return MOJO_RESULT_OK;
 }
 
-MojoWaitFlags LocalDataPipe::ProducerSatisfiedFlagsNoLock() {
-  MojoWaitFlags rv = MOJO_WAIT_FLAG_NONE;
-  if (consumer_open_no_lock() &&
-      (may_discard() || current_num_bytes_ < capacity_num_bytes()) &&
-      !producer_in_two_phase_write_no_lock())
-    rv |= MOJO_WAIT_FLAG_WRITABLE;
-  return rv;
-}
-
-MojoWaitFlags LocalDataPipe::ProducerSatisfiableFlagsNoLock() {
-  MojoWaitFlags rv = MOJO_WAIT_FLAG_NONE;
-  if (consumer_open_no_lock())
-    rv |= MOJO_WAIT_FLAG_WRITABLE;
+HandleSignalsState LocalDataPipe::ProducerGetHandleSignalsStateNoLock() const {
+  HandleSignalsState rv;
+  if (consumer_open_no_lock()) {
+    if ((may_discard() || current_num_bytes_ < capacity_num_bytes()) &&
+        !producer_in_two_phase_write_no_lock())
+      rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
+    rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_WRITABLE;
+  }
   return rv;
 }
 
@@ -278,17 +273,15 @@ MojoResult LocalDataPipe::ConsumerEndReadDataImplNoLock(
   return MOJO_RESULT_OK;
 }
 
-MojoWaitFlags LocalDataPipe::ConsumerSatisfiedFlagsNoLock() {
-  MojoWaitFlags rv = MOJO_WAIT_FLAG_NONE;
-  if (current_num_bytes_ > 0 && !consumer_in_two_phase_read_no_lock())
-    rv |= MOJO_WAIT_FLAG_READABLE;
-  return rv;
-}
-
-MojoWaitFlags LocalDataPipe::ConsumerSatisfiableFlagsNoLock() {
-  MojoWaitFlags rv = MOJO_WAIT_FLAG_NONE;
-  if (current_num_bytes_ > 0 || producer_open_no_lock())
-    rv |= MOJO_WAIT_FLAG_READABLE;
+HandleSignalsState LocalDataPipe::ConsumerGetHandleSignalsStateNoLock() const {
+  HandleSignalsState rv;
+  if (current_num_bytes_ > 0) {
+    if (!consumer_in_two_phase_read_no_lock())
+      rv.satisfied_signals |= MOJO_HANDLE_SIGNAL_READABLE;
+    rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
+  } else if (producer_open_no_lock()) {
+    rv.satisfiable_signals |= MOJO_HANDLE_SIGNAL_READABLE;
+  }
   return rv;
 }
 

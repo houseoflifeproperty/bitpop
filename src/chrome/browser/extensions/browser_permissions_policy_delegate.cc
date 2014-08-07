@@ -31,7 +31,6 @@ bool BrowserPermissionsPolicyDelegate::CanExecuteScriptOnPage(
     const GURL& document_url,
     const GURL& top_document_url,
     int tab_id,
-    const UserScript* script,
     int process_id,
     std::string* error) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -48,7 +47,7 @@ bool BrowserPermissionsPolicyDelegate::CanExecuteScriptOnPage(
       g_browser_process->profile_manager()->GetLoadedProfiles();
   for (std::vector<Profile*>::iterator profile = profiles.begin();
        profile != profiles.end(); ++profile) {
-    ChromeSigninClient* signin_client =
+    SigninClient* signin_client =
         ChromeSigninClientFactory::GetForProfile(*profile);
     if (signin_client && signin_client->IsSigninProcess(process_id)) {
       if (error)

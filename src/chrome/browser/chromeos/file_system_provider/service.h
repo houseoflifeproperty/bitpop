@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/files/file.h"
@@ -14,6 +15,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/threading/thread_checker.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/file_system_provider/observer.h"
 #include "chrome/browser/profiles/profile.h"
@@ -28,13 +30,24 @@ class EventRouter;
 class ExtensionRegistry;
 }  // namespace extensions
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}  // namespace user_prefs
+
 namespace chromeos {
 namespace file_system_provider {
+
+// Key names for preferences.
+extern const char kPrefKeyFileSystemId[];
+extern const char kPrefKeyFileSystemName[];
 
 class ProvidedFileSystemFactoryInterface;
 class ProvidedFileSystemInfo;
 class ProvidedFileSystemInterface;
 class ServiceFactory;
+
+// Registers preferences to remember registered file systems between reboots.
+void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
 // Manages and registers the file system provider service. Maintains provided
 // file systems.
@@ -51,23 +64,25 @@ class Service : public KeyedService,
 
   // Sets a custom ProvidedFileSystemInterface factory. Used by unit tests,
   // where an event router is not available.
-  void SetFileSystemFactoryForTests(
+  void SetFileSystemFactoryForTesting(
       const FileSystemFactoryCallback& factory_callback);
 
   // Mounts a file system provided by an extension with the |extension_id|.
-  // For success, it returns a numeric file system id, which is an
-  // auto-incremented non-zero value. For failures, it returns zero.
-  int MountFileSystem(const std::string& extension_id,
-                      const std::string& file_system_name);
+  // For success, returns true, otherwise false.
+  bool MountFileSystem(const std::string& extension_id,
+                       const std::string& file_system_id,
+                       const std::string& file_system_name);
 
   // Unmounts a file system with the specified |file_system_id| for the
   // |extension_id|. For success returns true, otherwise false.
-  bool UnmountFileSystem(const std::string& extension_id, int file_system_id);
+  bool UnmountFileSystem(const std::string& extension_id,
+                         const std::string& file_system_id);
 
   // Requests unmounting of the file system. The callback is called when the
   // request is accepted or rejected, with an error code. Returns false if the
   // request could not been created, true otherwise.
-  bool RequestUnmount(int file_system_id);
+  bool RequestUnmount(const std::string& extension_id,
+                      const std::string& file_system_id);
 
   // Returns a list of information of all currently provided file systems. All
   // items are copied.
@@ -77,7 +92,7 @@ class Service : public KeyedService,
   // the extension with |extension_id|. If not found, then returns NULL.
   ProvidedFileSystemInterface* GetProvidedFileSystem(
       const std::string& extension_id,
-      int file_system_id);
+      const std::string& file_system_id);
 
   // Returns a provided file system attached to the the passed
   // |mount_point_name|. If not found, then returns NULL.
@@ -96,23 +111,43 @@ class Service : public KeyedService,
       content::BrowserContext* browser_context,
       const extensions::Extension* extension,
       extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  virtual void OnExtensionLoaded(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension) OVERRIDE;
 
  private:
-  typedef std::map<int, ProvidedFileSystemInterface*> ProvidedFileSystemMap;
-  typedef std::map<std::string, int> MountPointNameToIdMap;
+  // Key is a pair of an extension id and file system id, which makes it
+  // unique among the entire service instance.
+  typedef std::pair<std::string, std::string> FileSystemKey;
+
+  typedef std::map<FileSystemKey, ProvidedFileSystemInterface*>
+      ProvidedFileSystemMap;
+  typedef std::map<std::string, FileSystemKey> MountPointNameToKeyMap;
 
   // Called when the providing extension accepts or refuses a unmount request.
   // If |error| is equal to FILE_OK, then the request is accepted.
   void OnRequestUnmountStatus(const ProvidedFileSystemInfo& file_system_info,
                               base::File::Error error);
 
+  // Saves a list of currently mounted file systems to preferences. Called
+  // from a destructor (on shutdown).
+  void RememberFileSystems();
+
+  // Removes all of the file systems mounted by the |extension_id| from
+  // preferences, so they are not loaded again after reboot.
+  void ForgetFileSystems(const std::string& extension_id);
+
+  // Restores from preferences file systems mounted previously by the
+  // |extension_id| providing extension.
+  void RestoreFileSystems(const std::string& extension_id);
+
   Profile* profile_;
   extensions::ExtensionRegistry* extension_registry_;  // Not owned.
   FileSystemFactoryCallback file_system_factory_;
   ObserverList<Observer> observers_;
   ProvidedFileSystemMap file_system_map_;  // Owns pointers.
-  MountPointNameToIdMap mount_point_name_to_id_map_;
-  int next_id_;
+  MountPointNameToKeyMap mount_point_name_to_key_map_;
+  base::ThreadChecker thread_checker_;
   base::WeakPtrFactory<Service> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Service);

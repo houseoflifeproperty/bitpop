@@ -22,7 +22,8 @@ void DriveServiceWrapper::AddNewDirectory(
     const std::string& parent_resource_id,
     const std::string& directory_title,
     const drive::DriveServiceInterface::AddNewDirectoryOptions& options,
-    const google_apis::GetResourceEntryCallback& callback) {
+    const google_apis::FileResourceCallback& callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
   drive_service_->AddNewDirectory(parent_resource_id,
                                   directory_title,
                                   options,
@@ -33,6 +34,7 @@ void DriveServiceWrapper::DeleteResource(
     const std::string& resource_id,
     const std::string& etag,
     const google_apis::EntryActionCallback& callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
   drive_service_->DeleteResource(resource_id,
                                  etag,
                                  callback);
@@ -44,6 +46,7 @@ void DriveServiceWrapper::DownloadFile(
     const google_apis::DownloadActionCallback& download_action_callback,
     const google_apis::GetContentCallback& get_content_callback,
     const google_apis::ProgressCallback& progress_callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
   drive_service_->DownloadFile(local_cache_path,
                                resource_id,
                                download_action_callback,
@@ -53,48 +56,50 @@ void DriveServiceWrapper::DownloadFile(
 
 void DriveServiceWrapper::GetAboutResource(
     const google_apis::AboutResourceCallback& callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
   drive_service_->GetAboutResource(callback);
 }
 
 void DriveServiceWrapper::GetChangeList(
     int64 start_changestamp,
-    const google_apis::GetResourceListCallback& callback) {
+    const google_apis::ChangeListCallback& callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
   drive_service_->GetChangeList(start_changestamp, callback);
 }
 
 void DriveServiceWrapper::GetRemainingChangeList(
     const GURL& next_link,
-    const google_apis::GetResourceListCallback& callback) {
+    const google_apis::ChangeListCallback& callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
   drive_service_->GetRemainingChangeList(next_link, callback);
 }
 
 void DriveServiceWrapper::GetRemainingFileList(
     const GURL& next_link,
-    const google_apis::GetResourceListCallback& callback) {
+    const google_apis::FileListCallback& callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
   drive_service_->GetRemainingFileList(next_link, callback);
 }
 
-void DriveServiceWrapper::GetResourceEntry(
+void DriveServiceWrapper::GetFileResource(
     const std::string& resource_id,
-    const google_apis::GetResourceEntryCallback& callback) {
-  drive_service_->GetResourceEntry(resource_id, callback);
+    const google_apis::FileResourceCallback& callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
+  drive_service_->GetFileResource(resource_id, callback);
 }
 
-void DriveServiceWrapper::GetResourceListInDirectory(
+void DriveServiceWrapper::GetFileListInDirectory(
     const std::string& directory_resource_id,
-    const google_apis::GetResourceListCallback& callback) {
-  drive_service_->GetResourceListInDirectory(directory_resource_id,
-                                             callback);
-}
-
-bool DriveServiceWrapper::HasRefreshToken() const {
-  return drive_service_->HasRefreshToken();
+    const google_apis::FileListCallback& callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
+  drive_service_->GetFileListInDirectory(directory_resource_id, callback);
 }
 
 void DriveServiceWrapper::RemoveResourceFromDirectory(
     const std::string& parent_resource_id,
     const std::string& resource_id,
     const google_apis::EntryActionCallback& callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
   drive_service_->RemoveResourceFromDirectory(
       parent_resource_id, resource_id, callback);
 }
@@ -102,7 +107,8 @@ void DriveServiceWrapper::RemoveResourceFromDirectory(
 void DriveServiceWrapper::SearchByTitle(
     const std::string& title,
     const std::string& directory_resource_id,
-    const google_apis::GetResourceListCallback& callback) {
+    const google_apis::FileListCallback& callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
   drive_service_->SearchByTitle(
       title, directory_resource_id, callback);
 }

@@ -16,6 +16,7 @@
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "base/threading/worker_pool.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_config_service.h"
 #include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
 #include "components/data_reduction_proxy/browser/http_auth_handler_data_reduction_proxy.h"
@@ -31,11 +32,14 @@
 #include "net/http/http_cache.h"
 #include "net/http/http_stream_factory.h"
 #include "net/proxy/proxy_service.h"
+#include "net/socket/next_proto.h"
+#include "net/ssl/default_server_bound_cert_store.h"
 #include "net/url_request/data_protocol_handler.h"
 #include "net/url_request/file_protocol_handler.h"
-#include "net/url_request/protocol_intercept_job_factory.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_intercepting_job_factory.h"
+#include "net/url_request/url_request_interceptor.h"
 
 using content::BrowserThread;
 using data_reduction_proxy::DataReductionProxySettings;
@@ -90,29 +94,35 @@ void PopulateNetworkSessionParams(
   params->network_delegate = context->network_delegate();
   params->http_server_properties = context->http_server_properties();
   params->net_log = context->net_log();
+
+  // TODO(sgurun) remove once crbug.com/329681 is fixed.
+  params->next_protos = net::NextProtosSpdy31();
+  params->use_alternate_protocols = true;
+
   ApplyCmdlineOverridesToNetworkSessionParams(params);
 }
 
 scoped_ptr<net::URLRequestJobFactory> CreateJobFactory(
-    content::ProtocolHandlerMap* protocol_handlers) {
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   scoped_ptr<AwURLRequestJobFactory> aw_job_factory(new AwURLRequestJobFactory);
   bool set_protocol = aw_job_factory->SetProtocolHandler(
-      content::kFileScheme,
+      url::kFileScheme,
       new net::FileProtocolHandler(
           content::BrowserThread::GetBlockingPool()->
               GetTaskRunnerWithShutdownBehavior(
                   base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)));
   DCHECK(set_protocol);
   set_protocol = aw_job_factory->SetProtocolHandler(
-      content::kDataScheme, new net::DataProtocolHandler());
+      url::kDataScheme, new net::DataProtocolHandler());
   DCHECK(set_protocol);
   set_protocol = aw_job_factory->SetProtocolHandler(
-      content::kBlobScheme,
-      (*protocol_handlers)[content::kBlobScheme].release());
+      url::kBlobScheme,
+      (*protocol_handlers)[url::kBlobScheme].release());
   DCHECK(set_protocol);
   set_protocol = aw_job_factory->SetProtocolHandler(
-      content::kFileSystemScheme,
-      (*protocol_handlers)[content::kFileSystemScheme].release());
+      url::kFileSystemScheme,
+      (*protocol_handlers)[url::kFileSystemScheme].release());
   DCHECK(set_protocol);
   set_protocol = aw_job_factory->SetProtocolHandler(
       content::kChromeUIScheme,
@@ -124,39 +134,34 @@ scoped_ptr<net::URLRequestJobFactory> CreateJobFactory(
   DCHECK(set_protocol);
   protocol_handlers->clear();
 
-  // Create a chain of URLRequestJobFactories. The handlers will be invoked
-  // in the order in which they appear in the protocol_handlers vector.
-  typedef std::vector<net::URLRequestJobFactory::ProtocolHandler*>
-      ProtocolHandlerVector;
-  ProtocolHandlerVector protocol_interceptors;
-
   // Note that even though the content:// scheme handler is created here,
   // it cannot be used by child processes until access to it is granted via
   // ChildProcessSecurityPolicy::GrantScheme(). This is done in
   // AwContentBrowserClient.
-  protocol_interceptors.push_back(
-      CreateAndroidContentProtocolHandler().release());
-  protocol_interceptors.push_back(
-      CreateAndroidAssetFileProtocolHandler().release());
+  request_interceptors.push_back(
+      CreateAndroidContentRequestInterceptor().release());
+  request_interceptors.push_back(
+      CreateAndroidAssetFileRequestInterceptor().release());
   // The AwRequestInterceptor must come after the content and asset file job
   // factories. This for WebViewClassic compatibility where it was not
   // possible to intercept resource loads to resolvable content:// and
   // file:// URIs.
   // This logical dependency is also the reason why the Content
-  // ProtocolHandler has to be added as a ProtocolInterceptJobFactory rather
-  // than via SetProtocolHandler.
-  protocol_interceptors.push_back(new AwRequestInterceptor());
+  // URLRequestInterceptor has to be added as an interceptor rather than as a
+  // ProtocolHandler.
+  request_interceptors.push_back(new AwRequestInterceptor());
 
   // The chain of responsibility will execute the handlers in reverse to the
   // order in which the elements of the chain are created.
   scoped_ptr<net::URLRequestJobFactory> job_factory(aw_job_factory.Pass());
-  for (ProtocolHandlerVector::reverse_iterator
-           i = protocol_interceptors.rbegin();
-       i != protocol_interceptors.rend();
+  for (content::URLRequestInterceptorScopedVector::reverse_iterator i =
+           request_interceptors.rbegin();
+       i != request_interceptors.rend();
        ++i) {
-    job_factory.reset(new net::ProtocolInterceptJobFactory(
+    job_factory.reset(new net::URLRequestInterceptingJobFactory(
         job_factory.Pass(), make_scoped_ptr(*i)));
   }
+  request_interceptors.weak_clear();
 
   return job_factory.Pass();
 }
@@ -185,7 +190,8 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
 
   net::URLRequestContextBuilder builder;
   builder.set_user_agent(GetUserAgent());
-  builder.set_network_delegate(new AwNetworkDelegate());
+  AwNetworkDelegate* aw_network_delegate = new AwNetworkDelegate();
+  builder.set_network_delegate(aw_network_delegate);
 #if !defined(DISABLE_FTP_SUPPORT)
   builder.set_ftp_enabled(false);  // Android WebView does not support ftp yet.
 #endif
@@ -194,13 +200,22 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
       AwContentBrowserClient::GetAcceptLangsImpl()));
   ApplyCmdlineOverridesToURLRequestContextBuilder(&builder);
 
-
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+  data_reduction_proxy::DataReductionProxyParams drp_params(
+      data_reduction_proxy::DataReductionProxyParams::kAllowed);
   builder.add_http_auth_handler_factory(
       data_reduction_proxy::HttpAuthHandlerDataReductionProxy::Scheme(),
       new data_reduction_proxy::HttpAuthHandlerDataReductionProxy::Factory(
-          DataReductionProxySettings::GetDataReductionProxies()));
+          drp_params.GetAllowedProxies()));
+#endif
 
   url_request_context_.reset(builder.Build());
+  server_bound_cert_service_.reset(
+      new net::ServerBoundCertService(
+          new net::DefaultServerBoundCertStore(NULL),
+          base::WorkerPool::GetTaskRunner(true)));
+  url_request_context_->set_server_bound_cert_service(
+      server_bound_cert_service_.get());
   // TODO(mnaganov): Fix URLRequestContextBuilder to use proper threads.
   net::HttpNetworkSession::Params network_session_params;
 
@@ -216,29 +231,31 @@ void AwURLRequestContextGetter::InitializeURLRequestContext() {
           20 * 1024 * 1024,  // 20M
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE)));
 
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
   AwBrowserContext* browser_context = AwBrowserContext::GetDefault();
   DCHECK(browser_context);
   DataReductionProxySettings* drp_settings =
       browser_context->GetDataReductionProxySettings();
-  DCHECK(drp_settings);
-  std::string drp_key = drp_settings->key();
-  // Only precache credentials if a key is available at URLRequestContext
-  // initialization.
-  if (!drp_key.empty()) {
-  DataReductionProxySettings::InitDataReductionProxySession(
-      main_cache->GetSession(), drp_settings->key());
+  if (drp_settings) {
+    aw_network_delegate->set_data_reduction_proxy_params(
+        drp_settings->params());
+    std::string drp_key = drp_settings->params()->key();
+    // Only precache credentials if a key is available at URLRequestContext
+    // initialization.
+    if (!drp_key.empty()) {
+    DataReductionProxySettings::InitDataReductionProxySession(
+        main_cache->GetSession(), &drp_params);
+    }
   }
+#endif
 
   main_http_factory_.reset(main_cache);
   url_request_context_->set_http_transaction_factory(main_cache);
   url_request_context_->set_cookie_store(cookie_store_);
 
-  job_factory_ = CreateJobFactory(&protocol_handlers_);
+  job_factory_ = CreateJobFactory(&protocol_handlers_,
+                                  request_interceptors_.Pass());
   url_request_context_->set_job_factory(job_factory_.get());
-
-  // TODO(sgurun) remove once crbug.com/329681 is fixed. Should be
-  // called only once.
-  net::HttpStreamFactory::EnableNpnSpdy31();
 }
 
 net::URLRequestContext* AwURLRequestContextGetter::GetURLRequestContext() {
@@ -254,9 +271,11 @@ AwURLRequestContextGetter::GetNetworkTaskRunner() const {
   return BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
 }
 
-void AwURLRequestContextGetter::SetProtocolHandlers(
-    content::ProtocolHandlerMap* protocol_handlers) {
+void AwURLRequestContextGetter::SetHandlersAndInterceptors(
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   std::swap(protocol_handlers_, *protocol_handlers);
+  request_interceptors_.swap(request_interceptors);
 }
 
 DataReductionProxyConfigService*

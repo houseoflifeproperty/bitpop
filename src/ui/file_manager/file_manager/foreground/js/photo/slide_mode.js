@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -290,7 +290,7 @@ SlideMode.prototype.enter = function(
     var selectedItem = this.getSelectedItem();
     // Show the selected item ASAP, then complete the initialization
     // (loading the ribbon thumbnails can take some time).
-    this.metadataCache_.get(selectedItem.getEntry(), Gallery.METADATA_TYPE,
+    this.metadataCache_.getOne(selectedItem.getEntry(), Gallery.METADATA_TYPE,
         function(metadata) {
           this.loadItem_(selectedItem.getEntry(), metadata,
               zoomFromRect && this.imageView_.createZoomEffect(zoomFromRect),
@@ -518,7 +518,7 @@ SlideMode.prototype.loadSelectedItem_ = function() {
             this.scheduleNextSlide_();
         }.bind(this));
   }.bind(this);
-  this.metadataCache_.get(
+  this.metadataCache_.getOne(
       selectedItem.getEntry(), Gallery.METADATA_TYPE, onMetadata);
 };
 
@@ -938,9 +938,14 @@ SlideMode.prototype.saveCurrentImage_ = function(callback) {
   this.showSpinner_(true);
   var metadataEncoder = ImageEncoder.encodeMetadata(
       this.selectedImageMetadata_.media, canvas, 1 /* quality */);
-
-  this.selectedImageMetadata_ = ContentProvider.ConvertContentMetadata(
+  var selectedImageMetadata = ContentProvider.ConvertContentMetadata(
       metadataEncoder.getMetadata(), this.selectedImageMetadata_);
+  if (selectedImageMetadata.filesystem)
+    selectedImageMetadata.filesystem.modificationTime = new Date();
+  this.selectedImageMetadata_ = selectedImageMetadata;
+  this.metadataCache_.set(oldEntry,
+                          Gallery.METADATA_TYPE,
+                          selectedImageMetadata);
 
   item.saveToFile(
       this.context_.saveDirEntry,
@@ -956,7 +961,7 @@ SlideMode.prototype.saveCurrentImage_ = function(callback) {
         var event = new Event('content');
         event.item = item;
         event.oldEntry = oldEntry;
-        event.metadata = this.selectedImageMetadata_;
+        event.metadata = selectedImageMetadata;
         this.dataModel_.dispatchEvent(event);
 
         // Allow changing the 'Overwrite original' setting only if the user

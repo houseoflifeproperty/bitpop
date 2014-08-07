@@ -51,7 +51,7 @@ v8::Local<v8::Script> V8ScriptRunner::compileScript(v8::Handle<v8::String> code,
     // Very small scripts are not worth the effort to store cached data.
     static const int minLengthForCachedData = 1024;
 
-    TRACE_EVENT0("v8", "v8.compile");
+    TRACE_EVENT1("v8", "v8.compile", "fileName", fileName.utf8());
     TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "V8Compile");
 
     // NOTE: For compatibility with WebCore, ScriptSourceCode's line starts at
@@ -88,10 +88,10 @@ v8::Local<v8::Script> V8ScriptRunner::compileScript(v8::Handle<v8::String> code,
 
 v8::Local<v8::Value> V8ScriptRunner::runCompiledScript(v8::Handle<v8::Script> script, ExecutionContext* context, v8::Isolate* isolate)
 {
-    TRACE_EVENT0("v8", "v8.run");
-    TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "V8Execution");
     if (script.IsEmpty())
         return v8::Local<v8::Value>();
+    TRACE_EVENT_SCOPED_SAMPLING_STATE("V8", "V8Execution");
+    TRACE_EVENT1("v8", "v8.run", "fileName", TRACE_STR_COPY(*v8::String::Utf8Value(script->GetUnboundScript()->GetScriptName())));
 
     if (V8RecursionScope::recursionLevel(isolate) >= kMaxRecursionDepth)
         return handleMaxRecursionDepthExceeded(isolate);

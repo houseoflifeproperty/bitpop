@@ -8,8 +8,8 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -329,9 +329,10 @@ TEST_F(BookmarkUndoServiceTest, UndoBookmarkRemoveAll) {
   new_folder = model->AddFolder(parent, 1, ASCIIToUTF16("folder"));
   model->AddURL(new_folder, 0, ASCIIToUTF16("b"), GURL("http://www.b.com"));
 
-  model->RemoveAll();
+  model->RemoveAllUserBookmarks();
 
-  // Test that the undo of RemoveAll restores all folders and bookmarks.
+  // Test that the undo of RemoveAllUserBookmarks restores all folders and
+  // bookmarks.
   undo_service->undo_manager()->Undo();
 
   ASSERT_EQ(2, model->other_node()->child_count());

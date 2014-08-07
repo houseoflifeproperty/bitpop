@@ -74,7 +74,6 @@ Layer::Layer()
       delegate_(NULL),
       owner_(NULL),
       cc_layer_(NULL),
-      scale_content_(true),
       device_scale_factor_(1.0f) {
   CreateWebLayer();
 }
@@ -99,7 +98,6 @@ Layer::Layer(LayerType type)
       delegate_(NULL),
       owner_(NULL),
       cc_layer_(NULL),
-      scale_content_(true),
       device_scale_factor_(1.0f) {
   CreateWebLayer();
 }
@@ -144,10 +142,15 @@ void Layer::SetCompositor(Compositor* compositor) {
   DCHECK(!compositor || !compositor_);
   DCHECK(!compositor || compositor->root_layer() == this);
   DCHECK(!parent_);
+  if (compositor_) {
+    RemoveAnimatorsInTreeFromCollection(
+        compositor_->layer_animator_collection());
+  }
   compositor_ = compositor;
   if (compositor) {
     OnDeviceScaleFactorChanged(compositor->device_scale_factor());
     SendPendingThreadedAnimations();
+    AddAnimatorsInTreeToCollection(compositor_->layer_animator_collection());
   }
 }
 
@@ -161,15 +164,21 @@ void Layer::Add(Layer* child) {
   child->OnDeviceScaleFactorChanged(device_scale_factor_);
   if (GetCompositor())
     child->SendPendingThreadedAnimations();
+  LayerAnimatorCollection* collection = GetLayerAnimatorCollection();
+  if (collection)
+    child->AddAnimatorsInTreeToCollection(collection);
 }
 
 void Layer::Remove(Layer* child) {
   // Current bounds are used to calculate offsets when layers are reparented.
   // Stop (and complete) an ongoing animation to update the bounds immediately.
-  if (child->GetAnimator()) {
-    child->GetAnimator()->StopAnimatingProperty(
-        ui::LayerAnimationElement::BOUNDS);
-  }
+  LayerAnimator* child_animator = child->animator_;
+  if (child_animator)
+    child_animator->StopAnimatingProperty(ui::LayerAnimationElement::BOUNDS);
+  LayerAnimatorCollection* collection = GetLayerAnimatorCollection();
+  if (collection)
+    child->RemoveAnimatorsInTreeFromCollection(collection);
+
   std::vector<Layer*>::iterator i =
       std::find(children_.begin(), children_.end(), child);
   DCHECK(i != children_.end());
@@ -232,6 +241,11 @@ gfx::Transform Layer::GetTargetTransform() const {
 
 void Layer::SetBounds(const gfx::Rect& bounds) {
   GetAnimator()->SetBounds(bounds);
+}
+
+void Layer::SetSubpixelPositionOffset(const gfx::Vector2dF offset) {
+  subpixel_position_offset_ = offset;
+  RecomputePosition();
 }
 
 gfx::Rect Layer::GetTargetBounds() const {
@@ -442,17 +456,6 @@ bool Layer::GetTargetTransformRelativeTo(const Layer* ancestor,
   return p == ancestor;
 }
 
-// static
-gfx::Transform Layer::ConvertTransformToCCTransform(
-    const gfx::Transform& transform,
-    float device_scale_factor) {
-  gfx::Transform cc_transform;
-  cc_transform.Scale(device_scale_factor, device_scale_factor);
-  cc_transform.PreconcatTransform(transform);
-  cc_transform.Scale(1.0f / device_scale_factor, 1.0f / device_scale_factor);
-  return cc_transform;
-}
-
 void Layer::SetFillsBoundsOpaquely(bool fills_bounds_opaquely) {
   if (fills_bounds_opaquely_ == fills_bounds_opaquely)
     return;
@@ -478,9 +481,8 @@ void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
   // TODO(piman): delegated_renderer_layer_ cleanup.
 
   cc_layer_->RemoveAllChildren();
-  if (parent_) {
-    DCHECK(parent_->cc_layer_);
-    parent_->cc_layer_->ReplaceChild(cc_layer_, new_layer);
+  if (cc_layer_->parent()) {
+    cc_layer_->parent()->ReplaceChild(cc_layer_, new_layer);
   }
   cc_layer_->SetLayerClient(NULL);
   cc_layer_->RemoveLayerAnimationEventObserver(this);
@@ -500,7 +502,7 @@ void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
     cc_layer_->AddChild(children_[i]->cc_layer_);
   }
   cc_layer_->SetLayerClient(this);
-  cc_layer_->SetAnchorPoint(gfx::PointF());
+  cc_layer_->SetTransformOrigin(gfx::Point3F());
   cc_layer_->SetContentsOpaque(fills_bounds_opaquely_);
   cc_layer_->SetForceRenderSurface(force_render_surface_);
   cc_layer_->SetIsDrawable(type_ != LAYER_NOT_DRAWN);
@@ -611,14 +613,19 @@ void Layer::SendDamagedRects() {
           sk_damaged.y(),
           sk_damaged.width(),
           sk_damaged.height());
-
-      gfx::Rect damaged_in_pixel = ConvertRectToPixel(this, damaged);
-      cc_layer_->SetNeedsDisplayRect(damaged_in_pixel);
+      cc_layer_->SetNeedsDisplayRect(damaged);
     }
     damaged_region_.setEmpty();
   }
   for (size_t i = 0; i < children_.size(); ++i)
     children_[i]->SendDamagedRects();
+}
+
+void Layer::CompleteAllAnimations() {
+  std::vector<scoped_refptr<LayerAnimator> > animators;
+  CollectAnimators(&animators);
+  std::for_each(animators.begin(), animators.end(),
+                std::mem_fun(&LayerAnimator::StopAnimating));
 }
 
 void Layer::SuppressPaint() {
@@ -634,9 +641,7 @@ void Layer::OnDeviceScaleFactorChanged(float device_scale_factor) {
     return;
   if (animator_.get())
     animator_->StopAnimatingProperty(LayerAnimationElement::TRANSFORM);
-  gfx::Transform transform = this->transform();
   device_scale_factor_ = device_scale_factor;
-  RecomputeCCTransformFromTransform(transform);
   RecomputeDrawsContentAndUVRect();
   RecomputePosition();
   SchedulePaint(gfx::Rect(bounds_.size()));
@@ -659,18 +664,8 @@ void Layer::PaintContents(SkCanvas* sk_canvas,
   TRACE_EVENT0("ui", "Layer::PaintContents");
   scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
       sk_canvas, device_scale_factor_));
-
-  bool scale_content = scale_content_;
-  if (scale_content) {
-    canvas->Save();
-    canvas->sk_canvas()->scale(SkFloatToScalar(device_scale_factor_),
-                               SkFloatToScalar(device_scale_factor_));
-  }
-
   if (delegate_)
     delegate_->OnPaintLayer(canvas.get());
-  if (scale_content)
-    canvas->Restore();
 }
 
 bool Layer::FillsBoundsCompletely() const { return fills_bounds_completely_; }
@@ -715,6 +710,15 @@ scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
 void Layer::OnAnimationStarted(const cc::AnimationEvent& event) {
   if (animator_.get())
     animator_->OnThreadedAnimationStarted(event);
+}
+
+void Layer::CollectAnimators(
+    std::vector<scoped_refptr<LayerAnimator> >* animators) {
+  if (IsAnimating())
+    animators->push_back(animator_);
+  std::for_each(children_.begin(), children_.end(),
+                std::bind2nd(std::mem_fun(&Layer::CollectAnimators),
+                             animators));
 }
 
 void Layer::StackRelativeTo(Layer* child, Layer* other, bool above) {
@@ -788,7 +792,7 @@ void Layer::SetBoundsFromAnimation(const gfx::Rect& bounds) {
 }
 
 void Layer::SetTransformFromAnimation(const gfx::Transform& transform) {
-  RecomputeCCTransformFromTransform(transform);
+  cc_layer_->SetTransform(transform);
 }
 
 void Layer::SetOpacityFromAnimation(float opacity) {
@@ -901,6 +905,11 @@ void Layer::RemoveThreadedAnimation(int animation_id) {
       pending_threaded_animations_.end());
 }
 
+LayerAnimatorCollection* Layer::GetLayerAnimatorCollection() {
+  Compositor* compositor = GetCompositor();
+  return compositor ? compositor->layer_animator_collection() : NULL;
+}
+
 void Layer::SendPendingThreadedAnimations() {
   for (cc::ScopedPtrVector<cc::Animation>::iterator it =
            pending_threaded_animations_.begin();
@@ -925,7 +934,7 @@ void Layer::CreateWebLayer() {
       content_layer_ = cc::ContentLayer::Create(this);
     cc_layer_ = content_layer_.get();
   }
-  cc_layer_->SetAnchorPoint(gfx::PointF());
+  cc_layer_->SetTransformOrigin(gfx::Point3F());
   cc_layer_->SetContentsOpaque(true);
   cc_layer_->SetIsDrawable(type_ != LAYER_NOT_DRAWN);
   cc_layer_->AddLayerAnimationEventObserver(this);
@@ -933,17 +942,8 @@ void Layer::CreateWebLayer() {
   RecomputePosition();
 }
 
-void Layer::RecomputeCCTransformFromTransform(const gfx::Transform& transform) {
-  cc_layer_->SetTransform(ConvertTransformToCCTransform(transform,
-                                                        device_scale_factor_));
-}
-
 gfx::Transform Layer::transform() const {
-  gfx::Transform transform;
-  transform.Scale(1.0f / device_scale_factor_, 1.0f / device_scale_factor_);
-  transform.PreconcatTransform(cc_layer_->transform());
-  transform.Scale(device_scale_factor_, device_scale_factor_);
-  return transform;
+  return cc_layer_->transform();
 }
 
 void Layer::RecomputeDrawsContentAndUVRect() {
@@ -958,16 +958,40 @@ void Layer::RecomputeDrawsContentAndUVRect() {
     texture_layer_->SetUV(uv_top_left, uv_bottom_right);
   } else if (delegated_renderer_layer_.get()) {
     size.SetToMin(frame_size_in_dip_);
-    delegated_renderer_layer_->SetDisplaySize(
-        ConvertSizeToPixel(this, frame_size_in_dip_));
   }
-  cc_layer_->SetBounds(ConvertSizeToPixel(this, size));
+  cc_layer_->SetBounds(size);
 }
 
 void Layer::RecomputePosition() {
-  cc_layer_->SetPosition(gfx::ScalePoint(
-        gfx::PointF(bounds_.x(), bounds_.y()),
-        device_scale_factor_));
+  cc_layer_->SetPosition(bounds_.origin() + subpixel_position_offset_);
+}
+
+void Layer::AddAnimatorsInTreeToCollection(
+    LayerAnimatorCollection* collection) {
+  DCHECK(collection);
+  if (IsAnimating())
+    animator_->AddToCollection(collection);
+  std::for_each(
+      children_.begin(),
+      children_.end(),
+      std::bind2nd(std::mem_fun(&Layer::AddAnimatorsInTreeToCollection),
+                   collection));
+}
+
+void Layer::RemoveAnimatorsInTreeFromCollection(
+    LayerAnimatorCollection* collection) {
+  DCHECK(collection);
+  if (IsAnimating())
+    animator_->RemoveFromCollection(collection);
+  std::for_each(
+      children_.begin(),
+      children_.end(),
+      std::bind2nd(std::mem_fun(&Layer::RemoveAnimatorsInTreeFromCollection),
+                   collection));
+}
+
+bool Layer::IsAnimating() const {
+  return animator_ && animator_->is_animating();
 }
 
 }  // namespace ui

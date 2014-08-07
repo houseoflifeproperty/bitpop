@@ -62,7 +62,7 @@ bool ParseUrl(ChromeAsyncExtensionFunction* function,
   }
   // Check against host permissions if needed.
   if (check_host_permissions &&
-      !PermissionsData::HasHostPermission(function->GetExtension(), *url)) {
+      !function->GetExtension()->permissions_data()->HasHostPermission(*url)) {
     function->SetError(ErrorUtils::FormatErrorMessage(
         keys::kNoHostPermissionsError, url->spec()));
     return false;

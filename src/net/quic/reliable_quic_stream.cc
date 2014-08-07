@@ -25,6 +25,34 @@ struct iovec MakeIovec(StringPiece data) {
   return iov;
 }
 
+size_t GetInitialStreamFlowControlWindowToSend(QuicSession* session) {
+  QuicVersion version = session->connection()->version();
+  if (version <= QUIC_VERSION_19) {
+    return session->config()->GetInitialFlowControlWindowToSend();
+  }
+
+  return session->config()->GetInitialStreamFlowControlWindowToSend();
+}
+
+size_t GetReceivedFlowControlWindow(QuicSession* session) {
+  QuicVersion version = session->connection()->version();
+  if (version <= QUIC_VERSION_19) {
+    if (session->config()->HasReceivedInitialFlowControlWindowBytes()) {
+      return session->config()->ReceivedInitialFlowControlWindowBytes();
+    }
+
+    return kDefaultFlowControlSendWindow;
+  }
+
+  // Version must be >= QUIC_VERSION_20, so we check for stream specific flow
+  // control window.
+  if (session->config()->HasReceivedInitialStreamFlowControlWindowBytes()) {
+    return session->config()->ReceivedInitialStreamFlowControlWindowBytes();
+  }
+
+  return kDefaultFlowControlSendWindow;
+}
+
 }  // namespace
 
 // Wrapper that aggregates OnAckNotifications for packets sent using
@@ -78,7 +106,7 @@ class ReliableQuicStream::ProxyAckNotifierDelegate
 
  protected:
   // Delegates are ref counted.
-  virtual ~ProxyAckNotifierDelegate() {
+  virtual ~ProxyAckNotifierDelegate() OVERRIDE {
   }
 
  private:
@@ -121,18 +149,17 @@ ReliableQuicStream::ReliableQuicStream(QuicStreamId id, QuicSession* session)
       write_side_closed_(false),
       fin_buffered_(false),
       fin_sent_(false),
+      fin_received_(false),
       rst_sent_(false),
+      rst_received_(false),
+      fec_policy_(FEC_PROTECT_OPTIONAL),
       is_server_(session_->is_server()),
       flow_controller_(
-          session_->connection()->version(),
-          id_,
-          is_server_,
-          session_->config()->HasReceivedInitialFlowControlWindowBytes() ?
-              session_->config()->ReceivedInitialFlowControlWindowBytes() :
-              kDefaultFlowControlSendWindow,
-          session_->connection()->max_flow_control_receive_window_bytes(),
-          session_->connection()->max_flow_control_receive_window_bytes()),
-      connection_flow_controller_(session_->connection()->flow_controller()) {
+          session_->connection(), id_, is_server_,
+          GetReceivedFlowControlWindow(session),
+          GetInitialStreamFlowControlWindowToSend(session),
+          GetInitialStreamFlowControlWindowToSend(session)),
+      connection_flow_controller_(session_->flow_controller()) {
 }
 
 ReliableQuicStream::~ReliableQuicStream() {
@@ -150,24 +177,27 @@ bool ReliableQuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
     return false;
   }
 
-  // This count include duplicate data received.
-  stream_bytes_read_ += frame.data.TotalBufferSize();
-
-  bool accepted = sequencer_.OnStreamFrame(frame);
-
-  if (flow_controller_.FlowControlViolation() ||
-      connection_flow_controller_->FlowControlViolation()) {
-    session_->connection()->SendConnectionClose(QUIC_FLOW_CONTROL_ERROR);
-    return false;
+  if (frame.fin) {
+    fin_received_ = true;
   }
-  MaybeSendWindowUpdate();
 
-  return accepted;
-}
+  // This count include duplicate data received.
+  size_t frame_payload_size = frame.data.TotalBufferSize();
+  stream_bytes_read_ += frame_payload_size;
 
-void ReliableQuicStream::MaybeSendWindowUpdate() {
-  flow_controller_.MaybeSendWindowUpdate(session()->connection());
-  connection_flow_controller_->MaybeSendWindowUpdate(session()->connection());
+  // Flow control is interested in tracking highest received offset.
+  if (MaybeIncreaseHighestReceivedOffset(frame.offset + frame_payload_size)) {
+    // As the highest received offset has changed, we should check to see if
+    // this is a violation of flow control.
+    if (flow_controller_.FlowControlViolation() ||
+        connection_flow_controller_->FlowControlViolation()) {
+      session_->connection()->SendConnectionClose(
+          QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA);
+      return false;
+    }
+  }
+
+  return sequencer_.OnStreamFrame(frame);
 }
 
 int ReliableQuicStream::num_frames_received() const {
@@ -179,6 +209,9 @@ int ReliableQuicStream::num_duplicate_frames_received() const {
 }
 
 void ReliableQuicStream::OnStreamReset(const QuicRstStreamFrame& frame) {
+  rst_received_ = true;
+  MaybeIncreaseHighestReceivedOffset(frame.byte_offset);
+
   stream_error_ = frame.error_code;
   CloseWriteSide();
   CloseReadSide();
@@ -298,8 +331,8 @@ void ReliableQuicStream::OnCanWrite() {
 }
 
 void ReliableQuicStream::MaybeSendBlocked() {
-  flow_controller_.MaybeSendBlocked(session()->connection());
-  connection_flow_controller_->MaybeSendBlocked(session()->connection());
+  flow_controller_.MaybeSendBlocked();
+  connection_flow_controller_->MaybeSendBlocked();
   // If we are connection level flow control blocked, then add the stream
   // to the write blocked list. It will be given a chance to write when a
   // connection level WINDOW_UPDATE arrives.
@@ -353,7 +386,8 @@ QuicConsumedData ReliableQuicStream::WritevData(
   data.AppendIovecAtMostBytes(iov, iov_count, write_length);
 
   QuicConsumedData consumed_data = session()->WritevData(
-      id(), data, stream_bytes_written_, fin, ack_notifier_delegate);
+      id(), data, stream_bytes_written_, fin, GetFecProtection(),
+      ack_notifier_delegate);
   stream_bytes_written_ += consumed_data.bytes_consumed;
 
   AddBytesSent(consumed_data.bytes_consumed);
@@ -372,6 +406,10 @@ QuicConsumedData ReliableQuicStream::WritevData(
     session_->MarkWriteBlocked(id(), EffectivePriority());
   }
   return consumed_data;
+}
+
+FecProtection ReliableQuicStream::GetFecProtection() {
+  return fec_policy_ == FEC_PROTECT_ALWAYS ? MUST_FEC_PROTECT : MAY_FEC_PROTECT;
 }
 
 void ReliableQuicStream::CloseReadSide() {
@@ -417,6 +455,14 @@ void ReliableQuicStream::OnClose() {
                             stream_bytes_written_);
     rst_sent_ = true;
   }
+
+  // We are closing the stream and will not process any further incoming bytes.
+  // As there may be more bytes in flight and we need to ensure that both
+  // endpoints have the same connection level flow control state, mark all
+  // unreceived or buffered bytes as consumed.
+  uint64 bytes_to_consume = flow_controller_.highest_received_byte_offset() -
+      flow_controller_.bytes_consumed();
+  AddBytesConsumed(bytes_to_consume);
 }
 
 void ReliableQuicStream::OnWindowUpdateFrame(
@@ -436,18 +482,21 @@ void ReliableQuicStream::OnWindowUpdateFrame(
   }
 }
 
-void ReliableQuicStream::AddBytesBuffered(uint64 bytes) {
+bool ReliableQuicStream::MaybeIncreaseHighestReceivedOffset(uint64 new_offset) {
   if (flow_controller_.IsEnabled()) {
-    flow_controller_.AddBytesBuffered(bytes);
-    connection_flow_controller_->AddBytesBuffered(bytes);
+    uint64 increment =
+        new_offset - flow_controller_.highest_received_byte_offset();
+    if (flow_controller_.UpdateHighestReceivedOffset(new_offset)) {
+      // If |new_offset| increased the stream flow controller's highest received
+      // offset, then we need to increase the connection flow controller's value
+      // by the incremental difference.
+      connection_flow_controller_->UpdateHighestReceivedOffset(
+          connection_flow_controller_->highest_received_byte_offset() +
+          increment);
+      return true;
+    }
   }
-}
-
-void ReliableQuicStream::RemoveBytesBuffered(uint64 bytes) {
-  if (flow_controller_.IsEnabled()) {
-    flow_controller_.RemoveBytesBuffered(bytes);
-    connection_flow_controller_->RemoveBytesBuffered(bytes);
-  }
+  return false;
 }
 
 void ReliableQuicStream::AddBytesSent(uint64 bytes) {
@@ -459,7 +508,11 @@ void ReliableQuicStream::AddBytesSent(uint64 bytes) {
 
 void ReliableQuicStream::AddBytesConsumed(uint64 bytes) {
   if (flow_controller_.IsEnabled()) {
-    flow_controller_.AddBytesConsumed(bytes);
+    // Only adjust stream level flow controller if we are still reading.
+    if (!read_side_closed_) {
+      flow_controller_.AddBytesConsumed(bytes);
+    }
+
     connection_flow_controller_->AddBytesConsumed(bytes);
   }
 }

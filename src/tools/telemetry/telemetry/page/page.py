@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -6,8 +6,6 @@ import inspect
 import os
 import re
 import urlparse
-
-from telemetry.page.actions.navigate import NavigateAction
 
 
 class Page(object):
@@ -41,7 +39,17 @@ class Page(object):
         raise ValueError('startup_url with local file scheme is not supported')
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
+    action_runner.NavigateToPage(self)
+
+  def CanRunOnBrowser(self, browser_info):
+    """Override this to returns whether this page can be run on specific
+    browser.
+
+    Args:
+      browser_info: an instance of telemetry.core.browser_info.BrowserInfo
+    """
+    assert browser_info
+    return True
 
   @property
   def page_set(self):

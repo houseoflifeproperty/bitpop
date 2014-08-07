@@ -440,7 +440,7 @@ static ssize_t RecvRequest(struct NaClSrpcMessageChannel* channel,
     NaClSrpcLog(NACL_SRPC_LOG_ERROR,
                 "RecvRequest:"
                 "NaClSrpcMessageChannelPeek incomplete: expected %"
-                NACL_PRIdS", got %"NACL_PRIdS"\n",
+                NACL_PRIuS", got %"NACL_PRIdS"\n",
                 expected_bytes,
                 retval);
     retval = ErrnoFromImcRet(retval);
@@ -482,7 +482,7 @@ static ssize_t RecvRequest(struct NaClSrpcMessageChannel* channel,
     NaClSrpcLog(NACL_SRPC_LOG_ERROR,
                 "RecvRequest:"
                 " NaClSrpcMessageChannelReceive incomplete: expected %"
-                NACL_PRIdS", got %"NACL_PRIdS"\n",
+                NACL_PRIuS", got %"NACL_PRIdS"\n",
                 expected_bytes,
                 retval);
     retval = ErrnoFromImcRet(retval);
@@ -544,13 +544,18 @@ static BoolValue CheckMatchAndCopyCounts(size_t vec_len,
         /*
          * Returned strings are allocated by the SRPC transport mechanism,
          * whereas all the other "array" types are allocated by the caller
-         * of the respective Invoke routine.
+         * of the respective Invoke routine.  The caller does allocate a
+         * stub "template" string, which is strdup("") and needs to be freed.
          */
-        expected[i]->arrays.oval = malloc(peeked[i]->u.count);
-        if (expected[i]->arrays.oval == NULL) {
-          return BoolFalse;
+        {
+          void *buffer = malloc(peeked[i]->u.count);
+          if (buffer == NULL) {
+            return BoolFalse;
+          }
+          free(expected[i]->arrays.oval);
+          expected[i]->arrays.oval = buffer;
+          expected[i]->u.count = peeked[i]->u.count;
         }
-        expected[i]->u.count = peeked[i]->u.count;
         break;
 
       case NACL_SRPC_ARG_TYPE_CHAR_ARRAY:
@@ -635,7 +640,7 @@ static ssize_t RecvResponse(struct NaClSrpcMessageChannel* channel,
   if (retval < (ssize_t) expected_bytes) {
     NaClSrpcLog(NACL_SRPC_LOG_ERROR,
                 "RecvResponse: NaClSrpcMessageChannelPeek incomplete: "
-                "expected %"NACL_PRIdS", got %"NACL_PRIdS"\n",
+                "expected %"NACL_PRIuS", got %"NACL_PRIdS"\n",
                 expected_bytes,
                 retval);
     retval = ErrnoFromImcRet(retval);
@@ -679,7 +684,7 @@ static ssize_t RecvResponse(struct NaClSrpcMessageChannel* channel,
   if (retval < (ssize_t) expected_bytes) {
     NaClSrpcLog(NACL_SRPC_LOG_ERROR,
                 "RecvResponse: NaClSrpcMessageChannelReceive incomplete: "
-                "expected %"NACL_PRIdS", got %"NACL_PRIdS"\n",
+                "expected %"NACL_PRIuS", got %"NACL_PRIdS"\n",
                 expected_bytes,
                 retval);
     retval = ErrnoFromImcRet(retval);
@@ -839,7 +844,7 @@ static ssize_t SrpcSendMessage(NaClSrpcRpc* rpc,
   if (retval >= 0  && retval < (ssize_t) expected_bytes) {
     NaClSrpcLog(NACL_SRPC_LOG_ERROR,
                 "SrpcSendMessage: NaClSrpcMessageChannelSend incomplete: "
-                "expected %"NACL_PRIdS", got %"NACL_PRIdS"\n",
+                "expected %"NACL_PRIuS", got %"NACL_PRIdS"\n",
                 expected_bytes,
                 retval);
     return -NACL_ABI_EIO;

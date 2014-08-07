@@ -6,12 +6,12 @@
 
 #include <string>
 
+#include "base/at_exit.h"
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "mojo/common/time_helper.h"
-#include "mojo/public/cpp/environment/environment.h"
 #include "mojo/public/cpp/system/core.h"
 #include "mojo/public/cpp/test_support/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,6 +19,13 @@
 namespace mojo {
 namespace common {
 namespace test {
+
+void ObserveCallback(bool* was_signaled,
+                     MojoResult* result_observed,
+                     MojoResult result) {
+  *was_signaled = true;
+  *result_observed = result;
+}
 
 void RunUntilIdle() {
   base::RunLoop run_loop;
@@ -71,8 +78,8 @@ class CallbackHelper {
   void StartWithCallback(HandleWatcher* watcher,
                          const MessagePipeHandle& handle,
                          const base::Callback<void(MojoResult)>& callback) {
-    watcher->Start(handle, MOJO_WAIT_FLAG_READABLE, MOJO_DEADLINE_INDEFINITE,
-                   callback);
+    watcher->Start(handle, MOJO_HANDLE_SIGNAL_READABLE,
+                   MOJO_DEADLINE_INDEFINITE, callback);
   }
 
  private:
@@ -101,14 +108,6 @@ class HandleWatcherTest : public testing::Test {
     test::SetTickClockForTest(NULL);
   }
 
-  virtual void SetUp() OVERRIDE {
-    environment_.reset(new Environment);
-  }
-
-  virtual void TearDown() OVERRIDE {
-    environment_.reset();
-  }
-
  protected:
   void InstallTickClock() {
     test::SetTickClockForTest(&tick_clock_);
@@ -117,8 +116,8 @@ class HandleWatcherTest : public testing::Test {
   base::SimpleTestTickClock tick_clock_;
 
  private:
+  base::ShadowingAtExitManager at_exit_;
   base::MessageLoop message_loop_;
-  scoped_ptr<Environment> environment_;
 
   DISALLOW_COPY_AND_ASSIGN(HandleWatcherTest);
 };
@@ -280,7 +279,7 @@ TEST_F(HandleWatcherTest, Deadline) {
 
   // Add another watcher wth a timeout of 500 microseconds.
   HandleWatcher watcher2;
-  watcher2.Start(test_pipe2.handle0.get(), MOJO_WAIT_FLAG_READABLE, 500,
+  watcher2.Start(test_pipe2.handle0.get(), MOJO_HANDLE_SIGNAL_READABLE, 500,
                  callback_helper2.GetCallback());
   RunUntilIdle();
   EXPECT_FALSE(callback_helper1.got_callback());
@@ -313,6 +312,28 @@ TEST_F(HandleWatcherTest, DeleteInCallback) {
                                            std::string()));
   callback_helper.RunUntilGotCallback();
   EXPECT_TRUE(callback_helper.got_callback());
+}
+
+TEST(HandleWatcherCleanEnvironmentTest, AbortedOnMessageLoopDestruction) {
+  bool was_signaled = false;
+  MojoResult result = MOJO_RESULT_OK;
+
+  base::ShadowingAtExitManager at_exit;
+  MessagePipe pipe;
+  HandleWatcher watcher;
+  {
+    base::MessageLoop loop;
+
+    watcher.Start(pipe.handle0.get(),
+                  MOJO_HANDLE_SIGNAL_READABLE,
+                  MOJO_DEADLINE_INDEFINITE,
+                  base::Bind(&ObserveCallback, &was_signaled, &result));
+
+    // Now, let the MessageLoop get torn down. We expect our callback to run.
+  }
+
+  EXPECT_TRUE(was_signaled);
+  EXPECT_EQ(MOJO_RESULT_ABORTED, result);
 }
 
 }  // namespace test

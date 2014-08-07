@@ -21,10 +21,10 @@
 #include "config.h"
 #include "core/html/HTMLDetailsElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/EventSender.h"
@@ -47,7 +47,7 @@ static DetailsEventSender& detailsToggleEventSender()
 
 PassRefPtrWillBeRawPtr<HTMLDetailsElement> HTMLDetailsElement::create(Document& document)
 {
-    RefPtrWillBeRawPtr<HTMLDetailsElement> details = adoptRefWillBeRefCountedGarbageCollected(new HTMLDetailsElement(document));
+    RefPtrWillBeRawPtr<HTMLDetailsElement> details = adoptRefWillBeNoop(new HTMLDetailsElement(document));
     details->ensureUserAgentShadowRoot();
     return details.release();
 }
@@ -80,16 +80,16 @@ void HTMLDetailsElement::didAddUserAgentShadowRoot(ShadowRoot& root)
 {
     DEFINE_STATIC_LOCAL(const AtomicString, summarySelector, ("summary:first-of-type", AtomicString::ConstructFromLiteral));
 
-    RefPtr<HTMLSummaryElement> defaultSummary = HTMLSummaryElement::create(document());
+    RefPtrWillBeRawPtr<HTMLSummaryElement> defaultSummary = HTMLSummaryElement::create(document());
     defaultSummary->appendChild(Text::create(document(), locale().queryString(blink::WebLocalizedString::DetailsLabel)));
 
-    RefPtr<HTMLContentElement> summary = HTMLContentElement::create(document());
+    RefPtrWillBeRawPtr<HTMLContentElement> summary = HTMLContentElement::create(document());
     summary->setIdAttribute(ShadowElementNames::detailsSummary());
     summary->setAttribute(selectAttr, summarySelector);
     summary->appendChild(defaultSummary);
     root.appendChild(summary.release());
 
-    RefPtr<HTMLDivElement> content = HTMLDivElement::create(document());
+    RefPtrWillBeRawPtr<HTMLDivElement> content = HTMLDivElement::create(document());
     content->setIdAttribute(ShadowElementNames::detailsContent());
     content->appendChild(HTMLContentElement::create(document()));
     content->setInlineStyleProperty(CSSPropertyDisplay, CSSValueNone);

@@ -24,7 +24,6 @@
 
 #include "core/rendering/svg/RenderSVGGradientStop.h"
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
@@ -37,10 +36,7 @@ inline SVGStopElement::SVGStopElement(Document& document)
     addToPropertyMap(m_offset);
 }
 
-PassRefPtr<SVGStopElement> SVGStopElement::create(Document& document)
-{
-    return adoptRef(new SVGStopElement(document));
-}
+DEFINE_NODE_FACTORY(SVGStopElement)
 
 bool SVGStopElement::isSupportedAttribute(const QualifiedName& attrName)
 {

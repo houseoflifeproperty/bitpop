@@ -16,14 +16,15 @@ NinjaActionTargetWriter::NinjaActionTargetWriter(const Target* target,
     : NinjaTargetWriter(target, toolchain, out),
       path_output_no_escaping_(
           target->settings()->build_settings()->build_dir(),
-          ESCAPE_NONE, false) {
+          ESCAPE_NONE) {
 }
 
 NinjaActionTargetWriter::~NinjaActionTargetWriter() {
 }
 
 void NinjaActionTargetWriter::Run() {
-  FileTemplate args_template(target_->action_values().args());
+  FileTemplate args_template(target_->settings(),
+                             target_->action_values().args());
   std::string custom_rule_name = WriteRuleDefinition(args_template);
 
   // Collect our deps to pass as "extra hard dependencies" for input deps. This
@@ -57,10 +58,6 @@ void NinjaActionTargetWriter::Run() {
     // Write a rule that invokes the script once with the outputs as outputs,
     // and the data as inputs.
     out_ << "build";
-    if (target_->action_values().has_depfile()) {
-      out_ << " ";
-      WriteDepfile(SourceFile());
-    }
     const Target::FileList& outputs = target_->action_values().outputs();
     for (size_t i = 0; i < outputs.size(); i++) {
       OutputFile output_path(
@@ -140,15 +137,11 @@ std::string NinjaActionTargetWriter::WriteRuleDefinition(
 void NinjaActionTargetWriter::WriteArgsSubstitutions(
     const SourceFile& source,
     const FileTemplate& args_template) {
-  std::ostringstream source_file_stream;
-  path_output_no_escaping_.WriteFile(source_file_stream, source);
-
   EscapeOptions template_escape_options;
-  template_escape_options.mode = ESCAPE_NINJA_SHELL;
-  template_escape_options.inhibit_quoting = true;
+  template_escape_options.mode = ESCAPE_NINJA_COMMAND;
 
   args_template.WriteNinjaVariablesForSubstitution(
-      out_, source_file_stream.str(), template_escape_options);
+      out_, target_->settings(), source, template_escape_options);
 }
 
 void NinjaActionTargetWriter::WriteSourceRules(
@@ -212,14 +205,8 @@ void NinjaActionTargetWriter::WriteOutputFilesForBuildLine(
     const FileTemplate& output_template,
     const SourceFile& source,
     std::vector<OutputFile>* output_files) {
-  // If there is a depfile specified we need to list it as the first output as
-  // that is what ninja will expect the depfile to refer to itself as.
-  if (target_->action_values().has_depfile()) {
-    out_ << " ";
-    WriteDepfile(source);
-  }
   std::vector<std::string> output_template_result;
-  output_template.ApplyString(source.value(), &output_template_result);
+  output_template.Apply(source, &output_template_result);
   for (size_t out_i = 0; out_i < output_template_result.size(); out_i++) {
     OutputFile output_path(output_template_result[out_i]);
     output_files->push_back(output_path);
@@ -230,7 +217,7 @@ void NinjaActionTargetWriter::WriteOutputFilesForBuildLine(
 
 void NinjaActionTargetWriter::WriteDepfile(const SourceFile& source) {
   std::vector<std::string> result;
-  GetDepfileTemplate().ApplyString(source.value(), &result);
+  GetDepfileTemplate().Apply(source, &result);
   path_output_.WriteFile(out_, OutputFile(result[0]));
 }
 
@@ -240,5 +227,5 @@ FileTemplate NinjaActionTargetWriter::GetDepfileTemplate() const {
       RemovePrefix(target_->action_values().depfile().value(),
                    settings_->build_settings()->build_dir().value());
   template_args.push_back(depfile_relative_to_build_dir);
-  return FileTemplate(template_args);
+  return FileTemplate(settings_, template_args);
 }

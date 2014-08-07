@@ -42,7 +42,7 @@ DEFAULT_SIZES_ENV_VAR = "CHROME_REMOTE_DESKTOP_DEFAULT_DESKTOP_SIZES"
 # with large or multiple monitors. This is a comma-separated list of
 # resolutions that will be made available if the X server supports RANDR. These
 # defaults can be overridden in ~/.profile.
-DEFAULT_SIZES = "1600x1200,3840x1600"
+DEFAULT_SIZES = "1600x1200,3840x2560"
 
 # If RANDR is not available, use a smaller default size. Only a single
 # resolution is supported in this case.
@@ -303,8 +303,6 @@ class Desktop:
     try:
       if not os.path.exists(pulse_path):
         os.mkdir(pulse_path)
-      if not os.path.exists(pipe_name):
-        os.mkfifo(pipe_name)
     except IOError, e:
       logging.error("Failed to create pulseaudio pipe: " + str(e))
       return False
@@ -502,14 +500,15 @@ class Desktop:
     self.host_proc.stdin.close()
 
 
-def get_daemon_pid():
+def get_daemon_proc():
   """Checks if there is already an instance of this script running, and returns
-  its PID.
+  a psutil.Process instance for it.
 
   Returns:
-    The process ID of the existing daemon process, or 0 if the daemon is not
-    running.
+    A Process instance for the existing daemon process, or None if the daemon
+    is not running.
   """
+
   uid = os.getuid()
   this_pid = os.getpid()
 
@@ -537,11 +536,11 @@ def get_daemon_pid():
       if len(cmdline) < 2:
         continue
       if cmdline[0] == sys.executable and cmdline[1] == sys.argv[0]:
-        return process.pid
+        return process
     except (psutil.NoSuchProcess, psutil.AccessDenied):
       continue
 
-  return 0
+  return None
 
 
 def choose_x_session():
@@ -979,8 +978,8 @@ Web Store: https://chrome.google.com/remotedesktop"""
   # Check for a modal command-line option (start, stop, etc.)
 
   if options.get_status:
-    pid = get_daemon_pid()
-    if pid != 0:
+    proc = get_daemon_proc()
+    if proc is not None:
       print "STARTED"
     elif is_supported_platform():
       print "STOPPED"
@@ -991,23 +990,28 @@ Web Store: https://chrome.google.com/remotedesktop"""
   # TODO(sergeyu): Remove --check-running once NPAPI plugin and NM host are
   # updated to always use get-status flag instead.
   if options.check_running:
-    pid = get_daemon_pid()
-    return 0 if pid != 0 else 1
+    proc = get_daemon_proc()
+    return 1 if proc is None else 0
 
   if options.stop:
-    pid = get_daemon_pid()
-    if pid == 0:
+    proc = get_daemon_proc()
+    if proc is None:
       print "The daemon is not currently running"
     else:
-      print "Killing process %s" % pid
-      os.kill(pid, signal.SIGTERM)
+      print "Killing process %s" % proc.pid
+      proc.terminate()
+      try:
+        proc.wait(timeout=30)
+      except psutil.TimeoutExpired:
+        print "Timed out trying to kill daemon process"
+        return 1
     return 0
 
   if options.reload:
-    pid = get_daemon_pid()
-    if pid == 0:
+    proc = get_daemon_proc()
+    if proc is None:
       return 1
-    os.kill(pid, signal.SIGHUP)
+    proc.send_signal(signal.SIGHUP)
     return 0
 
   if options.add_user:
@@ -1099,8 +1103,8 @@ Web Store: https://chrome.google.com/remotedesktop"""
 
   # Determine whether a desktop is already active for the specified host
   # host configuration.
-  pid = get_daemon_pid()
-  if pid != 0:
+  proc = get_daemon_proc()
+  if proc is not None:
     # Debian policy requires that services should "start" cleanly and return 0
     # if they are already running.
     print "Service already running."

@@ -12,11 +12,18 @@ namespace switches {
 // alongside the definition of their values in the .cc file.
 
 extern const char kDataReductionProxy[];
+extern const char kDataReductionProxyAlt[];
+extern const char kDataReductionProxyAltFallback[];
 extern const char kDataReductionProxyDev[];
 extern const char kDataReductionProxyFallback[];
 extern const char kDataReductionProxyKey[];
 extern const char kDataReductionProxyProbeURL[];
+extern const char kDataReductionProxyWarmupURL[];
+extern const char kDataReductionSSLProxy[];
+extern const char kDisableDataReductionProxyDev[];
+extern const char kEnableDataReductionProxyDev[];
 extern const char kEnableDataReductionProxy[];
+extern const char kEnableDataReductionProxyAlt[];
 
 }  // namespace switches
 }  // namespace data_reduction_proxy

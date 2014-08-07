@@ -11,3 +11,4 @@ class ChromiumWin(Master.Master1):
   master_port = 8085
   slave_port = 8185
   master_port_alt = 8285
+  buildbot_url = 'http://build.chromium.org/p/chromium.win/'

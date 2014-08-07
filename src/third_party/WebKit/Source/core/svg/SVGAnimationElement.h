@@ -57,10 +57,6 @@ enum CalcMode {
     CalcModeSpline
 };
 
-class ConditionEventListener;
-class TimeContainer;
-class SVGAnimatedType;
-
 class SVGAnimationElement : public SVGSMILElement,
                             public SVGTests {
 public:
@@ -80,7 +76,7 @@ public:
 
     static bool isTargetAttributeCSSProperty(SVGElement*, const QualifiedName&);
 
-    virtual bool isAdditive() const;
+    virtual bool isAdditive();
     bool isAccumulated() const;
     AnimationMode animationMode() const { return m_animationMode; }
     CalcMode calcMode() const { return m_calcMode; }
@@ -164,7 +160,6 @@ protected:
 
     virtual void setTargetElement(SVGElement*) OVERRIDE;
     virtual void setAttributeName(const QualifiedName&) OVERRIDE;
-    AnimatedPropertyType determineAnimatedPropertyType() const;
 
     bool hasInvalidCSSAttributeType() const { return m_hasInvalidCSSAttributeType; }
 

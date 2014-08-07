@@ -11,72 +11,41 @@
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate_observer.h"
-#include "ui/app_list/signin_delegate.h"
 #include "ui/app_list/test/app_list_test_model.h"
 #include "ui/gfx/image/image_skia.h"
 
 namespace app_list {
 namespace test {
 
-class TestSigninDelegate : public SigninDelegate {
- public:
-  TestSigninDelegate() : signed_in_(true) {}
-
-  void set_signed_in(bool signed_in) { signed_in_ = signed_in; }
-
-  // SigninDelegate overrides:
-  virtual bool NeedSignin() OVERRIDE { return !signed_in_; }
-  virtual void ShowSignin() OVERRIDE {}
-  virtual void OpenLearnMore() OVERRIDE {}
-  virtual void OpenSettings() OVERRIDE {}
-
-  virtual base::string16 GetSigninHeading() OVERRIDE {
-    return base::string16();
-  }
-  virtual base::string16 GetSigninText() OVERRIDE { return base::string16(); }
-  virtual base::string16 GetSigninButtonText() OVERRIDE {
-    return base::string16();
-  }
-  virtual base::string16 GetLearnMoreLinkText() OVERRIDE {
-    return base::string16();
-  }
-  virtual base::string16 GetSettingsLinkText() OVERRIDE {
-    return base::string16();
-  }
-
- private:
-  bool signed_in_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestSigninDelegate);
-};
-
 AppListTestViewDelegate::AppListTestViewDelegate()
     : dismiss_count_(0),
+      toggle_speech_recognition_count_(0),
       open_search_result_count_(0),
-      test_signin_delegate_(new TestSigninDelegate),
+      next_profile_app_count_(0),
       model_(new AppListTestModel),
       speech_ui_(SPEECH_RECOGNITION_OFF) {
+  model_->SetFoldersEnabled(true);
 }
 
 AppListTestViewDelegate::~AppListTestViewDelegate() {}
 
-void AppListTestViewDelegate::SetSignedIn(bool signed_in) {
-  test_signin_delegate_->set_signed_in(signed_in);
-  FOR_EACH_OBSERVER(AppListViewDelegateObserver,
-                    observers_,
-                    OnProfilesChanged());
+int AppListTestViewDelegate::GetToggleSpeechRecognitionCountAndReset() {
+  int count = toggle_speech_recognition_count_;
+  toggle_speech_recognition_count_ = 0;
+  return count;
 }
 
 bool AppListTestViewDelegate::ForceNativeDesktop() const {
   return false;
 }
 
-AppListModel* AppListTestViewDelegate::GetModel() {
-  return model_.get();
+void AppListTestViewDelegate::SetProfileByPath(
+    const base::FilePath& profile_path) {
+  ReplaceTestModel(next_profile_app_count_);
 }
 
-SigninDelegate* AppListTestViewDelegate::GetSigninDelegate() {
-  return test_signin_delegate_.get();
+AppListModel* AppListTestViewDelegate::GetModel() {
+  return model_.get();
 }
 
 SpeechUIModel* AppListTestViewDelegate::GetSpeechUI() {
@@ -114,16 +83,23 @@ void AppListTestViewDelegate::Dismiss() {
   ++dismiss_count_;
 }
 
+void AppListTestViewDelegate::ToggleSpeechRecognition() {
+  ++toggle_speech_recognition_count_;
+}
+
 gfx::ImageSkia AppListTestViewDelegate::GetWindowIcon() {
   return gfx::ImageSkia();
 }
 
-content::WebContents* AppListTestViewDelegate::GetStartPageContents() {
+#if defined(TOOLKIT_VIEWS)
+views::View* AppListTestViewDelegate::CreateStartPageWebView(
+    const gfx::Size& size) {
   return NULL;
 }
+#endif
 
-content::WebContents* AppListTestViewDelegate::GetSpeechRecognitionContents() {
-  return NULL;
+bool AppListTestViewDelegate::IsSpeechRecognitionEnabled() {
+  return false;
 }
 
 const AppListViewDelegate::Users& AppListTestViewDelegate::GetUsers() const {

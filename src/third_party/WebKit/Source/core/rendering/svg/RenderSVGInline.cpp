@@ -23,7 +23,6 @@
 
 #include "core/rendering/svg/RenderSVGInline.h"
 
-#include "SVGNames.h"
 #include "core/rendering/svg/RenderSVGText.h"
 #include "core/rendering/svg/SVGInlineFlowBox.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
@@ -78,22 +77,22 @@ FloatRect RenderSVGInline::strokeBoundingBox() const
     return FloatRect();
 }
 
-FloatRect RenderSVGInline::repaintRectInLocalCoordinates() const
+FloatRect RenderSVGInline::paintInvalidationRectInLocalCoordinates() const
 {
     if (const RenderObject* object = RenderSVGText::locateRenderSVGTextAncestor(this))
-        return object->repaintRectInLocalCoordinates();
+        return object->paintInvalidationRectInLocalCoordinates();
 
     return FloatRect();
 }
 
-LayoutRect RenderSVGInline::clippedOverflowRectForRepaint(const RenderLayerModelObject* repaintContainer) const
+LayoutRect RenderSVGInline::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
 {
-    return SVGRenderSupport::clippedOverflowRectForRepaint(this, repaintContainer);
+    return SVGRenderSupport::clippedOverflowRectForRepaint(this, paintInvalidationContainer);
 }
 
-void RenderSVGInline::computeFloatRectForRepaint(const RenderLayerModelObject* repaintContainer, FloatRect& repaintRect, bool fixed) const
+void RenderSVGInline::computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect& paintInvalidationRect, bool fixed) const
 {
-    SVGRenderSupport::computeFloatRectForRepaint(this, repaintContainer, repaintRect, fixed);
+    SVGRenderSupport::computeFloatRectForRepaint(this, paintInvalidationContainer, paintInvalidationRect, fixed);
 }
 
 void RenderSVGInline::mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState& transformState, MapCoordinatesFlags, bool* wasFixed) const

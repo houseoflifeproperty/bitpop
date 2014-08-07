@@ -12,7 +12,9 @@
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/chromeos/drive/sync/entry_revert_performer.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "google_apis/drive/drive_api_parser.h"
 
 using content::BrowserThread;
 
@@ -175,19 +177,19 @@ void RemovePerformer::UnparentResource(const ClientContext& context,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
-  scheduler_->GetResourceEntry(
+  scheduler_->GetFileResource(
       resource_id,
       context,
-      base::Bind(&RemovePerformer::UnparentResourceAfterGetResourceEntry,
+      base::Bind(&RemovePerformer::UnparentResourceAfterGetFileResource,
                  weak_ptr_factory_.GetWeakPtr(), context, callback, local_id));
 }
 
-void RemovePerformer::UnparentResourceAfterGetResourceEntry(
+void RemovePerformer::UnparentResourceAfterGetFileResource(
     const ClientContext& context,
     const FileOperationCallback& callback,
     const std::string& local_id,
     google_apis::GDataErrorCode status,
-    scoped_ptr<google_apis::ResourceEntry> resource_entry) {
+    scoped_ptr<google_apis::FileResource> file_resource) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!callback.is_null());
 
@@ -205,7 +207,8 @@ void RemovePerformer::UnparentResourceAfterGetResourceEntry(
 
   ResourceEntry entry;
   std::string parent_resource_id;
-  if (!ConvertToResourceEntry(*resource_entry, &entry, &parent_resource_id)) {
+  if (!ConvertFileResourceToResourceEntry(*file_resource, &entry,
+                                          &parent_resource_id)) {
     callback.Run(FILE_ERROR_NOT_A_FILE);
     return;
   }

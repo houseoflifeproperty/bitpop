@@ -10,6 +10,9 @@
 #include "content/common/service_worker/service_worker_messages.h"
 #include "content/renderer/service_worker/embedded_worker_context_client.h"
 #include "ipc/ipc_message.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerRequest.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebServiceWorkerContextClient.h"
 #include "third_party/WebKit/public/web/WebServiceWorkerContextProxy.h"
 
@@ -22,9 +25,10 @@ void SendPostMessageToDocumentOnMainThread(
     int routing_id,
     int client_id,
     const base::string16& message,
-    const std::vector<int>& message_port_ids) {
+    scoped_ptr<blink::WebMessagePortChannelArray> channels) {
   sender->Send(new ServiceWorkerHostMsg_PostMessageToDocument(
-      routing_id, client_id, message, message_port_ids));
+      routing_id, client_id, message,
+      WebMessagePortChannelImpl::ExtractMessagePortIDs(channels.release())));
 }
 
 }  // namespace
@@ -46,6 +50,7 @@ void ServiceWorkerScriptContext::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_FetchEvent, OnFetchEvent)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_InstallEvent, OnInstallEvent)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_SyncEvent, OnSyncEvent)
+    IPC_MESSAGE_HANDLER(ServiceWorkerMsg_PushEvent, OnPushEvent)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_MessageToWorker, OnPostMessage)
     IPC_MESSAGE_HANDLER(ServiceWorkerMsg_DidGetClientDocuments,
                         OnDidGetClientDocuments)
@@ -92,8 +97,8 @@ void ServiceWorkerScriptContext::GetClientDocuments(
 void ServiceWorkerScriptContext::PostMessageToDocument(
     int client_id,
     const base::string16& message,
-    const std::vector<int>& message_port_ids) {
-  // This may send IDs for MessagePorts, and all internal book-keeping
+    scoped_ptr<blink::WebMessagePortChannelArray> channels) {
+  // This may send channels for MessagePorts, and all internal book-keeping
   // messages for MessagePort (e.g. QueueMessages) are sent from main thread
   // (with thread hopping), so we need to do the same thread hopping here not
   // to overtake those messages.
@@ -101,7 +106,7 @@ void ServiceWorkerScriptContext::PostMessageToDocument(
       FROM_HERE,
       base::Bind(&SendPostMessageToDocumentOnMainThread,
                  make_scoped_refptr(embedded_context_->thread_safe_sender()),
-                 GetRoutingID(), client_id, message, message_port_ids));
+                 GetRoutingID(), client_id, message, base::Passed(&channels)));
 }
 
 void ServiceWorkerScriptContext::Send(IPC::Message* message) {
@@ -120,12 +125,28 @@ void ServiceWorkerScriptContext::OnInstallEvent(int request_id,
 void ServiceWorkerScriptContext::OnFetchEvent(
     int request_id,
     const ServiceWorkerFetchRequest& request) {
-  // TODO(falken): Pass in the request.
-  proxy_->dispatchFetchEvent(request_id);
+  blink::WebServiceWorkerRequest webRequest;
+  webRequest.setURL(blink::WebURL(request.url));
+  webRequest.setMethod(blink::WebString::fromUTF8(request.method));
+  for (std::map<std::string, std::string>::const_iterator it =
+           request.headers.begin();
+       it != request.headers.end();
+       ++it) {
+    webRequest.setHeader(blink::WebString::fromUTF8(it->first),
+                         blink::WebString::fromUTF8(it->second));
+  }
+  proxy_->dispatchFetchEvent(request_id, webRequest);
 }
 
 void ServiceWorkerScriptContext::OnSyncEvent(int request_id) {
   proxy_->dispatchSyncEvent(request_id);
+}
+
+void ServiceWorkerScriptContext::OnPushEvent(int request_id,
+                                             const std::string& data) {
+  proxy_->dispatchPushEvent(request_id, blink::WebString::fromUTF8(data));
+  Send(new ServiceWorkerHostMsg_PushEventFinished(
+      GetRoutingID(), request_id));
 }
 
 void ServiceWorkerScriptContext::OnPostMessage(

@@ -23,14 +23,19 @@
 
 struct ResourceMsg_RequestCompleteData;
 
+namespace blink {
+class WebThreadedDataReceiver;
+}
+
 namespace webkit_glue {
 class ResourceLoaderBridge;
-struct ResourceResponseInfo;
 }
 
 namespace content {
 class RequestPeer;
 class ResourceDispatcherDelegate;
+class ThreadedDataProvider;
+struct ResourceResponseInfo;
 struct RequestInfo;
 struct ResourceResponseHead;
 struct SiteIsolationResponseMetaData;
@@ -65,17 +70,22 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
   // request was found and removed.
   bool RemovePendingRequest(int request_id);
 
-  // Cancels a request in the |pending_requests_| list.
+  // Cancels a request in the |pending_requests_| list.  The request will be
+  // removed from the dispatcher as well.
   void CancelPendingRequest(int request_id);
 
   // Toggles the is_deferred attribute for the specified request.
   void SetDefersLoading(int request_id, bool value);
 
   // Indicates the priority of the specified request changed.
-  void DidChangePriority(int routing_id,
-                         int request_id,
+  void DidChangePriority(int request_id,
                          net::RequestPriority new_priority,
                          int intra_priority_value);
+
+  // The provided data receiver will receive incoming resource data rather
+  // than the resource bridge.
+  bool AttachThreadedDataReceiver(
+      int request_id, blink::WebThreadedDataReceiver* threaded_data_receiver);
 
   IPC::Sender* message_sender() const { return message_sender_; }
 
@@ -107,6 +117,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
     ~PendingRequestInfo();
 
     RequestPeer* peer;
+    ThreadedDataProvider* threaded_data_provider;
     ResourceType::Type resource_type;
     // The PID of the original process which issued this request. This gets
     // non-zero only for a request proxied by another renderer, particularly
@@ -145,6 +156,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
   void OnReceivedCachedMetadata(int request_id, const std::vector<char>& data);
   void OnReceivedRedirect(int request_id,
                           const GURL& new_url,
+                          const GURL& new_first_party_for_cookies,
                           const ResourceResponseHead& response_head);
   void OnSetDataBuffer(int request_id,
                        base::SharedMemoryHandle shm_handle,
@@ -166,10 +178,9 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
   // again in the deferred state.
   void FlushDeferredMessages(int request_id);
 
-  void ToResourceResponseInfo(
-      const PendingRequestInfo& request_info,
-      const ResourceResponseHead& browser_info,
-      webkit_glue::ResourceResponseInfo* renderer_info) const;
+  void ToResourceResponseInfo(const PendingRequestInfo& request_info,
+                              const ResourceResponseHead& browser_info,
+                              ResourceResponseInfo* renderer_info) const;
 
   base::TimeTicks ToRendererCompletionTime(
       const PendingRequestInfo& request_info,

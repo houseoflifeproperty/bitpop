@@ -7,7 +7,6 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/extensions/extension_icon_image.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -18,6 +17,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_icon_image.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/manifest_handlers/icons_handler.h"
@@ -31,7 +31,8 @@
 
 namespace {
 
-// For selected kChromeUIScheme and kAboutScheme, return the string resource
+// For selected kChromeUIScheme and url::kAboutScheme, return the string
+// resource
 // number for the title of the page. If we don't have a specialized title,
 // returns -1.
 int StringForChromeHost(const GURL& url) {
@@ -59,7 +60,7 @@ int StringForChromeHost(const GURL& url) {
   if (host == chrome::kChromeUIExtensionsHost)
     return IDS_MANAGE_EXTENSIONS_SETTING_WINDOWS_TITLE;
   if (host == chrome::kChromeUIHelpHost)
-    return IDS_ABOUT_TAB_TITLE;
+    return IDS_ABOUT_TITLE;
   if (host == chrome::kChromeUIHistoryHost)
     return IDS_HISTORY_TITLE;
   if (host == chrome::kChromeUINewTabHost)
@@ -111,35 +112,40 @@ bool OriginChipInfo::Update(const content::WebContents* web_contents,
                                         label_);
   }
 
-  if (displayed_url_.SchemeIs(extensions::kExtensionScheme)) {
-    icon_ = IDR_EXTENSIONS_FAVICON;
 
+  if (displayed_url_.SchemeIs(extensions::kExtensionScheme)) {
     const extensions::Extension* extension =
         extensions::ExtensionSystem::Get(profile_)->extension_service()->
             extensions()->GetExtensionOrAppByURL(displayed_url_);
-    extension_icon_image_.reset(
-        new extensions::IconImage(profile_,
-                                  extension,
-                                  extensions::IconsInfo::GetIcons(extension),
-                                  extension_misc::EXTENSION_ICON_BITTY,
-                                  extensions::util::GetDefaultAppIcon(),
-                                  owner_));
 
-    // Forces load of the image.
-    extension_icon_image_->image_skia().GetRepresentation(1.0f);
-    if (!extension_icon_image_->image_skia().image_reps().empty())
-      owner_->OnExtensionIconImageChanged(extension_icon_image_.get());
-  } else {
-    if (extension_icon_image_) {
-      extension_icon_image_.reset();
-      owner_->OnExtensionIconImageChanged(NULL);
+    if (extension) {
+      icon_ = IDR_EXTENSIONS_FAVICON;
+      extension_icon_image_.reset(
+          new extensions::IconImage(profile_,
+                                    extension,
+                                    extensions::IconsInfo::GetIcons(extension),
+                                    extension_misc::EXTENSION_ICON_BITTY,
+                                    extensions::util::GetDefaultAppIcon(),
+                                    owner_));
+
+      // Forces load of the image.
+      extension_icon_image_->image_skia().GetRepresentation(1.0f);
+      if (!extension_icon_image_->image_skia().image_reps().empty())
+        owner_->OnExtensionIconImageChanged(extension_icon_image_.get());
+
+      return true;
     }
-
-    icon_ = (displayed_url_.is_empty() ||
-             displayed_url_.SchemeIs(content::kChromeUIScheme)) ?
-        IDR_PRODUCT_LOGO_16 :
-        toolbar_model->GetIconForSecurityLevel(security_level_);
   }
+
+  if (extension_icon_image_) {
+    extension_icon_image_.reset();
+    owner_->OnExtensionIconImageChanged(NULL);
+  }
+
+  icon_ = (displayed_url_.is_empty() ||
+           displayed_url_.SchemeIs(content::kChromeUIScheme)) ?
+      IDR_PRODUCT_LOGO_16 :
+      toolbar_model->GetIconForSecurityLevel(security_level_);
 
   return true;
 }
@@ -172,7 +178,7 @@ base::string16 OriginChip::LabelFromURLForProfile(const GURL& provided_url,
 
   // About scheme pages. Currently all about: URLs other than about:blank
   // redirect to chrome: URLs, so this only affects about:blank.
-  if (url.SchemeIs(content::kAboutScheme))
+  if (url.SchemeIs(url::kAboutScheme))
     return base::UTF8ToUTF16(url.spec());
 
   // Chrome built-in pages.
@@ -192,7 +198,7 @@ base::string16 OriginChip::LabelFromURLForProfile(const GURL& provided_url,
         base::UTF8ToUTF16(extension->name()) : base::UTF8ToUTF16(url.host());
   }
 
-  if (url.SchemeIsHTTPOrHTTPS() || url.SchemeIs(content::kFtpScheme)) {
+  if (url.SchemeIsHTTPOrHTTPS() || url.SchemeIs(url::kFtpScheme)) {
     // See ToolbarModelImpl::GetText(). Does not pay attention to any user
     // edits, and uses GetURL/net::FormatUrl -- We don't really care about
     // length or the autocomplete parser.
@@ -225,14 +231,14 @@ base::string16 OriginChip::LabelFromURLForProfile(const GURL& provided_url,
   // to see. In these cases, the site chip will display the first
   // part of the full URL.
   if (url.SchemeIs(chrome::kChromeNativeScheme) ||
-      url.SchemeIs(content::kBlobScheme) ||
+      url.SchemeIs(url::kBlobScheme) ||
       url.SchemeIs(content::kChromeDevToolsScheme) ||
-      url.SchemeIs(content::kDataScheme) ||
-      url.SchemeIs(content::kFileScheme) ||
-      url.SchemeIs(content::kFileSystemScheme) ||
+      url.SchemeIs(url::kDataScheme) ||
+      url.SchemeIs(url::kFileScheme) ||
+      url.SchemeIs(url::kFileSystemScheme) ||
       url.SchemeIs(content::kGuestScheme) ||
-      url.SchemeIs(content::kJavaScriptScheme) ||
-      url.SchemeIs(content::kMailToScheme) ||
+      url.SchemeIs(url::kJavaScriptScheme) ||
+      url.SchemeIs(url::kMailToScheme) ||
       url.SchemeIs(content::kMetadataScheme) ||
       url.SchemeIs(content::kSwappedOutScheme)) {
     std::string truncated_url;

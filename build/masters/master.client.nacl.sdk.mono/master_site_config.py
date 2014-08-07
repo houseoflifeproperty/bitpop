@@ -11,3 +11,4 @@ class NativeClientSDKMono(Master.NaClBase):
   master_port = 8050
   slave_port = 8150
   master_port_alt = 8250
+  buildbot_url = 'http://build.chromium.org/p/client.nacl.sdk.mono/'

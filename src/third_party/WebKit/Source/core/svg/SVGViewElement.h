@@ -21,7 +21,7 @@
 #ifndef SVGViewElement_h
 #define SVGViewElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGFitToViewBox.h"
@@ -34,10 +34,12 @@ class SVGViewElement FINAL : public SVGElement,
                              public SVGFitToViewBox,
                              public SVGZoomAndPan {
 public:
-    static PassRefPtr<SVGViewElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGViewElement);
 
+#if !ENABLE(OILPAN)
     using SVGElement::ref;
     using SVGElement::deref;
+#endif
 
     SVGStringListTearOff* viewTarget() { return m_viewTarget->tearOff(); }
 

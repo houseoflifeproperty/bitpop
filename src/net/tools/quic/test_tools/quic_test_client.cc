@@ -12,7 +12,9 @@
 #include "net/quic/crypto/proof_verifier.h"
 #include "net/quic/quic_server_id.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
+#include "net/quic/test_tools/quic_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
+#include "net/quic/test_tools/reliable_quic_stream_peer.h"
 #include "net/tools/balsa/balsa_headers.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 #include "net/tools/quic/quic_packet_writer_wrapper.h"
@@ -23,8 +25,9 @@
 
 using base::StringPiece;
 using net::QuicServerId;
-using net::test::kInitialFlowControlWindowForTest;
 using net::test::QuicConnectionPeer;
+using net::test::QuicSessionPeer;
+using net::test::ReliableQuicStreamPeer;
 using std::string;
 using std::vector;
 
@@ -38,17 +41,18 @@ namespace {
 class RecordingProofVerifier : public ProofVerifier {
  public:
   // ProofVerifier interface.
-  virtual Status VerifyProof(const string& hostname,
-                             const string& server_config,
-                             const vector<string>& certs,
-                             const string& signature,
-                             const ProofVerifyContext* context,
-                             string* error_details,
-                             scoped_ptr<ProofVerifyDetails>* details,
-                             ProofVerifierCallback* callback) OVERRIDE {
+  virtual QuicAsyncStatus VerifyProof(
+      const string& hostname,
+      const string& server_config,
+      const vector<string>& certs,
+      const string& signature,
+      const ProofVerifyContext* context,
+      string* error_details,
+      scoped_ptr<ProofVerifyDetails>* details,
+      ProofVerifierCallback* callback) OVERRIDE {
     common_name_.clear();
     if (certs.empty()) {
-      return FAILURE;
+      return QUIC_FAILURE;
     }
 
     // Convert certs to X509Certificate.
@@ -59,11 +63,11 @@ class RecordingProofVerifier : public ProofVerifier {
     scoped_refptr<net::X509Certificate> cert =
         net::X509Certificate::CreateFromDERCertChain(cert_pieces);
     if (!cert.get()) {
-      return FAILURE;
+      return QUIC_FAILURE;
     }
 
     common_name_ = cert->subject().GetDisplayName();
-    return SUCCESS;
+    return QUIC_SUCCESS;
   }
 
   const string& common_name() const { return common_name_; }
@@ -100,12 +104,12 @@ MockableQuicClient::MockableQuicClient(
     IPEndPoint server_address,
     const QuicServerId& server_id,
     const QuicVersionVector& supported_versions,
-    uint32 initial_flow_control_window)
+    EpollServer* epoll_server)
     : QuicClient(server_address,
                  server_id,
                  supported_versions,
                  false,
-                 initial_flow_control_window),
+                 epoll_server),
       override_connection_id_(0),
       test_writer_(NULL) {}
 
@@ -114,12 +118,13 @@ MockableQuicClient::MockableQuicClient(
     const QuicServerId& server_id,
     const QuicConfig& config,
     const QuicVersionVector& supported_versions,
-    uint32 initial_flow_control_window)
+    EpollServer* epoll_server)
     : QuicClient(server_address,
                  server_id,
-                 config,
                  supported_versions,
-                 initial_flow_control_window),
+                 false,
+                 config,
+                 epoll_server),
       override_connection_id_(0),
       test_writer_(NULL) {}
 
@@ -162,7 +167,7 @@ QuicTestClient::QuicTestClient(IPEndPoint server_address,
                                                   false,
                                                   PRIVACY_MODE_DISABLED),
                                      supported_versions,
-                                     kInitialFlowControlWindowForTest)) {
+                                     &epoll_server_)) {
   Initialize(true);
 }
 
@@ -176,7 +181,7 @@ QuicTestClient::QuicTestClient(IPEndPoint server_address,
                                                   secure,
                                                   PRIVACY_MODE_DISABLED),
                                      supported_versions,
-                                     kInitialFlowControlWindowForTest)) {
+                                     &epoll_server_)) {
   Initialize(secure);
 }
 
@@ -185,8 +190,7 @@ QuicTestClient::QuicTestClient(
     const string& server_hostname,
     bool secure,
     const QuicConfig& config,
-    const QuicVersionVector& supported_versions,
-    uint32 client_initial_flow_control_receive_window)
+    const QuicVersionVector& supported_versions)
     : client_(
           new MockableQuicClient(server_address,
                                  QuicServerId(server_hostname,
@@ -195,7 +199,7 @@ QuicTestClient::QuicTestClient(
                                               PRIVACY_MODE_DISABLED),
                                  config,
                                  supported_versions,
-                                 client_initial_flow_control_receive_window)) {
+                                 &epoll_server_)) {
   Initialize(secure);
 }
 
@@ -214,6 +218,7 @@ void QuicTestClient::Initialize(bool secure) {
   secure_ = secure;
   auto_reconnect_ = false;
   buffer_body_ = true;
+  fec_policy_ = FEC_PROTECT_OPTIONAL;
   proof_verifier_ = NULL;
   ClearPerRequestState();
   ExpectCertificates(secure_);
@@ -227,6 +232,10 @@ void QuicTestClient::ExpectCertificates(bool on) {
     proof_verifier_ = NULL;
     client_->SetProofVerifier(NULL);
   }
+}
+
+void QuicTestClient::SetUserAgentID(const string& user_agent_id) {
+  client_->SetUserAgentID(user_agent_id);
 }
 
 ssize_t QuicTestClient::SendRequest(const string& uri) {
@@ -270,10 +279,6 @@ ssize_t QuicTestClient::SendData(string data, bool last_data) {
   GetOrCreateStream()->SendBody(data, last_data);
   WaitForWriteToFlush();
   return data.length();
-}
-
-QuicPacketCreator::Options* QuicTestClient::options() {
-  return client_->options();
 }
 
 bool QuicTestClient::response_complete() const {
@@ -336,6 +341,8 @@ QuicSpdyClientStream* QuicTestClient::GetOrCreateStream() {
     }
     stream_->set_visitor(this);
     reinterpret_cast<QuicSpdyClientStream*>(stream_)->set_priority(priority_);
+    // Set FEC policy on stream.
+    ReliableQuicStreamPeer::SetFecPolicy(stream_, fec_policy_);
   }
 
   return stream_;
@@ -407,9 +414,9 @@ void QuicTestClient::ClearPerRequestState() {
 
 void QuicTestClient::WaitForResponseForMs(int timeout_ms) {
   int64 timeout_us = timeout_ms * base::Time::kMicrosecondsPerMillisecond;
-  int64 old_timeout_us = client()->epoll_server()->timeout_in_us();
+  int64 old_timeout_us = epoll_server()->timeout_in_us();
   if (timeout_us > 0) {
-    client()->epoll_server()->set_timeout_in_us(timeout_us);
+    epoll_server()->set_timeout_in_us(timeout_us);
   }
   const QuicClock* clock =
       QuicConnectionPeer::GetHelper(client()->session()->connection())->
@@ -422,15 +429,15 @@ void QuicTestClient::WaitForResponseForMs(int timeout_ms) {
     client_->WaitForEvents();
   }
   if (timeout_us > 0) {
-    client()->epoll_server()->set_timeout_in_us(old_timeout_us);
+    epoll_server()->set_timeout_in_us(old_timeout_us);
   }
 }
 
 void QuicTestClient::WaitForInitialResponseForMs(int timeout_ms) {
   int64 timeout_us = timeout_ms * base::Time::kMicrosecondsPerMillisecond;
-  int64 old_timeout_us = client()->epoll_server()->timeout_in_us();
+  int64 old_timeout_us = epoll_server()->timeout_in_us();
   if (timeout_us > 0) {
-    client()->epoll_server()->set_timeout_in_us(timeout_us);
+    epoll_server()->set_timeout_in_us(timeout_us);
   }
   const QuicClock* clock =
       QuicConnectionPeer::GetHelper(client()->session()->connection())->
@@ -444,7 +451,7 @@ void QuicTestClient::WaitForInitialResponseForMs(int timeout_ms) {
     client_->WaitForEvents();
   }
   if (timeout_us > 0) {
-    client()->epoll_server()->set_timeout_in_us(old_timeout_us);
+    epoll_server()->set_timeout_in_us(old_timeout_us);
   }
 }
 
@@ -546,6 +553,15 @@ void QuicTestClient::WaitForWriteToFlush() {
   while (connected() && client()->session()->HasDataToWrite()) {
     client_->WaitForEvents();
   }
+}
+
+void QuicTestClient::SetFecPolicy(FecPolicy fec_policy) {
+  fec_policy_ = fec_policy;
+  // Set policy for headers and crypto streams.
+  ReliableQuicStreamPeer::SetFecPolicy(
+      QuicSessionPeer::GetHeadersStream(client()->session()), fec_policy);
+  ReliableQuicStreamPeer::SetFecPolicy(client()->session()->GetCryptoStream(),
+                                       fec_policy);
 }
 
 }  // namespace test

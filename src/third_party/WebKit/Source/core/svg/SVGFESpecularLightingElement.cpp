@@ -25,7 +25,6 @@
 
 #include "platform/graphics/filters/FilterEffect.h"
 #include "core/rendering/style/RenderStyle.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
@@ -48,10 +47,7 @@ inline SVGFESpecularLightingElement::SVGFESpecularLightingElement(Document& docu
     addToPropertyMap(m_in1);
 }
 
-PassRefPtr<SVGFESpecularLightingElement> SVGFESpecularLightingElement::create(Document& document)
-{
-    return adoptRef(new SVGFESpecularLightingElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFESpecularLightingElement)
 
 bool SVGFESpecularLightingElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -179,8 +175,8 @@ PassRefPtr<FilterEffect> SVGFESpecularLightingElement::build(SVGFilterBuilder* f
     if (!input1)
         return nullptr;
 
-    RefPtr<LightSource> lightSource = SVGFELightElement::findLightSource(*this);
-    if (!lightSource)
+    SVGFELightElement* lightNode = SVGFELightElement::findLightElement(*this);
+    if (!lightNode)
         return nullptr;
 
     RenderObject* renderer = this->renderer();
@@ -190,6 +186,7 @@ PassRefPtr<FilterEffect> SVGFESpecularLightingElement::build(SVGFilterBuilder* f
     ASSERT(renderer->style());
     Color color = renderer->style()->svgStyle()->lightingColor();
 
+    RefPtr<LightSource> lightSource = lightNode->lightSource(filter);
     RefPtr<FilterEffect> effect = FESpecularLighting::create(filter, color, m_surfaceScale->currentValue()->value(), m_specularConstant->currentValue()->value(),
         m_specularExponent->currentValue()->value(), kernelUnitLengthX()->currentValue()->value(), kernelUnitLengthY()->currentValue()->value(), lightSource.release());
     effect->inputEffects().append(input1);

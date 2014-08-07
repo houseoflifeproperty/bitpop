@@ -24,6 +24,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/browser/process_manager.h"
@@ -31,6 +32,7 @@
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/manifest_handlers/shared_module_info.h"
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 
@@ -44,10 +46,12 @@ namespace {
 
 const char kNoBackgroundPageError[] = "You do not have a background page.";
 const char kPageLoadError[] = "Background page failed to load.";
+const char kInstallId[] = "id";
 const char kInstallReason[] = "reason";
 const char kInstallReasonChromeUpdate[] = "chrome_update";
 const char kInstallReasonUpdate[] = "update";
 const char kInstallReasonInstall[] = "install";
+const char kInstallReasonSharedModuleUpdate[] = "shared_module_update";
 const char kInstallPreviousVersion[] = "previousVersion";
 const char kInvalidUrlError[] = "Invalid URL.";
 const char kPlatformInfoUnavailable[] = "Platform information unavailable.";
@@ -143,10 +147,10 @@ RuntimeAPI::RuntimeAPI(content::BrowserContext* context)
                  chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<BrowserContext>(context));
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_INSTALLED,
+                 chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
                  content::Source<BrowserContext>(context));
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  content::Source<BrowserContext>(context));
 
   delegate_ = ExtensionsBrowserClient::Get()->CreateRuntimeAPIDelegate(
@@ -176,13 +180,13 @@ void RuntimeAPI::Observe(int type,
       OnExtensionLoaded(extension);
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED: {
       const Extension* extension =
           content::Details<const InstalledExtensionInfo>(details)->extension;
       OnExtensionInstalled(extension);
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED: {
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
       OnExtensionUninstalled(extension);
@@ -227,7 +231,7 @@ void RuntimeAPI::OnExtensionLoaded(const Extension* extension) {
 void RuntimeAPI::OnExtensionInstalled(const Extension* extension) {
   // Ephemeral apps are not considered to be installed and do not receive
   // the onInstalled() event.
-  if (extension->is_ephemeral())
+  if (util::IsEphemeralApp(extension->id(), browser_context_))
     return;
 
   Version old_version = delegate_->GetPreviousExtensionVersion(extension);
@@ -245,7 +249,7 @@ void RuntimeAPI::OnExtensionInstalled(const Extension* extension) {
 void RuntimeAPI::OnExtensionUninstalled(const Extension* extension) {
   // Ephemeral apps are not considered to be installed, so the uninstall URL
   // is not invoked when they are removed.
-  if (extension->is_ephemeral())
+  if (util::IsEphemeralApp(extension->id(), browser_context_))
     return;
 
   RuntimeEventRouter::OnExtensionUninstalled(browser_context_, extension->id());
@@ -333,6 +337,30 @@ void RuntimeEventRouter::DispatchOnInstalledEvent(
       new Event(runtime::OnInstalled::kEventName, event_args.Pass()));
   system->event_router()->DispatchEventWithLazyListener(extension_id,
                                                         event.Pass());
+
+  if (old_version.IsValid()) {
+    const Extension* extension =
+        ExtensionRegistry::Get(context)->enabled_extensions().GetByID(
+            extension_id);
+    if (extension && SharedModuleInfo::IsSharedModule(extension)) {
+      scoped_ptr<ExtensionSet> dependents =
+          system->GetDependentExtensions(extension);
+      for (ExtensionSet::const_iterator i = dependents->begin();
+           i != dependents->end();
+           i++) {
+        scoped_ptr<base::ListValue> sm_event_args(new base::ListValue());
+        base::DictionaryValue* sm_info = new base::DictionaryValue();
+        sm_event_args->Append(sm_info);
+        sm_info->SetString(kInstallReason, kInstallReasonSharedModuleUpdate);
+        sm_info->SetString(kInstallPreviousVersion, old_version.GetString());
+        sm_info->SetString(kInstallId, extension_id);
+        scoped_ptr<Event> sm_event(
+            new Event(runtime::OnInstalled::kEventName, sm_event_args.Pass()));
+        system->event_router()->DispatchEventWithLazyListener((*i)->id(),
+                                                              sm_event.Pass());
+      }
+    }
+  }
 }
 
 // static
@@ -460,14 +488,12 @@ ExtensionFunction::ResponseAction RuntimeRequestUpdateCheckFunction::Run() {
 void RuntimeRequestUpdateCheckFunction::CheckComplete(
     const RuntimeAPIDelegate::UpdateCheckResult& result) {
   if (result.success) {
-    base::ListValue* results = new base::ListValue;
-    results->AppendString(result.response);
     base::DictionaryValue* details = new base::DictionaryValue;
-    results->Append(details);
     details->SetString("version", result.version);
-    Respond(MultipleArguments(results));
+    Respond(TwoArguments(new base::StringValue(result.response), details));
   } else {
-    Respond(SingleArgument(new base::StringValue(result.response)));
+    // HMM(kalman): Why does !success not imply Error()?
+    Respond(OneArgument(new base::StringValue(result.response)));
   }
 }
 
@@ -489,8 +515,8 @@ ExtensionFunction::ResponseAction RuntimeGetPlatformInfoFunction::Run() {
            ->GetPlatformInfo(&info)) {
     return RespondNow(Error(kPlatformInfoUnavailable));
   }
-  return RespondNow(MultipleArguments(
-      runtime::GetPlatformInfo::Results::Create(info).release()));
+  return RespondNow(
+      ArgumentList(runtime::GetPlatformInfo::Results::Create(info)));
 }
 
 ExtensionFunction::ResponseAction
@@ -502,7 +528,7 @@ RuntimeGetPackageDirectoryEntryFunction::Run() {
   std::string relative_path = kPackageDirectoryPath;
   base::FilePath path = extension_->path();
   std::string filesystem_id = isolated_context->RegisterFileSystemForPath(
-      fileapi::kFileSystemTypeNativeLocal, path, &relative_path);
+      fileapi::kFileSystemTypeNativeLocal, std::string(), path, &relative_path);
 
   int renderer_id = render_view_host_->GetProcess()->GetID();
   content::ChildProcessSecurityPolicy* policy =
@@ -511,7 +537,7 @@ RuntimeGetPackageDirectoryEntryFunction::Run() {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("fileSystemId", filesystem_id);
   dict->SetString("baseName", relative_path);
-  return RespondNow(SingleArgument(dict));
+  return RespondNow(OneArgument(dict));
 }
 
 }  // namespace extensions

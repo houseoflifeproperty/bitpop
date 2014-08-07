@@ -11,6 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/scoped_observer.h"
 #include "base/supports_user_data.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
@@ -22,6 +23,7 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "extensions/common/manifest_handlers/shared_module_info.h"
 #include "ui/gfx/image/image_skia.h"
 #include "url/gurl.h"
@@ -40,14 +42,17 @@ namespace extensions {
 
 class CrxInstaller;
 class Extension;
+class ExtensionRegistry;
 class Manifest;
 
 // Downloads and installs extensions from the web store.
 class WebstoreInstaller : public content::NotificationObserver,
+                          public ExtensionRegistryObserver,
                           public content::DownloadItem::Observer,
                           public content::WebContentsObserver,
                           public base::RefCountedThreadSafe<
-  WebstoreInstaller, content::BrowserThread::DeleteOnUIThread> {
+                              WebstoreInstaller,
+                              content::BrowserThread::DeleteOnUIThread> {
  public:
   enum InstallSource {
     // Inline installs trigger slightly different behavior (install source
@@ -155,7 +160,7 @@ class WebstoreInstaller : public content::NotificationObserver,
     // Required minimum version.
     scoped_ptr<Version> minimum_version;
 
-    // Ephemeral apps (experimental) are not permanently installed in Chrome.
+    // Ephemeral apps are transiently installed.
     bool is_ephemeral;
 
     // The authuser index required to download the item being installed. May be
@@ -188,10 +193,14 @@ class WebstoreInstaller : public content::NotificationObserver,
   // Starts downloading and installing the extension.
   void Start();
 
-  // content::NotificationObserver
+  // content::NotificationObserver.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
+
+  // ExtensionRegistryObserver.
+  virtual void OnExtensionInstalled(content::BrowserContext* browser_context,
+                                    const Extension* extension) OVERRIDE;
 
   // Removes the reference to the delegate passed in the constructor. Used when
   // the delegate object must be deleted before this object.
@@ -249,6 +258,8 @@ class WebstoreInstaller : public content::NotificationObserver,
   void RecordInterrupt(const content::DownloadItem* download) const;
 
   content::NotificationRegistrar registrar_;
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
   Profile* profile_;
   Delegate* delegate_;
   std::string id_;

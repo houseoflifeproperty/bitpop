@@ -8,20 +8,24 @@
 #include <map>
 #include <set>
 
+#include "base/scoped_observer.h"
 #include "base/timer/timer.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/extension_registry_observer.h"
 
 class Profile;
 
 namespace extensions {
 class Extension;
+class ExtensionRegistry;
 }  // namespace extensions
 
 // Performs the background garbage collection of ephemeral apps.
 class EphemeralAppService : public KeyedService,
-                            public content::NotificationObserver {
+                            public content::NotificationObserver,
+                            public extensions::ExtensionRegistryObserver {
  public:
   // Returns the instance for the given profile. This is a convenience wrapper
   // around EphemeralAppServiceFactory::GetForProfile.
@@ -29,6 +33,8 @@ class EphemeralAppService : public KeyedService,
 
   explicit EphemeralAppService(Profile* profile);
   virtual ~EphemeralAppService();
+
+  int ephemeral_app_count() const { return ephemeral_app_count_; }
 
   // Constants exposed for testing purposes:
 
@@ -39,9 +45,6 @@ class EphemeralAppService : public KeyedService,
   static const int kAppKeepThreshold;
   // The maximum number of ephemeral apps to keep cached. Excess may be removed.
   static const int kMaxEphemeralAppsCount;
-  // The number of days of inactivity before the data of an already evicted
-  // ephemeral app will be removed.
-  static const int kDataInactiveThreshold;
 
  private:
   // A map used to order the ephemeral apps by their last launch time.
@@ -51,6 +54,17 @@ class EphemeralAppService : public KeyedService,
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
+
+  // extensions::ExtensionRegistryObserver.
+  virtual void OnExtensionWillBeInstalled(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension,
+      bool is_update,
+      bool from_ephemeral,
+      const std::string& old_name) OVERRIDE;
+  virtual void OnExtensionUninstalled(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension) OVERRIDE;
 
   void Init();
   void InitEphemeralAppCount();
@@ -62,21 +76,18 @@ class EphemeralAppService : public KeyedService,
                               const LaunchTimeAppMap& app_launch_times,
                               std::set<std::string>* remove_app_ids);
 
-  // Garbage collect the data of ephemeral apps that have been evicted and
-  // inactive for a long period of time.
-  void GarbageCollectData();
-
   Profile* profile_;
 
   content::NotificationRegistrar registrar_;
+  ScopedObserver<extensions::ExtensionRegistry,
+                 extensions::ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   base::OneShotTimer<EphemeralAppService> garbage_collect_apps_timer_;
-  base::OneShotTimer<EphemeralAppService> garbage_collect_data_timer_;
 
   // The count of cached ephemeral apps.
   int ephemeral_app_count_;
 
-  friend class EphemeralAppBrowserTest;
   friend class EphemeralAppServiceTest;
   friend class EphemeralAppServiceBrowserTest;
 

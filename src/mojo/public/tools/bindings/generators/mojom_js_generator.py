@@ -18,11 +18,11 @@ _kind_to_javascript_default_value = {
   mojom.INT32:        "0",
   mojom.UINT32:       "0",
   mojom.FLOAT:        "0",
-  mojom.HANDLE:       "core.kInvalidHandle",
-  mojom.DCPIPE:       "core.kInvalidHandle",
-  mojom.DPPIPE:       "core.kInvalidHandle",
-  mojom.MSGPIPE:      "core.kInvalidHandle",
-  mojom.SHAREDBUFFER: "core.kInvalidHandle",
+  mojom.HANDLE:       "null",
+  mojom.DCPIPE:       "null",
+  mojom.DPPIPE:       "null",
+  mojom.MSGPIPE:      "null",
+  mojom.SHAREDBUFFER: "null",
   mojom.INT64:        "0",
   mojom.UINT64:       "0",
   mojom.DOUBLE:       "0",
@@ -32,14 +32,18 @@ _kind_to_javascript_default_value = {
 
 def JavaScriptDefaultValue(field):
   if field.default:
-    raise Exception("Default values should've been handled in jinja.")
+    if isinstance(field.kind, mojom.Struct):
+      assert field.default == "default"
+      return "new %s()" % JavascriptType(field.kind)
+    return ExpressionToText(field.default)
   if field.kind in mojom.PRIMITIVES:
     return _kind_to_javascript_default_value[field.kind]
   if isinstance(field.kind, mojom.Struct):
-    return "null";
+    return "null"
   if isinstance(field.kind, mojom.Array):
-    return "[]";
-  if isinstance(field.kind, mojom.Interface):
+    return "[]"
+  if isinstance(field.kind, mojom.Interface) or \
+     isinstance(field.kind, mojom.InterfaceRequest):
     return _kind_to_javascript_default_value[mojom.MSGPIPE]
   if isinstance(field.kind, mojom.Enum):
     return "0"
@@ -48,11 +52,11 @@ def JavaScriptDefaultValue(field):
 def JavaScriptPayloadSize(packed):
   packed_fields = packed.packed_fields
   if not packed_fields:
-    return 0;
+    return 0
   last_field = packed_fields[-1]
   offset = last_field.offset + last_field.size
   pad = pack.GetPad(offset, 8)
-  return offset + pad;
+  return offset + pad
 
 
 _kind_to_codec_type = {
@@ -83,7 +87,8 @@ def CodecType(kind):
     return "new codec.PointerTo(%s)" % CodecType(kind.name)
   if isinstance(kind, mojom.Array):
     return "new codec.ArrayOf(%s)" % CodecType(kind.kind)
-  if isinstance(kind, mojom.Interface):
+  if isinstance(kind, mojom.Interface) or \
+     isinstance(kind, mojom.InterfaceRequest):
     return CodecType(mojom.MSGPIPE)
   if isinstance(kind, mojom.Enum):
     return _kind_to_codec_type[mojom.INT32]
@@ -92,12 +97,13 @@ def CodecType(kind):
 
 def JavaScriptDecodeSnippet(kind):
   if kind in mojom.PRIMITIVES:
-    return "decodeStruct(%s)" % CodecType(kind);
+    return "decodeStruct(%s)" % CodecType(kind)
   if isinstance(kind, mojom.Struct):
-    return "decodeStructPointer(%s)" % CodecType(kind.name);
+    return "decodeStructPointer(%s)" % CodecType(kind.name)
   if isinstance(kind, mojom.Array):
-    return "decodeArrayPointer(%s)" % CodecType(kind.kind);
-  if isinstance(kind, mojom.Interface):
+    return "decodeArrayPointer(%s)" % CodecType(kind.kind)
+  if isinstance(kind, mojom.Interface) or \
+     isinstance(kind, mojom.InterfaceRequest):
     return JavaScriptDecodeSnippet(mojom.MSGPIPE)
   if isinstance(kind, mojom.Enum):
     return JavaScriptDecodeSnippet(mojom.INT32)
@@ -105,37 +111,36 @@ def JavaScriptDecodeSnippet(kind):
 
 def JavaScriptEncodeSnippet(kind):
   if kind in mojom.PRIMITIVES:
-    return "encodeStruct(%s, " % CodecType(kind);
+    return "encodeStruct(%s, " % CodecType(kind)
   if isinstance(kind, mojom.Struct):
-    return "encodeStructPointer(%s, " % CodecType(kind.name);
+    return "encodeStructPointer(%s, " % CodecType(kind.name)
   if isinstance(kind, mojom.Array):
-    return "encodeArrayPointer(%s, " % CodecType(kind.kind);
-  if isinstance(kind, mojom.Interface):
+    return "encodeArrayPointer(%s, " % CodecType(kind.kind)
+  if isinstance(kind, mojom.Interface) or \
+     isinstance(kind, mojom.InterfaceRequest):
     return JavaScriptEncodeSnippet(mojom.MSGPIPE)
   if isinstance(kind, mojom.Enum):
     return JavaScriptEncodeSnippet(mojom.INT32)
 
-def TranslateConstants(token, module):
-  if isinstance(token, mojom.Constant):
-    # Enum constants are constructed like:
-    # NamespaceUid.Struct_Enum.FIELD_NAME
+
+def TranslateConstants(token):
+  if isinstance(token, (mojom.EnumValue, mojom.NamedValue)):
+    # Both variable and enum constants are constructed like:
+    # NamespaceUid.Struct[.Enum].CONSTANT_NAME
     name = []
     if token.imported_from:
       name.append(token.imported_from["unique_name"])
     if token.parent_kind:
-      name.append(token.parent_kind.name + "_" + token.name[0])
-    else:
-      name.append(token.name[0])
-    name.append(token.name[1])
+      name.append(token.parent_kind.name)
+    if isinstance(token, mojom.EnumValue):
+      name.append(token.enum_name)
+    name.append(token.name)
     return ".".join(name)
   return token
 
 
-def ExpressionToText(value, module):
-  if value[0] != "EXPRESSION":
-    raise Exception("Expected EXPRESSION, got" + value)
-  return "".join(generator.ExpressionMapper(value,
-      lambda token: TranslateConstants(token, module)))
+def ExpressionToText(value):
+  return TranslateConstants(value)
 
 
 def JavascriptType(kind):
@@ -152,17 +157,14 @@ class Generator(generator.Generator):
     "decode_snippet": JavaScriptDecodeSnippet,
     "encode_snippet": JavaScriptEncodeSnippet,
     "expression_to_text": ExpressionToText,
-    "is_object_kind": generator.IsObjectKind,
-    "is_string_kind": generator.IsStringKind,
-    "is_array_kind": lambda kind: isinstance(kind, mojom.Array),
     "js_type": JavascriptType,
     "stylize_method": generator.StudlyCapsToCamel,
-    "verify_token_type": generator.VerifyTokenType,
   }
 
   @UseJinja("js_templates/module.js.tmpl", filters=js_filters)
   def GenerateJsModule(self):
     return {
+      "namespace": self.module.namespace,
       "imports": self.GetImports(),
       "kinds": self.module.kinds,
       "enums": self.module.enums,
@@ -171,7 +173,7 @@ class Generator(generator.Generator):
       "interfaces": self.module.interfaces,
     }
 
-  def GenerateFiles(self):
+  def GenerateFiles(self, args):
     self.Write(self.GenerateJsModule(), "%s.js" % self.module.name)
 
   def GetImports(self):

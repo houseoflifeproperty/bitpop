@@ -45,7 +45,8 @@ struct PasswordForm {
     SCHEME_HTML,
     SCHEME_BASIC,
     SCHEME_DIGEST,
-    SCHEME_OTHER
+    SCHEME_OTHER,
+    SCHEME_LAST = SCHEME_OTHER
   } scheme;
 
   // The "Realm" for the sign-on (scheme, host, port for SCHEME_HTML, and
@@ -158,6 +159,12 @@ struct PasswordForm {
   //
   // When parsing an HTML form, this is not used.
   base::Time date_created;
+
+  // When the login was downloaded from the sync server. For local passwords is
+  // not used.
+  //
+  // When parsing an HTML form, this is not used.
+  base::Time date_synced;
 
   // Tracks if the user opted to never remember passwords for this form. Default
   // to false.

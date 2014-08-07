@@ -27,99 +27,25 @@
 #include "config.h"
 #include "core/css/CSSFontSelector.h"
 
-#include "RuntimeEnabledFeatures.h"
+#include "core/css/CSSFontSelectorClient.h"
 #include "core/css/CSSSegmentedFontFace.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/FontFaceSet.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Document.h"
-#include "core/fetch/FontResource.h"
-#include "core/fetch/ResourceFetcher.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/loader/FrameLoader.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/SimpleFontData.h"
 #include "wtf/text/AtomicString.h"
 
-using namespace std;
-
 namespace WebCore {
-
-FontLoader::FontLoader(ResourceFetcher* resourceFetcher)
-    : m_beginLoadingTimer(this, &FontLoader::beginLoadTimerFired)
-    , m_resourceFetcher(resourceFetcher)
-{
-}
-
-FontLoader::~FontLoader()
-{
-#if ENABLE(OILPAN)
-    if (!m_resourceFetcher) {
-        ASSERT(m_fontsToBeginLoading.isEmpty());
-        return;
-    }
-    m_beginLoadingTimer.stop();
-
-    // When the m_fontsToBeginLoading vector is destroyed it will decrement the
-    // request counts on the ResourceFetcher for all the fonts that were pending
-    // at the time the FontLoader dies.
-#endif
-}
-
-void FontLoader::addFontToBeginLoading(FontResource* fontResource)
-{
-    if (!m_resourceFetcher || !fontResource->stillNeedsLoad())
-        return;
-
-    m_fontsToBeginLoading.append(
-        std::make_pair(fontResource, ResourceLoader::RequestCountTracker(m_resourceFetcher, fontResource)));
-    m_beginLoadingTimer.startOneShot(0, FROM_HERE);
-}
-
-void FontLoader::beginLoadTimerFired(Timer<WebCore::FontLoader>*)
-{
-    loadPendingFonts();
-}
-
-void FontLoader::loadPendingFonts()
-{
-    ASSERT(m_resourceFetcher);
-
-    FontsToLoadVector fontsToBeginLoading;
-    fontsToBeginLoading.swap(m_fontsToBeginLoading);
-    for (FontsToLoadVector::iterator it = fontsToBeginLoading.begin(); it != fontsToBeginLoading.end(); ++it) {
-        FontResource* fontResource = it->first.get();
-        fontResource->beginLoadIfNeeded(m_resourceFetcher);
-    }
-
-    // When the local fontsToBeginLoading vector goes out of scope it will
-    // decrement the request counts on the ResourceFetcher for all the fonts
-    // that were just loaded.
-}
-
-#if !ENABLE(OILPAN)
-void FontLoader::clearResourceFetcher()
-{
-    if (!m_resourceFetcher) {
-        ASSERT(m_fontsToBeginLoading.isEmpty());
-        return;
-    }
-
-    m_beginLoadingTimer.stop();
-    m_fontsToBeginLoading.clear();
-    m_resourceFetcher = nullptr;
-}
-#endif
-
-void FontLoader::trace(Visitor* visitor)
-{
-    visitor->trace(m_resourceFetcher);
-}
 
 CSSFontSelector::CSSFontSelector(Document* document)
     : m_document(document)
-    , m_fontLoader(document->fetcher())
+    , m_fontLoader(FontLoader::create(this, document->fetcher()))
     , m_genericFontFamilySettings(document->frame()->settings()->genericFontFamilySettings())
 {
     // FIXME: An old comment used to say there was no need to hold a reference to m_document
@@ -158,16 +84,9 @@ void CSSFontSelector::dispatchInvalidationCallbacks()
     copyToVector(m_clients, clients);
     for (size_t i = 0; i < clients.size(); ++i)
         clients[i]->fontsNeedUpdate(this);
-    // FIXME: we sometimes have no StyleResolver when a font is loaded.
-    // It would be better to make StyleEngine FontSelectorClient instead of
-    // StyleResolver.
-    // FIXME: crbug.com/366533: CSSFontSelector lives longer than the life of
-    // the Document. We need document() here.
-    if (clients.size() == 0 && document() && document()->isActive())
-        document()->setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
-void CSSFontSelector::fontLoaded()
+void CSSFontSelector::fontFaceInvalidated()
 {
     dispatchInvalidationCallbacks();
 }
@@ -228,27 +147,26 @@ void CSSFontSelector::willUseFontData(const FontDescription& fontDescription, co
         face->willUseFontData(fontDescription, character);
 }
 
+bool CSSFontSelector::isPlatformFontAvailable(const FontDescription& fontDescription, const AtomicString& passedFamily)
+{
+    AtomicString family = familyNameFromSettings(m_genericFontFamilySettings, fontDescription, passedFamily);
+    if (family.isEmpty())
+        family = passedFamily;
+    return FontCache::fontCache()->isPlatformFontAvailable(fontDescription, family);
+}
+
 #if !ENABLE(OILPAN)
 void CSSFontSelector::clearDocument()
 {
-    m_fontLoader.clearResourceFetcher();
+    m_fontLoader->clearResourceFetcherAndFontSelector();
     m_document = nullptr;
 }
 #endif
 
-void CSSFontSelector::beginLoadingFontSoon(FontResource* font)
-{
-    m_fontLoader.addFontToBeginLoading(font);
-}
-
-void CSSFontSelector::loadPendingFonts()
-{
-    m_fontLoader.loadPendingFonts();
-}
-
 void CSSFontSelector::updateGenericFontFamilySettings(Document& document)
 {
-    ASSERT(document.settings());
+    if (!document.settings())
+        return;
     m_genericFontFamilySettings = document.settings()->genericFontFamilySettings();
     // Need to increment FontFaceCache version to update RenderStyles.
     m_fontFaceCache.incrementVersion();

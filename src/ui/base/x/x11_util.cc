@@ -224,14 +224,6 @@ class XCustomCursorCache {
   DISALLOW_COPY_AND_ASSIGN(XCustomCursorCache);
 };
 
-bool IsShapeAvailable() {
-  int dummy;
-  static bool is_shape_available =
-    XShapeQueryExtension(gfx::GetXDisplay(), &dummy, &dummy);
-  return is_shape_available;
-
-}
-
 }  // namespace
 
 bool IsXInput2Available() {
@@ -471,6 +463,44 @@ void HideHostCursor() {
   return invisible_cursor;
 }
 
+void SetUseOSWindowFrame(XID window, bool use_os_window_frame) {
+  // This data structure represents additional hints that we send to the window
+  // manager and has a direct lineage back to Motif, which defined this de facto
+  // standard. This struct doesn't seem 64-bit safe though, but it's what GDK
+  // does.
+  typedef struct {
+    unsigned long flags;
+    unsigned long functions;
+    unsigned long decorations;
+    long input_mode;
+    unsigned long status;
+  } MotifWmHints;
+
+  MotifWmHints motif_hints;
+  memset(&motif_hints, 0, sizeof(motif_hints));
+  // Signals that the reader of the _MOTIF_WM_HINTS property should pay
+  // attention to the value of |decorations|.
+  motif_hints.flags = (1L << 1);
+  motif_hints.decorations = use_os_window_frame ? 1 : 0;
+
+  ::Atom hint_atom = GetAtom("_MOTIF_WM_HINTS");
+  XChangeProperty(gfx::GetXDisplay(),
+                  window,
+                  hint_atom,
+                  hint_atom,
+                  32,
+                  PropModeReplace,
+                  reinterpret_cast<unsigned char*>(&motif_hints),
+                  sizeof(MotifWmHints)/sizeof(long));
+}
+
+bool IsShapeExtensionAvailable() {
+  int dummy;
+  static bool is_shape_available =
+      XShapeQueryExtension(gfx::GetXDisplay(), &dummy, &dummy);
+  return is_shape_available;
+}
+
 XID GetX11RootWindow() {
   return DefaultRootWindow(gfx::GetXDisplay());
 }
@@ -579,7 +609,7 @@ bool WindowContainsPoint(XID window, gfx::Point screen_loc) {
   if (!window_rect.Contains(screen_loc))
     return false;
 
-  if (!IsShapeAvailable())
+  if (!IsShapeExtensionAvailable())
     return true;
 
   // According to http://www.x.org/releases/X11R7.6/doc/libXext/shapelib.html,
@@ -854,6 +884,14 @@ bool SetIntArrayProperty(XID window,
                   reinterpret_cast<const unsigned char*>(data.get()),
                   value.size());  // num items
   return !err_tracker.FoundNewError();
+}
+
+bool SetAtomProperty(XID window,
+                     const std::string& name,
+                     const std::string& type,
+                     Atom value) {
+  std::vector<Atom> values(1, value);
+  return SetAtomArrayProperty(window, name, type, values);
 }
 
 bool SetAtomArrayProperty(XID window,
@@ -1193,21 +1231,16 @@ bool IsX11WindowFullScreen(XID window) {
   // If _NET_WM_STATE_FULLSCREEN is in _NET_SUPPORTED, use the presence or
   // absence of _NET_WM_STATE_FULLSCREEN in _NET_WM_STATE to determine
   // whether we're fullscreen.
-  std::vector<Atom> supported_atoms;
-  if (GetAtomArrayProperty(GetX11RootWindow(),
-                           "_NET_SUPPORTED",
-                           &supported_atoms)) {
-    Atom atom = GetAtom("_NET_WM_STATE_FULLSCREEN");
-
-    if (std::find(supported_atoms.begin(), supported_atoms.end(), atom)
-        != supported_atoms.end()) {
-      std::vector<Atom> atom_properties;
-      if (GetAtomArrayProperty(window,
-                               "_NET_WM_STATE",
-                               &atom_properties)) {
-        return std::find(atom_properties.begin(), atom_properties.end(), atom)
-            != atom_properties.end();
-      }
+  Atom fullscreen_atom = GetAtom("_NET_WM_STATE_FULLSCREEN");
+  if (WmSupportsHint(fullscreen_atom)) {
+    std::vector<Atom> atom_properties;
+    if (GetAtomArrayProperty(window,
+                             "_NET_WM_STATE",
+                             &atom_properties)) {
+      return std::find(atom_properties.begin(),
+                       atom_properties.end(),
+                       fullscreen_atom) !=
+          atom_properties.end();
     }
   }
 
@@ -1225,6 +1258,18 @@ bool IsX11WindowFullScreen(XID window) {
   int width = WidthOfScreen(screen);
   int height = HeightOfScreen(screen);
   return window_rect.size() == gfx::Size(width, height);
+}
+
+bool WmSupportsHint(Atom atom) {
+  std::vector<Atom> supported_atoms;
+  if (!GetAtomArrayProperty(GetX11RootWindow(),
+                            "_NET_SUPPORTED",
+                            &supported_atoms)) {
+    return false;
+  }
+
+  return std::find(supported_atoms.begin(), supported_atoms.end(), atom) !=
+      supported_atoms.end();
 }
 
 const unsigned char* XRefcountedMemory::front() const {

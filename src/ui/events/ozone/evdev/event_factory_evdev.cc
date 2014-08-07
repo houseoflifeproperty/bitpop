@@ -10,6 +10,7 @@
 #include "base/debug/trace_event.h"
 #include "base/stl_util.h"
 #include "base/task_runner.h"
+#include "base/threading/worker_pool.h"
 #include "ui/events/ozone/device/device_event.h"
 #include "ui/events/ozone/device/device_manager.h"
 #include "ui/events/ozone/evdev/cursor_delegate_evdev.h"
@@ -77,7 +78,7 @@ scoped_ptr<EventConverterEvdev> CreateConverter(
 
 // Open an input device. Opening may put the calling thread to sleep, and
 // therefore should be run on a thread where latency is not critical. We
-// run it on the FILE thread.
+// run it on a thread from the worker pool.
 //
 // This takes a TaskRunner and runs the reply on that thread, so that we
 // can hop threads if necessary (back to the UI thread).
@@ -129,34 +130,22 @@ void CloseInputDevice(const base::FilePath& path,
 
 }  // namespace
 
-EventFactoryEvdev::EventFactoryEvdev()
-    : device_manager_(NULL),
-      has_started_processing_events_(false),
-      ui_task_runner_(base::MessageLoopProxy::current()),
-      file_task_runner_(base::MessageLoopProxy::current()),
-      cursor_(NULL),
-      dispatch_callback_(
-          base::Bind(base::IgnoreResult(&EventFactoryEvdev::DispatchUiEvent),
-                     base::Unretained(this))),
-      weak_ptr_factory_(this) {}
-
 EventFactoryEvdev::EventFactoryEvdev(
     CursorDelegateEvdev* cursor,
     DeviceManager* device_manager)
     : device_manager_(device_manager),
-      has_started_processing_events_(false),
-      ui_task_runner_(base::MessageLoopProxy::current()),
-      file_task_runner_(base::MessageLoopProxy::current()),
       cursor_(cursor),
       dispatch_callback_(
           base::Bind(base::IgnoreResult(&EventFactoryEvdev::DispatchUiEvent),
                      base::Unretained(this))),
-      weak_ptr_factory_(this) {}
+      weak_ptr_factory_(this) {
+  CHECK(device_manager_);
+}
 
 EventFactoryEvdev::~EventFactoryEvdev() { STLDeleteValues(&converters_); }
 
 void EventFactoryEvdev::DispatchUiEvent(Event* event) {
-  EventFactoryOzone::DispatchEvent(event);
+  DispatchEvent(event);
 }
 
 void EventFactoryEvdev::AttachInputDevice(
@@ -184,8 +173,8 @@ void EventFactoryEvdev::OnDeviceEvent(const DeviceEvent& event) {
     case DeviceEvent::CHANGE: {
       TRACE_EVENT1("ozone", "OnDeviceAdded", "path", event.path().value());
 
-      // Dispatch task to open on FILE thread, since open may block.
-      file_task_runner_->PostTask(
+      // Dispatch task to open from the worker pool, since open may block.
+      base::WorkerPool::PostTask(
           FROM_HERE,
           base::Bind(&OpenInputDevice,
                      event.path(),
@@ -195,7 +184,8 @@ void EventFactoryEvdev::OnDeviceEvent(const DeviceEvent& event) {
                      dispatch_callback_,
                      base::Bind(&EventFactoryEvdev::AttachInputDevice,
                                 weak_ptr_factory_.GetWeakPtr(),
-                                event.path())));
+                                event.path())),
+          true);
     }
       break;
     case DeviceEvent::REMOVE: {
@@ -203,6 +193,15 @@ void EventFactoryEvdev::OnDeviceEvent(const DeviceEvent& event) {
       DetachInputDevice(event.path());
     }
       break;
+  }
+}
+
+void EventFactoryEvdev::OnDispatcherListChanged() {
+  if (!ui_task_runner_) {
+    ui_task_runner_ = base::MessageLoopProxy::current();
+    // Scan & monitor devices.
+    device_manager_->AddObserver(this);
+    device_manager_->ScanDevices(this);
   }
 }
 
@@ -219,27 +218,12 @@ void EventFactoryEvdev::DetachInputDevice(const base::FilePath& path) {
     // on UI since the polling happens on UI.
     converter->Stop();
 
-    // Dispatch task to close on FILE thread, since close may block.
-    file_task_runner_->PostTask(
+    // Dispatch task to close from the worker pool, since close may block.
+    base::WorkerPool::PostTask(
         FROM_HERE,
-        base::Bind(&CloseInputDevice, path, base::Passed(&converter)));
+        base::Bind(&CloseInputDevice, path, base::Passed(&converter)),
+        true);
   }
-}
-
-void EventFactoryEvdev::StartProcessingEvents() {
-  CHECK(ui_task_runner_->RunsTasksOnCurrentThread());
-
-  if (device_manager_ && !has_started_processing_events_) {
-    has_started_processing_events_ = true;
-    // Scan & monitor devices.
-    device_manager_->AddObserver(this);
-    device_manager_->ScanDevices(this);
-  }
-}
-
-void EventFactoryEvdev::SetFileTaskRunner(
-    scoped_refptr<base::TaskRunner> task_runner) {
-  file_task_runner_ = task_runner;
 }
 
 void EventFactoryEvdev::WarpCursorTo(gfx::AcceleratedWidget widget,

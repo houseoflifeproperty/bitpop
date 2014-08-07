@@ -27,7 +27,6 @@
 
 #include "core/rendering/svg/RenderSVGResourceRadialGradient.h"
 #include "core/svg/RadialGradientAttributes.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGTransformList.h"
 
 namespace WebCore {
@@ -59,10 +58,7 @@ inline SVGRadialGradientElement::SVGRadialGradientElement(Document& document)
     addToPropertyMap(m_fr);
 }
 
-PassRefPtr<SVGRadialGradientElement> SVGRadialGradientElement::create(Document& document)
-{
-    return adoptRef(new SVGRadialGradientElement(document));
-}
+DEFINE_NODE_FACTORY(SVGRadialGradientElement)
 
 bool SVGRadialGradientElement::isSupportedAttribute(const QualifiedName& attrName)
 {

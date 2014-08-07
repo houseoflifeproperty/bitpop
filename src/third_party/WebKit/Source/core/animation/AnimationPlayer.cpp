@@ -32,7 +32,8 @@
 #include "core/animation/AnimationPlayer.h"
 
 #include "core/animation/Animation.h"
-#include "core/animation/DocumentTimeline.h"
+#include "core/animation/AnimationTimeline.h"
+#include "core/dom/Document.h"
 #include "core/events/AnimationPlayerEvent.h"
 #include "core/frame/UseCounter.h"
 
@@ -48,14 +49,14 @@ static unsigned nextSequenceNumber()
 
 }
 
-PassRefPtr<AnimationPlayer> AnimationPlayer::create(ExecutionContext* executionContext, DocumentTimeline& timeline, TimedItem* content)
+PassRefPtrWillBeRawPtr<AnimationPlayer> AnimationPlayer::create(ExecutionContext* executionContext, AnimationTimeline& timeline, AnimationNode* content)
 {
-    RefPtr<AnimationPlayer> player = adoptRef(new AnimationPlayer(executionContext, timeline, content));
+    RefPtrWillBeRawPtr<AnimationPlayer> player = adoptRefWillBeRefCountedGarbageCollected(new AnimationPlayer(executionContext, timeline, content));
     player->suspendIfNeeded();
     return player.release();
 }
 
-AnimationPlayer::AnimationPlayer(ExecutionContext* executionContext, DocumentTimeline& timeline, TimedItem* content)
+AnimationPlayer::AnimationPlayer(ExecutionContext* executionContext, AnimationTimeline& timeline, AnimationNode* content)
     : ActiveDOMObject(executionContext)
     , m_playbackRate(1)
     , m_startTime(nullValue())
@@ -79,10 +80,12 @@ AnimationPlayer::AnimationPlayer(ExecutionContext* executionContext, DocumentTim
 
 AnimationPlayer::~AnimationPlayer()
 {
+#if !ENABLE(OILPAN)
     if (m_content)
         m_content->detach();
     if (m_timeline)
         m_timeline->playerDestroyed(this);
+#endif
 }
 
 double AnimationPlayer::sourceEnd() const
@@ -194,7 +197,7 @@ void AnimationPlayer::setStartTimeInternal(double newStartTime, bool isUpdateFro
     }
 }
 
-void AnimationPlayer::setSource(TimedItem* newSource)
+void AnimationPlayer::setSource(AnimationNode* newSource)
 {
     if (m_content == newSource)
         return;
@@ -421,11 +424,13 @@ bool AnimationPlayer::SortInfo::operator<(const SortInfo& other) const
     return m_sequenceNumber < other.m_sequenceNumber;
 }
 
+#if !ENABLE(OILPAN)
 bool AnimationPlayer::canFree() const
 {
     ASSERT(m_content);
     return hasOneRef() && m_content->isAnimation() && m_content->hasOneRef();
 }
+#endif
 
 bool AnimationPlayer::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
 {
@@ -442,6 +447,14 @@ void AnimationPlayer::pauseForTesting(double pauseTime)
         toAnimation(m_content.get())->pauseAnimationForTestingOnCompositor(currentTimeInternal());
     m_isPausedForTesting = true;
     pause();
+}
+
+void AnimationPlayer::trace(Visitor* visitor)
+{
+    visitor->trace(m_content);
+    visitor->trace(m_timeline);
+    visitor->trace(m_pendingFinishedEvent);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace

@@ -4,8 +4,6 @@
 
 #include "chrome/browser/printing/print_view_manager_base.h"
 
-#include <map>
-
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
@@ -31,24 +29,30 @@
 #include "printing/printed_document.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if defined(OS_WIN)
-#include "base/command_line.h"
-#include "chrome/common/chrome_switches.h"
-#endif
-
 #if defined(ENABLE_FULL_PRINTING)
 #include "chrome/browser/printing/print_error_dialog.h"
+#endif
+
+#if defined(WIN_PDF_METAFILE_FOR_PRINTING)
+#include "base/memory/ref_counted.h"
+#include "base/memory/ref_counted_memory.h"
+#include "chrome/browser/printing/pdf_to_emf_converter.h"
+#include "printing/pdf_render_settings.h"
 #endif
 
 using base::TimeDelta;
 using content::BrowserThread;
 
-#if defined(OS_WIN)
+namespace printing {
+
+namespace {
+
+#if defined(OS_WIN) && !defined(WIN_PDF_METAFILE_FOR_PRINTING)
 // Limits memory usage by raster to 64 MiB.
 const int kMaxRasterSizeInPixels = 16*1024*1024;
 #endif
 
-namespace printing {
+}  // namespace
 
 PrintViewManagerBase::PrintViewManagerBase(content::WebContents* web_contents)
     : content::WebContentsObserver(web_contents),
@@ -58,7 +62,8 @@ PrintViewManagerBase::PrintViewManagerBase(content::WebContents* web_contents)
       cookie_(0),
       queue_(g_browser_process->print_job_manager()->queue()) {
   DCHECK(queue_);
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if (defined(OS_POSIX) && !defined(OS_MACOSX)) || \
+    defined(WIN_PDF_METAFILE_FOR_PRINTING)
   expecting_first_page_ = true;
 #endif
   Profile* profile =
@@ -124,8 +129,36 @@ void PrintViewManagerBase::OnDidGetDocumentCookie(int cookie) {
   cookie_ = cookie;
 }
 
+#if defined(WIN_PDF_METAFILE_FOR_PRINTING)
+void PrintViewManagerBase::OnPdfToEmfConverted(
+    const PrintHostMsg_DidPrintPage_Params& params,
+    double scale_factor,
+    const std::vector<base::FilePath>& emf_files) {
+  PrintedDocument* document = print_job_->document();
+  if (!document)
+    return;
+
+  for (size_t i = 0; i < emf_files.size(); ++i) {
+    scoped_ptr<printing::Emf> metafile(new printing::Emf);
+    if (!metafile->InitFromFile(emf_files[i])) {
+      NOTREACHED() << "Invalid metafile";
+      web_contents()->Stop();
+      return;
+    }
+    // Update the rendered document. It will send notifications to the listener.
+    document->SetPage(i,
+                      metafile.release(),
+                      scale_factor,
+                      params.page_size,
+                      params.content_area);
+  }
+
+  ShouldQuitFromInnerMessageLoop();
+}
+#endif  // WIN_PDF_METAFILE_FOR_PRINTING
+
 void PrintViewManagerBase::OnDidPrintPage(
-    const PrintHostMsg_DidPrintPage_Params& params) {
+  const PrintHostMsg_DidPrintPage_Params& params) {
   if (!OpportunisticallyCreatePrintJob(params.document_cookie))
     return;
 
@@ -136,9 +169,10 @@ void PrintViewManagerBase::OnDidPrintPage(
     return;
   }
 
-#if defined(OS_WIN) || defined(OS_MACOSX)
+#if (defined(OS_WIN) && !defined(WIN_PDF_METAFILE_FOR_PRINTING)) || \
+    defined(OS_MACOSX)
   const bool metafile_must_be_valid = true;
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) || defined(WIN_PDF_METAFILE_FOR_PRINTING)
   const bool metafile_must_be_valid = expecting_first_page_;
   expecting_first_page_ = false;
 #endif
@@ -161,10 +195,10 @@ void PrintViewManagerBase::OnDidPrintPage(
     }
   }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(WIN_PDF_METAFILE_FOR_PRINTING)
   bool big_emf = (params.data_size && params.data_size >= kMetafileMaxSize);
-  int raster_size = std::min(params.page_size.GetArea(),
-                             kMaxRasterSizeInPixels);
+  int raster_size =
+      std::min(params.page_size.GetArea(), kMaxRasterSizeInPixels);
   if (big_emf) {
     scoped_ptr<NativeMetafile> raster_metafile(
         metafile->RasterizeMetafile(raster_size));
@@ -178,16 +212,39 @@ void PrintViewManagerBase::OnDidPrintPage(
       return;
     }
   }
-#endif
+#endif  // OS_WIN && !WIN_PDF_METAFILE_FOR_PRINTING
 
+#if !defined(WIN_PDF_METAFILE_FOR_PRINTING)
   // Update the rendered document. It will send notifications to the listener.
   document->SetPage(params.page_number,
                     metafile.release(),
+#if defined(OS_WIN)
                     params.actual_shrink,
+#endif  // OS_WIN
                     params.page_size,
                     params.content_area);
 
   ShouldQuitFromInnerMessageLoop();
+#else
+  if (metafile_must_be_valid) {
+    scoped_refptr<base::RefCountedBytes> bytes = new base::RefCountedBytes(
+        reinterpret_cast<const unsigned char*>(shared_buf.memory()),
+        params.data_size);
+
+    document->DebugDumpData(bytes, FILE_PATH_LITERAL(".pdf"));
+
+    if (!pdf_to_emf_converter_)
+      pdf_to_emf_converter_ = PdfToEmfConverter::CreateDefault();
+
+    const int kPrinterDpi = print_job_->settings().dpi();
+    pdf_to_emf_converter_->Start(
+        bytes,
+        printing::PdfRenderSettings(params.content_area, kPrinterDpi, true),
+        base::Bind(&PrintViewManagerBase::OnPdfToEmfConverted,
+                   base::Unretained(this),
+                   params));
+  }
+#endif  // !WIN_PDF_METAFILE_FOR_PRINTING
 }
 
 void PrintViewManagerBase::OnPrintingFailed(int cookie) {
@@ -394,7 +451,8 @@ void PrintViewManagerBase::DisconnectFromCurrentPrintJob() {
     // DO NOT wait for the job to finish.
     ReleasePrintJob();
   }
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if (defined(OS_POSIX) && !defined(OS_MACOSX)) || \
+    defined(WIN_PDF_METAFILE_FOR_PRINTING)
   expecting_first_page_ = true;
 #endif
 }

@@ -7,6 +7,7 @@
 // status=stable -> Enable this in all Blink configurations.  We are committed to these APIs indefinitely.
 // status=experimental -> In-progress features, Web Developers might play with, but are not on by default in stable.
 // status=test -> Enabled in ContentShell for testing, otherwise off.
+// status=deprecated -> Alias for "test", will be removed at some point.
 // Features without a status are not enabled anywhere by default.
 //
 // "stable" features listed here should be rare, as anything which we've shipped stable
@@ -16,8 +17,10 @@
 // #if ENABLE(FEATURE) guards.  These are deprecated and should all be removed.
 
 ApplicationCache status=stable
+AudioVideoTracks depends_on=Media, status=experimental
 AuthorShadowDOMForAnyElement
 BatteryStatus status=experimental
+Beacon status=experimental
 
 // This feature is deprecated and we are evangalizing affected sites.
 // See https://crbug.com/346236 for current status.
@@ -27,17 +30,18 @@ PrefixedVideoFullscreen status=stable
 // The changes enabled behind this flag are very likely to break lots of content.
 // ** DO NOT use this flag unless you know what you are doing. **
 BleedingEdgeFastPaths
+ThemeColor status=stable
 
 ClientHintsDpr status=experimental
-Crypto status=experimental
+Crypto status=stable
 CSSAnimationUnprefixed status=experimental
 CSSCompositing status=experimental
 CSSExclusions status=experimental
 CSSGridLayout status=experimental
 CSSMaskSourceType status=experimental
 CSSOMSmoothScroll status=experimental
-CSSShapes status=experimental
-CSSStickyPosition status=experimental
+CSSShapes status=stable
+CSSStickyPosition status=test
 CSSTouchAction status=stable
 CSSTouchActionDelay status=test
 CSSTransformsUnprefixed status=stable
@@ -47,15 +51,15 @@ CSS3Text status=experimental
 CSS3TextDecorations status=experimental
 CustomSchemeHandler depends_on=NavigatorContentUtils, status=experimental
 Database status=stable
-DeviceMotion status=stable
-DeviceOrientation status=stable
-DialogElement status=experimental
+DeviceLight status=test
+DialogElement status=stable
 EncodingAPI status=experimental
 EncryptedMedia status=test
 EncryptedMediaAnyVersion status=stable
 ExperimentalCanvasFeatures status=test
 ExperimentalContentSecurityPolicyFeatures status=experimental
-ExperimentalWebSocket status=experimental
+ExperimentalWebSocket status=stable
+FastMobileScrolling
 FileAPIBlobClose status=experimental
 FileConstructor status=experimental
 FileSystem status=stable
@@ -69,18 +73,20 @@ ImageDataConstructor status=experimental
 IndexedDBExperimental status=experimental
 InputModeAttribute status=experimental
 LangAttributeAwareFormControlUI
-LayerSquashing status=test
+LayerSquashing status=stable
 PrefixedEncryptedMedia status=stable
 LocalStorage status=stable
 Manifest status=test
 Media status=stable
 MediaController depends_on=Media, status=experimental
-MediaQueryParser status=test
+MediaQueryParser status=stable
 MediaSource status=stable
 MediaSourceExperimental depends_on=MediaSource, status=experimental
 MediaStream status=stable
 MemoryInfoInWorkers status=experimental
+NavigationTransitions status=experimental
 NavigatorContentUtils
+NetworkInformation status=experimental
 Notifications status=stable
 ObjectFitPosition status=stable
 OrientationEvent
@@ -99,7 +105,7 @@ RegionBasedColumns status=experimental
 
 // This is implementation flag for the re-write of the layout/paint system to
 // do painting after we have completed layout, instead of piecemeal during layout.
-RepaintAfterLayout status=test
+RepaintAfterLayout status=stable
 
 RequestAutocomplete status=test
 ScreenOrientation status=experimental
@@ -115,16 +121,13 @@ SharedWorker status=stable
 PictureSizes status=experimental
 Picture status=experimental
 
-// window.showModalDialog is deprecated and slated for removal from M36
-// Once this ships to stable supporting code can be removed.crbug.com/345831
-ShowModalDialog status=stable
+// window.showModalDialog is deprecated and slated for removal. crbug.com/345831
+ShowModalDialog status=deprecated
 
 SpeechSynthesis status=stable
 Stream status=experimental
-StyleScoped status=experimental
-SubpixelFontScaling status=experimental
+SubpixelFontScaling status=stable
 SubresourceIntegrity status=test
-SVGPaintOrder status=stable
 
 // Enable optimizations to recalculate style on the fewest possible number of
 // elements when updating classes, ids or attributes of DOM elements.
@@ -138,12 +141,12 @@ Touch status=stable
 
 TouchIconLoading
 UserSelectAll status=experimental
-ScriptPromiseOnV8Promise status=stable
 WebAnimationsSVG
 WebAnimationsElementAnimate status=stable
 WebAnimationsAPI status=experimental, depends_on=WebAnimationsElementAnimate
 WebAudio condition=WEB_AUDIO, status=stable
 WebGLDraftExtensions status=experimental
+WebGLImageChromium
 WebMIDI status=test
 WebVTTRegions depends_on=Media, status=experimental
 WOFF2 status=stable

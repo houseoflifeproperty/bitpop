@@ -31,7 +31,7 @@
 #ifndef StyleBuilder_h
 #define StyleBuilder_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 #include "platform/heap/Handle.h"
 
 namespace WebCore {
@@ -46,13 +46,8 @@ class StyleBuilder {
 public:
     static void applyProperty(CSSPropertyID, StyleResolverState&, CSSValue*);
 
-    // This function contains the gigantic old switch-statement of properties inherited from
-    // StyleResolver. Each property should be migrated over to a new StyleBuilder templated
-    // function and removed from this code. Once they're all moved, this function can die.
-    static void oldApplyProperty(CSSPropertyID, StyleResolverState&, CSSValue*, bool isInitial, bool isInherit);
-
 private:
-    static bool applyProperty(CSSPropertyID, StyleResolverState&, CSSValue*, bool isInitial, bool isInherit);
+    static void applyProperty(CSSPropertyID, StyleResolverState&, CSSValue*, bool isInitial, bool isInherit);
 };
 
 }

@@ -16,3 +16,4 @@ class V8Branches(Master.Master3):
   slave_port = 8146
   master_port_alt = 8246
   project_url = 'http://v8.googlecode.com'
+  buildbot_url = 'http://build.chromium.org/p/client.v8.branches/'

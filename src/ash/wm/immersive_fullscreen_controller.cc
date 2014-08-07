@@ -274,8 +274,13 @@ void ImmersiveFullscreenController::SetEnabled(WindowType window_type,
 
   EnableWindowObservers(enabled_);
 
+  ash::wm::WindowState* window_state = wm::GetWindowState(native_window_);
   // Auto hide the shelf in immersive fullscreen instead of hiding it.
-  wm::GetWindowState(native_window_)->set_hide_shelf_when_fullscreen(!enabled);
+  window_state->set_hide_shelf_when_fullscreen(!enabled);
+
+  // Update the window's immersive mode state for the window manager.
+  window_state->set_in_immersive_fullscreen(enabled);
+
   Shell::GetInstance()->UpdateShelfVisibility();
 
   if (enabled_) {
@@ -870,8 +875,8 @@ ImmersiveFullscreenController::GetSwipeType(ui::GestureEvent* event) const {
   if (event->type() != ui::ET_GESTURE_SCROLL_UPDATE)
     return SWIPE_NONE;
   // Make sure that it is a clear vertical gesture.
-  if (abs(event->details().scroll_y()) <=
-      kSwipeVerticalThresholdMultiplier * abs(event->details().scroll_x()))
+  if (std::abs(event->details().scroll_y()) <=
+      kSwipeVerticalThresholdMultiplier * std::abs(event->details().scroll_x()))
     return SWIPE_NONE;
   if (event->details().scroll_y() < 0)
     return SWIPE_CLOSE;

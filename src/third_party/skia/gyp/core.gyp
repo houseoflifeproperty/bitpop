@@ -21,8 +21,10 @@
         '../include/utils',
         '../include/xml',
         '../src/core',
-        '../src/opts',
+        '../src/sfnt',
         '../src/image',
+        '../src/opts',
+        '../src/utils',
       ],
       'sources': [
         'core.gypi', # Makes the gypi appear in IDEs (but does not modify the build).
@@ -79,12 +81,6 @@
           'dependencies': [
             'android_deps.gyp:cpu_features',
           ],
-        }],
-        [ 'skia_android_framework', {
-            'libraries': [
-              # Required for SkAtomics_android.h
-              '-lcutils',
-            ],
         }],
         [ 'skia_arch_type == "arm"', {
           # The code in SkUtilsArm.cpp can be used on an ARM-based Linux system, not only Android.

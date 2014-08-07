@@ -23,7 +23,7 @@
 #define SVGGlyphElement_h
 
 #if ENABLE(SVG_FONTS)
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGElement.h"
 #include "platform/fonts/SVGGlyph.h"
 
@@ -33,7 +33,7 @@ class SVGFontData;
 
 class SVGGlyphElement FINAL : public SVGElement {
 public:
-    static PassRefPtr<SVGGlyphElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGGlyphElement);
 
     SVGGlyph buildGlyphIdentifier() const;
 

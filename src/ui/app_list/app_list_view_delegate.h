@@ -18,20 +18,22 @@ namespace base {
 class FilePath;
 }
 
-namespace content {
-class WebContents;
-}
-
 namespace gfx {
 class ImageSkia;
+class Size;
 }
+
+#if defined(TOOLKIT_VIEWS)
+namespace views {
+class View;
+}
+#endif
 
 namespace app_list {
 
 class AppListModel;
 class AppListViewDelegateObserver;
 class SearchResult;
-class SigninDelegate;
 class SpeechUIModel;
 
 class APP_LIST_EXPORT AppListViewDelegate {
@@ -52,9 +54,6 @@ class APP_LIST_EXPORT AppListViewDelegate {
 
     // The path to this user's profile directory.
     base::FilePath profile_path;
-
-    // Whether or not the current profile requires sign-in beofre use.
-    bool signin_required;
   };
   typedef std::vector<User> Users;
 
@@ -72,9 +71,6 @@ class APP_LIST_EXPORT AppListViewDelegate {
   // Gets the model associated with the view delegate. The model may be owned
   // by the delegate, or owned elsewhere (e.g. a profile keyed service).
   virtual AppListModel* GetModel() = 0;
-
-  // Gets the SigninDelegate for the app list. Owned by the AppListViewDelegate.
-  virtual SigninDelegate* GetSigninDelegate() = 0;
 
   // Gets the SpeechUIModel for the app list. Owned by the AppListViewDelegate.
   virtual SpeechUIModel* GetSpeechUI() = 0;
@@ -139,12 +135,14 @@ class APP_LIST_EXPORT AppListViewDelegate {
   // Shows the app list for the profile specified by |profile_path|.
   virtual void ShowForProfileByPath(const base::FilePath& profile_path) = 0;
 
-  // Get the start page web contents. Owned by the AppListViewDelegate.
-  virtual content::WebContents* GetStartPageContents() = 0;
+#if defined(TOOLKIT_VIEWS)
+  // Creates the web view for the start page. The caller takes the ownership of
+  // the returned view.
+  virtual views::View* CreateStartPageWebView(const gfx::Size& size) = 0;
+#endif
 
-  // Get the web contents for speech recognition or NULL if speech recognition
-  // is unavailable.
-  virtual content::WebContents* GetSpeechRecognitionContents() = 0;
+  // Returns true if the delegate supports speech recognition.
+  virtual bool IsSpeechRecognitionEnabled() = 0;
 
   // Returns the list of users (for AppListMenu).
   virtual const Users& GetUsers() const = 0;

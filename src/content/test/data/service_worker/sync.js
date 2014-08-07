@@ -5,14 +5,9 @@
 var code = 404;
 
 this.onfetch = function(event) {
-    response = new Response({
-        statusCode: code,
-        statusText: 'OK',
-        method: 'GET',
-        headers: {
-            'Content-Language': 'fi',
-            'Content-Type': 'text/html; charset=UTF-8'
-        }
+    response = new Response(new Blob(), {
+        status: code,
+        statusText: 'OK'
     });
 
     event.respondWith(new Promise(function(r) {

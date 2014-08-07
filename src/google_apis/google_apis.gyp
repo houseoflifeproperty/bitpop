@@ -36,29 +36,29 @@
             'GOOGLE_DEFAULT_CLIENT_SECRET="<(google_default_client_secret)"',
           ]
         }],
-        [ 'OS == "mac" or OS == "ios" or OS == "win"', {
+        ['OS == "mac" or OS == "ios" or OS == "win"', {
           'dependencies': [
             '../third_party/nss/nss.gyp:nspr',
             '../third_party/nss/nss.gyp:nss',
           ],
         }],
-        [ 'OS == "android"', {
-            'dependencies': [
-              '../third_party/openssl/openssl.gyp:openssl',
-            ],
-            'sources/': [
-              ['exclude', 'cup/client_update_protocol_nss\.cc$'],
-            ],
+        ['OS == "android"', {
+          'dependencies': [
+            '../third_party/openssl/openssl.gyp:openssl',
+          ],
+          'sources/': [
+            ['exclude', 'cup/client_update_protocol_nss\.cc$'],
+          ],
         }],
-        [ 'use_openssl==1', {
-            'sources!': [
-              'cup/client_update_protocol_nss.cc',
-            ],
-          }, {
-            'sources!': [
-              'cup/client_update_protocol_openssl.cc',
-            ],
-        },],
+        ['use_openssl==1', {
+          'sources!': [
+            'cup/client_update_protocol_nss.cc',
+          ],
+        }, {
+          'sources!': [
+            'cup/client_update_protocol_openssl.cc',
+          ],
+        }],
       ],
       'sources': [
         'cup/client_update_protocol.cc',
@@ -95,6 +95,8 @@
         'drive/task_util.h',
         'drive/time_util.cc',
         'drive/time_util.h',
+        'gaia/account_tracker.cc',
+        'gaia/account_tracker.h',
         'gaia/gaia_auth_consumer.cc',
         'gaia/gaia_auth_consumer.h',
         'gaia/gaia_auth_fetcher.cc',
@@ -128,6 +130,8 @@
         'gaia/oauth2_mint_token_flow.h',
         'gaia/oauth2_token_service.cc',
         'gaia/oauth2_token_service.h',
+        'gaia/oauth2_token_service_request.cc',
+        'gaia/oauth2_token_service_request.h',
         'gaia/ubertoken_fetcher.cc',
         'gaia/ubertoken_fetcher.h',
         'google_api_keys.cc',
@@ -166,6 +170,7 @@
         'drive/request_sender_unittest.cc',
         'drive/request_util_unittest.cc',
         'drive/time_util_unittest.cc',
+        'gaia/account_tracker_unittest.cc',
         'gaia/gaia_auth_fetcher_unittest.cc',
         'gaia/gaia_auth_util_unittest.cc',
         'gaia/gaia_oauth_client_unittest.cc',
@@ -175,6 +180,7 @@
         'gaia/oauth2_access_token_fetcher_impl_unittest.cc',
         'gaia/oauth2_api_call_flow_unittest.cc',
         'gaia/oauth2_mint_token_flow_unittest.cc',
+        'gaia/oauth2_token_service_request_unittest.cc',
         'gaia/oauth2_token_service_unittest.cc',
         'gaia/ubertoken_fetcher_unittest.cc',
       ],

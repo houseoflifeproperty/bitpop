@@ -47,6 +47,7 @@ class HTMLImportChild;
 //
 class LinkImport FINAL : public LinkResource, public HTMLImportChildClient {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LinkImport);
 public:
 
     static PassOwnPtrWillBeRawPtr<LinkImport> create(HTMLLinkElement* owner);
@@ -59,17 +60,20 @@ public:
     virtual Type type() const OVERRIDE { return Import; }
     virtual bool hasLoaded() const OVERRIDE;
     virtual void trace(Visitor*) OVERRIDE;
+    virtual void ownerInserted() OVERRIDE;
 
     // HTMLImportChildClient
     virtual void didFinish() OVERRIDE;
+#if !ENABLE(OILPAN)
     virtual void importChildWasDestroyed(HTMLImportChild*) OVERRIDE;
+#endif
     virtual bool isSync() const OVERRIDE;
     virtual HTMLLinkElement* link() OVERRIDE;
 
     Document* importedDocument() const;
 
 private:
-    HTMLImportChild* m_child;
+    RawPtrWillBeMember<HTMLImportChild> m_child;
 };
 
 } // namespace WebCore

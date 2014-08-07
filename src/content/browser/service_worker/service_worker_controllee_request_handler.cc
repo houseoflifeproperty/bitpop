@@ -10,6 +10,7 @@
 #include "content/browser/service_worker/service_worker_url_request_job.h"
 #include "content/browser/service_worker/service_worker_utils.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "net/base/net_util.h"
 #include "net/url_request/url_request.h"
 
 namespace content {
@@ -17,8 +18,12 @@ namespace content {
 ServiceWorkerControlleeRequestHandler::ServiceWorkerControlleeRequestHandler(
     base::WeakPtr<ServiceWorkerContextCore> context,
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
+    base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context,
     ResourceType::Type resource_type)
-    : ServiceWorkerRequestHandler(context, provider_host, resource_type),
+    : ServiceWorkerRequestHandler(context,
+                                  provider_host,
+                                  blob_storage_context,
+                                  resource_type),
       weak_factory_(this) {
 }
 
@@ -52,8 +57,8 @@ net::URLRequestJob* ServiceWorkerControlleeRequestHandler::MaybeCreateJob(
   // It's for original request (A) or redirect case (B-a or B-b).
   DCHECK(!job_.get() || job_->ShouldForwardToServiceWorker());
 
-  job_ = new ServiceWorkerURLRequestJob(request, network_delegate,
-                                        provider_host_);
+  job_ = new ServiceWorkerURLRequestJob(
+      request, network_delegate, provider_host_, blob_storage_context_);
   if (ServiceWorkerUtils::IsMainResourceType(resource_type_))
     PrepareForMainResource(request->url());
   else
@@ -77,10 +82,12 @@ void ServiceWorkerControlleeRequestHandler::PrepareForMainResource(
   // The corresponding provider_host may already have associate version in
   // redirect case, unassociate it now.
   provider_host_->SetActiveVersion(NULL);
-  provider_host_->SetPendingVersion(NULL);
-  provider_host_->set_document_url(url);
+  provider_host_->SetWaitingVersion(NULL);
+
+  GURL stripped_url = net::SimplifyUrlForRequest(url);
+  provider_host_->SetDocumentUrl(stripped_url);
   context_->storage()->FindRegistrationForDocument(
-      url,
+      stripped_url,
       base::Bind(&self::DidLookupRegistrationForMainResource,
                  weak_factory_.GetWeakPtr()));
 }
@@ -95,12 +102,12 @@ ServiceWorkerControlleeRequestHandler::DidLookupRegistrationForMainResource(
     job_->FallbackToNetwork();
     return;
   }
-  // TODO(michaeln): should SetPendingVersion() even if no active version so
+  // TODO(michaeln): should SetWaitingVersion() even if no active version so
   // so the versions in the pipeline (.installing, .waiting) show up in the
   // attribute values.
   DCHECK(registration);
   provider_host_->SetActiveVersion(registration->active_version());
-  provider_host_->SetPendingVersion(registration->pending_version());
+  provider_host_->SetWaitingVersion(registration->waiting_version());
   job_->ForwardToServiceWorker();
 }
 

@@ -160,8 +160,15 @@ class BrowserActionsContainer
   // Delete all browser action views.
   void DeleteBrowserActionViews();
 
-  // Returns how many browser actions are visible.
+  // Returns how many browser actions are currently visible. If the intent is
+  // to find how many are visible once the container finishes animation, see
+  // VisibleBrowserActionsAfterAnimation() below.
   size_t VisibleBrowserActions() const;
+
+  // Returns how many browser actions will be visible once the container
+  // finishes animating to a new size, or (if not animating) the currently
+  // visible icons.
+  size_t VisibleBrowserActionsAfterAnimation() const;
 
   // Executes |command| registered by |extension|.
   void ExecuteExtensionCommand(const extensions::Extension* extension,
@@ -172,7 +179,8 @@ class BrowserActionsContainer
   void RemoveObserver(BrowserActionsContainerObserver* observer);
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool GetDropFormats(int* formats,
       std::set<ui::OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
@@ -317,7 +325,7 @@ class BrowserActionsContainer
   // still show it.  This assumes a visible chevron because the only way we
   // would not have a chevron when shrinking down this far is if there were no
   // icons, in which case the container wouldn't be shown at all.
-  int ContainerMinSize() const;
+  int MinimumNonemptyWidth() const;
 
   // Animate to the target size (unless testing, in which case we go straight to
   // the target size).  This also saves the target number of visible icons in

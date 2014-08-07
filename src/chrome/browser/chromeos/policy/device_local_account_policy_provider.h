@@ -24,7 +24,8 @@ class PolicyMap;
 // DeviceLocalAccountPolicyService. Note that this implementation keeps
 // functioning when the device-local account disappears from
 // DeviceLocalAccountPolicyService. The current policy will be kept in that case
-// and RefreshPolicies becomes a no-op.
+// and RefreshPolicies becomes a no-op. Policies for any installed extensions
+// will be kept as well in that case.
 class DeviceLocalAccountPolicyProvider
     : public ConfigurationPolicyProvider,
       public DeviceLocalAccountPolicyService::Observer {
@@ -52,7 +53,7 @@ class DeviceLocalAccountPolicyProvider
 
  private:
   // Returns the broker for |user_id_| or NULL if not available.
-  DeviceLocalAccountPolicyBroker* GetBroker();
+  DeviceLocalAccountPolicyBroker* GetBroker() const;
 
   // Handles completion of policy refreshes and triggers the update callback.
   // |success| is true if the policy refresh was successful.

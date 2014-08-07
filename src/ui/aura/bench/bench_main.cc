@@ -148,7 +148,10 @@ void ReturnMailbox(scoped_refptr<cc::ContextProvider> context_provider,
 // A benchmark that adds a texture layer that is updated every frame.
 class WebGLBench : public BenchCompositorObserver {
  public:
-  WebGLBench(Layer* parent, Compositor* compositor, int max_frames)
+  WebGLBench(ui::ContextFactory* context_factory,
+             Layer* parent,
+             Compositor* compositor,
+             int max_frames)
       : BenchCompositorObserver(max_frames),
         parent_(parent),
         webgl_(ui::LAYER_TEXTURED),
@@ -177,8 +180,7 @@ class WebGLBench : public BenchCompositorObserver {
     webgl_.SetBounds(bounds);
     parent_->Add(&webgl_);
 
-    context_provider_ =
-        ui::ContextFactory::GetInstance()->SharedMainThreadContextProvider();
+    context_provider_ = context_factory->SharedMainThreadContextProvider();
     gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
     GLuint texture = 0;
     gl->GenTextures(1, &texture);
@@ -299,12 +301,12 @@ int main(int argc, char** argv) {
   // The ContextFactory must exist before any Compositors are created.
   scoped_ptr<ui::InProcessContextFactory> context_factory(
       new ui::InProcessContextFactory());
-  ui::ContextFactory::SetInstance(context_factory.get());
 
   base::i18n::InitializeICU();
 
   base::MessageLoopForUI message_loop;
   aura::Env::CreateInstance(true);
+  aura::Env::GetInstance()->set_context_factory(context_factory.get());
   scoped_ptr<aura::TestScreen> test_screen(
       aura::TestScreen::CreateFullscreen());
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen.get());
@@ -349,7 +351,8 @@ int main(int argc, char** argv) {
                                         host->compositor(),
                                         frames));
   } else {
-    bench.reset(new WebGLBench(&page_background,
+    bench.reset(new WebGLBench(context_factory.get(),
+                               &page_background,
                                host->compositor(),
                                frames));
   }

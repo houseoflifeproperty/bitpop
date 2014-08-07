@@ -54,6 +54,10 @@ namespace WebCore {
         }
 
         virtual bool isLazy() const OVERRIDE { return true; }
+        // V8LazyEventListener is always for the main world.
+        virtual DOMWrapperWorld& world() const OVERRIDE { return DOMWrapperWorld::mainWorld(); }
+
+        virtual void handleEvent(ExecutionContext*, Event*) OVERRIDE;
 
     protected:
         virtual void prepareListenerObject(ExecutionContext*) OVERRIDE;
@@ -61,7 +65,7 @@ namespace WebCore {
     private:
         V8LazyEventListener(const AtomicString& functionName, const AtomicString& eventParameterName, const String& code, const String sourceURL, const TextPosition&, Node*, v8::Isolate*);
 
-        virtual v8::Local<v8::Value> callListenerFunction(ExecutionContext*, v8::Handle<v8::Value> jsEvent, Event*) OVERRIDE;
+        virtual v8::Local<v8::Value> callListenerFunction(v8::Handle<v8::Value> jsEvent, Event*) OVERRIDE;
 
         // Needs to return true for all event handlers implemented in JavaScript so that
         // the SVG code does not add the event handler in both

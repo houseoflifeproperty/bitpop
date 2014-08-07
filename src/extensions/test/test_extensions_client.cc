@@ -5,10 +5,11 @@
 #include "extensions/test/test_extensions_client.h"
 
 #include "extensions/common/common_manifest_handlers.h"
-#include "extensions/common/features/base_feature_provider.h"
+#include "extensions/common/features/feature_provider.h"
+#include "extensions/common/features/json_feature_provider_source.h"
 #include "extensions/common/manifest_handler.h"
+#include "extensions/common/url_pattern_set.h"
 #include "extensions/test/test_permission_message_provider.h"
-#include "extensions/test/test_permissions_provider.h"
 
 namespace extensions {
 
@@ -27,12 +28,6 @@ void TestExtensionsClient::Initialize() {
   }
 }
 
-const PermissionsProvider&
-TestExtensionsClient::GetPermissionsProvider() const {
-  static TestPermissionsProvider provider;
-  return provider;
-}
-
 const PermissionMessageProvider&
 TestExtensionsClient::GetPermissionMessageProvider() const {
   static TestPermissionMessageProvider provider;
@@ -43,6 +38,13 @@ TestExtensionsClient::GetPermissionMessageProvider() const {
 scoped_ptr<FeatureProvider> TestExtensionsClient::CreateFeatureProvider(
     const std::string& name) const {
   return scoped_ptr<FeatureProvider>();
+}
+
+// TODO(yoz): Implement something reasonable here.
+scoped_ptr<JSONFeatureProviderSource>
+TestExtensionsClient::CreateFeatureProviderSource(
+    const std::string& name) const {
+  return scoped_ptr<JSONFeatureProviderSource>();
 }
 
 void TestExtensionsClient::FilterHostPermissions(
@@ -81,6 +83,9 @@ bool TestExtensionsClient::IsAPISchemaGenerated(
 base::StringPiece TestExtensionsClient::GetAPISchema(
     const std::string& name) const {
   return base::StringPiece();
+}
+
+void TestExtensionsClient::RegisterAPISchemaResources(ExtensionAPI* api) const {
 }
 
 bool TestExtensionsClient::ShouldSuppressFatalErrors() const {

@@ -126,17 +126,6 @@ class _BasePlatformSettings(object):
     ipfw_cmd = (self._ipfw_cmd(), ) + args
     return self._check_output(*ipfw_cmd, elevate_privilege=True)
 
-  def ping_rtt(self, hostname):
-    """Pings the hostname by calling the OS system ping command.
-    Also stores the result internally.
-
-    Args:
-      hostname: hostname of the server to be pinged
-    Returns:
-      round trip time to the server in seconds, or 0 if unable to calculate RTT
-    """
-    raise NotImplementedError
-
   def _get_cwnd(self):
     return None
 
@@ -233,10 +222,6 @@ class _BasePlatformSettings(object):
 
 
 class _PosixPlatformSettings(_BasePlatformSettings):
-  PING_PATTERN = r'rtt min/avg/max/mdev = \d+\.\d+/(\d+\.\d+)/\d+\.\d+/\d+\.\d+'
-  PING_CMD = ('ping', '-c', '3', '-i', '0.2', '-W', '1')
-  # For OsX Lion non-root:
-  PING_RESTRICTED_CMD = ('ping', '-c', '1', '-i', '1', '-W', '1')
 
   def rerun_as_administrator(self):
     """If needed, rerun the program with administrative privileges.
@@ -277,66 +262,13 @@ class _PosixPlatformSettings(_BasePlatformSettings):
   def _ipfw_cmd(self):
     return 'ipfw'
 
-  def _ping(self, hostname):
-    """Return ping output or None if ping fails.
-
-    Initially pings 'localhost' to test for ping command that works.
-    If the tests fails, subsequent calls will return None without calling ping.
-
-    Args:
-      hostname: host to ping
-    Returns:
-      ping stdout string, or None if ping unavailable
-    Raises:
-      CalledProcessError if ping returns non-zero exit
-    """
-    if not hasattr(self, 'ping_cmd'):
-      test_host = 'localhost'
-      for self.ping_cmd in (self.PING_CMD, self.PING_RESTRICTED_CMD):
-        try:
-          if self._ping(test_host):
-            break
-        except (CalledProcessError, OSError) as e:
-          last_ping_error = e
-      else:
-        logging.critical('Ping configuration failed: %s', last_ping_error)
-        self.ping_cmd = None
-    if self.ping_cmd:
-      cmd = list(self.ping_cmd) + [hostname]
-      return self._check_output(*cmd)
-    return None
-
-  def ping_rtt(self, hostname):
-    """Pings the hostname by calling the OS system ping command.
-
-    Args:
-      hostname: hostname of the server to be pinged
-    Returns:
-      round trip time to the server in milliseconds, or 0 if unavailable
-    """
-    rtt = 0
-    output = None
-    try:
-      output = self._ping(hostname)
-    except CalledProcessError as e:
-      logging.critical('Ping failed: %s', e)
-    if output:
-      match = re.search(self.PING_PATTERN, output)
-      if match:
-        rtt = float(match.groups()[0])
-      else:
-        logging.warning('Unable to ping %s: %s', hostname, output)
-    return rtt
-
-
   def _get_dns_update_error(self):
     return DnsUpdateError('Did you run under sudo?')
 
-  @classmethod
-  def _sysctl(cls, *args, **kwargs):
+  def _sysctl(self, *args, **kwargs):
     sysctl_args = [FindExecutable('sysctl')]
     if kwargs.get('use_sudo'):
-      sysctl_args = _elevate_privilege_for_cmd(sysctl_args)
+      sysctl_args = self._elevate_privilege_for_cmd(sysctl_args)
     sysctl_args.extend(str(a) for a in args)
     sysctl = subprocess.Popen(
         sysctl_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
@@ -439,6 +371,41 @@ class _OsxPlatformSettings(_PosixPlatformSettings):
       'set %s' % self._get_dns_service_key()
     ])
     self._scutil(command)
+
+
+class _FreeBSDPlatformSettings(_PosixPlatformSettings):
+  """Partial implementation for FreeBSD.  Does not allow a DNS server to be
+  launched nor ipfw to be used.
+  """
+  RESOLV_CONF = '/etc/resolv.conf'
+
+  def _get_default_route_line(self):
+    raise NotImplementedError
+
+  def _set_cwnd(self, cwnd):
+    raise NotImplementedError
+
+  def _get_cwnd(self):
+    raise NotImplementedError
+
+  def setup_temporary_loopback_config(self):
+    raise NotImplementedError
+
+  def _write_resolve_conf(self, dns):
+    raise NotImplementedError
+
+  def _get_primary_nameserver(self):
+    try:
+      resolv_file = open(self.RESOLV_CONF)
+    except IOError:
+      raise DnsReadError()
+    for line in resolv_file:
+      if line.startswith('nameserver '):
+        return line.split()[1]
+    raise DnsReadError()
+
+  def _set_primary_nameserver(self, dns):
+    raise NotImplementedError
 
 
 class _LinuxPlatformSettings(_PosixPlatformSettings):
@@ -714,6 +681,8 @@ def _new_platform_settings(system, release):
     return _WindowsXpPlatformSettings()
   if system == 'Windows':
     return _WindowsPlatformSettings()
+  if system == 'FreeBSD':
+    return _FreeBSDPlatformSettings()
   raise NotImplementedError('Sorry %s %s is not supported.' % (system, release))
 
 
@@ -728,7 +697,6 @@ timer = _inst.timer
 get_server_ip_address = _inst.get_server_ip_address
 get_httpproxy_ip_address = _inst.get_httpproxy_ip_address
 ipfw = _inst.ipfw
-ping_rtt = _inst.ping_rtt
 set_temporary_tcp_init_cwnd = _inst.set_temporary_tcp_init_cwnd
 setup_temporary_loopback_config = _inst.setup_temporary_loopback_config
 

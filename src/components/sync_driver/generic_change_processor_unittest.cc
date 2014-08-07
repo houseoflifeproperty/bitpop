@@ -9,12 +9,14 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "components/sync_driver/data_type_error_handler_mock.h"
-#include "sync/api/attachments/fake_attachment_service.h"
-#include "sync/api/attachments/fake_attachment_store.h"
-#include "sync/api/attachments/fake_attachment_uploader.h"
+#include "components/sync_driver/sync_api_component_factory.h"
+#include "sync/api/attachments/attachment_service_impl.h"
 #include "sync/api/fake_syncable_service.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_merge_result.h"
+#include "sync/internal_api/public/attachments/fake_attachment_downloader.h"
+#include "sync/internal_api/public/attachments/fake_attachment_store.h"
+#include "sync/internal_api/public/attachments/fake_attachment_uploader.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/read_node.h"
 #include "sync/internal_api/public/read_transaction.h"
@@ -32,7 +34,7 @@ namespace {
 const char kTestData[] = "some data";
 
 // A mock that keeps track of attachments passed to StoreAttachments.
-class MockAttachmentService : public syncer::FakeAttachmentService {
+class MockAttachmentService : public syncer::AttachmentServiceImpl {
  public:
   MockAttachmentService();
   virtual ~MockAttachmentService();
@@ -45,11 +47,14 @@ class MockAttachmentService : public syncer::FakeAttachmentService {
 };
 
 MockAttachmentService::MockAttachmentService()
-    : FakeAttachmentService(
+    : AttachmentServiceImpl(
           scoped_ptr<syncer::AttachmentStore>(new syncer::FakeAttachmentStore(
               base::MessageLoopProxy::current())),
           scoped_ptr<syncer::AttachmentUploader>(
-              new syncer::FakeAttachmentUploader)) {
+              new syncer::FakeAttachmentUploader),
+          scoped_ptr<syncer::AttachmentDownloader>(
+              new syncer::FakeAttachmentDownloader),
+          NULL) {
 }
 
 MockAttachmentService::~MockAttachmentService() {
@@ -59,12 +64,37 @@ void MockAttachmentService::StoreAttachments(
     const syncer::AttachmentList& attachments,
     const StoreCallback& callback) {
   attachment_lists_.push_back(attachments);
-  FakeAttachmentService::StoreAttachments(attachments, callback);
+  AttachmentServiceImpl::StoreAttachments(attachments, callback);
 }
 
 std::vector<syncer::AttachmentList>* MockAttachmentService::attachment_lists() {
   return &attachment_lists_;
 }
+
+// MockSyncApiComponentFactory needed to initialize GenericChangeProcessor and
+// pass MockAttachmentService to it.
+class MockSyncApiComponentFactory : public SyncApiComponentFactory {
+ public:
+  MockSyncApiComponentFactory(
+      scoped_ptr<syncer::AttachmentService> attachment_service)
+      : attachment_service_(attachment_service.Pass()) {}
+
+  virtual base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
+      syncer::ModelType type) OVERRIDE {
+    // Shouldn't be called for this test.
+    NOTREACHED();
+    return base::WeakPtr<syncer::SyncableService>();
+  }
+
+  virtual scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
+      syncer::AttachmentService::Delegate* delegate) OVERRIDE {
+    EXPECT_TRUE(attachment_service_ != NULL);
+    return attachment_service_.Pass();
+  }
+
+ private:
+  scoped_ptr<syncer::AttachmentService> attachment_service_;
+};
 
 class SyncGenericChangeProcessorTest : public testing::Test {
  public:
@@ -93,12 +123,14 @@ class SyncGenericChangeProcessorTest : public testing::Test {
     // Take a pointer and trust that GenericChangeProcessor does not prematurely
     // destroy it.
     mock_attachment_service_ = mock_attachment_service.get();
-    change_processor_.reset(new GenericChangeProcessor(
-        &data_type_error_handler_,
-        syncable_service_ptr_factory_.GetWeakPtr(),
-        merge_result_ptr_factory_.GetWeakPtr(),
-        test_user_share_.user_share(),
+    sync_factory_.reset(new MockSyncApiComponentFactory(
         mock_attachment_service.PassAs<syncer::AttachmentService>()));
+    change_processor_.reset(
+        new GenericChangeProcessor(&data_type_error_handler_,
+                                   syncable_service_ptr_factory_.GetWeakPtr(),
+                                   merge_result_ptr_factory_.GetWeakPtr(),
+                                   test_user_share_.user_share(),
+                                   sync_factory_.get()));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -109,8 +141,7 @@ class SyncGenericChangeProcessorTest : public testing::Test {
   void BuildChildNodes(int n) {
     syncer::WriteTransaction trans(FROM_HERE, user_share());
     syncer::ReadNode root(&trans);
-    ASSERT_EQ(syncer::BaseNode::INIT_OK,
-              root.InitByTagLookup(syncer::ModelTypeToRootTag(kType)));
+    ASSERT_EQ(syncer::BaseNode::INIT_OK, root.InitTypeRoot(kType));
     for (int i = 0; i < n; ++i) {
       syncer::WriteNode node(&trans);
       node.InitUniqueByCreation(kType, root, base::StringPrintf("node%05d", i));
@@ -142,6 +173,7 @@ class SyncGenericChangeProcessorTest : public testing::Test {
   DataTypeErrorHandlerMock data_type_error_handler_;
   syncer::TestUserShare test_user_share_;
   MockAttachmentService* mock_attachment_service_;
+  scoped_ptr<SyncApiComponentFactory> sync_factory_;
 
   scoped_ptr<GenericChangeProcessor> change_processor_;
 };
@@ -344,6 +376,44 @@ TEST_F(SyncGenericChangeProcessorTest,
       mock_attachment_service()->attachment_lists()->front();
   ASSERT_EQ(new_attachments_added.size(), 1U);
   ASSERT_EQ(new_attachments_added[0].GetId(), new_attachments[0].GetId());
+}
+
+// Verify that after attachment is uploaded GenericChangeProcessor updates
+// corresponding entries
+TEST_F(SyncGenericChangeProcessorTest, AttachmentUploaded) {
+  std::string tag = "client_tag";
+  std::string title = "client_title";
+  sync_pb::EntitySpecifics specifics;
+  sync_pb::PreferenceSpecifics* pref_specifics = specifics.mutable_preference();
+  pref_specifics->set_name("test");
+  syncer::AttachmentList attachments;
+  scoped_refptr<base::RefCountedString> attachment_data =
+      new base::RefCountedString;
+  attachment_data->data() = kTestData;
+  attachments.push_back(syncer::Attachment::Create(attachment_data));
+
+  // Add a SyncData with two attachments.
+  syncer::SyncChangeList change_list;
+  change_list.push_back(
+      syncer::SyncChange(FROM_HERE,
+                         syncer::SyncChange::ACTION_ADD,
+                         syncer::SyncData::CreateLocalDataWithAttachments(
+                             tag, title, specifics, attachments)));
+  ASSERT_FALSE(
+      change_processor()->ProcessSyncChanges(FROM_HERE, change_list).IsSet());
+
+  sync_pb::AttachmentIdProto attachment_id_proto =
+      attachments[0].GetId().GetProto();
+  syncer::AttachmentId attachment_id =
+      syncer::AttachmentId::CreateFromProto(attachment_id_proto);
+
+  change_processor()->OnAttachmentUploaded(attachment_id);
+  syncer::ReadTransaction read_transaction(FROM_HERE, user_share());
+  syncer::ReadNode node(&read_transaction);
+  ASSERT_EQ(node.InitByClientTagLookup(syncer::PREFERENCES, tag),
+            syncer::BaseNode::INIT_OK);
+  syncer::AttachmentIdList attachment_ids = node.GetAttachmentIds();
+  EXPECT_EQ(1U, attachment_ids.size());
 }
 
 }  // namespace

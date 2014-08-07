@@ -29,12 +29,12 @@
 #include "config.h"
 #include "modules/indexeddb/IDBEventDispatcher.h"
 
-#include "core/events/Event.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventModules.h"
+#include "modules/EventTargetModules.h"
 
 namespace WebCore {
 
-bool IDBEventDispatcher::dispatch(Event* event, Vector<RefPtr<EventTarget> >& eventTargets)
+bool IDBEventDispatcher::dispatch(Event* event, WillBeHeapVector<RefPtrWillBeMember<EventTarget> >& eventTargets)
 {
     size_t size = eventTargets.size();
     ASSERT(size);

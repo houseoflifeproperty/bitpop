@@ -57,7 +57,7 @@
 {% set method_callback_for_main_world =
    '%sV8Internal::%sMethodCallbackForMainWorld' % (cpp_class, method.name)
    if method.is_per_world_bindings else '0' %}
-{"{{method.name}}", {{method_callback}}, {{method_callback_for_main_world}}, {{method.number_of_required_or_variadic_arguments}}}
+{"{{method.name}}", {{method_callback}}, {{method_callback_for_main_world}}, {{method.length}}}
 {%- endmacro %}
 
 
@@ -562,7 +562,7 @@ static void {{cpp_class}}OriginSafeMethodSetterCallback(v8::Local<v8::String> na
                               if is_active_dom_object else '0' %}
 {% set to_event_target = '%s::toEventTarget' % v8_class
                          if is_event_target else '0' %}
-const WrapperTypeInfo {{v8_class}}Constructor::wrapperTypeInfo = { gin::kEmbedderBlink, {{v8_class}}Constructor::domTemplate, {{v8_class}}::derefObject, {{to_active_dom_object}}, {{to_event_target}}, 0, {{v8_class}}::installPerContextEnabledMethods, 0, WrapperTypeObjectPrototype, RefCountedObject };
+const WrapperTypeInfo {{v8_class}}Constructor::wrapperTypeInfo = { gin::kEmbedderBlink, {{v8_class}}Constructor::domTemplate, {{v8_class}}::derefObject, {{to_active_dom_object}}, {{to_event_target}}, 0, {{v8_class}}::installPerContextEnabledMethods, 0, WrapperTypeObjectPrototype, {{gc_type}} };
 
 {{named_constructor_callback(named_constructor)}}
 v8::Handle<v8::FunctionTemplate> {{v8_class}}Constructor::domTemplate(v8::Isolate* isolate)
@@ -588,27 +588,43 @@ v8::Handle<v8::FunctionTemplate> {{v8_class}}Constructor::domTemplate(v8::Isolat
 
 {##############################################################################}
 {% block overloaded_constructor %}
-{% if constructors | length > 1 %}
+{% if constructor_overloads %}
 static void constructor(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
-    {% for constructor in constructors %}
-    if ({{constructor.overload_resolution_expression}}) {
-        {{cpp_class}}V8Internal::constructor{{constructor.overload_index}}(info);
-        return;
-    }
+    v8::Isolate* isolate = info.GetIsolate();
+    ExceptionState exceptionState(ExceptionState::ConstructionContext, "{{interface_name}}", info.Holder(), isolate);
+    {# 2. Initialize argcount to be min(maxarg, n). #}
+    switch (std::min({{constructor_overloads.maxarg}}, info.Length())) {
+    {# 3. Remove from S all entries whose type list is not of length argcount. #}
+    {% for length, tests_constructors in constructor_overloads.length_tests_methods %}
+    case {{length}}:
+        {# Then resolve by testing argument #}
+        {% for test, constructor in tests_constructors %}
+        {# 10. If i = d, then: #}
+        if ({{test}}) {
+            {{cpp_class}}V8Internal::constructor{{constructor.overload_index}}(info);
+            return;
+        }
+        {% endfor %}
+        break;
     {% endfor %}
-    {% if interface_length %}
-    ExceptionState exceptionState(ExceptionState::ConstructionContext, "{{interface_name}}", info.Holder(), info.GetIsolate());
-    if (UNLIKELY(info.Length() < {{interface_length}})) {
-        exceptionState.throwTypeError(ExceptionMessages::notEnoughArguments({{interface_length}}, info.Length()));
+    default:
+        {# Invalid arity, throw error #}
+        {# Report full list of valid arities if gaps and above minimum #}
+        {% if constructor_overloads.valid_arities %}
+        if (info.Length() >= {{constructor_overloads.minarg}}) {
+            throwArityTypeError(exceptionState, "{{constructor_overloads.valid_arities}}", info.Length());
+            return;
+        }
+        {% endif %}
+        {# Otherwise just report "not enough arguments" #}
+        exceptionState.throwTypeError(ExceptionMessages::notEnoughArguments({{constructor_overloads.minarg}}, info.Length()));
         exceptionState.throwIfNeeded();
         return;
     }
+    {# No match, throw error #}
     exceptionState.throwTypeError("No matching constructor signature.");
     exceptionState.throwIfNeeded();
-    {% else %}
-    throwTypeError(ExceptionMessages::failedToConstruct("{{interface_name}}", "No matching constructor signature."), info.GetIsolate());
-    {% endif %}
 }
 
 {% endif %}
@@ -765,9 +781,9 @@ static const V8DOMConfiguration::AccessorConfiguration {{v8_class}}Accessors[] =
 {##############################################################################}
 {% block class_methods %}
 {# FIXME: rename to install_methods and put into configure_class_template #}
-{% if has_method_configuration %}
+{% if method_configuration_methods %}
 static const V8DOMConfiguration::MethodConfiguration {{v8_class}}Methods[] = {
-    {% for method in methods if method.do_generate_method_configuration %}
+    {% for method in method_configuration_methods %}
     {% filter conditional(method.conditional_string) %}
     {{method_configuration(method)}},
     {% endfilter %}
@@ -877,7 +893,12 @@ static void configure{{v8_class}}Template(v8::Handle<v8::FunctionTemplate> funct
     {% set runtime_enabled_indent = 4 if runtime_enabled_function else 0 %}
     {% filter indent(runtime_enabled_indent, true) %}
     defaultSignature = V8DOMConfiguration::installDOMClassTemplate(functionTemplate, "{{interface_name}}", {{parent_template}}, {{v8_class}}::internalFieldCount,
-        {# Test needed as size 0 constant arrays are not allowed in VC++ #}
+        {# Test needed as size 0 arrays definitions are not allowed per standard
+           (so objects have distinct addresses), which is enforced by MSVC.
+           8.5.1 Aggregates [dcl.init.aggr]
+           An array of unknown size initialized with a brace-enclosed
+           initializer-list containing n initializer-clauses, where n shall be
+           greater than zero, is defined as having n elements (8.3.4). #}
         {% set attributes_name, attributes_length =
                ('%sAttributes' % v8_class,
                 'WTF_ARRAY_LENGTH(%sAttributes)' % v8_class)
@@ -889,7 +910,7 @@ static void configure{{v8_class}}Template(v8::Handle<v8::FunctionTemplate> funct
         {% set methods_name, methods_length =
                ('%sMethods' % v8_class,
                 'WTF_ARRAY_LENGTH(%sMethods)' % v8_class)
-           if has_method_configuration else (0, 0) %}
+           if method_configuration_methods else (0, 0) %}
         {{attributes_name}}, {{attributes_length}},
         {{accessors_name}}, {{accessors_length}},
         {{methods_name}}, {{methods_length}},
@@ -970,11 +991,12 @@ static void configure{{v8_class}}Template(v8::Handle<v8::FunctionTemplate> funct
     {# Needed for legacy support of document.all #}
     functionTemplate->InstanceTemplate()->MarkAsUndetectable();
     {% endif %}
-    {% for method in methods if not method.do_not_check_signature %}
+    {% for method in custom_registration_methods %}
     {# install_custom_signature #}
-    {% if not method.overload_index or method.overload_index == 1 %}
-    {# For overloaded methods, only generate one accessor #}
     {% filter conditional(method.conditional_string) %}
+    {% filter runtime_enabled(method.overloads.runtime_enabled_function_all
+                              if method.overloads else
+                              method.runtime_enabled_function) %}
     {% if method.is_do_not_check_security %}
     {% if method.is_per_world_bindings %}
     if (DOMWrapperWorld::current(isolate).isMainWorld()) {
@@ -988,22 +1010,16 @@ static void configure{{v8_class}}Template(v8::Handle<v8::FunctionTemplate> funct
     {% else %}{# is_do_not_check_security #}
     {% if method.is_per_world_bindings %}
     if (DOMWrapperWorld::current(isolate).isMainWorld()) {
-        {% filter runtime_enabled(method.runtime_enabled_function) %}
         {{install_custom_signature(method, 'ForMainWorld')}}
-        {% endfilter %}
     } else {
-        {% filter runtime_enabled(method.runtime_enabled_function) %}
         {{install_custom_signature(method)}}
-        {% endfilter %}
     }
     {% else %}
-    {% filter runtime_enabled(method.runtime_enabled_function) %}
     {{install_custom_signature(method)}}
-    {% endfilter %}
     {% endif %}
     {% endif %}{# is_do_not_check_security #}
-    {% endfilter %}
-    {% endif %}{# install_custom_signature #}
+    {% endfilter %}{# runtime_enabled() #}
+    {% endfilter %}{# conditional() #}
     {% endfor %}
     {% for attribute in attributes if attribute.is_static %}
     {% set getter_callback = '%sV8Internal::%sAttributeGetterCallback' %
@@ -1062,7 +1078,7 @@ static void configure{{v8_class}}Template(v8::Handle<v8::FunctionTemplate> funct
                          (cpp_class, method.name, world_suffix) %}
 {% set property_attribute = 'static_cast<v8::PropertyAttribute>(%s)' %
                             ' | '.join(method.property_attributes) %}
-{{method.function_template}}->Set(v8AtomicString(isolate, "{{method.name}}"), v8::FunctionTemplate::New(isolate, {{method_callback}}, v8Undefined(), {{method.signature}}, {{method.number_of_required_or_variadic_arguments}}){% if method.property_attributes %}, {{property_attribute}}{% endif %});
+{{method.function_template}}->Set(v8AtomicString(isolate, "{{method.name}}"), v8::FunctionTemplate::New(isolate, {{method_callback}}, v8Undefined(), {{method.signature}}, {{method.length}}){% if method.property_attributes %}, {{property_attribute}}{% endif %});
 {%- endmacro %}
 
 
@@ -1098,16 +1114,7 @@ COMPILE_ASSERT({{constant.value}} == {{constant_cpp_class}}::{{constant.reflecte
 {# FIXME: rename to get_dom_template and GetDOMTemplate #}
 v8::Handle<v8::FunctionTemplate> {{v8_class}}::domTemplate(v8::Isolate* isolate)
 {
-    V8PerIsolateData* data = V8PerIsolateData::from(isolate);
-    v8::Local<v8::FunctionTemplate> result = data->existingDOMTemplate(const_cast<WrapperTypeInfo*>(&wrapperTypeInfo));
-    if (!result.IsEmpty())
-        return result;
-
-    TRACE_EVENT_SCOPED_SAMPLING_STATE("Blink", "BuildDOMTemplate");
-    result = v8::FunctionTemplate::New(isolate, V8ObjectConstructor::isValidConstructorMode);
-    configure{{v8_class}}Template(result, isolate);
-    data->setDOMTemplate(const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), result);
-    return result;
+    return V8DOMConfiguration::domClassTemplate(isolate, const_cast<WrapperTypeInfo*>(&wrapperTypeInfo), configure{{v8_class}}Template);
 }
 
 {% endblock %}
@@ -1159,14 +1166,14 @@ void {{v8_class}}::installPerContextEnabledProperties(v8::Handle<v8::Object> ins
 
 {##############################################################################}
 {% block install_per_context_methods %}
-{% if has_per_context_enabled_methods %}
+{% if per_context_enabled_methods %}
 void {{v8_class}}::installPerContextEnabledMethods(v8::Handle<v8::Object> prototypeTemplate, v8::Isolate* isolate)
 {
     {# Define per-context enabled operations #}
     v8::Local<v8::Signature> defaultSignature = v8::Signature::New(isolate, domTemplate(isolate));
 
     ExecutionContext* context = toExecutionContext(prototypeTemplate->CreationContext());
-    {% for method in methods if method.per_context_enabled_function %}
+    {% for method in per_context_enabled_methods %}
     if (context && context->isDocument() && {{method.per_context_enabled_function}}(toDocument(context)))
         prototypeTemplate->Set(v8AtomicString(isolate, "{{method.name}}"), v8::FunctionTemplate::New(isolate, {{cpp_class}}V8Internal::{{method.name}}MethodCallback, v8Undefined(), defaultSignature, {{method.number_of_required_arguments}})->GetFunction());
     {% endfor %}
@@ -1253,6 +1260,14 @@ v8::Handle<v8::Object> wrap({{cpp_class}}* impl, v8::Handle<v8::Object> creation
     }
     {% endif %}
     return wrapper;
+}
+
+{% elif not has_custom_to_v8 and not has_custom_wrap %}
+v8::Handle<v8::Object> wrap({{cpp_class}}* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    ASSERT(impl);
+    ASSERT(!DOMDataStore::containsWrapper<{{v8_class}}>(impl, isolate));
+    return {{v8_class}}::createWrapper(impl, creationContext, isolate);
 }
 
 {% endif %}

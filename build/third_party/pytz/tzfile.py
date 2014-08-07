@@ -3,22 +3,34 @@
 $Id: tzfile.py,v 1.8 2004/06/03 00:15:24 zenzen Exp $
 '''
 
-from cStringIO import StringIO
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from io import StringIO
 from datetime import datetime, timedelta
 from struct import unpack, calcsize
 
 from pytz.tzinfo import StaticTzInfo, DstTzInfo, memorized_ttinfo
 from pytz.tzinfo import memorized_datetime, memorized_timedelta
 
+def _byte_string(s):
+    """Cast a string or byte string to an ASCII byte string."""
+    return s.encode('US-ASCII')
+
+_NULL = _byte_string('\0')
+
+def _std_string(s):
+    """Cast a string or byte string to an ASCII string."""
+    return str(s.decode('US-ASCII'))
 
 def build_tzinfo(zone, fp):
-    head_fmt = '>4s 16x 6l'
+    head_fmt = '>4s c 15x 6l'
     head_size = calcsize(head_fmt)
-    (magic,ttisgmtcnt,ttisstdcnt,leapcnt,
-     timecnt,typecnt,charcnt) =  unpack(head_fmt, fp.read(head_size))
-    
-    # Make sure it is a tzinfo(5) file
-    assert magic == 'TZif'
+    (magic, format, ttisgmtcnt, ttisstdcnt,leapcnt, timecnt,
+        typecnt, charcnt) =  unpack(head_fmt, fp.read(head_size))
+
+    # Make sure it is a tzfile(5) file
+    assert magic == _byte_string('TZif'), 'Got magic %s' % repr(magic)
 
     # Read out the transition times, localtime indices and ttinfo structures.
     data_fmt = '>%(timecnt)dl %(timecnt)dB %(ttinfo)s %(charcnt)ds' % dict(
@@ -43,10 +55,11 @@ def build_tzinfo(zone, fp):
         # have we looked up this timezone name yet?
         tzname_offset = ttinfo_raw[i+2]
         if tzname_offset not in tznames:
-            nul = tznames_raw.find('\0', tzname_offset)
+            nul = tznames_raw.find(_NULL, tzname_offset)
             if nul < 0:
                 nul = len(tznames_raw)
-            tznames[tzname_offset] = tznames_raw[tzname_offset:nul]
+            tznames[tzname_offset] = _std_string(
+                tznames_raw[tzname_offset:nul])
         ttinfo.append((ttinfo_raw[i],
                        bool(ttinfo_raw[i+1]),
                        tznames[tzname_offset]))
@@ -83,14 +96,25 @@ def build_tzinfo(zone, fp):
                     if not prev_inf[1]:
                         break
                 dst = inf[0] - prev_inf[0] # dst offset
+
+                # Bad dst? Look further. DST > 24 hours happens when
+                # a timzone has moved across the international dateline.
+                if dst <= 0 or dst > 3600*3:
+                    for j in range(i+1, len(transitions)):
+                        stdinf = ttinfo[lindexes[j]]
+                        if not stdinf[1]:
+                            dst = inf[0] - stdinf[0]
+                            if dst > 0:
+                                break # Found a useful std time.
+
             tzname = inf[2]
 
             # Round utcoffset and dst to the nearest minute or the
             # datetime library will complain. Conversions to these timezones
             # might be up to plus or minus 30 seconds out, but it is
             # the best we can do.
-            utcoffset = int((utcoffset + 30) / 60) * 60
-            dst = int((dst + 30) / 60) * 60
+            utcoffset = int((utcoffset + 30) // 60) * 60
+            dst = int((dst + 30) // 60) * 60
             transition_info.append(memorized_ttinfo(utcoffset, dst, tzname))
 
         cls = type(zone, (DstTzInfo,), dict(

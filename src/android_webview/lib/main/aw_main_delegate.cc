@@ -9,7 +9,6 @@
 #include "android_webview/browser/gpu_memory_buffer_factory_impl.h"
 #include "android_webview/browser/scoped_allow_wait_for_legacy_web_view_api.h"
 #include "android_webview/lib/aw_browser_dependency_factory_impl.h"
-#include "android_webview/native/aw_geolocation_permission_context.h"
 #include "android_webview/native/aw_quota_manager_bridge_impl.h"
 #include "android_webview/native/aw_web_contents_view_delegate.h"
 #include "android_webview/native/aw_web_preferences_populater_impl.h"
@@ -66,12 +65,8 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
   // Not yet supported in single-process mode.
   cl->AppendSwitch(switches::kDisableSharedWorkers);
 
-
   // File system API not supported (requires some new API; internal bug 6930981)
   cl->AppendSwitch(switches::kDisableFileSystem);
-
-  // Fullscreen video with subtitle is not yet supported.
-  cl->AppendSwitch(switches::kDisableOverlayFullscreenVideoSubtitle);
 
 #if defined(VIDEO_HOLE)
   // Support EME/L1 with hole-punching.
@@ -80,6 +75,7 @@ bool AwMainDelegate::BasicStartupComplete(int* exit_code) {
 
   // WebRTC hardware decoding is not supported, internal bug 15075307
   cl->AppendSwitch(switches::kDisableWebRtcHWDecoding);
+
   return false;
 }
 
@@ -139,12 +135,6 @@ content::ContentRendererClient*
 scoped_refptr<AwQuotaManagerBridge> AwMainDelegate::CreateAwQuotaManagerBridge(
     AwBrowserContext* browser_context) {
   return AwQuotaManagerBridgeImpl::Create(browser_context);
-}
-
-content::GeolocationPermissionContext*
-    AwMainDelegate::CreateGeolocationPermission(
-        AwBrowserContext* browser_context) {
-  return AwGeolocationPermissionContext::Create(browser_context);
 }
 
 content::WebContentsViewDelegate* AwMainDelegate::CreateViewDelegate(

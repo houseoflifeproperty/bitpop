@@ -7,12 +7,33 @@ var MIN_VERSION_TARGET_ID = 26;
 var MIN_VERSION_NEW_TAB = 29;
 var MIN_VERSION_TAB_ACTIVATE = 30;
 
+var queryParamsObject = {};
+
+(function() {
+var queryParams = window.location.search;
+if (!queryParams)
+    return;
+var params = queryParams.substring(1).split('&');
+for (var i = 0; i < params.length; ++i) {
+    var pair = params[i].split('=');
+    queryParamsObject[pair[0]] = pair[1];
+}
+
+})();
+
 function sendCommand(command, args) {
   chrome.send(command, Array.prototype.slice.call(arguments, 1));
 }
 
 function sendTargetCommand(command, target) {
   sendCommand(command, target.source, target.id);
+}
+
+function sendServiceWorkerCommand(action, worker) {
+  $('serviceworker-internals').contentWindow.postMessage({
+    'action': action,
+    'worker': worker
+  },'chrome://serviceworker-internals');
 }
 
 function removeChildren(element_id) {
@@ -37,6 +58,15 @@ function onload() {
   onHashChange();
   initSettings();
   sendCommand('init-ui');
+  window.addEventListener('message', onMessage.bind(this), false);
+}
+
+function onMessage(event) {
+  if (event.origin != 'chrome://serviceworker-internals') {
+    return;
+  }
+  populateServiceWorkers(event.data.partition_id,
+                         event.data.workers);
 }
 
 function onHashChange() {
@@ -73,6 +103,39 @@ function selectTab(id) {
   return true;
 }
 
+function populateServiceWorkers(partition_id, workers) {
+  var list = $('service-workers-list-' + partition_id);
+  if (workers.length == 0) {
+    if (list) {
+        list.parentNode.removeChild(list);
+    }
+    return;
+  }
+  if (list) {
+    list.textContent = '';
+  } else {
+    list = document.createElement('div');
+    list.id = 'service-workers-list-' + partition_id;
+    list.className = 'list';
+    $('service-workers-list').appendChild(list);
+  }
+  for (var i = 0; i < workers.length; i++) {
+    var worker = workers[i];
+    worker.hasCustomInspectAction = true;
+    var row = addTargetToList(worker, list, ['scope', 'url']);
+    addActionLink(
+        row,
+        'inspect',
+        sendServiceWorkerCommand.bind(null, 'inspect', worker),
+        false);
+    addActionLink(
+        row,
+        'terminate',
+        sendServiceWorkerCommand.bind(null, 'stop', worker),
+        false);
+  }
+}
+
 function populateTargets(source, data) {
   if (source == 'renderers')
     populateWebContentsTargets(data);
@@ -107,6 +170,10 @@ function populateWorkerTargets(data) {
 
   for (var i = 0; i < data.length; i++)
     addToWorkersList(data[i]);
+}
+
+function showIncognitoWarning() {
+  $('devices-incognito').hidden = false;
 }
 
 function populateRemoteTargets(devices) {
@@ -267,6 +334,27 @@ function populateRemoteTargets(devices) {
           browserHeader.appendChild(newPage);
         }
 
+        var browserInspector;
+        var browserInspectorTitle;
+        if ('trace' in queryParamsObject || 'tracing' in queryParamsObject) {
+          browserInspector = 'chrome://tracing';
+          browserInspectorTitle = 'trace';
+        } else {
+          browserInspector = queryParamsObject['browser-inspector'];
+          browserInspectorTitle = 'inspect';
+        }
+        if (browserInspector) {
+          var link = document.createElement('span');
+          link.classList.add('action');
+          link.setAttribute('tabindex', 1);
+          link.textContent = browserInspectorTitle;
+          browserHeader.appendChild(link);
+          link.addEventListener(
+              'click',
+              sendCommand.bind(null, 'inspect-browser', browser.source,
+                  browser.id, browserInspector), false);
+        }
+
         pageList = document.createElement('div');
         pageList.className = 'list pages';
         browserSection.appendChild(pageList);
@@ -297,7 +385,7 @@ function populateRemoteTargets(devices) {
         }
         if (majorChromeVersion >= MIN_VERSION_TAB_CLOSE) {
           addActionLink(row, 'close',
-              sendTargetCommand.bind(null, 'close', page), page.attached);
+              sendTargetCommand.bind(null, 'close', page), false);
         }
       }
     }
@@ -337,7 +425,7 @@ function addToWorkersList(data) {
   var row =
       addTargetToList(data, $('workers-list'), ['name', 'description', 'url']);
   addActionLink(row, 'terminate',
-      sendTargetCommand.bind(null, 'close', data), data.attached);
+      sendTargetCommand.bind(null, 'close', data), false);
 }
 
 function addToOthersList(data) {
@@ -482,8 +570,10 @@ function addTargetToList(data, list, properties) {
   actionBox.className = 'actions';
   subrowBox.appendChild(actionBox);
 
-  addActionLink(row, 'inspect', sendTargetCommand.bind(null, 'inspect', data),
-      data.hasNoUniqueId || data.adbAttachedForeign);
+  if (!data.hasCustomInspectAction) {
+    addActionLink(row, 'inspect', sendTargetCommand.bind(null, 'inspect', data),
+        data.hasNoUniqueId || data.adbAttachedForeign);
+  }
 
   list.appendChild(row);
   return row;
@@ -500,6 +590,13 @@ function addActionLink(row, text, handler, opt_disabled) {
 
   link.textContent = text;
   link.addEventListener('click', handler, true);
+  function handleKey(e) {
+    if (e.keyIdentifier == 'Enter' || e.keyIdentifier == 'U+0020') {
+      e.preventDefault();
+      handler();
+    }
+  }
+  link.addEventListener('keydown', handleKey, true);
   row.querySelector('.actions').appendChild(link);
 }
 
@@ -568,7 +665,7 @@ function unsetModal(dialog) {
     if (dialog.tabIndexes[i] === null)
       node.removeAttribute('tabindex');
     else
-      node.setAttribute('tabindex', tabIndexes[i]);
+      node.setAttribute('tabindex', dialog.tabIndexes[i]);
   }
 
   if (window.holdDevices) {

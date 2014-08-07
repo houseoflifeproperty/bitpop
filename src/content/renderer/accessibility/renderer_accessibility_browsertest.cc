@@ -304,6 +304,7 @@ TEST_F(RendererAccessibilityTest,
       "  <p>Hello, world.</p>"
       "</body>";
   LoadHTML(html.c_str());
+  static const int kProxyRoutingId = 13;
 
   // Creating a RendererAccessibilityComplete should send the tree
   // to the browser.
@@ -321,7 +322,7 @@ TEST_F(RendererAccessibilityTest,
   accessibility->HandleAXEvent(
       root_obj,
       ui::AX_EVENT_VALUE_CHANGED);
-  view()->main_render_frame()->OnSwapOut();
+  view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
   accessibility->SendPendingAccessibilityEvents();
   EXPECT_FALSE(sink_->GetUniqueMessageMatching(
       AccessibilityHostMsg_Events::ID));
@@ -514,6 +515,40 @@ TEST_F(RendererAccessibilityTest, DetachAccessibilityObject) {
   EXPECT_EQ(text_1.axID(), event.update.nodes[1].id);
   // The third event is to update text_2, but its id changes
   // so we don't have a test expectation for it.
+}
+
+TEST_F(RendererAccessibilityTest, EventOnObjectNotInTree) {
+  // Test RendererAccessibilityComplete and make sure it doesn't send anything
+  // if we get a notification from Blink for an object that isn't in the
+  // tree, like the scroll area that's the parent of the main document,
+  // which we don't expose.
+  std::string html = "<body><input></body>";
+  LoadHTML(html.c_str());
+
+  scoped_ptr<TestRendererAccessibilityComplete> accessibility(
+      new TestRendererAccessibilityComplete(view()));
+  accessibility->SendPendingAccessibilityEvents();
+  EXPECT_EQ(3, CountAccessibilityNodesSentToBrowser());
+
+  WebDocument document = view()->GetWebView()->mainFrame()->document();
+  WebAXObject root_obj = document.accessibilityObject();
+  WebAXObject scroll_area = root_obj.parentObject();
+  EXPECT_EQ(blink::WebAXRoleScrollArea, scroll_area.role());
+
+  // Try to fire a message on the scroll area, and assert that we just
+  // ignore it.
+  sink_->ClearMessages();
+  accessibility->HandleAXEvent(scroll_area,
+                               ui::AX_EVENT_VALUE_CHANGED);
+
+  accessibility->SendPendingAccessibilityEvents();
+
+  const IPC::Message* message =
+      sink_->GetUniqueMessageMatching(AccessibilityHostMsg_Events::ID);
+  ASSERT_TRUE(message);
+  Tuple1<std::vector<AccessibilityHostMsg_EventParams> > param;
+  AccessibilityHostMsg_Events::Read(message, &param);
+  ASSERT_EQ(0U, param.a.size());
 }
 
 }  // namespace content

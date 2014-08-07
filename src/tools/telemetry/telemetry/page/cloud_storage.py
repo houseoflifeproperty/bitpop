@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -13,6 +13,7 @@ import sys
 import tarfile
 import urllib2
 
+from telemetry.core.backends.chrome import cros_interface
 from telemetry.core import util
 
 
@@ -23,14 +24,18 @@ INTERNAL_BUCKET = 'chrome-telemetry'
 
 _GSUTIL_URL = 'http://storage.googleapis.com/pub/gsutil.tar.gz'
 _DOWNLOAD_PATH = os.path.join(util.GetTelemetryDir(), 'third_party', 'gsutil')
-
+# TODO(tbarzic): A workaround for http://crbug.com/386416 and
+#     http://crbug.com/359293. See |_RunCommand|.
+_CROS_GSUTIL_HOME_WAR = '/home/chromeos-test/'
 
 class CloudStorageError(Exception):
   @staticmethod
   def _GetConfigInstructions(gsutil_path):
-    if SupportsProdaccess(gsutil_path):
+    if SupportsProdaccess(gsutil_path) and _FindExecutableInPath('prodaccess'):
       return 'Run prodaccess to authenticate.'
     else:
+      if cros_interface.IsRunningOnCrosDevice():
+        gsutil_path = ('HOME=%s %s' % (_CROS_GSUTIL_HOME_WAR, gsutil_path))
       return ('To configure your credentials:\n'
               '  1. Run "%s config" and follow its instructions.\n'
               '  2. If you have a @google.com account, use that account.\n'
@@ -92,18 +97,28 @@ def FindGsutil():
 
 
 def SupportsProdaccess(gsutil_path):
-  def GsutilSupportsProdaccess():
-    with open(gsutil_path, 'r') as gsutil:
-      return 'prodaccess' in gsutil.read()
-
-  return _FindExecutableInPath('prodaccess') and GsutilSupportsProdaccess()
+  with open(gsutil_path, 'r') as gsutil:
+    return 'prodaccess' in gsutil.read()
 
 
 def _RunCommand(args):
   gsutil_path = FindGsutil()
 
+  # On cros device, as telemetry is running as root, home will be set to /root/,
+  # which is not writable. gsutil will attempt to create a download tracker dir
+  # in home dir and fail. To avoid this, override HOME dir to something writable
+  # when running on cros device.
+  #
+  # TODO(tbarzic): Figure out a better way to handle gsutil on cros.
+  #     http://crbug.com/386416, http://crbug.com/359293.
+  gsutil_env = None
+  if cros_interface.IsRunningOnCrosDevice():
+    gsutil_env = os.environ.copy()
+    gsutil_env['HOME'] = _CROS_GSUTIL_HOME_WAR
+
   gsutil = subprocess.Popen([sys.executable, gsutil_path] + args,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            env=gsutil_env)
   stdout, stderr = gsutil.communicate()
 
   if gsutil.returncode:
@@ -113,7 +128,8 @@ def _RunCommand(args):
       raise CredentialsError(gsutil_path)
     if 'status=403' in stderr or 'status 403' in stderr:
       raise PermissionError(gsutil_path)
-    if stderr.startswith('InvalidUriError') or 'No such object' in stderr:
+    if (stderr.startswith('InvalidUriError') or 'No such object' in stderr or
+        'No URLs matched' in stderr):
       raise NotFoundError(stderr)
     raise CloudStorageError(stderr)
 
@@ -176,6 +192,7 @@ def GetIfChanged(file_path, bucket=None):
   """
   hash_path = file_path + '.sha1'
   if not os.path.exists(hash_path):
+    logging.warning('Hash file not found: %s' % hash_path)
     return False
 
   expected_hash = ReadHash(hash_path)

@@ -44,7 +44,7 @@ WebInspector.CodeMirrorTextEditor = function(url, delegate)
     this.registerRequiredCSS("cm/codemirror.css");
     this.registerRequiredCSS("cm/cmdevtools.css");
 
-    this._codeMirror = window.CodeMirror(this.element, {
+    this._codeMirror = new window.CodeMirror(this.element, {
         lineNumbers: true,
         gutters: ["CodeMirror-linenumbers"],
         matchBrackets: true,
@@ -139,7 +139,7 @@ WebInspector.CodeMirrorTextEditor = function(url, delegate)
     this._codeMirror.on("beforeSelectionChange", this._beforeSelectionChange.bind(this));
     this._codeMirror.on("scroll", this._scroll.bind(this));
     this._codeMirror.on("focus", this._focus.bind(this));
-    this._codeMirror.on("contextmenu", this._contextMenu.bind(this));
+    this.element.addEventListener("contextmenu", this._contextMenu.bind(this), false);
     /**
      * @this {WebInspector.CodeMirrorTextEditor}
      */
@@ -246,6 +246,9 @@ CodeMirror.commands.redoAndReveal = function(codemirror)
     codemirror._codeMirrorTextEditor._autocompleteController.finishAutocomplete();
 }
 
+/**
+ * @return {!Object|undefined}
+ */
 CodeMirror.commands.dismissMultipleSelections = function(codemirror)
 {
     var selections = codemirror.listSelections();
@@ -269,6 +272,13 @@ WebInspector.CodeMirrorTextEditor.MaximumNumberOfWhitespacesPerSingleSpan = 16;
 WebInspector.CodeMirrorTextEditor.MaxEditableTextSize = 1024 * 1024 * 10;
 
 WebInspector.CodeMirrorTextEditor.prototype = {
+    dispose: function()
+    {
+        WebInspector.settings.textEditorIndent.removeChangeListener(this._updateEditorIndentation, this);
+        WebInspector.settings.showWhitespacesInEditor.removeChangeListener(this._updateCodeMirrorMode, this);
+        WebInspector.settings.textEditorBracketMatching.removeChangeListener(this._enableBracketMatchingIfNeeded, this);
+    },
+
     _enableBracketMatchingIfNeeded: function()
     {
         this._codeMirror.setOption("autoCloseBrackets", WebInspector.settings.textEditorBracketMatching.get() ? { explode: false } : false);
@@ -714,7 +724,7 @@ WebInspector.CodeMirrorTextEditor.prototype = {
         this.dispatchEventToListeners(WebInspector.TextEditor.Events.GutterClick, { lineNumber: lineNumber, event: event });
     },
 
-    _contextMenu: function(codeMirror, event)
+    _contextMenu: function(event)
     {
         var contextMenu = new WebInspector.ContextMenu(event);
         var target = event.target.enclosingNodeOrSelfWithClass("CodeMirror-gutter-elt");
@@ -1416,6 +1426,7 @@ WebInspector.CodeMirrorTextEditor.TokenHighlighter.prototype = {
 
     /**
      * @param {function(!CodeMirror.StringStream)} highlighter
+     * @param {?CodeMirror.Pos} selectionStart
      */
     _setHighlighter: function(highlighter, selectionStart)
     {

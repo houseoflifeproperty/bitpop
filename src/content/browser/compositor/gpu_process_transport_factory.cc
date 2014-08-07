@@ -11,13 +11,17 @@
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/threading/thread.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface.h"
+#include "cc/surfaces/surface_manager.h"
 #include "content/browser/compositor/browser_compositor_output_surface.h"
 #include "content/browser/compositor/browser_compositor_output_surface_proxy.h"
 #include "content/browser/compositor/gpu_browser_compositor_output_surface.h"
+#include "content/browser/compositor/onscreen_display_client.h"
 #include "content/browser/compositor/reflector_impl.h"
 #include "content/browser/compositor/software_browser_compositor_output_surface.h"
+#include "content/browser/compositor/surface_display_output_surface.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
@@ -28,6 +32,7 @@
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/host_shared_bitmap_manager.h"
+#include "content/public/common/content_switches.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -43,9 +48,11 @@
 #elif defined(USE_OZONE)
 #include "content/browser/compositor/overlay_candidate_validator_ozone.h"
 #include "content/browser/compositor/software_output_device_ozone.h"
-#include "ui/gfx/ozone/surface_factory_ozone.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
 #elif defined(USE_X11)
 #include "content/browser/compositor/software_output_device_x11.h"
+#elif defined(OS_MACOSX)
+#include "content/browser/compositor/software_output_device_mac.h"
 #endif
 
 using cc::ContextProvider;
@@ -56,12 +63,27 @@ namespace content {
 struct GpuProcessTransportFactory::PerCompositorData {
   int surface_id;
   scoped_refptr<ReflectorImpl> reflector;
+  scoped_ptr<OnscreenDisplayClient> display_client;
 };
 
 GpuProcessTransportFactory::GpuProcessTransportFactory()
     : callback_factory_(this) {
   output_surface_proxy_ = new BrowserCompositorOutputSurfaceProxy(
       &output_surface_map_);
+#if defined(OS_CHROMEOS)
+  bool use_thread = !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kUIDisableThreadedCompositing);
+#else
+  bool use_thread = false;
+#endif
+  if (use_thread) {
+    compositor_thread_.reset(new base::Thread("Browser Compositor"));
+    compositor_thread_->Start();
+  }
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kUseSurfaces)) {
+    surface_manager_ = make_scoped_ptr(new cc::SurfaceManager);
+  }
 }
 
 GpuProcessTransportFactory::~GpuProcessTransportFactory() {
@@ -87,6 +109,9 @@ scoped_ptr<cc::SoftwareOutputDevice> CreateSoftwareOutputDevice(
 #elif defined(USE_X11)
   return scoped_ptr<cc::SoftwareOutputDevice>(new SoftwareOutputDeviceX11(
       compositor));
+#elif defined(OS_MACOSX)
+  return scoped_ptr<cc::SoftwareOutputDevice>(
+      new SoftwareOutputDeviceMac(compositor));
 #else
   NOTREACHED();
   return scoped_ptr<cc::SoftwareOutputDevice>();
@@ -96,8 +121,8 @@ scoped_ptr<cc::SoftwareOutputDevice> CreateSoftwareOutputDevice(
 scoped_ptr<cc::OverlayCandidateValidator> CreateOverlayCandidateValidator(
     gfx::AcceleratedWidget widget) {
 #if defined(USE_OZONE)
-  gfx::OverlayCandidatesOzone* overlay_candidates =
-      gfx::SurfaceFactoryOzone::GetInstance()->GetOverlayCandidates(widget);
+  ui::OverlayCandidatesOzone* overlay_candidates =
+      ui::SurfaceFactoryOzone::GetInstance()->GetOverlayCandidates(widget);
   if (overlay_candidates && CommandLine::ForCurrentProcess()->HasSwitch(
                                 switches::kEnableHardwareOverlays)) {
     return scoped_ptr<cc::OverlayCandidateValidator>(
@@ -125,6 +150,7 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
 #endif
 
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
+
   if (!create_software_renderer) {
     context_provider = ContextProviderCommandBuffer::Create(
         GpuProcessTransportFactory::CreateContextCommon(data->surface_id),
@@ -133,8 +159,43 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
 
   UMA_HISTOGRAM_BOOLEAN("Aura.CreatedGpuBrowserCompositor", !!context_provider);
 
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kUseSurfaces)) {
+    // This gets a bit confusing. Here we have a ContextProvider configured to
+    // render directly to this widget. We need to make an OnscreenDisplayClient
+    // associated with this context, then return a SurfaceDisplayOutputSurface
+    // set up to draw to the display's surface.
+    cc::SurfaceManager* manager = surface_manager_.get();
+    scoped_ptr<cc::OutputSurface> software_surface;
+    if (!context_provider) {
+      software_surface =
+          make_scoped_ptr(new SoftwareBrowserCompositorOutputSurface(
+              output_surface_proxy_,
+              CreateSoftwareOutputDevice(compositor),
+              per_compositor_data_[compositor]->surface_id,
+              &output_surface_map_,
+              compositor->vsync_manager()));
+    }
+    scoped_ptr<OnscreenDisplayClient> display_client(new OnscreenDisplayClient(
+        context_provider, software_surface.Pass(), manager));
+    // TODO(jamesr): Need to set up filtering for the
+    // GpuHostMsg_UpdateVSyncParameters message.
+
+    scoped_refptr<cc::ContextProvider> offscreen_context_provider;
+    if (context_provider) {
+      offscreen_context_provider = ContextProviderCommandBuffer::Create(
+          GpuProcessTransportFactory::CreateOffscreenCommandBufferContext(),
+          "Offscreen-Compositor");
+    }
+    scoped_ptr<SurfaceDisplayOutputSurface> output_surface(
+        new SurfaceDisplayOutputSurface(
+            display_client->display(), manager, offscreen_context_provider));
+    data->display_client = display_client.Pass();
+    return output_surface.PassAs<cc::OutputSurface>();
+  }
+
   if (!context_provider.get()) {
-    if (ui::Compositor::WasInitializedWithThread()) {
+    if (compositor_thread_.get()) {
       LOG(FATAL) << "Failed to create UI context, but can't use software"
                  " compositing with browser threaded compositing. Aborting.";
     }
@@ -150,7 +211,7 @@ scoped_ptr<cc::OutputSurface> GpuProcessTransportFactory::CreateOutputSurface(
   }
 
   scoped_refptr<base::SingleThreadTaskRunner> compositor_thread_task_runner =
-      ui::Compositor::GetCompositorMessageLoop();
+      GetCompositorMessageLoop();
   if (!compositor_thread_task_runner.get())
     compositor_thread_task_runner = base::MessageLoopProxy::current();
 
@@ -178,8 +239,11 @@ scoped_refptr<ui::Reflector> GpuProcessTransportFactory::CreateReflector(
   PerCompositorData* data = per_compositor_data_[source];
   DCHECK(data);
 
-  data->reflector = new ReflectorImpl(
-      source, target, &output_surface_map_, data->surface_id);
+  data->reflector = new ReflectorImpl(source,
+                                      target,
+                                      &output_surface_map_,
+                                      GetCompositorMessageLoop(),
+                                      data->surface_id);
   return data->reflector;
 }
 
@@ -232,6 +296,12 @@ ui::ContextFactory* GpuProcessTransportFactory::GetContextFactory() {
   return this;
 }
 
+base::MessageLoopProxy* GpuProcessTransportFactory::GetCompositorMessageLoop() {
+  if (!compositor_thread_)
+    return NULL;
+  return compositor_thread_->message_loop_proxy();
+}
+
 gfx::GLSurfaceHandle GpuProcessTransportFactory::GetSharedSurfaceHandle() {
   gfx::GLSurfaceHandle handle = gfx::GLSurfaceHandle(
       gfx::kNullPluginWindow, gfx::TEXTURE_TRANSPORT);
@@ -260,6 +330,15 @@ void GpuProcessTransportFactory::RemoveObserver(
     ImageTransportFactoryObserver* observer) {
   observer_list_.RemoveObserver(observer);
 }
+
+#if defined(OS_MACOSX)
+void GpuProcessTransportFactory::OnSurfaceDisplayed(int surface_id) {
+  BrowserCompositorOutputSurface* surface = output_surface_map_.Lookup(
+      surface_id);
+  if (surface)
+    surface->OnSurfaceDisplayed();
+}
+#endif
 
 scoped_refptr<cc::ContextProvider>
 GpuProcessTransportFactory::SharedMainThreadContextProvider() {

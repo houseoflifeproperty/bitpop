@@ -25,9 +25,8 @@
 
 #include "core/svg/SVGFilterElement.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGParserUtilities.h"
 
 namespace WebCore {
@@ -61,9 +60,12 @@ inline SVGFilterElement::SVGFilterElement(Document& document)
     addToPropertyMap(m_filterRes);
 }
 
-PassRefPtr<SVGFilterElement> SVGFilterElement::create(Document& document)
+DEFINE_NODE_FACTORY(SVGFilterElement)
+
+void SVGFilterElement::trace(Visitor* visitor)
 {
-    return adoptRef(new SVGFilterElement(document));
+    visitor->trace(m_clientsToAdd);
+    SVGElement::trace(visitor);
 }
 
 void SVGFilterElement::setFilterRes(unsigned x, unsigned y)
@@ -146,16 +148,16 @@ void SVGFilterElement::childrenChanged(bool changedByParser, Node* beforeChange,
         return;
 
     if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+        object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
 RenderObject* SVGFilterElement::createRenderer(RenderStyle*)
 {
     RenderSVGResourceFilter* renderer = new RenderSVGResourceFilter(this);
 
-    HashSet<RefPtr<Node> >::iterator layerEnd = m_clientsToAdd.end();
-    for (HashSet<RefPtr<Node> >::iterator it = m_clientsToAdd.begin(); it != layerEnd; ++it)
-        renderer->addClientRenderLayer((*it).get());
+    WillBeHeapHashSet<RefPtrWillBeMember<Node> >::iterator layerEnd = m_clientsToAdd.end();
+    for (WillBeHeapHashSet<RefPtrWillBeMember<Node> >::iterator it = m_clientsToAdd.begin(); it != layerEnd; ++it)
+        renderer->addClientRenderLayer(it->get());
     m_clientsToAdd.clear();
 
     return renderer;

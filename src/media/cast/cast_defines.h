@@ -22,11 +22,13 @@ namespace cast {
 const int64 kDontShowTimeoutMs = 33;
 const float kDefaultCongestionControlBackOff = 0.875f;
 const uint32 kVideoFrequency = 90000;
-const int64 kSkippedFramesCheckPeriodkMs = 10000;
 const uint32 kStartFrameId = UINT32_C(0xffffffff);
 
-// Number of skipped frames threshold in fps (as configured) per period above.
-const int kSkippedFramesThreshold = 3;
+// This is an important system-wide constant.  This limits how much history the
+// implementation must retain in order to process the acknowledgements of past
+// frames.
+const int kMaxUnackedFrames = 255;
+
 const size_t kMaxIpPacketSize = 1500;
 const int kStartRttMs = 20;
 const int64 kCastMessageUpdateIntervalMs = 33;
@@ -66,7 +68,14 @@ enum PacketType {
   kTooOldPacket,
 };
 
+// kRtcpCastAllPacketsLost is used in PacketIDSet and
+// on the wire to mean that ALL packets for a particular
+// frame are lost.
 const uint16 kRtcpCastAllPacketsLost = 0xffff;
+
+// kRtcpCastLastPacket is used in PacketIDSet to ask for
+// the last packet of a frame to be retransmitted.
+const uint16 kRtcpCastLastPacket = 0xfffe;
 
 const size_t kMinLengthOfRtcp = 8;
 
@@ -74,6 +83,7 @@ const size_t kMinLengthOfRtcp = 8;
 const size_t kMinLengthOfRtp = 12 + 6;
 
 // Each uint16 represents one packet id within a cast frame.
+// Can also contain kRtcpCastAllPacketsLost and kRtcpCastLastPacket.
 typedef std::set<uint16> PacketIdSet;
 // Each uint8 represents one cast frame.
 typedef std::map<uint8, PacketIdSet> MissingFramesAndPacketsMap;
@@ -135,13 +145,22 @@ inline base::TimeDelta ConvertFromNtpDiff(uint32 ntp_delay) {
   return base::TimeDelta::FromMilliseconds(delay_ms);
 }
 
-inline void ConvertTimeToFractions(int64 time_us,
+inline void ConvertTimeToFractions(int64 ntp_time_us,
                                    uint32* seconds,
                                    uint32* fractions) {
-  DCHECK_GE(time_us, 0) << "Time must NOT be negative";
-  *seconds = static_cast<uint32>(time_us / base::Time::kMicrosecondsPerSecond);
+  DCHECK_GE(ntp_time_us, 0) << "Time must NOT be negative";
+  const int64 seconds_component =
+      ntp_time_us / base::Time::kMicrosecondsPerSecond;
+  // NTP time will overflow in the year 2036.  Also, make sure unit tests don't
+  // regress and use an origin past the year 2036.  If this overflows here, the
+  // inverse calculation fails to compute the correct TimeTicks value, throwing
+  // off the entire system.
+  DCHECK_LT(seconds_component, INT64_C(4263431296))
+      << "One year left to fix the NTP year 2036 wrap-around issue!";
+  *seconds = static_cast<uint32>(seconds_component);
   *fractions = static_cast<uint32>(
-      (time_us % base::Time::kMicrosecondsPerSecond) * kMagicFractionalUnit);
+      (ntp_time_us % base::Time::kMicrosecondsPerSecond) *
+          kMagicFractionalUnit);
 }
 
 inline void ConvertTimeTicksToNtp(const base::TimeTicks& time,
@@ -169,61 +188,17 @@ inline base::TimeTicks ConvertNtpToTimeTicks(uint32 ntp_seconds,
   return base::TimeTicks::UnixEpoch() + elapsed_since_unix_epoch;
 }
 
+inline base::TimeDelta RtpDeltaToTimeDelta(int64 rtp_delta, int rtp_timebase) {
+  DCHECK_GT(rtp_timebase, 0);
+  return rtp_delta * base::TimeDelta::FromSeconds(1) / rtp_timebase;
+}
+
 inline uint32 GetVideoRtpTimestamp(const base::TimeTicks& time_ticks) {
   base::TimeTicks zero_time;
   base::TimeDelta recorded_delta = time_ticks - zero_time;
   // Timestamp is in 90 KHz for video.
   return static_cast<uint32>(recorded_delta.InMilliseconds() * 90);
 }
-
-class RtpSenderStatistics {
- public:
-  explicit RtpSenderStatistics(int frequency)
-      : frequency_(frequency),
-        rtp_timestamp_(0) {
-    memset(&sender_info_, 0, sizeof(sender_info_));
-  }
-
-  ~RtpSenderStatistics() {}
-
-  void UpdateInfo(const base::TimeTicks& now) {
-    // Update RTP timestamp and return last stored statistics.
-    uint32 ntp_seconds = 0;
-    uint32 ntp_fraction = 0;
-    uint32 rtp_timestamp = 0;
-    if (rtp_timestamp_ > 0) {
-      base::TimeDelta time_since_last_send = now - time_sent_;
-      rtp_timestamp = rtp_timestamp_ + time_since_last_send.InMilliseconds() *
-                                           (frequency_ / 1000);
-      // Update NTP time to current time.
-      ConvertTimeTicksToNtp(now, &ntp_seconds, &ntp_fraction);
-    }
-    // Populate sender info.
-    sender_info_.rtp_timestamp = rtp_timestamp;
-    sender_info_.ntp_seconds = ntp_seconds;
-    sender_info_.ntp_fraction = ntp_fraction;
-  }
-
-  transport::RtcpSenderInfo sender_info() const {
-    return sender_info_;
-  }
-
-  void Store(transport::RtcpSenderInfo sender_info,
-             base::TimeTicks time_sent,
-             uint32 rtp_timestamp) {
-    sender_info_ = sender_info;
-    time_sent_ = time_sent;
-    rtp_timestamp_ = rtp_timestamp;
-}
-
- private:
-  int frequency_;
-  transport::RtcpSenderInfo sender_info_;
-  base::TimeTicks time_sent_;
-  uint32 rtp_timestamp_;
-
-  DISALLOW_COPY_AND_ASSIGN(RtpSenderStatistics);
-};
 
 }  // namespace cast
 }  // namespace media

@@ -32,7 +32,6 @@
 #define EntryBase_h
 
 #include "platform/heap/Handle.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -41,7 +40,7 @@ class DOMFileSystemBase;
 class EntrySync;
 
 // A common base class for Entry and EntrySync.
-class EntryBase : public RefCountedWillBeGarbageCollectedFinalized<EntryBase> {
+class EntryBase : public GarbageCollectedFinalized<EntryBase> {
 public:
     virtual ~EntryBase();
 
@@ -58,15 +57,16 @@ public:
     virtual void trace(Visitor*);
 
 protected:
-    EntryBase(PassRefPtrWillBeRawPtr<DOMFileSystemBase>, const String& fullPath);
+    EntryBase(DOMFileSystemBase*, const String& fullPath);
     friend class EntrySync;
 
-    RefPtrWillBeMember<DOMFileSystemBase> m_fileSystem;
+    Member<DOMFileSystemBase> m_fileSystem;
 
     // This is a virtual path.
-    String m_fullPath;
+    const String m_fullPath;
+    const String m_name;
 
-    String m_name;
+    mutable String m_cachedURL;
 };
 
 }

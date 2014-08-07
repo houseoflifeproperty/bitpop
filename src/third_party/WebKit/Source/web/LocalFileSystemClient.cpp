@@ -54,33 +54,33 @@ LocalFileSystemClient::~LocalFileSystemClient()
 {
 }
 
-bool LocalFileSystemClient::allowFileSystem(ExecutionContext* context)
+bool LocalFileSystemClient::requestFileSystemAccessSync(ExecutionContext* context)
 {
     ASSERT(context);
     if (context->isDocument()) {
-        Document* document = toDocument(context);
-        WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
-        return !webFrame->permissionClient() || webFrame->permissionClient()->allowFileSystem();
+        ASSERT_NOT_REACHED();
+        return false;
     }
+
     ASSERT(context->isWorkerGlobalScope());
-    return WorkerPermissionClient::from(*toWorkerGlobalScope(context))->allowFileSystem();
+    return WorkerPermissionClient::from(*toWorkerGlobalScope(context))->requestFileSystemAccessSync();
 }
 
-void LocalFileSystemClient::requestFileSystemAccess(ExecutionContext* context, PassOwnPtr<WebCore::PermissionCallbacks> callbacks)
+void LocalFileSystemClient::requestFileSystemAccessAsync(ExecutionContext* context, PassOwnPtr<WebCore::PermissionCallbacks> callbacks)
 {
     ASSERT(context);
-    if (context->isDocument()) {
-        Document* document = toDocument(context);
-        WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
-        if (!webFrame->permissionClient()) {
-            callbacks->onAllowed();
-            return;
-        }
-        webFrame->permissionClient()->requestFileSystemAccess(callbacks);
+    if (!context->isDocument()) {
+        ASSERT_NOT_REACHED();
         return;
     }
-    ASSERT(context->isWorkerGlobalScope());
-    WorkerPermissionClient::from(*toWorkerGlobalScope(context))->requestFileSystemAccess(callbacks);
+
+    Document* document = toDocument(context);
+    WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
+    if (!webFrame->permissionClient()) {
+        callbacks->onAllowed();
+        return;
+    }
+    webFrame->permissionClient()->requestFileSystemAccessAsync(callbacks);
 }
 
 LocalFileSystemClient::LocalFileSystemClient()

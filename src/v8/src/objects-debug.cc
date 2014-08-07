@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "disassembler.h"
-#include "disasm.h"
-#include "jsregexp.h"
-#include "macro-assembler.h"
-#include "objects-visiting.h"
+#include "src/disassembler.h"
+#include "src/disasm.h"
+#include "src/jsregexp.h"
+#include "src/macro-assembler.h"
+#include "src/objects-visiting.h"
 
 namespace v8 {
 namespace internal {
@@ -261,8 +261,8 @@ void JSObject::JSObjectVerify() {
     for (int i = 0; i < map()->NumberOfOwnDescriptors(); i++) {
       if (descriptors->GetDetails(i).type() == FIELD) {
         Representation r = descriptors->GetDetails(i).representation();
-        int field = descriptors->GetFieldIndex(i);
-        Object* value = RawFastPropertyAt(field);
+        FieldIndex index = FieldIndex::ForDescriptor(map(), i);
+        Object* value = RawFastPropertyAt(index);
         if (r.IsDouble()) ASSERT(value->IsHeapNumber());
         if (value->IsUninitialized()) continue;
         if (r.IsSmi()) ASSERT(value->IsSmi());
@@ -378,12 +378,14 @@ void FixedDoubleArray::FixedDoubleArrayVerify() {
 
 void ConstantPoolArray::ConstantPoolArrayVerify() {
   CHECK(IsConstantPoolArray());
-  for (int i = 0; i < count_of_code_ptr_entries(); i++) {
-    Address code_entry = get_code_ptr_entry(first_code_ptr_index() + i);
+  ConstantPoolArray::Iterator code_iter(this, ConstantPoolArray::CODE_PTR);
+  while (!code_iter.is_finished()) {
+    Address code_entry = get_code_ptr_entry(code_iter.next_index());
     VerifyPointer(Code::GetCodeFromTargetAddress(code_entry));
   }
-  for (int i = 0; i < count_of_heap_ptr_entries(); i++) {
-    VerifyObjectField(OffsetOfElementAt(first_heap_ptr_index() + i));
+  ConstantPoolArray::Iterator heap_iter(this, ConstantPoolArray::HEAP_PTR);
+  while (!heap_iter.is_finished()) {
+    VerifyObjectField(OffsetOfElementAt(heap_iter.next_index()));
   }
 }
 
@@ -542,7 +544,7 @@ void JSGlobalProxy::JSGlobalProxyVerify() {
   VerifyObjectField(JSGlobalProxy::kNativeContextOffset);
   // Make sure that this object has no properties, elements.
   CHECK_EQ(0, properties()->length());
-  CHECK(HasFastObjectElements());
+  CHECK(HasFastSmiElements());
   CHECK_EQ(0, FixedArray::cast(elements())->length());
 }
 
@@ -627,8 +629,9 @@ void Code::CodeVerify() {
                   kCodeAlignment));
   relocation_info()->ObjectVerify();
   Address last_gc_pc = NULL;
+  Isolate* isolate = GetIsolate();
   for (RelocIterator it(this); !it.done(); it.next()) {
-    it.rinfo()->Verify();
+    it.rinfo()->Verify(isolate);
     // Ensure that GC will not iterate twice over the same pointer.
     if (RelocInfo::IsGCRelocMode(it.rinfo()->rmode())) {
       CHECK(it.rinfo()->pc() != last_gc_pc);
@@ -700,14 +703,8 @@ void JSSetIterator::JSSetIteratorVerify() {
   JSObjectVerify();
   VerifyHeapPointer(table());
   CHECK(table()->IsOrderedHashTable() || table()->IsUndefined());
-  CHECK(index()->IsSmi());
-  CHECK(count()->IsSmi());
-  CHECK(kind()->IsSmi());
-  VerifyHeapPointer(next_iterator());
-  CHECK(next_iterator()->IsJSSetIterator() || next_iterator()->IsUndefined());
-  VerifyHeapPointer(table());
-  CHECK(previous_iterator()->IsJSSetIterator()
-        || previous_iterator()->IsUndefined());
+  CHECK(index()->IsSmi() || index()->IsUndefined());
+  CHECK(kind()->IsSmi() || kind()->IsUndefined());
 }
 
 
@@ -716,14 +713,8 @@ void JSMapIterator::JSMapIteratorVerify() {
   JSObjectVerify();
   VerifyHeapPointer(table());
   CHECK(table()->IsOrderedHashTable() || table()->IsUndefined());
-  CHECK(index()->IsSmi());
-  CHECK(count()->IsSmi());
-  CHECK(kind()->IsSmi());
-  VerifyHeapPointer(next_iterator());
-  CHECK(next_iterator()->IsJSMapIterator() || next_iterator()->IsUndefined());
-  VerifyHeapPointer(table());
-  CHECK(previous_iterator()->IsJSMapIterator()
-        || previous_iterator()->IsUndefined());
+  CHECK(index()->IsSmi() || index()->IsUndefined());
+  CHECK(kind()->IsSmi() || kind()->IsUndefined());
 }
 
 

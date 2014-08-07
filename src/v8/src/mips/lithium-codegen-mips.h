@@ -5,13 +5,13 @@
 #ifndef V8_MIPS_LITHIUM_CODEGEN_MIPS_H_
 #define V8_MIPS_LITHIUM_CODEGEN_MIPS_H_
 
-#include "deoptimizer.h"
-#include "mips/lithium-gap-resolver-mips.h"
-#include "mips/lithium-mips.h"
-#include "lithium-codegen.h"
-#include "safepoint-table.h"
-#include "scopes.h"
-#include "utils.h"
+#include "src/deoptimizer.h"
+#include "src/mips/lithium-gap-resolver-mips.h"
+#include "src/mips/lithium-mips.h"
+#include "src/lithium-codegen.h"
+#include "src/safepoint-table.h"
+#include "src/scopes.h"
+#include "src/utils.h"
 
 namespace v8 {
 namespace internal {
@@ -132,8 +132,7 @@ class LCodeGen: public LCodeGenBase {
                                  int constant_key,
                                  int element_size,
                                  int shift_size,
-                                 int additional_index,
-                                 int additional_offset);
+                                 int base_offset);
 
   // Emit frame translation commands for an environment.
   void WriteTranslation(LEnvironment* environment, Translation* translation);
@@ -317,8 +316,8 @@ class LCodeGen: public LCodeGenBase {
                          Label* false_label,
                          Register input,
                          Handle<String> type_name,
-                         Register& cmp1,
-                         Operand& cmp2);
+                         Register* cmp1,
+                         Operand* cmp2);
 
   // Emits optimized code for %_IsObject(x).  Preserves input register.
   // Returns the condition on which a final split to

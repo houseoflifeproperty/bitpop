@@ -27,7 +27,7 @@ namespace WebCore {
 
 class SVGTSpanElement FINAL : public SVGTextPositioningElement {
 public:
-    static PassRefPtr<SVGTSpanElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGTSpanElement);
 
 private:
     explicit SVGTSpanElement(Document&);

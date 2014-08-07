@@ -20,8 +20,8 @@ namespace cast {
 // All these functions are called from the main cast thread.
 class VideoEncoder {
  public:
-  typedef base::Callback<void(scoped_ptr<transport::EncodedVideoFrame>,
-                              const base::TimeTicks&)> FrameEncodedCallback;
+  typedef base::Callback<void(scoped_ptr<transport::EncodedFrame>)>
+      FrameEncodedCallback;
 
   virtual ~VideoEncoder() {}
 
@@ -38,18 +38,11 @@ class VideoEncoder {
   // Inform the encoder about the new target bit rate.
   virtual void SetBitRate(int new_bit_rate) = 0;
 
-  // Inform the encoder to not encode the next frame.
-  // Note: this setting is sticky and should last until called with false.
-  virtual void SkipNextFrame(bool skip_next_frame) = 0;
-
   // Inform the encoder to encode the next frame as a key frame.
   virtual void GenerateKeyFrame() = 0;
 
   // Inform the encoder to only reference frames older or equal to frame_id;
   virtual void LatestFrameIdToReference(uint32 frame_id) = 0;
-
-  // Query the codec about how many frames it has skipped due to slow ACK.
-  virtual int NumberOfSkippedFrames() const = 0;
 };
 
 }  // namespace cast

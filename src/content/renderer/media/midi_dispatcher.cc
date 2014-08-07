@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "content/common/media/midi_messages.h"
-#include "content/renderer/render_view_impl.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebMIDIPermissionRequest.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
@@ -17,8 +17,8 @@ using blink::WebSecurityOrigin;
 
 namespace content {
 
-MidiDispatcher::MidiDispatcher(RenderViewImpl* render_view)
-    : RenderViewObserver(render_view) {
+MidiDispatcher::MidiDispatcher(RenderFrame* render_frame)
+    : RenderFrameObserver(render_frame) {
 }
 
 MidiDispatcher::~MidiDispatcher() {}
@@ -44,9 +44,7 @@ void MidiDispatcher::requestSysexPermission(
 
 void MidiDispatcher::cancelSysexPermissionRequest(
     const WebMIDIPermissionRequest& request) {
-  for (IDMap<WebMIDIPermissionRequest>::iterator it(&requests_);
-       !it.IsAtEnd();
-       it.Advance()) {
+  for (Requests::iterator it(&requests_); !it.IsAtEnd(); it.Advance()) {
     WebMIDIPermissionRequest* value = it.GetCurrentValue();
     if (value->equals(request)) {
       base::string16 origin = request.securityOrigin().toString();

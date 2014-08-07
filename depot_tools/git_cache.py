@@ -10,6 +10,7 @@ import errno
 import logging
 import optparse
 import os
+import re
 import tempfile
 import time
 import subprocess
@@ -20,6 +21,9 @@ import zipfile
 from download_from_google_storage import Gsutil
 import gclient_utils
 import subcommand
+
+# Analogous to gc.autopacklimit git config.
+GC_AUTOPACKLIMIT = 50
 
 try:
   # pylint: disable=E0602
@@ -95,11 +99,15 @@ class Lockfile(object):
 
   def unlock(self):
     """Release the lock."""
-    if not self.is_locked():
-      raise LockError("%s is not locked" % self.path)
-    if not self.i_am_locking():
-      raise LockError("%s is locked, but not by me" % self.path)
-    self._remove_lockfile()
+    try:
+      if not self.is_locked():
+        raise LockError("%s is not locked" % self.path)
+      if not self.i_am_locking():
+        raise LockError("%s is locked, but not by me" % self.path)
+      self._remove_lockfile()
+    except WinErr:
+      # Windows is unreliable when it comes to file locking.  YMMV.
+      pass
 
   def break_lock(self):
     """Remove the lock, even if it was created by someone else."""
@@ -124,17 +132,6 @@ class Lockfile(object):
     """Test if the file is locked by this process."""
     return self.is_locked() and self.pid == self._read_pid()
 
-  def __enter__(self):
-    self.lock()
-    return self
-
-  def __exit__(self, *_exc):
-    # Windows is unreliable when it comes to file locking.  YMMV.
-    try:
-      self.unlock()
-    except WinErr:
-      pass
-
 
 class Mirror(object):
 
@@ -142,7 +139,6 @@ class Mirror(object):
   gsutil_exe = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     'third_party', 'gsutil', 'gsutil')
-  bootstrap_bucket = 'chromium-git-cache'
 
   def __init__(self, url, refs=None, print_func=None):
     self.url = url
@@ -150,6 +146,17 @@ class Mirror(object):
     self.basedir = self.UrlToCacheDir(url)
     self.mirror_path = os.path.join(self.GetCachePath(), self.basedir)
     self.print = print_func or print
+
+  @property
+  def bootstrap_bucket(self):
+    if 'chrome-internal' in self.url:
+      return 'chrome-git-cache'
+    else:
+      return 'chromium-git-cache'
+
+  @classmethod
+  def FromPath(cls, path):
+    return cls(cls.CacheDirToUrl(path))
 
   @staticmethod
   def UrlToCacheDir(url):
@@ -159,6 +166,12 @@ class Mirror(object):
     if norm_url.endswith('.git'):
       norm_url = norm_url[:-len('.git')]
     return norm_url.replace('-', '--').replace('/', '-').lower()
+
+  @staticmethod
+  def CacheDirToUrl(path):
+    """Convert a cache dir path to its corresponding url."""
+    netpath = re.sub(r'\b-\b', '/', os.path.basename(path)).replace('--', '-')
+    return 'https://%s' % netpath
 
   @staticmethod
   def FindExecutable(executable):
@@ -209,8 +222,20 @@ class Mirror(object):
   def config(self, cwd=None):
     if cwd is None:
       cwd = self.mirror_path
+
+    # Don't run git-gc in a daemon.  Bad things can happen if it gets killed.
+    self.RunGit(['config', 'gc.autodetach', '0'], cwd=cwd)
+
+    # Don't combine pack files into one big pack file.  It's really slow for
+    # repositories, and there's no way to track progress and make sure it's
+    # not stuck.
+    self.RunGit(['config', 'gc.autopacklimit', '0'], cwd=cwd)
+
+    # Allocate more RAM for cache-ing delta chains, for better performance
+    # of "Resolving deltas".
     self.RunGit(['config', 'core.deltaBaseCacheLimit',
                  gclient_utils.DefaultDeltaBaseCacheLimit()], cwd=cwd)
+
     self.RunGit(['config', 'remote.origin.url', self.url], cwd=cwd)
     self.RunGit(['config', '--replace-all', 'remote.origin.fetch',
                  '+refs/heads/*:refs/heads/*'], cwd=cwd)
@@ -235,8 +260,7 @@ class Mirror(object):
       python_fallback = True
 
     gs_folder = 'gs://%s/%s' % (self.bootstrap_bucket, self.basedir)
-    gsutil = Gsutil(
-        self.gsutil_exe, boto_path=os.devnull, bypass_prodaccess=True)
+    gsutil = Gsutil(self.gsutil_exe, boto_path=None, bypass_prodaccess=True)
     # Get the most recent version of the zipfile.
     _, ls_out, _ = gsutil.check_call('ls', gs_folder)
     ls_out_sorted = sorted(ls_out.splitlines())
@@ -247,11 +271,10 @@ class Mirror(object):
 
     # Download zip file to a temporary directory.
     try:
-      tempdir = tempfile.mkdtemp()
+      tempdir = tempfile.mkdtemp(prefix='_cache_tmp', dir=self.GetCachePath())
       self.print('Downloading %s' % latest_checkout)
-      code, out, err = gsutil.check_call('cp', latest_checkout, tempdir)
+      code = gsutil.call('cp', latest_checkout, tempdir)
       if code:
-        self.print('%s\n%s' % (out, err))
         return False
       filename = os.path.join(tempdir, latest_checkout.split('/')[-1])
 
@@ -287,7 +310,8 @@ class Mirror(object):
     return os.path.isfile(os.path.join(self.mirror_path, 'config'))
 
   def populate(self, depth=None, shallow=False, bootstrap=False,
-               verbose=False):
+               verbose=False, ignore_lock=False):
+    assert self.GetCachePath()
     if shallow and not depth:
       depth = 10000
     gclient_utils.safe_makedirs(self.GetCachePath())
@@ -301,16 +325,39 @@ class Mirror(object):
       d = ['--depth', str(depth)]
 
 
-    with Lockfile(self.mirror_path):
+    lockfile = Lockfile(self.mirror_path)
+    if not ignore_lock:
+      lockfile.lock()
+
+    try:
       # Setup from scratch if the repo is new or is in a bad state.
       tempdir = None
-      if not os.path.exists(os.path.join(self.mirror_path, 'config')):
-        gclient_utils.rmtree(self.mirror_path)
+      config_file = os.path.join(self.mirror_path, 'config')
+      pack_dir = os.path.join(self.mirror_path, 'objects', 'pack')
+      pack_files = []
+      if os.path.isdir(pack_dir):
+        pack_files = [f for f in os.listdir(pack_dir) if f.endswith('.pack')]
+
+      should_bootstrap = (not os.path.exists(config_file) or
+                          len(pack_files) > GC_AUTOPACKLIMIT)
+      if should_bootstrap:
         tempdir = tempfile.mkdtemp(
-            suffix=self.basedir, dir=self.GetCachePath())
+            prefix='_cache_tmp', suffix=self.basedir, dir=self.GetCachePath())
         bootstrapped = not depth and bootstrap and self.bootstrap_repo(tempdir)
-        if not bootstrapped:
+        if bootstrapped:
+          # Bootstrap succeeded; delete previous cache, if any.
+          gclient_utils.rmtree(self.mirror_path)
+        elif not os.path.exists(config_file):
+          # Bootstrap failed, no previous cache; start with a bare git dir.
           self.RunGit(['init', '--bare'], cwd=tempdir)
+        else:
+          # Bootstrap failed, previous cache exists; warn and continue.
+          logging.warn(
+              'Git cache has a lot of pack files (%d).  Tried to re-bootstrap '
+              'but failed.  Continuing with non-optimized repository.'
+              % len(pack_files))
+          gclient_utils.rmtree(tempdir)
+          tempdir = None
       else:
         if depth and os.path.exists(os.path.join(self.mirror_path, 'shallow')):
           logging.warn(
@@ -330,8 +377,11 @@ class Mirror(object):
           logging.warn('Fetch of %s failed' % spec)
       if tempdir:
         os.rename(tempdir, self.mirror_path)
+    finally:
+      if not ignore_lock:
+        lockfile.unlock()
 
-  def update_bootstrap(self):
+  def update_bootstrap(self, prune=False):
     # The files are named <git number>.zip
     gen_number = subprocess.check_output(
         [self.git_exe, 'number', 'master'], cwd=self.mirror_path).strip()
@@ -341,17 +391,73 @@ class Mirror(object):
     os.remove(tmp_zipfile)
     subprocess.call(['zip', '-r', tmp_zipfile, '.'], cwd=self.mirror_path)
     gsutil = Gsutil(path=self.gsutil_exe, boto_path=None)
-    dest_name = 'gs://%s/%s/%s.zip' % (
-        self.bootstrap_bucket, self.basedir, gen_number)
+    gs_folder = 'gs://%s/%s' % (self.bootstrap_bucket, self.basedir)
+    dest_name = '%s/%s.zip' % (gs_folder, gen_number)
     gsutil.call('cp', tmp_zipfile, dest_name)
     os.remove(tmp_zipfile)
 
+    # Remove all other files in the same directory.
+    if prune:
+      _, ls_out, _ = gsutil.check_call('ls', gs_folder)
+      for filename in ls_out.splitlines():
+        if filename == dest_name:
+          continue
+        gsutil.call('rm', filename)
+
+  @staticmethod
+  def DeleteTmpPackFiles(path):
+    pack_dir = os.path.join(path, 'objects', 'pack')
+    if not os.path.isdir(pack_dir):
+      return
+    pack_files = [f for f in os.listdir(pack_dir) if
+                  f.startswith('.tmp-') or f.startswith('tmp_pack_')]
+    for f in pack_files:
+      f = os.path.join(pack_dir, f)
+      try:
+        os.remove(f)
+        logging.warn('Deleted stale temporary pack file %s' % f)
+      except OSError:
+        logging.warn('Unable to delete temporary pack file %s' % f)
+
+  @classmethod
+  def BreakLocks(cls, path):
+    did_unlock = False
+    lf = Lockfile(path)
+    if lf.break_lock():
+      did_unlock = True
+    # Look for lock files that might have been left behind by an interrupted
+    # git process.
+    lf = os.path.join(path, 'config.lock')
+    if os.path.exists(lf):
+      os.remove(lf)
+      did_unlock = True
+    cls.DeleteTmpPackFiles(path)
+    return did_unlock
+
   def unlock(self):
-    lf = Lockfile(self.mirror_path)
-    config_lock = os.path.join(self.mirror_path, 'config.lock')
-    if os.path.exists(config_lock):
-      os.remove(config_lock)
-    lf.break_lock()
+    return self.BreakLocks(self.mirror_path)
+
+  @classmethod
+  def UnlockAll(cls):
+    cachepath = cls.GetCachePath()
+    if not cachepath:
+      return
+    dirlist = os.listdir(cachepath)
+    repo_dirs = set([os.path.join(cachepath, path) for path in dirlist
+                     if os.path.isdir(os.path.join(cachepath, path))])
+    for dirent in dirlist:
+      if dirent.startswith('_cache_tmp') or dirent.startswith('tmp'):
+        gclient_utils.rmtree(os.path.join(cachepath, dirent))
+      elif (dirent.endswith('.lock') and
+          os.path.isfile(os.path.join(cachepath, dirent))):
+        repo_dirs.add(os.path.join(cachepath, dirent[:-5]))
+
+    unlocked_repos = []
+    for repo_dir in repo_dirs:
+      if cls.BreakLocks(repo_dir):
+        unlocked_repos.append(repo_dir)
+
+    return unlocked_repos
 
 @subcommand.usage('[url of repo to check for caching]')
 def CMDexists(parser, args):
@@ -375,16 +481,19 @@ def CMDupdate_bootstrap(parser, args):
     print('Sorry, update bootstrap will not work on Windows.', file=sys.stderr)
     return 1
 
+  parser.add_option('--prune', action='store_true',
+                    help='Prune all other cached zipballs of the same repo.')
+
   # First, we need to ensure the cache is populated.
   populate_args = args[:]
   populate_args.append('--no_bootstrap')
   CMDpopulate(parser, populate_args)
 
   # Get the repo directory.
-  _, args = parser.parse_args(args)
+  options, args = parser.parse_args(args)
   url = args[0]
   mirror = Mirror(url)
-  mirror.update_bootstrap()
+  mirror.update_bootstrap(options.prune)
   return 0
 
 
@@ -399,6 +508,8 @@ def CMDpopulate(parser, args):
                     help='Specify additional refs to be fetched')
   parser.add_option('--no_bootstrap', action='store_true',
                     help='Don\'t bootstrap from Google Storage')
+  parser.add_option('--ignore_locks', action='store_true',
+                    help='Don\'t try to lock repository')
 
   options, args = parser.parse_args(args)
   if not len(args) == 1:
@@ -410,6 +521,7 @@ def CMDpopulate(parser, args):
       'verbose': options.verbose,
       'shallow': options.shallow,
       'bootstrap': not options.no_bootstrap,
+      'ignore_lock': options.ignore_locks,
   }
   if options.depth:
     kwargs['depth'] = options.depth
@@ -427,54 +539,26 @@ def CMDunlock(parser, args):
   if len(args) > 1 or (len(args) == 0 and not options.all):
     parser.error('git cache unlock takes exactly one repo url, or --all')
 
-  repo_dirs = []
-  if not options.all:
-    url = args[0]
-    repo_dirs.append(Mirror(url).mirror_path)
-  else:
-    cachepath = Mirror.GetCachePath()
-    repo_dirs = [os.path.join(cachepath, path)
-                 for path in os.listdir(cachepath)
-                 if os.path.isdir(os.path.join(cachepath, path))]
-    repo_dirs.extend([os.path.join(cachepath,
-                                   lockfile.replace('.lock', ''))
-                      for lockfile in os.listdir(cachepath)
-                      if os.path.isfile(os.path.join(cachepath,
-                                                     lockfile))
-                      and lockfile.endswith('.lock')
-                      and os.path.join(cachepath, lockfile)
-                          not in repo_dirs])
-  lockfiles = [repo_dir + '.lock' for repo_dir in repo_dirs
-               if os.path.exists(repo_dir + '.lock')]
-
   if not options.force:
+    cachepath = Mirror.GetCachePath()
+    lockfiles = [os.path.join(cachepath, path)
+                 for path in os.listdir(cachepath)
+                 if path.endswith('.lock') and os.path.isfile(path)]
     parser.error('git cache unlock requires -f|--force to do anything. '
                  'Refusing to unlock the following repo caches: '
                  ', '.join(lockfiles))
 
   unlocked_repos = []
-  untouched_repos = []
-  for repo_dir in repo_dirs:
-    lf = Lockfile(repo_dir)
-    config_lock = os.path.join(repo_dir, 'config.lock')
-    unlocked = False
-    if os.path.exists(config_lock):
-      os.remove(config_lock)
-      unlocked = True
-    if lf.break_lock():
-      unlocked = True
-
-    if unlocked:
-      unlocked_repos.append(repo_dir)
-    else:
-      untouched_repos.append(repo_dir)
+  if options.all:
+    unlocked_repos.extend(Mirror.UnlockAll())
+  else:
+    m = Mirror(args[0])
+    if m.unlock():
+      unlocked_repos.append(m.mirror_path)
 
   if unlocked_repos:
     logging.info('Broke locks on these caches:\n  %s' % '\n  '.join(
         unlocked_repos))
-  if untouched_repos:
-    logging.debug('Did not touch these caches:\n %s' % '\n  '.join(
-        untouched_repos))
 
 
 class OptionParser(optparse.OptionParser):
@@ -484,11 +568,18 @@ class OptionParser(optparse.OptionParser):
     optparse.OptionParser.__init__(self, *args, prog='git cache', **kwargs)
     self.add_option('-c', '--cache-dir',
                     help='Path to the directory containing the cache')
-    self.add_option('-v', '--verbose', action='count', default=0,
+    self.add_option('-v', '--verbose', action='count', default=1,
                     help='Increase verbosity (can be passed multiple times)')
+    self.add_option('-q', '--quiet', action='store_true',
+                    help='Suppress all extraneous output')
 
   def parse_args(self, args=None, values=None):
     options, args = optparse.OptionParser.parse_args(self, args, values)
+    if options.quiet:
+      options.verbose = 0
+
+    levels = [logging.ERROR, logging.WARNING, logging.INFO, logging.DEBUG]
+    logging.basicConfig(level=levels[min(options.verbose, len(levels) - 1)])
 
     try:
       global_cache_dir = Mirror.GetCachePath()
@@ -500,9 +591,6 @@ class OptionParser(optparse.OptionParser):
           os.path.abspath(global_cache_dir)):
         logging.warn('Overriding globally-configured cache directory.')
       Mirror.SetCachePath(options.cache_dir)
-
-    levels = [logging.WARNING, logging.INFO, logging.DEBUG]
-    logging.basicConfig(level=levels[min(options.verbose, len(levels) - 1)])
 
     return options, args
 

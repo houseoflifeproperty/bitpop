@@ -38,10 +38,11 @@ class MediaSourceVideoRenderer : public VideoRenderer {
     virtual void OnMediaSourceReset(const std::string& format) = 0;
 
     // Called when new data becomes available.
-    virtual void OnMediaSourceData(uint8_t* buffer, size_t buffer_size) = 0;
+    virtual void OnMediaSourceData(uint8_t* buffer, size_t buffer_size,
+                                   bool keyframe) = 0;
   };
 
-  explicit MediaSourceVideoRenderer(Delegate* data_forwarder);
+  explicit MediaSourceVideoRenderer(Delegate* delegate);
   virtual ~MediaSourceVideoRenderer();
 
   // VideoRenderer interface.
@@ -55,6 +56,10 @@ class MediaSourceVideoRenderer : public VideoRenderer {
   class VideoWriter;
 
   Delegate* delegate_;
+
+  std::string format_string_;
+  const char* codec_id_;
+
   scoped_ptr<VideoWriter> writer_;
   webrtc::DesktopVector frame_dpi_;
   webrtc::DesktopRegion desktop_shape_;

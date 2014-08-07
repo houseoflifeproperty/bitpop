@@ -5,12 +5,12 @@
 #ifndef V8_GLOBAL_HANDLES_H_
 #define V8_GLOBAL_HANDLES_H_
 
-#include "../include/v8.h"
-#include "../include/v8-profiler.h"
+#include "include/v8.h"
+#include "include/v8-profiler.h"
 
-#include "handles.h"
-#include "list.h"
-#include "utils.h"
+#include "src/handles.h"
+#include "src/list.h"
+#include "src/utils.h"
 
 namespace v8 {
 namespace internal {
@@ -155,9 +155,9 @@ class GlobalHandles {
   static bool IsWeak(Object** location);
 
   // Process pending weak handles.
-  // Returns true if next major GC is likely to collect more garbage.
-  bool PostGarbageCollectionProcessing(GarbageCollector collector,
-                                       GCTracer* tracer);
+  // Returns the number of freed nodes.
+  int PostGarbageCollectionProcessing(GarbageCollector collector,
+                                      GCTracer* tracer);
 
   // Iterates over all strong handles.
   void IterateStrongRoots(ObjectVisitor* v);

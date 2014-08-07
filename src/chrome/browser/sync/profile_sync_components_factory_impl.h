@@ -9,8 +9,10 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 
 class Profile;
 
@@ -24,8 +26,26 @@ class ExtensionSystem;
 
 class ProfileSyncComponentsFactoryImpl : public ProfileSyncComponentsFactory {
  public:
-  ProfileSyncComponentsFactoryImpl(Profile* profile,
-                                   base::CommandLine* command_line);
+  // Constructs a ProfileSyncComponentsFactoryImpl.
+  //
+  // |sync_service_url| is the base URL of the sync server.
+  //
+  // |account_id| is the sync user's account id.
+  //
+  // |scope_set| is the set of scopes to use for sync.
+  //
+  // |token_service| must outlive the ProfileSyncComponentsFactoryImpl.
+  //
+  // |url_request_context_getter| must outlive the
+  // ProfileSyncComponentsFactoryImpl.
+  ProfileSyncComponentsFactoryImpl(
+      Profile* profile,
+      base::CommandLine* command_line,
+      const GURL& sync_service_url,
+      const std::string& account_id,
+      const OAuth2TokenService::ScopeSet& scope_set,
+      OAuth2TokenService* token_service,
+      net::URLRequestContextGetter* url_request_context_getter);
   virtual ~ProfileSyncComponentsFactoryImpl();
 
   virtual void RegisterDataTypes(ProfileSyncService* pss) OVERRIDE;
@@ -43,12 +63,14 @@ class ProfileSyncComponentsFactoryImpl : public ProfileSyncComponentsFactory {
   virtual browser_sync::SyncBackendHost* CreateSyncBackendHost(
       const std::string& name,
       Profile* profile,
-      const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs) OVERRIDE;
+      invalidation::InvalidationService* invalidator,
+      const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
+      const base::FilePath& sync_folder) OVERRIDE;
 
   virtual base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
       syncer::ModelType type) OVERRIDE;
-  virtual scoped_ptr<syncer::AttachmentStore>
-      CreateCustomAttachmentStoreForType(syncer::ModelType type) OVERRIDE;
+  virtual scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
+      syncer::AttachmentService::Delegate* delegate) OVERRIDE;
 
   // Legacy datatypes that need to be converted to the SyncableService API.
   virtual SyncComponents CreateBookmarkSyncComponents(
@@ -61,11 +83,24 @@ class ProfileSyncComponentsFactoryImpl : public ProfileSyncComponentsFactory {
 
  private:
   // Register data types which are enabled on desktop platforms only.
+  // |disabled_types| and |enabled_types| correspond only to those types
+  // being explicitly enabled/disabled by the command line.
   void RegisterDesktopDataTypes(syncer::ModelTypeSet disabled_types,
+                                syncer::ModelTypeSet enabled_types,
                                 ProfileSyncService* pss);
   // Register data types which are enabled on both desktop and mobile.
+  // |disabled_types| and |enabled_types| correspond only to those types
+  // being explicitly enabled/disabled by the command line.
   void RegisterCommonDataTypes(syncer::ModelTypeSet disabled_types,
+                               syncer::ModelTypeSet enabled_types,
                                ProfileSyncService* pss);
+  // Used to bind a callback to give to DataTypeControllers to disable
+  // data types.
+  browser_sync::DataTypeController::DisableTypeCallback
+      MakeDisableCallbackFor(syncer::ModelType type);
+  void DisableBrokenType(syncer::ModelType type,
+                         const tracked_objects::Location& from_here,
+                         const std::string& message);
 
   Profile* profile_;
   base::CommandLine* command_line_;
@@ -74,6 +109,14 @@ class ProfileSyncComponentsFactoryImpl : public ProfileSyncComponentsFactory {
   // GetSyncableServiceForType.
   extensions::ExtensionSystem* extension_system_;
   scoped_refptr<autofill::AutofillWebDataService> web_data_service_;
+
+  const GURL sync_service_url_;
+  const std::string account_id_;
+  const OAuth2TokenService::ScopeSet scope_set_;
+  OAuth2TokenService* const token_service_;
+  net::URLRequestContextGetter* const url_request_context_getter_;
+
+  base::WeakPtrFactory<ProfileSyncComponentsFactoryImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncComponentsFactoryImpl);
 };

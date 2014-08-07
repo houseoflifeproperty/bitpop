@@ -22,10 +22,9 @@
 
 #include "core/svg/SVGCursorElement.h"
 
-#include "SVGNames.h"
-#include "XLinkNames.h"
+#include "core/SVGNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/Document.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
@@ -42,10 +41,7 @@ inline SVGCursorElement::SVGCursorElement(Document& document)
     addToPropertyMap(m_y);
 }
 
-PassRefPtr<SVGCursorElement> SVGCursorElement::create(Document& document)
-{
-    return adoptRef(new SVGCursorElement(document));
-}
+DEFINE_NODE_FACTORY(SVGCursorElement)
 
 SVGCursorElement::~SVGCursorElement()
 {

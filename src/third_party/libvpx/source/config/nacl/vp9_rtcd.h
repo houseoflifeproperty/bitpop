@@ -259,8 +259,8 @@ void vp9_idct4x4_16_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
 void vp9_idct4x4_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
 #define vp9_idct4x4_1_add vp9_idct4x4_1_add_c
 
-void vp9_idct8x8_10_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
-#define vp9_idct8x8_10_add vp9_idct8x8_10_add_c
+void vp9_idct8x8_12_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+#define vp9_idct8x8_12_add vp9_idct8x8_12_add_c
 
 void vp9_idct8x8_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
 #define vp9_idct8x8_1_add vp9_idct8x8_1_add_c

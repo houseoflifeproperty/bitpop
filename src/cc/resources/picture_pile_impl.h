@@ -46,6 +46,7 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
   // Similar to the above RasterDirect method, but this is a convenience method
   // for when it is known that the raster is going to an intermediate bitmap
   // that itself will then be blended and thus that a canvas clear is required.
+  // Note that this function may write outside the canvas_rect.
   void RasterToBitmap(
       SkCanvas* canvas,
       const gfx::Rect& canvas_rect,
@@ -67,7 +68,6 @@ class CC_EXPORT PicturePileImpl : public PicturePileBase {
     ~Analysis();
 
     bool is_solid_color;
-    bool has_text;
     SkColor solid_color;
   };
 

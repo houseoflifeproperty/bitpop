@@ -43,8 +43,8 @@ class Helper(object):
 
   def Builder(self, name, factory, gatekeeper=None, scheduler=None,
               builddir=None, auto_reboot=True, notify_on_missing=False,
-              slavebuilddir=None):
-    category = self._defaults.get('category')
+              slavebuilddir=None, category=None):
+    category = category or self._defaults.get('category')
     self._builders.append({'name': name,
                            'factory': factory,
                            'gatekeeper': gatekeeper,

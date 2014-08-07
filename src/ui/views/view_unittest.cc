@@ -9,17 +9,13 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_strings.h"
-#include "ui/aura/window.h"
-#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
-#include "ui/compositor/layer_tree_owner.h"
 #include "ui/compositor/test/draw_waiter_for_test.h"
-#include "ui/compositor/test/test_layers.h"
 #include "ui/events/event.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -33,13 +29,11 @@
 #include "ui/views/focus/view_storage.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/view.h"
-#include "ui/views/view_constants_aura.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/window/dialog_client_view.h"
 #include "ui/views/window/dialog_delegate.h"
-#include "ui/wm/core/window_util.h"
 
 using base::ASCIIToUTF16;
 
@@ -203,7 +197,11 @@ typedef ViewsTestBase ViewTest;
 // A derived class for testing purpose.
 class TestView : public View {
  public:
-  TestView() : View(), delete_on_pressed_(false), native_theme_(NULL) {}
+  TestView()
+      : View(),
+        delete_on_pressed_(false),
+        native_theme_(NULL),
+        can_process_events_within_subtree_(true) {}
   virtual ~TestView() {}
 
   // Reset all test state
@@ -217,6 +215,7 @@ class TestView : public View {
     last_gesture_event_was_handled_ = false;
     last_clip_.setEmpty();
     accelerator_count_map_.clear();
+    can_process_events_within_subtree_ = true;
   }
 
   // Exposed as public for testing.
@@ -230,6 +229,14 @@ class TestView : public View {
 
   bool focusable() const { return View::focusable(); }
 
+  void set_can_process_events_within_subtree(bool can_process) {
+    can_process_events_within_subtree_ = can_process;
+  }
+
+  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE {
+    return can_process_events_within_subtree_;
+  }
+
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
@@ -240,7 +247,7 @@ class TestView : public View {
   // Ignores GestureEvent by default.
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
-  virtual void Paint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void Paint(gfx::Canvas* canvas, const CullSet& cull_set) OVERRIDE;
   virtual void SchedulePaintInRect(const gfx::Rect& rect) OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
 
@@ -273,6 +280,9 @@ class TestView : public View {
 
   // Native theme.
   const ui::NativeTheme* native_theme_;
+
+  // Value to return from CanProcessEventsWithinSubtree().
+  bool can_process_events_within_subtree_;
 };
 
 // A view subclass that consumes all Gesture events for testing purposes.
@@ -670,7 +680,7 @@ TEST_F(ViewTest, ScrollGestureEvent) {
 // Painting
 ////////////////////////////////////////////////////////////////////////////////
 
-void TestView::Paint(gfx::Canvas* canvas) {
+void TestView::Paint(gfx::Canvas* canvas, const CullSet& cull_set) {
   canvas->sk_canvas()->getClipBounds(&last_clip_);
 }
 
@@ -1212,6 +1222,163 @@ TEST_F(ViewTest, GetEventHandlerForRect) {
   widget->CloseNow();
 }
 
+// Tests that GetEventHandlerForRect() and GetTooltipHandlerForPoint() behave
+// as expected when different views in the view hierarchy return false
+// when CanProcessEventsWithinSubtree() is called.
+TEST_F(ViewTest, CanProcessEventsWithinSubtree) {
+  Widget* widget = new Widget;
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  widget->Init(params);
+  View* root_view = widget->GetRootView();
+  root_view->SetBoundsRect(gfx::Rect(0, 0, 500, 500));
+
+  // Have this hierarchy of views (the coords here are in the coordinate
+  // space of the root view):
+  // v (0, 0, 100, 100)
+  //  - v_child (0, 0, 20, 30)
+  //    - v_grandchild (5, 5, 5, 15)
+
+  TestView* v = new TestView;
+  v->SetBounds(0, 0, 100, 100);
+  root_view->AddChildView(v);
+  v->set_notify_enter_exit_on_child(true);
+
+  TestView* v_child = new TestView;
+  v_child->SetBounds(0, 0, 20, 30);
+  v->AddChildView(v_child);
+
+  TestView* v_grandchild = new TestView;
+  v_grandchild->SetBounds(5, 5, 5, 15);
+  v_child->AddChildView(v_grandchild);
+
+  v->Reset();
+  v_child->Reset();
+  v_grandchild->Reset();
+
+  // Define rects and points within the views in the hierarchy.
+  gfx::Rect rect_in_v_grandchild(7, 7, 3, 3);
+  gfx::Point point_in_v_grandchild(rect_in_v_grandchild.origin());
+  gfx::Rect rect_in_v_child(12, 3, 5, 5);
+  gfx::Point point_in_v_child(rect_in_v_child.origin());
+  gfx::Rect rect_in_v(50, 50, 25, 30);
+  gfx::Point point_in_v(rect_in_v.origin());
+
+  // When all three views return true when CanProcessEventsWithinSubtree()
+  // is called, targeting should behave as expected.
+
+  View* result_view = root_view->GetEventHandlerForRect(rect_in_v_grandchild);
+  EXPECT_EQ(v_grandchild, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_grandchild);
+  EXPECT_EQ(v_grandchild, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_child);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_child);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+
+  // When |v_grandchild| returns false when CanProcessEventsWithinSubtree()
+  // is called, then |v_grandchild| cannot be returned as a target.
+
+  v_grandchild->set_can_process_events_within_subtree(false);
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_grandchild);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_grandchild);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_child);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_child);
+  EXPECT_EQ(v_child, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v);
+  EXPECT_EQ(v, result_view);
+
+  // When |v_grandchild| returns false when CanProcessEventsWithinSubtree()
+  // is called, then NULL should be returned as a target if we call
+  // GetTooltipHandlerForPoint() with |v_grandchild| as the root of the
+  // views tree. Note that the location must be in the coordinate space
+  // of the root view (|v_grandchild| in this case), so use (1, 1).
+
+  result_view = v_grandchild;
+  result_view = v_grandchild->GetTooltipHandlerForPoint(gfx::Point(1, 1));
+  EXPECT_EQ(NULL, result_view);
+  result_view = NULL;
+
+  // When |v_child| returns false when CanProcessEventsWithinSubtree()
+  // is called, then neither |v_child| nor |v_grandchild| can be returned
+  // as a target (|v| should be returned as the target for each case).
+
+  v_grandchild->Reset();
+  v_child->set_can_process_events_within_subtree(false);
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_grandchild);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_grandchild);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_child);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_child);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v);
+  EXPECT_EQ(v, result_view);
+  result_view = NULL;
+
+  // When |v| returns false when CanProcessEventsWithinSubtree()
+  // is called, then none of |v|, |v_child|, and |v_grandchild| can be returned
+  // as a target (|root_view| should be returned as the target for each case).
+
+  v_child->Reset();
+  v->set_can_process_events_within_subtree(false);
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_grandchild);
+  EXPECT_EQ(root_view, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_grandchild);
+  EXPECT_EQ(root_view, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v_child);
+  EXPECT_EQ(root_view, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v_child);
+  EXPECT_EQ(root_view, result_view);
+  result_view = NULL;
+
+  result_view = root_view->GetEventHandlerForRect(rect_in_v);
+  EXPECT_EQ(root_view, result_view);
+  result_view = NULL;
+  result_view = root_view->GetTooltipHandlerForPoint(point_in_v);
+  EXPECT_EQ(root_view, result_view);
+}
+
 TEST_F(ViewTest, NotifyEnterExitOnChild) {
   Widget* widget = new Widget;
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
@@ -1487,7 +1654,7 @@ bool TestView::AcceleratorPressed(const ui::Accelerator& accelerator) {
 
 // TODO: these tests were initially commented out when getting aura to
 // run. Figure out if still valuable and either nuke or fix.
-#if defined(false)
+#if 0
 TEST_F(ViewTest, ActivateAccelerator) {
   // Register a keyboard accelerator before the view is added to a window.
   ui::Accelerator return_accelerator(ui::VKEY_RETURN, ui::EF_NONE);
@@ -1692,7 +1859,7 @@ TEST_F(ViewTest, DISABLED_RerouteMouseWheelTest) {
   window1->CloseNow();
   window2->CloseNow();
 }
-#endif  // false
+#endif  // 0
 
 ////////////////////////////////////////////////////////////////////////////////
 // Native view hierachy
@@ -3363,17 +3530,6 @@ TEST_F(ViewLayerTest, AcquireLayer) {
   c1.reset();
 }
 
-// Verify that new layer scales content only if the old layer does.
-TEST_F(ViewLayerTest, RecreateLayerScaling) {
-  scoped_ptr<View> v(new View());
-  v->SetPaintToLayer(true);
-  // Set to non default value.
-  v->layer()->set_scale_content(false);
-  scoped_ptr<ui::Layer> old_layer(v->RecreateLayer());
-  ui::Layer* new_layer = v->layer();
-  EXPECT_FALSE(new_layer->scale_content());
-}
-
 // Verify the z-order of the layers as a result of calling RecreateLayer().
 TEST_F(ViewLayerTest, RecreateLayerZOrder) {
   scoped_ptr<View> v(new View());
@@ -3463,6 +3619,292 @@ TEST_F(ViewLayerTest, RecreateLayerMovesNonViewChildren) {
   EXPECT_EQ(v.layer()->children()[1], child.layer());
 }
 
+class BoundsTreeTestView : public View {
+ public:
+  BoundsTreeTestView() {}
+
+  virtual void PaintChildren(gfx::Canvas* canvas,
+                             const CullSet& cull_set) OVERRIDE {
+    // Save out a copy of the cull_set before calling the base implementation.
+    last_cull_set_.clear();
+    if (cull_set.cull_set_) {
+      for (base::hash_set<intptr_t>::iterator it = cull_set.cull_set_->begin();
+           it != cull_set.cull_set_->end();
+           ++it) {
+        last_cull_set_.insert(reinterpret_cast<View*>(*it));
+      }
+    }
+    View::PaintChildren(canvas, cull_set);
+  }
+
+  std::set<View*> last_cull_set_;
+};
+
+TEST_F(ViewLayerTest, BoundsTreePaintUpdatesCullSet) {
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  View* v1 = new View();
+  v1->SetBoundsRect(gfx::Rect(10, 15, 150, 151));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View();
+  v2->SetBoundsRect(gfx::Rect(20, 33, 40, 50));
+  v1->AddChildView(v2);
+
+  // Schedule a full-view paint to get everyone's rectangles updated.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Now we have test_view - v1 - v2. Damage to only test_view should only
+  // return root_view and test_view.
+  test_view->SchedulePaintInRect(gfx::Rect(0, 0, 1, 1));
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(2U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+
+  // Damage to v1 only should only return root_view, test_view, and v1.
+  test_view->SchedulePaintInRect(gfx::Rect(11, 16, 1, 1));
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(3U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+
+  // A Damage rect inside v2 should get all 3 views back in the |last_cull_set_|
+  // on call to TestView::Paint(), along with the widget root view.
+  test_view->SchedulePaintInRect(gfx::Rect(31, 49, 1, 1));
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(4U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v2));
+}
+
+TEST_F(ViewLayerTest, BoundsTreeWithRTL) {
+  std::string locale = l10n_util::GetApplicationLocale(std::string());
+  base::i18n::SetICUDefaultLocale("ar");
+
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  // Add child views, which should be in RTL coordinate space of parent view.
+  View* v1 = new View;
+  v1->SetBoundsRect(gfx::Rect(10, 12, 25, 26));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View;
+  v2->SetBoundsRect(gfx::Rect(5, 6, 7, 8));
+  v1->AddChildView(v2);
+
+  // Schedule a full-view paint to get everyone's rectangles updated.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Damage to the right side of the parent view should touch both child views.
+  gfx::Rect rtl_damage(test_view->bounds().width() - 16, 18, 1, 1);
+  test_view->SchedulePaintInRect(rtl_damage);
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(4U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v2));
+
+  // Damage to the left side of the parent view should only touch the
+  // container views.
+  gfx::Rect ltr_damage(16, 18, 1, 1);
+  test_view->SchedulePaintInRect(ltr_damage);
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(2U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+
+  // Reset locale.
+  base::i18n::SetICUDefaultLocale(locale);
+}
+
+TEST_F(ViewLayerTest, BoundsTreeSetBoundsChangesCullSet) {
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  View* v1 = new View;
+  v1->SetBoundsRect(gfx::Rect(5, 6, 100, 101));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View;
+  v2->SetBoundsRect(gfx::Rect(20, 33, 40, 50));
+  v1->AddChildView(v2);
+
+  // Schedule a full-view paint to get everyone's rectangles updated.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Move v1 to a new origin out of the way of our next query.
+  v1->SetBoundsRect(gfx::Rect(50, 60, 100, 101));
+  // The move will force a repaint.
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Schedule a paint with damage rect where v1 used to be.
+  test_view->SchedulePaintInRect(gfx::Rect(5, 6, 10, 11));
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Should only have picked up root_view and test_view.
+  EXPECT_EQ(2U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+}
+
+TEST_F(ViewLayerTest, BoundsTreeLayerChangeMakesNewTree) {
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  View* v1 = new View;
+  v1->SetBoundsRect(gfx::Rect(5, 10, 15, 20));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View;
+  v2->SetBoundsRect(gfx::Rect(1, 2, 3, 4));
+  v1->AddChildView(v2);
+
+  // Schedule a full-view paint to get everyone's rectangles updated.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Set v1 to paint to its own layer, it should remove itself from the
+  // test_view heiarchy and no longer intersect with damage rects in that cull
+  // set.
+  v1->SetPaintToLayer(true);
+
+  // Schedule another full-view paint.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  // v1 and v2 should no longer be present in the test_view cull_set.
+  EXPECT_EQ(2U, test_view->last_cull_set_.size());
+  EXPECT_EQ(0U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(0U, test_view->last_cull_set_.count(v2));
+
+  // Now set v1 back to not painting to a layer.
+  v1->SetPaintToLayer(false);
+  // Schedule another full-view paint.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  // We should be back to the full cull set including v1 and v2.
+  EXPECT_EQ(4U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v2));
+}
+
+TEST_F(ViewLayerTest, BoundsTreeRemoveChildRemovesBounds) {
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  View* v1 = new View;
+  v1->SetBoundsRect(gfx::Rect(5, 10, 15, 20));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View;
+  v2->SetBoundsRect(gfx::Rect(1, 2, 3, 4));
+  v1->AddChildView(v2);
+
+  // Schedule a full-view paint to get everyone's rectangles updated.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Now remove v1 from the root view.
+  test_view->RemoveChildView(v1);
+
+  // Schedule another full-view paint.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  // v1 and v2 should no longer be present in the test_view cull_set.
+  EXPECT_EQ(2U, test_view->last_cull_set_.size());
+  EXPECT_EQ(0U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(0U, test_view->last_cull_set_.count(v2));
+
+  // View v1 and v2 are no longer part of view hierarchy and therefore won't be
+  // deleted with that hierarchy.
+  delete v1;
+}
+
+TEST_F(ViewLayerTest, BoundsTreeMoveViewMovesBounds) {
+  BoundsTreeTestView* test_view = new BoundsTreeTestView;
+  widget()->SetContentsView(test_view);
+
+  // Build hierarchy v1 - v2 - v3.
+  View* v1 = new View;
+  v1->SetBoundsRect(gfx::Rect(20, 30, 150, 160));
+  test_view->AddChildView(v1);
+
+  View* v2 = new View;
+  v2->SetBoundsRect(gfx::Rect(5, 10, 40, 50));
+  v1->AddChildView(v2);
+
+  View* v3 = new View;
+  v3->SetBoundsRect(gfx::Rect(1, 2, 3, 4));
+  v2->AddChildView(v3);
+
+  // Schedule a full-view paint and ensure all views are present in the cull.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+  EXPECT_EQ(5U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v2));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v3));
+
+  // Build an unrelated view hierarchy and move v2 in to it.
+  scoped_ptr<Widget> test_widget(new Widget);
+  Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
+  params.bounds = gfx::Rect(10, 10, 500, 500);
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  test_widget->Init(params);
+  test_widget->Show();
+  BoundsTreeTestView* widget_view = new BoundsTreeTestView;
+  test_widget->SetContentsView(widget_view);
+  widget_view->AddChildView(v2);
+
+  // Now schedule full-view paints in both widgets.
+  test_view->SchedulePaintInRect(test_view->bounds());
+  widget_view->SchedulePaintInRect(widget_view->bounds());
+  GetRootLayer()->GetCompositor()->ScheduleDraw();
+  ui::DrawWaiterForTest::Wait(GetRootLayer()->GetCompositor());
+
+  // Only v1 should be present in the first cull set.
+  EXPECT_EQ(3U, test_view->last_cull_set_.size());
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(widget()->GetRootView()));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(test_view));
+  EXPECT_EQ(1U, test_view->last_cull_set_.count(v1));
+
+  // We should find v2 and v3 in the widget_view cull_set.
+  EXPECT_EQ(4U, widget_view->last_cull_set_.size());
+  EXPECT_EQ(1U, widget_view->last_cull_set_.count(test_widget->GetRootView()));
+  EXPECT_EQ(1U, widget_view->last_cull_set_.count(widget_view));
+  EXPECT_EQ(1U, widget_view->last_cull_set_.count(v2));
+  EXPECT_EQ(1U, widget_view->last_cull_set_.count(v3));
+}
+
 TEST_F(ViewTest, FocusableAssertions) {
   // View subclasses may change insets based on whether they are focusable,
   // which effects the preferred size. To avoid preferred size changing around
@@ -3477,141 +3919,6 @@ TEST_F(ViewTest, FocusableAssertions) {
   EXPECT_TRUE(view.focusable());
   view.SetFocusable(false);
   EXPECT_FALSE(view.focusable());
-}
-
-// Creates a widget of TYPE_CONTROL.
-// The caller takes ownership of the returned widget.
-Widget* CreateControlWidget(aura::Window* parent, const gfx::Rect& bounds) {
-  Widget::InitParams params(Widget::InitParams::TYPE_CONTROL);
-  params.parent = parent;
-  params.bounds = bounds;
-  Widget* widget = new Widget();
-  widget->Init(params);
-  return widget;
-}
-
-// Returns a view with a layer with the passed in |bounds| and |layer_name|.
-// The caller takes ownership of the returned view.
-View* CreateViewWithLayer(const gfx::Rect& bounds,
-                          const char* layer_name) {
-  View* view = new View();
-  view->SetBoundsRect(bounds);
-  view->SetPaintToLayer(true);
-  view->layer()->set_name(layer_name);
-  return view;
-}
-
-// Test that RecreateWindowLayers() recreates the layers for all child windows
-// and all child views and that the z-order of the recreated layers matches that
-// of the original layers.
-// Test hierarchy:
-// w1
-// +-- v1
-// +-- v2 (no layer)
-//     +-- v3 (no layer)
-//     +-- v4
-// +-- w2
-//     +-- v5
-//         +-- v6
-// +-- v7
-//     +-- v8
-//     +-- v9
-TEST_F(ViewTest, RecreateLayers) {
-  Widget* w1 = CreateControlWidget(GetContext(), gfx::Rect(0, 0, 100, 100));
-  w1->GetNativeView()->layer()->set_name("w1");
-
-  View* v2 = new View();
-  v2->SetBounds(0, 1, 100, 101);
-  View* v3 = new View();
-  v3->SetBounds(0, 2, 100, 102);
-  View* w2_host_view = new View();
-
-  View* v1 = CreateViewWithLayer(gfx::Rect(0, 3, 100, 103), "v1");
-  ui::Layer* v1_layer = v1->layer();
-  w1->GetRootView()->AddChildView(v1);
-  w1->GetRootView()->AddChildView(v2);
-  v2->AddChildView(v3);
-  View* v4 = CreateViewWithLayer(gfx::Rect(0, 4, 100, 104), "v4");
-  ui::Layer* v4_layer = v4->layer();
-  v2->AddChildView(v4);
-
-  w1->GetRootView()->AddChildView(w2_host_view);
-  View* v7 = CreateViewWithLayer(gfx::Rect(0, 4, 100, 104), "v7");
-  ui::Layer* v7_layer = v7->layer();
-  w1->GetRootView()->AddChildView(v7);
-
-  View* v8 = CreateViewWithLayer(gfx::Rect(0, 4, 100, 104), "v8");
-  ui::Layer* v8_layer = v8->layer();
-  v7->AddChildView(v8);
-
-  View* v9 = CreateViewWithLayer(gfx::Rect(0, 4, 100, 104), "v9");
-  ui::Layer* v9_layer = v9->layer();
-  v7->AddChildView(v9);
-
-  Widget* w2 = CreateControlWidget(w1->GetNativeView(),
-                                          gfx::Rect(0, 5, 100, 105));
-  w2->GetNativeView()->layer()->set_name("w2");
-  w2->GetNativeView()->SetProperty(kHostViewKey, w2_host_view);
-
-  View* v5 = CreateViewWithLayer(gfx::Rect(0, 6, 100, 106), "v5");
-  w2->GetRootView()->AddChildView(v5);
-  View* v6 = CreateViewWithLayer(gfx::Rect(0, 7, 100, 107), "v6");
-  ui::Layer* v6_layer = v6->layer();
-  v5->AddChildView(v6);
-
-  // Test the initial order of the layers.
-  ui::Layer* w1_layer = w1->GetNativeView()->layer();
-  ASSERT_EQ("w1", w1_layer->name());
-  ASSERT_EQ("v1 v4 w2 v7", ui::test::ChildLayerNamesAsString(*w1_layer));
-  ui::Layer* w2_layer = w1_layer->children()[2];
-  ASSERT_EQ("v5", ui::test::ChildLayerNamesAsString(*w2_layer));
-  ui::Layer* v5_layer = w2_layer->children()[0];
-  ASSERT_EQ("v6", ui::test::ChildLayerNamesAsString(*v5_layer));
-
-  {
-    scoped_ptr<ui::LayerTreeOwner> cloned_owner(
-        wm::RecreateLayers(w1->GetNativeView()));
-    EXPECT_EQ(w1_layer, cloned_owner->root());
-    EXPECT_NE(w1_layer, w1->GetNativeView()->layer());
-
-    // The old layers should still exist and have the same hierarchy.
-    ASSERT_EQ("w1", w1_layer->name());
-    ASSERT_EQ("v1 v4 w2 v7", ui::test::ChildLayerNamesAsString(*w1_layer));
-    ASSERT_EQ("v5", ui::test::ChildLayerNamesAsString(*w2_layer));
-    ASSERT_EQ("v6", ui::test::ChildLayerNamesAsString(*v5_layer));
-    EXPECT_EQ("v8 v9", ui::test::ChildLayerNamesAsString(*v7_layer));
-
-    ASSERT_EQ(4u, w1_layer->children().size());
-    EXPECT_EQ(v1_layer, w1_layer->children()[0]);
-    EXPECT_EQ(v4_layer, w1_layer->children()[1]);
-    EXPECT_EQ(w2_layer, w1_layer->children()[2]);
-    EXPECT_EQ(v7_layer, w1_layer->children()[3]);
-
-    ASSERT_EQ(1u, w2_layer->children().size());
-    EXPECT_EQ(v5_layer, w2_layer->children()[0]);
-
-    ASSERT_EQ(1u, v5_layer->children().size());
-    EXPECT_EQ(v6_layer, v5_layer->children()[0]);
-
-    ASSERT_EQ(0u, v6_layer->children().size());
-
-    EXPECT_EQ(2u, v7_layer->children().size());
-    EXPECT_EQ(v8_layer, v7_layer->children()[0]);
-    EXPECT_EQ(v9_layer, v7_layer->children()[1]);
-
-    // The cloned layers should have the same hierarchy as old.
-    ui::Layer* w1_new_layer = w1->GetNativeView()->layer();
-    EXPECT_EQ("w1", w1_new_layer->name());
-    ASSERT_EQ("v1 v4 w2 v7", ui::test::ChildLayerNamesAsString(*w1_new_layer));
-    ui::Layer* w2_new_layer = w1_new_layer->children()[2];
-    ASSERT_EQ("v5", ui::test::ChildLayerNamesAsString(*w2_new_layer));
-    ui::Layer* v5_new_layer = w2_new_layer->children()[0];
-    ASSERT_EQ("v6", ui::test::ChildLayerNamesAsString(*v5_new_layer));
-    ui::Layer* v7_new_layer = w1_new_layer->children()[3];
-    ASSERT_EQ("v8 v9", ui::test::ChildLayerNamesAsString(*v7_new_layer));
-  }
-  // The views and the widgets are destroyed when AuraTestHelper::TearDown()
-  // destroys root_window().
 }
 
 // Verifies when a view is deleted it is removed from ViewStorage.

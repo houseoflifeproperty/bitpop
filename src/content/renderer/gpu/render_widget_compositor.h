@@ -9,6 +9,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "cc/base/swap_promise.h"
 #include "cc/base/swap_promise_monitor.h"
 #include "cc/input/top_controls_state.h"
 #include "cc/trees/layer_tree_host_client.h"
@@ -46,7 +47,6 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   void SetSuppressScheduleComposite(bool suppress);
   bool BeginMainFrameRequested() const;
   void UpdateAnimations(base::TimeTicks time);
-  void Composite(base::TimeTicks frame_begin_time);
   void SetNeedsDisplayOnAllLayers();
   void SetRasterizeOnlyVisibleContent();
   void UpdateTopControlsState(cc::TopControlsState constraints,
@@ -64,13 +64,17 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   // into a LatencyInfoSwapPromise.
   scoped_ptr<cc::SwapPromiseMonitor> CreateLatencyInfoSwapPromiseMonitor(
       ui::LatencyInfo* latency);
+  // Calling QueueSwapPromise() to directly queue a SwapPromise into
+  // LayerTreeHost.
+  void QueueSwapPromise(scoped_ptr<cc::SwapPromise> swap_promise);
   int GetLayerTreeId() const;
   void NotifyInputThrottledUntilCommit();
   const cc::Layer* GetRootLayer() const;
-  bool ScheduleMicroBenchmark(
+  int ScheduleMicroBenchmark(
       const std::string& name,
       scoped_ptr<base::Value> value,
       const base::Callback<void(scoped_ptr<base::Value>)>& callback);
+  bool SendMessageToMicroBenchmark(int id, scoped_ptr<base::Value> value);
 
   // WebLayerTreeView implementation.
   virtual void setSurfaceReady();
@@ -79,6 +83,7 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   virtual void setViewportSize(
       const blink::WebSize& unused_deprecated,
       const blink::WebSize& device_viewport_size);
+  virtual void setViewportSize(const blink::WebSize& device_viewport_size);
   virtual blink::WebSize layoutViewportSize() const;
   virtual blink::WebSize deviceViewportSize() const;
   virtual blink::WebFloatPoint adjustEventPointForPinchZoom(
@@ -100,7 +105,6 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   virtual void setNeedsAnimate();
   virtual bool commitRequested() const;
   virtual void didStopFlinging();
-  virtual bool compositeAndReadback(void *pixels, const blink::WebRect& rect);
   virtual void compositeAndReadbackAsync(
       blink::WebCompositeAndReadbackAsyncCallback* callback);
   virtual void finishAllRendering();

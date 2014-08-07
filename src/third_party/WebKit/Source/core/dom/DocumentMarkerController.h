@@ -42,12 +42,12 @@ class Node;
 class Range;
 class RenderedDocumentMarker;
 
-class DocumentMarkerController {
-    WTF_MAKE_NONCOPYABLE(DocumentMarkerController); WTF_MAKE_FAST_ALLOCATED;
+class DocumentMarkerController FINAL : public NoBaseWillBeGarbageCollected<DocumentMarkerController> {
+    WTF_MAKE_NONCOPYABLE(DocumentMarkerController); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DocumentMarkerController);
 public:
 
     DocumentMarkerController();
-    ~DocumentMarkerController();
 
     void clear();
     void addMarker(Range*, DocumentMarker::MarkerType);
@@ -66,8 +66,6 @@ public:
     void removeMarkers(Range*, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers(), RemovePartiallyOverlappingMarkerOrNot = DoNotRemovePartiallyOverlappingMarker);
     void removeMarkers(Node*, unsigned startOffset, int length, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers(),  RemovePartiallyOverlappingMarkerOrNot = DoNotRemovePartiallyOverlappingMarker);
 
-    void clearWeakMembers(Visitor*);
-
     void removeMarkers(DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
     void removeMarkers(Node*, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
     void repaintMarkers(DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
@@ -77,10 +75,12 @@ public:
     void setMarkersActive(Node*, unsigned startOffset, unsigned endOffset, bool);
 
     DocumentMarker* markerContainingPoint(const LayoutPoint&, DocumentMarker::MarkerType);
-    Vector<DocumentMarker*> markersFor(Node*, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
-    Vector<DocumentMarker*> markersInRange(Range*, DocumentMarker::MarkerTypes);
-    Vector<DocumentMarker*> markers();
+    WillBeHeapVector<DocumentMarker*> markersFor(Node*, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
+    WillBeHeapVector<DocumentMarker*> markersInRange(Range*, DocumentMarker::MarkerTypes);
+    WillBeHeapVector<DocumentMarker*> markers();
     Vector<IntRect> renderedRectsForMarkers(DocumentMarker::MarkerType);
+
+    void trace(Visitor*);
 
 #ifndef NDEBUG
     void showMarkers() const;
@@ -89,9 +89,9 @@ public:
 private:
     void addMarker(Node*, const DocumentMarker&);
 
-    typedef Vector<RenderedDocumentMarker> MarkerList;
-    typedef Vector<OwnPtr<MarkerList>, DocumentMarker::MarkerTypeIndexesCount> MarkerLists;
-    typedef HashMap<const Node*, OwnPtr<MarkerLists> > MarkerMap;
+    typedef WillBeHeapVector<RenderedDocumentMarker> MarkerList;
+    typedef WillBeHeapVector<OwnPtrWillBeMember<MarkerList>, DocumentMarker::MarkerTypeIndexesCount> MarkerLists;
+    typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<const Node>, OwnPtrWillBeMember<MarkerLists> > MarkerMap;
     void mergeOverlapping(MarkerList*, DocumentMarker&);
     bool possiblyHasMarkers(DocumentMarker::MarkerTypes);
     void removeMarkersFromList(MarkerMap::iterator, DocumentMarker::MarkerTypes);

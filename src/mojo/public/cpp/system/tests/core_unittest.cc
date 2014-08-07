@@ -99,14 +99,14 @@ TEST(CoreCppTest, Basic) {
     EXPECT_EQ(kInvalidHandleValue, h.get().value());
 
     EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-              Wait(h.get(), MOJO_WAIT_FLAG_EVERYTHING, 1000000));
+              Wait(h.get(), ~MOJO_HANDLE_SIGNAL_NONE, 1000000));
 
     std::vector<Handle> wh;
     wh.push_back(h.get());
-    std::vector<MojoWaitFlags> wf;
-    wf.push_back(MOJO_WAIT_FLAG_EVERYTHING);
+    std::vector<MojoHandleSignals> sigs;
+    sigs.push_back(~MOJO_HANDLE_SIGNAL_NONE);
     EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-              WaitMany(wh, wf, MOJO_DEADLINE_INDEFINITE));
+              WaitMany(wh, sigs, MOJO_DEADLINE_INDEFINITE));
   }
 
   // |MakeScopedHandle| (just compilation tests):
@@ -153,7 +153,7 @@ TEST(CoreCppTest, Basic) {
       EXPECT_FALSE(h0.get().is_valid());
       EXPECT_FALSE(h1.get().is_valid());
 
-      CreateMessagePipe(&h0, &h1);
+      CreateMessagePipe(NULL, &h0, &h1);
       EXPECT_TRUE(h0.get().is_valid());
       EXPECT_TRUE(h1.get().is_valid());
       EXPECT_NE(h0.get().value(), h1.get().value());
@@ -163,14 +163,14 @@ TEST(CoreCppTest, Basic) {
       MojoHandle hv1 = h1.get().value();
 
       EXPECT_EQ(MOJO_RESULT_DEADLINE_EXCEEDED,
-                Wait(h0.get(), MOJO_WAIT_FLAG_READABLE, 0));
+                Wait(h0.get(), MOJO_HANDLE_SIGNAL_READABLE, 0));
       std::vector<Handle> wh;
       wh.push_back(h0.get());
       wh.push_back(h1.get());
-      std::vector<MojoWaitFlags> wf;
-      wf.push_back(MOJO_WAIT_FLAG_READABLE);
-      wf.push_back(MOJO_WAIT_FLAG_WRITABLE);
-      EXPECT_EQ(1, WaitMany(wh, wf, 1000));
+      std::vector<MojoHandleSignals> sigs;
+      sigs.push_back(MOJO_HANDLE_SIGNAL_READABLE);
+      sigs.push_back(MOJO_HANDLE_SIGNAL_WRITABLE);
+      EXPECT_EQ(1, WaitMany(wh, sigs, 1000));
 
       // Test closing |h1| explicitly.
       Close(h1.Pass());
@@ -178,11 +178,11 @@ TEST(CoreCppTest, Basic) {
 
       // Make sure |h1| is closed.
       EXPECT_EQ(MOJO_RESULT_INVALID_ARGUMENT,
-                MojoWait(hv1, MOJO_WAIT_FLAG_EVERYTHING,
+                MojoWait(hv1, ~MOJO_HANDLE_SIGNAL_NONE,
                          MOJO_DEADLINE_INDEFINITE));
 
       EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-                Wait(h0.get(), MOJO_WAIT_FLAG_READABLE,
+                Wait(h0.get(), MOJO_HANDLE_SIGNAL_READABLE,
                      MOJO_DEADLINE_INDEFINITE));
     }
     // |hv0| should have been closed when |h0| went out of scope, so this close
@@ -193,7 +193,7 @@ TEST(CoreCppTest, Basic) {
     {
       ScopedMessagePipeHandle h0;
       ScopedMessagePipeHandle h1;
-      CreateMessagePipe(&h0, &h1);
+      CreateMessagePipe(NULL, &h0, &h1);
 
       const char kHello[] = "hello";
       const uint32_t kHelloSize = static_cast<uint32_t>(sizeof(kHello));
@@ -203,7 +203,7 @@ TEST(CoreCppTest, Basic) {
                                 NULL, 0,
                                 MOJO_WRITE_MESSAGE_FLAG_NONE));
       EXPECT_EQ(MOJO_RESULT_OK,
-                Wait(h1.get(), MOJO_WAIT_FLAG_READABLE,
+                Wait(h1.get(), MOJO_HANDLE_SIGNAL_READABLE,
                      MOJO_DEADLINE_INDEFINITE));
       char buffer[10] = { 0 };
       uint32_t buffer_size = static_cast<uint32_t>(sizeof(buffer));
@@ -245,7 +245,7 @@ TEST(CoreCppTest, Basic) {
 
       // Read "hello" and the sent handle.
       EXPECT_EQ(MOJO_RESULT_OK,
-                Wait(h0.get(), MOJO_WAIT_FLAG_READABLE,
+                Wait(h0.get(), MOJO_HANDLE_SIGNAL_READABLE,
                      MOJO_DEADLINE_INDEFINITE));
       memset(buffer, 0, sizeof(buffer));
       buffer_size = static_cast<uint32_t>(sizeof(buffer));
@@ -267,7 +267,7 @@ TEST(CoreCppTest, Basic) {
       // Save |handles[0]| to check that it gets properly closed.
       hv0 = handles[0];
       EXPECT_EQ(MOJO_RESULT_OK,
-                Wait(mp.handle1.get(), MOJO_WAIT_FLAG_READABLE,
+                Wait(mp.handle1.get(), MOJO_HANDLE_SIGNAL_READABLE,
                      MOJO_DEADLINE_INDEFINITE));
       memset(buffer, 0, sizeof(buffer));
       buffer_size = static_cast<uint32_t>(sizeof(buffer));
@@ -296,12 +296,12 @@ TEST(CoreCppTest, TearDownWithMessagesEnqueued) {
   {
     ScopedMessagePipeHandle h0;
     ScopedMessagePipeHandle h1;
-    CreateMessagePipe(&h0, &h1);
+    CreateMessagePipe(NULL, &h0, &h1);
 
     // Send a handle over the previously-establish message pipe.
     ScopedMessagePipeHandle h2;
     ScopedMessagePipeHandle h3;
-    CreateMessagePipe(&h2, &h3);
+    CreateMessagePipe(NULL, &h2, &h3);
 
     // Write a message to |h2|, before we send |h3|.
     const char kWorld[] = "world!";
@@ -343,12 +343,12 @@ TEST(CoreCppTest, TearDownWithMessagesEnqueued) {
   {
     ScopedMessagePipeHandle h0;
     ScopedMessagePipeHandle h1;
-    CreateMessagePipe(&h0, &h1);
+    CreateMessagePipe(NULL, &h0, &h1);
 
     // Send a handle over the previously-establish message pipe.
     ScopedMessagePipeHandle h2;
     ScopedMessagePipeHandle h3;
-    CreateMessagePipe(&h2, &h3);
+    CreateMessagePipe(NULL, &h2, &h3);
 
     // Write a message to |h2|, before we send |h3|.
     const char kWorld[] = "world!";
@@ -384,6 +384,33 @@ TEST(CoreCppTest, TearDownWithMessagesEnqueued) {
     EXPECT_EQ(MOJO_RESULT_OK, MojoClose(h0.release().value()));
     EXPECT_EQ(MOJO_RESULT_OK, MojoClose(h1.release().value()));
   }
+}
+
+TEST(CoreCppTest, ScopedHandleMoveCtor) {
+  ScopedSharedBufferHandle buffer1;
+  EXPECT_EQ(MOJO_RESULT_OK, CreateSharedBuffer(NULL, 1024, &buffer1));
+  EXPECT_TRUE(buffer1.is_valid());
+
+  ScopedSharedBufferHandle buffer2;
+  EXPECT_EQ(MOJO_RESULT_OK, CreateSharedBuffer(NULL, 1024, &buffer2));
+  EXPECT_TRUE(buffer2.is_valid());
+
+  // If this fails to close buffer1, ScopedHandleBase::CloseIfNecessary() will
+  // assert.
+  buffer1 = buffer2.Pass();
+
+  EXPECT_TRUE(buffer1.is_valid());
+  EXPECT_FALSE(buffer2.is_valid());
+}
+
+TEST(CoreCppTest, ScopedHandleMoveCtorSelf) {
+  ScopedSharedBufferHandle buffer1;
+  EXPECT_EQ(MOJO_RESULT_OK, CreateSharedBuffer(NULL, 1024, &buffer1));
+  EXPECT_TRUE(buffer1.is_valid());
+
+  buffer1 = buffer1.Pass();
+
+  EXPECT_TRUE(buffer1.is_valid());
 }
 
 // TODO(vtl): Write data pipe tests.

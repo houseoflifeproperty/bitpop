@@ -34,8 +34,9 @@ ShellContentBrowserClient* g_instance = NULL;
 
 }  // namespace
 
-ShellContentBrowserClient::ShellContentBrowserClient()
-    : browser_main_parts_(NULL) {
+ShellContentBrowserClient::ShellContentBrowserClient(
+    ShellBrowserMainDelegate* browser_main_delegate)
+    : browser_main_parts_(NULL), browser_main_delegate_(browser_main_delegate) {
   DCHECK(!g_instance);
   g_instance = this;
 }
@@ -53,7 +54,8 @@ content::BrowserContext* ShellContentBrowserClient::GetBrowserContext() {
 
 content::BrowserMainParts* ShellContentBrowserClient::CreateBrowserMainParts(
     const content::MainFunctionParams& parameters) {
-  browser_main_parts_ = new ShellBrowserMainParts(parameters);
+  browser_main_parts_ =
+      new ShellBrowserMainParts(parameters, browser_main_delegate_);
   return browser_main_parts_;
 }
 
@@ -77,7 +79,7 @@ bool ShellContentBrowserClient::ShouldUseProcessPerSite(
 net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
     content::BrowserContext* content_browser_context,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) {
+    content::URLRequestInterceptorScopedVector request_interceptors) {
   // Handle only chrome-extension:// requests. app_shell does not support
   // chrome-extension-resource:// requests (it does not store shared extension
   // data in its installation directory).
@@ -89,7 +91,7 @@ net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
                                                      extension_info_map));
   // Let content::ShellBrowserContext handle the rest of the setup.
   return browser_main_parts_->browser_context()->CreateRequestContext(
-      protocol_handlers, protocol_interceptors.Pass());
+      protocol_handlers, request_interceptors.Pass());
 }
 
 bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -98,12 +100,12 @@ bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
   // Keep in sync with ProtocolHandlers added in CreateRequestContext() and in
   // content::ShellURLRequestContextGetter::GetURLRequestContext().
   static const char* const kProtocolList[] = {
-      content::kBlobScheme,
+      url::kBlobScheme,
       content::kChromeDevToolsScheme,
       content::kChromeUIScheme,
-      content::kDataScheme,
-      content::kFileScheme,
-      content::kFileSystemScheme,
+      url::kDataScheme,
+      url::kFileScheme,
+      url::kFileSystemScheme,
       extensions::kExtensionScheme,
       extensions::kExtensionResourceScheme,
   };

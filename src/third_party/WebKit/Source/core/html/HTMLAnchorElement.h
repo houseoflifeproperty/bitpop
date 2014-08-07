@@ -24,8 +24,9 @@
 #ifndef HTMLAnchorElement_h
 #define HTMLAnchorElement_h
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/DOMURLUtils.h"
+#include "core/dom/Document.h"
 #include "core/html/HTMLElement.h"
 #include "platform/LinkHash.h"
 
@@ -81,6 +82,8 @@ public:
     LinkHash visitedLinkHash() const;
     void invalidateCachedVisitedLinkHash() { m_cachedVisitedLinkHash = 0; }
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 protected:
     HTMLAnchorElement(const QualifiedName&, Document&);
 
@@ -108,7 +111,7 @@ private:
     PrefetchEventHandler* prefetchEventHandler();
 
     uint32_t m_linkRelations;
-    OwnPtr<PrefetchEventHandler> m_prefetchEventHandler;
+    OwnPtrWillBeMember<PrefetchEventHandler> m_prefetchEventHandler;
     mutable LinkHash m_cachedVisitedLinkHash;
 };
 

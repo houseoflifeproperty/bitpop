@@ -9,13 +9,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
+#include "chrome/common/pref_names.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_node.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/test/test_browser_thread.h"
 #include "grit/generated_resources.h"
@@ -48,19 +52,12 @@ class BookmarkContextMenuControllerTest : public testing::Test {
   }
 
   virtual void SetUp() OVERRIDE {
-    Reset(false);
-  }
-  void Reset(bool incognito) {
     TestingProfile::Builder builder;
-    if (incognito)
-      builder.SetIncognito();
     profile_ = builder.Build();
     profile_->CreateBookmarkModel(true);
-
     model_ = BookmarkModelFactory::GetForProfile(profile_.get());
     test::WaitForBookmarkModelToLoad(model_);
-
-    AddTestData();
+    AddTestData(model_);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -70,15 +67,6 @@ class BookmarkContextMenuControllerTest : public testing::Test {
     message_loop_.RunUntilIdle();
   }
 
- protected:
-  base::MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
-  scoped_ptr<TestingProfile> profile_;
-  BookmarkModel* model_;
-  TestingPageNavigator navigator_;
-
- private:
   // Creates the following structure:
   // a
   // F1
@@ -89,19 +77,27 @@ class BookmarkContextMenuControllerTest : public testing::Test {
   // F3
   // F4
   //   f4a
-  void AddTestData() {
-    const BookmarkNode* bb_node = model_->bookmark_bar_node();
+  static void AddTestData(BookmarkModel* model) {
+    const BookmarkNode* bb_node = model->bookmark_bar_node();
     std::string test_base = "file:///c:/tmp/";
-    model_->AddURL(bb_node, 0, ASCIIToUTF16("a"), GURL(test_base + "a"));
-    const BookmarkNode* f1 = model_->AddFolder(bb_node, 1, ASCIIToUTF16("F1"));
-    model_->AddURL(f1, 0, ASCIIToUTF16("f1a"), GURL(test_base + "f1a"));
-    const BookmarkNode* f11 = model_->AddFolder(f1, 1, ASCIIToUTF16("F11"));
-    model_->AddURL(f11, 0, ASCIIToUTF16("f11a"), GURL(test_base + "f11a"));
-    model_->AddFolder(bb_node, 2, ASCIIToUTF16("F2"));
-    model_->AddFolder(bb_node, 3, ASCIIToUTF16("F3"));
-    const BookmarkNode* f4 = model_->AddFolder(bb_node, 4, ASCIIToUTF16("F4"));
-    model_->AddURL(f4, 0, ASCIIToUTF16("f4a"), GURL(test_base + "f4a"));
+    model->AddURL(bb_node, 0, ASCIIToUTF16("a"), GURL(test_base + "a"));
+    const BookmarkNode* f1 = model->AddFolder(bb_node, 1, ASCIIToUTF16("F1"));
+    model->AddURL(f1, 0, ASCIIToUTF16("f1a"), GURL(test_base + "f1a"));
+    const BookmarkNode* f11 = model->AddFolder(f1, 1, ASCIIToUTF16("F11"));
+    model->AddURL(f11, 0, ASCIIToUTF16("f11a"), GURL(test_base + "f11a"));
+    model->AddFolder(bb_node, 2, ASCIIToUTF16("F2"));
+    model->AddFolder(bb_node, 3, ASCIIToUTF16("F3"));
+    const BookmarkNode* f4 = model->AddFolder(bb_node, 4, ASCIIToUTF16("F4"));
+    model->AddURL(f4, 0, ASCIIToUTF16("f4a"), GURL(test_base + "f4a"));
   }
+
+ protected:
+  base::MessageLoopForUI message_loop_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
+  scoped_ptr<TestingProfile> profile_;
+  BookmarkModel* model_;
+  TestingPageNavigator navigator_;
 };
 
 // Tests Deleting from the menu.
@@ -245,12 +241,24 @@ TEST_F(BookmarkContextMenuControllerTest, MultipleFoldersWithURLs) {
 
 // Tests the enabled state of open incognito.
 TEST_F(BookmarkContextMenuControllerTest, DisableIncognito) {
-  // Create a new incognito profile.
-  Reset(true);
+  // Create an incognito Profile. It must be associated with the original
+  // Profile, so that GetOriginalProfile() works as expected.
+  TestingProfile::Builder builder;
+  builder.SetIncognito();
+  scoped_ptr<TestingProfile> testing_incognito = builder.Build();
+  testing_incognito->SetOriginalProfile(profile_.get());
+  TestingProfile* incognito = testing_incognito.get();
+  profile_->SetOffTheRecordProfile(testing_incognito.PassAs<Profile>());
+
+  incognito->CreateBookmarkModel(true);
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(incognito);
+  test::WaitForBookmarkModelToLoad(model);
+  AddTestData(model);
+
   std::vector<const BookmarkNode*> nodes;
-  nodes.push_back(model_->bookmark_bar_node()->GetChild(0));
+  nodes.push_back(model->bookmark_bar_node()->GetChild(0));
   BookmarkContextMenuController controller(
-      NULL, NULL, NULL, profile_.get(), NULL, nodes[0]->parent(), nodes);
+      NULL, NULL, NULL, incognito, NULL, nodes[0]->parent(), nodes);
   EXPECT_FALSE(controller.IsCommandIdEnabled(IDC_BOOKMARK_BAR_OPEN_INCOGNITO));
   EXPECT_FALSE(
       controller.IsCommandIdEnabled(IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO));
@@ -332,4 +340,30 @@ TEST_F(BookmarkContextMenuControllerTest, CutCopyPasteNode) {
   ASSERT_TRUE(bb_node->GetChild(0)->is_url());
   ASSERT_TRUE(bb_node->GetChild(1)->is_folder());
   ASSERT_EQ(old_count, bb_node->child_count());
+}
+
+TEST_F(BookmarkContextMenuControllerTest,
+       ManagedShowAppsShortcutInBookmarksBar) {
+  BookmarkContextMenuController controller(
+      NULL, NULL, NULL, profile_.get(), NULL, model_->bookmark_bar_node(),
+      std::vector<const BookmarkNode*>());
+
+  // By default, the pref is not managed and the command is enabled.
+  TestingPrefServiceSyncable* prefs = profile_->GetTestingPrefService();
+  EXPECT_FALSE(
+      prefs->IsManagedPreference(prefs::kShowAppsShortcutInBookmarkBar));
+  EXPECT_TRUE(
+      controller.IsCommandIdEnabled(IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT));
+
+  // Disabling the shorcut by policy disables the command.
+  prefs->SetManagedPref(prefs::kShowAppsShortcutInBookmarkBar,
+                        new base::FundamentalValue(false));
+  EXPECT_FALSE(
+      controller.IsCommandIdEnabled(IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT));
+
+  // And enabling the shortcut by policy disables the command too.
+  prefs->SetManagedPref(prefs::kShowAppsShortcutInBookmarkBar,
+                        new base::FundamentalValue(true));
+  EXPECT_FALSE(
+      controller.IsCommandIdEnabled(IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT));
 }

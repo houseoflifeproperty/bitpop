@@ -27,7 +27,7 @@
 
 #include "core/rendering/RenderVideo.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -81,7 +81,7 @@ void RenderVideo::updateIntrinsicSize()
 
     setIntrinsicSize(size);
     setPreferredLogicalWidthsDirty();
-    setNeedsLayout();
+    setNeedsLayoutAndFullPaintInvalidation();
 }
 
 LayoutSize RenderVideo::calculateIntrinsicSize()
@@ -97,9 +97,9 @@ LayoutSize RenderVideo::calculateIntrinsicSize()
     // The intrinsic height of a video element's playback area is the intrinsic height
     // of the video resource, if that is available; otherwise it is the intrinsic
     // height of the poster frame, if that is available; otherwise it is 150 CSS pixels.
-    MediaPlayer* player = mediaElement()->player();
-    if (player && video->readyState() >= HTMLVideoElement::HAVE_METADATA) {
-        LayoutSize size = player->naturalSize();
+    blink::WebMediaPlayer* webMediaPlayer = mediaElement()->webMediaPlayer();
+    if (webMediaPlayer && video->readyState() >= HTMLVideoElement::HAVE_METADATA) {
+        IntSize size = webMediaPlayer->naturalSize();
         if (!size.isEmpty())
             return size;
     }
@@ -210,7 +210,7 @@ void RenderVideo::updatePlayer()
     if (!videoElement()->isActive())
         return;
 
-    contentChanged(VideoChanged);
+    videoElement()->setNeedsCompositingUpdate();
 }
 
 LayoutUnit RenderVideo::computeReplacedLogicalWidth(ShouldComputePreferred shouldComputePreferred) const

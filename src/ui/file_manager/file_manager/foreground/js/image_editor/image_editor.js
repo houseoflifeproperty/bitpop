@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -788,7 +788,7 @@ ImageEditor.MouseControl.prototype.setDoubleTapCallback = function(callback) {
 };
 
 /**
- * Touch chancel handler.
+ * Touch cancel handler.
  */
 ImageEditor.MouseControl.prototype.onTouchCancel = function() {
   this.dragHandler_ = null;
@@ -1119,7 +1119,7 @@ ImageEditor.Prompt.prototype.setTimer = function(callback, timeout) {
  *
  * @param {string} text The prompt text.
  * @param {number} timeout Timeout in ms.
- * @param {Object} formatArgs varArgs for the formatting fuction.
+ * @param {Object} formatArgs varArgs for the formatting function.
  */
 ImageEditor.Prompt.prototype.show = function(text, timeout, formatArgs) {
   this.showAt.apply(this,

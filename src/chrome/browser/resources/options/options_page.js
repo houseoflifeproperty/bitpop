@@ -120,6 +120,7 @@ cr.define('options', function() {
       if (!targetPage && this.showOverlay_(pageName, rootPage)) {
         if (updateHistory)
           this.updateHistoryState_(!!opt_propertyBag.replaceState);
+        this.updateTitle_();
         return;
       } else {
         targetPage = this.getDefaultPage();
@@ -166,9 +167,6 @@ cr.define('options', function() {
     if (updateHistory)
       this.updateHistoryState_(!!opt_propertyBag.replaceState);
 
-    // Update tab title.
-    this.setTitle_(targetPage.title);
-
     // Update focus if any other control was focused on the previous page,
     // or the previous page is not known.
     if (document.activeElement != document.body &&
@@ -188,16 +186,10 @@ cr.define('options', function() {
         page.didShowPage();
       }
     }
-  };
 
-  /**
-   * Sets the title of the page. This is accomplished by calling into the
-   * parent page API.
-   * @param {string} title The title string.
-   * @private
-   */
-  OptionsPage.setTitle_ = function(title) {
-    uber.invokeMethodOnParent('setTitle', {title: title});
+    // Update the document title. Do this after didShowPage was called, in case
+    // a page decides to change its title.
+    this.updateTitle_();
   };
 
   /**
@@ -213,8 +205,17 @@ cr.define('options', function() {
   };
 
   /**
-   * Pushes the current page onto the history stack, overriding the last page
-   * if it is the generic chrome://settings/.
+   * Updates the title to title of the current page.
+   * @private
+   */
+  OptionsPage.updateTitle_ = function() {
+    var page = this.getTopmostVisiblePage();
+    uber.setTitle(page.title);
+  };
+
+  /**
+   * Pushes the current page onto the history stack, replacing the current entry
+   * if appropriate.
    * @param {boolean} replace If true, allow no history events to be created.
    * @param {object=} opt_params A bag of optional params, including:
    *     {boolean} ignoreHash Whether to include the hash or not.
@@ -229,29 +230,15 @@ cr.define('options', function() {
     if (path)
       path = path.slice(1).replace(/\/(?:#|$)/, '');  // Remove trailing slash.
 
-    // Update tab title.
-    this.setTitle_(page.title);
-
-    // The page is already in history (the user may have clicked the same link
-    // twice). Do nothing.
-    if (path == page.name && !OptionsPage.isLoading())
+    // If the page is already in history (the user may have clicked the same
+    // link twice, or this is the initial load), do nothing.
+    var hash = opt_params && opt_params.ignoreHash ? '' : window.location.hash;
+    var newPath = (page == this.getDefaultPage() ? '' : page.name) + hash;
+    if (path == newPath)
       return;
 
-    var hash = opt_params && opt_params.ignoreHash ? '' : window.location.hash;
-
-    // If settings are embedded, tell the outer page to set its "path" to the
-    // inner frame's path.
-    var outerPath = (page == this.getDefaultPage() ? '' : page.name) + hash;
-    uber.invokeMethodOnParent('setPath', {path: outerPath});
-
-    // If there is no path, the current location is chrome://settings/.
-    // Override this with the new page.
-    var historyFunction = path && !replace ? window.history.pushState :
-                                             window.history.replaceState;
-    historyFunction.call(window.history,
-                         {pageName: page.name},
-                         page.title,
-                         '/' + page.name + hash);
+    var historyFunction = replace ? uber.replaceState : uber.pushState;
+    historyFunction.call(uber, {}, newPath);
   };
 
   /**
@@ -280,9 +267,6 @@ cr.define('options', function() {
       overlay.visible = true;
       if (overlay.didShowPage) overlay.didShowPage();
     }
-
-    // Update tab title.
-    this.setTitle_(overlay.title);
 
     // Change focus to the overlay if any other control was focused by keyboard
     // before. Otherwise, no one should have focus.
@@ -350,6 +334,7 @@ cr.define('options', function() {
 
     if (overlay.didClosePage) overlay.didClosePage();
     this.updateHistoryState_(false, {ignoreHash: true});
+    this.updateTitle_();
 
     this.restoreLastFocusedElement_();
   };
@@ -551,9 +536,9 @@ cr.define('options', function() {
       }
     }
 
-    // Reverse the button strip for views. See the documentation of
+    // Reverse the button strip for Windows and CrOS. See the documentation of
     // reverseButtonStripIfNecessary_() for an explanation of why this is done.
-    if (cr.isViews)
+    if (cr.isWindows || cr.isChromeOS)
       this.reverseButtonStripIfNecessary_(overlay);
 
     overlay.tab = undefined;
@@ -587,22 +572,33 @@ cr.define('options', function() {
   };
 
   /**
+   * Returns the name of the page from the current path.
+   */
+  OptionsPage.getPageNameFromPath = function() {
+    var path = location.pathname;
+    if (path.length <= 1)
+      return this.getDefaultPage().name;
+
+    // Skip starting slash and remove trailing slash (if any).
+    return path.slice(1).replace(/\/$/, '');
+  };
+
+  /**
    * Callback for window.onpopstate to handle back/forward navigations.
+   * @param {string} pageName The current page name.
    * @param {Object} data State data pushed into history.
    */
-  OptionsPage.setState = function(data) {
-    if (data && data.pageName) {
-      var currentOverlay = this.getVisibleOverlay_();
-      var lowercaseName = data.pageName.toLowerCase();
-      var newPage = this.registeredPages[lowercaseName] ||
-                    this.registeredOverlayPages[lowercaseName] ||
-                    this.getDefaultPage();
-      if (currentOverlay && !currentOverlay.isAncestorOfPage(newPage)) {
-        currentOverlay.visible = false;
-        if (currentOverlay.didClosePage) currentOverlay.didClosePage();
-      }
-      this.showPageByName(data.pageName, false);
+  OptionsPage.setState = function(pageName, data) {
+    var currentOverlay = this.getVisibleOverlay_();
+    var lowercaseName = pageName.toLowerCase();
+    var newPage = this.registeredPages[lowercaseName] ||
+                  this.registeredOverlayPages[lowercaseName] ||
+                  this.getDefaultPage();
+    if (currentOverlay && !currentOverlay.isAncestorOfPage(newPage)) {
+      currentOverlay.visible = false;
+      if (currentOverlay.didClosePage) currentOverlay.didClosePage();
     }
+    this.showPageByName(pageName, false);
   };
 
   /**

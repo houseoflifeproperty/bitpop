@@ -40,6 +40,7 @@
 #include "core/html/HTMLTableColElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTableRowElement.h"
+#include "core/html/HTMLTableRowsCollection.h"
 #include "core/html/HTMLTableSectionElement.h"
 #include "core/rendering/RenderTableCell.h"
 
@@ -130,21 +131,22 @@ bool AXTable::isDataTable() const
     if (elementHasAriaRole(tableElement->tFoot()))
         return false;
 
-    RefPtr<HTMLCollection> bodies = tableElement->tBodies();
+    RefPtrWillBeRawPtr<HTMLCollection> bodies = tableElement->tBodies();
     for (unsigned bodyIndex = 0; bodyIndex < bodies->length(); ++bodyIndex) {
         Element* bodyElement = bodies->item(bodyIndex);
         if (elementHasAriaRole(bodyElement))
             return false;
     }
 
-    RefPtr<HTMLCollection> rows = tableElement->rows();
-    for (unsigned rowIndex = 0; rowIndex < rows->length(); ++rowIndex) {
+    RefPtrWillBeRawPtr<HTMLTableRowsCollection> rows = tableElement->rows();
+    unsigned rowCount = rows->length();
+    for (unsigned rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
         Element* rowElement = rows->item(rowIndex);
         if (elementHasAriaRole(rowElement))
             return false;
         if (rowElement->hasTagName(trTag)) {
             HTMLTableRowElement* row = static_cast<HTMLTableRowElement*>(rowElement);
-            RefPtr<HTMLCollection> cells = row->cells();
+            RefPtrWillBeRawPtr<HTMLCollection> cells = row->cells();
             for (unsigned cellIndex = 0; cellIndex < cells->length(); ++cellIndex) {
                 if (elementHasAriaRole(cells->item(cellIndex)))
                     return false;

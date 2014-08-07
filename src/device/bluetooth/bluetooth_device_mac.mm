@@ -7,31 +7,15 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/hash.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
-#include "device/bluetooth/bluetooth_out_of_band_pairing_data.h"
-#include "device/bluetooth/bluetooth_profile_mac.h"
-#include "device/bluetooth/bluetooth_service_record_mac.h"
 #include "device/bluetooth/bluetooth_socket_mac.h"
 #include "device/bluetooth/bluetooth_uuid.h"
-
-// Replicate specific 10.7 SDK declarations for building with prior SDKs.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-@interface IOBluetoothDevice (LionSDKDeclarations)
-- (NSString*)addressString;
-- (unsigned int)classOfDevice;
-- (BluetoothConnectionHandle)connectionHandle;
-- (BluetoothHCIRSSIValue)rawRSSI;
-- (NSArray*)services;
-@end
-
-#endif  // MAC_OS_X_VERSION_10_7
 
 // Undocumented API for accessing the Bluetooth transmit power level.
 // Similar to the API defined here [ http://goo.gl/20Q5vE ].
@@ -43,6 +27,34 @@
 @end
 
 namespace device {
+namespace {
+
+// Returns the first (should be, only) UUID contained within the
+// |service_class_data|. Returns an invalid (empty) UUID if none is found.
+BluetoothUUID ExtractUuid(IOBluetoothSDPDataElement* service_class_data) {
+  NSArray* inner_elements = [service_class_data getArrayValue];
+  IOBluetoothSDPUUID* sdp_uuid = nil;
+  for (IOBluetoothSDPDataElement* inner_element in inner_elements) {
+    if ([inner_element getTypeDescriptor] == kBluetoothSDPDataElementTypeUUID) {
+      sdp_uuid = [[inner_element getUUIDValue] getUUIDWithLength:16];
+      break;
+    }
+  }
+
+  if (!sdp_uuid)
+    return BluetoothUUID();
+
+  const uint8* uuid_bytes = reinterpret_cast<const uint8*>([sdp_uuid bytes]);
+  std::string uuid_str = base::HexEncode(uuid_bytes, 16);
+  DCHECK_EQ(uuid_str.size(), 32U);
+  uuid_str.insert(8, "-");
+  uuid_str.insert(13, "-");
+  uuid_str.insert(18, "-");
+  uuid_str.insert(23, "-");
+  return BluetoothUUID(uuid_str);
+}
+
+}  // namespace
 
 BluetoothDeviceMac::BluetoothDeviceMac(IOBluetoothDevice* device)
     : device_([device retain]) {
@@ -131,13 +143,18 @@ bool BluetoothDeviceMac::IsConnecting() const {
   return false;
 }
 
-// TODO(keybuk): BluetoothServiceRecord is deprecated; implement this method
-// without using BluetoothServiceRecord.
 BluetoothDevice::UUIDList BluetoothDeviceMac::GetUUIDs() const {
   UUIDList uuids;
-  for (IOBluetoothSDPServiceRecord* service in [device_ services]) {
-    BluetoothServiceRecordMac service_record(service);
-    uuids.push_back(service_record.uuid());
+  for (IOBluetoothSDPServiceRecord* service_record in [device_ services]) {
+    IOBluetoothSDPDataElement* service_class_data =
+        [service_record getAttributeDataElement:
+            kBluetoothSDPAttributeIdentifierServiceClassIDList];
+    if ([service_class_data getTypeDescriptor] ==
+            kBluetoothSDPDataElementTypeDataElementSequence) {
+      BluetoothUUID uuid = ExtractUuid(service_class_data);
+      if (uuid.IsValid())
+        uuids.push_back(uuid);
+    }
   }
   return uuids;
 }
@@ -193,33 +210,20 @@ void BluetoothDeviceMac::Forget(const ErrorCallback& error_callback) {
   NOTIMPLEMENTED();
 }
 
-void BluetoothDeviceMac::ConnectToProfile(
-    BluetoothProfile* profile,
-    const base::Closure& callback,
-    const ConnectToProfileErrorCallback& error_callback) {
-  static_cast<BluetoothProfileMac*>(profile)
-      ->Connect(device_, callback, error_callback);
-}
-
 void BluetoothDeviceMac::ConnectToService(
     const BluetoothUUID& uuid,
     const ConnectToServiceCallback& callback,
     const ConnectToServiceErrorCallback& error_callback) {
-  // TODO(keybuk): implement
-  NOTIMPLEMENTED();
+  scoped_refptr<BluetoothSocketMac> socket = BluetoothSocketMac::CreateSocket();
+  socket->Connect(
+      device_.get(), uuid, base::Bind(callback, socket), error_callback);
 }
 
-void BluetoothDeviceMac::SetOutOfBandPairingData(
-    const BluetoothOutOfBandPairingData& data,
-    const base::Closure& callback,
-    const ErrorCallback& error_callback) {
-  NOTIMPLEMENTED();
-}
-
-void BluetoothDeviceMac::ClearOutOfBandPairingData(
-    const base::Closure& callback,
-    const ErrorCallback& error_callback) {
-  NOTIMPLEMENTED();
+void BluetoothDeviceMac::CreateGattConnection(
+      const GattConnectionCallback& callback,
+      const ConnectErrorCallback& error_callback) {
+  // TODO(armansito): Implement.
+  error_callback.Run(ERROR_UNSUPPORTED_DEVICE);
 }
 
 void BluetoothDeviceMac::StartConnectionMonitor(
@@ -252,16 +256,7 @@ int BluetoothDeviceMac::GetHostTransmitPower(
 
 // static
 std::string BluetoothDeviceMac::GetDeviceAddress(IOBluetoothDevice* device) {
-  return NormalizeAddress(base::SysNSStringToUTF8([device addressString]));
-}
-
-// static
-std::string BluetoothDeviceMac::NormalizeAddress(const std::string& address) {
-  std::string normalized;
-  base::ReplaceChars(address, "-", ":", &normalized);
-  // TODO(isherman): Restore StringToUpperASCII(&normalized) call for M37.
-  // http://crbug.com/371014
-  return normalized;
+  return CanonicalizeAddress(base::SysNSStringToUTF8([device addressString]));
 }
 
 }  // namespace device

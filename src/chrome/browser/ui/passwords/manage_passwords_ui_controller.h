@@ -5,6 +5,10 @@
 #ifndef CHROME_BROWSER_UI_PASSWORDS_MANAGE_PASSWORDS_UI_CONTROLLER_H_
 #define CHROME_BROWSER_UI_PASSWORDS_MANAGE_PASSWORDS_UI_CONTROLLER_H_
 
+#include "base/gtest_prod_util.h"
+#include "base/memory/scoped_vector.h"
+#include "base/timer/elapsed_timer.h"
+#include "components/autofill/core/common/password_form.h"
 #include "components/password_manager/core/browser/password_form_manager.h"
 #include "components/password_manager/core/browser/password_store.h"
 #include "components/password_manager/core/browser/password_store_change.h"
@@ -89,15 +93,30 @@ class ManagePasswordsUIController
   explicit ManagePasswordsUIController(
       content::WebContents* web_contents);
 
+  // content::WebContentsObserver:
+  virtual void DidNavigateMainFrame(
+      const content::LoadCommittedDetails& details,
+      const content::FrameNavigateParams& params) OVERRIDE;
+
   // All previously stored credentials for a specific site. Set by
   // OnPasswordSubmitted(), OnPasswordAutofilled(), or
   // OnBlacklistBlockedAutofill(). Protected, not private, so we can mess with
   // the value in ManagePasswordsUIControllerMock.
   autofill::PasswordFormMap password_form_map_;
 
+  // We create copies of PasswordForm objects that come in via OnLoginsChanged()
+  // and store them in this vector as well as in |password_form_map_| to ensure
+  // that we destroy them correctly.
+  ScopedVector<autofill::PasswordForm> new_password_forms_;
+
   // The current state of the password manager. Protected so we can manipulate
   // the value in tests.
   password_manager::ui::State state_;
+
+  // Used to measure the amount of time on a page; if it's less than some
+  // reasonable limit, then don't close the bubble upon navigation. We create
+  // (and destroy) the timer in DidNavigateMainFrame.
+  scoped_ptr<base::ElapsedTimer> timer_;
 
  private:
   friend class content::WebContentsUserData<ManagePasswordsUIController>;
@@ -112,9 +131,6 @@ class ManagePasswordsUIController
   void UpdateBubbleAndIconVisibility();
 
   // content::WebContentsObserver:
-  virtual void DidNavigateMainFrame(
-      const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
   virtual void WebContentsDestroyed() OVERRIDE;
 
   // Set by OnPasswordSubmitted() when the user submits a form containing login

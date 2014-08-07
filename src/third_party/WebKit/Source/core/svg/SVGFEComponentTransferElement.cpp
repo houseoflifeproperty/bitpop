@@ -22,7 +22,7 @@
 
 #include "core/svg/SVGFEComponentTransferElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/svg/SVGFEFuncAElement.h"
 #include "core/svg/SVGFEFuncBElement.h"
@@ -41,10 +41,7 @@ inline SVGFEComponentTransferElement::SVGFEComponentTransferElement(Document& do
     addToPropertyMap(m_in1);
 }
 
-PassRefPtr<SVGFEComponentTransferElement> SVGFEComponentTransferElement::create(Document& document)
-{
-    return adoptRef(new SVGFEComponentTransferElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEComponentTransferElement)
 
 bool SVGFEComponentTransferElement::isSupportedAttribute(const QualifiedName& attrName)
 {

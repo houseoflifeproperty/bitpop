@@ -10,12 +10,12 @@
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/test/simple_test_clock.h"
-#include "components/os_crypt/os_crypt_switches.h"
+#include "google_apis/gcm/base/fake_encryptor.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/engine/fake_connection_factory.h"
 #include "google_apis/gcm/engine/fake_connection_handler.h"
 #include "google_apis/gcm/engine/gcm_store_impl.h"
-#include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
+#include "google_apis/gcm/monitoring/fake_gcm_stats_recorder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace gcm {
@@ -139,7 +139,7 @@ class MCSClientTest : public testing::Test {
   std::string sent_message_id_;
   MCSClient::MessageSendStatus message_send_status_;
 
-  gcm::GCMStatsRecorder recorder_;
+  gcm::FakeGCMStatsRecorder recorder_;
 };
 
 MCSClientTest::MCSClientTest()
@@ -159,15 +159,13 @@ MCSClientTest::~MCSClientTest() {}
 
 void MCSClientTest::SetUp() {
   testing::Test::SetUp();
-#if defined(OS_MACOSX)
-  base::CommandLine::ForCurrentProcess()->AppendSwitch(
-      os_crypt::switches::kUseMockKeychain);
-#endif  // OS_MACOSX
 }
 
 void MCSClientTest::BuildMCSClient() {
-  gcm_store_.reset(new GCMStoreImpl(temp_directory_.path(),
-                                    message_loop_.message_loop_proxy()));
+  gcm_store_.reset(new GCMStoreImpl(
+      temp_directory_.path(),
+      message_loop_.message_loop_proxy(),
+      make_scoped_ptr<Encryptor>(new FakeEncryptor)));
   mcs_client_.reset(new TestMCSClient(&clock_,
                                       &connection_factory_,
                                       gcm_store_.get(),

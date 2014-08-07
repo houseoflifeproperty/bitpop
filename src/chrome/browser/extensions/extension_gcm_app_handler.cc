@@ -11,8 +11,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
+#include "components/gcm_driver/gcm_driver.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
@@ -26,11 +25,13 @@ namespace extensions {
 
 namespace {
 
+const char kDummyAppId[] = "extension.guard.dummy.id";
+
 base::LazyInstance<BrowserContextKeyedAPIFactory<ExtensionGCMAppHandler> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
 bool IsGCMPermissionEnabled(const Extension* extension) {
-  return PermissionsData::HasAPIPermission(extension, APIPermission::kGcm);
+  return extension->permissions_data()->HasAPIPermission(APIPermission::kGcm);
 }
 
 }  // namespace
@@ -47,10 +48,6 @@ ExtensionGCMAppHandler::ExtensionGCMAppHandler(content::BrowserContext* context)
       extension_registry_observer_(this),
       weak_factory_(this) {
   extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
-                 content::Source<Profile>(profile_));
-
 #if !defined(OS_ANDROID)
   js_event_router_.reset(new extensions::GcmJsEventRouter(profile_));
 #endif
@@ -63,7 +60,7 @@ ExtensionGCMAppHandler::~ExtensionGCMAppHandler() {
        extension != enabled_extensions.end();
        ++extension) {
     if (IsGCMPermissionEnabled(extension->get()))
-      GetGCMProfileService()->RemoveAppHandler((*extension)->id());
+      GetGCMDriver()->RemoveAppHandler((*extension)->id());
   }
 }
 
@@ -99,40 +96,75 @@ void ExtensionGCMAppHandler::OnExtensionLoaded(
     content::BrowserContext* browser_context,
     const Extension* extension) {
   if (IsGCMPermissionEnabled(extension))
-    GetGCMProfileService()->AddAppHandler(extension->id(), this);
+    AddAppHandler(extension->id());
 }
 
 void ExtensionGCMAppHandler::OnExtensionUnloaded(
     content::BrowserContext* browser_context,
     const Extension* extension,
     UnloadedExtensionInfo::Reason reason) {
-  if (IsGCMPermissionEnabled(extension))
-    GetGCMProfileService()->RemoveAppHandler(extension->id());
+  if (!IsGCMPermissionEnabled(extension))
+    return;
+
+  if (reason == UnloadedExtensionInfo::REASON_UPDATE &&
+      GetGCMDriver()->app_handlers().size() == 1) {
+    // When the extension is being updated, it will be first unloaded and then
+    // loaded again by ExtensionService::AddExtension. If the app handler for
+    // this extension is the only handler, removing it and adding it again will
+    // cause the GCM service being stopped and restarted unnecessarily. To work
+    // around this, we add a dummy app handler to guard against it. This dummy
+    // app handler will be removed once the extension loading logic is done.
+    //
+    // Also note that the GCM message routing will not be interruptted during
+    // the update process since unloading and reloading extension are done in
+    // the single function ExtensionService::AddExtension.
+    AddDummyAppHandler();
+
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&ExtensionGCMAppHandler::RemoveDummyAppHandler,
+                   weak_factory_.GetWeakPtr()));
+  }
+
+  RemoveAppHandler(extension->id());
 }
 
-void ExtensionGCMAppHandler::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_UNINSTALLED, type);
-  const Extension* extension = content::Details<Extension>(details).ptr();
+void ExtensionGCMAppHandler::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
   if (IsGCMPermissionEnabled(extension)) {
-    GetGCMProfileService()->Unregister(
+    GetGCMDriver()->Unregister(
         extension->id(),
         base::Bind(&ExtensionGCMAppHandler::OnUnregisterCompleted,
                    weak_factory_.GetWeakPtr(),
                    extension->id()));
-    GetGCMProfileService()->RemoveAppHandler(extension->id());
+    RemoveAppHandler(extension->id());
   }
 }
 
-gcm::GCMProfileService* ExtensionGCMAppHandler::GetGCMProfileService() const {
-  return gcm::GCMProfileServiceFactory::GetForProfile(profile_);
+void ExtensionGCMAppHandler::AddDummyAppHandler() {
+  AddAppHandler(kDummyAppId);
+}
+
+void ExtensionGCMAppHandler::RemoveDummyAppHandler() {
+  RemoveAppHandler(kDummyAppId);
+}
+
+gcm::GCMDriver* ExtensionGCMAppHandler::GetGCMDriver() const {
+  return gcm::GCMProfileServiceFactory::GetForProfile(profile_)->driver();
 }
 
 void ExtensionGCMAppHandler::OnUnregisterCompleted(
     const std::string& app_id, gcm::GCMClient::Result result) {
   // Nothing to do.
+}
+
+void ExtensionGCMAppHandler::AddAppHandler(const std::string& app_id) {
+  GetGCMDriver()->AddAppHandler(app_id, this);
+}
+
+void ExtensionGCMAppHandler::RemoveAppHandler(const std::string& app_id) {
+  GetGCMDriver()->RemoveAppHandler(app_id);
 }
 
 }  // namespace extensions

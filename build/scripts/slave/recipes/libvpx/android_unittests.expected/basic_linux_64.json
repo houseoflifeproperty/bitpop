@@ -302,6 +302,6 @@
       "[BUILD]/scripts/slave/recipe_modules/perf_dashboard/resources/post_json.py"
     ],
     "name": "perf dashboard post",
-    "stdin": "{\"data\": [{\"bot\": \"libvpx-bot\", \"buildername\": \"Nexus 5 Builder\", \"buildnumber\": \"75\", \"master\": \"client.libvpx\", \"masterid\": \"client.libvpx\", \"revision\": \"75\", \"test\": \"libvpx/decode/perf_test/nexus_5/vp90-2-bbb_426x240_tile_1x1_180kbps.webm_1\", \"units\": \"fps\", \"value\": 609.82868}, {\"bot\": \"libvpx-bot\", \"buildername\": \"Nexus 5 Builder\", \"buildnumber\": \"75\", \"master\": \"client.libvpx\", \"masterid\": \"client.libvpx\", \"revision\": \"75\", \"test\": \"libvpx/decode/perf_test/nexus_5/vp90-2-bbb_640x360_tile_1x2_337kbps.webm_2\", \"units\": \"fps\", \"value\": 317.976883}], \"url\": \"https://chrome-perf.googleplex.com/add_point\"}"
+    "stdin": "{\"data\": [{\"bot\": \"libvpx-bot\", \"buildername\": \"Nexus 5 Builder\", \"buildnumber\": \"75\", \"master\": \"client.libvpx\", \"masterid\": \"client.libvpx\", \"revision\": \"75\", \"test\": \"libvpx/decode/perf_test/nexus_5/vp90-2-bbb_426x240_tile_1x1_180kbps.webm_1\", \"units\": \"fps\", \"value\": 609.82868}, {\"bot\": \"libvpx-bot\", \"buildername\": \"Nexus 5 Builder\", \"buildnumber\": \"75\", \"master\": \"client.libvpx\", \"masterid\": \"client.libvpx\", \"revision\": \"75\", \"test\": \"libvpx/decode/perf_test/nexus_5/vp90-2-bbb_640x360_tile_1x2_337kbps.webm_2\", \"units\": \"fps\", \"value\": 317.976883}], \"url\": \"https://chromeperf.appspot.com/add_point\"}"
   }
 ]

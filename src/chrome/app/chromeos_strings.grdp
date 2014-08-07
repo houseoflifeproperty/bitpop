@@ -115,6 +115,9 @@ Press any key to continue exploring.
   <message name="IDS_WALLPAPER_MANAGER_INVALID_WALLPAPER" desc="The string displayed to user when user selected wallpaper can not be set as a wallpaper.">
     Chrome cannot set wallpaper.
   </message>
+  <message name="IDS_CURRENT_WALLPAPER_SET_BY_MESSAGE" desc="The string displayed to user if the current wallpaper is set by a third party wallpaper app/extension.">
+    Current wallpaper is set by '<ph name="APP_NAME">$1</ph>'
+  </message>
 
   <!-- File Manager -->
   <message name="IDS_FLAGS_ENABLE_FILE_MANAGER_MTP_NAME" desc="Name of the about:flag option to enable MTP support in file manager.">
@@ -128,6 +131,12 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_AUDIO_PLAYER_DESCRIPTION" desc="Description of the about:flag option to the enable new audio player app.">
     Use the experimental new audio player instead of the stable one.
+  </message>
+  <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_GALLERY_NAME" desc="Name of the about:flag option to enable the new gallery app.">
+    Enable the new gallery
+  </message>
+  <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_GALLERY_DESCRIPTION" desc="Description of the about:flag option to the enable new gallery app.">
+    Use the experimental new gallery instead of the stable one.
   </message>
   <message name="IDS_FILE_BROWSER_ARCHIVE_DIRECTORY_LABEL" desc="/archive directory label.">
     Archives
@@ -261,7 +270,7 @@ Press any key to continue exploring.
   <message name="IDS_FILE_BROWSER_UNMOUNT_DEVICE_BUTTON_LABEL" desc="Title of the action for unmounting removable device.">
     Eject device
   </message>
-  <message name="IDS_FILE_BROWSER_CLOSE_ARCHIVE_BUTTON_LABEL" desc="Title of the action for closing the archive.">
+  <message name="IDS_FILE_BROWSER_CLOSE_VOLUME_BUTTON_LABEL" desc="Title of the action for closing either an archive volume or a volume provided by an extension.">
     Close
   </message>
   <message name="IDS_FILE_BROWSER_ACTION_VIEW" desc="Title of the action to view (no edit) a file.">
@@ -1053,7 +1062,7 @@ Press any key to continue exploring.
 
   <!-- Chrome OS Strings -->
   <message name="IDS_ECHO_CONSENT_DIALOG_TEXT" desc="Dialog text shown when user is asked to give consent to proceed with redeeming ECHO offer.">
-    <ph name="SERVICE_NAME">$1<ex>Google Drive</ex></ph> wants to verify that you are using an eligible Chrome OS device. <ph name="MORE_INFO_LINK">$2<ex>More info</ex></ph>
+    <ph name="SERVICE_NAME">$1<ex>Google Drive</ex></ph> wants to check if your Chrome OS device is eligible for an offer. <ph name="MORE_INFO_LINK">$2<ex>More info</ex></ph>
   </message>
   <message name="IDS_ECHO_DISABLED_CONSENT_DIALOG_TEXT" desc="Dialog text shown when user is informed that redeeming offers is disabled for the device.">
     Your IT administrator has disabled Chrome Goodies for your device. <ph name="MORE_INFO_LINK">$1<ex>More info</ex></ph>
@@ -1191,7 +1200,7 @@ Press any key to continue exploring.
     Enabling this setting allows kiosk applications to launch automatically on startup.
   </message>
   <message name="IDS_KIOSK_ENABLE_SCREEN_SUCCESS" desc="Confirmation text shown on kiosk auto-launch enable screen after the feature is successfully enabled.">
-    Kiosk applications can now now configured to auto-launch on this device.
+    Kiosk applications can now be configured to auto-launch on this device.
   </message>
   <message name="IDS_KIOSK_ENABLE_SCREEN_ERROR" desc="Error text shown on kiosk enable screen after we failed enabling this feature.">
    An error occurred. Kiosk application will not be able to auto-launch on this device.
@@ -1201,6 +1210,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_RESET_SCREEN_TITLE" desc="Title of the reset screen">
     Factory reset
+  </message>
+  <message name="IDS_RESET_SCREEN_ICON_TITLE" desc="Accessible title of the reset screen icon depicting exclamation mark.">
+    Exclamation mark icon
   </message>
   <message name="IDS_UPDATE_SCREEN_TITLE" desc="Title of the OOBE update screen">
     Update
@@ -1237,6 +1249,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_LANGUAGES_MEDIUM_LEN_NAME_KOREAN" desc="Medium length name for the input method for Korean which is show following the text: Your input method has changed to...">
     Korean
+  </message>
+  <message name="IDS_LANGUAGES_MEDIUM_LEN_NAME_BRAILLE" desc="Medium length name for the input method for the hardware keyboard on a braille display. Shown after the text: Your input method has changed to...">
+    Braille
   </message>
   <message name="IDS_KEYBOARD_SELECTION_SELECT" desc="Label for keyboard selection dropdown">
     Select your keyboard:
@@ -1419,8 +1434,14 @@ Press any key to continue exploring.
   <message name="IDS_LOGIN_CONFIRM_PASSWORD_ERROR_TEXT" desc="Error text to show when the password typed by the user could not be verified.">
     Sorry, your password could not be verified. Please try again.
   </message>
-  <message name="IDS_LOGIN_FATAL_ERROR_TEXT_GENERIC" desc="Message to show when the authentication could not be completed due to an unspecified error.">
+  <message name="IDS_LOGIN_FATAL_ERROR_NO_EMAIL" desc="Message to show when the authentication could not be completed because the user's e-mail address could not be retrieved.">
+    Oops, couldn't sign you in. Sign-in failed because your e-mail address could not be retrieved.
+  </message>
+  <message name="IDS_LOGIN_FATAL_ERROR_NO_PASSWORD" desc="Message to show when the authentication could not be completed because the user's password could not be retrieved.">
     Something went wrong with signing in.
+  </message>
+  <message name="IDS_LOGIN_FATAL_ERROR_PASSWORD_VERIFICATION" desc="Message to show when the authentication could not be completed because two attempts to verify the user's password failed.">
+    Oops, couldn't sign you in. Sign-in failed because your password could not be verified.
   </message>
   <message name="IDS_LOGIN_FATAL_ERROR_TEXT_INSECURE_URL" desc="Message to show when the authentication could not be completed because a redirect to an insecure URL was detected and blocked.">
     Oops, couldn't sign you in. Sign-in failed because it was configured to use a non-secure URL (<ph name="BLOCKED_URL">$1<ex>http://www.example.com/login.html</ex></ph>).
@@ -1646,6 +1667,9 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_MULTI_PROFILES_PRIMARY_ONLY_POLICY_MSG" desc="Text that is shown on the bubble shown for user pod which is not allowed in multi-profiles session because of primary-only policy.">
     The administrator for this account requires this account to be the first signed-in account in a multiple sign-in session.
+  </message>
+  <message name="IDS_MULTI_PROFILES_OWNER_PRIMARY_ONLY_MSG" desc="Text that is shown on the bubble shown for owner user pod which is not allowed in multi-profiles session because it has to be primary user in the session.">
+    This owner account has to be the first signed-in account in a multiple sign-in session.
   </message>
   <message name="IDS_LOCAL_STATE_ERROR_TEXT_0" desc="Text for notification that Local State file is corrupted and powerwash is required.">
     Unfortunately, <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is unable to recover your settings. To fix the error, <ph name="SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> must reset your device with Powerwash.
@@ -2713,7 +2737,7 @@ Press any key to continue exploring.
     Oops, something went wrong.
   </message>
   <message name="IDS_RESET_SCREEN_REVERT_ERROR_EXPLANATION" desc="Error description shown when revert was initiated but unavailable to be performed.">
-    <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is unable to revert to the previous version. Please try again or Powerwash your device.
+    <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is unable to revert to the previous version. Please try Powerwash instead.
   </message>
   <message name="IDS_RESET_SCREEN_REVERT_ERROR_BUTTON" desc="Reset device dialog, error page, revert error while initiating it, button title.">
     OK
@@ -2730,6 +2754,13 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_WRONG_HWID_SCREEN_SKIP_LINK" desc="Text on link that skips warning about malformed hardware ID.">
     Skip for now
+  </message>
+
+  <message name="IDS_AUTO_ENROLLMENT_CHECK_SCREEN_HEADER" desc="Header of message only used for accessability label in the current design,  notifying about pending auto-enrollment check completion.">
+    Determining device configuration.
+  </message>
+  <message name="IDS_AUTO_ENROLLMENT_CHECK_SCREEN_MESSAGE" desc="Warning message shown on screen notifying about pending auto-enrollment check completion.">
+    Determining device configuration...
   </message>
 
   <message name="IDS_TERMS_OF_SERVICE_SCREEN_HEADING" desc="Heading at the top of the Terms of Service screen.">
@@ -3215,6 +3246,14 @@ Press any key to continue exploring.
            desc="The label for languages with no Input Methods">
     This language doesn't have any input methods
   </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_THIRD_PARTY_WARNING_TITLE"
+           desc="The title showing in the warning dialog when enabling a 3rd party Input Method">
+    Third party input method
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_THIRD_PARTY_WARNING_MESSAGE"
+           desc="The description showing in the warning dialog when enabling a 3rd party Input Method">
+    This input method may be able to collect all the text you type, including personal data like passwords and credit card numbers. It comes from the extension &quot;<ph name="EXTENSION_NAME">$1<ex>Google Input Tools extension</ex></ph>&quot;. Use this input method?
+  </message>
   <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_SIGN_OUT_BUTTON"
            desc="The label for the sign out button for changing UI language">
     Sign out
@@ -3386,6 +3425,10 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_CHANGE_LANGUAGE_AND_INPUT_SETTINGS"
            desc="The link to open 'Language and input settings' window.">
     Change language and input settings
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_SHOW_KEYBOARD_SHORTCUTS"
+           desc="The link to open the keyboard overlay.">
+    View keyboard shortcuts
   </message>
   <message name="IDS_OPTIONS_NO_POINTING_DEVICES" desc="Text shown when there is neither a touchpad nor a mouse.">
     No mouse or touchpad was detected.
@@ -4127,6 +4170,9 @@ Battery full
   <message name="IDS_KEYBOARD_OVERLAY_NEW_WINDOW" desc="The text in the keyboard overlay to explain the shortcut.">
     New window
   </message>
+  <message name="IDS_KEYBOARD_OVERLAY_NEXT_USER" desc="The text in the keyboard overlay to explain the shortcut (Switch to next user).">
+    Next user
+  </message>
   <message name="IDS_KEYBOARD_OVERLAY_NEXT_WINDOW" desc="The text in the keyboard overlay to explain the shortcut (go to the next window).">
     Next window
   </message>
@@ -4156,6 +4202,9 @@ Battery full
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_PASTE_AS_PLAIN_TEXT" desc="The text in the keyboard overlay to explain the shortcut.">
     Paste as plain text
+  </message>
+  <message name="IDS_KEYBOARD_OVERLAY_PREVIOUS_USER" desc="The text in the keyboard overlay to explain the shortcut (Switch to previous user).">
+    Previous user
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_PREVIOUS_WINDOW" desc="The text in the keyboard overlay to explain the shortcut (go to the previous window).">
     Previous window
@@ -4463,6 +4512,9 @@ Battery full
   </message>
   <message name="IDS_STATUSBAR_LAYOUT_MONGOLIAN" desc="In the language menu button, this shows the input mode [Mongolian keyboard].">
     Mongolian
+  </message>
+  <message name="IDS_STATUSBAR_LAYOUT_IRISH" desc="In the language menu button, this shows the input mode [Irish keyboard].">
+    Irish
   </message>
 
   <message name="IDS_STATUSBAR_LAYOUT_USA_MYSTERY" desc="In the language menu button, this shows the input mode [US Mystery keyboard].">

@@ -40,9 +40,10 @@
 #include "WebData.h"
 #include "WebGamepadListener.h"
 #include "WebGamepads.h"
+#include "WebGestureDevice.h"
 #include "WebGraphicsContext3D.h"
 #include "WebLocalizedString.h"
-#include "WebScreenOrientationLockType.h"
+#include "WebLockOrientationCallback.h"
 #include "WebSpeechSynthesizer.h"
 #include "WebStorageQuotaCallbacks.h"
 #include "WebStorageQuotaType.h"
@@ -64,6 +65,7 @@ class WebConvertableToTraceFormat;
 class WebCookieJar;
 class WebCrypto;
 class WebDatabaseObserver;
+class WebDeviceLightListener;
 class WebDeviceMotionListener;
 class WebDeviceOrientationListener;
 class WebDiscardableMemory;
@@ -87,7 +89,6 @@ class WebPublicSuffixList;
 class WebRTCPeerConnectionHandler;
 class WebRTCPeerConnectionHandlerClient;
 class WebSandboxSupport;
-class WebScreenOrientationListener;
 class WebScrollbarBehavior;
 class WebSocketHandle;
 class WebSocketStreamHandle;
@@ -590,8 +591,7 @@ public:
 
     // Creates a new fling animation curve instance for device |deviceSource|
     // with |velocity| and already scrolled |cumulativeScroll| pixels.
-    virtual WebGestureCurve* createFlingAnimationCurve(int deviceSource, const WebFloatPoint& velocity, const WebSize& cumulativeScroll) { return 0; }
-
+    virtual WebGestureCurve* createFlingAnimationCurve(WebGestureDevice deviceSource, const WebFloatPoint& velocity, const WebSize& cumulativeScroll) { return 0; }
 
     // WebRTC ----------------------------------------------------------
 
@@ -614,21 +614,19 @@ public:
     virtual WebCrypto* crypto() { return 0; }
 
 
-    // Device Motion / Orientation ----------------------------------------
+    // Device Motion / Orientation / Light ----------------------------------------
 
     // Sets a Listener to listen for device motion data updates.
     // If null, the platform stops providing device motion data to the current listener.
     virtual void setDeviceMotionListener(blink::WebDeviceMotionListener*) { }
 
     // Sets a Listener to listen for device orientation data updates.
-    // If null, the platform stops proving device orientation data to the current listener.
+    // If null, the platform stops providing device orientation data to the current listener.
     virtual void setDeviceOrientationListener(blink::WebDeviceOrientationListener*) { }
 
-    // Screen Orientation -------------------------------------------------
-
-    virtual void setScreenOrientationListener(blink::WebScreenOrientationListener*) { }
-    virtual void lockOrientation(WebScreenOrientationLockType) { }
-    virtual void unlockOrientation() { }
+    // Sets a Listener to listen for device light data updates.
+    // If null, the platform stops providing device light data to the current listener.
+    virtual void setDeviceLightListener(blink::WebDeviceLightListener*) { }
 
 
     // Quota -----------------------------------------------------------

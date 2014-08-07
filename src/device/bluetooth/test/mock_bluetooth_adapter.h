@@ -60,16 +60,22 @@ class MockBluetoothAdapter : public BluetoothAdapter {
   MOCK_METHOD1(GetDevice, BluetoothDevice*(const std::string& address));
   MOCK_CONST_METHOD1(GetDevice,
                      const BluetoothDevice*(const std::string& address));
-  MOCK_METHOD2(
-      ReadLocalOutOfBandPairingData,
-      void(const BluetoothOutOfBandPairingDataCallback& callback,
-           const ErrorCallback& error_callback));
   MOCK_METHOD2(AddPairingDelegate,
                void(BluetoothDevice::PairingDelegate* pairing_delegate,
                     enum PairingDelegatePriority priority));
   MOCK_METHOD1(RemovePairingDelegate,
                void(BluetoothDevice::PairingDelegate* pairing_delegate));
   MOCK_METHOD0(DefaultPairingDelegate, BluetoothDevice::PairingDelegate*());
+  MOCK_METHOD4(CreateRfcommService,
+               void(const BluetoothUUID& uuid,
+                    int channel,
+                    const CreateServiceCallback& callback,
+                    const CreateServiceErrorCallback& error_callback));
+  MOCK_METHOD4(CreateL2capService,
+               void(const BluetoothUUID& uuid,
+                    int psm,
+                    const CreateServiceCallback& callback,
+                    const CreateServiceErrorCallback& error_callback));
 
  protected:
   virtual void AddDiscoverySession(const base::Closure& callback,

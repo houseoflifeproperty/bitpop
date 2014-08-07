@@ -287,52 +287,59 @@ enum SpdyFrameType {
   BLOCKED,
   PUSH_PROMISE,
   CONTINUATION,
-  LAST_CONTROL_TYPE = CONTINUATION
+  ALTSVC,
+  PRIORITY,
+  LAST_CONTROL_TYPE = PRIORITY
 };
 
 // Flags on data packets.
 enum SpdyDataFlags {
-DATA_FLAG_NONE = 0x00,
+  DATA_FLAG_NONE = 0x00,
   DATA_FLAG_FIN = 0x01,
   DATA_FLAG_END_SEGMENT = 0x02,
-  DATA_FLAG_PAD_LOW = 0x10,
-  DATA_FLAG_PAD_HIGH = 0x20
+  DATA_FLAG_PAD_LOW = 0x08,
+  DATA_FLAG_PAD_HIGH = 0x10,
+  DATA_FLAG_COMPRESSED = 0x20,
 };
 
 // Flags on control packets
 enum SpdyControlFlags {
-  CONTROL_FLAG_NONE = 0,
-  CONTROL_FLAG_FIN = 1,
-  CONTROL_FLAG_UNIDIRECTIONAL = 2
+  CONTROL_FLAG_NONE = 0x00,
+  CONTROL_FLAG_FIN = 0x01,
+  CONTROL_FLAG_UNIDIRECTIONAL = 0x02,
 };
 
 enum SpdyPingFlags {
-  PING_FLAG_ACK = 0x1,
+  PING_FLAG_ACK = 0x01,
 };
 
+// Used by HEADERS, PUSH_PROMISE, and CONTINUATION.
 enum SpdyHeadersFlags {
-  HEADERS_FLAG_END_HEADERS = 0x4,
-  HEADERS_FLAG_PRIORITY = 0x8
+  HEADERS_FLAG_END_SEGMENT = 0x02,
+  HEADERS_FLAG_END_HEADERS = 0x04,
+  HEADERS_FLAG_PAD_LOW = 0x08,
+  HEADERS_FLAG_PAD_HIGH = 0x10,
+  HEADERS_FLAG_PRIORITY = 0x20,
 };
 
 enum SpdyPushPromiseFlags {
-  PUSH_PROMISE_FLAG_END_PUSH_PROMISE = 0x4
+  PUSH_PROMISE_FLAG_END_PUSH_PROMISE = 0x04,
 };
 
 // Flags on the SETTINGS control frame.
 enum SpdySettingsControlFlags {
-  SETTINGS_FLAG_CLEAR_PREVIOUSLY_PERSISTED_SETTINGS = 0x1
+  SETTINGS_FLAG_CLEAR_PREVIOUSLY_PERSISTED_SETTINGS = 0x01,
 };
 
 enum Http2SettingsControlFlags {
-  SETTINGS_FLAG_ACK = 0x1,
+  SETTINGS_FLAG_ACK = 0x01,
 };
 
 // Flags for settings within a SETTINGS frame.
 enum SpdySettingsFlags {
-  SETTINGS_FLAG_NONE = 0x0,
-  SETTINGS_FLAG_PLEASE_PERSIST = 0x1,
-  SETTINGS_FLAG_PERSISTED = 0x2
+  SETTINGS_FLAG_NONE = 0x00,
+  SETTINGS_FLAG_PLEASE_PERSIST = 0x01,
+  SETTINGS_FLAG_PERSISTED = 0x02,
 };
 
 // List of known settings. Avoid changing these enum values, as persisted
@@ -354,6 +361,8 @@ enum SpdySettingsIds {
   SETTINGS_HEADER_TABLE_SIZE = 0x8,
   // Whether or not server push (PUSH_PROMISE) is enabled.
   SETTINGS_ENABLE_PUSH = 0x9,
+  // Whether or not to enable GZip compression of DATA frames.
+  SETTINGS_COMPRESS_DATA = 0xa,
 };
 
 // Status codes for RST_STREAM frames.
@@ -407,6 +416,8 @@ typedef uint8 SpdyPriority;
 typedef std::map<std::string, std::string> SpdyNameValueBlock;
 
 typedef uint64 SpdyPingId;
+
+typedef std::string SpdyProtocolId;
 
 // TODO(hkhalil): Add direct testing for this? It won't increase coverage any,
 // but is good to do anyway.
@@ -494,6 +505,10 @@ class NET_EXPORT_PRIVATE SpdyConstants {
   static size_t GetPrefixLength(SpdyFrameType type, SpdyMajorVersion version);
 
   static size_t GetFrameMaximumSize(SpdyMajorVersion version);
+
+  // Returns the size of a header block size field. Valid only for SPDY
+  // versions <= 3.
+  static size_t GetSizeOfSizeField(SpdyMajorVersion version);
 
   static SpdyMajorVersion ParseMajorVersion(int version_number);
 
@@ -826,21 +841,17 @@ class NET_EXPORT_PRIVATE SpdyHeadersIR : public SpdyFrameWithNameValueBlockIR {
  public:
   explicit SpdyHeadersIR(SpdyStreamId stream_id)
     : SpdyFrameWithNameValueBlockIR(stream_id),
-      end_headers_(true),
       has_priority_(false),
       priority_(0) {}
 
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
 
-  bool end_headers() const { return end_headers_; }
-  void set_end_headers(bool end_headers) {end_headers_ = end_headers;}
   bool has_priority() const { return has_priority_; }
   void set_has_priority(bool has_priority) { has_priority_ = has_priority; }
   uint32 priority() const { return priority_; }
   void set_priority(SpdyPriority priority) { priority_ = priority; }
 
  private:
-  bool end_headers_;
   bool has_priority_;
   // 31-bit priority.
   uint32 priority_;
@@ -885,20 +896,14 @@ class NET_EXPORT_PRIVATE SpdyPushPromiseIR
  public:
   SpdyPushPromiseIR(SpdyStreamId stream_id, SpdyStreamId promised_stream_id)
       : SpdyFrameWithNameValueBlockIR(stream_id),
-        promised_stream_id_(promised_stream_id),
-        end_push_promise_(true) {}
+        promised_stream_id_(promised_stream_id) {}
   SpdyStreamId promised_stream_id() const { return promised_stream_id_; }
   void set_promised_stream_id(SpdyStreamId id) { promised_stream_id_ = id; }
-  bool end_push_promise() const { return end_push_promise_; }
-  void set_end_push_promise(bool end_push_promise) {
-    end_push_promise_ = end_push_promise;
-  }
 
   virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
 
  private:
   SpdyStreamId promised_stream_id_;
-  bool end_push_promise_;
   DISALLOW_COPY_AND_ASSIGN(SpdyPushPromiseIR);
 };
 
@@ -919,6 +924,41 @@ class NET_EXPORT_PRIVATE SpdyContinuationIR
  private:
   bool end_headers_;
   DISALLOW_COPY_AND_ASSIGN(SpdyContinuationIR);
+};
+
+class NET_EXPORT_PRIVATE SpdyAltSvcIR : public SpdyFrameWithStreamIdIR {
+ public:
+  explicit SpdyAltSvcIR(SpdyStreamId stream_id);
+
+  uint32 max_age() const { return max_age_; }
+  uint16 port() const { return port_; }
+  SpdyProtocolId protocol_id() const {
+    return protocol_id_;
+  }
+  std::string host() const { return host_; }
+  std::string origin() const { return origin_; }
+
+  void set_max_age(uint32 max_age) { max_age_ = max_age; }
+  void set_port(uint16 port) { port_ = port; }
+  void set_protocol_id(SpdyProtocolId protocol_id) {
+    protocol_id_ = protocol_id;
+  }
+  void set_host(std::string host) {
+    host_ = host;
+  }
+  void set_origin(std::string origin) {
+    origin_ = origin;
+  }
+
+  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+
+ private:
+  uint32 max_age_;
+  uint16 port_;
+  SpdyProtocolId protocol_id_;
+  std::string host_;
+  std::string origin_;
+  DISALLOW_COPY_AND_ASSIGN(SpdyAltSvcIR);
 };
 
 // -------------------------------------------------------------------------
@@ -981,6 +1021,7 @@ class SpdyFrameVisitor {
   virtual void VisitBlocked(const SpdyBlockedIR& blocked) = 0;
   virtual void VisitPushPromise(const SpdyPushPromiseIR& push_promise) = 0;
   virtual void VisitContinuation(const SpdyContinuationIR& continuation) = 0;
+  virtual void VisitAltSvc(const SpdyAltSvcIR& altsvc) = 0;
   virtual void VisitData(const SpdyDataIR& data) = 0;
 
  protected:

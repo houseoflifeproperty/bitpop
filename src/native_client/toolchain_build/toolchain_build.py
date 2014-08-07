@@ -8,6 +8,7 @@
 The real entry plumbing is in toolchain_main.py.
 """
 
+import collections
 import fnmatch
 import platform
 import os
@@ -39,18 +40,18 @@ GIT_REVISIONS = {
         'upstream-base': '237df3fa4a1d939e6fd1af0c3e5029a25a137310',
         },
     'gcc': {
-        'rev': 'a2e4a3140c035233409598487c56b76108f8c74d',
+        'rev': 'faa3cdd0473b7fb82be937e32fd2b474fa0299e6',
         'upstream-branch': 'upstream/gcc-4_8-branch',
-        'upstream-name': 'gcc-4.8.2',
-         # Upstream tag gcc-4_8_2-release:
-        'upstream-base': '9bcca88e24e64d4e23636aafa3404088b13bcb0e',
+        'upstream-name': 'gcc-4.8.3',
+         # Upstream tag gcc-4_8_3-release:
+        'upstream-base': '6bbf0dec66c0e719b06cd2fe67559fda6df09000',
         },
     'newlib': {
-        'rev': 'a9ae3c60b36dea3d8a10e18b1b6db952d21268c2',
+        'rev': 'e7b1ccd4b5eec14e840f6bf875f4d6fa4cff045c',
         'upstream-branch': 'upstream/master',
-        'upstream-name': 'newlib-2.0.0',
-        # Upstream tag newlib_2_0_0:
-        'upstream-base': 'c3fc84e062cacc2b3e13c1f6b9151d0cc85392ba',
+        'upstream-name': 'newlib-2.1.0',
+        # Upstream tag newlib_2_1_0:
+        'upstream-base': '99fc6c167467b41466ec90e8260e9c49cbe3d13c',
         },
     'gdb': {
         'rev': '5deb4793a5e3f2f48d7899f424bb4484686020f8',
@@ -72,11 +73,22 @@ TAR_FILES = {
     }
 
 GIT_BASE_URL = 'https://chromium.googlesource.com/native_client'
+GIT_PUSH_URL = 'ssh://gerrit.chromium.org/native_client'
+
+KNOWN_MIRRORS = [('http://git.chromium.org/native_client', GIT_BASE_URL)]
+
+PUSH_MIRRORS = [('http://git.chromium.org/native_client', GIT_PUSH_URL),
+                (GIT_BASE_URL, GIT_PUSH_URL)]
 
 
-def GitUrl(package):
+def GitUrl(package, push_url=False):
   repo = GIT_REVISIONS[package].get('repo', package)
-  return '%s/nacl-%s.git' % (GIT_BASE_URL, repo)
+  if push_url:
+    base_url = GIT_PUSH_URL
+  else:
+    base_url = GIT_BASE_URL
+
+  return '%s/nacl-%s.git' % (base_url, repo)
 
 
 def CollectSources():
@@ -105,8 +117,12 @@ def CollectSources():
   for package, info in GIT_REVISIONS.iteritems():
     sources[package] = {
         'type': 'source',
-        'commands': [command.SyncGitRepo(GitUrl(package), '%(output)s',
-                                         info['rev'])],
+        'commands': command.SyncGitRepoCmds(GitUrl(package), '%(output)s',
+                                            info['rev'],
+                                            git_cache='%(git_cache_dir)s',
+                                            push_url=GitUrl(package, True),
+                                            known_mirrors=KNOWN_MIRRORS,
+                                            push_mirrors=PUSH_MIRRORS),
         }
     patch_packages.append(package)
     patch_info = {'name': package}
@@ -174,16 +190,8 @@ def CollectSources():
   return sources
 
 
-# List of all platform and architectures we target and will distribute for.
-HOSTS = [
-    ('win', 'x86-64'),
-    ('darwin', 'x86-64'),
-    ('linux', 'arm'),
-    ('linux', 'x86-32')
-    ]
-
 # Canonical tuples we use for hosts.
-WINDOWS_HOST_TUPLE = pynacl.platform.PlatformTriple('win', 'x86-64')
+WINDOWS_HOST_TUPLE = pynacl.platform.PlatformTriple('win', 'x86-32')
 MAC_HOST_TUPLE = pynacl.platform.PlatformTriple('darwin', 'x86-64')
 ARM_HOST_TUPLE = pynacl.platform.PlatformTriple('linux', 'arm')
 LINUX_X86_32_TUPLE = pynacl.platform.PlatformTriple('linux', 'x86-32')
@@ -209,13 +217,28 @@ NATIVE_ENOUGH_MAP = {
 
 # The list of targets to build toolchains for.
 TARGET_LIST = ['arm', 'i686']
-UPLOAD_TARGETS = ['arm']
+
+# List upload targets for each host we want to upload packages for.
+TARGET = collections.namedtuple('TARGET', ['name', 'pkg_prefix'])
+HOST_TARGET = collections.namedtuple('HOST_TARGET',
+                                     ['os', 'arch', 'differ3264', 'targets'])
+
+STANDARD_TARGETS = [TARGET('arm', '')]
+LINUX_X86_64_TARGETS = [TARGET('arm', ''), TARGET('i686', 'ng_')]
+
+UPLOAD_HOST_TARGETS = [
+    HOST_TARGET('win', 'x86-32', False, STANDARD_TARGETS),
+    HOST_TARGET('darwin', 'x86-64', False, STANDARD_TARGETS),
+    HOST_TARGET('linux', 'arm', False, STANDARD_TARGETS),
+    HOST_TARGET('linux', 'x86-32', False, STANDARD_TARGETS),
+    HOST_TARGET('linux', 'x86-64', True, LINUX_X86_64_TARGETS),
+    ]
 
 # GDB is built by toolchain_build but injected into package targets built by
 # other means. List out what package targets, packages, and the tar file we are
 # injecting on top of here.
 GDB_INJECT_HOSTS = [
-  ('win', 'x86-64'),
+  ('win', 'x86-32'),
   ('darwin', 'x86-64'),
   ('linux', 'x86-32'),
   ]
@@ -367,9 +390,9 @@ GROUP ( libnacl.a libcrt_common.a )
                    'elf32-bigarm-nacl',
                    'elf32-littlearm-nacl']
   elif arch == 'i686':
-    format_list = 'elf32-i386-nacl'
+    format_list = ['elf32-i386-nacl']
   elif arch == 'x86_64':
-    format_list = 'elf32-x86_64-nacl'
+    format_list = ['elf32-x86_64-nacl']
   else:
     raise Exception('TODO(mcgrathr): OUTPUT_FORMAT for %s' % arch)
   return template % ', '.join(['"' + fmt + '"' for fmt in format_list])
@@ -896,6 +919,7 @@ def HostIsMac(host):
 def BuildTargetLibsOn(host):
   return host == LINUX_X86_64_TUPLE
 
+
 def GetPackageTargets():
   """Package Targets describes all the final package targets.
 
@@ -905,17 +929,22 @@ def GetPackageTargets():
   """
   package_targets = {}
 
-  for target_arch in UPLOAD_TARGETS:
-    # Each package target contains non-platform specific newlib and gcc libs.
-    # These packages are added inside of TargetLibs(host, target).
-    newlib_package = 'newlib_%s' % target_arch
-    gcc_lib_package = 'gcc_libs_%s' % target_arch
-    shared_packages = [newlib_package, gcc_lib_package]
+  # Add in standard upload targets.
+  for host_target in UPLOAD_HOST_TARGETS:
+    for target in host_target.targets:
+      target_arch = target.name
+      package_prefix = target.pkg_prefix
 
-    for platform, arch in HOSTS:
+      # Each package target contains non-platform specific newlib and gcc libs.
+      # These packages are added inside of TargetLibs(host, target).
+      newlib_package = 'newlib_%s' % target_arch
+      gcc_lib_package = 'gcc_libs_%s' % target_arch
+      shared_packages = [newlib_package, gcc_lib_package]
+
       # Each package target contains arm binutils and gcc.
       # These packages are added inside of HostTools(host, target).
-      platform_triple = pynacl.platform.PlatformTriple(platform, arch)
+      platform_triple = pynacl.platform.PlatformTriple(host_target.os,
+                                                       host_target.arch)
       binutils_package = ForHost('binutils_%s' % target_arch, platform_triple)
       gcc_package = ForHost('gcc_%s' % target_arch, platform_triple)
       gdb_package = ForHost('gdb', platform_triple)
@@ -924,10 +953,14 @@ def GetPackageTargets():
       platform_packages = [binutils_package, gcc_package, gdb_package]
       combined_packages = shared_packages + platform_packages
 
-      os_name = pynacl.platform.GetOS(platform)
-      arch_name = pynacl.platform.GetArch(arch)
+      os_name = pynacl.platform.GetOS(host_target.os)
+      if host_target.differ3264:
+        arch_name = pynacl.platform.GetArch3264(host_target.arch)
+      else:
+        arch_name = pynacl.platform.GetArch(host_target.arch)
       package_target = '%s_%s' % (os_name, arch_name)
-      package_name = 'nacl_%s_newlib' % (pynacl.platform.GetArch(target_arch))
+      package_name = '%snacl_%s_newlib' % (package_prefix,
+                                           pynacl.platform.GetArch(target_arch))
 
       package_target_dict = package_targets.setdefault(package_target, {})
       package_target_dict.setdefault(package_name, []).extend(combined_packages)

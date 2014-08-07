@@ -93,13 +93,19 @@ UI_BASE_EXPORT void HideHostCursor();
 // Returns an invisible cursor.
 UI_BASE_EXPORT ::Cursor CreateInvisibleCursor();
 
+// Sets whether |window| should use the OS window frame.
+UI_BASE_EXPORT void SetUseOSWindowFrame(XID window, bool use_os_window_frame);
+
 // These functions do not cache their results --------------------------
+
+// Returns true if the shape extension is supported.
+UI_BASE_EXPORT bool IsShapeExtensionAvailable();
 
 // Get the X window id for the default root window
 UI_BASE_EXPORT XID GetX11RootWindow();
 
 // Returns the user's current desktop.
-bool GetCurrentDesktop(int* desktop);
+UI_BASE_EXPORT bool GetCurrentDesktop(int* desktop);
 
 enum HideTitlebarWhenMaximized {
   SHOW_TITLEBAR_WHEN_MAXIMIZED = 0,
@@ -166,6 +172,10 @@ UI_BASE_EXPORT bool SetIntArrayProperty(XID window,
                                         const std::string& name,
                                         const std::string& type,
                                         const std::vector<int>& value);
+UI_BASE_EXPORT bool SetAtomProperty(XID window,
+                                    const std::string& name,
+                                    const std::string& type,
+                                    Atom value);
 UI_BASE_EXPORT bool SetAtomArrayProperty(XID window,
                                          const std::string& name,
                                          const std::string& type,
@@ -176,7 +186,7 @@ UI_BASE_EXPORT bool SetStringProperty(XID window,
                                       const std::string& value);
 
 // Gets the X atom for default display corresponding to atom_name.
-Atom GetAtom(const char* atom_name);
+UI_BASE_EXPORT Atom GetAtom(const char* atom_name);
 
 // Sets the WM_CLASS attribute for a given X11 window.
 UI_BASE_EXPORT void SetWindowClassHint(XDisplay* display,
@@ -259,8 +269,11 @@ UI_BASE_EXPORT WindowManagerName GuessWindowManager();
 // to set your own error handlers.
 UI_BASE_EXPORT void SetDefaultX11ErrorHandlers();
 
-// Return true if a given window is in full-screen mode.
+// Returns true if a given window is in full-screen mode.
 UI_BASE_EXPORT bool IsX11WindowFullScreen(XID window);
+
+// Returns true if the window manager supports the given hint.
+UI_BASE_EXPORT bool WmSupportsHint(Atom atom);
 
 // Manages a piece of X11 allocated memory as a RefCountedMemory segment. This
 // object takes ownership over the passed in memory and will free it with the

@@ -122,18 +122,6 @@ Tile* PictureLayerTiling::CreateTile(int i,
   return tile.get();
 }
 
-Region PictureLayerTiling::OpaqueRegionInContentRect(
-    const gfx::Rect& content_rect) const {
-  Region opaque_region;
-  // TODO(enne): implement me
-  return opaque_region;
-}
-
-void PictureLayerTiling::SetCanUseLCDText(bool can_use_lcd_text) {
-  for (TileMap::iterator it = tiles_.begin(); it != tiles_.end(); ++it)
-    it->second->set_can_use_lcd_text(can_use_lcd_text);
-}
-
 void PictureLayerTiling::CreateMissingTilesInLiveTilesRect() {
   const PictureLayerTiling* twin_tiling = client_->GetTwinTiling(this);
   bool include_borders = true;
@@ -866,8 +854,10 @@ void PictureLayerTiling::TilingRasterTileIterator::AdvancePhase() {
       ++spiral_iterator_;
     }
 
-    if (!spiral_iterator_ && type_ == TilePriority::EVENTUALLY)
+    if (!spiral_iterator_ && type_ == TilePriority::EVENTUALLY) {
+      current_tile_ = NULL;
       break;
+    }
   } while (!spiral_iterator_);
 }
 
@@ -908,8 +898,10 @@ operator++() {
         break;
       case TilePriority::EVENTUALLY:
         ++spiral_iterator_;
-        if (!spiral_iterator_)
+        if (!spiral_iterator_) {
+          current_tile_ = NULL;
           return *this;
+        }
         next_index = spiral_iterator_.index();
         break;
     }

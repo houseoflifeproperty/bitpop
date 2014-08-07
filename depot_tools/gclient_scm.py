@@ -308,6 +308,15 @@ class GitWrapper(SCMWrapper):
       files = self._Capture(['ls-files']).splitlines()
       file_list.extend([os.path.join(self.checkout_path, f) for f in files])
 
+  def _DisableHooks(self):
+    hook_dir = os.path.join(self.checkout_path, '.git', 'hooks')
+    if not os.path.isdir(hook_dir):
+      return
+    for f in os.listdir(hook_dir):
+      if not f.endswith('.sample') and not f.endswith('.disabled'):
+        os.rename(os.path.join(hook_dir, f),
+                  os.path.join(hook_dir, f + '.disabled'))
+
   def update(self, options, args, file_list):
     """Runs git to update or transparently checkout the working copy.
 
@@ -331,10 +340,15 @@ class GitWrapper(SCMWrapper):
       # Override the revision number.
       revision = str(options.revision)
     if revision == 'unmanaged':
-      revision = None
+      # Check again for a revision in case an initial ref was specified
+      # in the url, for example bla.git@refs/heads/custombranch
+      revision = deps_revision
       managed = False
     if not revision:
       revision = default_rev
+
+    if managed:
+      self._DisableHooks()
 
     if gclient_utils.IsDateRevision(revision):
       # Date-revisions only work on git-repositories if the reflog hasn't
@@ -354,8 +368,6 @@ class GitWrapper(SCMWrapper):
       verbose = ['--verbose']
       printed_path = True
 
-    url = self._CreateOrUpdateCache(url, options)
-
     if revision.startswith('refs/'):
       rev_type = "branch"
     elif revision.startswith(self.remote + '/'):
@@ -366,15 +378,20 @@ class GitWrapper(SCMWrapper):
       # hash is also a tag, only make a distinction at checkout
       rev_type = "hash"
 
+    mirror = self._GetMirror(url, options)
+    if mirror:
+      url = mirror.mirror_path
+
     if (not os.path.exists(self.checkout_path) or
         (os.path.isdir(self.checkout_path) and
          not os.path.exists(os.path.join(self.checkout_path, '.git')))):
+      if mirror:
+        self._UpdateMirror(mirror, options)
       try:
         self._Clone(revision, url, options)
       except subprocess2.CalledProcessError:
         self._DeleteOrMove(options.force)
         self._Clone(revision, url, options)
-      self._UpdateBranchHeads(options, fetch=True)
       if deps_revision and deps_revision.startswith('branch-heads/'):
         deps_branch = deps_revision.replace('branch-heads/', '')
         self._Capture(['branch', deps_branch, deps_revision])
@@ -392,6 +409,9 @@ class GitWrapper(SCMWrapper):
       self._UpdateBranchHeads(options, fetch=False)
       self.Print('________ unmanaged solution; skipping %s' % self.relpath)
       return self._Capture(['rev-parse', '--verify', 'HEAD'])
+
+    if mirror:
+      self._UpdateMirror(mirror, options)
 
     # See if the url has changed (the unittests use git://foo for the url, let
     # that through).
@@ -478,7 +498,12 @@ class GitWrapper(SCMWrapper):
       if self._Capture(['rev-list', '-n', '1', 'HEAD']) == revision:
         self.Print('Up-to-date; skipping checkout.')
       else:
-        self._Capture(['checkout', '--quiet', '%s' % revision])
+        # 'git checkout' may need to overwrite existing untracked files. Allow
+        # it only when nuclear options are enabled.
+        if options.force and options.delete_unversioned_trees:
+          self._Capture(['checkout', '--force', '--quiet', '%s' % revision])
+        else:
+          self._Capture(['checkout', '--quiet', '%s' % revision])
       if not printed_path:
         self.Print('_____ %s%s' % (self.relpath, rev_str), timestamp=False)
     elif current_type == 'hash':
@@ -744,14 +769,10 @@ class GitWrapper(SCMWrapper):
     base_url = self.url
     return base_url[:base_url.rfind('/')] + url
 
-  def _CreateOrUpdateCache(self, url, options):
-    """Make a new git mirror or update existing mirror for |url|, and return the
-    mirror URI to clone from.
-
-    If no cache-dir is specified, just return |url| unchanged.
-    """
-    if not self.cache_dir:
-      return url
+  def _GetMirror(self, url, options):
+    """Get a git_cache.Mirror object for the argument url."""
+    if not git_cache.Mirror.GetCachePath():
+      return None
     mirror_kwargs = {
         'print_func': self.filter,
         'refs': []
@@ -764,10 +785,21 @@ class GitWrapper(SCMWrapper):
     #  mirror_kwargs['refs'].extend(['refs/tags/lkgr', 'refs/tags/lkcr'])
     if hasattr(options, 'with_branch_heads') and options.with_branch_heads:
       mirror_kwargs['refs'].append('refs/branch-heads/*')
-    mirror = git_cache.Mirror(url, **mirror_kwargs)
-    mirror.populate(verbose=options.verbose, bootstrap=True)
+    return git_cache.Mirror(url, **mirror_kwargs)
+
+  @staticmethod
+  def _UpdateMirror(mirror, options):
+    """Update a git mirror by fetching the latest commits from the remote."""
+    if options.shallow:
+      # HACK(hinoka): These repositories should be super shallow.
+      if 'flash' in mirror.url:
+        depth = 10
+      else:
+        depth = 10000
+    else:
+      depth = None
+    mirror.populate(verbose=options.verbose, bootstrap=True, depth=depth)
     mirror.unlock()
-    return mirror.mirror_path if mirror.exists() else None
 
   def _Clone(self, revision, url, options):
     """Clone a git repository from the given URL.
@@ -781,11 +813,8 @@ class GitWrapper(SCMWrapper):
       # git clone doesn't seem to insert a newline properly before printing
       # to stdout
       self.Print('')
-    template_path = os.path.join(
-        os.path.dirname(THIS_FILE_PATH), 'git-templates')
     cfg = gclient_utils.DefaultIndexPackConfig(url)
-    clone_cmd = cfg + [
-        'clone', '--no-checkout', '--progress', '--template=%s' % template_path]
+    clone_cmd = cfg + ['clone', '--no-checkout', '--progress']
     if self.cache_dir:
       clone_cmd.append('--shared')
     if options.verbose:
@@ -811,12 +840,11 @@ class GitWrapper(SCMWrapper):
       if os.listdir(tmp_dir):
         self.Print('_____ removing non-empty tmp dir %s' % tmp_dir)
       gclient_utils.rmtree(tmp_dir)
-    if revision.startswith('refs/heads/'):
-      self._Run(
-          ['checkout', '--quiet', revision.replace('refs/heads/', '')], options)
-    else:
+    self._UpdateBranchHeads(options, fetch=True)
+    self._Run(['checkout', '--quiet', revision.replace('refs/heads/', '')],
+              options)
+    if self._GetCurrentBranch() is None:
       # Squelch git's very verbose detached HEAD warning and use our own
-      self._Run(['checkout', '--quiet', revision], options)
       self.Print(
         ('Checked out %s to a detached HEAD. Before making any commits\n'
          'in this repo, you should use \'git checkout <branch>\' to switch to\n'

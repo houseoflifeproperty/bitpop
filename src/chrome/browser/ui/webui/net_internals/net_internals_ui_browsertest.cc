@@ -34,7 +34,6 @@
 #include "net/dns/host_resolver.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_network_session.h"
-#include "net/http/http_pipelined_host_capability.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -76,34 +75,6 @@ void AddCacheEntryOnIOThread(net::URLRequestContextGetter* context_getter,
              net::HostCache::Entry(net_error, address_list),
              base::TimeTicks::Now(),
              ttl);
-}
-
-// Called on IO thread.  Adds an entry to the list of known HTTP pipelining
-// hosts.
-void AddDummyHttpPipelineFeedbackOnIOThread(
-    net::URLRequestContextGetter* context_getter,
-    const std::string& hostname,
-    int port,
-    net::HttpPipelinedHostCapability capability) {
-  ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  net::URLRequestContext* context = context_getter->GetURLRequestContext();
-  net::HttpNetworkSession* http_network_session =
-      context->http_transaction_factory()->GetSession();
-  base::WeakPtr<net::HttpServerProperties> http_server_properties =
-      http_network_session->http_server_properties();
-  net::HostPortPair origin(hostname, port);
-  http_server_properties->SetPipelineCapability(origin, capability);
-}
-
-// Called on IO thread.  Adds an entry to the list of known HTTP pipelining
-// hosts.
-void EnableHttpPipeliningOnIOThread(
-    net::URLRequestContextGetter* context_getter, bool enable) {
-  ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  net::URLRequestContext* context = context_getter->GetURLRequestContext();
-  net::HttpNetworkSession* http_network_session =
-      context->http_transaction_factory()->GetSession();
-  http_network_session->set_http_pipelining_enabled(enable);
 }
 
 }  // namespace
@@ -152,13 +123,6 @@ class NetInternalsTest::MessageHandler : public content::WebUIMessageHandler {
   // Closes an incognito browser created with CreateIncognitoBrowser.
   void CloseIncognitoBrowser(const base::ListValue* list_value);
 
-  // Takes in a boolean and enables/disabled HTTP pipelining accordingly.
-  void EnableHttpPipelining(const base::ListValue* list_value);
-
-  // Called on UI thread. Adds an entry to the list of known HTTP pipelining
-  // hosts.
-  void AddDummyHttpPipelineFeedback(const base::ListValue* list_value);
-
   // Creates a simple log with a NetLogLogger, and returns it to the
   // Javascript callback.
   void GetNetLogLoggerLog(const base::ListValue* list_value);
@@ -199,13 +163,6 @@ void NetInternalsTest::MessageHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("closeIncognitoBrowser",
       base::Bind(&NetInternalsTest::MessageHandler::CloseIncognitoBrowser,
                  base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("enableHttpPipelining",
-      base::Bind(&NetInternalsTest::MessageHandler::EnableHttpPipelining,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("addDummyHttpPipelineFeedback",
-      base::Bind(
-          &NetInternalsTest::MessageHandler::AddDummyHttpPipelineFeedback,
-          base::Unretained(this)));
   web_ui()->RegisterMessageCallback("getNetLogLoggerLog",
       base::Bind(
           &NetInternalsTest::MessageHandler::GetNetLogLoggerLog,
@@ -303,42 +260,6 @@ void NetInternalsTest::MessageHandler::CloseIncognitoBrowser(
   incognito_browser_ = NULL;
 }
 
-void NetInternalsTest::MessageHandler::EnableHttpPipelining(
-    const base::ListValue* list_value) {
-  bool enable;
-  ASSERT_TRUE(list_value->GetBoolean(0, &enable));
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&EnableHttpPipeliningOnIOThread,
-                 make_scoped_refptr(browser()->profile()->GetRequestContext()),
-                 enable));
-}
-
-void NetInternalsTest::MessageHandler::AddDummyHttpPipelineFeedback(
-    const base::ListValue* list_value) {
-  std::string hostname;
-  double port;
-  std::string raw_capability;
-  net::HttpPipelinedHostCapability capability;
-  ASSERT_TRUE(list_value->GetString(0, &hostname));
-  ASSERT_TRUE(list_value->GetDouble(1, &port));
-  ASSERT_TRUE(list_value->GetString(2, &raw_capability));
-  if (raw_capability == "capable") {
-    capability = net::PIPELINE_CAPABLE;
-  } else if (raw_capability == "incapable") {
-    capability = net::PIPELINE_INCAPABLE;
-  } else {
-    FAIL() << "Unexpected capability string: " << raw_capability;
-  }
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&AddDummyHttpPipelineFeedbackOnIOThread,
-                 make_scoped_refptr(browser()->profile()->GetRequestContext()),
-                 hostname,
-                 static_cast<int>(port),
-                 capability));
-}
-
 void NetInternalsTest::MessageHandler::GetNetLogLoggerLog(
     const base::ListValue* list_value) {
   base::ScopedTempDir temp_directory;
@@ -398,6 +319,12 @@ void NetInternalsTest::SetUpOnMainThread() {
   prerender::PrerenderManager* prerender_manager =
       prerender::PrerenderManagerFactory::GetForProfile(profile);
   prerender_manager->mutable_config().max_bytes = 1000 * 1024 * 1024;
+  if (!prerender_manager->cookie_store_loaded()) {
+    base::RunLoop loop;
+    prerender_manager->set_on_cookie_store_loaded_cb_for_testing(
+        loop.QuitClosure());
+    loop.Run();
+  }
 }
 
 content::WebUIMessageHandler* NetInternalsTest::GetMockMessageHandler() {

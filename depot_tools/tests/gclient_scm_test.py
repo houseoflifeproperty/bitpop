@@ -24,7 +24,11 @@ from testing_support.super_mox import mox, StdoutCheck, SuperMoxTestBase
 from testing_support.super_mox import TestCaseUtils
 
 import gclient_scm
+import git_cache
 import subprocess2
+
+# Disable global git cache
+git_cache.Mirror.SetCachePath(None)
 
 # Shortcut since this function is used often
 join = gclient_scm.os.path.join
@@ -891,7 +895,9 @@ from :3
     TestCaseUtils.setUp(self)
     unittest.TestCase.setUp(self)
     self.url = 'git://foo'
-    self.root_dir = tempfile.mkdtemp()
+    # The .git suffix allows gclient_scm to recognize the dir as a git repo
+    # when cloning it locally
+    self.root_dir = tempfile.mkdtemp('.git')
     self.relpath = '.'
     self.base_path = join(self.root_dir, self.relpath)
     self.enabled = self.CreateGitRepo(self.sample_git_import, self.base_path)
@@ -1316,6 +1322,8 @@ class ManagedGitWrapperTestCaseMox(BaseTestCase):
   def testUpdateNoDotGit(self):
     options = self.Options()
 
+    gclient_scm.os.path.isdir(
+        os.path.join(self.base_path, '.git', 'hooks')).AndReturn(False)
     gclient_scm.os.path.exists(self.base_path).AndReturn(True)
     gclient_scm.os.path.isdir(self.base_path).AndReturn(True)
     gclient_scm.os.path.exists(os.path.join(self.base_path, '.git')
@@ -1344,6 +1352,8 @@ class ManagedGitWrapperTestCaseMox(BaseTestCase):
   def testUpdateConflict(self):
     options = self.Options()
 
+    gclient_scm.os.path.isdir(
+        os.path.join(self.base_path, '.git', 'hooks')).AndReturn(False)
     gclient_scm.os.path.exists(self.base_path).AndReturn(True)
     gclient_scm.os.path.isdir(self.base_path).AndReturn(True)
     gclient_scm.os.path.exists(os.path.join(self.base_path, '.git')
@@ -1377,6 +1387,181 @@ class ManagedGitWrapperTestCaseMox(BaseTestCase):
 
 
 class UnmanagedGitWrapperTestCase(BaseGitWrapperTestCase):
+  def checkInStdout(self, expected):
+    value = sys.stdout.getvalue()
+    sys.stdout.close()
+    # pylint: disable=E1101
+    self.assertIn(expected, value)
+
+  def checkNotInStdout(self, expected):
+    value = sys.stdout.getvalue()
+    sys.stdout.close()
+    # pylint: disable=E1101
+    self.assertNotIn(expected, value)
+
+  def getCurrentBranch(self):
+    # Returns name of current branch or HEAD for detached HEAD
+    branch = gclient_scm.scm.GIT.Capture(['rev-parse', '--abbrev-ref', 'HEAD'],
+                                          cwd=self.base_path)
+    if branch == 'HEAD':
+      return None
+    return branch
+
+  def testUpdateClone(self):
+    if not self.enabled:
+      return
+    options = self.Options()
+
+    origin_root_dir = self.root_dir
+    self.root_dir = tempfile.mkdtemp()
+    self.relpath = '.'
+    self.base_path = join(self.root_dir, self.relpath)
+
+    scm = gclient_scm.CreateSCM(url=origin_root_dir,
+                                root_dir=self.root_dir,
+                                relpath=self.relpath)
+
+    expected_file_list = [join(self.base_path, "a"),
+                          join(self.base_path, "b")]
+    file_list = []
+    options.revision = 'unmanaged'
+    scm.update(options, (), file_list)
+
+    self.assertEquals(file_list, expected_file_list)
+    self.assertEquals(scm.revinfo(options, (), None),
+                      '069c602044c5388d2d15c3f875b057c852003458')
+    # indicates detached HEAD
+    self.assertEquals(self.getCurrentBranch(), None)
+    self.checkInStdout(
+      'Checked out refs/remotes/origin/master to a detached HEAD')
+
+    rmtree(origin_root_dir)
+
+  def testUpdateCloneOnCommit(self):
+    if not self.enabled:
+      return
+    options = self.Options()
+
+    origin_root_dir = self.root_dir
+    self.root_dir = tempfile.mkdtemp()
+    self.relpath = '.'
+    self.base_path = join(self.root_dir, self.relpath)
+    url_with_commit_ref = origin_root_dir +\
+                          '@a7142dc9f0009350b96a11f372b6ea658592aa95'
+
+    scm = gclient_scm.CreateSCM(url=url_with_commit_ref,
+                                root_dir=self.root_dir,
+                                relpath=self.relpath)
+
+    expected_file_list = [join(self.base_path, "a"),
+                          join(self.base_path, "b")]
+    file_list = []
+    options.revision = 'unmanaged'
+    scm.update(options, (), file_list)
+
+    self.assertEquals(file_list, expected_file_list)
+    self.assertEquals(scm.revinfo(options, (), None),
+                      'a7142dc9f0009350b96a11f372b6ea658592aa95')
+    # indicates detached HEAD
+    self.assertEquals(self.getCurrentBranch(), None)
+    self.checkInStdout(
+      'Checked out a7142dc9f0009350b96a11f372b6ea658592aa95 to a detached HEAD')
+
+    rmtree(origin_root_dir)
+
+  def testUpdateCloneOnBranch(self):
+    if not self.enabled:
+      return
+    options = self.Options()
+
+    origin_root_dir = self.root_dir
+    self.root_dir = tempfile.mkdtemp()
+    self.relpath = '.'
+    self.base_path = join(self.root_dir, self.relpath)
+    url_with_branch_ref = origin_root_dir + '@feature'
+
+    scm = gclient_scm.CreateSCM(url=url_with_branch_ref,
+                                root_dir=self.root_dir,
+                                relpath=self.relpath)
+
+    expected_file_list = [join(self.base_path, "a"),
+                          join(self.base_path, "b"),
+                          join(self.base_path, "c")]
+    file_list = []
+    options.revision = 'unmanaged'
+    scm.update(options, (), file_list)
+
+    self.assertEquals(file_list, expected_file_list)
+    self.assertEquals(scm.revinfo(options, (), None),
+                      '9a51244740b25fa2ded5252ca00a3178d3f665a9')
+    self.assertEquals(self.getCurrentBranch(), 'feature')
+    self.checkNotInStdout('Checked out feature to a detached HEAD')
+
+    rmtree(origin_root_dir)
+
+  def testUpdateCloneOnDetachedBranch(self):
+    if not self.enabled:
+      return
+    options = self.Options()
+
+    origin_root_dir = self.root_dir
+    self.root_dir = tempfile.mkdtemp()
+    self.relpath = '.'
+    self.base_path = join(self.root_dir, self.relpath)
+    url_with_branch_ref = origin_root_dir + '@refs/remotes/origin/feature'
+
+    scm = gclient_scm.CreateSCM(url=url_with_branch_ref,
+                                root_dir=self.root_dir,
+                                relpath=self.relpath)
+
+    expected_file_list = [join(self.base_path, "a"),
+                          join(self.base_path, "b"),
+                          join(self.base_path, "c")]
+    file_list = []
+    options.revision = 'unmanaged'
+    scm.update(options, (), file_list)
+
+    self.assertEquals(file_list, expected_file_list)
+    self.assertEquals(scm.revinfo(options, (), None),
+                      '9a51244740b25fa2ded5252ca00a3178d3f665a9')
+    # indicates detached HEAD
+    self.assertEquals(self.getCurrentBranch(), None)
+    self.checkInStdout(
+      'Checked out refs/remotes/origin/feature to a detached HEAD')
+
+    rmtree(origin_root_dir)
+
+  def testUpdateCloneOnBranchHead(self):
+    if not self.enabled:
+      return
+    options = self.Options()
+
+    origin_root_dir = self.root_dir
+    self.root_dir = tempfile.mkdtemp()
+    self.relpath = '.'
+    self.base_path = join(self.root_dir, self.relpath)
+    url_with_branch_ref = origin_root_dir + '@refs/heads/feature'
+
+    scm = gclient_scm.CreateSCM(url=url_with_branch_ref,
+                                root_dir=self.root_dir,
+                                relpath=self.relpath)
+
+    expected_file_list = [join(self.base_path, "a"),
+                          join(self.base_path, "b"),
+                          join(self.base_path, "c")]
+    file_list = []
+    options.revision = 'unmanaged'
+    scm.update(options, (), file_list)
+
+    self.assertEquals(file_list, expected_file_list)
+    self.assertEquals(scm.revinfo(options, (), None),
+                      '9a51244740b25fa2ded5252ca00a3178d3f665a9')
+    self.assertEquals(self.getCurrentBranch(), 'feature')
+    self.checkNotInStdout(
+      'Checked out refs/heads/feature to a detached HEAD')
+
+    rmtree(origin_root_dir)
+
   def testUpdateUpdate(self):
     if not self.enabled:
       return
@@ -1394,11 +1579,11 @@ class UnmanagedGitWrapperTestCase(BaseGitWrapperTestCase):
 
 
 if __name__ == '__main__':
-  if '-v' in sys.argv:
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime).19s %(levelname)s %(filename)s:'
-               '%(lineno)s %(message)s')
+  level = logging.DEBUG if '-v' in sys.argv else logging.FATAL
+  logging.basicConfig(
+      level=level,
+      format='%(asctime).19s %(levelname)s %(filename)s:'
+             '%(lineno)s %(message)s')
   unittest.main()
 
 # vim: ts=2:sw=2:tw=80:et:

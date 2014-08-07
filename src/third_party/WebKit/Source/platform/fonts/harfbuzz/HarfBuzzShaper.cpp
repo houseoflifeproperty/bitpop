@@ -32,11 +32,12 @@
 #include "config.h"
 #include "platform/fonts/harfbuzz/HarfBuzzShaper.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "hb.h"
 #include "platform/LayoutUnit.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/Character.h"
 #include "platform/fonts/Font.h"
+#include "platform/fonts/GlyphBuffer.h"
 #include "platform/fonts/harfbuzz/HarfBuzzFace.h"
 #include "platform/text/SurrogatePairAwareTextIterator.h"
 #include "platform/text/TextBreakIterator.h"
@@ -86,12 +87,13 @@ typedef std::map<std::wstring, CachedShapingResults*> CachedShapingResultsMap;
 typedef std::list<CachedShapingResultsLRUNode*> CachedShapingResultsLRU;
 
 struct CachedShapingResults {
-    CachedShapingResults(hb_buffer_t* harfBuzzBuffer, const Font* runFont, hb_direction_t runDir);
+    CachedShapingResults(hb_buffer_t* harfBuzzBuffer, const Font* runFont, hb_direction_t runDir, const String& newLocale);
     ~CachedShapingResults();
 
     hb_buffer_t* buffer;
     Font font;
     hb_direction_t dir;
+    String locale;
     CachedShapingResultsLRU::iterator lru;
 };
 
@@ -102,10 +104,11 @@ struct CachedShapingResultsLRUNode {
     CachedShapingResultsMap::iterator entry;
 };
 
-CachedShapingResults::CachedShapingResults(hb_buffer_t* harfBuzzBuffer, const Font* fontData, hb_direction_t dirData)
+CachedShapingResults::CachedShapingResults(hb_buffer_t* harfBuzzBuffer, const Font* fontData, hb_direction_t dirData, const String& newLocale)
     : buffer(harfBuzzBuffer)
     , font(*fontData)
     , dir(dirData)
+    , locale(newLocale)
 {
 }
 
@@ -792,6 +795,9 @@ bool HarfBuzzShaper::shapeHarfBuzzRuns()
     HarfBuzzScopedPtr<hb_buffer_t> harfBuzzBuffer(hb_buffer_create(), hb_buffer_destroy);
 
     HarfBuzzRunCache& runCache = harfBuzzRunCache();
+    const FontDescription& fontDescription = m_font->fontDescription();
+    const String& localeString = fontDescription.locale();
+    CString locale = localeString.latin1();
 
     for (unsigned i = 0; i < m_harfBuzzRuns.size(); ++i) {
         unsigned runIndex = m_run.rtl() ? m_harfBuzzRuns.size() - i - 1 : i;
@@ -805,6 +811,7 @@ bool HarfBuzzShaper::shapeHarfBuzzRuns()
         if (!face)
             return false;
 
+        hb_buffer_set_language(harfBuzzBuffer.get(), hb_language_from_string(locale.data(), locale.length()));
         hb_buffer_set_script(harfBuzzBuffer.get(), currentRun->script());
         hb_buffer_set_direction(harfBuzzBuffer.get(), currentRun->rtl() ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
 
@@ -816,7 +823,7 @@ bool HarfBuzzShaper::shapeHarfBuzzRuns()
 
         CachedShapingResults* cachedResults = runCache.find(key);
         if (cachedResults) {
-            if (cachedResults->dir == props.direction && cachedResults->font == *m_font) {
+            if (cachedResults->dir == props.direction && cachedResults->font == *m_font && cachedResults->locale == localeString) {
                 currentRun->applyShapeResult(cachedResults->buffer);
                 setGlyphPositionsForHarfBuzzRun(currentRun, cachedResults->buffer);
 
@@ -835,7 +842,7 @@ bool HarfBuzzShaper::shapeHarfBuzzRuns()
         static const uint16_t preContext = ' ';
         hb_buffer_add_utf16(harfBuzzBuffer.get(), &preContext, 1, 1, 0);
 
-        if (m_font->fontDescription().variant() && u_islower(m_normalizedBuffer[currentRun->startIndex()])) {
+        if (fontDescription.variant() == FontVariantSmallCaps && u_islower(m_normalizedBuffer[currentRun->startIndex()])) {
             String upperText = String(m_normalizedBuffer.get() + currentRun->startIndex(), currentRun->numCharacters()).upper();
             ASSERT(!upperText.is8Bit()); // m_normalizedBuffer is 16 bit, therefore upperText is 16 bit, even after we call makeUpper().
             hb_buffer_add_utf16(harfBuzzBuffer.get(), toUint16(upperText.characters16()), currentRun->numCharacters(), 0, currentRun->numCharacters());
@@ -843,7 +850,7 @@ bool HarfBuzzShaper::shapeHarfBuzzRuns()
             hb_buffer_add_utf16(harfBuzzBuffer.get(), toUint16(m_normalizedBuffer.get() + currentRun->startIndex()), currentRun->numCharacters(), 0, currentRun->numCharacters());
         }
 
-        if (m_font->fontDescription().orientation() == Vertical)
+        if (fontDescription.orientation() == Vertical)
             face->setScriptForVerticalGlyphSubstitution(harfBuzzBuffer.get());
 
         HarfBuzzScopedPtr<hb_font_t> harfBuzzFont(face->createFont(), hb_font_destroy);
@@ -852,7 +859,7 @@ bool HarfBuzzShaper::shapeHarfBuzzRuns()
         currentRun->applyShapeResult(harfBuzzBuffer.get());
         setGlyphPositionsForHarfBuzzRun(currentRun, harfBuzzBuffer.get());
 
-        runCache.insert(key, new CachedShapingResults(harfBuzzBuffer.get(), m_font, props.direction));
+        runCache.insert(key, new CachedShapingResults(harfBuzzBuffer.get(), m_font, props.direction, localeString));
 
         harfBuzzBuffer.set(hb_buffer_create());
     }
@@ -940,12 +947,12 @@ void HarfBuzzShaper::fillGlyphBufferFromHarfBuzzRun(GlyphBuffer* glyphBuffer, Ha
             if (currentCharacterIndex >= m_toIndex)
                 m_startOffset.move(glyphAdvanceX, glyphAdvanceY);
             else if (currentCharacterIndex >= m_fromIndex)
-                glyphBuffer->add(glyphs[i], currentRun->fontData(), createGlyphBufferAdvance(glyphAdvanceX, glyphAdvanceY));
+                glyphBuffer->add(glyphs[i], currentRun->fontData(), FloatSize(glyphAdvanceX, glyphAdvanceY));
         } else {
             if (currentCharacterIndex < m_fromIndex)
                 m_startOffset.move(glyphAdvanceX, glyphAdvanceY);
             else if (currentCharacterIndex < m_toIndex)
-                glyphBuffer->add(glyphs[i], currentRun->fontData(), createGlyphBufferAdvance(glyphAdvanceX, glyphAdvanceY));
+                glyphBuffer->add(glyphs[i], currentRun->fontData(), FloatSize(glyphAdvanceX, glyphAdvanceY));
         }
     }
 }
@@ -995,8 +1002,8 @@ void HarfBuzzShaper::fillGlyphBufferForTextEmphasis(GlyphBuffer* glyphBuffer, Ha
             float glyphAdvanceX = clusterAdvance / graphemesInCluster;
             for (unsigned j = 0; j < graphemesInCluster; ++j) {
                 // Do not put emphasis marks on space, separator, and control characters.
-                GlyphBufferGlyph glyphToAdd = Character::canReceiveTextEmphasis(m_run[currentCharacterIndex]) ? 1 : 0;
-                glyphBuffer->add(glyphToAdd, currentRun->fontData(), createGlyphBufferAdvance(glyphAdvanceX, 0));
+                Glyph glyphToAdd = Character::canReceiveTextEmphasis(m_run[currentCharacterIndex]) ? 1 : 0;
+                glyphBuffer->add(glyphToAdd, currentRun->fontData(), glyphAdvanceX);
             }
             clusterStart = clusterEnd;
             clusterAdvance = 0;

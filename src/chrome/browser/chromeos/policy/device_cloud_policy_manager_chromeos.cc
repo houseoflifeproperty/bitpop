@@ -226,6 +226,17 @@ bool DeviceCloudPolicyManagerChromeOS::ShouldAutoStartEnrollment() const {
   return GetMachineFlag(chromeos::system::kOemIsEnterpriseManagedKey, false);
 }
 
+bool DeviceCloudPolicyManagerChromeOS::ShouldRecoverEnrollment() const {
+  if (install_attributes_->IsEnterpriseDevice() &&
+      chromeos::StartupUtils::IsEnrollmentRecoveryRequired()) {
+    LOG(WARNING) << "Enrollment recovery required according to pref.";
+    if (!DeviceCloudPolicyManagerChromeOS::GetMachineID().empty())
+      return true;
+    LOG(WARNING) << "Postponing recovery because machine id is missing.";
+  }
+  return false;
+}
+
 bool DeviceCloudPolicyManagerChromeOS::CanExitEnrollment() const {
   if (GetRestoreMode() == kDeviceStateRestoreModeReEnrollmentEnforced)
     return false;
@@ -326,6 +337,7 @@ void DeviceCloudPolicyManagerChromeOS::StartIfManaged() {
       local_state_ &&
       store()->is_initialized() &&
       store()->has_policy() &&
+      !device_store_->policy()->request_token().empty() &&
       !state_keys_broker_->pending() &&
       !enrollment_handler_ &&
       !service()) {

@@ -16,7 +16,6 @@ import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.widget.FrameLayout;
 
-import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.chrome.R;
 
 import java.util.ArrayList;
@@ -36,7 +35,6 @@ public class ContentWrapperView extends FrameLayout {
     private static final int CONTENT_INDEX = 0;
 
     private final int mGravity;
-    private final boolean mInfoBarsFromTop;
     private final InfoBar mInfoBar;
 
     private View mViewToHide;
@@ -46,32 +44,22 @@ public class ContentWrapperView extends FrameLayout {
      * Constructs a ContentWrapperView object.
      * @param context The context to create this View with.
      */
-    public ContentWrapperView(Context context, InfoBar infoBar, int backgroundType, View panel,
-            boolean infoBarsFromTop) {
+    public ContentWrapperView(Context context, InfoBar infoBar, View panel) {
         // Set up this ViewGroup.
         super(context);
         mInfoBar = infoBar;
-        mGravity = infoBarsFromTop ? Gravity.BOTTOM : Gravity.TOP;
-        mInfoBarsFromTop = infoBarsFromTop;
-
-        // Pull out resources we need for the backgrounds.  Defaults to the INFO type.
-        int separatorBackground = R.color.infobar_info_background_separator;
-        int layoutBackground = R.drawable.infobar_info_background;
-        if (backgroundType == InfoBar.BACKGROUND_TYPE_WARNING) {
-            layoutBackground = R.drawable.infobar_warning_background;
-            separatorBackground = R.color.infobar_warning_background_separator;
-        }
+        mGravity = Gravity.TOP;
 
         // Set up this view.
         Resources resources = context.getResources();
         LayoutParams wrapParams = new LayoutParams(LayoutParams.MATCH_PARENT,
                 LayoutParams.WRAP_CONTENT);
         setLayoutParams(wrapParams);
-        ApiCompatibilityUtils.setBackgroundForView(this, resources.getDrawable(layoutBackground));
+        setBackgroundColor(resources.getColor(R.color.infobar_background));
 
         // Add a separator line that delineates different InfoBars.
         View separator = new View(context);
-        separator.setBackgroundColor(resources.getColor(separatorBackground));
+        separator.setBackgroundColor(resources.getColor(R.color.infobar_background_separator));
         addView(separator, new LayoutParams(LayoutParams.MATCH_PARENT, getBoundaryHeight(context),
                 mGravity));
 
@@ -161,20 +149,6 @@ public class ContentWrapperView extends FrameLayout {
 
             // We're transitioning between two views; set the alpha so it doesn't pop in.
             if (mViewToHide != null) mViewToShow.setAlpha(0.0f);
-
-            // Because of layout scheduling, we need to move the child Views downward before it
-            // occurs.  Failure to do so results in the Views being located incorrectly during the
-            // first few frames of the animation.
-            if (mInfoBarsFromTop && getViewToShowHeight() > getViewToHideHeight()) {
-                getLayoutParams().height = getViewToShowHeight();
-
-                int translation = getTransitionHeightDifference();
-                for (int i = 0; i < getChildCount(); ++i) {
-                    View v = getChildAt(i);
-                    v.setTop(v.getTop() + translation);
-                    v.setBottom(v.getBottom() + translation);
-                }
-            }
         }
     }
 

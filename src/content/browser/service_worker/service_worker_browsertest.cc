@@ -6,6 +6,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/run_loop.h"
+#include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
@@ -26,6 +27,9 @@
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "webkit/browser/blob/blob_data_handle.h"
+#include "webkit/browser/blob/blob_storage_context.h"
+#include "webkit/common/blob/blob_data.h"
 
 namespace content {
 
@@ -35,6 +39,7 @@ struct FetchResult {
   ServiceWorkerStatusCode status;
   ServiceWorkerFetchEventResult result;
   ServiceWorkerResponse response;
+  scoped_ptr<webkit_blob::BlobDataHandle> blob_data_handle;
 };
 
 void RunAndQuit(const base::Closure& closure,
@@ -72,6 +77,7 @@ void RunOnIOThread(
 // to pass to DispatchFetchEvent.
 void ReceiveFetchResult(BrowserThread::ID run_quit_thread,
                         const base::Closure& quit,
+                        ChromeBlobStorageContext* blob_context,
                         FetchResult* out_result,
                         ServiceWorkerStatusCode actual_status,
                         ServiceWorkerFetchEventResult actual_result,
@@ -79,6 +85,11 @@ void ReceiveFetchResult(BrowserThread::ID run_quit_thread,
   out_result->status = actual_status;
   out_result->result = actual_result;
   out_result->response = actual_response;
+  if (!actual_response.blob_uuid.empty()) {
+    out_result->blob_data_handle =
+        blob_context->context()->GetBlobDataFromUUID(
+            actual_response.blob_uuid);
+  }
   if (!quit.is_null())
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, quit);
 }
@@ -86,8 +97,19 @@ void ReceiveFetchResult(BrowserThread::ID run_quit_thread,
 ServiceWorkerVersion::FetchCallback CreateResponseReceiver(
     BrowserThread::ID run_quit_thread,
     const base::Closure& quit,
+    ChromeBlobStorageContext* blob_context,
     FetchResult* result) {
-  return base::Bind(&ReceiveFetchResult, run_quit_thread, quit, result);
+  return base::Bind(&ReceiveFetchResult, run_quit_thread, quit,
+                    make_scoped_refptr<ChromeBlobStorageContext>(blob_context),
+                    result);
+}
+
+void ReadResponseBody(std::string* body,
+                      webkit_blob::BlobDataHandle* blob_data_handle) {
+  ASSERT_TRUE(blob_data_handle);
+  ASSERT_EQ(1U, blob_data_handle->data()->items().size());
+  *body = std::string(blob_data_handle->data()->items()[0].bytes(),
+                      blob_data_handle->data()->items()[0].length());
 }
 
 }  // namespace
@@ -286,8 +308,12 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
     ASSERT_EQ(expected_status, status);
   }
 
-  void FetchOnRegisteredWorker(ServiceWorkerFetchEventResult* result,
-                               ServiceWorkerResponse* response) {
+  void FetchOnRegisteredWorker(
+      ServiceWorkerFetchEventResult* result,
+      ServiceWorkerResponse* response,
+      scoped_ptr<webkit_blob::BlobDataHandle>* blob_data_handle) {
+    blob_context_ = ChromeBlobStorageContext::GetFor(
+        shell()->web_contents()->GetBrowserContext());
     FetchResult fetch_result;
     fetch_result.status = SERVICE_WORKER_ERROR_FAILED;
     base::RunLoop fetch_run_loop;
@@ -300,16 +326,18 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
     fetch_run_loop.Run();
     *result = fetch_result.result;
     *response = fetch_result.response;
+    *blob_data_handle = fetch_result.blob_data_handle.Pass();
     ASSERT_EQ(SERVICE_WORKER_OK, fetch_result.status);
   }
 
-  void FetchTestHelper(const std::string& worker_url,
-                       ServiceWorkerFetchEventResult* result,
-                       ServiceWorkerResponse* response) {
+  void FetchTestHelper(
+      const std::string& worker_url,
+      ServiceWorkerFetchEventResult* result,
+      ServiceWorkerResponse* response,
+      scoped_ptr<webkit_blob::BlobDataHandle>* blob_data_handle) {
     RunOnIOThread(
         base::Bind(&self::SetUpRegistrationOnIOThread, this, worker_url));
-
-    FetchOnRegisteredWorker(result, response);
+    FetchOnRegisteredWorker(result, response, blob_data_handle);
   }
 
   void SetUpRegistrationOnIOThread(const std::string& worker_url) {
@@ -354,7 +382,8 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
         std::map<std::string, std::string>());
     version_->SetStatus(ServiceWorkerVersion::ACTIVE);
     version_->DispatchFetchEvent(
-        request, CreateResponseReceiver(BrowserThread::UI, done, result));
+        request, CreateResponseReceiver(BrowserThread::UI, done,
+                                        blob_context_, result));
   }
 
   void StopOnIOThread(const base::Closure& done,
@@ -374,6 +403,7 @@ class ServiceWorkerVersionBrowserTest : public ServiceWorkerBrowserTest {
  protected:
   scoped_refptr<ServiceWorkerRegistration> registration_;
   scoped_refptr<ServiceWorkerVersion> version_;
+  scoped_refptr<ChromeBlobStorageContext> blob_context_;
 };
 
 IN_PROC_BROWSER_TEST_F(EmbeddedWorkerBrowserTest, StartAndStop) {
@@ -466,29 +496,22 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
 IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, FetchEvent_Response) {
   ServiceWorkerFetchEventResult result;
   ServiceWorkerResponse response;
-  FetchTestHelper("/service_worker/fetch_event.js", &result, &response);
+  scoped_ptr<webkit_blob::BlobDataHandle> blob_data_handle;
+  FetchTestHelper("/service_worker/fetch_event.js",
+                  &result, &response, &blob_data_handle);
   ASSERT_EQ(SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE, result);
-  EXPECT_EQ(200, response.status_code);
-  EXPECT_EQ("OK", response.status_text);
-  EXPECT_EQ("GET", response.method);
+  EXPECT_EQ(301, response.status_code);
+  EXPECT_EQ("Moved Permanently", response.status_text);
   std::map<std::string, std::string> expected_headers;
+  expected_headers["Content-Language"] = "fi";
+  expected_headers["Content-Type"] = "text/html; charset=UTF-8";
   EXPECT_EQ(expected_headers, response.headers);
-}
 
-IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
-                       FetchEvent_FallbackToNative) {
-  ServiceWorkerFetchEventResult result;
-  ServiceWorkerResponse response;
-  FetchTestHelper(
-      "/service_worker/fetch_event_fallback.js", &result, &response);
-  ASSERT_EQ(SERVICE_WORKER_FETCH_EVENT_RESULT_FALLBACK, result);
-}
-
-IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, FetchEvent_Rejected) {
-  ServiceWorkerFetchEventResult result;
-  ServiceWorkerResponse response;
-  FetchTestHelper("/service_worker/fetch_event_error.js", &result, &response);
-  ASSERT_EQ(SERVICE_WORKER_FETCH_EVENT_RESULT_FALLBACK, result);
+  std::string body;
+  RunOnIOThread(
+      base::Bind(&ReadResponseBody,
+                 &body, base::Owned(blob_data_handle.release())));
+  EXPECT_EQ("This resource is gone. Gone, gone, gone.", body);
 }
 
 IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
@@ -517,9 +540,9 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, SyncEventHandled) {
       &self::SetUpRegistrationOnIOThread, this, "/service_worker/sync.js"));
   ServiceWorkerFetchEventResult result;
   ServiceWorkerResponse response;
-
+  scoped_ptr<webkit_blob::BlobDataHandle> blob_data_handle;
   // Should 404 before sync event.
-  FetchOnRegisteredWorker(&result, &response);
+  FetchOnRegisteredWorker(&result, &response, &blob_data_handle);
   EXPECT_EQ(404, response.status_code);
 
   // Run the sync event.
@@ -535,7 +558,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, SyncEventHandled) {
   ASSERT_EQ(SERVICE_WORKER_OK, status);
 
   // Should 200 after sync event.
-  FetchOnRegisteredWorker(&result, &response);
+  FetchOnRegisteredWorker(&result, &response, &blob_data_handle);
   EXPECT_EQ(200, response.status_code);
 }
 
@@ -548,10 +571,6 @@ class ServiceWorkerBlackBoxBrowserTest : public ServiceWorkerBrowserTest {
                                  bool actual) {
     EXPECT_EQ(expected, actual);
     continuation.Run();
-  }
-
-  int RenderProcessID() {
-    return shell()->web_contents()->GetRenderProcessHost()->GetID();
   }
 
   void FindRegistrationOnIO(const GURL& document_url,
@@ -583,7 +602,27 @@ class ServiceWorkerBlackBoxBrowserTest : public ServiceWorkerBrowserTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, Registration) {
+static int CountRenderProcessHosts() {
+  int result = 0;
+  for (RenderProcessHost::iterator iter(RenderProcessHost::AllHostsIterator());
+       !iter.IsAtEnd();
+       iter.Advance()) {
+    result++;
+  }
+  return result;
+}
+
+// Crashes on Android: http://crbug.com/387045
+#if defined(OS_ANDROID)
+#define MAYBE_Registration DISABLED_Registration
+#else
+#define MAYBE_Registration Registration
+#endif
+IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, MAYBE_Registration) {
+  // Close the only window to be sure we're not re-using its RenderProcessHost.
+  shell()->Close();
+  EXPECT_EQ(0, CountRenderProcessHosts());
+
   const std::string kWorkerUrl = "/service_worker/fetch_event.js";
 
   // Unregistering nothing should return true.
@@ -597,6 +636,19 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, Registration) {
     run_loop.Run();
   }
 
+  // If we use a worker URL that doesn't exist, registration fails.
+  {
+    base::RunLoop run_loop;
+    public_context()->RegisterServiceWorker(
+        embedded_test_server()->GetURL("/*"),
+        embedded_test_server()->GetURL("/does/not/exist"),
+        base::Bind(&ServiceWorkerBlackBoxBrowserTest::ExpectResultAndRun,
+                   false,
+                   run_loop.QuitClosure()));
+    run_loop.Run();
+  }
+  EXPECT_EQ(0, CountRenderProcessHosts());
+
   // Register returns when the promise would be resolved.
   {
     base::RunLoop run_loop;
@@ -608,6 +660,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, Registration) {
                    run_loop.QuitClosure()));
     run_loop.Run();
   }
+  EXPECT_EQ(1, CountRenderProcessHosts());
 
   // Registering again should succeed, although the algo still
   // might not be complete.
@@ -636,6 +689,9 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerBlackBoxBrowserTest, Registration) {
                    run_loop.QuitClosure()));
     run_loop.Run();
   }
+  EXPECT_GE(1, CountRenderProcessHosts()) << "Unregistering doesn't stop the "
+                                             "workers eagerly, so their RPHs "
+                                             "can still be running.";
 
   // Should not be able to find it.
   {

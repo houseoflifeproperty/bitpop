@@ -25,6 +25,7 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/events/Event.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/loader/FrameLoader.h"
@@ -109,7 +110,7 @@ RenderPart* HTMLFrameOwnerElement::renderPart() const
 void HTMLFrameOwnerElement::setContentFrame(Frame& frame)
 {
     // Make sure we will not end up with two frames referencing the same owner element.
-    ASSERT(!m_contentFrame || m_contentFrame->ownerElement() != this);
+    ASSERT(!m_contentFrame || m_contentFrame->owner() != this);
     // Disconnected frames should not be allowed to load.
     ASSERT(inDocument());
     m_contentFrame = &frame;
@@ -154,7 +155,7 @@ Document* HTMLFrameOwnerElement::contentDocument() const
     return (m_contentFrame && m_contentFrame->isLocalFrame()) ? toLocalFrame(m_contentFrame)->document() : 0;
 }
 
-DOMWindow* HTMLFrameOwnerElement::contentWindow() const
+LocalDOMWindow* HTMLFrameOwnerElement::contentWindow() const
 {
     return m_contentFrame ? m_contentFrame->domWindow() : 0;
 }
@@ -167,6 +168,11 @@ void HTMLFrameOwnerElement::setSandboxFlags(SandboxFlags flags)
 bool HTMLFrameOwnerElement::isKeyboardFocusable() const
 {
     return m_contentFrame && HTMLElement::isKeyboardFocusable();
+}
+
+void HTMLFrameOwnerElement::dispatchLoad()
+{
+    dispatchEvent(Event::create(EventTypeNames::load));
 }
 
 Document* HTMLFrameOwnerElement::getSVGDocument(ExceptionState& exceptionState) const

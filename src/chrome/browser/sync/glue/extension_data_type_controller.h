@@ -8,8 +8,10 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/sync/glue/ui_data_type_controller.h"
 #include "components/sync_driver/generic_change_processor.h"
+#include "components/sync_driver/ui_data_type_controller.h"
+
+class Profile;
 
 namespace browser_sync {
 
@@ -19,15 +21,17 @@ class ExtensionDataTypeController : public UIDataTypeController {
  public:
   ExtensionDataTypeController(
       syncer::ModelType type,  // Either EXTENSIONS or APPS.
-      ProfileSyncComponentsFactory* profile_sync_factory,
+      SyncApiComponentFactory* sync_factory,
       Profile* profile,
-      ProfileSyncService* sync_service);
+      const DisableTypeCallback& disable_callback);
 
  private:
   virtual ~ExtensionDataTypeController();
 
   // DataTypeController implementations.
   virtual bool StartModels() OVERRIDE;
+
+  Profile* const profile_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionDataTypeController);
 };

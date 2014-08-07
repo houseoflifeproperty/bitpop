@@ -10,6 +10,7 @@
 #include "GrEffect.h"
 #include "GrGLEffect.h"
 #include "SkRTConf.h"
+#include "GrGLNameAllocator.h"
 #include "SkTSearch.h"
 
 #ifdef PROGRAM_CACHE_STATS
@@ -202,6 +203,7 @@ void GrGpuGL::abandonResources(){
     INHERITED::abandonResources();
     fProgramCache->abandon();
     fHWProgramID = 0;
+    fPathNameAllocator.reset(NULL);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -313,7 +315,7 @@ void GrGpuGL::setupGeometry(const DrawInfo& info, size_t* indexOffsetInBytes) {
     }
 
     SkASSERT(NULL != vbuf);
-    SkASSERT(!vbuf->isLocked());
+    SkASSERT(!vbuf->isMapped());
     vertexOffsetInBytes += vbuf->baseOffset();
 
     GrGLIndexBuffer* ibuf = NULL;
@@ -337,7 +339,7 @@ void GrGpuGL::setupGeometry(const DrawInfo& info, size_t* indexOffsetInBytes) {
         }
 
         SkASSERT(NULL != ibuf);
-        SkASSERT(!ibuf->isLocked());
+        SkASSERT(!ibuf->isMapped());
         *indexOffsetInBytes += ibuf->baseOffset();
     }
     GrGLAttribArrayState* attribState =

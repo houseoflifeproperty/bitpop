@@ -75,7 +75,7 @@ ContentSettingImageView::ContentSettingImageView(
                               parent_background_color,
                               SkColorGetA(background_image_color)));
   text_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  text_label_->SetElideBehavior(views::Label::NO_ELIDE);
+  text_label_->SetElideBehavior(gfx::TRUNCATE);
   AddChildView(text_label_);
 
   slide_animator_.SetSlideDuration(kAnimationDurationMS);
@@ -153,7 +153,7 @@ void ContentSettingImageView::AnimationCanceled(
   AnimationEnded(animation);
 }
 
-gfx::Size ContentSettingImageView::GetPreferredSize() {
+gfx::Size ContentSettingImageView::GetPreferredSize() const {
   // Height will be ignored by the LocationBarView.
   gfx::Size size(icon_->GetPreferredSize());
   if (background_showing()) {
@@ -245,7 +245,7 @@ void ContentSettingImageView::OnClick() {
                 parent_->delegate()->GetContentSettingBubbleModelDelegate(),
                 web_contents, parent_->profile(),
                 content_setting_image_model_->get_content_settings_type()),
-            this, views::BubbleBorder::TOP_RIGHT));
+            web_contents, this, views::BubbleBorder::TOP_RIGHT));
     bubble_widget_->AddObserver(this);
     bubble_widget_->Show();
   }

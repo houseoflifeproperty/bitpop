@@ -29,9 +29,9 @@
  */
 
 #include "config.h"
-#include "V8MessageChannel.h"
+#include "bindings/core/v8/V8MessageChannel.h"
 
-#include "V8MessagePort.h"
+#include "bindings/core/v8/V8MessagePort.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8HiddenValue.h"
 #include "core/dom/MessageChannel.h"
@@ -44,7 +44,7 @@ void V8MessageChannel::constructorCustom(const v8::FunctionCallbackInfo<v8::Valu
 {
     ExecutionContext* context = currentExecutionContext(info.GetIsolate());
 
-    RefPtr<MessageChannel> obj = MessageChannel::create(context);
+    RefPtrWillBeRawPtr<MessageChannel> obj = MessageChannel::create(context);
 
     v8::Local<v8::Object> wrapper = info.Holder();
 

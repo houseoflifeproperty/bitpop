@@ -56,17 +56,11 @@ public:
     static SkFlattenable* CreateProc(SkReadBuffer&);
 
 protected:
-    SkDashPathEffect(SkReadBuffer&);
+    SkDashPathEffect(const SkScalar intervals[], int count, SkScalar phase);
+    explicit SkDashPathEffect(SkReadBuffer&);
     virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
-#ifdef SK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS
-public:
-#endif
-    SkDashPathEffect(const SkScalar intervals[], int count, SkScalar phase);
-
 private:
-    void setInternalMembers(SkScalar phase);
-
     SkScalar*   fIntervals;
     int32_t     fCount;
     SkScalar    fPhase;

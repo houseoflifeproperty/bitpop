@@ -35,7 +35,6 @@
 #include "bindings/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
-#include "core/events/Event.h"
 #include "core/events/GenericEventQueue.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/Stream.h"
@@ -72,11 +71,11 @@ static bool throwExceptionIfRemovedOrUpdating(bool isRemoved, bool isUpdating, E
 
 } // namespace
 
-SourceBuffer* SourceBuffer::create(PassOwnPtr<WebSourceBuffer> webSourceBuffer, MediaSource* source, GenericEventQueue* asyncEventQueue)
+PassRefPtrWillBeRawPtr<SourceBuffer> SourceBuffer::create(PassOwnPtr<WebSourceBuffer> webSourceBuffer, MediaSource* source, GenericEventQueue* asyncEventQueue)
 {
-    SourceBuffer* sourceBuffer(adoptRefCountedGarbageCollected(new SourceBuffer(webSourceBuffer, source, asyncEventQueue)));
+    RefPtrWillBeRawPtr<SourceBuffer> sourceBuffer(adoptRefWillBeRefCountedGarbageCollected(new SourceBuffer(webSourceBuffer, source, asyncEventQueue)));
     sourceBuffer->suspendIfNeeded();
-    return sourceBuffer;
+    return sourceBuffer.release();
 }
 
 SourceBuffer::SourceBuffer(PassOwnPtr<WebSourceBuffer> webSourceBuffer, MediaSource* source, GenericEventQueue* asyncEventQueue)
@@ -248,8 +247,7 @@ void SourceBuffer::setAppendWindowEnd(double end, ExceptionState& exceptionState
     // 4. If the new value is less than or equal to appendWindowStart then throw an InvalidAccessError
     //    exception and abort these steps.
     if (end <= m_appendWindowStart) {
-        // FIXME: Use ExceptionState::indexExceedsMinimumBound() once it lands.
-        exceptionState.throwDOMException(InvalidAccessError, "The value provided ('" + String::number(end) + "') is less than or equal to the minimum value (" + String::number(m_appendWindowStart) + ").");
+        exceptionState.throwDOMException(InvalidAccessError, ExceptionMessages::indexExceedsMinimumBound("value", end, m_appendWindowStart));
         return;
     }
 
@@ -714,6 +712,7 @@ void SourceBuffer::trace(Visitor* visitor)
 {
     visitor->trace(m_source);
     visitor->trace(m_stream);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

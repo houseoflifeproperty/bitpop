@@ -24,6 +24,7 @@ from telemetry.core.backends.chrome import extension_backend
 from telemetry.core.backends.chrome import system_info_backend
 from telemetry.core.backends.chrome import tab_list_backend
 from telemetry.core.backends.chrome import tracing_backend
+from telemetry.timeline import tracing_timeline_data
 from telemetry.unittest import options_for_unittests
 
 
@@ -144,7 +145,9 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
     try:
       util.WaitFor(self.HasBrowserFinishedLaunching, timeout=30)
     except (util.TimeoutException, exceptions.ProcessGoneException) as e:
-      raise exceptions.BrowserGoneException(self.GetStackTrace())
+      if not self.IsBrowserRunning():
+        raise exceptions.BrowserGoneException(self.browser, e)
+      raise exceptions.BrowserConnectionGoneException(self.browser, e)
 
     def AllExtensionsLoaded():
       # Extension pages are loaded from an about:blank page,
@@ -158,26 +161,27 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
       for e in self._extensions_to_load:
         if not e.extension_id in self.extension_backend:
           return False
-        extension_object = self.extension_backend[e.extension_id]
-        try:
-          res = extension_object.EvaluateJavaScript(
-              extension_ready_js % e.extension_id)
-        except exceptions.EvaluateException:
-          # If the inspected page is not ready, we will get an error
-          # when we evaluate a JS expression, but we can just keep polling
-          # until the page is ready (crbug.com/251913).
-          res = None
+        for extension_object in self.extension_backend[e.extension_id]:
+          try:
+            res = extension_object.EvaluateJavaScript(
+                extension_ready_js % e.extension_id)
+          except exceptions.EvaluateException:
+            # If the inspected page is not ready, we will get an error
+            # when we evaluate a JS expression, but we can just keep polling
+            # until the page is ready (crbug.com/251913).
+            res = None
 
-        # TODO(tengs): We don't have full support for getting the Chrome
-        # version before launch, so for now we use a generic workaround to
-        # check for an extension binding bug in old versions of Chrome.
-        # See crbug.com/263162 for details.
-        if res and extension_object.EvaluateJavaScript(
-            'chrome.runtime == null'):
-          extension_object.Reload()
-        if not res:
-          return False
+          # TODO(tengs): We don't have full support for getting the Chrome
+          # version before launch, so for now we use a generic workaround to
+          # check for an extension binding bug in old versions of Chrome.
+          # See crbug.com/263162 for details.
+          if res and extension_object.EvaluateJavaScript(
+              'chrome.runtime == null'):
+            extension_object.Reload()
+          if not res:
+            return False
       return True
+
     if wait_for_extensions and self._supports_extensions:
       try:
         util.WaitFor(AllExtensionsLoaded, timeout=60)
@@ -235,8 +239,8 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
       if throw_network_exception:
         raise e
       if not self.IsBrowserRunning():
-        raise exceptions.BrowserGoneException(e)
-      raise exceptions.BrowserConnectionGoneException(e)
+        raise exceptions.BrowserGoneException(self.browser, e)
+      raise exceptions.BrowserConnectionGoneException(self.browser, e)
 
   @property
   def browser_directory(self):
@@ -279,17 +283,21 @@ class ChromeBrowserBackend(browser_backend.BrowserBackend):
 
   def StopTracing(self):
     """ Stops tracing and returns the result as TimelineData object. """
-    for (i, debugger_url) in enumerate(self._browser.tabs):
+    tab_ids_list = []
+    for (i, _) in enumerate(self._browser.tabs):
       tab = self.tab_list_backend.Get(i, None)
       if tab:
         success = tab.EvaluateJavaScript(
-            "console.time('" + debugger_url + "');" +
-            "console.timeEnd('" + debugger_url + "');" +
+            "console.time('" + tab.id + "');" +
+            "console.timeEnd('" + tab.id + "');" +
             "console.time.toString().indexOf('[native code]') != -1;")
         if not success:
           raise Exception('Page stomped on console.time')
-        self._tracing_backend.AddTabToMarkerMapping(tab, debugger_url)
-    return self._tracing_backend.StopTracing()
+        tab_ids_list.append(tab.id)
+    trace_events = self._tracing_backend.StopTracing()
+    # Augment tab_ids data to trace events.
+    event_data = {'traceEvents' : trace_events, 'tabIds': tab_ids_list}
+    return tracing_timeline_data.TracingTimelineData(event_data)
 
   def GetProcessName(self, cmd_line):
     """Returns a user-friendly name for the process of the given |cmd_line|."""

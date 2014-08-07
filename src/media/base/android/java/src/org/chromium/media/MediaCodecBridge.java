@@ -50,6 +50,10 @@ class MediaCodecBridge {
     private static final int MEDIA_CODEC_DECODER = 0;
     private static final int MEDIA_CODEC_ENCODER = 1;
 
+    // Max adaptive playback size to be supplied to the decoder.
+    private static final int MAX_ADAPTIVE_PLAYBACK_WIDTH = 1920;
+    private static final int MAX_ADAPTIVE_PLAYBACK_HEIGHT = 1080;
+
     // After a flush(), dequeueOutputBuffer() can often produce empty presentation timestamps
     // for several frames. As a result, the player may find that the time does not increase
     // after decoding a frame. To detect this, we check whether the presentation timestamp from
@@ -65,6 +69,8 @@ class MediaCodecBridge {
     private AudioTrack mAudioTrack;
     private boolean mFlushed;
     private long mLastPresentationTimeUs;
+    private String mMime;
+    private boolean mAdaptivePlaybackSupported;
 
     private static class DequeueInputResult {
         private final int mStatus;
@@ -174,7 +180,7 @@ class MediaCodecBridge {
         return codecInfos.toArray(new CodecInfo[codecInfos.size()]);
     }
 
-    private static String getSecureDecoderNameForMime(String mime) {
+    private static String getDecoderNameForMime(String mime) {
         int count = MediaCodecList.getCodecCount();
         for (int i = 0; i < count; ++i) {
             MediaCodecInfo info = MediaCodecList.getCodecInfoAt(i);
@@ -185,7 +191,7 @@ class MediaCodecBridge {
             String[] supportedTypes = info.getSupportedTypes();
             for (int j = 0; j < supportedTypes.length; ++j) {
                 if (supportedTypes[j].equalsIgnoreCase(mime)) {
-                    return info.getName() + ".secure";
+                    return info.getName();
                 }
             }
         }
@@ -193,11 +199,14 @@ class MediaCodecBridge {
         return null;
     }
 
-    private MediaCodecBridge(MediaCodec mediaCodec) {
+    private MediaCodecBridge(
+            MediaCodec mediaCodec, String mime, boolean adaptivePlaybackSupported) {
         assert mediaCodec != null;
         mMediaCodec = mediaCodec;
+        mMime = mime;
         mLastPresentationTimeUs = 0;
         mFlushed = true;
+        mAdaptivePlaybackSupported = adaptivePlaybackSupported;
     }
 
     @CalledByNative
@@ -208,15 +217,29 @@ class MediaCodecBridge {
             return null;
         }
         MediaCodec mediaCodec = null;
+        boolean adaptivePlaybackSupported = false;
         try {
             // |isSecure| only applies to video decoders.
             if (mime.startsWith("video") && isSecure && direction == MEDIA_CODEC_DECODER) {
-                mediaCodec = MediaCodec.createByCodecName(getSecureDecoderNameForMime(mime));
+                String decoderName = getDecoderNameForMime(mime);
+                if (decoderName == null) {
+                    return null;
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                    // To work around an issue that we cannot get the codec info from the secure
+                    // decoder, create an insecure decoder first so that we can query its codec
+                    // info. http://b/15587335.
+                    MediaCodec insecureCodec = MediaCodec.createByCodecName(decoderName);
+                    adaptivePlaybackSupported = codecSupportsAdaptivePlayback(insecureCodec, mime);
+                    insecureCodec.release();
+                }
+                mediaCodec = MediaCodec.createByCodecName(decoderName + ".secure");
             } else {
                 if (direction == MEDIA_CODEC_ENCODER) {
                     mediaCodec = MediaCodec.createEncoderByType(mime);
                 } else {
                     mediaCodec = MediaCodec.createDecoderByType(mime);
+                    adaptivePlaybackSupported = codecSupportsAdaptivePlayback(mediaCodec, mime);
                 }
             }
         } catch (Exception e) {
@@ -227,15 +250,14 @@ class MediaCodecBridge {
         if (mediaCodec == null) {
             return null;
         }
-
-        return new MediaCodecBridge(mediaCodec);
+        return new MediaCodecBridge(mediaCodec, mime, adaptivePlaybackSupported);
     }
 
     @CalledByNative
     private void release() {
         try {
             mMediaCodec.release();
-        } catch(IllegalStateException e) {
+        } catch (IllegalStateException e) {
             // The MediaCodec is stuck in a wrong state, possibly due to losing
             // the surface.
             Log.e(TAG, "Cannot release media codec", e);
@@ -407,7 +429,7 @@ class MediaCodecBridge {
     private void releaseOutputBuffer(int index, boolean render) {
         try {
             mMediaCodec.releaseOutputBuffer(index, render);
-        } catch(IllegalStateException e) {
+        } catch (IllegalStateException e) {
             // TODO(qinmin): May need to report the error to the caller. crbug.com/356498.
             Log.e(TAG, "Failed to release output buffer", e);
         }
@@ -453,6 +475,10 @@ class MediaCodecBridge {
     private boolean configureVideo(MediaFormat format, Surface surface, MediaCrypto crypto,
             int flags) {
         try {
+            if (mAdaptivePlaybackSupported) {
+                format.setInteger(MediaFormat.KEY_MAX_WIDTH, MAX_ADAPTIVE_PLAYBACK_WIDTH);
+                format.setInteger(MediaFormat.KEY_MAX_HEIGHT, MAX_ADAPTIVE_PLAYBACK_HEIGHT);
+            }
             mMediaCodec.configure(format, surface, crypto, flags);
             return true;
         } catch (IllegalStateException e) {
@@ -480,6 +506,31 @@ class MediaCodecBridge {
         format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, iFrameInterval);
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat);
         return format;
+    }
+
+    @CalledByNative
+    private boolean isAdaptivePlaybackSupported(int width, int height) {
+        if (!mAdaptivePlaybackSupported)
+            return false;
+        return width <= MAX_ADAPTIVE_PLAYBACK_WIDTH && height <= MAX_ADAPTIVE_PLAYBACK_HEIGHT;
+    }
+
+    private static boolean codecSupportsAdaptivePlayback(MediaCodec mediaCodec, String mime) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT || mediaCodec == null) {
+            return false;
+        }
+        try {
+            MediaCodecInfo info = mediaCodec.getCodecInfo();
+            if (info.isEncoder()) {
+                return false;
+            }
+            MediaCodecInfo.CodecCapabilities capabilities = info.getCapabilitiesForType(mime);
+            return (capabilities != null) && capabilities.isFeatureSupported(
+                    MediaCodecInfo.CodecCapabilities.FEATURE_AdaptivePlayback);
+        } catch (IllegalArgumentException e) {
+              Log.e(TAG, "Cannot retrieve codec information", e);
+        }
+        return false;
     }
 
     @CalledByNative

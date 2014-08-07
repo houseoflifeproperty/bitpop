@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/sync_file_system/conflict_resolution_policy.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
 #include "chrome/browser/sync_file_system/sync_file_metadata.h"
@@ -36,6 +37,7 @@ namespace sync_file_system {
 class FileStatusObserver;
 class LocalChangeProcessor;
 class RemoteChangeProcessor;
+class TaskLogger;
 
 enum RemoteServiceState {
   // Remote service is up and running, or has not seen any errors yet.
@@ -111,6 +113,8 @@ class RemoteFileSyncService {
 
   // For GetOriginStatusMap.
   typedef std::map<GURL, std::string> OriginStatusMap;
+  typedef base::Callback<void(scoped_ptr<OriginStatusMap> status_map)>
+      StatusMapCallback;
 
   // For GetRemoteVersions.
   typedef base::Callback<void(SyncStatusCode status,
@@ -120,11 +124,15 @@ class RemoteFileSyncService {
                               webkit_blob::ScopedFile downloaded)>
       DownloadVersionCallback;
 
+  // For DumpFile.
+  typedef base::Callback<void(scoped_ptr<base::ListValue> list)> ListCallback;
+
   // Creates an initialized RemoteFileSyncService for backend |version|
   // for |context|.
   static scoped_ptr<RemoteFileSyncService> CreateForBrowserContext(
       BackendVersion version,
-      content::BrowserContext* context);
+      content::BrowserContext* context,
+      TaskLogger* task_logger);
 
   // Returns BrowserContextKeyedServiceFactory's an instance of
   // RemoteFileSyncService for backend |version| depends on.
@@ -180,22 +188,20 @@ class RemoteFileSyncService {
   // storage backed by this service.
   virtual LocalChangeProcessor* GetLocalChangeProcessor() = 0;
 
-  // Returns true if the file |url| is marked conflicted in the remote service.
-  virtual bool IsConflicting(const fileapi::FileSystemURL& url) = 0;
-
   // Returns the current remote service state (should equal to the value
   // returned by the last OnRemoteServiceStateUpdated notification.
   virtual RemoteServiceState GetCurrentState() const = 0;
 
   // Returns all origins along with an arbitrary string description of their
   // corresponding sync statuses.
-  virtual void GetOriginStatusMap(OriginStatusMap* status_map) = 0;
+  virtual void GetOriginStatusMap(const StatusMapCallback& callback) = 0;
 
-  // Returns file metadata for |origin|.
-  virtual scoped_ptr<base::ListValue> DumpFiles(const GURL& origin) = 0;
+  // Returns file metadata for |origin| to call |callback|.
+  virtual void DumpFiles(const GURL& origin,
+                         const ListCallback& callback) = 0;
 
   // Returns the dump of internal database.
-  virtual scoped_ptr<base::ListValue> DumpDatabase() = 0;
+  virtual void DumpDatabase(const ListCallback& callback) = 0;
 
   // Enables or disables the background sync.
   // Setting this to false should disable the synchronization (and make
@@ -204,34 +210,6 @@ class RemoteFileSyncService {
   // (for example if Chrome is offline the service state will become
   // REMOTE_SERVICE_TEMPORARY_UNAVAILABLE).
   virtual void SetSyncEnabled(bool enabled) = 0;
-
-  // Sets the conflict resolution policy. Returns SYNC_STATUS_OK on success,
-  // or returns an error code if the given policy is not supported or had
-  // an error.
-  virtual SyncStatusCode SetDefaultConflictResolutionPolicy(
-      ConflictResolutionPolicy policy) = 0;
-  virtual SyncStatusCode SetConflictResolutionPolicy(
-      const GURL& origin,
-      ConflictResolutionPolicy policy) = 0;
-
-  // Gets the conflict resolution policy.
-  virtual ConflictResolutionPolicy GetDefaultConflictResolutionPolicy()
-      const = 0;
-  virtual ConflictResolutionPolicy GetConflictResolutionPolicy(
-      const GURL& origin) const = 0;
-
-  // Returns a list of remote versions with their metadata.
-  // This method is typically called for a file which is in conflicting state.
-  virtual void GetRemoteVersions(
-      const fileapi::FileSystemURL& url,
-      const RemoteVersionsCallback& callback) = 0;
-
-  // Downloads the remote image.  The |id| should be the ID string for a
-  // version returned by GetRemoteVersions.
-  virtual void DownloadRemoteVersion(
-      const fileapi::FileSystemURL& url,
-      const std::string& id,
-      const DownloadVersionCallback& callback) = 0;
 
   virtual void PromoteDemotedChanges() = 0;
 

@@ -46,10 +46,7 @@ class ToughVideoCasesPage(page_module.Page):
         'wait_for_ended': False
       }))
     # Wait for 1 second so that we know the play-head is at ~1s.
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 1
-      }))
+    action_runner.Wait(1)
     # Seek to before the play-head location.
     action_runner.RunAction(SeekAction(
       {
@@ -464,7 +461,8 @@ class ToughVideoCasesPageSet(page_set_module.PageSet):
   Description: Video Stack Perf benchmark
   """
   def __init__(self):
-    super(ToughVideoCasesPageSet, self).__init__()
+    super(ToughVideoCasesPageSet, self).__init__(
+            bucket=page_set_module.INTERNAL_BUCKET)
 
     self.AddPage(Page1(self))
     self.AddPage(Page2(self))
@@ -495,4 +493,3 @@ class ToughVideoCasesPageSet(page_set_module.PageSet):
     self.AddPage(Page27(self))
     self.AddPage(Page28(self))
     self.AddPage(Page29(self))
-

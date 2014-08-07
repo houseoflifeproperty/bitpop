@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/html/forms/SubmitInputType.h"
 
-#include "InputTypeNames.h"
+#include "core/InputTypeNames.h"
 #include "core/events/Event.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormElement.h"
@@ -67,7 +67,7 @@ bool SubmitInputType::supportsRequired() const
 
 void SubmitInputType::handleDOMActivateEvent(Event* event)
 {
-    RefPtr<HTMLInputElement> element(this->element());
+    RefPtrWillBeRawPtr<HTMLInputElement> element(this->element());
     if (element->isDisabledFormControl() || !element->form())
         return;
     element->setActivatedSubmit(true);

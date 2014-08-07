@@ -44,10 +44,12 @@ class SVGSVGElement FINAL : public SVGGraphicsElement,
                             public SVGFitToViewBox,
                             public SVGZoomAndPan {
 public:
-    static PassRefPtr<SVGSVGElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGSVGElement);
 
+#if !ENABLE(OILPAN)
     using SVGGraphicsElement::ref;
     using SVGGraphicsElement::deref;
+#endif
 
     // 'SVGSVGElement' functions
     PassRefPtr<SVGRectTearOff> viewport() const;
@@ -87,8 +89,8 @@ public:
     void unsuspendRedrawAll() { }
     void forceRedraw() { }
 
-    PassRefPtr<NodeList> getIntersectionList(PassRefPtr<SVGRectTearOff>, SVGElement* referenceElement) const;
-    PassRefPtr<NodeList> getEnclosureList(PassRefPtr<SVGRectTearOff>, SVGElement* referenceElement) const;
+    PassRefPtrWillBeRawPtr<StaticNodeList> getIntersectionList(PassRefPtr<SVGRectTearOff>, SVGElement* referenceElement) const;
+    PassRefPtrWillBeRawPtr<StaticNodeList> getEnclosureList(PassRefPtr<SVGRectTearOff>, SVGElement* referenceElement) const;
     bool checkIntersection(SVGElement*, PassRefPtr<SVGRectTearOff>) const;
     bool checkEnclosure(SVGElement*, PassRefPtr<SVGRectTearOff>) const;
     void deselectAll();
@@ -113,6 +115,8 @@ public:
     SVGAnimatedLength* y() const { return m_y.get(); }
     SVGAnimatedLength* width() const { return m_width.get(); }
     SVGAnimatedLength* height() const { return m_height.get(); }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     explicit SVGSVGElement(Document&);
@@ -144,7 +148,7 @@ private:
     };
 
     bool checkIntersectionOrEnclosure(const SVGElement&, const FloatRect&, CheckIntersectionOrEnclosure) const;
-    PassRefPtr<NodeList> collectIntersectionOrEnclosureList(const FloatRect&, SVGElement*, CheckIntersectionOrEnclosure) const;
+    PassRefPtrWillBeRawPtr<StaticNodeList> collectIntersectionOrEnclosureList(const FloatRect&, SVGElement*, CheckIntersectionOrEnclosure) const;
 
     RefPtr<SVGAnimatedLength> m_x;
     RefPtr<SVGAnimatedLength> m_y;
@@ -154,9 +158,9 @@ private:
     virtual AffineTransform localCoordinateSpaceTransform(SVGElement::CTMScope) const OVERRIDE;
 
     bool m_useCurrentView;
-    RefPtr<SMILTimeContainer> m_timeContainer;
+    RefPtrWillBeMember<SMILTimeContainer> m_timeContainer;
     RefPtr<SVGPoint> m_translation;
-    RefPtr<SVGViewSpec> m_viewSpec;
+    RefPtrWillBeMember<SVGViewSpec> m_viewSpec;
 
     friend class SVGCurrentTranslateTearOff;
 };

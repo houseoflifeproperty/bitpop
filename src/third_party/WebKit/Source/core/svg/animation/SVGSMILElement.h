@@ -26,9 +26,10 @@
 #ifndef SVGSMILElement_h
 #define SVGSMILElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/animation/SMILTime.h"
+#include "platform/heap/Heap.h"
 #include "wtf/HashMap.h"
 
 namespace WebCore {
@@ -86,7 +87,7 @@ public:
 
     SMILTime elapsed() const;
 
-    SMILTime intervalBegin() const { return m_intervalBegin; }
+    SMILTime intervalBegin() const { return m_interval.begin; }
     SMILTime previousIntervalBegin() const { return m_previousIntervalBegin; }
     SMILTime simpleDuration() const;
 
@@ -146,9 +147,15 @@ private:
     };
 
     SMILTime findInstanceTime(BeginOrEnd, SMILTime minimumTime, bool equalsMinimumOK) const;
+
+    enum ResolveInterval {
+        FirstInterval,
+        NextInterval
+    };
+
+    SMILInterval resolveInterval(ResolveInterval) const;
     void resolveFirstInterval();
     bool resolveNextInterval();
-    void resolveInterval(bool first, SMILTime& beginResult, SMILTime& endResult) const;
     SMILTime resolveActiveEnd(SMILTime resolvedBegin, SMILTime resolvedEnd) const;
     SMILTime repeatingDuration() const;
 
@@ -163,7 +170,8 @@ private:
 
     // This represents conditions on elements begin or end list that need to be resolved on runtime
     // for example <animate begin="otherElement.begin + 8s; button.click" ... />
-    struct Condition {
+    class Condition : public NoBaseWillBeGarbageCollectedFinalized<Condition> {
+    public:
         enum Type {
             EventBase,
             Syncbase,
@@ -171,13 +179,32 @@ private:
         };
 
         Condition(Type, BeginOrEnd, const String& baseID, const String& name, SMILTime offset, int repeat = -1);
+        static PassOwnPtrWillBeRawPtr<Condition> create(Type type, BeginOrEnd beginOrEnd, const String& baseID, const String& name, SMILTime offset, int repeat = -1)
+        {
+            return adoptPtrWillBeNoop(new Condition(type, beginOrEnd, baseID, name, offset, repeat));
+        }
+        ~Condition();
+        void trace(Visitor*);
+
+        Type type() const { return m_type; }
+        BeginOrEnd beginOrEnd() const { return m_beginOrEnd; }
+        String baseID() const { return m_baseID; }
+        String name() const { return m_name; }
+        SMILTime offset() const { return m_offset; }
+        int repeat() const { return m_repeat; }
+        SVGSMILElement* syncBase() const { return m_syncBase.get(); }
+        void setSyncBase(SVGSMILElement* element) { m_syncBase = element; }
+        ConditionEventListener* eventListener() const { return m_eventListener.get(); }
+        void setEventListener(PassRefPtr<ConditionEventListener>);
+
+    private:
         Type m_type;
         BeginOrEnd m_beginOrEnd;
         String m_baseID;
         String m_name;
         SMILTime m_offset;
         int m_repeat;
-        RefPtr<Element> m_syncbase;
+        RefPtrWillBeMember<SVGSMILElement> m_syncBase;
         RefPtr<ConditionEventListener> m_eventListener;
     };
     bool parseCondition(const String&, BeginOrEnd beginOrEnd);
@@ -209,13 +236,13 @@ private:
 
     RawPtrWillBeMember<SVGElement> m_targetElement;
 
-    Vector<Condition> m_conditions;
+    WillBeHeapVector<OwnPtrWillBeMember<Condition> > m_conditions;
     bool m_syncBaseConditionsConnected;
     bool m_hasEndEventConditions;
 
     bool m_isWaitingForFirstInterval;
 
-    typedef HashSet<SVGSMILElement*> TimeDependentSet;
+    typedef WillBeHeapHashSet<RawPtrWillBeMember<SVGSMILElement> > TimeDependentSet;
     TimeDependentSet m_syncBaseDependents;
 
     // Instance time lists
@@ -223,8 +250,7 @@ private:
     Vector<SMILTimeWithOrigin> m_endTimes;
 
     // This is the upcoming or current interval
-    SMILTime m_intervalBegin;
-    SMILTime m_intervalEnd;
+    SMILInterval m_interval;
 
     SMILTime m_previousIntervalBegin;
 
@@ -234,7 +260,7 @@ private:
 
     SMILTime m_nextProgressTime;
 
-    RefPtr<SMILTimeContainer> m_timeContainer;
+    RefPtrWillBeMember<SMILTimeContainer> m_timeContainer;
     unsigned m_documentOrderIndex;
 
     Vector<unsigned> m_repeatEventCountList;

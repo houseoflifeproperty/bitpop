@@ -13,6 +13,7 @@
 #include "content/public/common/page_transition_types.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/window_open_disposition.h"
 
 namespace content {
@@ -311,9 +312,6 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // Invoked when the renderer has toggled the tab into/out of fullscreen mode.
   virtual void DidToggleFullscreenModeForTab(bool entered_fullscreen) {}
 
-  // Invoked when visible SSL state (as defined by SSLStatus) changes.
-  virtual void DidChangeVisibleSSLState() {}
-
   // Invoked when an interstitial page is attached or detached.
   virtual void DidAttachInterstitialPage() {}
   virtual void DidDetachInterstitialPage() {}
@@ -330,6 +328,13 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // Invoked when an accessibility event is received from the renderer.
   virtual void AccessibilityEventReceived(
       const std::vector<AXEventNotificationDetails>& details) {}
+
+  // Invoked when theme color is changed to |theme_color|.
+  virtual void DidChangeThemeColor(SkColor theme_color) {}
+
+  // Invoked if an IPC message is coming from a specific RenderFrameHost.
+  virtual bool OnMessageReceived(const IPC::Message& message,
+                                 RenderFrameHost* render_frame_host);
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;

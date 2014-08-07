@@ -20,13 +20,17 @@ using content::BrowserThread;
 
 namespace browser_sync {
 
+// TODO(tim): Legacy controllers are being left behind in componentization
+// effort for now, hence passing null DisableTypeCallback and still having
+// a dependency on ProfileSyncService.  That dep can probably be removed
+// without too much work.
 FrontendDataTypeController::FrontendDataTypeController(
     scoped_refptr<base::MessageLoopProxy> ui_thread,
     const base::Closure& error_callback,
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : DataTypeController(ui_thread, error_callback),
+    : DataTypeController(ui_thread, error_callback, DisableTypeCallback()),
       profile_sync_factory_(profile_sync_factory),
       profile_(profile),
       sync_service_(sync_service),
@@ -143,11 +147,12 @@ DataTypeController::State FrontendDataTypeController::state() const {
 void FrontendDataTypeController::OnSingleDatatypeUnrecoverableError(
     const tracked_objects::Location& from_here, const std::string& message) {
   RecordUnrecoverableError(from_here, message);
-  sync_service_->DisableBrokenDatatype(type(), from_here, message);
+  sync_service_->DisableDatatype(type(), from_here, message);
 }
 
 FrontendDataTypeController::FrontendDataTypeController()
-    : DataTypeController(base::MessageLoopProxy::current(), base::Closure()),
+    : DataTypeController(base::MessageLoopProxy::current(), base::Closure(),
+                         DisableTypeCallback()),
       profile_sync_factory_(NULL),
       profile_(NULL),
       sync_service_(NULL),
@@ -163,6 +168,21 @@ bool FrontendDataTypeController::StartModels() {
   // By default, no additional services need to be started before we can proceed
   // with model association.
   return true;
+}
+
+void FrontendDataTypeController::RecordUnrecoverableError(
+    const tracked_objects::Location& from_here,
+    const std::string& message) {
+  DVLOG(1) << "Datatype Controller failed for type "
+           << ModelTypeToString(type()) << "  "
+           << message << " at location "
+           << from_here.ToString();
+  UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeRunFailures",
+                            ModelTypeToHistogramInt(type()),
+                            syncer::MODEL_TYPE_COUNT);
+
+  if (!error_callback_.is_null())
+    error_callback_.Run();
 }
 
 bool FrontendDataTypeController::Associate() {

@@ -59,15 +59,13 @@ def mipsel_builder(c):
 def dartium_builder(c):
   c.compile_py.default_targets=['chrome_apk', 'content_shell_apk']
 
-@CONFIG_CTX(includes=['main_builder'])
+@CONFIG_CTX()
 def cronet_builder(c):
-  c.gyp_env.GYP_DEFINES['icu_use_data_file_flag'] = 0
+  c.gyp_env.GYP_DEFINES['disable_file_support'] = 1
+  c.gyp_env.GYP_DEFINES['disable_ftp_support'] = 1
+  c.gyp_env.GYP_DEFINES['enable_websockets'] = 0
+  c.gyp_env.GYP_DEFINES['use_icu_alternatives_on_android'] = 1
   c.compile_py.default_targets=['cronet_package', 'cronet_sample_test_apk']
-
-@CONFIG_CTX(includes=['cronet_builder'],
-            config_vars={'BUILD_CONFIG': 'Release'})
-def cronet_rel(c):
-  pass
 
 @CONFIG_CTX(includes=['main_builder'])
 def arm_builder(c):
@@ -77,12 +75,26 @@ def arm_builder(c):
   gyp_defs['android_sdk_root'] = Path(
     '[CHECKOUT]', 'third_party', 'android_tools', 'sdk')
 
+@CONFIG_CTX(includes=['arm_builder'])
+def android_shared(c):
+  c.gyp_env.GYP_DEFINES['component'] = 'shared_library'
+
+@CONFIG_CTX(includes=['main_builder'])
+def arm_l_builder(c):
+  gyp_defs = c.gyp_env.GYP_DEFINES
+  gyp_defs['android_sdk_build_tools_version'] = 'android-L'
+  gyp_defs['android_sdk_version'] = 'L'
+  gyp_defs['android_sdk_root'] = Path(
+    '[CHECKOUT]', 'third_party', 'android_tools_internal', 'sdk')
+  gyp_defs['use_unpublished_apis'] = 1
+  c.compile_py.default_targets = ['All', 'hera_apk']
+
 @CONFIG_CTX(includes=['arm_builder'],
             config_vars={'BUILD_CONFIG': 'Release'})
 def arm_builder_rel(c):
   pass
 
-@CONFIG_CTX(includes=['base_config', 'default_compiler'],
+@CONFIG_CTX(includes=['base_config', 'default_compiler', 'goma'],
             config_vars={'TARGET_ARCH': 'intel', 'TARGET_BITS': 64})
 def x64_builder(c):
   if c.TARGET_ARCH != 'intel' or c.TARGET_BITS != 64:
@@ -90,7 +102,7 @@ def x64_builder(c):
       'Cannot target x64 with TARGET_ARCH == %s, TARGET_BITS == %d'
        % (c.TARGET_ARCH, c.TARGET_BITS))
 
-@CONFIG_CTX(includes=['base_config', 'default_compiler'])
+@CONFIG_CTX(includes=['base_config', 'default_compiler', 'goma'])
 def arm64_builder(c):
   gyp_defs = c.gyp_env.GYP_DEFINES
   gyp_defs['OS'] = 'android'

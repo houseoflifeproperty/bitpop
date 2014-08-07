@@ -33,12 +33,14 @@
 
 #include "bindings/v8/ScriptFunction.h"
 #include "bindings/v8/ScriptValue.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
 #include <v8.h>
 
 namespace WebCore {
 
-class ExecutionContext;
+class DOMException;
 
 // ScriptPromise is the class for representing Promise values in C++ world.
 // ScriptPromise holds a Promise.
@@ -94,7 +96,14 @@ public:
     // Constructs and returns a ScriptPromise from |value|.
     // if |value| is not a Promise object, returns a Promise object
     // resolved with |value|.
-    static ScriptPromise cast(const ScriptValue& /*value*/);
+    // Returns |value| itself if it is a Promise.
+    static ScriptPromise cast(ScriptState*, const ScriptValue& /*value*/);
+    static ScriptPromise cast(ScriptState*, v8::Handle<v8::Value> /*value*/);
+
+    static ScriptPromise reject(ScriptState*, const ScriptValue&);
+    static ScriptPromise reject(ScriptState*, v8::Handle<v8::Value>);
+
+    static ScriptPromise rejectWithDOMException(ScriptState*, PassRefPtrWillBeRawPtr<DOMException>);
 
 private:
     RefPtr<ScriptState> m_scriptState;

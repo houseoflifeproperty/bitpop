@@ -111,17 +111,17 @@ TEST_F(LayerTreeHostFiltersPixelTest, BackgroundFilterBlurOffAxis) {
   background->AddChild(blur);
 
   background->SetShouldFlattenTransform(false);
-  background->SetIs3dSorted(true);
+  background->Set3dSortingContextId(1);
   green->SetShouldFlattenTransform(false);
-  green->SetIs3dSorted(true);
+  green->Set3dSortingContextId(1);
   gfx::Transform background_transform;
   background_transform.ApplyPerspectiveDepth(200.0);
   background->SetTransform(background_transform);
 
   blur->SetShouldFlattenTransform(false);
-  blur->SetIs3dSorted(true);
+  blur->Set3dSortingContextId(1);
   for (size_t i = 0; i < blur->children().size(); ++i)
-    blur->children()[i]->SetIs3dSorted(true);
+    blur->children()[i]->Set3dSortingContextId(1);
 
   gfx::Transform blur_transform;
   blur_transform.Translate(55.0, 65.0);
@@ -176,7 +176,7 @@ class ImageFilterClippedPixelTest : public LayerTreeHostFiltersPixelTest {
     // This filter does a red-blue swap, so the foreground becomes blue.
     matrix[2] = matrix[6] = matrix[10] = matrix[18] = SK_Scalar1;
     skia::RefPtr<SkColorFilter> colorFilter(
-        skia::AdoptRef(new SkColorMatrixFilter(matrix)));
+        skia::AdoptRef(SkColorMatrixFilter::Create(matrix)));
     // We filter only the bottom 200x100 pixels of the foreground.
     SkImageFilter::CropRect crop_rect(SkRect::MakeXYWH(0, 100, 200, 100));
     skia::RefPtr<SkImageFilter> filter = skia::AdoptRef(

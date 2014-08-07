@@ -20,7 +20,7 @@ class SwarmingClientApi(recipe_api.RecipeApi):
     self._client_path = None
     self._script_version = {}
 
-  def checkout(self, revision=None):
+  def checkout(self, revision=None, curl_trace_file=None):
     """Returns a step to checkout swarming client into a separate directory.
 
     Ordinarily swarming client is checked out via Chromium DEPS into
@@ -44,7 +44,8 @@ class SwarmingClientApi(recipe_api.RecipeApi):
         url='https://chromium.googlesource.com/external/swarming.client.git',
         ref=revision,
         dir_path=self._client_path,
-        step_suffix='swarming_client')
+        step_suffix='swarming_client',
+        curl_trace_file=curl_trace_file)
 
   @property
   def path(self):

@@ -33,38 +33,22 @@
 
 namespace WebCore {
 
-class RenderBlockFlow;
+class ForceHorriblySlowRectMapping;
 class RenderBox;
 class RenderObject;
-class RenderFlowThread;
+class RenderView;
 
 class LayoutState {
     WTF_MAKE_NONCOPYABLE(LayoutState);
 public:
     // Constructor for root LayoutState created by RenderView
-    LayoutState(LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged)
-        : m_clipped(false)
-        , m_isPaginated(pageLogicalHeight)
-        , m_pageLogicalHeightChanged(pageLogicalHeightChanged)
-#if !ASSERT_DISABLED
-        , m_layoutDeltaXSaturated(false)
-        , m_layoutDeltaYSaturated(false)
-#endif
-        , m_columnInfo(0)
-        , m_next(0)
-        , m_pageLogicalHeight(pageLogicalHeight)
-#ifndef NDEBUG
-        , m_renderer(0)
-#endif
-    {
-    }
+    LayoutState(LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged, RenderView&);
+    // Constructor for sub-tree Layout and RenderTableSections
+    explicit LayoutState(RenderObject& root);
 
-    LayoutState(LayoutState*, RenderBox&, const LayoutSize& offset, LayoutUnit pageLogicalHeight, bool pageHeightLogicalChanged, ColumnInfo*);
-    explicit LayoutState(RenderObject&);
+    LayoutState(RenderBox&, const LayoutSize& offset, LayoutUnit pageLogicalHeight = 0, bool pageHeightLogicalChanged = false, ColumnInfo* = 0);
 
-    // LayoutState is allocated out of the rendering partition.
-    void* operator new(size_t);
-    void operator delete(void*);
+    ~LayoutState();
 
     void clearPaginationInformation();
     bool isPaginatingColumns() const { return m_columnInfo; }
@@ -80,7 +64,7 @@ public:
     void addLayoutDelta(const LayoutSize& delta)
     {
         m_layoutDelta += delta;
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
             m_layoutDeltaXSaturated |= m_layoutDelta.width() == LayoutUnit::max() || m_layoutDelta.width() == LayoutUnit::min();
             m_layoutDeltaYSaturated |= m_layoutDelta.height() == LayoutUnit::max() || m_layoutDelta.height() == LayoutUnit::min();
 #endif
@@ -100,24 +84,38 @@ public:
 
     ColumnInfo* columnInfo() const { return m_columnInfo; }
 
-    const LayoutRect& clipRect() const { return m_clipRect; }
-    const LayoutSize& paintOffset() const { return m_paintOffset; }
+    bool cachedOffsetsEnabled() const { return m_cachedOffsetsEnabled; }
 
-#ifndef NDEBUG
-    RenderObject* renderer() const { return m_renderer; }
-#endif
-#if !ASSERT_DISABLED
+    const LayoutRect& clipRect() const
+    {
+        ASSERT(m_cachedOffsetsEnabled);
+        return m_clipRect;
+    }
+    const LayoutSize& paintOffset() const
+    {
+        ASSERT(m_cachedOffsetsEnabled);
+        return m_paintOffset;
+    }
+
+
+    RenderObject& renderer() const { return m_renderer; }
+
+#if ASSERT_ENABLED
     bool layoutDeltaXSaturated() const { return m_layoutDeltaXSaturated; }
     bool layoutDeltaYSaturated() const { return m_layoutDeltaYSaturated; }
 #endif
 
 private:
+    friend class ForceHorriblySlowRectMapping;
+
     // Do not add anything apart from bitfields until after m_columnInfo. See https://bugs.webkit.org/show_bug.cgi?id=100173
     bool m_clipped:1;
     bool m_isPaginated:1;
     // If our page height has changed, this will force all blocks to relayout.
     bool m_pageLogicalHeightChanged:1;
-#if !ASSERT_DISABLED
+
+    bool m_cachedOffsetsEnabled:1;
+#if ASSERT_ENABLED
     bool m_layoutDeltaXSaturated:1;
     bool m_layoutDeltaYSaturated:1;
 #endif
@@ -143,9 +141,7 @@ private:
     // The offset of the start of the first page in the nearest enclosing pagination model.
     LayoutSize m_pageOffset;
 
-#ifndef NDEBUG
-    RenderObject* m_renderer;
-#endif
+    RenderObject& m_renderer;
 };
 
 } // namespace WebCore

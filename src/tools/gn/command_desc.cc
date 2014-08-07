@@ -10,6 +10,7 @@
 #include "tools/gn/commands.h"
 #include "tools/gn/config.h"
 #include "tools/gn/config_values_extractors.h"
+#include "tools/gn/file_template.h"
 #include "tools/gn/filesystem_utils.h"
 #include "tools/gn/item.h"
 #include "tools/gn/label.h"
@@ -69,6 +70,17 @@ void RecursivePrintDeps(const Target* target,
 
   std::string indent(indent_level * 2, ' ');
   for (size_t i = 0; i < sorted_deps.size(); i++) {
+    // Don't print groups. Groups are flattened such that the deps of the
+    // group are added directly to the target that depended on the group.
+    // Printing and recursing into groups here will cause such targets to be
+    // duplicated.
+    //
+    // It would be much more intuitive to do the opposite and not display the
+    // deps that were copied from the group to the target and instead display
+    // the group, but the source of those dependencies is not tracked.
+    if (sorted_deps[i].ptr->output_type() == Target::GROUP)
+      continue;
+
     OutputString(indent +
         sorted_deps[i].label.GetUserVisibleName(default_toolchain) + "\n");
     RecursivePrintDeps(sorted_deps[i].ptr, default_toolchain, indent_level + 1);
@@ -118,6 +130,25 @@ void PrintDeps(const Target* target, bool display_header) {
     OutputString("  " + deps[i].GetUserVisibleName(toolchain_label) + "\n");
 }
 
+void PrintForwardDependentConfigsFrom(const Target* target,
+                                      bool display_header) {
+  if (target->forward_dependent_configs().empty())
+    return;
+
+  if (display_header)
+    OutputString("\nforward_dependent_configs_from:\n");
+
+  // Collect the sorted list of deps.
+  std::vector<Label> forward;
+  for (size_t i = 0; i < target->forward_dependent_configs().size(); i++)
+    forward.push_back(target->forward_dependent_configs()[i].label);
+  std::sort(forward.begin(), forward.end());
+
+  Label toolchain_label = target->label().GetToolchainLabel();
+  for (size_t i = 0; i < forward.size(); i++)
+    OutputString("  " + forward[i].GetUserVisibleName(toolchain_label) + "\n");
+}
+
 // libs and lib_dirs are special in that they're inherited. We don't currently
 // implement a blame feature for this since the bottom-up inheritance makes
 // this difficult.
@@ -145,27 +176,134 @@ void PrintLibs(const Target* target, bool display_header) {
     OutputString("    " + libs[i] + "\n");
 }
 
-void PrintConfigs(const Target* target, bool display_header) {
-  // Configs (don't sort since the order determines how things are processed).
+void PrintPublic(const Target* target, bool display_header) {
   if (display_header)
-    OutputString("\nConfigs (in order applying):\n");
+    OutputString("\npublic:\n");
+
+  if (target->all_headers_public()) {
+    OutputString("  [All headers listed in the sources are public.]\n");
+    return;
+  }
+
+  Target::FileList public_headers = target->public_headers();
+  std::sort(public_headers.begin(), public_headers.end());
+  for (size_t i = 0; i < public_headers.size(); i++)
+    OutputString("  " + public_headers[i].value() + "\n");
+}
+
+void PrintVisibility(const Target* target, bool display_header) {
+  if (display_header)
+    OutputString("\nvisibility:\n");
+
+  OutputString(target->visibility().Describe(2, false));
+}
+
+void PrintConfigsVector(const Target* target,
+                        const LabelConfigVector& configs,
+                        const std::string& heading,
+                        bool display_header) {
+  if (configs.empty())
+    return;
+
+  // Don't sort since the order determines how things are processed.
+  if (display_header)
+    OutputString("\n" + heading + " (in order applying):\n");
 
   Label toolchain_label = target->label().GetToolchainLabel();
-  const LabelConfigVector& configs = target->configs();
   for (size_t i = 0; i < configs.size(); i++) {
     OutputString("  " +
         configs[i].label.GetUserVisibleName(toolchain_label) + "\n");
   }
 }
 
-void PrintSources(const Target* target, bool display_header) {
-  if (display_header)
-    OutputString("\nSources:\n");
+void PrintConfigs(const Target* target, bool display_header) {
+  PrintConfigsVector(target, target->configs(), "configs", display_header);
+}
 
-  Target::FileList sources = target->sources();
-  std::sort(sources.begin(), sources.end());
-  for (size_t i = 0; i < sources.size(); i++)
-    OutputString("  " + sources[i].value() + "\n");
+void PrintDirectDependentConfigs(const Target* target, bool display_header) {
+  PrintConfigsVector(target, target->direct_dependent_configs(),
+                     "direct_dependent_configs", display_header);
+}
+
+void PrintAllDependentConfigs(const Target* target, bool display_header) {
+  PrintConfigsVector(target, target->all_dependent_configs(),
+                     "all_dependent_configs", display_header);
+}
+
+void PrintFileList(const Target::FileList& files,
+                   const std::string& header,
+                   bool indent_extra,
+                   bool display_header) {
+  if (files.empty())
+    return;
+
+  if (display_header)
+    OutputString("\n" + header + ":\n");
+
+  std::string indent = indent_extra ? "    " : "  ";
+
+  Target::FileList sorted = files;
+  std::sort(sorted.begin(), sorted.end());
+  for (size_t i = 0; i < sorted.size(); i++)
+    OutputString(indent + sorted[i].value() + "\n");
+}
+
+void PrintSources(const Target* target, bool display_header) {
+  PrintFileList(target->sources(), "sources", false, display_header);
+}
+
+void PrintInputs(const Target* target, bool display_header) {
+  PrintFileList(target->inputs(), "inputs", false, display_header);
+}
+
+void PrintOutputs(const Target* target, bool display_header) {
+  if (target->output_type() == Target::ACTION) {
+    // Just display the outputs directly.
+    PrintFileList(target->action_values().outputs(), "outputs", false,
+                  display_header);
+  } else if (target->output_type() == Target::ACTION_FOREACH) {
+    // Display both the output pattern and resolved list.
+    if (display_header)
+      OutputString("\noutputs:\n");
+
+    // Display the pattern.
+    OutputString("  Output pattern:\n");
+    PrintFileList(target->action_values().outputs(), "", true, false);
+
+    // Now display what that resolves to given the sources.
+    OutputString("\n  Resolved output file list:\n");
+
+    std::vector<std::string> output_strings;
+    FileTemplate file_template = FileTemplate::GetForTargetOutputs(target);
+    for (size_t i = 0; i < target->sources().size(); i++)
+      file_template.Apply(target->sources()[i], &output_strings);
+
+    std::sort(output_strings.begin(), output_strings.end());
+    for (size_t i = 0; i < output_strings.size(); i++) {
+      OutputString("    " + output_strings[i] + "\n");
+    }
+  }
+}
+
+void PrintScript(const Target* target, bool display_header) {
+  if (display_header)
+    OutputString("\nscript:\n");
+  OutputString("  " + target->action_values().script().value() + "\n");
+}
+
+void PrintArgs(const Target* target, bool display_header) {
+  if (display_header)
+    OutputString("\nargs:\n");
+  for (size_t i = 0; i < target->action_values().args().size(); i++)
+    OutputString("  " + target->action_values().args()[i] + "\n");
+}
+
+void PrintDepfile(const Target* target, bool display_header) {
+  if (target->action_values().depfile().value().empty())
+    return;
+  if (display_header)
+    OutputString("\ndepfile:\n");
+  OutputString("  " + target->action_values().depfile().value() + "\n");
 }
 
 // Attribute the origin for attributing from where a target came from. Does
@@ -247,6 +385,15 @@ const char kDesc_Help[] =
     "  sources\n"
     "      Source files.\n"
     "\n"
+    "  inputs\n"
+    "      Additional input dependencies.\n"
+    "\n"
+    "  public\n"
+    "      Public header files.\n"
+    "\n"
+    "  visibility\n"
+    "      Prints which targets can depend on this one.\n"
+    "\n"
     "  configs\n"
     "      Shows configs applied to the given target, sorted in the order\n"
     "      they're specified. This includes both configs specified in the\n"
@@ -259,6 +406,23 @@ const char kDesc_Help[] =
     "      recursive) dependencies of the given target. \"--tree\" shows them\n"
     "      in a tree format.  Otherwise, they will be sorted alphabetically.\n"
     "      Both \"deps\" and \"datadeps\" will be included.\n"
+    "\n"
+    "  direct_dependent_configs\n"
+    "  all_dependent_configs\n"
+    "      Shows the labels of configs applied to targets that depend on this\n"
+    "      one (either directly or all of them).\n"
+    "\n"
+    "  forward_dependent_configs_from\n"
+    "      Shows the labels of dependencies for which dependent configs will\n"
+    "      be pushed to targets depending on the current one.\n"
+    "\n"
+    "  script\n"
+    "  args\n"
+    "  depfile\n"
+    "      Actions only. The script and related values.\n"
+    "\n"
+    "  outputs\n"
+    "      Outputs for script and copy target types.\n"
     "\n"
     "  defines       [--blame]\n"
     "  include_dirs  [--blame]\n"
@@ -318,8 +482,28 @@ int RunDesc(const std::vector<std::string>& args) {
     const std::string& what = args[1];
     if (what == "configs") {
       PrintConfigs(target, false);
+    } else if (what == "direct_dependent_configs") {
+      PrintDirectDependentConfigs(target, false);
+    } else if (what == "all_dependent_configs") {
+      PrintAllDependentConfigs(target, false);
+    } else if (what == "forward_dependent_configs_from") {
+      PrintForwardDependentConfigsFrom(target, false);
     } else if (what == "sources") {
       PrintSources(target, false);
+    } else if (what == "public") {
+      PrintPublic(target, false);
+    } else if (what == "visibility") {
+      PrintVisibility(target, false);
+    } else if (what == "inputs") {
+      PrintInputs(target, false);
+    } else if (what == "script") {
+      PrintScript(target, false);
+    } else if (what == "args") {
+      PrintArgs(target, false);
+    } else if (what == "depfile") {
+      PrintDepfile(target, false);
+    } else if (what == "outputs") {
+      PrintOutputs(target, false);
     } else if (what == "deps") {
       PrintDeps(target, false);
     } else if (what == "lib_dirs") {
@@ -347,6 +531,13 @@ int RunDesc(const std::vector<std::string>& args) {
 
   // Display summary.
 
+  // Display this only applicable to binary targets.
+  bool is_binary_output =
+    target->output_type() != Target::GROUP &&
+    target->output_type() != Target::COPY_FILES &&
+    target->output_type() != Target::ACTION &&
+    target->output_type() != Target::ACTION_FOREACH;
+
   // Generally we only want to display toolchains on labels when the toolchain
   // is different than the default one for this target (which we always print
   // in the header).
@@ -362,16 +553,44 @@ int RunDesc(const std::vector<std::string>& args) {
   OutputString(target_toolchain.GetUserVisibleName(false) + "\n");
 
   PrintSources(target, true);
-  PrintConfigs(target, true);
+  if (is_binary_output)
+    PrintPublic(target, true);
+  PrintVisibility(target, true);
+  if (is_binary_output)
+    PrintConfigs(target, true);
 
-  OUTPUT_CONFIG_VALUE(defines, std::string)
-  OUTPUT_CONFIG_VALUE(include_dirs, SourceDir)
-  OUTPUT_CONFIG_VALUE(cflags, std::string)
-  OUTPUT_CONFIG_VALUE(cflags_c, std::string)
-  OUTPUT_CONFIG_VALUE(cflags_cc, std::string)
-  OUTPUT_CONFIG_VALUE(cflags_objc, std::string)
-  OUTPUT_CONFIG_VALUE(cflags_objcc, std::string)
-  OUTPUT_CONFIG_VALUE(ldflags, std::string)
+  PrintDirectDependentConfigs(target, true);
+  PrintAllDependentConfigs(target, true);
+  PrintForwardDependentConfigsFrom(target, true);
+
+  PrintInputs(target, true);
+
+  if (is_binary_output) {
+    OUTPUT_CONFIG_VALUE(defines, std::string)
+    OUTPUT_CONFIG_VALUE(include_dirs, SourceDir)
+    OUTPUT_CONFIG_VALUE(cflags, std::string)
+    OUTPUT_CONFIG_VALUE(cflags_c, std::string)
+    OUTPUT_CONFIG_VALUE(cflags_cc, std::string)
+    OUTPUT_CONFIG_VALUE(cflags_objc, std::string)
+    OUTPUT_CONFIG_VALUE(cflags_objcc, std::string)
+    OUTPUT_CONFIG_VALUE(ldflags, std::string)
+  }
+
+  if (target->output_type() == Target::ACTION ||
+      target->output_type() == Target::ACTION_FOREACH) {
+    PrintScript(target, true);
+    PrintArgs(target, true);
+    PrintDepfile(target, true);
+  }
+
+  if (target->output_type() == Target::ACTION ||
+      target->output_type() == Target::ACTION_FOREACH ||
+      target->output_type() == Target::COPY_FILES) {
+    PrintOutputs(target, true);
+  }
+
+  // Libs can be part of any target and get recursively pushed up the chain,
+  // so always display them, even for groups and such.
   PrintLibs(target, true);
   PrintLibDirs(target, true);
 

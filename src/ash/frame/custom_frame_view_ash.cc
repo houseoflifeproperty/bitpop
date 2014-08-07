@@ -4,6 +4,9 @@
 
 #include "ash/frame/custom_frame_view_ash.h"
 
+#include <algorithm>
+#include <vector>
+
 #include "ash/ash_switches.h"
 #include "ash/frame/caption_buttons/frame_caption_button_container_view.h"
 #include "ash/frame/default_header_painter.h"
@@ -203,8 +206,7 @@ CustomFrameViewAsh::HeaderView::HeaderView(views::Widget* frame)
           FrameCaptionButtonContainerView::MINIMIZE_DISALLOWED;
   caption_button_container_ = new FrameCaptionButtonContainerView(frame_,
       minimize_allowed);
-  caption_button_container_->UpdateSizeButtonVisibility(Shell::GetInstance()->
-      IsMaximizeModeWindowManagerEnabled());
+  caption_button_container_->UpdateSizeButtonVisibility();
   AddChildView(caption_button_container_);
 
   header_painter_->Init(frame_, this, NULL, caption_button_container_);
@@ -289,12 +291,12 @@ void CustomFrameViewAsh::HeaderView::OnPaint(gfx::Canvas* canvas) {
 // CustomFrameViewAsh::HeaderView, ShellObserver overrides:
 
 void CustomFrameViewAsh::HeaderView::OnMaximizeModeStarted() {
-  caption_button_container_->UpdateSizeButtonVisibility(true);
+  caption_button_container_->UpdateSizeButtonVisibility();
   parent()->Layout();
 }
 
 void CustomFrameViewAsh::HeaderView::OnMaximizeModeEnded() {
-  caption_button_container_->UpdateSizeButtonVisibility(false);
+  caption_button_container_->UpdateSizeButtonVisibility();
   parent()->Layout();
 }
 
@@ -467,7 +469,7 @@ void CustomFrameViewAsh::UpdateWindowTitle() {
 ////////////////////////////////////////////////////////////////////////////////
 // CustomFrameViewAsh, views::View overrides:
 
-gfx::Size CustomFrameViewAsh::GetPreferredSize() {
+gfx::Size CustomFrameViewAsh::GetPreferredSize() const {
   gfx::Size pref = frame_->client_view()->GetPreferredSize();
   gfx::Rect bounds(0, 0, pref.width(), pref.height());
   return frame_->non_client_view()->GetWindowBoundsForClientBounds(
@@ -478,14 +480,14 @@ const char* CustomFrameViewAsh::GetClassName() const {
   return kViewClassName;
 }
 
-gfx::Size CustomFrameViewAsh::GetMinimumSize() {
+gfx::Size CustomFrameViewAsh::GetMinimumSize() const {
   gfx::Size min_client_view_size(frame_->client_view()->GetMinimumSize());
   return gfx::Size(
       std::max(header_view_->GetMinimumWidth(), min_client_view_size.width()),
       NonClientTopBorderHeight() + min_client_view_size.height());
 }
 
-gfx::Size CustomFrameViewAsh::GetMaximumSize() {
+gfx::Size CustomFrameViewAsh::GetMaximumSize() const {
   gfx::Size max_client_size(frame_->client_view()->GetMaximumSize());
   int width = 0;
   int height = 0;

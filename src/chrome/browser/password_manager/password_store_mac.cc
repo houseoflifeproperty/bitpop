@@ -877,9 +877,7 @@ PasswordStoreChangeList PasswordStoreMac::AddLoginImpl(
   DCHECK(thread_->message_loop() == base::MessageLoop::current());
   PasswordStoreChangeList changes;
   if (AddToKeychainIfNecessary(form)) {
-    if (login_metadata_db_->AddLogin(form)) {
-      changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD, form));
-    }
+    changes = login_metadata_db_->AddLogin(form);
   }
   return changes;
 }
@@ -887,13 +885,10 @@ PasswordStoreChangeList PasswordStoreMac::AddLoginImpl(
 PasswordStoreChangeList PasswordStoreMac::UpdateLoginImpl(
     const PasswordForm& form) {
   DCHECK(thread_->message_loop() == base::MessageLoop::current());
-  PasswordStoreChangeList changes;
-  int update_count = 0;
-  if (!login_metadata_db_->UpdateLogin(form, &update_count))
-    return changes;
+  PasswordStoreChangeList changes = login_metadata_db_->UpdateLogin(form);
 
   MacKeychainPasswordFormAdapter keychain_adapter(keychain_.get());
-  if (update_count == 0 &&
+  if (changes.empty() &&
       !keychain_adapter.HasPasswordsMergeableWithForm(form)) {
     // If the password isn't in either the DB or the keychain, then it must have
     // been deleted after autofill happened, and should not be re-added.
@@ -902,16 +897,8 @@ PasswordStoreChangeList PasswordStoreMac::UpdateLoginImpl(
 
   // The keychain add will update if there is a collision and add if there
   // isn't, which is the behavior we want, so there's no separate update call.
-  if (AddToKeychainIfNecessary(form)) {
-    if (update_count == 0) {
-      if (login_metadata_db_->AddLogin(form)) {
-        changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD,
-                                              form));
-      }
-    } else {
-      changes.push_back(PasswordStoreChange(PasswordStoreChange::UPDATE,
-                                            form));
-    }
+  if (AddToKeychainIfNecessary(form) && changes.empty()) {
+    changes = login_metadata_db_->AddLogin(form);
   }
   return changes;
 }
@@ -946,7 +933,8 @@ PasswordStoreChangeList PasswordStoreMac::RemoveLoginImpl(
 }
 
 PasswordStoreChangeList PasswordStoreMac::RemoveLoginsCreatedBetweenImpl(
-    const base::Time& delete_begin, const base::Time& delete_end) {
+    base::Time delete_begin,
+    base::Time delete_end) {
   PasswordStoreChangeList changes;
   std::vector<PasswordForm*> forms;
   if (login_metadata_db_->GetLoginsCreatedBetween(delete_begin, delete_end,
@@ -973,6 +961,40 @@ PasswordStoreChangeList PasswordStoreMac::RemoveLoginsCreatedBetweenImpl(
                                               **it));
       }
       LogStatsForBulkDeletion(changes.size());
+    }
+  }
+  return changes;
+}
+
+PasswordStoreChangeList PasswordStoreMac::RemoveLoginsSyncedBetweenImpl(
+    base::Time delete_begin,
+    base::Time delete_end) {
+  PasswordStoreChangeList changes;
+  std::vector<PasswordForm*> forms;
+  if (login_metadata_db_->GetLoginsSyncedBetween(
+          delete_begin, delete_end, &forms)) {
+    if (login_metadata_db_->RemoveLoginsSyncedBetween(delete_begin,
+                                                      delete_end)) {
+      // We can't delete from the Keychain by date because we may be sharing
+      // items with database entries that weren't in the delete range. Instead,
+      // we find all the Keychain items we own but aren't using any more and
+      // delete those.
+      std::vector<PasswordForm*> orphan_keychain_forms =
+          GetUnusedKeychainForms();
+      // This is inefficient, since we have to re-look-up each keychain item
+      // one at a time to delete it even though the search step already had a
+      // list of Keychain item references. If this turns out to be noticeably
+      // slow we'll need to rearchitect to allow the search and deletion steps
+      // to share.
+      RemoveKeychainForms(orphan_keychain_forms);
+      STLDeleteElements(&orphan_keychain_forms);
+
+      for (std::vector<PasswordForm*>::const_iterator it = forms.begin();
+           it != forms.end();
+           ++it) {
+        changes.push_back(
+            PasswordStoreChange(PasswordStoreChange::REMOVE, **it));
+      }
     }
   }
   return changes;

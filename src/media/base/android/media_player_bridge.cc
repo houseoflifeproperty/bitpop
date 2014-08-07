@@ -33,11 +33,13 @@ MediaPlayerBridge::MediaPlayerBridge(
     bool hide_url_log,
     MediaPlayerManager* manager,
     const RequestMediaResourcesCB& request_media_resources_cb,
-    const ReleaseMediaResourcesCB& release_media_resources_cb)
+    const ReleaseMediaResourcesCB& release_media_resources_cb,
+    const GURL& frame_url)
     : MediaPlayerAndroid(player_id,
                          manager,
                          request_media_resources_cb,
-                         release_media_resources_cb),
+                         release_media_resources_cb,
+                         frame_url),
       prepared_(false),
       pending_play_(false),
       url_(url),
@@ -50,6 +52,7 @@ MediaPlayerBridge::MediaPlayerBridge(
       can_seek_forward_(true),
       can_seek_backward_(true),
       is_surface_in_use_(false),
+      volume_(-1.0),
       weak_factory_(this) {
   listener_.reset(new MediaPlayerListener(base::MessageLoopProxy::current(),
                                           weak_factory_.GetWeakPtr()));
@@ -93,6 +96,9 @@ void MediaPlayerBridge::CreateJavaMediaPlayerBridge() {
 
   j_media_player_bridge_.Reset(Java_MediaPlayerBridge_create(
       env, reinterpret_cast<intptr_t>(this)));
+
+  if (volume_ >= 0)
+    SetVolume(volume_);
 
   SetMediaPlayerListener();
 }
@@ -323,8 +329,10 @@ void MediaPlayerBridge::Release() {
 }
 
 void MediaPlayerBridge::SetVolume(double volume) {
-  if (j_media_player_bridge_.is_null())
+  if (j_media_player_bridge_.is_null()) {
+    volume_ = volume;
     return;
+  }
 
   JNIEnv* env = base::android::AttachCurrentThread();
   CHECK(env);

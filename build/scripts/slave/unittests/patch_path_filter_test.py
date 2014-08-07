@@ -14,7 +14,7 @@ import test_env  # pylint: disable=W0403,W0611
 
 import slave.patch_path_filter as patch_path_filter
 
-from depot_tools.test_support.patches_data import GIT, RAW
+from depot_tools_patch.test_support.patches_data import GIT, RAW
 
 class ParsePatchSetTest(unittest.TestCase):
   """Test the patch_path_filter.parse_patch_set function with a variety of data.

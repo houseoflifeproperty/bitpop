@@ -49,7 +49,7 @@ class RepoPoller(PollingChangeSource):
                pollInterval=5*60, repo_bin='repo', git_bin='git',
                category='', project='', revlinktmpl=None,
                encoding='utf-8', from_addr=None, to_addrs=None,
-               smtp_host=None):
+               smtp_host=None, manifest='manifest'):
     # In 'dry_run' mode poller won't fetch the repository.
     # Used when running master smoke tests.
     self.dry_run = 'POLLER_DRY_RUN' in os.environ
@@ -63,6 +63,7 @@ class RepoPoller(PollingChangeSource):
     # transition assertion, repo_branch (string) became repo_branches (list)
     assert issubclass(type(self.repo_branches), list), \
       'repo_branches must be a list'
+    self.manifest_url = '/'.join([self.repo_url, manifest])
     self.workdir = workdir
     self.pollInterval = pollInterval
     self.repo_bin = repo_bin
@@ -157,7 +158,7 @@ class RepoPoller(PollingChangeSource):
   def initRepository(self):
     if not os.path.exists(self.workdir):
       os.makedirs(self.workdir)
-    repo_args = ['init', '-u', '/'.join([self.repo_url, 'manifest'])]
+    repo_args = ['init', '-u', self.manifest_url]
     if self.repo_branches:
       repo_args.extend(['-b', self.repo_branches[0]])  # any branch will do
     d = self.RunRepoCmd(repo_args)
@@ -343,7 +344,7 @@ class RepoPoller(PollingChangeSource):
             project=self.project,
             repository='/'.join([self.repo_url, project]),
             revlink=revlink,
-            properties={'manifest_url': self.repo_url,
+            properties={'manifest_url': self.manifest_url,
                         'manifest_branch': current_repo_branch})
         wfd = defer.waitForDeferred(d)
         yield wfd

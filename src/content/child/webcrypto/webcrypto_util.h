@@ -34,8 +34,8 @@ CONTENT_EXPORT bool Base64DecodeUrlSafe(const std::string& input,
 
 // Returns an unpadded 'base64url' encoding of the input data, the opposite of
 // Base64DecodeUrlSafe() above.
-std::string Base64EncodeUrlSafe(const base::StringPiece& input);
-std::string Base64EncodeUrlSafe(const std::vector<uint8>& input);
+CONTENT_EXPORT std::string Base64EncodeUrlSafe(const base::StringPiece& input);
+CONTENT_EXPORT std::string Base64EncodeUrlSafe(const std::vector<uint8>& input);
 
 // Composes a Web Crypto usage mask from an array of JWK key_ops values.
 CONTENT_EXPORT Status GetWebCryptoUsagesFromJwkKeyOps(
@@ -45,8 +45,6 @@ CONTENT_EXPORT Status GetWebCryptoUsagesFromJwkKeyOps(
 // Composes a JWK key_ops array from a Web Crypto usage mask.
 base::ListValue* CreateJwkKeyOpsFromWebCryptoUsages(
     blink::WebCryptoKeyUsageMask usage_mask);
-
-CONTENT_EXPORT bool IsHashAlgorithm(blink::WebCryptoAlgorithmId alg_id);
 
 // Returns the "hash" param for an algorithm if it exists, otherwise returns
 // a null algorithm.
@@ -72,6 +70,13 @@ CONTENT_EXPORT blink::WebCryptoAlgorithm CreateRsaHashedImportAlgorithm(
 bool CreateSecretKeyAlgorithm(const blink::WebCryptoAlgorithm& algorithm,
                               unsigned int keylen_bytes,
                               blink::WebCryptoKeyAlgorithm* key_algorithm);
+
+// Returns true if the set bits in b make up a subset of the set bits in a.
+bool ContainsKeyUsages(blink::WebCryptoKeyUsageMask a,
+                       blink::WebCryptoKeyUsageMask b);
+
+bool IsAlgorithmRsa(blink::WebCryptoAlgorithmId alg_id);
+bool IsAlgorithmAsymmetric(blink::WebCryptoAlgorithmId alg_id);
 
 }  // namespace webcrypto
 

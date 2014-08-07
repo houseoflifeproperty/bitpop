@@ -25,9 +25,10 @@
 #include "config.h"
 #include "core/html/HTMLFieldSetElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLCollection.h"
+#include "core/html/HTMLFormControlsCollection.h"
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/rendering/RenderFieldset.h"
@@ -46,7 +47,7 @@ inline HTMLFieldSetElement::HTMLFieldSetElement(Document& document, HTMLFormElem
 
 PassRefPtrWillBeRawPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(Document& document, HTMLFormElement* form)
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLFieldSetElement(document, form));
+    return adoptRefWillBeNoop(new HTMLFieldSetElement(document, form));
 }
 
 void HTMLFieldSetElement::trace(Visitor* visitor)
@@ -100,9 +101,9 @@ HTMLLegendElement* HTMLFieldSetElement::legend() const
     return Traversal<HTMLLegendElement>::firstChild(*this);
 }
 
-PassRefPtr<HTMLCollection> HTMLFieldSetElement::elements()
+PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> HTMLFieldSetElement::elements()
 {
-    return ensureCachedHTMLCollection(FormControls);
+    return toHTMLFormControlsCollection(ensureCachedHTMLCollection(FormControls).get());
 }
 
 void HTMLFieldSetElement::refreshElementsIfNeeded() const

@@ -4,27 +4,15 @@
 
 #include "ui/views/controls/menu/menu_controller.h"
 
-#if defined(OS_WIN)
-#include <windowsx.h>
-#endif
-
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/rtl.h"
-#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/env.h"
-#include "ui/aura/window.h"
-#include "ui/aura/window_event_dispatcher.h"
-#include "ui/aura/window_tree_host.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
-#include "ui/events/platform/platform_event_source.h"
-#include "ui/events/platform/scoped_event_dispatcher.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
@@ -36,6 +24,7 @@
 #include "ui/views/controls/menu/menu_controller_delegate.h"
 #include "ui/views/controls/menu/menu_host_root_view.h"
 #include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_message_loop.h"
 #include "ui/views/controls/menu/menu_scroll_view_container.h"
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/drag_utils.h"
@@ -47,20 +36,13 @@
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
-#include "ui/wm/public/activation_change_observer.h"
-#include "ui/wm/public/activation_client.h"
-#include "ui/wm/public/dispatcher_client.h"
-#include "ui/wm/public/drag_drop_client.h"
 
 #if defined(OS_WIN)
 #include "ui/base/win/internal_constants.h"
-#include "ui/views/controls/menu/menu_message_pump_dispatcher_win.h"
+#include "ui/gfx/win/dpi.h"
 #include "ui/views/win/hwnd_util.h"
-#else
-#include "ui/views/controls/menu/menu_event_dispatcher_linux.h"
 #endif
 
-using aura::client::ScreenPositionClient;
 using base::Time;
 using base::TimeDelta;
 using ui::OSExchangeData;
@@ -107,67 +89,6 @@ bool TitleMatchesMnemonic(MenuItemView* menu, base::char16 key) {
   base::string16 lower_title = base::i18n::ToLower(menu->title());
   return !lower_title.empty() && lower_title[0] == key;
 }
-
-aura::Window* GetOwnerRootWindow(views::Widget* owner) {
-  return owner ? owner->GetNativeWindow()->GetRootWindow() : NULL;
-}
-
-// ActivationChangeObserverImpl is used to observe activation changes and close
-// the menu. Additionally it listens for the root window to be destroyed and
-// cancel the menu as well.
-class ActivationChangeObserverImpl
-    : public aura::client::ActivationChangeObserver,
-      public aura::WindowObserver,
-      public ui::EventHandler {
- public:
-  ActivationChangeObserverImpl(MenuController* controller, aura::Window* root)
-      : controller_(controller),
-        root_(root) {
-    aura::client::GetActivationClient(root_)->AddObserver(this);
-    root_->AddObserver(this);
-    root_->AddPreTargetHandler(this);
-  }
-
-  virtual ~ActivationChangeObserverImpl() {
-    Cleanup();
-  }
-
-  // aura::client::ActivationChangeObserver:
-  virtual void OnWindowActivated(aura::Window* gained_active,
-                                 aura::Window* lost_active) OVERRIDE {
-    if (!controller_->drag_in_progress())
-      controller_->CancelAll();
-  }
-
-  // aura::WindowObserver:
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {
-    Cleanup();
-  }
-
-  // ui::EventHandler:
-  virtual void OnCancelMode(ui::CancelModeEvent* event) OVERRIDE {
-    controller_->CancelAll();
-  }
-
- private:
-  void Cleanup() {
-    if (!root_)
-      return;
-    // The ActivationClient may have been destroyed by the time we get here.
-    aura::client::ActivationClient* client =
-        aura::client::GetActivationClient(root_);
-    if (client)
-      client->RemoveObserver(this);
-    root_->RemovePreTargetHandler(this);
-    root_->RemoveObserver(this);
-    root_ = NULL;
-  }
-
-  MenuController* controller_;
-  aura::Window* root_;
-
-  DISALLOW_COPY_AND_ASSIGN(ActivationChangeObserverImpl);
-};
 
 }  // namespace
 
@@ -876,6 +797,7 @@ void MenuController::OnWidgetDestroying(Widget* widget) {
   DCHECK_EQ(owner_, widget);
   owner_->RemoveObserver(this);
   owner_ = NULL;
+  message_loop_->ClearOwner();
 }
 
 // static
@@ -1043,7 +965,7 @@ void MenuController::StartDrag(SubmenuView* source,
 
   OSExchangeData data;
   item->GetDelegate()->WriteDragData(item, &data);
-  drag_utils::SetDragImageOnDataObject(*canvas, item->size(),
+  drag_utils::SetDragImageOnDataObject(*canvas,
                                        press_loc.OffsetFromOrigin(),
                                        &data);
   StopScrolling();
@@ -1160,7 +1082,8 @@ MenuController::MenuController(ui::NativeTheme* theme,
       closing_event_time_(base::TimeDelta()),
       menu_start_time_(base::TimeTicks()),
       is_combobox_(false),
-      item_selected_by_touch_(false) {
+      item_selected_by_touch_(false),
+      message_loop_(MenuMessageLoop::Create()) {
   active_instance_ = this;
 }
 
@@ -1174,51 +1097,9 @@ MenuController::~MenuController() {
   StopCancelAllTimer();
 }
 
-#if defined(OS_WIN)
 void MenuController::RunMessageLoop(bool nested_menu) {
-  internal::MenuMessagePumpDispatcher nested_dispatcher(this);
-
-  // |owner_| may be NULL.
-  aura::Window* root = GetOwnerRootWindow(owner_);
-  if (root) {
-    scoped_ptr<ActivationChangeObserverImpl> observer;
-    if (!nested_menu)
-      observer.reset(new ActivationChangeObserverImpl(this, root));
-    aura::client::GetDispatcherClient(root)
-        ->RunWithDispatcher(&nested_dispatcher);
-  } else {
-    base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
-    base::MessageLoop::ScopedNestableTaskAllower allow(loop);
-    base::RunLoop run_loop(&nested_dispatcher);
-    run_loop.Run();
-  }
+  message_loop_->Run(this, owner_, nested_menu);
 }
-#else
-void MenuController::RunMessageLoop(bool nested_menu) {
-  internal::MenuEventDispatcher event_dispatcher(this);
-  scoped_ptr<ui::ScopedEventDispatcher> old_dispatcher =
-      nested_dispatcher_.Pass();
-  if (ui::PlatformEventSource::GetInstance()) {
-    nested_dispatcher_ =
-        ui::PlatformEventSource::GetInstance()->OverrideDispatcher(
-            &event_dispatcher);
-  }
-  // |owner_| may be NULL.
-  aura::Window* root = GetOwnerRootWindow(owner_);
-  if (root) {
-    scoped_ptr<ActivationChangeObserverImpl> observer;
-    if (!nested_menu)
-      observer.reset(new ActivationChangeObserverImpl(this, root));
-    aura::client::GetDispatcherClient(root)->RunWithDispatcher(NULL);
-  } else {
-    base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
-    base::MessageLoop::ScopedNestableTaskAllower allow(loop);
-    base::RunLoop run_loop;
-    run_loop.Run();
-  }
-  nested_dispatcher_ = old_dispatcher.Pass();
-}
-#endif
 
 MenuController::SendAcceleratorResultType
     MenuController::SendAcceleratorToHotTrackedView() {
@@ -1259,7 +1140,7 @@ void MenuController::UpdateInitialLocation(const gfx::Rect& bounds,
   // avoid repeated system queries for the info.
   pending_state_.monitor_bounds = GetScreen()->GetDisplayNearestPoint(
       bounds.origin()).work_area();
-#if defined(USE_ASH)
+
   if (!pending_state_.monitor_bounds.Contains(bounds)) {
     // Use the monitor area if the work area doesn't contain the bounds. This
     // handles showing a menu from the launcher.
@@ -1268,7 +1149,6 @@ void MenuController::UpdateInitialLocation(const gfx::Rect& bounds,
     if (monitor_area.Contains(bounds))
       pending_state_.monitor_bounds = monitor_area;
   }
-#endif
 }
 
 void MenuController::Accept(MenuItemView* item, int event_flags) {
@@ -2172,12 +2052,16 @@ void MenuController::RepostEvent(SubmenuView* source,
   gfx::NativeWindow window = screen->GetWindowAtScreenPoint(screen_loc);
 
 #if defined(OS_WIN)
+  // Convert screen_loc to pixels for the Win32 API's like WindowFromPoint,
+  // PostMessage/SendMessage to work correctly. These API's expect the
+  // coordinates to be in pixels.
   // PostMessage() to metro windows isn't allowed (access will be denied). Don't
   // try to repost with Win32 if the window under the mouse press is in metro.
   if (!ViewsDelegate::views_delegate ||
       !ViewsDelegate::views_delegate->IsWindowInMetro(window)) {
+    gfx::Point screen_loc_pixels = gfx::win::DIPToScreenPoint(screen_loc);
     HWND target_window = window ? HWNDForNativeWindow(window) :
-                                  WindowFromPoint(screen_loc.ToPOINT());
+                                  WindowFromPoint(screen_loc_pixels.ToPOINT());
     HWND source_window = HWNDForNativeView(native_view);
     if (!target_window || !source_window ||
         GetWindowThreadProcessId(source_window, NULL) !=
@@ -2191,7 +2075,7 @@ void MenuController::RepostEvent(SubmenuView* source,
 
     // Determine whether the click was in the client area or not.
     // NOTE: WM_NCHITTEST coordinates are relative to the screen.
-    LPARAM coords = MAKELPARAM(screen_loc.x(), screen_loc.y());
+    LPARAM coords = MAKELPARAM(screen_loc_pixels.x(), screen_loc_pixels.y());
     LRESULT nc_hit_result = SendMessage(target_window, WM_NCHITTEST, 0, coords);
     const bool client_area = nc_hit_result == HTCLIENT;
 
@@ -2211,8 +2095,8 @@ void MenuController::RepostEvent(SubmenuView* source,
       return;
     }
 
-    int window_x = screen_loc.x();
-    int window_y = screen_loc.y();
+    int window_x = screen_loc_pixels.x();
+    int window_y = screen_loc_pixels.y();
     if (client_area) {
       POINT pt = { window_x, window_y };
       ScreenToClient(target_window, &pt);
@@ -2230,18 +2114,7 @@ void MenuController::RepostEvent(SubmenuView* source,
   if (!window)
     return;
 
-  aura::Window* root = window->GetRootWindow();
-  ScreenPositionClient* spc = aura::client::GetScreenPositionClient(root);
-  if (!spc)
-    return;
-
-  gfx::Point root_loc(screen_loc);
-  spc->ConvertPointFromScreen(root, &root_loc);
-
-  ui::MouseEvent clone(static_cast<const ui::MouseEvent&>(event));
-  clone.set_location(root_loc);
-  clone.set_root_location(root_loc);
-  root->GetHost()->dispatcher()->RepostEvent(clone);
+  message_loop_->RepostEventToWindow(event, window, screen_loc);
 }
 
 void MenuController::SetDropMenuItem(
@@ -2376,27 +2249,14 @@ void MenuController::SetExitType(ExitType type) {
   //
   // It's safe to invoke QuitNestedMessageLoop() multiple times, it only effects
   // the current loop.
-  bool quit_now = ShouldQuitNow() && exit_type_ != EXIT_NONE &&
+  bool quit_now = message_loop_->ShouldQuitNow() && exit_type_ != EXIT_NONE &&
       message_loop_depth_;
   if (quit_now)
     TerminateNestedMessageLoop();
 }
 
 void MenuController::TerminateNestedMessageLoop() {
-  if (owner_) {
-    aura::Window* root = owner_->GetNativeWindow()->GetRootWindow();
-    aura::client::GetDispatcherClient(root)->QuitNestedMessageLoop();
-  } else {
-    base::MessageLoop::current()->QuitNow();
-  }
-  // Restore the previous dispatcher.
-  nested_dispatcher_.reset();
-}
-
-bool MenuController::ShouldQuitNow() const {
-  aura::Window* root = GetOwnerRootWindow(owner_);
-  return !aura::client::GetDragDropClient(root) ||
-         !aura::client::GetDragDropClient(root)->IsDragDropInProgress();
+  message_loop_->QuitNow();
 }
 
 void MenuController::HandleMouseLocation(SubmenuView* source,
@@ -2432,8 +2292,8 @@ void MenuController::HandleMouseLocation(SubmenuView* source,
 }
 
 gfx::Screen* MenuController::GetScreen() {
-  aura::Window* root = GetOwnerRootWindow(owner_);
-  return root ? gfx::Screen::GetScreenFor(root)
+  Widget* root = owner_ ? owner_->GetTopLevelWidget() : NULL;
+  return root ? gfx::Screen::GetScreenFor(root->GetNativeView())
               : gfx::Screen::GetNativeScreen();
 }
 

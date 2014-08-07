@@ -23,9 +23,12 @@
 #include "config.h"
 #include "core/html/HTMLMetaElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
+#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/loader/FrameLoaderClient.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -51,10 +54,7 @@ inline HTMLMetaElement::HTMLMetaElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLMetaElement> HTMLMetaElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLMetaElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLMetaElement)
 
 static bool isInvalidSeparator(UChar c)
 {
@@ -471,6 +471,8 @@ void HTMLMetaElement::process()
             processViewportContentAttribute("width=device-width", ViewportDescription::HandheldFriendlyMeta);
         else if (equalIgnoringCase(nameValue, "mobileoptimized"))
             processViewportContentAttribute("width=device-width, initial-scale=1", ViewportDescription::MobileOptimizedMeta);
+        else if (RuntimeEnabledFeatures::themeColorEnabled() && equalIgnoringCase(nameValue, "theme-color") && document().frame())
+            document().frame()->loader().client()->dispatchDidChangeThemeColor();
     }
 
     // Get the document to process the tag, but only if we're actually part of DOM

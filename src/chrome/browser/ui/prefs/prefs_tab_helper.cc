@@ -18,7 +18,7 @@
 #include "chrome/common/pref_font_webkit_names.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/pref_names_util.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
@@ -27,11 +27,16 @@
 #include "grit/platform_locale_settings.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
 #include "third_party/icu/source/common/unicode/uscript.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "webkit/common/webpreferences.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && defined(ENABLE_THEMES)
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#endif
+
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
 #endif
 
 using content::WebContents;
@@ -123,6 +128,19 @@ void RegisterFontFamilyMapObserver(
   }
 }
 #endif  // !defined(OS_ANDROID)
+
+#if defined(OS_WIN)
+// On Windows with antialising we want to use an alternate fixed font like
+// Consolas, which looks much better than Courier New.
+bool ShouldUseAlternateDefaultFixedFont(const std::string& script) {
+  if (!StartsWithASCII(script, "courier", false))
+    return false;
+  UINT smooth_type = 0;
+  SystemParametersInfo(SPI_GETFONTSMOOTHINGTYPE, 0, &smooth_type, 0);
+  return (base::win::GetVersion() >= base::win::VERSION_WIN7) &&
+         (smooth_type == FE_FONTSMOOTHINGCLEARTYPE);
+}
+#endif
 
 struct FontDefault {
   const char* pref_name;
@@ -454,7 +472,16 @@ void PrefsTabHelper::RegisterProfilePrefs(
   std::set<std::string> fonts_with_defaults;
   UScriptCode browser_script = GetScriptOfBrowserLocale();
   for (size_t i = 0; i < kFontDefaultsLength; ++i) {
-    const FontDefault& pref = kFontDefaults[i];
+    FontDefault pref = kFontDefaults[i];
+
+#if defined(OS_WIN)
+    if (pref.pref_name == prefs::kWebKitFixedFontFamily) {
+      if (ShouldUseAlternateDefaultFixedFont(
+              l10n_util::GetStringUTF8(pref.resource_id)))
+        pref.resource_id = IDS_FIXED_FONT_FAMILY_ALT_WIN;
+    }
+#endif
+
     UScriptCode pref_script = GetScriptOfFontPref(pref.pref_name);
 
     // Suppress this default font pref value if it is for the primary script of

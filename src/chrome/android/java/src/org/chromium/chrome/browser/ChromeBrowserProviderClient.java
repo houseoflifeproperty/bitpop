@@ -68,24 +68,25 @@ public class ChromeBrowserProviderClient {
     }
 
     /**
-     * Retrieves the full bookmark folder hierarchy returning its root node.
+     * Retrieves the bookmark folder hierarchy of editable nodes, returning its root node.
      *
      * @return The root node of the bookmark folder hierarchy with all its descendant folders
-     *         populated or null in case of error. Note that only folders are returned.
+     *         that are editable by the user, populated or null in case of error.
+     *         Note that only folders are returned.
      */
-    public static BookmarkNode getBookmarkFolderHierarchy(Context context) {
+    public static BookmarkNode getEditableBookmarkFolderHierarchy(Context context) {
         return chromeBrowserProviderCall(BookmarkNode.class,
-                ChromeBrowserProvider.CLIENT_API_GET_BOOKMARK_FOLDER_HIERARCHY, context,
+                ChromeBrowserProvider.CLIENT_API_GET_EDITABLE_BOOKMARK_FOLDER_HIERARCHY, context,
                 argsToBundle());
     }
 
     /**
-     * Removes all bookmarks and bookmark folders.
-     * Only the permanent bookmark folders remain after this operation.
+     * Removes all bookmarks and bookmark folders that the user can edit.
+     * Only the permanent bookmark folders remain after this operation, and any managed bookmarks.
      */
-    public static void removeAllBookmarks(Context context) {
+    public static void removeAllUserBookmarks(Context context) {
         chromeBrowserProviderCall(BookmarkNode.class,
-                ChromeBrowserProvider.CLIENT_API_DELETE_ALL_BOOKMARKS, context,
+                ChromeBrowserProvider.CLIENT_API_DELETE_ALL_USER_BOOKMARKS, context,
                 argsToBundle());
     }
 

@@ -84,9 +84,10 @@
             'type': 'executable',
             'variables': { 'enable_wexit_time_destructors': 1, },
             'dependencies': [
+                '../config.gyp:unittest_config',
                 '../../public/blink.gyp:blink',
                 '../wtf/wtf_tests.gyp:wtf_unittest_helpers',
-                'web.gyp:webkit_test_support',
+                'web.gyp:blink_web_test_support',
                 '<(DEPTH)/base/base.gyp:base',
                 '<(DEPTH)/base/base.gyp:base_i18n',
                 '<(DEPTH)/base/base.gyp:test_support_base',
@@ -96,7 +97,7 @@
                 '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
                 '<(DEPTH)/url/url.gyp:url_lib',
                 '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-                '<(DEPTH)/content/content_shell_and_tests.gyp:content_webkit_unit_test_support',
+                '<(DEPTH)/content/content_shell_and_tests.gyp:test_support_content',
                 'webkit_unit_tests_resources',
             ],
             'sources': [
@@ -146,7 +147,7 @@
                         }],
                     ],
                 }],
-                ['OS=="android" and gtest_target_type == "shared_library"', {
+                ['OS=="android"', {
                     'type': 'shared_library',
                     'dependencies': [
                         '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',

@@ -9,6 +9,7 @@
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
+        '../components/components.gyp:keyed_service_core',
         '../content/content.gyp:content_browser',
         '../net/net.gyp:net',
         '../url/url.gyp:url_lib',
@@ -23,6 +24,7 @@
         'domain_reliability/baked_in_configs.h',
         'domain_reliability/beacon.cc',
         'domain_reliability/beacon.h',
+        'domain_reliability/clear_mode.h',
         'domain_reliability/config.cc',
         'domain_reliability/config.h',
         'domain_reliability/context.cc',
@@ -34,6 +36,8 @@
         'domain_reliability/monitor.h',
         'domain_reliability/scheduler.cc',
         'domain_reliability/scheduler.h',
+        'domain_reliability/service.cc',
+        'domain_reliability/service.h',
         'domain_reliability/uploader.cc',
         'domain_reliability/uploader.h',
         'domain_reliability/util.cc',
@@ -49,6 +53,8 @@
             'baked_in_configs': [
               'domain_reliability/baked_in_configs/apis_google_com.json',
               'domain_reliability/baked_in_configs/ddm_google_com.json',
+              'domain_reliability/baked_in_configs/drive_google_com.json',
+              'domain_reliability/baked_in_configs/mail_google_com.json',
               'domain_reliability/baked_in_configs/ssl_gstatic_com.json',
               'domain_reliability/baked_in_configs/www_google_com.json',
               'domain_reliability/baked_in_configs/www_youtube_com.json',

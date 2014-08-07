@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/RadioNodeList.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Element.h"
 #include "core/dom/NodeRareData.h"
 #include "core/html/HTMLFormElement.h"
@@ -47,15 +47,16 @@ RadioNodeList::RadioNodeList(ContainerNode& rootNode, const AtomicString& name, 
 
 RadioNodeList::~RadioNodeList()
 {
+#if !ENABLE(OILPAN)
     ownerNode().nodeLists()->removeCache(this, m_onlyMatchImgElements ? RadioImgNodeListType : RadioNodeListType, m_name);
+#endif
 }
 
-static inline HTMLInputElement* toRadioButtonInputElement(Node& node)
+static inline HTMLInputElement* toRadioButtonInputElement(Element& element)
 {
-    ASSERT(node.isElementNode());
-    if (!isHTMLInputElement(node))
+    if (!isHTMLInputElement(element))
         return 0;
-    HTMLInputElement& inputElement = toHTMLInputElement(node);
+    HTMLInputElement& inputElement = toHTMLInputElement(element);
     if (!inputElement.isRadioButton() || inputElement.value().isEmpty())
         return 0;
     return &inputElement;
@@ -65,9 +66,9 @@ String RadioNodeList::value() const
 {
     if (m_onlyMatchImgElements)
         return String();
-    for (unsigned i = 0; i < length(); ++i) {
-        Node* node = item(i);
-        const HTMLInputElement* inputElement = toRadioButtonInputElement(*node);
+    unsigned length = this->length();
+    for (unsigned i = 0; i < length; ++i) {
+        const HTMLInputElement* inputElement = toRadioButtonInputElement(*item(i));
         if (!inputElement || !inputElement->checked())
             continue;
         return inputElement->value();
@@ -79,9 +80,9 @@ void RadioNodeList::setValue(const String& value)
 {
     if (m_onlyMatchImgElements)
         return;
-    for (unsigned i = 0; i < length(); ++i) {
-        Node* node = item(i);
-        HTMLInputElement* inputElement = toRadioButtonInputElement(*node);
+    unsigned length = this->length();
+    for (unsigned i = 0; i < length; ++i) {
+        HTMLInputElement* inputElement = toRadioButtonInputElement(*item(i));
         if (!inputElement || inputElement->value() != value)
             continue;
         inputElement->setChecked(true);
@@ -104,8 +105,11 @@ bool RadioNodeList::checkElementMatchesRadioNodeListFilter(const Element& testEl
 
 bool RadioNodeList::elementMatches(const Element& element) const
 {
-    if (m_onlyMatchImgElements)
-        return isHTMLImageElement(element);
+    if (m_onlyMatchImgElements) {
+        if (!isHTMLImageElement(element))
+            return false;
+        return toHTMLElement(element).formOwner() == ownerNode();
+    }
 
     if (!isHTMLObjectElement(element) && !element.isFormControlElement())
         return false;
@@ -117,4 +121,3 @@ bool RadioNodeList::elementMatches(const Element& element) const
 }
 
 } // namespace
-

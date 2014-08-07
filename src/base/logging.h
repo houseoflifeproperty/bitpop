@@ -127,18 +127,13 @@
 // GetLastError() on Windows and errno on POSIX).
 //
 // The supported severity levels for macros that allow you to specify one
-// are (in increasing order of severity) INFO, WARNING, ERROR, ERROR_REPORT,
-// and FATAL.
+// are (in increasing order of severity) INFO, WARNING, ERROR, and FATAL.
 //
 // Very important: logging a message at the FATAL severity level causes
 // the program to terminate (after the message is logged).
 //
-// Note the special severity of ERROR_REPORT only available/relevant in normal
-// mode, which displays error dialog without terminating the program. There is
-// no error dialog for severity ERROR or below in normal mode.
-//
-// There is also the special severity of DFATAL, which logs FATAL in
-// debug mode, ERROR in normal mode.
+// There is the special severity of DFATAL, which logs FATAL in debug mode,
+// ERROR in normal mode.
 
 namespace logging {
 
@@ -276,13 +271,6 @@ BASE_EXPORT void SetShowErrorDialogs(bool enable_dialogs);
 typedef void (*LogAssertHandlerFunction)(const std::string& str);
 BASE_EXPORT void SetLogAssertHandler(LogAssertHandlerFunction handler);
 
-// Sets the Log Report Handler that will be used to notify of check failures
-// in non-debug mode. The default handler shows a dialog box and continues
-// the execution, however clients can use this function to override with their
-// own handling.
-typedef void (*LogReportHandlerFunction)(const std::string& str);
-BASE_EXPORT void SetLogReportHandler(LogReportHandlerFunction handler);
-
 // Sets the Log Message Handler that gets passed every log message before
 // it's sent to other log destinations (if any).
 // Returns true to signal that it handled the message and the message
@@ -299,9 +287,8 @@ const LogSeverity LOG_VERBOSE = -1;  // This is level 1 verbosity
 const LogSeverity LOG_INFO = 0;
 const LogSeverity LOG_WARNING = 1;
 const LogSeverity LOG_ERROR = 2;
-const LogSeverity LOG_ERROR_REPORT = 3;
-const LogSeverity LOG_FATAL = 4;
-const LogSeverity LOG_NUM_SEVERITIES = 5;
+const LogSeverity LOG_FATAL = 3;
+const LogSeverity LOG_NUM_SEVERITIES = 4;
 
 // LOG_DFATAL is LOG_FATAL in debug mode, ERROR in normal mode
 #ifdef NDEBUG
@@ -319,9 +306,6 @@ const LogSeverity LOG_DFATAL = LOG_FATAL;
   logging::ClassName(__FILE__, __LINE__, logging::LOG_WARNING , ##__VA_ARGS__)
 #define COMPACT_GOOGLE_LOG_EX_ERROR(ClassName, ...) \
   logging::ClassName(__FILE__, __LINE__, logging::LOG_ERROR , ##__VA_ARGS__)
-#define COMPACT_GOOGLE_LOG_EX_ERROR_REPORT(ClassName, ...) \
-  logging::ClassName(__FILE__, __LINE__, \
-                     logging::LOG_ERROR_REPORT , ##__VA_ARGS__)
 #define COMPACT_GOOGLE_LOG_EX_FATAL(ClassName, ...) \
   logging::ClassName(__FILE__, __LINE__, logging::LOG_FATAL , ##__VA_ARGS__)
 #define COMPACT_GOOGLE_LOG_EX_DFATAL(ClassName, ...) \
@@ -333,8 +317,6 @@ const LogSeverity LOG_DFATAL = LOG_FATAL;
   COMPACT_GOOGLE_LOG_EX_WARNING(LogMessage)
 #define COMPACT_GOOGLE_LOG_ERROR \
   COMPACT_GOOGLE_LOG_EX_ERROR(LogMessage)
-#define COMPACT_GOOGLE_LOG_ERROR_REPORT \
-  COMPACT_GOOGLE_LOG_EX_ERROR_REPORT(LogMessage)
 #define COMPACT_GOOGLE_LOG_FATAL \
   COMPACT_GOOGLE_LOG_EX_FATAL(LogMessage)
 #define COMPACT_GOOGLE_LOG_DFATAL \
@@ -354,10 +336,9 @@ const LogSeverity LOG_DFATAL = LOG_FATAL;
 const LogSeverity LOG_0 = LOG_ERROR;
 #endif
 
-// As special cases, we can assume that LOG_IS_ON(ERROR_REPORT) and
-// LOG_IS_ON(FATAL) always hold.  Also, LOG_IS_ON(DFATAL) always holds
-// in debug mode.  In particular, CHECK()s will always fire if they
-// fail.
+// As special cases, we can assume that LOG_IS_ON(FATAL) always holds. Also,
+// LOG_IS_ON(DFATAL) always holds in debug mode. In particular, CHECK()s will
+// always fire if they fail.
 #define LOG_IS_ON(severity) \
   ((::logging::LOG_ ## severity) >= ::logging::GetMinLogLevel())
 
@@ -452,7 +433,7 @@ const LogSeverity LOG_0 = LOG_ERROR;
 // We make sure CHECK et al. always evaluates their arguments, as
 // doing CHECK(FunctionWithSideEffect()) is a common idiom.
 
-#if defined(OFFICIAL_BUILD) && defined(NDEBUG)
+#if defined(OFFICIAL_BUILD) && defined(NDEBUG) && !defined(OS_ANDROID)
 
 // Make all CHECK functions discard their log strings to reduce code
 // bloat for official release builds.
@@ -613,15 +594,6 @@ enum { DEBUG_MODE = ENABLE_DLOG };
 
 #define DVPLOG(verboselevel) DVPLOG_IF(verboselevel, VLOG_IS_ON(verboselevel))
 
-// TODO(vitalybuka): following should be removed and replaced with PLOG.
-#if defined(OS_WIN)
-#define LOG_GETLASTERROR(severity) PLOG(severity)
-#define DLOG_GETLASTERROR(severity) DPLOG(severity)
-#elif defined(OS_POSIX)
-#define LOG_ERRNO(severity) PLOG(severity)
-#define DLOG_ERRNO(severity) DPLOG(severity)
-#endif
-
 // Definitions for DCHECK et al.
 
 #if DCHECK_IS_ON
@@ -712,32 +684,14 @@ const LogSeverity LOG_DCHECK = LOG_INFO;
 // above.
 class BASE_EXPORT LogMessage {
  public:
-  LogMessage(const char* file, int line, LogSeverity severity, int ctr);
-
-  // Two special constructors that generate reduced amounts of code at
-  // LOG call sites for common cases.
-  //
-  // Used for LOG(INFO): Implied are:
-  // severity = LOG_INFO, ctr = 0
-  //
-  // Using this constructor instead of the more complex constructor above
-  // saves a couple of bytes per call site.
-  LogMessage(const char* file, int line);
-
-  // Used for LOG(severity) where severity != INFO.  Implied
-  // are: ctr = 0
-  //
-  // Using this constructor instead of the more complex constructor above
-  // saves a couple of bytes per call site.
+  // Used for LOG(severity).
   LogMessage(const char* file, int line, LogSeverity severity);
 
-  // A special constructor used for check failures.  Takes ownership
-  // of the given string.
-  // Implied severity = LOG_FATAL
+  // Used for CHECK_EQ(), etc. Takes ownership of the given string.
+  // Implied severity = LOG_FATAL.
   LogMessage(const char* file, int line, std::string* result);
 
-  // A special constructor used for check failures, with the option to
-  // specify severity.  Takes ownership of the given string.
+  // Used for DCHECK_EQ(), etc. Takes ownership of the given string.
   LogMessage(const char* file, int line, LogSeverity severity,
              std::string* result);
 

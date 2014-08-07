@@ -14,6 +14,7 @@
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
 #include "wtf/Assertions.h"
 #include "wtf/RefPtr.h"
+#include <v8.h>
 
 namespace WebCore {
 
@@ -76,13 +77,13 @@ void RespondWithObserver::didDispatchEvent()
         sendResponse(nullptr);
 }
 
-void RespondWithObserver::respondWith(const ScriptValue& value)
+void RespondWithObserver::respondWith(ScriptState* scriptState, const ScriptValue& value)
 {
     if (m_state != Initial)
         return;
 
     m_state = Pending;
-    ScriptPromise::cast(value).then(
+    ScriptPromise::cast(scriptState, value).then(
         ThenFunction::create(this, ThenFunction::Fulfilled),
         ThenFunction::create(this, ThenFunction::Rejected));
 }

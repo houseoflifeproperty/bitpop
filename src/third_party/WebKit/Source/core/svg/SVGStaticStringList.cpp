@@ -49,9 +49,9 @@ SVGPropertyBase* SVGStaticStringList::currentValueBase()
     return m_value.get();
 }
 
-void SVGStaticStringList::animationStarted()
+bool SVGStaticStringList::isAnimating() const
 {
-    ASSERT_NOT_REACHED();
+    return false;
 }
 
 PassRefPtr<SVGPropertyBase> SVGStaticStringList::createAnimatedValue()

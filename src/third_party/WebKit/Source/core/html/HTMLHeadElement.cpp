@@ -24,21 +24,18 @@
 #include "config.h"
 #include "core/html/HTMLHeadElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 
 namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLHeadElement::HTMLHeadElement(Document& document)
+inline HTMLHeadElement::HTMLHeadElement(Document& document)
     : HTMLElement(headTag, document)
 {
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLHeadElement> HTMLHeadElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLHeadElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLHeadElement)
 
 }

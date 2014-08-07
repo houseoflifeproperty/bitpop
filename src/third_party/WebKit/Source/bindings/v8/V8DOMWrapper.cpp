@@ -31,9 +31,9 @@
 #include "config.h"
 #include "bindings/v8/V8DOMWrapper.h"
 
-#include "V8HTMLCollection.h"
-#include "V8HTMLDocument.h"
-#include "V8Window.h"
+#include "bindings/core/v8/V8HTMLCollection.h"
+#include "bindings/core/v8/V8HTMLDocument.h"
+#include "bindings/core/v8/V8Window.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8ObjectConstructor.h"
 #include "bindings/v8/V8PerContextData.h"
@@ -64,7 +64,7 @@ static v8::Local<v8::Object> wrapInShadowTemplate(v8::Local<v8::Object> wrapper,
     if (shadow.IsEmpty())
         return v8::Local<v8::Object>();
     shadow->SetPrototype(wrapper);
-    V8DOMWrapper::setNativeInfo(wrapper, &V8HTMLDocument::wrapperTypeInfo, impl);
+    V8DOMWrapper::setNativeInfoForHiddenWrapper(wrapper, &V8HTMLDocument::wrapperTypeInfo, impl);
     return shadow;
 }
 

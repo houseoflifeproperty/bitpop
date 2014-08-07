@@ -245,6 +245,15 @@ extern const char kChromeVoxExtensionId[];
 // Path to preinstalled ChromeVox screen reader extension (relative to
 // |chrome::DIR_RESOURCES|).
 extern const char kChromeVoxExtensionPath[];
+// Name of ChromeVox manifest file.
+extern const char kChromeVoxManifestFilename[];
+// Name of ChromeVox guest manifest file.
+extern const char kChromeVoxGuestManifestFilename[];
+// Extension id, path (relative to |chrome::DIR_RESOURCES|) and IME engine
+// id for the builtin-in Braille IME extension.
+extern const char kBrailleImeExtensionId[];
+extern const char kBrailleImeExtensionPath[];
+extern const char kBrailleImeEngineId[];
 // Path to preinstalled Connectivity Diagnostics extension.
 extern const char kConnectivityDiagnosticsPath[];
 extern const char kConnectivityDiagnosticsKioskPath[];

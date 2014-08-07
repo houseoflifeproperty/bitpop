@@ -21,10 +21,6 @@
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/test/testsupport/gtest_prod_util.h"
 
-#ifdef MATLAB
-class MatlabPlot;
-#endif
-
 namespace webrtc {
 
 class ModuleRtpRtcpImpl : public RtpRtcp {
@@ -80,7 +76,7 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   virtual uint32_t SSRC() const OVERRIDE;
 
   // Configure SSRC, default is a random number.
-  virtual int32_t SetSSRC(const uint32_t ssrc) OVERRIDE;
+  virtual void SetSSRC(const uint32_t ssrc) OVERRIDE;
 
   virtual int32_t CSRCs(uint32_t arr_of_csrc[kRtpCsrcSize]) const OVERRIDE;
 
@@ -95,13 +91,12 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
 
   virtual uint32_t ByteCountSent() const;
 
-  virtual int32_t SetRTXSendStatus(const int mode,
-                                   const bool set_ssrc,
-                                   const uint32_t ssrc) OVERRIDE;
+  virtual void SetRTXSendStatus(const int mode) OVERRIDE;
 
-  virtual int32_t RTXSendStatus(int* mode, uint32_t* ssrc,
-                                int* payloadType) const OVERRIDE;
+  virtual void RTXSendStatus(int* mode, uint32_t* ssrc,
+                             int* payloadType) const OVERRIDE;
 
+  virtual void SetRtxSsrc(uint32_t ssrc) OVERRIDE;
 
   virtual void SetRtxSendPayloadType(int payload_type) OVERRIDE;
 
@@ -427,7 +422,8 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   scoped_ptr<CriticalSectionWrapper> critical_section_module_ptrs_;
   scoped_ptr<CriticalSectionWrapper> critical_section_module_ptrs_feedback_;
   ModuleRtpRtcpImpl*            default_module_;
-  std::list<ModuleRtpRtcpImpl*> child_modules_;
+  std::vector<ModuleRtpRtcpImpl*> child_modules_;
+  size_t padding_index_;
 
   // Send side
   NACKMethod            nack_method_;
@@ -439,10 +435,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   KeyFrameRequestMethod key_frame_req_method_;
 
   RemoteBitrateEstimator* remote_bitrate_;
-
-#ifdef MATLAB
-  MatlabPlot*           plot1_;
-#endif
 
   RtcpRttStats* rtt_stats_;
 

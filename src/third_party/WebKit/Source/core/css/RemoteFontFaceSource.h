@@ -11,9 +11,11 @@
 
 namespace WebCore {
 
+class FontLoader;
+
 class RemoteFontFaceSource : public CSSFontFaceSource, public FontResourceClient {
 public:
-    explicit RemoteFontFaceSource(FontResource*);
+    explicit RemoteFontFaceSource(FontResource*, PassRefPtrWillBeRawPtr<FontLoader>);
     virtual ~RemoteFontFaceSource();
 
     virtual FontResource* resource() OVERRIDE { return m_font.get(); }
@@ -21,7 +23,7 @@ public:
     virtual bool isLoaded() const OVERRIDE;
     virtual bool isValid() const OVERRIDE;
 
-    void beginLoadIfNeeded();
+    void beginLoadIfNeeded() OVERRIDE;
     virtual bool ensureFontData();
 
 #if ENABLE(SVG_FONTS)
@@ -31,11 +33,12 @@ public:
     virtual void didStartFontLoad(FontResource*) OVERRIDE;
     virtual void fontLoaded(FontResource*) OVERRIDE;
     virtual void fontLoadWaitLimitExceeded(FontResource*) OVERRIDE;
-    virtual void corsFailed(FontResource*) OVERRIDE;
 
     // For UMA reporting
     virtual bool hadBlankText() OVERRIDE { return m_histograms.hadBlankText(); }
     void paintRequested() { m_histograms.fallbackFontPainted(); }
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 protected:
     virtual PassRefPtr<SimpleFontData> createFontData(const FontDescription&) OVERRIDE;
@@ -45,21 +48,20 @@ protected:
 private:
     class FontLoadHistograms {
     public:
-        FontLoadHistograms() : m_loadStartTime(0), m_fallbackPaintTime(0), m_corsFailed(false) { }
+        FontLoadHistograms() : m_loadStartTime(0), m_fallbackPaintTime(0) { }
         void loadStarted();
         void fallbackFontPainted();
         void recordRemoteFont(const FontResource*);
         void recordFallbackTime(const FontResource*);
-        void corsFailed() { m_corsFailed = true; }
         bool hadBlankText() { return m_fallbackPaintTime; }
     private:
         const char* histogramName(const FontResource*);
         double m_loadStartTime;
         double m_fallbackPaintTime;
-        bool m_corsFailed;
     };
 
     ResourcePtr<FontResource> m_font;
+    RefPtrWillBeMember<FontLoader> m_fontLoader;
     FontLoadHistograms m_histograms;
 };
 

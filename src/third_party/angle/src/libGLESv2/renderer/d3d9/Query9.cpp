@@ -24,11 +24,7 @@ Query9::Query9(rx::Renderer9 *renderer, GLenum type) : QueryImpl(type)
 
 Query9::~Query9()
 {
-    if (mQuery)
-    {
-        mQuery->Release();
-        mQuery = NULL;
-    }
+    SafeRelease(mQuery);
 }
 
 void Query9::begin()
@@ -42,17 +38,16 @@ void Query9::begin()
     }
 
     HRESULT result = mQuery->Issue(D3DISSUE_BEGIN);
+    UNUSED_ASSERTION_VARIABLE(result);
     ASSERT(SUCCEEDED(result));
 }
 
 void Query9::end()
 {
-    if (mQuery == NULL)
-    {
-        return gl::error(GL_INVALID_OPERATION);
-    }
+    ASSERT(mQuery);
 
     HRESULT result = mQuery->Issue(D3DISSUE_END);
+    UNUSED_ASSERTION_VARIABLE(result);
     ASSERT(SUCCEEDED(result));
 
     mStatus = GL_FALSE;
@@ -120,6 +115,11 @@ GLboolean Query9::testQuery()
     }
 
     return GL_TRUE; // prevent blocking when query is null
+}
+
+bool Query9::isStarted() const
+{
+    return (mQuery != NULL);
 }
 
 }

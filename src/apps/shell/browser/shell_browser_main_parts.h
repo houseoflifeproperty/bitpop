@@ -34,6 +34,7 @@ class NetLog;
 namespace apps {
 
 class ShellBrowserContext;
+class ShellBrowserMainDelegate;
 class ShellDesktopController;
 class ShellExtensionsClient;
 
@@ -42,11 +43,10 @@ class ShellNetworkController;
 #endif
 
 // Handles initialization of AppShell.
-class ShellBrowserMainParts : public content::BrowserMainParts,
-                              public aura::WindowTreeHostObserver {
+class ShellBrowserMainParts : public content::BrowserMainParts {
  public:
-  explicit ShellBrowserMainParts(
-      const content::MainFunctionParams& parameters);
+  ShellBrowserMainParts(const content::MainFunctionParams& parameters,
+                        ShellBrowserMainDelegate* browser_main_delegate);
   virtual ~ShellBrowserMainParts();
 
   ShellBrowserContext* browser_context() {
@@ -66,9 +66,6 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
   virtual bool MainMessageLoopRun(int* result_code) OVERRIDE;
   virtual void PostMainMessageLoopRun() OVERRIDE;
   virtual void PostDestroyThreads() OVERRIDE;
-
-  // aura::WindowTreeHostObserver overrides:
-  virtual void OnHostCloseRequested(const aura::WindowTreeHost* host) OVERRIDE;
 
  private:
   // Creates and initializes the ExtensionSystem.
@@ -95,6 +92,8 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
   // If true, indicates the main message loop should be run
   // in MainMessageLoopRun. If false, it has already been run.
   bool run_message_loop_;
+
+  scoped_ptr<ShellBrowserMainDelegate> browser_main_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellBrowserMainParts);
 };

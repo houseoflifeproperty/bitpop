@@ -67,7 +67,7 @@ def CopyDriverForTargetLib(host):
   return [
       command.RemoveDirectory('driver'),
       command.Mkdir('driver'),
-      command.Runnable(pnacl_commands.InstallDriverScripts,
+      command.Runnable(None, pnacl_commands.InstallDriverScripts,
                        '%(driver)s', '%(cwd)s/driver',
                        host_windows=TripleIsWindows(host),
                        host_64bit=fnmatch.fnmatch(host, '*x86_64*'),
@@ -460,19 +460,29 @@ def BitcodeLibs(host, bias_arch):
   return libs
 
 
-def AeabiReadTpCmd(arch):
-  if arch == 'arm':
-    return [BuildTargetNativeCmd('aeabi_read_tp.S', 'aeabi_read_tp.o', arch)]
-  else:
-    return []
-
-
 def NativeLibs(host, arch):
   def H(component_name):
     return Mangle(component_name, host)
+
   setjmp_arch = arch
   if setjmp_arch.endswith('-nonsfi'):
     setjmp_arch = setjmp_arch[:-len('-nonsfi')]
+
+  arch_cmds = []
+  if arch == 'arm':
+    arch_cmds.append(
+        BuildTargetNativeCmd('aeabi_read_tp.S', 'aeabi_read_tp.o', arch))
+  elif arch == 'x86-32-nonsfi':
+    arch_cmds.extend(
+        [BuildTargetNativeCmd('entry_linux.c', 'entry_linux.o', arch),
+         BuildTargetNativeCmd('entry_linux_x86_32.S', 'entry_linux_asm.o',
+                              arch)])
+  elif arch == 'arm-nonsfi':
+    arch_cmds.extend(
+        [BuildTargetNativeCmd('entry_linux.c', 'entry_linux.o', arch),
+         BuildTargetNativeCmd('entry_linux_arm.S', 'entry_linux_asm.o',
+                              arch)])
+
   libs = {
       Mangle('libs_support_native', arch): {
           'type': 'build',
@@ -484,7 +494,7 @@ def NativeLibs(host, arch):
           'inputs': { 'src': os.path.join(NACL_DIR, 'pnacl', 'support'),
                       'include': os.path.join(NACL_DIR, 'src'),
                       'newlib_subset': os.path.join(
-                          NACL_DIR, 'src', 'third_party_mod',
+                          NACL_DIR, 'src', 'third_party',
                           'pnacl_native_newlib_subset'),
                       'driver': os.path.join(NACL_DIR, 'pnacl', 'driver')},
           'commands':
@@ -517,7 +527,7 @@ def NativeLibs(host, arch):
                   ['-std=c99', '-I%(abs_newlib_src)s/newlib/libm/common/',
                    '-D__ieee754_fmodf=fmodf'],
                   source_dir='%(abs_newlib_src)s/newlib/libm/math')] +
-              AeabiReadTpCmd(arch) + [
+              arch_cmds + [
               command.Command(' '.join([
                   PnaclTool('ar'), 'rc',
                   command.path.join('%(output)s', 'libcrt_platform.a'),
@@ -601,7 +611,7 @@ def UnsandboxedIRT(arch):
               # for build rules.
               command.Command([
                   'gcc', '-m32', '-O2', '-Wall', '-Werror',
-                  '-I%(top_srcdir)s/..', '-DNACL_LINUX=1',
+                  '-I%(top_srcdir)s/..', '-DNACL_LINUX=1', '-DDEFINE_MAIN',
                   '-c', command.path.join('%(support)s', 'irt_interfaces.c'),
                   '-o', command.path.join('%(output)s', 'unsandboxed_irt.o')]),
           ],

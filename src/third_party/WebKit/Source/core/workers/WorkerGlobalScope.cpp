@@ -44,10 +44,12 @@
 #include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/WorkerInspectorController.h"
 #include "core/loader/WorkerThreadableLoader.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/workers/WorkerNavigator.h"
 #include "core/workers/WorkerClients.h"
+#include "core/workers/WorkerConsole.h"
 #include "core/workers/WorkerLocation.h"
+#include "core/workers/WorkerNavigator.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThread.h"
@@ -209,6 +211,7 @@ void WorkerGlobalScope::dispose()
 {
     ASSERT(thread()->isCurrentThread());
 
+    m_eventQueue->close();
     clearScript();
     clearInspector();
     setClient(0);
@@ -271,7 +274,7 @@ EventTarget* WorkerGlobalScope::errorEventTarget()
     return this;
 }
 
-void WorkerGlobalScope::logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtr<ScriptCallStack>)
+void WorkerGlobalScope::logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>)
 {
     thread()->workerReportingProxy().reportException(errorMessage, lineNumber, columnNumber, sourceURL);
 }
@@ -291,7 +294,7 @@ void WorkerGlobalScope::addMessage(MessageSource source, MessageLevel level, con
     addMessageToWorkerConsole(source, level, message, sourceURL, lineNumber, nullptr, scriptState);
 }
 
-void WorkerGlobalScope::addMessageToWorkerConsole(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtr<ScriptCallStack> callStack, ScriptState* scriptState)
+void WorkerGlobalScope::addMessageToWorkerConsole(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack, ScriptState* scriptState)
 {
     ASSERT(isContextThread());
     if (callStack)
@@ -320,14 +323,26 @@ WorkerEventQueue* WorkerGlobalScope::eventQueue() const
     return m_eventQueue.get();
 }
 
+void WorkerGlobalScope::countFeature(UseCounter::Feature) const
+{
+    // FIXME: How should we count features for shared/service workers?
+}
+
+void WorkerGlobalScope::countDeprecation(UseCounter::Feature) const
+{
+    // FIXME: How should we count features for shared/service workers?
+}
+
 void WorkerGlobalScope::trace(Visitor* visitor)
 {
     visitor->trace(m_console);
     visitor->trace(m_location);
     visitor->trace(m_navigator);
+    visitor->trace(m_eventQueue);
     visitor->trace(m_workerClients);
     WillBeHeapSupplementable<WorkerGlobalScope>::trace(visitor);
     ExecutionContext::trace(visitor);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

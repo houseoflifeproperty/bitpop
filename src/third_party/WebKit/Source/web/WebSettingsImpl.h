@@ -99,7 +99,6 @@ public:
     virtual void setExperimentalWebGLEnabled(bool) OVERRIDE;
     virtual void setFantasyFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) OVERRIDE;
     virtual void setFixedFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) OVERRIDE;
-    virtual void setForceCompositingMode(bool) OVERRIDE;
     virtual void setGestureTapHighlightEnabled(bool) OVERRIDE;
     virtual void setHyperlinkAuditingEnabled(bool) OVERRIDE;
     virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool) OVERRIDE;
@@ -131,7 +130,6 @@ public:
     virtual void setPinchOverlayScrollbarThickness(int) OVERRIDE;
     virtual void setPinchVirtualViewportEnabled(bool) OVERRIDE;
     virtual void setPluginsEnabled(bool) OVERRIDE;
-    virtual void setPrivilegedWebGLExtensionsEnabled(bool) OVERRIDE;
     virtual void setRenderVSyncNotificationEnabled(bool) OVERRIDE;
     virtual void setReportScreenSizeInPhysicalPixelsQuirk(bool) OVERRIDE;
     virtual void setSansSerifFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) OVERRIDE;
@@ -156,14 +154,13 @@ public:
     virtual void setAccessibilityFontScaleFactor(float) OVERRIDE;
     virtual void setTouchDragDropEnabled(bool) OVERRIDE;
     virtual void setTouchEditingEnabled(bool) OVERRIDE;
-    virtual void setThreadedHTMLParser(bool) OVERRIDE;
     virtual void setUnifiedTextCheckerEnabled(bool) OVERRIDE;
     virtual void setUnsafePluginPastingEnabled(bool) OVERRIDE;
     virtual void setUsesEncodingDetector(bool) OVERRIDE;
+    virtual void setUseExpandedHeuristicsForGpuRasterization(bool) OVERRIDE;
     virtual void setUseLegacyBackgroundSizeShorthandBehavior(bool) OVERRIDE;
     virtual void setUseSolidColorScrollbars(bool) OVERRIDE;
     virtual void setUseWideViewport(bool) OVERRIDE;
-    virtual void setUseThreadedHTMLParserForDataURLs(bool) OVERRIDE;
     virtual void setValidationMessageTimerMagnification(int) OVERRIDE;
     virtual void setViewportEnabled(bool) OVERRIDE;
     virtual void setViewportMetaEnabled(bool) OVERRIDE;
@@ -185,6 +182,7 @@ public:
     bool doubleTapToZoomEnabled() const { return m_doubleTapToZoomEnabled; }
     bool perTilePaintingEnabled() const { return m_perTilePaintingEnabled; }
     bool supportDeprecatedTargetDensityDPI() const { return m_supportDeprecatedTargetDensityDPI; }
+    bool useExpandedHeuristicsForGpuRasterization() const { return m_useExpandedHeuristicsForGpuRasterization; }
     bool viewportMetaLayoutSizeQuirk() const { return m_viewportMetaLayoutSizeQuirk; }
     bool viewportMetaNonUserScalableQuirk() const { return m_viewportMetaNonUserScalableQuirk; }
     bool clobberUserAgentInitialScaleQuirk() const { return m_clobberUserAgentInitialScaleQuirk; }
@@ -202,6 +200,7 @@ private:
     bool m_perTilePaintingEnabled;
     bool m_supportDeprecatedTargetDensityDPI;
     bool m_shrinksViewportContentToFit;
+    bool m_useExpandedHeuristicsForGpuRasterization;
     // This quirk is to maintain compatibility with Android apps built on
     // the Android SDK prior to and including version 18. Presumably, this
     // can be removed any time after 2015. See http://crbug.com/277369.

@@ -15,14 +15,12 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebAutocompleteParams.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 using base::ASCIIToUTF16;
-using blink::WebAutocompleteParams;
 using blink::WebDocument;
 using blink::WebElement;
 using blink::WebFormElement;
@@ -79,7 +77,7 @@ TEST_F(AutofillRendererTest, SendForms) {
   ASSERT_NE(static_cast<IPC::Message*>(NULL), message);
   AutofillHostMsg_FormsSeen::Param params;
   AutofillHostMsg_FormsSeen::Read(message, &params);
-  const std::vector<FormData>& forms = params.a;
+  std::vector<FormData> forms = params.a;
   ASSERT_EQ(1UL, forms.size());
   ASSERT_EQ(4UL, forms[0].fields.size());
 
@@ -110,6 +108,56 @@ TEST_F(AutofillRendererTest, SendForms) {
   expected.form_control_type = "select-one";
   expected.max_length = 0;
   EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[3]);
+
+  render_thread_->sink().ClearMessages();
+
+  // Dynamically create a new form. A new message should be sent for it, but
+  // not for the previous form.
+  ExecuteJavaScript(
+      "var newForm=document.createElement('form');"
+      "newForm.id='new_testform';"
+      "newForm.action='http://google.com';"
+      "newForm.method='post';"
+      "var newFirstname=document.createElement('input');"
+      "newFirstname.setAttribute('type', 'text');"
+      "newFirstname.setAttribute('id', 'second_firstname');"
+      "newFirstname.value = 'Bob';"
+      "var newLastname=document.createElement('input');"
+      "newLastname.setAttribute('type', 'text');"
+      "newLastname.setAttribute('id', 'second_lastname');"
+      "newLastname.value = 'Hope';"
+      "var newEmail=document.createElement('input');"
+      "newEmail.setAttribute('type', 'text');"
+      "newEmail.setAttribute('id', 'second_email');"
+      "newEmail.value = 'bobhope@example.com';"
+      "newForm.appendChild(newFirstname);"
+      "newForm.appendChild(newLastname);"
+      "newForm.appendChild(newEmail);"
+      "document.body.appendChild(newForm);");
+  msg_loop_.RunUntilIdle();
+
+  message = render_thread_->sink().GetFirstMessageMatching(
+      AutofillHostMsg_FormsSeen::ID);
+  ASSERT_NE(static_cast<IPC::Message*>(NULL), message);
+  AutofillHostMsg_FormsSeen::Read(message, &params);
+  forms = params.a;
+  ASSERT_EQ(1UL, forms.size());
+  ASSERT_EQ(3UL, forms[0].fields.size());
+
+  expected.form_control_type = "text";
+  expected.max_length = WebInputElement::defaultMaxLength();
+
+  expected.name = ASCIIToUTF16("second_firstname");
+  expected.value = ASCIIToUTF16("Bob");
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[0]);
+
+  expected.name = ASCIIToUTF16("second_lastname");
+  expected.value = ASCIIToUTF16("Hope");
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[1]);
+
+  expected.name = ASCIIToUTF16("second_email");
+  expected.value = ASCIIToUTF16("bobhope@example.com");
+  EXPECT_FORM_FIELD_DATA_EQUALS(expected, forms[0].fields[2]);
 }
 
 TEST_F(AutofillRendererTest, EnsureNoFormSeenIfTooFewFields) {
@@ -229,8 +277,7 @@ class RequestAutocompleteRendererTest : public AutofillRendererTest {
     render_thread_->sink().ClearMessages();
 
     // Invoke requestAutocomplete to show the dialog.
-    autofill_agent_->didRequestAutocomplete(invoking_form(),
-                                            blink::WebAutocompleteParams());
+    autofill_agent_->didRequestAutocomplete(invoking_form());
     ASSERT_TRUE(render_thread_->sink().GetFirstMessageMatching(
         AutofillHostMsg_RequestAutocomplete::ID));
 
@@ -308,8 +355,7 @@ TEST_F(RequestAutocompleteRendererTest, NoCancelOnMainFrameNavigateAfterDone) {
 
 TEST_F(RequestAutocompleteRendererTest, InvokingTwiceOnlyShowsOnce) {
   // Attempting to show the requestAutocomplete dialog again should be ignored.
-  autofill_agent_->didRequestAutocomplete(invoking_form(),
-                                          blink::WebAutocompleteParams());
+  autofill_agent_->didRequestAutocomplete(invoking_form());
   EXPECT_FALSE(render_thread_->sink().GetFirstMessageMatching(
       AutofillHostMsg_RequestAutocomplete::ID));
 }

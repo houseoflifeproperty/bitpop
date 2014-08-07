@@ -11,11 +11,11 @@ from slave import recipe_test_api
 
 class BotUpdateTestApi(recipe_test_api.RecipeTestApi):
   def output_json(self, master, builder, slave, root, first_sln,
-                  revision_mapping, git_mode):
+                  revision_mapping, git_mode, force=False, fail_patch=False):
     """Deterministically synthesize json.output test data for gclient's
     --output-json option.
     """
-    active = bot_update.check_valid_host(master, builder, slave)
+    active = bot_update.check_valid_host(master, builder, slave) or force
 
     output = {
         'did_run': active
@@ -40,6 +40,9 @@ class BotUpdateTestApi(recipe_test_api.RecipeTestApi):
           'properties': properties,
           'step_text': 'Some step text'
       })
+
+      if fail_patch:
+        output['log_lines'] = [('patch failed', 'Patch failed to apply'),]
     return self.m.json.output(output)
 
 

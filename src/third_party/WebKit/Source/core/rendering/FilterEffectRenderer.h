@@ -30,7 +30,6 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRectExtent.h"
 #include "platform/geometry/LayoutRect.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/FilterEffect.h"
@@ -42,8 +41,6 @@
 
 namespace WebCore {
 
-class ShaderResource;
-class Document;
 class GraphicsContext;
 class RenderLayer;
 class RenderObject;

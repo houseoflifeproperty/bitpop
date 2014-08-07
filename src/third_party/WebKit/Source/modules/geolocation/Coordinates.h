@@ -27,17 +27,16 @@
 #define Coordinates_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 #include "platform/heap/Handle.h"
-#include "wtf/RefCounted.h"
 
 namespace WebCore {
 
-class Coordinates : public RefCountedWillBeGarbageCollectedFinalized<Coordinates>, public ScriptWrappable {
+class Coordinates : public GarbageCollectedFinalized<Coordinates>, public ScriptWrappable {
 public:
-    static PassRefPtrWillBeRawPtr<Coordinates> create(double latitude, double longitude, bool providesAltitude, double altitude, double accuracy, bool providesAltitudeAccuracy, double altitudeAccuracy, bool providesHeading, double heading, bool providesSpeed, double speed)
+    static Coordinates* create(double latitude, double longitude, bool providesAltitude, double altitude, double accuracy, bool providesAltitudeAccuracy, double altitudeAccuracy, bool providesHeading, double heading, bool providesSpeed, double speed)
     {
-        return adoptRefWillBeNoop(new Coordinates(latitude, longitude, providesAltitude, altitude, accuracy, providesAltitudeAccuracy, altitudeAccuracy, providesHeading, heading, providesSpeed, speed));
+        return new Coordinates(latitude, longitude, providesAltitude, altitude, accuracy, providesAltitudeAccuracy, altitudeAccuracy, providesHeading, heading, providesSpeed, speed);
     }
     void trace(Visitor*) { }
 

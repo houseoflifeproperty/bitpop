@@ -11,7 +11,6 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/views/controls/image_view.h"
-#include "ui/views/controls/label.h"
 #include "ui/views/painter.h"
 
 
@@ -65,7 +64,7 @@ IconLabelBubbleView::IconLabelBubbleView(const int background_images[],
                               parent_background_color,
                               SkColorGetA(background_image_color)));
   if (elide_in_middle)
-    label_->SetElideBehavior(views::Label::ELIDE_IN_MIDDLE);
+    label_->SetElideBehavior(gfx::ELIDE_MIDDLE);
   AddChildView(label_);
 }
 
@@ -80,7 +79,7 @@ void IconLabelBubbleView::SetImage(const gfx::ImageSkia& image_skia) {
   image_->SetImage(image_skia);
 }
 
-gfx::Size IconLabelBubbleView::GetPreferredSize() {
+gfx::Size IconLabelBubbleView::GetPreferredSize() const {
   // Height will be ignored by the LocationBarView.
   return GetSizeForLabelWidth(label_->GetPreferredSize().width());
 }

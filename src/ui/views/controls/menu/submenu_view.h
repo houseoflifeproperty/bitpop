@@ -55,14 +55,15 @@ class VIEWS_EXPORT SubmenuView : public PrefixDelegate,
   // Positions and sizes the child views. This tiles the views vertically,
   // giving each child the available width.
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   // Override from View.
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
 
   // Painting.
-  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+  virtual void PaintChildren(gfx::Canvas* canvas,
+                             const views::CullSet& cull_view) OVERRIDE;
 
   // Drag and drop methods. These are forwarded to the MenuController.
   virtual bool GetDropFormats(
@@ -200,7 +201,7 @@ class VIEWS_EXPORT SubmenuView : public PrefixDelegate,
   MenuScrollViewContainer* scroll_view_container_;
 
   // See description above getter.
-  int max_minor_text_width_;
+  mutable int max_minor_text_width_;
 
   // Minimum width returned in GetPreferredSize().
   int minimum_preferred_width_;

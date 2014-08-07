@@ -55,7 +55,6 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
       ReportUnrecoverableErrorFunction
           report_unrecoverable_error_function,
       CancelationSignal* cancelation_signal) OVERRIDE;
-  virtual void ThrowUnrecoverableError() OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
   virtual ModelTypeSet GetTypesWithEmptyProgressMarkerToken(
       ModelTypeSet types) OVERRIDE;
@@ -112,6 +111,9 @@ class SYNC_EXPORT_PRIVATE SyncRollbackManagerBase :
   virtual void OnTransactionWrite(
       const syncable::ImmutableWriteTransactionInfo& write_transaction_info,
       ModelTypeSet models_with_changes) OVERRIDE;
+
+ protected:
+  ObserverList<SyncManager::Observer>* GetObservers();
 
   virtual void RegisterDirectoryTypeDebugInfoObserver(
       syncer::TypeDebugInfoObserver* observer) OVERRIDE;

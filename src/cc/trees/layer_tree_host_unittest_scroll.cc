@@ -241,7 +241,8 @@ class LayerTreeHostScrollTestScrollAbortedCommit
       case 3:
         // This commit will not be aborted because of the scroll change.
         EXPECT_EQ(2, num_impl_scrolls_);
-        EXPECT_EQ(1, layer_tree_host()->source_frame_number());
+        // The source frame number still increases even with the abort.
+        EXPECT_EQ(2, layer_tree_host()->source_frame_number());
         EXPECT_VECTOR_EQ(root_scroll_layer->scroll_offset(),
                          initial_scroll_ + impl_scroll_ + impl_scroll_);
         EXPECT_EQ(impl_scale_ * impl_scale_,
@@ -252,7 +253,7 @@ class LayerTreeHostScrollTestScrollAbortedCommit
       case 4:
         // This commit will also be aborted.
         EXPECT_EQ(3, num_impl_scrolls_);
-        EXPECT_EQ(2, layer_tree_host()->source_frame_number());
+        EXPECT_EQ(3, layer_tree_host()->source_frame_number());
         EXPECT_VECTOR_EQ(root_scroll_layer->scroll_offset(),
                          initial_scroll_ + impl_scroll_ + impl_scroll_ +
                              impl_scroll_ + second_main_scroll_);
@@ -311,7 +312,10 @@ class LayerTreeHostScrollTestScrollAbortedCommit
                 impl->active_tree()->total_page_scale_factor());
 
       impl->SetNeedsCommit();
-    } else if (impl->active_tree()->source_frame_number() == 1 &&
+    } else if (impl->active_tree()->source_frame_number() == 1) {
+      // Commit for source frame 1 is aborted.
+      NOTREACHED();
+    } else if (impl->active_tree()->source_frame_number() == 2 &&
                impl->SourceAnimationFrameNumber() == 3) {
       // Third draw after the second full commit.
       EXPECT_EQ(root_scroll_layer->ScrollDelta(), gfx::Vector2d());
@@ -321,7 +325,7 @@ class LayerTreeHostScrollTestScrollAbortedCommit
       EXPECT_VECTOR_EQ(
           root_scroll_layer->scroll_offset(),
           initial_scroll_ + impl_scroll_ + impl_scroll_ + second_main_scroll_);
-    } else if (impl->active_tree()->source_frame_number() == 1 &&
+    } else if (impl->active_tree()->source_frame_number() == 2 &&
                impl->SourceAnimationFrameNumber() == 4) {
       // Final draw after the second aborted commit.
       EXPECT_VECTOR_EQ(root_scroll_layer->ScrollDelta(), gfx::Vector2d());
@@ -329,6 +333,9 @@ class LayerTreeHostScrollTestScrollAbortedCommit
                        initial_scroll_ + impl_scroll_ + impl_scroll_ +
                            impl_scroll_ + second_main_scroll_);
       EndTest();
+    } else {
+      // Commit for source frame 3 is aborted.
+      NOTREACHED();
     }
   }
 
@@ -446,7 +453,6 @@ class LayerTreeHostScrollTestCaseWithChild : public LayerTreeHostScrollTest {
     root_scroll_layer_->SetBounds(gfx::Size(110, 110));
 
     root_scroll_layer_->SetPosition(gfx::Point());
-    root_scroll_layer_->SetAnchorPoint(gfx::PointF());
 
     root_scroll_layer_->SetIsDrawable(true);
     root_scroll_layer_->SetScrollClipLayerId(root_layer->id());
@@ -468,7 +474,6 @@ class LayerTreeHostScrollTestCaseWithChild : public LayerTreeHostScrollTest {
       // Adjust the child layer horizontally so that scrolls will never hit it.
       child_layer_->SetPosition(gfx::Point(60, 5));
     }
-    child_layer_->SetAnchorPoint(gfx::PointF());
 
     child_layer_->SetIsDrawable(true);
     child_layer_->SetScrollClipLayerId(root_layer->id());
@@ -1202,7 +1207,6 @@ class LayerTreeHostScrollTestLayerStructureChange
         ContentLayer::Create(&fake_content_layer_client_);
     scroll_layer->SetBounds(gfx::Size(110, 110));
     scroll_layer->SetPosition(gfx::Point(0, 0));
-    scroll_layer->SetAnchorPoint(gfx::PointF());
     scroll_layer->SetIsDrawable(true);
     scroll_layer->SetScrollClipLayerId(parent->id());
     scroll_layer->SetBounds(gfx::Size(parent->bounds().width() + 100,

@@ -21,7 +21,7 @@ Unmount::~Unmount() {
 }
 
 bool Unmount::Execute(int request_id) {
-  scoped_ptr<base::ListValue> values(new base::ListValue);
+  scoped_ptr<base::DictionaryValue> values(new base::DictionaryValue);
   return SendEvent(
       request_id,
       extensions::api::file_system_provider::OnUnmountRequested::kEventName,
@@ -30,7 +30,7 @@ bool Unmount::Execute(int request_id) {
 
 void Unmount::OnSuccess(int /* request_id */,
                         scoped_ptr<RequestValue> /* result */,
-                        bool /* has_next */) {
+                        bool /* has_more */) {
   callback_.Run(base::File::FILE_OK);
 }
 

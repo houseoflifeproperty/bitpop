@@ -16,7 +16,7 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "mojo/embedder/scoped_platform_handle.h"
-#include "mojo/public/c/system/core.h"
+#include "mojo/public/c/system/types.h"
 #include "mojo/system/message_in_transit.h"
 #include "mojo/system/message_pipe.h"
 #include "mojo/system/raw_channel.h"
@@ -143,13 +143,17 @@ class MOJO_SYSTEM_IMPL_EXPORT Channel
 
   // |RawChannel::Delegate| implementation:
   virtual void OnReadMessage(
-      const MessageInTransit::View& message_view) OVERRIDE;
+      const MessageInTransit::View& message_view,
+      embedder::ScopedPlatformHandleVectorPtr platform_handles) OVERRIDE;
   virtual void OnFatalError(FatalError fatal_error) OVERRIDE;
 
   // Helpers for |OnReadMessage|:
-  bool ValidateReadMessage(const MessageInTransit::View& message_view);
-  void OnReadMessageForDownstream(const MessageInTransit::View& message_view);
-  void OnReadMessageForChannel(const MessageInTransit::View& message_view);
+  void OnReadMessageForDownstream(
+      const MessageInTransit::View& message_view,
+      embedder::ScopedPlatformHandleVectorPtr platform_handles);
+  void OnReadMessageForChannel(
+      const MessageInTransit::View& message_view,
+      embedder::ScopedPlatformHandleVectorPtr platform_handles);
 
   // Removes the message pipe endpoint with the given local ID, which must exist
   // and be a zombie, and given remote ID. Returns false on failure, in

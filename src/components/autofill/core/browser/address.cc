@@ -49,6 +49,9 @@ base::string16 Address::GetRawInfo(ServerFieldType type) const {
     case ADDRESS_HOME_LINE2:
       return street_address_.size() > 1 ? street_address_[1] : base::string16();
 
+    case ADDRESS_HOME_LINE3:
+      return street_address_.size() > 2 ? street_address_[2] : base::string16();
+
     case ADDRESS_HOME_DEPENDENT_LOCALITY:
       return dependent_locality_;
 
@@ -90,6 +93,13 @@ void Address::SetRawInfo(ServerFieldType type, const base::string16& value) {
       if (street_address_.size() < 2)
         street_address_.resize(2);
       street_address_[1] = value;
+      TrimStreetAddress();
+      break;
+
+    case ADDRESS_HOME_LINE3:
+      if (street_address_.size() < 3)
+        street_address_.resize(3);
+      street_address_[2] = value;
       TrimStreetAddress();
       break;
 
@@ -151,6 +161,9 @@ bool Address::SetInfo(const AutofillType& type,
 
     country_code_ = StringToUpperASCII(base::UTF16ToASCII(value));
     return true;
+  } else if (type.html_type() == HTML_TYPE_FULL_ADDRESS) {
+    // Parsing a full address is too hard.
+    return false;
   }
 
   ServerFieldType storable_type = type.GetStorableType();
@@ -198,6 +211,7 @@ void Address::GetMatchingTypes(const base::string16& text,
 void Address::GetSupportedTypes(ServerFieldTypeSet* supported_types) const {
   supported_types->insert(ADDRESS_HOME_LINE1);
   supported_types->insert(ADDRESS_HOME_LINE2);
+  supported_types->insert(ADDRESS_HOME_LINE3);
   supported_types->insert(ADDRESS_HOME_STREET_ADDRESS);
   supported_types->insert(ADDRESS_HOME_DEPENDENT_LOCALITY);
   supported_types->insert(ADDRESS_HOME_CITY);

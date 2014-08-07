@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //webkit/browser:storage
       'target_name': 'webkit_storage_browser',
       'type': '<(component)',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -49,8 +50,9 @@
         'browser/appcache/appcache_request_handler.h',
         'browser/appcache/appcache_response.cc',
         'browser/appcache/appcache_response.h',
-        'browser/appcache/appcache_service.cc',
         'browser/appcache/appcache_service.h',
+        'browser/appcache/appcache_service_impl.cc',
+        'browser/appcache/appcache_service_impl.h',
         'browser/appcache/appcache_storage.cc',
         'browser/appcache/appcache_storage.h',
         'browser/appcache/appcache_storage_impl.cc',
@@ -226,6 +228,7 @@
       ],
     },
     {
+      # GN version: //webkit/browser:dump_file_system
       'target_name': 'dump_file_system',
       'type': 'executable',
       'sources': [

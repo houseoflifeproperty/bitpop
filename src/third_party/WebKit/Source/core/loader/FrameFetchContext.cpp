@@ -45,8 +45,6 @@
 
 namespace WebCore {
 
-static const char defaultAcceptHeader[] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8";
-
 FrameFetchContext::FrameFetchContext(LocalFrame* frame)
     : m_frame(frame)
 {
@@ -80,31 +78,20 @@ void FrameFetchContext::addAdditionalRequestHeaders(Document* document, Resource
         FrameLoader::addHTTPOriginIfNeeded(request, AtomicString(outgoingOrigin));
     }
 
-    if (isMainResource && m_frame->isMainFrame())
-        request.setFirstPartyForCookies(request.url());
-    else
-        request.setFirstPartyForCookies(m_frame->tree().top()->document()->firstPartyForCookies());
-
     // The remaining modifications are only necessary for HTTP and HTTPS.
     if (!request.url().isEmpty() && !request.url().protocolIsInHTTPFamily())
         return;
 
     m_frame->loader().applyUserAgent(request);
 
-    if (request.cachePolicy() == ReloadIgnoringCacheData) {
-        if (m_frame->loader().loadType() == FrameLoadTypeReload) {
-            request.setHTTPHeaderField("Cache-Control", "max-age=0");
-        } else if (m_frame->loader().loadType() == FrameLoadTypeReloadFromOrigin) {
-            request.setHTTPHeaderField("Cache-Control", "no-cache");
-            request.setHTTPHeaderField("Pragma", "no-cache");
-        }
-    }
-
-    if (isMainResource)
-        request.setHTTPAccept(defaultAcceptHeader);
-
     // Default to sending an empty Origin header if one hasn't been set yet.
     FrameLoader::addHTTPOriginIfNeeded(request, nullAtom);
+}
+
+void FrameFetchContext::setFirstPartyForCookies(ResourceRequest& request)
+{
+    if (m_frame->tree().top()->isLocalFrame())
+        request.setFirstPartyForCookies(toLocalFrame(m_frame->tree().top())->document()->firstPartyForCookies());
 }
 
 CachePolicy FrameFetchContext::cachePolicy(Document* document) const
@@ -116,8 +103,9 @@ CachePolicy FrameFetchContext::cachePolicy(Document* document) const
     if (loadType == FrameLoadTypeReloadFromOrigin)
         return CachePolicyReload;
 
-    if (LocalFrame* parentFrame = m_frame->tree().parent()) {
-        CachePolicy parentCachePolicy = parentFrame->loader().fetchContext().cachePolicy(parentFrame->document());
+    Frame* parentFrame = m_frame->tree().parent();
+    if (parentFrame && parentFrame->isLocalFrame()) {
+        CachePolicy parentCachePolicy = toLocalFrame(parentFrame)->loader().fetchContext().cachePolicy(toLocalFrame(parentFrame)->document());
         if (parentCachePolicy != CachePolicyVerify)
             return parentCachePolicy;
     }

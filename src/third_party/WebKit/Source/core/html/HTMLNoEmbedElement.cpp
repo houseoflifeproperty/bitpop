@@ -31,7 +31,8 @@
 #include "config.h"
 #include "core/html/HTMLNoEmbedElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
+#include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/loader/FrameLoader.h"
 
@@ -39,15 +40,12 @@ namespace WebCore {
 
 using namespace HTMLNames;
 
-HTMLNoEmbedElement::HTMLNoEmbedElement(Document& document)
+inline HTMLNoEmbedElement::HTMLNoEmbedElement(Document& document)
     : HTMLElement(noembedTag, document)
 {
 }
 
-PassRefPtrWillBeRawPtr<HTMLNoEmbedElement> HTMLNoEmbedElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLNoEmbedElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLNoEmbedElement)
 
 bool HTMLNoEmbedElement::rendererIsNeeded(const RenderStyle& style)
 {

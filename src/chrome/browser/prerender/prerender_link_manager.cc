@@ -27,6 +27,10 @@
 #include "ui/gfx/size.h"
 #include "url/gurl.h"
 
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/guest_view/guest_view_base.h"
+#endif
+
 using base::TimeDelta;
 using base::TimeTicks;
 using content::RenderViewHost;
@@ -165,12 +169,17 @@ void PrerenderLinkManager::OnAddPrerender(int launcher_child_id,
   DCHECK_EQ(static_cast<LinkPrerender*>(NULL),
             FindByLauncherChildIdAndPrerenderId(launcher_child_id,
                                                 prerender_id));
-  content::RenderProcessHost* rph =
-      content::RenderProcessHost::FromID(launcher_child_id);
+
+#if defined(ENABLE_EXTENSIONS)
+  content::RenderViewHost* rvh =
+      content::RenderViewHost::FromID(launcher_child_id, render_view_route_id);
+  content::WebContents* web_contents =
+      rvh ? content::WebContents::FromRenderViewHost(rvh) : NULL;
   // Guests inside <webview> do not support cross-process navigation and so we
   // do not allow guests to prerender content.
-  if (rph && rph->IsGuest())
+  if (GuestViewBase::IsGuest(web_contents))
     return;
+#endif
 
   // Check if the launcher is itself an unswapped prerender.
   PrerenderContents* prerender_contents =

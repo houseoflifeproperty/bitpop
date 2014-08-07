@@ -20,6 +20,7 @@
 #include "base/rand_util.h"
 #include "base/task_runner.h"
 #include "base/threading/thread.h"
+#include "components/invalidation/non_blocking_invalidator.h"
 #include "jingle/notifier/base/notification_method.h"
 #include "jingle/notifier/base/notifier_options.h"
 #include "net/base/host_port_pair.h"
@@ -41,7 +42,6 @@
 #include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/js/js_event_details.h"
 #include "sync/js/js_event_handler.h"
-#include "sync/notifier/non_blocking_invalidator.h"
 #include "sync/test/fake_encryptor.h"
 #include "sync/tools/null_invalidation_state_tracker.h"
 
@@ -326,7 +326,7 @@ int SyncClientMain(int argc, char* argv[]) {
   workers.push_back(passive_model_safe_worker);
 
   // Set up sync manager.
-  SyncManagerFactory sync_manager_factory;
+  SyncManagerFactory sync_manager_factory(SyncManagerFactory::NORMAL);
   scoped_ptr<SyncManager> sync_manager =
       sync_manager_factory.CreateSyncManager("sync_client manager");
   LoggingJsEventHandler js_event_handler;

@@ -20,12 +20,12 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "base/version.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
+#include "components/network_time/network_time_tracker.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -127,10 +127,10 @@ bool IsSystemInstall() {
   return !InstallUtil::IsPerUserInstall(exe_path.value().c_str());
 }
 
-// This task checks the update policy and calls back the task only if the
-// system is not enrolled in a domain (i.e., not in an enterprise environment).
-// It also identifies if autoupdate is enabled and whether we are running an
-// unstable channel. |is_auto_update_enabled| can be NULL.
+// Sets |is_unstable_channel| to true if the current chrome is on the dev or
+// canary channels. Sets |is_auto_update_enabled| to true if Google Update will
+// update the current chrome. Unconditionally posts |callback_task| to the UI
+// thread to continue processing.
 void DetectUpdatability(const base::Closure& callback_task,
                         bool* is_unstable_channel,
                         bool* is_auto_update_enabled) {
@@ -144,11 +144,47 @@ void DetectUpdatability(const base::Closure& callback_task,
         GoogleUpdateSettings::AreAutoupdatesEnabled(app_guid);
   }
   *is_unstable_channel = IsUnstableChannel();
-  // Don't show the update bubbles to entreprise users (i.e., on a domain).
-  if (!base::win::IsEnrolledToDomain())
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, callback_task);
+  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, callback_task);
 }
 #endif  // defined(OS_WIN)
+
+// Gets the currently installed version. On Windows, if |critical_update| is not
+// NULL, also retrieves the critical update version info if available.
+base::Version GetCurrentlyInstalledVersionImpl(Version* critical_update) {
+  base::ThreadRestrictions::AssertIOAllowed();
+
+  Version installed_version;
+#if defined(OS_WIN)
+  // Get the version of the currently *installed* instance of Chrome,
+  // which might be newer than the *running* instance if we have been
+  // upgraded in the background.
+  bool system_install = IsSystemInstall();
+
+  // TODO(tommi): Check if using the default distribution is always the right
+  // thing to do.
+  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+  InstallUtil::GetChromeVersion(dist, system_install, &installed_version);
+  if (critical_update && installed_version.IsValid()) {
+    InstallUtil::GetCriticalUpdateVersion(dist, system_install,
+                                          critical_update);
+  }
+#elif defined(OS_MACOSX)
+  installed_version =
+      Version(base::UTF16ToASCII(keystone_glue::CurrentlyInstalledVersion()));
+#elif defined(OS_POSIX)
+  // POSIX but not Mac OS X: Linux, etc.
+  CommandLine command_line(*CommandLine::ForCurrentProcess());
+  command_line.AppendSwitch(switches::kProductVersion);
+  std::string reply;
+  if (!base::GetAppOutput(command_line, &reply)) {
+    DLOG(ERROR) << "Failed to get current file version";
+    return installed_version;
+  }
+
+  installed_version = Version(reply);
+#endif
+  return installed_version;
+}
 
 }  // namespace
 
@@ -248,14 +284,17 @@ UpgradeDetectorImpl::UpgradeDetectorImpl()
                                      start_upgrade_check_timer_task,
                                      &is_unstable_channel_));
 #endif
-  // Start tracking network time updates.
-  network_time_tracker_.Start();
 }
 
 UpgradeDetectorImpl::~UpgradeDetectorImpl() {
 }
 
-// Static
+// static
+base::Version UpgradeDetectorImpl::GetCurrentlyInstalledVersion() {
+  return GetCurrentlyInstalledVersionImpl(NULL);
+}
+
+// static
 // This task checks the currently running version of Chrome against the
 // installed version. If the installed version is newer, it calls back
 // UpgradeDetectorImpl::UpgradeDetected using a weak pointer so that it can
@@ -264,39 +303,9 @@ void UpgradeDetectorImpl::DetectUpgradeTask(
     base::WeakPtr<UpgradeDetectorImpl> upgrade_detector) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  Version installed_version;
   Version critical_update;
-
-#if defined(OS_WIN)
-  // Get the version of the currently *installed* instance of Chrome,
-  // which might be newer than the *running* instance if we have been
-  // upgraded in the background.
-  bool system_install = IsSystemInstall();
-
-  // TODO(tommi): Check if using the default distribution is always the right
-  // thing to do.
-  BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  InstallUtil::GetChromeVersion(dist, system_install, &installed_version);
-
-  if (installed_version.IsValid()) {
-    InstallUtil::GetCriticalUpdateVersion(dist, system_install,
-                                          &critical_update);
-  }
-#elif defined(OS_MACOSX)
-  installed_version =
-      Version(base::UTF16ToASCII(keystone_glue::CurrentlyInstalledVersion()));
-#elif defined(OS_POSIX)
-  // POSIX but not Mac OS X: Linux, etc.
-  CommandLine command_line(*CommandLine::ForCurrentProcess());
-  command_line.AppendSwitch(switches::kProductVersion);
-  std::string reply;
-  if (!base::GetAppOutput(command_line, &reply)) {
-    DLOG(ERROR) << "Failed to get current file version";
-    return;
-  }
-
-  installed_version = Version(reply);
-#endif
+  Version installed_version =
+      GetCurrentlyInstalledVersionImpl(&critical_update);
 
   // Get the version of the currently *running* instance of Chrome.
   chrome::VersionInfo version_info;
@@ -363,10 +372,14 @@ bool UpgradeDetectorImpl::DetectOutdatedInstall() {
   static bool simulate_outdated = SimulatingOutdated();
   if (!simulate_outdated) {
     std::string brand;
-    if (google_util::GetBrand(&brand) && !google_util::IsOrganic(brand))
+    if (google_brand::GetBrand(&brand) && !google_brand::IsOrganic(brand))
       return false;
 
 #if defined(OS_WIN)
+    // Don't show the update bubbles to entreprise users (i.e., on a domain).
+    if (base::win::IsEnrolledToDomain())
+      return false;
+
     // On Windows, we don't want to warn about outdated installs when the
     // machine doesn't support SSE2, it's been deprecated starting with M35.
     if (!base::CPU().has_sse2())
@@ -376,9 +389,8 @@ bool UpgradeDetectorImpl::DetectOutdatedInstall() {
 
   base::Time network_time;
   base::TimeDelta uncertainty;
-  if (!network_time_tracker_.GetNetworkTime(base::TimeTicks::Now(),
-                                            &network_time,
-                                            &uncertainty)) {
+  if (!g_browser_process->network_time_tracker()->GetNetworkTime(
+          base::TimeTicks::Now(), &network_time, &uncertainty)) {
     // When network time has not been initialized yet, simply rely on the
     // machine's current time.
     network_time = base::Time::Now();
@@ -436,9 +448,9 @@ void UpgradeDetectorImpl::NotifyOnUpgrade() {
     // second.
     const int kUnstableThreshold = 1;
 
-    if (is_critical_or_outdated)
+    if (is_critical_or_outdated) {
       set_upgrade_notification_stage(UPGRADE_ANNOYANCE_CRITICAL);
-    else if (time_passed >= kUnstableThreshold) {
+    } else if (time_passed >= kUnstableThreshold) {
       set_upgrade_notification_stage(UPGRADE_ANNOYANCE_LOW);
 
       // That's as high as it goes.

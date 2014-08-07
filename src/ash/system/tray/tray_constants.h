@@ -44,7 +44,7 @@ extern const int kTrayPopupPaddingBetweenItems;
 extern const int kTrayPopupTextSpacingVertical;
 extern const int kTrayPopupUserCardVerticalPadding;
 
-extern const int kTrayPopupItemHeight;
+const int kTrayPopupItemHeight = 48;
 extern const int kTrayPopupDetailsIconWidth;
 extern const int kTrayPopupDetailsLabelExtraLeftMargin;
 extern const int kTrayPopupScrollSeparatorHeight;
@@ -71,7 +71,6 @@ extern const int kTrayPopupMaxWidth;
 extern const int kNotificationIconWidth;
 extern const int kNotificationButtonWidth;
 extern const int kTrayNotificationContentsWidth;
-
 
 extern const int kTrayAvatarCornerRadius;
 extern const int kTrayAvatarSize;

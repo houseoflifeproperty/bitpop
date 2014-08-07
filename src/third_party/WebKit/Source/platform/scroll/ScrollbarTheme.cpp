@@ -26,8 +26,10 @@
 #include "config.h"
 #include "platform/scroll/ScrollbarTheme.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "platform/PlatformMouseEvent.h"
+#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/graphics/Color.h"
+#include "platform/graphics/GraphicsContext.h"
 #include "platform/scroll/ScrollbarThemeClient.h"
 #include "platform/scroll/ScrollbarThemeMock.h"
 #include "platform/scroll/ScrollbarThemeOverlayMock.h"

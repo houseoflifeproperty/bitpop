@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/loader/LinkLoader.h"
 
-#include "FetchInitiatorTypeNames.h"
+#include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
@@ -121,7 +121,7 @@ bool LinkLoader::loadLink(const LinkRelAttribute& relAttribute, const AtomicStri
     }
 
     // FIXME(crbug.com/323096): Should take care of import.
-    if ((relAttribute.isLinkPrefetch() || relAttribute.isLinkSubresource()) && href.isValid() && document.frame()) {
+    if ((relAttribute.isLinkPrefetch() || relAttribute.isLinkSubresource() || relAttribute.isTransitionExitingStylesheet()) && href.isValid() && document.frame()) {
         if (!m_client->shouldLoadLink())
             return false;
         Resource::Type type = relAttribute.isLinkSubresource() ?  Resource::LinkSubresource : Resource::LinkPrefetch;

@@ -90,14 +90,13 @@ PatternData* RenderSVGResourcePattern::buildPattern(RenderObject* object, unsign
     // Ignore 2D rotation, as it doesn't affect the size of the tile.
     SVGRenderingContext::clear2DRotation(absoluteTransformIgnoringRotation);
     FloatRect absoluteTileBoundaries = absoluteTransformIgnoringRotation.mapRect(tileBoundaries);
-    FloatRect clampedAbsoluteTileBoundaries;
 
     // Scale the tile size to match the scale level of the patternTransform.
     absoluteTileBoundaries.scale(static_cast<float>(m_attributes.patternTransform().xScale()),
         static_cast<float>(m_attributes.patternTransform().yScale()));
 
     // Build tile image.
-    OwnPtr<ImageBuffer> tileImage = createTileImage(m_attributes, tileBoundaries, absoluteTileBoundaries, tileImageTransform, clampedAbsoluteTileBoundaries);
+    OwnPtr<ImageBuffer> tileImage = createTileImage(m_attributes, tileBoundaries, absoluteTileBoundaries, tileImageTransform);
     if (!tileImage)
         return 0;
 
@@ -229,10 +228,9 @@ bool RenderSVGResourcePattern::buildTileImageTransform(RenderObject* renderer,
 PassOwnPtr<ImageBuffer> RenderSVGResourcePattern::createTileImage(const PatternAttributes& attributes,
                                                                   const FloatRect& tileBoundaries,
                                                                   const FloatRect& absoluteTileBoundaries,
-                                                                  const AffineTransform& tileImageTransform,
-                                                                  FloatRect& clampedAbsoluteTileBoundaries) const
+                                                                  const AffineTransform& tileImageTransform) const
 {
-    clampedAbsoluteTileBoundaries = SVGRenderingContext::clampedAbsoluteTargetRect(absoluteTileBoundaries);
+    FloatRect clampedAbsoluteTileBoundaries = SVGRenderingContext::clampedAbsoluteTargetRect(absoluteTileBoundaries);
 
     IntSize imageSize(roundedIntSize(clampedAbsoluteTileBoundaries.size()));
     if (imageSize.isEmpty())
@@ -244,11 +242,12 @@ PassOwnPtr<ImageBuffer> RenderSVGResourcePattern::createTileImage(const PatternA
     GraphicsContext* tileImageContext = tileImage->context();
     ASSERT(tileImageContext);
     IntSize unclampedImageSize(roundedIntSize(absoluteTileBoundaries.size()));
-    tileImageContext->scale(FloatSize(unclampedImageSize.width() / absoluteTileBoundaries.width(), unclampedImageSize.height() / absoluteTileBoundaries.height()));
+    tileImageContext->scale(unclampedImageSize.width() / absoluteTileBoundaries.width(), unclampedImageSize.height() / absoluteTileBoundaries.height());
 
     // The image buffer represents the final rendered size, so the content has to be scaled (to avoid pixelation).
-    tileImageContext->scale(FloatSize(clampedAbsoluteTileBoundaries.width() / tileBoundaries.width(),
-                                      clampedAbsoluteTileBoundaries.height() / tileBoundaries.height()));
+    tileImageContext->scale(
+        clampedAbsoluteTileBoundaries.width() / tileBoundaries.width(),
+        clampedAbsoluteTileBoundaries.height() / tileBoundaries.height());
 
     // Apply tile image transformations.
     if (!tileImageTransform.isIdentity())

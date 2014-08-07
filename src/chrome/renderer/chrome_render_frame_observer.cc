@@ -4,6 +4,7 @@
 
 #include "chrome/renderer/chrome_render_frame_observer.h"
 
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/prerender_messages.h"
 #include "chrome/common/print_messages.h"
 #include "chrome/common/render_messages.h"
@@ -14,12 +15,14 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/platform/WebImage.h"
 #include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 
 using blink::WebElement;
 using blink::WebNode;
 
 namespace {
+
 // If the source image is null or occupies less area than
 // |thumbnail_min_area_pixels|, we return the image unmodified.  Otherwise, we
 // scale down the image so that the width and height do not exceed
@@ -56,7 +59,8 @@ SkBitmap Downscale(blink::WebImage image,
                                        static_cast<int>(scaled_size.height()));
 }
 
-}
+}  // namespace
+
 ChromeRenderFrameObserver::ChromeRenderFrameObserver(
     content::RenderFrame* render_frame)
     : content::RenderFrameObserver(render_frame) {
@@ -84,6 +88,14 @@ bool ChromeRenderFrameObserver::OnMessageReceived(const IPC::Message& message) {
   IPC_END_MESSAGE_MAP()
 
   return handled;
+}
+
+void ChromeRenderFrameObserver::DidChangeName(
+    const base::string16& name) {
+  Send(new ChromeViewHostMsg_UpdateFrameName(
+      routing_id(),
+      !render_frame()->GetWebFrame()->parent(),
+      base::UTF16ToUTF8(name)));
 }
 
 void ChromeRenderFrameObserver::OnSetIsPrerendering(bool is_prerendering) {

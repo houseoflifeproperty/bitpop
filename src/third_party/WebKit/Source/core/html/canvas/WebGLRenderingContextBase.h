@@ -51,6 +51,7 @@ class WebLayer;
 namespace WebCore {
 
 class ANGLEInstancedArrays;
+class EXTBlendMinMax;
 class EXTFragDepth;
 class EXTShaderTextureLOD;
 class EXTTextureFilterAnisotropic;
@@ -347,6 +348,7 @@ public:
     virtual bool hasPendingActivity() const OVERRIDE;
     virtual void stop() OVERRIDE;
 
+    void setSavingImage(bool isSaving) { m_savingImage = isSaving; }
 protected:
     friend class WebGLDrawBuffers;
     friend class WebGLFramebuffer;
@@ -362,6 +364,7 @@ protected:
     friend class ScopedTexture2DRestorer;
 
     WebGLRenderingContextBase(HTMLCanvasElement*, PassOwnPtr<blink::WebGraphicsContext3D>, WebGLContextAttributes*);
+    PassRefPtr<DrawingBuffer> createDrawingBuffer(PassOwnPtr<blink::WebGraphicsContext3D>);
     void initializeNewContext();
     void setupFlags();
 
@@ -533,23 +536,21 @@ protected:
 
     OwnPtr<Extensions3DUtil> m_extensionsUtil;
 
+    bool m_savingImage;
+
     enum ExtensionFlags {
         ApprovedExtension               = 0x00,
         // Extension that is behind the draft extensions runtime flag:
         DraftExtension                  = 0x01,
-        PrivilegedExtension             = 0x02,
         // Extension that is still in draft state, but has been selectively enabled by default under a prefix. Do not use
         // this for enabling new draft extensions; use the DraftExtension flag instead, and do not use vendor prefixes:
         EnabledDraftExtension           = 0x04,
-        WebGLDebugRendererInfoExtension = 0x08,
     };
 
     class ExtensionTracker {
     public:
         ExtensionTracker(ExtensionFlags flags, const char* const* prefixes)
-            : m_privileged(flags & PrivilegedExtension)
-            , m_draft(flags & DraftExtension)
-            , m_webglDebugRendererInfo(flags & WebGLDebugRendererInfoExtension)
+            : m_draft(flags & DraftExtension)
             , m_prefixes(prefixes)
         {
         }
@@ -558,19 +559,9 @@ protected:
         {
         }
 
-        bool privileged() const
-        {
-            return m_privileged;
-        }
-
         bool draft() const
         {
             return m_draft;
-        }
-
-        bool webglDebugRendererInfo() const
-        {
-            return m_webglDebugRendererInfo;
         }
 
         const char* const* prefixes() const;
@@ -582,9 +573,7 @@ protected:
         virtual void loseExtension() = 0;
 
     private:
-        bool m_privileged;
         bool m_draft;
-        bool m_webglDebugRendererInfo;
         const char* const* m_prefixes;
     };
 
@@ -864,15 +853,6 @@ protected:
     void dispatchContextLostEvent(Timer<WebGLRenderingContextBase>*);
     // Helper for restoration after context lost.
     void maybeRestoreContext(Timer<WebGLRenderingContextBase>*);
-
-    // Determine if we are running privileged code in the browser, for example,
-    // a Safari or Chrome extension.
-    bool allowPrivilegedExtensions() const;
-
-    // Determine if WEBGL_debug_renderer_info extension is enabled. For the
-    // moment it can be enabled either through a chromium finch experiment
-    // or for privileged code in the browser.
-    bool allowWebGLDebugRendererInfo() const;
 
     enum ConsoleDisplayPreference {
         DisplayInConsole,

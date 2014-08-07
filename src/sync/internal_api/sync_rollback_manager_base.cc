@@ -80,10 +80,6 @@ void SyncRollbackManagerBase::Init(
   NotifyInitializationSuccess();
 }
 
-void SyncRollbackManagerBase::ThrowUnrecoverableError() {
-  NOTREACHED();
-}
-
 ModelTypeSet SyncRollbackManagerBase::InitialSyncEndedTypes() {
   return share_.directory->InitialSyncEndedTypes();
 }
@@ -282,7 +278,7 @@ bool SyncRollbackManagerBase::InitBackupDB(
 bool SyncRollbackManagerBase::InitTypeRootNode(ModelType type) {
   WriteTransaction trans(FROM_HERE, &share_);
   ReadNode root(&trans);
-  if (BaseNode::INIT_OK == root.InitByTagLookup(ModelTypeToRootTag(type)))
+  if (BaseNode::INIT_OK == root.InitTypeRoot(type))
     return true;
 
   syncable::MutableEntry entry(trans.GetWrappedWriteTrans(),
@@ -309,8 +305,8 @@ bool SyncRollbackManagerBase::InitTypeRootNode(ModelType type) {
 void SyncRollbackManagerBase::InitBookmarkFolder(const std::string& folder) {
   WriteTransaction trans(FROM_HERE, &share_);
   syncable::Entry bookmark_root(trans.GetWrappedTrans(),
-                                syncable::GET_BY_SERVER_TAG,
-                                ModelTypeToRootTag(BOOKMARKS));
+                                syncable::GET_TYPE_ROOT,
+                                BOOKMARKS);
   if (!bookmark_root.good())
     return;
 
@@ -330,6 +326,10 @@ void SyncRollbackManagerBase::InitBookmarkFolder(const std::string& folder) {
   sync_pb::EntitySpecifics specifics;
   AddDefaultFieldValue(BOOKMARKS, &specifics);
   entry.PutSpecifics(specifics);
+}
+
+ObserverList<SyncManager::Observer>* SyncRollbackManagerBase::GetObservers() {
+  return &observers_;
 }
 
 void SyncRollbackManagerBase::RegisterDirectoryTypeDebugInfoObserver(

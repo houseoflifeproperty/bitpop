@@ -43,9 +43,12 @@ def run_gatekeeper(master_urls, extra_args=None):
 
 
 def main():
-  stream = annotator.StructuredAnnotationStream(seed_steps=['gatekeeper_ng',
-                                                            'blink_gatekeeper'])
-  with stream.step('gatekeeper_ng') as s:
+  stream = annotator.StructuredAnnotationStream(seed_steps=[
+      'gatekeeper_ng',
+      'waterfall_gatekeeper',
+      'blink_gatekeeper'])
+
+  with stream.step('gatekeeper non-closure') as s:
     master_urls = ['http://build.chromium.org/p/chromium',
                    'http://build.chromium.org/p/chromium.lkgr',
                    'http://build.chromium.org/p/chromium.perf',
@@ -56,6 +59,20 @@ def main():
       s.step_failure()
       return 2
 
+  with stream.step('waterfall_gatekeeper') as s:
+    status_url = 'https://chromium-status.appspot.com'
+
+    master_urls = ['http://build.chromium.org/p/chromium.gpu']
+
+    extra_args = ['--build-db=waterfall_build_db.json', '-s',
+                  '--status-url=%s' % status_url,
+                  '--track-revisions',
+                  '--password-file=.status_password']
+
+    if run_gatekeeper(master_urls, extra_args=extra_args) != 0:
+      s.step_failure()
+      return 2
+
   with stream.step('blink_gatekeeper') as s:
     status_url = 'https://blink-status.appspot.com'
 
@@ -63,6 +80,8 @@ def main():
 
     extra_args = ['--build-db=blink_build_db.json', '-s',
                   '--status-url=%s' % status_url,
+                  '--track-revisions',
+                  '--revision-properties', 'got_revision,got_webkit_revision',
                   '--password-file=.blink_status_password']
 
     if run_gatekeeper(master_urls, extra_args=extra_args) != 0:

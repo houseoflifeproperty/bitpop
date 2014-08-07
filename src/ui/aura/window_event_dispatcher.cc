@@ -470,8 +470,10 @@ ui::EventDispatchDetails WindowEventDispatcher::PostDispatchEvent(
 #endif
 
   if (event.IsTouchEvent() && !details.target_destroyed) {
-    // Do not let 'held' touch events contribute to any gestures.
-    if (!held_move_event_ || !held_move_event_->IsTouchEvent()) {
+    // Do not let 'held' touch events contribute to any gestures unless it is
+    // being dispatched.
+    if (dispatching_held_event_ || !held_move_event_ ||
+        !held_move_event_->IsTouchEvent()) {
       ui::TouchEvent orig_event(static_cast<const ui::TouchEvent&>(event),
                                 static_cast<Window*>(event.target()), window());
       // Get the list of GestureEvents from GestureRecognizer.
@@ -681,6 +683,15 @@ ui::EventDispatchDetails WindowEventDispatcher::SynthesizeMouseMoveEvent() {
   if (!synthesize_mouse_move_)
     return details;
   synthesize_mouse_move_ = false;
+
+  // If one of the mouse buttons is currently down, then do not synthesize a
+  // mouse-move event. In such cases, aura could synthesize a DRAGGED event
+  // instead of a MOVED event, but in multi-display/multi-host scenarios, the
+  // DRAGGED event can be synthesized in the incorrect host. So avoid
+  // synthesizing any events at all.
+  if (Env::GetInstance()->mouse_button_flags())
+    return details;
+
   gfx::Point root_mouse_location = GetLastMouseLocationInRoot();
   if (!window()->bounds().Contains(root_mouse_location))
     return details;

@@ -11,13 +11,10 @@
 #include "base/files/file_path.h"
 #include "base/pickle.h"
 #include "base/strings/string16.h"
+#include "components/password_manager/core/browser/password_store_change.h"
 #include "components/password_manager/core/browser/psl_matching_helper.h"
 #include "sql/connection.h"
 #include "sql/meta_table.h"
-
-namespace autofill {
-struct PasswordForm;
-}  // namespace autofill
 
 namespace password_manager {
 
@@ -36,12 +33,17 @@ class LoginDatabase {
   // Reports usage metrics to UMA.
   void ReportMetrics();
 
-  // Adds |form| to the list of remembered password forms.
-  bool AddLogin(const autofill::PasswordForm& form);
+  // Adds |form| to the list of remembered password forms. Returns the list of
+  // changes applied ({}, {ADD}, {REMOVE, ADD}). If it returns {REMOVE, ADD}
+  // then the REMOVE is associated with the form that was added. Thus only the
+  // primary key columns contain the values associated with the removed form.
+  PasswordStoreChangeList AddLogin(const autofill::PasswordForm& form);
 
-  // Updates remembered password form. Returns true on success and sets
-  // items_changed (if non-NULL) to the number of logins updated.
-  bool UpdateLogin(const autofill::PasswordForm& form, int* items_changed);
+  // Updates existing password form. Returns the list of applied changes
+  // ({}, {UPDATE}). The password is looked up by the tuple {origin,
+  // username_element, username_value, password_element, signon_realm}.
+  // These columns stay intact.
+  PasswordStoreChangeList UpdateLogin(const autofill::PasswordForm& form);
 
   // Removes |form| from the list of remembered password forms.
   bool RemoveLogin(const autofill::PasswordForm& form);
@@ -49,8 +51,14 @@ class LoginDatabase {
   // Removes all logins created from |delete_begin| onwards (inclusive) and
   // before |delete_end|. You may use a null Time value to do an unbounded
   // delete in either direction.
-  bool RemoveLoginsCreatedBetween(const base::Time delete_begin,
-                                  const base::Time delete_end);
+  bool RemoveLoginsCreatedBetween(base::Time delete_begin,
+                                  base::Time delete_end);
+
+  // Removes all logins synced from |delete_begin| onwards (inclusive) and
+  // before |delete_end|. You may use a null Time value to do an unbounded
+  // delete in either direction.
+  bool RemoveLoginsSyncedBetween(base::Time delete_begin,
+                                 base::Time delete_end);
 
   // Loads a list of matching password forms into the specified vector |forms|.
   // The list will contain all possibly relevant entries to the observed |form|,
@@ -62,8 +70,16 @@ class LoginDatabase {
   // You may use a null Time value to do an unbounded search in either
   // direction.
   bool GetLoginsCreatedBetween(
-      const base::Time begin,
-      const base::Time end,
+      base::Time begin,
+      base::Time end,
+      std::vector<autofill::PasswordForm*>* forms) const;
+
+  // Loads all logins synced from |begin| onwards (inclusive) and before |end|.
+  // You may use a null Time value to do an unbounded search in either
+  // direction.
+  bool GetLoginsSyncedBetween(
+      base::Time begin,
+      base::Time end,
       std::vector<autofill::PasswordForm*>* forms) const;
 
   // Loads the complete list of autofillable password forms (i.e., not blacklist
@@ -83,8 +99,6 @@ class LoginDatabase {
   bool DeleteAndRecreateDatabaseFile();
 
  private:
-  friend class LoginDatabaseTest;
-
   // Result values for encryption/decryption actions.
   enum EncryptionResult {
     // Success.
@@ -127,10 +141,6 @@ class LoginDatabase {
   // |forms|.
   bool GetAllLoginsWithBlacklistSetting(
       bool blacklisted, std::vector<autofill::PasswordForm*>* forms) const;
-
-  // Serialization routines for vectors.
-  Pickle SerializeVector(const std::vector<base::string16>& vec) const;
-  std::vector<base::string16> DeserializeVector(const Pickle& pickle) const;
 
   base::FilePath db_path_;
   mutable sql::Connection db_;

@@ -50,7 +50,7 @@
       "runhooks"
     ],
     "env": {
-      "GYP_DEFINES": "asan=1 clang=1 component=static_library gomadir='[BUILD]/goma' lsan=1 target_arch=x64 use_allocator=none use_goma=1"
+      "GYP_DEFINES": "asan=1 clang=1 component=static_library gomadir='[BUILD]/goma' target_arch=x64 use_allocator=none use_goma=1"
     },
     "name": "gclient runhooks",
     "seed_steps": [
@@ -113,6 +113,7 @@
       "--test-type=audio_decoder_unittests",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "audio_decoder_unittests"
     ],
     "name": "audio_decoder_unittests"
@@ -135,6 +136,7 @@
       "--test-type=common_audio_unittests",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "common_audio_unittests"
     ],
     "name": "common_audio_unittests"
@@ -157,6 +159,7 @@
       "--test-type=common_video_unittests",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "common_video_unittests"
     ],
     "name": "common_video_unittests"
@@ -179,6 +182,7 @@
       "--test-type=libjingle_media_unittest",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "libjingle_media_unittest"
     ],
     "name": "libjingle_media_unittest"
@@ -201,6 +205,7 @@
       "--test-type=libjingle_p2p_unittest",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "libjingle_p2p_unittest"
     ],
     "name": "libjingle_p2p_unittest"
@@ -223,6 +228,7 @@
       "--test-type=libjingle_peerconnection_unittest",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "libjingle_peerconnection_unittest"
     ],
     "name": "libjingle_peerconnection_unittest"
@@ -245,6 +251,7 @@
       "--test-type=libjingle_sound_unittest",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "libjingle_sound_unittest"
     ],
     "name": "libjingle_sound_unittest"
@@ -267,6 +274,7 @@
       "--test-type=libjingle_unittest",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "libjingle_unittest"
     ],
     "name": "libjingle_unittest"
@@ -289,6 +297,7 @@
       "--test-type=modules_tests",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "modules_tests"
     ],
     "name": "modules_tests"
@@ -311,6 +320,7 @@
       "--test-type=modules_unittests",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "modules_unittests"
     ],
     "name": "modules_unittests"
@@ -333,6 +343,7 @@
       "--test-type=system_wrappers_unittests",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "system_wrappers_unittests"
     ],
     "name": "system_wrappers_unittests"
@@ -355,6 +366,7 @@
       "--test-type=test_support_unittests",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "test_support_unittests"
     ],
     "name": "test_support_unittests"
@@ -377,6 +389,7 @@
       "--test-type=tools_unittests",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "tools_unittests"
     ],
     "name": "tools_unittests"
@@ -399,6 +412,7 @@
       "--test-type=video_engine_core_unittests",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "video_engine_core_unittests"
     ],
     "name": "video_engine_core_unittests"
@@ -421,6 +435,7 @@
       "--test-type=video_engine_tests",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "video_engine_tests"
     ],
     "name": "video_engine_tests"
@@ -443,6 +458,7 @@
       "--test-type=voice_engine_unittests",
       "--builder-name=Linux Asan",
       "--slave-name=slavename",
+      "--enable-asan",
       "voice_engine_unittests"
     ],
     "name": "voice_engine_unittests"

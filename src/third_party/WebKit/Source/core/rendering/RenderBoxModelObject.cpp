@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/rendering/RenderBoxModelObject.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/page/scrolling/ScrollingConstraints.h"
@@ -319,14 +319,36 @@ void RenderBoxModelObject::computeStickyPositionConstraints(StickyPositionViewpo
     FloatRect absoluteStickyBoxRect(absContainerFrame.location() + stickyLocation, flippedStickyBoxRect.size());
     constraints.setAbsoluteStickyBoxRect(absoluteStickyBoxRect);
 
-    if (!style()->left().isAuto()) {
+    float horizontalOffsets = constraints.rightOffset() + constraints.leftOffset();
+    bool skipRight = false;
+    bool skipLeft = false;
+    if (!style()->left().isAuto() && !style()->right().isAuto()) {
+        if (horizontalOffsets > containerContentRect.width().toFloat()
+            || horizontalOffsets + containerContentRect.width().toFloat() > constrainingRect.width()) {
+            skipRight = style()->isLeftToRightDirection();
+            skipLeft = !skipRight;
+        }
+    }
+
+    if (!style()->left().isAuto() && !skipLeft) {
         constraints.setLeftOffset(floatValueForLength(style()->left(), constrainingRect.width()));
         constraints.addAnchorEdge(ViewportConstraints::AnchorEdgeLeft);
     }
 
-    if (!style()->right().isAuto()) {
+    if (!style()->right().isAuto() && !skipRight) {
         constraints.setRightOffset(floatValueForLength(style()->right(), constrainingRect.width()));
         constraints.addAnchorEdge(ViewportConstraints::AnchorEdgeRight);
+    }
+
+    bool skipBottom = false;
+    // FIXME(ostap): Exclude top or bottom edge offset depending on the writing mode when related
+    // sections are fixed in spec: http://lists.w3.org/Archives/Public/www-style/2014May/0286.html
+    float verticalOffsets = constraints.topOffset() + constraints.bottomOffset();
+    if (!style()->top().isAuto() && !style()->bottom().isAuto()) {
+        if (verticalOffsets > containerContentRect.height().toFloat()
+            || verticalOffsets + containerContentRect.height().toFloat() > constrainingRect.height()) {
+            skipBottom = true;
+        }
     }
 
     if (!style()->top().isAuto()) {
@@ -334,8 +356,8 @@ void RenderBoxModelObject::computeStickyPositionConstraints(StickyPositionViewpo
         constraints.addAnchorEdge(ViewportConstraints::AnchorEdgeTop);
     }
 
-    if (!style()->bottom().isAuto()) {
-        constraints.setBottomOffset(floatValueForLength(style()->bottom(), constrainingRect.height() ));
+    if (!style()->bottom().isAuto() && !skipBottom) {
+        constraints.setBottomOffset(floatValueForLength(style()->bottom(), constrainingRect.height()));
         constraints.addAnchorEdge(ViewportConstraints::AnchorEdgeBottom);
     }
 }
@@ -400,7 +422,7 @@ int RenderBoxModelObject::pixelSnappedOffsetHeight() const
     return snapSizeToPixel(offsetHeight(), offsetTop());
 }
 
-LayoutUnit RenderBoxModelObject::computedCSSPadding(Length padding) const
+LayoutUnit RenderBoxModelObject::computedCSSPadding(const Length& padding) const
 {
     LayoutUnit w = 0;
     if (padding.isPercent())
@@ -452,6 +474,8 @@ void RenderBoxModelObject::clipRoundedInnerRect(GraphicsContext * context, const
     }
 }
 
+// FIXME: See crbug.com/382491. The use of getCTM in this context is incorrect because the matrix returned does not
+// include scales applied at raster time, such as the device zoom.
 static LayoutRect shrinkRectByOnePixel(GraphicsContext* context, const LayoutRect& rect)
 {
     LayoutRect shrunkRect = rect;
@@ -981,15 +1005,15 @@ void RenderBoxModelObject::calculateBackgroundImageGeometry(const RenderLayerMod
     // FIXME: transforms spec says that fixed backgrounds behave like scroll inside transforms.
     bool fixedAttachment = fillLayer->attachment() == FixedBackgroundAttachment;
 
-#if ENABLE(FAST_MOBILE_SCROLLING)
-    if (view()->frameView() && view()->frameView()->shouldAttemptToScrollUsingFastPath()) {
+    if (RuntimeEnabledFeatures::fastMobileScrollingEnabled()
+        && view()->frameView()
+        && view()->frameView()->shouldAttemptToScrollUsingFastPath()) {
         // As a side effect of an optimization to blit on scroll, we do not honor the CSS
         // property "background-attachment: fixed" because it may result in rendering
         // artifacts. Note, these artifacts only appear if we are blitting on scroll of
         // a page that has fixed background images.
         fixedAttachment = false;
     }
-#endif
 
     if (!fixedAttachment) {
         geometry.setDestRect(snappedPaintRect);
@@ -2532,6 +2556,8 @@ void RenderBoxModelObject::paintBoxShadow(const PaintInfo& info, const LayoutRec
                     if (hasOpaqueBackground) {
                         // FIXME: The function to decide on the policy based on the transform should be a named function.
                         // FIXME: It's not clear if this check is right. What about integral scale factors?
+                        // FIXME: See crbug.com/382491. The use of getCTM may also be wrong because it does not include
+                        // device zoom applied at raster time.
                         AffineTransform transform = context->getCTM();
                         if (transform.a() != 1 || (transform.d() != 1 && transform.d() != -1) || transform.b() || transform.c())
                             rectToClipOut.inflate(-1);
@@ -2643,7 +2669,7 @@ void RenderBoxModelObject::setFirstLetterRemainingText(RenderTextFragment* remai
 
 LayoutRect RenderBoxModelObject::localCaretRectForEmptyElement(LayoutUnit width, LayoutUnit textIndentOffset)
 {
-    ASSERT(!firstChild());
+    ASSERT(!slowFirstChild());
 
     // FIXME: This does not take into account either :first-line or :first-letter
     // However, as soon as some content is entered, the line boxes will be
@@ -2711,30 +2737,22 @@ bool RenderBoxModelObject::shouldAntialiasLines(GraphicsContext* context)
 {
     // FIXME: We may want to not antialias when scaled by an integral value,
     // and we may want to antialias when translated by a non-integral value.
+    // FIXME: See crbug.com/382491. getCTM does not include scale factors applied at raster time, such
+    // as device zoom.
     return !context->getCTM().isIdentityOrTranslationOrFlipped();
 }
 
 void RenderBoxModelObject::mapAbsoluteToLocalPoint(MapCoordinatesFlags mode, TransformState& transformState) const
 {
     // We don't expect to be called during layout.
-    ASSERT(!view() || !view()->layoutStateEnabled());
+    ASSERT(!view() || !view()->layoutStateCachedOffsetsEnabled());
 
     RenderObject* o = container();
     if (!o)
         return;
 
-    // The point inside a box that's inside a region has its coordinates relative to the region,
-    // not the FlowThread that is its container in the RenderObject tree.
-    if (o->isRenderFlowThread() && isRenderBlock()) {
-        // FIXME: switch to Box instead of Block when we'll have range information for boxes as well, not just for blocks.
-        RenderRegion* startRegion;
-        RenderRegion* ignoredEndRegion;
-        toRenderFlowThread(o)->getRegionRangeForBox(toRenderBlock(this), startRegion, ignoredEndRegion);
-        // If there is no region to use the FlowThread, then there's no region range for the content in that FlowThread.
-        // An API like elementFromPoint might crash without this check.
-        if (startRegion)
-            o = startRegion;
-    }
+    if (o->isRenderFlowThread())
+        transformState.move(o->columnOffset(LayoutPoint(transformState.mappedPoint())));
 
     o->mapAbsoluteToLocalPoint(mode, transformState);
 

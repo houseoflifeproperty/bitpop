@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/id_map.h"
 #include "base/lazy_instance.h"
@@ -20,7 +19,11 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/public/browser/browser_thread.h"
-#include "ui/gl/gl_switches.h"
+
+#if defined(USE_OZONE)
+#include "ui/ozone/ozone_platform.h"
+#include "ui/ozone/public/gpu_platform_support_host.h"
+#endif
 
 namespace content {
 
@@ -92,6 +95,11 @@ void RouteToGpuProcessHostUIShimTask(int host_id, const IPC::Message& msg) {
 GpuProcessHostUIShim::GpuProcessHostUIShim(int host_id)
     : host_id_(host_id) {
   g_hosts_by_id.Pointer()->AddWithID(this, host_id_);
+#if defined(USE_OZONE)
+  ui::OzonePlatform::GetInstance()
+      ->GetGpuPlatformSupportHost()
+      ->OnChannelEstablished(host_id, this);
+#endif
 }
 
 // static
@@ -107,6 +115,12 @@ void GpuProcessHostUIShim::Destroy(int host_id, const std::string& message) {
   GpuDataManagerImpl::GetInstance()->AddLogMessage(
       logging::LOG_ERROR, "GpuProcessHostUIShim",
       message);
+
+#if defined(USE_OZONE)
+  ui::OzonePlatform::GetInstance()
+      ->GetGpuPlatformSupportHost()
+      ->OnChannelDestroyed(host_id);
+#endif
 
   delete FromID(host_id);
 }
@@ -146,6 +160,13 @@ bool GpuProcessHostUIShim::Send(IPC::Message* msg) {
 
 bool GpuProcessHostUIShim::OnMessageReceived(const IPC::Message& message) {
   DCHECK(CalledOnValidThread());
+
+#if defined(USE_OZONE)
+  if (ui::OzonePlatform::GetInstance()
+          ->GetGpuPlatformSupportHost()
+          ->OnMessageReceived(message))
+    return true;
+#endif
 
   if (message.routing_id() != MSG_ROUTING_CONTROL)
     return false;

@@ -28,8 +28,8 @@ MojoResult MessagePipeEndpoint::ReadMessage(void* /*bytes*/,
 }
 
 MojoResult MessagePipeEndpoint::AddWaiter(Waiter* /*waiter*/,
-                                          MojoWaitFlags /*flags*/,
-                                          MojoResult /*wake_result*/) {
+                                          MojoHandleSignals /*signals*/,
+                                          uint32_t /*context*/) {
   NOTREACHED();
   return MOJO_RESULT_INTERNAL;
 }
@@ -54,4 +54,3 @@ void MessagePipeEndpoint::OnRemove() {
 
 }  // namespace system
 }  // namespace mojo
-

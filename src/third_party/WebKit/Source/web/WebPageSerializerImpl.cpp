@@ -78,7 +78,7 @@
 #include "config.h"
 #include "web/WebPageSerializerImpl.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
@@ -303,19 +303,19 @@ void WebPageSerializerImpl::openTagToString(Element* element,
     result.append(element->nodeName().lower());
     // Go through all attributes and serialize them.
     if (element->hasAttributes()) {
-        unsigned numAttrs = element->attributeCount();
-        for (unsigned i = 0; i < numAttrs; i++) {
+        AttributeCollection attributes = element->attributes();
+        AttributeCollection::const_iterator end = attributes.end();
+        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
             result.append(' ');
             // Add attribute pair
-            const Attribute& attribute = element->attributeItem(i);
-            result.append(attribute.name().toString());
+            result.append(it->name().toString());
             result.appendLiteral("=\"");
-            if (!attribute.value().isEmpty()) {
-                const String& attrValue = attribute.value();
+            if (!it->value().isEmpty()) {
+                const String& attrValue = it->value();
 
                 // Check whether we need to replace some resource links
                 // with local resource paths.
-                const QualifiedName& attrName = attribute.name();
+                const QualifiedName& attrName = it->name();
                 if (element->hasLegalLinkAttribute(attrName)) {
                     // For links start with "javascript:", we do not change it.
                     if (attrValue.startsWith("javascript:", false))
@@ -473,9 +473,9 @@ void WebPageSerializerImpl::collectTargetFrames()
         // Get current using document.
         Document* currentDoc = currentFrame->frame()->document();
         // Go through sub-frames.
-        RefPtr<HTMLCollection> all = currentDoc->all();
+        RefPtrWillBeRawPtr<HTMLAllCollection> all = currentDoc->all();
 
-        for (unsigned i = 0; Element* element = all->item(i); i++) {
+        for (unsigned i = 0; Element* element = all->item(i); ++i) {
             if (!element->isHTMLElement())
                 continue;
             WebLocalFrameImpl* webFrame =

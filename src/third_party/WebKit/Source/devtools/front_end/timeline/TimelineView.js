@@ -35,15 +35,17 @@
  * @implements {WebInspector.TimelineModeView}
  * @param {!WebInspector.TimelineModeViewDelegate} delegate
  * @param {!WebInspector.TimelineModel} model
+ * @param {!WebInspector.TimelineUIUtils} uiUtils
  */
-WebInspector.TimelineView = function(delegate, model)
+WebInspector.TimelineView = function(delegate, model, uiUtils)
 {
     WebInspector.HBox.call(this);
     this.element.classList.add("timeline-view");
 
     this._delegate = delegate;
     this._model = model;
-    this._presentationModel = new WebInspector.TimelinePresentationModel(model);
+    this._uiUtils = uiUtils;
+    this._presentationModel = new WebInspector.TimelinePresentationModel(model, uiUtils);
     this._calculator = new WebInspector.TimelineCalculator(model);
     this._linkifier = new WebInspector.Linkifier();
     this._frameStripByFrame = new Map();
@@ -73,7 +75,7 @@ WebInspector.TimelineView = function(delegate, model)
 
 WebInspector.TimelineView.prototype = {
     /**
-     * @param {?WebInspector.TimelineFrameModel} frameModel
+     * @param {?WebInspector.TimelineFrameModelBase} frameModel
      */
     setFrameModel: function(frameModel)
     {
@@ -129,11 +131,12 @@ WebInspector.TimelineView.prototype = {
 
         for (var i = 0; i < eventDividerRecords.length; ++i) {
             var record = eventDividerRecords[i];
-            var positions = this._calculator.computeBarGraphWindowPosition(record);
-            var dividerPosition = Math.round(positions.left);
+            var position = this._calculator.computePosition(record.startTime());
+            var dividerPosition = Math.round(position);
             if (dividerPosition < 0 || dividerPosition >= clientWidth || dividers[dividerPosition])
                 continue;
-            var divider = WebInspector.TimelineUIUtils.createEventDivider(record.type(), WebInspector.TimelineUIUtils.recordTitle(record, this._model));
+            var title = this._uiUtils.titleForRecord(record);
+            var divider = this._uiUtils.createEventDivider(record.type(), title);
             divider.style.left = dividerPosition + "px";
             dividers[dividerPosition] = divider;
         }
@@ -179,7 +182,7 @@ WebInspector.TimelineView.prototype = {
             this._frameContainer.appendChild(frameStrip);
 
             if (actualStart > 0) {
-                var frameMarker = WebInspector.TimelineUIUtils.createEventDivider(WebInspector.TimelineModel.RecordType.BeginFrame);
+                var frameMarker = this._uiUtils.createBeginFrameDivider();
                 frameMarker.style.left = frameStart + "px";
                 dividers.push(frameMarker);
             }
@@ -248,8 +251,8 @@ WebInspector.TimelineView.prototype = {
 
     _resetView: function()
     {
-        this._windowStartTime = -1;
-        this._windowEndTime = -1;
+        this._windowStartTime = 0;
+        this._windowEndTime = 0;
         this._boundariesAreValid = false;
         this._adjustScrollPosition(0);
         this._linkifier.reset();
@@ -340,7 +343,7 @@ WebInspector.TimelineView.prototype = {
             var aggregatedStats = {};
             var presentationChildren = presentationRecord.presentationChildren();
             for (var i = 0; i < presentationChildren.length; ++i)
-                WebInspector.TimelineUIUtils.aggregateTimeByCategory(aggregatedStats, presentationChildren[i].record().aggregatedStats);
+                WebInspector.TimelineUIUtils.aggregateTimeByCategory(aggregatedStats, presentationChildren[i].record().aggregatedStats());
             var idle = presentationRecord.record().endTime() - presentationRecord.record().startTime();
             for (var category in aggregatedStats)
                 idle -= aggregatedStats[category];
@@ -456,13 +459,9 @@ WebInspector.TimelineView.prototype = {
             clearTimeout(this._refreshTimeout);
             delete this._refreshTimeout;
         }
-        var windowStartTime = this._windowStartTime;
-        var windowEndTime = this._windowEndTime;
+        var windowStartTime = this._windowStartTime || this._model.minimumRecordTime();
+        var windowEndTime = this._windowEndTime || this._model.maximumRecordTime();
         this._timelinePaddingLeft = this._expandOffset;
-        if (windowStartTime === -1)
-            windowStartTime = this._model.minimumRecordTime();
-        if (windowEndTime === -1)
-            windowEndTime = this._model.maximumRecordTime();
         this._calculator.setWindow(windowStartTime, windowEndTime);
         this._calculator.setDisplayWindow(this._timelinePaddingLeft, this._graphRowsElementWidth);
 
@@ -535,8 +534,8 @@ WebInspector.TimelineView.prototype = {
             this._automaticallySizeWindow = false;
             this._clearSelection();
             // If we're at the top, always use real timeline start as a left window bound so that expansion arrow padding logic works.
-            var windowStartTime = startIndex ? recordsInWindow[startIndex].record().startTime() : this._model.minimumRecordTime();
-            var windowEndTime = recordsInWindow[Math.max(0, lastVisibleLine - 1)].record().endTime();
+            var windowStartTime = startIndex ? recordsInWindow[startIndex].startTime() : this._model.minimumRecordTime();
+            var windowEndTime = recordsInWindow[Math.max(0, lastVisibleLine - 1)].endTime();
             this._delegate.requestWindowTimes(windowStartTime, windowEndTime);
             recordsInWindow = this._presentationModel.filteredRecords();
             endIndex = Math.min(recordsInWindow.length, lastVisibleLine);
@@ -570,7 +569,7 @@ WebInspector.TimelineView.prototype = {
                 var lastChildIndex = i + record.visibleChildrenCount();
                 if (lastChildIndex >= startIndex && lastChildIndex < endIndex) {
                     var expandElement = new WebInspector.TimelineExpandableElement(this._expandElements);
-                    var positions = this._calculator.computeBarGraphWindowPosition(record.record());
+                    var positions = this._calculator.computeBarGraphWindowPosition(record);
                     expandElement._update(record, i, positions.left - this._expandOffset, positions.width);
                 }
             } else {
@@ -583,7 +582,7 @@ WebInspector.TimelineView.prototype = {
                     this._graphRowsElement.appendChild(graphRowElement);
                 }
 
-                listRowElement.row.update(record, visibleTop, this._model.loadedFromFile());
+                listRowElement.row.update(record, visibleTop, this._model.loadedFromFile(), this._uiUtils);
                 graphRowElement.row.update(record, this._calculator, this._expandOffset, i);
                 if (this._lastSelectedRecord === record) {
                     listRowElement.row.renderAsSelected(true);
@@ -656,7 +655,7 @@ WebInspector.TimelineView.prototype = {
         var taskIndex = insertionIndexForObjectInListSortedByFunction(startTime, tasks, compareEndTime);
 
         var foreignStyle = "gpu-task-foreign";
-        var element = container.firstChild;
+        var element = /** @type {?Element} */ (container.firstChild);
         var lastElement;
         var lastLeft;
         var lastRight;
@@ -730,9 +729,7 @@ WebInspector.TimelineView.prototype = {
     _mouseMove: function(e)
     {
         var rowElement = e.target.enclosingNodeOrSelfWithClass("timeline-tree-item");
-        if (rowElement && rowElement.row && rowElement.row._record.record().highlightQuad)
-            this._highlightQuad(rowElement.row._record.record());
-        else
+        if (!this._highlightQuad(rowElement))
             this._hideQuadHighlight();
 
         var taskBarElement = e.target.enclosingNodeOrSelfWithClass("timeline-graph-bar");
@@ -823,15 +820,26 @@ WebInspector.TimelineView.prototype = {
     },
 
     /**
-     * @param {!WebInspector.TimelineModel.Record} record
+     * @param {?Element} rowElement
+     * @return {boolean}
      */
-    _highlightQuad: function(record)
+    _highlightQuad: function(rowElement)
     {
+        if (!rowElement || !rowElement.row)
+            return false;
+        var presentationRecord = rowElement.row._record;
+        if (presentationRecord.coalesced())
+            return false;
+        var record = presentationRecord.record();
         if (this._highlightedQuadRecord === record)
-            return;
+            return true;
         this._highlightedQuadRecord = record;
-        var quad = record.highlightQuad;
+
+        var quad = this._uiUtils.highlightQuadForRecord(record);
+        if (!quad)
+            return false;
         record.target().domAgent().highlightQuad(quad, WebInspector.Color.PageHighlight.Content.toProtocolRGBA(), WebInspector.Color.PageHighlight.ContentOutline.toProtocolRGBA());
+        return true;
     },
 
     _hideQuadHighlight: function()
@@ -918,7 +926,7 @@ WebInspector.TimelineCalculator.prototype = {
     },
 
     /**
-     * @param {!WebInspector.TimelineModel.Record} record
+     * @param {!WebInspector.TimelinePresentationModel.Record} record
      * @return {!{start: number, end: number, cpuWidth: number}}
      */
     computeBarGraphPercentages: function(record)
@@ -930,7 +938,7 @@ WebInspector.TimelineCalculator.prototype = {
     },
 
     /**
-     * @param {!WebInspector.TimelineModel.Record} record
+     * @param {!WebInspector.TimelinePresentationModel.Record} record
      * @return {!{left: number, width: number, cpuWidth: number}}
      */
     computeBarGraphWindowPosition: function(record)
@@ -1041,8 +1049,9 @@ WebInspector.TimelineRecordListRow.prototype = {
      * @param {!WebInspector.TimelinePresentationModel.Record} presentationRecord
      * @param {number} offset
      * @param {boolean} loadedFromFile
+     * @param {!WebInspector.TimelineUIUtils} uiUtils
      */
-    update: function(presentationRecord, offset, loadedFromFile)
+    update: function(presentationRecord, offset, loadedFromFile, uiUtils)
     {
         this._record = presentationRecord;
         var record = presentationRecord.record();
@@ -1057,7 +1066,7 @@ WebInspector.TimelineRecordListRow.prototype = {
         if (record.thread())
             this.element.classList.add("background");
 
-        this._typeElement.textContent = record.title();
+        this._typeElement.textContent = uiUtils.titleForRecord(record);
 
         if (this._dataElement.firstChild)
             this._dataElement.removeChildren();
@@ -1068,7 +1077,7 @@ WebInspector.TimelineRecordListRow.prototype = {
         if (presentationRecord.coalesced()) {
             this._dataElement.createTextChild(WebInspector.UIString("× %d", presentationRecord.presentationChildren().length));
         } else {
-            var detailsNode = WebInspector.TimelineUIUtils.buildDetailsNode(record, this._linkifier, loadedFromFile);
+            var detailsNode = uiUtils.buildDetailsNode(record, this._linkifier, loadedFromFile);
             if (detailsNode) {
                 this._dataElement.appendChild(document.createTextNode("("));
                 this._dataElement.appendChild(detailsNode);
@@ -1094,7 +1103,7 @@ WebInspector.TimelineRecordListRow.prototype = {
     },
 
     /**
-     * @param {!Event} event
+     * @param {?Event} event
      */
     _onExpandClick: function(event)
     {
@@ -1142,6 +1151,7 @@ WebInspector.TimelineRecordListRow.prototype = {
 
 /**
  * @constructor
+ * @param {!Element} graphContainer
  * @param {function(!WebInspector.TimelinePresentationModel.Record)} selectRecord
  * @param {function()} scheduleRefresh
  */
@@ -1188,7 +1198,7 @@ WebInspector.TimelineRecordGraphRow.prototype = {
         if (record.thread())
             this.element.classList.add("background");
 
-        var barPosition = calculator.computeBarGraphWindowPosition(record);
+        var barPosition = calculator.computeBarGraphWindowPosition(presentationRecord);
         this._barElement.style.left = barPosition.left + "px";
         this._barElement.style.width = barPosition.width + "px";
         this._barCpuElement.style.left = barPosition.left + "px";
@@ -1262,6 +1272,9 @@ WebInspector.TimelineExpandableElement = function(container)
 WebInspector.TimelineExpandableElement.prototype = {
     /**
      * @param {!WebInspector.TimelinePresentationModel.Record} record
+     * @param {number} index
+     * @param {number} left
+     * @param {number} width
      */
     _update: function(record, index, left, width)
     {

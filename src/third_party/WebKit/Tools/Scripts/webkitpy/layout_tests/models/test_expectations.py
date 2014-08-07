@@ -402,7 +402,7 @@ class TestExpectationLine(object):
             and self.is_skipped_outside_expectations_file == other.is_skipped_outside_expectations_file)
 
     def is_invalid(self):
-        return self.warnings and self.warnings != [TestExpectationParser.MISSING_BUG_WARNING]
+        return bool(self.warnings and self.warnings != [TestExpectationParser.MISSING_BUG_WARNING])
 
     def is_flaky(self):
         return len(self.parsed_expectations) > 1
@@ -884,6 +884,17 @@ class TestExpectations(object):
         return expected_results
 
     @staticmethod
+    def remove_non_sanitizer_failures(expected_results):
+        """Returns a copy of the expected results for a test, except that we
+        drop any failures that the sanitizers don't care about."""
+        expected_results = expected_results.copy()
+        for result in (IMAGE, FAIL, IMAGE_PLUS_TEXT):
+            if result in expected_results:
+                expected_results.remove(result)
+                expected_results.add(PASS)
+        return expected_results
+
+    @staticmethod
     def has_pixel_failures(actual_results):
         return IMAGE in actual_results or FAIL in actual_results
 
@@ -987,9 +998,11 @@ class TestExpectations(object):
     def expectation_to_string(self, expectation):
         return self._model.expectation_to_string(expectation)
 
-    def matches_an_expected_result(self, test, result, pixel_tests_are_enabled):
+    def matches_an_expected_result(self, test, result, pixel_tests_are_enabled, sanitizer_is_enabled):
         expected_results = self._model.get_expectations(test)
-        if not pixel_tests_are_enabled:
+        if sanitizer_is_enabled:
+            expected_results = self.remove_non_sanitizer_failures(expected_results)
+        elif not pixel_tests_are_enabled:
             expected_results = self.remove_pixel_failures(expected_results)
         return self.result_was_expected(result, expected_results, self.is_rebaselining(test))
 
@@ -1026,21 +1039,22 @@ class TestExpectations(object):
     def has_warnings(self):
         return self._has_warnings
 
-    def remove_configuration_from_test(self, test, test_configuration):
+    def remove_configurations(self, removals):
         expectations_to_remove = []
         modified_expectations = []
 
-        for expectation in self._expectations:
-            if expectation.name != test or not expectation.parsed_expectations:
-                continue
-            if test_configuration not in expectation.matching_configurations:
-                continue
+        for test, test_configuration in removals:
+            for expectation in self._expectations:
+                if expectation.name != test or not expectation.parsed_expectations:
+                    continue
+                if test_configuration not in expectation.matching_configurations:
+                    continue
 
-            expectation.matching_configurations.remove(test_configuration)
-            if expectation.matching_configurations:
-                modified_expectations.append(expectation)
-            else:
-                expectations_to_remove.append(expectation)
+                expectation.matching_configurations.remove(test_configuration)
+                if expectation.matching_configurations:
+                    modified_expectations.append(expectation)
+                else:
+                    expectations_to_remove.append(expectation)
 
         for expectation in expectations_to_remove:
             index = self._expectations.index(expectation)

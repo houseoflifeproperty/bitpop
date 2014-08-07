@@ -226,14 +226,14 @@ blink::WebGestureEvent MakeWebGestureEventFromUIEvent(
       break;
     case ui::ET_GESTURE_BEGIN:
     case ui::ET_GESTURE_END:
-    case ui::ET_GESTURE_MULTIFINGER_SWIPE:
+    case ui::ET_GESTURE_SWIPE:
       gesture_event.type = blink::WebInputEvent::Undefined;
       break;
     default:
       NOTREACHED() << "Unknown gesture type: " << event.type();
   }
 
-  gesture_event.sourceDevice = blink::WebGestureEvent::Touchscreen;
+  gesture_event.sourceDevice = blink::WebGestureDeviceTouchscreen;
   gesture_event.modifiers = EventFlagsToWebEventModifiers(event.flags());
   gesture_event.timeStampSeconds = event.time_stamp().InSecondsF();
 
@@ -314,7 +314,7 @@ blink::WebTouchPoint* UpdateWebTouchEventFromUIEvent(
   point->position.x = event.x();
   point->position.y = event.y();
 
-  const gfx::Point root_point = event.root_location();
+  const gfx::PointF& root_point = event.root_location_f();
   point->screenPosition.x = root_point.x();
   point->screenPosition.y = root_point.y();
 

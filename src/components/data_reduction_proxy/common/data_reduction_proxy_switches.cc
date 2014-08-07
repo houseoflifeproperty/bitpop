@@ -10,6 +10,13 @@ namespace switches {
 // The origin of the data reduction proxy.
 const char kDataReductionProxy[]         = "spdy-proxy-auth-origin";
 
+// The origin of an alternative data reduction proxy.
+const char kDataReductionProxyAlt[]      = "data-reduction-proxy-alternative";
+
+// The origin of an alternative data reduction proxy fallback.
+const char kDataReductionProxyAltFallback[] =
+    "data-reduction-proxy-alternative-fallback";
+
 // The origin of the data reduction proxy dev.
 const char kDataReductionProxyDev[]      = "spdy-proxy-dev-auth-origin";
 
@@ -23,8 +30,26 @@ const char kDataReductionProxyKey[] = "spdy-proxy-auth-value";
 // proxy. Note this canary does not go through the data reduction proxy.
 const char kDataReductionProxyProbeURL[] = "data-reduction-proxy-probe-url";
 
+// Sets a URL to fetch to warm up the data reduction proxy on startup and
+// network changes.
+const char kDataReductionProxyWarmupURL[] = "data-reduction-proxy-warmup-url";
+
+// The origin of the data reduction SSL proxy.
+const char kDataReductionSSLProxy[] = "data-reduction-ssl-proxy";
+
+// Disables the origin of the data reduction proxy dev.
+const char kDisableDataReductionProxyDev[] =
+    "disable-spdy-proxy-dev-auth-origin";
+
+// Enables the origin of the data reduction proxy dev.
+const char kEnableDataReductionProxyDev[] =
+    "enable-spdy-proxy-dev-auth-origin";
+
 // Enable the data reduction proxy.
 const char kEnableDataReductionProxy[] = "enable-spdy-proxy-auth";
+
+// Enable the alternative data reduction proxy.
+const char kEnableDataReductionProxyAlt[] = "enable-data-reduction-proxy-alt";
 
 }  // namespace switches
 }  // namespace data_reduction_proxy

@@ -236,6 +236,21 @@
         ]
       },
       {
+        "id": "FileSystemPermissionRequest",
+        "type": "object",
+        "description": "The type of <code>request</code> object which accompanies a <code>filesystem</code> <a href=\"#event-permissionrequest\">permissionrequest</a></code> DOM event.",
+        "properties": {
+          "url": {
+            "description": "The URL of the frame requesting access to local file system.",
+            "type": "string"
+          }
+        },
+        "functions": [
+          { "name": "allow", "description": "Allow the permission request." },
+          { "name": "deny", "description": "Deny the permission request." }
+        ]
+      },
+      {
         "id": "LoadPluginPermissionRequest",
         "type": "object",
         "description": "The type of <code>request</code> object which accompanies a <code>loadplugin</code> <a href=\"#event-permissionrequest\">permissionrequest</a> DOM event.<p>",
@@ -280,7 +295,7 @@
       {
         "id": "WebRequestEventInteface",
         "type": "object",
-        "description": "Interface which provides access to webRequest events on the guest page. See the <a href=\"http://developer.chrome.com/extensions/webRequest.html\">chrome.webRequest</a> extensions API for details on webRequest life cycle and related concepts.<p>To illustrate how usage differs from the extensions webRequest API, consider the following example code which blocks any guest requests for URLs which match <code>*://www.evil.com/*</code>:</p><pre>webview.request.onBeforeRequest.addListener(\r  function(details) { return {cancel: true}; },\r  {urls: [\"*://www.evil.com/*\"]},\r  [\"blocking\"]);</pre><p>Additionally, this interface supports declarative webRequest rules through <code>onRequest</code> and <code>onMessage</code> events. See <a href=\"http://developer.chrome.com/extensions/declarativeWebRequest.html\">declarativeWebRequest</a> for API details.</p>Note that conditions and actions for declarative webview webRequests should be instantiated from their <code>chrome.webViewRequest.*</code> counterparts. The following example code declaratively blocks all requests to <code>\"example.com\"</code> on the webview <code>myWebview</code>:</p><pre>var rule = {\r  conditions: [\r    new chrome.webViewRequest.RequestMatcher({ url: { hostSuffix: 'example.com' } })\r  ],\r  actions: [ new chrome.webViewRequest.CancelRequest() ]\r};\rmyWebview.request.onRequest.addRules([rule]);</pre>",
+        "description": "Interface which provides access to webRequest events on the guest page. See the <a href=\"http://developer.chrome.com/extensions/webRequest\">chrome.webRequest</a> extensions API for details on webRequest life cycle and related concepts.<p>To illustrate how usage differs from the extensions webRequest API, consider the following example code which blocks any guest requests for URLs which match <code>*://www.evil.com/*</code>:</p><pre>webview.request.onBeforeRequest.addListener(\r  function(details) { return {cancel: true}; },\r  {urls: [\"*://www.evil.com/*\"]},\r  [\"blocking\"]);</pre><p>Additionally, this interface supports declarative webRequest rules through <code>onRequest</code> and <code>onMessage</code> events. See <a href=\"http://developer.chrome.com/extensions/declarativeWebRequest.html\">declarativeWebRequest</a> for API details.</p>Note that conditions and actions for declarative webview webRequests should be instantiated from their <code>chrome.webViewRequest.*</code> counterparts. The following example code declaratively blocks all requests to <code>\"example.com\"</code> on the webview <code>myWebview</code>:</p><pre>var rule = {\r  conditions: [\r    new chrome.webViewRequest.RequestMatcher({ url: { hostSuffix: 'example.com' } })\r  ],\r  actions: [ new chrome.webViewRequest.CancelRequest() ]\r};\rmyWebview.request.onRequest.addRules([rule]);</pre>",
         "properties": {}
       }
     ],
@@ -561,7 +576,7 @@
       {
         "name": "contentload",
         "options": { "supportsDom": true },
-        "description": "Fired when the guest window fires a <code>load</code> event.<p>The following example code modifies the default font size of the guest's <code>body</code> element after the page loads:</p><pre>webview.addEventListener('contentload', function() {\r  webview.executeScript({ code: 'document.body.style.fontSize = \"42px\"' });\r});</pre>",
+        "description": "Fired when the guest window fires a <code>load</code> event, i.e., when a new document is loaded. This does <em>not</em> include page navigation within the current document or asynchronous resource loads. <p>The following example code modifies the default font size of the guest's <code>body</code> element after the page loads:</p><pre>webview.addEventListener('contentload', function() {\r  webview.executeScript({ code: 'document.body.style.fontSize = \"42px\"' });\r});</pre>",
         "parameters": []
       },
       {
@@ -645,7 +660,7 @@
       {
         "name": "loadabort",
         "options": { "supportsDom": true },
-        "description": "Fired when a top-level load has aborted without committing.",
+        "description": "Fired when a top-level load has aborted without committing. <p class=\"note\"><strong>Note:</strong> When a resource load is aborted, a <code>loadabort</code> event will eventually be followed by a <code>loadstop</code> event, even if all committed loads since the last <code>loadstop</code> event (if any) were aborted.</p>",
         "parameters": [
           {
             "name": "url",
@@ -668,7 +683,7 @@
       {
         "name": "loadcommit",
         "options": { "supportsDom": true },
-        "description": "Fired when a load has committed.",
+        "description": "Fired when a load has committed. This includes navigation within the current document as well as subframe document-level loads, but does <em>not</em> include asynchronous resource loads.",
         "parameters": [
           {
             "name": "url",
@@ -724,7 +739,7 @@
       {
         "name": "loadstop",
         "options": { "supportsDom": true },
-        "description": "Fired when all loads in the guest page (including all subframes) have completed. Fires in addition to any related <code>loadcommit</code> or <code>loadabort</code> events, which occur per-frame.",
+        "description": "Fired when all frame-level loads in a guest page (including all its subframes) have completed. This includes navigation within the current document as well as subframe document-level loads, but does <em>not</em> include asynchronous resource loads. This event fires every time the number of document-level loads transitions from one (or more) to zero. For example, if a page that has already finished loading (i.e., <code>loadstop</code> already fired once) creates a new iframe which loads a page, then a second <code>loadstop</code> will fire when the iframe page load completes. This pattern is commonly observed on pages that load ads. <p class=\"note\"><strong>Note:</strong> When a committed load is aborted, a <code>loadstop</code> event will eventually follow a <code>loadabort</code> event, even if all committed loads since the last <code>loadstop</code> event (if any) were aborted.</p>",
         "parameters": []
       },
       {
@@ -774,7 +789,7 @@
             "name": "permission",
             "description": "The type of permission being requested.",
             "type": "string",
-            "enum": ["media", "geolocation", "pointerLock", "download", "loadplugin"]
+            "enum": ["media", "geolocation", "pointerLock", "download", "loadplugin", "filesystem"]
           },
           {
             "name": "requestId",
@@ -870,4 +885,3 @@
     }
   }
 ]
-

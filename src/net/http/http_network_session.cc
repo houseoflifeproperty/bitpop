@@ -67,9 +67,7 @@ HttpNetworkSession::Params::Params()
       network_delegate(NULL),
       net_log(NULL),
       host_mapping_rules(NULL),
-      force_http_pipelining(false),
       ignore_certificate_errors(false),
-      http_pipelining_enabled(false),
       testing_fixed_http_port(0),
       testing_fixed_https_port(0),
       force_spdy_single_domain(false),
@@ -80,6 +78,10 @@ HttpNetworkSession::Params::Params()
       spdy_initial_max_concurrent_streams(0),
       spdy_max_concurrent_streams_limit(0),
       time_func(&base::TimeTicks::Now),
+      force_spdy_over_ssl(true),
+      force_spdy_always(false),
+      use_alternate_protocols(false),
+      enable_websocket_over_spdy(false),
       enable_quic(false),
       enable_quic_https(false),
       enable_quic_port_selection(true),
@@ -91,7 +93,7 @@ HttpNetworkSession::Params::Params()
       quic_max_packet_length(kDefaultMaxPacketSize),
       enable_user_alternate_protocol_ports(false),
       quic_crypto_client_stream_factory(NULL) {
-  quic_supported_versions.push_back(QUIC_VERSION_16);
+  quic_supported_versions.push_back(QUIC_VERSION_18);
 }
 
 HttpNetworkSession::Params::~Params() {}
@@ -103,7 +105,6 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
       http_server_properties_(params.http_server_properties),
       cert_verifier_(params.cert_verifier),
       http_auth_handler_factory_(params.http_auth_handler_factory),
-      force_http_pipelining_(params.force_http_pipelining),
       proxy_service_(params.proxy_service),
       ssl_config_service_(params.ssl_config_service),
       normal_socket_pool_manager_(
@@ -122,6 +123,7 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
                            params.quic_clock ? params. quic_clock :
                                new QuicClock(),
                            params.quic_max_packet_length,
+                           params.quic_user_agent_id,
                            params.quic_supported_versions,
                            params.enable_quic_port_selection,
                            params.enable_quic_pacing,
@@ -145,6 +147,36 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
   DCHECK(proxy_service_);
   DCHECK(ssl_config_service_.get());
   CHECK(http_server_properties_);
+
+  for (int i = ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION;
+       i <= ALTERNATE_PROTOCOL_MAXIMUM_VALID_VERSION; ++i) {
+    enabled_protocols_[i - ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION] = false;
+  }
+
+  // TODO(rtenneti): bug 116575 - consider combining the NextProto and
+  // AlternateProtocol.
+  for (std::vector<NextProto>::const_iterator it = params_.next_protos.begin();
+       it != params_.next_protos.end(); ++it) {
+    NextProto proto = *it;
+
+    // Add the protocol to the TLS next protocol list, except for QUIC
+    // since it uses UDP.
+    if (proto != kProtoQUIC1SPDY3) {
+      next_protos_.push_back(SSLClientSocket::NextProtoToString(proto));
+    }
+
+    // Enable the corresponding alternate protocol, except for HTTP
+    // which has not corresponding alternative.
+    if (proto != kProtoHTTP11) {
+      AlternateProtocol alternate = AlternateProtocolFromNextProto(proto);
+      if (!IsAlternateProtocolValid(alternate)) {
+        NOTREACHED() << "Invalid next proto: " << proto;
+        continue;
+      }
+      enabled_protocols_[alternate - ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION] =
+          true;
+    }
+  }
 
   if (HpackHuffmanAggregator::UseAggregator()) {
     huffman_aggregator_.reset(new HpackHuffmanAggregator());
@@ -235,6 +267,27 @@ void HttpNetworkSession::CloseIdleConnections() {
   normal_socket_pool_manager_->CloseIdleSockets();
   websocket_socket_pool_manager_->CloseIdleSockets();
   spdy_session_pool_.CloseCurrentIdleSessions();
+}
+
+bool HttpNetworkSession::IsProtocolEnabled(AlternateProtocol protocol) const {
+  DCHECK(IsAlternateProtocolValid(protocol));
+  return enabled_protocols_[
+      protocol - ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION];
+}
+
+void HttpNetworkSession::GetNextProtos(
+    std::vector<std::string>* next_protos) const {
+  if (HttpStreamFactory::spdy_enabled()) {
+    *next_protos = next_protos_;
+  } else {
+    next_protos->clear();
+  }
+}
+
+bool HttpNetworkSession::HasSpdyExclusion(
+    HostPortPair host_port_pair) const {
+  return params_.forced_spdy_exclusions.find(host_port_pair) !=
+      params_.forced_spdy_exclusions.end();
 }
 
 ClientSocketPoolManager* HttpNetworkSession::GetSocketPoolManager(

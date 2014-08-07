@@ -125,7 +125,6 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
     std::string url = test_server_.GetServiceURL().spec();
     CommandLine* command_line = CommandLine::ForCurrentProcess();
     command_line->AppendSwitchASCII(switches::kDeviceManagementUrl, url);
-    command_line->AppendSwitch(switches::kEnableComponentCloudPolicy);
 
     ExtensionBrowserTest::SetUpInProcessBrowserTestFixture();
   }
@@ -215,7 +214,7 @@ class ComponentCloudPolicyTest : public ExtensionBrowserTest {
     SigninManager* signin_manager =
         SigninManagerFactory::GetForProfile(browser()->profile());
     ASSERT_TRUE(signin_manager);
-    signin_manager->SignOut();
+    signin_manager->SignOut(signin_metrics::SIGNOUT_TEST);
   }
 #endif
 
@@ -270,6 +269,11 @@ IN_PROC_BROWSER_TEST_F(ComponentCloudPolicyTest, UpdateExtensionPolicy) {
 IN_PROC_BROWSER_TEST_F(ComponentCloudPolicyTest, InstallNewExtension) {
   EXPECT_TRUE(test_server_.UpdatePolicyData(
       dm_protocol::kChromeExtensionPolicyType, kTestExtension2, kTestPolicy2));
+  // Installing a new extension doesn't trigger another policy fetch because
+  // the server always sends down the list of all extensions that have policy.
+  // Fetch now that the configuration has been updated and before installing
+  // the extension.
+  RefreshPolicies();
 
   ExtensionTestMessageListener result_listener("ok", true);
   result_listener.set_failure_message("fail");

@@ -50,6 +50,7 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   // and (2) will correctly hide the old bubble instance.
   static void ShowBubble(views::View* anchor_view,
                          views::BubbleBorder::Arrow arrow,
+                         views::BubbleBorder::ArrowPaintType arrow_paint_type,
                          views::BubbleBorder::BubbleAlignment border_alignment,
                          const gfx::Rect& anchor_rect,
                          Browser* browser);
@@ -59,7 +60,7 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   virtual ~AvatarMenuBubbleView();
 
   // views::View implementation.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
 
@@ -71,7 +72,7 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
   // BubbleDelegate implementation.
-  virtual gfx::Rect GetAnchorRect() OVERRIDE;
+  virtual gfx::Rect GetAnchorRect() const OVERRIDE;
   virtual void Init() OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
 
@@ -100,8 +101,8 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   // Create the menu contents for a normal profile.
   void InitMenuContents(AvatarMenu* avatar_menu);
 
-  // Create the managed user specific contents of the menu.
-  void InitManagedUserContents(AvatarMenu* avatar_menu);
+  // Create the supervised user specific contents of the menu.
+  void InitSupervisedUserContents(AvatarMenu* avatar_menu);
 
   scoped_ptr<AvatarMenu> avatar_menu_;
   gfx::Rect anchor_rect_;
@@ -117,9 +118,9 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   views::View* buttons_view_;
 
   // This will be non-NULL if and only if |expanded_| is false and
-  // avatar_menu_->GetManagedUserInformation() returns a non-empty string.
+  // avatar_menu_->GetSupervisedUserInformation() returns a non-empty string.
   // See OnAvatarMenuChanged().
-  views::Label* managed_user_info_;
+  views::Label* supervised_user_info_;
   views::ImageView* icon_view_;
   views::Separator* separator_switch_users_;
   views::Link* switch_profile_link_;
@@ -127,7 +128,7 @@ class AvatarMenuBubbleView : public views::BubbleDelegateView,
   static AvatarMenuBubbleView* avatar_bubble_;
   static bool close_on_deactivate_for_testing_;
 
-  // Is set to true if the managed user has clicked on Switch Users.
+  // Is set to true if the supervised user has clicked on Switch Users.
   bool expanded_;
 
   DISALLOW_COPY_AND_ASSIGN(AvatarMenuBubbleView);

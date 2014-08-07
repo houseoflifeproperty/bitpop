@@ -34,7 +34,6 @@ chromium_categories_steps = {
     'keyboard_unittests',
     'media_unittests',
     'message_center_unittests',
-    'mini_installer_test',
     'nacl_integration',
     'nacl_loader_unittests',
     'net_unittests',
@@ -55,7 +54,6 @@ chromium_categories_steps = {
     #'webkit_tests',
    ],
   'compile': ['check_deps', 'compile', 'archive_build'],
-  'closer': ['BuildTarget'],
 }
 
 exclusions = {
@@ -64,35 +62,8 @@ exclusions = {
 forgiving_steps = ['update_scripts', 'update', 'svnkill', 'taskkill',
                    'archive_build', 'start_crash_handler', 'gclient_revert']
 
-close_chromiumos_categories_steps = {
-  'closer': [
-    'LKGMSync',
-    'BuildBoard',
-    'UnitTest',
-  ],
-}
-
-warn_chromiumos_categories_steps = {
-  'watch': [
-    'UploadPrebuilts',
-    'Archive',
-    'VMTest',
-  ],
-}
-
-warn_aura_chromiumos_categories_steps = {
-  'aurawatch': [
-    'Archive',
-    'BuildTarget',
-    'BuildBoard',
-    'UnitTest',
-  ]
-}
-
 subject = ('buildbot %(result)s in %(projectName)s on %(builder)s, '
            'revision %(revision)s')
-warning_header = ('Please look at failure in "%(steps)s" on "%(builder)s" '
-                  'and help out if you can')
 
 def Update(config, active_master, c):
   # chrome likely/possible failures to the chrome sheriffs, closing the
@@ -108,52 +79,5 @@ def Update(config, active_master, c):
       forgiving_steps=forgiving_steps,
       tree_status_url=active_master.tree_status_url,
       sheriffs=['sheriff'],
-      public_html='../master.chromium/public_html',
-      use_getname=True))
-  # chromium os failures close the chromeOS tree
-  c['status'].append(gatekeeper.GateKeeper(
-      fromaddr=active_master.from_address,
-      categories_steps=close_chromiumos_categories_steps,
-      exclusions=exclusions,
-      relayhost=config.Master.smtp,
-      subject='Closer ' + subject,
-      extraRecipients=(
-          active_master.alternate_tree_closing_notification_recipients),
-      lookup=master_utils.FilterDomain(),
-      forgiving_steps=forgiving_steps,
-      tree_status_url=active_master.alternate_tree_status_url,
-      sheriffs=['sheriff_cros_mtv', 'sheriff_cros_nonmtv'],
-      public_html='../master.chromium/public_html',
-      use_getname=True,
-      throttle=True))
-  # chromium os buried failures/flakiness to chrome OS folk
-  c['status'].append(gatekeeper.GateKeeper(
-      fromaddr=active_master.from_address,
-      categories_steps=warn_chromiumos_categories_steps,
-      exclusions=exclusions,
-      relayhost=config.Master.smtp,
-      subject='Warning ' + subject,
-      status_header=warning_header,
-      extraRecipients=[],
-      lookup=master_utils.FilterDomain(),
-      forgiving_steps=forgiving_steps,
-      tree_status_url=None,
-      sheriffs=['sheriff_cros_mtv', 'sheriff_cros_nonmtv'],
-      public_html='../master.chromium/public_html',
-      use_getname=True))
-  # while the Aura folk are in panic fast mode, let them know to help on
-  # failures that may be related to their special configs.
-  c['status'].append(gatekeeper.GateKeeper(
-      fromaddr=active_master.from_address,
-      categories_steps=warn_aura_chromiumos_categories_steps,
-      exclusions=exclusions,
-      relayhost=config.Master.smtp,
-      subject='Warning ' + subject,
-      status_header=warning_header,
-      extraRecipients=[],
-      lookup=master_utils.FilterDomain(),
-      forgiving_steps=forgiving_steps,
-      tree_status_url=None,
-      sheriffs=['sheriff_aura'],
       public_html='../master.chromium/public_html',
       use_getname=True))

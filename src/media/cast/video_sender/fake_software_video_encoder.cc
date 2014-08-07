@@ -13,10 +13,13 @@
 namespace media {
 namespace cast {
 
-FakeSoftwareVideoEncoder::FakeSoftwareVideoEncoder()
-    : next_frame_is_key_(true),
+FakeSoftwareVideoEncoder::FakeSoftwareVideoEncoder(
+    const VideoSenderConfig& video_config)
+    : video_config_(video_config),
+      next_frame_is_key_(true),
       frame_id_(0),
-      frame_id_to_reference_(0) {
+      frame_id_to_reference_(0),
+      frame_size_(0) {
 }
 
 FakeSoftwareVideoEncoder::~FakeSoftwareVideoEncoder() {}
@@ -25,24 +28,31 @@ void FakeSoftwareVideoEncoder::Initialize() {}
 
 bool FakeSoftwareVideoEncoder::Encode(
     const scoped_refptr<media::VideoFrame>& video_frame,
-    transport::EncodedVideoFrame* encoded_image) {
-  encoded_image->codec = transport::kFakeSoftwareVideo;
-  encoded_image->key_frame = next_frame_is_key_;
-  next_frame_is_key_ = false;
+    transport::EncodedFrame* encoded_image) {
   encoded_image->frame_id = frame_id_++;
-  encoded_image->last_referenced_frame_id = frame_id_to_reference_;
+  if (next_frame_is_key_) {
+    encoded_image->dependency = transport::EncodedFrame::KEY;
+    encoded_image->referenced_frame_id = encoded_image->frame_id;
+    next_frame_is_key_ = false;
+  } else {
+    encoded_image->dependency = transport::EncodedFrame::DEPENDENT;
+    encoded_image->referenced_frame_id = encoded_image->frame_id - 1;
+  }
 
   base::DictionaryValue values;
-  values.Set("key", base::Value::CreateBooleanValue(encoded_image->key_frame));
-  values.Set("id", base::Value::CreateIntegerValue(encoded_image->frame_id));
-  values.Set("ref", base::Value::CreateIntegerValue(
-      encoded_image->last_referenced_frame_id));
+  values.SetBoolean("key",
+                    encoded_image->dependency == transport::EncodedFrame::KEY);
+  values.SetInteger("ref", encoded_image->referenced_frame_id);
+  values.SetInteger("id", encoded_image->frame_id);
+  values.SetInteger("size", frame_size_);
   base::JSONWriter::Write(&values, &encoded_image->data);
+  encoded_image->data.resize(
+      std::max<size_t>(encoded_image->data.size(), frame_size_));
   return true;
 }
 
 void FakeSoftwareVideoEncoder::UpdateRates(uint32 new_bitrate) {
-  // TODO(hclam): Implement bitrate control.
+  frame_size_ = new_bitrate / video_config_.max_frame_rate / 8;
 }
 
 void FakeSoftwareVideoEncoder::GenerateKeyFrame() {

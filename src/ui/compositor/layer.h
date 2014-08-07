@@ -139,6 +139,10 @@ class COMPOSITOR_EXPORT Layer
   void SetBounds(const gfx::Rect& bounds);
   const gfx::Rect& bounds() const { return bounds_; }
 
+  // The offset from our parent (stored in bounds.origin()) is an integer but we
+  // may need to be at a fractional pixel offset to align properly on screen.
+  void SetSubpixelPositionOffset(const gfx::Vector2dF offset);
+
   // Return the target bounds if animator is running, or the current bounds
   // otherwise.
   gfx::Rect GetTargetBounds() const;
@@ -241,12 +245,6 @@ class COMPOSITOR_EXPORT Layer
   bool GetTargetTransformRelativeTo(const Layer* ancestor,
                                     gfx::Transform* transform) const;
 
-  // Converts a ui::Layer's transform to the transform on the corresponding
-  // cc::Layer.
-  static gfx::Transform ConvertTransformToCCTransform(
-      const gfx::Transform& transform,
-      float device_scale_factor);
-
   // See description in View for details
   void SetFillsBoundsOpaquely(bool fills_bounds_opaquely);
   bool fills_bounds_opaquely() const { return fills_bounds_opaquely_; }
@@ -293,22 +291,13 @@ class COMPOSITOR_EXPORT Layer
 
   const SkRegion& damaged_region() const { return damaged_region_; }
 
+  void CompleteAllAnimations();
+
   // Suppresses painting the content by disconnecting |delegate_|.
   void SuppressPaint();
 
   // Notifies the layer that the device scale factor has changed.
   void OnDeviceScaleFactorChanged(float device_scale_factor);
-
-  // Sets whether the layer should scale its content. If true, the canvas will
-  // be scaled in software rendering mode before it is passed to
-  // |LayerDelegate::OnPaintLayer|.
-  // Set to false if the delegate handles scaling.
-  // NOTE: if this is called during |LayerDelegate::OnPaint|, the new value will
-  // not apply to the canvas passed to the pending draw.
-  void set_scale_content(bool scale_content) { scale_content_ = scale_content; }
-
-  // Returns true if the layer scales its content.
-  bool scale_content() const { return scale_content_; }
 
   // Requets a copy of the layer's output as a texture or bitmap.
   void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request);
@@ -355,6 +344,8 @@ class COMPOSITOR_EXPORT Layer
  private:
   friend class LayerOwner;
 
+  void CollectAnimators(std::vector<scoped_refptr<LayerAnimator> >* animators);
+
   // Stacks |child| above or below |other|.  Helper method for StackAbove() and
   // StackBelow().
   void StackRelativeTo(Layer* child, Layer* other, bool above);
@@ -383,12 +374,12 @@ class COMPOSITOR_EXPORT Layer
   virtual void AddThreadedAnimation(
       scoped_ptr<cc::Animation> animation) OVERRIDE;
   virtual void RemoveThreadedAnimation(int animation_id) OVERRIDE;
+  virtual LayerAnimatorCollection* GetLayerAnimatorCollection() OVERRIDE;
 
   // Creates a corresponding composited layer for |type_|.
   void CreateWebLayer();
 
   // Recomputes and sets to |cc_layer_|.
-  void RecomputeCCTransformFromTransform(const gfx::Transform& transform);
   void RecomputeDrawsContentAndUVRect();
   void RecomputePosition();
 
@@ -407,6 +398,12 @@ class COMPOSITOR_EXPORT Layer
   // be called once we have been added to a tree.
   void SendPendingThreadedAnimations();
 
+  void AddAnimatorsInTreeToCollection(LayerAnimatorCollection* collection);
+  void RemoveAnimatorsInTreeFromCollection(LayerAnimatorCollection* collection);
+
+  // Returns whether the layer has an animating LayerAnimator.
+  bool IsAnimating() const;
+
   const LayerType type_;
 
   Compositor* compositor_;
@@ -417,6 +414,7 @@ class COMPOSITOR_EXPORT Layer
   std::vector<Layer*> children_;
 
   gfx::Rect bounds_;
+  gfx::Vector2dF subpixel_position_offset_;
 
   // Visibility of this layer. See SetVisible/IsDrawn for more details.
   bool visible_;
@@ -475,10 +473,6 @@ class COMPOSITOR_EXPORT Layer
   scoped_refptr<cc::SolidColorLayer> solid_color_layer_;
   scoped_refptr<cc::DelegatedRendererLayer> delegated_renderer_layer_;
   cc::Layer* cc_layer_;
-
-  // If true, the layer scales the canvas and the texture with the device scale
-  // factor as apporpriate. When true, the texture size is in DIP.
-  bool scale_content_;
 
   // A cached copy of |Compositor::device_scale_factor()|.
   float device_scale_factor_;

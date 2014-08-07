@@ -98,39 +98,6 @@ TestBrowserContext::GetMediaRequestContextForStoragePartition(
   return NULL;
 }
 
-void TestBrowserContext::RequestMidiSysExPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame,
-      bool user_gesture,
-      const MidiSysExPermissionCallback& callback) {
-  // Always reject requests for testing.
-  callback.Run(false);
-}
-
-void TestBrowserContext::CancelMidiSysExPermissionRequest(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    const GURL& requesting_frame) {
-}
-
-void TestBrowserContext::RequestProtectedMediaIdentifierPermission(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    int group_id,
-    const GURL& requesting_frame,
-    const ProtectedMediaIdentifierPermissionCallback& callback) {
-  // Always reject requests for testing.
-  callback.Run(false);
-}
-
-void TestBrowserContext::CancelProtectedMediaIdentifierPermissionRequests(
-    int group_id) {
-}
-
 ResourceContext* TestBrowserContext::GetResourceContext() {
   if (!resource_context_)
     resource_context_.reset(new MockResourceContext(
@@ -138,18 +105,16 @@ ResourceContext* TestBrowserContext::GetResourceContext() {
   return resource_context_.get();
 }
 
-GeolocationPermissionContext*
-    TestBrowserContext::GetGeolocationPermissionContext() {
-  return NULL;
-}
-
-BrowserPluginGuestManagerDelegate*
-    TestBrowserContext::GetGuestManagerDelegate() {
+BrowserPluginGuestManager* TestBrowserContext::GetGuestManager() {
   return NULL;
 }
 
 quota::SpecialStoragePolicy* TestBrowserContext::GetSpecialStoragePolicy() {
   return special_storage_policy_.get();
+}
+
+PushMessagingService* TestBrowserContext::GetPushMessagingService() {
+  return NULL;
 }
 
 }  // namespace content

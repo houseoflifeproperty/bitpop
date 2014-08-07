@@ -54,6 +54,12 @@
     'webrtc_vp8_dir%': '<(webrtc_vp8_dir)',
     'include_opus%': '<(include_opus)',
     'rbe_components_path%': '<(rbe_components_path)',
+    'external_libraries%': '0',
+    'json_root%': '<(DEPTH)/third_party/jsoncpp/source/include/',
+    # openssl needs to be defined or gyp will complain. Is is only used when
+    # when providing external libraries so just use current directory as a
+    # placeholder.
+    'ssl_root%': '.',
 
     # The Chromium common.gypi we use treats all gyp files without
     # chromium_code==1 as third party code. This disables many of the
@@ -85,9 +91,14 @@
     'enable_protobuf%': 1,
 
     # Disable these to not build components which can be externally provided.
+    'build_json%': 1,
     'build_libjpeg%': 1,
     'build_libyuv%': 1,
     'build_libvpx%': 1,
+    'build_ssl%': 1,
+
+    # Disable by default
+    'have_dbus_glib%': 0,
 
     # Enable to use the Mozilla internal settings.
     'build_with_mozilla%': 0,
@@ -144,9 +155,6 @@
   },
   'target_defaults': {
     'include_dirs': [
-      # Allow includes to be prefixed with webrtc/ in case it is not an
-      # immediate subdirectory of <(DEPTH).
-      '../..',
       # To include the top-level directory when building in Chrome, so we can
       # use full paths (e.g. headers inside testing/ or third_party/).
       '<(DEPTH)',
@@ -161,6 +169,14 @@
           'WEBRTC_MOZILLA_BUILD',
          ],
       }],
+      ['have_dbus_glib==1', {
+        'defines': [
+          'HAVE_DBUS_GLIB',
+         ],
+         'cflags': [
+           '<!@(pkg-config --cflags dbus-glib-1)',
+         ],
+      }],
       ['enable_video==1', {
         'defines': ['WEBRTC_MODULE_UTILITY_VIDEO',],
       }],
@@ -168,17 +184,36 @@
         'defines': [
           # Changes settings for Chromium build.
           'WEBRTC_CHROMIUM_BUILD',
+          'LOGGING_INSIDE_WEBRTC',
+        ],
+        'include_dirs': [
+          # overrides must be included first as that is the mechanism for
+          # selecting the override headers in Chromium.
+          '../overrides',
+          # Allow includes to be prefixed with webrtc/ in case it is not an
+          # immediate subdirectory of <(DEPTH).
+          '../..',
         ],
       }, {
         'conditions': [
           ['os_posix==1', {
-            'cflags': [
-              '-Wextra',
-              # We need to repeat some flags from Chromium's common.gypi here
-              # that get overridden by -Wextra.
-              '-Wno-unused-parameter',
-              '-Wno-missing-field-initializers',
-              '-Wno-strict-overflow',
+            'conditions': [
+              # -Wextra is currently disabled in Chromium's common.gypi. Enable
+              # for targets that can handle it. For Android/arm64 right now
+              # there will be an 'enumeral and non-enumeral type in conditional
+              # expression' warning in android_tools/ndk_experimental's version
+              # of stlport.
+              # See: https://code.google.com/p/chromium/issues/detail?id=379699
+              ['target_arch!="arm64" or OS!="android"', {
+                'cflags': [
+                  '-Wextra',
+                  # We need to repeat some flags from Chromium's common.gypi
+                  # here that get overridden by -Wextra.
+                  '-Wno-unused-parameter',
+                  '-Wno-missing-field-initializers',
+                  '-Wno-strict-overflow',
+                ],
+              }],
             ],
             'cflags_cc': [
               '-Wnon-virtual-dtor',
@@ -330,9 +365,6 @@
       }],
     ], # conditions
     'direct_dependent_settings': {
-      'include_dirs': [
-        '../..',
-      ],
       'conditions': [
         ['build_with_mozilla==1', {
           'defines': [
@@ -344,6 +376,16 @@
           'defines': [
             # Changes settings for Chromium build.
             'WEBRTC_CHROMIUM_BUILD',
+          ],
+          'include_dirs': [
+            # overrides must be included first as that is the mechanism for
+            # selecting the override headers in Chromium.
+            '../overrides',
+            '../..',
+          ],
+        }, {
+          'include_dirs': [
+            '../..',
           ],
         }],
         ['OS=="mac"', {
@@ -379,6 +421,13 @@
                ],
              }]
            ],
+        }],
+        ['os_posix==1', {
+          # For access to standard POSIXish features, use WEBRTC_POSIX instead
+          # of a more specific macro.
+          'defines': [
+            'WEBRTC_POSIX',
+          ],
         }],
       ],
     },

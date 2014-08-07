@@ -4,6 +4,8 @@
 
 #include "ash/wm/workspace/workspace_layout_manager.h"
 
+#include <algorithm>
+
 #include "ash/display/display_controller.h"
 #include "ash/root_window_controller.h"
 #include "ash/screen_util.h"
@@ -21,10 +23,13 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
+#include "ui/base/ime/input_method.h"
+#include "ui/base/ime/text_input_client.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
 #include "ui/gfx/screen.h"
+#include "ui/keyboard/keyboard_controller_observer.h"
 #include "ui/wm/core/window_util.h"
 #include "ui/wm/public/activation_client.h"
 
@@ -124,6 +129,32 @@ void WorkspaceLayoutManager::SetChildBounds(
 }
 
 //////////////////////////////////////////////////////////////////////////////
+// WorkspaceLayoutManager, keyboard::KeyboardControllerObserver implementation:
+
+void WorkspaceLayoutManager::OnKeyboardBoundsChanging(
+    const gfx::Rect& new_bounds) {
+  aura::Window* root_window = window_->GetRootWindow();
+  ui::InputMethod* input_method =
+      root_window->GetProperty(aura::client::kRootWindowInputMethodKey);
+  ui::TextInputClient* text_input_client = input_method->GetTextInputClient();
+  if (!text_input_client)
+    return;
+  aura::Window *window = text_input_client->GetAttachedWindow();
+  if (!window || !window_->Contains(window))
+    return;
+  gfx::Rect window_bounds = ScreenUtil::ConvertRectToScreen(
+      window_,
+      window->GetTargetBounds());
+  gfx::Rect intersect = gfx::IntersectRects(window_bounds, new_bounds);
+  int shift = std::min(intersect.height(),
+                       window->bounds().y() - work_area_in_parent_.y());
+  if (shift > 0) {
+    gfx::Point origin(window->bounds().x(), window->bounds().y() - shift);
+    SetChildBounds(window, gfx::Rect(origin, window->bounds().size()));
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////
 // WorkspaceLayoutManager, ash::ShellObserver implementation:
 
 void WorkspaceLayoutManager::OnDisplayWorkAreaInsetsChanged() {
@@ -134,6 +165,8 @@ void WorkspaceLayoutManager::OnDisplayWorkAreaInsetsChanged() {
     const wm::WMEvent event(wm::WM_EVENT_WORKAREA_BOUNDS_CHANGED);
     AdjustAllWindowsBoundsForWorkAreaChange(&event);
   }
+  if (backdrop_delegate_)
+    backdrop_delegate_->OnDisplayWorkAreaInsetsChanged();
 }
 
 //////////////////////////////////////////////////////////////////////////////

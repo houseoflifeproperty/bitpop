@@ -2,7 +2,7 @@ From nobody Wed Dec 31 16:00:01 1969
 Content-Type: multipart/mixed; boundary="===============7454617213454723890=="
 MIME-Version: 1.0
 Date: Wed, 31 Dec 1969 16:00:01 -0800
-Subject: try success for 11941002-33001: Rebase on win_rel @ rHEAD
+Subject: try success for 11941002-33001: Rebase on win_rel @ r178097
 From: from@example.org
 
 --===============7454617213454723890==
@@ -13,10 +13,10 @@ Content-Transfer-Encoding: quoted-printable
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html xmlns=3D"http://www.w3.org/1999/xhtml">
 <head>
-  <title>try success for 11941002-33001: Rebase on win_rel @ rHEAD</title>
+  <title>try success for 11941002-33001: Rebase on win_rel @ r178097</title>
 </head>
 <body style=3D"font-family: Verdana, Cursor; font-size: 10px;">
-  try success for 11941002-33001: Rebase on win_rel @ rHEAD<p>
+  try success for 11941002-33001: Rebase on win_rel @ r178097<p>
   <a href=3D"http://build.chromium.org/p/tryserver.chromium/">http://build.=
 chromium.org/p/tryserver.chromium/</a><p>
   You are awesome! Try succeeded!<p> =
@@ -148,24 +148,21 @@ logs/stdio">stdio</a></td></tr><tr><td style=3D"">content_browsertests<br/>=
 builds/102110/steps/content_browsertests/logs/stdio">stdio</a></td></tr><tr=
 ><td style=3D"">installer_util_unittests<br/><a href=3D"http://build.chromi=
 um.org/p/tryserver.chromium/builders/win_rel/builds/102110/steps/installer_=
-util_unittests/logs/stdio">stdio</a></td></tr><tr><td style=3D"">mini_insta=
-ller_test<br/><a href=3D"http://build.chromium.org/p/tryserver.chromium/bui=
-lders/win_rel/builds/102110/steps/mini_installer_test/logs/stdio">stdio</a>=
-</td></tr><tr><td style=3D"">webkit_compositor_bindings_unittests<br/><a hr=
-ef=3D"http://build.chromium.org/p/tryserver.chromium/builders/win_rel/build=
-s/102110/steps/webkit_compositor_bindings_unittests/logs/stdio">stdio</a></=
-td></tr><tr><td style=3D"">sizes<br/><a href=3D"http://build.chromium.org/p=
-/tryserver.chromium/builders/win_rel/builds/102110/steps/sizes/logs/stdio">=
-stdio</a></td></tr><tr><td style=3D"color: #FFFFFF; background-color: #8fdf=
-5f; border-color: #4F8530;">sync_integration_tests<br/><a href=3D"http://bu=
+util_unittests/logs/stdio">stdio</a></td></tr><tr><td style=3D"">webkit_com=
+positor_bindings_unittests<br/><a href=3D"http://build.chromium.org/p/tryse=
+rver.chromium/builders/win_rel/builds/102110/steps/webkit_compositor_bindin=
+gs_unittests/logs/stdio">stdio</a></td></tr><tr><td style=3D"">sizes<br/><a=
+ href=3D"http://build.chromium.org/p/tryserver.chromium/builders/win_rel/bu=
+ilds/102110/steps/sizes/logs/stdio">stdio</a></td></tr><tr><td style=3D"col=
+or: #FFFFFF; background-color: #8fdf5f; border-color: #4F8530;">sync_integr=
+ation_tests<br/><a href=3D"http://build.chromium.org/p/tryserver.chromium/b=
+uilders/win_rel/builds/102110/steps/sync_integration_tests/logs/stdio">stdi=
+o</a></td></tr><tr><td style=3D"">nacl_integration<br/><a href=3D"http://bu=
 ild.chromium.org/p/tryserver.chromium/builders/win_rel/builds/102110/steps/=
-sync_integration_tests/logs/stdio">stdio</a></td></tr><tr><td style=3D"">na=
-cl_integration<br/><a href=3D"http://build.chromium.org/p/tryserver.chromiu=
-m/builders/win_rel/builds/102110/steps/nacl_integration/logs/stdio">stdio</=
-a></td></tr><tr><td style=3D"color: #FFFFFF; background-color: #8fdf5f; bor=
-der-color: #4F8530;">process_dumps<br/><a href=3D"http://build.chromium.org=
-/p/tryserver.chromium/builders/win_rel/builds/102110/steps/process_dumps/lo=
-gs/stdio">stdio</a></td></tr></table>
+nacl_integration/logs/stdio">stdio</a></td></tr><tr><td style=3D"color: #FF=
+FFFF; background-color: #8fdf5f; border-color: #4F8530;">process_dumps<br/>=
+<a href=3D"http://build.chromium.org/p/tryserver.chromium/builders/win_rel/=
+builds/102110/steps/process_dumps/logs/stdio">stdio</a></td></tr></table>
 <br>
 FAQ: <a href=3D"https://sites.google.com/a/chromium.org/dev/developers/test=
 ing/try-server-usage">

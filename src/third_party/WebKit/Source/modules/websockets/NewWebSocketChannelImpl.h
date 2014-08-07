@@ -43,6 +43,7 @@
 #include "wtf/Deque.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -77,17 +78,14 @@ public:
 
     // WebSocketChannel functions.
     virtual bool connect(const KURL&, const String& protocol) OVERRIDE;
-    virtual String subprotocol() OVERRIDE;
-    virtual String extensions() OVERRIDE;
     virtual WebSocketChannel::SendResult send(const String& message) OVERRIDE;
     virtual WebSocketChannel::SendResult send(const ArrayBuffer&, unsigned byteOffset, unsigned byteLength) OVERRIDE;
     virtual WebSocketChannel::SendResult send(PassRefPtr<BlobDataHandle>) OVERRIDE;
-    virtual unsigned long bufferedAmount() const OVERRIDE;
+    virtual WebSocketChannel::SendResult send(PassOwnPtr<Vector<char> > data) OVERRIDE;
     // Start closing handshake. Use the CloseEventCodeNotSpecified for the code
     // argument to omit payload.
     virtual void close(int code, const String& reason) OVERRIDE;
     virtual void fail(const String& reason, MessageLevel, const String&, unsigned lineNumber) OVERRIDE;
-    using WebSocketChannel::fail;
     virtual void disconnect() OVERRIDE;
 
     virtual void suspend() OVERRIDE;
@@ -100,16 +98,21 @@ private:
         MessageTypeText,
         MessageTypeBlob,
         MessageTypeArrayBuffer,
+        MessageTypeVector,
     };
 
     struct Message {
         explicit Message(const String&);
         explicit Message(PassRefPtr<BlobDataHandle>);
         explicit Message(PassRefPtr<ArrayBuffer>);
+        explicit Message(PassOwnPtr<Vector<char> >);
+
         MessageType type;
+
         CString text;
         RefPtr<BlobDataHandle> blobDataHandle;
         RefPtr<ArrayBuffer> arrayBuffer;
+        OwnPtr<Vector<char> > vectorData;
     };
 
     struct ReceivedMessage {
@@ -156,16 +159,13 @@ private:
     // m_identifier > 0 means calling scriptContextExecution() returns a Document.
     unsigned long m_identifier;
     OwnPtrWillBeMember<BlobLoader> m_blobLoader;
-    Deque<Message> m_messages;
+    Deque<OwnPtr<Message> > m_messages;
     Vector<char> m_receivingMessageData;
 
     bool m_receivingMessageTypeIsText;
     int64_t m_sendingQuota;
     int64_t m_receivedDataSizeForFlowControl;
-    unsigned long m_bufferedAmount;
     size_t m_sentSizeOfTopMessage;
-    String m_subprotocol;
-    String m_extensions;
 
     String m_sourceURLAtConstruction;
     unsigned m_lineNumberAtConstruction;

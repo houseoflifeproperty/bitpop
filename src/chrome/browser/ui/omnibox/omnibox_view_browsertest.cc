@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 
+#include "base/command_line.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -29,13 +30,14 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/test_toolbar_model.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "net/dns/mock_host_resolver.h"
@@ -246,12 +248,12 @@ class OmniboxViewTest : public InProcessBrowserTest,
     data.short_name = ASCIIToUTF16(kSearchShortName);
     data.SetKeyword(ASCIIToUTF16(kSearchKeyword));
     data.SetURL(kSearchURL);
-    TemplateURL* template_url = new TemplateURL(profile, data);
+    TemplateURL* template_url = new TemplateURL(data);
     model->Add(template_url);
     model->SetUserSelectedDefaultSearchProvider(template_url);
 
     data.SetKeyword(ASCIIToUTF16(kSearchKeyword2));
-    model->Add(new TemplateURL(profile, data));
+    model->Add(new TemplateURL(data));
 
     // Remove built-in template urls, like google.com, bing.com etc., as they
     // may appear as autocomplete suggests and interfere with our tests.
@@ -595,7 +597,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, DesiredTLDWithTemporaryText) {
   data.short_name = ASCIIToUTF16("abc");
   data.SetKeyword(ASCIIToUTF16(kSearchText));
   data.SetURL("http://abc.com/");
-  template_url_service->Add(new TemplateURL(profile, data));
+  template_url_service->Add(new TemplateURL(data));
 
   // Send "ab", so that an "abc" entry appears in the popup.
   const wchar_t kSearchTextPrefixKeys[] = { ui::VKEY_A, ui::VKEY_B, 0 };
@@ -734,14 +736,14 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_EscapeToDefaultMatch) {
 #define MAYBE_BasicTextOperations BasicTextOperations
 #endif
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_BasicTextOperations) {
-  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   chrome::FocusLocationBar(browser());
 
   OmniboxView* omnibox_view = NULL;
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
 
   base::string16 old_text = omnibox_view->GetText();
-  EXPECT_EQ(base::UTF8ToUTF16(content::kAboutBlankURL), old_text);
+  EXPECT_EQ(base::UTF8ToUTF16(url::kAboutBlankURL), old_text);
   EXPECT_TRUE(omnibox_view->IsSelectAll());
 
   size_t start, end;
@@ -1017,7 +1019,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_NonSubstitutingKeywordTest) {
   data.short_name = ASCIIToUTF16("Search abc");
   data.SetKeyword(ASCIIToUTF16(kSearchText));
   data.SetURL("http://abc.com/{searchTerms}");
-  TemplateURL* template_url = new TemplateURL(profile, data);
+  TemplateURL* template_url = new TemplateURL(data);
   template_url_service->Add(template_url);
 
   omnibox_view->SetUserText(base::string16());
@@ -1041,7 +1043,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_NonSubstitutingKeywordTest) {
   template_url_service->Remove(template_url);
   data.short_name = ASCIIToUTF16("abc");
   data.SetURL("http://abc.com/");
-  template_url_service->Add(new TemplateURL(profile, data));
+  template_url_service->Add(new TemplateURL(data));
 
   // We always allow exact matches for non-substituting keywords.
   ASSERT_NO_FATAL_FAILURE(SendKeySequence(kSearchTextKeys));
@@ -1066,7 +1068,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, MAYBE_DeleteItem) {
       TemplateURLServiceFactory::GetForProfile(browser()->profile());
   model->SetUserSelectedDefaultSearchProvider(NULL);
 
-  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   chrome::FocusLocationBar(browser());
 
   OmniboxView* omnibox_view = NULL;
@@ -1371,14 +1373,14 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
 
 #if defined(TOOLKIT_VIEWS)
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, UndoRedo) {
-  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   chrome::FocusLocationBar(browser());
 
   OmniboxView* omnibox_view = NULL;
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
 
   base::string16 old_text = omnibox_view->GetText();
-  EXPECT_EQ(base::UTF8ToUTF16(content::kAboutBlankURL), old_text);
+  EXPECT_EQ(base::UTF8ToUTF16(url::kAboutBlankURL), old_text);
   EXPECT_TRUE(omnibox_view->IsSelectAll());
 
   // Delete the text, then undo.
@@ -1402,10 +1404,11 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, UndoRedo) {
   EXPECT_EQ(old_text.size(), start);
   EXPECT_EQ(old_text.size(), end);
 
-  // Delete two characters.
+  // Delete three characters; "about:bl" should not trigger inline autocomplete.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_BACK, 0));
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_BACK, 0));
-  EXPECT_EQ(old_text.substr(0, old_text.size() - 2), omnibox_view->GetText());
+  ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_BACK, 0));
+  EXPECT_EQ(old_text.substr(0, old_text.size() - 3), omnibox_view->GetText());
 
   // Undo delete.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, ui::EF_CONTROL_DOWN));
@@ -1414,7 +1417,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, UndoRedo) {
   // Redo delete.
   ASSERT_NO_FATAL_FAILURE(
       SendKey(ui::VKEY_Z, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN));
-  EXPECT_EQ(old_text.substr(0, old_text.size() - 2), omnibox_view->GetText());
+  EXPECT_EQ(old_text.substr(0, old_text.size() - 3), omnibox_view->GetText());
 
   // Delete everything.
   omnibox_view->SelectAll(true);
@@ -1423,16 +1426,14 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, UndoRedo) {
 
   // Undo delete everything.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, ui::EF_CONTROL_DOWN));
-  EXPECT_EQ(old_text.substr(0, old_text.size() - 2), omnibox_view->GetText());
+  EXPECT_EQ(old_text.substr(0, old_text.size() - 3), omnibox_view->GetText());
 
   // Undo delete two characters.
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_Z, ui::EF_CONTROL_DOWN));
   EXPECT_EQ(old_text, omnibox_view->GetText());
 }
 
-// See http://crosbug.com/10306
-IN_PROC_BROWSER_TEST_F(OmniboxViewTest,
-                       BackspaceDeleteHalfWidthKatakana) {
+IN_PROC_BROWSER_TEST_F(OmniboxViewTest, BackspaceDeleteHalfWidthKatakana) {
   OmniboxView* omnibox_view = NULL;
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
   // Insert text: ﾀﾞ
@@ -1500,10 +1501,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, Paste) {
   ASSERT_NO_FATAL_FAILURE(SendKey(ui::VKEY_V, kCtrlOrCmdMask));
   ASSERT_NO_FATAL_FAILURE(WaitForAutocompleteControllerDone());
   EXPECT_EQ(ASCIIToUTF16(kSearchText), omnibox_view->GetText());
-  // This fails on GTK, see http://crbug.com/131179
-#if !defined(TOOLKIT_GTK)
   EXPECT_TRUE(popup_model->IsOpen());
-#endif
   omnibox_view->CloseOmniboxPopup();
   EXPECT_FALSE(popup_model->IsOpen());
 
@@ -1660,6 +1658,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxViewTest, CutTextToClipboard) {
 }
 
 IN_PROC_BROWSER_TEST_F(OmniboxViewTest, EditSearchEngines) {
+  // Disable settings-in-a-window to simplify test.
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      ::switches::kDisableSettingsWindow);
   OmniboxView* omnibox_view = NULL;
   ASSERT_NO_FATAL_FAILURE(GetOmniboxView(&omnibox_view));
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_EDIT_SEARCH_ENGINES));

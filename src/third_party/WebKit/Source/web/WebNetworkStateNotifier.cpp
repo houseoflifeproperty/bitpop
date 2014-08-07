@@ -42,4 +42,9 @@ void WebNetworkStateNotifier::setOnLine(bool onLine)
     networkStateNotifier().setOnLine(onLine);
 }
 
+void WebNetworkStateNotifier::setWebConnectionType(WebConnectionType type)
+{
+    networkStateNotifier().setWebConnectionType(type);
+}
+
 } // namespace blink

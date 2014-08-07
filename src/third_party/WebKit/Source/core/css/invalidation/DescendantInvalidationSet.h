@@ -31,6 +31,7 @@
 #ifndef DescendantInvalidationSet_h
 #define DescendantInvalidationSet_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefCounted.h"
@@ -44,11 +45,11 @@ class Element;
 
 // Tracks data to determine which elements of a DOM subtree need to have style
 // recalculated.
-class DescendantInvalidationSet FINAL : public RefCounted<DescendantInvalidationSet> {
+class DescendantInvalidationSet FINAL : public RefCountedWillBeGarbageCollected<DescendantInvalidationSet> {
 public:
-    static PassRefPtr<DescendantInvalidationSet> create()
+    static PassRefPtrWillBeRawPtr<DescendantInvalidationSet> create()
     {
-        return adoptRef(new DescendantInvalidationSet);
+        return adoptRefWillBeNoop(new DescendantInvalidationSet);
     }
 
     bool invalidatesElement(Element&) const;
@@ -63,30 +64,38 @@ public:
     void setWholeSubtreeInvalid();
     bool wholeSubtreeInvalid() const { return m_allDescendantsMightBeInvalid; }
 
+    void setTreeBoundaryCrossing() { m_treeBoundaryCrossing = true; }
+    bool treeBoundaryCrossing() const { return m_treeBoundaryCrossing; }
+
     void setCustomPseudoInvalid() { m_customPseudoInvalid = true; }
     bool customPseudoInvalid() const { return m_customPseudoInvalid; }
 
     bool isEmpty() const { return !m_classes && !m_ids && !m_tagNames && !m_attributes; }
 
+    void trace(Visitor*);
+
 private:
     DescendantInvalidationSet();
 
-    HashSet<AtomicString>& ensureClassSet();
-    HashSet<AtomicString>& ensureIdSet();
-    HashSet<AtomicString>& ensureTagNameSet();
-    HashSet<AtomicString>& ensureAttributeSet();
-
-    // If true, all descendants might be invalidated, so a full subtree recalc is required.
-    bool m_allDescendantsMightBeInvalid;
-
-    // If true, all descendants which are custom pseudo elements must be invalidated.
-    bool m_customPseudoInvalid;
+    WillBeHeapHashSet<AtomicString>& ensureClassSet();
+    WillBeHeapHashSet<AtomicString>& ensureIdSet();
+    WillBeHeapHashSet<AtomicString>& ensureTagNameSet();
+    WillBeHeapHashSet<AtomicString>& ensureAttributeSet();
 
     // FIXME: optimize this if it becomes a memory issue.
-    OwnPtr<HashSet<AtomicString> > m_classes;
-    OwnPtr<HashSet<AtomicString> > m_ids;
-    OwnPtr<HashSet<AtomicString> > m_tagNames;
-    OwnPtr<HashSet<AtomicString> > m_attributes;
+    OwnPtrWillBeMember<WillBeHeapHashSet<AtomicString> > m_classes;
+    OwnPtrWillBeMember<WillBeHeapHashSet<AtomicString> > m_ids;
+    OwnPtrWillBeMember<WillBeHeapHashSet<AtomicString> > m_tagNames;
+    OwnPtrWillBeMember<WillBeHeapHashSet<AtomicString> > m_attributes;
+
+    // If true, all descendants might be invalidated, so a full subtree recalc is required.
+    unsigned m_allDescendantsMightBeInvalid : 1;
+
+    // If true, all descendants which are custom pseudo elements must be invalidated.
+    unsigned m_customPseudoInvalid : 1;
+
+    // If true, the invalidation must traverse into ShadowRoots with this set.
+    unsigned m_treeBoundaryCrossing : 1;
 };
 
 } // namespace WebCore

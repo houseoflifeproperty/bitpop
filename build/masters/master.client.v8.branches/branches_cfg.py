@@ -11,10 +11,3 @@
 
 stable_branch = '3.25'
 beta_branch = '3.26'
-branch_names = {
-    'stable': {'ia32': 'V8 Linux - ' + stable_branch + ' branch',
-               'arm': 'V8 arm - sim - ' + stable_branch + ' branch',
-               'x64': 'V8 Linux64 - ' + stable_branch + ' branch'},
-    'beta': {'ia32': 'V8 Linux - ' + beta_branch + ' branch',
-             'arm': 'V8 arm - sim - ' + beta_branch + ' branch',
-             'x64': 'V8 Linux64 - ' + beta_branch + ' branch'}}

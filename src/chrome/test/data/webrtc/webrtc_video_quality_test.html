@@ -4,9 +4,8 @@
   <title>WebRTC Automated Test</title>
   <script type="text/javascript" src="adapter.js"></script>
   <script type="text/javascript" src="test_functions.js"></script>
-  <script type="text/javascript" src="message_handling.js"></script>
+  <script type="text/javascript" src="peerconnection.js"></script>
   <script type="text/javascript" src="getusermedia.js"></script>
-  <script type="text/javascript" src="jsep01_call.js"></script>
   <script type="text/javascript" src="video_extraction.js"></script>
 </head>
 <body>
@@ -17,31 +16,15 @@
     </tr>
     <tr>
       <td>
-        <video width="640" height="360" id="local-view"
-            autoplay="autoplay"></video>
+        <video id="local-view" autoplay="autoplay"></video>
       </td>
       <td>
-        <!-- startFrameCapture() takes 5 parameters:
-             1. width: width of the video/canvas area.
-             2. height: height of the video area.
-             3. canvas_height: Height of the canvas.
-             4. fps: fps at which we would like to sample.
-             5. duration: The duration of the capturing. -->
-        <video width="640" height="360" id="remote-view"
-            autoplay="autoplay" onplay="startFrameCapture(640,360,360,30,5)">
-        </video>
-      </td>
-    </tr>
-    <tr>
-      <td></td>
-      <td>
-        <div id="output" style="display: inline-block;
-            position: relative; width: 640; height: 360">
-          <!-- Canvas height should be equal to video height if we want to
-               capture the whole frames. If we only want to capture the barcode,
-               canvas height should equal the barcode height. -->
-          <canvas id="remote-canvas" width="640" height="360"></canvas>
-        </div>
+        <!-- startFrameCapture() takes 3 parameters:
+             1. reference to remote video tag.
+             2. fps: fps at which we would like to sample.
+             3. duration: The duration of the capturing. -->
+        <video id="remote-view" autoplay="autoplay"
+            onplay="startFrameCapture(this, 30, 5)"></video>
       </td>
     </tr>
   </table>

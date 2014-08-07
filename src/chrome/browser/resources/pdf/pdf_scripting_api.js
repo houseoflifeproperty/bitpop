@@ -3,62 +3,74 @@
 // found in the LICENSE file.
 
 /**
- * Create a new PDFMessagingClient. This provides a scripting interface to
+ * Create a new PDFScriptingAPI. This provides a scripting interface to
  * the PDF viewer so that it can be customized by things like print preview.
- * @param {HTMLIFrameElement} iframe an iframe containing the PDF viewer.
- * @param {Window} window the window of the page containing the iframe.
+ * @param {Window} window the window of the page containing the pdf viewer.
  * @param {string} extensionUrl the url of the PDF extension.
  */
-function PDFMessagingClient(iframe, window, extensionUrl) {
-  this.iframe_ = iframe;
+function PDFScriptingAPI(window, extensionUrl) {
   this.extensionUrl_ = extensionUrl;
-  this.readyToReceive_ = false;
   this.messageQueue_ = [];
   window.addEventListener('message', function(event) {
+    if (event.origin != this.extensionUrl_) {
+      console.error('Received message that was not from the extension: ' +
+                    event);
+      return;
+    }
     switch (event.data.type) {
       case 'readyToReceive':
-        this.flushPendingMessages_();
+        this.setDestinationWindow(event.source);
         break;
-      case 'viewportChanged':
-        this.viewportChangedCallback_(event.data.pageX,
-                                      event.data.pageY,
-                                      event.data.pageWidth,
-                                      event.data.viewportWidth,
-                                      event.data.viewportHeight);
+      case 'viewport':
+        if (this.viewportChangedCallback_)
+          this.viewportChangedCallback_(event.data.pageX,
+                                        event.data.pageY,
+                                        event.data.pageWidth,
+                                        event.data.viewportWidth,
+                                        event.data.viewportHeight);
         break;
       case 'documentLoaded':
-        this.loadCallback_();
+        if (this.loadCallback_)
+          this.loadCallback_();
+        break;
+      case 'getAccessibilityJSONReply':
+        if (this.accessibilityCallback_) {
+          this.accessibilityCallback_(event.data.json);
+          this.accessibilityCallback_ = null;
+        }
         break;
     }
   }.bind(this), false);
 }
 
-PDFMessagingClient.prototype = {
+PDFScriptingAPI.prototype = {
   /**
    * @private
    * Send a message to the extension. If we try to send messages prior to the
    * extension being ready to receive messages (i.e. before it has finished
    * loading) we queue up the messages and flush them later.
-   * @param {MessageObject} the message to send.
+   * @param {Object} the message to send.
    */
   sendMessage_: function(message) {
-    if (!this.readyToReceive_) {
+    if (!this.pdfWindow_) {
       this.messageQueue_.push(message);
       return;
     }
 
-    this.iframe_.contentWindow.postMessage(message, this.extensionUrl_);
+    this.pdfWindow_.postMessage(message, this.extensionUrl_);
   },
 
   /**
-   * @private
-   * Flushes all pending messages to the extension.
+   * Sets the destination window containing the PDF viewer. This will be called
+   * when a 'readyToReceive' message is received from the PDF viewer or it can
+   * be called during tests. It then flushes any pending messages to the window.
+   * @param {Window} pdfWindow the window containing the PDF viewer.
    */
-  flushPendingMessages_: function() {
-    this.readyToReceive_ = true;
+  setDestinationWindow: function(pdfWindow) {
+    this.pdfWindow_ = pdfWindow;
     while (this.messageQueue_.length != 0) {
-      this.iframe_.contentWindow.postMessage(this.messageQueue_.shift(),
-                                             this.extensionUrl_);
+      this.pdfWindow_.postMessage(this.messageQueue_.shift(),
+                                  this.extensionUrl_);
     }
   },
 
@@ -110,12 +122,37 @@ PDFMessagingClient.prototype = {
   },
 
   /**
+   * Get accessibility JSON for the document.
+   * @param {Function} callback a callback to be called with the accessibility
+   *     json that has been retrieved.
+   * @param {number} [page] the 0-indexed page number to get accessibility data
+   *     for. If this is not provided, data about the entire document is
+   *     returned.
+   * @return {boolean} true if the function is successful, false if there is an
+   *     outstanding request for accessibility data that has not been answered.
+   */
+  getAccessibilityJSON: function(callback, page) {
+    if (this.accessibilityCallback_)
+      return false;
+    this.accessibilityCallback_ = callback;
+    var message = {
+      type: 'getAccessibilityJSON',
+    };
+    if (page || page == 0)
+      message.page = page;
+    this.sendMessage_(message);
+    return true;
+  },
+
+  /**
    * Send a key event to the extension.
    * @param {number} keyCode the key code to send to the extension.
    */
   sendKeyEvent: function(keyCode) {
-    // TODO(raymes): Figure out a way to do this. It's only used to do scrolling
-    // the viewport, so probably just expose viewport controls instead.
+    this.sendMessage_({
+      type: 'sendKeyEvent',
+      keyCode: keyCode
+    });
   },
 };
 
@@ -131,7 +168,7 @@ function PDFCreateOutOfProcessPlugin(src) {
   var EXTENSION_URL = 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai';
   var iframe = window.document.createElement('iframe');
   iframe.setAttribute('src', EXTENSION_URL + '/index.html?' + src);
-  var client = new PDFMessagingClient(iframe, window, EXTENSION_URL);
+  var client = new PDFScriptingAPI(window, EXTENSION_URL);
 
   // Add the functions to the iframe so that they can be called directly.
   iframe.setViewportChangedCallback =
@@ -142,64 +179,3 @@ function PDFCreateOutOfProcessPlugin(src) {
   iframe.sendKeyEvent = client.sendKeyEvent.bind(client);
   return iframe;
 }
-
-/**
- * Create a new PDFMessagingHost. This is the extension-side of the scripting
- * interface to the PDF viewer. It handles requests from a page which contains
- * a PDF viewer extension and translates them into actions on the viewer.
- * @param {Window} window the window containing the PDF extension.
- * @param {PDFViewer} pdfViewer the object which provides access to the viewer.
- */
-function PDFMessagingHost(window, pdfViewer) {
-  this.window_ = window;
-  this.pdfViewer_ = pdfViewer;
-  this.viewport_ = pdfViewer.viewport;
-
-  window.addEventListener('message', function(event) {
-    switch (event.data.type) {
-      case 'resetPrintPreviewMode':
-        this.pdfViewer_.resetPrintPreviewMode(
-            event.data.url,
-            event.data.grayscale,
-            event.data.pageNumbers,
-            event.data.modifiable);
-
-        break;
-      case 'loadPreviewPage':
-        this.pdfViewer_.loadPreviewPage(event.data.url, event.data.index);
-        break;
-    }
-  }.bind(this), false);
-
-  if (this.window_.parent != this.window_)
-    this.sendMessage_({type: 'readyToReceive'});
-}
-
-PDFMessagingHost.prototype = {
-  sendMessage_: function(message) {
-    if (this.window_.parent == this.window_)
-      return;
-    this.window_.parent.postMessage(message, '*');
-  },
-
-  viewportChanged: function() {
-    var visiblePage = this.viewport_.getMostVisiblePage();
-    var pageDimensions = this.viewport_.getPageScreenRect(visiblePage);
-    var size = this.viewport_.size;
-
-    this.sendMessage_({
-      type: 'viewportChanged',
-      pageX: pageDimensions.x,
-      pageY: pageDimensions.y,
-      pageWidth: pageDimensions.width,
-      viewportWidth: size.width,
-      viewportHeight: size.height,
-    });
-  },
-
-  documentLoaded: function() {
-    if (this.window_.parent == this.window_)
-      return;
-    this.sendMessage_({ type: 'documentLoaded' });
-  }
-};

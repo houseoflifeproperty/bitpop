@@ -12,6 +12,7 @@
 #include "net/quic/quic_blocked_writer_interface.h"
 #include "net/quic/quic_flags.h"
 #include "net/quic/quic_utils.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_default_packet_writer.h"
 #include "net/tools/quic/quic_epoll_connection_helper.h"
 #include "net/tools/quic/quic_socket_utils.h"
@@ -161,8 +162,7 @@ class QuicDispatcher::QuicFramerVisitor : public QuicFramerVisitorInterface {
 QuicDispatcher::QuicDispatcher(const QuicConfig& config,
                                const QuicCryptoServerConfig& crypto_config,
                                const QuicVersionVector& supported_versions,
-                               EpollServer* epoll_server,
-                               uint32 initial_flow_control_window_bytes)
+                               EpollServer* epoll_server)
     : config_(config),
       crypto_config_(crypto_config),
       delete_sessions_alarm_(new DeleteSessionsAlarm(this)),
@@ -173,8 +173,7 @@ QuicDispatcher::QuicDispatcher(const QuicConfig& config,
       supported_versions_no_connection_flow_control_(supported_versions),
       current_packet_(NULL),
       framer_(supported_versions, /*unused*/ QuicTime::Zero(), true),
-      framer_visitor_(new QuicFramerVisitor(this)),
-      initial_flow_control_window_bytes_(initial_flow_control_window_bytes) {
+      framer_visitor_(new QuicFramerVisitor(this)) {
   framer_.set_visitor(framer_visitor_.get());
 }
 
@@ -293,7 +292,7 @@ void QuicDispatcher::OnUnauthenticatedHeader(const QuicPacketHeader& header) {
 void QuicDispatcher::CleanUpSession(SessionMap::iterator it) {
   QuicConnection* connection = it->second->connection();
   QuicEncryptedPacket* connection_close_packet =
-          connection->ReleaseConnectionClosePacket();
+      connection->ReleaseConnectionClosePacket();
   write_blocked_list_.erase(connection);
   time_wait_list_manager_->AddConnectionIdToTimeWait(it->first,
                                                      connection->version(),
@@ -380,10 +379,7 @@ QuicSession* QuicDispatcher::CreateQuicSession(
     const IPEndPoint& client_address) {
   QuicServerSession* session = new QuicServerSession(
       config_,
-      CreateQuicConnection(connection_id,
-                           server_address,
-                           client_address,
-                           initial_flow_control_window_bytes_),
+      CreateQuicConnection(connection_id, server_address, client_address),
       this);
   session->InitializeSession(crypto_config_);
   return session;
@@ -392,31 +388,28 @@ QuicSession* QuicDispatcher::CreateQuicSession(
 QuicConnection* QuicDispatcher::CreateQuicConnection(
     QuicConnectionId connection_id,
     const IPEndPoint& server_address,
-    const IPEndPoint& client_address,
-    uint32 initial_flow_control_window) {
+    const IPEndPoint& client_address) {
   if (FLAGS_enable_quic_stream_flow_control_2 &&
-      FLAGS_enable_quic_connection_flow_control) {
+      FLAGS_enable_quic_connection_flow_control_2) {
     DLOG(INFO) << "Creating QuicDispatcher with all versions.";
     return new QuicConnection(connection_id, client_address, helper_.get(),
-                              writer_.get(), true, supported_versions_,
-                              initial_flow_control_window_bytes_);
+                              writer_.get(), true, supported_versions_);
   }
 
   if (FLAGS_enable_quic_stream_flow_control_2 &&
-      !FLAGS_enable_quic_connection_flow_control) {
+      !FLAGS_enable_quic_connection_flow_control_2) {
     DLOG(INFO) << "Connection flow control disabled, creating QuicDispatcher "
                << "WITHOUT version 19 or higher.";
     return new QuicConnection(connection_id, client_address, helper_.get(),
                               writer_.get(), true,
-                              supported_versions_no_connection_flow_control_,
-                              initial_flow_control_window_bytes_);
+                              supported_versions_no_connection_flow_control_);
   }
 
   DLOG(INFO) << "Flow control disabled, creating QuicDispatcher WITHOUT "
              << "version 17 or higher.";
-  return new QuicConnection(
-      connection_id, client_address, helper_.get(), writer_.get(), true,
-      supported_versions_no_flow_control_, initial_flow_control_window_bytes_);
+  return new QuicConnection(connection_id, client_address, helper_.get(),
+                            writer_.get(), true,
+                            supported_versions_no_flow_control_);
 }
 
 QuicTimeWaitListManager* QuicDispatcher::CreateQuicTimeWaitListManager() {

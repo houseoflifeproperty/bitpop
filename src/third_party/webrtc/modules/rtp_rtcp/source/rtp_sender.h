@@ -83,7 +83,8 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
   // was sent within the statistics window.
   bool GetSendSideDelay(int* avg_send_delay_ms, int* max_send_delay_ms) const;
 
-  void SetTargetSendBitrate(const uint32_t bits);
+  void SetTargetBitrate(uint32_t bitrate);
+  uint32_t GetTargetBitrate();
 
   virtual uint16_t MaxDataPayloadLength() const
       OVERRIDE;  // with RTP and FEC headers.
@@ -158,19 +159,11 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
   uint8_t BuildAudioLevelExtension(uint8_t* data_buffer) const;
   uint8_t BuildAbsoluteSendTimeExtension(uint8_t* data_buffer) const;
 
-  bool UpdateTransmissionTimeOffset(uint8_t *rtp_packet,
-                                    const uint16_t rtp_packet_length,
-                                    const RTPHeader &rtp_header,
-                                    const int64_t time_diff_ms) const;
   bool UpdateAudioLevel(uint8_t *rtp_packet,
                         const uint16_t rtp_packet_length,
                         const RTPHeader &rtp_header,
                         const bool is_voiced,
                         const uint8_t dBov) const;
-  bool UpdateAbsoluteSendTime(uint8_t *rtp_packet,
-                              const uint16_t rtp_packet_length,
-                              const RTPHeader &rtp_header,
-                              const int64_t now_ms) const;
 
   bool TimeToSendPacket(uint16_t sequence_number, int64_t capture_time_ms,
                         bool retransmission);
@@ -192,9 +185,11 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
   bool ProcessNACKBitRate(const uint32_t now);
 
   // RTX.
-  void SetRTXStatus(int mode, bool set_ssrc, uint32_t ssrc);
+  void SetRTXStatus(int mode);
 
   void RTXStatus(int* mode, uint32_t* ssrc, int* payload_type) const;
+
+  void SetRtxSsrc(uint32_t ssrc);
 
   void SetRtxPayloadType(int payloadType);
 
@@ -319,15 +314,21 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
 
   void UpdateDelayStatistics(int64_t capture_time_ms, int64_t now_ms);
 
+  void UpdateTransmissionTimeOffset(uint8_t *rtp_packet,
+                                    const uint16_t rtp_packet_length,
+                                    const RTPHeader &rtp_header,
+                                    const int64_t time_diff_ms) const;
+  void UpdateAbsoluteSendTime(uint8_t *rtp_packet,
+                              const uint16_t rtp_packet_length,
+                              const RTPHeader &rtp_header,
+                              const int64_t now_ms) const;
+
   void UpdateRtpStats(const uint8_t* buffer,
                       uint32_t size,
                       const RTPHeader& header,
                       bool is_rtx,
                       bool is_retransmit);
   bool IsFecPacket(const uint8_t* buffer, const RTPHeader& header) const;
-
-  void SetTargetBitrateKbps(uint16_t bitrate_kbps);
-  uint16_t GetTargetBitrateKbps();
 
   Clock* clock_;
   Bitrate bitrate_sent_;
@@ -396,7 +397,7 @@ class RTPSender : public RTPSenderInterface, public Bitrate::Observer {
   // that by the time the function returns there is no guarantee
   // that the target bitrate is still valid.
   scoped_ptr<CriticalSectionWrapper> target_bitrate_critsect_;
-  uint16_t target_bitrate_kbps_ GUARDED_BY(target_bitrate_critsect_);
+  uint32_t target_bitrate_ GUARDED_BY(target_bitrate_critsect_);
 };
 
 }  // namespace webrtc

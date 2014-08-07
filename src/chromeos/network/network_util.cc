@@ -5,7 +5,12 @@
 #include "chromeos/network/network_util.h"
 
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "chromeos/network/network_state.h"
+#include "chromeos/network/network_state_handler.h"
+#include "chromeos/network/onc/onc_signature.h"
+#include "chromeos/network/onc/onc_translator.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace chromeos {
@@ -93,6 +98,18 @@ int32 NetmaskToPrefixLength(const std::string& netmask) {
   return prefix_length;
 }
 
+std::string FormattedMacAddress(const std::string& shill_mac_address) {
+  if (shill_mac_address.size() % 2 != 0)
+    return shill_mac_address;
+  std::string result;
+  for (size_t i = 0; i < shill_mac_address.size(); ++i) {
+    if ((i != 0) && (i % 2 == 0))
+      result.push_back(':');
+    result.push_back(base::ToUpperASCII(shill_mac_address[i]));
+  }
+  return result;
+}
+
 bool ParseCellularScanResults(const base::ListValue& list,
                               std::vector<CellularScanResult>* scan_results) {
   scan_results->clear();
@@ -120,6 +137,50 @@ bool ParseCellularScanResults(const base::ListValue& list,
     scan_results->push_back(scan_result);
   }
   return true;
+}
+
+scoped_ptr<base::DictionaryValue> TranslateNetworkStateToONC(
+    const NetworkState* network) {
+  // Get the properties from the NetworkState.
+  base::DictionaryValue shill_dictionary;
+  network->GetStateProperties(&shill_dictionary);
+
+  scoped_ptr<base::DictionaryValue> onc_dictionary =
+      TranslateShillServiceToONCPart(
+          shill_dictionary, &onc::kNetworkWithStateSignature);
+  return onc_dictionary.Pass();
+}
+
+scoped_ptr<base::ListValue> TranslateNetworkListToONC(
+    NetworkTypePattern pattern,
+    bool configured_only,
+    bool visible_only,
+    int limit,
+    bool debugging_properties) {
+  NetworkStateHandler::NetworkStateList network_states;
+  NetworkHandler::Get()->network_state_handler()->GetNetworkListByType(
+      pattern, configured_only, visible_only, limit, &network_states);
+
+  scoped_ptr<base::ListValue> network_properties_list(new base::ListValue);
+  for (NetworkStateHandler::NetworkStateList::iterator it =
+           network_states.begin();
+       it != network_states.end();
+       ++it) {
+    scoped_ptr<base::DictionaryValue> onc_dictionary =
+        TranslateNetworkStateToONC(*it);
+
+    if (debugging_properties) {
+      onc_dictionary->SetBoolean("connectable", (*it)->connectable());
+      onc_dictionary->SetBoolean("visible", (*it)->visible());
+      onc_dictionary->SetString("profile_path", (*it)->profile_path());
+      std::string onc_source = (*it)->ui_data().GetONCSourceAsString();
+      if (!onc_source.empty())
+        onc_dictionary->SetString("onc_source", onc_source);
+    }
+
+    network_properties_list->Append(onc_dictionary.release());
+  }
+  return network_properties_list.Pass();
 }
 
 }  // namespace network_util

@@ -5,9 +5,10 @@
 #ifndef MOJO_PUBLIC_CPP_BINDINGS_LIB_CONNECTOR_H_
 #define MOJO_PUBLIC_CPP_BINDINGS_LIB_CONNECTOR_H_
 
+#include "mojo/public/c/environment/async_waiter.h"
 #include "mojo/public/cpp/bindings/lib/message_queue.h"
 #include "mojo/public/cpp/bindings/message.h"
-#include "mojo/public/cpp/environment/default_async_waiter.h"
+#include "mojo/public/cpp/environment/environment.h"
 #include "mojo/public/cpp/system/core.h"
 
 namespace mojo {
@@ -25,8 +26,9 @@ namespace internal {
 class Connector : public MessageReceiver {
  public:
   // The Connector takes ownership of |message_pipe|.
-  explicit Connector(ScopedMessagePipeHandle message_pipe,
-                     MojoAsyncWaiter* waiter = GetDefaultAsyncWaiter());
+  explicit Connector(
+      ScopedMessagePipeHandle message_pipe,
+      const MojoAsyncWaiter* waiter = Environment::GetDefaultAsyncWaiter());
   virtual ~Connector();
 
   // Sets the receiver to handle messages read from the message pipe.  The
@@ -59,22 +61,22 @@ class Connector : public MessageReceiver {
 
   // Releases the pipe, not triggering the error state. Connector is put into
   // a quiescent state.
-  ScopedMessagePipeHandle ReleaseMessagePipe();
+  ScopedMessagePipeHandle PassMessagePipe();
 
   // MessageReceiver implementation:
   virtual bool Accept(Message* message) MOJO_OVERRIDE;
-  virtual bool AcceptWithResponder(Message* message, MessageReceiver* responder)
-      MOJO_OVERRIDE;
 
  private:
   static void CallOnHandleReady(void* closure, MojoResult result);
   void OnHandleReady(MojoResult result);
 
   void WaitToReadMore();
-  void ReadMore();
+
+  // Returns false if |this| was destroyed during message dispatch.
+  MOJO_WARN_UNUSED_RESULT bool ReadMore();
 
   ErrorHandler* error_handler_;
-  MojoAsyncWaiter* waiter_;
+  const MojoAsyncWaiter* waiter_;
 
   ScopedMessagePipeHandle message_pipe_;
   MessageReceiver* incoming_receiver_;
@@ -83,6 +85,11 @@ class Connector : public MessageReceiver {
   bool error_;
   bool drop_writes_;
   bool enforce_errors_from_incoming_receiver_;
+
+  // If non-null, this will be set to true when the Connector is destroyed.  We
+  // use this flag to allow for the Connector to be destroyed as a side-effect
+  // of dispatching an incoming message.
+  bool* destroyed_flag_;
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(Connector);
 };

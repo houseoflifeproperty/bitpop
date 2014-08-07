@@ -35,7 +35,6 @@
 #include "platform/heap/Handle.h"
 #include "public/platform/WebCryptoKeyAlgorithm.h"
 #include "wtf/Forward.h"
-#include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace WebCore {
@@ -53,7 +52,6 @@ public:
     bool isAesKeyAlgorithm() const;
     bool isHmacKeyAlgorithm() const;
     bool isRsaHashedKeyAlgorithm() const;
-    bool isRsaKeyAlgorithm() const;
 
     virtual void trace(Visitor*);
 

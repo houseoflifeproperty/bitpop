@@ -22,7 +22,7 @@
 // See |ProfileOAuth2TokenService| for usage details.
 //
 // Note: requests should be started from the UI thread. To start a
-// request from other thread, please use ProfileOAuth2TokenServiceRequest.
+// request from other thread, please use OAuth2TokenServiceRequest.
 class AndroidProfileOAuth2TokenService : public ProfileOAuth2TokenService {
  public:
   // Registers the AndroidProfileOAuth2TokenService's native methods through
@@ -36,10 +36,17 @@ class AndroidProfileOAuth2TokenService : public ProfileOAuth2TokenService {
   static jobject GetForProfile(
       JNIEnv* env, jclass clazz, jobject j_profile_android);
 
+  // Called by the TestingProfile class to disable account validation in
+  // tests.  This prevents the token service from trying to look up system
+  // accounts which requires special permission.
+  static void set_is_testing_profile() {
+    is_testing_profile_ = true;
+  }
+
+  // ProfileOAuth2TokenService overrides:
+  virtual void Initialize(SigninClient* client) OVERRIDE;
   virtual bool RefreshTokenIsAvailable(
       const std::string& account_id) const OVERRIDE;
-
-  // Lists account IDs of all accounts with a refresh token.
   virtual std::vector<std::string> GetAccounts() OVERRIDE;
 
   // Lists account at the OS level.
@@ -47,15 +54,15 @@ class AndroidProfileOAuth2TokenService : public ProfileOAuth2TokenService {
 
   void ValidateAccounts(JNIEnv* env,
                         jobject obj,
-                        jstring current_account);
+                        jstring current_account,
+                        jboolean force_notifications);
 
   // Takes a the signed in sync account as well as all the other
-  // android account ids and check the token status of each.
-  void ValidateAccounts(const std::string& signed_in_account);
-
-  bool ValidateAccounts(const std::string& signed_in_account,
-                        const std::vector<std::string>& prev_account_ids,
-                        const std::vector<std::string>& curr_account_ids);
+  // android account ids and check the token status of each.  If
+  // |force_notifications| is true, TokenAvailable notifications will
+  // be sent anyway, even if the account was already known.
+  void ValidateAccounts(const std::string& signed_in_account,
+                        bool force_notifications);
 
   // Triggers a notification to all observers of the OAuth2TokenService that a
   // refresh token is now available. This may cause observers to retry
@@ -113,8 +120,21 @@ class AndroidProfileOAuth2TokenService : public ProfileOAuth2TokenService {
   // Called to notify observers when refresh tokans have been loaded.
   virtual void FireRefreshTokensLoaded() OVERRIDE;
 
+  // Return whether |signed_in_account| is valid and we have access
+  // to all the tokens in |curr_account_ids|. If |force_notifications| is true,
+  // TokenAvailable notifications will be sent anyway, even if the account was
+  // already known.
+  bool ValidateAccounts(const std::string& signed_in_account,
+                        const std::vector<std::string>& prev_account_ids,
+                        const std::vector<std::string>& curr_account_ids,
+                        std::vector<std::string>& refreshed_ids,
+                        std::vector<std::string>& revoked_ids,
+                        bool force_notifications);
+
  private:
   base::android::ScopedJavaGlobalRef<jobject> java_ref_;
+
+  static bool is_testing_profile_;
 
   DISALLOW_COPY_AND_ASSIGN(AndroidProfileOAuth2TokenService);
 };

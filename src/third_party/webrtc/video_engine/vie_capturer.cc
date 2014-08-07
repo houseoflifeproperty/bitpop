@@ -10,6 +10,7 @@
 
 #include "webrtc/video_engine/vie_capturer.h"
 
+#include "webrtc/common_video/interface/texture_video_frame.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/interface/module_common_types.h"
 #include "webrtc/modules/utility/interface/process_thread.h"
@@ -249,15 +250,8 @@ void ViECapturer::SetCpuOveruseOptions(const CpuOveruseOptions& options) {
   overuse_detector_->SetOptions(options);
 }
 
-void ViECapturer::CpuOveruseMeasures(int* capture_jitter_ms,
-                                     int* avg_encode_time_ms,
-                                     int* encode_usage_percent,
-                                     int* capture_queue_delay_ms_per_s) const {
-  *capture_jitter_ms = overuse_detector_->CaptureJitterMs();
-  *avg_encode_time_ms = overuse_detector_->AvgEncodeTimeMs();
-  *encode_usage_percent = overuse_detector_->EncodeUsagePercent();
-  *capture_queue_delay_ms_per_s =
-      overuse_detector_->AvgCaptureQueueDelayMsPerS();
+void ViECapturer::GetCpuOveruseMetrics(CpuOveruseMetrics* metrics) const {
+  overuse_detector_->GetCpuOveruseMetrics(metrics);
 }
 
 int32_t ViECapturer::SetCaptureDelay(int32_t delay_ms) {
@@ -337,6 +331,9 @@ int ViECapturer::IncomingFrameI420(const ViEVideoFrameI420& video_frame,
 void ViECapturer::SwapFrame(I420VideoFrame* frame) {
   external_capture_module_->IncomingI420VideoFrame(frame,
                                                    frame->render_time_ms());
+  frame->set_timestamp(0);
+  frame->set_ntp_time_ms(0);
+  frame->set_render_time_ms(0);
 }
 
 void ViECapturer::OnIncomingCapturedFrame(const int32_t capture_id,
@@ -350,11 +347,16 @@ void ViECapturer::OnIncomingCapturedFrame(const int32_t capture_id,
   TRACE_EVENT_ASYNC_BEGIN1("webrtc", "Video", video_frame.render_time_ms(),
                            "render_time", video_frame.render_time_ms());
 
-  captured_frame_.SwapFrame(&video_frame);
+  if (video_frame.native_handle() != NULL) {
+    captured_frame_.reset(video_frame.CloneFrame());
+  } else {
+    if (captured_frame_ == NULL || captured_frame_->native_handle() != NULL)
+      captured_frame_.reset(new I420VideoFrame());
+    captured_frame_->SwapFrame(&video_frame);
+  }
   capture_event_.Set();
-  overuse_detector_->FrameCaptured(captured_frame_.width(),
-                                   captured_frame_.height());
-  return;
+  overuse_detector_->FrameCaptured(captured_frame_->width(),
+                                   captured_frame_->height());
 }
 
 void ViECapturer::OnCaptureDelayChanged(const int32_t id,
@@ -477,7 +479,9 @@ bool ViECapturer::ViECaptureProcess() {
     deliver_cs_->Enter();
     if (SwapCapturedAndDeliverFrameIfAvailable()) {
       encode_start_time = Clock::GetRealTimeClock()->TimeInMilliseconds();
-      DeliverI420Frame(&deliver_frame_);
+      DeliverI420Frame(deliver_frame_.get());
+      if (deliver_frame_->native_handle() != NULL)
+        deliver_frame_.reset();  // Release the texture so it can be reused.
     }
     deliver_cs_->Leave();
     if (current_brightness_level_ != reported_brightness_level_) {
@@ -498,6 +502,11 @@ bool ViECapturer::ViECaptureProcess() {
 }
 
 void ViECapturer::DeliverI420Frame(I420VideoFrame* video_frame) {
+  if (video_frame->native_handle() != NULL) {
+    ViEFrameProviderBase::DeliverFrame(video_frame);
+    return;
+  }
+
   // Apply image enhancement and effect filter.
   if (deflicker_frame_stats_) {
     if (image_proc_module_->GetFrameStats(deflicker_frame_stats_,
@@ -612,11 +621,21 @@ void ViECapturer::OnNoPictureAlarm(const int32_t id,
 
 bool ViECapturer::SwapCapturedAndDeliverFrameIfAvailable() {
   CriticalSectionScoped cs(capture_cs_.get());
-  if (captured_frame_.IsZeroSize())
+  if (captured_frame_ == NULL)
     return false;
 
-  deliver_frame_.SwapFrame(&captured_frame_);
-  captured_frame_.ResetSize();
+  if (captured_frame_->native_handle() != NULL) {
+    deliver_frame_.reset(captured_frame_.release());
+    return true;
+  }
+
+  if (captured_frame_->IsZeroSize())
+    return false;
+
+  if (deliver_frame_ == NULL)
+    deliver_frame_.reset(new I420VideoFrame());
+  deliver_frame_->SwapFrame(captured_frame_.get());
+  captured_frame_->ResetSize();
   return true;
 }
 

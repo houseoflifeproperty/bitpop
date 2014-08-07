@@ -33,6 +33,7 @@
 
 #include "core/animation/AnimatableLength.h"
 #include "core/animation/AnimatableUnknown.h"
+#include "core/animation/interpolation/LegacyStyleInterpolation.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/parser/BisonCSSParser.h"
 #include "core/css/resolver/CSSToStyleMap.h"
@@ -142,7 +143,7 @@ TEST(AnimationKeyframeEffectModel, CompositeEaseIn)
     AnimatableValueKeyframeVector keyframes = keyframesAtZeroAndOne(pixelAnimatableValue(3.0), pixelAnimatableValue(5.0));
     RefPtrWillBeRawPtr<CSSValue> timingFunction = BisonCSSParser::parseAnimationTimingFunctionValue("ease-in");
     keyframes[0]->setComposite(AnimationEffect::CompositeReplace);
-    keyframes[0]->setEasing(CSSToStyleMap::animationTimingFunction(timingFunction.get(), false));
+    keyframes[0]->setEasing(CSSToStyleMap::mapAnimationTimingFunction(timingFunction.get(), true));
     keyframes[1]->setComposite(AnimationEffect::CompositeReplace);
     RefPtrWillBeRawPtr<AnimatableValueKeyframeEffectModel> effect = AnimatableValueKeyframeEffectModel::create(keyframes);
     expectDoubleValue(3.8579516, effect->sample(0, 0.6, duration)->at(0));
@@ -154,7 +155,7 @@ TEST(AnimationKeyframeEffectModel, CompositeCubicBezier)
     AnimatableValueKeyframeVector keyframes = keyframesAtZeroAndOne(pixelAnimatableValue(3.0), pixelAnimatableValue(5.0));
     RefPtrWillBeRawPtr<CSSValue> timingFunction = BisonCSSParser::parseAnimationTimingFunctionValue("cubic-bezier(0.42, 0, 0.58, 1)");
     keyframes[0]->setComposite(AnimationEffect::CompositeReplace);
-    keyframes[0]->setEasing(CSSToStyleMap::animationTimingFunction(timingFunction.get(), false));
+    keyframes[0]->setEasing(CSSToStyleMap::mapAnimationTimingFunction(timingFunction.get(), true));
     keyframes[1]->setComposite(AnimationEffect::CompositeReplace);
     RefPtrWillBeRawPtr<AnimatableValueKeyframeEffectModel> effect = AnimatableValueKeyframeEffectModel::create(keyframes);
     expectDoubleValue(4.3363357, effect->sample(0, 0.6, duration)->at(0));

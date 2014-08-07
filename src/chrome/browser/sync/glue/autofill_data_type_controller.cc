@@ -9,7 +9,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
-#include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/webdata/autocomplete_syncable_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
@@ -25,13 +24,13 @@ namespace browser_sync {
 AutofillDataTypeController::AutofillDataTypeController(
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
-    ProfileSyncService* sync_service)
+    const DisableTypeCallback& disable_callback)
     : NonUIDataTypeController(
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
           base::Bind(&ChromeReportUnrecoverableError),
-          profile_sync_factory,
-          profile,
-          sync_service) {
+          disable_callback,
+          profile_sync_factory),
+      profile_(profile) {
 }
 
 syncer::ModelType AutofillDataTypeController::type() const {
@@ -66,7 +65,7 @@ bool AutofillDataTypeController::StartModels() {
 
   autofill::AutofillWebDataService* web_data_service =
       WebDataServiceFactory::GetAutofillWebDataForProfile(
-          profile(), Profile::EXPLICIT_ACCESS).get();
+          profile_, Profile::EXPLICIT_ACCESS).get();
 
   if (!web_data_service)
     return false;
@@ -85,7 +84,7 @@ void AutofillDataTypeController::StartAssociating(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_EQ(state(), MODEL_LOADED);
   ProfileSyncService* sync = ProfileSyncServiceFactory::GetForProfile(
-      profile());
+      profile_);
   DCHECK(sync);
   NonUIDataTypeController::StartAssociating(start_callback);
 }

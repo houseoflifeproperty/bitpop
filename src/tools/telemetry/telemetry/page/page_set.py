@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,18 +7,25 @@ import inspect
 import os
 
 from telemetry.core import util
+from telemetry.page import cloud_storage
 from telemetry.page import page as page_module
 from telemetry.page import page_set_archive_info
+
+
+PUBLIC_BUCKET = cloud_storage.PUBLIC_BUCKET
+PARTNER_BUCKET = cloud_storage.PARTNER_BUCKET
+INTERNAL_BUCKET = cloud_storage.INTERNAL_BUCKET
+
 
 class PageSetError(Exception):
   pass
 
 
 class PageSet(object):
-  def __init__(self, file_path=None, description='', archive_data_file='',
+  def __init__(self, file_path=None, archive_data_file='',
                credentials_path=None, user_agent_type=None,
                make_javascript_deterministic=True, startup_url='',
-               serving_dirs=None):
+               serving_dirs=None, bucket=None):
     # The default value of file_path is location of the file that define this
     # page set instance's class.
     if file_path is None:
@@ -29,7 +36,6 @@ class PageSet(object):
 
     self.file_path = file_path
     # These attributes can be set dynamically by the page set.
-    self.description = description
     self.archive_data_file = archive_data_file
     self.credentials_path = credentials_path
     self.user_agent_type = user_agent_type
@@ -45,6 +51,21 @@ class PageSet(object):
         self.serving_dirs.add(os.path.realpath(sd))
       else:
         self.serving_dirs.add(os.path.realpath(os.path.join(self.base_dir, sd)))
+    if self._IsValidPrivacyBucket(bucket):
+      self._bucket = bucket
+    else:
+      raise ValueError("Pageset privacy bucket %s is invalid" % bucket)
+
+  @classmethod
+  def Name(cls):
+    return cls.__module__.split('.')[-1]
+
+  @classmethod
+  def Description(cls):
+    if cls.__doc__:
+      return cls.__doc__.splitlines()[0]
+    else:
+      return ''
 
   def AddPage(self, page):
     assert page.page_set is self
@@ -89,6 +110,14 @@ pages in %s must be in the form of def Run<...>(self, action_runner):"""
                                      % file_path)
     return page_set
 
+  @staticmethod
+  def _IsValidPrivacyBucket(bucket_name):
+    if not bucket_name:
+      return True
+    if (bucket_name in [PUBLIC_BUCKET, PARTNER_BUCKET, INTERNAL_BUCKET]):
+      return True
+    return False
+
   @property
   def base_dir(self):
     if os.path.isfile(self.file_path):
@@ -104,6 +133,10 @@ pages in %s must be in the form of def Run<...>(self, action_runner):"""
           page_set_archive_info.PageSetArchiveInfo.FromFile(
             os.path.join(self.base_dir, self.archive_data_file)))
     return self._wpr_archive_info
+
+  @property
+  def bucket(self):
+    return self._bucket
 
   @wpr_archive_info.setter
   def wpr_archive_info(self, value):  # pylint: disable=E0202

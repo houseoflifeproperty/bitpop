@@ -13,8 +13,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/managed_mode/managed_user_theme.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/supervised_user/supervised_user_theme.h"
 #include "chrome/browser/themes/browser_theme_pack.h"
 #include "chrome/browser/themes/custom_theme_supplier.h"
 #include "chrome/browser/themes/theme_properties.h"
@@ -119,7 +119,7 @@ gfx::Image ThemeService::GetImageNamed(int id) const {
   return image;
 }
 
-bool ThemeService::UsingNativeTheme() const {
+bool ThemeService::UsingSystemTheme() const {
   return UsingDefaultTheme();
 }
 
@@ -151,16 +151,16 @@ SkColor ThemeService::GetColor(int id) const {
       return IncreaseLightness(GetColor(Properties::COLOR_NTP_TEXT), 0.86);
     case Properties::COLOR_NTP_TEXT_LIGHT:
       return IncreaseLightness(GetColor(Properties::COLOR_NTP_TEXT), 0.40);
-    case Properties::COLOR_MANAGED_USER_LABEL:
+    case Properties::COLOR_SUPERVISED_USER_LABEL:
       return color_utils::GetReadableColor(
           SK_ColorWHITE,
-          GetColor(Properties::COLOR_MANAGED_USER_LABEL_BACKGROUND));
-    case Properties::COLOR_MANAGED_USER_LABEL_BACKGROUND:
+          GetColor(Properties::COLOR_SUPERVISED_USER_LABEL_BACKGROUND));
+    case Properties::COLOR_SUPERVISED_USER_LABEL_BACKGROUND:
       return color_utils::BlendTowardOppositeLuminance(
           GetColor(Properties::COLOR_FRAME), 0x80);
-    case Properties::COLOR_MANAGED_USER_LABEL_BORDER:
+    case Properties::COLOR_SUPERVISED_USER_LABEL_BORDER:
       return color_utils::AlphaBlend(
-          GetColor(Properties::COLOR_MANAGED_USER_LABEL_BACKGROUND),
+          GetColor(Properties::COLOR_SUPERVISED_USER_LABEL_BACKGROUND),
           SK_ColorBLACK,
           230);
     case Properties::COLOR_STATUS_BAR_TEXT: {
@@ -191,7 +191,7 @@ int ThemeService::GetDisplayProperty(int id) const {
 
   if (id == Properties::NTP_LOGO_ALTERNATE &&
       !UsingDefaultTheme() &&
-      !UsingNativeTheme()) {
+      !UsingSystemTheme()) {
     // Use the alternate logo for themes from the web store except for
     // |kDefaultThemeGalleryID|.
     return 1;
@@ -247,8 +247,7 @@ void ThemeService::Observe(int type,
           content::Source<Profile>(profile_));
       OnExtensionServiceReady();
       break;
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED:
-    {
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED: {
       // The theme may be initially disabled. Wait till it is loaded (if ever).
       Details<const extensions::InstalledExtensionInfo> installed_details(
           details);
@@ -325,7 +324,7 @@ void ThemeService::SetCustomDefaultTheme(
   NotifyThemeChanged();
 }
 
-bool ThemeService::ShouldInitWithNativeTheme() const {
+bool ThemeService::ShouldInitWithSystemTheme() const {
   return false;
 }
 
@@ -374,15 +373,15 @@ void ThemeService::RemoveUnusedThemes(bool ignore_infobars) {
 void ThemeService::UseDefaultTheme() {
   if (ready_)
     content::RecordAction(UserMetricsAction("Themes_Reset"));
-  if (IsManagedUser()) {
-    SetManagedUserTheme();
+  if (IsSupervisedUser()) {
+    SetSupervisedUserTheme();
     return;
   }
   ClearAllThemeData();
   NotifyThemeChanged();
 }
 
-void ThemeService::SetNativeTheme() {
+void ThemeService::UseSystemTheme() {
   UseDefaultTheme();
 }
 
@@ -433,11 +432,11 @@ void ThemeService::LoadThemePrefs() {
 
   std::string current_id = GetThemeID();
   if (current_id == kDefaultThemeID) {
-    // Managed users have a different default theme.
-    if (IsManagedUser())
-      SetManagedUserTheme();
-    else if (ShouldInitWithNativeTheme())
-      SetNativeTheme();
+    // Supervised users have a different default theme.
+    if (IsSupervisedUser())
+      SetSupervisedUserTheme();
+    else if (ShouldInitWithSystemTheme())
+      UseSystemTheme();
     else
       UseDefaultTheme();
     set_ready();
@@ -501,7 +500,7 @@ void ThemeService::OnExtensionServiceReady() {
   }
 
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_INSTALLED,
+                 chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
@@ -582,12 +581,12 @@ void ThemeService::BuildFromExtension(const Extension* extension) {
   SwapThemeSupplier(pack);
 }
 
-bool ThemeService::IsManagedUser() const {
-  return profile_->IsManaged();
+bool ThemeService::IsSupervisedUser() const {
+  return profile_->IsSupervised();
 }
 
-void ThemeService::SetManagedUserTheme() {
-  SetCustomDefaultTheme(new ManagedUserTheme);
+void ThemeService::SetSupervisedUserTheme() {
+  SetCustomDefaultTheme(new SupervisedUserTheme);
 }
 
 void ThemeService::OnInfobarDisplayed() {

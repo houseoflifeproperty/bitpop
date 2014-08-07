@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 
-#include "FetchInitiatorTypeNames.h"
+#include "core/FetchInitiatorTypeNames.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
@@ -92,19 +92,18 @@ bool CSSFontFaceSrcValue::shouldSetCrossOriginAccessControl(const KURL& resource
 {
     if (resource.isLocalFile() || resource.protocolIsData())
         return false;
-    if (m_fetched && m_fetched->isCORSFailed())
-        return false;
     return !securityOrigin->canRequest(resource);
 }
 
 FontResource* CSSFontFaceSrcValue::fetch(Document* document)
 {
-    if (!m_fetched || m_fetched->isCORSFailed()) {
+    if (!m_fetched) {
         FetchRequest request(ResourceRequest(document->completeURL(m_resource)), FetchInitiatorTypeNames::css);
         SecurityOrigin* securityOrigin = document->securityOrigin();
         if (shouldSetCrossOriginAccessControl(request.url(), securityOrigin)) {
             request.setCrossOriginAccessControl(securityOrigin, DoNotAllowStoredCredentials);
         }
+        request.mutableResourceRequest().setHTTPReferrer(m_referrer);
         m_fetched = document->fetcher()->fetchFont(request);
     } else {
         // FIXME: CSSFontFaceSrcValue::fetch is invoked when @font-face rule

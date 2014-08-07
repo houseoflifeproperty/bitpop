@@ -30,12 +30,12 @@
 #include "config.h"
 #include "core/css/RuntimeCSSEnabled.h"
 
-#include "RuntimeEnabledFeatures.h"
+#include "platform/RuntimeEnabledFeatures.h"
+#include "wtf/BitArray.h"
 
 namespace WebCore {
 
-// FIXME: We should use a real BitVector class instead!
-typedef Vector<bool> BoolVector;
+typedef BitArray<numCSSProperties> CSSPropertySwitches;
 
 static void setCSSPropertiesEnabled(CSSPropertyID* properties, size_t length, bool featureFlag)
 {
@@ -120,7 +120,6 @@ static void setPropertySwitchesFromRuntimeFeatures()
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyIsolation, RuntimeEnabledFeatures::cssCompositingEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyTouchAction, RuntimeEnabledFeatures::cssTouchActionEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyTouchActionDelay, RuntimeEnabledFeatures::cssTouchActionDelayEnabled());
-    RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyPaintOrder, RuntimeEnabledFeatures::svgPaintOrderEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyMaskSourceType, RuntimeEnabledFeatures::cssMaskSourceTypeEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyColumnFill, RuntimeEnabledFeatures::regionBasedColumnsEnabled());
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyScrollBehavior, RuntimeEnabledFeatures::cssomSmoothScrollEnabled());
@@ -130,12 +129,11 @@ static void setPropertySwitchesFromRuntimeFeatures()
     RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyInternalCallback, false);
 }
 
-static BoolVector& propertySwitches()
+static CSSPropertySwitches& propertySwitches()
 {
-    static BoolVector* switches = 0;
+    static CSSPropertySwitches* switches = 0;
     if (!switches) {
-        switches = new BoolVector;
-        switches->fill(true, numCSSProperties);
+        switches = new CSSPropertySwitches(true); // All bits sets to 1.
         setPropertySwitchesFromRuntimeFeatures();
     }
     return *switches;
@@ -144,7 +142,7 @@ static BoolVector& propertySwitches()
 size_t indexForProperty(CSSPropertyID propertyId)
 {
     RELEASE_ASSERT(propertyId >= firstCSSProperty && propertyId <= lastCSSProperty);
-    // Values all start at 0. Vector RELEASE_ASSERTS will catch if we're ever wrong.
+    // Values all start at 0. BitArray ASSERTS will catch if we're ever wrong.
     return static_cast<size_t>(propertyId - firstCSSProperty);
 }
 
@@ -155,12 +153,16 @@ bool RuntimeCSSEnabled::isCSSPropertyEnabled(CSSPropertyID propertyId)
     if (isInternalProperty(propertyId))
         return false;
 
-    return propertySwitches()[indexForProperty(propertyId)];
+    return propertySwitches().get(indexForProperty(propertyId));
 }
 
 void RuntimeCSSEnabled::setCSSPropertyEnabled(CSSPropertyID propertyId, bool enable)
 {
-    propertySwitches()[indexForProperty(propertyId)] = enable;
+    size_t propertyIndex = indexForProperty(propertyId);
+    if (enable)
+        propertySwitches().set(propertyIndex);
+    else
+        propertySwitches().clear(propertyIndex);
 }
 
 void RuntimeCSSEnabled::filterEnabledCSSPropertiesIntoVector(const CSSPropertyID* properties, size_t propertyCount, Vector<CSSPropertyID>& outVector)

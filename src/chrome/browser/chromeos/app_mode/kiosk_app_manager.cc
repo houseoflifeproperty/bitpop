@@ -19,7 +19,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_data.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager_observer.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -366,7 +366,7 @@ void KioskAppManager::RemoveObserver(KioskAppManagerObserver* observer) {
 
 KioskAppManager::KioskAppManager() : ownership_established_(false) {
   base::FilePath cache_dir;
-  GetKioskAppCrxCacheDir(&cache_dir);
+  GetCrxCacheDir(&cache_dir);
   external_cache_.reset(
       new ExternalCache(cache_dir,
                         g_browser_process->system_request_context(),
@@ -530,10 +530,16 @@ void KioskAppManager::SetAutoLoginState(AutoLoginState state) {
   prefs->CommitPendingWrite();
 }
 
-void KioskAppManager::GetKioskAppCrxCacheDir(base::FilePath* cache_dir) {
+void KioskAppManager::GetCrxCacheDir(base::FilePath* cache_dir) {
   base::FilePath user_data_dir;
   CHECK(PathService::Get(chrome::DIR_USER_DATA, &user_data_dir));
   *cache_dir = user_data_dir.AppendASCII(kCrxCacheDir);
+}
+
+bool KioskAppManager::GetCachedCrx(const std::string& app_id,
+                                   base::FilePath* file_path,
+                                   std::string* version) {
+  return external_cache_->GetExtension(app_id, file_path, version);
 }
 
 }  // namespace chromeos

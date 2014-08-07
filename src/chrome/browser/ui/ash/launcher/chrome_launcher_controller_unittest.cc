@@ -27,7 +27,6 @@
 #include "chrome/browser/ui/ash/launcher/app_window_launcher_item_controller.h"
 #include "chrome/browser/ui/ash/launcher/launcher_application_menu_item_model.h"
 #include "chrome/browser/ui/ash/launcher/launcher_item_controller.h"
-#include "chrome/browser/ui/ash/test_views_delegate_with_parent.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -53,7 +52,7 @@
 #include "apps/ui/native_app_window.h"
 #include "ash/test/test_session_state_delegate.h"
 #include "ash/test/test_shell_delegate.h"
-#include "chrome/browser/chromeos/login/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
 #include "chrome/browser/ui/apps/chrome_app_window_delegate.h"
 #include "chrome/browser/ui/ash/launcher/app_window_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/browser_status_monitor.h"
@@ -79,11 +78,13 @@ const char* offline_gmail_url = "https://mail.google.com/mail/mu/u";
 const char* gmail_url = "https://mail.google.com/mail/u";
 const char* kGmailLaunchURL = "https://mail.google.com/mail/ca";
 
+#if defined(OS_CHROMEOS)
 // As defined in /chromeos/dbus/cryptohome_client.cc.
 const char kUserIdHashSuffix[] = "-hash";
 
 // An extension prefix.
 const char kCrxAppPrefix[] = "_crx_";
+#endif
 
 // ShelfModelObserver implementation that tracks what messages are invoked.
 class TestShelfModelObserver : public ash::ShelfModelObserver {
@@ -787,9 +788,6 @@ class MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest
     // AvatarMenu and multiple profiles works after user logged in.
     profile_manager_->SetLoggedIn(true);
 
-    // Enabling multi profile requires several flags to be set.
-    CommandLine::ForCurrentProcess()->AppendSwitch(switches::kMultiProfiles);
-
     // Initialize the UserManager singleton to a fresh FakeUserManager instance.
     user_manager_enabler_.reset(
         new chromeos::ScopedUserManagerEnabler(new chromeos::FakeUserManager));
@@ -920,10 +918,6 @@ class MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest
     DCHECK(it != created_profiles_.end());
     profile_manager_->DeleteTestingProfile(it->second);
     created_profiles_.erase(it);
-  }
-
-  virtual views::ViewsDelegate* CreateViewsDelegate() OVERRIDE {
-    return new TestViewsDelegateWithParent;
   }
 
  private:

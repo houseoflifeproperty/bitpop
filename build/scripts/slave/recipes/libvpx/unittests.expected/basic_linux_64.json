@@ -1,0 +1,120 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport os, sys, shutil\nroot = sys.argv[1]\nnuke_dirs = sys.argv[2:]\nfor fname in os.listdir(root):\n  path = os.path.join(root, fname)\n  if os.path.isfile(path):\n    os.unlink(path)\n  elif fname in nuke_dirs:\n    shutil.rmtree(path)\n",
+      "[SLAVE_BUILD]",
+      "libs",
+      "obj",
+      "vp8",
+      "vp9",
+      "vpx",
+      "vpx_mem",
+      "vpx_ports",
+      "vpx_scale",
+      "third_party"
+    ],
+    "name": "clean_build",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys, shutil@@@",
+      "@@@STEP_LOG_LINE@python.inline@root = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@nuke_dirs = sys.argv[2:]@@@",
+      "@@@STEP_LOG_LINE@python.inline@for fname in os.listdir(root):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  path = os.path.join(root, fname)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  if os.path.isfile(path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    os.unlink(path)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  elif fname in nuke_dirs:@@@",
+      "@@@STEP_LOG_LINE@python.inline@    shutil.rmtree(path)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/git_setup.py",
+      "--path",
+      "[SLAVE_BUILD]/libvpx",
+      "--url",
+      "https://chromium.googlesource.com/webm/libvpx"
+    ],
+    "name": "git setup",
+    "seed_steps": [
+      "git setup",
+      "git fetch",
+      "git checkout",
+      "git clean",
+      "submodule sync",
+      "submodule update"
+    ]
+  },
+  {
+    "cmd": [
+      "git",
+      "fetch",
+      "origin",
+      "master",
+      "--recurse-submodules"
+    ],
+    "cwd": "[SLAVE_BUILD]/libvpx",
+    "name": "git fetch"
+  },
+  {
+    "cmd": [
+      "git",
+      "checkout",
+      "-f",
+      "FETCH_HEAD"
+    ],
+    "cwd": "[SLAVE_BUILD]/libvpx",
+    "name": "git checkout"
+  },
+  {
+    "cmd": [
+      "git",
+      "clean",
+      "-f",
+      "-d",
+      "-x"
+    ],
+    "cwd": "[SLAVE_BUILD]/libvpx",
+    "name": "git clean"
+  },
+  {
+    "cmd": [
+      "git",
+      "submodule",
+      "sync"
+    ],
+    "cwd": "[SLAVE_BUILD]/libvpx",
+    "name": "submodule sync"
+  },
+  {
+    "cmd": [
+      "git",
+      "submodule",
+      "update",
+      "--init",
+      "--recursive"
+    ],
+    "cwd": "[SLAVE_BUILD]/libvpx",
+    "name": "submodule update"
+  },
+  {
+    "cmd": [
+      "./libvpx/configure"
+    ],
+    "name": "configure"
+  },
+  {
+    "can_fail_build": true,
+    "cmd": [
+      "make",
+      "test",
+      "-j8"
+    ],
+    "name": "run tests"
+  }
+]

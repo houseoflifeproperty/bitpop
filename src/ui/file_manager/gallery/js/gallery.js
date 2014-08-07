@@ -28,7 +28,6 @@ ContentProvider.WORKER_SCRIPT = '/js/metadata_worker.js';
 function Gallery(volumeManager) {
   this.context_ = {
     appWindow: chrome.app.window.current(),
-    onBack: function() {},
     onClose: function() { close(); },
     onMaximize: function() {
       var appWindow = chrome.app.window.current();
@@ -67,14 +66,14 @@ function Gallery(volumeManager) {
 Gallery.prototype.__proto__ = cr.EventTarget.prototype;
 
 /**
- * Tools fade-out timeout im milliseconds.
+ * Tools fade-out timeout in milliseconds.
  * @const
  * @type {number}
  */
 Gallery.FADE_TIMEOUT = 3000;
 
 /**
- * First time tools fade-out timeout im milliseconds.
+ * First time tools fade-out timeout in milliseconds.
  * @const
  * @type {number}
  */
@@ -130,7 +129,7 @@ Gallery.prototype.onExternallyUnmounted_ = function(event) {
 
   if (this.volumeManager_.getVolumeInfo(this.selectedEntry_) ===
       event.volumeInfo) {
-    this.onBack_();
+    close();
   }
 };
 
@@ -160,11 +159,6 @@ Gallery.prototype.initDom_ = function() {
 
   this.header_ = util.createChild(this.container_, 'header tool dimmable');
   this.toolbar_ = util.createChild(this.container_, 'toolbar tool dimmable');
-
-  var backButton = util.createChild(this.container_,
-                                    'back-button tool dimmable');
-  util.createChild(backButton);
-  backButton.addEventListener('click', this.onBack_.bind(this));
 
   var preventDefault = function(event) { event.preventDefault(); };
 
@@ -336,26 +330,6 @@ Gallery.prototype.load = function(entries, selectedEntries) {
 };
 
 /**
- * Closes the Gallery and go to Files.app.
- * @private
- */
-Gallery.prototype.back_ = function() {
-  if (util.isFullScreen(this.context_.appWindow)) {
-    util.toggleFullScreen(this.context_.appWindow,
-                          false);  // Leave the full screen mode.
-  }
-  this.context_.onBack(this.getSelectedEntries());
-};
-
-/**
- * Handles user's 'Back' action (Escape or a click on the X icon).
- * @private
- */
-Gallery.prototype.onBack_ = function() {
-  this.executeWhenReady(this.back_.bind(this));
-};
-
-/**
  * Handles user's 'Close' action.
  * @private
  */
@@ -502,7 +476,6 @@ Gallery.prototype.delete_ = function() {
     if (!itemsToRemove.length)
       return;  // All deleted.
 
-    // TODO(hirono): Use fileOperationManager.
     var entry = itemsToRemove.pop().getEntry();
     entry.remove(deleteNext, function() {
       util.flog('Error deleting: ' + entry.name, deleteNext);
@@ -517,6 +490,7 @@ Gallery.prototype.delete_ = function() {
 
 
   var confirm = new cr.ui.dialogs.ConfirmDialog(this.container_);
+  confirm.setOkLabel(str('DELETE_BUTTON_LABEL'));
   confirm.show(strf(plural ?
       'GALLERY_CONFIRM_DELETE_SOME' : 'GALLERY_CONFIRM_DELETE_ONE', param),
       function() {
@@ -610,12 +584,6 @@ Gallery.prototype.onKeyDown_ = function(event) {
     case 'U+0008': // Backspace.
       // The default handler would call history.back and close the Gallery.
       event.preventDefault();
-      break;
-
-    case 'U+001B':  // Escape
-      // Swallow Esc if it closed the Share menu, otherwise close the Gallery.
-      if (!wasSharing)
-        this.onBack_();
       break;
 
     case 'U+004D':  // 'm' switches between Slide and Mosaic mode.
@@ -820,7 +788,13 @@ Gallery.prototype.updateShareMenu_ = function() {
 
     for (var t = 0; t !== tasks.length; t++) {
       var task = tasks[t];
-      if (!isShareAction(task)) continue;
+      if (!isShareAction(task))
+        continue;
+      // Filter out Files.app tasks.
+      // TODO(hirono): Remove the hack after the files.app's handlers are
+      // removed.
+      if (task.taskId.indexOf('hhaomjibdihmijegdhdafkllkbggdgoj|') === 0)
+        continue;
 
       var item = util.createChild(this.shareMenu_, 'item');
       item.textContent = task.title;
@@ -886,16 +860,24 @@ Gallery.prototype.updateButtons_ = function() {
   }
 };
 
-window.addEventListener('load', function() {
-  var entries = window.launchData.items.map(
-      function(item) { return item.entry; });
-  window.backgroundComponent.
-      then(function(inBackgroundComponent) {
-        window.loadTimeData.data = inBackgroundComponent.stringData;
-        var gallery = new Gallery(inBackgroundComponent.volumeManager);
-        gallery.load(entries, entries);
-      }).
-      catch(function(error) {
-        console.error(error.stack || error);
-      });
-});
+/**
+ * Singleton gallery.
+ * @type {Gallery}
+ */
+var gallery = null;
+
+/**
+ * Initialize the window.
+ * @param {Object} backgroundComponents Background components.
+ */
+window.initialize = function(backgroundComponents) {
+  window.loadTimeData.data = backgroundComponents.stringData;
+  gallery = new Gallery(backgroundComponents.volumeManager);
+};
+
+/**
+ * Loads entries.
+ */
+window.loadEntries = function(entries, selectedEntries) {
+  gallery.load(entries, selectedEntries);
+};

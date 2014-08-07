@@ -6,8 +6,8 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
 #include "base/sequenced_task_runner.h"
+#include "sync/engine/non_blocking_type_processor.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/non_blocking_type_processor.h"
 #include "sync/internal_api/sync_core.h"
 #include "sync/internal_api/sync_core_proxy_impl.h"
 #include "sync/sessions/model_type_registry.h"
@@ -31,9 +31,7 @@ class SyncCoreProxyImplTest : public ::testing::Test {
     core_.reset();
   }
 
-  SyncCoreProxy* GetProxy() {
-    return &core_proxy_;
-  }
+  scoped_ptr<SyncCoreProxy> GetProxy() { return core_proxy_.Clone(); }
 
  private:
   base::MessageLoop loop_;

@@ -25,6 +25,7 @@
 namespace net {
 
 class QuicCryptoStream;
+class QuicFlowController;
 class ReliableQuicStream;
 class SSLInfo;
 class VisitorShim;
@@ -52,8 +53,7 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
     HANDSHAKE_CONFIRMED,
   };
 
-  QuicSession(QuicConnection* connection,
-              const QuicConfig& config);
+  QuicSession(QuicConnection* connection, const QuicConfig& config);
 
   virtual ~QuicSession();
 
@@ -69,9 +69,9 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer) OVERRIDE;
   virtual void OnWriteBlocked() OVERRIDE {}
   virtual void OnSuccessfulVersionNegotiation(
-      const QuicVersion& version) OVERRIDE {}
+      const QuicVersion& version) OVERRIDE;
   virtual void OnCanWrite() OVERRIDE;
-  virtual bool HasPendingWrites() const OVERRIDE;
+  virtual bool WillingAndAbleToWrite() const OVERRIDE;
   virtual bool HasPendingHandshake() const OVERRIDE;
   virtual bool HasOpenDataStreams() const OVERRIDE;
 
@@ -94,7 +94,10 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // Returns a pair with the number of bytes consumed from data, and a boolean
   // indicating if the fin bit was consumed.  This does not indicate the data
   // has been sent on the wire: it may have been turned into a packet and queued
-  // if the socket was unexpectedly blocked.
+  // if the socket was unexpectedly blocked.  |fec_protection| indicates if
+  // data is to be FEC protected. Note that data that is sent immediately
+  // following MUST_FEC_PROTECT data may get protected by falling within the
+  // same FEC group.
   // If provided, |ack_notifier_delegate| will be registered to be notified when
   // we have seen ACKs for all packets resulting from this call.
   virtual QuicConsumedData WritevData(
@@ -102,6 +105,7 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
       const IOVector& data,
       QuicStreamOffset offset,
       bool fin,
+      FecProtection fec_protection,
       QuicAckNotifier::DelegateInterface* ack_notifier_delegate);
 
   // Writes |headers| for the stream |id| to the dedicated headers stream.
@@ -173,8 +177,6 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
     return connection_->connection_id();
   }
 
-  QuicPacketCreator::Options* options() { return connection()->options(); }
-
   // Returns the number of currently open streams, including those which have
   // been implicitly created, but excluding the reserved headers and crypto
   // streams.
@@ -200,6 +202,8 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   QuicErrorCode error() const { return error_; }
 
   bool is_server() const { return connection_->is_server(); }
+
+  QuicFlowController* flow_controller() { return flow_controller_.get(); }
 
  protected:
   typedef base::hash_map<QuicStreamId, QuicDataStream*> DataStreamMap;
@@ -256,6 +260,26 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // then the stream has been reset by this endpoint, not by the peer.
   void CloseStreamInner(QuicStreamId stream_id, bool locally_reset);
 
+  // When a stream is closed locally, it may not yet know how many bytes the
+  // peer sent on that stream.
+  // When this data arrives (via stream frame w. FIN, or RST) this method
+  // is called, and correctly updates the connection level flow controller.
+  void UpdateFlowControlOnFinalReceivedByteOffset(
+      QuicStreamId id, QuicStreamOffset final_byte_offset);
+
+  // Called in OnConfigNegotiated when we receive a new stream level flow
+  // control window in a negotiated config. Closes the connection if invalid.
+  void OnNewStreamFlowControlWindow(uint32 new_window);
+
+  // Called in OnConfigNegotiated when we receive a new session level flow
+  // control window in a negotiated config. Closes the connection if invalid.
+  void OnNewSessionFlowControlWindow(uint32 new_window);
+
+  // Keep track of highest received byte offset of locally closed streams, while
+  // waiting for a definitive final highest offset from the peer.
+  std::map<QuicStreamId, QuicStreamOffset>
+      locally_closed_streams_highest_offset_;
+
   scoped_ptr<QuicConnection> connection_;
 
   scoped_ptr<QuicHeadersStream> headers_stream_;
@@ -294,6 +318,9 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
 
   // Indicate if there is pending data for the crypto stream.
   bool has_pending_handshake_;
+
+  // Used for session level flow control.
+  scoped_ptr<QuicFlowController> flow_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSession);
 };

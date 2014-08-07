@@ -5,13 +5,17 @@
 #include "config.h"
 #include "core/animation/SampledEffect.h"
 
+#include "core/animation/interpolation/StyleInterpolation.h"
+
 namespace WebCore {
 
 SampledEffect::SampledEffect(Animation* animation, PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > interpolations)
-    : m_player(animation->player())
-    , m_animation(animation)
+    : m_animation(animation)
+#if !ENABLE(OILPAN)
+    , m_player(animation->player())
+#endif
     , m_interpolations(interpolations)
-    , m_playerSortInfo(m_player->sortInfo())
+    , m_playerSortInfo(animation->player()->sortInfo())
     , m_priority(animation->priority())
 {
     ASSERT(m_interpolations && !m_interpolations->isEmpty());
@@ -19,16 +23,22 @@ SampledEffect::SampledEffect(Animation* animation, PassOwnPtrWillBeRawPtr<WillBe
 
 bool SampledEffect::canChange() const
 {
+#if ENABLE(OILPAN)
+    return m_animation;
+#else
     if (!m_animation)
         return false;
     // FIXME: This check won't be needed when Animation and AnimationPlayer are moved to Oilpan.
     return !m_player->canFree();
+#endif
 }
 
 void SampledEffect::clear()
 {
-    m_player.clear();
-    m_animation = 0;
+#if !ENABLE(OILPAN)
+    m_player = nullptr;
+#endif
+    m_animation = nullptr;
     m_interpolations->clear();
 }
 
@@ -43,6 +53,14 @@ void SampledEffect::removeReplacedInterpolationsIfNeeded(const BitArray<numCSSPr
             m_interpolations->at(dest++) = m_interpolations->at(i);
     }
     m_interpolations->shrink(dest);
+}
+
+void SampledEffect::trace(Visitor* visitor)
+{
+    visitor->trace(m_animation);
+#if ENABLE(OILPAN)
+    visitor->trace(m_interpolations);
+#endif
 }
 
 } // namespace WebCore

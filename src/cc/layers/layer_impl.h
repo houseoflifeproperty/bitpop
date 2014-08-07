@@ -30,6 +30,7 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "ui/gfx/point3_f.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/rect_f.h"
 #include "ui/gfx/transform.h"
@@ -65,6 +66,15 @@ enum DrawMode {
 class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
                             public LayerAnimationValueProvider {
  public:
+  // Allows for the ownership of the total scroll offset to be delegated outside
+  // of the layer.
+  class ScrollOffsetDelegate {
+   public:
+    virtual void SetTotalScrollOffset(const gfx::Vector2dF& new_value) = 0;
+    virtual gfx::Vector2dF GetTotalScrollOffset() = 0;
+    virtual bool IsExternalFlingActive() const = 0;
+  };
+
   typedef LayerImplList RenderSurfaceListType;
   typedef LayerImplList LayerListType;
   typedef RenderSurfaceImpl RenderSurfaceType;
@@ -178,8 +188,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual RenderPass::Id FirstContributingRenderPassId() const;
   virtual RenderPass::Id NextContributingRenderPassId(RenderPass::Id id) const;
 
-  virtual void UpdateTilePriorities() {}
-  virtual void NotifyTileInitialized(const Tile* tile) {}
+  virtual void UpdateTiles() {}
+  virtual void NotifyTileStateChanged(const Tile* tile) {}
 
   virtual ScrollbarLayerImplBase* ToScrollbarLayer();
 
@@ -193,11 +203,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   bool force_render_surface() const { return force_render_surface_; }
   void SetForceRenderSurface(bool force) { force_render_surface_ = force; }
 
-  void SetAnchorPoint(const gfx::PointF& anchor_point);
-  gfx::PointF anchor_point() const { return anchor_point_; }
-
-  void SetAnchorPointZ(float anchor_point_z);
-  float anchor_point_z() const { return anchor_point_z_; }
+  void SetTransformOrigin(const gfx::Point3F& transform_origin);
+  gfx::Point3F transform_origin() const { return transform_origin_; }
 
   void SetBackgroundColor(SkColor background_color);
   SkColor background_color() const { return background_color_; }
@@ -260,8 +267,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetShouldFlattenTransform(bool flatten);
   bool should_flatten_transform() const { return should_flatten_transform_; }
 
-  void SetIs3dSorted(bool sorted);
-  bool is_3d_sorted() const { return is_3d_sorted_; }
+  bool Is3dSorted() const { return sorting_context_id_ != 0; }
 
   void SetUseParentBackfaceVisibility(bool use) {
     use_parent_backface_visibility_ = use;
@@ -352,17 +358,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   float contents_scale_y() const { return draw_properties_.contents_scale_y; }
   void SetContentsScale(float contents_scale_x, float contents_scale_y);
 
-  virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      float maximum_animation_contents_scale,
-                                      bool animating_transform_to_screen,
-                                      float* contents_scale_x,
-                                      float* contents_scale_y,
-                                      gfx::Size* content_bounds);
-
-  void SetScrollOffsetDelegate(
-      LayerScrollOffsetDelegate* scroll_offset_delegate);
+  void SetScrollOffsetDelegate(ScrollOffsetDelegate* scroll_offset_delegate);
   bool IsExternalFlingActive() const;
 
   void SetScrollOffset(const gfx::Vector2d& scroll_offset);
@@ -509,8 +505,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   virtual skia::RefPtr<SkPicture> GetPicture();
 
-  virtual bool AreVisibleResourcesReady() const;
-
   virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl);
   virtual void PushPropertiesTo(LayerImpl* layer);
 
@@ -536,6 +530,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   bool IsDrawnRenderSurfaceLayerListMember() const;
 
+  void Set3dSortingContextId(int id);
+  int sorting_context_id() { return sorting_context_id_; }
+
  protected:
   LayerImpl(LayerTreeImpl* layer_impl, int id);
 
@@ -543,9 +540,11 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   virtual void GetDebugBorderProperties(SkColor* color, float* width) const;
 
   void AppendDebugBorderQuad(QuadSink* quad_sink,
+                             const gfx::Size& content_bounds,
                              const SharedQuadState* shared_quad_state,
                              AppendQuadsData* append_quads_data) const;
   void AppendDebugBorderQuad(QuadSink* quad_sink,
+                             const gfx::Size& content_bounds,
                              const SharedQuadState* shared_quad_state,
                              AppendQuadsData* append_quads_data,
                              SkColor color,
@@ -589,12 +588,11 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   LayerTreeImpl* layer_tree_impl_;
 
   // Properties synchronized from the associated Layer.
-  gfx::PointF anchor_point_;
-  float anchor_point_z_;
+  gfx::Point3F transform_origin_;
   gfx::Size bounds_;
   gfx::SizeF temporary_impl_bounds_;
   gfx::Vector2d scroll_offset_;
-  LayerScrollOffsetDelegate* scroll_offset_delegate_;
+  ScrollOffsetDelegate* scroll_offset_delegate_;
   LayerImpl* scroll_clip_layer_;
   bool scrollable_ : 1;
   bool should_scroll_on_main_thread_ : 1;
@@ -624,7 +622,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   // Set for the layer that other layers are fixed to.
   bool is_container_for_fixed_position_layers_ : 1;
-  bool is_3d_sorted_ : 1;
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   SkColor background_color_;
@@ -658,6 +655,11 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   // to in order for them or a descendent of them to push properties to the
   // active side.
   int num_dependents_need_push_properties_;
+
+  // Layers that share a sorting context id will be sorted together in 3d
+  // space.  0 is a special value that means this layer will not be sorted and
+  // will be drawn in paint order.
+  int sorting_context_id_;
 
   DrawMode current_draw_mode_;
 

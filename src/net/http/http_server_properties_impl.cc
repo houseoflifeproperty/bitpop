@@ -11,16 +11,10 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "net/http/http_pipelined_host_capability.h"
 
 namespace net {
 
 namespace {
-
-// TODO(simonjam): Run experiments with different values of this to see what
-// value is good at avoiding evictions without eating too much memory. Until
-// then, this is just a bad guess.
-const int kDefaultNumHostsToRemember = 200;
 
 const uint64 kBrokenAlternateProtocolDelaySecs = 300;
 
@@ -29,12 +23,13 @@ const uint64 kBrokenAlternateProtocolDelaySecs = 300;
 HttpServerPropertiesImpl::HttpServerPropertiesImpl()
     : spdy_servers_map_(SpdyServerHostPortMap::NO_AUTO_EVICT),
       alternate_protocol_map_(AlternateProtocolMap::NO_AUTO_EVICT),
+      alternate_protocol_experiment_(
+          ALTERNATE_PROTOCOL_NOT_PART_OF_EXPERIMENT),
       spdy_settings_map_(SpdySettingsMap::NO_AUTO_EVICT),
-      pipeline_capability_map_(
-          new CachedPipelineCapabilityMap(kDefaultNumHostsToRemember)),
       weak_ptr_factory_(this) {
   canoncial_suffixes_.push_back(".c.youtube.com");
   canoncial_suffixes_.push_back(".googlevideo.com");
+  canoncial_suffixes_.push_back(".googleusercontent.com");
 }
 
 HttpServerPropertiesImpl::~HttpServerPropertiesImpl() {
@@ -107,21 +102,6 @@ void HttpServerPropertiesImpl::InitializeSpdySettingsServers(
   }
 }
 
-void HttpServerPropertiesImpl::InitializePipelineCapabilities(
-    const PipelineCapabilityMap* pipeline_capability_map) {
-  PipelineCapabilityMap::const_iterator it;
-  pipeline_capability_map_->Clear();
-  for (it = pipeline_capability_map->begin();
-       it != pipeline_capability_map->end(); ++it) {
-    pipeline_capability_map_->Put(it->first, it->second);
-  }
-}
-
-void HttpServerPropertiesImpl::SetNumPipelinedHostsToRemember(int max_size) {
-  DCHECK(pipeline_capability_map_->empty());
-  pipeline_capability_map_.reset(new CachedPipelineCapabilityMap(max_size));
-}
-
 void HttpServerPropertiesImpl::GetSpdyServerList(
     base::ListValue* spdy_server_list,
     size_t max_size) const {
@@ -176,7 +156,6 @@ void HttpServerPropertiesImpl::Clear() {
   spdy_servers_map_.Clear();
   alternate_protocol_map_.Clear();
   spdy_settings_map_.Clear();
-  pipeline_capability_map_->Clear();
 }
 
 bool HttpServerPropertiesImpl::SupportsSpdy(
@@ -218,6 +197,19 @@ bool HttpServerPropertiesImpl::HasAlternateProtocol(
     return true;
 
   return GetCanonicalHost(server) != canonical_host_to_origin_map_.end();
+}
+
+std::string HttpServerPropertiesImpl::GetCanonicalSuffix(
+    const HostPortPair& server) {
+  // If this host ends with a canonical suffix, then return the canonical
+  // suffix.
+  for (size_t i = 0; i < canoncial_suffixes_.size(); ++i) {
+    std::string canonical_suffix = canoncial_suffixes_[i];
+    if (EndsWith(server.host(), canoncial_suffixes_[i], false)) {
+      return canonical_suffix;
+    }
+  }
+  return std::string();
 }
 
 PortAlternateProtocolPair
@@ -275,7 +267,8 @@ void HttpServerPropertiesImpl::SetAlternateProtocol(
     // TODO(rch): Consider the case where multiple requests are started
     // before the first completes. In this case, only one of the jobs
     // would reach this code, whereas all of them should should have.
-    HistogramAlternateProtocolUsage(ALTERNATE_PROTOCOL_USAGE_MAPPING_MISSING);
+    HistogramAlternateProtocolUsage(ALTERNATE_PROTOCOL_USAGE_MAPPING_MISSING,
+                                    alternate_protocol_experiment_);
   }
 
   alternate_protocol_map_.Put(server, alternate);
@@ -297,12 +290,11 @@ void HttpServerPropertiesImpl::SetBrokenAlternateProtocol(
   AlternateProtocolMap::iterator it = alternate_protocol_map_.Get(server);
   if (it != alternate_protocol_map_.end()) {
     it->second.protocol = ALTERNATE_PROTOCOL_BROKEN;
-    return;
+  } else {
+    PortAlternateProtocolPair alternate;
+    alternate.protocol = ALTERNATE_PROTOCOL_BROKEN;
+    alternate_protocol_map_.Put(server, alternate);
   }
-  PortAlternateProtocolPair alternate;
-  alternate.protocol = ALTERNATE_PROTOCOL_BROKEN;
-  alternate_protocol_map_.Put(server, alternate);
-
   int count = ++broken_alternate_protocol_map_[server];
   base::TimeDelta delay =
       base::TimeDelta::FromSeconds(kBrokenAlternateProtocolDelaySecs);
@@ -338,6 +330,16 @@ void HttpServerPropertiesImpl::ClearAlternateProtocol(
 const AlternateProtocolMap&
 HttpServerPropertiesImpl::alternate_protocol_map() const {
   return alternate_protocol_map_;
+}
+
+void HttpServerPropertiesImpl::SetAlternateProtocolExperiment(
+    AlternateProtocolExperiment experiment) {
+  alternate_protocol_experiment_ = experiment;
+}
+
+AlternateProtocolExperiment
+HttpServerPropertiesImpl::GetAlternateProtocolExperiment() const {
+  return alternate_protocol_experiment_;
 }
 
 const SettingsMap& HttpServerPropertiesImpl::GetSpdySettings(
@@ -402,43 +404,6 @@ HttpServerPropertiesImpl::GetServerNetworkStats(
     return NULL;
   }
   return &it->second;
-}
-
-HttpPipelinedHostCapability HttpServerPropertiesImpl::GetPipelineCapability(
-    const HostPortPair& origin) {
-  HttpPipelinedHostCapability capability = PIPELINE_UNKNOWN;
-  CachedPipelineCapabilityMap::const_iterator it =
-      pipeline_capability_map_->Get(origin);
-  if (it != pipeline_capability_map_->end()) {
-    capability = it->second;
-  }
-  return capability;
-}
-
-void HttpServerPropertiesImpl::SetPipelineCapability(
-      const HostPortPair& origin,
-      HttpPipelinedHostCapability capability) {
-  CachedPipelineCapabilityMap::iterator it =
-      pipeline_capability_map_->Peek(origin);
-  if (it == pipeline_capability_map_->end() ||
-      it->second != PIPELINE_INCAPABLE) {
-    pipeline_capability_map_->Put(origin, capability);
-  }
-}
-
-void HttpServerPropertiesImpl::ClearPipelineCapabilities() {
-  pipeline_capability_map_->Clear();
-}
-
-PipelineCapabilityMap
-HttpServerPropertiesImpl::GetPipelineCapabilityMap() const {
-  PipelineCapabilityMap result;
-  CachedPipelineCapabilityMap::const_iterator it;
-  for (it = pipeline_capability_map_->begin();
-       it != pipeline_capability_map_->end(); ++it) {
-    result[it->first] = it->second;
-  }
-  return result;
 }
 
 HttpServerPropertiesImpl::CanonicalHostMap::const_iterator

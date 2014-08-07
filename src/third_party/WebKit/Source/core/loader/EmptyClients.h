@@ -47,7 +47,6 @@
 #include "platform/text/TextCheckerClient.h"
 #include "public/platform/WebScreenInfo.h"
 #include "wtf/Forward.h"
-
 #include <v8.h>
 
 /*
@@ -132,8 +131,6 @@ public:
     virtual void scroll(const IntSize&, const IntRect&, const IntRect&) OVERRIDE { }
     virtual void scheduleAnimation() OVERRIDE { }
 
-    virtual bool isCompositorFramePending() const OVERRIDE { return false; }
-
     virtual IntRect rootViewToScreen(const IntRect& r) const OVERRIDE { return r; }
     virtual blink::WebScreenInfo screenInfo() const OVERRIDE { return blink::WebScreenInfo(); }
     virtual void contentsSizeChanged(LocalFrame*, const IntSize&) const OVERRIDE { }
@@ -147,7 +144,7 @@ public:
     virtual void enumerateChosenDirectory(FileChooser*) OVERRIDE { }
 
     virtual PassOwnPtr<ColorChooser> createColorChooser(LocalFrame*, ColorChooserClient*, const Color&) OVERRIDE;
-    virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) OVERRIDE;
     virtual void openTextDataListChooser(HTMLInputElement&) OVERRIDE;
 
     virtual void runOpenPanel(LocalFrame*, PassRefPtr<FileChooser>) OVERRIDE;
@@ -159,15 +156,14 @@ public:
     virtual void needTouchEvents(bool) OVERRIDE { }
     virtual void setTouchAction(TouchAction touchAction) OVERRIDE { };
 
-    virtual void numWheelEventHandlersChanged(unsigned) OVERRIDE { }
-
-    virtual bool shouldRubberBandInDirection(WebCore::ScrollDirection) const OVERRIDE { return false; }
-
-    virtual void didAssociateFormControls(const Vector<RefPtr<Element> >&) OVERRIDE { }
+    virtual void didAssociateFormControls(const WillBeHeapVector<RefPtrWillBeMember<Element> >&) OVERRIDE { }
 
     virtual void annotatedRegionsChanged() OVERRIDE { }
     virtual bool paintCustomOverhangArea(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&) OVERRIDE { return false; }
     virtual String acceptLanguages() OVERRIDE;
+
+    virtual bool usesGpuRasterization() OVERRIDE { return false; }
+
 };
 
 class EmptyFrameLoaderClient FINAL : public FrameLoaderClient {
@@ -206,6 +202,7 @@ public:
     virtual void dispatchDidFinishDocumentLoad() OVERRIDE { }
     virtual void dispatchDidFinishLoad() OVERRIDE { }
     virtual void dispatchDidFirstVisuallyNonEmptyLayout() OVERRIDE { }
+    virtual void dispatchDidChangeThemeColor() OVERRIDE { };
 
     virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) OVERRIDE;
 
@@ -248,7 +245,7 @@ public:
 
     virtual blink::WebCookieJar* cookieJar() const OVERRIDE { return 0; }
 
-    virtual void didRequestAutocomplete(HTMLFormElement*, const Dictionary&) OVERRIDE;
+    virtual void didRequestAutocomplete(HTMLFormElement*) OVERRIDE;
 
     virtual PassOwnPtr<blink::WebServiceWorkerProvider> createServiceWorkerProvider() OVERRIDE;
     virtual PassOwnPtr<blink::WebApplicationCacheHost> createApplicationCacheHost(blink::WebApplicationCacheHostClient*) OVERRIDE;
@@ -295,7 +292,6 @@ public:
     virtual bool canCopyCut(LocalFrame*, bool defaultValue) const OVERRIDE { return defaultValue; }
     virtual bool canPaste(LocalFrame*, bool defaultValue) const OVERRIDE { return defaultValue; }
 
-    virtual void didExecuteCommand(String) OVERRIDE { }
     virtual bool handleKeyboardEvent() OVERRIDE { return false; }
 };
 

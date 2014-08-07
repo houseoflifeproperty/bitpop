@@ -13,11 +13,8 @@ class MseCasesPage(page_module.Page):
     super(MseCasesPage, self).__init__(url=url, page_set=page_set)
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript': 'window.__testDone == true'
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition('window.__testDone == true')
 
 
 class MseCasesPageSet(page_set_module.PageSet):

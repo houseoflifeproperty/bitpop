@@ -27,12 +27,11 @@
 #include "vp9/encoder/vp9_rdopt.h"
 
 static void full_pixel_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
-                                    const TileInfo *const tile,
                                     BLOCK_SIZE bsize, int mi_row, int mi_col,
                                     int_mv *tmp_mv, int *rate_mv) {
   MACROBLOCKD *xd = &x->e_mbd;
   MB_MODE_INFO *mbmi = &xd->mi[0]->mbmi;
-  struct buf_2d backup_yv12[MAX_MB_PLANE] = {{0}};
+  struct buf_2d backup_yv12[MAX_MB_PLANE] = {{0, 0}};
   int step_param;
   int sadpb = x->sadperbit16;
   MV mvp_full;
@@ -107,12 +106,11 @@ static void full_pixel_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
 }
 
 static void sub_pixel_motion_search(VP9_COMP *cpi, MACROBLOCK *x,
-                                    const TileInfo *const tile,
                                     BLOCK_SIZE bsize, int mi_row, int mi_col,
                                     MV *tmp_mv) {
   MACROBLOCKD *xd = &x->e_mbd;
   MB_MODE_INFO *mbmi = &xd->mi[0]->mbmi;
-  struct buf_2d backup_yv12[MAX_MB_PLANE] = {{0}};
+  struct buf_2d backup_yv12[MAX_MB_PLANE] = {{0, 0}};
   int ref = mbmi->ref_frame[0];
   MV ref_mv = mbmi->ref_mvs[ref][0].as_mv;
   int dis;
@@ -290,7 +288,7 @@ int64_t vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
         if (this_rd < (int64_t)(1 << num_pels_log2_lookup[bsize]))
           continue;
 
-        full_pixel_motion_search(cpi, x, tile, bsize, mi_row, mi_col,
+        full_pixel_motion_search(cpi, x, bsize, mi_row, mi_col,
                                  &frame_mv[NEWMV][ref_frame], &rate_mv);
 
         if (frame_mv[NEWMV][ref_frame].as_int == INVALID_MV)
@@ -301,7 +299,7 @@ int64_t vp9_pick_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
         if (RDCOST(x->rdmult, x->rddiv, rate_mv + rate_mode, 0) > best_rd)
           continue;
 
-        sub_pixel_motion_search(cpi, x, tile, bsize, mi_row, mi_col,
+        sub_pixel_motion_search(cpi, x, bsize, mi_row, mi_col,
                                 &frame_mv[NEWMV][ref_frame].as_mv);
       }
 

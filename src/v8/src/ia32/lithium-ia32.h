@@ -5,11 +5,11 @@
 #ifndef V8_IA32_LITHIUM_IA32_H_
 #define V8_IA32_LITHIUM_IA32_H_
 
-#include "hydrogen.h"
-#include "lithium-allocator.h"
-#include "lithium.h"
-#include "safepoint-table.h"
-#include "utils.h"
+#include "src/hydrogen.h"
+#include "src/lithium-allocator.h"
+#include "src/lithium.h"
+#include "src/safepoint-table.h"
+#include "src/utils.h"
 
 namespace v8 {
 namespace internal {
@@ -20,6 +20,7 @@ class LCodeGen;
 #define LITHIUM_CONCRETE_INSTRUCTION_LIST(V)    \
   V(AccessArgumentsAt)                          \
   V(AddI)                                       \
+  V(AllocateBlockContext)                       \
   V(Allocate)                                   \
   V(ApplyArguments)                             \
   V(ArgumentsElements)                          \
@@ -45,9 +46,7 @@ class LCodeGen;
   V(ClampDToUint8)                              \
   V(ClampIToUint8)                              \
   V(ClampTToUint8)                              \
-  V(ClampTToUint8NoSSE2)                        \
   V(ClassOfTestAndBranch)                       \
-  V(ClobberDoubles)                             \
   V(CompareMinusZeroAndBranch)                  \
   V(CompareNumericAndBranch)                    \
   V(CmpObjectEqAndBranch)                       \
@@ -139,6 +138,7 @@ class LCodeGen;
   V(StackCheck)                                 \
   V(StoreCodeEntry)                             \
   V(StoreContextSlot)                           \
+  V(StoreFrameContext)                          \
   V(StoreGlobalCell)                            \
   V(StoreKeyed)                                 \
   V(StoreKeyedGeneric)                          \
@@ -239,10 +239,7 @@ class LInstruction : public ZoneObject {
   bool ClobbersTemps() const { return IsCall(); }
   bool ClobbersRegisters() const { return IsCall(); }
   virtual bool ClobbersDoubleRegisters(Isolate* isolate) const {
-    return IsCall() ||
-           // We only have rudimentary X87Stack tracking, thus in general
-           // cannot handle phi-nodes.
-        (!CpuFeatures::IsSafeForSnapshot(isolate, SSE2) && IsControl());
+    return IsCall();
   }
 
   virtual bool HasResult() const = 0;
@@ -250,7 +247,6 @@ class LInstruction : public ZoneObject {
 
   bool HasDoubleRegisterResult();
   bool HasDoubleRegisterInput();
-  bool IsDoubleInput(X87Register reg, LCodeGen* cgen);
 
   LOperand* FirstInput() { return InputAt(0); }
   LOperand* Output() { return HasResult() ? result() : NULL; }
@@ -375,20 +371,6 @@ class LInstructionGap V8_FINAL : public LGap {
 };
 
 
-class LClobberDoubles V8_FINAL : public LTemplateInstruction<0, 0, 0> {
- public:
-  explicit LClobberDoubles(Isolate* isolate) {
-    ASSERT(!CpuFeatures::IsSafeForSnapshot(isolate, SSE2));
-  }
-
-  virtual bool ClobbersDoubleRegisters(Isolate* isolate) const V8_OVERRIDE {
-    return true;
-  }
-
-  DECLARE_CONCRETE_INSTRUCTION(ClobberDoubles, "clobber-d")
-};
-
-
 class LGoto V8_FINAL : public LTemplateInstruction<0, 0, 0> {
  public:
   explicit LGoto(HBasicBlock* block) : block_(block) { }
@@ -434,6 +416,7 @@ class LDummyUse V8_FINAL : public LTemplateInstruction<1, 1, 0> {
 
 class LDeoptimize V8_FINAL : public LTemplateInstruction<0, 0, 0> {
  public:
+  virtual bool IsControl() const V8_OVERRIDE { return true; }
   DECLARE_CONCRETE_INSTRUCTION(Deoptimize, "deoptimize")
   DECLARE_HYDROGEN_ACCESSOR(Deoptimize)
 };
@@ -1661,7 +1644,7 @@ class LLoadKeyed V8_FINAL : public LTemplateInstruction<1, 2, 0> {
   DECLARE_HYDROGEN_ACCESSOR(LoadKeyed)
 
   virtual void PrintDataTo(StringStream* stream) V8_OVERRIDE;
-  uint32_t additional_index() const { return hydrogen()->index_offset(); }
+  uint32_t base_offset() const { return hydrogen()->base_offset(); }
   bool key_is_smi() {
     return hydrogen()->key()->representation().IsTagged();
   }
@@ -1801,15 +1784,15 @@ class LDrop V8_FINAL : public LTemplateInstruction<0, 0, 0> {
 };
 
 
-class LStoreCodeEntry V8_FINAL: public LTemplateInstruction<0, 1, 1> {
+class LStoreCodeEntry V8_FINAL: public LTemplateInstruction<0, 2, 0> {
  public:
   LStoreCodeEntry(LOperand* function, LOperand* code_object) {
     inputs_[0] = function;
-    temps_[0] = code_object;
+    inputs_[1] = code_object;
   }
 
   LOperand* function() { return inputs_[0]; }
-  LOperand* code_object() { return temps_[0]; }
+  LOperand* code_object() { return inputs_[1]; }
 
   virtual void PrintDataTo(StringStream* stream);
 
@@ -1881,7 +1864,7 @@ class LCallJSFunction V8_FINAL : public LTemplateInstruction<1, 1, 0> {
 class LCallWithDescriptor V8_FINAL : public LTemplateResultInstruction<1> {
  public:
   LCallWithDescriptor(const CallInterfaceDescriptor* descriptor,
-                      ZoneList<LOperand*>& operands,
+                      const ZoneList<LOperand*>& operands,
                       Zone* zone)
     : inputs_(descriptor->environment_length() + 1, zone) {
     ASSERT(descriptor->environment_length() + 1 == operands.length());
@@ -2016,15 +1999,13 @@ class LInteger32ToDouble V8_FINAL : public LTemplateInstruction<1, 1, 0> {
 };
 
 
-class LUint32ToDouble V8_FINAL : public LTemplateInstruction<1, 1, 1> {
+class LUint32ToDouble V8_FINAL : public LTemplateInstruction<1, 1, 0> {
  public:
-  explicit LUint32ToDouble(LOperand* value, LOperand* temp) {
+  explicit LUint32ToDouble(LOperand* value) {
     inputs_[0] = value;
-    temps_[0] = temp;
   }
 
   LOperand* value() { return inputs_[0]; }
-  LOperand* temp() { return temps_[0]; }
 
   DECLARE_CONCRETE_INSTRUCTION(Uint32ToDouble, "uint32-to-double")
 };
@@ -2044,17 +2025,15 @@ class LNumberTagI V8_FINAL : public LTemplateInstruction<1, 1, 1> {
 };
 
 
-class LNumberTagU V8_FINAL : public LTemplateInstruction<1, 1, 2> {
+class LNumberTagU V8_FINAL : public LTemplateInstruction<1, 1, 1> {
  public:
-  LNumberTagU(LOperand* value, LOperand* temp1, LOperand* temp2) {
+  LNumberTagU(LOperand* value, LOperand* temp) {
     inputs_[0] = value;
-    temps_[0] = temp1;
-    temps_[1] = temp2;
+    temps_[0] = temp;
   }
 
   LOperand* value() { return inputs_[0]; }
-  LOperand* temp1() { return temps_[0]; }
-  LOperand* temp2() { return temps_[1]; }
+  LOperand* temp() { return temps_[0]; }
 
   DECLARE_CONCRETE_INSTRUCTION(NumberTagU, "number-tag-u")
 };
@@ -2241,7 +2220,7 @@ class LStoreKeyed V8_FINAL : public LTemplateInstruction<0, 3, 0> {
   DECLARE_HYDROGEN_ACCESSOR(StoreKeyed)
 
   virtual void PrintDataTo(StringStream* stream) V8_OVERRIDE;
-  uint32_t additional_index() const { return hydrogen()->index_offset(); }
+  uint32_t base_offset() const { return hydrogen()->base_offset(); }
   bool NeedsCanonicalization() { return hydrogen()->NeedsCanonicalization(); }
 };
 
@@ -2460,30 +2439,6 @@ class LClampTToUint8 V8_FINAL : public LTemplateInstruction<1, 1, 1> {
 };
 
 
-// Truncating conversion from a tagged value to an int32.
-class LClampTToUint8NoSSE2 V8_FINAL : public LTemplateInstruction<1, 1, 3> {
- public:
-  LClampTToUint8NoSSE2(LOperand* unclamped,
-                       LOperand* temp1,
-                       LOperand* temp2,
-                       LOperand* temp3) {
-    inputs_[0] = unclamped;
-    temps_[0] = temp1;
-    temps_[1] = temp2;
-    temps_[2] = temp3;
-  }
-
-  LOperand* unclamped() { return inputs_[0]; }
-  LOperand* scratch() { return temps_[0]; }
-  LOperand* scratch2() { return temps_[1]; }
-  LOperand* scratch3() { return temps_[2]; }
-
-  DECLARE_CONCRETE_INSTRUCTION(ClampTToUint8NoSSE2,
-                               "clamp-t-to-uint8-nosse2")
-  DECLARE_HYDROGEN_ACCESSOR(UnaryOperation)
-};
-
-
 class LCheckNonSmi V8_FINAL : public LTemplateInstruction<0, 1, 0> {
  public:
   explicit LCheckNonSmi(LOperand* value) {
@@ -2696,6 +2651,35 @@ class LLoadFieldByIndex V8_FINAL : public LTemplateInstruction<1, 2, 0> {
 };
 
 
+class LStoreFrameContext: public LTemplateInstruction<0, 1, 0> {
+ public:
+  explicit LStoreFrameContext(LOperand* context) {
+    inputs_[0] = context;
+  }
+
+  LOperand* context() { return inputs_[0]; }
+
+  DECLARE_CONCRETE_INSTRUCTION(StoreFrameContext, "store-frame-context")
+};
+
+
+class LAllocateBlockContext: public LTemplateInstruction<1, 2, 0> {
+ public:
+  LAllocateBlockContext(LOperand* context, LOperand* function) {
+    inputs_[0] = context;
+    inputs_[1] = function;
+  }
+
+  LOperand* context() { return inputs_[0]; }
+  LOperand* function() { return inputs_[1]; }
+
+  Handle<ScopeInfo> scope_info() { return hydrogen()->scope_info(); }
+
+  DECLARE_CONCRETE_INSTRUCTION(AllocateBlockContext, "allocate-block-context")
+  DECLARE_HYDROGEN_ACCESSOR(AllocateBlockContext)
+};
+
+
 class LChunkBuilder;
 class LPlatformChunk V8_FINAL : public LChunk {
  public:
@@ -2730,8 +2714,6 @@ class LChunkBuilder V8_FINAL : public LChunkBuilderBase {
 
   // Build the sequence for the graph.
   LPlatformChunk* Build();
-
-  LInstruction* CheckElideControlInstruction(HControlInstruction* instr);
 
   // Declare methods that deal with the individual node types.
 #define DECLARE_DO(type) LInstruction* Do##type(H##type* node);
@@ -2778,7 +2760,6 @@ class LChunkBuilder V8_FINAL : public LChunkBuilderBase {
   // Methods for getting operands for Use / Define / Temp.
   LUnallocated* ToUnallocated(Register reg);
   LUnallocated* ToUnallocated(XMMRegister reg);
-  LUnallocated* ToUnallocated(X87Register reg);
 
   // Methods for setting up define-use relationships.
   MUST_USE_RESULT LOperand* Use(HValue* value, LUnallocated* operand);
@@ -2840,7 +2821,6 @@ class LChunkBuilder V8_FINAL : public LChunkBuilderBase {
                             Register reg);
   LInstruction* DefineFixedDouble(LTemplateResultInstruction<1>* instr,
                                   XMMRegister reg);
-  LInstruction* DefineX87TOS(LTemplateResultInstruction<1>* instr);
   // Assigns an environment to an instruction.  An instruction which can
   // deoptimize must have an environment.
   LInstruction* AssignEnvironment(LInstruction* instr);
@@ -2861,6 +2841,7 @@ class LChunkBuilder V8_FINAL : public LChunkBuilderBase {
       CanDeoptimize can_deoptimize = CANNOT_DEOPTIMIZE_EAGERLY);
 
   void VisitInstruction(HInstruction* current);
+  void AddInstruction(LInstruction* instr, HInstruction* current);
 
   void DoBasicBlock(HBasicBlock* block, HBasicBlock* next_block);
   LInstruction* DoShift(Token::Value op, HBitwiseBinaryOperation* instr);

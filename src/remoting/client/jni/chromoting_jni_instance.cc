@@ -8,16 +8,18 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "jingle/glue/thread_wrapper.h"
 #include "net/socket/client_socket_factory.h"
 #include "remoting/client/audio_player.h"
 #include "remoting/client/jni/android_keymap.h"
 #include "remoting/client/jni/chromoting_jni_runtime.h"
 #include "remoting/client/log_to_server.h"
-#include "remoting/client/server_log_entry.h"
 #include "remoting/client/software_video_renderer.h"
+#include "remoting/client/token_fetcher_proxy.h"
 #include "remoting/jingle_glue/chromium_port_allocator.h"
 #include "remoting/jingle_glue/chromium_socket_factory.h"
 #include "remoting/jingle_glue/network_settings.h"
+#include "remoting/jingle_glue/server_log_entry.h"
 #include "remoting/protocol/host_stub.h"
 #include "remoting/protocol/libjingle_transport_factory.h"
 
@@ -46,7 +48,8 @@ ChromotingJniInstance::ChromotingJniInstance(ChromotingJniRuntime* jni_runtime,
     : jni_runtime_(jni_runtime),
       host_id_(host_id),
       create_pairing_(false),
-      stats_logging_enabled_(false) {
+      stats_logging_enabled_(false),
+      weak_factory_(this) {
   DCHECK(jni_runtime_->ui_task_runner()->BelongsToCurrentThread());
 
   // Intialize XMPP config.
@@ -74,6 +77,8 @@ ChromotingJniInstance::ChromotingJniInstance(ChromotingJniRuntime* jni_runtime,
       protocol::AuthenticationMethod::FromString("spake2_hmac"));
   client_config_.authentication_methods.push_back(
       protocol::AuthenticationMethod::FromString("spake2_plain"));
+  client_config_.authentication_methods.push_back(
+      protocol::AuthenticationMethod::FromString("third_party"));
 
   // Post a task to start connection
   jni_runtime_->display_task_runner()->PostTask(
@@ -102,6 +107,47 @@ void ChromotingJniInstance::Cleanup() {
       FROM_HERE,
       base::Bind(&ChromotingJniInstance::DisconnectFromHostOnNetworkThread,
                  this));
+}
+
+void ChromotingJniInstance::FetchThirdPartyToken(
+    const GURL& token_url,
+    const std::string& client_id,
+    const std::string& scope,
+    base::WeakPtr<TokenFetcherProxy> token_fetcher_proxy) {
+  DCHECK(jni_runtime_->network_task_runner()->BelongsToCurrentThread());
+  DCHECK(!token_fetcher_proxy_.get());
+
+  __android_log_print(ANDROID_LOG_INFO,
+                      "ThirdPartyAuth",
+                      "Fetching Third Party Token from user.");
+
+  token_fetcher_proxy_ = token_fetcher_proxy;
+  jni_runtime_->ui_task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ChromotingJniRuntime::FetchThirdPartyToken,
+                 base::Unretained(jni_runtime_),
+                 token_url,
+                 client_id,
+                 scope));
+}
+
+void ChromotingJniInstance::HandleOnThirdPartyTokenFetched(
+    const std::string& token,
+    const std::string& shared_secret) {
+  DCHECK(jni_runtime_->network_task_runner()->BelongsToCurrentThread());
+
+  __android_log_print(
+      ANDROID_LOG_INFO, "ThirdPartyAuth", "Third Party Token Fetched.");
+
+  if (token_fetcher_proxy_.get()) {
+    token_fetcher_proxy_->OnTokenFetched(token, shared_secret);
+    token_fetcher_proxy_.reset();
+  } else {
+    __android_log_print(
+        ANDROID_LOG_WARN,
+        "ThirdPartyAuth",
+        "Ignored OnThirdPartyTokenFetched() without a pending fetch.");
+  }
 }
 
 void ChromotingJniInstance::ProvideSecret(const std::string& pin,
@@ -166,23 +212,15 @@ void ChromotingJniInstance::SendMouseWheelEvent(int delta_x, int delta_y) {
   connection_->input_stub()->InjectMouseEvent(event);
 }
 
-void ChromotingJniInstance::SendKeyEvent(int key_code, bool key_down) {
-  if (!jni_runtime_->network_task_runner()->BelongsToCurrentThread()) {
-    jni_runtime_->network_task_runner()->PostTask(
-        FROM_HERE, base::Bind(&ChromotingJniInstance::SendKeyEvent,
-                              this, key_code, key_down));
-    return;
+bool ChromotingJniInstance::SendKeyEvent(int key_code, bool key_down) {
+  uint32 usb_key_code = AndroidKeycodeToUsbKeycode(key_code);
+  if (!usb_key_code) {
+    LOG(WARNING) << "Ignoring unknown keycode: " << key_code;
+    return false;
   }
 
-  uint32 usb_code = AndroidKeycodeToUsbKeycode(key_code);
-  if (usb_code) {
-    protocol::KeyEvent event;
-    event.set_usb_keycode(usb_code);
-    event.set_pressed(key_down);
-    connection_->input_stub()->InjectKeyEvent(event);
-  } else {
-    LOG(WARNING) << "Ignoring unknown keycode: " << key_code;
-  }
+  SendKeyEventInternal(usb_key_code, key_down);
+  return true;
 }
 
 void ChromotingJniInstance::SendTextEvent(const std::string& text) {
@@ -275,8 +313,11 @@ protocol::CursorShapeStub* ChromotingJniInstance::GetCursorShapeStub() {
 
 scoped_ptr<protocol::ThirdPartyClientAuthenticator::TokenFetcher>
     ChromotingJniInstance::GetTokenFetcher(const std::string& host_public_key) {
-  // Return null to indicate that third-party authentication is unsupported.
-  return scoped_ptr<protocol::ThirdPartyClientAuthenticator::TokenFetcher>();
+  return scoped_ptr<protocol::ThirdPartyClientAuthenticator::TokenFetcher>(
+      new TokenFetcherProxy(
+          base::Bind(&ChromotingJniInstance::FetchThirdPartyToken,
+                     weak_factory_.GetWeakPtr()),
+          host_public_key));
 }
 
 void ChromotingJniInstance::InjectClipboardEvent(
@@ -314,6 +355,8 @@ void ChromotingJniInstance::ConnectToHostOnDisplayThread() {
 void ChromotingJniInstance::ConnectToHostOnNetworkThread() {
   DCHECK(jni_runtime_->network_task_runner()->BelongsToCurrentThread());
 
+  jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
+
   client_context_.reset(new ClientContext(
       jni_runtime_->network_task_runner().get()));
   client_context_->Start();
@@ -336,7 +379,7 @@ void ChromotingJniInstance::ConnectToHostOnNetworkThread() {
       net::ClientSocketFactory::GetDefaultFactory(),
       jni_runtime_->url_requester(), xmpp_config_));
 
-  log_to_server_.reset(new client::LogToServer(client::ServerLogEntry::ME2ME,
+  log_to_server_.reset(new client::LogToServer(ServerLogEntry::ME2ME,
                                                signaling_.get(),
                                                "remoting@bot.talk.google.com"));
 
@@ -398,6 +441,22 @@ void ChromotingJniInstance::SetDeviceName(const std::string& device_name) {
   }
 
   device_name_ = device_name;
+}
+
+void ChromotingJniInstance::SendKeyEventInternal(int usb_key_code,
+                                                 bool key_down) {
+  if (!jni_runtime_->network_task_runner()->BelongsToCurrentThread()) {
+    jni_runtime_->network_task_runner()->PostTask(
+        FROM_HERE, base::Bind(&ChromotingJniInstance::SendKeyEventInternal,
+                              this, usb_key_code, key_down));
+    return;
+  }
+
+
+  protocol::KeyEvent event;
+  event.set_usb_keycode(usb_key_code);
+  event.set_pressed(key_down);
+  connection_->input_stub()->InjectKeyEvent(event);
 }
 
 void ChromotingJniInstance::EnableStatsLogging(bool enabled) {

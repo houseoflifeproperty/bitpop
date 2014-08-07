@@ -35,27 +35,14 @@ BOOL IsProcessDPIAwareWrapper() {
 float g_device_scale_factor = 0.0f;
 
 float GetUnforcedDeviceScaleFactor() {
+  // If the global device scale factor is initialized use it. This is to ensure
+  // we use the same scale factor across all callsites. We don't use the
+  // GetDeviceScaleFactor function here because it fires a DCHECK if the
+  // g_device_scale_factor global is 0. 
+  if (g_device_scale_factor)
+    return g_device_scale_factor;
   return static_cast<float>(gfx::GetDPI().width()) /
       static_cast<float>(kDefaultDPIX);
-}
-
-float GetModernUIScaleWrapper() {
-  float result = 1.0f;
-  // TODO(cpu) : Fix scale for Win7.
-  if (base::win::GetVersion() < base::win::VERSION_WIN8)
-    return result;
-
-  typedef float(WINAPI *GetModernUIScalePtr)(VOID);
-  HMODULE lib = LoadLibraryA("metro_driver.dll");
-  if (lib) {
-    GetModernUIScalePtr func =
-        reinterpret_cast<GetModernUIScalePtr>(
-        GetProcAddress(lib, "GetModernUIScale"));
-    if (func)
-      result = func();
-    FreeLibrary(lib);
-  }
-  return result;
 }
 
 // Duplicated from Win8.1 SDK ShellScalingApi.h
@@ -123,10 +110,6 @@ DWORD ReadRegistryValue(HKEY root,
 
 namespace gfx {
 
-float GetModernUIScale() {
-  return GetModernUIScaleWrapper();
-}
-
 void InitDeviceScaleFactor(float scale) {
   DCHECK_NE(0.0f, scale);
   g_device_scale_factor = scale;
@@ -159,7 +142,6 @@ float GetDPIScale() {
 }
 
 void ForceHighDPISupportForTesting(float scale) {
-  force_highdpi_for_testing = true;
   g_device_scale_factor = scale;
 }
 
@@ -169,8 +151,8 @@ bool IsHighDPIEnabled() {
   // Default is disabled.
   static DWORD value = ReadRegistryValue(
       HKEY_CURRENT_USER, gfx::win::kRegistryProfilePath,
-      gfx::win::kHighDPISupportW, FALSE);
-  return force_highdpi_for_testing || (value == 1);
+      gfx::win::kHighDPISupportW, TRUE);
+  return value != 0;
 }
 
 bool IsInHighDPIMode() {
@@ -238,31 +220,8 @@ int GetSystemMetricsInDIP(int metric) {
       GetDeviceScaleFactor() + 0.5);
 }
 
-double GetUndocumentedDPIScale() {
-  // TODO(girard): Remove this code when chrome is DPIAware.
-  static double scale = -1.0;
-  if (scale == -1.0) {
-    scale = 1.0;
-    if (!IsProcessDPIAwareWrapper()) {
-      base::win::RegKey key(HKEY_CURRENT_USER,
-                            L"Control Panel\\Desktop\\WindowMetrics",
-                            KEY_QUERY_VALUE);
-      if (key.Valid()) {
-        DWORD value = 0;
-        if (key.ReadValueDW(L"AppliedDPI", &value) == ERROR_SUCCESS) {
-          scale = static_cast<double>(value) / kDefaultDPIX;
-        }
-      }
-    }
-  }
-  return scale;
-}
-
-double GetUndocumentedDPITouchScale() {
-  static double scale =
-      (base::win::GetVersion() < base::win::VERSION_WIN8_1) ?
-      GetUndocumentedDPIScale() : 1.0;
-  return scale;
+bool IsDeviceScaleFactorSet() {
+  return g_device_scale_factor != 0.0f;
 }
 
 }  // namespace win

@@ -10,13 +10,14 @@
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_constants.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_screen.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -88,7 +89,7 @@ void SupervisedUserLoginFlow::ConfigureSync(const std::string& token) {
 
 void SupervisedUserLoginFlow::HandleLoginSuccess(
     const UserContext& login_context) {
-  context_.CopyFrom(login_context);
+  context_ = login_context;
 }
 
 void SupervisedUserLoginFlow::OnPasswordChangeDataLoaded(
@@ -131,8 +132,8 @@ void SupervisedUserLoginFlow::OnPasswordChangeDataLoaded(
   base::Base64Decode(base64_signature, &signature);
   scoped_ptr<base::DictionaryValue> data_copy(password_data->DeepCopy());
   cryptohome::KeyDefinition key(password,
-                                kCryptohomeManagedUserKeyLabel,
-                                kCryptohomeManagedUserKeyPrivileges);
+                                kCryptohomeSupervisedUserKeyLabel,
+                                kCryptohomeSupervisedUserKeyPrivileges);
 
   authenticator_ = new ExtendedAuthenticator(this);
   SupervisedUserAuthentication::Schema current_schema =
@@ -143,10 +144,10 @@ void SupervisedUserLoginFlow::OnPasswordChangeDataLoaded(
   if (SupervisedUserAuthentication::SCHEMA_PLAIN == current_schema) {
     // We need to add new key, and block old one. As we don't actually have
     // signature key, use Migrate privilege instead of AuthorizedUpdate.
-    key.privileges = kCryptohomeManagedUserIncompleteKeyPrivileges;
+    key.privileges = kCryptohomeSupervisedUserIncompleteKeyPrivileges;
 
     VLOG(1) << "Adding new schema key";
-    DCHECK_EQ(context_.key_label, std::string());
+    DCHECK(context_.GetKey()->GetLabel().empty());
     authenticator_->AddKey(context_,
                            key,
                            false /* no key exists */,
@@ -159,10 +160,10 @@ void SupervisedUserLoginFlow::OnPasswordChangeDataLoaded(
 
     if (auth->HasIncompleteKey(user_id())) {
       // We need to use Migrate instead of Authorized Update privilege.
-      key.privileges = kCryptohomeManagedUserIncompleteKeyPrivileges;
+      key.privileges = kCryptohomeSupervisedUserIncompleteKeyPrivileges;
     }
     // Just update the key.
-    DCHECK_EQ(context_.key_label, kCryptohomeManagedUserKeyLabel);
+    DCHECK_EQ(context_.GetKey()->GetLabel(), kCryptohomeSupervisedUserKeyLabel);
     authenticator_->UpdateKeyAuthorized(
         context_,
         key,
@@ -184,7 +185,7 @@ void SupervisedUserLoginFlow::OnNewKeyAdded(
   auth->MarkKeyIncomplete(user_id(), true /* incomplete */);
   authenticator_->RemoveKey(
       context_,
-      kLegacyCryptohomeManagedUserKeyLabel,
+      kLegacyCryptohomeSupervisedUserKeyLabel,
       base::Bind(&SupervisedUserLoginFlow::OnOldKeyRemoved,
                  weak_factory_.GetWeakPtr()));
 }

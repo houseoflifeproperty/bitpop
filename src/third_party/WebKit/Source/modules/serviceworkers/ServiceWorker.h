@@ -42,10 +42,6 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace blink {
-class WebServiceWorker;
-}
-
 namespace WebCore {
 
 class ScriptState;
@@ -56,16 +52,18 @@ class ServiceWorker
     , public ScriptWrappable
     , public blink::WebServiceWorkerProxy {
 public:
-    static PassRefPtr<ServiceWorker> create(ExecutionContext*, PassOwnPtr<blink::WebServiceWorker>);
-
     virtual ~ServiceWorker() { }
 
     // For CallbackPromiseAdapter
     typedef blink::WebServiceWorker WebType;
     static PassRefPtr<ServiceWorker> from(ScriptPromiseResolverWithContext*, WebType* worker);
 
+    static PassRefPtr<ServiceWorker> from(ExecutionContext*, WebType*);
+
     void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, ExceptionState&);
 
+    String scope() const;
+    String url() const;
     const AtomicString& state() const;
     DEFINE_ATTRIBUTE_EVENT_LISTENER(statechange);
 
@@ -79,12 +77,25 @@ public:
 private:
     class ThenFunction;
 
+    enum ProxyState {
+        Initial,
+        RegisterPromisePending,
+        Ready,
+        ContextStopped
+    };
+
+    static PassRefPtr<ServiceWorker> create(ExecutionContext*, PassOwnPtr<blink::WebServiceWorker>);
     ServiceWorker(ExecutionContext*, PassOwnPtr<blink::WebServiceWorker>);
+    void setProxyState(ProxyState);
     void onPromiseResolved();
     void waitOnPromise(ScriptPromise);
 
+    // ActiveDOMObject overrides.
+    virtual bool hasPendingActivity() const OVERRIDE;
+    virtual void stop() OVERRIDE;
+
     OwnPtr<blink::WebServiceWorker> m_outerWorker;
-    bool m_isPromisePending;
+    ProxyState m_proxyState;
 };
 
 } // namespace WebCore

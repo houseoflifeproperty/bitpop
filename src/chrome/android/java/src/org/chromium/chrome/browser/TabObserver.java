@@ -57,6 +57,12 @@ public interface TabObserver {
     void onUrlUpdated(Tab tab);
 
     /**
+     * Called when the SSL state of a {@link Tab} changes.
+     * @param tab The notifying {@link Tab}.
+     */
+    void onSSLStateUpdated(Tab tab);
+
+    /**
      * Called when the WebContents of a {@link Tab} have been swapped.
      * @param tab The notifying {@link Tab}.
      * @param didStartLoad Whether WebContentsObserver::DidStartProvisionalLoadForFrame() has
@@ -137,4 +143,9 @@ public interface TabObserver {
             Tab tab, long frameId, long parentFrameId, boolean isMainFrame, String validatedUrl,
             boolean isErrorPage, boolean isIframeSrcdoc);
 
+    /**
+     * Called when the theme color is changed
+     * @param color the new color in ARGB format.
+     */
+    public void onDidChangeThemeColor(int color);
 }

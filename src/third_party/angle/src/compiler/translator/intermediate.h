@@ -51,11 +51,17 @@ enum TOperator {
     EOpPreDecrement,
 
     EOpConvIntToBool,
+    EOpConvUIntToBool,
     EOpConvFloatToBool,
     EOpConvBoolToFloat,
     EOpConvIntToFloat,
+    EOpConvUIntToFloat,
     EOpConvFloatToInt,
     EOpConvBoolToInt,
+    EOpConvUIntToInt,
+    EOpConvIntToUInt,
+    EOpConvFloatToUInt,
+    EOpConvBoolToUInt,
 
     //
     // binary operations
@@ -87,6 +93,7 @@ enum TOperator {
     EOpIndexDirect,
     EOpIndexIndirect,
     EOpIndexDirectStruct,
+    EOpIndexDirectInterfaceBlock,
 
     EOpVectorSwizzle,
 
@@ -156,6 +163,7 @@ enum TOperator {
     //
 
     EOpConstructInt,
+    EOpConstructUInt,
     EOpConstructBool,
     EOpConstructFloat,
     EOpConstructVec2,
@@ -167,6 +175,9 @@ enum TOperator {
     EOpConstructIVec2,
     EOpConstructIVec3,
     EOpConstructIVec4,
+    EOpConstructUVec2,
+    EOpConstructUVec3,
+    EOpConstructUVec4,
     EOpConstructMat2,
     EOpConstructMat3,
     EOpConstructMat4,
@@ -268,18 +279,21 @@ public:
     TBasicType getBasicType() const { return type.getBasicType(); }
     TQualifier getQualifier() const { return type.getQualifier(); }
     TPrecision getPrecision() const { return type.getPrecision(); }
+    int getCols() const { return type.getCols(); }
+    int getRows() const { return type.getRows(); }
     int getNominalSize() const { return type.getNominalSize(); }
+    int getSecondarySize() const { return type.getSecondarySize(); }
     
+    bool isInterfaceBlock() const { return type.isInterfaceBlock(); }
     bool isMatrix() const { return type.isMatrix(); }
     bool isArray()  const { return type.isArray(); }
     bool isVector() const { return type.isVector(); }
     bool isScalar() const { return type.isScalar(); }
+    bool isScalarInt() const { return type.isScalarInt(); }
     const char* getBasicString() const { return type.getBasicString(); }
     const char* getQualifierString() const { return type.getQualifierString(); }
     TString getCompleteString() const { return type.getCompleteString(); }
 
-    int totalRegisterCount() const { return type.totalRegisterCount(); }
-    int elementRegisterCount() const { return type.elementRegisterCount(); }
     int getArraySize() const { return type.getArraySize(); }
 
 protected:
@@ -402,7 +416,6 @@ public:
 
     virtual TIntermRaw* getAsRawNode() { return this; }
     virtual bool replaceChildNode(TIntermNode *, TIntermNode *) { return false; }
-
     virtual void enqueueChildren(std::queue<TIntermNode*> *nodeQueue) const {}
 
 protected:
@@ -418,6 +431,7 @@ public:
     ConstantUnion* getUnionArrayPointer() const { return unionArrayPointer; }
     
     int getIConst(size_t index) const { return unionArrayPointer ? unionArrayPointer[index].getIConst() : 0; }
+    unsigned int getUConst(size_t index) const { return unionArrayPointer ? unionArrayPointer[index].getUConst() : 0; }
     float getFConst(size_t index) const { return unionArrayPointer ? unionArrayPointer[index].getFConst() : 0.0f; }
     bool getBConst(size_t index) const { return unionArrayPointer ? unionArrayPointer[index].getBConst() : false; }
 

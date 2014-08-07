@@ -1,3 +1,9 @@
+include_rules = [
+  "+mojo/geometry",
+  "+third_party/skia",
+  "+ui/gfx",
+]
+
 specific_include_rules = {
   "view_manager_test_suite.cc": [
     "+ui/gl",

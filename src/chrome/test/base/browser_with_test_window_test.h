@@ -16,7 +16,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
@@ -157,13 +157,13 @@ class BrowserWithTestWindowTest : public testing::Test {
                                  chrome::HostDesktopType host_desktop_type,
                                  BrowserWindow* browser_window);
 
-#if defined(TOOLKIT_VIEWS)
+ private:
+#if !defined(OS_CHROMEOS) && defined(TOOLKIT_VIEWS)
   // Creates the ViewsDelegate to use, may be overriden to create a different
   // ViewsDelegate.
-  virtual views::ViewsDelegate* CreateViewsDelegate();
+  views::ViewsDelegate* CreateViewsDelegate();
 #endif
 
- private:
   // We need to create a MessageLoop, otherwise a bunch of things fails.
   content::TestBrowserThreadBundle thread_bundle_;
   base::ShadowingAtExitManager at_exit_manager_;

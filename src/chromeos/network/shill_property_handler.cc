@@ -4,6 +4,8 @@
 
 #include "chromeos/network/shill_property_handler.h"
 
+#include <sstream>
+
 #include "base/bind.h"
 #include "base/format_macros.h"
 #include "base/stl_util.h"
@@ -59,9 +61,11 @@ class ShillPropertyObserver : public ShillPropertyChangedObserver {
         path_(path),
         handler_(handler) {
     if (type_ == ManagedState::MANAGED_TYPE_NETWORK) {
+      DVLOG(2) << "ShillPropertyObserver: Network: " << path;
       DBusThreadManager::Get()->GetShillServiceClient()->
           AddPropertyChangedObserver(dbus::ObjectPath(path_), this);
     } else if (type_ == ManagedState::MANAGED_TYPE_DEVICE) {
+      DVLOG(2) << "ShillPropertyObserver: Device: " << path;
       DBusThreadManager::Get()->GetShillDeviceClient()->
           AddPropertyChangedObserver(dbus::ObjectPath(path_), this);
     } else {
@@ -204,10 +208,10 @@ void ShillPropertyHandler::RequestProperties(ManagedState::ManagedType type,
   if (pending_updates_[type].find(path) != pending_updates_[type].end())
     return;  // Update already requested.
 
-  NET_LOG_DEBUG("Request Properties", path);
+  NET_LOG_DEBUG("Request Properties: " + ManagedState::TypeToString(type),
+                path);
   pending_updates_[type].insert(path);
-  if (type == ManagedState::MANAGED_TYPE_NETWORK ||
-      type == ManagedState::MANAGED_TYPE_FAVORITE) {
+  if (type == ManagedState::MANAGED_TYPE_NETWORK) {
     DBusThreadManager::Get()->GetShillServiceClient()->GetProperties(
         dbus::ObjectPath(path),
         base::Bind(&ShillPropertyHandler::GetPropertiesCallback,
@@ -240,26 +244,9 @@ void ShillPropertyHandler::ManagerPropertiesCallback(
     return;
   }
   NET_LOG_EVENT("ManagerPropertiesCallback", "Success");
-  const base::Value* update_service_value = NULL;
-  const base::Value* update_service_complete_value = NULL;
   for (base::DictionaryValue::Iterator iter(properties);
        !iter.IsAtEnd(); iter.Advance()) {
-    // Defer updating Services until all other properties have been updated.
-    if (iter.key() == shill::kServicesProperty)
-      update_service_value = &iter.value();
-    else if (iter.key() == shill::kServiceCompleteListProperty)
-      update_service_complete_value = &iter.value();
-    else
-      ManagerPropertyChanged(iter.key(), iter.value());
-  }
-  // Update Services which can safely assume other properties have been set.
-  if (update_service_value)
-    ManagerPropertyChanged(shill::kServicesProperty, *update_service_value);
-  // Update ServiceCompleteList which skips entries that have already been
-  // requested for Services.
-  if (update_service_complete_value) {
-    ManagerPropertyChanged(shill::kServiceCompleteListProperty,
-                           *update_service_complete_value);
+    ManagerPropertyChanged(iter.key(), iter.value());
   }
 
   CheckPendingStateListUpdates("");
@@ -268,16 +255,9 @@ void ShillPropertyHandler::ManagerPropertiesCallback(
 void ShillPropertyHandler::CheckPendingStateListUpdates(
     const std::string& key) {
   // Once there are no pending updates, signal the state list changed callbacks.
-  if ((key.empty() || key == shill::kServicesProperty) &&
+  if ((key.empty() || key == shill::kServiceCompleteListProperty) &&
       pending_updates_[ManagedState::MANAGED_TYPE_NETWORK].size() == 0) {
     listener_->ManagedStateListChanged(ManagedState::MANAGED_TYPE_NETWORK);
-  }
-  // Both Network update requests and Favorite update requests will affect
-  // the list of favorites, so wait for both to complete.
-  if ((key.empty() || key == shill::kServiceCompleteListProperty) &&
-      pending_updates_[ManagedState::MANAGED_TYPE_NETWORK].size() == 0 &&
-      pending_updates_[ManagedState::MANAGED_TYPE_FAVORITE].size() == 0) {
-    listener_->ManagedStateListChanged(ManagedState::MANAGED_TYPE_FAVORITE);
   }
   if ((key.empty() || key == shill::kDevicesProperty) &&
       pending_updates_[ManagedState::MANAGED_TYPE_DEVICE].size() == 0) {
@@ -287,26 +267,17 @@ void ShillPropertyHandler::CheckPendingStateListUpdates(
 
 void ShillPropertyHandler::ManagerPropertyChanged(const std::string& key,
                                                   const base::Value& value) {
+  NET_LOG_DEBUG("ManagerPropertyChanged", key);
   if (key == shill::kDefaultServiceProperty) {
     std::string service_path;
     value.GetAsString(&service_path);
     listener_->DefaultNetworkServiceChanged(service_path);
-  } else if (key == shill::kServicesProperty) {
+  } else if (key == shill::kServiceCompleteListProperty) {
     const base::ListValue* vlist = GetListValue(key, value);
     if (vlist) {
       listener_->UpdateManagedList(ManagedState::MANAGED_TYPE_NETWORK, *vlist);
       UpdateProperties(ManagedState::MANAGED_TYPE_NETWORK, *vlist);
-      // UpdateObserved used to use kServiceWatchListProperty for TYPE_NETWORK,
-      // however that prevents us from receiving Strength updates from inactive
-      // networks. The overhead for observing all services is not unreasonable
-      // (and we limit the max number of observed services to kMaxObserved).
       UpdateObserved(ManagedState::MANAGED_TYPE_NETWORK, *vlist);
-    }
-  } else if (key == shill::kServiceCompleteListProperty) {
-    const base::ListValue* vlist = GetListValue(key, value);
-    if (vlist) {
-      listener_->UpdateManagedList(ManagedState::MANAGED_TYPE_FAVORITE, *vlist);
-      UpdateProperties(ManagedState::MANAGED_TYPE_FAVORITE, *vlist);
     }
   } else if (key == shill::kDevicesProperty) {
     const base::ListValue* vlist = GetListValue(key, value);
@@ -341,28 +312,23 @@ void ShillPropertyHandler::ManagerPropertyChanged(const std::string& key,
 void ShillPropertyHandler::UpdateProperties(ManagedState::ManagedType type,
                                             const base::ListValue& entries) {
   std::set<std::string>& requested_updates = requested_updates_[type];
-  std::set<std::string>& requested_service_updates =
-      requested_updates_[ManagedState::MANAGED_TYPE_NETWORK];  // For favorites
   std::set<std::string> new_requested_updates;
-  NET_LOG_DEBUG(
-      base::StringPrintf("UpdateProperties: %" PRIuS, entries.GetSize()),
-      ManagedState::TypeToString(type));
+  NET_LOG_DEBUG("UpdateProperties: " + ManagedState::TypeToString(type),
+                base::StringPrintf("%" PRIuS, entries.GetSize()));
   for (base::ListValue::const_iterator iter = entries.begin();
        iter != entries.end(); ++iter) {
     std::string path;
     (*iter)->GetAsString(&path);
     if (path.empty())
       continue;
-    if (type == ManagedState::MANAGED_TYPE_FAVORITE &&
-        requested_service_updates.count(path) > 0)
-      continue;  // Update already requested
 
     // We add a special case for devices here to work around an issue in shill
     // that prevents it from sending property changed signals for cellular
     // devices (see crbug.com/321854).
     if (type == ManagedState::MANAGED_TYPE_DEVICE ||
-        requested_updates.find(path) == requested_updates.end())
+        requested_updates.find(path) == requested_updates.end()) {
       RequestProperties(type, path);
+    }
     new_requested_updates.insert(path);
   }
   requested_updates.swap(new_requested_updates);
@@ -370,8 +336,6 @@ void ShillPropertyHandler::UpdateProperties(ManagedState::ManagedType type,
 
 void ShillPropertyHandler::UpdateObserved(ManagedState::ManagedType type,
                                           const base::ListValue& entries) {
-  DCHECK(type == ManagedState::MANAGED_TYPE_NETWORK ||
-         type == ManagedState::MANAGED_TYPE_DEVICE);
   ShillPropertyObserverMap& observer_map =
       (type == ManagedState::MANAGED_TYPE_NETWORK)
       ? observed_networks_ : observed_devices_;
@@ -406,9 +370,10 @@ void ShillPropertyHandler::UpdateObserved(ManagedState::ManagedType type,
 
 void ShillPropertyHandler::UpdateAvailableTechnologies(
     const base::ListValue& technologies) {
+  std::stringstream technologies_str;
+  technologies_str << technologies;
+  NET_LOG_EVENT("AvailableTechnologies:", technologies_str.str());
   available_technologies_.clear();
-  NET_LOG_EVENT("AvailableTechnologiesChanged",
-                base::StringPrintf("Size: %" PRIuS, technologies.GetSize()));
   for (base::ListValue::const_iterator iter = technologies.begin();
        iter != technologies.end(); ++iter) {
     std::string technology;
@@ -421,9 +386,10 @@ void ShillPropertyHandler::UpdateAvailableTechnologies(
 
 void ShillPropertyHandler::UpdateEnabledTechnologies(
     const base::ListValue& technologies) {
+  std::stringstream technologies_str;
+  technologies_str << technologies;
+  NET_LOG_EVENT("EnabledTechnologies:", technologies_str.str());
   enabled_technologies_.clear();
-  NET_LOG_EVENT("EnabledTechnologiesChanged",
-                base::StringPrintf("Size: %" PRIuS, technologies.GetSize()));
   for (base::ListValue::const_iterator iter = technologies.begin();
        iter != technologies.end(); ++iter) {
     std::string technology;
@@ -437,9 +403,10 @@ void ShillPropertyHandler::UpdateEnabledTechnologies(
 
 void ShillPropertyHandler::UpdateUninitializedTechnologies(
     const base::ListValue& technologies) {
+  std::stringstream technologies_str;
+  technologies_str << technologies;
+  NET_LOG_EVENT("UninitializedTechnologies:", technologies_str.str());
   uninitialized_technologies_.clear();
-  NET_LOG_EVENT("UninitializedTechnologiesChanged",
-                base::StringPrintf("Size: %" PRIuS, technologies.GetSize()));
   for (base::ListValue::const_iterator iter = technologies.begin();
        iter != technologies.end(); ++iter) {
     std::string technology;
@@ -477,17 +444,6 @@ void ShillPropertyHandler::GetPropertiesCallback(
                   base::StringPrintf("%s: %d", path.c_str(), call_status));
     return;
   }
-  // Update Favorite properties for networks in the Services list.
-  if (type == ManagedState::MANAGED_TYPE_NETWORK) {
-    // Only networks with a ProfilePath set are Favorites.
-    std::string profile_path;
-    properties.GetStringWithoutPathExpansion(
-        shill::kProfileProperty, &profile_path);
-    if (!profile_path.empty()) {
-      listener_->UpdateManagedStateProperties(
-          ManagedState::MANAGED_TYPE_FAVORITE, path, properties);
-    }
-  }
   listener_->UpdateManagedStateProperties(type, path, properties);
 
   if (type == ManagedState::MANAGED_TYPE_NETWORK) {
@@ -503,15 +459,8 @@ void ShillPropertyHandler::GetPropertiesCallback(
   }
 
   // Notify the listener only when all updates for that type have completed.
-  if (pending_updates_[type].size() == 0) {
+  if (pending_updates_[type].size() == 0)
     listener_->ManagedStateListChanged(type);
-    // Notify that Favorites have changed when notifying for Networks if there
-    // are no additional Favorite updates pending.
-    if (type == ManagedState::MANAGED_TYPE_NETWORK &&
-        pending_updates_[ManagedState::MANAGED_TYPE_FAVORITE].size() == 0) {
-      listener_->ManagedStateListChanged(ManagedState::MANAGED_TYPE_FAVORITE);
-    }
-  }
 }
 
 void ShillPropertyHandler::PropertyChangedCallback(

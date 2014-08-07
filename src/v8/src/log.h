@@ -5,10 +5,12 @@
 #ifndef V8_LOG_H_
 #define V8_LOG_H_
 
-#include "allocation.h"
-#include "objects.h"
-#include "platform.h"
-#include "platform/elapsed-timer.h"
+#include <string>
+
+#include "src/allocation.h"
+#include "src/objects.h"
+#include "src/platform.h"
+#include "src/platform/elapsed-timer.h"
 
 namespace v8 {
 namespace internal {
@@ -79,6 +81,7 @@ struct TickSample;
 
 #define LOG_EVENTS_AND_TAGS_LIST(V)                                     \
   V(CODE_CREATION_EVENT,            "code-creation")                    \
+  V(CODE_DISABLE_OPT_EVENT,         "code-disable-optimization")        \
   V(CODE_MOVE_EVENT,                "code-move")                        \
   V(CODE_DELETE_EVENT,              "code-delete")                      \
   V(CODE_MOVING_GC,                 "code-moving-gc")                   \
@@ -237,6 +240,8 @@ class Logger {
                        CompilationInfo* info,
                        Name* source, int line, int column);
   void CodeCreateEvent(LogEventsAndTags tag, Code* code, int args_count);
+  // Emits a code deoptimization event.
+  void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared);
   void CodeMovingGCEvent();
   // Emits a code create event for a RegExp.
   void RegExpCodeCreateEvent(Code* code, String* source);
@@ -277,10 +282,7 @@ class Logger {
   void HeapSampleStats(const char* space, const char* kind,
                        intptr_t capacity, intptr_t used);
 
-  void SharedLibraryEvent(const char* library_path,
-                          uintptr_t start,
-                          uintptr_t end);
-  void SharedLibraryEvent(const wchar_t* library_path,
+  void SharedLibraryEvent(const std::string& library_path,
                           uintptr_t start,
                           uintptr_t end);
 
@@ -288,6 +290,7 @@ class Logger {
   enum StartEnd { START, END };
 
   void CodeDeoptEvent(Code* code);
+  void CurrentTimeEvent();
 
   void TimerEvent(StartEnd se, const char* name);
 
@@ -315,6 +318,7 @@ class Logger {
     static const char* v8_compile_full_code;
     static const char* v8_execute;
     static const char* v8_external;
+    static const char* v8_ic_miss;
 
    private:
     Isolate* isolate_;
@@ -325,9 +329,6 @@ class Logger {
   // Regexp compilation and execution events.
 
   void RegExpCompileEvent(Handle<JSRegExp> regexp, bool in_cache);
-
-  // Log an event reported from generated code
-  void LogRuntime(Vector<const char> format, Handle<JSArray> args);
 
   bool is_logging() {
     return is_logging_;
@@ -473,6 +474,7 @@ class CodeEventListener {
   virtual void CodeDeleteEvent(Address from) = 0;
   virtual void SharedFunctionInfoMoveEvent(Address from, Address to) = 0;
   virtual void CodeMovingGCEvent() = 0;
+  virtual void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared) = 0;
 };
 
 

@@ -101,15 +101,6 @@ IPC_MESSAGE_CONTROL2(MediaStreamMsg_GetSourcesACK,
                      int /* request id */,
                      content::StreamDeviceInfoArray /* device_list */)
 
-// The browser hands over a file handle to the renderer to use for AEC dump.
-// TODO(grunell): This should not belong to media stream. Change when
-// refactoring MediaStreamDependencyFactory.
-IPC_MESSAGE_CONTROL1(MediaStreamMsg_EnableAecDump,
-                     IPC::PlatformFileForTransit /* file_handle */)
-
-// Tell the renderer to disable AEC dump.
-IPC_MESSAGE_CONTROL0(MediaStreamMsg_DisableAecDump)
-
 // Messages sent from the renderer to the browser.
 
 // Request a new media stream.
@@ -135,15 +126,14 @@ IPC_MESSAGE_CONTROL2(MediaStreamHostMsg_GetSources,
                      int /* request id */,
                      GURL /* origin */)
 
-
 // Request to enumerate devices.
-// Used by Pepper.
-// TODO(vrk,wjia): Move this to pepper code.
-IPC_MESSAGE_CONTROL4(MediaStreamHostMsg_EnumerateDevices,
+// Used by Pepper and WebRTC.
+IPC_MESSAGE_CONTROL5(MediaStreamHostMsg_EnumerateDevices,
                      int /* render view id */,
                      int /* request id */,
                      content::MediaStreamType /* type */,
-                     GURL /* security origin */)
+                     GURL /* security origin */,
+                     bool /* hide_labels_if_no_access */)
 
 // Request to stop enumerating devices.
 IPC_MESSAGE_CONTROL2(MediaStreamHostMsg_CancelEnumerateDevices,

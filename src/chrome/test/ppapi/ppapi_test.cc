@@ -11,7 +11,6 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -20,29 +19,25 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
+#include "media/base/media_switches.h"
 #include "net/base/filename_util.h"
 #include "net/base/test_data_directory.h"
 #include "ppapi/shared_impl/ppapi_switches.h"
+#include "ppapi/shared_impl/test_harness_utils.h"
 #include "ui/gl/gl_switches.h"
 
 using content::DomOperationNotificationDetails;
 using content::RenderViewHost;
+using content::TestMessageHandler;
 
 namespace {
-
-// Platform-specific filename relative to the chrome executable.
-#if defined(OS_WIN)
-const wchar_t library_name[] = L"ppapi_tests.dll";
-#elif defined(OS_MACOSX)
-const char library_name[] = "ppapi_tests.plugin";
-#elif defined(OS_POSIX)
-const char library_name[] = "libppapi_tests.so";
-#endif
 
 void AddPrivateSwitches(base::CommandLine* command_line) {
   // For TestRequestOSFileHandle.
@@ -177,13 +172,6 @@ void PPAPITestBase::RunTest(const std::string& test_case) {
   RunTestURL(url);
 }
 
-void PPAPITestBase::RunTestAndReload(const std::string& test_case) {
-  GURL url = GetTestFileUrl(test_case);
-  RunTestURL(url);
-  // If that passed, we simply run the test again, which navigates again.
-  RunTestURL(url);
-}
-
 void PPAPITestBase::RunTestViaHTTP(const std::string& test_case) {
   base::FilePath document_root;
   ASSERT_TRUE(ui_test_utils::GetRelativeBuildDirectory(&document_root));
@@ -254,15 +242,6 @@ void PPAPITestBase::RunTestViaHTTPIfAudioOutputAvailable(
   RunTestViaHTTP(test_case);
 }
 
-std::string PPAPITestBase::StripPrefixes(const std::string& test_name) {
-  const char* const prefixes[] = {
-      "FAILS_", "FLAKY_", "DISABLED_", "SLOW_" };
-  for (size_t i = 0; i < sizeof(prefixes)/sizeof(prefixes[0]); ++i)
-    if (test_name.find(prefixes[i]) == 0)
-      return test_name.substr(strlen(prefixes[i]));
-  return test_name;
-}
-
 void PPAPITestBase::RunTestURL(const GURL& test_url) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // PPAPITests are broken in Ash browser tests (http://crbug.com/263548).
@@ -279,7 +258,7 @@ void PPAPITestBase::RunTestURL(const GURL& test_url) {
   // any other value indicates completion (in this case it will start with
   // "PASS" or "FAIL"). This keeps us from timing out on waits for long tests.
   PPAPITestMessageHandler handler;
-  JavascriptTestObserver observer(
+  content::JavascriptTestObserver observer(
       browser()->tab_strip_model()->GetActiveWebContents(),
       &handler);
 
@@ -312,7 +291,7 @@ void PPAPITest::SetUpCommandLine(base::CommandLine* command_line) {
   base::FilePath plugin_dir;
   EXPECT_TRUE(PathService::Get(base::DIR_MODULE, &plugin_dir));
 
-  base::FilePath plugin_lib = plugin_dir.Append(library_name);
+  base::FilePath plugin_lib = plugin_dir.Append(ppapi::GetTestLibraryName());
   EXPECT_TRUE(base::PathExists(plugin_lib));
   base::FilePath::StringType pepper_plugin = plugin_lib.value();
   pepper_plugin.append(FILE_PATH_LITERAL(";application/x-ppapi-tests"));
@@ -371,12 +350,6 @@ void PPAPINaClTest::SetUpOnMainThread() {
 void PPAPINaClTest::RunTest(const std::string& test_case) {
 #if !defined(DISABLE_NACL)
   PPAPITestBase::RunTest(test_case);
-#endif
-}
-
-void PPAPINaClTest::RunTestAndReload(const std::string& test_case) {
-#if !defined(DISABLE_NACL)
-  PPAPITestBase::RunTestAndReload(test_case);
 #endif
 }
 

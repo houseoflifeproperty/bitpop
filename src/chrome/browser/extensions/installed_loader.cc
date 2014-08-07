@@ -14,9 +14,11 @@
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/managed_mode_private/managed_mode_handler.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
@@ -28,6 +30,7 @@
 #include "extensions/browser/management_policy.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_l10n_util.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/file_util.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
@@ -43,36 +46,40 @@ namespace errors = manifest_errors;
 namespace {
 
 // The following enumeration is used in histograms matching
-// Extensions.ManifestReload* .  Values may be added, as long as existing
-// values are not changed.
+// Extensions.ManifestReload*.
 enum ManifestReloadReason {
-  NOT_NEEDED = 0,  // Reload not needed.
-  UNPACKED_DIR,  // Unpacked directory.
+  NOT_NEEDED = 0,        // Reload not needed.
+  UNPACKED_DIR,          // Unpacked directory.
   NEEDS_RELOCALIZATION,  // The locale has changed since we read this extension.
-  CORRUPT_PREFERENCES,  // The manifest in the preferences is corrupt.
+  CORRUPT_PREFERENCES,   // The manifest in the preferences is corrupt.
+
+  // New enum values must go above here.
   NUM_MANIFEST_RELOAD_REASONS
 };
 
-// Used in histogram Extension.BackgroundPageType. Values may be added, as
-// long as existing values are not changed.
+// Used in histogram Extension.BackgroundPageType.
 enum BackgroundPageType {
   NO_BACKGROUND_PAGE = 0,
-  BACKGROUND_PAGE_PERSISTENT = 1,
-  EVENT_PAGE = 2,
+  BACKGROUND_PAGE_PERSISTENT,
+  EVENT_PAGE,
+
+  // New enum values must go above here.
+  NUM_BACKGROUND_PAGE_TYPES
 };
 
-// Used in histogram Extensions.ExternalItemState. Values may be added, as
-// long as existing values are not changed.
+// Used in histogram Extensions.ExternalItemState.
 enum ExternalItemState {
   DEPRECATED_EXTERNAL_ITEM_DISABLED = 0,
-  DEPRECATED_EXTERNAL_ITEM_ENABLED = 1,
-  EXTERNAL_ITEM_WEBSTORE_DISABLED = 2,
-  EXTERNAL_ITEM_WEBSTORE_ENABLED = 3,
-  EXTERNAL_ITEM_NONWEBSTORE_DISABLED = 4,
-  EXTERNAL_ITEM_NONWEBSTORE_ENABLED = 5,
-  EXTERNAL_ITEM_WEBSTORE_UNINSTALLED = 6,
-  EXTERNAL_ITEM_NONWEBSTORE_UNINSTALLED = 7,
-  EXTERNAL_ITEM_MAX_ITEMS = 8
+  DEPRECATED_EXTERNAL_ITEM_ENABLED,
+  EXTERNAL_ITEM_WEBSTORE_DISABLED,
+  EXTERNAL_ITEM_WEBSTORE_ENABLED,
+  EXTERNAL_ITEM_NONWEBSTORE_DISABLED,
+  EXTERNAL_ITEM_NONWEBSTORE_ENABLED,
+  EXTERNAL_ITEM_WEBSTORE_UNINSTALLED,
+  EXTERNAL_ITEM_NONWEBSTORE_UNINSTALLED,
+
+  // New enum values must go above here.
+  EXTERNAL_ITEM_MAX_ITEMS
 };
 
 bool IsManifestCorrupt(const base::DictionaryValue* manifest) {
@@ -115,6 +122,18 @@ BackgroundPageType GetBackgroundPageType(const Extension* extension) {
   return EVENT_PAGE;
 }
 
+// Records the creation flags of an extension grouped by
+// Extension::InitFromValueFlags.
+void RecordCreationFlags(const Extension* extension) {
+  for (int i = 0; i < Extension::kInitFromValueFlagBits; ++i) {
+    int flag = 1 << i;
+    if (extension->creation_flags() & flag) {
+      UMA_HISTOGRAM_ENUMERATION(
+          "Extensions.LoadCreationFlags", i, Extension::kInitFromValueFlagBits);
+    }
+  }
+}
+
 }  // namespace
 
 InstalledLoader::InstalledLoader(ExtensionService* extension_service)
@@ -146,7 +165,6 @@ void InstalledLoader::Load(const ExtensionInfo& info, bool write_to_prefs) {
       info.extension_id != extension->id()) {
     error = errors::kCannotChangeExtensionID;
     extension = NULL;
-    content::RecordAction(UserMetricsAction("Extensions.IDChangedError"));
   }
 
   // Check policy on every load in case an extension was blacklisted while
@@ -191,6 +209,7 @@ void InstalledLoader::LoadAllExtensions() {
 
   base::TimeTicks start_time = base::TimeTicks::Now();
 
+  Profile* profile = extension_service_->profile();
   scoped_ptr<ExtensionPrefs::ExtensionsInfo> extensions_info(
       extension_prefs_->GetInstalledExtensionsInfo());
 
@@ -207,8 +226,6 @@ void InstalledLoader::LoadAllExtensions() {
 
     ManifestReloadReason reload_reason = ShouldReloadExtensionManifest(*info);
     ++reload_reason_counts[reload_reason];
-    UMA_HISTOGRAM_ENUMERATION("Extensions.ManifestReloadEnumValue",
-                              reload_reason, 100);
 
     if (reload_reason != NOT_NEEDED) {
       // Reloading an extension reads files from disk.  We do this on the
@@ -230,7 +247,7 @@ void InstalledLoader::LoadAllExtensions() {
         ExtensionErrorReporter::GetInstance()->ReportLoadError(
             info->extension_path,
             error,
-            extension_service_->profile(),
+            profile,
             false);  // Be quiet.
         continue;
       }
@@ -243,9 +260,8 @@ void InstalledLoader::LoadAllExtensions() {
   }
 
   for (size_t i = 0; i < extensions_info->size(); ++i) {
-    if (extensions_info->at(i)->extension_location == Manifest::COMMAND_LINE)
-      continue;
-    Load(*extensions_info->at(i), should_write_prefs);
+    if (extensions_info->at(i)->extension_location != Manifest::COMMAND_LINE)
+      Load(*extensions_info->at(i), should_write_prefs);
   }
 
   extension_service_->OnLoadedInstalledExtensions();
@@ -280,27 +296,54 @@ void InstalledLoader::LoadAllExtensions() {
   int page_action_count = 0;
   int browser_action_count = 0;
   int disabled_for_permissions_count = 0;
-  int item_user_count = 0;
   int non_webstore_ntp_override_count = 0;
+  int incognito_allowed_count = 0;
+  int incognito_not_allowed_count = 0;
+  int file_access_allowed_count = 0;
+  int file_access_not_allowed_count = 0;
+
   const ExtensionSet& extensions = extension_registry_->enabled_extensions();
-  ExtensionSet::const_iterator ex;
-  for (ex = extensions.begin(); ex != extensions.end(); ++ex) {
-    Manifest::Location location = (*ex)->location();
-    Manifest::Type type = (*ex)->GetType();
-    if ((*ex)->is_app()) {
-      UMA_HISTOGRAM_ENUMERATION("Extensions.AppLocation",
-                                location, 100);
-    } else if (type == Manifest::TYPE_EXTENSION) {
-      UMA_HISTOGRAM_ENUMERATION("Extensions.ExtensionLocation",
-                                location, 100);
+  ExtensionActionManager* extension_action_manager =
+      ExtensionActionManager::Get(profile);
+  for (ExtensionSet::const_iterator iter = extensions.begin();
+       iter != extensions.end();
+       ++iter) {
+    const Extension* extension = *iter;
+    Manifest::Location location = extension->location();
+    Manifest::Type type = extension->GetType();
+
+    // For the first few metrics, include all extensions and apps (component,
+    // unpacked, etc). It's good to know these locations, and it doesn't
+    // muck up any of the stats. Later, though, we want to omit component and
+    // unpacked, as they are less interesting.
+    if (extension->is_app())
+      UMA_HISTOGRAM_ENUMERATION(
+          "Extensions.AppLocation", location, Manifest::NUM_LOCATIONS);
+    else if (extension->is_extension())
+      UMA_HISTOGRAM_ENUMERATION(
+          "Extensions.ExtensionLocation", location, Manifest::NUM_LOCATIONS);
+
+    if (!ManifestURL::UpdatesFromGallery(extension)) {
+      UMA_HISTOGRAM_ENUMERATION(
+          "Extensions.NonWebstoreLocation", location, Manifest::NUM_LOCATIONS);
+
+      // Check for inconsistencies if the extension was supposedly installed
+      // from the webstore.
+      enum {
+        BAD_UPDATE_URL = 0,
+        // This value was a mistake. Turns out sideloaded extensions can
+        // have the from_webstore bit if they update from the webstore.
+        DEPRECATED_IS_EXTERNAL = 1,
+      };
+      if (extension->from_webstore()) {
+        UMA_HISTOGRAM_ENUMERATION(
+            "Extensions.FromWebstoreInconsistency", BAD_UPDATE_URL, 2);
+      }
     }
-    if (!ManifestURL::UpdatesFromGallery(*ex)) {
-      UMA_HISTOGRAM_ENUMERATION("Extensions.NonWebstoreLocation",
-                                location, 100);
-    }
+
     if (Manifest::IsExternalLocation(location)) {
       // See loop below for DISABLED.
-      if (ManifestURL::UpdatesFromGallery(*ex)) {
+      if (ManifestURL::UpdatesFromGallery(extension)) {
         UMA_HISTOGRAM_ENUMERATION("Extensions.ExternalItemState",
                                   EXTERNAL_ITEM_WEBSTORE_ENABLED,
                                   EXTERNAL_ITEM_MAX_ITEMS);
@@ -310,54 +353,42 @@ void InstalledLoader::LoadAllExtensions() {
                                   EXTERNAL_ITEM_MAX_ITEMS);
       }
     }
-    if ((*ex)->from_webstore()) {
-      // Check for inconsistencies if the extension was supposedly installed
-      // from the webstore.
-      enum {
-        BAD_UPDATE_URL = 0,
-        // This value was a mistake. Turns out sideloaded extensions can
-        // have the from_webstore bit if they update from the webstore.
-        DEPRECATED_IS_EXTERNAL = 1,
-      };
-      if (!ManifestURL::UpdatesFromGallery(*ex)) {
-        UMA_HISTOGRAM_ENUMERATION("Extensions.FromWebstoreInconsistency",
-                                  BAD_UPDATE_URL, 2);
-      }
-    }
 
-    // Don't count component extensions, since they are only extensions as an
-    // implementation detail.
+    // From now on, don't count component extensions, since they are only
+    // extensions as an implementation detail. Continue to count unpacked
+    // extensions for a few metrics.
     if (location == Manifest::COMPONENT)
       continue;
+
     // Histogram for non-webstore extensions overriding new tab page should
     // include unpacked extensions.
-    if (!(*ex)->from_webstore()) {
-      const extensions::URLOverrides::URLOverrideMap& override_map =
-          extensions::URLOverrides::GetChromeURLOverrides(ex->get());
-      if (override_map.find("newtab") != override_map.end()) {
-        ++non_webstore_ntp_override_count;
-      }
+    if (!extension->from_webstore() &&
+        URLOverrides::GetChromeURLOverrides(extension).count("newtab")) {
+      ++non_webstore_ntp_override_count;
     }
 
-    // Don't count unpacked extensions, since they're a developer-specific
-    // feature.
+    // Don't count unpacked extensions anymore, either.
     if (Manifest::IsUnpackedLocation(location))
       continue;
 
     UMA_HISTOGRAM_ENUMERATION("Extensions.ManifestVersion",
-                              (*ex)->manifest_version(), 10);
+                              extension->manifest_version(),
+                              10);  // TODO(kalman): Why 10 manifest versions?
 
+    // We might have wanted to count legacy packaged apps here, too, since they
+    // are effectively extensions. Unfortunately, it's too late, as we don't
+    // want to mess up the existing stats.
     if (type == Manifest::TYPE_EXTENSION) {
-      BackgroundPageType background_page_type =
-          GetBackgroundPageType(ex->get());
-      UMA_HISTOGRAM_ENUMERATION(
-          "Extensions.BackgroundPageType", background_page_type, 10);
+      UMA_HISTOGRAM_ENUMERATION("Extensions.BackgroundPageType",
+                                GetBackgroundPageType(extension),
+                                NUM_BACKGROUND_PAGE_TYPES);
     }
 
     // Using an enumeration shows us the total installed ratio across all users.
     // Using the totals per user at each startup tells us the distribution of
     // usage for each user (e.g. 40% of users have at least one app installed).
-    UMA_HISTOGRAM_ENUMERATION("Extensions.LoadType", type, 100);
+    UMA_HISTOGRAM_ENUMERATION(
+        "Extensions.LoadType", type, Manifest::NUM_LOAD_TYPES);
     switch (type) {
       case Manifest::TYPE_THEME:
         ++theme_count;
@@ -398,25 +429,46 @@ void InstalledLoader::LoadAllExtensions() {
         }
         break;
     }
-    if (!Manifest::IsExternalLocation((*ex)->location()))
-      ++item_user_count;
-    ExtensionActionManager* extension_action_manager =
-        ExtensionActionManager::Get(extension_service_->profile());
-    if (extension_action_manager->GetPageAction(*ex->get()))
+
+    if (extension_action_manager->GetPageAction(*extension))
       ++page_action_count;
-    if (extension_action_manager->GetBrowserAction(*ex->get()))
+
+    if (extension_action_manager->GetBrowserAction(*extension))
       ++browser_action_count;
 
-    if (extensions::ManagedModeInfo::IsContentPack(ex->get()))
+    if (ManagedModeInfo::IsContentPack(extension))
       ++content_pack_count;
 
-    extension_service_->RecordPermissionMessagesHistogram(
-        ex->get(), "Extensions.Permissions_Load");
+    RecordCreationFlags(extension);
+
+    ExtensionService::RecordPermissionMessagesHistogram(
+        extension, "Extensions.Permissions_Load2");
+
+    // For incognito and file access, skip anything that doesn't appear in
+    // settings. Also, policy-installed (and unpacked of course, checked above)
+    // extensions are boring.
+    if (extension->ShouldDisplayInExtensionSettings() &&
+        !Manifest::IsPolicyLocation(extension->location())) {
+      if (extension->can_be_incognito_enabled()) {
+        if (util::IsIncognitoEnabled(extension->id(), profile))
+          ++incognito_allowed_count;
+        else
+          ++incognito_not_allowed_count;
+      }
+      if (extension->wants_file_access()) {
+        if (util::AllowFileAccess(extension->id(), profile))
+          ++file_access_allowed_count;
+        else
+          ++file_access_not_allowed_count;
+      }
+    }
   }
 
   const ExtensionSet& disabled_extensions =
       extension_registry_->disabled_extensions();
-  for (ex = disabled_extensions.begin(); ex != disabled_extensions.end();
+
+  for (ExtensionSet::const_iterator ex = disabled_extensions.begin();
+       ex != disabled_extensions.end();
        ++ex) {
     if (extension_prefs_->DidExtensionEscalatePermissions((*ex)->id())) {
       ++disabled_for_permissions_count;
@@ -454,7 +506,6 @@ void InstalledLoader::LoadAllExtensions() {
     }
   }
 
-  UMA_HISTOGRAM_COUNTS_100("Extensions.LoadAllUser", item_user_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadApp",
                            app_user_count + app_external_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.LoadAppUser", app_user_count);
@@ -479,6 +530,18 @@ void InstalledLoader::LoadAllExtensions() {
                            disabled_for_permissions_count);
   UMA_HISTOGRAM_COUNTS_100("Extensions.NonWebStoreNewTabPageOverrides",
                            non_webstore_ntp_override_count);
+  if (incognito_allowed_count + incognito_not_allowed_count > 0) {
+    UMA_HISTOGRAM_COUNTS_100("Extensions.IncognitoAllowed",
+                             incognito_allowed_count);
+    UMA_HISTOGRAM_COUNTS_100("Extensions.IncognitoNotAllowed",
+                             incognito_not_allowed_count);
+  }
+  if (file_access_allowed_count + file_access_not_allowed_count > 0) {
+    UMA_HISTOGRAM_COUNTS_100("Extensions.FileAccessAllowed",
+                             file_access_allowed_count);
+    UMA_HISTOGRAM_COUNTS_100("Extensions.FileAccessNotAllowed",
+                             file_access_not_allowed_count);
+  }
 }
 
 int InstalledLoader::GetCreationFlags(const ExtensionInfo* info) {

@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "cc/base/cc_export.h"
@@ -47,8 +48,6 @@ class CC_EXPORT Proxy {
 
   virtual ~Proxy();
 
-  virtual bool CompositeAndReadback(void* pixels, const gfx::Rect& rect) = 0;
-
   virtual void FinishAllRendering() = 0;
 
   virtual bool IsStarted() const = 0;
@@ -58,11 +57,6 @@ class CC_EXPORT Proxy {
   virtual void SetLayerTreeHostClientReady() = 0;
 
   virtual void SetVisible(bool visible) = 0;
-
-  // Attempts to recreate the context and renderer synchronously after the
-  // output surface is lost. Calls
-  // LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted with the result.
-  virtual void CreateAndInitializeOutputSurface() = 0;
 
   virtual const RendererCapabilities& GetRendererCapabilities() const = 0;
 
@@ -101,7 +95,7 @@ class CC_EXPORT Proxy {
 
   // Testing hooks
   virtual bool CommitPendingForTesting() = 0;
-  virtual scoped_ptr<base::Value> SchedulerStateAsValueForTesting();
+  virtual scoped_ptr<base::Value> SchedulerAsValueForTesting();
 
  protected:
   explicit Proxy(
@@ -114,6 +108,7 @@ class CC_EXPORT Proxy {
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner_;
 #if DCHECK_IS_ON
+  const base::PlatformThreadId main_thread_id_;
   bool impl_thread_is_overridden_;
   bool is_main_thread_blocked_;
 #endif

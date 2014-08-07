@@ -68,6 +68,9 @@ message ClientPhishingRequest {
   optional string OBSOLETE_referrer_url = 9;
 
   // Field 11 is only used on the server.
+
+  // List of shingle hashes we extracted.
+  repeated uint32 shingle_hashes = 12 [packed = true];
 }
 
 message ClientPhishingResponse {
@@ -107,7 +110,7 @@ message ClientMalwareRequest {
     required string url = 2;
     optional string method = 3;
     optional string referrer = 4;
-    // Resource type, the int value is a direct cast from the Type enum 
+    // Resource type, the int value is a direct cast from the Type enum
     // of ResourceType class defined in //src/webkit/commom/resource_type.h
     optional int32 resource_type = 5;
   }
@@ -330,4 +333,95 @@ message ClientUploadResponse {
 
   // Holds the permalink where the results of scanning the binary are available
   optional string permalink = 2;
+}
+
+message ClientIncidentReport {
+  message IncidentData {
+    message TrackedPreferenceIncident {
+      enum ValueState {
+        UNKNOWN = 0;
+        CLEARED = 1;
+        WEAK_LEGACY = 2;
+        CHANGED = 3;
+        UNTRUSTED_UNKNOWN_VALUE = 4;
+      }
+
+      optional string path = 1;
+      optional string atomic_value = 2;
+      repeated string split_key = 3;
+      optional ValueState value_state = 4;
+    }
+    optional int64 incident_time_msec = 1;
+    optional TrackedPreferenceIncident tracked_preference = 2;
+  }
+
+  repeated IncidentData incident = 1;
+
+  message DownloadDetails {
+    optional bytes token = 1;
+    optional ClientDownloadRequest download = 2;
+    optional int64 download_time_msec = 3;
+    optional int64 open_time_msec = 4;
+  }
+
+  optional DownloadDetails download = 2;
+
+  message EnvironmentData {
+    message OS {
+      optional string os_name = 1;
+      optional string os_version = 2;
+    }
+    optional OS os = 1;
+    message Machine {
+      optional string cpu_architecture = 1;
+      optional string cpu_vendor = 2;
+      optional uint32 cpuid = 3;
+    }
+    optional Machine machine = 2;
+    message Process {
+      optional string version = 1;
+      repeated string OBSOLETE_dlls = 2;
+      message Patch {
+        optional string function = 1;
+        optional string target_dll = 2;
+      }
+      repeated Patch patches = 3;
+      message NetworkProvider {}
+      repeated NetworkProvider network_providers = 4;
+      enum Channel {
+        CHANNEL_UNKNOWN = 0;
+        CHANNEL_CANARY = 1;
+        CHANNEL_DEV = 2;
+        CHANNEL_BETA = 3;
+        CHANNEL_STABLE = 4;
+      }
+      optional Channel chrome_update_channel = 5;
+      optional int64 uptime_msec = 6;
+      optional bool metrics_consent = 7;
+      optional bool extended_consent = 8;
+      message Dll {
+        enum Feature {
+          UNKNOWN = 0;
+          LSP = 1;
+        }
+        optional string path = 1;
+        optional uint64 base_address = 2;
+        optional uint32 length = 3;
+        repeated Feature feature = 4;
+      }
+      repeated Dll dll = 9;
+    }
+    optional Process process = 3;
+  }
+
+  optional EnvironmentData environment = 3;
+}
+
+message ClientIncidentResponse {
+  optional bytes token = 1;
+  optional bool download_requested = 2;
+
+  message EnvironmentRequest { optional int32 dll_index = 1; }
+
+  repeated EnvironmentRequest environment_requests = 3;
 }

@@ -6,9 +6,22 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/stringprintf.h"
+#include "grit/ui_resources.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/app_list/app_list_constants.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image_skia.h"
 
 namespace app_list {
 namespace test {
+
+gfx::ImageSkia CreateImageSkia(int width, int height) {
+  SkBitmap bitmap;
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
+  bitmap.allocPixels();
+  bitmap.eraseARGB(255, 0, 255, 0);
+  return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
+}
 
 // static
 const char AppListTestModel::kItemType[] = "TestItem";
@@ -20,7 +33,10 @@ AppListTestModel::AppListTestItem::AppListTestItem(
     AppListTestModel* model)
     : AppListItem(id),
       model_(model) {
+  SetIcon(CreateImageSkia(kPreferredIconDimension, kPreferredIconDimension),
+          false /* has_shadow */);
 }
+
 AppListTestModel::AppListTestItem::~AppListTestItem() {
 }
 
@@ -54,7 +70,7 @@ AppListItem* AppListTestModel::AddItemToFolder(AppListItem* item,
 }
 
 void AppListTestModel::MoveItemToFolder(AppListItem* item,
-                                          const std::string& folder_id) {
+                                        const std::string& folder_id) {
   AppListModel::MoveItemToFolder(item, folder_id);
 }
 
@@ -88,6 +104,16 @@ AppListFolderItem* AppListTestModel::CreateAndAddOemFolder(
   AppListFolderItem* folder =
       new AppListFolderItem(id, AppListFolderItem::FOLDER_TYPE_OEM);
   return static_cast<AppListFolderItem*>(AddItem(folder));
+}
+
+AppListFolderItem* AppListTestModel::CreateSingleItemFolder(
+    const std::string& folder_id,
+    const std::string& item_id) {
+  AppListTestItem* item = CreateItem(item_id);
+  AddItemToFolder(item, folder_id);
+  AppListItem* folder_item = FindItem(folder_id);
+  DCHECK(folder_item->GetItemType() == AppListFolderItem::kItemType);
+  return static_cast<AppListFolderItem*>(folder_item);
 }
 
 void AppListTestModel::PopulateAppWithId(int id) {

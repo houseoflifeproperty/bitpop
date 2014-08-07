@@ -311,7 +311,7 @@ Ribbon.prototype.renderThumbnail_ = function(index) {
 
   util.createChild(thumbnail, 'image-wrapper');
 
-  this.metadataCache_.get(item.getEntry(), Gallery.METADATA_TYPE,
+  this.metadataCache_.getOne(item.getEntry(), Gallery.METADATA_TYPE,
       this.setThumbnailImage_.bind(this, thumbnail, item.getEntry()));
 
   // TODO: Implement LRU eviction.
@@ -344,7 +344,8 @@ Ribbon.prototype.setThumbnailImage_ = function(thumbnail, entry, metadata) {
  */
 Ribbon.prototype.onContentChange_ = function(event) {
   var url = event.item.getEntry().toURL();
-  this.remapCache_(event.oldEntry.toURL(), url);
+  if (event.oldEntry.toURL() !== url)
+    this.remapCache_(event.oldEntry.toURL(), url);
 
   var thumbnail = this.renderCache_[url];
   if (thumbnail && event.metadata)

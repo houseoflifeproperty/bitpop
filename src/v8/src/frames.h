@@ -5,9 +5,9 @@
 #ifndef V8_FRAMES_H_
 #define V8_FRAMES_H_
 
-#include "allocation.h"
-#include "handles.h"
-#include "safepoint-table.h"
+#include "src/allocation.h"
+#include "src/handles.h"
+#include "src/safepoint-table.h"
 
 namespace v8 {
 namespace internal {
@@ -927,13 +927,6 @@ class StackFrameLocator BASE_EMBEDDED {
 
  private:
   StackFrameIterator iterator_;
-};
-
-
-// Used specify the type of prologue to generate.
-enum PrologueFrameMode {
-  BUILD_FUNCTION_FRAME,
-  BUILD_STUB_FRAME
 };
 
 

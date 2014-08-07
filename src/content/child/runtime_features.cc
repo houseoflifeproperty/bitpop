@@ -12,6 +12,7 @@
 
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
+#include "base/android/build_info.h"
 #include "media/base/android/media_codec_bridge.h"
 #endif
 
@@ -27,14 +28,19 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
     WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
     WebRuntimeFeatures::enableEncryptedMedia(false);
   }
-  // WebAudio is enabled by default on ARM and X86 and only when the
-  // MediaCodec API is available.
+  // WebAudio is enabled by default but only when the MediaCodec API
+  // is available.
+  AndroidCpuFamily cpu_family = android_getCpuFamily();
   WebRuntimeFeatures::enableWebAudio(
       media::MediaCodecBridge::IsAvailable() &&
-      ((android_getCpuFamily() == ANDROID_CPU_FAMILY_ARM) ||
-       (android_getCpuFamily() == ANDROID_CPU_FAMILY_X86)));
-  // Android does not support the Gamepad API.
-  WebRuntimeFeatures::enableGamepad(false);
+      ((cpu_family == ANDROID_CPU_FAMILY_ARM) ||
+       (cpu_family == ANDROID_CPU_FAMILY_ARM64) ||
+       (cpu_family == ANDROID_CPU_FAMILY_X86) ||
+       (cpu_family == ANDROID_CPU_FAMILY_MIPS)));
+
+  // Android supports gamepad API for JellyBean and beyond
+  WebRuntimeFeatures::enableGamepad(
+      base::android::BuildInfo::GetInstance()->sdk_int() >= 16);
   // Android does not have support for PagePopup
   WebRuntimeFeatures::enablePagePopup(false);
   // Android does not yet support the Web Notification API. crbug.com/115320
@@ -45,6 +51,7 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   WebRuntimeFeatures::enableNavigatorContentUtils(false);
   WebRuntimeFeatures::enableTouchIconLoading(true);
   WebRuntimeFeatures::enableOrientationEvent(true);
+  WebRuntimeFeatures::enableFastMobileScrolling(true);
 #else
   WebRuntimeFeatures::enableNavigatorContentUtils(true);
 #endif  // defined(OS_ANDROID)
@@ -129,15 +136,20 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableWebGLDraftExtensions))
     WebRuntimeFeatures::enableWebGLDraftExtensions(true);
 
+  if (command_line.HasSwitch(switches::kEnableWebGLImageChromium))
+    WebRuntimeFeatures::enableWebGLImageChromium(true);
+
   if (command_line.HasSwitch(switches::kEnableOverlayFullscreenVideo))
     WebRuntimeFeatures::enableOverlayFullscreenVideo(true);
 
   if (ui::IsOverlayScrollbarEnabled())
     WebRuntimeFeatures::enableOverlayScrollbars(true);
 
-  if (command_line.HasSwitch(switches::kEnableFastTextAutosizing)
-      && !command_line.HasSwitch(switches::kDisableFastTextAutosizing))
+  if (command_line.HasSwitch(switches::kEnableFastTextAutosizing))
     WebRuntimeFeatures::enableFastTextAutosizing(true);
+
+  if (command_line.HasSwitch(switches::kDisableFastTextAutosizing))
+    WebRuntimeFeatures::enableFastTextAutosizing(false);
 
   if (command_line.HasSwitch(switches::kDisableRepaintAfterLayout))
     WebRuntimeFeatures::enableRepaintAfterLayout(false);
@@ -153,6 +165,9 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kEnablePreciseMemoryInfo))
     WebRuntimeFeatures::enablePreciseMemoryInfo(true);
+
+  if (command_line.HasSwitch(switches::kEnableLayerSquashing))
+    WebRuntimeFeatures::enableLayerSquashing(true);
 }
 
 }  // namespace content

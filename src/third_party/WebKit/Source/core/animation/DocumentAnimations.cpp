@@ -32,7 +32,7 @@
 #include "core/animation/DocumentAnimations.h"
 
 #include "core/animation/AnimationClock.h"
-#include "core/animation/DocumentTimeline.h"
+#include "core/animation/AnimationTimeline.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
@@ -49,7 +49,6 @@ namespace {
 void updateAnimationTiming(Document& document, TimingUpdateReason reason)
 {
     document.timeline().serviceAnimations(reason);
-    document.transitionTimeline().serviceAnimations(reason);
 }
 
 } // namespace
@@ -82,7 +81,7 @@ void DocumentAnimations::updateAnimationTimingForGetComputedStyle(Node& node, CS
 
 bool DocumentAnimations::needsOutdatedAnimationPlayerUpdate(const Document& document)
 {
-    return document.timeline().hasOutdatedAnimationPlayer() || document.transitionTimeline().hasOutdatedAnimationPlayer();
+    return document.timeline().hasOutdatedAnimationPlayer();
 }
 
 void DocumentAnimations::startPendingAnimations(Document& document)
@@ -92,8 +91,6 @@ void DocumentAnimations::startPendingAnimations(Document& document)
         ASSERT(document.view());
         document.view()->scheduleAnimation();
     }
-
-    document.animationClock().unfreeze();
 }
 
 } // namespace WebCore

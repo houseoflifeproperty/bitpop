@@ -91,37 +91,44 @@ define([
   function checkDefaultValues() {
     var bar = new sample.Bar();
     expect(bar.alpha).toBe(255);
+    expect(bar.type).toBe(sample.Bar.Type.TYPE_VERTICAL);
 
     var foo = new sample.Foo();
     expect(foo.name).toBe("Fooby");
     expect(foo.a).toBeTruthy();
+    // TODO(vtl): crbug.com/375845
+    // expect(foo.data).toBeNull();
 
-    expect(foo.data.length).toBe(3);
-    expect(foo.data[0]).toBe(1);
-    expect(foo.data[1]).toBe(2);
-    expect(foo.data[2]).toBe(3);
-
-    var inner = new sample.DefaultsTestInner();
-    expect(inner.names.length).toBe(1);
-    expect(inner.names[0]).toBe("Jim");
-    expect(inner.height).toBe(6*12);
-
-    var full = new sample.DefaultsTest();
-    expect(full.people.length).toBe(1);
-    expect(full.people[0].age).toBe(32);
-    expect(full.people[0].names.length).toBe(2);
-    expect(full.people[0].names[0]).toBe("Bob");
-    expect(full.people[0].names[1]).toBe("Bobby");
-    expect(full.people[0].height).toBe(6*12);
-
-    expect(full.point.x).toBe(7);
-    expect(full.point.y).toBe(15);
-
-    expect(full.shape_masks.length).toBe(1);
-    expect(full.shape_masks[0]).toBe(1 << imported.Shape.SHAPE_RECTANGLE);
-
-    expect(full.thing.shape).toBe(imported.Shape.SHAPE_CIRCLE);
-    expect(full.thing.color).toBe(imported2.Color.COLOR_BLACK);
+    var defaults = new sample.DefaultsTest();
+    expect(defaults.a0).toBe(-12);
+    expect(defaults.a1).toBe(sample.kTwelve);
+    expect(defaults.a2).toBe(1234);
+    expect(defaults.a3).toBe(34567);
+    expect(defaults.a4).toBe(123456);
+    // TODO(vtl): crbug.com/375522
+    // expect(defaults.a5).toBe(3456789012);
+    expect(defaults.a6).toBe(111111111111);
+    // TODO(vtl): crbug.com/375522 (Also, can we get exact values for large
+    // int64/uint64's in JS?)
+    // expect(defaults.a7).toBe(9999999999999999999);
+    expect(defaults.a8).toBe(0x12345);
+    expect(defaults.a9).toBe(-0x12345);
+    expect(defaults.a10).toBe(1234);
+    expect(defaults.a11).toBe(true);
+    expect(defaults.a12).toBe(false);
+    expect(defaults.a13).toBe(123.25);
+    expect(defaults.a14).toBe(1234567890.123);
+    expect(defaults.a15).toBe(1E10);
+    expect(defaults.a16).toBe(-1.2E+20);
+    expect(defaults.a17).toBe(1.23E-20);
+    expect(defaults.a20).toBe(sample.Bar.Type.TYPE_BOTH);
+    expect(defaults.a21).toBeNull();
+    expect(defaults.a22).toBeTruthy();
+    expect(defaults.a22.shape).toBe(imported.Shape.SHAPE_RECTANGLE);
+    expect(defaults.a22.color).toBe(imported2.Color.COLOR_BLACK);
+    // TODO(vtl): crbug.com/375845
+    // expect(defaults.a21).toBeNull();
+    // expect(defaults.a22).toBeNull();
   }
 
   function ServiceImpl() {

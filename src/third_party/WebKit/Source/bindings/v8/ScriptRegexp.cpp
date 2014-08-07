@@ -40,7 +40,7 @@ ScriptRegexp::ScriptRegexp(const String& pattern, TextCaseSensitivity caseSensit
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HandleScope handleScope(isolate);
-    v8::Context::Scope contextScope(V8PerIsolateData::from(isolate)->ensureDomInJSContext());
+    v8::Context::Scope contextScope(V8PerIsolateData::from(isolate)->ensureScriptRegexpContext());
     v8::TryCatch tryCatch;
 
     unsigned flags = v8::RegExp::kNone;
@@ -72,13 +72,16 @@ int ScriptRegexp::match(const String& string, int startFrom, int* matchLength) c
 
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::HandleScope handleScope(isolate);
-    v8::Context::Scope contextScope(V8PerIsolateData::from(isolate)->ensureDomInJSContext());
+    v8::Context::Scope contextScope(V8PerIsolateData::from(isolate)->ensureScriptRegexpContext());
     v8::TryCatch tryCatch;
 
     v8::Local<v8::RegExp> regex = m_regex.newLocal(isolate);
     v8::Local<v8::Function> exec = regex->Get(v8AtomicString(isolate, "exec")).As<v8::Function>();
     v8::Handle<v8::Value> argv[] = { v8String(isolate, string.substring(startFrom)) };
     v8::Local<v8::Value> returnValue = V8ScriptRunner::callInternalFunction(exec, regex, WTF_ARRAY_LENGTH(argv), argv, isolate);
+
+    if (tryCatch.HasCaught())
+        return -1;
 
     // RegExp#exec returns null if there's no match, otherwise it returns an
     // Array of strings with the first being the whole match string and others
@@ -87,6 +90,7 @@ int ScriptRegexp::match(const String& string, int startFrom, int* matchLength) c
     //
     // https://developer.mozilla.org/en-US/docs/JavaScript/Reference/Global_Objects/RegExp/exec
 
+    ASSERT(!returnValue.IsEmpty());
     if (!returnValue->IsArray())
         return -1;
 

@@ -36,7 +36,7 @@ typedef EventSender<HTMLSourceElement> SourceEventSender;
 
 class HTMLSourceElement FINAL : public HTMLElement {
 public:
-    static PassRefPtrWillBeRawPtr<HTMLSourceElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLSourceElement);
     virtual ~HTMLSourceElement();
 
     const AtomicString& type() const;
@@ -54,6 +54,7 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
     virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
 };
 
 } // namespace WebCore

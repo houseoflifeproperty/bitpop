@@ -48,6 +48,8 @@
 
         'skia_android_framework%': 0,
         'skia_arch_type%': 'x86',
+        'arm_version%': 0,
+        'arm_neon%': 0,
       },
 
       # Re-define all variables defined within the level-3 'variables' dict,
@@ -55,21 +57,25 @@
       # (skia_os will depend on skia_android_framework.)
       'skia_android_framework%': '<(skia_android_framework)',
       'skia_arch_type%': '<(skia_arch_type)',
+      'arm_version%': '<(arm_version)',
+      'arm_neon%': '<(arm_neon)',
 
       'conditions': [
         [ 'skia_android_framework == 1', {
           'skia_os%': 'android',
           'skia_chrome_utils%': 0,
+          'skia_use_system_json%': 1,
         }, {
           'skia_os%': '<(skia_os)',
           'skia_chrome_utils%': 1,
+          'skia_use_system_json%': 0,
         }],
         [ 'skia_os == "win"', {
           'os_posix%': 0,
         }, {
           'os_posix%': 1,
         }],
-        [ 'skia_os in ["linux", "win"]', {
+        [ 'skia_os in ["linux"]', {
           'skia_poppler_enabled%': 1,
         }, {
           'skia_poppler_enabled%': 0,
@@ -88,10 +94,6 @@
           'skia_arch_type%': 'arm',
           'arm_version%': 7,
           'arm_neon%': 0, # neon asm files known not to work with the ios build
-        },{ # skia_os is not ios
-          'skia_arch_type%': 'x86',
-          'arm_version%': 0,
-          'arm_neon%': 0,
         }],
         [ 'skia_os in ["android", "nacl"] and not skia_android_framework',
           # skia_freetype_static - on OS variants that normally would
@@ -185,6 +187,8 @@
     'arm_version%': '<(arm_version)',
     'arm_neon%': '<(arm_neon)',
     'arm_neon_optional%': 0,
+    'mips_arch_variant%': 'mips32',
+    'mips_dsp%': 0,
     'skia_os%': '<(skia_os)',
     'os_posix%': '<(os_posix)',
 
@@ -198,6 +202,7 @@
     'skia_mesa%': '<(skia_mesa)',
     'skia_stroke_path_rendering%': '<(skia_stroke_path_rendering)',
     'skia_android_framework%': '<(skia_android_framework)',
+    'skia_use_system_json%': '<(skia_use_system_json)',
     'skia_android_path_rendering%': '<(skia_android_path_rendering)',
     'skia_resource_cache_mb_limit%': '<(skia_resource_cache_mb_limit)',
     'skia_resource_cache_count_limit%': '<(skia_resource_cache_count_limit)',
@@ -219,6 +224,7 @@
     'skia_win_debuggers_path%': '<(skia_win_debuggers_path)',
     'skia_run_pdfviewer_in_gm%': 0,
     'skia_disable_inlining%': 0,
+    'skia_moz2d%': 0,
 
     # These are referenced by our .gypi files that list files (e.g. core.gypi)
     #

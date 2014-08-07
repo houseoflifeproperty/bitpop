@@ -156,13 +156,7 @@ class CHROMEOS_EXPORT ShillPropertyHandler
   void ManagerPropertyChanged(const std::string& key,
                               const base::Value& value);
 
-  // Requests properties for new entries in the list for |type| as follows:
-  // * Any new Device objects for MANAGED_TYPE_DEVICE
-  // * Any new Service objects for MANAGED_TYPE_NETWORK
-  // * Additional new Service objects for MANAGED_TYPE_FAVORITE that were not
-  //   requested for MANAGED_TYPE_NETWORK (i.e. only request objects once).
-  // For this to avoid duplicate requests, this must be called with
-  // MANAGED_TYPE_NETWORK before MANAGED_TYPE_FAVORITE.
+  // Requests properties for new entries in the list for |type|.
   void UpdateProperties(ManagedState::ManagedType type,
                         const base::ListValue& entries);
 

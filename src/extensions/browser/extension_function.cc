@@ -13,35 +13,49 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_message_filter.h"
+#include "extensions/common/error_utils.h"
 #include "extensions/common/extension_api.h"
 #include "extensions/common/extension_messages.h"
 
 using content::BrowserThread;
 using content::RenderViewHost;
 using content::WebContents;
+using extensions::ErrorUtils;
 using extensions::ExtensionAPI;
 using extensions::Feature;
 
 namespace {
 
-class MultipleArgumentsResponseValue
+class ArgumentListResponseValue
     : public ExtensionFunction::ResponseValueObject {
  public:
-  MultipleArgumentsResponseValue(ExtensionFunction* function,
-                                 base::ListValue* result) {
+  ArgumentListResponseValue(const std::string& function_name,
+                            const char* title,
+                            ExtensionFunction* function,
+                            scoped_ptr<base::ListValue> result)
+      : function_name_(function_name), title_(title) {
     if (function->GetResultList()) {
-      DCHECK_EQ(function->GetResultList(), result);
+      DCHECK_EQ(function->GetResultList(), result.get())
+          << "The result set on this function (" << function_name_ << ") "
+          << "either by calling SetResult() or directly modifying |result_| is "
+          << "different to the one passed to " << title_ << "(). "
+          << "The best way to fix this problem is to exclusively use " << title_
+          << "(). SetResult() and |result_| are deprecated.";
     } else {
-      function->SetResultList(make_scoped_ptr(result));
+      function->SetResultList(result.Pass());
     }
     // It would be nice to DCHECK(error.empty()) but some legacy extension
     // function implementations... I'm looking at chrome.input.ime... do this
     // for some reason.
   }
 
-  virtual ~MultipleArgumentsResponseValue() {}
+  virtual ~ArgumentListResponseValue() {}
 
   virtual bool Apply() OVERRIDE { return true; }
+
+ private:
+  std::string function_name_;
+  const char* title_;
 };
 
 class ErrorResponseValue : public ExtensionFunction::ResponseValueObject {
@@ -130,6 +144,16 @@ class UIThreadExtensionFunction::RenderHostTracker
     function_->SetRenderFrameHost(NULL);
   }
 
+  virtual bool OnMessageReceived(
+      const IPC::Message& message,
+      content::RenderFrameHost* render_frame_host) OVERRIDE {
+    DCHECK(render_frame_host);
+    if (render_frame_host == function_->render_frame_host())
+      return function_->OnMessageReceived(message);
+    else
+      return false;
+  }
+
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     return function_->OnMessageReceived(message);
   }
@@ -200,29 +224,65 @@ void ExtensionFunction::SetError(const std::string& error) {
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::NoArguments() {
-  return MultipleArguments(new base::ListValue());
+  return ResponseValue(new ArgumentListResponseValue(
+      name(), "NoArguments", this, make_scoped_ptr(new base::ListValue())));
 }
 
-ExtensionFunction::ResponseValue ExtensionFunction::SingleArgument(
+ExtensionFunction::ResponseValue ExtensionFunction::OneArgument(
     base::Value* arg) {
-  base::ListValue* args = new base::ListValue();
+  scoped_ptr<base::ListValue> args(new base::ListValue());
   args->Append(arg);
-  return MultipleArguments(args);
+  return ResponseValue(
+      new ArgumentListResponseValue(name(), "OneArgument", this, args.Pass()));
 }
 
-ExtensionFunction::ResponseValue ExtensionFunction::MultipleArguments(
-    base::ListValue* args) {
-  return scoped_ptr<ResponseValueObject>(
-      new MultipleArgumentsResponseValue(this, args));
+ExtensionFunction::ResponseValue ExtensionFunction::TwoArguments(
+    base::Value* arg1,
+    base::Value* arg2) {
+  scoped_ptr<base::ListValue> args(new base::ListValue());
+  args->Append(arg1);
+  args->Append(arg2);
+  return ResponseValue(
+      new ArgumentListResponseValue(name(), "TwoArguments", this, args.Pass()));
+}
+
+ExtensionFunction::ResponseValue ExtensionFunction::ArgumentList(
+    scoped_ptr<base::ListValue> args) {
+  return ResponseValue(
+      new ArgumentListResponseValue(name(), "ArgumentList", this, args.Pass()));
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::Error(
     const std::string& error) {
-  return scoped_ptr<ResponseValueObject>(new ErrorResponseValue(this, error));
+  return ResponseValue(new ErrorResponseValue(this, error));
+}
+
+ExtensionFunction::ResponseValue ExtensionFunction::Error(
+    const std::string& format,
+    const std::string& s1) {
+  return ResponseValue(
+      new ErrorResponseValue(this, ErrorUtils::FormatErrorMessage(format, s1)));
+}
+
+ExtensionFunction::ResponseValue ExtensionFunction::Error(
+    const std::string& format,
+    const std::string& s1,
+    const std::string& s2) {
+  return ResponseValue(new ErrorResponseValue(
+      this, ErrorUtils::FormatErrorMessage(format, s1, s2)));
+}
+
+ExtensionFunction::ResponseValue ExtensionFunction::Error(
+    const std::string& format,
+    const std::string& s1,
+    const std::string& s2,
+    const std::string& s3) {
+  return ResponseValue(new ErrorResponseValue(
+      this, ErrorUtils::FormatErrorMessage(format, s1, s2, s3)));
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::BadMessage() {
-  return scoped_ptr<ResponseValueObject>(new BadMessageResponseValue(this));
+  return ResponseValue(new BadMessageResponseValue(this));
 }
 
 ExtensionFunction::ResponseAction ExtensionFunction::RespondNow(
@@ -326,18 +386,39 @@ void UIThreadExtensionFunction::SendResponse(bool success) {
     delegate_->OnSendResponse(this, success, bad_message_);
   else
     SendResponseImpl(success);
+
+  if (!transferred_blob_uuids_.empty()) {
+    DCHECK(!delegate_) << "Blob transfer not supported with test delegate.";
+    GetIPCSender()->Send(
+        new ExtensionMsg_TransferBlobs(transferred_blob_uuids_));
+  }
+}
+
+void UIThreadExtensionFunction::SetTransferredBlobUUIDs(
+    const std::vector<std::string>& blob_uuids) {
+  DCHECK(transferred_blob_uuids_.empty());  // Should only be called once.
+  transferred_blob_uuids_ = blob_uuids;
 }
 
 void UIThreadExtensionFunction::WriteToConsole(
     content::ConsoleMessageLevel level,
     const std::string& message) {
-  if (render_view_host_) {
-    render_view_host_->Send(new ExtensionMsg_AddMessageToConsole(
-        render_view_host_->GetRoutingID(), level, message));
-  } else {
-    render_frame_host_->Send(new ExtensionMsg_AddMessageToConsole(
-        render_frame_host_->GetRoutingID(), level, message));
-  }
+  GetIPCSender()->Send(
+      new ExtensionMsg_AddMessageToConsole(GetRoutingID(), level, message));
+}
+
+IPC::Sender* UIThreadExtensionFunction::GetIPCSender() {
+  if (render_view_host_)
+    return render_view_host_;
+  else
+    return render_frame_host_;
+}
+
+int UIThreadExtensionFunction::GetRoutingID() {
+  if (render_view_host_)
+    return render_view_host_->GetRoutingID();
+  else
+    return render_frame_host_->GetRoutingID();
 }
 
 IOThreadExtensionFunction::IOThreadExtensionFunction()
@@ -383,8 +464,7 @@ SyncExtensionFunction::~SyncExtensionFunction() {
 }
 
 ExtensionFunction::ResponseAction SyncExtensionFunction::Run() {
-  return RespondNow(RunSync() ? MultipleArguments(results_.get())
-                              : Error(error_));
+  return RespondNow(RunSync() ? ArgumentList(results_.Pass()) : Error(error_));
 }
 
 // static
@@ -399,8 +479,7 @@ SyncIOThreadExtensionFunction::~SyncIOThreadExtensionFunction() {
 }
 
 ExtensionFunction::ResponseAction SyncIOThreadExtensionFunction::Run() {
-  return RespondNow(RunSync() ? MultipleArguments(results_.get())
-                              : Error(error_));
+  return RespondNow(RunSync() ? ArgumentList(results_.Pass()) : Error(error_));
 }
 
 // static

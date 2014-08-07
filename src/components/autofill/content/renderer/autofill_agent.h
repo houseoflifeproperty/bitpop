@@ -15,7 +15,6 @@
 #include "base/timer/timer.h"
 #include "components/autofill/content/renderer/form_cache.h"
 #include "components/autofill/content/renderer/page_click_listener.h"
-#include "components/autofill/core/common/forms_seen_state.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/public/web/WebAutofillClient.h"
 #include "third_party/WebKit/public/web/WebFormControlElement.h"
@@ -60,6 +59,8 @@ class AutofillAgent : public content::RenderViewObserver,
   // content::RenderViewObserver:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidFinishDocumentLoad(blink::WebLocalFrame* frame) OVERRIDE;
+  virtual void DidCommitProvisionalLoad(blink::WebLocalFrame* frame,
+                                        bool is_new_navigation) OVERRIDE;
   virtual void FrameDetached(blink::WebFrame* frame) OVERRIDE;
   virtual void FrameWillClose(blink::WebFrame* frame) OVERRIDE;
   virtual void WillSubmitForm(blink::WebLocalFrame* frame,
@@ -83,9 +84,12 @@ class AutofillAgent : public content::RenderViewObserver,
   virtual void textFieldDidReceiveKeyDown(
       const blink::WebInputElement& element,
       const blink::WebKeyboardEvent& event);
+  // TODO(estade): remove.
   virtual void didRequestAutocomplete(
       const blink::WebFormElement& form,
       const blink::WebAutocompleteParams& details);
+  virtual void didRequestAutocomplete(
+      const blink::WebFormElement& form);
   virtual void setIgnoreTextChanges(bool ignore);
   virtual void didAssociateFormControls(
       const blink::WebVector<blink::WebNode>& nodes);
@@ -95,6 +99,7 @@ class AutofillAgent : public content::RenderViewObserver,
   void OnFieldTypePredictionsAvailable(
       const std::vector<FormDataPredictions>& forms);
   void OnFillForm(int query_id, const FormData& form);
+  void OnPing();
   void OnPreviewForm(int query_id, const FormData& form);
 
   // For external Autofill selection.
@@ -103,8 +108,10 @@ class AutofillAgent : public content::RenderViewObserver,
   void OnFillFieldWithValue(const base::string16& value);
   void OnPreviewFieldWithValue(const base::string16& value);
   void OnAcceptDataListSuggestion(const base::string16& value);
-  void OnAcceptPasswordAutofillSuggestion(const base::string16& username,
-                                          const base::string16& password);
+  void OnFillPasswordSuggestion(const base::string16& username,
+                                const base::string16& password);
+  void OnPreviewPasswordSuggestion(const base::string16& username,
+                                   const base::string16& password);
 
   // Called when interactive autocomplete finishes. |message| is printed to
   // the console if non-empty.
@@ -167,6 +174,9 @@ class AutofillAgent : public content::RenderViewObserver,
   void PreviewFieldWithValue(const base::string16& value,
                              blink::WebInputElement* node);
 
+  // Notifies browser of new fillable forms in |frame|.
+  void ProcessForms(const blink::WebLocalFrame& frame);
+
   // Hides any currently showing Autofill popup.
   void HidePopup();
 
@@ -218,8 +228,10 @@ class AutofillAgent : public content::RenderViewObserver,
   // messages to close the Autofill popup when it can't possibly be showing.
   bool is_popup_possibly_visible_;
 
-  // Timestamp of first time forms are seen.
-  base::TimeTicks forms_seen_timestamp_;
+  // True if a message has already been sent about forms for the main frame.
+  // When the main frame is first loaded, a message is sent even if no forms
+  // exist in the frame. Otherwise, such messages are supressed.
+  bool main_frame_processed_;
 
   base::WeakPtrFactory<AutofillAgent> weak_ptr_factory_;
 

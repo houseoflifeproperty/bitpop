@@ -314,6 +314,7 @@ cr.define('cr.ui', function() {
 
       this.addEventListener('dblclick', this.handleDoubleClick_);
       this.addEventListener('mousedown', handleMouseDown);
+      this.addEventListener('dragstart', handleDragStart, true);
       this.addEventListener('mouseup', this.handlePointerDownUp_);
       this.addEventListener('keydown', this.handleKeyDown);
       this.addEventListener('focus', this.handleElementFocus_, true);
@@ -1300,6 +1301,28 @@ cr.define('cr.ui', function() {
         listItem.contains(listItem.ownerDocument.activeElement)) {
       e.preventDefault();
     }
+  }
+
+  /**
+   * Dragstart event handler.
+   * If there is an item at starting position of drag operation and the item
+   * is not selected, select it.
+   * @this {List}
+   * @param {MouseEvent} e The event object for 'dragstart'.
+   */
+  function handleDragStart(e) {
+    var element = e.target.ownerDocument.elementFromPoint(e.clientX, e.clientY);
+    var listItem = this.getListItemAncestor(element);
+    if (!listItem)
+      return;
+
+    var index = this.getIndexOfListItem(listItem);
+    if (index == -1)
+      return;
+
+    var isAlreadySelected = this.selectionModel_.getIndexSelected(index);
+    if (!isAlreadySelected)
+      this.selectionModel_.selectedIndex = index;
   }
 
   /**

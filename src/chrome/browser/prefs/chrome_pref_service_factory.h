@@ -23,7 +23,6 @@ namespace user_prefs {
 class PrefRegistrySyncable;
 }
 
-class ManagedUserSettingsService;
 class PrefHashStore;
 class PrefRegistry;
 class PrefRegistrySimple;
@@ -31,6 +30,8 @@ class PrefService;
 class PrefServiceSyncable;
 class PrefStore;
 class Profile;
+class SupervisedUserSettingsService;
+class TrackedPreferenceValidationDelegate;
 
 namespace chrome_prefs {
 
@@ -38,7 +39,6 @@ namespace internals {
 
 extern const char kSettingsEnforcementTrialName[];
 extern const char kSettingsEnforcementGroupNoEnforcement[];
-extern const char kSettingsEnforcementGroupEnforceOnload[];
 extern const char kSettingsEnforcementGroupEnforceAlways[];
 extern const char kSettingsEnforcementGroupEnforceAlwaysWithDSE[];
 extern const char kSettingsEnforcementGroupEnforceAlwaysWithExtensionsAndDSE[];
@@ -70,8 +70,9 @@ scoped_ptr<PrefService> CreateLocalState(
 scoped_ptr<PrefServiceSyncable> CreateProfilePrefs(
     const base::FilePath& pref_filename,
     base::SequencedTaskRunner* pref_io_task_runner,
+    TrackedPreferenceValidationDelegate* validation_delegate,
     policy::PolicyService* policy_service,
-    ManagedUserSettingsService* managed_user_settings,
+    SupervisedUserSettingsService* supervised_user_settings,
     const scoped_refptr<PrefStore>& extension_prefs,
     const scoped_refptr<user_prefs::PrefRegistrySyncable>& pref_registry,
     bool async);
@@ -90,10 +91,6 @@ void DisableDelaysAndDomainCheckForTesting();
 // state on platforms that don't yet support a pref hash store.
 void SchedulePrefHashStoresUpdateCheck(
     const base::FilePath& initial_profile_path);
-
-// Resets the contents of the preference hash store for the profile at
-// |profile_path|.
-void ResetPrefHashStore(const base::FilePath& profile_path);
 
 // Initializes the preferences for the profile at |profile_path| with the
 // preference values in |master_prefs|. Returns true on success.

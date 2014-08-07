@@ -27,18 +27,11 @@ class CastTransportHostFilter : public content::BrowserMessageFilter {
   void ReceivedPacket(
       int32 channel_id,
       scoped_ptr<media::cast::transport::Packet> result);
-  void ReceivedRtpStatistics(
-      int32 channel_id,
-      bool audio,
-      const media::cast::transport::RtcpSenderInfo& sender_info,
-      base::TimeTicks time_sent,
-      uint32 rtp_timestamp);
   void RawEvents(int32 channel_id,
                  const std::vector<media::cast::PacketEvent>& packet_events);
 
   // BrowserMessageFilter implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Forwarding functions.
   void OnInitializeAudio(
@@ -49,22 +42,20 @@ class CastTransportHostFilter : public content::BrowserMessageFilter {
       const media::cast::transport::CastTransportVideoConfig& config);
   void OnInsertCodedAudioFrame(
       int32 channel_id,
-      const media::cast::transport::EncodedAudioFrame& audio_frame,
-      base::TimeTicks recorded_time);
+      const media::cast::transport::EncodedFrame& audio_frame);
   void OnInsertCodedVideoFrame(
       int32 channel_id,
-      const media::cast::transport::EncodedVideoFrame& video_frame,
-      base::TimeTicks capture_time);
+      const media::cast::transport::EncodedFrame& video_frame);
   void OnSendRtcpFromRtpSender(
       int32 channel_id,
       const media::cast::transport::SendRtcpFromRtpSenderData& data,
-      const media::cast::transport::RtcpSenderInfo& sender_info,
-      const media::cast::transport::RtcpDlrrReportBlock& dlrr,
-      const media::cast::transport::RtcpSenderLogMessage& sender_log);
+      const media::cast::transport::RtcpDlrrReportBlock& dlrr);
   void OnResendPackets(
       int32 channel_id,
       bool is_audio,
-      const media::cast::MissingFramesAndPacketsMap& missing_packets);
+      const media::cast::MissingFramesAndPacketsMap& missing_packets,
+      bool cancel_rtx_if_not_in_list,
+      base::TimeDelta dedupe_window);
   void OnNew(
       int32 channel_id,
       const net::IPEndPoint& remote_end_point);

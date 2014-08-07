@@ -1,5 +1,34 @@
 [
   {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/bot_update.py",
+      "--master",
+      "client.webrtc",
+      "--builder",
+      "Android Chromium-APK Tests (KK Nexus5)(dbg)",
+      "--slave",
+      "fake_slavename",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'googlecode_url': 'svn://svn-mirror.golo.chromium.org/%s', 'nacl_trunk': 'svn://svn-mirror.golo.chromium.org/native_client/trunk', 'sourceforge_url': 'svn://svn-mirror.golo.chromium.org/%(repo)s', 'webkit_trunk': 'svn://svn-mirror.golo.chromium.org/blink/trunk', 'webrtc_revision': '12345'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'}, {'custom_vars': {'root_dir': 'src'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'webrtc-limited', 'url': 'svn://svn-mirror.golo.chromium.org/chrome-internal/trunk/webrtc-limited'}, {'deps_file': 'DEPS', 'managed': True, 'name': 'webrtc.DEPS', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/deps/third_party/webrtc/webrtc.DEPS'}]\ntarget_os = ['android']",
+      "--revision_mapping_file",
+      "{\"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_revision\", \"src/tools/swarm_client\": \"got_swarm_client_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
+      "--output_json",
+      "/path/to/tmp/json",
+      "--revision",
+      "src@HEAD"
+    ],
+    "name": "bot_update",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
     "cmd": [
       "python",
       "-u",
@@ -101,11 +130,11 @@
       "--build-url",
       "gs://chromium-webrtc/android_dbg",
       "--build_revision",
-      "12345",
+      "120644",
       "--factory-properties",
-      "{\"BUILD_CONFIG\": \"Debug\", \"TARGET_ARCH\": \"arm\", \"TARGET_BITS\": 32, \"TARGET_PLATFORM\": \"android\", \"buildername\": \"Android Chromium-APK Tests (KK Nexus5)(dbg)\", \"mastername\": \"client.webrtc\", \"parent_buildername\": \"Android Chromium-APK Builder (dbg)\", \"parent_got_revision\": \"12345\", \"recipe\": \"webrtc/android_apk\", \"revision\": \"12345\"}",
+      "{\"BUILD_CONFIG\": \"Debug\", \"TARGET_ARCH\": \"arm\", \"TARGET_BITS\": 32, \"TARGET_PLATFORM\": \"android\", \"buildername\": \"Android Chromium-APK Tests (KK Nexus5)(dbg)\", \"mastername\": \"client.webrtc\", \"parent_buildername\": \"Android Chromium-APK Builder (dbg)\", \"parent_got_revision\": \"12345\", \"recipe\": \"webrtc/android_apk\", \"revision\": \"12345\", \"slavename\": \"fake_slavename\"}",
       "--build-properties",
-      "{\"BUILD_CONFIG\": \"Debug\", \"TARGET_ARCH\": \"arm\", \"TARGET_BITS\": 32, \"TARGET_PLATFORM\": \"android\", \"buildername\": \"Android Chromium-APK Tests (KK Nexus5)(dbg)\", \"mastername\": \"client.webrtc\", \"parent_buildername\": \"Android Chromium-APK Builder (dbg)\", \"parent_got_revision\": \"12345\", \"recipe\": \"webrtc/android_apk\", \"revision\": \"12345\"}"
+      "{\"BUILD_CONFIG\": \"Debug\", \"TARGET_ARCH\": \"arm\", \"TARGET_BITS\": 32, \"TARGET_PLATFORM\": \"android\", \"buildername\": \"Android Chromium-APK Tests (KK Nexus5)(dbg)\", \"mastername\": \"client.webrtc\", \"parent_buildername\": \"Android Chromium-APK Builder (dbg)\", \"parent_got_revision\": \"12345\", \"recipe\": \"webrtc/android_apk\", \"revision\": \"12345\", \"slavename\": \"fake_slavename\"}"
     ],
     "name": "extract build"
   },
@@ -302,6 +331,23 @@
       "[SLAVE_BUILD]/src/build/android/test_runner.py",
       "gtest",
       "-s",
+      "video_engine_tests",
+      "--verbose"
+    ],
+    "env": {
+      "GYP_CROSSCOMPILE": "1",
+      "GYP_DEFINES": "OS=android component=static_library fastbuild=1 gomadir='[BUILD]/goma' include_tests=1 target_arch=arm use_goma=1",
+      "GYP_GENERATOR_FLAGS": "default_target=android_builder_webrtc"
+    },
+    "name": "video_engine_tests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
       "voice_engine_unittests",
       "--verbose"
     ],
@@ -311,6 +357,40 @@
       "GYP_GENERATOR_FLAGS": "default_target=android_builder_webrtc"
     },
     "name": "voice_engine_unittests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "video_capture_tests",
+      "--verbose"
+    ],
+    "env": {
+      "GYP_CROSSCOMPILE": "1",
+      "GYP_DEFINES": "OS=android component=static_library fastbuild=1 gomadir='[BUILD]/goma' include_tests=1 target_arch=arm use_goma=1",
+      "GYP_GENERATOR_FLAGS": "default_target=android_builder_webrtc"
+    },
+    "name": "video_capture_tests"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/test_runner.py",
+      "gtest",
+      "-s",
+      "webrtc_perf_tests",
+      "--verbose"
+    ],
+    "env": {
+      "GYP_CROSSCOMPILE": "1",
+      "GYP_DEFINES": "OS=android component=static_library fastbuild=1 gomadir='[BUILD]/goma' include_tests=1 target_arch=arm use_goma=1",
+      "GYP_GENERATOR_FLAGS": "default_target=android_builder_webrtc"
+    },
+    "name": "webrtc_perf_tests"
   },
   {
     "always_run": true,
@@ -324,6 +404,31 @@
       "[SLAVE_BUILD]/src/out/logcat"
     ],
     "name": "logcat_dump"
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "[SLAVE_BUILD]/src/third_party/android_platform/development/scripts/stack",
+      "--more-info",
+      "[SLAVE_BUILD]/src/out/Debug/full_log"
+    ],
+    "env": {
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
+    "name": "stack_tool_with_logcat_dump"
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "[SLAVE_BUILD]/src/build/android/tombstones.py",
+      "-a",
+      "-s",
+      "-w"
+    ],
+    "env": {
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
+    "name": "stack_tool_for_tombstones"
   },
   {
     "always_run": true,

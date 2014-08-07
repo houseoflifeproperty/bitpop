@@ -1,0 +1,462 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'root_dir': 'src'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/webrtc/trunk'}, {'custom_vars': {'root_dir': 'src'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'webrtc-limited', 'url': 'svn://svn-mirror.golo.chromium.org/chrome-internal/trunk/webrtc-limited'}]"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "sync",
+      "--nohooks",
+      "--delete_unversioned_trees",
+      "--force",
+      "--verbose",
+      "--revision",
+      "src@12345",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 170242@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"webrtc-limited/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 24644@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@170242@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "GYP_DEFINES": "chromium_win_pch=0 component=static_library fastbuild=1 gomadir='[BUILD]\\goma' syzyasan=1 target_arch=ia32 use_goma=1 win_z7=1",
+      "GYP_USE_SEPARATE_MSPDBSRV": "1"
+    },
+    "name": "gclient runhooks",
+    "seed_steps": [
+      "gclient runhooks",
+      "compile",
+      "apply_syzyasan",
+      "audio_decoder_unittests",
+      "common_audio_unittests",
+      "common_video_unittests",
+      "libjingle_media_unittest",
+      "libjingle_p2p_unittest",
+      "libjingle_peerconnection_unittest",
+      "libjingle_sound_unittest",
+      "libjingle_unittest",
+      "modules_tests",
+      "modules_unittests",
+      "system_wrappers_unittests",
+      "test_support_unittests",
+      "tools_unittests",
+      "video_engine_core_unittests",
+      "video_engine_tests",
+      "voice_engine_unittests"
+    ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\compile.py",
+      "--target",
+      "Release",
+      "--src-dir",
+      "[SLAVE_BUILD]\\src",
+      "--build-tool",
+      "ninja",
+      "--compiler",
+      "goma",
+      "--goma-dir",
+      "[BUILD]\\goma",
+      "--",
+      "All"
+    ],
+    "name": "compile"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\chromium\\win_apply_syzyasan.py",
+      "--target",
+      "Release"
+    ],
+    "name": "apply_syzyasan"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=audio_decoder_unittests",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "audio_decoder_unittests.exe"
+    ],
+    "name": "audio_decoder_unittests"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=common_audio_unittests",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "common_audio_unittests.exe"
+    ],
+    "name": "common_audio_unittests"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=common_video_unittests",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "common_video_unittests.exe"
+    ],
+    "name": "common_video_unittests"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=libjingle_media_unittest",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "libjingle_media_unittest.exe"
+    ],
+    "name": "libjingle_media_unittest"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=libjingle_p2p_unittest",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "libjingle_p2p_unittest.exe"
+    ],
+    "name": "libjingle_p2p_unittest"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=libjingle_peerconnection_unittest",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "libjingle_peerconnection_unittest.exe"
+    ],
+    "name": "libjingle_peerconnection_unittest"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=libjingle_sound_unittest",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "libjingle_sound_unittest.exe"
+    ],
+    "name": "libjingle_sound_unittest"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=libjingle_unittest",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "libjingle_unittest.exe"
+    ],
+    "name": "libjingle_unittest"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=modules_tests",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "modules_tests.exe"
+    ],
+    "name": "modules_tests"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=modules_unittests",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "modules_unittests.exe"
+    ],
+    "name": "modules_unittests"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=system_wrappers_unittests",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "system_wrappers_unittests.exe"
+    ],
+    "name": "system_wrappers_unittests"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=test_support_unittests",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "test_support_unittests.exe"
+    ],
+    "name": "test_support_unittests"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=tools_unittests",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "tools_unittests.exe"
+    ],
+    "name": "tools_unittests"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=video_engine_core_unittests",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "video_engine_core_unittests.exe"
+    ],
+    "name": "video_engine_core_unittests"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=video_engine_tests",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "video_engine_tests.exe"
+    ],
+    "name": "video_engine_tests"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\runtest.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Win SyzyASan\", \"mastername\": \"client.webrtc\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
+      "--annotate=gtest",
+      "--test-type=voice_engine_unittests",
+      "--builder-name=Win SyzyASan",
+      "--slave-name=slavename",
+      "--use-syzyasan-logger",
+      "voice_engine_unittests.exe"
+    ],
+    "name": "voice_engine_unittests"
+  }
+]

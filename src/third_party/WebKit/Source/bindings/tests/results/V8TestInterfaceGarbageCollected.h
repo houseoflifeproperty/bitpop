@@ -7,8 +7,8 @@
 #ifndef V8TestInterfaceGarbageCollected_h
 #define V8TestInterfaceGarbageCollected_h
 
-#include "V8EventTarget.h"
 #include "bindings/tests/idls/TestInterfaceGarbageCollected.h"
+#include "bindings/tests/v8/V8EventTarget.h"
 #include "bindings/v8/V8Binding.h"
 #include "bindings/v8/V8DOMWrapper.h"
 #include "bindings/v8/WrapperTypeInfo.h"
@@ -32,7 +32,7 @@ public:
     static void constructorCallback(const v8::FunctionCallbackInfo<v8::Value>&);
     static const int eventListenerCacheIndex = v8DefaultWrapperInternalFieldCount + 0;
     static const int persistentHandleIndex = v8DefaultWrapperInternalFieldCount + 1;
-    static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 2;
+    static const int internalFieldCount = v8DefaultWrapperInternalFieldCount + 1 + 1;
     static inline void* toInternalPointer(TestInterfaceGarbageCollected* impl)
     {
         return V8EventTarget::toInternalPointer(impl);
@@ -50,12 +50,7 @@ private:
     static v8::Handle<v8::Object> createWrapper(RawPtr<TestInterfaceGarbageCollected>, v8::Handle<v8::Object> creationContext, v8::Isolate*);
 };
 
-inline v8::Handle<v8::Object> wrap(TestInterfaceGarbageCollected* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    ASSERT(impl);
-    ASSERT(!DOMDataStore::containsWrapper<V8TestInterfaceGarbageCollected>(impl, isolate));
-    return V8TestInterfaceGarbageCollected::createWrapper(impl, creationContext, isolate);
-}
+v8::Handle<v8::Object> wrap(TestInterfaceGarbageCollected* impl, v8::Handle<v8::Object> creationContext, v8::Isolate*);
 
 inline v8::Handle<v8::Value> toV8(TestInterfaceGarbageCollected* impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
@@ -107,6 +102,28 @@ inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, TestInterface
     v8SetReturnValue(callbackInfo, wrapper);
 }
 
+inline v8::Handle<v8::Value> toV8(RawPtr<TestInterfaceGarbageCollected> impl, v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
+{
+    return toV8(impl.get(), creationContext, isolate);
+}
+
+template<class CallbackInfo>
+inline void v8SetReturnValue(const CallbackInfo& callbackInfo, RawPtr<TestInterfaceGarbageCollected> impl)
+{
+    v8SetReturnValue(callbackInfo, impl.get());
+}
+
+template<class CallbackInfo>
+inline void v8SetReturnValueForMainWorld(const CallbackInfo& callbackInfo, RawPtr<TestInterfaceGarbageCollected> impl)
+{
+    v8SetReturnValueForMainWorld(callbackInfo, impl.get());
+}
+
+template<class CallbackInfo, class Wrappable>
+inline void v8SetReturnValueFast(const CallbackInfo& callbackInfo, RawPtr<TestInterfaceGarbageCollected> impl, Wrappable* wrappable)
+{
+    v8SetReturnValueFast(callbackInfo, impl.get(), wrappable);
+}
 
 }
 #endif // V8TestInterfaceGarbageCollected_h

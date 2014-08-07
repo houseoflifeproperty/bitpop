@@ -21,35 +21,6 @@ using base::android::ScopedJavaLocalRef;
 
 namespace media {
 
-//static
-void VideoCaptureDevice::GetDeviceNames(Names* device_names) {
-  VideoCaptureDeviceFactoryAndroid::GetDeviceNames(device_names);
-}
-
-// static
-void VideoCaptureDevice::GetDeviceSupportedFormats(
-    const Name& device,
-    VideoCaptureFormats* capture_formats) {
-  VideoCaptureDeviceFactoryAndroid::GetDeviceSupportedFormats(device,
-                                                              capture_formats);
-}
-
-// static
-VideoCaptureDevice* VideoCaptureDevice::Create(
-    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
-    const Name& device_name) {
-  return VideoCaptureDeviceAndroid::Create(device_name);
-}
-
-// static
-VideoCaptureDevice* VideoCaptureDeviceAndroid::Create(const Name& device_name) {
-  scoped_ptr<VideoCaptureDeviceAndroid> ret(
-      new VideoCaptureDeviceAndroid(device_name));
-  if (ret->Init())
-    return ret.release();
-  return NULL;
-}
-
 // static
 bool VideoCaptureDeviceAndroid::RegisterVideoCaptureDevice(JNIEnv* env) {
   return RegisterNativesImpl(env);

@@ -21,6 +21,7 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/singleton_tabs.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
@@ -33,10 +34,12 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/web_ui_util.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_util.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
 #endif
 
 namespace {
@@ -61,7 +64,6 @@ const char kJsApiUserManagerAuthLaunchUser[] = "authenticatedLaunchUser";
 const char kJsApiUserManagerLaunchGuest[] = "launchGuest";
 const char kJsApiUserManagerLaunchUser[] = "launchUser";
 const char kJsApiUserManagerRemoveUser[] = "removeUser";
-const char kJsApiUserManagerCustomButtonClicked[] = "customButtonClicked";
 const char kJsApiUserManagerAttemptUnlock[] = "attemptUnlock";
 
 const size_t kAvatarIconSize = 180;
@@ -141,7 +143,7 @@ extensions::ScreenlockPrivateEventRouter* GetScreenlockRouter(
       profile);
 }
 
-} // namespace
+}  // namespace
 
 // ProfileUpdateObserver ------------------------------------------------------
 
@@ -220,21 +222,27 @@ void UserManagerScreenHandler::ShowBannerMessage(const std::string& message) {
       base::StringValue(message));
 }
 
-void UserManagerScreenHandler::ShowUserPodButton(
+void UserManagerScreenHandler::ShowUserPodCustomIcon(
     const std::string& user_email,
-    const gfx::Image& icon,
-    const base::Closure& callback) {
-  GURL icon_url(webui::GetBitmapDataUrl(icon.AsBitmap()));
+    const gfx::Image& icon) {
+  gfx::ImageSkia icon_skia = icon.AsImageSkia();
+  base::DictionaryValue icon_representations;
+  icon_representations.SetString(
+      "scale1x",
+      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(1.0f).sk_bitmap()));
+  icon_representations.SetString(
+      "scale2x",
+      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(2.0f).sk_bitmap()));
   web_ui()->CallJavascriptFunction(
-      "login.AccountPickerScreen.showUserPodButton",
+      "login.AccountPickerScreen.showUserPodCustomIcon",
       base::StringValue(user_email),
-      base::StringValue(icon_url.spec()));
+      icon_representations);
 }
 
-void UserManagerScreenHandler::HideUserPodButton(
+void UserManagerScreenHandler::HideUserPodCustomIcon(
     const std::string& user_email) {
   web_ui()->CallJavascriptFunction(
-      "login.AccountPickerScreen.hideUserPodButton",
+      "login.AccountPickerScreen.hideUserPodCustomIcon",
       base::StringValue(user_email));
 }
 
@@ -346,9 +354,10 @@ void UserManagerScreenHandler::HandleRemoveUser(const base::ListValue* args) {
   if (!base::GetValueAsFilePath(*profile_path_value, &profile_path))
     return;
 
-  // This handler could have been called in managed mode, for example because
-  // the user fiddled with the web inspector. Silently return in this case.
-  if (Profile::FromWebUI(web_ui())->IsManaged())
+  // This handler could have been called for a supervised user, for example
+  // because the user fiddled with the web inspector. Silently return in this
+  // case.
+  if (Profile::FromWebUI(web_ui())->IsSupervised())
     return;
 
   if (!profiles::IsMultipleProfilesEnabled())
@@ -403,11 +412,6 @@ void UserManagerScreenHandler::HandleLaunchUser(const base::ListValue* args) {
                             ProfileMetrics::SWITCH_PROFILE_MANAGER);
 }
 
-void UserManagerScreenHandler::HandleCustomButtonClicked(
-    const base::ListValue* args) {
-  // TODO(xiyuan): Remove this. Deprecated now.
-}
-
 void UserManagerScreenHandler::HandleAttemptUnlock(
     const base::ListValue* args) {
   std::string email;
@@ -456,9 +460,6 @@ void UserManagerScreenHandler::RegisterMessages() {
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(kJsApiUserManagerRemoveUser,
       base::Bind(&UserManagerScreenHandler::HandleRemoveUser,
-                 base::Unretained(this)));
-  web_ui()->RegisterMessageCallback(kJsApiUserManagerCustomButtonClicked,
-      base::Bind(&UserManagerScreenHandler::HandleCustomButtonClicked,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(kJsApiUserManagerAttemptUnlock,
       base::Bind(&UserManagerScreenHandler::HandleAttemptUnlock,
@@ -517,8 +518,11 @@ void UserManagerScreenHandler::GetLocalizedValues(
   localized_strings->SetString("removeUserWarningButtonTitle",
       l10n_util::GetStringUTF16(IDS_LOGIN_POD_USER_REMOVE_WARNING_BUTTON));
   localized_strings->SetString("removeUserWarningText",
-      l10n_util::GetStringUTF16(
-           IDS_LOGIN_POD_USER_REMOVE_WARNING));
+      l10n_util::GetStringUTF16(IDS_LOGIN_POD_USER_REMOVE_WARNING));
+  localized_strings->SetString("removeSupervisedUserWarningText",
+      l10n_util::GetStringFUTF16(
+          IDS_LOGIN_POD_SUPERVISED_USER_REMOVE_WARNING,
+          base::UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL)));
 
   // Strings needed for the User Manager tutorial slides.
   localized_strings->SetString("tutorialStart",
@@ -563,8 +567,6 @@ void UserManagerScreenHandler::GetLocalizedValues(
   localized_strings->SetString("publicAccountEnter", base::string16());
   localized_strings->SetString("publicAccountEnterAccessibleName",
                                base::string16());
-  localized_strings->SetString("multiple-signin-banner-text",
-                               base::string16());
   localized_strings->SetString("signinBannerText", base::string16());
   localized_strings->SetString("launchAppButton", base::string16());
   localized_strings->SetString("multiProfilesRestrictedPolicyTitle",
@@ -584,9 +586,9 @@ void UserManagerScreenHandler::SendUserList() {
 
   user_auth_type_map_.clear();
 
-  // If the active user is a managed user, then they may not perform
+  // If the active user is a supervised user, then they may not perform
   // certain actions (i.e. delete another user).
-  bool active_user_is_managed = Profile::FromWebUI(web_ui())->IsManaged();
+  bool active_user_is_supervised = Profile::FromWebUI(web_ui())->IsSupervised();
   for (size_t i = 0; i < info_cache.GetNumberOfProfiles(); ++i) {
     base::DictionaryValue* profile_value = new base::DictionaryValue();
 
@@ -601,12 +603,13 @@ void UserManagerScreenHandler::SendUserList() {
         kKeyDisplayName, info_cache.GetNameOfProfileAtIndex(i));
     profile_value->SetString(kKeyProfilePath, profile_path.MaybeAsASCII());
     profile_value->SetBoolean(kKeyPublicAccount, false);
-    profile_value->SetBoolean(kKeyLocallyManagedUser, false);
+    profile_value->SetBoolean(
+        kKeyLocallyManagedUser, info_cache.ProfileIsSupervisedAtIndex(i));
     profile_value->SetBoolean(kKeySignedIn, is_active_user);
     profile_value->SetBoolean(
         kKeyNeedsSignin, info_cache.ProfileIsSigninRequiredAtIndex(i));
     profile_value->SetBoolean(kKeyIsOwner, false);
-    profile_value->SetBoolean(kKeyCanRemove, !active_user_is_managed);
+    profile_value->SetBoolean(kKeyCanRemove, !active_user_is_supervised);
     profile_value->SetBoolean(kKeyIsDesktop, true);
     profile_value->SetString(
         kKeyAvatarUrl, GetAvatarImageAtIndex(i, info_cache));

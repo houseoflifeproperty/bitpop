@@ -13,13 +13,15 @@
 #include "components/usb_service/usb_device.h"
 
 struct libusb_device;
+struct libusb_config_descriptor;
 
 namespace usb_service {
 
-class UsbDeviceHandle;
+class UsbDeviceHandleImpl;
 class UsbContext;
 
 typedef libusb_device* PlatformUsbDevice;
+typedef libusb_config_descriptor* PlatformUsbConfigDescriptor;
 
 class UsbDeviceImpl : public UsbDevice {
  public:
@@ -56,7 +58,7 @@ class UsbDeviceImpl : public UsbDevice {
   scoped_refptr<UsbContext> context_;
 
   // Opened handles.
-  typedef std::vector<scoped_refptr<UsbDeviceHandle> > HandlesVector;
+  typedef std::vector<scoped_refptr<UsbDeviceHandleImpl> > HandlesVector;
   HandlesVector handles_;
 
   DISALLOW_COPY_AND_ASSIGN(UsbDeviceImpl);

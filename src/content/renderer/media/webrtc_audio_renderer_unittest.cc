@@ -7,7 +7,7 @@
 #include "content/renderer/media/audio_device_factory.h"
 #include "content/renderer/media/audio_message_filter.h"
 #include "content/renderer/media/media_stream_audio_renderer.h"
-#include "content/renderer/media/mock_media_stream_dependency_factory.h"
+#include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "content/renderer/media/webrtc_audio_renderer.h"
 #include "media/audio/audio_output_device.h"
@@ -68,9 +68,10 @@ class MockAudioRendererSource : public WebRtcAudioRendererSource {
  public:
   MockAudioRendererSource() {}
   virtual ~MockAudioRendererSource() {}
-  MOCK_METHOD3(RenderData, void(media::AudioBus* audio_bus,
+  MOCK_METHOD4(RenderData, void(media::AudioBus* audio_bus,
                                 int sample_rate,
-                                int audio_delay_milliseconds));
+                                int audio_delay_milliseconds,
+                                base::TimeDelta* current_time));
   MOCK_METHOD1(RemoveAudioRenderer, void(WebRtcAudioRenderer* renderer));
 };
 

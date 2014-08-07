@@ -17,8 +17,8 @@
 #include "media/cast/transport/cast_transport_sender.h"
 #include "media/cast/transport/pacing/paced_sender.h"
 #include "media/cast/transport/rtcp/rtcp_builder.h"
-#include "media/cast/transport/transport_audio_sender.h"
-#include "media/cast/transport/transport_video_sender.h"
+#include "media/cast/transport/rtp_sender/rtp_sender.h"
+#include "media/cast/transport/utility/transport_encryption_handler.h"
 
 namespace media {
 namespace cast {
@@ -54,30 +54,22 @@ class CastTransportSenderImpl : public CastTransportSender {
   virtual void SetPacketReceiver(const PacketReceiverCallback& packet_receiver)
       OVERRIDE;
 
-  virtual void InsertCodedAudioFrame(const EncodedAudioFrame* audio_frame,
-                                     const base::TimeTicks& recorded_time)
-      OVERRIDE;
-
-  virtual void InsertCodedVideoFrame(const EncodedVideoFrame* video_frame,
-                                     const base::TimeTicks& capture_time)
-      OVERRIDE;
+  virtual void InsertCodedAudioFrame(const EncodedFrame& audio_frame) OVERRIDE;
+  virtual void InsertCodedVideoFrame(const EncodedFrame& video_frame) OVERRIDE;
 
   virtual void SendRtcpFromRtpSender(uint32 packet_type_flags,
-                                     const RtcpSenderInfo& sender_info,
+                                     uint32 ntp_seconds,
+                                     uint32 ntp_fraction,
+                                     uint32 rtp_timestamp,
                                      const RtcpDlrrReportBlock& dlrr,
-                                     const RtcpSenderLogMessage& sender_log,
                                      uint32 sending_ssrc,
                                      const std::string& c_name) OVERRIDE;
 
   virtual void ResendPackets(bool is_audio,
-                             const MissingFramesAndPacketsMap& missing_packets)
+                             const MissingFramesAndPacketsMap& missing_packets,
+                             bool cancel_rtx_if_not_in_list,
+                             base::TimeDelta dedupe_window)
       OVERRIDE;
-
-  virtual void SubscribeAudioRtpStatsCallback(
-      const CastTransportRtpStatistics& callback) OVERRIDE;
-
-  virtual void SubscribeVideoRtpStatsCallback(
-      const CastTransportRtpStatistics& callback) OVERRIDE;
 
  private:
   // If |raw_events_callback_| is non-null, calls it with events collected
@@ -92,8 +84,15 @@ class CastTransportSenderImpl : public CastTransportSender {
   LoggingImpl logging_;
   PacedSender pacer_;
   RtcpBuilder rtcp_builder_;
-  scoped_ptr<TransportAudioSender> audio_sender_;
-  scoped_ptr<TransportVideoSender> video_sender_;
+  scoped_ptr<RtpSender> audio_sender_;
+  scoped_ptr<RtpSender> video_sender_;
+
+  // Encrypts data in EncodedFrames before they are sent.  Note that it's
+  // important for the encryption to happen here, in code that would execute in
+  // the main browser process, for security reasons.  This helps to mitigate
+  // the damage that could be caused by a compromised renderer process.
+  TransportEncryptionHandler audio_encryptor_;
+  TransportEncryptionHandler video_encryptor_;
 
   // This is non-null iff |raw_events_callback_| is non-null.
   scoped_ptr<SimpleEventSubscriber> event_subscriber_;

@@ -23,11 +23,13 @@ Call tool.CleanUpEnvironment().
 # pylint: disable=R0201
 
 import glob
+import logging
 import os.path
 import subprocess
 import sys
 
 from pylib.constants import DIR_SOURCE_ROOT
+from pylib.device import device_errors
 
 
 def SetChromeTimeoutScale(device, scale):
@@ -35,7 +37,7 @@ def SetChromeTimeoutScale(device, scale):
   path = '/data/local/tmp/chrome_timeout_scale'
   if not scale or scale == 1.0:
     # Delete if scale is None/0.0/1.0 since the default timeout scale is 1.0
-    device.old_interface.RunShellCommand('rm %s' % path)
+    device.RunShellCommand('rm %s' % path)
   else:
     device.old_interface.SetProtectedFileContents(path, '%f' % scale)
 
@@ -118,7 +120,7 @@ class AddressSanitizerTool(BaseTool):
                      '--device', self._device.old_interface.GetDevice(),
                      '--lib', self._lib,
                      '--extra-options', AddressSanitizerTool.EXTRA_OPTIONS])
-    self._device.old_interface.WaitForDevicePm()
+    self._device.WaitUntilFullyBooted()
 
   def GetTestWrapper(self):
     return AddressSanitizerTool.WRAPPER_NAME
@@ -132,7 +134,13 @@ class AddressSanitizerTool(BaseTool):
     return self.GetTestWrapper()
 
   def SetupEnvironment(self):
-    self._device.old_interface.EnableAdbRoot()
+    try:
+      self._device.EnableRoot()
+    except device_errors.CommandFailedError as e:
+      # Try to set the timeout scale anyway.
+      # TODO(jbudorick) Handle this exception appropriately after interface
+      #                 conversions are finished.
+      logging.error(str(e))
     SetChromeTimeoutScale(self._device, self.GetTimeoutScale())
 
   def CleanUpEnvironment(self):
@@ -158,9 +166,9 @@ class ValgrindTool(BaseTool):
 
   def CopyFiles(self):
     """Copies Valgrind tools to the device."""
-    self._device.old_interface.RunShellCommand(
+    self._device.RunShellCommand(
         'rm -r %s; mkdir %s' % (ValgrindTool.VG_DIR, ValgrindTool.VG_DIR))
-    self._device.old_interface.RunShellCommand(
+    self._device.RunShellCommand(
         'rm -r %s; mkdir %s' % (ValgrindTool.VGLOGS_DIR,
                                 ValgrindTool.VGLOGS_DIR))
     files = self.GetFilesForTool()
@@ -171,17 +179,17 @@ class ValgrindTool(BaseTool):
 
   def SetupEnvironment(self):
     """Sets up device environment."""
-    self._device.old_interface.RunShellCommand('chmod 777 /data/local/tmp')
-    self._device.old_interface.RunShellCommand('setenforce 0')
+    self._device.RunShellCommand('chmod 777 /data/local/tmp')
+    self._device.RunShellCommand('setenforce 0')
     for prop in self._wrap_properties:
-      self._device.old_interface.RunShellCommand(
+      self._device.RunShellCommand(
           'setprop %s "logwrapper %s"' % (prop, self.GetTestWrapper()))
     SetChromeTimeoutScale(self._device, self.GetTimeoutScale())
 
   def CleanUpEnvironment(self):
     """Cleans up device environment."""
     for prop in self._wrap_properties:
-      self._device.old_interface.RunShellCommand('setprop %s ""' % (prop,))
+      self._device.RunShellCommand('setprop %s ""' % (prop,))
     SetChromeTimeoutScale(self._device, None)
 
   def GetFilesForTool(self):

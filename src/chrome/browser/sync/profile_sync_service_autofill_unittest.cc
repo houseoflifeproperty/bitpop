@@ -53,7 +53,6 @@
 #include "components/webdata/common/web_database.h"
 #include "content/public/test/test_browser_thread.h"
 #include "google_apis/gaia/gaia_constants.h"
-#include "sync/api/attachments/fake_attachment_service.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/data_type_debug_info_listener.h"
 #include "sync/internal_api/public/read_node.h"
@@ -85,10 +84,11 @@ using browser_sync::AutofillProfileDataTypeController;
 using browser_sync::DataTypeController;
 using content::BrowserThread;
 using syncer::AUTOFILL;
+using syncer::AUTOFILL_PROFILE;
 using syncer::BaseNode;
 using syncer::syncable::BASE_VERSION;
 using syncer::syncable::CREATE;
-using syncer::syncable::GET_BY_SERVER_TAG;
+using syncer::syncable::GET_TYPE_ROOT;
 using syncer::syncable::MutableEntry;
 using syncer::syncable::SERVER_SPECIFICS;
 using syncer::syncable::SPECIFICS;
@@ -357,6 +357,7 @@ ACTION_P(MakeAutocompleteSyncComponents, wds) {
 
 ACTION_P(ReturnNewDataTypeManagerWithDebugListener, debug_listener) {
   return new browser_sync::DataTypeManagerImpl(
+      base::Closure(),
       debug_listener,
       arg1,
       arg2,
@@ -391,7 +392,8 @@ class AutofillEntryFactory : public AbstractAutofillFactory {
       ProfileSyncComponentsFactory* factory,
       TestingProfile* profile,
       ProfileSyncService* service) OVERRIDE {
-    return new AutofillDataTypeController(factory, profile, service);
+    return new AutofillDataTypeController(
+        factory, profile, DataTypeController::DisableTypeCallback());
   }
 
   virtual void SetExpectation(ProfileSyncComponentsFactoryMock* factory,
@@ -409,7 +411,8 @@ class AutofillProfileFactory : public AbstractAutofillFactory {
       ProfileSyncComponentsFactory* factory,
       TestingProfile* profile,
       ProfileSyncService* service) OVERRIDE {
-    return new AutofillProfileDataTypeController(factory, profile, service);
+    return new AutofillProfileDataTypeController(
+        factory, profile, DataTypeController::DisableTypeCallback());
   }
 
   virtual void SetExpectation(ProfileSyncComponentsFactoryMock* factory,
@@ -527,8 +530,7 @@ class ProfileSyncServiceAutofillTest
   int GetSyncCount(syncer::ModelType type) {
     syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode node(&trans);
-    if (node.InitByTagLookup(syncer::ModelTypeToRootTag(type)) !=
-        syncer::BaseNode::INIT_OK)
+    if (node.InitTypeRoot(type) != syncer::BaseNode::INIT_OK)
       return 0;
     return node.GetTotalNodeCount() - 1;
   }
@@ -581,9 +583,7 @@ class ProfileSyncServiceAutofillTest
   bool AddAutofillSyncNode(const AutofillEntry& entry) {
     syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode autofill_root(&trans);
-    if (autofill_root.InitByTagLookup(
-            syncer::ModelTypeToRootTag(syncer::AUTOFILL)) !=
-                BaseNode::INIT_OK) {
+    if (autofill_root.InitTypeRoot(syncer::AUTOFILL) != BaseNode::INIT_OK) {
       return false;
     }
 
@@ -607,8 +607,7 @@ class ProfileSyncServiceAutofillTest
   bool AddAutofillSyncNode(const AutofillProfile& profile) {
     syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode autofill_root(&trans);
-    if (autofill_root.InitByTagLookup(autofill::kAutofillProfileTag) !=
-            BaseNode::INIT_OK) {
+    if (autofill_root.InitTypeRoot(AUTOFILL_PROFILE) != BaseNode::INIT_OK) {
       return false;
     }
     syncer::WriteNode node(&trans);
@@ -631,9 +630,7 @@ class ProfileSyncServiceAutofillTest
                                     std::vector<AutofillProfile>* profiles) {
     syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode autofill_root(&trans);
-    if (autofill_root.InitByTagLookup(
-            syncer::ModelTypeToRootTag(syncer::AUTOFILL)) !=
-                BaseNode::INIT_OK) {
+    if (autofill_root.InitTypeRoot(syncer::AUTOFILL) != BaseNode::INIT_OK) {
       return false;
     }
 
@@ -672,8 +669,7 @@ class ProfileSyncServiceAutofillTest
       std::vector<AutofillProfile>* profiles) {
     syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode autofill_root(&trans);
-    if (autofill_root.InitByTagLookup(autofill::kAutofillProfileTag) !=
-            BaseNode::INIT_OK) {
+    if (autofill_root.InitTypeRoot(AUTOFILL_PROFILE) != BaseNode::INIT_OK) {
       return false;
     }
 
@@ -837,8 +833,7 @@ class FakeServerUpdater : public base::RefCountedThreadSafe<FakeServerUpdater> {
 
       // Create actual entry based on autofill protobuf information.
       // Simulates effects of UpdateLocalDataFromServerData
-      MutableEntry parent(&trans, GET_BY_SERVER_TAG,
-                          syncer::ModelTypeToRootTag(syncer::AUTOFILL));
+      MutableEntry parent(&trans, GET_TYPE_ROOT, syncer::AUTOFILL);
       MutableEntry item(&trans, CREATE, syncer::AUTOFILL, parent.GetId(), tag);
       ASSERT_TRUE(item.good());
       item.PutSpecifics(entity_specifics);

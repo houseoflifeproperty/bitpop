@@ -20,6 +20,7 @@
 #include "extensions/browser/app_sorting.h"
 #include "extensions/browser/blacklist_state.h"
 #include "extensions/browser/extension_scoped_prefs.h"
+#include "extensions/browser/install_flag.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/url_pattern_set.h"
@@ -184,14 +185,24 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   void SetKnownDisabled(const ExtensionIdSet& extension_ids);
 
   // Called when an extension is installed, so that prefs get created.
-  // |blacklisted_for_malware| should be set if the extension was included in a
-  // blacklist due to being malware. If |page_ordinal| is an invalid ordinal,
-  // then a page will be found for the App.
+  // If |page_ordinal| is invalid then a page will be found for the App.
+  // |install_flags| are a bitmask of extension::InstallFlags.
   void OnExtensionInstalled(const Extension* extension,
                             Extension::State initial_state,
-                            bool blacklisted_for_malware,
                             const syncer::StringOrdinal& page_ordinal,
+                            int install_flags,
                             const std::string& install_parameter);
+  // OnExtensionInstalled with no install flags.
+  void OnExtensionInstalled(const Extension* extension,
+                            Extension::State initial_state,
+                            const syncer::StringOrdinal& page_ordinal,
+                            const std::string& install_parameter) {
+    OnExtensionInstalled(extension,
+                         initial_state,
+                         page_ordinal,
+                         kInstallFlagNone,
+                         install_parameter);
+  }
 
   // Called when an extension is uninstalled, so that prefs get cleaned up.
   void OnExtensionUninstalled(const std::string& extension_id,
@@ -254,8 +265,10 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
       const Extension* extension,
       bool did_escalate);
 
-  // Getter and setters for disabled reason.
+  // Getters and setters for disabled reason.
   int GetDisableReasons(const std::string& extension_id) const;
+  bool HasDisableReason(const std::string& extension_id,
+                        Extension::DisableReason disable_reason) const;
   void AddDisableReason(const std::string& extension_id,
                         Extension::DisableReason disable_reason);
   void RemoveDisableReason(const std::string& extension_id,
@@ -279,9 +292,6 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   // Re-writes the extension manifest into the prefs.
   // Called to change the extension's manifest when it's re-localized.
   void UpdateManifest(const Extension* extension);
-
-  // Returns extension path based on extension ID, or empty FilePath on error.
-  base::FilePath GetExtensionPath(const std::string& extension_id);
 
   // Returns base extensions install directory.
   const base::FilePath& install_directory() const { return install_directory_; }
@@ -328,6 +338,13 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   bool HasNtpOverriddenBubbleBeenAcknowledged(const std::string& extension_id);
   void SetNtpOverriddenBubbleBeenAcknowledged(const std::string& extension_id,
                                               bool value);
+
+  // Whether the user has been notified about extension with |extension_id|
+  // overriding the proxy.
+  bool HasProxyOverriddenBubbleBeenAcknowledged(
+      const std::string& extension_id);
+  void SetProxyOverriddenBubbleBeenAcknowledged(const std::string& extension_id,
+                                                bool value);
 
   // Returns true if the extension notification code has already run for the
   // first time for this profile. Currently we use this flag to mean that any
@@ -437,9 +454,11 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
 
   // We've downloaded an updated .crx file for the extension, but are waiting
   // to install it.
+  //
+  // |install_flags| are a bitmask of extension::InstallFlags.
   void SetDelayedInstallInfo(const Extension* extension,
                              Extension::State initial_state,
-                             bool blacklisted_for_malware,
+                             int install_flags,
                              DelayReason delay_reason,
                              const syncer::StringOrdinal& page_ordinal,
                              const std::string& install_parameter);
@@ -462,16 +481,11 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   // information.
   scoped_ptr<ExtensionsInfo> GetAllDelayedInstallInfo() const;
 
-  // Returns information about evicted ephemeral apps.
-  scoped_ptr<ExtensionsInfo> GetEvictedEphemeralAppsInfo() const;
+  // Returns true if the extension is an ephemeral app.
+  bool IsEphemeralApp(const std::string& extension_id) const;
 
-  // Return information about a specific evicted ephemeral app. Can return NULL
-  // if no such evicted app exists or is currently installed.
-  scoped_ptr<ExtensionInfo> GetEvictedEphemeralAppInfo(
-      const std::string& extension_id) const;
-
-  // Permanently remove the preferences for an evicted ephemeral app.
-  void RemoveEvictedEphemeralApp(const std::string& extension_id);
+  // Promotes an ephemeral app to a regular installed app.
+  void OnEphemeralAppPromoted(const std::string& extension_id);
 
   // Returns true if the user repositioned the app on the app launcher via drag
   // and drop.
@@ -508,6 +522,9 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   // Returns base::Time() if the installation time could not be parsed or
   // found.
   base::Time GetInstallTime(const std::string& extension_id) const;
+
+  // Returns true if the extension should not be synced.
+  bool DoNotSync(const std::string& extension_id) const;
 
   // Gets/sets the last launch time of an extension.
   base::Time GetLastLaunchTime(const std::string& extension_id) const;
@@ -550,19 +567,6 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   std::string GetInstallParam(const std::string& extension_id) const;
   void SetInstallParam(const std::string& extension_id,
                        const std::string& install_parameter);
-
-  // Gets/sets the next threshold for displaying a notification if an extension
-  // or app consumes excessive disk space. Returns 0 if the initial threshold
-  // has not yet been reached.
-  int64 GetNextStorageThreshold(const std::string& extension_id) const;
-  void SetNextStorageThreshold(const std::string& extension_id,
-                               int64 next_threshold);
-
-  // Gets/sets whether notifications should be shown if an extension or app
-  // consumes too much disk space.
-  bool IsStorageNotificationEnabled(const std::string& extension_id) const;
-  void SetStorageNotificationEnabled(const std::string& extension_id,
-                                     bool enable_notifications);
 
  private:
   friend class ExtensionPrefsBlacklistedExtensions;  // Unit test.
@@ -675,10 +679,12 @@ class ExtensionPrefs : public ExtensionScopedPrefs, public KeyedService {
   // by a newly installed extension. Work is broken up between this
   // function and FinishExtensionInfoPrefs() to accomodate delayed
   // installations.
+  //
+  // |install_flags| are a bitmask of extension::InstallFlags.
   void PopulateExtensionInfoPrefs(const Extension* extension,
                                   const base::Time install_time,
                                   Extension::State initial_state,
-                                  bool blacklisted_for_malware,
+                                  int install_flags,
                                   const std::string& install_parameter,
                                   base::DictionaryValue* extension_dict);
 

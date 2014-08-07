@@ -16,6 +16,7 @@ namespace chromeos {
 
 namespace {
 
+const int kStartNotifyResponseIntervalMs = 200;
 const int kHeartRateMeasurementNotificationIntervalMs = 2000;
 
 }  // namespace
@@ -51,9 +52,6 @@ void FakeBluetoothGattCharacteristicClient::Properties::Get(
     dbus::PropertyBase* property,
     dbus::PropertySet::GetCallback callback) {
   VLOG(1) << "Get " << property->name();
-
-  // TODO(armansito): Return success or failure here based on characteristic
-  // read permission.
   callback.Run(true);
 }
 
@@ -65,20 +63,7 @@ void FakeBluetoothGattCharacteristicClient::Properties::Set(
     dbus::PropertyBase* property,
     dbus::PropertySet::SetCallback callback) {
   VLOG(1) << "Set " << property->name();
-  if (property->name() != value.name()) {
-    callback.Run(false);
-    return;
-  }
-  // Allow writing to only certain characteristics that are defined with the
-  // write permission.
-  // TODO(armansito): Actually check against the permissions property instead of
-  // UUID, once that property is fully defined in the API.
-  if (uuid.value() != kHeartRateControlPointUUID) {
-    callback.Run(false);
-    return;
-  }
-  callback.Run(true);
-  property->ReplaceValueWithSetValue();
+  callback.Run(false);
 }
 
 FakeBluetoothGattCharacteristicClient::FakeBluetoothGattCharacteristicClient()
@@ -131,6 +116,117 @@ FakeBluetoothGattCharacteristicClient::GetProperties(
   return NULL;
 }
 
+void FakeBluetoothGattCharacteristicClient::ReadValue(
+    const dbus::ObjectPath& object_path,
+    const ValueCallback& callback,
+    const ErrorCallback& error_callback) {
+  if (!IsHeartRateVisible()) {
+    error_callback.Run(kUnknownCharacteristicError, "");
+    return;
+  }
+
+  if (object_path.value() == heart_rate_measurement_path_ ||
+      object_path.value() == heart_rate_control_point_path_) {
+    error_callback.Run("org.bluez.Error.ReadNotPermitted",
+                       "Reads of this value are not allowed");
+    return;
+  }
+
+  if (object_path.value() != body_sensor_location_path_) {
+    error_callback.Run(kUnknownCharacteristicError, "");
+    return;
+  }
+
+  std::vector<uint8> value;
+  value.push_back(0x06);  // Location is "foot".
+  callback.Run(value);
+}
+
+void FakeBluetoothGattCharacteristicClient::WriteValue(
+    const dbus::ObjectPath& object_path,
+    const std::vector<uint8>& value,
+    const base::Closure& callback,
+    const ErrorCallback& error_callback) {
+  if (!IsHeartRateVisible()) {
+    error_callback.Run(kUnknownCharacteristicError, "");
+    return;
+  }
+
+  if (object_path.value() != heart_rate_control_point_path_) {
+    error_callback.Run("org.bluez.Error.WriteNotPermitted",
+                       "Writes of this value are not allowed");
+    return;
+  }
+
+  DCHECK(heart_rate_control_point_properties_.get());
+  if (value.size() != 1 || value[0] > 1) {
+    error_callback.Run("org.bluez.Error.Failed",
+                       "Invalid value given for write");
+    return;
+  }
+
+  if (value[0] == 1)
+    calories_burned_ = 0;
+
+  callback.Run();
+}
+
+void FakeBluetoothGattCharacteristicClient::StartNotify(
+    const dbus::ObjectPath& object_path,
+    const base::Closure& callback,
+    const ErrorCallback& error_callback) {
+  if (!IsHeartRateVisible()) {
+    error_callback.Run(kUnknownCharacteristicError, "");
+    return;
+  }
+
+  if (object_path.value() != heart_rate_measurement_path_) {
+    error_callback.Run("org.bluez.Error.NotSupported",
+                       "This characteristic does not support notifications");
+    return;
+  }
+
+  if (heart_rate_measurement_properties_->notifying.value()) {
+    error_callback.Run("org.bluez.Error.Busy",
+                       "Characteristic already notifying");
+    return;
+  }
+
+  heart_rate_measurement_properties_->notifying.ReplaceValue(true);
+  ScheduleHeartRateMeasurementValueChange();
+
+  // Respond asynchronously.
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      callback,
+      base::TimeDelta::FromMilliseconds(kStartNotifyResponseIntervalMs));
+}
+
+void FakeBluetoothGattCharacteristicClient::StopNotify(
+    const dbus::ObjectPath& object_path,
+    const base::Closure& callback,
+    const ErrorCallback& error_callback) {
+  if (!IsHeartRateVisible()) {
+    error_callback.Run(kUnknownCharacteristicError, "");
+    return;
+  }
+
+  if (object_path.value() != heart_rate_measurement_path_) {
+    error_callback.Run("org.bluez.Error.NotSupported",
+                       "This characteristic does not support notifications");
+    return;
+  }
+
+  if (!heart_rate_measurement_properties_->notifying.value()) {
+    error_callback.Run("org.bluez.Error.Failed", "Not notifying");
+    return;
+  }
+
+  heart_rate_measurement_properties_->notifying.ReplaceValue(false);
+
+  callback.Run();
+}
+
 void FakeBluetoothGattCharacteristicClient::ExposeHeartRateCharacteristics(
     const dbus::ObjectPath& service_path) {
   if (IsHeartRateVisible()) {
@@ -139,6 +235,8 @@ void FakeBluetoothGattCharacteristicClient::ExposeHeartRateCharacteristics(
   }
 
   VLOG(2) << "Exposing fake Heart Rate characteristics.";
+
+  std::vector<std::string> flags;
 
   // ==== Heart Rate Measurement Characteristic ====
   heart_rate_measurement_path_ =
@@ -150,12 +248,8 @@ void FakeBluetoothGattCharacteristicClient::ExposeHeartRateCharacteristics(
   heart_rate_measurement_properties_->uuid.ReplaceValue(
       kHeartRateMeasurementUUID);
   heart_rate_measurement_properties_->service.ReplaceValue(service_path);
-
-  // TODO(armansito): Fill out the flags field once bindings for the values have
-  // been added. For now, leave it empty.
-
-  std::vector<uint8> measurement_value = GetHeartRateMeasurementValue();
-  heart_rate_measurement_properties_->value.ReplaceValue(measurement_value);
+  flags.push_back(bluetooth_gatt_characteristic::kFlagNotify);
+  heart_rate_measurement_properties_->flags.ReplaceValue(flags);
 
   // ==== Body Sensor Location Characteristic ====
   body_sensor_location_path_ =
@@ -166,15 +260,9 @@ void FakeBluetoothGattCharacteristicClient::ExposeHeartRateCharacteristics(
       dbus::ObjectPath(body_sensor_location_path_))));
   body_sensor_location_properties_->uuid.ReplaceValue(kBodySensorLocationUUID);
   body_sensor_location_properties_->service.ReplaceValue(service_path);
-
-  // TODO(armansito): Fill out the flags field once bindings for the values have
-  // been added. For now, leave it empty.
-
-  // The sensor is in the "Other" location.
-  std::vector<uint8> body_sensor_location_value;
-  body_sensor_location_value.push_back(0);
-  body_sensor_location_properties_->value.ReplaceValue(
-      body_sensor_location_value);
+  flags.clear();
+  flags.push_back(bluetooth_gatt_characteristic::kFlagRead);
+  body_sensor_location_properties_->flags.ReplaceValue(flags);
 
   // ==== Heart Rate Control Point Characteristic ====
   heart_rate_control_point_path_ =
@@ -186,28 +274,15 @@ void FakeBluetoothGattCharacteristicClient::ExposeHeartRateCharacteristics(
   heart_rate_control_point_properties_->uuid.ReplaceValue(
       kHeartRateControlPointUUID);
   heart_rate_control_point_properties_->service.ReplaceValue(service_path);
-
-  // TODO(armansito): Fill out the flags field once bindings for the values have
-  // been added. For now, leave it empty.
-
-  // Set the initial value to 0. Whenever this gets set to 1, we will reset the
-  // total calories burned and change the value back to 0.
-  std::vector<uint8> heart_rate_control_point_value;
-  heart_rate_control_point_value.push_back(0);
-  heart_rate_control_point_properties_->value.ReplaceValue(
-      heart_rate_control_point_value);
+  flags.clear();
+  flags.push_back(bluetooth_gatt_characteristic::kFlagWrite);
+  heart_rate_control_point_properties_->flags.ReplaceValue(flags);
 
   heart_rate_visible_ = true;
 
   NotifyCharacteristicAdded(dbus::ObjectPath(heart_rate_measurement_path_));
   NotifyCharacteristicAdded(dbus::ObjectPath(body_sensor_location_path_));
   NotifyCharacteristicAdded(dbus::ObjectPath(heart_rate_control_point_path_));
-
-  // Set up notifications for heart rate measurement.
-  // TODO(armansito): Do this based on the value of the "client characteristic
-  // configuration" descriptor. Since it's still unclear how descriptors will
-  // be handled by BlueZ, automatically set up notifications for now.
-  ScheduleHeartRateMeasurementValueChange();
 
   // Expose CCC descriptor for Heart Rate Measurement characteristic.
   FakeBluetoothGattDescriptorClient* descriptor_client =
@@ -271,25 +346,6 @@ void FakeBluetoothGattCharacteristicClient::OnPropertyChanged(
   FOR_EACH_OBSERVER(BluetoothGattCharacteristicClient::Observer, observers_,
                     GattCharacteristicPropertyChanged(
                         object_path, property_name));
-
-  // If the heart rate control point was set, reset the calories burned.
-  if (object_path.value() != heart_rate_control_point_path_)
-    return;
-  DCHECK(heart_rate_control_point_properties_.get());
-  dbus::Property<std::vector<uint8> >* value_prop =
-      &heart_rate_control_point_properties_->value;
-  if (property_name != value_prop->name())
-    return;
-
-  std::vector<uint8> value = value_prop->value();
-  DCHECK(value.size() == 1);
-  if (value[0] == 0)
-    return;
-
-  DCHECK(value[0] == 1);
-  calories_burned_ = 0;
-  value[0] = 0;
-  value_prop->ReplaceValue(value);
 }
 
 void FakeBluetoothGattCharacteristicClient::NotifyCharacteristicAdded(
@@ -310,9 +366,19 @@ void FakeBluetoothGattCharacteristicClient::
     ScheduleHeartRateMeasurementValueChange() {
   if (!IsHeartRateVisible())
     return;
+
+  // Don't send updates if the characteristic is not notifying.
+  if (!heart_rate_measurement_properties_->notifying.value())
+    return;
+
   VLOG(2) << "Updating heart rate value.";
   std::vector<uint8> measurement = GetHeartRateMeasurementValue();
-  heart_rate_measurement_properties_->value.ReplaceValue(measurement);
+
+  FOR_EACH_OBSERVER(
+      BluetoothGattCharacteristicClient::Observer,
+      observers_,
+      GattCharacteristicValueUpdated(
+          dbus::ObjectPath(heart_rate_measurement_path_), measurement));
 
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,

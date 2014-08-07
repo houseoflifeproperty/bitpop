@@ -28,13 +28,14 @@
 #include "content/public/browser/resource_context.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "net/base/sdch_dictionary_fetcher.h"
+#include "net/base/sdch_manager.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/ssl/default_server_bound_cert_store.h"
 #include "net/ssl/server_bound_cert_service.h"
-#include "net/url_request/protocol_intercept_job_factory.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "webkit/browser/database/database_tracker.h"
 
@@ -72,7 +73,7 @@ OffTheRecordProfileIOData::Handle::GetResourceContextNoInit() const {
 scoped_refptr<ChromeURLRequestContextGetter>
 OffTheRecordProfileIOData::Handle::CreateMainRequestContextGetter(
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) const {
+    content::URLRequestInterceptorScopedVector request_interceptors) const {
   // TODO(oshima): Re-enable when ChromeOS only accesses the profile on the UI
   // thread.
 #if !defined(OS_CHROMEOS)
@@ -81,7 +82,7 @@ OffTheRecordProfileIOData::Handle::CreateMainRequestContextGetter(
   LazyInitialize();
   DCHECK(!main_request_context_getter_.get());
   main_request_context_getter_ = ChromeURLRequestContextGetter::Create(
-      profile_, io_data_, protocol_handlers, protocol_interceptors.Pass());
+      profile_, io_data_, protocol_handlers, request_interceptors.Pass());
   return main_request_context_getter_;
 }
 
@@ -117,7 +118,7 @@ OffTheRecordProfileIOData::Handle::CreateIsolatedAppRequestContextGetter(
     const base::FilePath& partition_path,
     bool in_memory,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) const {
+    content::URLRequestInterceptorScopedVector request_interceptors) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!partition_path.empty());
   LazyInitialize();
@@ -137,10 +138,16 @@ OffTheRecordProfileIOData::Handle::CreateIsolatedAppRequestContextGetter(
           descriptor,
           protocol_handler_interceptor.Pass(),
           protocol_handlers,
-          protocol_interceptors.Pass());
+          request_interceptors.Pass());
   app_request_context_getter_map_[descriptor] = context;
 
   return context;
+}
+
+DevToolsNetworkController*
+OffTheRecordProfileIOData::Handle::GetDevToolsNetworkController() const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  return io_data_->network_controller();
 }
 
 void OffTheRecordProfileIOData::Handle::LazyInitialize() const {
@@ -154,6 +161,13 @@ void OffTheRecordProfileIOData::Handle::LazyInitialize() const {
   io_data_->safe_browsing_enabled()->Init(prefs::kSafeBrowsingEnabled,
       profile_->GetPrefs());
   io_data_->safe_browsing_enabled()->MoveToThread(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
+#endif
+#if defined(OS_ANDROID) || defined(OS_IOS)
+  io_data_->data_reduction_proxy_enabled()->Init(
+      data_reduction_proxy::prefs::kDataReductionProxyEnabled,
+      profile_->GetPrefs());
+  io_data_->data_reduction_proxy_enabled()->MoveToThread(
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 #endif
   io_data_->InitializeOnUIThread(profile_);
@@ -170,7 +184,7 @@ OffTheRecordProfileIOData::~OffTheRecordProfileIOData() {
 void OffTheRecordProfileIOData::InitializeInternal(
     ProfileParams* profile_params,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) const {
+    content::URLRequestInterceptorScopedVector request_interceptors) const {
   ChromeURLRequestContext* main_context = main_request_context();
 
   IOThread* const io_thread = profile_params->io_thread;
@@ -219,13 +233,9 @@ void OffTheRecordProfileIOData::InitializeInternal(
 
   net::HttpCache::BackendFactory* main_backend =
       net::HttpCache::DefaultBackend::InMemory(0);
-  net::HttpNetworkSession::Params network_session_params;
-  PopulateNetworkSessionParams(profile_params, &network_session_params);
-  net::HttpCache* cache = new net::HttpCache(
-      network_session_params, main_backend);
+  main_http_factory_ = CreateMainHttpFactory(profile_params, main_backend);
 
-  main_http_factory_.reset(cache);
-  main_context->set_http_transaction_factory(cache);
+  main_context->set_http_transaction_factory(main_http_factory_.get());
 #if !defined(DISABLE_FTP_SUPPORT)
   ftp_factory_.reset(
       new net::FtpNetworkLayer(main_context->host_resolver()));
@@ -237,11 +247,24 @@ void OffTheRecordProfileIOData::InitializeInternal(
   InstallProtocolHandlers(main_job_factory.get(), protocol_handlers);
   main_job_factory_ = SetUpJobFactoryDefaults(
       main_job_factory.Pass(),
-      protocol_interceptors.Pass(),
+      request_interceptors.Pass(),
       profile_params->protocol_handler_interceptor.Pass(),
       network_delegate(),
       ftp_factory_.get());
   main_context->set_job_factory(main_job_factory_.get());
+
+  // Setup the SDCHManager for this profile.
+  sdch_manager_.reset(new net::SdchManager);
+  sdch_manager_->set_sdch_fetcher(
+      new net::SdchDictionaryFetcher(
+          sdch_manager_.get(),
+          // SdchDictionaryFetcher takes a reference to the Getter, and
+          // hence implicitly takes ownership.
+          new net::TrivialURLRequestContextGetter(
+              main_context,
+              content::BrowserThread::GetMessageLoopProxyForThread(
+                  content::BrowserThread::IO))));
+  main_context->set_sdch_manager(sdch_manager_.get());
 
 #if defined(ENABLE_EXTENSIONS)
   InitializeExtensionsRequestContext(profile_params);
@@ -285,7 +308,7 @@ void OffTheRecordProfileIOData::
   // SetUpJobFactoryDefaults() to get this effect.
   extensions_job_factory_ = SetUpJobFactoryDefaults(
       extensions_job_factory.Pass(),
-      content::ProtocolHandlerScopedVector(),
+      content::URLRequestInterceptorScopedVector(),
       scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>(),
       NULL,
       ftp_factory_.get());
@@ -298,7 +321,7 @@ ChromeURLRequestContext* OffTheRecordProfileIOData::InitializeAppRequestContext(
     scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
         protocol_handler_interceptor,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) const {
+    content::URLRequestInterceptorScopedVector request_interceptors) const {
   AppRequestContext* context = new AppRequestContext();
 
   // Copy most state from the main context.
@@ -315,17 +338,18 @@ ChromeURLRequestContext* OffTheRecordProfileIOData::InitializeAppRequestContext(
       net::HttpCache::DefaultBackend::InMemory(0);
   net::HttpNetworkSession* main_network_session =
       main_http_factory_->GetSession();
-  scoped_ptr<net::HttpTransactionFactory> app_http_cache(
-      new net::HttpCache(main_network_session, app_backend));
+  scoped_ptr<net::HttpCache> app_http_cache =
+      CreateHttpFactory(main_network_session, app_backend);
 
-  context->SetHttpTransactionFactory(app_http_cache.Pass());
+  context->SetHttpTransactionFactory(
+      app_http_cache.PassAs<net::HttpTransactionFactory>());
 
   scoped_ptr<net::URLRequestJobFactoryImpl> job_factory(
       new net::URLRequestJobFactoryImpl());
   InstallProtocolHandlers(job_factory.get(), protocol_handlers);
   scoped_ptr<net::URLRequestJobFactory> top_job_factory;
   top_job_factory = SetUpJobFactoryDefaults(job_factory.Pass(),
-                                            protocol_interceptors.Pass(),
+                                            request_interceptors.Pass(),
                                             protocol_handler_interceptor.Pass(),
                                             network_delegate(),
                                             ftp_factory_.get());
@@ -354,14 +378,14 @@ OffTheRecordProfileIOData::AcquireIsolatedAppRequestContext(
     scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
         protocol_handler_interceptor,
     content::ProtocolHandlerMap* protocol_handlers,
-    content::ProtocolHandlerScopedVector protocol_interceptors) const {
+    content::URLRequestInterceptorScopedVector request_interceptors) const {
   // We create per-app contexts on demand, unlike the others above.
   ChromeURLRequestContext* app_request_context =
       InitializeAppRequestContext(main_context,
                                   partition_descriptor,
                                   protocol_handler_interceptor.Pass(),
                                   protocol_handlers,
-                                  protocol_interceptors.Pass());
+                                  request_interceptors.Pass());
   DCHECK(app_request_context);
   return app_request_context;
 }

@@ -12,14 +12,16 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
+#include "ui/aura/test/aura_test_base.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/layout/fill_layout.h"
-#include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/wm/core/default_activation_client.h"
 
 namespace views {
 namespace {
@@ -32,19 +34,17 @@ NativeWidgetAura* Init(aura::Window* parent, Widget* widget) {
   return static_cast<NativeWidgetAura*>(widget->native_widget());
 }
 
-class NativeWidgetAuraTest : public ViewsTestBase {
+class NativeWidgetAuraTest : public aura::test::AuraTestBase {
  public:
   NativeWidgetAuraTest() {}
   virtual ~NativeWidgetAuraTest() {}
 
   // testing::Test overrides:
   virtual void SetUp() OVERRIDE {
-    ViewsTestBase::SetUp();
+    AuraTestBase::SetUp();
+    new wm::DefaultActivationClient(root_window());
     host()->SetBounds(gfx::Rect(640, 480));
   }
-
- protected:
-  aura::Window* root_window() { return GetContext(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NativeWidgetAuraTest);
@@ -317,8 +317,8 @@ TEST_F(NativeWidgetAuraTest, DontCaptureOnGesture) {
   widget->SetContentsView(view);
   widget->Show();
 
-  ui::TouchEvent press(ui::ET_TOUCH_PRESSED, gfx::Point(41, 51), 1,
-                       base::TimeDelta());
+  ui::TouchEvent press(
+      ui::ET_TOUCH_PRESSED, gfx::Point(41, 51), 1, ui::EventTimeForNow());
   ui::EventDispatchDetails details =
       event_processor()->OnEventFromSource(&press);
   ASSERT_FALSE(details.dispatcher_destroyed);
@@ -332,8 +332,8 @@ TEST_F(NativeWidgetAuraTest, DontCaptureOnGesture) {
 
   // Release touch. Only |view| should get the release since that it consumed
   // the press.
-  ui::TouchEvent release(ui::ET_TOUCH_RELEASED, gfx::Point(250, 251), 1,
-                             base::TimeDelta());
+  ui::TouchEvent release(
+      ui::ET_TOUCH_RELEASED, gfx::Point(250, 251), 1, ui::EventTimeForNow());
   details = event_processor()->OnEventFromSource(&release);
   ASSERT_FALSE(details.dispatcher_destroyed);
   EXPECT_TRUE(view->got_gesture_event());
@@ -433,9 +433,9 @@ TEST_F(NativeWidgetAuraTest, NoCrashOnThemeAfterClose) {
   parent->Init(aura::WINDOW_LAYER_NOT_DRAWN);
   parent->SetBounds(gfx::Rect(0, 0, 480, 320));
   scoped_ptr<Widget> widget(new Widget());
-  NativeWidgetAura* window = Init(parent.get(), widget.get());
-  window->Show();
-  window->Close();
+  Init(parent.get(), widget.get());
+  widget->Show();
+  widget->Close();
   base::MessageLoop::current()->RunUntilIdle();
   widget->GetNativeTheme();  // Shouldn't crash.
 }

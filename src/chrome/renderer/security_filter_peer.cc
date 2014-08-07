@@ -70,15 +70,14 @@ void SecurityFilterPeer::OnUploadProgress(uint64 position, uint64 size) {
 
 bool SecurityFilterPeer::OnReceivedRedirect(
     const GURL& new_url,
-    const webkit_glue::ResourceResponseInfo& info,
-    bool* has_new_first_party_for_cookies,
-    GURL* new_first_party_for_cookies) {
+    const GURL& new_first_party_for_cookies,
+    const content::ResourceResponseInfo& info) {
   NOTREACHED();
   return false;
 }
 
 void SecurityFilterPeer::OnReceivedResponse(
-    const webkit_glue::ResourceResponseInfo& info) {
+    const content::ResourceResponseInfo& info) {
   NOTREACHED();
 }
 
@@ -99,10 +98,9 @@ void SecurityFilterPeer::OnCompletedRequest(
 }
 
 // static
-void ProcessResponseInfo(
-    const webkit_glue::ResourceResponseInfo& info_in,
-    webkit_glue::ResourceResponseInfo* info_out,
-    const std::string& mime_type) {
+void ProcessResponseInfo(const content::ResourceResponseInfo& info_in,
+                         content::ResourceResponseInfo* info_out,
+                         const std::string& mime_type) {
   DCHECK(info_out);
   *info_out = info_in;
   info_out->mime_type = mime_type;
@@ -138,7 +136,7 @@ BufferedPeer::~BufferedPeer() {
 }
 
 void BufferedPeer::OnReceivedResponse(
-    const webkit_glue::ResourceResponseInfo& info) {
+    const content::ResourceResponseInfo& info) {
   ProcessResponseInfo(info, &response_info_, mime_type_);
 }
 
@@ -192,7 +190,7 @@ ReplaceContentPeer::~ReplaceContentPeer() {
 }
 
 void ReplaceContentPeer::OnReceivedResponse(
-    const webkit_glue::ResourceResponseInfo& info) {
+    const content::ResourceResponseInfo& info) {
   // Ignore this, we'll serve some alternate content in OnCompletedRequest.
 }
 
@@ -209,7 +207,7 @@ void ReplaceContentPeer::OnCompletedRequest(
     const std::string& security_info,
     const base::TimeTicks& completion_time,
     int64 total_transfer_size) {
-  webkit_glue::ResourceResponseInfo info;
+  content::ResourceResponseInfo info;
   ProcessResponseInfo(info, &info, mime_type_);
   info.security_info = security_info;
   info.content_length = static_cast<int>(data_.size());

@@ -10,6 +10,7 @@
 
 #if defined(USE_AURA)
 #include "ui/events/gestures/gesture_configuration.h"
+#include "ui/events/gestures/unified_gesture_detector_enabled.h"
 #elif defined(OS_ANDROID)
 #include "ui/gfx/android/view_configuration.h"
 #include "ui/gfx/screen.h"
@@ -23,16 +24,8 @@ namespace {
 GestureEventQueue::Config GetGestureEventQueueConfig() {
   GestureEventQueue::Config config;
 
-#if defined(OS_CHROMEOS)
-  // Default debouncing interval duration on ChromeOS: if a scroll is in
-  // progress, non-scroll events during this interval are deferred to either its
-  // end or discarded on receipt of another GestureScrollUpdate.
-  // TODO(jdduke): Disable and remove entirely when issues with spurious
-  // scroll end detection on the Pixel are resolved, crbug.com/353702.
-  const int kDebouncingIntervalTimeMs = 30;
-  config.debounce_interval =
-      base::TimeDelta::FromMilliseconds(kDebouncingIntervalTimeMs);
-#endif
+  config.debounce_interval = base::TimeDelta::FromMilliseconds(
+      ui::GestureConfiguration::scroll_debounce_interval_in_ms());
 
   config.touchscreen_tap_suppression_config.enabled = true;
   config.touchscreen_tap_suppression_config.max_cancel_to_down_time =
@@ -60,8 +53,9 @@ TouchEventQueue::Config GetTouchEventQueueConfig() {
 
   config.touchmove_slop_suppression_length_dips =
       ui::GestureConfiguration::max_touch_move_in_pixels_for_click();
-  // TODO(jdduke): Remove when unified GR enabled, crbug.com/332418.
-  config.touchmove_slop_suppression_region_includes_boundary = false;
+
+  config.touchmove_slop_suppression_region_includes_boundary =
+      ui::IsUnifiedGestureDetectorEnabled();
 
   return config;
 }

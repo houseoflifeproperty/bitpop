@@ -32,13 +32,17 @@ class VIEWS_EXPORT X11WindowEventFilter : public ui::EventHandler {
   explicit X11WindowEventFilter(DesktopWindowTreeHost* window_tree_host);
   virtual ~X11WindowEventFilter();
 
-  // Changes whether borders are shown on this |root_window|.
-  void SetUseHostWindowBorders(bool use_os_border);
-
   // Overridden from ui::EventHandler:
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
 
  private:
+  // Called when the user clicked the caption area.
+  void OnClickedCaption(ui::MouseEvent* event,
+                        int previous_click_component);
+
+  // Called when the user clicked the maximize button.
+  void OnClickedMaximizeButton(ui::MouseEvent* event);
+
   void ToggleMaximizedState();
 
   // Dispatches a _NET_WM_MOVERESIZE message to the window manager to tell it

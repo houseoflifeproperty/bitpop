@@ -25,6 +25,7 @@ class GURL;
 
 namespace base {
 class FilePath;
+class MessageLoopProxy;
 class SequencedTaskRunner;
 }
 
@@ -36,6 +37,7 @@ namespace content {
 
 class EmbeddedWorkerRegistry;
 class ServiceWorkerContextObserver;
+class ServiceWorkerContextWrapper;
 class ServiceWorkerHandle;
 class ServiceWorkerJobCoordinator;
 class ServiceWorkerProviderHost;
@@ -48,8 +50,7 @@ class ServiceWorkerStorage;
 // is the root of the containment hierarchy for service worker data
 // associated with a particular partition.
 class CONTENT_EXPORT ServiceWorkerContextCore
-    : NON_EXPORTED_BASE(public base::SupportsWeakPtr<ServiceWorkerContextCore>),
-      public ServiceWorkerVersion::Listener {
+    : public ServiceWorkerVersion::Listener {
  public:
   typedef base::Callback<void(ServiceWorkerStatusCode status,
                               int64 registration_id,
@@ -88,9 +89,10 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   ServiceWorkerContextCore(
       const base::FilePath& user_data_directory,
       base::SequencedTaskRunner* database_task_runner,
+      base::MessageLoopProxy* disk_cache_thread,
       quota::QuotaManagerProxy* quota_manager_proxy,
       ObserverListThreadSafe<ServiceWorkerContextObserver>* observer_list,
-      scoped_ptr<ServiceWorkerProcessManager> process_manager);
+      ServiceWorkerContextWrapper* wrapper);
   virtual ~ServiceWorkerContextCore();
 
   // ServiceWorkerVersion::Listener overrides.
@@ -110,9 +112,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
                                       const GURL& source_url) OVERRIDE;
 
   ServiceWorkerStorage* storage() { return storage_.get(); }
-  ServiceWorkerProcessManager* process_manager() {
-    return process_manager_.get();
-  }
+  ServiceWorkerProcessManager* process_manager();
   EmbeddedWorkerRegistry* embedded_worker_registry() {
     return embedded_worker_registry_.get();
   }
@@ -151,13 +151,14 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   void AddLiveVersion(ServiceWorkerVersion* version);
   void RemoveLiveVersion(int64 registration_id);
 
+  std::vector<ServiceWorkerRegistrationInfo> GetAllLiveRegistrationInfo();
+  std::vector<ServiceWorkerVersionInfo> GetAllLiveVersionInfo();
+
   // Returns new context-local unique ID for ServiceWorkerHandle.
   int GetNewServiceWorkerHandleId();
 
-  // Allows tests to change how processes are created.
-  void SetProcessManagerForTest(
-      scoped_ptr<ServiceWorkerProcessManager> new_process_manager) {
-    process_manager_ = new_process_manager.Pass();
+  base::WeakPtr<ServiceWorkerContextCore> AsWeakPtr() {
+    return weak_factory_.GetWeakPtr();
   }
 
  private:
@@ -168,21 +169,28 @@ class CONTENT_EXPORT ServiceWorkerContextCore
     return providers_.Lookup(process_id);
   }
 
-  void RegistrationComplete(
-      const RegistrationCallback& callback,
-      ServiceWorkerStatusCode status,
-      ServiceWorkerRegistration* registration,
-      ServiceWorkerVersion* version);
+  void RegistrationComplete(const GURL& pattern,
+                            const RegistrationCallback& callback,
+                            ServiceWorkerStatusCode status,
+                            ServiceWorkerRegistration* registration,
+                            ServiceWorkerVersion* version);
 
+  void UnregistrationComplete(const GURL& pattern,
+                              const UnregistrationCallback& callback,
+                              ServiceWorkerStatusCode status);
+
+  base::WeakPtrFactory<ServiceWorkerContextCore> weak_factory_;
+  // It's safe to store a raw pointer instead of a scoped_refptr to |wrapper_|
+  // because the Wrapper::Shutdown call that hops threads to destroy |this| uses
+  // Bind() to hold a reference to |wrapper_| until |this| is fully destroyed.
+  ServiceWorkerContextWrapper* wrapper_;
   ProcessToProviderMap providers_;
   scoped_ptr<ServiceWorkerStorage> storage_;
   scoped_refptr<EmbeddedWorkerRegistry> embedded_worker_registry_;
   scoped_ptr<ServiceWorkerJobCoordinator> job_coordinator_;
-  scoped_ptr<ServiceWorkerProcessManager> process_manager_;
   std::map<int64, ServiceWorkerRegistration*> live_registrations_;
   std::map<int64, ServiceWorkerVersion*> live_versions_;
   int next_handle_id_;
-
   scoped_refptr<ObserverListThreadSafe<ServiceWorkerContextObserver> >
       observer_list_;
 

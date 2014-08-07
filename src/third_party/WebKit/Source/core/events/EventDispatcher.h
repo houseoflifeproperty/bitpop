@@ -46,9 +46,10 @@ enum EventDispatchContinuation {
 };
 
 class EventDispatcher {
+    STACK_ALLOCATED();
 public:
-    static bool dispatchEvent(Node*, PassRefPtr<EventDispatchMediator>);
-    static void dispatchScopedEvent(Node*, PassRefPtr<EventDispatchMediator>);
+    static bool dispatchEvent(Node*, PassRefPtrWillBeRawPtr<EventDispatchMediator>);
+    static void dispatchScopedEvent(Node*, PassRefPtrWillBeRawPtr<EventDispatchMediator>);
 
     static void dispatchSimulatedClick(Node*, Event* underlyingEvent, SimulatedClickMouseEventOptions);
 
@@ -66,8 +67,8 @@ private:
     void dispatchEventAtBubbling(WindowEventContext&);
     void dispatchEventPostProcess(void* preDispatchEventHandlerResult);
 
-    RefPtr<Node> m_node;
-    RefPtrWillBePersistent<Event> m_event;
+    RefPtrWillBeMember<Node> m_node;
+    RefPtrWillBeMember<Event> m_event;
     RefPtr<FrameView> m_view;
 #ifndef NDEBUG
     bool m_eventDispatched;

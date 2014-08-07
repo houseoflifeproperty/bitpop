@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/debug/alias.h"
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
@@ -43,7 +44,7 @@
 #include "net/url_request/url_request_job_factory.h"
 #include "url/url_util.h"
 
-using appcache::AppCacheService;
+using appcache::AppCacheServiceImpl;
 
 namespace content {
 
@@ -341,6 +342,11 @@ bool URLRequestChromeJob::ReadRawData(net::IOBuffer* buf, int buf_size,
 
 void URLRequestChromeJob::CompleteRead(net::IOBuffer* buf, int buf_size,
                                        int* bytes_read) {
+  // http://crbug.com/373841
+  char url_buf[128];
+  base::strlcpy(url_buf, request_->url().spec().c_str(), arraysize(url_buf));
+  base::debug::Alias(url_buf);
+
   int remaining = static_cast<int>(data_->size()) - data_offset_;
   if (buf_size > remaining)
     buf_size = remaining;
@@ -422,7 +428,7 @@ class ChromeProtocolHandler
   // |is_incognito| should be set for incognito profiles.
   ChromeProtocolHandler(ResourceContext* resource_context,
                         bool is_incognito,
-                        AppCacheService* appcache_service,
+                        AppCacheServiceImpl* appcache_service,
                         ChromeBlobStorageContext* blob_storage_context)
       : resource_context_(resource_context),
         is_incognito_(is_incognito),
@@ -483,7 +489,7 @@ class ChromeProtocolHandler
 
   // True when generated from an incognito profile.
   const bool is_incognito_;
-  AppCacheService* appcache_service_;
+  AppCacheServiceImpl* appcache_service_;
   ChromeBlobStorageContext* blob_storage_context_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeProtocolHandler);
@@ -512,7 +518,7 @@ net::URLRequestJobFactory::ProtocolHandler*
 URLDataManagerBackend::CreateProtocolHandler(
     content::ResourceContext* resource_context,
     bool is_incognito,
-    AppCacheService* appcache_service,
+    AppCacheServiceImpl* appcache_service,
     ChromeBlobStorageContext* blob_storage_context) {
   DCHECK(resource_context);
   return new ChromeProtocolHandler(

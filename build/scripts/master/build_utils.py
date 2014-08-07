@@ -223,6 +223,20 @@ def EmailableBuildTable_bb8(build_status, waterfall_url, styles=None,
           '</table>\n')
 
 
+class FakeProperties(object):
+  """Wrapper implementing the minimum amount of BuildBot's IProperties
+  interface."""
+
+  def __init__(self, build):
+    self.build = build
+
+  def getProperty(self, key, default=None):
+    return self.build.properties.get(key, default)
+
+  def asDict(self):
+    return self.build.asDict()
+
+
 class FakeBuild(object):
   """Fake build object which spits back a canned set of properties.
 
@@ -236,7 +250,7 @@ class FakeBuild(object):
     return self.properties[key]
 
   def getProperties(self):
-    return self
+    return FakeProperties(self)
 
   def asDict(self):
     # The dictionary returned from a Properties object is in the form:

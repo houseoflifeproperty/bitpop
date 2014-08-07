@@ -98,22 +98,23 @@ GpuChannel* GpuChannelManager::LookupChannel(int32 client_id) {
   if (iter == gpu_channels_.end())
     return NULL;
   else
-    return iter->second.get();
+    return iter->second;
 }
 
 bool GpuChannelManager::OnMessageReceived(const IPC::Message& msg) {
-  bool msg_is_ok = true;
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(GpuChannelManager, msg, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(GpuChannelManager, msg)
     IPC_MESSAGE_HANDLER(GpuMsg_EstablishChannel, OnEstablishChannel)
     IPC_MESSAGE_HANDLER(GpuMsg_CloseChannel, OnCloseChannel)
     IPC_MESSAGE_HANDLER(GpuMsg_CreateViewCommandBuffer,
                         OnCreateViewCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuMsg_CreateImage, OnCreateImage)
     IPC_MESSAGE_HANDLER(GpuMsg_DeleteImage, OnDeleteImage)
+    IPC_MESSAGE_HANDLER(GpuMsg_CreateGpuMemoryBuffer, OnCreateGpuMemoryBuffer)
+    IPC_MESSAGE_HANDLER(GpuMsg_DestroyGpuMemoryBuffer, OnDestroyGpuMemoryBuffer)
     IPC_MESSAGE_HANDLER(GpuMsg_LoadedShader, OnLoadedShader)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
@@ -134,14 +135,9 @@ void GpuChannelManager::OnEstablishChannel(int client_id, bool share_context) {
     mailbox_manager = mailbox_manager_.get();
   }
 
-  scoped_refptr<GpuChannel> channel = new GpuChannel(this,
-                                                     watchdog_,
-                                                     share_group,
-                                                     mailbox_manager,
-                                                     client_id,
-                                                     false);
+  scoped_ptr<GpuChannel> channel(new GpuChannel(
+      this, watchdog_, share_group, mailbox_manager, client_id, false));
   channel->Init(io_message_loop_.get(), shutdown_event_);
-  gpu_channels_[client_id] = channel;
   channel_handle.name = channel->GetChannelName();
 
 #if defined(OS_POSIX)
@@ -151,6 +147,8 @@ void GpuChannelManager::OnEstablishChannel(int client_id, bool share_context) {
   DCHECK_NE(-1, renderer_fd);
   channel_handle.socket = base::FileDescriptor(renderer_fd, true);
 #endif
+
+  gpu_channels_.set(client_id, channel.Pass());
 
   Send(new GpuHostMsg_ChannelEstablished(channel_handle));
 }
@@ -259,6 +257,19 @@ void GpuChannelManager::OnDeleteImageSyncPointRetired(
   }
 }
 
+void GpuChannelManager::OnCreateGpuMemoryBuffer(
+    const gfx::GpuMemoryBufferHandle& handle,
+    const gfx::Size& size,
+    unsigned internalformat,
+    unsigned usage) {
+  Send(new GpuHostMsg_GpuMemoryBufferCreated(gfx::GpuMemoryBufferHandle()));
+}
+
+void GpuChannelManager::OnDestroyGpuMemoryBuffer(
+    const gfx::GpuMemoryBufferHandle& handle,
+    int32 sync_point) {
+}
+
 void GpuChannelManager::OnLoadedShader(std::string program_proto) {
   if (program_cache())
     program_cache()->LoadProgram(program_proto);
@@ -301,7 +312,7 @@ void GpuChannelManager::OnLoseAllContexts() {
 gfx::GLSurface* GpuChannelManager::GetDefaultOffscreenSurface() {
   if (!default_offscreen_surface_.get()) {
     default_offscreen_surface_ =
-        gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1));
+        gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size());
   }
   return default_offscreen_surface_.get();
 }

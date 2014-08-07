@@ -51,7 +51,7 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
   }
 
   // Called by the script reloader when new scripts have been loaded.
-  void NewScriptsAvailable(base::SharedMemory* handle);
+  void NewScriptsAvailable(scoped_ptr<base::SharedMemory> handle);
 
   // Return true if we have any scripts ready.
   bool ScriptsReady() const { return shared_memory_.get() != NULL; }
@@ -105,7 +105,7 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
 
     // Runs on the master thread.
     // Notify the master that new scripts are available.
-    void NotifyMaster(base::SharedMemory* memory);
+    void NotifyMaster(scoped_ptr<base::SharedMemory> memory);
 
     // Runs on the File thread.
     // Load the specified user scripts, calling NotifyMaster when done.
@@ -149,9 +149,13 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
       const Extension* extension,
       UnloadedExtensionInfo::Reason reason) OVERRIDE;
 
-  // Sends the renderer process a new set of user scripts.
+  // Sends the renderer process a new set of user scripts. If
+  // |changed_extensions| is not empty, this signals that only the scripts from
+  // those extensions should be updated. Otherwise, all extensions will be
+  // updated.
   void SendUpdate(content::RenderProcessHost* process,
-                  base::SharedMemory* shared_memory);
+                  base::SharedMemory* shared_memory,
+                  const std::set<std::string>& changed_extensions);
 
   // Manages our notification registrations.
   content::NotificationRegistrar registrar_;
@@ -167,6 +171,10 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
 
   // Maps extension info needed for localization to an extension ID.
   ExtensionsInfo extensions_info_;
+
+  // The IDs of the extensions which have changed since the last update sent to
+  // the renderer.
+  std::set<std::string> changed_extensions_;
 
   // If the extensions service has finished loading its initial set of
   // extensions.

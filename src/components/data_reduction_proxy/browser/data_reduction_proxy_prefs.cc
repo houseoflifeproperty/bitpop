@@ -6,13 +6,19 @@
 
 #include "base/prefs/pref_registry_simple.h"
 #include "components/data_reduction_proxy/common/data_reduction_proxy_pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 
 namespace data_reduction_proxy {
 
+// Make sure any changes here that have the potential to impact android_webview
+// are reflected in RegisterSimpleProfilePrefs.
 void RegisterSyncableProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       data_reduction_proxy::prefs::kDataReductionProxyEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      data_reduction_proxy::prefs::kDataReductionProxyAltEnabled,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
@@ -23,11 +29,11 @@ void RegisterSyncableProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 
 void RegisterSimpleProfilePrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(
-      data_reduction_proxy::prefs::kDataReductionProxyEnabled,
-      false);
+      data_reduction_proxy::prefs::kDataReductionProxyEnabled, false);
   registry->RegisterBooleanPref(
-      data_reduction_proxy::prefs::kDataReductionProxyWasEnabledBefore,
-      false);
+      data_reduction_proxy::prefs::kDataReductionProxyAltEnabled, false);
+  registry->RegisterBooleanPref(
+      data_reduction_proxy::prefs::kDataReductionProxyWasEnabledBefore, false);
 }
 
 void RegisterPrefs(PrefRegistrySimple* registry) {

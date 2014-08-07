@@ -33,10 +33,7 @@ inline SVGAltGlyphItemElement::SVGAltGlyphItemElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGAltGlyphItemElement> SVGAltGlyphItemElement::create(Document& document)
-{
-    return adoptRef(new SVGAltGlyphItemElement(document));
-}
+DEFINE_NODE_FACTORY(SVGAltGlyphItemElement)
 
 bool SVGAltGlyphItemElement::hasValidGlyphElements(Vector<AtomicString>& glyphNames) const
 {

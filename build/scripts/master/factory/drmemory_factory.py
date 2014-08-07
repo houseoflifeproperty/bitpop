@@ -340,8 +340,8 @@ class DrCommands(object):
     """Add a test of a single drmemory config on the tsan tests."""
     app_cmd = [('..\\tsan\\unittest\\bin\\'
                 'racecheck_unittest-windows-x86-O0.exe'),
-               ('--gtest_filter="-PositiveTests.FreeVsRead'
-                ':NegativeTests.WaitForMultiple*"'),
+               ('--gtest_filter=-PositiveTests.FreeVsRead'
+                ':NegativeTests.WaitForMultiple*'),
                '-147']
     # Pick exe from build mode.
     if self.IsWindows():
@@ -544,6 +544,10 @@ class DrMemoryTest(Test):
         failed_tests.append(m.groups()[0])  # Append failed test name.
 
       DRM_PREFIX = '~~[Dr\.M0-9]+~~ '
+      # Only count non-ignored errors.
+      m = re.match(DRM_PREFIX + 'ERRORS IGNORED:', line)
+      if m:
+        break
       m = re.match(DRM_PREFIX + '(.*)', line)
       if m:
         summary.append(m.groups()[0])

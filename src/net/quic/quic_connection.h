@@ -40,6 +40,7 @@
 #include "net/quic/quic_received_packet_manager.h"
 #include "net/quic/quic_sent_entropy_manager.h"
 #include "net/quic/quic_sent_packet_manager.h"
+#include "net/quic/quic_types.h"
 
 namespace net {
 
@@ -49,7 +50,6 @@ class QuicConnection;
 class QuicDecrypter;
 class QuicEncrypter;
 class QuicFecGroup;
-class QuicFlowController;
 class QuicRandom;
 
 namespace test {
@@ -94,10 +94,12 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // Called when a blocked socket becomes writable.
   virtual void OnCanWrite() = 0;
 
-  // Called to ask if any writes are pending in this visitor. Writes may be
-  // pending because they were write-blocked, congestion-throttled or
-  // yielded to other connections.
-  virtual bool HasPendingWrites() const = 0;
+  // Called to ask if the visitor wants to schedule write resumption as it both
+  // has pending data to write, and is able to write (e.g. based on flow control
+  // limits).
+  // Writes may be pending because they were write-blocked, congestion-throttled
+  // or yielded to other connections.
+  virtual bool WillingAndAbleToWrite() const = 0;
 
   // Called to ask if any handshake messages are pending in this visitor.
   virtual bool HasPendingHandshake() const = 0;
@@ -110,10 +112,11 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
 // Interface which gets callbacks from the QuicConnection at interesting
 // points.  Implementations must not mutate the state of the connection
 // as a result of these callbacks.
-class NET_EXPORT_PRIVATE QuicConnectionDebugVisitorInterface
-    : public QuicPacketGenerator::DebugDelegateInterface {
+class NET_EXPORT_PRIVATE QuicConnectionDebugVisitor
+    : public QuicPacketGenerator::DebugDelegate,
+      public QuicSentPacketManager::DebugDelegate {
  public:
-  virtual ~QuicConnectionDebugVisitorInterface() {}
+  virtual ~QuicConnectionDebugVisitor() {}
 
   // Called when a packet has been sent.
   virtual void OnPacketSent(QuicPacketSequenceNumber sequence_number,
@@ -157,12 +160,21 @@ class NET_EXPORT_PRIVATE QuicConnectionDebugVisitorInterface
   // Called when a Ping has been parsed.
   virtual void OnPingFrame(const QuicPingFrame& frame) {}
 
+  // Called when a GoAway has been parsed.
+  virtual void OnGoAwayFrame(const QuicGoAwayFrame& frame) {}
+
   // Called when a RstStreamFrame has been parsed.
   virtual void OnRstStreamFrame(const QuicRstStreamFrame& frame) {}
 
   // Called when a ConnectionCloseFrame has been parsed.
   virtual void OnConnectionCloseFrame(
       const QuicConnectionCloseFrame& frame) {}
+
+  // Called when a WindowUpdate has been parsed.
+  virtual void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) {}
+
+  // Called when a BlockedFrame has been parsed.
+  virtual void OnBlockedFrame(const QuicBlockedFrame& frame) {}
 
   // Called when a public reset packet has been received.
   virtual void OnPublicResetPacket(const QuicPublicResetPacket& packet) {}
@@ -217,8 +229,7 @@ class NET_EXPORT_PRIVATE QuicConnection
                  QuicConnectionHelperInterface* helper,
                  QuicPacketWriter* writer,
                  bool is_server,
-                 const QuicVersionVector& supported_versions,
-                 uint32 max_flow_control_receive_window_bytes);
+                 const QuicVersionVector& supported_versions);
   virtual ~QuicConnection();
 
   // Sets connection parameters from the supplied |config|.
@@ -228,7 +239,10 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Returns a pair with the number of bytes consumed from data, and a boolean
   // indicating if the fin bit was consumed.  This does not indicate the data
   // has been sent on the wire: it may have been turned into a packet and queued
-  // if the socket was unexpectedly blocked.
+  // if the socket was unexpectedly blocked. |fec_protection| indicates if
+  // data is to be FEC protected. Note that data that is sent immediately
+  // following MUST_FEC_PROTECT data may get protected by falling within the
+  // same FEC group.
   // If |delegate| is provided, then it will be informed once ACKs have been
   // received for all the packets written in this call.
   // The |delegate| is not owned by the QuicConnection and must outlive it.
@@ -236,6 +250,7 @@ class NET_EXPORT_PRIVATE QuicConnection
                                   const IOVector& data,
                                   QuicStreamOffset offset,
                                   bool fin,
+                                  FecProtection fec_protection,
                                   QuicAckNotifier::DelegateInterface* delegate);
 
   // Send a RST_STREAM frame to the peer.
@@ -266,8 +281,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   virtual void SendGoAway(QuicErrorCode error,
                           QuicStreamId last_good_stream_id,
                           const std::string& reason);
-
-  QuicFlowController* flow_controller() { return flow_controller_.get(); }
 
   // Returns statistics tracked for this connection.
   const QuicConnectionStats& GetStats();
@@ -346,17 +359,18 @@ class NET_EXPORT_PRIVATE QuicConnection
   void set_visitor(QuicConnectionVisitorInterface* visitor) {
     visitor_ = visitor;
   }
-  void set_debug_visitor(QuicConnectionDebugVisitorInterface* debug_visitor) {
+  void set_debug_visitor(QuicConnectionDebugVisitor* debug_visitor) {
     debug_visitor_ = debug_visitor;
     packet_generator_.set_debug_delegate(debug_visitor);
+    sent_packet_manager_.set_debug_delegate(debug_visitor);
   }
   const IPEndPoint& self_address() const { return self_address_; }
   const IPEndPoint& peer_address() const { return peer_address_; }
   QuicConnectionId connection_id() const { return connection_id_; }
   const QuicClock* clock() const { return clock_; }
   QuicRandom* random_generator() const { return random_generator_; }
-
-  QuicPacketCreator::Options* options() { return packet_creator_.options(); }
+  size_t max_packet_length() const;
+  void set_max_packet_length(size_t length);
 
   bool connected() const { return connected_; }
 
@@ -374,10 +388,6 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicEncryptedPacket* ReleaseConnectionClosePacket() {
     return connection_close_packet_.release();
   }
-
-  // Flush any queued frames immediately.  Preserves the batch write mode and
-  // does nothing if there are no pending frames.
-  void Flush();
 
   // Returns true if the underlying UDP socket is writable, there is
   // no queued data and the connection is not congestion-control
@@ -417,9 +427,9 @@ class NET_EXPORT_PRIVATE QuicConnection
   // initially encrypted packets when the initial encrypter changes.
   void RetransmitUnackedPackets(RetransmissionType retransmission_type);
 
-  // Calls |sent_packet_manager_|'s DiscardUnencryptedPackets. Used when the
+  // Calls |sent_packet_manager_|'s NeuterUnencryptedPackets. Used when the
   // connection becomes forward secure and hasn't received acks for all packets.
-  void DiscardUnencryptedPackets();
+  void NeuterUnencryptedPackets();
 
   // Changes the encrypter used for level |level| to |encrypter|. The function
   // takes ownership of |encrypter|.
@@ -457,13 +467,7 @@ class NET_EXPORT_PRIVATE QuicConnection
     return sent_packet_manager_;
   }
 
-  bool CanWrite(TransmissionType transmission_type,
-                HasRetransmittableData retransmittable,
-                IsHandshake handshake);
-
-  uint32 max_flow_control_receive_window_bytes() const {
-    return max_flow_control_receive_window_bytes_;
-  }
+  bool CanWrite(HasRetransmittableData retransmittable);
 
   // Stores current batch state for connection, puts the connection
   // into batch mode, and destruction restores the stored batch state.
@@ -611,6 +615,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Sets the ping alarm to the appropriate value, if any.
   void SetPingAlarm();
 
+  // On arrival of a new packet, checks to see if the socket addresses have
+  // changed since the last packet we saw on this connection.
+  void CheckForAddressMigration(const IPEndPoint& self_address,
+                                const IPEndPoint& peer_address);
+
   QuicFramer framer_;
   QuicConnectionHelperInterface* helper_;  // Not owned.
   QuicPacketWriter* writer_;  // Not owned.
@@ -623,6 +632,8 @@ class NET_EXPORT_PRIVATE QuicConnection
   // client.
   IPEndPoint self_address_;
   IPEndPoint peer_address_;
+  // Used to store latest peer port to possibly migrate to later.
+  int migrating_peer_port_;
 
   bool last_packet_revived_;  // True if the last packet was revived from FEC.
   size_t last_size_;  // Size of the last received packet.
@@ -695,8 +706,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   scoped_ptr<QuicAlarm> ping_alarm_;
 
   QuicConnectionVisitorInterface* visitor_;
-  QuicConnectionDebugVisitorInterface* debug_visitor_;
-  QuicPacketCreator packet_creator_;
+  QuicConnectionDebugVisitor* debug_visitor_;
   QuicPacketGenerator packet_generator_;
 
   // Network idle time before we kill of this connection.
@@ -734,19 +744,25 @@ class NET_EXPORT_PRIVATE QuicConnection
   // close.
   bool connected_;
 
-  // Set to true if the udp packet headers have a new self or peer address.
-  // This is checked later on validating a data or version negotiation packet.
-  bool address_migrating_;
+  // Set to true if the UDP packet headers have a new IP address for the peer.
+  // If true, do not perform connection migration.
+  bool peer_ip_changed_;
+
+  // Set to true if the UDP packet headers have a new port for the peer.
+  // If true, and the IP has not changed, then we can migrate the connection.
+  bool peer_port_changed_;
+
+  // Set to true if the UDP packet headers are addressed to a different IP.
+  // We do not support connection migration when the self IP changed.
+  bool self_ip_changed_;
+
+  // Set to true if the UDP packet headers are addressed to a different port.
+  // We do not support connection migration when the self port changed.
+  bool self_port_changed_;
 
   // If non-empty this contains the set of versions received in a
   // version negotiation packet.
   QuicVersionVector server_supported_versions_;
-
-  // Initial flow control receive window size for new streams.
-  uint32 max_flow_control_receive_window_bytes_;
-
-  // Used for connection level flow control.
-  scoped_ptr<QuicFlowController> flow_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

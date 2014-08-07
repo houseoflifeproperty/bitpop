@@ -7,6 +7,8 @@
 
 #include <string>
 
+#include "base/bind.h"
+#include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
@@ -62,9 +64,6 @@ bool HasFileAsParent(const FileDetails& details, const std::string& file_id);
 
 std::string GetMimeTypeFromTitle(const base::FilePath& title);
 
-scoped_ptr<google_apis::ResourceEntry> GetOldestCreatedFolderResource(
-    ScopedVector<google_apis::ResourceEntry> list);
-
 SyncStatusCode GDataErrorCodeToSyncStatusCode(
     google_apis::GDataErrorCode error);
 
@@ -84,6 +83,19 @@ const typename Container::mapped_type& LookUpMap(
   if (found == container.end())
     return default_value;
   return found->second;
+}
+
+template <typename R, typename S, typename T>
+R ComposeFunction(const base::Callback<T()>& g,
+                  const base::Callback<R(S)>& f) {
+  return f.Run(g.Run());
+}
+
+template <typename R, typename S, typename T>
+base::Callback<R()> CreateComposedFunction(
+    const base::Callback<T()>& g,
+    const base::Callback<R(S)>& f) {
+  return base::Bind(&ComposeFunction<R, S, T>, g, f);
 }
 
 }  // namespace drive_backend

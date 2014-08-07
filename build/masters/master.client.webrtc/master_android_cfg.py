@@ -18,6 +18,7 @@ def Update(c):
           'Android',
           'Android (dbg)',
           'Android Clang (dbg)',
+          'Android ARM64 (dbg)',
           'Android Chromium-APK Builder',
           'Android Chromium-APK Builder (dbg)',
       ]),
@@ -30,10 +31,30 @@ def Update(c):
           'Android Chromium-APK Tests (JB Nexus7.2)',
       ]),
   ])
+
+  # 'slavebuilddir' below is used to reduce the number of checkouts since some
+  # of the builders are pooled over multiple slave machines.
   specs = [
-    {'name': 'Android', 'recipe': 'webrtc/standalone'},
-    {'name': 'Android (dbg)', 'recipe': 'webrtc/standalone'},
-    {'name': 'Android Clang (dbg)', 'recipe': 'webrtc/standalone'},
+    {
+      'name': 'Android',
+      'recipe': 'webrtc/standalone',
+      'slavebuilddir': 'android',
+    },
+    {
+      'name': 'Android (dbg)',
+      'recipe': 'webrtc/standalone',
+      'slavebuilddir': 'android',
+    },
+    {
+      'name': 'Android Clang (dbg)',
+      'recipe': 'webrtc/standalone',
+      'slavebuilddir': 'android_clang',
+    },
+    {
+      'name': 'Android ARM64 (dbg)',
+      'recipe': 'webrtc/standalone',
+      'slavebuilddir': 'android_arm64',
+    },
     {
       'name': 'Android Chromium-APK Builder',
       'triggers': ['android_trigger_rel'],
@@ -56,5 +77,6 @@ def Update(c):
             triggers=spec.get('triggers')),
         'notify_on_missing': True,
         'category': 'android',
+        'slavebuilddir': spec.get('slavebuilddir', 'android_apk'),
       } for spec in specs
   ])

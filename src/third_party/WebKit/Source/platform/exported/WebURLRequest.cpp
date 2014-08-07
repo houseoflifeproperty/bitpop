@@ -214,11 +214,6 @@ void WebURLRequest::setReportUploadProgress(bool reportUploadProgress)
     m_private->m_resourceRequest->setReportUploadProgress(reportUploadProgress);
 }
 
-bool WebURLRequest::reportLoadTiming() const
-{
-    return m_private->m_resourceRequest->reportLoadTiming();
-}
-
 void WebURLRequest::setReportRawHeaders(bool reportRawHeaders)
 {
     m_private->m_resourceRequest->setReportRawHeaders(reportRawHeaders);
@@ -227,11 +222,6 @@ void WebURLRequest::setReportRawHeaders(bool reportRawHeaders)
 bool WebURLRequest::reportRawHeaders() const
 {
     return m_private->m_resourceRequest->reportRawHeaders();
-}
-
-void WebURLRequest::setReportLoadTiming(bool reportLoadTiming)
-{
-    m_private->m_resourceRequest->setReportLoadTiming(reportLoadTiming);
 }
 
 WebURLRequest::TargetType WebURLRequest::targetType() const
@@ -329,6 +319,12 @@ WebURLRequest::Priority WebURLRequest::priority() const
 {
     return static_cast<WebURLRequest::Priority>(
         m_private->m_resourceRequest->priority());
+}
+
+void WebURLRequest::setPriority(WebURLRequest::Priority priority)
+{
+    m_private->m_resourceRequest->setPriority(
+        static_cast<ResourceLoadPriority>(priority));
 }
 
 const ResourceRequest& WebURLRequest::toResourceRequest() const

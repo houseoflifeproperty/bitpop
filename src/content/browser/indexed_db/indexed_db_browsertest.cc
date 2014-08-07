@@ -8,12 +8,15 @@
 #include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/thread_test_helper.h"
 #include "content/browser/browser_main_loop.h"
+#include "content/browser/indexed_db/indexed_db_class_factory.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
+#include "content/browser/indexed_db/mock_browsertest_indexed_db_class_factory.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -26,6 +29,7 @@
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
+#include "net/base/escape.h"
 #include "net/base/net_errors.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
@@ -44,6 +48,25 @@ namespace content {
 class IndexedDBBrowserTest : public ContentBrowserTest {
  public:
   IndexedDBBrowserTest() : disk_usage_(-1) {}
+
+  virtual void SetUp() OVERRIDE {
+    GetTestClassFactory()->Reset();
+    IndexedDBClassFactory::SetIndexedDBClassFactoryGetter(GetIDBClassFactory);
+    ContentBrowserTest::SetUp();
+  }
+
+  virtual void TearDown() OVERRIDE {
+    IndexedDBClassFactory::SetIndexedDBClassFactoryGetter(NULL);
+    ContentBrowserTest::TearDown();
+  }
+
+  void FailOperation(FailClass failure_class,
+                     FailMethod failure_method,
+                     int fail_on_instance_num,
+                     int fail_on_call_num) {
+    GetTestClassFactory()->FailOperation(
+        failure_class, failure_method, fail_on_instance_num, fail_on_call_num);
+  }
 
   void SimpleTest(const GURL& test_url, bool incognito = false) {
     // The test page will perform tests on IndexedDB, then navigate to either
@@ -125,13 +148,26 @@ class IndexedDBBrowserTest : public ContentBrowserTest {
     base::MessageLoop::current()->RunUntilIdle();
     return disk_usage_;
   }
+
  private:
+  static MockBrowserTestIndexedDBClassFactory* GetTestClassFactory() {
+    static ::base::LazyInstance<MockBrowserTestIndexedDBClassFactory>::Leaky
+        s_factory = LAZY_INSTANCE_INITIALIZER;
+    return s_factory.Pointer();
+  }
+
+  static IndexedDBClassFactory* GetIDBClassFactory() {
+    return GetTestClassFactory();
+  }
+
   virtual void DidGetDiskUsage(int64 bytes) {
     EXPECT_GT(bytes, 0);
     disk_usage_ = bytes;
   }
 
   int64 disk_usage_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBBrowserTest);
 };
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CursorTest) {
@@ -208,10 +244,15 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, Bug109187Test) {
 
 class IndexedDBBrowserTestWithLowQuota : public IndexedDBBrowserTest {
  public:
+  IndexedDBBrowserTestWithLowQuota() {}
+
   virtual void SetUpOnMainThread() OVERRIDE {
     const int kInitialQuotaKilobytes = 5000;
     SetQuota(kInitialQuotaKilobytes);
   }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBBrowserTestWithLowQuota);
 };
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithLowQuota, QuotaTest) {
@@ -220,9 +261,14 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithLowQuota, QuotaTest) {
 
 class IndexedDBBrowserTestWithGCExposed : public IndexedDBBrowserTest {
  public:
+  IndexedDBBrowserTestWithGCExposed() {}
+
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     command_line->AppendSwitchASCII(switches::kJavaScriptFlags, "--expose-gc");
   }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBBrowserTestWithGCExposed);
 };
 
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestWithGCExposed,
@@ -250,6 +296,7 @@ static void CopyLevelDBToProfile(Shell* shell,
 
 class IndexedDBBrowserTestWithPreexistingLevelDB : public IndexedDBBrowserTest {
  public:
+  IndexedDBBrowserTestWithPreexistingLevelDB() {}
   virtual void SetUpOnMainThread() OVERRIDE {
     scoped_refptr<IndexedDBContextImpl> context = GetContext();
     context->TaskRunner()->PostTask(
@@ -264,6 +311,8 @@ class IndexedDBBrowserTestWithPreexistingLevelDB : public IndexedDBBrowserTest {
 
   virtual std::string EnclosingLevelDBDir() = 0;
 
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBBrowserTestWithPreexistingLevelDB);
 };
 
 class IndexedDBBrowserTestWithVersion0Schema : public
@@ -426,8 +475,8 @@ static scoped_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
     IndexedDBContextImpl* context,
     const GURL& origin_url,
     const std::string& path,
+    IndexedDBBrowserTest* test,
     const net::test_server::HttpRequest& request) {
-
   std::string request_path;
   if (path.find(s_corrupt_db_test_prefix) != std::string::npos)
     request_path = request.relative_url.substr(s_corrupt_db_test_prefix.size());
@@ -451,6 +500,63 @@ static scoped_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
                                                origin_url,
                                                &signal_when_finished));
     signal_when_finished.Wait();
+
+    scoped_ptr<net::test_server::BasicHttpResponse> http_response(
+        new net::test_server::BasicHttpResponse);
+    http_response->set_code(net::HTTP_OK);
+    return http_response.PassAs<net::test_server::HttpResponse>();
+  } else if (request_path == "fail" && !request_query.empty()) {
+    FailClass failure_class = FAIL_CLASS_NOTHING;
+    FailMethod failure_method = FAIL_METHOD_NOTHING;
+    int instance_num = 1;
+    int call_num = 1;
+    std::string fail_class;
+    std::string fail_method;
+
+    url::Component query(0, request_query.length()), key_pos, value_pos;
+    while (url::ExtractQueryKeyValue(
+        request_query.c_str(), &query, &key_pos, &value_pos)) {
+      std::string escaped_key(request_query.substr(key_pos.begin, key_pos.len));
+      std::string escaped_value(
+          request_query.substr(value_pos.begin, value_pos.len));
+
+      std::string key = net::UnescapeURLComponent(
+          escaped_key,
+          net::UnescapeRule::NORMAL | net::UnescapeRule::SPACES |
+              net::UnescapeRule::URL_SPECIAL_CHARS);
+
+      std::string value = net::UnescapeURLComponent(
+          escaped_value,
+          net::UnescapeRule::NORMAL | net::UnescapeRule::SPACES |
+              net::UnescapeRule::URL_SPECIAL_CHARS);
+
+      if (key == "method")
+        fail_method = value;
+      else if (key == "class")
+        fail_class = value;
+      else if (key == "instNum")
+        instance_num = atoi(value.c_str());
+      else if (key == "callNum")
+        call_num = atoi(value.c_str());
+      else
+        NOTREACHED() << "Unknown param: \"" << key << "\"";
+    }
+
+    if (fail_class == "LevelDBTransaction") {
+      failure_class = FAIL_CLASS_LEVELDB_TRANSACTION;
+      if (fail_method == "Get")
+        failure_method = FAIL_METHOD_GET;
+      else if (fail_method == "Commit")
+        failure_method = FAIL_METHOD_COMMIT;
+      else {
+        NOTREACHED() << "Unknown method: \"" << fail_method << "\"";
+      }
+    }
+
+    DCHECK_GE(instance_num, 1);
+    DCHECK_GE(call_num, 1);
+
+    test->FailOperation(failure_class, failure_method, instance_num, call_num);
 
     scoped_ptr<net::test_server::BasicHttpResponse> http_response(
         new net::test_server::BasicHttpResponse);
@@ -486,7 +592,8 @@ IN_PROC_BROWSER_TEST_P(IndexedDBBrowserCorruptionTest,
       base::Bind(&CorruptDBRequestHandler,
                  base::ConstRef(GetContext()),
                  origin_url,
-                 s_corrupt_db_test_prefix));
+                 s_corrupt_db_test_prefix,
+                 this));
 
   std::string test_file = s_corrupt_db_test_prefix +
                           "corrupted_open_db_detection.html#" + GetParam();
@@ -502,7 +609,9 @@ INSTANTIATE_TEST_CASE_P(IndexedDBBrowserCorruptionTestInstantiation,
                                           "iterate",
                                           "clearObjectStore"));
 
-IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, DeleteCompactsBackingStore) {
+// Crashes flakily on various platforms. crbug.com/375856
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest,
+                       DISABLED_DeleteCompactsBackingStore) {
   const GURL test_url = GetTestUrl("indexeddb", "delete_compact.html");
   SimpleTest(GURL(test_url.spec() + "#fill"));
   int64 after_filling = RequestDiskUsage();
@@ -567,7 +676,7 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, ConnectionsClosedOnTabClose) {
 
   // Start on a different URL to force a new renderer process.
   Shell* new_shell = CreateBrowser();
-  NavigateToURL(new_shell, GURL(kAboutBlankURL));
+  NavigateToURL(new_shell, GURL(url::kAboutBlankURL));
   NavigateAndWaitForTitle(new_shell, "version_change_blocked.html", "#tab2",
                           "setVersion(3) blocked");
 

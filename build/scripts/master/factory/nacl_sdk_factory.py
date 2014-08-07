@@ -32,7 +32,7 @@ class NativeClientSDKFactory(gclient_factory.GClientFactory):
   NEEDED_COMPONENTS_INTERNAL = {
   }
 
-  def __init__(self, build_dir, target_platform=None, use_supplement=False,
+  def __init__(self, build_dir, target_platform=None,
                alternate_url=None, branch='trunk'):
     solutions = []
     self.target_platform = target_platform

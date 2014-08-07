@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import logging
@@ -13,14 +13,13 @@ from telemetry.core import browser_options
 from telemetry.core import discover
 from telemetry.core import wpr_modes
 from telemetry.page import page_measurement
-from telemetry.page import page_measurement_results
 from telemetry.page import page_runner
 from telemetry.page import page_set
 from telemetry.page import page_test
 from telemetry.page import profile_creator
 from telemetry.page import test_expectations
 from telemetry.page.actions import action_runner as action_runner_module
-from telemetry.page.actions import interact
+from telemetry.results import page_measurement_results
 
 
 class RecordPage(page_test.PageTest):  # pylint: disable=W0223
@@ -41,6 +40,7 @@ class RecordPage(page_test.PageTest):  # pylint: disable=W0223
     """Override to ensure all resources are fetched from network."""
     tab.ClearCache(force=False)
     if self.test:
+      self.test.options = self.options
       self.test.WillNavigateToPage(page, tab)
 
   def DidNavigateToPage(self, page, tab):
@@ -49,20 +49,14 @@ class RecordPage(page_test.PageTest):  # pylint: disable=W0223
       self.test.DidNavigateToPage(page, tab)
 
   def RunPage(self, page, tab, results):
-    # When recording, sleep to catch any resources that load post-onload.
     tab.WaitForDocumentReadyStateToBeComplete()
 
-    if self.test:
-      dummy_results = page_measurement_results.PageMeasurementResults()
-      dummy_results.WillMeasurePage(page)
-      self.test.MeasurePage(page, tab, dummy_results)
-      dummy_results.DidMeasurePage()
-    else:
-      # TODO(tonyg): This should probably monitor resource timing for activity
-      # and sleep until 2s since the last network event with some timeout like
-      # 20s. We could wrap this up as WaitForNetworkIdle() and share with the
-      # speed index metric.
-      time.sleep(3)
+    # When recording, sleep to catch any resources that load post-onload.
+    # TODO(tonyg): This should probably monitor resource timing for activity
+    # and sleep until 2s since the last network event with some timeout like
+    # 20s. We could wrap this up as WaitForNetworkIdle() and share with the
+    # speed index metric.
+    time.sleep(3)
 
     # Run the actions for all measurements. Reload the page between
     # actions.
@@ -73,12 +67,18 @@ class RecordPage(page_test.PageTest):  # pylint: disable=W0223
         continue
       if should_reload:
         self.RunNavigateSteps(page, tab)
-      action_runner = action_runner_module.ActionRunner(page, tab, self)
+      action_runner = action_runner_module.ActionRunner(tab)
       if interactive:
-        action_runner.RunAction(interact.InteractAction())
+        action_runner.PauseInteractive()
       else:
         self._RunMethod(page, action_name, action_runner)
       should_reload = True
+
+    # Run the PageTest's validator, so that we capture any additional resources
+    # that are loaded by the test.
+    if self.test:
+      dummy_results = page_measurement_results.PageMeasurementResults()
+      self.test.ValidatePage(page, tab, dummy_results)
 
 
 def Main(base_dir):

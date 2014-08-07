@@ -13,13 +13,11 @@
 #include "base/time/time.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/state_store.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/alarms.h"
-#include "content/public/browser/notification_service.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 
 namespace extensions {
@@ -91,22 +89,18 @@ scoped_ptr<base::ListValue> AlarmsToValue(const std::vector<Alarm>& alarms) {
   return list.Pass();
 }
 
-
 }  // namespace
 
 // AlarmManager
 
 AlarmManager::AlarmManager(content::BrowserContext* context)
-    : profile_(Profile::FromBrowserContext(context)),
+    : browser_context_(context),
       clock_(new base::DefaultClock()),
-      delegate_(new DefaultAlarmDelegate(context)) {
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
-                 content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
-                 content::Source<Profile>(profile_));
+      delegate_(new DefaultAlarmDelegate(context)),
+      extension_registry_observer_(this) {
+  extension_registry_observer_.Add(ExtensionRegistry::Get(browser_context_));
 
-  StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
+  StateStore* storage = ExtensionSystem::Get(browser_context_)->state_store();
   if (storage)
     storage->RegisterKey(kRegisteredAlarms);
 }
@@ -226,8 +220,8 @@ AlarmManager::GetFactoryInstance() {
 }
 
 // static
-AlarmManager* AlarmManager::Get(Profile* profile) {
-  return BrowserContextKeyedAPIFactory<AlarmManager>::Get(profile);
+AlarmManager* AlarmManager::Get(content::BrowserContext* browser_context) {
+  return BrowserContextKeyedAPIFactory<AlarmManager>::Get(browser_context);
 }
 
 void AlarmManager::RemoveAlarmIterator(const AlarmIterator& iter) {
@@ -290,7 +284,7 @@ void AlarmManager::AddAlarmImpl(const std::string& extension_id,
 }
 
 void AlarmManager::WriteToStorage(const std::string& extension_id) {
-  StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
+  StateStore* storage = ExtensionSystem::Get(browser_context_)->state_store();
   if (!storage)
     return;
 
@@ -410,35 +404,23 @@ void AlarmManager::RunWhenReady(
     it->second.push(action);
 }
 
-void AlarmManager::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
-      const Extension* extension =
-          content::Details<const Extension>(details).ptr();
-      StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
-      if (storage) {
-        ready_actions_.insert(
-            ReadyMap::value_type(extension->id(), ReadyQueue()));
-        storage->GetExtensionValue(extension->id(), kRegisteredAlarms,
-            base::Bind(&AlarmManager::ReadFromStorage,
-                       AsWeakPtr(), extension->id()));
-      }
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
-      const Extension* extension =
-          content::Details<const Extension>(details).ptr();
-      RemoveAllAlarms(
-          extension->id(), base::Bind(RemoveAllOnUninstallCallback));
-      break;
-    }
-    default:
-      NOTREACHED();
-      break;
+void AlarmManager::OnExtensionLoaded(content::BrowserContext* browser_context,
+                                     const Extension* extension) {
+  StateStore* storage = ExtensionSystem::Get(browser_context_)->state_store();
+  if (storage) {
+    ready_actions_.insert(ReadyMap::value_type(extension->id(), ReadyQueue()));
+    storage->GetExtensionValue(
+        extension->id(),
+        kRegisteredAlarms,
+        base::Bind(
+            &AlarmManager::ReadFromStorage, AsWeakPtr(), extension->id()));
   }
+}
+
+void AlarmManager::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  RemoveAllAlarms(extension->id(), base::Bind(RemoveAllOnUninstallCallback));
 }
 
 // AlarmManager::Alarm

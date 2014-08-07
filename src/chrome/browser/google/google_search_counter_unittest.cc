@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/google/google_search_counter.h"
-#include "chrome/browser/google/google_search_metrics.h"
+#include "components/google/core/browser/google_search_metrics.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
@@ -75,8 +75,11 @@ void GoogleSearchCounterTest::TestGoogleSearch(
   content::LoadCommittedDetails details;
   scoped_ptr<content::NavigationEntry> entry(
       content::NavigationEntry::Create());
-  if (is_omnibox)
-    entry->SetTransitionType(content::PAGE_TRANSITION_GENERATED);
+  if (is_omnibox) {
+    entry->SetTransitionType(content::PageTransitionFromInt(
+        content::PAGE_TRANSITION_GENERATED |
+            content::PAGE_TRANSITION_FROM_ADDRESS_BAR));
+  }
   entry->SetURL(GURL(url));
   details.entry = entry.get();
 

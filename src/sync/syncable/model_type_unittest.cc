@@ -9,6 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/test/values_test_util.h"
 #include "base/values.h"
+#include "sync/protocol/sync.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace syncer {
@@ -70,6 +71,12 @@ TEST_F(ModelTypeTest, IsRealDataType) {
   EXPECT_TRUE(IsRealDataType(APPS));
 }
 
+TEST_F(ModelTypeTest, IsProxyType) {
+  EXPECT_FALSE(IsProxyType(BOOKMARKS));
+  EXPECT_FALSE(IsProxyType(MODEL_TYPE_COUNT));
+  EXPECT_TRUE(IsProxyType(PROXY_TABS));
+}
+
 // Make sure we can convert ModelTypes to and from specifics field
 // numbers.
 TEST_F(ModelTypeTest, ModelTypeToFromSpecificsFieldNumber) {
@@ -115,6 +122,26 @@ TEST_F(ModelTypeTest, ModelTypeSetFromString) {
       one.Equals(ModelTypeSetFromString(ModelTypeSetToString(one))));
   EXPECT_TRUE(
       two.Equals(ModelTypeSetFromString(ModelTypeSetToString(two))));
+}
+
+TEST_F(ModelTypeTest, DefaultFieldValues) {
+  syncer::ModelTypeSet types = syncer::ProtocolTypes();
+  for (ModelTypeSet::Iterator it = types.First(); it.Good(); it.Inc()) {
+    SCOPED_TRACE(ModelTypeToString(it.Get()));
+
+    sync_pb::EntitySpecifics specifics;
+    syncer::AddDefaultFieldValue(it.Get(), &specifics);
+    EXPECT_TRUE(specifics.IsInitialized());
+
+    std::string tmp;
+    EXPECT_TRUE(specifics.SerializeToString(&tmp));
+
+    sync_pb::EntitySpecifics from_string;
+    EXPECT_TRUE(from_string.ParseFromString(tmp));
+    EXPECT_TRUE(from_string.IsInitialized());
+
+    EXPECT_EQ(it.Get(), syncer::GetModelTypeFromSpecifics(from_string));
+  }
 }
 
 }  // namespace

@@ -16,7 +16,7 @@ import os
 import re
 import sys
 
-from depot_tools import patch
+from depot_tools_patch import patch
 
 # Subversion patch entries always start with either of the following, according
 # to depot_tools/third_party/upload.py.

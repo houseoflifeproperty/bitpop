@@ -4,6 +4,9 @@
 
 #include "cc/trees/layer_tree_impl.h"
 
+#include <limits>
+#include <set>
+
 #include "base/debug/trace_event.h"
 #include "cc/animation/keyframed_animation_curve.h"
 #include "cc/animation/scrollbar_animation_controller.h"
@@ -11,6 +14,7 @@
 #include "cc/animation/scrollbar_animation_controller_thinning.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
+#include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/traced_value.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer.h"
@@ -20,6 +24,7 @@
 #include "cc/resources/ui_resource_request.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_host_impl.h"
+#include "ui/gfx/point_conversions.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/vector2d_conversions.h"
 
@@ -28,19 +33,19 @@ namespace cc {
 // This class exists to split the LayerScrollOffsetDelegate between the
 // InnerViewportScrollLayer and the OuterViewportScrollLayer in a manner
 // that never requires the embedder or LayerImpl to know about.
-class LayerScrollOffsetDelegateProxy : public LayerScrollOffsetDelegate {
+class LayerScrollOffsetDelegateProxy : public LayerImpl::ScrollOffsetDelegate {
  public:
   LayerScrollOffsetDelegateProxy(LayerImpl* layer,
                                  LayerScrollOffsetDelegate* delegate,
                                  LayerTreeImpl* layer_tree)
       : layer_(layer), delegate_(delegate), layer_tree_impl_(layer_tree) {}
+  virtual ~LayerScrollOffsetDelegateProxy() {}
 
   gfx::Vector2dF last_set_scroll_offset() const {
     return last_set_scroll_offset_;
   }
 
   // LayerScrollOffsetDelegate implementation.
-
   virtual void SetTotalScrollOffset(const gfx::Vector2dF& new_offset) OVERRIDE {
     last_set_scroll_offset_ = new_offset;
     layer_tree_impl_->UpdateScrollOffsetDelegate();
@@ -52,20 +57,6 @@ class LayerScrollOffsetDelegateProxy : public LayerScrollOffsetDelegate {
 
   virtual bool IsExternalFlingActive() const OVERRIDE {
     return delegate_->IsExternalFlingActive();
-  }
-
-  // Functions below this point are never called by LayerImpl on its
-  // LayerScrollOffsetDelegate, and so are not implemented.
-  virtual void SetMaxScrollOffset(const gfx::Vector2dF&) OVERRIDE {
-    NOTIMPLEMENTED();
-  }
-
-  virtual void SetTotalPageScaleFactorAndLimits(float, float, float) OVERRIDE {
-    NOTIMPLEMENTED();
-  }
-
-  virtual void SetScrollableSize(const gfx::SizeF& scrollable_size) OVERRIDE {
-    NOTIMPLEMENTED();
   }
 
  private:
@@ -92,7 +83,6 @@ LayerTreeImpl::LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl)
       min_page_scale_factor_(0),
       max_page_scale_factor_(0),
       scrolling_layer_id_from_previous_tree_(0),
-      use_gpu_rasterization_(false),
       contents_textures_purged_(false),
       requires_high_res_to_draw_(false),
       viewport_size_invalid_(false),
@@ -199,15 +189,14 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   DCHECK_EQ(ui_resource_request_queue_.size(), 0u);
 
   if (next_activation_forces_redraw_) {
-    layer_tree_host_impl_->SetFullRootLayerDamage();
+    target_tree->ForceRedrawNextActivation();
     next_activation_forces_redraw_ = false;
   }
 
   target_tree->PassSwapPromises(&swap_promise_list_);
 
-  target_tree->SetPageScaleFactorAndLimits(
-      page_scale_factor(), min_page_scale_factor(), max_page_scale_factor());
-  target_tree->SetPageScaleDelta(
+  target_tree->SetPageScaleValues(
+      page_scale_factor(), min_page_scale_factor(), max_page_scale_factor(),
       target_tree->page_scale_delta() / target_tree->sent_page_scale_delta());
   target_tree->set_sent_page_scale_delta(1);
 
@@ -225,8 +214,6 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   target_tree->set_source_frame_number(source_frame_number());
   target_tree->set_background_color(background_color());
   target_tree->set_has_transparent_background(has_transparent_background());
-
-  target_tree->use_gpu_rasterization_ = use_gpu_rasterization();
 
   if (ContentsTexturesPurged())
     target_tree->SetContentsTexturesPurged();
@@ -303,58 +290,62 @@ void ForceScrollbarParameterUpdateAfterScaleChange(LayerImpl* current_layer) {
 
 void LayerTreeImpl::SetPageScaleFactorAndLimits(float page_scale_factor,
     float min_page_scale_factor, float max_page_scale_factor) {
-  if (!page_scale_factor)
-    return;
+  SetPageScaleValues(page_scale_factor, min_page_scale_factor,
+      max_page_scale_factor, page_scale_delta_);
+}
 
-  if (min_page_scale_factor == min_page_scale_factor_ &&
-      max_page_scale_factor == max_page_scale_factor_ &&
-      page_scale_factor == page_scale_factor_)
-    return;
+void LayerTreeImpl::SetPageScaleDelta(float delta) {
+  SetPageScaleValues(page_scale_factor_, min_page_scale_factor_,
+      max_page_scale_factor_, delta);
+}
+
+void LayerTreeImpl::SetPageScaleValues(float page_scale_factor,
+      float min_page_scale_factor, float max_page_scale_factor,
+      float page_scale_delta) {
+  bool page_scale_changed =
+      min_page_scale_factor != min_page_scale_factor_ ||
+      max_page_scale_factor != max_page_scale_factor_ ||
+      page_scale_factor != page_scale_factor_;
 
   min_page_scale_factor_ = min_page_scale_factor;
   max_page_scale_factor_ = max_page_scale_factor;
   page_scale_factor_ = page_scale_factor;
 
+  float total = page_scale_factor_ * page_scale_delta;
+  if (min_page_scale_factor_ && total < min_page_scale_factor_)
+    page_scale_delta = min_page_scale_factor_ / page_scale_factor_;
+  else if (max_page_scale_factor_ && total > max_page_scale_factor_)
+    page_scale_delta = max_page_scale_factor_ / page_scale_factor_;
+
+  if (page_scale_delta_ == page_scale_delta && !page_scale_changed)
+    return;
+
+  if (page_scale_delta_ != page_scale_delta) {
+    page_scale_delta_ = page_scale_delta;
+
+    if (IsActiveTree()) {
+      LayerTreeImpl* pending_tree = layer_tree_host_impl_->pending_tree();
+      if (pending_tree) {
+        DCHECK_EQ(1, pending_tree->sent_page_scale_delta());
+        pending_tree->SetPageScaleDelta(
+            page_scale_delta_ / sent_page_scale_delta_);
+      }
+    }
+
+    set_needs_update_draw_properties();
+  }
+
   if (root_layer_scroll_offset_delegate_) {
-    root_layer_scroll_offset_delegate_->SetTotalPageScaleFactorAndLimits(
+    root_layer_scroll_offset_delegate_->UpdateRootLayerState(
+        TotalScrollOffset(),
+        TotalMaxScrollOffset(),
+        ScrollableSize(),
         total_page_scale_factor(),
-        this->min_page_scale_factor(),
-        this->max_page_scale_factor());
+        min_page_scale_factor_,
+        max_page_scale_factor_);
   }
 
   ForceScrollbarParameterUpdateAfterScaleChange(page_scale_layer());
-}
-
-void LayerTreeImpl::SetPageScaleDelta(float delta) {
-  // Clamp to the current min/max limits.
-  float total = page_scale_factor_ * delta;
-  if (min_page_scale_factor_ && total < min_page_scale_factor_)
-    delta = min_page_scale_factor_ / page_scale_factor_;
-  else if (max_page_scale_factor_ && total > max_page_scale_factor_)
-    delta = max_page_scale_factor_ / page_scale_factor_;
-
-  if (delta == page_scale_delta_)
-    return;
-
-  page_scale_delta_ = delta;
-
-  if (IsActiveTree()) {
-    LayerTreeImpl* pending_tree = layer_tree_host_impl_->pending_tree();
-    if (pending_tree) {
-      DCHECK_EQ(1, pending_tree->sent_page_scale_delta());
-      pending_tree->SetPageScaleDelta(
-          page_scale_delta_ / sent_page_scale_delta_);
-    }
-  }
-
-  set_needs_update_draw_properties();
-
-  if (root_layer_scroll_offset_delegate_) {
-    root_layer_scroll_offset_delegate_->SetTotalPageScaleFactorAndLimits(
-        total_page_scale_factor(),
-        min_page_scale_factor(),
-        max_page_scale_factor());
-  }
 }
 
 gfx::SizeF LayerTreeImpl::ScrollableViewportSize() const {
@@ -445,24 +436,19 @@ void LayerTreeImpl::ClearViewportLayers() {
   outer_viewport_scroll_layer_ = NULL;
 }
 
-void LayerTreeImpl::SetUseGpuRasterization(bool use_gpu) {
-  if (use_gpu == use_gpu_rasterization_)
-    return;
-
-  use_gpu_rasterization_ = use_gpu;
-  ReleaseResources();
-}
-
-void LayerTreeImpl::UpdateDrawProperties() {
-  needs_update_draw_properties_ = false;
-  render_surface_layer_list_.clear();
+bool LayerTreeImpl::UpdateDrawProperties() {
+  if (!needs_update_draw_properties_)
+    return true;
 
   // For max_texture_size.
   if (!layer_tree_host_impl_->renderer())
-    return;
+    return false;
 
   if (!root_layer())
-    return;
+    return false;
+
+  needs_update_draw_properties_ = false;
+  render_surface_layer_list_.clear();
 
   {
     TRACE_EVENT2("cc",
@@ -511,20 +497,21 @@ void LayerTreeImpl::UpdateDrawProperties() {
          ++it) {
       LayerImpl* layer = *it;
       if (it.represents_itself())
-        layer->UpdateTilePriorities();
+        layer->UpdateTiles();
 
       if (!it.represents_contributing_render_surface())
         continue;
 
       if (layer->mask_layer())
-        layer->mask_layer()->UpdateTilePriorities();
+        layer->mask_layer()->UpdateTiles();
       if (layer->replica_layer() && layer->replica_layer()->mask_layer())
-        layer->replica_layer()->mask_layer()->UpdateTilePriorities();
+        layer->replica_layer()->mask_layer()->UpdateTiles();
     }
   }
 
   DCHECK(!needs_update_draw_properties_) <<
       "CalcDrawProperties should not set_needs_update_draw_properties()";
+  return true;
 }
 
 const LayerImplList& LayerTreeImpl::RenderSurfaceLayerList() const {
@@ -573,12 +560,19 @@ void LayerTreeImpl::DidBecomeActive() {
   if (!root_layer())
     return;
 
+  if (next_activation_forces_redraw_) {
+    layer_tree_host_impl_->SetFullRootLayerDamage();
+    next_activation_forces_redraw_ = false;
+  }
+
   if (scrolling_layer_id_from_previous_tree_) {
     currently_scrolling_layer_ = LayerTreeHostCommon::FindLayerInSubtree(
         root_layer_.get(), scrolling_layer_id_from_previous_tree_);
   }
 
   DidBecomeActiveRecursive(root_layer());
+  devtools_instrumentation::DidActivateLayerTree(layer_tree_host_impl_->id(),
+                                                 source_frame_number_);
 }
 
 bool LayerTreeImpl::ContentsTexturesPurged() const {
@@ -753,6 +747,14 @@ void LayerTreeImpl::DidAnimateScrollOffset() {
   layer_tree_host_impl_->DidAnimateScrollOffset();
 }
 
+bool LayerTreeImpl::use_gpu_rasterization() const {
+  return layer_tree_host_impl_->use_gpu_rasterization();
+}
+
+bool LayerTreeImpl::create_low_res_tiling() const {
+  return layer_tree_host_impl_->create_low_res_tiling();
+}
+
 void LayerTreeImpl::SetNeedsRedraw() {
   layer_tree_host_impl_->SetNeedsRedraw();
 }
@@ -814,12 +816,10 @@ void LayerTreeImpl::SetRootLayerScrollOffsetDelegate(
   root_layer_scroll_offset_delegate_ = root_layer_scroll_offset_delegate;
 
   if (root_layer_scroll_offset_delegate_) {
-    root_layer_scroll_offset_delegate_->SetTotalScrollOffset(
-        TotalScrollOffset());
-    root_layer_scroll_offset_delegate_->SetMaxScrollOffset(
-        TotalMaxScrollOffset());
-    root_layer_scroll_offset_delegate_->SetScrollableSize(ScrollableSize());
-    root_layer_scroll_offset_delegate_->SetTotalPageScaleFactorAndLimits(
+    root_layer_scroll_offset_delegate_->UpdateRootLayerState(
+        TotalScrollOffset(),
+        TotalMaxScrollOffset(),
+        ScrollableSize(),
         total_page_scale_factor(),
         min_page_scale_factor(),
         max_page_scale_factor());
@@ -854,9 +854,13 @@ void LayerTreeImpl::UpdateScrollOffsetDelegate() {
   if (OuterViewportScrollLayer())
     offset += outer_viewport_scroll_delegate_proxy_->last_set_scroll_offset();
 
-  root_layer_scroll_offset_delegate_->SetTotalScrollOffset(offset);
-  root_layer_scroll_offset_delegate_->SetMaxScrollOffset(
-      TotalMaxScrollOffset());
+  root_layer_scroll_offset_delegate_->UpdateRootLayerState(
+      offset,
+      TotalMaxScrollOffset(),
+      ScrollableSize(),
+      total_page_scale_factor(),
+      min_page_scale_factor(),
+      max_page_scale_factor());
 }
 
 gfx::Vector2dF LayerTreeImpl::GetDelegatedScrollOffset(LayerImpl* layer) {
@@ -1020,6 +1024,278 @@ void LayerTreeImpl::ReleaseResourcesRecursive(LayerImpl* current) {
     ReleaseResourcesRecursive(current->replica_layer());
   for (size_t i = 0; i < current->children().size(); ++i)
     ReleaseResourcesRecursive(current->children()[i]);
+}
+
+template <typename LayerType>
+static inline bool LayerClipsSubtree(LayerType* layer) {
+  return layer->masks_to_bounds() || layer->mask_layer();
+}
+
+static bool PointHitsRect(
+    const gfx::PointF& screen_space_point,
+    const gfx::Transform& local_space_to_screen_space_transform,
+    const gfx::RectF& local_space_rect,
+    float* distance_to_camera) {
+  // If the transform is not invertible, then assume that this point doesn't hit
+  // this rect.
+  gfx::Transform inverse_local_space_to_screen_space(
+      gfx::Transform::kSkipInitialization);
+  if (!local_space_to_screen_space_transform.GetInverse(
+          &inverse_local_space_to_screen_space))
+    return false;
+
+  // Transform the hit test point from screen space to the local space of the
+  // given rect.
+  bool clipped = false;
+  gfx::Point3F planar_point = MathUtil::ProjectPoint3D(
+      inverse_local_space_to_screen_space, screen_space_point, &clipped);
+  gfx::PointF hit_test_point_in_local_space =
+      gfx::PointF(planar_point.x(), planar_point.y());
+
+  // If ProjectPoint could not project to a valid value, then we assume that
+  // this point doesn't hit this rect.
+  if (clipped)
+    return false;
+
+  if (!local_space_rect.Contains(hit_test_point_in_local_space))
+    return false;
+
+  if (distance_to_camera) {
+    // To compute the distance to the camera, we have to take the planar point
+    // and pull it back to world space and compute the displacement along the
+    // z-axis.
+    gfx::Point3F planar_point_in_screen_space(planar_point);
+    local_space_to_screen_space_transform.TransformPoint(
+        &planar_point_in_screen_space);
+    *distance_to_camera = planar_point_in_screen_space.z();
+  }
+
+  return true;
+}
+
+static bool PointHitsRegion(const gfx::PointF& screen_space_point,
+                            const gfx::Transform& screen_space_transform,
+                            const Region& layer_space_region,
+                            float layer_content_scale_x,
+                            float layer_content_scale_y) {
+  // If the transform is not invertible, then assume that this point doesn't hit
+  // this region.
+  gfx::Transform inverse_screen_space_transform(
+      gfx::Transform::kSkipInitialization);
+  if (!screen_space_transform.GetInverse(&inverse_screen_space_transform))
+    return false;
+
+  // Transform the hit test point from screen space to the local space of the
+  // given region.
+  bool clipped = false;
+  gfx::PointF hit_test_point_in_content_space = MathUtil::ProjectPoint(
+      inverse_screen_space_transform, screen_space_point, &clipped);
+  gfx::PointF hit_test_point_in_layer_space =
+      gfx::ScalePoint(hit_test_point_in_content_space,
+                      1.f / layer_content_scale_x,
+                      1.f / layer_content_scale_y);
+
+  // If ProjectPoint could not project to a valid value, then we assume that
+  // this point doesn't hit this region.
+  if (clipped)
+    return false;
+
+  return layer_space_region.Contains(
+      gfx::ToRoundedPoint(hit_test_point_in_layer_space));
+}
+
+static LayerImpl* GetNextClippingLayer(LayerImpl* layer) {
+  if (layer->scroll_parent())
+    return layer->scroll_parent();
+  if (layer->clip_parent())
+    return layer->clip_parent();
+  return layer->parent();
+}
+
+static bool PointIsClippedBySurfaceOrClipRect(
+    const gfx::PointF& screen_space_point,
+    LayerImpl* layer) {
+  // Walk up the layer tree and hit-test any render_surfaces and any layer
+  // clip rects that are active.
+  for (; layer; layer = GetNextClippingLayer(layer)) {
+    if (layer->render_surface() &&
+        !PointHitsRect(screen_space_point,
+                       layer->render_surface()->screen_space_transform(),
+                       layer->render_surface()->content_rect(),
+                       NULL))
+      return true;
+
+    if (LayerClipsSubtree(layer) &&
+        !PointHitsRect(screen_space_point,
+                       layer->screen_space_transform(),
+                       gfx::Rect(layer->content_bounds()),
+                       NULL))
+      return true;
+  }
+
+  // If we have finished walking all ancestors without having already exited,
+  // then the point is not clipped by any ancestors.
+  return false;
+}
+
+static bool PointHitsLayer(LayerImpl* layer,
+                           const gfx::PointF& screen_space_point,
+                           float* distance_to_intersection) {
+  gfx::RectF content_rect(layer->content_bounds());
+  if (!PointHitsRect(screen_space_point,
+                     layer->screen_space_transform(),
+                     content_rect,
+                     distance_to_intersection))
+    return false;
+
+  // At this point, we think the point does hit the layer, but we need to walk
+  // up the parents to ensure that the layer was not clipped in such a way
+  // that the hit point actually should not hit the layer.
+  if (PointIsClippedBySurfaceOrClipRect(screen_space_point, layer))
+    return false;
+
+  // Skip the HUD layer.
+  if (layer == layer->layer_tree_impl()->hud_layer())
+    return false;
+
+  return true;
+}
+
+struct FindClosestMatchingLayerDataForRecursion {
+  FindClosestMatchingLayerDataForRecursion()
+      : closest_match(NULL),
+        closest_distance(-std::numeric_limits<float>::infinity()) {}
+  LayerImpl* closest_match;
+  // Note that the positive z-axis points towards the camera, so bigger means
+  // closer in this case, counterintuitively.
+  float closest_distance;
+};
+
+template <typename Functor>
+static void FindClosestMatchingLayer(
+    const gfx::PointF& screen_space_point,
+    LayerImpl* layer,
+    const Functor& func,
+    FindClosestMatchingLayerDataForRecursion* data_for_recursion) {
+  for (int i = layer->children().size() - 1; i >= 0; --i) {
+    FindClosestMatchingLayer(
+        screen_space_point, layer->children()[i], func, data_for_recursion);
+  }
+
+  float distance_to_intersection = 0.f;
+  if (func(layer) &&
+      PointHitsLayer(layer, screen_space_point, &distance_to_intersection) &&
+      ((!data_for_recursion->closest_match ||
+        distance_to_intersection > data_for_recursion->closest_distance))) {
+    data_for_recursion->closest_distance = distance_to_intersection;
+    data_for_recursion->closest_match = layer;
+  }
+}
+
+static bool ScrollsAnyDrawnRenderSurfaceLayerListMember(LayerImpl* layer) {
+  if (!layer->scrollable())
+    return false;
+  if (layer->IsDrawnRenderSurfaceLayerListMember())
+    return true;
+  if (!layer->scroll_children())
+    return false;
+  for (std::set<LayerImpl*>::const_iterator it =
+           layer->scroll_children()->begin();
+       it != layer->scroll_children()->end();
+       ++it) {
+    if ((*it)->IsDrawnRenderSurfaceLayerListMember())
+      return true;
+  }
+  return false;
+}
+
+struct FindScrollingLayerFunctor {
+  bool operator()(LayerImpl* layer) const {
+    return ScrollsAnyDrawnRenderSurfaceLayerListMember(layer);
+  }
+};
+
+LayerImpl* LayerTreeImpl::FindFirstScrollingLayerThatIsHitByPoint(
+    const gfx::PointF& screen_space_point) {
+  FindClosestMatchingLayerDataForRecursion data_for_recursion;
+  FindClosestMatchingLayer(screen_space_point,
+                           root_layer(),
+                           FindScrollingLayerFunctor(),
+                           &data_for_recursion);
+  return data_for_recursion.closest_match;
+}
+
+struct HitTestVisibleScrollableOrTouchableFunctor {
+  bool operator()(LayerImpl* layer) const {
+    return layer->IsDrawnRenderSurfaceLayerListMember() ||
+           ScrollsAnyDrawnRenderSurfaceLayerListMember(layer) ||
+           !layer->touch_event_handler_region().IsEmpty() ||
+           layer->have_wheel_event_handlers();
+  }
+};
+
+LayerImpl* LayerTreeImpl::FindLayerThatIsHitByPoint(
+    const gfx::PointF& screen_space_point) {
+  if (!root_layer())
+    return NULL;
+  if (!UpdateDrawProperties())
+    return NULL;
+  FindClosestMatchingLayerDataForRecursion data_for_recursion;
+  FindClosestMatchingLayer(screen_space_point,
+                           root_layer(),
+                           HitTestVisibleScrollableOrTouchableFunctor(),
+                           &data_for_recursion);
+  return data_for_recursion.closest_match;
+}
+
+static bool LayerHasTouchEventHandlersAt(const gfx::PointF& screen_space_point,
+                                         LayerImpl* layer_impl) {
+  if (layer_impl->touch_event_handler_region().IsEmpty())
+    return false;
+
+  if (!PointHitsRegion(screen_space_point,
+                       layer_impl->screen_space_transform(),
+                       layer_impl->touch_event_handler_region(),
+                       layer_impl->contents_scale_x(),
+                       layer_impl->contents_scale_y()))
+    return false;
+
+  // At this point, we think the point does hit the touch event handler region
+  // on the layer, but we need to walk up the parents to ensure that the layer
+  // was not clipped in such a way that the hit point actually should not hit
+  // the layer.
+  if (PointIsClippedBySurfaceOrClipRect(screen_space_point, layer_impl))
+    return false;
+
+  return true;
+}
+
+struct FindTouchEventLayerFunctor {
+  bool operator()(LayerImpl* layer) const {
+    return LayerHasTouchEventHandlersAt(screen_space_point, layer);
+  }
+  const gfx::PointF screen_space_point;
+};
+
+LayerImpl* LayerTreeImpl::FindLayerThatIsHitByPointInTouchHandlerRegion(
+    const gfx::PointF& screen_space_point) {
+  if (!root_layer())
+    return NULL;
+  if (!UpdateDrawProperties())
+    return NULL;
+  FindTouchEventLayerFunctor func = {screen_space_point};
+  FindClosestMatchingLayerDataForRecursion data_for_recursion;
+  FindClosestMatchingLayer(
+      screen_space_point, root_layer(), func, &data_for_recursion);
+  return data_for_recursion.closest_match;
+}
+
+void LayerTreeImpl::RegisterPictureLayerImpl(PictureLayerImpl* layer) {
+  layer_tree_host_impl_->RegisterPictureLayerImpl(layer);
+}
+
+void LayerTreeImpl::UnregisterPictureLayerImpl(PictureLayerImpl* layer) {
+  layer_tree_host_impl_->UnregisterPictureLayerImpl(layer);
 }
 
 }  // namespace cc

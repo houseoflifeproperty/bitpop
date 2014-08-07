@@ -45,7 +45,7 @@ class VTTCueBox FINAL : public HTMLDivElement {
 public:
     static PassRefPtrWillBeRawPtr<VTTCueBox> create(Document& document, VTTCue* cue)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new VTTCueBox(document, cue));
+        return adoptRefWillBeNoop(new VTTCueBox(document, cue));
     }
 
     VTTCue* getCue() const { return m_cue; }
@@ -93,8 +93,8 @@ public:
 
     void parseSettings(const String&);
 
-    PassRefPtr<DocumentFragment> getCueAsHTML();
-    PassRefPtr<DocumentFragment> createCueRenderingTree();
+    PassRefPtrWillBeRawPtr<DocumentFragment> getCueAsHTML();
+    PassRefPtrWillBeRawPtr<DocumentFragment> createCueRenderingTree();
 
     const String& regionId() const { return m_regionId; }
     void setRegionId(const String&);

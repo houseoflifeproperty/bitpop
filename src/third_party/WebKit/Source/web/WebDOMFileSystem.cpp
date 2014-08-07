@@ -56,6 +56,14 @@ WebDOMFileSystem WebDOMFileSystem::fromV8Value(v8::Handle<v8::Value> value)
     return WebDOMFileSystem(domFileSystem);
 }
 
+WebURL WebDOMFileSystem::createFileSystemURL(v8::Handle<v8::Value> value)
+{
+    const FileEntry* const entry = V8FileEntry::toNativeWithTypeCheck(v8::Isolate::GetCurrent(), value);
+    if (entry)
+        return entry->filesystem()->createFileSystemURL(entry);
+    return WebURL();
+}
+
 WebDOMFileSystem WebDOMFileSystem::create(
     WebLocalFrame* frame,
     WebFileSystemType type,
@@ -64,7 +72,7 @@ WebDOMFileSystem WebDOMFileSystem::create(
     SerializableType serializableType)
 {
     ASSERT(frame && toWebLocalFrameImpl(frame)->frame());
-    RefPtrWillBeRawPtr<DOMFileSystem> domFileSystem = DOMFileSystem::create(toWebLocalFrameImpl(frame)->frame()->document(), name, static_cast<WebCore::FileSystemType>(type), rootURL);
+    DOMFileSystem* domFileSystem = DOMFileSystem::create(toWebLocalFrameImpl(frame)->frame()->document(), name, static_cast<WebCore::FileSystemType>(type), rootURL);
     if (serializableType == SerializableTypeSerializable)
         domFileSystem->makeClonable();
     return WebDOMFileSystem(domFileSystem);
@@ -110,31 +118,33 @@ WebURL WebDOMFileSystem::rootURL() const
     return m_private->rootURL();
 }
 
-v8::Handle<v8::Value> WebDOMFileSystem::toV8Value()
+v8::Handle<v8::Value> WebDOMFileSystem::toV8Value(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
 {
     if (!m_private.get())
         return v8::Handle<v8::Value>();
-    return toV8(m_private.get(), v8::Handle<v8::Object>(), toIsolate(m_private->executionContext()));
+    return toV8(m_private.get(), creationContext, isolate);
 }
 
 v8::Handle<v8::Value> WebDOMFileSystem::createV8Entry(
     const WebString& path,
-    EntryType entryType)
+    EntryType entryType,
+    v8::Handle<v8::Object> creationContext,
+    v8::Isolate* isolate)
 {
     if (!m_private.get())
         return v8::Handle<v8::Value>();
     if (entryType == EntryTypeDirectory)
-        return toV8(DirectoryEntry::create(m_private.get(), path), v8::Handle<v8::Object>(), toIsolate(m_private->executionContext()));
+        return toV8(DirectoryEntry::create(m_private.get(), path), creationContext, isolate);
     ASSERT(entryType == EntryTypeFile);
-    return toV8(FileEntry::create(m_private.get(), path), v8::Handle<v8::Object>(), toIsolate(m_private->executionContext()));
+    return toV8(FileEntry::create(m_private.get(), path), creationContext, isolate);
 }
 
-WebDOMFileSystem::WebDOMFileSystem(const PassRefPtrWillBeRawPtr<DOMFileSystem>& domFileSystem)
+WebDOMFileSystem::WebDOMFileSystem(DOMFileSystem* domFileSystem)
     : m_private(domFileSystem)
 {
 }
 
-WebDOMFileSystem& WebDOMFileSystem::operator=(const PassRefPtrWillBeRawPtr<WebCore::DOMFileSystem>& domFileSystem)
+WebDOMFileSystem& WebDOMFileSystem::operator=(WebCore::DOMFileSystem* domFileSystem)
 {
     m_private = domFileSystem;
     return *this;

@@ -38,51 +38,37 @@ const int kWindowCornerRadius = 2;
 const int kHorizontalMarginAroundText = 100;
 const int kVerticalMarginAroundText = 100;
 
-class ExitWarningLabel : public views::Label {
- public:
-  ExitWarningLabel() {}
-
-  virtual ~ExitWarningLabel() {}
-
- private:
-  virtual void PaintText(gfx::Canvas* canvas,
-                         const base::string16& text,
-                         const gfx::Rect& text_bounds,
-                         int flags) OVERRIDE {
-    // Turn off subpixel rendering.
-    views::Label::PaintText(canvas,
-                            text,
-                            text_bounds,
-                            flags | gfx::Canvas::NO_SUBPIXEL_RENDERING);
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(ExitWarningLabel);
-};
-
 class ExitWarningWidgetDelegateView : public views::WidgetDelegateView {
  public:
   ExitWarningWidgetDelegateView() : text_width_(0), width_(0), height_(0) {
+#ifdef OS_CHROMEOS
+    text_ = l10n_util::GetStringUTF16(IDS_ASH_SIGN_OUT_WARNING_POPUP_TEXT);
+    accessible_name_ = l10n_util::GetStringUTF16(
+        IDS_ASH_SIGN_OUT_WARNING_POPUP_TEXT_ACCESSIBLE);
+#else
     text_ = l10n_util::GetStringUTF16(IDS_ASH_EXIT_WARNING_POPUP_TEXT);
     accessible_name_ =
         l10n_util::GetStringUTF16(IDS_ASH_EXIT_WARNING_POPUP_TEXT_ACCESSIBLE);
+#endif
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     const gfx::FontList& font_list =
         rb.GetFontList(ui::ResourceBundle::LargeFont);
     text_width_ = gfx::GetStringWidth(text_, font_list);
     width_ = text_width_ + kHorizontalMarginAroundText;
     height_ = font_list.GetHeight() + kVerticalMarginAroundText;
-    views::Label* label = new ExitWarningLabel;
+    views::Label* label = new views::Label();
     label->SetText(text_);
     label->SetHorizontalAlignment(gfx::ALIGN_CENTER);
     label->SetFontList(font_list);
     label->SetEnabledColor(kTextColor);
     label->SetDisabledColor(kTextColor);
     label->SetAutoColorReadabilityEnabled(false);
+    label->set_subpixel_rendering_enabled(false);
     AddChildView(label);
     SetLayoutManager(new views::FillLayout);
   }
 
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(width_, height_);
   }
 
@@ -181,7 +167,6 @@ void ExitWarningHandler::Show() {
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.accept_events = false;
-  params.can_activate = false;
   params.keep_on_top = true;
   params.remove_standard_frame = true;
   params.delegate = delegate;

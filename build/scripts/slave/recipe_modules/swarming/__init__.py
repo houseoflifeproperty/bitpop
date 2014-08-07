@@ -4,6 +4,7 @@
 
 DEPS = [
   'isolate',
+  'json',
   'path',
   'platform',
   'properties',

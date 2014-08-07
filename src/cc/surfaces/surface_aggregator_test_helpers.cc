@@ -14,7 +14,6 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/surface_draw_quad.h"
 #include "cc/surfaces/surface.h"
-#include "cc/test/mock_quad_culler.h"
 #include "cc/test/render_pass_test_common.h"
 #include "cc/test/render_pass_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -25,7 +24,7 @@ namespace test {
 
 void AddTestSurfaceQuad(TestRenderPass* pass,
                         const gfx::Size& surface_size,
-                        int surface_id) {
+                        SurfaceId surface_id) {
   gfx::Transform content_to_target_transform;
   gfx::Size content_bounds = surface_size;
   gfx::Rect visible_content_rect = gfx::Rect(surface_size);
@@ -41,7 +40,8 @@ void AddTestSurfaceQuad(TestRenderPass* pass,
                             clip_rect,
                             is_clipped,
                             opacity,
-                            blend_mode);
+                            blend_mode,
+                            0);
 
   scoped_ptr<SurfaceDrawQuad> surface_quad = SurfaceDrawQuad::Create();
   gfx::Rect quad_rect = gfx::Rect(surface_size);
@@ -53,16 +53,16 @@ void AddTestSurfaceQuad(TestRenderPass* pass,
 }
 void AddTestRenderPassQuad(TestRenderPass* pass,
                            RenderPass::Id render_pass_id) {
-  MockQuadCuller quad_sink(pass);
   gfx::Rect output_rect = gfx::Rect(0, 0, 5, 5);
-  SharedQuadState* shared_state = quad_sink.CreateSharedQuadState();
+  SharedQuadState* shared_state = pass->CreateAndAppendSharedQuadState();
   shared_state->SetAll(gfx::Transform(),
                        output_rect.size(),
                        output_rect,
                        output_rect,
                        false,
                        1,
-                       SkXfermode::kSrcOver_Mode);
+                       SkXfermode::kSrcOver_Mode,
+                       0);
   scoped_ptr<RenderPassDrawQuad> quad = RenderPassDrawQuad::Create();
   quad->SetNew(shared_state,
                output_rect,
@@ -74,7 +74,7 @@ void AddTestRenderPassQuad(TestRenderPass* pass,
                gfx::RectF(),
                FilterOperations(),
                FilterOperations());
-  quad_sink.Append(quad.PassAs<DrawQuad>());
+  pass->AppendDrawQuad(quad.PassAs<DrawQuad>());
 }
 
 void AddQuadInPass(TestRenderPass* pass, Quad desc) {

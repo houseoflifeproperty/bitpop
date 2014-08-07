@@ -4,6 +4,7 @@
 
 #include "content/browser/renderer_host/compositing_iosurface_mac.h"
 
+#include <OpenGL/CGLIOSurface.h>
 #include <OpenGL/CGLRenderers.h>
 #include <OpenGL/OpenGL.h>
 
@@ -28,7 +29,6 @@
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gl/gl_context.h"
-#include "ui/gl/io_surface_support_mac.h"
 
 #ifdef NDEBUG
 #define CHECK_GL_ERROR()
@@ -217,13 +217,7 @@ void CompositingIOSurfaceMac::CopyContext::PrepareForAsynchronousReadback() {
 
 
 // static
-CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
-  IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
-  if (!io_surface_support) {
-    LOG(ERROR) << "No IOSurface support";
-    return NULL;
-  }
-
+scoped_refptr<CompositingIOSurfaceMac> CompositingIOSurfaceMac::Create() {
   scoped_refptr<CompositingIOSurfaceContext> offscreen_context =
       CompositingIOSurfaceContext::Get(
           CompositingIOSurfaceContext::kOffscreenContextWindowNumber);
@@ -232,15 +226,12 @@ CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
     return NULL;
   }
 
-  return new CompositingIOSurfaceMac(io_surface_support,
-                                     offscreen_context);
+  return new CompositingIOSurfaceMac(offscreen_context);
 }
 
 CompositingIOSurfaceMac::CompositingIOSurfaceMac(
-    IOSurfaceSupport* io_surface_support,
     const scoped_refptr<CompositingIOSurfaceContext>& offscreen_context)
-    : io_surface_support_(io_surface_support),
-      offscreen_context_(offscreen_context),
+    : offscreen_context_(offscreen_context),
       io_surface_handle_(0),
       scale_factor_(1.f),
       texture_(0),
@@ -271,7 +262,7 @@ CompositingIOSurfaceMac::~CompositingIOSurfaceMac() {
 
 bool CompositingIOSurfaceMac::SetIOSurfaceWithContextCurrent(
     scoped_refptr<CompositingIOSurfaceContext> current_context,
-    uint64 io_surface_handle,
+    IOSurfaceID io_surface_handle,
     const gfx::Size& size,
     float scale_factor) {
   bool result = MapIOSurfaceToTextureWithContextCurrent(
@@ -292,8 +283,7 @@ int CompositingIOSurfaceMac::GetRendererID() {
 bool CompositingIOSurfaceMac::DrawIOSurface(
     scoped_refptr<CompositingIOSurfaceContext> drawing_context,
     const gfx::Rect& window_rect,
-    float window_scale_factor,
-    bool flush_drawable) {
+    float window_scale_factor) {
   DCHECK_EQ(CGLGetCurrentContext(), drawing_context->cgl_context());
 
   bool has_io_surface = HasIOSurface();
@@ -367,27 +357,14 @@ bool CompositingIOSurfaceMac::DrawIOSurface(
   bool workaround_needed =
       GpuDataManagerImpl::GetInstance()->IsDriverBugWorkaroundActive(
           gpu::FORCE_GL_FINISH_AFTER_COMPOSITING);
-  // Note that this is not necessary when not flushing the drawable in Mavericks
-  // or later if we are in one of the two following situations:
-  // - we are drawing an underlay, and we will call glFinish() when drawing
-  //   the overlay.
-  // - we are using CoreAnimation, where this bug does not manifest.
-  if (workaround_needed && !flush_drawable && base::mac::IsOSMavericksOrLater())
-    workaround_needed = false;
-
   if (workaround_needed) {
     TRACE_EVENT0("gpu", "glFinish");
     glFinish();
   }
 
-  bool result = true;
-  if (flush_drawable) {
-    TRACE_EVENT0("gpu", "flushBuffer");
-    [drawing_context->nsgl_context() flushBuffer];
-  }
-
   // Check if any of the drawing calls result in an error.
   GetAndSaveGLError();
+  bool result = true;
   if (gl_error_ != GL_NO_ERROR) {
     LOG(ERROR) << "GL error in DrawIOSurface: " << gl_error_;
     result = false;
@@ -476,7 +453,7 @@ bool CompositingIOSurfaceMac::MapIOSurfaceToTextureWithContextCurrent(
     const scoped_refptr<CompositingIOSurfaceContext>& current_context,
     const gfx::Size pixel_size,
     float scale_factor,
-    uint64 io_surface_handle) {
+    IOSurfaceID io_surface_handle) {
   TRACE_EVENT0("browser", "CompositingIOSurfaceMac::MapIOSurfaceToTexture");
 
   if (!io_surface_ || io_surface_handle != io_surface_handle_)
@@ -493,8 +470,7 @@ bool CompositingIOSurfaceMac::MapIOSurfaceToTextureWithContextCurrent(
   if (io_surface_ && io_surface_handle == io_surface_handle_)
     return true;
 
-  io_surface_.reset(io_surface_support_->IOSurfaceLookup(
-      static_cast<uint32>(io_surface_handle)));
+  io_surface_.reset(IOSurfaceLookup(io_surface_handle));
   // Can fail if IOSurface with that ID was already released by the gpu
   // process.
   if (!io_surface_) {
@@ -506,9 +482,8 @@ bool CompositingIOSurfaceMac::MapIOSurfaceToTextureWithContextCurrent(
 
   // Actual IOSurface size is rounded up to reduce reallocations during window
   // resize. Get the actual size to properly map the texture.
-  gfx::Size rounded_size(
-      io_surface_support_->IOSurfaceGetWidth(io_surface_),
-      io_surface_support_->IOSurfaceGetHeight(io_surface_));
+  gfx::Size rounded_size(IOSurfaceGetWidth(io_surface_),
+                         IOSurfaceGetHeight(io_surface_));
 
   glGenTextures(1, &texture_);
   glBindTexture(GL_TEXTURE_RECTANGLE_ARB, texture_);
@@ -516,7 +491,7 @@ bool CompositingIOSurfaceMac::MapIOSurfaceToTextureWithContextCurrent(
   glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   CHECK_AND_SAVE_GL_ERROR();
   GLuint plane = 0;
-  CGLError cgl_error = io_surface_support_->CGLTexImageIOSurface2D(
+  CGLError cgl_error = CGLTexImageIOSurface2D(
       current_context->cgl_context(),
       GL_TEXTURE_RECTANGLE_ARB,
       GL_RGBA,
@@ -946,8 +921,6 @@ void CompositingIOSurfaceMac::EvictionMarkEvicted() {
 
 // static
 void CompositingIOSurfaceMac::EvictionScheduleDoEvict() {
-  if (GetCoreAnimationStatus() == CORE_ANIMATION_DISABLED)
-    return;
   if (eviction_scheduled_)
     return;
   if (eviction_queue_.Get().size() <= kMaximumUnevictedSurfaces)

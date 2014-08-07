@@ -92,18 +92,33 @@ bool MP4StreamParser::Parse(const uint8* buf, int size) {
   BufferQueue audio_buffers;
   BufferQueue video_buffers;
 
-  bool result, err = false;
+  bool result = false;
+  bool err = false;
 
   do {
-    if (state_ == kParsingBoxes) {
-      result = ParseBox(&err);
-    } else {
-      DCHECK_EQ(kEmittingSamples, state_);
-      result = EnqueueSample(&audio_buffers, &video_buffers, &err);
-      if (result) {
-        int64 max_clear = runs_->GetMaxClearOffset() + moof_head_;
-        err = !ReadAndDiscardMDATsUntil(max_clear);
-      }
+    switch (state_) {
+      case kWaitingForInit:
+      case kError:
+        NOTREACHED();
+        return false;
+
+      case kParsingBoxes:
+        result = ParseBox(&err);
+        break;
+
+      case kWaitingForSampleData:
+        result = HaveEnoughDataToEnqueueSamples();
+        if (result)
+          ChangeState(kEmittingSamples);
+        break;
+
+      case kEmittingSamples:
+        result = EnqueueSample(&audio_buffers, &video_buffers, &err);
+        if (result) {
+          int64 max_clear = runs_->GetMaxClearOffset() + moof_head_;
+          err = !ReadAndDiscardMDATsUntil(max_clear);
+        }
+        break;
     }
   } while (result && !err);
 
@@ -207,7 +222,7 @@ bool MP4StreamParser::ParseMoov(BoxReader* reader) {
       }
 
       uint8 audio_type = entry.esds.object_type;
-      DVLOG(1) << "audio_type " << std::hex << audio_type;
+      DVLOG(1) << "audio_type " << std::hex << static_cast<int>(audio_type);
       if (audio_object_types_.find(audio_type) == audio_object_types_.end()) {
         MEDIA_LOG(log_cb_) << "audio object type 0x" << std::hex << audio_type
                            << " does not match what is specified in the"
@@ -312,9 +327,10 @@ bool MP4StreamParser::ParseMoof(BoxReader* reader) {
   if (!runs_)
     runs_.reset(new TrackRunIterator(moov_.get(), log_cb_));
   RCHECK(runs_->Init(moof));
+  RCHECK(ComputeHighestEndOffset(moof));
   EmitNeedKeyIfNecessary(moof.pssh);
   new_segment_cb_.Run();
-  ChangeState(kEmittingSamples);
+  ChangeState(kWaitingForSampleData);
   return true;
 }
 
@@ -366,7 +382,8 @@ bool MP4StreamParser::PrepareAVCBuffer(
     RCHECK(AVC::InsertParamSetsAnnexB(avc_config, frame_buf, subsamples));
   }
 
-  DCHECK(AVC::IsValidAnnexB(*frame_buf));
+  // TODO(acolwell): Improve IsValidAnnexB() so it can handle encrypted content.
+  DCHECK(runs_->is_encrypted() || AVC::IsValidAnnexB(*frame_buf));
   return true;
 }
 
@@ -392,6 +409,8 @@ bool MP4StreamParser::PrepareAACBuffer(
 bool MP4StreamParser::EnqueueSample(BufferQueue* audio_buffers,
                                     BufferQueue* video_buffers,
                                     bool* err) {
+  DCHECK_EQ(state_, kEmittingSamples);
+
   if (!runs_->IsRunValid()) {
     // Flush any buffers we've gotten in this chunk so that buffers don't
     // cross NewSegment() calls
@@ -399,7 +418,7 @@ bool MP4StreamParser::EnqueueSample(BufferQueue* audio_buffers,
     if (*err)
       return false;
 
-    // Remain in kEnqueueingSamples state, discarding data, until the end of
+    // Remain in kEmittingSamples state, discarding data, until the end of
     // the current 'mdat' box has been appended to the queue.
     if (!queue_.Trim(mdat_tail_))
       return false;
@@ -425,8 +444,10 @@ bool MP4StreamParser::EnqueueSample(BufferQueue* audio_buffers,
   bool video = has_video_ && video_track_id_ == runs_->track_id();
 
   // Skip this entire track if it's not one we're interested in
-  if (!audio && !video)
+  if (!audio && !video) {
     runs_->AdvanceRun();
+    return true;
+  }
 
   // Attempt to cache the auxiliary information first. Aux info is usually
   // placed in a contiguous block before the sample data, rather than being
@@ -499,9 +520,13 @@ bool MP4StreamParser::EnqueueSample(BufferQueue* audio_buffers,
   // TODO(wolenetz/acolwell): Validate and use a common cross-parser TrackId
   // type and allow multiple tracks for same media type, if applicable. See
   // https://crbug.com/341581.
+  //
+  // NOTE: MPEG's "random access point" concept is equivalent to the
+  // downstream code's "is keyframe" concept.
   scoped_refptr<StreamParserBuffer> stream_buf =
       StreamParserBuffer::CopyFrom(&frame_buf[0], frame_buf.size(),
-                                   runs_->is_keyframe(), buffer_type, 0);
+                                   runs_->is_random_access_point(),
+                                   buffer_type, 0);
 
   if (decrypt_config)
     stream_buf->set_decrypt_config(decrypt_config.Pass());
@@ -512,6 +537,7 @@ bool MP4StreamParser::EnqueueSample(BufferQueue* audio_buffers,
 
   DVLOG(3) << "Pushing frame: aud=" << audio
            << ", key=" << runs_->is_keyframe()
+           << ", rap=" << runs_->is_random_access_point()
            << ", dur=" << runs_->duration().InMilliseconds()
            << ", dts=" << runs_->dts().InMilliseconds()
            << ", cts=" << runs_->cts().InMilliseconds()
@@ -541,14 +567,13 @@ bool MP4StreamParser::SendAndFlushSamples(BufferQueue* audio_buffers,
   return success;
 }
 
-bool MP4StreamParser::ReadAndDiscardMDATsUntil(const int64 offset) {
+bool MP4StreamParser::ReadAndDiscardMDATsUntil(int64 max_clear_offset) {
   bool err = false;
-  while (mdat_tail_ < offset) {
+  int64 upper_bound = std::min(max_clear_offset, queue_.tail());
+  while (mdat_tail_ < upper_bound) {
     const uint8* buf = NULL;
     int size = 0;
     queue_.PeekAt(mdat_tail_, &buf, &size);
-    if (size <= 0)
-      return false;
 
     FourCC type;
     int box_sz;
@@ -562,13 +587,48 @@ bool MP4StreamParser::ReadAndDiscardMDATsUntil(const int64 offset) {
     }
     mdat_tail_ += box_sz;
   }
-  queue_.Trim(std::min(mdat_tail_, offset));
+  queue_.Trim(std::min(mdat_tail_, upper_bound));
   return !err;
 }
 
 void MP4StreamParser::ChangeState(State new_state) {
   DVLOG(2) << "Changing state: " << new_state;
   state_ = new_state;
+}
+
+bool MP4StreamParser::HaveEnoughDataToEnqueueSamples() {
+  DCHECK_EQ(state_, kWaitingForSampleData);
+  // For muxed content, make sure we have data up to |highest_end_offset_|
+  // so we can ensure proper enqueuing behavior. Otherwise assume we have enough
+  // data and allow per sample offset checks to meter sample enqueuing.
+  // TODO(acolwell): Fix trun box handling so we don't have to special case
+  // muxed content.
+  return !(has_audio_ && has_video_ &&
+           queue_.tail() < highest_end_offset_ + moof_head_);
+}
+
+bool MP4StreamParser::ComputeHighestEndOffset(const MovieFragment& moof) {
+  highest_end_offset_ = 0;
+
+  TrackRunIterator runs(moov_.get(), log_cb_);
+  RCHECK(runs.Init(moof));
+
+  while (runs.IsRunValid()) {
+    int64 aux_info_end_offset = runs.aux_info_offset() + runs.aux_info_size();
+    if (aux_info_end_offset > highest_end_offset_)
+      highest_end_offset_ = aux_info_end_offset;
+
+    while (runs.IsSampleValid()) {
+      int64 sample_end_offset = runs.sample_offset() + runs.sample_size();
+      if (sample_end_offset > highest_end_offset_)
+        highest_end_offset_ = sample_end_offset;
+
+      runs.AdvanceSample();
+    }
+    runs.AdvanceRun();
+  }
+
+  return true;
 }
 
 }  // namespace mp4

@@ -6,8 +6,8 @@
 
 #include "base/deferred_sequenced_task_runner.h"
 #include "base/message_loop/message_loop.h"
+#include "sync/engine/non_blocking_type_processor.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/non_blocking_type_processor.h"
 #include "sync/sessions/model_type_registry.h"
 #include "sync/test/engine/fake_model_worker.h"
 #include "sync/test/engine/test_directory_setter_upper.h"
@@ -22,6 +22,14 @@ class ModelTypeRegistryTest : public ::testing::Test {
   virtual void TearDown() OVERRIDE;
 
   ModelTypeRegistry* registry();
+
+  static DataTypeState MakeInitialDataTypeState(ModelType type) {
+    DataTypeState state;
+    state.progress_marker.set_data_type_id(
+        GetSpecificsFieldNumberFromModelType(type));
+    state.next_client_id = 0;
+    return state;
+  }
 
  private:
   syncable::Directory* directory();
@@ -139,17 +147,17 @@ TEST_F(ModelTypeRegistryTest, NonBlockingTypes) {
 
   EXPECT_TRUE(registry()->GetEnabledTypes().Empty());
 
-  registry()->InitializeNonBlockingType(
-      syncer::THEMES,
-      task_runner,
-      themes_processor.AsWeakPtr());
+  registry()->InitializeNonBlockingType(syncer::THEMES,
+                                        MakeInitialDataTypeState(THEMES),
+                                        task_runner,
+                                        themes_processor.AsWeakPtrForUI());
   EXPECT_TRUE(registry()->GetEnabledTypes().Equals(
       ModelTypeSet(syncer::THEMES)));
 
-  registry()->InitializeNonBlockingType(
-      syncer::SESSIONS,
-      task_runner,
-      sessions_processor.AsWeakPtr());
+  registry()->InitializeNonBlockingType(syncer::SESSIONS,
+                                        MakeInitialDataTypeState(SESSIONS),
+                                        task_runner,
+                                        sessions_processor.AsWeakPtrForUI());
   EXPECT_TRUE(registry()->GetEnabledTypes().Equals(
       ModelTypeSet(syncer::THEMES, syncer::SESSIONS)));
 
@@ -176,10 +184,10 @@ TEST_F(ModelTypeRegistryTest, NonBlockingTypesWithDirectoryTypes) {
   EXPECT_TRUE(registry()->GetEnabledTypes().Empty());
 
   // Add the themes non-blocking type.
-  registry()->InitializeNonBlockingType(
-      syncer::THEMES,
-      task_runner,
-      themes_processor.AsWeakPtr());
+  registry()->InitializeNonBlockingType(syncer::THEMES,
+                                        MakeInitialDataTypeState(THEMES),
+                                        task_runner,
+                                        themes_processor.AsWeakPtrForUI());
   current_types.Put(syncer::THEMES);
   EXPECT_TRUE(registry()->GetEnabledTypes().Equals(current_types));
 
@@ -189,10 +197,10 @@ TEST_F(ModelTypeRegistryTest, NonBlockingTypesWithDirectoryTypes) {
   EXPECT_TRUE(registry()->GetEnabledTypes().Equals(current_types));
 
   // Add sessions non-blocking type.
-  registry()->InitializeNonBlockingType(
-      syncer::SESSIONS,
-      task_runner,
-      sessions_processor.AsWeakPtr());
+  registry()->InitializeNonBlockingType(syncer::SESSIONS,
+                                        MakeInitialDataTypeState(SESSIONS),
+                                        task_runner,
+                                        sessions_processor.AsWeakPtrForUI());
   current_types.Put(syncer::SESSIONS);
   EXPECT_TRUE(registry()->GetEnabledTypes().Equals(current_types));
 
@@ -218,14 +226,14 @@ TEST_F(ModelTypeRegistryTest, DeletionOrdering) {
 
   EXPECT_TRUE(registry()->GetEnabledTypes().Empty());
 
-  registry()->InitializeNonBlockingType(
-      syncer::THEMES,
-      task_runner,
-      themes_processor->AsWeakPtr());
-  registry()->InitializeNonBlockingType(
-      syncer::SESSIONS,
-      task_runner,
-      sessions_processor->AsWeakPtr());
+  registry()->InitializeNonBlockingType(syncer::THEMES,
+                                        MakeInitialDataTypeState(THEMES),
+                                        task_runner,
+                                        themes_processor->AsWeakPtrForUI());
+  registry()->InitializeNonBlockingType(syncer::SESSIONS,
+                                        MakeInitialDataTypeState(SESSIONS),
+                                        task_runner,
+                                        sessions_processor->AsWeakPtrForUI());
   EXPECT_TRUE(registry()->GetEnabledTypes().Equals(
       ModelTypeSet(syncer::THEMES, syncer::SESSIONS)));
 

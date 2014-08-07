@@ -7,7 +7,6 @@
 #include "ash/display/display_layout_store.h"
 #include "ash/display/display_manager.h"
 #include "ash/display/display_pref_util.h"
-#include "ash/display/resolution_notification_controller.h"
 #include "ash/shell.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
@@ -18,7 +17,7 @@
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/common/pref_names.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/gfx/display.h"
@@ -305,10 +304,10 @@ void StoreDisplayPrefs() {
 
   // Do not store prefs when the confirmation dialog is shown.
   if (!UserCanSaveDisplayPreference() ||
-      ash::Shell::GetInstance()->resolution_notification_controller()->
-          DoesNotificationTimeout()) {
+      !ash::Shell::GetInstance()->ShouldSaveDisplaySettings()) {
     return;
   }
+
   StoreCurrentDisplayLayoutPrefs();
   StoreCurrentDisplayProperties();
 }

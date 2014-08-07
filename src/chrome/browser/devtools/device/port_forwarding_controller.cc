@@ -120,8 +120,14 @@ class SocketTunnel : public base::NonThreadSafe {
       return;
     }
 
+    ++pending_writes_; // avoid SelfDestruct in first Pump
     Pump(host_socket_.get(), remote_socket_.get());
-    Pump(remote_socket_.get(), host_socket_.get());
+    --pending_writes_;
+    if (pending_destruction_) {
+      SelfDestruct();
+    } else {
+      Pump(remote_socket_.get(), host_socket_.get());
+    }
   }
 
   void Pump(net::StreamSocket* from, net::StreamSocket* to) {
@@ -236,8 +242,7 @@ FindBestBrowserForTethering(
       browsers.begin(); it != browsers.end(); ++it) {
     scoped_refptr<DevToolsAndroidBridge::RemoteBrowser> browser = *it;
     ParsedVersion current_version = browser->GetParsedVersion();
-    if (browser->IsChrome() &&
-        IsPortForwardingSupported(current_version) &&
+    if (IsPortForwardingSupported(current_version) &&
         IsVersionLower(newest_version, current_version)) {
       best_browser = browser;
       newest_version = current_version;

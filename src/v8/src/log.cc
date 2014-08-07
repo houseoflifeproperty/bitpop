@@ -4,21 +4,21 @@
 
 #include <stdarg.h>
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "bootstrapper.h"
-#include "code-stubs.h"
-#include "cpu-profiler.h"
-#include "deoptimizer.h"
-#include "global-handles.h"
-#include "log.h"
-#include "log-utils.h"
-#include "macro-assembler.h"
-#include "platform.h"
-#include "runtime-profiler.h"
-#include "serialize.h"
-#include "string-stream.h"
-#include "vm-state-inl.h"
+#include "src/bootstrapper.h"
+#include "src/code-stubs.h"
+#include "src/cpu-profiler.h"
+#include "src/deoptimizer.h"
+#include "src/global-handles.h"
+#include "src/log.h"
+#include "src/log-utils.h"
+#include "src/macro-assembler.h"
+#include "src/platform.h"
+#include "src/runtime-profiler.h"
+#include "src/serialize.h"
+#include "src/string-stream.h"
+#include "src/vm-state-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -106,7 +106,7 @@ class CodeEventLogger::NameBuffer {
 
   void AppendBytes(const char* bytes, int size) {
     size = Min(size, kUtf8BufferSize - utf8_pos_);
-    OS::MemCopy(utf8_buffer_ + utf8_pos_, bytes, size);
+    MemCopy(utf8_buffer_ + utf8_pos_, bytes, size);
     utf8_pos_ += size;
   }
 
@@ -122,7 +122,7 @@ class CodeEventLogger::NameBuffer {
   void AppendInt(int n) {
     Vector<char> buffer(utf8_buffer_ + utf8_pos_,
                         kUtf8BufferSize - utf8_pos_);
-    int size = OS::SNPrintF(buffer, "%d", n);
+    int size = SNPrintF(buffer, "%d", n);
     if (size > 0 && utf8_pos_ + size <= kUtf8BufferSize) {
       utf8_pos_ += size;
     }
@@ -131,7 +131,7 @@ class CodeEventLogger::NameBuffer {
   void AppendHex(uint32_t n) {
     Vector<char> buffer(utf8_buffer_ + utf8_pos_,
                         kUtf8BufferSize - utf8_pos_);
-    int size = OS::SNPrintF(buffer, "%x", n);
+    int size = SNPrintF(buffer, "%x", n);
     if (size > 0 && utf8_pos_ + size <= kUtf8BufferSize) {
       utf8_pos_ += size;
     }
@@ -230,6 +230,7 @@ class PerfBasicLogger : public CodeEventLogger {
   virtual ~PerfBasicLogger();
 
   virtual void CodeMoveEvent(Address from, Address to) { }
+  virtual void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared) { }
   virtual void CodeDeleteEvent(Address from) { }
 
  private:
@@ -258,7 +259,7 @@ PerfBasicLogger::PerfBasicLogger()
   // Open the perf JIT dump file.
   int bufferSize = sizeof(kFilenameFormatString) + kFilenameBufferPadding;
   ScopedVector<char> perf_dump_name(bufferSize);
-  int size = OS::SNPrintF(
+  int size = SNPrintF(
       perf_dump_name,
       kFilenameFormatString,
       OS::GetCurrentProcessId());
@@ -295,6 +296,7 @@ class PerfJitLogger : public CodeEventLogger {
   virtual ~PerfJitLogger();
 
   virtual void CodeMoveEvent(Address from, Address to) { }
+  virtual void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared) { }
   virtual void CodeDeleteEvent(Address from) { }
 
  private:
@@ -320,6 +322,7 @@ class PerfJitLogger : public CodeEventLogger {
   static const uint32_t kElfMachX64 = 62;
   static const uint32_t kElfMachARM = 40;
   static const uint32_t kElfMachMIPS = 10;
+  static const uint32_t kElfMachX87 = 3;
 
   struct jitheader {
     uint32_t magic;
@@ -359,6 +362,8 @@ class PerfJitLogger : public CodeEventLogger {
     return kElfMachARM;
 #elif V8_TARGET_ARCH_MIPS
     return kElfMachMIPS;
+#elif V8_TARGET_ARCH_X87
+    return kElfMachX87;
 #else
     UNIMPLEMENTED();
     return 0;
@@ -378,7 +383,7 @@ PerfJitLogger::PerfJitLogger()
   // Open the perf JIT dump file.
   int bufferSize = sizeof(kFilenameFormatString) + kFilenameBufferPadding;
   ScopedVector<char> perf_dump_name(bufferSize);
-  int size = OS::SNPrintF(
+  int size = SNPrintF(
       perf_dump_name,
       kFilenameFormatString,
       OS::GetCurrentProcessId());
@@ -457,6 +462,7 @@ class LowLevelLogger : public CodeEventLogger {
   virtual ~LowLevelLogger();
 
   virtual void CodeMoveEvent(Address from, Address to);
+  virtual void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared) { }
   virtual void CodeDeleteEvent(Address from);
   virtual void SnapshotPositionEvent(Address addr, int pos);
   virtual void CodeMovingGCEvent();
@@ -530,8 +536,8 @@ LowLevelLogger::LowLevelLogger(const char* name)
   // Open the low-level log file.
   size_t len = strlen(name);
   ScopedVector<char> ll_name(static_cast<int>(len + sizeof(kLogExt)));
-  OS::MemCopy(ll_name.start(), name, len);
-  OS::MemCopy(ll_name.start() + len, kLogExt, sizeof(kLogExt));
+  MemCopy(ll_name.start(), name, len);
+  MemCopy(ll_name.start() + len, kLogExt, sizeof(kLogExt));
   ll_output_handle_ = OS::FOpen(ll_name.start(), OS::LogFileOpenMode);
   setvbuf(ll_output_handle_, NULL, _IOFBF, kLogBufferSize);
 
@@ -554,6 +560,8 @@ void LowLevelLogger::LogCodeInfo() {
   const char arch[] = "arm";
 #elif V8_TARGET_ARCH_MIPS
   const char arch[] = "mips";
+#elif V8_TARGET_ARCH_X87
+  const char arch[] = "x87";
 #else
   const char arch[] = "unknown";
 #endif
@@ -623,6 +631,7 @@ class JitLogger : public CodeEventLogger {
   explicit JitLogger(JitCodeEventHandler code_event_handler);
 
   virtual void CodeMoveEvent(Address from, Address to);
+  virtual void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared) { }
   virtual void CodeDeleteEvent(Address from);
   virtual void AddCodeLinePosInfoEvent(
       void* jit_handler_data,
@@ -858,7 +867,12 @@ void Profiler::Engage() {
   if (engaged_) return;
   engaged_ = true;
 
-  OS::LogSharedLibraryAddresses(isolate_);
+  std::vector<OS::SharedLibraryAddress> addresses =
+      OS::GetSharedLibraryAddresses();
+  for (size_t i = 0; i < addresses.size(); ++i) {
+    LOG(isolate_, SharedLibraryEvent(
+        addresses[i].library_path, addresses[i].start, addresses[i].end));
+  }
 
   // Start thread processing the profiler buffer.
   running_ = true;
@@ -1039,26 +1053,13 @@ void Logger::ApiNamedSecurityCheck(Object* key) {
 }
 
 
-void Logger::SharedLibraryEvent(const char* library_path,
+void Logger::SharedLibraryEvent(const std::string& library_path,
                                 uintptr_t start,
                                 uintptr_t end) {
   if (!log_->IsEnabled() || !FLAG_prof) return;
   Log::MessageBuilder msg(log_);
   msg.Append("shared-library,\"%s\",0x%08" V8PRIxPTR ",0x%08" V8PRIxPTR "\n",
-             library_path,
-             start,
-             end);
-  msg.WriteToLogFile();
-}
-
-
-void Logger::SharedLibraryEvent(const wchar_t* library_path,
-                                uintptr_t start,
-                                uintptr_t end) {
-  if (!log_->IsEnabled() || !FLAG_prof) return;
-  Log::MessageBuilder msg(log_);
-  msg.Append("shared-library,\"%ls\",0x%08" V8PRIxPTR ",0x%08" V8PRIxPTR "\n",
-             library_path,
+             library_path.c_str(),
              start,
              end);
   msg.WriteToLogFile();
@@ -1071,6 +1072,16 @@ void Logger::CodeDeoptEvent(Code* code) {
   Log::MessageBuilder msg(log_);
   int since_epoch = static_cast<int>(timer_.Elapsed().InMicroseconds());
   msg.Append("code-deopt,%ld,%d\n", since_epoch, code->CodeSize());
+  msg.WriteToLogFile();
+}
+
+
+void Logger::CurrentTimeEvent() {
+  if (!log_->IsEnabled()) return;
+  ASSERT(FLAG_log_internal_timer_events);
+  Log::MessageBuilder msg(log_);
+  int since_epoch = static_cast<int>(timer_.Elapsed().InMicroseconds());
+  msg.Append("current-time,%ld\n", since_epoch);
   msg.WriteToLogFile();
 }
 
@@ -1120,6 +1131,7 @@ const char* Logger::TimerEventScope::v8_compile_full_code =
     "V8.CompileFullCode";
 const char* Logger::TimerEventScope::v8_execute = "V8.Execute";
 const char* Logger::TimerEventScope::v8_external = "V8.External";
+const char* Logger::TimerEventScope::v8_ic_miss = "V8.IcMiss";
 
 
 void Logger::LogRegExpSource(Handle<JSRegExp> regexp) {
@@ -1174,47 +1186,6 @@ void Logger::RegExpCompileEvent(Handle<JSRegExp> regexp, bool in_cache) {
   msg.Append("regexp-compile,");
   LogRegExpSource(regexp);
   msg.Append(in_cache ? ",hit\n" : ",miss\n");
-  msg.WriteToLogFile();
-}
-
-
-void Logger::LogRuntime(Vector<const char> format,
-                        Handle<JSArray> args) {
-  if (!log_->IsEnabled() || !FLAG_log_runtime) return;
-  Log::MessageBuilder msg(log_);
-  for (int i = 0; i < format.length(); i++) {
-    char c = format[i];
-    if (c == '%' && i <= format.length() - 2) {
-      i++;
-      ASSERT('0' <= format[i] && format[i] <= '9');
-      // No exception expected when getting an element from an array literal.
-      Handle<Object> obj = Object::GetElement(
-          isolate_, args, format[i] - '0').ToHandleChecked();
-      i++;
-      switch (format[i]) {
-        case 's':
-          msg.AppendDetailed(String::cast(*obj), false);
-          break;
-        case 'S':
-          msg.AppendDetailed(String::cast(*obj), true);
-          break;
-        case 'r':
-          Logger::LogRegExpSource(Handle<JSRegExp>::cast(obj));
-          break;
-        case 'x':
-          msg.Append("0x%x", Smi::cast(*obj)->value());
-          break;
-        case 'i':
-          msg.Append("%i", Smi::cast(*obj)->value());
-          break;
-        default:
-          UNREACHABLE();
-      }
-    } else {
-      msg.Append(c);
-    }
-  }
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1483,6 +1454,24 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   AppendCodeCreateHeader(&msg, tag, code);
   msg.Append("\"args_count: %d\"", args_count);
   msg.Append('\n');
+  msg.WriteToLogFile();
+}
+
+
+void Logger::CodeDisableOptEvent(Code* code,
+                                 SharedFunctionInfo* shared) {
+  PROFILER_LOG(CodeDisableOptEvent(code, shared));
+
+  if (!is_logging_code_events()) return;
+  CALL_LISTENERS(CodeDisableOptEvent(code, shared));
+
+  if (!FLAG_log_code || !log_->IsEnabled()) return;
+  Log::MessageBuilder msg(log_);
+  msg.Append("%s,", kLogEventsNames[CODE_DISABLE_OPT_EVENT]);
+  SmartArrayPointer<char> name =
+      shared->DebugName()->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
+  msg.Append("\"%s\",", name.get());
+  msg.Append("\"%s\"\n", GetBailoutReason(shared->DisableOptimizationReason()));
   msg.WriteToLogFile();
 }
 
@@ -1977,58 +1966,48 @@ void Logger::LogAccessorCallbacks() {
 
 
 static void AddIsolateIdIfNeeded(Isolate* isolate, StringStream* stream) {
-  if (isolate->IsDefaultIsolate() || !FLAG_logfile_per_isolate) return;
-  stream->Add("isolate-%p-", isolate);
+  if (FLAG_logfile_per_isolate) stream->Add("isolate-%p-", isolate);
 }
 
 
 static SmartArrayPointer<const char> PrepareLogFileName(
     Isolate* isolate, const char* file_name) {
-  if (strchr(file_name, '%') != NULL || !isolate->IsDefaultIsolate()) {
-    // If there's a '%' in the log file name we have to expand
-    // placeholders.
-    HeapStringAllocator allocator;
-    StringStream stream(&allocator);
-    AddIsolateIdIfNeeded(isolate, &stream);
-    for (const char* p = file_name; *p; p++) {
-      if (*p == '%') {
-        p++;
-        switch (*p) {
-          case '\0':
-            // If there's a % at the end of the string we back up
-            // one character so we can escape the loop properly.
-            p--;
-            break;
-          case 'p':
-            stream.Add("%d", OS::GetCurrentProcessId());
-            break;
-          case 't': {
-            // %t expands to the current time in milliseconds.
-            double time = OS::TimeCurrentMillis();
-            stream.Add("%.0f", FmtElm(time));
-            break;
-          }
-          case '%':
-            // %% expands (contracts really) to %.
-            stream.Put('%');
-            break;
-          default:
-            // All other %'s expand to themselves.
-            stream.Put('%');
-            stream.Put(*p);
-            break;
+  HeapStringAllocator allocator;
+  StringStream stream(&allocator);
+  AddIsolateIdIfNeeded(isolate, &stream);
+  for (const char* p = file_name; *p; p++) {
+    if (*p == '%') {
+      p++;
+      switch (*p) {
+        case '\0':
+          // If there's a % at the end of the string we back up
+          // one character so we can escape the loop properly.
+          p--;
+          break;
+        case 'p':
+          stream.Add("%d", OS::GetCurrentProcessId());
+          break;
+        case 't': {
+          // %t expands to the current time in milliseconds.
+          double time = OS::TimeCurrentMillis();
+          stream.Add("%.0f", FmtElm(time));
+          break;
         }
-      } else {
-        stream.Put(*p);
+        case '%':
+          // %% expands (contracts really) to %.
+          stream.Put('%');
+          break;
+        default:
+          // All other %'s expand to themselves.
+          stream.Put('%');
+          stream.Put(*p);
+          break;
       }
+    } else {
+      stream.Put(*p);
     }
-    return SmartArrayPointer<const char>(stream.ToCString());
   }
-  int length = StrLength(file_name);
-  char* str = NewArray<char>(length + 1);
-  OS::MemCopy(str, file_name, length);
-  str[length] = '\0';
-  return SmartArrayPointer<const char>(str);
+  return SmartArrayPointer<const char>(stream.ToCString());
 }
 
 

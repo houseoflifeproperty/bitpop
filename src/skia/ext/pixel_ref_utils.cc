@@ -361,8 +361,7 @@ void PixelRefUtils::GatherDiscardablePixelRefs(
   DiscardablePixelRefSet pixel_ref_set(pixel_refs);
 
   SkBitmap empty_bitmap;
-  empty_bitmap.setConfig(
-      SkBitmap::kNo_Config, picture->width(), picture->height());
+  empty_bitmap.setInfo(SkImageInfo::MakeUnknown(picture->width(), picture->height()));
 
   GatherPixelRefDevice device(empty_bitmap, &pixel_ref_set);
   SkNoSaveLayerCanvas canvas(&device);
@@ -370,7 +369,7 @@ void PixelRefUtils::GatherDiscardablePixelRefs(
   canvas.clipRect(SkRect::MakeWH(picture->width(), picture->height()),
                   SkRegion::kIntersect_Op,
                   false);
-  canvas.drawPicture(*picture);
+  canvas.drawPicture(picture);
 }
 
 }  // namespace skia

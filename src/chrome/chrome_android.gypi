@@ -72,6 +72,13 @@
         'additional_input_paths': [
           '<@(chrome_android_pak_output_resources)',
         ],
+        'conditions': [
+          ['component != "shared_library" and target_arch != "arm64" and target_arch != "x64"', {
+            # Only enable the chromium linker on regular builds, since the
+            # component build crashes on Android 4.4. See b/11379966
+            'use_chromium_linker': '1',
+          }],
+        ],
       },
       'includes': [ '../build/java_apk.gypi', ],
     },
@@ -98,6 +105,9 @@
         'chrome.gyp:plugin',
         'chrome.gyp:renderer',
         'chrome.gyp:utility',
+        # TODO(kkimlabs): Move this to chrome.gyp:browser when the dependent
+        #                 is upstreamed.
+        '../components/components.gyp:enhanced_bookmarks',
         '../content/content.gyp:content',
         '../content/content.gyp:content_app_browser',
       ],

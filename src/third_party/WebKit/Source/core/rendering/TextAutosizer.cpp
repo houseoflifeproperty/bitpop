@@ -177,7 +177,7 @@ bool TextAutosizer::isApplicable() const
         && m_document->settings()->textAutosizingEnabled()
         && m_document->page()
         && m_document->page()->mainFrame()
-        && m_document->page()->mainFrame()->loader().stateMachine()->committedFirstRealDocumentLoad();
+        && m_document->page()->deprecatedLocalMainFrame()->loader().stateMachine()->committedFirstRealDocumentLoad();
 }
 
 void TextAutosizer::recalculateMultipliers()
@@ -185,7 +185,7 @@ void TextAutosizer::recalculateMultipliers()
     if (!isApplicable() && !m_previouslyAutosized)
         return;
 
-    RenderObject* renderer = m_document->renderer();
+    RenderObject* renderer = m_document->renderView();
     while (renderer) {
         if (renderer->style() && renderer->style()->textAutosizingMultiplier() != 1)
             setMultiplier(renderer, 1);
@@ -201,7 +201,7 @@ bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
     if (!isApplicable() || layoutRoot->view()->document().printing())
         return false;
 
-    LocalFrame* mainFrame = m_document->page()->mainFrame();
+    LocalFrame* mainFrame = m_document->page()->deprecatedLocalMainFrame();
     TextAutosizingWindowInfo windowInfo;
 
     // Window area, in logical (density-independent) pixels.
@@ -212,8 +212,9 @@ bool TextAutosizer::processSubtree(RenderObject* layoutRoot)
     // Largest area of block that can be visible at once (assuming the main
     // frame doesn't get scaled to less than overview scale), in CSS pixels.
     windowInfo.minLayoutSize = mainFrame->view()->layoutSize();
-    for (LocalFrame* frame = m_document->frame(); frame; frame = frame->tree().parent())
-        windowInfo.minLayoutSize = windowInfo.minLayoutSize.shrunkTo(frame->view()->layoutSize());
+    for (Frame* frame = m_document->frame(); frame; frame = frame->tree().parent()) {
+        windowInfo.minLayoutSize = windowInfo.minLayoutSize.shrunkTo(toLocalFrame(frame)->view()->layoutSize());
+    }
 
     // The layoutRoot could be neither a container nor a cluster, so walk up the tree till we find each of these.
     RenderBlock* container = layoutRoot->isRenderBlock() ? toRenderBlock(layoutRoot) : layoutRoot->containingBlock();
@@ -260,7 +261,7 @@ float TextAutosizer::clusterMultiplier(WritingMode writingMode, const TextAutosi
     multiplier *= m_document->settings()->accessibilityFontScaleFactor();
 
     // If the page has a meta viewport or @viewport, don't apply the device scale adjustment.
-    const ViewportDescription& viewportDescription = m_document->page()->mainFrame()->document()->viewportDescription();
+    const ViewportDescription& viewportDescription = m_document->page()->deprecatedLocalMainFrame()->document()->viewportDescription();
     if (!viewportDescription.isSpecifiedByAuthor()) {
         float deviceScaleAdjustment = m_document->settings()->deviceScaleAdjustment();
         multiplier *= deviceScaleAdjustment;
@@ -460,7 +461,7 @@ void TextAutosizer::setMultiplierForList(RenderObject* renderer, float multiplie
     setMultiplier(renderer, multiplier);
 
     // Make sure all list items are autosized consistently.
-    for (RenderObject* child = renderer->firstChild(); child; child = child->nextSibling()) {
+    for (RenderObject* child = renderer->slowFirstChild(); child; child = child->nextSibling()) {
         if (child->isListItem() && child->style()->textAutosizingMultiplier() == 1)
             setMultiplier(child, multiplier);
     }
@@ -801,7 +802,7 @@ const RenderObject* TextAutosizer::findFirstTextLeafNotInCluster(const RenderObj
         return parent;
 
     ++depth;
-    const RenderObject* child = (direction == FirstToLast) ? parent->firstChild() : parent->lastChild();
+    const RenderObject* child = (direction == FirstToLast) ? parent->slowFirstChild() : parent->slowLastChild();
     while (child) {
         if (!isAutosizingContainer(child) || !isIndependentDescendant(toRenderBlock(child))) {
             const RenderObject* leaf = findFirstTextLeafNotInCluster(child, depth, direction);

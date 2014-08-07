@@ -31,7 +31,6 @@
 #include "config.h"
 #include "web/WebSharedWorkerImpl.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/dom/CrossThreadTask.h"
 #include "core/dom/Document.h"
 #include "core/events/MessageEvent.h"
@@ -49,6 +48,7 @@
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThreadStartupData.h"
 #include "modules/webdatabase/DatabaseTask.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/network/ResourceResponse.h"
@@ -191,6 +191,9 @@ void WebSharedWorkerImpl::initializeLoader(const WebURL& url)
     ASSERT(!m_webView);
     m_webView = WebView::create(0);
     m_webView->settings()->setOfflineWebApplicationCacheEnabled(RuntimeEnabledFeatures::applicationCacheEnabled());
+    // FIXME: http://crbug.com/363843. This needs to find a better way to
+    // not create graphics layers.
+    m_webView->settings()->setAcceleratedCompositingEnabled(false);
     // FIXME: Settings information should be passed to the Worker process from Browser process when the worker
     // is created (similar to RenderThread::OnCreateNewView).
     m_mainFrame = WebLocalFrame::create(this);
@@ -308,11 +311,11 @@ void WebSharedWorkerImpl::connect(WebMessagePortChannel* webChannel)
 void WebSharedWorkerImpl::connectTask(ExecutionContext* context, PassOwnPtr<WebMessagePortChannel> channel)
 {
     // Wrap the passed-in channel in a MessagePort, and send it off via a connect event.
-    RefPtr<MessagePort> port = MessagePort::create(*context);
+    RefPtrWillBeRawPtr<MessagePort> port = MessagePort::create(*context);
     port->entangle(channel);
     WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
     ASSERT_WITH_SECURITY_IMPLICATION(workerGlobalScope->isSharedWorkerGlobalScope());
-    workerGlobalScope->dispatchEvent(createConnectEvent(port));
+    workerGlobalScope->dispatchEvent(createConnectEvent(port.release()));
 }
 
 void WebSharedWorkerImpl::startWorkerContext(const WebURL& url, const WebString& name, const WebString& contentSecurityPolicy, WebContentSecurityPolicyType policyType)

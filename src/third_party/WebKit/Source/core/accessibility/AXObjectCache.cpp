@@ -30,7 +30,7 @@
 
 #include "core/accessibility/AXObjectCache.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/accessibility/AXARIAGrid.h"
 #include "core/accessibility/AXARIAGridCell.h"
 #include "core/accessibility/AXARIAGridRow.h"
@@ -691,7 +691,7 @@ void AXObjectCache::childrenChanged(AXObject* obj)
 
 void AXObjectCache::notificationPostTimerFired(Timer<AXObjectCache>*)
 {
-    RefPtr<Document> protectorForCacheOwner(m_document);
+    RefPtrWillBeRawPtr<Document> protectorForCacheOwner(m_document);
 
     m_notificationPostTimer.stop();
 
@@ -775,7 +775,7 @@ void AXObjectCache::postNotification(AXObject* object, Document* document, AXNot
         object = object->observableObject();
 
     if (!object && document)
-        object = get(document->renderer());
+        object = get(document->renderView());
 
     if (!object)
         return;
@@ -818,6 +818,20 @@ void AXObjectCache::handleScrollbarUpdate(ScrollView* view)
         m_computedObjectAttributeCache->clear();
         scrollViewObject->updateChildrenIfNecessary();
     }
+}
+
+void AXObjectCache::handleLayoutComplete(RenderObject* renderer)
+{
+    if (!renderer)
+        return;
+
+    m_computedObjectAttributeCache->clear();
+
+    // Create the AXObject if it didn't yet exist - that's always safe at the end of a layout, and it
+    // allows an AX notification to be sent when a page has its first layout, rather than when the
+    // document first loads.
+    if (AXObject* obj = getOrCreate(renderer))
+        postNotification(obj, obj->document(), AXLayoutComplete, true);
 }
 
 void AXObjectCache::handleAriaExpandedChange(Node* node)
@@ -952,7 +966,7 @@ void AXObjectCache::postPlatformNotification(AXObject* obj, AXNotification notif
         Document* document = toFrameView(scrollBar->parent())->frame().document();
         if (document != document->topDocument())
             return;
-        obj = get(document->renderer());
+        obj = get(document->renderView());
     }
 
     if (!obj || !obj->document() || !obj->documentFrameView() || !obj->documentFrameView()->frame().page())

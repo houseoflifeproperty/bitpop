@@ -31,16 +31,16 @@
 #include "config.h"
 #include "ServiceWorker.h"
 
-#include "EventTargetNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptPromiseResolverWithContext.h"
 #include "bindings/v8/ScriptState.h"
 #include "core/dom/MessagePort.h"
-#include "core/events/Event.h"
+#include "modules/EventTargetModules.h"
 #include "platform/NotImplemented.h"
 #include "public/platform/WebMessagePortChannel.h"
 #include "public/platform/WebServiceWorkerState.h"
 #include "public/platform/WebString.h"
+#include <v8.h>
 
 namespace WebCore {
 
@@ -86,13 +86,23 @@ void ServiceWorker::postMessage(PassRefPtr<SerializedScriptValue> message, const
 
 bool ServiceWorker::isReady()
 {
-    return !m_isPromisePending;
+    return m_proxyState == Ready;
 }
 
 void ServiceWorker::dispatchStateChangeEvent()
 {
     ASSERT(isReady());
     this->dispatchEvent(Event::create(EventTypeNames::statechange));
+}
+
+String ServiceWorker::scope() const
+{
+    return m_outerWorker->scope().string();
+}
+
+String ServiceWorker::url() const
+{
+    return m_outerWorker->url().string();
 }
 
 const AtomicString& ServiceWorker::state() const
@@ -128,27 +138,85 @@ const AtomicString& ServiceWorker::state() const
     }
 }
 
+PassRefPtr<ServiceWorker> ServiceWorker::from(ExecutionContext* executionContext, WebType* worker)
+{
+    if (!worker)
+        return PassRefPtr<ServiceWorker>();
+
+    blink::WebServiceWorkerProxy* proxy = worker->proxy();
+    ServiceWorker* existingServiceWorker = proxy ? proxy->unwrap() : 0;
+    if (existingServiceWorker) {
+        ASSERT(existingServiceWorker->executionContext() == executionContext);
+        return existingServiceWorker;
+    }
+
+    return create(executionContext, adoptPtr(worker));
+}
+
 PassRefPtr<ServiceWorker> ServiceWorker::from(ScriptPromiseResolverWithContext* resolver, WebType* worker)
 {
+    RefPtr<ServiceWorker> serviceWorker = ServiceWorker::from(resolver->scriptState()->executionContext(), worker);
     ScriptState::Scope scope(resolver->scriptState());
-    RefPtr<ServiceWorker> serviceWorker = create(resolver->scriptState()->executionContext(), adoptPtr(worker));
     serviceWorker->waitOnPromise(resolver->promise());
     return serviceWorker;
 }
 
+void ServiceWorker::setProxyState(ProxyState state)
+{
+    if (m_proxyState == state)
+        return;
+    switch (m_proxyState) {
+    case Initial:
+        ASSERT(state == RegisterPromisePending || state == ContextStopped);
+        break;
+    case RegisterPromisePending:
+        ASSERT(state == Ready || state == ContextStopped);
+        break;
+    case Ready:
+        ASSERT(state == ContextStopped);
+        break;
+    case ContextStopped:
+        ASSERT_NOT_REACHED();
+        break;
+    }
+
+    ProxyState oldState = m_proxyState;
+    m_proxyState = state;
+    if (oldState == Ready || state == Ready)
+        m_outerWorker->proxyReadyChanged();
+}
+
 void ServiceWorker::onPromiseResolved()
 {
-    ASSERT(m_isPromisePending);
-    m_isPromisePending = false;
-    m_outerWorker->proxyReadyChanged();
+    if (m_proxyState == ContextStopped)
+        return;
+    setProxyState(Ready);
 }
 
 void ServiceWorker::waitOnPromise(ScriptPromise promise)
 {
-    ASSERT(!m_isPromisePending);
-    m_isPromisePending = true;
-    m_outerWorker->proxyReadyChanged();
+    if (promise.isEmpty()) {
+        // The document was detached during registration. The state doesn't really
+        // matter since this ServiceWorker will immediately die.
+        setProxyState(ContextStopped);
+        return;
+    }
+    setProxyState(RegisterPromisePending);
     promise.then(ThenFunction::create(this));
+}
+
+bool ServiceWorker::hasPendingActivity() const
+{
+    if (AbstractWorker::hasPendingActivity())
+        return true;
+    if (m_proxyState == ContextStopped)
+        return false;
+    return m_outerWorker->state() != blink::WebServiceWorkerStateDeactivated;
+}
+
+void ServiceWorker::stop()
+{
+    setProxyState(ContextStopped);
 }
 
 PassRefPtr<ServiceWorker> ServiceWorker::create(ExecutionContext* executionContext, PassOwnPtr<blink::WebServiceWorker> outerWorker)
@@ -160,8 +228,9 @@ PassRefPtr<ServiceWorker> ServiceWorker::create(ExecutionContext* executionConte
 
 ServiceWorker::ServiceWorker(ExecutionContext* executionContext, PassOwnPtr<blink::WebServiceWorker> worker)
     : AbstractWorker(executionContext)
+    , WebServiceWorkerProxy(this)
     , m_outerWorker(worker)
-    , m_isPromisePending(false)
+    , m_proxyState(Initial)
 {
     ScriptWrappable::init(this);
     ASSERT(m_outerWorker);

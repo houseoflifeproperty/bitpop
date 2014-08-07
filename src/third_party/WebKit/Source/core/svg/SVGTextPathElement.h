@@ -20,7 +20,7 @@
 #ifndef SVGTextPathElement_h
 #define SVGTextPathElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGTextContentElement.h"
 #include "core/svg/SVGURIReference.h"
 
@@ -54,7 +54,7 @@ public:
         TEXTPATH_SPACINGTYPE_EXACT = SVGTextPathSpacingExact
     };
 
-    static PassRefPtr<SVGTextPathElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGTextPathElement);
 
     SVGAnimatedLength* startOffset() const { return m_startOffset.get(); }
     SVGAnimatedEnumeration<SVGTextPathMethodType>* method() { return m_method.get(); }

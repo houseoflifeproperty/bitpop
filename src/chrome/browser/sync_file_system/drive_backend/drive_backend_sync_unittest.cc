@@ -16,6 +16,8 @@
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_worker.h"
 #include "chrome/browser/sync_file_system/local/canned_syncable_file_system.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_context.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_service.h"
@@ -39,6 +41,28 @@ namespace drive_backend {
 
 typedef fileapi::FileSystemOperation::FileEntryList FileEntryList;
 
+namespace {
+
+template <typename T>
+void SetValueAndCallClosure(const base::Closure& closure,
+                            T* arg_out,
+                            T arg) {
+  *arg_out = base::internal::CallbackForward(arg);
+  closure.Run();
+}
+
+void SetSyncStatusAndUrl(const base::Closure& closure,
+                         SyncStatusCode* status_out,
+                         fileapi::FileSystemURL* url_out,
+                         SyncStatusCode status,
+                         const fileapi::FileSystemURL& url) {
+  *status_out = status;
+  *url_out = url;
+  closure.Run();
+}
+
+}  // namespace
+
 class DriveBackendSyncTest : public testing::Test,
                              public LocalFileSyncService::Observer,
                              public RemoteFileSyncService::Observer {
@@ -55,8 +79,18 @@ class DriveBackendSyncTest : public testing::Test,
 
     io_task_runner_ = content::BrowserThread::GetMessageLoopProxyForThread(
         content::BrowserThread::IO);
+    scoped_refptr<base::SequencedWorkerPool> worker_pool(
+        content::BrowserThread::GetBlockingPool());
+    worker_task_runner_ =
+        worker_pool->GetSequencedTaskRunnerWithShutdownBehavior(
+            worker_pool->GetSequenceToken(),
+            base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
     file_task_runner_ = content::BrowserThread::GetMessageLoopProxyForThread(
         content::BrowserThread::FILE);
+    scoped_refptr<base::SequencedTaskRunner> drive_task_runner =
+        worker_pool->GetSequencedTaskRunnerWithShutdownBehavior(
+            worker_pool->GetSequenceToken(),
+            base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
 
     RegisterSyncableFileSystem();
     local_sync_service_ = LocalFileSyncService::CreateForTesting(
@@ -77,14 +111,23 @@ class DriveBackendSyncTest : public testing::Test,
         kSyncRootFolderTitle));
 
     remote_sync_service_.reset(new SyncEngine(
+        base::MessageLoopProxy::current(),  // ui_task_runner
+        worker_task_runner_,
+        file_task_runner_,
+        drive_task_runner,
+        base_dir_.path(),
+        NULL,  // task_logger
+        NULL,  // notification_manager
+        NULL,  // extension_service
+        NULL,  // signin_manager
+        NULL,  // token_service
+        NULL,  // request_context
+        in_memory_env_.get()));
+    remote_sync_service_->AddServiceObserver(this);
+    remote_sync_service_->InitializeForTesting(
         drive_service.PassAs<drive::DriveServiceInterface>(),
         uploader.Pass(),
-        file_task_runner_.get(),
-        NULL, NULL, NULL));
-    remote_sync_service_->AddServiceObserver(this);
-    remote_sync_service_->Initialize(base_dir_.path(),
-                                     base::MessageLoopProxy::current(),
-                                     in_memory_env_.get());
+        scoped_ptr<SyncWorkerInterface>());
     remote_sync_service_->SetSyncEnabled(true);
 
     local_sync_service_->SetLocalChangeProcessor(remote_sync_service_.get());
@@ -100,9 +143,13 @@ class DriveBackendSyncTest : public testing::Test,
     }
     file_systems_.clear();
 
+    local_sync_service_->Shutdown();
+
     fake_drive_service_helper_.reset();
+    local_sync_service_.reset();
     remote_sync_service_.reset();
 
+    content::BrowserThread::GetBlockingPool()->FlushForTesting();
     base::RunLoop().RunUntilIdle();
     RevokeSyncableFileSystem();
   }
@@ -129,8 +176,21 @@ class DriveBackendSyncTest : public testing::Test,
 
   bool GetAppRootFolderID(const std::string& app_id,
                           std::string* folder_id) {
+    base::RunLoop run_loop;
+    bool success = false;
     FileTracker tracker;
-    if (!metadata_database()->FindAppRootTracker(app_id, &tracker))
+    PostTaskAndReplyWithResult(
+        worker_task_runner_,
+        FROM_HERE,
+        base::Bind(&MetadataDatabase::FindAppRootTracker,
+                   base::Unretained(metadata_database()),
+                   app_id,
+                   &tracker),
+        base::Bind(&SetValueAndCallClosure<bool>,
+                   run_loop.QuitClosure(),
+                   &success));
+    run_loop.Run();
+    if (!success)
       return false;
     *folder_id = tracker.file_id();
     return true;
@@ -143,11 +203,25 @@ class DriveBackendSyncTest : public testing::Test,
 
   std::string GetFileIDByPath(const std::string& app_id,
                               const base::FilePath& path) {
+    base::RunLoop run_loop;
+    bool success = false;
     FileTracker tracker;
     base::FilePath result_path;
     base::FilePath normalized_path = path.NormalizePathSeparators();
-    EXPECT_TRUE(metadata_database()->FindNearestActiveAncestor(
-        app_id, normalized_path, &tracker, &result_path));
+    PostTaskAndReplyWithResult(
+        worker_task_runner_,
+        FROM_HERE,
+        base::Bind(&MetadataDatabase::FindNearestActiveAncestor,
+                   base::Unretained(metadata_database()),
+                   app_id,
+                   normalized_path,
+                   &tracker,
+                   &result_path),
+        base::Bind(&SetValueAndCallClosure<bool>,
+                   run_loop.QuitClosure(),
+                   &success));
+    run_loop.Run();
+    EXPECT_TRUE(success);
     EXPECT_EQ(normalized_path, result_path);
     return tracker.file_id();
   }
@@ -161,10 +235,12 @@ class DriveBackendSyncTest : public testing::Test,
       file_system->SetUp(CannedSyncableFileSystem::QUOTA_DISABLED);
 
       SyncStatusCode status = SYNC_STATUS_UNKNOWN;
+      base::RunLoop run_loop;
       local_sync_service_->MaybeInitializeFileSystemContext(
           origin, file_system->file_system_context(),
-          CreateResultReceiver(&status));
-      base::RunLoop().RunUntilIdle();
+          base::Bind(&SetValueAndCallClosure<SyncStatusCode>,
+                     run_loop.QuitClosure(), &status));
+      run_loop.Run();
       EXPECT_EQ(SYNC_STATUS_OK, status);
 
       file_system->backend()->sync_context()->
@@ -175,8 +251,12 @@ class DriveBackendSyncTest : public testing::Test,
     }
 
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    remote_sync_service_->RegisterOrigin(origin, CreateResultReceiver(&status));
-    base::RunLoop().RunUntilIdle();
+    base::RunLoop run_loop;
+    remote_sync_service_->RegisterOrigin(
+        origin,
+        base::Bind(&SetValueAndCallClosure<SyncStatusCode>,
+                   run_loop.QuitClosure(), &status));
+    run_loop.Run();
     return status;
   }
 
@@ -222,18 +302,20 @@ class DriveBackendSyncTest : public testing::Test,
   SyncStatusCode ProcessLocalChange() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     fileapi::FileSystemURL url;
-    local_sync_service_->ProcessLocalChange(
-        CreateResultReceiver(&status, &url));
-    base::RunLoop().RunUntilIdle();
+    base::RunLoop run_loop;
+    local_sync_service_->ProcessLocalChange(base::Bind(
+        &SetSyncStatusAndUrl, run_loop.QuitClosure(), &status, &url));
+    run_loop.Run();
     return status;
   }
 
   SyncStatusCode ProcessRemoteChange() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     fileapi::FileSystemURL url;
-    remote_sync_service_->ProcessRemoteChange(
-        CreateResultReceiver(&status, &url));
-    base::RunLoop().RunUntilIdle();
+    base::RunLoop run_loop;
+    remote_sync_service_->ProcessRemoteChange(base::Bind(
+        &SetSyncStatusAndUrl, run_loop.QuitClosure(), &status, &url));
+    run_loop.Run();
     return status;
   }
 
@@ -275,8 +357,17 @@ class DriveBackendSyncTest : public testing::Test,
         if (pending_remote_changes_ || pending_local_changes_)
           continue;
 
-        int64 largest_fetched_change_id =
-            metadata_database()->GetLargestFetchedChangeID();
+        base::RunLoop run_loop;
+        int64 largest_fetched_change_id = -1;
+        PostTaskAndReplyWithResult(
+            worker_task_runner_,
+            FROM_HERE,
+            base::Bind(&MetadataDatabase::GetLargestFetchedChangeID,
+                       base::Unretained(metadata_database())),
+            base::Bind(&SetValueAndCallClosure<int64>,
+                       run_loop.QuitClosure(),
+                       &largest_fetched_change_id));
+        run_loop.Run();
         if (largest_fetched_change_id != GetLargestChangeID()) {
           FetchRemoteChanges();
           continue;
@@ -452,29 +543,53 @@ class DriveBackendSyncTest : public testing::Test,
   }
 
   size_t CountMetadata() {
-    return metadata_database()->CountFileMetadata();
+    size_t count = 0;
+    base::RunLoop run_loop;
+    PostTaskAndReplyWithResult(
+        worker_task_runner_,
+        FROM_HERE,
+        base::Bind(&MetadataDatabase::CountFileMetadata,
+                   base::Unretained(metadata_database())),
+        base::Bind(&SetValueAndCallClosure<size_t>,
+                   run_loop.QuitClosure(),
+                   &count));
+    run_loop.Run();
+    return count;
   }
 
   size_t CountTracker() {
-    return metadata_database()->CountFileTracker();
+    size_t count = 0;
+    base::RunLoop run_loop;
+    PostTaskAndReplyWithResult(
+        worker_task_runner_,
+        FROM_HERE,
+        base::Bind(&MetadataDatabase::CountFileTracker,
+                   base::Unretained(metadata_database())),
+        base::Bind(&SetValueAndCallClosure<size_t>,
+                   run_loop.QuitClosure(), &count));
+    run_loop.Run();
+    return count;
   }
 
   drive::FakeDriveService* fake_drive_service() {
     return static_cast<drive::FakeDriveService*>(
-        remote_sync_service_->GetDriveService());
+        remote_sync_service_->drive_service_.get());
   }
 
   FakeDriveServiceHelper* fake_drive_service_helper() {
     return fake_drive_service_helper_.get();
   }
 
+ private:
+  // MetadataDatabase is normally used on the worker thread.
+  // Use this only when there is no task running on the worker.
   MetadataDatabase* metadata_database() {
-    return remote_sync_service_->GetMetadataDatabase();
+    SyncWorker* worker = static_cast<SyncWorker*>(
+        remote_sync_service_->sync_worker_.get());
+    return worker->context_->metadata_database_.get();
   }
 
- private:
   content::TestBrowserThreadBundle thread_bundle_;
-  ScopedEnableSyncFSV2 enable_syncfs_v2_;
 
   base::ScopedTempDir base_dir_;
   scoped_ptr<leveldb::Env> in_memory_env_;
@@ -491,6 +606,7 @@ class DriveBackendSyncTest : public testing::Test,
 
 
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
+  scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> file_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(DriveBackendSyncTest);

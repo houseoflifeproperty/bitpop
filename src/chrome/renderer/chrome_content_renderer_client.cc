@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/debug/crash_logging.h"
 #include "base/logging.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/user_metrics_action.h"
 #include "base/path_service.h"
@@ -51,6 +52,7 @@
 #include "chrome/renderer/playback_extension.h"
 #include "chrome/renderer/plugins/chrome_plugin_placeholder.h"
 #include "chrome/renderer/plugins/plugin_uma.h"
+#include "chrome/renderer/prefetch_helper.h"
 #include "chrome/renderer/prerender/prerender_dispatcher.h"
 #include "chrome/renderer/prerender/prerender_helper.h"
 #include "chrome/renderer/prerender/prerender_media_load_deferrer.h"
@@ -110,8 +112,12 @@
 #include "ui/base/webui/jstemplate_builder.h"
 #include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
 
-#if defined(ENABLE_WEBRTC)
-#include "chrome/renderer/media/webrtc_logging_message_filter.h"
+#if !defined(DISABLE_NACL)
+#include "components/nacl/renderer/nacl_helper.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/renderer/extensions/chrome_extensions_render_frame_observer.h"
 #endif
 
 #if defined(ENABLE_SPELLCHECK)
@@ -119,9 +125,13 @@
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
 #endif
 
+#if defined(ENABLE_WEBRTC)
+#include "chrome/renderer/media/webrtc_logging_message_filter.h"
+#endif
+
 #if defined(OS_WIN)
 #include "chrome_elf/blacklist/blacklist.h"
-#endif  // OS_WIN
+#endif
 
 using autofill::AutofillAgent;
 using autofill::PasswordAutofillAgent;
@@ -149,9 +159,6 @@ using blink::WebURLResponse;
 using blink::WebVector;
 
 namespace {
-
-const char kWebViewTagName[] = "WEBVIEW";
-const char kAdViewTagName[] = "ADVIEW";
 
 ChromeContentRendererClient* g_current_client;
 
@@ -303,8 +310,7 @@ void ChromeContentRendererClient::RenderThreadStarted() {
     thread->RegisterExtension(extensions_v8::SearchBoxExtension::Get());
 
   if (command_line->HasSwitch(switches::kPlaybackMode) ||
-      command_line->HasSwitch(switches::kRecordMode) ||
-      command_line->HasSwitch(switches::kNoJsRandomness)) {
+      command_line->HasSwitch(switches::kRecordMode)) {
     thread->RegisterExtension(extensions_v8::PlaybackExtension::Get());
   }
 
@@ -391,11 +397,18 @@ void ChromeContentRendererClient::RenderFrameCreated(
         chrome_observer_->content_setting_rules());
   }
 
+#if defined(ENABLE_EXTENSIONS)
+  new extensions::ChromeExtensionsRenderFrameObserver(render_frame);
+#endif
   new extensions::ExtensionFrameHelper(render_frame,
                                        extension_dispatcher_.get());
 
 #if defined(ENABLE_PLUGINS)
   new PepperHelper(render_frame);
+#endif
+
+#if !defined(DISABLE_NACL)
+  new nacl::NaClHelper(render_frame);
 #endif
 
   // TODO(jam): when the frame tree moves into content and parent() works at
@@ -412,7 +425,9 @@ void ChromeContentRendererClient::RenderFrameCreated(
   if (render_frame->GetRenderView()->GetMainRenderFrame() == render_frame) {
     // Only attach NetErrorHelper to the main frame, since only the main frame
     // should get error pages.
+    // PrefetchHelper is also needed only for main frames.
     new NetErrorHelper(render_frame);
+    new prefetch::PrefetchHelper(render_frame);
   }
 }
 
@@ -488,10 +503,9 @@ bool ChromeContentRendererClient::OverrideCreatePlugin(
     if (extension) {
       const extensions::APIPermission::ID perms[] = {
         extensions::APIPermission::kWebView,
-        extensions::APIPermission::kAdView
       };
       for (size_t i = 0; i < arraysize(perms); ++i) {
-        if (extension->HasAPIPermission(perms[i]))
+        if (extension->permissions_data()->HasAPIPermission(perms[i]))
           return false;
       }
     }
@@ -797,10 +811,19 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
             IDR_BLOCKED_PLUGIN_HTML,
             l10n_util::GetStringFUTF16(IDS_PLUGIN_NOT_AUTHORIZED, group_name));
         placeholder->set_allow_loading(true);
-        render_frame->Send(new ChromeViewHostMsg_BlockedUnauthorizedPlugin(
-            render_frame->GetRoutingID(),
-            group_name,
-            identifier));
+        // Check to see if old infobar should be displayed.
+        std::string trial_group =
+            base::FieldTrialList::FindFullName("UnauthorizedPluginInfoBar");
+        if (plugin.type != content::WebPluginInfo::PLUGIN_TYPE_NPAPI ||
+            trial_group == "Enabled") {
+          render_frame->Send(new ChromeViewHostMsg_BlockedUnauthorizedPlugin(
+              render_frame->GetRoutingID(),
+              group_name,
+              identifier));
+        } else {
+          // Send IPC for showing blocked plugins page action.
+          observer->DidBlockContentType(content_type);
+        }
         break;
       }
       case ChromeViewHostMsg_GetPluginInfo_Status::kClickToPlay: {
@@ -1320,29 +1343,10 @@ void ChromeContentRendererClient::SetSpellcheck(SpellCheck* spellcheck) {
 }
 #endif
 
-bool ChromeContentRendererClient::IsAdblockInstalled() {
-  return g_current_client->extension_dispatcher_->extensions()->Contains(
-      "gighmmpiobklfepjocnamgkkbiglidom");
-}
-
-bool ChromeContentRendererClient::IsAdblockPlusInstalled() {
-  return g_current_client->extension_dispatcher_->extensions()->Contains(
-      "cfhdojbkjhnklbpkdaibdccddilifddb");
-}
-
-bool ChromeContentRendererClient::IsAdblockWithWebRequestInstalled() {
+// static
+bool ChromeContentRendererClient::WasWebRequestUsedBySomeExtensions() {
   return g_current_client->extension_dispatcher_delegate_
-      ->IsAdblockWithWebRequestInstalled();
-}
-
-bool ChromeContentRendererClient::IsAdblockPlusWithWebRequestInstalled() {
-  return g_current_client->extension_dispatcher_delegate_
-      ->IsAdblockPlusWithWebRequestInstalled();
-}
-
-bool ChromeContentRendererClient::IsOtherExtensionWithWebRequestInstalled() {
-  return g_current_client->extension_dispatcher_delegate_
-      ->IsOtherExtensionWithWebRequestInstalled();
+      ->WasWebRequestUsedBySomeExtensions();
 }
 
 const void* ChromeContentRendererClient::CreatePPAPIInterface(
@@ -1378,28 +1382,6 @@ blink::WebSpeechSynthesizer*
 ChromeContentRendererClient::OverrideSpeechSynthesizer(
     blink::WebSpeechSynthesizerClient* client) {
   return new TtsDispatcher(client);
-}
-
-bool ChromeContentRendererClient::AllowBrowserPlugin(
-    blink::WebPluginContainer* container) {
-  // If this |BrowserPlugin| <object> in the |container| is not inside a
-  // <webview>/<adview> shadowHost, we disable instantiating this plugin. This
-  // is to discourage and prevent developers from accidentally attaching
-  // <object> directly in apps.
-  //
-  // Note that this check below does *not* ensure any security, it is still
-  // possible to bypass this check.
-  // TODO(lazyboy): http://crbug.com/178663, Ensure we properly disallow
-  // instantiating BrowserPlugin outside of the <webview>/<adview> shim.
-  if (container->element().isNull())
-    return false;
-
-  if (container->element().shadowHost().isNull())
-    return false;
-
-  WebString tag_name = container->element().shadowHost().tagName();
-  return tag_name.equals(WebString::fromUTF8(kWebViewTagName)) ||
-    tag_name.equals(WebString::fromUTF8(kAdViewTagName));
 }
 
 bool ChromeContentRendererClient::AllowPepperMediaStreamAPI(

@@ -69,8 +69,8 @@ MockMotionEvent::MockMotionEvent(const MockMotionEvent& other)
       time(other.time),
       touch_major(other.touch_major),
       id(other.GetId()) {
-  points[0] = other.points[0];
-  points[1] = other.points[1];
+  for (size_t i = 0; i < pointer_count; ++i)
+    points[i] = other.points[i];
 }
 
 MockMotionEvent::~MockMotionEvent() {}
@@ -98,6 +98,14 @@ float MockMotionEvent::GetX(size_t pointer_index) const {
 
 float MockMotionEvent::GetY(size_t pointer_index) const {
   return points[pointer_index].y();
+}
+
+float MockMotionEvent::GetRawX(size_t pointer_index) const {
+  return GetX(pointer_index) + raw_offset.x();
+}
+
+float MockMotionEvent::GetRawY(size_t pointer_index) const {
+  return GetY(pointer_index) + raw_offset.y();
 }
 
 float MockMotionEvent::GetTouchMajor(size_t pointer_index) const {
@@ -186,6 +194,11 @@ void MockMotionEvent::CancelPoint() {
 
 void MockMotionEvent::SetTouchMajor(float new_touch_major) {
   touch_major = new_touch_major;
+}
+
+void MockMotionEvent::SetRawOffset(float raw_offset_x, float raw_offset_y) {
+  raw_offset.set_x(raw_offset_x);
+  raw_offset.set_y(raw_offset_y);
 }
 
 }  // namespace ui

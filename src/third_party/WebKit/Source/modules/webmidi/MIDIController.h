@@ -31,27 +31,27 @@
 #ifndef MIDIController_h
 #define MIDIController_h
 
-#include "core/page/Page.h"
+#include "core/frame/LocalFrame.h"
 #include "platform/heap/Handle.h"
 
 namespace WebCore {
 
-class MIDIAccess;
+class MIDIAccessInitializer;
 class MIDIClient;
 
-class MIDIController FINAL : public NoBaseWillBeGarbageCollectedFinalized<MIDIController>, public WillBeHeapSupplement<Page> {
+class MIDIController FINAL : public NoBaseWillBeGarbageCollectedFinalized<MIDIController>, public WillBeHeapSupplement<LocalFrame> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MIDIController);
 public:
     virtual ~MIDIController();
 
-    void requestSysexPermission(PassRefPtrWillBeRawPtr<MIDIAccess>);
-    void cancelSysexPermissionRequest(MIDIAccess*);
+    void requestSysexPermission(MIDIAccessInitializer*);
+    void cancelSysexPermissionRequest(MIDIAccessInitializer*);
 
     static PassOwnPtrWillBeRawPtr<MIDIController> create(PassOwnPtr<MIDIClient>);
     static const char* supplementName();
-    static MIDIController* from(Page* page) { return static_cast<MIDIController*>(WillBeHeapSupplement<Page>::from(page, supplementName())); }
+    static MIDIController* from(LocalFrame* frame) { return static_cast<MIDIController*>(WillBeHeapSupplement<LocalFrame>::from(frame, supplementName())); }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Page>::trace(visitor); }
+    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<LocalFrame>::trace(visitor); }
 
 protected:
     explicit MIDIController(PassOwnPtr<MIDIClient>);

@@ -67,6 +67,11 @@ class TestConnectDelegate : public WebSocketStream::ConnectDelegate {
       scoped_ptr<WebSocketHandshakeRequestInfo> request) OVERRIDE {}
   virtual void OnFinishOpeningHandshake(
       scoped_ptr<WebSocketHandshakeResponseInfo> response) OVERRIDE {}
+  virtual void OnSSLCertificateError(
+      scoped_ptr<WebSocketEventInterface::SSLErrorCallbacks>
+          ssl_error_callbacks,
+      const SSLInfo& ssl_info,
+      bool fatal) OVERRIDE {}
 };
 
 class WebSocketHandshakeStreamCreateHelperTest : public ::testing::Test {
@@ -80,6 +85,7 @@ class WebSocketHandshakeStreamCreateHelperTest : public ::testing::Test {
       const std::string& extra_response_headers) {
     WebSocketHandshakeStreamCreateHelper create_helper(&connect_delegate_,
                                                        sub_protocols);
+    create_helper.set_failure_message(&failure_message_);
 
     scoped_ptr<ClientSocketHandle> socket_handle =
         socket_handle_factory_.CreateClientSocketHandle(
@@ -133,6 +139,7 @@ class WebSocketHandshakeStreamCreateHelperTest : public ::testing::Test {
 
   MockClientSocketHandleFactory socket_handle_factory_;
   TestConnectDelegate connect_delegate_;
+  std::string failure_message_;
 };
 
 // Confirm that the basic case works as expected.

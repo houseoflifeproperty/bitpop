@@ -8,18 +8,21 @@
     "name": "taskkill"
   },
   {
+    "abort_on_failure": false,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
       "[DEPOT_TOOLS]\\gclient.py",
       "config",
       "--spec",
-      "cache_dir = None\nsolutions = [{'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+      "cache_dir = None\nsolutions = [{'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
     ],
     "name": "gclient setup"
   },
   {
-    "abort_on_failure": true,
+    "abort_on_failure": false,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -30,7 +33,8 @@
     "name": "gclient revert"
   },
   {
-    "abort_on_failure": true,
+    "abort_on_failure": false,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -59,6 +63,7 @@
     ]
   },
   {
+    "abort_on_failure": true,
     "cmd": [
       "svn.bat",
       "export",
@@ -68,24 +73,51 @@
     ],
     "name": "download patch",
     "~followup_annotations": [
-      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff contents@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 1)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 2)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@@@@",
       "@@@STEP_LOG_END@patch.diff@@@"
     ]
   },
   {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys\nout = open(sys.argv[1], \"w\")\nfor line in sys.stdin:\n  out.write(line)\n",
+      "/path/to/tmp/"
+    ],
+    "name": "convert line endings (win32)",
+    "stdin": "fake patch.diff content (line 1)\nfake patch.diff content (line 2)\n",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@out = open(sys.argv[1], \"w\")@@@",
+      "@@@STEP_LOG_LINE@python.inline@for line in sys.stdin:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  out.write(line)@@@",
+      "@@@STEP_LOG_END@python.inline@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content for Windows (line 1)",
+      "@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content for Windows (line 2)",
+      "@@@",
+      "@@@STEP_LOG_LINE@patch.diff@@@@",
+      "@@@STEP_LOG_END@patch.diff@@@"
+    ]
+  },
+  {
+    "abort_on_failure": true,
     "cmd": [
       "patch",
       "--dir",
       "[SLAVE_BUILD]\\v8",
       "--force",
       "--forward",
-      "--input",
-      "fake patch.diff contents",
       "--remove-empty-files",
       "--strip",
       "0"
     ],
-    "name": "apply patch"
+    "name": "apply patch",
+    "stdin": "fake patch.diff content for Windows (line 1)\r\nfake patch.diff content for Windows (line 2)\r\n"
   },
   {
     "cmd": [
@@ -125,6 +157,7 @@
     "name": "compile (with patch)"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -135,7 +168,9 @@
       "ia32",
       "--testname",
       "mjsunit fuzz-natives cctest message preparser",
-      "--quickcheck"
+      "--quickcheck",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]\\v8",
     "name": "Check"

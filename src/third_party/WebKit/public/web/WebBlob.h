@@ -42,6 +42,8 @@
 #endif
 
 namespace v8 {
+class Isolate;
+class Object;
 class Value;
 template <class T> class Handle;
 }
@@ -72,7 +74,7 @@ public:
 
     bool isNull() const { return m_private.isNull(); }
 
-    BLINK_EXPORT v8::Handle<v8::Value>  toV8Value();
+    BLINK_EXPORT v8::Handle<v8::Value>  toV8Value(v8::Handle<v8::Object> creationContext, v8::Isolate*);
 
 #if BLINK_IMPLEMENTATION
     explicit WebBlob(const PassRefPtrWillBeRawPtr<WebCore::Blob>&);

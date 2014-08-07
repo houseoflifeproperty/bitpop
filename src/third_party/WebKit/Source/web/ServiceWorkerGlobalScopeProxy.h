@@ -32,6 +32,7 @@
 #define ServiceWorkerGlobalScopeProxy_h
 
 #include "core/workers/WorkerReportingProxy.h"
+#include "public/platform/WebString.h"
 #include "public/web/WebServiceWorkerContextProxy.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
@@ -44,6 +45,7 @@ namespace blink {
 
 class WebEmbeddedWorkerImpl;
 class WebServiceWorkerContextClient;
+class WebServiceWorkerRequest;
 
 // This class is created and destructed on the main thread, but live most
 // of its time as a resident of the worker thread.
@@ -68,8 +70,9 @@ public:
     // WebServiceWorkerContextProxy overrides:
     virtual void dispatchActivateEvent(int) OVERRIDE;
     virtual void dispatchInstallEvent(int) OVERRIDE;
-    virtual void dispatchFetchEvent(int) OVERRIDE;
+    virtual void dispatchFetchEvent(int, const WebServiceWorkerRequest&) OVERRIDE;
     virtual void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray&) OVERRIDE;
+    virtual void dispatchPushEvent(int, const WebString& data) OVERRIDE;
     virtual void dispatchSyncEvent(int) OVERRIDE;
 
     // WorkerReportingProxy overrides:

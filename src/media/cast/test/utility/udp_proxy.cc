@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdlib.h>
+
 #include "media/cast/test/utility/udp_proxy.h"
 
 #include "base/logging.h"
@@ -9,6 +11,7 @@
 #include "base/rand_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
+#include "base/time/default_tick_clock.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/udp/udp_socket.h"
@@ -22,10 +25,12 @@ const size_t kMaxPacketSize = 65536;
 PacketPipe::PacketPipe() {}
 PacketPipe::~PacketPipe() {}
 void PacketPipe::InitOnIOThread(
-    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) {
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+    base::TickClock* clock) {
   task_runner_ = task_runner;
+  clock_ = clock;
   if (pipe_) {
-    pipe_->InitOnIOThread(task_runner);
+    pipe_->InitOnIOThread(task_runner, clock);
   }
 }
 void PacketPipe::AppendToPipe(scoped_ptr<PacketPipe> pipe) {
@@ -45,7 +50,10 @@ class Buffer : public PacketPipe {
       : buffer_size_(0),
         max_buffer_size_(buffer_size),
         max_megabits_per_second_(max_megabits_per_second),
-        weak_factory_(this) {}
+        weak_factory_(this) {
+    CHECK_GT(max_buffer_size_, 0UL);
+    CHECK_GT(max_megabits_per_second, 0);
+  }
 
   virtual void Send(scoped_ptr<transport::Packet> packet) OVERRIDE {
     if (packet->size() + buffer_size_ <= max_buffer_size_) {
@@ -92,17 +100,17 @@ scoped_ptr<PacketPipe> NewBuffer(size_t buffer_size, double bandwidth) {
 
 class RandomDrop : public PacketPipe {
  public:
-  RandomDrop(double drop_fraction) : drop_fraction_(drop_fraction) {
-  }
+  RandomDrop(double drop_fraction)
+      : drop_fraction_(static_cast<int>(drop_fraction * RAND_MAX)) {}
 
   virtual void Send(scoped_ptr<transport::Packet> packet) OVERRIDE {
-    if (base::RandDouble() >= drop_fraction_) {
+    if (rand() > drop_fraction_) {
       pipe_->Send(packet.Pass());
     }
   }
 
  private:
-  double drop_fraction_;
+  int drop_fraction_;
 };
 
 scoped_ptr<PacketPipe> NewRandomDrop(double drop_fraction) {
@@ -183,8 +191,9 @@ class RandomSortedDelay : public PacketPipe {
     }
   }
   virtual void InitOnIOThread(
-      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) OVERRIDE {
-    PacketPipe::InitOnIOThread(task_runner);
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      base::TickClock* clock) OVERRIDE {
+    PacketPipe::InitOnIOThread(task_runner, clock);
     // As we start the stream, assume that we are in a random
     // place between two extra delays, thus multiplier = 1.0;
     ScheduleExtraDelay(1.0);
@@ -202,7 +211,7 @@ class RandomSortedDelay : public PacketPipe {
   }
 
   void CauseExtraDelay() {
-    block_until_ = base::TimeTicks::Now() +
+    block_until_ = clock_->NowTicks() +
         base::TimeDelta::FromMicroseconds(
             static_cast<int64>(extra_delay_ * 1E6));
     // An extra delay just happened, wait up to seconds_between_extra_delay_*2
@@ -264,8 +273,9 @@ class NetworkGlitchPipe : public PacketPipe {
         weak_factory_(this) {}
 
   virtual void InitOnIOThread(
-      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) OVERRIDE {
-    PacketPipe::InitOnIOThread(task_runner);
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      base::TickClock* clock) OVERRIDE {
+    PacketPipe::InitOnIOThread(task_runner, clock);
     Flip();
   }
 
@@ -300,62 +310,20 @@ scoped_ptr<PacketPipe> NewNetworkGlitchPipe(double average_work_time,
       .Pass();
 }
 
+class UDPProxyImpl;
+
 class PacketSender : public PacketPipe {
  public:
-  PacketSender(net::UDPSocket* udp_socket,
-               const net::IPEndPoint* destination) :
-      blocked_(false),
-      udp_socket_(udp_socket),
-      destination_(destination),
-      weak_factory_(this) {
-  }
-  virtual void Send(scoped_ptr<transport::Packet> packet) OVERRIDE {
-    if (blocked_) {
-      LOG(ERROR) << "Cannot write packet right now: blocked";
-      return;
-    }
-
-    VLOG(1) << "Sending packet, len = " << packet->size();
-    // We ignore all problems, callbacks and errors.
-    // If it didn't work we just drop the packet at and call it a day.
-    scoped_refptr<net::IOBuffer> buf =
-        new net::WrappedIOBuffer(reinterpret_cast<char*>(&packet->front()));
-    size_t buf_size = packet->size();
-    int result;
-    if (destination_->address().empty()) {
-      VLOG(1) << "Destination has not been set yet.";
-      result = net::ERR_INVALID_ARGUMENT;
-    } else {
-      VLOG(1) << "Destination:" << destination_->ToString();
-      result = udp_socket_->SendTo(buf,
-                                   static_cast<int>(buf_size),
-                                   *destination_,
-                                   base::Bind(&PacketSender::AllowWrite,
-                                              weak_factory_.GetWeakPtr(),
-                                              buf,
-                                              base::Passed(&packet)));
-    }
-    if (result == net::ERR_IO_PENDING) {
-      blocked_ = true;
-    } else if (result < 0) {
-      LOG(ERROR) << "Failed to write packet.";
-    }
-  }
+  PacketSender(UDPProxyImpl* udp_proxy, const net::IPEndPoint* destination)
+      : udp_proxy_(udp_proxy), destination_(destination) {}
+  virtual void Send(scoped_ptr<transport::Packet> packet) OVERRIDE;
   virtual void AppendToPipe(scoped_ptr<PacketPipe> pipe) OVERRIDE {
     NOTREACHED();
   }
 
  private:
-  void AllowWrite(scoped_refptr<net::IOBuffer> buf,
-                  scoped_ptr<transport::Packet> packet,
-                  int unused_len) {
-    DCHECK(blocked_);
-    blocked_ = false;
-  }
-  bool blocked_;
-  net::UDPSocket* udp_socket_;
+  UDPProxyImpl* udp_proxy_;
   const net::IPEndPoint* destination_;  // not owned
-  base::WeakPtrFactory<PacketSender> weak_factory_;
 };
 
 namespace {
@@ -371,34 +339,34 @@ void BuildPipe(scoped_ptr<PacketPipe>* pipe, PacketPipe* next) {
 scoped_ptr<PacketPipe> WifiNetwork() {
   // This represents the buffer on the sender.
   scoped_ptr<PacketPipe> pipe;
-  BuildPipe(&pipe, new Buffer(256 << 10, 5000000));
+  BuildPipe(&pipe, new Buffer(256 << 10, 20));
   BuildPipe(&pipe, new RandomDrop(0.005));
   // This represents the buffer on the router.
   BuildPipe(&pipe, new ConstantDelay(1E-3));
   BuildPipe(&pipe, new RandomSortedDelay(1E-3, 20E-3, 3));
-  BuildPipe(&pipe, new Buffer(256 << 10, 5000000));
+  BuildPipe(&pipe, new Buffer(256 << 10, 20));
   BuildPipe(&pipe, new ConstantDelay(1E-3));
   BuildPipe(&pipe, new RandomSortedDelay(1E-3, 20E-3, 3));
   BuildPipe(&pipe, new RandomDrop(0.005));
   // This represents the buffer on the receiving device.
-  BuildPipe(&pipe, new Buffer(256 << 10, 5000000));
+  BuildPipe(&pipe, new Buffer(256 << 10, 20));
   return pipe.Pass();
 }
 
 scoped_ptr<PacketPipe> BadNetwork() {
   scoped_ptr<PacketPipe> pipe;
   // This represents the buffer on the sender.
-  BuildPipe(&pipe, new Buffer(64 << 10, 5000000)); // 64 kb buf, 5mbit/s
+  BuildPipe(&pipe, new Buffer(64 << 10, 5)); // 64 kb buf, 5mbit/s
   BuildPipe(&pipe, new RandomDrop(0.05));  // 5% packet drop
   BuildPipe(&pipe, new RandomSortedDelay(2E-3, 20E-3, 1));
   // This represents the buffer on the router.
-  BuildPipe(&pipe, new Buffer(64 << 10, 2000000));  // 64 kb buf, 2mbit/s
+  BuildPipe(&pipe, new Buffer(64 << 10, 5));  // 64 kb buf, 4mbit/s
   BuildPipe(&pipe, new ConstantDelay(1E-3));
   // Random 40ms every other second
   //  BuildPipe(&pipe, new NetworkGlitchPipe(2, 40E-1));
   BuildPipe(&pipe, new RandomUnsortedDelay(5E-3));
   // This represents the buffer on the receiving device.
-  BuildPipe(&pipe, new Buffer(64 << 10, 4000000));  // 64 kb buf, 4mbit/s
+  BuildPipe(&pipe, new Buffer(64 << 10, 5));  // 64 kb buf, 5mbit/s
   return pipe.Pass();
 }
 
@@ -406,17 +374,17 @@ scoped_ptr<PacketPipe> BadNetwork() {
 scoped_ptr<PacketPipe> EvilNetwork() {
   // This represents the buffer on the sender.
   scoped_ptr<PacketPipe> pipe;
-  BuildPipe(&pipe, new Buffer(4 << 10, 2000000));
+  BuildPipe(&pipe, new Buffer(4 << 10, 5));  // 4 kb buf, 2mbit/s
   // This represents the buffer on the router.
   BuildPipe(&pipe, new RandomDrop(0.1));  // 10% packet drop
   BuildPipe(&pipe, new RandomSortedDelay(20E-3, 60E-3, 1));
-  BuildPipe(&pipe, new Buffer(4 << 10, 1000000));  // 4 kb buf, 1mbit/s
+  BuildPipe(&pipe, new Buffer(4 << 10, 2));  // 4 kb buf, 2mbit/s
   BuildPipe(&pipe, new RandomDrop(0.1));  // 10% packet drop
   BuildPipe(&pipe, new ConstantDelay(1E-3));
   BuildPipe(&pipe, new NetworkGlitchPipe(2.0, 0.3));
   BuildPipe(&pipe, new RandomUnsortedDelay(20E-3));
   // This represents the buffer on the receiving device.
-  BuildPipe(&pipe, new Buffer(4 << 10, 2000000));  // 4 kb buf, 2mbit/s
+  BuildPipe(&pipe, new Buffer(4 << 10, 2));  // 4 kb buf, 2mbit/s
   return pipe.Pass();
 }
 
@@ -426,12 +394,15 @@ class UDPProxyImpl : public UDPProxy {
                const net::IPEndPoint& destination,
                scoped_ptr<PacketPipe> to_dest_pipe,
                scoped_ptr<PacketPipe> from_dest_pipe,
-               net::NetLog* net_log) :
-      local_port_(local_port),
-      destination_(destination),
-      proxy_thread_("media::cast::test::UdpProxy Thread"),
-      to_dest_pipe_(to_dest_pipe.Pass()),
-      from_dest_pipe_(from_dest_pipe.Pass()) {
+               net::NetLog* net_log)
+      : local_port_(local_port),
+        destination_(destination),
+        destination_is_mutable_(destination.address().empty()),
+        proxy_thread_("media::cast::test::UdpProxy Thread"),
+        to_dest_pipe_(to_dest_pipe.Pass()),
+        from_dest_pipe_(from_dest_pipe.Pass()),
+        blocked_(false),
+        weak_factory_(this) {
     proxy_thread_.StartWithOptions(
         base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
     base::WaitableEvent start_event(false, false);
@@ -455,6 +426,40 @@ class UDPProxyImpl : public UDPProxy {
     proxy_thread_.Stop();
   }
 
+  void Send(scoped_ptr<transport::Packet> packet,
+            const net::IPEndPoint& destination) {
+    if (blocked_) {
+      LOG(ERROR) << "Cannot write packet right now: blocked";
+      return;
+    }
+
+    VLOG(1) << "Sending packet, len = " << packet->size();
+    // We ignore all problems, callbacks and errors.
+    // If it didn't work we just drop the packet at and call it a day.
+    scoped_refptr<net::IOBuffer> buf =
+        new net::WrappedIOBuffer(reinterpret_cast<char*>(&packet->front()));
+    size_t buf_size = packet->size();
+    int result;
+    if (destination.address().empty()) {
+      VLOG(1) << "Destination has not been set yet.";
+      result = net::ERR_INVALID_ARGUMENT;
+    } else {
+      VLOG(1) << "Destination:" << destination.ToString();
+      result = socket_->SendTo(buf,
+                               static_cast<int>(buf_size),
+                               destination,
+                               base::Bind(&UDPProxyImpl::AllowWrite,
+                                          weak_factory_.GetWeakPtr(),
+                                          buf,
+                                          base::Passed(&packet)));
+    }
+    if (result == net::ERR_IO_PENDING) {
+      blocked_ = true;
+    } else if (result < 0) {
+      LOG(ERROR) << "Failed to write packet.";
+    }
+  }
+
  private:
   void Start(base::WaitableEvent* start_event,
              net::NetLog* net_log) {
@@ -462,14 +467,16 @@ class UDPProxyImpl : public UDPProxy {
                                      net::RandIntCallback(),
                                      net_log,
                                      net::NetLog::Source()));
-    BuildPipe(&to_dest_pipe_, new PacketSender(socket_.get(), &destination_));
-    BuildPipe(&from_dest_pipe_,
-              new PacketSender(socket_.get(), &return_address_));
-    to_dest_pipe_->InitOnIOThread(base::MessageLoopProxy::current());
-    from_dest_pipe_->InitOnIOThread(base::MessageLoopProxy::current());
+    BuildPipe(&to_dest_pipe_, new PacketSender(this, &destination_));
+    BuildPipe(&from_dest_pipe_, new PacketSender(this, &return_address_));
+    to_dest_pipe_->InitOnIOThread(base::MessageLoopProxy::current(),
+                                  &tick_clock_);
+    from_dest_pipe_->InitOnIOThread(base::MessageLoopProxy::current(),
+                                    &tick_clock_);
 
     VLOG(0) << "From:" << local_port_.ToString();
-    VLOG(0) << "To:" << destination_.ToString();
+    if (!destination_is_mutable_)
+      VLOG(0) << "To:" << destination_.ToString();
 
     CHECK_GE(socket_->Bind(local_port_), 0);
 
@@ -492,9 +499,16 @@ class UDPProxyImpl : public UDPProxy {
       return;
     }
     packet_->resize(len);
+    if (destination_is_mutable_ && set_destination_next_ &&
+        !(recv_address_ == return_address_) &&
+        !(recv_address_ == destination_)) {
+      destination_ = recv_address_;
+    }
     if (recv_address_ == destination_) {
+      set_destination_next_ = false;
       from_dest_pipe_->Send(packet_.Pass());
     } else {
+      set_destination_next_ = true;
       VLOG(1) << "Return address = " << recv_address_.ToString();
       return_address_ = recv_address_;
       to_dest_pipe_->Send(packet_.Pass());
@@ -524,17 +538,41 @@ class UDPProxyImpl : public UDPProxy {
     }
   }
 
+  void AllowWrite(scoped_refptr<net::IOBuffer> buf,
+                  scoped_ptr<transport::Packet> packet,
+                  int unused_len) {
+    DCHECK(blocked_);
+    blocked_ = false;
+  }
 
+  // Input
   net::IPEndPoint local_port_;
+
   net::IPEndPoint destination_;
-  net::IPEndPoint recv_address_;
+  bool destination_is_mutable_;
+
   net::IPEndPoint return_address_;
+  bool set_destination_next_;
+
+  base::DefaultTickClock tick_clock_;
   base::Thread proxy_thread_;
   scoped_ptr<net::UDPSocket> socket_;
   scoped_ptr<PacketPipe> to_dest_pipe_;
   scoped_ptr<PacketPipe> from_dest_pipe_;
+
+  // For receiving.
+  net::IPEndPoint recv_address_;
   scoped_ptr<transport::Packet> packet_;
+
+  // For sending.
+  bool blocked_;
+
+  base::WeakPtrFactory<UDPProxyImpl> weak_factory_;
 };
+
+void PacketSender::Send(scoped_ptr<transport::Packet> packet) {
+  udp_proxy_->Send(packet.Pass(), *destination_);
+}
 
 scoped_ptr<UDPProxy> UDPProxy::Create(
     const net::IPEndPoint& local_port,

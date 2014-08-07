@@ -40,14 +40,24 @@ class Label;
 class CreateApplicationShortcutView : public views::DialogDelegateView,
                                       public views::ButtonListener {
  public:
+  enum DialogLayout {
+    // URL shortcuts have an info frame at the top with a thumbnail, title and
+    // description.
+    DIALOG_LAYOUT_URL_SHORTCUT,
+
+    // App shortcuts don't have an info frame, since they are launched from
+    // places where it's clear what app they are from.
+    DIALOG_LAYOUT_APP_SHORTCUT
+  };
+
   explicit CreateApplicationShortcutView(Profile* profile);
   virtual ~CreateApplicationShortcutView();
 
   // Initialize the controls on the dialog.
-  void InitControls();
+  void InitControls(DialogLayout dialog_layout);
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   // Overridden from views::DialogDelegate:
   virtual base::string16 GetDialogButtonLabel(
@@ -69,6 +79,7 @@ class CreateApplicationShortcutView : public views::DialogDelegateView,
   Profile* profile_;
 
   // UI elements on the dialog.
+  // May be NULL if we are not displaying the app's info.
   views::View* app_info_;
   views::Label* create_shortcuts_label_;
   views::Checkbox* desktop_check_box_;
@@ -132,8 +143,7 @@ class CreateChromeApplicationShortcutView
   virtual bool Cancel() OVERRIDE;
 
  private:
-  void OnShortcutInfoLoaded(
-      const web_app::ShortcutInfo& shortcut_info);
+  void OnShortcutInfoLoaded(const web_app::ShortcutInfo& shortcut_info);
 
   base::Callback<void(bool)> close_callback_;
 

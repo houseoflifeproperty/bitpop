@@ -17,6 +17,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "cc/layers/content_layer_client.h"
+#include "cc/layers/layer.h"
 #include "cc/layers/texture_layer_client.h"
 #include "content/common/content_export.h"
 #include "content/public/renderer/pepper_plugin_instance.h"
@@ -55,6 +56,7 @@
 #include "third_party/WebKit/public/web/WebPlugin.h"
 #include "third_party/WebKit/public/web/WebUserGestureToken.h"
 #include "ui/base/ime/text_input_type.h"
+#include "ui/events/latency_info.h"
 #include "ui/gfx/rect.h"
 #include "url/gurl.h"
 
@@ -89,6 +91,7 @@ namespace ppapi {
 class Resource;
 struct InputEventData;
 struct PPP_Instance_Combined;
+class ScopedPPVar;
 }
 
 namespace v8 {
@@ -100,6 +103,7 @@ namespace content {
 class ContentDecryptorDelegate;
 class FullscreenContainer;
 class MessageChannel;
+class PepperCompositorHost;
 class PepperGraphics2DHost;
 class PluginModule;
 class PluginObject;
@@ -296,8 +300,14 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // already in fullscreen mode).
   bool SetFullscreen(bool fullscreen);
 
-  // Implementation of PPP_Messaging.
-  void HandleMessage(PP_Var message);
+  // Send the message on to the plugin.
+  void HandleMessage(ppapi::ScopedPPVar message);
+
+  // Send the message synchronously to the plugin, and get a result. Returns
+  // true if the plugin handled the message, false if it didn't. The plugin
+  // won't handle the message if it has not registered a PPP_MessageHandler.
+  bool HandleBlockingMessage(ppapi::ScopedPPVar message,
+                             ppapi::ScopedPPVar* result);
 
   // Returns true if the plugin is processing a user gesture.
   bool IsProcessingUserGesture();
@@ -363,6 +373,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   virtual void SetSelectedText(const base::string16& selected_text) OVERRIDE;
   virtual void SetLinkUnderCursor(const std::string& url) OVERRIDE;
   virtual void SetTextInputType(ui::TextInputType type) OVERRIDE;
+  virtual void PostMessageToJavaScript(PP_Var message) OVERRIDE;
 
   // PPB_Instance_API implementation.
   virtual PP_Bool BindGraphics(PP_Instance instance,
@@ -402,11 +413,17 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
                                               uint32_t event_classes) OVERRIDE;
   virtual void ClearInputEventRequest(PP_Instance instance,
                                       uint32_t event_classes) OVERRIDE;
+  virtual void StartTrackingLatency(PP_Instance instance) OVERRIDE;
   virtual void ZoomChanged(PP_Instance instance, double factor) OVERRIDE;
   virtual void ZoomLimitsChanged(PP_Instance instance,
                                  double minimum_factor,
                                  double maximum_factor) OVERRIDE;
   virtual void PostMessage(PP_Instance instance, PP_Var message) OVERRIDE;
+  virtual int32_t RegisterMessageHandler(PP_Instance instance,
+                                         void* user_data,
+                                         const PPP_MessageHandler_0_1* handler,
+                                         PP_Resource message_loop) OVERRIDE;
+  virtual void UnregisterMessageHandler(PP_Instance instance) OVERRIDE;
   virtual PP_Bool SetCursor(PP_Instance instance,
                             PP_MouseCursor_Type type,
                             PP_Resource image,
@@ -443,20 +460,29 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
       OVERRIDE;
 
   // PPB_ContentDecryptor_Private implementation.
-  virtual void SessionCreated(PP_Instance instance,
-                              uint32_t session_id,
-                              PP_Var web_session_id_var) OVERRIDE;
+  virtual void PromiseResolved(PP_Instance instance,
+                               uint32 promise_id) OVERRIDE;
+  virtual void PromiseResolvedWithSession(PP_Instance instance,
+                                          uint32 promise_id,
+                                          PP_Var web_session_id_var) OVERRIDE;
+  virtual void PromiseRejected(PP_Instance instance,
+                               uint32 promise_id,
+                               PP_CdmExceptionCode exception_code,
+                               uint32 system_code,
+                               PP_Var error_description_var) OVERRIDE;
   virtual void SessionMessage(PP_Instance instance,
-                              uint32_t session_id,
-                              PP_Var message,
-                              PP_Var destination_url) OVERRIDE;
-  virtual void SessionReady(PP_Instance instance, uint32_t session_id) OVERRIDE;
+                              PP_Var web_session_id_var,
+                              PP_Var message_var,
+                              PP_Var destination_url_var) OVERRIDE;
+  virtual void SessionReady(PP_Instance instance,
+                            PP_Var web_session_id_var) OVERRIDE;
   virtual void SessionClosed(PP_Instance instance,
-                             uint32_t session_id) OVERRIDE;
+                             PP_Var web_session_id_var) OVERRIDE;
   virtual void SessionError(PP_Instance instance,
-                            uint32_t session_id,
-                            int32_t media_error,
-                            uint32_t system_code) OVERRIDE;
+                            PP_Var web_session_id_var,
+                            PP_CdmExceptionCode exception_code,
+                            uint32 system_code,
+                            PP_Var error_description_var) OVERRIDE;
   virtual void DeliverBlock(PP_Instance instance,
                             PP_Resource decrypted_block,
                             const PP_DecryptedBlockInfo* block_info) OVERRIDE;
@@ -504,6 +530,8 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // RenderFrameObserver
   virtual void OnDestruct() OVERRIDE;
+
+  void AddLatencyInfo(const std::vector<ui::LatencyInfo>& latency_info);
 
  private:
   friend class base::RefCounted<PepperPluginInstanceImpl>;
@@ -607,7 +635,10 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // - we are not in Flash full-screen mode (or transitioning to it)
   // Otherwise it destroys the layer.
   // It does either operation lazily.
-  void UpdateLayer();
+  // device_changed: true if the bound device has been changed, and
+  // UpdateLayer() will be forced to recreate the layer and attaches to the
+  // container.
+  void UpdateLayer(bool device_changed);
 
   // Internal helper function for PrintPage().
   bool PrintPageHelper(PP_PrintPageNumberRange_Dev* page_ranges,
@@ -667,6 +698,7 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // NULL until we have been initialized.
   blink::WebPluginContainer* container_;
+  scoped_refptr<cc::Layer> compositor_layer_;
   scoped_refptr<cc::TextureLayer> texture_layer_;
   scoped_ptr<blink::WebLayer> web_layer_;
   bool layer_bound_to_fullscreen_;
@@ -690,9 +722,10 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
   // same as the default values.
   bool sent_initial_did_change_view_;
 
-  // The current device context for painting in 2D and 3D.
+  // The current device context for painting in 2D, 3D or compositor.
   scoped_refptr<PPB_Graphics3D_Impl> bound_graphics_3d_;
   PepperGraphics2DHost* bound_graphics_2d_platform_;
+  PepperCompositorHost* bound_compositor_;
 
   // We track two types of focus, one from WebKit, which is the focus among
   // all elements of the page, one one from the browser, which is whether the
@@ -861,6 +894,10 @@ class CONTENT_EXPORT PepperPluginInstanceImpl
 
   // The text that is currently selected in the plugin.
   base::string16 selected_text_;
+
+  int64 last_input_number_;
+
+  bool is_tracking_latency_;
 
   // We use a weak ptr factory for scheduling DidChangeView events so that we
   // can tell whether updates are pending and consolidate them. When there's

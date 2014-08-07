@@ -7,6 +7,7 @@
 #include "base/location.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "components/sync_driver/sync_api_component_factory.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_error.h"
 #include "sync/api/syncable_service.h"
@@ -91,12 +92,12 @@ GenericChangeProcessor::GenericChangeProcessor(
     const base::WeakPtr<syncer::SyncableService>& local_service,
     const base::WeakPtr<syncer::SyncMergeResult>& merge_result,
     syncer::UserShare* user_share,
-    scoped_ptr<syncer::AttachmentService> attachment_service)
+    SyncApiComponentFactory* sync_factory)
     : ChangeProcessor(error_handler),
       local_service_(local_service),
       merge_result_(merge_result),
       share_handle_(user_share),
-      attachment_service_(attachment_service.Pass()),
+      attachment_service_(sync_factory->CreateAttachmentService(this)),
       attachment_service_weak_ptr_factory_(attachment_service_.get()),
       attachment_service_proxy_(
           base::MessageLoopProxy::current(),
@@ -209,6 +210,12 @@ syncer::SyncError GenericChangeProcessor::UpdateDataTypeContext(
   return syncer::SyncError();
 }
 
+void GenericChangeProcessor::OnAttachmentUploaded(
+    const syncer::AttachmentId& attachment_id) {
+  syncer::WriteTransaction trans(FROM_HERE, share_handle());
+  trans.UpdateEntriesWithAttachmentId(attachment_id);
+}
+
 syncer::SyncError GenericChangeProcessor::GetAllSyncDataReturnError(
     syncer::ModelType type,
     syncer::SyncDataList* current_sync_data) const {
@@ -216,8 +223,7 @@ syncer::SyncError GenericChangeProcessor::GetAllSyncDataReturnError(
   std::string type_name = syncer::ModelTypeToString(type);
   syncer::ReadTransaction trans(FROM_HERE, share_handle());
   syncer::ReadNode root(&trans);
-  if (root.InitByTagLookup(syncer::ModelTypeToRootTag(type)) !=
-          syncer::BaseNode::INIT_OK) {
+  if (root.InitTypeRoot(type) != syncer::BaseNode::INIT_OK) {
     syncer::SyncError error(FROM_HERE,
                             syncer::SyncError::DATATYPE_ERROR,
                             "Server did not create the top-level " + type_name +
@@ -269,8 +275,7 @@ bool GenericChangeProcessor::GetDataTypeContext(syncer::ModelType type,
 int GenericChangeProcessor::GetSyncCountForType(syncer::ModelType type) {
   syncer::ReadTransaction trans(FROM_HERE, share_handle());
   syncer::ReadNode root(&trans);
-  if (root.InitByTagLookup(syncer::ModelTypeToRootTag(type)) !=
-      syncer::BaseNode::INIT_OK)
+  if (root.InitTypeRoot(type) != syncer::BaseNode::INIT_OK)
     return 0;
 
   // Subtract one to account for type's root node.
@@ -488,8 +493,8 @@ syncer::SyncError GenericChangeProcessor::HandleActionAdd(
   // etc.).
   syncer::ReadNode root_node(&trans);
   const syncer::SyncDataLocal sync_data_local(change.sync_data());
-  if (root_node.InitByTagLookup(syncer::ModelTypeToRootTag(
-          sync_data_local.GetDataType())) != syncer::BaseNode::INIT_OK) {
+  if (root_node.InitTypeRoot(sync_data_local.GetDataType()) !=
+      syncer::BaseNode::INIT_OK) {
     syncer::SyncError error(FROM_HERE,
                             syncer::SyncError::DATATYPE_ERROR,
                             "Failed to look up root node for type " + type_str,
@@ -697,8 +702,7 @@ bool GenericChangeProcessor::SyncModelHasUserCreatedNodes(
   *has_nodes = false;
   syncer::ReadTransaction trans(FROM_HERE, share_handle());
   syncer::ReadNode type_root_node(&trans);
-  if (type_root_node.InitByTagLookup(syncer::ModelTypeToRootTag(type)) !=
-          syncer::BaseNode::INIT_OK) {
+  if (type_root_node.InitTypeRoot(type) != syncer::BaseNode::INIT_OK) {
     LOG(ERROR) << err_str;
     return false;
   }

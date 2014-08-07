@@ -42,6 +42,8 @@ class TestListener : public internal::ShillPropertyHandler::Listener {
 
   virtual void UpdateManagedList(ManagedState::ManagedType type,
                                  const base::ListValue& entries) OVERRIDE {
+    VLOG(1) << "UpdateManagedList[" << ManagedState::TypeToString(type) << "]: "
+            << entries.GetSize();
     UpdateEntries(GetTypeString(type), entries);
   }
 
@@ -49,7 +51,8 @@ class TestListener : public internal::ShillPropertyHandler::Listener {
       ManagedState::ManagedType type,
       const std::string& path,
       const base::DictionaryValue& properties) OVERRIDE {
-    AddInitialPropertyUpdate(GetTypeString(type), path);
+    VLOG(2) << "UpdateManagedStateProperties: " << GetTypeString(type);
+    initial_property_updates(GetTypeString(type))[path] += 1;
   }
 
   virtual void ProfileListChanged() OVERRIDE {
@@ -59,7 +62,7 @@ class TestListener : public internal::ShillPropertyHandler::Listener {
       const std::string& service_path,
       const std::string& key,
       const base::Value& value) OVERRIDE {
-    AddPropertyUpdate(shill::kServicesProperty, service_path);
+    AddPropertyUpdate(shill::kServiceCompleteListProperty, service_path);
   }
 
   virtual void UpdateDeviceProperty(
@@ -78,6 +81,7 @@ class TestListener : public internal::ShillPropertyHandler::Listener {
   }
 
   virtual void TechnologyListChanged() OVERRIDE {
+    VLOG(1) << "TechnologyListChanged.";
     ++technology_list_updates_;
   }
 
@@ -87,6 +91,7 @@ class TestListener : public internal::ShillPropertyHandler::Listener {
 
   virtual void ManagedStateListChanged(
       ManagedState::ManagedType type) OVERRIDE {
+    VLOG(1) << "ManagedStateListChanged: " << GetTypeString(type);
     AddStateListUpdate(GetTypeString(type));
   }
 
@@ -105,21 +110,21 @@ class TestListener : public internal::ShillPropertyHandler::Listener {
     return initial_property_updates_[type];
   }
   int list_updates(const std::string& type) { return list_updates_[type]; }
-  void reset_list_updates() { list_updates_.clear(); }
   int technology_list_updates() { return technology_list_updates_; }
+  void reset_list_updates() {
+    VLOG(1) << "=== RESET LIST UPDATES ===";
+    list_updates_.clear();
+    technology_list_updates_ = 0;
+  }
   int errors() { return errors_; }
 
  private:
   std::string GetTypeString(ManagedState::ManagedType type) {
-    if (type == ManagedState::MANAGED_TYPE_NETWORK) {
-      return shill::kServicesProperty;
-    } else if (type == ManagedState::MANAGED_TYPE_FAVORITE) {
+    if (type == ManagedState::MANAGED_TYPE_NETWORK)
       return shill::kServiceCompleteListProperty;
-    } else if (type == ManagedState::MANAGED_TYPE_DEVICE) {
+    if (type == ManagedState::MANAGED_TYPE_DEVICE)
       return shill::kDevicesProperty;
-    }
-    LOG(ERROR) << "UpdateManagedList called with unrecognized type: " << type;
-    ++errors_;
+    NOTREACHED();
     return std::string();
   }
 
@@ -136,21 +141,13 @@ class TestListener : public internal::ShillPropertyHandler::Listener {
   }
 
   void AddPropertyUpdate(const std::string& type, const std::string& path) {
-    if (type.empty())
-      return;
+    DCHECK(!type.empty());
+    VLOG(2) << "AddPropertyUpdate: " << type;
     property_updates(type)[path] += 1;
   }
 
-  void AddInitialPropertyUpdate(const std::string& type,
-                                const std::string& path) {
-    if (type.empty())
-      return;
-    initial_property_updates(type)[path] += 1;
-  }
-
   void AddStateListUpdate(const std::string& type) {
-    if (type.empty())
-      return;
+    DCHECK(!type.empty());
     list_updates_[type] += 1;
   }
 
@@ -207,7 +204,7 @@ class ShillPropertyHandlerTest : public testing::Test {
 
   void AddDevice(const std::string& type, const std::string& id) {
     ASSERT_TRUE(IsValidType(type));
-    device_test_->AddDevice(id, type, std::string("/device/" + id));
+    device_test_->AddDevice(id, type, id);
   }
 
   void RemoveDevice(const std::string& id) {
@@ -216,30 +213,30 @@ class ShillPropertyHandlerTest : public testing::Test {
 
   void AddService(const std::string& type,
                   const std::string& id,
-                  const std::string& state,
-                  bool add_to_watch_list) {
+                  const std::string& state) {
+    VLOG(2) << "AddService: " << type << ": " << id << ": " << state;
     ASSERT_TRUE(IsValidType(type));
-    service_test_->AddService(id, id, type, state,
-                              true /* visible */, add_to_watch_list);
+    service_test_->AddService(id, id, type, state, true /* visible */);
   }
 
   void AddServiceWithIPConfig(const std::string& type,
                               const std::string& id,
                               const std::string& state,
-                              const std::string& ipconfig_path,
-                              bool add_to_watch_list) {
+                              const std::string& ipconfig_path) {
     ASSERT_TRUE(IsValidType(type));
-    service_test_->AddServiceWithIPConfig(id, id, type, state,
+    service_test_->AddServiceWithIPConfig(id, /* service_path */
+                                          "" /* guid */,
+                                          id /* name */,
+                                          type,
+                                          state,
                                           ipconfig_path,
-                                          true /* visible */,
-                                          add_to_watch_list);
+                                          true /* visible */);
   }
 
   void AddServiceToProfile(const std::string& type,
                            const std::string& id,
                            bool visible) {
-    service_test_->AddService(id, id, type, shill::kStateIdle,
-                              visible, false /* watch */);
+    service_test_->AddService(id, id, type, shill::kStateIdle, visible);
     std::vector<std::string> profiles;
     profile_test_->GetProfilePaths(&profiles);
     ASSERT_TRUE(profiles.size() > 0);
@@ -277,15 +274,10 @@ class ShillPropertyHandlerTest : public testing::Test {
     AddDevice(shill::kTypeWifi, "stub_wifi_device1");
     AddDevice(shill::kTypeCellular, "stub_cellular_device1");
     service_test_->ClearServices();
-    const bool add_to_watchlist = true;
-    AddService(shill::kTypeEthernet, "stub_ethernet",
-               shill::kStateOnline, add_to_watchlist);
-    AddService(shill::kTypeWifi, "stub_wifi1",
-               shill::kStateOnline, add_to_watchlist);
-    AddService(shill::kTypeWifi, "stub_wifi2",
-               shill::kStateIdle, add_to_watchlist);
-    AddService(shill::kTypeCellular, "stub_cellular1",
-               shill::kStateIdle, add_to_watchlist);
+    AddService(shill::kTypeEthernet, "stub_ethernet", shill::kStateOnline);
+    AddService(shill::kTypeWifi, "stub_wifi1", shill::kStateOnline);
+    AddService(shill::kTypeWifi, "stub_wifi2", shill::kStateIdle);
+    AddService(shill::kTypeCellular, "stub_cellular1", shill::kStateIdle);
   }
 
   base::MessageLoopForUI message_loop_;
@@ -308,7 +300,7 @@ TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerStub) {
             listener_->entries(shill::kDevicesProperty).size());
   const size_t kNumShillManagerClientStubImplServices = 4;
   EXPECT_EQ(kNumShillManagerClientStubImplServices,
-            listener_->entries(shill::kServicesProperty).size());
+            listener_->entries(shill::kServiceCompleteListProperty).size());
 
   EXPECT_EQ(0, listener_->errors());
 }
@@ -318,27 +310,27 @@ TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerTechnologyChanged) {
   EXPECT_EQ(initial_technology_updates, listener_->technology_list_updates());
 
   // Remove an enabled technology. Updates both the Available and Enabled lists.
+  listener_->reset_list_updates();
   manager_test_->RemoveTechnology(shill::kTypeWifi);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(initial_technology_updates + 2,
-            listener_->technology_list_updates());
+  EXPECT_EQ(2, listener_->technology_list_updates());
 
   // Add a disabled technology.
+  listener_->reset_list_updates();
   manager_test_->AddTechnology(shill::kTypeWifi, false);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(initial_technology_updates + 3,
-            listener_->technology_list_updates());
+  EXPECT_EQ(1, listener_->technology_list_updates());
   EXPECT_TRUE(shill_property_handler_->IsTechnologyAvailable(
       shill::kTypeWifi));
   EXPECT_FALSE(shill_property_handler_->IsTechnologyEnabled(shill::kTypeWifi));
 
   // Enable the technology.
+  listener_->reset_list_updates();
   DBusThreadManager::Get()->GetShillManagerClient()->EnableTechnology(
       shill::kTypeWifi,
       base::Bind(&base::DoNothing), base::Bind(&ErrorCallbackFunction));
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(initial_technology_updates + 4,
-            listener_->technology_list_updates());
+  EXPECT_EQ(1, listener_->technology_list_updates());
   EXPECT_TRUE(shill_property_handler_->IsTechnologyEnabled(shill::kTypeWifi));
 
   EXPECT_EQ(0, listener_->errors());
@@ -356,7 +348,7 @@ TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerDevicePropertyChanged) {
   EXPECT_EQ(1, listener_->list_updates(shill::kDevicesProperty));
   EXPECT_EQ(kNumShillManagerClientStubImplDevices + 1,
             listener_->entries(shill::kDevicesProperty).size());
-  // Device changes are not observed.
+
   // Remove a device
   listener_->reset_list_updates();
   RemoveDevice(kTestDevicePath);
@@ -371,20 +363,20 @@ TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerDevicePropertyChanged) {
 TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerServicePropertyChanged) {
   const size_t kNumShillManagerClientStubImplServices = 4;
   EXPECT_EQ(kNumShillManagerClientStubImplServices,
-            listener_->entries(shill::kServicesProperty).size());
+            listener_->entries(shill::kServiceCompleteListProperty).size());
 
-  // Add an unwatched service.
+  // Add a service.
   listener_->reset_list_updates();
   const std::string kTestServicePath("test_wifi_service1");
-  AddService(shill::kTypeWifi, kTestServicePath, shill::kStateIdle, false);
+  AddService(shill::kTypeWifi, kTestServicePath, shill::kStateIdle);
   message_loop_.RunUntilIdle();
-  // Watched and unwatched services trigger a service list update.
-  EXPECT_EQ(1, listener_->list_updates(shill::kServicesProperty));
+  // Add should trigger a service list update and update entries.
+  EXPECT_EQ(1, listener_->list_updates(shill::kServiceCompleteListProperty));
   EXPECT_EQ(kNumShillManagerClientStubImplServices + 1,
-            listener_->entries(shill::kServicesProperty).size());
+            listener_->entries(shill::kServiceCompleteListProperty).size());
   // Service receives an initial property update.
   EXPECT_EQ(1, listener_->initial_property_updates(
-      shill::kServicesProperty)[kTestServicePath]);
+      shill::kServiceCompleteListProperty)[kTestServicePath]);
   // Change a property.
   base::FundamentalValue scan_interval(3);
   DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
@@ -393,38 +385,29 @@ TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerServicePropertyChanged) {
       scan_interval,
       base::Bind(&base::DoNothing), base::Bind(&ErrorCallbackFunction));
   message_loop_.RunUntilIdle();
-  // Property change triggers an update.
+  // Property change triggers an update (but not a service list update).
   EXPECT_EQ(1, listener_->property_updates(
-      shill::kServicesProperty)[kTestServicePath]);
+      shill::kServiceCompleteListProperty)[kTestServicePath]);
 
-  // Add the existing service to the watch list.
+  // Change the visibility of a service. This will trigger a service list
+  // updates.
   listener_->reset_list_updates();
-  AddService(shill::kTypeWifi, kTestServicePath, shill::kStateIdle, true);
-  message_loop_.RunUntilIdle();
-  // Service list update should be received when watch list changes.
-  EXPECT_EQ(1, listener_->list_updates(shill::kServicesProperty));
-  // Number of services shouldn't change.
-  EXPECT_EQ(kNumShillManagerClientStubImplServices + 1,
-            listener_->entries(shill::kServicesProperty).size());
-
-  // Change a property.
   DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
       dbus::ObjectPath(kTestServicePath),
-      shill::kScanIntervalProperty,
-      scan_interval,
+      shill::kVisibleProperty,
+      base::FundamentalValue(false),
       base::Bind(&base::DoNothing), base::Bind(&ErrorCallbackFunction));
   message_loop_.RunUntilIdle();
-  // Property change should trigger another update.
-  EXPECT_EQ(2, listener_->property_updates(
-      shill::kServicesProperty)[kTestServicePath]);
+  EXPECT_EQ(1, listener_->list_updates(shill::kServiceCompleteListProperty));
 
-  // Remove a service
+  // Remove a service. This will update the entries and signal a service list
+  // update.
   listener_->reset_list_updates();
   RemoveService(kTestServicePath);
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(1, listener_->list_updates(shill::kServicesProperty));
+  EXPECT_EQ(1, listener_->list_updates(shill::kServiceCompleteListProperty));
   EXPECT_EQ(kNumShillManagerClientStubImplServices,
-            listener_->entries(shill::kServicesProperty).size());
+            listener_->entries(shill::kServiceCompleteListProperty).size());
 
   EXPECT_EQ(0, listener_->errors());
 }
@@ -460,11 +443,11 @@ TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerIPConfigPropertyChanged) {
   // Add a service with an empty ipconfig and then update
   // its ipconfig property.
   const std::string kTestServicePath1("test_wifi_service1");
-  AddService(shill::kTypeWifi, kTestServicePath1, shill::kStateIdle, true);
+  AddService(shill::kTypeWifi, kTestServicePath1, shill::kStateIdle);
   message_loop_.RunUntilIdle();
   // This is the initial property update.
   EXPECT_EQ(1, listener_->initial_property_updates(
-      shill::kServicesProperty)[kTestServicePath1]);
+      shill::kServiceCompleteListProperty)[kTestServicePath1]);
   DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
       dbus::ObjectPath(kTestServicePath1),
       shill::kIPConfigProperty,
@@ -475,75 +458,45 @@ TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerIPConfigPropertyChanged) {
   EXPECT_EQ(1, listener_->property_updates(
       shill::kIPConfigsProperty)[kTestIPConfigPath]);
 
-  // Now, Add a new watched service with the IPConfig already set.
+  // Now, Add a new service with the IPConfig already set.
   const std::string kTestServicePath2("test_wifi_service2");
   AddServiceWithIPConfig(shill::kTypeWifi, kTestServicePath2,
-                         shill::kStateIdle, kTestIPConfigPath, true);
+                         shill::kStateIdle, kTestIPConfigPath);
   message_loop_.RunUntilIdle();
-  // A watched service with the IPConfig property already set should trigger an
+  // A service with the IPConfig property already set should trigger an
   // additional IPConfigs update.
   EXPECT_EQ(2, listener_->property_updates(
       shill::kIPConfigsProperty)[kTestIPConfigPath]);
 }
 
-TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerServiceCompleteList) {
-  // Add a new entry to the profile only (triggers a Services update).
+TEST_F(ShillPropertyHandlerTest, ShillPropertyHandlerServiceList) {
+  // Add an entry to the profile only.
   const std::string kTestServicePath1("stub_wifi_profile_only1");
-  AddServiceToProfile(shill::kTypeWifi, kTestServicePath1, false);
+  AddServiceToProfile(shill::kTypeWifi, kTestServicePath1, false /* visible */);
   message_loop_.RunUntilIdle();
 
-  // Update the Manager properties. This should trigger a single list update
-  // for both Services and ServiceCompleteList, and a single property update
-  // for ServiceCompleteList.
+  // Update the Manager properties. This should trigger a single list update,
+  // an initial property update, and a regular property update.
   listener_->reset_list_updates();
   shill_property_handler_->UpdateManagerProperties();
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(1, listener_->list_updates(shill::kServicesProperty));
   EXPECT_EQ(1, listener_->list_updates(shill::kServiceCompleteListProperty));
-  EXPECT_EQ(0, listener_->initial_property_updates(
-      shill::kServicesProperty)[kTestServicePath1]);
   EXPECT_EQ(1, listener_->initial_property_updates(
       shill::kServiceCompleteListProperty)[kTestServicePath1]);
-  EXPECT_EQ(0, listener_->property_updates(
-      shill::kServicesProperty)[kTestServicePath1]);
-  EXPECT_EQ(0, listener_->property_updates(
+  EXPECT_EQ(1, listener_->property_updates(
       shill::kServiceCompleteListProperty)[kTestServicePath1]);
 
   // Add a new entry to the services and the profile; should also trigger a
-  // single list update for both Services and ServiceCompleteList, and should
-  // trigger tow property updates for Services (one when the Profile propety
-  // changes, and one for the Request) and one ServiceCompleteList change for
-  // the Request.
+  // service list update, and a property update.
   listener_->reset_list_updates();
   const std::string kTestServicePath2("stub_wifi_profile_only2");
   AddServiceToProfile(shill::kTypeWifi, kTestServicePath2, true);
   shill_property_handler_->UpdateManagerProperties();
   message_loop_.RunUntilIdle();
-  EXPECT_EQ(1, listener_->list_updates(shill::kServicesProperty));
   EXPECT_EQ(1, listener_->list_updates(shill::kServiceCompleteListProperty));
   EXPECT_EQ(1, listener_->initial_property_updates(
-      shill::kServicesProperty)[kTestServicePath2]);
-  EXPECT_EQ(1, listener_->initial_property_updates(
       shill::kServiceCompleteListProperty)[kTestServicePath2]);
-  // Expect one property update for the Profile property of the Network.
   EXPECT_EQ(1, listener_->property_updates(
-      shill::kServicesProperty)[kTestServicePath2]);
-  EXPECT_EQ(0, listener_->property_updates(
-      shill::kServiceCompleteListProperty)[kTestServicePath2]);
-
-  // Change a property of a Network in a Profile.
-  base::FundamentalValue scan_interval(3);
-  DBusThreadManager::Get()->GetShillServiceClient()->SetProperty(
-      dbus::ObjectPath(kTestServicePath2),
-      shill::kScanIntervalProperty,
-      scan_interval,
-      base::Bind(&base::DoNothing), base::Bind(&ErrorCallbackFunction));
-  message_loop_.RunUntilIdle();
-  // Property change should trigger an update for the Network only; no
-  // property updates pushed by Shill affect Favorites.
-  EXPECT_EQ(2, listener_->property_updates(
-      shill::kServicesProperty)[kTestServicePath2]);
-  EXPECT_EQ(0, listener_->property_updates(
       shill::kServiceCompleteListProperty)[kTestServicePath2]);
 }
 

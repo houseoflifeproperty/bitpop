@@ -2,9 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import datetime
 import hashlib
 import json
 import os
+import pytz
 import time
 import urllib
 import urlparse
@@ -19,6 +21,17 @@ from twisted.web import client
 
 from master import master_utils
 from master.try_job_base import TryJobBase
+
+
+# Number of recent buildsets used to initialize RietveldPollerWithCache's cache.
+MAX_RECENT_BUILDSETS_TO_INIT_CACHE = 10000
+
+
+def str_to_datetime(text):
+  try:
+    return datetime.datetime.strptime(text, '%Y-%m-%d %H:%M:%S.%f')
+  except ValueError:
+    return datetime.datetime.strptime(text, '%Y-%m-%d %H:%M:%S')
 
 
 class _ValidUserPoller(internet.TimerService):
@@ -39,6 +52,7 @@ class _ValidUserPoller(internet.TimerService):
       internet.TimerService.__init__(self, interval, _ValidUserPoller._poll,
                                      self)
     self._users = frozenset()
+    self._valid = False
 
   def contains(self, email):
     """Checks if the given email address is a valid user.
@@ -52,6 +66,10 @@ class _ValidUserPoller(internet.TimerService):
     if email is None:
       return False
     return email in self._users or email.endswith(self._SPECIAL_DOMAIN)
+
+  def valid(self):
+    """Returns true if the poller has retrieved valid users successfully."""
+    return self._valid
 
   # base.PollingChangeSource overrides:
   def _poll(self):
@@ -96,6 +114,7 @@ class _ValidUserPoller(internet.TimerService):
     emails = (email.strip() for email in data.splitlines())
     self._users = frozenset(email for email in emails if email)
     log.msg('Found %d users' % len(self._users))
+    self._valid = True
 
 
 class _RietveldPoller(base.PollingChangeSource):
@@ -192,12 +211,170 @@ class _RietveldPoller(base.PollingChangeSource):
     return d
 
 
+class _RietveldPollerWithCache(base.PollingChangeSource):
+  """Polls Rietveld for any pending patch sets to build.
+
+  Periodically polls Rietveld to see if any patch sets have been marked by
+  users to be tried. If so, send them to the trybots. Uses cursor to download
+  all pages within a single poll. To avoid sending same jobs, keeps a cache of
+  the jobs that were already processed thus reducing chances of a duplicate job
+  submission and increasing robustness to bugs in Rietveld. On the first poll
+  this cache is initialized with jobs currently pending on the Buildbot.
+  """
+
+  def __init__(self, pending_jobs_url, interval, timeout=2*60):
+    """
+    Args:
+      pending_jobs_url: Rietveld URL string used to retrieve jobs to try.
+      interval: Interval used to poll Rietveld, in seconds.
+    """
+    self.pollInterval = interval
+    self._try_job_rietveld = None
+    self._pending_jobs_url = pending_jobs_url
+    self._processed_keys = None
+    self.timeout = timeout
+
+  def getPage(self, url):  # pylint: disable=R0201
+    """Schedules a page at `url` to be downloaded. Returns a deferred."""
+    return client.getPage(url, agent='buildbot', timeout=self.timeout)
+
+  # base.PollingChangeSource overrides:
+  def poll(self):
+    """Polls Rietveld for any pending try jobs and submit them.
+
+    Returns:
+      A deferred object to be called once the operation completes.
+    """
+
+    # Make sure setServiceParent was called before this method is called.
+    assert self._try_job_rietveld
+
+    # Check if we have valid user list, otherwise - do not submit any jobs. This
+    # is different from having no valid users in the list, in which case
+    # SubmitJobs will correctly discard the jobs.
+    if not self._try_job_rietveld.has_valid_user_list():
+      log.msg('[RPWC] No valid user list. Ignoring the poll request.')
+      return
+
+    log.msg('[RPWC] Poll started')
+    log.msg('[RPWC] Downloading %s...' % self._pending_jobs_url)
+    pollDeferred = self.getPage(self._pending_jobs_url)
+    pollDeferred.addCallback(self._ProcessResults)
+    pollDeferred.addErrback(log.err, '[RPWC] error')
+    return pollDeferred
+
+  def setServiceParent(self, parent):
+    base.PollingChangeSource.setServiceParent(self, parent)
+    self._try_job_rietveld = parent
+
+  @defer.inlineCallbacks
+  def _InitProcessedKeysCache(self):
+    log.msg('[RPWC] Initializing processed keys cache...')
+
+    # Get recent BuildBot buildsets. We limit the number of fetched buildsets
+    # as otherwise fetching properties of all of them would take days.
+    bsdicts = yield self.master.db.buildsets.getRecentBuildsets(
+        MAX_RECENT_BUILDSETS_TO_INIT_CACHE)
+
+    log.msg('[RPWC] Received %d buildset dicts' % len(bsdicts))
+
+    def asNaiveUTC(dt):
+      if dt is None:
+        return datetime.datetime.now()
+      if dt.tzinfo is None:
+        return dt
+      utc_datetime = dt.astimezone(pytz.utc)
+      return utc_datetime.replace(tzinfo=None)
+
+    # Compose a map of buildset ids to the submission timestamp.
+    buildsets = {}
+    for bsdict in bsdicts:
+      bsid = bsdict.get('bsid')
+      if bsid is not None:
+        buildsets[bsid] = asNaiveUTC(bsdict.get('submitted_at'))
+
+    log.msg('[RPWC] Processing %d buildsets' % len(buildsets))
+
+    # Find jobs for each buildset and add them to the processed keys cache.
+    self._processed_keys = {}
+    for bsid in buildsets.keys():
+      log.msg('[RPWC] Loading properties of the buildset %d' % bsid)
+      bsprops = yield self.master.db.buildsets.getBuildsetProperties(bsid)
+      if 'try_job_key' in bsprops:
+        key = bsprops['try_job_key'][0]
+        self._processed_keys[key] = buildsets[bsid]
+
+    log.msg('[RPWC] Initialized processed keys cache from master with %d '
+            'jobs.' % len(self._processed_keys))
+
+  @defer.inlineCallbacks
+  def _ProcessResults(self, first_page_json):
+    """Processes all incoming jobs from Rietveld and submits new jobs."""
+    results = json.loads(first_page_json)
+    all_jobs = []
+
+    # Initialize processed keys cache if needed. We can't do it in the
+    # constructor as self.master, required for this, is not available then yet.
+    if self._processed_keys is None:
+      yield self._InitProcessedKeysCache()
+
+    prev_cursor = None
+    # TODO(sergiyb): Change logic to use 'more' field when it is implemented on
+    # Rietveld. This field will indicate whether there are more pages.
+    while len(results['jobs']) and prev_cursor != results['cursor']:
+      all_jobs.extend(results['jobs'])
+      next_url = self._pending_jobs_url + '&cursor=%s' % str(results['cursor'])
+      prev_cursor = results['cursor']
+      log.msg('[RPWC] Downloading %s...' % next_url)
+      page_json = yield self.getPage(next_url)
+      results = json.loads(page_json)
+
+    log.msg('[RPWC] Retrieved %d jobs' % len(all_jobs))
+
+    # Rietveld uses AppEngine NDB API, which serves naive UTC datetimes.
+    cutoff_timestamp = datetime.datetime.utcnow() - datetime.timedelta(hours=6)
+
+    log.msg('[RPWC] Cache contains %d jobs' % len(self._processed_keys))
+
+    # Find new jobs and put them into cache.
+    new_jobs = []
+    for job in all_jobs:
+      parsed_timestamp = str_to_datetime(job['timestamp'])
+      # TODO(sergiyb): This logic relies on the assumption that we don't care
+      # about jobs older than 6 hours. Once we stabilize Rietveld cursor, we
+      # should get rid of this assumption. Also see, http://crbug.com/376537.
+      if (parsed_timestamp > cutoff_timestamp and
+          job['key'] not in self._processed_keys):
+        new_jobs.append(job)
+
+    if new_jobs:
+      log.msg('[RPWC] Submitting %d new jobs...' % len(new_jobs))
+      yield self._try_job_rietveld.SubmitJobs(new_jobs)
+    else:
+      log.msg('[RPWC] No new jobs.')
+
+    # Update processed keys cache.
+    new_processed_keys = {}
+    for job in new_jobs:
+      parsed_timestamp = str_to_datetime(job['timestamp'])
+      new_processed_keys[job['key']] = parsed_timestamp
+    log.msg('[RPWC] Added %d new jobs to the cache.' % len(new_processed_keys))
+
+    num_removed = 0
+    for processed_key, timestamp in self._processed_keys.iteritems():
+      if timestamp > cutoff_timestamp:
+        new_processed_keys[processed_key] = timestamp
+      else:
+        num_removed += 1
+    log.msg('[RPWC] Removed %d old jobs from the cache.' % num_removed)
+    self._processed_keys = new_processed_keys
+
+
 class TryJobRietveld(TryJobBase):
   """A try job source that gets jobs from pending Rietveld patch sets."""
 
   def __init__(self, name, pools, properties=None, last_good_urls=None,
-               code_review_sites=None, project=None, filter_master=False,
-               cachepath=None):
+               code_review_sites=None, project=None, filter_master=False):
     """Creates a try job source for Rietveld patch sets.
 
     Args:
@@ -218,7 +395,7 @@ class TryJobRietveld(TryJobBase):
     endpoint = self._GetRietveldEndPointForProject(
         code_review_sites, project, filter_master)
 
-    self._poller = _RietveldPoller(endpoint, interval=10, cachepath=cachepath)
+    self._poller = _RietveldPollerWithCache(endpoint, interval=10)
     self._valid_users = _ValidUserPoller(interval=12 * 60 * 60)
     self._project = project
 
@@ -248,13 +425,18 @@ class TryJobRietveld(TryJobBase):
     if project not in code_review_sites:
       raise Exception('No review site for "%s"' % project)
 
-    url = 'get_pending_try_patchsets?limit=100'
+    url = 'get_pending_try_patchsets?limit=1000'
 
     # Filter by master name if specified.
     if filter_master:
       url += '&master=%s' % urllib.quote_plus(master_utils.GetMastername())
 
     return urlparse.urljoin(code_review_sites[project], url)
+
+  def has_valid_user_list(self):
+    """Returns true if the user poller is valid (has retrieved valid users)."""
+
+    return self._valid_users.valid()
 
   @defer.inlineCallbacks
   def SubmitJobs(self, jobs):

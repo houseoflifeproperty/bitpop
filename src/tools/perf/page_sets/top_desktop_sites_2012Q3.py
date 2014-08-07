@@ -3,22 +3,22 @@
 # found in the LICENSE file.
 # pylint: disable=W0401,W0614
 from telemetry.page.actions.all_page_actions import *
-from telemetry.page.page_set import PageSet
-from telemetry.page.page import Page
+from telemetry.page import page_set
+from telemetry.page import page
 
 
-class Top2012Q3Page(Page):
+class Top2012Q3Page(page.Page):
 
-  def __init__(self, url, page_set):
-    super(Top2012Q3Page, self).__init__(url=url, page_set=page_set)
+  def __init__(self, url, ps):
+    super(Top2012Q3Page, self).__init__(url=url, page_set=ps)
     self.make_javascript_deterministic = True
     self.credentials_path = 'data/credentials.json'
     self.archive_data_file = 'data/2012Q3.json'
 
   def ReloadAndGc(self, action_runner):
     action_runner.RunAction(ReloadAction())
-    action_runner.RunAction(WaitAction({"seconds": 1}))
-    action_runner.RunAction(JsCollectGarbageAction())
+    action_runner.Wait(1)
+    action_runner.ForceGarbageCollection()
 
   def RunSmoothness(self, action_runner):
     action_runner.RunAction(ScrollAction())
@@ -28,14 +28,15 @@ class Top2012Q3Page(Page):
       self.ReloadAndGc(action_runner)
 
 
-class Top2012Q3PageSet(PageSet):
+class Top2012Q3PageSet(page_set.PageSet):
   """ Pages hand-picked from top-lists in Q32012. """
 
   def __init__(self):
     super(Top2012Q3PageSet, self).__init__(
       make_javascript_deterministic=True,
       credentials_path='data/credentials.json',
-      archive_data_file='data/2012Q3.json')
+      archive_data_file='data/2012Q3.json',
+      bucket=page_set.PARTNER_BUCKET)
 
     urls_list = [
       'http://www.facebook.com/barackobama',

@@ -31,7 +31,7 @@
 #ifndef VTTParser_h
 #define VTTParser_h
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/html/track/vtt/BufferedLineReader.h"
@@ -98,7 +98,7 @@ public:
     static bool parseFloatPercentageValuePair(VTTScanner&, char, FloatPoint&);
 
     // Create the DocumentFragment representation of the WebVTT cue text.
-    static PassRefPtr<DocumentFragment> createDocumentFragmentFromCueText(Document&, const String&);
+    static PassRefPtrWillBeRawPtr<DocumentFragment> createDocumentFragmentFromCueText(Document&, const String&);
 
     // Input data to the parser to parse.
     void parseBytes(const char* data, unsigned length);
@@ -113,7 +113,7 @@ public:
 private:
     VTTParser(VTTParserClient*, Document&);
 
-    Document* m_document;
+    RawPtrWillBeMember<Document> m_document;
     ParseState m_state;
 
     void parse();

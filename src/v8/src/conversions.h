@@ -7,10 +7,10 @@
 
 #include <limits>
 
-#include "checks.h"
-#include "handles.h"
-#include "objects.h"
-#include "utils.h"
+#include "src/checks.h"
+#include "src/handles.h"
+#include "src/objects.h"
+#include "src/utils.h"
 
 namespace v8 {
 namespace internal {
@@ -160,6 +160,17 @@ static inline bool IsInt32Double(double value) {
          value >= kMinInt &&
          value <= kMaxInt &&
          value == FastI2D(FastD2I(value));
+}
+
+
+// UInteger32 is an integer that can be represented as an unsigned 32-bit
+// integer. It has to be in the range [0, 2^32 - 1].
+// We also have to check for negative 0 as it is not a UInteger32.
+static inline bool IsUint32Double(double value) {
+  return !IsMinusZero(value) &&
+         value >= 0 &&
+         value <= kMaxUInt32 &&
+         value == FastUI2D(FastD2UI(value));
 }
 
 

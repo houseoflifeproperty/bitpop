@@ -43,36 +43,33 @@ void EncodeVideoFrameOnEncoderThread(
       dynamic_config.latest_frame_id_to_reference);
   encoder->UpdateRates(dynamic_config.bit_rate);
 
-  scoped_ptr<transport::EncodedVideoFrame> encoded_frame(
-      new transport::EncodedVideoFrame());
-  bool retval = encoder->Encode(video_frame, encoded_frame.get());
-
-  encoded_frame->rtp_timestamp = transport::GetVideoRtpTimestamp(capture_time);
-
-  if (!retval) {
+  scoped_ptr<transport::EncodedFrame> encoded_frame(
+      new transport::EncodedFrame());
+  if (!encoder->Encode(video_frame, encoded_frame.get())) {
     VLOG(1) << "Encoding failed";
     return;
   }
-  if (encoded_frame->data.size() <= 0) {
+  if (encoded_frame->data.empty()) {
     VLOG(1) << "Encoding resulted in an empty frame";
     return;
   }
+  encoded_frame->rtp_timestamp = transport::GetVideoRtpTimestamp(capture_time);
+  encoded_frame->reference_time = capture_time;
+
   environment->PostTask(
       CastEnvironment::MAIN,
       FROM_HERE,
       base::Bind(
-          frame_encoded_callback, base::Passed(&encoded_frame), capture_time));
+          frame_encoded_callback, base::Passed(&encoded_frame)));
 }
 }  // namespace
 
 VideoEncoderImpl::VideoEncoderImpl(
     scoped_refptr<CastEnvironment> cast_environment,
     const VideoSenderConfig& video_config,
-    uint8 max_unacked_frames)
+    int max_unacked_frames)
     : video_config_(video_config),
-      cast_environment_(cast_environment),
-      skip_next_frame_(false),
-      skip_count_(0) {
+      cast_environment_(cast_environment) {
   if (video_config.codec == transport::kVp8) {
     encoder_.reset(new Vp8Encoder(video_config, max_unacked_frames));
     cast_environment_->PostTask(CastEnvironment::VIDEO,
@@ -82,7 +79,7 @@ VideoEncoderImpl::VideoEncoderImpl(
                                            encoder_.get()));
 #ifndef OFFICIAL_BUILD
   } else if (video_config.codec == transport::kFakeSoftwareVideo) {
-    encoder_.reset(new FakeSoftwareVideoEncoder());
+    encoder_.reset(new FakeSoftwareVideoEncoder(video_config));
 #endif
   } else {
     DCHECK(false) << "Invalid config";  // Codec not supported.
@@ -109,11 +106,6 @@ bool VideoEncoderImpl::EncodeVideoFrame(
     const base::TimeTicks& capture_time,
     const FrameEncodedCallback& frame_encoded_callback) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  if (skip_next_frame_) {
-    ++skip_count_;
-    return false;
-  }
-
   cast_environment_->PostTask(CastEnvironment::VIDEO,
                               FROM_HERE,
                               base::Bind(&EncodeVideoFrameOnEncoderThread,
@@ -133,11 +125,6 @@ void VideoEncoderImpl::SetBitRate(int new_bit_rate) {
   dynamic_config_.bit_rate = new_bit_rate;
 }
 
-// Inform the encoder to not encode the next frame.
-void VideoEncoderImpl::SkipNextFrame(bool skip_next_frame) {
-  skip_next_frame_ = skip_next_frame;
-}
-
 // Inform the encoder to encode the next frame as a key frame.
 void VideoEncoderImpl::GenerateKeyFrame() {
   dynamic_config_.key_frame_requested = true;
@@ -147,8 +134,6 @@ void VideoEncoderImpl::GenerateKeyFrame() {
 void VideoEncoderImpl::LatestFrameIdToReference(uint32 frame_id) {
   dynamic_config_.latest_frame_id_to_reference = frame_id;
 }
-
-int VideoEncoderImpl::NumberOfSkippedFrames() const { return skip_count_; }
 
 }  //  namespace cast
 }  //  namespace media

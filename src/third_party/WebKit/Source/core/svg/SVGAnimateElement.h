@@ -23,7 +23,7 @@
 #ifndef SVGAnimateElement_h
 #define SVGAnimateElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/SVGAnimationElement.h"
 #include "wtf/OwnPtr.h"
@@ -34,8 +34,13 @@ class SVGAnimatedTypeAnimator;
 
 class SVGAnimateElement : public SVGAnimationElement {
 public:
-    static PassRefPtr<SVGAnimateElement> create(Document&);
+    static PassRefPtrWillBeRawPtr<SVGAnimateElement> create(Document&);
     virtual ~SVGAnimateElement();
+
+    virtual void trace(Visitor*) OVERRIDE;
+
+    AnimatedPropertyType animatedPropertyType();
+    bool animatedPropertyTypeSupportsAddition();
 
 protected:
     SVGAnimateElement(const QualifiedName&, Document&);
@@ -49,17 +54,14 @@ protected:
     virtual void calculateAnimatedValue(float percentage, unsigned repeatCount, SVGSMILElement* resultElement) OVERRIDE FINAL;
     virtual void applyResultsToTarget() OVERRIDE FINAL;
     virtual float calculateDistance(const String& fromString, const String& toString) OVERRIDE FINAL;
-    virtual bool isAdditive() const OVERRIDE FINAL;
+    virtual bool isAdditive() OVERRIDE FINAL;
 
     virtual void setTargetElement(SVGElement*) OVERRIDE FINAL;
     virtual void setAttributeName(const QualifiedName&) OVERRIDE FINAL;
 
-    AnimatedPropertyType m_animatedPropertyType;
-
 private:
     void resetAnimatedPropertyType();
     SVGAnimatedTypeAnimator* ensureAnimator();
-    bool animatedPropertyTypeSupportsAddition() const;
 
     virtual bool hasValidAttributeType() OVERRIDE;
 
@@ -68,8 +70,7 @@ private:
     RefPtr<SVGPropertyBase> m_toAtEndOfDurationProperty;
     RefPtr<SVGPropertyBase> m_animatedProperty;
 
-    Vector<SVGElement*> m_animatedElements;
-    OwnPtr<SVGAnimatedTypeAnimator> m_animator;
+    OwnPtrWillBeMember<SVGAnimatedTypeAnimator> m_animator;
 };
 
 inline bool isSVGAnimateElement(const Node& node)

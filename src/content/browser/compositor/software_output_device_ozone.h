@@ -11,9 +11,6 @@
 
 namespace ui {
 class Compositor;
-}
-
-namespace gfx {
 class SurfaceOzoneCanvas;
 }
 
@@ -28,14 +25,15 @@ class CONTENT_EXPORT SoftwareOutputDeviceOzone
   explicit SoftwareOutputDeviceOzone(ui::Compositor* compositor);
   virtual ~SoftwareOutputDeviceOzone();
 
-  virtual void Resize(const gfx::Size& viewport_size) OVERRIDE;
+  virtual void Resize(const gfx::Size& viewport_pixel_size,
+                      float scale_factor) OVERRIDE;
   virtual SkCanvas* BeginPaint(const gfx::Rect& damage_rect) OVERRIDE;
   virtual void EndPaint(cc::SoftwareFrameData* frame_data) OVERRIDE;
 
  private:
   ui::Compositor* compositor_;
 
-  scoped_ptr<gfx::SurfaceOzoneCanvas> surface_ozone_;
+  scoped_ptr<ui::SurfaceOzoneCanvas> surface_ozone_;
 
   DISALLOW_COPY_AND_ASSIGN(SoftwareOutputDeviceOzone);
 };

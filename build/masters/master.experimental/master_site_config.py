@@ -12,3 +12,4 @@ class Experimental(Master.Base):
   master_port = 8010
   slave_port = 8110
   master_port_alt = 8210
+  buildbot_url = 'http://localhost:8010/'

@@ -63,6 +63,10 @@ WebInspector.NavigatorView.Events = {
     ItemRenamed: "ItemRenamed",
 }
 
+/**
+ * @param {string} type
+ * @return {string}
+ */
 WebInspector.NavigatorView.iconClassForType = function(type)
 {
     if (type === WebInspector.NavigatorTreeOutline.Types.Domain)
@@ -78,7 +82,7 @@ WebInspector.NavigatorView.prototype = {
         this._workspace = workspace;
         this._workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeAdded, this._uiSourceCodeAdded, this);
         this._workspace.addEventListener(WebInspector.Workspace.Events.UISourceCodeRemoved, this._uiSourceCodeRemoved, this);
-        this._workspace.addEventListener(WebInspector.Workspace.Events.ProjectWillReset, this._projectWillReset.bind(this), this);
+        this._workspace.addEventListener(WebInspector.Workspace.Events.ProjectRemoved, this._projectRemoved.bind(this), this);
     },
 
     wasShown: function()
@@ -133,7 +137,7 @@ WebInspector.NavigatorView.prototype = {
     /**
      * @param {!WebInspector.Event} event
      */
-    _projectWillReset: function(event)
+    _projectRemoved: function(event)
     {
         var project = /** @type {!WebInspector.Project} */ (event.data);
         var uiSourceCodes = project.uiSourceCodes();
@@ -316,6 +320,14 @@ WebInspector.NavigatorView.prototype = {
     },
 
     /**
+     * @param {!WebInspector.UISourceCode} uiSourceCode
+     */
+    _handleContextMenuRename: function(uiSourceCode)
+    {
+        this.rename(uiSourceCode, false);
+    },
+
+    /**
      * @param {!WebInspector.Project} project
      * @param {string} path
      */
@@ -350,12 +362,14 @@ WebInspector.NavigatorView.prototype = {
         contextMenu.appendSeparator();
 
         var project = uiSourceCode.project();
-        var path = uiSourceCode.parentPath();
-        contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Refresh parent" : "Refresh Parent"), this._handleContextMenuRefresh.bind(this, project, path));
-        contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Duplicate file" : "Duplicate File"), this._handleContextMenuCreate.bind(this, project, path, uiSourceCode));
-        contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Exclude parent folder" : "Exclude Parent Folder"), this._handleContextMenuExclude.bind(this, project, path));
-        contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Delete file" : "Delete File"), this._handleContextMenuDelete.bind(this, uiSourceCode));
-        contextMenu.appendSeparator();
+        if (project.type() === WebInspector.projectTypes.FileSystem) {
+            var path = uiSourceCode.parentPath();
+            contextMenu.appendItem(WebInspector.UIString("Rename\u2026"), this._handleContextMenuRename.bind(this, uiSourceCode));
+            contextMenu.appendItem(WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Make a copy\u2026" : "Make a Copy\u2026"), this._handleContextMenuCreate.bind(this, project, path, uiSourceCode));
+            contextMenu.appendItem(WebInspector.UIString("Delete"), this._handleContextMenuDelete.bind(this, uiSourceCode));
+            contextMenu.appendSeparator();
+        }
+
         this._appendAddFolderItem(contextMenu);
         contextMenu.show();
     },

@@ -82,6 +82,8 @@ namespace content {
 
 namespace {
 
+static const int kProxyRoutingId = 13;
+
 #if (defined(USE_AURA) && defined(USE_X11)) || defined(USE_OZONE)
 // Converts MockKeyboard::Modifiers to ui::EventFlags.
 int ConvertMockKeyboardModifier(MockKeyboard::Modifiers modifiers) {
@@ -488,7 +490,7 @@ TEST_F(RenderViewImplTest, SendSwapOutACK) {
   int initial_page_id = view()->GetPageId();
 
   // Respond to a swap out request.
-  view()->main_render_frame()->OnSwapOut();
+  view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
 
   // Ensure the swap out commits synchronously.
   EXPECT_NE(initial_page_id, view()->GetPageId());
@@ -501,7 +503,7 @@ TEST_F(RenderViewImplTest, SendSwapOutACK) {
   // It is possible to get another swap out request.  Ensure that we send
   // an ACK, even if we don't have to do anything else.
   render_thread_->sink().ClearMessages();
-  view()->main_render_frame()->OnSwapOut();
+  view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
   const IPC::Message* msg2 = render_thread_->sink().GetUniqueMessageMatching(
       FrameHostMsg_SwapOut_ACK::ID);
   ASSERT_TRUE(msg2);
@@ -537,9 +539,10 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_A);
-  int page_id_A;
-  PageState state_A;
-  ViewHostMsg_UpdateState::Read(msg_A, &page_id_A, &state_A);
+  ViewHostMsg_UpdateState::Param params;
+  ViewHostMsg_UpdateState::Read(msg_A, &params);
+  int page_id_A = params.a;
+  PageState state_A = params.b;
   EXPECT_EQ(1, page_id_A);
   render_thread_->sink().ClearMessages();
 
@@ -556,7 +559,7 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   ProcessPendingMessages();
 
   // Respond to a swap out request.
-  view()->main_render_frame()->OnSwapOut();
+  view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
 
   // Check for a OnSwapOutACK.
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
@@ -609,9 +612,10 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_A);
-  int page_id_A;
-  PageState state_A;
-  ViewHostMsg_UpdateState::Read(msg_A, &page_id_A, &state_A);
+  ViewHostMsg_UpdateState::Param param;
+  ViewHostMsg_UpdateState::Read(msg_A, &param);
+  int page_id_A = param.a;
+  PageState state_A = param.b;
   EXPECT_EQ(1, page_id_A);
   render_thread_->sink().ClearMessages();
 
@@ -623,9 +627,9 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   const IPC::Message* msg_B = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_B);
-  int page_id_B;
-  PageState state_B;
-  ViewHostMsg_UpdateState::Read(msg_B, &page_id_B, &state_B);
+  ViewHostMsg_UpdateState::Read(msg_B, &param);
+  int page_id_B = param.a;
+  PageState state_B = param.b;
   EXPECT_EQ(2, page_id_B);
   EXPECT_NE(state_A, state_B);
   render_thread_->sink().ClearMessages();
@@ -638,9 +642,9 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   const IPC::Message* msg_C = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_C);
-  int page_id_C;
-  PageState state_C;
-  ViewHostMsg_UpdateState::Read(msg_C, &page_id_C, &state_C);
+  ViewHostMsg_UpdateState::Read(msg_C, &param);
+  int page_id_C = param.a;
+  PageState state_C = param.b;
   EXPECT_EQ(3, page_id_C);
   EXPECT_NE(state_B, state_C);
   render_thread_->sink().ClearMessages();
@@ -690,9 +694,9 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg);
-  int page_id;
-  PageState state;
-  ViewHostMsg_UpdateState::Read(msg, &page_id, &state);
+  ViewHostMsg_UpdateState::Read(msg, &param);
+  int page_id = param.a;
+  PageState state = param.b;
   EXPECT_EQ(page_id_C, page_id);
   EXPECT_NE(state_A, state);
   EXPECT_NE(state_B, state);
@@ -720,9 +724,10 @@ TEST_F(RenderViewImplTest, StaleNavigationsIgnored) {
   const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_A);
-  int page_id_A;
-  PageState state_A;
-  ViewHostMsg_UpdateState::Read(msg_A, &page_id_A, &state_A);
+  ViewHostMsg_UpdateState::Param param;
+  ViewHostMsg_UpdateState::Read(msg_A, &param);
+  int page_id_A = param.a;
+  PageState state_A = param.b;
   EXPECT_EQ(1, page_id_A);
   render_thread_->sink().ClearMessages();
 
@@ -785,9 +790,10 @@ TEST_F(RenderViewImplTest, DontIgnoreBackAfterNavEntryLimit) {
   const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_A);
-  int page_id_A;
-  PageState state_A;
-  ViewHostMsg_UpdateState::Read(msg_A, &page_id_A, &state_A);
+  ViewHostMsg_UpdateState::Param param;
+  ViewHostMsg_UpdateState::Read(msg_A, &param);
+  int page_id_A = param.a;
+  PageState state_A = param.b;
   EXPECT_EQ(1, page_id_A);
   render_thread_->sink().ClearMessages();
 
@@ -802,9 +808,9 @@ TEST_F(RenderViewImplTest, DontIgnoreBackAfterNavEntryLimit) {
   const IPC::Message* msg_B = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_B);
-  int page_id_B;
-  PageState state_B;
-  ViewHostMsg_UpdateState::Read(msg_B, &page_id_B, &state_B);
+  ViewHostMsg_UpdateState::Read(msg_B, &param);
+  int page_id_B = param.a;
+  PageState state_B = param.b;
   EXPECT_EQ(2, page_id_B);
   render_thread_->sink().ClearMessages();
 
@@ -891,19 +897,16 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
 
     // Update the IME status and verify if our IME backend sends an IPC message
     // to activate IMEs.
-    view()->UpdateTextInputType();
+    view()->UpdateTextInputState(
+        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
     const IPC::Message* msg = render_thread_->sink().GetMessageAt(0);
     EXPECT_TRUE(msg != NULL);
-    EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
-    ui::TextInputType type;
-    bool can_compose_inline = false;
-    ui::TextInputMode input_mode = ui::TEXT_INPUT_MODE_DEFAULT;
-    ViewHostMsg_TextInputTypeChanged::Read(msg,
-                                           &type,
-                                           &input_mode,
-                                           &can_compose_inline);
-    EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT, type);
-    EXPECT_EQ(true, can_compose_inline);
+    EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
+    ViewHostMsg_TextInputStateChanged::Param params;
+    ViewHostMsg_TextInputStateChanged::Read(msg, &params);
+    ViewHostMsg_TextInputState_Params p = params.a;
+    EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT, p.type);
+    EXPECT_EQ(true, p.can_compose_inline);
 
     // Move the input focus to the second <input> element, where we should
     // de-activate IMEs.
@@ -913,38 +916,34 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
 
     // Update the IME status and verify if our IME backend sends an IPC message
     // to de-activate IMEs.
-    view()->UpdateTextInputType();
+    view()->UpdateTextInputState(
+        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
     msg = render_thread_->sink().GetMessageAt(0);
     EXPECT_TRUE(msg != NULL);
-    EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
-    ViewHostMsg_TextInputTypeChanged::Read(msg,
-                                           &type,
-                                           &input_mode,
-                                           &can_compose_inline);
-    EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, type);
+    EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
+    ViewHostMsg_TextInputStateChanged::Read(msg, &params);
+    EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, params.a.type);
 
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kInputModeTestCases); i++) {
-      const InputModeTestCase* test_case = &kInputModeTestCases[i];
+    for (size_t j = 0; j < ARRAYSIZE_UNSAFE(kInputModeTestCases); j++) {
+      const InputModeTestCase* test_case = &kInputModeTestCases[j];
       std::string javascript =
           base::StringPrintf("document.getElementById('%s').focus();",
                              test_case->input_id);
       // Move the input focus to the target <input> element, where we should
       // activate IMEs.
-      ExecuteJavaScriptAndReturnIntValue(base::ASCIIToUTF16(javascript), NULL);
+      ExecuteJavaScript(javascript.c_str());
       ProcessPendingMessages();
       render_thread_->sink().ClearMessages();
 
       // Update the IME status and verify if our IME backend sends an IPC
       // message to activate IMEs.
-      view()->UpdateTextInputType();
-      const IPC::Message* msg = render_thread_->sink().GetMessageAt(0);
+      view()->UpdateTextInputState(
+        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
+      msg = render_thread_->sink().GetMessageAt(0);
       EXPECT_TRUE(msg != NULL);
-      EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
-      ViewHostMsg_TextInputTypeChanged::Read(msg,
-                                            &type,
-                                            &input_mode,
-                                            &can_compose_inline);
-      EXPECT_EQ(test_case->expected_mode, input_mode);
+      EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
+      ViewHostMsg_TextInputStateChanged::Read(msg, &params);
+      EXPECT_EQ(test_case->expected_mode, params.a.mode);
     }
   }
 }
@@ -1073,7 +1072,8 @@ TEST_F(RenderViewImplTest, ImeComposition) {
 
     // Update the status of our IME back-end.
     // TODO(hbono): we should verify messages to be sent from the back-end.
-    view()->UpdateTextInputType();
+    view()->UpdateTextInputState(
+        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
     ProcessPendingMessages();
     render_thread_->sink().ClearMessages();
 
@@ -1810,6 +1810,9 @@ TEST_F(RenderViewImplTest, TestBackForward) {
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_b, &was_page_b));
   EXPECT_EQ(1, was_page_b);
 
+  PageState back_state =
+      HistoryEntryToPageState(view()->history_controller()->GetCurrentEntry());
+
   LoadHTML("<div id=pagename>Page C</div>");
   int was_page_c = -1;
   base::string16 check_page_c =
@@ -1820,17 +1823,18 @@ TEST_F(RenderViewImplTest, TestBackForward) {
 
   PageState forward_state =
       HistoryEntryToPageState(view()->history_controller()->GetCurrentEntry());
-  GoBack(HistoryEntryToPageState(
-      view()->history_controller()->GetPreviousEntry()));
+  GoBack(back_state);
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_b, &was_page_b));
   EXPECT_EQ(1, was_page_b);
+
+  PageState back_state2 =
+      HistoryEntryToPageState(view()->history_controller()->GetCurrentEntry());
 
   GoForward(forward_state);
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_c, &was_page_c));
   EXPECT_EQ(1, was_page_c);
 
-  GoBack(HistoryEntryToPageState(
-      view()->history_controller()->GetPreviousEntry()));
+  GoBack(back_state2);
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_b, &was_page_b));
   EXPECT_EQ(1, was_page_b);
 
@@ -2062,7 +2066,7 @@ TEST_F(RenderViewImplTest, MessageOrderInDidChangeSelection) {
 
   for (size_t i = 0; i < render_thread_->sink().message_count(); ++i) {
     const uint32 type = render_thread_->sink().GetMessageAt(i)->type();
-    if (type == ViewHostMsg_TextInputTypeChanged::ID) {
+    if (type == ViewHostMsg_TextInputStateChanged::ID) {
       is_input_type_called = true;
       last_input_type = i;
     } else if (type == ViewHostMsg_SelectionChanged::ID) {
@@ -2231,40 +2235,6 @@ TEST_F(RenderViewImplTest, SendFaviconURLUpdateEvent) {
            "</html>");
   EXPECT_FALSE(render_thread_->sink().GetFirstMessageMatching(
       ViewHostMsg_UpdateFaviconURL::ID));
-}
-
-// Test progress tracker messages.
-TEST_F(RenderViewImplTest, SendProgressCompletionUpdates) {
-  std::string data_url_string = "data:text/html,<body>placeholder</body>";
-  GURL url(data_url_string);
-  GetMainFrame()->loadRequest(blink::WebURLRequest(url));
-
-  EXPECT_TRUE(render_thread_->sink().GetFirstMessageMatching(
-      FrameHostMsg_DidStartLoading::ID));
-
-  // The load started, we should receive a start notification and a progress
-  // update with the minimum progress.
-  const IPC::Message* message = render_thread_->sink().GetFirstMessageMatching(
-      ViewHostMsg_DidChangeLoadProgress::ID);
-  EXPECT_TRUE(message);
-  Tuple1<double> progress_value;
-  ViewHostMsg_DidChangeLoadProgress::Read(message, &progress_value);
-  EXPECT_EQ(0.1, progress_value.a);
-  render_thread_->sink().ClearMessages();
-
-  FrameLoadWaiter(frame()).Wait();
-
-  // The data url has loaded, so we should see a progress change to 1.0 (done)
-  // and a stop notification.
-  message = render_thread_->sink().GetFirstMessageMatching(
-      ViewHostMsg_DidChangeLoadProgress::ID);
-  EXPECT_TRUE(message);
-  ViewHostMsg_DidChangeLoadProgress::Read(message, &progress_value);
-  EXPECT_EQ(1.0, progress_value.a);
-
-  EXPECT_TRUE(render_thread_->sink().GetFirstMessageMatching(
-      FrameHostMsg_DidStopLoading::ID));
-  render_thread_->sink().ClearMessages();
 }
 
 TEST_F(RenderViewImplTest, FocusElementCallsFocusedNodeChanged) {

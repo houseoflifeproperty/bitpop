@@ -61,13 +61,12 @@ namespace nacl_io {
 // 2. Add the necessary pepper header to the top of this file.
 // 3. Compile and cross your fingers!
 
-
 // Forward declare interface classes.
 #include "nacl_io/pepper/undef_macros.h"
 #include "nacl_io/pepper/define_empty_macros.h"
 #undef BEGIN_INTERFACE
 #define BEGIN_INTERFACE(BaseClass, PPInterface, InterfaceString) \
-    class BaseClass;
+  class BaseClass;
 #include "nacl_io/pepper/all_interfaces.h"
 
 int PPErrorToErrno(int32_t err);
@@ -92,7 +91,7 @@ class PepperInterface {
 #include "nacl_io/pepper/define_empty_macros.h"
 #undef BEGIN_INTERFACE
 #define BEGIN_INTERFACE(BaseClass, PPInterface, InterfaceString) \
-    virtual BaseClass* Get##BaseClass() = 0;
+  virtual BaseClass* Get##BaseClass() = 0;
 #include "nacl_io/pepper/all_interfaces.h"
 };
 
@@ -152,6 +151,29 @@ class ScopedResource {
   PP_Resource resource_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedResource);
+};
+
+class ScopedVar {
+ public:
+  // Does not AddRef.
+  explicit ScopedVar(PepperInterface* ppapi);
+  ScopedVar(PepperInterface* ppapi, PP_Var var);
+  ~ScopedVar();
+
+  PP_Var pp_var() const { return var_; }
+
+  // Set a new var, releasing the old one. Does not AddRef the new
+  // resource.
+  void Reset(PP_Var resource);
+
+  // Return the var without decrementing its refcount.
+  PP_Var Release();
+
+ private:
+  PepperInterface* ppapi_;
+  PP_Var var_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedVar);
 };
 
 }  // namespace nacl_io

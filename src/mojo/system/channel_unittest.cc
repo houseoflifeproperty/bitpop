@@ -139,6 +139,11 @@ class MockRawChannelOnInitFails : public RawChannel {
     CHECK(false);
     return IO_FAILED;
   }
+  virtual embedder::ScopedPlatformHandleVectorPtr GetReadPlatformHandles(
+      size_t, const void*) OVERRIDE {
+    CHECK(false);
+    return embedder::ScopedPlatformHandleVectorPtr();
+  }
   virtual IOResult WriteNoLock(size_t*, size_t*) OVERRIDE {
     CHECK(false);
     return IO_FAILED;
@@ -259,7 +264,7 @@ TEST_F(ChannelTest, ShutdownAfterAttach) {
   Waiter waiter;
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_OK,
-            mp->AddWaiter(0, &waiter, MOJO_WAIT_FLAG_READABLE, 123));
+            mp->AddWaiter(0, &waiter, MOJO_HANDLE_SIGNAL_READABLE, 123));
 
   // Don't wait for the shutdown to run ...
   io_thread()->PostTask(FROM_HERE,
@@ -268,7 +273,7 @@ TEST_F(ChannelTest, ShutdownAfterAttach) {
 
   // ... since this |Wait()| should fail once the channel is shut down.
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-            waiter.Wait(MOJO_DEADLINE_INDEFINITE));
+            waiter.Wait(MOJO_DEADLINE_INDEFINITE, NULL));
   mp->RemoveWaiter(0, &waiter);
 
   mp->Close(0);
@@ -310,7 +315,7 @@ TEST_F(ChannelTest, WaitAfterAttachRunAndShutdown) {
   Waiter waiter;
   waiter.Init();
   EXPECT_EQ(MOJO_RESULT_FAILED_PRECONDITION,
-            mp->AddWaiter(0, &waiter, MOJO_WAIT_FLAG_READABLE, 123));
+            mp->AddWaiter(0, &waiter, MOJO_HANDLE_SIGNAL_READABLE, 123));
 
   mp->Close(0);
 

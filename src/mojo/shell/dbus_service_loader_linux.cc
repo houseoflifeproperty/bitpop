@@ -16,10 +16,9 @@
 #include "dbus/message.h"
 #include "dbus/object_path.h"
 #include "dbus/object_proxy.h"
-#include "mojo/common/channel_init.h"
 #include "mojo/dbus/dbus_external_service.h"
+#include "mojo/embedder/channel_init.h"
 #include "mojo/embedder/platform_channel_pair.h"
-#include "mojo/public/cpp/bindings/allocation_scope.h"
 #include "mojo/shell/context.h"
 #include "mojo/shell/external_service.mojom.h"
 #include "mojo/shell/keep_alive.h"
@@ -37,12 +36,12 @@ class DBusServiceLoader::LoadContext {
   LoadContext(DBusServiceLoader* loader,
               const scoped_refptr<dbus::Bus>& bus,
               const GURL& url,
-              ScopedMessagePipeHandle shell_handle)
+              ScopedMessagePipeHandle service_provider_handle)
       : loader_(loader),
         bus_(bus),
         service_dbus_proxy_(NULL),
         url_(url),
-        shell_handle_(shell_handle.Pass()),
+        service_provider_handle_(service_provider_handle.Pass()),
         keep_alive_(loader->context_) {
     base::PostTaskAndReplyWithResult(
         loader_->context_->task_runners()->io_runner(),
@@ -65,7 +64,7 @@ class DBusServiceLoader::LoadContext {
     CHECK(bus_->SetUpAsyncOperations());
 
     embedder::PlatformChannelPair channel_pair;
-    channel_init_.reset(new common::ChannelInit);
+    channel_init_.reset(new embedder::ChannelInit);
     mojo::ScopedMessagePipeHandle bootstrap_message_pipe =
         channel_init_->Init(channel_pair.PassServerHandle().release().fd,
                             loader_->context_->task_runners()->io_runner());
@@ -105,10 +104,10 @@ class DBusServiceLoader::LoadContext {
   // Sends a ShellHandle over to the now-connected externally-running service,
   // using the Mojo ExternalService API.
   void ActivateService(dbus::Response* response) {
-    mojo::AllocationScope scope;
     external_service_->Activate(
         mojo::ScopedMessagePipeHandle(
-            mojo::MessagePipeHandle(shell_handle_.release().value())));
+            mojo::MessagePipeHandle(
+                service_provider_handle_.release().value())));
   }
 
   // Should the ExternalService disappear completely, destroy connection state.
@@ -132,9 +131,9 @@ class DBusServiceLoader::LoadContext {
   scoped_refptr<dbus::Bus> bus_;
   dbus::ObjectProxy* service_dbus_proxy_;  // Owned by bus_;
   const GURL url_;
-  ScopedMessagePipeHandle shell_handle_;
+  ScopedMessagePipeHandle service_provider_handle_;
   KeepAlive keep_alive_;
-  scoped_ptr<common::ChannelInit> channel_init_;
+  scoped_ptr<embedder::ChannelInit> channel_init_;
   ExternalServicePtr external_service_;
 
   DISALLOW_COPY_AND_ASSIGN(LoadContext);

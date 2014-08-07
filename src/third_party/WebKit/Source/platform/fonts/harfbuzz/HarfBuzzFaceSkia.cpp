@@ -40,7 +40,6 @@
 #include "SkUtils.h"
 #include "platform/fonts/FontPlatformData.h"
 #include "platform/fonts/SimpleFontData.h"
-#include "platform/fonts/GlyphBuffer.h"
 #include "platform/fonts/harfbuzz/HarfBuzzShaper.h"
 
 #include "hb.h"
@@ -128,7 +127,7 @@ static hb_position_t harfBuzzGetGlyphHorizontalKerning(hb_font_t*, void* fontDat
 
     SkTypeface* typeface = hbFontData->m_paint.getTypeface();
 
-    const uint16_t glyphs[2] = { leftGlyph, rightGlyph };
+    const uint16_t glyphs[2] = { static_cast<uint16_t>(leftGlyph), static_cast<uint16_t>(rightGlyph) };
     int32_t kerningAdjustments[1] = { 0 };
 
     if (typeface->getKerningPairAdjustments(glyphs, 2, kerningAdjustments)) {
@@ -150,7 +149,7 @@ static hb_position_t harfBuzzGetGlyphVerticalKerning(hb_font_t*, void* fontData,
 
     SkTypeface* typeface = hbFontData->m_paint.getTypeface();
 
-    const uint16_t glyphs[2] = { topGlyph, bottomGlyph };
+    const uint16_t glyphs[2] = { static_cast<uint16_t>(topGlyph), static_cast<uint16_t>(bottomGlyph) };
     int32_t kerningAdjustments[1] = { 0 };
 
     if (typeface->getKerningPairAdjustments(glyphs, 2, kerningAdjustments)) {
@@ -233,11 +232,6 @@ hb_font_t* HarfBuzzFace::createFont()
     hb_font_set_scale(font, scale, scale);
     hb_font_make_immutable(font);
     return font;
-}
-
-GlyphBufferAdvance HarfBuzzShaper::createGlyphBufferAdvance(float width, float height)
-{
-    return GlyphBufferAdvance(width, height);
 }
 
 } // namespace WebCore

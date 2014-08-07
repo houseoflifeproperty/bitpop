@@ -6,7 +6,6 @@
 
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,8 +15,10 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/touch_uma/touch_uma.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
+#include "ui/base/hit_test.h"
 
 // static
 const char BrowserRootView::kViewClassName[] =
@@ -124,9 +125,11 @@ bool BrowserRootView::OnMouseWheel(const ui::MouseWheelEvent& event) {
     // Switch to the left/right tab if the wheel-scroll happens over the
     // tabstrip, or the empty space beside the tabstrip.
     views::View* hit_view = GetEventHandlerForPoint(event.location());
-    views::NonClientView* non_client = GetWidget()->non_client_view();
+    int hittest =
+        GetWidget()->non_client_view()->NonClientHitTest(event.location());
     if (tabstrip()->Contains(hit_view) ||
-        hit_view == non_client->frame_view()) {
+        hittest == HTCAPTION ||
+        hittest == HTTOP) {
       int scroll_offset = abs(event.y_offset()) > abs(event.x_offset()) ?
           event.y_offset() : -event.x_offset();
       Browser* browser = browser_view_->browser();
@@ -196,7 +199,8 @@ bool BrowserRootView::GetPasteAndGoURL(const ui::OSExchangeData& data,
   AutocompleteMatch match;
   AutocompleteClassifierFactory::GetForProfile(
       browser_view_->browser()->profile())->Classify(
-          text, false, false, AutocompleteInput::INVALID_SPEC, &match, NULL);
+          text, false, false, metrics::OmniboxEventProto::INVALID_SPEC, &match,
+          NULL);
   if (!match.destination_url.is_valid())
     return false;
 

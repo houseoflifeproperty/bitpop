@@ -29,6 +29,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "crypto/sha2.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/constants.h"
@@ -151,7 +152,8 @@ ExtensionUpdater::ExtensionUpdater(ExtensionServiceInterface* service,
 #endif
   frequency_seconds_ = std::min(frequency_seconds_, kMaxUpdateFrequencySeconds);
 
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
                  content::NotificationService::AllBrowserContextsAndSources());
 }
 
@@ -565,7 +567,7 @@ void ExtensionUpdater::MaybeInstallCRXFile() {
           it != crx_file.request_ids.end(); ++it) {
         InProgressCheck& request = requests_in_progress_[*it];
         if (request.install_immediately) {
-          installer->set_install_wait_for_idle(false);
+          installer->set_install_immediately(true);
           break;
         }
       }
@@ -616,7 +618,7 @@ void ExtensionUpdater::Observe(int type,
       MaybeInstallCRXFile();
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED: {
       const Extension* extension =
           content::Details<const InstalledExtensionInfo>(details)->extension;
       if (extension)

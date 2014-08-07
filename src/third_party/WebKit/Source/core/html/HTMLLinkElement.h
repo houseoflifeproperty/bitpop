@@ -100,14 +100,9 @@ private:
         Blocking
     };
 
-    enum RemovePendingSheetNotificationType {
-        RemovePendingSheetNotifyImmediately,
-        RemovePendingSheetNotifyLater
-    };
-
     void clearSheet();
     void addPendingSheet(PendingSheetType);
-    void removePendingSheet(RemovePendingSheetNotificationType = RemovePendingSheetNotifyImmediately);
+    void removePendingSheet();
     Document& document();
 
     RefPtrWillBeMember<CSSStyleSheet> m_sheet;
@@ -147,6 +142,8 @@ public:
     bool isImport() const { return linkImport(); }
     bool isDisabled() const { return linkStyle() && linkStyle()->isDisabled(); }
     bool isEnabledViaScript() const { return linkStyle() && linkStyle()->isEnabledViaScript(); }
+    void enableIfExitTransitionStyle();
+
     DOMSettableTokenList* sizes() const;
 
     void dispatchPendingEvent(LinkEventSender*);

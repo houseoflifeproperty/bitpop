@@ -5,55 +5,54 @@
 // Do not test orientation or hover attributes (similar to exclusions on native
 // accessibility), since they can be inconsistent depending on the environment.
 var RemoveUntestedStates = function(state) {
-  delete state['horizontal'];
-  delete state['hovered'];
-  delete state['vertical'];
+  delete state[StateType.horizontal];
+  delete state[StateType.hovered];
+  delete state[StateType.vertical];
 };
 
 var allTests = [
   function testSimplePage() {
-    var title = tree.root.attributes['ax_attr_doc_title'];
+    var title = rootNode.attributes.docTitle;
     assertEq('Automation Tests', title);
-    RemoveUntestedStates(tree.root.state);
+    RemoveUntestedStates(rootNode.state);
     assertEq(
-      {enabled: true, focusable: true, read_only: true},
-      tree.root.state);
-    var children = tree.root.children();
+      {enabled: true, focusable: true, readOnly: true},
+      rootNode.state);
+    var children = rootNode.children();
     assertEq(1, children.length);
-
     var body = children[0];
-    assertEq('body', body.attributes['ax_attr_html_tag']);
+    assertEq('body', body.attributes.htmlTag);
 
     RemoveUntestedStates(body.state);
-    assertEq({enabled: true, read_only: true},
-             body.state);
+    assertEq({enabled: true, readOnly: true},
+               body.state);
 
     var contentChildren = body.children();
     assertEq(3, contentChildren.length);
     var okButton = contentChildren[0];
-    assertEq('Ok', okButton.attributes['ax_attr_name']);
+    assertEq('Ok', okButton.attributes.name);
     RemoveUntestedStates(okButton.state);
-    assertEq({enabled: true, focusable: true, read_only: true},
+    assertEq({enabled: true, focusable: true, readOnly: true},
              okButton.state);
     var userNameInput = contentChildren[1];
     assertEq('Username',
-             userNameInput.attributes['ax_attr_description']);
+             userNameInput.attributes.description);
     RemoveUntestedStates(userNameInput.state);
     assertEq({enabled: true, focusable: true},
              userNameInput.state);
     var cancelButton = contentChildren[2];
     assertEq('Cancel',
-             cancelButton.attributes['ax_attr_name']);
+             cancelButton.attributes.name);
     RemoveUntestedStates(cancelButton.state);
-    assertEq({enabled: true, focusable: true, read_only: true},
+    assertEq({enabled: true, focusable: true, readOnly: true},
              cancelButton.state);
 
     // Traversal.
-    assertEq(undefined, tree.root.parent());
-    assertEq(tree.root, body.parent());
+    assertEq(undefined, rootNode.parent());
+    assertEq(rootNode, body.parent());
 
-    assertEq(body, tree.root.firstChild());
-    assertEq(body, tree.root.lastChild());
+    assertEq(body, rootNode.firstChild());
+    assertEq(body, rootNode.lastChild());
 
     assertEq(okButton, body.firstChild());
     assertEq(cancelButton, body.lastChild());
@@ -73,6 +72,11 @@ var allTests = [
     assertEq(userNameInput, cancelButton.previousSibling());
     assertEq(undefined, cancelButton.nextSibling());
 
+    chrome.test.succeed();
+  },
+  function testIsRoot() {
+    assertTrue(rootNode.isRootNode);
+    assertFalse(rootNode.firstChild().isRootNode);
     chrome.test.succeed();
   }
 ];

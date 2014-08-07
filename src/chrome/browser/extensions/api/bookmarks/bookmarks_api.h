@@ -12,11 +12,13 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
-#include "components/bookmarks/core/browser/base_bookmark_model_observer.h"
-#include "components/bookmarks/core/browser/bookmark_node.h"
+#include "components/bookmarks/browser/base_bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_node.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
+
+class ChromeBookmarkClient;
 
 namespace base {
 class FilePath;
@@ -39,7 +41,7 @@ struct CreateDetails;
 // the extension system.
 class BookmarkEventRouter : public BookmarkModelObserver {
  public:
-  BookmarkEventRouter(content::BrowserContext* context, BookmarkModel* model);
+  explicit BookmarkEventRouter(Profile* profile);
   virtual ~BookmarkEventRouter();
 
   // BookmarkModelObserver:
@@ -51,6 +53,8 @@ class BookmarkEventRouter : public BookmarkModelObserver {
                                  int old_index,
                                  const BookmarkNode* new_parent,
                                  int new_index) OVERRIDE;
+  virtual void OnWillAddBookmarkNode(BookmarkModel* model,
+                                     BookmarkNode* node) OVERRIDE;
   virtual void BookmarkNodeAdded(BookmarkModel* model,
                                  const BookmarkNode* parent,
                                  int index) OVERRIDE;
@@ -59,7 +63,7 @@ class BookmarkEventRouter : public BookmarkModelObserver {
                                    int old_index,
                                    const BookmarkNode* node,
                                    const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkAllNodesRemoved(
+  virtual void BookmarkAllUserNodesRemoved(
       BookmarkModel* model,
       const std::set<GURL>& removed_urls) OVERRIDE;
   virtual void BookmarkNodeChanged(BookmarkModel* model,
@@ -78,6 +82,7 @@ class BookmarkEventRouter : public BookmarkModelObserver {
 
   content::BrowserContext* browser_context_;
   BookmarkModel* model_;
+  ChromeBookmarkClient* client_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkEventRouter);
 };
@@ -125,6 +130,12 @@ class BookmarksFunction : public ChromeAsyncExtensionFunction,
   // RunAsync semantic equivalent called when the bookmarks are ready.
   virtual bool RunOnReady() = 0;
 
+  // Helper to get the BookmarkModel.
+  BookmarkModel* GetBookmarkModel();
+
+  // Helper to get the ChromeBookmarkClient.
+  ChromeBookmarkClient* GetChromeBookmarkClient();
+
   // Helper to get the bookmark id as int64 from the given string id.
   // Sets error_ to an error string if the given id string can't be parsed
   // as an int64. In case of error, doesn't change id and returns false.
@@ -145,6 +156,12 @@ class BookmarksFunction : public ChromeAsyncExtensionFunction,
   // Helper that checks if bookmark editing is enabled. If it's not, this sets
   // error_ to the appropriate error string.
   bool EditBookmarksEnabled();
+
+  // Helper that checks if |node| can be modified. Returns false if |node|
+  // is NULL, or a managed node, or the root node. In these cases the node
+  // can't be edited, can't have new child nodes appended, and its direct
+  // children can't be moved or reordered.
+  bool CanBeModified(const BookmarkNode* node);
 
  private:
   // BaseBookmarkModelObserver:

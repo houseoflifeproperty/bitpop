@@ -41,10 +41,10 @@
 
 namespace WebCore {
 
+class Event;
 class EventListener;
 class EventTarget;
 class ExecutionContext;
-class ExecutionContextTask;
 class MutationObserver;
 class XMLHttpRequest;
 
@@ -88,7 +88,9 @@ public:
     void didCancelAnimationFrame(ExecutionContext*, int callbackId);
     void willFireAnimationFrame(ExecutionContext*, int callbackId);
 
-    void willHandleEvent(EventTarget*, const AtomicString& eventType, EventListener*, bool useCapture);
+    void didEnqueueEvent(EventTarget*, Event*, const ScriptValue& callFrames);
+    void didRemoveEvent(EventTarget*, Event*);
+    void willHandleEvent(EventTarget*, Event*, EventListener*, bool useCapture);
     void willLoadXHR(XMLHttpRequest*, const ScriptValue& callFrames);
 
     void didEnqueueMutationRecord(ExecutionContext*, MutationObserver*, const ScriptValue& callFrames);
@@ -96,14 +98,11 @@ public:
     void didClearAllMutationRecords(ExecutionContext*, MutationObserver*);
     void willDeliverMutationRecords(ExecutionContext*, MutationObserver*);
 
-    void didPostPromiseTask(ExecutionContext*, ExecutionContextTask*, bool isResolved, const ScriptValue& callFrames);
-    void willPerformPromiseTask(ExecutionContext*, ExecutionContextTask*);
-
     void didFireAsyncCall();
     void clear();
 
 private:
-    void willHandleXHREvent(XMLHttpRequest*, EventTarget*, const AtomicString& eventType);
+    void willHandleXHREvent(XMLHttpRequest*, EventTarget*, Event*);
 
     PassRefPtr<AsyncCallChain> createAsyncCallChain(const String& description, const ScriptValue& callFrames);
     void setCurrentAsyncCallChain(PassRefPtr<AsyncCallChain>);

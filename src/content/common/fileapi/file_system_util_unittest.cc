@@ -9,8 +9,9 @@
 #include "url/gurl.h"
 
 using fileapi::CrackIsolatedFileSystemName;
-using fileapi::FileSystemType;
+using fileapi::GetExternalFileSystemRootURIString;
 using fileapi::GetIsolatedFileSystemName;
+using fileapi::GetIsolatedFileSystemRootURIString;
 using fileapi::ValidateIsolatedFileSystemId;
 using fileapi::VirtualPath;
 
@@ -22,7 +23,7 @@ class FileSystemUtilTest : public testing::Test {};
 TEST_F(FileSystemUtilTest, ParseFileSystemSchemeURL) {
   GURL uri("filesystem:http://chromium.org/temporary/foo/bar");
   GURL origin_url;
-  FileSystemType type;
+  fileapi::FileSystemType type;
   base::FilePath virtual_path;
   ParseFileSystemSchemeURL(uri, &origin_url, &type, &virtual_path);
   EXPECT_EQ(GURL("http://chromium.org"), origin_url);
@@ -279,6 +280,27 @@ TEST_F(FileSystemUtilTest, ValidateIsolatedFileSystemId) {
   const std::string kSpaceId = "ABCD EFGH IJKL MNOP QRST UVWX YZ";
   EXPECT_EQ(kExpectedFileSystemIdSize, kSpaceId.size());
   EXPECT_FALSE(ValidateIsolatedFileSystemId(kSpaceId));
+}
+
+TEST_F(FileSystemUtilTest, GetIsolatedFileSystemRootURIString) {
+  const GURL kOriginURL("http://foo");
+  // Percents must be escaped, otherwise they will be unintentionally unescaped.
+  const std::string kFileSystemId = "A%20B";
+  const std::string kRootName = "C%20D";
+
+  const std::string url_string =
+      GetIsolatedFileSystemRootURIString(kOriginURL, kFileSystemId, kRootName);
+  EXPECT_EQ("filesystem:http://foo/isolated/A%2520B/C%2520D/", url_string);
+}
+
+TEST_F(FileSystemUtilTest, GetExternalFileSystemRootURIString) {
+  const GURL kOriginURL("http://foo");
+  // Percents must be escaped, otherwise they will be unintentionally unescaped.
+  const std::string kMountName = "X%20Y";
+
+  const std::string url_string =
+      GetExternalFileSystemRootURIString(kOriginURL, kMountName);
+  EXPECT_EQ("filesystem:http://foo/external/X%2520Y/", url_string);
 }
 
 }  // namespace

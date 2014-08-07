@@ -31,13 +31,12 @@
 #include "config.h"
 #include "bindings/v8/V8GCController.h"
 
-#include <algorithm>
-#include "V8MutationObserver.h"
-#include "V8Node.h"
-#include "V8ScriptRunner.h"
+#include "bindings/core/v8/V8MutationObserver.h"
+#include "bindings/core/v8/V8Node.h"
 #include "bindings/v8/RetainedDOMInfo.h"
 #include "bindings/v8/V8AbstractEventListener.h"
 #include "bindings/v8/V8Binding.h"
+#include "bindings/v8/V8ScriptRunner.h"
 #include "bindings/v8/WrapperTypeInfo.h"
 #include "core/dom/Attr.h"
 #include "core/dom/NodeTraversal.h"
@@ -49,7 +48,9 @@
 #include "core/html/imports/HTMLImportsController.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/svg/SVGElement.h"
+#include "platform/Partitions.h"
 #include "platform/TraceEvent.h"
+#include <algorithm>
 
 namespace WebCore {
 
@@ -409,7 +410,7 @@ void V8GCController::gcEpilogue(v8::GCType type, v8::GCCallbackFlags flags)
     }
 
     TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "GCEvent", "usedHeapSizeAfter", usedHeapSize(isolate));
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "", InspectorUpdateCountersEvent::data());
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
 }
 
 void V8GCController::minorGCEpilogue(v8::Isolate* isolate)
@@ -430,8 +431,25 @@ void V8GCController::majorGCEpilogue(v8::Isolate* isolate)
 
 void V8GCController::collectGarbage(v8::Isolate* isolate)
 {
-    V8ExecutionScope scope(isolate);
+    v8::HandleScope handleScope(isolate);
+    RefPtr<ScriptState> scriptState = ScriptState::create(v8::Context::New(isolate), DOMWrapperWorld::create());
+    ScriptState::Scope scope(scriptState.get());
     V8ScriptRunner::compileAndRunInternalScript(v8String(isolate, "if (gc) gc();"), isolate);
+    scriptState->disposePerContextData();
+}
+
+void V8GCController::reportDOMMemoryUsageToV8(v8::Isolate* isolate)
+{
+    if (!isMainThread())
+        return;
+
+    static size_t lastUsageReportedToV8 = 0;
+
+    size_t currentUsage = Partitions::currentDOMMemoryUsage();
+    int64_t diff = static_cast<int64_t>(currentUsage) - static_cast<int64_t>(lastUsageReportedToV8);
+    isolate->AdjustAmountOfExternalAllocatedMemory(diff);
+
+    lastUsageReportedToV8 = currentUsage;
 }
 
 }  // namespace WebCore

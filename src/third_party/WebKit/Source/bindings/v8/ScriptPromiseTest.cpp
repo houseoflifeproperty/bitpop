@@ -31,12 +31,12 @@
 #include "config.h"
 #include "bindings/v8/ScriptPromise.h"
 
-#include "RuntimeEnabledFeatures.h"
-#include "bindings/v8/DOMWrapperWorld.h"
+#include "bindings/v8/ScriptFunction.h"
 #include "bindings/v8/ScriptPromiseResolver.h"
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/custom/V8PromiseCustom.h"
+#include "core/dom/DOMException.h"
+#include "core/dom/ExceptionCode.h"
 
 #include <gtest/gtest.h>
 #include <v8.h>
@@ -47,65 +47,212 @@ namespace {
 
 void callback(const v8::FunctionCallbackInfo<v8::Value>& info) { }
 
+class Function : public ScriptFunction {
+public:
+    static PassOwnPtr<Function> create(v8::Isolate* isolate, String* value)
+    {
+        return adoptPtr(new Function(isolate, value));
+    }
+
+    virtual ScriptValue call(ScriptValue value) OVERRIDE
+    {
+        ASSERT(!value.isEmpty());
+        *m_value = toCoreString(value.v8Value()->ToString());
+        return value;
+    }
+
+private:
+    Function(v8::Isolate* isolate, String* value) : ScriptFunction(isolate), m_value(value) { }
+
+    String* m_value;
+};
+
 class ScriptPromiseTest : public testing::Test {
 public:
     ScriptPromiseTest()
-        : m_scope(V8ExecutionScope::create(v8::Isolate::GetCurrent()))
+        : m_scope(v8::Isolate::GetCurrent())
     {
     }
 
     ~ScriptPromiseTest()
     {
         // FIXME: We put this statement here to clear an exception from the isolate.
-        createClosure(callback, v8::Undefined(m_scope->isolate()), m_scope->isolate());
+        createClosure(callback, v8::Undefined(m_scope.isolate()), m_scope.isolate());
+
+        // Execute all pending microtasks
+        isolate()->RunMicrotasks();
     }
 
-    V8PromiseCustom::PromiseState state(ScriptPromise promise)
-    {
-        return V8PromiseCustom::getState(V8PromiseCustom::getInternal(promise.v8Value().As<v8::Object>()));
-    }
+    ScriptState* scriptState() const { return m_scope.scriptState(); }
+    v8::Isolate* isolate() const { return m_scope.isolate(); }
 
 protected:
-    OwnPtr<V8ExecutionScope> m_scope;
+    V8TestingScope m_scope;
 };
 
 TEST_F(ScriptPromiseTest, constructFromNonPromise)
 {
     v8::TryCatch trycatch;
-    ScriptPromise promise(m_scope->scriptState(), v8::Undefined(m_scope->isolate()));
+    ScriptPromise promise(scriptState(), v8::Undefined(isolate()));
     ASSERT_TRUE(trycatch.HasCaught());
     ASSERT_TRUE(promise.isEmpty());
 }
 
-TEST_F(ScriptPromiseTest, castPromise)
+TEST_F(ScriptPromiseTest, thenResolve)
 {
-    if (RuntimeEnabledFeatures::scriptPromiseOnV8PromiseEnabled())
-        return;
-    ScriptPromise promise = ScriptPromiseResolver::create(m_scope->scriptState())->promise();
-    ScriptPromise newPromise = ScriptPromise::cast(ScriptValue(m_scope->scriptState(), promise.v8Value()));
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState());
+    ScriptPromise promise = resolver->promise();
+    String onFulfilled, onRejected;
+    promise.then(Function::create(isolate(), &onFulfilled), Function::create(isolate(), &onRejected));
 
     ASSERT_FALSE(promise.isEmpty());
-    EXPECT_EQ(V8PromiseCustom::Pending, state(promise));
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ(String(), onRejected);
+
+    isolate()->RunMicrotasks();
+    resolver->resolve("hello");
+
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ(String(), onRejected);
+
+    isolate()->RunMicrotasks();
+
+    EXPECT_EQ("hello", onFulfilled);
+    EXPECT_EQ(String(), onRejected);
+}
+
+TEST_F(ScriptPromiseTest, resolveThen)
+{
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState());
+    ScriptPromise promise = resolver->promise();
+    String onFulfilled, onRejected;
+    resolver->resolve("hello");
+    promise.then(Function::create(isolate(), &onFulfilled), Function::create(isolate(), &onRejected));
+
+    ASSERT_FALSE(promise.isEmpty());
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ(String(), onRejected);
+
+    isolate()->RunMicrotasks();
+
+    EXPECT_EQ("hello", onFulfilled);
+    EXPECT_EQ(String(), onRejected);
+}
+
+TEST_F(ScriptPromiseTest, thenReject)
+{
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState());
+    ScriptPromise promise = resolver->promise();
+    String onFulfilled, onRejected;
+    promise.then(Function::create(isolate(), &onFulfilled), Function::create(isolate(), &onRejected));
+
+    ASSERT_FALSE(promise.isEmpty());
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ(String(), onRejected);
+
+    isolate()->RunMicrotasks();
+    resolver->reject("hello");
+
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ(String(), onRejected);
+
+    isolate()->RunMicrotasks();
+
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ("hello", onRejected);
+}
+
+TEST_F(ScriptPromiseTest, rejectThen)
+{
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState());
+    ScriptPromise promise = resolver->promise();
+    String onFulfilled, onRejected;
+    resolver->reject("hello");
+    promise.then(Function::create(isolate(), &onFulfilled), Function::create(isolate(), &onRejected));
+
+    ASSERT_FALSE(promise.isEmpty());
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ(String(), onRejected);
+
+    isolate()->RunMicrotasks();
+
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ("hello", onRejected);
+}
+
+TEST_F(ScriptPromiseTest, castPromise)
+{
+    ScriptPromise promise = ScriptPromiseResolver::create(scriptState())->promise();
+    ScriptPromise newPromise = ScriptPromise::cast(scriptState(), promise.v8Value());
+
+    ASSERT_FALSE(promise.isEmpty());
     EXPECT_EQ(promise.v8Value(), newPromise.v8Value());
 }
 
 TEST_F(ScriptPromiseTest, castNonPromise)
 {
-    if (RuntimeEnabledFeatures::scriptPromiseOnV8PromiseEnabled())
-        return;
-    ScriptValue value = ScriptValue(m_scope->scriptState(), v8String(m_scope->isolate(), "hello"));
-    ScriptPromise promise1 = ScriptPromise::cast(ScriptValue(value));
-    ScriptPromise promise2 = ScriptPromise::cast(ScriptValue(value));
+    String onFulfilled1, onFulfilled2, onRejected1, onRejected2;
+
+    ScriptValue value = ScriptValue(scriptState(), v8String(isolate(), "hello"));
+    ScriptPromise promise1 = ScriptPromise::cast(scriptState(), ScriptValue(value));
+    ScriptPromise promise2 = ScriptPromise::cast(scriptState(), ScriptValue(value));
+    promise1.then(Function::create(isolate(), &onFulfilled1), Function::create(isolate(), &onRejected1));
+    promise2.then(Function::create(isolate(), &onFulfilled2), Function::create(isolate(), &onRejected2));
 
     ASSERT_FALSE(promise1.isEmpty());
     ASSERT_FALSE(promise2.isEmpty());
-
-    ASSERT_TRUE(V8PromiseCustom::isPromise(promise1.v8Value(), m_scope->isolate()));
-    ASSERT_TRUE(V8PromiseCustom::isPromise(promise2.v8Value(), m_scope->isolate()));
-
-    EXPECT_EQ(V8PromiseCustom::Fulfilled, state(promise1));
-    EXPECT_EQ(V8PromiseCustom::Fulfilled, state(promise2));
     EXPECT_NE(promise1.v8Value(), promise2.v8Value());
+
+    ASSERT_TRUE(promise1.v8Value()->IsPromise());
+    ASSERT_TRUE(promise2.v8Value()->IsPromise());
+
+    EXPECT_EQ(String(), onFulfilled1);
+    EXPECT_EQ(String(), onFulfilled2);
+    EXPECT_EQ(String(), onRejected1);
+    EXPECT_EQ(String(), onRejected2);
+
+    isolate()->RunMicrotasks();
+
+    EXPECT_EQ("hello", onFulfilled1);
+    EXPECT_EQ("hello", onFulfilled2);
+    EXPECT_EQ(String(), onRejected1);
+    EXPECT_EQ(String(), onRejected2);
+}
+
+TEST_F(ScriptPromiseTest, reject)
+{
+    String onFulfilled, onRejected;
+
+    ScriptValue value = ScriptValue(scriptState(), v8String(isolate(), "hello"));
+    ScriptPromise promise = ScriptPromise::reject(scriptState(), ScriptValue(value));
+    promise.then(Function::create(isolate(), &onFulfilled), Function::create(isolate(), &onRejected));
+
+    ASSERT_FALSE(promise.isEmpty());
+    ASSERT_TRUE(promise.v8Value()->IsPromise());
+
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ(String(), onRejected);
+
+    isolate()->RunMicrotasks();
+
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ("hello", onRejected);
+}
+
+TEST_F(ScriptPromiseTest, rejectWithExceptionState)
+{
+    String onFulfilled, onRejected;
+    ScriptPromise promise = ScriptPromise::rejectWithDOMException(scriptState(), DOMException::create(SyntaxError, "some syntax error"));
+    promise.then(Function::create(isolate(), &onFulfilled), Function::create(isolate(), &onRejected));
+
+    ASSERT_FALSE(promise.isEmpty());
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ(String(), onRejected);
+
+    isolate()->RunMicrotasks();
+
+    EXPECT_EQ(String(), onFulfilled);
+    EXPECT_EQ("SyntaxError: some syntax error", onRejected);
 }
 
 } // namespace

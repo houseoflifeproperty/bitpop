@@ -43,10 +43,10 @@ const char kSyncExtensions[] = "sync.extensions";
 const char kSyncFaviconImages[] = "sync.favicon_images";
 const char kSyncFaviconTracking[] = "sync.favicon_tracking";
 const char kSyncHistoryDeleteDirectives[] = "sync.history_delete_directives";
-const char kSyncManagedUserSettings[] = "sync.managed_user_settings";
-const char kSyncManagedUserSharedSettings[] =
+const char kSyncSupervisedUserSettings[] = "sync.managed_user_settings";
+const char kSyncSupervisedUserSharedSettings[] =
     "sync.managed_user_shared_settings";
-const char kSyncManagedUsers[] = "sync.managed_users";
+const char kSyncSupervisedUsers[] = "sync.managed_users";
 const char kSyncArticles[] = "sync.articles";
 const char kSyncPasswords[] = "sync.passwords";
 const char kSyncPreferences[] = "sync.preferences";
@@ -94,6 +94,12 @@ const char kSyncSessionsGUID[] = "sync.session_sync_guid";
 // disabled. This will be refreshed every sign-in.
 const char kSyncSpareBootstrapToken[] = "sync.spare_bootstrap_token";
 #endif  // defined(OS_CHROMEOS)
+
+// Stores how many times to try rollback before giving up.
+const char kSyncRemainingRollbackTries[] = "sync.remaining_rollback_tries";
+
+// Stores the timestamp of first sync.
+const char kSyncFirstSyncTime[] = "sync.first_sync_time";
 
 }  // namespace prefs
 

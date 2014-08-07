@@ -400,7 +400,9 @@ def main():
         os.path.dirname(sys.executable),
         os.path.join(os.environ['SYSTEMROOT'], 'system32'),
         os.path.join(os.environ['SYSTEMROOT'], 'system32', 'WBEM'),
-        os.path.join(os.environ['SYSTEMDRIVE'], 'Program Files', '7-Zip'),
+        # Use os.sep to make this absolute, not relative.
+        os.path.join(os.environ['SYSTEMDRIVE'], os.sep, 'Program Files',
+                     '7-Zip'),
     ]
     # build_internal/tools contains tools we can't redistribute.
     tools = os.path.join(ROOT_DIR, 'build_internal', 'tools')
@@ -472,6 +474,17 @@ def main():
 
   import twisted.scripts.twistd as twistd
   twistd.run()
+  shutdown_file = os.path.join(os.path.dirname(__file__), 'shutdown.stamp')
+  if os.path.isfile(shutdown_file):
+    # If this slave is being shut down gracefully, don't reboot it.
+    try:
+      os.remove(shutdown_file)
+      # Only disable reboot if the file can be removed.  Otherwise, the slave
+      # might get stuck offline after every build.
+      global needs_reboot
+      needs_reboot = False
+    except OSError:
+      Log('Could not delete graceful shutdown signal file %s' % shutdown_file)
   if needs_reboot:
     # Send the appropriate system shutdown command.
     Reboot()

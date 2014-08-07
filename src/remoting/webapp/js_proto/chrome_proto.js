@@ -200,6 +200,11 @@ chrome.identity = {
   getAuthToken: function(parameters, callback) {},
   /**
    * @param {Object.<string>} parameters
+   * @param {function():void} callback
+   */
+  removeCachedAuthToken: function(parameters, callback) {},
+  /**
+   * @param {Object.<string>} parameters
    * @param {function(string):void} callback
    */
   launchWebAuthFlow: function(parameters, callback) {}
@@ -287,6 +292,7 @@ var AppWindow = function() {
 
 AppWindow.prototype.close = function() {};
 AppWindow.prototype.drawAttention = function() {};
+AppWindow.prototype.maximize = function() {};
 AppWindow.prototype.minimize = function() {};
 AppWindow.prototype.restore = function() {};
 AppWindow.prototype.fullscreen = function() {};

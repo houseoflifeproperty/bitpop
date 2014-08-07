@@ -10,7 +10,9 @@
 
 #include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/avatar_menu_observer.h"
+#include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/profile_chooser_constants.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
@@ -44,40 +46,18 @@ class ProfileChooserView : public views::BubbleDelegateView,
                            public AvatarMenuObserver,
                            public OAuth2TokenService::Observer {
  public:
-  // Different views that can be displayed in the bubble.
-  enum BubbleViewMode {
-    // Shows a "fast profile switcher" view.
-    BUBBLE_VIEW_MODE_PROFILE_CHOOSER,
-    // Shows a list of accounts for the active user.
-    BUBBLE_VIEW_MODE_ACCOUNT_MANAGEMENT,
-    // Shows a web view for primary sign in.
-    BUBBLE_VIEW_MODE_GAIA_SIGNIN,
-    // Shows a web view for adding secondary accounts.
-    BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT,
-    // Shows a view for confirming account removal.
-    BUBBLE_VIEW_MODE_ACCOUNT_REMOVAL,
-    // Shows a view for ending new profile management preview.
-    BUBBLE_VIEW_MODE_END_PREVIEW
-  };
-
-  enum TutorialMode {
-    TUTORIAL_MODE_NONE,             // No tutorial card shown.
-    TUTORIAL_MODE_ENABLE_PREVIEW,   // The enable-mirror-preview tutorial shown.
-    TUTORIAL_MODE_PREVIEW_ENABLED,  // The welcome-to-mirror tutorial shown.
-    TUTORIAL_MODE_SEND_FEEDBACK     // The send-feedback tutorial shown.
-  };
-
   // Shows the bubble if one is not already showing.  This allows us to easily
   // make a button toggle the bubble on and off when clicked: we unconditionally
   // call this function when the button is clicked and if the bubble isn't
   // showing it will appear while if it is showing, nothing will happen here and
   // the existing bubble will auto-close due to focus loss.
-  static void ShowBubble(BubbleViewMode view_mode,
-                         views::View* anchor_view,
-                         views::BubbleBorder::Arrow arrow,
-                         views::BubbleBorder::BubbleAlignment border_alignment,
-                         const gfx::Rect& anchor_rect,
-                         Browser* browser);
+  static void ShowBubble(
+      profiles::BubbleViewMode view_mode,
+      const signin::ManageAccountsParams& manage_accounts_params,
+      views::View* anchor_view,
+      views::BubbleBorder::Arrow arrow,
+      views::BubbleBorder::BubbleAlignment border_alignment,
+      Browser* browser);
   static bool IsShowing();
   static void Hide();
 
@@ -98,9 +78,9 @@ class ProfileChooserView : public views::BubbleDelegateView,
 
   ProfileChooserView(views::View* anchor_view,
                      views::BubbleBorder::Arrow arrow,
-                     const gfx::Rect& anchor_rect,
                      Browser* browser,
-                     BubbleViewMode view_mode);
+                     profiles::BubbleViewMode view_mode,
+                     signin::GAIAServiceType service_type);
   virtual ~ProfileChooserView();
 
   // views::BubbleDelegateView:
@@ -135,13 +115,13 @@ class ProfileChooserView : public views::BubbleDelegateView,
   void ResetView();
 
   // Shows the bubble with the |view_to_display|.
-  void ShowView(BubbleViewMode view_to_display,
+  void ShowView(profiles::BubbleViewMode view_to_display,
                 AvatarMenu* avatar_menu);
 
   // Creates the profile chooser view. |tutorial_shown| indicates if the "mirror
   // enabled" tutorial was shown or not in the last active view.
   views::View* CreateProfileChooserView(AvatarMenu* avatar_menu,
-                                        TutorialMode last_tutorial_mode);
+      profiles::TutorialMode last_tutorial_mode);
 
   // Creates the main profile card for the profile |avatar_item|. |is_guest|
   // is used to determine whether to show any Sign in/Sign out/Manage accounts
@@ -152,6 +132,7 @@ class ProfileChooserView : public views::BubbleDelegateView,
   views::View* CreateGuestProfileView();
   views::View* CreateOtherProfilesView(const Indexes& avatars_to_show);
   views::View* CreateOptionsView(bool enable_lock);
+  views::View* CreateSupervisedUserDisclaimerView();
 
   // Account Management view for the profile |avatar_item|.
   views::View* CreateCurrentProfileAccountsView(
@@ -159,10 +140,11 @@ class ProfileChooserView : public views::BubbleDelegateView,
   void CreateAccountButton(views::GridLayout* layout,
                            const std::string& account,
                            bool is_primary_account,
+                           bool reauth_required,
                            int width);
 
   // Creates a webview showing the gaia signin page.
-  views::View* CreateGaiaSigninView(bool add_secondary_account);
+  views::View* CreateGaiaSigninView();
 
   // Creates a view to confirm account removal for |account_id_to_remove_|.
   views::View* CreateAccountRemovalView();
@@ -191,7 +173,7 @@ class ProfileChooserView : public views::BubbleDelegateView,
   // sets |link| to point to the newly created link, |button| to the newly
   // created button, and |tutorial_mode_| to the given |tutorial_mode|.
   views::View* CreateTutorialView(
-      TutorialMode tutorial_mode,
+      profiles::TutorialMode tutorial_mode,
       const base::string16& title_text,
       const base::string16& content_text,
       const base::string16& link_text,
@@ -201,14 +183,18 @@ class ProfileChooserView : public views::BubbleDelegateView,
 
   views::View* CreateEndPreviewView();
 
+  // Clean-up done after an action was performed in the ProfileChooser.
+  void PostActionPerformed(ProfileMetrics::ProfileDesktopMenu action_performed);
+
   scoped_ptr<AvatarMenu> avatar_menu_;
   Browser* browser_;
 
   // Other profiles used in the "fast profile switcher" view.
   ButtonIndexes open_other_profile_indexes_map_;
 
-  // Accounts associated with the current profile.
-  AccountButtonIndexes current_profile_accounts_map_;
+  // Buttons associated with the current profile.
+  AccountButtonIndexes delete_account_button_map_;
+  AccountButtonIndexes reauth_account_button_map_;
 
   // Links and buttons displayed in the tutorial card.
   views::Link* tutorial_learn_more_link_;
@@ -247,10 +233,13 @@ class ProfileChooserView : public views::BubbleDelegateView,
   std::string account_id_to_remove_;
 
   // Active view mode.
-  BubbleViewMode view_mode_;
+  profiles::BubbleViewMode view_mode_;
 
   // The current tutorial mode.
-  TutorialMode tutorial_mode_;
+  profiles::TutorialMode tutorial_mode_;
+
+  // The GAIA service type provided in the response header.
+  signin::GAIAServiceType gaia_service_type_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileChooserView);
 };

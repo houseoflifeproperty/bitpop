@@ -118,7 +118,7 @@ protected:
     const Referrer& referrer() const { return m_referrer; }
 
 private:
-    RefPtr<Document> m_originDocument;
+    RefPtrWillBePersistent<Document> m_originDocument;
     String m_url;
     Referrer m_referrer;
 };
@@ -190,7 +190,7 @@ public:
         }
         // go(i!=0) from a frame navigates into the history of the frame only,
         // in both IE and NS (but not in Mozilla). We can't easily do that.
-        frame->page()->mainFrame()->loader().client()->navigateBackForward(m_historySteps);
+        frame->page()->deprecatedLocalMainFrame()->loader().client()->navigateBackForward(m_historySteps);
     }
 
 private:
@@ -199,7 +199,7 @@ private:
 
 class ScheduledFormSubmission FINAL : public ScheduledNavigation {
 public:
-    ScheduledFormSubmission(PassRefPtr<FormSubmission> submission, bool lockBackForwardList)
+    ScheduledFormSubmission(PassRefPtrWillBeRawPtr<FormSubmission> submission, bool lockBackForwardList)
         : ScheduledNavigation(0, lockBackForwardList, true)
         , m_submission(submission)
     {
@@ -221,7 +221,7 @@ public:
     FormSubmission* submission() const { return m_submission.get(); }
 
 private:
-    RefPtr<FormSubmission> m_submission;
+    RefPtrWillBePersistent<FormSubmission> m_submission;
 };
 
 NavigationScheduler::NavigationScheduler(LocalFrame* frame)
@@ -289,7 +289,8 @@ bool NavigationScheduler::mustLockBackForwardList(LocalFrame* targetFrame)
     // Navigation of a subframe during loading of an ancestor frame does not create a new back/forward item.
     // The definition of "during load" is any time before all handlers for the load event have been run.
     // See https://bugs.webkit.org/show_bug.cgi?id=14957 for the original motivation for this.
-    return targetFrame->tree().parent() && !targetFrame->tree().parent()->loader().allAncestorsAreComplete();
+    Frame* parentFrame = targetFrame->tree().parent();
+    return parentFrame && parentFrame->isLocalFrame() && !toLocalFrame(parentFrame)->loader().allAncestorsAreComplete();
 }
 
 void NavigationScheduler::scheduleLocationChange(Document* originDocument, const String& url, const Referrer& referrer, bool lockBackForwardList)
@@ -320,7 +321,7 @@ void NavigationScheduler::scheduleLocationChange(Document* originDocument, const
     schedule(adoptPtr(new ScheduledLocationChange(originDocument, url, referrer, lockBackForwardList)));
 }
 
-void NavigationScheduler::scheduleFormSubmission(PassRefPtr<FormSubmission> submission)
+void NavigationScheduler::scheduleFormSubmission(PassRefPtrWillBeRawPtr<FormSubmission> submission)
 {
     ASSERT(m_frame->page());
     schedule(adoptPtr(new ScheduledFormSubmission(submission, mustLockBackForwardList(m_frame))));

@@ -31,8 +31,8 @@
 #ifndef FontFace_h
 #define FontFace_h
 
-#include "CSSPropertyNames.h"
 #include "bindings/v8/ScriptPromise.h"
+#include "core/CSSPropertyNames.h"
 #include "core/css/CSSValue.h"
 #include "core/dom/DOMError.h"
 #include "platform/fonts/FontTraits.h"
@@ -80,8 +80,9 @@ public:
     void setFeatureSettings(ExecutionContext*, const String&, ExceptionState&);
 
     String status() const;
+    ScriptPromise loaded(ScriptState* scriptState) { return fontStatusPromise(scriptState); }
 
-    ScriptPromise load(ExecutionContext*);
+    ScriptPromise load(ScriptState*);
 
     LoadStatus loadStatus() const { return m_status; }
     void setLoadStatus(LoadStatus);
@@ -113,6 +114,7 @@ private:
     bool setFamilyValue(CSSValueList*);
     void resolveReadyPromises();
     void loadInternal(ExecutionContext*);
+    ScriptPromise fontStatusPromise(ScriptState*);
 
     AtomicString m_family;
     RefPtrWillBeMember<CSSValue> m_src;

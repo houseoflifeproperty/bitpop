@@ -22,7 +22,10 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// http://dev.w3.org/2011/webrtc/editor/getusermedia.html#idl-def-MediaStream
+
 [
+    WillBeGarbageCollected,
     Constructor,
     Constructor(MediaStream stream),
     Constructor(MediaStreamTrack[] tracks),

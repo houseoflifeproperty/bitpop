@@ -14,7 +14,6 @@
 #include "chrome/browser/content_settings/content_settings_details.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/notifications/notification.h"
@@ -30,8 +29,9 @@
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_frame_host.h"
@@ -54,6 +54,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/browser/info_map.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -382,7 +383,7 @@ std::string DesktopNotificationService::AddIconNotification(
                             blink::WebTextDirectionDefault,
                             base::string16(), replace_id, delegate);
   g_browser_process->notification_ui_manager()->Add(notification, profile);
-  return notification.notification_id();
+  return notification.delegate_id();
 }
 
 DesktopNotificationService::DesktopNotificationService(
@@ -421,7 +422,8 @@ DesktopNotificationService::DesktopNotificationService(
           base::Unretained(this),
           base::Unretained(prefs::kMessageCenterEnabledSyncNotifierIds),
           base::Unretained(&enabled_sync_notifier_ids_)));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  content::Source<Profile>(profile_));
 }
 
@@ -514,12 +516,14 @@ void DesktopNotificationService::RequestPermission(
     if (PermissionBubbleManager::Enabled()) {
       PermissionBubbleManager* bubble_manager =
           PermissionBubbleManager::FromWebContents(web_contents);
-      bubble_manager->AddRequest(new NotificationPermissionRequest(
-          this,
-          origin,
-          DisplayNameForOriginInProcessId(
-              origin, render_frame_host->GetProcess()->GetID()),
-          callback));
+      if (bubble_manager) {
+        bubble_manager->AddRequest(new NotificationPermissionRequest(
+            this,
+            origin,
+            DisplayNameForOriginInProcessId(
+                origin, render_frame_host->GetProcess()->GetID()),
+            callback));
+      }
       return;
     }
 
@@ -713,7 +717,7 @@ void DesktopNotificationService::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
 #if defined(ENABLE_EXTENSIONS)
-  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_UNINSTALLED, type);
+  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED, type);
 
   extensions::Extension* extension =
       content::Details<extensions::Extension>(details).ptr();
@@ -722,7 +726,7 @@ void DesktopNotificationService::Observe(
     return;
 
   // The settings for ephemeral apps will be persisted across cache evictions.
-  if (extension->is_ephemeral())
+  if (extensions::util::IsEphemeralApp(extension->id(), profile_))
     return;
 
   SetNotifierEnabled(notifier_id, true);

@@ -31,8 +31,7 @@
 #include "config.h"
 #include "web/PopupListBox.h"
 
-#include "CSSValueKeywords.h"
-#include "RuntimeEnabledFeatures.h"
+#include "core/CSSValueKeywords.h"
 #include "core/rendering/RenderTheme.h"
 #include "platform/KeyboardCodes.h"
 #include "platform/PlatformGestureEvent.h"
@@ -42,6 +41,7 @@
 #include "platform/PlatformTouchEvent.h"
 #include "platform/PlatformWheelEvent.h"
 #include "platform/PopupMenuClient.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontSelector.h"
@@ -349,7 +349,7 @@ void PopupListBox::paint(GraphicsContext* gc, const IntRect& rect)
 {
     // Adjust coords for scrolled frame.
     IntRect r = intersection(rect, frameRect());
-    int tx = x() - scrollX() + ((shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar()) ? verticalScrollbar()->width() : 0);
+    int tx = x() - scrollX() + ((shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar() && !verticalScrollbar()->isOverlayScrollbar()) ? verticalScrollbar()->width() : 0);
     int ty = y() - scrollY();
 
     r.move(-tx, -ty);
@@ -596,7 +596,7 @@ void PopupListBox::invalidateRow(int index)
     // Invalidate in the window contents, as FramelessScrollView::invalidateRect
     // paints in the window coordinates.
     IntRect clipRect = contentsToWindow(getRowBounds(index));
-    if (shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar())
+    if (shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar() && !verticalScrollbar()->isOverlayScrollbar())
         clipRect.move(verticalScrollbar()->width(), 0);
     invalidateRect(clipRect);
 }
@@ -773,7 +773,8 @@ void PopupListBox::layout()
     // Set our widget and scrollable contents sizes.
     int scrollbarWidth = 0;
     if (m_visibleRows < numItems()) {
-        scrollbarWidth = ScrollbarTheme::theme()->scrollbarThickness();
+        if (!ScrollbarTheme::theme()->usesOverlayScrollbars())
+            scrollbarWidth = ScrollbarTheme::theme()->scrollbarThickness();
 
         // Use minEndOfLinePadding when there is a scrollbar so that we use
         // as much as (lineEndPaddingWidth - minEndOfLinePadding) padding

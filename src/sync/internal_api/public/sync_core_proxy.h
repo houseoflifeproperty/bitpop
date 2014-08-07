@@ -11,6 +11,7 @@
 namespace syncer {
 
 class NonBlockingTypeProcessor;
+struct DataTypeState;
 
 // Interface for the datatype integration logic from non-sync threads.
 //
@@ -25,7 +26,15 @@ class SYNC_EXPORT_PRIVATE SyncCoreProxy {
   // Must be called from the thread where the data type lives.
   virtual void ConnectTypeToCore(
       syncer::ModelType type,
+      const DataTypeState& data_type_state,
       base::WeakPtr<NonBlockingTypeProcessor> type_processor) = 0;
+
+  // Tells the syncer that we're no longer interested in syncing this type.
+  //
+  // Once this takes effect, the syncer can assume that it will no longer
+  // receive commit requests for this type.  It should also stop requesting
+  // and applying updates for this type, too.
+  virtual void Disconnect(syncer::ModelType type) = 0;
 
   // Creates a clone of this SyncCoreProxy.
   virtual scoped_ptr<SyncCoreProxy> Clone() const = 0;

@@ -2,25 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
-#include "lithium.h"
-#include "scopes.h"
+#include "src/v8.h"
+#include "src/lithium.h"
+#include "src/scopes.h"
+#include "src/serialize.h"
 
 #if V8_TARGET_ARCH_IA32
-#include "ia32/lithium-ia32.h"
-#include "ia32/lithium-codegen-ia32.h"
+#include "src/ia32/lithium-ia32.h"
+#include "src/ia32/lithium-codegen-ia32.h"
 #elif V8_TARGET_ARCH_X64
-#include "x64/lithium-x64.h"
-#include "x64/lithium-codegen-x64.h"
+#include "src/x64/lithium-x64.h"
+#include "src/x64/lithium-codegen-x64.h"
 #elif V8_TARGET_ARCH_ARM
-#include "arm/lithium-arm.h"
-#include "arm/lithium-codegen-arm.h"
+#include "src/arm/lithium-arm.h"
+#include "src/arm/lithium-codegen-arm.h"
 #elif V8_TARGET_ARCH_MIPS
-#include "mips/lithium-mips.h"
-#include "mips/lithium-codegen-mips.h"
+#include "src/mips/lithium-mips.h"
+#include "src/mips/lithium-codegen-mips.h"
 #elif V8_TARGET_ARCH_ARM64
-#include "arm64/lithium-arm64.h"
-#include "arm64/lithium-codegen-arm64.h"
+#include "src/arm64/lithium-arm64.h"
+#include "src/arm64/lithium-codegen-arm64.h"
+#elif V8_TARGET_ARCH_X87
+#include "src/x87/lithium-x87.h"
+#include "src/x87/lithium-codegen-x87.h"
 #else
 #error "Unknown architecture."
 #endif
@@ -61,6 +65,9 @@ void LOperand::PrintTo(StringStream* stream) {
         }
         case LUnallocated::MUST_HAVE_REGISTER:
           stream->Add("(R)");
+          break;
+        case LUnallocated::MUST_HAVE_DOUBLE_REGISTER:
+          stream->Add("(D)");
           break;
         case LUnallocated::WRITABLE_REGISTER:
           stream->Add("(WR)");
@@ -446,6 +453,9 @@ Handle<Code> LChunk::Codegen() {
                    CodeEndLinePosInfoRecordEvent(*code, jit_handler_data));
 
     CodeGenerator::PrintCode(code, info());
+    ASSERT(!(info()->isolate()->serializer_enabled() &&
+             info()->GetMustNotHaveEagerFrame() &&
+             generator.NeedsEagerFrame()));
     return code;
   }
   assembler.AbortedCodeGeneration();
@@ -502,7 +512,7 @@ LEnvironment* LChunkBuilderBase::CreateEnvironment(
 
     LOperand* op;
     HValue* value = hydrogen_env->values()->at(i);
-    CHECK(!value->IsPushArgument());  // Do not deopt outgoing arguments
+    CHECK(!value->IsPushArguments());  // Do not deopt outgoing arguments
     if (value->IsArgumentsObject() || value->IsCapturedObject()) {
       op = LEnvironment::materialization_marker();
     } else {
@@ -583,7 +593,7 @@ void LChunkBuilderBase::AddObjectToMaterialize(HValue* value,
       // Insert a hole for nested objects
       op = LEnvironment::materialization_marker();
     } else {
-      ASSERT(!arg_value->IsPushArgument());
+      ASSERT(!arg_value->IsPushArguments());
       // For ordinary values, tell the register allocator we need the value
       // to be alive here
       op = UseAny(arg_value);
@@ -599,14 +609,6 @@ void LChunkBuilderBase::AddObjectToMaterialize(HValue* value,
       AddObjectToMaterialize(arg_value, objects_to_materialize, result);
     }
   }
-}
-
-
-LInstruction* LChunkBuilder::CheckElideControlInstruction(
-    HControlInstruction* instr) {
-  HBasicBlock* successor;
-  if (!instr->KnownSuccessorBlock(&successor)) return NULL;
-  return new(zone()) LGoto(successor);
 }
 
 

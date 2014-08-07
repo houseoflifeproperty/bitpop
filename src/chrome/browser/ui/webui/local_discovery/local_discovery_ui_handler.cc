@@ -29,6 +29,7 @@
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/cloud_devices/common/cloud_devices_switches.h"
 #include "components/cloud_devices/common/cloud_devices_urls.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_manager_base.h"
@@ -49,11 +50,57 @@
 namespace local_discovery {
 
 namespace {
-const char kDeviceTypePrinter[] = "printer";
+
+const char kDictionaryKeyServiceName[] = "service_name";
+const char kDictionaryKeyDisplayName[] = "display_name";
+const char kDictionaryKeyDescription[] = "description";
+const char kDictionaryKeyType[] = "type";
+const char kDictionaryKeyIsWifi[] = "is_wifi";
+const char kDictionaryKeyID[] = "id";
+
+const char kKeyPrefixMDns[] = "MDns:";
+
+#if defined(ENABLE_WIFI_BOOTSTRAPPING)
+const char kKeyPrefixWifi[] = "WiFi:";
+#endif  // ENABLE_WIFI_BOOTSTRAPPING
+
 int g_num_visible = 0;
+
+scoped_ptr<base::DictionaryValue> CreateDeviceInfo(
+    const CloudDeviceListDelegate::Device& description) {
+  scoped_ptr<base::DictionaryValue> return_value(new base::DictionaryValue);
+
+  return_value->SetString(kDictionaryKeyID, description.id);
+  return_value->SetString(kDictionaryKeyDisplayName, description.display_name);
+  return_value->SetString(kDictionaryKeyDescription, description.description);
+  return_value->SetString(kDictionaryKeyType, description.type);
+
+  return return_value.Pass();
+}
+
+void ReadDevicesList(
+    const std::vector<CloudDeviceListDelegate::Device>& devices,
+    const std::set<std::string>& local_ids,
+    base::ListValue* devices_list) {
+  for (CloudDeviceList::iterator i = devices.begin(); i != devices.end(); i++) {
+    if (local_ids.count(i->id) > 0) {
+      devices_list->Append(CreateDeviceInfo(*i).release());
+    }
+  }
+
+  for (CloudDeviceList::iterator i = devices.begin(); i != devices.end(); i++) {
+    if (local_ids.count(i->id) == 0) {
+      devices_list->Append(CreateDeviceInfo(*i).release());
+    }
+  }
+}
+
 }  // namespace
 
-LocalDiscoveryUIHandler::LocalDiscoveryUIHandler() : is_visible_(false) {
+LocalDiscoveryUIHandler::LocalDiscoveryUIHandler()
+    : is_visible_(false),
+      failed_list_count_(0),
+      succeded_list_count_(0) {
 #if defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)
 #if !defined(GOOGLE_CHROME_BUILD) && defined(OS_WIN)
   // On Windows, we need the PDF plugin which is only guaranteed to exist on
@@ -98,9 +145,10 @@ void LocalDiscoveryUIHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("cancelRegistration", base::Bind(
       &LocalDiscoveryUIHandler::HandleCancelRegistration,
       base::Unretained(this)));
-  web_ui()->RegisterMessageCallback("requestPrinterList", base::Bind(
-      &LocalDiscoveryUIHandler::HandleRequestPrinterList,
-      base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "requestDeviceList",
+      base::Bind(&LocalDiscoveryUIHandler::HandleRequestDeviceList,
+                 base::Unretained(this)));
   web_ui()->RegisterMessageCallback("openCloudPrintURL", base::Bind(
       &LocalDiscoveryUIHandler::HandleOpenCloudPrintURL,
       base::Unretained(this)));
@@ -120,7 +168,7 @@ void LocalDiscoveryUIHandler::RegisterMessages() {
         base::Bind(&LocalDiscoveryUIHandler::HandleDisableCloudPrintConnector,
                    base::Unretained(this)));
   }
-#endif  // defined(ENABLE_FULL_PRINTING)
+#endif  // defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)
 }
 
 void LocalDiscoveryUIHandler::HandleStart(const base::ListValue* args) {
@@ -130,11 +178,10 @@ void LocalDiscoveryUIHandler::HandleStart(const base::ListValue* args) {
   // of a reload.
   if (!privet_lister_) {
     service_discovery_client_ = ServiceDiscoverySharedClient::GetInstance();
-    privet_lister_.reset(new PrivetDeviceListerImpl(
-        service_discovery_client_.get(), this));
-    privet_http_factory_ =
-        PrivetHTTPAsynchronousFactory::CreateInstance(
-            service_discovery_client_.get(), profile->GetRequestContext());
+    privet_lister_.reset(
+        new PrivetDeviceListerImpl(service_discovery_client_.get(), this));
+    privet_http_factory_ = PrivetHTTPAsynchronousFactory::CreateInstance(
+        service_discovery_client_.get(), profile->GetRequestContext());
 
     SigninManagerBase* signin_manager =
         SigninManagerFactory::GetInstance()->GetForProfile(profile);
@@ -147,6 +194,13 @@ void LocalDiscoveryUIHandler::HandleStart(const base::ListValue* args) {
 
 #if defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)
   StartCloudPrintConnector();
+#endif
+
+#if defined(ENABLE_WIFI_BOOTSTRAPPING)
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableCloudDevices)) {
+    StartWifiBootstrapping();
+  }
 #endif
 
   CheckUserLoggedIn();
@@ -179,21 +233,27 @@ void LocalDiscoveryUIHandler::HandleCancelRegistration(
   ResetCurrentRegistration();
 }
 
-void LocalDiscoveryUIHandler::HandleRequestPrinterList(
+void LocalDiscoveryUIHandler::HandleRequestDeviceList(
     const base::ListValue* args) {
-  Profile* profile = Profile::FromWebUI(web_ui());
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+  failed_list_count_ = 0;
+  succeded_list_count_ = 0;
+  cloud_devices_.clear();
 
-  SigninManagerBase* signin_manager =
-      SigninManagerFactory::GetInstance()->GetForProfile(profile);
+  cloud_print_printer_list_ = CreateApiFlow();
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableCloudDevices)) {
+    cloud_device_list_ = CreateApiFlow();
+  }
 
-  cloud_print_printer_list_.reset(
-      new CloudPrintPrinterList(profile->GetRequestContext(),
-                                token_service,
-                                signin_manager->GetAuthenticatedAccountId(),
-                                this));
-  cloud_print_printer_list_->Start();
+  if (cloud_print_printer_list_) {
+    cloud_print_printer_list_->Start(
+        make_scoped_ptr<GCDApiFlow::Request>(new CloudPrintPrinterList(this)));
+  }
+  if (cloud_device_list_) {
+    cloud_device_list_->Start(
+        make_scoped_ptr<GCDApiFlow::Request>(new CloudDeviceList(this)));
+  }
+  CheckListingDone();
 }
 
 void LocalDiscoveryUIHandler::HandleOpenCloudPrintURL(
@@ -227,7 +287,7 @@ void LocalDiscoveryUIHandler::HandleShowSyncUI(
 
 void LocalDiscoveryUIHandler::StartRegisterHTTP(
     scoped_ptr<PrivetHTTPClient> http_client) {
-  current_http_client_.swap(http_client);
+  current_http_client_ = PrivetV1HTTPClient::CreateDefault(http_client.Pass());
 
   std::string user = GetSyncAccount();
 
@@ -252,36 +312,16 @@ void LocalDiscoveryUIHandler::OnPrivetRegisterClaimToken(
     return;
   }
 
-  bool is_cloud_print =
-      device_descriptions_[current_http_client_->GetName()].type ==
-      kDeviceTypePrinter;
-
-  Profile* profile = Profile::FromWebUI(web_ui());
-
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
-
-  if (!token_service) {
+  confirm_api_call_flow_ = CreateApiFlow();
+  if (!confirm_api_call_flow_) {
     SendRegisterError();
     return;
   }
-
-  SigninManagerBase* signin_manager =
-      SigninManagerFactory::GetInstance()->GetForProfile(profile);
-  if (!signin_manager) {
-    SendRegisterError();
-    return;
-  }
-
-  confirm_api_call_flow_.reset(new PrivetConfirmApiCallFlow(
-      profile->GetRequestContext(),
-      token_service,
-      signin_manager->GetAuthenticatedAccountId(),
-      is_cloud_print,
-      token,
-      base::Bind(&LocalDiscoveryUIHandler::OnConfirmDone,
-                 base::Unretained(this))));
-  confirm_api_call_flow_->Start();
+  confirm_api_call_flow_->Start(
+      make_scoped_ptr<GCDApiFlow::Request>(new PrivetConfirmApiCallFlow(
+          token,
+          base::Bind(&LocalDiscoveryUIHandler::OnConfirmDone,
+                     base::Unretained(this)))));
 }
 
 void LocalDiscoveryUIHandler::OnPrivetRegisterError(
@@ -332,8 +372,8 @@ void LocalDiscoveryUIHandler::OnPrivetRegisterDone(
   SendRegisterDone(found->first, found->second);
 }
 
-void LocalDiscoveryUIHandler::OnConfirmDone(GCDBaseApiFlow::Status status) {
-  if (status == GCDBaseApiFlow::SUCCESS) {
+void LocalDiscoveryUIHandler::OnConfirmDone(GCDApiFlow::Status status) {
+  if (status == GCDApiFlow::SUCCESS) {
     confirm_api_call_flow_.reset();
     current_register_operation_->CompleteRegistration();
   } else {
@@ -349,28 +389,29 @@ void LocalDiscoveryUIHandler::DeviceChanged(
 
   base::DictionaryValue info;
 
-  base::StringValue service_name(name);
-  scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
+  base::StringValue service_key(kKeyPrefixMDns + name);
 
   if (description.id.empty()) {
-    info.SetString("service_name", name);
-    info.SetString("human_readable_name", description.name);
-    info.SetString("description", description.description);
+    info.SetString(kDictionaryKeyServiceName, name);
+    info.SetString(kDictionaryKeyDisplayName, description.name);
+    info.SetString(kDictionaryKeyDescription, description.description);
+    info.SetString(kDictionaryKeyType, description.type);
+    info.SetBoolean(kDictionaryKeyIsWifi, false);
 
     web_ui()->CallJavascriptFunction(
-        "local_discovery.onUnregisteredDeviceUpdate",
-        service_name, info);
+        "local_discovery.onUnregisteredDeviceUpdate", service_key, info);
   } else {
+    scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
+
     web_ui()->CallJavascriptFunction(
-        "local_discovery.onUnregisteredDeviceUpdate",
-        service_name, *null_value);
+        "local_discovery.onUnregisteredDeviceUpdate", service_key, *null_value);
   }
 }
 
 void LocalDiscoveryUIHandler::DeviceRemoved(const std::string& name) {
   device_descriptions_.erase(name);
   scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
-  base::StringValue name_value(name);
+  base::StringValue name_value(kKeyPrefixMDns + name);
 
   web_ui()->CallJavascriptFunction("local_discovery.onUnregisteredDeviceUpdate",
                                    name_value, *null_value);
@@ -381,39 +422,16 @@ void LocalDiscoveryUIHandler::DeviceCacheFlushed() {
   privet_lister_->DiscoverNewDevices(false);
 }
 
-void LocalDiscoveryUIHandler::OnCloudPrintPrinterListReady() {
-  base::ListValue printer_object_list;
-  std::set<std::string> local_ids;
-
-  for (DeviceDescriptionMap::iterator i = device_descriptions_.begin();
-       i != device_descriptions_.end();
-       i++) {
-    std::string device_id = i->second.id;
-    if (!device_id.empty()) {
-      const CloudPrintPrinterList::PrinterDetails* details =
-          cloud_print_printer_list_->GetDetailsFor(device_id);
-
-      if (details) {
-        local_ids.insert(device_id);
-        printer_object_list.Append(CreatePrinterInfo(*details).release());
-      }
-    }
-  }
-
-  for (CloudPrintPrinterList::iterator i = cloud_print_printer_list_->begin();
-       i != cloud_print_printer_list_->end(); i++) {
-    if (local_ids.count(i->id) == 0) {
-      printer_object_list.Append(CreatePrinterInfo(*i).release());
-    }
-  }
-
-  web_ui()->CallJavascriptFunction(
-      "local_discovery.onCloudDeviceListAvailable", printer_object_list);
+void LocalDiscoveryUIHandler::OnDeviceListReady(
+    const std::vector<Device>& devices) {
+  cloud_devices_.insert(cloud_devices_.end(), devices.begin(), devices.end());
+  ++succeded_list_count_;
+  CheckListingDone();
 }
 
-void LocalDiscoveryUIHandler::OnCloudPrintPrinterListUnavailable() {
-  web_ui()->CallJavascriptFunction(
-      "local_discovery.onCloudDeviceListUnavailable");
+void LocalDiscoveryUIHandler::OnDeviceListUnavailable() {
+  ++failed_list_count_;
+  CheckListingDone();
 }
 
 void LocalDiscoveryUIHandler::GoogleSigninSucceeded(
@@ -434,10 +452,10 @@ void LocalDiscoveryUIHandler::SendRegisterDone(
     const std::string& service_name, const DeviceDescription& device) {
   base::DictionaryValue printer_value;
 
-  printer_value.SetString("id", device.id);
-  printer_value.SetString("display_name", device.name);
-  printer_value.SetString("description", device.description);
-  printer_value.SetString("service_name", service_name);
+  printer_value.SetString(kDictionaryKeyID, device.id);
+  printer_value.SetString(kDictionaryKeyDisplayName, device.name);
+  printer_value.SetString(kDictionaryKeyDescription, device.description);
+  printer_value.SetString(kDictionaryKeyServiceName, service_name);
 
   web_ui()->CallJavascriptFunction("local_discovery.onRegistrationSuccess",
                                    printer_value);
@@ -464,7 +482,7 @@ std::string LocalDiscoveryUIHandler::GetSyncAccount() {
 
 // TODO(noamsml): Create master object for registration flow.
 void LocalDiscoveryUIHandler::ResetCurrentRegistration() {
-  if (current_register_operation_.get()) {
+  if (current_register_operation_) {
     current_register_operation_->Cancel();
     current_register_operation_.reset();
   }
@@ -474,21 +492,59 @@ void LocalDiscoveryUIHandler::ResetCurrentRegistration() {
   current_http_client_.reset();
 }
 
-scoped_ptr<base::DictionaryValue> LocalDiscoveryUIHandler::CreatePrinterInfo(
-    const CloudPrintPrinterList::PrinterDetails& description) {
-  scoped_ptr<base::DictionaryValue> return_value(new base::DictionaryValue);
-
-  return_value->SetString("id", description.id);
-  return_value->SetString("display_name", description.display_name);
-  return_value->SetString("description", description.description);
-
-  return return_value.Pass();
-}
-
 void LocalDiscoveryUIHandler::CheckUserLoggedIn() {
   base::FundamentalValue logged_in_value(!GetSyncAccount().empty());
   web_ui()->CallJavascriptFunction("local_discovery.setUserLoggedIn",
                                    logged_in_value);
+}
+
+void LocalDiscoveryUIHandler::CheckListingDone() {
+  int started = 0;
+  if (cloud_print_printer_list_)
+    ++started;
+  if (cloud_device_list_)
+    ++started;
+
+  if (started > failed_list_count_ + succeded_list_count_)
+    return;
+
+  if (succeded_list_count_ <= 0) {
+    web_ui()->CallJavascriptFunction(
+        "local_discovery.onCloudDeviceListUnavailable");
+    return;
+  }
+
+  base::ListValue devices_list;
+  std::set<std::string> local_ids;
+
+  for (DeviceDescriptionMap::iterator i = device_descriptions_.begin();
+       i != device_descriptions_.end(); i++) {
+    local_ids.insert(i->second.id);
+  }
+
+  ReadDevicesList(cloud_devices_, local_ids, &devices_list);
+
+  web_ui()->CallJavascriptFunction(
+      "local_discovery.onCloudDeviceListAvailable", devices_list);
+  cloud_print_printer_list_.reset();
+  cloud_device_list_.reset();
+}
+
+scoped_ptr<GCDApiFlow> LocalDiscoveryUIHandler::CreateApiFlow() {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  if (!profile)
+    return scoped_ptr<GCDApiFlow>();
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+  if (!token_service)
+    return scoped_ptr<GCDApiFlow>();
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetInstance()->GetForProfile(profile);
+  if (!signin_manager)
+    return scoped_ptr<GCDApiFlow>();
+  return GCDApiFlow::Create(profile->GetRequestContext(),
+                            token_service,
+                            signin_manager->GetAuthenticatedAccountId());
 }
 
 #if defined(CLOUD_PRINT_CONNECTOR_UI_AVAILABLE)
@@ -596,6 +652,52 @@ void LocalDiscoveryUIHandler::RefreshCloudPrintStatusFromService() {
     CloudPrintProxyServiceFactory::GetForProfile(Profile::FromWebUI(web_ui()))->
         RefreshStatusFromService();
 }
+
 #endif // cloud print connector option stuff
+
+#if defined(ENABLE_WIFI_BOOTSTRAPPING)
+
+void LocalDiscoveryUIHandler::StartWifiBootstrapping() {
+  // Since LocalDiscoveryUIHandler isn't destroyed every time the page is
+  // refreshed, reset bootstrapping_device_lister_ so it's destoryed before
+  // wifi_manager_ is.
+  bootstrapping_device_lister_.reset();
+
+  wifi_manager_ = wifi::WifiManager::Create();
+  bootstrapping_device_lister_.reset(new wifi::BootstrappingDeviceLister(
+      wifi_manager_.get(),
+      base::Bind(&LocalDiscoveryUIHandler::OnBootstrappingDeviceChanged,
+                 base::Unretained(this))));
+
+  wifi_manager_->Start();
+  bootstrapping_device_lister_->Start();
+  wifi_manager_->RequestScan();
+}
+
+void LocalDiscoveryUIHandler::OnBootstrappingDeviceChanged(
+    bool available,
+    const wifi::BootstrappingDeviceDescription& description) {
+  base::DictionaryValue info;
+
+  base::StringValue service_key(kKeyPrefixWifi + description.device_ssid);
+
+  if (available) {
+    info.SetString(kDictionaryKeyServiceName, description.device_ssid);
+    info.SetString(kDictionaryKeyDisplayName, description.device_name);
+    info.SetString(kDictionaryKeyDescription, std::string());
+    info.SetString(kDictionaryKeyType, description.device_kind);
+    info.SetBoolean(kDictionaryKeyIsWifi, true);
+
+    web_ui()->CallJavascriptFunction(
+        "local_discovery.onUnregisteredDeviceUpdate", service_key, info);
+  } else {
+    scoped_ptr<base::Value> null_value(base::Value::CreateNullValue());
+
+    web_ui()->CallJavascriptFunction(
+        "local_discovery.onUnregisteredDeviceUpdate", service_key, *null_value);
+  }
+}
+
+#endif  // ENABLE_WIFI_BOOTSTRAPPING
 
 }  // namespace local_discovery

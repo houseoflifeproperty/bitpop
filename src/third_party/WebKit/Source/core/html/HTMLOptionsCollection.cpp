@@ -64,9 +64,9 @@ void HTMLOptionsCollection::supportedPropertyNames(Vector<String>& names)
     }
 }
 
-PassRefPtr<HTMLOptionsCollection> HTMLOptionsCollection::create(ContainerNode& select, CollectionType)
+PassRefPtrWillBeRawPtr<HTMLOptionsCollection> HTMLOptionsCollection::create(ContainerNode& select, CollectionType)
 {
-    return adoptRef(new HTMLOptionsCollection(select));
+    return adoptRefWillBeNoop(new HTMLOptionsCollection(select));
 }
 
 void HTMLOptionsCollection::add(PassRefPtrWillBeRawPtr<HTMLOptionElement> element, ExceptionState& exceptionState)
@@ -123,9 +123,9 @@ void HTMLOptionsCollection::setLength(unsigned length, ExceptionState& exception
     toHTMLSelectElement(ownerNode()).setLength(length, exceptionState);
 }
 
-void HTMLOptionsCollection::namedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtr<NodeList>& returnValue0, bool& returnValue1Enabled, RefPtr<Element>& returnValue1)
+void HTMLOptionsCollection::namedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtrWillBeRawPtr<NodeList>& returnValue0, bool& returnValue1Enabled, RefPtrWillBeRawPtr<Element>& returnValue1)
 {
-    Vector<RefPtr<Element> > namedItems;
+    WillBeHeapVector<RefPtrWillBeMember<Element> > namedItems;
     this->namedItems(name, namedItems);
 
     if (!namedItems.size())

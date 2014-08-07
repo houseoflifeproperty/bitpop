@@ -34,8 +34,8 @@ using syncer::GetModelType;
 using syncer::ModelType;
 using syncer::ModelTypeSet;
 
-// The default birthday value.
-static const char kDefaultBirthday[] = "1234567890";
+// The default store birthday value.
+static const char kDefaultStoreBirthday[] = "1234567890";
 
 // The default keystore key.
 static const char kDefaultKeystoreKey[] = "1111111111111111";
@@ -115,7 +115,8 @@ class UpdateSieve {
 
 scoped_ptr<UpdateSieve> UpdateSieve::Create(
     const sync_pb::GetUpdatesMessage& get_updates_message) {
-  DCHECK_GT(get_updates_message.from_progress_marker_size(), 0);
+  CHECK_GT(get_updates_message.from_progress_marker_size(), 0)
+      << "A GetUpdates request must have at least one progress marker.";
 
   UpdateSieve::ModelTypeToVersionMap request_from_version;
   int64 min_version = std::numeric_limits<int64>::max();
@@ -128,7 +129,7 @@ scoped_ptr<UpdateSieve> UpdateSieve::Create(
     // first request for this type).
     if (marker.has_token() && !marker.token().empty()) {
       bool parsed = base::StringToInt64(marker.token(), &version);
-      DCHECK(parsed);
+      CHECK(parsed) << "Unable to parse progress marker token.";
     }
 
     ModelType model_type = syncer::GetModelTypeFromSpecificsFieldNumber(
@@ -145,7 +146,10 @@ scoped_ptr<UpdateSieve> UpdateSieve::Create(
 
 }  // namespace
 
-FakeServer::FakeServer() : version_(0), birthday_(kDefaultBirthday) {
+FakeServer::FakeServer() : version_(0),
+                           store_birthday_(kDefaultStoreBirthday),
+                           authenticated_(true),
+                           error_type_(sync_pb::SyncEnums::SUCCESS) {
   keystore_keys_.push_back(kDefaultKeystoreKey);
   CHECK(CreateDefaultPermanentItems());
 }
@@ -214,35 +218,52 @@ void FakeServer::SaveEntity(FakeServerEntity* entity) {
 
 void FakeServer::HandleCommand(const string& request,
                                const HandleCommandCallback& callback) {
-  sync_pb::ClientToServerMessage message;
-  bool parsed = message.ParseFromString(request);
-  DCHECK(parsed);
-
-  sync_pb::ClientToServerResponse response_proto;
-  bool success;
-  switch (message.message_contents()) {
-    case sync_pb::ClientToServerMessage::GET_UPDATES:
-      success = HandleGetUpdatesRequest(message.get_updates(),
-                                        response_proto.mutable_get_updates());
-      break;
-    case sync_pb::ClientToServerMessage::COMMIT:
-      success = HandleCommitRequest(message.commit(),
-                                    response_proto.mutable_commit());
-      break;
-    default:
-      callback.Run(net::ERR_NOT_IMPLEMENTED, 0, string());;
-      return;
-  }
-
-  if (!success) {
-    // TODO(pvalenzuela): Add logging here so that tests have more info about
-    // the failure.
-    callback.Run(net::ERR_FAILED, 0, string());
+  if (!authenticated_) {
+    callback.Run(0, net::HTTP_UNAUTHORIZED, string());
     return;
   }
 
-  response_proto.set_error_code(sync_pb::SyncEnums::SUCCESS);
-  response_proto.set_store_birthday(birthday_);
+  sync_pb::ClientToServerMessage message;
+  bool parsed = message.ParseFromString(request);
+  CHECK(parsed) << "Unable to parse the ClientToServerMessage.";
+
+  sync_pb::SyncEnums_ErrorType error_code;
+  sync_pb::ClientToServerResponse response_proto;
+
+  if (message.has_store_birthday() &&
+      message.store_birthday() != store_birthday_) {
+    error_code = sync_pb::SyncEnums::NOT_MY_BIRTHDAY;
+  } else if (error_type_ != sync_pb::SyncEnums::SUCCESS) {
+    error_code = error_type_;
+  } else {
+    bool success = false;
+    switch (message.message_contents()) {
+      case sync_pb::ClientToServerMessage::GET_UPDATES:
+        success = HandleGetUpdatesRequest(message.get_updates(),
+                                          response_proto.mutable_get_updates());
+        break;
+      case sync_pb::ClientToServerMessage::COMMIT:
+        success = HandleCommitRequest(message.commit(),
+                                      message.invalidator_client_id(),
+                                      response_proto.mutable_commit());
+        break;
+      default:
+        callback.Run(net::ERR_NOT_IMPLEMENTED, 0, string());;
+        return;
+    }
+
+    if (!success) {
+      // TODO(pvalenzuela): Add logging here so that tests have more info about
+      // the failure.
+      callback.Run(net::ERR_FAILED, 0, string());
+      return;
+    }
+
+    error_code = sync_pb::SyncEnums::SUCCESS;
+  }
+
+  response_proto.set_error_code(error_code);
+  response_proto.set_store_birthday(store_birthday_);
   callback.Run(0, net::HTTP_OK, response_proto.SerializeAsString());
 }
 
@@ -396,6 +417,7 @@ bool FakeServer::DeleteChildren(const string& id) {
 
 bool FakeServer::HandleCommitRequest(
     const sync_pb::CommitMessage& commit,
+    const std::string& invalidator_client_id,
     sync_pb::CommitResponse* response) {
   std::map<string, string> client_to_server_ids;
   string guid = commit.cache_guid();
@@ -430,7 +452,8 @@ bool FakeServer::HandleCommitRequest(
     committed_model_types.Put(entity->GetModelType());
   }
 
-  FOR_EACH_OBSERVER(Observer, observers_, OnCommit(committed_model_types));
+  FOR_EACH_OBSERVER(Observer, observers_,
+                    OnCommit(invalidator_client_id, committed_model_types));
   return true;
 }
 
@@ -468,6 +491,31 @@ scoped_ptr<base::DictionaryValue> FakeServer::GetEntitiesAsDictionaryValue() {
 
 void FakeServer::InjectEntity(scoped_ptr<FakeServerEntity> entity) {
   SaveEntity(entity.release());
+}
+
+bool FakeServer::SetNewStoreBirthday(const string& store_birthday) {
+  if (store_birthday_ == store_birthday)
+    return false;
+
+  store_birthday_ = store_birthday;
+  return true;
+}
+
+void FakeServer::SetAuthenticated() {
+  authenticated_ = true;
+}
+
+void FakeServer::SetUnauthenticated() {
+  authenticated_ = false;
+}
+
+// TODO(pvalenzuela): comments from Richard: we should look at
+// mock_connection_manager.cc and take it as a warning. This style of injecting
+// errors works when there's one or two conditions we care about, but it can
+// eventually lead to a hairball once we have many different conditions and
+// triggering logic.
+void FakeServer::TriggerError(const sync_pb::SyncEnums::ErrorType& error_type) {
+  error_type_ = error_type;
 }
 
 void FakeServer::AddObserver(Observer* observer) {

@@ -45,13 +45,15 @@ class VideoCaptureDeviceChromeOS::ScreenObserverDelegate
     DCHECK(!capture_device_);
   }
 
-  // gfx::DisplayObserver:
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE {
-    SendDisplayRotation(display);
-  }
-
   virtual void OnDisplayAdded(const gfx::Display& /*new_display*/) OVERRIDE {}
   virtual void OnDisplayRemoved(const gfx::Display& /*old_display*/) OVERRIDE {}
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE {
+    DCHECK(ui_task_runner_->BelongsToCurrentThread());
+    if (!(metrics & DISPLAY_METRIC_ROTATION))
+      return;
+    SendDisplayRotation(display);
+  }
 
   void AddObserverOnUIThread() {
     DCHECK(ui_task_runner_->BelongsToCurrentThread());
@@ -71,8 +73,9 @@ class VideoCaptureDeviceChromeOS::ScreenObserverDelegate
       screen->RemoveObserver(this);
   }
 
+  // Post the screen rotation change from the UI thread to capture thread
   void SendDisplayRotation(const gfx::Display& display) {
-    DCHECK(capture_task_runner_->BelongsToCurrentThread());
+    DCHECK(ui_task_runner_->BelongsToCurrentThread());
     capture_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&ScreenObserverDelegate::SendDisplayRotationOnCaptureThread,

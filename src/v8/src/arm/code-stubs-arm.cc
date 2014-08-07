@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_ARM
 
-#include "bootstrapper.h"
-#include "code-stubs.h"
-#include "regexp-macro-assembler.h"
-#include "stub-cache.h"
+#include "src/bootstrapper.h"
+#include "src/code-stubs.h"
+#include "src/regexp-macro-assembler.h"
+#include "src/stub-cache.h"
 
 namespace v8 {
 namespace internal {
@@ -58,6 +58,11 @@ void FastCloneShallowArrayStub::InitializeInterfaceDescriptor(
   static Register registers[] = { r3, r2, r1 };
   descriptor->register_param_count_ = 3;
   descriptor->register_params_ = registers;
+  static Representation representations[] = {
+    Representation::Tagged(),
+    Representation::Smi(),
+    Representation::Tagged() };
+  descriptor->register_param_representations_ = representations;
   descriptor->deoptimization_handler_ =
       Runtime::FunctionForId(
           Runtime::kHiddenCreateArrayLiteralStubBailout)->entry;
@@ -110,6 +115,16 @@ void RegExpConstructResultStub::InitializeInterfaceDescriptor(
   descriptor->register_params_ = registers;
   descriptor->deoptimization_handler_ =
       Runtime::FunctionForId(Runtime::kHiddenRegExpConstructResult)->entry;
+}
+
+
+void KeyedLoadGenericElementStub::InitializeInterfaceDescriptor(
+    CodeStubInterfaceDescriptor* descriptor) {
+  static Register registers[] = { r1, r0 };
+  descriptor->register_param_count_ = 2;
+  descriptor->register_params_ = registers;
+  descriptor->deoptimization_handler_ =
+      Runtime::FunctionForId(Runtime::kKeyedGetProperty)->entry;
 }
 
 
@@ -201,6 +216,11 @@ static void InitializeArrayConstructorDescriptor(
     descriptor->stack_parameter_count_ = r0;
     descriptor->register_param_count_ = 3;
     descriptor->register_params_ = registers_variable_args;
+    static Representation representations[] = {
+        Representation::Tagged(),
+        Representation::Tagged(),
+        Representation::Integer32() };
+    descriptor->register_param_representations_ = representations;
   }
 
   descriptor->hint_stack_parameter_count_ = constant_stack_parameter_count;
@@ -228,6 +248,10 @@ static void InitializeInternalArrayConstructorDescriptor(
     descriptor->stack_parameter_count_ = r0;
     descriptor->register_param_count_ = 2;
     descriptor->register_params_ = registers_variable_args;
+    static Representation representations[] = {
+        Representation::Tagged(),
+        Representation::Integer32() };
+    descriptor->register_param_representations_ = representations;
   }
 
   descriptor->hint_stack_parameter_count_ = constant_stack_parameter_count;
@@ -2034,7 +2058,7 @@ void ArgumentsAccessStub::GenerateNewSloppySlow(MacroAssembler* masm) {
   __ str(r3, MemOperand(sp, 1 * kPointerSize));
 
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kHiddenNewArgumentsFast, 3, 1);
+  __ TailCallRuntime(Runtime::kHiddenNewSloppyArguments, 3, 1);
 }
 
 
@@ -2238,7 +2262,7 @@ void ArgumentsAccessStub::GenerateNewSloppyFast(MacroAssembler* masm) {
   // r2 = argument count (tagged)
   __ bind(&runtime);
   __ str(r2, MemOperand(sp, 0 * kPointerSize));  // Patch argument count.
-  __ TailCallRuntime(Runtime::kHiddenNewArgumentsFast, 3, 1);
+  __ TailCallRuntime(Runtime::kHiddenNewSloppyArguments, 3, 1);
 }
 
 
@@ -2332,7 +2356,7 @@ void ArgumentsAccessStub::GenerateNewStrict(MacroAssembler* masm) {
 
   // Do the runtime call to allocate the arguments object.
   __ bind(&runtime);
-  __ TailCallRuntime(Runtime::kHiddenNewStrictArgumentsFast, 3, 1);
+  __ TailCallRuntime(Runtime::kHiddenNewStrictArguments, 3, 1);
 }
 
 
@@ -2473,8 +2497,8 @@ void RegExpExecStub::Generate(MacroAssembler* masm) {
   STATIC_ASSERT(kSeqStringTag == 0);
   __ tst(r0, Operand(kStringRepresentationMask));
   // The underlying external string is never a short external string.
-  STATIC_CHECK(ExternalString::kMaxShortLength < ConsString::kMinLength);
-  STATIC_CHECK(ExternalString::kMaxShortLength < SlicedString::kMinLength);
+  STATIC_ASSERT(ExternalString::kMaxShortLength < ConsString::kMinLength);
+  STATIC_ASSERT(ExternalString::kMaxShortLength < SlicedString::kMinLength);
   __ b(ne, &external_string);  // Go to (7).
 
   // (5) Sequential string.  Load regexp code according to encoding.
@@ -2910,11 +2934,13 @@ static void EmitWrapCase(MacroAssembler* masm, int argc, Label* cont) {
 }
 
 
-void CallFunctionStub::Generate(MacroAssembler* masm) {
+static void CallFunctionNoFeedback(MacroAssembler* masm,
+                                   int argc, bool needs_checks,
+                                   bool call_as_method) {
   // r1 : the function to call
   Label slow, non_function, wrap, cont;
 
-  if (NeedsChecks()) {
+  if (needs_checks) {
     // Check that the function is really a JavaScript function.
     // r1: pushed function (to be verified)
     __ JumpIfSmi(r1, &non_function);
@@ -2926,18 +2952,17 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
 
   // Fast-case: Invoke the function now.
   // r1: pushed function
-  int argc = argc_;
   ParameterCount actual(argc);
 
-  if (CallAsMethod()) {
-    if (NeedsChecks()) {
+  if (call_as_method) {
+    if (needs_checks) {
       EmitContinueIfStrictOrNative(masm, &cont);
     }
 
     // Compute the receiver in sloppy mode.
     __ ldr(r3, MemOperand(sp, argc * kPointerSize));
 
-    if (NeedsChecks()) {
+    if (needs_checks) {
       __ JumpIfSmi(r3, &wrap);
       __ CompareObjectType(r3, r4, r4, FIRST_SPEC_OBJECT_TYPE);
       __ b(lt, &wrap);
@@ -2950,16 +2975,21 @@ void CallFunctionStub::Generate(MacroAssembler* masm) {
 
   __ InvokeFunction(r1, actual, JUMP_FUNCTION, NullCallWrapper());
 
-  if (NeedsChecks()) {
+  if (needs_checks) {
     // Slow-case: Non-function called.
     __ bind(&slow);
     EmitSlowCase(masm, argc, &non_function);
   }
 
-  if (CallAsMethod()) {
+  if (call_as_method) {
     __ bind(&wrap);
     EmitWrapCase(masm, argc, &cont);
   }
+}
+
+
+void CallFunctionStub::Generate(MacroAssembler* masm) {
+  CallFunctionNoFeedback(masm, argc_, NeedsChecks(), CallAsMethod());
 }
 
 
@@ -3022,7 +3052,7 @@ void CallConstructStub::Generate(MacroAssembler* masm) {
   __ bind(&do_call);
   // Set expected number of arguments to zero (not changing r0).
   __ mov(r2, Operand::Zero());
-  __ Jump(isolate()->builtins()->ArgumentsAdaptorTrampoline(),
+  __ Jump(masm->isolate()->builtins()->ArgumentsAdaptorTrampoline(),
           RelocInfo::CODE_TARGET);
 }
 
@@ -3033,6 +3063,41 @@ static void EmitLoadTypeFeedbackVector(MacroAssembler* masm, Register vector) {
                                  JSFunction::kSharedFunctionInfoOffset));
   __ ldr(vector, FieldMemOperand(vector,
                                  SharedFunctionInfo::kFeedbackVectorOffset));
+}
+
+
+void CallIC_ArrayStub::Generate(MacroAssembler* masm) {
+  // r1 - function
+  // r3 - slot id
+  Label miss;
+  int argc = state_.arg_count();
+  ParameterCount actual(argc);
+
+  EmitLoadTypeFeedbackVector(masm, r2);
+
+  __ LoadGlobalFunction(Context::ARRAY_FUNCTION_INDEX, r4);
+  __ cmp(r1, r4);
+  __ b(ne, &miss);
+
+  __ mov(r0, Operand(arg_count()));
+  __ add(r4, r2, Operand::PointerOffsetFromSmiKey(r3));
+  __ ldr(r2, FieldMemOperand(r4, FixedArray::kHeaderSize));
+  // Verify that r2 contains an AllocationSite
+  __ AssertUndefinedOrAllocationSite(r2, r4);
+  ArrayConstructorStub stub(masm->isolate(), arg_count());
+  __ TailCallStub(&stub);
+
+  __ bind(&miss);
+  GenerateMiss(masm, IC::kCallIC_Customization_Miss);
+
+  // The slow case, we need this no matter what to complete a call after a miss.
+  CallFunctionNoFeedback(masm,
+                         arg_count(),
+                         true,
+                         CallAsMethod());
+
+  // Unreachable.
+  __ stop("Unexpected code address");
 }
 
 
@@ -3094,7 +3159,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
 
   // We are here because tracing is on or we are going monomorphic.
   __ bind(&miss);
-  GenerateMiss(masm);
+  GenerateMiss(masm, IC::kCallIC_Miss);
 
   // the slow case
   __ bind(&slow_start);
@@ -3109,7 +3174,7 @@ void CallICStub::Generate(MacroAssembler* masm) {
 }
 
 
-void CallICStub::GenerateMiss(MacroAssembler* masm) {
+void CallICStub::GenerateMiss(MacroAssembler* masm, IC::UtilityId id) {
   // Get the receiver of the function from the stack; 1 ~ return address.
   __ ldr(r4, MemOperand(sp, (state_.arg_count() + 1) * kPointerSize));
 
@@ -3120,7 +3185,7 @@ void CallICStub::GenerateMiss(MacroAssembler* masm) {
     __ Push(r4, r1, r2, r3);
 
     // Call the entry.
-    ExternalReference miss = ExternalReference(IC_Utility(IC::kCallIC_Miss),
+    ExternalReference miss = ExternalReference(IC_Utility(id),
                                                masm->isolate());
     __ CallExternalReference(miss, 4);
 
@@ -3267,142 +3332,37 @@ enum CopyCharactersFlags {
 };
 
 
-void StringHelper::GenerateCopyCharactersLong(MacroAssembler* masm,
-                                              Register dest,
-                                              Register src,
-                                              Register count,
-                                              Register scratch1,
-                                              Register scratch2,
-                                              Register scratch3,
-                                              Register scratch4,
-                                              int flags) {
-  bool ascii = (flags & COPY_ASCII) != 0;
-  bool dest_always_aligned = (flags & DEST_ALWAYS_ALIGNED) != 0;
-
-  if (dest_always_aligned && FLAG_debug_code) {
-    // Check that destination is actually word aligned if the flag says
-    // that it is.
+void StringHelper::GenerateCopyCharacters(MacroAssembler* masm,
+                                          Register dest,
+                                          Register src,
+                                          Register count,
+                                          Register scratch,
+                                          String::Encoding encoding) {
+  if (FLAG_debug_code) {
+    // Check that destination is word aligned.
     __ tst(dest, Operand(kPointerAlignmentMask));
     __ Check(eq, kDestinationOfCopyNotAligned);
   }
 
-  const int kReadAlignment = 4;
-  const int kReadAlignmentMask = kReadAlignment - 1;
-  // Ensure that reading an entire aligned word containing the last character
-  // of a string will not read outside the allocated area (because we pad up
-  // to kObjectAlignment).
-  STATIC_ASSERT(kObjectAlignment >= kReadAlignment);
   // Assumes word reads and writes are little endian.
   // Nothing to do for zero characters.
   Label done;
-  if (!ascii) {
+  if (encoding == String::TWO_BYTE_ENCODING) {
     __ add(count, count, Operand(count), SetCC);
-  } else {
-    __ cmp(count, Operand::Zero());
-  }
-  __ b(eq, &done);
-
-  // Assume that you cannot read (or write) unaligned.
-  Label byte_loop;
-  // Must copy at least eight bytes, otherwise just do it one byte at a time.
-  __ cmp(count, Operand(8));
-  __ add(count, dest, Operand(count));
-  Register limit = count;  // Read until src equals this.
-  __ b(lt, &byte_loop);
-
-  if (!dest_always_aligned) {
-    // Align dest by byte copying. Copies between zero and three bytes.
-    __ and_(scratch4, dest, Operand(kReadAlignmentMask), SetCC);
-    Label dest_aligned;
-    __ b(eq, &dest_aligned);
-    __ cmp(scratch4, Operand(2));
-    __ ldrb(scratch1, MemOperand(src, 1, PostIndex));
-    __ ldrb(scratch2, MemOperand(src, 1, PostIndex), le);
-    __ ldrb(scratch3, MemOperand(src, 1, PostIndex), lt);
-    __ strb(scratch1, MemOperand(dest, 1, PostIndex));
-    __ strb(scratch2, MemOperand(dest, 1, PostIndex), le);
-    __ strb(scratch3, MemOperand(dest, 1, PostIndex), lt);
-    __ bind(&dest_aligned);
   }
 
-  Label simple_loop;
+  Register limit = count;  // Read until dest equals this.
+  __ add(limit, dest, Operand(count));
 
-  __ sub(scratch4, dest, Operand(src));
-  __ and_(scratch4, scratch4, Operand(0x03), SetCC);
-  __ b(eq, &simple_loop);
-  // Shift register is number of bits in a source word that
-  // must be combined with bits in the next source word in order
-  // to create a destination word.
-
-  // Complex loop for src/dst that are not aligned the same way.
-  {
-    Label loop;
-    __ mov(scratch4, Operand(scratch4, LSL, 3));
-    Register left_shift = scratch4;
-    __ and_(src, src, Operand(~3));  // Round down to load previous word.
-    __ ldr(scratch1, MemOperand(src, 4, PostIndex));
-    // Store the "shift" most significant bits of scratch in the least
-    // signficant bits (i.e., shift down by (32-shift)).
-    __ rsb(scratch2, left_shift, Operand(32));
-    Register right_shift = scratch2;
-    __ mov(scratch1, Operand(scratch1, LSR, right_shift));
-
-    __ bind(&loop);
-    __ ldr(scratch3, MemOperand(src, 4, PostIndex));
-    __ orr(scratch1, scratch1, Operand(scratch3, LSL, left_shift));
-    __ str(scratch1, MemOperand(dest, 4, PostIndex));
-    __ mov(scratch1, Operand(scratch3, LSR, right_shift));
-    // Loop if four or more bytes left to copy.
-    __ sub(scratch3, limit, Operand(dest));
-    __ sub(scratch3, scratch3, Operand(4), SetCC);
-    __ b(ge, &loop);
-  }
-  // There is now between zero and three bytes left to copy (negative that
-  // number is in scratch3), and between one and three bytes already read into
-  // scratch1 (eight times that number in scratch4). We may have read past
-  // the end of the string, but because objects are aligned, we have not read
-  // past the end of the object.
-  // Find the minimum of remaining characters to move and preloaded characters
-  // and write those as bytes.
-  __ add(scratch3, scratch3, Operand(4), SetCC);
-  __ b(eq, &done);
-  __ cmp(scratch4, Operand(scratch3, LSL, 3), ne);
-  // Move minimum of bytes read and bytes left to copy to scratch4.
-  __ mov(scratch3, Operand(scratch4, LSR, 3), LeaveCC, lt);
-  // Between one and three (value in scratch3) characters already read into
-  // scratch ready to write.
-  __ cmp(scratch3, Operand(2));
-  __ strb(scratch1, MemOperand(dest, 1, PostIndex));
-  __ mov(scratch1, Operand(scratch1, LSR, 8), LeaveCC, ge);
-  __ strb(scratch1, MemOperand(dest, 1, PostIndex), ge);
-  __ mov(scratch1, Operand(scratch1, LSR, 8), LeaveCC, gt);
-  __ strb(scratch1, MemOperand(dest, 1, PostIndex), gt);
-  // Copy any remaining bytes.
-  __ b(&byte_loop);
-
-  // Simple loop.
-  // Copy words from src to dst, until less than four bytes left.
-  // Both src and dest are word aligned.
-  __ bind(&simple_loop);
-  {
-    Label loop;
-    __ bind(&loop);
-    __ ldr(scratch1, MemOperand(src, 4, PostIndex));
-    __ sub(scratch3, limit, Operand(dest));
-    __ str(scratch1, MemOperand(dest, 4, PostIndex));
-    // Compare to 8, not 4, because we do the substraction before increasing
-    // dest.
-    __ cmp(scratch3, Operand(8));
-    __ b(ge, &loop);
-  }
-
-  // Copy bytes from src to dst until dst hits limit.
-  __ bind(&byte_loop);
+  Label loop_entry, loop;
+  // Copy bytes from src to dest until dest hits limit.
+  __ b(&loop_entry);
+  __ bind(&loop);
+  __ ldrb(scratch, MemOperand(src, 1, PostIndex), lt);
+  __ strb(scratch, MemOperand(dest, 1, PostIndex));
+  __ bind(&loop_entry);
   __ cmp(dest, Operand(limit));
-  __ ldrb(scratch1, MemOperand(src, 1, PostIndex), lt);
-  __ b(ge, &done);
-  __ strb(scratch1, MemOperand(dest, 1, PostIndex));
-  __ b(&byte_loop);
+  __ b(lt, &loop);
 
   __ bind(&done);
 }
@@ -3597,7 +3557,7 @@ void SubStringStub::Generate(MacroAssembler* masm) {
 
   // Handle external string.
   // Rule out short external strings.
-  STATIC_CHECK(kShortExternalStringTag != 0);
+  STATIC_ASSERT(kShortExternalStringTag != 0);
   __ tst(r1, Operand(kShortExternalStringTag));
   __ b(ne, &runtime);
   __ ldr(r5, FieldMemOperand(r5, ExternalString::kResourceDataOffset));
@@ -3628,8 +3588,8 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // r2: result string length
   // r5: first character of substring to copy
   STATIC_ASSERT((SeqOneByteString::kHeaderSize & kObjectAlignmentMask) == 0);
-  StringHelper::GenerateCopyCharactersLong(masm, r1, r5, r2, r3, r4, r6, r9,
-                                           COPY_ASCII | DEST_ALWAYS_ALIGNED);
+  StringHelper::GenerateCopyCharacters(
+      masm, r1, r5, r2, r3, String::ONE_BYTE_ENCODING);
   __ jmp(&return_r0);
 
   // Allocate and copy the resulting two-byte string.
@@ -3647,8 +3607,8 @@ void SubStringStub::Generate(MacroAssembler* masm) {
   // r2: result length.
   // r5: first character of substring to copy.
   STATIC_ASSERT((SeqTwoByteString::kHeaderSize & kObjectAlignmentMask) == 0);
-  StringHelper::GenerateCopyCharactersLong(
-      masm, r1, r5, r2, r3, r4, r6, r9, DEST_ALWAYS_ALIGNED);
+  StringHelper::GenerateCopyCharacters(
+      masm, r1, r5, r2, r3, String::TWO_BYTE_ENCODING);
 
   __ bind(&return_r0);
   Counters* counters = isolate()->counters();
@@ -4445,11 +4405,6 @@ void StoreBufferOverflowStub::GenerateFixedRegStubsAheadOfTime(
 }
 
 
-bool CodeStub::CanUseFPRegisters() {
-  return true;  // VFP2 is a base requirement for V8
-}
-
-
 // Takes the input in 3 registers: address_ value_ and object_.  A pointer to
 // the value has just been written into the object, now this stub makes sure
 // we keep the GC informed.  The word in the object where the value has been
@@ -4705,7 +4660,7 @@ void StoreArrayLiteralElementStub::Generate(MacroAssembler* masm) {
 
 
 void StubFailureTrampolineStub::Generate(MacroAssembler* masm) {
-  CEntryStub ces(isolate(), 1, fp_registers_ ? kSaveFPRegs : kDontSaveFPRegs);
+  CEntryStub ces(isolate(), 1, kSaveFPRegs);
   __ Call(ces.GetCode(), RelocInfo::CODE_TARGET);
   int parameter_count_offset =
       StubFailureTrampolineFrame::kCallerStackParameterCountFrameOffset;
@@ -5059,7 +5014,7 @@ void InternalArrayConstructorStub::Generate(MacroAssembler* masm) {
   // but the following bit field extraction takes care of that anyway.
   __ ldr(r3, FieldMemOperand(r3, Map::kBitField2Offset));
   // Retrieve elements_kind from bit field 2.
-  __ Ubfx(r3, r3, Map::kElementsKindShift, Map::kElementsKindBitCount);
+  __ DecodeField<Map::ElementsKindBits>(r3);
 
   if (FLAG_debug_code) {
     Label done;

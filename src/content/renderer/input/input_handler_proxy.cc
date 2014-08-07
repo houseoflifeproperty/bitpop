@@ -232,8 +232,12 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
         // main thread. Change back to DROP_EVENT once we have synchronization
         // bugs sorted out.
         return DID_NOT_HANDLE;
+      case cc::InputHandler::ScrollUnknown:
       case cc::InputHandler::ScrollOnMainThread:
         return DID_NOT_HANDLE;
+      case cc::InputHandler::ScrollStatusCount:
+        NOTREACHED();
+        break;
     }
   } else if (event.type == WebInputEvent::GestureScrollBegin) {
     DCHECK(!gesture_scroll_on_impl_thread_);
@@ -246,6 +250,9 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
     cc::InputHandler::ScrollStatus scroll_status = input_handler_->ScrollBegin(
         gfx::Point(gesture_event.x, gesture_event.y),
         cc::InputHandler::Gesture);
+    UMA_HISTOGRAM_ENUMERATION("Renderer4.CompositorScrollHitTestResult",
+                              scroll_status,
+                              cc::InputHandler::ScrollStatusCount);
     switch (scroll_status) {
       case cc::InputHandler::ScrollStarted:
         TRACE_EVENT_INSTANT0("input",
@@ -253,10 +260,14 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
                              TRACE_EVENT_SCOPE_THREAD);
         gesture_scroll_on_impl_thread_ = true;
         return DID_HANDLE;
+      case cc::InputHandler::ScrollUnknown:
       case cc::InputHandler::ScrollOnMainThread:
         return DID_NOT_HANDLE;
       case cc::InputHandler::ScrollIgnored:
         return DROP_EVENT;
+      case cc::InputHandler::ScrollStatusCount:
+        NOTREACHED();
+        break;
     }
   } else if (event.type == WebInputEvent::GestureScrollUpdate) {
 #ifndef NDEBUG
@@ -348,7 +359,7 @@ InputHandlerProxy::HandleGestureFling(
     const WebGestureEvent& gesture_event) {
   cc::InputHandler::ScrollStatus scroll_status;
 
-  if (gesture_event.sourceDevice == WebGestureEvent::Touchpad) {
+  if (gesture_event.sourceDevice == blink::WebGestureDeviceTouchpad) {
     scroll_status = input_handler_->ScrollBegin(
         gfx::Point(gesture_event.x, gesture_event.y),
         cc::InputHandler::NonBubblingGesture);
@@ -365,14 +376,16 @@ InputHandlerProxy::HandleGestureFling(
 
   switch (scroll_status) {
     case cc::InputHandler::ScrollStarted: {
-      if (gesture_event.sourceDevice == WebGestureEvent::Touchpad)
+      if (gesture_event.sourceDevice == blink::WebGestureDeviceTouchpad)
         input_handler_->ScrollEnd();
 
       const float vx = gesture_event.data.flingStart.velocityX;
       const float vy = gesture_event.data.flingStart.velocityY;
       current_fling_velocity_ = gfx::Vector2dF(vx, vy);
       fling_curve_.reset(client_->CreateFlingAnimationCurve(
-          gesture_event.sourceDevice, WebFloatPoint(vx, vy), blink::WebSize()));
+          gesture_event.sourceDevice,
+          WebFloatPoint(vx, vy),
+          blink::WebSize()));
       disallow_horizontal_fling_scroll_ = !vx;
       disallow_vertical_fling_scroll_ = !vy;
       TRACE_EVENT_ASYNC_BEGIN2("input",
@@ -395,6 +408,7 @@ InputHandlerProxy::HandleGestureFling(
       input_handler_->SetNeedsAnimate();
       return DID_HANDLE;
     }
+    case cc::InputHandler::ScrollUnknown:
     case cc::InputHandler::ScrollOnMainThread: {
       TRACE_EVENT_INSTANT0("input",
                            "InputHandlerProxy::HandleGestureFling::"
@@ -408,7 +422,7 @@ InputHandlerProxy::HandleGestureFling(
           "input",
           "InputHandlerProxy::HandleGestureFling::ignored",
           TRACE_EVENT_SCOPE_THREAD);
-      if (gesture_event.sourceDevice == WebGestureEvent::Touchpad) {
+      if (gesture_event.sourceDevice == blink::WebGestureDeviceTouchpad) {
         // We still pass the curve to the main thread if there's nothing
         // scrollable, in case something
         // registers a handler before the curve is over.
@@ -416,6 +430,9 @@ InputHandlerProxy::HandleGestureFling(
       }
       return DROP_EVENT;
     }
+    case cc::InputHandler::ScrollStatusCount:
+      NOTREACHED();
+      break;
   }
   return DID_NOT_HANDLE;
 }
@@ -463,7 +480,7 @@ bool InputHandlerProxy::FilterInputEventForFlingBoosting(
     case WebInputEvent::GestureScrollBegin:
       if (!input_handler_->IsCurrentlyScrollingLayerAt(
               gfx::Point(gesture_event.x, gesture_event.y),
-              fling_parameters_.sourceDevice == WebGestureEvent::Touchpad
+              fling_parameters_.sourceDevice == blink::WebGestureDeviceTouchpad
                   ? cc::InputHandler::NonBubblingGesture
                   : cc::InputHandler::Gesture)) {
         CancelCurrentFling(true);
@@ -514,7 +531,9 @@ bool InputHandlerProxy::FilterInputEventForFlingBoosting(
       deferred_fling_cancel_time_seconds_ = 0;
       last_fling_boost_event_ = WebGestureEvent();
       fling_curve_.reset(client_->CreateFlingAnimationCurve(
-          gesture_event.sourceDevice, velocity, blink::WebSize()));
+          gesture_event.sourceDevice,
+          velocity,
+          blink::WebSize()));
       fling_parameters_.startTime = gesture_event.timeStampSeconds;
       fling_parameters_.delta = velocity;
       fling_parameters_.point = WebPoint(gesture_event.x, gesture_event.y);
@@ -653,7 +672,7 @@ bool InputHandlerProxy::CancelCurrentFling(
     bool send_fling_stopped_notification) {
   bool had_fling_animation = fling_curve_;
   if (had_fling_animation &&
-      fling_parameters_.sourceDevice == WebGestureEvent::Touchscreen) {
+      fling_parameters_.sourceDevice == blink::WebGestureDeviceTouchscreen) {
     input_handler_->ScrollEnd();
     TRACE_EVENT_ASYNC_END0(
         "input",
@@ -747,10 +766,10 @@ bool InputHandlerProxy::scrollBy(const WebFloatSize& increment,
   bool did_scroll = false;
 
   switch (fling_parameters_.sourceDevice) {
-    case WebGestureEvent::Touchpad:
+    case blink::WebGestureDeviceTouchpad:
       did_scroll = TouchpadFlingScroll(clipped_increment);
       break;
-    case WebGestureEvent::Touchscreen:
+    case blink::WebGestureDeviceTouchscreen:
       clipped_increment = ToClientScrollIncrement(clipped_increment);
       did_scroll = input_handler_->ScrollBy(fling_parameters_.point,
                                             clipped_increment);

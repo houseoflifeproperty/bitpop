@@ -7,6 +7,7 @@
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/file_manager/app_id.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
@@ -14,6 +15,7 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "extensions/common/extension.h"
+#include "google_apis/drive/task_util.h"
 #include "net/base/escape.h"
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
@@ -98,7 +100,7 @@ FileDefinitionListConverter::FileDefinitionListConverter(
       file_definition_list_(file_definition_list),
       callback_(callback),
       result_(new EntryDefinitionList) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // File browser APIs are meant to be used only from extension context, so
   // the extension's site is the one in whose file system context the virtual
@@ -156,7 +158,7 @@ void FileDefinitionListConverter::OnResolvedURL(
     const fileapi::FileSystemInfo& info,
     const base::FilePath& file_path,
     fileapi::FileSystemContext::ResolvedEntryType type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (error != base::File::FILE_OK) {
     OnIteratorConverted(self_deleter.Pass(),
@@ -168,10 +170,17 @@ void FileDefinitionListConverter::OnResolvedURL(
   EntryDefinition entry_definition;
   entry_definition.file_system_root_url = info.root_url.spec();
   entry_definition.file_system_name = info.name;
-  DCHECK(type == fileapi::FileSystemContext::RESOLVED_ENTRY_NOT_FOUND ||
-         iterator->is_directory ==
-             (type == fileapi::FileSystemContext::RESOLVED_ENTRY_DIRECTORY));
-  entry_definition.is_directory = iterator->is_directory;
+  switch (type) {
+    case fileapi::FileSystemContext::RESOLVED_ENTRY_FILE:
+      entry_definition.is_directory = false;
+      break;
+    case fileapi::FileSystemContext::RESOLVED_ENTRY_DIRECTORY:
+      entry_definition.is_directory = true;
+      break;
+    case fileapi::FileSystemContext::RESOLVED_ENTRY_NOT_FOUND:
+      entry_definition.is_directory = iterator->is_directory;
+      break;
+  }
   entry_definition.error = base::File::FILE_OK;
 
   // Construct a target Entry.fullPath value from the virtual path and the
@@ -202,6 +211,18 @@ void OnConvertFileDefinitionDone(
     scoped_ptr<EntryDefinitionList> entry_definition_list) {
   DCHECK_EQ(1u, entry_definition_list->size());
   callback.Run(entry_definition_list->at(0));
+}
+
+// Used to implement CheckIfDirectoryExists().
+void CheckIfDirectoryExistsOnIOThread(
+    scoped_refptr<fileapi::FileSystemContext> file_system_context,
+    const GURL& url,
+    const fileapi::FileSystemOperationRunner::StatusCallback& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  fileapi::FileSystemURL file_system_url = file_system_context->CrackURL(url);
+  file_system_context->operation_runner()->DirectoryExists(
+      file_system_url, callback);
 }
 
 }  // namespace
@@ -298,7 +319,7 @@ void ConvertFileDefinitionListToEntryDefinitionList(
     const std::string& extension_id,
     const FileDefinitionList& file_definition_list,
     const EntryDefinitionListCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // The converter object destroys itself.
   new FileDefinitionListConverter(
@@ -310,7 +331,7 @@ void ConvertFileDefinitionToEntryDefinition(
     const std::string& extension_id,
     const FileDefinition& file_definition,
     const EntryDefinitionCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   FileDefinitionList file_definition_list;
   file_definition_list.push_back(file_definition);
@@ -319,6 +340,27 @@ void ConvertFileDefinitionToEntryDefinition(
       extension_id,
       file_definition_list,
       base::Bind(&OnConvertFileDefinitionDone, callback));
+}
+
+void CheckIfDirectoryExists(
+    scoped_refptr<fileapi::FileSystemContext> file_system_context,
+    const GURL& url,
+    const fileapi::FileSystemOperationRunner::StatusCallback& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  // Check the existence of directory using file system API implementation on
+  // behalf of the file manager app. We need to grant access beforehand.
+  fileapi::ExternalFileSystemBackend* backend =
+      file_system_context->external_backend();
+  DCHECK(backend);
+  backend->GrantFullAccessToExtension(kFileManagerAppId);
+
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&CheckIfDirectoryExistsOnIOThread,
+                 file_system_context,
+                 url,
+                 google_apis::CreateRelayCallback(callback)));
 }
 
 }  // namespace util

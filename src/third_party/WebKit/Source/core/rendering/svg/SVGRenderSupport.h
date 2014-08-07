@@ -24,66 +24,74 @@
 #ifndef SVGRenderSupport_h
 #define SVGRenderSupport_h
 
-#include "core/rendering/PaintInfo.h"
-
 namespace WebCore {
 
+class AffineTransform;
 class FloatPoint;
 class FloatRect;
-class ImageBuffer;
+class GraphicsContext;
 class LayoutRect;
-class RenderBoxModelObject;
+struct PaintInfo;
 class RenderGeometryMap;
 class RenderLayerModelObject;
 class RenderObject;
 class RenderStyle;
 class RenderSVGRoot;
+class StrokeData;
 class TransformState;
 
-namespace SVGRenderSupport {
-// Shares child layouting code between RenderSVGRoot/RenderSVG(Hidden)Container
-void layoutChildren(RenderObject*, bool selfNeedsLayout);
+class SVGRenderSupport {
+public:
+    // Shares child layouting code between RenderSVGRoot/RenderSVG(Hidden)Container
+    static void layoutChildren(RenderObject*, bool selfNeedsLayout);
 
-// Layout resources used by this node.
-void layoutResourcesIfNeeded(const RenderObject*);
+    // Layout resources used by this node.
+    static void layoutResourcesIfNeeded(const RenderObject*);
 
-// Helper function determining wheter overflow is hidden
-bool isOverflowHidden(const RenderObject*);
+    // Helper function determining wheter overflow is hidden
+    static bool isOverflowHidden(const RenderObject*);
 
-// Calculates the repaintRect in combination with filter, clipper and masker in local coordinates.
-void intersectRepaintRectWithResources(const RenderObject*, FloatRect&);
+    // Calculates the repaintRect in combination with filter, clipper and masker in local coordinates.
+    static void intersectRepaintRectWithResources(const RenderObject*, FloatRect&);
 
-// Determines whether a container needs to be laid out because it's filtered and a child is being laid out.
-bool filtersForceContainerLayout(RenderObject*);
+    // Determines whether a container needs to be laid out because it's filtered and a child is being laid out.
+    static bool filtersForceContainerLayout(RenderObject*);
 
-// Determines whether the passed point lies in a clipping area
-bool pointInClippingArea(RenderObject*, const FloatPoint&);
+    // Determines whether the passed point lies in a clipping area
+    static bool pointInClippingArea(RenderObject*, const FloatPoint&);
 
-void computeContainerBoundingBoxes(const RenderObject* container, FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, FloatRect& strokeBoundingBox, FloatRect& repaintBoundingBox);
-bool paintInfoIntersectsRepaintRect(const FloatRect& localRepaintRect, const AffineTransform& localTransform, const PaintInfo&);
+    static void computeContainerBoundingBoxes(const RenderObject* container, FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, FloatRect& strokeBoundingBox, FloatRect& repaintBoundingBox);
 
-// Important functions used by nearly all SVG renderers centralizing coordinate transformations / repaint rect calculations
-LayoutRect clippedOverflowRectForRepaint(const RenderObject*, const RenderLayerModelObject* repaintContainer);
-void computeFloatRectForRepaint(const RenderObject*, const RenderLayerModelObject* repaintContainer, FloatRect&, bool fixed);
-void mapLocalToContainer(const RenderObject*, const RenderLayerModelObject* repaintContainer, TransformState&, bool* wasFixed = 0);
-const RenderObject* pushMappingToContainer(const RenderObject*, const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&);
-bool checkForSVGRepaintDuringLayout(RenderObject*);
+    static bool paintInfoIntersectsRepaintRect(const FloatRect& localRepaintRect, const AffineTransform& localTransform, const PaintInfo&);
 
-// Shared between SVG renderers and resources.
-void applyStrokeStyleToContext(GraphicsContext*, const RenderStyle*, const RenderObject*);
-void applyStrokeStyleToStrokeData(StrokeData*, const RenderStyle*, const RenderObject*);
+    static bool parentTransformDidChange(RenderObject*);
 
-// Determines if any ancestor's transform has changed.
-bool transformToRootChanged(RenderObject*);
+    // Important functions used by nearly all SVG renderers centralizing coordinate transformations / repaint rect calculations
+    static LayoutRect clippedOverflowRectForRepaint(const RenderObject*, const RenderLayerModelObject* repaintContainer);
+    static void computeFloatRectForRepaint(const RenderObject*, const RenderLayerModelObject* repaintContainer, FloatRect&, bool fixed);
+    static void mapLocalToContainer(const RenderObject*, const RenderLayerModelObject* repaintContainer, TransformState&, bool* wasFixed = 0);
+    static const RenderObject* pushMappingToContainer(const RenderObject*, const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&);
+    static bool checkForSVGRepaintDuringLayout(RenderObject*);
 
-// FIXME: These methods do not belong here.
-const RenderSVGRoot* findTreeRootObject(const RenderObject*);
+    // Shared between SVG renderers and resources.
+    static void applyStrokeStyleToContext(GraphicsContext*, const RenderStyle*, const RenderObject*);
+    static void applyStrokeStyleToStrokeData(StrokeData*, const RenderStyle*, const RenderObject*);
 
-// Helper method for determining if a RenderObject marked as text (isText()== true)
-// can/will be rendered as part of a <text>.
-bool isRenderableTextNode(const RenderObject*);
+    // Determines if any ancestor's transform has changed.
+    static bool transformToRootChanged(RenderObject*);
 
-} // namespace SVGRenderSupport
+    // FIXME: These methods do not belong here.
+    static const RenderSVGRoot* findTreeRootObject(const RenderObject*);
+
+    // Helper method for determining if a RenderObject marked as text (isText()== true)
+    // can/will be rendered as part of a <text>.
+    static bool isRenderableTextNode(const RenderObject*);
+
+private:
+    static void updateObjectBoundingBox(FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, RenderObject* other, FloatRect otherBoundingBox);
+    static void invalidateResourcesOfChildren(RenderObject* start);
+    static bool layoutSizeOfNearestViewportChanged(const RenderObject* start);
+};
 
 } // namespace WebCore
 

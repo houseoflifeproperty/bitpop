@@ -78,7 +78,10 @@ PassRefPtrWillBeRawPtr<Range> PlainTextRange::createRangeFor(const ContainerNode
 
     RefPtrWillBeRawPtr<Range> textRunRange = nullptr;
 
-    TextIterator it(rangeOfContents(const_cast<ContainerNode*>(&scope)).get(), getRangeFor == ForSelection ? TextIteratorEmitsCharactersBetweenAllVisiblePositions : TextIteratorDefaultBehavior);
+    TextIteratorBehaviorFlags behaviorFlags = TextIteratorEmitsObjectReplacementCharacter;
+    if (getRangeFor == ForSelection)
+        behaviorFlags |= TextIteratorEmitsCharactersBetweenAllVisiblePositions;
+    TextIterator it(rangeOfContents(const_cast<ContainerNode*>(&scope)).get(), behaviorFlags);
 
     // FIXME: the atEnd() check shouldn't be necessary, workaround for <http://bugs.webkit.org/show_bug.cgi?id=6289>.
     if (!start() && !length() && it.atEnd()) {

@@ -5,14 +5,12 @@
 #include "apps/shell/browser/shell_browser_main_parts.h"
 
 #include "apps/shell/browser/shell_browser_context.h"
+#include "apps/shell/browser/shell_browser_main_delegate.h"
 #include "apps/shell/browser/shell_desktop_controller.h"
 #include "apps/shell/browser/shell_extension_system.h"
 #include "apps/shell/browser/shell_extension_system_factory.h"
 #include "apps/shell/browser/shell_extensions_browser_client.h"
 #include "apps/shell/common/shell_extensions_client.h"
-#include "base/command_line.h"
-#include "base/file_util.h"
-#include "base/files/file_path.h"
 #include "base/run_loop.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "content/public/common/result_codes.h"
@@ -21,6 +19,7 @@
 #include "extensions/browser/browser_context_keyed_service_factories.h"
 #include "extensions/browser/extension_system.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/base/ime/input_method_initializer.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
@@ -47,10 +46,13 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
 namespace apps {
 
 ShellBrowserMainParts::ShellBrowserMainParts(
-    const content::MainFunctionParams& parameters)
+    const content::MainFunctionParams& parameters,
+    ShellBrowserMainDelegate* browser_main_delegate)
     : extension_system_(NULL),
       parameters_(parameters),
-      run_message_loop_(true) {}
+      run_message_loop_(true),
+      browser_main_delegate_(browser_main_delegate) {
+}
 
 ShellBrowserMainParts::~ShellBrowserMainParts() {
 }
@@ -63,6 +65,9 @@ void ShellBrowserMainParts::PostMainMessageLoopStart() {
 #if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::Initialize();
   network_controller_.reset(new ShellNetworkController);
+#else
+  // Non-Chrome OS platforms are for developer convenience, so use a test IME.
+  ui::InitializeInputMethodForTesting();
 #endif
 }
 
@@ -80,8 +85,8 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   // Initialize our "profile" equivalent.
   browser_context_.reset(new ShellBrowserContext);
 
-  desktop_controller_.reset(new ShellDesktopController);
-  desktop_controller_->GetWindowTreeHost()->AddObserver(this);
+  desktop_controller_.reset(browser_main_delegate_->CreateDesktopController());
+  desktop_controller_->CreateRootWindow();
 
   // NOTE: Much of this is culled from chrome/test/base/chrome_test_suite.cc
   // TODO(jamescook): Initialize chromeos::UserManager.
@@ -105,20 +110,13 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
 
   devtools_delegate_.reset(
       new content::ShellDevToolsDelegate(browser_context_.get()));
-
-  const std::string kAppSwitch = "app";
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(kAppSwitch)) {
-    base::FilePath app_dir(command_line->GetSwitchValueNative(kAppSwitch));
-    base::FilePath app_absolute_dir = base::MakeAbsoluteFilePath(app_dir);
-    extension_system_->LoadAndLaunchApp(app_absolute_dir);
-  } else if (parameters_.ui_task) {
+  if (parameters_.ui_task) {
     // For running browser tests.
     parameters_.ui_task->Run();
     delete parameters_.ui_task;
     run_message_loop_ = false;
   } else {
-    LOG(ERROR) << "--" << kAppSwitch << " unset; boredom is in your future";
+    browser_main_delegate_->Start(browser_context_.get());
   }
 }
 
@@ -133,6 +131,8 @@ bool ShellBrowserMainParts::MainMessageLoopRun(int* result_code)  {
 }
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {
+  browser_main_delegate_->Shutdown();
+
   BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(
       browser_context_.get());
   extension_system_ = NULL;
@@ -140,7 +140,6 @@ void ShellBrowserMainParts::PostMainMessageLoopRun() {
   extensions_browser_client_.reset();
   browser_context_.reset();
 
-  desktop_controller_->GetWindowTreeHost()->RemoveObserver(this);
   desktop_controller_.reset();
 }
 
@@ -149,13 +148,6 @@ void ShellBrowserMainParts::PostDestroyThreads() {
   network_controller_.reset();
   chromeos::DBusThreadManager::Shutdown();
 #endif
-}
-
-void ShellBrowserMainParts::OnHostCloseRequested(
-    const aura::WindowTreeHost* host) {
-  desktop_controller_->CloseAppWindow();
-  base::MessageLoop::current()->PostTask(FROM_HERE,
-                                         base::MessageLoop::QuitClosure());
 }
 
 void ShellBrowserMainParts::CreateExtensionSystem() {

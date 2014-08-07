@@ -26,12 +26,12 @@
 #include "config.h"
 #include "core/html/HTMLSourceElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
+#include "core/events/Event.h"
 #include "core/events/EventSender.h"
 #include "core/html/HTMLMediaElement.h"
+#include "core/html/HTMLPictureElement.h"
 #include "platform/Logging.h"
-
-using namespace std;
 
 namespace WebCore {
 
@@ -50,10 +50,7 @@ inline HTMLSourceElement::HTMLSourceElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLSourceElement> HTMLSourceElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLSourceElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLSourceElement)
 
 HTMLSourceElement::~HTMLSourceElement()
 {
@@ -66,6 +63,8 @@ Node::InsertionNotificationRequest HTMLSourceElement::insertedInto(ContainerNode
     Element* parent = parentElement();
     if (isHTMLMediaElement(parent))
         toHTMLMediaElement(parent)->sourceWasAdded(this);
+    if (isHTMLPictureElement(parent))
+        toHTMLPictureElement(parent)->sourceOrMediaChanged();
     return InsertionDone;
 }
 
@@ -76,6 +75,8 @@ void HTMLSourceElement::removedFrom(ContainerNode* removalRoot)
         parent = toElement(removalRoot);
     if (isHTMLMediaElement(parent))
         toHTMLMediaElement(parent)->sourceWasRemoved(this);
+    if (isHTMLPictureElement(parent))
+        toHTMLPictureElement(parent)->sourceOrMediaChanged();
     HTMLElement::removedFrom(removalRoot);
 }
 
@@ -116,6 +117,16 @@ void HTMLSourceElement::dispatchPendingEvent(SourceEventSender* eventSender)
 bool HTMLSourceElement::isURLAttribute(const Attribute& attribute) const
 {
     return attribute.name() == srcAttr || HTMLElement::isURLAttribute(attribute);
+}
+
+void HTMLSourceElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+{
+    HTMLElement::parseAttribute(name, value);
+    if (name == srcsetAttr || name == sizesAttr || name == mediaAttr || name == typeAttr) {
+        Element* parent = parentElement();
+        if (isHTMLPictureElement(parent))
+            toHTMLPictureElement(parent)->sourceOrMediaChanged();
+    }
 }
 
 }

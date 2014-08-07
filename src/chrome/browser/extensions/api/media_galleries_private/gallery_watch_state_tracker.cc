@@ -92,16 +92,12 @@ GalleryWatchStateTracker::~GalleryWatchStateTracker() {
 GalleryWatchStateTracker* GalleryWatchStateTracker::GetForProfile(
     Profile* profile) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-#if defined(OS_WIN)
-  // Gallery watch operation is supported only on windows.
-  // Please refer to crbug.com/144491 for more details.
   DCHECK(profile);
   MediaGalleriesPrivateAPI* private_api =
       MediaGalleriesPrivateAPI::Get(profile);
   // In unit tests, we don't have a MediaGalleriesPrivateAPI.
   if (private_api)
     return private_api->GetGalleryWatchStateTracker();
-#endif
   return NULL;
 }
 

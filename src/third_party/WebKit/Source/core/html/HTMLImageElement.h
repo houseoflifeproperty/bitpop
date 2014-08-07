@@ -33,21 +33,23 @@
 namespace WebCore {
 
 class HTMLFormElement;
+class ImageCandidate;
 
 class HTMLImageElement FINAL : public HTMLElement, public CanvasImageSource {
 public:
     static PassRefPtrWillBeRawPtr<HTMLImageElement> create(Document&);
-    static PassRefPtrWillBeRawPtr<HTMLImageElement> create(Document&, HTMLFormElement*);
+    static PassRefPtrWillBeRawPtr<HTMLImageElement> create(Document&, HTMLFormElement*, bool createdByParser);
     static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&, int width, int height);
 
     virtual ~HTMLImageElement();
+    virtual void trace(Visitor*) OVERRIDE;
 
     int width(bool ignorePendingStylesheets = false);
     int height(bool ignorePendingStylesheets = false);
 
     int naturalWidth() const;
     int naturalHeight() const;
-    const AtomicString& currentSrc() const;
+    const String& currentSrc() const;
 
     bool isServerMap() const;
 
@@ -55,10 +57,10 @@ public:
 
     CompositeOperator compositeOperator() const { return m_compositeOperator; }
 
-    ImageResource* cachedImage() const { return m_imageLoader.image(); }
-    void setImageResource(ImageResource* i) { m_imageLoader.setImage(i); };
+    ImageResource* cachedImage() const { return imageLoader().image(); }
+    void setImageResource(ImageResource* i) { imageLoader().setImage(i); };
 
-    void setLoadManually(bool loadManually) { m_imageLoader.setLoadManually(loadManually); }
+    void setLoadManually(bool loadManually) { imageLoader().setLoadManually(loadManually); }
 
     const AtomicString& alt() const;
 
@@ -74,12 +76,12 @@ public:
 
     bool complete() const;
 
-    bool hasPendingActivity() const { return m_imageLoader.hasPendingActivity(); }
+    bool hasPendingActivity() const { return imageLoader().hasPendingActivity(); }
 
     virtual bool canContainRangeEndPoint() const OVERRIDE { return false; }
 
-    void addClient(ImageLoaderClient* client) { m_imageLoader.addClient(client); }
-    void removeClient(ImageLoaderClient* client) { m_imageLoader.removeClient(client); }
+    void addClient(ImageLoaderClient* client) { imageLoader().addClient(client); }
+    void removeClient(ImageLoaderClient* client) { imageLoader().removeClient(client); }
 
     virtual const AtomicString imageSourceURL() const OVERRIDE;
 
@@ -91,9 +93,16 @@ public:
     virtual bool wouldTaintOrigin(SecurityOrigin*) const OVERRIDE;
     virtual FloatSize sourceSize() const OVERRIDE;
     virtual FloatSize defaultDestinationSize() const OVERRIDE;
+    virtual const KURL& sourceURL() const OVERRIDE;
 
+    enum UpdateFromElementBehavior {
+        UpdateNormal,
+        UpdateIgnorePreviousError
+    };
+    // public so that HTMLPictureElement can call this as well.
+    void selectSourceURL(UpdateFromElementBehavior);
 protected:
-    explicit HTMLImageElement(Document&, HTMLFormElement* = 0);
+    explicit HTMLImageElement(Document&, HTMLFormElement* = 0, bool createdByParser = false);
 
     virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
 
@@ -123,14 +132,21 @@ private:
     virtual Image* imageContents() OVERRIDE;
 
     void resetFormOwner();
+    ImageCandidate findBestFitImageFromPictureParent();
+    void setBestFitURLAndDPRFromImageCandidate(const ImageCandidate&);
+    HTMLImageLoader& imageLoader() const { return *m_imageLoader; }
 
-    HTMLImageLoader m_imageLoader;
-    // m_form should be a strong reference in Oilpan.
+    OwnPtrWillBeMember<HTMLImageLoader> m_imageLoader;
+#if ENABLE(OILPAN)
+    Member<HTMLFormElement> m_form;
+#else
     WeakPtr<HTMLFormElement> m_form;
+#endif
     CompositeOperator m_compositeOperator;
     AtomicString m_bestFitImageURL;
     float m_imageDevicePixelRatio;
     bool m_formWasSetByParser;
+    bool m_elementCreatedByParser;
 };
 
 } //namespace

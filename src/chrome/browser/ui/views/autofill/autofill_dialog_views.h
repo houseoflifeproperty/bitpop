@@ -98,12 +98,13 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual void ValidateSection(DialogSection section) OVERRIDE;
 
   // views::View implementation.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
   // views::DialogDelegate implementation:
+  virtual ui::ModalType GetModalType() const OVERRIDE;
   virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
@@ -259,9 +260,10 @@ class AutofillDialogViews : public AutofillDialogView,
     void SetNotifications(const std::vector<DialogNotification>& notifications);
 
     // views::View implementation.
-    virtual gfx::Size GetPreferredSize() OVERRIDE;
+    virtual gfx::Size GetPreferredSize() const OVERRIDE;
     virtual const char* GetClassName() const OVERRIDE;
-    virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+    virtual void PaintChildren(gfx::Canvas* canvas,
+                               const views::CullSet& cull_set) OVERRIDE;
     virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
     void set_arrow_centering_anchor(
@@ -339,9 +341,10 @@ class AutofillDialogViews : public AutofillDialogView,
     virtual ~SuggestedButton();
 
     // views::MenuButton implementation.
-    virtual gfx::Size GetPreferredSize() OVERRIDE;
+    virtual gfx::Size GetPreferredSize() const OVERRIDE;
     virtual const char* GetClassName() const OVERRIDE;
-    virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+    virtual void PaintChildren(gfx::Canvas* canvas,
+                               const views::CullSet& cull_set) OVERRIDE;
     virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
    private:
@@ -384,8 +387,8 @@ class AutofillDialogViews : public AutofillDialogView,
     void SetState(const SuggestionState& state);
 
     // views::View implementation.
-    virtual gfx::Size GetPreferredSize() OVERRIDE;
-    virtual int GetHeightForWidth(int width) OVERRIDE;
+    virtual gfx::Size GetPreferredSize() const OVERRIDE;
+    virtual int GetHeightForWidth(int width) const OVERRIDE;
     virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
 
     ExpandingTextfield* textfield() { return textfield_; }
@@ -397,7 +400,7 @@ class AutofillDialogViews : public AutofillDialogView,
     // |vertically_compact_text| or |horizontally_compact_text| as the case may
     // be.
     bool CanUseVerticallyCompactText(int available_width,
-                                     int* resulting_height);
+                                     int* resulting_height) const;
 
     // Sets the display text of the suggestion.
     void SetLabelText(const base::string16& text);
@@ -418,7 +421,7 @@ class AutofillDialogViews : public AutofillDialogView,
 
     // This caches preferred heights for given widths. The key is a preferred
     // width, the value is a cached result of CanUseVerticallyCompactText.
-    std::map<int, std::pair<bool, int> > calculated_heights_;
+    mutable std::map<int, std::pair<bool, int> > calculated_heights_;
 
     // The label that holds the suggestion description text.
     views::Label* label_;
@@ -458,7 +461,7 @@ class AutofillDialogViews : public AutofillDialogView,
   typedef std::map<DialogSection, DetailsGroup> DetailGroupMap;
 
   // Returns the preferred size or minimum size (if |get_minimum_size| is true).
-  gfx::Size CalculatePreferredSize(bool get_minimum_size);
+  gfx::Size CalculatePreferredSize(bool get_minimum_size) const;
 
   // Returns the minimum size of the sign in view for this dialog.
   gfx::Size GetMinimumSignInViewSize() const;
@@ -556,7 +559,7 @@ class AutofillDialogViews : public AutofillDialogView,
   // Updates the views in the button strip.
   void UpdateButtonStripExtraView();
 
-  // Call this when the size of anything in |contents_| might've changed.
+  // Call this when the size of anything in the contents might have changed.
   void ContentsPreferredSizeChanged();
   void DoContentsPreferredSizeChanged();
 
@@ -590,7 +593,7 @@ class AutofillDialogViews : public AutofillDialogView,
   AutofillDialogViewDelegate* const delegate_;
 
   // The preferred size of the view, cached to avoid needless recomputation.
-  gfx::Size preferred_size_;
+  mutable gfx::Size preferred_size_;
 
   // The current number of unmatched calls to UpdatesStarted.
   int updates_scope_;
@@ -599,8 +602,8 @@ class AutofillDialogViews : public AutofillDialogView,
   // due to an unmatched UpdatesStarted.
   bool needs_update_;
 
-  // The window that displays |contents_|. Weak pointer; may be NULL when the
-  // dialog is closing.
+  // The window that displays the dialog contents. Weak pointer; may be NULL
+  // when the dialog is closing.
   views::Widget* window_;
 
   // A DialogSection-keyed map of the DetailGroup structs.

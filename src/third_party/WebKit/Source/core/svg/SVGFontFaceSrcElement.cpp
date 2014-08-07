@@ -22,7 +22,7 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGFontFaceSrcElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSValueList.h"
 #include "core/dom/ElementTraversal.h"
@@ -40,10 +40,7 @@ inline SVGFontFaceSrcElement::SVGFontFaceSrcElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGFontFaceSrcElement> SVGFontFaceSrcElement::create(Document& document)
-{
-    return adoptRef(new SVGFontFaceSrcElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFontFaceSrcElement)
 
 PassRefPtrWillBeRawPtr<CSSValueList> SVGFontFaceSrcElement::srcValue() const
 {

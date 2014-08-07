@@ -23,6 +23,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_initializer.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_task_manager.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task_token.h"
 #include "chrome/browser/sync_file_system/fake_remote_change_processor.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
@@ -43,6 +44,8 @@ fileapi::FileSystemURL URL(const GURL& origin,
   return CreateSyncableFileSystemURL(
       origin, base::FilePath::FromUTF8Unsafe(path));
 }
+
+const int kRetryLimit = 100;
 
 }  // namespace
 
@@ -69,6 +72,7 @@ class LocalToRemoteSyncerTest : public testing::Test {
     context_.reset(new SyncEngineContext(
         fake_drive_service.PassAs<drive::DriveServiceInterface>(),
         drive_uploader.Pass(),
+        NULL,
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current()));
@@ -78,7 +82,8 @@ class LocalToRemoteSyncerTest : public testing::Test {
 
     sync_task_manager_.reset(new SyncTaskManager(
         base::WeakPtr<SyncTaskManager::Client>(),
-        10 /* maximum_background_task */));
+        10 /* maximum_background_task */,
+        base::MessageLoopProxy::current()));
     sync_task_manager_->Initialize(SYNC_STATUS_OK);
   }
 
@@ -93,7 +98,6 @@ class LocalToRemoteSyncerTest : public testing::Test {
   void InitializeMetadataDatabase() {
     SyncEngineInitializer* initializer =
         new SyncEngineInitializer(context_.get(),
-                                  base::MessageLoopProxy::current(),
                                   database_dir_.path(),
                                   in_memory_env_.get());
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
@@ -170,7 +174,8 @@ class LocalToRemoteSyncerTest : public testing::Test {
         context_.get(),
         SyncFileMetadata(file_change.file_type(), 0, base::Time()),
         file_change, local_path, url));
-    syncer->RunExclusive(CreateResultReceiver(&status));
+    syncer->RunPreflight(SyncTaskToken::CreateForTesting(
+        CreateResultReceiver(&status)));
     base::RunLoop().RunUntilIdle();
     return status;
   }
@@ -418,12 +423,14 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_UpdateDeleteOnFile) {
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
 
   SyncStatusCode status;
+  int retry_count = 0;
   do {
+    if (retry_count++ > kRetryLimit)
+      break;
     status = RunRemoteToLocalSyncer();
-    EXPECT_TRUE(status == SYNC_STATUS_OK ||
-                status == SYNC_STATUS_RETRY ||
-                status == SYNC_STATUS_NO_CHANGE_TO_SYNC);
-  } while (status != SYNC_STATUS_NO_CHANGE_TO_SYNC);
+  } while (status == SYNC_STATUS_OK ||
+           status == SYNC_STATUS_RETRY);
+  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
 
   DeleteResource(file_id);
 
@@ -454,12 +461,14 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_CreateDeleteOnFile) {
   const std::string file_id = CreateRemoteFile(app_root, "foo", "data");
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   SyncStatusCode status;
+  int retry_count = 0;
   do {
+    if (retry_count++ > kRetryLimit)
+      break;
     status = RunRemoteToLocalSyncer();
-    EXPECT_TRUE(status == SYNC_STATUS_OK ||
-                status == SYNC_STATUS_RETRY ||
-                status == SYNC_STATUS_NO_CHANGE_TO_SYNC);
-  } while (status != SYNC_STATUS_NO_CHANGE_TO_SYNC);
+  } while (status == SYNC_STATUS_OK ||
+           status == SYNC_STATUS_RETRY);
+  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
 
   DeleteResource(file_id);
 
@@ -519,12 +528,14 @@ TEST_F(LocalToRemoteSyncerTest, AppRootDeletion) {
   DeleteResource(app_root);
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   SyncStatusCode status;
+  int retry_count = 0;
   do {
+    if (retry_count++ > kRetryLimit)
+      break;
     status = RunRemoteToLocalSyncer();
-    EXPECT_TRUE(status == SYNC_STATUS_OK ||
-                status == SYNC_STATUS_RETRY ||
-                status == SYNC_STATUS_NO_CHANGE_TO_SYNC);
-  } while (status != SYNC_STATUS_NO_CHANGE_TO_SYNC);
+  } while (status == SYNC_STATUS_OK ||
+           status == SYNC_STATUS_RETRY);
+  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
 
   EXPECT_EQ(SYNC_STATUS_UNKNOWN_ORIGIN, RunLocalToRemoteSyncer(
       FileChange(FileChange::FILE_CHANGE_ADD_OR_UPDATE,

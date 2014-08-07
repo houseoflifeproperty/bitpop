@@ -29,11 +29,11 @@
  */
 
 #include "config.h"
-#include "V8File.h"
+#include "bindings/core/v8/V8File.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/custom/V8BlobCustomHelpers.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 

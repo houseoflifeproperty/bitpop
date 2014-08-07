@@ -18,7 +18,7 @@ ServiceWorkerContextWrapper::ServiceWorkerContextWrapper(
     BrowserContext* browser_context)
     : observer_list_(
           new ObserverListThreadSafe<ServiceWorkerContextObserver>()),
-      browser_context_(browser_context) {
+      process_manager_(new ServiceWorkerProcessManager(browser_context)) {
 }
 
 ServiceWorkerContextWrapper::~ServiceWorkerContextWrapper() {
@@ -32,20 +32,19 @@ void ServiceWorkerContextWrapper::Init(
           GetSequencedTaskRunnerWithShutdownBehavior(
               BrowserThread::GetBlockingPool()->GetSequenceToken(),
               base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
-  InitInternal(user_data_directory, database_task_runner, quota_manager_proxy);
+  scoped_refptr<base::MessageLoopProxy> disk_cache_thread =
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE);
+  InitInternal(user_data_directory, database_task_runner,
+               disk_cache_thread, quota_manager_proxy);
 }
 
 void ServiceWorkerContextWrapper::Shutdown() {
-  if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
-    DCHECK_CURRENTLY_ON(BrowserThread::UI);
-    browser_context_ = NULL;
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&ServiceWorkerContextWrapper::Shutdown, this));
-    return;
-  }
-  // Breaks the reference cycle through ServiceWorkerProcessManager.
-  context_core_.reset();
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  process_manager_->Shutdown();
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&ServiceWorkerContextWrapper::ShutdownOnIO, this));
 }
 
 ServiceWorkerContextCore* ServiceWorkerContextWrapper::context() {
@@ -118,6 +117,11 @@ void ServiceWorkerContextWrapper::UnregisterServiceWorker(
       base::Bind(&FinishUnregistrationOnIO, continuation));
 }
 
+void ServiceWorkerContextWrapper::Terminate() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  process_manager_->Shutdown();
+}
+
 void ServiceWorkerContextWrapper::AddObserver(
     ServiceWorkerContextObserver* observer) {
   observer_list_->AddObserver(observer);
@@ -128,16 +132,10 @@ void ServiceWorkerContextWrapper::RemoveObserver(
   observer_list_->RemoveObserver(observer);
 }
 
-void ServiceWorkerContextWrapper::InitForTesting(
-    const base::FilePath& user_data_directory,
-    base::SequencedTaskRunner* database_task_runner,
-    quota::QuotaManagerProxy* quota_manager_proxy) {
-  InitInternal(user_data_directory, database_task_runner, quota_manager_proxy);
-}
-
 void ServiceWorkerContextWrapper::InitInternal(
     const base::FilePath& user_data_directory,
     base::SequencedTaskRunner* database_task_runner,
+    base::MessageLoopProxy* disk_cache_thread,
     quota::QuotaManagerProxy* quota_manager_proxy) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
     BrowserThread::PostTask(
@@ -147,16 +145,22 @@ void ServiceWorkerContextWrapper::InitInternal(
                    this,
                    user_data_directory,
                    make_scoped_refptr(database_task_runner),
+                   make_scoped_refptr(disk_cache_thread),
                    make_scoped_refptr(quota_manager_proxy)));
     return;
   }
   DCHECK(!context_core_);
-  context_core_.reset(new ServiceWorkerContextCore(
-      user_data_directory,
-      database_task_runner,
-      quota_manager_proxy,
-      observer_list_,
-      make_scoped_ptr(new ServiceWorkerProcessManager(this))));
+  context_core_.reset(new ServiceWorkerContextCore(user_data_directory,
+                                                   database_task_runner,
+                                                   disk_cache_thread,
+                                                   quota_manager_proxy,
+                                                   observer_list_,
+                                                   this));
+}
+
+void ServiceWorkerContextWrapper::ShutdownOnIO() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  context_core_.reset();
 }
 
 }  // namespace content

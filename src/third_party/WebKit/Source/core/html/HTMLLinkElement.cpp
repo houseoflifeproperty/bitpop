@@ -25,18 +25,17 @@
 #include "config.h"
 #include "core/html/HTMLLinkElement.h"
 
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
 #include "bindings/v8/ScriptEventListener.h"
+#include "core/HTMLNames.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQueryEvaluator.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
+#include "core/dom/StyleEngine.h"
 #include "core/events/Event.h"
 #include "core/events/EventSender.h"
-#include "core/dom/StyleEngine.h"
 #include "core/fetch/CSSStyleSheetResource.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
@@ -47,6 +46,8 @@
 #include "core/html/imports/LinkImport.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
+#include "core/rendering/style/StyleInheritedData.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/StdLibExtras.h"
 
 namespace WebCore {
@@ -143,7 +144,7 @@ inline HTMLLinkElement::HTMLLinkElement(Document& document, bool createdByParser
 
 PassRefPtrWillBeRawPtr<HTMLLinkElement> HTMLLinkElement::create(Document& document, bool createdByParser)
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLLinkElement(document, createdByParser));
+    return adoptRefWillBeNoop(new HTMLLinkElement(document, createdByParser));
 }
 
 HTMLLinkElement::~HTMLLinkElement()
@@ -213,7 +214,7 @@ LinkResource* HTMLLinkElement::linkResourceToProcess()
             m_link = LinkManifest::create(this);
         } else {
             OwnPtrWillBeRawPtr<LinkStyle> link = LinkStyle::create(this);
-            if (fastHasAttribute(disabledAttr))
+            if (fastHasAttribute(disabledAttr) || m_relAttribute.isTransitionExitingStylesheet())
                 link->setDisabledState(true);
             m_link = link.release();
         }
@@ -249,6 +250,14 @@ void HTMLLinkElement::process()
         link->process();
 }
 
+void HTMLLinkElement::enableIfExitTransitionStyle()
+{
+    if (m_relAttribute.isTransitionExitingStylesheet()) {
+        if (LinkStyle* link = linkStyle())
+            link->setDisabledState(false);
+    }
+}
+
 Node::InsertionNotificationRequest HTMLLinkElement::insertedInto(ContainerNode* insertionPoint)
 {
     HTMLElement::insertedInto(insertionPoint);
@@ -262,6 +271,10 @@ Node::InsertionNotificationRequest HTMLLinkElement::insertedInto(ContainerNode* 
     document().styleEngine()->addStyleSheetCandidateNode(this, m_createdByParser);
 
     process();
+
+    if (m_link)
+        m_link->ownerInserted();
+
     return InsertionDone;
 }
 
@@ -465,7 +478,7 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
 
     }
     // Completing the sheet load may cause scripts to execute.
-    RefPtrWillBeRawPtr<Node> protector(m_owner);
+    RefPtrWillBeRawPtr<Node> protector(m_owner.get());
 
     CSSParserContext parserContext(m_owner->document(), 0, baseURL, charset);
 
@@ -555,7 +568,7 @@ void LinkStyle::addPendingSheet(PendingSheetType type)
     m_owner->document().styleEngine()->addPendingSheet();
 }
 
-void LinkStyle::removePendingSheet(RemovePendingSheetNotificationType notification)
+void LinkStyle::removePendingSheet()
 {
     PendingSheetType type = m_pendingSheetType;
     m_pendingSheetType = None;
@@ -568,14 +581,11 @@ void LinkStyle::removePendingSheet(RemovePendingSheetNotificationType notificati
         // Document::removePendingSheet() triggers the style selector recalc for blocking sheets.
         // FIXME: We don't have enough knowledge at this point to know if we're adding or removing a sheet
         // so we can't call addedStyleSheet() or removedStyleSheet().
-        m_owner->document().styleResolverChanged(RecalcStyleDeferred);
+        m_owner->document().styleResolverChanged();
         return;
     }
 
-    m_owner->document().styleEngine()->removePendingSheet(m_owner,
-        notification == RemovePendingSheetNotifyImmediately
-        ? StyleEngine::RemovePendingSheetNotifyImmediately
-        : StyleEngine::RemovePendingSheetNotifyLater);
+    m_owner->document().styleEngine()->removePendingSheet(m_owner);
 }
 
 void LinkStyle::setDisabledState(bool disabled)
@@ -615,7 +625,7 @@ void LinkStyle::setDisabledState(bool disabled)
                 process();
         } else {
             // FIXME: We don't have enough knowledge here to know if we should call addedStyleSheet() or removedStyleSheet().
-            m_owner->document().styleResolverChanged(RecalcStyleDeferred);
+            m_owner->document().styleResolverChanged();
         }
     }
 }
@@ -640,7 +650,7 @@ void LinkStyle::process()
     if (!m_owner->loadLink(type, builder.url()))
         return;
 
-    if ((m_disabledState != Disabled) && m_owner->relAttribute().isStyleSheet()
+    if ((m_disabledState != Disabled) && (m_owner->relAttribute().isStyleSheet() || m_owner->relAttribute().isTransitionExitingStylesheet())
         && shouldLoadResource() && builder.url().isValid()) {
 
         if (resource()) {
@@ -701,7 +711,7 @@ void LinkStyle::ownerRemoved()
         clearSheet();
 
     if (styleSheetIsLoading())
-        removePendingSheet(RemovePendingSheetNotifyLater);
+        removePendingSheet();
 }
 
 void LinkStyle::trace(Visitor* visitor)

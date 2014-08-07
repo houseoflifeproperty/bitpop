@@ -11,6 +11,7 @@
         'pathops_unittest.gypi',
         'tests.gypi',
       ],
+      'dependencies': [ 'crash_handler.gyp:CrashHandler' ],
       'sources': [
         '../tests/skia_test.cpp',
       ],
@@ -18,7 +19,6 @@
         [ 'skia_android_framework == 1', {
           'libraries': [
             '-lskia',
-            '-lcutils',
           ],
           'libraries!': [
             '-lz',

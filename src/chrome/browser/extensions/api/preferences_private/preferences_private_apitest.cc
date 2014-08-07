@@ -19,15 +19,20 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/sync/managed_user_signin_manager_wrapper.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/bookmarks/core/common/bookmark_constants.h"
+#include "components/bookmarks/common/bookmark_constants.h"
 #include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/browser_context.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
 
 using extensions::PreferencesPrivateGetSyncCategoriesWithoutPassphraseFunction;
 
@@ -39,7 +44,7 @@ class FakeProfileSyncService : public ProfileSyncService {
       : ProfileSyncService(
             NULL,
             profile,
-            NULL,
+            make_scoped_ptr<ManagedUserSigninManagerWrapper>(NULL),
             ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
             browser_sync::MANUAL_START),
         sync_initialized_(true),
@@ -106,6 +111,13 @@ class PreferencesPrivateApiTest : public ExtensionApiTest {
  public:
   PreferencesPrivateApiTest() : browser_(NULL), service_(NULL) {}
   virtual ~PreferencesPrivateApiTest() {}
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+#if defined(OS_CHROMEOS)
+    command_line->AppendSwitch(
+        chromeos::switches::kIgnoreUserProfileMappingForTests);
+#endif
+  }
 
   virtual void SetUpOnMainThread() OVERRIDE {
     ExtensionApiTest::SetUpOnMainThread();

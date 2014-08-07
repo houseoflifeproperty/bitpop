@@ -14,9 +14,10 @@ fun:*MOZ_Z_deflate*
 fun:unpack_RGBA8888
 fun:unpack_RGB888
 
-# http://crbug.com/363487
-fun:*WebCore*RenderLayerCompositor*updateIfNeeded*
+# Bug in MSan, fixed in clang r210020. http://crbug.com/378909
+fun:*convolveVertically_SSE2*
 
-# Fixed in clang r207227.
-# http://code.google.com/p/memory-sanitizer/issues/detail?id=53
-fun:getc_unlocked
+# MSan issue, http://crbug.com/381233
+# (Both functions call __mm_maddubs_epi16()).
+fun:*ProcessPixelPairHelper*
+fun:*ProcessOnePixel*

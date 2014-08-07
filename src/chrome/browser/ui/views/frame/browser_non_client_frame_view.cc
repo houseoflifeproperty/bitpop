@@ -60,7 +60,7 @@ void BrowserNonClientFrameView::UpdateAvatarInfo() {
   if (browser_view_->ShouldShowAvatar()) {
     if (!avatar_button_) {
       Profile* profile = browser_view_->browser()->profile();
-      if (profile->IsManaged() && !avatar_label_) {
+      if (profile->IsSupervised() && !avatar_label_) {
         avatar_label_ = new AvatarLabel(browser_view_);
         avatar_label_->set_id(VIEW_ID_AVATAR_LABEL);
         AddChildView(avatar_label_);
@@ -121,11 +121,8 @@ void BrowserNonClientFrameView::UpdateAvatarInfo() {
     if (avatar_button_ && !AvatarMenu::ShouldShowAvatarMenu())
       avatar_button_->SetEnabled(false);
   }
-  if (avatar_button_) {
+  if (avatar_button_)
     avatar_button_->SetAvatarIcon(avatar, is_rectangle);
-    if (!text.empty())
-      avatar_button_->SetText(text);
-  }
 
   // For popups and panels which don't have the avatar button, we still
   // need to draw the taskbar decoration. Even though we have an icon on the

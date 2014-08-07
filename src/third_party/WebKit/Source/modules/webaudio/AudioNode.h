@@ -26,7 +26,7 @@
 #define AudioNode_h
 
 #include "bindings/v8/ScriptWrappable.h"
-#include "core/events/EventTarget.h"
+#include "modules/EventTargetModules.h"
 #include "platform/audio/AudioBus.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
@@ -52,6 +52,7 @@ class ExceptionState;
 
 // AudioNode has its own ref-counting mechanism that use RefTypes so we cannot use RefCountedGarbageCollected.
 class AudioNode : public NoBaseWillBeGarbageCollectedFinalized<AudioNode>, public ScriptWrappable, public EventTargetWithInlineData {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(AudioNode);
 public:
     enum { ProcessingSizeInFrames = 128 };
 
@@ -180,7 +181,7 @@ public:
     virtual const AtomicString& interfaceName() const OVERRIDE FINAL;
     virtual ExecutionContext* executionContext() const OVERRIDE FINAL;
 
-    virtual void trace(Visitor*);
+    virtual void trace(Visitor*) OVERRIDE;
 
 #if ENABLE(OILPAN)
     void clearKeepAlive();
@@ -234,8 +235,10 @@ private:
     static int s_nodeCount[NodeTypeEnd];
 #endif
 
+#if !ENABLE(OILPAN)
     virtual void refEventTarget() OVERRIDE FINAL { ref(); }
     virtual void derefEventTarget() OVERRIDE FINAL { deref(); }
+#endif
 
 protected:
     unsigned m_channelCount;

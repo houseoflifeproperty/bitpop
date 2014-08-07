@@ -40,16 +40,16 @@ NotificationController::~NotificationController()
 {
 }
 
-PassOwnPtr<NotificationController> NotificationController::create(PassOwnPtr<NotificationClient> client)
+PassOwnPtrWillBeRawPtr<NotificationController> NotificationController::create(PassOwnPtr<NotificationClient> client)
 {
-    return adoptPtr(new NotificationController(client));
+    return adoptPtrWillBeNoop(new NotificationController(client));
 }
 
-NotificationClient* NotificationController::clientFrom(LocalFrame* frame)
+NotificationClient& NotificationController::clientFrom(LocalFrame* frame)
 {
-    if (NotificationController* controller = NotificationController::from(frame))
-        return controller->client();
-    return 0;
+    NotificationController* controller = NotificationController::from(frame);
+    ASSERT(controller);
+    return controller->client();
 }
 
 const char* NotificationController::supplementName()

@@ -24,6 +24,7 @@
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebScopedUserGesture.h"
+#include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
 
@@ -188,29 +189,29 @@ void UserScriptScheduler::ExecuteCodeImpl(
     // For child frames, we just skip ones the extension doesn't have access
     // to and carry on.
 
+    GURL document_url = ScriptContext::GetEffectiveDocumentURL(
+        child_frame, child_frame->document().url(), params.match_about_blank);
     bool can_execute_script =
-        PermissionsData::CanExecuteScriptOnPage(extension,
-                                                child_frame->document().url(),
-                                                top_url,
-                                                extension_helper->tab_id(),
-                                                NULL,
-                                                -1,
-                                                NULL);
+        extension->permissions_data()->CanAccessPage(extension,
+                                                     document_url,
+                                                     top_url,
+                                                     extension_helper->tab_id(),
+                                                     -1,     // no process ID.
+                                                     NULL);  // ignore error.
     if ((!params.is_web_view && !can_execute_script) ||
-        (params.is_web_view &&
-         child_frame->document().url() != params.webview_src)) {
+        (params.is_web_view && document_url != params.webview_src)) {
       if (child_frame->parent()) {
         continue;
       } else {
         error = ErrorUtils::FormatErrorMessage(
-            manifest_errors::kCannotAccessPage,
-            child_frame->document().url().spec());
+            manifest_errors::kCannotAccessPage, document_url.spec());
         break;
       }
     }
 
     if (params.is_javascript) {
-      WebScriptSource source(WebString::fromUTF8(params.code), params.file_url);
+      blink::WebScriptSource source(
+          WebString::fromUTF8(params.code), params.file_url);
       v8::HandleScope scope(v8::Isolate::GetCurrent());
 
       scoped_ptr<content::V8ValueConverter> v8_converter(
@@ -223,7 +224,7 @@ void UserScriptScheduler::ExecuteCodeImpl(
         script_value = child_frame->executeScriptAndReturnValue(source);
       } else {
         blink::WebVector<v8::Local<v8::Value> > results;
-        std::vector<WebScriptSource> sources;
+        std::vector<blink::WebScriptSource> sources;
         sources.push_back(source);
         int isolated_world_id =
             dispatcher_->user_script_slave()->GetIsolatedWorldIdForExtension(

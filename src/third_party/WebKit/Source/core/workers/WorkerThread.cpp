@@ -128,6 +128,8 @@ void WorkerThread::workerThread()
     m_workerReportingProxy.workerGlobalScopeStarted(m_workerGlobalScope.get());
 
     WorkerScriptController* script = m_workerGlobalScope->script();
+    if (!script->isExecutionForbidden())
+        script->initializeContextIfNeeded();
     InspectorInstrumentation::willEvaluateWorkerScript(workerGlobalScope(), startMode);
     script->evaluate(ScriptSourceCode(sourceCode, scriptURL));
 
@@ -202,7 +204,7 @@ public:
     virtual void performTask(ExecutionContext *context)
     {
         WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
-
+        workerGlobalScope->stopFetch();
         workerGlobalScope->stopActiveDOMObjects();
 
         // Event listeners would keep DOMWrapperWorld objects alive for too long. Also, they have references to JS objects,

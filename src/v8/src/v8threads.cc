@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "api.h"
-#include "bootstrapper.h"
-#include "debug.h"
-#include "execution.h"
-#include "v8threads.h"
-#include "regexp-stack.h"
+#include "src/api.h"
+#include "src/bootstrapper.h"
+#include "src/debug.h"
+#include "src/execution.h"
+#include "src/v8threads.h"
+#include "src/regexp-stack.h"
 
 namespace v8 {
 
@@ -145,7 +145,7 @@ bool ThreadManager::RestoreThread() {
   from = isolate_->bootstrapper()->RestoreState(from);
   per_thread->set_thread_state(NULL);
   if (state->terminate_on_restore()) {
-    isolate_->stack_guard()->TerminateExecution();
+    isolate_->stack_guard()->RequestTerminateExecution();
     state->set_terminate_on_restore(false);
   }
   state->set_id(ThreadId::Invalid());

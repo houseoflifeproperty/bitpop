@@ -111,8 +111,8 @@ class FrameProcessorTest : public testing::TestWithParam<bool> {
         timestamps[i] = timestamps[i].substr(0, timestamps[i].length() - 1);
       }
 
-      int time_in_ms;
-      CHECK(base::StringToInt(timestamps[i], &time_in_ms));
+      double time_in_ms;
+      CHECK(base::StringToDouble(timestamps[i], &time_in_ms));
 
       // Create buffer. Encode the original time_in_ms as the buffer's data to
       // enable later verification of possible buffer relocation in presentation
@@ -121,8 +121,8 @@ class FrameProcessorTest : public testing::TestWithParam<bool> {
       scoped_refptr<StreamParserBuffer> buffer =
           StreamParserBuffer::CopyFrom(timestamp_as_data, sizeof(time_in_ms),
                                        is_keyframe, type, track_id);
-      base::TimeDelta timestamp =
-          base::TimeDelta::FromMilliseconds(time_in_ms);
+      base::TimeDelta timestamp = base::TimeDelta::FromSecondsD(
+          time_in_ms / base::Time::kMillisecondsPerSecond);
       buffer->set_timestamp(timestamp);
       buffer->SetDecodeTimestamp(timestamp);
       buffer->set_duration(frame_duration_);
@@ -207,13 +207,19 @@ class FrameProcessorTest : public testing::TestWithParam<bool> {
       ss << time_in_ms;
 
       // Decode the original_time_in_ms from the buffer's data.
-      int original_time_in_ms;
+      double original_time_in_ms;
       ASSERT_EQ(static_cast<int>(sizeof(original_time_in_ms)),
                 last_read_buffer_->data_size());
-      original_time_in_ms = *(reinterpret_cast<const int*>(
+      original_time_in_ms = *(reinterpret_cast<const double*>(
           last_read_buffer_->data()));
       if (original_time_in_ms != time_in_ms)
         ss << ":" << original_time_in_ms;
+
+      // Detect full-discard preroll buffer.
+      if (last_read_buffer_->discard_padding().first == kInfiniteDuration() &&
+          last_read_buffer_->discard_padding().second == base::TimeDelta()) {
+        ss << "P";
+      }
     }
 
     EXPECT_EQ(expected, ss.str());
@@ -259,30 +265,34 @@ class FrameProcessorTest : public testing::TestWithParam<bool> {
   void CreateAndConfigureStream(DemuxerStream::Type type) {
     // TODO(wolenetz/dalecurtis): Also test with splicing disabled?
     switch (type) {
-      case DemuxerStream::AUDIO:
+      case DemuxerStream::AUDIO: {
         ASSERT_FALSE(audio_);
         audio_.reset(new ChunkDemuxerStream(DemuxerStream::AUDIO, true));
-        ASSERT_TRUE(audio_->UpdateAudioConfig(
-            AudioDecoderConfig(kCodecVorbis,
-                               kSampleFormatPlanarF32,
-                               CHANNEL_LAYOUT_STEREO,
-                               1000,
-                               NULL,
-                               0,
-                               false),
-            base::Bind(&LogFunc)));
+        AudioDecoderConfig decoder_config(kCodecVorbis,
+                                          kSampleFormatPlanarF32,
+                                          CHANNEL_LAYOUT_STEREO,
+                                          1000,
+                                          NULL,
+                                          0,
+                                          false);
+        frame_processor_->OnPossibleAudioConfigUpdate(decoder_config);
+        ASSERT_TRUE(
+            audio_->UpdateAudioConfig(decoder_config, base::Bind(&LogFunc)));
         break;
-      case DemuxerStream::VIDEO:
+      }
+      case DemuxerStream::VIDEO: {
         ASSERT_FALSE(video_);
         video_.reset(new ChunkDemuxerStream(DemuxerStream::VIDEO, true));
         ASSERT_TRUE(video_->UpdateVideoConfig(TestVideoConfig::Normal(),
                                               base::Bind(&LogFunc)));
         break;
+      }
       // TODO(wolenetz): Test text coded frame processing.
       case DemuxerStream::TEXT:
       case DemuxerStream::UNKNOWN:
-      case DemuxerStream::NUM_TYPES:
+      case DemuxerStream::NUM_TYPES: {
         ASSERT_FALSE(true);
+      }
     }
   }
 
@@ -565,6 +575,81 @@ TEST_P(FrameProcessorTest, AudioVideo_Discontinuity) {
     video_->StartReturningData();
     CheckReadsThenReadStalls(video_.get(), "50");
   }
+}
+
+TEST_P(FrameProcessorTest,
+       AppendWindowFilterOfNegativeBufferTimestampsWithPrerollDiscard) {
+  InSequence s;
+  AddTestTracks(HAS_AUDIO);
+  new_media_segment_ = true;
+  if (GetParam())
+    frame_processor_->SetSequenceMode(true);
+
+  SetTimestampOffset(frame_duration_ * -2);
+  EXPECT_CALL(callbacks_, PossibleDurationIncrease(frame_duration_));
+  ProcessFrames("0K 10K 20K", "");
+  EXPECT_FALSE(new_media_segment_);
+  EXPECT_EQ(frame_duration_ * -2, timestamp_offset_);
+  CheckExpectedRangesByTimestamp(audio_.get(), "{ [0,10) }");
+  CheckReadsThenReadStalls(audio_.get(), "0:10P 0:20");
+}
+
+TEST_P(FrameProcessorTest, AppendWindowFilterWithInexactPreroll) {
+  InSequence s;
+  AddTestTracks(HAS_AUDIO);
+  new_media_segment_ = true;
+  if (GetParam())
+    frame_processor_->SetSequenceMode(true);
+  SetTimestampOffset(-frame_duration_);
+  EXPECT_CALL(callbacks_, PossibleDurationIncrease(frame_duration_ * 2));
+  ProcessFrames("0K 9.75K 20K", "");
+  CheckExpectedRangesByTimestamp(audio_.get(), "{ [0,20) }");
+  CheckReadsThenReadStalls(audio_.get(), "0P 0:9.75 10:20");
+}
+
+TEST_P(FrameProcessorTest, AllowNegativeFramePTSAndDTSBeforeOffsetAdjustment) {
+  InSequence s;
+  AddTestTracks(HAS_AUDIO);
+  new_media_segment_ = true;
+  bool using_sequence_mode = GetParam();
+  if (using_sequence_mode) {
+    frame_processor_->SetSequenceMode(true);
+    EXPECT_CALL(callbacks_, PossibleDurationIncrease(frame_duration_ * 3));
+  } else {
+    EXPECT_CALL(callbacks_,
+                PossibleDurationIncrease((frame_duration_ * 5) / 2));
+  }
+
+  ProcessFrames("-5K 5K 15K", "");
+
+  if (using_sequence_mode) {
+    EXPECT_EQ(frame_duration_ / 2, timestamp_offset_);
+    CheckExpectedRangesByTimestamp(audio_.get(), "{ [0,30) }");
+    CheckReadsThenReadStalls(audio_.get(), "0:-5 10:5 20:15");
+  } else {
+    EXPECT_EQ(base::TimeDelta(), timestamp_offset_);
+    CheckExpectedRangesByTimestamp(audio_.get(), "{ [0,25) }");
+    CheckReadsThenReadStalls(audio_.get(), "0:-5 5 15");
+  }
+}
+
+TEST_P(FrameProcessorTest, PartialAppendWindowFilterNoDiscontinuity) {
+  // Tests that spurious discontinuity is not introduced by a partially
+  // trimmed frame.
+  InSequence s;
+  AddTestTracks(HAS_AUDIO);
+  new_media_segment_ = true;
+  if (GetParam())
+    frame_processor_->SetSequenceMode(true);
+  EXPECT_CALL(callbacks_,
+              PossibleDurationIncrease(base::TimeDelta::FromMilliseconds(29)));
+
+  append_window_start_ = base::TimeDelta::FromMilliseconds(7);
+  ProcessFrames("0K 19K", "");
+
+  EXPECT_EQ(base::TimeDelta(), timestamp_offset_);
+  CheckExpectedRangesByTimestamp(audio_.get(), "{ [7,29) }");
+  CheckReadsThenReadStalls(audio_.get(), "7:0 19");
 }
 
 INSTANTIATE_TEST_CASE_P(SequenceMode, FrameProcessorTest, Values(true));

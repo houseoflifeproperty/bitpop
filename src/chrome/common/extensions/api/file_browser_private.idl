@@ -81,6 +81,18 @@ enum SearchType { EXCLUDE_DIRECTORIES, SHARED_WITH_ME, OFFLINE, ALL };
 // Zooming mode.
 enum ZoomOperationType { in, out, reset };
 
+// Specifies how to open inspector.
+enum InspectionType {
+  // Open inspector for foreground page.
+  normal,
+  // Open inspector for foreground page and bring focus to the console.
+  console,
+  // Open inspector for foreground page in inspect element mode.
+  element,
+  // Open inspector for background page.
+  background
+};
+
 // Device event type.
 enum DeviceEventType {
   // Device is added.
@@ -234,6 +246,15 @@ dictionary VolumeMetadata {
   // ID of the disk volume.
   DOMString volumeId;
 
+  // Id the provided file system (for proviided file systems).
+  DOMString? fileSystemId;
+
+  // Extension providing this volume (for provided file systems).
+  DOMString? extensionId;
+
+  // Label of the volume (if available).
+  DOMString? volumeLabel;
+
   // Description of the profile where the volume belongs.
   // TODO(hirono): Remove the property because of the design change of
   // multi-profile support.
@@ -251,9 +272,6 @@ dictionary VolumeMetadata {
   // Path to identify the device. This is consistent with DeviceEvent's
   // devicePath.
   DOMString? devicePath;
-
-  // Label of the device.
-  DOMString? deviceLabel;
 
   // Whether the device is parent or not (i.e. sdb rather than sdb1).
   boolean? isParentDevice;
@@ -506,6 +524,10 @@ callback GetProfilesCallback = void(ProfileInfo[] profiles,
                                     DOMString runningProfile,
                                     DOMString displayProfile);
 
+// |entryUrl| URL of an entry in a normal file system.
+callback ResolveEntriesCallback =
+    void([instanceOf=FileEntry] object[] entries);
+
 interface Functions {
   // Logout the current user for navigating to the re-authentication screen for
   // the Google account.
@@ -601,8 +623,8 @@ interface Functions {
   // Pins/unpins a Drive file in the cache.
   // |fileUrl| URL of a file to pin/unpin.
   // |pin| Pass true to pin the file.
-  // |callback| Completion callback. $(ref:runtime.lastError) will be set if there
-  //     was an error.
+  // |callback| Completion callback. $(ref:runtime.lastError) will be set if
+  //     there was an error.
   static void pinDriveFile(DOMString fileUrl,
                            boolean pin,
                            optional SimpleCallback callback);
@@ -612,6 +634,15 @@ interface Functions {
   // |callback|
   static void getDriveFiles(DOMString[] fileUrls,
                             GetDriveFilesCallback callback);
+
+  // Resolves file entries in the isolated file system and returns corresponding
+  // entries in the external file system mounted to Chrome OS file manager
+  // backend. If resolving entry fails, the entry will be just ignored and the
+  // corresponding entry does not appear in the result.
+  [nocompile]
+  static void resolveIsolatedEntries(
+      [instanceOf=FileEntry] object[] entries,
+      ResolveEntriesCallback callback);
 
   // Mount a resource or a file.
   // |source| Mount point source. For compressed files it is relative file path
@@ -742,6 +773,10 @@ interface Functions {
   // Moves the window to other user's desktop.
   static void visitDesktop(DOMString profileId,
                            optional SimpleCallback callback);
+
+  // Opens inspector window.
+  // |type| InspectionType which specifies how to open inspector.
+  static void openInspector(InspectionType type);
 };
 
 interface Events {

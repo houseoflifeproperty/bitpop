@@ -23,10 +23,6 @@ namespace media {
 static const int kPowerMeasurementTimeConstantMillis = 10;
 #endif
 
-// Polling-related constants.
-const int AudioOutputController::kPollNumAttempts = 3;
-const int AudioOutputController::kPollPauseInMilliseconds = 3;
-
 AudioOutputController::AudioOutputController(
     AudioManager* audio_manager,
     EventHandler* handler,
@@ -295,13 +291,7 @@ void AudioOutputController::DoReportError() {
 
 int AudioOutputController::OnMoreData(AudioBus* dest,
                                       AudioBuffersState buffers_state) {
-  return OnMoreIOData(NULL, dest, buffers_state);
-}
-
-int AudioOutputController::OnMoreIOData(AudioBus* source,
-                                        AudioBus* dest,
-                                        AudioBuffersState buffers_state) {
-  TRACE_EVENT0("audio", "AudioOutputController::OnMoreIOData");
+  TRACE_EVENT0("audio", "AudioOutputController::OnMoreData");
 
   // Indicate that we haven't wedged (at least not indefinitely, WedgeCheck()
   // may have already fired if OnMoreIOData() took an abnormal amount of time).
@@ -310,7 +300,7 @@ int AudioOutputController::OnMoreIOData(AudioBus* source,
   if (base::AtomicRefCountIsZero(&on_more_io_data_called_))
     base::AtomicRefCountInc(&on_more_io_data_called_);
 
-  sync_reader_->Read(source, dest);
+  sync_reader_->Read(dest);
 
   const int frames = dest->frames();
   sync_reader_->UpdatePendingBytes(

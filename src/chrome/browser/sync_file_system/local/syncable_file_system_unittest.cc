@@ -21,7 +21,6 @@
 #include "webkit/common/fileapi/file_system_types.h"
 #include "webkit/common/quota/quota_types.h"
 
-using base::PlatformFileError;
 using content::SandboxFileSystemTestHelper;
 using fileapi::FileSystemContext;
 using fileapi::FileSystemOperationContext;
@@ -252,6 +251,8 @@ TEST_F(SyncableFileSystemTest, ChangeTrackerSimple) {
 
 // Make sure directory operation is disabled (when it's configured so).
 TEST_F(SyncableFileSystemTest, DisableDirectoryOperations) {
+  ScopedDisableSyncFSV2 scoped_disable_v2;
+
   bool was_enabled = IsSyncFSDirectoryOperationEnabled();
   SetEnableSyncFSDirectoryOperation(false);
   EXPECT_EQ(base::File::FILE_OK,

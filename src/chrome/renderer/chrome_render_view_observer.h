@@ -51,17 +51,12 @@ class ChromeRenderViewObserver : public content::RenderViewObserver {
   virtual void DidStopLoading() OVERRIDE;
   virtual void DidCommitProvisionalLoad(blink::WebLocalFrame* frame,
                                         bool is_new_navigation) OVERRIDE;
-  virtual void DetailedConsoleMessageAdded(const base::string16& message,
-                                           const base::string16& source,
-                                           const base::string16& stack_trace,
-                                           int32 line_number,
-                                           int32 severity_level) OVERRIDE;
   virtual void Navigate(const GURL& url) OVERRIDE;
 
   void OnWebUIJavaScript(const base::string16& javascript);
   void OnSetClientSidePhishingDetection(bool enable_phishing_detection);
+  void OnSetName(const std::string& name);
   void OnSetVisuallyDeemphasized(bool deemphasized);
-  void OnGetFPS();
 #if defined(OS_ANDROID)
   void OnUpdateTopControlsState(content::TopControlsState constraints,
                                 content::TopControlsState current,
@@ -91,7 +86,7 @@ class ChromeRenderViewObserver : public content::RenderViewObserver {
   bool HasRefreshMetaTag(blink::WebFrame* frame);
 
   // Save the JavaScript to preload if a ViewMsg_WebUIJavaScript is received.
-  base::string16 webui_javascript_;
+  std::vector<base::string16> webui_javascript_;
 
   // Owned by ChromeContentRendererClient and outlive us.
   ChromeRenderProcessObserver* chrome_render_process_observer_;

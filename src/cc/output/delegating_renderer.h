@@ -26,8 +26,6 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
 
   virtual const RendererCapabilitiesImpl& Capabilities() const OVERRIDE;
 
-  virtual bool CanReadPixels() const OVERRIDE;
-
   virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
                          float device_scale_factor,
                          const gfx::Rect& device_viewport_rect,
@@ -39,14 +37,7 @@ class CC_EXPORT DelegatingRenderer : public Renderer {
   virtual void SwapBuffers(const CompositorFrameMetadata& metadata) OVERRIDE;
   virtual void ReceiveSwapBuffersAck(const CompositorFrameAck&) OVERRIDE;
 
-  virtual void GetFramebufferPixels(void* pixels,
-                                    const gfx::Rect& rect) OVERRIDE;
-
   virtual bool IsContextLost() OVERRIDE;
-
-  virtual void SendManagedMemoryStats(size_t bytes_visible,
-                                      size_t bytes_visible_and_nearby,
-                                      size_t bytes_allocated) OVERRIDE;
 
  private:
   DelegatingRenderer(RendererClient* client,

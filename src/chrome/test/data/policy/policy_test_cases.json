@@ -1369,6 +1369,14 @@
     ]
   },
 
+  "ShowAppsShortcutInBookmarkBar": {
+    "os": ["win", "linux", "mac"],
+    "test_policy": { "ShowAppsShortcutInBookmarkBar": false },
+    "pref_mappings": [
+      { "pref": "bookmark_bar.show_apps_shortcut" }
+    ]
+  },
+
   "AllowFileSelectionDialogs": {
     "os": ["win", "mac", "linux"],
     "test_policy": { "AllowFileSelectionDialogs": false },
@@ -1563,6 +1571,17 @@
     "pref_mappings": [
       { "pref": "proxy.quick_check_enabled",
         "local_state": true
+      }
+    ]
+  },
+
+  "RegisteredProtocolHandlers": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "can_be_recommended": true,
+    "test_policy": { "RegisteredProtocolHandlers": {"protocol": "test", "url": "http://example.com/%s", "default": "true"} },
+    "pref_mappings": [
+      { "pref": "custom_handlers.policy.registered_protocol_handlers",
+        "check_for_mandatory": false
       }
     ]
   },
@@ -2095,6 +2114,26 @@
     ]
   },
 
+  "EnableDeprecatedWebPlatformFeatures": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": {
+      "EnableDeprecatedWebPlatformFeatures": [
+        "ShowModalDialog_EffectiveUntil20150430"
+      ]
+    },
+    "pref_mappings": [
+      { "pref": "enable_deprecated_web_platform_features" }
+    ]
+  },
+
+  "TouchVirtualKeyboardEnabled": {
+    "os": ["chromeos"],
+    "test_policy": { "TouchVirtualKeyboardEnabled": false },
+    "pref_mappings": [
+      { "pref": "ui.touch_virtual_keyboard_enabled" }
+    ]
+  },
+
   "----- Chrome OS device policies ---------------------------------------": {},
 
   "DevicePolicyRefreshRate": {
@@ -2222,6 +2261,9 @@
   },
 
   "DeviceLocalAccountPromptForNetworkWhenOffline": {
+  },
+
+  "DeviceBlockDevmode": {
   },
 
   "DeviceLoginScreenPowerManagement": {

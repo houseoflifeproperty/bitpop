@@ -23,11 +23,10 @@
 
 #include "core/svg/SVGPatternElement.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/rendering/svg/RenderSVGResourcePattern.h"
 #include "core/svg/PatternAttributes.h"
-#include "core/svg/SVGElementInstance.h"
 #include "platform/transforms/AffineTransform.h"
 
 namespace WebCore {
@@ -56,10 +55,7 @@ inline SVGPatternElement::SVGPatternElement(Document& document)
     addToPropertyMap(m_patternContentUnits);
 }
 
-PassRefPtr<SVGPatternElement> SVGPatternElement::create(Document& document)
-{
-    return adoptRef(new SVGPatternElement(document));
-}
+DEFINE_NODE_FACTORY(SVGPatternElement)
 
 bool SVGPatternElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -137,7 +133,7 @@ void SVGPatternElement::childrenChanged(bool changedByParser, Node* beforeChange
         return;
 
     if (RenderObject* object = renderer())
-        object->setNeedsLayout();
+        object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
 RenderObject* SVGPatternElement::createRenderer(RenderStyle*)

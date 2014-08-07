@@ -93,6 +93,7 @@ WebInspector.StylesSidebarPane._colorRegex = /((?:rgb|hsl)a?\([^)]+\)|#[0-9a-fA-
 
 /**
  * @param {!WebInspector.CSSProperty} property
+ * @return {!Element}
  */
 WebInspector.StylesSidebarPane.createExclamationMark = function(property)
 {
@@ -1155,7 +1156,7 @@ WebInspector.StylePropertiesSection.prototype = {
         if (!this.rule || !this.rule.styleSheetId)
             return;
         if (this.rule !== editedRule)
-            this.rule.sourceStyleSheetEdited(this.rule.styleSheetId, oldRange, newRange);
+            this.rule.sourceStyleSheetEdited(editedRule.styleSheetId, oldRange, newRange);
         this._updateMediaList();
         this._updateRuleOrigin();
     },
@@ -2117,6 +2118,9 @@ WebInspector.StylePropertyTreeElementBase.prototype = {
 
         /**
          * @param {!RegExp} regex
+         * @param {function(string):!Node} processor
+         * @param {?function(string):!Node} nextProcessor
+         * @param {string} valueText
          * @return {!DocumentFragment}
          */
         function processValue(regex, processor, nextProcessor, valueText)
@@ -2209,6 +2213,7 @@ WebInspector.StylePropertyTreeElementBase.prototype = {
      * @param {!Element} nameElement
      * @param {!Element} valueElement
      * @param {string} text
+     * @return {!Node}
      */
     _processColor: function(nameElement, valueElement, text)
     {
@@ -2684,7 +2689,7 @@ WebInspector.StylePropertyTreeElement.prototype = {
     },
 
     /**
-     * @param {!Element=} selectElement
+     * @param {?Element=} selectElement
      */
     startEditing: function(selectElement)
     {

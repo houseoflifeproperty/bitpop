@@ -94,6 +94,7 @@ public:
     virtual void dispatchDidFinishDocumentLoad() OVERRIDE;
     virtual void dispatchDidFinishLoad() OVERRIDE;
     virtual void dispatchDidFirstVisuallyNonEmptyLayout() OVERRIDE;
+    virtual void dispatchDidChangeThemeColor() OVERRIDE;
     virtual WebCore::NavigationPolicy decidePolicyForNavigation(const WebCore::ResourceRequest&, WebCore::DocumentLoader*, WebCore::NavigationPolicy) OVERRIDE;
     virtual void dispatchWillRequestResource(WebCore::FetchRequest*) OVERRIDE;
     virtual void dispatchWillSendSubmitEvent(WebCore::HTMLFormElement*) OVERRIDE;
@@ -142,10 +143,11 @@ public:
     virtual void didChangeName(const String&) OVERRIDE;
 
     virtual void dispatchWillOpenSocketStream(WebCore::SocketStreamHandle*) OVERRIDE;
+    virtual void dispatchWillOpenWebSocket(blink::WebSocketHandle*) OVERRIDE;
 
     virtual void dispatchWillStartUsingPeerConnectionHandler(blink::WebRTCPeerConnectionHandler*) OVERRIDE;
 
-    virtual void didRequestAutocomplete(WebCore::HTMLFormElement*, const WebCore::Dictionary&) OVERRIDE;
+    virtual void didRequestAutocomplete(WebCore::HTMLFormElement*) OVERRIDE;
 
     virtual bool allowWebGL(bool enabledPerSettings) OVERRIDE;
     virtual void didLoseWebGLContext(int arbRobustnessContextLostReason) OVERRIDE;

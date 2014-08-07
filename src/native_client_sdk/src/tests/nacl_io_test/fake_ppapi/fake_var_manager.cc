@@ -61,6 +61,10 @@ std::string FakeVarManager::Describe(const FakeVarData& var_data) {
       rtn << "ArrayBuffer of size " << var_data.buffer_value.length
           << " with id " << var_data.id;
       break;
+    case PP_VARTYPE_DICTIONARY:
+      rtn << "Dictionary of size " << var_data.dict_value.size() << " with id "
+          << var_data.id;
+      break;
     default:
       rtn << "resource of type " << var_data.type
           << " with id " << var_data.id;
@@ -103,6 +107,19 @@ void FakeVarManager::DestroyVarData(FakeVarData* var_data) {
 }
 
 FakeVarData* FakeVarManager::GetVarData(PP_Var var) {
+  switch (var.type) {
+    // These types don't have any var data as their data
+    // is stored directly in the var's value union.
+    case PP_VARTYPE_UNDEFINED:
+    case PP_VARTYPE_NULL:
+    case PP_VARTYPE_BOOL:
+    case PP_VARTYPE_INT32:
+    case PP_VARTYPE_DOUBLE:
+      return NULL;
+    default:
+      break;
+  }
+
   VarMap::iterator iter = var_map_.find(var.value.as_id);
   if (iter == var_map_.end())
     return NULL;

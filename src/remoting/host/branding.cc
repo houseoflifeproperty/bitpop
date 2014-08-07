@@ -4,7 +4,7 @@
 
 #include "remoting/host/branding.h"
 
-#include "base/file_util.h"
+#include "base/base_paths.h"
 #include "base/path_service.h"
 
 namespace {
@@ -12,7 +12,7 @@ namespace {
 // TODO(lambroslambrou): The default locations should depend on whether Chrome
 // branding is enabled - this means also modifying the Python daemon script.
 // The actual location of the files is ultimately determined by the service
-// daemon and NPAPI implementation - these defaults are only used in case the
+// daemon and native messaging host - these defaults are only used in case the
 // command-line switches are absent.
 #if defined(OS_WIN)
 #ifdef OFFICIAL_BUILD
@@ -46,7 +46,7 @@ base::FilePath GetConfigDir() {
 #elif defined(OS_MACOSX)
   PathService::Get(base::DIR_APP_DATA, &app_data_dir);
 #else
-  app_data_dir = base::GetHomeDir();
+  PathService::Get(base::DIR_HOME, &app_data_dir);
 #endif
 
   return app_data_dir.Append(kConfigDir);

@@ -139,6 +139,14 @@ Value RunExecutable(Scope* scope,
                     BlockNode* block,
                     Err* err);
 
+extern const char kForEach[];
+extern const char kForEach_HelpShort[];
+extern const char kForEach_Help[];
+Value RunForEach(Scope* scope,
+                 const FunctionCallNode* function,
+                 const ListNode* args_list,
+                 Err* err);
+
 extern const char kGetEnv[];
 extern const char kGetEnv_HelpShort[];
 extern const char kGetEnv_Help[];
@@ -146,6 +154,22 @@ Value RunGetEnv(Scope* scope,
                 const FunctionCallNode* function,
                 const std::vector<Value>& args,
                 Err* err);
+
+extern const char kGetLabelInfo[];
+extern const char kGetLabelInfo_HelpShort[];
+extern const char kGetLabelInfo_Help[];
+Value RunGetLabelInfo(Scope* scope,
+                      const FunctionCallNode* function,
+                      const std::vector<Value>& args,
+                      Err* err);
+
+extern const char kGetPathInfo[];
+extern const char kGetPathInfo_HelpShort[];
+extern const char kGetPathInfo_Help[];
+Value RunGetPathInfo(Scope* scope,
+                     const FunctionCallNode* function,
+                     const std::vector<Value>& args,
+                     Err* err);
 
 extern const char kGetTargetOutputs[];
 extern const char kGetTargetOutputs_HelpShort[];

@@ -31,11 +31,10 @@
 #include "config.h"
 #include "bindings/v8/V8WindowShell.h"
 
-#include "RuntimeEnabledFeatures.h"
-#include "V8Document.h"
-#include "V8HTMLCollection.h"
-#include "V8HTMLDocument.h"
-#include "V8Window.h"
+#include "bindings/core/v8/V8Document.h"
+#include "bindings/core/v8/V8HTMLCollection.h"
+#include "bindings/core/v8/V8HTMLDocument.h"
+#include "bindings/core/v8/V8Window.h"
 #include "bindings/v8/DOMWrapperWorld.h"
 #include "bindings/v8/ScriptController.h"
 #include "bindings/v8/V8Binding.h"
@@ -53,6 +52,7 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -130,8 +130,8 @@ void V8WindowShell::clearForNavigation()
     m_document.clear();
 
     // Clear the document wrapper cache before turning on access checks on
-    // the old DOMWindow wrapper. This way, access to the document wrapper
-    // will be protected by the security checks on the DOMWindow wrapper.
+    // the old LocalDOMWindow wrapper. This way, access to the document wrapper
+    // will be protected by the security checks on the LocalDOMWindow wrapper.
     clearDocumentProperty();
 
     v8::Handle<v8::Object> windowWrapper = V8Window::findInstanceInPrototypeChain(m_global.newLocal(m_isolate), m_isolate);
@@ -142,16 +142,16 @@ void V8WindowShell::clearForNavigation()
 
 // Create a new environment and setup the global object.
 //
-// The global object corresponds to a DOMWindow instance. However, to
-// allow properties of the JS DOMWindow instance to be shadowed, we
-// use a shadow object as the global object and use the JS DOMWindow
-// instance as the prototype for that shadow object. The JS DOMWindow
+// The global object corresponds to a LocalDOMWindow instance. However, to
+// allow properties of the JS LocalDOMWindow instance to be shadowed, we
+// use a shadow object as the global object and use the JS LocalDOMWindow
+// instance as the prototype for that shadow object. The JS LocalDOMWindow
 // instance is undetectable from JavaScript code because the __proto__
 // accessors skip that object.
 //
-// The shadow object and the DOMWindow instance are seen as one object
+// The shadow object and the LocalDOMWindow instance are seen as one object
 // from JavaScript. The JavaScript object that corresponds to a
-// DOMWindow instance is the shadow object. When mapping a DOMWindow
+// LocalDOMWindow instance is the shadow object. When mapping a LocalDOMWindow
 // instance to a V8 object, we return the shadow object.
 //
 // To implement split-window, see
@@ -216,13 +216,13 @@ bool V8WindowShell::initialize()
             setInjectedScriptContextDebugId(context, m_frame->script().contextDebugId(mainWindow->context()));
     }
 
-    m_scriptState->world().setActivityLogger(V8DOMActivityLogger::activityLogger(m_world->worldId()));
     if (!installDOMWindow()) {
         disposeContext(DoNotDetachGlobal);
         return false;
     }
 
     if (m_world->isMainWorld()) {
+        // ActivityLogger for main world is updated within updateDocument().
         updateDocument();
         if (m_frame->document()) {
             setSecurityToken(m_frame->document()->securityOrigin());
@@ -231,10 +231,11 @@ bool V8WindowShell::initialize()
             context->SetErrorMessageForCodeGenerationFromStrings(v8String(m_isolate, csp->evalDisabledErrorMessage()));
         }
     } else {
+        updateActivityLogger();
         SecurityOrigin* origin = m_world->isolatedWorldSecurityOrigin();
         setSecurityToken(origin);
         if (origin && InspectorInstrumentation::hasFrontends()) {
-            InspectorInstrumentation::didCreateIsolatedContext(m_frame, ScriptState::current(m_isolate), origin);
+            InspectorInstrumentation::didCreateIsolatedContext(m_frame, m_scriptState.get(), origin);
         }
     }
     m_frame->loader().client()->didCreateScriptContext(context, m_world->extensionGroup(), m_world->worldId());
@@ -289,7 +290,7 @@ static v8::Handle<v8::Object> toInnerGlobalObject(v8::Handle<v8::Context> contex
 
 bool V8WindowShell::installDOMWindow()
 {
-    DOMWindow* window = m_frame->domWindow();
+    LocalDOMWindow* window = m_frame->domWindow();
     v8::Local<v8::Object> windowWrapper = V8ObjectConstructor::newInstance(m_isolate, m_scriptState->perContextData()->constructorForType(&V8Window::wrapperTypeInfo));
     if (windowWrapper.IsEmpty())
         return false;
@@ -303,25 +304,25 @@ bool V8WindowShell::installDOMWindow()
     //
     // outerGlobalObject (Empty object, remains after navigation)
     //   -- has prototype --> innerGlobalObject (Holds global variables, changes during navigation)
-    //   -- has prototype --> DOMWindow instance
+    //   -- has prototype --> LocalDOMWindow instance
     //   -- has prototype --> Window.prototype
     //   -- has prototype --> Object.prototype
     //
     // Note: Much of this prototype structure is hidden from web content. The
-    //       outer, inner, and DOMWindow instance all appear to be the same
+    //       outer, inner, and LocalDOMWindow instance all appear to be the same
     //       JavaScript object.
     //
-    // Note: With Oilpan, the DOMWindow object is garbage collected.
-    //       Persistent references to this inner global object view of the DOMWindow
+    // Note: With Oilpan, the LocalDOMWindow object is garbage collected.
+    //       Persistent references to this inner global object view of the LocalDOMWindow
     //       aren't kept, as that would prevent the global object from ever being released.
-    //       It is safe not to do so, as the wrapper for the DOMWindow being installed here
+    //       It is safe not to do so, as the wrapper for the LocalDOMWindow being installed here
     //       already keeps a persistent reference, and it along with the inner global object
-    //       views of the DOMWindow will die together once that wrapper clears the persistent
+    //       views of the LocalDOMWindow will die together once that wrapper clears the persistent
     //       reference.
     v8::Handle<v8::Object> innerGlobalObject = toInnerGlobalObject(m_scriptState->context());
     V8DOMWrapper::setNativeInfoForHiddenWrapper(innerGlobalObject, &V8Window::wrapperTypeInfo, window);
     innerGlobalObject->SetPrototype(windowWrapper);
-    V8DOMWrapper::associateObjectWithWrapper<V8Window>(PassRefPtrWillBeRawPtr<DOMWindow>(window), &V8Window::wrapperTypeInfo, windowWrapper, m_isolate, WrapperConfiguration::Dependent);
+    V8DOMWrapper::associateObjectWithWrapper<V8Window>(PassRefPtrWillBeRawPtr<LocalDOMWindow>(window), &V8Window::wrapperTypeInfo, windowWrapper, m_isolate, WrapperConfiguration::Dependent);
     return true;
 }
 
@@ -338,14 +339,14 @@ void V8WindowShell::updateDocumentProperty()
 
     ScriptState::Scope scope(m_scriptState.get());
     v8::Handle<v8::Context> context = m_scriptState->context();
-    v8::Handle<v8::Value> documentWrapper = toV8(m_frame->document(), v8::Handle<v8::Object>(), context->GetIsolate());
+    v8::Handle<v8::Value> documentWrapper = toV8(m_frame->document(), context->Global(), context->GetIsolate());
     ASSERT(documentWrapper == m_document.newLocal(m_isolate) || m_document.isEmpty());
     if (m_document.isEmpty())
         updateDocumentWrapper(v8::Handle<v8::Object>::Cast(documentWrapper));
     checkDocumentWrapper(m_document.newLocal(m_isolate), m_frame->document());
 
     // If instantiation of the document wrapper fails, clear the cache
-    // and let the DOMWindow accessor handle access to the document.
+    // and let the LocalDOMWindow accessor handle access to the document.
     if (documentWrapper.IsEmpty()) {
         clearDocumentProperty();
         return;
@@ -354,7 +355,7 @@ void V8WindowShell::updateDocumentProperty()
     context->Global()->ForceSet(v8AtomicString(m_isolate, "document"), documentWrapper, static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete));
 
     // We also stash a reference to the document on the inner global object so that
-    // DOMWindow objects we obtain from JavaScript references are guaranteed to have
+    // LocalDOMWindow objects we obtain from JavaScript references are guaranteed to have
     // live Document objects.
     V8HiddenValue::setHiddenValue(m_isolate, toInnerGlobalObject(context), V8HiddenValue::document(m_isolate), documentWrapper);
 }
@@ -366,6 +367,12 @@ void V8WindowShell::clearDocumentProperty()
         return;
     v8::HandleScope handleScope(m_isolate);
     m_scriptState->context()->Global()->ForceDelete(v8AtomicString(m_isolate, "document"));
+}
+
+void V8WindowShell::updateActivityLogger()
+{
+    m_scriptState->perContextData()->setActivityLogger(V8DOMActivityLogger::activityLogger(
+        m_world->worldId(), m_frame->document() ? m_frame->document()->baseURI() : KURL()));
 }
 
 void V8WindowShell::setSecurityToken(SecurityOrigin* origin)
@@ -409,6 +416,7 @@ void V8WindowShell::updateDocument()
         return;
     if (!isContextInitialized())
         return;
+    updateActivityLogger();
     updateDocumentProperty();
     updateSecurityOrigin(m_frame->document()->securityOrigin());
 }
@@ -418,7 +426,7 @@ static v8::Handle<v8::Value> getNamedProperty(HTMLDocument* htmlDocument, const 
     if (!htmlDocument->hasNamedItem(key) && !htmlDocument->hasExtraNamedItem(key))
         return v8Undefined();
 
-    RefPtr<HTMLCollection> items = htmlDocument->documentNamedItems(key);
+    RefPtrWillBeRawPtr<HTMLCollection> items = htmlDocument->documentNamedItems(key);
     if (items->isEmpty())
         return v8Undefined();
 

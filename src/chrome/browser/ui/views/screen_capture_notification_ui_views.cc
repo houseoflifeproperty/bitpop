@@ -86,7 +86,7 @@ class ScreenCaptureNotificationUIViews
       OVERRIDE;
 
   // views::View overrides.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
 
   // views::WidgetDelegateView overrides.
@@ -164,29 +164,24 @@ gfx::NativeViewId ScreenCaptureNotificationUIViews::OnStarted(
     const base::Closure& stop_callback) {
   stop_callback_ = stop_callback;
 
-  label_->SetElideBehavior(views::Label::ELIDE_IN_MIDDLE);
+  label_->SetElideBehavior(gfx::ELIDE_MIDDLE);
   label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   label_->SetText(text_);
 
   views::Widget* widget = new views::Widget;
 
-  views::Widget::InitParams params;
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
   params.delegate = this;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.remove_standard_frame = true;
   params.keep_on_top = true;
-  params.top_level = true;
-  // Make sure can_activate is true so the window icon will show in the taskbar.
-  params.can_activate = true;
 
-#if defined(USE_ASH)
   // TODO(sergeyu): The notification bar must be shown on the monitor that's
   // being captured. Make sure it's always the case. Currently we always capture
   // the primary monitor.
   if (ash::Shell::HasInstance())
     params.context = ash::Shell::GetPrimaryRootWindow();
-#endif
 
   widget->set_frame_type(views::Widget::FRAME_TYPE_FORCE_CUSTOM);
   widget->Init(params);
@@ -218,7 +213,7 @@ gfx::NativeViewId ScreenCaptureNotificationUIViews::OnStarted(
 #endif
 }
 
-gfx::Size ScreenCaptureNotificationUIViews::GetPreferredSize() {
+gfx::Size ScreenCaptureNotificationUIViews::GetPreferredSize() const {
   gfx::Size grip_size = gripper_->GetPreferredSize();
   gfx::Size label_size = label_->GetPreferredSize();
   gfx::Size stop_button_size = stop_button_->GetPreferredSize();

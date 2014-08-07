@@ -31,7 +31,7 @@ class VideoRecorder(object):
       device = pylib.device.device_utils.DeviceUtils(device)
     self._device = device
     self._device_file = (
-        '%s/screen-recording.mp4' % device.old_interface.GetExternalStorage())
+        '%s/screen-recording.mp4' % device.GetExternalStoragePath())
     self._host_file = host_file or ('screen-recording-%s.mp4' %
                                     device.old_interface.GetTimestamp())
     self._host_file = os.path.abspath(self._host_file)
@@ -76,7 +76,7 @@ class VideoRecorder(object):
     self._is_started = False
     if not self._recorder or not self._recorder_pids:
       return
-    self._device.old_interface.RunShellCommand(
+    self._device.RunShellCommand(
         'kill -SIGINT ' + ' '.join(self._recorder_pids))
     self._recorder.wait()
 
@@ -88,5 +88,5 @@ class VideoRecorder(object):
     """
     self._device.old_interface.PullFileFromDevice(
         self._device_file, self._host_file)
-    self._device.old_interface.RunShellCommand('rm -f "%s"' % self._device_file)
+    self._device.RunShellCommand('rm -f "%s"' % self._device_file)
     return self._host_file

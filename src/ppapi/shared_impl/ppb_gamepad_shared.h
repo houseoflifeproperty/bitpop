@@ -19,7 +19,7 @@ namespace ppapi {
 
 struct WebKitGamepadButton {
   bool pressed;
-  float value;
+  double value;
 };
 
 // This must match the definition of blink::Gamepad. The GamepadHost unit test
@@ -44,7 +44,7 @@ struct WebKitGamepad {
   unsigned axes_length;
 
   // Normalized values representing axes, in the range [-1..1].
-  float axes[kAxesLengthCap];
+  double axes[kAxesLengthCap];
 
   // Number of valid entries in the buttons array.
   unsigned buttons_length;

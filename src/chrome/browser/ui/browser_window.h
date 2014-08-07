@@ -7,7 +7,8 @@
 
 #include "base/callback_forward.h"
 #include "chrome/browser/lifetime/browser_close_manager.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/signin/signin_header_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
@@ -364,12 +365,15 @@ class BrowserWindow : public ui::BaseWindow {
                                 const gfx::Rect& rect) = 0;
 
   // Shows the avatar bubble on the window frame off of the avatar button with
-  // the given mode.
+  // the given mode. The Service Type specified by GAIA is provided as well.
   enum AvatarBubbleMode {
     AVATAR_BUBBLE_MODE_DEFAULT,
-    AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT
+    AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT,
+    AVATAR_BUBBLE_MODE_SIGNIN,
+    AVATAR_BUBBLE_MODE_REAUTH,
   };
-  virtual void ShowAvatarBubbleFromAvatarButton(AvatarBubbleMode mode) = 0;
+  virtual void ShowAvatarBubbleFromAvatarButton(AvatarBubbleMode mode,
+      const signin::ManageAccountsParams& manage_accounts_params) = 0;
 
   // Show bubble for password generation positioned relative to |rect|. The
   // subclasses implementing this interface do not own the |password_generator|

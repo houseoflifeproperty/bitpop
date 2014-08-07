@@ -26,12 +26,14 @@
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/extension_pref_value_map.h"
 #include "extensions/browser/extension_pref_value_map_factory.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_prefs_factory.h"
 #include "extensions/browser/extension_system_provider.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/permissions/api_permission.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 namespace keys = extensions::preference_api_constants;
 namespace helpers = extensions::preference_helpers;
@@ -90,25 +92,25 @@ PrefMappingEntry kPrefMapping[] = {
     {"translationServiceEnabled", prefs::kEnableTranslate,
      APIPermission::kPrivacy, APIPermission::kPrivacy},
 #if defined(OS_CHROMEOS)
-    {"autoclick", prefs::kAutoclickEnabled,
+    {"autoclick", prefs::kAccessibilityAutoclickEnabled,
      APIPermission::kAccessibilityFeaturesRead,
      APIPermission::kAccessibilityFeaturesModify},
-    {"highContrast", prefs::kHighContrastEnabled,
+    {"highContrast", prefs::kAccessibilityHighContrastEnabled,
      APIPermission::kAccessibilityFeaturesRead,
      APIPermission::kAccessibilityFeaturesModify},
-    {"largeCursor", prefs::kLargeCursorEnabled,
+    {"largeCursor", prefs::kAccessibilityLargeCursorEnabled,
      APIPermission::kAccessibilityFeaturesRead,
      APIPermission::kAccessibilityFeaturesModify},
-    {"screenMagnifier", prefs::kScreenMagnifierEnabled,
+    {"screenMagnifier", prefs::kAccessibilityScreenMagnifierEnabled,
      APIPermission::kAccessibilityFeaturesRead,
      APIPermission::kAccessibilityFeaturesModify},
-    {"spokenFeedback", prefs::kSpokenFeedbackEnabled,
+    {"spokenFeedback", prefs::kAccessibilitySpokenFeedbackEnabled,
      APIPermission::kAccessibilityFeaturesRead,
      APIPermission::kAccessibilityFeaturesModify},
-    {"stickyKeys", prefs::kStickyKeysEnabled,
+    {"stickyKeys", prefs::kAccessibilityStickyKeysEnabled,
      APIPermission::kAccessibilityFeaturesRead,
      APIPermission::kAccessibilityFeaturesModify},
-    {"virtualKeyboard", prefs::kVirtualKeyboardEnabled,
+    {"virtualKeyboard", prefs::kAccessibilityVirtualKeyboardEnabled,
      APIPermission::kAccessibilityFeaturesRead,
      APIPermission::kAccessibilityFeaturesModify},
 #endif
@@ -511,7 +513,7 @@ bool PreferenceFunction::ValidateBrowserPref(
   APIPermission::ID permission = permission_type == PERMISSION_TYPE_READ
                                      ? read_permission
                                      : write_permission;
-  if (!GetExtension()->HasAPIPermission(permission)) {
+  if (!GetExtension()->permissions_data()->HasAPIPermission(permission)) {
     error_ = ErrorUtils::FormatErrorMessage(
         keys::kPermissionErrorMessage, extension_pref_key);
     return false;

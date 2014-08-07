@@ -6,10 +6,12 @@
 
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/history/chrome_history_client.h"
+#include "chrome/browser/history/chrome_history_client_factory.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/common/pref_names.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 // static
@@ -58,7 +60,7 @@ void HistoryServiceFactory::ShutdownForProfile(Profile* profile) {
 HistoryServiceFactory::HistoryServiceFactory()
     : BrowserContextKeyedServiceFactory(
           "HistoryService", BrowserContextDependencyManager::GetInstance()) {
-  DependsOn(BookmarkModelFactory::GetInstance());
+  DependsOn(ChromeHistoryClientFactory::GetInstance());
 }
 
 HistoryServiceFactory::~HistoryServiceFactory() {
@@ -67,9 +69,9 @@ HistoryServiceFactory::~HistoryServiceFactory() {
 KeyedService* HistoryServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
-  HistoryService* history_service = new HistoryService(profile);
-  if (!history_service->Init(profile->GetPath(),
-                             BookmarkModelFactory::GetForProfile(profile))) {
+  HistoryService* history_service = new HistoryService(
+      ChromeHistoryClientFactory::GetForProfile(profile), profile);
+  if (!history_service->Init(profile->GetPath())) {
     return NULL;
   }
   return history_service;

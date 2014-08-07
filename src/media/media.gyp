@@ -37,7 +37,7 @@
         'use_pulseaudio%': 0,
       }],
       ['sysroot!=""', {
-        'pkg-config': '../build/linux/pkg-config-wrapper "<(sysroot)" "<(target_arch)"',
+        'pkg-config': '../build/linux/pkg-config-wrapper "<(sysroot)" "<(target_arch)" "<(system_libdir)"',
       }, {
         'pkg-config': 'pkg-config'
       }],
@@ -52,7 +52,7 @@
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
-	'../base/base.gyp:base_i18n',
+        '../base/base.gyp:base_i18n',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../crypto/crypto.gyp:crypto',
         '../gpu/gpu.gyp:command_buffer_common',
@@ -248,9 +248,12 @@
         'base/bit_reader_core.cc',
         'base/bit_reader_core.h',
         'base/bitstream_buffer.h',
+        'base/buffering_state.h',
         'base/buffers.h',
         'base/byte_queue.cc',
         'base/byte_queue.h',
+        'base/cdm_promise.cc',
+        'base/cdm_promise.h',
         'base/channel_mixer.cc',
         'base/channel_mixer.h',
         'base/clock.cc',
@@ -297,6 +300,8 @@
         'base/pipeline.cc',
         'base/pipeline.h',
         'base/pipeline_status.h',
+        'base/player_tracker.cc',
+        'base/player_tracker.h',
         'base/ranges.cc',
         'base/ranges.h',
         'base/sample_format.cc',
@@ -354,6 +359,8 @@
         'cdm/json_web_key.h',
         'cdm/key_system_names.cc',
         'cdm/key_system_names.h',
+        'cdm/player_tracker_impl.cc',
+        'cdm/player_tracker_impl.h',
         'ffmpeg/ffmpeg_common.cc',
         'ffmpeg/ffmpeg_common.h',
         'ffmpeg/ffmpeg_deleters.h',
@@ -405,8 +412,6 @@
         'filters/h264_parser.h',
         'filters/in_memory_url_protocol.cc',
         'filters/in_memory_url_protocol.h',
-        'filters/legacy_frame_processor.cc',
-        'filters/legacy_frame_processor.h',
         'filters/opus_audio_decoder.cc',
         'filters/opus_audio_decoder.h',
         'filters/skcanvas_video_renderer.cc',
@@ -456,6 +461,8 @@
         'midi/usb_midi_jack.h',
         'midi/usb_midi_output_stream.cc',
         'midi/usb_midi_output_stream.h',
+        'ozone/media_ozone_platform.cc',
+        'ozone/media_ozone_platform.h',
         'video/capture/android/video_capture_device_android.cc',
         'video/capture/android/video_capture_device_android.h',
         'video/capture/android/video_capture_device_factory_android.cc',
@@ -468,6 +475,8 @@
         'video/capture/file_video_capture_device.h',
         'video/capture/file_video_capture_device_factory.h',
         'video/capture/file_video_capture_device_factory.cc',
+        'video/capture/linux/video_capture_device_factory_linux.cc',
+        'video/capture/linux/video_capture_device_factory_linux.h',
         'video/capture/linux/video_capture_device_linux.cc',
         'video/capture/linux/video_capture_device_linux.h',
         'video/capture/linux/video_capture_device_chromeos.cc',
@@ -479,6 +488,8 @@
         'video/capture/mac/platform_video_capturing_mac.h',
         'video/capture/mac/video_capture_device_avfoundation_mac.h',
         'video/capture/mac/video_capture_device_avfoundation_mac.mm',
+        'video/capture/mac/video_capture_device_factory_mac.h',
+        'video/capture/mac/video_capture_device_factory_mac.mm',
         'video/capture/mac/video_capture_device_mac.h',
         'video/capture/mac/video_capture_device_mac.mm',
         'video/capture/mac/video_capture_device_qtkit_mac.h',
@@ -500,6 +511,8 @@
         'video/capture/win/sink_filter_win.h',
         'video/capture/win/sink_input_pin_win.cc',
         'video/capture/win/sink_input_pin_win.h',
+        'video/capture/win/video_capture_device_factory_win.cc',
+        'video/capture/win/video_capture_device_factory_win.h',
         'video/capture/win/video_capture_device_mf_win.cc',
         'video/capture/win/video_capture_device_mf_win.h',
         'video/capture/win/video_capture_device_win.cc',
@@ -598,6 +611,13 @@
             'filters/vpx_video_decoder.h',
           ],
         }],
+        ['enable_browser_cdms==1', {
+          'sources': [
+            'base/browser_cdm.cc',
+            'base/browser_cdm.h',
+            'base/browser_cdm_factory.h',
+          ],
+        }],
         ['OS=="android"', {
           'dependencies': [
             'media_android_jni_headers',
@@ -635,6 +655,11 @@
             'formats/webm/chromeos/ebml_writer.h',
             'formats/webm/chromeos/webm_encoder.cc',
             'formats/webm/chromeos/webm_encoder.h',
+          ],
+        }],
+        ['OS!="ios"', {
+          'dependencies': [
+            '../third_party/libyuv/libyuv.gyp:libyuv',
           ],
         }],
         ['use_alsa==1', {
@@ -699,6 +724,49 @@
               ],
             }],
           ],
+        }],
+        ['use_ozone==1', {
+          'variables': {
+            'platform_list_txt_file': '<(SHARED_INTERMEDIATE_DIR)/ui/ozone/platform_list.txt',
+            'constructor_list_cc_file': '<(INTERMEDIATE_DIR)/media/ozone/constructor_list.cc',
+          },
+          'include_dirs': [
+              # Used for the generated listing header (ui/ozone/platform_list.h)
+              '<(SHARED_INTERMEDIATE_DIR)',
+          ],
+          'sources': [
+            '<(constructor_list_cc_file)',
+          ],
+          'dependencies': [
+            '../ui/ozone/ozone.gyp:ozone',
+          ],
+          'actions': [
+            {
+              # Ozone platform objects are auto-generated using similar
+              # patterns for naming and classes constructors. Here we build the
+              # object MediaOzonePlatform.
+              'action_name': 'generate_constructor_list',
+              'variables': {
+                'generator_path': '../ui/ozone/generate_constructor_list.py',
+              },
+              'inputs': [
+                '<(generator_path)',
+                '<(platform_list_txt_file)',
+              ],
+              'outputs': [
+                '<(constructor_list_cc_file)',
+              ],
+              'action': [
+                'python',
+                '<(generator_path)',
+                '--platform_list=<(platform_list_txt_file)',
+                '--output_cc=<(constructor_list_cc_file)',
+                '--namespace=media',
+                '--typename=MediaOzonePlatform',
+                '--include="media/ozone/media_ozone_platform.h"'
+              ],
+            },
+          ]
         }],
         ['OS!="linux"', {
           'sources!': [
@@ -910,7 +978,6 @@
           'dependencies': [
             'media_asm',
             'media_mmx',
-            'media_sse',
             'media_sse2',
           ],
           'sources': [
@@ -943,6 +1010,7 @@
         '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
+        '../url/url.gyp:url_lib',
       ],
       'sources': [
         'audio/android/audio_android_unittest.cc',
@@ -1068,6 +1136,7 @@
         'midi/usb_midi_descriptor_parser_unittest.cc',
         'midi/usb_midi_input_stream_unittest.cc',
         'midi/usb_midi_output_stream_unittest.cc',
+        'video/capture/fake_video_capture_device_unittest.cc',
         'video/capture/video_capture_device_unittest.cc',
         'formats/common/offset_byte_queue_unittest.cc',
         'formats/webm/cluster_builder.cc',
@@ -1136,13 +1205,9 @@
             'filters/pipeline_integration_test.cc',
             'filters/pipeline_integration_test_base.cc',
           ],
-          'conditions': [
-            ['gtest_target_type=="shared_library"', {
-              'dependencies': [
-                '../testing/android/native_test.gyp:native_test_native_code',
-                'player_android',
-              ],
-            }],
+          'dependencies': [
+            '../testing/android/native_test.gyp:native_test_native_code',
+            'player_android',
           ],
         }],
         ['OS=="linux"', {
@@ -1198,6 +1263,11 @@
         ['OS=="win" and target_arch=="x64"', {
           'msvs_disabled_warnings': [ 4267, ],
         }],
+        ['OS=="mac"', {
+          'sources': [
+            'video/capture/mac/video_capture_device_factory_mac_unittest.mm',
+          ]
+        }],
       ],
     },
     {
@@ -1234,13 +1304,9 @@
           ],
         }],
         ['OS=="android"', {
-          'conditions': [
-            ['gtest_target_type=="shared_library"', {
-              'dependencies': [
-                '../testing/android/native_test.gyp:native_test_native_code',
-              ],
-            }],
-          ],
+            'dependencies': [
+              '../testing/android/native_test.gyp:native_test_native_code',
+            ],
         }],
         ['media_use_ffmpeg==1', {
           'dependencies': [
@@ -1325,11 +1391,6 @@
         ['arm_neon==1', {
           'defines': [
             'USE_NEON'
-          ],
-        }],
-        ['target_arch=="ia32" or target_arch=="x64"', {
-          'dependencies': [
-            'shared_memory_support_sse'
           ],
         }],
       ],
@@ -1441,22 +1502,6 @@
           ],
         },
         {
-          'target_name': 'media_sse',
-          'type': 'static_library',
-          'cflags': [
-            '-msse',
-          ],
-          'defines': [
-            'MEDIA_IMPLEMENTATION',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'base/simd/sinc_resampler_sse.cc',
-          ],
-        },
-        {
           'target_name': 'media_sse2',
           'type': 'static_library',
           'cflags': [
@@ -1474,22 +1519,6 @@
             'base/simd/filter_yuv_sse2.cc',
           ],
         },
-        {
-          'target_name': 'shared_memory_support_sse',
-          'type': 'static_library',
-          'cflags': [
-            '-msse',
-          ],
-          'defines': [
-            'MEDIA_IMPLEMENTATION',
-          ],
-          'include_dirs': [
-            '..',
-          ],
-          'sources': [
-            'base/simd/vector_math_sse.cc',
-          ],
-        },
       ], # targets
     }],
     ['use_x11==1', {
@@ -1499,7 +1528,7 @@
           'type': 'executable',
           'dependencies': [
             'media',
-	    'shared_memory_support',
+            'shared_memory_support',
             '../base/base.gyp:base',
             '../ui/gl/gl.gyp:gl',
             '../ui/gfx/gfx.gyp:gfx',
@@ -1530,9 +1559,7 @@
         },
       ],
     }],
-    # Special target to wrap a gtest_target_type==shared_library
-    # media_unittests into an android apk for execution.
-    ['OS=="android" and gtest_target_type=="shared_library"', {
+    ['OS=="android"', {
       'targets': [
         {
           'target_name': 'media_unittests_apk',
@@ -1578,7 +1605,6 @@
           ],
           'variables': {
             'jni_gen_package': 'media',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': ['../build/jni_generator.gypi'],
         },
@@ -1591,7 +1617,6 @@
           ],
           'variables': {
             'jni_gen_package': 'media',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': ['../build/jni_generator.gypi'],
         },
@@ -1601,6 +1626,7 @@
           'sources': [
             'base/android/audio_decoder_job.cc',
             'base/android/audio_decoder_job.h',
+            'base/android/browser_cdm_factory_android.cc',
             'base/android/media_codec_bridge.cc',
             'base/android/media_codec_bridge.h',
             'base/android/media_decoder_job.cc',

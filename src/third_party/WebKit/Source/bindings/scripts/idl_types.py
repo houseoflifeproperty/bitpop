@@ -15,20 +15,6 @@ from collections import defaultdict
 # IDL types
 ################################################################################
 
-BASIC_TYPES = set([
-    # Built-in, non-composite, non-object data types
-    # http://www.w3.org/TR/WebIDL/#dfn-primitive-type
-    'boolean',
-    'float',
-    'unrestricted float',
-    'double',
-    'unrestricted double',
-    # http://www.w3.org/TR/WebIDL/#idl-types
-    'DOMString',
-    'Date',
-    # http://www.w3.org/TR/WebIDL/#es-type-mapping
-    'void',
-])
 INTEGER_TYPES = frozenset([
     # http://www.w3.org/TR/WebIDL/#dfn-integer-type
     'byte',
@@ -41,7 +27,26 @@ INTEGER_TYPES = frozenset([
     'long long',
     'unsigned long long',
 ])
-BASIC_TYPES.update(INTEGER_TYPES)
+NUMERIC_TYPES = (INTEGER_TYPES | frozenset([
+    # http://www.w3.org/TR/WebIDL/#dfn-numeric-type
+    'float',
+    'unrestricted float',
+    'double',
+    'unrestricted double',
+]))
+# http://www.w3.org/TR/WebIDL/#dfn-primitive-type
+PRIMITIVE_TYPES = (frozenset(['boolean']) | NUMERIC_TYPES)
+BASIC_TYPES = (PRIMITIVE_TYPES | frozenset([
+    # Built-in, non-composite, non-object data types
+    # http://heycam.github.io/webidl/#idl-types
+    'DOMString',
+    'ByteString',
+    'Date',
+    # http://heycam.github.io/webidl/#es-type-mapping
+    'void',
+    # http://encoding.spec.whatwg.org/#type-scalarvaluestring
+    'ScalarValueString',
+]))
 TYPE_NAMES = {
     # http://heycam.github.io/webidl/#dfn-type-name
     'any': 'Any',
@@ -60,7 +65,9 @@ TYPE_NAMES = {
     'unrestricted double': 'UnrestrictedDouble',
     'DOMString': 'String',
     'ByteString': 'ByteString',
+    'ScalarValueString': 'ScalarValueString',
     'object': 'Object',
+    'Date': 'Date',
 }
 
 
@@ -165,6 +172,14 @@ class IdlType(object):
     @property
     def is_integer_type(self):
         return self.base_type in INTEGER_TYPES and not self.array_or_sequence_type
+
+    @property
+    def is_numeric_type(self):
+        return self.base_type in NUMERIC_TYPES and not self.array_or_sequence_type
+
+    @property
+    def is_primitive_type(self):
+        return self.base_type in PRIMITIVE_TYPES and not self.array_or_sequence_type
 
     @property
     def is_interface_type(self):
@@ -276,6 +291,14 @@ class IdlUnionType(object):
 
     @property
     def is_integer_type(self):
+        return False
+
+    @property
+    def is_numeric_type(self):
+        return False
+
+    @property
+    def is_primitivee_type(self):
         return False
 
     @property

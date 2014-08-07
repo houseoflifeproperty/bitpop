@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
-#include "mojo/public/c/system/core.h"
+#include "mojo/system/handle_signals_state.h"
 #include "mojo/system/message_in_transit_queue.h"
 #include "mojo/system/message_pipe_endpoint.h"
 #include "mojo/system/system_impl_export.h"
@@ -37,16 +37,15 @@ class MOJO_SYSTEM_IMPL_EXPORT LocalMessagePipeEndpoint
                                  uint32_t* num_dispatchers,
                                  MojoReadMessageFlags flags) OVERRIDE;
   virtual MojoResult AddWaiter(Waiter* waiter,
-                               MojoWaitFlags flags,
-                               MojoResult wake_result) OVERRIDE;
+                               MojoHandleSignals signals,
+                               uint32_t context) OVERRIDE;
   virtual void RemoveWaiter(Waiter* waiter) OVERRIDE;
 
   // This is only to be used by |ProxyMessagePipeEndpoint|:
   MessageInTransitQueue* message_queue() { return &message_queue_; }
 
  private:
-  MojoWaitFlags SatisfiedFlags();
-  MojoWaitFlags SatisfiableFlags();
+  HandleSignalsState GetHandleSignalsState();
 
   bool is_open_;
   bool is_peer_open_;

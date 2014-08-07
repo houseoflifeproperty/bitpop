@@ -29,6 +29,7 @@
 
 #if defined(USE_ASH)
 #include "ash/shell.h"
+#include "ash/shell_init_params.h"
 #include "ash/test/test_session_state_delegate.h"
 #include "ash/test/test_shell_delegate.h"
 #endif
@@ -53,7 +54,7 @@ class TestView : public views::View {
     PreferredSizeChanged();
   }
 
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     if (!preferred_size_.IsEmpty())
       return preferred_size_;
     return View::GetPreferredSize();
@@ -108,42 +109,42 @@ void ViewEventTestBase::SetUp() {
 
   // The ContextFactory must exist before any Compositors are created.
   bool enable_pixel_output = false;
-  ui::InitializeContextFactoryForTests(enable_pixel_output);
+  ui::ContextFactory* context_factory =
+      ui::InitializeContextFactoryForTests(enable_pixel_output);
 
-#if defined(USE_ASH)
-#if defined(OS_WIN)
-  // http://crbug.com/154081 use ash::Shell code path below on win_ash bots when
-  // interactive_ui_tests is brought up on that platform.
-  gfx::Screen::SetScreenInstance(
-      gfx::SCREEN_TYPE_NATIVE, views::CreateDesktopScreen());
-
-#else  // !OS_WIN
+#if defined(OS_CHROMEOS)
   // Ash Shell can't just live on its own without a browser process, we need to
   // also create the message center.
   message_center::MessageCenter::Initialize();
-#if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::InitializeWithStub();
   chromeos::CrasAudioHandler::InitializeForTesting();
   chromeos::NetworkHandler::Initialize();
-#endif  // OS_CHROMEOS
   ash::test::TestShellDelegate* shell_delegate =
       new ash::test::TestShellDelegate();
-  ash::Shell::CreateInstance(shell_delegate);
+  ash::ShellInitParams init_params;
+  init_params.delegate = shell_delegate;
+  init_params.context_factory = context_factory;
+  ash::Shell::CreateInstance(init_params);
   shell_delegate->test_session_state_delegate()
       ->SetActiveUserSessionStarted(true);
   context = ash::Shell::GetPrimaryRootWindow();
   context->GetHost()->Show();
-#endif  // !OS_WIN
+#elif defined(USE_ASH)
+  // http://crbug.com/154081 use ash::Shell code path below on win_ash bots when
+  // interactive_ui_tests is brought up on that platform.
+  gfx::Screen::SetScreenInstance(
+      gfx::SCREEN_TYPE_NATIVE, views::CreateDesktopScreen());
   aura::Env::CreateInstance(true);
+  aura::Env::GetInstance()->set_context_factory(context_factory);
 #elif defined(USE_AURA)
   // Instead of using the ash shell, use an AuraTestHelper to create and manage
   // the test screen.
   aura_test_helper_.reset(
       new aura::test::AuraTestHelper(base::MessageLoopForUI::current()));
-  aura_test_helper_->SetUp();
+  aura_test_helper_->SetUp(context_factory);
   new wm::DefaultActivationClient(aura_test_helper_->root_window());
   context = aura_test_helper_->root_window();
-#endif  // !USE_ASH && USE_AURA
+#endif
 
   window_ = views::Widget::CreateWindowWithContext(this, context);
 }
@@ -158,17 +159,15 @@ void ViewEventTestBase::TearDown() {
   ui::Clipboard::DestroyClipboardForCurrentThread();
 
 #if defined(USE_ASH)
-#if !defined(OS_WIN)
-  ash::Shell::DeleteInstance();
 #if defined(OS_CHROMEOS)
+  ash::Shell::DeleteInstance();
   chromeos::NetworkHandler::Shutdown();
   chromeos::CrasAudioHandler::Shutdown();
   chromeos::DBusThreadManager::Shutdown();
-#endif
   // Ash Shell can't just live on its own without a browser process, we need to
   // also shut down the message center.
   message_center::MessageCenter::Shutdown();
-#endif  // !OS_WIN
+#endif
   aura::Env::DeleteInstance();
 #elif defined(USE_AURA)
   aura_test_helper_->TearDown();
@@ -225,7 +224,7 @@ void ViewEventTestBase::StartMessageLoopAndRunTest() {
   content::RunMessageLoop();
 }
 
-gfx::Size ViewEventTestBase::GetPreferredSize() {
+gfx::Size ViewEventTestBase::GetPreferredSize() const {
   return gfx::Size();
 }
 

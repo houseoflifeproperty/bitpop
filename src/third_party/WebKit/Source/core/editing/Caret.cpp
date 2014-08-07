@@ -32,6 +32,7 @@
 #include "core/frame/Settings.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderView.h"
+#include "platform/graphics/GraphicsContext.h"
 
 namespace WebCore {
 
@@ -46,9 +47,9 @@ DragCaretController::DragCaretController()
 {
 }
 
-PassOwnPtr<DragCaretController> DragCaretController::create()
+PassOwnPtrWillBeRawPtr<DragCaretController> DragCaretController::create()
 {
-    return adoptPtr(new DragCaretController);
+    return adoptPtrWillBeNoop(new DragCaretController);
 }
 
 bool DragCaretController::isContentRichlyEditable() const
@@ -98,6 +99,11 @@ void DragCaretController::nodeWillBeRemoved(Node& node)
 
     m_position.deepEquivalent().document()->renderView()->clearSelection();
     clear();
+}
+
+void DragCaretController::trace(Visitor* visitor)
+{
+    visitor->trace(m_position);
 }
 
 void CaretBase::clearCaretRect()
@@ -190,7 +196,7 @@ void CaretBase::repaintCaretForLocalRect(Node* node, const LayoutRect& rect)
     LayoutRect inflatedRect = rect;
     inflatedRect.inflate(1);
 
-    caretPainter->repaintRectangle(inflatedRect);
+    caretPainter->invalidatePaintRectangle(inflatedRect);
 }
 
 bool CaretBase::shouldRepaintCaret(const RenderView* view, bool isContentEditable) const

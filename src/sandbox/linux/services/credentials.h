@@ -15,7 +15,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "sandbox/linux/sandbox_export.h"
+#include "sandbox/sandbox_export.h"
 
 namespace sandbox {
 
@@ -26,6 +26,11 @@ class SANDBOX_EXPORT Credentials {
  public:
   Credentials();
   ~Credentials();
+
+  // Returns the number of file descriptors in the current process's FD
+  // table, excluding |proc_fd|, which should be a file descriptor for
+  // /proc.
+  int CountOpenFds(int proc_fd);
 
   // Checks whether the current process has any directory file descriptor open.
   // Directory file descriptors are "capabilities" that would let a process use

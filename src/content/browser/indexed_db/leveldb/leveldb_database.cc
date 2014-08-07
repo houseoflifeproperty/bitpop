@@ -124,8 +124,10 @@ class LockImpl : public LevelDBLock {
  private:
   leveldb::Env* env_;
   leveldb::FileLock* lock_;
+
+  DISALLOW_COPY_AND_ASSIGN(LockImpl);
 };
-}
+}  // namespace
 
 scoped_ptr<LevelDBLock> LevelDBDatabase::LockForTesting(
     const base::FilePath& file_name) {
@@ -188,7 +190,7 @@ static void ParseAndHistogramIOErrorDetails(const std::string& histogram_name,
   std::string error_histogram_name(histogram_name);
 
   if (result == leveldb_env::METHOD_AND_PFE) {
-    DCHECK(error < 0);
+    DCHECK_LT(error, 0);
     error_histogram_name.append(std::string(".PFE.") +
                                 leveldb_env::MethodIDToString(method));
     base::LinearHistogram::FactoryGet(
@@ -213,7 +215,7 @@ static void ParseAndHistogramCorruptionDetails(
     const std::string& histogram_name,
     const leveldb::Status& status) {
   int error = leveldb_env::GetCorruptionCode(status);
-  DCHECK(error >= 0);
+  DCHECK_GE(error, 0);
   std::string corruption_histogram_name(histogram_name);
   corruption_histogram_name.append(".Corruption");
   const int kNumPatterns = leveldb_env::GetNumCorruptionCodes();
@@ -391,8 +393,10 @@ class IteratorImpl : public LevelDBIterator {
   void CheckStatus();
 
   scoped_ptr<leveldb::Iterator> iterator_;
+
+  DISALLOW_COPY_AND_ASSIGN(IteratorImpl);
 };
-}
+}  // namespace
 
 IteratorImpl::IteratorImpl(scoped_ptr<leveldb::Iterator> it)
     : iterator_(it.Pass()) {}

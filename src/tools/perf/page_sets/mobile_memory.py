@@ -31,11 +31,8 @@ class GmailPage(MobileMemoryPage):
 
   def ReloadAndGc(self, action_runner):
     action_runner.RunAction(ReloadAction())
-    action_runner.RunAction(WaitAction(
-        {
-            'seconds': 15
-        }))
-    action_runner.RunAction(JsCollectGarbageAction())
+    action_runner.Wait(15)
+    action_runner.ForceGarbageCollection()
 
   def RunStressMemory(self, action_runner):
     for _ in xrange(3):
@@ -53,26 +50,14 @@ class GoogleSearchPage(MobileMemoryPage):
 
   def RunStressMemory(self, action_runner):
     action_runner.RunAction(ScrollAction())
-    action_runner.RunAction(WaitAction(
-        {
-            'seconds': 3
-        }))
+    action_runner.Wait(3)
     action_runner.RunAction(ScrollAction())
-    action_runner.RunAction(WaitAction(
-        {
-            'seconds': 3
-        }))
+    action_runner.Wait(3)
     action_runner.RunAction(ScrollAction())
-    action_runner.RunAction(WaitAction(
-        {
-            'seconds': 3
-        }))
+    action_runner.Wait(3)
     action_runner.RunAction(ScrollAction())
-    action_runner.RunAction(WaitAction(
-        {
-            'javascript':
-              'document.getElementById("rg_s").childElementCount > 300'
-        }))
+    action_runner.WaitForJavaScriptCondition(
+        'document.getElementById("rg_s").childElementCount > 300')
 
 
 class ScrollPage(MobileMemoryPage):
@@ -92,7 +77,8 @@ class MobileMemoryPageSet(page_set_module.PageSet):
     super(MobileMemoryPageSet, self).__init__(
         credentials_path='data/credentials.json',
         user_agent_type='mobile',
-        archive_data_file='data/mobile_memory.json')
+        archive_data_file='data/mobile_memory.json',
+        bucket=page_set_module.PARTNER_BUCKET)
 
     self.AddPage(GmailPage(self))
     self.AddPage(GoogleSearchPage(self))

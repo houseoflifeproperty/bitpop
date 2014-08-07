@@ -4,7 +4,10 @@
 
 
 from master import master_config
+from master.factory import annotator_factory
 from master.factory import chromium_factory
+
+m_annotator = annotator_factory.AnnotatorFactory()
 
 defaults = {}
 
@@ -69,49 +72,12 @@ F('f_linux_tests_dbg', linux().ChromiumFactory(
         'blink_config': 'blink',
     }))
 
-linux_aura_build_targets = [
-    'aura_builder',
-    'base_unittests',
-    'browser_tests',
-    'cacheinvalidation_unittests',
-    'compositor_unittests',
-    'content_browsertests',
-    'content_unittests',
-    'crypto_unittests',
-    'device_unittests',
-    'gpu_unittests',
-    'interactive_ui_tests',
-    'ipc_tests',
-    'jingle_unittests',
-    'media_unittests',
-    'net_unittests',
-    'ppapi_unittests',
-    'printing_unittests',
-    'remoting_unittests',
-    'sql_unittests',
-    'ui_unittests',
-    'url_unittests',
-]
 
-B('Linux Aura', 'f_linux_aura_rel', scheduler='global_scheduler')
-F('f_linux_aura_rel', linux().ChromiumFactory(
-    tests=[
-        'aura',
-        # This seems to have many failures
-        #'content_browsertests',
-        'unit',
-    ],
-    options=[
-        '--build-tool=ninja',
-        '--compiler=goma',
-        '--',
-    ] + linux_aura_build_targets,
-    factory_properties={
-        'generate_gtest_json': True,
-        'gclient_env': {'GYP_DEFINES': 'use_aura=1', 'GYP_GENERATORS': 'ninja'},
-        'window_manager': 'False',
-        'blink_config': 'blink',
-    }))
+B('Linux GN', 'f_linux_gn', scheduler='global_scheduler')
+F('f_linux_gn', m_annotator.BaseFactory('chromium_gn'))
+
+B('Android GN', 'f_android_gn', scheduler='global_scheduler')
+F('f_android_gn', m_annotator.BaseFactory('chromium_gn'))
 
 
 def Update(_config, _active_master, c):

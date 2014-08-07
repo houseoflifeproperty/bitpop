@@ -37,11 +37,11 @@
 
 namespace WebCore {
 
-PassRefPtrWillBeRawPtr<SpeechRecognition> SpeechRecognition::create(ExecutionContext* context)
+SpeechRecognition* SpeechRecognition::create(ExecutionContext* context)
 {
-    RefPtrWillBeRawPtr<SpeechRecognition> speechRecognition(adoptRefWillBeRefCountedGarbageCollected(new SpeechRecognition(context)));
+    SpeechRecognition* speechRecognition = adoptRefCountedGarbageCollectedWillBeNoop(new SpeechRecognition(context));
     speechRecognition->suspendIfNeeded();
-    return speechRecognition.release();
+    return speechRecognition;
 }
 
 void SpeechRecognition::start(ExceptionState& exceptionState)
@@ -105,21 +105,21 @@ void SpeechRecognition::didEndAudio()
     dispatchEvent(Event::create(EventTypeNames::audioend));
 }
 
-void SpeechRecognition::didReceiveResults(const WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionResult> >& newFinalResults, const WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionResult> >& currentInterimResults)
+void SpeechRecognition::didReceiveResults(const HeapVector<Member<SpeechRecognitionResult> >& newFinalResults, const HeapVector<Member<SpeechRecognitionResult> >& currentInterimResults)
 {
     unsigned long resultIndex = m_finalResults.size();
 
     for (size_t i = 0; i < newFinalResults.size(); ++i)
         m_finalResults.append(newFinalResults[i]);
 
-    WillBeHeapVector<RefPtrWillBeMember<SpeechRecognitionResult> > results = m_finalResults;
+    HeapVector<Member<SpeechRecognitionResult> > results = m_finalResults;
     for (size_t i = 0; i < currentInterimResults.size(); ++i)
         results.append(currentInterimResults[i]);
 
     dispatchEvent(SpeechRecognitionEvent::createResult(resultIndex, results));
 }
 
-void SpeechRecognition::didReceiveNoMatch(PassRefPtrWillBeRawPtr<SpeechRecognitionResult> result)
+void SpeechRecognition::didReceiveNoMatch(SpeechRecognitionResult* result)
 {
     dispatchEvent(SpeechRecognitionEvent::createNoMatch(result));
 }
@@ -171,7 +171,7 @@ SpeechRecognition::SpeechRecognition(ExecutionContext* context)
     , m_continuous(false)
     , m_interimResults(false)
     , m_maxAlternatives(1)
-    , m_controller(0)
+    , m_controller(nullptr)
     , m_stoppedByActiveDOMObject(false)
     , m_started(false)
     , m_stopping(false)
@@ -195,7 +195,11 @@ SpeechRecognition::~SpeechRecognition()
 void SpeechRecognition::trace(Visitor* visitor)
 {
     visitor->trace(m_grammars);
+#if ENABLE(OILPAN)
+    visitor->trace(m_controller);
+#endif
     visitor->trace(m_finalResults);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

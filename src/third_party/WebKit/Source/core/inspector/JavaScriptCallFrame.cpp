@@ -33,6 +33,7 @@
 
 #include "bindings/v8/ScriptValue.h"
 #include "bindings/v8/V8Binding.h"
+#include <v8-debug.h>
 
 namespace WebCore {
 
@@ -162,13 +163,9 @@ v8::Handle<v8::Value> JavaScriptCallFrame::restart()
     return result;
 }
 
-v8::Handle<v8::Object> JavaScriptCallFrame::innerCallFrame()
+ScriptValue JavaScriptCallFrame::setVariableValue(ScriptState* scriptState, int scopeNumber, const String& variableName, const ScriptValue& newValue)
 {
-    return m_callFrame.newLocal(m_isolate);
-}
-
-ScriptValue JavaScriptCallFrame::setVariableValue(int scopeNumber, const String& variableName, const ScriptValue& newValue)
-{
+    ScriptState::Scope scriptScope(scriptState);
     v8::Handle<v8::Object> callFrame = m_callFrame.newLocal(m_isolate);
     v8::Handle<v8::Function> setVariableValueFunction = v8::Handle<v8::Function>::Cast(callFrame->Get(v8AtomicString(m_isolate, "setVariableValue")));
     v8::Handle<v8::Value> argv[] = {
@@ -176,7 +173,12 @@ ScriptValue JavaScriptCallFrame::setVariableValue(int scopeNumber, const String&
         v8String(m_isolate, variableName),
         newValue.v8Value()
     };
-    return ScriptValue(setVariableValueFunction->Call(callFrame, WTF_ARRAY_LENGTH(argv), argv), m_isolate);
+    return ScriptValue(scriptState, setVariableValueFunction->Call(callFrame, WTF_ARRAY_LENGTH(argv), argv));
+}
+
+void JavaScriptCallFrame::trace(Visitor* visitor)
+{
+    visitor->trace(m_caller);
 }
 
 } // namespace WebCore

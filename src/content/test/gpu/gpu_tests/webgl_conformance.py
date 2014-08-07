@@ -54,6 +54,13 @@ conformance_harness_script = r"""
   window.webglTestHarness = testHarness;
   window.parent.webglTestHarness = testHarness;
   window.console.log = testHarness.log;
+  window.onerror = function(message, url, line) {
+    testHarness._failures++;
+    if (message) {
+      testHarness.log(message);
+    }
+    testHarness.notifyFinished(null);
+  };
 """
 
 def _DidWebGLTestSucceed(tab):
@@ -88,9 +95,9 @@ class WebglConformancePage(page_module.Page):
     self.script_to_evaluate_on_commit = conformance_harness_script
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {'javascript': 'webglTestHarness._finished', 'timeout': 120}))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'webglTestHarness._finished', timeout=120)
 
 
 class WebglConformance(test_module.Test):
@@ -108,7 +115,6 @@ class WebglConformance(test_module.Test):
         options.webgl_conformance_version)
 
     ps = page_set.PageSet(
-      description='Executes WebGL conformance tests',
       user_agent_type='desktop',
       serving_dirs=[''],
       file_path=conformance_path)

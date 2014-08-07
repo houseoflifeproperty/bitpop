@@ -21,7 +21,7 @@
 #ifndef SVGPatternElement_h
 #define SVGPatternElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedLength.h"
@@ -41,7 +41,7 @@ class SVGPatternElement FINAL : public SVGElement,
                                 public SVGTests,
                                 public SVGFitToViewBox {
 public:
-    static PassRefPtr<SVGPatternElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGPatternElement);
 
     void collectPatternAttributes(PatternAttributes&) const;
 

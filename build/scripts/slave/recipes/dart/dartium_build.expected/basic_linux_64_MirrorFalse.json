@@ -100,5 +100,14 @@
       "chromium_builder_tests"
     ],
     "name": "compile"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/dart/tools/dartium/multivm_archive.py",
+      "12345"
+    ],
+    "name": "archive_build"
   }
 ]

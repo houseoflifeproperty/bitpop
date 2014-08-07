@@ -349,9 +349,6 @@ class Browser : public TabStripModelObserver,
   // fullscreen.
   void WindowFullscreenStateChanged();
 
-  // Invoked when visible SSL state (as defined by SSLStatus) changes.
-  void VisibleSSLStateChanged(content::WebContents* web_contents);
-
   // Assorted browser commands ////////////////////////////////////////////////
 
   // NOTE: Within each of the following sections, the IDs are ordered roughly by
@@ -537,6 +534,8 @@ class Browser : public TabStripModelObserver,
       const content::OpenURLParams& params) OVERRIDE;
   virtual void NavigationStateChanged(const content::WebContents* source,
                                       unsigned changed_flags) OVERRIDE;
+  virtual void VisibleSSLStateChanged(
+      const content::WebContents* source) OVERRIDE;
   virtual void AddNewContents(content::WebContents* source,
                               content::WebContents* new_contents,
                               WindowOpenDisposition disposition,
@@ -616,7 +615,6 @@ class Browser : public TabStripModelObserver,
   virtual void RegisterProtocolHandler(content::WebContents* web_contents,
                                        const std::string& protocol,
                                        const GURL& url,
-                                       const base::string16& title,
                                        bool user_gesture) OVERRIDE;
   virtual void UpdatePreferredSize(content::WebContents* source,
                                    const gfx::Size& pref_size) OVERRIDE;

@@ -21,6 +21,7 @@
 #include "content/public/common/window_container_type.h"
 #include "net/base/mime_util.h"
 #include "net/cookies/canonical_cookie.h"
+#include "net/url_request/url_request_interceptor.h"
 #include "net/url_request/url_request_job_factory.h"
 #include "third_party/WebKit/public/web/WebNotificationPresenter.h"
 #include "ui/base/window_open_disposition.h"
@@ -88,6 +89,7 @@ class BrowserPluginGuestDelegate;
 class BrowserPpapiHost;
 class BrowserURLHandler;
 class DesktopNotificationDelegate;
+class DevToolsManagerDelegate;
 class ExternalVideoSurfaceContainer;
 class LocationProvider;
 class MediaObserver;
@@ -111,9 +113,9 @@ typedef std::map<
   std::string, linked_ptr<net::URLRequestJobFactory::ProtocolHandler> >
     ProtocolHandlerMap;
 
-// A scoped vector of protocol handlers.
-typedef ScopedVector<net::URLRequestJobFactory::ProtocolHandler>
-    ProtocolHandlerScopedVector;
+// A scoped vector of protocol interceptors.
+typedef ScopedVector<net::URLRequestInterceptor>
+    URLRequestInterceptorScopedVector;
 
 // Embedder API (or SPI) for participating in browser logic, to be implemented
 // by the client of the content browser. See ChromeContentBrowserClient for the
@@ -150,21 +152,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // the delegate in the content embedder that will service the guest in the
   // content layer. The content layer takes ownership of the |guest_delegate|.
   virtual void GuestWebContentsCreated(
+      int guest_instance_id,
       SiteInstance* guest_site_instance,
       WebContents* guest_web_contents,
       WebContents* opener_web_contents,
       BrowserPluginGuestDelegate** guest_delegate,
       scoped_ptr<base::DictionaryValue> extra_params) {}
-
-  // Notifies that a guest WebContents has been attached to a BrowserPlugin.
-  // A guest is attached to a BrowserPlugin when the guest has acquired an
-  // embedder WebContents. This happens on initial navigation or when a new
-  // window is attached to a BrowserPlugin. |extra_params| are params sent
-  // from javascript.
-  virtual void GuestWebContentsAttached(
-      WebContents* guest_web_contents,
-      WebContents* embedder_web_contents,
-      const base::DictionaryValue& extra_params) {}
 
   // Notifies that a render process will be created. This is called before
   // the content layer adds its own BrowserMessageFilters, so that the
@@ -203,7 +196,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual net::URLRequestContextGetter* CreateRequestContext(
       BrowserContext* browser_context,
       ProtocolHandlerMap* protocol_handlers,
-      ProtocolHandlerScopedVector protocol_interceptors);
+      URLRequestInterceptorScopedVector request_interceptors);
 
   // Creates the net::URLRequestContextGetter for a StoragePartition. Should
   // only be called once per partition_path per ContentBrowserClient object.
@@ -213,7 +206,7 @@ class CONTENT_EXPORT ContentBrowserClient {
       const base::FilePath& partition_path,
       bool in_memory,
       ProtocolHandlerMap* protocol_handlers,
-      ProtocolHandlerScopedVector protocol_interceptors);
+      URLRequestInterceptorScopedVector request_interceptors);
 
   // Returns whether a specified URL is handled by the embedder's internal
   // protocol handlers.
@@ -233,6 +226,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // given |process_host|.
   virtual bool IsSuitableHost(RenderProcessHost* process_host,
                               const GURL& site_url);
+
+  // Returns whether a new view for a new site instance can be added to a
+  // given |process_host|.
+  virtual bool MayReuseHost(RenderProcessHost* process_host);
 
   // Returns whether a new process should be created or an existing one should
   // be reused based on the URL we want to load. This should return false,
@@ -293,7 +290,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual std::string GetAcceptLangs(BrowserContext* context);
 
   // Returns the default favicon.  The callee doesn't own the given bitmap.
-  virtual gfx::ImageSkia* GetDefaultFavicon();
+  virtual const gfx::ImageSkia* GetDefaultFavicon();
 
   // Allow the embedder to control if an AppCache can be used for the given url.
   // This is called on the IO thread.
@@ -362,7 +359,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Allow the embedder to specify a string version of the storage partition
   // config with a site.
   virtual std::string GetStoragePartitionIdForSite(
-      content::BrowserContext* browser_context,
+      BrowserContext* browser_context,
       const GURL& site);
 
   // Allows the embedder to provide a validation check for |partition_id|s.
@@ -387,7 +384,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   // |in_memory| values. When a partition is not to be persisted, the
   // |in_memory| value must be set to true.
   virtual void GetStoragePartitionConfigForSite(
-      content::BrowserContext* browser_context,
+      BrowserContext* browser_context,
       const GURL& site,
       bool can_be_default,
       std::string* partition_domain,
@@ -427,14 +424,12 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Adds a new installable certificate or private key.
   // Typically used to install an X.509 user certificate.
   // Note that it's up to the embedder to verify that the data is
-  // well-formed. |cert_data| will be NULL if file_size is 0.
-  virtual void AddCertificate(
-      net::URLRequest* request,
-      net::CertificateMimeType cert_type,
-      const void* cert_data,
-      size_t cert_size,
-      int render_process_id,
-      int render_view_id) {}
+  // well-formed. |cert_data| will be NULL if |cert_size| is 0.
+  virtual void AddCertificate(net::CertificateMimeType cert_type,
+                              const void* cert_data,
+                              size_t cert_size,
+                              int render_process_id,
+                              int render_frame_id) {}
 
   // Returns a class to get notifications about media event. The embedder can
   // return NULL if they're not interested.
@@ -445,7 +440,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void RequestDesktopNotificationPermission(
       const GURL& source_origin,
       RenderFrameHost* render_frame_host,
-      base::Closure& callback) {}
+      const base::Closure& callback) {}
 
   // Checks if the given page has permission to show desktop notifications.
   // This is called on the IO thread.
@@ -463,6 +458,39 @@ class CONTENT_EXPORT ContentBrowserClient {
       DesktopNotificationDelegate* delegate,
       base::Closure* cancel_callback) {}
 
+  // The renderer is requesting permission to use Geolocation. When the answer
+  // to a permission request has been determined, |result_callback| should be
+  // called with the result. If |cancel_callback| is non-null, it's set to a
+  // callback which can be used to cancel the permission request.
+  virtual void RequestGeolocationPermission(
+      WebContents* web_contents,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      base::Callback<void(bool)> result_callback,
+      base::Closure* cancel_callback);
+
+  // Requests a permission to use system exclusive messages in MIDI events.
+  // |result_callback| will be invoked when the request is resolved. If
+  // |cancel_callback| is non-null, it's set to a callback which can be used to
+  // cancel the permission request.
+  virtual void RequestMidiSysExPermission(
+      WebContents* web_contents,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      base::Callback<void(bool)> result_callback,
+      base::Closure* cancel_callback);
+
+  // Request permission to access protected media identifier. |result_callback
+  // will tell whether it's permitted. If |cancel_callback| is non-null, it's
+  // set to a callback which can be used to cancel the permission request.
+  virtual void RequestProtectedMediaIdentifierPermission(
+      WebContents* web_contents,
+      const GURL& origin,
+      base::Callback<void(bool)> result_callback,
+      base::Closure* cancel_callback);
+
   // Returns true if the given page is allowed to open a window of the given
   // type. If true is returned, |no_javascript_access| will indicate whether
   // the window that is created should be scriptable/in the same process.
@@ -472,14 +500,13 @@ class CONTENT_EXPORT ContentBrowserClient {
                                const GURL& source_origin,
                                WindowContainerType container_type,
                                const GURL& target_url,
-                               const content::Referrer& referrer,
+                               const Referrer& referrer,
                                WindowOpenDisposition disposition,
                                const blink::WebWindowFeatures& features,
                                bool user_gesture,
                                bool opener_suppressed,
-                               content::ResourceContext* context,
+                               ResourceContext* context,
                                int render_process_id,
-                               bool is_guest,
                                int opener_id,
                                bool* no_javascript_access);
 
@@ -543,7 +570,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void DidCreatePpapiPlugin(BrowserPpapiHost* browser_host) {}
 
   // Gets the host for an external out-of-process plugin.
-  virtual content::BrowserPpapiHost* GetExternalBrowserPpapiHost(
+  virtual BrowserPpapiHost* GetExternalBrowserPpapiHost(
       int plugin_child_id);
 
   // Returns true if the socket operation specified by |params| is allowed from
@@ -593,6 +620,27 @@ class CONTENT_EXPORT ContentBrowserClient {
   // information.
   virtual VibrationProvider* OverrideVibrationProvider();
 
+  // Creates a new DevToolsManagerDelegate. The caller owns the returned value.
+  // It's valid to return NULL.
+  virtual DevToolsManagerDelegate* GetDevToolsManagerDelegate();
+
+  // Returns true if plugin referred to by the url can use
+  // pp::FileIO::RequestOSFileHandle.
+  virtual bool IsPluginAllowedToCallRequestOSFileHandle(
+      BrowserContext* browser_context,
+      const GURL& url);
+
+  // Returns true if dev channel APIs are available for plugins.
+  virtual bool IsPluginAllowedToUseDevChannelAPIs(
+      BrowserContext* browser_context,
+      const GURL& url);
+
+  // Returns a special cookie store to use for a given render process, or NULL
+  // if the default cookie store should be used
+  // This is called on the IO thread.
+  virtual net::CookieStore* OverrideCookieStoreForRenderProcess(
+      int render_process_id);
+
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Populates |mappings| with all files that need to be mapped before launching
   // a child process.
@@ -612,21 +660,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void PreSpawnRenderer(sandbox::TargetPolicy* policy,
                                 bool* success) {}
 #endif
-
-  // Returns true if plugin referred to by the url can use
-  // pp::FileIO::RequestOSFileHandle.
-  virtual bool IsPluginAllowedToCallRequestOSFileHandle(
-      content::BrowserContext* browser_context,
-      const GURL& url);
-
-  // Returns true if dev channel APIs are available for plugins.
-  virtual bool IsPluginAllowedToUseDevChannelAPIs();
-
-  // Returns a special cookie store to use for a given render process, or NULL
-  // if the default cookie store should be used
-  // This is called on the IO thread.
-  virtual net::CookieStore* OverrideCookieStoreForRenderProcess(
-      int render_process_id_);
 
 #if defined(VIDEO_HOLE)
   // Allows an embedder to provide its own ExternalVideoSurfaceContainer

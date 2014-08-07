@@ -12,7 +12,6 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -188,7 +187,9 @@ void CoreTabHelper::BeforeUnloadDialogCancelled() {
   OnCloseCanceled();
 }
 
-bool CoreTabHelper::OnMessageReceived(const IPC::Message& message) {
+bool CoreTabHelper::OnMessageReceived(
+    const IPC::Message& message,
+    content::RenderFrameHost* render_frame_host) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(CoreTabHelper, message)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_RequestThumbnailForContextNode_ACK,
@@ -235,7 +236,7 @@ void CoreTabHelper::OnRequestThumbnailForContextNodeACK(
   search_args.image_original_size = original_size;
   TemplateURLRef::PostContent post_content;
   GURL result(default_provider->image_url_ref().ReplaceSearchTerms(
-      search_args, &post_content));
+      search_args, template_url_service->search_terms_data(), &post_content));
   if (!result.is_valid())
     return;
 

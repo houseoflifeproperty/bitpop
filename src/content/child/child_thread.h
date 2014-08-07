@@ -16,7 +16,7 @@
 #include "content/common/content_export.h"
 #include "content/common/message_router.h"
 #include "ipc/ipc_message.h"  // For IPC_MESSAGE_LOG_ENABLED.
-#include "mojo/public/interfaces/shell/shell.mojom.h"
+#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 
 namespace base {
 class MessageLoop;
@@ -56,9 +56,10 @@ class WebSocketDispatcher;
 struct RequestInfo;
 
 // The main thread of a child process derives from this class.
-class CONTENT_EXPORT ChildThread : public IPC::Listener,
-                                   public IPC::Sender,
-                                   public NON_EXPORTED_BASE(mojo::ShellClient) {
+class CONTENT_EXPORT ChildThread
+    : public IPC::Listener,
+      public IPC::Sender,
+      public NON_EXPORTED_BASE(mojo::ServiceProvider) {
  public:
   // Creates the thread.
   ChildThread();
@@ -169,10 +170,12 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener,
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
   virtual void OnChannelError() OVERRIDE;
 
-  // mojo::ShellClient implementation:
-  virtual void AcceptConnection(
+  // mojo::ServiceProvider implementation:
+  virtual void ConnectToService(
+      const mojo::String& service_url,
       const mojo::String& service_name,
-      mojo::ScopedMessagePipeHandle message_pipe) OVERRIDE;
+      mojo::ScopedMessagePipeHandle message_pipe,
+      const mojo::String& requestor_url) OVERRIDE;
 
  private:
   class ChildThreadMessageRouter : public MessageRouter {
@@ -192,6 +195,7 @@ class CONTENT_EXPORT ChildThread : public IPC::Listener,
   void OnSetProfilerStatus(tracked_objects::ThreadData::Status status);
   void OnGetChildProfilerData(int sequence_number);
   void OnDumpHandles();
+  void OnProcessBackgrounded(bool background);
 #ifdef IPC_MESSAGE_LOG_ENABLED
   void OnSetIPCLoggingEnabled(bool enable);
 #endif

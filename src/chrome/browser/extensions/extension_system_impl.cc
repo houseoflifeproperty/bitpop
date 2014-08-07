@@ -23,6 +23,7 @@
 #include "chrome/browser/extensions/extension_warning_set.h"
 #include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/navigation_observer.h"
+#include "chrome/browser/extensions/shared_module_service.h"
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
 #include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
@@ -33,6 +34,7 @@
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/features/feature_channel.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
@@ -66,8 +68,8 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/chromeos/extensions/device_local_account_management_policy_provider.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/login/login_state.h"
@@ -492,6 +494,12 @@ QuotaService* ExtensionSystemImpl::quota_service() {
 
 ContentVerifier* ExtensionSystemImpl::content_verifier() {
   return shared_->content_verifier();
+}
+
+scoped_ptr<ExtensionSet> ExtensionSystemImpl::GetDependentExtensions(
+    const Extension* extension) {
+  return extension_service()->shared_module_service()->GetDependentExtensions(
+      extension);
 }
 
 void ExtensionSystemImpl::RegisterExtensionWithRequestContexts(

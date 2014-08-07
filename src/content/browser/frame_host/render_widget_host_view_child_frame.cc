@@ -86,8 +86,7 @@ RenderWidgetHostViewChildFrame::GetNativeViewAccessible() {
   return NULL;
 }
 
-void RenderWidgetHostViewChildFrame::SetBackground(
-    const SkBitmap& background) {
+void RenderWidgetHostViewChildFrame::SetBackgroundOpaque(bool opaque) {
 }
 
 gfx::Size RenderWidgetHostViewChildFrame::GetPhysicalBackingSize() const {
@@ -146,11 +145,8 @@ void RenderWidgetHostViewChildFrame::SetIsLoading(bool is_loading) {
   NOTREACHED();
 }
 
-void RenderWidgetHostViewChildFrame::TextInputTypeChanged(
-    ui::TextInputType type,
-    ui::TextInputMode input_mode,
-    bool can_compose_inline) {
-  NOTREACHED();
+void RenderWidgetHostViewChildFrame::TextInputStateChanged(
+    const ViewHostMsg_TextInputState_Params& params) {
 }
 
 void RenderWidgetHostViewChildFrame::RenderProcessGone(
@@ -192,10 +188,6 @@ void RenderWidgetHostViewChildFrame::ShowDisambiguationPopup(
     const SkBitmap& zoomed_bitmap) {
 }
 
-void RenderWidgetHostViewChildFrame::SelectionRootBoundsChanged(
-    const gfx::Rect& bounds) {
-}
-
 void RenderWidgetHostViewChildFrame::LockCompositingSurface() {
 }
 
@@ -204,9 +196,6 @@ void RenderWidgetHostViewChildFrame::UnlockCompositingSurface() {
 #endif
 
 void RenderWidgetHostViewChildFrame::ScrollOffsetChanged() {
-}
-
-void RenderWidgetHostViewChildFrame::OnAcceleratedCompositingStateChange() {
 }
 
 void RenderWidgetHostViewChildFrame::AcceleratedSurfaceInitialized(int host_id,
@@ -330,10 +319,6 @@ bool RenderWidgetHostViewChildFrame::HasAcceleratedSurface(
 
 gfx::GLSurfaceHandle RenderWidgetHostViewChildFrame::GetCompositingSurface() {
   return gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::TEXTURE_TRANSPORT);
-}
-
-void RenderWidgetHostViewChildFrame::SetScrollOffsetPinning(
-    bool is_pinned_to_left, bool is_pinned_to_right) {
 }
 
 #if defined(OS_WIN)

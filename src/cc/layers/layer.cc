@@ -6,10 +6,12 @@
 
 #include <algorithm>
 
+#include "base/atomic_sequence_num.h"
 #include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/metrics/histogram.h"
 #include "base/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/keyframed_animation_curve.h"
@@ -27,7 +29,7 @@
 
 namespace cc {
 
-static int s_next_layer_id = 1;
+base::StaticAtomicSequenceNumber g_next_layer_id;
 
 scoped_refptr<Layer> Layer::Create() {
   return make_scoped_refptr(new Layer());
@@ -37,8 +39,10 @@ Layer::Layer()
     : needs_push_properties_(false),
       num_dependents_need_push_properties_(false),
       stacking_order_changed_(false),
-      layer_id_(s_next_layer_id++),
+      // Layer IDs start from 1.
+      layer_id_(g_next_layer_id.GetNext() + 1),
       ignore_set_needs_commit_(false),
+      sorting_context_id_(0),
       parent_(NULL),
       layer_tree_host_(NULL),
       scroll_clip_layer_id_(INVALID_ID),
@@ -58,22 +62,15 @@ Layer::Layer()
       use_parent_backface_visibility_(false),
       draw_checkerboard_for_missing_tiles_(false),
       force_render_surface_(false),
-      is_3d_sorted_(false),
       transform_is_invertible_(true),
-      anchor_point_(0.5f, 0.5f),
       background_color_(0),
       opacity_(1.f),
       blend_mode_(SkXfermode::kSrcOver_Mode),
-      anchor_point_z_(0.f),
       scroll_parent_(NULL),
       clip_parent_(NULL),
       replica_layer_(NULL),
       raster_scale_(0.f),
       client_(NULL) {
-  if (layer_id_ == INT_MAX) {
-    s_next_layer_id = 1;
-  }
-
   layer_animation_controller_ = LayerAnimationController::Create(layer_id_);
   layer_animation_controller_->AddValueObserver(this);
   layer_animation_controller_->set_value_provider(this);
@@ -370,22 +367,6 @@ void Layer::RequestCopyOfOutput(
   SetNeedsCommit();
 }
 
-void Layer::SetAnchorPoint(const gfx::PointF& anchor_point) {
-  DCHECK(IsPropertyChangeAllowed());
-  if (anchor_point_ == anchor_point)
-    return;
-  anchor_point_ = anchor_point;
-  SetNeedsCommit();
-}
-
-void Layer::SetAnchorPointZ(float anchor_point_z) {
-  DCHECK(IsPropertyChangeAllowed());
-  if (anchor_point_z_ == anchor_point_z)
-    return;
-  anchor_point_z_ = anchor_point_z;
-  SetNeedsCommit();
-}
-
 void Layer::SetBackgroundColor(SkColor background_color) {
   DCHECK(IsPropertyChangeAllowed());
   if (background_color_ == background_color)
@@ -597,6 +578,14 @@ void Layer::SetTransform(const gfx::Transform& transform) {
   SetNeedsCommit();
 }
 
+void Layer::SetTransformOrigin(const gfx::Point3F& transform_origin) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (transform_origin_ == transform_origin)
+    return;
+  transform_origin_ = transform_origin;
+  SetNeedsCommit();
+}
+
 bool Layer::TransformIsAnimating() const {
   return layer_animation_controller_->IsAnimatingProperty(Animation::Transform);
 }
@@ -767,11 +756,11 @@ void Layer::SetDoubleSided(bool double_sided) {
   SetNeedsCommit();
 }
 
-void Layer::SetIs3dSorted(bool sorted) {
+void Layer::Set3dSortingContextId(int id) {
   DCHECK(IsPropertyChangeAllowed());
-  if (is_3d_sorted_ == sorted)
+  if (id == sorting_context_id_)
     return;
-  is_3d_sorted_ = sorted;
+  sorting_context_id_ = id;
   SetNeedsCommit();
 }
 
@@ -865,8 +854,7 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   bool use_paint_properties = paint_properties_.source_frame_number ==
                               layer_tree_host_->source_frame_number();
 
-  layer->SetAnchorPoint(anchor_point_);
-  layer->SetAnchorPointZ(anchor_point_z_);
+  layer->SetTransformOrigin(transform_origin_);
   layer->SetBackgroundColor(background_color_);
   layer->SetBounds(use_paint_properties ? paint_properties_.bounds
                                         : bounds_);
@@ -906,11 +894,11 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
       IsContainerForFixedPositionLayers());
   layer->SetPositionConstraint(position_constraint_);
   layer->SetShouldFlattenTransform(should_flatten_transform_);
-  layer->SetIs3dSorted(is_3d_sorted_);
   layer->SetUseParentBackfaceVisibility(use_parent_backface_visibility_);
   if (!layer->TransformIsAnimatingOnImplOnly() && !TransformIsAnimating())
     layer->SetTransformAndInvertibility(transform_, transform_is_invertible_);
   DCHECK(!(TransformIsAnimating() && layer->TransformIsAnimatingOnImplOnly()));
+  layer->Set3dSortingContextId(sorting_context_id_);
 
   layer->SetScrollClipLayer(scroll_clip_layer_id_);
   layer->set_user_scrollable_horizontal(user_scrollable_horizontal_);
@@ -1119,7 +1107,8 @@ bool Layer::AddAnimation(scoped_ptr <Animation> animation) {
 }
 
 void Layer::PauseAnimation(int animation_id, double time_offset) {
-  layer_animation_controller_->PauseAnimation(animation_id, time_offset);
+  layer_animation_controller_->PauseAnimation(
+      animation_id, base::TimeDelta::FromSecondsD(time_offset));
   SetNeedsCommit();
 }
 

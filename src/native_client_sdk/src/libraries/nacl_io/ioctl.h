@@ -8,20 +8,13 @@
 #include <sys/types.h>
 
 /*
- * ioctl to feed input to a tty node. Accepts a pointer to the following
- * struct (tioc_nacl_input_string), which contains a pointer to an array
- * of characters.
- */
-#define TIOCNACLINPUT 0xadcd02
-
-/*
- * ioctl to register an output handler with the tty node.  Will fail
- * with EALREADY if a handler is already registered.  Expects an
- * argument of type tioc_nacl_output.  The handler will be called during
- * calls to write() on the thread that calls write(), or, for echoed input
- * during the TIOCNACLINPUT ioctl() on the thread calling ioctl(). The
- * handler should return the number of bytes written/handled, or -errno
- * if an error occured.
+ * ioctl to register an output handler with the tty node.  Will fail with
+ * EALREADY if a handler is already registered.  Expects an argument of type
+ * tioc_nacl_output.  The handler will be called during calls to write() on the
+ * thread that calls write(), or, for echoed input during the
+ * NACL_IOC_HANDLEMESSAGE ioctl() on the thread calling ioctl(). The handler
+ * should return the number of bytes written/handled, or -errno if an error
+ * occured.
  */
 #define TIOCNACLOUTPUT 0xadcd03
 
@@ -33,15 +26,23 @@
  * unique prefix.  Until a prefix is set on a given pipe any I/O operations
  * will return EIO.
  */
-#define TIOCNACLPIPENAME 0xadcd04
+#define NACL_IOC_PIPE_SETNAME 0xadcd04
 
-typedef char* tioc_nacl_jspipe_name;
+/*
+ * Find out how much space is available in a nacl_io pipe.
+ * Argument type is "int*" which will be set to the amount of space in the
+ * pipe in bytes.
+ */
+#define NACL_IOC_PIPE_GETOSPACE 0xadcd06
+#define NACL_IOC_PIPE_GETISPACE 0xadcd07
 
-struct tioc_nacl_input_string {
-  size_t length;
-  const char* buffer;
-};
+/*
+ * ioctl used to pass messages from JavaScript to a node.
+ * Argument type is "struct PP_Var*".
+ */
+#define NACL_IOC_HANDLEMESSAGE 0xadcd05
 
+typedef char* naclioc_jspipe_name;
 
 typedef ssize_t (*tioc_nacl_output_handler_t)(const char* buf,
                                               size_t count,

@@ -194,8 +194,8 @@ class TestWebUI : public content::WebUI {
     return NULL;
   }
   virtual void SetController(content::WebUIController* controller) OVERRIDE {}
-  virtual ui::ScaleFactor GetDeviceScaleFactor() const OVERRIDE {
-    return ui::SCALE_FACTOR_100P;
+  virtual float GetDeviceScaleFactor() const OVERRIDE {
+    return 1.0f;
   }
   virtual const base::string16& GetOverriddenTitle() const OVERRIDE {
     return temp_string_;
@@ -405,7 +405,7 @@ TEST_F(SyncSetupHandlerFirstSigninTest, DisplayBasicLogin) {
       .WillRepeatedly(Return(false));
   // Ensure that the user is not signed in before calling |HandleStartSignin()|.
   SigninManager* manager = static_cast<SigninManager*>(mock_signin_);
-  manager->SignOut();
+  manager->SignOut(signin_metrics::SIGNOUT_TEST);
   handler_->HandleStartSignin(NULL);
 
   // Sync setup hands off control to the gaia login tab.
@@ -441,6 +441,19 @@ TEST_F(SyncSetupHandlerTest, ShowSyncSetupWhenNotSignedIn) {
                 profile_.get())->current_login_ui());
 }
 #endif  // !defined(OS_CHROMEOS)
+
+// Verifies that the sync setup is terminated correctly when the
+// sync is disabled.
+TEST_F(SyncSetupHandlerTest, HandleSetupUIWhenSyncDisabled) {
+  EXPECT_CALL(*mock_pss_, IsManaged()).WillRepeatedly(Return(true));
+  handler_->HandleShowSetupUI(NULL);
+
+  // Sync setup is closed when sync is disabled.
+  EXPECT_EQ(NULL,
+            LoginUIServiceFactory::GetForProfile(
+                profile_.get())->current_login_ui());
+  ASSERT_FALSE(handler_->is_configuring_sync());
+}
 
 // Verifies that the handler correctly handles a cancellation when
 // it is displaying the spinner to the user.
@@ -867,7 +880,7 @@ TEST_F(SyncSetupHandlerTest, ShowSigninOnAuthError) {
   FakeAuthStatusProvider provider(
       ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get())->
           signin_error_controller());
-  provider.SetAuthError(kTestUser, error_);
+  provider.SetAuthError(kTestUser, kTestUser, error_);
   EXPECT_CALL(*mock_pss_, IsSyncEnabledAndLoggedIn())
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_pss_, IsOAuthRefreshTokenAvailable())

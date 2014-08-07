@@ -31,9 +31,9 @@
 #include "config.h"
 #include "core/html/forms/SearchInputType.h"
 
-#include "HTMLNames.h"
-#include "InputTypeNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
@@ -108,7 +108,7 @@ void SearchInputType::handleKeydownEvent(KeyboardEvent* event)
 
     const String& key = event->keyIdentifier();
     if (key == "U+001B") {
-        RefPtr<HTMLInputElement> input(element());
+        RefPtrWillBeRawPtr<HTMLInputElement> input(element());
         input->setValueForUser("");
         input->onSearch();
         event->setDefaultHandled();
@@ -120,7 +120,7 @@ void SearchInputType::handleKeydownEvent(KeyboardEvent* event)
 void SearchInputType::startSearchEventTimer()
 {
     ASSERT(element().renderer());
-    unsigned length = element().innerTextValue().length();
+    unsigned length = element().innerEditorValue().length();
 
     if (!length) {
         stopSearchEventTimer();

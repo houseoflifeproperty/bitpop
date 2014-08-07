@@ -6,6 +6,7 @@
 #define EXTENSIONS_BROWSER_EXTENSION_MESSAGE_FILTER_H_
 
 #include <string>
+#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/macros.h"
@@ -37,14 +38,17 @@ class ExtensionMessageFilter : public content::BrowserMessageFilter {
   int render_process_id() { return render_process_id_; }
 
  private:
+  friend class content::BrowserThread;
+  friend class base::DeleteHelper<ExtensionMessageFilter>;
+
   virtual ~ExtensionMessageFilter();
 
   // content::BrowserMessageFilter implementation.
   virtual void OverrideThreadForMessage(
       const IPC::Message& message,
       content::BrowserThread::ID* thread) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual void OnDestruct() const OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Message handlers on the UI thread.
   void OnExtensionAddListener(const std::string& extension_id,
@@ -66,6 +70,7 @@ class ExtensionMessageFilter : public content::BrowserMessageFilter {
   void OnExtensionShouldSuspendAck(const std::string& extension_id,
                                    int sequence_id);
   void OnExtensionSuspendAck(const std::string& extension_id);
+  void OnExtensionTransferBlobsAck(const std::vector<std::string>& blob_uuids);
 
   // Message handlers on the IO thread.
   void OnExtensionGenerateUniqueID(int* unique_id);
@@ -81,6 +86,7 @@ class ExtensionMessageFilter : public content::BrowserMessageFilter {
 
   scoped_refptr<extensions::InfoMap> extension_info_map_;
 
+  // Weak pointers produced by this factory are bound to the IO thread.
   base::WeakPtrFactory<ExtensionMessageFilter> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionMessageFilter);

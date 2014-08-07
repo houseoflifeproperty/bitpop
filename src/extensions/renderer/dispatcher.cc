@@ -73,8 +73,7 @@
 #include "extensions/renderer/user_script_slave.h"
 #include "extensions/renderer/utils_native_handler.h"
 #include "extensions/renderer/v8_context_native_handler.h"
-#include "grit/common_resources.h"
-#include "grit/renderer_resources.h"
+#include "grit/extensions_renderer_resources.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebCustomElement.h"
@@ -259,9 +258,10 @@ void Dispatcher::DidCreateScriptContext(
           .release();
   script_context_set_.Add(context);
 
-  if (extension) {
-    InitOriginPermissions(extension, context_type);
-  }
+  // Initialize origin permissions for content scripts, which can't be
+  // initialized in |OnActivateExtension|.
+  if (context_type == Feature::CONTENT_SCRIPT_CONTEXT)
+    InitOriginPermissions(extension);
 
   {
     scoped_ptr<ModuleSystem> module_system(
@@ -392,7 +392,6 @@ void Dispatcher::DispatchEvent(const std::string& extension_id,
   // Needed for Windows compilation, since kEventBindings is declared extern.
   const char* local_event_bindings = kEventBindings;
   script_context_set_.ForEach(extension_id,
-                              NULL,  // all render views
                               base::Bind(&CallModuleMethod,
                                          local_event_bindings,
                                          kEventDispatchFunction,
@@ -462,6 +461,7 @@ bool Dispatcher::OnControlMessageReceived(const IPC::Message& message) {
   IPC_MESSAGE_HANDLER(ExtensionMsg_SetSystemFont, OnSetSystemFont)
   IPC_MESSAGE_HANDLER(ExtensionMsg_ShouldSuspend, OnShouldSuspend)
   IPC_MESSAGE_HANDLER(ExtensionMsg_Suspend, OnSuspend)
+  IPC_MESSAGE_HANDLER(ExtensionMsg_TransferBlobs, OnTransferBlobs)
   IPC_MESSAGE_HANDLER(ExtensionMsg_Unloaded, OnUnloaded)
   IPC_MESSAGE_HANDLER(ExtensionMsg_UpdatePermissions, OnUpdatePermissions)
   IPC_MESSAGE_HANDLER(ExtensionMsg_UpdateTabSpecificPermissions,
@@ -496,6 +496,8 @@ void Dispatcher::WebKitInitialized() {
        ++iter) {
     const Extension* extension = extensions_.GetByID(*iter);
     CHECK(extension);
+
+    InitOriginPermissions(extension);
   }
 
   EnableCustomElementWhiteList();
@@ -504,9 +506,10 @@ void Dispatcher::WebKitInitialized() {
 }
 
 void Dispatcher::IdleNotification() {
-  if (is_extension_process_) {
+  if (is_extension_process_ && forced_idle_timer_) {
     // Dampen the forced delay as well if the extension stays idle for long
-    // periods of time.
+    // periods of time. (forced_idle_timer_ can be NULL after
+    // OnRenderProcessShutdown has been called.)
     int64 forced_delay_ms =
         std::max(RenderThread::Get()->GetIdleNotificationDelayInMs(),
                  kMaxExtensionIdleHandlerDelayMs);
@@ -552,6 +555,8 @@ void Dispatcher::OnActivateExtension(const std::string& extension_id) {
   if (is_webkit_initialized_) {
     extensions::DOMActivityLogger::AttachToWorld(
         extensions::DOMActivityLogger::kMainWorldId, extension_id);
+
+    InitOriginPermissions(extension);
   }
 
   UpdateActiveExtensions();
@@ -576,7 +581,7 @@ void Dispatcher::OnDeliverMessage(int target_port_id, const Message& message) {
         new RequestSender::ScopedTabID(request_sender(), it->second));
   }
 
-  MessagingBindings::DeliverMessage(script_context_set_.GetAll(),
+  MessagingBindings::DeliverMessage(script_context_set_,
                                     target_port_id,
                                     message,
                                     NULL);  // All render views.
@@ -594,20 +599,18 @@ void Dispatcher::OnDispatchOnConnect(
   source_tab.GetInteger("id", &sender_tab_id);
   port_to_tab_id_map_[target_port_id] = sender_tab_id;
 
-  MessagingBindings::DispatchOnConnect(script_context_set_.GetAll(),
+  MessagingBindings::DispatchOnConnect(script_context_set_,
                                        target_port_id,
                                        channel_name,
                                        source_tab,
-                                       info.source_id,
-                                       info.target_id,
-                                       info.source_url,
+                                       info,
                                        tls_channel_id,
                                        NULL);  // All render views.
 }
 
 void Dispatcher::OnDispatchOnDisconnect(int port_id,
                                         const std::string& error_message) {
-  MessagingBindings::DispatchOnDisconnect(script_context_set_.GetAll(),
+  MessagingBindings::DispatchOnDisconnect(script_context_set_,
                                           port_id,
                                           error_message,
                                           NULL);  // All render views.
@@ -681,6 +684,10 @@ void Dispatcher::OnSuspend(const std::string& extension_id) {
   RenderThread::Get()->Send(new ExtensionHostMsg_SuspendAck(extension_id));
 }
 
+void Dispatcher::OnTransferBlobs(const std::vector<std::string>& blob_uuids) {
+  RenderThread::Get()->Send(new ExtensionHostMsg_TransferBlobsAck(blob_uuids));
+}
+
 void Dispatcher::OnUnloaded(const std::string& id) {
   extensions_.Remove(id);
   active_extension_ids_.erase(id);
@@ -731,7 +738,7 @@ void Dispatcher::OnUpdatePermissions(
   scoped_refptr<const PermissionSet> delta = new PermissionSet(
       apis, manifest_permissions, explicit_hosts, scriptable_hosts);
   scoped_refptr<const PermissionSet> old_active =
-      extension->GetActivePermissions();
+      extension->permissions_data()->active_permissions();
   UpdatedExtensionPermissionsInfo::Reason reason =
       static_cast<UpdatedExtensionPermissionsInfo::Reason>(reason_id);
 
@@ -746,7 +753,7 @@ void Dispatcher::OnUpdatePermissions(
       break;
   }
 
-  PermissionsData::SetActivePermissions(extension, new_active);
+  extension->permissions_data()->SetActivePermissions(new_active);
   UpdateOriginPermissions(reason, extension, explicit_hosts);
   UpdateBindings(extension->id());
 }
@@ -760,16 +767,29 @@ void Dispatcher::OnUpdateTabSpecificPermissions(
       this, page_id, tab_id, extension_id, origin_set);
 }
 
-void Dispatcher::OnUpdateUserScripts(base::SharedMemoryHandle scripts) {
-  DCHECK(base::SharedMemory::IsHandleValid(scripts)) << "Bad scripts handle";
-  user_script_slave_->UpdateScripts(scripts);
+void Dispatcher::OnUpdateUserScripts(
+    base::SharedMemoryHandle scripts,
+    const std::set<std::string>& extension_ids) {
+  if (!base::SharedMemory::IsHandleValid(scripts)) {
+    NOTREACHED() << "Bad scripts handle";
+    return;
+  }
+
+  for (std::set<std::string>::const_iterator iter = extension_ids.begin();
+       iter != extension_ids.end();
+       ++iter) {
+    if (!Extension::IdIsValid(*iter)) {
+      NOTREACHED() << "Invalid extension id: " << *iter;
+      return;
+    }
+  }
+
+  user_script_slave_->UpdateScripts(scripts, extension_ids);
   UpdateActiveExtensions();
 }
 
-void Dispatcher::OnUsingWebRequestAPI(bool adblock,
-                                      bool adblock_plus,
-                                      bool other_webrequest) {
-  delegate_->HandleWebRequestAPIUsage(adblock, adblock_plus, other_webrequest);
+void Dispatcher::OnUsingWebRequestAPI(bool webrequest_used) {
+  delegate_->HandleWebRequestAPIUsage(webrequest_used);
 }
 
 void Dispatcher::UpdateActiveExtensions() {
@@ -778,13 +798,13 @@ void Dispatcher::UpdateActiveExtensions() {
   delegate_->OnActiveExtensionsUpdated(active_extensions);
 }
 
-void Dispatcher::InitOriginPermissions(const Extension* extension,
-                                       Feature::Context context_type) {
-  delegate_->InitOriginPermissions(extension, context_type);
+void Dispatcher::InitOriginPermissions(const Extension* extension) {
+  delegate_->InitOriginPermissions(extension,
+                                   IsExtensionActive(extension->id()));
   UpdateOriginPermissions(
       UpdatedExtensionPermissionsInfo::ADDED,
       extension,
-      PermissionsData::GetEffectiveHostPermissions(extension));
+      extension->permissions_data()->GetEffectiveHostPermissions());
 }
 
 void Dispatcher::UpdateOriginPermissions(
@@ -796,9 +816,9 @@ void Dispatcher::UpdateOriginPermissions(
     const char* schemes[] = {
         url::kHttpScheme,
         url::kHttpsScheme,
-        content::kFileScheme,
+        url::kFileScheme,
         content::kChromeUIScheme,
-        content::kFtpScheme,
+        url::kFtpScheme,
     };
     for (size_t j = 0; j < arraysize(schemes); ++j) {
       if (i->MatchesScheme(schemes[j])) {
@@ -816,14 +836,11 @@ void Dispatcher::UpdateOriginPermissions(
 
 void Dispatcher::EnableCustomElementWhiteList() {
   blink::WebCustomElement::addEmbedderCustomElementName("webview");
-  // TODO(fsamuel): Add <adview> to the whitelist once it has been converted
-  // into a custom element.
   blink::WebCustomElement::addEmbedderCustomElementName("browser-plugin");
 }
 
 void Dispatcher::UpdateBindings(const std::string& extension_id) {
   script_context_set().ForEach(extension_id,
-                               NULL,  // all render views
                                base::Bind(&Dispatcher::UpdateBindingsForContext,
                                           base::Unretained(this)));
 }
@@ -867,7 +884,8 @@ void Dispatcher::UpdateBindingsForContext(ScriptContext* context) {
     case Feature::CONTENT_SCRIPT_CONTEXT: {
       // Extension context; iterate through all the APIs and bind the available
       // ones.
-      FeatureProvider* api_feature_provider = FeatureProvider::GetAPIFeatures();
+      const FeatureProvider* api_feature_provider =
+          FeatureProvider::GetAPIFeatures();
       const std::vector<std::string>& apis =
           api_feature_provider->GetAllFeatureNames();
       for (std::vector<std::string>::const_iterator it = apis.begin();
@@ -1187,7 +1205,8 @@ v8::Handle<v8::Object> Dispatcher::GetOrCreateBindObjectIfAvailable(
   //  If app is available and app.window is not, just install app.
   //  If app.window is available and app is not, delete app and install
   //  app.window on a new object so app does not have to be loaded.
-  FeatureProvider* api_feature_provider = FeatureProvider::GetAPIFeatures();
+  const FeatureProvider* api_feature_provider =
+      FeatureProvider::GetAPIFeatures();
   std::string ancestor_name;
   bool only_ancestor_available = false;
 

@@ -24,7 +24,7 @@
 #include "core/events/MouseRelatedEvent.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderLayer.h"
@@ -110,7 +110,7 @@ void MouseRelatedEvent::initCoordinates(const LayoutPoint& clientLocation)
 
 static float pageZoomFactor(const UIEvent* event)
 {
-    DOMWindow* window = event->view();
+    LocalDOMWindow* window = event->view();
     if (!window)
         return 1;
     LocalFrame* frame = window->frame();
@@ -184,6 +184,8 @@ int MouseRelatedEvent::layerY()
 
 int MouseRelatedEvent::offsetX()
 {
+    if (isSimulated())
+        return 0;
     if (!m_hasCachedRelativePosition)
         computeRelativePosition();
     return roundToInt(m_offsetLocation.x());
@@ -191,6 +193,8 @@ int MouseRelatedEvent::offsetX()
 
 int MouseRelatedEvent::offsetY()
 {
+    if (isSimulated())
+        return 0;
     if (!m_hasCachedRelativePosition)
         computeRelativePosition();
     return roundToInt(m_offsetLocation.y());

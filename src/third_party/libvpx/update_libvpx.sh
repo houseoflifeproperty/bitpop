@@ -11,7 +11,7 @@
 
 # Usage:
 #
-# $ ./update_libvpx.sh [branch | revision | file containing a revision]
+# $ ./update_libvpx.sh [branch | revision | file or url containing a revision]
 # When specifying a branch it may be necessary to prefix with origin/
 
 # Tools required for running this tool:
@@ -33,6 +33,8 @@ if [ -n "$1" ]; then
   GIT_BRANCH="$1"
   if [ -f "$1"  ]; then
     GIT_BRANCH=$(<"$1")
+  elif [[ $1 = http* ]]; then
+    GIT_BRANCH=`curl $1`
   fi
 fi
 

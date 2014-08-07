@@ -29,7 +29,16 @@ namespace test {
 
 static const QuicConnectionId kTestConnectionId = 42;
 static const int kTestPort = 123;
-static const uint32 kInitialFlowControlWindowForTest = 32 * 1024;  // 32 KB
+static const uint32 kInitialStreamFlowControlWindowForTest =
+    32 * 1024;  // 32 KB
+static const uint32 kInitialSessionFlowControlWindowForTest =
+    64 * 1024;  // 64 KB
+
+// Data stream IDs start at 5: the crypto stream is 1, headers stream is 3.
+static const QuicStreamId kClientDataStreamId1 = 5;
+static const QuicStreamId kClientDataStreamId2 = 7;
+static const QuicStreamId kClientDataStreamId3 = 9;
+static const QuicStreamId kClientDataStreamId4 = 11;
 
 // Returns the test peer IP address.
 IPAddressNumber TestPeerIPAddress();
@@ -42,6 +51,9 @@ QuicVersion QuicVersionMin();
 
 // Returns an address for 127.0.0.1.
 IPAddressNumber Loopback4();
+
+// Returns an address for ::1.
+IPAddressNumber Loopback6();
 
 void GenerateBody(std::string* body, int length);
 
@@ -82,6 +94,18 @@ QuicVersionVector SupportedVersions(QuicVersion version);
 QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed,
                           QuicPacketSequenceNumber least_unacked);
 
+// Testing convenience method to construct a QuicAckFrame with |num_nack_ranges|
+// nack ranges of width 1 packet, starting from |least_unacked|.
+QuicAckFrame MakeAckFrameWithNackRanges(size_t num_nack_ranges,
+                                        QuicPacketSequenceNumber least_unacked);
+
+// Returns a SerializedPacket whose |packet| member is owned by the caller, and
+// is populated with the fields in |header| and |frames|, or is NULL if the
+// packet could not be created.
+SerializedPacket BuildUnsizedDataPacket(QuicFramer* framer,
+                                        const QuicPacketHeader& header,
+                                        const QuicFrames& frames);
+
 template<typename SaveType>
 class ValueRestore {
  public:
@@ -99,6 +123,25 @@ class ValueRestore {
   SaveType value_;
 
   DISALLOW_COPY_AND_ASSIGN(ValueRestore);
+};
+
+// Simple random number generator used to compute random numbers suitable
+// for pseudo-randomly dropping packets in tests.  It works by computing
+// the sha1 hash of the current seed, and using the first 64 bits as
+// the next random number, and the next seed.
+class SimpleRandom {
+ public:
+  SimpleRandom() : seed_(0) {}
+
+  // Returns a random number in the range [0, kuint64max].
+  uint64 RandUint64();
+
+  void set_seed(uint64 seed) { seed_ = seed; }
+
+ private:
+  uint64 seed_;
+
+  DISALLOW_COPY_AND_ASSIGN(SimpleRandom);
 };
 
 class MockFramerVisitor : public QuicFramerVisitorInterface {
@@ -194,7 +237,7 @@ class MockConnectionVisitor : public QuicConnectionVisitorInterface {
   MOCK_METHOD2(OnConnectionClosed, void(QuicErrorCode error, bool from_peer));
   MOCK_METHOD0(OnWriteBlocked, void());
   MOCK_METHOD0(OnCanWrite, void());
-  MOCK_CONST_METHOD0(HasPendingWrites, bool());
+  MOCK_CONST_METHOD0(WillingAndAbleToWrite, bool());
   MOCK_CONST_METHOD0(HasPendingHandshake, bool());
   MOCK_CONST_METHOD0(HasOpenDataStreams, bool());
   MOCK_METHOD1(OnSuccessfulVersionNegotiation,
@@ -305,11 +348,12 @@ class MockSession : public QuicSession {
   MOCK_METHOD1(CreateIncomingDataStream, QuicDataStream*(QuicStreamId id));
   MOCK_METHOD0(GetCryptoStream, QuicCryptoStream*());
   MOCK_METHOD0(CreateOutgoingDataStream, QuicDataStream*());
-  MOCK_METHOD5(WritevData,
+  MOCK_METHOD6(WritevData,
                QuicConsumedData(QuicStreamId id,
                                 const IOVector& data,
                                 QuicStreamOffset offset,
                                 bool fin,
+                                FecProtection fec_protection,
                                 QuicAckNotifier::DelegateInterface*));
   MOCK_METHOD2(OnStreamHeaders, void(QuicStreamId stream_id,
                                      base::StringPiece headers_data));
@@ -408,9 +452,10 @@ class MockSendAlgorithm : public SendAlgorithmInterface {
                bool(QuicTime, QuicByteCount, QuicPacketSequenceNumber,
                     QuicByteCount, HasRetransmittableData));
   MOCK_METHOD1(OnRetransmissionTimeout, void(bool));
-  MOCK_METHOD3(TimeUntilSend, QuicTime::Delta(QuicTime now,
-                                              QuicByteCount bytes_in_flight,
-                                              HasRetransmittableData));
+  MOCK_CONST_METHOD3(TimeUntilSend,
+                     QuicTime::Delta(QuicTime now,
+                                     QuicByteCount bytes_in_flight,
+                                     HasRetransmittableData));
   MOCK_CONST_METHOD0(BandwidthEstimate, QuicBandwidth(void));
   MOCK_METHOD1(OnRttUpdated, void(QuicPacketSequenceNumber));
   MOCK_CONST_METHOD0(RetransmissionDelay, QuicTime::Delta(void));

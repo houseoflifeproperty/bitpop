@@ -22,8 +22,8 @@
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/file_manager/open_util.h"
 #include "chrome/browser/chromeos/file_manager/volume_manager.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/screen_locker.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -64,7 +64,7 @@ void DirectoryExistsOnBlockingPool(const base::FilePath& directory_path,
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, success_callback);
   else
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, failure_callback);
-};
+}
 
 void DirectoryExistsOnUIThread(const base::FilePath& directory_path,
                                const base::Closure& success_callback,
@@ -77,7 +77,7 @@ void DirectoryExistsOnUIThread(const base::FilePath& directory_path,
                  directory_path,
                  success_callback,
                  failure_callback));
-};
+}
 
 // Constants for the "transferState" field of onFileTransferUpdated event.
 const char kFileTransferStateStarted[] = "started";
@@ -155,7 +155,7 @@ bool IsRecoveryToolRunning(Profile* profile) {
     return false;
 
   const std::string kRecoveryToolIds[] = {
-      "kkebgepbbgbcmghedmmdfcbdcodlkngh",  // Recovert tool staging
+      "kkebgepbbgbcmghedmmdfcbdcodlkngh",  // Recovery tool staging
       "jndclpdbaamdhonoechobihbbiimdgai"   // Recovery tool prod
   };
 
@@ -733,9 +733,10 @@ void EventRouter::DispatchDirectoryChangeEvent(
 void EventRouter::DispatchDirectoryChangeEventWithEntryDefinition(
     bool watcher_error,
     const EntryDefinition& entry_definition) {
-  if (entry_definition.error != base::File::FILE_OK) {
-    DVLOG(1) << "Unable to dispatch event because resolving the entry "
-             << "definition failed.";
+  if (entry_definition.error != base::File::FILE_OK ||
+      !entry_definition.is_directory) {
+    DVLOG(1) << "Unable to dispatch event because resolving the directory "
+             << "entry definition failed.";
     return;
   }
 

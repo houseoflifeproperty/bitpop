@@ -34,23 +34,24 @@ namespace WebCore {
 class MediaDevicesRequest;
 class UserMediaRequest;
 
-class UserMediaController FINAL : public Supplement<LocalFrame> {
+class UserMediaController FINAL : public NoBaseWillBeGarbageCollected<UserMediaController>, public WillBeHeapSupplement<LocalFrame> {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(UserMediaController);
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(UserMediaController);
 public:
-    virtual ~UserMediaController();
 
     UserMediaClient* client() const { return m_client; }
 
-    void requestUserMedia(PassRefPtr<UserMediaRequest>);
+    void requestUserMedia(PassRefPtrWillBeRawPtr<UserMediaRequest>);
     void cancelUserMediaRequest(UserMediaRequest*);
 
-    void requestMediaDevices(PassRefPtr<MediaDevicesRequest>);
+    void requestMediaDevices(PassRefPtrWillBeRawPtr<MediaDevicesRequest>);
     void cancelMediaDevicesRequest(MediaDevicesRequest*);
 
-    static PassOwnPtr<UserMediaController> create(UserMediaClient*);
+    static PassOwnPtrWillBeRawPtr<UserMediaController> create(UserMediaClient*);
     static const char* supplementName();
-    static UserMediaController* from(LocalFrame* frame) { return static_cast<UserMediaController*>(Supplement<LocalFrame>::from(frame, supplementName())); }
+    static UserMediaController* from(LocalFrame* frame) { return static_cast<UserMediaController*>(WillBeHeapSupplement<LocalFrame>::from(frame, supplementName())); }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { Supplement<LocalFrame>::trace(visitor); }
+    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<LocalFrame>::trace(visitor); }
 
 protected:
     explicit UserMediaController(UserMediaClient*);
@@ -59,7 +60,7 @@ private:
     UserMediaClient* m_client;
 };
 
-inline void UserMediaController::requestUserMedia(PassRefPtr<UserMediaRequest> request)
+inline void UserMediaController::requestUserMedia(PassRefPtrWillBeRawPtr<UserMediaRequest> request)
 {
     m_client->requestUserMedia(request);
 }
@@ -69,7 +70,7 @@ inline void UserMediaController::cancelUserMediaRequest(UserMediaRequest* reques
     m_client->cancelUserMediaRequest(request);
 }
 
-inline void UserMediaController::requestMediaDevices(PassRefPtr<MediaDevicesRequest> request)
+inline void UserMediaController::requestMediaDevices(PassRefPtrWillBeRawPtr<MediaDevicesRequest> request)
 {
     m_client->requestMediaDevices(request);
 }

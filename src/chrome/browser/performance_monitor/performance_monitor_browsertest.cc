@@ -43,7 +43,7 @@
 #include "extensions/common/extension.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chromeos/chromeos_switches.h"
 #endif
@@ -290,8 +290,10 @@ class PerformanceMonitorUncleanExitBrowserTest
  public:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     PerformanceMonitorBrowserTest::SetUpCommandLine(command_line);
-    if (GetParam())
-      command_line->AppendSwitch(::switches::kMultiProfiles);
+#if defined(OS_CHROMEOS)
+    command_line->AppendSwitch(
+        chromeos::switches::kIgnoreUserProfileMappingForTests);
+#endif
   }
 
   virtual bool SetUpUserDataDirectory() OVERRIDE {

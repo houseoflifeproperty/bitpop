@@ -52,7 +52,7 @@ InjectedScript::InjectedScript()
 {
 }
 
-InjectedScript::InjectedScript(ScriptObject injectedScriptObject, InspectedStateAccessCheck accessCheck)
+InjectedScript::InjectedScript(ScriptValue injectedScriptObject, InspectedStateAccessCheck accessCheck)
     : InjectedScriptBase("InjectedScript", injectedScriptObject, accessCheck)
 {
 }
@@ -221,7 +221,7 @@ Node* InjectedScript::nodeForObjectId(const String& objectId)
     ScriptValue resultValue = callFunctionWithEvalEnabled(function, hadException);
     ASSERT(!hadException);
 
-    return InjectedScriptHost::scriptValueAsNode(resultValue);
+    return InjectedScriptHost::scriptValueAsNode(scriptState(), resultValue);
 }
 
 void InjectedScript::releaseObject(const String& objectId)
@@ -242,7 +242,7 @@ PassRefPtr<Array<CallFrame> > InjectedScript::wrapCallFrames(const ScriptValue& 
     ScriptValue callFramesValue = callFunctionWithEvalEnabled(function, hadException);
     ASSERT(!hadException);
     RefPtr<JSONValue> result = callFramesValue.toJSONValue(scriptState());
-    if (result->type() == JSONValue::TypeArray)
+    if (result && result->type() == JSONValue::TypeArray)
         return Array<CallFrame>::runtimeCast(result);
     return Array<CallFrame>::create();
 }
@@ -295,21 +295,6 @@ ScriptValue InjectedScript::findObjectById(const String& objectId) const
     bool hadException = false;
     ScriptValue resultValue = callFunctionWithEvalEnabled(function, hadException);
     ASSERT(!hadException);
-    return resultValue;
-}
-
-ScriptValue InjectedScript::findCallFrameById(ErrorString* errorString, const ScriptValue& topCallFrame, const String& callFrameId)
-{
-    ScriptFunctionCall function(injectedScriptObject(), "callFrameForId");
-    function.appendArgument(topCallFrame);
-    function.appendArgument(callFrameId);
-    bool hadException = false;
-    ScriptValue resultValue = callFunctionWithEvalEnabled(function, hadException);
-    ASSERT(!hadException);
-    if (hadException || resultValue.isEmpty() || !resultValue.isObject()) {
-        *errorString = "Internal error";
-        return ScriptValue();
-    }
     return resultValue;
 }
 

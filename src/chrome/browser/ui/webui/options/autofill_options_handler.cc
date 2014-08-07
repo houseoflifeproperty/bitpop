@@ -162,16 +162,16 @@ void SetCountryData(const PersonalDataManager& manager,
   }
   localized_strings->Set("autofillCountrySelectList", country_list.release());
 
-  scoped_ptr<base::ListValue> defaultCountryComponents(new base::ListValue);
-  std::string defaultCountryLanguageCode;
+  scoped_ptr<base::ListValue> default_country_components(new base::ListValue);
+  std::string default_country_language_code;
   GetAddressComponents(countries.front()->country_code(),
                        g_browser_process->GetApplicationLocale(),
-                       defaultCountryComponents.get(),
-                       &defaultCountryLanguageCode);
+                       default_country_components.get(),
+                       &default_country_language_code);
   localized_strings->Set("autofillDefaultCountryComponents",
-                         defaultCountryComponents.release());
+                         default_country_components.release());
   localized_strings->SetString("autofillDefaultCountryLanguageCode",
-                               defaultCountryLanguageCode);
+                               default_country_language_code);
 }
 
 // Get the multi-valued element for |type| and return it in |ListValue| form.
@@ -333,6 +333,12 @@ void AutofillOptionsHandler::RegisterMessages() {
   personal_data_ = autofill::PersonalDataManagerFactory::GetForProfile(
       Profile::FromWebUI(web_ui()));
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  web_ui()->RegisterMessageCallback(
+      "accessAddressBook",
+      base::Bind(&AutofillOptionsHandler::AccessAddressBook,
+                 base::Unretained(this)));
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
   web_ui()->RegisterMessageCallback(
       "removeData",
       base::Bind(&AutofillOptionsHandler::RemoveData,
@@ -436,6 +442,12 @@ void AutofillOptionsHandler::LoadAutofillData() {
   web_ui()->CallJavascriptFunction("AutofillOptions.setCreditCardList",
                                    credit_cards);
 }
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+void AutofillOptionsHandler::AccessAddressBook(const base::ListValue* args) {
+  personal_data_->AccessAddressBook();
+}
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
 void AutofillOptionsHandler::RemoveData(const base::ListValue* args) {
   DCHECK(IsPersonalDataLoaded());

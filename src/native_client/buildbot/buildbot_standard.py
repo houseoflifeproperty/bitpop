@@ -15,76 +15,9 @@ import time
 from buildbot_lib import (
     BuildContext, BuildStatus, Command, EnsureDirectoryExists,
     ParseStandardCommandLine, RemoveDirectory, RemoveGypBuildDirectories,
-    RemoveSconsBuildDirectories, RunBuild, SCons, Step, StepLink,
-    StepText, TryToCleanContents)
-
-
-# Windows-specific environment manipulation
-def SetupWindowsEnvironment(context):
-  # Poke around looking for MSVC.  We should do something more principled in
-  # the future.
-
-  # The name of Program Files can differ, depending on the bittage of Windows.
-  program_files = r'c:\Program Files (x86)'
-  if not os.path.exists(program_files):
-    program_files = r'c:\Program Files'
-    if not os.path.exists(program_files):
-      raise Exception('Cannot find the Program Files directory!')
-
-  # The location of MSVC can differ depending on the version.
-  msvc_locs = [
-      ('Microsoft Visual Studio 12.0', 'VS120COMNTOOLS', '2013'),
-      ('Microsoft Visual Studio 10.0', 'VS100COMNTOOLS', '2010'),
-      ('Microsoft Visual Studio 9.0', 'VS90COMNTOOLS', '2008'),
-      ('Microsoft Visual Studio 8.0', 'VS80COMNTOOLS', '2005'),
-  ]
-
-  for dirname, comntools_var, gyp_msvs_version in msvc_locs:
-    msvc = os.path.join(program_files, dirname)
-    context.SetEnv('GYP_MSVS_VERSION', gyp_msvs_version)
-    if os.path.exists(msvc):
-      break
-  else:
-    # The break statement did not execute.
-    raise Exception('Cannot find MSVC!')
-
-  # Put MSVC in the path.
-  vc = os.path.join(msvc, 'VC')
-  comntools = os.path.join(msvc, 'Common7', 'Tools')
-  perf = os.path.join(msvc, 'Team Tools', 'Performance Tools')
-  context.SetEnv('PATH', os.pathsep.join([
-      context.GetEnv('PATH'),
-      vc,
-      comntools,
-      perf]))
-
-  # SCons needs this variable to find vsvars.bat.
-  # The end slash is needed because the batch files expect it.
-  context.SetEnv(comntools_var, comntools + '\\')
-
-  # This environment variable will SCons to print debug info while it searches
-  # for MSVC.
-  context.SetEnv('SCONS_MSCOMMON_DEBUG', '-')
-
-  # Needed for finding devenv.
-  context['msvc'] = msvc
-
-  # The context on other systems has GYP_DEFINES set, set it for windows to be
-  # able to save and restore without KeyError.
-  context.SetEnv('GYP_DEFINES', '')
-
-
-def SetupGypDefines(context, extra_vars=[]):
-  context.SetEnv('GYP_DEFINES', ' '.join(context['gyp_vars'] + extra_vars))
-
-
-def SetupLinuxEnvironment(context):
-  SetupGypDefines(context, ['target_arch='+context['gyp_arch']])
-
-
-def SetupMacEnvironment(context):
-  SetupGypDefines(context)
-  context.SetEnv('GYP_GENERATORS', 'ninja')
+    RemoveSconsBuildDirectories, RunBuild, SCons, SetupLinuxEnvironment,
+    SetupMacEnvironment, SetupWindowsEnvironment, SetupAndroidEnvironment,
+    Step, StepLink, StepText, TryToCleanContents)
 
 
 def SetupContextVars(context):
@@ -150,12 +83,11 @@ def CommandGypBuild(context):
              r'build\all.sln',
              '/build', context['gyp_mode']])
   elif context.Linux():
-    Command(context, cmd=['make', '-C', '..', '-k',
-                          '-j%d' % context['max_jobs'], 'V=1',
-                          'BUILDTYPE=' + context['gyp_mode']])
+    Command(context, cmd=[
+        'ninja', '-v', '-k', '0', '-C', '../out/' + context['gyp_mode']])
   elif context.Mac():
     Command(context, cmd=[
-        'ninja', '-k', '0', '-C', '../out/' + context['gyp_mode']])
+        'ninja', '-v', '-k', '0', '-C', '../out/' + context['gyp_mode']])
   else:
     raise Exception('Unknown platform')
 
@@ -177,7 +109,10 @@ def CommandGclientRunhooks(context):
   else:
     gclient = 'gclient'
   print 'Running gclient runhooks...'
-  print 'GYP_DEFINES=' + context.GetEnv('GYP_DEFINES')
+  print 'GYP_CROSSCOMPILE=' + context.GetEnv('GYP_CROSSCOMPILE', '')
+  print 'GYP_GENERATORS=' + context.GetEnv('GYP_GENERATORS', '')
+  print 'GYP_MSVS_VERSION=' + context.GetEnv('GYP_MSVS_VERSION', '')
+  print 'GYP_DEFINES=' + context.GetEnv('GYP_DEFINES', '')
   Command(context, cmd=[gclient, 'runhooks', '--force'])
 
 
@@ -222,7 +157,7 @@ def BuildScript(status, context):
           shell=True)
 
   # Skip over hooks when run inside the toolchain build because
-  # download_toolchains would overwrite the toolchain build.
+  # package_version would overwrite the toolchain build.
   if inside_toolchain:
     with Step('gyp_generate_only', status):
       CommandGypGenerate(context)
@@ -282,6 +217,15 @@ def BuildScript(status, context):
   with Step('checkdeps', status):
     Command(context, cmd=[sys.executable, 'tools/checkdeps/checkdeps.py'])
 
+  # Make sure our GN build is working.
+  if context.Linux() and context['arch'] == '64':
+    with Step('gn_compile', status):
+      Command(context,
+              cmd=['tools/gn/bin/linux/gn32', '--dotfile=../native_client/.gn',
+                   '--root=..', 'gen', '../out'])
+      Command(context, cmd=['ninja', '-C', '../out', '-j10', 'prep_toolchains'])
+      Command(context, cmd=['ninja', '-C', '../out', '-j10'])
+
   # Make sure our Gyp build is working.
   if not context['no_gyp']:
     with Step('gyp_compile', status):
@@ -311,6 +255,10 @@ def BuildScript(status, context):
     if slave_type != 'Trybot' and slave_type is not None:
       with Step('archive_coverage', status, halt_on_fail=True):
         ArchiveCoverage(context)
+    return
+
+  # Android bots don't run tests for now.
+  if context['android']:
     return
 
   ### BEGIN tests ###
@@ -374,7 +322,10 @@ def Main():
   if context.Windows():
     SetupWindowsEnvironment(context)
   elif context.Linux():
-    SetupLinuxEnvironment(context)
+    if context['android']:
+      SetupAndroidEnvironment(context)
+    else:
+      SetupLinuxEnvironment(context)
   elif context.Mac():
     SetupMacEnvironment(context)
   else:

@@ -48,7 +48,7 @@ Position InsertTextCommand::positionInsideTextNode(const Position& p)
 {
     Position pos = p;
     if (isTabSpanTextNode(pos.anchorNode())) {
-        RefPtr<Node> textNode = document().createEditingTextNode("");
+        RefPtrWillBeRawPtr<Node> textNode = document().createEditingTextNode("");
         insertNodeAtTabSpanPosition(textNode.get(), pos);
         return firstPositionInNode(textNode.get());
     }
@@ -56,7 +56,7 @@ Position InsertTextCommand::positionInsideTextNode(const Position& p)
     // Prepare for text input by looking at the specified position.
     // It may be necessary to insert a text node to receive characters.
     if (!pos.containerNode()->isTextNode()) {
-        RefPtr<Node> textNode = document().createEditingTextNode("");
+        RefPtrWillBeRawPtr<Node> textNode = document().createEditingTextNode("");
         insertNodeAt(textNode.get(), pos);
         return firstPositionInNode(textNode.get());
     }
@@ -100,7 +100,7 @@ bool InsertTextCommand::performTrivialReplace(const String& text, bool selectIns
 bool InsertTextCommand::performOverwrite(const String& text, bool selectInsertedText)
 {
     Position start = endingSelection().start();
-    RefPtr<Text> textNode = start.containerText();
+    RefPtrWillBeRawPtr<Text> textNode = start.containerText();
     if (!textNode)
         return false;
 
@@ -194,7 +194,7 @@ void InsertTextCommand::doApply()
         ASSERT(startPosition.containerNode()->isTextNode());
         if (placeholder.isNotNull())
             removePlaceholderAt(placeholder);
-        RefPtr<Text> textNode = startPosition.containerText();
+        RefPtrWillBeRawPtr<Text> textNode = startPosition.containerText();
         const unsigned offset = startPosition.offsetInContainerNode();
 
         insertTextIntoNode(textNode, offset, m_text);
@@ -216,7 +216,7 @@ void InsertTextCommand::doApply()
     setEndingSelectionWithoutValidation(startPosition, endPosition);
 
     // Handle the case where there is a typing style.
-    if (RefPtr<EditingStyle> typingStyle = document().frame()->selection().typingStyle()) {
+    if (RefPtrWillBeRawPtr<EditingStyle> typingStyle = document().frame()->selection().typingStyle()) {
         typingStyle->prepareToApplyAt(endPosition, EditingStyle::PreserveWritingDirection);
         if (!typingStyle->isEmpty())
             applyStyle(typingStyle.get());
@@ -229,25 +229,27 @@ void InsertTextCommand::doApply()
 Position InsertTextCommand::insertTab(const Position& pos)
 {
     Position insertPos = VisiblePosition(pos, DOWNSTREAM).deepEquivalent();
+    if (insertPos.isNull())
+        return pos;
 
     Node* node = insertPos.containerNode();
     unsigned offset = node->isTextNode() ? insertPos.offsetInContainerNode() : 0;
 
     // keep tabs coalesced in tab span
     if (isTabSpanTextNode(node)) {
-        RefPtr<Text> textNode = toText(node);
+        RefPtrWillBeRawPtr<Text> textNode = toText(node);
         insertTextIntoNode(textNode, offset, "\t");
         return Position(textNode.release(), offset + 1);
     }
 
     // create new tab span
-    RefPtr<Element> spanNode = createTabSpanElement(document());
+    RefPtrWillBeRawPtr<Element> spanNode = createTabSpanElement(document());
 
     // place it
     if (!node->isTextNode()) {
         insertNodeAt(spanNode.get(), insertPos);
     } else {
-        RefPtr<Text> textNode = toText(node);
+        RefPtrWillBeRawPtr<Text> textNode = toText(node);
         if (offset >= textNode->length())
             insertNodeAfter(spanNode, textNode.release());
         else {

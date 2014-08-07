@@ -74,6 +74,8 @@ const char* Target::GetStringForOutputType(OutputType type) {
       return "Shared library";
     case STATIC_LIBRARY:
       return "Static library";
+    case SOURCE_SET:
+      return "Source set";
     case COPY_FILES:
       return "Copy";
     case ACTION:
@@ -100,8 +102,7 @@ void Target::OnResolved() {
   // group's deps. We insert the new deps immediately after the group so that
   // the ordering is preserved. We need to keep the original group so that any
   // flags, etc. that it specifies itself are applied to us.
-  size_t original_deps_size = deps_.size();
-  for (size_t i = 0; i < original_deps_size; i++) {
+  for (size_t i = 0; i < deps_.size(); i++) {
     const Target* dep = deps_[i].ptr;
     if (dep->output_type_ == GROUP) {
       deps_.insert(deps_.begin() + i + 1, dep->deps_.begin(), dep->deps_.end());
@@ -211,7 +212,13 @@ void Target::PullRecursiveHardDeps() {
     const Target* dep = deps_[dep_i].ptr;
     if (dep->hard_dep())
       recursive_hard_deps_.insert(dep);
-    recursive_hard_deps_.insert(dep->recursive_hard_deps().begin(),
-                                dep->recursive_hard_deps().end());
+
+    // Android STL doesn't like insert(begin, end) so do it manually.
+    // TODO(brettw) this can be changed to insert(dep->begin(), dep->end()) when
+    // Android uses a better STL.
+    for (std::set<const Target*>::const_iterator cur =
+             dep->recursive_hard_deps().begin();
+         cur != dep->recursive_hard_deps().end(); ++cur)
+      recursive_hard_deps_.insert(*cur);
   }
 }

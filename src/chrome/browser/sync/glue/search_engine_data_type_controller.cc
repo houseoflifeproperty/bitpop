@@ -8,7 +8,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
-#include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/syncable_service.h"
@@ -18,16 +17,21 @@ using content::BrowserThread;
 namespace browser_sync {
 
 SearchEngineDataTypeController::SearchEngineDataTypeController(
-    ProfileSyncComponentsFactory* profile_sync_factory,
+    SyncApiComponentFactory* sync_factory,
     Profile* profile,
-    ProfileSyncService* sync_service)
+    const DisableTypeCallback& disable_callback)
     : UIDataTypeController(
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
           base::Bind(&ChromeReportUnrecoverableError),
+          disable_callback,
           syncer::SEARCH_ENGINES,
-          profile_sync_factory,
-          profile,
-          sync_service) {
+          sync_factory),
+      profile_(profile) {
+}
+
+TemplateURLService::Subscription*
+SearchEngineDataTypeController::GetSubscriptionForTesting() {
+  return template_url_subscription_.get();
 }
 
 SearchEngineDataTypeController::~SearchEngineDataTypeController() {}
@@ -51,6 +55,10 @@ bool SearchEngineDataTypeController::StartModels() {
                  this));
 
   return false;  // Don't continue Start.
+}
+
+void SearchEngineDataTypeController::StopModels() {
+  template_url_subscription_.reset();
 }
 
 void SearchEngineDataTypeController::OnTemplateURLServiceLoaded() {

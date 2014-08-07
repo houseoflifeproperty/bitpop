@@ -235,10 +235,15 @@ SiteInstance* GetSiteInstanceFromEntry(NavigationEntry* entry) {
 class TestWebContentsDelegate : public WebContentsDelegate {
  public:
   explicit TestWebContentsDelegate() :
-      navigation_state_change_count_(0) {}
+      navigation_state_change_count_(0),
+      repost_form_warning_count_(0) {}
 
   int navigation_state_change_count() {
     return navigation_state_change_count_;
+  }
+
+  int repost_form_warning_count() {
+    return repost_form_warning_count_;
   }
 
   // Keep track of whether the tab has notified us of a navigation state change.
@@ -247,9 +252,16 @@ class TestWebContentsDelegate : public WebContentsDelegate {
     navigation_state_change_count_++;
   }
 
+  virtual void ShowRepostFormWarningDialog(WebContents* source) OVERRIDE {
+    repost_form_warning_count_++;
+  }
+
  private:
   // The number of times NavigationStateChanged has been called.
   int navigation_state_change_count_;
+
+  // The number of times ShowRepostFormWarningDialog() was called.
+  int repost_form_warning_count_;
 };
 
 // -----------------------------------------------------------------------------
@@ -529,7 +541,7 @@ TEST_F(NavigationControllerTest, LoadURLWithExtraParams_Data) {
       GURL("data:text/html,dataurl"));
   load_params.load_type = NavigationController::LOAD_TYPE_DATA;
   load_params.base_url_for_data_url = GURL("http://foo");
-  load_params.virtual_url_for_data_url = GURL(kAboutBlankURL);
+  load_params.virtual_url_for_data_url = GURL(url::kAboutBlankURL);
   load_params.override_user_agent = NavigationController::UA_OVERRIDE_FALSE;
 
   controller.LoadURLWithParams(load_params);
@@ -905,7 +917,7 @@ TEST_F(NavigationControllerTest, LoadURL_IgnorePreemptsPending) {
   contents()->SetDelegate(delegate.get());
 
   // Without any navigations, the renderer starts at about:blank.
-  const GURL kExistingURL(kAboutBlankURL);
+  const GURL kExistingURL(url::kAboutBlankURL);
 
   // Now make a pending new navigation.
   const GURL kNewURL("http://eh");
@@ -1218,7 +1230,7 @@ TEST_F(NavigationControllerTest, ReloadWithGuest) {
   NavigationEntryImpl* entry1 =
       NavigationEntryImpl::FromNavigationEntry(controller.GetVisibleEntry());
   reinterpret_cast<MockRenderProcessHost*>(
-      entry1->site_instance()->GetProcess())->SetIsGuest(true);
+      entry1->site_instance()->GetProcess())->set_is_isolated_guest(true);
 
   // And reload.
   controller.Reload(true);
@@ -2151,6 +2163,7 @@ TEST_F(NavigationControllerTest, InPage_Replace) {
   params.gesture = NavigationGestureUser;
   params.is_post = false;
   params.page_state = PageState::CreateFromURL(url2);
+  params.was_within_same_page = true;
 
   // This should NOT generate a new entry, nor prune the list.
   LoadCommittedDetails details;
@@ -2202,6 +2215,7 @@ TEST_F(NavigationControllerTest, ClientRedirectAfterInPageNavigation) {
     params.gesture = NavigationGestureUnknown;
     params.is_post = false;
     params.page_state = PageState::CreateFromURL(url);
+    params.was_within_same_page = true;
 
     // This should NOT generate a new entry, nor prune the list.
     LoadCommittedDetails details;
@@ -2247,6 +2261,19 @@ TEST_F(NavigationControllerTest, ClientRedirectAfterInPageNavigation) {
     navigation_entry_committed_counter_ = 0;
     EXPECT_EQ(url, controller.GetVisibleEntry()->GetURL());
   }
+}
+
+TEST_F(NavigationControllerTest, PushStateWithoutPreviousEntry)
+{
+  ASSERT_FALSE(controller_impl().GetLastCommittedEntry());
+  FrameHostMsg_DidCommitProvisionalLoad_Params params;
+  GURL url("http://foo");
+  params.page_id = 1;
+  params.url = url;
+  params.page_state = PageState::CreateFromURL(url);
+  params.was_within_same_page = true;
+  test_rvh()->SendNavigateWithParams(&params);
+  // We pass if we don't crash.
 }
 
 // NotificationObserver implementation used in verifying we've received the
@@ -3052,21 +3079,28 @@ TEST_F(NavigationControllerTest, IsInPageNavigation) {
   main_test_rfh()->SendNavigate(0, url);
 
   // Reloading the page is not an in-page navigation.
-  EXPECT_FALSE(controller.IsURLInPageNavigation(url));
+  EXPECT_FALSE(controller.IsURLInPageNavigation(url, false,
+      NAVIGATION_TYPE_UNKNOWN));
   const GURL other_url("http://www.google.com/add.html");
-  EXPECT_FALSE(controller.IsURLInPageNavigation(other_url));
+  EXPECT_FALSE(controller.IsURLInPageNavigation(other_url, false,
+      NAVIGATION_TYPE_UNKNOWN));
   const GURL url_with_ref("http://www.google.com/home.html#my_ref");
-  EXPECT_TRUE(controller.IsURLInPageNavigation(url_with_ref));
+  EXPECT_TRUE(controller.IsURLInPageNavigation(url_with_ref, true,
+      NAVIGATION_TYPE_UNKNOWN));
 
   // Navigate to URL with refs.
   main_test_rfh()->SendNavigate(1, url_with_ref);
 
   // Reloading the page is not an in-page navigation.
-  EXPECT_FALSE(controller.IsURLInPageNavigation(url_with_ref));
-  EXPECT_FALSE(controller.IsURLInPageNavigation(url));
-  EXPECT_FALSE(controller.IsURLInPageNavigation(other_url));
+  EXPECT_FALSE(controller.IsURLInPageNavigation(url_with_ref, false,
+      NAVIGATION_TYPE_UNKNOWN));
+  EXPECT_FALSE(controller.IsURLInPageNavigation(url, false,
+      NAVIGATION_TYPE_UNKNOWN));
+  EXPECT_FALSE(controller.IsURLInPageNavigation(other_url, false,
+      NAVIGATION_TYPE_UNKNOWN));
   const GURL other_url_with_ref("http://www.google.com/home.html#my_other_ref");
-  EXPECT_TRUE(controller.IsURLInPageNavigation(other_url_with_ref));
+  EXPECT_TRUE(controller.IsURLInPageNavigation(other_url_with_ref, true,
+      NAVIGATION_TYPE_UNKNOWN));
 
   // Going to the same url again will be considered in-page
   // if the renderer says it is even if the navigation type isn't IN_PAGE.
@@ -3077,6 +3111,17 @@ TEST_F(NavigationControllerTest, IsInPageNavigation) {
   // type is IN_PAGE.
   EXPECT_TRUE(controller.IsURLInPageNavigation(url, true,
       NAVIGATION_TYPE_IN_PAGE));
+
+  // If the renderer says this is a same-origin in-page navigation, believe it.
+  // This is the pushState/replaceState case.
+  EXPECT_TRUE(controller.IsURLInPageNavigation(other_url, true,
+      NAVIGATION_TYPE_UNKNOWN));
+
+  // Don't believe the renderer if it claims a cross-origin navigation is
+  // in-page.
+  const GURL different_origin_url("http://www.example.com");
+  EXPECT_FALSE(controller.IsURLInPageNavigation(different_origin_url, true,
+      NAVIGATION_TYPE_UNKNOWN));
 }
 
 // Some pages can have subframes with the same base URL (minus the reference) as
@@ -4175,6 +4220,30 @@ TEST_F(NavigationControllerTest, MAYBE_PurgeScreenshot) {
   }
 }
 
+TEST_F(NavigationControllerTest, PushStateUpdatesTitle) {
+
+  // Navigate
+  test_rvh()->SendNavigate(1, GURL("http://foo"));
+
+  // Set title
+  base::string16 title(base::ASCIIToUTF16("Title"));
+  controller().GetLastCommittedEntry()->SetTitle(title);
+
+  // history.pushState() is called.
+  FrameHostMsg_DidCommitProvisionalLoad_Params params;
+  GURL url("http://foo#foo");
+  params.page_id = 2;
+  params.url = url;
+  params.page_state = PageState::CreateFromURL(url);
+  params.was_within_same_page = true;
+  test_rvh()->SendNavigateWithParams(&params);
+
+  // The title should immediately be visible on the new NavigationEntry.
+  base::string16 new_title =
+      controller().GetLastCommittedEntry()->GetTitleForDisplay(std::string());
+  EXPECT_EQ(title, new_title);
+}
+
 // Test that the navigation controller clears its session history when a
 // navigation commits with the clear history list flag set.
 TEST_F(NavigationControllerTest, ClearHistoryList) {
@@ -4222,6 +4291,42 @@ TEST_F(NavigationControllerTest, ClearHistoryList) {
   EXPECT_FALSE(controller.CanGoBack());
   EXPECT_FALSE(controller.CanGoForward());
   EXPECT_EQ(url4, controller.GetVisibleEntry()->GetURL());
+}
+
+TEST_F(NavigationControllerTest, PostThenReplaceStateThenReload) {
+  scoped_ptr<TestWebContentsDelegate> delegate(new TestWebContentsDelegate());
+  EXPECT_FALSE(contents()->GetDelegate());
+  contents()->SetDelegate(delegate.get());
+
+  // Submit a form.
+  GURL url("http://foo");
+  FrameHostMsg_DidCommitProvisionalLoad_Params params;
+  params.page_id = 1;
+  params.url = url;
+  params.transition = PAGE_TRANSITION_FORM_SUBMIT;
+  params.gesture = NavigationGestureUser;
+  params.page_state = PageState::CreateFromURL(url);
+  params.was_within_same_page = false;
+  params.is_post = true;
+  params.post_id = 2;
+  test_rvh()->SendNavigateWithParams(&params);
+
+  // history.replaceState() is called.
+  GURL replace_url("http://foo#foo");
+  params.page_id = 1;
+  params.url = replace_url;
+  params.transition = PAGE_TRANSITION_LINK;
+  params.gesture = NavigationGestureUser;
+  params.page_state = PageState::CreateFromURL(replace_url);
+  params.was_within_same_page = true;
+  params.is_post = false;
+  params.post_id = -1;
+  test_rvh()->SendNavigateWithParams(&params);
+
+  // Now reload. replaceState overrides the POST, so we should not show a
+  // repost warning dialog.
+  controller_impl().Reload(true);
+  EXPECT_EQ(0, delegate->repost_form_warning_count());
 }
 
 }  // namespace content

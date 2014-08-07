@@ -148,7 +148,7 @@ void OmniboxProvider::Start(const base::string16& query) {
                                        base::string16::npos,
                                        base::string16(),
                                        GURL(),
-                                       AutocompleteInput::INVALID_SPEC,
+                                       metrics::OmniboxEventProto::INVALID_SPEC,
                                        false,
                                        false,
                                        true,
@@ -167,8 +167,7 @@ void OmniboxProvider::PopulateFromACResult(const AutocompleteResult& result) {
     if (!it->destination_url.is_valid())
       continue;
 
-    Add(scoped_ptr<ChromeSearchResult>(
-        new OmniboxResult(profile_, *it)).Pass());
+    Add(scoped_ptr<SearchResult>(new OmniboxResult(profile_, *it)));
   }
 }
 

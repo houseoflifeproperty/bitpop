@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/values.h"
 #include "chromeos/network/network_state.h"
+#include "chromeos/network/network_util.h"
 #include "chromeos/network/onc/onc_signature.h"
 #include "chromeos/network/onc/onc_translation_tables.h"
 #include "chromeos/network/shill_property_util.h"
@@ -262,6 +263,32 @@ void ShillToONCTranslator::TranslateCellularWithState() {
           shill::kCellularApnListProperty, &shill_apns)) {
     TranslateAndAddListOfObjects(::onc::cellular::kAPNList, *shill_apns);
   }
+
+  const base::DictionaryValue* device_dictionary = NULL;
+  if (!shill_dictionary_->GetDictionaryWithoutPathExpansion(
+          shill::kDeviceProperty, &device_dictionary)) {
+    return;
+  }
+
+  // Iterate through all fields of the CellularWithState signature and copy
+  // values from the device properties according to the separate
+  // CellularDeviceTable.
+  for (const OncFieldSignature* field_signature = onc_signature_->fields;
+       field_signature->onc_field_name != NULL; ++field_signature) {
+    const std::string& onc_field_name = field_signature->onc_field_name;
+
+    std::string shill_property_name;
+    const base::Value* shill_value = NULL;
+    if (!GetShillPropertyName(field_signature->onc_field_name,
+                              kCellularDeviceTable,
+                              &shill_property_name) ||
+        !device_dictionary->GetWithoutPathExpansion(shill_property_name,
+                                                    &shill_value)) {
+      continue;
+    }
+    onc_object_->SetWithoutPathExpansion(onc_field_name,
+                                         shill_value->DeepCopy());
+  }
 }
 
 void ShillToONCTranslator::TranslateNetworkWithState() {
@@ -276,6 +303,7 @@ void ShillToONCTranslator::TranslateNetworkWithState() {
     TranslateStringToONC(
         kNetworkTypeTable, shill_network_type, &onc_network_type);
   }
+  // Translate nested Cellular, WiFi, etc. properties.
   if (!onc_network_type.empty()) {
     onc_object_->SetStringWithoutPathExpansion(::onc::network_config::kType,
                                                onc_network_type);
@@ -290,6 +318,7 @@ void ShillToONCTranslator::TranslateNetworkWithState() {
   onc_object_->SetStringWithoutPathExpansion(::onc::network_config::kName,
                                              name);
 
+  // Limit ONC state to "NotConnected", "Connected", or "Connecting".
   std::string state;
   if (shill_dictionary_->GetStringWithoutPathExpansion(shill::kStateProperty,
                                                        &state)) {
@@ -303,8 +332,19 @@ void ShillToONCTranslator::TranslateNetworkWithState() {
         ::onc::network_config::kConnectionState, onc_state);
   }
 
-  // Shill's Service has an IPConfig property (note the singular, and not a
-  // IPConfigs property). However, we require the caller of the translation to
+  // Use a human-readable aa:bb format for any hardware MAC address. Note:
+  // this property is provided by the caller but is not part of the Shill
+  // Service properties (it is copied from the Device properties).
+  std::string address;
+  if (shill_dictionary_->GetStringWithoutPathExpansion(shill::kAddressProperty,
+                                                       &address)) {
+    onc_object_->SetStringWithoutPathExpansion(
+        ::onc::network_config::kMacAddress,
+        network_util::FormattedMacAddress(address));
+  }
+
+  // Shill's Service has an IPConfig property (note the singular), not an
+  // IPConfigs property. However, we require the caller of the translation to
   // patch the Shill dictionary before passing it to the translator.
   const base::ListValue* shill_ipconfigs = NULL;
   if (shill_dictionary_->GetListWithoutPathExpansion(shill::kIPConfigsProperty,

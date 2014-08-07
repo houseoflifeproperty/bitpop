@@ -1361,6 +1361,7 @@ util.getEntryLabel = function(volumeManager, entry) {
       case VolumeManagerCommon.RootType.ARCHIVE:
       case VolumeManagerCommon.RootType.REMOVABLE:
       case VolumeManagerCommon.RootType.MTP:
+      case VolumeManagerCommon.RootType.PROVIDED:
         return locationInfo.volumeInfo.label;
       default:
         console.error('Unsupported root type: ' + locationInfo.rootType);
@@ -1369,4 +1370,17 @@ util.getEntryLabel = function(volumeManager, entry) {
   }
 
   return entry.name;
+};
+
+/**
+ * Checks if the specified set of allowed effects contains the given effect.
+ * See: http://www.w3.org/TR/html5/editing.html#the-datatransfer-interface
+ *
+ * @param {string} effectAllowed The string denoting the set of allowed effects.
+ * @param {string} dropEffect The effect to be checked.
+ * @return {boolean} True if |dropEffect| is included in |effectAllowed|.
+ */
+util.isDropEffectAllowed = function(effectAllowed, dropEffect) {
+  return effectAllowed === 'all' ||
+      effectAllowed.toLowerCase().indexOf(dropEffect) !== -1;
 };

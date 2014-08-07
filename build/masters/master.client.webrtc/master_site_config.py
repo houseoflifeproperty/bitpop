@@ -21,3 +21,4 @@ class WebRTC(Master.Master3):
   tree_status_url = base_app_url + '/status'
   store_revisions_url = base_app_url + '/revisions'
   last_good_url = base_app_url + '/lkgr'
+  buildbot_url = 'http://build.chromium.org/p/client.webrtc/'

@@ -27,10 +27,9 @@ namespace password_manager {
 class ContentPasswordManagerDriver : public PasswordManagerDriver,
                                      public content::WebContentsObserver {
  public:
-  ContentPasswordManagerDriver(
-      content::WebContents* web_contents,
-      PasswordManagerClient* client,
-      autofill::AutofillManagerDelegate* autofill_manager_delegate);
+  ContentPasswordManagerDriver(content::WebContents* web_contents,
+                               PasswordManagerClient* client,
+                               autofill::AutofillClient* autofill_client);
   virtual ~ContentPasswordManagerDriver();
 
   // PasswordManagerDriver implementation.
@@ -42,9 +41,11 @@ class ContentPasswordManagerDriver : public PasswordManagerDriver,
       OVERRIDE;
   virtual void AccountCreationFormsFound(
       const std::vector<autofill::FormData>& forms) OVERRIDE;
-  virtual void AcceptPasswordAutofillSuggestion(
-      const base::string16& username,
-      const base::string16& password) OVERRIDE;
+  virtual void FillSuggestion(const base::string16& username,
+                              const base::string16& password) OVERRIDE;
+  virtual void PreviewSuggestion(const base::string16& username,
+                                 const base::string16& password) OVERRIDE;
+  virtual void ClearPreviewedForm() OVERRIDE;
 
   virtual PasswordGenerationManager* GetPasswordGenerationManager() OVERRIDE;
   virtual PasswordManager* GetPasswordManager() OVERRIDE;

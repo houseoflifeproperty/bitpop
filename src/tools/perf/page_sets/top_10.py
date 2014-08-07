@@ -22,8 +22,7 @@ class Google(SimpleScrollPage):
 
   def RunNavigateSteps(self, action_runner):
     super(Google, self).RunNavigateSteps(action_runner)
-    action_runner.RunAction(WaitAction(
-      {'condition': 'element', 'text': 'Next'}))
+    action_runner.WaitForElement(text='Next')
 
 
 class Gmail(SimpleScrollPage):
@@ -35,9 +34,9 @@ class Gmail(SimpleScrollPage):
 
   def RunNavigateSteps(self, action_runner):
     super(Gmail, self).RunNavigateSteps(action_runner)
-    action_runner.RunAction(WaitAction(
-      {'javascript' : 'window.gmonkey !== undefined &&'
-       'document.getElementById("gb") !== null'}))
+    action_runner.WaitForJavaScriptCondition(
+        'window.gmonkey !== undefined &&'
+        'document.getElementById("gb") !== null')
 
 
 class GoogleCalendar(SimpleScrollPage):
@@ -49,15 +48,14 @@ class GoogleCalendar(SimpleScrollPage):
 
   def RunNavigateSteps(self, action_runner):
     super(GoogleCalendar, self).RunNavigateSteps(action_runner)
-    action_runner.RunAction(JavascriptAction(
-      { 'expression' :
-       '(function() { var elem = document.createElement("meta");'
-      'elem.name="viewport";'
-      'elem.content="initial-scale=1";'
-      'document.body.appendChild(elem); })();'}))
-    action_runner.RunAction(WaitAction({'seconds' : 2}))
-    action_runner.RunAction(WaitAction({
-      'condition' : 'element', 'selector' : 'div[class~="navForward"]'}))
+    action_runner.ExecuteJavaScript('''
+        (function() { var elem = document.createElement("meta");
+          elem.name="viewport";
+          elem.content="initial-scale=1";
+          document.body.appendChild(elem);
+        })();''')
+    action_runner.Wait(2)
+    action_runner.WaitForElement('div[class~="navForward"]')
 
 
 class Youtube(SimpleScrollPage):
@@ -69,7 +67,7 @@ class Youtube(SimpleScrollPage):
 
   def RunNavigateSteps(self, action_runner):
     super(Youtube, self).RunNavigateSteps(action_runner)
-    action_runner.RunAction(WaitAction({'seconds' : 2}))
+    action_runner.Wait(2)
 
 
 class Facebook(SimpleScrollPage):
@@ -82,23 +80,25 @@ class Facebook(SimpleScrollPage):
 
   def RunNavigateSteps(self, action_runner):
     super(Facebook, self).RunNavigateSteps(action_runner)
-    action_runner.RunAction(WaitAction(
-      {'condition': 'element', 'text': 'About'}))
+    action_runner.WaitForElement(text='About')
 
 
 class Top10PageSet(page_set_module.PageSet):
+  """10 Pages chosen from Alexa top sites"""
+
   def __init__(self):
     super(Top10PageSet, self).__init__(
-      description='10 Pages chosen from Alexa top sites',
       archive_data_file='data/top_10.json',
       credentials_path='data/credentials.json',
-      user_agent_type='desktop')
+      user_agent_type='desktop',
+      bucket=page_set_module.PARTNER_BUCKET)
 
     # top google property; a google tab is often open
     self.AddPage(Google(self))
 
     # productivity, top google properties
-    self.AddPage(Gmail(self))
+    # TODO(dominikg): fix crbug.com/386152
+    #self.AddPage(Gmail(self))
 
     # productivity, top google properties
     self.AddPage(GoogleCalendar(self))

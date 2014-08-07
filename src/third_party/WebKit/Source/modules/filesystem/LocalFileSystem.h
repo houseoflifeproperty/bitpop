@@ -31,18 +31,21 @@
 #ifndef LocalFileSystem_h
 #define LocalFileSystem_h
 
-#include "core/page/Page.h"
 #include "core/workers/WorkerClients.h"
 #include "platform/FileSystemType.h"
 #include "wtf/Forward.h"
+#include "wtf/Functional.h"
 
 namespace WebCore {
 
 class AsyncFileSystemCallbacks;
+class CallbackWrapper;
 class FileSystemClient;
 class ExecutionContext;
+class KURL;
+class LocalFrame;
 
-class LocalFileSystem FINAL : public NoBaseWillBeGarbageCollectedFinalized<LocalFileSystem>, public WillBeHeapSupplement<Page>, public WillBeHeapSupplement<WorkerClients> {
+class LocalFileSystem FINAL : public NoBaseWillBeGarbageCollectedFinalized<LocalFileSystem>, public WillBeHeapSupplement<LocalFrame>, public WillBeHeapSupplement<WorkerClients> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LocalFileSystem);
     WTF_MAKE_NONCOPYABLE(LocalFileSystem);
 public:
@@ -60,13 +63,19 @@ public:
 
     virtual void trace(Visitor* visitor) OVERRIDE
     {
-        WillBeHeapSupplement<Page>::trace(visitor);
+        WillBeHeapSupplement<LocalFrame>::trace(visitor);
         WillBeHeapSupplement<WorkerClients>::trace(visitor);
     }
 
 protected:
     explicit LocalFileSystem(PassOwnPtr<FileSystemClient>);
 
+private:
+    void requestFileSystemAccessInternal(ExecutionContext*, const Closure& allowed, const Closure& denied);
+    void fileSystemNotAllowedInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, PassRefPtr<CallbackWrapper>);
+    void fileSystemAllowedInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, FileSystemType, PassRefPtr<CallbackWrapper>);
+    void resolveURLInternal(const KURL&, PassRefPtr<CallbackWrapper>);
+    void deleteFileSystemInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, FileSystemType, PassRefPtr<CallbackWrapper>);
     OwnPtr<FileSystemClient> m_client;
 };
 

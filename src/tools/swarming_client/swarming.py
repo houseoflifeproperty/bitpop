@@ -5,7 +5,7 @@
 
 """Client tool to trigger tasks or retrieve results from a Swarming server."""
 
-__version__ = '0.4.7'
+__version__ = '0.4.9'
 
 import datetime
 import getpass
@@ -59,13 +59,11 @@ class Failure(Exception):
 
 
 class Manifest(object):
-  """Represents a Swarming task manifest.
+  """Represents a Swarming task manifest."""
 
-  Also includes code to zip code and upload itself.
-  """
   def __init__(
       self, isolate_server, namespace, isolated_hash, task_name, extra_args,
-      shards, env, dimensions, working_dir, deadline, verbose, profile,
+      env, dimensions, deadline, verbose, profile,
       priority):
     """Populates a manifest object.
       Args:
@@ -74,10 +72,8 @@ class Manifest(object):
         isolated_hash - the manifest's sha-1 that the slave is going to fetch.
         task_name - the name to give the task request.
         extra_args - additional arguments to pass to isolated command.
-        shards - the number of swarming shards to request.
         env - environment variables to set.
         dimensions - dimensions to filter the task on.
-        working_dir - relative working directory to start the script.
         deadline - maximum pending time before this task expires.
         verbose - if True, have the slave print more details.
         profile - if True, have the slave print more timing data.
@@ -85,28 +81,17 @@ class Manifest(object):
     """
     self.isolate_server = isolate_server
     self.namespace = namespace
-    # The reason is that swarm_bot doesn't understand compressed data yet. So
-    # the data to be downloaded by swarm_bot is in 'default', independent of
-    # what run_isolated.py is going to fetch.
-    self.storage = isolateserver.get_storage(isolate_server, 'default')
-
     self.isolated_hash = isolated_hash
+    self.task_name = task_name
     self.extra_args = tuple(extra_args or [])
-    self.bundle = zip_package.ZipPackage(ROOT_DIR)
-
-    self._task_name = task_name
-    self._shards = shards
-    self._env = env.copy()
-    self._dimensions = dimensions.copy()
-    self._working_dir = working_dir
-    self._deadline = deadline
-
+    self.env = env.copy()
+    self.dimensions = dimensions.copy()
+    self.deadline = deadline
     self.verbose = bool(verbose)
     self.profile = bool(profile)
     self.priority = priority
-
-    self._isolate_item = None
     self._tasks = []
+    self._files = []
 
   def add_task(self, task_name, actions, time_out=2*60*60):
     """Appends a new task as a TestObject to the swarming manifest file.
@@ -118,7 +103,6 @@ class Manifest(object):
     See TestObject in services/swarming/src/common/test_request_message.py for
     the valid format.
     """
-    assert not self._isolate_item
     self._tasks.append(
         {
           'action': actions,
@@ -127,13 +111,19 @@ class Manifest(object):
           'hard_time_out': time_out,
         })
 
+  def add_bundled_file(self, file_name, file_url):
+    """Appends a file to the manifest.
+
+    File will be downloaded and extracted by the swarm bot before launching the
+    task.
+    """
+    self._files.append([file_url, file_name])
+
   def to_json(self):
     """Exports the current configuration into a swarm-readable manifest file.
 
     The actual serialization format is defined as a TestCase object as described
     in services/swarming/src/common/test_request_message.py
-
-    This function doesn't mutate the object.
     """
     request = {
       'cleanup': 'root',
@@ -141,37 +131,17 @@ class Manifest(object):
         # Is a TestConfiguration.
         {
           'config_name': 'isolated',
-          'deadline_to_run': self._deadline,
-          'dimensions': self._dimensions,
-          'min_instances': self._shards,
+          'deadline_to_run': self.deadline,
+          'dimensions': self.dimensions,
           'priority': self.priority,
         },
       ],
-      'data': [],
-      'encoding': 'UTF-8',
-      'env_vars': self._env,
-      'restart_on_failure': True,
-      'test_case_name': self._task_name,
+      'data': self._files,
+      'env_vars': self.env,
+      'test_case_name': self.task_name,
       'tests': self._tasks,
-      'working_dir': self._working_dir,
     }
-    if self._isolate_item:
-      request['data'].append(
-          [
-            self.storage.get_fetch_url(self._isolate_item),
-            'swarm_data.zip',
-          ])
     return json.dumps(request, sort_keys=True, separators=(',',':'))
-
-  @property
-  def isolate_item(self):
-    """Calling this property 'closes' the manifest and it can't be modified
-    afterward.
-    """
-    if self._isolate_item is None:
-      self._isolate_item = isolateserver.BufferItem(
-          self.bundle.zip_into_buffer(), high_priority=True)
-    return self._isolate_item
 
 
 class TaskOutputCollector(object):
@@ -200,17 +170,13 @@ class TaskOutputCollector(object):
     if not os.path.isdir(self.task_output_dir):
       os.makedirs(self.task_output_dir)
 
-  def process_shard_result(self, result):
+  def process_shard_result(self, shard_index, result):
     """Stores results of a single task shard, fetches output files if necessary.
 
     Called concurrently from multiple threads.
     """
-    # We are going to put |shard_index| into a file path. Make sure it is int.
-    shard_index = result['config_instance_index']
-    if not isinstance(shard_index, int):
-      raise ValueError('Shard index should be an int: %r' % (shard_index,))
-
     # Sanity check index is in expected range.
+    assert isinstance(shard_index, int)
     if shard_index < 0 or shard_index >= self.shard_count:
       logging.warning(
           'Shard index %d is outside of expected range: [0; %d]',
@@ -276,26 +242,6 @@ class TaskOutputCollector(object):
               self._storage.namespace, namespace)
           return None
       return self._storage
-
-
-def zip_and_upload(manifest):
-  """Zips up all the files necessary to run a manifest and uploads to Swarming
-  master.
-  """
-  try:
-    start_time = now()
-    with manifest.storage:
-      uploaded = manifest.storage.upload_items([manifest.isolate_item])
-    elapsed = now() - start_time
-  except (IOError, OSError) as exc:
-    tools.report_error('Failed to upload the zip file: %s' % exc)
-    return False
-
-  if manifest.isolate_item in uploaded:
-    logging.info('Upload complete, time elapsed: %f', elapsed)
-  else:
-    logging.info('Zip file already on server, time elapsed: %f', elapsed)
-  return True
 
 
 def now():
@@ -366,10 +312,12 @@ def extract_output_files_location(task_log):
 
 
 def retrieve_results(
-    base_url, task_key, timeout, should_stop, output_collector):
+    base_url, shard_index, task_key, timeout, should_stop, output_collector):
   """Retrieves results for a single task_key.
 
-  Returns a dict with results on success or None on failure or timeout.
+  Returns:
+    <result dict> on success.
+    None on failure.
   """
   assert isinstance(timeout, float), timeout
   params = [('r', task_key)]
@@ -425,7 +373,7 @@ def retrieve_results(
       # Record the result, try to fetch attached output files (if any).
       if output_collector:
         # TODO(vadimsh): Respect |should_stop| and |deadline| when fetching.
-        output_collector.process_shard_result(result)
+        output_collector.process_shard_result(shard_index, result)
       return result
 
 
@@ -456,18 +404,27 @@ def yield_results(
 
   with threading_utils.ThreadPool(number_threads, number_threads, 0) as pool:
     try:
-      # Enqueue 'retrieve_results' calls for each shard key to run in parallel.
-      for task_key in task_keys:
+      # Adds a task to the thread pool to call 'retrieve_results' and return
+      # the results together with shard_index that produced them (as a tuple).
+      def enqueue_retrieve_results(shard_index, task_key):
+        task_fn = lambda *args: (shard_index, retrieve_results(*args))
         pool.add_task(
-            0, results_channel.wrap_task(retrieve_results),
-            swarm_base_url, task_key, timeout, should_stop, output_collector)
+            0, results_channel.wrap_task(task_fn),
+            swarm_base_url, shard_index, task_key, timeout,
+            should_stop, output_collector)
+
+      # Enqueue 'retrieve_results' calls for each shard key to run in parallel.
+      for shard_index, task_key in enumerate(task_keys):
+        enqueue_retrieve_results(shard_index, task_key)
 
       # Wait for all of them to finish.
       shards_remaining = range(len(task_keys))
       active_task_count = len(task_keys)
       while active_task_count:
+        shard_index, result = None, None
         try:
-          result = results_channel.pull(timeout=STATUS_UPDATE_INTERVAL)
+          shard_index, result = results_channel.pull(
+              timeout=STATUS_UPDATE_INTERVAL)
         except threading_utils.TaskChannel.Timeout:
           if print_status_updates:
             print(
@@ -477,7 +434,6 @@ def yield_results(
           continue
         except Exception:
           logging.exception('Unexpected exception in retrieve_results')
-          result = None
 
         # A call to 'retrieve_results' finished (successfully or not).
         active_task_count -= 1
@@ -485,32 +441,39 @@ def yield_results(
           logging.error('Failed to retrieve the results for a swarming key')
           continue
 
-        shard_index = result['config_instance_index']
-        if shard_index in shards_remaining:
-          shards_remaining.remove(shard_index)
-          yield shard_index, result
-        else:
-          logging.warning('Ignoring duplicate shard index %d', shard_index)
+        # Yield back results to the caller.
+        assert shard_index in shards_remaining
+        shards_remaining.remove(shard_index)
+        yield shard_index, result
 
     finally:
       # Done or aborted with Ctrl+C, kill the remaining threads.
       should_stop.set()
 
 
-def chromium_setup(manifest):
-  """Sets up the commands to run.
+def setup_run_isolated(manifest, bundle):
+  """Sets up the manifest to run an isolated task via run_isolated.py.
 
-  Highly chromium specific.
+  Modifies |bundle| (by adding files) and |manifest| (by adding commands) in
+  place.
+
+  Args:
+    manifest: Manifest with swarm task definition.
+    bundle: ZipPackage with files that would be transfered to swarm bot.
+        If None, only |manifest| is modified (useful in tests).
   """
   # Add uncompressed zip here. It'll be compressed as part of the package sent
   # to Swarming server.
   run_test_name = 'run_isolated.zip'
-  manifest.bundle.add_buffer(run_test_name,
-    run_isolated.get_as_zip_package().zip_into_buffer(compress=False))
+  if bundle and run_test_name not in bundle.files:
+    bundle.add_buffer(
+        run_test_name,
+        run_isolated.get_as_zip_package().zip_into_buffer(compress=False))
 
   cleanup_script_name = 'swarm_cleanup.py'
-  manifest.bundle.add_file(os.path.join(TOOLS_PATH, cleanup_script_name),
-    cleanup_script_name)
+  if bundle and cleanup_script_name not in bundle.files:
+    bundle.add_file(
+        os.path.join(TOOLS_PATH, cleanup_script_name), cleanup_script_name)
 
   run_cmd = [
     'python', run_test_name,
@@ -537,12 +500,12 @@ def chromium_setup(manifest):
   manifest.add_task('Clean Up', ['python', cleanup_script_name])
 
 
-def googletest_setup(env, shards):
+def setup_googletest(env, shards, index):
   """Sets googletest specific environment variables."""
   if shards > 1:
     env = env.copy()
-    env['GTEST_SHARD_INDEX'] = '%(instance_index)s'
-    env['GTEST_TOTAL_SHARDS'] = '%(num_instances)s'
+    env['GTEST_SHARD_INDEX'] = str(index)
+    env['GTEST_TOTAL_SHARDS'] = str(shards)
   return env
 
 
@@ -577,55 +540,147 @@ def archive(isolate_server, namespace, isolated, algo, verbose):
       shutil.rmtree(tempdir)
 
 
-def process_manifest(
-    swarming, isolate_server, namespace, isolated_hash, task_name, extra_args,
-    shards, dimensions, env, working_dir, deadline, verbose, profile, priority):
-  """Processes the manifest file and send off the swarming task request."""
+def get_shard_task_name(task_name, shards, index):
+  """Returns a task name to use for a single shard of a task."""
+  if shards == 1:
+    return task_name
+  return '%s:%s:%s' % (task_name, shards, index)
+
+
+def upload_zip_bundle(isolate_server, bundle):
+  """Uploads a zip package to isolate storage and returns raw fetch URL.
+
+  Args:
+    isolate_server: URL of an isolate server.
+    bundle: instance of ZipPackage to upload.
+
+  Returns:
+    URL to get the file from on success.
+    None on failure.
+  """
+  # Swarming bot would need to be able to grab the file from the storage
+  # using raw HTTP GET. Use 'default' namespace so that the raw data returned
+  # to a bot is not zipped, since swarm_bot doesn't understand compressed
+  # data yet. This namespace have nothing to do with |namespace| passed to
+  # run_isolated.py that is used to store files for isolated task.
+  logging.info('Zipping up and uploading files...')
   try:
-    manifest = Manifest(
-        isolate_server=isolate_server,
-        namespace=namespace,
-        isolated_hash=isolated_hash,
-        task_name=task_name,
-        extra_args=extra_args,
-        shards=shards,
-        dimensions=dimensions,
-        env=env,
-        working_dir=working_dir,
-        deadline=deadline,
-        verbose=verbose,
-        profile=profile,
-        priority=priority)
-  except ValueError as e:
-    tools.report_error('Unable to process %s: %s' % (task_name, e))
-    return 1
+    start_time = now()
+    isolate_item = isolateserver.BufferItem(
+        bundle.zip_into_buffer(), high_priority=True)
+    with isolateserver.get_storage(isolate_server, 'default') as storage:
+      uploaded = storage.upload_items([isolate_item])
+      bundle_url = storage.get_fetch_url(isolate_item)
+    elapsed = now() - start_time
+  except (IOError, OSError) as exc:
+    tools.report_error('Failed to upload the zip file: %s' % exc)
+    return None
+  if isolate_item in uploaded:
+    logging.info('Upload complete, time elapsed: %f', elapsed)
+  else:
+    logging.info('Zip file already on server, time elapsed: %f', elapsed)
+  return bundle_url
 
-  chromium_setup(manifest)
 
-  logging.info('Zipping up files...')
-  if not zip_and_upload(manifest):
-    return 1
+def trigger_by_manifest(swarming, manifest):
+  """Given a task manifest, triggers it for execution on swarming.
 
-  logging.info('Server: %s', swarming)
-  logging.info('Task name: %s', task_name)
-  trigger_url = swarming + '/test'
+  Args:
+    swarming: URL of a swarming service.
+    manifest: instance of Manifest.
+
+  Returns:
+    tuple(Task id, priority) on success. tuple(None, None) on failure.
+  """
+  logging.info('Triggering: %s', manifest.task_name)
   manifest_text = manifest.to_json()
-  result = net.url_read(trigger_url, data={'request': manifest_text})
+  result = net.url_read(swarming + '/test', data={'request': manifest_text})
   if not result:
-    tools.report_error(
-        'Failed to trigger task %s\n%s' % (task_name, trigger_url))
-    return 1
+    tools.report_error('Failed to trigger task %s' % manifest.task_name)
+    return None
   try:
-    json.loads(result)
+    data = json.loads(result)
   except (ValueError, TypeError) as e:
     msg = '\n'.join((
-        'Failed to trigger task %s' % task_name,
+        'Failed to trigger task %s' % manifest.task_name,
         'Manifest: %s' % manifest_text,
         'Bad response: %s' % result,
         str(e)))
     tools.report_error(msg)
-    return 1
-  return 0
+    return None, None
+  if not data:
+    return None, None
+  return data['test_keys'][0]['test_key'], data['priority']
+
+
+def abort_task(_swarming, _manifest):
+  """Given a task manifest that was triggered, aborts its execution."""
+  # TODO(vadimsh): No supported by the server yet.
+
+
+def trigger_task_shards(
+    swarming, isolate_server, namespace, isolated_hash, task_name, extra_args,
+    shards, dimensions, env, deadline, verbose, profile, priority):
+  """Triggers multiple subtasks of a sharded task.
+
+  Returns:
+    dict(task_name: task_id). None in case of failure.
+  """
+  # Collects all files that are necessary to bootstrap a task execution
+  # on the bot. Usually it includes self contained run_isolated.zip and
+  # a bunch of small other scripts. All heavy files are pulled
+  # by run_isolated.zip. Updated in 'setup_run_isolated'.
+  bundle = zip_package.ZipPackage(ROOT_DIR)
+
+  # Make a separate Manifest for each shard, put shard index and number of
+  # shards into env and subtask name.
+  manifests = []
+  for index in xrange(shards):
+    manifest = Manifest(
+        isolate_server=isolate_server,
+        namespace=namespace,
+        isolated_hash=isolated_hash,
+        task_name=get_shard_task_name(task_name, shards, index),
+        extra_args=extra_args,
+        dimensions=dimensions,
+        env=setup_googletest(env, shards, index),
+        deadline=deadline,
+        verbose=verbose,
+        profile=profile,
+        priority=priority)
+    setup_run_isolated(manifest, bundle)
+    manifests.append(manifest)
+
+  # Upload zip bundle file to get its URL.
+  bundle_url = upload_zip_bundle(isolate_server, bundle)
+  if not bundle_url:
+    return None, None
+
+  # Attach that file to all manifests.
+  for manifest in manifests:
+    manifest.add_bundled_file('swarm_data.zip', bundle_url)
+
+  # Trigger all the subtasks.
+  tasks = {}
+  priority_warning = False
+  for manifest in manifests:
+    task_id, priority = trigger_by_manifest(swarming, manifest)
+    if not task_id:
+      break
+    if not priority_warning and priority != manifest.priority:
+      priority_warning = True
+      print >> sys.stderr, 'Priority was reset to %s' % priority
+    tasks[manifest.task_name] = task_id
+
+  # Some shards weren't triggered. Abort everything.
+  if len(tasks) != len(manifests):
+    if tasks:
+      print >> sys.stderr, 'Not all shards were triggered'
+      for task_id in tasks.itervalues():
+        abort_task(swarming, task_id)
+    return None
+
+  return tasks
 
 
 def isolated_to_hash(isolate_server, namespace, arg, algo, verbose):
@@ -657,12 +712,16 @@ def trigger(
     shards,
     dimensions,
     env,
-    working_dir,
     deadline,
     verbose,
     profile,
     priority):
-  """Sends off the hash swarming task requests."""
+  """Sends off the hash swarming task requests.
+
+  Returns:
+    tuple(dict(task_name: task_id), base task name). The dict of tasks is None
+    in case of failure.
+  """
   file_hash, is_file = isolated_to_hash(
       isolate_server, namespace, file_hash_or_isolated, hashlib.sha1, verbose)
   if not file_hash:
@@ -680,10 +739,7 @@ def trigger(
         file_hash,
         now() * 1000)
 
-  env = googletest_setup(env, shards)
-  # TODO(maruel): It should first create a request manifest object, then pass
-  # it to a function to zip, archive and trigger.
-  result = process_manifest(
+  tasks = trigger_task_shards(
       swarming=swarming,
       isolate_server=isolate_server,
       namespace=namespace,
@@ -694,17 +750,16 @@ def trigger(
       dimensions=dimensions,
       deadline=deadline,
       env=env,
-      working_dir=working_dir,
       verbose=verbose,
       profile=profile,
       priority=priority)
-  return result, task_name
+  return tasks, task_name
 
 
-def decorate_shard_output(result, shard_exit_code):
+def decorate_shard_output(shard_index, result, shard_exit_code):
   """Returns wrapped output for swarming task shard."""
   tag = 'index %s (machine tag: %s, id: %s)' % (
-      result['config_instance_index'],
+      shard_index,
       result['machine_id'],
       result.get('machine_tag', 'unknown'))
   return (
@@ -715,18 +770,29 @@ def decorate_shard_output(result, shard_exit_code):
     '\n'
     '%s'
     '================================================================\n'
-    'End output from shard %s. Return %d\n'
-    '================================================================\n'
-    ) % (tag, result['output'] or NO_OUTPUT_FOUND, tag, shard_exit_code)
+    'End output from shard %s.\nExit code %d (%s).\n'
+    '================================================================\n') % (
+        tag, result['output'] or NO_OUTPUT_FOUND, tag,
+        shard_exit_code, hex(0xffffffff & shard_exit_code))
 
 
 def collect(
-    url, task_name, timeout, decorate, print_status_updates, task_output_dir):
+    url, task_name, shards, timeout, decorate,
+    print_status_updates, task_output_dir):
   """Retrieves results of a Swarming task."""
-  logging.info('Collecting %s', task_name)
-  task_keys = get_task_keys(url, task_name)
-  if not task_keys:
-    raise Failure('No task keys to get results with.')
+  # Grab task keys for each shard. Order is important, used to figure out
+  # shard index based on the key.
+  # TODO(vadimsh): Simplify this once server support is added.
+  task_keys = []
+  for index in xrange(shards):
+    shard_task_name = get_shard_task_name(task_name, shards, index)
+    logging.info('Collecting %s', shard_task_name)
+    shard_task_keys = get_task_keys(url, shard_task_name)
+    if not shard_task_keys:
+      raise Failure('No task keys to get results with: %s' % shard_task_name)
+    if len(shard_task_keys) != 1:
+      raise Failure('Expecting only one shard for a task: %s' % shard_task_name)
+    task_keys.append(shard_task_keys[0])
 
   # Collect output files only if explicitly asked with --task-output-dir option.
   if task_output_dir:
@@ -735,17 +801,24 @@ def collect(
   else:
     output_collector = None
 
-  exit_code = None
   seen_shards = set()
+  exit_codes = []
 
   try:
     for index, output in yield_results(
         url, task_keys, timeout, None, print_status_updates, output_collector):
       seen_shards.add(index)
-      shard_exit_codes = (output['exit_codes'] or '1').split(',')
-      shard_exit_code = max(int(i) for i in shard_exit_codes)
+
+      # Grab first non-zero exit code as an overall shard exit code.
+      shard_exit_code = 0
+      for code in map(int, (output['exit_codes'] or '1').split(',')):
+        if code:
+          shard_exit_code = code
+          break
+      exit_codes.append(shard_exit_code)
+
       if decorate:
-        print decorate_shard_output(output, shard_exit_code)
+        print decorate_shard_output(index, output, shard_exit_code)
       else:
         print(
             '%s/%s: %s' % (
@@ -753,7 +826,6 @@ def collect(
                 output['machine_tag'],
                 output['exit_codes']))
         print(''.join('  %s\n' % l for l in output['output'].splitlines()))
-      exit_code = exit_code or shard_exit_code
   finally:
     if output_collector:
       output_collector.finalize()
@@ -762,9 +834,9 @@ def collect(
     missing_shards = [x for x in range(len(task_keys)) if x not in seen_shards]
     print >> sys.stderr, ('Results from some shards are missing: %s' %
         ', '.join(map(str, missing_shards)))
-    exit_code = exit_code or 1
+    return 1
 
-  return exit_code if exit_code is not None else 1
+  return int(bool(any(exit_codes)))
 
 
 def add_filter_options(parser):
@@ -782,6 +854,14 @@ def process_filter_options(parser, options):
     parser.error('Please at least specify one --dimension')
 
 
+def add_sharding_options(parser):
+  parser.sharding_group = tools.optparse.OptionGroup(parser, 'Sharding options')
+  parser.sharding_group.add_option(
+      '--shards', type='int', default=1,
+      help='Number of shards to trigger and collect.')
+  parser.add_option_group(parser.sharding_group)
+
+
 def add_trigger_options(parser):
   """Adds all options to trigger a task on Swarming."""
   isolateserver.add_isolate_server_options(parser, True)
@@ -789,18 +869,11 @@ def add_trigger_options(parser):
 
   parser.task_group = tools.optparse.OptionGroup(parser, 'Task properties')
   parser.task_group.add_option(
-      '-w', '--working-dir', default='swarm_tests',
-      help='Working directory on the swarming slave side. default: %default.')
-  parser.task_group.add_option(
-      '--working_dir', help=tools.optparse.SUPPRESS_HELP)
-  parser.task_group.add_option(
       '-e', '--env', default=[], action='append', nargs=2, metavar='FOO bar',
-      help='environment variables to set')
+      help='Environment variables to set')
   parser.task_group.add_option(
       '--priority', type='int', default=100,
       help='The lower value, the more important the task is')
-  parser.task_group.add_option(
-      '--shards', type='int', default=1, help='number of shards to use')
   parser.task_group.add_option(
       '-T', '--task-name',
       help='Display name of the task. It uniquely identifies the task. '
@@ -865,6 +938,7 @@ def CMDcollect(parser, args):
   potentially have retries.
   """
   add_collect_options(parser)
+  add_sharding_options(parser)
   (options, args) = parser.parse_args(args)
   if not args:
     parser.error('Must specify one task name.')
@@ -875,6 +949,7 @@ def CMDcollect(parser, args):
     return collect(
         options.swarming,
         args[0],
+        options.shards,
         options.timeout,
         options.decorate,
         options.print_status_updates,
@@ -907,7 +982,7 @@ def CMDquery(parser, args):
     return 1
   timeout = datetime.timedelta(seconds=data['machine_death_timeout'])
   utcnow = datetime.datetime.utcnow()
-  for machine in natsort.natsorted(data['machines'], key=lambda x: x['tag']):
+  for machine in natsort.natsorted(data['machines'], key=lambda x: x['id']):
     last_seen = datetime.datetime.strptime(
         machine['last_seen'], '%Y-%m-%d %H:%M:%S')
     is_dead = utcnow - last_seen > timeout
@@ -933,7 +1008,7 @@ def CMDquery(parser, args):
         if value != dimensions[key]:
           break
     else:
-      print machine['tag']
+      print machine['id']
       if not options.bare:
         print '  %s' % dimensions
   return 0
@@ -947,12 +1022,13 @@ def CMDrun(parser, args):
   """
   add_trigger_options(parser)
   add_collect_options(parser)
+  add_sharding_options(parser)
   args, isolated_cmd_args = extract_isolated_command_extra_args(args)
   options, args = parser.parse_args(args)
   process_trigger_options(parser, options, args)
 
   try:
-    result, task_name = trigger(
+    tasks, task_name = trigger(
         swarming=options.swarming,
         isolate_server=options.isolate_server or options.indir,
         namespace=options.namespace,
@@ -962,7 +1038,6 @@ def CMDrun(parser, args):
         shards=options.shards,
         dimensions=options.dimensions,
         env=dict(options.env),
-        working_dir=options.working_dir,
         deadline=options.deadline,
         verbose=options.verbose,
         profile=options.profile,
@@ -972,15 +1047,17 @@ def CMDrun(parser, args):
         'Failed to trigger %s(%s): %s' %
         (options.task_name, args[0], e.args[0]))
     return 1
-  if result:
+  if not tasks:
     tools.report_error('Failed to trigger the task.')
-    return result
+    return 1
   if task_name != options.task_name:
     print('Triggered task: %s' % task_name)
   try:
+    # TODO(maruel): Use task_ids, it's much more efficient!
     return collect(
         options.swarming,
         task_name,
+        options.shards,
         options.timeout,
         options.decorate,
         options.print_status_updates,
@@ -1004,12 +1081,17 @@ def CMDtrigger(parser, args):
   arguments for an isolated command specified in *.isolate file.
   """
   add_trigger_options(parser)
+  add_sharding_options(parser)
   args, isolated_cmd_args = extract_isolated_command_extra_args(args)
+  parser.add_option(
+      '--dump-json',
+      metavar='FILE',
+      help='Dump details about the triggered task(s) to this file as json')
   options, args = parser.parse_args(args)
   process_trigger_options(parser, options, args)
 
   try:
-    result, task_name = trigger(
+    tasks, task_name = trigger(
         swarming=options.swarming,
         isolate_server=options.isolate_server or options.indir,
         namespace=options.namespace,
@@ -1019,14 +1101,20 @@ def CMDtrigger(parser, args):
         shards=options.shards,
         dimensions=options.dimensions,
         env=dict(options.env),
-        working_dir=options.working_dir,
         deadline=options.deadline,
         verbose=options.verbose,
         profile=options.profile,
         priority=options.priority)
-    if task_name != options.task_name and not result:
-      print('Triggered task: %s' % task_name)
-    return result
+    if tasks:
+      if task_name != options.task_name:
+        print('Triggered task: %s' % task_name)
+      if options.dump_json:
+        data = {
+          'base_task_name': task_name,
+          'tasks': tasks,
+        }
+        tools.write_json(options.dump_json, data, True)
+    return int(not tasks)
   except Failure as e:
     tools.report_error(e)
     return 1

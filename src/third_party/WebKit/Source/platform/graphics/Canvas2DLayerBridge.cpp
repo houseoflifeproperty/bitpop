@@ -116,9 +116,10 @@ Canvas2DLayerBridge::Canvas2DLayerBridge(PassOwnPtr<blink::WebGraphicsContext3DP
 Canvas2DLayerBridge::~Canvas2DLayerBridge()
 {
     ASSERT(m_destructionInProgress);
+    ASSERT(!Canvas2DLayerManager::get().isInList(this));
     m_layer.clear();
     freeReleasedMailbox();
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     Vector<MailboxInfo>::iterator mailboxInfo;
     for (mailboxInfo = m_mailboxes.begin(); mailboxInfo < m_mailboxes.end(); ++mailboxInfo) {
         ASSERT(mailboxInfo->m_status != MailboxInUse);
@@ -312,7 +313,7 @@ void Canvas2DLayerBridge::freeReleasedMailbox()
     if (mailboxInfo->m_image) {
         if (isHidden() || releasedMailboxHasExpired())
             mailboxInfo->m_image->getTexture()->resetFlag(static_cast<GrTextureFlags>(GrTexture::kReturnToCache_FlagBit));
-        mailboxInfo->m_image->getTexture()->invalidateCachedState();
+        mailboxInfo->m_image->getTexture()->textureParamsModified();
         mailboxInfo->m_image.clear();
     }
     mailboxInfo->m_status = MailboxAvailable;
@@ -414,14 +415,14 @@ bool Canvas2DLayerBridge::prepareMailbox(blink::WebExternalTextureMailbox* outMa
     mailboxInfo->m_status = MailboxInUse;
     mailboxInfo->m_image = image;
 
-    // Because of texture sharing with the compositor, we must invalidate
-    // the state cached in skia so that the deferred copy on write
-    // in SkSurface_Gpu does not make any false assumptions.
-    mailboxInfo->m_image->getTexture()->invalidateCachedState();
-
     ASSERT(mailboxInfo->m_mailbox.syncPoint == 0);
     ASSERT(mailboxInfo->m_image.get());
     ASSERT(mailboxInfo->m_image->getTexture());
+
+    // Because of texture sharing with the compositor, we must invalidate
+    // the state cached in skia so that the deferred copy on write
+    // in SkSurface_Gpu does not make any false assumptions.
+    mailboxInfo->m_image->getTexture()->textureParamsModified();
 
     webContext->bindTexture(GL_TEXTURE_2D, mailboxInfo->m_image->getTexture()->getTextureHandle());
     webContext->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

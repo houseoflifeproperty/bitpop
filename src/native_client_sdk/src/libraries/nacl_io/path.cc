@@ -12,8 +12,6 @@
 
 namespace nacl_io {
 
-Path::Path() {}
-
 Path::Path(const Path& path) {
   paths_ = path.paths_;
 }
@@ -21,8 +19,6 @@ Path::Path(const Path& path) {
 Path::Path(const std::string& path) {
   Set(path);
 }
-
-Path::~Path() {}
 
 bool Path::IsAbsolute() const {
   return !paths_.empty() && paths_[0] == "/";
@@ -36,16 +32,19 @@ size_t Path::Size() const {
   return paths_.size();
 }
 
-bool Path::Top() const {
-  return (paths_.size() == 0) || (paths_.size() == 1 && paths_[0] == "/");
+bool Path::IsRoot() const {
+  return paths_.empty() || (paths_.size() == 1 && paths_[0] == "/");
 }
 
 Path& Path::Append(const std::string& path) {
   StringArray_t paths = Split(path);
+  if (paths.empty())
+    return *this;
 
   for (size_t index = 0; index < paths.size(); index++) {
     // Skip ROOT
-    if (paths_.size() && index == 0 && paths[0] == "/") continue;
+    if (paths_.size() && index == 0 && paths[0] == "/")
+      continue;
     paths_.push_back(paths[index]);
   }
 
@@ -55,12 +54,16 @@ Path& Path::Append(const std::string& path) {
 
 Path& Path::Prepend(const std::string& path) {
   StringArray_t paths = Split(path);
+  if (paths.empty())
+    return *this;
 
   for (size_t index = 0; index < paths_.size(); index++) {
     // Skip ROOT
-    if (index == 0 && paths_[0] == "/") continue;
-    paths.push_back(paths[index]);
+    if (index == 0 && paths_[0] == "/")
+      continue;
+    paths.push_back(paths_[index]);
   }
+
   paths_ = Normalize(paths);
   return *this;
 }
@@ -74,12 +77,14 @@ Path& Path::Set(const std::string& path) {
 Path Path::Parent() const {
   Path out;
   out.paths_ = paths_;
-  if (out.paths_.size()) out.paths_.pop_back();
+  if (out.paths_.size())
+    out.paths_.pop_back();
   return out;
 }
 
 std::string Path::Basename() const {
-  if (paths_.size()) return paths_.back();
+  if (paths_.size())
+    return paths_.back();
   return std::string();
 }
 
@@ -100,14 +105,16 @@ StringArray_t Path::Normalize(const StringArray_t& paths) {
   StringArray_t path_out;
 
   for (size_t index = 0; index < paths.size(); index++) {
-    const std::string &curr = paths[index];
+    const std::string& curr = paths[index];
 
     // Check if '/' was used excessively in the path.
     // For example, in cd Desktop/////
-    if (curr == "/" && index != 0) continue;
+    if (curr == "/" && index != 0)
+      continue;
 
     // Check for '.' in the path and remove it
-    if (curr == ".") continue;
+    if (curr == ".")
+      continue;
 
     // Check for '..'
     if (curr == "..") {
@@ -137,7 +144,8 @@ StringArray_t Path::Normalize(const StringArray_t& paths) {
   }
 
   // If the path was valid, but now it's empty, return self
-  if (path_out.size() == 0) path_out.push_back(".");
+  if (path_out.empty())
+    path_out.push_back(".");
 
   return path_out;
 }
@@ -152,7 +160,8 @@ std::string Path::Range(const StringArray_t& paths, size_t start, size_t end) {
   std::string out_path;
   size_t index = start;
 
-  if (end > paths.size()) end = paths.size();
+  if (end > paths.size())
+    end = paths.size();
 
   // If this is an absolute path, paths[0] == "/". In this case, we don't want
   // to add an additional / separator.
@@ -182,20 +191,21 @@ StringArray_t Path::Split(const std::string& path) {
 
   // Copy path_split to components, removing empty path segments.
   for (StringArray_t::const_iterator it = path_split.begin();
-       it != path_split.end(); ++it) {
-    if (!it->empty()) components.push_back(*it);
+       it != path_split.end();
+       ++it) {
+    if (!it->empty())
+      components.push_back(*it);
   }
   return components;
 }
 
-Path& Path::operator =(const Path& p) {
+Path& Path::operator=(const Path& p) {
   paths_ = p.paths_;
   return *this;
 }
 
-Path& Path::operator =(const std::string& p) {
+Path& Path::operator=(const std::string& p) {
   return Set(p);
 }
 
 }  // namespace nacl_io
-

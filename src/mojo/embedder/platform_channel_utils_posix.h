@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <sys/types.h>  // For |ssize_t|.
 
-#include <vector>
+#include <deque>
 
 #include "base/memory/scoped_ptr.h"
 #include "mojo/embedder/platform_handle.h"
@@ -20,12 +20,10 @@ namespace mojo {
 namespace embedder {
 
 // The maximum number of handles that can be sent "at once" using
-// |PlatformChannelSendHandles()|.
+// |PlatformChannelSendmsgWithHandles()|.
 // TODO(vtl): This number is taken from ipc/file_descriptor_set_posix.h:
 // |FileDescriptorSet::kMaxDescriptorsPerMessage|. Where does it come from?
 const size_t kPlatformChannelMaxNumHandles = 7;
-
-typedef std::vector<PlatformHandle> PlatformHandleVector;
 
 // Use these to write to a socket created using |PlatformChannelPair| (or
 // equivalent). These are like |write()| and |writev()|, but handle |EINTR| and
@@ -38,6 +36,23 @@ MOJO_SYSTEM_IMPL_EXPORT ssize_t PlatformChannelWritev(PlatformHandle h,
                                                       struct iovec* iov,
                                                       size_t num_iov);
 
+// Writes data, and the given set of |PlatformHandle|s (i.e., file descriptors)
+// over the Unix domain socket given by |h| (e.g., created using
+// |PlatformChannelPair()|). All the handles must be valid, and there must be at
+// least one and at most |kPlatformChannelMaxNumHandles| handles. The return
+// value is as for |sendmsg()|, namely -1 on failure and otherwise the number of
+// bytes of data sent on success (note that this may not be all the data
+// specified by |iov|). (The handles are not closed, regardless of success or
+// failure.)
+MOJO_SYSTEM_IMPL_EXPORT ssize_t PlatformChannelSendmsgWithHandles(
+    PlatformHandle h,
+    struct iovec* iov,
+    size_t num_iov,
+    PlatformHandle* platform_handles,
+    size_t num_platform_handles);
+
+// TODO(vtl): Remove this once I've switched things over to
+// |PlatformChannelSendmsgWithHandles()|.
 // Sends |PlatformHandle|s (i.e., file descriptors) over the Unix domain socket
 // (e.g., created using PlatformChannelPair|). (These will be sent in a single
 // message having one null byte of data and one control message header with all
@@ -49,14 +64,13 @@ MOJO_SYSTEM_IMPL_EXPORT bool PlatformChannelSendHandles(PlatformHandle h,
                                                         size_t num_handles);
 
 // Wrapper around |recvmsg()|, which will extract any attached file descriptors
-// (in the control message) to |PlatformHandle|s. (This also handles |EINTR|.)
-// If |*handles| is null and handles are received, a vector will be allocated;
-// otherwise, any handles received will be appended to the existing vector.
+// (in the control message) to |PlatformHandle|s (and append them to
+// |platform_handles|). (This also handles |EINTR|.)
 MOJO_SYSTEM_IMPL_EXPORT ssize_t PlatformChannelRecvmsg(
     PlatformHandle h,
     void* buf,
     size_t num_bytes,
-    scoped_ptr<PlatformHandleVector>* handles);
+    std::deque<PlatformHandle>* platform_handles);
 
 }  // namespace embedder
 }  // namespace mojo

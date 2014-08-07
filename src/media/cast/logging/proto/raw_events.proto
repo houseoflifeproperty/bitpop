@@ -14,6 +14,8 @@ package media.cast.proto;
 // For compatibility reasons, existing values in this enum must not be changed.
 enum EventType {
   UNKNOWN = 0;
+  
+  // Note: 1-28 are deprecated in favor of unified event types. Do not use.
   // Generic events. No longer used.
   RTT_MS = 1;
   PACKET_LOSS = 2;
@@ -51,6 +53,28 @@ enum EventType {
   VIDEO_PACKET_RECEIVED = 26;
   DUPLICATE_AUDIO_PACKET_RECEIVED = 27;
   DUPLICATE_VIDEO_PACKET_RECEIVED = 28;
+  
+  
+  // New, unified event types.
+  FRAME_CAPTURE_BEGIN = 29;
+  FRAME_CAPTURE_END = 30;
+  FRAME_ENCODED = 31;
+  FRAME_ACK_RECEIVED = 32;
+  FRAME_ACK_SENT = 33;
+  FRAME_DECODED = 34;
+  FRAME_PLAYOUT = 35;
+  PACKET_SENT_TO_NETWORK = 36;
+  PACKET_RETRANSMITTED = 37;
+  PACKET_RECEIVED = 38;
+  PACKET_RTX_REJECTED = 39;
+}
+
+// Contains information independent of the stream that describes the system
+// setup, e.g. OS and hardware info.
+message GeneralDescription {
+  optional string product = 1;
+  optional string product_version = 2;
+  optional string os = 3;
 }
 
 // Each log will contain one |LogMetadata|.
@@ -74,6 +98,12 @@ message LogMetadata {
   // of the Unix epoch. This is used for relating the timestamps in the events
   // to a real time and date.
   optional int64 reference_timestamp_ms_at_unix_epoch = 5;
+
+  // Extra data to attach to the log, e.g. experiment tags,
+  // in key-value JSON string format. The data is supplied by the application.
+  optional string extra_data = 6;
+
+  optional GeneralDescription general_description = 7;
 }
 
 message AggregatedFrameEvent {
@@ -86,16 +116,16 @@ message AggregatedFrameEvent {
   // and date.
   repeated int64 event_timestamp_ms = 3 [packed = true];
 
-  // Only set if there is a kAudioFrameEncoded and kVideoFrameEncoded event.
+  // Only set if there is a frame encoded event.
   optional int32 encoded_frame_size = 4;
 
-  // Only set if there is a kAudioPlayoutDelay or kVideoRenderDelay event.
+  // Only set if there is a frame playout event.
   optional int32 delay_millis = 5;
 
-  // Only set if there is a kVideoFrameEncoded event.
+  // Only set if there is a video frame encoded event.
   optional bool key_frame = 6;
   
-  // Only set if there is a kVideoFrameEncoded event.
+  // Only set if there is a video frame encoded event.
   optional int32 target_bitrate = 7;
 };
 

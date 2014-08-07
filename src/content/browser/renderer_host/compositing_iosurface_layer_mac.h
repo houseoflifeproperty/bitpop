@@ -9,36 +9,60 @@
 
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/ref_counted.h"
+#include "base/timer/timer.h"
 
 namespace content {
+class CompositingIOSurfaceMac;
 class CompositingIOSurfaceContext;
-class RenderWidgetHostViewMac;
-}
+class CompositingIOSurfaceLayerHelper;
+
+class CompositingIOSurfaceLayerClient {
+ public:
+  virtual void AcceleratedLayerDidDrawFrame(bool succeeded) = 0;
+};
+
+}  // namespace content
 
 // The CoreAnimation layer for drawing accelerated content.
 @interface CompositingIOSurfaceLayer : CAOpenGLLayer {
  @private
-  content::RenderWidgetHostViewMac* renderWidgetHostView_;
+  content::CompositingIOSurfaceLayerClient* client_;
+  scoped_refptr<content::CompositingIOSurfaceMac> iosurface_;
   scoped_refptr<content::CompositingIOSurfaceContext> context_;
+
+  // The browser places back-pressure on the GPU by not acknowledging swap
+  // calls until they appear on the screen. This can lead to hangs if the
+  // view is moved offscreen (among other things). Prevent hangs by always
+  // acknowledging the frame after timeout of 1/6th of a second  has passed.
+  scoped_ptr<content::CompositingIOSurfaceLayerHelper> helper_;
+  scoped_ptr<base::DelayTimer<content::CompositingIOSurfaceLayerHelper>> timer_;
 
   // Used to track when canDrawInCGLContext should return YES. This can be
   // in response to receiving a new compositor frame, or from any of the events
   // that cause setNeedsDisplay to be called on the layer.
-  BOOL needsDisplay_;
+  BOOL needs_display_;
+
+  // This is set when a frame is received, and un-set when the frame is drawn.
+  BOOL has_pending_frame_;
+
+  // Incremented every time that this layer is asked to draw but does not have
+  // new content to draw.
+  uint64 did_not_draw_counter_;
 }
 
-- (id)initWithRenderWidgetHostViewMac:(content::RenderWidgetHostViewMac*)r;
+- (content::CompositingIOSurfaceMac*)iosurface;
+- (content::CompositingIOSurfaceContext*)context;
 
-// Remove this layer from the layer heirarchy, and mark that
-// |renderWidgetHostView_| is no longer valid and may no longer be dereferenced.
-- (void)disableCompositing;
+- (id)initWithIOSurface:(scoped_refptr<content::CompositingIOSurfaceMac>)
+                            iosurface
+        withScaleFactor:(float)scale_factor
+             withClient:(content::CompositingIOSurfaceLayerClient*)client;
+
+// Mark that the client is no longer valid and cannot be called back into.
+- (void)resetClient;
 
 // Called when a new frame is received.
 - (void)gotNewFrame;
-
-// Called when it has been a while since a new frame has been received, and the
-// layer should become not-asynchronous.
-- (void)timerSinceGotNewFrameFired;
 
 @end
 

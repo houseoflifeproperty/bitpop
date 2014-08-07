@@ -7,27 +7,27 @@
 #include "base/bind.h"
 #include "base/containers/hash_tables.h"
 #include "base/containers/mru_cache.h"
+#include "base/debug/crash_logging.h"
 #include "base/debug/trace_event.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
 
 namespace base {
 namespace internal {
-namespace {
 
-// This is admittedly pretty magical. It's approximately enough memory for eight
-// 2560x1600 images.
-static const size_t kDefaultMemoryLimit = 128 * 1024 * 1024;
-static const size_t kDefaultBytesToKeepUnderModeratePressure = 12 * 1024 * 1024;
-
-}  // namespace
-
-DiscardableMemoryManager::DiscardableMemoryManager()
+DiscardableMemoryManager::DiscardableMemoryManager(
+    size_t memory_limit,
+    size_t soft_memory_limit,
+    size_t bytes_to_keep_under_moderate_pressure,
+    TimeDelta hard_memory_limit_expiration_time)
     : allocations_(AllocationMap::NO_AUTO_EVICT),
-      bytes_allocated_(0),
-      memory_limit_(kDefaultMemoryLimit),
+      bytes_allocated_(0u),
+      memory_limit_(memory_limit),
+      soft_memory_limit_(soft_memory_limit),
       bytes_to_keep_under_moderate_pressure_(
-          kDefaultBytesToKeepUnderModeratePressure) {
-  BytesAllocatedChanged();
+          bytes_to_keep_under_moderate_pressure),
+      hard_memory_limit_expiration_time_(hard_memory_limit_expiration_time) {
+  BytesAllocatedChanged(bytes_allocated_);
 }
 
 DiscardableMemoryManager::~DiscardableMemoryManager() {
@@ -52,13 +52,29 @@ void DiscardableMemoryManager::UnregisterMemoryPressureListener() {
 void DiscardableMemoryManager::SetMemoryLimit(size_t bytes) {
   AutoLock lock(lock_);
   memory_limit_ = bytes;
-  EnforcePolicyWithLockAcquired();
+  PurgeIfNotUsedSinceTimestampUntilUsageIsWithinLimitWithLockAcquired(
+      Now(), memory_limit_);
+}
+
+void DiscardableMemoryManager::SetSoftMemoryLimit(size_t bytes) {
+  AutoLock lock(lock_);
+  soft_memory_limit_ = bytes;
 }
 
 void DiscardableMemoryManager::SetBytesToKeepUnderModeratePressure(
     size_t bytes) {
   AutoLock lock(lock_);
   bytes_to_keep_under_moderate_pressure_ = bytes;
+}
+
+void DiscardableMemoryManager::SetHardMemoryLimitExpirationTime(
+    TimeDelta hard_memory_limit_expiration_time) {
+  AutoLock lock(lock_);
+  hard_memory_limit_expiration_time_ = hard_memory_limit_expiration_time;
+}
+
+bool DiscardableMemoryManager::ReduceMemoryUsage() {
+  return PurgeIfNotUsedSinceHardLimitCutoffUntilWithinSoftMemoryLimit();
 }
 
 void DiscardableMemoryManager::Register(Allocation* allocation, size_t bytes) {
@@ -82,7 +98,7 @@ void DiscardableMemoryManager::Unregister(Allocation* allocation) {
     size_t bytes_purgable = info.bytes;
     DCHECK_LE(bytes_purgable, bytes_allocated_);
     bytes_allocated_ -= bytes_purgable;
-    BytesAllocatedChanged();
+    BytesAllocatedChanged(bytes_allocated_);
   }
   allocations_.Erase(it);
 }
@@ -99,6 +115,7 @@ bool DiscardableMemoryManager::AcquireLock(Allocation* allocation,
   if (!info->bytes)
     return false;
 
+  TimeTicks now = Now();
   size_t bytes_required = info->purgable ? 0u : info->bytes;
 
   if (memory_limit_) {
@@ -106,7 +123,8 @@ bool DiscardableMemoryManager::AcquireLock(Allocation* allocation,
     if (bytes_required < memory_limit_)
       limit = memory_limit_ - bytes_required;
 
-    PurgeLRUWithLockAcquiredUntilUsageIsWithin(limit);
+    PurgeIfNotUsedSinceTimestampUntilUsageIsWithinLimitWithLockAcquired(now,
+                                                                        limit);
   }
 
   // Check for overflow.
@@ -115,9 +133,10 @@ bool DiscardableMemoryManager::AcquireLock(Allocation* allocation,
 
   *purged = !allocation->AllocateAndAcquireLock();
   info->purgable = false;
+  info->last_usage = now;
   if (bytes_required) {
     bytes_allocated_ += bytes_required;
-    BytesAllocatedChanged();
+    BytesAllocatedChanged(bytes_allocated_);
   }
   return true;
 }
@@ -130,14 +149,18 @@ void DiscardableMemoryManager::ReleaseLock(Allocation* allocation) {
   DCHECK(it != allocations_.end());
   AllocationInfo* info = &it->second;
 
+  TimeTicks now = Now();
   allocation->ReleaseLock();
   info->purgable = true;
-  EnforcePolicyWithLockAcquired();
+  info->last_usage = now;
+
+  PurgeIfNotUsedSinceTimestampUntilUsageIsWithinLimitWithLockAcquired(
+      now, memory_limit_);
 }
 
 void DiscardableMemoryManager::PurgeAll() {
   AutoLock lock(lock_);
-  PurgeLRUWithLockAcquiredUntilUsageIsWithin(0);
+  PurgeIfNotUsedSinceTimestampUntilUsageIsWithinLimitWithLockAcquired(Now(), 0);
 }
 
 bool DiscardableMemoryManager::IsRegisteredForTest(
@@ -163,7 +186,7 @@ void DiscardableMemoryManager::OnMemoryPressure(
     MemoryPressureListener::MemoryPressureLevel pressure_level) {
   switch (pressure_level) {
     case MemoryPressureListener::MEMORY_PRESSURE_MODERATE:
-      Purge();
+      PurgeUntilWithinBytesToKeepUnderModeratePressure();
       return;
     case MemoryPressureListener::MEMORY_PRESSURE_CRITICAL:
       PurgeAll();
@@ -173,21 +196,28 @@ void DiscardableMemoryManager::OnMemoryPressure(
   NOTREACHED();
 }
 
-void DiscardableMemoryManager::Purge() {
+void
+DiscardableMemoryManager::PurgeUntilWithinBytesToKeepUnderModeratePressure() {
   AutoLock lock(lock_);
 
-  PurgeLRUWithLockAcquiredUntilUsageIsWithin(
-      bytes_to_keep_under_moderate_pressure_);
+  PurgeIfNotUsedSinceTimestampUntilUsageIsWithinLimitWithLockAcquired(
+      Now(), bytes_to_keep_under_moderate_pressure_);
 }
 
-void DiscardableMemoryManager::PurgeLRUWithLockAcquiredUntilUsageIsWithin(
-    size_t limit) {
-  TRACE_EVENT1(
-      "base",
-      "DiscardableMemoryManager::PurgeLRUWithLockAcquiredUntilUsageIsWithin",
-      "limit",
-      limit);
+bool DiscardableMemoryManager::
+    PurgeIfNotUsedSinceHardLimitCutoffUntilWithinSoftMemoryLimit() {
+  AutoLock lock(lock_);
 
+  PurgeIfNotUsedSinceTimestampUntilUsageIsWithinLimitWithLockAcquired(
+      Now() - hard_memory_limit_expiration_time_, soft_memory_limit_);
+
+  return bytes_allocated_ <= soft_memory_limit_;
+}
+
+void DiscardableMemoryManager::
+    PurgeIfNotUsedSinceTimestampUntilUsageIsWithinLimitWithLockAcquired(
+        TimeTicks timestamp,
+        size_t limit) {
   lock_.AssertAcquired();
 
   size_t bytes_allocated_before_purging = bytes_allocated_;
@@ -199,7 +229,9 @@ void DiscardableMemoryManager::PurgeLRUWithLockAcquiredUntilUsageIsWithin(
 
     if (bytes_allocated_ <= limit)
       break;
-    if (!info->purgable)
+
+    bool purgable = info->purgable && info->last_usage <= timestamp;
+    if (!purgable)
       continue;
 
     size_t bytes_purgable = info->bytes;
@@ -210,15 +242,21 @@ void DiscardableMemoryManager::PurgeLRUWithLockAcquiredUntilUsageIsWithin(
   }
 
   if (bytes_allocated_ != bytes_allocated_before_purging)
-    BytesAllocatedChanged();
+    BytesAllocatedChanged(bytes_allocated_);
 }
 
-void DiscardableMemoryManager::EnforcePolicyWithLockAcquired() {
-  PurgeLRUWithLockAcquiredUntilUsageIsWithin(memory_limit_);
+void DiscardableMemoryManager::BytesAllocatedChanged(
+    size_t new_bytes_allocated) const {
+  TRACE_COUNTER_ID1(
+      "base", "DiscardableMemoryUsage", this, new_bytes_allocated);
+
+  static const char kDiscardableMemoryUsageKey[] = "dm-usage";
+  base::debug::SetCrashKeyValue(kDiscardableMemoryUsageKey,
+                                Uint64ToString(new_bytes_allocated));
 }
 
-void DiscardableMemoryManager::BytesAllocatedChanged() const {
-  TRACE_COUNTER_ID1("base", "DiscardableMemoryUsage", this, bytes_allocated_);
+TimeTicks DiscardableMemoryManager::Now() const {
+  return TimeTicks::Now();
 }
 
 }  // namespace internal

@@ -7,8 +7,9 @@
 
 #include "SkMatrix.h"
 #include "SkFloatBits.h"
-#include "SkOnce.h"
 #include "SkString.h"
+
+#include <stddef.h>
 
 // In a few places, we performed the following
 //      a * b + c * d + e
@@ -1451,27 +1452,40 @@ bool SkMatrix::setPolyToPoly(const SkPoint src[], const SkPoint dst[],
 
 ///////////////////////////////////////////////////////////////////////////////
 
-enum MinOrMax {
-    kMin_MinOrMax,
-    kMax_MinOrMax
+enum MinMaxOrBoth {
+    kMin_MinMaxOrBoth,
+    kMax_MinMaxOrBoth,
+    kBoth_MinMaxOrBoth
 };
 
-template <MinOrMax MIN_OR_MAX> SkScalar get_stretch_factor(SkMatrix::TypeMask typeMask,
-                                                           const SkScalar m[9]) {
+template <MinMaxOrBoth MIN_MAX_OR_BOTH> bool get_scale_factor(SkMatrix::TypeMask typeMask,
+                                                              const SkScalar m[9],
+                                                              SkScalar results[/*1 or 2*/]) {
     if (typeMask & SkMatrix::kPerspective_Mask) {
-        return -1;
+        return false;
     }
     if (SkMatrix::kIdentity_Mask == typeMask) {
-        return 1;
+        results[0] = SK_Scalar1;
+        if (kBoth_MinMaxOrBoth == MIN_MAX_OR_BOTH) {
+            results[1] = SK_Scalar1;
+        }
+        return true;
     }
     if (!(typeMask & SkMatrix::kAffine_Mask)) {
-        if (kMin_MinOrMax == MIN_OR_MAX) {
-             return SkMinScalar(SkScalarAbs(m[SkMatrix::kMScaleX]),
-                                SkScalarAbs(m[SkMatrix::kMScaleY]));
+        if (kMin_MinMaxOrBoth == MIN_MAX_OR_BOTH) {
+             results[0] = SkMinScalar(SkScalarAbs(m[SkMatrix::kMScaleX]),
+                                      SkScalarAbs(m[SkMatrix::kMScaleY]));
+        } else if (kMax_MinMaxOrBoth == MIN_MAX_OR_BOTH) {
+             results[0] = SkMaxScalar(SkScalarAbs(m[SkMatrix::kMScaleX]),
+                                      SkScalarAbs(m[SkMatrix::kMScaleY]));
         } else {
-             return SkMaxScalar(SkScalarAbs(m[SkMatrix::kMScaleX]),
-                                SkScalarAbs(m[SkMatrix::kMScaleY]));
+            results[0] = SkScalarAbs(m[SkMatrix::kMScaleX]);
+            results[1] = SkScalarAbs(m[SkMatrix::kMScaleY]);
+             if (results[0] > results[1]) {
+                 SkTSwap(results[0], results[1]);
+             }
         }
+        return true;
     }
     // ignore the translation part of the matrix, just look at 2x2 portion.
     // compute singular values, take largest or smallest abs value.
@@ -1487,60 +1501,98 @@ template <MinOrMax MIN_OR_MAX> SkScalar get_stretch_factor(SkMatrix::TypeMask ty
     // l^2 - (a + c)l + (ac-b^2)
     // solve using quadratic equation (divisor is non-zero since l^2 has 1 coeff
     // and roots are guaranteed to be pos and real).
-    SkScalar chosenRoot;
     SkScalar bSqd = b * b;
     // if upper left 2x2 is orthogonal save some math
     if (bSqd <= SK_ScalarNearlyZero*SK_ScalarNearlyZero) {
-        if (kMin_MinOrMax == MIN_OR_MAX) {
-            chosenRoot = SkMinScalar(a, c);
+        if (kMin_MinMaxOrBoth == MIN_MAX_OR_BOTH) {
+            results[0] = SkMinScalar(a, c);
+        } else if (kMax_MinMaxOrBoth == MIN_MAX_OR_BOTH) {
+            results[0] = SkMaxScalar(a, c);
         } else {
-            chosenRoot = SkMaxScalar(a, c);
+            results[0] = a;
+            results[1] = c;
+            if (results[0] > results[1]) {
+                SkTSwap(results[0], results[1]);
+            }
         }
     } else {
         SkScalar aminusc = a - c;
         SkScalar apluscdiv2 = SkScalarHalf(a + c);
         SkScalar x = SkScalarHalf(SkScalarSqrt(aminusc * aminusc + 4 * bSqd));
-        if (kMin_MinOrMax == MIN_OR_MAX) {
-            chosenRoot = apluscdiv2 - x;
+        if (kMin_MinMaxOrBoth == MIN_MAX_OR_BOTH) {
+            results[0] = apluscdiv2 - x;
+        } else if (kMax_MinMaxOrBoth == MIN_MAX_OR_BOTH) {
+            results[0] = apluscdiv2 + x;
         } else {
-            chosenRoot = apluscdiv2 + x;
+            results[0] = apluscdiv2 - x;
+            results[1] = apluscdiv2 + x;
         }
     }
-    SkASSERT(chosenRoot >= 0);
-    return SkScalarSqrt(chosenRoot);
+    SkASSERT(results[0] >= 0);
+    results[0] = SkScalarSqrt(results[0]);
+    if (kBoth_MinMaxOrBoth == MIN_MAX_OR_BOTH) {
+        SkASSERT(results[1] >= 0);
+        results[1] = SkScalarSqrt(results[1]);
+    }
+    return true;
 }
 
-SkScalar SkMatrix::getMinStretch() const {
-    return get_stretch_factor<kMin_MinOrMax>(this->getType(), fMat);
+SkScalar SkMatrix::getMinScale() const {
+    SkScalar factor;
+    if (get_scale_factor<kMin_MinMaxOrBoth>(this->getType(), fMat, &factor)) {
+        return factor;
+    } else {
+        return -1;
+    }
 }
 
-SkScalar SkMatrix::getMaxStretch() const {
-    return get_stretch_factor<kMax_MinOrMax>(this->getType(), fMat);
+SkScalar SkMatrix::getMaxScale() const {
+    SkScalar factor;
+    if (get_scale_factor<kMax_MinMaxOrBoth>(this->getType(), fMat, &factor)) {
+        return factor;
+    } else {
+        return -1;
+    }
 }
 
-static void reset_identity_matrix(SkMatrix* identity) {
-    identity->reset();
+bool SkMatrix::getMinMaxScales(SkScalar scaleFactors[2]) const {
+    return get_scale_factor<kBoth_MinMaxOrBoth>(this->getType(), fMat, scaleFactors);
 }
+
+namespace {
+
+struct PODMatrix {
+    SkScalar matrix[9];
+    uint32_t typemask;
+
+    const SkMatrix& asSkMatrix() const { return *reinterpret_cast<const SkMatrix*>(this); }
+};
+SK_COMPILE_ASSERT(sizeof(PODMatrix) == sizeof(SkMatrix), PODMatrixSizeMismatch);
+
+}  // namespace
 
 const SkMatrix& SkMatrix::I() {
-    // If you can use C++11 now, you might consider replacing this with a constexpr constructor.
-    static SkMatrix gIdentity;
-    SK_DECLARE_STATIC_ONCE(once);
-    SkOnce(&once, reset_identity_matrix, &gIdentity);
-    return gIdentity;
+    SK_COMPILE_ASSERT(offsetof(SkMatrix, fMat)      == offsetof(PODMatrix, matrix),   BadfMat);
+    SK_COMPILE_ASSERT(offsetof(SkMatrix, fTypeMask) == offsetof(PODMatrix, typemask), BadfTypeMask);
+
+    static const PODMatrix identity = { {SK_Scalar1, 0, 0,
+                                         0, SK_Scalar1, 0,
+                                         0, 0, SK_Scalar1 },
+                                       kIdentity_Mask | kRectStaysRect_Mask};
+    SkASSERT(identity.asSkMatrix().isIdentity());
+    return identity.asSkMatrix();
 }
 
 const SkMatrix& SkMatrix::InvalidMatrix() {
-    static SkMatrix gInvalid;
-    static bool gOnce;
-    if (!gOnce) {
-        gInvalid.setAll(SK_ScalarMax, SK_ScalarMax, SK_ScalarMax,
-                        SK_ScalarMax, SK_ScalarMax, SK_ScalarMax,
-                        SK_ScalarMax, SK_ScalarMax, SK_ScalarMax);
-        gInvalid.getType(); // force the type to be computed
-        gOnce = true;
-    }
-    return gInvalid;
+    SK_COMPILE_ASSERT(offsetof(SkMatrix, fMat)      == offsetof(PODMatrix, matrix),   BadfMat);
+    SK_COMPILE_ASSERT(offsetof(SkMatrix, fTypeMask) == offsetof(PODMatrix, typemask), BadfTypeMask);
+
+    static const PODMatrix invalid =
+        { {SK_ScalarMax, SK_ScalarMax, SK_ScalarMax,
+           SK_ScalarMax, SK_ScalarMax, SK_ScalarMax,
+           SK_ScalarMax, SK_ScalarMax, SK_ScalarMax },
+         kTranslate_Mask | kScale_Mask | kAffine_Mask | kPerspective_Mask };
+    return invalid.asSkMatrix();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -27,7 +27,7 @@ namespace WebCore {
 //    ExecutionContext state. When the ExecutionContext is suspended,
 //    resolve or reject will be delayed. When it is stopped, resolve or reject
 //    will be ignored.
-class ScriptPromiseResolverWithContext FINAL : public ActiveDOMObject, public RefCounted<ScriptPromiseResolverWithContext> {
+class ScriptPromiseResolverWithContext : public ActiveDOMObject, public RefCounted<ScriptPromiseResolverWithContext> {
     WTF_MAKE_NONCOPYABLE(ScriptPromiseResolverWithContext);
 
 public:
@@ -36,6 +36,15 @@ public:
         RefPtr<ScriptPromiseResolverWithContext> resolver = adoptRef(new ScriptPromiseResolverWithContext(scriptState));
         resolver->suspendIfNeeded();
         return resolver.release();
+    }
+
+    virtual ~ScriptPromiseResolverWithContext()
+    {
+        // This assertion fails if:
+        //  - promise() is called at least once and
+        //  - this resolver is destructed before it is resolved, rejected or
+        //    the associated ExecutionContext is stopped.
+        ASSERT(m_state == ResolvedOrRejected || !m_isPromiseCalled);
     }
 
     // Anything that can be passed to toV8Value can be passed to this function.
@@ -58,6 +67,9 @@ public:
     // reject is called.
     ScriptPromise promise()
     {
+#if ASSERT_ENABLED
+        m_isPromiseCalled = true;
+#endif
         return m_resolver ? m_resolver->promise() : ScriptPromise();
     }
 
@@ -68,11 +80,14 @@ public:
     virtual void resume() OVERRIDE;
     virtual void stop() OVERRIDE;
 
-    // Used by ToV8Value<ScriptPromiseResolverWithContext, ScriptState*>.
-    static v8::Handle<v8::Object> getCreationContext(ScriptState* scriptState)
-    {
-        return scriptState->context()->Global();
-    }
+    // Once this function is called this resolver stays alive while the
+    // promise is pending and the associated ExecutionContext isn't stopped.
+    void keepAliveWhilePending();
+
+protected:
+    // You need to call suspendIfNeeded after the construction because
+    // this is an ActiveDOMObject.
+    explicit ScriptPromiseResolverWithContext(ScriptState*);
 
 private:
     enum ResolutionState {
@@ -81,13 +96,15 @@ private:
         Rejecting,
         ResolvedOrRejected,
     };
-
-    explicit ScriptPromiseResolverWithContext(ScriptState*);
+    enum LifetimeMode {
+        Default,
+        KeepAliveWhilePending,
+    };
 
     template<typename T>
     v8::Handle<v8::Value> toV8Value(const T& value)
     {
-        return ToV8Value<ScriptPromiseResolverWithContext, ScriptState*>::toV8Value(value, m_scriptState.get(), m_scriptState->isolate());
+        return ToV8Value<ScriptPromiseResolverWithContext, v8::Handle<v8::Object> >::toV8Value(value, m_scriptState->context()->Global(), m_scriptState->isolate());
     }
 
     template <typename T>
@@ -95,6 +112,7 @@ private:
     {
         if (m_state != Pending || !executionContext() || executionContext()->activeDOMObjectsAreStopped())
             return;
+        ASSERT(newState == Resolving || newState == Rejecting);
         m_state = newState;
         // Retain this object until it is actually resolved or rejected.
         // |deref| will be called in |clear|.
@@ -102,24 +120,24 @@ private:
 
         ScriptState::Scope scope(m_scriptState.get());
         m_value.set(m_scriptState->isolate(), toV8Value(value));
-        if (!executionContext()->activeDOMObjectsAreSuspended()) {
+        if (!executionContext()->activeDOMObjectsAreSuspended())
             resolveOrRejectImmediately();
-            // |this| can't be deleted here, so it is safe to call an instance
-            // method.
-            postRunMicrotasks();
-        }
     }
 
     void resolveOrRejectImmediately();
-    void postRunMicrotasks();
     void onTimerFired(Timer<ScriptPromiseResolverWithContext>*);
     void clear();
 
     ResolutionState m_state;
     const RefPtr<ScriptState> m_scriptState;
+    LifetimeMode m_mode;
     Timer<ScriptPromiseResolverWithContext> m_timer;
     RefPtr<ScriptPromiseResolver> m_resolver;
     ScopedPersistent<v8::Value> m_value;
+#if ASSERT_ENABLED
+    // True if promise() is called.
+    bool m_isPromiseCalled;
+#endif
 };
 
 } // namespace WebCore

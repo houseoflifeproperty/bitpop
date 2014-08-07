@@ -50,7 +50,10 @@ DesktopCaptureDeviceTest.Capture
 GamepadProviderTest.PollingAccess
 GamepadProviderTest.UserGesture
 
-# Flaky. http://crbug.com/365715
-AppCacheRequestHandlerTest.MainResource_Hit
-AppCacheRequestHandlerTest.MainResource_Miss
-AppCacheRequestHandlerTest.WorkerRequest
+# 'impossible' happend. http://crbug.com/365715, crbug.com/51716
+AppCacheRequestHandlerTest.*
+AppCacheResponseTest.*
+AppCacheStorageImplTest.*
+AppCacheStorageImplTest.*
+AppCacheUpdateJobTest.AlreadyChecking
+AppCacheUpdateJobTest.ManifestMissingMimeTypeTest

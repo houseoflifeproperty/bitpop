@@ -13,11 +13,19 @@
 #include "base/time/time.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_export.h"
-#include "net/http/http_pipelined_host_capability.h"
 #include "net/socket/next_proto.h"
 #include "net/spdy/spdy_framer.h"  // TODO(willchan): Reconsider this.
 
 namespace net {
+
+enum AlternateProtocolExperiment {
+  // 200 alternate_protocol servers are loaded (persisted 200 MRU servers).
+  ALTERNATE_PROTOCOL_NOT_PART_OF_EXPERIMENT = 0,
+  // 200 alternate_protocol servers are loaded (persisted 1000 MRU servers).
+  ALTERNATE_PROTOCOL_TRUNCATED_200_SERVERS,
+  // 1000 alternate_protocol servers are loaded (persisted 1000 MRU servers).
+  ALTERNATE_PROTOCOL_TRUNCATED_1000_SERVERS,
+};
 
 enum AlternateProtocolUsage {
   // Alternate Protocol was used without racing a normal connection.
@@ -36,12 +44,16 @@ enum AlternateProtocolUsage {
   ALTERNATE_PROTOCOL_USAGE_MAX,
 };
 
-// Log a histogram to reflect |usage|.
-NET_EXPORT void HistogramAlternateProtocolUsage(AlternateProtocolUsage usage);
+// Log a histogram to reflect |usage| and |alternate_protocol_experiment|.
+NET_EXPORT void HistogramAlternateProtocolUsage(
+    AlternateProtocolUsage usage,
+    AlternateProtocolExperiment alternate_protocol_experiment);
 
 enum BrokenAlternateProtocolLocation {
   BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB = 0,
   BROKEN_ALTERNATE_PROTOCOL_LOCATION_QUIC_STREAM_FACTORY = 1,
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB_ALT = 2,
+  BROKEN_ALTERNATE_PROTOCOL_LOCATION_HTTP_STREAM_FACTORY_IMPL_JOB_MAIN = 3,
   BROKEN_ALTERNATE_PROTOCOL_LOCATION_MAX,
 };
 
@@ -94,8 +106,6 @@ struct NET_EXPORT PortAlternateProtocolPair {
 typedef base::MRUCache<
     HostPortPair, PortAlternateProtocolPair> AlternateProtocolMap;
 typedef base::MRUCache<HostPortPair, SettingsMap> SpdySettingsMap;
-typedef std::map<HostPortPair,
-        HttpPipelinedHostCapability> PipelineCapabilityMap;
 
 extern const char kAlternateProtocolHeader[];
 
@@ -157,6 +167,12 @@ class NET_EXPORT HttpServerProperties {
   // Returns all Alternate-Protocol mappings.
   virtual const AlternateProtocolMap& alternate_protocol_map() const = 0;
 
+  virtual void SetAlternateProtocolExperiment(
+      AlternateProtocolExperiment experiment) = 0;
+
+  virtual AlternateProtocolExperiment GetAlternateProtocolExperiment()
+      const = 0;
+
   // Gets a reference to the SettingsMap stored for a host.
   // If no settings are stored, returns an empty SettingsMap.
   virtual const SettingsMap& GetSpdySettings(
@@ -183,17 +199,6 @@ class NET_EXPORT HttpServerProperties {
 
   virtual const NetworkStats* GetServerNetworkStats(
       const HostPortPair& host_port_pair) const = 0;
-
-  virtual HttpPipelinedHostCapability GetPipelineCapability(
-      const HostPortPair& origin) = 0;
-
-  virtual void SetPipelineCapability(
-      const HostPortPair& origin,
-      HttpPipelinedHostCapability capability) = 0;
-
-  virtual void ClearPipelineCapabilities() = 0;
-
-  virtual PipelineCapabilityMap GetPipelineCapabilityMap() const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(HttpServerProperties);

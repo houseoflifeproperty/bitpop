@@ -1,40 +1,49 @@
-{%- macro setters(struct) %}
-{%    for packed_field in struct.packed.packed_fields %}
-{%-     set type = packed_field.field.kind|cpp_type %}
-{%-     set name = packed_field.field.name %}
-{%-     if packed_field.field.kind|is_object_kind %}
-  void set_{{name}}({{type}} {{name}}) { {{name}}_.ptr = {{name}}; }
-{%-     else %}
-  void set_{{name}}({{type}} {{name}}) { {{name}}_ = {{name}}; }
-{%-     endif %}
-{%-   endfor %}
-{%- endmacro %}
+{%- macro validate(struct, class_name) %}
+  if (!data)
+    return true;
 
-{%- macro getters(struct) %}
-{%    for packed_field in struct.packed.packed_fields %}
-{%-     set type = packed_field.field.kind|cpp_type %}
+  if (!ValidateStructHeader(
+          data, sizeof({{class_name}}),
+          {{struct.packed.packed_fields|length}}, bounds_checker)) {
+    return false;
+  }
+
+  const {{class_name}}* MOJO_ALLOW_UNUSED object =
+      static_cast<const {{class_name}}*>(data);
+
+{%-   for packed_field in struct.packed.packed_fields %}
 {%-     set name = packed_field.field.name %}
 {%-     if packed_field.field.kind|is_object_kind %}
-  const {{type}} {{name}}() const { return {{name}}_.ptr; }
+{%-       set wrapper_type = packed_field.field.kind|cpp_wrapper_type %}
+  if (!mojo::internal::ValidateEncodedPointer(&object->{{name}}.offset)) {
+    ReportValidationError(mojo::internal::VALIDATION_ERROR_ILLEGAL_POINTER);
+    return false;
+  }
+  if (!{{wrapper_type}}::Data_::Validate(
+          mojo::internal::DecodePointerRaw(&object->{{name}}.offset),
+          bounds_checker)) {
+    return false;
+  }
 {%-     elif packed_field.field.kind|is_handle_kind %}
-  {{type}}* {{name}}() const { return &{{name}}_; }
-{%-     else %}
-  {{type}} {{name}}() const { return {{name}}_; }
+  if (!bounds_checker->ClaimHandle(object->{{name}})) {
+    ReportValidationError(mojo::internal::VALIDATION_ERROR_ILLEGAL_HANDLE);
+    return false;
+  }
 {%-     endif %}
 {%-   endfor %}
+
+  return true;
 {%- endmacro %}
 
 {%- macro field_line(field) %}
 {%-   set type = field.kind|cpp_field_type %}
 {%-   set name = field.name -%}
 {%-   if field.kind.spec == 'b' -%}
-  uint8_t {{name}}_ : 1;
-{%-   elif field.kind|is_handle_kind -%}
-  mutable {{type}} {{name}}_;
+  uint8_t {{name}} : 1;
 {%-   elif field.kind|is_enum_kind -%}
-  int32_t {{name}}_;
+  int32_t {{name}};
 {%-   else -%}
-  {{type}} {{name}}_;
+  {{type}} {{name}};
 {%-   endif %}
 {%- endmacro %}
 
@@ -45,7 +54,7 @@
 {%-       set next_pf = struct.packed.packed_fields[loop.index0 + 1] %}
 {%-       set pad = next_pf.offset - (packed_field.offset + packed_field.size) %}
 {%-       if pad > 0 %}
-  uint8_t _pad{{loop.index0}}_[{{pad}}];
+  uint8_t pad{{loop.index0}}_[{{pad}}];
 {%-       endif %}
 {%-     endif %}
 {%-   endfor -%}
@@ -56,28 +65,27 @@
 {%-     set offset = last_field.offset + last_field.size %}
 {%-     set pad = offset|get_pad(8) -%}
 {%-     if pad > 0 %}
-  uint8_t _padfinal_[{{pad}}];
+  uint8_t padfinal_[{{pad}}];
 {%-     endif %}
 {%-   endif %}
 {%- endmacro %}
 
 {%- macro encodes(struct) -%}
-{%-   for pf in struct.packed.packed_fields if pf.field.kind|is_object_kind -%}
-mojo::internal::Encode(&{{pf.field.name}}_, handles);
-{%    endfor %}
-{%-   for pf in struct.packed.packed_fields if pf.field.kind|is_handle_kind -%}
-mojo::internal::EncodeHandle(&{{pf.field.name}}_, handles);
-{%    endfor %}
+{%-   for pf in struct.packed.packed_fields %}
+{%-     if pf.field.kind|is_object_kind %}
+mojo::internal::Encode(&{{pf.field.name}}, handles);
+{%-     elif pf.field.kind|is_handle_kind %}
+mojo::internal::EncodeHandle(&{{pf.field.name}}, handles);
+{%-     endif %}
+{%-   endfor %}
 {%- endmacro -%}
 
 {%- macro decodes(struct) -%}
-{%-   for pf in struct.packed.packed_fields if pf.field.kind|is_object_kind -%}
-if (!mojo::internal::Decode(&{{pf.field.name}}_, message))
-  return false;
-{%    endfor %}
-{%-   for pf in struct.packed.packed_fields if pf.field.kind|is_handle_kind -%}
-if (!mojo::internal::DecodeHandle(&{{pf.field.name}}_,
-                                  message->mutable_handles()))
-  return false;
-{%    endfor %}
+{%-   for pf in struct.packed.packed_fields %}
+{%-     if pf.field.kind|is_object_kind %}
+mojo::internal::Decode(&{{pf.field.name}}, handles);
+{%-     elif pf.field.kind|is_handle_kind %}
+mojo::internal::DecodeHandle(&{{pf.field.name}}, handles);
+{%-     endif %}
+{%-   endfor %}
 {%- endmacro -%}

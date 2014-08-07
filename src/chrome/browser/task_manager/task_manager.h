@@ -180,7 +180,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   base::string16 GetResourceWebCoreScriptsCacheSize(int index) const;
   base::string16 GetResourceWebCoreCSSCacheSize(int index) const;
   base::string16 GetResourceVideoMemory(int index) const;
-  base::string16 GetResourceFPS(int index) const;
   base::string16 GetResourceSqliteMemoryUsed(int index) const;
   base::string16 GetResourceIdleWakeupsPerSecond(int index) const;
   base::string16 GetResourceGoatsTeleported(int index) const;
@@ -215,10 +214,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   bool GetVideoMemory(int index,
                       size_t* video_memory,
                       bool* has_duplicates) const;
-
-  // Gets the fps of the given page. Return false if the resource for the given
-  // row isn't a renderer.
-  bool GetFPS(int index, float* result) const;
 
   // Gets the sqlite memory (in byte). Return false if the resource for the
   // given row doesn't report information.
@@ -306,10 +301,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
         base::ProcessId renderer_id,
         const blink::WebCache::ResourceTypeStats& stats);
 
-  void NotifyFPS(base::ProcessId renderer_id,
-                 int routing_id,
-                 float fps);
-
   void NotifyVideoMemoryUsageStats(
       const content::GPUVideoMemoryUsageStats& video_memory_usage_stats);
 
@@ -351,9 +342,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
     PerResourceValues();
     ~PerResourceValues();
 
-    bool is_nacl_debug_stub_port_valid;
-    int nacl_debug_stub_port;
-
     bool is_title_valid;
     base::string16 title;
 
@@ -371,9 +359,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
     bool is_webcore_stats_valid;
     blink::WebCache::ResourceTypeStats webcore_stats;
-
-    bool is_fps_valid;
-    float fps;
 
     bool is_sqlite_memory_bytes_valid;
     size_t sqlite_memory_bytes;
@@ -413,12 +398,15 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
     bool is_user_handles_valid;
     size_t user_handles;
     size_t user_handles_peak;
+
+    bool is_nacl_debug_stub_port_valid;
+    int nacl_debug_stub_port;
   };
 
   typedef std::vector<task_manager::Resource*> ResourceList;
   typedef std::vector<scoped_refptr<task_manager::ResourceProvider> >
       ResourceProviderList;
-  typedef std::map<base::ProcessHandle, ResourceList*> GroupMap;
+  typedef std::map<base::ProcessHandle, ResourceList> GroupMap;
   typedef std::map<base::ProcessHandle, base::ProcessMetrics*> MetricsMap;
   typedef std::map<task_manager::Resource*, int64> ResourceValueMap;
   typedef std::map<task_manager::Resource*,

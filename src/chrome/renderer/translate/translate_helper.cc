@@ -23,7 +23,7 @@
 #include "components/translate/core/common/translate_constants.h"
 #include "components/translate/core/common/translate_metrics.h"
 #include "components/translate/core/common/translate_util.h"
-#include "components/translate/language_detection/language_detection_util.h"
+#include "components/translate/core/language_detection/language_detection_util.h"
 #include "content/public/renderer/render_view.h"
 #include "extensions/common/constants.h"
 #include "extensions/renderer/extension_groups.h"
@@ -126,7 +126,7 @@ void TranslateHelper::PrepareForUrl(const GURL& url) {
     return;
   if (url.SchemeIs(content::kChromeDevToolsScheme))
     return;
-  if (url.SchemeIs(content::kFtpScheme))
+  if (url.SchemeIs(url::kFtpScheme))
     return;
 #if defined(OS_CHROMEOS)
   if (url.SchemeIs(extensions::kExtensionScheme) &&
@@ -626,7 +626,8 @@ void TranslateHelper::OnCLDDataAvailable(
     const IPC::PlatformFileForTransit ipc_file_handle,
     const uint64 data_offset,
     const uint64 data_length) {
-  LoadCLDDData(ipc_file_handle, data_offset, data_length);
+  LoadCLDDData(IPC::PlatformFileForTransitToFile(ipc_file_handle), data_offset,
+               data_length);
   if (deferred_page_capture_ && CLD2::isDataLoaded()) {
     deferred_page_capture_ = false; // Don't do this a second time.
     PageCaptured(deferred_page_id_, deferred_contents_);
@@ -636,7 +637,7 @@ void TranslateHelper::OnCLDDataAvailable(
 }
 
 void TranslateHelper::LoadCLDDData(
-    const IPC::PlatformFileForTransit ipc_file_handle,
+    base::File file,
     const uint64 data_offset,
     const uint64 data_length) {
   // Terminate immediately if told to stop polling.
@@ -647,18 +648,14 @@ void TranslateHelper::LoadCLDDData(
   if (CLD2::isDataLoaded())
     return;
 
-  // Grab the file handle
-  base::PlatformFile platform_file =
-      IPC::PlatformFileForTransitToPlatformFile(ipc_file_handle);
-  if (platform_file == base::kInvalidPlatformFileValue) {
+  if (!file.IsValid()) {
     LOG(ERROR) << "Can't find the CLD data file.";
     return;
   }
-  base::File basic_file(platform_file);
 
   // mmap the file
   s_cld_mmap_.Get().value = new base::MemoryMappedFile();
-  bool initialized = s_cld_mmap_.Get().value->Initialize(basic_file.Pass());
+  bool initialized = s_cld_mmap_.Get().value->Initialize(file.Pass());
   if (!initialized) {
     LOG(ERROR) << "mmap initialization failed";
     delete s_cld_mmap_.Get().value;

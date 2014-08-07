@@ -13,7 +13,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
-#include "net/base/network_time_notifier.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -34,6 +33,7 @@ namespace net {
 class HttpResponseHeaders;
 class HttpUserAgentSettings;
 class URLFetcher;
+class URLRequestJobFactory;
 }
 
 namespace syncer {
@@ -73,6 +73,7 @@ class SYNC_EXPORT_PRIVATE HttpBridge
     net::URLRequestContext* const baseline_context_;
     const scoped_refptr<base::SingleThreadTaskRunner> network_task_runner_;
     scoped_ptr<net::HttpUserAgentSettings> http_user_agent_settings_;
+    scoped_ptr<net::URLRequestJobFactory> job_factory_;
 
     DISALLOW_COPY_AND_ASSIGN(RequestContext);
   };

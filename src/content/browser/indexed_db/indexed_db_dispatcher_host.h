@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_INDEXED_DB_INDEXED_DB_DISPATCHER_HOST_H_
 
 #include <map>
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -62,8 +63,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
   virtual void OnDestruct() const OVERRIDE;
   virtual base::TaskRunner* OverrideTaskRunnerForMessage(
       const IPC::Message& message) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   void FinishTransaction(int64 host_transaction_id, bool committed);
 
@@ -150,6 +150,8 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
 
    private:
     IDMap<scoped_refptr<RefCountedType>, IDMapOwnPointer> map_;
+
+    DISALLOW_COPY_AND_ASSIGN(RefIDMap);
   };
 
   // Helper templates.
@@ -176,7 +178,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     ~DatabaseDispatcherHost();
 
     void CloseAll();
-    bool OnMessageReceived(const IPC::Message& message, bool* msg_is_ok);
+    bool OnMessageReceived(const IPC::Message& message);
 
     void OnCreateObjectStore(
         const IndexedDBHostMsg_DatabaseCreateObjectStore_Params& params);
@@ -224,6 +226,9 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     TransactionIDToSizeMap transaction_size_map_;
     TransactionIDToURLMap transaction_url_map_;
     TransactionIDToDatabaseIDMap transaction_database_map_;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(DatabaseDispatcherHost);
   };
 
   class CursorDispatcherHost {
@@ -231,12 +236,12 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     explicit CursorDispatcherHost(IndexedDBDispatcherHost* parent);
     ~CursorDispatcherHost();
 
-    bool OnMessageReceived(const IPC::Message& message, bool* msg_is_ok);
+    bool OnMessageReceived(const IPC::Message& message);
 
     void OnAdvance(int32 ipc_object_store_id,
                    int32 ipc_thread_id,
                    int32 ipc_callbacks_id,
-                   unsigned long count);
+                   uint32 count);
     void OnContinue(int32 ipc_object_store_id,
                     int32 ipc_thread_id,
                     int32 ipc_callbacks_id,
@@ -253,6 +258,9 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
 
     IndexedDBDispatcherHost* parent_;
     RefIDMap<IndexedDBCursor> map_;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(CursorDispatcherHost);
   };
 
   // The getter holds the context until OnChannelConnected() can be called from

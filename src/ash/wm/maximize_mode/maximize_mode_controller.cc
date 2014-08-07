@@ -4,13 +4,21 @@
 
 #include "ash/wm/maximize_mode/maximize_mode_controller.h"
 
+#include "ash/accelerators/accelerator_controller.h"
+#include "ash/accelerators/accelerator_table.h"
 #include "ash/accelerometer/accelerometer_controller.h"
 #include "ash/ash_switches.h"
 #include "ash/display/display_manager.h"
 #include "ash/shell.h"
 #include "ash/wm/maximize_mode/maximize_mode_event_blocker.h"
+#include "ash/wm/maximize_mode/maximize_mode_window_manager.h"
 #include "base/auto_reset.h"
 #include "base/command_line.h"
+#include "base/metrics/histogram.h"
+#include "ui/base/accelerators/accelerator.h"
+#include "ui/events/event.h"
+#include "ui/events/event_handler.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/vector3d_f.h"
 
 namespace ash {
@@ -54,8 +62,10 @@ const float kDisplayRotationStickyAngleDegrees = 60.0f;
 
 // The minimum acceleration in a direction required to trigger screen rotation.
 // This prevents rapid toggling of rotation when the device is near flat and
-// there is very little screen aligned force on it.
-const float kMinimumAccelerationScreenRotation = 0.3f;
+// there is very little screen aligned force on it. The value is effectively the
+// sine of the rise angle required, with the current value requiring at least a
+// 25 degree rise.
+const float kMinimumAccelerationScreenRotation = 0.42f;
 
 const float kRadiansToDegrees = 180.0f / 3.14159265f;
 
@@ -82,17 +92,78 @@ float ClockwiseAngleBetweenVectorsInDegrees(const gfx::Vector3dF& base,
   return angle;
 }
 
+#if defined(OS_CHROMEOS)
+
+// An event handler which listens for a volume down + power keypress and
+// triggers a screenshot when this is seen.
+class ScreenshotActionHandler : public ui::EventHandler {
+ public:
+  ScreenshotActionHandler();
+  virtual ~ScreenshotActionHandler();
+
+  // ui::EventHandler:
+  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
+
+ private:
+  bool volume_down_pressed_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScreenshotActionHandler);
+};
+
+ScreenshotActionHandler::ScreenshotActionHandler()
+    : volume_down_pressed_(false) {
+  Shell::GetInstance()->PrependPreTargetHandler(this);
+}
+
+ScreenshotActionHandler::~ScreenshotActionHandler() {
+  Shell::GetInstance()->RemovePreTargetHandler(this);
+}
+
+void ScreenshotActionHandler::OnKeyEvent(ui::KeyEvent* event) {
+  if (event->key_code() == ui::VKEY_VOLUME_DOWN) {
+    volume_down_pressed_ = event->type() == ui::ET_KEY_PRESSED ||
+                           event->type() == ui::ET_TRANSLATED_KEY_PRESS;
+  } else if (volume_down_pressed_ &&
+             event->key_code() == ui::VKEY_POWER &&
+             event->type() == ui::ET_KEY_PRESSED) {
+    Shell::GetInstance()->accelerator_controller()->PerformAction(
+        ash::TAKE_SCREENSHOT, ui::Accelerator());
+  }
+}
+
+#endif  // OS_CHROMEOS
+
 }  // namespace
 
 MaximizeModeController::MaximizeModeController()
     : rotation_locked_(false),
       have_seen_accelerometer_data_(false),
-      in_set_screen_rotation_(false) {
+      in_set_screen_rotation_(false),
+      user_rotation_(gfx::Display::ROTATE_0),
+      last_touchview_transition_time_(base::Time::Now()) {
   Shell::GetInstance()->accelerometer_controller()->AddObserver(this);
+  Shell::GetInstance()->AddShellObserver(this);
 }
 
 MaximizeModeController::~MaximizeModeController() {
+  Shell::GetInstance()->RemoveShellObserver(this);
   Shell::GetInstance()->accelerometer_controller()->RemoveObserver(this);
+}
+
+void MaximizeModeController::SetRotationLocked(bool rotation_locked) {
+  if (rotation_locked_ == rotation_locked)
+    return;
+  rotation_locked_ = rotation_locked;
+  FOR_EACH_OBSERVER(Observer, observers_,
+                    OnRotationLockChanged(rotation_locked_));
+}
+
+void MaximizeModeController::AddObserver(Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void MaximizeModeController::RemoveObserver(Observer* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 bool MaximizeModeController::CanEnterMaximizeMode() {
@@ -103,6 +174,27 @@ bool MaximizeModeController::CanEnterMaximizeMode() {
   return have_seen_accelerometer_data_ ||
          CommandLine::ForCurrentProcess()->HasSwitch(
              switches::kAshEnableTouchViewTesting);
+}
+
+void MaximizeModeController::EnableMaximizeModeWindowManager(bool enable) {
+  if (enable && !maximize_mode_window_manager_.get()) {
+    maximize_mode_window_manager_.reset(new MaximizeModeWindowManager());
+    // TODO(jonross): Move the maximize mode notifications from ShellObserver
+    // to MaximizeModeController::Observer
+    Shell::GetInstance()->OnMaximizeModeStarted();
+  } else if (!enable && maximize_mode_window_manager_.get()) {
+    maximize_mode_window_manager_.reset();
+    Shell::GetInstance()->OnMaximizeModeEnded();
+  }
+}
+
+bool MaximizeModeController::IsMaximizeModeWindowManagerEnabled() const {
+  return maximize_mode_window_manager_.get() != NULL;
+}
+
+void MaximizeModeController::Shutdown() {
+  maximize_mode_window_manager_.reset();
+  Shell::GetInstance()->OnMaximizeModeEnded();
 }
 
 void MaximizeModeController::OnAccelerometerUpdated(
@@ -127,11 +219,26 @@ void MaximizeModeController::OnAccelerometerUpdated(
   HandleScreenRotation(lid);
 }
 
+void MaximizeModeController::OnDisplayConfigurationChanged() {
+  if (in_set_screen_rotation_)
+    return;
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+  gfx::Display::Rotation user_rotation = display_manager->
+      GetDisplayInfo(gfx::Display::InternalDisplayId()).rotation();
+  if (user_rotation != current_rotation_) {
+    // A user may change other display configuration settings. When the user
+    // does change the rotation setting, then lock rotation to prevent the
+    // accelerometer from erasing their change.
+    SetRotationLocked(true);
+    user_rotation_ = user_rotation;
+    current_rotation_ = user_rotation;
+  }
+}
+
 void MaximizeModeController::HandleHingeRotation(const gfx::Vector3dF& base,
                                                  const gfx::Vector3dF& lid) {
   static const gfx::Vector3dF hinge_vector(0.0f, 1.0f, 0.0f);
-  bool maximize_mode_engaged =
-      Shell::GetInstance()->IsMaximizeModeWindowManagerEnabled();
+  bool maximize_mode_engaged = IsMaximizeModeWindowManagerEnabled();
   // Ignore the component of acceleration parallel to the hinge for the purposes
   // of hinge angle calculation.
   gfx::Vector3dF base_flattened(base);
@@ -158,43 +265,26 @@ void MaximizeModeController::HandleHingeRotation(const gfx::Vector3dF& base,
   if (maximize_mode_engaged &&
       angle > kFullyOpenAngleErrorTolerance &&
       angle < kExitMaximizeModeAngle) {
-    Shell::GetInstance()->EnableMaximizeModeWindowManager(false);
-    event_blocker_.reset();
+    LeaveMaximizeMode();
   } else if (!maximize_mode_engaged &&
       angle > kEnterMaximizeModeAngle) {
-    Shell::GetInstance()->EnableMaximizeModeWindowManager(true);
-    event_blocker_.reset(new MaximizeModeEventBlocker);
+    EnterMaximizeMode();
   }
 }
 
 void MaximizeModeController::HandleScreenRotation(const gfx::Vector3dF& lid) {
-  bool maximize_mode_engaged =
-      Shell::GetInstance()->IsMaximizeModeWindowManagerEnabled();
+  bool maximize_mode_engaged = IsMaximizeModeWindowManagerEnabled();
+
+  // TODO(jonross): track the updated rotation angle even when locked. So that
+  // when rotation lock is removed the accelerometer rotation can be applied
+  // without waiting for the next update.
+  if (!maximize_mode_engaged || rotation_locked_)
+    return;
 
   DisplayManager* display_manager =
       Shell::GetInstance()->display_manager();
   gfx::Display::Rotation current_rotation = display_manager->GetDisplayInfo(
       gfx::Display::InternalDisplayId()).rotation();
-
-  // If maximize mode is not engaged, ensure the screen is not rotated and
-  // do not rotate to match the current device orientation.
-  if (!maximize_mode_engaged) {
-    if (current_rotation != gfx::Display::ROTATE_0) {
-      // TODO(flackr): Currently this will prevent setting a manual rotation on
-      // the screen of a device with an accelerometer, this should only set it
-      // back to ROTATE_0 if it was last set by the accelerometer.
-      // Also, SetDisplayRotation will save the setting to the local store,
-      // this should be stored in a way that we can distinguish what the
-      // rotation was set by.
-      SetDisplayRotation(display_manager,
-                         gfx::Display::ROTATE_0);
-    }
-    rotation_locked_ = false;
-    return;
-  }
-
-  if (rotation_locked_)
-    return;
 
   // After determining maximize mode state, determine if the screen should
   // be rotated.
@@ -241,13 +331,8 @@ void MaximizeModeController::HandleScreenRotation(const gfx::Vector3dF& lid) {
   else if (angle < 270.0f)
     new_rotation = gfx::Display::ROTATE_180;
 
-  // When exiting maximize mode return rotation to 0. When entering, rotate to
-  // match screen orientation.
-  if (new_rotation == gfx::Display::ROTATE_0 ||
-      maximize_mode_engaged) {
-    SetDisplayRotation(display_manager,
-                       new_rotation);
-  }
+  if (new_rotation != current_rotation)
+    SetDisplayRotation(display_manager, new_rotation);
 }
 
 void MaximizeModeController::SetDisplayRotation(
@@ -255,8 +340,86 @@ void MaximizeModeController::SetDisplayRotation(
     gfx::Display::Rotation rotation) {
   base::AutoReset<bool> auto_in_set_screen_rotation(
       &in_set_screen_rotation_, true);
+  current_rotation_ = rotation;
   display_manager->SetDisplayRotation(gfx::Display::InternalDisplayId(),
                                       rotation);
+}
+
+void MaximizeModeController::EnterMaximizeMode() {
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+  current_rotation_ = user_rotation_ = display_manager->
+      GetDisplayInfo(gfx::Display::InternalDisplayId()).rotation();
+  EnableMaximizeModeWindowManager(true);
+  event_blocker_.reset(new MaximizeModeEventBlocker);
+#if defined(OS_CHROMEOS)
+  event_handler_.reset(new ScreenshotActionHandler);
+#endif
+  Shell::GetInstance()->display_controller()->AddObserver(this);
+}
+
+void MaximizeModeController::LeaveMaximizeMode() {
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+  gfx::Display::Rotation current_rotation = display_manager->
+      GetDisplayInfo(gfx::Display::InternalDisplayId()).rotation();
+  if (current_rotation != user_rotation_)
+    SetDisplayRotation(display_manager, user_rotation_);
+  rotation_locked_ = false;
+  EnableMaximizeModeWindowManager(false);
+  event_blocker_.reset();
+  event_handler_.reset();
+}
+
+void MaximizeModeController::OnSuspend() {
+  RecordTouchViewStateTransition();
+}
+
+void MaximizeModeController::OnResume() {
+  last_touchview_transition_time_ = base::Time::Now();
+}
+
+// Called after maximize mode has started, windows might still animate though.
+void MaximizeModeController::OnMaximizeModeStarted() {
+  RecordTouchViewStateTransition();
+}
+
+// Called after maximize mode has ended, windows might still be returning to
+// their original position.
+void MaximizeModeController::OnMaximizeModeEnded() {
+  RecordTouchViewStateTransition();
+}
+
+void MaximizeModeController::RecordTouchViewStateTransition() {
+  if (CanEnterMaximizeMode()) {
+    base::Time current_time = base::Time::Now();
+    base::TimeDelta delta = current_time - last_touchview_transition_time_;
+    if (IsMaximizeModeWindowManagerEnabled()) {
+      UMA_HISTOGRAM_LONG_TIMES("Ash.TouchView.TouchViewInactive", delta);
+      total_non_touchview_time_ += delta;
+    } else {
+      UMA_HISTOGRAM_LONG_TIMES("Ash.TouchView.TouchViewActive", delta);
+      total_touchview_time_ += delta;
+    }
+    last_touchview_transition_time_ = current_time;
+  }
+}
+
+void MaximizeModeController::OnAppTerminating() {
+  if (CanEnterMaximizeMode()) {
+    RecordTouchViewStateTransition();
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Ash.TouchView.TouchViewActiveTotal",
+        total_touchview_time_.InMinutes(),
+        1, base::TimeDelta::FromDays(7).InMinutes(), 50);
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Ash.TouchView.TouchViewInactiveTotal",
+        total_non_touchview_time_.InMinutes(),
+        1, base::TimeDelta::FromDays(7).InMinutes(), 50);
+    base::TimeDelta total_runtime = total_touchview_time_ +
+        total_non_touchview_time_;
+    if (total_runtime.InSeconds() > 0) {
+      UMA_HISTOGRAM_PERCENTAGE("Ash.TouchView.TouchViewActivePercentage",
+          100 * total_touchview_time_.InSeconds() / total_runtime.InSeconds());
+    }
+  }
+  Shell::GetInstance()->display_controller()->RemoveObserver(this);
 }
 
 }  // namespace ash

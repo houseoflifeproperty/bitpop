@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "mojo/services/public/interfaces/view_manager/view_manager.mojom.h"
 #include "mojo/services/view_manager/ids.h"
 #include "mojo/services/view_manager/view_manager_export.h"
 #include "ui/aura/window.h"
@@ -15,8 +16,8 @@
 #include "ui/aura/window_observer.h"
 
 namespace mojo {
-namespace services {
 namespace view_manager {
+namespace service {
 
 class NodeDelegate;
 class View;
@@ -37,15 +38,31 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   void Add(Node* child);
   void Remove(Node* child);
 
+  void Reorder(Node* child, Node* relative, OrderDirection direction);
+
   aura::Window* window() { return &window_; }
 
-  Node* GetParent();
+  const gfx::Rect& bounds() const { return window_.bounds(); }
 
+  const Node* GetParent() const;
+  Node* GetParent() {
+    return const_cast<Node*>(const_cast<const Node*>(this)->GetParent());
+  }
+
+  const Node* GetRoot() const;
+  Node* GetRoot() {
+    return const_cast<Node*>(const_cast<const Node*>(this)->GetRoot());
+  }
+
+  std::vector<const Node*> GetChildren() const;
   std::vector<Node*> GetChildren();
+
+  bool Contains(const Node* node) const;
 
   // Sets the view associated with this node. Node does not own its View.
   void SetView(View* view);
   View* view() { return view_; }
+  const View* view() const { return view_; }
 
  private:
   // WindowObserver overrides:
@@ -72,6 +89,9 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
 
+  // ui::EventHandler overrides:
+  virtual void OnEvent(ui::Event* event) OVERRIDE;
+
   NodeDelegate* delegate_;
   const NodeId id_;
 
@@ -85,8 +105,8 @@ class MOJO_VIEW_MANAGER_EXPORT Node
   DISALLOW_COPY_AND_ASSIGN(Node);
 };
 
+}  // namespace service
 }  // namespace view_manager
-}  // namespace services
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_VIEW_MANAGER_NODE_H_

@@ -234,7 +234,7 @@ AudioPlayer.prototype.select_ = function(newTrack, opt_restoreState) {
  * @private
  */
 AudioPlayer.prototype.fetchMetadata_ = function(entry, callback) {
-  this.metadataCache_.get(entry, 'thumbnail|media|streaming',
+  this.metadataCache_.getOne(entry, 'thumbnail|media|streaming',
       function(generation, metadata) {
         // Do nothing if another load happened since the metadata request.
         if (this.playlistGeneration_ == generation)
@@ -468,7 +468,7 @@ AudioPlayer.prototype.syncHeight_ = function() {
       targetHeight = AudioPlayer.CONTROLS_HEIGHT + expandedListHeight;
     }
   } else {
-    // Not expaned.
+    // Not expanded.
     targetHeight = AudioPlayer.CONTROLS_HEIGHT + AudioPlayer.TRACK_HEIGHT;
   }
 

@@ -33,8 +33,6 @@ Extends IdlType and IdlUnion type with |enum_validation_expression| property.
 Design doc: http://www.chromium.org/developers/design-documents/idl-compiler
 """
 
-# FIXME: eliminate this file if possible
-
 import re
 
 from idl_types import IdlType, IdlUnionType
@@ -42,7 +40,18 @@ import idl_types
 from v8_globals import includes
 import v8_types
 
-ACRONYMS = ['CSS', 'HTML', 'IME', 'JS', 'SVG', 'URL', 'WOFF', 'XML', 'XSLT']
+ACRONYMS = [
+    'CSSOM',  # must come *before* CSS to match full acronym
+    'CSS',
+    'HTML',
+    'IME',
+    'JS',
+    'SVG',
+    'URL',
+    'WOFF',
+    'XML',
+    'XSLT',
+]
 
 
 ################################################################################
@@ -146,13 +155,31 @@ def activity_logging_world_list(member, access_type=''):
     return set([''])  # At minimum, include isolated worlds.
 
 
+# [ActivityLogging]
+def activity_logging_world_check(member):
+    """Returns if an isolated world check is required when generating activity
+    logging code.
+
+    The check is required when there is no per-world binding code and logging is
+    required only for isolated world.
+    """
+    extended_attributes = member.extended_attributes
+    if 'LogActivity' not in extended_attributes:
+        return False
+    if ('PerWorldBindings' not in extended_attributes and
+        'LogAllWorlds' not in extended_attributes):
+        return True
+    return False
+
+
 # [CallWith]
 CALL_WITH_ARGUMENTS = {
-    'ScriptState': 'state',
-    'ExecutionContext': 'scriptContext',
+    'ScriptState': 'scriptState',
+    'ExecutionContext': 'executionContext',
     'ScriptArguments': 'scriptArguments.release()',
     'ActiveWindow': 'callingDOMWindow(info.GetIsolate())',
     'FirstWindow': 'enteredDOMWindow(info.GetIsolate())',
+    'Document': 'document',
 }
 # List because key order matters, as we want arguments in deterministic order
 CALL_WITH_VALUES = [
@@ -161,12 +188,11 @@ CALL_WITH_VALUES = [
     'ScriptArguments',
     'ActiveWindow',
     'FirstWindow',
+    'Document',
 ]
 
 
-def call_with_arguments(member, call_with_values=None):
-    # Optional parameter so setter can override with [SetterCallWith]
-    call_with_values = call_with_values or member.extended_attributes.get('CallWith')
+def call_with_arguments(call_with_values):
     if not call_with_values:
         return []
     return [CALL_WITH_ARGUMENTS[value]

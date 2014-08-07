@@ -4,32 +4,33 @@
 
 #include "mojo/public/cpp/environment/environment.h"
 
-#include "mojo/common/environment_data.h"
+#include "mojo/environment/default_async_waiter_impl.h"
+#include "mojo/environment/default_logger_impl.h"
 
 namespace mojo {
 
-class Environment::Data {
- public:
-  Data();
-  ~Data();
-
- private:
-  common::EnvironmentData data_;
-
-  DISALLOW_COPY_AND_ASSIGN(Data);
-};
-
-Environment::Data::Data() {
+// These methods are intentionally not implemented so that there is a link
+// error if someone uses them in a Chromium-environment.
+#if 0
+Environment::Environment() {
 }
 
-Environment::Data::~Data() {
-}
-
-Environment::Environment() : data_(new Environment::Data) {
+Environment::Environment(const MojoAsyncWaiter* default_async_waiter,
+                         const MojoLogger* default_logger) {
 }
 
 Environment::~Environment() {
-  delete data_;
+}
+#endif
+
+// static
+const MojoAsyncWaiter* Environment::GetDefaultAsyncWaiter() {
+  return internal::GetDefaultAsyncWaiterImpl();
+}
+
+// static
+const MojoLogger* Environment::GetDefaultLogger() {
+  return internal::GetDefaultLoggerImpl();
 }
 
 }  // namespace mojo

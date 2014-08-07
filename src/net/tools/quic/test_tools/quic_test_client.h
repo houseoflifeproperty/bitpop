@@ -14,6 +14,7 @@
 #include "net/quic/quic_packet_creator.h"
 #include "net/quic/quic_protocol.h"
 #include "net/tools/balsa/balsa_frame.h"
+#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_client.h"
 #include "net/tools/quic/test_tools/simple_client.h"
 
@@ -36,13 +37,13 @@ class MockableQuicClient : public QuicClient {
   MockableQuicClient(IPEndPoint server_address,
                      const QuicServerId& server_id,
                      const QuicVersionVector& supported_versions,
-                     uint32 initial_flow_control_window);
+                     EpollServer* epoll_server);
 
   MockableQuicClient(IPEndPoint server_address,
                      const QuicServerId& server_id,
                      const QuicConfig& config,
                      const QuicVersionVector& supported_versions,
-                     uint32 initial_flow_control_window);
+                     EpollServer* epoll_server);
 
   virtual ~MockableQuicClient() OVERRIDE;
   virtual QuicPacketWriter* CreateQuicPacketWriter() OVERRIDE;
@@ -72,8 +73,7 @@ class QuicTestClient : public SimpleClient,
                  const string& server_hostname,
                  bool secure,
                  const QuicConfig& config,
-                 const QuicVersionVector& supported_versions,
-                 uint32 client_initial_flow_control_receive_window);
+                 const QuicVersionVector& supported_versions);
 
   virtual ~QuicTestClient();
 
@@ -82,10 +82,11 @@ class QuicTestClient : public SimpleClient,
   // name is recorded and available with |cert_common_name()|.
   void ExpectCertificates(bool on);
 
+  // Sets the |user_agent_id| of the |client_|.
+  void SetUserAgentID(const string& user_agent_id);
+
   // Wraps data in a quic packet and sends it.
   ssize_t SendData(string data, bool last_data);
-
-  QuicPacketCreator::Options* options();
 
   // From SimpleClient
   // Clears any outstanding state and sends a simple GET of 'uri' to the
@@ -156,7 +157,13 @@ class QuicTestClient : public SimpleClient,
 
   void set_priority(QuicPriority priority) { priority_ = priority; }
 
+  // Sets client's FEC policy. This policy applies to the data stream(s), and
+  // also to the headers and crypto streams.
+  void SetFecPolicy(FecPolicy fec_policy);
+
   void WaitForWriteToFlush();
+
+  EpollServer* epoll_server() { return &epoll_server_; }
 
  protected:
   QuicTestClient();
@@ -166,6 +173,7 @@ class QuicTestClient : public SimpleClient,
   void set_client(MockableQuicClient* client) { client_.reset(client); }
 
  private:
+  EpollServer epoll_server_;
   scoped_ptr<MockableQuicClient> client_;  // The actual client
   QuicSpdyClientStream* stream_;
 
@@ -191,7 +199,8 @@ class QuicTestClient : public SimpleClient,
   bool auto_reconnect_;
   // Should we buffer the response body? Defaults to true.
   bool buffer_body_;
-
+  // FEC policy for data sent by this client.
+  FecPolicy fec_policy_;
   // proof_verifier_ points to a RecordingProofVerifier that is owned by
   // client_.
   ProofVerifier* proof_verifier_;

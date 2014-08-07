@@ -27,7 +27,7 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/google/google_url_tracker.h"
+#include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor.h"
@@ -41,6 +41,7 @@
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/omnibox/omnibox_current_page_delegate_impl.h"
@@ -53,9 +54,11 @@
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/google/core/browser/google_url_tracker.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -65,6 +68,7 @@
 #include "ui/gfx/image/image.h"
 #include "url/url_util.h"
 
+using metrics::OmniboxEventProto;
 using predictors::AutocompleteActionPredictor;
 
 
@@ -331,8 +335,7 @@ bool OmniboxEditModel::UpdatePermanentText() {
 }
 
 GURL OmniboxEditModel::PermanentURL() {
-  return URLFixerUpper::FixupURL(base::UTF16ToUTF8(permanent_text_),
-                                 std::string());
+  return url_fixer::FixupURL(base::UTF16ToUTF8(permanent_text_), std::string());
 }
 
 void OmniboxEditModel::SetUserText(const base::string16& text) {
@@ -488,7 +491,7 @@ void OmniboxEditModel::AdjustTextForCopy(int sel_min,
       url->SchemeIs(url::kHttpScheme) && perm_url.host() == url->host()) {
     *write_url = true;
     base::string16 http = base::ASCIIToUTF16(url::kHttpScheme) +
-        base::ASCIIToUTF16(content::kStandardSchemeSeparator);
+        base::ASCIIToUTF16(url::kStandardSchemeSeparator);
     if (text->compare(0, http.length(), http) != 0)
       *text = http + *text;
   }
@@ -518,10 +521,11 @@ void OmniboxEditModel::SetInputInProgress(bool in_progress) {
   // * For HIDE_ON_MOUSE_RELEASE, which only hides the chip on mouse release if
   //   the omnibox is empty, it handles the "omnibox was not empty" case by
   //   acting like HIDE_ON_USER_INPUT.
-  if (chrome::ShouldDisplayOriginChipV2() && in_progress)
+  if (chrome::ShouldDisplayOriginChip() && in_progress)
     controller()->GetToolbarModel()->set_origin_chip_enabled(false);
 
   controller_->GetToolbarModel()->set_input_in_progress(in_progress);
+  controller_->EndOriginChipAnimations(true);
   controller_->Update(NULL);
 
   if (user_input_in_progress_ || !in_revert_)
@@ -687,8 +691,13 @@ void OmniboxEditModel::AcceptInput(WindowOpenDisposition disposition,
   }
 
   const TemplateURL* template_url = match.GetTemplateURL(profile_, false);
-  if (template_url && template_url->url_ref().HasGoogleBaseURLs())
-    GoogleURLTracker::GoogleURLSearchCommitted(profile_);
+  if (template_url && template_url->url_ref().HasGoogleBaseURLs(
+          UIThreadSearchTermsData(profile_))) {
+    GoogleURLTracker* tracker =
+        GoogleURLTrackerFactory::GetForProfile(profile_);
+    if (tracker)
+      tracker->SearchCommitted();
+  }
 
   DCHECK(popup_model());
   view_->OpenMatch(match, disposition, alternate_nav_url, base::string16(),
@@ -750,7 +759,8 @@ void OmniboxEditModel::OpenMatch(AutocompleteMatch match,
       -1,  // don't yet know tab ID; set later if appropriate
       ClassifyPage(),
       elapsed_time_since_user_first_modified_omnibox,
-      match.inline_autocompletion.length(),
+      match.allowed_to_be_default_match ? match.inline_autocompletion.length() :
+          base::string16::npos,
       elapsed_time_since_last_change_to_default_match,
       (!popup_model()->IsOpen() || !pasted_text.empty()) ?
           fake_single_entry_result : result());
@@ -802,8 +812,10 @@ void OmniboxEditModel::OpenMatch(AutocompleteMatch match,
       // in template_url.h.
     }
 
-    UMA_HISTOGRAM_ENUMERATION("Omnibox.SearchEngineType",
-        TemplateURLPrepopulateData::GetEngineType(*template_url),
+    UMA_HISTOGRAM_ENUMERATION(
+        "Omnibox.SearchEngineType",
+        TemplateURLPrepopulateData::GetEngineType(
+            *template_url, UIThreadSearchTermsData(profile_)),
         SEARCH_ENGINE_MAX);
   }
 
@@ -1416,31 +1428,31 @@ bool OmniboxEditModel::IsSpaceCharForAcceptingKeyword(wchar_t c) {
   }
 }
 
-AutocompleteInput::PageClassification OmniboxEditModel::ClassifyPage() const {
+OmniboxEventProto::PageClassification OmniboxEditModel::ClassifyPage() const {
   if (!delegate_->CurrentPageExists())
-    return AutocompleteInput::OTHER;
+    return OmniboxEventProto::OTHER;
   if (delegate_->IsInstantNTP()) {
     // Note that we treat OMNIBOX as the source if focus_source_ is INVALID,
     // i.e., if input isn't actually in progress.
     return (focus_source_ == FAKEBOX) ?
-        AutocompleteInput::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS :
-        AutocompleteInput::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS;
+        OmniboxEventProto::INSTANT_NTP_WITH_FAKEBOX_AS_STARTING_FOCUS :
+        OmniboxEventProto::INSTANT_NTP_WITH_OMNIBOX_AS_STARTING_FOCUS;
   }
   const GURL& gurl = delegate_->GetURL();
   if (!gurl.is_valid())
-    return AutocompleteInput::INVALID_SPEC;
+    return OmniboxEventProto::INVALID_SPEC;
   const std::string& url = gurl.spec();
   if (url == chrome::kChromeUINewTabURL)
-    return AutocompleteInput::NTP;
-  if (url == content::kAboutBlankURL)
-    return AutocompleteInput::BLANK;
+    return OmniboxEventProto::NTP;
+  if (url == url::kAboutBlankURL)
+    return OmniboxEventProto::BLANK;
   if (url == profile()->GetPrefs()->GetString(prefs::kHomePage))
-    return AutocompleteInput::HOME_PAGE;
+    return OmniboxEventProto::HOME_PAGE;
   if (controller_->GetToolbarModel()->WouldPerformSearchTermReplacement(true))
-    return AutocompleteInput::SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT;
+    return OmniboxEventProto::SEARCH_RESULT_PAGE_DOING_SEARCH_TERM_REPLACEMENT;
   if (delegate_->IsSearchResultsPage())
-    return AutocompleteInput::SEARCH_RESULT_PAGE_NO_SEARCH_TERM_REPLACEMENT;
-  return AutocompleteInput::OTHER;
+    return OmniboxEventProto::SEARCH_RESULT_PAGE_NO_SEARCH_TERM_REPLACEMENT;
+  return OmniboxEventProto::OTHER;
 }
 
 void OmniboxEditModel::ClassifyStringForPasteAndGo(

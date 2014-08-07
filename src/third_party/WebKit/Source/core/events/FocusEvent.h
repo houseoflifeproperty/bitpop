@@ -36,7 +36,7 @@ class Node;
 struct FocusEventInit : public UIEventInit {
     FocusEventInit();
 
-    RefPtr<EventTarget> relatedTarget;
+    RefPtrWillBeMember<EventTarget> relatedTarget;
 };
 
 class FocusEvent FINAL : public UIEvent {
@@ -70,14 +70,14 @@ private:
     FocusEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView>, int, EventTarget*);
     FocusEvent(const AtomicString& type, const FocusEventInit&);
 
-    RefPtr<EventTarget> m_relatedTarget;
+    RefPtrWillBeMember<EventTarget> m_relatedTarget;
 };
 
 DEFINE_EVENT_TYPE_CASTS(FocusEvent);
 
 class FocusEventDispatchMediator FINAL : public EventDispatchMediator {
 public:
-    static PassRefPtr<FocusEventDispatchMediator> create(PassRefPtrWillBeRawPtr<FocusEvent>);
+    static PassRefPtrWillBeRawPtr<FocusEventDispatchMediator> create(PassRefPtrWillBeRawPtr<FocusEvent>);
 private:
     explicit FocusEventDispatchMediator(PassRefPtrWillBeRawPtr<FocusEvent>);
     FocusEvent* event() const { return static_cast<FocusEvent*>(EventDispatchMediator::event()); }
@@ -86,7 +86,7 @@ private:
 
 class BlurEventDispatchMediator FINAL : public EventDispatchMediator {
 public:
-    static PassRefPtr<BlurEventDispatchMediator> create(PassRefPtrWillBeRawPtr<FocusEvent>);
+    static PassRefPtrWillBeRawPtr<BlurEventDispatchMediator> create(PassRefPtrWillBeRawPtr<FocusEvent>);
 private:
     explicit BlurEventDispatchMediator(PassRefPtrWillBeRawPtr<FocusEvent>);
     FocusEvent* event() const { return static_cast<FocusEvent*>(EventDispatchMediator::event()); }
@@ -95,7 +95,7 @@ private:
 
 class FocusInEventDispatchMediator FINAL : public EventDispatchMediator {
 public:
-    static PassRefPtr<FocusInEventDispatchMediator> create(PassRefPtrWillBeRawPtr<FocusEvent>);
+    static PassRefPtrWillBeRawPtr<FocusInEventDispatchMediator> create(PassRefPtrWillBeRawPtr<FocusEvent>);
 private:
     explicit FocusInEventDispatchMediator(PassRefPtrWillBeRawPtr<FocusEvent>);
     FocusEvent* event() const { return static_cast<FocusEvent*>(EventDispatchMediator::event()); }
@@ -104,7 +104,7 @@ private:
 
 class FocusOutEventDispatchMediator FINAL : public EventDispatchMediator {
 public:
-    static PassRefPtr<FocusOutEventDispatchMediator> create(PassRefPtrWillBeRawPtr<FocusEvent>);
+    static PassRefPtrWillBeRawPtr<FocusOutEventDispatchMediator> create(PassRefPtrWillBeRawPtr<FocusEvent>);
 private:
     explicit FocusOutEventDispatchMediator(PassRefPtrWillBeRawPtr<FocusEvent>);
     FocusEvent* event() const { return static_cast<FocusEvent*>(EventDispatchMediator::event()); }

@@ -28,6 +28,7 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/debug/leak_annotations.h"
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
@@ -519,6 +520,8 @@ class SettingGetterImplGConf : public ProxyConfigServiceLinux::SettingGetter {
 #endif  // defined(USE_GCONF)
 
 #if defined(USE_GIO)
+const char kProxyGConfSchema[] = "org.gnome.system.proxy";
+
 // This setting getter uses gsettings, as used in most GNOME 3 desktops.
 class SettingGetterImplGSettings
     : public ProxyConfigServiceLinux::SettingGetter {
@@ -574,8 +577,8 @@ class SettingGetterImplGSettings
     DCHECK(!client_);
     DCHECK(!task_runner_.get());
 
-    if (!SchemaExists("org.gnome.system.proxy") ||
-        !(client_ = libgio_loader_.g_settings_new("org.gnome.system.proxy"))) {
+    if (!SchemaExists(kProxyGConfSchema) ||
+        !(client_ = libgio_loader_.g_settings_new(kProxyGConfSchema))) {
       // It's not clear whether/when this can return NULL.
       LOG(ERROR) << "Unable to create a gsettings client";
       return false;
@@ -815,9 +818,12 @@ bool SettingGetterImplGSettings::LoadAndCheckVersion(
     }
   }
 
-  GSettings* client;
-  if (!SchemaExists("org.gnome.system.proxy") ||
-      !(client = libgio_loader_.g_settings_new("org.gnome.system.proxy"))) {
+  GSettings* client = NULL;
+  if (SchemaExists(kProxyGConfSchema)) {
+    ANNOTATE_SCOPED_MEMORY_LEAK; // http://crbug.com/380782
+    client = libgio_loader_.g_settings_new(kProxyGConfSchema);
+  }
+  if (!client) {
     VLOG(1) << "Cannot create gsettings client. Will fall back to gconf.";
     return false;
   }

@@ -22,15 +22,19 @@
 #include "config.h"
 #include "core/loader/ImageLoader.h"
 
+#include "bindings/v8/ScriptController.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/dom/IncrementLoadEventDelayCount.h"
+#include "core/dom/Microtask.h"
 #include "core/events/Event.h"
 #include "core/events/EventSender.h"
 #include "core/fetch/CrossOriginAccessControl.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/html/HTMLObjectElement.h"
+#include "core/frame/LocalFrame.h"
+#include "core/html/HTMLImageElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderVideo.h"
@@ -56,6 +60,40 @@ static inline bool pageIsBeingDismissed(Document* document)
     return document->pageDismissalEventBeingDispatched() != Document::NoDismissal;
 }
 
+class ImageLoader::Task : public blink::WebThread::Task {
+public:
+    Task(ImageLoader* loader)
+        : m_loader(loader)
+        , m_shouldBypassMainWorldContentSecurityPolicy(false)
+        , m_weakFactory(this)
+    {
+        LocalFrame* frame = loader->m_element->document().frame();
+        m_shouldBypassMainWorldContentSecurityPolicy = frame->script().shouldBypassMainWorldContentSecurityPolicy();
+    }
+
+    virtual void run() OVERRIDE
+    {
+        if (m_loader) {
+            m_loader->doUpdateFromElement(m_shouldBypassMainWorldContentSecurityPolicy);
+        }
+    }
+
+    void clearLoader()
+    {
+        m_loader = 0;
+    }
+
+    WeakPtr<Task> createWeakPtr()
+    {
+        return m_weakFactory.createWeakPtr();
+    }
+
+private:
+    ImageLoader* m_loader;
+    bool m_shouldBypassMainWorldContentSecurityPolicy;
+    WeakPtrFactory<Task> m_weakFactory;
+};
+
 ImageLoader::ImageLoader(Element* element)
     : m_element(element)
     , m_image(0)
@@ -71,6 +109,9 @@ ImageLoader::ImageLoader(Element* element)
 
 ImageLoader::~ImageLoader()
 {
+    if (m_pendingTask)
+        m_pendingTask->clearLoader();
+
     if (m_image)
         m_image->removeClient(this);
 
@@ -81,11 +122,11 @@ ImageLoader::~ImageLoader()
     ASSERT(m_hasPendingErrorEvent || !errorEventSender().hasPendingEvents(this));
     if (m_hasPendingErrorEvent)
         errorEventSender().cancelEvent(this);
+}
 
-    // If the ImageLoader is being destroyed but it is still protecting its image-loading Element,
-    // remove that protection here.
-    if (m_elementIsProtected)
-        m_element->deref();
+void ImageLoader::trace(Visitor* visitor)
+{
+    visitor->trace(m_element);
 }
 
 void ImageLoader::setImage(ImageResource* newImage)
@@ -123,24 +164,28 @@ void ImageLoader::setImageWithoutConsideringPendingLoadEvent(ImageResource* newI
         imageResource->resetAnimation();
 }
 
-void ImageLoader::updateFromElement()
+void ImageLoader::doUpdateFromElement(bool bypassMainWorldCSP)
 {
-    // Don't load images for inactive documents. We don't want to slow down the
-    // raw HTML parsing case by loading images we don't intend to display.
+    // We don't need to call clearLoader here: Either we were called from the
+    // task, or our caller updateFromElement cleared the task's loader (and set
+    // m_pendingTask to null).
+    m_pendingTask.clear();
+    // Make sure to only decrement the count when we exit this function
+    OwnPtr<IncrementLoadEventDelayCount> delayLoad;
+    delayLoad.swap(m_delayLoad);
+
     Document& document = m_element->document();
     if (!document.isActive())
         return;
 
     AtomicString attr = m_element->imageSourceURL();
 
-    if (!m_failedLoadURL.isEmpty() && attr == m_failedLoadURL)
-        return;
-
-    // Do not load any image if the 'src' attribute is missing or if it is
-    // an empty string.
+    KURL url = imageURL();
     ResourcePtr<ImageResource> newImage = 0;
-    if (!attr.isNull() && !stripLeadingAndTrailingHTMLSpaces(attr).isEmpty()) {
-        FetchRequest request(ResourceRequest(document.completeURL(sourceURI(attr))), element()->localName());
+    if (!url.isNull()) {
+        FetchRequest request(ResourceRequest(url), element()->localName());
+        if (bypassMainWorldCSP)
+            request.setContentSecurityCheck(DoNotCheckContentSecurityPolicy);
 
         AtomicString crossOriginMode = m_element->fastGetAttribute(HTMLNames::crossoriginAttr);
         if (!crossOriginMode.isNull())
@@ -218,10 +263,75 @@ void ImageLoader::updateFromElement()
     updatedHasPendingEvent();
 }
 
+void ImageLoader::updateFromElement(LoadType loadType)
+{
+    AtomicString attr = m_element->imageSourceURL();
+
+    if (!m_failedLoadURL.isEmpty() && attr == m_failedLoadURL)
+        return;
+
+    // If we have a pending task, we have to clear it -- either we're
+    // now loading immediately, or we need to reset the task's state.
+    if (m_pendingTask) {
+        m_pendingTask->clearLoader();
+        m_pendingTask.clear();
+    }
+
+    KURL url = imageURL();
+    if (!attr.isNull() && !url.isNull()) {
+        bool loadImmediately = shouldLoadImmediately(url) || (loadType == ForceLoadImmediately);
+        if (loadImmediately) {
+            doUpdateFromElement(false);
+        } else {
+            OwnPtr<Task> task = adoptPtr(new Task(this));
+            m_pendingTask = task->createWeakPtr();
+            Microtask::enqueueMicrotask(task.release());
+            m_delayLoad = adoptPtr(new IncrementLoadEventDelayCount(m_element->document()));
+            return;
+        }
+    } else {
+        doUpdateFromElement(false);
+    }
+}
+
 void ImageLoader::updateFromElementIgnoringPreviousError()
 {
     clearFailedLoadURL();
     updateFromElement();
+}
+
+KURL ImageLoader::imageURL() const
+{
+    KURL url;
+
+    // Don't load images for inactive documents. We don't want to slow down the
+    // raw HTML parsing case by loading images we don't intend to display.
+    Document& document = m_element->document();
+    if (!document.isActive())
+        return url;
+
+    AtomicString attr = m_element->imageSourceURL();
+
+    // Do not load any image if the 'src' attribute is missing or if it is
+    // an empty string.
+    if (!attr.isNull() && !stripLeadingAndTrailingHTMLSpaces(attr).isEmpty()) {
+        url = document.completeURL(sourceURI(attr));
+    }
+    return url;
+}
+
+bool ImageLoader::shouldLoadImmediately(const KURL& url) const
+{
+    if (m_loadManually)
+        return true;
+    if (isHTMLObjectElement(m_element) || isHTMLEmbedElement(m_element))
+        return true;
+
+    if (url.protocolIsData())
+        return true;
+    if (memoryCache()->resourceForURL(url))
+        return true;
+    return false;
 }
 
 void ImageLoader::notifyFinished(Resource* resource)
@@ -308,7 +418,7 @@ void ImageLoader::updatedHasPendingEvent()
         if (m_derefElementTimer.isActive())
             m_derefElementTimer.stop();
         else
-            m_element->ref();
+            m_keepAlive = m_element;
     } else {
         ASSERT(!m_derefElementTimer.isActive());
         m_derefElementTimer.startOneShot(0, FROM_HERE);
@@ -317,7 +427,7 @@ void ImageLoader::updatedHasPendingEvent()
 
 void ImageLoader::timerFired(Timer<ImageLoader>*)
 {
-    m_element->deref();
+    m_keepAlive.clear();
 }
 
 void ImageLoader::dispatchPendingEvent(ImageEventSender* eventSender)
@@ -350,6 +460,7 @@ void ImageLoader::dispatchPendingErrorEvent()
     if (!m_hasPendingErrorEvent)
         return;
     m_hasPendingErrorEvent = false;
+
     if (element()->document().frame())
         element()->dispatchEvent(Event::create(EventTypeNames::error));
 
@@ -364,16 +475,26 @@ void ImageLoader::addClient(ImageLoaderClient* client)
         if (m_image && !m_highPriorityClientCount++)
             memoryCache()->updateDecodedResource(m_image.get(), UpdateForPropertyChange, MemoryCacheLiveResourcePriorityHigh);
     }
+#if ENABLE(OILPAN)
+    m_clients.add(client, adoptPtr(new ImageLoaderClientRemover(*this, *client)));
+#else
     m_clients.add(client);
+#endif
 }
-void ImageLoader::removeClient(ImageLoaderClient* client)
+
+void ImageLoader::willRemoveClient(ImageLoaderClient& client)
 {
-    if (client->requestsHighLiveResourceCachePriority()) {
+    if (client.requestsHighLiveResourceCachePriority()) {
         ASSERT(m_highPriorityClientCount);
         m_highPriorityClientCount--;
         if (m_image && !m_highPriorityClientCount)
             memoryCache()->updateDecodedResource(m_image.get(), UpdateForPropertyChange, MemoryCacheLiveResourcePriorityLow);
     }
+}
+
+void ImageLoader::removeClient(ImageLoaderClient* client)
+{
+    willRemoveClient(*client);
     m_clients.remove(client);
 }
 
@@ -389,22 +510,39 @@ void ImageLoader::dispatchPendingErrorEvents()
 
 void ImageLoader::elementDidMoveToNewDocument()
 {
+    if (m_delayLoad) {
+        m_delayLoad->documentChanged(m_element->document());
+    }
     clearFailedLoadURL();
     setImage(0);
 }
 
 void ImageLoader::sourceImageChanged()
 {
-    ImageLoaderClientSet::iterator end = m_clients.end();
-    for (ImageLoaderClientSet::iterator it = m_clients.begin(); it != end; ++it) {
+#if ENABLE(OILPAN)
+    PersistentHeapHashMap<WeakMember<ImageLoaderClient>, OwnPtr<ImageLoaderClientRemover> >::iterator end = m_clients.end();
+    for (PersistentHeapHashMap<WeakMember<ImageLoaderClient>, OwnPtr<ImageLoaderClientRemover> >::iterator it = m_clients.begin(); it != end; ++it) {
+        it->key->notifyImageSourceChanged();
+    }
+#else
+    HashSet<ImageLoaderClient*>::iterator end = m_clients.end();
+    for (HashSet<ImageLoaderClient*>::iterator it = m_clients.begin(); it != end; ++it) {
         ImageLoaderClient* handle = *it;
         handle->notifyImageSourceChanged();
     }
+#endif
 }
 
 inline void ImageLoader::clearFailedLoadURL()
 {
     m_failedLoadURL = AtomicString();
 }
+
+#if ENABLE(OILPAN)
+ImageLoader::ImageLoaderClientRemover::~ImageLoaderClientRemover()
+{
+    m_loader.willRemoveClient(m_client);
+}
+#endif
 
 }

@@ -36,20 +36,16 @@ const v8::PropertyCallbackInfo<v8::Value>& info
     {% elif not attribute.is_static %}
     {{cpp_class}}* impl = {{v8_class}}::toNative(holder);
     {% endif %}
-    {% if attribute.is_partial_interface_member and not attribute.is_static %}
-    {# instance members (non-static members) in partial interface take |impl| #}
-    ASSERT(impl);
-    {% endif %}
     {% if interface_name == 'Window' and attribute.idl_type == 'EventHandler' %}
     if (!impl->document())
         return;
     {% endif %}
     {# Local variables #}
     {% if attribute.is_call_with_execution_context %}
-    ExecutionContext* scriptContext = currentExecutionContext(info.GetIsolate());
+    ExecutionContext* executionContext = currentExecutionContext(info.GetIsolate());
     {% endif %}
     {% if attribute.is_call_with_script_state %}
-    ScriptState* state = ScriptState::current(info.GetIsolate());
+    ScriptState* scriptState = ScriptState::current(info.GetIsolate());
     {% endif %}
     {% if attribute.is_check_security_for_node or
           attribute.is_getter_raises_exception %}
@@ -95,7 +91,7 @@ const v8::PropertyCallbackInfo<v8::Value>& info
     }
     {% endif %}
     {% if attribute.cached_attribute_validation_method %}
-    V8HiddenValue::setHiddenValue(info.GetIsolate(), holder, propertyName, {{attribute.cpp_value}}.v8Value());
+    V8HiddenValue::setHiddenValue(info.GetIsolate(), holder, propertyName, {{attribute.cpp_value_to_v8_value}});
     {% endif %}
     {# v8SetReturnValue #}
     {% if attribute.is_keep_alive_for_gc %}
@@ -169,9 +165,14 @@ v8::Local<v8::String>, const v8::PropertyCallbackInfo<v8::Value>& info
     UseCounter::count(callingExecutionContext(info.GetIsolate()), UseCounter::{{attribute.measure_as}});
     {% endif %}
     {% if world_suffix in attribute.activity_logging_world_list_for_getter %}
-    DOMWrapperWorld& world = DOMWrapperWorld::current(info.GetIsolate());
-    if (world.activityLogger())
-        world.activityLogger()->logGetter("{{interface_name}}.{{attribute.name}}");
+    ScriptState* scriptState = ScriptState::from(info.GetIsolate()->GetCurrentContext());
+    V8PerContextData* contextData = scriptState->perContextData();
+    {% if attribute.activity_logging_world_check %}
+    if (scriptState->world().isIsolatedWorld() && contextData && contextData->activityLogger())
+    {% else %}
+    if (contextData && contextData->activityLogger())
+    {% endif %}
+        contextData->activityLogger()->logGetter("{{interface_name}}.{{attribute.name}}");
     {% endif %}
     {% if attribute.has_custom_getter %}
     {{v8_class}}::{{attribute.name}}AttributeGetterCustom(info);
@@ -243,10 +244,6 @@ v8::Local<v8::Value> v8Value, const v8::PropertyCallbackInfo<void>& info
     {% elif not attribute.is_static %}
     {{cpp_class}}* impl = {{v8_class}}::toNative(holder);
     {% endif %}
-    {% if attribute.is_partial_interface_member and not attribute.is_static %}
-    {# instance members (non-static members) in partial interface take |impl| #}
-    ASSERT(impl);
-    {% endif %}
     {% if attribute.idl_type == 'EventHandler' and interface_name == 'Window' %}
     if (!impl->document())
         return;
@@ -284,7 +281,7 @@ v8::Local<v8::Value> v8Value, const v8::PropertyCallbackInfo<void>& info
     {% endif %}
     {% if attribute.is_call_with_execution_context or
           attribute.is_setter_call_with_execution_context %}
-    ExecutionContext* scriptContext = currentExecutionContext(info.GetIsolate());
+    ExecutionContext* executionContext = currentExecutionContext(info.GetIsolate());
     {% endif %}
     {# Set #}
     {{attribute.cpp_setter}};
@@ -321,8 +318,13 @@ v8::Local<v8::String>, v8::Local<v8::Value> v8Value, const v8::PropertyCallbackI
     UseCounter::count(callingExecutionContext(info.GetIsolate()), UseCounter::{{attribute.measure_as}});
     {% endif %}
     {% if world_suffix in attribute.activity_logging_world_list_for_setter %}
-    DOMWrapperWorld& world = DOMWrapperWorld::current(info.GetIsolate());
-    if (world.activityLogger()) {
+    ScriptState* scriptState = ScriptState::from(info.GetIsolate()->GetCurrentContext());
+    V8PerContextData* contextData = scriptState->perContextData();
+    {% if attribute.activity_logging_world_check %}
+    if (scriptState->world().isIsolatedWorld() && contextData && contextData->activityLogger()) {
+    {% else %}
+    if (contextData && contextData->activityLogger()) {
+    {% endif %}
         {% if attribute.activity_logging_include_old_value_for_setter %}
         {{cpp_class}}* impl = {{v8_class}}::toNative(info.Holder());
         {% if attribute.cpp_value_original %}
@@ -331,9 +333,9 @@ v8::Local<v8::String>, v8::Local<v8::Value> v8Value, const v8::PropertyCallbackI
         {{attribute.cpp_type}} original = {{attribute.cpp_value}};
         {% endif %}
         v8::Handle<v8::Value> originalValue = {{attribute.cpp_value_to_v8_value}};
-        world.activityLogger()->logSetter("{{interface_name}}.{{attribute.name}}", v8Value, originalValue);
+        contextData->activityLogger()->logSetter("{{interface_name}}.{{attribute.name}}", v8Value, originalValue);
         {% else %}
-        world.activityLogger()->logSetter("{{interface_name}}.{{attribute.name}}", v8Value);
+        contextData->activityLogger()->logSetter("{{interface_name}}.{{attribute.name}}", v8Value);
         {% endif %}
     }
     {% endif %}

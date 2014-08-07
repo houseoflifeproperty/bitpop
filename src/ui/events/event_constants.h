@@ -38,17 +38,18 @@ enum EventType {
   ET_GESTURE_TAP_CANCEL,
   ET_GESTURE_TAP_UNCONFIRMED, // User tapped, but the tap delay hasn't expired.
   ET_GESTURE_DOUBLE_TAP,
-  ET_GESTURE_BEGIN,  // Sent before any other gesture types.
-  ET_GESTURE_END,    // Sent after any other gestures.
+  ET_GESTURE_BEGIN,  // The first event sent when each finger is pressed.
+  ET_GESTURE_END,    // Sent for each released finger.
   ET_GESTURE_TWO_FINGER_TAP,
   ET_GESTURE_PINCH_BEGIN,
   ET_GESTURE_PINCH_END,
   ET_GESTURE_PINCH_UPDATE,
   ET_GESTURE_LONG_PRESS,
   ET_GESTURE_LONG_TAP,
-  // A SWIPE gesture can happen at the end of a TAP_UP gesture if the
-  // finger(s) were moving quickly before they are released.
-  ET_GESTURE_MULTIFINGER_SWIPE,
+  // A SWIPE gesture can happen at the end of a touch sequence involving one or
+  // more fingers if the finger velocity was high enough when the first finger
+  // was released.
+  ET_GESTURE_SWIPE,
   ET_GESTURE_SHOW_PRESS,
 
   // Sent by Win8+ metro when the user swipes from the bottom or top.
@@ -99,15 +100,19 @@ enum KeyEventFlags {
   EF_IME_FABRICATED_KEY = 1 << 17,  // Key event fabricated by the underlying
                                     // IME without a user action.
                                     // (Linux X11 only)
+  EF_IS_REPEAT          = 1 << 18,
+  EF_FUNCTION_KEY       = 1 << 19,  // Key originates from function key row
 };
 
 // Flags specific to mouse events
 enum MouseEventFlags {
-  EF_IS_DOUBLE_CLICK    = 1 << 16,
-  EF_IS_TRIPLE_CLICK    = 1 << 17,
-  EF_IS_NON_CLIENT      = 1 << 18,
-  EF_FROM_TOUCH         = 1 << 19,  // Indicates this mouse event is generated
-                                    // from an unconsumed touch/gesture event.
+  EF_IS_DOUBLE_CLICK     = 1 << 16,
+  EF_IS_TRIPLE_CLICK     = 1 << 17,
+  EF_IS_NON_CLIENT       = 1 << 18,
+  EF_FROM_TOUCH          = 1 << 19,  // Indicates this mouse event is generated
+                                     // from an unconsumed touch/gesture event.
+  EF_TOUCH_ACCESSIBILITY = 1 << 20,  // Indicates this event was generated from
+                                     // touch accessibility mode.
 };
 
 // Result of dispatching an event.

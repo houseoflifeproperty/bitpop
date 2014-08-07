@@ -26,6 +26,8 @@
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #include "content/common/gpu/media/dxva_video_decode_accelerator.h"
+#elif defined(OS_MACOSX)
+#include "content/common/gpu/media/vt_video_decode_accelerator.h"
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
 #include "content/common/gpu/media/v4l2_video_decode_accelerator.h"
 #include "content/common/gpu/media/v4l2_video_device.h"
@@ -33,6 +35,8 @@
 #include "content/common/gpu/media/vaapi_video_decode_accelerator.h"
 #include "ui/gl/gl_context_glx.h"
 #include "ui/gl/gl_implementation.h"
+#elif defined(USE_OZONE)
+#include "media/ozone/media_ozone_platform.h"
 #elif defined(OS_ANDROID)
 #include "content/common/gpu/media/android_video_decode_accelerator.h"
 #endif
@@ -72,12 +76,12 @@ class GpuVideoDecodeAccelerator::MessageFilter : public IPC::MessageFilter {
   MessageFilter(GpuVideoDecodeAccelerator* owner, int32 host_route_id)
       : owner_(owner), host_route_id_(host_route_id) {}
 
-  virtual void OnChannelError() OVERRIDE { channel_ = NULL; }
+  virtual void OnChannelError() OVERRIDE { sender_ = NULL; }
 
-  virtual void OnChannelClosing() OVERRIDE { channel_ = NULL; }
+  virtual void OnChannelClosing() OVERRIDE { sender_ = NULL; }
 
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE {
-    channel_ = channel;
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE {
+    sender_ = sender;
   }
 
   virtual void OnFilterRemoved() OVERRIDE {
@@ -99,11 +103,11 @@ class GpuVideoDecodeAccelerator::MessageFilter : public IPC::MessageFilter {
 
   bool SendOnIOThread(IPC::Message* message) {
     DCHECK(!message->is_sync());
-    if (!channel_) {
+    if (!sender_) {
       delete message;
       return false;
     }
-    return channel_->Send(message);
+    return sender_->Send(message);
   }
 
  protected:
@@ -112,8 +116,8 @@ class GpuVideoDecodeAccelerator::MessageFilter : public IPC::MessageFilter {
  private:
   GpuVideoDecodeAccelerator* owner_;
   int32 host_route_id_;
-  // The channel to which this filter was added.
-  IPC::Channel* channel_;
+  // The sender to which this filter was added.
+  IPC::Sender* sender_;
 };
 
 GpuVideoDecodeAccelerator::GpuVideoDecodeAccelerator(
@@ -251,6 +255,10 @@ void GpuVideoDecodeAccelerator::Initialize(
   DVLOG(0) << "Initializing DXVA HW decoder for windows.";
   video_decode_accelerator_.reset(
       new DXVAVideoDecodeAccelerator(make_context_current_));
+#elif defined(OS_MACOSX)
+  video_decode_accelerator_.reset(new VTVideoDecodeAccelerator(
+      static_cast<CGLContextObj>(
+          stub_->decoder()->GetGLContext()->GetHandle())));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
   scoped_ptr<V4L2Device> device = V4L2Device::Create(V4L2Device::kDecoder);
   if (!device.get()) {
@@ -275,6 +283,15 @@ void GpuVideoDecodeAccelerator::Initialize(
       static_cast<gfx::GLContextGLX*>(stub_->decoder()->GetGLContext());
   video_decode_accelerator_.reset(new VaapiVideoDecodeAccelerator(
       glx_context->display(), make_context_current_));
+#elif defined(USE_OZONE)
+  media::MediaOzonePlatform* platform =
+      media::MediaOzonePlatform::GetInstance();
+  video_decode_accelerator_.reset(platform->CreateVideoDecodeAccelerator(
+      make_context_current_));
+  if (!video_decode_accelerator_) {
+    SendCreateDecoderReply(init_done_msg, false);
+    return;
+  }
 #elif defined(OS_ANDROID)
   video_decode_accelerator_.reset(new AndroidVideoDecodeAccelerator(
       stub_->decoder()->AsWeakPtr(),
@@ -459,9 +476,7 @@ void GpuVideoDecodeAccelerator::OnWillDestroyStub() {
   stub_->channel()->RemoveRoute(host_route_id_);
   stub_->RemoveDestructionObserver(this);
 
-  if (video_decode_accelerator_)
-    video_decode_accelerator_.release()->Destroy();
-
+  video_decode_accelerator_.reset();
   delete this;
 }
 

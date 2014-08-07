@@ -3,6 +3,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import test_env  # pylint: disable=W0611
+from common import find_depot_tools  # pylint: disable=W0611
+
 import os
 import subprocess
 import sys

@@ -4,7 +4,6 @@
 
 #import "chrome/browser/app_controller_mac.h"
 
-#include "apps/app_shim/app_shim_mac.h"
 #include "apps/app_shim/extension_app_shim_handler_mac.h"
 #include "apps/app_window_registry.h"
 #include "base/auto_reset.h"
@@ -13,6 +12,7 @@
 #include "base/files/file_path.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/mac_util.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
@@ -372,12 +372,6 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
       ![self shouldQuitWithInProgressDownloads])
     return NO;
 
-  // Check for active apps, and prompt the user if they really want to quit
-  // (and also quit the apps).
-  if (!browser_shutdown::IsTryingToQuit() &&
-      quitWithAppsController_.get() && !quitWithAppsController_->ShouldQuit())
-    return NO;
-
   // TODO(viettrungluu): Remove Apple Event handlers here? (It's safe to leave
   // them in, but I'm not sure about UX; we'd also want to disable other things
   // though.) http://crbug.com/40861
@@ -387,6 +381,19 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   if (!browser_shutdown::IsTryingToQuit() &&
       [self applicationShouldTerminate:app] != NSTerminateNow)
     return NO;
+
+  // Check for active apps. If quitting is prevented, only close browsers and
+  // sessions.
+  if (!browser_shutdown::IsTryingToQuit() &&
+      quitWithAppsController_ && !quitWithAppsController_->ShouldQuit()) {
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_CLOSE_ALL_BROWSERS_REQUEST,
+        content::NotificationService::AllSources(),
+        content::NotificationService::NoDetails());
+    // This will close all browser sessions.
+    chrome::CloseAllBrowsers();
+    return NO;
+  }
 
   size_t num_browsers = chrome::GetTotalBrowserCount();
 
@@ -607,7 +614,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
     browserWindows.insert(browser->window()->GetNativeWindow());
   }
   if (!browserWindows.empty()) {
-    ui::FocusWindowSet(browserWindows, false);
+    ui::FocusWindowSetOnCurrentSpace(browserWindows);
   }
 }
 
@@ -1194,7 +1201,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
         // See http://crbug.com/309656.
         reopenTime_ = base::TimeTicks::Now();
       } else {
-        ui::FocusWindowSet(browserWindows, false);
+        ui::FocusWindowSetOnCurrentSpace(browserWindows);
       }
       // Return NO; we've done (or soon will do) the deminiaturize, so
       // AppKit shouldn't do anything.
@@ -1208,37 +1215,17 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   // Normally, it'd just open a new empty page.
   {
     static BOOL doneOnce = NO;
-    if (!doneOnce) {
-      doneOnce = YES;
-      if (base::mac::WasLaunchedAsHiddenLoginItem()) {
-        SessionService* sessionService =
-            SessionServiceFactory::GetForProfileForSessionRestore(
-                [self lastProfile]);
-        if (sessionService &&
-            sessionService->RestoreIfNecessary(std::vector<GURL>()))
-          return NO;
-      }
+    BOOL attemptRestore = apps::AppShimHandler::ShouldRestoreSession() ||
+        (!doneOnce && base::mac::WasLaunchedAsHiddenLoginItem());
+    doneOnce = YES;
+    if (attemptRestore) {
+      SessionService* sessionService =
+          SessionServiceFactory::GetForProfileForSessionRestore(
+              [self lastProfile]);
+      if (sessionService &&
+          sessionService->RestoreIfNecessary(std::vector<GURL>()))
+        return NO;
     }
-  }
-
-  // Platform apps don't use browser windows so don't do anything if there are
-  // visible windows, otherwise, launch the browser with the same command line
-  // which should launch the app again.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kAppId)) {
-    if (hasVisibleWindows)
-      return YES;
-
-    {
-      base::AutoReset<bool> auto_reset_in_run(&g_is_opening_new_window, true);
-      int return_code;
-      StartupBrowserCreator browser_creator;
-      browser_creator.LaunchBrowser(
-          command_line, [self lastProfile], base::FilePath(),
-          chrome::startup::IS_NOT_PROCESS_STARTUP,
-          chrome::startup::IS_NOT_FIRST_RUN, &return_code);
-    }
-    return NO;
   }
 
   // Otherwise open a new window.
@@ -1468,7 +1455,7 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   [dockMenu addItem:item];
 
   // |profile| can be NULL during unit tests.
-  if (!profile || !profile->IsManaged()) {
+  if (!profile || !profile->IsSupervised()) {
     titleStr = l10n_util::GetNSStringWithFixup(IDS_NEW_INCOGNITO_WINDOW_MAC);
     item.reset(
         [[NSMenuItem alloc] initWithTitle:titleStr

@@ -7382,6 +7382,33 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="MobilePreviewPageBack">
+  <owner>ksimbili@chromium.org</owner>
+  <description>
+    When user navigates back, using either system back or toolbar back button,
+    from the preview page.
+  </description>
+</action>
+
+<action name="MobilePreviewPageReload">
+  <owner>ksimbili@chromium.org</owner>
+  <description>
+    User pressed reload button while the preview page is being shown.
+  </description>
+</action>
+
+<action name="MobilePreviewPageSingleTap">
+  <owner>ksimbili@chromium.org</owner>
+  <description>
+    User taped on the page while the preview page is being shown.
+  </description>
+</action>
+
+<action name="MobilePreviewPageTabClose">
+  <owner>ksimbili@chromium.org</owner>
+  <description>User closes the tab while preview page is loaded.</description>
+</action>
+
 <action name="MobileReceivedExternalIntent">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -7958,6 +7985,110 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Options_AccessibilityHighContrastMode">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Toggle high contrast mode</description>
+</action>
+
+<action name="Options_AccessibilityHighContrastMode_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Disable high contrast mode</description>
+</action>
+
+<action name="Options_AccessibilityHighContrastMode_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Enable high contrast mode</description>
+</action>
+
+<action name="Options_AccessibilityLargeMouseCursor_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Disable large mouse cursor</description>
+</action>
+
+<action name="Options_AccessibilityLargeMouseCursor_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Enable large mouse cursor</description>
+</action>
+
+<action name="Options_AccessibilityLearnMore">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Learn More</description>
+</action>
+
+<action name="Options_AccessibilityOnScreenKeyboard_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Disable on-screen keyboard</description>
+</action>
+
+<action name="Options_AccessibilityOnScreenKeyboard_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Enable on-screen keyboard</description>
+</action>
+
+<action name="Options_AccessibilityScreenMagnifier_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Disable screen magnifier</description>
+</action>
+
+<action name="Options_AccessibilityScreenMagnifier_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Enable screen magnifier</description>
+</action>
+
+<action name="Options_AccessibilitySpokenFeedback_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Disable ChromeVox</description>
+</action>
+
+<action name="Options_AccessibilitySpokenFeedback_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Enable ChromeVox</description>
+</action>
+
+<action name="Options_AccessibilityStickyKeys_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Disable sticky keys</description>
+</action>
+
+<action name="Options_AccessibilityStickyKeys_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Enable sticky keys</description>
+</action>
+
+<action name="Options_AccessibilitySystemMenu_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>
+    Settings: Accessibility: Disable show in system menu
+  </description>
+</action>
+
+<action name="Options_AccessibilitySystemMenu_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Enable show in system menu</description>
+</action>
+
+<action name="Options_AccessibilityTapDragging_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Disable tap dragging</description>
+</action>
+
+<action name="Options_AccessibilityTapDragging_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Accessibility: Enable tap dragging</description>
+</action>
+
+<action name="Options_AllowAllUsers_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>
+    Settings: Users: Disable allowing all users (whitelisted users only)
+  </description>
+</action>
+
+<action name="Options_AllowAllUsers_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Enable allowing all users</description>
+</action>
+
 <action name="Options_AppLanguage">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -8265,6 +8396,16 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Options_GuestBrowsing_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Disable guest browsing</description>
+</action>
+
+<action name="Options_GuestBrowsing_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Enable guest browsing</description>
+</action>
+
 <action name="Options_Homepage_HideHomeButton">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -8416,6 +8557,13 @@ should be able to be added at any place in this file.
   <description>Settings: Keyboard settings: Search</description>
 </action>
 
+<action name="Options_KeyboardShowKeyboardShortcuts">
+  <owner>michaelpg@chromium.org</owner>
+  <description>
+    Settings: Keyboard settings: View keyboard shortcuts
+  </description>
+</action>
+
 <action name="Options_KeyboardShowLanguageSettings">
   <owner>stevenjb@chromium.org</owner>
   <description>
@@ -8436,6 +8584,11 @@ should be able to be added at any place in this file.
 <action name="Options_LinkDoctorCheckbox_Enable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_ManageAccounts">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Manage other users</description>
 </action>
 
 <action name="Options_ManageCloudPrinters">
@@ -8700,13 +8853,43 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="Options_SafeBrowsingDownloadFeedbackCheckbox_Disable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>felt@chromium.org</owner>
+  <description>Safe Browsing download feedback disabled</description>
+  <obsolete>
+    Deprecated 6/14. Replaced by SafeBrowsingExtendedReportingCheckbox_Disable.
+  </obsolete>
 </action>
 
 <action name="Options_SafeBrowsingDownloadFeedbackCheckbox_Enable">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>felt@chromium.org</owner>
+  <description>Safe Browsing download feedback enabled</description>
+  <obsolete>
+    Deprecated 6/14. Replaced by SafeBrowsingExtendedReportingCheckbox_Enable.
+  </obsolete>
+</action>
+
+<action name="Options_SafeBrowsingExtendedReportingCheckbox_Disable">
+  <owner>felt@chromium.org</owner>
+  <description>Safe Browsing Extended Reporting disabled</description>
+</action>
+
+<action name="Options_SafeBrowsingExtendedReportingCheckbox_Enable">
+  <owner>felt@chromium.org</owner>
+  <description>Safe Browsing Extended Reporting enabled</description>
+</action>
+
+<action name="Options_ScreenLock_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>
+    Settings: Users: Do not require a password to wake from sleep
+  </description>
+</action>
+
+<action name="Options_ScreenLock_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>
+    Settings: Users: Require a password to wake from sleep
+  </description>
 </action>
 
 <action name="Options_SearchEngineChanged">
@@ -8742,6 +8925,11 @@ should be able to be added at any place in this file.
 <action name="Options_SetTimeDialog_Show">
   <owner>michaelpg@chromium.org</owner>
   <description>Set system time dialog was launched.</description>
+</action>
+
+<action name="Options_ShowAdvancedSettings">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Show advanced settings</description>
 </action>
 
 <action name="Options_ShowAutoFillSettings">
@@ -8784,9 +8972,24 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="Options_ShowSyncAdvanced">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Show advanced sync settings</description>
+</action>
+
 <action name="Options_ShowTouchpadSettings">
   <owner>stevenjb@chromium.org</owner>
   <description>Settings: Touchpad settings</description>
+</action>
+
+<action name="Options_ShowUserNamesOnSignin_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Disable usernames on signin</description>
+</action>
+
+<action name="Options_ShowUserNamesOnSignin_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Enable usernames on signin</description>
 </action>
 
 <action name="Options_SpeedFactorSlider_Changed">
@@ -8832,6 +9035,38 @@ should be able to be added at any place in this file.
 <action name="Options_Startup_NewTab">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_SupervisedUsers_Disable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Disable supervised users</description>
+</action>
+
+<action name="Options_SupervisedUsers_Enable">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Enable supervised users</description>
+</action>
+
+<action name="Options_SyncSelectDataTypes">
+  <owner>stevenjb@chromium.org</owner>
+  <description>
+    Settings: Users: Sync: Enable selectively syncing data types
+  </description>
+</action>
+
+<action name="Options_SyncSetDefault">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Sync: Use default settings</description>
+</action>
+
+<action name="Options_SyncSetEncryption">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Sync: Encrypt sync data</description>
+</action>
+
+<action name="Options_SyncToggleDataType">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Toggle a sync data type</description>
 </action>
 
 <action name="Options_TLS1_Disable">
@@ -8932,6 +9167,16 @@ should be able to be added at any place in this file.
 <action name="Options_VertEdgeScrollCheckbox_Enable">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="Options_WhitelistedUser_Add">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Add a whitelisted user</description>
+</action>
+
+<action name="Options_WhitelistedUser_Remove">
+  <owner>stevenjb@chromium.org</owner>
+  <description>Settings: Users: Remove a whitelisted user</description>
 </action>
 
 <action name="OriginChipPress">
@@ -9333,6 +9578,17 @@ should be able to be added at any place in this file.
 <action name="PeopleSearch_SendEmail">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+</action>
+
+<action name="PermissionBubbleIFrameRequestQueued">
+  <owner>gbillock@chromium.org</owner>
+  <owner>leng@chromium.org</owner>
+  <description>
+    A website with a domain that is not the same as the main frame's domain
+    requested a permission and that permission was queued because an existing
+    permission request was already visible, or because an existing request for
+    the main frame's domain is pending.
+  </description>
 </action>
 
 <action name="PermissionBubbleRequest">
@@ -10808,6 +11064,14 @@ should be able to be added at any place in this file.
   </description>
 </action>
 
+<action name="WebView.PermissionAllow.FileSystem">
+  <owner>fsamuel@chromium.org</owner>
+  <owner>hanxi@chromium.org</owner>
+  <description>
+    Tracks when the filesystem permission is explicitly allowed on a webview.
+  </description>
+</action>
+
 <action name="WebView.PermissionAllow.Geolocation">
   <owner>fsamuel@chromium.org</owner>
   <owner>lazyboy@chromium.org</owner>
@@ -10845,6 +11109,14 @@ should be able to be added at any place in this file.
   <owner>lazyboy@chromium.org</owner>
   <description>
     Tracks when the download permission is explicitly denied on a webview.
+  </description>
+</action>
+
+<action name="WebView.PermissionDeny.FileSystem">
+  <owner>fsamuel@chromium.org</owner>
+  <owner>hanxi@chromium.org</owner>
+  <description>
+    Tracks when the filesystem permission is explicitly denied on a webview.
   </description>
 </action>
 
@@ -10925,6 +11197,14 @@ should be able to be added at any place in this file.
   <description>Please enter the description of this user action.</description>
 </action>
 
+<action name="WindowCycleController_Cycle">
+  <owner>tdanderson@chromium.org</owner>
+  <owner>flackr@chromium.org</owner>
+  <description>
+    Starting a window selection cycle by pressing alt-tab.
+  </description>
+</action>
+
 <action name="WindowDrag_MaximizeLeft">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
@@ -10936,13 +11216,26 @@ should be able to be added at any place in this file.
 </action>
 
 <action name="WindowSelector_Overview">
-  <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
-  <description>Please enter the description of this user action.</description>
+  <owner>tdanderson@chromium.org</owner>
+  <owner>flackr@chromium.org</owner>
+  <description>Starting the window overview mode.</description>
+</action>
+
+<action name="WindowSelector_OverviewEnterKey">
+  <owner>tdanderson@chromium.org</owner>
+  <owner>flackr@chromium.org</owner>
+  <description>
+    Using the enter key to select a window in the overview.
+  </description>
 </action>
 
 <action name="WindowSelector_Selection">
   <owner>Please list the metric's owners. Add more owner tags as needed.</owner>
   <description>Please enter the description of this user action.</description>
+  <obsolete>
+    Deprecated as of 06/2014. No longer relevant since alt tab window switching
+    was separated from overview mode.
+  </obsolete>
 </action>
 
 <action name="WorkerProcess_BadProcessToKill">

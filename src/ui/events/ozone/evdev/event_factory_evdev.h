@@ -10,11 +10,12 @@
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/task_runner.h"
-#include "ui/events/events_export.h"
 #include "ui/events/ozone/device/device_event_observer.h"
 #include "ui/events/ozone/evdev/event_converter_evdev.h"
 #include "ui/events/ozone/evdev/event_modifiers_evdev.h"
-#include "ui/events/ozone/event_factory_ozone.h"
+#include "ui/events/ozone/evdev/events_ozone_evdev_export.h"
+#include "ui/events/platform/platform_event_source.h"
+#include "ui/ozone/public/event_factory_ozone.h"
 
 namespace ui {
 
@@ -22,10 +23,10 @@ class CursorDelegateEvdev;
 class DeviceManager;
 
 // Ozone events implementation for the Linux input subsystem ("evdev").
-class EVENTS_EXPORT EventFactoryEvdev
-    : public EventFactoryOzone, DeviceEventObserver {
+class EVENTS_OZONE_EVDEV_EXPORT EventFactoryEvdev : public EventFactoryOzone,
+                                                    public DeviceEventObserver,
+                                                    public PlatformEventSource {
  public:
-  EventFactoryEvdev();
   EventFactoryEvdev(CursorDelegateEvdev* cursor,
                     DeviceManager* device_manager);
   virtual ~EventFactoryEvdev();
@@ -33,9 +34,6 @@ class EVENTS_EXPORT EventFactoryEvdev
   void DispatchUiEvent(Event* event);
 
   // EventFactoryOzone:
-  virtual void StartProcessingEvents() OVERRIDE;
-  virtual void SetFileTaskRunner(scoped_refptr<base::TaskRunner> task_runner)
-      OVERRIDE;
   virtual void WarpCursorTo(gfx::AcceleratedWidget widget,
                             const gfx::PointF& location) OVERRIDE;
 
@@ -52,25 +50,17 @@ class EVENTS_EXPORT EventFactoryEvdev
   // Callback for device add (on UI thread).
   virtual void OnDeviceEvent(const DeviceEvent& event) OVERRIDE;
 
+  // PlatformEventSource:
+  virtual void OnDispatcherListChanged() OVERRIDE;
+
   // Owned per-device event converters (by path).
   std::map<base::FilePath, EventConverterEvdev*> converters_;
 
   // Interface for scanning & monitoring input devices.
   DeviceManager* device_manager_;  // Not owned.
 
-  // True if this was registered with |device_manager_|. This is needed since
-  // StartProcessingEvents() is called multiple times (when a
-  // WindowTreeHostOzone is created) but we shouldn't register this multiple
-  // times.
-  // TODO(dnicoara) Remove once event processing is refactored and we no longer
-  // rely on WTH for starting event processing.
-  bool has_started_processing_events_;
-
   // Task runner for event dispatch.
   scoped_refptr<base::TaskRunner> ui_task_runner_;
-
-  // Task runner for file I/O.
-  scoped_refptr<base::TaskRunner> file_task_runner_;
 
   // Modifier key state (shift, ctrl, etc).
   EventModifiersEvdev modifiers_;

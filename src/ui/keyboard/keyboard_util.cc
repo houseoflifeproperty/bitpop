@@ -28,9 +28,8 @@ const char kKeyUp[] = "keyup";
 
 void SendProcessKeyEvent(ui::EventType type,
                          aura::WindowTreeHost* host) {
-  ui::TranslatedKeyEvent event(type == ui::ET_KEY_PRESSED,
-                               ui::VKEY_PROCESSKEY,
-                               ui::EF_NONE);
+  ui::KeyEvent event(type, ui::VKEY_PROCESSKEY, ui::EF_NONE, false);
+  event.SetTranslated(true);
   ui::EventDispatchDetails details =
       host->event_processor()->OnEventFromSource(&event);
   CHECK(!details.dispatcher_destroyed);
@@ -47,6 +46,9 @@ bool g_touch_keyboard_enabled = false;
 
 keyboard::KeyboardOverscrolOverride g_keyboard_overscroll_override =
     keyboard::KEYBOARD_OVERSCROLL_OVERRIDE_NONE;
+
+keyboard::KeyboardShowOverride g_keyboard_show_override =
+    keyboard::KEYBOARD_SHOW_OVERRIDE_NONE;
 
 }  // namespace
 
@@ -98,11 +100,18 @@ std::string GetKeyboardLayout() {
 }
 
 bool IsKeyboardEnabled() {
-  return g_accessibility_keyboard_enabled ||
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableVirtualKeyboard) ||
-      IsKeyboardUsabilityExperimentEnabled() ||
-      g_touch_keyboard_enabled;
+  // Accessibility setting prioritized over policy setting.
+  if (g_accessibility_keyboard_enabled)
+    return true;
+  // Policy strictly disables showing a virtual keyboard.
+  if (g_keyboard_show_override == keyboard::KEYBOARD_SHOW_OVERRIDE_DISABLED)
+    return false;
+  // Check if any of the flags are enabled.
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kEnableVirtualKeyboard) ||
+         IsKeyboardUsabilityExperimentEnabled() ||
+         g_touch_keyboard_enabled ||
+         (g_keyboard_show_override == keyboard::KEYBOARD_SHOW_OVERRIDE_ENABLED);
 }
 
 bool IsKeyboardUsabilityExperimentEnabled() {
@@ -137,6 +146,10 @@ void SetKeyboardOverscrollOverride(KeyboardOverscrolOverride override) {
   g_keyboard_overscroll_override = override;
 }
 
+void SetKeyboardShowOverride(KeyboardShowOverride override) {
+  g_keyboard_show_override = override;
+}
+
 bool IsInputViewEnabled() {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableInputView))
     return true;
@@ -144,6 +157,14 @@ bool IsInputViewEnabled() {
     return false;
   // Default value if no command line flags specified.
   return true;
+}
+
+bool IsExperimentalInputViewEnabled() {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableExperimentalInputViewFeatures)) {
+    return true;
+  }
+  return false;
 }
 
 bool InsertText(const base::string16& text, aura::Window* root_window) {

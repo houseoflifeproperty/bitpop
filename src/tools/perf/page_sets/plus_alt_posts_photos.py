@@ -22,45 +22,20 @@ class PlusAltPostsPhotosPage(page_module.Page):
     self.archive_data_file = 'data/plus_alt_posts_photos.json'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'text': 'Barack Obama',
-        'condition': 'element'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'condition': 'element',
-        'selector': 'span[guidedhelpid="posts_tab_profile"][class*="s6U8x"]'
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForElement(text='Barack Obama')
+    action_runner.WaitForElement(
+        'span[guidedhelpid="posts_tab_profile"][class*="s6U8x"]')
 
   def RunEndure(self, action_runner):
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'span[guidedhelpid="posts_tab_profile"]'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'condition': 'element',
-        'selector': 'span[guidedhelpid="posts_tab_profile"][class*="s6U8x"]'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 5
-      }))
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'span[guidedhelpid="photos_tab_profile"]'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'condition': 'element',
-        'selector': 'span[guidedhelpid="photos_tab_profile"][class*="s6U8x"]'
-      }))
-    action_runner.RunAction(WaitAction(
-      {
-        'seconds': 5
-      }))
+    action_runner.ClickElement('span[guidedhelpid="posts_tab_profile"]')
+    action_runner.WaitForElement(
+        'span[guidedhelpid="posts_tab_profile"][class*="s6U8x"]')
+    action_runner.Wait(5)
+    action_runner.ClickElement('span[guidedhelpid="photos_tab_profile"]')
+    action_runner.WaitForElement(
+        'span[guidedhelpid="photos_tab_profile"][class*="s6U8x"]')
+    action_runner.Wait(5)
 
 
 class PlusAltPostsPhotosPageSet(page_set_module.PageSet):
@@ -71,6 +46,7 @@ class PlusAltPostsPhotosPageSet(page_set_module.PageSet):
     super(PlusAltPostsPhotosPageSet, self).__init__(
       credentials_path='data/credentials.json',
       user_agent_type='desktop',
-      archive_data_file='data/plus_alt_posts_photos.json')
+      archive_data_file='data/plus_alt_posts_photos.json',
+      bucket=page_set_module.PUBLIC_BUCKET)
 
     self.AddPage(PlusAltPostsPhotosPage(self))

@@ -30,12 +30,13 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/ExecutionContextTask.h"
 #include "core/events/Event.h"
+#include "core/inspector/InspectorInstrumentation.h"
 
 namespace WebCore {
 
-PassOwnPtr<WorkerEventQueue> WorkerEventQueue::create(ExecutionContext* context)
+PassOwnPtrWillBeRawPtr<WorkerEventQueue> WorkerEventQueue::create(ExecutionContext* context)
 {
-    return adoptPtr(new WorkerEventQueue(context));
+    return adoptPtrWillBeNoop(new WorkerEventQueue(context));
 }
 
 WorkerEventQueue::WorkerEventQueue(ExecutionContext* context)
@@ -46,7 +47,14 @@ WorkerEventQueue::WorkerEventQueue(ExecutionContext* context)
 
 WorkerEventQueue::~WorkerEventQueue()
 {
-    close();
+    ASSERT(m_eventTaskMap.isEmpty());
+}
+
+void WorkerEventQueue::trace(Visitor* visitor)
+{
+    visitor->trace(m_executionContext);
+    visitor->trace(m_eventTaskMap);
+    EventQueue::trace(visitor);
 }
 
 class WorkerEventQueue::EventDispatcherTask : public ExecutionContextTask {
@@ -97,6 +105,7 @@ private:
 
 void WorkerEventQueue::removeEvent(Event* event)
 {
+    InspectorInstrumentation::didRemoveEvent(event->target(), event);
     m_eventTaskMap.remove(event);
 }
 
@@ -105,6 +114,7 @@ bool WorkerEventQueue::enqueueEvent(PassRefPtrWillBeRawPtr<Event> prpEvent)
     if (m_isClosed)
         return false;
     RefPtrWillBeRawPtr<Event> event = prpEvent;
+    InspectorInstrumentation::didEnqueueEvent(event->target(), event.get());
     OwnPtr<EventDispatcherTask> task = EventDispatcherTask::create(event, this);
     m_eventTaskMap.add(event.release(), task.get());
     m_executionContext->postTask(task.release());
@@ -125,7 +135,9 @@ void WorkerEventQueue::close()
 {
     m_isClosed = true;
     for (EventTaskMap::iterator it = m_eventTaskMap.begin(); it != m_eventTaskMap.end(); ++it) {
+        Event* event = it->key.get();
         EventDispatcherTask* task = it->value;
+        InspectorInstrumentation::didRemoveEvent(event->target(), event);
         task->cancel();
     }
     m_eventTaskMap.clear();

@@ -29,7 +29,6 @@
 
 #include "modules/filesystem/DOMFileSystemSync.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
 
 namespace WebCore {
 
@@ -48,9 +47,9 @@ public:
     };
 
     static void webkitRequestFileSystem(WorkerGlobalScope&, int type, long long size, PassOwnPtr<FileSystemCallback> successCallback, PassOwnPtr<ErrorCallback>);
-    static PassRefPtrWillBeRawPtr<DOMFileSystemSync> webkitRequestFileSystemSync(WorkerGlobalScope&, int type, long long size, ExceptionState&);
+    static DOMFileSystemSync* webkitRequestFileSystemSync(WorkerGlobalScope&, int type, long long size, ExceptionState&);
     static void webkitResolveLocalFileSystemURL(WorkerGlobalScope&, const String& url, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback>);
-    static PassRefPtrWillBeRawPtr<EntrySync> webkitResolveLocalFileSystemSyncURL(WorkerGlobalScope&, const String& url, ExceptionState&);
+    static EntrySync* webkitResolveLocalFileSystemSyncURL(WorkerGlobalScope&, const String& url, ExceptionState&);
 
 private:
     WorkerGlobalScopeFileSystem();

@@ -22,10 +22,9 @@
 
 #include "core/svg/SVGTextPathElement.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGTextPath.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
@@ -63,10 +62,7 @@ inline SVGTextPathElement::SVGTextPathElement(Document& document)
     addToPropertyMap(m_spacing);
 }
 
-PassRefPtr<SVGTextPathElement> SVGTextPathElement::create(Document& document)
-{
-    return adoptRef(new SVGTextPathElement(document));
-}
+DEFINE_NODE_FACTORY(SVGTextPathElement)
 
 SVGTextPathElement::~SVGTextPathElement()
 {

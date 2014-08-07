@@ -31,6 +31,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/browser/process_manager.h"
@@ -40,6 +41,7 @@
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/manifest_handlers/externally_connectable.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "net/base/completion_callback.h"
 #include "url/gurl.h"
 
@@ -216,7 +218,7 @@ void MessageService::OpenChannelToExtension(
 
   // Only running ephemeral apps can receive messages. Idle cached ephemeral
   // apps are invisible and should not be connectable.
-  if (target_extension->is_ephemeral() &&
+  if (util::IsEphemeralApp(target_extension_id, context) &&
       util::IsExtensionIdle(target_extension_id, context)) {
     DispatchOnDisconnect(
         source, receiver_port_id, kReceivingEndDoesntExistError);
@@ -367,8 +369,9 @@ void MessageService::OpenChannelToNativeApp(
   if (extension_service) {
     const Extension* extension =
         extension_service->GetExtensionById(source_extension_id, false);
-    has_permission = extension && extension->HasAPIPermission(
-        APIPermission::kNativeMessaging);
+    has_permission = extension &&
+                     extension->permissions_data()->HasAPIPermission(
+                         APIPermission::kNativeMessaging);
   }
 
   if (!has_permission) {

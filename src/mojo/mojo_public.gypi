@@ -26,9 +26,14 @@
         ],
       },
       'sources': [
+        'public/c/system/buffer.h',
         'public/c/system/core.h',
+        'public/c/system/data_pipe.h',
+        'public/c/system/functions.h',
         'public/c/system/macros.h',
+        'public/c/system/message_pipe.h',
         'public/c/system/system_export.h',
+        'public/c/system/types.h',
         'public/platform/native/system_thunks.cc',
         'public/platform/native/system_thunks.h',
       ],
@@ -127,6 +132,7 @@
       ],
       'sources': [
         'public/cpp/bindings/tests/array_unittest.cc',
+        'public/cpp/bindings/tests/bounds_checker_unittest.cc',
         'public/cpp/bindings/tests/buffer_unittest.cc',
         'public/cpp/bindings/tests/connector_unittest.cc',
         'public/cpp/bindings/tests/handle_passing_unittest.cc',
@@ -134,7 +140,11 @@
         'public/cpp/bindings/tests/request_response_unittest.cc',
         'public/cpp/bindings/tests/router_unittest.cc',
         'public/cpp/bindings/tests/sample_service_unittest.cc',
+        'public/cpp/bindings/tests/string_unittest.cc',
+        'public/cpp/bindings/tests/struct_unittest.cc',
         'public/cpp/bindings/tests/type_conversion_unittest.cc',
+        'public/cpp/bindings/tests/validation_test_input_parser.cc',
+        'public/cpp/bindings/tests/validation_test_input_parser.h',
         'public/cpp/bindings/tests/validation_unittest.cc',
       ],
     },
@@ -151,6 +161,8 @@
       ],
       'sources': [
         'public/cpp/environment/tests/async_waiter_unittest.cc',
+        'public/cpp/environment/tests/logger_unittest.cc',
+        'public/cpp/environment/tests/logging_unittest.cc',
       ],
     },
     {
@@ -212,34 +224,39 @@
       ],
     },
     {
+      # GN version: //mojo/public/cpp/bindings
       'target_name': 'mojo_cpp_bindings',
       'type': 'static_library',
       'include_dirs': [
         '..'
       ],
       'sources': [
-        'public/cpp/bindings/allocation_scope.h',
         'public/cpp/bindings/array.h',
-        'public/cpp/bindings/buffer.h',
         'public/cpp/bindings/callback.h',
         'public/cpp/bindings/error_handler.h',
         'public/cpp/bindings/interface_impl.h',
         'public/cpp/bindings/interface_ptr.h',
+        'public/cpp/bindings/interface_request.h',
         'public/cpp/bindings/message.h',
+        'public/cpp/bindings/message_filter.h',
         'public/cpp/bindings/no_interface.h',
-        'public/cpp/bindings/passable.h',
+        'public/cpp/bindings/string.h',
         'public/cpp/bindings/sync_dispatcher.h',
         'public/cpp/bindings/type_converter.h',
-        'public/cpp/bindings/lib/array.cc',
         'public/cpp/bindings/lib/array_internal.h',
         'public/cpp/bindings/lib/array_internal.cc',
+        'public/cpp/bindings/lib/array_serialization.h',
         'public/cpp/bindings/lib/bindings_internal.h',
         'public/cpp/bindings/lib/bindings_serialization.cc',
         'public/cpp/bindings/lib/bindings_serialization.h',
-        'public/cpp/bindings/lib/buffer.cc',
+        'public/cpp/bindings/lib/bounds_checker.cc',
+        'public/cpp/bindings/lib/bounds_checker.h',
+        'public/cpp/bindings/lib/buffer.h',
         'public/cpp/bindings/lib/callback_internal.h',
         'public/cpp/bindings/lib/connector.cc',
         'public/cpp/bindings/lib/connector.h',
+        'public/cpp/bindings/lib/filter_chain.cc',
+        'public/cpp/bindings/lib/filter_chain.h',
         'public/cpp/bindings/lib/fixed_buffer.cc',
         'public/cpp/bindings/lib/fixed_buffer.h',
         'public/cpp/bindings/lib/interface_impl_internal.h',
@@ -247,6 +264,7 @@
         'public/cpp/bindings/lib/message.cc',
         'public/cpp/bindings/lib/message_builder.cc',
         'public/cpp/bindings/lib/message_builder.h',
+        'public/cpp/bindings/lib/message_filter.cc',
         'public/cpp/bindings/lib/message_header_validator.cc',
         'public/cpp/bindings/lib/message_header_validator.h',
         'public/cpp/bindings/lib/message_internal.h',
@@ -255,14 +273,17 @@
         'public/cpp/bindings/lib/no_interface.cc',
         'public/cpp/bindings/lib/router.cc',
         'public/cpp/bindings/lib/router.h',
-        'public/cpp/bindings/lib/scratch_buffer.cc',
-        'public/cpp/bindings/lib/scratch_buffer.h',
         'public/cpp/bindings/lib/shared_data.h',
         'public/cpp/bindings/lib/shared_ptr.h',
+        'public/cpp/bindings/lib/string_serialization.h',
+        'public/cpp/bindings/lib/string_serialization.cc',
         'public/cpp/bindings/lib/sync_dispatcher.cc',
+        'public/cpp/bindings/lib/validation_errors.cc',
+        'public/cpp/bindings/lib/validation_errors.h',
       ],
     },
     {
+      # GN version: //mojo/public/js/bindings
       'target_name': 'mojo_js_bindings',
       'type': 'static_library',
       'include_dirs': [
@@ -284,10 +305,8 @@
         'public/interfaces/bindings/tests/sample_interfaces.mojom',
         'public/interfaces/bindings/tests/sample_service.mojom',
         'public/interfaces/bindings/tests/test_structs.mojom',
+        'public/interfaces/bindings/tests/validation_test_interfaces.mojom',
       ],
-      'variables': {
-        'mojom_base_output_dir': 'mojo',
-      },
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'export_dependent_settings': [
         'mojo_cpp_bindings',
@@ -300,13 +319,16 @@
       'target_name': 'mojo_environment_standalone',
       'type': 'static_library',
       'sources': [
-        'public/cpp/environment/buffer_tls.h',
-        'public/cpp/environment/default_async_waiter.h',
+        'public/c/environment/async_waiter.h',
+        'public/c/environment/logger.h',
+        'public/c/environment/logging.h',
         'public/cpp/environment/environment.h',
         'public/cpp/environment/lib/default_async_waiter.cc',
-        'public/cpp/environment/lib/buffer_tls.cc',
-        'public/cpp/environment/lib/buffer_tls_setup.h',
+        'public/cpp/environment/lib/default_async_waiter.h',
+        'public/cpp/environment/lib/default_logger.cc',
+        'public/cpp/environment/lib/default_logger.h',
         'public/cpp/environment/lib/environment.cc',
+        'public/cpp/environment/lib/logging.cc',
       ],
       'include_dirs': [
         '..',
@@ -343,14 +365,12 @@
       ],
     },
     {
-      'target_name': 'mojo_shell_bindings',
+      # GN version: //mojo/public/interfaces/interface_provider:interface_provider
+      'target_name': 'mojo_interface_provider_bindings',
       'type': 'static_library',
       'sources': [
-        'public/interfaces/shell/shell.mojom',
+        'public/interfaces/interface_provider/interface_provider.mojom',
       ],
-      'variables': {
-        'mojom_base_output_dir': 'mojo',
-      },
       'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'dependencies': [
         'mojo_cpp_bindings',
@@ -360,19 +380,37 @@
       ],
     },
     {
-      'target_name': 'mojo_shell_client',
+      # GN version: //mojo/public/interfaces/service_provider:service_provider
+      'target_name': 'mojo_service_provider_bindings',
       'type': 'static_library',
       'sources': [
-        'public/cpp/shell/application.h',
-        'public/cpp/shell/service.h',
-        'public/cpp/shell/lib/application.cc',
-        'public/cpp/shell/lib/service.cc',
+        'public/interfaces/service_provider/service_provider.mojom',
       ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
       'dependencies': [
-        'mojo_shell_bindings',
+        'mojo_cpp_bindings',
       ],
       'export_dependent_settings': [
-        'mojo_shell_bindings',
+        'mojo_cpp_bindings',
+      ],
+    },
+    {
+      'target_name': 'mojo_application',
+      'type': 'static_library',
+      'sources': [
+        'public/cpp/application/application.h',
+        'public/cpp/application/connect.h',
+        'public/cpp/application/lib/application.cc',
+        'public/cpp/application/lib/service_connector.cc',
+        'public/cpp/application/lib/service_connector.h',
+        'public/cpp/application/lib/service_registry.cc',
+        'public/cpp/application/lib/service_registry.h',
+      ],
+      'dependencies': [
+        'mojo_service_provider_bindings',
+      ],
+      'export_dependent_settings': [
+        'mojo_service_provider_bindings',
       ],
     },
   ],
@@ -385,6 +423,17 @@
           'variables': {
             'java_in_dir': 'public/java',
           },
+          'includes': [ '../build/java.gypi' ],
+        },
+        {
+          'target_name': 'mojo_bindings_java',
+          'type': 'none',
+          'variables': {
+            'java_in_dir': 'bindings/java',
+          },
+          'dependencies': [
+            'mojo_public_java',
+          ],
           'includes': [ '../build/java.gypi' ],
         },
       ],

@@ -11,8 +11,10 @@ build directory, e.g. chrome-release/build/.
 For a list of command-line options, call this script with '--help'.
 """
 
+import ast
 import copy
 import datetime
+import exceptions
 import gzip
 import hashlib
 import json
@@ -157,19 +159,23 @@ def _ShutdownDBus():
     print ' cleared DBUS_SESSION_BUS_ADDRESS environment variable'
 
 
-def _RunGTestCommand(command, results_tracker=None, pipes=None, extra_env=None):
+def _RunGTestCommand(command, extra_env, results_tracker=None, pipes=None):
   """Runs a test, printing and possibly processing the output.
 
   Args:
     command: A list of strings in a command (the command and its arguments).
+    extra_env: A dictionary of extra environment variables to set.
     results_tracker: A "log processor" class which has the ProcessLine method.
     pipes: A list of command string lists which the output will be piped to.
-    extra_env: A dictionary of extra environment variables to set.
 
   Returns:
     The process return code.
   """
   env = os.environ.copy()
+  if extra_env:
+    print 'Additional test environment:'
+    for k, v in sorted(extra_env.items()):
+      print '  %s=%s' % (k, v)
   env.update(extra_env or {})
 
   # Trigger bot mode (test retries, redirection of stdio, possibly faster,
@@ -340,6 +346,7 @@ def _GenerateJSONForTestResults(options, results_tracker):
 
   except Exception as e:
     print 'Unexpected error while generating JSON: %s' % e
+    sys.excepthook(*sys.exc_info())
     return False
 
   # The code can throw all sorts of exceptions, including
@@ -353,6 +360,7 @@ def _GenerateJSONForTestResults(options, results_tracker):
   except Exception as e:
     # Consider this non-fatal for the moment.
     print 'Unexpected error while uploading JSON: %s' % e
+    sys.excepthook(*sys.exc_info())
 
   return True
 
@@ -751,7 +759,8 @@ def _UploadGtestJsonSummary(json_path, build_properties, test_exe):
   }
   target_json_serialized = json.dumps(target_json, indent=2)
 
-  today = datetime.date.today()
+  now = datetime.datetime.utcnow()
+  today = now.date()
   weekly_timestamp = today - datetime.timedelta(days=today.weekday())
 
   # Pick a non-colliding file name by hashing the JSON contents
@@ -812,6 +821,7 @@ def _UploadGtestJsonSummary(json_path, build_properties, test_exe):
                 'mastername':
                     target_json['build_properties'].get('mastername', ''),
                 'raw_json_gs_path': raw_json_gs_path,
+                'timestamp': now.strftime('%Y-%m-%d %H:%M:%S.%f')
               }
               gzipf.write(json.dumps(row) + '\n')
 
@@ -899,7 +909,7 @@ def _MainParse(options, _args):
   return options.parse_result
 
 
-def _MainMac(options, args):
+def _MainMac(options, args, extra_env):
   """Runs the test on mac."""
   if len(args) < 1:
     raise chromium_utils.MissingArgument('Usage: %s' % USAGE)
@@ -952,14 +962,14 @@ def _MainMac(options, args):
       command.append('--test-launcher-summary-output=%s' % json_file_name)
 
     pipes = []
-    if options.factory_properties.get('asan', False):
+    if options.enable_asan:
       symbolize = os.path.abspath(os.path.join('src', 'tools', 'valgrind',
                                                'asan', 'asan_symbolize.py'))
       pipes = [[sys.executable, symbolize], ['c++filt']]
 
     command = _GenerateRunIsolatedCommand(build_dir, test_exe_path, options,
                                           command)
-    result = _RunGTestCommand(command, pipes=pipes,
+    result = _RunGTestCommand(command, extra_env, pipes=pipes,
                               results_tracker=results_tracker)
   finally:
     if http_server:
@@ -988,12 +998,12 @@ def _MainMac(options, args):
         options.build_properties.get('buildername'),
         options.build_properties.get('buildnumber'),
         options.supplemental_columns_file,
-        options.factory_properties.get('perf_config'))
+        options.perf_config)
 
   return result
 
 
-def _MainIOS(options, args):
+def _MainIOS(options, args, extra_env):
   """Runs the test on iOS."""
   if len(args) < 1:
     raise chromium_utils.MissingArgument('Usage: %s' % USAGE)
@@ -1062,7 +1072,7 @@ def _MainIOS(options, args):
   crash_files_after = set([])
   crash_files_before = set(crash_utils.list_crash_logs())
 
-  result = _RunGTestCommand(command, results_tracker)
+  result = _RunGTestCommand(command, extra_env, results_tracker)
 
   # Because test apps kill themselves, iossim sometimes returns non-zero
   # status even though all tests have passed.  Check the results_tracker to
@@ -1091,7 +1101,7 @@ def _MainIOS(options, args):
   return result
 
 
-def _MainLinux(options, args):
+def _MainLinux(options, args, extra_env):
   """Runs the test on Linux."""
   if len(args) < 1:
     raise chromium_utils.MissingArgument('Usage: %s' % USAGE)
@@ -1128,10 +1138,6 @@ def _MainLinux(options, args):
     msg = 'Unable to find %s' % test_exe_path
     raise chromium_utils.PathNotFound(msg)
 
-  # We will use this to accumulate overrides for the command under test,
-  # That we may not need or want for other support commands.
-  extra_env = {}
-
   # Unset http_proxy and HTTPS_PROXY environment variables.  When set, this
   # causes some tests to hang.  See http://crbug.com/139638 for more info.
   if 'http_proxy' in os.environ:
@@ -1143,7 +1149,7 @@ def _MainLinux(options, args):
 
   # Decide whether to enable the suid sandbox for Chrome.
   if (_ShouldEnableSandbox(CHROME_SANDBOX_PATH) and
-      not options.factory_properties.get('tsan', False) and
+      not options.enable_tsan and
       not options.enable_lsan):
     print 'Enabling sandbox.  Setting environment variable:'
     print '  CHROME_DEVEL_SANDBOX="%s"' % CHROME_SANDBOX_PATH
@@ -1222,18 +1228,18 @@ def _MainLinux(options, args):
 
     pipes = []
     # See the comment in main() regarding offline symbolization.
-    if ((options.factory_properties.get('asan', False) or
-        options.factory_properties.get('msan', False)) and
-        not options.enable_lsan):
+    if (options.enable_asan or options.enable_msan) and not options.enable_lsan:
       symbolize = os.path.abspath(os.path.join('src', 'tools', 'valgrind',
                                                'asan', 'asan_symbolize.py'))
-      pipes = [[sys.executable, symbolize], ['c++filt']]
+      asan_symbolize = [sys.executable, symbolize]
+      if options.strip_path_prefix:
+        asan_symbolize.append(options.strip_path_prefix)
+      pipes = [asan_symbolize]
 
     command = _GenerateRunIsolatedCommand(build_dir, test_exe_path, options,
                                           command)
-    result = _RunGTestCommand(command, pipes=pipes,
-                              results_tracker=results_tracker,
-                              extra_env=extra_env)
+    result = _RunGTestCommand(command, extra_env, pipes=pipes,
+                              results_tracker=results_tracker)
   finally:
     if http_server:
       http_server.StopServer()
@@ -1263,12 +1269,12 @@ def _MainLinux(options, args):
         options.build_properties.get('buildername'),
         options.build_properties.get('buildnumber'),
         options.supplemental_columns_file,
-        options.factory_properties.get('perf_config'))
+        options.perf_config)
 
   return result
 
 
-def _MainWin(options, args):
+def _MainWin(options, args, extra_env):
   """Runs tests on windows.
 
   Using the target build configuration, run the executable given in the
@@ -1278,6 +1284,7 @@ def _MainWin(options, args):
   Args:
     options: Command-line options for this invocation of runtest.py.
     args: Command and arguments for the test.
+    extra_env: A dictionary of extra environment variables to set.
 
   Returns:
     Exit status code.
@@ -1353,7 +1360,7 @@ def _MainWin(options, args):
 
     command = _GenerateRunIsolatedCommand(build_dir, test_exe_path, options,
                                           command)
-    result = _RunGTestCommand(command, results_tracker)
+    result = _RunGTestCommand(command, extra_env, results_tracker)
   finally:
     if http_server:
       http_server.StopServer()
@@ -1384,12 +1391,12 @@ def _MainWin(options, args):
         options.build_properties.get('buildername'),
         options.build_properties.get('buildnumber'),
         options.supplemental_columns_file,
-        options.factory_properties.get('perf_config'))
+        options.perf_config)
 
   return result
 
 
-def _MainAndroid(options, args):
+def _MainAndroid(options, args, extra_env):
   """Runs tests on android.
 
   Running GTest-based tests on android is different than on Linux as it requires
@@ -1399,12 +1406,13 @@ def _MainAndroid(options, args):
   Args:
     options: Command-line options for this invocation of runtest.py.
     args: Command and arguments for the test.
+    extra_env: A dictionary of extra environment variables to set.
 
   Returns:
     Exit status code.
   """
   if options.run_python_script:
-    return _MainLinux(options, args)
+    return _MainLinux(options, args, extra_env)
 
   if len(args) < 1:
     raise chromium_utils.MissingArgument('Usage: %s' % USAGE)
@@ -1426,7 +1434,7 @@ def _MainAndroid(options, args):
     run_test_target_option = '--debug'
   command = ['src/build/android/test_runner.py', 'gtest',
              run_test_target_option, '-s', test_suite]
-  result = _RunGTestCommand(command, results_tracker=results_tracker)
+  result = _RunGTestCommand(command, extra_env, results_tracker=results_tracker)
 
   if options.generate_json_file:
     if not _GenerateJSONForTestResults(options, results_tracker):
@@ -1446,7 +1454,7 @@ def _MainAndroid(options, args):
         options.build_properties.get('buildername'),
         options.build_properties.get('buildnumber'),
         options.supplemental_columns_file,
-        options.factory_properties.get('perf_config'))
+        options.perf_config)
 
   return result
 
@@ -1589,6 +1597,12 @@ def main():
                                 'to.')
   option_parser.add_option('--perf-id', default='',
                            help='The perf builder id')
+  option_parser.add_option('--perf-config', default='',
+                           help='Perf configuration dictionary (as a string). '
+                                'This allows to specify custom revisions to be '
+                                'the main revision at the Perf dashboard. '
+                                'Example: --perf-config="{\'a_default_rev\': '
+                                '\'r_webrtc_rev\'}"')
   option_parser.add_option('--supplemental-columns-file',
                            default='supplemental_columns',
                            help='A file containing a JSON blob with a dict '
@@ -1600,10 +1614,38 @@ def main():
                                 'is automatically extracted from the checkout.')
   option_parser.add_option('--webkit-revision',
                            help='See --revision.')
-  option_parser.add_option('--enable-lsan', default=False,
+  option_parser.add_option('--enable-asan', action='store_true', default=False,
+                           help='Enable fast memory error detection '
+                                '(AddressSanitizer). Can also enabled with the '
+                                'factory property "asan" (deprecated).')
+  option_parser.add_option('--enable-lsan', action='store_true', default=False,
                            help='Enable memory leak detection (LeakSanitizer). '
-                                'Also can be enabled with the factory '
-                                'properties "lsan" and "lsan_run_all_tests".')
+                                'Can also be enabled with the factory '
+                                'property "lsan" (deprecated).')
+  option_parser.add_option('--lsan-suppressions-file',
+                           default='src/tools/lsan/suppressions.txt',
+                           help='Suppression file for LeakSanitizer. '
+                                'Default: %default.')
+  option_parser.add_option('--enable-msan', action='store_true', default=False,
+                           help='Enable uninitialized memory reads detection '
+                                '(MemorySanitizer). Can also enabled with the '
+                                'factory property "msan" (deprecated).')
+  option_parser.add_option('--enable-tsan', action='store_true', default=False,
+                           help='Enable data race detection '
+                                '(ThreadSanitizer). Can also enabled with the '
+                                'factory property "tsan" (deprecated).')
+  option_parser.add_option('--tsan-suppressions-file',
+                           default=('src/tools/valgrind/tsan_v2/'
+                                    'suppressions.txt'),
+                           help='Suppression file for ThreadSanitizer. '
+                                'Default: %default. Can also be specified '
+                                'using the factory property '
+                                '"tsan_suppressions_file" (deprecated).')
+  option_parser.add_option('--strip-path-prefix',
+                           default='build/src/out/Release/../../',
+                           help='Source paths in stack traces will be stripped '
+                           'of prefixes ending with this substring. This '
+                           'option is used by sanitizer tools.')
   option_parser.add_option('--extra-sharding-args', default='',
                            help='Extra options for run_test_cases.py.')
   option_parser.add_option('--no-spawn-dbus', action='store_true',
@@ -1645,20 +1687,16 @@ def main():
     if options.pass_build_dir:
       args.extend(['--build-dir', options.build_dir])
 
-    # Leak detection will be forced off for the following binaries, unless
-    # lsan_run_all_tests is True. This mechanism was originally used to
-    # gradually roll out leak detection on existing ASan bots. We no longer
-    # need it.
-    # TODO(earthdok): remove it.
-    lsan_blacklist = [
-        'browser_tests',
-        'content_browsertests',
-        'interactive_ui_tests',
-    ]
+    options.enable_asan = (options.enable_asan or
+                           options.factory_properties.get('asan', False))
+    options.enable_msan = (options.enable_msan or
+                           options.factory_properties.get('msan', False))
+    options.enable_tsan = (options.enable_tsan or
+                           options.factory_properties.get('tsan', False))
+    options.tsan_suppressions_file = (options.tsan_suppressions_file or
+        options.factory_properties.get('tsan_suppressions_file'))
     options.enable_lsan = (options.enable_lsan or
-       (options.factory_properties.get('lsan', False) and
-        (options.factory_properties.get('lsan_run_all_tests', False) or
-         args[0] not in lsan_blacklist)))
+                           options.factory_properties.get('lsan', False))
 
     extra_sharding_args_list = options.extra_sharding_args.split()
 
@@ -1666,9 +1704,9 @@ def main():
     # enable verbose output. We support both.
     always_print_test_output = ['--verbose',
                                 '--test-launcher-print-test-stdio=always']
-    if options.factory_properties.get('asan', False):
+    if options.enable_asan:
       extra_sharding_args_list.extend(always_print_test_output)
-    if options.factory_properties.get('tsan', False):
+    if options.enable_tsan:
       # Print ThreadSanitizer reports; don't cluster the tests so that TSan exit
       # code denotes a test failure.
       extra_sharding_args_list.extend(always_print_test_output)
@@ -1679,22 +1717,25 @@ def main():
 
     options.extra_sharding_args = ' '.join(extra_sharding_args_list)
 
-    if (options.factory_properties.get('asan', False) or
-        options.factory_properties.get('tsan', False) or
-        options.factory_properties.get('msan', False) or options.enable_lsan):
+    # We will use this to accumulate overrides for the command under test,
+    # That we may not need or want for other support commands.
+    extra_env = {}
+
+    if (options.enable_asan or options.enable_tsan or
+        options.enable_msan or options.enable_lsan):
       # Instruct GTK to use malloc while running ASan, TSan, MSan or LSan tests.
-      os.environ['G_SLICE'] = 'always-malloc'
-      os.environ['NSS_DISABLE_ARENA_FREE_LIST'] = '1'
-      os.environ['NSS_DISABLE_UNLOAD'] = '1'
+      extra_env['G_SLICE'] = 'always-malloc'
+      extra_env['NSS_DISABLE_ARENA_FREE_LIST'] = '1'
+      extra_env['NSS_DISABLE_UNLOAD'] = '1'
 
     # TODO(glider): remove the symbolizer path once
     # https://code.google.com/p/address-sanitizer/issues/detail?id=134 is fixed.
     symbolizer_path = os.path.abspath(os.path.join('src', 'third_party',
         'llvm-build', 'Release+Asserts', 'bin', 'llvm-symbolizer'))
-    strip_path_prefix = 'build/src/out/Release/../../'
+    strip_path_prefix = options.strip_path_prefix
 
     # Symbolization of sanitizer reports.
-    if options.factory_properties.get('tsan', False) or options.enable_lsan:
+    if options.enable_tsan or options.enable_lsan:
       # TSan and LSan are not sandbox-compatible, so we can use online
       # symbolization. In fact, they need symbolization to be able to apply
       # suppressions.
@@ -1707,39 +1748,35 @@ def main():
       # we must use the LSan symbolization options above.
       symbolization_options = ['symbolize=0']
       # Set the path to llvm-symbolizer to be used by asan_symbolize.py
-      os.environ['LLVM_SYMBOLIZER_PATH'] = symbolizer_path
+      extra_env['LLVM_SYMBOLIZER_PATH'] = symbolizer_path
 
     # ThreadSanitizer
-    if options.factory_properties.get('tsan', False):
-      suppressions_file = options.factory_properties.get(
-          'tsan_suppressions_file',
-          'src/tools/valgrind/tsan_v2/suppressions.txt')
+    if options.enable_tsan:
       # TODO(glider): enable die_after_fork back once http://crbug.com/356758
       # is fixed.
       tsan_options = symbolization_options + \
-                     ['suppressions=%s' % suppressions_file,
+                     ['suppressions=%s' % options.tsan_suppressions_file,
                       'print_suppressions=1',
                       'report_signal_unsafe=0',
                       'report_thread_leaks=0',
                       'history_size=7',
                       'die_after_fork=0']
-      os.environ['TSAN_OPTIONS'] = ' '.join(tsan_options)
+      extra_env['TSAN_OPTIONS'] = ' '.join(tsan_options)
       # Disable sandboxing under TSan for now. http://crbug.com/223602.
       args.append('--no-sandbox')
 
     # LeakSanitizer
     if options.enable_lsan:
       # Symbolization options set here take effect only for standalone LSan.
-      suppressions_file = 'src/tools/lsan/suppressions.txt'
       lsan_options = symbolization_options + \
-                     ['suppressions=%s' % suppressions_file,
+                     ['suppressions=%s' % options.lsan_suppressions_file,
                       'print_suppressions=1']
-      os.environ['LSAN_OPTIONS'] = ' '.join(lsan_options)
+      extra_env['LSAN_OPTIONS'] = ' '.join(lsan_options)
       # Disable sandboxing under LSan.
       args.append('--no-sandbox')
 
     # AddressSanitizer
-    if options.factory_properties.get('asan', False):
+    if options.enable_asan:
       # Avoid aggressive memcmp checks until http://crbug.com/178677 is
       # fixed.  Also do not replace memcpy/memmove/memset to suppress a
       # report in OpenCL, see http://crbug.com/162461.
@@ -1749,19 +1786,38 @@ def main():
                       'strip_path_prefix=%s ' % strip_path_prefix]
       if options.enable_lsan:
         asan_options += ['detect_leaks=1']
-      os.environ['ASAN_OPTIONS'] = ' '.join(asan_options)
+      extra_env['ASAN_OPTIONS'] = ' '.join(asan_options)
+
+      # ASan is not yet sandbox-friendly on Windows.
+      if sys.platform == 'win32':
+        args.append('--no-sandbox')
 
     # MemorySanitizer
-    if options.factory_properties.get('msan', False):
+    if options.enable_msan:
       msan_options = symbolization_options
       if options.enable_lsan:
         msan_options += ['detect_leaks=1']
-      os.environ['MSAN_OPTIONS'] = ' '.join(msan_options)
+      extra_env['MSAN_OPTIONS'] = ' '.join(msan_options)
 
     # Set the number of shards environement variables.
     if options.total_shards and options.shard_index:
-      os.environ['GTEST_TOTAL_SHARDS'] = str(options.total_shards)
-      os.environ['GTEST_SHARD_INDEX'] = str(options.shard_index - 1)
+      extra_env['GTEST_TOTAL_SHARDS'] = str(options.total_shards)
+      extra_env['GTEST_SHARD_INDEX'] = str(options.shard_index - 1)
+
+    # If perf config is passed via command line, parse the string into a dict.
+    if options.perf_config:
+      try:
+        options.perf_config = ast.literal_eval(options.perf_config)
+        assert type(options.perf_config) is dict, (
+            'Value of --perf-config couldn\'t be evaluated into a dict.')
+      except (exceptions.SyntaxError, ValueError):
+        option_parser.error('Failed to parse --perf-config value into a dict: '
+                            '%s' % options.perf_config)
+        return 1
+
+    # Allow factory property 'perf_config' as well during a transition period.
+    options.perf_config = (options.perf_config or
+                           options.factory_properties.get('perf_config'))
 
     if options.results_directory:
       options.test_output_xml = os.path.normpath(os.path.abspath(os.path.join(
@@ -1781,16 +1837,16 @@ def main():
     elif sys.platform.startswith('darwin'):
       test_platform = options.factory_properties.get('test_platform', '')
       if test_platform in ('ios-simulator',):
-        result = _MainIOS(options, args)
+        result = _MainIOS(options, args, extra_env)
       else:
-        result = _MainMac(options, args)
+        result = _MainMac(options, args, extra_env)
     elif sys.platform == 'win32':
-      result = _MainWin(options, args)
+      result = _MainWin(options, args, extra_env)
     elif sys.platform == 'linux2':
       if options.factory_properties.get('test_platform', '') == 'android':
-        result = _MainAndroid(options, args)
+        result = _MainAndroid(options, args, extra_env)
       else:
-        result = _MainLinux(options, args)
+        result = _MainLinux(options, args, extra_env)
     else:
       sys.stderr.write('Unknown sys.platform value %s\n' % repr(sys.platform))
       return 1

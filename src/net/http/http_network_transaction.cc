@@ -76,8 +76,7 @@ namespace net {
 namespace {
 
 void ProcessAlternateProtocol(
-    HttpStreamFactory* factory,
-    const base::WeakPtr<HttpServerProperties>& http_server_properties,
+    HttpNetworkSession* session,
     const HttpResponseHeaders& headers,
     const HostPortPair& http_host_port_pair) {
   std::string alternate_protocol_str;
@@ -88,9 +87,11 @@ void ProcessAlternateProtocol(
     return;
   }
 
-  factory->ProcessAlternateProtocol(http_server_properties,
-                                    alternate_protocol_str,
-                                    http_host_port_pair);
+  session->http_stream_factory()->ProcessAlternateProtocol(
+      session->http_server_properties(),
+      alternate_protocol_str,
+      http_host_port_pair,
+      *session);
 }
 
 // Returns true if |error| is a client certificate authentication error.
@@ -142,10 +143,7 @@ HttpNetworkTransaction::HttpNetworkTransaction(RequestPriority priority,
       establishing_tunnel_(false),
       websocket_handshake_stream_base_create_helper_(NULL) {
   session->ssl_config_service()->GetSSLConfig(&server_ssl_config_);
-  if (session->http_stream_factory()->has_next_protos()) {
-    server_ssl_config_.next_protos =
-        session->http_stream_factory()->next_protos();
-  }
+  session->GetNextProtos(&server_ssl_config_.next_protos);
   proxy_ssl_config_ = server_ssl_config_;
 }
 
@@ -195,9 +193,8 @@ int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
   }
 
   // Channel ID is disabled if privacy mode is enabled for this request.
-  bool channel_id_enabled = server_ssl_config_.channel_id_enabled &&
-      (request_->privacy_mode == PRIVACY_MODE_DISABLED);
-  server_ssl_config_.channel_id_enabled = channel_id_enabled;
+  if (request_->privacy_mode == PRIVACY_MODE_ENABLED)
+    server_ssl_config_.channel_id_enabled = false;
 
   next_state_ = STATE_NOTIFY_BEFORE_CREATE_STREAM;
   int rv = DoLoop(OK);
@@ -489,7 +486,8 @@ void HttpNetworkTransaction::OnStreamReady(const SSLConfig& used_ssl_config,
       stream_request_->protocol_negotiated());
   response_.was_fetched_via_spdy = stream_request_->using_spdy();
   response_.was_fetched_via_proxy = !proxy_info_.is_direct();
-
+  if (response_.was_fetched_via_proxy && !proxy_info_.is_empty())
+    response_.proxy_server = proxy_info_.proxy_server().host_port_pair();
   OnIOComplete(OK);
 }
 
@@ -990,68 +988,19 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
 
   DCHECK(response_.headers.get());
 
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
-  // Server-induced fallback; see: http://crbug.com/143712
-  if (response_.was_fetched_via_proxy) {
-    ProxyService::DataReductionProxyBypassEventType proxy_bypass_event =
-        ProxyService::BYPASS_EVENT_TYPE_MAX;
-    bool data_reduction_proxy_used =
-        proxy_info_.proxy_server().isDataReductionProxy();
-    bool data_reduction_fallback_proxy_used = false;
-#if defined(DATA_REDUCTION_FALLBACK_HOST)
-    if (!data_reduction_proxy_used) {
-      data_reduction_fallback_proxy_used =
-          proxy_info_.proxy_server().isDataReductionProxyFallback();
-    }
-#endif
-
-    if (data_reduction_proxy_used || data_reduction_fallback_proxy_used) {
-      net::HttpResponseHeaders::DataReductionProxyInfo
-      data_reduction_proxy_info;
-      proxy_bypass_event
-          = response_.headers->GetDataReductionProxyBypassEventType(
-              &data_reduction_proxy_info);
-      if (proxy_bypass_event < ProxyService::BYPASS_EVENT_TYPE_MAX) {
-        ProxyService* proxy_service = session_->proxy_service();
-
-        proxy_service->RecordDataReductionProxyBypassInfo(
-            data_reduction_proxy_used, proxy_info_.proxy_server(),
-            proxy_bypass_event);
-
-        ProxyServer proxy_server;
-#if defined(DATA_REDUCTION_FALLBACK_HOST)
-        if (data_reduction_proxy_used && data_reduction_proxy_info.bypass_all) {
-          // TODO(bengr): Rename as DATA_REDUCTION_FALLBACK_ORIGIN.
-          GURL proxy_url(DATA_REDUCTION_FALLBACK_HOST);
-          if (proxy_url.SchemeIsHTTPOrHTTPS()) {
-            proxy_server = ProxyServer(proxy_url.SchemeIs("http") ?
-                                           ProxyServer::SCHEME_HTTP :
-                                           ProxyServer::SCHEME_HTTPS,
-                                       HostPortPair::FromURL(proxy_url));
-            }
-        }
-#endif
-        if (proxy_service->MarkProxiesAsBadUntil(
-                proxy_info_,
-                data_reduction_proxy_info.bypass_duration,
-                proxy_server,
-                net_log_)) {
-          // Only retry idempotent methods. We don't want to resubmit a POST
-          // if the proxy took some action.
-          if (request_->method == "GET" ||
-              request_->method == "OPTIONS" ||
-              request_->method == "HEAD" ||
-              request_->method == "PUT" ||
-              request_->method == "DELETE" ||
-              request_->method == "TRACE") {
-            ResetConnectionAndRequestForResend();
-            return OK;
-          }
-        }
-      }
-    }
+  // On a 408 response from the server ("Request Timeout") on a stale socket,
+  // retry the request.
+  // Headers can be NULL because of http://crbug.com/384554.
+  if (response_.headers.get() && response_.headers->response_code() == 408 &&
+      stream_->IsConnectionReused()) {
+    net_log_.AddEventWithNetErrorCode(
+        NetLog::TYPE_HTTP_TRANSACTION_RESTART_AFTER_ERROR,
+        response_.headers->response_code());
+    // This will close the socket - it would be weird to try and reuse it, even
+    // if the server doesn't actually close it.
+    ResetConnectionAndRequestForResend();
+    return OK;
   }
-#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 
   // Like Net.HttpResponseCode, but only for MAIN_FRAME loads.
   if (request_->load_flags & LOAD_MAIN_FRAME) {
@@ -1087,8 +1036,7 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
 
   HostPortPair endpoint = HostPortPair(request_->url.HostNoBrackets(),
                                        request_->url.EffectiveIntPort());
-  ProcessAlternateProtocol(session_->http_stream_factory(),
-                           session_->http_server_properties(),
+  ProcessAlternateProtocol(session_,
                            *response_.headers.get(),
                            endpoint);
 
@@ -1438,14 +1386,6 @@ int HttpNetworkTransaction::HandleIOError(int error) {
     // preconnected but failed to be used before the server timed it out.
     case ERR_EMPTY_RESPONSE:
       if (ShouldResendRequest()) {
-        net_log_.AddEventWithNetErrorCode(
-            NetLog::TYPE_HTTP_TRANSACTION_RESTART_AFTER_ERROR, error);
-        ResetConnectionAndRequestForResend();
-        error = OK;
-      }
-      break;
-    case ERR_PIPELINE_EVICTION:
-      if (!session_->force_http_pipelining()) {
         net_log_.AddEventWithNetErrorCode(
             NetLog::TYPE_HTTP_TRANSACTION_RESTART_AFTER_ERROR, error);
         ResetConnectionAndRequestForResend();

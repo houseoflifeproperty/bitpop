@@ -31,7 +31,7 @@
 #ifndef CustomElementAsyncImportMicrotaskQueue_h
 #define CustomElementAsyncImportMicrotaskQueue_h
 
-#include "core/dom/custom/CustomElementMicrotaskQueue.h"
+#include "core/dom/custom/CustomElementMicrotaskQueueBase.h"
 
 namespace WebCore {
 
@@ -39,9 +39,9 @@ class CustomElementMicrotaskImportStep;
 
 class CustomElementAsyncImportMicrotaskQueue : public CustomElementMicrotaskQueueBase {
 public:
-    static PassRefPtr<CustomElementAsyncImportMicrotaskQueue> create() { return adoptRef(new CustomElementAsyncImportMicrotaskQueue()); }
+    static PassRefPtrWillBeRawPtr<CustomElementAsyncImportMicrotaskQueue> create() { return adoptRefWillBeNoop(new CustomElementAsyncImportMicrotaskQueue()); }
 
-    void enqueue(PassOwnPtr<CustomElementMicrotaskImportStep>);
+    void enqueue(PassOwnPtrWillBeRawPtr<CustomElementMicrotaskImportStep>);
 
 private:
     CustomElementAsyncImportMicrotaskQueue() { }

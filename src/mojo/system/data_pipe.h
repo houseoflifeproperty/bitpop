@@ -5,11 +5,15 @@
 #ifndef MOJO_SYSTEM_DATA_PIPE_H_
 #define MOJO_SYSTEM_DATA_PIPE_H_
 
-#include "base/basictypes.h"
+#include <stdint.h>
+
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
-#include "mojo/public/c/system/core.h"
+#include "mojo/public/c/system/data_pipe.h"
+#include "mojo/public/c/system/types.h"
+#include "mojo/system/handle_signals_state.h"
 #include "mojo/system/system_impl_export.h"
 
 namespace mojo {
@@ -27,12 +31,19 @@ class WaiterList;
 class MOJO_SYSTEM_IMPL_EXPORT DataPipe :
     public base::RefCountedThreadSafe<DataPipe> {
  public:
-  // Validates and/or sets default options. If non-null, |in_options| must point
-  // to a struct of at least |in_options->struct_size| bytes. |out_options| must
-  // point to a (current) |MojoCreateDataPipeOptions| and will be entirely
-  // overwritten on success (it may be partly overwritten on failure).
-  static MojoResult ValidateOptions(const MojoCreateDataPipeOptions* in_options,
-                                    MojoCreateDataPipeOptions* out_options);
+  // The default options for |MojoCreateDataPipe()|. (Real uses should obtain
+  // this via |ValidateCreateOptions()| with a null |in_options|; this is
+  // exposed directly for testing convenience.)
+  static const MojoCreateDataPipeOptions kDefaultCreateOptions;
+
+  // Validates and/or sets default options for |MojoCreateDataPipeOptions|. If
+  // non-null, |in_options| must point to a struct of at least
+  // |in_options->struct_size| bytes. |out_options| must point to a (current)
+  // |MojoCreateDataPipeOptions| and will be entirely overwritten on success (it
+  // may be partly overwritten on failure).
+  static MojoResult ValidateCreateOptions(
+      const MojoCreateDataPipeOptions* in_options,
+      MojoCreateDataPipeOptions* out_options);
 
   // These are called by the producer dispatcher to implement its methods of
   // corresponding names.
@@ -49,8 +60,8 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipe :
                                     bool all_or_none);
   MojoResult ProducerEndWriteData(uint32_t num_bytes_written);
   MojoResult ProducerAddWaiter(Waiter* waiter,
-                               MojoWaitFlags flags,
-                               MojoResult wake_result);
+                               MojoHandleSignals signals,
+                               uint32_t context);
   void ProducerRemoveWaiter(Waiter* waiter);
   bool ProducerIsBusy() const;
 
@@ -72,8 +83,8 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipe :
                                    bool all_or_none);
   MojoResult ConsumerEndReadData(uint32_t num_bytes_read);
   MojoResult ConsumerAddWaiter(Waiter* waiter,
-                               MojoWaitFlags flags,
-                               MojoResult wake_result);
+                               MojoHandleSignals signals,
+                               uint32_t context);
   void ConsumerRemoveWaiter(Waiter* waiter);
   bool ConsumerIsBusy() const;
 
@@ -97,8 +108,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipe :
   virtual MojoResult ProducerEndWriteDataImplNoLock(
       uint32_t num_bytes_written) = 0;
   // Note: A producer should not be writable during a two-phase write.
-  virtual MojoWaitFlags ProducerSatisfiedFlagsNoLock() = 0;
-  virtual MojoWaitFlags ProducerSatisfiableFlagsNoLock() = 0;
+  virtual HandleSignalsState ProducerGetHandleSignalsStateNoLock() const = 0;
 
   virtual void ConsumerCloseImplNoLock() = 0;
   // |*num_bytes| will be a nonzero multiple of |element_num_bytes_|.
@@ -114,8 +124,7 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipe :
                                                      bool all_or_none) = 0;
   virtual MojoResult ConsumerEndReadDataImplNoLock(uint32_t num_bytes_read) = 0;
   // Note: A consumer should not be writable during a two-phase read.
-  virtual MojoWaitFlags ConsumerSatisfiedFlagsNoLock() = 0;
-  virtual MojoWaitFlags ConsumerSatisfiableFlagsNoLock() = 0;
+  virtual HandleSignalsState ConsumerGetHandleSignalsStateNoLock() const = 0;
 
   // Thread-safe and fast (they don't take the lock):
   bool may_discard() const { return may_discard_; }
@@ -158,16 +167,18 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipe :
   }
 
  private:
-  void AwakeProducerWaitersForStateChangeNoLock();
-  void AwakeConsumerWaitersForStateChangeNoLock();
+  void AwakeProducerWaitersForStateChangeNoLock(
+      const HandleSignalsState& new_producer_state);
+  void AwakeConsumerWaitersForStateChangeNoLock(
+      const HandleSignalsState& new_consumer_state);
 
   bool has_local_producer_no_lock() const {
     lock_.AssertAcquired();
-    return !!producer_waiter_list_.get();
+    return !!producer_waiter_list_;
   }
   bool has_local_consumer_no_lock() const {
     lock_.AssertAcquired();
-    return !!consumer_waiter_list_.get();
+    return !!consumer_waiter_list_;
   }
 
   const bool may_discard_;

@@ -30,6 +30,9 @@ public class EmptyTabObserver implements TabObserver {
     public void onUrlUpdated(Tab tab) { }
 
     @Override
+    public void onSSLStateUpdated(Tab tab) { }
+
+    @Override
     public void onWebContentsSwapped(Tab tab, boolean didStartLoad, boolean didFinishLoad) { }
 
     @Override
@@ -58,4 +61,7 @@ public class EmptyTabObserver implements TabObserver {
     public void onDidStartProvisionalLoadForFrame(Tab tab, long frameId, long parentFrameId,
             boolean isMainFrame, String validatedUrl, boolean isErrorPage,
             boolean isIframeSrcdoc) { }
+
+    @Override
+    public void onDidChangeThemeColor(int color) { }
 }

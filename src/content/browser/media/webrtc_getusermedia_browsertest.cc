@@ -85,8 +85,8 @@ class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest,
     WebRtcContentBrowserTest::SetUpCommandLine(command_line);
 
     bool enable_audio_track_processing = GetParam();
-    if (enable_audio_track_processing)
-      command_line->AppendSwitch(switches::kEnableAudioTrackProcessing);
+    if (!enable_audio_track_processing)
+      command_line->AppendSwitch(switches::kDisableAudioTrackProcessing);
   }
 
   void StartTracing() {
@@ -177,19 +177,34 @@ class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest,
         graph_name, "", "interarrival_time", interarrival_us, "us", true);
   }
 
-  void GetSources(std::vector<std::string>* audio_ids,
-                  std::vector<std::string>* video_ids) {
+  void RunTwoGetTwoGetUserMediaWithDifferentContraints(
+      const std::string& constraints1,
+      const std::string& constraints2,
+      const std::string& expected_result) {
+    ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
     GURL url(embedded_test_server()->GetURL("/media/getusermedia.html"));
     NavigateToURL(shell(), url);
 
-    std::string sources_as_json = ExecuteJavascriptAndReturnResult(
+    std::string command = "twoGetUserMedia(" + constraints1 + ',' +
+        constraints2 + ')';
+
+    EXPECT_EQ(expected_result, ExecuteJavascriptAndReturnResult(command));
+  }
+
+  void GetInputDevices(std::vector<std::string>* audio_ids,
+                       std::vector<std::string>* video_ids) {
+    GURL url(embedded_test_server()->GetURL("/media/getusermedia.html"));
+    NavigateToURL(shell(), url);
+
+    std::string devices_as_json = ExecuteJavascriptAndReturnResult(
         "getSources()");
-    EXPECT_FALSE(sources_as_json.empty());
+    EXPECT_FALSE(devices_as_json.empty());
 
     int error_code;
     std::string error_message;
     scoped_ptr<base::Value> value(
-        base::JSONReader::ReadAndReturnError(sources_as_json,
+        base::JSONReader::ReadAndReturnError(devices_as_json,
                                              base::JSON_ALLOW_TRAILING_COMMAS,
                                              &error_code,
                                              &error_message));
@@ -204,16 +219,16 @@ class WebRtcGetUserMediaBrowserTest: public WebRtcContentBrowserTest,
          it != values->end(); ++it) {
       const base::DictionaryValue* dict;
       std::string kind;
-      std::string id;
+      std::string device_id;
       ASSERT_TRUE((*it)->GetAsDictionary(&dict));
       ASSERT_TRUE(dict->GetString("kind", &kind));
-      ASSERT_TRUE(dict->GetString("id", &id));
-      ASSERT_FALSE(id.empty());
+      ASSERT_TRUE(dict->GetString("id", &device_id));
+      ASSERT_FALSE(device_id.empty());
       EXPECT_TRUE(kind == "audio" || kind == "video");
       if (kind == "audio") {
-        audio_ids->push_back(id);
+        audio_ids->push_back(device_id);
       } else if (kind == "video") {
-        video_ids->push_back(id);
+        video_ids->push_back(device_id);
       }
     }
     ASSERT_FALSE(audio_ids->empty());
@@ -332,7 +347,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
 
   std::vector<std::string> audio_ids;
   std::vector<std::string> video_ids;
-  GetSources(&audio_ids, &video_ids);
+  GetInputDevices(&audio_ids, &video_ids);
 
   GURL url(embedded_test_server()->GetURL("/media/getusermedia.html"));
 
@@ -357,7 +372,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
 
   std::vector<std::string> audio_ids;
   std::vector<std::string> video_ids;
-  GetSources(&audio_ids, &video_ids);
+  GetInputDevices(&audio_ids, &video_ids);
 
   GURL url(embedded_test_server()->GetURL("/media/getusermedia.html"));
 
@@ -390,7 +405,7 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
 
   std::vector<std::string> audio_ids;
   std::vector<std::string> video_ids;
-  GetSources(&audio_ids, &video_ids);
+  GetInputDevices(&audio_ids, &video_ids);
 
   GURL url(embedded_test_server()->GetURL("/media/getusermedia.html"));
 
@@ -425,6 +440,36 @@ IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest, TwoGetUserMediaAndStop) {
 
   ExecuteJavascriptAndWaitForOk(
       "twoGetUserMediaAndStop({video: true, audio: true});");
+}
+
+IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+                       TwoGetUserMediaWithEqualConstraints) {
+  std::string constraints1 = "{video: true, audio: true}";
+  const std::string& constraints2 = constraints1;
+  std::string expected_result = "w=640:h=480-w=640:h=480";
+
+  RunTwoGetTwoGetUserMediaWithDifferentContraints(constraints1, constraints2,
+                                                  expected_result);
+}
+
+IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+                       TwoGetUserMediaWithSecondVideoCropped) {
+  std::string constraints1 = "{video: true}";
+  std::string constraints2 = "{video: {mandatory: {maxHeight: 360}}}";
+  std::string expected_result = "w=640:h=480-w=640:h=360";
+  RunTwoGetTwoGetUserMediaWithDifferentContraints(constraints1, constraints2,
+                                                  expected_result);
+}
+
+IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,
+                       TwoGetUserMediaWithFirstHdSecondVga) {
+  std::string constraints1 =
+      "{video: {mandatory: {minWidth:1280 , minHeight: 720}}}";
+  std::string constraints2 =
+      "{video: {mandatory: {maxWidth:640 , maxHeight: 480}}}";
+  std::string expected_result = "w=1280:h=720-w=640:h=480";
+  RunTwoGetTwoGetUserMediaWithDifferentContraints(constraints1, constraints2,
+                                                  expected_result);
 }
 
 IN_PROC_BROWSER_TEST_P(WebRtcGetUserMediaBrowserTest,

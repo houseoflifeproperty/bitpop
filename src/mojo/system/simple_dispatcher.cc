@@ -15,10 +15,9 @@ SimpleDispatcher::SimpleDispatcher() {
 SimpleDispatcher::~SimpleDispatcher() {
 }
 
-void SimpleDispatcher::StateChangedNoLock() {
+void SimpleDispatcher::HandleSignalsStateChangedNoLock() {
   lock().AssertAcquired();
-  waiter_list_.AwakeWaitersForStateChange(SatisfiedFlagsNoLock(),
-                                          SatisfiableFlagsNoLock());
+  waiter_list_.AwakeWaitersForStateChange(GetHandleSignalsStateNoLock());
 }
 
 void SimpleDispatcher::CancelAllWaitersNoLock() {
@@ -27,16 +26,17 @@ void SimpleDispatcher::CancelAllWaitersNoLock() {
 }
 
 MojoResult SimpleDispatcher::AddWaiterImplNoLock(Waiter* waiter,
-                                                 MojoWaitFlags flags,
-                                                 MojoResult wake_result) {
+                                                 MojoHandleSignals signals,
+                                                 uint32_t context) {
   lock().AssertAcquired();
 
-  if ((flags & SatisfiedFlagsNoLock()))
+  HandleSignalsState state(GetHandleSignalsStateNoLock());
+  if (state.satisfies(signals))
     return MOJO_RESULT_ALREADY_EXISTS;
-  if (!(flags & SatisfiableFlagsNoLock()))
+  if (!state.can_satisfy(signals))
     return MOJO_RESULT_FAILED_PRECONDITION;
 
-  waiter_list_.AddWaiter(waiter, flags, wake_result);
+  waiter_list_.AddWaiter(waiter, signals, context);
   return MOJO_RESULT_OK;
 }
 

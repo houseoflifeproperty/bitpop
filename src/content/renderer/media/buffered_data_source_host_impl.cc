@@ -35,7 +35,7 @@ static base::TimeDelta TimeForByteOffset(
 
 void BufferedDataSourceHostImpl::AddBufferedTimeRanges(
     media::Ranges<base::TimeDelta>* buffered_time_ranges,
-    base::TimeDelta media_duration) {
+    base::TimeDelta media_duration) const {
   if (total_bytes_ && buffered_byte_ranges_.size()) {
     for (size_t i = 0; i < buffered_byte_ranges_.size(); ++i) {
       int64 start = buffered_byte_ranges_.start(i);
@@ -47,7 +47,7 @@ void BufferedDataSourceHostImpl::AddBufferedTimeRanges(
   }
 }
 
-bool BufferedDataSourceHostImpl::DidLoadingProgress() const {
+bool BufferedDataSourceHostImpl::DidLoadingProgress() {
   bool ret = did_loading_progress_;
   did_loading_progress_ = false;
   return ret;

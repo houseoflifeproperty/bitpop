@@ -164,8 +164,7 @@ void ChildProcessHostImpl::ForceShutdown() {
 
 std::string ChildProcessHostImpl::CreateChannel() {
   channel_id_ = IPC::Channel::GenerateVerifiedChannelID(std::string());
-  channel_.reset(new IPC::Channel(
-      channel_id_, IPC::Channel::MODE_SERVER, this));
+  channel_ = IPC::Channel::CreateServer(channel_id_, this);
   if (!channel_->Connect())
     return std::string();
 
@@ -291,6 +290,10 @@ void ChildProcessHostImpl::OnChannelError() {
 
   // This will delete host_, which will also destroy this!
   delegate_->OnChildDisconnected();
+}
+
+void ChildProcessHostImpl::OnBadMessageReceived(const IPC::Message& message) {
+  delegate_->OnBadMessageReceived(message);
 }
 
 void ChildProcessHostImpl::OnAllocateSharedMemory(

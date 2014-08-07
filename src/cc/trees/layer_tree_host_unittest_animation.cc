@@ -200,11 +200,11 @@ class LayerTreeHostAnimationTestCheckerboardDoesNotStarveDraws
       EndTest();
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
-    return DrawSwapReadbackResult::DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
+      DrawResult draw_result) OVERRIDE {
+    return DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
   }
 
   virtual void AfterTest() OVERRIDE { }
@@ -332,13 +332,13 @@ class LayerTreeHostAnimationTestAnimationTickTimeIsMonotonic
     }
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+      DrawResult draw_result) OVERRIDE {
     if (TestEnded())
       return draw_result;
-    return DrawSwapReadbackResult::DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
+    return DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
   }
 
   virtual void AfterTest() OVERRIDE {}
@@ -568,7 +568,8 @@ class LayerTreeHostAnimationTestSynchronizeAnimationStartTimes
         layer_animation_controller();
     Animation* animation =
         controller->GetAnimation(Animation::Opacity);
-    main_start_time_ = animation->start_time();
+    main_start_time_ =
+        (animation->start_time() - base::TimeTicks()).InSecondsF();
     controller->RemoveAnimation(animation->id());
 
     if (impl_start_time_ > 0.0)
@@ -586,7 +587,8 @@ class LayerTreeHostAnimationTestSynchronizeAnimationStartTimes
     if (!animation)
       return;
 
-    impl_start_time_ = animation->start_time();
+    impl_start_time_ =
+        (animation->start_time() - base::TimeTicks()).InSecondsF();
     controller->RemoveAnimation(animation->id());
 
     if (main_start_time_ > 0.0)
@@ -719,56 +721,6 @@ class LayerTreeHostAnimationTestLayerAddedWithAnimation
 
 SINGLE_AND_MULTI_THREAD_TEST_F(
     LayerTreeHostAnimationTestLayerAddedWithAnimation);
-
-class LayerTreeHostAnimationTestCompositeAndReadbackAnimateCount
-    : public LayerTreeHostAnimationTest {
- public:
-  LayerTreeHostAnimationTestCompositeAndReadbackAnimateCount()
-      : animated_commit_(-1) {
-  }
-
-  virtual void Animate(base::TimeTicks) OVERRIDE {
-    // We shouldn't animate on the CompositeAndReadback-forced commit, but we
-    // should for the SetNeedsCommit-triggered commit.
-    animated_commit_ = layer_tree_host()->source_frame_number();
-    EXPECT_NE(2, animated_commit_);
-  }
-
-  virtual void BeginTest() OVERRIDE {
-    PostSetNeedsCommitToMainThread();
-  }
-
-  virtual void DidCommit() OVERRIDE {
-    switch (layer_tree_host()->source_frame_number()) {
-      case 1:
-        layer_tree_host()->SetNeedsCommit();
-        break;
-      case 2: {
-        char pixels[4];
-        layer_tree_host()->CompositeAndReadback(&pixels, gfx::Rect(0, 0, 1, 1));
-        break;
-      }
-      case 3:
-        // This is finishing the readback's commit.
-        break;
-      case 4:
-        // This is finishing the followup commit.
-        EndTest();
-        break;
-      default:
-        NOTREACHED();
-    }
-  }
-
-  virtual void AfterTest() OVERRIDE {
-    EXPECT_EQ(3, animated_commit_);
-  }
-
- private:
-  int animated_commit_;
-};
-
-MULTI_THREAD_TEST_F(LayerTreeHostAnimationTestCompositeAndReadbackAnimateCount);
 
 class LayerTreeHostAnimationTestContinuousAnimate
     : public LayerTreeHostAnimationTest {
@@ -1065,10 +1017,10 @@ class LayerTreeHostAnimationTestCheckerboardDoesntStartAnimations
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame_data,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+      DrawResult draw_result) OVERRIDE {
     if (added_animations_ < 2)
       return draw_result;
     if (TestEnded())
@@ -1077,7 +1029,7 @@ class LayerTreeHostAnimationTestCheckerboardDoesntStartAnimations
     ++prevented_draw_;
     if (prevented_draw_ > 2)
       EndTest();
-    return DrawSwapReadbackResult::DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
+    return DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
   }
 
   virtual void DidCommitAndDrawFrame() OVERRIDE {
@@ -1209,10 +1161,9 @@ class LayerTreeHostAnimationTestFrozenAnimationTickTime
     }
   }
 
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
-      LayerTreeHostImpl* host_impl,
-      LayerTreeHostImpl::FrameData* frame,
-      DrawSwapReadbackResult::DrawResult draw_result) OVERRIDE {
+  virtual DrawResult PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
+                                           LayerTreeHostImpl::FrameData* frame,
+                                           DrawResult draw_result) OVERRIDE {
     if (TestEnded())
       return draw_result;
     num_draw_attempts_++;
@@ -1220,7 +1171,7 @@ class LayerTreeHostAnimationTestFrozenAnimationTickTime
       num_draw_attempts_ = 0;
       PostSetNeedsCommitToMainThread();
     }
-    return DrawSwapReadbackResult::DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
+    return DRAW_ABORTED_CHECKERBOARD_ANIMATIONS;
   }
 
   virtual void BeginCommitOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
@@ -1369,10 +1320,10 @@ class LayerTreeHostAnimationTestAddAnimationAfterAnimating
         int id = ((*iter).second->id());
         if (id == host_impl->RootLayer()->id()) {
           Animation* anim = (*iter).second->GetAnimation(Animation::Transform);
-          EXPECT_GT(anim->start_time(), 0);
+          EXPECT_GT((anim->start_time() - base::TimeTicks()).InSecondsF(), 0);
         } else if (id == host_impl->RootLayer()->children()[0]->id()) {
           Animation* anim = (*iter).second->GetAnimation(Animation::Opacity);
-          EXPECT_GT(anim->start_time(), 0);
+          EXPECT_GT((anim->start_time() - base::TimeTicks()).InSecondsF(), 0);
         }
       }
     }

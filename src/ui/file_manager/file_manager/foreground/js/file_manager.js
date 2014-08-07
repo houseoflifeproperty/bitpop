@@ -83,6 +83,9 @@ FileManager.prototype = {
   get fileTransferController() {
     return this.fileTransferController_;
   },
+  get fileOperationManager() {
+    return this.fileOperationManager_;
+  },
   get backgroundPage() {
     return this.backgroundPage_;
   },
@@ -167,14 +170,17 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   var DOUBLE_CLICK_TIMEOUT = 200;
 
   /**
-   * Update the element to display the information about remaining space for
+   * Updates the element to display the information about remaining space for
    * the storage.
+   *
+   * @param {!Object<string, number>} sizeStatsResult Map containing remaining
+   *     space information.
    * @param {!Element} spaceInnerBar Block element for a percentage bar
-   *                                 representing the remaining space.
+   *     representing the remaining space.
    * @param {!Element} spaceInfoLabel Inline element to contain the message.
    * @param {!Element} spaceOuterBar Block element around the percentage bar.
    */
-   var updateSpaceInfo = function(
+  var updateSpaceInfo = function(
       sizeStatsResult, spaceInnerBar, spaceInfoLabel, spaceOuterBar) {
     spaceInnerBar.removeAttribute('pending');
     if (sizeStatsResult) {
@@ -671,6 +677,9 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       this.backgroundPage_ = backgroundPage;
       this.backgroundPage_.background.ready(function() {
         loadTimeData.data = this.backgroundPage_.background.stringData;
+        if (util.platform.runningInBrowser()) {
+          this.backgroundPage_.registerDialog(window);
+        }
         callback();
       }.bind(this));
     }.bind(this));
@@ -819,7 +828,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.document_.addEventListener('keyup', this.onKeyUp_.bind(this));
 
     this.renameInput_ = this.document_.createElement('input');
-    this.renameInput_.className = 'rename';
+    this.renameInput_.className = 'rename entry-name';
 
     this.renameInput_.addEventListener(
         'keydown', this.onRenameInputKeyDown_.bind(this));
@@ -999,15 +1008,21 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.table_.list.addEventListener('focus', fileListFocusBound);
     this.grid_.addEventListener('focus', fileListFocusBound);
 
-    var dragStartBound = this.onDragStart_.bind(this);
-    this.table_.list.addEventListener('dragstart', dragStartBound);
-    this.grid_.addEventListener('dragstart', dragStartBound);
-
+    var draggingBound = this.onDragging_.bind(this);
     var dragEndBound = this.onDragEnd_.bind(this);
+
+    // Listen to drag events to hide preview panel while user is dragging files.
+    // Files.app prevents default actions in 'dragstart' in some situations,
+    // so we listen to 'drag' to know the list is actually being dragged.
+    this.table_.list.addEventListener('drag', draggingBound);
+    this.grid_.addEventListener('drag', draggingBound);
     this.table_.list.addEventListener('dragend', dragEndBound);
     this.grid_.addEventListener('dragend', dragEndBound);
-    // This event is published by DragSelector because drag end event is not
-    // published at the end of drag selection.
+
+    // Listen to dragselection events to hide preview panel while the user is
+    // selecting files by drag operation.
+    this.table_.list.addEventListener('dragselectionstart', draggingBound);
+    this.grid_.addEventListener('dragselectionstart', draggingBound);
     this.table_.list.addEventListener('dragselectionend', dragEndBound);
     this.grid_.addEventListener('dragselectionend', dragEndBound);
 
@@ -1056,7 +1071,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.directoryTree_ = this.dialogDom_.querySelector('#directory-tree');
     DirectoryTree.decorate(this.directoryTree_,
                            this.directoryModel_,
-                           this.volumeManager_);
+                           this.volumeManager_,
+                           this.metadataCache_);
 
     this.navigationList_ = this.dialogDom_.querySelector('#navigation-list');
     NavigationList.decorate(this.navigationList_,
@@ -1259,13 +1275,12 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       var locationInfo = this.volumeManager_.getLocationInfo(entry);
       if (!locationInfo)
         return;
-      this.metadataCache_.get(entry, 'thumbnail|drive', function(metadata) {
+      this.metadataCache_.getOne(entry, 'thumbnail|drive', function(metadata) {
         var thumbnailLoader_ = new ThumbnailLoader(
             entry,
             ThumbnailLoader.LoaderType.CANVAS,
             metadata,
             undefined,  // Media type.
-            // TODO(mtomasz): Use Entry instead of paths.
             locationInfo.isDriveBased ?
                 ThumbnailLoader.UseEmbedded.USE_EMBEDDED :
                 ThumbnailLoader.UseEmbedded.NO_EMBEDDED,
@@ -1339,12 +1354,25 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     this.fileFilter_.removeFilter('fileType');
     var selectedIndex = this.getSelectedFilterIndex_();
     if (selectedIndex > 0) { // Specific filter selected.
-      var regexp = new RegExp('.*(' +
+      var regexp = new RegExp('\\.(' +
           this.fileTypes_[selectedIndex - 1].extensions.join('|') + ')$', 'i');
       var filter = function(entry) {
         return entry.isDirectory || regexp.test(entry.name);
       };
       this.fileFilter_.addFilter('fileType', filter);
+
+      // In save dialog, update the destination name extension.
+      if (this.dialogType === DialogType.SELECT_SAVEAS_FILE) {
+        var current = this.filenameInput_.value;
+        var newExt = this.fileTypes_[selectedIndex - 1].extensions[0];
+        if (newExt && !regexp.test(current)) {
+          var i = current.lastIndexOf('.');
+          if (i >= 0) {
+            this.filenameInput_.value = current.substr(0, i) + '.' + newExt;
+            this.selectTargetNameInFilenameInput_();
+          }
+        }
+      }
     }
   };
 
@@ -1402,10 +1430,11 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
   };
 
   /**
-   * Invoked when the drag is started on the list or the grid.
+   * Invoked while the drag is being performed on the list or the grid.
+   * Note: this method may be called multiple times before onDragEnd_().
    * @private
    */
-  FileManager.prototype.onDragStart_ = function() {
+  FileManager.prototype.onDragging_ = function() {
     // On open file dialog, the preview panel is always shown.
     if (DialogType.isOpenDialog(this.dialogType))
       return;
@@ -1843,7 +1872,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
 
       if (self.hostedButton.hasAttribute('checked') ===
           prefs.hostedFilesDisabled && self.isOnDrive()) {
-        self.directoryModel_.rescan();
+        self.directoryModel_.rescan(false);
       }
 
       if (!prefs.hostedFilesDisabled)
@@ -1975,20 +2004,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    */
   FileManager.prototype.getCurrentDirectoryEntry = function() {
     return this.directoryModel_ && this.directoryModel_.getCurrentDirEntry();
-  };
-
-  /**
-   * Deletes the selected file and directories recursively.
-   */
-  FileManager.prototype.deleteSelection = function() {
-    // TODO(mtomasz): Remove this temporary dialog. crbug.com/167364
-    var entries = this.getSelection().entries;
-    var message = entries.length == 1 ?
-        strf('GALLERY_CONFIRM_DELETE_ONE', entries[0].name) :
-        strf('GALLERY_CONFIRM_DELETE_SOME', entries.length);
-    this.confirm.show(message, function() {
-      this.fileOperationManager_.deleteEntries(entries);
-    }.bind(this));
   };
 
   /**
@@ -2149,8 +2164,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     }
 
-    this.metadataCache_.get([entry], 'drive', function(props) {
-      if (!props || !props[0] || !props[0].contentMimeType) {
+    this.metadataCache_.getOne(entry, 'drive', function(prop) {
+      if (!prop || !prop.contentMimeType) {
         onFailure();
         return;
       }
@@ -2159,7 +2174,7 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       var splitted = util.splitExtension(basename);
       var filename = splitted[0];
       var extension = splitted[1];
-      var mime = props[0].contentMimeType;
+      var mime = prop.contentMimeType;
 
       // Returns with failure if the file has neither extension nor mime.
       if (!extension || !mime) {
@@ -2303,6 +2318,10 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     if (!this.currentVolumeInfo_)
       return;
 
+    var volumeSpaceInfo =
+        this.dialogDom_.querySelector('#volume-space-info');
+    var volumeSpaceInfoSeparator =
+        this.dialogDom_.querySelector('#volume-space-info-separator');
     var volumeSpaceInfoLabel =
         this.dialogDom_.querySelector('#volume-space-info-label');
     var volumeSpaceInnerBar =
@@ -2310,6 +2329,19 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
     var volumeSpaceOuterBar =
         this.dialogDom_.querySelector('#volume-space-info-bar').parentNode;
 
+    var currentVolumeInfo = this.currentVolumeInfo_;
+
+    // TODO(mtomasz): Add support for remaining space indication for provided
+    // file systems.
+    if (currentVolumeInfo.volumeType ==
+        VolumeManagerCommon.VolumeType.PROVIDED) {
+      volumeSpaceInfo.hidden = true;
+      volumeSpaceInfoSeparator.hidden = true;
+      return;
+    }
+
+    volumeSpaceInfo.hidden = false;
+    volumeSpaceInfoSeparator.hidden = false;
     volumeSpaceInnerBar.setAttribute('pending', '');
 
     if (showLoadingCaption) {
@@ -2317,7 +2349,6 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       volumeSpaceInnerBar.style.width = '100%';
     }
 
-    var currentVolumeInfo = this.currentVolumeInfo_;
     chrome.fileBrowserPrivate.getSizeStats(
         currentVolumeInfo.volumeId, function(result) {
           var volumeInfo = this.volumeManager_.getVolumeInfo(
@@ -2338,20 +2369,20 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
    * @private
    */
   FileManager.prototype.onDirectoryChanged_ = function(event) {
-    var newCurrentVolumeInfo = this.volumeManager_.getVolumeInfo(
+    var oldCurrentVolumeInfo = this.currentVolumeInfo_;
+
+    // Remember the current volume info.
+    this.currentVolumeInfo_ = this.volumeManager_.getVolumeInfo(
         event.newDirEntry);
 
     // If volume has changed, then update the gear menu.
-    if (this.currentVolumeInfo_ !== newCurrentVolumeInfo) {
+    if (oldCurrentVolumeInfo !== this.currentVolumeInfo_) {
       this.updateGearMenu_();
       // If the volume has changed, and it was previously set, then do not
       // close on unmount anymore.
-      if (this.currentVolumeInfo_)
+      if (oldCurrentVolumeInfo)
         this.closeOnUnmount_ = false;
     }
-
-    // Remember the current volume info.
-    this.currentVolumeInfo_ = newCurrentVolumeInfo;
 
     this.selectionHandler_.onFileSelectionChanged();
     this.ui_.searchBox.clear();
@@ -2444,22 +2475,24 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     var label = item.querySelector('.filename-label');
     var input = this.renameInput_;
+    var currentEntry = this.currentList_.dataModel.item(item.listIndex);
 
     input.value = label.textContent;
     item.setAttribute('renaming', '');
     label.parentNode.appendChild(input);
     input.focus();
+
     var selectionEnd = input.value.lastIndexOf('.');
-    if (selectionEnd == -1) {
-      input.select();
-    } else {
+    if (currentEntry.isFile && selectionEnd !== -1) {
       input.selectionStart = 0;
       input.selectionEnd = selectionEnd;
+    } else {
+      input.select();
     }
 
     // This has to be set late in the process so we don't handle spurious
     // blur events.
-    input.currentEntry = this.currentList_.dataModel.item(item.listIndex);
+    input.currentEntry = currentEntry;
     this.table_.startBatchUpdates();
     this.grid_.startBatchUpdates();
   };
@@ -2544,6 +2577,8 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
             renamedItemElement.removeAttribute('renaming');
             this.table_.endBatchUpdates();
             this.grid_.endBatchUpdates();
+            // Focus may go out of the list. Back it to the list.
+            this.currentList_.focus();
           }.bind(this),
           function(error) {
             // Write back to the old name.
@@ -2928,14 +2963,14 @@ var BOTTOM_MARGIN_FOR_PREVIEW_PANEL_PX = 52;
       return;
     }
 
-    switch (util.getKeyModifiers(event) + event.keyCode) {
-      case 'Ctrl-190':  // Ctrl-. => Toggle filter files.
+    switch (util.getKeyModifiers(event) + event.keyIdentifier) {
+      case 'Ctrl-U+00BE':  // Ctrl-. => Toggle filter files.
         this.fileFilter_.setFilterHidden(
             !this.fileFilter_.isFilterHiddenOn());
         event.preventDefault();
         return;
 
-      case '27':  // Escape => Cancel dialog.
+      case 'U+001B':  // Escape => Cancel dialog.
         if (this.dialogType != DialogType.FULL_PAGE) {
           // If there is nothing else for ESC to do, then cancel the dialog.
           event.preventDefault();

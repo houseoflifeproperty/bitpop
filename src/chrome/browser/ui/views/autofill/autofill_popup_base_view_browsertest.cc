@@ -70,11 +70,18 @@ class AutofillPopupBaseViewTest : public InProcessBrowserTest {
   }
 
  protected:
-  MockAutofillPopupViewDelegate mock_delegate_;
+  testing::NiceMock<MockAutofillPopupViewDelegate> mock_delegate_;
   AutofillPopupBaseView* view_;
 };
 
-IN_PROC_BROWSER_TEST_F(AutofillPopupBaseViewTest, GestureTest) {
+// Flaky on Win only.  http://crbug.com/376299
+#if defined(OS_WIN)
+#define MAYBE_GestureTest DISABLED_GestureTest
+#else
+#define MAYBE_GestureTest GestureTest
+#endif
+
+IN_PROC_BROWSER_TEST_F(AutofillPopupBaseViewTest, MAYBE_GestureTest) {
   gfx::Rect bounds(0, 0, 5, 5);
   gfx::Point point = bounds.CenterPoint();
   EXPECT_CALL(mock_delegate_, popup_bounds()).WillRepeatedly(ReturnRef(bounds));
@@ -103,6 +110,24 @@ IN_PROC_BROWSER_TEST_F(AutofillPopupBaseViewTest, GestureTest) {
   ui::GestureEvent outside_tap = CreateGestureEvent(ui::ET_GESTURE_TAP,
                                                     gfx::Point(100, 100));
   SimulateGesture(&outside_tap);
+}
+
+IN_PROC_BROWSER_TEST_F(AutofillPopupBaseViewTest, DoubleClickTest) {
+  gfx::Rect bounds(0, 0, 5, 5);
+  gfx::Point point = bounds.CenterPoint();
+  EXPECT_CALL(mock_delegate_, popup_bounds()).WillRepeatedly(ReturnRef(bounds));
+
+  ShowView();
+
+  ui::MouseEvent mouse_down(ui::ET_MOUSE_PRESSED,
+                            gfx::Point(0, 0),
+                            gfx::Point(0, 0),
+                            0, 0);
+  EXPECT_TRUE(static_cast<views::View*>(view_)->OnMousePressed(mouse_down));
+
+  // Ignore double clicks.
+  mouse_down.SetClickCount(2);
+  EXPECT_FALSE(static_cast<views::View*>(view_)->OnMousePressed(mouse_down));
 }
 
 }  // namespace autofill

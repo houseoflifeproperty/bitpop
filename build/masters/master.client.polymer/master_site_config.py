@@ -12,3 +12,4 @@ class Polymer(Master.Master3):
   master_port = 8044
   slave_port = 8144
   master_port_alt = 8244
+  buildbot_url = 'http://build.chromium.org/p/client.polymer/'

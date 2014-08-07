@@ -34,7 +34,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/MessageEvent.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "public/platform/WebString.h"
 #include "wtf/Functional.h"
@@ -42,9 +42,9 @@
 
 namespace WebCore {
 
-PassRefPtr<MessagePort> MessagePort::create(ExecutionContext& executionContext)
+PassRefPtrWillBeRawPtr<MessagePort> MessagePort::create(ExecutionContext& executionContext)
 {
-    RefPtr<MessagePort> port = adoptRef(new MessagePort(executionContext));
+    RefPtrWillBeRawPtr<MessagePort> port = adoptRefWillBeRefCountedGarbageCollected(new MessagePort(executionContext));
     port->suspendIfNeeded();
     return port.release();
 }

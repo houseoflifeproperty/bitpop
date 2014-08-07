@@ -23,11 +23,10 @@
 
 #include "core/svg/SVGAnimateMotionElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGPathData.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGMPathElement.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/SVGPathElement.h"
@@ -48,17 +47,10 @@ inline SVGAnimateMotionElement::SVGAnimateMotionElement(Document& document)
     ScriptWrappable::init(this);
 }
 
+DEFINE_NODE_FACTORY(SVGAnimateMotionElement)
+
 SVGAnimateMotionElement::~SVGAnimateMotionElement()
 {
-#if !ENABLE(OILPAN)
-    if (targetElement())
-        clearAnimatedType(targetElement());
-#endif
-}
-
-PassRefPtr<SVGAnimateMotionElement> SVGAnimateMotionElement::create(Document& document)
-{
-    return adoptRef(new SVGAnimateMotionElement(document));
 }
 
 bool SVGAnimateMotionElement::hasValidAttributeType()

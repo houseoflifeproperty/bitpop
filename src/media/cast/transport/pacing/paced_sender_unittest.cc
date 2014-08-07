@@ -129,7 +129,7 @@ TEST_F(PacedSenderTest, PassThroughRtcp) {
   SendPacketVector packets = CreateSendPacketVector(kSize1, 1, true);
 
   EXPECT_TRUE(paced_sender_->SendPackets(packets));
-  EXPECT_TRUE(paced_sender_->ResendPackets(packets));
+  EXPECT_TRUE(paced_sender_->ResendPackets(packets, base::TimeDelta()));
 
   mock_transport_.AddExpectedSize(kSize2, 1);
   Packet tmp(kSize2, kValue);
@@ -174,7 +174,7 @@ TEST_F(PacedSenderTest, BasicPace) {
   for (std::vector<PacketEvent>::iterator it = packet_events.begin();
        it != packet_events.end();
        ++it) {
-    if (it->type == kVideoPacketSentToNetwork)
+    if (it->type == PACKET_SENT_TO_NETWORK)
       sent_to_network_event_count++;
     else
       FAIL() << "Got unexpected event type " << CastLoggingToString(it->type);
@@ -202,7 +202,7 @@ TEST_F(PacedSenderTest, PaceWithNack) {
   EXPECT_TRUE(paced_sender_->SendPackets(first_frame_packets));
 
   // Add first NACK request.
-  EXPECT_TRUE(paced_sender_->ResendPackets(nack_packets));
+  EXPECT_TRUE(paced_sender_->ResendPackets(nack_packets, base::TimeDelta()));
 
   // Check that we get the first NACK burst.
   mock_transport_.AddExpectedSize(kNackSize, 10);
@@ -211,7 +211,7 @@ TEST_F(PacedSenderTest, PaceWithNack) {
   task_runner_->RunTasks();
 
   // Add second NACK request.
-  EXPECT_TRUE(paced_sender_->ResendPackets(nack_packets));
+  EXPECT_TRUE(paced_sender_->ResendPackets(nack_packets, base::TimeDelta()));
 
   // Check that we get the next NACK burst.
   mock_transport_.AddExpectedSize(kNackSize, 10);
@@ -254,14 +254,17 @@ TEST_F(PacedSenderTest, PaceWithNack) {
   for (std::vector<PacketEvent>::iterator it = packet_events.begin();
        it != packet_events.end();
        ++it) {
-    if (it->type == kVideoPacketSentToNetwork)
-      video_network_event_count++;
-    else if (it->type == kVideoPacketRetransmitted)
-      video_retransmitted_event_count++;
-    else if (it->type == kAudioPacketSentToNetwork)
-      audio_network_event_count++;
-    else
+    if (it->type == PACKET_SENT_TO_NETWORK) {
+      if (it->media_type == VIDEO_EVENT)
+        video_network_event_count++;
+      else
+        audio_network_event_count++;
+    } else if (it->type == PACKET_RETRANSMITTED) {
+      if (it->media_type == VIDEO_EVENT)
+        video_retransmitted_event_count++;
+    } else {
       FAIL() << "Got unexpected event type " << CastLoggingToString(it->type);
+    }
   }
   EXPECT_EQ(expected_audio_network_event_count, audio_network_event_count);
   EXPECT_EQ(expected_video_network_event_count, video_network_event_count);

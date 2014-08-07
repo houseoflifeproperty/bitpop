@@ -6,85 +6,82 @@
 #define CONTENT_BROWSER_GEOLOCATION_GEOLOCATION_DISPATCHER_HOST_H_
 
 #include <map>
-#include <set>
+#include <vector>
 
+#include "base/callback_forward.h"
+#include "base/memory/weak_ptr.h"
 #include "content/browser/geolocation/geolocation_provider_impl.h"
-#include "content/public/browser/browser_message_filter.h"
+#include "content/public/browser/web_contents_observer.h"
 
 class GURL;
 
 namespace content {
 
-class GeolocationPermissionContext;
-
-// GeolocationDispatcherHost is a browser filter for Geolocation messages.
+// GeolocationDispatcherHost is an observer for Geolocation messages.
 // It's the complement of GeolocationDispatcher (owned by RenderView).
-class GeolocationDispatcherHost : public BrowserMessageFilter {
+class GeolocationDispatcherHost : public WebContentsObserver {
  public:
-  GeolocationDispatcherHost(
-      int render_process_id,
-      GeolocationPermissionContext* geolocation_permission_context);
-
-  // Pause or resumes geolocation for the given |render_view_id|. Should
-  // be called on the IO thread. Resuming when nothing is paused is a no-op.
-  // If a renderer is paused while not currently using geolocation but
-  // then goes on to do so before being resumed, then that renderer will
-  // not get geolocation updates until it is resumed.
-  void PauseOrResume(int render_view_id, bool should_pause);
-
- private:
+  explicit GeolocationDispatcherHost(WebContents* web_contents);
   virtual ~GeolocationDispatcherHost();
 
-  // GeolocationDispatcherHost
-  virtual bool OnMessageReceived(const IPC::Message& msg,
-                                 bool* msg_was_ok) OVERRIDE;
+  // Pause or resumes geolocation. Resuming when nothing is paused is a no-op.
+  // If the web contents is paused while not currently using geolocation but
+  // then goes on to do so before being resumed, then it will not get
+  // geolocation updates until it is resumed.
+  void PauseOrResume(bool should_pause);
+
+ private:
+  // WebContentsObserver
+  virtual void RenderFrameDeleted(RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void RenderViewHostChanged(RenderViewHost* old_host,
+                                     RenderViewHost* new_host) OVERRIDE;
+  virtual bool OnMessageReceived(
+      const IPC::Message& msg, RenderFrameHost* render_frame_host) OVERRIDE;
 
   // Message handlers:
-  void OnRequestPermission(int render_view_id,
+  void OnRequestPermission(RenderFrameHost* render_frame_host,
                            int bridge_id,
                            const GURL& requesting_frame,
                            bool user_gesture);
-  void OnCancelPermissionRequest(int render_view_id,
+  void OnCancelPermissionRequest(RenderFrameHost* render_frame_host,
                                  int bridge_id,
                                  const GURL& requesting_frame);
-  void OnStartUpdating(int render_view_id,
+  void OnStartUpdating(RenderFrameHost* render_frame_host,
                        const GURL& requesting_frame,
                        bool enable_high_accuracy);
-  void OnStopUpdating(int render_view_id);
+  void OnStopUpdating(RenderFrameHost* render_frame_host);
 
-  // Updates the |geolocation_provider_| with the currently required update
+  // Updates the geolocation provider with the currently required update
   // options.
   void RefreshGeolocationOptions();
 
   void OnLocationUpdate(const Geoposition& position);
 
-  int render_process_id_;
-  scoped_refptr<GeolocationPermissionContext> geolocation_permission_context_;
+  void SendGeolocationPermissionResponse(int render_process_id,
+                                         int render_frame_id,
+                                         int bridge_id,
+                                         bool allowed);
 
-  struct RendererGeolocationOptions {
-    bool high_accuracy;
-    bool is_paused;
+  // A map from the RenderFrameHosts that have requested geolocation updates to
+  // the type of accuracy they requested (true = high accuracy).
+  std::map<RenderFrameHost*, bool> updating_frames_;
+  bool paused_;
+
+  struct PendingPermission {
+    PendingPermission(int render_frame_id,
+                      int render_process_id,
+                      int bridge_id);
+    ~PendingPermission();
+    int render_frame_id;
+    int render_process_id;
+    int bridge_id;
+    base::Closure cancel;
   };
+  std::vector<PendingPermission> pending_permissions_;
 
-  // Used to keep track of the renderers in this process that are using
-  // geolocation and the options associated with them. The map is iterated
-  // when a location update is available and the fan out to individual bridge
-  // IDs happens renderer side, in order to minimize context switches.
-  // Only used on the IO thread.
-  std::map<int, RendererGeolocationOptions> geolocation_renderers_;
+  scoped_ptr<GeolocationProvider::Subscription> geolocation_subscription_;
 
-  // Used by Android WebView to support that case that a renderer is in the
-  // 'paused' state but not yet using geolocation. If the renderer does start
-  // using geolocation while paused, we move from this set into
-  // |geolocation_renderers_|. If the renderer doesn't end up wanting to use
-  // geolocation while 'paused' then we remove from this set. A renderer id
-  // can exist only in this set or |geolocation_renderers_|, never both.
-  std::set<int> pending_paused_geolocation_renderers_;
-
-  // Only set whilst we are registered with the geolocation provider.
-  GeolocationProviderImpl* geolocation_provider_;
-
-  GeolocationProviderImpl::LocationUpdateCallback callback_;
+  base::WeakPtrFactory<GeolocationDispatcherHost> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GeolocationDispatcherHost);
 };

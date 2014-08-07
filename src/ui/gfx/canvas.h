@@ -15,6 +15,7 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/shadow_value.h"
+#include "ui/gfx/text_constants.h"
 
 namespace gfx {
 
@@ -39,11 +40,6 @@ class Transform;
 // of kSrcOver_Mode.
 class GFX_EXPORT Canvas {
  public:
-  enum TruncateFadeMode {
-    TruncateFadeTail,
-    TruncateFadeHead,
-  };
-
   // Specifies the alignment for text rendered with the DrawStringRect method.
   enum {
     TEXT_ALIGN_LEFT = 1 << 0,
@@ -201,8 +197,9 @@ class GFX_EXPORT Canvas {
   // Adds |rect| to the current clip.
   void ClipRect(const Rect& rect);
 
-  // Adds |path| to the current clip.
-  void ClipPath(const SkPath& path);
+  // Adds |path| to the current clip. |do_anti_alias| is true if the clip
+  // should be antialiased.
+  void ClipPath(const SkPath& path, bool do_anti_alias);
 
   // Returns true if the current clip is empty.
   bool IsClipEmpty() const;
@@ -417,20 +414,12 @@ class GFX_EXPORT Canvas {
   // Apply transformation on the canvas.
   void Transform(const Transform& transform);
 
-  // Draws the given string with the beginning or the end using a fade gradient.
-  void DrawFadeTruncatingStringRect(
-      const base::string16& text,
-      TruncateFadeMode truncate_mode,
-      const FontList& font_list,
-      SkColor color,
-      const Rect& display_rect);
-  void DrawFadeTruncatingStringRectWithFlags(
-      const base::string16& text,
-      TruncateFadeMode truncate_mode,
-      const FontList& font_list,
-      SkColor color,
-      const Rect& display_rect,
-      int flags);
+  // Draws the given string with a fade gradient at the end.
+  void DrawFadedString(const base::string16& text,
+                       const FontList& font_list,
+                       SkColor color,
+                       const Rect& display_rect,
+                       int flags);
 
   skia::PlatformCanvas* platform_canvas() const { return owned_canvas_.get(); }
   SkCanvas* sk_canvas() const { return canvas_; }
@@ -442,18 +431,6 @@ class GFX_EXPORT Canvas {
   // Test whether the provided rectangle intersects the current clip rect.
   bool IntersectsClipRectInt(int x, int y, int w, int h);
   bool IntersectsClipRect(const Rect& rect);
-
-  // Returns the image rep which best matches the canvas |image_scale_|.
-  // Returns a null image rep if |image| contains no image reps.
-  // Builds mip map for returned image rep if necessary.
-  //
-  // An optional additional user defined scale can be provided.
-  const ImageSkiaRep& GetImageRepToPaint(const ImageSkia& image) const;
-  const ImageSkiaRep& GetImageRepToPaint(
-      const ImageSkia& image,
-      float image_scale,
-      float user_defined_scale_factor_x,
-      float user_defined_scale_factor_y) const;
 
   // Helper for the DrawImageInt functions declared above. The |pixel|
   // parameter if true indicates that the bounds and the image are to

@@ -9,6 +9,7 @@
 #include "ash/shell.h"
 #include "ash/shell/shell_delegate_impl.h"
 #include "ash/shell/window_watcher.h"
+#include "ash/shell_init_params.h"
 #include "ash/system/user/login_status.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -17,6 +18,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "content/public/browser/context_factory.h"
 #include "content/public/common/content_switches.h"
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_net_log.h"
@@ -66,7 +68,7 @@ class ShellViewsDelegate : public views::TestViewsDelegate {
     if (params->native_widget)
       return;
 
-    if (!params->parent && !params->context && params->top_level)
+    if (!params->parent && !params->context && !params->child)
       params->context = Shell::GetPrimaryRootWindow();
   }
 
@@ -121,7 +123,10 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   chromeos::CrasAudioHandler::InitializeForTesting();
 #endif
 
-  ash::Shell::CreateInstance(delegate_);
+  ash::ShellInitParams init_params;
+  init_params.delegate = delegate_;
+  init_params.context_factory = content::GetContextFactory();
+  ash::Shell::CreateInstance(init_params);
   delegate_->set_browser_context(browser_context_.get());
   ash::Shell::GetInstance()->CreateShelf();
   ash::Shell::GetInstance()->UpdateAfterLoginStatusChange(

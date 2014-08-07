@@ -3,13 +3,21 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-
 import cStringIO
 import os
 import re
 import subprocess
 import sys
 import threading
+
+try:
+  import git_cache
+except ImportError:
+  for p in os.environ['PATH'].split(os.pathsep):
+    if (os.path.basename(p) == 'depot_tools' and
+        os.path.exists(os.path.join(p, 'git_cache.py'))):
+      sys.path.append(p)
+  import git_cache
 
 
 # Show more information about the commands being executed.
@@ -54,8 +62,8 @@ class StdioBuffer(object):
 def GetStatusOutput(cmd, cwd=None, out_buffer=None):
   """Return (status, output) of executing cmd in a shell."""
   if VERBOSE:
-    print ''
-    print '[DEBUG] Running "%s"' % cmd
+    print >> sys.stderr, ''
+    print >> sys.stderr, '[DEBUG] Running "%s"' % cmd
 
   def _thread_main():
     thr = threading.current_thread()
@@ -100,7 +108,8 @@ def GetStatusOutput(cmd, cwd=None, out_buffer=None):
   if VERBOSE:
     short_output = ' '.join(thr.stdout.splitlines())
     short_output = short_output.strip(' \t\n\r')
-    print '[DEBUG] Output: %d, %-60s' % (thr.status, short_output)
+    print >> sys.stderr, (
+        '[DEBUG] Output: %d, %-60s' % (thr.status, short_output))
 
   return (thr.status, thr.stdout)
 
@@ -127,36 +136,8 @@ def Git(git_repo, command, is_mirror=False, out_buffer=None):
   return (status, output)
 
 
-def GetCacheRepoDir(git_url, cache_dir):
-  """Assuming we used git_cache to populate a cache, get the repo directory."""
-  _, out = Git(None, 'cache exists --cache-dir=%s %s' % (cache_dir, git_url),
-               is_mirror=True)
-  return out.strip()
-
-
-def Clone(git_url, git_repo, is_mirror, out_queue=None, cache_dir=None,
-          shallow=False):
+def Clone(git_url, git_repo, is_mirror, out_buffer=None):
   """Clone a repository."""
-  repo_name = git_url.split('/')[-1]
-  if out_queue:
-    buf = StdioBuffer(repo_name, out_queue)
-  else:
-    buf = None
-
-  if is_mirror == 'bare':
-    if shallow:
-      if 'adobe' in git_url:
-        # --shallow by default checks out 10000 revision, but for really large
-        # repos like adobe ones, we want significantly less than 10000.
-        shallow_arg = '--depth 10 '
-      else:
-        shallow_arg = '--shallow '
-    else:
-      shallow_arg = ''
-    cmd = 'cache populate -v --cache-dir %s %s%s' % (cache_dir, shallow_arg,
-                                                     git_url)
-    return Git(None, cmd, is_mirror=True, out_buffer=buf)
-
   cmd = 'clone'
   if is_mirror:
     cmd += ' --mirror'
@@ -165,7 +146,18 @@ def Clone(git_url, git_repo, is_mirror, out_queue=None, cache_dir=None,
   if not is_mirror and not os.path.exists(git_repo):
     os.makedirs(git_repo)
 
-  return Git(None, cmd, is_mirror, buf)
+  return Git(None, cmd, is_mirror=is_mirror, out_buffer=out_buffer)
+
+
+def PopulateCache(git_url, shallow=False):
+  # --shallow by default checks out 10000 revision, but for really large
+  # repos like adobe ones, we want significantly less than 10000.
+  depth = None
+  if shallow and 'adobe' in git_url:
+    depth = 10
+  mirror = git_cache.Mirror(git_url, print_func=lambda *args: None)
+  mirror.populate(depth=depth, shallow=shallow)
+  return mirror.mirror_path
 
 
 def Fetch(git_repo, git_url, is_mirror):
@@ -275,7 +267,8 @@ def _SearchImpl(git_repo, svn_rev, is_mirror, refspec, fetch_url, regex):
     found_rev = None
   if (not found_rev or found_rev < int(svn_rev)) and fetch_url:
     if VERBOSE:
-      print 'Fetching %s %s [%s < %s]' % (git_repo, refspec, found_rev, svn_rev)
+      print >> sys.stderr, (
+          'Fetching %s %s [%s < %s]' % (git_repo, refspec, found_rev, svn_rev))
     Fetch(git_repo, fetch_url, is_mirror)
     found_rev = _FindRevForCommitish(git_repo, refspec, is_mirror)
 
@@ -295,7 +288,7 @@ def _SearchImpl(git_repo, svn_rev, is_mirror, refspec, fetch_url, regex):
   found_msg = svn_rev
   if found_rev != int(svn_rev):
     found_msg = '%s [actual: %s]' % (svn_rev, found_rev)
-  print '%s: %s <-> %s' % (git_repo, output, found_msg)
+  print >> sys.stderr, '%s: %s <-> %s' % (git_repo, output, found_msg)
   return output
 
 

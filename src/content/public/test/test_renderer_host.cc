@@ -150,7 +150,8 @@ void RenderViewHostTestHarness::Reload() {
   DCHECK(entry);
   controller().Reload(false);
   static_cast<TestRenderViewHost*>(
-      rvh())->SendNavigate(entry->GetPageID(), entry->GetURL());
+      rvh())->SendNavigateWithTransition(
+          entry->GetPageID(), entry->GetURL(), PAGE_TRANSITION_RELOAD);
 }
 
 void RenderViewHostTestHarness::FailedReload() {
@@ -170,11 +171,12 @@ void RenderViewHostTestHarness::SetUp() {
 #if defined(USE_AURA)
   // The ContextFactory must exist before any Compositors are created.
   bool enable_pixel_output = false;
-  ui::InitializeContextFactoryForTests(enable_pixel_output);
+  ui::ContextFactory* context_factory =
+      ui::InitializeContextFactoryForTests(enable_pixel_output);
 
   aura_test_helper_.reset(
       new aura::test::AuraTestHelper(base::MessageLoopForUI::current()));
-  aura_test_helper_->SetUp();
+  aura_test_helper_->SetUp(context_factory);
   new wm::DefaultActivationClient(aura_test_helper_->root_window());
 #endif
 

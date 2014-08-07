@@ -41,13 +41,17 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   virtual void Release() OVERRIDE;
   virtual ResultCode SetTokenLevel(TokenLevel initial,
                                    TokenLevel lockdown) OVERRIDE;
+  virtual TokenLevel GetInitialTokenLevel() const OVERRIDE;
+  virtual TokenLevel GetLockdownTokenLevel() const OVERRIDE;
   virtual ResultCode SetJobLevel(JobLevel job_level,
                                  uint32 ui_exceptions) OVERRIDE;
+  virtual ResultCode SetJobMemoryLimit(size_t memory_limit) OVERRIDE;
   virtual ResultCode SetAlternateDesktop(bool alternate_winstation) OVERRIDE;
   virtual base::string16 GetAlternateDesktop() const OVERRIDE;
   virtual ResultCode CreateAlternateDesktop(bool alternate_winstation) OVERRIDE;
   virtual void DestroyAlternateDesktop() OVERRIDE;
   virtual ResultCode SetIntegrityLevel(IntegrityLevel integrity_level) OVERRIDE;
+  virtual IntegrityLevel GetIntegrityLevel() const OVERRIDE;
   virtual ResultCode SetDelayedIntegrityLevel(
       IntegrityLevel integrity_level) OVERRIDE;
   virtual ResultCode SetAppContainer(const wchar_t* sid) OVERRIDE;
@@ -56,7 +60,7 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   virtual MitigationFlags GetProcessMitigations() OVERRIDE;
   virtual ResultCode SetDelayedProcessMitigations(
       MitigationFlags flags) OVERRIDE;
-  virtual MitigationFlags GetDelayedProcessMitigations() OVERRIDE;
+  virtual MitigationFlags GetDelayedProcessMitigations() const OVERRIDE;
   virtual void SetStrictInterceptions() OVERRIDE;
   virtual ResultCode SetStdoutHandle(HANDLE handle) OVERRIDE;
   virtual ResultCode SetStderrHandle(HANDLE handle) OVERRIDE;
@@ -124,6 +128,7 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   TokenLevel initial_level_;
   JobLevel job_level_;
   uint32 ui_exceptions_;
+  size_t memory_limit_;
   bool use_alternate_desktop_;
   bool use_alternate_winstation_;
   // Helps the file system policy initialization.

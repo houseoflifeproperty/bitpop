@@ -10,16 +10,7 @@ void FakeProxy::SetLayerTreeHost(LayerTreeHost* host) {
   layer_tree_host_ = host;
 }
 
-bool FakeProxy::CompositeAndReadback(void* pixels, const gfx::Rect& rect) {
-  return true;
-}
-
 bool FakeProxy::IsStarted() const { return true; }
-
-void FakeProxy::CreateAndInitializeOutputSurface() {
-  DCHECK(layer_tree_host_);
-  layer_tree_host_->OnCreateAndInitializeOutputSurfaceAttempted(true);
-}
 
 const RendererCapabilities& FakeProxy::GetRendererCapabilities() const {
   return capabilities_;

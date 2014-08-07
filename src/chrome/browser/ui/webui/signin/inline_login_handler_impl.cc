@@ -7,7 +7,6 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -15,21 +14,20 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_promo.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/sync/one_click_signin_helper.h"
 #include "chrome/browser/ui/sync/one_click_signin_histogram.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_error_controller.h"
 #include "components/signin/core/browser/signin_oauth_helper.h"
 #include "content/public/browser/storage_partition.h"
-#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
 #include "google_apis/gaia/gaia_auth_util.h"
@@ -110,7 +108,8 @@ void InlineSigninHelper::OnSigninOAuthInformationAvailable(
   about_signin_internals->OnRefreshTokenReceived("Successful");
 
   signin::Source source = signin::GetSourceForPromoURL(current_url_);
-  if (source == signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT) {
+  if (source == signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT ||
+      source == signin::SOURCE_REAUTH) {
     ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)->
         UpdateCredentials(email, refresh_token);
 
@@ -120,7 +119,8 @@ void InlineSigninHelper::OnSigninOAuthInformationAvailable(
       base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&InlineLoginHandlerImpl::CloseTab,
-          handler_));
+          handler_,
+          signin::ShouldShowAccountManagement(current_url_)));
     }
   } else {
     ProfileSyncService* sync_service =
@@ -141,18 +141,15 @@ void InlineSigninHelper::OnSigninOAuthInformationAvailable(
         choose_what_to_sync_ ?
             OneClickSigninSyncStarter::NO_CONFIRMATION :
             OneClickSigninSyncStarter::CONFIRM_AFTER_SIGNIN;
-    bool start_signin = true;
 
-    if (source != signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT) {
-      start_signin = !OneClickSigninHelper::HandleCrossAccountError(
+    bool start_signin =
+        !OneClickSigninHelper::HandleCrossAccountError(
             contents, "",
             email, password_, refresh_token,
             OneClickSigninHelper::AUTO_ACCEPT_EXPLICIT,
             source, start_mode,
             base::Bind(&InlineLoginHandlerImpl::SyncStarterCallback,
                        handler_));
-    }
-
     if (start_signin) {
       // Call OneClickSigninSyncStarter to exchange oauth code for tokens.
       // OneClickSigninSyncStarter will delete itself once the job is done.
@@ -191,77 +188,28 @@ InlineLoginHandlerImpl::InlineLoginHandlerImpl()
 
 InlineLoginHandlerImpl::~InlineLoginHandlerImpl() {}
 
-void InlineLoginHandlerImpl::RegisterMessages() {
-  InlineLoginHandler::RegisterMessages();
-
-  web_ui()->RegisterMessageCallback("switchToFullTab",
-      base::Bind(&InlineLoginHandlerImpl::HandleSwitchToFullTabMessage,
-                  base::Unretained(this)));
+bool InlineLoginHandlerImpl::HandleContextMenu(
+    const content::ContextMenuParams& params) {
+#ifndef NDEBUG
+  return false;
+#else
+  return true;
+#endif
 }
 
 void InlineLoginHandlerImpl::SetExtraInitParams(base::DictionaryValue& params) {
-  params.SetInteger("authMode", InlineLoginHandler::kDesktopAuthMode);
-
-  const GURL& current_url = web_ui()->GetWebContents()->GetURL();
-  signin::Source source = signin::GetSourceForPromoURL(current_url);
-  if (source == signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT ||
-      source == signin::SOURCE_AVATAR_BUBBLE_SIGN_IN) {
-    // Drop the leading slash in the path.
-    params.SetString("gaiaPath",
-        GaiaUrls::GetInstance()->embedded_signin_url().path().substr(1));
-  }
-
   params.SetString("service", "chromiumsync");
-  params.SetString("continueUrl",
-      signin::GetLandingURL("source", static_cast<int>(source)).spec());
 
-  std::string default_email;
-  if (source != signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT) {
-    default_email = Profile::FromWebUI(web_ui())->GetPrefs()->
-        GetString(prefs::kGoogleServicesLastUsername);
-  } else {
-    if (!net::GetValueForKeyInQuery(current_url, "email", &default_email))
-      default_email.clear();
-  }
-  if (!default_email.empty())
-    params.SetString("email", default_email);
-
-  std::string frame_url;
-  net::GetValueForKeyInQuery(current_url, "frameUrl", &frame_url);
-  if (!frame_url.empty())
-    params.SetString("frameUrl", frame_url);
-
+  content::WebContents* contents = web_ui()->GetWebContents();
+  const GURL& current_url = contents->GetURL();
   std::string is_constrained;
   net::GetValueForKeyInQuery(current_url, "constrained", &is_constrained);
-  if (!is_constrained.empty())
-    params.SetString("constrained", is_constrained);
+  if (is_constrained == "1")
+    contents->SetDelegate(this);
 
-  // TODO(rogerta): this needs to be passed on to gaia somehow.
-  std::string read_only_email;
-  net::GetValueForKeyInQuery(current_url, "readOnlyEmail", &read_only_email);
-  if (!read_only_email.empty())
-    params.SetString("readOnlyEmail", read_only_email);
-
+  signin::Source source = signin::GetSourceForPromoURL(current_url);
   OneClickSigninHelper::LogHistogramValue(
       source, one_click_signin::HISTOGRAM_SHOWN);
-}
-
-void InlineLoginHandlerImpl::HandleSwitchToFullTabMessage(
-    const base::ListValue* args) {
-  base::string16 url_str;
-  CHECK(args->GetString(0, &url_str));
-
-  content::WebContents* web_contents = web_ui()->GetWebContents();
-  GURL main_frame_url(web_contents->GetURL());
-  main_frame_url = net::AppendOrReplaceQueryParameter(
-      main_frame_url, "frameUrl", base::UTF16ToASCII(url_str));
-  chrome::NavigateParams params(
-      Profile::FromWebUI(web_ui()),
-      net::AppendOrReplaceQueryParameter(main_frame_url, "constrained", "0"),
-      content::PAGE_TRANSITION_AUTO_TOPLEVEL);
-  chrome::Navigate(&params);
-
-  web_ui()->CallJavascriptFunction("inline.login.closeDialog");
 }
 
 void InlineLoginHandlerImpl::CompleteLogin(const base::ListValue* args) {
@@ -320,9 +268,24 @@ void InlineLoginHandlerImpl::CompleteLogin(const base::ListValue* args) {
                            one_click_signin::HISTOGRAM_WITH_DEFAULTS);
 
   OneClickSigninHelper::CanOfferFor can_offer_for =
-      source == signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT ?
-      OneClickSigninHelper::CAN_OFFER_FOR_SECONDARY_ACCOUNT :
       OneClickSigninHelper::CAN_OFFER_FOR_ALL;
+  switch (source) {
+    case signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT:
+      can_offer_for = OneClickSigninHelper::CAN_OFFER_FOR_SECONDARY_ACCOUNT;
+      break;
+    case signin::SOURCE_REAUTH: {
+      std::string primary_username =
+          SigninManagerFactory::GetForProfile(
+              Profile::FromWebUI(web_ui()))->GetAuthenticatedUsername();
+      if (!gaia::AreEmailsSame(default_email, primary_username))
+        can_offer_for = OneClickSigninHelper::CAN_OFFER_FOR_SECONDARY_ACCOUNT;
+      break;
+    }
+    default:
+      // No need to change |can_offer_for|.
+      break;
+  }
+
   std::string error_msg;
   bool can_offer = OneClickSigninHelper::CanOffer(
       contents, can_offer_for, email_, &error_msg);
@@ -399,13 +362,14 @@ void InlineLoginHandlerImpl::SyncStarterCallback(
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&InlineLoginHandlerImpl::CloseTab,
-                   weak_factory_.GetWeakPtr()));
+                   weak_factory_.GetWeakPtr(),
+                   signin::ShouldShowAccountManagement(current_url)));
   } else {
      OneClickSigninHelper::RedirectToNtpOrAppsPageIfNecessary(contents, source);
   }
 }
 
-void InlineLoginHandlerImpl::CloseTab() {
+void InlineLoginHandlerImpl::CloseTab(bool show_account_management) {
   content::WebContents* tab = web_ui()->GetWebContents();
   Browser* browser = chrome::FindBrowserWithWebContents(tab);
   if (browser) {
@@ -416,6 +380,12 @@ void InlineLoginHandlerImpl::CloseTab() {
         tab_strip_model->ExecuteContextMenuCommand(
             index, TabStripModel::CommandCloseTab);
       }
+    }
+
+    if (show_account_management) {
+      browser->window()->ShowAvatarBubbleFromAvatarButton(
+            BrowserWindow::AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT,
+            signin::ManageAccountsParams());
     }
   }
 }

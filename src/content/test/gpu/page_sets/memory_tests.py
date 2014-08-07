@@ -16,12 +16,9 @@ class MemoryTestsPage(page_module.Page):
     self.user_agent_type = 'desktop'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'javascript': 'domAutomationController._finished',
-        'timeout': 60
-      }))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'domAutomationController._finished', timeout=60)
 
 
 class MemoryTestsPageSet(page_set_module.PageSet):

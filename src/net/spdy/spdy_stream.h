@@ -286,9 +286,8 @@ class NET_EXPORT_PRIVATE SpdyStream {
 
   // Called at most once by the SpdySession when the initial response
   // headers have been received for this stream, i.e., a SYN_REPLY (or
-  // SYN_STREAM for push streams) frame has been received. This is the
-  // entry point for a push stream. Returns a status code; if it is
-  // an error, the stream was closed by this function.
+  // SYN_STREAM for push streams) frame has been received. Returns a status
+  // code; if it is an error, the stream was closed by this function.
   int OnInitialResponseHeadersReceived(const SpdyHeaderBlock& response_headers,
                                        base::Time response_time,
                                        base::TimeTicks recv_first_byte_time);
@@ -299,6 +298,10 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // code; if it is an error, the stream was closed by this function.
   int OnAdditionalResponseHeadersReceived(
       const SpdyHeaderBlock& additional_response_headers);
+
+  // Called by the SpdySession when a frame carrying request headers opening a
+  // push stream is received. Stream transits to STATE_RESERVED_REMOTE state.
+  void OnPushPromiseHeadersReceived(const SpdyHeaderBlock& headers);
 
   // Called by the SpdySession when response data has been received
   // for this stream.  This callback may be called multiple times as
@@ -401,6 +404,11 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // response headers are complete, and it is not in a half-closed state.
   bool IsOpen() const;
 
+  // Returns whether the stream is reserved by remote endpoint: server has sent
+  // intended request headers for a pushed stream, but haven't started response
+  // yet.
+  bool IsReservedRemote() const;
+
   // Returns the protocol used by this stream. Always between
   // kProtoSPDYMinimumVersion and kProtoSPDYMaximumVersion.
   NextProto GetProtocol() const;
@@ -440,14 +448,13 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // are modeled, with the exceptions of RESERVED_LOCAL (the client
   // cannot initate push streams), and the transition to OPEN due to
   // a remote SYN_STREAM (the client can only initate streams).
-  // TODO(jgraettinger): RESERVED_REMOTE must be added to the state
-  // machine when PUSH_PROMISE is implemented.
   enum State {
     STATE_IDLE,
     STATE_OPEN,
     STATE_HALF_CLOSED_LOCAL_UNCLAIMED,
     STATE_HALF_CLOSED_LOCAL,
     STATE_HALF_CLOSED_REMOTE,
+    STATE_RESERVED_REMOTE,
     STATE_CLOSED,
   };
 
@@ -487,8 +494,6 @@ class NET_EXPORT_PRIVATE SpdyStream {
   static std::string DescribeState(State state);
 
   const SpdyStreamType type_;
-
-  base::WeakPtrFactory<SpdyStream> weak_ptr_factory_;
 
   SpdyStreamId stream_id_;
   const GURL url_;
@@ -561,6 +566,8 @@ class NET_EXPORT_PRIVATE SpdyStream {
   // TODO(jgraettinger): Consider removing after crbug.com/35511 is tracked
   // down.
   bool write_handler_guard_;
+
+  base::WeakPtrFactory<SpdyStream> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SpdyStream);
 };

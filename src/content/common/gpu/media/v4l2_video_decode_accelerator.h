@@ -19,10 +19,10 @@
 #include "base/threading/thread.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/media/v4l2_video_device.h"
-#include "content/common/gpu/media/video_decode_accelerator_impl.h"
 #include "media/base/limits.h"
 #include "media/base/video_decoder_config.h"
 #include "media/video/picture.h"
+#include "media/video/video_decode_accelerator.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_bindings.h"
 
@@ -73,7 +73,7 @@ namespace content {
 // subtle races (esp. if we get Reset() in the meantime), we block the decoder
 // thread while we wait for AssignPictureBuffers from the client.
 class CONTENT_EXPORT V4L2VideoDecodeAccelerator
-    : public VideoDecodeAcceleratorImpl {
+    : public media::VideoDecodeAccelerator {
  public:
   V4L2VideoDecodeAccelerator(
       EGLDisplay egl_display,
@@ -95,8 +95,6 @@ class CONTENT_EXPORT V4L2VideoDecodeAccelerator
   virtual void Flush() OVERRIDE;
   virtual void Reset() OVERRIDE;
   virtual void Destroy() OVERRIDE;
-
-  // VideoDecodeAcceleratorImpl implementation.
   virtual bool CanDecodeOnIOThread() OVERRIDE;
 
  private:
@@ -105,7 +103,10 @@ class CONTENT_EXPORT V4L2VideoDecodeAccelerator
     kInputBufferCount = 8,
     // TODO(posciak): determine input buffer size based on level limits.
     // See http://crbug.com/255116.
-    kInputBufferMaxSize = 1024 * 1024,
+    // Input bitstream buffer size for up to 1080p streams.
+    kInputBufferMaxSizeFor1080p = 1024 * 1024,
+    // Input bitstream buffer size for up to 4k streams.
+    kInputBufferMaxSizeFor4k = 4 * kInputBufferMaxSizeFor1080p,
     // Number of output buffers to use for each VDA stage above what's required
     // by the decoder (e.g. DPB size, in H264).  We need
     // media::limits::kMaxVideoFrames to fill up the GpuVideoDecode pipeline,

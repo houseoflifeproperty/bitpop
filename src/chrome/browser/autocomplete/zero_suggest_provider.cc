@@ -20,7 +20,6 @@
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/autocomplete/search_provider.h"
-#include "chrome/browser/autocomplete/url_prefix.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/metrics/variations/variations_http_header_provider.h"
@@ -29,10 +28,10 @@
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/user_metrics.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
@@ -93,7 +92,7 @@ void ZeroSuggestProvider::RegisterProfilePrefs(
 void ZeroSuggestProvider::Start(const AutocompleteInput& input,
                                 bool minimal_changes) {
   matches_.clear();
-  if (input.type() == AutocompleteInput::INVALID)
+  if (input.type() == metrics::OmniboxInputType::INVALID)
     return;
 
   Stop(true);
@@ -113,7 +112,7 @@ void ZeroSuggestProvider::Start(const AutocompleteInput& input,
   base::string16 prefix;
   TemplateURLRef::SearchTermsArgs search_term_args(prefix);
   GURL suggest_url(default_provider->suggestions_url_ref().ReplaceSearchTerms(
-      search_term_args));
+      search_term_args, template_url_service_->search_terms_data()));
   if (!suggest_url.is_valid())
     return;
 
@@ -124,7 +123,9 @@ void ZeroSuggestProvider::Start(const AutocompleteInput& input,
     // Update suggest_url to include the current_page_url.
     search_term_args.current_page_url = current_query_;
     suggest_url = GURL(default_provider->suggestions_url_ref().
-                       ReplaceSearchTerms(search_term_args));
+                       ReplaceSearchTerms(
+                           search_term_args,
+                           template_url_service_->search_terms_data()));
   } else if (!CanShowZeroSuggestWithoutSendingURL(suggest_url,
                                                   input.current_url())) {
     return;
@@ -344,7 +345,8 @@ void ZeroSuggestProvider::ConvertResultsToAutocompleteMatches() {
   const TemplateURL* default_provider =
       template_url_service_->GetDefaultSearchProvider();
   // Fail if we can't set the clickthrough URL for query suggestions.
-  if (default_provider == NULL || !default_provider->SupportsReplacement())
+  if (default_provider == NULL || !default_provider->SupportsReplacement(
+          template_url_service_->search_terms_data()))
     return;
 
   MatchMap map;

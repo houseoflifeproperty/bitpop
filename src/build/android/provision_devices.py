@@ -21,8 +21,11 @@ import time
 from pylib import android_commands
 from pylib import constants
 from pylib import device_settings
-from pylib.cmd_helper import GetCmdOutput
 from pylib.device import device_utils
+
+sys.path.append(os.path.join(constants.DIR_SOURCE_ROOT,
+                             'third_party', 'android_testrunner'))
+import errors
 
 def KillHostHeartbeat():
   ps = subprocess.Popen(['ps', 'aux'], stdout = subprocess.PIPE)
@@ -64,10 +67,8 @@ def PushAndLaunchAdbReboot(devices, target):
     device.old_interface.PushIfNeeded(adb_reboot, '/data/local/tmp/')
     # Launch adb_reboot
     print '  Launching adb_reboot ...'
-    # TODO(jbudorick) Try to convert this to RunShellCommand.
-    p = subprocess.Popen(['adb', '-s', device_serial, 'shell'],
-                         stdin=subprocess.PIPE)
-    p.communicate('/data/local/tmp/adb_reboot; exit\n')
+    device.old_interface.GetAndroidToolStatusAndOutput(
+        '/data/local/tmp/adb_reboot')
   LaunchHostHeartbeat()
 
 
@@ -83,8 +84,9 @@ def _ConfigureLocalProperties(device):
       constants.DEVICE_LOCAL_PROPERTIES_PATH,
       '\n'.join(local_props))
   # Android will not respect the local props file if it is world writable.
-  device.old_interface.RunShellCommandWithSU(
-      'chmod 644 %s' % constants.DEVICE_LOCAL_PROPERTIES_PATH)
+  device.RunShellCommand(
+      'chmod 644 %s' % constants.DEVICE_LOCAL_PROPERTIES_PATH,
+      root=True)
 
   # LOCAL_PROPERTIES_PATH = '/data/local.prop'
 
@@ -104,45 +106,86 @@ def WipeDeviceData(device):
   device_authorized = device.old_interface.FileExistsOnDevice(
       constants.ADB_KEYS_FILE)
   if device_authorized:
-    adb_keys = device.old_interface.RunShellCommandWithSU(
-      'cat %s' % constants.ADB_KEYS_FILE)
-  device.old_interface.RunShellCommandWithSU('wipe data')
+    adb_keys = device.RunShellCommand('cat %s' % constants.ADB_KEYS_FILE,
+                                      root=True)
+  device.RunShellCommand('wipe data', root=True)
   if device_authorized:
     path_list = constants.ADB_KEYS_FILE.split('/')
     dir_path = '/'.join(path_list[:len(path_list)-1])
-    device.old_interface.RunShellCommandWithSU('mkdir -p %s' % dir_path)
-    device.old_interface.RunShellCommand('echo %s > %s' %
-                                         (adb_keys[0], constants.ADB_KEYS_FILE))
+    device.RunShellCommand('mkdir -p %s' % dir_path, root=True)
+    device.RunShellCommand('echo %s > %s' %
+                           (adb_keys[0], constants.ADB_KEYS_FILE))
     for adb_key in adb_keys[1:]:
-      device.old_interface.RunShellCommand(
+      device.RunShellCommand(
         'echo %s >> %s' % (adb_key, constants.ADB_KEYS_FILE))
 
 
 def ProvisionDevices(options):
+  # TODO(jbudorick): Parallelize provisioning of all attached devices after
+  # switching from AndroidCommands.
   if options.device is not None:
     devices = [options.device]
   else:
     devices = android_commands.GetAttachedDevices()
+
+  # Wipe devices (unless --skip-wipe was specified)
+  if not options.skip_wipe:
+    for device_serial in devices:
+      device = device_utils.DeviceUtils(device_serial)
+      device.old_interface.EnableAdbRoot()
+      WipeDeviceData(device)
+    try:
+      device_utils.DeviceUtils.parallel(devices).Reboot(True)
+    except errors.DeviceUnresponsiveError:
+      pass
+    for device_serial in devices:
+      device.WaitUntilFullyBooted(timeout=90)
+
+  # Provision devices
   for device_serial in devices:
     device = device_utils.DeviceUtils(device_serial)
     device.old_interface.EnableAdbRoot()
-    install_output = GetCmdOutput(
-      ['%s/build/android/adb_install_apk.py' % constants.DIR_SOURCE_ROOT,
-       '--apk',
-       '%s/build/android/CheckInstallApk-debug.apk' % constants.DIR_SOURCE_ROOT
-       ])
-    failure_string = 'Failure [INSTALL_FAILED_INSUFFICIENT_STORAGE]'
-    if failure_string in install_output:
-      WipeDeviceData(device)
     _ConfigureLocalProperties(device)
-    device_settings.ConfigureContentSettingsDict(
-        device, device_settings.DETERMINISTIC_DEVICE_SETTINGS)
-    # TODO(tonyg): We eventually want network on. However, currently radios
-    # can cause perfbots to drain faster than they charge.
+    device_settings_map = device_settings.DETERMINISTIC_DEVICE_SETTINGS
+    if options.disable_location:
+      device_settings_map.update(device_settings.DISABLE_LOCATION_SETTING)
+    else:
+      device_settings_map.update(device_settings.ENABLE_LOCATION_SETTING)
+    device_settings.ConfigureContentSettingsDict(device, device_settings_map)
     if 'perf' in os.environ.get('BUILDBOT_BUILDERNAME', '').lower():
+      # TODO(tonyg): We eventually want network on. However, currently radios
+      # can cause perfbots to drain faster than they charge.
       device_settings.ConfigureContentSettingsDict(
           device, device_settings.NETWORK_DISABLED_SETTINGS)
-    device.old_interface.RunShellCommandWithSU('date -u %f' % time.time())
+      # Some perf bots run benchmarks with USB charging disabled which leads
+      # to gradual draining of the battery. We must wait for a full charge
+      # before starting a run in order to keep the devices online.
+      try:
+        battery_info = device.old_interface.GetBatteryInfo()
+      except Exception as e:
+        battery_info = {}
+        logging.error('Unable to obtain battery info for %s, %s',
+                      device_serial, e)
+
+      while int(battery_info.get('level', 100)) < 95:
+        if not device.old_interface.IsDeviceCharging():
+          if device.old_interface.CanControlUsbCharging():
+            device.old_interface.EnableUsbCharging()
+          else:
+            logging.error('Device is not charging')
+            break
+        logging.info('Waiting for device to charge. Current level=%s',
+                     battery_info.get('level', 0))
+        time.sleep(60)
+        battery_info = device.old_interface.GetBatteryInfo()
+    device.RunShellCommand('date -u %f' % time.time(), root=True)
+  try:
+    device_utils.DeviceUtils.parallel(devices).Reboot(True)
+  except errors.DeviceUnresponsiveError:
+    pass
+  for device_serial in devices:
+    device = device_utils.DeviceUtils(device_serial)
+    device.WaitUntilFullyBooted(timeout=90)
     (_, props) = device.old_interface.GetShellCommandStatusAndOutput('getprop')
     for prop in props:
       print prop
@@ -154,8 +197,10 @@ def main(argv):
   logging.basicConfig(level=logging.INFO)
 
   parser = optparse.OptionParser()
-  parser.add_option('-w', '--wipe', action='store_true',
-                    help='Wipe device data from all attached devices.')
+  parser.add_option('--skip-wipe', action='store_true', default=False,
+                    help="Don't wipe device data during provisioning.")
+  parser.add_option('--disable-location', action='store_true', default=False,
+                    help="Disallow Google location services on devices.")
   parser.add_option('-d', '--device',
                     help='The serial number of the device to be provisioned')
   parser.add_option('-t', '--target', default='Debug', help='The build target')
@@ -169,14 +214,7 @@ def main(argv):
     print >> sys.stderr, 'Unused args %s' % args
     return 1
 
-  if options.wipe:
-    devices = android_commands.GetAttachedDevices()
-    for device_serial in devices:
-      device = device_utils.DeviceUtils(device_serial)
-      WipeDeviceData(device)
-    device_utils.RebootDevices()
-  else:
-    ProvisionDevices(options)
+  ProvisionDevices(options)
 
 
 if __name__ == '__main__':

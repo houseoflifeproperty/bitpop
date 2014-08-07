@@ -17,6 +17,7 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/compositor/compositor_export.h"
 #include "ui/compositor/compositor_observer.h"
+#include "ui/compositor/layer_animator_collection.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/vector2d.h"
@@ -60,14 +61,6 @@ class COMPOSITOR_EXPORT ContextFactory {
  public:
   virtual ~ContextFactory() {}
 
-  // Gets the global instance.
-  static ContextFactory* GetInstance();
-
-  // Sets the global instance. Caller keeps ownership.
-  // If this function isn't called (for tests), a "default" factory will be
-  // created on the first call of GetInstance.
-  static void SetInstance(ContextFactory* instance);
-
   // Creates an output surface for the given compositor. The factory may keep
   // per-compositor data (e.g. a shared context), that needs to be cleaned up
   // by calling RemoveCompositor when the compositor gets destroyed.
@@ -96,6 +89,10 @@ class COMPOSITOR_EXPORT ContextFactory {
 
   // Gets the shared bitmap manager for software mode.
   virtual cc::SharedBitmapManager* GetSharedBitmapManager() = 0;
+
+  // Gets the compositor message loop, or NULL if not using threaded
+  // compositing.
+  virtual base::MessageLoopProxy* GetCompositorMessageLoop() = 0;
 };
 
 // This class represents a lock on the compositor, that can be used to prevent
@@ -130,15 +127,14 @@ class COMPOSITOR_EXPORT CompositorLock
 // view hierarchy.
 class COMPOSITOR_EXPORT Compositor
     : NON_EXPORTED_BASE(public cc::LayerTreeHostClient),
-      NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient) {
+      NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient),
+      NON_EXPORTED_BASE(public LayerAnimatorCollectionDelegate) {
  public:
-  explicit Compositor(gfx::AcceleratedWidget widget);
+  Compositor(gfx::AcceleratedWidget widget,
+             ui::ContextFactory* context_factory);
   virtual ~Compositor();
 
-  static void Initialize();
-  static bool WasInitializedWithThread();
-  static scoped_refptr<base::MessageLoopProxy> GetCompositorMessageLoop();
-  static void Terminate();
+  ui::ContextFactory* context_factory() { return context_factory_; }
 
   // Schedules a redraw of the layer tree associated with this compositor.
   void ScheduleDraw();
@@ -219,7 +215,7 @@ class COMPOSITOR_EXPORT Compositor
   // LayerTreeHostClient implementation.
   virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
   virtual void DidBeginMainFrame() OVERRIDE {}
-  virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE {}
+  virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
                                    float page_scale) OVERRIDE {}
@@ -237,6 +233,9 @@ class COMPOSITOR_EXPORT Compositor
   virtual void DidPostSwapBuffers() OVERRIDE;
   virtual void DidAbortSwapBuffers() OVERRIDE;
 
+  // LayerAnimatorCollectionDelegate implementation.
+  virtual void ScheduleAnimationForLayerCollection() OVERRIDE;
+
   int last_started_frame() { return last_started_frame_; }
   int last_ended_frame() { return last_ended_frame_; }
 
@@ -244,6 +243,10 @@ class COMPOSITOR_EXPORT Compositor
 
   const cc::LayerTreeDebugState& GetLayerTreeDebugState() const;
   void SetLayerTreeDebugState(const cc::LayerTreeDebugState& debug_state);
+
+  LayerAnimatorCollection* layer_animator_collection() {
+    return &layer_animator_collection_;
+  }
 
  private:
   friend class base::RefCounted<Compositor>;
@@ -260,6 +263,8 @@ class COMPOSITOR_EXPORT Compositor
 
   gfx::Size size_;
 
+  ui::ContextFactory* context_factory_;
+
   // The root of the Layer tree drawn by this compositor.
   Layer* root_layer_;
 
@@ -268,6 +273,7 @@ class COMPOSITOR_EXPORT Compositor
   gfx::AcceleratedWidget widget_;
   scoped_refptr<cc::Layer> root_web_layer_;
   scoped_ptr<cc::LayerTreeHost> host_;
+  scoped_refptr<base::MessageLoopProxy> compositor_thread_loop_;
 
   // The manager of vsync parameters for this compositor.
   scoped_refptr<CompositorVSyncManager> vsync_manager_;
@@ -291,6 +297,8 @@ class COMPOSITOR_EXPORT Compositor
   bool draw_on_compositing_end_;
   enum SwapState { SWAP_NONE, SWAP_POSTED, SWAP_COMPLETED };
   SwapState swap_state_;
+
+  LayerAnimatorCollection layer_animator_collection_;
 
   base::WeakPtrFactory<Compositor> schedule_draw_factory_;
 

@@ -17,7 +17,6 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/metrics/stats_counters.h"
-#include "base/platform_file.h"
 #include "base/process/process_metrics.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -32,7 +31,6 @@
 #include "content/child/web_discardable_memory_impl.h"
 #include "content/child/web_socket_stream_handle_impl.h"
 #include "content/child/web_url_loader_impl.h"
-#include "content/child/webcrypto/webcrypto_impl.h"
 #include "content/child/websocket_bridge.h"
 #include "content/child/webthread_impl.h"
 #include "content/child/worker_task_runner.h"
@@ -47,7 +45,6 @@
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebWaitableEvent.h"
-#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/base/layout.h"
 
 #if defined(OS_ANDROID)
@@ -316,6 +313,8 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_RECENT_SEARCHES_NONE;
     case WebLocalizedString::SearchMenuRecentSearchesText:
       return IDS_RECENT_SEARCHES;
+    case WebLocalizedString::SelectMenuListText:
+      return IDS_FORM_SELECT_MENU_LIST_TEXT;
     case WebLocalizedString::SubmitButtonDefaultLabel:
       return IDS_FORM_SUBMIT_LABEL;
     case WebLocalizedString::ThisMonthButtonLabel:
@@ -877,7 +876,7 @@ void BlinkPlatformImpl::callOnMainThread(
 }
 
 blink::WebGestureCurve* BlinkPlatformImpl::createFlingAnimationCurve(
-    int device_source,
+    blink::WebGestureDevice device_source,
     const blink::WebFloatPoint& velocity,
     const blink::WebSize& cumulative_scroll) {
 #if defined(OS_ANDROID)
@@ -886,7 +885,7 @@ blink::WebGestureCurve* BlinkPlatformImpl::createFlingAnimationCurve(
       cumulative_scroll);
 #endif
 
-  if (device_source == blink::WebGestureEvent::Touchscreen)
+  if (device_source == blink::WebGestureDeviceTouchscreen)
     return fling_curve_configuration_->CreateForTouchScreen(velocity,
                                                             cumulative_scroll);
 
@@ -907,9 +906,8 @@ void BlinkPlatformImpl::didStopWorkerRunLoop(
 }
 
 blink::WebCrypto* BlinkPlatformImpl::crypto() {
-  if (!web_crypto_)
-    web_crypto_.reset(new WebCryptoImpl());
-  return web_crypto_.get();
+  WebCryptoImpl::EnsureInit();
+  return &web_crypto_;
 }
 
 
@@ -921,9 +919,13 @@ WebFallbackThemeEngine* BlinkPlatformImpl::fallbackThemeEngine() {
   return &fallback_theme_engine_;
 }
 
-base::PlatformFile BlinkPlatformImpl::databaseOpenFile(
+blink::Platform::FileHandle BlinkPlatformImpl::databaseOpenFile(
     const blink::WebString& vfs_file_name, int desired_flags) {
-  return base::kInvalidPlatformFileValue;
+#if defined(OS_WIN)
+  return INVALID_HANDLE_VALUE;
+#elif defined(OS_POSIX)
+  return -1;
+#endif
 }
 
 int BlinkPlatformImpl::databaseDeleteFile(

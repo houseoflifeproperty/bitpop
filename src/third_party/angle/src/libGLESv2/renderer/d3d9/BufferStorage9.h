@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2013 The ANGLE Project Authors. All rights reserved.
+// Copyright (c) 2013-2014 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -23,18 +23,22 @@ class BufferStorage9 : public BufferStorage
     static BufferStorage9 *makeBufferStorage9(BufferStorage *bufferStorage);
 
     virtual void *getData();
-    virtual void setData(const void* data, unsigned int size, unsigned int offset);
+    virtual void setData(const void* data, size_t size, size_t offset);
+    virtual void copyData(BufferStorage* sourceStorage, size_t size, size_t sourceOffset, size_t destOffset);
     virtual void clear();
-    virtual unsigned int getSize() const;
+    virtual void markTransformFeedbackUsage();
+    virtual size_t getSize() const;
     virtual bool supportsDirectBinding() const;
+
+    virtual bool isMapped() const;
+    virtual void *map(GLbitfield access);
+    virtual void unmap();
 
   private:
     DISALLOW_COPY_AND_ASSIGN(BufferStorage9);
 
-    void *mMemory;
-    unsigned int mAllocatedSize;
-
-    unsigned int mSize;
+    std::vector<char> mMemory;
+    size_t mSize;
 };
 
 }

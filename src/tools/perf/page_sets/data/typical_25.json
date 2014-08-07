@@ -1,7 +1,7 @@
 {
     "description": "Describes the Web Page Replay archives for a page set. Don't edit by hand! Use record_wpr for updating.", 
     "archives": {
-        "typical_25_000.wpr": [
+        "typical_25_002.wpr": [
             "http://www.nick.com/games", 
             "http://www.rei.com/", 
             "http://www.fifa.com/", 

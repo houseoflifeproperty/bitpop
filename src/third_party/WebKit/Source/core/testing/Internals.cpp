@@ -25,18 +25,8 @@
  */
 
 #include "config.h"
-#include "Internals.h"
+#include "core/testing/Internals.h"
 
-#include <v8.h>
-#include "InternalProfilers.h"
-#include "InternalRuntimeFlags.h"
-#include "InternalSettings.h"
-#include "LayerRect.h"
-#include "LayerRectList.h"
-#include "MallocStatistics.h"
-#include "MockPagePopupDriver.h"
-#include "RuntimeEnabledFeatures.h"
-#include "TypeConversions.h"
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptFunction.h"
@@ -44,7 +34,8 @@
 #include "bindings/v8/ScriptPromiseResolver.h"
 #include "bindings/v8/SerializedScriptValue.h"
 #include "bindings/v8/V8ThrowException.h"
-#include "core/animation/DocumentTimeline.h"
+#include "core/InternalRuntimeFlags.h"
+#include "core/animation/AnimationTimeline.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleResolverStats.h"
@@ -64,7 +55,6 @@
 #include "core/dom/StaticNodeList.h"
 #include "core/dom/TreeScope.h"
 #include "core/dom/ViewportDescription.h"
-#include "core/dom/WheelController.h"
 #include "core/dom/shadow/ComposedTreeWalker.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/SelectRuleFeatureSet.h"
@@ -78,7 +68,7 @@
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/DOMPoint.h"
-#include "core/frame/DOMWindow.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -106,6 +96,7 @@
 #include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
+#include "core/page/NetworkStateNotifier.h"
 #include "core/page/Page.h"
 #include "core/page/PagePopupController.h"
 #include "core/page/PrintContext.h"
@@ -117,10 +108,17 @@
 #include "core/rendering/compositing/CompositedLayerMapping.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "core/testing/GCObservation.h"
+#include "core/testing/InternalProfilers.h"
+#include "core/testing/InternalSettings.h"
+#include "core/testing/LayerRect.h"
+#include "core/testing/LayerRectList.h"
+#include "core/testing/MallocStatistics.h"
+#include "core/testing/MockPagePopupDriver.h"
+#include "core/testing/TypeConversions.h"
 #include "core/workers/WorkerThread.h"
-#include "platform/ColorChooser.h"
 #include "platform/Cursor.h"
 #include "platform/Language.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
@@ -129,6 +127,7 @@
 #include "platform/graphics/filters/FilterOperations.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebConnectionType.h"
 #include "public/platform/WebGraphicsContext3D.h"
 #include "public/platform/WebGraphicsContext3DProvider.h"
 #include "public/platform/WebLayer.h"
@@ -136,6 +135,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/dtoa.h"
 #include "wtf/text/StringBuffer.h"
+#include <v8.h>
 
 namespace WebCore {
 
@@ -190,15 +190,15 @@ void Internals::resetToConsistentState(Page* page)
     delete s_pagePopupDriver;
     s_pagePopupDriver = 0;
     page->chrome().client().resetPagePopupDriver();
-    if (!page->mainFrame()->spellChecker().isContinuousSpellCheckingEnabled())
-        page->mainFrame()->spellChecker().toggleContinuousSpellChecking();
-    if (page->mainFrame()->editor().isOverwriteModeEnabled())
-        page->mainFrame()->editor().toggleOverwriteModeEnabled();
+    if (!page->deprecatedLocalMainFrame()->spellChecker().isContinuousSpellCheckingEnabled())
+        page->deprecatedLocalMainFrame()->spellChecker().toggleContinuousSpellChecking();
+    if (page->deprecatedLocalMainFrame()->editor().isOverwriteModeEnabled())
+        page->deprecatedLocalMainFrame()->editor().toggleOverwriteModeEnabled();
 
     if (ScrollingCoordinator* scrollingCoordinator = page->scrollingCoordinator())
         scrollingCoordinator->reset();
 
-    page->mainFrame()->view()->clear();
+    page->deprecatedLocalMainFrame()->view()->clear();
 }
 
 Internals::Internals(Document* document)
@@ -460,7 +460,7 @@ unsigned Internals::numberOfActiveAnimations() const
 {
     LocalFrame* contextFrame = frame();
     Document* document = contextFrame->document();
-    return document->timeline().numberOfActiveAnimationsForTesting() + document->transitionTimeline().numberOfActiveAnimationsForTesting();
+    return document->timeline().numberOfActiveAnimationsForTesting();
 }
 
 void Internals::pauseAnimations(double pauseTime, ExceptionState& exceptionState)
@@ -472,7 +472,6 @@ void Internals::pauseAnimations(double pauseTime, ExceptionState& exceptionState
 
     frame()->view()->updateLayoutAndStyleForPainting();
     frame()->document()->timeline().pauseAnimationsForTesting(pauseTime);
-    frame()->document()->transitionTimeline().pauseAnimationsForTesting(pauseTime);
 }
 
 bool Internals::hasShadowInsertionPoint(const Node* root, ExceptionState& exceptionState) const
@@ -571,15 +570,6 @@ String Internals::elementRenderTreeAsText(Element* element, ExceptionState& exce
     }
 
     return representation;
-}
-
-size_t Internals::numberOfScopedHTMLStyleChildren(const Node* scope, ExceptionState& exceptionState) const
-{
-    if (scope && (scope->isElementNode() || scope->isShadowRoot()))
-        return scope->numberOfScopedHTMLStyleChildren();
-
-    exceptionState.throwDOMException(InvalidAccessError, ExceptionMessages::argumentNullOrIncorrectType(1, "Node"));
-    return 0;
 }
 
 PassRefPtrWillBeRawPtr<CSSComputedStyleDeclaration> Internals::computedStyleIncludingVisitedInfo(Node* node, ExceptionState& exceptionState) const
@@ -737,7 +727,7 @@ void Internals::setEnableMockPagePopup(bool enabled, ExceptionState& exceptionSt
         return;
     }
     if (!s_pagePopupDriver)
-        s_pagePopupDriver = MockPagePopupDriver::create(page->mainFrame()).leakPtr();
+        s_pagePopupDriver = MockPagePopupDriver::create(page->deprecatedLocalMainFrame()).leakPtr();
     page->chrome().client().setPagePopupDriver(s_pagePopupDriver);
 }
 
@@ -807,10 +797,10 @@ unsigned Internals::activeMarkerCountForNode(Node* node, ExceptionState& excepti
 
     // Only TextMatch markers can be active.
     DocumentMarker::MarkerType markerType = DocumentMarker::TextMatch;
-    Vector<DocumentMarker*> markers = node->document().markers().markersFor(node, markerType);
+    WillBeHeapVector<DocumentMarker*> markers = node->document().markers().markersFor(node, markerType);
 
     unsigned activeMarkerCount = 0;
-    for (Vector<DocumentMarker*>::iterator iter = markers.begin(); iter != markers.end(); ++iter) {
+    for (WillBeHeapVector<DocumentMarker*>::iterator iter = markers.begin(); iter != markers.end(); ++iter) {
         if ((*iter)->activeMatch())
             activeMarkerCount++;
     }
@@ -831,7 +821,7 @@ DocumentMarker* Internals::markerAt(Node* node, const String& markerType, unsign
         return 0;
     }
 
-    Vector<DocumentMarker*> markers = node->document().markers().markersFor(node, markerTypes);
+    WillBeHeapVector<DocumentMarker*> markers = node->document().markers().markersFor(node, markerTypes);
     if (markers.size() <= index)
         return 0;
     return markers[index];
@@ -908,7 +898,7 @@ String Internals::viewportAsText(Document* document, float, int availableWidth, 
 
     // Update initial viewport size.
     IntSize initialViewportSize(availableWidth, availableHeight);
-    document->page()->mainFrame()->view()->setFrameRect(IntRect(IntPoint::zero(), initialViewportSize));
+    document->page()->deprecatedLocalMainFrame()->view()->setFrameRect(IntRect(IntPoint::zero(), initialViewportSize));
 
     ViewportDescription description = page->viewportDescription();
     PageScaleConstraints constraints = description.resolve(initialViewportSize, Length());
@@ -1268,7 +1258,7 @@ unsigned Internals::wheelEventHandlerCount(Document* document, ExceptionState& e
         return 0;
     }
 
-    return WheelController::from(*document)->wheelEventHandlerCount();
+    return eventHandlerCount(*document, EventHandlerRegistry::WheelEvent);
 }
 
 unsigned Internals::scrollEventHandlerCount(Document* document, ExceptionState& exceptionState)
@@ -1444,7 +1434,7 @@ PassRefPtrWillBeRawPtr<LayerRectList> Internals::touchEventTargetLayerRects(Docu
     return nullptr;
 }
 
-PassRefPtr<NodeList> Internals::nodesFromRect(Document* document, int centerX, int centerY, unsigned topPadding, unsigned rightPadding,
+PassRefPtrWillBeRawPtr<StaticNodeList> Internals::nodesFromRect(Document* document, int centerX, int centerY, unsigned topPadding, unsigned rightPadding,
     unsigned bottomPadding, unsigned leftPadding, bool ignoreClipping, bool allowShadowContent, bool allowChildFrameContent, ExceptionState& exceptionState) const
 {
     if (!document || !document->frame() || !document->frame()->view()) {
@@ -1476,7 +1466,7 @@ PassRefPtr<NodeList> Internals::nodesFromRect(Document* document, int centerX, i
     if (!request.ignoreClipping() && !frameView->visibleContentRect().intersects(HitTestLocation::rectForPoint(point, topPadding, rightPadding, bottomPadding, leftPadding)))
         return nullptr;
 
-    Vector<RefPtr<Node> > matches;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > matches;
 
     // Need padding to trigger a rect based hit test, but we want to return a NodeList
     // so we special case this.
@@ -1602,9 +1592,9 @@ unsigned Internals::numberOfScrollableAreas(Document* document, ExceptionState&)
     if (frame->view()->scrollableAreas())
         count += frame->view()->scrollableAreas()->size();
 
-    for (LocalFrame* child = frame->tree().firstChild(); child; child = child->tree().nextSibling()) {
-        if (child->view() && child->view()->scrollableAreas())
-            count += child->view()->scrollableAreas()->size();
+    for (Frame* child = frame->tree().firstChild(); child; child = child->tree().nextSibling()) {
+        if (child->isLocalFrame() && toLocalFrame(child)->view() && toLocalFrame(child)->view()->scrollableAreas())
+            count += toLocalFrame(child)->view()->scrollableAreas()->size();
     }
 
     return count;
@@ -1689,7 +1679,13 @@ bool Internals::isUnclippedDescendant(Element* element, ExceptionState& exceptio
         return 0;
     }
 
-    return layer->isUnclippedDescendant();
+    // We used to compute isUnclippedDescendant only when acceleratedCompositingForOverflowScrollEnabled,
+    // but now we compute it all the time.
+    // FIXME: Remove this if statement and rebaseline the tests that make this assumption.
+    if (!layer->compositor()->acceleratedCompositingForOverflowScrollEnabled())
+        return false;
+
+    return layer->compositingInputs().isUnclippedDescendant;
 }
 
 String Internals::layerTreeAsText(Document* document, unsigned flags, ExceptionState& exceptionState) const
@@ -1750,19 +1746,6 @@ static RenderLayer* getRenderLayerForElement(Element* element, ExceptionState& e
     }
 
     return layer;
-}
-
-void Internals::setNeedsCompositedScrolling(Element* element, unsigned needsCompositedScrolling, ExceptionState& exceptionState)
-{
-    if (!element) {
-        exceptionState.throwDOMException(InvalidAccessError, ExceptionMessages::argumentNullOrIncorrectType(1, "Element"));
-        return;
-    }
-
-    element->document().updateLayout();
-
-    if (RenderLayer* layer = getRenderLayerForElement(element, exceptionState))
-        layer->scrollableArea()->setForceNeedsCompositedScrolling(static_cast<ForceNeedsCompositedScrollingMode>(needsCompositedScrolling));
 }
 
 String Internals::repaintRectsAsText(Document* document, ExceptionState& exceptionState) const
@@ -2009,7 +1992,7 @@ void Internals::startTrackingRepaints(Document* document, ExceptionState& except
 
     FrameView* frameView = document->view();
     frameView->updateLayoutAndStyleForPainting();
-    frameView->setTracksRepaints(true);
+    frameView->setTracksPaintInvalidations(true);
 }
 
 void Internals::stopTrackingRepaints(Document* document, ExceptionState& exceptionState)
@@ -2021,7 +2004,7 @@ void Internals::stopTrackingRepaints(Document* document, ExceptionState& excepti
 
     FrameView* frameView = document->view();
     frameView->updateLayoutAndStyleForPainting();
-    frameView->setTracksRepaints(false);
+    frameView->setTracksPaintInvalidations(false);
 }
 
 void Internals::updateLayoutIgnorePendingStylesheetsAndRunPostLayoutTasks(ExceptionState& exceptionState)
@@ -2043,6 +2026,17 @@ void Internals::updateLayoutIgnorePendingStylesheetsAndRunPostLayoutTasks(Node* 
         return;
     }
     document->updateLayoutIgnorePendingStylesheets(Document::RunPostLayoutTasksSynchronously);
+}
+
+void Internals::forceFullRepaint(Document* document, ExceptionState& exceptionState)
+{
+    if (!document || !document->view()) {
+        exceptionState.throwDOMException(InvalidAccessError, document ? "The document's view cannot be retrieved." : "The document provided is invalid.");
+        return;
+    }
+
+    if (RenderView *renderView = document->renderView())
+        renderView->repaintViewAndCompositedLayers();
 }
 
 PassRefPtrWillBeRawPtr<ClientRectList> Internals::draggableRegions(Document* document, ExceptionState& exceptionState)
@@ -2226,7 +2220,7 @@ bool Internals::isSelectPopupVisible(Node* node)
     HTMLSelectElement& select = toHTMLSelectElement(*node);
 
     RenderObject* renderer = select.renderer();
-    if (!renderer->isMenuList())
+    if (!renderer || !renderer->isMenuList())
         return false;
 
     RenderMenuList* menuList = toRenderMenuList(renderer);
@@ -2258,16 +2252,6 @@ void Internals::forceCompositingUpdate(Document* document, ExceptionState& excep
     }
 
     document->frame()->view()->updateLayoutAndStyleForPainting();
-}
-
-bool Internals::isCompositorFramePending(Document* document, ExceptionState& exceptionState)
-{
-    if (!document || !document->renderView()) {
-        exceptionState.throwDOMException(InvalidAccessError, document ? "The document's render view cannot be retrieved." : "The document provided is invalid.");
-        return false;
-    }
-
-    return document->page()->chrome().client().isCompositorFramePending();
 }
 
 void Internals::setZoomFactor(float factor)
@@ -2303,10 +2287,9 @@ private:
     virtual ScriptValue call(ScriptValue value) OVERRIDE
     {
         v8::Local<v8::Value> v8Value = value.v8Value();
-        v8::Isolate* isolate = value.isolate();
         ASSERT(v8Value->IsNumber());
         int intValue = v8Value.As<v8::Integer>()->Value();
-        ScriptValue result  = ScriptValue(v8::Integer::New(isolate, intValue + 1), isolate);
+        ScriptValue result  = ScriptValue(ScriptState::current(isolate()), v8::Integer::New(isolate(), intValue + 1));
         return result;
     }
 };
@@ -2355,7 +2338,7 @@ String Internals::textSurroundingNode(Node* node, int x, int y, unsigned long ma
     if (!node)
         return String();
     blink::WebPoint point(x, y);
-    SurroundingText surroundingText(VisiblePosition(node->renderer()->positionForPoint(static_cast<IntPoint>(point))), maxLength);
+    SurroundingText surroundingText(VisiblePosition(node->renderer()->positionForPoint(static_cast<IntPoint>(point))).deepEquivalent().parentAnchoredEquivalent(), maxLength);
     return surroundingText.content();
 }
 
@@ -2364,4 +2347,41 @@ void Internals::setFocused(bool focused)
     frame()->page()->focusController().setFocused(focused);
 }
 
+bool Internals::ignoreLayoutWithPendingStylesheets(Document* document, ExceptionState& exceptionState)
+{
+    if (!document) {
+        exceptionState.throwDOMException(InvalidAccessError, "No context document is available.");
+        return false;
+    }
+
+    return document->ignoreLayoutWithPendingStylesheets();
 }
+
+void Internals::setNetworkStateNotifierTestOnly(bool testOnly)
+{
+    networkStateNotifier().setTestUpdatesOnly(testOnly);
+}
+
+void Internals::setNetworkConnectionInfo(const String& type, ExceptionState& exceptionState)
+{
+    blink::WebConnectionType webtype;
+    if (type == "cellular") {
+        webtype = blink::ConnectionTypeCellular;
+    } else if (type == "bluetooth") {
+        webtype = blink::ConnectionTypeBluetooth;
+    } else if (type == "ethernet") {
+        webtype = blink::ConnectionTypeEthernet;
+    } else if (type == "wifi") {
+        webtype = blink::ConnectionTypeWifi;
+    } else if (type == "other") {
+        webtype = blink::ConnectionTypeOther;
+    } else if (type == "none") {
+        webtype = blink::ConnectionTypeNone;
+    } else {
+        exceptionState.throwDOMException(NotFoundError, ExceptionMessages::failedToEnumerate("connection type", type));
+        return;
+    }
+    networkStateNotifier().setWebConnectionTypeForTest(webtype);
+}
+
+} // namespace WebCore

@@ -12,3 +12,4 @@ class Sfntly(Master.Master3):
   master_port = 8048
   slave_port = 8148
   master_port_alt = 8248
+  buildbot_url = 'http://build.chromium.org/p/client.sfntly/'

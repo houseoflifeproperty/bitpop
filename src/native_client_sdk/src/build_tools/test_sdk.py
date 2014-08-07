@@ -63,19 +63,40 @@ def StepBuildTests(pepperdir):
                                    deps=False, config=config)
 
 
-def StepRunSelLdrTests(pepperdir):
+def StepRunSelLdrTests(pepperdir, sanitizer):
   filters = {
     'SEL_LDR': True
   }
 
   tree = parse_dsc.LoadProjectTree(SDK_SRC_DIR, include=filters)
 
-  def RunTest(test, toolchain, arch, config):
-    args = ['TOOLCHAIN=%s' % toolchain, 'NACL_ARCH=%s' % arch]
-    args += ['SEL_LDR=1', 'run']
+  def RunTest(test, toolchain, config, arch=None):
+    args = ['STANDALONE=1', 'TOOLCHAIN=%s' % toolchain]
+    if arch is not None:
+      args.append('NACL_ARCH=%s' % arch)
+    deps = False
+
+    if sanitizer is not None:
+      # For sanitizer builds we pass extra argument for make, and do
+      # full clean build to make sure everything is rebuilt with the
+      # correct flags
+      deps = True
+      if sanitizer == 'valgrind':
+        args += ['RUN_UNDER=valgrind']
+      else:
+        args += ['CC=clang', 'CXX=clang++',
+                 'LDFLAGS=-pie -fsanitize=' + sanitizer,
+                 'CFLAGS=-fPIC -fsanitize=' + sanitizer]
+      build_projects.BuildProjectsBranch(pepperdir, 'src', clean=False,
+                                         deps=deps, config=config,
+                                         args=args + ['clean'])
+      build_projects.BuildProjectsBranch(pepperdir, 'tests', clean=False,
+                                         deps=deps, config=config,
+                                         args=args + ['clean'])
+
     build_projects.BuildProjectsBranch(pepperdir, test, clean=False,
-                                       deps=False, config=config,
-                                       args=args)
+                                       deps=deps, config=config,
+                                       args=args + ['run'])
 
   if getos.GetPlatform() == 'win':
     # On win32 we only support running on the system
@@ -90,13 +111,31 @@ def StepRunSelLdrTests(pepperdir):
 
   for root, projects in tree.iteritems():
     for project in projects:
-      title = 'sel_ldr tests: %s' % os.path.basename(project['NAME'])
+      if sanitizer:
+        sanitizer_name = '[sanitizer=%s]'  % sanitizer
+      else:
+        sanitizer_name = ''
+      title = 'standalone test%s: %s' % (sanitizer_name,
+                                         os.path.basename(project['NAME']))
       location = os.path.join(root, project['NAME'])
       buildbot_common.BuildStep(title)
+      configs = ('Debug', 'Release')
+
+      # On linux we can run the standalone tests natively using the host
+      # compiler.
+      if getos.GetPlatform() == 'linux':
+        if sanitizer:
+          configs = ('Debug',)
+        for config in configs:
+          RunTest(location, 'linux', config)
+
+      if sanitizer:
+        continue
+
       for toolchain in ('newlib', 'glibc'):
         for arch in archs:
-          for config in ('Debug', 'Release'):
-            RunTest(location, toolchain, arch, config)
+          for config in configs:
+            RunTest(location, toolchain, config, arch)
 
 
 def StepRunBrowserTests(toolchains, experimental):
@@ -123,6 +162,9 @@ def main(args):
   usage = '%prog [<options>] [<phase...>]'
   parser = optparse.OptionParser(description=__doc__, usage=usage)
   parser.add_option('--experimental', help='build experimental tests',
+                    action='store_true')
+  parser.add_option('--sanitizer',
+                    help='Run sanitizer (asan/tsan/valgrind) tests',
                     action='store_true')
   parser.add_option('--verbose', '-v', help='Verbose output',
                     action='store_true')
@@ -155,9 +197,18 @@ def main(args):
     ('build_examples', StepBuildExamples, pepperdir),
     ('copy_tests', StepCopyTests, pepperdir, toolchains, options.experimental),
     ('build_tests', StepBuildTests, pepperdir),
-    ('sel_ldr_tests', StepRunSelLdrTests, pepperdir),
+    ('sel_ldr_tests', StepRunSelLdrTests, pepperdir, None),
     ('browser_tests', StepRunBrowserTests, toolchains, options.experimental),
   ]
+
+  if options.sanitizer:
+    if getos.GetPlatform() != 'linux':
+      buildbot_common.ErrorExit('sanitizer tests only run on linux.')
+    phases += [
+      ('sel_ldr_tests_asan', StepRunSelLdrTests, pepperdir, 'address'),
+      ('sel_ldr_tests_tsan', StepRunSelLdrTests, pepperdir, 'thread'),
+      ('sel_ldr_tests_valgrind', StepRunSelLdrTests, pepperdir, 'valgrind')
+    ]
 
   if args:
     phase_names = [p[0] for p in phases]

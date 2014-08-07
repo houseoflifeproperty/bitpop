@@ -16,11 +16,13 @@ namespace content {
 MediaStreamDispatcherHost::MediaStreamDispatcherHost(
     int render_process_id,
     const ResourceContext::SaltCallback& salt_callback,
-    MediaStreamManager* media_stream_manager)
+    MediaStreamManager* media_stream_manager,
+    ResourceContext* resource_context)
     : BrowserMessageFilter(MediaStreamMsgStart),
       render_process_id_(render_process_id),
       salt_callback_(salt_callback),
-      media_stream_manager_(media_stream_manager) {
+      media_stream_manager_(media_stream_manager),
+      resource_context_(resource_context) {
 }
 
 void MediaStreamDispatcherHost::StreamGenerated(
@@ -91,10 +93,9 @@ void MediaStreamDispatcherHost::DeviceOpened(
       render_view_id, page_request_id, label, video_device));
 }
 
-bool MediaStreamDispatcherHost::OnMessageReceived(
-    const IPC::Message& message, bool* message_was_ok) {
+bool MediaStreamDispatcherHost::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(MediaStreamDispatcherHost, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(MediaStreamDispatcherHost, message)
     IPC_MESSAGE_HANDLER(MediaStreamHostMsg_GenerateStream, OnGenerateStream)
     IPC_MESSAGE_HANDLER(MediaStreamHostMsg_CancelGenerateStream,
                         OnCancelGenerateStream)
@@ -109,14 +110,14 @@ bool MediaStreamDispatcherHost::OnMessageReceived(
     IPC_MESSAGE_HANDLER(MediaStreamHostMsg_CloseDevice,
                         OnCloseDevice)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
 void MediaStreamDispatcherHost::OnChannelClosing() {
   DVLOG(1) << "MediaStreamDispatcherHost::OnChannelClosing";
 
-  // Since the IPC channel is gone, close all requesting/requested streams.
+  // Since the IPC sender is gone, close all requesting/requested streams.
   media_stream_manager_->CancelAllRequests(render_process_id_);
 }
 
@@ -169,7 +170,8 @@ void MediaStreamDispatcherHost::OnEnumerateDevices(
     int render_view_id,
     int page_request_id,
     MediaStreamType type,
-    const GURL& security_origin) {
+    const GURL& security_origin,
+    bool hide_labels_if_no_access) {
   DVLOG(1) << "MediaStreamDispatcherHost::OnEnumerateDevices("
            << render_view_id << ", "
            << page_request_id << ", "
@@ -179,9 +181,21 @@ void MediaStreamDispatcherHost::OnEnumerateDevices(
   if (!IsURLAllowed(security_origin))
     return;
 
+  DCHECK(type == MEDIA_DEVICE_AUDIO_CAPTURE ||
+         type == MEDIA_DEVICE_VIDEO_CAPTURE ||
+         type == MEDIA_DEVICE_AUDIO_OUTPUT);
+  bool have_permission = true;
+  if (hide_labels_if_no_access) {
+    bool audio_type = type == MEDIA_DEVICE_AUDIO_CAPTURE ||
+                      type == MEDIA_DEVICE_AUDIO_OUTPUT;
+    have_permission = audio_type ?
+        resource_context_->AllowMicAccess(security_origin) :
+        resource_context_->AllowCameraAccess(security_origin);
+  }
+
   media_stream_manager_->EnumerateDevices(
       this, render_process_id_, render_view_id, salt_callback_,
-      page_request_id, type, security_origin);
+      page_request_id, type, security_origin, have_permission);
 }
 
 void MediaStreamDispatcherHost::OnCancelEnumerateDevices(

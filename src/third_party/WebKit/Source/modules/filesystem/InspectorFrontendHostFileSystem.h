@@ -6,7 +6,6 @@
 #define InspectorFrontendHostFileSystem_h
 
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -16,7 +15,7 @@ class InspectorFrontendHost;
 
 class InspectorFrontendHostFileSystem {
 public:
-    static PassRefPtrWillBeRawPtr<DOMFileSystem> isolatedFileSystem(InspectorFrontendHost&, const String& fileSystemName, const String& rootURL);
+    static DOMFileSystem* isolatedFileSystem(InspectorFrontendHost&, const String& fileSystemName, const String& rootURL);
     static void upgradeDraggedFileSystemPermissions(InspectorFrontendHost&, DOMFileSystem*);
 private:
     InspectorFrontendHostFileSystem();

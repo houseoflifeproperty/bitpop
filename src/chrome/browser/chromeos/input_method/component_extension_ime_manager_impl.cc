@@ -6,10 +6,15 @@
 
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/path_service.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/common/chrome_paths.h"
+#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/extension_file_util.h"
+#include "chromeos/ime/extension_ime_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
@@ -28,62 +33,57 @@ struct WhitelistedComponentExtensionIME {
 } whitelisted_component_extension[] = {
   {
     // ChromeOS Hangul Input.
-    "bdgdidmhaijohebebipajioienkglgfo",
+    extension_ime_util::kHangulExtensionId,
     "/usr/share/chromeos-assets/input_methods/hangul",
   },
 #if defined(OFFICIAL_BUILD)
   {
     // Official Google XKB Input.
-    "jkghodnilhceideoidjikpgommlajknk",
+    extension_ime_util::kXkbExtensionId,
     "/usr/share/chromeos-assets/input_methods/google_xkb",
   },
   {
-    // Official Google Keyboards Input.
-    "habcdindjejkmepknlhkkloncjcpcnbf",
-    "/usr/share/chromeos-assets/input_methods/google_keyboards",
-  },
-  {
-    // Official Google Japanese Input.
-    "fpfbhcjppmaeaijcidgiibchfbnhbelj",
-    "/usr/share/chromeos-assets/input_methods/nacl_mozc",
-  },
-  {
     // Google input tools.
-    "gjaehgfemfahhmlgpdfknkhdnemmolop",
+    extension_ime_util::kT13nExtensionId,
     "/usr/share/chromeos-assets/input_methods/input_tools",
   },
 #else
   {
     // Open-sourced ChromeOS xkb extension.
-    "fgoepimhcoialccpbmpnnblemnepkkao",
+    extension_ime_util::kXkbExtensionId,
     "/usr/share/chromeos-assets/input_methods/xkb",
   },
   {
     // Open-sourced ChromeOS Keyboards extension.
-    "jhffeifommiaekmbkkjlpmilogcfdohp",
+    extension_ime_util::kM17nExtensionId,
     "/usr/share/chromeos-assets/input_methods/keyboard_layouts",
   },
   {
     // Open-sourced Pinyin Chinese Input Method.
-    "cpgalbafkoofkjmaeonnfijgpfennjjn",
+    extension_ime_util::kChinesePinyinExtensionId,
     "/usr/share/chromeos-assets/input_methods/pinyin",
   },
   {
     // Open-sourced Zhuyin Chinese Input Method.
-    "ekbifjdfhkmdeeajnolmgdlmkllopefi",
+    extension_ime_util::kChineseZhuyinExtensionId,
     "/usr/share/chromeos-assets/input_methods/zhuyin",
   },
   {
     // Open-sourced Cangjie Chinese Input Method.
-    "aeebooiibjahgpgmhkeocbeekccfknbj",
+    extension_ime_util::kChineseCangjieExtensionId,
     "/usr/share/chromeos-assets/input_methods/cangjie",
   },
   {
-    // Open-sourced Mozc Japanese Input.
-    "bbaiamgfapehflhememkfglaehiobjnk",
+    // Japanese Mozc Input.
+    extension_ime_util::kMozcExtensionId,
     "/usr/share/chromeos-assets/input_methods/nacl_mozc",
   },
 #endif
+  {
+    // Braille hardware keyboard IME that works together with ChromeVox.
+    extension_misc::kBrailleImeExtensionId,
+    extension_misc::kBrailleImeExtensionPath,
+  },
 };
 
 extensions::ComponentLoader* GetComponentLoader() {
@@ -284,6 +284,12 @@ void ComponentExtensionIMEManagerImpl::ReadComponentExtensionsInfo(
     component_ime.path = base::FilePath(
         whitelisted_component_extension[i].path);
 
+    if (!component_ime.path.IsAbsolute()) {
+      base::FilePath resources_path;
+      if (!PathService::Get(chrome::DIR_RESOURCES, &resources_path))
+        NOTREACHED();
+      component_ime.path = resources_path.Append(component_ime.path);
+    }
     const base::FilePath manifest_path =
         component_ime.path.Append("manifest.json");
 

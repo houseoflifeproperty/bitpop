@@ -21,23 +21,19 @@ namespace {
 // A Label with a constrained preferred size to demonstrate eliding or wrapping.
 class PreferredSizeLabel : public Label {
  public:
-  PreferredSizeLabel();
-  virtual ~PreferredSizeLabel();
+  PreferredSizeLabel() : Label() {
+    SetBorder(Border::CreateSolidBorder(2, SK_ColorCYAN));
+  }
+  virtual ~PreferredSizeLabel() {}
 
   // Label:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+    return gfx::Size(100, 40);
+  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PreferredSizeLabel);
 };
-
-PreferredSizeLabel::PreferredSizeLabel() : Label() {
-  SetBorder(Border::CreateSolidBorder(2, SK_ColorCYAN));
-}
-
-PreferredSizeLabel::~PreferredSizeLabel() {}
-
-gfx::Size PreferredSizeLabel::GetPreferredSize() { return gfx::Size(100, 40); }
 
 }  // namespace
 
@@ -66,14 +62,22 @@ void LabelExample::CreateExampleView(View* container) {
   label->SetEnabledColor(SK_ColorBLUE);
   container->AddChildView(label);
 
-  label = new Label(ASCIIToUTF16("A Courier-18 label with a shadow."));
+  label = new Label(ASCIIToUTF16("A Courier-18 label with shadows."));
   label->SetFontList(gfx::FontList("Courier, 18px"));
-  label->SetShadowColors(SK_ColorGRAY, SK_ColorLTGRAY);
-  label->SetShadowOffset(1, 1);
+  gfx::ShadowValues shadows(1, gfx::ShadowValue(gfx::Point(), 1, SK_ColorRED));
+  gfx::ShadowValue shadow(gfx::Point(2, 2), 0, SK_ColorGRAY);
+  shadows.push_back(shadow);
+  label->set_shadows(shadows);
   container->AddChildView(label);
 
   label = new PreferredSizeLabel();
   label->SetText(ASCIIToUTF16("A long label will elide toward its logical end "
+      "if the text's width exceeds the label's available width."));
+  container->AddChildView(label);
+
+  label = new PreferredSizeLabel();
+  label->SetElideBehavior(gfx::FADE_TAIL);
+  label->SetText(ASCIIToUTF16("Some long labels will fade, rather than elide, "
       "if the text's width exceeds the label's available width."));
   container->AddChildView(label);
 

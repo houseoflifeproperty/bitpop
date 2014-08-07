@@ -38,11 +38,11 @@ class GetMetadata : public Operation {
   virtual bool Execute(int request_id) OVERRIDE;
   virtual void OnSuccess(int request_id,
                          scoped_ptr<RequestValue> result,
-                         bool has_next) OVERRIDE;
+                         bool has_more) OVERRIDE;
   virtual void OnError(int request_id, base::File::Error error) OVERRIDE;
 
  private:
-  base::FilePath directory_path_;
+  base::FilePath entry_path_;
   const fileapi::AsyncFileUtil::GetFileInfoCallback callback_;
 
   DISALLOW_COPY_AND_ASSIGN(GetMetadata);

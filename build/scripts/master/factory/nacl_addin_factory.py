@@ -29,7 +29,7 @@ class NativeClientAddInFactory(gclient_factory.GClientFactory):
   NEEDED_COMPONENTS_INTERNAL = {
   }
 
-  def __init__(self, build_dir, target_platform=None, use_supplement=False,
+  def __init__(self, build_dir, target_platform=None,
                branch='trunk'):
     solutions = []
     self.target_platform = target_platform
@@ -78,10 +78,10 @@ class NativeClientAddInFactory(gclient_factory.GClientFactory):
 
 
 class NativeClientGameFactory(NativeClientAddInFactory):
-  def __init__(self, build_dir, target_platform=None, use_supplement=False,
+  def __init__(self, build_dir, target_platform=None,
              branch='trunk'):
     NativeClientAddInFactory.__init__(self, build_dir, target_platform,
-                                      use_supplement, branch)
+                                      branch)
 
   def NativeClientGameFactory(self, target='Release', clobber=True, tests=None,
                               mode=None, slave_type='BuilderTester',

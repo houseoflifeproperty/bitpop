@@ -32,15 +32,14 @@ class NamedNodeMap;
 
 class DocumentType FINAL : public Node {
 public:
-    static PassRefPtr<DocumentType> create(Document* document, const String& name, const String& publicId, const String& systemId)
+    static PassRefPtrWillBeRawPtr<DocumentType> create(Document* document, const String& name, const String& publicId, const String& systemId)
     {
-        return adoptRef(new DocumentType(document, name, publicId, systemId));
+        return adoptRefWillBeNoop(new DocumentType(document, name, publicId, systemId));
     }
 
     const String& name() const { return m_name; }
     const String& publicId() const { return m_publicId; }
     const String& systemId() const { return m_systemId; }
-    const String& internalSubset() const { return m_subset; }
 
 private:
     DocumentType(Document*, const String& name, const String& publicId, const String& systemId);
@@ -48,7 +47,7 @@ private:
     virtual KURL baseURI() const OVERRIDE;
     virtual String nodeName() const OVERRIDE;
     virtual NodeType nodeType() const OVERRIDE;
-    virtual PassRefPtr<Node> cloneNode(bool deep) OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep) OVERRIDE;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
     virtual void removedFrom(ContainerNode*) OVERRIDE;
@@ -56,7 +55,6 @@ private:
     String m_name;
     String m_publicId;
     String m_systemId;
-    String m_subset;
 };
 
 DEFINE_NODE_TYPE_CASTS(DocumentType, isDocumentTypeNode());

@@ -74,9 +74,18 @@ class TestBluetoothAdapter : public BluetoothAdapter {
       const ErrorCallback& error_callback) OVERRIDE {
   }
 
-  virtual void ReadLocalOutOfBandPairingData(
-      const BluetoothAdapter::BluetoothOutOfBandPairingDataCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE {
+  virtual void CreateRfcommService(
+      const BluetoothUUID& uuid,
+      int channel,
+      const CreateServiceCallback& callback,
+      const CreateServiceErrorCallback& error_callback) OVERRIDE {
+  }
+
+  virtual void CreateL2capService(
+      const BluetoothUUID& uuid,
+      int psm,
+      const CreateServiceCallback& callback,
+      const CreateServiceErrorCallback& error_callback) OVERRIDE {
   }
 
  protected:

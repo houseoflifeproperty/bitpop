@@ -10,6 +10,7 @@
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 namespace extensions {
 namespace sync_helper {
@@ -42,7 +43,7 @@ SyncType GetSyncType(const Extension* extension) {
   // TODO(akalin): Relax this restriction once we've put in UI to
   // approve synced extensions.
   if (PluginInfo::HasPlugins(extension) ||
-      extension->HasAPIPermission(APIPermission::kPlugin)) {
+      extension->permissions_data()->HasAPIPermission(APIPermission::kPlugin)) {
     return SYNC_TYPE_NONE;
   }
 
@@ -67,6 +68,9 @@ SyncType GetSyncType(const Extension* extension) {
     case Manifest::TYPE_THEME:
     case Manifest::TYPE_SHARED_MODULE:
       return SYNC_TYPE_NONE;
+
+    case Manifest::NUM_LOAD_TYPES:
+      NOTREACHED();
   }
   NOTREACHED();
   return SYNC_TYPE_NONE;
@@ -82,8 +86,7 @@ bool IsSyncable(const Extension* extension) {
   // apps, creates a new profile (which get default apps) and then enables sync
   // for it, then their profile everywhere gets the default apps.
   bool is_syncable = (extension->location() == Manifest::INTERNAL &&
-                      !extension->was_installed_by_default() &&
-                      !extension->is_ephemeral());
+                      !extension->was_installed_by_default());
   // Sync the chrome web store to maintain its position on the new tab page.
   is_syncable |= (extension->id() == extension_misc::kWebStoreAppId);
   // Sync the chrome component app to maintain its position on the app list.

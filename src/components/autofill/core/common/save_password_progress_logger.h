@@ -99,6 +99,8 @@ class SavePasswordProgressLogger {
     STRING_PASSWORD_FORM_REAPPEARED,
     STRING_SAVING_DISABLED,
     STRING_NO_MATCHING_FORM,
+    STRING_SSL_ERRORS_PRESENT,
+    STRING_ONLY_VISIBLE,
     STRING_INVALID,  // Represents a string returned in a case of an error.
     STRING_MAX = STRING_INVALID
   };
@@ -108,7 +110,7 @@ class SavePasswordProgressLogger {
 
   // Call these methods to log information. They sanitize the input and call
   // SendLog to pass it for display.
-  void LogPasswordForm(StringID label, const autofill::PasswordForm& form);
+  void LogPasswordForm(StringID label, const PasswordForm& form);
   void LogHTMLForm(StringID label,
                    const std::string& name_or_id,
                    const std::string& method,

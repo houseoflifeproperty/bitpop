@@ -102,15 +102,8 @@
                   }],
                   [ 'arm_version==7 or arm_version=="default"', {
                     'conditions': [
-                      [ 'arm_neon==1', {
-                        'cflags': ['-mfpu=neon',],
-                      },
-                      {
-                        'conditions': [
-                          [ 'arm_fpu!="default"', {
-                            'cflags': ['-mfpu=<(arm_fpu)',],
-                          }],
-                        ],
+                      [ 'arm_fpu!="default"', {
+                        'cflags': ['-mfpu=<(arm_fpu)',],
                       }],
                     ],
                   }],
@@ -153,10 +146,11 @@
                           'CAN_USE_VFP32DREGS',
                         ],
                       }],
-                      [ 'arm_fpu=="neon" or arm_neon==1', {
+                      [ 'arm_fpu=="neon"', {
                         'defines': [
                           'CAN_USE_VFP3_INSTRUCTIONS',
                           'CAN_USE_VFP32DREGS',
+                          'CAN_USE_NEON',
                         ],
                       }],
                     ],
@@ -190,15 +184,8 @@
                   }],
                   [ 'arm_version==7 or arm_version=="default"', {
                     'conditions': [
-                      [ 'arm_neon==1', {
-                        'cflags': ['-mfpu=neon',],
-                      },
-                      {
-                        'conditions': [
-                          [ 'arm_fpu!="default"', {
-                            'cflags': ['-mfpu=<(arm_fpu)',],
-                          }],
-                        ],
+                      [ 'arm_fpu!="default"', {
+                        'cflags': ['-mfpu=<(arm_fpu)',],
                       }],
                     ],
                   }],
@@ -215,6 +202,26 @@
                     'defines': [
                       'ARM_TEST',
                     ],
+                    'conditions': [
+                      [ 'arm_fpu=="vfpv3-d16"', {
+                        'defines': [
+                          'CAN_USE_VFP3_INSTRUCTIONS',
+                        ],
+                      }],
+                      [ 'arm_fpu=="vfpv3"', {
+                        'defines': [
+                          'CAN_USE_VFP3_INSTRUCTIONS',
+                          'CAN_USE_VFP32DREGS',
+                        ],
+                      }],
+                      [ 'arm_fpu=="neon"', {
+                        'defines': [
+                          'CAN_USE_VFP3_INSTRUCTIONS',
+                          'CAN_USE_VFP32DREGS',
+                          'CAN_USE_NEON',
+                        ],
+                      }],
+                    ],
                   }],
                 ],
               }, {
@@ -228,6 +235,8 @@
                       [ 'arm_fpu=="default"', {
                         'defines': [
                           'CAN_USE_VFP3_INSTRUCTIONS',
+                          'CAN_USE_VFP32DREGS',
+                          'CAN_USE_NEON',
                         ],
                       }],
                       [ 'arm_fpu=="vfpv3-d16"', {
@@ -241,10 +250,11 @@
                           'CAN_USE_VFP32DREGS',
                         ],
                       }],
-                      [ 'arm_fpu=="neon" or arm_neon==1', {
+                      [ 'arm_fpu=="neon"', {
                         'defines': [
                           'CAN_USE_VFP3_INSTRUCTIONS',
                           'CAN_USE_VFP32DREGS',
+                          'CAN_USE_NEON',
                         ],
                       }],
                     ],
@@ -278,6 +288,12 @@
           'V8_TARGET_ARCH_IA32',
         ],
       }],  # v8_target_arch=="ia32"
+      ['v8_target_arch=="x87"', {
+        'defines': [
+          'V8_TARGET_ARCH_X87',
+        ],
+        'cflags': ['-march=i586'],
+      }],  # v8_target_arch=="x87"
       ['v8_target_arch=="mips"', {
         'defines': [
           'V8_TARGET_ARCH_MIPS',
@@ -430,7 +446,7 @@
       }],
       ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris" \
          or OS=="netbsd" or OS=="mac" or OS=="android" or OS=="qnx") and \
-        (v8_target_arch=="arm" or v8_target_arch=="ia32" or \
+        (v8_target_arch=="arm" or v8_target_arch=="ia32" or v8_target_arch=="x87" or\
          v8_target_arch=="mips" or v8_target_arch=="mipsel")', {
         # Check whether the host compiler and target compiler support the
         # '-m32' option and set it if so.

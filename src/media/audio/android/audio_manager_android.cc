@@ -90,6 +90,11 @@ void AudioManagerAndroid::GetAudioInputDeviceNames(
   ScopedJavaLocalRef<jobjectArray> j_device_array =
       Java_AudioManagerAndroid_getAudioInputDeviceNames(
           env, j_audio_manager_.obj());
+  if (j_device_array.is_null()) {
+    // Most probable reason for a NULL result here is that the process lacks
+    // MODIFY_AUDIO_SETTINGS or RECORD_AUDIO permissions.
+    return;
+  }
   jsize len = env->GetArrayLength(j_device_array.obj());
   AudioDeviceName device;
   for (jsize i = 0; i < len; ++i) {
@@ -123,13 +128,18 @@ AudioParameters AudioManagerAndroid::GetInputStreamParameters(
   int buffer_size = Java_AudioManagerAndroid_getMinInputFrameSize(
       env, GetNativeOutputSampleRate(),
       ChannelLayoutToChannelCount(channel_layout));
+  buffer_size = buffer_size <= 0 ? kDefaultInputBufferSize : buffer_size;
   int effects = AudioParameters::NO_EFFECTS;
   effects |= Java_AudioManagerAndroid_shouldUseAcousticEchoCanceler(env) ?
       AudioParameters::ECHO_CANCELLER : AudioParameters::NO_EFFECTS;
+
+  int user_buffer_size = GetUserBufferSize();
+  if (user_buffer_size)
+    buffer_size = user_buffer_size;
+
   AudioParameters params(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, 0,
-      GetNativeOutputSampleRate(), 16,
-      buffer_size <= 0 ? kDefaultInputBufferSize : buffer_size, effects);
+      GetNativeOutputSampleRate(), 16, buffer_size, effects);
   return params;
 }
 

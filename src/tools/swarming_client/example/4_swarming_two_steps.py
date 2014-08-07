@@ -41,7 +41,7 @@ def main():
             '--isolate', os.path.join('payload', 'hello_world.isolate'),
             '--isolated', isolated,
             '--isolate-server', options.isolate_server,
-            '--config-variable', 'OS', options.isolate_os,
+            '--config-variable', 'OS', options.swarming_os,
           ], options.verbose)
       with open(isolated, 'rb') as f:
         hashval = hashlib.sha1(f.read()).hexdigest()
@@ -51,18 +51,19 @@ def main():
     # At this point, the temporary directory is not needed anymore.
     tempdir = None
 
-    task_name = common.unique_task_name()
     common.note('Running on %s' % options.swarming)
-    common.run(
-        [
-          'swarming.py',
-          'trigger',
-          '--swarming', options.swarming,
-          '--isolate-server', options.isolate_server,
-          '--dimension', 'os', options.swarming_os,
-          '--task-name', task_name,
-          hashval,
-        ], options.verbose)
+    cmd = [
+      'swarming.py',
+      'trigger',
+      '--swarming', options.swarming,
+      '--isolate-server', options.isolate_server,
+      '--dimension', 'os', options.swarming_os,
+      '--task-name', options.task_name,
+      hashval,
+    ]
+    if options.priority is not None:
+      cmd.extend(('--priority', str(options.priority)))
+    common.run(cmd, options.verbose)
 
     common.note('Getting results from %s' % options.swarming)
     common.run(
@@ -70,7 +71,7 @@ def main():
           'swarming.py',
           'collect',
           '--swarming', options.swarming,
-          task_name,
+          options.task_name,
         ], options.verbose)
     return 0
   except subprocess.CalledProcessError as e:

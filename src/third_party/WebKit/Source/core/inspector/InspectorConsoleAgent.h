@@ -25,9 +25,9 @@
 #ifndef InspectorConsoleAgent_h
 #define InspectorConsoleAgent_h
 
-#include "InspectorFrontend.h"
 #include "bindings/v8/ScriptState.h"
 #include "bindings/v8/ScriptString.h"
+#include "core/InspectorFrontend.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "core/frame/ConsoleTypes.h"
@@ -42,7 +42,7 @@ namespace WebCore {
 
 class ConsoleMessage;
 class DocumentLoader;
-class DOMWindow;
+class LocalDOMWindow;
 class LocalFrame;
 class InspectorFrontend;
 class InjectedScriptManager;
@@ -76,11 +76,11 @@ public:
     virtual void clearFrontend() OVERRIDE FINAL;
     virtual void restore() OVERRIDE FINAL;
 
-    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, ScriptState*, ScriptArguments*, unsigned long requestIdentifier = 0);
+    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>, unsigned long requestIdentifier = 0);
     void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, const String& scriptId, unsigned lineNumber, unsigned columnNumber = 0, ScriptState* = 0, unsigned long requestIdentifier = 0);
 
     // FIXME: Remove once we no longer generate stacks outside of Inspector.
-    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, ScriptCallStack*, unsigned long requestIdentifier = 0);
+    void addMessageToConsole(MessageSource, MessageType, MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack>, unsigned long requestIdentifier = 0);
 
     Vector<unsigned> consoleMessageArgumentCounts();
 
@@ -89,15 +89,15 @@ public:
     void consoleTimeline(ExecutionContext*, const String& title, ScriptState*);
     void consoleTimelineEnd(ExecutionContext*, const String& title, ScriptState*);
 
-    void consoleCount(ScriptState*, PassRefPtr<ScriptArguments>);
+    void consoleCount(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
 
-    void frameWindowDiscarded(DOMWindow*);
+    void frameWindowDiscarded(LocalDOMWindow*);
     void didCommitLoad(LocalFrame*, DocumentLoader*);
 
     void didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const AtomicString& method, const String& url, const String& sendURL, unsigned sendLineNumber);
     void didReceiveResourceResponse(LocalFrame*, unsigned long requestIdentifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
     void didFailLoading(unsigned long requestIdentifier, const ResourceError&);
-    void addProfileFinishedMessageToConsole(PassRefPtr<ScriptProfile>, unsigned lineNumber, const String& sourceURL);
+    void addProfileFinishedMessageToConsole(PassRefPtrWillBeRawPtr<ScriptProfile>, unsigned lineNumber, const String& sourceURL);
     void addStartProfilingMessageToConsole(const String& title, unsigned lineNumber, const String& sourceURL);
     virtual void setMonitoringXHREnabled(ErrorString*, bool enabled) OVERRIDE;
     virtual void addInspectedNode(ErrorString*, int nodeId) = 0;

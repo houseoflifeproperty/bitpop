@@ -18,11 +18,16 @@
 #include <libaddressinput/storage.h>
 #include <libaddressinput/util/scoped_ptr.h>
 
+#include <cstddef>
 #include <string>
 
 #include <gtest/gtest.h>
 
 #include "fake_storage.h"
+
+#define CHECKSUM "dd63dafcbd4d5b28badfcaf86fb6fcdb"
+#define DATA "{'foo': 'bar'}"
+#define OLD_TIMESTAMP "0"
 
 namespace {
 
@@ -31,6 +36,13 @@ using i18n::addressinput::FakeStorage;
 using i18n::addressinput::scoped_ptr;
 using i18n::addressinput::Storage;
 using i18n::addressinput::ValidatingStorage;
+
+const char kKey[] = "key";
+const char kValidatedData[] = DATA;
+const char kStaleWrappedData[] = "timestamp=" OLD_TIMESTAMP "\n"
+                                 "checksum=" CHECKSUM "\n"
+                                 DATA;
+const char kEmptyData[] = "";
 
 // Tests for ValidatingStorage object.
 class ValidatingStorageTest : public testing::Test  {
@@ -44,67 +56,81 @@ class ValidatingStorageTest : public testing::Test  {
 
   virtual ~ValidatingStorageTest() {}
 
-  Storage::Callback* BuildCallback() {
+  ValidatingStorage::Callback* BuildCallback() {
     return ::BuildCallback(this, &ValidatingStorageTest::OnDataReady);
   }
 
-  FakeStorage* const wrapped_storage_;  // Owned by |storage_|.
+  Storage* const wrapped_storage_;  // Owned by |storage_|.
   ValidatingStorage storage_;
   bool success_;
   std::string key_;
   std::string data_;
 
  private:
-  void OnDataReady(bool success,
-                   const std::string& key,
-                   const std::string& data) {
+  void OnDataReady(bool success, const std::string& key, std::string* data) {
+    ASSERT_FALSE(success && data == NULL);
     success_ = success;
     key_ = key;
-    data_ = data;
+    if (data != NULL) {
+      data_ = *data;
+      delete data;
+    }
   }
 };
 
-TEST_F(ValidatingStorageTest, Basic) {
-  storage_.Put("key", "value");
+TEST_F(ValidatingStorageTest, GoodData) {
+  storage_.Put(kKey, new std::string(kValidatedData));
 
-  scoped_ptr<Storage::Callback> callback(BuildCallback());
-  storage_.Get("key", *callback);
+  scoped_ptr<ValidatingStorage::Callback> callback(BuildCallback());
+  storage_.Get(kKey, *callback);
 
   EXPECT_TRUE(success_);
-  EXPECT_EQ("key", key_);
-  EXPECT_EQ("value", data_);
+  EXPECT_EQ(kKey, key_);
+  EXPECT_EQ(kValidatedData, data_);
 }
 
 TEST_F(ValidatingStorageTest, EmptyData) {
-  storage_.Put("key", std::string());
+  storage_.Put(kKey, new std::string(kEmptyData));
 
-  scoped_ptr<Storage::Callback> callback(BuildCallback());
-  storage_.Get("key", *callback);
+  scoped_ptr<ValidatingStorage::Callback> callback(BuildCallback());
+  storage_.Get(kKey, *callback);
 
   EXPECT_TRUE(success_);
-  EXPECT_EQ("key", key_);
-  EXPECT_TRUE(data_.empty());
+  EXPECT_EQ(kKey, key_);
+  EXPECT_EQ(kEmptyData, data_);
 }
 
 TEST_F(ValidatingStorageTest, MissingKey) {
-  scoped_ptr<Storage::Callback> callback(BuildCallback());
-  storage_.Get("key", *callback);
+  scoped_ptr<ValidatingStorage::Callback> callback(BuildCallback());
+  storage_.Get(kKey, *callback);
 
   EXPECT_FALSE(success_);
-  EXPECT_EQ("key", key_);
+  EXPECT_EQ(kKey, key_);
   EXPECT_TRUE(data_.empty());
 }
 
 TEST_F(ValidatingStorageTest, GarbageData) {
-  storage_.Put("key", "value");
-  wrapped_storage_->Put("key", "garbage");
+  storage_.Put(kKey, new std::string(kValidatedData));
+  wrapped_storage_->Put(kKey, new std::string("garbage"));
 
-  scoped_ptr<Storage::Callback> callback(BuildCallback());
-  storage_.Get("key", *callback);
+  scoped_ptr<ValidatingStorage::Callback> callback(BuildCallback());
+  storage_.Get(kKey, *callback);
 
   EXPECT_FALSE(success_);
-  EXPECT_EQ("key", key_);
+  EXPECT_EQ(kKey, key_);
   EXPECT_TRUE(data_.empty());
+}
+
+TEST_F(ValidatingStorageTest, StaleData) {
+  storage_.Put(kKey, new std::string(kValidatedData));
+  wrapped_storage_->Put(kKey, new std::string(kStaleWrappedData));
+
+  scoped_ptr<ValidatingStorage::Callback> callback(BuildCallback());
+  storage_.Get(kKey, *callback);
+
+  EXPECT_FALSE(success_);
+  EXPECT_EQ(kKey, key_);
+  EXPECT_EQ(kValidatedData, data_);
 }
 
 }  // namespace

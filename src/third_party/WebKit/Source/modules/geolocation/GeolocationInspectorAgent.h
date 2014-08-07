@@ -34,7 +34,7 @@
 
 #include "core/inspector/InspectorBaseAgent.h"
 #include "modules/geolocation/GeolocationPosition.h"
-#include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -46,7 +46,7 @@ typedef String ErrorString;
 class GeolocationInspectorAgent FINAL : public InspectorBaseAgent<GeolocationInspectorAgent>, public InspectorBackendDispatcher::GeolocationCommandHandler {
     WTF_MAKE_NONCOPYABLE(GeolocationInspectorAgent);
 public:
-    static PassOwnPtr<GeolocationInspectorAgent> create(GeolocationController*);
+    static PassOwnPtr<GeolocationInspectorAgent> create();
     virtual ~GeolocationInspectorAgent();
 
     // Protocol methods.
@@ -56,12 +56,16 @@ public:
     // Instrumentation method.
     GeolocationPosition* overrideGeolocationPosition(GeolocationPosition*);
 
+    void AddController(GeolocationController*);
+    void RemoveController(GeolocationController*);
+
 private:
-    explicit GeolocationInspectorAgent(GeolocationController*);
-    GeolocationController* m_controller;
+    GeolocationInspectorAgent();
+    typedef WillBeHeapHashSet<RawPtrWillBeMember<GeolocationController> > GeolocationControllers;
+    WillBePersistentHeapHashSet<RawPtrWillBeMember<GeolocationController> > m_controllers;
     bool m_geolocationOverridden;
-    RefPtrWillBePersistent<GeolocationPosition> m_geolocationPosition;
-    RefPtrWillBePersistent<GeolocationPosition> m_platformGeolocationPosition;
+    Persistent<GeolocationPosition> m_geolocationPosition;
+    Persistent<GeolocationPosition> m_platformGeolocationPosition;
 };
 
 

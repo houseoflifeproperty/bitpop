@@ -81,7 +81,6 @@ class WebLayer;
 namespace content {
 class InputRouter;
 class MockRenderWidgetHost;
-class OverscrollController;
 class RenderWidgetHostDelegate;
 class RenderWidgetHostViewBase;
 class SyntheticGestureController;
@@ -190,6 +189,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual gfx::Rect AccessibilityGetViewBounds() const OVERRIDE;
   virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
       const OVERRIDE;
+  virtual void AccessibilityHitTest(const gfx::Point& point) OVERRIDE;
   virtual void AccessibilityFatalError() OVERRIDE;
 
   const NativeWebKeyboardEvent* GetLastKeyboardEvent() const;
@@ -241,11 +241,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Noifies the RenderWidget of the current mouse cursor visibility state.
   void SendCursorVisibilityState(bool is_visible);
-
-  // Tells us whether the page is rendered directly via the GPU process.
-  bool is_accelerated_compositing_active() {
-    return is_accelerated_compositing_active_;
-  }
 
   // Notifies the RenderWidgetHost that the View was destroyed.
   void ViewDestroyed();
@@ -384,8 +379,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // perform an action. See OnUserGesture for more details.
   void StartUserGesture();
 
-  // Set the RenderView background.
-  void SetBackground(const SkBitmap& background);
+  // Set the RenderView background transparency.
+  void SetBackgroundOpaque(bool opaque);
 
   // Notifies the renderer that the next key event is bound to one or more
   // pre-defined edit commands
@@ -475,13 +470,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Update the renderer's cache of the screen rect of the view and window.
   void SendScreenRects();
-
-  OverscrollController* overscroll_controller() const {
-    return overscroll_controller_.get();
-  }
-
-  // Sets whether the overscroll controller should be enabled for this page.
-  void SetOverscrollControllerEnabled(bool enabled);
 
   // Suppreses future char events until a keydown. See
   // suppress_next_char_events_.
@@ -590,9 +578,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   int increment_in_flight_event_count() { return ++in_flight_event_count_; }
   int decrement_in_flight_event_count() { return --in_flight_event_count_; }
 
-  // Returns whether an overscroll gesture is in progress.
-  bool IsInOverscrollGesture() const;
-
   // The View associated with the RenderViewHost. The lifetime of this object
   // is associated with the lifetime of the Render process. If the Renderer
   // crashes, its View is destroyed and this pointer becomes NULL, even though
@@ -637,22 +622,20 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool OnSwapCompositorFrame(const IPC::Message& message);
   void OnFlingingStopped();
   void OnUpdateRect(const ViewHostMsg_UpdateRect_Params& params);
-  void OnUpdateIsDelayed();
   void OnQueueSyntheticGesture(const SyntheticGesturePacket& gesture_packet);
   virtual void OnFocus();
   virtual void OnBlur();
   void OnSetCursor(const WebCursor& cursor);
   void OnSetTouchEventEmulationEnabled(bool enabled, bool allow_pinch);
-  void OnTextInputTypeChanged(ui::TextInputType type,
-                              ui::TextInputMode input_mode,
-                              bool can_compose_inline);
+  void OnTextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params);
+
 #if defined(OS_MACOSX) || defined(USE_AURA)
   void OnImeCompositionRangeChanged(
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds);
 #endif
   void OnImeCancelComposition();
-  void OnDidActivateAcceleratedCompositing(bool activated);
   void OnLockMouse(bool user_gesture,
                    bool last_unlocked_by_target,
                    bool privileged);
@@ -690,8 +673,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void IncrementInFlightEventCount() OVERRIDE;
   virtual void DecrementInFlightEventCount() OVERRIDE;
   virtual void OnHasTouchEventHandlers(bool has_handlers) OVERRIDE;
-  virtual OverscrollController* GetOverscrollController() const OVERRIDE;
   virtual void DidFlush() OVERRIDE;
+  virtual void DidOverscroll(const DidOverscrollParams& params) OVERRIDE;
 
   // InputAckHandler
   virtual void OnKeyboardEventAck(const NativeWebKeyboardEvent& event,
@@ -738,9 +721,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Indicates whether a page is fullscreen or not.
   bool is_fullscreen_;
-
-  // True when a page is rendered directly via the GPU process.
-  bool is_accelerated_compositing_active_;
 
   // Set if we are waiting for a repaint ack for the view.
   bool repaint_ack_pending_;
@@ -820,12 +800,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Flag to detect recursive calls to GetBackingStore().
   bool in_get_backing_store_;
 
-  // Flag to trigger the GetBackingStore method to abort early.
-  bool abort_get_backing_store_;
-
-  // Set when we call DidPaintRect/DidScrollRect on the view.
-  bool view_being_painted_;
-
   // Used for UMA histogram logging to measure the time for a repaint view
   // operation to finish.
   base::TimeTicks repaint_start_time_;
@@ -879,8 +853,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Receives and handles all input events.
   scoped_ptr<InputRouter> input_router_;
-
-  scoped_ptr<OverscrollController> overscroll_controller_;
 
   scoped_ptr<TimeoutMonitor> hang_monitor_timeout_;
 

@@ -31,7 +31,7 @@
 #ifndef MIDIConnectionEvent_h
 #define MIDIConnectionEvent_h
 
-#include "core/events/Event.h"
+#include "modules/EventModules.h"
 #include "modules/webmidi/MIDIPort.h"
 
 namespace WebCore {
@@ -40,55 +40,29 @@ struct MIDIConnectionEventInit : public EventInit {
     MIDIConnectionEventInit()
         : port(nullptr)
     {
-    };
+    }
 
-    RefPtr<MIDIPort> port;
+    RefPtrWillBeMember<MIDIPort> port;
 };
 
 class MIDIConnectionEvent FINAL : public Event {
 public:
-    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create()
-    {
-        return adoptRefWillBeNoop(new MIDIConnectionEvent());
-    }
+    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create();
+    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create(const AtomicString&, PassRefPtrWillBeRawPtr<MIDIPort>);
+    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create(const AtomicString&, const MIDIConnectionEventInit&);
 
-    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create(const AtomicString& type, PassRefPtr<MIDIPort> port)
-    {
-        return adoptRefWillBeNoop(new MIDIConnectionEvent(type, port));
-    }
-
-    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create(const AtomicString& type, const MIDIConnectionEventInit& initializer)
-    {
-        return adoptRefWillBeNoop(new MIDIConnectionEvent(type, initializer));
-    }
-
-    RefPtr<MIDIPort> port() { return m_port; }
+    PassRefPtrWillBeRawPtr<MIDIPort> port() { return m_port; }
 
     virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::MIDIConnectionEvent; }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { Event::trace(visitor); }
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
-    MIDIConnectionEvent()
-    {
-        ScriptWrappable::init(this);
-    }
+    MIDIConnectionEvent();
+    MIDIConnectionEvent(const AtomicString&, PassRefPtrWillBeRawPtr<MIDIPort>);
+    MIDIConnectionEvent(const AtomicString&, const MIDIConnectionEventInit&);
 
-    MIDIConnectionEvent(const AtomicString& type, PassRefPtr<MIDIPort> port)
-        : Event(type, false, false)
-        , m_port(port)
-    {
-        ScriptWrappable::init(this);
-    }
-
-    MIDIConnectionEvent(const AtomicString& type, const MIDIConnectionEventInit& initializer)
-        : Event(type, initializer)
-        , m_port(initializer.port)
-    {
-        ScriptWrappable::init(this);
-    }
-
-    RefPtr<MIDIPort> m_port;
+    RefPtrWillBeMember<MIDIPort> m_port;
 };
 
 } // namespace WebCore

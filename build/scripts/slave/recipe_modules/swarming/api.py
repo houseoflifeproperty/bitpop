@@ -6,7 +6,7 @@ from slave import recipe_api
 
 
 # Minimally supported version of swarming.py script (reported by --version).
-MINIMAL_SWARMING_VERSION = (0, 4, 7)
+MINIMAL_SWARMING_VERSION = (0, 4, 8)
 
 
 # Platform name as provided by 'platform' module -> Swarming OS dimension.
@@ -24,7 +24,8 @@ PLATFORM_TO_OS_DIMENSION = {
 # being downloading the executable files. While it can be lowered, it'll stay in
 # the "few seconds" range due to the sheer size of the executables to map.
 # Anything not listed defaults to 1 shard.
-# TODO(vadimsh): Move this mapping somewhere else?
+# TODO(vadimsh): Get rid of this. chromium_trybot.py recipe is reading sharding
+# config from test spec in src/. Swarming canary builder should do the same.
 TESTS_SHARDS = {
   'browser_tests': 5,
   'interactive_ui_tests': 3,
@@ -182,14 +183,16 @@ class SwarmingApi(recipe_api.RecipeApi):
         extra_args=extra_args,
         collect_step_builder=self._default_collect_step)
 
-  def gtest_task(self, title, isolated_hash,
-                 make_unique=False, shards=None, extra_args=None):
+  def gtest_task(self, title, isolated_hash, make_unique=False, shards=None,
+                 test_launcher_summary_output=None, extra_args=None):
     """Returns SwarmingTask instance that represents some isolated gtest.
 
     Swarming recipe module knows how collect and interpret JSON files with test
-    execution summary produced by chromium test launcher.
+    execution summary produced by chromium test launcher. It will combine JSON
+    results from multiple shards and place it in path provided by
+    |test_launcher_summary_output| placeholder.
 
-    For meaning of the arguments see 'task' method.
+    For meaning of the rest of the arguments see 'task' method.
     """
     extra_args = list(extra_args or [])
 
@@ -206,7 +209,8 @@ class SwarmingApi(recipe_api.RecipeApi):
 
     # Make a task, configure it to be collected through shim script.
     task = self.task(title, isolated_hash, make_unique, shards, extra_args)
-    task.collect_step_builder = self._gtest_collect_step
+    task.collect_step_builder = lambda *args, **kwargs: (
+        self._gtest_collect_step(test_launcher_summary_output, *args, **kwargs))
     return task
 
   def check_client_version(self):
@@ -214,7 +218,7 @@ class SwarmingApi(recipe_api.RecipeApi):
     yield self.m.swarming_client.ensure_script_version(
         'swarming.py', MINIMAL_SWARMING_VERSION)
 
-  def trigger(self, tasks):
+  def trigger(self, tasks, **kwargs):
     """Asynchronously launches a set of tasks on Swarming.
 
     This steps justs posts the tasks and immediately returns. Use 'collect' to
@@ -222,6 +226,8 @@ class SwarmingApi(recipe_api.RecipeApi):
 
     Args:
       tasks: an enumerable of SwarmingTask instances.
+      kwargs: passed to recipe step constructor as-is, may contain
+        always_run, can_fail_build, etc.
     """
     # TODO(vadimsh): Trigger multiple tasks as a single step.
     assert all(isinstance(t, SwarmingTask) for t in tasks)
@@ -263,11 +269,12 @@ class SwarmingApi(recipe_api.RecipeApi):
       steps.append(self.m.python(
           name=self._get_step_name('trigger', task),
           script=self.m.swarming_client.path.join('swarming.py'),
-          args=args))
+          args=args,
+          **kwargs))
 
     return steps
 
-  def collect(self, tasks):
+  def collect(self, tasks, **kwargs):
     """Waits for a set of Swarming tasks to finish.
 
     Always waits for all task results. Failed tasks will be marked as such
@@ -277,6 +284,8 @@ class SwarmingApi(recipe_api.RecipeApi):
     Args:
       tasks: an enumerable of SwarmingTask instances. All of them should have
           been triggered previously with 'trigger' method.
+      kwargs: passed to recipe step constructor as-is, may contain
+        always_run, can_fail_build, followup_fn, etc.
     """
     # TODO(vadimsh): Implement "wait for any" to wait for first finished task.
     # TODO(vadimsh): Update |tasks| in-place with results of task execution.
@@ -287,25 +296,36 @@ class SwarmingApi(recipe_api.RecipeApi):
       assert task.task_id in self._pending_tasks, (
           'Trying to collect a task that was not triggered: %s' % task.task_id)
       self._pending_tasks.remove(task.task_id)
-      steps.append(task.collect_step_builder(task))
+      steps.append(task.collect_step_builder(task, **kwargs))
     return steps
 
-  def _default_collect_step(self, task):
+  def _default_collect_step(self, task, **kwargs):
     """Produces a step that collects a result of an arbitrary task."""
-    # Always wait for all tasks to finish even if some of them failed.
+    # By default wait for all tasks to finish even if some of them failed.
+    kwargs.setdefault('always_run', True)
     return self.m.python(
         name=self._get_step_name('swarming', task),
         script=self.m.swarming_client.path.join('swarming.py'),
         args=self._get_collect_cmd_args(task),
-        always_run=True)
+        **kwargs)
 
-  def _gtest_collect_step(self, task):
+  def _gtest_collect_step(self, merged_test_output, task, **kwargs):
     """Produces a step that collects and processes a result of gtest task."""
+    # By default wait for all tasks to finish even if some of them failed.
+    kwargs.setdefault('always_run', True)
+
     # Shim script's own arguments.
     args = [
       '--swarming-client-dir', self.m.swarming_client.path,
       '--temp-root-dir', self.m.path['tmp_base'],
     ]
+
+    # Where to put combined summary to, consumed by recipes. Also emit
+    # test expectation only if |merged_test_output| is really used.
+    step_test_data = None
+    if merged_test_output:
+      args.extend(['--merged-test-output', merged_test_output])
+      step_test_data = lambda: self.m.json.test_api.canned_gtest_output(True)
 
     # Arguments for actual 'collect' command.
     args.append('--')
@@ -317,8 +337,9 @@ class SwarmingApi(recipe_api.RecipeApi):
         name=self._get_step_name('swarming', task),
         script=self.resource('collect_gtest_task.py'),
         args=args,
-        always_run=True,
-        allow_subannotations=True)
+        allow_subannotations=True,
+        step_test_data=step_test_data,
+        **kwargs)
 
   def _get_step_name(self, prefix, task):
     """SwarmingTask -> name of a step of a waterfall.
@@ -346,6 +367,7 @@ class SwarmingApi(recipe_api.RecipeApi):
     args = [
       'collect',
       '--swarming', self.swarming_server,
+      '--shards', str(task.shards),
       '--decorate',
       '--print-status-updates',
     ]
@@ -387,7 +409,8 @@ class SwarmingTask(object):
       suffix: string suffix to append to task ID.
       extra_args: list of command line arguments to pass to isolated tasks.
       collect_step_builder: callback that will be called to generate recipe step
-          that collects and processes results of task execution.
+          that collects and processes results of task execution, signature is
+          collect_step_builder(task, **step_kwargs).
     """
     assert 'os' in dimensions
     self.title = title

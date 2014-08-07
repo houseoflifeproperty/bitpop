@@ -128,6 +128,7 @@ void CommandBufferProxyImpl::SetChannelErrorCallback(
 }
 
 bool CommandBufferProxyImpl::Initialize() {
+  TRACE_EVENT0("gpu", "CommandBufferProxyImpl::Initialize");
   shared_state_shm_.reset(channel_->factory()->AllocateSharedMemory(
       sizeof(*shared_state())).release());
   if (!shared_state_shm_)
@@ -440,15 +441,6 @@ void CommandBufferProxyImpl::SetSurfaceVisible(bool visible) {
   Send(new GpuCommandBufferMsg_SetSurfaceVisible(route_id_, visible));
 }
 
-void CommandBufferProxyImpl::SendManagedMemoryStats(
-    const gpu::ManagedMemoryStats& stats) {
-  if (last_state_.error != gpu::error::kNoError)
-    return;
-
-  Send(new GpuCommandBufferMsg_SendClientManagedMemoryStats(route_id_,
-                                                            stats));
-}
-
 bool CommandBufferProxyImpl::ProduceFrontBuffer(const gpu::Mailbox& mailbox) {
   if (last_state_.error != gpu::error::kNoError)
     return false;
@@ -458,12 +450,16 @@ bool CommandBufferProxyImpl::ProduceFrontBuffer(const gpu::Mailbox& mailbox) {
 
 scoped_ptr<media::VideoDecodeAccelerator>
 CommandBufferProxyImpl::CreateVideoDecoder() {
+  if (!channel_)
+    return scoped_ptr<media::VideoDecodeAccelerator>();
   return scoped_ptr<media::VideoDecodeAccelerator>(
       new GpuVideoDecodeAcceleratorHost(channel_, this));
 }
 
 scoped_ptr<media::VideoEncodeAccelerator>
 CommandBufferProxyImpl::CreateVideoEncoder() {
+  if (!channel_)
+    return scoped_ptr<media::VideoEncodeAccelerator>();
   return scoped_ptr<media::VideoEncodeAccelerator>(
       new GpuVideoEncodeAcceleratorHost(channel_, this));
 }

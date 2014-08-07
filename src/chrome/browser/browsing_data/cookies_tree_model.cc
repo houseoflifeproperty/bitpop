@@ -72,8 +72,8 @@ std::string CanonicalizeHost(const GURL& url) {
   // "google.com".
 
   if (url.SchemeIsFile()) {
-    return std::string(content::kFileScheme) +
-           content::kStandardSchemeSeparator;
+    return std::string(url::kFileScheme) +
+           url::kStandardSchemeSeparator;
   }
 
   std::string host = url.host();
@@ -559,7 +559,7 @@ CookieTreeNode::DetailedInfo CookieTreeRootNode::GetDetailedInfo() const {
 // static
 base::string16 CookieTreeHostNode::TitleForUrl(const GURL& url) {
   const std::string file_origin_node_name(
-      std::string(content::kFileScheme) + content::kStandardSchemeSeparator);
+      std::string(url::kFileScheme) + url::kStandardSchemeSeparator);
   return base::UTF8ToUTF16(url.SchemeIsFile() ? file_origin_node_name
                                               : url.host());
 }
@@ -583,7 +583,7 @@ CookieTreeHostNode::~CookieTreeHostNode() {}
 
 const std::string CookieTreeHostNode::GetHost() const {
   const std::string file_origin_node_name(
-      std::string(content::kFileScheme) + content::kStandardSchemeSeparator);
+      std::string(url::kFileScheme) + url::kStandardSchemeSeparator);
   return url_.SchemeIsFile() ? file_origin_node_name : url_.host();
 }
 
@@ -883,12 +883,12 @@ CookiesTreeModel::~CookiesTreeModel() {
 // Returns the set of icons for the nodes in the tree. You only need override
 // this if you don't want to use the default folder icons.
 void CookiesTreeModel::GetIcons(std::vector<gfx::ImageSkia>* icons) {
-  icons->push_back(*ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-      IDR_DEFAULT_FAVICON));
-  icons->push_back(*ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-      IDR_COOKIE_ICON));
-  icons->push_back(*ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-      IDR_COOKIE_STORAGE_ICON));
+  icons->push_back(*ResourceBundle::GetSharedInstance().GetNativeImageNamed(
+      IDR_DEFAULT_FAVICON).ToImageSkia());
+  icons->push_back(*ResourceBundle::GetSharedInstance().GetNativeImageNamed(
+      IDR_COOKIE_ICON).ToImageSkia());
+  icons->push_back(*ResourceBundle::GetSharedInstance().GetNativeImageNamed(
+      IDR_COOKIE_STORAGE_ICON).ToImageSkia());
 }
 
 // Returns the index of the icon to use for |node|. Return -1 to use the
@@ -1089,7 +1089,7 @@ void CookiesTreeModel::PopulateCookieInfoWithFilter(
 
       // We treat secure cookies just the same as normal ones.
       source_string = std::string(url::kHttpScheme) +
-          content::kStandardSchemeSeparator + domain + "/";
+          url::kStandardSchemeSeparator + domain + "/";
     }
 
     GURL source(source_string);
@@ -1236,7 +1236,7 @@ void CookiesTreeModel::PopulateServerBoundCertInfoWithFilter(
       // Domain Bound Cert.  Make a valid URL to satisfy the
       // CookieTreeRootNode::GetOrCreateHostNode interface.
       origin = GURL(std::string(url::kHttpsScheme) +
-          content::kStandardSchemeSeparator +
+          url::kStandardSchemeSeparator +
           cert_info->server_identifier() + "/");
     }
     base::string16 title = CookieTreeHostNode::TitleForUrl(origin);

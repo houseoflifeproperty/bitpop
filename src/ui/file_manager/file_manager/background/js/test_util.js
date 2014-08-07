@@ -53,9 +53,6 @@ test.util.async.openMainWindow = function(appState, callback) {
 /**
  * Obtains window information.
  *
- * @param {string} appIdPrefix ID prefix of the requested window.
- * @param {function(Array.<{innerWidth:number, innerHeight:number}>)} callback
- *     Completion callback with the window information.
  * @return {Object.<string, {innerWidth:number, innerHeight:number}>} Map window
  *     ID and window information.
  */
@@ -66,6 +63,12 @@ test.util.sync.getWindows = function() {
     windows[id] = {
       innerWidth: windowWrapper.contentWindow.innerWidth,
       innerHeight: windowWrapper.contentWindow.innerHeight
+    };
+  }
+  for (var id in background.dialogs) {
+    windows[id] = {
+      innerWidth: background.dialogs[id].innerWidth,
+      innerHeight: background.dialogs[id].innerHeight
     };
   }
   return windows;
@@ -352,12 +355,22 @@ test.util.sync.sendEvent = function(
  *
  * @param {Window} contentWindow Window to be tested.
  * @param {string} targetQuery Query to specify the element.
- * @param {string} event Type of event.
+ * @param {string} eventType Type of event.
+ * @param {Object=} opt_additionalProperties Object contaning additional
+ *     properties.
  * @return {boolean} True if the event is sent to the target, false otherwise.
  */
-test.util.sync.fakeEvent = function(contentWindow, targetQuery, event) {
-  return test.util.sync.sendEvent(
-      contentWindow, targetQuery, new Event(event));
+test.util.sync.fakeEvent = function(contentWindow,
+                                    targetQuery,
+                                    eventType,
+                                    opt_additionalProperties) {
+  var event = new Event(eventType, opt_additionalProperties || {});
+  if (opt_additionalProperties) {
+    for (var name in opt_additionalProperties) {
+      event[name] = opt_additionalProperties[name];
+    }
+  }
+  return test.util.sync.sendEvent(contentWindow, targetQuery, event);
 };
 
 /**
@@ -407,6 +420,24 @@ test.util.sync.fakeMouseClick = function(
   var resultClick = test.util.sync.sendEvent(
       contentWindow, targetQuery, clickEvent, opt_iframeQuery);
   return resultMouseOver && resultMouseDown && resultMouseUp && resultClick;
+};
+
+/**
+ * Simulates a fake mouse click (right button, single click) on the element
+ * specified by |targetQuery|.
+ *
+ * @param {Window} contentWindow Window to be tested.
+ * @param {string} targetQuery Query to specify the element.
+ * @param {string=} opt_iframeQuery Optional iframe selector.
+ * @return {boolean} True if the event is sent to the target, false
+ *     otherwise.
+ */
+test.util.sync.fakeMouseRightClick = function(
+    contentWindow, targetQuery, opt_iframeQuery) {
+  var contextMenuEvent = new MouseEvent('contextmenu', {bubbles: true});
+  var result = test.util.sync.sendEvent(
+      contentWindow, targetQuery, contextMenuEvent, opt_iframeQuery);
+  return result;
 };
 
 /**
@@ -573,9 +604,16 @@ test.util.sync.overrideTasks = function(contentWindow, taskList) {
     test.util.executedTasks_.push(taskId);
   };
 
+  var setDefaultTask = function(taskId) {
+    for (var i = 0; i < taskList.length; i++) {
+      taskList[i].isDefault = taskList[i].taskId === taskId;
+    }
+  };
+
   test.util.executedTasks_ = [];
   contentWindow.chrome.fileBrowserPrivate.getFileTasks = getFileTasks;
   contentWindow.chrome.fileBrowserPrivate.executeTask = executeTask;
+  contentWindow.chrome.fileBrowserPrivate.setDefaultTask = setDefaultTask;
   return true;
 };
 
@@ -649,11 +687,14 @@ test.util.registerRemoteTestUtils = function() {
     // Prepare arguments.
     var args = request.args.slice();  // shallow copy
     if (request.appId) {
-      if (!background.appWindows[request.appId]) {
+      if (background.appWindows[request.appId]) {
+        args.unshift(background.appWindows[request.appId].contentWindow);
+      } else if (background.dialogs[request.appId]) {
+        args.unshift(background.dialogs[request.appId]);
+      } else {
         console.error('Specified window not found: ' + request.appId);
         return false;
       }
-      args.unshift(background.appWindows[request.appId].contentWindow);
     }
     // Call the test utility function and respond the result.
     if (test.util.async[request.func]) {

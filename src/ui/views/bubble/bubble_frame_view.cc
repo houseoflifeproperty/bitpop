@@ -163,6 +163,10 @@ void BubbleFrameView::UpdateWindowTitle() {
   ResetWindowControls();
 }
 
+void BubbleFrameView::SetTitleFontList(const gfx::FontList& font_list) {
+  title_->SetFontList(font_list);
+}
+
 gfx::Insets BubbleFrameView::GetInsets() const {
   gfx::Insets insets = content_margins_;
   const int title_height = title_->text().empty() ? 0 :
@@ -172,11 +176,11 @@ gfx::Insets BubbleFrameView::GetInsets() const {
   return insets;
 }
 
-gfx::Size BubbleFrameView::GetPreferredSize() {
+gfx::Size BubbleFrameView::GetPreferredSize() const {
   return GetSizeForClientSize(GetWidget()->client_view()->GetPreferredSize());
 }
 
-gfx::Size BubbleFrameView::GetMinimumSize() {
+gfx::Size BubbleFrameView::GetMinimumSize() const {
   return GetSizeForClientSize(GetWidget()->client_view()->GetMinimumSize());
 }
 
@@ -346,7 +350,8 @@ void BubbleFrameView::OffsetArrowIfOffScreen(const gfx::Rect& anchor_rect,
     SchedulePaint();
 }
 
-gfx::Size BubbleFrameView::GetSizeForClientSize(const gfx::Size& client_size) {
+gfx::Size BubbleFrameView::GetSizeForClientSize(
+    const gfx::Size& client_size) const {
   // Accommodate the width of the title bar elements.
   int title_bar_width = GetInsets().width() + border()->GetInsets().width();
   if (!title_->text().empty())

@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/editing/DeleteSelectionCommand.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/NodeTraversal.h"
@@ -163,6 +163,10 @@ void DeleteSelectionCommand::initializePositionData()
 {
     Position start, end;
     initializeStartEnd(start, end);
+
+    ASSERT(isEditablePosition(start, ContentIsEditable, DoNotUpdateStyle));
+    if (!isEditablePosition(end, ContentIsEditable, DoNotUpdateStyle))
+        end = lastEditablePositionBeforePositionInRoot(end, highestEditableRoot(start));
 
     m_upstreamStart = start.upstream();
     m_downstreamStart = start.downstream();
@@ -327,7 +331,7 @@ static Position firstEditablePositionInNode(Node* node)
     return next ? firstPositionInOrBeforeNode(next) : Position();
 }
 
-void DeleteSelectionCommand::removeNode(PassRefPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
+void DeleteSelectionCommand::removeNode(PassRefPtrWillBeRawPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
 {
     if (!node)
         return;
@@ -339,9 +343,9 @@ void DeleteSelectionCommand::removeNode(PassRefPtr<Node> node, ShouldAssumeConte
             if (!node->firstChild())
                 return;
             // Search this non-editable region for editable regions to empty.
-            RefPtr<Node> child = node->firstChild();
+            RefPtrWillBeRawPtr<Node> child = node->firstChild();
             while (child) {
-                RefPtr<Node> nextChild = child->nextSibling();
+                RefPtrWillBeRawPtr<Node> nextChild = child->nextSibling();
                 removeNode(child.get(), shouldAssumeContentIsAlwaysEditable);
                 // Bail if nextChild is no longer node's child.
                 if (nextChild && nextChild->parentNode() != node)
@@ -405,7 +409,7 @@ static void updatePositionForTextRemoval(Node* node, int offset, int count, Posi
         position.moveToOffset(offset);
 }
 
-void DeleteSelectionCommand::deleteTextFromNode(PassRefPtr<Text> node, unsigned offset, unsigned count)
+void DeleteSelectionCommand::deleteTextFromNode(PassRefPtrWillBeRawPtr<Text> node, unsigned offset, unsigned count)
 {
     // FIXME: Update the endpoints of the range being deleted.
     updatePositionForTextRemoval(node.get(), offset, count, m_endingPosition);
@@ -419,12 +423,12 @@ void DeleteSelectionCommand::deleteTextFromNode(PassRefPtr<Text> node, unsigned 
 void DeleteSelectionCommand::makeStylingElementsDirectChildrenOfEditableRootToPreventStyleLoss()
 {
     RefPtrWillBeRawPtr<Range> range = m_selectionToDelete.toNormalizedRange();
-    RefPtr<Node> node = range->firstNode();
+    RefPtrWillBeRawPtr<Node> node = range->firstNode();
     while (node && node != range->pastLastNode()) {
-        RefPtr<Node> nextNode = NodeTraversal::next(*node);
+        RefPtrWillBeRawPtr<Node> nextNode = NodeTraversal::next(*node);
         if ((isHTMLStyleElement(*node) && !(toElement(node)->hasAttribute(scopedAttr))) || isHTMLLinkElement(*node)) {
             nextNode = NodeTraversal::nextSkippingChildren(*node);
-            RefPtr<ContainerNode> rootEditableElement = node->rootEditableElement();
+            RefPtrWillBeRawPtr<ContainerNode> rootEditableElement = node->rootEditableElement();
             if (rootEditableElement.get()) {
                 removeNode(node);
                 appendNode(node, rootEditableElement);
@@ -487,7 +491,7 @@ void DeleteSelectionCommand::handleGeneralDelete()
     else {
         bool startNodeWasDescendantOfEndNode = m_upstreamStart.deprecatedNode()->isDescendantOf(m_downstreamEnd.deprecatedNode());
         // The selection to delete spans more than one node.
-        RefPtr<Node> node(startNode);
+        RefPtrWillBeRawPtr<Node> node(startNode);
 
         if (startOffset > 0) {
             if (startNode->isTextNode()) {
@@ -509,7 +513,7 @@ void DeleteSelectionCommand::handleGeneralDelete()
                 // NodeTraversal::nextSkippingChildren just blew past the end position, so stop deleting
                 node = nullptr;
             } else if (!m_downstreamEnd.deprecatedNode()->isDescendantOf(node.get())) {
-                RefPtr<Node> nextNode = NodeTraversal::nextSkippingChildren(*node);
+                RefPtrWillBeRawPtr<Node> nextNode = NodeTraversal::nextSkippingChildren(*node);
                 // if we just removed a node from the end container, update end position so the
                 // check above will work
                 updatePositionForNodeRemoval(m_downstreamEnd, *node);
@@ -675,7 +679,7 @@ void DeleteSelectionCommand::removePreviouslySelectedEmptyTableRows()
     if (m_endTableRow && m_endTableRow->inDocument() && m_endTableRow != m_startTableRow) {
         Node* row = m_endTableRow->previousSibling();
         while (row && row != m_startTableRow) {
-            RefPtr<Node> previousRow = row->previousSibling();
+            RefPtrWillBeRawPtr<Node> previousRow = row->previousSibling();
             if (isTableRowEmpty(row))
                 // Use a raw removeNode, instead of DeleteSelectionCommand's, because
                 // that won't remove rows, it only empties them in preparation for this function.
@@ -688,7 +692,7 @@ void DeleteSelectionCommand::removePreviouslySelectedEmptyTableRows()
     if (m_startTableRow && m_startTableRow->inDocument() && m_startTableRow != m_endTableRow) {
         Node* row = m_startTableRow->nextSibling();
         while (row && row != m_endTableRow) {
-            RefPtr<Node> nextRow = row->nextSibling();
+            RefPtrWillBeRawPtr<Node> nextRow = row->nextSibling();
             if (isTableRowEmpty(row))
                 CompositeEditCommand::removeNode(row);
             row = nextRow.get();
@@ -832,7 +836,7 @@ void DeleteSelectionCommand::doApply()
         m_needPlaceholder = hasPlaceholder && lineBreakBeforeStart && !lineBreakAtEndOfSelectionToDelete;
     }
 
-    RefPtr<Node> placeholder = m_needPlaceholder ? createBreakElement(document()).get() : 0;
+    RefPtrWillBeRawPtr<Node> placeholder = m_needPlaceholder ? createBreakElement(document()) : nullptr;
 
     if (placeholder) {
         if (m_sanitizeMarkup)
@@ -862,6 +866,28 @@ EditAction DeleteSelectionCommand::editingAction() const
 bool DeleteSelectionCommand::preservesTypingStyle() const
 {
     return m_typingStyle;
+}
+
+void DeleteSelectionCommand::trace(Visitor* visitor)
+{
+    visitor->trace(m_selectionToDelete);
+    visitor->trace(m_upstreamStart);
+    visitor->trace(m_downstreamStart);
+    visitor->trace(m_upstreamEnd);
+    visitor->trace(m_downstreamEnd);
+    visitor->trace(m_endingPosition);
+    visitor->trace(m_leadingWhitespace);
+    visitor->trace(m_trailingWhitespace);
+    visitor->trace(m_startBlock);
+    visitor->trace(m_endBlock);
+    visitor->trace(m_typingStyle);
+    visitor->trace(m_deleteIntoBlockquoteStyle);
+    visitor->trace(m_startRoot);
+    visitor->trace(m_endRoot);
+    visitor->trace(m_startTableRow);
+    visitor->trace(m_endTableRow);
+    visitor->trace(m_temporaryPlaceholder);
+    CompositeEditCommand::trace(visitor);
 }
 
 } // namespace WebCore

@@ -7,7 +7,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/test_tools/quic_test_utils.h"
-#include "net/tools/epoll_server/epoll_server.h"
 #include "net/tools/quic/quic_client_session.h"
 #include "net/tools/quic/quic_spdy_client_stream.h"
 #include "net/tools/quic/spdy_utils.h"
@@ -17,8 +16,8 @@
 
 using net::test::DefaultQuicConfig;
 using net::test::SupportedVersions;
-using testing::TestWithParam;
 using testing::StrictMock;
+using testing::TestWithParam;
 
 namespace net {
 namespace tools {
@@ -45,7 +44,11 @@ class QuicSpdyClientStreamTest : public TestWithParam<QuicVersion> {
     // New streams rely on having the peer's flow control receive window
     // negotiated in the config.
     session_.config()->SetInitialFlowControlWindowToSend(
-        kInitialFlowControlWindowForTest);
+        kInitialSessionFlowControlWindowForTest);
+    session_.config()->SetInitialStreamFlowControlWindowToSend(
+        kInitialStreamFlowControlWindowForTest);
+    session_.config()->SetInitialSessionFlowControlWindowToSend(
+        kInitialSessionFlowControlWindowForTest);
     stream_.reset(new QuicSpdyClientStream(3, &session_));
   }
 

@@ -127,4 +127,3 @@ remoting.HostInstallDialog.prototype.onRetryClicked_ = function() {
       'click', this.onCancelClickedHandler_, false);
   remoting.setMode(remoting.AppMode.HOST_INSTALL_PROMPT);
 };
-

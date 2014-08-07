@@ -71,18 +71,9 @@ public:
 
     virtual GrRenderTarget* accessRenderTarget() SK_OVERRIDE;
 
-    // overrides from SkBaseDevice
-    virtual int width() const SK_OVERRIDE {
-        return NULL == fRenderTarget ? 0 : fRenderTarget->width();
+    virtual SkImageInfo imageInfo() const SK_OVERRIDE {
+        return fRenderTarget ? fRenderTarget->info() : SkImageInfo::MakeUnknown();
     }
-    virtual int height() const SK_OVERRIDE {
-        return NULL == fRenderTarget ? 0 : fRenderTarget->height();
-    }
-    virtual bool isOpaque() const SK_OVERRIDE {
-        return NULL == fRenderTarget ? false
-                                     : kRGB_565_GrPixelConfig == fRenderTarget->config();
-    }
-    virtual SkBitmap::Config config() const SK_OVERRIDE;
 
     virtual void clear(SkColor color) SK_OVERRIDE;
     virtual void drawPaint(const SkDraw&, const SkPaint& paint) SK_OVERRIDE;
@@ -150,11 +141,11 @@ protected:
     virtual bool onWritePixels(const SkImageInfo&, const void*, size_t, int, int) SK_OVERRIDE;
 
     /**  PRIVATE / EXPERIMENTAL -- do not call */
-    virtual void EXPERIMENTAL_optimize(SkPicture* picture) SK_OVERRIDE;
+    virtual void EXPERIMENTAL_optimize(const SkPicture* picture) SK_OVERRIDE;
     /**  PRIVATE / EXPERIMENTAL -- do not call */
-    virtual void EXPERIMENTAL_purge(SkPicture* picture) SK_OVERRIDE;
+    virtual void EXPERIMENTAL_purge(const SkPicture* picture) SK_OVERRIDE;
     /**  PRIVATE / EXPERIMENTAL -- do not call */
-    virtual bool EXPERIMENTAL_drawPicture(SkCanvas* canvas, SkPicture* picture) SK_OVERRIDE;
+    virtual bool EXPERIMENTAL_drawPicture(SkCanvas* canvas, const SkPicture* picture) SK_OVERRIDE;
 
 private:
     GrContext*      fContext;
@@ -208,7 +199,8 @@ private:
                             const GrTextureParams& params,
                             const SkPaint& paint,
                             SkCanvas::DrawBitmapRectFlags flags,
-                            bool bicubic);
+                            bool bicubic,
+                            bool needsTextureDomain);
     void drawTiledBitmap(const SkBitmap& bitmap,
                          const SkRect& srcRect,
                          const SkIRect& clippedSrcRect,
@@ -217,6 +209,8 @@ private:
                          SkCanvas::DrawBitmapRectFlags flags,
                          int tileSize,
                          bool bicubic);
+
+    bool drawDashLine(const SkPoint pts[2], const SkPaint& paint);
 
     static SkPicture::AccelData::Key ComputeAccelDataKey();
 

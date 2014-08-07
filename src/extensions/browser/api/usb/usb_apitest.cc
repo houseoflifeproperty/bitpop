@@ -19,6 +19,7 @@ using usb_service::UsbConfigDescriptor;
 using usb_service::UsbDevice;
 using usb_service::UsbDeviceHandle;
 using usb_service::UsbEndpointDirection;
+using usb_service::UsbInterfaceDescriptor;
 using usb_service::UsbService;
 using usb_service::UsbTransferCallback;
 
@@ -27,7 +28,9 @@ namespace {
 ACTION_TEMPLATE(InvokeUsbTransferCallback,
                 HAS_1_TEMPLATE_PARAMS(int, k),
                 AND_1_VALUE_PARAMS(p1)) {
-  ::std::tr1::get<k>(args).Run(p1, new net::IOBuffer(1), 1);
+  net::IOBuffer* io_buffer = new net::IOBuffer(1);
+  memset(io_buffer->data(), 0, 1);  // Avoid uninitialized reads.
+  ::std::tr1::get<k>(args).Run(p1, io_buffer, 1);
 }
 
 // MSVC erroneously thinks that at least one of the arguments for the transfer
@@ -83,16 +86,29 @@ class MockUsbDeviceHandle : public UsbDeviceHandle {
                     const UsbTransferCallback& callback));
 
   MOCK_METHOD0(ResetDevice, bool());
+  MOCK_METHOD1(ClaimInterface, bool(const int interface_number));
+  MOCK_METHOD1(ReleaseInterface, bool(const int interface_number));
+  MOCK_METHOD2(SetInterfaceAlternateSetting,
+               bool(const int interface_number, const int alternate_setting));
+  MOCK_METHOD1(GetSerial, bool(base::string16* serial));
+
+  virtual scoped_refptr<UsbDevice> GetDevice() const OVERRIDE {
+    return device_;
+  }
 
   void set_device(UsbDevice* device) { device_ = device; }
 
  protected:
+  UsbDevice* device_;
+
   virtual ~MockUsbDeviceHandle() {}
 };
 
 class MockUsbConfigDescriptor : public UsbConfigDescriptor {
  public:
   MOCK_CONST_METHOD0(GetNumInterfaces, size_t());
+  MOCK_CONST_METHOD1(GetInterface,
+                     scoped_refptr<const UsbInterfaceDescriptor>(size_t index));
 
  protected:
   virtual ~MockUsbConfigDescriptor() {}

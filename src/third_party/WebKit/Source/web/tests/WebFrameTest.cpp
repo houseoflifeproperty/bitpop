@@ -32,10 +32,9 @@
 
 #include "public/web/WebFrame.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "SkBitmap.h"
 #include "SkCanvas.h"
-#include "UserAgentStyleSheets.h"
+#include "core/UserAgentStyleSheets.h"
 #include "core/clipboard/Clipboard.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/css/resolver/ViewportStyleResolver.h"
@@ -57,6 +56,8 @@
 #include "core/rendering/RenderView.h"
 #include "core/rendering/TextAutosizer.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
+#include "platform/DragImage.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/network/ResourceError.h"
@@ -149,14 +150,13 @@ protected:
         OwnPtrWillBeRawPtr<WebCore::RuleSet> ruleSet = WebCore::RuleSet::create();
         ruleSet->addRulesFromSheet(styleSheet.get(), WebCore::MediaQueryEvaluator("screen"));
 
-        Document* document = webViewHelper->webViewImpl()->page()->mainFrame()->document();
+        Document* document = toLocalFrame(webViewHelper->webViewImpl()->page()->mainFrame())->document();
         document->ensureStyleResolver().viewportStyleResolver()->collectViewportRules(ruleSet.get(), WebCore::ViewportStyleResolver::UserAgentOrigin);
         document->ensureStyleResolver().viewportStyleResolver()->resolve();
     }
 
     static void configueCompositingWebView(WebSettings* settings)
     {
-        settings->setForceCompositingMode(true);
         settings->setAcceleratedCompositingEnabled(true);
         settings->setAcceleratedCompositingForFixedPositionEnabled(true);
         settings->setAcceleratedCompositingForOverflowScrollEnabled(true);
@@ -168,6 +168,17 @@ protected:
         webViewHelper->initializeAndLoad(url, true);
         webViewHelper->webView()->settings()->setDefaultFontSize(12);
         webViewHelper->webView()->resize(WebSize(640, 480));
+    }
+
+    PassOwnPtr<WebCore::DragImage> nodeImageTestSetup(FrameTestHelpers::WebViewHelper* webViewHelper, const std::string& testcase)
+    {
+        registerMockedHttpURLLoad("nodeimage.html");
+        webViewHelper->initializeAndLoad(m_baseURL + "nodeimage.html");
+        webViewHelper->webView()->resize(WebSize(640, 480));
+        webViewHelper->webView()->layout();
+        RefPtr<WebCore::LocalFrame> frame = toLocalFrame(webViewHelper->webViewImpl()->page()->mainFrame());
+        WebCore::Element* element = frame->document()->getElementById(testcase.c_str());
+        return frame->nodeImage(*element);
     }
 
     std::string m_baseURL;
@@ -294,13 +305,7 @@ TEST_F(WebFrameTest, LocationSetHostWithMissingPort)
     // Setting host to "hostname:" should be treated as "hostname:0".
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), "javascript:location.host = 'www.test.com:'; void 0;");
 
-    runPendingTasks();
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
-
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), "javascript:document.body.textContent = location.href; void 0;");
-    // Required to see any updates in contentAsText.
-    runPendingTasks();
-    webViewHelper.webView()->layout();
 
     std::string content = webViewHelper.webView()->mainFrame()->contentAsText(1024).utf8();
     EXPECT_EQ("http://www.test.com:0/" + fileName, content);
@@ -319,13 +324,7 @@ TEST_F(WebFrameTest, LocationSetEmptyPort)
 
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), "javascript:location.port = ''; void 0;");
 
-    runPendingTasks();
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
-
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), "javascript:document.body.textContent = location.href; void 0;");
-    // Required to see any updates in contentAsText.
-    runPendingTasks();
-    webViewHelper.webView()->layout();
 
     std::string content = webViewHelper.webView()->mainFrame()->contentAsText(1024).utf8();
     EXPECT_EQ("http://www.test.com:0/" + fileName, content);
@@ -384,10 +383,9 @@ protected:
         return m_client.m_matchedSelectors[m_frame];
     }
 
-    void loadHTML(const WebData& html)
+    void loadHTML(const std::string& html)
     {
-        m_frame->loadHTMLString(html, toKURL("about:blank"));
-        runPendingTasks();
+        FrameTestHelpers::loadHTMLString(m_frame, html, toKURL("about:blank"));
     }
 
     void executeScript(const WebString& code)
@@ -634,7 +632,7 @@ TEST_F(WebFrameTest, PostMessageThenDetach)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad("about:blank");
 
-    RefPtr<WebCore::LocalFrame> frame = webViewHelper.webViewImpl()->page()->mainFrame();
+    RefPtr<WebCore::LocalFrame> frame = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame());
     WebCore::NonThrowableExceptionState exceptionState;
     frame->domWindow()->postMessage(WebCore::SerializedScriptValue::create("message"), 0, "*", frame->domWindow(), exceptionState);
     webViewHelper.reset();
@@ -690,7 +688,7 @@ TEST_F(WebFrameTest, FrameViewNeedsLayoutOnFixedLayoutResize)
 static bool checkOrSetTextAutosizingMultiplier(Document* document, float multiplier, bool setMultiplier)
 {
     bool multiplierCheckedOrSetAtLeastOnce = false;
-    for (WebCore::RenderObject* renderer = document->renderer(); renderer; renderer = renderer->nextInPreOrder()) {
+    for (WebCore::RenderObject* renderer = document->renderView(); renderer; renderer = renderer->nextInPreOrder()) {
         if (renderer->style()) {
             if (setMultiplier)
                 renderer->style()->setTextAutosizingMultiplier(multiplier);
@@ -724,7 +722,7 @@ TEST_F(WebFrameTest, ChangeInFixedLayoutResetsTextAutosizingMultipliers)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "fixed_layout.html", true, 0, &client, enableViewportSettings);
 
-    WebCore::Document* document = webViewHelper.webViewImpl()->page()->mainFrame()->document();
+    WebCore::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
     document->settings()->setTextAutosizingEnabled(true);
     EXPECT_TRUE(document->settings()->textAutosizingEnabled());
     webViewHelper.webViewImpl()->resize(WebSize(viewportWidth, viewportHeight));
@@ -754,7 +752,7 @@ TEST_F(WebFrameTest, SetFrameRectInvalidatesTextAutosizingMultipliers)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "iframe_reload.html", true, 0, &client, enableViewportSettings);
 
-    WebCore::LocalFrame* mainFrame = webViewHelper.webViewImpl()->page()->mainFrame();
+    WebCore::LocalFrame* mainFrame = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame());
     WebCore::Document* document = mainFrame->document();
     WebCore::FrameView* frameView = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
     document->settings()->setTextAutosizingEnabled(true);
@@ -762,17 +760,21 @@ TEST_F(WebFrameTest, SetFrameRectInvalidatesTextAutosizingMultipliers)
     webViewHelper.webViewImpl()->resize(WebSize(viewportWidth, viewportHeight));
     webViewHelper.webViewImpl()->layout();
 
-    for (WebCore::LocalFrame* frame = mainFrame; frame; frame = frame->tree().traverseNext()) {
-        EXPECT_TRUE(setTextAutosizingMultiplier(frame->document(), 2));
-        for (WebCore::RenderObject* renderer = frame->document()->renderer(); renderer; renderer = renderer->nextInPreOrder()) {
+    for (WebCore::Frame* frame = mainFrame; frame; frame = frame->tree().traverseNext()) {
+        if (!frame->isLocalFrame())
+            continue;
+        EXPECT_TRUE(setTextAutosizingMultiplier(toLocalFrame(frame)->document(), 2));
+        for (WebCore::RenderObject* renderer = toLocalFrame(frame)->document()->renderView(); renderer; renderer = renderer->nextInPreOrder()) {
             if (renderer->isText())
                 EXPECT_FALSE(renderer->needsLayout());
         }
     }
 
     frameView->setFrameRect(WebCore::IntRect(0, 0, 200, 200));
-    for (WebCore::LocalFrame* frame = mainFrame; frame; frame = frame->tree().traverseNext()) {
-        for (WebCore::RenderObject* renderer = frame->document()->renderer(); renderer; renderer = renderer->nextInPreOrder()) {
+    for (WebCore::Frame* frame = mainFrame; frame; frame = frame->tree().traverseNext()) {
+        if (!frame->isLocalFrame())
+            continue;
+        for (WebCore::RenderObject* renderer = toLocalFrame(frame)->document()->renderView(); renderer; renderer = renderer->nextInPreOrder()) {
             if (renderer->isText())
                 EXPECT_TRUE(renderer->needsLayout());
         }
@@ -796,8 +798,8 @@ TEST_F(WebFrameTest, FixedLayoutSizeStopsResizeFromChangingLayoutSize)
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
     webViewHelper.webView()->layout();
 
-    EXPECT_EQ(fixedLayoutWidth, webViewHelper.webViewImpl()->page()->mainFrame()->view()->layoutSize().width());
-    EXPECT_EQ(fixedLayoutHeight, webViewHelper.webViewImpl()->page()->mainFrame()->view()->layoutSize().height());
+    EXPECT_EQ(fixedLayoutWidth, toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->view()->layoutSize().width());
+    EXPECT_EQ(fixedLayoutHeight, toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->view()->layoutSize().height());
 }
 
 TEST_F(WebFrameTest, FixedLayoutSizePreventsResizeFromChangingPageScale)
@@ -1039,7 +1041,7 @@ TEST_F(WebFrameTest, DelayedViewportInitialScale)
 
     EXPECT_EQ(0.25f, webViewHelper.webView()->pageScaleFactor());
 
-    WebCore::Document* document = webViewHelper.webViewImpl()->page()->mainFrame()->document();
+    WebCore::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
     WebCore::ViewportDescription description = document->viewportDescription();
     description.zoom = 2;
     document->setViewportDescription(description);
@@ -1384,7 +1386,6 @@ TEST_F(WebFrameTest, WideViewportAndWideContentWithInitialScale)
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "wide_document_width_viewport.html");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
     int wideDocumentWidth = 800;
@@ -1411,7 +1412,6 @@ TEST_F(WebFrameTest, WideViewportQuirkClobbersHeight)
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "viewport-height-1000.html");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
     EXPECT_EQ(800, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().height());
@@ -1436,7 +1436,6 @@ TEST_F(WebFrameTest, LayoutSize320Quirk)
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "viewport/viewport-30.html");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
     EXPECT_EQ(600, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().width());
@@ -1445,7 +1444,7 @@ TEST_F(WebFrameTest, LayoutSize320Quirk)
 
     // The magic number to snap to device-width is 320, so test that 321 is
     // respected.
-    WebCore::Document* document = webViewHelper.webViewImpl()->page()->mainFrame()->document();
+    WebCore::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
     WebCore::ViewportDescription description = document->viewportDescription();
     description.minWidth = WebCore::Length(321, WebCore::Fixed);
     description.maxWidth = WebCore::Length(321, WebCore::Fixed);
@@ -1487,7 +1486,6 @@ TEST_F(WebFrameTest, ZeroValuesQuirk)
     webViewHelper.webView()->settings()->setWideViewportQuirkEnabled(true);
     webViewHelper.webView()->settings()->setViewportMetaLayoutSizeQuirk(true);
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "viewport-zero-values.html");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
     EXPECT_EQ(viewportWidth, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().width());
@@ -1511,7 +1509,6 @@ TEST_F(WebFrameTest, OverflowHiddenDisablesScrolling)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initialize(true, 0, &client);
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "body-overflow-hidden.html");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
     WebCore::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
@@ -1531,7 +1528,6 @@ TEST_F(WebFrameTest, IgnoreOverflowHiddenQuirk)
     webViewHelper.initialize(true, 0, &client);
     webViewHelper.webView()->settings()->setIgnoreMainFrameOverflowHiddenQuirk(true);
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "body-overflow-hidden.html");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
     WebCore::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
@@ -1554,7 +1550,6 @@ TEST_F(WebFrameTest, NonZeroValuesNoQuirk)
     webViewHelper.webView()->settings()->setViewportMetaZeroValuesQuirk(true);
     webViewHelper.webView()->settings()->setWideViewportQuirkEnabled(true);
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "viewport-nonzero-values.html");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     webViewHelper.webView()->resize(WebSize(viewportWidth, viewportHeight));
 
     EXPECT_EQ(viewportWidth / expectedPageScaleFactor, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->layoutSize().width());
@@ -1611,21 +1606,6 @@ TEST_F(WebFrameTest, setPageScaleFactorWithOverlayScrollbarsDoesNotLayout)
 
 }
 
-TEST_F(WebFrameTest, setPageScaleFactorBeforeFrameHasView)
-{
-    registerMockedHttpURLLoad("fixed_layout.html");
-
-    float pageScaleFactor = 3;
-    FrameTestHelpers::WebViewHelper webViewHelper;
-    webViewHelper.initializeAndLoad("about:html", true, 0, 0);
-    webViewHelper.webView()->setPageScaleFactor(pageScaleFactor);
-
-    FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "fixed_layout.html");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
-    WebCore::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
-    EXPECT_EQ(pageScaleFactor, view->visibleContentScaleFactor());
-}
-
 TEST_F(WebFrameTest, pageScaleFactorWrittenToHistoryItem)
 {
     UseMockScrollbarSettings mockScrollbarSettings;
@@ -1642,7 +1622,7 @@ TEST_F(WebFrameTest, pageScaleFactorWrittenToHistoryItem)
     webViewHelper.webView()->layout();
 
     webViewHelper.webView()->setPageScaleFactor(3);
-    EXPECT_EQ(3, webViewHelper.webViewImpl()->page()->mainFrame()->loader().currentItem()->pageScaleFactor());
+    EXPECT_EQ(3, toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->loader().currentItem()->pageScaleFactor());
 }
 
 TEST_F(WebFrameTest, initialScaleWrittenToHistoryItem)
@@ -1662,7 +1642,7 @@ TEST_F(WebFrameTest, initialScaleWrittenToHistoryItem)
 
     int defaultFixedLayoutWidth = 980;
     float minimumPageScaleFactor = viewportWidth / (float) defaultFixedLayoutWidth;
-    EXPECT_EQ(minimumPageScaleFactor, webViewHelper.webViewImpl()->page()->mainFrame()->loader().currentItem()->pageScaleFactor());
+    EXPECT_EQ(minimumPageScaleFactor, toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->loader().currentItem()->pageScaleFactor());
 }
 
 TEST_F(WebFrameTest, pageScaleFactorShrinksViewport)
@@ -1717,7 +1697,7 @@ TEST_F(WebFrameTest, pageScaleFactorDoesNotApplyCssTransform)
 
     webViewHelper.webView()->setPageScaleFactor(2);
 
-    EXPECT_EQ(980, webViewHelper.webViewImpl()->page()->mainFrame()->contentRenderer()->unscaledDocumentRect().width());
+    EXPECT_EQ(980, toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->contentRenderer()->unscaledDocumentRect().width());
     EXPECT_EQ(980, webViewHelper.webViewImpl()->mainFrameImpl()->frameView()->contentsSize().width());
 }
 
@@ -2022,7 +2002,7 @@ protected:
             webViewHelper.webViewImpl()->mainFrame()->setScrollOffset(scrollOffset);
 
             WebCore::IntPoint anchorPoint = WebCore::IntPoint(scrollOffset) + WebCore::IntPoint(viewportSize.width / 2, 0);
-            RefPtr<WebCore::Node> anchorNode = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->eventHandler().hitTestResultAtPoint(anchorPoint, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent).innerNode();
+            RefPtrWillBeRawPtr<WebCore::Node> anchorNode = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->eventHandler().hitTestResultAtPoint(anchorPoint, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent).innerNode();
             ASSERT(anchorNode);
 
             pageScaleFactor = webViewHelper.webViewImpl()->pageScaleFactor();
@@ -2197,10 +2177,9 @@ TEST_F(WebFrameTest, updateOverlayScrollbarLayers)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initialize(true, 0, fakeCompositingWebViewClient.get(), &configueCompositingWebView);
 
+    webViewHelper.webView()->setPageScaleFactorLimits(1, 1);
     webViewHelper.webView()->resize(WebSize(viewWidth, viewHeight));
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "large-div.html");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
-    webViewHelper.webView()->layout();
 
     WebCore::FrameView* view = webViewHelper.webViewImpl()->mainFrameImpl()->frameView();
     EXPECT_TRUE(view->renderView()->compositor()->layerForHorizontalScrollbar());
@@ -2682,10 +2661,27 @@ TEST_F(WebFrameTest, ReloadDoesntSetRedirect)
     webViewHelper.initializeAndLoad(m_baseURL + "form.html", false, &webFrameClient);
 
     webViewHelper.webView()->mainFrame()->reload(true);
-    // start reload before request is delivered.
-    webViewHelper.webView()->mainFrame()->reload(true);
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    // start another reload before request is delivered.
+    FrameTestHelpers::reloadFrameIgnoringCache(webViewHelper.webView()->mainFrame());
 }
+
+class ReloadWithOverrideURLTask : public WebThread::Task {
+public:
+    ReloadWithOverrideURLTask(WebFrame* frame, const WebCore::KURL& url, bool ignoreCache)
+        : m_frame(frame), m_url(url), m_ignoreCache(ignoreCache)
+    {
+    }
+
+    virtual void run() OVERRIDE
+    {
+        m_frame->reloadWithOverrideURL(m_url, m_ignoreCache);
+    }
+
+private:
+    WebFrame* const m_frame;
+    const WebCore::KURL m_url;
+    const bool m_ignoreCache;
+};
 
 TEST_F(WebFrameTest, ReloadWithOverrideURLPreservesState)
 {
@@ -2710,14 +2706,16 @@ TEST_F(WebFrameTest, ReloadWithOverrideURLPreservesState)
     float previousScale = webViewHelper.webViewImpl()->pageScaleFactor();
 
     // Reload the page using the cache.
-    webViewHelper.webViewImpl()->mainFrame()->reloadWithOverrideURL(toKURL(m_baseURL + secondURL), false);
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    Platform::current()->currentThread()->postTask(
+        new ReloadWithOverrideURLTask(webViewHelper.webViewImpl()->mainFrame(), toKURL(m_baseURL + secondURL), false));
+    FrameTestHelpers::pumpPendingRequestsDoNotUse(webViewHelper.webViewImpl()->mainFrame());
     ASSERT_EQ(previousOffset, webViewHelper.webViewImpl()->mainFrame()->scrollOffset());
     ASSERT_EQ(previousScale, webViewHelper.webViewImpl()->pageScaleFactor());
 
     // Reload the page while ignoring the cache.
-    webViewHelper.webViewImpl()->mainFrame()->reloadWithOverrideURL(toKURL(m_baseURL + thirdURL), true);
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    Platform::current()->currentThread()->postTask(
+        new ReloadWithOverrideURLTask(webViewHelper.webViewImpl()->mainFrame(), toKURL(m_baseURL + thirdURL), true));
+    FrameTestHelpers::pumpPendingRequestsDoNotUse(webViewHelper.webViewImpl()->mainFrame());
     ASSERT_EQ(previousOffset, webViewHelper.webViewImpl()->mainFrame()->scrollOffset());
     ASSERT_EQ(previousScale, webViewHelper.webViewImpl()->pageScaleFactor());
 }
@@ -2730,11 +2728,12 @@ TEST_F(WebFrameTest, ReloadWhileProvisional)
 
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initialize();
-    FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "fixed_layout.html");
+    WebURLRequest request;
+    request.initialize();
+    request.setURL(toKURL(m_baseURL + "fixed_layout.html"));
+    webViewHelper.webView()->mainFrame()->loadRequest(request);
     // start reload before first request is delivered.
-    webViewHelper.webView()->mainFrame()->reload(true);
-
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    FrameTestHelpers::reloadFrameIgnoringCache(webViewHelper.webView()->mainFrame());
 
     WebDataSource* dataSource = webViewHelper.webView()->mainFrame()->dataSource();
     ASSERT_TRUE(dataSource);
@@ -2767,7 +2766,8 @@ TEST_F(WebFrameTest, IframeRedirect)
 
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "iframe_redirect.html", true);
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests(); // Load the iframe.
+    // Pump pending requests one more time. The test page loads script that navigates.
+    FrameTestHelpers::pumpPendingRequestsDoNotUse(webViewHelper.webView()->mainFrame());
 
     WebFrame* iframe = webViewHelper.webView()->findFrameByName(WebString::fromUTF8("ifr"));
     ASSERT_TRUE(iframe);
@@ -2908,8 +2908,7 @@ TEST_F(WebFrameTest, ContextNotificationsReload)
     webViewHelper.initializeAndLoad(m_baseURL + "context_notifications_test.html", true, &webFrameClient);
 
     // Refresh, we should get two release notifications and two more create notifications.
-    webViewHelper.webView()->mainFrame()->reload(false);
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    FrameTestHelpers::reloadFrame(webViewHelper.webView()->mainFrame());
     ASSERT_EQ(4u, webFrameClient.createNotifications.size());
     ASSERT_EQ(2u, webFrameClient.releaseNotifications.size());
 
@@ -3047,8 +3046,7 @@ TEST_F(WebFrameTest, GetContentAsPlainText)
     // Generate a simple test case.
     const char simpleSource[] = "<div>Foo bar</div><div></div>baz";
     WebCore::KURL testURL = toKURL("about:blank");
-    frame->loadHTMLString(simpleSource, testURL);
-    runPendingTasks();
+    FrameTestHelpers::loadHTMLString(frame, simpleSource, testURL);
 
     // Make sure it comes out OK.
     const std::string expected("Foo bar\nbaz");
@@ -3062,14 +3060,12 @@ TEST_F(WebFrameTest, GetContentAsPlainText)
 
     // Now do a new test with a subframe.
     const char outerFrameSource[] = "Hello<iframe></iframe> world";
-    frame->loadHTMLString(outerFrameSource, testURL);
-    runPendingTasks();
+    FrameTestHelpers::loadHTMLString(frame, outerFrameSource, testURL);
 
     // Load something into the subframe.
     WebFrame* subframe = frame->firstChild();
     ASSERT_TRUE(subframe);
-    subframe->loadHTMLString("sub<p>text", testURL);
-    runPendingTasks();
+    FrameTestHelpers::loadHTMLString(subframe, "sub<p>text", testURL);
 
     text = frame->contentAsText(std::numeric_limits<size_t>::max());
     EXPECT_EQ("Hello world\n\nsub\ntext", text.utf8());
@@ -3089,8 +3085,7 @@ TEST_F(WebFrameTest, GetFullHtmlOfPage)
     // Generate a simple test case.
     const char simpleSource[] = "<p>Hello</p><p>World</p>";
     WebCore::KURL testURL = toKURL("about:blank");
-    frame->loadHTMLString(simpleSource, testURL);
-    runPendingTasks();
+    FrameTestHelpers::loadHTMLString(frame, simpleSource, testURL);
 
     WebString text = frame->contentAsText(std::numeric_limits<size_t>::max());
     EXPECT_EQ("Hello\n\nWorld", text.utf8());
@@ -3098,8 +3093,7 @@ TEST_F(WebFrameTest, GetFullHtmlOfPage)
     const std::string html = frame->contentAsMarkup().utf8();
 
     // Load again with the output html.
-    frame->loadHTMLString(WebData(html.c_str(), html.length()), testURL);
-    runPendingTasks();
+    FrameTestHelpers::loadHTMLString(frame, html, testURL);
 
     EXPECT_EQ(html, frame->contentAsMarkup().utf8());
 
@@ -3132,8 +3126,7 @@ TEST_F(WebFrameTest, ExecuteScriptDuringDidCreateScriptContext)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "hello_world.html", true, &webFrameClient);
 
-    webViewHelper.webView()->mainFrame()->reload();
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    FrameTestHelpers::reloadFrame(webViewHelper.webView()->mainFrame());
 }
 
 class FindUpdateWebFrameClient : public FrameTestHelpers::TestWebFrameClient {
@@ -3435,6 +3428,37 @@ TEST_F(WebFrameTest, FindDetachFrameWhileScopingStrings)
     EXPECT_TRUE(client.findResultsAreReady());
 
     holdSecondFrame.release();
+}
+
+TEST_F(WebFrameTest, ResetMatchCount)
+{
+    registerMockedHttpURLLoad("find_in_generated_frame.html");
+
+    FindUpdateWebFrameClient client;
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    webViewHelper.initializeAndLoad(m_baseURL + "find_in_generated_frame.html", true, &client);
+    webViewHelper.webView()->resize(WebSize(640, 480));
+    webViewHelper.webView()->layout();
+    runPendingTasks();
+
+    static const char* kFindString = "result";
+    static const int kFindIdentifier = 12345;
+
+    WebFindOptions options;
+    WebString searchText = WebString::fromUTF8(kFindString);
+    WebLocalFrameImpl* mainFrame = toWebLocalFrameImpl(webViewHelper.webView()->mainFrame());
+
+    // Check that child frame exists.
+    EXPECT_TRUE(!!mainFrame->traverseNext(false));
+
+    for (WebFrame* frame = mainFrame; frame; frame = frame->traverseNext(false)) {
+        EXPECT_FALSE(frame->find(kFindIdentifier, searchText, options, false, 0));
+    }
+
+    runPendingTasks();
+    EXPECT_FALSE(client.findResultsAreReady());
+
+    mainFrame->resetMatchCount();
 }
 
 TEST_F(WebFrameTest, SetTickmarks)
@@ -4068,7 +4092,6 @@ public:
     virtual void didFailProvisionalLoad(WebLocalFrame* frame, const WebURLError& error)
     {
         frame->loadHTMLString("This should appear", toKURL("data:text/html,chromewebdata"), error.unreachableURL, true);
-        runPendingTasks();
     }
 
     virtual void didCommitProvisionalLoad(WebLocalFrame* frame, const WebHistoryItem&, WebHistoryCommitType)
@@ -4089,7 +4112,6 @@ TEST_F(WebFrameTest, ReplaceNavigationAfterHistoryNavigation)
 
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad("about:blank", true, &webFrameClient);
-    runPendingTasks();
     WebFrame* frame = webViewHelper.webView()->mainFrame();
 
     // Load a url as a history navigation that will return an error. TestSubstituteDataWebFrameClient
@@ -4109,8 +4131,7 @@ TEST_F(WebFrameTest, ReplaceNavigationAfterHistoryNavigation)
     errorHistoryItem.initialize();
     errorHistoryItem.setURLString(WebString::fromUTF8(errorURL.c_str(), errorURL.length()));
     Platform::current()->unitTestSupport()->registerMockedErrorURL(URLTestHelpers::toKURL(errorURL), response, error);
-    frame->loadHistoryItem(errorHistoryItem, WebHistoryDifferentDocumentLoad, WebURLRequest::UseProtocolCachePolicy);
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    FrameTestHelpers::loadHistoryItem(frame, errorHistoryItem, WebHistoryDifferentDocumentLoad, WebURLRequest::UseProtocolCachePolicy);
 
     WebString text = frame->contentAsText(std::numeric_limits<size_t>::max());
     EXPECT_EQ("This should appear", text.utf8());
@@ -4536,7 +4557,6 @@ TEST_F(WebFrameTest, DidAccessInitialDocumentViaJavascriptUrl)
 
     // Access the initial document from a javascript: URL.
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), "javascript:document.body.appendChild(document.createTextNode('Modified'))");
-    runPendingTasks();
     EXPECT_TRUE(webFrameClient.m_didAccessInitialDocument);
 }
 
@@ -4769,7 +4789,7 @@ TEST_F(WebFrameTest, SimulateFragmentAnchorMiddleClick)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "fragment_middle_click.html", true, &client);
 
-    WebCore::Document* document = webViewHelper.webViewImpl()->page()->mainFrame()->document();
+    WebCore::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
     WebCore::KURL destination = document->url();
     destination.setFragmentIdentifier("test");
 
@@ -4777,7 +4797,7 @@ TEST_F(WebFrameTest, SimulateFragmentAnchorMiddleClick)
         document->domWindow(), 0, 0, 0, 0, 0, 0, 0, false, false, false, false, 1, nullptr, nullptr);
     WebCore::FrameLoadRequest frameRequest(document, WebCore::ResourceRequest(destination));
     frameRequest.setTriggeringEvent(event);
-    webViewHelper.webViewImpl()->page()->mainFrame()->loader().load(frameRequest);
+    toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->loader().load(frameRequest);
 }
 
 class TestNewWindowWebViewClient : public FrameTestHelpers::TestWebViewClient {
@@ -4819,7 +4839,7 @@ TEST_F(WebFrameTest, ModifiedClickNewWindow)
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "ctrl_click.html", true, &webFrameClient, &webViewClient);
 
-    WebCore::Document* document = webViewHelper.webViewImpl()->page()->mainFrame()->document();
+    WebCore::Document* document = toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document();
     WebCore::KURL destination = toKURL(m_baseURL + "hello_world.html");
 
     // ctrl+click event
@@ -4828,7 +4848,8 @@ TEST_F(WebFrameTest, ModifiedClickNewWindow)
     WebCore::FrameLoadRequest frameRequest(document, WebCore::ResourceRequest(destination));
     frameRequest.setTriggeringEvent(event);
     WebCore::UserGestureIndicator gesture(WebCore::DefinitelyProcessingUserGesture);
-    webViewHelper.webViewImpl()->page()->mainFrame()->loader().load(frameRequest);
+    toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->loader().load(frameRequest);
+    FrameTestHelpers::pumpPendingRequestsDoNotUse(webViewHelper.webView()->mainFrame());
 
     // decidePolicyForNavigation should be called both for the original request and the ctrl+click.
     EXPECT_EQ(2, webFrameClient.decidePolicyCallCount());
@@ -4846,15 +4867,12 @@ TEST_F(WebFrameTest, BackToReload)
 
     registerMockedHttpURLLoad("white-1x1.png");
     FrameTestHelpers::loadFrame(frame, m_baseURL + "white-1x1.png");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     EXPECT_NE(firstItem.get(), mainFrameLoader.currentItem());
 
-    frame->loadHistoryItem(WebHistoryItem(firstItem.get()), WebHistoryDifferentDocumentLoad, WebURLRequest::UseProtocolCachePolicy);
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    FrameTestHelpers::loadHistoryItem(frame, WebHistoryItem(firstItem.get()), WebHistoryDifferentDocumentLoad, WebURLRequest::UseProtocolCachePolicy);
     EXPECT_EQ(firstItem.get(), mainFrameLoader.currentItem());
 
-    frame->reload();
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    FrameTestHelpers::reloadFrame(frame);
     EXPECT_EQ(WebURLRequest::ReloadIgnoringCacheData, frame->dataSource()->request().cachePolicy());
 }
 
@@ -4879,8 +4897,7 @@ TEST_F(WebFrameTest, BackDuringChildFrameReload)
     item.setURLString(historyURL.string());
     mainFrame->loadHistoryItem(item, WebHistoryDifferentDocumentLoad, WebURLRequest::UseProtocolCachePolicy);
 
-    childFrame->reload();
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    FrameTestHelpers::reloadFrame(childFrame);
     EXPECT_EQ(item.urlString(), mainFrame->document().url().string());
     EXPECT_EQ(item.urlString(), WebString(mainFrameLoader.currentItem()->urlString()));
 }
@@ -4893,12 +4910,12 @@ TEST_F(WebFrameTest, ReloadPost)
     WebFrame* frame = webViewHelper.webView()->mainFrame();
 
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), "javascript:document.forms[0].submit()");
-    runPendingTasks();
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    // Pump requests one more time after the javascript URL has executed to
+    // trigger the actual POST load request.
+    FrameTestHelpers::pumpPendingRequestsDoNotUse(webViewHelper.webView()->mainFrame());
     EXPECT_EQ(WebString::fromUTF8("POST"), frame->dataSource()->request().httpMethod());
 
-    frame->reload();
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    FrameTestHelpers::reloadFrame(frame);
     EXPECT_EQ(WebURLRequest::ReloadIgnoringCacheData, frame->dataSource()->request().cachePolicy());
     EXPECT_EQ(WebNavigationTypeFormResubmitted, frame->dataSource()->navigationType());
 }
@@ -4915,45 +4932,56 @@ TEST_F(WebFrameTest, LoadHistoryItemReload)
 
     registerMockedHttpURLLoad("white-1x1.png");
     FrameTestHelpers::loadFrame(frame, m_baseURL + "white-1x1.png");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     EXPECT_NE(firstItem.get(), mainFrameLoader.currentItem());
 
     // Cache policy overrides should take.
-    frame->loadHistoryItem(WebHistoryItem(firstItem), WebHistoryDifferentDocumentLoad, WebURLRequest::ReloadIgnoringCacheData);
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    FrameTestHelpers::loadHistoryItem(frame, WebHistoryItem(firstItem), WebHistoryDifferentDocumentLoad, WebURLRequest::ReloadIgnoringCacheData);
     EXPECT_EQ(firstItem.get(), mainFrameLoader.currentItem());
     EXPECT_EQ(WebURLRequest::ReloadIgnoringCacheData, frame->dataSource()->request().cachePolicy());
 }
 
 
-class TestCachePolicyWebFrameClient : public WebFrameClient {
+class TestCachePolicyWebFrameClient : public FrameTestHelpers::TestWebFrameClient {
 public:
-    TestCachePolicyWebFrameClient()
-        : m_policy(WebURLRequest::UseProtocolCachePolicy)
-        , m_client(0)
+    explicit TestCachePolicyWebFrameClient(TestCachePolicyWebFrameClient* parentClient)
+        : m_parentClient(parentClient)
+        , m_policy(WebURLRequest::UseProtocolCachePolicy)
+        , m_childClient(0)
         , m_willSendRequestCallCount(0)
         , m_childFrameCreationCount(0)
     {
     }
 
-    void setChildWebFrameClient(WebFrameClient* client) { m_client = client; }
+    void setChildWebFrameClient(TestCachePolicyWebFrameClient* client) { m_childClient = client; }
     WebURLRequest::CachePolicy cachePolicy() const { return m_policy; }
     int willSendRequestCallCount() const { return m_willSendRequestCallCount; }
     int childFrameCreationCount() const { return m_childFrameCreationCount; }
 
     virtual WebFrame* createChildFrame(WebLocalFrame* parent, const WebString&)
     {
+        ASSERT(m_childClient);
         m_childFrameCreationCount++;
-        WebFrame* frame = WebLocalFrame::create(m_client);
+        WebFrame* frame = WebLocalFrame::create(m_childClient);
         parent->appendChild(frame);
         return frame;
     }
 
-    virtual void frameDetached(WebFrame* frame) OVERRIDE
+    virtual void didStartLoading(bool toDifferentDocument)
     {
-        if (frame->parent())
-            frame->parent()->removeChild(frame);
-        frame->close();
+        if (m_parentClient) {
+            m_parentClient->didStartLoading(toDifferentDocument);
+            return;
+        }
+        TestWebFrameClient::didStartLoading(toDifferentDocument);
+    }
+
+    virtual void didStopLoading()
+    {
+        if (m_parentClient) {
+            m_parentClient->didStopLoading();
+            return;
+        }
+        TestWebFrameClient::didStopLoading();
     }
 
     virtual void willSendRequest(WebLocalFrame* frame, unsigned, WebURLRequest& request, const WebURLResponse&) OVERRIDE
@@ -4963,8 +4991,10 @@ public:
     }
 
 private:
+    TestCachePolicyWebFrameClient* m_parentClient;
+
     WebURLRequest::CachePolicy m_policy;
-    WebFrameClient* m_client;
+    TestCachePolicyWebFrameClient* m_childClient;
     int m_willSendRequestCallCount;
     int m_childFrameCreationCount;
 };
@@ -4973,8 +5003,8 @@ TEST_F(WebFrameTest, ReloadIframe)
 {
     registerMockedHttpURLLoad("iframe_reload.html");
     registerMockedHttpURLLoad("visible_iframe.html");
-    TestCachePolicyWebFrameClient mainClient;
-    TestCachePolicyWebFrameClient childClient;
+    TestCachePolicyWebFrameClient mainClient(0);
+    TestCachePolicyWebFrameClient childClient(&mainClient);
     mainClient.setChildWebFrameClient(&childClient);
 
     FrameTestHelpers::WebViewHelper webViewHelper;
@@ -4987,8 +5017,7 @@ TEST_F(WebFrameTest, ReloadIframe)
     EXPECT_EQ(childClient.willSendRequestCallCount(), 1);
     EXPECT_EQ(childClient.cachePolicy(), WebURLRequest::UseProtocolCachePolicy);
 
-    mainFrame->reload(false);
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    FrameTestHelpers::reloadFrame(mainFrame);
 
     // A new WebFrame should have been created, but the child WebFrameClient should be reused.
     ASSERT_NE(childFrame, toWebLocalFrameImpl(mainFrame->firstChild()));
@@ -5026,9 +5055,9 @@ TEST_F(WebFrameTest, NavigateToSame)
     webViewHelper.initializeAndLoad(m_baseURL + "navigate_to_same.html", true, &client);
     EXPECT_FALSE(client.frameLoadTypeSameSeen());
 
-    WebCore::FrameLoadRequest frameRequest(0, WebCore::ResourceRequest(webViewHelper.webViewImpl()->page()->mainFrame()->document()->url()));
-    webViewHelper.webViewImpl()->page()->mainFrame()->loader().load(frameRequest);
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    WebCore::FrameLoadRequest frameRequest(0, WebCore::ResourceRequest(toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->document()->url()));
+    toLocalFrame(webViewHelper.webViewImpl()->page()->mainFrame())->loader().load(frameRequest);
+    FrameTestHelpers::pumpPendingRequestsDoNotUse(webViewHelper.webView()->mainFrame());
 
     EXPECT_TRUE(client.frameLoadTypeSameSeen());
 }
@@ -5043,8 +5072,7 @@ TEST_F(WebFrameTest, WebNodeImageContents)
 
     // Load up the image and test that we can extract the contents.
     WebCore::KURL testURL = toKURL("about:blank");
-    frame->loadHTMLString(bluePNG, testURL);
-    runPendingTasks();
+    FrameTestHelpers::loadHTMLString(frame, bluePNG, testURL);
 
     WebNode node = frame->document().body().firstChild();
     EXPECT_TRUE(node.isElementNode());
@@ -5060,7 +5088,7 @@ TEST_F(WebFrameTest, WebNodeImageContents)
 //    EXPECT_EQ(bitmap.getColor(0, 0), SK_ColorBLUE);
 }
 
-class TestStartStopCallbackWebFrameClient : public WebFrameClient {
+class TestStartStopCallbackWebFrameClient : public FrameTestHelpers::TestWebFrameClient {
 public:
     TestStartStopCallbackWebFrameClient()
         : m_startLoadingCount(0)
@@ -5071,6 +5099,7 @@ public:
 
     virtual void didStartLoading(bool toDifferentDocument) OVERRIDE
     {
+        TestWebFrameClient::didStartLoading(toDifferentDocument);
         m_startLoadingCount++;
         if (toDifferentDocument)
             m_differentDocumentStartCount++;
@@ -5078,6 +5107,7 @@ public:
 
     virtual void didStopLoading() OVERRIDE
     {
+        TestWebFrameClient::didStopLoading();
         m_stopLoadingCount++;
     }
 
@@ -5097,14 +5127,44 @@ TEST_F(WebFrameTest, PushStateStartsAndStops)
     TestStartStopCallbackWebFrameClient client;
     FrameTestHelpers::WebViewHelper webViewHelper;
     webViewHelper.initializeAndLoad(m_baseURL + "push_state.html", true, &client);
-    runPendingTasks();
 
     EXPECT_EQ(client.startLoadingCount(), 2);
     EXPECT_EQ(client.stopLoadingCount(), 2);
     EXPECT_EQ(client.differentDocumentStartCount(), 1);
 }
 
-class TestHistoryWebFrameClient : public WebFrameClient {
+class TestDidNavigateCommitTypeWebFrameClient : public FrameTestHelpers::TestWebFrameClient {
+public:
+    TestDidNavigateCommitTypeWebFrameClient()
+        : m_lastCommitType(WebHistoryInertCommit)
+    {
+    }
+
+    virtual void didNavigateWithinPage(WebLocalFrame*, const WebHistoryItem&, WebHistoryCommitType type) OVERRIDE
+    {
+        m_lastCommitType = type;
+    }
+
+    WebHistoryCommitType lastCommitType() const { return m_lastCommitType; }
+
+private:
+    WebHistoryCommitType m_lastCommitType;
+};
+
+TEST_F(WebFrameTest, SameDocumentHistoryNavigationCommitType)
+{
+    registerMockedHttpURLLoad("push_state.html");
+    TestDidNavigateCommitTypeWebFrameClient client;
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    WebViewImpl* webViewImpl = webViewHelper.initializeAndLoad(m_baseURL + "push_state.html", true, &client);
+    RefPtr<WebCore::HistoryItem> item = toLocalFrame(webViewImpl->page()->mainFrame())->loader().currentItem();
+    runPendingTasks();
+
+    toLocalFrame(webViewImpl->page()->mainFrame())->loader().loadHistoryItem(item.get(), WebCore::HistorySameDocumentLoad);
+    EXPECT_EQ(WebBackForwardCommit, client.lastCommitType());
+}
+
+class TestHistoryWebFrameClient : public FrameTestHelpers::TestWebFrameClient {
 public:
     TestHistoryWebFrameClient()
     {
@@ -5136,31 +5196,23 @@ TEST_F(WebFrameTest, DISABLED_FirstFrameNavigationReplacesHistory)
     FrameTestHelpers::WebViewHelper webViewHelper;
     TestHistoryWebFrameClient client;
     webViewHelper.initializeAndLoad("about:blank", true, &client);
-    runPendingTasks();
     EXPECT_TRUE(client.replacesCurrentHistoryItem());
 
     WebFrame* frame = webViewHelper.webView()->mainFrame();
 
     FrameTestHelpers::loadFrame(frame,
         "javascript:document.body.appendChild(document.createElement('iframe'))");
-    // Need to call runPendingTasks in order for the JavaScript above to be
-    // evaluated and executed.
-    runPendingTasks();
     WebFrame* iframe = frame->firstChild();
     EXPECT_EQ(client.frame(), iframe);
     EXPECT_TRUE(client.replacesCurrentHistoryItem());
 
     FrameTestHelpers::loadFrame(frame,
         "javascript:window.frames[0].location.assign('" + m_baseURL + "history.html')");
-    runPendingTasks();
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     EXPECT_EQ(client.frame(), iframe);
     EXPECT_TRUE(client.replacesCurrentHistoryItem());
 
     FrameTestHelpers::loadFrame(frame,
         "javascript:window.frames[0].location.assign('" + m_baseURL + "find.html')");
-    runPendingTasks();
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     EXPECT_EQ(client.frame(), iframe);
     EXPECT_FALSE(client.replacesCurrentHistoryItem());
 
@@ -5170,8 +5222,6 @@ TEST_F(WebFrameTest, DISABLED_FirstFrameNavigationReplacesHistory)
         "javascript:var f = document.createElement('iframe'); "
         "f.src = '" + m_baseURL + "history.html';"
         "document.body.appendChild(f)");
-    runPendingTasks();
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
 
     iframe = frame->firstChild()->nextSibling();
     EXPECT_EQ(client.frame(), iframe);
@@ -5179,8 +5229,6 @@ TEST_F(WebFrameTest, DISABLED_FirstFrameNavigationReplacesHistory)
 
     FrameTestHelpers::loadFrame(frame,
         "javascript:window.frames[1].location.assign('" + m_baseURL + "find.html')");
-    runPendingTasks();
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
     EXPECT_EQ(client.frame(), iframe);
     EXPECT_FALSE(client.replacesCurrentHistoryItem());
 }
@@ -5196,8 +5244,6 @@ TEST_F(WebFrameTest, overflowHiddenRewrite)
 
     webViewHelper.webView()->resize(WebSize(100, 100));
     FrameTestHelpers::loadFrame(webViewHelper.webView()->mainFrame(), m_baseURL + "non-scrollable.html");
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
-    webViewHelper.webView()->layout();
 
     WebCore::RenderLayerCompositor* compositor =  webViewHelper.webViewImpl()->compositor();
     ASSERT_TRUE(compositor->scrollLayer());
@@ -5226,12 +5272,15 @@ TEST_F(WebFrameTest, CurrentHistoryItem)
     webViewHelper.initialize();
     WebFrame* frame = webViewHelper.webView()->mainFrame();
     const WebCore::FrameLoader& mainFrameLoader = webViewHelper.webViewImpl()->mainFrameImpl()->frame()->loader();
-    FrameTestHelpers::loadFrame(frame, url);
+    WebURLRequest request;
+    request.initialize();
+    request.setURL(toKURL(url));
+    frame->loadRequest(request);
 
     // Before commit, there is no history item.
     EXPECT_FALSE(mainFrameLoader.currentItem());
 
-    Platform::current()->unitTestSupport()->serveAsynchronousMockedRequests();
+    FrameTestHelpers::pumpPendingRequestsDoNotUse(frame);
 
     // After commit, there is.
     WebCore::HistoryItem* item = mainFrameLoader.currentItem();
@@ -5239,7 +5288,7 @@ TEST_F(WebFrameTest, CurrentHistoryItem)
     EXPECT_EQ(WTF::String(url.data()), item->urlString());
 }
 
-class FailCreateChildFrame : public WebFrameClient {
+class FailCreateChildFrame : public FrameTestHelpers::TestWebFrameClient {
 public:
     FailCreateChildFrame() : m_callCount(0) { }
 
@@ -5247,11 +5296,6 @@ public:
     {
         ++m_callCount;
         return 0;
-    }
-
-    virtual void frameDetached(WebFrame* frame) OVERRIDE
-    {
-        frame->close();
     }
 
     int callCount() const { return m_callCount; }
@@ -5354,6 +5398,30 @@ TEST_F(WebFrameTest, FullscreenLayerNonScrollable)
     ASSERT_TRUE(webScrollLayer->scrollable());
 }
 
+TEST_F(WebFrameTest, FullscreenMainFrameScrollable)
+{
+    FakeCompositingWebViewClient client;
+    registerMockedHttpURLLoad("fullscreen_div.html");
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    int viewportWidth = 640;
+    int viewportHeight = 480;
+    WebViewImpl* webViewImpl = webViewHelper.initializeAndLoad(m_baseURL + "fullscreen_div.html", true, 0, &client, &configueCompositingWebView);
+    webViewImpl->resize(WebSize(viewportWidth, viewportHeight));
+    webViewImpl->layout();
+
+    Document* document = toWebLocalFrameImpl(webViewImpl->mainFrame())->frame()->document();
+    WebCore::UserGestureIndicator gesture(WebCore::DefinitelyProcessingUserGesture);
+    document->documentElement()->webkitRequestFullscreen();
+    webViewImpl->willEnterFullScreen();
+    webViewImpl->didEnterFullScreen();
+    webViewImpl->layout();
+
+    // Verify that the main frame is still scrollable.
+    ASSERT_TRUE(WebCore::FullscreenElementStack::isFullScreen(*document));
+    WebLayer* webScrollLayer = webViewImpl->compositor()->scrollLayer()->platformLayer();
+    ASSERT_TRUE(webScrollLayer->scrollable());
+}
+
 TEST_F(WebFrameTest, RenderBlockPercentHeightDescendants)
 {
     registerMockedHttpURLLoad("percent-height-descendants.html");
@@ -5426,6 +5494,107 @@ TEST_F(WebFrameTest, NotifyManifestChange)
     webViewHelper.initializeAndLoad(m_baseURL + "link-manifest-change.html", true, &webFrameClient);
 
     EXPECT_EQ(14, webFrameClient.manifestChangeCount());
+}
+
+TEST_F(WebFrameTest, ReloadBypassingCache)
+{
+    // Check that a reload ignoring cache on a frame will result in the cache
+    // policy of the request being set to ReloadBypassingCache.
+    registerMockedHttpURLLoad("foo.html");
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    webViewHelper.initializeAndLoad(m_baseURL + "foo.html", true);
+    WebFrame* frame = webViewHelper.webView()->mainFrame();
+    FrameTestHelpers::reloadFrameIgnoringCache(frame);
+    EXPECT_EQ(WebURLRequest::ReloadBypassingCache, frame->dataSource()->request().cachePolicy());
+}
+
+TEST_F(WebFrameTest, NodeImageTestCSSTransform)
+{
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    OwnPtr<WebCore::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-css-transform"));
+    EXPECT_TRUE(dragImage);
+
+    SkBitmap bitmap;
+    ASSERT_TRUE(bitmap.allocN32Pixels(40, 40));
+    SkCanvas canvas(bitmap);
+    canvas.drawColor(SK_ColorGREEN);
+
+    EXPECT_EQ(40, dragImage->size().width());
+    EXPECT_EQ(40, dragImage->size().height());
+    const SkBitmap& dragBitmap = dragImage->bitmap();
+    SkAutoLockPixels lockPixel(dragBitmap);
+    EXPECT_EQ(0, memcmp(bitmap.getPixels(), dragBitmap.getPixels(), bitmap.getSize()));
+}
+
+TEST_F(WebFrameTest, NodeImageTestCSS3DTransform)
+{
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    OwnPtr<WebCore::DragImage> dragImage = nodeImageTestSetup(&webViewHelper, std::string("case-css-3dtransform"));
+    EXPECT_TRUE(dragImage);
+
+    SkBitmap bitmap;
+    ASSERT_TRUE(bitmap.allocN32Pixels(20, 40));
+    SkCanvas canvas(bitmap);
+    canvas.drawColor(SK_ColorGREEN);
+
+    EXPECT_EQ(20, dragImage->size().width());
+    EXPECT_EQ(40, dragImage->size().height());
+    const SkBitmap& dragBitmap = dragImage->bitmap();
+    SkAutoLockPixels lockPixel(dragBitmap);
+    EXPECT_EQ(0, memcmp(bitmap.getPixels(), dragBitmap.getPixels(), bitmap.getSize()));
+}
+
+class ThemeColorTestWebFrameClient : public FrameTestHelpers::TestWebFrameClient {
+public:
+    ThemeColorTestWebFrameClient()
+        : m_didNotify(false)
+    {
+    }
+
+    void reset()
+    {
+        m_didNotify = false;
+    }
+
+    bool didNotify() const
+    {
+        return m_didNotify;
+    }
+
+private:
+    virtual void didChangeThemeColor()
+    {
+        m_didNotify = true;
+    }
+
+    bool m_didNotify;
+};
+
+TEST_F(WebFrameTest, ThemeColor)
+{
+    registerMockedHttpURLLoad("theme_color_test.html");
+    FrameTestHelpers::WebViewHelper webViewHelper;
+    ThemeColorTestWebFrameClient client;
+    webViewHelper.initializeAndLoad(m_baseURL + "theme_color_test.html", true, &client);
+    EXPECT_TRUE(client.didNotify());
+    WebLocalFrameImpl* frame = webViewHelper.webViewImpl()->mainFrameImpl();
+    EXPECT_EQ(0xff0000ff, frame->document().themeColor());
+    // Change color by rgb.
+    client.reset();
+    frame->executeScript(WebScriptSource("document.getElementById('tc1').setAttribute('content', 'rgb(0, 0, 0)');"));
+    EXPECT_TRUE(client.didNotify());
+    EXPECT_EQ(0xff000000, frame->document().themeColor());
+    // Change color by hsl.
+    client.reset();
+    frame->executeScript(WebScriptSource("document.getElementById('tc1').setAttribute('content', 'hsl(240,100%, 50%)');"));
+    EXPECT_TRUE(client.didNotify());
+    EXPECT_EQ(0xff0000ff, frame->document().themeColor());
+    // Change of second theme-color meta tag will not change frame's theme
+    // color.
+    client.reset();
+    frame->executeScript(WebScriptSource("document.getElementById('tc2').setAttribute('content', '#00FF00');"));
+    EXPECT_TRUE(client.didNotify());
+    EXPECT_EQ(0xff0000ff, frame->document().themeColor());
 }
 
 } // namespace

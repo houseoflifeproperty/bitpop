@@ -11,7 +11,6 @@
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/browser/sync/sync_error_controller.h"
-#include "chrome/browser/ui/ash/test_views_delegate_with_parent.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
@@ -98,8 +97,6 @@ class SyncErrorNotifierTest : public AshTestBase  {
   virtual ~SyncErrorNotifierTest() {}
 
   virtual void SetUp() OVERRIDE {
-    views::ViewsDelegate::views_delegate = &views_delegate_;
-
     profile_manager_.reset(
         new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
     ASSERT_TRUE(profile_manager_->SetUp());
@@ -112,7 +109,7 @@ class SyncErrorNotifierTest : public AshTestBase  {
     // Set up a desktop screen for Windows to hold native widgets, used when
     // adding desktop widgets (i.e., message center notifications).
 #if defined(OS_WIN)
-    aura::TestScreen* test_screen = aura::TestScreen::Create();
+    aura::TestScreen* test_screen = aura::TestScreen::Create(gfx::Size());
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen);
     gfx::Screen::SetScreenTypeDelegate(new ScreenTypeDelegateDesktop);
 #endif
@@ -175,7 +172,6 @@ class SyncErrorNotifierTest : public AshTestBase  {
   TestingProfile* profile_;
   FakeLoginUI login_ui_;
   NotificationUIManager* notification_ui_manager_;
-  TestViewsDelegateWithParent views_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncErrorNotifierTest);
 };
@@ -184,7 +180,13 @@ class SyncErrorNotifierTest : public AshTestBase  {
 
 // Test that SyncErrorNotifier shows an notification if a passphrase is
 // required.
-TEST_F(SyncErrorNotifierTest, PassphraseNotification) {
+// Disabled on Windows: http://crbug.com/373238
+#if defined(OS_WIN)
+#define MAYBE_PassphraseNotification DISABLED_PassphraseNotification
+#else
+#define MAYBE_PassphraseNotification PassphraseNotification
+#endif
+TEST_F(SyncErrorNotifierTest, MAYBE_PassphraseNotification) {
   ASSERT_FALSE(notification_ui_manager_->FindById(kNotificationId));
 
   browser_sync::SyncBackendHost::Status status;

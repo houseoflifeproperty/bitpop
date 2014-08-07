@@ -54,7 +54,6 @@ class InspectorResourceAgent;
 class InstrumentingAgents;
 class MediaList;
 class Node;
-class NodeList;
 class PlatformFontUsage;
 class RenderText;
 class StyleResolver;
@@ -101,6 +100,9 @@ public:
     {
         return adoptPtr(new InspectorCSSAgent(domAgent, pageAgent, resourceAgent));
     }
+
+    static void collectAllDocumentStyleSheets(Document*, Vector<CSSStyleSheet*>&);
+
     virtual ~InspectorCSSAgent();
 
     bool forcePseudoState(Element*, CSSSelector::PseudoType);
@@ -134,7 +136,11 @@ public:
     virtual void createStyleSheet(ErrorString*, const String& frameId, TypeBuilder::CSS::StyleSheetId* outStyleSheetId) OVERRIDE;
     virtual void addRule(ErrorString*, const String& styleSheetId, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result) OVERRIDE;
     virtual void forcePseudoState(ErrorString*, int nodeId, const RefPtr<JSONArray>& forcedPseudoClasses) OVERRIDE;
+    virtual void getMediaQueries(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> >& medias) OVERRIDE;
 
+
+    bool collectMediaQueriesFromRule(CSSRule*, TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>* mediaArray);
+    bool collectMediaQueriesFromStyleSheet(CSSStyleSheet*, TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>* mediaArray);
     PassRefPtr<TypeBuilder::CSS::CSSMedia> buildMediaObject(const MediaList*, MediaListSource, const String&, CSSStyleSheet*);
     PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> > buildMediaListChain(CSSRule*);
 
@@ -144,7 +150,9 @@ private:
     class SetPropertyTextAction;
     class SetRuleSelectorAction;
     class AddRuleAction;
-    class EnableResourceClient;
+    class InspectorResourceContentLoaderCallback;
+
+    static void collectStyleSheets(CSSStyleSheet*, Vector<CSSStyleSheet*>&);
 
     InspectorCSSAgent(InspectorDOMAgent*, InspectorPageAgent*, InspectorResourceAgent*);
 
@@ -153,13 +161,10 @@ private:
     typedef HashMap<Node*, RefPtr<InspectorStyleSheetForInlineStyle> > NodeToInspectorStyleSheet; // bogus "stylesheets" with elements' inline styles
     typedef HashMap<int, unsigned> NodeIdToForcedPseudoState;
 
-    void wasEnabled(PassRefPtr<EnableCallback>);
+    void wasEnabled();
     void resetNonPersistentData();
     InspectorStyleSheetForInlineStyle* asInspectorStyleSheet(Element* element);
     Element* elementForId(ErrorString*, int nodeId);
-    void collectAllStyleSheets(Vector<InspectorStyleSheet*>&);
-    void collectAllDocumentStyleSheets(Document*, Vector<CSSStyleSheet*>&);
-    void collectStyleSheets(CSSStyleSheet*, Vector<CSSStyleSheet*>&);
 
     void updateActiveStyleSheets(Document*, StyleSheetsUpdateType);
     void setActiveStyleSheets(Document*, const Vector<CSSStyleSheet*>&, StyleSheetsUpdateType);
@@ -203,7 +208,7 @@ private:
     HashSet<Document*> m_invalidatedDocuments;
 
     NodeToInspectorStyleSheet m_nodeToInspectorStyleSheet;
-    HashMap<RefPtr<Document>, RefPtr<InspectorStyleSheet> > m_documentToViaInspectorStyleSheet; // "via inspector" stylesheets
+    WillBePersistentHeapHashMap<RefPtrWillBeMember<Document>, RefPtr<InspectorStyleSheet> > m_documentToViaInspectorStyleSheet; // "via inspector" stylesheets
     NodeIdToForcedPseudoState m_nodeIdToForcedPseudoState;
 
     RefPtrWillBePersistent<CSSStyleSheet> m_inspectorUserAgentStyleSheet;
@@ -214,7 +219,7 @@ private:
     bool m_creatingViaInspectorStyleSheet;
     bool m_isSettingStyleSheetText;
 
-    friend class EnableResourceClient;
+    friend class InspectorResourceContentLoaderCallback;
     friend class StyleSheetBinder;
 };
 

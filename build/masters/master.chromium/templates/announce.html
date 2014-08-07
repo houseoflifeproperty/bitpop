@@ -283,11 +283,24 @@
             /**
              * Builds a reference for the iframe with boxes.
              * @param {String} x the name of the waterfall.
+             * @param {?Array.<String>} opt_builders an optional array of
+             *   builder names to use as a filter.
              * @returns {String} The URL.
              */
-            function BarUrl(x) {
+            function BarUrl(x, opt_builders) {
+              builders = '';
+              if (opt_builders) {
+                for (var ii = 0; ii < opt_builders.length; ++ii) {
+                  if (ii == 0) {
+                    builders += '?';
+                  } else {
+                    builders += '&';
+                  }
+                  builders += 'builder=' + encodeURIComponent(opt_builders[ii]);
+                }
+              }
               return 'https://chromium-build.appspot.com/p/' + x +
-                     '/horizontal_one_box_per_builder';
+                     '/horizontal_one_box_per_builder' + builders;
             }
             c.bar = BarUrl('chromium')
             c.bar_win = BarUrl('chromium.win');
@@ -300,6 +313,24 @@
             c.bar_lkgr = BarUrl('chromium.lkgr');
             c.bar_cros = BarUrl('chromium.chromiumos');
             c.bar_gpu = BarUrl('chromium.gpu');
+            c.bar_gpu_closers = BarUrl('chromium.gpu',
+              // This list must be kept in sync with the bots watched in
+              // scripts/slave/gatekeeper.json.
+              [ 'GPU Win Builder',
+                'Win7 Release (NVIDIA)',
+                'Win8 Release (NVIDIA)',
+                'Win7 Release (ATI)',
+                'Win7 Release (Intel)',
+                'GPU Mac Builder',
+                'Mac Release (Intel)',
+                'Mac Release (ATI)',
+                'Mac Retina Release',
+                'Mac 10.8 Release (Intel)',
+                'Mac 10.8 Release (ATI)',
+                'GPU Linux Builder',
+                'Linux Release (NVIDIA)',
+              ]
+            );
             c.bar_gpu_fyi = BarUrl('chromium.gpu.fyi');
 
 
@@ -422,11 +453,16 @@
                        HTMLBaseBar(c.status_linux, c.bar_linux, c.linux,
                                    'Linux', 'width="20%"')) +
                     tr(HTMLBaseBar(c.status_cros, c.bar_cros, c.cros,
-                                  'ChromiumOS', 'width="50%" colspan=3') +
-                       HTMLSubBar(c.status_chrome, c.bar_chrome, c.chrome,
-                                  'Official', '30%') +
-                       HTMLSubBar(c.status_memory, c.bar_memory, c.memory,
-                                  'Memory', '20%')))))));
+                                   'ChromiumOS', 'colspan=3') +
+                       HTMLBaseBar(c.status_chrome, c.bar_chrome, c.chrome,
+                                   'Official', 'colspan=3')) +
+                    tr(HTMLBaseBar(c.status_memory, c.bar_memory, c.memory,
+                                  'Memory', 'colspan=3') +
+                       /* TODO(kbr): subset the bots in this bar to
+                          reflect which ones are tree closers.
+                          crbug.com/372576 */
+                       HTMLBaseBar(c.status_gpu, c.bar_gpu_closers, c.gpu,
+                                   'GPU', 'colspan=3')))))));
 
             document.write(tr(
                 HTMLBaseBar(c.status_perf, c.bar_perf, c.perf,

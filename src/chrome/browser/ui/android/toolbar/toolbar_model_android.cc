@@ -7,7 +7,7 @@
 #include "base/android/jni_string.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/ui/toolbar/toolbar_model_impl.h"
 #include "content/public/browser/web_contents.h"
 #include "jni/ToolbarModel_jni.h"
@@ -26,8 +26,8 @@ void ToolbarModelAndroid::Destroy(JNIEnv* env, jobject obj) {
   delete this;
 }
 
-ScopedJavaLocalRef<jstring> ToolbarModelAndroid::GetSearchTerms(JNIEnv* env,
-                                                                jobject obj) {
+ScopedJavaLocalRef<jstring> ToolbarModelAndroid::GetText(JNIEnv* env,
+                                                         jobject obj) {
   return base::android::ConvertUTF16ToJavaString(env,
                                                  toolbar_model_->GetText());
 }

@@ -31,33 +31,38 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
   virtual ~FFmpegVideoDecoder();
 
+  // Allow decoding of individual NALU. Entire frames are required by default.
+  // Disables low-latency mode. Must be called before Initialize().
+  void set_decode_nalus(bool decode_nalus) { decode_nalus_ = decode_nalus; }
+
   // VideoDecoder implementation.
   virtual void Initialize(const VideoDecoderConfig& config,
                           bool low_delay,
-                          const PipelineStatusCB& status_cb) OVERRIDE;
+                          const PipelineStatusCB& status_cb,
+                          const OutputCB& output_cb) OVERRIDE;
   virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
                       const DecodeCB& decode_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
   virtual void Stop() OVERRIDE;
 
   // Callback called from within FFmpeg to allocate a buffer based on
-  // the dimensions of |codec_context|. See AVCodecContext.get_buffer
+  // the dimensions of |codec_context|. See AVCodecContext.get_buffer2
   // documentation inside FFmpeg.
-  int GetVideoBuffer(AVCodecContext *codec_context, AVFrame* frame);
+  int GetVideoBuffer(struct AVCodecContext* codec_context,
+                     AVFrame* frame,
+                     int flags);
 
  private:
   enum DecoderState {
     kUninitialized,
     kNormal,
-    kFlushCodec,
     kDecodeFinished,
     kError
   };
 
   // Handles decoding an unencrypted encoded buffer.
-  void DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer);
   bool FFmpegDecode(const scoped_refptr<DecoderBuffer>& buffer,
-                    scoped_refptr<VideoFrame>* video_frame);
+                    bool* has_produced_frame);
 
   // Handles (re-)initializing the decoder with a (new) config.
   // Returns true if initialization was successful.
@@ -71,8 +76,7 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
 
   DecoderState state_;
 
-  // TODO(xhwang): Merge DecodeBuffer() into Decode() and remove this.
-  DecodeCB decode_cb_;
+  OutputCB output_cb_;
 
   // FFmpeg structures owned by this object.
   scoped_ptr<AVCodecContext, ScopedPtrAVFreeContext> codec_context_;
@@ -81,6 +85,8 @@ class MEDIA_EXPORT FFmpegVideoDecoder : public VideoDecoder {
   VideoDecoderConfig config_;
 
   VideoFramePool frame_pool_;
+
+  bool decode_nalus_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegVideoDecoder);
 };

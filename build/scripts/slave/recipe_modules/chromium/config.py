@@ -46,11 +46,15 @@ def BaseConfig(HOST_PLATFORM, HOST_ARCH, HOST_BITS,
       GYP_DEFINES = Dict(equal_fn, ' '.join, (basestring,int,Path)),
       GYP_GENERATORS = Set(basestring, ','.join),
       GYP_GENERATOR_FLAGS = Dict(equal_fn, ' '.join, (basestring,int)),
+      GYP_USE_SEPARATE_MSPDBSRV = Single(int, jsonish_fn=str, required=False),
     ),
     build_dir = Single(Path),
-
-    memory_tool = Single(basestring, required=False),
-    memory_tests_runner = Single(Path),
+    runtests = ConfigGroup(
+      memory_tool = Single(basestring, required=False),
+      memory_tests_runner = Single(Path),
+      lsan_suppressions_file = Single(Path),
+      tsan_suppressions_file = Single(Path),
+    ),
 
     # Some platforms do not have a 1:1 correlation of BUILD_CONFIG to what is
     # passed as --target on the command line.
@@ -133,10 +137,12 @@ def BASE(c):
       # Windows requires 64-bit builds to be in <dir>_x64.
       c.build_config_fs = c.BUILD_CONFIG + '_x64'
 
-  c.memory_tests_runner = Path('[CHECKOUT]', 'tools', 'valgrind',
-                               'chrome_tests', platform_ext={'win': '.bat',
-                                                             'mac': '.sh',
-                                                             'linux': '.sh'})
+  # Test runner memory tools that are not compile-time based.
+  c.runtests.memory_tests_runner = Path('[CHECKOUT]', 'tools', 'valgrind',
+                                        'chrome_tests',
+                                        platform_ext={'win': '.bat',
+                                                      'mac': '.sh',
+                                                      'linux': '.sh'})
   gyp_arch = {
     ('intel', 32): 'ia32',
     ('intel', 64): 'x64',
@@ -168,7 +174,6 @@ def msvs(c):
   if c.HOST_PLATFORM != 'win':
     raise BadConf('can not use msvs on "%s"' % c.HOST_PLATFORM)
   c.gyp_env.GYP_GENERATORS.add('msvs')
-  c.gyp_env.GYP_GENERATOR_FLAGS['msvs_error_on_missing_sources'] = 1
   c.compile_py.build_tool = 'msvs'
   c.build_dir = Path('[CHECKOUT]', 'build')
 
@@ -303,6 +308,16 @@ def tsan2(c):
   gyp_defs['release_extra_cflags'] = '-gline-tables-only'
   gyp_defs['disable_nacl'] = 1
 
+@config_ctx(deps=['compiler'], group='memory_tool')
+def syzyasan(c):
+  if c.gyp_env.GYP_DEFINES['component'] != 'static_library':  # pragma: no cover
+    raise BadConf('SyzyASan requires component=static_library')
+  gyp_defs = c.gyp_env.GYP_DEFINES
+  gyp_defs['syzyasan'] = 1
+  gyp_defs['win_z7'] = 1
+  gyp_defs['chromium_win_pch'] = 0
+  c.gyp_env.GYP_USE_SEPARATE_MSPDBSRV = 1
+
 @config_ctx(group='memory_tool')
 def drmemory_full(c):
   _memory_tool(c, 'drmemory_full')
@@ -316,8 +331,8 @@ def drmemory_light(c):
 def _memory_tool(c, tool):
   if tool not in MEMORY_TOOLS:  # pragma: no cover
     raise BadConf('"%s" is not a supported memory tool, the supported ones '
-                  'are: %s' % (c.memory_tool, ','.join(MEMORY_TOOLS)))
-  c.memory_tool = tool
+                  'are: %s' % (tool, ','.join(MEMORY_TOOLS)))
+  c.runtests.memory_tool = tool
 
 @config_ctx()
 def trybot_flavor(c):
@@ -336,10 +351,18 @@ def chromium(c):
 @config_ctx(includes=['ninja', 'clang', 'goma', 'asan'])
 def chromium_asan(c):
   c.compile_py.default_targets = ['All', 'chromium_builder_tests']
+  c.runtests.lsan_suppressions_file = Path('[CHECKOUT]', 'tools', 'lsan',
+                                           'suppressions.txt')
+
+@config_ctx(includes=['ninja', 'clang', 'goma', 'syzyasan'])
+def chromium_syzyasan(c):
+  c.compile_py.default_targets = ['All', 'chromium_builder_tests']
 
 @config_ctx(includes=['ninja', 'clang', 'goma', 'tsan2'])
 def chromium_tsan2(c):
   c.compile_py.default_targets = ['All', 'chromium_builder_tests']
+  c.runtests.tsan_suppressions_file = Path('[CHECKOUT]', 'tools', 'valgrind',
+                                           'tsan_v2', 'suppressions.txt')
 
 @config_ctx(includes=['ninja', 'default_compiler', 'goma', 'chromeos'])
 def chromium_chromeos(c):

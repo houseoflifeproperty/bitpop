@@ -48,6 +48,7 @@ static int kf_high_motion_minq[QINDEX_RANGE];
 static int arfgf_low_motion_minq[QINDEX_RANGE];
 static int arfgf_high_motion_minq[QINDEX_RANGE];
 static int inter_minq[QINDEX_RANGE];
+static int rtc_minq[QINDEX_RANGE];
 static int gf_high = 2000;
 static int gf_low = 400;
 static int kf_high = 5000;
@@ -84,6 +85,7 @@ void vp9_rc_init_minq_luts() {
     arfgf_low_motion_minq[i] = get_minq_index(maxq, 0.0000015, -0.0009, 0.30);
     arfgf_high_motion_minq[i] = get_minq_index(maxq, 0.0000021, -0.00125, 0.50);
     inter_minq[i] = get_minq_index(maxq, 0.00000271, -0.00113, 0.90);
+    rtc_minq[i] = get_minq_index(maxq, 0.00000271, -0.00113, 0.70);
   }
 }
 
@@ -549,14 +551,14 @@ static int rc_pick_q_and_bounds_one_pass_cbr(const VP9_COMP *cpi,
     // Use the lower of active_worst_quality and recent/average Q.
     if (cm->current_video_frame > 1) {
       if (rc->avg_frame_qindex[INTER_FRAME] < active_worst_quality)
-        active_best_quality = inter_minq[rc->avg_frame_qindex[INTER_FRAME]];
+        active_best_quality = rtc_minq[rc->avg_frame_qindex[INTER_FRAME]];
       else
-        active_best_quality = inter_minq[active_worst_quality];
+        active_best_quality = rtc_minq[active_worst_quality];
     } else {
       if (rc->avg_frame_qindex[KEY_FRAME] < active_worst_quality)
-        active_best_quality = inter_minq[rc->avg_frame_qindex[KEY_FRAME]];
+        active_best_quality = rtc_minq[rc->avg_frame_qindex[KEY_FRAME]];
       else
-        active_best_quality = inter_minq[active_worst_quality];
+        active_best_quality = rtc_minq[active_worst_quality];
     }
   }
 
@@ -972,11 +974,7 @@ int vp9_rc_pick_q_and_bounds(const VP9_COMP *cpi,
     q = rc_pick_q_and_bounds_two_pass(cpi, bottom_index, top_index);
   }
 
-  // Q of 0 is disabled because we force tx size to be
-  // 16x16...
   if (cpi->sf.use_nonrd_pick_mode) {
-    if (q == 0)
-      q++;
     if (cpi->sf.force_frame_boost == 1)
       q -= cpi->sf.max_delta_qindex;
 
@@ -1149,10 +1147,6 @@ void vp9_rc_postencode_update_drop_frame(VP9_COMP *cpi) {
   cpi->rc.frames_to_key--;
 }
 
-static int test_for_kf_one_pass(VP9_COMP *cpi) {
-  // Placeholder function for auto key frame
-  return 0;
-}
 // Use this macro to turn on/off use of alt-refs in one-pass mode.
 #define USE_ALTREF_FOR_ONE_PASS   1
 
@@ -1184,11 +1178,12 @@ void vp9_rc_get_one_pass_vbr_params(VP9_COMP *cpi) {
   VP9_COMMON *const cm = &cpi->common;
   RATE_CONTROL *const rc = &cpi->rc;
   int target;
+  // TODO(yaowu): replace the "auto_key && 0" below with proper decision logic.
   if (!cpi->refresh_alt_ref_frame &&
       (cm->current_video_frame == 0 ||
        (cpi->frame_flags & FRAMEFLAGS_KEY) ||
        rc->frames_to_key == 0 ||
-       (cpi->oxcf.auto_key && test_for_kf_one_pass(cpi)))) {
+       (cpi->oxcf.auto_key && 0))) {
     cm->frame_type = KEY_FRAME;
     rc->this_key_frame_forced = cm->current_video_frame != 0 &&
                                 rc->frames_to_key == 0;
@@ -1315,10 +1310,11 @@ void vp9_rc_get_one_pass_cbr_params(VP9_COMP *cpi) {
   VP9_COMMON *const cm = &cpi->common;
   RATE_CONTROL *const rc = &cpi->rc;
   int target;
+  // TODO(yaowu): replace the "auto_key && 0" below with proper decision logic.
   if ((cm->current_video_frame == 0 ||
       (cpi->frame_flags & FRAMEFLAGS_KEY) ||
       rc->frames_to_key == 0 ||
-      (cpi->oxcf.auto_key && test_for_kf_one_pass(cpi)))) {
+      (cpi->oxcf.auto_key && 0))) {
     cm->frame_type = KEY_FRAME;
     rc->this_key_frame_forced = cm->current_video_frame != 0 &&
                                 rc->frames_to_key == 0;

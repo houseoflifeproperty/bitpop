@@ -16,7 +16,6 @@
 #include "base/test/test_file_util.h"
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/net/net_error_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -41,6 +40,7 @@
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/google/core/browser/google_util.h"
 #include "components/os_crypt/os_crypt.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -249,7 +249,7 @@ void InProcessBrowserTest::PrepareTestCommandLine(CommandLine* command_line) {
     command_line->AppendSwitch(switches::kDisableZeroBrowsersOpenForTests);
 
   if (command_line->GetArgs().empty())
-    command_line->AppendArg(content::kAboutBlankURL);
+    command_line->AppendArg(url::kAboutBlankURL);
 }
 
 bool InProcessBrowserTest::CreateUserDataDirectory() {
@@ -342,7 +342,8 @@ void InProcessBrowserTest::AddBlankTabAndShow(Browser* browser) {
   content::WindowedNotificationObserver observer(
       content::NOTIFICATION_LOAD_STOP,
       content::NotificationService::AllSources());
-  chrome::AddSelectedTabWithURL(browser, GURL(content::kAboutBlankURL),
+  chrome::AddSelectedTabWithURL(browser,
+                                GURL(url::kAboutBlankURL),
                                 content::PAGE_TRANSITION_AUTO_TOPLEVEL);
   observer.Wait();
 

@@ -23,10 +23,10 @@ def _GetFeaturePaths(feature_file, *extra_paths):
   return paths
 
 
-def _AddPlatformsFromDependencies(feature,
-                                  api_features,
-                                  manifest_features,
-                                  permission_features):
+def _AddPlatformsAndChannelsFromDependencies(feature,
+                                             api_features,
+                                             manifest_features,
+                                             permission_features):
   features_map = {
     'api': api_features,
     'manifest': manifest_features,
@@ -34,8 +34,9 @@ def _AddPlatformsFromDependencies(feature,
   }
   dependencies = feature.get('dependencies')
   if dependencies is None:
-    return ['apps', 'extensions']
+    return
   platforms = set()
+  channel = None
   for dependency in dependencies:
     dep_type, dep_name = dependency.split(':')
     dependency_features = features_map[dep_type]
@@ -43,9 +44,18 @@ def _AddPlatformsFromDependencies(feature,
     # If the dependency can't be resolved, it is inaccessible and therefore
     # so is this feature.
     if dependency_feature is None:
-      return []
-    platforms = platforms.union(dependency_feature['platforms'])
-  feature['platforms'] = list(platforms)
+      return
+    # Import the platforms from the dependency. The logic is a bit odd; if
+    # |feature| specifies platforms the it's considered an override. If not,
+    # we form the union of all dependency's platforms.
+    # TODO(kalman): Fix this (see http://crbug.com/322094).
+    platforms.update(dependency_feature.get('platforms', set()))
+    # Import the channel from the dependency.
+    channel = dependency_feature.get('channel', channel)
+  if platforms and not feature.get('platforms'):
+    feature['platforms'] = list(platforms)
+  if channel and not feature.get('channel'):
+    feature['channel'] = channel
 
 
 class _FeaturesCache(object):
@@ -98,11 +108,10 @@ class FeaturesBundle(object):
         compiled_fs_factory,
         _GetFeaturePaths(_PERMISSION_FEATURES,
                          posixpath.join(JSON_TEMPLATES, 'permissions.json')))
-    # Namespace the object store by the file system ID because this class is
-    # used by the availability finder cross-channel.
-    # TODO(kalman): Configure this at the ObjectStore level.
+    self._identity = file_system.GetIdentity()
     self._object_store = object_store_creator.Create(
-        _FeaturesCache, category=file_system.GetIdentity())
+        _FeaturesCache,
+        category=self._identity)
 
   def GetPermissionFeatures(self):
     return self._permission_cache.GetFeatures()
@@ -127,8 +136,11 @@ class FeaturesBundle(object):
       # If we don't store this value before annotating platforms, inter-API
       # dependencies will lead to infinite recursion.
       for feature in api_features.itervalues():
-        _AddPlatformsFromDependencies(
+        _AddPlatformsAndChannelsFromDependencies(
             feature, api_features, manifest_features, permission_features)
       self._object_store.Set('api_features', api_features)
       return api_features
     return Future(callback=resolve)
+
+  def GetIdentity(self):
+    return self._identity

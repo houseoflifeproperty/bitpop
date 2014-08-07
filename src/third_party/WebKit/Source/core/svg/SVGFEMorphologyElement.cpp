@@ -21,9 +21,8 @@
 
 #include "core/svg/SVGFEMorphologyElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
@@ -52,10 +51,7 @@ inline SVGFEMorphologyElement::SVGFEMorphologyElement(Document& document)
     addToPropertyMap(m_svgOperator);
 }
 
-PassRefPtr<SVGFEMorphologyElement> SVGFEMorphologyElement::create(Document& document)
-{
-    return adoptRef(new SVGFEMorphologyElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFEMorphologyElement)
 
 void SVGFEMorphologyElement::setRadius(float x, float y)
 {

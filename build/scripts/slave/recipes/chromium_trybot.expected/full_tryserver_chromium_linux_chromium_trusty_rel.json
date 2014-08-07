@@ -15,12 +15,17 @@
       "cache_dir = None\nsolutions = [{'custom_vars': {'googlecode_url': 'svn://svn-mirror.golo.chromium.org/%s', 'nacl_trunk': 'svn://svn-mirror.golo.chromium.org/native_client/trunk', 'sourceforge_url': 'svn://svn-mirror.golo.chromium.org/%(repo)s', 'webkit_trunk': 'svn://svn-mirror.golo.chromium.org/blink/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'}]",
       "--root",
       "src",
+      "--revision_mapping_file",
+      "{\"src\": \"got_revision\", \"src/native_client\": \"got_nacl_revision\", \"src/third_party/WebKit\": \"got_webkit_revision\", \"src/third_party/webrtc\": \"got_webrtc_revision\", \"src/tools/swarm_client\": \"got_swarm_client_revision\", \"src/tools/swarming_client\": \"got_swarming_client_revision\", \"src/v8\": \"got_v8_revision\"}",
       "--issue",
       "12853011",
       "--patchset",
       "1",
       "--output_json",
-      "/path/to/tmp/json"
+      "/path/to/tmp/json",
+      "--revision",
+      "src@HEAD",
+      "--force"
     ],
     "name": "bot_update",
     "~followup_annotations": [
@@ -74,6 +79,7 @@
     ],
     "name": "read test spec",
     "~followup_annotations": [
+      "@@@STEP_TEXT@path: testing/buildbot/chromium_trybot.json@@@",
       "@@@STEP_LOG_LINE@json.output@[@@@",
       "@@@STEP_LOG_LINE@json.output@  \"base_unittests\", @@@",
       "@@@STEP_LOG_LINE@json.output@  {@@@",
@@ -107,8 +113,6 @@
     ]
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -121,8 +125,7 @@
     "name": "gclient runhooks"
   },
   {
-    "abort_on_failure": false,
-    "can_fail_build": false,
+    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
@@ -201,15 +204,52 @@
     "name": "telemetry_perf_unittests"
   },
   {
+    "always_run": true,
     "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
-      "[SLAVE_BUILD]/src/tools/checkdeps/checkdeps.py",
+      "[SLAVE_BUILD]/src/buildtools/checkdeps/checkdeps.py",
       "--json",
       "/path/to/tmp/json"
     ],
     "name": "checkdeps (with patch)",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@[]@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "always_run": true,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/tools/checkperms/checkperms.py",
+      "--root",
+      "[SLAVE_BUILD]/src",
+      "--json",
+      "/path/to/tmp/json"
+    ],
+    "name": "checkperms (with patch)",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@[]@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "always_run": true,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/tools/checklicenses/checklicenses.py",
+      "--root",
+      "[SLAVE_BUILD]/src",
+      "--json",
+      "/path/to/tmp/json"
+    ],
+    "name": "checklicenses (with patch)",
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@[]@@@",
       "@@@STEP_LOG_END@json.output@@@"

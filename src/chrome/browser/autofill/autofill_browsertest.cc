@@ -16,7 +16,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -33,6 +32,7 @@
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
 #include "components/autofill/core/browser/validation.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "components/infobars/core/infobar_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -126,7 +126,7 @@ class AutofillTest : public InProcessBrowserTest {
         browser()->tab_strip_model()->GetActiveWebContents();
     AutofillManager* autofill_manager = ContentAutofillDriver::FromWebContents(
                                             web_contents)->autofill_manager();
-    autofill_manager->delegate()->HideAutofillPopup();
+    autofill_manager->client()->HideAutofillPopup();
   }
 
   PersonalDataManager* personal_data_manager() {
@@ -162,7 +162,10 @@ class AutofillTest : public InProcessBrowserTest {
   // The function returns after the PersonalDataManager is updated.
   void FillFormAndSubmit(const std::string& filename, const FormMap& data) {
     GURL url = test_server()->GetURL("files/autofill/" + filename);
-    ui_test_utils::NavigateToURL(browser(), url);
+    chrome::NavigateParams params(browser(), url,
+                                  content::PAGE_TRANSITION_LINK);
+    params.disposition = NEW_FOREGROUND_TAB;
+    ui_test_utils::NavigateToURL(&params);
 
     std::string js;
     for (FormMap::const_iterator i = data.begin(); i != data.end(); ++i) {
@@ -376,7 +379,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, FillProfileCrazyCharacters) {
   SetProfiles(&profiles);
   ASSERT_EQ(profiles.size(), personal_data_manager()->GetProfiles().size());
   for (size_t i = 0; i < profiles.size(); ++i)
-    ASSERT_EQ(profiles[i], *personal_data_manager()->GetProfiles()[i]);
+    EXPECT_EQ(profiles[i], *personal_data_manager()->GetProfiles()[i]);
 
   std::vector<CreditCard> cards;
   CreditCard card1;
@@ -427,7 +430,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, FillProfileCrazyCharacters) {
   SetCards(&cards);
   ASSERT_EQ(cards.size(), personal_data_manager()->GetCreditCards().size());
   for (size_t i = 0; i < cards.size(); ++i)
-    ASSERT_EQ(cards[i], *personal_data_manager()->GetCreditCards()[i]);
+    EXPECT_EQ(cards[i], *personal_data_manager()->GetCreditCards()[i]);
 }
 
 // Test filling in invalid values for profiles are saved as-is. Phone

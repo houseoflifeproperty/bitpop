@@ -21,6 +21,7 @@
 
 namespace syncer {
 class SyncError;
+struct UserShare;
 }
 
 namespace browser_sync {
@@ -70,6 +71,9 @@ class DataTypeController
   typedef base::Callback<void(syncer::ModelType,
                               syncer::SyncError)> ModelLoadCallback;
 
+  typedef base::Callback<void(const tracked_objects::Location& location,
+                              const std::string&)> DisableTypeCallback;
+
   typedef std::map<syncer::ModelType,
                    scoped_refptr<DataTypeController> > TypeMap;
   typedef std::map<syncer::ModelType, DataTypeController::State> StateMap;
@@ -96,6 +100,11 @@ class DataTypeController
   // Synchronously stops the data type. If StartAssociating has already been
   // called but is not done yet it will be aborted. Similarly if LoadModels
   // has not completed it will also be aborted.
+  // NOTE: Stop() should be called after sync backend machinery has stopped
+  // routing changes to this data type. Stop() should ensure the data type
+  // logic shuts down gracefully by flushing remaining changes and calling
+  // StopSyncing on the SyncableService. This assumes no changes will ever
+  // propagate from sync again from point where Stop() is called.
   virtual void Stop() = 0;
 
   // Unique model type for this data type controller.
@@ -123,12 +132,24 @@ class DataTypeController
       const std::string& message,
       syncer::ModelType type) OVERRIDE;
 
+  // Called when the sync backend has initialized. |share| is the
+  // UserShare handle to associate model data with.
+  void OnUserShareReady(syncer::UserShare* share);
+
+  // Whether the DataTypeController is ready to start. This is useful if the
+  // datatype itself must make the decision about whether it should be enabled
+  // at all (and therefore whether the initial download of the sync data for
+  // the type should be performed).
+  // Returns true by default.
+  virtual bool ReadyForStart() const;
+
  protected:
   friend class base::RefCountedDeleteOnMessageLoop<DataTypeController>;
   friend class base::DeleteHelper<DataTypeController>;
 
   DataTypeController(scoped_refptr<base::MessageLoopProxy> ui_thread,
-                     const base::Closure& error_callback);
+                     const base::Closure& error_callback,
+                     const DisableTypeCallback& disable_callback);
 
   // If the DTC is waiting for models to load, once the models are
   // loaded the datatype service will call this function on DTC to let
@@ -137,16 +158,18 @@ class DataTypeController
 
   virtual ~DataTypeController();
 
-  // Handles the reporting of unrecoverable error. It records stuff in
-  // UMA and reports to breakpad.
-  // Virtual for testing purpose.
-  virtual void RecordUnrecoverableError(
-      const tracked_objects::Location& from_here,
-      const std::string& message);
+  syncer::UserShare* user_share() const;
+  DisableTypeCallback disable_callback();
+
+  // The callback that will be invoked when an unrecoverable error occurs.
+  // TODO(sync): protected for use by legacy controllers.
+  base::Closure error_callback_;
 
  private:
-  // The callback that will be invoked when an unrecoverable error occurs.
-  base::Closure error_callback_;
+  // TODO(tim): Bug 383480. Do we need two callbacks?
+  DisableTypeCallback disable_callback_;
+
+  syncer::UserShare* user_share_;
 };
 
 }  // namespace browser_sync

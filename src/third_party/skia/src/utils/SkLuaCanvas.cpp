@@ -122,7 +122,9 @@ void SkLuaCanvas::didConcat(const SkMatrix& matrix) {
         }
         default: {
             AUTO_LUA("concat");
-            lua.pushMatrix(matrix);
+            // pushMatrix added in https://codereview.chromium.org/203203004/
+            // Doesn't seem to have ever been working correctly since added
+            // lua.pushMatrix(matrix);
             break;
         }
     }
@@ -266,10 +268,10 @@ void SkLuaCanvas::onDrawTextOnPath(const void* text, size_t byteLength, const Sk
     lua.pushPaint(paint, "paint");
 }
 
-void SkLuaCanvas::drawPicture(SkPicture& picture) {
+void SkLuaCanvas::onDrawPicture(const SkPicture* picture) {
     AUTO_LUA("drawPicture");
     // call through so we can see the nested picture ops
-    this->INHERITED::drawPicture(picture);
+    this->INHERITED::onDrawPicture(picture);
 }
 
 void SkLuaCanvas::drawVertices(VertexMode vmode, int vertexCount,

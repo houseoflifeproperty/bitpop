@@ -1,6 +1,11 @@
 {
     "extensions": [
         {
+            "type": "@WebInspector.ContextMenu.Provider",
+            "contextTypes": ["WebInspector.UISourceCode", "WebInspector.Resource", "WebInspector.NetworkRequest", "Node"],
+            "className": "WebInspector.HandlerRegistry.ContextMenuProvider"
+        },
+        {
             "type": "@WebInspector.ActionDelegate",
             "actionId": "main.reload",
             "className": "WebInspector.Main.ReloadActionDelegate",
@@ -109,6 +114,31 @@
                     "shortcut": "Meta+0 Meta+Numpad0"
                 }
             ]
+        },
+        {
+            "type": "@WebInspector.StatusBarButton.Provider",
+            "className": "WebInspector.InspectElementModeController.ToggleButtonProvider",
+            "location": "toolbar-left",
+            "order": 0,
+            "actionId": "main.toggle-element-search"
+        },
+        {
+            "type": "@WebInspector.StatusBarButton.Provider",
+            "className": "WebInspector.App.EmulationButtonProvider",
+            "order": 1,
+            "location": "toolbar-left"
+        },
+        {
+            "type": "@WebInspector.StatusBarButton.Provider",
+            "className": "WebInspector.DockController.ButtonProvider",
+            "order": 1,
+            "location": "toolbar-right"
+        },
+        {
+            "type": "@WebInspector.StatusBarButton.Provider",
+            "className": "WebInspector.ScreencastApp.StatusBarButtonProvider",
+            "order": 2,
+            "location": "toolbar-right"
         },
         {
             "type": "ui-setting",

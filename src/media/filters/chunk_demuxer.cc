@@ -18,7 +18,6 @@
 #include "media/base/stream_parser_buffer.h"
 #include "media/base/video_decoder_config.h"
 #include "media/filters/frame_processor.h"
-#include "media/filters/legacy_frame_processor.h"
 #include "media/filters/stream_parser_factory.h"
 
 using base::TimeDelta;
@@ -96,7 +95,7 @@ class SourceState {
 
   SourceState(
       scoped_ptr<StreamParser> stream_parser,
-      scoped_ptr<FrameProcessorBase> frame_processor, const LogCB& log_cb,
+      scoped_ptr<FrameProcessor> frame_processor, const LogCB& log_cb,
       const CreateDemuxerStreamCB& create_demuxer_stream_cb);
 
   ~SourceState();
@@ -228,7 +227,7 @@ class SourceState {
   typedef std::map<StreamParser::TrackId, ChunkDemuxerStream*> TextStreamMap;
   TextStreamMap text_stream_map_;  // |this| owns the map's stream pointers.
 
-  scoped_ptr<FrameProcessorBase> frame_processor_;
+  scoped_ptr<FrameProcessor> frame_processor_;
   LogCB log_cb_;
   StreamParser::InitCB init_cb_;
 
@@ -242,7 +241,7 @@ class SourceState {
 };
 
 SourceState::SourceState(scoped_ptr<StreamParser> stream_parser,
-                         scoped_ptr<FrameProcessorBase> frame_processor,
+                         scoped_ptr<FrameProcessor> frame_processor,
                          const LogCB& log_cb,
                          const CreateDemuxerStreamCB& create_demuxer_stream_cb)
     : create_demuxer_stream_cb_(create_demuxer_stream_cb),
@@ -569,6 +568,7 @@ bool SourceState::OnNewConfigs(
       }
     }
 
+    frame_processor_->OnPossibleAudioConfigUpdate(audio_config);
     success &= audio_->UpdateAudioConfig(audio_config, log_cb_);
   }
 
@@ -622,8 +622,17 @@ bool SourceState::OnNewConfigs(
         success &= false;
         MEDIA_LOG(log_cb_) << "New text track config does not match old one.";
       } else {
-        text_stream_map_.clear();
-        text_stream_map_[config_itr->first] = text_stream;
+        StreamParser::TrackId old_id = stream_itr->first;
+        StreamParser::TrackId new_id = config_itr->first;
+        if (new_id != old_id) {
+          if (frame_processor_->UpdateTrack(old_id, new_id)) {
+            text_stream_map_.clear();
+            text_stream_map_[config_itr->first] = text_stream;
+          } else {
+            success &= false;
+            MEDIA_LOG(log_cb_) << "Error remapping single text track number";
+          }
+        }
       }
     } else {
       for (TextConfigItr config_itr = text_configs.begin();
@@ -651,6 +660,8 @@ bool SourceState::OnNewConfigs(
       }
     }
   }
+
+  frame_processor_->SetAllTrackBuffersNeedRandomAccessPoint();
 
   DVLOG(1) << "OnNewConfigs() : " << (success ? "success" : "failed");
   return success;
@@ -858,15 +869,13 @@ bool ChunkDemuxerStream::UpdateAudioConfig(const AudioDecoderConfig& config,
     DCHECK_EQ(state_, UNINITIALIZED);
 
     // On platforms which support splice frames, enable splice frames and
-    // partial append window support for a limited set of codecs.
-    // TODO(dalecurtis): Verify this works for codecs other than MP3 and Vorbis.
-    // Right now we want to be extremely conservative to ensure we don't break
-    // the world.
-    const bool mp3_or_vorbis =
-        config.codec() == kCodecMP3 || config.codec() == kCodecVorbis;
-    splice_frames_enabled_ = splice_frames_enabled_ && mp3_or_vorbis;
+    // partial append window support for most codecs (notably: not opus).
+    const bool codec_supported = config.codec() == kCodecMP3 ||
+                                 config.codec() == kCodecAAC ||
+                                 config.codec() == kCodecVorbis;
+    splice_frames_enabled_ = splice_frames_enabled_ && codec_supported;
     partial_append_window_trimming_enabled_ =
-        splice_frames_enabled_ && mp3_or_vorbis;
+        splice_frames_enabled_ && codec_supported;
 
     stream_.reset(
         new SourceBufferStream(config, log_cb, splice_frames_enabled_));
@@ -1141,11 +1150,9 @@ void ChunkDemuxer::CancelPendingSeek(TimeDelta seek_time) {
   base::ResetAndReturn(&seek_cb_).Run(PIPELINE_OK);
 }
 
-ChunkDemuxer::Status ChunkDemuxer::AddId(
-    const std::string& id,
-    const std::string& type,
-    std::vector<std::string>& codecs,
-    const bool use_legacy_frame_processor) {
+ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
+                                         const std::string& type,
+                                         std::vector<std::string>& codecs) {
   base::AutoLock auto_lock(lock_);
 
   if ((state_ != WAITING_FOR_INIT && state_ != INITIALIZING) || IsValidId(id))
@@ -1170,16 +1177,9 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(
   if (has_video)
     source_id_video_ = id;
 
-  scoped_ptr<FrameProcessorBase> frame_processor;
-  if (use_legacy_frame_processor) {
-    frame_processor.reset(new LegacyFrameProcessor(
-        base::Bind(&ChunkDemuxer::IncreaseDurationIfNecessary,
-                   base::Unretained(this))));
-  } else {
-    frame_processor.reset(new FrameProcessor(
-        base::Bind(&ChunkDemuxer::IncreaseDurationIfNecessary,
-                   base::Unretained(this))));
-  }
+  scoped_ptr<FrameProcessor> frame_processor(
+      new FrameProcessor(base::Bind(&ChunkDemuxer::IncreaseDurationIfNecessary,
+                         base::Unretained(this))));
 
   scoped_ptr<SourceState> source_state(
       new SourceState(stream_parser.Pass(),
@@ -1323,6 +1323,16 @@ void ChunkDemuxer::Remove(const std::string& id, TimeDelta start,
 
   DCHECK(!id.empty());
   CHECK(IsValidId(id));
+  DCHECK(start >= base::TimeDelta()) << start.InSecondsF();
+  DCHECK(start < end) << "start " << start.InSecondsF()
+                      << " end " << end.InSecondsF();
+  DCHECK(duration_ != kNoTimestamp());
+  DCHECK(start <= duration_) << "start " << start.InSecondsF()
+                             << " duration " << duration_.InSecondsF();
+
+  if (start == duration_)
+    return;
+
   source_state_map_[id]->Remove(start, end, duration_);
 }
 

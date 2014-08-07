@@ -21,7 +21,7 @@
 #ifndef SVGClipPathElement_h
 #define SVGClipPathElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGGraphicsElement.h"
@@ -33,7 +33,7 @@ class RenderObject;
 
 class SVGClipPathElement FINAL : public SVGGraphicsElement {
 public:
-    static PassRefPtr<SVGClipPathElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGClipPathElement);
     SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>* clipPathUnits() { return m_clipPathUnits.get(); }
 
     virtual bool supportsFocus() const OVERRIDE { return false; }

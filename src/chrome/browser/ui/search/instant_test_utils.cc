@@ -65,7 +65,7 @@ void InstantTestBase::SetupInstant(Browser* browser) {
   data.alternate_urls.push_back(instant_url_.spec() + "#q={searchTerms}");
   data.search_terms_replacement_key = "strk";
 
-  TemplateURL* template_url = new TemplateURL(browser_->profile(), data);
+  TemplateURL* template_url = new TemplateURL(data);
   service->Add(template_url);  // Takes ownership of |template_url|.
   service->SetUserSelectedDefaultSearchProvider(template_url);
 }
@@ -80,7 +80,7 @@ void InstantTestBase::SetInstantURL(const std::string& url) {
   data.SetURL(url);
   data.instant_url = url;
 
-  TemplateURL* template_url = new TemplateURL(browser_->profile(), data);
+  TemplateURL* template_url = new TemplateURL(data);
   service->Add(template_url);  // Takes ownership of |template_url|.
   service->SetUserSelectedDefaultSearchProvider(template_url);
 }
@@ -113,6 +113,14 @@ void InstantTestBase::SetOmniboxText(const std::string& text) {
 void InstantTestBase::PressEnterAndWaitForNavigation() {
   content::WindowedNotificationObserver nav_observer(
       content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+      content::NotificationService::AllSources());
+  browser_->window()->GetLocationBar()->AcceptInput();
+  nav_observer.Wait();
+}
+
+void InstantTestBase::PressEnterAndWaitForFrameLoad() {
+  content::WindowedNotificationObserver nav_observer(
+      content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
       content::NotificationService::AllSources());
   browser_->window()->GetLocationBar()->AcceptInput();
   nav_observer.Wait();

@@ -11,8 +11,8 @@
 #include "base/gtest_prod_util.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/ui/bookmarks/bookmark_editor.h"
-#include "components/bookmarks/core/browser/bookmark_expanded_state_tracker.h"
-#include "components/bookmarks/core/browser/bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_expanded_state_tracker.h"
+#include "components/bookmarks/browser/bookmark_model_observer.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/models/tree_node_model.h"
 #include "ui/views/context_menu_controller.h"
@@ -88,7 +88,7 @@ class BookmarkEditorView : public BookmarkEditor,
   virtual bool Accept() OVERRIDE;
 
   // views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // views::TreeViewController:
@@ -147,7 +147,7 @@ class BookmarkEditorView : public BookmarkEditor,
                                    int index,
                                    const BookmarkNode* node,
                                    const std::set<GURL>& removed_urls) OVERRIDE;
-  virtual void BookmarkAllNodesRemoved(
+  virtual void BookmarkAllUserNodesRemoved(
       BookmarkModel* model,
       const std::set<GURL>& removed_urls) OVERRIDE;
   virtual void BookmarkNodeChanged(BookmarkModel* model,
@@ -217,8 +217,9 @@ class BookmarkEditorView : public BookmarkEditor,
 
   // If |editor_node| is expanded it's added to |expanded_nodes| and this is
   // recursively invoked for all the children.
-  void UpdateExpandedNodes(EditorNode* editor_node,
-                           BookmarkExpandedStateTracker::Nodes* expanded_nodes);
+  void UpdateExpandedNodes(
+      EditorNode* editor_node,
+      bookmarks::BookmarkExpandedStateTracker::Nodes* expanded_nodes);
 
   ui::SimpleMenuModel* GetMenuModel();
 

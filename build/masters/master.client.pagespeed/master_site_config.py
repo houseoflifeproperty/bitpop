@@ -11,6 +11,7 @@ class PageSpeed(Master.Master3):
   master_port = 8038
   slave_port = 8138
   master_port_alt = 8238
+  buildbot_url = 'http://build.chromium.org/p/client.pagespeed/'
   tree_closing_notification_recipients = [
       'page-speed-codereview@googlegroups.com']
   # Select tree status urls and codereview location.

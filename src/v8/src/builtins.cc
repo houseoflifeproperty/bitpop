@@ -2,19 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "api.h"
-#include "arguments.h"
-#include "bootstrapper.h"
-#include "builtins.h"
-#include "cpu-profiler.h"
-#include "gdb-jit.h"
-#include "ic-inl.h"
-#include "heap-profiler.h"
-#include "mark-compact.h"
-#include "stub-cache.h"
-#include "vm-state-inl.h"
+#include "src/api.h"
+#include "src/arguments.h"
+#include "src/base/once.h"
+#include "src/bootstrapper.h"
+#include "src/builtins.h"
+#include "src/cpu-profiler.h"
+#include "src/gdb-jit.h"
+#include "src/ic-inl.h"
+#include "src/heap-profiler.h"
+#include "src/mark-compact.h"
+#include "src/stub-cache.h"
+#include "src/vm-state-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -172,15 +173,11 @@ BUILTIN(EmptyFunction) {
 }
 
 
-static void MoveDoubleElements(FixedDoubleArray* dst,
-                               int dst_index,
-                               FixedDoubleArray* src,
-                               int src_index,
-                               int len) {
+static void MoveDoubleElements(FixedDoubleArray* dst, int dst_index,
+                               FixedDoubleArray* src, int src_index, int len) {
   if (len == 0) return;
-  OS::MemMove(dst->data_start() + dst_index,
-              src->data_start() + src_index,
-              len * kDoubleSize);
+  MemMove(dst->data_start() + dst_index, src->data_start() + src_index,
+          len * kDoubleSize);
 }
 
 
@@ -382,15 +379,17 @@ BUILTIN(ArrayPush) {
   }
 
   Handle<JSArray> array = Handle<JSArray>::cast(receiver);
+  int len = Smi::cast(array->length())->value();
+  int to_add = args.length() - 1;
+  if (to_add > 0 && JSArray::WouldChangeReadOnlyLength(array, len + to_add)) {
+    return CallJsBuiltin(isolate, "ArrayPush", args);
+  }
   ASSERT(!array->map()->is_observed());
 
   ElementsKind kind = array->GetElementsKind();
 
   if (IsFastSmiOrObjectElementsKind(kind)) {
     Handle<FixedArray> elms = Handle<FixedArray>::cast(elms_obj);
-
-    int len = Smi::cast(array->length())->value();
-    int to_add = args.length() - 1;
     if (to_add == 0) {
       return Smi::FromInt(len);
     }
@@ -429,10 +428,7 @@ BUILTIN(ArrayPush) {
     array->set_length(Smi::FromInt(new_length));
     return Smi::FromInt(new_length);
   } else {
-    int len = Smi::cast(array->length())->value();
     int elms_len = elms_obj->length();
-
-    int to_add = args.length() - 1;
     if (to_add == 0) {
       return Smi::FromInt(len);
     }
@@ -578,14 +574,18 @@ BUILTIN(ArrayUnshift) {
   if (!array->HasFastSmiOrObjectElements()) {
     return CallJsBuiltin(isolate, "ArrayUnshift", args);
   }
-  Handle<FixedArray> elms = Handle<FixedArray>::cast(elms_obj);
-
   int len = Smi::cast(array->length())->value();
   int to_add = args.length() - 1;
   int new_length = len + to_add;
   // Currently fixed arrays cannot grow too big, so
   // we should never hit this case.
   ASSERT(to_add <= (Smi::kMaxValue - len));
+
+  if (to_add > 0 && JSArray::WouldChangeReadOnlyLength(array, len + to_add)) {
+    return CallJsBuiltin(isolate, "ArrayUnshift", args);
+  }
+
+  Handle<FixedArray> elms = Handle<FixedArray>::cast(elms_obj);
 
   JSObject::EnsureCanContainElements(array, &args, 1, to_add,
                                      DONT_ALLOW_DOUBLE_ELEMENTS);
@@ -995,7 +995,7 @@ BUILTIN(ArrayConcat) {
         JSObject::cast(native_context->array_function()->prototype());
     if (!ArrayPrototypeHasNoElements(heap, native_context, array_proto)) {
       AllowHeapAllocation allow_allocation;
-      return CallJsBuiltin(isolate, "ArrayConcat", args);
+      return CallJsBuiltin(isolate, "ArrayConcatJS", args);
     }
 
     // Iterate through all the arguments performing checks
@@ -1007,7 +1007,7 @@ BUILTIN(ArrayConcat) {
           !JSArray::cast(arg)->HasFastElements() ||
           JSArray::cast(arg)->GetPrototype() != array_proto) {
         AllowHeapAllocation allow_allocation;
-        return CallJsBuiltin(isolate, "ArrayConcat", args);
+        return CallJsBuiltin(isolate, "ArrayConcatJS", args);
       }
       int len = Smi::cast(JSArray::cast(arg)->length())->value();
 
@@ -1020,7 +1020,7 @@ BUILTIN(ArrayConcat) {
 
       if (result_len > FixedDoubleArray::kMaxLength) {
         AllowHeapAllocation allow_allocation;
-        return CallJsBuiltin(isolate, "ArrayConcat", args);
+        return CallJsBuiltin(isolate, "ArrayConcatJS", args);
       }
 
       ElementsKind arg_kind = JSArray::cast(arg)->map()->elements_kind();
@@ -1068,13 +1068,20 @@ BUILTIN(ArrayConcat) {
 
 
 // -----------------------------------------------------------------------------
-// Strict mode poison pills
+// Generator and strict mode poison pills
 
 
 BUILTIN(StrictModePoisonPill) {
   HandleScope scope(isolate);
   return isolate->Throw(*isolate->factory()->NewTypeError(
       "strict_poison_pill", HandleVector<Object>(NULL, 0)));
+}
+
+
+BUILTIN(GeneratorPoisonPill) {
+  HandleScope scope(isolate);
+  return isolate->Throw(*isolate->factory()->NewTypeError(
+      "generator_poison_pill", HandleVector<Object>(NULL, 0)));
 }
 
 
@@ -1421,68 +1428,68 @@ static void Generate_KeyedStoreIC_SloppyArguments(MacroAssembler* masm) {
 
 
 static void Generate_CallICStub_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateCallICStubDebugBreak(masm);
+  DebugCodegen::GenerateCallICStubDebugBreak(masm);
 }
 
 
 static void Generate_LoadIC_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateLoadICDebugBreak(masm);
+  DebugCodegen::GenerateLoadICDebugBreak(masm);
 }
 
 
 static void Generate_StoreIC_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateStoreICDebugBreak(masm);
+  DebugCodegen::GenerateStoreICDebugBreak(masm);
 }
 
 
 static void Generate_KeyedLoadIC_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateKeyedLoadICDebugBreak(masm);
+  DebugCodegen::GenerateKeyedLoadICDebugBreak(masm);
 }
 
 
 static void Generate_KeyedStoreIC_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateKeyedStoreICDebugBreak(masm);
+  DebugCodegen::GenerateKeyedStoreICDebugBreak(masm);
 }
 
 
 static void Generate_CompareNilIC_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateCompareNilICDebugBreak(masm);
+  DebugCodegen::GenerateCompareNilICDebugBreak(masm);
 }
 
 
 static void Generate_Return_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateReturnDebugBreak(masm);
+  DebugCodegen::GenerateReturnDebugBreak(masm);
 }
 
 
 static void Generate_CallFunctionStub_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateCallFunctionStubDebugBreak(masm);
+  DebugCodegen::GenerateCallFunctionStubDebugBreak(masm);
 }
 
 
 static void Generate_CallConstructStub_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateCallConstructStubDebugBreak(masm);
+  DebugCodegen::GenerateCallConstructStubDebugBreak(masm);
 }
 
 
 static void Generate_CallConstructStub_Recording_DebugBreak(
     MacroAssembler* masm) {
-  Debug::GenerateCallConstructStubRecordDebugBreak(masm);
+  DebugCodegen::GenerateCallConstructStubRecordDebugBreak(masm);
 }
 
 
 static void Generate_Slot_DebugBreak(MacroAssembler* masm) {
-  Debug::GenerateSlotDebugBreak(masm);
+  DebugCodegen::GenerateSlotDebugBreak(masm);
 }
 
 
 static void Generate_PlainReturn_LiveEdit(MacroAssembler* masm) {
-  Debug::GeneratePlainReturnLiveEdit(masm);
+  DebugCodegen::GeneratePlainReturnLiveEdit(masm);
 }
 
 
 static void Generate_FrameDropper_LiveEdit(MacroAssembler* masm) {
-  Debug::GenerateFrameDropperLiveEdit(masm);
+  DebugCodegen::GenerateFrameDropperLiveEdit(masm);
 }
 
 
@@ -1528,11 +1535,11 @@ struct BuiltinDesc {
 class BuiltinFunctionTable {
  public:
   BuiltinDesc* functions() {
-    CallOnce(&once_, &Builtins::InitBuiltinFunctionTable);
+    base::CallOnce(&once_, &Builtins::InitBuiltinFunctionTable);
     return functions_;
   }
 
-  OnceType once_;
+  base::OnceType once_;
   BuiltinDesc functions_[Builtins::builtin_count + 1];
 
   friend class Builtins;
@@ -1604,9 +1611,13 @@ void Builtins::SetUp(Isolate* isolate, bool create_heap_objects) {
   // For now we generate builtin adaptor code into a stack-allocated
   // buffer, before copying it into individual code objects. Be careful
   // with alignment, some platforms don't like unaligned code.
-  // TODO(jbramley): I had to increase the size of this buffer from 8KB because
-  // we can generate a lot of debug code on ARM64.
-  union { int force_alignment; byte buffer[16*KB]; } u;
+#ifdef DEBUG
+  // We can generate a lot of debug code on Arm64.
+  const size_t buffer_size = 32*KB;
+#else
+  const size_t buffer_size = 8*KB;
+#endif
+  union { int force_alignment; byte buffer[buffer_size]; } u;
 
   // Traverse the list of builtins and generate an adaptor in a
   // separate code object for each one.

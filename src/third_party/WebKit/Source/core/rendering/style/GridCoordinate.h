@@ -114,6 +114,11 @@ struct GridSpan {
         return resolvedInitialPosition == o.resolvedInitialPosition && resolvedFinalPosition == o.resolvedFinalPosition;
     }
 
+    size_t integerSpan() const
+    {
+        return resolvedFinalPosition.toInt() - resolvedInitialPosition.toInt() + 1;
+    }
+
     GridResolvedPosition resolvedInitialPosition;
     GridResolvedPosition resolvedFinalPosition;
 
@@ -153,6 +158,22 @@ struct GridCoordinate {
     bool operator!=(const GridCoordinate& o) const
     {
         return !(*this == o);
+    }
+
+    GridResolvedPosition positionForSide(GridPositionSide side) const
+    {
+        switch (side) {
+        case ColumnStartSide:
+            return columns.resolvedInitialPosition;
+        case ColumnEndSide:
+            return columns.resolvedFinalPosition;
+        case RowStartSide:
+            return rows.resolvedInitialPosition;
+        case RowEndSide:
+            return rows.resolvedFinalPosition;
+        }
+        ASSERT_NOT_REACHED();
+        return 0;
     }
 
     GridSpan columns;

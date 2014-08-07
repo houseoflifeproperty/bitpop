@@ -6,13 +6,11 @@
 #include "core/dom/custom/CustomElementMicrotaskDispatcher.h"
 
 #include "core/dom/Microtask.h"
-#include "core/dom/custom/CustomElementAsyncImportMicrotaskQueue.h"
 #include "core/dom/custom/CustomElementCallbackDispatcher.h"
 #include "core/dom/custom/CustomElementCallbackQueue.h"
 #include "core/dom/custom/CustomElementMicrotaskImportStep.h"
-#include "core/dom/custom/CustomElementMicrotaskQueue.h"
+#include "core/dom/custom/CustomElementMicrotaskStepDispatcher.h"
 #include "core/dom/custom/CustomElementScheduler.h"
-#include "core/html/imports/HTMLImportLoader.h"
 #include "wtf/MainThread.h"
 
 namespace WebCore {
@@ -22,37 +20,28 @@ static const CustomElementCallbackQueue::ElementQueueId kMicrotaskQueueId = 0;
 CustomElementMicrotaskDispatcher::CustomElementMicrotaskDispatcher()
     : m_hasScheduledMicrotask(false)
     , m_phase(Quiescent)
-    , m_resolutionAndImports(CustomElementMicrotaskQueue::create())
-    , m_asyncImports(CustomElementAsyncImportMicrotaskQueue::create())
+    , m_steps(CustomElementMicrotaskStepDispatcher::create())
 {
 }
 
-CustomElementMicrotaskDispatcher::~CustomElementMicrotaskDispatcher()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(CustomElementMicrotaskDispatcher)
 
 CustomElementMicrotaskDispatcher& CustomElementMicrotaskDispatcher::instance()
 {
-    DEFINE_STATIC_LOCAL(CustomElementMicrotaskDispatcher, instance, ());
-    return instance;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<CustomElementMicrotaskDispatcher>, instance, (adoptPtrWillBeNoop(new CustomElementMicrotaskDispatcher())));
+    return *instance;
 }
 
-void CustomElementMicrotaskDispatcher::enqueue(HTMLImportLoader* parentLoader, PassOwnPtr<CustomElementMicrotaskStep> step)
+void CustomElementMicrotaskDispatcher::enqueue(HTMLImportLoader* parentLoader, PassOwnPtrWillBeRawPtr<CustomElementMicrotaskStep> step)
 {
     ensureMicrotaskScheduledForMicrotaskSteps();
-    if (parentLoader)
-        parentLoader->microtaskQueue()->enqueue(step);
-    else
-        m_resolutionAndImports->enqueue(step);
+    m_steps->enqueue(parentLoader, step);
 }
 
-void CustomElementMicrotaskDispatcher::enqueue(HTMLImportLoader* parentLoader, PassOwnPtr<CustomElementMicrotaskImportStep> step, bool importIsSync)
+void CustomElementMicrotaskDispatcher::enqueue(HTMLImportLoader* parentLoader, PassOwnPtrWillBeRawPtr<CustomElementMicrotaskImportStep> step, bool importIsSync)
 {
     ensureMicrotaskScheduledForMicrotaskSteps();
-    if (importIsSync)
-        enqueue(parentLoader, PassOwnPtr<CustomElementMicrotaskStep>(step));
-    else
-        m_asyncImports->enqueue(step);
+    m_steps->enqueue(parentLoader, step, importIsSync);
 }
 
 void CustomElementMicrotaskDispatcher::enqueue(CustomElementCallbackQueue* queue)
@@ -105,12 +94,10 @@ void CustomElementMicrotaskDispatcher::doDispatch()
     ASSERT_WITH_SECURITY_IMPLICATION(!CustomElementCallbackDispatcher::inCallbackDeliveryScope());
 
     m_phase = Resolving;
-    m_resolutionAndImports->dispatch();
-    if (m_resolutionAndImports->isEmpty())
-        m_asyncImports->dispatch();
+    m_steps->dispatch();
 
     m_phase = DispatchingCallbacks;
-    for (Vector<CustomElementCallbackQueue*>::iterator it = m_elements.begin();it != m_elements.end(); ++it) {
+    for (WillBeHeapVector<RawPtrWillBeMember<CustomElementCallbackQueue> >::iterator it = m_elements.begin(); it != m_elements.end(); ++it) {
         // Created callback may enqueue an attached callback.
         CustomElementCallbackDispatcher::CallbackDeliveryScope scope;
         (*it)->processInElementQueue(kMicrotaskQueueId);
@@ -121,14 +108,18 @@ void CustomElementMicrotaskDispatcher::doDispatch()
     m_phase = Quiescent;
 }
 
+void CustomElementMicrotaskDispatcher::trace(Visitor* visitor)
+{
+    visitor->trace(m_steps);
+#if ENABLE(OILPAN)
+    visitor->trace(m_elements);
+#endif
+}
+
 #if !defined(NDEBUG)
 void CustomElementMicrotaskDispatcher::show()
 {
-    fprintf(stderr, "Dispatcher:\n");
-    fprintf(stderr, "  Sync:\n");
-    m_resolutionAndImports->show(3);
-    fprintf(stderr, "  Async:\n");
-    m_asyncImports->show(3);
+    m_steps->show(2);
 
 }
 #endif

@@ -5,6 +5,7 @@
 #import "chrome/browser/ui/cocoa/framed_browser_window.h"
 
 #include "base/logging.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "chrome/browser/global_keyboard_shortcuts_mac.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -17,22 +18,6 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "grit/theme_resources.h"
 #include "ui/base/cocoa/nsgraphics_context_additions.h"
-
-// Replicate specific 10.7 SDK declarations for building with prior SDKs.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-@interface NSWindow (LionSDKDeclarations)
-- (void)toggleFullScreen:(id)sender;
-@end
-
-enum {
-  NSWindowDocumentVersionsButton = 6,
-  NSWindowFullScreenButton
-};
-
-#endif  // MAC_OS_X_VERSION_10_7
-
 
 // Implementer's note: Moving the window controls is tricky. When altering the
 // code, ensure that:
@@ -51,7 +36,7 @@ const CGFloat kWindowGradientHeight = 24.0;
 
 }
 
-@interface FramedBrowserWindow (Private)
+@interface FramedBrowserWindow ()
 
 - (void)adjustCloseButton:(NSNotification*)notification;
 - (void)adjustMiniaturizeButton:(NSNotification*)notification;
@@ -267,11 +252,18 @@ const CGFloat kWindowGradientHeight = 24.0;
 }
 
 - (void)setShouldHideTitle:(BOOL)flag {
-  shouldHideTitle_ = flag;
+  if ([self respondsToSelector:@selector(setTitleVisibility:)])
+    self.titleVisibility = flag ? NSWindowTitleHidden : NSWindowTitleVisible;
+  else
+    shouldHideTitle_ = flag;
 }
 
 - (BOOL)_isTitleHidden {
-  return shouldHideTitle_;
+  // Only intervene with 10.6-10.9.
+  if ([self respondsToSelector:@selector(setTitleVisibility:)])
+    return [super _isTitleHidden];
+  else
+    return shouldHideTitle_;
 }
 
 - (CGFloat)windowButtonsInterButtonSpacing {
@@ -364,9 +356,12 @@ const CGFloat kWindowGradientHeight = 24.0;
                           bounds:windowRect
             forceBlackBackground:NO];
 
-  // If the window needs a title and we painted over the title as drawn by the
-  // default window paint, paint it ourselves.
-  if (themed && [view respondsToSelector:@selector(_titlebarTitleRect)] &&
+  // In Yosemite: The title is drawn by a subview and not painted on. Therefore,
+  // never worry about drawing it. Pre-Yosemite: If the window needs a title and
+  // we painted over the title as drawn by the default window paint, paint it
+  // ourselves.
+  if (![self respondsToSelector:@selector(setTitleVisibility:)] &&
+      themed && [view respondsToSelector:@selector(_titlebarTitleRect)] &&
       [view respondsToSelector:@selector(_drawTitleStringIn:withColor:)] &&
       ![self _isTitleHidden]) {
     [view _drawTitleStringIn:[view _titlebarTitleRect]

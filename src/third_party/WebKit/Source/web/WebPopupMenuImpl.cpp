@@ -74,7 +74,6 @@ WebPopupMenu* WebPopupMenu::create(WebWidgetClient* client)
 WebPopupMenuImpl::WebPopupMenuImpl(WebWidgetClient* client)
     : m_client(client)
     , m_layerTreeView(0)
-    , m_isAcceleratedCompositingActive(false)
     // Set to impossible point so we always get the first mouse position.
     , m_lastMousePosition(WebPoint(-1, -1))
     , m_widget(0)
@@ -89,7 +88,6 @@ WebPopupMenuImpl::~WebPopupMenuImpl()
 
 void WebPopupMenuImpl::willCloseLayerTreeView()
 {
-    enterForceCompositingMode(false);
     m_layerTreeView = 0;
 }
 
@@ -98,9 +96,19 @@ void WebPopupMenuImpl::initialize(FramelessScrollView* widget, const WebRect& bo
     m_widget = widget;
     m_widget->setClient(this);
 
-    if (m_client) {
-        m_client->setWindowRect(bounds);
-        m_client->show(WebNavigationPolicy()); // Policy is ignored.
+    if (!m_client)
+        return;
+    m_client->setWindowRect(bounds);
+    m_client->show(WebNavigationPolicy()); // Policy is ignored.
+
+    m_client->initializeLayerTreeView();
+    m_layerTreeView = m_client->layerTreeView();
+    if (m_layerTreeView) {
+        m_layerTreeView->setVisible(true);
+        m_layerTreeView->setDeviceScaleFactor(m_client->deviceScaleFactor());
+        m_rootLayer = adoptPtr(Platform::current()->compositorSupport()->createContentLayer(this));
+        m_rootLayer->layer()->setBounds(m_size);
+        m_layerTreeView->setRootLayer(*m_rootLayer->layer());
     }
 }
 
@@ -204,37 +212,6 @@ void WebPopupMenuImpl::layout()
 {
 }
 
-void WebPopupMenuImpl::enterForceCompositingMode(bool enter)
-{
-    if (m_isAcceleratedCompositingActive == enter)
-        return;
-
-    if (!enter) {
-        m_isAcceleratedCompositingActive = false;
-        m_client->didDeactivateCompositor();
-    } else if (m_layerTreeView) {
-        m_isAcceleratedCompositingActive = true;
-        m_client->didActivateCompositor();
-    } else {
-        TRACE_EVENT0("webkit", "WebPopupMenuImpl::enterForceCompositingMode(true)");
-
-        m_client->initializeLayerTreeView();
-        m_layerTreeView = m_client->layerTreeView();
-        if (m_layerTreeView) {
-            m_layerTreeView->setVisible(true);
-            m_client->didActivateCompositor();
-            m_isAcceleratedCompositingActive = true;
-            m_layerTreeView->setDeviceScaleFactor(m_client->deviceScaleFactor());
-            m_rootLayer = adoptPtr(Platform::current()->compositorSupport()->createContentLayer(this));
-            m_rootLayer->layer()->setBounds(m_size);
-            m_layerTreeView->setRootLayer(*m_rootLayer->layer());
-        } else {
-            m_isAcceleratedCompositingActive = false;
-            m_client->didDeactivateCompositor();
-        }
-    }
-}
-
 void WebPopupMenuImpl::paintContents(WebCanvas* canvas, const WebRect& rect, bool, WebFloatRect&,
     WebContentLayerClient::GraphicsContextStatus contextStatus)
 {
@@ -248,7 +225,7 @@ void WebPopupMenuImpl::paintContents(WebCanvas* canvas, const WebRect& rect, boo
     }
 }
 
-void WebPopupMenuImpl::paint(WebCanvas* canvas, const WebRect& rect, PaintOptions)
+void WebPopupMenuImpl::paint(WebCanvas* canvas, const WebRect& rect)
 {
     if (!m_widget)
         return;

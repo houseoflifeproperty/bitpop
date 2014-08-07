@@ -16,9 +16,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
-#include "chrome/common/net/url_fixer_upper.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/url_fixer/url_fixer.h"
 #include "components/user_prefs/user_prefs.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -39,6 +39,7 @@
 #include "ui/views/window/dialog_client_view.h"
 #include "url/gurl.h"
 
+using bookmarks::BookmarkExpandedStateTracker;
 using views::GridLayout;
 
 namespace {
@@ -72,9 +73,12 @@ BookmarkEditorView::BookmarkEditorView(
       title_tf_(NULL),
       parent_(parent),
       details_(details),
+      bb_model_(BookmarkModelFactory::GetForProfile(profile)),
       running_menu_for_root_(false),
       show_tree_(configuration == SHOW_TREE) {
   DCHECK(profile);
+  DCHECK(bb_model_);
+  DCHECK(bb_model_->client()->CanBeEditedByUser(parent));
   Init();
 }
 
@@ -134,7 +138,7 @@ bool BookmarkEditorView::Accept() {
   return true;
 }
 
-gfx::Size BookmarkEditorView::GetPreferredSize() {
+gfx::Size BookmarkEditorView::GetPreferredSize() const {
   if (!show_tree_)
     return views::View::GetPreferredSize();
 
@@ -262,8 +266,6 @@ void BookmarkEditorView::ShowContextMenuForView(
 }
 
 void BookmarkEditorView::Init() {
-  bb_model_ = BookmarkModelFactory::GetForProfile(profile_);
-  DCHECK(bb_model_);
   bb_model_->AddObserver(this);
 
   title_label_ = new views::Label(
@@ -392,7 +394,7 @@ void BookmarkEditorView::BookmarkNodeRemoved(
   }
 }
 
-void BookmarkEditorView::BookmarkAllNodesRemoved(
+void BookmarkEditorView::BookmarkAllUserNodesRemoved(
     BookmarkModel* model,
     const std::set<GURL>& removed_urls) {
   Reset();
@@ -432,8 +434,7 @@ void BookmarkEditorView::Reset() {
 GURL BookmarkEditorView::GetInputURL() const {
   if (details_.GetNodeType() == BookmarkNode::FOLDER)
     return GURL();
-  return URLFixerUpper::FixupURL(
-      base::UTF16ToUTF8(url_tf_->text()), std::string());
+  return url_fixer::FixupURL(base::UTF16ToUTF8(url_tf_->text()), std::string());
 }
 
 void BookmarkEditorView::UserInputChanged() {
@@ -495,10 +496,10 @@ BookmarkEditorView::EditorNode* BookmarkEditorView::CreateRootNode() {
   EditorNode* root_node = new EditorNode(base::string16(), 0);
   const BookmarkNode* bb_root_node = bb_model_->root_node();
   CreateNodes(bb_root_node, root_node);
-  DCHECK(root_node->child_count() >= 2 && root_node->child_count() <= 3);
+  DCHECK(root_node->child_count() >= 2 && root_node->child_count() <= 4);
   DCHECK_EQ(BookmarkNode::BOOKMARK_BAR, bb_root_node->GetChild(0)->type());
   DCHECK_EQ(BookmarkNode::OTHER_NODE, bb_root_node->GetChild(1)->type());
-  if (root_node->child_count() == 3)
+  if (root_node->child_count() >= 3)
     DCHECK_EQ(BookmarkNode::MOBILE, bb_root_node->GetChild(2)->type());
   return root_node;
 }
@@ -507,7 +508,8 @@ void BookmarkEditorView::CreateNodes(const BookmarkNode* bb_node,
                                      BookmarkEditorView::EditorNode* b_node) {
   for (int i = 0; i < bb_node->child_count(); ++i) {
     const BookmarkNode* child_bb_node = bb_node->GetChild(i);
-    if (child_bb_node->IsVisible() && child_bb_node->is_folder()) {
+    if (child_bb_node->IsVisible() && child_bb_node->is_folder() &&
+        bb_model_->client()->CanBeEditedByUser(child_bb_node)) {
       EditorNode* new_b_node = new EditorNode(child_bb_node->GetTitle(),
                                               child_bb_node->id());
       b_node->Add(new_b_node, b_node->child_count());

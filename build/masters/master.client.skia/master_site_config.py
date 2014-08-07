@@ -16,3 +16,4 @@ class Skia(Master.Master3):
   repo_url = 'https://skia.googlesource.com/skia.git'
   production_host = None
   is_production_host = False
+  buildbot_url = None

@@ -4,7 +4,6 @@
 
 #include "ash/shelf/shelf_window_watcher.h"
 
-#include "ash/ash_switches.h"
 #include "ash/display/display_controller.h"
 #include "ash/shelf/shelf_constants.h"
 #include "ash/shelf/shelf_item_delegate_manager.h"
@@ -86,9 +85,7 @@ void ShelfWindowWatcher::RemovedWindowObserver::OnWindowParentChanged(
   // We don't need to check |parent| is default container because this observer
   // is already removed from |window| when |window| is re-parented to default
   // container.
-  if (switches::UseDockedWindows() &&
-      IsDragging(window) &&
-      parent->id() == kShellWindowId_DockedContainer)
+  if (IsDragging(window) && parent->id() == kShellWindowId_DockedContainer)
     return;
 
   // When |window| is re-parented to other containers or |window| is re-parented
@@ -267,9 +264,6 @@ void ShelfWindowWatcher::OnWindowPropertyChanged(aura::Window* window,
   AddShelfItem(window);
 }
 
-void ShelfWindowWatcher::OnDisplayBoundsChanged(const gfx::Display& display) {
-}
-
 void ShelfWindowWatcher::OnDisplayAdded(const gfx::Display& new_display) {
   // Add a new RootWindow and its ActivationClient to observed list.
   aura::Window* root_window = Shell::GetInstance()->display_controller()->
@@ -286,6 +280,10 @@ void ShelfWindowWatcher::OnDisplayRemoved(const gfx::Display& old_display) {
   // Instead, we remove an observer from RootWindow and ActivationClient in the
   // OnRootWindowDestroyed().
   // Do nothing here.
+}
+
+void ShelfWindowWatcher::OnDisplayMetricsChanged(const gfx::Display&,
+                                                 uint32_t) {
 }
 
 }  // namespace ash

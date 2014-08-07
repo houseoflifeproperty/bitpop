@@ -31,8 +31,10 @@ namespace remoting {
 static const int kMaxPendingFrames = 2;
 
 // Interval between empty keep-alive frames. These frames are sent only
-// when there are no real video frames being sent.
-static const int kKeepAlivePacketIntervalMs = 500;
+// when there are no real video frames being sent. To prevent PseudoTCP from
+// resetting congestion window this value must be smaller that then the minimum
+// RTO used in PseudoTCP, which is 250ms.
+static const int kKeepAlivePacketIntervalMs = 200;
 
 VideoScheduler::VideoScheduler(
     scoped_refptr<base::SingleThreadTaskRunner> capture_task_runner,
@@ -163,6 +165,30 @@ void VideoScheduler::UpdateSequenceNumber(int64 sequence_number) {
   }
 
   sequence_number_ = sequence_number;
+}
+
+void VideoScheduler::SetLosslessEncode(bool want_lossless) {
+  if (!encode_task_runner_->BelongsToCurrentThread()) {
+    DCHECK(network_task_runner_->BelongsToCurrentThread());
+    encode_task_runner_->PostTask(
+        FROM_HERE, base::Bind(&VideoScheduler::SetLosslessEncode,
+                              this, want_lossless));
+    return;
+  }
+
+  encoder_->SetLosslessEncode(want_lossless);
+}
+
+void VideoScheduler::SetLosslessColor(bool want_lossless) {
+  if (!encode_task_runner_->BelongsToCurrentThread()) {
+    DCHECK(network_task_runner_->BelongsToCurrentThread());
+    encode_task_runner_->PostTask(
+        FROM_HERE, base::Bind(&VideoScheduler::SetLosslessColor,
+                              this, want_lossless));
+    return;
+  }
+
+  encoder_->SetLosslessColor(want_lossless);
 }
 
 // Private methods -----------------------------------------------------------

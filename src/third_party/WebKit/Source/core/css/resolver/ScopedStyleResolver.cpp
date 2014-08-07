@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/css/resolver/ScopedStyleResolver.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/PageRuleCollector.h"
 #include "core/css/RuleFeature.h"
@@ -49,22 +49,15 @@ ContainerNode* ScopedStyleResolver::scopingNodeFor(Document& document, const CSS
     Document* sheetDocument = sheet->ownerDocument();
     if (!sheetDocument)
         return 0;
+
     Node* ownerNode = sheet->ownerNode();
     if (!isHTMLStyleElement(ownerNode))
         return &document;
 
     HTMLStyleElement& styleElement = toHTMLStyleElement(*ownerNode);
-    if (!styleElement.scoped()) {
-        if (styleElement.isInShadowTree())
-            return styleElement.containingShadowRoot();
-        return &document;
-    }
-
-    ContainerNode* parent = styleElement.parentNode();
-    if (!parent)
-        return 0;
-
-    return (parent->isElementNode() || parent->isShadowRoot()) ? parent : 0;
+    if (styleElement.isInShadowTree())
+        return styleElement.containingShadowRoot();
+    return &document;
 }
 
 void ScopedStyleResolver::addRulesFromSheet(CSSStyleSheet* cssSheet, const MediaQueryEvaluator& medium, StyleResolver* resolver)
@@ -127,10 +120,8 @@ void ScopedStyleResolver::collectMatchingAuthorRules(ElementRuleCollector& colle
     if (!applyAuthorStyles)
         behaviorAtBoundary |= SelectorChecker::ScopeContainsLastMatchedElement;
 
-    if (m_scopingNode.isShadowRoot()) {
-        scopingNode = toShadowRoot(m_scopingNode).host();
-        behaviorAtBoundary |= SelectorChecker::ScopeIsShadowHost;
-    }
+    if (m_scopingNode.isShadowRoot())
+        behaviorAtBoundary |= SelectorChecker::ScopeIsShadowRoot;
 
     RuleRange ruleRange = collector.matchedResult().ranges.authorRuleRange();
     for (size_t i = 0; i < m_authorStyleSheets.size(); ++i) {

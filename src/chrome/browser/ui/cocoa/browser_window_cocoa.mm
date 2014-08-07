@@ -20,7 +20,8 @@
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/signin/signin_header_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands_mac.h"
@@ -50,6 +51,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/translate/core/browser/language_state.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -493,9 +495,9 @@ void BrowserWindowCocoa::ShowBookmarkAppBubble(
 void BrowserWindowCocoa::ShowTranslateBubble(content::WebContents* contents,
                                              translate::TranslateStep step,
                                              TranslateErrors::Type error_type) {
-  TranslateTabHelper* translate_tab_helper =
-      TranslateTabHelper::FromWebContents(contents);
-  LanguageState& language_state = translate_tab_helper->GetLanguageState();
+  ChromeTranslateClient* chrome_translate_client =
+      ChromeTranslateClient::FromWebContents(contents);
+  LanguageState& language_state = chrome_translate_client->GetLanguageState();
   language_state.SetTranslateEnabled(true);
 
   [controller_ showTranslateBubbleForWebContents:contents
@@ -704,9 +706,15 @@ void BrowserWindowCocoa::ShowAvatarBubble(WebContents* web_contents,
 }
 
 void BrowserWindowCocoa::ShowAvatarBubbleFromAvatarButton(
-    AvatarBubbleMode mode) {
+    AvatarBubbleMode mode,
+    const signin::ManageAccountsParams& manage_accounts_params) {
   AvatarBaseController* controller = [controller_ avatarButtonController];
-  [controller showAvatarBubble:[controller buttonView] withMode:mode];
+  NSView* anchor = [controller buttonView];
+  if ([anchor isHiddenOrHasHiddenAncestor])
+    anchor = [[controller_ toolbarController] wrenchButton];
+  [controller showAvatarBubble:anchor
+                      withMode:mode
+               withServiceType:manage_accounts_params.service_type];
 }
 
 void BrowserWindowCocoa::ShowPasswordGenerationBubble(

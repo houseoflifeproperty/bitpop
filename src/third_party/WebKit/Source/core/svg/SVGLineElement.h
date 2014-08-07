@@ -21,7 +21,7 @@
 #ifndef SVGLineElement_h
 #define SVGLineElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGGeometryElement.h"
@@ -30,7 +30,7 @@ namespace WebCore {
 
 class SVGLineElement FINAL : public SVGGeometryElement {
 public:
-    static PassRefPtr<SVGLineElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGLineElement);
 
     SVGAnimatedLength* x1() const { return m_x1.get(); }
     SVGAnimatedLength* y1() const { return m_y1.get(); }

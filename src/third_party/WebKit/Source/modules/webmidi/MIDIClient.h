@@ -35,18 +35,18 @@
 
 namespace WebCore {
 
-class MIDIAccess;
-class Page;
+class LocalFrame;
+class MIDIAccessInitializer;
 
 class MIDIClient {
 public:
-    virtual void requestSysexPermission(PassRefPtrWillBeRawPtr<MIDIAccess>) = 0;
-    virtual void cancelSysexPermissionRequest(MIDIAccess*) = 0;
+    virtual void requestSysexPermission(MIDIAccessInitializer*) = 0;
+    virtual void cancelSysexPermissionRequest(MIDIAccessInitializer*) = 0;
 
     virtual ~MIDIClient() { }
 };
 
-void provideMIDITo(Page&, PassOwnPtr<MIDIClient>);
+void provideMIDITo(LocalFrame&, PassOwnPtr<MIDIClient>);
 
 } // namespace WebCore
 

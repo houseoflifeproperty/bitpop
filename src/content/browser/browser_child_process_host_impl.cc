@@ -140,6 +140,7 @@ void BrowserChildProcessHostImpl::Launch(
   static const char* kForwardSwitches[] = {
     switches::kDisableLogging,
     switches::kEnableLogging,
+    switches::kIPCConnectionTimeout,
     switches::kLoggingLevel,
     switches::kTraceToConsole,
     switches::kV,
@@ -175,11 +176,6 @@ base::ProcessHandle BrowserChildProcessHostImpl::GetHandle() const {
   DCHECK(child_process_->GetHandle())
       << "Requesting a child process handle before launch has completed OK.";
   return child_process_->GetHandle();
-}
-
-void BrowserChildProcessHostImpl::SetNaClDebugStubPort(int port) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  data_.nacl_debug_stub_port = port;
 }
 
 void BrowserChildProcessHostImpl::SetName(const base::string16& name) {
@@ -219,6 +215,12 @@ void BrowserChildProcessHostImpl::NotifyProcessInstanceCreated(
                     BrowserChildProcessInstanceCreated(data));
 }
 
+void BrowserChildProcessHostImpl::HistogramBadMessageTerminated(
+    int process_type) {
+  UMA_HISTOGRAM_ENUMERATION("ChildProcess.BadMessgeTerminated", process_type,
+                            PROCESS_TYPE_MAX);
+}
+
 base::TerminationStatus BrowserChildProcessHostImpl::GetTerminationStatus(
     bool known_dead, int* exit_code) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -250,6 +252,16 @@ void BrowserChildProcessHostImpl::OnChannelConnected(int32 peer_pid) {
 
 void BrowserChildProcessHostImpl::OnChannelError() {
   delegate_->OnChannelError();
+}
+
+void BrowserChildProcessHostImpl::OnBadMessageReceived(
+    const IPC::Message& message) {
+  HistogramBadMessageTerminated(data_.process_type);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableKillAfterBadIPC)) {
+    return;
+  }
+  base::KillProcess(GetHandle(), RESULT_CODE_KILLED_BAD_MESSAGE, false);
 }
 
 bool BrowserChildProcessHostImpl::CanShutdown() {

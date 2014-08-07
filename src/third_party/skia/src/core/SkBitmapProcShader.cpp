@@ -382,24 +382,22 @@ void SkBitmapProcShader::toString(SkString* str) const {
 #include "effects/GrSimpleTextureEffect.h"
 #include "SkGr.h"
 
-// Note that this will return -1 if either matrix is perspective.
-static SkScalar get_combined_min_stretch(const SkMatrix& viewMatrix, const SkMatrix& localMatrix) {
-    if (localMatrix.isIdentity()) {
-        return viewMatrix.getMinStretch();
-    } else {
-        SkMatrix combined;
-        combined.setConcat(viewMatrix, localMatrix);
-        return combined.getMinStretch();
-    }
-}
-
-GrEffectRef* SkBitmapProcShader::asNewEffect(GrContext* context, const SkPaint& paint) const {
+bool SkBitmapProcShader::asNewEffect(GrContext* context, const SkPaint& paint,
+                                     const SkMatrix* localMatrix, GrColor* grColor,
+                                     GrEffectRef** grEffect) const {
     SkMatrix matrix;
     matrix.setIDiv(fRawBitmap.width(), fRawBitmap.height());
 
     SkMatrix lmInverse;
     if (!this->getLocalMatrix().invert(&lmInverse)) {
-        return NULL;
+        return false;
+    }
+    if (localMatrix) {
+        SkMatrix inv;
+        if (!localMatrix->invert(&inv)) {
+            return false;
+        }
+        lmInverse.postConcat(inv);
     }
     matrix.preConcat(lmInverse);
 
@@ -412,37 +410,32 @@ GrEffectRef* SkBitmapProcShader::asNewEffect(GrContext* context, const SkPaint& 
     // we check the matrix scale factors to determine how to interpret the filter quality setting.
     // This completely ignores the complexity of the drawVertices case where explicit local coords
     // are provided by the caller.
-    SkPaint::FilterLevel paintFilterLevel = paint.getFilterLevel();
+    bool useBicubic = false;
     GrTextureParams::FilterMode textureFilterMode;
-    switch(paintFilterLevel) {
+    switch(paint.getFilterLevel()) {
         case SkPaint::kNone_FilterLevel:
             textureFilterMode = GrTextureParams::kNone_FilterMode;
             break;
         case SkPaint::kLow_FilterLevel:
             textureFilterMode = GrTextureParams::kBilerp_FilterMode;
             break;
-        case SkPaint::kMedium_FilterLevel:
-            if (get_combined_min_stretch(context->getMatrix(), this->getLocalMatrix()) <
-                SK_Scalar1) {
+        case SkPaint::kMedium_FilterLevel: {
+            SkMatrix matrix;
+            matrix.setConcat(context->getMatrix(), this->getLocalMatrix());
+            if (matrix.getMinScale() < SK_Scalar1) {
                 textureFilterMode = GrTextureParams::kMipMap_FilterMode;
             } else {
                 // Don't trigger MIP level generation unnecessarily.
                 textureFilterMode = GrTextureParams::kBilerp_FilterMode;
             }
             break;
-        case SkPaint::kHigh_FilterLevel:
-            // Minification can look bad with bicubic filtering.
-            if (get_combined_min_stretch(context->getMatrix(), this->getLocalMatrix()) >=
-                SK_Scalar1) {
-                // fall back to no filtering here; we will install another shader that will do the
-                // HQ filtering.
-                textureFilterMode = GrTextureParams::kNone_FilterMode;
-            } else {
-                // Fall back to MIP-mapping.
-                paintFilterLevel = SkPaint::kMedium_FilterLevel;
-                textureFilterMode = GrTextureParams::kMipMap_FilterMode;
-            }
+        }
+        case SkPaint::kHigh_FilterLevel: {
+            SkMatrix matrix;
+            matrix.setConcat(context->getMatrix(), this->getLocalMatrix());
+            useBicubic = GrBicubicEffect::ShouldUseBicubic(matrix, &textureFilterMode);
             break;
+        }
         default:
             SkErrorInternals::SetError( kInvalidPaint_SkError,
                                         "Sorry, I don't understand the filtering "
@@ -458,16 +451,29 @@ GrEffectRef* SkBitmapProcShader::asNewEffect(GrContext* context, const SkPaint& 
     if (NULL == texture) {
         SkErrorInternals::SetError( kInternalError_SkError,
                                     "Couldn't convert bitmap to texture.");
-        return NULL;
+        return false;
     }
+    
+    *grColor = (kAlpha_8_SkColorType == fRawBitmap.colorType()) ? SkColor2GrColor(paint.getColor())
+                                        : SkColor2GrColorJustAlpha(paint.getColor());
 
-    GrEffectRef* effect = NULL;
-    if (paintFilterLevel == SkPaint::kHigh_FilterLevel) {
-        effect = GrBicubicEffect::Create(texture, matrix, tm);
+    if (useBicubic) {
+        *grEffect = GrBicubicEffect::Create(texture, matrix, tm);
     } else {
-        effect = GrSimpleTextureEffect::Create(texture, matrix, params);
+        *grEffect = GrSimpleTextureEffect::Create(texture, matrix, params);
     }
     GrUnlockAndUnrefCachedBitmapTexture(texture);
-    return effect;
+
+    return true;
 }
+
+#else 
+
+bool SkBitmapProcShader::asNewEffect(GrContext* context, const SkPaint& paint,
+                                     const SkMatrix* localMatrix, GrColor* grColor,
+                                     GrEffectRef** grEffect) const {
+    SkDEBUGFAIL("Should not call in GPU-less build");
+    return false;
+}
+
 #endif

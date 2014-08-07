@@ -34,9 +34,9 @@
 
 namespace WebCore {
 
-PassRefPtrWillBeRawPtr<SpeechSynthesis> SpeechSynthesis::create(ExecutionContext* context)
+SpeechSynthesis* SpeechSynthesis::create(ExecutionContext* context)
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new SpeechSynthesis(context));
+    return adoptRefCountedGarbageCollectedWillBeNoop(new SpeechSynthesis(context));
 }
 
 SpeechSynthesis::SpeechSynthesis(ExecutionContext* context)
@@ -47,7 +47,7 @@ SpeechSynthesis::SpeechSynthesis(ExecutionContext* context)
     ScriptWrappable::init(this);
 }
 
-void SpeechSynthesis::setPlatformSynthesizer(PassOwnPtr<PlatformSpeechSynthesizer> synthesizer)
+void SpeechSynthesis::setPlatformSynthesizer(PlatformSpeechSynthesizer* synthesizer)
 {
     m_platformSpeechSynthesizer = synthesizer;
 }
@@ -60,20 +60,20 @@ ExecutionContext* SpeechSynthesis::executionContext() const
 void SpeechSynthesis::voicesDidChange()
 {
     m_voiceList.clear();
-    if (!executionContext()->activeDOMObjectsAreStopped())
+    if (executionContext() && !executionContext()->activeDOMObjectsAreStopped())
         dispatchEvent(Event::create(EventTypeNames::voiceschanged));
 }
 
-const WillBeHeapVector<RefPtrWillBeMember<SpeechSynthesisVoice> >& SpeechSynthesis::getVoices()
+const HeapVector<Member<SpeechSynthesisVoice> >& SpeechSynthesis::getVoices()
 {
     if (m_voiceList.size())
         return m_voiceList;
 
     // If the voiceList is empty, that's the cue to get the voices from the platform again.
-    const Vector<RefPtr<PlatformSpeechSynthesisVoice> >& platformVoices = m_platformSpeechSynthesizer->voiceList();
+    const HeapVector<Member<PlatformSpeechSynthesisVoice> >& platformVoices = m_platformSpeechSynthesizer->voiceList();
     size_t voiceCount = platformVoices.size();
     for (size_t k = 0; k < voiceCount; k++)
-        m_voiceList.append(SpeechSynthesisVoice::create(platformVoices[k]));
+        m_voiceList.append(SpeechSynthesisVoice::create(platformVoices[k].get()));
 
     return m_voiceList;
 }
@@ -145,17 +145,13 @@ void SpeechSynthesis::resume()
 
 void SpeechSynthesis::fireEvent(const AtomicString& type, SpeechSynthesisUtterance* utterance, unsigned long charIndex, const String& name)
 {
-    if (!executionContext()->activeDOMObjectsAreStopped())
+    if (executionContext() && !executionContext()->activeDOMObjectsAreStopped())
         utterance->dispatchEvent(SpeechSynthesisEvent::create(type, charIndex, (currentTime() - utterance->startTime()), name));
 }
 
 void SpeechSynthesis::handleSpeakingCompleted(SpeechSynthesisUtterance* utterance, bool errorOccurred)
 {
     ASSERT(utterance);
-
-    // Keep the utterance around long enough to fire an event on it in case m_utteranceQueue
-    // is holding the last reference to it.
-    RefPtrWillBeRawPtr<SpeechSynthesisUtterance> protect(utterance);
 
     bool didJustFinishCurrentUtterance = false;
     // If the utterance that completed was the one we're currently speaking,
@@ -176,7 +172,7 @@ void SpeechSynthesis::handleSpeakingCompleted(SpeechSynthesisUtterance* utteranc
         startSpeakingImmediately();
 }
 
-void SpeechSynthesis::boundaryEventOccurred(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance, SpeechBoundary boundary, unsigned charIndex)
+void SpeechSynthesis::boundaryEventOccurred(PlatformSpeechSynthesisUtterance* utterance, SpeechBoundary boundary, unsigned charIndex)
 {
     DEFINE_STATIC_LOCAL(const String, wordBoundaryString, ("word"));
     DEFINE_STATIC_LOCAL(const String, sentenceBoundaryString, ("sentence"));
@@ -193,33 +189,33 @@ void SpeechSynthesis::boundaryEventOccurred(PassRefPtr<PlatformSpeechSynthesisUt
     }
 }
 
-void SpeechSynthesis::didStartSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
+void SpeechSynthesis::didStartSpeaking(PlatformSpeechSynthesisUtterance* utterance)
 {
     if (utterance->client())
         fireEvent(EventTypeNames::start, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
 }
 
-void SpeechSynthesis::didPauseSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
+void SpeechSynthesis::didPauseSpeaking(PlatformSpeechSynthesisUtterance* utterance)
 {
     m_isPaused = true;
     if (utterance->client())
         fireEvent(EventTypeNames::pause, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
 }
 
-void SpeechSynthesis::didResumeSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
+void SpeechSynthesis::didResumeSpeaking(PlatformSpeechSynthesisUtterance* utterance)
 {
     m_isPaused = false;
     if (utterance->client())
         fireEvent(EventTypeNames::resume, static_cast<SpeechSynthesisUtterance*>(utterance->client()), 0, String());
 }
 
-void SpeechSynthesis::didFinishSpeaking(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
+void SpeechSynthesis::didFinishSpeaking(PlatformSpeechSynthesisUtterance* utterance)
 {
     if (utterance->client())
         handleSpeakingCompleted(static_cast<SpeechSynthesisUtterance*>(utterance->client()), false);
 }
 
-void SpeechSynthesis::speakingErrorOccurred(PassRefPtr<PlatformSpeechSynthesisUtterance> utterance)
+void SpeechSynthesis::speakingErrorOccurred(PlatformSpeechSynthesisUtterance* utterance)
 {
     if (utterance->client())
         handleSpeakingCompleted(static_cast<SpeechSynthesisUtterance*>(utterance->client()), true);
@@ -234,13 +230,16 @@ SpeechSynthesisUtterance* SpeechSynthesis::currentSpeechUtterance() const
 
 const AtomicString& SpeechSynthesis::interfaceName() const
 {
-    return EventTargetNames::SpeechSynthesisUtterance;
+    return EventTargetNames::SpeechSynthesis;
 }
 
 void SpeechSynthesis::trace(Visitor* visitor)
 {
+    visitor->trace(m_platformSpeechSynthesizer);
     visitor->trace(m_voiceList);
     visitor->trace(m_utteranceQueue);
+    PlatformSpeechSynthesizerClient::trace(visitor);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 } // namespace WebCore

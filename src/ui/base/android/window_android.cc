@@ -37,24 +37,6 @@ bool WindowAndroid::RegisterWindowAndroid(JNIEnv* env) {
 
 WindowAndroid::~WindowAndroid() {
   DCHECK(!compositor_);
-  FOR_EACH_OBSERVER(
-      WindowAndroidObserver, observer_list_, OnWillDestroyWindow());
-}
-
-bool WindowAndroid::GrabSnapshot(
-    int content_x, int content_y, int width, int height,
-    std::vector<unsigned char>* png_representation) {
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jbyteArray> result =
-      Java_WindowAndroid_grabSnapshot(env, GetJavaObject().obj(),
-                                      content_x + content_offset_.x(),
-                                      content_y + content_offset_.y(),
-                                      width, height);
-  if (result.is_null())
-    return false;
-  base::android::JavaByteArrayToByteVector(
-      env, result.obj(), png_representation);
-  return true;
 }
 
 void WindowAndroid::OnCompositingDidCommit() {
@@ -95,11 +77,24 @@ void WindowAndroid::RequestVSyncUpdate() {
   Java_WindowAndroid_requestVSyncUpdate(env, GetJavaObject().obj());
 }
 
+void WindowAndroid::SetNeedsAnimate() {
+  if (compositor_)
+    compositor_->SetNeedsAnimate();
+}
+
+void WindowAndroid::Animate(base::TimeTicks begin_frame_time) {
+  FOR_EACH_OBSERVER(
+      WindowAndroidObserver, observer_list_, OnAnimate(begin_frame_time));
+}
+
 void WindowAndroid::OnVSync(JNIEnv* env, jobject obj, jlong time_micros) {
+  base::TimeTicks frame_time(base::TimeTicks::FromInternalValue(time_micros));
   FOR_EACH_OBSERVER(
       WindowAndroidObserver,
       observer_list_,
-      OnVSync(base::TimeTicks::FromInternalValue(time_micros), vsync_period_));
+      OnVSync(frame_time, vsync_period_));
+  if (compositor_)
+    compositor_->OnVSync(frame_time, vsync_period_);
 }
 
 // ----------------------------------------------------------------------------

@@ -4,6 +4,7 @@
 
 DEPS = [
   'archive',
+  'bot_update',
   'chromium',
   'gclient',
   'isolate',

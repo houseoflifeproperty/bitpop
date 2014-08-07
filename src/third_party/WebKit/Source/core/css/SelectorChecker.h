@@ -53,10 +53,10 @@ public:
         StaysWithinTreeScope = 2,
         BoundaryBehaviorMask = 3, // 2bit for boundary behavior
         ScopeContainsLastMatchedElement = 4,
-        ScopeIsShadowHost = 8,
+        ScopeIsShadowRoot = 8,
         TreatShadowHostAsNormalScope = 16,
 
-        ScopeIsShadowHostInPseudoHostParameter = ScopeIsShadowHost | TreatShadowHostAsNormalScope
+        ScopeIsShadowHostInPseudoHostParameter = ScopeIsShadowRoot | TreatShadowHostAsNormalScope
     };
 
     struct SelectorCheckingContext {
@@ -144,7 +144,7 @@ private:
 
 inline bool SelectorChecker::isCommonPseudoClassSelector(const CSSSelector& selector)
 {
-    if (selector.m_match != CSSSelector::PseudoClass)
+    if (selector.match() != CSSSelector::PseudoClass)
         return false;
     CSSSelector::PseudoType pseudoType = selector.pseudoType();
     return pseudoType == CSSSelector::PseudoLink
@@ -168,10 +168,10 @@ inline bool SelectorChecker::checkExactAttribute(const Element& element, const Q
 {
     if (!element.hasAttributesWithoutUpdate())
         return false;
-    unsigned size = element.attributeCount();
-    for (unsigned i = 0; i < size; ++i) {
-        const Attribute& attribute = element.attributeItem(i);
-        if (attribute.matches(selectorAttributeName) && (!value || attribute.value().impl() == value))
+    AttributeCollection attributes = element.attributes();
+    AttributeCollection::const_iterator end = attributes.end();
+    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+        if (it->matches(selectorAttributeName) && (!value || it->value().impl() == value))
             return true;
     }
     return false;
@@ -179,11 +179,7 @@ inline bool SelectorChecker::checkExactAttribute(const Element& element, const Q
 
 inline bool SelectorChecker::isHostInItsShadowTree(const Element& element, BehaviorAtBoundary behaviorAtBoundary, const ContainerNode* scope)
 {
-    if ((behaviorAtBoundary & (ScopeIsShadowHost | TreatShadowHostAsNormalScope)) == ScopeIsShadowHost)
-        return scope == element;
-    if (scope && scope->isInShadowTree())
-        return scope->shadowHost() == element;
-    return false;
+    return scope && scope->isInShadowTree() && scope->shadowHost() == element;
 }
 
 }

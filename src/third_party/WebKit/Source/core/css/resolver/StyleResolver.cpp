@@ -29,27 +29,27 @@
 #include "config.h"
 #include "core/css/resolver/StyleResolver.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
-#include "StylePropertyShorthand.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
+#include "core/StylePropertyShorthand.h"
 #include "core/animation/ActiveAnimations.h"
 #include "core/animation/AnimatableValue.h"
 #include "core/animation/Animation.h"
-#include "core/animation/DocumentTimeline.h"
+#include "core/animation/AnimationTimeline.h"
 #include "core/animation/css/CSSAnimatableValueFactory.h"
 #include "core/animation/css/CSSAnimations.h"
+#include "core/animation/interpolation/StyleInterpolation.h"
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSDefaultStyleSheets.h"
 #include "core/css/CSSFontSelector.h"
 #include "core/css/CSSKeyframeRule.h"
 #include "core/css/CSSKeyframesRule.h"
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSReflectValue.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSStyleRule.h"
 #include "core/css/CSSValueList.h"
+#include "core/css/CSSValuePool.h"
 #include "core/css/ElementRuleCollector.h"
 #include "core/css/FontFace.h"
 #include "core/css/MediaQueryEvaluator.h"
@@ -57,12 +57,14 @@
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRuleImport.h"
 #include "core/css/StyleSheetContents.h"
+#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/resolver/AnimatedStyleBuilder.h"
 #include "core/css/resolver/MatchResult.h"
 #include "core/css/resolver/MediaQueryResult.h"
 #include "core/css/resolver/SharedStyleFinder.h"
 #include "core/css/resolver/StyleAdjuster.h"
 #include "core/css/resolver/StyleResolverParentScope.h"
+#include "core/css/resolver/StyleResolverState.h"
 #include "core/css/resolver/StyleResolverStats.h"
 #include "core/css/resolver/ViewportStyleResolver.h"
 #include "core/dom/CSSSelectorWatch.h"
@@ -80,9 +82,8 @@
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGFontFaceElement.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/StdLibExtras.h"
-
-using namespace std;
 
 namespace {
 
@@ -148,9 +149,9 @@ StyleResolver::StyleResolver(Document& document)
 
 #if ENABLE(SVG_FONTS)
     if (document.svgExtensions()) {
-        const HashSet<SVGFontFaceElement*>& svgFontFaceElements = document.svgExtensions()->svgFontFaceElements();
-        HashSet<SVGFontFaceElement*>::const_iterator end = svgFontFaceElements.end();
-        for (HashSet<SVGFontFaceElement*>::const_iterator it = svgFontFaceElements.begin(); it != end; ++it)
+        const WillBeHeapHashSet<RawPtrWillBeMember<SVGFontFaceElement> >& svgFontFaceElements = document.svgExtensions()->svgFontFaceElements();
+        WillBeHeapHashSet<RawPtrWillBeMember<SVGFontFaceElement> >::const_iterator end = svgFontFaceElements.end();
+        for (WillBeHeapHashSet<RawPtrWillBeMember<SVGFontFaceElement> >::const_iterator it = svgFontFaceElements.begin(); it != end; ++it)
             addFontFaceRule(&document, document.styleEngine()->fontSelector(), (*it)->fontFaceRule());
     }
 #endif
@@ -217,8 +218,8 @@ void StyleResolver::finishAppendAuthorStyleSheets()
 {
     collectFeatures();
 
-    if (document().renderer() && document().renderer()->style())
-        document().renderer()->style()->font().update(document().styleEngine()->fontSelector());
+    if (document().renderView() && document().renderView()->style())
+        document().renderView()->style()->font().update(document().styleEngine()->fontSelector());
 
     collectViewportRules();
 
@@ -254,8 +255,6 @@ void StyleResolver::processScopedRules(const RuleSet& authorRules, CSSStyleSheet
 
 void StyleResolver::resetAuthorStyle(const ContainerNode* scopingNode)
 {
-    // FIXME: When chanking scoped attribute, scopingNode's hasScopedHTMLStyleChild has been already modified.
-    // So we cannot use hasScopedHTMLStyleChild flag here.
     ScopedStyleResolver* resolver = scopingNode ? m_styleTree.lookupScopedStyleResolverFor(scopingNode) : m_styleTree.scopedStyleResolverForDocument();
     if (!resolver)
         return;
@@ -270,7 +269,7 @@ void StyleResolver::resetAuthorStyle(const ContainerNode* scopingNode)
     m_styleTree.remove(scopingNode);
 }
 
-static PassOwnPtrWillBeRawPtr<RuleSet> makeRuleSet(const Vector<RuleFeature>& rules)
+static PassOwnPtrWillBeRawPtr<RuleSet> makeRuleSet(const WillBeHeapVector<RuleFeature>& rules)
 {
     size_t size = rules.size();
     if (!size)
@@ -293,6 +292,9 @@ void StyleResolver::collectFeatures()
 
     if (document().isViewSource())
         m_features.add(defaultStyleSheets.defaultViewSourceStyle()->features());
+
+    if (document().isTransitionDocument())
+        m_features.add(defaultStyleSheets.defaultTransitionStyle()->features());
 
     if (m_watchedSelectorsRules)
         m_features.add(m_watchedSelectorsRules->features());
@@ -341,12 +343,6 @@ StyleSharingList& StyleResolver::styleSharingList()
 void StyleResolver::clearStyleSharingList()
 {
     m_styleSharingLists.resize(0);
-}
-
-void StyleResolver::fontsNeedUpdate(CSSFontSelector* fontSelector)
-{
-    invalidateMatchedPropertiesCache();
-    m_document.setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 void StyleResolver::pushParentElement(Element& parent)
@@ -489,6 +485,9 @@ void StyleResolver::matchUARules(ElementRuleCollector& collector)
     if (document().isViewSource())
         matchUARules(collector, defaultStyleSheets.defaultViewSourceStyle());
 
+    if (document().isTransitionDocument())
+        matchUARules(collector, defaultStyleSheets.defaultTransitionStyle());
+
     collector.setMatchingUARules(false);
 
     matchWatchSelectorRules(collector);
@@ -582,15 +581,15 @@ static void addContentAttrValuesToFeatures(const Vector<AtomicString>& contentAt
 
 void StyleResolver::adjustRenderStyle(StyleResolverState& state, Element* element)
 {
-    StyleAdjuster adjuster(state.cachedUAStyle(), m_document.inQuirksMode());
-    adjuster.adjustRenderStyle(state.style(), state.parentStyle(), element);
+    StyleAdjuster adjuster(m_document.inQuirksMode());
+    adjuster.adjustRenderStyle(state.style(), state.parentStyle(), element, state.cachedUAStyle());
 }
 
 // Start loading resources referenced by this style.
 void StyleResolver::loadPendingResources(StyleResolverState& state)
 {
     m_styleResourceLoader.loadPendingResources(state.style(), state.elementStyleResources());
-    document().styleEngine()->fontSelector()->loadPendingFonts();
+    document().styleEngine()->fontSelector()->fontLoader()->loadPendingFonts();
 }
 
 PassRefPtr<RenderStyle> StyleResolver::styleForElement(Element* element, RenderStyle* defaultParent, StyleSharingBehavior sharingBehavior,
@@ -644,7 +643,7 @@ PassRefPtr<RenderStyle> StyleResolver::styleForElement(Element* element, RenderS
         }
     }
 
-    state.fontBuilder().initForStyleResolve(state.document(), state.style(), state.useSVGZoomRules());
+    state.fontBuilder().initForStyleResolve(state.document(), state.style());
 
     if (element->isLink()) {
         state.style()->setIsLink(true);
@@ -712,24 +711,14 @@ PassRefPtr<RenderStyle> StyleResolver::styleForKeyframe(Element* element, const 
     state.setStyle(RenderStyle::clone(&elementStyle));
     state.setLineHeightValue(0);
 
-    // Make sure that the CSSAnimationData for the animation to which this
-    // keyframe belongs is first in the list. This makes sure that if the
-    // animation-timing-function property is set for this keyframe, it will be
-    // applied to the correct CSSAnimationData object. Note that objects other
-    // than the first in the list are ignored when reading the timing function
-    // value. See KeyframeValue::timingFunction().
-    CSSAnimationDataList* animations = state.style()->accessAnimations();
-    ASSERT(animations && !animations->isEmpty());
-    while (animations->animation(0)->name() != animationName)
-        animations->remove(0);
-    ASSERT(!animations->isEmpty() && animations->animation(0)->name() == animationName);
-
-    state.fontBuilder().initForStyleResolve(state.document(), state.style(), state.useSVGZoomRules());
+    state.fontBuilder().initForStyleResolve(state.document(), state.style());
 
     // We don't need to bother with !important. Since there is only ever one
     // decl, there's nothing to override. So just add the first properties.
+    // We also don't need to bother with animation properties since the only
+    // relevant one is animation-timing-function and we special-case that in
+    // CSSAnimations.cpp
     bool inheritedOnly = false;
-    applyMatchedProperties<AnimationProperties>(state, result, false, 0, result.matchedProperties.size() - 1, inheritedOnly);
     applyMatchedProperties<HighPriorityProperties>(state, result, false, 0, result.matchedProperties.size() - 1, inheritedOnly);
 
     // If our font got dirtied, go ahead and update it now.
@@ -755,18 +744,26 @@ PassRefPtr<RenderStyle> StyleResolver::styleForKeyframe(Element* element, const 
 
 // This function is used by the WebAnimations JavaScript API method animate().
 // FIXME: Remove this when animate() switches away from resolution-dependent parsing.
-PassRefPtrWillBeRawPtr<AnimatableValue> StyleResolver::createAnimatableValueSnapshot(Element& element, CSSPropertyID property, CSSValue* value)
+PassRefPtrWillBeRawPtr<AnimatableValue> StyleResolver::createAnimatableValueSnapshot(Element& element, CSSPropertyID property, CSSValue& value)
 {
-    // We use a fresh RenderStyle here because certain values (eg. background-position) won't always completely replace the previously applied property.
-    RefPtr<RenderStyle> style = element.renderStyle() ? RenderStyle::clone(element.renderStyle()) : RenderStyle::create();
+    RefPtr<RenderStyle> style;
+    if (element.renderStyle())
+        style = RenderStyle::clone(element.renderStyle());
+    else
+        style = RenderStyle::create();
     StyleResolverState state(element.document(), &element);
-    state.setStyle(style.get());
-    state.fontBuilder().initForStyleResolve(state.document(), state.style(), state.useSVGZoomRules());
-    StyleBuilder::applyProperty(property, state, value);
-    return CSSAnimatableValueFactory::create(property, *style);
+    state.setStyle(style);
+    state.fontBuilder().initForStyleResolve(state.document(), state.style());
+    return createAnimatableValueSnapshot(state, property, value);
 }
 
-PassRefPtr<PseudoElement> StyleResolver::createPseudoElementIfNeeded(Element& parent, PseudoId pseudoId)
+PassRefPtrWillBeRawPtr<AnimatableValue> StyleResolver::createAnimatableValueSnapshot(StyleResolverState& state, CSSPropertyID property, CSSValue& value)
+{
+    StyleBuilder::applyProperty(property, state, &value);
+    return CSSAnimatableValueFactory::create(property, *state.style());
+}
+
+PassRefPtrWillBeRawPtr<PseudoElement> StyleResolver::createPseudoElementIfNeeded(Element& parent, PseudoId pseudoId)
 {
     RenderObject* parentRenderer = parent.renderer();
     if (!parentRenderer)
@@ -798,7 +795,7 @@ PassRefPtr<PseudoElement> StyleResolver::createPseudoElementIfNeeded(Element& pa
     if (!pseudoElementRendererIsNeeded(style.get()))
         return nullptr;
 
-    RefPtr<PseudoElement> pseudo = PseudoElement::create(&parent, pseudoId);
+    RefPtrWillBeRawPtr<PseudoElement> pseudo = PseudoElement::create(&parent, pseudoId);
 
     setAnimationUpdateIfNeeded(state, *pseudo);
     if (ActiveAnimations* activeAnimations = pseudo->activeAnimations())
@@ -822,7 +819,7 @@ bool StyleResolver::pseudoStyleForElementInternal(Element& element, const Pseudo
         state.setParentStyle(RenderStyle::clone(state.style()));
     }
 
-    state.fontBuilder().initForStyleResolve(state.document(), state.style(), state.useSVGZoomRules());
+    state.fontBuilder().initForStyleResolve(state.document(), state.style());
 
     // Since we don't use pseudo-elements in any of our quirk/print
     // user agent rules, don't waste time walking those rules.
@@ -891,7 +888,7 @@ PassRefPtr<RenderStyle> StyleResolver::styleForPage(int pageIndex)
     ASSERT(rootElementStyle);
     state.style()->inheritFrom(rootElementStyle);
 
-    state.fontBuilder().initForStyleResolve(state.document(), state.style(), state.useSVGZoomRules());
+    state.fontBuilder().initForStyleResolve(state.document(), state.style());
 
     PageRuleCollector collector(rootElementStyle, pageIndex);
 
@@ -946,7 +943,7 @@ PassRefPtr<RenderStyle> StyleResolver::defaultStyleForElement()
 {
     StyleResolverState state(document(), 0);
     state.setStyle(RenderStyle::create());
-    state.fontBuilder().initForStyleResolve(document(), state.style(), state.useSVGZoomRules());
+    state.fontBuilder().initForStyleResolve(document(), state.style());
     state.style()->setLineHeight(RenderStyle::initialLineHeight());
     state.setLineHeightValue(0);
     state.fontBuilder().setInitial(state.style()->effectiveZoom());
@@ -1024,8 +1021,7 @@ bool StyleResolver::applyAnimatedProperties(StyleResolverState& state, Element* 
     ASSERT(animatingElement == element || !animatingElement || animatingElement->parentOrShadowHostElement() == element);
 
     if (!(animatingElement && animatingElement->hasActiveAnimations())
-        && !(state.style()->transitions() && !state.style()->transitions()->isEmpty())
-        && !(state.style()->animations() && !state.style()->animations()->isEmpty()))
+        && !state.style()->transitions() && !state.style()->animations())
         return false;
 
     state.setAnimationUpdate(CSSAnimations::calculateUpdate(animatingElement, *element, *state.style(), state.parentStyle(), this));
@@ -1036,11 +1032,16 @@ bool StyleResolver::applyAnimatedProperties(StyleResolverState& state, Element* 
     const WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> >& activeInterpolationsForTransitions = state.animationUpdate()->activeInterpolationsForTransitions();
     applyAnimatedProperties<HighPriorityProperties>(state, activeInterpolationsForAnimations);
     applyAnimatedProperties<HighPriorityProperties>(state, activeInterpolationsForTransitions);
+
+    updateFont(state);
+
     applyAnimatedProperties<LowPriorityProperties>(state, activeInterpolationsForAnimations);
     applyAnimatedProperties<LowPriorityProperties>(state, activeInterpolationsForTransitions);
 
     // Start loading resources used by animations.
     loadPendingResources(state);
+
+    ASSERT(!state.fontBuilder().fontDirty());
 
     return true;
 }
@@ -1228,27 +1229,111 @@ static inline bool isValidFirstLetterStyleProperty(CSSPropertyID id)
     }
 }
 
+// FIXME: Consider refactoring to create a new class which owns the following
+// first/last/range properties.
+// This method returns the first CSSPropertyId of properties which generate
+// animations. All animation properties are obtained by using
+// firstCSSPropertyId<AnimationProperties> and
+// lastCSSPropertyId<AnimationProperties>.
+// c.f. //src/third_party/WebKit/Source/core/css/CSSPropertyNames.in.
+template<> CSSPropertyID StyleResolver::firstCSSPropertyId<StyleResolver::AnimationProperties>()
+{
+    COMPILE_ASSERT(firstCSSProperty == CSSPropertyDisplay, CSS_first_animation_property_should_be_first_property);
+    return CSSPropertyDisplay;
+}
+
+// This method returns the first CSSPropertyId of properties which generate
+// animations.
+template<> CSSPropertyID StyleResolver::lastCSSPropertyId<StyleResolver::AnimationProperties>()
+{
+    COMPILE_ASSERT(CSSPropertyTransitionTimingFunction == CSSPropertyColor - 1, CSS_transition_timing_is_last_animation_property);
+    return CSSPropertyTransitionTimingFunction;
+}
+
+// This method returns the first CSSPropertyId of high priority properties.
+// Other properties can depend on high priority properties. For example,
+// border-color property with currentColor value depends on color property.
+// All high priority properties are obtained by using
+// firstCSSPropertyId<HighPriorityProperties> and
+// lastCSSPropertyId<HighPriorityProperties>.
+template<> CSSPropertyID StyleResolver::firstCSSPropertyId<StyleResolver::HighPriorityProperties>()
+{
+    COMPILE_ASSERT(CSSPropertyTransitionTimingFunction + 1 == CSSPropertyColor, CSS_color_is_first_high_priority_property);
+    return CSSPropertyColor;
+}
+
+// This method returns the last CSSPropertyId of high priority properties.
+template<> CSSPropertyID StyleResolver::lastCSSPropertyId<StyleResolver::HighPriorityProperties>()
+{
+    COMPILE_ASSERT(CSSPropertyLineHeight == CSSPropertyColor + 17, CSS_line_height_is_end_of_high_prioity_property_range);
+    COMPILE_ASSERT(CSSPropertyZoom == CSSPropertyLineHeight - 1, CSS_zoom_is_before_line_height);
+    return CSSPropertyLineHeight;
+}
+
+// This method returns the first CSSPropertyId of remaining properties,
+// i.e. low priority properties. No properties depend on low priority
+// properties. So we don't need to resolve such properties quickly.
+// All low priority properties are obtained by using
+// firstCSSPropertyId<LowPriorityProperties> and
+// lastCSSPropertyId<LowPriorityProperties>.
+template<> CSSPropertyID StyleResolver::firstCSSPropertyId<StyleResolver::LowPriorityProperties>()
+{
+    COMPILE_ASSERT(CSSPropertyBackground == CSSPropertyLineHeight + 1, CSS_background_is_first_low_priority_property);
+    return CSSPropertyBackground;
+}
+
+// This method returns the last CSSPropertyId of low priority properties.
+template<> CSSPropertyID StyleResolver::lastCSSPropertyId<StyleResolver::LowPriorityProperties>()
+{
+    return static_cast<CSSPropertyID>(lastCSSProperty);
+}
+
 template <StyleResolver::StyleApplicationPass pass>
 bool StyleResolver::isPropertyForPass(CSSPropertyID property)
 {
-    const CSSPropertyID firstAnimationProperty = CSSPropertyDisplay;
-    const CSSPropertyID lastAnimationProperty = CSSPropertyTransitionTimingFunction;
-    COMPILE_ASSERT(firstCSSProperty == firstAnimationProperty, CSS_first_animation_property_should_be_first_property);
-    const CSSPropertyID firstHighPriorityProperty = CSSPropertyColor;
-    const CSSPropertyID lastHighPriorityProperty = CSSPropertyLineHeight;
-    COMPILE_ASSERT(lastAnimationProperty + 1 == firstHighPriorityProperty, CSS_color_is_first_high_priority_property);
-    COMPILE_ASSERT(CSSPropertyLineHeight == firstHighPriorityProperty + 17, CSS_line_height_is_end_of_high_prioity_property_range);
-    COMPILE_ASSERT(CSSPropertyZoom == lastHighPriorityProperty - 1, CSS_zoom_is_before_line_height);
-    switch (pass) {
-    case AnimationProperties:
-        return property >= firstAnimationProperty && property <= lastAnimationProperty;
-    case HighPriorityProperties:
-        return property >= firstHighPriorityProperty && property <= lastHighPriorityProperty;
-    case LowPriorityProperties:
-        return property > lastHighPriorityProperty;
+    return firstCSSPropertyId<pass>() <= property && property <= lastCSSPropertyId<pass>();
+}
+
+// This method expands all shorthand property to longhand properties
+// considering StyleApplicationPass, and apply each expanded longhand property.
+// For example, if StyleApplicationPass is AnimationProperties, all shorthand
+// is expaneded to display, -webkit-animation, -webkit-animation-delay, ...,
+// transition-timing-function. So each property's value will be applied
+// according to all's value (initial, inherit or unset).
+template <StyleResolver::StyleApplicationPass pass>
+void StyleResolver::applyAllProperty(StyleResolverState& state, CSSValue* allValue)
+{
+    bool isUnsetValue = !allValue->isInitialValue() && !allValue->isInheritedValue();
+    unsigned startCSSProperty = firstCSSPropertyId<pass>();
+    unsigned endCSSProperty = lastCSSPropertyId<pass>();
+
+    for (unsigned i = startCSSProperty; i <= endCSSProperty; ++i) {
+        CSSPropertyID propertyId = static_cast<CSSPropertyID>(i);
+
+        // StyleBuilder does not allow any expanded shorthands.
+        if (isExpandedShorthandForAll(propertyId))
+            continue;
+
+        // all shorthand spec says:
+        // The all property is a shorthand that resets all CSS properties
+        // except direction and unicode-bidi.
+        // c.f. http://dev.w3.org/csswg/css-cascade/#all-shorthand
+        // We skip applyProperty when a given property is unicode-bidi or
+        // direction.
+        if (!CSSProperty::isAffectedByAllProperty(propertyId))
+            continue;
+
+        CSSValue* value;
+        if (!isUnsetValue) {
+            value = allValue;
+        } else {
+            if (CSSProperty::isInheritedProperty(propertyId))
+                value = cssValuePool().createInheritedValue().get();
+            else
+                value = cssValuePool().createExplicitInitialValue().get();
+        }
+        StyleBuilder::applyProperty(propertyId, state, value);
     }
-    ASSERT_NOT_REACHED();
-    return false;
 }
 
 template <StyleResolver::StyleApplicationPass pass>
@@ -1261,6 +1346,13 @@ void StyleResolver::applyProperties(StyleResolverState& state, const StyleProper
         StylePropertySet::PropertyReference current = properties->propertyAt(i);
         if (isImportant != current.isImportant())
             continue;
+
+        CSSPropertyID property = current.id();
+        if (property == CSSPropertyAll) {
+            applyAllProperty<pass>(state, current.value());
+            continue;
+        }
+
         if (inheritedOnly && !current.isInherited()) {
             // If the property value is explicitly inherited, we need to apply further non-inherited properties
             // as they might override the value inherited here. For this reason we don't allow declarations with
@@ -1268,7 +1360,6 @@ void StyleResolver::applyProperties(StyleResolverState& state, const StyleProper
             ASSERT(!current.value()->isInheritedValue());
             continue;
         }
-        CSSPropertyID property = current.id();
 
         if (propertyWhitelistType == PropertyWhitelistCue && !isValidCueStyleProperty(property))
             continue;
@@ -1365,12 +1456,6 @@ void StyleResolver::applyMatchedProperties(StyleResolverState& state, const Matc
     applyMatchedProperties<AnimationProperties>(state, matchResult, true, matchResult.ranges.firstUserRule, matchResult.ranges.lastUserRule, applyInheritedOnly);
     applyMatchedProperties<AnimationProperties>(state, matchResult, true, matchResult.ranges.firstUARule, matchResult.ranges.lastUARule, applyInheritedOnly);
 
-    // Match transition-property / animation-name length by trimming and
-    // lengthening other transition / animation property lists
-    // FIXME: This is wrong because we shouldn't affect the computed values
-    state.style()->adjustAnimations();
-    state.style()->adjustTransitions();
-
     // Now we have all of the matched rules in the appropriate order. Walk the rules and apply
     // high-priority properties first, i.e., those properties that other properties depend on.
     // The order is (1) high-priority not important, (2) high-priority important, (3) normal not important
@@ -1380,6 +1465,17 @@ void StyleResolver::applyMatchedProperties(StyleResolverState& state, const Matc
     applyMatchedProperties<HighPriorityProperties>(state, matchResult, true, matchResult.ranges.firstAuthorRule, matchResult.ranges.lastAuthorRule, applyInheritedOnly);
     applyMatchedProperties<HighPriorityProperties>(state, matchResult, true, matchResult.ranges.firstUserRule, matchResult.ranges.lastUserRule, applyInheritedOnly);
     applyMatchedProperties<HighPriorityProperties>(state, matchResult, true, matchResult.ranges.firstUARule, matchResult.ranges.lastUARule, applyInheritedOnly);
+
+    if (UNLIKELY(isSVGForeignObjectElement(element))) {
+        // RenderSVGRoot handles zooming for the whole SVG subtree, so foreignObject content should not be scaled again.
+        //
+        // FIXME: The following hijacks the zoom property for foreignObject so that children of foreignObject get the
+        // correct font-size in case of zooming. 'zoom' is part of HighPriorityProperties, along with other font-related
+        // properties used as input to the FontBuilder, so resetting it here may cause the FontBuilder to recompute the
+        // font used as inheritable font for foreignObject content. If we want to support zoom on foreignObject we'll
+        // need to find another way of handling the SVG zoom model.
+        state.setEffectiveZoom(RenderStyle::initialZoom());
+    }
 
     if (cachedMatchedProperties && cachedMatchedProperties->renderStyle->effectiveZoom() != state.style()->effectiveZoom()) {
         state.fontBuilder().setFontDirty(true);
@@ -1457,7 +1553,7 @@ void StyleResolver::applyPropertiesToStyle(const CSSPropertyValue* properties, s
     StyleResolverState state(document(), document().documentElement(), style);
     state.setStyle(style);
 
-    state.fontBuilder().initForStyleResolve(document(), style, state.useSVGZoomRules());
+    state.fontBuilder().initForStyleResolve(document(), style);
 
     for (size_t i = 0; i < count; ++i) {
         if (properties[i].value) {
@@ -1486,7 +1582,7 @@ void StyleResolver::addMediaQueryResults(const MediaQueryResultList& list)
 bool StyleResolver::mediaQueryAffectedByViewportChange() const
 {
     for (unsigned i = 0; i < m_viewportDependentMediaQueryResults.size(); ++i) {
-        if (m_medium->eval(&m_viewportDependentMediaQueryResults[i]->m_expression) != m_viewportDependentMediaQueryResults[i]->m_result)
+        if (m_medium->eval(m_viewportDependentMediaQueryResults[i]->expression()) != m_viewportDependentMediaQueryResults[i]->result())
             return true;
     }
     return false;
@@ -1497,12 +1593,12 @@ void StyleResolver::trace(Visitor* visitor)
     visitor->trace(m_keyframesRuleMap);
     visitor->trace(m_viewportDependentMediaQueryResults);
     visitor->trace(m_viewportStyleResolver);
+    visitor->trace(m_features);
     visitor->trace(m_siblingRuleSet);
     visitor->trace(m_uncommonAttributeRuleSet);
     visitor->trace(m_watchedSelectorsRules);
     visitor->trace(m_treeBoundaryCrossingRules);
     visitor->trace(m_pendingStyleSheets);
-    CSSFontSelectorClient::trace(visitor);
 }
 
 } // namespace WebCore

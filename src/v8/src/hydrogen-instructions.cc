@@ -2,23 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "double.h"
-#include "factory.h"
-#include "hydrogen-infer-representation.h"
-#include "property-details-inl.h"
+#include "src/double.h"
+#include "src/factory.h"
+#include "src/hydrogen-infer-representation.h"
+#include "src/property-details-inl.h"
 
 #if V8_TARGET_ARCH_IA32
-#include "ia32/lithium-ia32.h"
+#include "src/ia32/lithium-ia32.h"
 #elif V8_TARGET_ARCH_X64
-#include "x64/lithium-x64.h"
+#include "src/x64/lithium-x64.h"
 #elif V8_TARGET_ARCH_ARM64
-#include "arm64/lithium-arm64.h"
+#include "src/arm64/lithium-arm64.h"
 #elif V8_TARGET_ARCH_ARM
-#include "arm/lithium-arm.h"
+#include "src/arm/lithium-arm.h"
 #elif V8_TARGET_ARCH_MIPS
-#include "mips/lithium-mips.h"
+#include "src/mips/lithium-mips.h"
+#elif V8_TARGET_ARCH_X87
+#include "src/x87/lithium-x87.h"
 #else
 #error Unsupported target architecture.
 #endif
@@ -303,46 +305,6 @@ bool Range::MulAndCheckOverflow(const Representation& r, Range* other) {
   Verify();
 #endif
   return may_overflow;
-}
-
-
-const char* HType::ToString() {
-  // Note: The c1visualizer syntax for locals allows only a sequence of the
-  // following characters: A-Za-z0-9_-|:
-  switch (type_) {
-    case kNone: return "none";
-    case kTagged: return "tagged";
-    case kTaggedPrimitive: return "primitive";
-    case kTaggedNumber: return "number";
-    case kSmi: return "smi";
-    case kHeapNumber: return "heap-number";
-    case kString: return "string";
-    case kBoolean: return "boolean";
-    case kNonPrimitive: return "non-primitive";
-    case kJSArray: return "array";
-    case kJSObject: return "object";
-  }
-  UNREACHABLE();
-  return "unreachable";
-}
-
-
-HType HType::TypeFromValue(Handle<Object> value) {
-  HType result = HType::Tagged();
-  if (value->IsSmi()) {
-    result = HType::Smi();
-  } else if (value->IsHeapNumber()) {
-    result = HType::HeapNumber();
-  } else if (value->IsString()) {
-    result = HType::String();
-  } else if (value->IsBoolean()) {
-    result = HType::Boolean();
-  } else if (value->IsJSObject()) {
-    result = HType::JSObject();
-  } else if (value->IsJSArray()) {
-    result = HType::JSArray();
-  }
-  return result;
 }
 
 
@@ -762,6 +724,21 @@ void HInstruction::InsertAfter(HInstruction* previous) {
 }
 
 
+bool HInstruction::Dominates(HInstruction* other) {
+  if (block() != other->block()) {
+    return block()->Dominates(other->block());
+  }
+  // Both instructions are in the same basic block. This instruction
+  // should precede the other one in order to dominate it.
+  for (HInstruction* instr = next(); instr != NULL; instr = instr->next()) {
+    if (instr == other) {
+      return true;
+    }
+  }
+  return false;
+}
+
+
 #ifdef DEBUG
 void HInstruction::Verify() {
   // Verify that input operands are defined before use.
@@ -820,7 +797,6 @@ bool HInstruction::CanDeoptimize() {
     case HValue::kBlockEntry:
     case HValue::kBoundsCheckBaseIndexInformation:
     case HValue::kCallFunction:
-    case HValue::kCallJSFunction:
     case HValue::kCallNew:
     case HValue::kCallNewArray:
     case HValue::kCallStub:
@@ -865,13 +841,12 @@ bool HInstruction::CanDeoptimize() {
     case HValue::kMathMinMax:
     case HValue::kParameter:
     case HValue::kPhi:
-    case HValue::kPushArgument:
+    case HValue::kPushArguments:
     case HValue::kRegExpLiteral:
     case HValue::kReturn:
-    case HValue::kRor:
-    case HValue::kSar:
     case HValue::kSeqStringGetChar:
     case HValue::kStoreCodeEntry:
+    case HValue::kStoreFrameContext:
     case HValue::kStoreKeyed:
     case HValue::kStoreNamedField:
     case HValue::kStoreNamedGeneric:
@@ -884,10 +859,12 @@ bool HInstruction::CanDeoptimize() {
       return false;
 
     case HValue::kAdd:
+    case HValue::kAllocateBlockContext:
     case HValue::kApplyArguments:
     case HValue::kBitwise:
     case HValue::kBoundsCheck:
     case HValue::kBranch:
+    case HValue::kCallJSFunction:
     case HValue::kCallRuntime:
     case HValue::kChange:
     case HValue::kCheckHeapObject:
@@ -914,6 +891,8 @@ bool HInstruction::CanDeoptimize() {
     case HValue::kMul:
     case HValue::kOsrEntry:
     case HValue::kPower:
+    case HValue::kRor:
+    case HValue::kSar:
     case HValue::kSeqStringSetChar:
     case HValue::kShl:
     case HValue::kShr:
@@ -1159,6 +1138,13 @@ void HAccessArgumentsAt::PrintDataTo(StringStream* stream) {
 }
 
 
+void HAllocateBlockContext::PrintDataTo(StringStream* stream) {
+  context()->PrintNameTo(stream);
+  stream->Add(" ");
+  function()->PrintNameTo(stream);
+}
+
+
 void HControlInstruction::PrintDataTo(StringStream* stream) {
   stream->Add(" goto (");
   bool first_block = true;
@@ -1380,6 +1366,17 @@ void HCheckMapValue::PrintDataTo(StringStream* stream) {
 }
 
 
+HValue* HCheckMapValue::Canonicalize() {
+  if (map()->IsConstant()) {
+    HConstant* c_map = HConstant::cast(map());
+    return HCheckMaps::CreateAndInsertAfter(
+        block()->graph()->zone(), value(), c_map->MapValue(),
+        c_map->HasStableMapValue(), this);
+  }
+  return this;
+}
+
+
 void HForInPrepareMap::PrintDataTo(StringStream* stream) {
   enumerable()->PrintNameTo(stream);
 }
@@ -1543,7 +1540,10 @@ HInstruction* HForceRepresentation::New(Zone* zone, HValue* context,
     HConstant* c = HConstant::cast(value);
     if (c->HasNumberValue()) {
       double double_res = c->DoubleValue();
-      if (representation.CanContainDouble(double_res)) {
+      if (representation.IsDouble()) {
+        return HConstant::New(zone, context, double_res);
+
+      } else if (representation.CanContainDouble(double_res)) {
         return HConstant::New(zone, context,
                               static_cast<int32_t>(double_res),
                               representation);
@@ -1622,7 +1622,9 @@ HValue* HUnaryMathOperation::Canonicalize() {
 
 
 HValue* HCheckInstanceType::Canonicalize() {
-  if (check_ == IS_STRING && value()->type().IsString()) {
+  if ((check_ == IS_SPEC_OBJECT && value()->type().IsJSObject()) ||
+      (check_ == IS_JS_ARRAY && value()->type().IsJSArray()) ||
+      (check_ == IS_STRING && value()->type().IsString())) {
     return value();
   }
 
@@ -1682,7 +1684,7 @@ void HCheckMaps::PrintDataTo(StringStream* stream) {
 HValue* HCheckMaps::Canonicalize() {
   if (!IsStabilityCheck() && maps_are_stable() && value()->IsConstant()) {
     HConstant* c_value = HConstant::cast(value());
-    if (c_value->HasObjectMap() && c_value->ObjectMapIsStable()) {
+    if (c_value->HasObjectMap()) {
       for (int i = 0; i < maps()->size(); ++i) {
         if (c_value->ObjectMap() == maps()->at(i)) {
           if (maps()->size() > 1) {
@@ -2458,6 +2460,12 @@ Range* HMathMinMax::InferRange(Zone* zone) {
 }
 
 
+void HPushArguments::AddInput(HValue* value) {
+  inputs_.Add(NULL, value->block()->zone());
+  SetOperandAt(OperandCount() - 1, value);
+}
+
+
 void HPhi::PrintTo(StringStream* stream) {
   stream->Add("[");
   for (int i = 0; i < OperandCount(); ++i) {
@@ -2682,10 +2690,10 @@ static bool IsInteger32(double value) {
 
 
 HConstant::HConstant(Handle<Object> object, Representation r)
-  : HTemplateInstruction<0>(HType::TypeFromValue(object)),
+  : HTemplateInstruction<0>(HType::FromValue(object)),
     object_(Unique<Object>::CreateUninitialized(object)),
     object_map_(Handle<Map>::null()),
-    object_map_is_stable_(false),
+    has_stable_map_value_(false),
     has_smi_value_(false),
     has_int32_value_(false),
     has_double_value_(false),
@@ -2695,13 +2703,15 @@ HConstant::HConstant(Handle<Object> object, Representation r)
     is_undetectable_(false),
     instance_type_(kUnknownInstanceType) {
   if (object->IsHeapObject()) {
-    Isolate* isolate = Handle<HeapObject>::cast(object)->GetIsolate();
-    Handle<Map> map(Handle<HeapObject>::cast(object)->map(), isolate);
+    Handle<HeapObject> heap_object = Handle<HeapObject>::cast(object);
+    Isolate* isolate = heap_object->GetIsolate();
+    Handle<Map> map(heap_object->map(), isolate);
     is_not_in_new_space_ = !isolate->heap()->InNewSpace(*object);
     instance_type_ = map->instance_type();
     is_undetectable_ = map->is_undetectable();
-    object_map_ = Unique<Map>::CreateImmovable(map);
-    object_map_is_stable_ = map->is_stable();
+    if (map->is_stable()) object_map_ = Unique<Map>::CreateImmovable(map);
+    has_stable_map_value_ = (instance_type_ == MAP_TYPE &&
+                             Handle<Map>::cast(heap_object)->is_stable());
   }
   if (object->IsNumber()) {
     double n = object->Number();
@@ -2717,7 +2727,9 @@ HConstant::HConstant(Handle<Object> object, Representation r)
 }
 
 
-HConstant::HConstant(Unique<Object> unique,
+HConstant::HConstant(Unique<Object> object,
+                     Unique<Map> object_map,
+                     bool has_stable_map_value,
                      Representation r,
                      HType type,
                      bool is_not_in_new_space,
@@ -2725,9 +2737,9 @@ HConstant::HConstant(Unique<Object> unique,
                      bool is_undetectable,
                      InstanceType instance_type)
   : HTemplateInstruction<0>(type),
-    object_(unique),
-    object_map_(Handle<Map>::null()),
-    object_map_is_stable_(false),
+    object_(object),
+    object_map_(object_map),
+    has_stable_map_value_(has_stable_map_value),
     has_smi_value_(false),
     has_int32_value_(false),
     has_double_value_(false),
@@ -2736,8 +2748,8 @@ HConstant::HConstant(Unique<Object> unique,
     boolean_value_(boolean_value),
     is_undetectable_(is_undetectable),
     instance_type_(instance_type) {
-  ASSERT(!unique.handle().is_null());
-  ASSERT(!type.IsTaggedNumber());
+  ASSERT(!object.handle().is_null());
+  ASSERT(!type.IsTaggedNumber() || type.IsNone());
   Initialize(r);
 }
 
@@ -2748,7 +2760,7 @@ HConstant::HConstant(int32_t integer_value,
                      Unique<Object> object)
   : object_(object),
     object_map_(Handle<Map>::null()),
-    object_map_is_stable_(false),
+    has_stable_map_value_(false),
     has_smi_value_(Smi::IsValid(integer_value)),
     has_int32_value_(true),
     has_double_value_(true),
@@ -2774,7 +2786,7 @@ HConstant::HConstant(double double_value,
                      Unique<Object> object)
   : object_(object),
     object_map_(Handle<Map>::null()),
-    object_map_is_stable_(false),
+    has_stable_map_value_(false),
     has_int32_value_(IsInteger32(double_value)),
     has_double_value_(true),
     has_external_reference_value_(false),
@@ -2795,10 +2807,10 @@ HConstant::HConstant(double double_value,
 
 
 HConstant::HConstant(ExternalReference reference)
-  : HTemplateInstruction<0>(HType::None()),
+  : HTemplateInstruction<0>(HType::Any()),
     object_(Unique<Object>(Handle<Object>::null())),
     object_map_(Handle<Map>::null()),
-    object_map_is_stable_(false),
+    has_stable_map_value_(false),
     has_smi_value_(false),
     has_int32_value_(false),
     has_double_value_(false),
@@ -2884,6 +2896,7 @@ bool HConstant::EmitAtUses() {
   if (UseCount() == 0) return true;
   if (IsCell()) return false;
   if (representation().IsDouble()) return false;
+  if (representation().IsExternal()) return false;
   return true;
 }
 
@@ -2904,6 +2917,8 @@ HConstant* HConstant::CopyToRepresentation(Representation r, Zone* zone) const {
   }
   ASSERT(!object_.handle().is_null());
   return new(zone) HConstant(object_,
+                             object_map_,
+                             has_stable_map_value_,
                              r,
                              type_,
                              is_not_in_new_space_,
@@ -2955,6 +2970,13 @@ void HConstant::PrintDataTo(StringStream* stream) {
             external_reference_value_.address()));
   } else {
     handle(Isolate::Current())->ShortPrint(stream);
+    stream->Add(" ");
+    if (HasStableMapValue()) {
+      stream->Add("[stable-map] ");
+    }
+    if (HasObjectMap()) {
+      stream->Add("[map %p] ", *ObjectMap().handle());
+    }
   }
   if (!is_not_in_new_space_) {
     stream->Add("[new space] ");
@@ -3261,9 +3283,25 @@ bool HIsObjectAndBranch::KnownSuccessorBlock(HBasicBlock** block) {
 
 
 bool HIsStringAndBranch::KnownSuccessorBlock(HBasicBlock** block) {
+  if (known_successor_index() != kNoKnownSuccessorIndex) {
+    *block = SuccessorAt(known_successor_index());
+    return true;
+  }
   if (FLAG_fold_constants && value()->IsConstant()) {
     *block = HConstant::cast(value())->HasStringValue()
         ? FirstSuccessor() : SecondSuccessor();
+    return true;
+  }
+  if (value()->type().IsString()) {
+    *block = FirstSuccessor();
+    return true;
+  }
+  if (value()->type().IsSmi() ||
+      value()->type().IsNull() ||
+      value()->type().IsBoolean() ||
+      value()->type().IsUndefined() ||
+      value()->type().IsJSObject()) {
+    *block = SecondSuccessor();
     return true;
   }
   *block = NULL;
@@ -3394,7 +3432,7 @@ void HLoadNamedField::PrintDataTo(StringStream* stream) {
   object()->PrintNameTo(stream);
   access_.PrintTo(stream);
 
-  if (maps()->size() != 0) {
+  if (maps() != NULL) {
     stream->Add(" [%p", *maps()->at(0).handle());
     for (int i = 1; i < maps()->size(); ++i) {
       stream->Add(",%p", *maps()->at(i).handle());
@@ -3430,7 +3468,7 @@ void HLoadKeyed::PrintDataTo(StringStream* stream) {
   stream->Add("[");
   key()->PrintNameTo(stream);
   if (IsDehoisted()) {
-    stream->Add(" + %d]", index_offset());
+    stream->Add(" + %d]", base_offset());
   } else {
     stream->Add("]");
   }
@@ -3582,7 +3620,7 @@ void HStoreKeyed::PrintDataTo(StringStream* stream) {
   stream->Add("[");
   key()->PrintNameTo(stream);
   if (IsDehoisted()) {
-    stream->Add(" + %d] = ", index_offset());
+    stream->Add(" + %d] = ", base_offset());
   } else {
     stream->Add("] = ");
   }
@@ -3735,10 +3773,10 @@ bool HAllocate::HandleSideEffectDominator(GVNFlag side_effect,
   HValue* current_size = size();
 
   // TODO(hpayer): Add support for non-constant allocation in dominator.
-  if (!current_size->IsInteger32Constant() ||
-      !dominator_size->IsInteger32Constant()) {
+  if (!dominator_size->IsInteger32Constant()) {
     if (FLAG_trace_allocation_folding) {
-      PrintF("#%d (%s) cannot fold into #%d (%s), dynamic allocation size\n",
+      PrintF("#%d (%s) cannot fold into #%d (%s), "
+             "dynamic allocation size in dominator\n",
           id(), Mnemonic(), dominator->id(), dominator->Mnemonic());
     }
     return false;
@@ -3747,6 +3785,32 @@ bool HAllocate::HandleSideEffectDominator(GVNFlag side_effect,
   dominator_allocate = GetFoldableDominator(dominator_allocate);
   if (dominator_allocate == NULL) {
     return false;
+  }
+
+  if (!has_size_upper_bound()) {
+    if (FLAG_trace_allocation_folding) {
+      PrintF("#%d (%s) cannot fold into #%d (%s), "
+             "can't estimate total allocation size\n",
+          id(), Mnemonic(), dominator->id(), dominator->Mnemonic());
+    }
+    return false;
+  }
+
+  if (!current_size->IsInteger32Constant()) {
+    // If it's not constant then it is a size_in_bytes calculation graph
+    // like this: (const_header_size + const_element_size * size).
+    ASSERT(current_size->IsInstruction());
+
+    HInstruction* current_instr = HInstruction::cast(current_size);
+    if (!current_instr->Dominates(dominator_allocate)) {
+      if (FLAG_trace_allocation_folding) {
+        PrintF("#%d (%s) cannot fold into #%d (%s), dynamic size "
+               "value does not dominate target allocation\n",
+            id(), Mnemonic(), dominator_allocate->id(),
+            dominator_allocate->Mnemonic());
+      }
+      return false;
+    }
   }
 
   ASSERT((IsNewSpaceAllocation() &&
@@ -3761,19 +3825,15 @@ bool HAllocate::HandleSideEffectDominator(GVNFlag side_effect,
   int32_t original_object_size =
       HConstant::cast(dominator_size)->GetInteger32Constant();
   int32_t dominator_size_constant = original_object_size;
-  int32_t current_size_constant =
-      HConstant::cast(current_size)->GetInteger32Constant();
-  int32_t new_dominator_size = dominator_size_constant + current_size_constant;
 
   if (MustAllocateDoubleAligned()) {
-    if (!dominator_allocate->MustAllocateDoubleAligned()) {
-      dominator_allocate->MakeDoubleAligned();
-    }
     if ((dominator_size_constant & kDoubleAlignmentMask) != 0) {
       dominator_size_constant += kDoubleSize / 2;
-      new_dominator_size += kDoubleSize / 2;
     }
   }
+
+  int32_t current_size_max_value = size_upper_bound()->GetInteger32Constant();
+  int32_t new_dominator_size = dominator_size_constant + current_size_max_value;
 
   // Since we clear the first word after folded memory, we cannot use the
   // whole Page::kMaxRegularHeapObjectSize memory.
@@ -3786,27 +3846,54 @@ bool HAllocate::HandleSideEffectDominator(GVNFlag side_effect,
     return false;
   }
 
-  HInstruction* new_dominator_size_constant = HConstant::CreateAndInsertBefore(
-      zone,
-      context(),
-      new_dominator_size,
-      Representation::None(),
-      dominator_allocate);
-  dominator_allocate->UpdateSize(new_dominator_size_constant);
+  HInstruction* new_dominator_size_value;
 
+  if (current_size->IsInteger32Constant()) {
+    new_dominator_size_value =
+        HConstant::CreateAndInsertBefore(zone,
+                                         context(),
+                                         new_dominator_size,
+                                         Representation::None(),
+                                         dominator_allocate);
+  } else {
+    HValue* new_dominator_size_constant =
+        HConstant::CreateAndInsertBefore(zone,
+                                         context(),
+                                         dominator_size_constant,
+                                         Representation::Integer32(),
+                                         dominator_allocate);
+
+    // Add old and new size together and insert.
+    current_size->ChangeRepresentation(Representation::Integer32());
+
+    new_dominator_size_value = HAdd::New(zone, context(),
+        new_dominator_size_constant, current_size);
+    new_dominator_size_value->ClearFlag(HValue::kCanOverflow);
+    new_dominator_size_value->ChangeRepresentation(Representation::Integer32());
+
+    new_dominator_size_value->InsertBefore(dominator_allocate);
+  }
+
+  dominator_allocate->UpdateSize(new_dominator_size_value);
+
+  if (MustAllocateDoubleAligned()) {
+    if (!dominator_allocate->MustAllocateDoubleAligned()) {
+      dominator_allocate->MakeDoubleAligned();
+    }
+  }
+
+  bool keep_new_space_iterable = FLAG_log_gc || FLAG_heap_stats;
 #ifdef VERIFY_HEAP
-  if (FLAG_verify_heap && dominator_allocate->IsNewSpaceAllocation()) {
+  keep_new_space_iterable = keep_new_space_iterable || FLAG_verify_heap;
+#endif
+
+  if (keep_new_space_iterable && dominator_allocate->IsNewSpaceAllocation()) {
     dominator_allocate->MakePrefillWithFiller();
   } else {
     // TODO(hpayer): This is a short-term hack to make allocation mementos
     // work again in new space.
     dominator_allocate->ClearNextMapWord(original_object_size);
   }
-#else
-  // TODO(hpayer): This is a short-term hack to make allocation mementos
-  // work again in new space.
-  dominator_allocate->ClearNextMapWord(original_object_size);
-#endif
 
   dominator_allocate->UpdateClearNextMapWord(MustClearNextMapWord());
 
@@ -3925,7 +4012,7 @@ void HAllocate::CreateFreeSpaceFiller(int32_t free_space_size) {
   free_space_instr->InsertBefore(this);
   HConstant* filler_map = HConstant::CreateAndInsertAfter(
       zone, Unique<Map>::CreateImmovable(
-          isolate()->factory()->free_space_map()), free_space_instr);
+          isolate()->factory()->free_space_map()), true, free_space_instr);
   HInstruction* store_map = HStoreNamedField::New(zone, context(),
       free_space_instr, HObjectAccess::ForMap(), filler_map);
   store_map->SetFlag(HValue::kHasNoObservableSideEffects);

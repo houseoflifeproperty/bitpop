@@ -141,17 +141,17 @@ class DriveServiceInterface {
   // Returns the resource id for the root directory.
   virtual std::string GetRootResourceId() const = 0;
 
-  // Fetches a resource list of the account. |callback| will be called upon
+  // Fetches a file list of the account. |callback| will be called upon
   // completion.
   // If the list is too long, it may be paged. In such a case, a URL to fetch
   // remaining results will be included in the returned result. See also
   // GetRemainingFileList.
   //
   // |callback| must not be null.
-  virtual google_apis::CancelCallback GetAllResourceList(
-      const google_apis::GetResourceListCallback& callback) = 0;
+  virtual google_apis::CancelCallback GetAllFileList(
+      const google_apis::FileListCallback& callback) = 0;
 
-  // Fetches a resource list in the directory with |directory_resource_id|.
+  // Fetches a file list in the directory with |directory_resource_id|.
   // |callback| will be called upon completion.
   // If the list is too long, it may be paged. In such a case, a URL to fetch
   // remaining results will be included in the returned result. See also
@@ -159,9 +159,9 @@ class DriveServiceInterface {
   //
   // |directory_resource_id| must not be empty.
   // |callback| must not be null.
-  virtual google_apis::CancelCallback GetResourceListInDirectory(
+  virtual google_apis::CancelCallback GetFileListInDirectory(
       const std::string& directory_resource_id,
-      const google_apis::GetResourceListCallback& callback) = 0;
+      const google_apis::FileListCallback& callback) = 0;
 
   // Searches the resources for the |search_query| from all the user's
   // resources. |callback| will be called upon completion.
@@ -173,7 +173,7 @@ class DriveServiceInterface {
   // |callback| must not be null.
   virtual google_apis::CancelCallback Search(
       const std::string& search_query,
-      const google_apis::GetResourceListCallback& callback) = 0;
+      const google_apis::FileListCallback& callback) = 0;
 
   // Searches the resources with the |title|.
   // |directory_resource_id| is an optional parameter. If it is empty,
@@ -187,7 +187,7 @@ class DriveServiceInterface {
   virtual google_apis::CancelCallback SearchByTitle(
       const std::string& title,
       const std::string& directory_resource_id,
-      const google_apis::GetResourceListCallback& callback) = 0;
+      const google_apis::FileListCallback& callback) = 0;
 
   // Fetches change list since |start_changestamp|. |callback| will be
   // called upon completion.
@@ -198,9 +198,9 @@ class DriveServiceInterface {
   // |callback| must not be null.
   virtual google_apis::CancelCallback GetChangeList(
       int64 start_changestamp,
-      const google_apis::GetResourceListCallback& callback) = 0;
+      const google_apis::ChangeListCallback& callback) = 0;
 
-  // The result of GetChangeList() and GetAllResourceList() may be paged.
+  // The result of GetChangeList() may be paged.
   // In such a case, a next link to fetch remaining result is returned.
   // The page token can be used for this method. |callback| will be called upon
   // completion.
@@ -208,25 +208,25 @@ class DriveServiceInterface {
   // |next_link| must not be empty. |callback| must not be null.
   virtual google_apis::CancelCallback GetRemainingChangeList(
       const GURL& next_link,
-      const google_apis::GetResourceListCallback& callback) = 0;
+      const google_apis::ChangeListCallback& callback) = 0;
 
-  // The result of GetResourceListInDirectory(), Search() and SearchByTitle()
-  // may be paged. In such a case, a next link to fetch remaining result is
-  // returned. The page token can be used for this method. |callback| will be
-  // called upon completion.
+  // The result of GetAllFileList(), GetFileListInDirectory(), Search()
+  // and SearchByTitle() may be paged. In such a case, a next link to fetch
+  // remaining result is returned. The page token can be used for this method.
+  // |callback| will be called upon completion.
   //
   // |next_link| must not be empty. |callback| must not be null.
   virtual google_apis::CancelCallback GetRemainingFileList(
       const GURL& next_link,
-      const google_apis::GetResourceListCallback& callback) = 0;
+      const google_apis::FileListCallback& callback) = 0;
 
-  // Fetches single entry metadata from server. The entry's resource id equals
+  // Fetches single entry metadata from server. The entry's file id equals
   // |resource_id|.
   // Upon completion, invokes |callback| with results on the calling thread.
   // |callback| must not be null.
-  virtual google_apis::CancelCallback GetResourceEntry(
+  virtual google_apis::CancelCallback GetFileResource(
       const std::string& resource_id,
-      const google_apis::GetResourceEntryCallback& callback) = 0;
+      const google_apis::FileResourceCallback& callback) = 0;
 
   // Fetches an url for the sharing dialog for a single entry with id
   // |resource_id|, to be embedded in a webview or an iframe with origin
@@ -280,7 +280,7 @@ class DriveServiceInterface {
       const std::string& parent_resource_id,
       const std::string& new_title,
       const base::Time& last_modified,
-      const google_apis::GetResourceEntryCallback& callback) = 0;
+      const google_apis::FileResourceCallback& callback) = 0;
 
   // Updates a resource with |resource_id| to the directory of
   // |parent_resource_id| with renaming to |new_title|.
@@ -296,7 +296,7 @@ class DriveServiceInterface {
       const std::string& new_title,
       const base::Time& last_modified,
       const base::Time& last_viewed_by_me,
-      const google_apis::GetResourceEntryCallback& callback) = 0;
+      const google_apis::FileResourceCallback& callback) = 0;
 
   // Renames a document or collection identified by its |resource_id|
   // to the UTF-8 encoded |new_title|. Upon completion,
@@ -337,7 +337,7 @@ class DriveServiceInterface {
       const std::string& parent_resource_id,
       const std::string& directory_title,
       const AddNewDirectoryOptions& options,
-      const google_apis::GetResourceEntryCallback& callback) = 0;
+      const google_apis::FileResourceCallback& callback) = 0;
 
   // Downloads a file with |resourced_id|. The downloaded file will
   // be stored at |local_cache_path| location. Upon completion, invokes
@@ -389,7 +389,7 @@ class DriveServiceInterface {
       int64 content_length,
       const std::string& content_type,
       const base::FilePath& local_file_path,
-      const google_apis::UploadRangeCallback& callback,
+      const google_apis::drive::UploadRangeCallback& callback,
       const google_apis::ProgressCallback& progress_callback) = 0;
 
   // Gets the current status of the uploading to |upload_url| from the server.
@@ -399,7 +399,7 @@ class DriveServiceInterface {
   virtual google_apis::CancelCallback GetUploadStatus(
       const GURL& upload_url,
       int64 content_length,
-      const google_apis::UploadRangeCallback& callback) = 0;
+      const google_apis::drive::UploadRangeCallback& callback) = 0;
 
   // Authorizes a Drive app with the id |app_id| to open the given file.
   // Upon completion, invokes |callback| with the link to open the file with

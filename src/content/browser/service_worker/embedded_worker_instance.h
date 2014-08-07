@@ -13,12 +13,14 @@
 #include "base/gtest_prod_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
+#include "url/gurl.h"
 
-class GURL;
+struct EmbeddedWorkerMsg_StartWorker_Params;
 
 namespace IPC {
 class Message;
@@ -27,6 +29,7 @@ class Message;
 namespace content {
 
 class EmbeddedWorkerRegistry;
+class ServiceWorkerContextCore;
 struct ServiceWorkerFetchRequest;
 
 // This gives an interface to control one EmbeddedWorker instance, which
@@ -106,19 +109,34 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
 
   friend class EmbeddedWorkerRegistry;
   FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, StartAndStop);
+  FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, SortProcesses);
 
   typedef std::map<int, int> ProcessRefMap;
 
   // Constructor is called via EmbeddedWorkerRegistry::CreateWorker().
   // This instance holds a ref of |registry|.
-  EmbeddedWorkerInstance(EmbeddedWorkerRegistry* registry,
+  EmbeddedWorkerInstance(base::WeakPtr<ServiceWorkerContextCore> context,
                          int embedded_worker_id);
 
-  // Called back from EmbeddedWorkerRegistry after Start() passes control to the
-  // UI thread to acquire a reference to the process.
-  void RecordProcessId(int process_id,
-                       ServiceWorkerStatusCode status,
-                       int worker_devtools_agent_route_id);
+  // Called back from ServiceWorkerProcessManager after Start() passes control
+  // to the UI thread to acquire a reference to the process.
+  static void RunProcessAllocated(
+      base::WeakPtr<EmbeddedWorkerInstance> instance,
+      base::WeakPtr<ServiceWorkerContextCore> context,
+      scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
+      const EmbeddedWorkerInstance::StatusCallback& callback,
+      ServiceWorkerStatusCode status,
+      int process_id);
+  void ProcessAllocated(scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
+                        const StatusCallback& callback,
+                        int process_id,
+                        ServiceWorkerStatusCode status);
+  // Called back after ProcessAllocated() passes control to the UI thread to
+  // register to WorkerDevToolsManager.
+  void SendStartWorker(scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
+                       const StatusCallback& callback,
+                       int worker_devtools_agent_route_id,
+                       bool pause_on_start);
 
   // Called back from Registry when the worker instance has ack'ed that
   // it finished loading the script.
@@ -163,6 +181,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   std::vector<int> SortProcesses(
       const std::vector<int>& possible_process_ids) const;
 
+  base::WeakPtr<ServiceWorkerContextCore> context_;
   scoped_refptr<EmbeddedWorkerRegistry> registry_;
   const int embedded_worker_id_;
   Status status_;
@@ -174,6 +193,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
 
   ProcessRefMap process_refs_;
   ListenerList listener_list_;
+
+  base::WeakPtrFactory<EmbeddedWorkerInstance> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(EmbeddedWorkerInstance);
 };

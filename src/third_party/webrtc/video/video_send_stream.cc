@@ -10,10 +10,12 @@
 
 #include "webrtc/video/video_send_stream.h"
 
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/video_engine/include/vie_base.h"
 #include "webrtc/video_engine/include/vie_capture.h"
 #include "webrtc/video_engine/include/vie_codec.h"
@@ -25,31 +27,111 @@
 #include "webrtc/video_send_stream.h"
 
 namespace webrtc {
-namespace internal {
+std::string
+VideoSendStream::Config::EncoderSettings::ToString() const {
+  std::stringstream ss;
+  ss << "{payload_name: " << payload_name;
+  ss << ", payload_type: " << payload_type;
+  if (encoder != NULL)
+    ss << ", encoder: " << (encoder != NULL ? "(encoder)" : "NULL");
+  ss << '}';
+  return ss.str();
+}
 
+std::string VideoSendStream::Config::Rtp::Rtx::ToString()
+    const {
+  std::stringstream ss;
+  ss << "{ssrcs: {";
+  for (size_t i = 0; i < ssrcs.size(); ++i) {
+    ss << ssrcs[i];
+    if (i != ssrcs.size() - 1)
+      ss << "}, {";
+  }
+  ss << '}';
+
+  ss << ", payload_type: " << payload_type;
+  ss << '}';
+  return ss.str();
+}
+
+std::string VideoSendStream::Config::Rtp::ToString() const {
+  std::stringstream ss;
+  ss << "{ssrcs: {";
+  for (size_t i = 0; i < ssrcs.size(); ++i) {
+    ss << ssrcs[i];
+    if (i != ssrcs.size() - 1)
+      ss << "}, {";
+  }
+  ss << '}';
+
+  ss << ", max_packet_size: " << max_packet_size;
+  if (min_transmit_bitrate_bps != 0)
+    ss << ", min_transmit_bitrate_bps: " << min_transmit_bitrate_bps;
+
+  ss << ", extensions: {";
+  for (size_t i = 0; i < extensions.size(); ++i) {
+    ss << extensions[i].ToString();
+    if (i != extensions.size() - 1)
+      ss << "}, {";
+  }
+  ss << '}';
+
+  if (nack.rtp_history_ms != 0)
+    ss << ", nack.rtp_history_ms: " << nack.rtp_history_ms;
+  if (fec.ulpfec_payload_type != -1 || fec.red_payload_type != -1)
+    ss << ", fec: " << fec.ToString();
+  if (rtx.payload_type != 0 || !rtx.ssrcs.empty())
+    ss << ", rtx: " << rtx.ToString();
+  if (c_name != "")
+    ss << ", c_name: " << c_name;
+  ss << '}';
+  return ss.str();
+}
+
+std::string VideoSendStream::Config::ToString() const {
+  std::stringstream ss;
+  ss << "{encoder_settings: " << encoder_settings.ToString();
+  ss << ", rtp: " << rtp.ToString();
+  if (pre_encode_callback != NULL)
+    ss << ", (pre_encode_callback)";
+  if (post_encode_callback != NULL)
+    ss << ", (post_encode_callback)";
+  if (local_renderer != NULL) {
+    ss << ", (local_renderer, render_delay_ms: " << render_delay_ms << ")";
+  }
+  if (target_delay_ms > 0)
+    ss << ", target_delay_ms: " << target_delay_ms;
+  if (suspend_below_min_bitrate)
+    ss << ", suspend_below_min_bitrate: on";
+  ss << '}';
+  return ss.str();
+}
+
+namespace internal {
 VideoSendStream::VideoSendStream(newapi::Transport* transport,
                                  CpuOveruseObserver* overuse_observer,
                                  webrtc::VideoEngine* video_engine,
                                  const VideoSendStream::Config& config,
-                                 int base_channel)
+                                 const std::vector<VideoStream> video_streams,
+                                 const void* encoder_settings,
+                                 int base_channel,
+                                 int start_bitrate_bps)
     : transport_adapter_(transport),
       encoded_frame_proxy_(config.post_encode_callback),
-      codec_lock_(CriticalSectionWrapper::CreateCriticalSection()),
       config_(config),
+      start_bitrate_bps_(start_bitrate_bps),
       external_codec_(NULL),
       channel_(-1),
       stats_proxy_(new SendStatisticsProxy(config, this)) {
   video_engine_base_ = ViEBase::GetInterface(video_engine);
   video_engine_base_->CreateChannel(channel_, base_channel);
   assert(channel_ != -1);
+  assert(start_bitrate_bps_ > 0);
 
   rtp_rtcp_ = ViERTP_RTCP::GetInterface(video_engine);
   assert(rtp_rtcp_ != NULL);
 
   assert(config_.rtp.ssrcs.size() > 0);
-  if (config_.suspend_below_min_bitrate)
-    config_.pacing = true;
-  rtp_rtcp_->SetTransmissionSmoothingStatus(channel_, config_.pacing);
 
   assert(config_.rtp.min_transmit_bitrate_bps >= 0);
   rtp_rtcp_->SetMinTransmitBitrate(channel_,
@@ -123,10 +205,8 @@ VideoSendStream::VideoSendStream(newapi::Transport* transport,
   }
 
   codec_ = ViECodec::GetInterface(video_engine);
-  if (!ReconfigureVideoEncoder(config_.encoder_settings.streams,
-                               config_.encoder_settings.encoder_settings)) {
+  if (!ReconfigureVideoEncoder(video_streams, encoder_settings))
     abort();
-  }
 
   if (overuse_observer)
     video_engine_base_->RegisterCpuOveruseObserver(channel_, overuse_observer);
@@ -139,9 +219,8 @@ VideoSendStream::VideoSendStream(newapi::Transport* transport,
                                                     &encoded_frame_proxy_);
   }
 
-  if (config_.suspend_below_min_bitrate) {
+  if (config_.suspend_below_min_bitrate)
     codec_->SuspendBelowMinBitrate(channel_);
-  }
 
   rtp_rtcp_->RegisterSendChannelRtcpStatisticsCallback(channel_,
                                                        stats_proxy_.get());
@@ -187,24 +266,12 @@ VideoSendStream::~VideoSendStream() {
   rtp_rtcp_->Release();
 }
 
-void VideoSendStream::PutFrame(const I420VideoFrame& frame) {
-  input_frame_.CopyFrame(frame);
-  SwapFrame(&input_frame_);
-}
-
 void VideoSendStream::SwapFrame(I420VideoFrame* frame) {
-  // TODO(pbos): Warn if frame is "too far" into the future, or too old. This
-  //             would help detect if frame's being used without NTP.
-  //             TO REVIEWER: Is there any good check for this? Should it be
-  //             skipped?
-  if (frame != &input_frame_)
-    input_frame_.SwapFrame(frame);
-
   // TODO(pbos): Local rendering should not be done on the capture thread.
   if (config_.local_renderer != NULL)
-    config_.local_renderer->RenderFrame(input_frame_, 0);
+    config_.local_renderer->RenderFrame(*frame, 0);
 
-  external_capture_->SwapFrame(&input_frame_);
+  external_capture_->SwapFrame(frame);
 }
 
 VideoSendStreamInput* VideoSendStream::Input() { return this; }
@@ -223,14 +290,11 @@ void VideoSendStream::Stop() {
 
 bool VideoSendStream::ReconfigureVideoEncoder(
     const std::vector<VideoStream>& streams,
-    void* encoder_settings) {
+    const void* encoder_settings) {
   assert(!streams.empty());
   assert(config_.rtp.ssrcs.size() >= streams.size());
   // TODO(pbos): Wire encoder_settings.
   assert(encoder_settings == NULL);
-
-  // VideoStreams in config_.encoder_settings need to be locked.
-  CriticalSectionScoped crit(codec_lock_.get());
 
   VideoCodec video_codec;
   memset(&video_codec, 0, sizeof(video_codec));
@@ -289,21 +353,25 @@ bool VideoSendStream::ReconfigureVideoEncoder(
     video_codec.qpMax = std::max(video_codec.qpMax,
                                  static_cast<unsigned int>(streams[i].max_qp));
   }
+  video_codec.startBitrate =
+      static_cast<unsigned int>(start_bitrate_bps_) / 1000;
 
   if (video_codec.minBitrate < kViEMinCodecBitrate)
     video_codec.minBitrate = kViEMinCodecBitrate;
   if (video_codec.maxBitrate < kViEMinCodecBitrate)
     video_codec.maxBitrate = kViEMinCodecBitrate;
-
-  video_codec.startBitrate = 300;
+  if (video_codec.startBitrate < video_codec.minBitrate)
+    video_codec.startBitrate = video_codec.minBitrate;
+  if (video_codec.startBitrate > video_codec.maxBitrate)
+    video_codec.startBitrate = video_codec.maxBitrate;
 
   if (video_codec.startBitrate < video_codec.minBitrate)
     video_codec.startBitrate = video_codec.minBitrate;
   if (video_codec.startBitrate > video_codec.maxBitrate)
     video_codec.startBitrate = video_codec.maxBitrate;
 
-  assert(config_.encoder_settings.streams[0].max_framerate > 0);
-  video_codec.maxFramerate = config_.encoder_settings.streams[0].max_framerate;
+  assert(streams[0].max_framerate > 0);
+  video_codec.maxFramerate = streams[0].max_framerate;
 
   if (codec_->SetSendCodec(channel_, video_codec) != 0)
     return false;
@@ -315,11 +383,10 @@ bool VideoSendStream::ReconfigureVideoEncoder(
                             static_cast<unsigned char>(i));
   }
 
-  config_.encoder_settings.streams = streams;
-  config_.encoder_settings.encoder_settings = encoder_settings;
-
-  if (config_.rtp.rtx.ssrcs.empty())
+  if (config_.rtp.rtx.ssrcs.empty()) {
+    assert(!config_.rtp.rtx.pad_with_redundant_payloads);
     return true;
+  }
 
   // Set up RTX.
   assert(config_.rtp.rtx.ssrcs.size() == config_.rtp.ssrcs.size());
@@ -330,8 +397,12 @@ bool VideoSendStream::ReconfigureVideoEncoder(
                             static_cast<unsigned char>(i));
   }
 
-  if (config_.rtp.rtx.payload_type != 0)
-    rtp_rtcp_->SetRtxSendPayloadType(channel_, config_.rtp.rtx.payload_type);
+  if (config_.rtp.rtx.pad_with_redundant_payloads) {
+    rtp_rtcp_->SetPadWithRedundantPayloads(channel_, true);
+  }
+
+  assert(config_.rtp.rtx.payload_type >= 0);
+  rtp_rtcp_->SetRtxSendPayloadType(channel_, config_.rtp.rtx.payload_type);
 
   return true;
 }

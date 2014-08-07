@@ -30,17 +30,18 @@
 
 #include "config.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/dom/ClientRect.h"
 #include "core/dom/ClientRectList.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/dom/StaticNodeList.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/page/EventHandler.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderTreeAsText.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebUnitTestSupport.h"
 #include "public/web/WebDocument.h"
@@ -131,9 +132,19 @@ void TouchActionTest::runTouchActionTest(std::string file)
 {
     TouchActionTrackingWebViewClient client;
 
+    // runTouchActionTest() loads a document in a frame, setting up a
+    // nested message loop. Should any Oilpan GC happen while it is in
+    // effect, the implicit assumption that we're outside any event
+    // loop (=> there being no pointers on the stack needing scanning)
+    // when that GC strikes will no longer hold.
+    //
+    // To ensure that the references on the stack are also traced, we
+    // turn them into persistent, stack allocated references. This
+    // workaround is sufficient to handle this artificial test
+    // scenario.
     WebView* webView = setupTest(file, client);
 
-    RefPtrWillBeRawPtr<WebCore::Document> document = static_cast<PassRefPtrWillBeRawPtr<WebCore::Document> >(webView->mainFrame()->document());
+    RefPtrWillBePersistent<WebCore::Document> document = static_cast<PassRefPtrWillBeRawPtr<WebCore::Document> >(webView->mainFrame()->document());
     runTestOnTree(document.get(), webView, client);
 
     m_webViewHelper.reset(); // Explicitly reset to break dependency on locally scoped client.
@@ -146,8 +157,10 @@ void TouchActionTest::runShadowDOMTest(std::string file)
     WebView* webView = setupTest(file, client);
 
     WebCore::TrackExceptionState es;
-    RefPtrWillBeRawPtr<WebCore::Document> document = static_cast<PassRefPtrWillBeRawPtr<WebCore::Document> >(webView->mainFrame()->document());
-    RefPtr<WebCore::NodeList> hostNodes = document->querySelectorAll("[shadow-host]", es);
+
+    // Oilpan: see runTouchActionTest() comment why these are persistent references.
+    RefPtrWillBePersistent<WebCore::Document> document = static_cast<PassRefPtrWillBeRawPtr<WebCore::Document> >(webView->mainFrame()->document());
+    RefPtrWillBePersistent<WebCore::StaticNodeList> hostNodes = document->querySelectorAll("[shadow-host]", es);
     ASSERT_FALSE(es.hadException());
     ASSERT_GE(hostNodes->length(), 1u);
 
@@ -168,6 +181,9 @@ WebView* TouchActionTest::setupTest(std::string file, TouchActionTrackingWebView
     // Note that JavaScript must be enabled for shadow DOM tests.
     WebView* webView = m_webViewHelper.initializeAndLoad(m_baseURL + file, true, 0, &client);
 
+    // Lock page scale factor to avoid zooming out to contents size.
+    m_webViewHelper.webView()->setPageScaleFactorLimits(1, 1);
+
     // Set size to enable hit testing, and avoid line wrapping for consistency with browser.
     webView->resize(WebSize(800, 1200));
 
@@ -183,7 +199,9 @@ void TouchActionTest::runTestOnTree(WebCore::ContainerNode* root, WebView* webVi
 {
     // Find all elements to test the touch-action of in the document.
     WebCore::TrackExceptionState es;
-    RefPtr<WebCore::NodeList> nodes = root->querySelectorAll("[expected-action]", es);
+
+    // Oilpan: see runTouchActionTest() comment why these are persistent references.
+    RefPtrWillBePersistent<WebCore::StaticNodeList> nodes = root->querySelectorAll("[expected-action]", es);
     ASSERT_FALSE(es.hadException());
 
     for (unsigned index = 0; index < nodes->length(); index++) {
@@ -206,9 +224,9 @@ void TouchActionTest::runTestOnTree(WebCore::ContainerNode* root, WebView* webVi
         // Note that we don't want the bounding box because our tests sometimes have elements with
         // multiple border boxes with other elements in between. Use the first border box (which
         // we can easily visualize in a browser for debugging).
-        RefPtrWillBeRawPtr<WebCore::ClientRectList> rects = element->getClientRects();
+        RefPtrWillBePersistent<WebCore::ClientRectList> rects = element->getClientRects();
         ASSERT_GE(rects->length(), 0u) << failureContext;
-        RefPtrWillBeRawPtr<WebCore::ClientRect> r = rects->item(0);
+        RefPtrWillBePersistent<WebCore::ClientRect> r = rects->item(0);
         WebCore::FloatRect clientFloatRect = WebCore::FloatRect(r->left(), r->top(), r->width(), r->height());
         WebCore::IntRect clientRect =  enclosedIntRect(clientFloatRect);
         for (int locIdx = 0; locIdx < 3; locIdx++) {

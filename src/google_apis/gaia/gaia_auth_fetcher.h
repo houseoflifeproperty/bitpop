@@ -107,15 +107,6 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   void StartRevokeOAuth2Token(const std::string& auth_token);
 
   // Start a request to exchange the cookies of a signed-in user session
-  // for an OAuth2 authorization code. In the case of a session with
-  // multiple accounts signed in, |session_index| indicate the which of accounts
-  // within the session.
-  //
-  // Either OnClientOAuthCodeSuccess or OnClientOAuthCodeFailure will be
-  // called on the consumer on the original thread.
-  void StartCookieForOAuthCodeExchange(const std::string& session_index);
-
-  // Start a request to exchange the cookies of a signed-in user session
   // for an OAuthLogin-scoped oauth2 token.  In the case of a session with
   // multiple accounts signed in, |session_index| indicate the which of accounts
   // within the session.
@@ -123,6 +114,19 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   // Either OnClientOAuthSuccess or OnClientOAuthFailure will be
   // called on the consumer on the original thread.
   void StartCookieForOAuthLoginTokenExchange(const std::string& session_index);
+
+  // Start a request to exchange the cookies of a signed-in user session
+  // for an OAuthLogin-scoped oauth2 token. In the case of a session with
+  // multiple accounts signed in, |session_index| indicate the which of accounts
+  // within the session.
+  // Resulting refresh token is annotated on the server with |device_id|. Format
+  // of device_id on the server is at most 64 unicode characters.
+  //
+  // Either OnClientOAuthSuccess or OnClientOAuthFailure will be
+  // called on the consumer on the original thread.
+  void StartCookieForOAuthLoginTokenExchangeWithDeviceId(
+      const std::string& session_index,
+      const std::string& device_id);
 
   // Start a request to exchange the authorization code for an OAuthLogin-scoped
   // oauth2 token.
@@ -200,6 +204,9 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   static const char kIssueAuthTokenFormat[];
   // The format of the POST body to get OAuth2 auth code from auth token.
   static const char kClientLoginToOAuth2BodyFormat[];
+  // The format of the POST body to get OAuth2 auth code from auth token. This
+  // format is used for request annotated with device_id.
+  static const char kClientLoginToOAuth2WithDeviceTypeBodyFormat[];
   // The format of the POST body to get OAuth2 token pair from auth code.
   static const char kOAuth2CodeToTokenPairBodyFormat[];
   // The format of the POST body to revoke an OAuth2 token.
@@ -238,6 +245,7 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   static const char kAuthHeaderFormat[];
   static const char kOAuthHeaderFormat[];
   static const char kOAuth2BearerHeaderFormat[];
+  static const char kDeviceIdHeaderFormat[];
   static const char kClientLoginToOAuth2CookiePartSecure[];
   static const char kClientLoginToOAuth2CookiePartHttpOnly[];
   static const char kClientLoginToOAuth2CookiePartCodePrefix[];
@@ -323,7 +331,7 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
                                             const std::string& lsid,
                                             const char* const service);
   // Create body to get OAuth2 auth code.
-  static std::string MakeGetAuthCodeBody();
+  static std::string MakeGetAuthCodeBody(bool include_device_type);
   // Given auth code, create body to get OAuth2 token pair.
   static std::string MakeGetTokenPairBody(const std::string& auth_code);
   // Given an OAuth2 token, create body to revoke the token.
@@ -383,9 +391,6 @@ class GaiaAuthFetcher : public net::URLFetcherDelegate {
   std::string request_body_;
   std::string requested_service_; // Currently tracked for IssueAuthToken only.
   bool fetch_pending_;
-  // This is to distinguish between the fetch for oauth login token and that for
-  // oauth code.
-  bool fetch_code_only_;
 
   friend class GaiaAuthFetcherTest;
   FRIEND_TEST_ALL_PREFIXES(GaiaAuthFetcherTest, CaptchaParse);

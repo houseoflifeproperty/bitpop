@@ -25,6 +25,7 @@ import org.chromium.base.library_loader.ProcessInitException;
 import org.chromium.chrome.browser.DevToolsServer;
 import org.chromium.chrome.browser.appmenu.AppMenuHandler;
 import org.chromium.chrome.browser.appmenu.AppMenuPropertiesDelegate;
+import org.chromium.chrome.browser.dom_distiller.DomDistillerTabUtils;
 import org.chromium.chrome.browser.printing.PrintingControllerFactory;
 import org.chromium.chrome.browser.printing.TabPrinter;
 import org.chromium.chrome.browser.share.ShareHelper;
@@ -69,6 +70,7 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
 
     private WindowAndroid mWindow;
     private TabManager mTabManager;
+    private ChromeShellToolbar mToolbar;
     private DevToolsServer mDevToolsServer;
     private SyncController mSyncController;
     private PrintingController mPrintingController;
@@ -159,7 +161,7 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
         if (!TextUtils.isEmpty(startupUrl)) {
             mTabManager.setStartupUrl(startupUrl);
         }
-        ChromeShellToolbar mToolbar = (ChromeShellToolbar) findViewById(R.id.toolbar);
+        mToolbar = (ChromeShellToolbar) findViewById(R.id.toolbar);
         mAppMenuHandler = sAppMenuHandlerFactory.getAppMenuHandler(this, this, R.menu.main_menu);
         mToolbar.setMenuHandler(mAppMenuHandler);
 
@@ -215,6 +217,8 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
     @Override
     protected void onStop() {
         super.onStop();
+
+        if (mToolbar != null) mToolbar.hideSuggestions();
 
         ContentViewCore viewCore = getActiveContentViewCore();
         if (viewCore != null) viewCore.onHide();
@@ -302,9 +306,8 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
                 return true;
             case R.id.distill_page:
                 if (activeTab != null) {
-                    String viewUrl = DomDistillerUrlUtils.getDistillerViewUrlFromUrl(
-                            CHROME_DISTILLER_SCHEME, activeTab.getUrl());
-                    activeTab.loadUrlWithSanitization(viewUrl);
+                    DomDistillerTabUtils.distillCurrentPageAndView(
+                            activeTab.getContentViewCore().getWebContents());
                 }
                 return true;
             case R.id.back_menu_id:
@@ -388,7 +391,7 @@ public class ChromeShellActivity extends Activity implements AppMenuPropertiesDe
 
     @Override
     public int getMenuThemeResourceId() {
-        return android.R.style.Theme_Holo_Light;
+        return R.style.OverflowMenuTheme;
     }
 
     @VisibleForTesting

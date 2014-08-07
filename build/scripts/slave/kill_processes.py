@@ -245,15 +245,12 @@ def main():
   # Kill all lingering processes.  It's okay if these aren't killed or end up
   # reappearing.
   KillAll(lingering_processes, must_die=False)
-
-  rc = 0
-  if not KillProcessesUsingCurrentDirectory(options.handle_exe):
-    rc = 88
+  KillProcessesUsingCurrentDirectory(options.handle_exe)
 
   # Kill all regular processes.  We must guarantee that these are killed since
   # we exit with an error code if they're not.
   if KillAll(processes, must_die=True):
-    return rc
+    return 0
 
   # Some processes were not killed, exit with non-zero status.
   return 1

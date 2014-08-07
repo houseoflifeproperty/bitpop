@@ -14,7 +14,6 @@
 #include "cc/resources/picture_layer_tiling.h"
 #include "cc/resources/picture_layer_tiling_set.h"
 #include "cc/resources/picture_pile_impl.h"
-#include "cc/trees/layer_tree_impl.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkPicture.h"
 
@@ -92,19 +91,11 @@ class CC_EXPORT PictureLayerImpl
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual void AppendQuads(QuadSink* quad_sink,
                            AppendQuadsData* append_quads_data) OVERRIDE;
-  virtual void UpdateTilePriorities() OVERRIDE;
-  virtual void NotifyTileInitialized(const Tile* tile) OVERRIDE;
+  virtual void UpdateTiles() OVERRIDE;
+  virtual void NotifyTileStateChanged(const Tile* tile) OVERRIDE;
   virtual void DidBecomeActive() OVERRIDE;
   virtual void DidBeginTracing() OVERRIDE;
   virtual void ReleaseResources() OVERRIDE;
-  virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      float maximum_animation_contents_scale,
-                                      bool animating_transform_to_screen,
-                                      float* contents_scale_x,
-                                      float* contents_scale_y,
-                                      gfx::Size* content_bounds) OVERRIDE;
   virtual skia::RefPtr<SkPicture> GetPicture() OVERRIDE;
 
   // PictureLayerTilingClient overrides.
@@ -132,15 +123,12 @@ class CC_EXPORT PictureLayerImpl
 
   virtual void RunMicroBenchmark(MicroBenchmarkImpl* benchmark) OVERRIDE;
 
-  bool use_gpu_rasterization() const {
-    return layer_tree_impl()->use_gpu_rasterization();
-  }
-
   // Functions used by tile manager.
-  void DidUnregisterLayer();
   PictureLayerImpl* GetTwinLayer() { return twin_layer_; }
   WhichTree GetTree() const;
   bool IsOnActiveOrPendingTree() const;
+  bool HasValidTilePriorities() const;
+  bool AllTilesRequiredForActivationAreReadyToDraw() const;
 
  protected:
   friend class LayerRasterTileIterator;
@@ -150,20 +138,14 @@ class CC_EXPORT PictureLayerImpl
   void RemoveTiling(float contents_scale);
   void RemoveAllTilings();
   void SyncFromActiveLayer(const PictureLayerImpl* other);
-  void ManageTilings(bool animating_transform_to_screen,
-                     float maximum_animation_contents_scale);
-  bool ShouldHaveLowResTiling() const {
-    return should_use_low_res_tiling_ && !use_gpu_rasterization();
-  }
-  virtual bool ShouldAdjustRasterScale(
-      bool animating_transform_to_screen) const;
-  virtual void RecalculateRasterScales(bool animating_transform_to_screen,
-                                       float maximum_animation_contents_scale);
+  void AddTilingsForRasterScale();
+  void UpdateTilePriorities();
+  virtual bool ShouldAdjustRasterScale() const;
+  virtual void RecalculateRasterScales();
   void CleanUpTilingsOnActiveLayer(
       std::vector<PictureLayerTiling*> used_tilings);
   float MinimumContentsScale() const;
   float SnappedContentsScale(float new_contents_scale);
-  void UpdateLCDTextStatus(bool new_status);
   void ResetRasterScale();
   void MarkVisibleResourcesAsRequired() const;
   bool MarkVisibleTilesAsRequired(
@@ -187,6 +169,9 @@ class CC_EXPORT PictureLayerImpl
       SkColor* color, float* width) const OVERRIDE;
   virtual void AsValueInto(base::DictionaryValue* dict) const OVERRIDE;
 
+  virtual void UpdateIdealScales();
+  float MaximumTilingContentsScale() const;
+
   PictureLayerImpl* twin_layer_;
 
   scoped_ptr<PictureLayerTilingSet> tilings_;
@@ -207,15 +192,11 @@ class CC_EXPORT PictureLayerImpl
   float low_res_raster_contents_scale_;
 
   bool raster_source_scale_is_fixed_;
-  bool was_animating_transform_to_screen_;
-  bool is_using_lcd_text_;
+  bool was_screen_space_transform_animating_;
   bool needs_post_commit_initialization_;
   // A sanity state check to make sure UpdateTilePriorities only gets called
   // after a CalculateContentsScale/ManageTilings.
   bool should_update_tile_priorities_;
-  bool should_use_low_res_tiling_;
-
-  bool layer_needs_to_register_itself_;
 
   // Save a copy of the visible rect and viewport size of the last frame that
   // has a valid viewport for prioritizing tiles.

@@ -49,6 +49,8 @@ class StyleBuilderWriter(in_generator.Writer):
         'custom_initial': [True, False],
         'custom_inherit': [True, False],
         'custom_value': [True, False],
+        'direction_aware': [True, False],
+        'skip': [True, False],
     }
     defaults = {
         'name_for_methods': None,
@@ -56,6 +58,8 @@ class StyleBuilderWriter(in_generator.Writer):
         'svg': False,
         'font': False,
         'converter': None,
+        'direction_aware': False,
+        'skip': False,
 # These depend on property name by default
         'type_name': None,
         'getter': None,
@@ -95,6 +99,7 @@ class StyleBuilderWriter(in_generator.Writer):
                 property['custom_initial'] = True
                 property['custom_inherit'] = True
                 property['custom_value'] = True
+            property['should_declare_functions'] = not property['use_handlers_for'] and not property['direction_aware'] and not property['skip']
 
         self._properties = dict((property['property_id'], property) for property in self._properties)
 

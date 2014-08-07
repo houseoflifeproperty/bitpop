@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import os
@@ -10,7 +10,7 @@ class ScrollAction(GestureAction):
   def __init__(self, attributes=None):
     super(ScrollAction, self).__init__(attributes)
 
-  def WillRunAction(self, page, tab):
+  def WillRunAction(self, tab):
     for js_file in ['gesture_common.js', 'scroll.js']:
       with open(os.path.join(os.path.dirname(__file__), js_file)) as f:
         js = f.read()
@@ -43,7 +43,7 @@ class ScrollAction(GestureAction):
         window.__scrollAction = new __ScrollAction(%s, %s);"""
         % (done_callback, distance_func))
 
-  def RunGesture(self, page, tab):
+  def RunGesture(self, tab):
     # scrollable_element_function is a function that passes the scrollable
     # element on the page to a callback. For example:
     #   function (callback) {
@@ -98,13 +98,3 @@ class ScrollAction(GestureAction):
            gesture_source_type))
 
     tab.WaitForJavaScriptExpression('window.__scrollActionDone', 60)
-
-  def CanBeBound(self):
-    return True
-
-  def BindMeasurementJavaScript(self, tab, start_js, stop_js):
-    # Make the scroll action start and stop measurement automatically.
-    tab.ExecuteJavaScript("""
-        window.__scrollAction.beginMeasuringHook = function() { %s };
-        window.__scrollAction.endMeasuringHook = function() { %s };
-    """ % (start_js, stop_js))

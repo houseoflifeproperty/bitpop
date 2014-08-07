@@ -6,7 +6,7 @@
       "[DEPOT_TOOLS]\\gclient.py",
       "config",
       "--spec",
-      "cache_dir = None\nsolutions = [{'custom_vars': {'root_dir': 'src'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/webrtc/trunk'}, {'custom_vars': {'root_dir': 'src'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'webrtc-limited', 'url': 'svn://svn-mirror.golo.chromium.org/chrome-internal/trunk/webrtc-limited'}, {'deps_file': 'DEPS', 'managed': True, 'name': 'drmemory.DEPS', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/deps/third_party/drmemory/drmemory.DEPS'}]"
+      "cache_dir = None\nsolutions = [{'custom_vars': {'root_dir': 'src'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/webrtc/trunk'}, {'custom_vars': {'root_dir': 'src'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'webrtc-limited', 'url': 'svn://svn-mirror.golo.chromium.org/chrome-internal/trunk/webrtc-limited'}]"
     ],
     "name": "gclient setup"
   },
@@ -41,9 +41,6 @@
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
-      "@@@STEP_LOG_LINE@json.output@    \"drmemory.DEPS/\": {@@@",
-      "@@@STEP_LOG_LINE@json.output@      \"revision\": 74515@@@",
-      "@@@STEP_LOG_LINE@json.output@    }, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"src/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 170242@@@",
       "@@@STEP_LOG_LINE@json.output@    }, @@@",
@@ -57,18 +54,74 @@
     ]
   },
   {
+    "abort_on_failure": true,
+    "cmd": [
+      "svn.bat",
+      "export",
+      "--force",
+      "try_job_svn_patch",
+      "/path/to/tmp/diff"
+    ],
+    "name": "download patch",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 1)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 2)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@@@@",
+      "@@@STEP_LOG_END@patch.diff@@@"
+    ]
+  },
+  {
+    "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
-      "[BUILD]\\scripts\\slave\\apply_svn_patch.py",
-      "-p",
-      "try_job_svn_patch",
-      "-r",
-      "[SLAVE_BUILD]\\src"
+      "\nimport sys\nout = open(sys.argv[1], \"w\")\nfor line in sys.stdin:\n  out.write(line)\n",
+      "/path/to/tmp/"
     ],
-    "name": "apply_patch",
+    "name": "convert line endings (win32)",
+    "stdin": "fake patch.diff content (line 1)\nfake patch.diff content (line 2)\n",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@out = open(sys.argv[1], \"w\")@@@",
+      "@@@STEP_LOG_LINE@python.inline@for line in sys.stdin:@@@",
+      "@@@STEP_LOG_LINE@python.inline@  out.write(line)@@@",
+      "@@@STEP_LOG_END@python.inline@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content for Windows (line 1)",
+      "@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content for Windows (line 2)",
+      "@@@",
+      "@@@STEP_LOG_LINE@patch.diff@@@@",
+      "@@@STEP_LOG_END@patch.diff@@@"
+    ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "patch",
+      "--dir",
+      "[SLAVE_BUILD]\\src",
+      "--force",
+      "--forward",
+      "--remove-empty-files",
+      "--strip",
+      "0"
+    ],
+    "name": "apply patch",
+    "stdin": "fake patch.diff content for Windows (line 1)\r\nfake patch.diff content for Windows (line 2)\r\n"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "GYP_DEFINES": "build_for_tool=drmemory chromium_win_pch=0 component=shared_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]\\goma' target_arch=ia32 use_goma=1"
+    },
+    "name": "gclient runhooks",
     "seed_steps": [
-      "apply_patch",
       "gclient runhooks",
       "compile",
       "audio_decoder_unittests",
@@ -90,25 +143,13 @@
     ]
   },
   {
-    "cmd": [
-      "python",
-      "-u",
-      "[DEPOT_TOOLS]\\gclient.py",
-      "runhooks"
-    ],
-    "env": {
-      "GYP_DEFINES": "build_for_tool=drmemory chromium_win_pch=0 component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]\\goma' target_arch=x64 use_goma=1"
-    },
-    "name": "gclient runhooks"
-  },
-  {
     "abort_on_failure": true,
     "cmd": [
       "python",
       "-u",
       "[BUILD]\\scripts\\slave\\compile.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--src-dir",
       "[SLAVE_BUILD]\\src",
       "--build-tool",
@@ -130,7 +171,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -144,7 +185,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "audio_decoder_unittests.exe",
+      "audio_decoder_unittests",
       "--tool",
       "drmemory_light"
     ],
@@ -158,7 +199,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -172,7 +213,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "common_audio_unittests.exe",
+      "common_audio_unittests",
       "--tool",
       "drmemory_light"
     ],
@@ -186,7 +227,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -200,7 +241,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "common_video_unittests.exe",
+      "common_video_unittests",
       "--tool",
       "drmemory_light"
     ],
@@ -214,7 +255,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -228,7 +269,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "libjingle_media_unittest.exe",
+      "libjingle_media_unittest",
       "--tool",
       "drmemory_light"
     ],
@@ -242,7 +283,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -256,7 +297,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "libjingle_p2p_unittest.exe",
+      "libjingle_p2p_unittest",
       "--tool",
       "drmemory_light"
     ],
@@ -270,7 +311,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -284,7 +325,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "libjingle_peerconnection_unittest.exe",
+      "libjingle_peerconnection_unittest",
       "--tool",
       "drmemory_light"
     ],
@@ -298,7 +339,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -312,7 +353,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "libjingle_sound_unittest.exe",
+      "libjingle_sound_unittest",
       "--tool",
       "drmemory_light"
     ],
@@ -326,7 +367,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -340,7 +381,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "libjingle_unittest.exe",
+      "libjingle_unittest",
       "--tool",
       "drmemory_light"
     ],
@@ -354,7 +395,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -368,7 +409,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "modules_tests.exe",
+      "modules_tests",
       "--tool",
       "drmemory_light"
     ],
@@ -382,7 +423,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -396,7 +437,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "modules_unittests.exe",
+      "modules_unittests",
       "--tool",
       "drmemory_light"
     ],
@@ -410,7 +451,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -424,7 +465,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "system_wrappers_unittests.exe",
+      "system_wrappers_unittests",
       "--tool",
       "drmemory_light"
     ],
@@ -438,7 +479,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -452,7 +493,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "test_support_unittests.exe",
+      "test_support_unittests",
       "--tool",
       "drmemory_light"
     ],
@@ -466,7 +507,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -480,7 +521,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "tools_unittests.exe",
+      "tools_unittests",
       "--tool",
       "drmemory_light"
     ],
@@ -494,7 +535,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -508,7 +549,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "video_engine_core_unittests.exe",
+      "video_engine_core_unittests",
       "--tool",
       "drmemory_light"
     ],
@@ -522,7 +563,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -536,7 +577,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "video_engine_tests.exe",
+      "video_engine_tests",
       "--tool",
       "drmemory_light"
     ],
@@ -550,7 +591,7 @@
       "-u",
       "[BUILD]\\scripts\\slave\\runtest.py",
       "--target",
-      "Release_x64",
+      "Debug",
       "--factory-properties",
       "{\"buildername\": \"win_drmemory_light\", \"mastername\": \"tryserver.webrtc\", \"patch_url\": \"try_job_svn_patch\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"slavename\": \"slavename\"}",
       "--build-properties",
@@ -564,7 +605,7 @@
       "--run-shell-script",
       "[SLAVE_BUILD]\\src\\tools\\valgrind-webrtc\\webrtc_tests.bat",
       "--test",
-      "voice_engine_unittests.exe",
+      "voice_engine_unittests",
       "--tool",
       "drmemory_light"
     ],

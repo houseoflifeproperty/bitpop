@@ -24,8 +24,8 @@
 #define CSSPropertyParser_h
 
 // FIXME: Way too many.
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSFilterValue.h"
 #include "core/css/CSSGradientValue.h"
@@ -42,7 +42,6 @@
 namespace WebCore {
 
 // FIXME: Many of these may not be used.
-class AnimationParseContext;
 class CSSArrayFunctionValue;
 class CSSBorderImageSliceValue;
 class CSSPrimitiveValue;
@@ -136,12 +135,13 @@ private:
     PassRefPtrWillBeRawPtr<CSSValue> parseAnimationIterationCount();
     PassRefPtrWillBeRawPtr<CSSValue> parseAnimationName();
     PassRefPtrWillBeRawPtr<CSSValue> parseAnimationPlayState();
-    PassRefPtrWillBeRawPtr<CSSValue> parseAnimationProperty(AnimationParseContext&);
+    PassRefPtrWillBeRawPtr<CSSValue> parseAnimationProperty();
     PassRefPtrWillBeRawPtr<CSSValue> parseAnimationTimingFunction();
 
     bool parseWebkitTransformOriginShorthand(RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&, RefPtrWillBeRawPtr<CSSValue>&);
     bool parseCubicBezierTimingFunctionValue(CSSParserValueList*& args, double& result);
-    bool parseAnimationProperty(CSSPropertyID, RefPtrWillBeRawPtr<CSSValue>&, AnimationParseContext&);
+    PassRefPtrWillBeRawPtr<CSSValue> parseAnimationProperty(CSSPropertyID);
+    PassRefPtrWillBeRawPtr<CSSValueList> parseAnimationPropertyList(CSSPropertyID);
     bool parseTransitionShorthand(CSSPropertyID, bool important);
     bool parseAnimationShorthand(CSSPropertyID, bool important);
 
@@ -150,7 +150,7 @@ private:
     bool parseColumnsShorthand(bool important);
 
     PassRefPtrWillBeRawPtr<CSSValue> parseGridPosition();
-    bool parseIntegerOrStringFromGridPosition(RefPtrWillBeRawPtr<CSSPrimitiveValue>& numericValue, RefPtrWillBeRawPtr<CSSPrimitiveValue>& gridLineName);
+    bool parseIntegerOrCustomIdentFromGridPosition(RefPtrWillBeRawPtr<CSSPrimitiveValue>& numericValue, RefPtrWillBeRawPtr<CSSPrimitiveValue>& gridLineName);
     bool parseGridItemPositionShorthand(CSSPropertyID, bool important);
     bool parseGridTemplateRowsAndAreas(PassRefPtrWillBeRawPtr<CSSValue>, bool important);
     bool parseGridTemplateShorthand(bool important);
@@ -268,6 +268,8 @@ private:
 
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createPrimitiveNumericValue(CSSParserValue*);
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createPrimitiveStringValue(CSSParserValue*);
+
+    PassRefPtrWillBeRawPtr<CSSValue> createCSSImageValueWithReferrer(const String& rawValue, const KURL&);
 
     bool validWidthOrHeight(CSSParserValue*);
 
@@ -401,7 +403,7 @@ CSSPropertyID cssPropertyID(const String&);
 CSSValueID cssValueKeywordID(const CSSParserString&);
 
 bool isKeywordPropertyID(CSSPropertyID);
-bool isValidKeywordPropertyAndValue(CSSPropertyID, int valueID, const CSSParserContext&);
+bool isValidKeywordPropertyAndValue(CSSPropertyID, CSSValueID, const CSSParserContext&);
 
 } // namespace WebCore
 

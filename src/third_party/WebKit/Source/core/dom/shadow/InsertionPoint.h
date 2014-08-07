@@ -35,7 +35,6 @@
 #include "core/dom/shadow/ContentDistribution.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLElement.h"
-#include "wtf/Forward.h"
 
 namespace WebCore {
 
@@ -52,7 +51,7 @@ public:
     bool isShadowInsertionPoint() const;
     bool isContentInsertionPoint() const;
 
-    PassRefPtr<NodeList> getDistributedNodes();
+    PassRefPtrWillBeRawPtr<StaticNodeList> getDistributedNodes();
 
     virtual bool canAffectSelector() const { return false; }
 
@@ -68,6 +67,8 @@ public:
     Node* nextTo(const Node* node) const { return m_distribution.nextTo(node); }
     Node* previousTo(const Node* node) const { return m_distribution.previousTo(node); }
 
+    virtual void trace(Visitor*) OVERRIDE;
+
 protected:
     InsertionPoint(const QualifiedName&, Document&);
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
@@ -81,7 +82,7 @@ private:
     bool m_registeredWithShadowRoot;
 };
 
-typedef Vector<RefPtr<InsertionPoint> > DestinationInsertionPoints;
+typedef WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> > DestinationInsertionPoints;
 
 DEFINE_ELEMENT_TYPE_CASTS(InsertionPoint, isInsertionPoint());
 
@@ -111,7 +112,7 @@ inline ElementShadow* shadowWhereNodeCanBeDistributed(const Node& node)
 
 const InsertionPoint* resolveReprojection(const Node*);
 
-void collectDestinationInsertionPoints(const Node&, Vector<InsertionPoint*, 8>& results);
+void collectDestinationInsertionPoints(const Node&, WillBeHeapVector<RawPtrWillBeMember<InsertionPoint>, 8>& results);
 
 } // namespace WebCore
 

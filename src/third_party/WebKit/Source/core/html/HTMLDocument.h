@@ -37,7 +37,7 @@ class HTMLDocument : public Document, public ResourceClient {
 public:
     static PassRefPtrWillBeRawPtr<HTMLDocument> create(const DocumentInit& initializer = DocumentInit())
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new HTMLDocument(initializer));
+        return adoptRefWillBeNoop(new HTMLDocument(initializer));
     }
     virtual ~HTMLDocument();
 
@@ -67,12 +67,12 @@ public:
 
     using Document::write;
     using Document::writeln;
-    void write(DOMWindow*, const Vector<String>& text, ExceptionState&);
-    void writeln(DOMWindow*, const Vector<String>& text, ExceptionState&);
+    void write(LocalDOMWindow*, const Vector<String>& text, ExceptionState&);
+    void writeln(LocalDOMWindow*, const Vector<String>& text, ExceptionState&);
 
     static bool isCaseSensitiveAttribute(const QualifiedName&);
 
-    virtual PassRefPtr<Document> cloneDocumentWithoutChildren() OVERRIDE FINAL;
+    virtual PassRefPtrWillBeRawPtr<Document> cloneDocumentWithoutChildren() OVERRIDE FINAL;
 
 protected:
     HTMLDocument(const DocumentInit&, DocumentClassFlags extendedDocumentClasses = DefaultDocumentClass);

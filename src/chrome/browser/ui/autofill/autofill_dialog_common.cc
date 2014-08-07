@@ -37,8 +37,15 @@ bool ServerTypeEncompassesFieldType(ServerFieldType type,
 
   // The page may ask for individual address lines; this roughly matches the
   // street address blob.
-  if (server_type == ADDRESS_HOME_LINE1 || server_type == ADDRESS_HOME_LINE2)
+  if (server_type == ADDRESS_HOME_LINE1 ||
+          server_type == ADDRESS_HOME_LINE2 ||
+          server_type == ADDRESS_HOME_LINE3) {
     return autofill_type.GetStorableType() == ADDRESS_HOME_STREET_ADDRESS;
+  }
+
+  // First, middle and last name are parsed from full name.
+  if (field_type.group() == NAME || field_type.group() == NAME_BILLING)
+    return autofill_type.GetStorableType() == NAME_FULL;
 
   return autofill_type.GetStorableType() == server_type;
 }

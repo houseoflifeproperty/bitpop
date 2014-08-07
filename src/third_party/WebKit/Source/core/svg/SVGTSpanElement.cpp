@@ -22,7 +22,7 @@
 
 #include "core/svg/SVGTSpanElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/rendering/svg/RenderSVGTSpan.h"
 
 namespace WebCore {
@@ -33,10 +33,7 @@ inline SVGTSpanElement::SVGTSpanElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGTSpanElement> SVGTSpanElement::create(Document& document)
-{
-    return adoptRef(new SVGTSpanElement(document));
-}
+DEFINE_NODE_FACTORY(SVGTSpanElement)
 
 RenderObject* SVGTSpanElement::createRenderer(RenderStyle*)
 {

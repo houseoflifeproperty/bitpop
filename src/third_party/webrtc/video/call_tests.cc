@@ -73,8 +73,10 @@ class CallTest : public ::testing::Test {
     receive_config_ = receiver_call_->GetDefaultReceiveConfig();
 
     send_config_.rtp.ssrcs.push_back(kSendSsrc);
-    send_config_.encoder_settings = test::CreateEncoderSettings(
-        &fake_encoder_, "FAKE", kSendPayloadType, 1);
+    send_config_.encoder_settings.encoder = &fake_encoder_;
+    send_config_.encoder_settings.payload_name = "FAKE";
+    send_config_.encoder_settings.payload_type = kSendPayloadType;
+    video_streams_ = test::CreateVideoStreams(1);
 
     assert(receive_config_.codecs.empty());
     VideoCodec codec =
@@ -92,17 +94,18 @@ class CallTest : public ::testing::Test {
     assert(send_stream_ == NULL);
     assert(receive_stream_ == NULL);
 
-    send_stream_ = sender_call_->CreateVideoSendStream(send_config_);
+    send_stream_ =
+        sender_call_->CreateVideoSendStream(send_config_, video_streams_, NULL);
     receive_stream_ = receiver_call_->CreateVideoReceiveStream(receive_config_);
   }
 
   void CreateFrameGenerator() {
-    frame_generator_capturer_.reset(test::FrameGeneratorCapturer::Create(
-        send_stream_->Input(),
-        send_config_.encoder_settings.streams[0].width,
-        send_config_.encoder_settings.streams[0].height,
-        30,
-        Clock::GetRealTimeClock()));
+    frame_generator_capturer_.reset(
+        test::FrameGeneratorCapturer::Create(send_stream_->Input(),
+                                             video_streams_[0].width,
+                                             video_streams_[0].height,
+                                             30,
+                                             Clock::GetRealTimeClock()));
   }
 
   void StartSending() {
@@ -139,6 +142,7 @@ class CallTest : public ::testing::Test {
   scoped_ptr<Call> receiver_call_;
 
   VideoSendStream::Config send_config_;
+  std::vector<VideoStream> video_streams_;
   VideoReceiveStream::Config receive_config_;
 
   VideoSendStream* send_stream_;
@@ -350,8 +354,7 @@ TEST_F(CallTest, TransmitsFirstFrame) {
   StartSending();
 
   scoped_ptr<test::FrameGenerator> frame_generator(test::FrameGenerator::Create(
-      send_config_.encoder_settings.streams[0].width,
-      send_config_.encoder_settings.streams[0].height));
+      video_streams_[0].width, video_streams_[0].height));
   send_stream_->Input()->SwapFrame(frame_generator->NextFrame());
 
   EXPECT_EQ(kEventSignaled, renderer.Wait())
@@ -701,10 +704,9 @@ TEST_F(CallTest, UsesFrameCallbacks) {
   scoped_ptr<VP8Encoder> encoder(VP8Encoder::Create());
   send_config_.encoder_settings.encoder = encoder.get();
   send_config_.encoder_settings.payload_name = "VP8";
-  ASSERT_EQ(1u, send_config_.encoder_settings.streams.size())
-      << "Test setup error.";
-  send_config_.encoder_settings.streams[0].width = kWidth;
-  send_config_.encoder_settings.streams[0].height = kHeight;
+  ASSERT_EQ(1u, video_streams_.size()) << "Test setup error.";
+  video_streams_[0].width = kWidth;
+  video_streams_[0].height = kHeight;
   send_config_.pre_encode_callback = &pre_encode_callback;
   receive_config_.codecs.clear();
   VideoCodec codec =
@@ -840,7 +842,7 @@ TEST_F(CallTest, DISABLED_ReceivesPliAndRecoversWithoutNack) {
   ReceivesPliAndRecovers(0);
 }
 
-TEST_F(CallTest, SurvivesIncomingRtpPacketsToDestroyedReceiveStream) {
+TEST_F(CallTest, UnknownRtpPacketGivesUnknownSsrcReturnCode) {
   class PacketInputObserver : public PacketReceiver {
    public:
     explicit PacketInputObserver(PacketReceiver* receiver)
@@ -851,13 +853,16 @@ TEST_F(CallTest, SurvivesIncomingRtpPacketsToDestroyedReceiveStream) {
     }
 
    private:
-    virtual bool DeliverPacket(const uint8_t* packet, size_t length) {
+    virtual DeliveryStatus DeliverPacket(const uint8_t* packet,
+                                         size_t length) OVERRIDE {
       if (RtpHeaderParser::IsRtcp(packet, static_cast<int>(length))) {
         return receiver_->DeliverPacket(packet, length);
       } else {
-        EXPECT_FALSE(receiver_->DeliverPacket(packet, length));
+        DeliveryStatus delivery_status =
+            receiver_->DeliverPacket(packet, length);
+        EXPECT_EQ(DELIVERY_UNKNOWN_SSRC, delivery_status);
         delivered_packet_->Set();
-        return false;
+        return delivery_status;
       }
     }
 
@@ -1052,15 +1057,18 @@ TEST_F(CallTest, SendsAndReceivesMultipleStreams) {
 
     VideoSendStream::Config send_config = sender_call->GetDefaultSendConfig();
     send_config.rtp.ssrcs.push_back(ssrc);
-    send_config.encoder_settings =
-        test::CreateEncoderSettings(encoders[i].get(), "VP8", 124, 1);
-    VideoStream* stream = &send_config.encoder_settings.streams[0];
+    send_config.encoder_settings.encoder = encoders[i].get();
+    send_config.encoder_settings.payload_name = "VP8";
+    send_config.encoder_settings.payload_type = 124;
+    std::vector<VideoStream> video_streams = test::CreateVideoStreams(1);
+    VideoStream* stream = &video_streams[0];
     stream->width = width;
     stream->height = height;
     stream->max_framerate = 5;
     stream->min_bitrate_bps = stream->target_bitrate_bps =
         stream->max_bitrate_bps = 100000;
-    send_streams[i] = sender_call->CreateVideoSendStream(send_config);
+    send_streams[i] =
+        sender_call->CreateVideoSendStream(send_config, video_streams, NULL);
     send_streams[i]->Start();
 
     VideoReceiveStream::Config receive_config =
@@ -1151,8 +1159,7 @@ TEST_F(CallTest, ObserversEncodedFrames) {
   StartSending();
 
   scoped_ptr<test::FrameGenerator> frame_generator(test::FrameGenerator::Create(
-      send_config_.encoder_settings.streams[0].width,
-      send_config_.encoder_settings.streams[0].height));
+      video_streams_[0].width, video_streams_[0].height));
   send_stream_->Input()->SwapFrame(frame_generator->NextFrame());
 
   EXPECT_EQ(kEventSignaled, post_encode_observer.Wait())
@@ -1552,6 +1559,54 @@ TEST_F(CallTest, ReceiverReferenceTimeReportEnabled) {
 
 TEST_F(CallTest, ReceiverReferenceTimeReportDisabled) {
   TestXrReceiverReferenceTimeReport(false);
+}
+
+TEST_F(CallTest, TestReceivedRtpPacketStats) {
+  static const size_t kNumRtpPacketsToSend = 5;
+  class ReceivedRtpStatsObserver : public test::RtpRtcpObserver {
+   public:
+    ReceivedRtpStatsObserver()
+        : test::RtpRtcpObserver(kDefaultTimeoutMs),
+          receive_stream_(NULL),
+          sent_rtp_(0) {}
+
+    void SetReceiveStream(VideoReceiveStream* stream) {
+      receive_stream_ = stream;
+    }
+
+   private:
+    virtual Action OnSendRtp(const uint8_t* packet, size_t length) OVERRIDE {
+      if (sent_rtp_ >= kNumRtpPacketsToSend) {
+        VideoReceiveStream::Stats stats = receive_stream_->GetStats();
+        if (kNumRtpPacketsToSend == stats.rtp_stats.packets) {
+          observation_complete_->Set();
+        }
+        return DROP_PACKET;
+      }
+      ++sent_rtp_;
+      return SEND_PACKET;
+    }
+
+    VideoReceiveStream* receive_stream_;
+    uint32_t sent_rtp_;
+  } observer;
+
+  CreateCalls(Call::Config(observer.SendTransport()),
+              Call::Config(observer.ReceiveTransport()));
+  observer.SetReceivers(receiver_call_->Receiver(), sender_call_->Receiver());
+
+  CreateTestConfigs();
+  CreateStreams();
+  observer.SetReceiveStream(receive_stream_);
+  CreateFrameGenerator();
+  StartSending();
+
+  EXPECT_EQ(kEventSignaled, observer.Wait())
+      << "Timed out while verifying number of received RTP packets.";
+
+  StopSending();
+  observer.StopSending();
+  DestroyStreams();
 }
 
 }  // namespace webrtc

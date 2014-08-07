@@ -31,13 +31,14 @@
 
 namespace WebCore {
 
-PassRefPtr<HTMLAllCollection> HTMLAllCollection::create(ContainerNode& node, CollectionType type)
+PassRefPtrWillBeRawPtr<HTMLAllCollection> HTMLAllCollection::create(ContainerNode& node, CollectionType type)
 {
-    return adoptRef(new HTMLAllCollection(node, type));
+    ASSERT_UNUSED(type, type == DocAll);
+    return adoptRefWillBeNoop(new HTMLAllCollection(node));
 }
 
-HTMLAllCollection::HTMLAllCollection(ContainerNode& node, CollectionType type)
-    : HTMLCollection(node, type, DoesNotOverrideItemAfter)
+HTMLAllCollection::HTMLAllCollection(ContainerNode& node)
+    : HTMLCollection(node, DocAll, DoesNotOverrideItemAfter)
 {
     ScriptWrappable::init(this);
 }
@@ -51,13 +52,13 @@ Element* HTMLAllCollection::namedItemWithIndex(const AtomicString& name, unsigne
     updateIdNameCache();
 
     const NamedItemCache& cache = namedItemCache();
-    if (Vector<Element*>* elements = cache.getElementsById(name)) {
+    if (WillBeHeapVector<RawPtrWillBeMember<Element> >* elements = cache.getElementsById(name)) {
         if (index < elements->size())
             return elements->at(index);
         index -= elements->size();
     }
 
-    if (Vector<Element*>* elements = cache.getElementsByName(name)) {
+    if (WillBeHeapVector<RawPtrWillBeMember<Element> >* elements = cache.getElementsByName(name)) {
         if (index < elements->size())
             return elements->at(index);
     }
@@ -65,9 +66,9 @@ Element* HTMLAllCollection::namedItemWithIndex(const AtomicString& name, unsigne
     return 0;
 }
 
-void HTMLAllCollection::namedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtr<NodeList>& returnValue0, bool& returnValue1Enabled, RefPtr<Element>& returnValue1)
+void HTMLAllCollection::namedGetter(const AtomicString& name, bool& returnValue0Enabled, RefPtrWillBeRawPtr<NodeList>& returnValue0, bool& returnValue1Enabled, RefPtrWillBeRawPtr<Element>& returnValue1)
 {
-    Vector<RefPtr<Element> > namedItems;
+    WillBeHeapVector<RefPtrWillBeMember<Element> > namedItems;
     this->namedItems(name, namedItems);
 
     if (!namedItems.size())

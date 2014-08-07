@@ -318,6 +318,26 @@ class FakeFullscreenDelegate : public WebContentsDelegate {
   DISALLOW_COPY_AND_ASSIGN(FakeFullscreenDelegate);
 };
 
+class FakeValidationMessageDelegate : public WebContentsDelegate {
+ public:
+  FakeValidationMessageDelegate()
+      : hide_validation_message_was_called_(false) {}
+  virtual ~FakeValidationMessageDelegate() {}
+
+  virtual void HideValidationMessage(WebContents* web_contents) OVERRIDE {
+    hide_validation_message_was_called_ = true;
+  }
+
+  bool hide_validation_message_was_called() const {
+    return hide_validation_message_was_called_;
+  }
+
+ private:
+  bool hide_validation_message_was_called_;
+
+  DISALLOW_COPY_AND_ASSIGN(FakeValidationMessageDelegate);
+};
+
 }  // namespace
 
 // Test to make sure that title updates get stripped of whitespace.
@@ -325,12 +345,13 @@ TEST_F(WebContentsImplTest, UpdateTitle) {
   NavigationControllerImpl& cont =
       static_cast<NavigationControllerImpl&>(controller());
   FrameHostMsg_DidCommitProvisionalLoad_Params params;
-  InitNavigateParams(&params, 0, GURL(kAboutBlankURL), PAGE_TRANSITION_TYPED);
+  InitNavigateParams(
+      &params, 0, GURL(url::kAboutBlankURL), PAGE_TRANSITION_TYPED);
 
   LoadCommittedDetails details;
   cont.RendererDidNavigate(main_test_rfh(), params, &details);
 
-  contents()->UpdateTitle(rvh(), 0,
+  contents()->UpdateTitle(main_test_rfh(), 0,
                           base::ASCIIToUTF16("    Lots O' Whitespace\n"),
                           base::i18n::LEFT_TO_RIGHT);
   EXPECT_EQ(base::ASCIIToUTF16("Lots O' Whitespace"), contents()->GetTitle());
@@ -448,7 +469,6 @@ TEST_F(WebContentsImplTest, NavigateToExcessivelyLongURL) {
 // Test that navigating across a site boundary creates a new RenderViewHost
 // with a new SiteInstance.  Going back should do the same.
 TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
-  contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
   RenderFrameHostImpl* orig_rfh =
       contents()->GetFrameTree()->root()->current_frame_host();
@@ -549,7 +569,6 @@ TEST_F(WebContentsImplTest, CrossSiteBoundaries) {
 // Test that navigating across a site boundary after a crash creates a new
 // RVH without requiring a cross-site transition (i.e., PENDING state).
 TEST_F(WebContentsImplTest, CrossSiteBoundariesAfterCrash) {
-  contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
   int orig_rvh_delete_count = 0;
   orig_rvh->set_delete_counter(&orig_rvh_delete_count);
@@ -595,7 +614,6 @@ TEST_F(WebContentsImplTest, CrossSiteBoundariesAfterCrash) {
 // both contentses to a new site will place both contentses in a single
 // SiteInstance.
 TEST_F(WebContentsImplTest, NavigateTwoTabsCrossSite) {
-  contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
   SiteInstance* instance1 = contents()->GetSiteInstance();
 
@@ -608,7 +626,6 @@ TEST_F(WebContentsImplTest, NavigateTwoTabsCrossSite) {
   // Open a new contents with the same SiteInstance, navigated to the same site.
   scoped_ptr<TestWebContents> contents2(
       TestWebContents::Create(browser_context(), instance1));
-  contents2->transition_cross_site = true;
   contents2->GetController().LoadURL(url, Referrer(),
                                     PAGE_TRANSITION_TYPED,
                                     std::string());
@@ -658,7 +675,6 @@ TEST_F(WebContentsImplTest, NavigateDoesNotUseUpSiteInstance) {
   WebContentsImplTestBrowserClient browser_client;
   SetBrowserClientForTesting(&browser_client);
 
-  contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
   RenderFrameHostImpl* orig_rfh =
       contents()->GetFrameTree()->root()->current_frame_host();
@@ -747,7 +763,6 @@ TEST_F(WebContentsImplTest, NavigateDoesNotUseUpSiteInstance) {
 // Test that we can find an opener RVH even if it's pending.
 // http://crbug.com/176252.
 TEST_F(WebContentsImplTest, FindOpenerRVHWhenPending) {
-  contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
 
   // Navigate to a URL.
@@ -777,7 +792,6 @@ TEST_F(WebContentsImplTest, FindOpenerRVHWhenPending) {
 // Tests that WebContentsImpl uses the current URL, not the SiteInstance's site,
 // to determine whether a navigation is cross-site.
 TEST_F(WebContentsImplTest, CrossSiteComparesAgainstCurrentPage) {
-  contents()->transition_cross_site = true;
   RenderViewHost* orig_rvh = rvh();
   SiteInstance* instance1 = contents()->GetSiteInstance();
 
@@ -791,7 +805,6 @@ TEST_F(WebContentsImplTest, CrossSiteComparesAgainstCurrentPage) {
   // Open a related contents to a second site.
   scoped_ptr<TestWebContents> contents2(
       TestWebContents::Create(browser_context(), instance1));
-  contents2->transition_cross_site = true;
   const GURL url2("http://www.yahoo.com");
   contents2->GetController().LoadURL(url2, Referrer(),
                                     PAGE_TRANSITION_TYPED,
@@ -829,7 +842,6 @@ TEST_F(WebContentsImplTest, CrossSiteComparesAgainstCurrentPage) {
 // Test that the onbeforeunload and onunload handlers run when navigating
 // across site boundaries.
 TEST_F(WebContentsImplTest, CrossSiteUnloadHandlers) {
-  contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
   SiteInstance* instance1 = contents()->GetSiteInstance();
 
@@ -881,7 +893,6 @@ TEST_F(WebContentsImplTest, CrossSiteUnloadHandlers) {
 // navigate to a different URL and have it displayed, canceling the slow
 // navigation.
 TEST_F(WebContentsImplTest, CrossSiteNavigationPreempted) {
-  contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
   SiteInstance* instance1 = contents()->GetSiteInstance();
 
@@ -916,8 +927,6 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationPreempted) {
 }
 
 TEST_F(WebContentsImplTest, CrossSiteNavigationBackPreempted) {
-  contents()->transition_cross_site = true;
-
   // Start with a web ui page, which gets a new RVH with WebUI bindings.
   const GURL url1("chrome://blah");
   controller().LoadURL(
@@ -1020,7 +1029,6 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationBackPreempted) {
 // Test that during a slow cross-site navigation, a sub-frame navigation in the
 // original renderer will not cancel the slow navigation (bug 42029).
 TEST_F(WebContentsImplTest, CrossSiteNavigationNotPreemptedByFrame) {
-  contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
 
   // Navigate to URL.  First URL should use first RenderViewHost.
@@ -1056,8 +1064,6 @@ TEST_F(WebContentsImplTest, CrossSiteNavigationNotPreemptedByFrame) {
 // We should only preempt the cross-site navigation if the previous renderer
 // has started a new navigation.  See http://crbug.com/79176.
 TEST_F(WebContentsImplTest, CrossSiteNotPreemptedDuringBeforeUnload) {
-  contents()->transition_cross_site = true;
-
   // Navigate to NTP URL.
   const GURL url("chrome://blah");
   controller().LoadURL(
@@ -1093,7 +1099,6 @@ TEST_F(WebContentsImplTest, CrossSiteNotPreemptedDuringBeforeUnload) {
 // is almost ready to be displayed, and the original renderer is only given a
 // short chance to run an unload handler.  Prevents regression of bug 23942.
 TEST_F(WebContentsImplTest, CrossSiteCantPreemptAfterUnload) {
-  contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
   SiteInstance* instance1 = contents()->GetSiteInstance();
 
@@ -1151,7 +1156,6 @@ TEST_F(WebContentsImplTest, CrossSiteCantPreemptAfterUnload) {
 // Test that a cross-site navigation that doesn't commit after the unload
 // handler doesn't leave the contents in a stuck state.  http://crbug.com/88562
 TEST_F(WebContentsImplTest, CrossSiteNavigationCanceled) {
-  contents()->transition_cross_site = true;
   TestRenderViewHost* orig_rvh = test_rvh();
   SiteInstance* instance1 = contents()->GetSiteInstance();
 
@@ -1232,7 +1236,7 @@ TEST_F(WebContentsImplTest, NavigationEntryContentStateNewWindow) {
 
   // When opening a new window, it is navigated to about:blank internally.
   // Currently, this results in two DidNavigate events.
-  const GURL url(kAboutBlankURL);
+  const GURL url(url::kAboutBlankURL);
   contents()->TestDidNavigate(orig_rvh, 1, url, PAGE_TRANSITION_TYPED);
   contents()->TestDidNavigate(orig_rvh, 1, url, PAGE_TRANSITION_TYPED);
 
@@ -1347,6 +1351,22 @@ TEST_F(WebContentsImplTest, HistoryNavigationExitsFullscreen) {
     EXPECT_FALSE(contents()->IsFullscreenForCurrentTab());
     EXPECT_FALSE(fake_delegate.IsFullscreenForTabOrPending(contents()));
   }
+
+  contents()->SetDelegate(NULL);
+}
+
+TEST_F(WebContentsImplTest, TerminateHidesValidationMessage) {
+  FakeValidationMessageDelegate fake_delegate;
+  contents()->SetDelegate(&fake_delegate);
+  EXPECT_FALSE(fake_delegate.hide_validation_message_was_called());
+
+  // Crash the renderer.
+  test_rvh()->OnMessageReceived(
+      ViewHostMsg_RenderProcessGone(
+          0, base::TERMINATION_STATUS_PROCESS_CRASHED, -1));
+
+  // Confirm HideValidationMessage was called.
+  EXPECT_TRUE(fake_delegate.hide_validation_message_was_called());
 
   contents()->SetDelegate(NULL);
 }
@@ -2297,7 +2317,7 @@ TEST_F(WebContentsImplTest, FilterURLs) {
 
   // A navigation to about:whatever should always look like a navigation to
   // about:blank
-  GURL url_normalized(kAboutBlankURL);
+  GURL url_normalized(url::kAboutBlankURL);
   GURL url_from_ipc("about:whatever");
 
   // We navigate the test WebContents to about:blank, since NavigateAndCommit
@@ -2496,7 +2516,7 @@ TEST_F(WebContentsImplTest, HandleGestureEvent) {
 
   const float kZoomStepValue = 0.6f;
   blink::WebGestureEvent event = SyntheticWebGestureEventBuilder::Build(
-      WebInputEvent::GesturePinchUpdate, WebGestureEvent::Touchpad);
+      WebInputEvent::GesturePinchUpdate, blink::WebGestureDeviceTouchpad);
 
   // A pinch less than the step value doesn't change the zoom level.
   event.data.pinchUpdate.scale = 1.0f + kZoomStepValue * 0.8f;
@@ -2526,13 +2546,119 @@ TEST_F(WebContentsImplTest, HandleGestureEvent) {
   // No other type of gesture event is handled by WebContentsImpl (for example
   // a touchscreen pinch gesture).
   event = SyntheticWebGestureEventBuilder::Build(
-      WebInputEvent::GesturePinchUpdate, WebGestureEvent::Touchscreen);
+      WebInputEvent::GesturePinchUpdate, blink::WebGestureDeviceTouchscreen);
   event.data.pinchUpdate.scale = 1.0f + kZoomStepValue * 3;
   EXPECT_FALSE(contents()->HandleGestureEvent(event));
   EXPECT_EQ(0, delegate->GetAndResetContentsZoomChangedCallCount());
 
   // Ensure pointers to the delegate aren't kept beyond it's lifetime.
   contents()->SetDelegate(NULL);
+}
+
+// Tests that GetRelatedActiveContentsCount is shared between related
+// SiteInstances and includes WebContents that have not navigated yet.
+TEST_F(WebContentsImplTest, ActiveContentsCountBasic) {
+  scoped_refptr<SiteInstance> instance1(
+      SiteInstance::CreateForURL(browser_context(), GURL("http://a.com")));
+  scoped_refptr<SiteInstance> instance2(
+      instance1->GetRelatedSiteInstance(GURL("http://b.com")));
+
+  EXPECT_EQ(0u, instance1->GetRelatedActiveContentsCount());
+  EXPECT_EQ(0u, instance2->GetRelatedActiveContentsCount());
+
+  scoped_ptr<TestWebContents> contents1(
+      TestWebContents::Create(browser_context(), instance1));
+  EXPECT_EQ(1u, instance1->GetRelatedActiveContentsCount());
+  EXPECT_EQ(1u, instance2->GetRelatedActiveContentsCount());
+
+  scoped_ptr<TestWebContents> contents2(
+      TestWebContents::Create(browser_context(), instance1));
+  EXPECT_EQ(2u, instance1->GetRelatedActiveContentsCount());
+  EXPECT_EQ(2u, instance2->GetRelatedActiveContentsCount());
+
+  contents1.reset();
+  EXPECT_EQ(1u, instance1->GetRelatedActiveContentsCount());
+  EXPECT_EQ(1u, instance2->GetRelatedActiveContentsCount());
+
+  contents2.reset();
+  EXPECT_EQ(0u, instance1->GetRelatedActiveContentsCount());
+  EXPECT_EQ(0u, instance2->GetRelatedActiveContentsCount());
+}
+
+// Tests that GetRelatedActiveContentsCount is preserved correctly across
+// same-site and cross-site navigations.
+TEST_F(WebContentsImplTest, ActiveContentsCountNavigate) {
+  scoped_refptr<SiteInstance> instance(
+      SiteInstance::Create(browser_context()));
+
+  EXPECT_EQ(0u, instance->GetRelatedActiveContentsCount());
+
+  scoped_ptr<TestWebContents> contents(
+      TestWebContents::Create(browser_context(), instance));
+  EXPECT_EQ(1u, instance->GetRelatedActiveContentsCount());
+
+  // Navigate to a URL.
+  contents->GetController().LoadURL(
+      GURL("http://a.com/1"), Referrer(), PAGE_TRANSITION_TYPED, std::string());
+  EXPECT_EQ(1u, instance->GetRelatedActiveContentsCount());
+  contents->CommitPendingNavigation();
+  EXPECT_EQ(1u, instance->GetRelatedActiveContentsCount());
+
+  // Navigate to a URL in the same site.
+  contents->GetController().LoadURL(
+      GURL("http://a.com/2"), Referrer(), PAGE_TRANSITION_TYPED, std::string());
+  EXPECT_EQ(1u, instance->GetRelatedActiveContentsCount());
+  contents->CommitPendingNavigation();
+  EXPECT_EQ(1u, instance->GetRelatedActiveContentsCount());
+
+  // Navigate to a URL in a different site.
+  contents->GetController().LoadURL(
+      GURL("http://b.com"), Referrer(), PAGE_TRANSITION_TYPED, std::string());
+  EXPECT_TRUE(contents->cross_navigation_pending());
+  EXPECT_EQ(1u, instance->GetRelatedActiveContentsCount());
+  contents->CommitPendingNavigation();
+  EXPECT_EQ(1u, instance->GetRelatedActiveContentsCount());
+
+  contents.reset();
+  EXPECT_EQ(0u, instance->GetRelatedActiveContentsCount());
+}
+
+// Tests that GetRelatedActiveContentsCount tracks BrowsingInstance changes
+// from WebUI.
+TEST_F(WebContentsImplTest, ActiveContentsCountChangeBrowsingInstance) {
+  scoped_refptr<SiteInstance> instance(
+      SiteInstance::Create(browser_context()));
+
+  EXPECT_EQ(0u, instance->GetRelatedActiveContentsCount());
+
+  scoped_ptr<TestWebContents> contents(
+      TestWebContents::Create(browser_context(), instance));
+  EXPECT_EQ(1u, instance->GetRelatedActiveContentsCount());
+
+  // Navigate to a URL.
+  contents->NavigateAndCommit(GURL("http://a.com"));
+  EXPECT_EQ(1u, instance->GetRelatedActiveContentsCount());
+
+  // Navigate to a URL with WebUI. This will change BrowsingInstances.
+  contents->GetController().LoadURL(
+      GURL(kTestWebUIUrl), Referrer(), PAGE_TRANSITION_TYPED, std::string());
+  EXPECT_TRUE(contents->cross_navigation_pending());
+  scoped_refptr<SiteInstance> instance_webui(
+      contents->GetPendingRenderViewHost()->GetSiteInstance());
+  EXPECT_FALSE(instance->IsRelatedSiteInstance(instance_webui.get()));
+
+  // At this point, contents still counts for the old BrowsingInstance.
+  EXPECT_EQ(1u, instance->GetRelatedActiveContentsCount());
+  EXPECT_EQ(0u, instance_webui->GetRelatedActiveContentsCount());
+
+  // Commit and contents counts for the new one.
+  contents->CommitPendingNavigation();
+  EXPECT_EQ(0u, instance->GetRelatedActiveContentsCount());
+  EXPECT_EQ(1u, instance_webui->GetRelatedActiveContentsCount());
+
+  contents.reset();
+  EXPECT_EQ(0u, instance->GetRelatedActiveContentsCount());
+  EXPECT_EQ(0u, instance_webui->GetRelatedActiveContentsCount());
 }
 
 }  // namespace content

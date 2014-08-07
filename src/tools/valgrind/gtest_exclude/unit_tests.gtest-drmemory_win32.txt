@@ -7,17 +7,11 @@ AudioRendererHostTest.*
 ##################################################
 # un-analyzed Dr. Memory bugs:
 
-# http://code.google.com/p/drmemory/issues/detail?id=548
-DownloadManagerTest.StartDownload
-
 # http://code.google.com/p/drmemory/issues/detail?id=979
 FirefoxProfileImporterTest.Firefox35Importer
 
 # http://code.google.com/p/drmemory/issues/detail?id=980
 MetricsLogManagerTest.*
-
-# http://code.google.com/p/drmemory/issues/detail?id=983
-ProfileShortcutManagerTest.*
 
 ##################################################
 # Chromium bugs:
@@ -49,9 +43,6 @@ TemplateURLFetcherTest.*
 GAIAInfoUpdateServiceTest.*
 ProfileManagerTest.*
 ProfileInfoCacheTest.*
-
-# Failing on the bot. http://crbug.com/167014
-BrowserCommandControllerTest.AvatarMenuDisabledWhenOnlyOneProfile
 
 # Failing on the bot. http://crbug.com/168882
 UserCloudPolicyStoreTest.LoadWithInvalidFile

@@ -192,8 +192,14 @@ void BrowserNavigatorTest::RunDoNothingIfIncognitoIsForcedTest(
   // The page should not be opened.
   EXPECT_EQ(browser, p.browser);
   EXPECT_EQ(1, browser->tab_strip_model()->count());
-  EXPECT_EQ(GURL(content::kAboutBlankURL),
+  EXPECT_EQ(GURL(url::kAboutBlankURL),
             browser->tab_strip_model()->GetActiveWebContents()->GetURL());
+}
+
+void BrowserNavigatorTest::SetUpCommandLine(base::CommandLine* command_line) {
+  // Disable settings-in-a-window so that we can use the settings page and
+  // sub-pages to test browser navigation.
+  command_line->AppendSwitch(::switches::kDisableSettingsWindow);
 }
 
 void BrowserNavigatorTest::Observe(
@@ -1084,7 +1090,7 @@ IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest,
 IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest,
                        NavigateFromBlankToOptionsInSameTab) {
   chrome::NavigateParams p(MakeNavigateParams());
-  p.url = GURL(content::kAboutBlankURL);
+  p.url = GURL(url::kAboutBlankURL);
   ui_test_utils::NavigateToURL(&p);
 
   {

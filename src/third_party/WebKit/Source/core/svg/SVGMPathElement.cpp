@@ -21,11 +21,10 @@
 
 #include "core/svg/SVGMPathElement.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/svg/SVGAnimateMotionElement.h"
 #include "core/svg/SVGDocumentExtensions.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGPathElement.h"
 
 namespace WebCore {
@@ -37,10 +36,7 @@ inline SVGMPathElement::SVGMPathElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGMPathElement> SVGMPathElement::create(Document& document)
-{
-    return adoptRef(new SVGMPathElement(document));
-}
+DEFINE_NODE_FACTORY(SVGMPathElement)
 
 SVGMPathElement::~SVGMPathElement()
 {

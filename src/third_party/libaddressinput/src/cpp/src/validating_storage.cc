@@ -37,7 +37,7 @@ namespace {
 class Helper {
  public:
   Helper(const std::string& key,
-         const Storage::Callback& data_ready,
+         const ValidatingStorage::Callback& data_ready,
          const Storage& wrapped_storage)
       : data_ready_(data_ready),
         wrapped_data_ready_(BuildCallback(this, &Helper::OnWrappedDataReady)) {
@@ -49,15 +49,21 @@ class Helper {
 
   void OnWrappedDataReady(bool success,
                           const std::string& key,
-                          const std::string& wrapped_data) {
-    std::string data(wrapped_data);
-    if (!success ||
-        !ValidatingUtil::UnwrapTimestamp(&data, time(NULL)) ||
-        !ValidatingUtil::UnwrapChecksum(&data)) {
-      data_ready_(false, key, std::string());
+                          std::string* data) {
+    if (success) {
+      assert(data != NULL);
+      bool is_stale = !ValidatingUtil::UnwrapTimestamp(data, time(NULL));
+      bool is_corrupted = !ValidatingUtil::UnwrapChecksum(data);
+      success = !is_corrupted && !is_stale;
+      if (is_corrupted) {
+        delete data;
+        data = NULL;
+      }
     } else {
-      data_ready_(true, key, data);
+      delete data;
+      data = NULL;
     }
+    data_ready_(success, key, data);
     delete this;
   }
 
@@ -76,8 +82,10 @@ ValidatingStorage::ValidatingStorage(Storage* storage)
 
 ValidatingStorage::~ValidatingStorage() {}
 
-void ValidatingStorage::Put(const std::string& key, const std::string& data) {
-  wrapped_storage_->Put(key, ValidatingUtil::Wrap(data, time(NULL)));
+void ValidatingStorage::Put(const std::string& key, std::string* data) {
+  assert(data != NULL);
+  ValidatingUtil::Wrap(time(NULL), data);
+  wrapped_storage_->Put(key, data);
 }
 
 void ValidatingStorage::Get(const std::string& key,

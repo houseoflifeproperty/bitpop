@@ -4,7 +4,6 @@
 
 #include "chrome/browser/extensions/suspicious_extension_bubble_controller.h"
 
-#include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
@@ -12,14 +11,15 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/url_constants.h"
-#include "content/public/browser/user_metrics.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using extensions::ExtensionMessageBubbleController;
 
 namespace {
 
@@ -28,6 +28,39 @@ base::LazyInstance<std::set<Profile*> > g_shown_for_profiles =
 
 ////////////////////////////////////////////////////////////////////////////////
 // SuspiciousExtensionBubbleDelegate
+
+class SuspiciousExtensionBubbleDelegate
+    : public ExtensionMessageBubbleController::Delegate {
+ public:
+  explicit SuspiciousExtensionBubbleDelegate(Profile* profile);
+  virtual ~SuspiciousExtensionBubbleDelegate();
+
+  // ExtensionMessageBubbleController::Delegate methods.
+  virtual bool ShouldIncludeExtension(const std::string& extension_id) OVERRIDE;
+  virtual void AcknowledgeExtension(
+      const std::string& extension_id,
+      ExtensionMessageBubbleController::BubbleAction user_action) OVERRIDE;
+  virtual void PerformAction(const extensions::ExtensionIdList& list) OVERRIDE;
+  virtual base::string16 GetTitle() const OVERRIDE;
+  virtual base::string16 GetMessageBody(
+      bool anchored_to_browser_action) const OVERRIDE;
+  virtual base::string16 GetOverflowText(
+      const base::string16& overflow_count) const OVERRIDE;
+  virtual base::string16 GetLearnMoreLabel() const OVERRIDE;
+  virtual GURL GetLearnMoreUrl() const OVERRIDE;
+  virtual base::string16 GetActionButtonLabel() const OVERRIDE;
+  virtual base::string16 GetDismissButtonLabel() const OVERRIDE;
+  virtual bool ShouldShowExtensionList() const OVERRIDE;
+  virtual void LogExtensionCount(size_t count) OVERRIDE;
+  virtual void LogAction(
+      ExtensionMessageBubbleController::BubbleAction action) OVERRIDE;
+
+ private:
+  // Our profile. Weak, not owned by us.
+  Profile* profile_;
+
+  DISALLOW_COPY_AND_ASSIGN(SuspiciousExtensionBubbleDelegate);
+};
 
 SuspiciousExtensionBubbleDelegate::SuspiciousExtensionBubbleDelegate(
     Profile* profile)
@@ -66,7 +99,8 @@ base::string16 SuspiciousExtensionBubbleDelegate::GetTitle() const {
   return l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNSUPPORTED_DISABLED_TITLE);
 }
 
-base::string16 SuspiciousExtensionBubbleDelegate::GetMessageBody() const {
+base::string16 SuspiciousExtensionBubbleDelegate::GetMessageBody(
+    bool anchored_to_browser_action) const {
   return l10n_util::GetStringFUTF16(IDS_EXTENSIONS_UNSUPPORTED_DISABLED_BODY,
       l10n_util::GetStringUTF16(IDS_EXTENSION_WEB_STORE_TITLE));
 }
@@ -105,13 +139,13 @@ SuspiciousExtensionBubbleDelegate::ShouldShowExtensionList() const {
 void SuspiciousExtensionBubbleDelegate::LogExtensionCount(
     size_t count) {
   UMA_HISTOGRAM_COUNTS_100(
-      "ExtensionWipeoutBubble.ExtensionWipeoutCount", count);
+      "ExtensionBubble.ExtensionWipeoutCount", count);
 }
 
 void SuspiciousExtensionBubbleDelegate::LogAction(
     ExtensionMessageBubbleController::BubbleAction action) {
   UMA_HISTOGRAM_ENUMERATION(
-      "ExtensionWipeoutBubble.UserSelection",
+      "ExtensionBubble.WipeoutUserSelection",
       action, ExtensionMessageBubbleController::ACTION_BOUNDARY);
 }
 

@@ -38,7 +38,6 @@ namespace WebCore {
 
 class RenderLayer;
 class RenderLayerModelObject;
-class RenderView;
 class TransformState;
 
 // Stores data about how to map from one renderer to its container.
@@ -121,10 +120,10 @@ private:
     bool hasFixedPositionStep() const { return m_fixedStepsCount; }
 
 #ifndef NDEBUG
-    void dumpSteps();
+    void dumpSteps() const;
 #endif
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     bool isTopmostRenderView(const RenderObject* renderer) const;
 #endif
 

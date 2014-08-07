@@ -20,9 +20,11 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/mock_input_method_manager.h"
-#include "chrome/browser/chromeos/login/authenticator.h"
-#include "chrome/browser/chromeos/login/login_status_consumer.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/auth/authenticator.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
+#include "chrome/browser/chromeos/login/auth/login_status_consumer.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
@@ -34,10 +36,10 @@
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/rlz/rlz.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/chrome_unit_test_suite.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
@@ -207,9 +209,6 @@ class LoginUtilsTest : public testing::Test,
     command_line->AppendSwitchASCII(
         policy::switches::kDeviceManagementUrl, kDMServer);
 
-    if (!command_line->HasSwitch(::switches::kMultiProfiles))
-      command_line->AppendSwitchASCII(switches::kLoginProfile, "user");
-
     // DBusThreadManager should be initialized before io_thread_state_, as
     // DBusThreadManager is used from chromeos::ProxyConfigServiceImpl,
     // which is part of io_thread_state_.
@@ -359,7 +358,7 @@ class LoginUtilsTest : public testing::Test,
   }
 
 #if defined(ENABLE_RLZ)
-  virtual void OnRlzInitialized(Profile* profile) OVERRIDE {
+  virtual void OnRlzInitialized() OVERRIDE {
     rlz_initialized_cb_.Run();
   }
 #endif
@@ -400,25 +399,21 @@ class LoginUtilsTest : public testing::Test,
 
     scoped_refptr<Authenticator> authenticator =
         LoginUtils::Get()->CreateAuthenticator(this);
+    UserContext user_context(username);
+    user_context.SetKey(Key("password"));
+    user_context.SetUserIDHash(username);
     authenticator->CompleteLogin(ProfileHelper::GetSigninProfile(),
-                                 UserContext(username,
-                                             "password",
-                                             std::string(),
-                                             username));   // username_hash
+                                 user_context);
 
-    const bool kUsingOAuth = true;
     // Setting |kHasCookies| to false prevents ProfileAuthData::Transfer from
     // waiting for an IO task before proceeding.
     const bool kHasCookies = false;
     const bool kHasActiveSession = false;
-    LoginUtils::Get()->PrepareProfile(
-        UserContext(username,
-                    "password",
-                    std::string(),
-                    username,
-                    kUsingOAuth,
-                    UserContext::AUTH_FLOW_GAIA_WITHOUT_SAML),
-        std::string(), kHasCookies, kHasActiveSession, this);
+    user_context.SetAuthFlow(UserContext::AUTH_FLOW_GAIA_WITHOUT_SAML);
+    LoginUtils::Get()->PrepareProfile(user_context,
+                                      kHasCookies,
+                                      kHasActiveSession,
+                                      this);
     device_settings_test_helper.Flush();
     RunUntilIdle();
 
@@ -526,28 +521,11 @@ class LoginUtilsTest : public testing::Test,
   DISALLOW_COPY_AND_ASSIGN(LoginUtilsTest);
 };
 
-class LoginUtilsParamTest
-    : public LoginUtilsTest,
-      public testing::WithParamInterface<bool> {
- public:
-  LoginUtilsParamTest() {}
-
-  virtual void SetUp() OVERRIDE {
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
-    if (GetParam())
-      command_line->AppendSwitch(::switches::kMultiProfiles);
-    LoginUtilsTest::SetUp();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(LoginUtilsParamTest);
-};
-
 class LoginUtilsBlockingLoginTest
     : public LoginUtilsTest,
       public testing::WithParamInterface<int> {};
 
-TEST_P(LoginUtilsParamTest, NormalLoginDoesntBlock) {
+TEST_F(LoginUtilsTest, NormalLoginDoesntBlock) {
   UserManager* user_manager = UserManager::Get();
   EXPECT_FALSE(user_manager->IsUserLoggedIn());
   EXPECT_FALSE(connector_->IsEnterpriseManaged());
@@ -563,7 +541,7 @@ TEST_P(LoginUtilsParamTest, NormalLoginDoesntBlock) {
   EXPECT_EQ(kUsername, user_manager->GetLoggedInUser()->email());
 }
 
-TEST_P(LoginUtilsParamTest, EnterpriseLoginDoesntBlockForNormalUser) {
+TEST_F(LoginUtilsTest, EnterpriseLoginDoesntBlockForNormalUser) {
   UserManager* user_manager = UserManager::Get();
   EXPECT_FALSE(user_manager->IsUserLoggedIn());
   EXPECT_FALSE(connector_->IsEnterpriseManaged());
@@ -588,7 +566,7 @@ TEST_P(LoginUtilsParamTest, EnterpriseLoginDoesntBlockForNormalUser) {
 }
 
 #if defined(ENABLE_RLZ)
-TEST_P(LoginUtilsParamTest, RlzInitialized) {
+TEST_F(LoginUtilsTest, RlzInitialized) {
   // No RLZ brand code set initially.
   EXPECT_FALSE(local_state_.Get()->HasPrefPath(prefs::kRLZBrand));
 
@@ -608,7 +586,7 @@ TEST_P(LoginUtilsParamTest, RlzInitialized) {
   // RLZ value for homepage access point should have been initialized.
   base::string16 rlz_string;
   EXPECT_TRUE(RLZTracker::GetAccessPointRlz(
-      RLZTracker::CHROME_HOME_PAGE, &rlz_string));
+      RLZTracker::ChromeHomePage(), &rlz_string));
   EXPECT_EQ(base::string16(), rlz_string);
 }
 #endif
@@ -722,10 +700,6 @@ INSTANTIATE_TEST_CASE_P(
     LoginUtilsBlockingLoginTestInstance,
     LoginUtilsBlockingLoginTest,
     testing::Values(0, 1, 2, 3, 4, 5));
-
-INSTANTIATE_TEST_CASE_P(LoginUtilsParamTestInstantiation,
-                        LoginUtilsParamTest,
-                        testing::Bool());
 
 }  // namespace
 

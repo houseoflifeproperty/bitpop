@@ -42,12 +42,13 @@ using base::UserMetricsAction;
 
 namespace {
 
-const CGFloat kHorizontalPadding = 20.0f;
-const CGFloat kVerticalPadding = 20.0f;
-const CGFloat kButtonPadding = 10.0f;
+const CGFloat kHorizontalPadding = 13.0f;
+const CGFloat kVerticalPadding = 13.0f;
+const CGFloat kBetweenButtonsPadding = 10.0f;
+const CGFloat kButtonRightEdgePadding = 17.0f;
 const CGFloat kTitlePaddingX = 50.0f;
-const CGFloat kTitleFontSize = 15.0f;
-const CGFloat kPermissionFontSize = 12.0f;
+const CGFloat kBubbleMinWidth = 315.0f;
+const NSSize kPermissionIconSize = {18, 18};
 
 class MenuDelegate : public ui::SimpleMenuModel::Delegate {
  public:
@@ -87,6 +88,9 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
          allowed:(BOOL)allow
            index:(int)index
         delegate:(PermissionBubbleView::Delegate*)delegate;
+
+// Returns the maximum width of its possible titles.
+- (CGFloat)maximumTitleWidth;
 @end
 
 @implementation AllowBlockMenuButton
@@ -98,7 +102,7 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
   if (self = [super initWithFrame:NSZeroRect pullsDown:NO]) {
     ContentSetting setting =
         allow ? CONTENT_SETTING_ALLOW : CONTENT_SETTING_BLOCK;
-    [self setFont:[NSFont systemFontOfSize:kPermissionFontSize]];
+    [self setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
     [self setBordered:NO];
 
     __block PermissionBubbleView::Delegate* blockDelegate = delegate;
@@ -125,6 +129,15 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
     [self setFrameSize:SizeForWebsiteSettingsButtonTitle(self, [self title])];
   }
   return self;
+}
+
+- (CGFloat)maximumTitleWidth {
+  CGFloat maxTitleWidth = 0;
+  for (NSMenuItem* item in [self itemArray]) {
+    NSSize size = SizeForWebsiteSettingsButtonTitle(self, [item title]);
+    maxTitleWidth = std::max(maxTitleWidth, size.width);
+  }
+  return maxTitleWidth;
 }
 
 @end
@@ -217,6 +230,7 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
                        parentWindow:parentWindow
                          anchoredAt:NSZeroPoint])) {
     [self setShouldCloseOnResignKey:NO];
+    [self setShouldOpenAsKeyWindow:NO];
     [[self bubble] setArrowLocation:info_bubble::kTopLeft];
     bridge_ = bridge;
   }
@@ -259,6 +273,7 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
   if (customizationMode)
     permissionMenus.reset([[NSMutableArray alloc] init]);
 
+  CGFloat maxPermissionLineWidth = 0;
   for (auto it = requests.begin(); it != requests.end(); it++) {
     base::scoped_nsobject<NSView> permissionView(
         [[self labelForRequest:(*it)] retain]);
@@ -281,28 +296,9 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
       [permissionMenus addObject:menu];
       [contentView addSubview:menu];
     }
+    maxPermissionLineWidth = std::max(
+        maxPermissionLineWidth, NSMaxX([permissionView frame]));
     yOffset += NSHeight([permissionView frame]);
-  }
-
-  // The maximum width of the above permissions will dictate the width of the
-  // bubble.  It is calculated here so that it can be used for the positioning
-  // of the buttons.
-  NSRect bubbleFrame = NSZeroRect;
-  for (NSView* view in [contentView subviews]) {
-    bubbleFrame = NSUnionRect(
-        bubbleFrame, NSInsetRect([view frame], -kHorizontalPadding, 0));
-  }
-
-  if (customizationMode) {
-    // Adjust the horizontal origin for each menu.
-    CGFloat xOffset = NSWidth(bubbleFrame) - kHorizontalPadding;
-    CGFloat maxMenuWidth = 0;
-    for (NSView* view in permissionMenus.get()) {
-      [view setFrameOrigin:NSMakePoint(xOffset, NSMinY([view frame]))];
-      maxMenuWidth = std::max(maxMenuWidth, NSWidth([view frame]));
-    }
-    // And add the menu width to the bubble's width.
-    bubbleFrame.size.width += maxMenuWidth;
   }
 
   base::scoped_nsobject<NSView> titleView(
@@ -311,30 +307,68 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
   [contentView addSubview:titleView];
   [titleView setFrameOrigin:NSMakePoint(kHorizontalPadding,
                                         kVerticalPadding + yOffset)];
-  yOffset += NSHeight([titleView frame]) + kVerticalPadding;
-
-  // The title must fit within the bubble.
-  bubbleFrame.size.width = std::max(NSWidth(bubbleFrame),
-                                    NSWidth([titleView frame]));
 
   // 'x' button in the upper-right-hand corner.
   base::scoped_nsobject<NSView> closeButton([[self closeButton] retain]);
-  // Place the close button at the rightmost edge of the bubble.
-  [closeButton setFrameOrigin:NSMakePoint(
-      NSMaxX(bubbleFrame), yOffset - chrome_style::kCloseButtonPadding)];
-  // Increase the size of the bubble by the width of the close button and its
-  // padding.
-  bubbleFrame.size.width +=
-      NSWidth([closeButton frame]) + chrome_style::kCloseButtonPadding;
+
+  // Determine the dimensions of the bubble.
+  // Once the height and width are set, the buttons and permission menus can
+  // be laid out correctly.
+  NSRect bubbleFrame = NSMakeRect(0, 0, kBubbleMinWidth, 0);
+
+  // Fix the height of the bubble relative to the title.
+  bubbleFrame.size.height = NSMaxY([titleView frame]) + kVerticalPadding +
+                            info_bubble::kBubbleArrowHeight;
+
+  if (customizationMode) {
+    // Add the maximum menu width to the bubble width.  Note that the right edge
+    // of the menus align with the left edge of the 'ok' button, so the width of
+    // the 'ok' button needs to be added as well.
+    CGFloat maxMenuWidth = 0;
+    for (AllowBlockMenuButton* button in permissionMenus.get()) {
+      maxMenuWidth = std::max(maxMenuWidth, [button maximumTitleWidth]);
+    }
+    maxPermissionLineWidth += maxMenuWidth + NSWidth([allowOrOkButton frame]);
+  }
+
+  // The title and 'x' button row must fit within the bubble.
+  CGFloat titleRowWidth = NSMaxX([titleView frame]) +
+                          NSWidth([closeButton frame]) +
+                          chrome_style::kCloseButtonPadding;
+
+  bubbleFrame.size.width = std::max(
+      NSWidth(bubbleFrame), std::max(titleRowWidth, maxPermissionLineWidth));
+
+  // Now that the bubble's dimensions have been set, lay out the buttons and
+  // menus.
+
+  // Place the close button at the upper-right-hand corner of the bubble.
+  NSPoint closeButtonOrigin =
+      NSMakePoint(NSWidth(bubbleFrame) - NSWidth([closeButton frame]) -
+                      chrome_style::kCloseButtonPadding,
+                  NSHeight(bubbleFrame) - NSWidth([closeButton frame]) -
+                      chrome_style::kCloseButtonPadding);
+  // Account for the bubble's arrow.
+  closeButtonOrigin.y -= info_bubble::kBubbleArrowHeight;
+
+  [closeButton setFrameOrigin:closeButtonOrigin];
   [contentView addSubview:closeButton];
 
   // Position the allow/ok button.
   CGFloat xOrigin = NSWidth(bubbleFrame) - NSWidth([allowOrOkButton frame]) -
-      kHorizontalPadding;
+                    kButtonRightEdgePadding;
   [allowOrOkButton setFrameOrigin:NSMakePoint(xOrigin, kVerticalPadding)];
   [contentView addSubview:allowOrOkButton];
 
-  if (!customizationMode) {
+  if (customizationMode) {
+    // Adjust the horizontal origin for each menu so that its right edge
+    // lines up with the left edge of the ok button.
+    CGFloat rightEdge = NSMinX([allowOrOkButton frame]);
+    for (NSView* view in permissionMenus.get()) {
+      [view setFrameOrigin:NSMakePoint(rightEdge - NSWidth([view frame]),
+                                       NSMinY([view frame]))];
+    }
+  } else {
     base::scoped_nsobject<NSView> blockButton;
     if (singlePermission)
       blockButton.reset([[self blockButton] retain]);
@@ -346,14 +380,12 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
     xOrigin = NSWidth(bubbleFrame) - width - kHorizontalPadding;
     [allowOrOkButton setFrameOrigin:NSMakePoint(xOrigin, kVerticalPadding)];
     // Line up the block button.
-    xOrigin = NSMinX([allowOrOkButton frame]) - width - kButtonPadding;
+    xOrigin = NSMinX([allowOrOkButton frame]) - width - kBetweenButtonsPadding;
     [blockButton setFrameOrigin:NSMakePoint(xOrigin, kVerticalPadding)];
     [contentView addSubview:blockButton];
   }
 
-  bubbleFrame.size.height = yOffset + kVerticalPadding;
   bubbleFrame = [[self window] frameRectForContentRect:bubbleFrame];
-
   if ([[self window] isVisible]) {
     // Unfortunately, calling -setFrame followed by -setFrameOrigin  (called
     // within -setAnchorPoint) causes flickering.  Avoid the flickering by
@@ -379,7 +411,7 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
       [[NSImageView alloc] initWithFrame:NSZeroRect]);
   [permissionIcon setImage:ui::ResourceBundle::GetSharedInstance().
       GetNativeImageNamed(request->GetIconID()).ToNSImage()];
-  [permissionIcon setFrameSize:[[permissionIcon image] size]];
+  [permissionIcon setFrameSize:kPermissionIconSize];
   [permissionView addSubview:permissionIcon];
 
   base::scoped_nsobject<NSTextField> permissionLabel(
@@ -389,7 +421,8 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
   [permissionLabel setBezeled:NO];
   [permissionLabel setEditable:NO];
   [permissionLabel setSelectable:NO];
-  [permissionLabel setFont:[NSFont systemFontOfSize:kPermissionFontSize]];
+  [permissionLabel
+      setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
   [permissionLabel setStringValue:base::SysUTF16ToNSString(label)];
   [permissionLabel sizeToFit];
   [permissionLabel setFrameOrigin:
@@ -426,7 +459,7 @@ class MenuDelegate : public ui::SimpleMenuModel::Delegate {
   [titleView setStringValue:
       l10n_util::GetNSStringF(IDS_PERMISSIONS_BUBBLE_PROMPT,
                               base::UTF8ToUTF16(host))];
-  [titleView setFont:[NSFont systemFontOfSize:kTitleFontSize]];
+  [titleView setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
   [titleView sizeToFit];
   NSRect titleFrame = [titleView frame];
   [titleView setFrameSize:NSMakeSize(NSWidth(titleFrame) + kTitlePaddingX,

@@ -18,7 +18,7 @@
 #include "android_webview/browser/scoped_app_gl_state_restore.h"
 #include "android_webview/common/aw_hit_test_data.h"
 #include "android_webview/common/devtools_instrumentation.h"
-#include "android_webview/native/aw_autofill_manager_delegate.h"
+#include "android_webview/native/aw_autofill_client.h"
 #include "android_webview/native/aw_browser_dependency_factory.h"
 #include "android_webview/native/aw_contents_client_bridge.h"
 #include "android_webview/native/aw_contents_io_thread_client_impl.h"
@@ -28,6 +28,7 @@
 #include "android_webview/native/java_browser_view_renderer_helper.h"
 #include "android_webview/native/permission/aw_permission_request.h"
 #include "android_webview/native/permission/permission_request_handler.h"
+#include "android_webview/native/permission/simple_permission_request.h"
 #include "android_webview/native/state_serializer.h"
 #include "android_webview/public/browser/draw_gl.h"
 #include "base/android/jni_android.h"
@@ -135,12 +136,12 @@ void OnIoThreadClientReady(content::RenderFrameHost* rfh) {
 
 // static
 AwContents* AwContents::FromWebContents(WebContents* web_contents) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   return AwContentsUserData::GetContents(web_contents);
 }
 
 // static
 AwContents* AwContents::FromID(int render_process_id, int render_view_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   const content::RenderViewHost* rvh =
       content::RenderViewHost::FromID(render_process_id, render_view_id);
   if (!rvh) return NULL;
@@ -148,6 +149,14 @@ AwContents* AwContents::FromID(int render_process_id, int render_view_id) {
       content::WebContents::FromRenderViewHost(rvh);
   if (!web_contents) return NULL;
   return FromWebContents(web_contents);
+}
+
+// static
+AwBrowserPermissionRequestDelegate* AwBrowserPermissionRequestDelegate::FromID(
+    int render_process_id, int render_view_id) {
+  AwContents* aw_contents = AwContents::FromID(render_process_id,
+                                               render_view_id);
+  return implicit_cast<AwBrowserPermissionRequestDelegate*>(aw_contents);
 }
 
 AwContents::AwContents(scoped_ptr<WebContents> web_contents)
@@ -172,8 +181,8 @@ AwContents::AwContents(scoped_ptr<WebContents> web_contents)
   permission_request_handler_.reset(
       new PermissionRequestHandler(this, web_contents_.get()));
 
-  AwAutofillManagerDelegate* autofill_manager_delegate =
-      AwAutofillManagerDelegate::FromWebContents(web_contents_.get());
+  AwAutofillClient* autofill_manager_delegate =
+      AwAutofillClient::FromWebContents(web_contents_.get());
   InitDataReductionProxyIfNecessary();
   if (autofill_manager_delegate)
     InitAutofillIfNecessary(autofill_manager_delegate->GetSaveFormData());
@@ -218,7 +227,7 @@ void AwContents::SetSaveFormData(bool enabled) {
   // We need to check for the existence, since autofill_manager_delegate
   // may not be created when the setting is false.
   if (ContentAutofillDriver::FromWebContents(web_contents_.get())) {
-    AwAutofillManagerDelegate::FromWebContents(web_contents_.get())->
+    AwAutofillClient::FromWebContents(web_contents_.get())->
         SetSaveFormData(enabled);
   }
 }
@@ -240,21 +249,21 @@ void AwContents::InitAutofillIfNecessary(bool enabled) {
 
   AwBrowserContext::FromWebContents(web_contents)->
       CreateUserPrefServiceIfNecessary();
-  AwAutofillManagerDelegate::CreateForWebContents(web_contents);
+  AwAutofillClient::CreateForWebContents(web_contents);
   ContentAutofillDriver::CreateForWebContentsAndDelegate(
       web_contents,
-      AwAutofillManagerDelegate::FromWebContents(web_contents),
+      AwAutofillClient::FromWebContents(web_contents),
       l10n_util::GetDefaultLocale(),
       AutofillManager::DISABLE_AUTOFILL_DOWNLOAD_MANAGER);
 }
 
-void AwContents::SetAwAutofillManagerDelegate(jobject delegate) {
+void AwContents::SetAwAutofillClient(jobject client) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return;
-  Java_AwContents_setAwAutofillManagerDelegate(env, obj.obj(), delegate);
+  Java_AwContents_setAwAutofillClient(env, obj.obj(), client);
 }
 
 AwContents::~AwContents() {
@@ -283,6 +292,13 @@ jlong AwContents::GetWebContents(JNIEnv* env, jobject obj) {
 
 void AwContents::Destroy(JNIEnv* env, jobject obj) {
   java_ref_.reset();
+
+  // We clear the contents_client_bridge_ here so that we break the link with
+  // the java peer. This is important for the popup window case, where we are
+  // swapping AwContents out that share the same java AwContentsClientBridge.
+  // See b/15074651.
+  contents_client_bridge_.reset();
+
   // We do not delete AwContents immediately. Some applications try to delete
   // Webview in ShouldOverrideUrlLoading callback, which is a sync IPC from
   // Webkit.
@@ -342,7 +358,6 @@ void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
 
   if (!shared_renderer_state_.IsHardwareAllowed()) {
     hardware_renderer_.reset();
-    shared_renderer_state_.SetHardwareInitialized(false);
     return;
   }
 
@@ -350,18 +365,12 @@ void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
     return;
 
   if (!hardware_renderer_) {
-    DCHECK(!shared_renderer_state_.IsHardwareInitialized());
     hardware_renderer_.reset(new HardwareRenderer(&shared_renderer_state_));
-    shared_renderer_state_.SetHardwareInitialized(true);
   }
 
-  DrawGLResult result;
-  if (hardware_renderer_->DrawGL(state_restore.stencil_enabled(),
-                                 state_restore.framebuffer_binding_ext(),
-                                 draw_info,
-                                 &result)) {
-    browser_view_renderer_.DidDrawGL(result);
-  }
+  hardware_renderer_->DrawGL(state_restore.stencil_enabled(),
+                             state_restore.framebuffer_binding_ext(),
+                             draw_info);
 }
 
 namespace {
@@ -578,6 +587,51 @@ void AwContents::PreauthorizePermission(
     jlong resources) {
   permission_request_handler_->PreauthorizePermission(
       GURL(base::android::ConvertJavaStringToUTF8(env, origin)), resources);
+}
+
+void AwContents::RequestProtectedMediaIdentifierPermission(
+    const GURL& origin,
+    const base::Callback<void(bool)>& callback) {
+  permission_request_handler_->SendRequest(
+      scoped_ptr<AwPermissionRequestDelegate>(new SimplePermissionRequest(
+          origin, AwPermissionRequest::ProtectedMediaId, callback)));
+}
+
+void AwContents::CancelProtectedMediaIdentifierPermissionRequests(
+    const GURL& origin) {
+  permission_request_handler_->CancelRequest(
+      origin, AwPermissionRequest::ProtectedMediaId);
+}
+
+void AwContents::RequestGeolocationPermission(
+    const GURL& origin,
+    const base::Callback<void(bool)>& callback) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+
+  if (Java_AwContents_useLegacyGeolocationPermissionAPI(env, obj.obj())) {
+    ShowGeolocationPrompt(origin, callback);
+    return;
+  }
+  permission_request_handler_->SendRequest(
+      scoped_ptr<AwPermissionRequestDelegate>(new SimplePermissionRequest(
+          origin, AwPermissionRequest::Geolocation, callback)));
+}
+
+void AwContents::CancelGeolocationPermissionRequests(const GURL& origin) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+
+  if (Java_AwContents_useLegacyGeolocationPermissionAPI(env, obj.obj())) {
+    HideGeolocationPrompt(origin);
+    return;
+  }
+  permission_request_handler_->CancelRequest(
+      origin, AwPermissionRequest::Geolocation);
 }
 
 void AwContents::FindAllAsync(JNIEnv* env, jobject obj, jstring search_string) {
@@ -807,10 +861,10 @@ void AwContents::OnDetachedFromWindow(JNIEnv* env, jobject obj) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   shared_renderer_state_.SetHardwareAllowed(false);
 
-  bool hardware_initialized = shared_renderer_state_.IsHardwareInitialized();
+  bool hardware_initialized = browser_view_renderer_.hardware_enabled();
   if (hardware_initialized) {
     bool draw_functor_succeeded = RequestDrawGL(NULL, true);
-    if (!draw_functor_succeeded && hardware_initialized) {
+    if (!draw_functor_succeeded) {
       LOG(ERROR) << "Unable to free GL resources. Has the Window leaked?";
       // Calling release on wrong thread intentionally.
       AwDrawGLInfo info;
@@ -879,11 +933,7 @@ bool AwContents::OnDraw(JNIEnv* env,
                         jint visible_left,
                         jint visible_top,
                         jint visible_right,
-                        jint visible_bottom,
-                        jint clip_left,
-                        jint clip_top,
-                        jint clip_right,
-                        jint clip_bottom) {
+                        jint visible_bottom) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (is_hardware_accelerated)
     InitializeHardwareDrawIfNeeded();
@@ -894,9 +944,7 @@ bool AwContents::OnDraw(JNIEnv* env,
       gfx::Rect(visible_left,
                 visible_top,
                 visible_right - visible_left,
-                visible_bottom - visible_top),
-      gfx::Rect(
-          clip_left, clip_top, clip_right - clip_left, clip_bottom - clip_top));
+                visible_bottom - visible_top));
 }
 
 void AwContents::SetPendingWebContentsForPopup(
@@ -941,16 +989,6 @@ gfx::Point AwContents::GetLocationOnScreen() {
   return gfx::Point(location[0], location[1]);
 }
 
-void AwContents::SetMaxContainerViewScrollOffset(gfx::Vector2d new_value) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-  Java_AwContents_setMaxContainerViewScrollOffset(
-      env, obj.obj(), new_value.x(), new_value.y());
-}
-
 void AwContents::ScrollContainerViewTo(gfx::Vector2d new_value) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JNIEnv* env = AttachCurrentThread();
@@ -970,30 +1008,25 @@ bool AwContents::IsFlingActive() const {
   return Java_AwContents_isFlingActive(env, obj.obj());
 }
 
-void AwContents::SetPageScaleFactorAndLimits(
-    float page_scale_factor,
-    float min_page_scale_factor,
-    float max_page_scale_factor) {
+void AwContents::UpdateScrollState(gfx::Vector2d max_scroll_offset,
+                                   gfx::SizeF contents_size_dip,
+                                   float page_scale_factor,
+                                   float min_page_scale_factor,
+                                   float max_page_scale_factor) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
   if (obj.is_null())
     return;
-  Java_AwContents_setPageScaleFactorAndLimits(env,
-                                              obj.obj(),
-                                              page_scale_factor,
-                                              min_page_scale_factor,
-                                              max_page_scale_factor);
-}
-
-void AwContents::SetContentsSize(gfx::SizeF contents_size_dip) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
-  if (obj.is_null())
-    return;
-  Java_AwContents_setContentsSize(
-      env, obj.obj(), contents_size_dip.width(), contents_size_dip.height());
+  Java_AwContents_updateScrollState(env,
+                                    obj.obj(),
+                                    max_scroll_offset.x(),
+                                    max_scroll_offset.y(),
+                                    contents_size_dip.width(),
+                                    contents_size_dip.height(),
+                                    page_scale_factor,
+                                    min_page_scale_factor,
+                                    max_page_scale_factor);
 }
 
 void AwContents::DidOverscroll(gfx::Vector2d overscroll_delta) {
@@ -1082,6 +1115,11 @@ void AwContents::SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
                                     extra_headers);
 }
 
+void AwContents::SendCheckRenderThreadResponsiveness(JNIEnv* env, jobject obj) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  render_view_host_ext_->SendCheckRenderThreadResponsiveness();
+}
+
 void AwContents::SetJsOnlineProperty(JNIEnv* env,
                                      jobject obj,
                                      jboolean network_up) {
@@ -1094,10 +1132,6 @@ void AwContents::TrimMemory(JNIEnv* env,
                             jint level,
                             jboolean visible) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (!shared_renderer_state_.IsHardwareInitialized())
-    return;
-
   browser_view_renderer_.TrimMemory(level, visible);
 }
 

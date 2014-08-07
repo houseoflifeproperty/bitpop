@@ -87,6 +87,8 @@ interface TestObject {
     // Basic types
     attribute Date dateAttribute;
     attribute DOMString stringAttribute;
+    attribute ByteString byteStringAttribute;
+    attribute ScalarValueString scalarValueStringAttribute;
     attribute DOMTimeStamp domTimeStampAttribute;
     attribute boolean booleanAttribute;
     attribute byte byteAttribute;
@@ -159,6 +161,7 @@ interface TestObject {
     [LogActivity=GetterOnly, LogAllWorlds] attribute long activityLoggingGetterForAllWorldsLongAttribute;
     [LogActivity=SetterOnly, LogAllWorlds] attribute long activityLoggingSetterForAllWorldsLongAttribute;
     [CachedAttribute=isValueDirty] attribute any cachedAttributeAnyAttribute;
+    [CachedAttribute=isArrayDirty] attribute DOMString[] cachedArrayAttribute;
     [CallWith=ExecutionContext] attribute any callWithExecutionContextAnyAttribute;
     [CallWith=ScriptState] attribute any callWithScriptStateAnyAttribute;
     [CallWith=ExecutionContext|ScriptState] attribute any callWithExecutionContextAndScriptStateAnyAttribute;
@@ -236,6 +239,10 @@ interface TestObject {
     [TreatNullAs=NullString] attribute DOMString treatNullAsNullStringStringAttribute;
     [TreatReturnedNullStringAs=Null] attribute DOMString treatReturnedNullStringAsNullStringAttribute;
     [TreatReturnedNullStringAs=Undefined] attribute DOMString treatReturnedNullStringAsUndefinedStringAttribute;
+    [TreatReturnedNullStringAs=Null] attribute ByteString treatReturnedNullStringAsNullByteStringAttribute;
+    [TreatReturnedNullStringAs=Undefined] attribute ByteString treatReturnedNullStringAsUndefinedByteStringAttribute;
+    [TreatReturnedNullStringAs=Null] attribute ScalarValueString treatReturnedNullStringAsNullScalarValueStringAttribute;
+    [TreatReturnedNullStringAs=Undefined] attribute ScalarValueString treatReturnedNullStringAsUndefinedScalarValueStringAttribute;
     [TypeChecking=Interface|Nullable] attribute float typeCheckingInterfaceNullableStringFloatAttribute; // nop for non-interface types
     [TypeChecking=Interface] attribute TestInterface typeCheckingInterfaceTestInterfaceAttribute;
     [TypeChecking=Nullable] attribute TestInterface? typeCheckingNullableTestInterfaceOrNullAttribute;
@@ -260,6 +267,8 @@ interface TestObject {
     // Basic types
     Date dateMethod();
     DOMString stringMethod();
+    ByteString byteStringMethod();
+    ScalarValueString scalarValueStringMethod();
     DOMTimeStamp readonlyDOMTimeStampMethod();
     boolean booleanMethod();
     byte byteMethod();
@@ -275,6 +284,8 @@ interface TestObject {
 
     void voidMethodDateArg(Date dateArg);
     void voidMethodStringArg(DOMString stringArg);
+    void voidMethodByteStringArg(ByteString stringArg);
+    void voidMethodScalarValueStringArg(ScalarValueString scalarValueStringArg);
     void voidMethodDOMTimeStampArg(DOMTimeStamp domTimeStampArg);
     void voidMethodBooleanArg(boolean booleanArg);
     void voidMethodByteArg(byte byteArg);
@@ -375,6 +386,16 @@ interface TestObject {
     // Optional arguments: exceptional case
     void voidMethodOptionalDictionaryArg(optional Dictionary optionalDictionaryArg);
 
+    // Optional arguments with defaults
+    void voidMethodDefaultStringArg(optional DOMString defaultStringArg = "foo");
+    void voidMethodDefaultNullStringArg(optional DOMString defaultStringArg = null);
+    void voidMethodDefaultLongArg(optional long defaultLongArg = 10);
+    void voidMethodDefaultDoubleArg(optional double defaultDoubleArg = 0.5);
+    void voidMethodDefaultTrueBooleanArg(optional boolean defaultBooleanArg = true);
+    void voidMethodDefaultFalseBooleanArg(optional boolean defaultBooleanArg = false);
+    void voidMethodDefaultNullableStringArg(optional DOMString? defaultStringArg = null);
+    void voidMethodDefaultNullableTestInterfaceArg(optional TestInterface? defaultTestInterfaceArg = null);
+
     // Variadic operations
     void voidMethodVariadicStringArg(DOMString... variadicStringArgs);
     void voidMethodStringArgVariadicStringArg(DOMString stringArg, DOMString... variadicStringArgs);
@@ -387,25 +408,21 @@ interface TestObject {
     void overloadedMethodA(long longArg);
     void overloadedMethodA(long longArg1, long longArg2);
     void overloadedMethodB(long longArg);
-    void overloadedMethodB(boolean booleanArg, optional long longArg);
+    void overloadedMethodB(DOMString stringArg, optional long longArg);
     void overloadedMethodC(long longArg);
-    void overloadedMethodC(boolean booleanArg, long... longArgs);
+    void overloadedMethodC(TestInterfaceEmpty testInterfaceEmptyArg);
     void overloadedMethodD(long longArg);
-    void overloadedMethodD(TestInterfaceEmpty testInterfaceEmptyArg);
+    void overloadedMethodD(long[] longArrayArg);
     void overloadedMethodE(long longArg);
-    void overloadedMethodE(long[] longArrayArg);
-    void overloadedMethodF(long longArg);
-    void overloadedMethodF(TestInterfaceEmpty? testInterfaceEmptyOrNullArg);
-    void overloadedMethodG();
-    void overloadedMethodG([LegacyOverloadString] DOMString legacyOverloadStringStringArg);
-    void overloadedMethodH();
-    void overloadedMethodH(TestCallbackInterface testCallbackInterfaceArg);
-    // FIXME: Should be in order double, Dictionary, but Blink implementation of
-    // overload resolution can't handle this. http://crbug.com/293561
-    void overloadedMethodI(Dictionary dictionaryArg); // Non-wrapper type
+    void overloadedMethodE(TestInterfaceEmpty? testInterfaceEmptyOrNullArg);
+    void overloadedMethodF(optional DOMString stringArg);
+    void overloadedMethodF(double doubleArg);
+    void overloadedMethodG(long longArg);
+    void overloadedMethodG(optional TestInterfaceEmpty? testInterfaceEmptyOrNullArg = null);
+    void overloadedMethodH(TestInterface testInterfaceArg);
+    void overloadedMethodH(TestInterfaceEmpty testInterfaceEmptyArg);
+    void overloadedMethodI(DOMString stringArg);
     void overloadedMethodI(double doubleArg);
-    void overloadedMethodJ(long longArg);
-    void overloadedMethodJ([Default=Null] TestInterfaceEmpty? testInterfaceEmptyOrNullArg);
 
 
     [PerWorldBindings] void overloadedPerWorldBindingsMethod();
@@ -422,7 +439,6 @@ interface TestObject {
     void voidMethodDefaultUndefinedTestInterfaceEmptyArg([Default=Undefined] optional TestInterfaceEmpty defaultUndefinedTestInterfaceEmptyArg);
     void voidMethodDefaultUndefinedLongArg([Default=Undefined] optional long defaultUndefinedLongArg);
     void voidMethodDefaultUndefinedStringArg([Default=Undefined] optional DOMString defaultUndefinedStringArg);
-    void voidMethodDefaultNullStringStringArg([Default=NullString] optional DOMString defaultNullStringStringArg);
     // [EnforceRange]
     void voidMethodEnforceRangeLongArg([EnforceRange] long enforceRangeLongArg);
     // [TreatNullAs], [TreatUndefinedAs]
@@ -481,8 +497,17 @@ interface TestObject {
     [NotEnumerable, ReadOnly] void notEnumerableReadOnlyVoidMethod();
     [RuntimeEnabled=FeatureName] void runtimeEnabledVoidMethod();
     [PerWorldBindings, RuntimeEnabled=FeatureName] void perWorldBindingsRuntimeEnabledVoidMethod();
+    [RuntimeEnabled=FeatureName] void runtimeEnabledOverloadedVoidMethod(DOMString stringArg);
+    [RuntimeEnabled=FeatureName] void runtimeEnabledOverloadedVoidMethod(long longArg);
+    [RuntimeEnabled=FeatureName1] void partiallyRuntimeEnabledOverloadedVoidMethod(DOMString stringArg);
+    [RuntimeEnabled=FeatureName2] void partiallyRuntimeEnabledOverloadedVoidMethod(TestInterface testInterface);
+    void partiallyRuntimeEnabledOverloadedVoidMethod(long longArg);
     [TreatReturnedNullStringAs=Null] DOMString treatReturnedNullStringAsNullStringMethod();
     [TreatReturnedNullStringAs=Undefined] DOMString treatReturnedNullStringAsUndefinedStringMethod();
+    [TreatReturnedNullStringAs=Null] ByteString treatReturnedNullStringAsNullByteStringMethod();
+    [TreatReturnedNullStringAs=Undefined] ByteString treatReturnedNullStringAsUndefinedByteStringMethod();
+    [TreatReturnedNullStringAs=Null] ScalarValueString treatReturnedNullStringAsNullScalarValueStringMethod();
+    [TreatReturnedNullStringAs=Undefined] ScalarValueString treatReturnedNullStringAsUndefinedScalarValueStringMethod();
     [TypeChecking=Interface] void typeCheckingInterfaceVoidMethodTestInterfaceEmptyArg(TestInterfaceEmpty testInterfaceEmptyArg);
     [TypeChecking=Nullable] void typeCheckingNullableVoidMethodTestInterfaceEmptyOrNullArg(TestInterfaceEmpty? testInterfaceEmptyOrNullArg);
     [TypeChecking=Interface|Nullable] void typeCheckingInterfaceNullableVoidMethodTestInterfaceEmptyOrNullArg(TestInterfaceEmpty? testInterfaceEmptyOrNullArg);

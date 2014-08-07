@@ -2,21 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// http://fetch.spec.whatwg.org/#response-class
+// FIXME: Split this idl/impl into AbstractResponse and Response.
 [
-    Constructor(optional Dictionary responseInitDict),
+    // FIXME: Add ctors for String, Stream, and ArrayBuffer/ArrayBufferView response bodies.
+    Constructor(Blob body, optional Dictionary responseInitDict),
     RuntimeEnabled=ServiceWorker,
     Exposed=ServiceWorker
 ] interface Response {
-    attribute unsigned short statusCode;
-
-    // FIXME: Spec uses ByteString for these. We must perform the DOMString -> ByteString conversion manually (crbug.com/347426).
-    attribute DOMString statusText;
-    attribute DOMString method;
-
-    // FIXME: Implement HeaderMap which uses the MapClass WebIDL attribute (crbug.com/347435).
-    // FIXME: Can't return Dictionaries yet (crbug.com/364025).
-    // getter Dictionary headers();
-    setter void headers(Dictionary items);
+    attribute unsigned short status;
+    attribute ByteString statusText;
+    readonly attribute HeaderMap headers;
 
     // FIXME: Implement the following:
     // attribute DOMString url;

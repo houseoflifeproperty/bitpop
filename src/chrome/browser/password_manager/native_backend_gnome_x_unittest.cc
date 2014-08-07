@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -23,6 +24,8 @@ using autofill::PasswordForm;
 using base::UTF8ToUTF16;
 using base::UTF16ToUTF8;
 using content::BrowserThread;
+using password_manager::PasswordStoreChange;
+using password_manager::PasswordStoreChangeList;
 
 namespace {
 
@@ -278,6 +281,41 @@ class MockGnomeKeyringLoader : public GnomeKeyringLoader {
   }
 };
 
+void CheckPasswordChanges(const PasswordStoreChangeList& expected_list,
+                          const PasswordStoreChangeList& actual_list) {
+  ASSERT_EQ(expected_list.size(), actual_list.size());
+  for (size_t i = 0; i < expected_list.size(); ++i) {
+    EXPECT_EQ(expected_list[i].type(), actual_list[i].type());
+    const PasswordForm& expected = expected_list[i].form();
+    const PasswordForm& actual = actual_list[i].form();
+
+    EXPECT_EQ(expected.origin, actual.origin);
+    EXPECT_EQ(expected.password_value, actual.password_value);
+    EXPECT_EQ(expected.action, actual.action);
+    EXPECT_EQ(expected.username_element, actual.username_element);
+    EXPECT_EQ(expected.username_value, actual.username_value);
+    EXPECT_EQ(expected.password_element, actual.password_element);
+    EXPECT_EQ(expected.submit_element, actual.submit_element);
+    EXPECT_EQ(expected.signon_realm, actual.signon_realm);
+    EXPECT_EQ(expected.ssl_valid, actual.ssl_valid);
+    EXPECT_EQ(expected.preferred, actual.preferred);
+    // We don't check the date created. It varies due to bug in the
+    // serialization. Integer seconds are saved instead of microseconds.
+    EXPECT_EQ(expected.blacklisted_by_user, actual.blacklisted_by_user);
+    EXPECT_EQ(expected.type, actual.type);
+    EXPECT_EQ(expected.times_used, actual.times_used);
+    EXPECT_EQ(expected.scheme, actual.scheme);
+    EXPECT_EQ(expected.date_synced, actual.date_synced);
+  }
+}
+
+void CheckPasswordChangesWithResult(const PasswordStoreChangeList* expected,
+                                    const PasswordStoreChangeList* actual,
+                                    bool result) {
+  EXPECT_TRUE(result);
+  CheckPasswordChanges(*expected, *actual);
+}
+
 }  // anonymous namespace
 
 class NativeBackendGnomeTest : public testing::Test {
@@ -285,6 +323,10 @@ class NativeBackendGnomeTest : public testing::Test {
   enum UpdateType {  // Used in CheckPSLUpdate().
     UPDATE_BY_UPDATELOGIN,
     UPDATE_BY_ADDLOGIN,
+  };
+  enum RemoveBetweenMethod {  // Used in CheckRemoveLoginsBetween().
+    CREATED,
+    SYNCED,
   };
 
   NativeBackendGnomeTest()
@@ -306,6 +348,8 @@ class NativeBackendGnomeTest : public testing::Test {
     form_google_.submit_element = UTF8ToUTF16("submit");
     form_google_.signon_realm = "http://www.google.com/";
     form_google_.type = PasswordForm::TYPE_GENERATED;
+    form_google_.date_created = base::Time::Now();
+    form_google_.date_synced = base::Time::Now();
 
     form_facebook_.origin = GURL("http://www.facebook.com/");
     form_facebook_.action = GURL("http://www.facebook.com/login");
@@ -315,6 +359,8 @@ class NativeBackendGnomeTest : public testing::Test {
     form_facebook_.password_value = UTF8ToUTF16("b");
     form_facebook_.submit_element = UTF8ToUTF16("submit");
     form_facebook_.signon_realm = "http://www.facebook.com/";
+    form_facebook_.date_created = base::Time::Now();
+    form_facebook_.date_synced = base::Time::Now();
 
     form_isc_.origin = GURL("http://www.isc.org/");
     form_isc_.action = GURL("http://www.isc.org/auth");
@@ -324,11 +370,15 @@ class NativeBackendGnomeTest : public testing::Test {
     form_isc_.password_value = UTF8ToUTF16("ihazabukkit");
     form_isc_.submit_element = UTF8ToUTF16("login");
     form_isc_.signon_realm = "http://www.isc.org/";
+    form_isc_.date_created = base::Time::Now();
+    form_isc_.date_synced = base::Time::Now();
 
     other_auth_.origin = GURL("http://www.example.com/");
     other_auth_.username_value = UTF8ToUTF16("username");
     other_auth_.password_value = UTF8ToUTF16("pass");
     other_auth_.signon_realm = "http://www.example.com/Realm";
+    other_auth_.date_created = base::Time::Now();
+    other_auth_.date_synced = base::Time::Now();
   }
 
   virtual void TearDown() {
@@ -384,7 +434,7 @@ class NativeBackendGnomeTest : public testing::Test {
     EXPECT_EQ("login", item->keyring);
     EXPECT_EQ(form.origin.spec(), item->display_name);
     EXPECT_EQ(UTF16ToUTF8(form.password_value), item->password);
-    EXPECT_EQ(15u, item->attributes.size());
+    EXPECT_EQ(16u, item->attributes.size());
     CheckStringAttribute(item, "origin_url", form.origin.spec());
     CheckStringAttribute(item, "action_url", form.action.spec());
     CheckStringAttribute(item, "username_element",
@@ -404,6 +454,8 @@ class NativeBackendGnomeTest : public testing::Test {
     CheckUint32Attribute(item, "times_used", form.times_used);
     CheckUint32Attribute(item, "scheme", form.scheme);
     CheckStringAttribute(item, "application", app_string);
+    CheckStringAttribute(item, "date_synced", base::Int64ToString(
+        form.date_synced.ToInternalValue()));
   }
 
   // Saves |credentials| and then gets logins matching |url| and |scheme|.
@@ -523,7 +575,8 @@ class NativeBackendGnomeTest : public testing::Test {
             FROM_HERE,
             base::Bind(base::IgnoreResult(&NativeBackendGnome::UpdateLogin),
                        base::Unretained(&backend),
-                       new_facebook));
+                       new_facebook,
+                       base::Owned(new PasswordStoreChangeList)));
         break;
       case UPDATE_BY_ADDLOGIN:
         BrowserThread::PostTask(
@@ -594,6 +647,83 @@ class NativeBackendGnomeTest : public testing::Test {
     // Do match non-HTML forms from the same origin.
     EXPECT_TRUE(CheckCredentialAvailability(
         other_auth_, GURL("http://www.example.com/"), scheme, NULL));
+  }
+
+  void CheckRemoveLoginsBetween(RemoveBetweenMethod date_to_test) {
+    NativeBackendGnome backend(42);
+    backend.Init();
+
+    form_google_.date_synced = base::Time();
+    form_isc_.date_synced = base::Time();
+    form_google_.date_created = base::Time();
+    form_isc_.date_created = base::Time();
+    base::Time now = base::Time::Now();
+    base::Time next_day = now + base::TimeDelta::FromDays(1);
+    if (date_to_test == CREATED) {
+      // crbug/374132. Remove the next line once it's fixed.
+      next_day = base::Time::FromTimeT(next_day.ToTimeT());
+      form_google_.date_created = now;
+      form_isc_.date_created = next_day;
+    } else {
+      form_google_.date_synced = now;
+      form_isc_.date_synced = next_day;
+    }
+
+    BrowserThread::PostTask(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
+                   base::Unretained(&backend),
+                   form_google_));
+    BrowserThread::PostTask(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
+                   base::Unretained(&backend),
+                   form_isc_));
+
+    PasswordStoreChangeList expected_changes;
+    expected_changes.push_back(
+        PasswordStoreChange(PasswordStoreChange::REMOVE, form_google_));
+    PasswordStoreChangeList changes;
+    bool (NativeBackendGnome::*method)(
+        base::Time, base::Time, password_manager::PasswordStoreChangeList*) =
+        date_to_test == CREATED
+            ? &NativeBackendGnome::RemoveLoginsCreatedBetween
+            : &NativeBackendGnome::RemoveLoginsSyncedBetween;
+    BrowserThread::PostTaskAndReplyWithResult(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(method,
+                   base::Unretained(&backend),
+                   base::Time(),
+                   next_day,
+                   &changes),
+        base::Bind(
+            &CheckPasswordChangesWithResult, &expected_changes, &changes));
+    RunBothThreads();
+
+    EXPECT_EQ(1u, mock_keyring_items.size());
+    if (mock_keyring_items.size() > 0)
+      CheckMockKeyringItem(&mock_keyring_items[0], form_isc_, "chrome-42");
+
+    // Remove form_isc_.
+    expected_changes.clear();
+    expected_changes.push_back(
+        PasswordStoreChange(PasswordStoreChange::REMOVE, form_isc_));
+    BrowserThread::PostTaskAndReplyWithResult(
+        BrowserThread::DB,
+        FROM_HERE,
+        base::Bind(method,
+                   base::Unretained(&backend),
+                   next_day,
+                   base::Time(),
+                   &changes),
+        base::Bind(
+            &CheckPasswordChangesWithResult, &expected_changes, &changes));
+    RunBothThreads();
+
+    EXPECT_EQ(0u, mock_keyring_items.size());
   }
 
   base::MessageLoopForUI message_loop_;
@@ -723,13 +853,19 @@ TEST_F(NativeBackendGnomeTest, BasicUpdateLogin) {
     CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
 
   // Update login
+  PasswordStoreChangeList changes;
   BrowserThread::PostTask(
       BrowserThread::DB, FROM_HERE,
       base::Bind(base::IgnoreResult(&NativeBackendGnome::UpdateLogin),
-                 base::Unretained(&backend), new_form_google));
+                 base::Unretained(&backend),
+                 new_form_google,
+                 base::Unretained(&changes)));
 
   RunBothThreads();
 
+  ASSERT_EQ(1u, changes.size());
+  EXPECT_EQ(PasswordStoreChange::UPDATE, changes.front().type());
+  EXPECT_EQ(new_form_google, changes.front().form());
   EXPECT_EQ(1u, mock_keyring_items.size());
   if (mock_keyring_items.size() > 0)
     CheckMockKeyringItem(&mock_keyring_items[0], new_form_google, "chrome-42");
@@ -801,18 +937,64 @@ TEST_F(NativeBackendGnomeTest, RemoveNonexistentLogin) {
     CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
 }
 
+TEST_F(NativeBackendGnomeTest, UpdateNonexistentLogin) {
+  NativeBackendGnome backend(42);
+  backend.Init();
+
+  // First add an unrelated login.
+  BrowserThread::PostTask(
+      BrowserThread::DB, FROM_HERE,
+      base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
+                 base::Unretained(&backend), form_google_));
+
+  RunBothThreads();
+
+  EXPECT_EQ(1u, mock_keyring_items.size());
+  if (mock_keyring_items.size() > 0)
+    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
+
+  // Attempt to update a login that doesn't exist.
+  PasswordStoreChangeList changes;
+  BrowserThread::PostTask(
+      BrowserThread::DB, FROM_HERE,
+      base::Bind(base::IgnoreResult(&NativeBackendGnome::UpdateLogin),
+                 base::Unretained(&backend),
+                 form_isc_,
+                 base::Unretained(&changes)));
+
+  RunBothThreads();
+
+  EXPECT_EQ(PasswordStoreChangeList(), changes);
+  EXPECT_EQ(1u, mock_keyring_items.size());
+  if (mock_keyring_items.size() > 0)
+    CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
+}
+
 TEST_F(NativeBackendGnomeTest, AddDuplicateLogin) {
   NativeBackendGnome backend(42);
   backend.Init();
 
-  BrowserThread::PostTask(
+  PasswordStoreChangeList changes;
+  changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD,
+                                        form_google_));
+  BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::DB, FROM_HERE,
-      base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
-                 base::Unretained(&backend), form_google_));
-  BrowserThread::PostTask(
+      base::Bind(&NativeBackendGnome::AddLogin,
+                 base::Unretained(&backend), form_google_),
+      base::Bind(&CheckPasswordChanges, changes));
+
+  changes.clear();
+  changes.push_back(PasswordStoreChange(PasswordStoreChange::REMOVE,
+                                        form_google_));
+  form_google_.times_used++;
+  changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD,
+                                        form_google_));
+
+  BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::DB, FROM_HERE,
-      base::Bind(base::IgnoreResult(&NativeBackendGnome::AddLogin),
-                 base::Unretained(&backend), form_google_));
+      base::Bind(&NativeBackendGnome::AddLogin,
+                 base::Unretained(&backend), form_google_),
+      base::Bind(&CheckPasswordChanges, changes));
 
   RunBothThreads();
 
@@ -852,6 +1034,14 @@ TEST_F(NativeBackendGnomeTest, ListLoginsAppends) {
   EXPECT_EQ(1u, mock_keyring_items.size());
   if (mock_keyring_items.size() > 0)
     CheckMockKeyringItem(&mock_keyring_items[0], form_google_, "chrome-42");
+}
+
+TEST_F(NativeBackendGnomeTest, RemoveLoginsCreatedBetween) {
+  CheckRemoveLoginsBetween(CREATED);
+}
+
+TEST_F(NativeBackendGnomeTest, RemoveLoginsSyncedBetween) {
+  CheckRemoveLoginsBetween(SYNCED);
 }
 
 // TODO(mdm): add more basic tests here at some point.

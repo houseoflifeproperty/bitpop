@@ -21,6 +21,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "components/onc/onc_constants.h"
+#include "components/wifi/network_properties.h"
 #include "third_party/libxml/chromium/libxml_utils.h"
 
 namespace {
@@ -203,7 +204,8 @@ class WiFiServiceImpl : public WiFiService {
                              std::string* error) OVERRIDE;
 
   virtual void GetVisibleNetworks(const std::string& network_type,
-                                   base::ListValue* network_list) OVERRIDE;
+                                  base::ListValue* network_list,
+                                  bool include_details) OVERRIDE;
 
   virtual void RequestNetworkScan() OVERRIDE;
 
@@ -581,7 +583,7 @@ void WiFiServiceImpl::CreateNetwork(
   if (CheckError(error_code, kErrorWiFiService, error))
     return;
 
-  WiFiService::NetworkProperties network_properties;
+  NetworkProperties network_properties;
   if (!network_properties.UpdateFromValue(*properties)) {
     CheckError(ERROR_INVALID_DATA, kErrorWiFiService, error);
     return;
@@ -623,7 +625,8 @@ void WiFiServiceImpl::CreateNetwork(
 }
 
 void WiFiServiceImpl::GetVisibleNetworks(const std::string& network_type,
-                                         base::ListValue* network_list) {
+                                         base::ListValue* network_list,
+                                         bool include_details) {
   if (!network_type.empty() &&
       network_type != onc::network_type::kAllTypes &&
       network_type != onc::network_type::kWiFi) {
@@ -636,10 +639,11 @@ void WiFiServiceImpl::GetVisibleNetworks(const std::string& network_type,
     error = GetVisibleNetworkList(&networks);
     if (error == ERROR_SUCCESS && !networks.empty()) {
       SortNetworks(&networks);
-      for (WiFiService::NetworkList::const_iterator it = networks.begin();
+      for (NetworkList::const_iterator it = networks.begin();
            it != networks.end();
            ++it) {
-        scoped_ptr<base::DictionaryValue> network(it->ToValue(true));
+        scoped_ptr<base::DictionaryValue> network(
+            it->ToValue(!include_details));
         network_list->Append(network.release());
       }
     }
@@ -828,6 +832,7 @@ void WiFiServiceImpl::OnWlanNotification(
       break;
     }
     case wlan_notification_acm_scan_complete:
+    case wlan_notification_acm_interface_removal:
       message_loop_proxy_->PostTask(
           FROM_HERE,
           base::Bind(&WiFiServiceImpl::OnNetworkScanCompleteOnMainThread,
@@ -841,9 +846,9 @@ void WiFiServiceImpl::OnNetworkScanCompleteOnMainThread() {
   // Get current list of visible networks and notify that network list has
   // changed.
   DWORD error = GetVisibleNetworkList(&networks);
-  DCHECK(error == ERROR_SUCCESS);
-  if (error == ERROR_SUCCESS)
-    NotifyNetworkListChanged(networks);
+  if (error != ERROR_SUCCESS)
+    networks.clear();
+  NotifyNetworkListChanged(networks);
 }
 
 void WiFiServiceImpl::WaitForNetworkConnect(const std::string& network_guid,
@@ -936,7 +941,7 @@ bool WiFiServiceImpl::CheckError(DWORD error_code,
   return false;
 }
 
-WiFiService::NetworkList::iterator WiFiServiceImpl::FindNetwork(
+NetworkList::iterator WiFiServiceImpl::FindNetwork(
     NetworkList& networks,
     const std::string& network_guid) {
   for (NetworkList::iterator it = networks.begin(); it != networks.end();
@@ -1457,7 +1462,7 @@ DWORD WiFiServiceImpl::GetCurrentProperties(NetworkProperties* properties) {
   return error;
 }
 
-WiFiService::Frequency WiFiServiceImpl::GetFrequencyToConnect(
+Frequency WiFiServiceImpl::GetFrequencyToConnect(
     const std::string& network_guid) const {
   // Check whether desired frequency is set in |connect_properties_|.
   const base::DictionaryValue* properties;
@@ -1553,8 +1558,7 @@ DWORD WiFiServiceImpl::GetDesiredBssList(
   return error;
 }
 
-WiFiService::Frequency WiFiServiceImpl::GetNormalizedFrequency(
-    int frequency_in_mhz) const {
+Frequency WiFiServiceImpl::GetNormalizedFrequency(int frequency_in_mhz) const {
   if (frequency_in_mhz == 0)
     return kFrequencyAny;
   if (frequency_in_mhz < 3000)

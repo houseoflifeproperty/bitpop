@@ -70,7 +70,7 @@ void ImageView::SetImageSize(const gfx::Size& image_size) {
   PreferredSizeChanged();
 }
 
-bool ImageView::GetImageSize(gfx::Size* image_size) {
+bool ImageView::GetImageSize(gfx::Size* image_size) const {
   DCHECK(image_size);
   if (image_size_set_)
     *image_size = image_size_;
@@ -91,7 +91,7 @@ void ImageView::SetFocusPainter(scoped_ptr<Painter> focus_painter) {
   focus_painter_ = focus_painter.Pass();
 }
 
-gfx::Size ImageView::GetPreferredSize() {
+gfx::Size ImageView::GetPreferredSize() const {
   gfx::Insets insets = GetInsets();
   if (image_size_set_) {
     gfx::Size image_size;
@@ -205,10 +205,9 @@ bool ImageView::GetTooltipText(const gfx::Point& p,
   return true;
 }
 
-bool ImageView::HitTestRect(const gfx::Rect& rect) const {
-  return interactive_ ? View::HitTestRect(rect) : false;
+bool ImageView::CanProcessEventsWithinSubtree() const {
+  return interactive_;
 }
-
 
 void ImageView::OnPaintImage(gfx::Canvas* canvas) {
   last_paint_scale_ = canvas->image_scale();
@@ -224,7 +223,7 @@ void ImageView::OnPaintImage(gfx::Canvas* canvas) {
   if (image_bounds.size() != gfx::Size(image_.width(), image_.height())) {
     // Resize case
     SkPaint paint;
-    paint.setFilterBitmap(true);
+    paint.setFilterLevel(SkPaint::kLow_FilterLevel);
     canvas->DrawImageInt(image_, 0, 0, image_.width(), image_.height(),
         image_bounds.x(), image_bounds.y(), image_bounds.width(),
         image_bounds.height(), true, paint);

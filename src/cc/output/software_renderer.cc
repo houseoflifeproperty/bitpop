@@ -290,7 +290,7 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
                                        quad->IsRightEdge();
     if (settings_->allow_antialiasing && all_four_edges_are_exterior)
       current_paint_.setAntiAlias(true);
-    current_paint_.setFilterBitmap(true);
+    current_paint_.setFilterLevel(SkPaint::kLow_FilterLevel);
   }
 
   if (quad->ShouldDrawWithBlending()) {
@@ -395,7 +395,7 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
                                  current_canvas_,
                                  quad->content_rect,
                                  quad->contents_scale));
-  RunOnDemandRasterTask(on_demand_raster_task.get());
+  client_->RunOnDemandRasterTask(on_demand_raster_task.get());
 
   current_canvas_->setDrawFilter(NULL);
 }
@@ -454,8 +454,7 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
     SkMatrix matrix;
     matrix.setRectToRect(sk_uv_rect, quad_rect, SkMatrix::kFill_ScaleToFit);
     skia::RefPtr<SkShader> shader = skia::AdoptRef(
-        SkShader::CreateBitmapShader(*bitmap, tile_mode, tile_mode));
-    shader->setLocalMatrix(matrix);
+        SkShader::CreateBitmapShader(*bitmap, tile_mode, tile_mode, &matrix));
     SkPaint paint;
     paint.setStyle(SkPaint::kFill_Style);
     paint.setShader(shader.get());
@@ -488,7 +487,7 @@ void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
       QuadVertexRect(), quad->rect, quad->visible_rect);
 
   SkRect uv_rect = gfx::RectFToSkRect(visible_tex_coord_rect);
-  current_paint_.setFilterBitmap(true);
+  current_paint_.setFilterLevel(SkPaint::kLow_FilterLevel);
   current_canvas_->drawBitmapRectToRect(
       *lock.sk_bitmap(),
       &uv_rect,
@@ -548,12 +547,11 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
   skia::RefPtr<SkShader> shader;
   if (filter_bitmap.isNull()) {
     shader = skia::AdoptRef(SkShader::CreateBitmapShader(
-        *content, content_tile_mode, content_tile_mode));
+        *content, content_tile_mode, content_tile_mode, &content_mat));
   } else {
     shader = skia::AdoptRef(SkShader::CreateBitmapShader(
-        filter_bitmap, content_tile_mode, content_tile_mode));
+        filter_bitmap, content_tile_mode, content_tile_mode, &content_mat));
   }
-  shader->setLocalMatrix(content_mat);
   current_paint_.setShader(shader.get());
 
   if (quad->mask_resource_id) {
@@ -575,9 +573,9 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     SkMatrix mask_mat;
     mask_mat.setRectToRect(mask_rect, dest_rect, SkMatrix::kFill_ScaleToFit);
 
-    skia::RefPtr<SkShader> mask_shader = skia::AdoptRef(
-        SkShader::CreateBitmapShader(*mask, mask_tile_mode, mask_tile_mode));
-    mask_shader->setLocalMatrix(mask_mat);
+    skia::RefPtr<SkShader> mask_shader =
+        skia::AdoptRef(SkShader::CreateBitmapShader(
+            *mask, mask_tile_mode, mask_tile_mode, &mask_mat));
 
     SkPaint mask_paint;
     mask_paint.setShader(mask_shader.get());
@@ -644,14 +642,6 @@ void SoftwareRenderer::EnsureBackbuffer() {
 
   output_surface_->EnsureBackbuffer();
   is_backbuffer_discarded_ = false;
-}
-
-void SoftwareRenderer::GetFramebufferPixels(void* pixels,
-                                            const gfx::Rect& rect) {
-  TRACE_EVENT0("cc", "SoftwareRenderer::GetFramebufferPixels");
-  gfx::Rect frame_rect(rect);
-  frame_rect += current_viewport_rect_.OffsetFromOrigin();
-  output_device_->CopyToPixels(frame_rect, pixels);
 }
 
 void SoftwareRenderer::DidChangeVisibility() {

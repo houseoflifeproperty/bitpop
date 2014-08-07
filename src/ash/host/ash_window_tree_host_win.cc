@@ -7,6 +7,7 @@
 #include "ash/ash_export.h"
 #include "ash/ash_switches.h"
 #include "ash/host/ash_remote_window_tree_host_win.h"
+#include "ash/host/ash_window_tree_host_init_params.h"
 #include "ash/host/root_window_transformer.h"
 #include "ash/host/transformer_helper.h"
 #include "base/command_line.h"
@@ -71,6 +72,9 @@ class ASH_EXPORT AshWindowTreeHostWin : public AshWindowTreeHost,
       scoped_ptr<RootWindowTransformer> transformer) {
     transformer_helper_.SetRootWindowTransformer(transformer.Pass());
   }
+  virtual gfx::Insets GetHostInsets() const OVERRIDE {
+    return transformer_helper_.GetHostInsets();
+  }
   virtual aura::WindowTreeHost* AsWindowTreeHost() OVERRIDE { return this; }
 
   // WindowTreeHostWin:
@@ -107,13 +111,14 @@ class ASH_EXPORT AshWindowTreeHostWin : public AshWindowTreeHost,
 
 }  // namespace
 
-AshWindowTreeHost* AshWindowTreeHost::Create(const gfx::Rect& initial_bounds) {
+AshWindowTreeHost* AshWindowTreeHost::Create(
+    const AshWindowTreeHostInitParams& init_params) {
   if (base::win::GetVersion() >= base::win::VERSION_WIN7 &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           ash::switches::kForceAshToDesktop))
-    return AshRemoteWindowTreeHostWin::GetInstance();
+    return new AshRemoteWindowTreeHostWin(init_params.remote_hwnd);
 
-  return new AshWindowTreeHostWin(initial_bounds);
+  return new AshWindowTreeHostWin(init_params.initial_bounds);
 }
 
 }  // namespace ash

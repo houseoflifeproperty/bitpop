@@ -32,6 +32,7 @@
 #define HTMLImport_h
 
 #include "core/html/imports/HTMLImportState.h"
+#include "platform/heap/Handle.h"
 #include "wtf/TreeNode.h"
 #include "wtf/Vector.h"
 
@@ -51,25 +52,23 @@ class KURL;
 //
 // HTML Imports form a tree:
 //
-// * The root of the tree is HTMLImportsController, which is owned by the master
+// * The root of the tree is HTMLImportTreeRoot.
+//
+// * The HTMLImportTreeRoot is owned HTMLImportsController, which is owned by the master
 //   document as a DocumentSupplement.
 //
-// * The non-root nodes are HTMLImportChild, which is owned by LinkStyle, that is owned by HTMLLinkElement.
+// * The non-root nodes are HTMLImportChild. They are all owned by HTMLImporTreeRoot.
 //   LinkStyle is wired into HTMLImportChild by implementing HTMLImportChildClient interface
 //
-// * Both HTMLImportsController and HTMLImportChild are derived from HTMLImport superclass
+// * Both HTMLImportTreeRoot and HTMLImportChild are derived from HTMLImport superclass
 //   that models the tree data structure using WTF::TreeNode and provides a set of
 //   virtual functions.
 //
 // HTMLImportsController also owns all loaders in the tree and manages their lifetime through it.
 // One assumption is that the tree is append-only and nodes are never inserted in the middle of the tree nor removed.
 //
-//
-//    HTMLImport <|- HTMLImportsController <- Document
-//                   *
-//                   |
-//               <|- HTMLImportChild <- LinkStyle <- HTMLLinkElement
-//
+// Full diagram is here:
+// https://docs.google.com/drawings/d/1jFQrO0IupWrlykTNzQ3Nv2SdiBiSz4UE9-V3-vDgBb0/
 //
 // # Import Sharing and HTMLImportLoader
 //
@@ -94,9 +93,9 @@ class KURL;
 //   In such case, the preceding import should be loaded and following ones should be de-duped.
 //
 
-// The superclass of HTMLImportsController and HTMLImportChild
+// The superclass of HTMLImportTreeRoot and HTMLImportChild
 // This represents the import tree data structure.
-class HTMLImport : public TreeNode<HTMLImport> {
+class HTMLImport : public NoBaseWillBeGarbageCollectedFinalized<HTMLImport>, public TreeNode<HTMLImport> {
 public:
     enum SyncMode {
         Sync  = 0,
@@ -105,21 +104,23 @@ public:
 
     virtual ~HTMLImport() { }
 
+    // FIXME: Consider returning HTMLImportTreeRoot.
     HTMLImport* root();
     bool precedes(HTMLImport*);
-    bool isRoot() const { return !isChild(); }
+    bool isRoot() const { return !parent(); }
     bool isSync() const { return SyncMode(m_sync) == Sync; }
     bool formsCycle() const;
     const HTMLImportState& state() const { return m_state; }
 
     void appendImport(HTMLImport*);
 
-    virtual bool isChild() const { return false; }
     virtual Document* document() const = 0;
     virtual bool isDone() const = 0; // FIXME: Should be renamed to haveFinishedLoading()
     virtual HTMLImportLoader* loader() const { return 0; }
     virtual void stateWillChange() { }
     virtual void stateDidChange();
+
+    virtual void trace(Visitor*) { }
 
 protected:
     // Stating from most conservative state.

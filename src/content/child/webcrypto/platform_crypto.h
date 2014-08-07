@@ -97,17 +97,24 @@ Status EncryptDecryptAesGcm(EncryptOrDecrypt mode,
                             std::vector<uint8>* buffer);
 
 // Preconditions:
-//  * |key| is non-null.
-//  * |data| is not empty.
-Status EncryptRsaEsPkcs1v1_5(PublicKey* key,
-                             const CryptoData& data,
-                             std::vector<uint8>* buffer);
+//  * |key| is non-null
+//  * |hash| is a digest algorithm
+//  * |label| MAY be empty (e.g. 0 bytes long).
+Status EncryptRsaOaep(PublicKey* key,
+                      const blink::WebCryptoAlgorithm& hash,
+                      const CryptoData& label,
+                      const CryptoData& data,
+                      std::vector<uint8>* buffer);
 
 // Preconditions:
-//  * |key| is non-null.
-Status DecryptRsaEsPkcs1v1_5(PrivateKey* key,
-                             const CryptoData& data,
-                             std::vector<uint8>* buffer);
+//   * |key| is non-null
+//   * |hash| is a digest algorithm
+//   * |label| MAY be empty (e.g. 0 bytes long).
+Status DecryptRsaOaep(PrivateKey* key,
+                      const blink::WebCryptoAlgorithm& hash,
+                      const CryptoData& label,
+                      const CryptoData& data,
+                      std::vector<uint8>* buffer);
 
 // Preconditions:
 //  * |key| is a non-null HMAC key.
@@ -151,6 +158,7 @@ Status VerifyRsaSsaPkcs1v1_5(PublicKey* key,
 //  * algorithm.id() is for a symmetric key algorithm.
 //  * keylen_bytes is non-zero (TODO(eroman): revisit this).
 //  * For AES algorithms |keylen_bytes| is either 16, 24, or 32 bytes long.
+//  * usage_mask makes sense for the algorithm.
 Status GenerateSecretKey(const blink::WebCryptoAlgorithm& algorithm,
                          bool extractable,
                          blink::WebCryptoKeyUsageMask usage_mask,
@@ -161,16 +169,15 @@ Status GenerateSecretKey(const blink::WebCryptoAlgorithm& algorithm,
 //  * algorithm.id() is for an RSA algorithm.
 //  * public_exponent, modulus_length_bits and hash_or_null are the same as what
 //    is in algorithm. They are split out for convenience.
-//  * hash_or_null.isNull() may be true if a hash is not applicable to the
-//    algorithm
 //  * modulus_length_bits is not 0
 //  * public_exponent is not empty.
+//  * {public|private}_key_usage_mask make sense for the algorithm.
 Status GenerateRsaKeyPair(const blink::WebCryptoAlgorithm& algorithm,
                           bool extractable,
-                          blink::WebCryptoKeyUsageMask usage_mask,
+                          blink::WebCryptoKeyUsageMask public_key_usage_mask,
+                          blink::WebCryptoKeyUsageMask private_key_usage_mask,
                           unsigned int modulus_length_bits,
-                          const CryptoData& public_exponent,
-                          const blink::WebCryptoAlgorithm& hash,
+                          unsigned long public_exponent,
                           blink::WebCryptoKey* public_key,
                           blink::WebCryptoKey* private_key);
 
@@ -178,6 +185,7 @@ Status GenerateRsaKeyPair(const blink::WebCryptoAlgorithm& algorithm,
 //  * |key| is non-null.
 //  * |algorithm.id()| is for a symmetric key algorithm.
 //  * For AES algorithms |key_data| is either 16, 24, or 32 bytes long.
+//  * usage_mask makes sense for the algorithm.
 // Note that this may be called from target Blink thread.
 Status ImportKeyRaw(const blink::WebCryptoAlgorithm& algorithm,
                     const CryptoData& key_data,
@@ -187,6 +195,7 @@ Status ImportKeyRaw(const blink::WebCryptoAlgorithm& algorithm,
 
 // Preconditions:
 //  * algorithm.id() is for an RSA algorithm.
+//  * usage_mask makes sense for the algorithm.
 Status ImportRsaPublicKey(const blink::WebCryptoAlgorithm& algorithm,
                           bool extractable,
                           blink::WebCryptoKeyUsageMask usage_mask,
@@ -194,7 +203,28 @@ Status ImportRsaPublicKey(const blink::WebCryptoAlgorithm& algorithm,
                           const CryptoData& exponent_data,
                           blink::WebCryptoKey* key);
 
+// Preconditions:
+//  * algorithm.id() is for an RSA algorithm.
+//  * modulus, public_exponent, and private_exponent will be non-empty. The
+//    others will either all be specified (non-empty), or all be unspecified
+//    (empty).
+//  * usage_mask makes sense for the algorithm.
+Status ImportRsaPrivateKey(const blink::WebCryptoAlgorithm& algorithm,
+                           bool extractable,
+                           blink::WebCryptoKeyUsageMask usage_mask,
+                           const CryptoData& modulus,
+                           const CryptoData& public_exponent,
+                           const CryptoData& private_exponent,
+                           const CryptoData& prime1,
+                           const CryptoData& prime2,
+                           const CryptoData& exponent1,
+                           const CryptoData& exponent2,
+                           const CryptoData& coefficient,
+                           blink::WebCryptoKey* key);
+
 // Note that this may be called from target Blink thread.
+// Preconditions:
+//  * usage_mask makes sense for the algorithm.
 Status ImportKeySpki(const blink::WebCryptoAlgorithm& algorithm,
                      const CryptoData& key_data,
                      bool extractable,
@@ -202,6 +232,8 @@ Status ImportKeySpki(const blink::WebCryptoAlgorithm& algorithm,
                      blink::WebCryptoKey* key);
 
 // Note that this may be called from target Blink thread.
+// Preconditions:
+//  * usage_mask makes sense for the algorithm.
 Status ImportKeyPkcs8(const blink::WebCryptoAlgorithm& algorithm,
                       const CryptoData& key_data,
                       bool extractable,
@@ -224,61 +256,32 @@ Status ExportRsaPublicKey(PublicKey* key,
 
 // Preconditions:
 //  * |key| is non-null.
+Status ExportRsaPrivateKey(PrivateKey* key,
+                           std::vector<uint8>* modulus,
+                           std::vector<uint8>* public_exponent,
+                           std::vector<uint8>* private_exponent,
+                           std::vector<uint8>* prime1,
+                           std::vector<uint8>* prime2,
+                           std::vector<uint8>* exponent1,
+                           std::vector<uint8>* exponent2,
+                           std::vector<uint8>* coefficient);
+
+// Preconditions:
+//  * |key| is non-null.
 Status ExportKeyPkcs8(PrivateKey* key,
                       const blink::WebCryptoKeyAlgorithm& key_algorithm,
                       std::vector<uint8>* buffer);
 
-// Preconditions:
-//  * |wrapping_key| is non-null
-//  * |key| is non-null
-Status WrapSymKeyAesKw(SymKey* wrapping_key,
-                       SymKey* key,
-                       std::vector<uint8>* buffer);
-
-// Unwraps (decrypts) |wrapped_key_data| using AES-KW and places the results in
-// a WebCryptoKey. Raw key data remains inside NSS. This function should be used
-// when the input |wrapped_key_data| is known to result in symmetric raw key
-// data after AES-KW decryption.
-// Preconditions:
-//  * |wrapping_key| is non-null
-//  * |key| is non-null
-//  * |wrapped_key_data| is at least 24 bytes and a multiple of 8 bytes
-//  * |algorithm.id()| is for a symmetric key algorithm.
-Status UnwrapSymKeyAesKw(const CryptoData& wrapped_key_data,
-                         SymKey* wrapping_key,
-                         const blink::WebCryptoAlgorithm& algorithm,
-                         bool extractable,
-                         blink::WebCryptoKeyUsageMask usage_mask,
-                         blink::WebCryptoKey* key);
-
-// Performs AES-KW decryption on the input |data|. This function should be used
-// when the input |data| does not directly represent a key and should instead be
-// interpreted as generic bytes.
+// Performs AES-KW encryption/decryption on the input |data|.
 // Preconditions:
 //  * |key| is non-null
-//  * |data| is at least 24 bytes and a multiple of 8 bytes
+//  * |data| is multiple of 8 bytes. If encrypting it is at least 16 bytes, and
+//    if decrypting at least 24 bytes.
 //  * |buffer| is non-null.
-Status DecryptAesKw(SymKey* key,
-                    const CryptoData& data,
-                    std::vector<uint8>* buffer);
-
-// Preconditions:
-//  * |wrapping_key| is non-null
-//  * |key| is non-null
-Status WrapSymKeyRsaEs(PublicKey* wrapping_key,
-                       SymKey* key,
-                       std::vector<uint8>* buffer);
-
-// Preconditions:
-//  * |wrapping_key| is non-null
-//  * |key| is non-null
-//  * |algorithm.id()| is for a symmetric key algorithm.
-Status UnwrapSymKeyRsaEs(const CryptoData& wrapped_key_data,
-                         PrivateKey* wrapping_key,
-                         const blink::WebCryptoAlgorithm& algorithm,
-                         bool extractable,
-                         blink::WebCryptoKeyUsageMask usage_mask,
-                         blink::WebCryptoKey* key);
+Status EncryptDecryptAesKw(EncryptOrDecrypt mode,
+                           SymKey* key,
+                           const CryptoData& data,
+                           std::vector<uint8>* buffer);
 
 }  // namespace platform
 

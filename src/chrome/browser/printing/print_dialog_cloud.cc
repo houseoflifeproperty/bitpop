@@ -14,8 +14,8 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/devtools/devtools_window.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/printing/print_dialog_cloud_internal.h"
 #include "chrome/browser/profiles/profile.h"
@@ -26,7 +26,8 @@
 #include "chrome/common/print_messages.h"
 #include "chrome/common/url_constants.h"
 #include "components/cloud_devices/common/cloud_devices_urls.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -336,7 +337,8 @@ void CloudPrintFlowHandler::RegisterMessages() {
   NavigationEntry* pending_entry = controller->GetPendingEntry();
   if (pending_entry) {
     pending_entry->SetURL(google_util::AppendGoogleLocaleParam(
-        cloud_devices::GetCloudPrintRelativeURL("client/dialog.html")));
+        cloud_devices::GetCloudPrintRelativeURL("client/dialog.html"),
+        g_browser_process->GetApplicationLocale()));
   }
   registrar_.Add(this, content::NOTIFICATION_LOAD_STOP,
                  content::Source<NavigationController>(controller));
@@ -711,12 +713,13 @@ void CreateCloudPrintSigninTab(Browser* browser,
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   GURL url = add_account ? cloud_devices::GetCloudPrintAddAccountURL()
                          : cloud_devices::GetCloudPrintSigninURL();
-  content::WebContents* web_contents = browser->OpenURL(
-      content::OpenURLParams(google_util::AppendGoogleLocaleParam(url),
-                             content::Referrer(),
-                             NEW_FOREGROUND_TAB,
-                             content::PAGE_TRANSITION_AUTO_BOOKMARK,
-                             false));
+  content::WebContents* web_contents = browser->OpenURL(content::OpenURLParams(
+      google_util::AppendGoogleLocaleParam(
+          url, g_browser_process->GetApplicationLocale()),
+      content::Referrer(),
+      NEW_FOREGROUND_TAB,
+      content::PAGE_TRANSITION_AUTO_BOOKMARK,
+      false));
   new SignInObserver(web_contents, cloud_devices::GetCloudPrintURL(), callback);
 }
 

@@ -6,7 +6,7 @@
       "[DEPOT_TOOLS]/gclient.py",
       "config",
       "--spec",
-      "cache_dir = None\nsolutions = [{'custom_deps': {'v8/test/mozilla/data': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/deps/third_party/mozilla-tests'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+      "cache_dir = None\nsolutions = [{'custom_deps': {'v8/test/mozilla/data': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/deps/third_party/mozilla-tests'}, 'custom_vars': {'chromium_trunk': 'svn://svn-mirror.golo.chromium.org/chrome/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
     ],
     "name": "gclient setup"
   },
@@ -21,6 +21,8 @@
       "--delete_unversioned_trees",
       "--force",
       "--verbose",
+      "--revision",
+      "v8@20123",
       "--output-json",
       "/path/to/tmp/json"
     ],
@@ -45,7 +47,7 @@
       "runhooks"
     ],
     "env": {
-      "GYP_DEFINES": "component=shared_library target_arch=ia32 v8_target_arch=ia32"
+      "GYP_DEFINES": "component=shared_library target_arch=ia32 v8_enable_verify_heap=1 v8_target_arch=ia32"
     },
     "name": "gclient runhooks"
   },
@@ -74,6 +76,7 @@
     "name": "compile"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -85,19 +88,16 @@
       "--testname",
       "mjsunit fuzz-natives cctest message preparser",
       "--flaky-tests",
-      "skip"
+      "skip",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
-    "name": "Check",
-    "seed_steps": [
-      "Check",
-      "Check - flaky",
-      "Test262",
-      "Mozilla"
-    ]
+    "name": "Check"
   },
   {
-    "abort_on_failure": false,
+    "always_run": true,
+    "can_fail_build": false,
     "cmd": [
       "python",
       "-u",
@@ -109,12 +109,15 @@
       "--testname",
       "mjsunit fuzz-natives cctest message preparser",
       "--flaky-tests",
-      "run"
+      "run",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Check - flaky"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -124,12 +127,15 @@
       "--arch",
       "ia32",
       "--testname",
-      "test262"
+      "test262",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Test262"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -139,7 +145,9 @@
       "--arch",
       "ia32",
       "--testname",
-      "mozilla"
+      "mozilla",
+      "--json-test-results",
+      "/path/to/tmp/json"
     ],
     "cwd": "[SLAVE_BUILD]/v8",
     "name": "Mozilla"

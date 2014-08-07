@@ -21,7 +21,9 @@ PictureLayer::PictureLayer(ContentLayerClient* client)
       pile_(make_scoped_refptr(new PicturePile())),
       instrumentation_object_tracker_(id()),
       is_mask_(false),
-      update_source_frame_number_(-1) {}
+      update_source_frame_number_(-1),
+      can_use_lcd_text_last_frame_(can_use_lcd_text()) {
+}
 
 PictureLayer::~PictureLayer() {
 }
@@ -88,6 +90,8 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
   update_source_frame_number_ = layer_tree_host()->source_frame_number();
   bool updated = Layer::Update(queue, occlusion);
 
+  UpdateCanUseLCDText();
+
   gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
       visible_content_rect(), 1.f / contents_scale_x());
 
@@ -102,6 +106,8 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
   TRACE_EVENT1("cc", "PictureLayer::Update",
                "source_frame_number",
                layer_tree_host()->source_frame_number());
+  devtools_instrumentation::ScopedLayerTreeTask update_layer(
+      devtools_instrumentation::kUpdateLayer, id(), layer_tree_host()->id());
 
   pile_->SetTilingRect(layer_rect);
 
@@ -110,21 +116,27 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
   pending_invalidation_.Swap(&pile_invalidation_);
   pending_invalidation_.Clear();
 
-  if (layer_tree_host()->settings().using_synchronous_renderer_compositor) {
+  if (layer_tree_host()->settings().record_full_layer) {
     // Workaround for http://crbug.com/235910 - to retain backwards compat
     // the full page content must always be provided in the picture layer.
     visible_layer_rect = gfx::Rect(bounds());
   }
+
+  // UpdateAndExpandInvalidation will give us an invalidation that covers
+  // anything not explicitly recorded in this frame. We give this region
+  // to the impl side so that it drops tiles that may not have a recording
+  // for them.
   DCHECK(client_);
-  updated |= pile_->Update(client_,
-                           SafeOpaqueBackgroundColor(),
-                           contents_opaque(),
-                           client_->FillsBoundsCompletely(),
-                           pile_invalidation_,
-                           visible_layer_rect,
-                           update_source_frame_number_,
-                           RecordingMode(),
-                           rendering_stats_instrumentation());
+  updated |=
+      pile_->UpdateAndExpandInvalidation(client_,
+                                         &pile_invalidation_,
+                                         SafeOpaqueBackgroundColor(),
+                                         contents_opaque(),
+                                         client_->FillsBoundsCompletely(),
+                                         visible_layer_rect,
+                                         update_source_frame_number_,
+                                         RecordingMode(),
+                                         rendering_stats_instrumentation());
   last_updated_visible_content_rect_ = visible_content_rect();
 
   if (updated) {
@@ -155,6 +167,15 @@ Picture::RecordingMode PictureLayer::RecordingMode() const {
 
 bool PictureLayer::SupportsLCDText() const {
   return true;
+}
+
+void PictureLayer::UpdateCanUseLCDText() {
+  if (can_use_lcd_text_last_frame_ == can_use_lcd_text())
+    return;
+
+  can_use_lcd_text_last_frame_ = can_use_lcd_text();
+  if (client_)
+    client_->DidChangeLayerCanUseLCDText();
 }
 
 skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {

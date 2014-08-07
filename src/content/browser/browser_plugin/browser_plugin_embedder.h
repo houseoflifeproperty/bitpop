@@ -33,7 +33,6 @@ namespace content {
 
 class BrowserPluginGuest;
 class BrowserPluginGuestManager;
-class BrowserPluginHostFactory;
 class RenderWidgetHostImpl;
 class WebContentsImpl;
 struct NativeWebKeyboardEvent;
@@ -49,21 +48,6 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
 
   // Called when embedder's |rwh| has sent screen rects to renderer.
   void DidSendScreenRects();
-
-  // Called when embedder's WebContentsImpl has unhandled keyboard input.
-  // Returns whether the BrowserPlugin has handled the keyboard event.
-  // Currently we are only interested in checking for the escape key to
-  // unlock hte guest's pointer lock.
-  bool HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
-
-  // Overrides factory for testing. Default (NULL) value indicates regular
-  // (non-test) environment.
-  static void set_factory_for_testing(BrowserPluginHostFactory* factory) {
-    factory_ = factory;
-  }
-
-  // Sets the zoom level for all guests within this embedder.
-  void SetZoomLevel(double level);
 
   // WebContentsObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
@@ -84,38 +68,32 @@ class CONTENT_EXPORT BrowserPluginEmbedder : public WebContentsObserver {
   void SystemDragEnded();
 
  private:
-  friend class TestBrowserPluginEmbedder;
-
   explicit BrowserPluginEmbedder(WebContentsImpl* web_contents);
 
   BrowserPluginGuestManager* GetBrowserPluginGuestManager() const;
 
-  bool DidSendScreenRectsCallback(BrowserPluginGuest* guest);
+  bool DidSendScreenRectsCallback(WebContents* guest_web_contents);
 
-  bool SetZoomLevelCallback(double level, BrowserPluginGuest* guest);
+  bool SetZoomLevelCallback(double level, WebContents* guest_web_contents);
 
   bool UnlockMouseIfNecessaryCallback(const NativeWebKeyboardEvent& event,
-                                      BrowserPluginGuest* guest);
+                                      WebContents* guest);
 
   // Called by the content embedder when a guest exists with the provided
   // |instance_id|.
   void OnGuestCallback(int instance_id,
                        const BrowserPluginHostMsg_Attach_Params& params,
                        const base::DictionaryValue* extra_params,
-                       BrowserPluginGuest* guest);
+                       WebContents* guest_web_contents);
 
   // Message handlers.
 
-  void OnAllocateInstanceID(int request_id);
   void OnAttach(int instance_id,
                 const BrowserPluginHostMsg_Attach_Params& params,
                 const base::DictionaryValue& extra_params);
   void OnPluginAtPositionResponse(int instance_id,
                                   int request_id,
                                   const gfx::Point& position);
-
-  // Static factory instance (always NULL for non-test).
-  static BrowserPluginHostFactory* factory_;
 
   // Used to correctly update the cursor when dragging over a guest, and to
   // handle a race condition when dropping onto the guest that started the drag

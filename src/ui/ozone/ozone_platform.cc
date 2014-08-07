@@ -5,72 +5,69 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "ui/base/cursor/ozone/cursor_factory_ozone.h"
-#include "ui/events/ozone/event_factory_ozone.h"
-#include "ui/gfx/ozone/surface_factory_ozone.h"
-#include "ui/ozone/ime/input_method_context_factory_ozone.h"
 #include "ui/ozone/ozone_platform.h"
-#include "ui/ozone/ozone_platform_list.h"
 #include "ui/ozone/ozone_switches.h"
+#include "ui/ozone/platform_object.h"
+#include "ui/ozone/platform_selection.h"
 
 namespace ui {
 
 namespace {
 
-// Helper to construct an OzonePlatform by name using the platform list.
-OzonePlatform* CreatePlatform(const std::string& platform_name) {
-  // Search for a matching platform in the list.
-  for (int i = 0; i < kOzonePlatformCount; ++i)
-    if (platform_name == kOzonePlatforms[i].name)
-      return kOzonePlatforms[i].constructor();
+bool g_platform_initialized_ui = false;
+bool g_platform_initialized_gpu = false;
 
-  LOG(FATAL) << "Invalid ozone platform: " << platform_name;
-  return NULL;  // not reached
 }
 
-// Returns the name of the platform to use (value of --ozone-platform flag).
-std::string GetPlatformName() {
-  // The first platform is the default.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kOzonePlatform) &&
-      kOzonePlatformCount > 0)
-    return kOzonePlatforms[0].name;
-  return CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-      switches::kOzonePlatform);
+OzonePlatform::OzonePlatform() {
+  CHECK(!instance_) << "There should only be a single OzonePlatform.";
+  instance_ = this;
+  g_platform_initialized_ui = false;
+  g_platform_initialized_gpu = false;
 }
-
-}  // namespace
-
-OzonePlatform::OzonePlatform() {}
 
 OzonePlatform::~OzonePlatform() {
-  gfx::SurfaceFactoryOzone::SetInstance(NULL);
-  ui::EventFactoryOzone::SetInstance(NULL);
-  ui::CursorFactoryOzone::SetInstance(NULL);
+  CHECK_EQ(instance_, this);
+  instance_ = NULL;
 }
 
 // static
-void OzonePlatform::Initialize() {
-  if (instance_)
+void OzonePlatform::InitializeForUI() {
+  CreateInstance();
+  if (g_platform_initialized_ui)
     return;
+  g_platform_initialized_ui = true;
+  instance_->InitializeUI();
+}
 
-  std::string platform = GetPlatformName();
-
-  TRACE_EVENT1("ozone", "OzonePlatform::Initialize", "platform", platform);
-
-  instance_ = CreatePlatform(platform);
-
-  // Inject ozone interfaces.
-  gfx::SurfaceFactoryOzone::SetInstance(instance_->GetSurfaceFactoryOzone());
-  ui::EventFactoryOzone::SetInstance(instance_->GetEventFactoryOzone());
-  ui::InputMethodContextFactoryOzone::SetInstance(
-      instance_->GetInputMethodContextFactoryOzone());
-  ui::CursorFactoryOzone::SetInstance(instance_->GetCursorFactoryOzone());
+// static
+void OzonePlatform::InitializeForGPU() {
+  CreateInstance();
+  if (g_platform_initialized_gpu)
+    return;
+  g_platform_initialized_gpu = true;
+  instance_->InitializeGPU();
 }
 
 // static
 OzonePlatform* OzonePlatform::GetInstance() {
   CHECK(instance_) << "OzonePlatform is not initialized";
   return instance_;
+}
+
+// static
+void OzonePlatform::CreateInstance() {
+  if (!instance_) {
+    TRACE_EVENT1("ozone",
+                 "OzonePlatform::Initialize",
+                 "platform",
+                 GetOzonePlatformName());
+    scoped_ptr<OzonePlatform> platform =
+        PlatformObject<OzonePlatform>::Create();
+
+    // TODO(spang): Currently need to leak this object.
+    CHECK_EQ(instance_, platform.release());
+  }
 }
 
 // static

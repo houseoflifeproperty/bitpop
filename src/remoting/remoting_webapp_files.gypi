@@ -90,6 +90,7 @@
       'webapp/menu_button.js',
       'webapp/ui_mode.js',
       'webapp/toolbar.js',
+      'webapp/window_frame.js',
     ],
     # UI files for controlling the local machine as a host.
     'remoting_webapp_js_ui_host_control_files': [
@@ -123,6 +124,9 @@
     # browser test JavaScript files.
     'remoting_webapp_js_browser_test_files': [
       'webapp/browser_test/browser_test.js',
+      'webapp/browser_test/cancel_pin_browser_test.js',
+      'webapp/browser_test/invalid_pin_browser_test.js',
+      'webapp/browser_test/update_pin_browser_test.js',
     ],
     # The JavaScript files required by main.html.
     'remoting_webapp_main_html_js_files': [
@@ -166,10 +170,15 @@
     'remoting_webapp_resource_files': [
       'resources/disclosure_arrow_down.webp',
       'resources/disclosure_arrow_right.webp',
+      'resources/drag.webp',
       'resources/host_setup_instructions.webp',
+      'resources/icon_close.webp',
       'resources/icon_cross.webp',
+      'resources/icon_disconnect.webp',
       'resources/icon_help.webp',
       'resources/icon_host.webp',
+      'resources/icon_maximize_restore.webp',
+      'resources/icon_minimize.webp',
       'resources/icon_pencil.webp',
       'resources/icon_warning.webp',
       'resources/infographic_my_computers.webp',
@@ -185,6 +194,7 @@
       'webapp/scale-to-fit.webp',
       'webapp/spinner.gif',
       'webapp/toolbar.css',
+      'webapp/window_frame.css',
     ],
 
     'remoting_webapp_files': [
@@ -222,6 +232,7 @@
       'webapp/html/ui_header.html',
       'webapp/html/ui_it2me.html',
       'webapp/html/ui_me2me.html',
+      'webapp/html/window_frame.html',
     ],
 
   },

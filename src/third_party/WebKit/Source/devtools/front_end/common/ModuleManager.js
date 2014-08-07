@@ -210,6 +210,7 @@ WebInspector.ModuleManager.prototype = {
 
     /**
      * @param {string|!Function} type
+     * @param {?Object=} context
      * @return {?Object}
      */
     instance: function(type, context)
@@ -284,7 +285,7 @@ WebInspector.ModuleManager.ModuleDescriptor = function()
     this.extensions;
 
     /**
-     * @type {!Array.<!string>|undefined}
+     * @type {!Array.<string>|undefined}
      */
     this.dependencies;
 

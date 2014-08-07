@@ -24,14 +24,10 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 
-#if defined(USE_ASH)
-#include "ash/shell.h"
-#endif
-
 namespace {
 
 const int kRightColumnWidth = 210;
-const int kIconSize = 69;
+const int kIconSize = 64;
 
 class ExtensionUninstallDialogDelegateView;
 
@@ -43,11 +39,13 @@ gfx::NativeWindow GetParent(Browser* browser) {
 }
 
 // Views implementation of the uninstall dialog.
-class ExtensionUninstallDialogViews : public ExtensionUninstallDialog {
+class ExtensionUninstallDialogViews
+    : public extensions::ExtensionUninstallDialog {
  public:
-  ExtensionUninstallDialogViews(Profile* profile,
-                                Browser* browser,
-                                ExtensionUninstallDialog::Delegate* delegate);
+  ExtensionUninstallDialogViews(
+      Profile* profile,
+      Browser* browser,
+      extensions::ExtensionUninstallDialog::Delegate* delegate);
   virtual ~ExtensionUninstallDialogViews();
 
   // Forwards the accept and cancels to the delegate.
@@ -98,7 +96,7 @@ class ExtensionUninstallDialogDelegateView : public views::DialogDelegateView {
   virtual base::string16 GetWindowTitle() const OVERRIDE;
 
   // views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   virtual void Layout() OVERRIDE;
 
@@ -114,8 +112,8 @@ class ExtensionUninstallDialogDelegateView : public views::DialogDelegateView {
 ExtensionUninstallDialogViews::ExtensionUninstallDialogViews(
     Profile* profile,
     Browser* browser,
-    ExtensionUninstallDialog::Delegate* delegate)
-    : ExtensionUninstallDialog(profile, browser, delegate),
+    extensions::ExtensionUninstallDialog::Delegate* delegate)
+    : extensions::ExtensionUninstallDialog(profile, browser, delegate),
       view_(NULL),
       show_in_app_list_(!browser) {
 }
@@ -203,7 +201,7 @@ base::string16 ExtensionUninstallDialogDelegateView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_EXTENSION_UNINSTALL_PROMPT_TITLE);
 }
 
-gfx::Size ExtensionUninstallDialogDelegateView::GetPreferredSize() {
+gfx::Size ExtensionUninstallDialogDelegateView::GetPreferredSize() const {
   int width = kRightColumnWidth;
   width += kIconSize;
   width += views::kButtonHEdgeMarginNew * 2;
@@ -245,9 +243,9 @@ void ExtensionUninstallDialogDelegateView::Layout() {
 }  // namespace
 
 // static
-ExtensionUninstallDialog* ExtensionUninstallDialog::Create(
-    Profile* profile,
-    Browser* browser,
-    Delegate* delegate) {
+extensions::ExtensionUninstallDialog*
+extensions::ExtensionUninstallDialog::Create(Profile* profile,
+                                             Browser* browser,
+                                             Delegate* delegate) {
   return new ExtensionUninstallDialogViews(profile, browser, delegate);
 }

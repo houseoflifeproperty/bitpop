@@ -29,15 +29,17 @@ const size_t kMaxPagesInArticle = 32;
 namespace dom_distiller {
 
 DistillerFactoryImpl::DistillerFactoryImpl(
-    scoped_ptr<DistillerURLFetcherFactory> distiller_url_fetcher_factory)
-    : distiller_url_fetcher_factory_(distiller_url_fetcher_factory.Pass()) {
+    scoped_ptr<DistillerURLFetcherFactory> distiller_url_fetcher_factory,
+    const dom_distiller::proto::DomDistillerOptions& dom_distiller_options)
+    : distiller_url_fetcher_factory_(distiller_url_fetcher_factory.Pass()),
+      dom_distiller_options_(dom_distiller_options) {
 }
 
 DistillerFactoryImpl::~DistillerFactoryImpl() {}
 
 scoped_ptr<Distiller> DistillerFactoryImpl::CreateDistiller() {
-  scoped_ptr<DistillerImpl> distiller(
-      new DistillerImpl(*distiller_url_fetcher_factory_));
+  scoped_ptr<DistillerImpl> distiller(new DistillerImpl(
+      *distiller_url_fetcher_factory_, dom_distiller_options_));
   return distiller.PassAs<Distiller>();
 }
 
@@ -46,8 +48,10 @@ DistillerImpl::DistilledPageData::DistilledPageData() {}
 DistillerImpl::DistilledPageData::~DistilledPageData() {}
 
 DistillerImpl::DistillerImpl(
-    const DistillerURLFetcherFactory& distiller_url_fetcher_factory)
+    const DistillerURLFetcherFactory& distiller_url_fetcher_factory,
+    const dom_distiller::proto::DomDistillerOptions& dom_distiller_options)
     : distiller_url_fetcher_factory_(distiller_url_fetcher_factory),
+      dom_distiller_options_(dom_distiller_options),
       max_pages_in_article_(kMaxPagesInArticle),
       destruction_allowed_(true),
       weak_factory_(this) {
@@ -120,6 +124,7 @@ void DistillerImpl::DistillNextPage() {
     started_pages_index_[page_num] = pages_.size() - 1;
     distiller_page_->DistillPage(
         url,
+        dom_distiller_options_,
         base::Bind(&DistillerImpl::OnPageDistillationFinished,
                    weak_factory_.GetWeakPtr(),
                    page_num,
@@ -140,8 +145,7 @@ void DistillerImpl::OnPageDistillationFinished(
     page_data->distilled_page_proto =
         new base::RefCountedData<DistilledPageProto>();
     page_data->page_num = page_num;
-    page_data->title = distilled_page->title;
-
+    page_data->distilled_page_proto->data.set_title(distilled_page->title);
     page_data->distilled_page_proto->data.set_url(page_url.spec());
     page_data->distilled_page_proto->data.set_html(distilled_page->html);
 
@@ -266,7 +270,7 @@ void DistillerImpl::RunDistillerCallbackIfDone() {
       *(article_proto->add_pages()) = page_data->distilled_page_proto->data;
 
       if (first_page) {
-        article_proto->set_title(page_data->title);
+        article_proto->set_title(page_data->distilled_page_proto->data.title());
         first_page = false;
       }
 

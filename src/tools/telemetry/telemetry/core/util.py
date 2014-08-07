@@ -1,7 +1,7 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
+import glob
 import imp
 import inspect
 import logging
@@ -39,7 +39,7 @@ def GetChromiumSrcDir():
 def AddDirToPythonPath(*path_parts):
   path = os.path.abspath(os.path.join(*path_parts))
   if os.path.isdir(path) and path not in sys.path:
-    sys.path.append(path)
+    sys.path.insert(0, path)
 
 _counter = [0]
 def _GetUniqueModuleName():
@@ -91,29 +91,6 @@ def WaitFor(condition, timeout):
     time.sleep(poll_interval)
 
 
-def FindElementAndPerformAction(tab, text, callback_code):
-  """JavaScript snippet for finding an element with a given text on a page."""
-  code = """
-      (function() {
-        var callback_function = """ + callback_code + """;
-        function _findElement(element, text) {
-          if (element.innerHTML == text) {
-            callback_function
-            return element;
-          }
-          for (var i in element.childNodes) {
-            var found = _findElement(element.childNodes[i], text);
-            if (found)
-              return found;
-          }
-          return null;
-        }
-        var _element = _findElement(document, \"""" + text + """\");
-        return callback_function(_element);
-      })();"""
-  return tab.EvaluateJavaScript(code)
-
-
 def GetUnreservedAvailableLocalPort():
   """Returns an available port on the system.
 
@@ -148,3 +125,20 @@ def GetBuildDirectories():
   for build_dir in build_dirs:
     for build_type in build_types:
       yield build_dir, build_type
+
+def GetSequentialFileName(base_name):
+  """Returns the next sequential file name based on |base_name| and the
+  existing files. base_name should not contain extension.
+  e.g: if base_name is /tmp/test, and /tmp/test_000.json,
+  /tmp/test_001.mp3 exist, this returns /tmp/test_002. In case no
+  other sequential file name exist, this will return /tmp/test_000
+  """
+  name, ext = os.path.splitext(base_name)
+  assert ext == '', 'base_name cannot contain file extension.'
+  index = 0
+  while True:
+    output_name = '%s_%03d' % (name, index)
+    if not glob.glob(output_name + '.*'):
+      break
+    index = index + 1
+  return output_name

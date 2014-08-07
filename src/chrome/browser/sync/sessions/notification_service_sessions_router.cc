@@ -21,8 +21,8 @@
 #include "content/public/browser/web_contents.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #endif
 
 using content::NavigationController;
@@ -56,10 +56,10 @@ NotificationServiceSessionsRouter::NotificationServiceSessionsRouter(
   registrar_.Add(this, chrome::NOTIFICATION_FAVICON_CHANGED,
       content::Source<Profile>(profile_));
 #if defined(ENABLE_MANAGED_USERS)
-  if (profile_->IsManaged()) {
-    ManagedUserService* managed_user_service =
-        ManagedUserServiceFactory::GetForProfile(profile_);
-    managed_user_service->AddNavigationBlockedCallback(
+  if (profile_->IsSupervised()) {
+    SupervisedUserService* supervised_user_service =
+        SupervisedUserServiceFactory::GetForProfile(profile_);
+    supervised_user_service->AddNavigationBlockedCallback(
         base::Bind(&NotificationServiceSessionsRouter::OnNavigationBlocked,
                    weak_ptr_factory_.GetWeakPtr()));
   }

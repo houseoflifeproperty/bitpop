@@ -66,7 +66,9 @@ static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame
 
     if (openerFrame.settings() && !openerFrame.settings()->supportsMultipleWindows()) {
         created = false;
-        return openerFrame.tree().top();
+        if (!openerFrame.tree().top()->isLocalFrame())
+            return 0;
+        return toLocalFrame(openerFrame.tree().top());
     }
 
     Page* oldPage = openerFrame.page();
@@ -74,12 +76,12 @@ static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame
         return 0;
 
     Page* page = oldPage->chrome().client().createWindow(&openerFrame, request, features, policy, shouldSendReferrer);
-    if (!page)
+    if (!page || !page->mainFrame()->isLocalFrame())
         return 0;
     FrameHost* host = &page->frameHost();
 
     ASSERT(page->mainFrame());
-    LocalFrame& frame = *page->mainFrame();
+    LocalFrame& frame = *page->deprecatedLocalMainFrame();
 
     if (request.frameName() != "_blank")
         frame.tree().setName(request.frameName());
@@ -103,7 +105,7 @@ static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame
         windowRect.setHeight(features.height + (windowRect.height() - viewportSize.height()));
 
     // Ensure non-NaN values, minimum size as well as being within valid screen area.
-    FloatRect newWindowRect = DOMWindow::adjustWindowRect(frame, windowRect);
+    FloatRect newWindowRect = LocalDOMWindow::adjustWindowRect(frame, windowRect);
 
     host->chrome().setWindowRect(newWindowRect);
     host->chrome().show(policy);
@@ -113,7 +115,7 @@ static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame
 }
 
 LocalFrame* createWindow(const String& urlString, const AtomicString& frameName, const WindowFeatures& windowFeatures,
-    DOMWindow& callingWindow, LocalFrame& firstFrame, LocalFrame& openerFrame, DOMWindow::PrepareDialogFunction function, void* functionContext)
+    LocalDOMWindow& callingWindow, LocalFrame& firstFrame, LocalFrame& openerFrame, LocalDOMWindow::PrepareDialogFunction function, void* functionContext)
 {
     LocalFrame* activeFrame = callingWindow.frame();
     ASSERT(activeFrame);
@@ -167,7 +169,7 @@ void createWindowForRequest(const FrameLoadRequest& request, LocalFrame& openerF
     if (openerFrame.document() && openerFrame.document()->isSandboxed(SandboxPopups))
         return;
 
-    if (!DOMWindow::allowPopUp(openerFrame))
+    if (!LocalDOMWindow::allowPopUp(openerFrame))
         return;
 
     if (policy == NavigationPolicyCurrentTab)

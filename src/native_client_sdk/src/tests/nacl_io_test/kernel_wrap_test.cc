@@ -64,6 +64,10 @@ MATCHER_P(IsEqualToStatbuf, statbuf, "") {
 
 #undef COMPARE_FIELD
 
+ACTION_P(SetErrno, value) {
+  errno = value;
+}
+
 ACTION_P(SetStat, statbuf) {
   memset(arg1, 0, sizeof(struct stat));
   arg1->st_dev = statbuf->st_dev;
@@ -95,6 +99,7 @@ void MakeDummyStatbuf(struct stat* statbuf) {
 }
 
 const mode_t kDummyMode = 0xbeef;
+const int kDummyErrno = 0xfeeb;
 const int kDummyInt = 0xdedbeef;
 const int kDummyInt2 = 0xcabba6e;
 const int kDummyInt3 = 0xf00ba4;
@@ -112,15 +117,15 @@ class KernelWrapTest : public ::testing::Test {
   KernelWrapTest() {}
 
   virtual void SetUp() {
+    // Initialize the global errno value to a consistent value rather than
+    // relying on its value from previous test runs.
+    errno = 0;
+
     // Initializing the KernelProxy opens stdin/stdout/stderr.
     EXPECT_CALL(mock, open(_, _))
         .WillOnce(Return(0))
         .WillOnce(Return(1))
         .WillOnce(Return(2));
-    // And will call mount / and /dev.
-    EXPECT_CALL(mock, mount(_, _, _, _, _))
-        .WillOnce(Return(0))
-        .WillOnce(Return(0));
 
     ASSERT_EQ(0, ki_push_state_for_testing());
     ASSERT_EQ(0, ki_init(&mock));
@@ -157,19 +162,24 @@ class KernelWrapTest : public ::testing::Test {
 }  // namespace
 
 TEST_F(KernelWrapTest, access) {
-  EXPECT_CALL(mock, access(kDummyConstChar, kDummyInt)) .WillOnce(Return(-1));
-  EXPECT_EQ(-1, access(kDummyConstChar, kDummyInt));
-
   EXPECT_CALL(mock, access(kDummyConstChar, kDummyInt)) .WillOnce(Return(0));
   EXPECT_EQ(0, access(kDummyConstChar, kDummyInt));
+
+  EXPECT_CALL(mock, access(kDummyConstChar, kDummyInt))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(-1, access(kDummyConstChar, kDummyInt));
+  EXPECT_EQ(kDummyErrno, errno);
+
 }
 
 TEST_F(KernelWrapTest, chdir) {
-  EXPECT_CALL(mock, chdir(kDummyConstChar)).WillOnce(Return(-1));
-  EXPECT_EQ(-1, chdir(kDummyConstChar));
-
   EXPECT_CALL(mock, chdir(kDummyConstChar)).WillOnce(Return(0));
   EXPECT_EQ(0, chdir(kDummyConstChar));
+
+  EXPECT_CALL(mock, chdir(kDummyConstChar))
+    .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(-1, chdir(kDummyConstChar));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, chmod) {
@@ -188,11 +198,14 @@ TEST_F(KernelWrapTest, close) {
   // The way we wrap close does not support returning arbitrary values, so we
   // test 0 and -1.
   EXPECT_CALL(mock, close(kDummyInt))
-      .WillOnce(Return(0))
-      .WillOnce(Return(-1));
+      .WillOnce(Return(0));
 
   EXPECT_EQ(0, close(kDummyInt));
+
+  EXPECT_CALL(mock, close(kDummyInt))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
   EXPECT_EQ(-1, close(kDummyInt));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, dup) {
@@ -205,24 +218,29 @@ TEST_F(KernelWrapTest, dup2) {
   // or the value of the new fd.
   EXPECT_CALL(mock, dup2(kDummyInt, kDummyInt2))
       .WillOnce(Return(kDummyInt2))
-      .WillOnce(Return(-1));
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+
   EXPECT_EQ(kDummyInt2, dup2(kDummyInt, kDummyInt2));
   EXPECT_EQ(-1, dup2(kDummyInt, kDummyInt2));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, fchdir) {
   EXPECT_CALL(mock, fchdir(kDummyInt))
-      .WillOnce(Return(-1));
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+
   EXPECT_EQ(-1, fchdir(kDummyInt));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, fchmod) {
   EXPECT_CALL(mock, fchmod(kDummyInt, kDummyMode))
-      .WillOnce(Return(-1));
-  EXPECT_EQ(-1, fchmod(kDummyInt, kDummyMode));
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
 
-  EXPECT_CALL(mock, fchmod(kDummyInt, kDummyMode)) .WillOnce(Return(0));
   EXPECT_EQ(0, fchmod(kDummyInt, kDummyMode));
+  EXPECT_EQ(-1, fchmod(kDummyInt, kDummyMode));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, fchown) {
@@ -239,11 +257,12 @@ TEST_F(KernelWrapTest, fcntl) {
 }
 
 TEST_F(KernelWrapTest, fdatasync) {
-  EXPECT_CALL(mock, fdatasync(kDummyInt)).WillOnce(Return(-1));
-  EXPECT_EQ(-1, fdatasync(kDummyInt));
+  EXPECT_CALL(mock, fdatasync(kDummyInt)).WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
 
-  EXPECT_CALL(mock, fdatasync(kDummyInt)).WillOnce(Return(0));
   EXPECT_EQ(0, fdatasync(kDummyInt));
+  EXPECT_EQ(-1, fdatasync(kDummyInt));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, fstat) {
@@ -253,11 +272,14 @@ TEST_F(KernelWrapTest, fstat) {
   MakeDummyStatbuf(&in_statbuf);
   EXPECT_CALL(mock, fstat(kDummyInt, _))
       .WillOnce(DoAll(SetStat(&in_statbuf), Return(0)))
-      .WillOnce(Return(-1));
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
   struct stat out_statbuf;
+
   EXPECT_EQ(0, fstat(kDummyInt, &out_statbuf));
   EXPECT_THAT(&in_statbuf, IsEqualToStatbuf(&out_statbuf));
+
   EXPECT_EQ(-1, fstat(kDummyInt, &out_statbuf));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, ftruncate) {
@@ -267,8 +289,10 @@ TEST_F(KernelWrapTest, ftruncate) {
 }
 
 TEST_F(KernelWrapTest, fsync) {
-  EXPECT_CALL(mock, fsync(kDummyInt)).WillOnce(Return(-1));
+  EXPECT_CALL(mock, fsync(kDummyInt))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
   EXPECT_EQ(-1, fsync(kDummyInt));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, getcwd) {
@@ -412,15 +436,13 @@ TEST_F(KernelWrapTest, munmap) {
   munmap(kDummyVoidPtr, kDummySizeT);
 }
 
-
 TEST_F(KernelWrapTest, open) {
   // We pass O_RDONLY because we do not want an error in flags translation
   EXPECT_CALL(mock, open(kDummyConstChar, 0))
+      .WillOnce(Return(kDummyInt2))
       .WillOnce(Return(kDummyInt2));
-  EXPECT_EQ(kDummyInt2, open(kDummyConstChar, 0));
 
-  EXPECT_CALL(mock, open(kDummyConstChar, 0))
-      .WillOnce(Return(kDummyInt2));
+  EXPECT_EQ(kDummyInt2, open(kDummyConstChar, 0));
   EXPECT_EQ(kDummyInt2, open(kDummyConstChar, 0));
 }
 
@@ -442,12 +464,12 @@ TEST_F(KernelWrapTest, readlink) {
   char buf[10];
 
   EXPECT_CALL(mock, readlink(kDummyConstChar, buf, 10))
-      .WillOnce(Return(-1));
-  EXPECT_EQ(-1, readlink(kDummyConstChar, buf, 10));
+      .WillOnce(Return(kDummyInt))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
 
-  EXPECT_CALL(mock, readlink(kDummyConstChar, buf, 10))
-      .WillOnce(Return(kDummyInt));
   EXPECT_EQ(kDummyInt, readlink(kDummyConstChar, buf, 10));
+  EXPECT_EQ(-1, readlink(kDummyConstChar, buf, 10));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 #ifdef __GLIBC__
@@ -461,12 +483,12 @@ TEST_F(KernelWrapTest, remove) {
 
 TEST_F(KernelWrapTest, rename) {
   EXPECT_CALL(mock, rename(kDummyConstChar, kDummyConstChar2))
-      .WillOnce(Return(-1));
-  EXPECT_EQ(-1, rename(kDummyConstChar, kDummyConstChar2));
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
 
-  EXPECT_CALL(mock, rename(kDummyConstChar, kDummyConstChar2))
-      .WillOnce(Return(0));
   EXPECT_EQ(0, rename(kDummyConstChar, kDummyConstChar2));
+  EXPECT_EQ(-1, rename(kDummyConstChar, kDummyConstChar2));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, rmdir) {
@@ -504,11 +526,14 @@ TEST_F(KernelWrapTest, stat) {
   MakeDummyStatbuf(&in_statbuf);
   EXPECT_CALL(mock, stat(StrEq(kDummyConstChar), _))
       .WillOnce(DoAll(SetStat(&in_statbuf), Return(0)))
-      .WillOnce(Return(-1));
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
   struct stat out_statbuf;
+
   EXPECT_EQ(0, stat(kDummyConstChar, &out_statbuf));
   EXPECT_THAT(&in_statbuf, IsEqualToStatbuf(&out_statbuf));
+
   EXPECT_EQ(-1, stat(kDummyConstChar, &out_statbuf));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, symlink) {
@@ -544,11 +569,13 @@ TEST_F(KernelWrapTest, umount) {
 }
 
 TEST_F(KernelWrapTest, truncate) {
-  EXPECT_CALL(mock, truncate(kDummyConstChar, kDummyInt3)).WillOnce(Return(-1));
-  EXPECT_EQ(-1, truncate(kDummyConstChar, kDummyInt3));
+  EXPECT_CALL(mock, truncate(kDummyConstChar, kDummyInt3))
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
 
-  EXPECT_CALL(mock, truncate(kDummyConstChar, kDummyInt3)).WillOnce(Return(0));
   EXPECT_EQ(0, truncate(kDummyConstChar, kDummyInt3));
+
+  EXPECT_EQ(-1, truncate(kDummyConstChar, kDummyInt3));
 }
 
 TEST_F(KernelWrapTest, lstat) {
@@ -556,11 +583,14 @@ TEST_F(KernelWrapTest, lstat) {
   MakeDummyStatbuf(&in_statbuf);
   EXPECT_CALL(mock, lstat(StrEq(kDummyConstChar), _))
       .WillOnce(DoAll(SetStat(&in_statbuf), Return(0)))
-      .WillOnce(Return(-1));
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
   struct stat out_statbuf;
+
   EXPECT_EQ(0, lstat(kDummyConstChar, &out_statbuf));
   EXPECT_THAT(&in_statbuf, IsEqualToStatbuf(&out_statbuf));
+
   EXPECT_EQ(-1, lstat(kDummyConstChar, &out_statbuf));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, unlink) {
@@ -576,8 +606,10 @@ TEST_F(KernelWrapTest, utime) {
 
 TEST_F(KernelWrapTest, utimes) {
   struct timeval* times = NULL;
-  EXPECT_CALL(mock, utimes(kDummyConstChar, times)).WillOnce(Return(-1));
+  EXPECT_CALL(mock, utimes(kDummyConstChar, times))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
   EXPECT_EQ(-1, utimes(kDummyConstChar, times));
+  ASSERT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, write) {
@@ -614,17 +646,27 @@ TEST_F(KernelWrapTest, accept) {
 }
 
 TEST_F(KernelWrapTest, bind) {
+  // The way we wrap bind does not support returning arbitrary values, so we
+  // test 0 and -1.
   struct sockaddr addr;
   EXPECT_CALL(mock, bind(kDummyInt, &addr, kDummyInt2))
-      .WillOnce(Return(kDummyInt2));
-  EXPECT_EQ(kDummyInt2, bind(kDummyInt, &addr, kDummyInt2));
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(0, bind(kDummyInt, &addr, kDummyInt2));
+  EXPECT_EQ(-1, bind(kDummyInt, &addr, kDummyInt2));
+  EXPECT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, connect) {
+  // The way we wrap connect does not support returning arbitrary values, so we
+  // test 0 and -1.
   struct sockaddr addr;
   EXPECT_CALL(mock, connect(kDummyInt, &addr, kDummyInt2))
-      .WillOnce(Return(kDummyInt2));
-  EXPECT_EQ(kDummyInt2, connect(kDummyInt, &addr, kDummyInt2));
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(0, connect(kDummyInt, &addr, kDummyInt2));
+  EXPECT_EQ(-1, connect(kDummyInt, &addr, kDummyInt2));
+  EXPECT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, gethostbyname) {
@@ -634,36 +676,60 @@ TEST_F(KernelWrapTest, gethostbyname) {
 }
 
 TEST_F(KernelWrapTest, getpeername) {
+  // The way we wrap getpeername does not support returning arbitrary values,
+  // so we test 0 and -1.
   struct sockaddr addr;
   socklen_t len;
   EXPECT_CALL(mock, getpeername(kDummyInt, &addr, &len))
-      .WillOnce(Return(kDummyInt2));
-  EXPECT_EQ(kDummyInt2, getpeername(kDummyInt, &addr, &len));
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(0, getpeername(kDummyInt, &addr, &len));
+  EXPECT_EQ(-1, getpeername(kDummyInt, &addr, &len));
+  EXPECT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, getsockname) {
+  // The way we wrap getsockname does not support returning arbitrary values,
+  // so we test 0 and -1.
   struct sockaddr addr;
   socklen_t len;
+
   EXPECT_CALL(mock, getsockname(kDummyInt, &addr, &len))
-      .WillOnce(Return(kDummyInt2));
-  EXPECT_EQ(kDummyInt2, getsockname(kDummyInt, &addr, &len));
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(0, getsockname(kDummyInt, &addr, &len));
+  EXPECT_EQ(-1, getsockname(kDummyInt, &addr, &len));
+  EXPECT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, getsockopt) {
+  // The way we wrap getsockname does not support returning arbitrary values,
+  // so we test 0 and -1.
   int dummy_val;
   void* dummy_void_ptr = &dummy_val;
   socklen_t len;
   EXPECT_CALL(
       mock, getsockopt(kDummyInt, kDummyInt2, kDummyInt3, dummy_void_ptr, &len))
-      .WillOnce(Return(kDummyInt4));
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
   EXPECT_EQ(
-      kDummyInt4,
+      0,
       getsockopt(kDummyInt, kDummyInt2, kDummyInt3, dummy_void_ptr, &len));
+  EXPECT_EQ(
+      -1,
+      getsockopt(kDummyInt, kDummyInt2, kDummyInt3, dummy_void_ptr, &len));
+  EXPECT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, listen) {
-  EXPECT_CALL(mock, listen(kDummyInt, kDummyInt2)).WillOnce(Return(kDummyInt3));
-  EXPECT_EQ(kDummyInt3, listen(kDummyInt, kDummyInt2));
+  // The way we wrap listen does not support returning arbitrary values, so we
+  // test 0 and -1.
+  EXPECT_CALL(mock, listen(kDummyInt, kDummyInt2))
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(0, listen(kDummyInt, kDummyInt2));
+  EXPECT_EQ(-1, listen(kDummyInt, kDummyInt2));
+  EXPECT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, recv) {
@@ -732,22 +798,35 @@ TEST_F(KernelWrapTest, sendmsg) {
 }
 
 TEST_F(KernelWrapTest, setsockopt) {
+  // The way we wrap setsockopt does not support returning arbitrary values, so
+  // we test 0 and -1.
   const socklen_t kDummySockLen = 0x50cc5;
   EXPECT_CALL(
       mock,
       setsockopt(
           kDummyInt, kDummyInt2, kDummyInt3, kDummyVoidPtr, kDummySockLen))
-      .WillOnce(Return(kDummyInt4));
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
   EXPECT_EQ(
-      kDummyInt4,
+      0,
       setsockopt(
           kDummyInt, kDummyInt2, kDummyInt3, kDummyVoidPtr, kDummySockLen));
+  EXPECT_EQ(
+      -1,
+      setsockopt(
+          kDummyInt, kDummyInt2, kDummyInt3, kDummyVoidPtr, kDummySockLen));
+  EXPECT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, shutdown) {
+  // The way we wrap shutdown does not support returning arbitrary values, so we
+  // test 0 and -1.
   EXPECT_CALL(mock, shutdown(kDummyInt, kDummyInt2))
-      .WillOnce(Return(kDummyInt3));
-  EXPECT_EQ(kDummyInt3, shutdown(kDummyInt, kDummyInt2));
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(0, shutdown(kDummyInt, kDummyInt2));
+  EXPECT_EQ(-1, shutdown(kDummyInt, kDummyInt2));
+  EXPECT_EQ(kDummyErrno, errno);
 }
 
 TEST_F(KernelWrapTest, socket) {
@@ -757,11 +836,15 @@ TEST_F(KernelWrapTest, socket) {
 }
 
 TEST_F(KernelWrapTest, socketpair) {
+  // The way we wrap socketpair does not support returning arbitrary values,
+  // so we test 0 and -1.
   int dummy_val;
   EXPECT_CALL(mock, socketpair(kDummyInt, kDummyInt2, kDummyInt3, &dummy_val))
-      .WillOnce(Return(kDummyInt4));
-  EXPECT_EQ(kDummyInt4,
-            socketpair(kDummyInt, kDummyInt2, kDummyInt3, &dummy_val));
+      .WillOnce(Return(0))
+      .WillOnce(DoAll(SetErrno(kDummyErrno), Return(-1)));
+  EXPECT_EQ(0, socketpair(kDummyInt, kDummyInt2, kDummyInt3, &dummy_val));
+  EXPECT_EQ(-1, socketpair(kDummyInt, kDummyInt2, kDummyInt3, &dummy_val));
+  EXPECT_EQ(kDummyErrno, errno);
 }
 
 #endif  // PROVIDES_SOCKET_API

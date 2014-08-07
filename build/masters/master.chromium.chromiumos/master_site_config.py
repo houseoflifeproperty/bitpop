@@ -14,3 +14,4 @@ class ChromiumChromiumOS(Master.Master1):
   alternate_tree_closing_notification_recipients = [
       'chromeos-build-failures@google.com']
   alternate_tree_status_url = 'https://chromiumos-status.appspot.com'
+  buildbot_url = 'http://build.chromium.org/p/chromium.chromiumos/'

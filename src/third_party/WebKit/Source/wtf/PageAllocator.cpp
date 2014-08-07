@@ -170,7 +170,11 @@ static void* getRandomPageBase()
     // Linux and OS X support the full 47-bit user space of x64 processors.
     random &= 0x3fffffffffffUL;
 #endif
-#else // !CPU(X86_64)
+#elif CPU(ARM64)
+    // ARM64 on Linux has 39-bit user space.
+    random &= 0x3fffffffffUL;
+    random += 0x1000000000UL;
+#else // !CPU(X86_64) && !CPU(ARM64)
     // This is a good range on Windows, Linux and Mac.
     // Allocates in the 0.5-1.5GB region.
     random &= 0x3fffffff;
@@ -286,8 +290,17 @@ void decommitSystemPages(void* addr, size_t len)
     int ret = madvise(addr, len, MADV_FREE);
     RELEASE_ASSERT(!ret);
 #else
-    void* ret = VirtualAlloc(addr, len, MEM_RESET, PAGE_READWRITE);
-    RELEASE_ASSERT(ret);
+    setSystemPagesInaccessible(addr, len);
+#endif
+}
+
+void recommitSystemPages(void* addr, size_t len)
+{
+    ASSERT(!(len & kSystemPageOffsetMask));
+#if OS(POSIX)
+    (void) addr;
+#else
+    setSystemPagesAccessible(addr, len);
 #endif
 }
 

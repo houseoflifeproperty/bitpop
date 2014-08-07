@@ -5,11 +5,11 @@
 #ifndef V8_DEOPTIMIZER_H_
 #define V8_DEOPTIMIZER_H_
 
-#include "v8.h"
+#include "src/v8.h"
 
-#include "allocation.h"
-#include "macro-assembler.h"
-#include "zone-inl.h"
+#include "src/allocation.h"
+#include "src/macro-assembler.h"
+#include "src/zone-inl.h"
 
 
 namespace v8 {
@@ -386,10 +386,6 @@ class Deoptimizer : public Malloced {
   // Determines whether the input frame contains alignment padding by looking
   // at the dynamic alignment state slot inside the frame.
   bool HasAlignmentPadding(JSFunction* function);
-
-  // Select the version of NotifyStubFailure builtin that either saves or
-  // doesn't save the double registers depending on CPU features.
-  Code* NotifyStubFailureBuiltin();
 
   Isolate* isolate_;
   JSFunction* function_;

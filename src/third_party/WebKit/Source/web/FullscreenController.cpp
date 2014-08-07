@@ -31,12 +31,12 @@
 #include "config.h"
 #include "web/FullscreenController.h"
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/dom/Document.h"
 #include "core/dom/FullscreenElementStack.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLMediaElement.h"
 #include "platform/LayoutTestSupport.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "public/web/WebFrame.h"
 #include "public/web/WebViewClient.h"
 #include "web/WebViewImpl.h"
@@ -83,6 +83,8 @@ void FullscreenController::didEnterFullScreen()
                 m_exitFullscreenScrollOffset = m_webViewImpl->mainFrame()->scrollOffset();
                 m_exitFullscreenPinchViewportOffset = m_webViewImpl->pinchViewportOffset();
                 m_webViewImpl->setPageScaleFactor(1.0f);
+                m_webViewImpl->setMainFrameScrollOffset(IntPoint());
+                m_webViewImpl->setPinchViewportOffset(FloatPoint());
             }
 
             FullscreenElementStack::from(*doc).webkitDidEnterFullScreenForElement(0);
@@ -163,8 +165,8 @@ void FullscreenController::enterFullScreenForElement(WebCore::Element* element)
         // FIXME: There is no embedder-side handling in layout test mode.
         && !isRunningLayoutTest()) {
         HTMLMediaElement* mediaElement = toHTMLMediaElement(element);
-        if (mediaElement->player() && mediaElement->player()->canShowFullscreenOverlay()) {
-            mediaElement->player()->showFullscreenOverlay();
+        if (mediaElement->webMediaPlayer() && mediaElement->webMediaPlayer()->canEnterFullscreen()) {
+            mediaElement->webMediaPlayer()->enterFullscreen();
             m_provisionalFullScreenElement = element;
             return;
         }
@@ -187,8 +189,8 @@ void FullscreenController::exitFullScreenForElement(WebCore::Element* element)
         // FIXME: There is no embedder-side handling in layout test mode.
         && !isRunningLayoutTest()) {
         HTMLMediaElement* mediaElement = toHTMLMediaElement(element);
-        if (mediaElement->player())
-            mediaElement->player()->hideFullscreenOverlay();
+        if (mediaElement->webMediaPlayer())
+            mediaElement->webMediaPlayer()->exitFullscreen();
         return;
     }
     if (WebViewClient* client = m_webViewImpl->client())

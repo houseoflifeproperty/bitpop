@@ -73,6 +73,11 @@ class Build(object):
     self.steps = steps
     self.blame = blame
     self.results = results
+    self.properties = [
+        ['revision', 72453, 'GatekeeperTest'],
+        ['got_webkit_revision', 100, 'GatekeeperTest'],
+    ]
+    self.times = [100, 200]
     self.reason = 'scheduler'
     self.sourcestamp = {
         'branch': 'src',
@@ -189,7 +194,9 @@ class GatekeeperTest(unittest.TestCase):
                         'reason': build.reason,
                         'builderName': builder.name,
                         'blame': build.blame,
+                        'properties': build.properties,
                         'sourceStamp': build.sourcestamp,
+                        'times': build.times,
                         'number': build.number}
           if build.finished:
             build_json['results'] = build.results
@@ -414,7 +421,7 @@ class GatekeeperTest(unittest.TestCase):
     sys.argv.extend(['--skip-build-db-update',
                      '--email-app-secret-file=%s' % self.email_secret_file])
 
-    self.masters[0].builders[0].builds[0].results = 3
+    self.masters[0].builders[0].builds[0].results = 2
     self.add_gatekeeper_master_config(self.masters[0].url,
                                       {'respect_build_status': True})
     self.add_gatekeeper_section(self.masters[0].url,
@@ -428,6 +435,40 @@ class GatekeeperTest(unittest.TestCase):
     mailer_data = GatekeeperTest.decode_param_json(
         self.url_calls[-1]['params'])
     self.assertEquals(mailer_data['recipients'], ['a_committer@chromium.org'])
+
+  def testRetryDoesntClose(self):
+    """Test that a step marked retry doesn't close the tree."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--skip-build-db-update',
+                     '--email-app-secret-file=%s' % self.email_secret_file])
+
+    self.masters[0].builders[0].builds[0].results = 5
+    self.add_gatekeeper_master_config(self.masters[0].url,
+                                      {'respect_build_status': True})
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {},
+                                idx=0)
+
+    urls = self.call_gatekeeper()
+    self.assertNotIn(self.mailer_url, urls)
+
+  def testExceptionDoesntClose(self):
+    """Test that a step marked exception doesn't close the tree."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--skip-build-db-update',
+                     '--email-app-secret-file=%s' % self.email_secret_file])
+
+    self.masters[0].builders[0].builds[0].results = 4
+    self.add_gatekeeper_master_config(self.masters[0].url,
+                                      {'respect_build_status': True})
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {},
+                                idx=0)
+
+    urls = self.call_gatekeeper()
+    self.assertNotIn(self.mailer_url, urls)
 
   def testFailedBuildNoEmail(self):
     """Test that no email is sent if there are no watchers."""
@@ -482,6 +523,20 @@ class GatekeeperTest(unittest.TestCase):
     mailer_data = GatekeeperTest.decode_param_json(
         self.url_calls[-1]['params'])
     self.assertEquals(mailer_data['recipients'], ['a_committer@chromium.org'])
+
+  def testStepExceptionIgnored(self):
+    """Test that an exception on a closing step doesn't close the tree."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--skip-build-db-update',
+                     '--email-app-secret-file=%s' % self.email_secret_file])
+
+    self.masters[0].builders[0].builds[0].steps[1].results = [5, None]
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {'closing_steps': ['step1']})
+
+    urls = self.call_gatekeeper()
+    self.assertNotIn(self.mailer_url, urls)
 
   def testStepCloserFailureOptional(self):
     """Test that a failed closing_optional step closes the tree."""
@@ -740,7 +795,7 @@ class GatekeeperTest(unittest.TestCase):
                      '--email-app-secret-file=%s' % self.email_secret_file])
 
     subject_template = 'build %(result)s, oh no!'
-    self.masters[0].builders[0].builds[0].results = 3
+    self.masters[0].builders[0].builds[0].results = 2
     self.add_gatekeeper_master_config(self.masters[0].url,
                                       {'respect_build_status': True})
     self.add_gatekeeper_section(self.masters[0].url,
@@ -776,7 +831,7 @@ class GatekeeperTest(unittest.TestCase):
       step_dicts.append(step_json)
 
     self.assertEquals(mailer_data['steps'], step_dicts)
-    self.assertEquals(mailer_data['result'], 3)
+    self.assertEquals(mailer_data['result'], 2)
     self.assertEquals(mailer_data['blamelist'], ['a_committer@chromium.org'])
     self.assertEquals(mailer_data['changes'],
         self.masters[0].builders[0].builds[0].sourcestamp['changes'])
@@ -1123,6 +1178,278 @@ class GatekeeperTest(unittest.TestCase):
 
     self.assertNotIn(self.mailer_url, urls)
     self.assertIn(self.set_status_url, urls)
+
+  #### Revision tracking operation.
+
+  def testEmptyRevisionInfoWorks(self):
+    """Test that an empty build_db still lets revisions through."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--no-email-app', '--set-status',
+                     '--password-file', self.status_secret_file,
+                     '--track-revisions'])
+
+    self.masters[0].builders[0].builds[0].steps[1].results = [2, None]
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {'closing_steps': ['step1']})
+
+    urls = self.call_gatekeeper()
+    self.assertIn(self.set_status_url, urls)
+    build_db = build_scan_db.get_build_db(self.build_db_file)
+    self.assertEquals(build_db.aux['triggered_revisions'],
+                      {'revision': 72453})
+
+  def testOlderRevisionIgnored(self):
+    """Test that an old revision is ignored."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--no-email-app', '--set-status',
+                     '--password-file', self.status_secret_file,
+                     '--track-revisions'])
+
+    self.masters[0].builders[0].builds[0].steps[1].results = [2, None]
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {'closing_steps': ['step1']})
+
+    build_db = build_scan_db.gen_db(masters={
+        self.masters[0].url: {
+            'mybuilder': {
+                0: build_scan_db.gen_build(finished=True)
+            }
+        }
+    })
+    build_db.aux['triggered_revisions'] = {'revision': 72454}
+
+    urls = self.call_gatekeeper(build_db=build_db)
+    self.assertNotIn(self.set_status_url, urls)
+    build_db = build_scan_db.get_build_db(self.build_db_file)
+    self.assertEquals(build_db.aux['triggered_revisions'],
+                      {'revision': 72454})
+
+  def testNewerRevisionAccepted(self):
+    """Test that a newer revision is accepted."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--no-email-app', '--set-status',
+                     '--password-file', self.status_secret_file,
+                     '--track-revisions'])
+
+    self.masters[0].builders[0].builds[0].steps[1].results = [2, None]
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {'closing_steps': ['step1']})
+
+    build_db = build_scan_db.gen_db(masters={
+        self.masters[0].url: {
+            'mybuilder': {
+                0: build_scan_db.gen_build(finished=True)
+            }
+        }
+    })
+    build_db.aux['triggered_revisions'] = {'revision': 72452}
+
+    urls = self.call_gatekeeper(build_db=build_db)
+    self.assertIn(self.set_status_url, urls)
+    build_db = build_scan_db.get_build_db(self.build_db_file)
+    self.assertEquals(build_db.aux['triggered_revisions'],
+                      {'revision': 72453})
+
+  def testRevisionChangeClears(self):
+    """Test that changing the revision forces a reset in the build_db."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--no-email-app', '--set-status',
+                     '--password-file', self.status_secret_file,
+                     '--track-revisions'])
+
+    self.masters[0].builders[0].builds[0].steps[1].results = [2, None]
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {'closing_steps': ['step1']})
+
+    build_db = build_scan_db.gen_db(masters={
+        self.masters[0].url: {
+            'mybuilder': {
+                0: build_scan_db.gen_build(finished=True)
+            }
+        }
+    })
+    build_db.aux['triggered_revisions'] = {'revision': 72454,
+                                           'other_revision': 2}
+
+    urls = self.call_gatekeeper(build_db=build_db)
+    self.assertIn(self.set_status_url, urls)
+    build_db = build_scan_db.get_build_db(self.build_db_file)
+    self.assertEquals(build_db.aux['triggered_revisions'],
+                      {'revision': 72453})
+
+  def testMultiRevisionAccepted(self):
+    """Test that a newer multi-revision is accepted."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--no-email-app', '--set-status',
+                     '--password-file', self.status_secret_file,
+                     '--track-revisions',
+                     '--revision-properties', 'revision,got_webkit_revision'])
+
+    self.masters[0].builders[0].builds[0].steps[1].results = [2, None]
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {'closing_steps': ['step1']})
+
+    build_db = build_scan_db.gen_db(masters={
+        self.masters[0].url: {
+            'mybuilder': {
+                0: build_scan_db.gen_build(finished=True)
+            }
+        }
+    })
+    build_db.aux['triggered_revisions'] = {'revision': 72452,
+                                           'got_webkit_revision': 100}
+
+    urls = self.call_gatekeeper(build_db=build_db)
+    self.assertIn(self.set_status_url, urls)
+    build_db = build_scan_db.get_build_db(self.build_db_file)
+    self.assertEquals(build_db.aux['triggered_revisions'],
+                      {'revision': 72453,
+                       'got_webkit_revision': 100})
+
+  def testMultiRevisionRejected(self):
+    """Test that an older multi-revision is rejected."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--no-email-app', '--set-status',
+                     '--password-file', self.status_secret_file,
+                     '--track-revisions',
+                     '--revision-properties', 'revision,got_webkit_revision'])
+
+    self.masters[0].builders[0].builds[0].steps[1].results = [2, None]
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {'closing_steps': ['step1']})
+
+    build_db = build_scan_db.gen_db(masters={
+        self.masters[0].url: {
+            'mybuilder': {
+                0: build_scan_db.gen_build(finished=True)
+            }
+        }
+    })
+    build_db.aux['triggered_revisions'] = {'revision': 72452,
+                                           'got_webkit_revision': 102}
+
+    urls = self.call_gatekeeper(build_db=build_db)
+    self.assertNotIn(self.set_status_url, urls)
+    build_db = build_scan_db.get_build_db(self.build_db_file)
+    self.assertEquals(build_db.aux['triggered_revisions'],
+                      {'revision': 72452,
+                       'got_webkit_revision': 102})
+
+  def testHighestGetsWritten(self):
+    """Test that only the highest revision is written to the build_db."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--no-email-app', '--set-status',
+                     '--password-file', self.status_secret_file,
+                     '--track-revisions',
+                     '--revision-properties', 'revision,got_webkit_revision'])
+
+    new_build = self.create_generic_build(
+        2, ['a_second_committer@chromium.org'])
+    new_build.properties = [
+        ['revision', 72457, 'GatekeeperTest'],
+        ['got_webkit_revision', 150, 'GatekeeperTest'],
+    ]
+    new_build.times = [200, 300]
+    new_builder = Builder('mybuilder2', [new_build])
+    self.masters[0].builders.append(new_builder)
+
+    self.masters[0].builders[0].builds[0].steps[1].results = [2, None]
+    self.masters[0].builders[1].builds[0].steps[1].results = [2, None]
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {'closing_steps': ['step1']})
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[1].name,
+                                {'closing_steps': ['step1']})
+
+    build_db = build_scan_db.gen_db(masters={
+        self.masters[0].url: {
+            'mybuilder': {
+                0: build_scan_db.gen_build(finished=True)
+            },
+            'mybuilder2': {
+                0: build_scan_db.gen_build(finished=True)
+            }
+        }
+    })
+    build_db.aux['triggered_revisions'] = {'revision': 72452,
+                                           'got_webkit_revision': 100}
+
+    urls = self.call_gatekeeper(build_db=build_db)
+    self.assertEquals(urls.count(self.set_status_url), 1)
+    build_db = build_scan_db.get_build_db(self.build_db_file)
+    self.assertEquals(build_db.aux['triggered_revisions'],
+                      {'revision': 72457,
+                       'got_webkit_revision': 150})
+
+  def testLatestTriggered(self):
+    """Test that only the latest failure is triggered if multiple are seen."""
+    sys.argv.extend([m.url for m in self.masters])
+    sys.argv.extend(['--no-email-app', '--set-status',
+                     '--password-file', self.status_secret_file,
+                     '--track-revisions',
+                     '--revision-properties', 'revision,got_webkit_revision'])
+
+    new_build = self.create_generic_build(
+        2, ['a_second_committer@chromium.org'])
+    new_build.properties = [
+        ['revision', 72457, 'GatekeeperTest'],
+        ['got_webkit_revision', 150, 'GatekeeperTest'],
+    ]
+    new_build.times = [200, 300]
+    new_builder = Builder('mybuilder2', [new_build])
+    self.masters[0].builders.append(new_builder)
+
+    newer_build = self.create_generic_build(
+        3, ['a_third_committer@chromium.org'])
+    newer_build.properties = [
+        ['revision', 72459, 'GatekeeperTest'],
+        ['got_webkit_revision', 200, 'GatekeeperTest'],
+    ]
+    newer_builder = Builder('mybuilder3', [newer_build])
+    self.masters[0].builders.append(newer_builder)
+
+    self.masters[0].builders[0].builds[0].steps[1].results = [2, None]
+    self.masters[0].builders[1].builds[0].steps[1].results = [2, None]
+    self.masters[0].builders[2].builds[0].steps[1].results = [2, None]
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[0].name,
+                                {'closing_steps': ['step1']})
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[1].name,
+                                {'closing_steps': ['step1']})
+    self.add_gatekeeper_section(self.masters[0].url,
+                                self.masters[0].builders[2].name,
+                                {'closing_steps': ['step1']})
+
+    build_db = build_scan_db.gen_db(masters={
+        self.masters[0].url: {
+            'mybuilder': {
+                0: build_scan_db.gen_build(finished=True)
+            },
+            'mybuilder2': {
+                0: build_scan_db.gen_build(finished=True)
+            },
+            'mybuilder3': {
+                0: build_scan_db.gen_build(finished=True)
+            },
+        }
+    })
+    build_db.aux['triggered_revisions'] = {'revision': 72452,
+                                           'got_webkit_revision': 100}
+
+    urls = self.call_gatekeeper(build_db=build_db)
+    self.assertEquals(urls.count(self.set_status_url), 1)
+    gatekeeper_data = urlparse.parse_qs(self.url_calls[-1]['params'])
+    msg = ['Tree is closed (Automatic: "step1" on "mybuilder2" '
+           'a_second_committer@chromium.org)']
+    self.assertEquals(gatekeeper_data['message'], msg)
 
   #### Multiple failures.
 

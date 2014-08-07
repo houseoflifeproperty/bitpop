@@ -6,21 +6,26 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/path_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/chromeos/file_manager/drive_test_util.h"
 #include "chrome/browser/chromeos/file_manager/volume_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
+#include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/test_util.h"
 #include "google_apis/drive/time_util.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
@@ -64,6 +69,11 @@ const char kRestrictedMountPointName[] = "restricted";
 
 // Default file content for the test files.
 const char kTestFileContent[] = "This is some test content.";
+
+// User account email and directory hash for secondary account for multi-profile
+// sensitive test cases.
+const char kSecondProfileAccount[] = "profile2@test.com";
+const char kSecondProfileHash[] = "fileBrowserApiTestProfile2";
 
 // Sets up the initial file system state for native local and restricted native
 // local file systems. The hierarchy is the same as for the drive file system.
@@ -114,7 +124,7 @@ bool InitializeLocalFileSystem(std::string mount_point_name,
   return true;
 }
 
-scoped_ptr<google_apis::ResourceEntry> UpdateDriveEntryTime(
+scoped_ptr<google_apis::FileResource> UpdateDriveEntryTime(
     drive::FakeDriveService* fake_drive_service,
     const std::string& resource_id,
     const std::string& last_modified,
@@ -124,10 +134,10 @@ scoped_ptr<google_apis::ResourceEntry> UpdateDriveEntryTime(
                                             &last_modified_time) ||
       !google_apis::util::GetTimeFromString(last_viewed_by_me,
                                             &last_viewed_by_me_time))
-    return scoped_ptr<google_apis::ResourceEntry>();
+    return scoped_ptr<google_apis::FileResource>();
 
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
   fake_drive_service->UpdateResource(
       resource_id,
       std::string(),  // parent_resource_id
@@ -137,12 +147,12 @@ scoped_ptr<google_apis::ResourceEntry> UpdateDriveEntryTime(
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
   base::RunLoop().RunUntilIdle();
   if (error != google_apis::HTTP_SUCCESS)
-    return scoped_ptr<google_apis::ResourceEntry>();
+    return scoped_ptr<google_apis::FileResource>();
 
   return entry.Pass();
 }
 
-scoped_ptr<google_apis::ResourceEntry> AddFileToDriveService(
+scoped_ptr<google_apis::FileResource> AddFileToDriveService(
     drive::FakeDriveService* fake_drive_service,
     const std::string& mime_type,
     const std::string& content,
@@ -151,7 +161,7 @@ scoped_ptr<google_apis::ResourceEntry> AddFileToDriveService(
     const std::string& last_modified,
     const std::string& last_viewed_by_me) {
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
   fake_drive_service->AddNewFile(
       mime_type,
       content,
@@ -161,20 +171,20 @@ scoped_ptr<google_apis::ResourceEntry> AddFileToDriveService(
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
   base::RunLoop().RunUntilIdle();
   if (error != google_apis::HTTP_CREATED)
-    return scoped_ptr<google_apis::ResourceEntry>();
+    return scoped_ptr<google_apis::FileResource>();
 
-  return UpdateDriveEntryTime(fake_drive_service, entry->resource_id(),
+  return UpdateDriveEntryTime(fake_drive_service, entry->file_id(),
                               last_modified, last_viewed_by_me);
 }
 
-scoped_ptr<google_apis::ResourceEntry> AddDirectoryToDriveService(
+scoped_ptr<google_apis::FileResource> AddDirectoryToDriveService(
     drive::FakeDriveService* fake_drive_service,
     const std::string& parent_resource_id,
     const std::string& title,
     const std::string& last_modified,
     const std::string& last_viewed_by_me) {
   google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
   fake_drive_service->AddNewDirectory(
       parent_resource_id,
       title,
@@ -182,9 +192,9 @@ scoped_ptr<google_apis::ResourceEntry> AddDirectoryToDriveService(
       google_apis::test_util::CreateCopyResultCallback(&error, &entry));
   base::RunLoop().RunUntilIdle();
   if (error != google_apis::HTTP_CREATED)
-    return scoped_ptr<google_apis::ResourceEntry>();
+    return scoped_ptr<google_apis::FileResource>();
 
-  return UpdateDriveEntryTime(fake_drive_service, entry->resource_id(),
+  return UpdateDriveEntryTime(fake_drive_service, entry->file_id(),
                               last_modified, last_viewed_by_me);
 }
 
@@ -193,7 +203,7 @@ scoped_ptr<google_apis::ResourceEntry> AddDirectoryToDriveService(
 bool InitializeDriveService(
     drive::FakeDriveService* fake_drive_service,
     std::map<std::string, std::string>* out_resource_ids) {
-  scoped_ptr<google_apis::ResourceEntry> entry;
+  scoped_ptr<google_apis::FileResource> entry;
 
   entry = AddDirectoryToDriveService(fake_drive_service,
                                      fake_drive_service->GetRootResourceId(),
@@ -202,7 +212,7 @@ bool InitializeDriveService(
                                      "2012-01-02T00:00:01.000Z");
   if (!entry)
     return false;
-  (*out_resource_ids)[entry->title()] = entry->resource_id();
+  (*out_resource_ids)[entry->title()] = entry->file_id();
 
   entry = AddDirectoryToDriveService(fake_drive_service,
                                      (*out_resource_ids)["test_dir"],
@@ -211,7 +221,7 @@ bool InitializeDriveService(
                                      "2011-11-02T04:00:00.000Z");
   if (!entry)
     return false;
-  (*out_resource_ids)[entry->title()] = entry->resource_id();
+  (*out_resource_ids)[entry->title()] = entry->file_id();
 
   entry = AddDirectoryToDriveService(fake_drive_service,
                                      (*out_resource_ids)["test_dir"],
@@ -220,7 +230,7 @@ bool InitializeDriveService(
                                      "2012-01-02T00:00:01.000Z");
   if (!entry)
     return false;
-  (*out_resource_ids)[entry->title()] = entry->resource_id();
+  (*out_resource_ids)[entry->title()] = entry->file_id();
 
   entry = AddFileToDriveService(fake_drive_service,
                                 "application/vnd.mozilla.xul+xml",
@@ -231,7 +241,7 @@ bool InitializeDriveService(
                                 "2012-01-02T00:00:00.000Z");
   if (!entry)
     return false;
-  (*out_resource_ids)[entry->title()] = entry->resource_id();
+  (*out_resource_ids)[entry->title()] = entry->file_id();
 
   entry = AddFileToDriveService(fake_drive_service,
                                 "test/ro",
@@ -242,7 +252,7 @@ bool InitializeDriveService(
                                 "2012-01-01T00:00:00.000Z");
   if (!entry)
     return false;
-  (*out_resource_ids)[entry->title()] = entry->resource_id();
+  (*out_resource_ids)[entry->title()] = entry->file_id();
 
   entry = AddFileToDriveService(fake_drive_service,
                                 "image/tiff",
@@ -253,7 +263,7 @@ bool InitializeDriveService(
                                 "2012-01-02T00:00:00.000Z");
   if (!entry)
     return false;
-  (*out_resource_ids)[entry->title()] = entry->resource_id();
+  (*out_resource_ids)[entry->title()] = entry->file_id();
 
   entry = AddFileToDriveService(fake_drive_service,
                                 "test/rw",
@@ -264,7 +274,7 @@ bool InitializeDriveService(
                                 "2010-01-02T00:00:00.000Z");
   if (!entry)
     return false;
-  (*out_resource_ids)[entry->title()] = entry->resource_id();
+  (*out_resource_ids)[entry->title()] = entry->file_id();
 
   entry = AddFileToDriveService(fake_drive_service,
                                 "test/rw",
@@ -275,7 +285,7 @@ bool InitializeDriveService(
                                 "2011-12-14T00:40:47.330Z");
   if (!entry)
     return false;
-  (*out_resource_ids)[entry->title()] = entry->resource_id();
+  (*out_resource_ids)[entry->title()] = entry->file_id();
 
   return true;
 }
@@ -501,11 +511,16 @@ class MultiProfileDriveFileSystemExtensionApiTest :
   MultiProfileDriveFileSystemExtensionApiTest() : second_profile(NULL) {}
 
   virtual void SetUpOnMainThread() OVERRIDE {
+    base::FilePath user_data_directory;
+    PathService::Get(chrome::DIR_USER_DATA, &user_data_directory);
+    chromeos::UserManager::Get()->UserLoggedIn(kSecondProfileAccount,
+                                               kSecondProfileHash,
+                                               false);
     // Set up the secondary profile.
-    base::FilePath profile_dir;
-    base::CreateNewTempDirectory(base::FilePath::StringType(), &profile_dir);
-    profile_dir = profile_dir.AppendASCII(
-        std::string(chrome::kProfileDirPrefix) + "fileBrowserApiTestProfile2");
+    base::FilePath profile_dir =
+        user_data_directory.Append(
+            chromeos::ProfileHelper::GetUserProfileDir(
+                kSecondProfileHash).BaseName());
     second_profile =
         g_browser_process->profile_manager()->GetProfile(profile_dir);
 
@@ -554,7 +569,7 @@ class MultiProfileDriveFileSystemExtensionApiTest :
             drive::util::GetDriveServiceByProfile(second_profile));
 
     google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-    scoped_ptr<google_apis::ResourceEntry> entry;
+    scoped_ptr<google_apis::FileResource> entry;
 
     // Place a hosted document under root/test_dir of the sub profile.
     sub_service->AddNewFileWithResourceId(
@@ -583,6 +598,78 @@ class MultiProfileDriveFileSystemExtensionApiTest :
       service_factory_for_test_;
   Profile* second_profile;
   std::map<std::string, std::string> resource_ids_;
+};
+
+class LocalAndDriveFileSystemExtensionApiTest
+    : public FileSystemExtensionApiTestBase {
+ public:
+  LocalAndDriveFileSystemExtensionApiTest() {}
+  virtual ~LocalAndDriveFileSystemExtensionApiTest() {}
+
+  // FileSystemExtensionApiTestBase OVERRIDE.
+  virtual void InitTestFileSystem() OVERRIDE {
+    ASSERT_TRUE(InitializeLocalFileSystem(
+        kLocalMountPointName, &local_tmp_dir_, &local_mount_point_dir_))
+        << "Failed to initialize file system.";
+
+    // Set up cache root to be used by DriveIntegrationService. This has to be
+    // done before the browser is created because the service instance is
+    // initialized by EventRouter.
+    ASSERT_TRUE(test_cache_root_.CreateUniqueTempDir());
+
+    // This callback will get called during Profile creation.
+    create_drive_integration_service_ = base::Bind(
+        &LocalAndDriveFileSystemExtensionApiTest::CreateDriveIntegrationService,
+        base::Unretained(this));
+    service_factory_for_test_.reset(
+        new DriveIntegrationServiceFactory::ScopedFactoryForTest(
+            &create_drive_integration_service_));
+  }
+
+  // FileSystemExtensionApiTestBase OVERRIDE.
+  virtual void AddTestMountPoint() OVERRIDE {
+    EXPECT_TRUE(content::BrowserContext::GetMountPoints(browser()->profile())
+                    ->RegisterFileSystem(kLocalMountPointName,
+                                         fileapi::kFileSystemTypeNativeLocal,
+                                         fileapi::FileSystemMountOption(),
+                                         local_mount_point_dir_));
+    VolumeManager::Get(browser()->profile())
+        ->AddVolumeInfoForTesting(local_mount_point_dir_,
+                                  VOLUME_TYPE_TESTING,
+                                  chromeos::DEVICE_TYPE_UNKNOWN);
+    test_util::WaitUntilDriveMountPointIsAdded(browser()->profile());
+  }
+
+ protected:
+  // DriveIntegrationService factory function for this test.
+  drive::DriveIntegrationService* CreateDriveIntegrationService(
+      Profile* profile) {
+    fake_drive_service_ = new drive::FakeDriveService;
+    fake_drive_service_->LoadAppListForDriveApi("drive/applist.json");
+
+    std::map<std::string, std::string> resource_ids;
+    EXPECT_TRUE(InitializeDriveService(fake_drive_service_, &resource_ids));
+
+    return new drive::DriveIntegrationService(profile,
+                                              NULL,
+                                              fake_drive_service_,
+                                              "drive",
+                                              test_cache_root_.path(),
+                                              NULL);
+  }
+
+ private:
+  // For local volume.
+  base::ScopedTempDir local_tmp_dir_;
+  base::FilePath local_mount_point_dir_;
+
+  // For drive volume.
+  base::ScopedTempDir test_cache_root_;
+  drive::FakeDriveService* fake_drive_service_;
+  DriveIntegrationServiceFactory::FactoryCallback
+      create_drive_integration_service_;
+  scoped_ptr<DriveIntegrationServiceFactory::ScopedFactoryForTest>
+      service_factory_for_test_;
 };
 
 //
@@ -698,5 +785,17 @@ IN_PROC_BROWSER_TEST_F(MultiProfileDriveFileSystemExtensionApiTest,
       FLAGS_NONE)) << message_;
 }
 
+//
+// LocalAndDriveFileSystemExtensionApiTests.
+//
+IN_PROC_BROWSER_TEST_F(LocalAndDriveFileSystemExtensionApiTest,
+                       AppFileHandlerMulti) {
+  EXPECT_TRUE(
+      RunFileSystemExtensionApiTest("file_browser/app_file_handler_multi",
+                                    FILE_PATH_LITERAL("manifest.json"),
+                                    "",
+                                    FLAGS_NONE))
+      << message_;
+}
 }  // namespace
 }  // namespace file_manager

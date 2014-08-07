@@ -44,7 +44,9 @@ const unsigned short kAbnormalShutdownOpCode = 1006;
 }  // namespace
 
 WebSocketBridge::WebSocketBridge()
-    : channel_id_(kInvalidChannelId), client_(NULL) {}
+    : channel_id_(kInvalidChannelId),
+      render_frame_id_(MSG_ROUTING_NONE),
+      client_(NULL) {}
 
 WebSocketBridge::~WebSocketBridge() {
   if (channel_id_ != kInvalidChannelId) {
@@ -225,11 +227,8 @@ void WebSocketBridge::connect(
            << JoinString(protocols_to_pass, ", ") << "), "
            << origin_to_pass.string() << ")";
 
-  ChildThread::current()->Send(
-      new WebSocketHostMsg_AddChannelRequest(channel_id_,
-                                             url,
-                                             protocols_to_pass,
-                                             origin_to_pass));
+  ChildThread::current()->Send(new WebSocketHostMsg_AddChannelRequest(
+      channel_id_, url, protocols_to_pass, origin_to_pass, render_frame_id_));
 }
 
 void WebSocketBridge::send(bool fin,

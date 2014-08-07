@@ -37,9 +37,8 @@ Contents:
    devguide/coding/url-loading.rst
    devguide/coding/view-focus-input-events.rst
    devguide/distributing.rst
+   io2014.rst
    community/index.rst
-   community/application-gallery.rst
-   community/middleware.rst
    community/security-contest/index.rst
    community/security-contest/contest-announcement.rst
    community/security-contest/contest-terms.rst
@@ -57,6 +56,7 @@ Contents:
    reference/nacl-manifest-format.rst
    reference/sandbox_internals/index.rst
    reference/sandbox_internals/arm-32-bit-sandbox.rst
+   reference/sandbox_internals/x86-64-sandbox.rst
    publications-and-presentations.rst
    faq.rst
    help.rst

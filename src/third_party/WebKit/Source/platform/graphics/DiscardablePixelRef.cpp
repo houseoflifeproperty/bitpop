@@ -27,7 +27,7 @@
 #include "platform/graphics/DiscardablePixelRef.h"
 
 #include "public/platform/Platform.h"
-#include "wtf/StdLibExtras.h"
+#include <string.h>
 
 namespace WebCore {
 
@@ -48,8 +48,8 @@ bool DiscardablePixelRefAllocator::allocPixelRef(SkBitmap* dst, SkColorTable* ct
     if (size < 0 || !sk_64_isS32(size))
         return false;
 
-    SkImageInfo info;
-    if (!dst->asImageInfo(&info))
+    const SkImageInfo& info = dst->info();
+    if (kUnknown_SkColorType == info.colorType())
         return false;
 
     SkAutoTUnref<DiscardablePixelRef> pixelRef(new DiscardablePixelRef(info, dst->rowBytes(), adoptPtr(new SkMutex())));
@@ -113,10 +113,7 @@ void DiscardablePixelRef::onUnlockPixels()
 
 bool DiscardablePixelRef::isDiscardable(SkPixelRef* pixelRef)
 {
-    // FIXME: DEFINE_STATIC_LOCAL is not thread safe.
-    // ImageDecodingStore provides the synchronization for this.
-    DEFINE_STATIC_LOCAL(const SkString, discardable, (labelDiscardable));
-    return pixelRef && pixelRef->getURI() && discardable.equals(pixelRef->getURI());
+    return pixelRef && pixelRef->getURI() && !strcmp(pixelRef->getURI(), labelDiscardable);
 }
 
 } // namespace WebCore

@@ -259,8 +259,7 @@ class ShelfFocusSearch : public views::FocusSearch {
 
 // AnimationDelegate used when inserting a new item. This steadily increases the
 // opacity of the layer as the animation progress.
-class FadeInAnimationDelegate
-    : public views::BoundsAnimator::OwnedAnimationDelegate {
+class FadeInAnimationDelegate : public gfx::AnimationDelegate {
  public:
   explicit FadeInAnimationDelegate(views::View* view) : view_(view) {}
   virtual ~FadeInAnimationDelegate() {}
@@ -314,8 +313,7 @@ void ReflectItemStatus(const ShelfItem& item, ShelfButton* button) {
 
 // AnimationDelegate used when deleting an item. This steadily decreased the
 // opacity of the layer as the animation progress.
-class ShelfView::FadeOutAnimationDelegate
-    : public views::BoundsAnimator::OwnedAnimationDelegate {
+class ShelfView::FadeOutAnimationDelegate : public gfx::AnimationDelegate {
  public:
   FadeOutAnimationDelegate(ShelfView* host, views::View* view)
       : shelf_view_(host),
@@ -343,8 +341,7 @@ class ShelfView::FadeOutAnimationDelegate
 // AnimationDelegate used to trigger fading an element in. When an item is
 // inserted this delegate is attached to the animation that expands the size of
 // the item.  When done it kicks off another animation to fade the item in.
-class ShelfView::StartFadeAnimationDelegate
-    : public views::BoundsAnimator::OwnedAnimationDelegate {
+class ShelfView::StartFadeAnimationDelegate : public gfx::AnimationDelegate {
  public:
   StartFadeAnimationDelegate(ShelfView* host,
                              views::View* view)
@@ -379,7 +376,6 @@ ShelfView::ShelfView(ShelfModel* model,
       owner_overflow_bubble_(NULL),
       drag_pointer_(NONE),
       drag_view_(NULL),
-      drag_offset_(0),
       start_drag_index_(-1),
       context_menu_id_(0),
       leading_inset_(kDefaultLeadingInset),
@@ -454,9 +450,16 @@ void ShelfView::SchedulePaintForAllButtons() {
 
 gfx::Rect ShelfView::GetIdealBoundsOfItemIcon(ShelfID id) {
   int index = model_->ItemIndexByID(id);
-  if (index == -1 || (index > last_visible_index_ &&
-                      index < model_->FirstPanelIndex()))
+  if (index == -1)
     return gfx::Rect();
+  // Map all items from overflow area to the overflow button. Note that the
+  // section between last_index_hidden_ and model_->FirstPanelIndex() is the
+  // list of invisible panel items. However, these items are currently nowhere
+  // represented and get dropped instead - see (crbug.com/378907). As such there
+  // is no way to address them or place them. We therefore move them over the
+  // overflow button.
+  if (index > last_visible_index_ && index < model_->FirstPanelIndex())
+    index = last_visible_index_ + 1;
   const gfx::Rect& ideal_bounds(view_model_->ideal_bounds(index));
   DCHECK_NE(TYPE_APP_LIST, model_->items()[index].type);
   ShelfButton* button = static_cast<ShelfButton*>(view_model_->view_at(index));
@@ -702,7 +705,7 @@ void ShelfView::UpdateAllButtonsVisibilityInOverflowMode() {
   }
 }
 
-void ShelfView::CalculateIdealBounds(IdealBounds* bounds) {
+void ShelfView::CalculateIdealBounds(IdealBounds* bounds) const {
   int available_size = layout_manager_->PrimaryAxisValue(width(), height());
   DCHECK(model_->item_count() == view_model_->view_size());
   if (!available_size)
@@ -732,7 +735,7 @@ void ShelfView::CalculateIdealBounds(IdealBounds* bounds) {
   }
 
   if (is_overflow_mode()) {
-    UpdateAllButtonsVisibilityInOverflowMode();
+    const_cast<ShelfView*>(this)->UpdateAllButtonsVisibilityInOverflowMode();
     return;
   }
 
@@ -775,7 +778,7 @@ void ShelfView::CalculateIdealBounds(IdealBounds* bounds) {
     --last_visible_index_;
   for (int i = 0; i < view_model_->view_size(); ++i) {
     bool visible = i <= last_visible_index_ || i > last_hidden_index_;
-    // To receive drag event continously from |drag_view_| during the dragging
+    // To receive drag event continuously from |drag_view_| during the dragging
     // off from the shelf, don't make |drag_view_| invisible. It will be
     // eventually invisible and removed from the |view_model_| by
     // FinalizeRipOffDrag().
@@ -897,7 +900,8 @@ void ShelfView::FadeIn(views::View* view) {
   view->layer()->SetOpacity(0);
   AnimateToIdealBounds();
   bounds_animator_->SetAnimationDelegate(
-      view, new FadeInAnimationDelegate(view), true);
+      view,
+      scoped_ptr<gfx::AnimationDelegate>(new FadeInAnimationDelegate(view)));
 }
 
 void ShelfView::PrepareForDrag(Pointer pointer, const ui::LocatedEvent& event) {
@@ -963,7 +967,7 @@ void ShelfView::ContinueDrag(const ui::LocatedEvent& event) {
   int x = 0, y = 0;
   if (layout_manager_->IsHorizontalAlignment()) {
     x = std::max(view_model_->ideal_bounds(indices.first).x(),
-                     drag_point.x() - drag_offset_);
+                     drag_point.x() - drag_origin_.x());
     x = std::min(view_model_->ideal_bounds(last_drag_index).right() -
                  view_model_->ideal_bounds(current_index).width(),
                  x);
@@ -972,7 +976,7 @@ void ShelfView::ContinueDrag(const ui::LocatedEvent& event) {
     drag_view_->SetX(x);
   } else {
     y = std::max(view_model_->ideal_bounds(indices.first).y(),
-                     drag_point.y() - drag_offset_);
+                     drag_point.y() - drag_origin_.y());
     y = std::min(view_model_->ideal_bounds(last_drag_index).bottom() -
                  view_model_->ideal_bounds(current_index).height(),
                  y);
@@ -1162,7 +1166,7 @@ void ShelfView::FinalizeRipOffDrag(bool cancel) {
   DestroyDragIconProxy();
 }
 
-ShelfView::RemovableState ShelfView::RemovableByRipOff(int index) {
+ShelfView::RemovableState ShelfView::RemovableByRipOff(int index) const {
   DCHECK(index >= 0 && index < model_->item_count());
   ShelfItemType type = model_->items()[index].type;
   if (type == TYPE_APP_LIST || type == TYPE_DIALOG || !delegate_->CanPin())
@@ -1248,12 +1252,12 @@ void ShelfView::StartFadeInLastVisibleItem() {
     last_visible_view->layer()->SetOpacity(0);
     bounds_animator_->SetAnimationDelegate(
         last_visible_view,
-        new ShelfView::StartFadeAnimationDelegate(this, last_visible_view),
-        true);
+        scoped_ptr<gfx::AnimationDelegate>(
+            new StartFadeAnimationDelegate(this, last_visible_view)));
   }
 }
 
-void ShelfView::UpdateOverflowRange(ShelfView* overflow_view) {
+void ShelfView::UpdateOverflowRange(ShelfView* overflow_view) const {
   const int first_overflow_index = last_visible_index_ + 1;
   const int last_overflow_index = last_hidden_index_;
   DCHECK_LE(first_overflow_index, last_overflow_index);
@@ -1356,7 +1360,7 @@ int ShelfView::CancelDrag(int modified_index) {
   return modified_view ? view_model_->GetIndexOfView(modified_view) : -1;
 }
 
-gfx::Size ShelfView::GetPreferredSize() {
+gfx::Size ShelfView::GetPreferredSize() const {
   IdealBounds ideal_bounds;
   CalculateIdealBounds(&ideal_bounds);
 
@@ -1445,7 +1449,9 @@ void ShelfView::ShelfItemAdded(int model_index) {
   if (model_index <= last_visible_index_ ||
       model_index >= model_->FirstPanelIndex()) {
     bounds_animator_->SetAnimationDelegate(
-        view, new StartFadeAnimationDelegate(this, view), true);
+        view,
+        scoped_ptr<gfx::AnimationDelegate>(
+            new StartFadeAnimationDelegate(this, view)));
   } else {
     // Undo the hiding if animation does not run.
     view->layer()->SetOpacity(1.0f);
@@ -1479,7 +1485,9 @@ void ShelfView::ShelfItemRemoved(int model_index, ShelfID id) {
     // of the views to their target location.
     bounds_animator_->AnimateViewTo(view, view->bounds());
     bounds_animator_->SetAnimationDelegate(
-        view, new FadeOutAnimationDelegate(this, view), true);
+        view,
+        scoped_ptr<gfx::AnimationDelegate>(
+            new FadeOutAnimationDelegate(this, view)));
   } else {
     // We don't need to show a fade out animation for invisible |view|. When an
     // item is ripped out from the shelf, its |view| is already invisible.
@@ -1567,7 +1575,7 @@ void ShelfView::PointerPressedOnButton(views::View* view,
     return;  // View is being deleted or not draggable, ignore request.
 
   drag_view_ = view;
-  drag_offset_ = layout_manager_->PrimaryAxisValue(event.x(), event.y());
+  drag_origin_ = gfx::Point(event.x(), event.y());
   UMA_HISTOGRAM_ENUMERATION("Ash.ShelfAlignmentUsage",
       layout_manager_->SelectValueForShelfAlignment(
           SHELF_ALIGNMENT_UMA_ENUM_VALUE_BOTTOM,
@@ -1583,8 +1591,8 @@ void ShelfView::PointerDraggedOnButton(views::View* view,
   // To prepare all drag types (moving an item in the shelf and dragging off),
   // we should check the x-axis and y-axis offset.
   if (!dragging() && drag_view_ &&
-      ((abs(event.x() - drag_offset_) >= kMinimumDragDistance) ||
-       (abs(event.y() - drag_offset_) >= kMinimumDragDistance))) {
+      ((std::abs(event.x() - drag_origin_.x()) >= kMinimumDragDistance) ||
+       (std::abs(event.y() - drag_origin_.y()) >= kMinimumDragDistance))) {
     PrepareForDrag(pointer, event);
   }
   if (drag_pointer_ == pointer)

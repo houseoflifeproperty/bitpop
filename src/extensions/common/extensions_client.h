@@ -18,11 +18,12 @@ namespace extensions {
 
 class APIPermissionSet;
 class Extension;
+class ExtensionAPI;
 class FeatureProvider;
+class JSONFeatureProviderSource;
 class ManifestPermissionSet;
 class PermissionMessage;
 class PermissionMessageProvider;
-class PermissionsProvider;
 class SimpleFeature;
 class URLPatternSet;
 
@@ -46,6 +47,13 @@ class ExtensionsClient {
 
   // Create a FeatureProvider for a specific feature type, e.g. "permission".
   virtual scoped_ptr<FeatureProvider> CreateFeatureProvider(
+      const std::string& name) const = 0;
+
+  // Create a JSONFeatureProviderSource for a specific feature type,
+  // e.g. "permission". Currently, all features are loaded from
+  // JSONFeatureProviderSources.
+  // This is used primarily in CreateFeatureProvider, above.
+  virtual scoped_ptr<JSONFeatureProviderSource> CreateFeatureProviderSource(
       const std::string& name) const = 0;
 
   // Takes the list of all hosts and filters out those with special
@@ -75,8 +83,12 @@ class ExtensionsClient {
   // Returns true iff a schema named |name| is generated.
   virtual bool IsAPISchemaGenerated(const std::string& name) const = 0;
 
-  // Gets the API schema named |name|.
+  // Gets the generated API schema named |name|.
   virtual base::StringPiece GetAPISchema(const std::string& name) const = 0;
+
+  // Register non-generated API schema resources with the global ExtensionAPI.
+  // Called when the ExtensionAPI is lazily initialized.
+  virtual void RegisterAPISchemaResources(ExtensionAPI* api) const = 0;
 
   // Determines if certain fatal extensions errors should be surpressed
   // (i.e., only logged) or allowed (i.e., logged before crashing).

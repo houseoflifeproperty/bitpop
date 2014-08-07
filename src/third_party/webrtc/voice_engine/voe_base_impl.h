@@ -79,7 +79,9 @@ public:
                                      uint8_t nChannels,
                                      uint32_t samplesPerSec,
                                      void* audioSamples,
-                                     uint32_t& nSamplesOut);
+                                     uint32_t& nSamplesOut,
+                                     int64_t* elapsed_time_ms,
+                                     int64_t* ntp_time_ms);
 
     virtual int OnDataAvailable(const int voe_channels[],
                                 int number_of_voe_channels,
@@ -102,7 +104,9 @@ public:
 
     virtual void PullRenderData(int bits_per_sample, int sample_rate,
                                 int number_of_channels, int number_of_frames,
-                                void* audio_data);
+                                void* audio_data,
+                                int64_t* elapsed_time_ms,
+                                int64_t* ntp_time_ms);
 
     // AudioDeviceObserver
     virtual void OnErrorIsReported(ErrorCode error);
@@ -138,7 +142,9 @@ private:
 
     void GetPlayoutData(int sample_rate, int number_of_channels,
                         int number_of_frames, bool feed_data_to_apm,
-                        void* audio_data);
+                        void* audio_data,
+                        int64_t* elapsed_time_ms,
+                        int64_t* ntp_time_ms);
 
     int32_t AddBuildInfo(char* str) const;
     int32_t AddVoEVersion(char* str) const;
@@ -148,9 +154,6 @@ private:
     int InitializeChannel(voe::ChannelOwner* channel_owner);
 #ifdef WEBRTC_EXTERNAL_TRANSPORT
     int32_t AddExternalTransportBuild(char* str) const;
-#endif
-#ifdef WEBRTC_VOE_EXTERNAL_REC_AND_PLAYOUT
-    int32_t AddExternalRecAndPlayoutBuild(char* str) const;
 #endif
     VoiceEngineObserver* _voiceEngineObserverPtr;
     CriticalSectionWrapper& _callbackCritSect;

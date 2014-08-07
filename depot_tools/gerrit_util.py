@@ -14,14 +14,34 @@ import json
 import logging
 import netrc
 import os
+import re
+import stat
+import sys
 import time
 import urllib
 from cStringIO import StringIO
 
+_netrc_file = '_netrc' if sys.platform.startswith('win') else '.netrc'
+_netrc_file = os.path.join(os.environ['HOME'], _netrc_file)
 try:
-  NETRC = netrc.netrc()
-except (IOError, netrc.NetrcParseError):
+  NETRC = netrc.netrc(_netrc_file)
+except IOError:
+  print >> sys.stderr, 'WARNING: Could not read netrc file %s' % _netrc_file
   NETRC = netrc.netrc(os.devnull)
+except netrc.NetrcParseError as e:
+  _netrc_stat = os.stat(e.filename)
+  if _netrc_stat.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+    print >> sys.stderr, (
+        'WARNING: netrc file %s cannot be used because its file permissions '
+        'are insecure.  netrc file permissions should be 600.' % _netrc_file)
+  else:
+    print >> sys.stderr, ('ERROR: Cannot use netrc file %s due to a parsing '
+                          'error.' % _netrc_file)
+    raise
+  del _netrc_stat
+  NETRC = netrc.netrc(os.devnull)
+del _netrc_file
+
 LOGGER = logging.getLogger()
 TRY_LIMIT = 5
 
@@ -36,6 +56,10 @@ class GerritError(Exception):
     super(GerritError, self).__init__(*args, **kwargs)
     self.http_status = http_status
     self.message = '(%d) %s' % (self.http_status, self.message)
+
+
+class GerritAuthenticationError(GerritError):
+  """Exception class for authentication errors during Gerrit communication."""
 
 
 def _QueryString(param_dict, first_param=None):
@@ -70,7 +94,7 @@ def CreateHttpConn(host, path, reqtype='GET', headers=None, body=None):
     headers.setdefault('Authorization', 'Basic %s' % (
         base64.b64encode('%s:%s' % (auth[0], auth[2]))))
   else:
-    LOGGER.debug('No authorization found in netrc.')
+    LOGGER.debug('No authorization found in netrc for %s.' % bare_host)
 
   if 'Authorization' in headers and not path.startswith('a/'):
     url = '/a/%s' % path
@@ -115,6 +139,17 @@ def ReadHttpResponse(conn, expect_status=200, ignore_404=True):
   sleep_time = 0.5
   for idx in range(TRY_LIMIT):
     response = conn.getresponse()
+
+    # Check if this is an authentication issue.
+    www_authenticate = response.getheader('www-authenticate')
+    if (response.status in (httplib.UNAUTHORIZED, httplib.FOUND) and
+        www_authenticate):
+      auth_match = re.search('realm="([^"]+)"', www_authenticate, re.I)
+      host = auth_match.group(1) if auth_match else conn.req_host
+      reason = ('Authentication failed. Please make sure your .netrc file '
+                'has credentials for %s' % host)
+      raise GerritAuthenticationError(response.status, reason)
+
     # If response.status < 500 then the result is final; break retry loop.
     if response.status < 500:
       break

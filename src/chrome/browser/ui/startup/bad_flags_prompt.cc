@@ -15,6 +15,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/switch_utils.h"
+#include "components/invalidation/invalidation_switches.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "components/translate/core/common/translate_switches.h"
@@ -51,13 +52,12 @@ void ShowBadFlagsPrompt(Browser* browser) {
     translate::switches::kTranslateSecurityOrigin,
 
     // These flags undermine HTTPS / connection security.
-    switches::kDisableUserMediaSecurity,
 #if defined(ENABLE_WEBRTC)
     switches::kDisableWebRtcEncryption,
 #endif
     switches::kIgnoreCertificateErrors,
     switches::kReduceSecurityForTesting,
-    switches::kSyncAllowInsecureXmppConnection,
+    invalidation::switches::kSyncAllowInsecureXmppConnection,
 
     // These flags change the URLs that handle PII.
     autofill::switches::kWalletSecureServiceUrl,

@@ -9,6 +9,8 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/profiles/gaia_info_update_service.h"
+#include "chrome/browser/profiles/gaia_info_update_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -17,11 +19,12 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
 #include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 
 namespace profiles {
@@ -30,10 +33,6 @@ bool IsMultipleProfilesEnabled() {
 #if defined(OS_ANDROID)
   return false;
 #endif
-#if defined(OS_CHROMEOS)
-  return chromeos::UserManager::IsMultipleProfilesAllowed();
-#endif
-
   return true;
 }
 
@@ -111,6 +110,22 @@ std::vector<std::string> GetSecondaryAccountsForProfile(
 bool IsRegularOrGuestSession(Browser* browser) {
   Profile* profile = browser->profile();
   return profile->IsGuestSession() || !profile->IsOffTheRecord();
+}
+
+void UpdateGaiaProfilePhotoIfNeeded(Profile* profile) {
+  // If the --google-profile-info flag isn't used, then the
+  // GAIAInfoUpdateService isn't initialized, and we can't download the picture.
+  if (!switches::IsGoogleProfileInfo())
+    return;
+
+  DCHECK(profile);
+  GAIAInfoUpdateServiceFactory::GetInstance()->GetForProfile(profile)->Update();
+}
+
+SigninErrorController* GetSigninErrorController(Profile* profile) {
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+  return token_service ? token_service->signin_error_controller() : NULL;
 }
 
 }  // namespace profiles

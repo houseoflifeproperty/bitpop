@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/html/HTMLFrameElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/html/HTMLFrameSetElement.h"
 #include "core/rendering/RenderFrame.h"
 
@@ -40,10 +40,7 @@ inline HTMLFrameElement::HTMLFrameElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLFrameElement> HTMLFrameElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLFrameElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLFrameElement)
 
 bool HTMLFrameElement::rendererIsNeeded(const RenderStyle&)
 {

@@ -81,13 +81,13 @@ class SctpFakeNetworkInterface : public cricket::MediaChannel::NetworkInterface,
   // an SCTP packet.
   virtual void OnMessage(talk_base::Message* msg) {
     LOG(LS_VERBOSE) << "SctpFakeNetworkInterface::OnMessage";
-    talk_base::Buffer* buffer =
+    talk_base::scoped_ptr<talk_base::Buffer> buffer(
         static_cast<talk_base::TypedMessageData<talk_base::Buffer*>*>(
-            msg->pdata)->data();
+            msg->pdata)->data());
     if (dest_) {
-      dest_->OnPacketReceived(buffer, talk_base::PacketTime());
+      dest_->OnPacketReceived(buffer.get(), talk_base::PacketTime());
     }
-    delete buffer;
+    delete msg->pdata;
   }
 
   // Unsupported functions required to exist by NetworkInterface.
@@ -167,24 +167,24 @@ class SignalChannelClosedObserver : public sigslot::has_slots<> {
  public:
   SignalChannelClosedObserver() {}
   void BindSelf(cricket::SctpDataMediaChannel* channel) {
-    channel->SignalStreamClosed.connect(
+    channel->SignalStreamClosedRemotely.connect(
         this, &SignalChannelClosedObserver::OnStreamClosed);
   }
-  void OnStreamClosed(int stream) {
+  void OnStreamClosed(uint32 stream) {
     streams_.push_back(stream);
   }
 
-  int StreamCloseCount(int stream) {
+  int StreamCloseCount(uint32 stream) {
     return std::count(streams_.begin(), streams_.end(), stream);
   }
 
-  bool WasStreamClosed(int stream) {
+  bool WasStreamClosed(uint32 stream) {
     return std::find(streams_.begin(), streams_.end(), stream)
         != streams_.end();
   }
 
  private:
-  std::vector<int> streams_;
+  std::vector<uint32> streams_;
 };
 
 class SignalChannelClosedReopener : public sigslot::has_slots<> {
@@ -295,7 +295,7 @@ class SctpDataMediaChannelTest : public testing::Test,
     params.ssrc = ssrc;
 
     return chan->SendData(params, talk_base::Buffer(
-        msg.data(), msg.length()), result);
+        &msg[0], msg.length()), result);
   }
 
   bool ReceivedData(const SctpFakeDataReceiver* recv, uint32 ssrc,
@@ -364,26 +364,26 @@ TEST_F(SctpDataMediaChannelTest, SendData) {
   EXPECT_EQ(cricket::SDR_SUCCESS, result);
   EXPECT_TRUE_WAIT(ReceivedData(receiver2(), 1, "hello?"), 1000);
   LOG(LS_VERBOSE) << "recv2.received=" << receiver2()->received()
-                  << "recv2.last_params.ssrc="
+                  << ", recv2.last_params.ssrc="
                   << receiver2()->last_params().ssrc
-                  << "recv2.last_params.timestamp="
+                  << ", recv2.last_params.timestamp="
                   << receiver2()->last_params().ssrc
-                  << "recv2.last_params.seq_num="
+                  << ", recv2.last_params.seq_num="
                   << receiver2()->last_params().seq_num
-                  << "recv2.last_data=" << receiver2()->last_data();
+                  << ", recv2.last_data=" << receiver2()->last_data();
 
   LOG(LS_VERBOSE) << "chan2 sending: 'hi chan1' -----------------------------";
   ASSERT_TRUE(SendData(channel2(), 2, "hi chan1", &result));
   EXPECT_EQ(cricket::SDR_SUCCESS, result);
   EXPECT_TRUE_WAIT(ReceivedData(receiver1(), 2, "hi chan1"), 1000);
   LOG(LS_VERBOSE) << "recv1.received=" << receiver1()->received()
-                  << "recv1.last_params.ssrc="
+                  << ", recv1.last_params.ssrc="
                   << receiver1()->last_params().ssrc
-                  << "recv1.last_params.timestamp="
+                  << ", recv1.last_params.timestamp="
                   << receiver1()->last_params().ssrc
-                  << "recv1.last_params.seq_num="
+                  << ", recv1.last_params.seq_num="
                   << receiver1()->last_params().seq_num
-                  << "recv1.last_data=" << receiver1()->last_data();
+                  << ", recv1.last_data=" << receiver1()->last_data();
 }
 
 // Sends a lot of large messages at once and verifies SDR_BLOCK is returned.
@@ -398,7 +398,7 @@ TEST_F(SctpDataMediaChannelTest, SendDataBlocked) {
 
   for (size_t i = 0; i < 100; ++i) {
     channel1()->SendData(
-        params, talk_base::Buffer(buffer.data(), buffer.size()), &result);
+        params, talk_base::Buffer(&buffer[0], buffer.size()), &result);
     if (result == cricket::SDR_BLOCK)
       break;
   }

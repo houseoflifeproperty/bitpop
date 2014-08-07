@@ -11,6 +11,7 @@
 #include "base/single_thread_task_runner.h"
 #include "chrome/browser/sync_file_system/drive_backend/callback_helper.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_uploader_wrapper.h"
+#include "google_apis/drive/drive_api_parser.h"
 
 namespace sync_file_system {
 namespace drive_backend {
@@ -21,7 +22,9 @@ DriveUploaderOnWorker::DriveUploaderOnWorker(
       base::SequencedTaskRunner* worker_task_runner)
     : wrapper_(wrapper),
       ui_task_runner_(ui_task_runner),
-      worker_task_runner_(worker_task_runner) {}
+      worker_task_runner_(worker_task_runner) {
+  sequece_checker_.DetachFromSequence();
+}
 
 DriveUploaderOnWorker::~DriveUploaderOnWorker() {}
 
@@ -33,6 +36,8 @@ google_apis::CancelCallback DriveUploaderOnWorker::UploadNewFile(
       const UploadNewFileOptions& options,
       const drive::UploadCompletionCallback& callback,
       const google_apis::ProgressCallback& progress_callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
+
   ui_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&DriveUploaderWrapper::UploadNewFile,
@@ -57,6 +62,8 @@ google_apis::CancelCallback DriveUploaderOnWorker::UploadExistingFile(
       const UploadExistingFileOptions& options,
       const drive::UploadCompletionCallback& callback,
       const google_apis::ProgressCallback& progress_callback) {
+  DCHECK(sequece_checker_.CalledOnValidSequencedThread());
+
   ui_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&DriveUploaderWrapper::UploadExistingFile,

@@ -11,7 +11,6 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
-#include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/profile.h"
@@ -19,11 +18,11 @@
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "components/metrics/metrics_service.h"
 #include "components/variations/variations_associated_data.h"
 
 using base::FieldTrial;
 using base::FieldTrialList;
-using base::SplitStringUsingSubstr;
 using base::StringToInt;
 using std::string;
 using std::vector;
@@ -45,6 +44,7 @@ const char kLocalPredictorUnencryptedSyncOnlyKeyName[] =
 const char kSideEffectFreeWhitelistKeyName[] = "SideEffectFreeWhitelist";
 const char kPrerenderLaunchKeyName[] = "PrerenderLaunch";
 const char kPrerenderAlwaysControlKeyName[] = "PrerenderAlwaysControl";
+const char kPrerenderPrefetchKeyName[] = "PrerenderPrefetch";
 const char kPrerenderQueryPrerenderServiceKeyName[] =
     "PrerenderQueryPrerenderService";
 const char kPrerenderQueryPrerenderServiceCurrentURLKeyName[] =
@@ -58,6 +58,7 @@ const char kPrerenderTTLKeyName[] = "PrerenderTTLSeconds";
 const char kPrerenderPriorityHalfLifeTimeKeyName[] =
     "PrerenderPriorityHalfLifeTimeSeconds";
 const char kMaxConcurrentPrerenderKeyName[] = "MaxConcurrentPrerenders";
+const char kMaxLaunchPrerenderKeyName[] = "MaxLaunchPrerenders";
 const char kSkipFragment[] = "SkipFragment";
 const char kSkipHTTPS[] = "SkipHTTPS";
 const char kSkipWhitelist[] = "SkipWhitelist";
@@ -76,6 +77,7 @@ const char kSkipPrerenderServiceCanadidates[] =
     "SkipPrerenderServiceCandidates";
 const char kDisableSessionStorageNamespaceMerging[] =
     "DisableSessionStorageNamespaceMerging";
+const char kPrerenderCookieStore[] = "PrerenderCookieStore";
 
 void SetupPrerenderFieldTrial() {
   const FieldTrial::Probability divisor = 1000;
@@ -258,7 +260,7 @@ bool IsOmniboxEnabled(Profile* profile) {
     if (switch_value == switches::kPrerenderFromOmniboxSwitchValueDisabled)
       return false;
 
-    DCHECK(switch_value == switches::kPrerenderFromOmniboxSwitchValueAuto);
+    DCHECK_EQ(switches::kPrerenderFromOmniboxSwitchValueAuto, switch_value);
   }
 
   const int group = FieldTrialList::FindValue(kOmniboxTrialName);
@@ -276,13 +278,11 @@ LocalPredictorSpec.
 */
 string GetLocalPredictorSpecValue(string spec_key) {
   vector<string> elements;
-  SplitStringUsingSubstr(
-      FieldTrialList::FindFullName(kLocalPredictorSpecTrialName),
-      ":",
-      &elements);
+  base::SplitString(FieldTrialList::FindFullName(kLocalPredictorSpecTrialName),
+                    ':', &elements);
   for (int i = 0; i < static_cast<int>(elements.size()); i++) {
     vector<string> key_value;
-    SplitStringUsingSubstr(elements[i], "=", &key_value);
+    base::SplitString(elements[i], '=', &key_value);
     if (key_value.size() == 2 && key_value[0] == spec_key)
       return key_value[1];
   }
@@ -302,17 +302,16 @@ bool IsLocalPredictorEnabled() {
 #if defined(OS_ANDROID) || defined(OS_IOS)
   return false;
 #endif
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisablePrerenderLocalPredictor)) {
-    return false;
-  }
-  return GetLocalPredictorSpecValue(kLocalPredictorKeyName) == kEnabledGroup;
+  return
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisablePrerenderLocalPredictor) &&
+      GetLocalPredictorSpecValue(kLocalPredictorKeyName) == kEnabledGroup;
 }
 
 bool DisableLocalPredictorBasedOnSyncAndConfiguration(Profile* profile) {
   return
       GetLocalPredictorSpecValue(kLocalPredictorUnencryptedSyncOnlyKeyName) ==
-      kEnabledGroup &&
+          kEnabledGroup &&
       !IsUnencryptedSyncEnabled(profile);
 }
 
@@ -331,7 +330,14 @@ bool IsLocalPredictorPrerenderLaunchEnabled() {
 }
 
 bool IsLocalPredictorPrerenderAlwaysControlEnabled() {
-  return GetLocalPredictorSpecValue(kPrerenderAlwaysControlKeyName) ==
+  // If we prefetch rather than prerender, we automatically also prerender
+  // as a control group only.
+  return (GetLocalPredictorSpecValue(kPrerenderAlwaysControlKeyName) ==
+          kEnabledGroup) || IsLocalPredictorPrerenderPrefetchEnabled();
+}
+
+bool IsLocalPredictorPrerenderPrefetchEnabled() {
+  return GetLocalPredictorSpecValue(kPrerenderPrefetchKeyName) ==
       kEnabledGroup;
 }
 
@@ -355,9 +361,7 @@ string GetPrerenderServiceURLPrefix() {
   string prefix = chrome_variations::GetVariationParamValue(
       kLocalPredictorSpecTrialName,
       kPrerenderServiceURLPrefixParameterName);
-  if (prefix.empty())
-    prefix = kDefaultPrerenderServiceURLPrefix;
-  return prefix;
+  return prefix.empty() ? kDefaultPrerenderServiceURLPrefix : prefix;
 }
 
 int GetPrerenderServiceBehaviorID() {
@@ -365,30 +369,24 @@ int GetPrerenderServiceBehaviorID() {
   StringToInt(GetLocalPredictorSpecValue(kPrerenderServiceBehaviorIDKeyName),
               &id);
   // The behavior ID must be non-negative.
-  if (id < 0)
-    id = 0;
-  return id;
+  return std::max(id, 0);
 }
 
 int GetPrerenderServiceFetchTimeoutMs() {
   int result;
   StringToInt(GetLocalPredictorSpecValue(kPrerenderServiceFetchTimeoutKeyName),
               &result);
-  // The behavior ID must be non-negative.
-  if (result < kMinPrerenderServiceTimeoutMs ||
-      result > kMaxPrerenderServiceTimeoutMs) {
-    result = kDefaultPrerenderServiceTimeoutMs;
-  }
-  return result;
+  // If the value is outside the valid range, use the default value.
+  return (result < kMinPrerenderServiceTimeoutMs ||
+          result > kMaxPrerenderServiceTimeoutMs) ?
+      kDefaultPrerenderServiceTimeoutMs : result;
 }
 
 int GetLocalPredictorTTLSeconds() {
   int ttl;
   StringToInt(GetLocalPredictorSpecValue(kPrerenderTTLKeyName), &ttl);
   // If the value is outside of 10s or 600s, use a default value of 180s.
-  if (ttl < 10 || ttl > 600)
-    ttl = 180;
-  return ttl;
+  return (ttl < 10 || ttl > 600) ? 180 : ttl;
 }
 
 int GetLocalPredictorPrerenderPriorityHalfLifeTimeSeconds() {
@@ -396,23 +394,24 @@ int GetLocalPredictorPrerenderPriorityHalfLifeTimeSeconds() {
   StringToInt(GetLocalPredictorSpecValue(kPrerenderPriorityHalfLifeTimeKeyName),
               &half_life_time);
   // Sanity check: Ensure the half life time is non-negative.
-  if (half_life_time < 0)
-    half_life_time = 0;
-  return half_life_time;
+  return std::max(half_life_time, 0);
 }
 
 int GetLocalPredictorMaxConcurrentPrerenders() {
   int num_prerenders;
   StringToInt(GetLocalPredictorSpecValue(kMaxConcurrentPrerenderKeyName),
               &num_prerenders);
-  // Sanity check: Ensure the number of prerenders is at least 1.
-  if (num_prerenders < 1)
-    num_prerenders = 1;
-  // Sanity check: Ensure the number of prerenders is at most 10.
-  if (num_prerenders > 10)
-    num_prerenders = 10;
-  return num_prerenders;
-};
+  // Sanity check: Ensure the number of prerenders is between 1 and 10.
+  return std::min(std::max(num_prerenders, 1), 10);
+}
+
+int GetLocalPredictorMaxLaunchPrerenders() {
+  int num_prerenders;
+  StringToInt(GetLocalPredictorSpecValue(kMaxLaunchPrerenderKeyName),
+              &num_prerenders);
+  // Sanity check: Ensure the number of prerenders is between 1 and 10.
+  return std::min(std::max(num_prerenders, 1), 10);
+}
 
 bool SkipLocalPredictorFragment() {
   return GetLocalPredictorSpecValue(kSkipFragment) == kEnabledGroup;
@@ -451,6 +450,11 @@ bool SkipLocalPredictorServiceCandidates() {
 bool ShouldMergeSessionStorageNamespaces() {
   return GetLocalPredictorSpecValue(kDisableSessionStorageNamespaceMerging) !=
       kDisabledGroup;
+}
+
+bool IsPrerenderCookieStoreEnabled() {
+  return GetLocalPredictorSpecValue(kPrerenderCookieStore) != kDisabledGroup &&
+      FieldTrialList::FindFullName(kPrerenderCookieStore) != kDisabledGroup;
 }
 
 }  // namespace prerender

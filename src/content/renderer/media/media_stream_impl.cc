@@ -6,31 +6,28 @@
 
 #include <utility>
 
+#include "base/hash.h"
 #include "base/logging.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/renderer/media/media_stream.h"
-#include "content/renderer/media/media_stream_audio_renderer.h"
 #include "content/renderer/media/media_stream_audio_source.h"
-#include "content/renderer/media/media_stream_dependency_factory.h"
 #include "content/renderer/media/media_stream_dispatcher.h"
 #include "content/renderer/media/media_stream_video_capturer_source.h"
 #include "content/renderer/media/media_stream_video_track.h"
 #include "content/renderer/media/peer_connection_tracker.h"
-#include "content/renderer/media/rtc_video_renderer.h"
+#include "content/renderer/media/webrtc/webrtc_video_capturer_adapter.h"
 #include "content/renderer/media/webrtc_audio_capturer.h"
-#include "content/renderer/media/webrtc_audio_renderer.h"
-#include "content/renderer/media/webrtc_local_audio_renderer.h"
 #include "content/renderer/media/webrtc_logging.h"
 #include "content/renderer/media/webrtc_uma_histograms.h"
 #include "content/renderer/render_thread_impl.h"
-#include "media/base/audio_hardware_config.h"
 #include "third_party/WebKit/public/platform/WebMediaConstraints.h"
+#include "third_party/WebKit/public/platform/WebMediaDeviceInfo.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
-#include "third_party/WebKit/public/web/WebMediaStreamRegistry.h"
 
 namespace content {
 namespace {
@@ -57,21 +54,37 @@ void CopyStreamConstraints(const blink::WebMediaConstraints& constraints,
 
 static int g_next_request_id  = 0;
 
-void GetDefaultOutputDeviceParams(
-    int* output_sample_rate, int* output_buffer_size) {
-  // Fetch the default audio output hardware config.
-  media::AudioHardwareConfig* hardware_config =
-      RenderThreadImpl::current()->GetAudioHardwareConfig();
-  *output_sample_rate = hardware_config->GetOutputSampleRate();
-  *output_buffer_size = hardware_config->GetOutputBufferSize();
-}
-
 }  // namespace
+
+struct MediaStreamImpl::MediaDevicesRequestInfo {
+  MediaDevicesRequestInfo(const blink::WebMediaDevicesRequest& request,
+                          int audio_input_request_id,
+                          int video_input_request_id,
+                          int audio_output_request_id)
+      : request(request),
+        audio_input_request_id(audio_input_request_id),
+        video_input_request_id(video_input_request_id),
+        audio_output_request_id(audio_output_request_id),
+        has_audio_input_returned(false),
+        has_video_input_returned(false),
+        has_audio_output_returned(false) {}
+
+  blink::WebMediaDevicesRequest request;
+  int audio_input_request_id;
+  int video_input_request_id;
+  int audio_output_request_id;
+  bool has_audio_input_returned;
+  bool has_video_input_returned;
+  bool has_audio_output_returned;
+  StreamDeviceInfoArray audio_input_devices;
+  StreamDeviceInfoArray video_input_devices;
+  StreamDeviceInfoArray audio_output_devices;
+};
 
 MediaStreamImpl::MediaStreamImpl(
     RenderView* render_view,
     MediaStreamDispatcher* media_stream_dispatcher,
-    MediaStreamDependencyFactory* dependency_factory)
+    PeerConnectionDependencyFactory* dependency_factory)
     : RenderViewObserver(render_view),
       dependency_factory_(dependency_factory),
       media_stream_dispatcher_(media_stream_dispatcher) {
@@ -185,97 +198,73 @@ void MediaStreamImpl::cancelUserMediaRequest(
   }
 }
 
-blink::WebMediaStream MediaStreamImpl::GetMediaStream(
-    const GURL& url) {
-  return blink::WebMediaStreamRegistry::lookupMediaStreamDescriptor(url);
-}
-
-bool MediaStreamImpl::IsMediaStream(const GURL& url) {
-  blink::WebMediaStream web_stream(
-      blink::WebMediaStreamRegistry::lookupMediaStreamDescriptor(url));
-
-  return (!web_stream.isNull() &&
-      (MediaStream::GetMediaStream(web_stream) != NULL));
-}
-
-scoped_refptr<VideoFrameProvider>
-MediaStreamImpl::GetVideoFrameProvider(
-    const GURL& url,
-    const base::Closure& error_cb,
-    const VideoFrameProvider::RepaintCB& repaint_cb) {
+void MediaStreamImpl::requestMediaDevices(
+    const blink::WebMediaDevicesRequest& media_devices_request) {
+  UpdateWebRTCMethodCount(WEBKIT_GET_MEDIA_DEVICES);
   DCHECK(CalledOnValidThread());
-  blink::WebMediaStream web_stream(GetMediaStream(url));
 
-  if (web_stream.isNull() || !web_stream.extraData())
-    return NULL;  // This is not a valid stream.
+  int audio_input_request_id = g_next_request_id++;
+  int video_input_request_id = g_next_request_id++;
+  int audio_output_request_id = g_next_request_id++;
 
-  DVLOG(1) << "MediaStreamImpl::GetVideoFrameProvider stream:"
-           << base::UTF16ToUTF8(web_stream.id());
+  // |media_devices_request| can't be mocked, so in tests it will be empty (the
+  // underlying pointer is null). In order to use this function in a test we
+  // need to check if it isNull.
+  GURL security_origin;
+  if (!media_devices_request.isNull())
+    security_origin = GURL(media_devices_request.securityOrigin().toString());
 
-  blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
-  web_stream.videoTracks(video_tracks);
-  if (video_tracks.isEmpty() ||
-      !MediaStreamVideoTrack::GetTrack(video_tracks[0])) {
-    return NULL;
-  }
+  DVLOG(1) << "MediaStreamImpl::requestMediaDevices(" << audio_input_request_id
+           << ", " << video_input_request_id << ", " << audio_output_request_id
+           << ", " << security_origin.spec() << ")";
 
-  return new RTCVideoRenderer(video_tracks[0], error_cb, repaint_cb);
+  media_devices_requests_.push_back(new MediaDevicesRequestInfo(
+      media_devices_request,
+      audio_input_request_id,
+      video_input_request_id,
+      audio_output_request_id));
+
+  media_stream_dispatcher_->EnumerateDevices(
+      audio_input_request_id,
+      AsWeakPtr(),
+      MEDIA_DEVICE_AUDIO_CAPTURE,
+      security_origin,
+      true);
+
+  media_stream_dispatcher_->EnumerateDevices(
+      video_input_request_id,
+      AsWeakPtr(),
+      MEDIA_DEVICE_VIDEO_CAPTURE,
+      security_origin,
+      true);
+
+  media_stream_dispatcher_->EnumerateDevices(
+      audio_output_request_id,
+      AsWeakPtr(),
+      MEDIA_DEVICE_AUDIO_OUTPUT,
+      security_origin,
+      true);
 }
 
-scoped_refptr<MediaStreamAudioRenderer>
-MediaStreamImpl::GetAudioRenderer(const GURL& url, int render_frame_id) {
+void MediaStreamImpl::cancelMediaDevicesRequest(
+    const blink::WebMediaDevicesRequest& media_devices_request) {
   DCHECK(CalledOnValidThread());
-  blink::WebMediaStream web_stream(GetMediaStream(url));
+  MediaDevicesRequestInfo* request =
+      FindMediaDevicesRequestInfo(media_devices_request);
+  if (!request)
+    return;
 
-  if (web_stream.isNull() || !web_stream.extraData())
-    return NULL;  // This is not a valid stream.
-
-  DVLOG(1) << "MediaStreamImpl::GetAudioRenderer stream:"
-           << base::UTF16ToUTF8(web_stream.id());
-
-  MediaStream* native_stream = MediaStream::GetMediaStream(web_stream);
-
-  // TODO(tommi): MediaStreams do not have a 'local or not' concept.
-  // Tracks _might_, but even so, we need to fix the data flow so that
-  // it works the same way for all track implementations, local, remote or what
-  // have you.
-  // In this function, we should simply create a renderer object that receives
-  // and mixes audio from all the tracks that belong to the media stream.
-  // We need to remove the |is_local| property from MediaStreamExtraData since
-  // this concept is peerconnection specific (is a previously recorded stream
-  // local or remote?).
-  if (native_stream->is_local()) {
-    // Create the local audio renderer if the stream contains audio tracks.
-    blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
-    web_stream.audioTracks(audio_tracks);
-    if (audio_tracks.isEmpty())
-      return NULL;
-
-    // TODO(xians): Add support for the case where the media stream contains
-    // multiple audio tracks.
-    return CreateLocalAudioRenderer(audio_tracks[0], render_frame_id);
-  }
-
-  webrtc::MediaStreamInterface* stream =
-      MediaStream::GetAdapter(web_stream);
-  if (stream->GetAudioTracks().empty())
-    return NULL;
-
-  // This is a remote WebRTC media stream.
-  WebRtcAudioDeviceImpl* audio_device =
-      dependency_factory_->GetWebRtcAudioDevice();
-
-  // Share the existing renderer if any, otherwise create a new one.
-  scoped_refptr<WebRtcAudioRenderer> renderer(audio_device->renderer());
-  if (!renderer.get()) {
-    renderer = CreateRemoteAudioRenderer(stream, render_frame_id);
-
-    if (renderer.get() && !audio_device->SetAudioRenderer(renderer.get()))
-      renderer = NULL;
-  }
-
-  return renderer.get() ?
-      renderer->CreateSharedAudioRendererProxy(stream) : NULL;
+  // Cancel device enumeration.
+  media_stream_dispatcher_->StopEnumerateDevices(
+      request->audio_input_request_id,
+      AsWeakPtr());
+  media_stream_dispatcher_->StopEnumerateDevices(
+      request->video_input_request_id,
+      AsWeakPtr());
+  media_stream_dispatcher_->StopEnumerateDevices(
+      request->audio_output_request_id,
+      AsWeakPtr());
+  DeleteMediaDevicesRequestInfo(request);
 }
 
 // Callback from MediaStreamDispatcher.
@@ -464,8 +453,7 @@ void MediaStreamImpl::CreateVideoTracks(
                            request->frame,
                            &webkit_source);
     (*webkit_tracks)[i] =
-        request->CreateAndStartVideoTrack(webkit_source, constraints,
-                                          dependency_factory_);
+        request->CreateAndStartVideoTrack(webkit_source, constraints);
   }
 }
 
@@ -527,9 +515,89 @@ void MediaStreamImpl::OnCreateNativeTracksCompleted(
 void MediaStreamImpl::OnDevicesEnumerated(
     int request_id,
     const StreamDeviceInfoArray& device_array) {
-  DVLOG(1) << "MediaStreamImpl::OnDevicesEnumerated("
-           << request_id << ")";
-  NOTIMPLEMENTED();
+  DVLOG(1) << "MediaStreamImpl::OnDevicesEnumerated(" << request_id << ")";
+
+  MediaDevicesRequestInfo* request = FindMediaDevicesRequestInfo(request_id);
+  DCHECK(request);
+
+  if (request_id == request->audio_input_request_id) {
+    request->has_audio_input_returned = true;
+    DCHECK(request->audio_input_devices.empty());
+    request->audio_input_devices = device_array;
+  } else if (request_id == request->video_input_request_id) {
+    request->has_video_input_returned = true;
+    DCHECK(request->video_input_devices.empty());
+    request->video_input_devices = device_array;
+  } else {
+    DCHECK_EQ(request->audio_output_request_id, request_id);
+    request->has_audio_output_returned = true;
+    DCHECK(request->audio_output_devices.empty());
+    request->audio_output_devices = device_array;
+  }
+
+  if (!request->has_audio_input_returned ||
+      !request->has_video_input_returned ||
+      !request->has_audio_output_returned) {
+    // Wait for the rest of the devices to complete.
+    return;
+  }
+
+  // All devices are ready for copying. We use a hashed audio output device id
+  // as the group id for input and output audio devices. If an input device
+  // doesn't have an associated output device, we use the input device's own id.
+  // We don't support group id for video devices, that's left empty.
+  blink::WebVector<blink::WebMediaDeviceInfo>
+      devices(request->audio_input_devices.size() +
+              request->video_input_devices.size() +
+              request->audio_output_devices.size());
+  for (size_t i = 0; i  < request->audio_input_devices.size(); ++i) {
+    const MediaStreamDevice& device = request->audio_input_devices[i].device;
+    DCHECK_EQ(device.type, MEDIA_DEVICE_AUDIO_CAPTURE);
+    std::string group_id = base::UintToString(base::Hash(
+        !device.matched_output_device_id.empty() ?
+            device.matched_output_device_id :
+            device.id));
+    devices[i].initialize(
+        blink::WebString::fromUTF8(device.id),
+        blink::WebMediaDeviceInfo::MediaDeviceKindAudioInput,
+        blink::WebString::fromUTF8(device.name),
+        blink::WebString::fromUTF8(group_id));
+  }
+  size_t offset = request->audio_input_devices.size();
+  for (size_t i = 0; i  < request->video_input_devices.size(); ++i) {
+    const MediaStreamDevice& device = request->video_input_devices[i].device;
+    DCHECK_EQ(device.type, MEDIA_DEVICE_VIDEO_CAPTURE);
+    devices[offset + i].initialize(
+        blink::WebString::fromUTF8(device.id),
+        blink::WebMediaDeviceInfo::MediaDeviceKindVideoInput,
+        blink::WebString::fromUTF8(device.name),
+        blink::WebString());
+  }
+  offset += request->video_input_devices.size();
+  for (size_t i = 0; i  < request->audio_output_devices.size(); ++i) {
+    const MediaStreamDevice& device = request->audio_output_devices[i].device;
+    DCHECK_EQ(device.type, MEDIA_DEVICE_AUDIO_OUTPUT);
+    devices[offset + i].initialize(
+        blink::WebString::fromUTF8(device.id),
+        blink::WebMediaDeviceInfo::MediaDeviceKindAudioOutput,
+        blink::WebString::fromUTF8(device.name),
+        blink::WebString::fromUTF8(base::UintToString(base::Hash(device.id))));
+  }
+
+  EnumerateDevicesSucceded(&request->request, devices);
+
+  // Cancel device enumeration.
+  media_stream_dispatcher_->StopEnumerateDevices(
+      request->audio_input_request_id,
+      AsWeakPtr());
+  media_stream_dispatcher_->StopEnumerateDevices(
+      request->video_input_request_id,
+      AsWeakPtr());
+  media_stream_dispatcher_->StopEnumerateDevices(
+      request->audio_output_request_id,
+      AsWeakPtr());
+
+  DeleteMediaDevicesRequestInfo(request);
 }
 
 void MediaStreamImpl::OnDeviceOpened(
@@ -594,6 +662,12 @@ void MediaStreamImpl::GetUserMediaRequestFailed(
   }
 }
 
+void MediaStreamImpl::EnumerateDevicesSucceded(
+    blink::WebMediaDevicesRequest* request,
+    blink::WebVector<blink::WebMediaDeviceInfo>& devices) {
+  request->requestSucceeded(devices);
+}
+
 const blink::WebMediaStreamSource* MediaStreamImpl::FindLocalSource(
     const StreamDeviceInfo& device) const {
   for (LocalStreamSources::const_iterator it = local_sources_.begin();
@@ -637,6 +711,43 @@ void MediaStreamImpl::DeleteUserMediaRequestInfo(
   for (; it != user_media_requests_.end(); ++it) {
     if ((*it) == request) {
       user_media_requests_.erase(it);
+      return;
+    }
+  }
+  NOTREACHED();
+}
+
+MediaStreamImpl::MediaDevicesRequestInfo*
+MediaStreamImpl::FindMediaDevicesRequestInfo(
+    int request_id) {
+  MediaDevicesRequests::iterator it = media_devices_requests_.begin();
+  for (; it != media_devices_requests_.end(); ++it) {
+    if ((*it)->audio_input_request_id == request_id ||
+        (*it)->video_input_request_id == request_id ||
+        (*it)->audio_output_request_id == request_id) {
+      return (*it);
+    }
+  }
+  return NULL;
+}
+
+MediaStreamImpl::MediaDevicesRequestInfo*
+MediaStreamImpl::FindMediaDevicesRequestInfo(
+    const blink::WebMediaDevicesRequest& request) {
+  MediaDevicesRequests::iterator it = media_devices_requests_.begin();
+  for (; it != media_devices_requests_.end(); ++it) {
+    if ((*it)->request == request)
+      return (*it);
+  }
+  return NULL;
+}
+
+void MediaStreamImpl::DeleteMediaDevicesRequestInfo(
+    MediaDevicesRequestInfo* request) {
+  MediaDevicesRequests::iterator it = media_devices_requests_.begin();
+  for (; it != media_devices_requests_.end(); ++it) {
+    if ((*it) == request) {
+      media_devices_requests_.erase(it);
       return;
     }
   }
@@ -719,66 +830,6 @@ void MediaStreamImpl::StopLocalSource(
   source_impl->StopSource();
 }
 
-scoped_refptr<WebRtcAudioRenderer> MediaStreamImpl::CreateRemoteAudioRenderer(
-    webrtc::MediaStreamInterface* stream,
-    int render_frame_id) {
-  if (stream->GetAudioTracks().empty())
-    return NULL;
-
-  DVLOG(1) << "MediaStreamImpl::CreateRemoteAudioRenderer label:"
-           << stream->label();
-
-  // TODO(tommi): Change the default value of session_id to be
-  // StreamDeviceInfo::kNoId.  Also update AudioOutputDevice etc.
-  int session_id = 0, sample_rate = 0, buffer_size = 0;
-  if (!GetAuthorizedDeviceInfoForAudioRenderer(&session_id,
-                                               &sample_rate,
-                                               &buffer_size)) {
-    GetDefaultOutputDeviceParams(&sample_rate, &buffer_size);
-  }
-
-  return new WebRtcAudioRenderer(
-      stream, RenderViewObserver::routing_id(), render_frame_id,  session_id,
-      sample_rate, buffer_size);
-}
-
-scoped_refptr<WebRtcLocalAudioRenderer>
-MediaStreamImpl::CreateLocalAudioRenderer(
-    const blink::WebMediaStreamTrack& audio_track,
-    int render_frame_id) {
-  DVLOG(1) << "MediaStreamImpl::CreateLocalAudioRenderer";
-
-  int session_id = 0, sample_rate = 0, buffer_size = 0;
-  if (!GetAuthorizedDeviceInfoForAudioRenderer(&session_id,
-                                               &sample_rate,
-                                               &buffer_size)) {
-    GetDefaultOutputDeviceParams(&sample_rate, &buffer_size);
-  }
-
-  // Create a new WebRtcLocalAudioRenderer instance and connect it to the
-  // existing WebRtcAudioCapturer so that the renderer can use it as source.
-  return new WebRtcLocalAudioRenderer(
-      audio_track,
-      RenderViewObserver::routing_id(),
-      render_frame_id,
-      session_id,
-      buffer_size);
-}
-
-bool MediaStreamImpl::GetAuthorizedDeviceInfoForAudioRenderer(
-    int* session_id,
-    int* output_sample_rate,
-    int* output_frames_per_buffer) {
-  DCHECK(CalledOnValidThread());
-  WebRtcAudioDeviceImpl* audio_device =
-      dependency_factory_->GetWebRtcAudioDevice();
-  if (!audio_device)
-    return false;
-
-  return audio_device->GetAuthorizedDeviceInfoForAudioRenderer(
-      session_id, output_sample_rate, output_frames_per_buffer);
-}
-
 MediaStreamImpl::UserMediaRequestInfo::UserMediaRequestInfo(
     int request_id,
     blink::WebFrame* frame,
@@ -816,8 +867,7 @@ void MediaStreamImpl::UserMediaRequestInfo::StartAudioTrack(
 blink::WebMediaStreamTrack
 MediaStreamImpl::UserMediaRequestInfo::CreateAndStartVideoTrack(
     const blink::WebMediaStreamSource& source,
-    const blink::WebMediaConstraints& constraints,
-    MediaStreamDependencyFactory* factory) {
+    const blink::WebMediaConstraints& constraints) {
   DCHECK(source.type() == blink::WebMediaStreamSource::TypeVideo);
   MediaStreamVideoSource* native_source =
       MediaStreamVideoSource::GetVideoSource(source);

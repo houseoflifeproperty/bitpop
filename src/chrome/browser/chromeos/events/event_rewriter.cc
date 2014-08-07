@@ -13,8 +13,8 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
@@ -137,6 +137,7 @@ void UpdateX11EventMask(int ui_flags, unsigned int* x_flags) {
     {ui::EF_ALT_DOWN, Mod1Mask},
     {ui::EF_CAPS_LOCK_DOWN, LockMask},
     {ui::EF_ALTGR_DOWN, Mod5Mask},
+    {ui::EF_COMMAND_DOWN, Mod4Mask},
     {ui::EF_MOD3_DOWN, Mod3Mask},
     {ui::EF_NUMPAD_KEY, Mod2Mask},
     {ui::EF_LEFT_MOUSE_BUTTON, Button1Mask},

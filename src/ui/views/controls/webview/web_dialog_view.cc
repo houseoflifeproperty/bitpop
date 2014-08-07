@@ -18,7 +18,7 @@
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/layout/fill_layout.h"
-#include "ui/views/widget/native_widget_aura.h"
+#include "ui/views/widget/native_widget_private.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
@@ -66,14 +66,14 @@ content::WebContents* WebDialogView::web_contents() {
 ////////////////////////////////////////////////////////////////////////////////
 // WebDialogView, views::View implementation:
 
-gfx::Size WebDialogView::GetPreferredSize() {
+gfx::Size WebDialogView::GetPreferredSize() const {
   gfx::Size out;
   if (delegate_)
     delegate_->GetDialogSize(&out);
   return out;
 }
 
-gfx::Size WebDialogView::GetMinimumSize() {
+gfx::Size WebDialogView::GetMinimumSize() const {
   gfx::Size out;
   if (delegate_)
     delegate_->GetMinimumDialogSize(&out);
@@ -122,6 +122,8 @@ bool WebDialogView::CanClose() {
 // WebDialogView, views::WidgetDelegate implementation:
 
 bool WebDialogView::CanResize() const {
+  if (delegate_)
+    return delegate_->CanResizeDialog();
   return true;
 }
 
@@ -278,14 +280,8 @@ void WebDialogView::HandleKeyboardEvent(content::WebContents* source,
                                         const NativeWebKeyboardEvent& event) {
   if (!event.os_event)
     return;
-  ui::KeyEvent aura_event(event.os_event->native_event(), false);
-  ui::EventHandler* event_handler =
-      GetWidget()->native_widget()->GetEventHandler();
 
-  DCHECK(event_handler);
-  if (event_handler)
-    event_handler->OnKeyEvent(&aura_event);
-
+  GetWidget()->native_widget_private()->RepostNativeEvent(event.os_event);
 }
 
 void WebDialogView::CloseContents(WebContents* source) {

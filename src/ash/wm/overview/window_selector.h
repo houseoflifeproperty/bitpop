@@ -14,68 +14,72 @@
 #include "base/memory/scoped_vector.h"
 #include "base/time/time.h"
 #include "ui/aura/window_observer.h"
+#include "ui/aura/window_tracker.h"
+#include "ui/events/event_handler.h"
+#include "ui/gfx/display_observer.h"
 #include "ui/wm/public/activation_change_observer.h"
 
 namespace aura {
 class RootWindow;
+class Window;
+}
+
+namespace gfx {
+class Rect;
 }
 
 namespace ui {
-class EventHandler;
+class LocatedEvent;
 }
 
 namespace ash {
-class ScopedShowWindow;
-class WindowOverview;
 class WindowSelectorDelegate;
 class WindowSelectorItem;
 class WindowSelectorTest;
+class WindowGrid;
 
-// The WindowSelector allows selecting a window by alt-tabbing (CYCLE mode) or
-// by clicking or tapping on it (OVERVIEW mode). A WindowOverview will be shown
-// in OVERVIEW mode or if the user lingers on a window while alt tabbing.
+// The WindowSelector shows a grid of all of your windows, allowing to select
+// one by clicking or tapping on it.
 class ASH_EXPORT WindowSelector
-    : public aura::WindowObserver,
+    : public ui::EventHandler,
+      public gfx::DisplayObserver,
+      public aura::WindowObserver,
       public aura::client::ActivationChangeObserver {
  public:
   enum Direction {
-    FORWARD,
-    BACKWARD
-  };
-  enum Mode {
-    CYCLE,
-    OVERVIEW
+    LEFT,
+    UP,
+    RIGHT,
+    DOWN
   };
 
   typedef std::vector<aura::Window*> WindowList;
+  typedef ScopedVector<WindowSelectorItem> WindowSelectorItemList;
 
   WindowSelector(const WindowList& windows,
-                 Mode mode,
                  WindowSelectorDelegate* delegate);
   virtual ~WindowSelector();
-
-  // Step to the next window in |direction|.
-  void Step(Direction direction);
-
-  // Choose the currently selected window.
-  void SelectWindow();
-
-  // Choose |window| from the available windows to select.
-  void SelectWindow(aura::Window* window);
 
   // Cancels window selection.
   void CancelSelection();
 
-  Mode mode() { return mode_; }
+  // Called when the last window selector item from a grid is deleted.
+  void OnGridEmpty(WindowGrid* grid);
+
+  // ui::EventHandler:
+  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
+
+  // gfx::DisplayObserver:
+  virtual void OnDisplayAdded(const gfx::Display& display) OVERRIDE;
+  virtual void OnDisplayRemoved(const gfx::Display& display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // aura::WindowObserver:
   virtual void OnWindowAdded(aura::Window* new_window) OVERRIDE;
-  virtual void OnWindowBoundsChanged(aura::Window* window,
-                                     const gfx::Rect& old_bounds,
-                                     const gfx::Rect& new_bounds) OVERRIDE;
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
 
-  // Overridden from aura::client::ActivationChangeObserver:
+  // aura::client::ActivationChangeObserver:
   virtual void OnWindowActivated(aura::Window* gained_active,
                                  aura::Window* lost_active) OVERRIDE;
   virtual void OnAttemptToReactivateWindow(
@@ -88,39 +92,25 @@ class ASH_EXPORT WindowSelector
   // Begins positioning windows such that all windows are visible on the screen.
   void StartOverview();
 
-  // Resets the stored window from RemoveFocusAndSetRestoreWindow to NULL. If
+  // Position all of the windows in the overview.
+  void PositionWindows(bool animate);
+
+  // Hide and track all hidden windows not in the overview item list.
+  void HideAndTrackNonOverviewWindows();
+
   // |focus|, restores focus to the stored window.
   void ResetFocusRestoreWindow(bool focus);
 
-  // The collection of items in the overview wrapped by a helper class which
-  // restores their state and helps transform them to other root windows.
-  ScopedVector<WindowSelectorItem> windows_;
+  // Helper function that moves the selection widget to |direction| on the
+  // corresponding window grid.
+  void Move(Direction direction);
 
   // Tracks observed windows.
   std::set<aura::Window*> observed_windows_;
 
-  // The window selection mode.
-  Mode mode_;
-
-  // An event handler listening for the release of the alt key during alt-tab
-  // cycling.
-  scoped_ptr<ui::EventHandler> event_handler_;
-
-  // The currently selected window being shown (temporarily brought to the front
-  // of the stacking order and made visible).
-  scoped_ptr<ScopedShowWindow> showing_window_;
-
-  scoped_ptr<WindowOverview> window_overview_;
-
-  // The time when window cycling was started.
-  base::Time cycle_start_time_;
-
   // Weak pointer to the selector delegate which will be called when a
   // selection is made.
   WindowSelectorDelegate* delegate_;
-
-  // Index of the currently selected window if the mode is CYCLE.
-  size_t selected_window_;
 
   // A weak pointer to the window which was focused on beginning window
   // selection. If window selection is canceled the focus should be restored to
@@ -130,6 +120,27 @@ class ASH_EXPORT WindowSelector
   // True when performing operations that may cause window activations. This is
   // used to prevent handling the resulting expected activation.
   bool ignore_activations_;
+
+  // List of all the window overview grids, one for each root window.
+  ScopedVector<WindowGrid> grid_list_;
+
+  // Tracks windows which were hidden because they were not part of the
+  // overview.
+  aura::WindowTracker hidden_windows_;
+
+  // Tracks the index of the root window the selection widget is in.
+  size_t selected_grid_index_;
+
+  // The following variables are used for metric collection purposes. All of
+  // them refer to this particular overview session and are not cumulative:
+  // The time when overview was started.
+  base::Time overview_start_time_;
+
+  // The number of arrow key presses.
+  size_t num_key_presses_;
+
+  // The number of items in the overview.
+  size_t num_items_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowSelector);
 };

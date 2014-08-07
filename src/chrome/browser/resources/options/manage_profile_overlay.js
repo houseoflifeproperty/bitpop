@@ -501,6 +501,7 @@ cr.define('options', function() {
      * @private
      */
     prepareForManageDialog_: function() {
+      chrome.send('refreshGaiaPicture');
       var profileInfo = BrowserOptions.getCurrentProfile();
       ManageProfileOverlay.setProfileInfo(profileInfo, 'manage');
       $('manage-profile-overlay-create').hidden = true;
@@ -550,7 +551,8 @@ cr.define('options', function() {
      * Display the "Disconnect Managed Profile" dialog.
      * @private
      */
-    showDisconnectManagedProfileDialog_: function() {
+    showDisconnectManagedProfileDialog_: function(replacements) {
+      loadTimeData.overrideValues(replacements);
       $('manage-profile-overlay-create').hidden = true;
       $('manage-profile-overlay-manage').hidden = true;
       $('manage-profile-overlay-delete').hidden = true;

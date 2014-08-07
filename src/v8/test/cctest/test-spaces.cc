@@ -27,8 +27,8 @@
 
 #include <stdlib.h>
 
-#include "v8.h"
-#include "cctest.h"
+#include "src/v8.h"
+#include "test/cctest/cctest.h"
 
 using namespace v8::internal;
 
@@ -169,7 +169,7 @@ static void VerifyMemoryChunk(Isolate* isolate,
                                                               commit_area_size,
                                                               executable,
                                                               NULL);
-  size_t alignment = code_range->exists() ?
+  size_t alignment = code_range != NULL && code_range->valid() ?
                      MemoryChunk::kAlignment : OS::CommitPageSize();
   size_t reserved_size = ((executable == EXECUTABLE))
       ? RoundUp(header_size + guard_size + reserve_area_size + guard_size,
@@ -221,7 +221,7 @@ TEST(MemoryChunk) {
 
     // With CodeRange.
     CodeRange* code_range = new CodeRange(isolate);
-    const int code_range_size = 32 * MB;
+    const size_t code_range_size = 32 * MB;
     if (!code_range->SetUp(code_range_size)) return;
 
     VerifyMemoryChunk(isolate,
@@ -393,7 +393,7 @@ TEST(LargeObjectSpace) {
       if (allocation.IsRetry()) break;
     }
     CHECK(lo->Available() < available);
-  };
+  }
 
   CHECK(!lo->IsEmpty());
 
@@ -408,6 +408,8 @@ TEST(SizeOfFirstPageIsLargeEnough) {
 
   // Freshly initialized VM gets by with one page per space.
   for (int i = FIRST_PAGED_SPACE; i <= LAST_PAGED_SPACE; i++) {
+    // Debug code can be very large, so skip CODE_SPACE if we are generating it.
+    if (i == CODE_SPACE && i::FLAG_debug_code) continue;
     CHECK_EQ(1, isolate->heap()->paged_space(i)->CountTotalPages());
   }
 
@@ -415,6 +417,8 @@ TEST(SizeOfFirstPageIsLargeEnough) {
   HandleScope scope(isolate);
   CompileRun("/*empty*/");
   for (int i = FIRST_PAGED_SPACE; i <= LAST_PAGED_SPACE; i++) {
+    // Debug code can be very large, so skip CODE_SPACE if we are generating it.
+    if (i == CODE_SPACE && i::FLAG_debug_code) continue;
     CHECK_EQ(1, isolate->heap()->paged_space(i)->CountTotalPages());
   }
 

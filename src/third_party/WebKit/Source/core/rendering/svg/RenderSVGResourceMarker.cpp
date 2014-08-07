@@ -23,6 +23,7 @@
 
 #include "core/rendering/svg/RenderSVGResourceMarker.h"
 
+#include "core/rendering/PaintInfo.h"
 #include "core/rendering/svg/RenderSVGContainer.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
@@ -77,7 +78,7 @@ void RenderSVGResourceMarker::applyViewportClip(PaintInfo& paintInfo)
 
 FloatRect RenderSVGResourceMarker::markerBoundaries(const AffineTransform& markerTransformation) const
 {
-    FloatRect coordinates = RenderSVGContainer::repaintRectInLocalCoordinates();
+    FloatRect coordinates = RenderSVGContainer::paintInvalidationRectInLocalCoordinates();
 
     // Map repaint rect into parent coordinate space, in which the marker boundaries have to be evaluated
     coordinates = localToParentTransform().mapRect(coordinates);

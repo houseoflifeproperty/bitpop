@@ -130,8 +130,8 @@ public class AwShellActivity extends Activity {
         final AwSettings awSettings = new AwSettings(this /*context*/,
                 false /*isAccessFromFileURLsGrantedByDefault*/, true /*supportsLegacyQuirks*/);
         testContainerView.initialize(new AwContents(mBrowserContext, testContainerView,
-                testContainerView.getInternalAccessDelegate(),
-                awContentsClient, awSettings));
+                testContainerView.getContext(), testContainerView.getInternalAccessDelegate(),
+                testContainerView.getNativeGLDelegate(), awContentsClient, awSettings));
         testContainerView.getAwContents().getSettings().setJavaScriptEnabled(true);
         if (mDevToolsServer == null) {
             mDevToolsServer = new AwDevToolsServer();

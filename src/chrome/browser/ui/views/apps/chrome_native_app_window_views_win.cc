@@ -26,6 +26,7 @@
 #include "chrome/common/chrome_icon_resources_win.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "ui/aura/remote_window_tree_host_win.h"
@@ -34,86 +35,33 @@
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/win/hwnd_util.h"
 
-namespace {
-
-void CreateIconAndSetRelaunchDetails(
-    const base::FilePath& web_app_path,
-    const base::FilePath& icon_file,
-    const web_app::ShortcutInfo& shortcut_info,
-    const HWND hwnd) {
-  DCHECK(content::BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
-
-  // Set the relaunch data so "Pin this program to taskbar" has the app's
-  // information.
-  CommandLine command_line = ShellIntegration::CommandLineArgsForLauncher(
-      shortcut_info.url,
-      shortcut_info.extension_id,
-      shortcut_info.profile_path);
-
-  base::FilePath chrome_exe;
-  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
-    NOTREACHED();
-    return;
-  }
-  command_line.SetProgram(chrome_exe);
-  ui::win::SetRelaunchDetailsForWindow(command_line.GetCommandLineString(),
-      shortcut_info.title, hwnd);
-
-  if (!base::PathExists(web_app_path) &&
-      !base::CreateDirectory(web_app_path)) {
-    return;
-  }
-
-  ui::win::SetAppIconForWindow(icon_file.value(), hwnd);
-  web_app::internals::CheckAndSaveIcon(icon_file, shortcut_info.favicon);
-}
-
-}  // namespace
-
 ChromeNativeAppWindowViewsWin::ChromeNativeAppWindowViewsWin()
     : weak_ptr_factory_(this), glass_frame_view_(NULL) {
 }
 
 void ChromeNativeAppWindowViewsWin::ActivateParentDesktopIfNecessary() {
-  if (!ash::Shell::HasInstance())
-    return;
-
-  views::Widget* widget =
-      implicit_cast<views::WidgetDelegate*>(this)->GetWidget();
-  chrome::HostDesktopType host_desktop_type =
-      chrome::GetHostDesktopTypeForNativeWindow(widget->GetNativeWindow());
   // Only switching into Ash from Native is supported. Tearing the user out of
   // Metro mode can only be done by launching a process from Metro mode itself.
   // This is done for launching apps, but not regular activations.
-  if (host_desktop_type == chrome::HOST_DESKTOP_TYPE_ASH &&
+  if (IsRunningInAsh() &&
       chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_NATIVE) {
     chrome::ActivateMetroChrome();
   }
 }
 
-void ChromeNativeAppWindowViewsWin::OnShortcutInfoLoaded(
-    const web_app::ShortcutInfo& shortcut_info) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-
-  HWND hwnd = GetNativeAppWindowHWND();
-
-  // Set window's icon to the one we're about to create/update in the web app
-  // path. The icon cache will refresh on icon creation.
-  base::FilePath web_app_path = web_app::GetWebAppDataDirectory(
-      shortcut_info.profile_path, shortcut_info.extension_id,
-      shortcut_info.url);
-  base::FilePath icon_file = web_app_path
-      .Append(web_app::internals::GetSanitizedFileName(shortcut_info.title))
-      .ReplaceExtension(FILE_PATH_LITERAL(".ico"));
-
-  content::BrowserThread::PostBlockingPoolTask(
-      FROM_HERE,
-      base::Bind(&CreateIconAndSetRelaunchDetails,
-                 web_app_path, icon_file, shortcut_info, hwnd));
-}
-
 HWND ChromeNativeAppWindowViewsWin::GetNativeAppWindowHWND() const {
   return views::HWNDForWidget(widget()->GetTopLevelWidget());
+}
+
+bool ChromeNativeAppWindowViewsWin::IsRunningInAsh() {
+  if (!ash::Shell::HasInstance())
+    return false;
+
+  views::Widget* widget =
+      implicit_cast<views::WidgetDelegate*>(this)->GetWidget();
+  chrome::HostDesktopType host_desktop_type =
+      chrome::GetHostDesktopTypeForNativeWindow(widget->GetNativeWindow());
+  return host_desktop_type == chrome::HOST_DESKTOP_TYPE_ASH;
 }
 
 void ChromeNativeAppWindowViewsWin::EnsureCaptionStyleSet() {
@@ -175,13 +123,9 @@ void ChromeNativeAppWindowViewsWin::InitializeDefaultWindow(
                                                 profile->GetPath());
   ui::win::SetAppIdForWindow(app_model_id_, hwnd);
 
-  web_app::UpdateShortcutInfoAndIconForApp(
-      extension,
-      profile,
-      base::Bind(&ChromeNativeAppWindowViewsWin::OnShortcutInfoLoaded,
-                 weak_ptr_factory_.GetWeakPtr()));
+  web_app::UpdateRelaunchDetailsForApp(profile, extension, hwnd);
 
-  if (!create_params.transparent_background)
+  if (!create_params.transparent_background && !IsRunningInAsh())
     EnsureCaptionStyleSet();
   UpdateShelfMenu();
 }
@@ -231,7 +175,8 @@ void ChromeNativeAppWindowViewsWin::UpdateShelfMenu() {
     return;
 
   // Add item to install ephemeral apps.
-  if (extension->is_ephemeral()) {
+  if (extensions::util::IsEphemeralApp(extension->id(),
+                                       app_window()->browser_context())) {
     scoped_refptr<ShellLinkItem> link(new ShellLinkItem());
     link->set_title(l10n_util::GetStringUTF16(IDS_APP_INSTALL_TITLE));
     link->set_icon(chrome_path.value(),
@@ -246,5 +191,6 @@ void ChromeNativeAppWindowViewsWin::UpdateShelfMenu() {
     jumplist_updater.AddTasks(items);
   }
 
+  // Note that an empty jumplist must still be committed to clear all items.
   jumplist_updater.CommitUpdate();
 }

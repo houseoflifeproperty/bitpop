@@ -10,8 +10,8 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/google/google_util.h"
-#include "chrome/browser/metrics/metrics_service.h"
+#include "chrome/browser/google/google_brand.h"
+#include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
 #include "chrome/browser/omaha_query_params/omaha_query_params.h"
 #include "net/base/escape.h"
 
@@ -91,8 +91,8 @@ bool ManifestFetchData::AddExtension(const std::string& id,
   if (base_url_.DomainIs("google.com")) {
 #if defined(GOOGLE_CHROME_BUILD)
     std::string brand;
-    google_util::GetBrand(&brand);
-    if (!brand.empty() && !google_util::IsOrganic(brand))
+    google_brand::GetBrand(&brand);
+    if (!brand.empty() && !google_brand::IsOrganic(brand))
       parts.push_back("brand=" + brand);
 #endif
 
@@ -103,7 +103,7 @@ bool ManifestFetchData::AddExtension(const std::string& id,
       if (ping_data->rollcall_days == kNeverPinged ||
           ping_data->rollcall_days > 0) {
         ping_value += "r=" + base::IntToString(ping_data->rollcall_days);
-        if (MetricsServiceHelper::IsMetricsReportingEnabled()) {
+        if (ChromeMetricsServiceAccessor::IsMetricsReportingEnabled()) {
           ping_value += "&e=" + std::string(ping_data->is_enabled ? "1" : "0");
         }
         pings_[id].rollcall_days = ping_data->rollcall_days;

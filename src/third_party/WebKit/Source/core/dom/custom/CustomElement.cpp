@@ -31,9 +31,10 @@
 #include "config.h"
 #include "core/dom/custom/CustomElement.h"
 
-#include "HTMLNames.h"
-#include "MathMLNames.h"
-#include "SVGNames.h"
+#include "core/HTMLNames.h"
+#include "core/MathMLNames.h"
+#include "core/SVGNames.h"
+#include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/custom/CustomElementObserver.h"
 #include "core/dom/custom/CustomElementScheduler.h"
@@ -68,12 +69,14 @@ bool CustomElement::isValidName(const AtomicString& name, NameSet validNames)
         DEFINE_STATIC_LOCAL(Vector<AtomicString>, reservedNames, ());
         if (reservedNames.isEmpty()) {
             reservedNames.append(MathMLNames::annotation_xmlTag.localName());
+#if ENABLE(SVG_FONTS)
             reservedNames.append(SVGNames::font_faceTag.localName());
             reservedNames.append(SVGNames::font_face_srcTag.localName());
             reservedNames.append(SVGNames::font_face_uriTag.localName());
             reservedNames.append(SVGNames::font_face_formatTag.localName());
             reservedNames.append(SVGNames::font_face_nameTag.localName());
             reservedNames.append(SVGNames::missing_glyphTag.localName());
+#endif
         }
 
         if (kNotFound == reservedNames.find(name))

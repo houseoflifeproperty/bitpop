@@ -7,7 +7,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "content/public/renderer/content_renderer_client.h"
 
 namespace blink {
@@ -47,8 +46,6 @@ class ShellContentRendererClient : public ContentRendererClient {
       double sample_rate) OVERRIDE;
   virtual blink::WebClipboard* OverrideWebClipboard() OVERRIDE;
   virtual blink::WebThemeEngine* OverrideThemeEngine() OVERRIDE;
-  virtual bool AllowBrowserPlugin(
-      blink::WebPluginContainer* container) OVERRIDE;
 
  private:
   void WebTestProxyCreated(RenderView* render_view, WebTestProxyBase* proxy);

@@ -13,6 +13,10 @@
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/stl_util.h"
+#include "crypto/rsa_private_key.h"
+#include "net/cert/x509_util_nss.h"
 
 namespace base {
 class FilePath;
@@ -26,6 +30,45 @@ namespace chromeos {
 
 class OwnerKeyUtilTest;
 
+class PublicKey : public base::RefCountedThreadSafe<PublicKey> {
+ public:
+  PublicKey();
+
+  std::vector<uint8>& data() { return data_; }
+
+  bool is_loaded() const { return !data_.empty(); }
+
+  std::string as_string() {
+    return std::string(reinterpret_cast<const char*>(vector_as_array(&data_)),
+                       data_.size());
+  }
+
+ private:
+  friend class base::RefCountedThreadSafe<PublicKey>;
+
+  virtual ~PublicKey();
+
+  std::vector<uint8> data_;
+
+  DISALLOW_COPY_AND_ASSIGN(PublicKey);
+};
+
+class PrivateKey : public base::RefCountedThreadSafe<PrivateKey> {
+ public:
+  explicit PrivateKey(crypto::RSAPrivateKey* key);
+
+  crypto::RSAPrivateKey* key() { return key_.get(); }
+
+ private:
+  friend class base::RefCountedThreadSafe<PrivateKey>;
+
+  virtual ~PrivateKey();
+
+  scoped_ptr<crypto::RSAPrivateKey> key_;
+
+  DISALLOW_COPY_AND_ASSIGN(PrivateKey);
+};
+
 class OwnerKeyUtil : public base::RefCountedThreadSafe<OwnerKeyUtil> {
  public:
   // Creates an OwnerKeyUtil instance.
@@ -38,8 +81,18 @@ class OwnerKeyUtil : public base::RefCountedThreadSafe<OwnerKeyUtil> {
   // Looks for the private key associated with |key| in the default slot,
   // and returns it if it can be found.  Returns NULL otherwise.
   // Caller takes ownership.
+  //
+  // TODO (ygorshenin@): this function is deprecated and should be
+  // removed, see crbug.com/372316.
   virtual crypto::RSAPrivateKey* FindPrivateKey(
       const std::vector<uint8>& key) = 0;
+
+  // Looks for the private key associated with |key| in the |slot|
+  // and returns it if it can be found.  Returns NULL otherwise.
+  // Caller takes ownership.
+  virtual crypto::RSAPrivateKey* FindPrivateKeyInSlot(
+      const std::vector<uint8>& key,
+      PK11SlotInfo* slot) = 0;
 
   // Checks whether the public key is present in the file system.
   virtual bool IsPublicKeyPresent() = 0;
@@ -63,6 +116,9 @@ class OwnerKeyUtilImpl : public OwnerKeyUtil {
   virtual bool ImportPublicKey(std::vector<uint8>* output) OVERRIDE;
   virtual crypto::RSAPrivateKey* FindPrivateKey(
       const std::vector<uint8>& key) OVERRIDE;
+  virtual crypto::RSAPrivateKey* FindPrivateKeyInSlot(
+      const std::vector<uint8>& key,
+      PK11SlotInfo* slot) OVERRIDE;
   virtual bool IsPublicKeyPresent() OVERRIDE;
 
  protected:

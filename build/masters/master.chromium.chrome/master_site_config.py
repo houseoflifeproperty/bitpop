@@ -11,3 +11,4 @@ class ChromiumChrome(Master.Master1):
   master_port = 8015
   slave_port = 8115
   master_port_alt = 8215
+  buildbot_url = 'http://build.chromium.org/p/chromium.chrome/'

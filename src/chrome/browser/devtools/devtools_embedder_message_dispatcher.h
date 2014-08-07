@@ -10,6 +10,7 @@
 
 #include "base/callback.h"
 #include "ui/gfx/insets.h"
+#include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
 namespace base {
@@ -30,8 +31,7 @@ class DevToolsEmbedderMessageDispatcher {
 
     virtual void ActivateWindow() = 0;
     virtual void CloseWindow() = 0;
-    virtual void SetContentsInsets(
-        int top, int left, int bottom, int right) = 0;
+    virtual void SetInspectedPageBounds(const gfx::Rect& rect) = 0;
     virtual void SetContentsResizingStrategy(
         const gfx::Insets& insets, const gfx::Size& min_size) = 0;
     virtual void InspectElementCompleted() = 0;
@@ -61,9 +61,9 @@ class DevToolsEmbedderMessageDispatcher {
     virtual void ResetZoom() = 0;
     virtual void OpenUrlOnRemoteDeviceAndInspect(const std::string& browser_id,
                                                  const std::string& url) = 0;
-    virtual void StartRemoteDevicesListener() = 0;
-    virtual void StopRemoteDevicesListener() = 0;
-    virtual void EnableRemoteDeviceCounter(bool enable) = 0;
+
+    virtual void Subscribe(const std::string& event_type) = 0;
+    virtual void Unsubscribe(const std::string& event_type) = 0;
   };
 
   virtual ~DevToolsEmbedderMessageDispatcher() {}

@@ -26,7 +26,6 @@ class CC_EXPORT DirectRenderer : public Renderer {
  public:
   virtual ~DirectRenderer();
 
-  virtual bool CanReadPixels() const OVERRIDE;
   virtual void DecideRenderPassAllocationsForFrame(
       const RenderPassList& render_passes_in_draw_order) OVERRIDE;
   virtual bool HasAllocatedResourcesForTesting(RenderPass::Id id) const
@@ -92,8 +91,6 @@ class CC_EXPORT DirectRenderer : public Renderer {
   void DrawRenderPass(DrawingFrame* frame, const RenderPass* render_pass);
   bool UseRenderPass(DrawingFrame* frame, const RenderPass* render_pass);
 
-  void RunOnDemandRasterTask(Task* on_demand_raster_task);
-
   virtual void BindFramebufferToOutputSurface(DrawingFrame* frame) = 0;
   virtual bool BindFramebufferToTexture(DrawingFrame* frame,
                                         const ScopedResource* resource,
@@ -134,8 +131,6 @@ class CC_EXPORT DirectRenderer : public Renderer {
 
  private:
   gfx::Vector2d enlarge_pass_texture_amount_;
-
-  NamespaceToken on_demand_task_namespace_;
 
   DISALLOW_COPY_AND_ASSIGN(DirectRenderer);
 };

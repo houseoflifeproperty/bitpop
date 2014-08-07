@@ -37,15 +37,17 @@ class ProfileSyncComponentsFactoryMock : public ProfileSyncComponentsFactory {
                    browser_sync::DataTypeManagerObserver* observer,
                    browser_sync::FailedDataTypesHandler*
                        failed_datatypes_handler));
-  MOCK_METHOD3(CreateSyncBackendHost,
+  MOCK_METHOD5(CreateSyncBackendHost,
                browser_sync::SyncBackendHost*(
                    const std::string& name,
                    Profile* profile,
-                   const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs));
+                   invalidation::InvalidationService* invalidator,
+                   const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
+                   const base::FilePath& sync_folder));
   MOCK_METHOD1(GetSyncableServiceForType,
                base::WeakPtr<syncer::SyncableService>(syncer::ModelType));
-  virtual scoped_ptr<syncer::AttachmentStore>
-      CreateCustomAttachmentStoreForType(syncer::ModelType type) OVERRIDE;
+  virtual scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
+      syncer::AttachmentService::Delegate* delegate) OVERRIDE;
   MOCK_METHOD2(CreateBookmarkSyncComponents,
       SyncComponents(ProfileSyncService* profile_sync_service,
                      browser_sync::DataTypeErrorHandler* error_handler));

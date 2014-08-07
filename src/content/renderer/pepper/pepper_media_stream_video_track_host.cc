@@ -225,7 +225,9 @@ void PepperMediaStreamVideoTrackHost::FrameDeliverer::DeliverFrameOnIO(
      const scoped_refptr<media::VideoFrame>& frame,
      const media::VideoCaptureFormat& format) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
-  new_frame_callback_.Run(frame, format);
+  // The time when this frame is generated is unknown so give a null value to
+  // |estimated_capture_time|.
+  new_frame_callback_.Run(frame, format, base::TimeTicks());
 }
 
 PepperMediaStreamVideoTrackHost::PepperMediaStreamVideoTrackHost(
@@ -381,7 +383,8 @@ int32_t PepperMediaStreamVideoTrackHost::SendFrameToTrack(int32_t index) {
 
 void PepperMediaStreamVideoTrackHost::OnVideoFrame(
     const scoped_refptr<VideoFrame>& frame,
-    const media::VideoCaptureFormat& format) {
+    const media::VideoCaptureFormat& format,
+    const base::TimeTicks& estimated_capture_time) {
   DCHECK(frame);
   // TODO(penghuang): Check |frame->end_of_stream()| and close the track.
   PP_VideoFrame_Format ppformat = ToPpapiFormat(frame->format());
@@ -466,10 +469,10 @@ void PepperMediaStreamVideoTrackHost::DidConnectPendingHostToResource() {
 int32_t PepperMediaStreamVideoTrackHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperMediaStreamVideoTrackHost, msg)
-  PPAPI_DISPATCH_HOST_RESOURCE_CALL(
-      PpapiHostMsg_MediaStreamVideoTrack_Configure, OnHostMsgConfigure)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_BEGIN_MESSAGE_MAP(PepperMediaStreamVideoTrackHost, msg)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL(
+        PpapiHostMsg_MediaStreamVideoTrack_Configure, OnHostMsgConfigure)
+  PPAPI_END_MESSAGE_MAP()
   return PepperMediaStreamTrackHostBase::OnResourceMessageReceived(msg,
                                                                    context);
 }

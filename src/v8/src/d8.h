@@ -6,12 +6,12 @@
 #define V8_D8_H_
 
 #ifndef V8_SHARED
-#include "allocation.h"
-#include "hashmap.h"
-#include "smart-pointers.h"
-#include "v8.h"
+#include "src/allocation.h"
+#include "src/hashmap.h"
+#include "src/smart-pointers.h"
+#include "src/v8.h"
 #else
-#include "../include/v8.h"
+#include "include/v8.h"
 #endif  // !V8_SHARED
 
 namespace v8 {
@@ -195,13 +195,10 @@ class BinaryResource : public v8::String::ExternalAsciiStringResource {
 class ShellOptions {
  public:
   ShellOptions() :
-#ifndef V8_SHARED
-     num_parallel_files(0),
-     parallel_files(NULL),
-#endif  // !V8_SHARED
      script_executed(false),
      last_run(true),
      send_idle_notification(false),
+     invoke_weak_callbacks(false),
      stress_opt(false),
      stress_deopt(false),
      interactive_shell(false),
@@ -214,19 +211,17 @@ class ShellOptions {
      icu_data_file(NULL) { }
 
   ~ShellOptions() {
-#ifndef V8_SHARED
-    delete[] parallel_files;
-#endif  // !V8_SHARED
     delete[] isolate_sources;
   }
 
-#ifndef V8_SHARED
-  int num_parallel_files;
-  char** parallel_files;
-#endif  // !V8_SHARED
+  bool use_interactive_shell() {
+    return (interactive_shell || !script_executed) && !test_shell;
+  }
+
   bool script_executed;
   bool last_run;
   bool send_idle_notification;
+  bool invoke_weak_callbacks;
   bool stress_opt;
   bool stress_deopt;
   bool interactive_shell;
@@ -270,13 +265,12 @@ class Shell : public i::AllStatic {
                                int max,
                                size_t buckets);
   static void AddHistogramSample(void* histogram, int sample);
-  static void MapCounters(const char* name);
+  static void MapCounters(v8::Isolate* isolate, const char* name);
 
   static Local<Object> DebugMessageDetails(Isolate* isolate,
                                            Handle<String> message);
   static Local<Value> DebugCommandToJSONRequest(Isolate* isolate,
                                                 Handle<String> command);
-  static void DispatchDebugMessages();
 
   static void PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& args);
 #endif  // !V8_SHARED

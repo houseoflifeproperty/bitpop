@@ -25,7 +25,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_change_processor.h"
@@ -229,7 +229,6 @@ TEST_F(ChromeNotifierServiceTest, NotificationToSyncDataToNotification) {
 
 // Model assocation:  We have no local data, and no remote data.
 TEST_F(ChromeNotifierServiceTest, ModelAssocBothEmpty) {
-
   ChromeNotifierService notifier(profile_.get(), notification_manager());
 
   notifier.MergeDataAndStartSyncing(
@@ -588,13 +587,7 @@ TEST_F(ChromeNotifierServiceTest, ServiceEnabledTest) {
   EXPECT_EQ(notification_manager()->dismissed_id(), std::string(kKey1));
 }
 
-// http://crbug.com/341326
-#if defined(TOOLKIT_GTK)
-#define MAYBE_AddNewSendingServicesTest DISABLED_AddNewSendingServicesTest
-#else
-#define MAYBE_AddNewSendingServicesTest AddNewSendingServicesTest
-#endif
-TEST_F(ChromeNotifierServiceTest, MAYBE_AddNewSendingServicesTest) {
+TEST_F(ChromeNotifierServiceTest, AddNewSendingServicesTest) {
   // This test will see if we get a new sending service after the first
   // notification for that service.
   ChromeNotifierService notifier(profile_.get(), notification_manager());
@@ -687,13 +680,7 @@ TEST_F(ChromeNotifierServiceTest, CheckInitializedServicesTest) {
   EXPECT_EQ(0U, notification_manager()->added_notifications());
 }
 
-#if defined(TOOLKIT_GTK)
-// TODO(petewil): crbug.com/358031
-#define MAYBE_SetAddedAppIdsTest DISABLED_SetAddedAppIdsTest
-#else
-#define MAYBE_SetAddedAppIdsTest SetAddedAppIdsTest
-#endif
-TEST_F(ChromeNotifierServiceTest, MAYBE_SetAddedAppIdsTest) {
+TEST_F(ChromeNotifierServiceTest, SetAddedAppIdsTest) {
   ChromeNotifierService notifier(profile_.get(), notification_manager());
   notifier.set_avoid_bitmap_fetching_for_test(true);
 

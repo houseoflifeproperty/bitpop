@@ -210,6 +210,7 @@ class TestGitCl(TestCase):
          (('', None), 0)),
         ((['git', 'rev-parse', '--show-cdup'],), ''),
         ((['git', 'svn', 'info'],), ''),
+        ((['git', 'config', 'rietveld.project'],), ''),
         ((['git',
            'config', 'branch.master.rietveldissue', '1'],), ''),
         ((['git', 'config', 'branch.master.rietveldserver',
@@ -588,7 +589,7 @@ class TestGitCl(TestCase):
            description)
           ]
     calls += [
-        ((['git', 'rev-list', 'origin/master...'],), ''),
+        ((['git', 'rev-list', 'origin/master..'],), ''),
         ((['git', 'config', 'rietveld.cc'],), '')
         ]
     receive_pack = '--receive-pack=git receive-pack '
@@ -686,6 +687,8 @@ class TestGitCl(TestCase):
            'rietveld.cpplint-regex'],), ''),
         ((['git', 'config', '--unset-all',
            'rietveld.cpplint-ignore-regex'],), ''),
+        ((['git', 'config', '--unset-all',
+           'rietveld.project'],), ''),
         ((['git', 'config', 'gerrit.host',
            'gerrit.chromium.org'],), ''),
         # DownloadHooks(False)

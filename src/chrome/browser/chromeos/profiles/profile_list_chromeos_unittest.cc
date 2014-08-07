@@ -9,7 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chromeos/login/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/avatar_menu.h"
@@ -63,10 +63,6 @@ class ProfileListChromeOSTest : public testing::Test {
 
     // AvatarMenu and multiple profiles works after user logged in.
     manager_.SetLoggedIn(true);
-
-    // We only instantiate UserMenuModel if multi-profile mode is enabled.
-    CommandLine* cl = CommandLine::ForCurrentProcess();
-    cl->AppendSwitch(switches::kMultiProfiles);
 
     // Initialize the UserManager singleton to a fresh FakeUserManager instance.
     user_manager_enabler_.reset(

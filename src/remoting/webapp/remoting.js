@@ -69,6 +69,8 @@ remoting.init = function() {
   if (remoting.isAppsV2) {
     remoting.identity = new remoting.Identity(consentRequired_);
     remoting.fullscreen = new remoting.FullscreenAppsV2();
+    remoting.windowFrame = new remoting.WindowFrame(
+        document.getElementById('title-bar'));
   } else {
     remoting.oauth2 = new remoting.OAuth2();
     if (!remoting.oauth2.isAuthenticated()) {
@@ -175,28 +177,6 @@ function isIT2MeSupported_() {
   // Currently, IT2Me on Chromebooks is not supported.
   return !remoting.runningOnChromeOS();
 }
-
-/**
- * Create an instance of the NPAPI plugin.
- * @param {Element} container The element to add the plugin to.
- * @return {remoting.HostPlugin} The new plugin instance or null if it failed to
- *     load.
- */
-remoting.createNpapiPlugin = function(container) {
-  var plugin = document.createElement('embed');
-  plugin.type = remoting.settings.PLUGIN_MIMETYPE;
-  // Hiding the plugin means it doesn't load, so make it size zero instead.
-  plugin.width = 0;
-  plugin.height = 0;
-
-  // Verify if the plugin was loaded successfully.
-  if (plugin.hasOwnProperty('REQUESTED_ACCESS_CODE')) {
-    container.appendChild(plugin);
-    return /** @type {remoting.HostPlugin} */ (plugin);
-  }
-
-  return null;
-};
 
 /**
  * Returns true if the current platform is fully supported. It's only used when
@@ -321,6 +301,18 @@ remoting.getExtensionInfo = function() {
   } else {
     return 'Failed to get product version. Corrupt manifest?';
   }
+};
+
+/**
+ * Returns Chrome version.
+ * @return {string?}
+ */
+remoting.getChromeVersion = function() {
+  var match = new RegExp('Chrome/([0-9.]*)').exec(navigator.userAgent);
+  if (match && (match.length >= 2)) {
+    return match[1];
+  }
+  return null;
 };
 
 /**

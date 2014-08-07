@@ -66,7 +66,8 @@ SynchronousCompositorImpl::SynchronousCompositorImpl(WebContents* contents)
     : compositor_client_(NULL),
       output_surface_(NULL),
       contents_(contents),
-      input_handler_(NULL) {
+      input_handler_(NULL),
+      weak_ptr_factory_(this) {
   DCHECK(contents);
 }
 
@@ -88,17 +89,17 @@ void SynchronousCompositor::SetGpuService(
   g_factory.Get().SetDeferredGpuService(service);
 }
 
-bool SynchronousCompositorImpl::InitializeHwDraw(
-    scoped_refptr<gfx::GLSurface> surface) {
+// static
+void SynchronousCompositor::SetRecordFullDocument(bool record_full_document) {
+  g_factory.Get().SetRecordFullDocument(record_full_document);
+}
+
+bool SynchronousCompositorImpl::InitializeHwDraw() {
   DCHECK(CalledOnValidThread());
   DCHECK(output_surface_);
 
-  // Create contexts in this order so that the share group gets passed
-  // along correctly.
-  scoped_refptr<cc::ContextProvider> offscreen_context =
-      g_factory.Get().GetOffscreenContextProviderForCompositorThread();
   scoped_refptr<cc::ContextProvider> onscreen_context =
-  g_factory.Get().CreateOnscreenContextProviderForCompositorThread(surface);
+      g_factory.Get().CreateOnscreenContextProviderForCompositorThread();
 
   bool success = output_surface_->InitializeHwDraw(onscreen_context);
 
@@ -114,24 +115,48 @@ void SynchronousCompositorImpl::ReleaseHwDraw() {
   g_factory.Get().CompositorReleasedHardwareDraw();
 }
 
-bool SynchronousCompositorImpl::DemandDrawHw(
-      gfx::Size surface_size,
-      const gfx::Transform& transform,
-      gfx::Rect viewport,
-      gfx::Rect clip,
-      bool stencil_enabled) {
+gpu::GLInProcessContext* SynchronousCompositorImpl::GetShareContext() {
+  DCHECK(CalledOnValidThread());
+  return g_factory.Get().GetShareContext();
+}
+
+scoped_ptr<cc::CompositorFrame> SynchronousCompositorImpl::DemandDrawHw(
+    gfx::Size surface_size,
+    const gfx::Transform& transform,
+    gfx::Rect viewport,
+    gfx::Rect clip) {
   DCHECK(CalledOnValidThread());
   DCHECK(output_surface_);
 
-  return output_surface_->DemandDrawHw(
-      surface_size, transform, viewport, clip, stencil_enabled);
+  scoped_ptr<cc::CompositorFrame> frame =
+      output_surface_->DemandDrawHw(surface_size, transform, viewport, clip);
+  if (frame.get())
+    UpdateFrameMetaData(frame->metadata);
+  return frame.Pass();
+}
+
+void SynchronousCompositorImpl::ReturnResources(
+    const cc::CompositorFrameAck& frame_ack) {
+  DCHECK(CalledOnValidThread());
+  output_surface_->ReturnResources(frame_ack);
 }
 
 bool SynchronousCompositorImpl::DemandDrawSw(SkCanvas* canvas) {
   DCHECK(CalledOnValidThread());
   DCHECK(output_surface_);
 
-  return output_surface_->DemandDrawSw(canvas);
+  scoped_ptr<cc::CompositorFrame> frame = output_surface_->DemandDrawSw(canvas);
+  if (frame.get())
+    UpdateFrameMetaData(frame->metadata);
+  return !!frame.get();
+}
+
+void SynchronousCompositorImpl::UpdateFrameMetaData(
+    const cc::CompositorFrameMetadata& frame_metadata) {
+  RenderWidgetHostViewAndroid* rwhv = static_cast<RenderWidgetHostViewAndroid*>(
+      contents_->GetRenderWidgetHostView());
+  if (rwhv)
+    rwhv->SynchronousFrameMetadata(frame_metadata);
 }
 
 void SynchronousCompositorImpl::SetMemoryPolicy(
@@ -211,31 +236,9 @@ InputEventAckState SynchronousCompositorImpl::HandleInputEvent(
       contents_->GetRoutingID(), input_event);
 }
 
-void SynchronousCompositorImpl::UpdateFrameMetaData(
-    const cc::CompositorFrameMetadata& frame_metadata) {
-  RenderWidgetHostViewAndroid* rwhv = static_cast<RenderWidgetHostViewAndroid*>(
-      contents_->GetRenderWidgetHostView());
-  if (rwhv)
-    rwhv->SynchronousFrameMetadata(frame_metadata);
-}
-
 void SynchronousCompositorImpl::DidActivatePendingTree() {
   if (compositor_client_)
     compositor_client_->DidUpdateContent();
-}
-
-void SynchronousCompositorImpl::SetMaxScrollOffset(
-    const gfx::Vector2dF& max_scroll_offset) {
-  DCHECK(CalledOnValidThread());
-  if (compositor_client_)
-    compositor_client_->SetMaxRootLayerScrollOffset(max_scroll_offset);
-}
-
-void SynchronousCompositorImpl::SetTotalScrollOffset(
-    const gfx::Vector2dF& new_value) {
-  DCHECK(CalledOnValidThread());
-  if (compositor_client_)
-    compositor_client_->SetTotalRootLayerScrollOffset(new_value);
 }
 
 gfx::Vector2dF SynchronousCompositorImpl::GetTotalScrollOffset() {
@@ -252,21 +255,23 @@ bool SynchronousCompositorImpl::IsExternalFlingActive() const {
   return false;
 }
 
-void SynchronousCompositorImpl::SetTotalPageScaleFactorAndLimits(
+void SynchronousCompositorImpl::UpdateRootLayerState(
+    const gfx::Vector2dF& total_scroll_offset,
+    const gfx::Vector2dF& max_scroll_offset,
+    const gfx::SizeF& scrollable_size,
     float page_scale_factor,
     float min_page_scale_factor,
     float max_page_scale_factor) {
   DCHECK(CalledOnValidThread());
-  if (compositor_client_)
-    compositor_client_->SetRootLayerPageScaleFactorAndLimits(
-        page_scale_factor, min_page_scale_factor, max_page_scale_factor);
-}
+  if (!compositor_client_)
+    return;
 
-void SynchronousCompositorImpl::SetScrollableSize(
-    const gfx::SizeF& scrollable_size) {
-  DCHECK(CalledOnValidThread());
-  if (compositor_client_)
-    compositor_client_->SetRootLayerScrollableSize(scrollable_size);
+  compositor_client_->UpdateRootLayerState(total_scroll_offset,
+                                           max_scroll_offset,
+                                           scrollable_size,
+                                           page_scale_factor,
+                                           min_page_scale_factor,
+                                           max_page_scale_factor);
 }
 
 // Not using base::NonThreadSafe as we want to enforce a more exacting threading

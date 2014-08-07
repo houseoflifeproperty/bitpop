@@ -15,6 +15,7 @@ namespace cc {
 class CompositorFrameAck;
 class CompositorFrameMetadata;
 class ScopedResource;
+class Task;
 
 struct RendererCapabilitiesImpl {
   RendererCapabilitiesImpl();
@@ -40,6 +41,7 @@ struct RendererCapabilitiesImpl {
 class CC_EXPORT RendererClient {
  public:
   virtual void SetFullRootLayerDamage() = 0;
+  virtual void RunOnDemandRasterTask(Task* on_demand_raster_task) = 0;
 };
 
 class CC_EXPORT Renderer {
@@ -47,8 +49,6 @@ class CC_EXPORT Renderer {
   virtual ~Renderer() {}
 
   virtual const RendererCapabilitiesImpl& Capabilities() const = 0;
-
-  virtual bool CanReadPixels() const = 0;
 
   virtual void DecideRenderPassAllocationsForFrame(
       const RenderPassList& render_passes_in_draw_order) {}
@@ -74,16 +74,10 @@ class CC_EXPORT Renderer {
   virtual void SwapBuffers(const CompositorFrameMetadata& metadata) = 0;
   virtual void ReceiveSwapBuffersAck(const CompositorFrameAck& ack) {}
 
-  virtual void GetFramebufferPixels(void* pixels, const gfx::Rect& rect) = 0;
-
   virtual bool IsContextLost();
 
   bool visible() const { return visible_; }
   void SetVisible(bool visible);
-
-  virtual void SendManagedMemoryStats(size_t bytes_visible,
-                                      size_t bytes_visible_and_nearby,
-                                      size_t bytes_allocated) = 0;
 
  protected:
   explicit Renderer(RendererClient* client, const LayerTreeSettings* settings)

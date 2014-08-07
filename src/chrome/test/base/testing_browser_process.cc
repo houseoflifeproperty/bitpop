@@ -6,6 +6,7 @@
 
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
+#include "base/time/default_tick_clock.h"
 #include "build/build_config.h"
 #include "chrome/browser/apps/chrome_apps_client.h"
 #include "chrome/browser/background/background_mode_manager.h"
@@ -15,6 +16,7 @@
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/test/base/testing_browser_process_platform_part.h"
+#include "components/network_time/network_time_tracker.h"
 #include "content/public/browser/notification_service.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -72,8 +74,10 @@ TestingBrowserProcess::TestingBrowserProcess()
       platform_part_(new TestingBrowserProcessPlatformPart()),
       extensions_browser_client_(
           new extensions::ChromeExtensionsBrowserClient) {
-  extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
+#if defined(ENABLE_EXTENSIONS)
   apps::AppsClient::Set(ChromeAppsClient::GetInstance());
+#endif
+  extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
 }
 
 TestingBrowserProcess::~TestingBrowserProcess() {
@@ -92,6 +96,10 @@ void TestingBrowserProcess::ResourceDispatcherHostCreated() {
 }
 
 void TestingBrowserProcess::EndSession() {
+}
+
+MetricsServicesManager* TestingBrowserProcess::GetMetricsServicesManager() {
+  return NULL;
 }
 
 MetricsService* TestingBrowserProcess::metrics_service() {
@@ -360,6 +368,21 @@ WebRtcLogUploader* TestingBrowserProcess::webrtc_log_uploader() {
 }
 #endif
 
+network_time::NetworkTimeTracker*
+TestingBrowserProcess::network_time_tracker() {
+  if (!network_time_tracker_) {
+    DCHECK(local_state_);
+    network_time_tracker_.reset(new network_time::NetworkTimeTracker(
+        scoped_ptr<base::TickClock>(new base::DefaultTickClock()),
+        local_state_));
+  }
+  return network_time_tracker_.get();
+}
+
+gcm::GCMDriver* TestingBrowserProcess::gcm_driver() {
+  return NULL;
+}
+
 void TestingBrowserProcess::SetSystemRequestContext(
     net::URLRequestContextGetter* context_getter) {
   system_request_context_ = context_getter;
@@ -376,6 +399,7 @@ void TestingBrowserProcess::SetLocalState(PrefService* local_state) {
     // (assumedly as part of exiting the test and freeing TestingBrowserProcess)
     // any components owned by TestingBrowserProcess that depend on local_state
     // are also freed.
+    network_time_tracker_.reset();
 #if !defined(OS_IOS)
     notification_ui_manager_.reset();
 #endif

@@ -102,6 +102,7 @@
 
 .timeline-view {
     flex: auto;
+    overflow: hidden;
 }
 
 .timeline-view-stack {
@@ -751,8 +752,16 @@
 .timeline-aggregated-info {
     flex: none;
     position: relative;
-    margin: 8px 2px;
-    width: 200px;
+    margin: 8px;
+}
+
+.timeline-range-summary {
+    align-items: center;
+    margin: 6px;
+}
+
+.timeline-range-summary > div {
+    flex-shrink: 0;
 }
 
 .timeline-aggregated-info-legend > div {

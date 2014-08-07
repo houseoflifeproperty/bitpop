@@ -9,9 +9,9 @@
 #include "content/browser/streams/stream.h"
 #include "content/browser/streams/stream_registry.h"
 #include "content/public/browser/resource_controller.h"
-#include "content/public/common/url_constants.h"
 #include "net/base/io_buffer.h"
 #include "net/url_request/url_request_status.h"
+#include "url/url_constants.h"
 
 namespace content {
 
@@ -22,7 +22,7 @@ StreamResourceHandler::StreamResourceHandler(net::URLRequest* request,
       read_buffer_(NULL) {
   // TODO(tyoshino): Find a way to share this with the blob URL creation in
   // WebKit.
-  GURL url(std::string(kBlobScheme) + ":" + origin.spec() +
+  GURL url(std::string(url::kBlobScheme) + ":" + origin.spec() +
            base::GenerateGUID());
   stream_ = new Stream(registry, this, url);
 }
@@ -31,39 +31,31 @@ StreamResourceHandler::~StreamResourceHandler() {
   stream_->RemoveWriteObserver(this);
 }
 
-bool StreamResourceHandler::OnUploadProgress(int request_id,
-                                             uint64 position,
+bool StreamResourceHandler::OnUploadProgress(uint64 position,
                                              uint64 size) {
   return true;
 }
 
-bool StreamResourceHandler::OnRequestRedirected(int request_id,
-                                                const GURL& url,
+bool StreamResourceHandler::OnRequestRedirected(const GURL& url,
                                                 ResourceResponse* resp,
                                                 bool* defer) {
   return true;
 }
 
-bool StreamResourceHandler::OnResponseStarted(int request_id,
-                                              ResourceResponse* resp,
+bool StreamResourceHandler::OnResponseStarted(ResourceResponse* resp,
                                               bool* defer) {
   return true;
 }
 
-bool StreamResourceHandler::OnWillStart(int request_id,
-                                        const GURL& url,
-                                        bool* defer) {
+bool StreamResourceHandler::OnWillStart(const GURL& url, bool* defer) {
   return true;
 }
 
-bool StreamResourceHandler::OnBeforeNetworkStart(int request_id,
-                                                 const GURL& url,
-                                                 bool* defer) {
+bool StreamResourceHandler::OnBeforeNetworkStart(const GURL& url, bool* defer) {
   return true;
 }
 
-bool StreamResourceHandler::OnWillRead(int request_id,
-                                       scoped_refptr<net::IOBuffer>* buf,
+bool StreamResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                                        int* buf_size,
                                        int min_size) {
   static const int kReadBufSize = 32768;
@@ -77,9 +69,7 @@ bool StreamResourceHandler::OnWillRead(int request_id,
   return true;
 }
 
-bool StreamResourceHandler::OnReadCompleted(int request_id,
-                                            int bytes_read,
-                                            bool* defer) {
+bool StreamResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
   if (!bytes_read)
     return true;
 
@@ -99,16 +89,13 @@ bool StreamResourceHandler::OnReadCompleted(int request_id,
 }
 
 void StreamResourceHandler::OnResponseCompleted(
-    int request_id,
     const net::URLRequestStatus& status,
     const std::string& sec_info,
     bool* defer) {
   stream_->Finalize();
 }
 
-void StreamResourceHandler::OnDataDownloaded(
-    int request_id,
-    int bytes_downloaded) {
+void StreamResourceHandler::OnDataDownloaded(int bytes_downloaded) {
   NOTREACHED();
 }
 

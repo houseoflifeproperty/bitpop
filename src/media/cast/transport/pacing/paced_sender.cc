@@ -20,22 +20,11 @@ static const int64 kPacingIntervalMs = 10;
 static const size_t kPacingMaxBurstsPerFrame = 3;
 static const size_t kTargetBurstSize = 10;
 static const size_t kMaxBurstSize = 20;
-
-using media::cast::CastLoggingEvent;
-
-CastLoggingEvent GetLoggingEvent(bool is_audio, bool retransmit) {
-  if (retransmit) {
-    return is_audio ? media::cast::kAudioPacketRetransmitted
-                    : media::cast::kVideoPacketRetransmitted;
-  } else {
-    return is_audio ? media::cast::kAudioPacketSentToNetwork
-                    : media::cast::kVideoPacketSentToNetwork;
-  }
-}
+static const size_t kMaxDedupeWindowMs = 500;
 
 }  // namespace
 
-
+// static
 PacketKey PacedPacketSender::MakePacketKey(const base::TimeTicks& ticks,
                                            uint32 ssrc,
                                            uint16 packet_id) {
@@ -85,11 +74,21 @@ bool PacedSender::SendPackets(const SendPacketVector& packets) {
   return true;
 }
 
-bool PacedSender::ResendPackets(const SendPacketVector& packets) {
+bool PacedSender::ResendPackets(const SendPacketVector& packets,
+                                base::TimeDelta dedupe_window) {
   if (packets.empty()) {
     return true;
   }
+  base::TimeTicks now = clock_->NowTicks();
   for (size_t i = 0; i < packets.size(); i++) {
+    std::map<PacketKey, base::TimeTicks>::const_iterator j =
+        sent_time_.find(packets[i].first);
+
+    if (j != sent_time_.end() && now - j->second < dedupe_window) {
+      LogPacketEvent(packets[i].second->data, PACKET_RTX_REJECTED);
+      continue;
+    }
+
     packet_list_[packets[i].first] =
         make_pair(PacketType_Resend, packets[i].second);
   }
@@ -116,11 +115,17 @@ bool PacedSender::SendRtcpPacket(uint32 ssrc, PacketRef packet) {
   return true;
 }
 
-PacketRef PacedSender::GetNextPacket(PacketType* packet_type) {
+void PacedSender::CancelSendingPacket(const PacketKey& packet_key) {
+  packet_list_.erase(packet_key);
+}
+
+PacketRef PacedSender::GetNextPacket(PacketType* packet_type,
+                                     PacketKey* packet_key) {
   std::map<PacketKey, std::pair<PacketType, PacketRef> >::iterator i;
   i = packet_list_.begin();
   DCHECK(i != packet_list_.end());
   *packet_type = i->second.first;
+  *packet_key = i->first;
   PacketRef ret = i->second.second;
   packet_list_.erase(i);
   return ret;
@@ -193,14 +198,17 @@ void PacedSender::SendStoredPackets() {
       return;
     }
     PacketType packet_type;
-    PacketRef packet = GetNextPacket(&packet_type);
+    PacketKey packet_key;
+    PacketRef packet = GetNextPacket(&packet_type, &packet_key);
+    sent_time_[packet_key] = now;
+    sent_time_buffer_[packet_key] = now;
 
     switch (packet_type) {
       case PacketType_Resend:
-        LogPacketEvent(packet->data, true);
+        LogPacketEvent(packet->data, PACKET_RETRANSMITTED);
         break;
       case PacketType_Normal:
-        LogPacketEvent(packet->data, false);
+        LogPacketEvent(packet->data, PACKET_SENT_TO_NETWORK);
         break;
       case PacketType_RTCP:
         break;
@@ -211,10 +219,20 @@ void PacedSender::SendStoredPackets() {
     }
     current_burst_size_++;
   }
+  // Keep ~0.5 seconds of data (1000 packets)
+  if (sent_time_buffer_.size() >=
+      kMaxBurstSize * kMaxDedupeWindowMs / kPacingIntervalMs) {
+    sent_time_.swap(sent_time_buffer_);
+    sent_time_buffer_.clear();
+  }
+  DCHECK_LE(sent_time_buffer_.size(),
+            kMaxBurstSize * kMaxDedupeWindowMs / kPacingIntervalMs);
+  DCHECK_LE(sent_time_.size(),
+            2 * kMaxBurstSize * kMaxDedupeWindowMs / kPacingIntervalMs);
   state_ = State_Unblocked;
 }
 
-void PacedSender::LogPacketEvent(const Packet& packet, bool retransmit) {
+void PacedSender::LogPacketEvent(const Packet& packet, CastLoggingEvent event) {
   // Get SSRC from packet and compare with the audio_ssrc / video_ssrc to see
   // if the packet is audio or video.
   DCHECK_GE(packet.size(), 12u);
@@ -232,9 +250,9 @@ void PacedSender::LogPacketEvent(const Packet& packet, bool retransmit) {
     return;
   }
 
-  CastLoggingEvent event = GetLoggingEvent(is_audio, retransmit);
-
-  logging_->InsertSinglePacketEvent(clock_->NowTicks(), event, packet);
+  EventMediaType media_type = is_audio ? AUDIO_EVENT : VIDEO_EVENT;
+  logging_->InsertSinglePacketEvent(clock_->NowTicks(), event, media_type,
+      packet);
 }
 
 }  // namespace transport

@@ -17,9 +17,9 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
-#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
 
@@ -95,7 +95,7 @@ IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, PRE_Persist) {
 IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, MAYBE_Persist) {
   BookmarkModel* bookmark_model = WaitForBookmarkModel(browser()->profile());
 
-  std::vector<BookmarkService::URLAndTitle> urls;
+  std::vector<BookmarkModel::URLAndTitle> urls;
   bookmark_model->GetBookmarks(&urls);
 
   ASSERT_EQ(1u, urls.size());
@@ -123,7 +123,7 @@ IN_PROC_BROWSER_TEST_F(BookmarkBrowsertest, DISABLED_MultiProfile) {
   bookmark_utils::AddIfNotBookmarked(
       bookmark_model1, GURL(kPersistBookmarkURL),
       base::ASCIIToUTF16(kPersistBookmarkTitle));
-  std::vector<BookmarkService::URLAndTitle> urls1, urls2;
+  std::vector<BookmarkModel::URLAndTitle> urls1, urls2;
   bookmark_model1->GetBookmarks(&urls1);
   bookmark_model2->GetBookmarks(&urls2);
   ASSERT_EQ(1u, urls1.size());

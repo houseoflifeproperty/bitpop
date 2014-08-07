@@ -243,7 +243,7 @@ NaClErrorCode NaClAppLoadFileAslr(struct NaClDesc *ndp,
     size_t code_segment_size = info.static_text_end - NACL_TRAMPOLINE_END;
     if (code_segment_size > nap->initial_nexe_max_code_bytes) {
       NaClLog(LOG_ERROR, "NaClAppLoadFileAslr: "
-              "Code segment size (%"NACL_PRIdS" bytes) exceeds limit (%"
+              "Code segment size (%"NACL_PRIuS" bytes) exceeds limit (%"
               NACL_PRId32" bytes)\n",
               code_segment_size, nap->initial_nexe_max_code_bytes);
       ret = LOAD_CODE_SEGMENT_TOO_LARGE;
@@ -345,6 +345,9 @@ NaClErrorCode NaClAppLoadFileAslr(struct NaClDesc *ndp,
             ret);
   }
   subret = NaClElfImageLoad(image, ndp, nap);
+  NaClPerfCounterMark(&time_load_file,
+                      NACL_PERF_IMPORTANT_PREFIX "NaClElfImageLoad");
+  NaClPerfCounterIntervalLast(&time_load_file);
   if (LOAD_OK != subret) {
     ret = subret;
     goto done;
@@ -702,6 +705,9 @@ int NaClCreateMainThread(struct NaClApp     *nap,
   if (0 != nap->user_entry_pt) {
     auxv_entries++;
   }
+  if (0 != nap->dynamic_text_start) {
+    auxv_entries++;
+  }
   ptr_tbl_size = (((NACL_STACK_GETS_ARG ? 1 : 0) +
                    (3 + argc + 1 + envc + 1 + auxv_entries * 2)) *
                   sizeof(uint32_t));
@@ -776,6 +782,10 @@ int NaClCreateMainThread(struct NaClApp     *nap,
   if (0 != nap->user_entry_pt) {
     *p++ = AT_ENTRY;
     *p++ = (uint32_t) nap->user_entry_pt;
+  }
+  if (0 != nap->dynamic_text_start) {
+    *p++ = AT_BASE;
+    *p++ = (uint32_t) nap->dynamic_text_start;
   }
   *p++ = AT_NULL;
   *p++ = 0;

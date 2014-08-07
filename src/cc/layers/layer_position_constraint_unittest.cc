@@ -19,17 +19,15 @@ namespace {
 
 void SetLayerPropertiesForTesting(LayerImpl* layer,
                                   const gfx::Transform& transform,
-                                  const gfx::PointF& anchor,
+                                  const gfx::Point3F& transform_origin,
                                   const gfx::PointF& position,
                                   const gfx::Size& bounds,
-                                  bool flatten_transform,
-                                  bool is_3d_sorted) {
+                                  bool flatten_transform) {
   layer->SetTransform(transform);
-  layer->SetAnchorPoint(anchor);
+  layer->SetTransformOrigin(transform_origin);
   layer->SetPosition(position);
   layer->SetBounds(bounds);
   layer->SetShouldFlattenTransform(flatten_transform);
-  layer->SetIs3dSorted(is_3d_sorted);
   layer->SetContentBounds(bounds);
 }
 
@@ -87,38 +85,30 @@ class LayerPositionConstraintTest : public testing::Test {
         LayerImpl::Create(host_impl_.active_tree(), 4);
 
     gfx::Transform IdentityMatrix;
-    gfx::PointF anchor;
+    gfx::Point3F transform_origin;
     gfx::PointF position;
     gfx::Size bounds(200, 200);
     gfx::Size clip_bounds(100, 100);
     SetLayerPropertiesForTesting(scroll_layer.get(),
                                  IdentityMatrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
-                                 true,
-                                 false);
-    SetLayerPropertiesForTesting(child.get(),
-                                 IdentityMatrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
+                                 true);
+    SetLayerPropertiesForTesting(
+        child.get(), IdentityMatrix, transform_origin, position, bounds, true);
     SetLayerPropertiesForTesting(grand_child.get(),
                                  IdentityMatrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
-                                 true,
-                                 false);
+                                 true);
     SetLayerPropertiesForTesting(great_grand_child.get(),
                                  IdentityMatrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
-                                 true,
-                                 false);
+                                 true);
 
     root->SetBounds(clip_bounds);
     scroll_layer->SetScrollClipLayer(root->id());
@@ -741,11 +731,10 @@ TEST_F(LayerPositionConstraintTest,
         LayerImpl::Create(host_impl_.active_tree(), 5);
     SetLayerPropertiesForTesting(fixed_position_child.get(),
                                  identity,
-                                 gfx::PointF(),
+                                 gfx::Point3F(),
                                  gfx::PointF(),
                                  gfx::Size(100, 100),
-                                 true,
-                                 false);
+                                 true);
     great_grand_child->AddChild(fixed_position_child.Pass());
   }
   LayerImpl* fixed_position_child = great_grand_child->children()[0];

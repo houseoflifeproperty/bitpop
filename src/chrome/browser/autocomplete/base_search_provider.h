@@ -19,6 +19,7 @@
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
 class AutocompleteProviderListener;
@@ -28,6 +29,7 @@ class SuggestionDeletionHandler;
 class TemplateURL;
 
 namespace base {
+class DictionaryValue;
 class ListValue;
 class Value;
 }
@@ -62,7 +64,8 @@ class BaseSearchProvider : public AutocompleteProvider,
       const base::string16& suggestion,
       AutocompleteMatchType::Type type,
       bool from_keyword_provider,
-      const TemplateURL* template_url);
+      const TemplateURL* template_url,
+      const SearchTermsData& search_terms_data);
 
   // AutocompleteProvider:
   virtual void Stop(bool clear_cached_results) OVERRIDE;
@@ -177,6 +180,8 @@ class BaseSearchProvider : public AutocompleteProvider,
                   const base::string16& match_contents,
                   const base::string16& match_contents_prefix,
                   const base::string16& annotation,
+                  const base::string16& answer_contents,
+                  const base::string16& answer_type,
                   const std::string& suggest_query_params,
                   const std::string& deletion_url,
                   bool from_keyword_provider,
@@ -194,6 +199,10 @@ class BaseSearchProvider : public AutocompleteProvider,
     const std::string& suggest_query_params() const {
       return suggest_query_params_;
     }
+
+    const base::string16& answer_contents() const { return answer_contents_; }
+    const base::string16& answer_type() const { return answer_type_; }
+
     bool should_prefetch() const { return should_prefetch_; }
 
     // Fills in |match_contents_class_| to reflect how |match_contents_| should
@@ -226,6 +235,12 @@ class BaseSearchProvider : public AutocompleteProvider,
 
     // Optional additional parameters to be added to the search URL.
     std::string suggest_query_params_;
+
+    // Optional formatted Answers result.
+    base::string16 answer_contents_;
+
+    // Type of optional formatted Answers result.
+    base::string16 answer_type_;
 
     // Should this result be prefetched?
     bool should_prefetch_;
@@ -340,6 +355,7 @@ class BaseSearchProvider : public AutocompleteProvider,
       const AutocompleteInput& input,
       const SuggestResult& suggestion,
       const TemplateURL* template_url,
+      const SearchTermsData& search_terms_data,
       int accepted_suggestion,
       int omnibox_start_margin,
       bool append_extra_query_params,
@@ -364,7 +380,7 @@ class BaseSearchProvider : public AutocompleteProvider,
   static bool ZeroSuggestEnabled(
      const GURL& suggest_url,
      const TemplateURL* template_url,
-     AutocompleteInput::PageClassification page_classification,
+     metrics::OmniboxEventProto::PageClassification page_classification,
      Profile* profile);
 
   // Returns whether we can send the URL of the current page in any suggest
@@ -387,7 +403,7 @@ class BaseSearchProvider : public AutocompleteProvider,
       const GURL& current_page_url,
       const GURL& suggest_url,
       const TemplateURL* template_url,
-      AutocompleteInput::PageClassification page_classification,
+      metrics::OmniboxEventProto::PageClassification page_classification,
       Profile* profile);
 
   // net::URLFetcherDelegate:
@@ -419,6 +435,9 @@ class BaseSearchProvider : public AutocompleteProvider,
   bool ParseSuggestResults(const base::Value& root_val,
                            bool is_keyword_result,
                            Results* results);
+
+  // Prefetches any images in Answers results.
+  void PrefetchAnswersImages(const base::DictionaryValue* answers_json);
 
   // Called at the end of ParseSuggestResults to rank the |results|.
   virtual void SortResults(bool is_keyword,

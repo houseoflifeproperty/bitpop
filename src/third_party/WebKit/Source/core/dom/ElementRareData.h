@@ -23,6 +23,7 @@
 #define ElementRareData_h
 
 #include "core/animation/ActiveAnimations.h"
+#include "core/dom/Attr.h"
 #include "core/dom/DatasetDOMStringMap.h"
 #include "core/dom/NamedNodeMap.h"
 #include "core/dom/NodeRareData.h"
@@ -48,7 +49,7 @@ public:
 
     ~ElementRareData();
 
-    void setPseudoElement(PseudoId, PassRefPtr<PseudoElement>);
+    void setPseudoElement(PseudoId, PassRefPtrWillBeRawPtr<PseudoElement>);
     PseudoElement* pseudoElement(PseudoId) const;
 
     void resetStyleState();
@@ -123,6 +124,10 @@ public:
     void setCustomElementDefinition(PassRefPtr<CustomElementDefinition> definition) { m_customElementDefinition = definition; }
     CustomElementDefinition* customElementDefinition() const { return m_customElementDefinition.get(); }
 
+    WillBeHeapVector<RefPtrWillBeMember<Attr> >& ensureAttrNodeList();
+    WillBeHeapVector<RefPtrWillBeMember<Attr> >* attrNodeList() { return m_attrNodeList.get(); }
+    void removeAttrNodeList() { m_attrNodeList.clear(); }
+
     void traceAfterDispatch(Visitor*);
 
 private:
@@ -135,16 +140,17 @@ private:
     OwnPtrWillBeMember<ClassList> m_classList;
     OwnPtrWillBeMember<ElementShadow> m_shadow;
     OwnPtrWillBeMember<NamedNodeMap> m_attributeMap;
-    OwnPtr<InputMethodContext> m_inputMethodContext;
+    OwnPtrWillBeMember<WillBeHeapVector<RefPtrWillBeMember<Attr> > > m_attrNodeList;
+    OwnPtrWillBeMember<InputMethodContext> m_inputMethodContext;
     OwnPtrWillBeMember<ActiveAnimations> m_activeAnimations;
     OwnPtrWillBeMember<InlineCSSStyleDeclaration> m_cssomWrapper;
 
     RefPtr<RenderStyle> m_computedStyle;
     RefPtr<CustomElementDefinition> m_customElementDefinition;
 
-    RefPtr<PseudoElement> m_generatedBefore;
-    RefPtr<PseudoElement> m_generatedAfter;
-    RefPtr<PseudoElement> m_backdrop;
+    RefPtrWillBeMember<PseudoElement> m_generatedBefore;
+    RefPtrWillBeMember<PseudoElement> m_generatedAfter;
+    RefPtrWillBeMember<PseudoElement> m_backdrop;
 
     explicit ElementRareData(RenderObject*);
 };
@@ -184,7 +190,7 @@ inline void ElementRareData::clearPseudoElements()
     setPseudoElement(BACKDROP, nullptr);
 }
 
-inline void ElementRareData::setPseudoElement(PseudoId pseudoId, PassRefPtr<PseudoElement> element)
+inline void ElementRareData::setPseudoElement(PseudoId pseudoId, PassRefPtrWillBeRawPtr<PseudoElement> element)
 {
     switch (pseudoId) {
     case BEFORE:

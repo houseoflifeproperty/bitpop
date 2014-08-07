@@ -22,9 +22,8 @@
 
 #include "core/svg/SVGFETileElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
 namespace WebCore {
@@ -37,10 +36,7 @@ inline SVGFETileElement::SVGFETileElement(Document& document)
     addToPropertyMap(m_in1);
 }
 
-PassRefPtr<SVGFETileElement> SVGFETileElement::create(Document& document)
-{
-    return adoptRef(new SVGFETileElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFETileElement)
 
 bool SVGFETileElement::isSupportedAttribute(const QualifiedName& attrName)
 {

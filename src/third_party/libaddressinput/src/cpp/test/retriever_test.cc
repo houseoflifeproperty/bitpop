@@ -15,25 +15,30 @@
 #include "retriever.h"
 
 #include <libaddressinput/callback.h>
-#include <libaddressinput/downloader.h>
+#include <libaddressinput/null_storage.h>
+#include <libaddressinput/storage.h>
 #include <libaddressinput/util/scoped_ptr.h>
 
+#include <cstddef>
 #include <string>
 
 #include <gtest/gtest.h>
 
 #include "fake_downloader.h"
-#include "fake_storage.h"
-#include "region_data_constants.h"
+#include "mock_downloader.h"
+
+#define CHECKSUM "dd63dafcbd4d5b28badfcaf86fb6fcdb"
+#define DATA "{'foo': 'bar'}"
+#define OLD_TIMESTAMP "0"
 
 namespace {
 
 using i18n::addressinput::BuildCallback;
-using i18n::addressinput::Downloader;
 using i18n::addressinput::FakeDownloader;
-using i18n::addressinput::FakeStorage;
-using i18n::addressinput::RegionDataConstants;
+using i18n::addressinput::MockDownloader;
+using i18n::addressinput::NullStorage;
 using i18n::addressinput::Retriever;
+using i18n::addressinput::Storage;
 using i18n::addressinput::scoped_ptr;
 
 const char kKey[] = "data/CA/AB--fr";
@@ -41,13 +46,21 @@ const char kKey[] = "data/CA/AB--fr";
 // Empty data that the downloader can return.
 const char kEmptyData[] = "{}";
 
+// The value of the data that the stale storage returns.
+const char kStaleData[] = DATA;
+
+// The actual data that the stale storage returns.
+const char kStaleWrappedData[] = "timestamp=" OLD_TIMESTAMP "\n"
+                                 "checksum=" CHECKSUM "\n"
+                                 DATA;
+
 // Tests for Retriever object.
 class RetrieverTest : public testing::Test {
  protected:
   RetrieverTest()
       : retriever_(FakeDownloader::kFakeDataUrl,
                    new FakeDownloader,
-                   new FakeStorage),
+                   new NullStorage),
         success_(false),
         key_(),
         data_() {}
@@ -107,23 +120,11 @@ TEST_F(RetrieverTest, MissingKeyReturnsEmptyData) {
   EXPECT_EQ(kEmptyData, data_);
 }
 
-// The downloader that always fails.
-class FaultyDownloader : public Downloader {
- public:
-  FaultyDownloader() {}
-  virtual ~FaultyDownloader() {}
-
-  // Downloader implementation.
-  virtual void Download(const std::string& url,
-                        const Callback& downloaded) const {
-    downloaded(false, url, "garbage");
-  }
-};
-
 TEST_F(RetrieverTest, FaultyDownloader) {
-  Retriever bad_retriever(FakeDownloader::kFakeDataUrl,
-                          new FaultyDownloader,
-                          new FakeStorage);
+  // An empty MockDownloader will fail for any request.
+  Retriever bad_retriever(MockDownloader::kMockDataUrl,
+                          new MockDownloader,
+                          new NullStorage);
 
   scoped_ptr<Retriever::Callback> callback(BuildCallback());
   bad_retriever.Retrieve(kKey, *callback);
@@ -131,6 +132,62 @@ TEST_F(RetrieverTest, FaultyDownloader) {
   EXPECT_FALSE(success_);
   EXPECT_EQ(kKey, key_);
   EXPECT_TRUE(data_.empty());
+}
+
+// The storage that always returns stale data.
+class StaleStorage : public Storage {
+ public:
+  StaleStorage() : data_updated_(false) {}
+  virtual ~StaleStorage() {}
+
+  // Storage implementation.
+  virtual void Get(const std::string& key, const Callback& data_ready) const {
+    data_ready(true, key, new std::string(kStaleWrappedData));
+  }
+
+  virtual void Put(const std::string& key, std::string* value) {
+    ASSERT_TRUE(value != NULL);
+    data_updated_ = true;
+    delete value;
+  }
+
+  bool data_updated_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(StaleStorage);
+};
+
+TEST_F(RetrieverTest, UseStaleDataWhenDownloaderFails) {
+  // Owned by |resilient_retriver|.
+  StaleStorage* stale_storage = new StaleStorage;
+  // An empty MockDownloader will fail for any request.
+  Retriever resilient_retriever(
+      MockDownloader::kMockDataUrl, new MockDownloader, stale_storage);
+
+  scoped_ptr<Retriever::Callback> callback(BuildCallback());
+  resilient_retriever.Retrieve(kKey, *callback);
+
+  EXPECT_TRUE(success_);
+  EXPECT_EQ(kKey, key_);
+  EXPECT_EQ(kStaleData, data_);
+  EXPECT_FALSE(stale_storage->data_updated_);
+}
+
+TEST_F(RetrieverTest, DoNotUseStaleDataWhenDownloaderSucceeds) {
+  // Owned by |resilient_retriver|.
+  StaleStorage* stale_storage = new StaleStorage;
+  Retriever resilient_retriever(
+      FakeDownloader::kFakeDataUrl, new FakeDownloader, stale_storage);
+
+  scoped_ptr<Retriever::Callback> callback(BuildCallback());
+  resilient_retriever.Retrieve(kKey, *callback);
+
+  EXPECT_TRUE(success_);
+  EXPECT_EQ(kKey, key_);
+  EXPECT_FALSE(data_.empty());
+  EXPECT_NE(kEmptyData, data_);
+  EXPECT_NE(kStaleData, data_);
+  EXPECT_TRUE(stale_storage->data_updated_);
 }
 
 }  // namespace

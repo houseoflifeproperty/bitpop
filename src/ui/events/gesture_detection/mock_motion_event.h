@@ -46,6 +46,8 @@ struct MockMotionEvent : public MotionEvent {
   virtual int GetPointerId(size_t pointer_index) const OVERRIDE;
   virtual float GetX(size_t pointer_index) const OVERRIDE;
   virtual float GetY(size_t pointer_index) const OVERRIDE;
+  virtual float GetRawX(size_t pointer_index) const OVERRIDE;
+  virtual float GetRawY(size_t pointer_index) const OVERRIDE;
   virtual float GetTouchMajor(size_t pointer_index) const OVERRIDE;
   virtual float GetPressure(size_t pointer_index) const OVERRIDE;
   virtual base::TimeTicks GetEventTime() const OVERRIDE;
@@ -70,10 +72,12 @@ struct MockMotionEvent : public MotionEvent {
   void ReleasePoint();
   void CancelPoint();
   void SetTouchMajor(float new_touch_major);
+  void SetRawOffset(float raw_offset_x, float raw_offset_y);
 
   MotionEvent::Action action;
   size_t pointer_count;
   gfx::PointF points[MAX_POINTERS];
+  gfx::Vector2dF raw_offset;
   base::TimeTicks time;
   float touch_major;
   int id;

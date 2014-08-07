@@ -10,7 +10,7 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/common/net/url_fixer_upper.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/user_metrics.h"
 #include "url/gurl.h"
 
@@ -43,23 +43,25 @@ bool EditSearchEngineController::IsURLValid(
   // TemplateURLRef::IsValid() when its owner is NULL.
   TemplateURLData data;
   data.SetURL(url);
-  TemplateURL t_url(profile_, data);
+  TemplateURL t_url(data);
   const TemplateURLRef& template_ref = t_url.url_ref();
-  if (!template_ref.IsValid())
+  TemplateURLService* service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
+  if (!template_ref.IsValid(service->search_terms_data()))
     return false;
 
   // If this is going to be the default search engine, it must support
   // replacement.
-  if (!template_ref.SupportsReplacement() &&
+  if (!template_ref.SupportsReplacement(service->search_terms_data()) &&
       template_url_ &&
-      template_url_ == TemplateURLServiceFactory::GetForProfile(profile_)->
-          GetDefaultSearchProvider())
+      template_url_ == service->GetDefaultSearchProvider())
     return false;
 
   // Replace any search term with a placeholder string and make sure the
   // resulting URL is valid.
   return GURL(template_ref.ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(base::ASCIIToUTF16("x")))).is_valid();
+      TemplateURLRef::SearchTermsArgs(base::ASCIIToUTF16("x")),
+      service->search_terms_data())).is_valid();
 }
 
 bool EditSearchEngineController::IsKeywordValid(
@@ -135,11 +137,12 @@ std::string EditSearchEngineController::GetFixedUpURL(
   // we need to replace the search terms before testing for the scheme.
   TemplateURLData data;
   data.SetURL(url);
-  TemplateURL t_url(profile_, data);
+  TemplateURL t_url(data);
   std::string expanded_url(t_url.url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(base::ASCIIToUTF16("x"))));
+      TemplateURLRef::SearchTermsArgs(base::ASCIIToUTF16("x")),
+      TemplateURLServiceFactory::GetForProfile(profile_)->search_terms_data()));
   url::Parsed parts;
-  std::string scheme(URLFixerUpper::SegmentURL(expanded_url, &parts));
+  std::string scheme(url_fixer::SegmentURL(expanded_url, &parts));
   if (!parts.scheme.is_valid())
     url.insert(0, scheme + "://");
 

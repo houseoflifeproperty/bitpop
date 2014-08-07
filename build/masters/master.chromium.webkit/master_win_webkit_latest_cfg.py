@@ -87,7 +87,8 @@ F('f_webkit_win_rel_x64', win().ChromiumFactory(
         },
     }))
 
-B('WebKit Win Oilpan', 'f_webkit_win_oilpan_rel', scheduler='global_scheduler')
+B('WebKit Win Oilpan', 'f_webkit_win_oilpan_rel', scheduler='global_scheduler',
+    category='oilpan')
 F('f_webkit_win_oilpan_rel', win().ChromiumFactory(
     tests=chromium_factory.blink_tests,
     options=['--build-tool=ninja', '--', 'blink_tests'],
@@ -155,7 +156,7 @@ F('f_webkit_dbg_tests', win().ChromiumFactory(
     }))
 
 B('WebKit Win Oilpan (dbg)', 'f_webkit_win_oilpan_dbg',
-  scheduler='global_scheduler')
+  scheduler='global_scheduler', category='oilpan')
 F('f_webkit_win_oilpan_dbg', win().ChromiumFactory(
     target='Debug',
     tests=chromium_factory.blink_tests,

@@ -33,10 +33,10 @@
 #include "config.h"
 #include "core/html/canvas/CanvasRenderingContext2D.h"
 
-#include "CSSPropertyNames.h"
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/CSSPropertyNames.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/css/CSSFontSelector.h"
 #include "core/css/parser/BisonCSSParser.h"
@@ -69,8 +69,6 @@
 #include "wtf/Uint8ClampedArray.h"
 #include "wtf/text/StringBuilder.h"
 
-using namespace std;
-
 namespace WebCore {
 
 static const int defaultFontSize = 10;
@@ -102,9 +100,6 @@ CanvasRenderingContext2D::CanvasRenderingContext2D(HTMLCanvasElement* canvas, co
 
 void CanvasRenderingContext2D::unwindStateStack()
 {
-    // Ensure that the state stack in the ImageBuffer's context
-    // is cleared before destruction, to avoid assertions in the
-    // GraphicsContext dtor.
     if (size_t stackSize = m_stateStack.size()) {
         if (GraphicsContext* context = canvas()->existingDrawingContext()) {
             while (--stackSize)
@@ -115,10 +110,14 @@ void CanvasRenderingContext2D::unwindStateStack()
 
 CanvasRenderingContext2D::~CanvasRenderingContext2D()
 {
-#if !ENABLE(OILPAN)
-#if !ASSERT_DISABLED
-    unwindStateStack();
-#endif
+}
+
+void CanvasRenderingContext2D::validateStateStack()
+{
+#if ASSERT_ENABLED
+    GraphicsContext* context = canvas()->existingDrawingContext();
+    if (context && !context->contextDisabled())
+        ASSERT(context->saveCount() == m_stateStack.size());
 #endif
 }
 
@@ -226,10 +225,12 @@ void CanvasRenderingContext2D::dispatchContextRestoredEvent(Timer<CanvasRenderin
 
 void CanvasRenderingContext2D::reset()
 {
+    validateStateStack();
     unwindStateStack();
     m_stateStack.resize(1);
     m_stateStack.first() = adoptPtrWillBeNoop(new State());
     m_path.clear();
+    validateStateStack();
 }
 
 // Important: Several of these properties are also stored in GraphicsContext's
@@ -348,6 +349,7 @@ void CanvasRenderingContext2D::State::fontsNeedUpdate(CSSFontSelector* fontSelec
 
 void CanvasRenderingContext2D::realizeSaves()
 {
+    validateStateStack();
     if (state().m_unrealizedSaveCount) {
         ASSERT(m_stateStack.size() >= 1);
         // Reduce the current state's unrealized count by one now,
@@ -362,11 +364,13 @@ void CanvasRenderingContext2D::realizeSaves()
         GraphicsContext* context = drawingContext();
         if (context)
             context->save();
+        validateStateStack();
     }
 }
 
 void CanvasRenderingContext2D::restore()
 {
+    validateStateStack();
     if (state().m_unrealizedSaveCount) {
         // We never realized the save, so just record that it was unnecessary.
         --m_stateStack.last()->m_unrealizedSaveCount;
@@ -381,6 +385,7 @@ void CanvasRenderingContext2D::restore()
     GraphicsContext* c = drawingContext();
     if (c)
         c->restore();
+    validateStateStack();
 }
 
 CanvasStyle* CanvasRenderingContext2D::strokeStyle() const
@@ -719,7 +724,7 @@ void CanvasRenderingContext2D::scale(float sx, float sy)
     }
 
     modifiableState().m_transform = newTransform;
-    c->scale(FloatSize(sx, sy));
+    c->scale(sx, sy);
     m_path.transform(AffineTransform().scaleNonUniform(1.0 / sx, 1.0 / sy));
 }
 
@@ -1240,6 +1245,7 @@ void CanvasRenderingContext2D::clearRect(float x, float y, float width, float he
     if (saved)
         context->restore();
 
+    validateStateStack();
     didDraw(dirtyRect);
 }
 
@@ -1407,10 +1413,10 @@ bool CanvasRenderingContext2D::shouldDrawShadows() const
 
 static inline FloatRect normalizeRect(const FloatRect& rect)
 {
-    return FloatRect(min(rect.x(), rect.maxX()),
-        min(rect.y(), rect.maxY()),
-        max(rect.width(), -rect.width()),
-        max(rect.height(), -rect.height()));
+    return FloatRect(std::min(rect.x(), rect.maxX()),
+        std::min(rect.y(), rect.maxY()),
+        std::max(rect.width(), -rect.width()),
+        std::max(rect.height(), -rect.height()));
 }
 
 static inline void clipRectsToImageRect(const FloatRect& imageRect, FloatRect* srcRect, FloatRect* dstRect)
@@ -1519,7 +1525,7 @@ void CanvasRenderingContext2D::drawImageInternal(CanvasImageSource* imageSource,
             canvas()->buffer()->flush();
     }
 
-    if (canvas()->originClean() && imageSource->wouldTaintOrigin(canvas()->securityOrigin()))
+    if (canvas()->originClean() && wouldTaintOrigin(imageSource))
         canvas()->setOriginTainted();
 
     didDraw(dirtyRect);
@@ -1531,10 +1537,11 @@ void CanvasRenderingContext2D::drawVideo(HTMLVideoElement* video, FloatRect srcR
     GraphicsContextStateSaver stateSaver(*c);
     c->clip(dstRect);
     c->translate(dstRect.x(), dstRect.y());
-    c->scale(FloatSize(dstRect.width() / srcRect.width(), dstRect.height() / srcRect.height()));
+    c->scale(dstRect.width() / srcRect.width(), dstRect.height() / srcRect.height());
     c->translate(-srcRect.x(), -srcRect.y());
     video->paintCurrentFrameInContext(c, IntRect(IntPoint(), IntSize(video->videoWidth(), video->videoHeight())));
     stateSaver.restore();
+    validateStateStack();
 }
 
 void CanvasRenderingContext2D::drawImageFromRect(HTMLImageElement* image,
@@ -1694,7 +1701,9 @@ PassRefPtr<CanvasPattern> CanvasRenderingContext2D::createPattern(CanvasImageSou
     }
     ASSERT(imageForRendering);
 
-    return CanvasPattern::create(imageForRendering.release(), repeatX, repeatY, !imageSource->wouldTaintOrigin(canvas()->securityOrigin()));
+    bool originClean = !wouldTaintOrigin(imageSource);
+
+    return CanvasPattern::create(imageForRendering.release(), repeatX, repeatY, originClean);
 }
 
 bool CanvasRenderingContext2D::computeDirtyRect(const FloatRect& localRect, FloatRect* dirtyRect)
@@ -1933,9 +1942,12 @@ void CanvasRenderingContext2D::setFont(const String& newFont)
     // Map the <canvas> font into the text style. If the font uses keywords like larger/smaller, these will work
     // relative to the canvas.
     RefPtr<RenderStyle> newStyle = RenderStyle::create();
-    if (RenderStyle* computedStyle = canvas()->computedStyle())
-        newStyle->setFontDescription(computedStyle->fontDescription());
-    else {
+    if (RenderStyle* computedStyle = canvas()->computedStyle()) {
+        FontDescription elementFontDescription(computedStyle->fontDescription());
+        // Reset the computed size to avoid inheriting the zoom factor from the <canvas> element.
+        elementFontDescription.setComputedSize(elementFontDescription.specifiedSize());
+        newStyle->setFontDescription(elementFontDescription);
+    } else {
         FontFamily fontFamily;
         fontFamily.setFamily(defaultFontFamily);
 
@@ -2024,6 +2036,32 @@ void CanvasRenderingContext2D::strokeText(const String& text, float x, float y, 
     drawTextInternal(text, x, y, false, maxWidth, true);
 }
 
+static inline bool isSpaceCharacter(UChar c)
+{
+    // According to specification all space characters should be replaced with 0x0020 space character.
+    // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-canvas-element.html#text-preparation-algorithm
+    // The space characters according to specification are : U+0020, U+0009, U+000A, U+000C, and U+000D.
+    // http://www.whatwg.org/specs/web-apps/current-work/multipage/common-microsyntaxes.html#space-character
+    // This function returns true for 0x000B also, so that this is backward compatible.
+    // Otherwise, the test LayoutTests/canvas/philip/tests/2d.text.draw.space.collapse.space.html will fail
+    return c == 0x0009 || c == 0x000A || c == 0x000B || c == 0x000C || c == 0x000D;
+}
+
+static String normalizeSpaces(const String& text)
+{
+    unsigned textLength = text.length();
+    Vector<UChar> charVector(textLength);
+
+    for (unsigned i = 0; i < textLength; i++) {
+        if (isSpaceCharacter(text[i]))
+            charVector[i] = ' ';
+        else
+            charVector[i] = text[i];
+    }
+
+    return String(charVector);
+}
+
 PassRefPtr<TextMetrics> CanvasRenderingContext2D::measureText(const String& text)
 {
     RefPtr<TextMetrics> metrics = TextMetrics::create();
@@ -2035,7 +2073,8 @@ PassRefPtr<TextMetrics> CanvasRenderingContext2D::measureText(const String& text
     FontCachePurgePreventer fontCachePurgePreventer;
     canvas()->document().updateRenderTreeIfNeeded();
     const Font& font = accessFont();
-    const TextRun textRun(text);
+    String normalizedText = normalizeSpaces(text);
+    const TextRun textRun(normalizedText);
     FloatRect textBounds = font.selectionRectForText(textRun, FloatPoint(), font.fontDescription().computedSize(), 0, -1, true);
 
     // x direction
@@ -2063,16 +2102,6 @@ PassRefPtr<TextMetrics> CanvasRenderingContext2D::measureText(const String& text
     metrics->setAlphabeticBaseline(baselineY);
     metrics->setIdeographicBaseline(descent + baselineY);
     return metrics.release();
-}
-
-static void replaceCharacterInString(String& text, WTF::CharacterMatchFunctionPtr matchFunction, const String& replacement)
-{
-    const size_t replacementLength = replacement.length();
-    size_t index = 0;
-    while ((index = text.find(matchFunction, index)) != kNotFound) {
-        text.replace(index, 1, replacement);
-        index += replacementLength;
-    }
 }
 
 void CanvasRenderingContext2D::drawTextInternal(const String& text, float x, float y, bool fill, float maxWidth, bool useMaxWidth)
@@ -2109,9 +2138,7 @@ void CanvasRenderingContext2D::drawTextInternal(const String& text, float x, flo
 
     const Font& font = accessFont();
     const FontMetrics& fontMetrics = font.fontMetrics();
-    // According to spec, all the space characters must be replaced with U+0020 SPACE characters.
-    String normalizedText = text;
-    replaceCharacterInString(normalizedText, isSpaceOrNewline, " ");
+    String normalizedText = normalizeSpaces(text);
 
     // FIXME: Need to turn off font smoothing.
 
@@ -2161,7 +2188,7 @@ void CanvasRenderingContext2D::drawTextInternal(const String& text, float x, flo
     if (useMaxWidth) {
         c->translate(location.x(), location.y());
         // We draw when fontWidth is 0 so compositing operations (eg, a "copy" op) still work.
-        c->scale(FloatSize((fontWidth > 0 ? (width / fontWidth) : 0), 1));
+        c->scale((fontWidth > 0 ? (width / fontWidth) : 0), 1);
         location = FloatPoint();
     }
 
@@ -2281,24 +2308,11 @@ void CanvasRenderingContext2D::drawFocusIfNeededInternal(const Path& path, Eleme
     if (!focusRingCallIsValid(path, element))
         return;
 
-    updateFocusRingAccessibility(path, element);
     // Note: we need to check document->focusedElement() rather than just calling
     // element->focused(), because element->focused() isn't updated until after
     // focus events fire.
     if (element->document().focusedElement() == element)
         drawFocusRing(path);
-}
-
-bool CanvasRenderingContext2D::drawCustomFocusRing(Element* element)
-{
-    if (!focusRingCallIsValid(m_path, element))
-        return false;
-
-    updateFocusRingAccessibility(m_path, element);
-
-    // Return true if the application should draw the focus ring. The spec allows us to
-    // override this for accessibility, but currently Blink doesn't take advantage of this.
-    return element->focused();
 }
 
 bool CanvasRenderingContext2D::focusRingCallIsValid(const Path& path, Element* element)
@@ -2312,39 +2326,6 @@ bool CanvasRenderingContext2D::focusRingCallIsValid(const Path& path, Element* e
         return false;
 
     return true;
-}
-
-void CanvasRenderingContext2D::updateFocusRingAccessibility(const Path& path, Element* element)
-{
-    if (!canvas()->renderer())
-        return;
-
-    // If accessibility is already enabled in this frame, associate this path's
-    // bounding box with the accessible object. Do this even if the element
-    // isn't focused because assistive technology might try to explore the object's
-    // location before it gets focus.
-    if (AXObjectCache* axObjectCache = element->document().existingAXObjectCache()) {
-        if (AXObject* obj = axObjectCache->getOrCreate(element)) {
-            // Get the bounding rect and apply transformations.
-            FloatRect bounds = path.boundingRect();
-            AffineTransform ctm = state().m_transform;
-            FloatRect transformedBounds = ctm.mapRect(bounds);
-            LayoutRect elementRect = LayoutRect(transformedBounds);
-
-            // Offset by the canvas rect and set the bounds of the accessible element.
-            IntRect canvasRect = canvas()->renderer()->absoluteBoundingBoxRect();
-            elementRect.moveBy(canvasRect.location());
-            obj->setElementRect(elementRect);
-
-            // Set the bounds of any ancestor accessible elements, up to the canvas element,
-            // otherwise this element will appear to not be within its parent element.
-            obj = obj->parentObject();
-            while (obj && obj->node() != canvas()) {
-                obj->setElementRect(elementRect);
-                obj = obj->parentObject();
-            }
-        }
-    }
 }
 
 void CanvasRenderingContext2D::drawFocusRing(const Path& path)
@@ -2372,7 +2353,7 @@ void CanvasRenderingContext2D::drawFocusRing(const Path& path)
     c->setCompositeOperation(CompositeSourceOver, blink::WebBlendModeNormal);
     c->drawFocusRing(path, focusRingWidth, focusRingOutline, focusRingColor);
     c->restore();
-
+    validateStateStack();
     didDraw(dirtyRect);
 }
 

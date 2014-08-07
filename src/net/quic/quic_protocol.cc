@@ -144,6 +144,11 @@ uint32 MakeQuicTag(char a, char b, char c, char d) {
          static_cast<uint32>(d) << 24;
 }
 
+bool ContainsQuicTag(const QuicTagVector& tag_vector, QuicTag tag) {
+  return std::find(tag_vector.begin(), tag_vector.end(),  tag)
+      != tag_vector.end();
+}
+
 QuicVersionVector QuicSupportedVersions() {
   QuicVersionVector supported_versions;
   for (size_t i = 0; i < arraysize(kSupportedQuicVersions); ++i) {
@@ -164,6 +169,8 @@ QuicTag QuicVersionToQuicTag(const QuicVersion version) {
       return MakeQuicTag('Q', '0', '1', '8');
     case QUIC_VERSION_19:
       return MakeQuicTag('Q', '0', '1', '9');
+    case QUIC_VERSION_20:
+      return MakeQuicTag('Q', '0', '2', '0');
     default:
       // This shold be an ERROR because we should never attempt to convert an
       // invalid QuicVersion to be written to the wire.
@@ -195,6 +202,7 @@ string QuicVersionToString(const QuicVersion version) {
     RETURN_STRING_LITERAL(QUIC_VERSION_17);
     RETURN_STRING_LITERAL(QUIC_VERSION_18);
     RETURN_STRING_LITERAL(QUIC_VERSION_19);
+    RETURN_STRING_LITERAL(QUIC_VERSION_20);
     default:
       return "QUIC_VERSION_UNSUPPORTED";
   }
@@ -525,6 +533,10 @@ ostream& operator<<(ostream& os,
       os << " receive_window: " << tcp.receive_window;
       break;
     }
+    case kTCPBBR: {
+      LOG(DFATAL) << "TCPBBR is not yet supported.";
+      break;
+    }
   }
   return os;
 }
@@ -742,8 +754,9 @@ TransmissionInfo::TransmissionInfo()
       sent_time(QuicTime::Zero()),
       bytes_sent(0),
       nack_count(0),
+      transmission_type(NOT_RETRANSMISSION),
       all_transmissions(NULL),
-      pending(false) { }
+      in_flight(false) {}
 
 TransmissionInfo::TransmissionInfo(
     RetransmittableFrames* retransmittable_frames,
@@ -754,8 +767,9 @@ TransmissionInfo::TransmissionInfo(
       sent_time(QuicTime::Zero()),
       bytes_sent(0),
       nack_count(0),
+      transmission_type(NOT_RETRANSMISSION),
       all_transmissions(new SequenceNumberSet),
-      pending(false) {
+      in_flight(false) {
   all_transmissions->insert(sequence_number);
 }
 
@@ -763,38 +777,17 @@ TransmissionInfo::TransmissionInfo(
     RetransmittableFrames* retransmittable_frames,
     QuicPacketSequenceNumber sequence_number,
     QuicSequenceNumberLength sequence_number_length,
+    TransmissionType transmission_type,
     SequenceNumberSet* all_transmissions)
     : retransmittable_frames(retransmittable_frames),
       sequence_number_length(sequence_number_length),
       sent_time(QuicTime::Zero()),
       bytes_sent(0),
       nack_count(0),
+      transmission_type(transmission_type),
       all_transmissions(all_transmissions),
-      pending(false) {
+      in_flight(false) {
   all_transmissions->insert(sequence_number);
-}
-
-QuicConsumedData::QuicConsumedData(size_t bytes_consumed,
-                                   bool fin_consumed)
-      : bytes_consumed(bytes_consumed),
-        fin_consumed(fin_consumed) {
-}
-
-ostream& operator<<(ostream& os, const QuicConsumedData& s) {
-  os << "bytes_consumed: " << s.bytes_consumed
-     << " fin_consumed: " << s.fin_consumed;
-  return os;
-}
-
-WriteResult::WriteResult()
-    : status(WRITE_STATUS_ERROR),
-      bytes_written(0) {
-}
-
-WriteResult::WriteResult(WriteStatus status,
-                         int bytes_written_or_error_code)
-    : status(status),
-      bytes_written(bytes_written_or_error_code) {
 }
 
 }  // namespace net

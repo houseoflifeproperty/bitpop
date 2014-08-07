@@ -5,27 +5,9 @@
 #include "config.h"
 #include "core/rendering/compositing/CompositingReasonFinder.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
 #include "core/frame/FrameView.h"
-#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
-#include "core/html/HTMLCanvasElement.h"
-#include "core/html/HTMLIFrameElement.h"
-#include "core/html/HTMLMediaElement.h"
-#include "core/html/canvas/CanvasRenderingContext.h"
-#include "core/page/Chrome.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderApplet.h"
-#include "core/rendering/RenderEmbeddedObject.h"
-#include "core/rendering/RenderFullScreen.h"
-#include "core/rendering/RenderGeometryMap.h"
-#include "core/rendering/RenderIFrame.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderLayerStackingNode.h"
-#include "core/rendering/RenderLayerStackingNodeIterator.h"
-#include "core/rendering/RenderReplica.h"
-#include "core/rendering/RenderVideo.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
 
@@ -52,10 +34,9 @@ void CompositingReasonFinder::updateTriggers()
     if (settings.acceleratedCompositingForFiltersEnabled())
         m_compositingTriggers |= FilterTrigger;
 
-    if (settings.acceleratedCompositingForOverflowScrollEnabled())
-        m_compositingTriggers |= LegacyOverflowScrollTrigger;
-
-    if (settings.compositorDrivenAcceleratedScrollingEnabled())
+    // We map both these settings to universal overlow scrolling.
+    // FIXME: Replace these settings with a generic compositing setting for HighDPI.
+    if (settings.acceleratedCompositingForOverflowScrollEnabled() || settings.compositorDrivenAcceleratedScrollingEnabled())
         m_compositingTriggers |= OverflowScrollTrigger;
 
     // FIXME: acceleratedCompositingForFixedPositionEnabled should be renamed acceleratedCompositingForViewportConstrainedPositionEnabled().
@@ -69,25 +50,17 @@ bool CompositingReasonFinder::hasOverflowScrollTrigger() const
     return m_compositingTriggers & OverflowScrollTrigger;
 }
 
-// FIXME: This is a temporary trigger for enabling the old, opt-in path for
-// accelerated overflow scroll. It should be removed once the "universal"
-// path is ready (crbug.com/254111).
-bool CompositingReasonFinder::hasLegacyOverflowScrollTrigger() const
-{
-    return m_compositingTriggers & LegacyOverflowScrollTrigger;
-}
-
 bool CompositingReasonFinder::isMainFrame() const
 {
     // FIXME: LocalFrame::isMainFrame() is probably better.
     return !m_renderView.document().ownerElement();
 }
 
-CompositingReasons CompositingReasonFinder::directReasons(const RenderLayer* layer, bool* needToRecomputeCompositingRequirements) const
+CompositingReasons CompositingReasonFinder::directReasons(const RenderLayer* layer) const
 {
     CompositingReasons styleReasons = layer->styleDeterminedCompositingReasons();
     ASSERT(styleDeterminedReasons(layer->renderer()) == styleReasons);
-    return styleReasons | nonStyleDeterminedDirectReasons(layer, needToRecomputeCompositingRequirements);
+    return styleReasons | nonStyleDeterminedDirectReasons(layer);
 }
 
 // This information doesn't appear to be incorporated into CompositingReasons.
@@ -101,27 +74,28 @@ bool CompositingReasonFinder::requiresCompositingForScrollableFrame() const
     if (!(m_compositingTriggers & ScrollableInnerFrameTrigger))
         return false;
 
-    FrameView* frameView = m_renderView.frameView();
-    return frameView->isScrollable();
+    return m_renderView.frameView()->isScrollable();
 }
 
 CompositingReasons CompositingReasonFinder::styleDeterminedReasons(RenderObject* renderer) const
 {
     CompositingReasons directReasons = CompositingReasonNone;
 
+    RenderStyle* style = renderer->style();
+
     if (requiresCompositingForTransform(renderer))
         directReasons |= CompositingReason3DTransform;
-
-    if (requiresCompositingForBackfaceVisibilityHidden(renderer))
-        directReasons |= CompositingReasonBackfaceVisibilityHidden;
-
-    if (requiresCompositingForAnimation(renderer))
-        directReasons |= CompositingReasonActiveAnimation;
 
     if (requiresCompositingForFilters(renderer))
         directReasons |= CompositingReasonFilters;
 
-    if (requiresCompositingForWillChangeCompositingHint(renderer))
+    if (style->backfaceVisibility() == BackfaceVisibilityHidden)
+        directReasons |= CompositingReasonBackfaceVisibilityHidden;
+
+    if (requiresCompositingForAnimation(style))
+        directReasons |= CompositingReasonActiveAnimation;
+
+    if (style->hasWillChangeCompositingHint() && !style->subtreeWillChangeContents())
         directReasons |= CompositingReasonWillChangeCompositingHint;
 
     ASSERT(!(directReasons & ~CompositingReasonComboAllStyleDeterminedReasons));
@@ -135,11 +109,6 @@ bool CompositingReasonFinder::requiresCompositingForTransform(RenderObject* rend
     return renderer->hasTransform() && renderer->style()->transform().has3DOperation();
 }
 
-bool CompositingReasonFinder::requiresCompositingForBackfaceVisibilityHidden(RenderObject* renderer) const
-{
-    return renderer->style()->backfaceVisibility() == BackfaceVisibilityHidden;
-}
-
 bool CompositingReasonFinder::requiresCompositingForFilters(RenderObject* renderer) const
 {
     if (!(m_compositingTriggers & FilterTrigger))
@@ -148,31 +117,26 @@ bool CompositingReasonFinder::requiresCompositingForFilters(RenderObject* render
     return renderer->hasFilter();
 }
 
-bool CompositingReasonFinder::requiresCompositingForWillChangeCompositingHint(const RenderObject* renderer) const
-{
-    return renderer->style()->hasWillChangeCompositingHint();
-}
-
-CompositingReasons CompositingReasonFinder::nonStyleDeterminedDirectReasons(const RenderLayer* layer, bool* needToRecomputeCompositingRequirements) const
+CompositingReasons CompositingReasonFinder::nonStyleDeterminedDirectReasons(const RenderLayer* layer) const
 {
     CompositingReasons directReasons = CompositingReasonNone;
     RenderObject* renderer = layer->renderer();
 
     if (hasOverflowScrollTrigger()) {
-        if (requiresCompositingForOutOfFlowClipping(layer))
+        // IsUnclippedDescendant is only actually stale during the chicken/egg code path.
+        // FIXME: Use compositingInputs().isUnclippedDescendant to ASSERT that
+        // this value isn't stale.
+        if (layer->compositingInputs().isUnclippedDescendant)
             directReasons |= CompositingReasonOutOfFlowClipping;
 
-        if (requiresCompositingForOverflowScrollingParent(layer))
+        if (layer->scrollParent())
             directReasons |= CompositingReasonOverflowScrollingParent;
+
+        if (layer->needsCompositedScrolling())
+            directReasons |= CompositingReasonOverflowScrollingTouch;
     }
 
-    if (requiresCompositingForOverflowScrolling(layer))
-        directReasons |= CompositingReasonOverflowScrollingTouch;
-
-    if (requiresCompositingForPositionSticky(renderer, layer))
-        directReasons |= CompositingReasonPositionSticky;
-
-    if (requiresCompositingForPositionFixed(renderer, layer, 0, needToRecomputeCompositingRequirements))
+    if (requiresCompositingForPositionFixed(renderer, layer, 0))
         directReasons |= CompositingReasonPositionFixed;
 
     directReasons |= renderer->additionalCompositingReasons(m_compositingTriggers);
@@ -181,45 +145,15 @@ CompositingReasons CompositingReasonFinder::nonStyleDeterminedDirectReasons(cons
     return directReasons;
 }
 
-bool CompositingReasonFinder::requiresCompositingForAnimation(RenderObject* renderer) const
+bool CompositingReasonFinder::requiresCompositingForAnimation(RenderStyle* style) const
 {
-    return renderer->style()->shouldCompositeForCurrentAnimations();
+    if (style->subtreeWillChangeContents())
+        return style->isRunningAnimationOnCompositor();
+
+    return style->shouldCompositeForCurrentAnimations();
 }
 
-bool CompositingReasonFinder::requiresCompositingForOutOfFlowClipping(const RenderLayer* layer) const
-{
-    return layer->isUnclippedDescendant();
-}
-
-bool CompositingReasonFinder::requiresCompositingForOverflowScrollingParent(const RenderLayer* layer) const
-{
-    if (!hasOverflowScrollTrigger())
-        return false;
-    return layer->scrollParent();
-}
-
-bool CompositingReasonFinder::requiresCompositingForOverflowScrolling(const RenderLayer* layer) const
-{
-    return layer->needsCompositedScrolling();
-}
-
-bool CompositingReasonFinder::requiresCompositingForPosition(RenderObject* renderer, const RenderLayer* layer, RenderLayer::ViewportConstrainedNotCompositedReason* viewportConstrainedNotCompositedReason, bool* needToRecomputeCompositingRequirements) const
-{
-    return requiresCompositingForPositionSticky(renderer, layer) || requiresCompositingForPositionFixed(renderer, layer, viewportConstrainedNotCompositedReason, needToRecomputeCompositingRequirements);
-}
-
-bool CompositingReasonFinder::requiresCompositingForPositionSticky(RenderObject* renderer, const RenderLayer* layer) const
-{
-    if (!(m_compositingTriggers & ViewportConstrainedPositionedTrigger))
-        return false;
-    if (renderer->style()->position() != StickyPosition)
-        return false;
-    // FIXME: This probably isn't correct for accelerated overflow scrolling. crbug.com/361723
-    // Instead it should return false only if the layer is not inside a scrollable region.
-    return !layer->enclosingOverflowClipLayer(ExcludeSelf);
-}
-
-bool CompositingReasonFinder::requiresCompositingForPositionFixed(RenderObject* renderer, const RenderLayer* layer, RenderLayer::ViewportConstrainedNotCompositedReason* viewportConstrainedNotCompositedReason, bool* needToRecomputeCompositingRequirements) const
+bool CompositingReasonFinder::requiresCompositingForPositionFixed(RenderObject* renderer, const RenderLayer* layer, RenderLayer::ViewportConstrainedNotCompositedReason* viewportConstrainedNotCompositedReason) const
 {
     if (!(m_compositingTriggers & ViewportConstrainedPositionedTrigger))
         return false;
@@ -230,7 +164,11 @@ bool CompositingReasonFinder::requiresCompositingForPositionFixed(RenderObject* 
     RenderObject* container = renderer->container();
     // If the renderer is not hooked up yet then we have to wait until it is.
     if (!container) {
-        *needToRecomputeCompositingRequirements = true;
+        ASSERT(m_renderView.document().lifecycle().state() < DocumentLifecycle::InCompositingUpdate);
+        // FIXME: Remove this and ASSERT(container) once we get rid of the incremental
+        // allocateOrClearCompositedLayerMapping compositing update. This happens when
+        // adding the renderer to the tree because we setStyle before addChild in
+        // createRendererForElementIfNeeded.
         return false;
     }
 
@@ -269,10 +207,9 @@ bool CompositingReasonFinder::requiresCompositingForPositionFixed(RenderObject* 
     }
 
     // Subsequent tests depend on layout. If we can't tell now, just keep things the way they are until layout is done.
-    if (m_renderView.document().lifecycle().state() < DocumentLifecycle::LayoutClean) {
-        *needToRecomputeCompositingRequirements = true;
+    // FIXME: Get rid of this codepath once we get rid of the incremental compositing update in RenderLayer::styleChanged.
+    if (m_renderView.document().lifecycle().state() < DocumentLifecycle::LayoutClean)
         return layer->hasCompositedLayerMapping();
-    }
 
     bool paintsContent = layer->isVisuallyNonEmpty() || layer->hasVisibleDescendant();
     if (!paintsContent) {
@@ -283,13 +220,12 @@ bool CompositingReasonFinder::requiresCompositingForPositionFixed(RenderObject* 
 
     // Fixed position elements that are invisible in the current view don't get their own layer.
     if (FrameView* frameView = m_renderView.frameView()) {
+        ASSERT(m_renderView.document().lifecycle().state() == DocumentLifecycle::InCompositingUpdate);
         LayoutRect viewBounds = frameView->viewportConstrainedVisibleContentRect();
         LayoutRect layerBounds = layer->boundingBoxForCompositing(layer->compositor()->rootRenderLayer(), RenderLayer::ApplyBoundsChickenEggHacks);
         if (!viewBounds.intersects(enclosingIntRect(layerBounds))) {
-            if (viewportConstrainedNotCompositedReason) {
+            if (viewportConstrainedNotCompositedReason)
                 *viewportConstrainedNotCompositedReason = RenderLayer::NotCompositedForBoundsOutOfView;
-                *needToRecomputeCompositingRequirements = true;
-            }
             return false;
         }
     }

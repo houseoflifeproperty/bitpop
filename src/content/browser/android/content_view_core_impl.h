@@ -9,7 +9,6 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_weak_ref.h"
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_ptr.h"
@@ -17,8 +16,6 @@
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/android/content_view_core.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/rect.h"
@@ -31,12 +28,12 @@ class WindowAndroid;
 }
 
 namespace content {
+class JavaBridgeDispatcherHostManager;
 class RenderWidgetHostViewAndroid;
 struct MenuItem;
 
 // TODO(jrg): this is a shell.  Upstream the rest.
 class ContentViewCoreImpl : public ContentViewCore,
-                            public NotificationObserver,
                             public WebContentsObserver {
  public:
   static ContentViewCoreImpl* FromWebContents(WebContents* web_contents);
@@ -44,7 +41,8 @@ class ContentViewCoreImpl : public ContentViewCore,
                       jobject obj,
                       WebContents* web_contents,
                       ui::ViewAndroid* view_android,
-                      ui::WindowAndroid* window_android);
+                      ui::WindowAndroid* window_android,
+                      jobject java_bridge_retained_object_set);
 
   // ContentViewCore implementation.
   virtual base::android::ScopedJavaLocalRef<jobject> GetJavaObject() OVERRIDE;
@@ -63,6 +61,11 @@ class ContentViewCoreImpl : public ContentViewCore,
   virtual float GetDpiScale() const OVERRIDE;
   virtual void PauseVideo() OVERRIDE;
   virtual void PauseOrResumeGeolocation(bool should_pause) OVERRIDE;
+  virtual void RequestTextSurroundingSelection(
+      int max_length,
+      const base::Callback<void(const base::string16& content,
+                                int start_offset,
+                                int end_offset)>& callback) OVERRIDE;
 
   // --------------------------------------------------------------------------
   // Methods called from Java via JNI
@@ -109,7 +112,9 @@ class ContentViewCoreImpl : public ContentViewCore,
                         jint pointer_id_0,
                         jint pointer_id_1,
                         jfloat touch_major_0,
-                        jfloat touch_major_1);
+                        jfloat touch_major_1,
+                        jfloat raw_pos_x,
+                        jfloat raw_pos_y);
   jboolean SendMouseMoveEvent(JNIEnv* env,
                               jobject obj,
                               jlong time_ms,
@@ -156,6 +161,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   void ReloadIgnoringCache(JNIEnv* env, jobject obj, jboolean check_for_repost);
   void CancelPendingReload(JNIEnv* env, jobject obj);
   void ContinuePendingReload(JNIEnv* env, jobject obj);
+  void AddStyleSheetByURL(JNIEnv* env, jobject obj, jstring url);
   void ClearHistory(JNIEnv* env, jobject obj);
   void EvaluateJavaScript(JNIEnv* env,
                           jobject obj,
@@ -165,6 +171,7 @@ class ContentViewCoreImpl : public ContentViewCore,
   long GetNativeImeAdapter(JNIEnv* env, jobject obj);
   void SetFocus(JNIEnv* env, jobject obj, jboolean focused);
   void ScrollFocusedEditableNodeIntoView(JNIEnv* env, jobject obj);
+  void SelectWordAroundCaret(JNIEnv* env, jobject obj);
 
   jint GetBackgroundColor(JNIEnv* env, jobject obj);
   void SetBackgroundColor(JNIEnv* env, jobject obj, jint color);
@@ -185,8 +192,7 @@ class ContentViewCoreImpl : public ContentViewCore,
                               jobject obj,
                               jobject object,
                               jstring name,
-                              jclass safe_annotation_clazz,
-                              jobject retained_object_set);
+                              jclass safe_annotation_clazz);
   void RemoveJavascriptInterface(JNIEnv* env, jobject obj, jstring name);
   int GetNavigationHistory(JNIEnv* env, jobject obj, jobject history);
   void GetDirectedNavigationHistory(JNIEnv* env,
@@ -220,6 +226,8 @@ class ContentViewCoreImpl : public ContentViewCore,
                             jint y,
                             jint width,
                             jint height);
+
+  void SetBackgroundOpaque(JNIEnv* env, jobject jobj, jboolean opaque);
 
   jint GetCurrentRenderProcessId(JNIEnv* env, jobject obj);
 
@@ -312,13 +320,10 @@ class ContentViewCoreImpl : public ContentViewCore,
   friend class ContentViewUserData;
   virtual ~ContentViewCoreImpl();
 
-  // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
-
   // WebContentsObserver implementation.
   virtual void RenderViewReady() OVERRIDE;
+  virtual void RenderViewHostChanged(RenderViewHost* old_host,
+                                     RenderViewHost* new_host) OVERRIDE;
   virtual void WebContentsDestroyed() OVERRIDE;
 
   // --------------------------------------------------------------------------
@@ -351,8 +356,6 @@ class ContentViewCoreImpl : public ContentViewCore,
   // A weak reference to the Java ContentViewCore object.
   JavaObjectWeakGlobalRef java_ref_;
 
-  NotificationRegistrar notification_registrar_;
-
   // Reference to the current WebContents used to determine how and what to
   // display in the ContentViewCore.
   WebContentsImpl* web_contents_;
@@ -374,9 +377,11 @@ class ContentViewCoreImpl : public ContentViewCore,
   // will be sent to Renderer once it is ready.
   int device_orientation_;
 
-  bool geolocation_needs_pause_;
-
   bool accessibility_enabled_;
+
+  // Manages injecting Java objects.
+  scoped_ptr<JavaBridgeDispatcherHostManager>
+      java_bridge_dispatcher_host_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentViewCoreImpl);
 };

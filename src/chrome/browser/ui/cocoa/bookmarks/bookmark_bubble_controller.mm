@@ -7,6 +7,7 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
@@ -14,8 +15,8 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -52,14 +53,16 @@ using base::UserMetricsAction;
 }
 
 - (id)initWithParentWindow:(NSWindow*)parentWindow
+                    client:(ChromeBookmarkClient*)client
                      model:(BookmarkModel*)model
                       node:(const BookmarkNode*)node
          alreadyBookmarked:(BOOL)alreadyBookmarked {
-  DCHECK(model);
+  DCHECK(client);
   DCHECK(node);
   if ((self = [super initWithWindowNibPath:@"BookmarkBubble"
                               parentWindow:parentWindow
                                 anchoredAt:NSZeroPoint])) {
+    client_ = client;
     model_ = model;
     node_ = node;
     alreadyBookmarked_ = alreadyBookmarked;
@@ -103,6 +106,7 @@ using base::UserMetricsAction;
 - (void)startPulsingBookmarkButton:(const BookmarkNode*)node  {
   while (node) {
     if ((node->parent() == model_->bookmark_bar_node()) ||
+        (node->parent() == client_->managed_node()) ||
         (node == model_->other_node())) {
       pulsingBookmarkNode_ = node;
       bookmarkObserver_->StartObservingNode(pulsingBookmarkNode_);
@@ -195,9 +199,8 @@ using base::UserMetricsAction;
   // dialog, the bookmark bubble's cancel: means "don't add this as a
   // bookmark", not "cancel editing".  We must take extra care to not
   // touch the bookmark in this selector.
-  bookmarkObserver_.reset(new BookmarkModelObserverForCocoa(
-      model_,
-      ^(BOOL nodeWasDeleted) {
+  bookmarkObserver_.reset(
+      new BookmarkModelObserverForCocoa(model_, ^(BOOL nodeWasDeleted) {
           // If a watched node was deleted, the pointer to the pulsing button
           // is likely stale.
           if (nodeWasDeleted)
@@ -360,7 +363,7 @@ using base::UserMetricsAction;
 - (void)addFolderNodes:(const BookmarkNode*)parent
          toPopUpButton:(NSPopUpButton*)button
            indentation:(int)indentation {
-  if (!model_->is_root_node(parent))  {
+  if (!model_->is_root_node(parent)) {
     NSString* title = base::SysUTF16ToNSString(parent->GetTitle());
     NSMenu* menu = [button menu];
     NSMenuItem* item = [menu addItemWithTitle:title
@@ -372,10 +375,12 @@ using base::UserMetricsAction;
   }
   for (int i = 0; i < parent->child_count(); i++) {
     const BookmarkNode* child = parent->GetChild(i);
-    if (child->is_folder() && child->IsVisible())
+    if (child->is_folder() && child->IsVisible() &&
+        client_->CanBeEditedByUser(child)) {
       [self addFolderNodes:child
              toPopUpButton:button
                indentation:indentation];
+    }
   }
 }
 

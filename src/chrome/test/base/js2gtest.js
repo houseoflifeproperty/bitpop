@@ -4,7 +4,7 @@
 
 /**
  * @fileoverview Generator script for creating gtest-style JavaScript
- *     tests for WebUI and unit tests. Generates C++ gtest wrappers
+ *     tests for extensions, WebUI and unit tests. Generates C++ gtest wrappers
  *     which will invoke the appropriate JavaScript for each test.
  * @author scr@chromium.org (Sheridan Rawlins)
  * @see WebUI testing: http://goo.gl/ZWFXF
@@ -15,9 +15,10 @@
 
 // Arguments from rules in chrome_tests.gypi are passed in through
 // python script gypv8sh.py.
-if (arguments.length < 4) {
+if (arguments.length != 6) {
   print('usage: ' +
-        arguments[0] + ' path-to-testfile.js testfile.js output.cc test-type');
+        arguments[0] +
+        ' path-to-testfile.js testfile.js path_to_deps.js output.cc test-type');
   quit(-1);
 }
 
@@ -35,16 +36,28 @@ var jsFile = arguments[1];
 var jsFileBase = arguments[2];
 
 /**
+ * Path to Closure library style deps.js file.
+ * @type {string?}
+ */
+var depsFile = arguments[3];
+
+/**
  * Path to C++ file generation is outputting to.
  * @type {string}
  */
-var outputFile = arguments[3];
+var outputFile = arguments[4];
 
 /**
  * Type of this test.
- * @type {string} ('unit'| 'webui')
+ * @type {string} ('extension' | 'unit' | 'webui')
  */
-var testType = arguments[4];
+var testType = arguments[5];
+if (testType != 'extension' &&
+    testType != 'unit' &&
+    testType != 'webui') {
+  print('Invalid test type: ' + testType);
+  quit(-1);
+}
 
 /**
  * C++ gtest macro to use for TEST_F depending on |testType|.
@@ -68,37 +81,69 @@ var genIncludes = [];
 
 /**
  * When true, add calls to set_preload_test_(fixture|name). This is needed when
- * |testType| === 'browser' to send an injection message before the page loads,
- * but is not required or supported for |testType| === 'unit'.
+ * |testType| === 'webui' to send an injection message before the page loads,
+ * but is not required or supported by any other test type.
  * @type {boolean}
  */
 var addSetPreloadInfo;
 
-// Generate the file to stdout.
-print('// GENERATED FILE');
-print('// ' + arguments.join(' '));
-print('// PLEASE DO NOT HAND EDIT!');
-print();
+/**
+ * Whether cc headers need to be generated.
+ * @type {boolean}
+ */
+var needGenHeader = true;
 
-// Output some C++ headers based upon the |testType|.
-//
-// Currently supports:
-// 'unit' - unit_tests harness, js2unit rule, V8UnitTest superclass.
-// 'webui' - browser_tests harness, js2webui rule, WebUIBrowserTest superclass.
-if (testType === 'unit') {
-  print('#include "chrome/test/base/v8_unit_test.h"');
-  testing.Test.prototype.typedefCppFixture = 'V8UnitTest';
-  testF = 'TEST_F';
-  addSetPreloadInfo = false;
-} else {
-  print('#include "chrome/test/base/web_ui_browsertest.h"');
-  testing.Test.prototype.typedefCppFixture = 'WebUIBrowserTest';
-  testF = 'IN_PROC_BROWSER_TEST_F';
-  addSetPreloadInfo = true;
+/**
+ * Helpful hint pointing back to the source js.
+ * @type {string}
+ */
+var argHint = '// ' + this['arguments'].join(' ');
+
+
+/**
+ * Generates the header of the cc file to stdout.
+ * @param {string?} testFixture Name of test fixture.
+ */
+function maybeGenHeader(testFixture) {
+  if (!needGenHeader)
+    return;
+  needGenHeader = false;
+  print('// GENERATED FILE');
+  print(argHint);
+  print('// PLEASE DO NOT HAND EDIT!');
+  print();
+
+  // Output some C++ headers based upon the |testType|.
+  //
+  // Currently supports:
+  // 'extension' - browser_tests harness, js2extension rule,
+  //               ExtensionJSBrowserTest superclass.
+  // 'unit' - unit_tests harness, js2unit rule, V8UnitTest superclass.
+  // 'webui' - browser_tests harness, js2webui rule, WebUIBrowserTest
+  // superclass.
+  if (testType === 'extension') {
+    print('#include "chrome/test/base/extension_js_browser_test.h"');
+    testing.Test.prototype.typedefCppFixture = 'ExtensionJSBrowserTest';
+    addSetPreloadInfo = false;
+    testF = 'IN_PROC_BROWSER_TEST_F';
+  } else if (testType === 'unit') {
+    print('#include "chrome/test/base/v8_unit_test.h"');
+    testing.Test.prototype.typedefCppFixture = 'V8UnitTest';
+    testF = 'TEST_F';
+    addSetPreloadInfo = false;
+  } else {
+    print('#include "chrome/test/base/web_ui_browser_test.h"');
+    testing.Test.prototype.typedefCppFixture = 'WebUIBrowserTest';
+    testF = 'IN_PROC_BROWSER_TEST_F';
+    addSetPreloadInfo = true;
+  }
+  print('#include "url/gurl.h"');
+  print('#include "testing/gtest/include/gtest/gtest.h"');
+  if (testFixture && this[testFixture].prototype.testGenCppIncludes)
+    this[testFixture].prototype.testGenCppIncludes();
+  print();
 }
-print('#include "url/gurl.h"');
-print('#include "testing/gtest/include/gtest/gtest.h"');
-print();
+
 
 /**
  * Convert the |includeFile| to paths appropriate for immediate
@@ -114,12 +159,123 @@ function includeFileToPaths(includeFile) {
   };
 }
 
+
+/**
+ * Maps object names to the path to the file that provides them.
+ * Populated from the |depsFile| if any.
+ * @type {Object.<string, string>}
+ */
+var dependencyProvidesToPaths = {};
+
+/**
+ * Maps dependency path names to object names required by the file.
+ * Populated from the |depsFile| if any.
+ * @type {Object.<string, Array.<string>>}
+ */
+var dependencyPathsToRequires = {};
+
+if (depsFile) {
+  var goog = goog || {};
+  /**
+   * Called by the javascript in the deps file to add modules and their
+   * dependencies.
+   * @param {string} path Relative path to the file.
+   * @param Array.<string> provides Objects provided by this file.
+   * @param Array.<string> requires Objects required by this file.
+   */
+  goog.addDependency = function(path, provides, requires) {
+    provides.forEach(function(provide) {
+      dependencyProvidesToPaths[provide] = path;
+    });
+    dependencyPathsToRequires[path] = requires;
+  };
+
+  // Read and eval the deps file.  It should only contain goog.addDependency
+  // calls.
+  eval(read(depsFile));
+}
+
+/**
+ * Resolves a list of libraries to an ordered list of paths to load by the
+ * generated C++.  The input should contain object names provided
+ * by the deps file.  Dependencies will be resolved and included in the
+ * correct order, meaning that the returned array may contain more entries
+ * than the input.
+ * @param {Array.<string>} deps List of dependencies.
+ * @return {Array.<string>} List of paths to load.
+ */
+function resolveClosureModuleDeps(deps) {
+  if (!depsFile && deps.length > 0) {
+    print('Can\'t have closure dependencies without a deps file.');
+    quit(-1);
+  }
+  var resultPaths = [];
+  var addedPaths = {};
+
+  function addPath(path) {
+    addedPaths[path] = true;
+    resultPaths.push(path);
+  }
+
+  function resolveAndAppend(path) {
+    if (addedPaths[path]) {
+      return;
+    }
+    // Set before recursing to catch cycles.
+    addedPaths[path] = true;
+    dependencyPathsToRequires[path].forEach(function(require) {
+      var providingPath = dependencyProvidesToPaths[require];
+      if (!providingPath) {
+        print('Unknown object', require, 'required by', path);
+        quit(-1);
+      }
+      resolveAndAppend(providingPath);
+    });
+    resultPaths.push(path);
+  }
+
+  // Always add closure library's base.js if provided by deps.
+  var basePath = dependencyProvidesToPaths['goog'];
+  if (basePath) {
+    addPath(basePath);
+  }
+
+  deps.forEach(function(dep) {
+    var providingPath = dependencyProvidesToPaths[dep];
+    if (providingPath) {
+      resolveAndAppend(providingPath);
+    } else {
+      print('Unknown dependency:', dep);
+      quit(-1);
+    }
+  });
+
+  return resultPaths;
+}
+
 /**
  * Output |code| verbatim.
  * @param {string} code The code to output.
  */
 function GEN(code) {
+  maybeGenHeader(null);
   print(code);
+}
+
+/**
+ * Outputs |commentEncodedCode|, converting comment to enclosed C++ code.
+ * @param {function} commentEncodedCode A function in the following format (note
+ * the space in '/ *' and '* /' should be removed to form a comment delimiter):
+ *    function() {/ *! my_cpp_code.DoSomething(); * /
+ *    Code between / *! and * / will be extracted and written to stdout.
+ */
+function GEN_BLOCK(commentEncodedCode) {
+  var code = commentEncodedCode.toString().
+      replace(/^[^\/]+\/\*!?/, '').
+      replace(/\*\/[^\/]+$/, '').
+      replace(/^\n|\n$/, '').
+      replace(/\s+$/, '');
+  GEN(code);
 }
 
 /**
@@ -145,6 +301,7 @@ function GEN_INCLUDE(includes) {
  * @param {Function} testBody The function body to execute for this test.
  */
 function TEST_F(testFixture, testFunction, testBody) {
+  maybeGenHeader(testFixture);
   var browsePreload = this[testFixture].prototype.browsePreload;
   var browsePrintPreload = this[testFixture].prototype.browsePrintPreload;
   var testGenPreamble = this[testFixture].prototype.testGenPreamble;
@@ -158,7 +315,8 @@ function TEST_F(testFixture, testFunction, testBody) {
       this[testFixture].prototype.extraLibraries.map(
           function(includeFile) {
             return includeFileToPaths(includeFile).base;
-          }));
+          }),
+      resolveClosureModuleDeps(this[testFixture].prototype.closureModuleDeps));
 
   if (typedefCppFixture && !(testFixture in typedeffedCppFixtures)) {
     print('typedef ' + typedefCppFixture + ' ' + testFixture + ';');

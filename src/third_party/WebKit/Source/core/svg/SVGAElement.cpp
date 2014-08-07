@@ -24,8 +24,8 @@
 
 #include "core/svg/SVGAElement.h"
 
-#include "SVGNames.h"
-#include "XLinkNames.h"
+#include "core/SVGNames.h"
+#include "core/XLinkNames.h"
 #include "core/dom/Attr.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
@@ -45,7 +45,6 @@
 #include "core/rendering/svg/RenderSVGInline.h"
 #include "core/rendering/svg/RenderSVGText.h"
 #include "core/rendering/svg/RenderSVGTransformableContainer.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/animation/SVGSMILElement.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/network/ResourceRequest.h"
@@ -63,10 +62,7 @@ inline SVGAElement::SVGAElement(Document& document)
     addToPropertyMap(m_svgTarget);
 }
 
-PassRefPtr<SVGAElement> SVGAElement::create(Document& document)
-{
-    return adoptRef(new SVGAElement(document));
-}
+DEFINE_NODE_FACTORY(SVGAElement)
 
 String SVGAElement::title() const
 {

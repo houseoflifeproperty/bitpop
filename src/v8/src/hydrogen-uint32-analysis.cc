@@ -2,10 +2,34 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "hydrogen-uint32-analysis.h"
+#include "src/hydrogen-uint32-analysis.h"
 
 namespace v8 {
 namespace internal {
+
+
+static bool IsUnsignedLoad(HLoadKeyed* instr) {
+  switch (instr->elements_kind()) {
+    case EXTERNAL_UINT8_ELEMENTS:
+    case EXTERNAL_UINT16_ELEMENTS:
+    case EXTERNAL_UINT32_ELEMENTS:
+    case EXTERNAL_UINT8_CLAMPED_ELEMENTS:
+    case UINT8_ELEMENTS:
+    case UINT16_ELEMENTS:
+    case UINT32_ELEMENTS:
+    case UINT8_CLAMPED_ELEMENTS:
+      return true;
+    default:
+      return false;
+  }
+}
+
+
+static bool IsUint32Operation(HValue* instr) {
+  return instr->IsShr() ||
+      (instr->IsLoadKeyed() && IsUnsignedLoad(HLoadKeyed::cast(instr))) ||
+      (instr->IsInteger32Constant() && instr->GetInteger32Constant() >= 0);
+}
 
 
 bool HUint32AnalysisPhase::IsSafeUint32Use(HValue* val, HValue* use) {
@@ -37,6 +61,9 @@ bool HUint32AnalysisPhase::IsSafeUint32Use(HValue* val, HValue* use) {
         return true;
       }
     }
+  } else if (use->IsCompareNumericAndBranch()) {
+    HCompareNumericAndBranch* c = HCompareNumericAndBranch::cast(use);
+    return IsUint32Operation(c->left()) && IsUint32Operation(c->right());
   }
 
   return false;

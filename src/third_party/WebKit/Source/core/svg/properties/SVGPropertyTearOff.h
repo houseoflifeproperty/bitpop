@@ -83,10 +83,19 @@ public:
         return m_attributeName;
     }
 
+    void attachToSVGElementAttribute(SVGElement* contextElement, const QualifiedName& attributeName)
+    {
+        ASSERT(!isImmutable());
+        ASSERT(contextElement);
+        ASSERT(attributeName != QualifiedName::null());
+        m_contextElement = contextElement;
+        m_attributeName = attributeName;
+    }
+
     virtual AnimatedPropertyType type() const = 0;
 
 protected:
-    SVGPropertyTearOffBase(SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = nullQName())
+    SVGPropertyTearOffBase(SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
         : m_contextElement(contextElement)
         , m_propertyIsAnimVal(propertyIsAnimVal)
         , m_isReadOnlyProperty(false)
@@ -122,7 +131,7 @@ public:
     }
 
 protected:
-    SVGPropertyTearOff(PassRefPtr<Property> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = nullQName())
+    SVGPropertyTearOff(PassRefPtr<Property> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
         : SVGPropertyTearOffBase(contextElement, propertyIsAnimVal, attributeName)
         , m_target(target)
     {

@@ -19,7 +19,7 @@ namespace gpu {
 namespace {
 
 // Break a version string into segments.  Return true if each segment is
-// a valid number.
+// a valid number, and not all segment is 0.
 bool ProcessVersionString(const std::string& version_string,
                           char splitter,
                           std::vector<std::string>* version) {
@@ -36,12 +36,15 @@ bool ProcessVersionString(const std::string& version_string,
     }
     (*version)[0] = year;
   }
+  bool all_zero = true;
   for (size_t i = 0; i < version->size(); ++i) {
     unsigned num = 0;
     if (!base::StringToUint((*version)[i], &num))
       return false;
+    if (num)
+      all_zero = false;
   }
-  return true;
+  return !all_zero;
 }
 
 // Compare two number strings using numerical ordering.
@@ -87,6 +90,10 @@ int CompareLexicalNumberStrings(
 }
 
 const char kMultiGpuStyleStringAMDSwitchable[] = "amd_switchable";
+const char kMultiGpuStyleStringAMDSwitchableDiscrete[] =
+    "amd_switchable_discrete";
+const char kMultiGpuStyleStringAMDSwitchableIntegrated[] =
+    "amd_switchable_integrated";
 const char kMultiGpuStyleStringOptimus[] = "optimus";
 
 const char kMultiGpuCategoryStringPrimary[] = "primary";
@@ -213,13 +220,20 @@ GpuControlList::OsInfo::OsInfo(const std::string& os,
 
 GpuControlList::OsInfo::~OsInfo() {}
 
-bool GpuControlList::OsInfo::Contains(OsType type,
-                                    const std::string& version) const {
+bool GpuControlList::OsInfo::Contains(
+    OsType type, const std::string& version) const {
   if (!IsValid())
     return false;
   if (type_ != type && type_ != kOsAny)
     return false;
-  return version_info_->Contains(version);
+  std::string processed_version;
+  size_t pos = version.find_first_not_of("0123456789.");
+  if (pos != std::string::npos)
+    processed_version = version.substr(0, pos);
+  else
+    processed_version = version;
+
+  return version_info_->Contains(processed_version);
 }
 
 bool GpuControlList::OsInfo::IsValid() const {
@@ -1078,6 +1092,10 @@ GpuControlList::GpuControlListEntry::StringToMultiGpuStyle(
     return kMultiGpuStyleOptimus;
   if (style == kMultiGpuStyleStringAMDSwitchable)
     return kMultiGpuStyleAMDSwitchable;
+  if (style == kMultiGpuStyleStringAMDSwitchableIntegrated)
+    return kMultiGpuStyleAMDSwitchableIntegrated;
+  if (style == kMultiGpuStyleStringAMDSwitchableDiscrete)
+    return kMultiGpuStyleAMDSwitchableDiscrete;
   return kMultiGpuStyleNone;
 }
 
@@ -1197,6 +1215,22 @@ bool GpuControlList::GpuControlListEntry::Contains(
       break;
     case kMultiGpuStyleAMDSwitchable:
       if (!gpu_info.amd_switchable)
+        return false;
+      break;
+    case kMultiGpuStyleAMDSwitchableDiscrete:
+      if (!gpu_info.amd_switchable)
+        return false;
+      // The discrete GPU is always the primary GPU.
+      // This is guaranteed by GpuInfoCollector.
+      if (!gpu_info.gpu.active)
+        return false;
+      break;
+    case kMultiGpuStyleAMDSwitchableIntegrated:
+      if (!gpu_info.amd_switchable)
+        return false;
+      // Assume the integrated GPU is the first in the secondary GPU list.
+      if (gpu_info.secondary_gpus.size() == 0 ||
+          !gpu_info.secondary_gpus[0].active)
         return false;
       break;
     case kMultiGpuStyleNone:
@@ -1421,15 +1455,8 @@ std::set<int> GpuControlList::MakeDecision(
 
   if (os == kOsAny)
     os = GetOsType();
-  if (os_version.empty()) {
+  if (os_version.empty())
     os_version = base::SysInfo::OperatingSystemVersion();
-    size_t pos = os_version.find_first_not_of("0123456789.");
-    if (pos != std::string::npos)
-      os_version = os_version.substr(0, pos);
-  }
-  std::vector<std::string> pieces;
-  if (!ProcessVersionString(os_version, '.', &pieces))
-    os_version = "0";
 
   for (size_t i = 0; i < entries_.size(); ++i) {
     if (entries_[i]->Contains(os, os_version, gpu_info)) {

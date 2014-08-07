@@ -18,8 +18,9 @@ class DriveServiceInterface;
 }
 
 namespace google_apis {
+class FileList;
+class FileResource;
 class ResourceEntry;
-class ResourceList;
 }
 
 namespace sync_file_system {
@@ -44,11 +45,11 @@ class FolderCreator {
  private:
   void DidCreateFolder(const FileIDCallback& callback,
                        google_apis::GDataErrorCode error,
-                       scoped_ptr<google_apis::ResourceEntry> entry);
+                       scoped_ptr<google_apis::FileResource> entry);
   void DidListFolders(const FileIDCallback& callback,
-                      ScopedVector<google_apis::ResourceEntry> candidates,
+                      ScopedVector<google_apis::FileResource> candidates,
                       google_apis::GDataErrorCode error,
-                      scoped_ptr<google_apis::ResourceList> resource_list);
+                      scoped_ptr<google_apis::FileList> file_list);
   void DidUpdateDatabase(const std::string& file_id,
                          const FileIDCallback& callback,
                          SyncStatusCode status);

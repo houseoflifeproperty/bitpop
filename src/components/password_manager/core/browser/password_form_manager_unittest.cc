@@ -11,13 +11,13 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/common/password_form.h"
-#include "components/password_manager/core/browser/mock_password_manager_driver.h"
 #include "components/password_manager/core/browser/mock_password_store.h"
 #include "components/password_manager/core/browser/password_form_manager.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/password_manager/core/browser/password_manager_driver.h"
 #include "components/password_manager/core/browser/password_store.h"
 #include "components/password_manager/core/browser/stub_password_manager_client.h"
+#include "components/password_manager/core/browser/stub_password_manager_driver.h"
 #include "components/password_manager/core/browser/test_password_store.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -44,6 +44,12 @@ void RunAllPendingTasks() {
       FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
   run_loop.Run();
 }
+
+class MockPasswordManagerDriver : public StubPasswordManagerDriver {
+ public:
+  MOCK_METHOD0(IsOffTheRecord, bool());
+  MOCK_METHOD1(AllowPasswordGenerationForForm, void(autofill::PasswordForm*));
+};
 
 class TestPasswordManagerClient : public StubPasswordManagerClient {
  public:
@@ -186,7 +192,7 @@ class PasswordFormManagerTest : public testing::Test {
 TEST_F(PasswordFormManagerTest, TestNewLogin) {
   scoped_ptr<TestPasswordManagerClient> client(
       new TestPasswordManagerClient(NULL));
-  scoped_ptr<MockPasswordManagerDriver> driver;
+  scoped_ptr<StubPasswordManagerDriver> driver;
   PasswordFormManager* manager = new PasswordFormManager(
       NULL, client.get(), driver.get(), *observed_form(), false);
 
@@ -245,7 +251,7 @@ TEST_F(PasswordFormManagerTest, TestUpdatePassword) {
   // saw this form and need to find matching logins.
   scoped_ptr<TestPasswordManagerClient> client(
       new TestPasswordManagerClient(NULL));
-  scoped_ptr<MockPasswordManagerDriver> driver;
+  scoped_ptr<StubPasswordManagerDriver> driver;
   PasswordFormManager* manager = new PasswordFormManager(
       NULL, client.get(), driver.get(), *observed_form(), false);
 
@@ -285,7 +291,7 @@ TEST_F(PasswordFormManagerTest, TestUpdatePassword) {
 TEST_F(PasswordFormManagerTest, TestIgnoreResult) {
   scoped_ptr<TestPasswordManagerClient> client(
       new TestPasswordManagerClient(NULL));
-  scoped_ptr<MockPasswordManagerDriver> driver;
+  scoped_ptr<StubPasswordManagerDriver> driver;
   PasswordFormManager* manager = new PasswordFormManager(
       NULL, client.get(), driver.get(), *observed_form(), false);
 
@@ -307,7 +313,7 @@ TEST_F(PasswordFormManagerTest, TestIgnoreResult) {
 TEST_F(PasswordFormManagerTest, TestEmptyAction) {
   scoped_ptr<TestPasswordManagerClient> client(
       new TestPasswordManagerClient(NULL));
-  scoped_ptr<MockPasswordManagerDriver> driver;
+  scoped_ptr<StubPasswordManagerDriver> driver;
   scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
       NULL, client.get(), driver.get(), *observed_form(), false));
 
@@ -329,7 +335,7 @@ TEST_F(PasswordFormManagerTest, TestEmptyAction) {
 TEST_F(PasswordFormManagerTest, TestUpdateAction) {
   scoped_ptr<TestPasswordManagerClient> client(
       new TestPasswordManagerClient(NULL));
-  scoped_ptr<MockPasswordManagerDriver> driver;
+  scoped_ptr<StubPasswordManagerDriver> driver;
   scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
       NULL, client.get(), driver.get(), *observed_form(), false));
 
@@ -352,7 +358,7 @@ TEST_F(PasswordFormManagerTest, TestUpdateAction) {
 TEST_F(PasswordFormManagerTest, TestDynamicAction) {
   scoped_ptr<TestPasswordManagerClient> client(
       new TestPasswordManagerClient(NULL));
-  scoped_ptr<MockPasswordManagerDriver> driver;
+  scoped_ptr<StubPasswordManagerDriver> driver;
   scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
       NULL, client.get(), driver.get(), *observed_form(), false));
 
@@ -380,6 +386,10 @@ TEST_F(PasswordFormManagerTest, TestAlternateUsername) {
   TestPasswordManager password_manager(&client);
   scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
       &password_manager, &client, client.GetDriver(), *observed_form(), false));
+  EXPECT_CALL(*client.GetMockDriver(), AllowPasswordGenerationForForm(_))
+      .Times(1);
+  EXPECT_CALL(*client.GetMockDriver(), IsOffTheRecord())
+      .WillRepeatedly(Return(false));
 
   password_store->AddLogin(*saved_match());
   manager->FetchMatchingLoginsFromPasswordStore(PasswordStore::ALLOW_PROMPT);
@@ -411,6 +421,8 @@ TEST_F(PasswordFormManagerTest, TestAlternateUsername) {
   // This time use an alternate username
   manager.reset(new PasswordFormManager(
       &password_manager, &client, client.GetDriver(), *observed_form(), false));
+  EXPECT_CALL(*client.GetMockDriver(), AllowPasswordGenerationForForm(_))
+      .Times(1);
   password_store->Clear();
   password_store->AddLogin(*saved_match());
   manager->FetchMatchingLoginsFromPasswordStore(PasswordStore::ALLOW_PROMPT);
@@ -529,6 +541,8 @@ TEST_F(PasswordFormManagerTest, TestSendNotBlacklistedMessage) {
       &password_manager, &client, client.GetDriver(), *observed_form(), false));
   EXPECT_CALL(*client.GetMockDriver(), AllowPasswordGenerationForForm(_))
       .Times(1);
+  EXPECT_CALL(*client.GetMockDriver(), IsOffTheRecord())
+      .WillRepeatedly(Return(false));
   SimulateFetchMatchingLoginsFromPasswordStore(manager.get());
   // We need add heap allocated objects to result.
   result.push_back(CreateSavedMatch(false));
@@ -556,6 +570,10 @@ TEST_F(PasswordFormManagerTest, TestForceInclusionOfGeneratedPasswords) {
   TestPasswordManager password_manager(&client);
   scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
       &password_manager, &client, client.GetDriver(), *observed_form(), false));
+  EXPECT_CALL(*client.GetMockDriver(), AllowPasswordGenerationForForm(_))
+      .Times(1);
+  EXPECT_CALL(*client.GetMockDriver(), IsOffTheRecord())
+      .WillRepeatedly(Return(false));
 
   // Simulate having two matches for this origin, one of which was from a form
   // with different HTML tags for elements. Because of scoring differences,
@@ -575,6 +593,9 @@ TEST_F(PasswordFormManagerTest, TestForceInclusionOfGeneratedPasswords) {
   // well are generated. They should now be sent to Autofill().
   manager.reset(new PasswordFormManager(
       &password_manager, &client, client.GetDriver(), *observed_form(), false));
+  EXPECT_CALL(*client.GetMockDriver(), AllowPasswordGenerationForForm(_))
+      .Times(1);
+
   results.push_back(CreateSavedMatch(false));
   results.push_back(CreateSavedMatch(false));
   results[1]->username_value = ASCIIToUTF16("other@gmail.com");
@@ -589,7 +610,7 @@ TEST_F(PasswordFormManagerTest, TestForceInclusionOfGeneratedPasswords) {
 TEST_F(PasswordFormManagerTest, TestSanitizePossibleUsernames) {
   scoped_ptr<TestPasswordManagerClient> client(
       new TestPasswordManagerClient(NULL));
-  scoped_ptr<MockPasswordManagerDriver> driver;
+  scoped_ptr<StubPasswordManagerDriver> driver;
   scoped_ptr<PasswordFormManager> manager(new PasswordFormManager(
       NULL, client.get(), driver.get(), *observed_form(), false));
   PasswordForm credentials(*observed_form());
@@ -672,6 +693,9 @@ TEST_F(PasswordFormManagerTest, TestUpdateIncompleteCredentials) {
   complete_form.username_element = encountered_form.username_element;
   complete_form.submit_element = encountered_form.submit_element;
 
+  PasswordForm obsolete_form(*incomplete_form);
+  obsolete_form.action = encountered_form.action;
+
   // Feed the incomplete credentials to the manager.
   std::vector<PasswordForm*> results;
   results.push_back(incomplete_form);  // Takes ownership.
@@ -681,9 +705,11 @@ TEST_F(PasswordFormManagerTest, TestUpdateIncompleteCredentials) {
       complete_form, PasswordFormManager::IGNORE_OTHER_POSSIBLE_USERNAMES);
   // By now that form has been used once.
   complete_form.times_used = 1;
+  obsolete_form.times_used = 1;
 
   // Check that PasswordStore receives an update request with the complete form.
-  EXPECT_CALL(*mock_store(), UpdateLogin(complete_form));
+  EXPECT_CALL(*mock_store(), RemoveLogin(obsolete_form));
+  EXPECT_CALL(*mock_store(), AddLogin(complete_form));
   form_manager.Save();
 }
 

@@ -24,49 +24,21 @@ class GmailExpandCollapseConversationPage(
     self.archive_data_file = 'data/gmail_expand_collapse_conversation.json'
 
   def RunNavigateSteps(self, action_runner):
-    action_runner.RunAction(NavigateAction())
-    action_runner.RunAction(WaitAction(
-      {
-        'condition': 'element',
-        'selector': 'img[alt="Expand all"]'
-      }))
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'img[alt="Expand all"]'
-      }))
-    action_runner.RunAction(WaitAction({'seconds': 5}))
-    action_runner.RunAction(WaitAction(
-      {
-        'condition': 'element',
-        'selector': 'img[alt="Collapse all"]'
-      }))
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'img[alt="Collapse all"]'
-      }))
-    action_runner.RunAction(WaitAction({'seconds': 1}))
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForElement('img[alt="Expand all"]')
+    action_runner.ClickElement('img[alt="Expand all"]')
+    action_runner.Wait(5)
+    action_runner.WaitForElement('img[alt="Collapse all"]')
+    action_runner.ClickElement('img[alt="Collapse all"]')
+    action_runner.Wait(1)
 
   def RunEndure(self, action_runner):
-    action_runner.RunAction(WaitAction(
-      {
-        'condition': 'element',
-        'selector': 'img[alt="Expand all"]'
-      }))
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'img[alt="Expand all"]'
-      }))
-    action_runner.RunAction(WaitAction({'seconds': 1}))
-    action_runner.RunAction(WaitAction(
-      {
-        'condition': 'element',
-        'selector': 'img[alt="Collapse all"]'
-      }))
-    action_runner.RunAction(ClickElementAction(
-      {
-        'selector': 'img[alt="Collapse all"]'
-      }))
-    action_runner.RunAction(WaitAction({'seconds': 1}))
+    action_runner.WaitForElement('img[alt="Expand all"]')
+    action_runner.ClickElement('img[alt="Expand all"]')
+    action_runner.Wait(1)
+    action_runner.WaitForElement('img[alt="Collapse all"]')
+    action_runner.ClickElement('img[alt="Collapse all"]')
+    action_runner.Wait(1)
 
 
 class GmailExpandCollapseConversationPageSet(page_set_module.PageSet):
@@ -79,6 +51,7 @@ class GmailExpandCollapseConversationPageSet(page_set_module.PageSet):
     super(GmailExpandCollapseConversationPageSet, self).__init__(
       credentials_path='data/credentials.json',
       user_agent_type='desktop',
-      archive_data_file='data/gmail_expand_collapse_conversation.json')
+      archive_data_file='data/gmail_expand_collapse_conversation.json',
+      bucket=page_set_module.PUBLIC_BUCKET)
 
     self.AddPage(GmailExpandCollapseConversationPage(self))

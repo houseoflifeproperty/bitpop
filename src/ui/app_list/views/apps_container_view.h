@@ -11,10 +11,6 @@
 #include "ui/app_list/views/top_icon_animation_view.h"
 #include "ui/views/view.h"
 
-namespace content {
-class WebContents;
-}
-
 namespace app_list {
 
 class AppsGridView;
@@ -25,7 +21,6 @@ class AppListMainView;
 class AppListModel;
 class ContentsView;
 class FolderBackgroundView;
-class PaginationModel;
 
 // AppsContainerView contains a root level AppsGridView to render the root level
 // app items, and a AppListFolderView to render the app items inside the
@@ -34,7 +29,6 @@ class AppsContainerView : public views::View,
                           public TopIconAnimationObserver {
  public:
   AppsContainerView(AppListMainView* app_list_main_view,
-                    PaginationModel* pagination_model,
                     AppListModel* model);
   virtual ~AppsContainerView();
 
@@ -64,7 +58,7 @@ class AppsContainerView : public views::View,
   bool IsInFolderView() const;
 
   // views::View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
 

@@ -133,6 +133,7 @@ class StatsReport {
 
   // Internal StatsValue names
   static const char kStatsValueNameAvgEncodeMs[];
+  static const char kStatsValueNameEncodeRelStdDev[];
   static const char kStatsValueNameEncodeUsagePercent[];
   static const char kStatsValueNameCaptureJitterMs[];
   static const char kStatsValueNameCaptureQueueDelayMsPerS[];
@@ -200,6 +201,12 @@ class StatsReport {
   static const char kStatsValueNameRecvPacketGroupArrivalTimeDebug[];
   static const char kStatsValueNameRecvPacketGroupPropagationDeltaDebug[];
   static const char kStatsValueNameRecvPacketGroupPropagationDeltaSumDebug[];
+  static const char kStatsValueNameDecodingCTSG[];
+  static const char kStatsValueNameDecodingCTN[];
+  static const char kStatsValueNameDecodingNormal[];
+  static const char kStatsValueNameDecodingPLC[];
+  static const char kStatsValueNameDecodingCNG[];
+  static const char kStatsValueNameDecodingPLCCNG[];
 };
 
 typedef std::vector<StatsReport> StatsReports;

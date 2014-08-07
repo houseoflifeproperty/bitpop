@@ -30,6 +30,7 @@
 #include "WebBlendMode.h"
 #include "WebColor.h"
 #include "WebCommon.h"
+#include "WebFloatPoint3D.h"
 #include "WebPoint.h"
 #include "WebRect.h"
 #include "WebSize.h"
@@ -68,12 +69,6 @@ public:
     virtual void removeFromParent() = 0;
     virtual void removeAllChildren() = 0;
 
-    virtual void setAnchorPoint(const WebFloatPoint&) = 0;
-    virtual WebFloatPoint anchorPoint() const = 0;
-
-    virtual void setAnchorPointZ(float) = 0;
-    virtual float anchorPointZ() const = 0;
-
     virtual void setBounds(const WebSize&) = 0;
     virtual WebSize bounds() const = 0;
 
@@ -100,6 +95,9 @@ public:
 
     virtual void setTransform(const SkMatrix44&) = 0;
     virtual SkMatrix44 transform() const = 0;
+
+    virtual void setTransformOrigin(const WebFloatPoint3D&) { }
+    virtual WebFloatPoint3D transformOrigin() const { return WebFloatPoint3D(); }
 
     // Sets whether the layer draws its content when compositing.
     virtual void setDrawsContent(bool) = 0;

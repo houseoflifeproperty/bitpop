@@ -399,8 +399,9 @@ void URLRequestJob::NotifyReadComplete(int bytes_read) {
 
   // TODO(darin): Bug 1004233. Re-enable this test once all of the chrome
   // unit_tests have been fixed to not trip this.
-  //DCHECK(!request_->status().is_io_pending());
-
+#if 0
+  DCHECK(!request_->status().is_io_pending());
+#endif
   // The headers should be complete before reads complete
   DCHECK(has_handled_response_);
 
@@ -680,6 +681,10 @@ const URLRequestStatus URLRequestJob::GetStatus() {
 void URLRequestJob::SetStatus(const URLRequestStatus &status) {
   if (request_)
     request_->set_status(status);
+}
+
+void URLRequestJob::SetProxyServer(const HostPortPair& proxy_server) {
+  request_->proxy_server_ = proxy_server;
 }
 
 bool URLRequestJob::ReadRawDataForFilter(int* bytes_read) {

@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_ARM64
 
-#include "cpu-profiler.h"
-#include "unicode.h"
-#include "log.h"
-#include "code-stubs.h"
-#include "regexp-stack.h"
-#include "macro-assembler.h"
-#include "regexp-macro-assembler.h"
-#include "arm64/regexp-macro-assembler-arm64.h"
+#include "src/cpu-profiler.h"
+#include "src/unicode.h"
+#include "src/log.h"
+#include "src/code-stubs.h"
+#include "src/regexp-stack.h"
+#include "src/macro-assembler.h"
+#include "src/regexp-macro-assembler.h"
+#include "src/arm64/regexp-macro-assembler-arm64.h"
 
 namespace v8 {
 namespace internal {
@@ -976,6 +976,7 @@ Handle<HeapObject> RegExpMacroAssemblerARM64::GetCode(Handle<String> source) {
   // Set stack pointer back to first register to retain
   ASSERT(csp.Is(__ StackPointer()));
   __ Mov(csp, fp);
+  __ AssertStackConsistency();
 
   // Restore registers.
   __ PopCPURegList(registers_to_retain);
@@ -1288,7 +1289,8 @@ int RegExpMacroAssemblerARM64::CheckStackGuardState(Address* return_address,
                                                   const byte** input_start,
                                                   const byte** input_end) {
   Isolate* isolate = frame_entry<Isolate*>(re_frame, kIsolate);
-  if (isolate->stack_guard()->IsStackOverflow()) {
+  StackLimitCheck check(isolate);
+  if (check.JsHasOverflowed()) {
     isolate->StackOverflow();
     return EXCEPTION;
   }
@@ -1315,7 +1317,7 @@ int RegExpMacroAssemblerARM64::CheckStackGuardState(Address* return_address,
   ASSERT(*return_address <=
       re_code->instruction_start() + re_code->instruction_size());
 
-  Object* result = Execution::HandleStackGuardInterrupt(isolate);
+  Object* result = isolate->stack_guard()->HandleInterrupts();
 
   if (*code_handle != re_code) {  // Return address no longer valid
     int delta = code_handle->address() - re_code->address();
@@ -1459,7 +1461,7 @@ void RegExpMacroAssemblerARM64::BranchOrBacktrack(Condition condition,
     to = &backtrack_label_;
   }
   // TODO(ulan): do direct jump when jump distance is known and fits in imm19.
-  Condition inverted_condition = InvertCondition(condition);
+  Condition inverted_condition = NegateCondition(condition);
   Label no_branch;
   __ B(inverted_condition, &no_branch);
   __ B(to);
@@ -1600,7 +1602,7 @@ void RegExpMacroAssemblerARM64::StoreRegister(int register_index,
 
 void RegExpMacroAssemblerARM64::CallIf(Label* to, Condition condition) {
   Label skip_call;
-  if (condition != al) __ B(&skip_call, InvertCondition(condition));
+  if (condition != al) __ B(&skip_call, NegateCondition(condition));
   __ Bl(to);
   __ Bind(&skip_call);
 }

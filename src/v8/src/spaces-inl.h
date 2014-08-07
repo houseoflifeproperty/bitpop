@@ -5,10 +5,10 @@
 #ifndef V8_SPACES_INL_H_
 #define V8_SPACES_INL_H_
 
-#include "heap-profiler.h"
-#include "isolate.h"
-#include "spaces.h"
-#include "v8memory.h"
+#include "src/heap-profiler.h"
+#include "src/isolate.h"
+#include "src/spaces.h"
+#include "src/v8memory.h"
 
 namespace v8 {
 namespace internal {
@@ -290,21 +290,6 @@ AllocationResult PagedSpace::AllocateRaw(int size_in_bytes) {
 
 AllocationResult NewSpace::AllocateRaw(int size_in_bytes) {
   Address old_top = allocation_info_.top();
-#ifdef DEBUG
-  // If we are stressing compaction we waste some memory in new space
-  // in order to get more frequent GCs.
-  if (FLAG_stress_compaction && !heap()->linear_allocation()) {
-    if (allocation_info_.limit() - old_top >= size_in_bytes * 4) {
-      int filler_size = size_in_bytes * 4;
-      for (int i = 0; i < filler_size; i += kPointerSize) {
-        *(reinterpret_cast<Object**>(old_top + i)) =
-            heap()->one_pointer_filler_map();
-      }
-      old_top += filler_size;
-      allocation_info_.set_top(allocation_info_.top() + filler_size);
-    }
-  }
-#endif
 
   if (allocation_info_.limit() - old_top < size_in_bytes) {
     return SlowAllocateRaw(size_in_bytes);

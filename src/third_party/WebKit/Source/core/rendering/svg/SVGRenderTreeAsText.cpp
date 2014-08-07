@@ -30,7 +30,6 @@
 
 #include "core/rendering/svg/SVGRenderTreeAsText.h"
 
-#include "SVGNames.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderTreeAsText.h"
 #include "core/rendering/svg/RenderSVGGradientStop.h"
@@ -64,6 +63,7 @@
 #include "core/svg/SVGRadialGradientElement.h"
 #include "core/svg/SVGRectElement.h"
 #include "core/svg/SVGStopElement.h"
+#include "platform/graphics/DashArray.h"
 #include "platform/graphics/GraphicsTypes.h"
 
 #include <math.h>
@@ -473,7 +473,7 @@ static void writeStandardPrefix(TextStream& ts, const RenderObject& object, int 
 
 static void writeChildren(TextStream& ts, const RenderObject& object, int indent)
 {
-    for (RenderObject* child = object.firstChild(); child; child = child->nextSibling())
+    for (RenderObject* child = object.slowFirstChild(); child; child = child->nextSibling())
         write(ts, *child, indent + 1);
 }
 

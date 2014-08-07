@@ -34,7 +34,6 @@
 #include "bindings/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/Document.h"
-#include "core/events/Event.h"
 #include "core/fileapi/File.h"
 #include "core/fileapi/FileError.h"
 #include "core/fileapi/FileReader.h"
@@ -42,6 +41,7 @@
 #include "core/html/VoidCallback.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/inspector/InspectorState.h"
+#include "core/page/Page.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/DirectoryEntry.h"
 #include "modules/filesystem/DirectoryReader.h"
@@ -217,7 +217,7 @@ private:
     RefPtr<RequestDirectoryContentCallback> m_requestCallback;
     KURL m_url;
     RefPtr<Array<TypeBuilder::FileSystem::Entry> > m_entries;
-    RefPtrWillBePersistent<DirectoryReader> m_directoryReader;
+    Persistent<DirectoryReader> m_directoryReader;
 };
 
 void DirectoryContentRequest::start(ExecutionContext* executionContext)
@@ -265,7 +265,7 @@ bool DirectoryContentRequest::didReadDirectoryEntries(const EntryHeapVector& ent
     }
 
     for (size_t i = 0; i < entries.size(); ++i) {
-        RefPtrWillBeRawPtr<Entry> entry = entries[i];
+        Entry* entry = entries[i];
         RefPtr<TypeBuilder::FileSystem::Entry> entryForFrontend = TypeBuilder::FileSystem::Entry::create()
             .setUrl(entry->toURL())
             .setName(entry->name())
@@ -565,7 +565,7 @@ void DeleteEntryRequest::start(ExecutionContext* executionContext)
 
     if (path == "/") {
         OwnPtr<VoidCallback> successCallback = adoptPtr(new VoidCallbackImpl(this));
-        OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = VoidCallbacks::create(successCallback.release(), errorCallback.release(), nullptr);
+        OwnPtr<AsyncFileSystemCallbacks> fileSystemCallbacks = VoidCallbacks::create(successCallback.release(), errorCallback.release(), executionContext, nullptr);
         LocalFileSystem::from(*executionContext)->deleteFileSystem(executionContext, type, fileSystemCallbacks.release());
     } else {
         OwnPtr<EntryCallback> successCallback = CallbackDispatcherFactory<EntryCallback>::create(this, &DeleteEntryRequest::didGetEntry);
@@ -715,9 +715,12 @@ bool InspectorFileSystemAgent::assertEnabled(ErrorString* error)
 
 ExecutionContext* InspectorFileSystemAgent::assertExecutionContextForOrigin(ErrorString* error, SecurityOrigin* origin)
 {
-    for (LocalFrame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        if (frame->document() && frame->document()->securityOrigin()->isSameSchemeHostPort(origin))
-            return frame->document();
+    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        if (!frame->isLocalFrame())
+            continue;
+        LocalFrame* localFrame = toLocalFrame(frame);
+        if (localFrame->document() && localFrame->document()->securityOrigin()->isSameSchemeHostPort(origin))
+            return localFrame->document();
     }
 
     *error = "No frame is available for the request";

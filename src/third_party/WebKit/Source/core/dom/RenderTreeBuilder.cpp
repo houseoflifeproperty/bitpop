@@ -26,9 +26,8 @@
 #include "config.h"
 #include "core/dom/RenderTreeBuilder.h"
 
-#include "HTMLNames.h"
-#include "RuntimeEnabledFeatures.h"
-#include "SVGNames.h"
+#include "core/HTMLNames.h"
+#include "core/SVGNames.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/FullscreenElementStack.h"
 #include "core/dom/Node.h"
@@ -38,6 +37,7 @@
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderView.h"
 #include "core/svg/SVGElement.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -104,15 +104,10 @@ void RenderTreeBuilder::createRendererForElementIfNeeded()
 {
     ASSERT(!m_node->renderer());
 
-    // If we're out of composition then we can't render since there's no parent to inherit from.
-    if (!m_renderingParent)
-        return;
-
-    Element* element = toElement(m_node);
-
     if (!shouldCreateRenderer())
         return;
 
+    Element* element = toElement(m_node);
     RenderStyle& style = this->style();
 
     if (!element->rendererIsNeeded(style))
@@ -150,10 +145,6 @@ void RenderTreeBuilder::createRendererForElementIfNeeded()
 void RenderTreeBuilder::createRendererForTextIfNeeded()
 {
     ASSERT(!m_node->renderer());
-
-    // If we're out of composition then we can't render since there's no parent to inherit from.
-    if (!m_renderingParent)
-        return;
 
     if (!shouldCreateRenderer())
         return;

@@ -24,7 +24,6 @@
 #include "content/test/data/web_ui_test_mojo_bindings.mojom.h"
 #include "grit/content_resources.h"
 #include "mojo/common/test/test_utils.h"
-#include "mojo/public/cpp/bindings/allocation_scope.h"
 #include "mojo/public/js/bindings/constants.h"
 
 namespace content {
@@ -40,6 +39,7 @@ bool GetResource(const std::string& id,
   if (id == mojo::kCodecModuleName ||
       id == mojo::kConnectionModuleName ||
       id == mojo::kConnectorModuleName ||
+      id == mojo::kUnicodeModuleName ||
       id == mojo::kRouterModuleName)
     return false;
 
@@ -57,9 +57,9 @@ class BrowserTargetImpl : public BrowserTarget {
  public:
   BrowserTargetImpl(mojo::ScopedMessagePipeHandle handle,
                     base::RunLoop* run_loop)
-      : renderer_(mojo::MakeProxy<RendererTarget>(handle.Pass())),
-        run_loop_(run_loop) {
-    renderer_->SetClient(this);
+      : run_loop_(run_loop) {
+    renderer_.Bind(handle.Pass());
+    renderer_.set_client(this);
   }
 
   virtual ~BrowserTargetImpl() {}

@@ -9,6 +9,7 @@ import unittest
 from telemetry import test
 from telemetry.core import util
 from telemetry.core.platform import mac_platform_backend
+from telemetry.core.platform import platform_backend
 from telemetry.core.platform.power_monitor import powermetrics_power_monitor
 
 
@@ -18,7 +19,7 @@ class PowerMetricsPowerMonitorTest(unittest.TestCase):
     backend = mac_platform_backend.MacPlatformBackend()
     power_monitor = powermetrics_power_monitor.PowerMetricsPowerMonitor(backend)
     mavericks_or_later = (
-        backend.GetOSVersionName() >= mac_platform_backend.MAVERICKS)
+        backend.GetOSVersionName() >= platform_backend.MAVERICKS)
     # Should always be able to monitor power usage on OS Version >= 10.9 .
     self.assertEqual(power_monitor.CanMonitorPower(), mavericks_or_later,
         "Error checking powermetrics availability: '%s'" % '|'.join(os.uname()))
@@ -47,7 +48,6 @@ class PowerMetricsPowerMonitorTest(unittest.TestCase):
     # Supported hardware reports power samples and energy consumption.
     result = getOutput('powermetrics_output.output')
 
-    self.assertTrue(len(result['power_samples_mw']) > 1)
     self.assertTrue(result['energy_consumption_mwh'] > 0)
 
     # Verify that all component entries exist in output.
@@ -58,5 +58,4 @@ class PowerMetricsPowerMonitorTest(unittest.TestCase):
 
     # Unsupported hardware doesn't.
     result = getOutput('powermetrics_output_unsupported_hardware.output')
-    self.assertNotIn('power_samples_mw', result)
     self.assertNotIn('energy_consumption_mwh', result)

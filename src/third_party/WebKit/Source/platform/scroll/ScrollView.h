@@ -35,6 +35,7 @@
 #include "platform/scroll/Scrollbar.h"
 
 #include "wtf/HashSet.h"
+#include "wtf/TemporaryChange.h"
 
 namespace WebCore {
 
@@ -107,7 +108,7 @@ public:
 
     // By default, paint events are clipped to the visible area.  If set to
     // false, paint events are no longer clipped.  paintsEntireContents() implies !clipsRepaints().
-    bool clipsRepaints() const { return m_clipsRepaints; }
+    bool clipsPaintInvalidations() const { return m_clipsRepaints; }
     void setClipsRepaints(bool);
 
     // Overridden by FrameView to create custom CSS scrollbars if applicable.
@@ -120,8 +121,8 @@ public:
     // included.
     virtual IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const OVERRIDE;
     IntSize visibleSize() const { return visibleContentRect().size(); }
-    virtual int visibleWidth() const OVERRIDE { return visibleContentRect().width(); }
-    virtual int visibleHeight() const OVERRIDE { return visibleContentRect().height(); }
+    virtual int visibleWidth() const OVERRIDE FINAL { return visibleContentRect().width(); }
+    virtual int visibleHeight() const OVERRIDE FINAL { return visibleContentRect().height(); }
 
     // visibleContentRect().size() is computed from unscaledVisibleContentSize() divided by the value of visibleContentScaleFactor.
     // For the main frame, visibleContentScaleFactor is equal to the page's pageScaleFactor; it's 1 otherwise.
@@ -179,6 +180,7 @@ public:
     // the entire widget hierarchy. It is up to the platform to decide what the precise definition
     // of containing window is. (For example on Mac it is the containing NSWindow.)
     IntPoint windowToContents(const IntPoint&) const;
+    FloatPoint windowToContents(const FloatPoint&) const;
     IntPoint contentsToWindow(const IntPoint&) const;
     IntRect windowToContents(const IntRect&) const;
     IntRect contentsToWindow(const IntRect&) const;
@@ -256,7 +258,7 @@ public:
 protected:
     ScrollView();
 
-    virtual void repaintContentRectangle(const IntRect&);
+    virtual void contentRectangleForPaintInvalidation(const IntRect&);
     virtual void paintContents(GraphicsContext*, const IntRect& damageRect) = 0;
 
     virtual void paintOverhangAreas(GraphicsContext*, const IntRect& horizontalOverhangArea, const IntRect& verticalOverhangArea, const IntRect& dirtyRect);
@@ -281,12 +283,30 @@ protected:
     virtual bool isVerticalDocument() const { return true; }
     virtual bool isFlippedDocument() const { return false; }
 
+    enum ComputeScrollbarExistenceOption {
+        FirstPass,
+        Incremental
+    };
+    void computeScrollbarExistence(bool& newHasHorizontalScrollbar, bool& newHasVerticalScrollbar, ComputeScrollbarExistenceOption = FirstPass) const;
+    void updateScrollbarGeometry();
+
     // Called to update the scrollbars to accurately reflect the state of the view.
     void updateScrollbars(const IntSize& desiredOffset);
 
     IntSize excludeScrollbars(const IntSize&) const;
 
+    class InUpdateScrollbarsScope {
+    public:
+        explicit InUpdateScrollbarsScope(ScrollView* view)
+            : m_scope(view->m_inUpdateScrollbars, true)
+        { }
+    private:
+        TemporaryChange<bool> m_scope;
+    };
+
 private:
+    bool adjustScrollbarExistence(ComputeScrollbarExistenceOption = FirstPass);
+
     RefPtr<Scrollbar> m_horizontalScrollbar;
     RefPtr<Scrollbar> m_verticalScrollbar;
     ScrollbarMode m_horizontalScrollbarMode;
@@ -306,7 +326,6 @@ private:
     bool m_scrollbarsSuppressed;
 
     bool m_inUpdateScrollbars;
-    unsigned m_updateScrollbarsPass;
 
     IntPoint m_panScrollIconPoint;
     bool m_drawPanScrollIcon;

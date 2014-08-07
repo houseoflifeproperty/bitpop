@@ -5,8 +5,8 @@
 'use strict';
 
 <include src="../../../../ui/webui/resources/js/util.js">
-<include src="viewport.js">
 <include src="pdf_scripting_api.js">
+<include src="viewport.js">
 
 /**
  * @return {number} Width of a scrollbar in pixels
@@ -25,10 +25,18 @@ function getScrollbarWidth() {
 }
 
 /**
+ * The minimum number of pixels to offset the toolbar by from the bottom and
+ * right side of the screen.
+ */
+PDFViewer.MIN_TOOLBAR_OFFSET = 15;
+
+/**
  * Creates a new PDFViewer. There should only be one of these objects per
  * document.
  */
 function PDFViewer() {
+  this.loaded = false;
+
   // The sizer element is placed behind the plugin element to cause scrollbars
   // to be displayed in the window. It is sized according to the document size
   // of the pdf and zoom level.
@@ -56,129 +64,169 @@ function PDFViewer() {
   // chrome/renderer/printing/print_web_view_helper.cc actually references it.
   this.plugin_.id = 'plugin';
   this.plugin_.type = 'application/x-google-chrome-pdf';
-  this.plugin_.addEventListener('message', this.handleMessage_.bind(this),
+  this.plugin_.addEventListener('message', this.handlePluginMessage_.bind(this),
                                 false);
+
+  // Handle scripting messages from outside the extension that wish to interact
+  // with it. We also send a message indicating that extension has loaded and
+  // is ready to receive messages.
+  window.addEventListener('message', this.handleScriptingMessage_.bind(this),
+                          false);
+  this.sendScriptingMessage_({type: 'readyToReceive'});
 
   // If the viewer is started from a MIME type request, there will be a
   // background page and stream details object with the details of the request.
   // Otherwise, we take the query string of the URL to indicate the URL of the
   // PDF to load. This is used for print preview in particular.
-  var streamDetails;
   if (chrome.extension.getBackgroundPage &&
       chrome.extension.getBackgroundPage()) {
-    streamDetails = chrome.extension.getBackgroundPage().popStreamDetails();
+    this.streamDetails =
+        chrome.extension.getBackgroundPage().popStreamDetails();
   }
 
-  if (!streamDetails) {
+  if (!this.streamDetails) {
     // The URL of this page will be of the form
     // "chrome-extension://<extension id>?<pdf url>". We pull out the <pdf url>
     // part here.
     var url = window.location.search.substring(1);
-    streamDetails = {
+    this.streamDetails = {
       streamUrl: url,
-      originalUrl: url
+      originalUrl: url,
+      responseHeaders: ''
     };
   }
 
-  this.plugin_.setAttribute('src', streamDetails.streamUrl);
+  this.plugin_.setAttribute('src', this.streamDetails.originalUrl);
+  this.plugin_.setAttribute('stream-url', this.streamDetails.streamUrl);
+  var headers = '';
+  for (var header in this.streamDetails.responseHeaders) {
+    headers += header + ': ' +
+        this.streamDetails.responseHeaders[header] + '\n';
+  }
+  this.plugin_.setAttribute('headers', headers);
+
   if (window.top == window)
     this.plugin_.setAttribute('full-frame', '');
   document.body.appendChild(this.plugin_);
 
-  this.messagingHost_ = new PDFMessagingHost(window, this);
+  // Setup the button event listeners.
+  $('fit-to-width-button').addEventListener('click',
+      this.viewport_.fitToWidth.bind(this.viewport_));
+  $('fit-to-page-button').addEventListener('click',
+      this.viewport_.fitToPage.bind(this.viewport_));
+  $('zoom-in-button').addEventListener('click',
+      this.viewport_.zoomIn.bind(this.viewport_));
+  $('zoom-out-button').addEventListener('click',
+      this.viewport_.zoomOut.bind(this.viewport_));
+  $('save-button-link').href = this.streamDetails.originalUrl;
+  $('print-button').addEventListener('click', this.print_.bind(this));
 
-  this.setupEventListeners_(streamDetails);
+  // Setup the keyboard event listener.
+  document.onkeydown = this.handleKeyEvent_.bind(this);
 }
 
 PDFViewer.prototype = {
   /**
    * @private
-   * Sets up event listeners for key shortcuts and also the UI buttons.
-   * @param {Object} streamDetails the details of the original HTTP request for
-   *     the PDF.
+   * Handle key events. These may come from the user directly or via the
+   * scripting API.
+   * @param {KeyboardEvent} e the event to handle.
    */
-  setupEventListeners_: function(streamDetails) {
-    // Setup the button event listeners.
-    $('fit-to-width-button').addEventListener('click',
-        this.viewport_.fitToWidth.bind(this.viewport_));
-    $('fit-to-page-button').addEventListener('click',
-        this.viewport_.fitToPage.bind(this.viewport_));
-    $('zoom-in-button').addEventListener('click',
-        this.viewport_.zoomIn.bind(this.viewport_));
-    $('zoom-out-button').addEventListener('click',
-        this.viewport_.zoomOut.bind(this.viewport_));
-    $('save-button-link').href = streamDetails.originalUrl;
-    $('print-button').addEventListener('click', this.print_.bind(this));
+  handleKeyEvent_: function(e) {
+    var position = this.viewport_.position;
+    // Certain scroll events may be sent from outside of the extension.
+    var fromScriptingAPI = e.type == 'scriptingKeypress';
 
-    // Setup keyboard event listeners.
-    document.onkeydown = function(e) {
-      switch (e.keyCode) {
-        case 37:  // Left arrow key.
-          // Go to the previous page if there are no horizontal scrollbars.
-          if (!this.viewport_.documentHasScrollbars().x) {
-            this.viewport_.goToPage(this.viewport_.getMostVisiblePage() - 1);
-            // Since we do the movement of the page.
-            e.preventDefault();
-          }
-          return;
-        case 33:  // Page up key.
-          // Go to the previous page if we are fit-to-page.
-          if (this.viewport_.fittingType == Viewport.FittingType.FIT_TO_PAGE) {
-            this.viewport_.goToPage(this.viewport_.getMostVisiblePage() - 1);
-            // Since we do the movement of the page.
-            e.preventDefault();
-          }
-          return;
-        case 39:  // Right arrow key.
-          // Go to the next page if there are no horizontal scrollbars.
-          if (!this.viewport_.documentHasScrollbars().x) {
-            this.viewport_.goToPage(this.viewport_.getMostVisiblePage() + 1);
-            // Since we do the movement of the page.
-            e.preventDefault();
-          }
-          return;
-        case 34:  // Page down key.
-          // Go to the next page if we are fit-to-page.
-          if (this.viewport_.fittingType == Viewport.FittingType.FIT_TO_PAGE) {
-            this.viewport_.goToPage(this.viewport_.getMostVisiblePage() + 1);
-            // Since we do the movement of the page.
-            e.preventDefault();
-          }
-          return;
-        case 187:  // +/= key.
-        case 107:  // Numpad + key.
-          if (e.ctrlKey || e.metaKey) {
-            this.viewport_.zoomIn();
-            // Since we do the zooming of the page.
-            e.preventDefault();
-          }
-          return;
-        case 189:  // -/_ key.
-        case 109:  // Numpad - key.
-          if (e.ctrlKey || e.metaKey) {
-            this.viewport_.zoomOut();
-            // Since we do the zooming of the page.
-            e.preventDefault();
-          }
-          return;
-        case 83:  // s key.
-          if (e.ctrlKey || e.metaKey) {
-            // Simulate a click on the button so that the <a download ...>
-            // attribute is used.
-            $('save-button-link').click();
-            // Since we do the saving of the page.
-            e.preventDefault();
-          }
-          return;
-        case 80:  // p key.
-          if (e.ctrlKey || e.metaKey) {
-            this.print_();
-            // Since we do the printing of the page.
-            e.preventDefault();
-          }
-          return;
-      }
-    }.bind(this);
+    switch (e.keyCode) {
+      case 33:  // Page up key.
+        // Go to the previous page if we are fit-to-page.
+        if (this.viewport_.fittingType == Viewport.FittingType.FIT_TO_PAGE) {
+          this.viewport_.goToPage(this.viewport_.getMostVisiblePage() - 1);
+          // Since we do the movement of the page.
+          e.preventDefault();
+        } else if (fromScriptingAPI) {
+          position.y -= this.viewport.size.height;
+          this.viewport.position = position;
+        }
+        return;
+      case 34:  // Page down key.
+        // Go to the next page if we are fit-to-page.
+        if (this.viewport_.fittingType == Viewport.FittingType.FIT_TO_PAGE) {
+          this.viewport_.goToPage(this.viewport_.getMostVisiblePage() + 1);
+          // Since we do the movement of the page.
+          e.preventDefault();
+        } else if (fromScriptingAPI) {
+          position.y += this.viewport.size.height;
+          this.viewport.position = position;
+        }
+        return;
+      case 37:  // Left arrow key.
+        // Go to the previous page if there are no horizontal scrollbars.
+        if (!this.viewport_.documentHasScrollbars().x) {
+          this.viewport_.goToPage(this.viewport_.getMostVisiblePage() - 1);
+          // Since we do the movement of the page.
+          e.preventDefault();
+        } else if (fromScriptingAPI) {
+          position.x -= Viewport.SCROLL_INCREMENT;
+          this.viewport.position = position;
+        }
+        return;
+      case 38:  // Up arrow key.
+        if (fromScriptingAPI) {
+          position.y -= Viewport.SCROLL_INCREMENT;
+          this.viewport.position = position;
+        }
+        return;
+      case 39:  // Right arrow key.
+        // Go to the next page if there are no horizontal scrollbars.
+        if (!this.viewport_.documentHasScrollbars().x) {
+          this.viewport_.goToPage(this.viewport_.getMostVisiblePage() + 1);
+          // Since we do the movement of the page.
+          e.preventDefault();
+        } else if (fromScriptingAPI) {
+          position.x += Viewport.SCROLL_INCREMENT;
+          this.viewport.position = position;
+        }
+        return;
+      case 40:  // Down arrow key.
+        if (fromScriptingAPI) {
+          position.y += Viewport.SCROLL_INCREMENT;
+          this.viewport.position = position;
+        }
+        return;
+      case 187:  // +/= key.
+      case 107:  // Numpad + key.
+        if (e.ctrlKey || e.metaKey) {
+          this.viewport_.zoomIn();
+          // Since we do the zooming of the page.
+          e.preventDefault();
+        }
+        return;
+      case 189:  // -/_ key.
+      case 109:  // Numpad - key.
+        if (e.ctrlKey || e.metaKey) {
+          this.viewport_.zoomOut();
+          // Since we do the zooming of the page.
+          e.preventDefault();
+        }
+        return;
+      case 83:  // s key.
+        if (e.ctrlKey || e.metaKey) {
+          // Simulate a click on the button so that the <a download ...>
+          // attribute is used.
+          $('save-button-link').click();
+          // Since we do the saving of the page.
+          e.preventDefault();
+        }
+        return;
+      case 80:  // p key.
+        if (e.ctrlKey || e.metaKey) {
+          this.print_();
+          // Since we do the printing of the page.
+          e.preventDefault();
+        }
+        return;
+    }
   },
 
   /**
@@ -210,10 +258,12 @@ PDFViewer.prototype = {
       }
     } else if (progress == 100) {
       // Document load complete.
+      this.loaded = true;
       var loadEvent = new Event('pdfload');
       window.dispatchEvent(loadEvent);
-      // TODO(raymes): Replace this and other callbacks with events.
-      this.messagingHost_.documentLoaded();
+      this.sendScriptingMessage_({
+        type: 'documentLoaded'
+      });
       if (this.lastViewportPosition_)
         this.viewport_.position = this.lastViewportPosition_;
     }
@@ -237,7 +287,7 @@ PDFViewer.prototype = {
    * An event handler for handling message events received from the plugin.
    * @param {MessageObject} message a message event.
    */
-  handleMessage_: function(message) {
+  handlePluginMessage_: function(message) {
     switch (message.data.type.toString()) {
       case 'documentDimensions':
         this.documentDimensions_ = message.data;
@@ -251,19 +301,16 @@ PDFViewer.prototype = {
         this.pageIndicator_.initialFadeIn();
         this.toolbar_.initialFadeIn();
         break;
-      case 'loadProgress':
-        this.updateProgress_(message.data.progress);
+      case 'email':
+        var href = 'mailto:' + message.data.to + '?cc=' + message.data.cc +
+            '&bcc=' + message.data.bcc + '&subject=' + message.data.subject +
+            '&body=' + message.data.body;
+        var w = window.open(href, '_blank', 'width=1,height=1');
+        if (w)
+          w.close();
         break;
-      case 'goToPage':
-        this.viewport_.goToPage(message.data.page);
-        break;
-      case 'setScrollPosition':
-        var position = this.viewport_.position;
-        if (message.data.x != undefined)
-          position.x = message.data.x;
-        if (message.data.y != undefined)
-          position.y = message.data.y;
-        this.viewport_.position = position;
+      case 'getAccessibilityJSONReply':
+        this.sendScriptingMessage_(message.data);
         break;
       case 'getPassword':
         // If the password screen isn't up, put it up. Otherwise we're
@@ -273,10 +320,33 @@ PDFViewer.prototype = {
         else
           this.passwordScreen_.deny();
         break;
+      case 'goToPage':
+        this.viewport_.goToPage(message.data.page);
+        break;
+      case 'loadProgress':
+        this.updateProgress_(message.data.progress);
+        break;
+      case 'navigate':
+        if (message.data.newTab)
+          window.open(message.data.url);
+        else
+          window.location.href = message.data.url;
+        break;
+      case 'setScrollPosition':
+        var position = this.viewport_.position;
+        if (message.data.x != undefined)
+          position.x = message.data.x;
+        if (message.data.y != undefined)
+          position.y = message.data.y;
+        this.viewport_.position = position;
+        break;
       case 'setTranslatedStrings':
         this.passwordScreen_.text = message.data.getPasswordString;
         this.progressBar_.text = message.data.loadingString;
         this.errorScreen_.text = message.data.loadFailedString;
+        break;
+      case 'cancelStreamUrl':
+        chrome.streamsPrivate.abort(this.streamDetails.streamUrl);
         break;
     }
   },
@@ -302,21 +372,24 @@ PDFViewer.prototype = {
     var hasScrollbars = this.viewport_.documentHasScrollbars();
     var scrollbarWidth = this.viewport_.scrollbarWidth;
     // Offset the toolbar position so that it doesn't move if scrollbars appear.
-    var toolbarRight = hasScrollbars.vertical ? 0 : scrollbarWidth;
-    var toolbarBottom = hasScrollbars.horizontal ? 0 : scrollbarWidth;
+    var toolbarRight = Math.max(PDFViewer.MIN_TOOLBAR_OFFSET, scrollbarWidth);
+    var toolbarBottom = Math.max(PDFViewer.MIN_TOOLBAR_OFFSET, scrollbarWidth);
+    if (hasScrollbars.vertical)
+      toolbarRight -= scrollbarWidth;
+    if (hasScrollbars.horizontal)
+      toolbarBottom -= scrollbarWidth;
     this.toolbar_.style.right = toolbarRight + 'px';
     this.toolbar_.style.bottom = toolbarBottom + 'px';
 
     // Update the page indicator.
-    this.pageIndicator_.index = this.viewport_.getMostVisiblePage();
+    var visiblePage = this.viewport_.getMostVisiblePage();
+    this.pageIndicator_.index = visiblePage;
     if (this.documentDimensions_.pageDimensions.length > 1 &&
         hasScrollbars.vertical) {
       this.pageIndicator_.style.visibility = 'visible';
     } else {
       this.pageIndicator_.style.visibility = 'hidden';
     }
-
-    this.messagingHost_.viewportChanged();
 
     var position = this.viewport_.position;
     var zoom = this.viewport_.zoom;
@@ -327,62 +400,80 @@ PDFViewer.prototype = {
       xOffset: position.x,
       yOffset: position.y
     });
+
+    var visiblePageDimensions = this.viewport_.getPageScreenRect(visiblePage);
+    var size = this.viewport_.size;
+    this.sendScriptingMessage_({
+      type: 'viewport',
+      pageX: visiblePageDimensions.x,
+      pageY: visiblePageDimensions.y,
+      pageWidth: visiblePageDimensions.width,
+      viewportWidth: size.width,
+      viewportHeight: size.height,
+    });
   },
 
   /**
-   * Resets the viewer into print preview mode, which is used for Chrome print
-   * preview.
-   * @param {string} url the url of the pdf to load.
-   * @param {boolean} grayscale true if the pdf should be displayed in
-   *     grayscale, false otherwise.
-   * @param {Array.<number>} pageNumbers an array of the number to label each
-   *     page in the document.
-   * @param {boolean} modifiable whether the PDF is modifiable or not.
+   * @private
+   * Handle a scripting message from outside the extension (typically sent by
+   * PDFScriptingAPI in a page containing the extension) to interact with the
+   * plugin.
+   * @param {MessageObject} message the message to handle.
    */
-  resetPrintPreviewMode: function(url,
-                                  grayscale,
-                                  pageNumbers,
-                                  modifiable) {
-    if (!this.inPrintPreviewMode_) {
-      this.inPrintPreviewMode_ = true;
-      this.viewport_.fitToPage();
+  handleScriptingMessage_: function(message) {
+    switch (message.data.type.toString()) {
+      case 'getAccessibilityJSON':
+      case 'loadPreviewPage':
+        this.plugin_.postMessage(message.data);
+        break;
+      case 'resetPrintPreviewMode':
+        if (!this.inPrintPreviewMode_) {
+          this.inPrintPreviewMode_ = true;
+          this.viewport_.fitToPage();
+        }
+
+        // Stash the scroll location so that it can be restored when the new
+        // document is loaded.
+        this.lastViewportPosition_ = this.viewport_.position;
+
+        // TODO(raymes): Disable these properly in the plugin.
+        var printButton = $('print-button');
+        if (printButton)
+          printButton.parentNode.removeChild(printButton);
+        var saveButton = $('save-button');
+        if (saveButton)
+          saveButton.parentNode.removeChild(saveButton);
+
+        this.pageIndicator_.pageLabels = message.data.pageNumbers;
+
+        this.plugin_.postMessage({
+          type: 'resetPrintPreviewMode',
+          url: message.data.url,
+          grayscale: message.data.grayscale,
+          // If the PDF isn't modifiable we send 0 as the page count so that no
+          // blank placeholder pages get appended to the PDF.
+          pageCount: (message.data.modifiable ?
+                      message.data.pageNumbers.length : 0)
+        });
+        break;
+      case 'sendKeyEvent':
+        var e = document.createEvent('Event');
+        e.initEvent('scriptingKeypress');
+        e.keyCode = message.data.keyCode;
+        this.handleKeyEvent_(e);
+        break;
     }
 
-    // Stash the scroll location so that it can be restored when the new
-    // document is loaded.
-    this.lastViewportPosition_ = this.viewport_.position;
-
-    // TODO(raymes): Disable these properly in the plugin.
-    var printButton = $('print-button');
-    if (printButton)
-      printButton.parentNode.removeChild(printButton);
-    var saveButton = $('save-button');
-    if (saveButton)
-      saveButton.parentNode.removeChild(saveButton);
-
-    this.pageIndicator_.pageLabels = pageNumbers;
-
-    this.plugin_.postMessage({
-      type: 'resetPrintPreviewMode',
-      url: url,
-      grayscale: grayscale,
-      // If the PDF isn't modifiable we send 0 as the page count so that no
-      // blank placeholder pages get appended to the PDF.
-      pageCount: (modifiable ? pageNumbers.length : 0)
-    });
   },
 
   /**
-   * Load a page into the document while in print preview mode.
-   * @param {string} url the url of the pdf page to load.
-   * @param {number} index the index of the page to load.
+   * @private
+   * Send a scripting message outside the extension (typically to
+   * PDFScriptingAPI in a page containing the extension).
+   * @param {Object} message the message to send.
    */
-  loadPreviewPage: function(url, index) {
-    this.plugin_.postMessage({
-      type: 'loadPreviewPage',
-      url: url,
-      index: index
-    });
+  sendScriptingMessage_: function(message) {
+    window.parent.postMessage(message, '*');
   },
 
   /**

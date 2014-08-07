@@ -11,3 +11,4 @@ class Gatekeeper(Master.Master1):
   master_port = 8008
   slave_port = 8108
   master_port_alt = 8208
+  buildbot_url = 'http://build.chromium.org/p/chromium.gatekeeper/'

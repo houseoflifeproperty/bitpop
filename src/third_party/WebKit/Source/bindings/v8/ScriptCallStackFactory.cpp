@@ -84,7 +84,7 @@ static void toScriptCallFramesVector(v8::Handle<v8::StackTrace> stackTrace, Vect
     }
 }
 
-static PassRefPtr<ScriptCallStack> createScriptCallStack(v8::Handle<v8::StackTrace> stackTrace, size_t maxStackSize, bool emptyStackIsAllowed, v8::Isolate* isolate)
+static PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStack(v8::Handle<v8::StackTrace> stackTrace, size_t maxStackSize, bool emptyStackIsAllowed, v8::Isolate* isolate)
 {
     ASSERT(isolate->InContext());
     v8::HandleScope scope(isolate);
@@ -93,12 +93,12 @@ static PassRefPtr<ScriptCallStack> createScriptCallStack(v8::Handle<v8::StackTra
     return ScriptCallStack::create(scriptCallFrames);
 }
 
-PassRefPtr<ScriptCallStack> createScriptCallStack(v8::Handle<v8::StackTrace> stackTrace, size_t maxStackSize, v8::Isolate* isolate)
+PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStack(v8::Handle<v8::StackTrace> stackTrace, size_t maxStackSize, v8::Isolate* isolate)
 {
     return createScriptCallStack(stackTrace, maxStackSize, true, isolate);
 }
 
-PassRefPtr<ScriptCallStack> createScriptCallStack(size_t maxStackSize, bool emptyStackIsAllowed)
+PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStack(size_t maxStackSize, bool emptyStackIsAllowed)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     if (!isolate->InContext())
@@ -108,23 +108,18 @@ PassRefPtr<ScriptCallStack> createScriptCallStack(size_t maxStackSize, bool empt
     return createScriptCallStack(stackTrace, maxStackSize, emptyStackIsAllowed, isolate);
 }
 
-PassRefPtr<ScriptCallStack> createScriptCallStackForConsole(size_t maxStackSize)
+PassRefPtrWillBeRawPtr<ScriptCallStack> createScriptCallStackForConsole(ScriptState* scriptState, size_t maxStackSize)
 {
     size_t stackSize = 1;
     if (InspectorInstrumentation::hasFrontends()) {
-        ExecutionContext* executionContext = currentExecutionContext(v8::Isolate::GetCurrent());
-        if (InspectorInstrumentation::consoleAgentEnabled(executionContext))
+        if (InspectorInstrumentation::consoleAgentEnabled(scriptState->executionContext()))
             stackSize = maxStackSize;
     }
     return createScriptCallStack(stackSize);
 }
 
-PassRefPtr<ScriptArguments> createScriptArguments(const v8::FunctionCallbackInfo<v8::Value>& v8arguments, unsigned skipArgumentCount)
+PassRefPtrWillBeRawPtr<ScriptArguments> createScriptArguments(ScriptState* scriptState, const v8::FunctionCallbackInfo<v8::Value>& v8arguments, unsigned skipArgumentCount)
 {
-    v8::Isolate* isolate = v8arguments.GetIsolate();
-    v8::HandleScope scope(isolate);
-    ScriptState* scriptState = ScriptState::current(isolate);
-
     Vector<ScriptValue> arguments;
     for (int i = skipArgumentCount; i < v8arguments.Length(); ++i)
         arguments.append(ScriptValue(scriptState, v8arguments[i]));

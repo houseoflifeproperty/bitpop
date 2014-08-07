@@ -41,6 +41,19 @@ struct QuicConnectionStats;
 // previous transmission is acked, the data will not be retransmitted.
 class NET_EXPORT_PRIVATE QuicSentPacketManager {
  public:
+  // Interface which gets callbacks from the QuicSentPacketManager at
+  // interesting points.  Implementations must not mutate the state of
+  // the packet manager or connection as a result of these callbacks.
+  class NET_EXPORT_PRIVATE DebugDelegate {
+   public:
+    virtual ~DebugDelegate() {}
+
+    // Called when a spurious retransmission is detected.
+    virtual void OnSpuriousPacketRetransmition(
+        TransmissionType transmission_type,
+        QuicByteCount byte_size) {}
+  };
+
   // Struct to store the pending retransmission information.
   struct PendingRetransmission {
     PendingRetransmission(QuicPacketSequenceNumber sequence_number,
@@ -82,21 +95,19 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   void OnIncomingAck(const ReceivedPacketInfo& received_info,
                      QuicTime ack_receive_time);
 
-  // Discards any information for the packet corresponding to |sequence_number|.
-  // If this packet has been retransmitted, information on those packets
-  // will be discarded as well.  Also discards it from the congestion window if
-  // it is present.
-  void DiscardUnackedPacket(QuicPacketSequenceNumber sequence_number);
-
   // Returns true if the non-FEC packet |sequence_number| is unacked.
   bool IsUnacked(QuicPacketSequenceNumber sequence_number) const;
 
   // Requests retransmission of all unacked packets of |retransmission_type|.
   void RetransmitUnackedPackets(RetransmissionType retransmission_type);
 
+  // Retransmits the oldest pending packet there is still a tail loss probe
+  // pending.  Invoked after OnRetransmissionTimeout.
+  bool MaybeRetransmitTailLossProbe();
+
   // Removes the retransmittable frames from all unencrypted packets to ensure
   // they don't get retransmitted.
-  void DiscardUnencryptedPackets();
+  void NeuterUnencryptedPackets();
 
   // Returns true if the unacked packet |sequence_number| has retransmittable
   // frames.  This will only return false if the packet has been acked, if a
@@ -139,7 +150,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // Note 2: Send algorithms may or may not use |retransmit| in their
   // calculations.
   virtual QuicTime::Delta TimeUntilSend(QuicTime now,
-                                        TransmissionType transmission_type,
                                         HasRetransmittableData retransmittable);
 
   // Returns amount of time for delayed ack timer.
@@ -165,6 +175,10 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   void MaybeEnablePacing();
 
   bool using_pacing() const { return using_pacing_; }
+
+  void set_debug_delegate(DebugDelegate* debug_delegate) {
+    debug_delegate_ = debug_delegate;
+  }
 
  private:
   friend class test::QuicConnectionPeer;
@@ -195,9 +209,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Retransmits all crypto stream packets.
   void RetransmitCryptoPackets();
-
-  // Retransmits the oldest pending packet.
-  void RetransmitOldestPacket();
 
   // Retransmits all the packets and abandons by invoking a full RTO.
   void RetransmitAllPackets();
@@ -233,11 +244,11 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   void MarkPacketRevived(QuicPacketSequenceNumber sequence_number,
                          QuicTime::Delta delta_largest_observed);
 
-  // Marks |sequence_number| as being fully handled, either due to receipt
-  // by the peer, or having been discarded as indecipherable.  Returns an
-  // iterator to the next remaining unacked packet.
+  // Removes the retransmittability and pending properties from the packet at
+  // |it| due to receipt by the peer.  Returns an iterator to the next remaining
+  // unacked packet.
   QuicUnackedPacketMap::const_iterator MarkPacketHandled(
-      QuicPacketSequenceNumber sequence_number,
+      QuicUnackedPacketMap::const_iterator it,
       QuicTime::Delta delta_largest_observed);
 
   // Request that |sequence_number| be retransmitted after the other pending
@@ -245,6 +256,11 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // a pending retransmission.
   void MarkForRetransmission(QuicPacketSequenceNumber sequence_number,
                              TransmissionType transmission_type);
+
+  // Notify observers about spurious retransmits.
+  void RecordSpuriousRetransmissions(
+      const SequenceNumberSet& all_transmissions,
+      QuicPacketSequenceNumber acked_sequence_number);
 
   // Newly serialized retransmittable and fec packets are added to this map,
   // which contains owning pointers to any contained frames.  If a packet is
@@ -269,6 +285,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
 
   const QuicClock* clock_;
   QuicConnectionStats* stats_;
+  DebugDelegate* debug_delegate_;
   RttStats rtt_stats_;
   scoped_ptr<SendAlgorithmInterface> send_algorithm_;
   scoped_ptr<LossDetectionInterface> loss_algorithm_;
@@ -280,6 +297,8 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   size_t consecutive_tlp_count_;
   // Number of times the crypto handshake has been retransmitted.
   size_t consecutive_crypto_retransmission_count_;
+  // Whether a tlp packet can be sent even if the send algorithm says not to.
+  bool pending_tlp_transmission_;
   // Maximum number of tail loss probes to send before firing an RTO.
   size_t max_tail_loss_probes_;
   bool using_pacing_;

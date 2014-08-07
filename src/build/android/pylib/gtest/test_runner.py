@@ -10,7 +10,7 @@ from pylib import constants
 from pylib import pexpect
 from pylib.base import base_test_result
 from pylib.base import base_test_runner
-from pylib.device import adb_wrapper
+from pylib.device import device_errors
 from pylib.perf import perf_control
 
 
@@ -61,14 +61,15 @@ class TestRunner(base_test_runner.BaseTestRunner):
 
   #override
   def PushDataDeps(self):
-    self.device.old_interface.WaitForSdCardReady(20)
+    self.device.WaitUntilFullyBooted(timeout=20)
     self.tool.CopyFiles()
     if os.path.exists(constants.ISOLATE_DEPS_DIR):
-      device_dir = self.device.old_interface.GetExternalStorage()
       # TODO(frankf): linux_dumper_unittest_helper needs to be in the same dir
       # as breakpad_unittests exe. Find a better way to do this.
       if self.test_package.suite_name == 'breakpad_unittests':
         device_dir = constants.TEST_EXECUTABLE_DIR
+      else:
+        device_dir = self.device.GetExternalStoragePath()
       for p in os.listdir(constants.ISOLATE_DEPS_DIR):
         self.device.old_interface.PushIfNeeded(
             os.path.join(constants.ISOLATE_DEPS_DIR, p),
@@ -128,8 +129,8 @@ class TestRunner(base_test_runner.BaseTestRunner):
       logging.error('Test terminated - EOF')
       # We're here because either the device went offline, or the test harness
       # crashed without outputting the CRASHED marker (crbug.com/175538).
-      if not self.device.old_interface.IsOnline():
-        raise adb_wrapper.DeviceUnreachableError(
+      if not self.device.IsOnline():
+        raise device_errors.DeviceUnreachableError(
             'Device %s went offline.' % self.device.old_interface.GetDevice())
       if full_test_name:
         results.AddResult(base_test_result.BaseTestResult(
@@ -191,7 +192,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
   def TearDown(self):
     """Cleans up the test enviroment for the test suite."""
     if _TestSuiteRequiresHighPerfMode(self.test_package.suite_name):
-      self._perf_controller.RestoreOriginalPerfMode()
+      self._perf_controller.SetDefaultPerfMode()
     self.test_package.ClearApplicationState(self.device)
     self.tool.CleanUpEnvironment()
     super(TestRunner, self).TearDown()

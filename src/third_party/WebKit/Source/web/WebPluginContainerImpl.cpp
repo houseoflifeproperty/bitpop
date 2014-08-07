@@ -44,8 +44,8 @@
 #include "web/WebInputEventConversion.h"
 #include "web/WebViewImpl.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ScriptController.h"
+#include "core/HTMLNames.h"
 #include "core/clipboard/Clipboard.h"
 #include "core/clipboard/DataObject.h"
 #include "core/events/GestureEvent.h"
@@ -65,6 +65,7 @@
 #include "core/plugins/PluginOcclusionSupport.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBox.h"
+#include "core/rendering/RenderLayer.h"
 #include "platform/HostWindow.h"
 #include "platform/KeyboardCodes.h"
 #include "platform/PlatformGestureEvent.h"
@@ -148,7 +149,7 @@ void WebPluginContainerImpl::invalidateRect(const IntRect& rect)
     IntRect dirtyRect = rect;
     dirtyRect.move(renderer->borderLeft() + renderer->paddingLeft(),
                    renderer->borderTop() + renderer->paddingTop());
-    renderer->repaintRectangle(dirtyRect);
+    renderer->invalidatePaintRectangle(dirtyRect);
 }
 
 void WebPluginContainerImpl::setFocus(bool focused)
@@ -288,15 +289,27 @@ void WebPluginContainerImpl::setWebLayer(WebLayer* layer)
     if (m_webLayer == layer)
         return;
 
-    // If anyone of the layers is null we need to switch between hardware
-    // and software compositing.
-    if (!m_webLayer || !layer)
-        m_element->scheduleLayerUpdate();
     if (m_webLayer)
         GraphicsLayer::unregisterContentsLayer(m_webLayer);
     if (layer)
         GraphicsLayer::registerContentsLayer(layer);
+
+    // If either of the layers is null we need to switch between hardware
+    // and software compositing.
+    bool needsCompositingUpdate = !m_webLayer || !layer;
+
     m_webLayer = layer;
+
+    if (!needsCompositingUpdate)
+        return;
+
+    m_element->setNeedsCompositingUpdate();
+    // Being composited or not affects the self painting layer bit
+    // on the RenderLayer.
+    if (RenderPart* renderer = m_element->renderPart()) {
+        ASSERT(renderer->hasLayer());
+        renderer->layer()->updateSelfPaintingLayer();
+    }
 }
 
 bool WebPluginContainerImpl::supportsPaginatedPrint() const
@@ -437,12 +450,13 @@ WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popup
         kurl.string().substring(strlen("javascript:")));
 
     UserGestureIndicator gestureIndicator(popupsAllowed ? DefinitelyProcessingNewUserGesture : PossiblyProcessingUserGesture);
-    ScriptValue result = frame->script().executeScriptInMainWorldAndReturnValue(ScriptSourceCode(script));
+    v8::HandleScope handleScope(toIsolate(frame));
+    v8::Local<v8::Value> result = frame->script().executeScriptInMainWorldAndReturnValue(ScriptSourceCode(script));
 
     // Failure is reported as a null string.
-    String resultString;
-    result.toString(resultString);
-    return resultString;
+    if (result.IsEmpty() || !result->IsString())
+        return WebString();
+    return toCoreString(v8::Handle<v8::String>::Cast(result));
 }
 
 void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, const WebString& target, bool notifyNeeded, void* notifyData)
@@ -823,6 +837,8 @@ void WebPluginContainerImpl::handleGestureEvent(GestureEvent* event)
     WebGestureEventBuilder webEvent(this, m_element->renderer(), *event);
     if (webEvent.type == WebInputEvent::Undefined)
         return;
+    if (event->type() == EventTypeNames::gesturetapdown)
+        focusPlugin();
     WebCursorInfo cursorInfo;
     if (m_webPlugin->handleInputEvent(webEvent, cursorInfo)) {
         event->setDefaultHandled();
@@ -883,10 +899,10 @@ WebCore::IntRect WebPluginContainerImpl::windowClipRect() const
     IntRect clipRect =
         convertToContainingWindow(IntRect(0, 0, width(), height()));
 
-    // document().renderer() can be 0 when we receive messages from the
+    // document().renderView() can be 0 when we receive messages from the
     // plugins while we are destroying a frame.
     // FIXME: Can we just check m_element->document().isActive() ?
-    if (m_element->renderer()->document().renderer()) {
+    if (m_element->renderer()->document().renderView()) {
         // Take our element and get the clip rect from the enclosing layer and
         // frame view.
         clipRect.intersect(

@@ -24,15 +24,15 @@
 #include "config.h"
 #include "core/html/HTMLObjectElement.h"
 
-#include "HTMLNames.h"
 #include "bindings/v8/ScriptEventListener.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/ElementTraversal.h"
+#include "core/dom/TagCollection.h"
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/fetch/ImageResource.h"
 #include "core/html/FormDataList.h"
-#include "core/html/HTMLCollection.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLMetaElement.h"
@@ -65,7 +65,7 @@ inline HTMLObjectElement::~HTMLObjectElement()
 
 PassRefPtrWillBeRawPtr<HTMLObjectElement> HTMLObjectElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
 {
-    RefPtrWillBeRawPtr<HTMLObjectElement> element = adoptRefWillBeRefCountedGarbageCollected(new HTMLObjectElement(document, form, createdByParser));
+    RefPtrWillBeRawPtr<HTMLObjectElement> element = adoptRefWillBeNoop(new HTMLObjectElement(document, form, createdByParser));
     element->ensureUserAgentShadowRoot();
     return element.release();
 }
@@ -115,7 +115,7 @@ void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         if (renderer() && isImageType()) {
             setNeedsWidgetUpdate(true);
             if (!m_imageLoader)
-                m_imageLoader = adoptPtr(new HTMLImageLoader(this));
+                m_imageLoader = HTMLImageLoader::create(this);
             m_imageLoader->updateFromElementIgnoringPreviousError();
         } else {
             reloadPluginOnAttributeChange(name);
@@ -188,13 +188,13 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
 
     // Turn the attributes of the <object> element into arrays, but don't override <param> values.
     if (hasAttributes()) {
-        unsigned attributeCount = this->attributeCount();
-        for (unsigned i = 0; i < attributeCount; ++i) {
-            const Attribute& attribute = attributeItem(i);
-            const AtomicString& name = attribute.name().localName();
+        AttributeCollection attributes = this->attributes();
+        AttributeCollection::const_iterator end = attributes.end();
+        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+            const AtomicString& name = it->name().localName();
             if (!uniqueParamNames.contains(name.impl())) {
                 paramNames.append(name.string());
-                paramValues.append(attribute.value().string());
+                paramValues.append(it->value().string());
             }
         }
     }
@@ -242,7 +242,7 @@ bool HTMLObjectElement::shouldAllowQuickTimeClassIdQuirk()
         || !equalIgnoringCase(classId(), "clsid:02BF25D5-8C17-4B23-BC80-D3488ABDDC6B"))
         return false;
 
-    RefPtr<HTMLCollection> metaElements = document().getElementsByTagName(HTMLNames::metaTag.localName());
+    RefPtrWillBeRawPtr<TagCollection> metaElements = document().getElementsByTagName(HTMLNames::metaTag.localName());
     unsigned length = metaElements->length();
     for (unsigned i = 0; i < length; ++i) {
         ASSERT(metaElements->item(i)->isHTMLElement());
@@ -326,9 +326,6 @@ void HTMLObjectElement::updateWidgetInternal()
         return;
     }
 
-    bool fallbackContent = hasFallbackContent();
-    renderEmbeddedObject()->setHasFallbackContent(fallbackContent);
-
     // FIXME: Is it possible to get here without a renderer now that we don't have beforeload events?
     if (!renderer())
         return;
@@ -336,7 +333,7 @@ void HTMLObjectElement::updateWidgetInternal()
     if (!hasValidClassId() || !requestObject(url, serviceType, paramNames, paramValues)) {
         if (!url.isEmpty())
             dispatchErrorEvent();
-        if (fallbackContent)
+        if (hasFallbackContent())
             renderFallbackContent();
     }
 }

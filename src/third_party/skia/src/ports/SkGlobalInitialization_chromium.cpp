@@ -37,11 +37,11 @@
 #include "SkEmbossMaskFilter.h"
 #include "SkFlattenable.h"
 #include "SkGradientShader.h"
-#include "SkImages.h"
 #include "SkLayerDrawLooper.h"
 #include "SkLayerRasterizer.h"
 #include "SkLerpXfermode.h"
 #include "SkLightingImageFilter.h"
+#include "SkLocalMatrixShader.h"
 #include "SkLumaColorFilter.h"
 #include "SkMagnifierImageFilter.h"
 #include "SkMatrixConvolutionImageFilter.h"
@@ -61,7 +61,7 @@
 #include "SkMatrixImageFilter.h"
 #include "SkXfermodeImageFilter.h"
 
-static void InitializeFlattenables(int*) {
+static void InitializeFlattenables() {
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkAvoidXfermode)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkBicubicImageFilter)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkBitmapProcShader)
@@ -84,6 +84,7 @@ static void InitializeFlattenables(int*) {
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkLayerDrawLooper)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkLayerRasterizer)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkLerpXfermode)
+    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkLocalMatrixShader)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkLumaColorFilter)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkPath1DPathEffect)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(Sk2DPathEffect)
@@ -113,14 +114,12 @@ static void InitializeFlattenables(int*) {
     SkBlurMaskFilter::InitializeFlattenables();
     SkColorFilter::InitializeFlattenables();
     SkGradientShader::InitializeFlattenables();
-    SkImages::InitializeFlattenables();
     SkLightingImageFilter::InitializeFlattenables();
     SkTableColorFilter::InitializeFlattenables();
     SkXfermode::InitializeFlattenables();
 }
 
 void SkFlattenable::InitializeFlattenablesIfNeeded() {
-    int dummy;
     SK_DECLARE_STATIC_ONCE(once);
-    SkOnce(&once, InitializeFlattenables, &dummy);
+    SkOnce(&once, InitializeFlattenables);
 }

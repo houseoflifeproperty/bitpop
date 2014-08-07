@@ -54,18 +54,49 @@
     ]
   },
   {
+    "abort_on_failure": true,
+    "cmd": [
+      "svn",
+      "export",
+      "--force",
+      "try_job_svn_patch",
+      "/path/to/tmp/diff"
+    ],
+    "name": "download patch",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 1)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff content (line 2)@@@",
+      "@@@STEP_LOG_LINE@patch.diff@@@@",
+      "@@@STEP_LOG_END@patch.diff@@@"
+    ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "patch",
+      "--dir",
+      "[SLAVE_BUILD]/src",
+      "--force",
+      "--forward",
+      "--remove-empty-files",
+      "--strip",
+      "0"
+    ],
+    "name": "apply patch",
+    "stdin": "fake patch.diff content (line 1)\nfake patch.diff content (line 2)\n"
+  },
+  {
     "cmd": [
       "python",
       "-u",
-      "[BUILD]/scripts/slave/apply_svn_patch.py",
-      "-p",
-      "try_job_svn_patch",
-      "-r",
-      "[SLAVE_BUILD]/src"
+      "[DEPOT_TOOLS]/gclient.py",
+      "runhooks"
     ],
-    "name": "apply_patch",
+    "env": {
+      "GYP_DEFINES": "component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' target_arch=x64 use_goma=1"
+    },
+    "name": "gclient runhooks",
     "seed_steps": [
-      "apply_patch",
       "gclient runhooks",
       "compile",
       "audioproc_perf",
@@ -79,18 +110,6 @@
       "video_capture_tests",
       "webrtc_perf_tests"
     ]
-  },
-  {
-    "cmd": [
-      "python",
-      "-u",
-      "[DEPOT_TOOLS]/gclient.py",
-      "runhooks"
-    ],
-    "env": {
-      "GYP_DEFINES": "component=static_library dcheck_always_on=1 fastbuild=1 gomadir='[BUILD]/goma' target_arch=x64 use_goma=1"
-    },
-    "name": "gclient runhooks"
   },
   {
     "abort_on_failure": true,

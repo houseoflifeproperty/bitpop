@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// This is the main interface for the cast transport sender. The cast sender
-// handles the cast pipeline from encoded frames (both audio and video), to
-// encryption, packetization and transport.
+// This is the main interface for the cast transport sender.  It accepts encoded
+// frames (both audio and video), encrypts their encoded data, packetizes them
+// and feeds them into a transport (e.g., UDP).
 
 // Construction of the Cast Sender and the Cast Transport Sender should be done
 // in the following order:
@@ -45,10 +45,6 @@ namespace transport {
 typedef base::Callback<void(CastTransportStatus status)>
     CastTransportStatusCallback;
 
-typedef base::Callback<void(const RtcpSenderInfo& sender_info,
-                            base::TimeTicks time_sent,
-                            uint32 rtp_timestamp)> CastTransportRtpStatistics;
-
 typedef base::Callback<void(const std::vector<PacketEvent>&)>
     BulkRawEventsCallback;
 
@@ -81,33 +77,33 @@ class CastTransportSender : public base::NonThreadSafe {
   // The following two functions handle the encoded media frames (audio and
   // video) to be processed.
   // Frames will be encrypted, packetized and transmitted to the network.
-  virtual void InsertCodedAudioFrame(const EncodedAudioFrame* audio_frame,
-                                     const base::TimeTicks& recorded_time) = 0;
-
-  virtual void InsertCodedVideoFrame(const EncodedVideoFrame* video_frame,
-                                     const base::TimeTicks& capture_time) = 0;
+  virtual void InsertCodedAudioFrame(const EncodedFrame& audio_frame) = 0;
+  virtual void InsertCodedVideoFrame(const EncodedFrame& video_frame) = 0;
 
   // Builds an RTCP packet and sends it to the network.
+  // |ntp_seconds|, |ntp_fraction| and |rtp_timestamp| are used in the
+  // RTCP Sender Report.
   virtual void SendRtcpFromRtpSender(uint32 packet_type_flags,
-                                     const RtcpSenderInfo& sender_info,
+                                     uint32 ntp_seconds,
+                                     uint32 ntp_fraction,
+                                     uint32 rtp_timestamp,
                                      const RtcpDlrrReportBlock& dlrr,
-                                     const RtcpSenderLogMessage& sender_log,
                                      uint32 sending_ssrc,
                                      const std::string& c_name) = 0;
 
   // Retransmission request.
+  // |missing_packets| includes the list of frames and packets in each
+  // frame to be re-transmitted.
+  // If |cancel_rtx_if_not_in_list| is used as an optimization to cancel
+  // pending re-transmission requests of packets not listed in
+  // |missing_packets|. If the requested packet(s) were sent recently
+  // (how long is specified by |dedupe_window|) then this re-transmit
+  // will be ignored.
   virtual void ResendPackets(
       bool is_audio,
-      const MissingFramesAndPacketsMap& missing_packets) = 0;
-
-  // RTP statistics will be returned on a regular interval on the designated
-  // callback.
-  // Must be called after initialization of the corresponding A/V pipeline.
-  virtual void SubscribeAudioRtpStatsCallback(
-      const CastTransportRtpStatistics& callback) = 0;
-
-  virtual void SubscribeVideoRtpStatsCallback(
-      const CastTransportRtpStatistics& callback) = 0;
+      const MissingFramesAndPacketsMap& missing_packets,
+      bool cancel_rtx_if_not_in_list,
+      base::TimeDelta dedupe_window) = 0;
 };
 
 }  // namespace transport

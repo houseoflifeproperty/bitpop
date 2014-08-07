@@ -28,14 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-
-var Preferences = {
-    maxInlineTextChildLength: 80,
-    minSidebarWidth: 100,
-    minSidebarHeight: 75,
-    applicationTitle: "Developer Tools - %s"
-}
-
 var Capabilities = {
     isMainFrontend: false,
     canProfilePower: false,
@@ -98,6 +90,7 @@ WebInspector.Settings = function()
     this.pauseOnExceptionEnabled = this.createSetting("pauseOnExceptionEnabled", false);
     this.pauseOnCaughtException = this.createSetting("pauseOnCaughtException", false);
     this.enableAsyncStackTraces = this.createSetting("enableAsyncStackTraces", false);
+    this.showMediaQueryInspector = this.createSetting("showMediaQueryInspector", false);
 }
 
 WebInspector.Settings.prototype = {
@@ -290,7 +283,7 @@ WebInspector.BackendSetting.prototype = {
         function callback(error)
         {
             if (error) {
-                WebInspector.console.log("Error applying setting " + this._name + ": " + error);
+                WebInspector.messageSink.addErrorMessage("Error applying setting " + this._name + ": " + error);
                 this._eventSupport.dispatchEventToListeners(this._name, this._value);
                 return;
             }
@@ -314,24 +307,27 @@ WebInspector.ExperimentsSettings = function(experimentsEnabled)
     this._enabledForTest = {};
 
     // Add currently running experiments here.
-    this.fileSystemInspection = this._createExperiment("fileSystemInspection", "FileSystem inspection");
-    this.canvasInspection = this._createExperiment("canvasInspection ", "Canvas inspection");
-    this.frameworksDebuggingSupport = this._createExperiment("frameworksDebuggingSupport", "Enable frameworks debugging support");
-    this.layersPanel = this._createExperiment("layersPanel", "Show Layers panel");
-    this.showEditorInDrawer = this._createExperiment("showEditorInDrawer", "Show editor in drawer");
-    this.gpuTimeline = this._createExperiment("gpuTimeline", "Show GPU data on timeline");
     this.applyCustomStylesheet = this._createExperiment("applyCustomStylesheet", "Allow custom UI themes");
-    this.workersInMainWindow = this._createExperiment("workersInMainWindow", "Show workers in main window");
-    this.dockToLeft = this._createExperiment("dockToLeft", "Enable dock to left mode");
-    this.allocationProfiler = this._createExperiment("allocationProfiler", "Enable JavaScript heap allocation profiler");
-    this.heapSnapshotStatistics = this._createExperiment("heapSnapshotStatistics", "Show memory breakdown statistics in heap snapshots");
-    this.timelineNoLiveUpdate = this._createExperiment("timelineNoLiveUpdate", "Timeline w/o live update");
-    this.powerProfiler = this._createExperiment("powerProfiler", "Enable power mode in Timeline");
-    this.timelineFlameChart = this._createExperiment("timelineFlameChart", "Enable FlameChart mode in Timeline");
-    this.timelineOnTraceEvents = this._createExperiment("timelineOnTraceEvents", "Use trace events as Timeline backend");
-    this.timelineTracingMode = this._createExperiment("timelineTracingMode", "Enable Tracing mode in Timeline");
-    this.devicesPanel = this._createExperiment("devicesPanel", "Show devices in drawer");
-    this.timelineJSCPUProfile = this._createExperiment("timelineJSCPUProfile", "Collect JavaScript CPU profile while recording timeline");
+    this.canvasInspection = this._createExperiment("canvasInspection ", "Canvas inspection");
+    this.devicesPanel = this._createExperiment("devicesPanel", "Devices panel", true);
+    this.disableAgentsWhenProfile = this._createExperiment("disableAgentsWhenProfile", "Disable other agents and UI when profiler is active", true);
+    this.dockToLeft = this._createExperiment("dockToLeft", "Dock to left", true);
+    this.editorInDrawer = this._createExperiment("showEditorInDrawer", "Editor in drawer", true);
+    this.fileSystemInspection = this._createExperiment("fileSystemInspection", "FileSystem inspection");
+    this.frameworksDebuggingSupport = this._createExperiment("frameworksDebuggingSupport", "JavaScript frameworks debugging");
+    this.gpuTimeline = this._createExperiment("gpuTimeline", "GPU data on timeline", true);
+    this.heapAllocationProfiler = this._createExperiment("allocationProfiler", "Heap allocation profiler");
+    this.heapSnapshotStatistics = this._createExperiment("heapSnapshotStatistics", "Heap snapshot statistics", true);
+    this.layersPanel = this._createExperiment("layersPanel", "Layers panel", true);
+    this.networkConditions = this._createExperiment("networkConditions", "Network conditions", true);
+    this.responsiveDesign = this._createExperiment("responsiveDesign", "Responsive design");
+    this.timelineFlameChart = this._createExperiment("timelineFlameChart", "Timeline flame chart");
+    this.timelineOnTraceEvents = this._createExperiment("timelineOnTraceEvents", "Timeline on trace events", true);
+    this.timelinePowerProfiler = this._createExperiment("timelinePowerProfiler", "Timeline power profiler");
+    this.timelineTracingMode = this._createExperiment("timelineTracingMode", "Timeline tracing mode");
+    this.timelineJSCPUProfile = this._createExperiment("timelineJSCPUProfile", "Timeline with JS sampling");
+    this.timelineNoLiveUpdate = this._createExperiment("timelineNoLiveUpdate", "Timeline w/o live update", true);
+    this.workersInMainWindow = this._createExperiment("workersInMainWindow", "Workers in main window", true);
 
     this._cleanUpSetting();
 }
@@ -356,11 +352,12 @@ WebInspector.ExperimentsSettings.prototype = {
     /**
      * @param {string} experimentName
      * @param {string} experimentTitle
+     * @param {boolean=} hidden
      * @return {!WebInspector.Experiment}
      */
-    _createExperiment: function(experimentName, experimentTitle)
+    _createExperiment: function(experimentName, experimentTitle, hidden)
     {
-        var experiment = new WebInspector.Experiment(this, experimentName, experimentTitle);
+        var experiment = new WebInspector.Experiment(this, experimentName, experimentTitle, !!hidden);
         this._experiments.push(experiment);
         return experiment;
     },
@@ -418,11 +415,13 @@ WebInspector.ExperimentsSettings.prototype = {
  * @param {!WebInspector.ExperimentsSettings} experimentsSettings
  * @param {string} name
  * @param {string} title
+ * @param {boolean} hidden
  */
-WebInspector.Experiment = function(experimentsSettings, name, title)
+WebInspector.Experiment = function(experimentsSettings, name, title, hidden)
 {
     this._name = name;
     this._title = title;
+    this._hidden = hidden;
     this._experimentsSettings = experimentsSettings;
 }
 
@@ -441,6 +440,14 @@ WebInspector.Experiment.prototype = {
     get title()
     {
         return this._title;
+    },
+
+    /**
+     * @return {boolean}
+     */
+    get hidden()
+    {
+        return this._hidden;
     },
 
     /**
@@ -672,8 +679,15 @@ WebInspector.VersionController.prototype = {
     }
 }
 
-WebInspector.settings = new WebInspector.Settings();
-WebInspector.experimentsSettings = new WebInspector.ExperimentsSettings(WebInspector.queryParam("experiments") !== null);
+/**
+ * @type {!WebInspector.Settings}
+ */
+WebInspector.settings;
+
+/**
+ * @type {!WebInspector.ExperimentsSettings}
+ */
+WebInspector.experimentsSettings;
 
 // These methods are added for backwards compatibility with Devtools CodeSchool extension.
 // DO NOT REMOVE
@@ -749,5 +763,3 @@ WebInspector.PauseOnExceptionStateSetting.prototype = {
         this._eventSupport.dispatchEventToListeners(this._name, this._value);
     }
 }
-
-WebInspector.settings.pauseOnExceptionStateString = new WebInspector.PauseOnExceptionStateSetting();

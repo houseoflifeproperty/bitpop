@@ -57,6 +57,18 @@ TEST(Credentials, CreateAndDestroy) {
   scoped_ptr<Credentials> cred2(new Credentials);
 }
 
+TEST(Credentials, CountOpenFds) {
+  base::ScopedFD proc_fd(open("/proc", O_RDONLY | O_DIRECTORY));
+  ASSERT_TRUE(proc_fd.is_valid());
+  Credentials creds;
+  int fd_count = creds.CountOpenFds(proc_fd.get());
+  int fd = open("/dev/null", O_RDONLY);
+  ASSERT_LE(0, fd);
+  EXPECT_EQ(fd_count + 1, creds.CountOpenFds(proc_fd.get()));
+  ASSERT_EQ(0, IGNORE_EINTR(close(fd)));
+  EXPECT_EQ(fd_count, creds.CountOpenFds(proc_fd.get()));
+}
+
 TEST(Credentials, HasOpenDirectory) {
   Credentials creds;
   // No open directory should exist at startup.
@@ -190,7 +202,7 @@ TEST(Credentials, CanDetectRoot) {
   ASSERT_TRUE(WorkingDirectoryIsRoot());
 }
 
-SANDBOX_TEST(Credentials, DropFileSystemAccessIsSafe) {
+SANDBOX_TEST(Credentials, DISABLE_ON_LSAN(DropFileSystemAccessIsSafe)) {
   Credentials creds;
   CHECK(creds.DropAllCapabilities());
   // Probably missing kernel support.
@@ -205,7 +217,7 @@ SANDBOX_TEST(Credentials, DropFileSystemAccessIsSafe) {
 
 // Check that after dropping filesystem access and dropping privileges
 // it is not possible to regain capabilities.
-SANDBOX_TEST(Credentials, CannotRegainPrivileges) {
+SANDBOX_TEST(Credentials, DISABLE_ON_LSAN(CannotRegainPrivileges)) {
   Credentials creds;
   CHECK(creds.DropAllCapabilities());
   // Probably missing kernel support.

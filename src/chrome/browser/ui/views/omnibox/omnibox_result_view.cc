@@ -202,7 +202,7 @@ void OmniboxResultView::Invalidate() {
   SchedulePaint();
 }
 
-gfx::Size OmniboxResultView::GetPreferredSize() {
+gfx::Size OmniboxResultView::GetPreferredSize() const {
   return gfx::Size(0, std::max(
       default_icon_size_ + (kMinimumIconVerticalPadding * 2),
       GetTextHeight() + (minimum_text_vertical_padding_ * 2)));
@@ -339,7 +339,7 @@ scoped_ptr<gfx::RenderText> OmniboxResultView::CreateRenderText(
     const base::string16& text) const {
   scoped_ptr<gfx::RenderText> render_text(gfx::RenderText::CreateInstance());
   render_text->SetCursorEnabled(false);
-  render_text->SetElideBehavior(gfx::ELIDE_AT_END);
+  render_text->SetElideBehavior(gfx::ELIDE_TAIL);
   render_text->SetFontList(font_list_);
   render_text->SetText(text);
   return render_text.Pass();

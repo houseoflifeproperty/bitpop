@@ -9,9 +9,17 @@
 #define {{header_guard}}
 
 #include "mojo/public/cpp/bindings/lib/bindings_internal.h"
+#include "mojo/public/cpp/bindings/lib/buffer.h"
+
 {%- for import in imports %}
 #include "{{import.module.path}}-internal.h"
 {%- endfor %}
+
+namespace mojo {
+namespace internal {
+class BoundsChecker;
+}
+}
 
 {%- for namespace in namespaces_as_array %}
 namespace {{namespace}} {

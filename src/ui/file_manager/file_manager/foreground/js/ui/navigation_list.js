@@ -33,7 +33,7 @@ NavigationListItem.prototype.decorate = function() {
   this.appendChild(this.iconDiv_);
 
   this.label_ = cr.doc.createElement('div');
-  this.label_.className = 'root-label';
+  this.label_.className = 'root-label entry-name';
   this.appendChild(this.label_);
 
   cr.defineProperty(this, 'lead', cr.PropertyKind.BOOL_ATTR);
@@ -52,11 +52,23 @@ NavigationListItem.prototype.setModelItem = function(modelItem) {
 
   var typeIcon;
   if (modelItem.isVolume) {
+    if (modelItem.volumeInfo.volumeType == 'provided') {
+      var backgroundImage = '-webkit-image-set(' +
+          'url(chrome://extension-icon/' + modelItem.volumeInfo.extensionId +
+              '/24/1) 1x, ' +
+          'url(chrome://extension-icon/' + modelItem.volumeInfo.extensionId +
+              '/48/1) 2x);';
+      // The icon div is not yet added to DOM, therefore it is impossible to
+      // use style.backgroundImage.
+      this.iconDiv_.setAttribute(
+          'style', 'background-image: ' + backgroundImage);
+    }
     typeIcon = modelItem.volumeInfo.volumeType;
   } else if (modelItem.isShortcut) {
     // Shortcuts are available for Drive only.
     typeIcon = VolumeManagerCommon.VolumeType.DRIVE;
   }
+
   this.iconDiv_.setAttribute('volume-type-icon', typeIcon);
 
   if (modelItem.isVolume) {
@@ -70,7 +82,9 @@ NavigationListItem.prototype.setModelItem = function(modelItem) {
       (modelItem.volumeInfo.volumeType ===
            VolumeManagerCommon.VolumeType.ARCHIVE ||
        modelItem.volumeInfo.volumeType ===
-           VolumeManagerCommon.VolumeType.REMOVABLE)) {
+           VolumeManagerCommon.VolumeType.REMOVABLE ||
+       modelItem.volumeInfo.volumeType ===
+           VolumeManagerCommon.VolumeType.PROVIDED)) {
     this.eject_ = cr.doc.createElement('div');
     // Block other mouse handlers.
     this.eject_.addEventListener(
@@ -105,7 +119,9 @@ NavigationListItem.prototype.maybeSetContextMenu = function(menu) {
   if (this.modelItem_.isVolume && (this.modelItem_.volumeInfo.volumeType ===
           VolumeManagerCommon.VolumeType.REMOVABLE ||
       this.modelItem_.volumeInfo.volumeType ===
-          VolumeManagerCommon.VolumeType.ARCHIVE) ||
+          VolumeManagerCommon.VolumeType.ARCHIVE ||
+      this.modelItem_.volumeInfo.volumeType ===
+          VolumeManagerCommon.VolumeType.PROVIDED) ||
       this.modelItem_.isShortcut) {
     cr.ui.contextMenuHandler.setContextMenu(this, menu);
   }
@@ -184,6 +200,9 @@ NavigationList.prototype.decorate = function(volumeManager, directoryModel) {
 
   this.scrollBar_ = new ScrollBar();
   this.scrollBar_.initialize(this.parentNode, this);
+
+  // Keeps track of selected model item to detect if it is changed actually.
+  this.currentModelItem_ = null;
 
   // Overriding default role 'list' set by cr.ui.List.decorate() to 'listbox'
   // role for better accessibility on ChromeOS.
@@ -271,6 +290,7 @@ NavigationList.prototype.selectByIndex = function(index) {
   if (index < 0 || index > this.dataModel.length - 1)
     return false;
 
+  this.selectionModel.selectedIndex = index;
   this.activateModelItem_(this.dataModel.item(index));
   return true;
 };
@@ -283,16 +303,11 @@ NavigationList.prototype.selectByIndex = function(index) {
  */
 NavigationList.prototype.activateModelItem_ = function(modelItem) {
   var onEntryResolved = function(entry) {
-    // If the root item of active directory was same as newly activated
-    // root item, keep the active directory as it was.
-    var currentDir = this.directoryModel_.getCurrentDirEntry();
-    if (util.isSameEntry(entry, currentDir) ||
-        util.isDescendantEntry(entry, currentDir)) {
-      return;
+    // Changes directory to the model item's root directory if needed.
+    if (!util.isSameEntry(this.directoryModel_.getCurrentDirEntry(), entry)) {
+      metrics.recordUserAction('FolderShortcut.Navigate');
+      this.directoryModel_.changeDirectoryEntry(entry);
     }
-
-    metrics.recordUserAction('FolderShortcut.Navigate');
-    this.directoryModel_.changeDirectoryEntry(entry);
   }.bind(this);
 
   if (modelItem.isVolume) {
@@ -310,7 +325,7 @@ NavigationList.prototype.activateModelItem_ = function(modelItem) {
         url,
         onEntryResolved,
         function() {
-          // Error, the entry can't be re-resolved. It may happen for shotrcuts
+          // Error, the entry can't be re-resolved. It may happen for shortcuts
           // which targets got removed after resolving the Entry during
           // initialization.
           this.dataModel.onItemNotFoundError(modelItem);
@@ -334,12 +349,25 @@ NavigationList.prototype.onBeforeSelectionChange_ = function(event) {
  * @private
  */
 NavigationList.prototype.onSelectionChange_ = function(event) {
+  var index = this.selectionModel.selectedIndex;
+  if (index < 0 || index > this.dataModel.length - 1)
+    return;
+
+  // If the selected model item is not changed actually, we don't change the
+  // current directory even if the selected index is changed.
+  var modelItem = this.dataModel.item(index);
+  if (modelItem === this.currentModelItem_)
+    return;
+
+  // Remembers the selected model item.
+  this.currentModelItem_ = modelItem;
+
   // This handler is invoked even when the navigation list itself changes the
   // selection. In such case, we shouldn't handle the event.
   if (this.dontHandleSelectionEvent_)
     return;
 
-  this.selectByIndex(this.selectionModel.selectedIndex);
+  this.activateModelItem_(modelItem);
 };
 
 /**

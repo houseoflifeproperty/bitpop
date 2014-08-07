@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
@@ -13,6 +15,7 @@
 #include "chrome/browser/bookmarks/enhanced_bookmarks_features.h"
 #include "chrome/browser/dom_distiller/dom_distiller_service_factory.h"
 #include "chrome/browser/extensions/extension_web_ui.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -44,7 +47,6 @@
 #include "chrome/browser/ui/webui/plugins_ui.h"
 #include "chrome/browser/ui/webui/predictors/predictors_ui.h"
 #include "chrome/browser/ui/webui/profiler_ui.h"
-#include "chrome/browser/ui/webui/quota_internals/quota_internals_ui.h"
 #include "chrome/browser/ui/webui/signin/inline_login_ui.h"
 #include "chrome/browser/ui/webui/signin/profile_signin_confirmation_ui.h"
 #include "chrome/browser/ui/webui/signin/user_manager_ui.h"
@@ -60,6 +62,8 @@
 #include "components/dom_distiller/core/dom_distiller_constants.h"
 #include "components/dom_distiller/core/dom_distiller_service.h"
 #include "components/dom_distiller/webui/dom_distiller_ui.h"
+#include "components/favicon_base/favicon_util.h"
+#include "components/favicon_base/select_favicon_frames.h"
 #include "components/password_manager/core/common/password_manager_switches.h"
 #include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/web_contents.h"
@@ -96,6 +100,7 @@
 #include "chrome/browser/ui/webui/welcome_ui_android.h"
 #else
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
+#include "chrome/browser/ui/webui/quota_internals/quota_internals_ui.h"
 #include "chrome/browser/ui/webui/suggestions_internals/suggestions_internals_ui.h"
 #include "chrome/browser/ui/webui/sync_file_system_internals/sync_file_system_internals_ui.h"
 #include "chrome/browser/ui/webui/system_info_ui.h"
@@ -121,6 +126,7 @@
 #include "chrome/browser/ui/webui/chromeos/network_ui.h"
 #include "chrome/browser/ui/webui/chromeos/nfc_debug_ui.h"
 #include "chrome/browser/ui/webui/chromeos/power_ui.h"
+#include "chrome/browser/ui/webui/chromeos/provided_file_systems_ui.h"
 #include "chrome/browser/ui/webui/chromeos/proxy_settings_ui.h"
 #include "chrome/browser/ui/webui/chromeos/salsa_ui.h"
 #include "chrome/browser/ui/webui/chromeos/set_time_ui.h"
@@ -297,17 +303,12 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #endif
   if (url.host() == chrome::kChromeUIOmniboxHost)
     return &NewWebUI<OmniboxUI>;
-  if (url.host() == chrome::kChromeUIPasswordManagerInternalsHost &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          password_manager::switches::kEnablePasswordManagerInternalsUI)) {
+  if (url.host() == chrome::kChromeUIPasswordManagerInternalsHost)
     return &NewWebUI<PasswordManagerInternalsUI>;
-  }
   if (url.host() == chrome::kChromeUIPredictorsHost)
     return &NewWebUI<PredictorsUI>;
   if (url.host() == chrome::kChromeUIProfilerHost)
     return &NewWebUI<ProfilerUI>;
-  if (url.host() == chrome::kChromeUIQuotaInternalsHost)
-    return &NewWebUI<QuotaInternalsUI>;
   if (url.host() == chrome::kChromeUISignInInternalsHost)
     return &NewWebUI<SignInInternalsUI>;
   if (url.host() == chrome::kChromeUISyncInternalsHost)
@@ -372,6 +373,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   // Android does not support plugins for now.
   if (url.host() == chrome::kChromeUIPluginsHost)
     return &NewWebUI<PluginsUI>;
+  if (url.host() == chrome::kChromeUIQuotaInternalsHost)
+    return &NewWebUI<QuotaInternalsUI>;
   // Settings are implemented with native UI elements on Android.
   if (url.host() == chrome::kChromeUISettingsFrameHost)
     return &NewWebUI<options::OptionsUI>;
@@ -427,6 +430,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<chromeos::NfcDebugUI>;
   if (url.host() == chrome::kChromeUIOobeHost)
     return &NewWebUI<chromeos::OobeUI>;
+  if (url.host() == chrome::kChromeUIProvidedFileSystemsHost)
+    return &NewWebUI<chromeos::ProvidedFileSystemsUI>;
   if (url.host() == chrome::kChromeUIProxySettingsHost)
     return &NewWebUI<chromeos::ProxySettingsUI>;
   if (url.host() == chrome::kChromeUISalsaHost)
@@ -522,8 +527,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 }
 
 void RunFaviconCallbackAsync(
-    const FaviconService::FaviconResultsCallback& callback,
-    const std::vector<favicon_base::FaviconBitmapResult>* results) {
+    const favicon_base::FaviconResultsCallback& callback,
+    const std::vector<favicon_base::FaviconRawBitmapResult>* results) {
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(&FaviconService::FaviconResultsCallbackRunner,
@@ -567,8 +572,8 @@ WebUIController* ChromeWebUIControllerFactory::CreateWebUIControllerForURL(
 void ChromeWebUIControllerFactory::GetFaviconForURL(
     Profile* profile,
     const GURL& page_url,
-    const std::vector<ui::ScaleFactor>& scale_factors,
-    const FaviconService::FaviconResultsCallback& callback) const {
+    const std::vector<int>& desired_sizes_in_pixel,
+    const favicon_base::FaviconResultsCallback& callback) const {
   // Before determining whether page_url is an extension url, we must handle
   // overrides. This changes urls in |kChromeUIScheme| to extension urls, and
   // allows to use ExtensionWebUI::GetFaviconForURL.
@@ -583,30 +588,48 @@ void ChromeWebUIControllerFactory::GetFaviconForURL(
     ExtensionWebUI::GetFaviconForURL(profile, url, callback);
 #else
     RunFaviconCallbackAsync(
-        callback, new std::vector<favicon_base::FaviconBitmapResult>());
+        callback, new std::vector<favicon_base::FaviconRawBitmapResult>());
 #endif
     return;
   }
 
-  std::vector<favicon_base::FaviconBitmapResult>* favicon_bitmap_results =
-      new std::vector<favicon_base::FaviconBitmapResult>();
+  std::vector<favicon_base::FaviconRawBitmapResult>* favicon_bitmap_results =
+      new std::vector<favicon_base::FaviconRawBitmapResult>();
 
-  for (size_t i = 0; i < scale_factors.size(); ++i) {
-    scoped_refptr<base::RefCountedMemory> bitmap(GetFaviconResourceBytes(
-          url, scale_factors[i]));
+  // Use ui::GetSupportedScaleFactors instead of
+  // favicon_base::GetFaviconScales() because chrome favicons comes from
+  // resources.
+  std::vector<ui::ScaleFactor> resource_scale_factors =
+      ui::GetSupportedScaleFactors();
+
+  std::vector<gfx::Size> candidate_sizes;
+  for (size_t i = 0; i < resource_scale_factors.size(); ++i) {
+    float scale = ui::GetScaleForScaleFactor(resource_scale_factors[i]);
+    // Assume that GetFaviconResourceBytes() returns favicons which are
+    // |gfx::kFaviconSize| x |gfx::kFaviconSize| DIP.
+    int candidate_edge_size =
+        static_cast<int>(gfx::kFaviconSize * scale + 0.5f);
+    candidate_sizes.push_back(
+        gfx::Size(candidate_edge_size, candidate_edge_size));
+  }
+  std::vector<size_t> selected_indices;
+  SelectFaviconFrameIndices(
+      candidate_sizes, desired_sizes_in_pixel, &selected_indices, NULL);
+  for (size_t i = 0; i < selected_indices.size(); ++i) {
+    size_t selected_index = selected_indices[i];
+    ui::ScaleFactor selected_resource_scale =
+        resource_scale_factors[selected_index];
+
+    scoped_refptr<base::RefCountedMemory> bitmap(
+        GetFaviconResourceBytes(url, selected_resource_scale));
     if (bitmap.get() && bitmap->size()) {
-      favicon_base::FaviconBitmapResult bitmap_result;
+      favicon_base::FaviconRawBitmapResult bitmap_result;
       bitmap_result.bitmap_data = bitmap;
       // Leave |bitmap_result|'s icon URL as the default of GURL().
       bitmap_result.icon_type = favicon_base::FAVICON;
       favicon_bitmap_results->push_back(bitmap_result);
 
-      // Assume that |bitmap| is |gfx::kFaviconSize| x |gfx::kFaviconSize|
-      // DIP.
-      float scale = ui::GetImageScale(scale_factors[i]);
-      int edge_pixel_size =
-          static_cast<int>(gfx::kFaviconSize * scale + 0.5f);
-      bitmap_result.pixel_size = gfx::Size(edge_pixel_size, edge_pixel_size);
+      bitmap_result.pixel_size = candidate_sizes[selected_index];
     }
   }
 

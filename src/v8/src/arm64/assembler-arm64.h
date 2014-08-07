@@ -8,12 +8,12 @@
 #include <list>
 #include <map>
 
-#include "globals.h"
-#include "utils.h"
-#include "assembler.h"
-#include "serialize.h"
-#include "arm64/instructions-arm64.h"
-#include "arm64/cpu-arm64.h"
+#include "src/cpu.h"
+#include "src/globals.h"
+#include "src/utils.h"
+#include "src/assembler.h"
+#include "src/serialize.h"
+#include "src/arm64/instructions-arm64.h"
 
 
 namespace v8 {
@@ -66,6 +66,7 @@ struct CPURegister {
   bool IsValidFPRegister() const;
   bool IsNone() const;
   bool Is(const CPURegister& other) const;
+  bool Aliases(const CPURegister& other) const;
 
   bool IsZero() const;
   bool IsSP() const;
@@ -561,6 +562,11 @@ class CPURegList {
     return size_in_bits / kBitsPerByte;
   }
 
+  unsigned TotalSizeInBytes() const {
+    ASSERT(IsValid());
+    return RegisterSizeInBytes() * Count();
+  }
+
  private:
   RegList list_;
   unsigned size_;
@@ -592,6 +598,31 @@ class CPURegList {
 // AAPCS64 caller-saved registers. Note that this includes lr.
 #define kCallerSaved CPURegList::GetCallerSaved()
 #define kCallerSavedFP CPURegList::GetCallerSavedFP()
+
+// -----------------------------------------------------------------------------
+// Immediates.
+class Immediate {
+ public:
+  template<typename T>
+  inline explicit Immediate(Handle<T> handle);
+
+  // This is allowed to be an implicit constructor because Immediate is
+  // a wrapper class that doesn't normally perform any type conversion.
+  template<typename T>
+  inline Immediate(T value);  // NOLINT(runtime/explicit)
+
+  template<typename T>
+  inline Immediate(T value, RelocInfo::Mode rmode);
+
+  int64_t value() const { return value_; }
+  RelocInfo::Mode rmode() const { return rmode_; }
+
+ private:
+  void InitializeHandle(Handle<Object> value);
+
+  int64_t value_;
+  RelocInfo::Mode rmode_;
+};
 
 
 // -----------------------------------------------------------------------------
@@ -628,8 +659,8 @@ class Operand {
   inline Operand(T t);  // NOLINT(runtime/explicit)
 
   // Implicit constructor for int types.
-  template<typename int_t>
-  inline Operand(int_t t, RelocInfo::Mode rmode);
+  template<typename T>
+  inline Operand(T t, RelocInfo::Mode rmode);
 
   inline bool IsImmediate() const;
   inline bool IsShiftedRegister() const;
@@ -640,35 +671,33 @@ class Operand {
   // which helps in the encoding of instructions that use the stack pointer.
   inline Operand ToExtendedRegister() const;
 
-  inline int64_t immediate() const;
+  inline Immediate immediate() const;
+  inline int64_t ImmediateValue() const;
   inline Register reg() const;
   inline Shift shift() const;
   inline Extend extend() const;
   inline unsigned shift_amount() const;
 
   // Relocation information.
-  RelocInfo::Mode rmode() const { return rmode_; }
-  void set_rmode(RelocInfo::Mode rmode) { rmode_ = rmode; }
-  bool NeedsRelocation(Isolate* isolate) const;
+  bool NeedsRelocation(const Assembler* assembler) const;
 
   // Helpers
   inline static Operand UntagSmi(Register smi);
   inline static Operand UntagSmiAndScale(Register smi, int scale);
 
  private:
-  void initialize_handle(Handle<Object> value);
-  int64_t immediate_;
+  Immediate immediate_;
   Register reg_;
   Shift shift_;
   Extend extend_;
   unsigned shift_amount_;
-  RelocInfo::Mode rmode_;
 };
 
 
 // MemOperand represents a memory operand in a load or store instruction.
 class MemOperand {
  public:
+  inline explicit MemOperand();
   inline explicit MemOperand(Register base,
                              ptrdiff_t offset = 0,
                              AddrMode addrmode = Offset);
@@ -781,11 +810,15 @@ class Assembler : public AssemblerBase {
                                           ConstantPoolArray* constant_pool);
   inline static void set_target_address_at(Address pc,
                                            ConstantPoolArray* constant_pool,
-                                           Address target);
+                                           Address target,
+                                           ICacheFlushMode icache_flush_mode =
+                                               FLUSH_ICACHE_IF_NEEDED);
   static inline Address target_address_at(Address pc, Code* code);
   static inline void set_target_address_at(Address pc,
                                            Code* code,
-                                           Address target);
+                                           Address target,
+                                           ICacheFlushMode icache_flush_mode =
+                                               FLUSH_ICACHE_IF_NEEDED);
 
   // Return the code target address at a call site from the return address of
   // that call in the instruction stream.
@@ -858,7 +891,8 @@ class Assembler : public AssemblerBase {
   static const int kPatchDebugBreakSlotAddressOffset =  0;
 
   // Number of instructions necessary to be able to later patch it to a call.
-  // See Debug::GenerateSlot() and BreakLocationIterator::SetDebugBreakAtSlot().
+  // See DebugCodegen::GenerateSlot() and
+  // BreakLocationIterator::SetDebugBreakAtSlot().
   static const int kDebugBreakSlotInstructions = 4;
   static const int kDebugBreakSlotLength =
     kDebugBreakSlotInstructions * kInstructionSize;
@@ -924,9 +958,9 @@ class Assembler : public AssemblerBase {
   // function, compiled with and without debugger support (see for example
   // Debug::PrepareForBreakPoints()).
   // Compiling functions with debugger support generates additional code
-  // (Debug::GenerateSlot()). This may affect the emission of the pools and
-  // cause the version of the code with debugger support to have pools generated
-  // in different places.
+  // (DebugCodegen::GenerateSlot()). This may affect the emission of the pools
+  // and cause the version of the code with debugger support to have pools
+  // generated in different places.
   // Recording the position and size of emitted pools allows to correctly
   // compute the offset mappings between the different versions of a function in
   // all situations.
@@ -1357,9 +1391,6 @@ class Assembler : public AssemblerBase {
 
   // Memory instructions.
 
-  // Load literal from pc + offset_from_pc.
-  void LoadLiteral(const CPURegister& rt, int offset_from_pc);
-
   // Load integer or FP register.
   void ldr(const CPURegister& rt, const MemOperand& src);
 
@@ -1406,12 +1437,11 @@ class Assembler : public AssemblerBase {
   void stnp(const CPURegister& rt, const CPURegister& rt2,
             const MemOperand& dst);
 
-  // Load literal to register.
-  void ldr(const Register& rt, uint64_t imm);
+  // Load literal to register from a pc relative address.
+  void ldr_pcrel(const CPURegister& rt, int imm19);
 
-  // Load literal to FP register.
-  void ldr(const FPRegister& ft, double imm);
-  void ldr(const FPRegister& ft, float imm);
+  // Load literal to register.
+  void ldr(const CPURegister& rt, const Immediate& imm);
 
   // Move instructions. The default shift of -1 indicates that the move
   // instruction will calculate an appropriate 16-bit immediate and left shift
@@ -1748,6 +1778,13 @@ class Assembler : public AssemblerBase {
   inline static Instr ImmCondCmp(unsigned imm);
   inline static Instr Nzcv(StatusFlags nzcv);
 
+  static bool IsImmAddSub(int64_t immediate);
+  static bool IsImmLogical(uint64_t value,
+                           unsigned width,
+                           unsigned* n,
+                           unsigned* imm_s,
+                           unsigned* imm_r);
+
   // MemOperand offset encoding.
   inline static Instr ImmLSUnsigned(int imm12);
   inline static Instr ImmLS(int imm9);
@@ -1822,7 +1859,6 @@ class Assembler : public AssemblerBase {
   void CheckVeneerPool(bool force_emit, bool require_jump,
                        int margin = kVeneerDistanceMargin);
 
-
   class BlockPoolsScope {
    public:
     explicit BlockPoolsScope(Assembler* assem) : assem_(assem) {
@@ -1837,10 +1873,6 @@ class Assembler : public AssemblerBase {
 
     DISALLOW_IMPLICIT_CONSTRUCTORS(BlockPoolsScope);
   };
-
-  // Available for constrained code generation scopes. Prefer
-  // MacroAssembler::Mov() when possible.
-  inline void LoadRelocated(const CPURegister& rt, const Operand& operand);
 
  protected:
   inline const Register& AppropriateZeroRegFor(const CPURegister& reg) const;
@@ -1861,11 +1893,6 @@ class Assembler : public AssemblerBase {
                         unsigned imm_s,
                         unsigned imm_r,
                         LogicalOp op);
-  static bool IsImmLogical(uint64_t value,
-                           unsigned width,
-                           unsigned* n,
-                           unsigned* imm_s,
-                           unsigned* imm_r);
 
   void ConditionalCompare(const Register& rn,
                           const Operand& operand,
@@ -1896,7 +1923,6 @@ class Assembler : public AssemblerBase {
               const Operand& operand,
               FlagsUpdate S,
               AddSubOp op);
-  static bool IsImmAddSub(int64_t immediate);
 
   static bool IsImmFP32(float imm);
   static bool IsImmFP64(double imm);
@@ -1914,6 +1940,7 @@ class Assembler : public AssemblerBase {
     const CPURegister& rt, const CPURegister& rt2);
   static inline LoadStorePairNonTemporalOp StorePairNonTemporalOpFor(
     const CPURegister& rt, const CPURegister& rt2);
+  static inline LoadLiteralOp LoadLiteralOpFor(const CPURegister& rt);
 
   // Remove the specified branch from the unbound label link chain.
   // If available, a veneer for this label can be used for other branches in the
@@ -1946,11 +1973,6 @@ class Assembler : public AssemblerBase {
                                 const CPURegister& rt2,
                                 const MemOperand& addr,
                                 LoadStorePairNonTemporalOp op);
-  // Register the relocation information for the operand and load its value
-  // into rt.
-  void LoadRelocatedValue(const CPURegister& rt,
-                          const Operand& operand,
-                          LoadLiteralOp op);
   void ConditionalSelect(const Register& rd,
                          const Register& rn,
                          const Register& rm,

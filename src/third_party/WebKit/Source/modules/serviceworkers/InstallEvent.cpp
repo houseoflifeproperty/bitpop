@@ -35,6 +35,7 @@
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/NotImplemented.h"
 #include "wtf/RefPtr.h"
+#include <v8.h>
 
 namespace WebCore {
 
@@ -62,7 +63,7 @@ ScriptPromise InstallEvent::reloadAll(ScriptState* scriptState)
     // For now this just returns a promise which is already rejected.
     RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    resolver->reject(ScriptValue(v8::Null(scriptState->isolate()), scriptState->isolate()));
+    resolver->reject(ScriptValue(scriptState, v8::Null(scriptState->isolate())));
     return promise;
 }
 

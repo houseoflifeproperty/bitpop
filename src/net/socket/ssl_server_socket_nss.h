@@ -99,7 +99,7 @@ class SSLServerSocketNSS : public SSLServerSocket {
                                       PRBool is_server);
   static void HandshakeCallback(PRFileDesc* socket, void* arg);
 
-  virtual int Init();
+  int Init();
 
   // Members used to send and receive buffer.
   bool transport_send_busy_;

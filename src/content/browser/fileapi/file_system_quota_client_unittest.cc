@@ -7,7 +7,6 @@
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/platform_file.h"
 #include "base/run_loop.h"
 #include "content/public/test/async_file_test_helper.h"
 #include "content/public/test/test_file_system_context.h"
@@ -23,7 +22,6 @@
 
 using content::AsyncFileTestHelper;
 using fileapi::FileSystemQuotaClient;
-using fileapi::FileSystemType;
 using fileapi::FileSystemURL;
 
 namespace content {
@@ -121,8 +119,8 @@ class FileSystemQuotaClientTest : public testing::Test {
   bool CreateFileSystemDirectory(const base::FilePath& file_path,
                                  const std::string& origin_url,
                                  quota::StorageType storage_type) {
-    FileSystemType type = fileapi::QuotaStorageTypeToFileSystemType(
-        storage_type);
+    fileapi::FileSystemType type =
+        fileapi::QuotaStorageTypeToFileSystemType(storage_type);
     FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
         GURL(origin_url), type, file_path);
 
@@ -138,8 +136,8 @@ class FileSystemQuotaClientTest : public testing::Test {
     if (file_path.empty())
       return false;
 
-    FileSystemType type = fileapi::QuotaStorageTypeToFileSystemType(
-        storage_type);
+    fileapi::FileSystemType type =
+        fileapi::QuotaStorageTypeToFileSystemType(storage_type);
     FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
         GURL(origin_url), type, file_path);
 

@@ -14,8 +14,8 @@
         '../../base/base.gyp:base',
         '../../base/base.gyp:base_i18n',
         '../../skia/skia.gyp:skia',
-        '../base/strings/ui_strings.gyp:ui_strings',
         '../base/ui_base.gyp:ui_base',
+        '../strings/ui_strings.gyp:ui_strings',
       ],
       'defines': [
         'SHELL_DIALOGS_IMPLEMENTATION',
@@ -74,6 +74,13 @@
           {
             'dependencies': [
               '../android/ui_android.gyp:ui_java',
+            ],
+          }
+        ],
+        ['OS=="win"',
+          {
+            'dependencies': [
+              '../../win8/win8.gyp:metro_viewer',
             ],
           }
         ],

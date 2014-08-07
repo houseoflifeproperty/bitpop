@@ -57,7 +57,9 @@ class WtsTerminalMonitor;
 
 // The command line parameters that should be copied from the service's command
 // line to the host process.
-const char* kCopiedSwitchNames[] = { switches::kV, switches::kVModule };
+const char kEnableVp9SwitchName[] = "enable-vp9";
+const char* kCopiedSwitchNames[] =
+    { switches::kV, switches::kVModule, kEnableVp9SwitchName };
 
 class DaemonProcessWin : public DaemonProcess {
  public:
@@ -167,7 +169,7 @@ bool DaemonProcessWin::OnDesktopSessionAgentAttached(
                        0,
                        FALSE,
                        DUPLICATE_SAME_ACCESS)) {
-    LOG_GETLASTERROR(ERROR) << "Failed to duplicate the desktop process handle";
+    PLOG(ERROR) << "Failed to duplicate the desktop process handle";
     return false;
   }
 
@@ -238,8 +240,7 @@ void DaemonProcessWin::DisableAutoStart() {
       OpenSCManager(NULL, SERVICES_ACTIVE_DATABASE,
                     SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE));
   if (!scmanager.IsValid()) {
-    LOG_GETLASTERROR(INFO)
-        << "Failed to connect to the service control manager";
+    PLOG(INFO) << "Failed to connect to the service control manager";
     return;
   }
 
@@ -247,8 +248,8 @@ void DaemonProcessWin::DisableAutoStart() {
   ScopedScHandle service(
       OpenService(scmanager, kWindowsServiceName, desired_access));
   if (!service.IsValid()) {
-    LOG_GETLASTERROR(INFO)
-        << "Failed to open to the '" << kWindowsServiceName << "' service";
+    PLOG(INFO) << "Failed to open to the '" << kWindowsServiceName
+               << "' service";
     return;
   }
 
@@ -265,9 +266,8 @@ void DaemonProcessWin::DisableAutoStart() {
                            NULL,
                            NULL,
                            NULL)) {
-    LOG_GETLASTERROR(INFO)
-        << "Failed to change the '" << kWindowsServiceName
-        << "'service start type to 'manual'";
+    PLOG(INFO) << "Failed to change the '" << kWindowsServiceName
+               << "'service start type to 'manual'";
   }
 }
 

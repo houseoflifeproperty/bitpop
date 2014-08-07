@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -57,13 +57,9 @@ class _DromaeoBenchmark(test.Test):
     if not hasattr(self, 'query_param'):
       raise NotImplementedError('query_param not in Dromaeo benchmark.')
     url = 'file://index.html?%s&automated' % self.query_param
-    # The docstring of benchmark classes may also be used as a description
-    # when 'run_benchmarks list' is run.
-    description = self.__doc__ or 'Dromaeo JavaScript Benchmark'
     dromaeo_dir = os.path.join(util.GetChromiumSrcDir(),
                                'chrome', 'test', 'data', 'dromaeo')
-    ps = page_set.PageSet(description=description,
-                          file_path=dromaeo_dir)
+    ps = page_set.PageSet(file_path=dromaeo_dir)
     ps.AddPageWithDefaultRunNavigate(url)
     return ps
 

@@ -61,6 +61,7 @@
 #define MIN_GF_INTERVAL             4
 #endif
 
+
 // #define LONG_TERM_VBR_CORRECTION
 
 static void swap_yv12(YV12_BUFFER_CONFIG *a, YV12_BUFFER_CONFIG *b) {
@@ -540,7 +541,7 @@ void vp9_first_pass(VP9_COMP *cpi) {
 
   vp9_setup_src_planes(x, cpi->Source, 0, 0);
   vp9_setup_pre_planes(xd, 0, first_ref_buf, 0, 0, NULL);
-  vp9_setup_dst_planes(xd, new_yv12, 0, 0);
+  vp9_setup_dst_planes(xd->plane, new_yv12, 0, 0);
 
   xd->mi = cm->mi_grid_visible;
   xd->mi[0] = cm->mi;
@@ -1417,12 +1418,90 @@ void define_fixed_arf_period(VP9_COMP *cpi) {
 }
 #endif
 
+// Calculate a section intra ratio used in setting max loop filter.
+static void calculate_section_intra_ratio(struct twopass_rc *twopass,
+                                          const FIRSTPASS_STATS *start_pos,
+                                          int section_length) {
+  FIRSTPASS_STATS next_frame;
+  FIRSTPASS_STATS sectionstats;
+  int i;
+
+  vp9_zero(next_frame);
+  vp9_zero(sectionstats);
+
+  reset_fpf_position(twopass, start_pos);
+
+  for (i = 0; i < section_length; ++i) {
+    input_stats(twopass, &next_frame);
+    accumulate_stats(&sectionstats, &next_frame);
+  }
+
+  avg_stats(&sectionstats);
+
+  twopass->section_intra_rating =
+    (int)(sectionstats.intra_error /
+          DOUBLE_DIVIDE_CHECK(sectionstats.coded_error));
+
+  reset_fpf_position(twopass, start_pos);
+}
+
+// Calculate the total bits to allocate in this GF/ARF group.
+static int64_t calculate_total_gf_group_bits(VP9_COMP *cpi,
+                                             double gf_group_err) {
+  const RATE_CONTROL *const rc = &cpi->rc;
+  const struct twopass_rc *const twopass = &cpi->twopass;
+  const int max_bits = frame_max_bits(rc, &cpi->oxcf);
+  int64_t total_group_bits;
+
+  // Calculate the bits to be allocated to the group as a whole.
+  if ((twopass->kf_group_bits > 0) && (twopass->kf_group_error_left > 0)) {
+    total_group_bits = (int64_t)(twopass->kf_group_bits *
+                                 (gf_group_err / twopass->kf_group_error_left));
+  } else {
+    total_group_bits = 0;
+  }
+
+  // Clamp odd edge cases.
+  total_group_bits = (total_group_bits < 0) ?
+     0 : (total_group_bits > twopass->kf_group_bits) ?
+     twopass->kf_group_bits : total_group_bits;
+
+  // Clip based on user supplied data rate variability limit.
+  if (total_group_bits > (int64_t)max_bits * rc->baseline_gf_interval)
+    total_group_bits = (int64_t)max_bits * rc->baseline_gf_interval;
+
+  return total_group_bits;
+}
+
+// Calculate the number bits extra to assign to boosted frames in a group.
+static int calculate_boost_bits(int frame_count,
+                                int boost, int64_t total_group_bits) {
+  int allocation_chunks;
+
+  // return 0 for invalid inputs (could arise e.g. through rounding errors)
+  if (!boost || (total_group_bits <= 0) || (frame_count <= 0) )
+    return 0;
+
+  allocation_chunks = (frame_count * 100) + boost;
+
+  // Prevent overflow.
+  if (boost > 1023) {
+    int divisor = boost >> 10;
+    boost /= divisor;
+    allocation_chunks /= divisor;
+  }
+
+  // Calculate the number of extra bits for use in the boosted frame or frames.
+  return MAX((int)(((int64_t)boost * total_group_bits) / allocation_chunks), 0);
+}
+
+
 // Analyse and define a gf/arf group.
 static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   RATE_CONTROL *const rc = &cpi->rc;
   const VP9EncoderConfig *const oxcf = &cpi->oxcf;
   struct twopass_rc *const twopass = &cpi->twopass;
-  FIRSTPASS_STATS next_frame = { 0 };
+  FIRSTPASS_STATS next_frame;
   const FIRSTPASS_STATS *start_pos;
   int i;
   double boost_score = 0.0;
@@ -1442,8 +1521,6 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   double mv_in_out_accumulator = 0.0;
   double abs_mv_in_out_accumulator = 0.0;
   double mv_ratio_accumulator_thresh;
-  // Max bits for a single frame.
-  const int max_bits = frame_max_bits(rc, oxcf);
   unsigned int allow_alt_ref = oxcf->play_alternate && oxcf->lag_in_frames;
 
   int f_boost = 0;
@@ -1451,10 +1528,10 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   int flash_detected;
   int active_max_gf_interval;
 
-  twopass->gf_group_bits = 0;
-
   vp9_clear_system_state();
+  vp9_zero(next_frame);
 
+  twopass->gf_group_bits = 0;
   start_pos = twopass->stats_in;
 
   // Load stats for the current frame.
@@ -1657,149 +1734,57 @@ static void define_gf_group(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   }
 #endif
 #endif
-
-  // Calculate the bits to be allocated to the group as a whole.
-  if (twopass->kf_group_bits > 0 && twopass->kf_group_error_left > 0) {
-    twopass->gf_group_bits = (int64_t)(twopass->kf_group_bits *
-                (gf_group_err / twopass->kf_group_error_left));
-  } else {
-    twopass->gf_group_bits = 0;
-  }
-  twopass->gf_group_bits = (twopass->gf_group_bits < 0) ?
-     0 : (twopass->gf_group_bits > twopass->kf_group_bits) ?
-     twopass->kf_group_bits : twopass->gf_group_bits;
-
-  // Clip cpi->twopass.gf_group_bits based on user supplied data rate
-  // variability limit, cpi->oxcf.two_pass_vbrmax_section.
-  if (twopass->gf_group_bits > (int64_t)max_bits * rc->baseline_gf_interval)
-    twopass->gf_group_bits = (int64_t)max_bits * rc->baseline_gf_interval;
-
   // Reset the file position.
   reset_fpf_position(twopass, start_pos);
 
-  // Assign  bits to the arf or gf.
-  for (i = 0; i <= (rc->source_alt_ref_pending &&
-                    cpi->common.frame_type != KEY_FRAME); ++i) {
-    int allocation_chunks;
-    int q = rc->last_q[INTER_FRAME];
-    int gf_bits;
+  // Calculate the bits to be allocated to the gf/arf group as a whole
+  twopass->gf_group_bits = calculate_total_gf_group_bits(cpi, gf_group_err);
 
+  // Calculate the extra bits to be used for boosted frame(s)
+  {
+    int q = rc->last_q[INTER_FRAME];
     int boost = (rc->gfu_boost * gfboost_qadjust(q)) / 100;
 
     // Set max and minimum boost and hence minimum allocation.
     boost = clamp(boost, 125, (rc->baseline_gf_interval + 1) * 200);
 
-    if (rc->source_alt_ref_pending && i == 0)
-      allocation_chunks = ((rc->baseline_gf_interval + 1) * 100) + boost;
-    else
-      allocation_chunks = (rc->baseline_gf_interval * 100) + (boost - 100);
+    // Calculate the extra bits to be used for boosted frame(s)
+    twopass->gf_bits = calculate_boost_bits(rc->baseline_gf_interval,
+                                            boost, twopass->gf_group_bits);
 
-    // Prevent overflow.
-    if (boost > 1023) {
-      int divisor = boost >> 10;
-      boost /= divisor;
-      allocation_chunks /= divisor;
-    }
 
-    // Calculate the number of bits to be spent on the gf or arf based on
-    // the boost number.
-    gf_bits = (int)((double)boost * (twopass->gf_group_bits /
-                  (double)allocation_chunks));
-
-    // If the frame that is to be boosted is simpler than the average for
-    // the gf/arf group then use an alternative calculation
-    // based on the error score of the frame itself.
-    if (rc->baseline_gf_interval < 1 ||
-        mod_frame_err < gf_group_err / (double)rc->baseline_gf_interval) {
-      double alt_gf_grp_bits = (double)twopass->kf_group_bits  *
-        (mod_frame_err * (double)rc->baseline_gf_interval) /
-        DOUBLE_DIVIDE_CHECK(twopass->kf_group_error_left);
-
-      int alt_gf_bits = (int)((double)boost * (alt_gf_grp_bits /
-                                           (double)allocation_chunks));
-
-      if (gf_bits > alt_gf_bits)
-        gf_bits = alt_gf_bits;
-    } else {
-      // If it is harder than other frames in the group make sure it at
-      // least receives an allocation in keeping with its relative error
-      // score, otherwise it may be worse off than an "un-boosted" frame.
-      int alt_gf_bits = (int)((double)twopass->kf_group_bits *
-                        mod_frame_err /
-                        DOUBLE_DIVIDE_CHECK(twopass->kf_group_error_left));
-
-      if (alt_gf_bits > gf_bits)
-        gf_bits = alt_gf_bits;
-    }
-
-    // Don't allow a negative value for gf_bits.
-    if (gf_bits < 0)
-      gf_bits = 0;
-
-    if (i == 0) {
-      twopass->gf_bits = gf_bits;
-    }
-    if (i == 1 ||
-        (!rc->source_alt_ref_pending && cpi->common.frame_type != KEY_FRAME &&
-         !vp9_is_upper_layer_key_frame(cpi))) {
-      // Calculate the per frame bit target for this frame.
-      vp9_rc_set_frame_target(cpi, gf_bits);
+    // For key frames the frame target rate is set already.
+    // NOTE: We dont bother to check for the special case of ARF overlay
+    // frames here, as there is clamping code for this in the function
+    // vp9_rc_clamp_pframe_target_size(), which applies to one and two pass
+    // encodes.
+    if (cpi->common.frame_type != KEY_FRAME &&
+        !vp9_is_upper_layer_key_frame(cpi)) {
+      vp9_rc_set_frame_target(cpi, twopass->gf_bits);
     }
   }
 
-  {
-    // Adjust KF group bits and error remaining.
-    twopass->kf_group_error_left -= (int64_t)gf_group_err;
+  // Adjust KF group bits and error remaining.
+  twopass->kf_group_error_left -= (int64_t)gf_group_err;
 
-    // If this is an arf update we want to remove the score for the overlay
-    // frame at the end which will usually be very cheap to code.
-    // The overlay frame has already, in effect, been coded so we want to spread
-    // the remaining bits among the other frames.
-    // For normal GFs remove the score for the GF itself unless this is
-    // also a key frame in which case it has already been accounted for.
-    if (rc->source_alt_ref_pending) {
-      twopass->gf_group_error_left = (int64_t)(gf_group_err - mod_frame_err);
-    } else if (cpi->common.frame_type != KEY_FRAME) {
-      twopass->gf_group_error_left = (int64_t)(gf_group_err
-                                                   - gf_first_frame_err);
-    } else {
-      twopass->gf_group_error_left = (int64_t)gf_group_err;
-    }
-
-    // This condition could fail if there are two kfs very close together
-    // despite MIN_GF_INTERVAL and would cause a divide by 0 in the
-    // calculation of alt_extra_bits.
-    if (rc->baseline_gf_interval >= 3) {
-      const int boost = rc->source_alt_ref_pending ? b_boost : rc->gfu_boost;
-
-      if (boost >= 150) {
-        const int pct_extra = MIN(20, (boost - 100) / 50);
-        const int alt_extra_bits = (int)((
-            MAX(twopass->gf_group_bits - twopass->gf_bits, 0) *
-            pct_extra) / 100);
-        twopass->gf_group_bits -= alt_extra_bits;
-      }
-    }
+  // If this is an arf update we want to remove the score for the overlay
+  // frame at the end which will usually be very cheap to code.
+  // The overlay frame has already, in effect, been coded so we want to spread
+  // the remaining bits among the other frames.
+  // For normal GFs remove the score for the GF itself unless this is
+  // also a key frame in which case it has already been accounted for.
+  if (rc->source_alt_ref_pending) {
+    twopass->gf_group_error_left = (int64_t)(gf_group_err - mod_frame_err);
+  } else if (cpi->common.frame_type != KEY_FRAME) {
+    twopass->gf_group_error_left = (int64_t)(gf_group_err
+                                                 - gf_first_frame_err);
+  } else {
+    twopass->gf_group_error_left = (int64_t)gf_group_err;
   }
 
+  // Calculate a section intra ratio used in setting max loop filter.
   if (cpi->common.frame_type != KEY_FRAME) {
-    FIRSTPASS_STATS sectionstats;
-
-    zero_stats(&sectionstats);
-    reset_fpf_position(twopass, start_pos);
-
-    for (i = 0; i < rc->baseline_gf_interval; ++i) {
-      input_stats(twopass, &next_frame);
-      accumulate_stats(&sectionstats, &next_frame);
-    }
-
-    avg_stats(&sectionstats);
-
-    twopass->section_intra_rating = (int)
-      (sectionstats.intra_error /
-      DOUBLE_DIVIDE_CHECK(sectionstats.coded_error));
-
-    reset_fpf_position(twopass, start_pos);
+    calculate_section_intra_ratio(twopass, start_pos, rc->baseline_gf_interval);
   }
 }
 
@@ -2050,15 +2035,15 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   } else {
     twopass->kf_group_bits = 0;
   }
+  twopass->kf_group_bits = MAX(0, twopass->kf_group_bits);
+
   // Reset the first pass file position.
   reset_fpf_position(twopass, start_position);
 
-  // Determine how big to make this keyframe based on how well the subsequent
-  // frames use inter blocks.
+  // Scan through the kf group collating various stats used to deteermine
+  // how many bits to spend on it.
   decay_accumulator = 1.0;
   boost_score = 0.0;
-
-  // Scan through the kf group collating various stats.
   for (i = 0; i < rc->frames_to_key; ++i) {
     if (EOF == input_stats(twopass, &next_frame))
       break;
@@ -2095,101 +2080,27 @@ static void find_next_key_frame(VP9_COMP *cpi, FIRSTPASS_STATS *this_frame) {
     }
   }
 
-  {
-    FIRSTPASS_STATS sectionstats;
+  // Store the zero motion percentage
+  twopass->kf_zeromotion_pct = (int)(zero_motion_accumulator * 100.0);
 
-    zero_stats(&sectionstats);
-    reset_fpf_position(twopass, start_position);
-
-    for (i = 0; i < rc->frames_to_key; ++i) {
-      input_stats(twopass, &next_frame);
-      accumulate_stats(&sectionstats, &next_frame);
-    }
-
-    avg_stats(&sectionstats);
-
-    twopass->section_intra_rating = (int) (sectionstats.intra_error /
-        DOUBLE_DIVIDE_CHECK(sectionstats.coded_error));
-  }
-
-  // Reset the first pass file position.
-  reset_fpf_position(twopass, start_position);
+  // Calculate a section intra ratio used in setting max loop filter.
+  calculate_section_intra_ratio(twopass, start_position, rc->frames_to_key);
 
   // Work out how many bits to allocate for the key frame itself.
-  if (1) {
-    int kf_boost = (int)boost_score;
-    int allocation_chunks;
+  rc->kf_boost = (int)boost_score;
 
-    if (kf_boost < (rc->frames_to_key * 3))
-      kf_boost = (rc->frames_to_key * 3);
+  if (rc->kf_boost  < (rc->frames_to_key * 3))
+    rc->kf_boost  = (rc->frames_to_key * 3);
+  if (rc->kf_boost   < MIN_KF_BOOST)
+    rc->kf_boost = MIN_KF_BOOST;
 
-    if (kf_boost < MIN_KF_BOOST)
-      kf_boost = MIN_KF_BOOST;
+  twopass->kf_bits = calculate_boost_bits((rc->frames_to_key - 1),
+                                          rc->kf_boost, twopass->kf_group_bits);
 
-    // Make a note of baseline boost and the zero motion
-    // accumulator value for use elsewhere.
-    rc->kf_boost = kf_boost;
-    twopass->kf_zeromotion_pct = (int)(zero_motion_accumulator * 100.0);
+  twopass->kf_group_bits -= twopass->kf_bits;
 
-    // Key frame size depends on:
-    // (1) the error score for the whole key frame group,
-    // (2) the key frames' own error if this is smaller than the
-    //     average for the group (optional),
-    // (3) insuring that the frame receives at least the allocation it would
-    //     have received based on its own error score vs the error score
-    //     remaining.
-    // Special case:
-    // If the sequence appears almost totally static we want to spend almost
-    // all of the bits on the key frame.
-    //
-    // We use (cpi->rc.frames_to_key - 1) below because the key frame itself is
-    // taken care of by kf_boost.
-    if (zero_motion_accumulator >= 0.99) {
-      allocation_chunks = ((rc->frames_to_key - 1) * 10) + kf_boost;
-    } else {
-      allocation_chunks = ((rc->frames_to_key - 1) * 100) + kf_boost;
-    }
-
-    // Prevent overflow.
-    if (kf_boost > 1028) {
-      const int divisor = kf_boost >> 10;
-      kf_boost /= divisor;
-      allocation_chunks /= divisor;
-    }
-
-    twopass->kf_group_bits = MAX(0, twopass->kf_group_bits);
-    // Calculate the number of bits to be spent on the key frame.
-    twopass->kf_bits = (int)((double)kf_boost *
-        ((double)twopass->kf_group_bits / allocation_chunks));
-
-    // If the key frame is actually easier than the average for the
-    // kf group (which does sometimes happen, e.g. a blank intro frame)
-    // then use an alternate calculation based on the kf error score
-    // which should give a smaller key frame.
-    if (kf_mod_err < kf_group_err / rc->frames_to_key) {
-      double alt_kf_grp_bits = ((double)twopass->bits_left *
-         (kf_mod_err * (double)rc->frames_to_key) /
-         DOUBLE_DIVIDE_CHECK(twopass->modified_error_left));
-
-      const int alt_kf_bits = (int)((double)kf_boost *
-                          (alt_kf_grp_bits / (double)allocation_chunks));
-
-      if (twopass->kf_bits > alt_kf_bits)
-        twopass->kf_bits = alt_kf_bits;
-    } else {
-      // Else if it is much harder than other frames in the group make sure
-      // it at least receives an allocation in keeping with its relative
-      // error score.
-      const int alt_kf_bits = (int)((double)twopass->bits_left * (kf_mod_err /
-               DOUBLE_DIVIDE_CHECK(twopass->modified_error_left)));
-
-      if (alt_kf_bits > twopass->kf_bits)
-        twopass->kf_bits = alt_kf_bits;
-    }
-    twopass->kf_group_bits -= twopass->kf_bits;
-    // Per frame bit target for this frame.
-    vp9_rc_set_frame_target(cpi, twopass->kf_bits);
-  }
+  // Per frame bit target for this frame.
+  vp9_rc_set_frame_target(cpi, twopass->kf_bits);
 
   // Note the total error score of the kf group minus the key frame itself.
   twopass->kf_group_error_left = (int)(kf_group_err - kf_mod_err);
@@ -2242,8 +2153,8 @@ void vp9_rc_get_second_pass_params(VP9_COMP *cpi) {
   double this_frame_coded_error;
   int target;
   LAYER_CONTEXT *lc = NULL;
-  int is_spatial_svc = (cpi->use_svc && cpi->svc.number_temporal_layers == 1);
-
+  const int is_spatial_svc = (cpi->use_svc &&
+                              cpi->svc.number_temporal_layers == 1);
   if (is_spatial_svc) {
     lc = &cpi->svc.layer_context[cpi->svc.spatial_layer_id];
     frames_left = (int)(twopass->total_stats.count -
@@ -2303,14 +2214,14 @@ void vp9_rc_get_second_pass_params(VP9_COMP *cpi) {
     this_frame_copy = this_frame;
     find_next_key_frame(cpi, &this_frame_copy);
     // Don't place key frame in any enhancement layers in spatial svc
-    if (cpi->use_svc && cpi->svc.number_temporal_layers == 1) {
+    if (is_spatial_svc) {
       lc->is_key_frame = 1;
       if (cpi->svc.spatial_layer_id > 0) {
         cm->frame_type = INTER_FRAME;
       }
     }
   } else {
-    if (cpi->use_svc && cpi->svc.number_temporal_layers == 1) {
+    if (is_spatial_svc) {
       lc->is_key_frame = 0;
     }
     cm->frame_type = INTER_FRAME;

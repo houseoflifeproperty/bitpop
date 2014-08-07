@@ -17,7 +17,7 @@
 #include "base/run_loop.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
 #include "chrome/browser/chromeos/policy/cloud_external_data_manager_base_test_util.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/policy/device_local_account_external_data_manager.h"
@@ -177,10 +177,10 @@ void CloudExternalDataPolicyObserverTest::SetUp() {
       new DeviceLocalAccountPolicyService(&device_settings_test_helper_,
                                           &device_settings_service_,
                                           &cros_settings_,
-                                          loop_.message_loop_proxy(),
-                                          loop_.message_loop_proxy(),
-                                          loop_.message_loop_proxy(),
-                                          loop_.message_loop_proxy(),
+                                          base::MessageLoopProxy::current(),
+                                          base::MessageLoopProxy::current(),
+                                          base::MessageLoopProxy::current(),
+                                          base::MessageLoopProxy::current(),
                                           NULL));
   url_fetcher_factory_.set_remove_fetcher_on_delete(true);
 

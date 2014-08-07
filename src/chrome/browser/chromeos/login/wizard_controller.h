@@ -30,7 +30,7 @@ class DictionaryValue;
 
 namespace chromeos {
 
-class AutoEnrollmentCheckStep;
+class AutoEnrollmentCheckScreen;
 class EnrollmentScreen;
 class ErrorScreen;
 class EulaScreen;
@@ -94,6 +94,9 @@ class WizardController : public ScreenObserver {
   // Checks whether OOBE should start enrollment automatically.
   static bool ShouldAutoStartEnrollment();
 
+  // Checks whether OOBE should recover enrollment.
+  static bool ShouldRecoverEnrollment();
+
   // Shows the first screen defined by |first_screen_name| or by default
   // if the parameter is empty. Takes ownership of |screen_parameters|.
   void Init(const std::string& first_screen_name,
@@ -112,6 +115,9 @@ class WizardController : public ScreenObserver {
   // Called right after the browser session has started.
   void OnSessionStart();
 
+  // Skip update, go straight to enrollment after EULA is accepted.
+  void SkipUpdateEnrollAfterEula();
+
   // TODO(antrim) : temporary hack. Should be removed once screen system is
   // reworked at hackaton.
   void EnableUserImageScreenReturnToPreviousHack();
@@ -127,6 +133,7 @@ class WizardController : public ScreenObserver {
   KioskEnableScreen* GetKioskEnableScreen();
   TermsOfServiceScreen* GetTermsOfServiceScreen();
   WrongHWIDScreen* GetWrongHWIDScreen();
+  AutoEnrollmentCheckScreen* GetAutoEnrollmentCheckScreen();
   HIDDetectionScreen* GetHIDDetectionScreen();
   LocallyManagedUserCreationScreen* GetLocallyManagedUserCreationScreen();
 
@@ -150,6 +157,7 @@ class WizardController : public ScreenObserver {
   static const char kKioskAutolaunchScreenName[];
   static const char kErrorScreenName[];
   static const char kTermsOfServiceScreenName[];
+  static const char kAutoEnrollmentCheckScreenName[];
   static const char kWrongHWIDScreenName[];
   static const char kLocallyManagedUserCreationScreenName[];
   static const char kAppLaunchSplashScreenName[];
@@ -170,6 +178,7 @@ class WizardController : public ScreenObserver {
   void ShowKioskEnableScreen();
   void ShowTermsOfServiceScreen();
   void ShowWrongHWIDScreen();
+  void ShowAutoEnrollmentCheckScreen();
   void ShowLocallyManagedUserCreationScreen();
   void ShowHIDDetectionScreen();
 
@@ -257,16 +266,14 @@ class WizardController : public ScreenObserver {
   // Called when LocalState is initialized.
   void OnLocalStateInitialized(bool /* succeeded */);
 
-  // Kicks off the auto-enrollment check step. Once it finishes, it'll call
-  // back via ScreenObserver::OnExit().
-  void StartAutoEnrollmentCheck();
-
   // Returns local state.
   PrefService* GetLocalState();
 
   static void set_local_state_for_testing(PrefService* local_state) {
     local_state_for_testing_ = local_state;
   }
+
+  std::string first_screen_name() { return first_screen_name_; }
 
   // Called when network is UP.
   void StartTimezoneResolve();
@@ -282,6 +289,10 @@ class WizardController : public ScreenObserver {
   void OnLocationResolved(const Geoposition& position,
                           bool server_error,
                           const base::TimeDelta elapsed);
+
+  // Returns true if callback has been installed.
+  // Returns false if timezone has already been resolved.
+  bool SetOnTimeZoneResolvedForTesting(const base::Closure& callback);
 
   // Whether to skip any screens that may normally be shown after login
   // (registration, Terms of Service, user image selection).
@@ -301,6 +312,7 @@ class WizardController : public ScreenObserver {
   scoped_ptr<ErrorScreen> error_screen_;
   scoped_ptr<TermsOfServiceScreen> terms_of_service_screen_;
   scoped_ptr<WrongHWIDScreen> wrong_hwid_screen_;
+  scoped_ptr<AutoEnrollmentCheckScreen> auto_enrollment_check_screen_;
   scoped_ptr<LocallyManagedUserCreationScreen>
       locally_managed_user_creation_screen_;
   scoped_ptr<HIDDetectionScreen> hid_detection_screen_;
@@ -329,9 +341,6 @@ class WizardController : public ScreenObserver {
   // Default WizardController.
   static WizardController* default_controller_;
 
-  // The auto-enrollment check step, currently active.
-  scoped_ptr<AutoEnrollmentCheckStep> auto_enrollment_check_step_;
-
   // Parameters for the first screen. May be NULL.
   scoped_ptr<base::DictionaryValue> screen_parameters_;
 
@@ -342,6 +351,10 @@ class WizardController : public ScreenObserver {
   // State of Usage stat/error reporting checkbox on EULA screen
   // during wizard lifetime.
   bool usage_statistics_reporting_;
+
+  // If true then update check is cancelled and enrollment is started after
+  // EULA is accepted.
+  bool skip_update_enroll_after_eula_;
 
   // Time when the EULA was accepted. Used to measure the duration from the EULA
   // acceptance until the Sign-In screen is displayed.
@@ -361,15 +374,20 @@ class WizardController : public ScreenObserver {
   FRIEND_TEST_ALL_PREFIXES(EnrollmentScreenTest, TestCancel);
   FRIEND_TEST_ALL_PREFIXES(WizardControllerFlowTest, Accelerators);
   friend class WizardControllerFlowTest;
+  friend class WizardControllerOobeResumeTest;
   friend class WizardInProcessBrowserTest;
   friend class WizardControllerBrokenLocalStateTest;
 
   scoped_ptr<AccessibilityStatusSubscription> accessibility_subscription_;
 
-  base::WeakPtrFactory<WizardController> weak_factory_;
-
   scoped_ptr<SimpleGeolocationProvider> geolocation_provider_;
   scoped_ptr<TimeZoneProvider> timezone_provider_;
+
+  // Tests check result of timezone resolve.
+  bool timezone_resolved_;
+  base::Closure on_timezone_resolved_for_testing_;
+
+  base::WeakPtrFactory<WizardController> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WizardController);
 };

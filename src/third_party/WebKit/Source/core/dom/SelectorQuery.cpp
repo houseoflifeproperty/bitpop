@@ -51,11 +51,11 @@ struct SingleElementSelectorQueryTrait {
 };
 
 struct AllElementsSelectorQueryTrait {
-    typedef Vector<RefPtr<Node> > OutputType;
+    typedef WillBeHeapVector<RefPtrWillBeMember<Node> > OutputType;
     static const bool shouldOnlyMatchFirstElement = false;
     ALWAYS_INLINE static void appendElement(OutputType& output, Node& element)
     {
-        output.append(RefPtr<Node>(element));
+        output.append(&element);
     }
 };
 
@@ -63,10 +63,11 @@ enum ClassElementListBehavior { AllElements, OnlyRoots };
 
 template <ClassElementListBehavior onlyRoots>
 class ClassElementList {
+    STACK_ALLOCATED();
 public:
     ClassElementList(ContainerNode& rootNode, const AtomicString& className)
         : m_className(className)
-        , m_rootNode(rootNode)
+        , m_rootNode(&rootNode)
         , m_currentElement(nextInternal(ElementTraversal::firstWithin(rootNode))) { }
 
     bool isEmpty() const { return !m_currentElement; }
@@ -76,16 +77,16 @@ public:
         Element* current = m_currentElement;
         ASSERT(current);
         if (onlyRoots)
-            m_currentElement = nextInternal(ElementTraversal::nextSkippingChildren(*m_currentElement, &m_rootNode));
+            m_currentElement = nextInternal(ElementTraversal::nextSkippingChildren(*m_currentElement, m_rootNode));
         else
-            m_currentElement = nextInternal(ElementTraversal::next(*m_currentElement, &m_rootNode));
+            m_currentElement = nextInternal(ElementTraversal::next(*m_currentElement, m_rootNode));
         return current;
     }
 
 private:
     Element* nextInternal(Element* element)
     {
-        for (; element; element = ElementTraversal::next(*element, &m_rootNode)) {
+        for (; element; element = ElementTraversal::next(*element, m_rootNode)) {
             if (element->hasClass() && element->classNames().contains(m_className))
                 return element;
         }
@@ -93,8 +94,8 @@ private:
     }
 
     const AtomicString& m_className;
-    ContainerNode& m_rootNode;
-    Element* m_currentElement;
+    RawPtrWillBeMember<ContainerNode> m_rootNode;
+    RawPtrWillBeMember<Element> m_currentElement;
 };
 
 void SelectorDataList::initialize(const CSSSelectorList& selectorList)
@@ -120,6 +121,8 @@ inline bool SelectorDataList::selectorMatches(const CSSSelector& selector, Eleme
     SelectorChecker::SelectorCheckingContext selectorCheckingContext(selector, &element, SelectorChecker::VisitedMatchDisabled);
     selectorCheckingContext.behaviorAtBoundary = SelectorChecker::StaysWithinTreeScope;
     selectorCheckingContext.scope = !rootNode.isDocumentNode() ? &rootNode : 0;
+    if (selectorCheckingContext.scope)
+        selectorCheckingContext.behaviorAtBoundary = static_cast<SelectorChecker::BehaviorAtBoundary>(SelectorChecker::StaysWithinTreeScope | SelectorChecker::ScopeContainsLastMatchedElement);
     return selectorChecker.match(selectorCheckingContext, DOMSiblingTraversalStrategy()) == SelectorChecker::SelectorMatches;
 }
 
@@ -134,14 +137,14 @@ bool SelectorDataList::matches(Element& targetElement) const
     return false;
 }
 
-PassRefPtr<NodeList> SelectorDataList::queryAll(ContainerNode& rootNode) const
+PassRefPtrWillBeRawPtr<StaticNodeList> SelectorDataList::queryAll(ContainerNode& rootNode) const
 {
-    Vector<RefPtr<Node> > result;
+    WillBeHeapVector<RefPtrWillBeMember<Node> > result;
     execute<AllElementsSelectorQueryTrait>(rootNode, result);
     return StaticNodeList::adopt(result);
 }
 
-PassRefPtr<Element> SelectorDataList::queryFirst(ContainerNode& rootNode) const
+PassRefPtrWillBeRawPtr<Element> SelectorDataList::queryFirst(ContainerNode& rootNode) const
 {
     Element* matchedElement = 0;
     execute<SingleElementSelectorQueryTrait>(rootNode, matchedElement);
@@ -208,7 +211,7 @@ void SelectorDataList::findTraverseRootsAndExecute(ContainerNode& rootNode, type
     bool startFromParent = false;
 
     for (const CSSSelector* selector = m_selectors[0]; selector; selector = selector->tagHistory()) {
-        if (selector->m_match == CSSSelector::Id && !rootNode.document().containsMultipleElementsWithId(selector->value())) {
+        if (selector->match() == CSSSelector::Id && !rootNode.document().containsMultipleElementsWithId(selector->value())) {
             Element* element = rootNode.treeScope().getElementById(selector->value());
             ContainerNode* adjustedNode = &rootNode;
             if (element && (isTreeScopeRoot(rootNode) || element->isDescendantOf(&rootNode)))
@@ -229,7 +232,7 @@ void SelectorDataList::findTraverseRootsAndExecute(ContainerNode& rootNode, type
 
         // If we have both CSSSelector::Id and CSSSelector::Class at the same time, we should use Id
         // to find traverse root.
-        if (!SelectorQueryTrait::shouldOnlyMatchFirstElement && !startFromParent && selector->m_match == CSSSelector::Class) {
+        if (!SelectorQueryTrait::shouldOnlyMatchFirstElement && !startFromParent && selector->match() == CSSSelector::Class) {
             if (isRightmostSelector) {
                 ClassElementList<AllElements> traverseRoots(rootNode, selector->value());
                 executeForTraverseRoots<SelectorQueryTrait>(*m_selectors[0], traverseRoots, MatchesTraverseRoots, rootNode, output);
@@ -395,7 +398,7 @@ void SelectorDataList::executeSlowTraversingShadowTree(ContainerNode& rootNode, 
 const CSSSelector* SelectorDataList::selectorForIdLookup(const CSSSelector& firstSelector) const
 {
     for (const CSSSelector* selector = &firstSelector; selector; selector = selector->tagHistory()) {
-        if (selector->m_match == CSSSelector::Id)
+        if (selector->match() == CSSSelector::Id)
             return selector;
         if (selector->relation() != CSSSelector::SubSelector)
             break;
@@ -449,7 +452,7 @@ void SelectorDataList::execute(ContainerNode& rootNode, typename SelectorQueryTr
 
     if (!firstSelector.tagHistory()) {
         // Fast path for querySelector*('.foo'), and querySelector*('div').
-        switch (firstSelector.m_match) {
+        switch (firstSelector.match()) {
         case CSSSelector::Class:
             collectElementsByClassName<SelectorQueryTrait>(rootNode, firstSelector.value(), output);
             return;
@@ -464,9 +467,14 @@ void SelectorDataList::execute(ContainerNode& rootNode, typename SelectorQueryTr
     findTraverseRootsAndExecute<SelectorQueryTrait>(rootNode, output);
 }
 
-SelectorQuery::SelectorQuery(const CSSSelectorList& selectorList)
-    : m_selectorList(selectorList)
+PassOwnPtr<SelectorQuery> SelectorQuery::adopt(CSSSelectorList& selectorList)
 {
+    return adoptPtr(new SelectorQuery(selectorList));
+}
+
+SelectorQuery::SelectorQuery(CSSSelectorList& selectorList)
+{
+    m_selectorList.adopt(selectorList);
     m_selectors.initialize(m_selectorList);
 }
 
@@ -475,12 +483,12 @@ bool SelectorQuery::matches(Element& element) const
     return m_selectors.matches(element);
 }
 
-PassRefPtr<NodeList> SelectorQuery::queryAll(ContainerNode& rootNode) const
+PassRefPtrWillBeRawPtr<StaticNodeList> SelectorQuery::queryAll(ContainerNode& rootNode) const
 {
     return m_selectors.queryAll(rootNode);
 }
 
-PassRefPtr<Element> SelectorQuery::queryFirst(ContainerNode& rootNode) const
+PassRefPtrWillBeRawPtr<Element> SelectorQuery::queryFirst(ContainerNode& rootNode) const
 {
     return m_selectors.queryFirst(rootNode);
 }
@@ -510,10 +518,7 @@ SelectorQuery* SelectorQueryCache::add(const AtomicString& selectors, const Docu
     if (m_entries.size() == maximumSelectorQueryCacheSize)
         m_entries.remove(m_entries.begin());
 
-    OwnPtr<SelectorQuery> selectorQuery = adoptPtr(new SelectorQuery(selectorList));
-    SelectorQuery* rawSelectorQuery = selectorQuery.get();
-    m_entries.add(selectors, selectorQuery.release());
-    return rawSelectorQuery;
+    return m_entries.add(selectors, SelectorQuery::adopt(selectorList)).storedValue->value.get();
 }
 
 void SelectorQueryCache::invalidate()

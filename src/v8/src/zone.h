@@ -5,21 +5,16 @@
 #ifndef V8_ZONE_H_
 #define V8_ZONE_H_
 
-#include "allocation.h"
-#include "checks.h"
-#include "hashmap.h"
-#include "globals.h"
-#include "list.h"
-#include "splay-tree.h"
+#include "src/allocation.h"
+#include "src/checks.h"
+#include "src/hashmap.h"
+#include "src/globals.h"
+#include "src/list.h"
+#include "src/splay-tree.h"
 
 namespace v8 {
 namespace internal {
 
-#if defined(__has_feature)
-  #if __has_feature(address_sanitizer)
-    #define V8_USE_ADDRESS_SANITIZER
-  #endif
-#endif
 
 class Segment;
 class Isolate;

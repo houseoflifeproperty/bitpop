@@ -47,16 +47,19 @@ class QuicClient : public EpollCallbackInterface,
                                     const string& response_body) = 0;
   };
 
+  // Create a quic client, which will have events managed by an externally owned
+  // EpollServer.
   QuicClient(IPEndPoint server_address,
              const QuicServerId& server_id,
              const QuicVersionVector& supported_versions,
              bool print_response,
-             uint32 initial_flow_control_window);
+             EpollServer* epoll_server);
   QuicClient(IPEndPoint server_address,
              const QuicServerId& server_id,
-             const QuicConfig& config,
              const QuicVersionVector& supported_versions,
-             uint32 initial_flow_control_window);
+             bool print_response,
+             const QuicConfig& config,
+             EpollServer* epoll_server);
 
   virtual ~QuicClient();
 
@@ -116,8 +119,6 @@ class QuicClient : public EpollCallbackInterface,
   // QuicDataStream::Visitor
   virtual void OnClose(QuicDataStream* stream) OVERRIDE;
 
-  QuicPacketCreator::Options* options();
-
   QuicClientSession* session() { return session_.get(); }
 
   bool connected() const;
@@ -134,7 +135,7 @@ class QuicClient : public EpollCallbackInterface,
 
   const IPEndPoint& client_address() const { return client_address_; }
 
-  EpollServer* epoll_server() { return &epoll_server_; }
+  EpollServer* epoll_server() { return epoll_server_; }
 
   int fd() { return fd_; }
 
@@ -145,6 +146,10 @@ class QuicClient : public EpollCallbackInterface,
     server_id_ = server_id;
   }
 
+  void SetUserAgentID(const string& user_agent_id) {
+    crypto_config_.set_user_agent_id(user_agent_id);
+  }
+
   // SetProofVerifier sets the ProofVerifier that will be used to verify the
   // server's certificate and takes ownership of |verifier|.
   void SetProofVerifier(ProofVerifier* verifier) {
@@ -152,11 +157,12 @@ class QuicClient : public EpollCallbackInterface,
     crypto_config_.SetProofVerifier(verifier);
   }
 
-  // SetChannelIDSigner sets a ChannelIDSigner that will be called when the
-  // server supports channel IDs to sign a message proving possession of the
-  // given ChannelID. This object takes ownership of |signer|.
-  void SetChannelIDSigner(ChannelIDSigner* signer) {
-    crypto_config_.SetChannelIDSigner(signer);
+  // SetChannelIDSource sets a ChannelIDSource that will be called, when the
+  // server supports channel IDs, to obtain a channel ID for signing a message
+  // proving possession of the channel ID. This object takes ownership of
+  // |source|.
+  void SetChannelIDSource(ChannelIDSource* source) {
+    crypto_config_.SetChannelIDSource(source);
   }
 
   void SetSupportedVersions(const QuicVersionVector& versions) {
@@ -180,6 +186,10 @@ class QuicClient : public EpollCallbackInterface,
 
  private:
   friend class net::tools::test::QuicClientPeer;
+
+  // Used during initialization: creates the UDP socket FD, sets socket options,
+  // and binds the socket to our address.
+  bool CreateUDPSocket();
 
   // Read a UDP packet and hand it to the framer.
   bool ReadAndProcessPacket();
@@ -206,7 +216,7 @@ class QuicClient : public EpollCallbackInterface,
   // Session which manages streams.
   scoped_ptr<QuicClientSession> session_;
   // Listens for events on the client socket.
-  EpollServer epoll_server_;
+  EpollServer* epoll_server_;
   // UDP socket.
   int fd_;
 
@@ -241,9 +251,6 @@ class QuicClient : public EpollCallbackInterface,
   // If true, then the contents of each response will be printed to stdout
   // when the stream is closed (in OnClose).
   bool print_response_;
-
-  // Size of initial flow control receive window to advertise to server.
-  uint32 initial_flow_control_window_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicClient);
 };

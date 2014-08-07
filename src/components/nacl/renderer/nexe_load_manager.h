@@ -8,9 +8,11 @@
 #include <map>
 #include <string>
 
+#include "base/files/file.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "ppapi/c/private/ppb_nacl_private.h"
 #include "url/gurl.h"
 
@@ -31,16 +33,22 @@ class NexeLoadManager {
   ~NexeLoadManager();
 
   void NexeFileDidOpen(int32_t pp_error,
-                       int32_t fd,
+                       const base::File& file,
                        int32_t http_status,
                        int64_t nexe_bytes_read,
                        const std::string& url,
-                       int64_t time_since_open);
+                       base::TimeDelta time_since_open);
   void ReportLoadSuccess(const std::string& url,
                          uint64_t loaded_bytes,
                          uint64_t total_bytes);
   void ReportLoadError(PP_NaClError error,
                        const std::string& error_message);
+
+  // console_message is a part of the error that is logged to
+  // the JavaScript console but is not reported to JavaScript via
+  // the lastError property.  This is used to report internal errors which
+  // may easily change in new versions of the browser and we don't want apps
+  // to come to depend on the details of these errors.
   void ReportLoadError(PP_NaClError error,
                        const std::string& error_message,
                        const std::string& console_message);
@@ -52,31 +60,6 @@ class NexeLoadManager {
   // The intent is for this class to only expose functions for reporting a
   // load state transition (e.g., ReportLoadError, ReportProgress,
   // ReportLoadAbort, etc.)
-  struct ProgressEvent {
-    explicit ProgressEvent(PP_NaClEventType event_type_param)
-        : event_type(event_type_param),
-          length_is_computable(false),
-          loaded_bytes(0),
-          total_bytes(0) {
-    }
-    ProgressEvent(PP_Instance instance, PP_NaClEventType event_type,
-                  const std::string& resource_url, bool length_is_computable,
-                  uint64_t loaded_bytes, uint64_t total_bytes)
-        : instance(instance),
-          event_type(event_type),
-          resource_url(resource_url),
-          length_is_computable(length_is_computable),
-          loaded_bytes(loaded_bytes),
-          total_bytes(total_bytes) {
-    }
-    PP_Instance instance;
-    PP_NaClEventType event_type;
-    std::string resource_url;
-    bool length_is_computable;
-    uint64_t loaded_bytes;
-    uint64_t total_bytes;
-  };
-  void DispatchEvent(const ProgressEvent &event);
   void set_trusted_plugin_channel(scoped_ptr<TrustedPluginChannel> channel);
   void set_manifest_service_channel(
       scoped_ptr<ManifestServiceChannel> channel);
@@ -99,7 +82,7 @@ class NexeLoadManager {
 
   int64_t nexe_size() const { return nexe_size_; }
 
-  bool RequestNaClManifest(const std::string& url, bool* is_data_uri);
+  bool RequestNaClManifest(const std::string& url);
   void ProcessNaClManifest(const std::string& program_url);
 
   // URL resolution support.

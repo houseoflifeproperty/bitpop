@@ -41,9 +41,10 @@ namespace WebCore {
 class ExecutionContext;
 
 // Returns false if the callback threw an exception, true otherwise.
-bool invokeCallback(v8::Local<v8::Function> callback, int argc, v8::Handle<v8::Value> argv[], ExecutionContext*, v8::Isolate*);
-bool invokeCallback(v8::Local<v8::Function> callback, v8::Handle<v8::Object> thisObject, int argc, v8::Handle<v8::Value> argv[], ExecutionContext*, v8::Isolate*);
+bool invokeCallback(ScriptState*, v8::Local<v8::Function> callback, int argc, v8::Handle<v8::Value> argv[]);
+bool invokeCallback(ScriptState*, v8::Local<v8::Function> callback, v8::Handle<v8::Value> thisValue, int argc, v8::Handle<v8::Value> argv[]);
 
+// FIXME: This file is used only by V8GeolocationCustom.cpp. Remove the custom binding and this file.
 enum CallbackAllowedValueFlag {
     CallbackAllowUndefined = 1,
     CallbackAllowNull = 1 << 1
@@ -70,7 +71,7 @@ PassOwnPtr<V8CallbackType> createFunctionOnlyCallback(v8::Local<v8::Value> value
         return nullptr;
     }
 
-    return V8CallbackType::create(v8::Handle<v8::Function>::Cast(value), currentExecutionContext(isolate));
+    return V8CallbackType::create(v8::Handle<v8::Function>::Cast(value), ScriptState::current(isolate));
 }
 
 } // namespace WebCore

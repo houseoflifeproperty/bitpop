@@ -5,6 +5,8 @@
 // Note: Mandatory blank line to skip parameter parsing phase
 
 align-content
+align-items custom_value
+align-self custom_value
 background-attachment custom_all
 background-blend-mode custom_all
 background-clip custom_all
@@ -45,6 +47,7 @@ caption-side
 clear
 clip custom_all
 color custom_all
+content custom_all
 counter-increment custom_all
 counter-reset custom_all
 cursor custom_all
@@ -57,6 +60,7 @@ flex-grow type_name=float
 flex-shrink type_name=float
 flex-wrap
 float type_name=EFloat, name_for_methods=Floating
+font custom_all
 font-family custom_all
 font-kerning font, type_name=FontDescription::Kerning, name_for_methods=Kerning
 font-size custom_all
@@ -77,7 +81,9 @@ grid-template-areas custom_all
 height type_name=Length, initial=initialSize, converter=convertLengthSizing
 justify-content
 image-rendering
+internal-callback custom_all
 isolation
+justify-self custom_value
 left type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
 letter-spacing type_name=float, initial=initialLetterWordSpacing, converter=convertSpacing
 line-height getter=specifiedLineHeight, custom_value
@@ -113,8 +119,10 @@ padding-top type_name=Length, initial=initialPadding, converter=convertLength
 page-break-after type_name=EPageBreak, initial=initialPageBreak
 page-break-before type_name=EPageBreak, initial=initialPageBreak
 page-break-inside type_name=EPageBreak, initial=initialPageBreak
+perspective custom_value
 pointer-events
 position
+quotes converter=convertQuotes
 resize custom_value
 right type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
 scroll-behavior type_name=ScrollBehavior
@@ -141,7 +149,7 @@ top type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
 touch-action type_name=TouchAction, custom_value
 touch-action-delay type_name=TouchActionDelay, initial=initialTouchActionDelay
 unicode-bidi
-vertical-align custom_value
+vertical-align custom_inherit, custom_value
 visibility
 white-space
 widows type_name=short, custom_all
@@ -162,6 +170,7 @@ z-index type_name=int, custom_all
 -webkit-animation-name custom_all
 -webkit-animation-play-state custom_all
 -webkit-animation-timing-function custom_all
+-webkit-app-region custom_all
 -webkit-appearance type_name=ControlPart
 -webkit-aspect-ratio custom_all
 backface-visibility
@@ -183,6 +192,7 @@ backface-visibility
 -webkit-box-ordinal-group type_name=unsigned int
 -webkit-box-orient
 -webkit-box-pack
+-webkit-box-reflect converter=convertBoxReflect
 -webkit-box-shadow use_handlers_for=CSSPropertyBoxShadow
 -webkit-clip-path custom_value
 -webkit-column-break-after type_name=EPageBreak, initial=initialPageBreak
@@ -197,11 +207,14 @@ column-fill type_name=ColumnFill
 -webkit-column-span type_name=ColumnSpan
 -webkit-column-width type_name=float, custom_all
 -webkit-filter custom_value
+-webkit-font-feature-settings custom_all
 -webkit-font-smoothing font, type_name=FontSmoothingMode
 -webkit-highlight type_name=AtomicString, converter=convertString<CSSValueNone>
 -webkit-hyphenate-character type_name=AtomicString, name_for_methods=HyphenationString, converter=convertString<CSSValueAuto>
+-webkit-line-box-contain converter=convertLineBoxContain
 -webkit-line-break type_name=LineBreak
 -webkit-line-clamp type_name=LineClampValue
+-webkit-locale custom_value
 -webkit-margin-after-collapse type_name=EMarginCollapse
 -webkit-margin-before-collapse type_name=EMarginCollapse
 -webkit-margin-bottom-collapse type_name=EMarginCollapse, name_for_methods=MarginAfterCollapse
@@ -225,6 +238,7 @@ column-fill type_name=ColumnFill
 -webkit-mask-repeat-x custom_all
 -webkit-mask-repeat-y custom_all
 -webkit-mask-size custom_all
+-webkit-perspective custom_all
 perspective-origin custom_all
 -webkit-perspective-origin custom_all
 -webkit-perspective-origin-x type_name=Length, converter=convertLength
@@ -238,8 +252,10 @@ perspective-origin custom_all
 -webkit-text-emphasis-position type_name=TextEmphasisPosition
 -webkit-text-emphasis-style custom_all
 -webkit-text-fill-color custom_all
+-webkit-text-orientation custom_value
 -webkit-text-security
 -webkit-text-stroke-color custom_all
+-webkit-text-stroke-width converter=convertTextStrokeWidth
 text-underline-position custom_value
 transform custom_value
 -webkit-transform use_handlers_for=CSSPropertyTransform
@@ -258,8 +274,10 @@ transform-style name_for_methods=TransformStyle3D
 -webkit-user-select
 -webkit-wrap-flow type_name=WrapFlow
 -webkit-wrap-through type_name=WrapThrough
+-webkit-writing-mode custom_value
 
 alignment-baseline svg
+baseline-shift svg, custom_value
 buffered-rendering svg
 clip-path svg, type_name=String, name_for_methods=ClipperResource, converter=convertFragmentIdentifier
 clip-rule svg, type_name=WindRule
@@ -267,6 +285,7 @@ color-interpolation svg
 color-interpolation-filters svg, type_name=EColorInterpolation
 color-rendering svg
 dominant-baseline svg
+fill svg, setter=setFillPaint, custom_all
 fill-opacity svg, type_name=float, converter=convertNumberOrPercentage
 fill-rule svg, type_name=WindRule
 filter svg, type_name=String, name_for_methods=FilterResource, converter=convertFragmentIdentifier
@@ -284,6 +303,7 @@ paint-order svg, converter=convertPaintOrder
 shape-rendering svg
 stop-color svg, converter=convertSVGColor
 stop-opacity svg, type_name=float, converter=convertNumberOrPercentage
+stroke svg, setter=setStrokePaint, custom_all
 stroke-dasharray svg, name_for_methods=StrokeDashArray, converter=convertStrokeDasharray
 stroke-dashoffset svg, type_name=SVGLength, name_for_methods=StrokeDashOffset, converter=convertSVGLength
 stroke-linecap svg, type_name=LineCap, name_for_methods=CapStyle
@@ -294,3 +314,70 @@ stroke-width svg, type_name=SVGLength, converter=convertSVGLength
 text-anchor svg
 vector-effect svg
 writing-mode svg, type_name=SVGWritingMode
+
+-webkit-border-end-color direction_aware
+-webkit-border-end-style direction_aware
+-webkit-border-end-width direction_aware
+-webkit-border-start-color direction_aware
+-webkit-border-start-style direction_aware
+-webkit-border-start-width direction_aware
+-webkit-border-before-color direction_aware
+-webkit-border-before-style direction_aware
+-webkit-border-before-width direction_aware
+-webkit-border-after-color direction_aware
+-webkit-border-after-style direction_aware
+-webkit-border-after-width direction_aware
+-webkit-margin-end direction_aware
+-webkit-margin-start direction_aware
+-webkit-margin-before direction_aware
+-webkit-margin-after direction_aware
+-webkit-padding-end direction_aware
+-webkit-padding-start direction_aware
+-webkit-padding-before direction_aware
+-webkit-padding-after direction_aware
+-webkit-logical-width direction_aware
+-webkit-logical-height direction_aware
+-webkit-min-logical-width direction_aware
+-webkit-min-logical-height direction_aware
+-webkit-max-logical-width direction_aware
+-webkit-max-logical-height direction_aware
+
+// FIXME: We should look over these and see if some should actually be
+// marked as unreachable.
+animation-delay skip
+animation-direction skip
+animation-duration skip
+animation-fill-mode skip
+animation-iteration-count skip
+animation-name skip
+animation-play-state skip
+animation-timing-function skip
+transition-delay skip
+transition-duration skip
+transition-property skip
+transition-timing-function skip
+font-stretch skip
+page skip
+src skip
+text-line-through-color skip
+text-line-through-mode skip
+text-line-through-style skip
+text-line-through-width skip
+text-overline-color skip
+text-overline-mode skip
+text-overline-style skip
+text-overline-width skip
+text-underline-color skip
+text-underline-mode skip
+text-underline-style skip
+text-underline-width skip
+unicode-range skip
+-webkit-font-size-delta skip
+-webkit-text-decorations-in-effect skip
+max-zoom skip
+min-zoom skip
+user-zoom skip
+orientation skip
+enable-background skip
+invalid skip
+all skip

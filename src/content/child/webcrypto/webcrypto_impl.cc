@@ -134,14 +134,6 @@ void CompleteWithKeyOrError(const Status& status,
   }
 }
 
-bool IsAlgorithmAsymmetric(const blink::WebCryptoAlgorithm& algorithm) {
-  // TODO(padolph): include all other asymmetric algorithms once they are
-  // defined, e.g. EC and DH.
-  return (algorithm.id() == blink::WebCryptoAlgorithmIdRsaEsPkcs1v1_5 ||
-          algorithm.id() == blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5 ||
-          algorithm.id() == blink::WebCryptoAlgorithmIdRsaOaep);
-}
-
 // Gets a task runner for the current thread. The current thread is either:
 //
 //   * The main Blink thread
@@ -177,6 +169,10 @@ scoped_refptr<base::TaskRunner> GetCurrentBlinkThread() {
 struct BaseState {
   explicit BaseState(const blink::WebCryptoResult& result)
       : origin_thread(GetCurrentBlinkThread()), result(result) {}
+
+  bool cancelled() {
+    return result.cancelled();
+  }
 
   scoped_refptr<base::TaskRunner> origin_thread;
 
@@ -360,6 +356,8 @@ void DoEncryptReply(scoped_ptr<EncryptState> state) {
 
 void DoEncrypt(scoped_ptr<EncryptState> passed_state) {
   EncryptState* state = passed_state.get();
+  if (state->cancelled())
+    return;
   state->status = webcrypto::Encrypt(state->algorithm,
                                      state->key,
                                      webcrypto::CryptoData(state->data),
@@ -374,6 +372,8 @@ void DoDecryptReply(scoped_ptr<DecryptState> state) {
 
 void DoDecrypt(scoped_ptr<DecryptState> passed_state) {
   DecryptState* state = passed_state.get();
+  if (state->cancelled())
+    return;
   state->status = webcrypto::Decrypt(state->algorithm,
                                      state->key,
                                      webcrypto::CryptoData(state->data),
@@ -388,6 +388,8 @@ void DoDigestReply(scoped_ptr<DigestState> state) {
 
 void DoDigest(scoped_ptr<DigestState> passed_state) {
   DigestState* state = passed_state.get();
+  if (state->cancelled())
+    return;
   state->status = webcrypto::Digest(
       state->algorithm, webcrypto::CryptoData(state->data), &state->buffer);
   state->origin_thread->PostTask(
@@ -407,7 +409,10 @@ void DoGenerateKeyReply(scoped_ptr<GenerateKeyState> state) {
 
 void DoGenerateKey(scoped_ptr<GenerateKeyState> passed_state) {
   GenerateKeyState* state = passed_state.get();
-  state->is_asymmetric = IsAlgorithmAsymmetric(state->algorithm);
+  if (state->cancelled())
+    return;
+  state->is_asymmetric =
+      webcrypto::IsAlgorithmAsymmetric(state->algorithm.id());
   if (state->is_asymmetric) {
     state->status = webcrypto::GenerateKeyPair(state->algorithm,
                                                state->extractable,
@@ -422,8 +427,6 @@ void DoGenerateKey(scoped_ptr<GenerateKeyState> passed_state) {
       DCHECK_EQ(state->algorithm.id(), state->private_key.algorithm().id());
       DCHECK_EQ(true, state->public_key.extractable());
       DCHECK_EQ(state->extractable, state->private_key.extractable());
-      DCHECK_EQ(state->usage_mask, state->public_key.usages());
-      DCHECK_EQ(state->usage_mask, state->private_key.usages());
     }
   } else {
     blink::WebCryptoKey* key = &state->public_key;
@@ -449,6 +452,8 @@ void DoImportKeyReply(scoped_ptr<ImportKeyState> state) {
 
 void DoImportKey(scoped_ptr<ImportKeyState> passed_state) {
   ImportKeyState* state = passed_state.get();
+  if (state->cancelled())
+    return;
   state->status = webcrypto::ImportKey(state->format,
                                        webcrypto::CryptoData(state->key_data),
                                        state->algorithm,
@@ -466,11 +471,25 @@ void DoImportKey(scoped_ptr<ImportKeyState> passed_state) {
 }
 
 void DoExportKeyReply(scoped_ptr<ExportKeyState> state) {
-  CompleteWithBufferOrError(state->status, state->buffer, &state->result);
+  if (state->format != blink::WebCryptoKeyFormatJwk) {
+    CompleteWithBufferOrError(state->status, state->buffer, &state->result);
+    return;
+  }
+
+  if (state->status.IsError()) {
+    CompleteWithError(state->status, &state->result);
+  } else {
+    state->result.completeWithJson(
+        reinterpret_cast<const char*>(
+            webcrypto::Uint8VectorStart(&state->buffer)),
+        state->buffer.size());
+  }
 }
 
 void DoExportKey(scoped_ptr<ExportKeyState> passed_state) {
   ExportKeyState* state = passed_state.get();
+  if (state->cancelled())
+    return;
   state->status =
       webcrypto::ExportKey(state->format, state->key, &state->buffer);
   state->origin_thread->PostTask(
@@ -483,6 +502,8 @@ void DoSignReply(scoped_ptr<SignState> state) {
 
 void DoSign(scoped_ptr<SignState> passed_state) {
   SignState* state = passed_state.get();
+  if (state->cancelled())
+    return;
   state->status = webcrypto::Sign(state->algorithm,
                                   state->key,
                                   webcrypto::CryptoData(state->data),
@@ -502,6 +523,8 @@ void DoVerifyReply(scoped_ptr<VerifySignatureState> state) {
 
 void DoVerify(scoped_ptr<VerifySignatureState> passed_state) {
   VerifySignatureState* state = passed_state.get();
+  if (state->cancelled())
+    return;
   state->status =
       webcrypto::VerifySignature(state->algorithm,
                                  state->key,
@@ -519,11 +542,11 @@ void DoWrapKeyReply(scoped_ptr<WrapKeyState> state) {
 
 void DoWrapKey(scoped_ptr<WrapKeyState> passed_state) {
   WrapKeyState* state = passed_state.get();
-  // TODO(eroman): The parameter ordering of webcrypto::WrapKey() is
-  //               inconsistent with that of blink::WebCrypto::wrapKey().
+  if (state->cancelled())
+    return;
   state->status = webcrypto::WrapKey(state->format,
-                                     state->wrapping_key,
                                      state->key,
+                                     state->wrapping_key,
                                      state->wrap_algorithm,
                                      &state->buffer);
 
@@ -537,6 +560,8 @@ void DoUnwrapKeyReply(scoped_ptr<UnwrapKeyState> state) {
 
 void DoUnwrapKey(scoped_ptr<UnwrapKeyState> passed_state) {
   UnwrapKeyState* state = passed_state.get();
+  if (state->cancelled())
+    return;
   state->status =
       webcrypto::UnwrapKey(state->format,
                            webcrypto::CryptoData(state->wrapped_key),
@@ -554,10 +579,13 @@ void DoUnwrapKey(scoped_ptr<UnwrapKeyState> passed_state) {
 }  // namespace
 
 WebCryptoImpl::WebCryptoImpl() {
-  webcrypto::Init();
 }
 
 WebCryptoImpl::~WebCryptoImpl() {
+}
+
+void WebCryptoImpl::EnsureInit() {
+  webcrypto::Init();
 }
 
 void WebCryptoImpl::encrypt(const blink::WebCryptoAlgorithm& algorithm,

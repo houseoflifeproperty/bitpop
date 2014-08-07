@@ -33,6 +33,8 @@ def _MapKind(kind):
                   'handle<shared_buffer>': 'h:s'}
   if kind.endswith('[]'):
     return 'a:' + _MapKind(kind[0:len(kind)-2])
+  if kind.endswith('&'):
+    return 'r:' + _MapKind(kind[0:len(kind)-1])
   if kind in map_to_kind:
     return map_to_kind[kind]
   return 'x:' + kind
@@ -83,6 +85,7 @@ def _MapStruct(tree):
   struct['attributes'] = _MapAttributes(tree[2])
   struct['fields'] = _MapTree(_MapField, tree[3], 'FIELD')
   struct['enums'] = _MapTree(_MapEnum, tree[3], 'ENUM')
+  struct['constants'] = _MapTree(_MapConstant, tree[3], 'CONST')
   return struct
 
 def _MapInterface(tree):
@@ -91,6 +94,7 @@ def _MapInterface(tree):
   interface['client'] = _GetAttribute(tree[2], 'Client')
   interface['methods'] = _MapTree(_MapMethod, tree[3], 'METHOD')
   interface['enums'] = _MapTree(_MapEnum, tree[3], 'ENUM')
+  interface['constants'] = _MapTree(_MapConstant, tree[3], 'CONST')
   return interface
 
 def _MapEnum(tree):
@@ -98,6 +102,13 @@ def _MapEnum(tree):
   enum['name'] = tree[1]
   enum['fields'] = _MapTree(_MapEnumField, tree[2], 'ENUM_FIELD')
   return enum
+
+def _MapConstant(tree):
+  constant = {}
+  constant['name'] = tree[2]
+  constant['kind'] = _MapKind(tree[1])
+  constant['value'] = tree[3]
+  return constant
 
 def _MapModule(tree, name):
   mojom = {}
@@ -107,6 +118,7 @@ def _MapModule(tree, name):
   mojom['structs'] = _MapTree(_MapStruct, tree[3], 'STRUCT')
   mojom['interfaces'] = _MapTree(_MapInterface, tree[3], 'INTERFACE')
   mojom['enums'] = _MapTree(_MapEnum, tree[3], 'ENUM')
+  mojom['constants'] = _MapTree(_MapConstant, tree[3], 'CONST')
   return mojom
 
 def _MapImport(tree):

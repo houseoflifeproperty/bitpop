@@ -305,8 +305,8 @@ FileTable.decorate = function(self, metadataCache, fullPage) {
     e.preventDefault();
   });
 
-  self.relayoutAggregation_ =
-      new AsyncUtil.Aggregation(self.relayoutImmediately_.bind(self));
+  self.relayoutRateLimiter_ =
+      new AsyncUtil.RateLimiter(self.relayoutImmediately_.bind(self));
 
   // Override header#redraw to use FileTableSplitter.
   self.header_.redraw = function() {
@@ -554,15 +554,17 @@ FileTable.prototype.updateDate_ = function(div, filesystemProps) {
    */
   var MILLISECONDS_IN_DAY = 24 * 60 * 60 * 1000;
 
-  if (modTime >= today &&
+  if (isNaN(modTime.getTime())) {
+    // In case of 'Invalid Date'.
+    div.textContent = '--';
+  } else if (modTime >= today &&
       modTime < today.getTime() + MILLISECONDS_IN_DAY) {
     div.textContent = strf('TIME_TODAY', this.timeFormatter_.format(modTime));
   } else if (modTime >= today - MILLISECONDS_IN_DAY && modTime < today) {
     div.textContent = strf('TIME_YESTERDAY',
                            this.timeFormatter_.format(modTime));
   } else {
-    div.textContent =
-        this.dateFormatter_.format(filesystemProps.modificationTime);
+    div.textContent = this.dateFormatter_.format(modTime);
   }
 };
 
@@ -732,7 +734,7 @@ FileTable.prototype.setBottomMarginForPanel = function(margin) {
  * Redraws the UI. Skips multiple consecutive calls.
  */
 FileTable.prototype.relayout = function() {
-  this.relayoutAggregation_.run();
+  this.relayoutRateLimiter_.run();
 };
 
 /**
@@ -798,6 +800,7 @@ filelist.renderFileNameLabel = function(doc, entry) {
   var box = doc.createElement('div');
   box.className = 'filename-label';
   var fileName = doc.createElement('span');
+  fileName.className = 'entry-name';
   fileName.textContent = entry.name;
   box.appendChild(fileName);
 
@@ -820,10 +823,13 @@ filelist.updateListItemDriveProps = function(li, driveProps) {
     // crbug.com/246611.
   }
 
-  if (driveProps.customIconUrl) {
-    var iconDiv = li.querySelector('.detail-icon');
-    if (!iconDiv)
-      return;
+  var iconDiv = li.querySelector('.detail-icon');
+  if (!iconDiv)
+    return;
+
+  if (driveProps.customIconUrl)
     iconDiv.style.backgroundImage = 'url(' + driveProps.customIconUrl + ')';
-  }
+
+  if (li.classList.contains('directory'))
+    iconDiv.classList.toggle('shared', driveProps.shared);
 };

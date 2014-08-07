@@ -178,10 +178,7 @@ int RendererMain(const MainFunctionParams& parameters) {
 
   base::PlatformThread::SetName("CrRendererMain");
 
-  platform.PlatformInitialize();
-
   bool no_sandbox = parsed_command_line.HasSwitch(switches::kNoSandbox);
-  platform.InitSandboxTests(no_sandbox);
 
   // Initialize histogram statistics gathering system.
   base::StatisticsRecorder::Initialize();
@@ -200,6 +197,9 @@ int RendererMain(const MainFunctionParams& parameters) {
         std::set<std::string>());
     DCHECK(result);
   }
+
+  // PlatformInitialize uses FieldTrials, so this must happen later.
+  platform.PlatformInitialize();
 
 #if defined(ENABLE_PLUGINS)
   // Load pepper plugins before engaging the sandbox.
@@ -238,8 +238,6 @@ int RendererMain(const MainFunctionParams& parameters) {
 #endif
 
     base::HighResolutionTimerManager hi_res_timer_manager;
-
-    platform.RunSandboxTests(no_sandbox);
 
     startup_timer.Stop();  // End of Startup Time Measurement.
 

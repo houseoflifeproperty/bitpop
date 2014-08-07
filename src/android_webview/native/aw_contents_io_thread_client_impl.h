@@ -15,6 +15,7 @@
 class GURL;
 
 namespace content {
+class ResourceRequestInfo;
 class WebContents;
 }
 
@@ -24,7 +25,7 @@ class URLRequest;
 
 namespace android_webview {
 
-class InterceptedRequestData;
+class AwWebResourceResponse;
 
 class AwContentsIoThreadClientImpl : public AwContentsIoThreadClient {
  public:
@@ -46,11 +47,12 @@ class AwContentsIoThreadClientImpl : public AwContentsIoThreadClient {
   // Implementation of AwContentsIoThreadClient.
   virtual bool PendingAssociation() const OVERRIDE;
   virtual CacheMode GetCacheMode() const OVERRIDE;
-  virtual scoped_ptr<InterceptedRequestData> ShouldInterceptRequest(
+  virtual scoped_ptr<AwWebResourceResponse> ShouldInterceptRequest(
       const GURL& location,
       const net::URLRequest* request) OVERRIDE;
   virtual bool ShouldBlockContentUrls() const OVERRIDE;
   virtual bool ShouldBlockFileUrls() const OVERRIDE;
+  virtual bool ShouldAcceptThirdPartyCookies() const OVERRIDE;
   virtual bool ShouldBlockNetworkLoads() const OVERRIDE;
   virtual void NewDownload(const GURL& url,
                            const std::string& user_agent,

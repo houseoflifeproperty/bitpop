@@ -30,8 +30,9 @@ void ExtensionUninstaller::Run() {
     CleanUp();
     return;
   }
-  controller_->OnShowExtensionPrompt();
-  dialog_.reset(ExtensionUninstallDialog::Create(profile_, NULL, this));
+  controller_->OnShowChildDialog();
+  dialog_.reset(
+      extensions::ExtensionUninstallDialog::Create(profile_, NULL, this));
   dialog_->ConfirmUninstall(extension);
 }
 
@@ -45,12 +46,12 @@ void ExtensionUninstaller::ExtensionUninstallAccepted() {
                                 false, /* external_uninstall*/
                                 NULL);
   }
-  controller_->OnCloseExtensionPrompt();
+  controller_->OnCloseChildDialog();
   CleanUp();
 }
 
 void ExtensionUninstaller::ExtensionUninstallCanceled() {
-  controller_->OnCloseExtensionPrompt();
+  controller_->OnCloseChildDialog();
   CleanUp();
 }
 

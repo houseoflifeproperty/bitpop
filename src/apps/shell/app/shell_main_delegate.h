@@ -9,11 +9,16 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/app/content_main_delegate.h"
 
-namespace apps {
+namespace content {
+class BrowserContext;
+class ContentBrowserClient;
+class ContentClient;
+class ContentRendererClient;
+}
 
-class ShellContentBrowserClient;
-class ShellContentClient;
-class ShellContentRendererClient;
+namespace apps {
+class ShellBrowserMainDelegate;
+class ShellRendererMainDelegate;
 
 class ShellMainDelegate : public content::ContentMainDelegate {
  public:
@@ -27,6 +32,14 @@ class ShellMainDelegate : public content::ContentMainDelegate {
   virtual content::ContentRendererClient* CreateContentRendererClient()
       OVERRIDE;
 
+ protected:
+  // The created object is owned by ShellBrowserMainParts.
+  virtual ShellBrowserMainDelegate* CreateShellBrowserMainDelegate();
+
+  // The returned object is owned by ShellContentRendererClient.
+  virtual scoped_ptr<ShellRendererMainDelegate>
+      CreateShellRendererMainDelegate();
+
  private:
   // |process_type| is zygote, renderer, utility, etc. Returns true if the
   // process needs data from resources.pak.
@@ -35,9 +48,9 @@ class ShellMainDelegate : public content::ContentMainDelegate {
   // Initializes the resource bundle and resources.pak.
   static void InitializeResourceBundle();
 
-  scoped_ptr<ShellContentClient> content_client_;
-  scoped_ptr<ShellContentBrowserClient> browser_client_;
-  scoped_ptr<ShellContentRendererClient> renderer_client_;
+  scoped_ptr<content::ContentClient> content_client_;
+  scoped_ptr<content::ContentBrowserClient> browser_client_;
+  scoped_ptr<content::ContentRendererClient> renderer_client_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellMainDelegate);
 };

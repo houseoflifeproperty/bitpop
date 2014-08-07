@@ -9,22 +9,22 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/managed/managed_user_test_base.h"
 #include "chrome/browser/chromeos/login/managed/supervised_user_authentication.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/net/network_portal_detector_test_impl.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
-#include "chrome/browser/managed_mode/managed_user_constants.h"
-#include "chrome/browser/managed_mode/managed_user_registration_utility.h"
-#include "chrome/browser/managed_mode/managed_user_registration_utility_stub.h"
-#include "chrome/browser/managed_mode/managed_user_shared_settings_service.h"
-#include "chrome/browser/managed_mode/managed_user_shared_settings_service_factory.h"
-#include "chrome/browser/managed_mode/managed_user_sync_service.h"
-#include "chrome/browser/managed_mode/managed_user_sync_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_constants.h"
+#include "chrome/browser/supervised_user/supervised_user_registration_utility.h"
+#include "chrome/browser/supervised_user/supervised_user_registration_utility_stub.h"
+#include "chrome/browser/supervised_user/supervised_user_shared_settings_service.h"
+#include "chrome/browser/supervised_user/supervised_user_shared_settings_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_sync_service.h"
+#include "chrome/browser/supervised_user/supervised_user_sync_service_factory.h"
 #include "chromeos/cryptohome/mock_async_method_caller.h"
 #include "chromeos/cryptohome/mock_homedir_methods.h"
 #include "content/public/browser/notification_service.h"
@@ -90,12 +90,12 @@ class SupervisedUserTransactionCleanupTest2
 };
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserCreationTest,
-                       PRE_PRE_PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_PRE_PRE_CreateAndRemoveSupervisedUser) {
   PrepareUsers();
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserCreationTest,
-                       PRE_PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_PRE_CreateAndRemoveSupervisedUser) {
   StartFlowLoginAsManager();
   FillNewUserData(kTestSupervisedUserDisplayName);
   StartUserCreation("managed-user-creation-next-button",
@@ -103,22 +103,22 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserCreationTest,
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserCreationTest,
-                       PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_CreateAndRemoveSupervisedUser) {
   SigninAsSupervisedUser(true, 0, kTestSupervisedUserDisplayName);
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserCreationTest,
-                       CreateAndRemoveSupervisedUser) {
+                       DISABLED_CreateAndRemoveSupervisedUser) {
   RemoveSupervisedUser(3, 0, kTestSupervisedUserDisplayName);
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
-                       PRE_PRE_PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_PRE_PRE_CreateAndRemoveSupervisedUser) {
   PrepareUsers();
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
-                       PRE_PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_PRE_CreateAndRemoveSupervisedUser) {
   StartFlowLoginAsManager();
   FillNewUserData(kTestSupervisedUserDisplayName);
   StartUserCreation("managed-user-creation-next-button",
@@ -126,22 +126,22 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
-                       PRE_CreateAndRemoveSupervisedUser) {
+                       DISABLED_PRE_CreateAndRemoveSupervisedUser) {
   SigninAsSupervisedUser(true, 0, kTestSupervisedUserDisplayName);
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserOwnerCreationTest,
-                       CreateAndRemoveSupervisedUser) {
+                       DISABLED_CreateAndRemoveSupervisedUser) {
   RemoveSupervisedUser(3, 0, kTestSupervisedUserDisplayName);
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserTransactionCleanupTest,
-                       PRE_PRE_CreateAndCancelSupervisedUser) {
+                       DISABLED_PRE_PRE_CreateAndCancelSupervisedUser) {
   PrepareUsers();
 }
 
 IN_PROC_BROWSER_TEST_F(SupervisedUserTransactionCleanupTest,
-                       PRE_CreateAndCancelSupervisedUser) {
+                       DISABLED_PRE_CreateAndCancelSupervisedUser) {
   StartFlowLoginAsManager();
   FillNewUserData(kTestSupervisedUserDisplayName);
 
@@ -156,7 +156,7 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserTransactionCleanupTest,
   EXPECT_EQ(registration_utility_stub_->display_name(),
             base::UTF8ToUTF16(kTestSupervisedUserDisplayName));
 
-  std::string user_id = registration_utility_stub_->managed_user_id();
+  std::string user_id = registration_utility_stub_->supervised_user_id();
 
   // Make sure user is already in list.
   ASSERT_EQ(3UL, UserManager::Get()->GetUsers().size());
@@ -167,7 +167,7 @@ IN_PROC_BROWSER_TEST_F(SupervisedUserTransactionCleanupTest,
 
 IN_PROC_BROWSER_TEST_(
     SupervisedUserTransactionCleanupTest,
-    CreateAndCancelSupervisedUser,
+    DISABLED_CreateAndCancelSupervisedUser,
     SupervisedUserTransactionCleanupTest2,
     testing::internal::GetTypeId<SupervisedUserTransactionCleanupTest>()) {
   // Make sure there is no supervised user in list.

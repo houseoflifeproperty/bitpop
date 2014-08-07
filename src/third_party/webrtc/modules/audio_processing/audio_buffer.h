@@ -24,6 +24,7 @@ namespace webrtc {
 
 class PushSincResampler;
 class SplitChannelBuffer;
+class IFChannelBuffer;
 
 struct SplitFilterStates {
   SplitFilterStates() {
@@ -64,14 +65,19 @@ class AudioBuffer {
   const int16_t* mixed_data(int channel) const;
   const int16_t* mixed_low_pass_data(int channel) const;
   const int16_t* low_pass_reference(int channel) const;
+
+  // Float versions of the accessors, with automatic conversion back and forth
+  // as necessary. The range of the numbers are the same as for int16_t.
+  float* data_f(int channel);
+  float* low_pass_split_data_f(int channel);
+  float* high_pass_split_data_f(int channel);
+
   const float* keyboard_data() const;
 
   SplitFilterStates* filter_states(int channel);
 
   void set_activity(AudioFrame::VADActivity activity);
   AudioFrame::VADActivity activity() const;
-
-  bool is_muted() const;
 
   // Use for int16 interleaved data.
   void DeinterleaveFrom(AudioFrame* audioFrame);
@@ -106,15 +112,9 @@ class AudioBuffer {
   int num_mixed_low_pass_channels_;
   bool reference_copied_;
   AudioFrame::VADActivity activity_;
-  bool is_muted_;
-
-  // If non-null, use this instead of channels_->channel(0). This is an
-  // optimization for the case num_proc_channels_ == 1 that allows us to point
-  // to the data instead of copying it.
-  int16_t* data_;
 
   const float* keyboard_data_;
-  scoped_ptr<ChannelBuffer<int16_t> > channels_;
+  scoped_ptr<IFChannelBuffer> channels_;
   scoped_ptr<SplitChannelBuffer> split_channels_;
   scoped_ptr<SplitFilterStates[]> filter_states_;
   scoped_ptr<ChannelBuffer<int16_t> > mixed_channels_;

@@ -54,7 +54,6 @@ class BookmarkBubbleView : public views::BubbleDelegateView,
 
   // views::View method.
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
-  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
  protected:
   // views::BubbleDelegateView method.
@@ -77,7 +76,6 @@ class BookmarkBubbleView : public views::BubbleDelegateView,
   base::string16 GetTitle();
 
   // Overridden from views::View:
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
   virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // Overridden from views::ButtonListener:

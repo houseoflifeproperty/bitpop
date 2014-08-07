@@ -4,15 +4,16 @@
 
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/first_run/first_run_controller.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -65,13 +66,11 @@ class DialogLauncher : public content::NotificationObserver {
     bool launched_in_test = command_line->HasSwitch(::switches::kTestType);
     bool launched_in_telemetry =
         command_line->HasSwitch(switches::kOobeSkipPostLogin);
-    bool first_run_disabled =
-        command_line->HasSwitch(switches::kDisableFirstRunUI);
     bool is_user_new = chromeos::UserManager::Get()->IsCurrentUserNew();
     bool first_run_forced = command_line->HasSwitch(switches::kForceFirstRunUI);
     bool first_run_seen =
         profile_->GetPrefs()->GetBoolean(prefs::kFirstRunTutorialShown);
-    if (!launched_in_telemetry && !first_run_disabled &&
+    if (!launched_in_telemetry &&
         ((is_user_new && !first_run_seen && !launched_in_test) ||
          first_run_forced)) {
       LaunchDialogForProfile(profile_);

@@ -14,3 +14,4 @@ class WebRTCFYI(Master.Master3):
   server_url = 'http://webrtc.googlecode.com'
   project_url = 'http://webrtc.googlecode.com'
   from_address = 'webrtc-cb-fyi-watchlist@google.com'
+  buildbot_url = 'http://build.chromium.org/p/client.webrtc.fyi/'

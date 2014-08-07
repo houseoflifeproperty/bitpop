@@ -16,7 +16,7 @@
 
 namespace media {
 
-class MediaDrmBridge;
+class BrowserCdm;
 class MediaPlayerManager;
 
 // This class serves as the base class for different media player
@@ -73,23 +73,22 @@ class MEDIA_EXPORT MediaPlayerAndroid {
   virtual GURL GetUrl();
   virtual GURL GetFirstPartyForCookies();
 
-  // Pass a drm bridge to a player.
-  virtual void SetDrmBridge(MediaDrmBridge* drm_bridge);
-
-  // Notifies the player that a decryption key has been added. The player
-  // may want to start/resume playback if it is waiting for a key.
-  virtual void OnKeyAdded();
+  // Associates the |cdm| with this player.
+  virtual void SetCdm(BrowserCdm* cdm);
 
   // Check whether the player still uses the current surface.
   virtual bool IsSurfaceInUse() const = 0;
 
   int player_id() { return player_id_; }
 
+  GURL frame_url() { return frame_url_; }
+
  protected:
   MediaPlayerAndroid(int player_id,
                      MediaPlayerManager* manager,
                      const RequestMediaResourcesCB& request_media_resources_cb,
-                     const ReleaseMediaResourcesCB& release_media_resources_cb);
+                     const ReleaseMediaResourcesCB& release_media_resources_cb,
+                     const GURL& frame_url);
 
   MediaPlayerManager* manager() { return manager_; }
 
@@ -103,6 +102,9 @@ class MEDIA_EXPORT MediaPlayerAndroid {
 
   // Resource manager for all the media players.
   MediaPlayerManager* manager_;
+
+  // Url for the frame that contains this player.
+  GURL frame_url_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaPlayerAndroid);
 };

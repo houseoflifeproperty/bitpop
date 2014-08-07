@@ -25,6 +25,7 @@
 
 #include "bindings/v8/SharedPersistent.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include <v8.h>
 
 struct NPObject;
 
@@ -43,6 +44,7 @@ enum PreferPlugInsForImagesOption {
 class HTMLPlugInElement : public HTMLFrameOwnerElement {
 public:
     virtual ~HTMLPlugInElement();
+    virtual void trace(Visitor*) OVERRIDE;
 
     void resetInstance();
     SharedPersistent<v8::Object>* pluginWrapper();
@@ -55,6 +57,8 @@ public:
     bool needsWidgetUpdate() const { return m_needsWidgetUpdate; }
     void setNeedsWidgetUpdate(bool needsWidgetUpdate) { m_needsWidgetUpdate = needsWidgetUpdate; }
     void updateWidget();
+
+    bool shouldAccelerate() const;
 
     void requestPluginCreationWithoutRendererIfPossible();
     void createPluginWithoutRenderer();
@@ -69,6 +73,7 @@ protected:
     virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
 
+    virtual bool hasFallbackContent() const;
     virtual bool useFallbackContent() const;
     // Create or update the RenderWidget and return it, triggering layout if
     // necessary.
@@ -86,7 +91,7 @@ protected:
     String m_serviceType;
     String m_url;
     KURL m_loadedUrl;
-    OwnPtr<HTMLImageLoader> m_imageLoader;
+    OwnPtrWillBeMember<HTMLImageLoader> m_imageLoader;
     bool m_isDelayingLoadEvent;
 
 private:

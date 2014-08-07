@@ -25,6 +25,7 @@
 #include "chrome/browser/extensions/convert_user_script.h"
 #include "chrome/browser/extensions/convert_web_app.h"
 #include "chrome/browser/extensions/crx_installer_error.h"
+#include "chrome/browser/extensions/extension_assets_manager.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -41,7 +42,9 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/user_metrics.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/install_flag.h"
 #include "extensions/common/extension_icon_set.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/file_util.h"
@@ -61,7 +64,7 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 
 using base::UserMetricsAction;
@@ -105,10 +108,9 @@ scoped_refptr<CrxInstaller> CrxInstaller::Create(
   return new CrxInstaller(service->AsWeakPtr(), client.Pass(), approval);
 }
 
-CrxInstaller::CrxInstaller(
-    base::WeakPtr<ExtensionService> service_weak,
-    scoped_ptr<ExtensionInstallPrompt> client,
-    const WebstoreInstaller::Approval* approval)
+CrxInstaller::CrxInstaller(base::WeakPtr<ExtensionService> service_weak,
+                           scoped_ptr<ExtensionInstallPrompt> client,
+                           const WebstoreInstaller::Approval* approval)
     : install_directory_(service_weak->install_directory()),
       install_source_(Manifest::INTERNAL),
       approved_(false),
@@ -123,15 +125,14 @@ CrxInstaller::CrxInstaller(
       client_(client.release()),
       apps_require_extension_mime_type_(false),
       allow_silent_install_(false),
+      grant_permissions_(true),
       install_cause_(extension_misc::INSTALL_CAUSE_UNSET),
       creation_flags_(Extension::NO_FLAGS),
       off_store_install_allow_reason_(OffStoreInstallDisallowed),
       did_handle_successfully_(true),
       error_on_unsupported_requirements_(false),
-      has_requirement_errors_(false),
-      blacklist_state_(extensions::NOT_BLACKLISTED),
-      install_wait_for_idle_(true),
       update_from_settings_page_(false),
+      install_flags_(kInstallFlagNone),
       installer_(service_weak->profile()) {
   installer_task_runner_ = service_weak->GetFileTaskRunner();
   if (!approval)
@@ -161,9 +162,7 @@ CrxInstaller::CrxInstaller(
   }
 
   show_dialog_callback_ = approval->show_dialog_callback;
-
-  if (approval->is_ephemeral)
-    creation_flags_ |= Extension::IS_EPHEMERAL;
+  set_is_ephemeral(approval->is_ephemeral);
 }
 
 CrxInstaller::~CrxInstaller() {
@@ -230,19 +229,14 @@ void CrxInstaller::InstallWebApp(const WebApplicationInfo& web_app) {
 
   if (!installer_task_runner_->PostTask(
           FROM_HERE,
-          base::Bind(&CrxInstaller::ConvertWebAppOnFileThread,
-                     this,
-                     web_app,
-                     install_directory_)))
+          base::Bind(&CrxInstaller::ConvertWebAppOnFileThread, this, web_app)))
     NOTREACHED();
 }
 
 void CrxInstaller::ConvertWebAppOnFileThread(
-    const WebApplicationInfo& web_app,
-    const base::FilePath& install_directory) {
-  base::string16 error;
-  scoped_refptr<Extension> extension(
-      ConvertWebAppToExtension(web_app, base::Time::Now(), install_directory));
+    const WebApplicationInfo& web_app) {
+  scoped_refptr<Extension> extension(ConvertWebAppToExtension(
+      web_app, base::Time::Now(), install_directory_));
   if (!extension.get()) {
     // Validation should have stopped any potential errors before getting here.
     NOTREACHED() << "Could not convert web app to extension.";
@@ -295,8 +289,8 @@ CrxInstallerError CrxInstaller::AllowInstall(const Extension* extension) {
         WebstoreInstaller::MANIFEST_CHECK_LEVEL_NONE) {
         // To skip manifest checking, the extension must be a shared module
         // and not request any permissions.
-        if (SharedModuleInfo::IsSharedModule(extension) &&
-            PermissionsData::GetActivePermissions(extension)->IsEmpty()) {
+      if (SharedModuleInfo::IsSharedModule(extension) &&
+          extension->permissions_data()->active_permissions()->IsEmpty()) {
           valid = true;
         }
     } else {
@@ -312,11 +306,11 @@ CrxInstallerError CrxInstaller::AllowInstall(const Extension* extension) {
                               &error);
         if (error.empty()) {
           scoped_refptr<const PermissionSet> expected_permissions =
-              PermissionsData::GetActivePermissions(dummy_extension.get());
+              dummy_extension->permissions_data()->active_permissions();
           valid = !(PermissionMessageProvider::Get()->IsPrivilegeIncrease(
-                        expected_permissions,
-                        PermissionsData::GetActivePermissions(extension),
-                        extension->GetType()));
+              expected_permissions,
+              extension->permissions_data()->active_permissions(),
+              extension->GetType()));
         }
       }
     }
@@ -527,7 +521,7 @@ void CrxInstaller::OnRequirementsChecked(
           base::UTF8ToUTF16(JoinString(requirement_errors, ' '))));
       return;
     }
-    has_requirement_errors_ = true;
+    install_flags_ |= kInstallFlagHasRequirementErrors;
   }
 
   ExtensionSystem::Get(profile())->blacklist()->IsBlacklisted(
@@ -541,10 +535,12 @@ void CrxInstaller::OnBlacklistChecked(
   if (!service_weak_)
     return;
 
-  blacklist_state_ = blacklist_state;
+  if (blacklist_state == extensions::BLACKLISTED_MALWARE) {
+    install_flags_ |= kInstallFlagIsBlacklistedForMalware;
+  }
 
-  if ((blacklist_state_ == extensions::BLACKLISTED_MALWARE ||
-       blacklist_state_ == extensions::BLACKLISTED_UNKNOWN) &&
+  if ((blacklist_state == extensions::BLACKLISTED_MALWARE ||
+       blacklist_state == extensions::BLACKLISTED_UNKNOWN) &&
       !allow_silent_install_) {
     // User tried to install a blacklisted extension. Show an error and
     // refuse to install it.
@@ -658,9 +654,9 @@ void CrxInstaller::InstallUIAbort(bool user_initiated) {
   // and if it is false, this function is called in response to
   // ExtensionInstallPrompt::ConfirmInstall().
   if (!update_from_settings_page_) {
-    std::string histogram_name = user_initiated ?
-        "Extensions.Permissions_InstallCancel" :
-        "Extensions.Permissions_InstallAbort";
+    std::string histogram_name = user_initiated
+                                     ? "Extensions.Permissions_InstallCancel2"
+                                     : "Extensions.Permissions_InstallAbort2";
     ExtensionService::RecordPermissionMessagesHistogram(
         extension(), histogram_name.c_str());
 
@@ -695,11 +691,20 @@ void CrxInstaller::CompleteInstall() {
     "Extensions.CrxInstallDirPathLength",
         install_directory_.value().length(), 0, 500, 100);
 
-  base::FilePath version_dir =
-      file_util::InstallExtension(unpacked_extension_root_,
-                                  extension()->id(),
-                                  extension()->VersionString(),
-                                  install_directory_);
+  ExtensionAssetsManager* assets_manager =
+      ExtensionAssetsManager::GetInstance();
+  assets_manager->InstallExtension(
+      extension(),
+      unpacked_extension_root_,
+      install_directory_,
+      profile(),
+      base::Bind(&CrxInstaller::ReloadExtensionAfterInstall, this));
+}
+
+void CrxInstaller::ReloadExtensionAfterInstall(
+    const base::FilePath& version_dir) {
+  DCHECK(installer_task_runner_->RunsTasksOnCurrentThread());
+
   if (version_dir.empty()) {
     ReportFailureFromFileThread(
         CrxInstallerError(
@@ -730,7 +735,6 @@ void CrxInstaller::CompleteInstall() {
     LOG(ERROR) << error << " " << extension_id << " " << download_url_;
     ReportFailureFromFileThread(CrxInstallerError(base::UTF8ToUTF16(error)));
   }
-
 }
 
 void CrxInstaller::ReportFailureFromFileThread(const CrxInstallerError& error) {
@@ -802,17 +806,14 @@ void CrxInstaller::ReportSuccessFromUIThread() {
     // We update the extension's granted permissions if the user already
     // approved the install (client_ is non NULL), or we are allowed to install
     // this silently.
-    if (client_ || allow_silent_install_) {
+    if ((client_ || allow_silent_install_) && grant_permissions_) {
       PermissionsUpdater perms_updater(profile());
       perms_updater.GrantActivePermissions(extension());
     }
   }
 
-  service_weak_->OnExtensionInstalled(extension(),
-                                      page_ordinal_,
-                                      has_requirement_errors_,
-                                      blacklist_state_,
-                                      install_wait_for_idle_);
+  service_weak_->OnExtensionInstalled(
+      extension(), page_ordinal_, install_flags_);
   NotifyCrxInstallComplete(true);
 }
 

@@ -31,12 +31,13 @@
 #ifndef ElementAnimation_h
 #define ElementAnimation_h
 
-#include "RuntimeEnabledFeatures.h"
 #include "core/animation/Animation.h"
-#include "core/animation/DocumentTimeline.h"
+#include "core/animation/AnimationTimeline.h"
 #include "core/animation/EffectInput.h"
 #include "core/animation/TimingInput.h"
+#include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
@@ -90,7 +91,7 @@ private:
     static AnimationPlayer* animateInternal(Element& element, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing)
     {
         if (RuntimeEnabledFeatures::webAnimationsElementAnimateEnabled()) {
-            RefPtr<Animation> animation = Animation::create(&element, effect, timing);
+            RefPtrWillBeRawPtr<Animation> animation = Animation::create(&element, effect, timing);
             return element.document().timeline().play(animation.get());
         }
         return 0;

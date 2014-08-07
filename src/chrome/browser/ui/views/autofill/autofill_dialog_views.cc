@@ -67,9 +67,6 @@
 #include "ui/views/window/dialog_client_view.h"
 #include "ui/views/window/non_client_view.h"
 
-using web_modal::WebContentsModalDialogManager;
-using web_modal::WebContentsModalDialogManagerDelegate;
-
 namespace autofill {
 
 namespace {
@@ -165,7 +162,7 @@ class SectionRowView : public views::View {
   virtual ~SectionRowView() {}
 
   // views::View implementation:
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     int height = 0;
     int width = 0;
     for (int i = 0; i < child_count(); ++i) {
@@ -317,10 +314,10 @@ class NotificationView : public views::View,
                        vertical_padding, kDialogEdgePadding);
   }
 
-  virtual int GetHeightForWidth(int width) OVERRIDE {
+  virtual int GetHeightForWidth(int width) const OVERRIDE {
     int label_width = width - GetInsets().width();
     if (child_count() > 1) {
-      views::View* tooltip_icon = child_at(1);
+      const views::View* tooltip_icon = child_at(1);
       label_width -= tooltip_icon->GetPreferredSize().width() +
           kDialogEdgePadding;
     }
@@ -510,8 +507,7 @@ void AutofillDialogViews::AccountChooser::Update() {
   gfx::Image icon = delegate_->AccountChooserImage();
   image_->SetImage(icon.AsImageSkia());
   menu_button_->SetText(delegate_->AccountChooserText());
-  // This allows the button to shrink if the new text is smaller.
-  menu_button_->ClearMaxTextSize();
+  menu_button_->set_min_size(gfx::Size());
 
   bool show_link = !delegate_->MenuModelForAccountChooser();
   menu_button_->SetVisible(!show_link);
@@ -649,7 +645,7 @@ void AutofillDialogViews::OverlayView::OnPaint(gfx::Canvas* canvas) {
   gfx::Path window_mask;
   window_mask.addRoundRect(gfx::RectToSkRect(rect),
                            kCornerRadius, kCornerRadius);
-  canvas->ClipPath(window_mask);
+  canvas->ClipPath(window_mask, false);
 
   OnPaintBackground(canvas);
 
@@ -692,7 +688,7 @@ void AutofillDialogViews::OverlayView::OnPaint(gfx::Canvas* canvas) {
     canvas->DrawPath(arrow, paint);
   }
 
-  PaintChildren(canvas);
+  PaintChildren(canvas, views::CullSet());
 }
 
 void AutofillDialogViews::OverlayView::OnNativeThemeChanged(
@@ -755,7 +751,7 @@ void AutofillDialogViews::NotificationArea::SetNotifications(
   PreferredSizeChanged();
 }
 
-gfx::Size AutofillDialogViews::NotificationArea::GetPreferredSize() {
+gfx::Size AutofillDialogViews::NotificationArea::GetPreferredSize() const {
   gfx::Size size = views::View::GetPreferredSize();
   // Ensure that long notifications wrap and don't enlarge the dialog.
   size.set_width(1);
@@ -767,11 +763,13 @@ const char* AutofillDialogViews::NotificationArea::GetClassName() const {
 }
 
 void AutofillDialogViews::NotificationArea::PaintChildren(
-    gfx::Canvas* canvas) {}
+    gfx::Canvas* canvas,
+    const views::CullSet& cull_set) {
+}
 
 void AutofillDialogViews::NotificationArea::OnPaint(gfx::Canvas* canvas) {
   views::View::OnPaint(canvas);
-  views::View::PaintChildren(canvas);
+  views::View::PaintChildren(canvas, views::CullSet());
 
   if (HasArrow()) {
     DrawArrow(
@@ -991,7 +989,7 @@ AutofillDialogViews::SuggestedButton::SuggestedButton(
 
 AutofillDialogViews::SuggestedButton::~SuggestedButton() {}
 
-gfx::Size AutofillDialogViews::SuggestedButton::GetPreferredSize() {
+gfx::Size AutofillDialogViews::SuggestedButton::GetPreferredSize() const {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   gfx::Size size = rb.GetImageNamed(ResourceIDForState()).Size();
   const gfx::Insets insets = GetInsets();
@@ -1003,7 +1001,10 @@ const char* AutofillDialogViews::SuggestedButton::GetClassName() const {
   return kSuggestedButtonClassName;
 }
 
-void AutofillDialogViews::SuggestedButton::PaintChildren(gfx::Canvas* canvas) {}
+void AutofillDialogViews::SuggestedButton::PaintChildren(
+    gfx::Canvas* canvas,
+    const views::CullSet& cull_set) {
+}
 
 void AutofillDialogViews::SuggestedButton::OnPaint(gfx::Canvas* canvas) {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -1083,13 +1084,13 @@ AutofillDialogViews::SuggestionView::SuggestionView(
 
 AutofillDialogViews::SuggestionView::~SuggestionView() {}
 
-gfx::Size AutofillDialogViews::SuggestionView::GetPreferredSize() {
+gfx::Size AutofillDialogViews::SuggestionView::GetPreferredSize() const {
   // There's no preferred width. The parent's layout should get the preferred
   // height from GetHeightForWidth().
   return gfx::Size();
 }
 
-int AutofillDialogViews::SuggestionView::GetHeightForWidth(int width) {
+int AutofillDialogViews::SuggestionView::GetHeightForWidth(int width) const {
   int height = 0;
   CanUseVerticallyCompactText(width, &height);
   return height;
@@ -1097,7 +1098,7 @@ int AutofillDialogViews::SuggestionView::GetHeightForWidth(int width) {
 
 bool AutofillDialogViews::SuggestionView::CanUseVerticallyCompactText(
     int available_width,
-    int* resulting_height) {
+    int* resulting_height) const {
   // This calculation may be costly, avoid doing it more than once per width.
   if (!calculated_heights_.count(available_width)) {
     // Changing the state of |this| now will lead to extra layouts and
@@ -1236,18 +1237,7 @@ void AutofillDialogViews::Show() {
   UpdateNotificationArea();
   UpdateButtonStripExtraView();
 
-  // Ownership of |contents_| is handed off by this call. The widget will take
-  // care of deleting itself after calling DeleteDelegate().
-  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
-      WebContentsModalDialogManager::FromWebContents(
-          delegate_->GetWebContents());
-  WebContentsModalDialogManagerDelegate* modal_delegate =
-      web_contents_modal_dialog_manager->delegate();
-  DCHECK(modal_delegate);
-  window_ = views::Widget::CreateWindowAsFramelessChild(
-      this, modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
-  web_contents_modal_dialog_manager->ShowModalDialog(
-      window_->GetNativeView());
+  window_ = ShowWebModalDialogViews(this, delegate_->GetWebContents());
   focus_manager_ = window_->GetFocusManager();
   focus_manager_->AddFocusChangeListener(this);
 
@@ -1467,14 +1457,14 @@ void AutofillDialogViews::ValidateSection(DialogSection section) {
   ValidateGroup(*GroupForSection(section), VALIDATE_EDIT);
 }
 
-gfx::Size AutofillDialogViews::GetPreferredSize() {
+gfx::Size AutofillDialogViews::GetPreferredSize() const {
   if (preferred_size_.IsEmpty())
     preferred_size_ = CalculatePreferredSize(false);
 
   return preferred_size_;
 }
 
-gfx::Size AutofillDialogViews::GetMinimumSize() {
+gfx::Size AutofillDialogViews::GetMinimumSize() const {
   return CalculatePreferredSize(true);
 }
 
@@ -1529,6 +1519,10 @@ void AutofillDialogViews::OnNativeThemeChanged(
       theme->GetSystemColor(ui::NativeTheme::kColorId_LabelDisabledColor);
 
   legal_document_view_->SetDefaultStyle(default_style);
+}
+
+ui::ModalType AutofillDialogViews::GetModalType() const {
+  return ui::MODAL_TYPE_CHILD;
 }
 
 base::string16 AutofillDialogViews::GetWindowTitle() const {
@@ -1761,7 +1755,8 @@ void AutofillDialogViews::OnMenuButtonClicked(views::View* source,
   group->suggested_button->SetState(state);
 }
 
-gfx::Size AutofillDialogViews::CalculatePreferredSize(bool get_minimum_size) {
+gfx::Size AutofillDialogViews::CalculatePreferredSize(
+    bool get_minimum_size) const {
   gfx::Insets insets = GetInsets();
   gfx::Size scroll_size = scrollable_area_->contents()->GetPreferredSize();
   // The width is always set by the scroll area.
@@ -1802,7 +1797,7 @@ gfx::Size AutofillDialogViews::GetMinimumSignInViewSize() const {
 
 gfx::Size AutofillDialogViews::GetMaximumSignInViewSize() const {
   web_modal::WebContentsModalDialogHost* dialog_host =
-      WebContentsModalDialogManager::FromWebContents(
+      web_modal::WebContentsModalDialogManager::FromWebContents(
           delegate_->GetWebContents())->delegate()->
               GetWebContentsModalDialogHost();
 
@@ -2324,7 +2319,7 @@ void AutofillDialogViews::ContentsPreferredSizeChanged() {
   if (GetWidget() && delegate_ && delegate_->GetWebContents()) {
     UpdateWebContentsModalDialogPosition(
         GetWidget(),
-        WebContentsModalDialogManager::FromWebContents(
+        web_modal::WebContentsModalDialogManager::FromWebContents(
             delegate_->GetWebContents())->delegate()->
                 GetWebContentsModalDialogHost());
     SetBoundsRect(bounds());

@@ -31,7 +31,7 @@
 #include "net/url_request/url_request_status.h"
 
 namespace {
-const char kNonSigninURL[] = "www.google.com";
+const char kNonSigninURL[] = "http://www.google.com";
 }
 
 class SigninBrowserTest : public InProcessBrowserTest {
@@ -107,7 +107,7 @@ const bool kOneClickSigninEnabled = false;
 #define MAYBE_ProcessIsolation ProcessIsolation
 #endif
 IN_PROC_BROWSER_TEST_F(SigninBrowserTest, MAYBE_ProcessIsolation) {
-  ChromeSigninClient* signin =
+  SigninClient* signin =
       ChromeSigninClientFactory::GetForProfile(browser()->profile());
   EXPECT_FALSE(signin->HasSigninProcess());
 
@@ -148,8 +148,15 @@ IN_PROC_BROWSER_TEST_F(SigninBrowserTest, MAYBE_ProcessIsolation) {
       active_tab->GetRenderProcessHost()->GetID()));
 }
 
-IN_PROC_BROWSER_TEST_F(SigninBrowserTest, NotTrustedAfterRedirect) {
-  ChromeSigninClient* signin =
+#if defined (OS_MACOSX)
+// crbug.com/375197
+#define MAYBE_NotTrustedAfterRedirect DISABLED_NotTrustedAfterRedirect
+#else
+#define MAYBE_NotTrustedAfterRedirect NotTrustedAfterRedirect
+#endif
+
+IN_PROC_BROWSER_TEST_F(SigninBrowserTest, MAYBE_NotTrustedAfterRedirect) {
+  SigninClient* signin =
       ChromeSigninClientFactory::GetForProfile(browser()->profile());
   EXPECT_FALSE(signin->HasSigninProcess());
 
@@ -206,7 +213,7 @@ IN_PROC_BROWSER_TEST_F(SigninBrowserTest, SigninSkipForNowAndGoBack) {
   GURL start_url = signin::GetPromoURL(signin::SOURCE_START_PAGE, false);
   GURL skip_url = signin::GetLandingURL("ntp", 1);
 
-  ChromeSigninClient* signin =
+  SigninClient* signin =
       ChromeSigninClientFactory::GetForProfile(browser()->profile());
   EXPECT_FALSE(signin->HasSigninProcess());
 

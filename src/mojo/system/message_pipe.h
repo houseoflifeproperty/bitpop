@@ -5,13 +5,16 @@
 #ifndef MOJO_SYSTEM_MESSAGE_PIPE_H_
 #define MOJO_SYSTEM_MESSAGE_PIPE_H_
 
+#include <stdint.h>
+
 #include <vector>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
-#include "mojo/public/c/system/core.h"
+#include "mojo/public/c/system/message_pipe.h"
+#include "mojo/public/c/system/types.h"
 #include "mojo/system/dispatcher.h"
 #include "mojo/system/message_in_transit.h"
 #include "mojo/system/message_pipe_endpoint.h"
@@ -63,8 +66,8 @@ class MOJO_SYSTEM_IMPL_EXPORT MessagePipe :
                          MojoReadMessageFlags flags);
   MojoResult AddWaiter(unsigned port,
                        Waiter* waiter,
-                       MojoWaitFlags flags,
-                       MojoResult wake_result);
+                       MojoHandleSignals signals,
+                       uint32_t context);
   void RemoveWaiter(unsigned port, Waiter* waiter);
 
   // This is called by the dispatcher to convert a local endpoint to a proxy

@@ -11,6 +11,7 @@
 #include <sddl.h>
 
 #include "base/command_line.h"
+#include "base/files/file.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
 #include "base/single_thread_task_runner.h"
@@ -113,7 +114,7 @@ bool CreateWindowStationAndDesktop(ScopedSid logon_sid,
   // Convert the logon SID into a string.
   std::string logon_sid_string = ConvertSidToString(logon_sid.get());
   if (logon_sid_string.empty()) {
-    LOG_GETLASTERROR(ERROR) << "Failed to convert a SID to string";
+    PLOG(ERROR) << "Failed to convert a SID to string";
     return false;
   }
 
@@ -134,7 +135,7 @@ bool CreateWindowStationAndDesktop(ScopedSid logon_sid,
   ScopedSd desktop_sd = ConvertSddlToSd(desktop_sddl);
   ScopedSd window_station_sd = ConvertSddlToSd(window_station_sddl);
   if (!desktop_sd || !window_station_sd) {
-    LOG_GETLASTERROR(ERROR) << "Failed to create a security descriptor.";
+    PLOG(ERROR) << "Failed to create a security descriptor.";
     return false;
   }
 
@@ -169,13 +170,13 @@ bool CreateWindowStationAndDesktop(ScopedSid logon_sid,
       base::UTF8ToUTF16(window_station_name).c_str(), window_station_flags,
       desired_access, &security_attributes));
   if (!handles.window_station()) {
-    LOG_GETLASTERROR(ERROR) << "CreateWindowStation() failed";
+    PLOG(ERROR) << "CreateWindowStation() failed";
     return false;
   }
 
   // Switch to the new window station and create a desktop on it.
   if (!SetProcessWindowStation(handles.window_station())) {
-    LOG_GETLASTERROR(ERROR) << "SetProcessWindowStation() failed";
+    PLOG(ERROR) << "SetProcessWindowStation() failed";
     return false;
   }
 
@@ -196,12 +197,12 @@ bool CreateWindowStationAndDesktop(ScopedSid logon_sid,
 
   // Switch back to the original window station.
   if (!SetProcessWindowStation(current_window_station)) {
-    LOG_GETLASTERROR(ERROR) << "SetProcessWindowStation() failed";
+    PLOG(ERROR) << "SetProcessWindowStation() failed";
     return false;
   }
 
   if (!handles.desktop()) {
-    LOG_GETLASTERROR(ERROR) << "CreateDesktop() failed";
+    PLOG(ERROR) << "CreateDesktop() failed";
     return false;
   }
 
@@ -237,8 +238,7 @@ void UnprivilegedProcessDelegate::LaunchProcess(
   // Create a restricted token that will be used to run the worker process.
   ScopedHandle token;
   if (!CreateRestrictedToken(&token)) {
-    LOG_GETLASTERROR(ERROR)
-        << "Failed to create a restricted LocalService token";
+    PLOG(ERROR) << "Failed to create a restricted LocalService token";
     ReportFatalError();
     return;
   }
@@ -247,7 +247,7 @@ void UnprivilegedProcessDelegate::LaunchProcess(
   // and desktop.
   ScopedSid logon_sid = GetLogonSid(token);
   if (!logon_sid) {
-    LOG_GETLASTERROR(ERROR) << "Failed to retrieve the logon SID";
+    PLOG(ERROR) << "Failed to retrieve the logon SID";
     ReportFatalError();
     return;
   }
@@ -256,7 +256,7 @@ void UnprivilegedProcessDelegate::LaunchProcess(
   ScopedSd process_sd = ConvertSddlToSd(kWorkerProcessSd);
   ScopedSd thread_sd = ConvertSddlToSd(kWorkerThreadSd);
   if (!process_sd || !thread_sd) {
-    LOG_GETLASTERROR(ERROR) << "Failed to create a security descriptor";
+    PLOG(ERROR) << "Failed to create a security descriptor";
     ReportFatalError();
     return;
   }
@@ -278,28 +278,25 @@ void UnprivilegedProcessDelegate::LaunchProcess(
     base::AutoLock lock(g_inherit_handles_lock.Get());
 
     // Create a connected IPC channel.
-    HANDLE temp_handle;
-    if (!CreateConnectedIpcChannel(io_task_runner_, this, &temp_handle,
-                                   &server)) {
+    base::File client;
+    if (!CreateConnectedIpcChannel(io_task_runner_, this, &client, &server)) {
       ReportFatalError();
       return;
     }
-    ScopedHandle client(temp_handle);
 
     // Convert the handle value into a decimal integer. Handle values are 32bit
     // even on 64bit platforms.
     std::string pipe_handle = base::StringPrintf(
-        "%d", reinterpret_cast<ULONG_PTR>(client.Get()));
+        "%d", reinterpret_cast<ULONG_PTR>(client.GetPlatformFile()));
 
     // Pass the IPC channel via the command line.
-    CommandLine command_line(target_command_->argv());
+    base::CommandLine command_line(target_command_->argv());
     command_line.AppendSwitchASCII(kDaemonPipeSwitchName, pipe_handle);
 
     // Create our own window station and desktop accessible by |logon_sid|.
     WindowStationAndDesktop handles;
     if (!CreateWindowStationAndDesktop(logon_sid.Pass(), &handles)) {
-      LOG_GETLASTERROR(ERROR)
-          << "Failed to create a window station and desktop";
+      PLOG(ERROR) << "Failed to create a window station and desktop";
       ReportFatalError();
       return;
     }
@@ -411,7 +408,7 @@ void UnprivilegedProcessDelegate::ReportProcessLaunched(
                        desired_access,
                        FALSE,
                        0)) {
-    LOG_GETLASTERROR(ERROR) << "Failed to duplicate a handle";
+    PLOG(ERROR) << "Failed to duplicate a handle";
     ReportFatalError();
     return;
   }
@@ -420,4 +417,4 @@ void UnprivilegedProcessDelegate::ReportProcessLaunched(
   event_handler_->OnProcessLaunched(limited_handle.Pass());
 }
 
-} // namespace remoting
+}  // namespace remoting

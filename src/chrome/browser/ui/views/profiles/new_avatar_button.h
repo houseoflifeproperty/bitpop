@@ -6,13 +6,15 @@
 #define CHROME_BROWSER_UI_VIEWS_PROFILES_NEW_AVATAR_BUTTON_H_
 
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
+#include "components/signin/core/browser/signin_error_controller.h"
 #include "ui/views/controls/button/menu_button.h"
 
 class Browser;
 
 // Avatar button that displays the active profile's name in the caption area.
 class NewAvatarButton : public views::MenuButton,
-                        public ProfileInfoCacheObserver {
+                        public ProfileInfoCacheObserver,
+                        public SigninErrorController::Observer {
  public:
   // Different button styles that can be applied.
   enum AvatarButtonStyle {
@@ -25,9 +27,6 @@ class NewAvatarButton : public views::MenuButton,
                   AvatarButtonStyle button_style,
                   Browser* browser);
   virtual ~NewAvatarButton();
-
-  // views::View:
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
  private:
   friend class NewAvatarMenuButtonTest;
@@ -43,6 +42,11 @@ class NewAvatarButton : public views::MenuButton,
   virtual void OnProfileNameChanged(
       const base::FilePath& profile_path,
       const base::string16& old_profile_name) OVERRIDE;
+  virtual void OnProfileSupervisedUserIdChanged(
+      const base::FilePath& profile_path) OVERRIDE;
+
+  // SigninErrorController::Observer:
+  virtual void OnErrorChanged() OVERRIDE;
 
   // Called when the profile info cache has changed, which means we might
   // have to re-display the profile name.

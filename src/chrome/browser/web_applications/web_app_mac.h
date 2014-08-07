@@ -12,17 +12,28 @@
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "chrome/browser/web_applications/web_app.h"
-#include "chrome/common/extensions/file_handler_info.h"
+#include "extensions/common/manifest_handlers/file_handler_info.h"
+
+namespace base {
+class CommandLine;
+}
+
+// Whether to enable update and launch of app shims in tests. (Normally shims
+// are never created or launched in tests). Note that update only creates
+// internal shim bundles, i.e. it does not create new shims in ~/Applications.
+extern bool g_app_shims_allow_update_and_launch_in_tests;
 
 namespace web_app {
 
 // Returns the full path of the .app shim that would be created by
-// web_app::CreateShortcuts().
-base::FilePath GetAppInstallPath(
-    const web_app::ShortcutInfo& shortcut_info);
+// CreateShortcuts().
+base::FilePath GetAppInstallPath(const ShortcutInfo& shortcut_info);
 
 // If necessary, launch the shortcut for an app.
-void MaybeLaunchShortcut(const web_app::ShortcutInfo& shortcut_info);
+void MaybeLaunchShortcut(const ShortcutInfo& shortcut_info);
+
+// Rebuild the shortcut and relaunch it.
+bool MaybeRebuildShortcut(const base::CommandLine& command_line);
 
 // Creates a shortcut for a web application. The shortcut is a stub app
 // that simply loads the browser framework and runs the given app.
@@ -32,7 +43,7 @@ class WebAppShortcutCreator {
   // A copy of the shortcut is placed in |app_data_dir|.
   // |chrome_bundle_id| is the CFBundleIdentifier of the Chrome browser bundle.
   WebAppShortcutCreator(const base::FilePath& app_data_dir,
-                        const web_app::ShortcutInfo& shortcut_info,
+                        const ShortcutInfo& shortcut_info,
                         const extensions::FileHandlersInfo& file_handlers_info);
 
   virtual ~WebAppShortcutCreator();
@@ -51,7 +62,7 @@ class WebAppShortcutCreator {
   base::FilePath GetInternalShortcutPath() const;
 
   bool CreateShortcuts(ShortcutCreationReason creation_reason,
-                       web_app::ShortcutLocations creation_locations);
+                       ShortcutLocations creation_locations);
   void DeleteShortcuts();
   bool UpdateShortcuts();
 
@@ -101,7 +112,7 @@ class WebAppShortcutCreator {
   base::FilePath app_data_dir_;
 
   // Information about the app.
-  web_app::ShortcutInfo info_;
+  ShortcutInfo info_;
 
   // The app's file handlers.
   extensions::FileHandlersInfo file_handlers_info_;

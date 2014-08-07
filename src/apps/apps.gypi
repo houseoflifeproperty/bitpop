@@ -94,13 +94,15 @@
         ['enable_extensions==0',
           {
             'sources/': [
-              ['exclude', '^apps/'],
+              ['exclude', '.*'],
+              ['include', 'ui/web_contents_sizer\.cc$'],
+              ['include', 'ui/web_contents_sizer\.mm$'],
             ],
           }
         ],
         ['toolkit_views==1', {
           'dependencies': [
-            '../ui/base/strings/ui_strings.gyp:ui_strings',
+            '../ui/strings/ui_strings.gyp:ui_strings',
             '../ui/views/views.gyp:views',
           ],
         }, {  # toolkit_views==0

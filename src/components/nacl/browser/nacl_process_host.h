@@ -45,6 +45,7 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
  public:
   // manifest_url: the URL of the manifest of the Native Client plugin being
   // executed.
+  // permissions: PPAPI permissions, to control access to private APIs.
   // render_view_id: RenderView routing id, to control access to private APIs.
   // permission_bits: controls which interfaces the NaCl plugin can use.
   // uses_irt: whether the launched process should use the IRT.
@@ -60,6 +61,7 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // off_the_record: was the process launched from an incognito renderer?
   // profile_directory: is the path of current profile directory.
   NaClProcessHost(const GURL& manifest_url,
+                  ppapi::PpapiPermissions permissions,
                   int render_view_id,
                   uint32 permission_bits,
                   bool uses_irt,
@@ -106,12 +108,22 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
 
   bool LaunchNaClGdb();
 
+  // Mark the process as using a particular GDB debug stub port and notify
+  // listeners (if the port is not kGdbDebugStubPortUnknown).
+  void SetDebugStubPort(int port);
+
 #if defined(OS_POSIX)
   // Create bound TCP socket in the browser process so that the NaCl GDB debug
   // stub can use it to accept incoming connections even when the Chrome sandbox
   // is enabled.
   net::SocketDescriptor GetDebugStubSocketHandle();
 #endif
+
+#if defined(OS_WIN)
+  // Called when the debug stub port has been selected.
+  void OnDebugStubPortSelected(uint16_t debug_stub_port);
+#endif
+
   bool LaunchSelLdr();
 
   // BrowserChildProcessHostDelegate implementation:

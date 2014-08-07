@@ -41,7 +41,9 @@ RendererPpapiHostImpl::RendererPpapiHostImpl(
     PluginModule* module,
     ppapi::proxy::HostDispatcher* dispatcher,
     const ppapi::PpapiPermissions& permissions)
-    : module_(module), dispatcher_(dispatcher) {
+    : module_(module),
+      dispatcher_(dispatcher),
+      is_external_plugin_host_(false) {
   // Hook the PpapiHost up to the dispatcher for out-of-process communication.
   ppapi_host_.reset(new ppapi::host::PpapiHost(dispatcher, permissions));
   ppapi_host_->AddHostFactoryFilter(scoped_ptr<ppapi::host::HostFactory>(
@@ -54,7 +56,7 @@ RendererPpapiHostImpl::RendererPpapiHostImpl(
 RendererPpapiHostImpl::RendererPpapiHostImpl(
     PluginModule* module,
     const ppapi::PpapiPermissions& permissions)
-    : module_(module), dispatcher_(NULL) {
+    : module_(module), dispatcher_(NULL), is_external_plugin_host_(false) {
   // Hook the host up to the in-process router.
   in_process_router_.reset(new PepperInProcessRouter(this));
   ppapi_host_.reset(new ppapi::host::PpapiHost(
@@ -125,6 +127,10 @@ PepperPluginInstanceImpl* RendererPpapiHostImpl::GetPluginInstanceImpl(
   return GetAndValidateInstance(instance);
 }
 
+bool RendererPpapiHostImpl::IsExternalPluginHost() const {
+  return is_external_plugin_host_;
+}
+
 ppapi::host::PpapiHost* RendererPpapiHostImpl::GetPpapiHost() {
   return ppapi_host_.get();
 }
@@ -170,7 +176,7 @@ blink::WebPluginContainer* RendererPpapiHostImpl::GetContainerForInstance(
 
 base::ProcessId RendererPpapiHostImpl::GetPluginPID() const {
   if (dispatcher_)
-    return dispatcher_->channel()->peer_pid();
+    return dispatcher_->channel()->GetPeerPID();
   return base::kNullProcessId;
 }
 
@@ -225,6 +231,14 @@ IPC::PlatformFileForTransit RendererPpapiHostImpl::ShareHandleWithRemote(
 
 bool RendererPpapiHostImpl::IsRunningInProcess() const {
   return is_running_in_process_;
+}
+
+std::string RendererPpapiHostImpl::GetPluginName() const {
+  return module_->name();
+}
+
+void RendererPpapiHostImpl::SetToExternalPluginHost() {
+  is_external_plugin_host_ = true;
 }
 
 void RendererPpapiHostImpl::CreateBrowserResourceHosts(

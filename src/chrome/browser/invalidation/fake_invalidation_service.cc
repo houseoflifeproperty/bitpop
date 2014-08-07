@@ -5,7 +5,7 @@
 #include "chrome/browser/invalidation/fake_invalidation_service.h"
 
 #include "base/macros.h"
-#include "chrome/browser/invalidation/invalidation_service_util.h"
+#include "components/invalidation/invalidation_service_util.h"
 #include "sync/notifier/object_id_invalidation_map.h"
 
 namespace invalidation {
@@ -18,11 +18,6 @@ FakeInvalidationService::FakeInvalidationService()
 }
 
 FakeInvalidationService::~FakeInvalidationService() {
-}
-
-// static
-KeyedService* FakeInvalidationService::Build(content::BrowserContext* context) {
-  return new FakeInvalidationService();
 }
 
 void FakeInvalidationService::RegisterInvalidationHandler(

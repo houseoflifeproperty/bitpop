@@ -25,14 +25,13 @@ struct ChildProcessData {
   // one run of the browser.
   int id;
 
-  // The handle to the process.
+  // The handle to the process. May have value kNullProcessHandle if no process
+  // exists - either because it hasn't been started yet or it's running in the
+  // current process.
   base::ProcessHandle handle;
 
-  int nacl_debug_stub_port;
-
   explicit ChildProcessData(int process_type)
-      : process_type(process_type), id(0), handle(base::kNullProcessHandle),
-        nacl_debug_stub_port(0) {
+      : process_type(process_type), id(0), handle(base::kNullProcessHandle) {
   }
 };
 

@@ -226,7 +226,6 @@ public:
 
     void drawFocusIfNeeded(Element*);
     void drawFocusIfNeeded(Path2D*, Element*);
-    bool drawCustomFocusRing(Element*);
 
     void loseContext();
     void restoreContext();
@@ -332,8 +331,9 @@ private:
 
     void drawFocusIfNeededInternal(const Path&, Element*);
     bool focusRingCallIsValid(const Path&, Element*);
-    void updateFocusRingAccessibility(const Path&, Element*);
     void drawFocusRing(const Path&);
+
+    void validateStateStack();
 
     virtual bool is2d() const OVERRIDE { return true; }
     virtual bool isAccelerated() const OVERRIDE;

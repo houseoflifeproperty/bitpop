@@ -63,7 +63,7 @@ def cpp_type(idl_type):
         return 'void'
     # Callbacks use raw pointers, so used_as_argument=True
     usual_cpp_type = idl_type.cpp_type_args(used_as_argument=True)
-    if usual_cpp_type.startswith(('Vector', 'WillBeHeapVector')):
+    if usual_cpp_type.startswith(('Vector', 'HeapVector', 'WillBeHeapVector')):
         return 'const %s&' % usual_cpp_type
     return usual_cpp_type
 
@@ -121,7 +121,7 @@ def generate_arguments_contents(arguments, call_with_this_handle):
             # used.
             'cpp_value_to_v8_value': argument.idl_type.cpp_value_to_v8_value(
                 argument.name, isolate='isolate',
-                creation_context='v8::Handle<v8::Object>()'),
+                creation_context='m_scriptState->context()->Global()'),
         }
 
     argument_declarations = ['ScriptValue thisValue'] if call_with_this_handle else []

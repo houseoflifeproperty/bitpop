@@ -95,6 +95,7 @@ ContentSettingTitleAndLinkModel::ContentSettingTitleAndLinkModel(
   DCHECK_NE(content_type, CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
   SetTitle();
   SetManageLink();
+  SetLearnMoreLink();
 }
 
 void ContentSettingTitleAndLinkModel::SetTitle() {
@@ -154,6 +155,22 @@ void ContentSettingTitleAndLinkModel::SetManageLink() {
 void ContentSettingTitleAndLinkModel::OnManageLinkClicked() {
   if (delegate_)
     delegate_->ShowContentSettingsPage(content_type());
+}
+
+void ContentSettingTitleAndLinkModel::SetLearnMoreLink() {
+  static const ContentSettingsTypeIdEntry kLearnMoreIDs[] = {
+    {CONTENT_SETTINGS_TYPE_PLUGINS, IDS_LEARN_MORE},
+  };
+  int learn_more_id =
+      GetIdForContentType(kLearnMoreIDs, arraysize(kLearnMoreIDs),
+                          content_type());
+  if (learn_more_id)
+    set_learn_more_link(l10n_util::GetStringUTF8(learn_more_id));
+}
+
+void ContentSettingTitleAndLinkModel::OnLearnMoreLinkClicked() {
+  if (delegate_)
+    delegate_->ShowLearnMorePage(content_type());
 }
 
 class ContentSettingTitleLinkAndCustomModel
@@ -1031,23 +1048,22 @@ ContentSettingRPHBubbleModel::ContentSettingRPHBubbleModel(
     protocol = base::UTF8ToUTF16(pending_handler_.protocol());
   }
 
+  // Note that we ignore the |title| parameter.
   if (previous_handler_.IsEmpty()) {
     set_title(l10n_util::GetStringFUTF8(
         IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM,
-        pending_handler_.title(),
         base::UTF8ToUTF16(pending_handler_.url().host()),
         protocol));
   } else {
     set_title(l10n_util::GetStringFUTF8(
         IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM_REPLACE,
-        pending_handler_.title(),
         base::UTF8ToUTF16(pending_handler_.url().host()),
-        protocol, previous_handler_.title()));
+        protocol,
+        base::UTF8ToUTF16(previous_handler_.url().host())));
   }
 
   std::string radio_allow_label =
-      l10n_util::GetStringFUTF8(IDS_REGISTER_PROTOCOL_HANDLER_ACCEPT,
-                                pending_handler_.title());
+      l10n_util::GetStringUTF8(IDS_REGISTER_PROTOCOL_HANDLER_ACCEPT);
   std::string radio_deny_label =
       l10n_util::GetStringUTF8(IDS_REGISTER_PROTOCOL_HANDLER_DENY);
   std::string radio_ignore_label =

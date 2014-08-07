@@ -45,7 +45,10 @@ scoped_ptr<UIResourceLayerImpl> GenerateUIResourceLayer(
 
 void QuadSizeTest(scoped_ptr<UIResourceLayerImpl> layer,
                   size_t expected_quad_size) {
-  MockQuadCuller quad_culler;
+  MockOcclusionTracker<LayerImpl> occlusion_tracker;
+  scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+  MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
+
   AppendQuadsData data;
   layer->AppendQuads(&quad_culler, &data);
 
@@ -84,7 +87,10 @@ TEST(UIResourceLayerImplTest, VerifyDrawQuads) {
 
 void OpaqueBoundsTest(scoped_ptr<UIResourceLayerImpl> layer,
                  const gfx::Rect& expected_opaque_bounds) {
-  MockQuadCuller quad_culler;
+  MockOcclusionTracker<LayerImpl> occlusion_tracker;
+  scoped_ptr<RenderPass> render_pass = RenderPass::Create();
+  MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
+
   AppendQuadsData data;
   layer->AppendQuads(&quad_culler, &data);
 
@@ -159,7 +165,6 @@ TEST(UIResourceLayerImplTest, Occlusion) {
 
   UIResourceLayerImpl* ui_resource_layer_impl =
       impl.AddChildToRoot<UIResourceLayerImpl>();
-  ui_resource_layer_impl->SetAnchorPoint(gfx::PointF());
   ui_resource_layer_impl->SetBounds(layer_size);
   ui_resource_layer_impl->SetContentBounds(layer_size);
   ui_resource_layer_impl->SetDrawsContent(true);

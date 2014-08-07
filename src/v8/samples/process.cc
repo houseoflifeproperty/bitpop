@@ -574,7 +574,7 @@ StringHttpRequest::StringHttpRequest(const string& path,
 
 void ParseOptions(int argc,
                   char* argv[],
-                  map<string, string>& options,
+                  map<string, string>* options,
                   string* file) {
   for (int i = 1; i < argc; i++) {
     string arg = argv[i];
@@ -584,7 +584,7 @@ void ParseOptions(int argc,
     } else {
       string key = arg.substr(0, index);
       string value = arg.substr(index+1);
-      options[key] = value;
+      (*options)[key] = value;
     }
   }
 }
@@ -646,12 +646,13 @@ int main(int argc, char* argv[]) {
   v8::V8::InitializeICU();
   map<string, string> options;
   string file;
-  ParseOptions(argc, argv, options, &file);
+  ParseOptions(argc, argv, &options, &file);
   if (file.empty()) {
     fprintf(stderr, "No script was specified.\n");
     return 1;
   }
-  Isolate* isolate = Isolate::GetCurrent();
+  Isolate* isolate = Isolate::New();
+  Isolate::Scope isolate_scope(isolate);
   HandleScope scope(isolate);
   Handle<String> source = ReadFile(isolate, file);
   if (source.IsEmpty()) {

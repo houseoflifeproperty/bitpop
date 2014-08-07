@@ -46,9 +46,17 @@ class TestUtilsApi(recipe_api.RecipeApi):
       """Name of the test."""
       raise NotImplementedError()
 
+    def pre_run(self, suffix):  # pragma: no cover
+      """Steps to execute before running the test."""
+      return []
+
     def run(self, suffix):  # pragma: no cover
       """Run the test. suffix is 'with patch' or 'without patch'."""
       raise NotImplementedError()
+
+    def post_run(self, suffix):  # pragma: no cover
+      """Steps to execute after running the test."""
+      return []
 
     def has_valid_results(self, suffix):  # pragma: no cover
       """
@@ -79,14 +87,22 @@ class TestUtilsApi(recipe_api.RecipeApi):
       deapply_patch_fn - function that takes a list of failing tests
                          and undoes any effect of the previously applied patch
     """
+    # Convert iterable to list, since it is enumerated multiple times.
+    tests = list(tests)
+
     if self.m.step_history.failed:
       yield self.m.python.inline(
-        'Aborting due to failed build state.',
+        'Aborting due to failed build state',
         "import sys; sys.exit(1)",
         always_run=True, abort_on_failure=True)
       return  # won't actually hit this, but be explicit
 
-    yield (t.run('with patch') for t in tests)
+    def run(prefix, tests):
+      yield (t.pre_run(prefix) for t in tests)
+      yield (t.run(prefix) for t in tests)
+      yield (t.post_run(prefix) for t in tests)
+
+    yield run('with patch', tests)
 
     failing_tests = []
     for t in tests:
@@ -106,7 +122,7 @@ class TestUtilsApi(recipe_api.RecipeApi):
 
     yield deapply_patch_fn(failing_tests)
 
-    yield (t.run('without patch') for t in failing_tests)
+    yield run('without patch', failing_tests)
     yield (self._summarize_retried_test(t) for t in failing_tests)
 
   def _summarize_retried_test(self, test):

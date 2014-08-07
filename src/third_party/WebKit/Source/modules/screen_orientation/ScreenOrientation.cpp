@@ -5,11 +5,16 @@
 #include "config.h"
 #include "modules/screen_orientation/ScreenOrientation.h"
 
-#include "core/frame/DOMWindow.h"
+#include "bindings/v8/ScriptPromise.h"
+#include "bindings/v8/ScriptPromiseResolverWithContext.h"
+#include "core/dom/DOMException.h"
+#include "core/dom/Document.h"
+#include "core/dom/ExceptionCode.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Screen.h"
+#include "modules/screen_orientation/LockOrientationCallback.h"
 #include "modules/screen_orientation/ScreenOrientationController.h"
-#include "public/platform/Platform.h"
 #include "public/platform/WebScreenOrientationType.h"
 
 // This code assumes that WebScreenOrientationType values are included in WebScreenOrientationLockType.
@@ -51,7 +56,7 @@ static ScreenOrientationInfo* orientationsMap(unsigned& length)
     return orientationMap;
 }
 
-static const AtomicString& orientationTypeToString(blink::WebScreenOrientationType orientation)
+const AtomicString& ScreenOrientation::orientationTypeToString(blink::WebScreenOrientationType orientation)
 {
     unsigned length = 0;
     ScreenOrientationInfo* orientationMap = orientationsMap(length);
@@ -79,26 +84,7 @@ static blink::WebScreenOrientationLockType stringToOrientationLock(const AtomicS
 
 ScreenOrientation::ScreenOrientation(Screen& screen)
     : DOMWindowProperty(screen.frame())
-    , m_orientationLockTimer(this, &ScreenOrientation::orientationLockTimerFired)
-    , m_prospectiveLock(blink::WebScreenOrientationLockDefault)
 {
-}
-
-void ScreenOrientation::lockOrientationAsync(blink::WebScreenOrientationLockType orientation)
-{
-    if (m_orientationLockTimer.isActive())
-        m_orientationLockTimer.stop();
-
-    m_prospectiveLock = orientation;
-    m_orientationLockTimer.startOneShot(0, FROM_HERE);
-}
-
-void ScreenOrientation::orientationLockTimerFired(Timer<ScreenOrientation>*)
-{
-    if (m_prospectiveLock == blink::WebScreenOrientationLockDefault)
-        blink::Platform::current()->unlockOrientation();
-    else
-        blink::Platform::current()->lockOrientation(m_prospectiveLock);
 }
 
 const char* ScreenOrientation::supplementName()
@@ -131,23 +117,45 @@ ScreenOrientation::~ScreenOrientation()
 const AtomicString& ScreenOrientation::orientation(Screen& screen)
 {
     ScreenOrientation& screenOrientation = ScreenOrientation::from(screen);
-    if (!screenOrientation.document()) {
+    if (!screenOrientation.frame()) {
         // FIXME: we should try to return a better guess, like the latest known value.
         return orientationTypeToString(blink::WebScreenOrientationPortraitPrimary);
     }
-    ScreenOrientationController& controller = ScreenOrientationController::from(*screenOrientation.document());
+    ScreenOrientationController& controller = ScreenOrientationController::from(*screenOrientation.frame());
     return orientationTypeToString(controller.orientation());
 }
 
-bool ScreenOrientation::lockOrientation(Screen& screen, const AtomicString& lockString)
+ScriptPromise ScreenOrientation::lockOrientation(ScriptState* state, Screen& screen, const AtomicString& lockString)
 {
-    ScreenOrientation::from(screen).lockOrientationAsync(stringToOrientationLock(lockString));
-    return true;
+    RefPtr<ScriptPromiseResolverWithContext> resolver = ScriptPromiseResolverWithContext::create(state);
+    ScriptPromise promise = resolver->promise();
+
+    ScreenOrientation& screenOrientation = ScreenOrientation::from(screen);
+    Document* document = screenOrientation.document();
+
+    if (!document || !screenOrientation.frame()) {
+        RefPtrWillBeRawPtr<DOMException> exception = DOMException::create(InvalidStateError, "The object is no longer associated to a document.");
+        resolver->reject(exception);
+        return promise;
+    }
+
+    if (document->isSandboxed(SandboxOrientationLock)) {
+        RefPtrWillBeRawPtr<DOMException> exception = DOMException::create(SecurityError, "The document is sandboxed and lacks the 'allow-orientation-lock' flag.");
+        resolver->reject(exception);
+        return promise;
+    }
+
+    ScreenOrientationController::from(*screenOrientation.frame()).lockOrientation(stringToOrientationLock(lockString), new LockOrientationCallback(resolver));
+    return promise;
 }
 
 void ScreenOrientation::unlockOrientation(Screen& screen)
 {
-    ScreenOrientation::from(screen).lockOrientationAsync(blink::WebScreenOrientationLockDefault);
+    ScreenOrientation& screenOrientation = ScreenOrientation::from(screen);
+    if (!screenOrientation.frame())
+        return;
+
+    ScreenOrientationController::from(*screenOrientation.frame()).unlockOrientation();
 }
 
 } // namespace WebCore

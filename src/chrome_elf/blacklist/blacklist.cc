@@ -7,6 +7,8 @@
 #include <assert.h>
 #include <string.h>
 
+#include <vector>
+
 #include "base/basictypes.h"
 #include "chrome_elf/blacklist/blacklist_interceptions.h"
 #include "chrome_elf/chrome_elf_constants.h"
@@ -21,11 +23,28 @@ extern "C" IMAGE_DOS_HEADER __ImageBase;
 
 namespace blacklist{
 
+// The DLLs listed here are known (or under strong suspicion) of causing crashes
+// when they are loaded in the browser. DLLs should only be added to this list
+// if there is nothing else Chrome can do to prevent those crashes.
+// For more information about how this list is generated, and how to get off
+// of it, see:
+// https://sites.google.com/a/chromium.org/dev/Home/third-party-developers
 const wchar_t* g_troublesome_dlls[kTroublesomeDllsMaxCount] = {
+  L"activedetect32.dll",                // Lenovo One Key Theater.
+                                        // See crbug.com/379218.
+  L"activedetect64.dll",                // Lenovo One Key Theater.
+  L"bitguard.dll",                      // Unknown (suspected malware).
+  L"chrmxtn.dll",                       // Unknown (keystroke logger).
   L"datamngr.dll",                      // Unknown (suspected adware).
   L"hk.dll",                            // Unknown (keystroke logger).
   L"libsvn_tsvn32.dll",                 // TortoiseSVN.
   L"lmrn.dll",                          // Unknown.
+  L"scdetour.dll",                      // Quick Heal Antivirus.
+                                        // See crbug.com/382561.
+  L"systemk.dll",                       // Unknown (suspected adware).
+  L"windowsapihookdll32.dll",           // Lenovo One Key Theater.
+                                        // See crbug.com/379218.
+  L"windowsapihookdll64.dll",           // Lenovo One Key Theater.
   // Keep this null pointer here to mark the end of the list.
   NULL,
 };
@@ -46,20 +65,54 @@ namespace {
 // determine if the blacklist is enabled for them.
 bool g_blacklist_initialized = false;
 
-// Record that the thunk setup completed succesfully and close the registry
-// key handle since it is no longer needed.
-void RecordSuccessfulThunkSetup(HKEY* key) {
-  if (key != NULL) {
-    DWORD blacklist_state = blacklist::BLACKLIST_SETUP_RUNNING;
-    ::RegSetValueEx(*key,
-                    blacklist::kBeaconState,
-                    0,
-                    REG_DWORD,
-                    reinterpret_cast<LPBYTE>(&blacklist_state),
-                    sizeof(blacklist_state));
-    ::RegCloseKey(*key);
-    key = NULL;
+// Helper to set DWORD registry values.
+DWORD SetDWValue(HKEY* key, const wchar_t* property, DWORD value) {
+  return ::RegSetValueEx(*key,
+                         property,
+                         0,
+                         REG_DWORD,
+                         reinterpret_cast<LPBYTE>(&value),
+                         sizeof(value));
+}
+
+bool GenerateStateFromBeaconAndAttemptCount(HKEY* key, DWORD blacklist_state) {
+  LONG result = 0;
+  if (blacklist_state == blacklist::BLACKLIST_SETUP_RUNNING) {
+    // Some part of the blacklist setup failed last time.  If this has occured
+    // blacklist::kBeaconMaxAttempts times in a row we switch the state to
+    // failed and skip setting up the blacklist.
+    DWORD attempt_count = 0;
+    DWORD attempt_count_size = sizeof(attempt_count);
+    result = ::RegQueryValueEx(*key,
+                               blacklist::kBeaconAttemptCount,
+                               0,
+                               NULL,
+                               reinterpret_cast<LPBYTE>(&attempt_count),
+                               &attempt_count_size);
+
+    if (result == ERROR_FILE_NOT_FOUND)
+      attempt_count = 0;
+    else if (result != ERROR_SUCCESS)
+      return false;
+
+    ++attempt_count;
+    SetDWValue(key, blacklist::kBeaconAttemptCount, attempt_count);
+
+    if (attempt_count >= blacklist::kBeaconMaxAttempts) {
+      blacklist_state = blacklist::BLACKLIST_SETUP_FAILED;
+      SetDWValue(key, blacklist::kBeaconState, blacklist_state);
+      return false;
+    }
+  } else if (blacklist_state == blacklist::BLACKLIST_ENABLED) {
+    // If the blacklist succeeded on the previous run reset the failure
+    // counter.
+    result =
+        SetDWValue(key, blacklist::kBeaconAttemptCount, static_cast<DWORD>(0));
+    if (result != ERROR_SUCCESS) {
+      return false;
+    }
   }
+  return true;
 }
 
 }  // namespace
@@ -89,7 +142,7 @@ bool LeaveSetupBeacon() {
     return false;
 
   // Retrieve the current blacklist state.
-  DWORD blacklist_state = BLACKLIST_DISABLED;
+  DWORD blacklist_state = BLACKLIST_STATE_MAX;
   DWORD blacklist_state_size = sizeof(blacklist_state);
   DWORD type = 0;
   result = ::RegQueryValueEx(key,
@@ -99,21 +152,18 @@ bool LeaveSetupBeacon() {
                              reinterpret_cast<LPBYTE>(&blacklist_state),
                              &blacklist_state_size);
 
-  if (blacklist_state != BLACKLIST_ENABLED ||
-      result != ERROR_SUCCESS || type != REG_DWORD) {
+  if (blacklist_state == BLACKLIST_DISABLED || result != ERROR_SUCCESS ||
+      type != REG_DWORD) {
     ::RegCloseKey(key);
     return false;
   }
 
-  // Mark the blacklist setup code as running so if it crashes the blacklist
-  // won't be enabled for the next run.
-  blacklist_state = BLACKLIST_SETUP_RUNNING;
-  result = ::RegSetValueEx(key,
-                           kBeaconState,
-                           0,
-                           REG_DWORD,
-                           reinterpret_cast<LPBYTE>(&blacklist_state),
-                           sizeof(blacklist_state));
+  if (!GenerateStateFromBeaconAndAttemptCount(&key, blacklist_state)) {
+    ::RegCloseKey(key);
+    return false;
+  }
+
+  result = SetDWValue(&key, kBeaconState, BLACKLIST_SETUP_RUNNING);
   ::RegCloseKey(key);
 
   return (result == ERROR_SUCCESS);
@@ -134,15 +184,28 @@ bool ResetBeacon() {
   if (result != ERROR_SUCCESS)
     return false;
 
-  DWORD blacklist_state = BLACKLIST_ENABLED;
-  result = ::RegSetValueEx(key,
-                           kBeaconState,
-                           0,
-                           REG_DWORD,
-                           reinterpret_cast<LPBYTE>(&blacklist_state),
-                           sizeof(blacklist_state));
-  ::RegCloseKey(key);
+  DWORD blacklist_state = BLACKLIST_STATE_MAX;
+  DWORD blacklist_state_size = sizeof(blacklist_state);
+  DWORD type = 0;
+  result = ::RegQueryValueEx(key,
+                             kBeaconState,
+                             0,
+                             &type,
+                             reinterpret_cast<LPBYTE>(&blacklist_state),
+                             &blacklist_state_size);
 
+  if (result != ERROR_SUCCESS || type != REG_DWORD) {
+    ::RegCloseKey(key);
+    return false;
+  }
+
+  // Reaching this point with the setup running state means the setup did not
+  // crash, so we reset to enabled.  Any other state indicates that setup was
+  // skipped; in that case we leave the state alone for later recording.
+  if (blacklist_state == BLACKLIST_SETUP_RUNNING)
+    result = SetDWValue(&key, kBeaconState, BLACKLIST_ENABLED);
+
+  ::RegCloseKey(key);
   return (result == ERROR_SUCCESS);
 }
 
@@ -240,7 +303,8 @@ bool Initialize(bool force) {
   if (IsNonBrowserProcess())
     return false;
 
-  // Check to see if a beacon is present, abort if so.
+  // Check to see if the blacklist beacon is still set to running (indicating a
+  // failure) or disabled, and abort if so.
   if (!force && !LeaveSetupBeacon())
     return false;
 
@@ -255,33 +319,6 @@ bool Initialize(bool force) {
   if (!thunk)
     return false;
 
-  // Record that we are starting the thunk setup code.
-  HKEY key = NULL;
-  DWORD disposition = 0;
-  LONG result = ::RegCreateKeyEx(HKEY_CURRENT_USER,
-                                 kRegistryBeaconPath,
-                                 0,
-                                 NULL,
-                                 REG_OPTION_NON_VOLATILE,
-                                 KEY_QUERY_VALUE | KEY_SET_VALUE,
-                                 NULL,
-                                 &key,
-                                 &disposition);
-  if (result == ERROR_SUCCESS) {
-    DWORD blacklist_state = BLACKLIST_THUNK_SETUP;
-    ::RegSetValueEx(key,
-                    kBeaconState,
-                    0,
-                    REG_DWORD,
-                    reinterpret_cast<LPBYTE>(&blacklist_state),
-                    sizeof(blacklist_state));
-  } else {
-    key = NULL;
-  }
-
-  // Record that we have initialized the blacklist.
-  g_blacklist_initialized = true;
-
   BYTE* thunk_storage = reinterpret_cast<BYTE*>(&g_thunk_storage);
 
   // Mark the thunk storage as readable and writeable, since we
@@ -291,7 +328,6 @@ bool Initialize(bool force) {
                       sizeof(g_thunk_storage),
                       PAGE_EXECUTE_READWRITE,
                       &old_protect)) {
-    RecordSuccessfulThunkSetup(&key);
     return false;
   }
 
@@ -334,15 +370,58 @@ bool Initialize(bool force) {
 #endif
   delete thunk;
 
+  // Record if we have initialized the blacklist.
+  g_blacklist_initialized = NT_SUCCESS(ret);
+
   // Mark the thunk storage as executable and prevent any future writes to it.
   page_executable = page_executable && VirtualProtect(&g_thunk_storage,
                                                       sizeof(g_thunk_storage),
                                                       PAGE_EXECUTE_READ,
                                                       &old_protect);
 
-  RecordSuccessfulThunkSetup(&key);
+  AddDllsFromRegistryToBlacklist();
 
   return NT_SUCCESS(ret) && page_executable;
+}
+
+bool AddDllsFromRegistryToBlacklist() {
+  HKEY key = NULL;
+  LONG result = ::RegOpenKeyEx(HKEY_CURRENT_USER,
+                               kRegistryFinchListPath,
+                               0,
+                               KEY_QUERY_VALUE | KEY_SET_VALUE,
+                               &key);
+
+  if (result != ERROR_SUCCESS)
+    return false;
+
+  // We add dlls from the registry to the blacklist, and then clear registry.
+  DWORD value_len;
+  DWORD name_len = MAX_PATH;
+  std::vector<wchar_t> name_buffer(name_len);
+  for (int i = 0; result == ERROR_SUCCESS; ++i) {
+    name_len = MAX_PATH;
+    value_len = 0;
+    result = ::RegEnumValue(
+        key, i, &name_buffer[0], &name_len, NULL, NULL, NULL, &value_len);
+    name_len = name_len + 1;
+    value_len = value_len + 1;
+    std::vector<wchar_t> value_buffer(value_len);
+    result = ::RegEnumValue(key, i, &name_buffer[0], &name_len, NULL, NULL,
+                            reinterpret_cast<BYTE*>(&value_buffer[0]),
+                            &value_len);
+    value_buffer[value_len - 1] = L'\0';
+
+    if (result == ERROR_SUCCESS) {
+      AddDllToBlacklist(&value_buffer[0]);
+    }
+  }
+
+  // Delete the finch registry key to clear the values.
+  result = ::RegDeleteKey(key, L"");
+
+  ::RegCloseKey(key);
+  return result == ERROR_SUCCESS;
 }
 
 }  // namespace blacklist

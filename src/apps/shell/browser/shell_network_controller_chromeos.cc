@@ -14,7 +14,6 @@
 #include "chromeos/network/network_handler_callbacks.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/shill_property_util.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace apps {
@@ -126,7 +125,7 @@ void ShellNetworkController::ConnectIfUnconnected() {
     return;
 
   chromeos::NetworkStateHandler::NetworkStateList state_list;
-  handler->network_state_handler()->GetNetworkListByType(
+  handler->network_state_handler()->GetVisibleNetworkListByType(
       chromeos::NetworkTypePattern::WiFi(), &state_list);
   for (chromeos::NetworkStateHandler::NetworkStateList::const_iterator it =
        state_list.begin(); it != state_list.end(); ++it) {

@@ -11,7 +11,8 @@ using syncer::ModelType;
 namespace browser_sync {
 
 FakeDataTypeController::FakeDataTypeController(ModelType type)
-      : DataTypeController(base::MessageLoopProxy::current(), base::Closure()),
+      : DataTypeController(base::MessageLoopProxy::current(), base::Closure(),
+                           DisableTypeCallback()),
         state_(NOT_RUNNING),
         model_load_delayed_(false),
         type_(type) {}
@@ -131,12 +132,6 @@ DataTypeController::State FakeDataTypeController::state() const {
 }
 
 void FakeDataTypeController::OnSingleDatatypeUnrecoverableError(
-    const tracked_objects::Location& from_here,
-    const std::string& message) {
-  ADD_FAILURE() << message;
-}
-
-void FakeDataTypeController::RecordUnrecoverableError(
     const tracked_objects::Location& from_here,
     const std::string& message) {
   ADD_FAILURE() << message;

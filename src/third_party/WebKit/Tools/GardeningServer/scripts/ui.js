@@ -211,33 +211,6 @@ ui.onebar = base.extends('div', {
     }
 });
 
-// FIXME: Loading a module shouldn't set off a timer.  The controller should kick this off.
-setInterval(function() {
-    Array.prototype.forEach.call(document.querySelectorAll("time.relative"), function(time) {
-        time.update && time.update();
-    });
-}, config.kRelativeTimeUpdateFrequency);
-
-ui.RelativeTime = base.extends('time', {
-    init: function()
-    {
-        this.className = 'relative';
-    },
-    date: function()
-    {
-        return this._date;
-    },
-    update: function()
-    {
-        this.textContent = this._date ? base.relativizeTime(this._date) : '';
-    },
-    setDate: function(date)
-    {
-        this._date = date;
-        this.update();
-    }
-});
-
 ui.TreeStatus = base.extends('div',  {
     addStatus: function(name)
     {
@@ -351,6 +324,36 @@ ui.StatusArea = base.extends('div',  {
 });
 
 ui.revisionDetails = base.extends('span', {
+    // We only support 2 levels of visual escalation levels: warning and critical.
+    warnRollRevisionSpanThreshold: 45,
+    criticalRollRevisionSpanThreshold: 80,
+    classNameForUrgencyLevel: function(rollRevisionSpan) {
+        if (rollRevisionSpan < this.criticalRollRevisionSpanThreshold)
+            return "warning";
+        return "critical";
+    },
+    updateUI: function(totRevision) {
+        this.appendChild(document.createElement("br"));
+        this.appendChild(document.createTextNode('Last roll is to '));
+        this.appendChild(ui.createLinkNode(trac.changesetURL(this.lastRolledRevision), this.lastRolledRevision));
+        var rollRevisionSpan = totRevision - this.lastRolledRevision;
+        // Don't clutter the UI if we haven't run behind.
+        if (rollRevisionSpan > this.warnRollRevisionSpanThreshold) {
+            var wrapper = document.createElement("span");
+            wrapper.className = this.classNameForUrgencyLevel(rollRevisionSpan);
+            wrapper.appendChild(document.createTextNode("(" + rollRevisionSpan + " revisions behind)"));
+            this.appendChild(wrapper);
+        }
+        this.appendChild(document.createTextNode(', current autoroll '));
+        if (this.roll) {
+            var linkText = "" + this.roll.fromRevision + ":" + this.roll.toRevision;
+            this.appendChild(ui.createLinkNode(this.roll.url, linkText));
+            if (this.roll.isStopped)
+                this.appendChild(document.createTextNode(' (STOPPED) '));
+        } else {
+            this.appendChild(document.createTextNode(' None'));
+        }
+    },
     init: function() {
         var theSpan = this;
         theSpan.appendChild(document.createTextNode('Latest revision processed by every bot: '));
@@ -407,21 +410,10 @@ ui.revisionDetails = base.extends('span', {
         theSpan.appendChild(document.createTextNode(', trunk is at '));
         theSpan.appendChild(ui.createLinkNode(trac.changesetURL(totRevision), totRevision));
 
-        checkout.lastBlinkRollRevision().then(function(revision) {
-            theSpan.appendChild(document.createTextNode(', last roll is to '));
-            theSpan.appendChild(ui.createLinkNode(trac.changesetURL(revision), revision));
-        }, function() {});
-
-        rollbot.fetchCurrentRoll().then(function(roll) {
-            theSpan.appendChild(document.createTextNode(', current autoroll '));
-            if (roll) {
-                var linkText = "" + roll.fromRevision + ":" + roll.toRevision;
-                theSpan.appendChild(ui.createLinkNode(roll.url, linkText));
-                if (roll.isStopped)
-                    theSpan.appendChild(document.createTextNode(' (STOPPED) '));
-            } else {
-                theSpan.appendChild(document.createTextNode(' None'));
-            }
+        Promise.all([checkout.lastBlinkRollRevision(), rollbot.fetchCurrentRoll()]).then(function(results) {
+            theSpan.lastRolledRevision = results[0];
+            theSpan.roll = results[1];
+            theSpan.updateUI(totRevision);
         });
     }
 });

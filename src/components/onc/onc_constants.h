@@ -58,9 +58,11 @@ ONC_EXPORT extern const char kUnencryptedConfiguration[];
 // NetworkConfiguration.
 namespace network_config {
 ONC_EXPORT extern const char kCellular[];
+ONC_EXPORT extern const char kDevice[];
 ONC_EXPORT extern const char kEthernet[];
 ONC_EXPORT extern const char kGUID[];
 ONC_EXPORT extern const char kIPConfigs[];
+ONC_EXPORT extern const char kMacAddress[];
 ONC_EXPORT extern const char kName[];
 ONC_EXPORT extern const char kNameServers[];
 ONC_EXPORT extern const char kProxySettings[];
@@ -79,11 +81,14 @@ ONC_EXPORT extern std::string WifiProperty(const std::string& property);
 }  // namespace network_config
 
 namespace network_type {
-ONC_EXPORT extern const char kAllTypes[];
 ONC_EXPORT extern const char kCellular[];
 ONC_EXPORT extern const char kEthernet[];
 ONC_EXPORT extern const char kVPN[];
 ONC_EXPORT extern const char kWiFi[];
+ONC_EXPORT extern const char kWimax[];
+// Patterns matching multiple types, not part of the ONC spec.
+ONC_EXPORT extern const char kAllTypes[];
+ONC_EXPORT extern const char kWireless[];
 }  // namespace network_type
 
 namespace cellular {
@@ -113,7 +118,9 @@ ONC_EXPORT extern const char kProviderRequiresRoaming[];
 ONC_EXPORT extern const char kRoamingState[];
 ONC_EXPORT extern const char kSelectedNetwork[];
 ONC_EXPORT extern const char kServingOperator[];
+ONC_EXPORT extern const char kSIMLockEnabled[];
 ONC_EXPORT extern const char kSIMLockStatus[];
+ONC_EXPORT extern const char kSIMLockType[];
 ONC_EXPORT extern const char kSIMPresent[];
 ONC_EXPORT extern const char kSupportedCarriers[];
 ONC_EXPORT extern const char kSupportNetworkScan[];
@@ -277,6 +284,7 @@ ONC_EXPORT extern const char kAuth[];
 ONC_EXPORT extern const char kCipher[];
 ONC_EXPORT extern const char kCompLZO[];
 ONC_EXPORT extern const char kCompNoAdapt[];
+ONC_EXPORT extern const char kIgnoreDefaultRoute[];
 ONC_EXPORT extern const char kInteract[];
 ONC_EXPORT extern const char kKeyDirection[];
 ONC_EXPORT extern const char kNoInteract[];

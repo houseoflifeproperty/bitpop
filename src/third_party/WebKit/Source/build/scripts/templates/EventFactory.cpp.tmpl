@@ -2,14 +2,18 @@
 {{license()}}
 
 #include "config.h"
+{% if suffix == 'Modules' %}
+#include "modules/{{namespace}}{{suffix}}Factory.h"
+{% else %}
 #include "core/events/{{namespace}}Factory.h"
+{% endif %}
 
-#include "{{namespace}}Headers.h"
-#include "RuntimeEnabledFeatures.h"
+#include "{{namespace}}{{suffix}}Headers.h"
+#include "platform/RuntimeEnabledFeatures.h"
 
 namespace WebCore {
 
-PassRefPtrWillBeRawPtr<{{namespace}}> {{namespace}}Factory::create(const String& type)
+PassRefPtrWillBeRawPtr<{{namespace}}> {{namespace}}{{suffix}}Factory::create(const String& type)
 {
     {% for event in events %}
     {% filter enable_conditional(event.Conditional) %}

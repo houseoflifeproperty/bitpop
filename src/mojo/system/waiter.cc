@@ -18,7 +18,8 @@ Waiter::Waiter()
       initialized_(false),
 #endif
       awoken_(false),
-      wait_result_(MOJO_RESULT_INTERNAL) {
+      awake_result_(MOJO_RESULT_INTERNAL),
+      awake_context_(static_cast<uint32_t>(-1)) {
 }
 
 Waiter::~Waiter() {
@@ -30,12 +31,12 @@ void Waiter::Init() {
 #endif
   awoken_ = false;
   // NOTE(vtl): If performance ever becomes an issue, we can disable the setting
-  // of |wait_result_| (except the first one in |Awake()|) in Release builds.
-  wait_result_ = MOJO_RESULT_INTERNAL;
+  // of |awake_result_| (except the first one in |Awake()|) in Release builds.
+  awake_result_ = MOJO_RESULT_INTERNAL;
 }
 
 // TODO(vtl): Fast-path the |deadline == 0| case?
-MojoResult Waiter::Wait(MojoDeadline deadline) {
+MojoResult Waiter::Wait(MojoDeadline deadline, uint32_t* context) {
   base::AutoLock locker(lock_);
 
 #ifndef NDEBUG
@@ -46,8 +47,10 @@ MojoResult Waiter::Wait(MojoDeadline deadline) {
 
   // Fast-path the already-awoken case:
   if (awoken_) {
-    DCHECK_NE(wait_result_, MOJO_RESULT_INTERNAL);
-    return wait_result_;
+    DCHECK_NE(awake_result_, MOJO_RESULT_INTERNAL);
+    if (context)
+      *context = awake_context_;
+    return awake_result_;
   }
 
   // |MojoDeadline| is actually a |uint64_t|, but we need a signed quantity.
@@ -72,18 +75,21 @@ MojoResult Waiter::Wait(MojoDeadline deadline) {
     } while (!awoken_);
   }
 
-  DCHECK_NE(wait_result_, MOJO_RESULT_INTERNAL);
-  return wait_result_;
+  DCHECK_NE(awake_result_, MOJO_RESULT_INTERNAL);
+  if (context)
+    *context = awake_context_;
+  return awake_result_;
 }
 
-void Waiter::Awake(MojoResult wait_result) {
+void Waiter::Awake(MojoResult result, uint32_t context) {
   base::AutoLock locker(lock_);
 
   if (awoken_)
     return;
 
   awoken_ = true;
-  wait_result_ = wait_result;
+  awake_result_ = result;
+  awake_context_ = context;
   cv_.Signal();
   // |cv_.Wait()|/|cv_.TimedWait()| will return after |lock_| is released.
 }

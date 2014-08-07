@@ -168,7 +168,7 @@ AXObject* AXScrollView::webAreaObject() const
         return 0;
 
     Document* doc = toFrameView(m_scrollView)->frame().document();
-    if (!doc || !doc->renderer())
+    if (!doc || !doc->renderView())
         return 0;
 
     return axObjectCache()->getOrCreate(doc);
@@ -209,7 +209,8 @@ AXObject* AXScrollView::parentObject() const
     if (!m_scrollView || !m_scrollView->isFrameView())
         return 0;
 
-    HTMLFrameOwnerElement* owner = toFrameView(m_scrollView)->frame().ownerElement();
+    // FIXME: Broken for OOPI.
+    HTMLFrameOwnerElement* owner = toFrameView(m_scrollView)->frame().deprecatedLocalOwner();
     if (owner && owner->renderer())
         return axObjectCache()->getOrCreate(owner);
 
@@ -221,7 +222,7 @@ AXObject* AXScrollView::parentObjectIfExists() const
     if (!m_scrollView || !m_scrollView->isFrameView())
         return 0;
 
-    HTMLFrameOwnerElement* owner = toFrameView(m_scrollView)->frame().ownerElement();
+    HTMLFrameOwnerElement* owner = toFrameView(m_scrollView)->frame().deprecatedLocalOwner();
     if (owner && owner->renderer())
         return axObjectCache()->get(owner);
 

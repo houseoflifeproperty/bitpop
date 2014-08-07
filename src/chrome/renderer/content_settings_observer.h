@@ -51,32 +51,33 @@ class ContentSettingsObserver
   // blink::WebPermissionClient implementation.
   virtual bool allowDatabase(const blink::WebString& name,
                              const blink::WebString& display_name,
-                             unsigned long estimated_size);
-  virtual bool allowFileSystem();
+                             unsigned long estimated_size) OVERRIDE;
+  virtual void requestFileSystemAccessAsync(
+      const blink::WebPermissionCallbacks& callbacks) OVERRIDE;
   virtual bool allowImage(bool enabled_per_settings,
-                          const blink::WebURL& image_url);
+                          const blink::WebURL& image_url) OVERRIDE;
   virtual bool allowIndexedDB(const blink::WebString& name,
-                              const blink::WebSecurityOrigin& origin);
-  virtual bool allowPlugins(bool enabled_per_settings);
-  virtual bool allowScript(bool enabled_per_settings);
+                              const blink::WebSecurityOrigin& origin) OVERRIDE;
+  virtual bool allowPlugins(bool enabled_per_settings) OVERRIDE;
+  virtual bool allowScript(bool enabled_per_settings) OVERRIDE;
   virtual bool allowScriptFromSource(bool enabled_per_settings,
-                                     const blink::WebURL& script_url);
-  virtual bool allowStorage(bool local);
-  virtual bool allowReadFromClipboard(bool default_value);
-  virtual bool allowWriteToClipboard(bool default_value);
-  virtual bool allowWebComponents(bool default_value);
-  virtual bool allowMutationEvents(bool default_value);
-  virtual bool allowPushState();
-  virtual void didNotAllowPlugins();
-  virtual void didNotAllowScript();
+                                     const blink::WebURL& script_url) OVERRIDE;
+  virtual bool allowStorage(bool local) OVERRIDE;
+  virtual bool allowReadFromClipboard(bool default_value) OVERRIDE;
+  virtual bool allowWriteToClipboard(bool default_value) OVERRIDE;
+  virtual bool allowWebComponents(bool default_value) OVERRIDE;
+  virtual bool allowMutationEvents(bool default_value) OVERRIDE;
+  virtual bool allowPushState() OVERRIDE;
+  virtual void didNotAllowPlugins() OVERRIDE;
+  virtual void didNotAllowScript() OVERRIDE;
   virtual bool allowDisplayingInsecureContent(
       bool allowed_per_settings,
       const blink::WebSecurityOrigin& context,
-      const blink::WebURL& url);
+      const blink::WebURL& url) OVERRIDE;
   virtual bool allowRunningInsecureContent(
       bool allowed_per_settings,
       const blink::WebSecurityOrigin& context,
-      const blink::WebURL& url);
+      const blink::WebURL& url) OVERRIDE;
 
   // This is used for cases when the NPAPI plugins malfunction if used.
   bool AreNPAPIPluginsBlocked() const;
@@ -98,6 +99,7 @@ class ContentSettingsObserver
   void OnSetAllowDisplayingInsecureContent(bool allow);
   void OnSetAllowRunningInsecureContent(bool allow);
   void OnReloadFrame();
+  void OnRequestFileSystemAccessAsyncResponse(int request_id, bool allowed);
 
   // Resets the |content_blocked_| array.
   void ClearBlockedContentSettings();
@@ -140,6 +142,10 @@ class ContentSettingsObserver
   std::set<std::string> temporarily_allowed_plugins_;
   bool is_interstitial_page_;
   bool npapi_plugins_blocked_;
+
+  int current_request_id_;
+  typedef std::map<int, blink::WebPermissionCallbacks> PermissionRequestMap;
+  PermissionRequestMap permission_requests_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentSettingsObserver);
 };

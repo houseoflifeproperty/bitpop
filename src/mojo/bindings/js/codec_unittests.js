@@ -84,9 +84,12 @@ define([
     foo.name = "I am a banana";
     // This is supposed to be a handle, but we fake it with an integer.
     foo.source = 23423782;
+    foo.array_of_array_of_bools = [
+      [true], [false, true]
+    ];
 
     var messageName = 31;
-    var payloadSize = 240;
+    var payloadSize = 304;
 
     var builder = new codec.MessageBuilder(messageName, payloadSize);
     builder.encodeStruct(sample.Foo, foo);
@@ -96,10 +99,10 @@ define([
     var expectedMemory = new Uint8Array([
       /*  0: */   16,    0,    0,    0,    2,    0,    0,    0,
       /*  8: */   31,    0,    0,    0,    0,    0,    0,    0,
-      /* 16: */   80,    0,    0,    0,   13,    0,    0,    0,
+      /* 16: */   88,    0,    0,    0,   14,    0,    0,    0,
       /* 24: */ 0xD5, 0xB4, 0x12, 0x02, 0x93, 0x6E, 0x01,    0,
       /* 32: */    5,    0,    0,    0,    0,    0,    0,    0,
-      /* 40: */   56,    0,    0,    0,    0,    0,    0,    0,
+      /* 40: */   64,    0,    0,    0,    0,    0,    0,    0,
     ]);
     // TODO(abarth): Test more of the message's raw memory.
     var actualMemory = new Uint8Array(message.buffer.arrayBuffer,

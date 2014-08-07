@@ -7,7 +7,9 @@
 
 #include <string>
 
+#include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
+#include "components/invalidation/invalidation_service.h"
 #include "components/sync_driver/data_type_controller.h"
 #include "components/sync_driver/data_type_error_handler.h"
 #include "components/sync_driver/sync_api_component_factory.h"
@@ -70,7 +72,7 @@ class ProfileSyncComponentsFactory
         : model_associator(ma), change_processor(cp) {}
   };
 
-  virtual ~ProfileSyncComponentsFactory() {}
+  virtual ~ProfileSyncComponentsFactory() OVERRIDE {}
 
   // Creates and registers enabled datatypes with the provided
   // ProfileSyncService.
@@ -92,7 +94,9 @@ class ProfileSyncComponentsFactory
   virtual browser_sync::SyncBackendHost* CreateSyncBackendHost(
       const std::string& name,
       Profile* profile,
-      const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs) = 0;
+      invalidation::InvalidationService* invalidator,
+      const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
+      const base::FilePath& sync_folder) = 0;
 
   // Legacy datatypes that need to be converted to the SyncableService API.
   virtual SyncComponents CreateBookmarkSyncComponents(

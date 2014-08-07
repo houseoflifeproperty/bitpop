@@ -5,12 +5,12 @@
 #include <stdarg.h>
 #include <cmath>
 
-#include "globals.h"
-#include "utils.h"
-#include "strtod.h"
-#include "bignum.h"
-#include "cached-powers.h"
-#include "double.h"
+#include "src/globals.h"
+#include "src/utils.h"
+#include "src/strtod.h"
+#include "src/bignum.h"
+#include "src/cached-powers.h"
+#include "src/double.h"
 
 namespace v8 {
 namespace internal {
@@ -153,7 +153,8 @@ static void ReadDiyFp(Vector<const char> buffer,
 static bool DoubleStrtod(Vector<const char> trimmed,
                          int exponent,
                          double* result) {
-#if (V8_TARGET_ARCH_IA32 || defined(USE_SIMULATOR)) && !defined(_MSC_VER)
+#if (V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X87 || defined(USE_SIMULATOR)) && \
+    !defined(_MSC_VER)
   // On x86 the floating-point stack can be 64 or 80 bits wide. If it is
   // 80 bits wide (as is the case on Linux) then double-rounding occurs and the
   // result is not accurate.

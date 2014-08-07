@@ -31,14 +31,25 @@
 #include "config.h"
 #include "bindings/v8/ScriptPromise.h"
 
-#include "RuntimeEnabledFeatures.h"
+#include "bindings/v8/ScriptPromiseResolver.h"
 #include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8DOMWrapper.h"
-#include "bindings/v8/custom/V8PromiseCustom.h"
+#include "core/dom/DOMException.h"
 
 #include <v8.h>
 
 namespace WebCore {
+
+namespace {
+
+struct WithScriptState {
+    // Used by ToV8Value<WithScriptState, ScriptState*>.
+    static v8::Handle<v8::Object> getCreationContext(ScriptState* scriptState)
+    {
+        return scriptState->context()->Global();
+    }
+};
+
+} // namespace
 
 ScriptPromise::ScriptPromise(ScriptState* scriptState, v8::Handle<v8::Value> value)
     : m_scriptState(scriptState)
@@ -46,7 +57,7 @@ ScriptPromise::ScriptPromise(ScriptState* scriptState, v8::Handle<v8::Value> val
     if (value.IsEmpty())
         return;
 
-    if (!V8PromiseCustom::isPromise(value, scriptState->isolate()) && !value->IsPromise()) {
+    if (!value->IsPromise()) {
         m_promise = ScriptValue(scriptState, v8::Handle<v8::Value>());
         V8ThrowException::throwTypeError("the given value is not a Promise", scriptState->isolate());
         return;
@@ -63,19 +74,15 @@ ScriptPromise ScriptPromise::then(PassOwnPtr<ScriptFunction> onFulfilled, PassOw
     v8::Local<v8::Function> v8OnFulfilled = ScriptFunction::adoptByGarbageCollector(onFulfilled);
     v8::Local<v8::Function> v8OnRejected = ScriptFunction::adoptByGarbageCollector(onRejected);
 
-    if (V8PromiseCustom::isPromise(promise, m_scriptState->isolate()))
-        return ScriptPromise(m_scriptState.get(), V8PromiseCustom::then(promise, v8OnFulfilled, v8OnRejected, m_scriptState->isolate()));
-
     ASSERT(promise->IsPromise());
     // Return this Promise if no handlers are given.
     // In fact it is not the exact bahavior of Promise.prototype.then
     // but that is not a problem in this case.
     v8::Local<v8::Promise> resultPromise = promise.As<v8::Promise>();
-    // FIXME: Use Then once it is introduced.
     if (!v8OnFulfilled.IsEmpty()) {
-        resultPromise = resultPromise->Chain(v8OnFulfilled);
+        resultPromise = resultPromise->Then(v8OnFulfilled);
         if (resultPromise.IsEmpty()) {
-            // v8::Promise::Chain may return an empty value, for example when
+            // v8::Promise::Then may return an empty value, for example when
             // the stack is exhausted.
             return ScriptPromise();
         }
@@ -86,26 +93,43 @@ ScriptPromise ScriptPromise::then(PassOwnPtr<ScriptFunction> onFulfilled, PassOw
     return ScriptPromise(m_scriptState.get(), resultPromise);
 }
 
-ScriptPromise ScriptPromise::cast(const ScriptValue& value)
+ScriptPromise ScriptPromise::cast(ScriptState* scriptState, const ScriptValue& value)
 {
-    if (value.isEmpty())
+    return ScriptPromise::cast(scriptState, value.v8Value());
+}
+
+ScriptPromise ScriptPromise::cast(ScriptState* scriptState, v8::Handle<v8::Value> value)
+{
+    if (value.IsEmpty())
         return ScriptPromise();
-    v8::Local<v8::Value> v8Value(value.v8Value());
-    v8::Isolate* isolate = value.isolate();
-    if (V8PromiseCustom::isPromise(v8Value, isolate) || v8Value->IsPromise()) {
-        return ScriptPromise(value.scriptState(), v8Value);
+    if (value->IsPromise()) {
+        return ScriptPromise(scriptState, value);
     }
-    if (RuntimeEnabledFeatures::scriptPromiseOnV8PromiseEnabled()) {
-        v8::Local<v8::Promise::Resolver> resolver = v8::Promise::Resolver::New(isolate);
-        if (resolver.IsEmpty()) {
-            // The Promise constructor may return an empty value, for example
-            // when the stack is exhausted.
-            return ScriptPromise();
-        }
-        resolver->Resolve(v8Value);
-        return ScriptPromise(value.scriptState(), resolver->GetPromise());
-    }
-    return ScriptPromise(value.scriptState(), V8PromiseCustom::toPromise(v8Value, isolate));
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
+    resolver->resolve(value);
+    return promise;
+}
+
+ScriptPromise ScriptPromise::reject(ScriptState* scriptState, const ScriptValue& value)
+{
+    return ScriptPromise::reject(scriptState, value.v8Value());
+}
+
+ScriptPromise ScriptPromise::reject(ScriptState* scriptState, v8::Handle<v8::Value> value)
+{
+    if (value.IsEmpty())
+        return ScriptPromise();
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
+    resolver->reject(value);
+    return promise;
+}
+
+ScriptPromise ScriptPromise::rejectWithDOMException(ScriptState* scriptState, PassRefPtrWillBeRawPtr<DOMException> exception)
+{
+    ASSERT(scriptState->isolate()->InContext());
+    return reject(scriptState, ToV8Value<WithScriptState, v8::Handle<v8::Object> >::toV8Value(exception, scriptState->context()->Global(), scriptState->isolate()));
 }
 
 } // namespace WebCore

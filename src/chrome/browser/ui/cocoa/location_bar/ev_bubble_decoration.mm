@@ -87,8 +87,7 @@ CGFloat EVBubbleDecoration::GetWidthForSpace(CGFloat width) {
   NSString* elided_label = base::SysUTF16ToNSString(
       gfx::ElideText(base::SysNSStringToUTF16(full_label_),
                      gfx::FontList(gfx::Font(GetFont())),
-                     width_left,
-                     gfx::ELIDE_IN_MIDDLE));
+                     width_left, gfx::ELIDE_MIDDLE));
 
   // Use the elided label.
   SetLabel(elided_label);
@@ -112,8 +111,8 @@ NSRect EVBubbleDecoration::GetDragImageFrame(NSRect frame) {
   return GetImageRectInFrame(frame);
 }
 
-bool EVBubbleDecoration::OnMousePressed(NSRect frame) {
-  return location_icon_->OnMousePressed(frame);
+bool EVBubbleDecoration::OnMousePressed(NSRect frame, NSPoint location) {
+  return location_icon_->OnMousePressed(frame, location);
 }
 
 bool EVBubbleDecoration::AcceptsMousePress() {

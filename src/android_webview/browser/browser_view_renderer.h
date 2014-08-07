@@ -11,6 +11,8 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/callback.h"
 #include "base/cancelable_callback.h"
+#include "base/values.h"
+#include "content/public/browser/android/synchronous_compositor.h"
 #include "content/public/browser/android/synchronous_compositor_client.h"
 #include "skia/ext/refptr.h"
 #include "ui/gfx/rect.h"
@@ -23,7 +25,6 @@ struct AwDrawSWFunctionTable;
 
 namespace content {
 class ContentViewCore;
-class SynchronousCompositor;
 struct SynchronousCompositorMemoryPolicy;
 class WebContents;
 }
@@ -46,7 +47,7 @@ class BrowserViewRendererJavaHelper {
   virtual bool RenderViaAuxilaryBitmapIfNeeded(
       jobject java_canvas,
       const gfx::Vector2d& scroll_correction,
-      const gfx::Rect& clip,
+      const gfx::Rect& auxiliary_bitmap_size,
       RenderMethod render_source) = 0;
 
  protected:
@@ -78,9 +79,7 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
   bool OnDraw(jobject java_canvas,
               bool is_hardware_canvas,
               const gfx::Vector2d& scroll,
-              const gfx::Rect& global_visible_rect,
-              const gfx::Rect& clip);
-  void DidDrawGL(const DrawGLResult& result);
+              const gfx::Rect& global_visible_rect);
 
   // CapturePicture API methods.
   skia::RefPtr<SkPicture> CapturePicture(int width, int height);
@@ -103,9 +102,10 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
   void ScrollTo(gfx::Vector2d new_value);
 
   // Android views hierarchy gluing.
-  bool IsAttachedToWindow() const;
   bool IsVisible() const;
   gfx::Rect GetScreenRect() const;
+  bool attached_to_window() const { return attached_to_window_; }
+  bool hardware_enabled() const { return hardware_enabled_; }
 
   // Set the memory policy in shared renderer state and request the tiles from
   // GlobalTileManager. The actually amount of memory allowed by
@@ -114,43 +114,53 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
 
   void TrimMemory(const int level, const bool visible);
 
-  // SynchronousCompositorClient overrides
+  // SynchronousCompositorClient overrides.
   virtual void DidInitializeCompositor(
       content::SynchronousCompositor* compositor) OVERRIDE;
   virtual void DidDestroyCompositor(content::SynchronousCompositor* compositor)
       OVERRIDE;
   virtual void SetContinuousInvalidate(bool invalidate) OVERRIDE;
-  virtual void SetMaxRootLayerScrollOffset(gfx::Vector2dF new_value) OVERRIDE;
-  virtual void SetTotalRootLayerScrollOffset(gfx::Vector2dF new_value_css)
-      OVERRIDE;
   virtual void DidUpdateContent() OVERRIDE;
   virtual gfx::Vector2dF GetTotalRootLayerScrollOffset() OVERRIDE;
+  virtual void UpdateRootLayerState(
+      const gfx::Vector2dF& total_scroll_offset_dip,
+      const gfx::Vector2dF& max_scroll_offset_dip,
+      const gfx::SizeF& scrollable_size_dip,
+      float page_scale_factor,
+      float min_page_scale_factor,
+      float max_page_scale_factor) OVERRIDE;
   virtual bool IsExternalFlingActive() const OVERRIDE;
-  virtual void SetRootLayerPageScaleFactorAndLimits(float page_scale_factor,
-                                                    float min_page_scale_factor,
-                                                    float max_page_scale_factor)
-      OVERRIDE;
-  virtual void SetRootLayerScrollableSize(gfx::SizeF scrollable_size) OVERRIDE;
   virtual void DidOverscroll(gfx::Vector2dF accumulated_overscroll,
                              gfx::Vector2dF latest_overscroll_delta,
                              gfx::Vector2dF current_fling_velocity) OVERRIDE;
 
-  // GlobalTileManagerClient overrides
+  // GlobalTileManagerClient overrides.
   virtual size_t GetNumTiles() const OVERRIDE;
   virtual void SetNumTiles(size_t num_tiles,
                            bool effective_immediately) OVERRIDE;
 
  private:
+  void SetTotalRootLayerScrollOffset(gfx::Vector2dF new_value_dip);
   // Checks the continuous invalidate and block invalidate state, and schedule
   // invalidates appropriately. If |force_invalidate| is true, then send a view
   // invalidate regardless of compositor expectation.
   void EnsureContinuousInvalidation(bool force_invalidate);
-  bool DrawSWInternal(jobject java_canvas, const gfx::Rect& clip_bounds);
+  bool OnDrawSoftware(jobject java_canvas);
   bool CompositeSW(SkCanvas* canvas);
-  void DidComposite(bool force_invalidate);
+  void DidComposite();
+  scoped_ptr<base::Value> RootLayerStateAsValue(
+      const gfx::Vector2dF& total_scroll_offset_dip,
+      const gfx::SizeF& scrollable_size_dip);
+
+  bool OnDrawHardware(jobject java_canvas);
+  void ReturnUnusedResource(scoped_ptr<DrawGLInput> input);
+  void ReturnResourceFromParent();
 
   // If we call up view invalidate and OnDraw is not called before a deadline,
   // then we keep ticking the SynchronousCompositor so it can make progress.
+  // Do this in a two stage tick due to native MessageLoop favors delayed task,
+  // so ensure delayed task is inserted only after the draw task returns.
+  void PostFallbackTick();
   void FallbackTickFired();
 
   // Force invoke the compositor to run produce a 1x1 software frame that is
@@ -171,24 +181,22 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
   BrowserViewRendererClient* client_;
   SharedRendererState* shared_renderer_state_;
   content::WebContents* web_contents_;
-  // TODO(boliu): This class should only be used on the UI thread. However in
-  // short term to supporting HardwareRenderer, some callbacks on
-  // SynchronousCompositorClient may be called on non-UI thread. These are
-  // used to detect this and post them back to UI thread.
-  base::WeakPtrFactory<BrowserViewRenderer> weak_factory_on_ui_thread_;
-  base::WeakPtr<BrowserViewRenderer> ui_thread_weak_ptr_;
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
 
-  bool has_compositor_;
+  content::SynchronousCompositor* compositor_;
 
   bool is_paused_;
   bool view_visible_;
   bool window_visible_;  // Only applicable if |attached_to_window_| is true.
   bool attached_to_window_;
+  bool hardware_enabled_;
   float dip_scale_;
   float page_scale_factor_;
   bool on_new_picture_enable_;
   bool clear_view_;
+
+  gfx::Vector2d last_on_draw_scroll_offset_;
+  gfx::Rect last_on_draw_global_visible_rect_;
 
   // When true, we should continuously invalidate and keep drawing, for example
   // to drive animation. This value is set by the compositor and should always
@@ -199,13 +207,11 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
   // Used to block additional invalidates while one is already pending.
   bool block_invalidates_;
 
-  // Holds a callback to FallbackTickFired while it is pending.
-  base::CancelableClosure fallback_tick_;
+  base::CancelableClosure post_fallback_tick_;
+  base::CancelableClosure fallback_tick_fired_;
 
   int width_;
   int height_;
-
-  DrawGLInput draw_gl_input_;
 
   // Current scroll offset in CSS pixels.
   gfx::Vector2dF scroll_offset_dip_;
@@ -219,17 +225,12 @@ class BrowserViewRenderer : public content::SynchronousCompositorClient,
   gfx::Vector2dF overscroll_rounding_error_;
 
   GlobalTileManager::Key tile_manager_key_;
+  content::SynchronousCompositorMemoryPolicy memory_policy_;
 
   // The following 2 are used to construct a memory policy and set the memory
   // policy on the shared_renderer_state_ atomically.
   size_t num_tiles_;
   size_t num_bytes_;
-
-  // TODO(boliu): This is a short term solution to support
-  // SynchronousCompositorClient methods called on RenderThread. This is only
-  // used on data that must be modified immediately instead of being posted
-  // back to UI.
-  base::Lock render_thread_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserViewRenderer);
 };

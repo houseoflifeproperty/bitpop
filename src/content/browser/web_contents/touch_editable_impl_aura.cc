@@ -104,6 +104,7 @@ void TouchEditableImplAura::EndTouchEditing(bool quick) {
     if (touch_selection_controller_->IsHandleDragInProgress()) {
       touch_selection_controller_->SelectionChanged();
     } else {
+      selection_gesture_in_process_ = false;
       touch_selection_controller_->HideHandles(quick);
       touch_selection_controller_.reset();
     }
@@ -135,12 +136,9 @@ void TouchEditableImplAura::OnTextInputTypeChanged(ui::TextInputType type) {
 
 bool TouchEditableImplAura::HandleInputEvent(const ui::Event* event) {
   DCHECK(rwhva_);
-  if (event->IsTouchEvent())
-    return false;
-
   if (!event->IsGestureEvent()) {
-    selection_gesture_in_process_ = false;
-    EndTouchEditing(false);
+    // Ignore all non-gesture events. Non-gesture events that can deactivate
+    // touch editing are handled in TouchSelectionControllerImpl.
     return false;
   }
 
@@ -148,11 +146,10 @@ bool TouchEditableImplAura::HandleInputEvent(const ui::Event* event) {
       static_cast<const ui::GestureEvent*>(event);
   switch (event->type()) {
     case ui::ET_GESTURE_TAP:
-      if (gesture_event->details().tap_count() > 1)
-        selection_gesture_in_process_ = true;
       // When the user taps, we want to show touch editing handles if user
       // tapped on selected text.
-      if (selection_anchor_rect_ != selection_focus_rect_) {
+      if (gesture_event->details().tap_count() == 1 &&
+          selection_anchor_rect_ != selection_focus_rect_) {
         // UnionRects only works for rects with non-zero width.
         gfx::Rect anchor(selection_anchor_rect_.origin(),
                          gfx::Size(1, selection_anchor_rect_.height()));

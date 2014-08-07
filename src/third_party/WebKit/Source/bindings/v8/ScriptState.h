@@ -12,10 +12,11 @@
 
 namespace WebCore {
 
-class DOMWindow;
+class LocalDOMWindow;
 class DOMWrapperWorld;
 class ExecutionContext;
 class LocalFrame;
+class ScriptValue;
 
 // ScriptState is created when v8::Context is created.
 // ScriptState is destroyed when v8::Context is garbage-collected and
@@ -45,7 +46,7 @@ public:
     };
 
     static PassRefPtr<ScriptState> create(v8::Handle<v8::Context>, PassRefPtr<DOMWrapperWorld>);
-    ~ScriptState();
+    virtual ~ScriptState();
 
     static ScriptState* current(v8::Isolate* isolate)
     {
@@ -67,8 +68,9 @@ public:
 
     v8::Isolate* isolate() const { return m_isolate; }
     DOMWrapperWorld& world() const { return *m_world; }
-    ExecutionContext* executionContext() const;
-    DOMWindow* domWindow() const;
+    LocalDOMWindow* domWindow() const;
+    virtual ExecutionContext* executionContext() const;
+    virtual void setExecutionContext(ExecutionContext*);
 
     // This can return an empty handle if the v8::Context is gone.
     v8::Handle<v8::Context> context() const { return m_context.newLocal(m_isolate); }
@@ -80,10 +82,12 @@ public:
 
     bool evalEnabled() const;
     void setEvalEnabled(bool);
+    ScriptValue getFromGlobalObject(const char* name);
 
-private:
+protected:
     ScriptState(v8::Handle<v8::Context>, PassRefPtr<DOMWrapperWorld>);
 
+private:
     v8::Isolate* m_isolate;
     // This persistent handle is weak.
     ScopedPersistent<v8::Context> m_context;
@@ -96,6 +100,19 @@ private:
     // So you must explicitly clear the OwnPtr by calling disposePerContextData()
     // once you no longer need V8PerContextData. Otherwise, the v8::Context will leak.
     OwnPtr<V8PerContextData> m_perContextData;
+};
+
+class ScriptStateForTesting : public ScriptState {
+public:
+    static PassRefPtr<ScriptStateForTesting> create(v8::Handle<v8::Context>, PassRefPtr<DOMWrapperWorld>);
+
+    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual void setExecutionContext(ExecutionContext*) OVERRIDE;
+
+private:
+    ScriptStateForTesting(v8::Handle<v8::Context>, PassRefPtr<DOMWrapperWorld>);
+
+    ExecutionContext* m_executionContext;
 };
 
 // ScriptStateProtectingContext keeps the context associated with the ScriptState alive.

@@ -25,12 +25,12 @@
 #include "config.h"
 #include "core/html/HTMLElement.h"
 
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
-#include "XMLNames.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptEventListener.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
+#include "core/XMLNames.h"
 #include "core/css/CSSMarkup.h"
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
@@ -38,6 +38,8 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
+#include "core/dom/shadow/ElementShadow.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/markup.h"
 #include "core/events/EventListener.h"
 #include "core/events/KeyboardEvent.h"
@@ -63,10 +65,7 @@ using namespace WTF;
 using std::min;
 using std::max;
 
-PassRefPtrWillBeRawPtr<HTMLElement> HTMLElement::create(const QualifiedName& tagName, Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLElement(tagName, document));
-}
+DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLElement);
 
 String HTMLElement::nodeName() const
 {
@@ -314,13 +313,13 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
     } else {
         const AtomicString& eventName = eventNameForAttributeName(name);
         if (!eventName.isNull())
-            setAttributeEventListener(eventName, createAttributeEventListener(this, name, value));
+            setAttributeEventListener(eventName, createAttributeEventListener(this, name, value, eventParameterName()));
     }
 }
 
-PassRefPtr<DocumentFragment> HTMLElement::textToFragment(const String& text, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<DocumentFragment> HTMLElement::textToFragment(const String& text, ExceptionState& exceptionState)
 {
-    RefPtr<DocumentFragment> fragment = DocumentFragment::create(document());
+    RefPtrWillBeRawPtr<DocumentFragment> fragment = DocumentFragment::create(document());
     unsigned i, length = text.length();
     UChar c = 0;
     for (unsigned start = 0; start < length; ) {
@@ -393,7 +392,7 @@ void HTMLElement::setInnerText(const String& text, ExceptionState& exceptionStat
     }
 
     // Add text nodes and <br> elements.
-    RefPtr<DocumentFragment> fragment = textToFragment(text, exceptionState);
+    RefPtrWillBeRawPtr<DocumentFragment> fragment = textToFragment(text, exceptionState);
     if (!exceptionState.hadException())
         replaceChildrenWithFragment(this, fragment.release(), exceptionState);
 }
@@ -418,9 +417,9 @@ void HTMLElement::setOuterText(const String &text, ExceptionState& exceptionStat
         return;
     }
 
-    RefPtr<Node> prev = previousSibling();
-    RefPtr<Node> next = nextSibling();
-    RefPtr<Node> newChild;
+    RefPtrWillBeRawPtr<Node> prev = previousSibling();
+    RefPtrWillBeRawPtr<Node> next = nextSibling();
+    RefPtrWillBeRawPtr<Node> newChild = nullptr;
 
     // Convert text to fragment with <br> tags instead of linebreaks if needed.
     if (text.contains('\r') || text.contains('\n'))
@@ -429,7 +428,7 @@ void HTMLElement::setOuterText(const String &text, ExceptionState& exceptionStat
         newChild = Text::create(document(), text);
 
     // textToFragment might cause mutation events.
-    if (!this || !parentNode())
+    if (!parentNode())
         exceptionState.throwDOMException(HierarchyRequestError, "The element has no parent.");
 
     if (exceptionState.hadException())
@@ -437,7 +436,7 @@ void HTMLElement::setOuterText(const String &text, ExceptionState& exceptionStat
 
     parent->replaceChild(newChild.release(), this, exceptionState);
 
-    RefPtr<Node> node = next ? next->previousSibling() : 0;
+    RefPtrWillBeRawPtr<Node> node = next ? next->previousSibling() : nullptr;
     if (!exceptionState.hadException() && node && node->isTextNode())
         mergeWithNextTextNode(node.release(), exceptionState);
 
@@ -637,9 +636,6 @@ static void setHasDirAutoFlagRecursively(Node* firstNode, bool flag, Node* lastN
     Node* node = firstNode->firstChild();
 
     while (node) {
-        if (node->selfOrAncestorHasDirAutoAttribute() == flag)
-            return;
-
         if (elementAffectsDirectionality(node)) {
             if (node == lastNode)
                 return;
@@ -753,14 +749,16 @@ void HTMLElement::calculateAndAdjustDirectionality()
 {
     Node* strongDirectionalityTextNode;
     TextDirection textDirection = directionality(&strongDirectionalityTextNode);
-    setHasDirAutoFlagRecursively(this, true, strongDirectionalityTextNode);
+    setHasDirAutoFlagRecursively(this, hasDirectionAuto(), strongDirectionalityTextNode);
+    for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
+        setHasDirAutoFlagRecursively(root, hasDirectionAuto());
     if (renderer() && renderer()->style() && renderer()->style()->direction() != textDirection)
         setNeedsStyleRecalc(SubtreeStyleChange);
 }
 
 void HTMLElement::adjustDirectionalityIfNeededAfterChildrenChanged(Node* beforeChange, int childCountDelta)
 {
-    if (document().renderer() && childCountDelta < 0) {
+    if (document().renderView() && childCountDelta < 0) {
         Node* node = beforeChange ? NodeTraversal::nextSkippingChildren(*beforeChange) : 0;
         for (int counter = 0; node && counter < childCountDelta; counter++, node = NodeTraversal::nextSkippingChildren(*node)) {
             if (elementAffectsDirectionality(node))
@@ -948,6 +946,12 @@ void HTMLElement::handleKeypressEvent(KeyboardEvent* event)
         dispatchSimulatedClick(event);
         event->setDefaultHandled();
     }
+}
+
+const AtomicString& HTMLElement::eventParameterName()
+{
+    DEFINE_STATIC_LOCAL(const AtomicString, eventString, ("event", AtomicString::ConstructFromLiteral));
+    return eventString;
 }
 
 } // namespace WebCore

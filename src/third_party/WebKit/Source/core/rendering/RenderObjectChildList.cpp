@@ -58,18 +58,18 @@ RenderObject* RenderObjectChildList::removeChildNode(RenderObject* owner, Render
 
     {
         // FIXME: We should not be allowing repaint during layout. crbug.com/336250
-        AllowRepaintScope scoper(owner->frameView());
+        AllowPaintInvalidationScope scoper(owner->frameView());
 
         // So that we'll get the appropriate dirty bit set (either that a normal flow child got yanked or
         // that a positioned child got yanked). We also repaint, so that the area exposed when the child
         // disappears gets repainted properly.
         if (!owner->documentBeingDestroyed() && notifyRenderer && oldChild->everHadLayout()) {
-            oldChild->setNeedsLayoutAndPrefWidthsRecalc();
+            oldChild->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
             // We only repaint |oldChild| if we have a RenderLayer as its visual overflow may not be tracked by its parent.
             if (oldChild->isBody())
-                owner->view()->repaint();
+                owner->view()->paintInvalidationForWholeRenderer();
             else
-                oldChild->repaint();
+                oldChild->paintInvalidationForWholeRenderer();
         }
     }
 
@@ -158,7 +158,7 @@ void RenderObjectChildList::insertChildNode(RenderObject* owner, RenderObject* n
         RenderCounter::rendererSubtreeAttached(newChild);
     }
 
-    newChild->setNeedsLayoutAndPrefWidthsRecalc();
+    newChild->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
     if (!owner->normalChildNeedsLayout())
         owner->setChildNeedsLayout(); // We may supply the static position for an absolute positioned child.
 

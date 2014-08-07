@@ -17,11 +17,13 @@
 #include "ash/display/display_manager.h"
 #include "ash/display/root_window_transformers.h"
 #include "ash/host/ash_window_tree_host.h"
+#include "ash/host/ash_window_tree_host_init_params.h"
 #include "ash/host/root_window_transformer.h"
 #include "ash/root_window_settings.h"
 #include "ash/shell.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/client/capture_client.h"
+#include "ui/aura/env.h"
 #include "ui/aura/window_delegate.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
@@ -81,8 +83,9 @@ MirrorWindowController::~MirrorWindowController() {
 void MirrorWindowController::UpdateWindow(const DisplayInfo& display_info) {
   static int mirror_host_count = 0;
   if (!ash_host_.get()) {
-    const gfx::Rect& bounds_in_native = display_info.bounds_in_native();
-    ash_host_.reset(AshWindowTreeHost::Create(bounds_in_native));
+    AshWindowTreeHostInitParams init_params;
+    init_params.initial_bounds = display_info.bounds_in_native();
+    ash_host_.reset(AshWindowTreeHost::Create(init_params));
     aura::WindowTreeHost* host = ash_host_->AsWindowTreeHost();
     host->window()->SetName(
         base::StringPrintf("MirrorRootWindow-%d", mirror_host_count++));
@@ -107,7 +110,7 @@ void MirrorWindowController::UpdateWindow(const DisplayInfo& display_info) {
     host->window()->AddChild(mirror_window);
     mirror_window->SetBounds(host->window()->bounds());
     mirror_window->Show();
-    reflector_ = ui::ContextFactory::GetInstance()->CreateReflector(
+    reflector_ = aura::Env::GetInstance()->context_factory()->CreateReflector(
         Shell::GetPrimaryRootWindow()->GetHost()->compositor(),
         mirror_window->layer());
   } else {
@@ -138,7 +141,7 @@ void MirrorWindowController::UpdateWindow() {
 void MirrorWindowController::Close() {
   if (ash_host_.get()) {
     aura::WindowTreeHost* host = ash_host_->AsWindowTreeHost();
-    ui::ContextFactory::GetInstance()->RemoveReflector(reflector_);
+    aura::Env::GetInstance()->context_factory()->RemoveReflector(reflector_);
     reflector_ = NULL;
     NoneCaptureClient* capture_client = static_cast<NoneCaptureClient*>(
         aura::client::GetCaptureClient(host->window()));

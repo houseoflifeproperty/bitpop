@@ -9,8 +9,24 @@
 
 namespace url {
 
+URL_EXPORT extern const char kAboutBlankURL[];
+
+URL_EXPORT extern const char kAboutScheme[];
+URL_EXPORT extern const char kBlobScheme[];
+URL_EXPORT extern const char kDataScheme[];
+URL_EXPORT extern const char kFileScheme[];
+URL_EXPORT extern const char kFileSystemScheme[];
+URL_EXPORT extern const char kFtpScheme[];
+URL_EXPORT extern const char kGopherScheme[];
 URL_EXPORT extern const char kHttpScheme[];
 URL_EXPORT extern const char kHttpsScheme[];
+URL_EXPORT extern const char kJavaScriptScheme[];
+URL_EXPORT extern const char kMailToScheme[];
+URL_EXPORT extern const char kWsScheme[];
+URL_EXPORT extern const char kWssScheme[];
+
+// Used to separate a standard scheme and the hostname: "://".
+URL_EXPORT extern const char kStandardSchemeSeparator[];
 
 }  // namespace url
 

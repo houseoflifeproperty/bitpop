@@ -11,10 +11,11 @@
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/accessibility_private.h"
+#include "chrome/common/extensions/extension_constants.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "extensions/browser/event_router.h"
@@ -96,6 +97,9 @@ void ExtensionAccessibilityEventRouter::HandleMenuEvent(
     case ui::AX_EVENT_FOCUS:
       OnControlFocused(info);
       break;
+    case ui::AX_EVENT_HOVER:
+      OnControlHover(info);
+      break;
     default:
       NOTREACHED();
   }
@@ -118,6 +122,9 @@ void ExtensionAccessibilityEventRouter::HandleControlEvent(
       break;
     case ui::AX_EVENT_FOCUS:
       OnControlFocused(info);
+      break;
+    case ui::AX_EVENT_HOVER:
+      OnControlHover(info);
       break;
     default:
       NOTREACHED();
@@ -147,6 +154,14 @@ void ExtensionAccessibilityEventRouter::OnControlAction(
   scoped_ptr<base::ListValue> args(ControlInfoToEventArguments(info));
   DispatchEvent(info->profile(),
                 accessibility_private::OnControlAction::kEventName,
+                args.Pass());
+}
+
+void ExtensionAccessibilityEventRouter::OnControlHover(
+    const AccessibilityControlInfo* info) {
+  scoped_ptr<base::ListValue> args(ControlInfoToEventArguments(info));
+  DispatchEvent(info->profile(),
+                accessibility_private::OnControlHover::kEventName,
                 args.Pass());
 }
 

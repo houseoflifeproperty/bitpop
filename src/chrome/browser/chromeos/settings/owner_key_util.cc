@@ -16,6 +16,24 @@
 namespace chromeos {
 
 ///////////////////////////////////////////////////////////////////////////
+// PublicKey
+
+PublicKey::PublicKey() {
+}
+
+PublicKey::~PublicKey() {
+}
+
+///////////////////////////////////////////////////////////////////////////
+// PrivateKey
+
+PrivateKey::PrivateKey(crypto::RSAPrivateKey* key) : key_(key) {
+}
+
+PrivateKey::~PrivateKey() {
+}
+
+///////////////////////////////////////////////////////////////////////////
 // OwnerKeyUtil
 
 OwnerKeyUtil* OwnerKeyUtil::Create() {
@@ -68,6 +86,12 @@ bool OwnerKeyUtilImpl::ImportPublicKey(std::vector<uint8>* output) {
 crypto::RSAPrivateKey* OwnerKeyUtilImpl::FindPrivateKey(
     const std::vector<uint8>& key) {
   return crypto::RSAPrivateKey::FindFromPublicKeyInfo(key);
+}
+
+crypto::RSAPrivateKey* OwnerKeyUtilImpl::FindPrivateKeyInSlot(
+    const std::vector<uint8>& key,
+    PK11SlotInfo* slot) {
+  return crypto::RSAPrivateKey::FindFromPublicKeyInfoInSlot(key, slot);
 }
 
 bool OwnerKeyUtilImpl::IsPublicKeyPresent() {

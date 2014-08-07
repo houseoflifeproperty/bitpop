@@ -41,10 +41,24 @@ bool ChromeExtensionWebContentsObserver::OnMessageReceived(
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ChromeExtensionWebContentsObserver, message)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_PostMessage, OnPostMessage)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
+}
+
+bool ChromeExtensionWebContentsObserver::OnMessageReceived(
+    const IPC::Message& message,
+    content::RenderFrameHost* render_frame_host) {
+#if defined(ENABLE_EXTENSIONS)
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(ChromeExtensionWebContentsObserver, message)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_DetailedConsoleMessageAdded,
                         OnDetailedConsoleMessageAdded)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
+#else
+  bool handled = false;
+#endif
   return handled;
 }
 
@@ -53,6 +67,7 @@ void ChromeExtensionWebContentsObserver::OnDetailedConsoleMessageAdded(
     const base::string16& source,
     const StackTrace& stack_trace,
     int32 severity_level) {
+#if defined(ENABLE_EXTENSIONS)
   if (!IsSourceFromAnExtension(source))
     return;
 
@@ -73,6 +88,7 @@ void ChromeExtensionWebContentsObserver::OnDetailedConsoleMessageAdded(
                            static_cast<logging::LogSeverity>(severity_level),
                            render_view_host->GetRoutingID(),
                            render_view_host->GetProcess()->GetID())));
+#endif
 }
 
 void ChromeExtensionWebContentsObserver::OnPostMessage(int port_id,

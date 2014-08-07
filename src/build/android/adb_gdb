@@ -16,7 +16,7 @@ PROGNAME=$(basename "$0")
 PROGDIR=$(dirname "$0")
 
 # Location of Chromium-top-level sources.
-CHROMIUM_SRC=$(cd "$PROGDIR"/../.. && pwd 2>/dev/null)
+CHROMIUM_SRC=$(cd "$PROGDIR"/../.. >/dev/null && pwd 2>/dev/null)
 
 # Location of Chromium out/ directory.
 if [ -z "$CHROMIUM_OUT_DIR" ]; then
@@ -320,6 +320,7 @@ Valid options:
   --su-prefix=<prefix>  Prepend <prefix> to 'adb shell' commands that are
                         run by this script. This can be useful to use
                         the 'su' program on rooted production devices.
+                        e.g. --su-prefix="su -c"
 
   --pull-libs           Force system libraries extraction.
   --no-pull-libs        Do not extract any system library.
@@ -361,7 +362,7 @@ get_gyp_target_arch () {
                cut -d= -f2)
   case $ARCH in
     ia32|i?86|x86) echo "x86";;
-    mips|arm) echo "$ARCH";;
+    mips|arm|arm64|x86_64) echo "$ARCH";;
     *) echo "";
   esac
 }
@@ -429,8 +430,14 @@ get_arch_gnu_config () {
     arm)
       echo "arm-linux-androideabi"
       ;;
+    arm64)
+      echo "aarch64-linux-android"
+      ;;
     x86)
       echo "i686-linux-android"
+      ;;
+    x86_64)
+      echo "x86_64-linux-android"
       ;;
     mips)
       echo "mipsel-linux-android"
@@ -466,11 +473,14 @@ get_ndk_toolchain_prebuilt () {
   local SUBPATH="$3"
   local NAME="$(get_arch_toolchain_prefix $ARCH)"
   local FILE TARGET
-  FILE=$NDK_DIR/toolchains/$NAME-4.6/prebuilt/$SUBPATH
+  FILE=$NDK_DIR/toolchains/$NAME-4.8/prebuilt/$SUBPATH
   if [ ! -f "$FILE" ]; then
-    FILE=$NDK_DIR/toolchains/$NAME-4.4.3/prebuilt/$SUBPATH
+    FILE=$NDK_DIR/toolchains/$NAME-4.9/prebuilt/$SUBPATH
     if [ ! -f "$FILE" ]; then
-      FILE=
+      FILE=$NDK_DIR/toolchains/$NAME-4.6/prebuilt/$SUBPATH
+      if [ ! -f "$FILE" ]; then
+        FILE=
+      fi
     fi
   fi
   echo "$FILE"
@@ -843,7 +853,7 @@ if [ "$SU_PREFIX" ]; then
     cat $SU_PREFIX_TEST_LOG
     exit 1
   fi
-  COMMAND_PREFIX=$SU_PREFIX
+  COMMAND_PREFIX="$SU_PREFIX"
 else
   SHELL_UID=$(adb shell cat /proc/self/status | \
               awk '$1 == "Uid:" { print $2; }')
@@ -904,9 +914,15 @@ PORT=5039
 HOST_PORT=$PORT
 TARGET_PORT=$PORT
 
+# Select correct app_process for architecture.
+case $TARGET_ARCH in
+      arm|x86|mips) GDBEXEC=app_process;;
+      arm64|x86_64) GDBEXEC=app_process64;;
+      *) fail_panic "Unknown app_process for architecture!";;
+esac
+
 # Detect AddressSanitizer setup on the device. In that case app_process is a
 # script, and the real executable is app_process.real.
-GDBEXEC=app_process
 GDBEXEC_ASAN=app_process.real
 adb_shell ls /system/bin/$GDBEXEC_ASAN
 if [ $? == 0 ]; then
@@ -976,6 +992,6 @@ if [ "$VERBOSE" -gt 0 ]; then
   echo "### END $COMMANDS"
 fi
 
-log "Launching gdb client: $GDB $GDBARGS -x $COMMANDS"
-$GDB $GDBARGS -x $COMMANDS &&
+log "Launching gdb client: $GDB $GDB_ARGS -x $COMMANDS"
+$GDB $GDB_ARGS -x $COMMANDS &&
 rm -f "$GDBSERVER_PIDFILE"

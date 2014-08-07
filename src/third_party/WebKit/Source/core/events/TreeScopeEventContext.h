@@ -28,7 +28,6 @@
 #define TreeScopeEventContext_h
 
 #include "core/dom/Node.h"
-#include "core/dom/NodeList.h"
 #include "core/dom/TreeScope.h"
 #include "core/events/EventTarget.h"
 #include "wtf/PassRefPtr.h"
@@ -40,26 +39,28 @@ namespace WebCore {
 class EventPath;
 class EventTarget;
 class Node;
+class StaticNodeList;
 class TouchEventContext;
 class TreeScope;
 
-class TreeScopeEventContext : public RefCounted<TreeScopeEventContext> {
+class TreeScopeEventContext FINAL : public RefCountedWillBeGarbageCollected<TreeScopeEventContext> {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(TreeScopeEventContext);
 public:
-    static PassRefPtr<TreeScopeEventContext> create(TreeScope&);
-    ~TreeScopeEventContext();
+    static PassRefPtrWillBeRawPtr<TreeScopeEventContext> create(TreeScope&);
+    void trace(Visitor*);
 
-    TreeScope& treeScope() const { return m_treeScope; }
+    TreeScope& treeScope() const { return *m_treeScope; }
 
     EventTarget* target() const { return m_target.get(); }
-    void setTarget(PassRefPtr<EventTarget>);
+    void setTarget(PassRefPtrWillBeRawPtr<EventTarget>);
 
     EventTarget* relatedTarget() const { return m_relatedTarget.get(); }
-    void setRelatedTarget(PassRefPtr<EventTarget>);
+    void setRelatedTarget(PassRefPtrWillBeRawPtr<EventTarget>);
 
     TouchEventContext* touchEventContext() const { return m_touchEventContext.get(); }
     TouchEventContext* ensureTouchEventContext();
 
-    PassRefPtr<NodeList> ensureEventPath(EventPath&);
+    PassRefPtrWillBeRawPtr<StaticNodeList> ensureEventPath(EventPath&);
 
     bool isInclusiveAncestorOf(const TreeScopeEventContext&);
     void addChild(TreeScopeEventContext& child) { m_children.append(&child); }
@@ -75,13 +76,13 @@ private:
     bool isUnreachableNode(EventTarget&);
 #endif
 
-    TreeScope& m_treeScope;
-    RefPtr<EventTarget> m_target;
-    RefPtr<EventTarget> m_relatedTarget;
-    RefPtr<NodeList> m_eventPath;
-    RefPtrWillBePersistent<TouchEventContext> m_touchEventContext;
+    RawPtrWillBeMember<TreeScope> m_treeScope;
+    RefPtrWillBeMember<EventTarget> m_target;
+    RefPtrWillBeMember<EventTarget> m_relatedTarget;
+    RefPtrWillBeMember<StaticNodeList> m_eventPath;
+    RefPtrWillBeMember<TouchEventContext> m_touchEventContext;
 
-    Vector<TreeScopeEventContext*> m_children;
+    WillBeHeapVector<RawPtrWillBeMember<TreeScopeEventContext> > m_children;
     int m_preOrder;
     int m_postOrder;
 };
@@ -90,18 +91,18 @@ private:
 inline bool TreeScopeEventContext::isUnreachableNode(EventTarget& target)
 {
     // FIXME: Checks also for SVG elements.
-    return target.toNode() && !target.toNode()->isSVGElement() && !target.toNode()->treeScope().isInclusiveOlderSiblingShadowRootOrAncestorTreeScopeOf(m_treeScope);
+    return target.toNode() && !target.toNode()->isSVGElement() && !target.toNode()->treeScope().isInclusiveOlderSiblingShadowRootOrAncestorTreeScopeOf(treeScope());
 }
 #endif
 
-inline void TreeScopeEventContext::setTarget(PassRefPtr<EventTarget> target)
+inline void TreeScopeEventContext::setTarget(PassRefPtrWillBeRawPtr<EventTarget> target)
 {
     ASSERT(target);
     ASSERT(!isUnreachableNode(*target));
     m_target = target;
 }
 
-inline void TreeScopeEventContext::setRelatedTarget(PassRefPtr<EventTarget> relatedTarget)
+inline void TreeScopeEventContext::setRelatedTarget(PassRefPtrWillBeRawPtr<EventTarget> relatedTarget)
 {
     ASSERT(relatedTarget);
     ASSERT(!isUnreachableNode(*relatedTarget));

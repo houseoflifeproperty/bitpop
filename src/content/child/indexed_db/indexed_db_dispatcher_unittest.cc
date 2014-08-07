@@ -39,16 +39,22 @@ class MockCallbacks : public WebIDBCallbacks {
 
  private:
   bool error_seen_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockCallbacks);
 };
 
 class MockDispatcher : public IndexedDBDispatcher {
  public:
-  MockDispatcher(ThreadSafeSender* sender) : IndexedDBDispatcher(sender) {}
+  explicit MockDispatcher(ThreadSafeSender* sender)
+      : IndexedDBDispatcher(sender) {}
 
   virtual bool Send(IPC::Message* msg) OVERRIDE {
     delete msg;
     return true;
   }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockDispatcher);
 };
 
 }  // namespace
@@ -128,7 +134,8 @@ namespace {
 
 class CursorCallbacks : public WebIDBCallbacks {
  public:
-  CursorCallbacks(scoped_ptr<WebIDBCursor>* cursor) : cursor_(cursor) {}
+  explicit CursorCallbacks(scoped_ptr<WebIDBCursor>* cursor)
+      : cursor_(cursor) {}
 
   virtual void onSuccess(const WebData&,
                          const WebVector<WebBlobInfo>&) OVERRIDE {}
@@ -142,6 +149,8 @@ class CursorCallbacks : public WebIDBCallbacks {
 
  private:
   scoped_ptr<WebIDBCursor>* cursor_;
+
+  DISALLOW_COPY_AND_ASSIGN(CursorCallbacks);
 };
 
 }  // namespace
@@ -248,6 +257,8 @@ class MockCursor : public WebIDBCursorImpl {
 
  private:
   int reset_count_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockCursor);
 };
 
 }  // namespace

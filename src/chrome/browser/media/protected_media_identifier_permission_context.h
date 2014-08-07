@@ -8,6 +8,7 @@
 #include <map>
 #include <string>
 
+#include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/content_settings/permission_queue_controller.h"
 
@@ -16,6 +17,7 @@ class Profile;
 
 namespace content {
 class RenderViewHost;
+class WebContents;
 }
 
 // Manages protected media identifier permissions flow, and delegates UI
@@ -27,14 +29,10 @@ class ProtectedMediaIdentifierPermissionContext
   explicit ProtectedMediaIdentifierPermissionContext(Profile* profile);
 
   void RequestProtectedMediaIdentifierPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      int group_id,
-      const GURL& requesting_frame,
-      const base::Callback<void(bool)>& callback);
-  void CancelProtectedMediaIdentifierPermissionRequests(
-      int group_id);
+      content::WebContents* web_contents,
+      const GURL& origin,
+      base::Callback<void(bool)> result_callback,
+      base::Closure* cancel_callback);
 
   // Called on the UI thread when the profile is about to be destroyed.
   void ShutdownOnUIThread();
@@ -50,11 +48,16 @@ class ProtectedMediaIdentifierPermissionContext
   // if necessary.
   PermissionQueueController* QueueController();
 
+  void CancelProtectedMediaIdentifierPermissionRequests(
+      int render_process_id,
+      int render_view_id,
+      const GURL& origin);
+
   // Notifies whether or not the corresponding bridge is allowed to use
   // protected media identifier via
   // SetProtectedMediaIdentifierPermissionResponse(). Called on the UI thread.
   void NotifyPermissionSet(const PermissionRequestID& id,
-                           const GURL& requesting_frame,
+                           const GURL& origin,
                            const base::Callback<void(bool)>& callback,
                            bool allowed);
 
@@ -63,7 +66,7 @@ class ProtectedMediaIdentifierPermissionContext
   // or NotifyPermissionSet if permission decided by presenting an
   // infobar to the user. Called on the UI thread.
   void DecidePermission(const PermissionRequestID& id,
-                        const GURL& requesting_frame,
+                        const GURL& origin,
                         const GURL& embedder,
                         content::RenderViewHost* rvh,
                         const base::Callback<void(bool)>& callback);
@@ -73,7 +76,7 @@ class ProtectedMediaIdentifierPermissionContext
   // Should ultimately ensure that NotifyPermissionSet is called.
   // Called on the UI thread.
   void PermissionDecided(const PermissionRequestID& id,
-                         const GURL& requesting_frame,
+                         const GURL& origin,
                          const GURL& embedder,
                          const base::Callback<void(bool)>& callback,
                          bool allowed);
@@ -82,8 +85,11 @@ class ProtectedMediaIdentifierPermissionContext
   // provide additional UI flow.  Called on the UI thread.
   PermissionQueueController* CreateQueueController();
 
-  // Removes pending InfoBar requests that match |group_id|.
-  void CancelPendingInfobarRequests(int group_id);
+  // Removes pending InfoBar requests that match |bridge_id| from the tab
+  // given by |render_process_id| and |render_view_id|.
+  void CancelPendingInfobarRequests(int render_process_id,
+                                    int render_view_id,
+                                    const GURL& origin);
 
   // These must only be accessed from the UI thread.
   Profile* const profile_;

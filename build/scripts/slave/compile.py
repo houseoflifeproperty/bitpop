@@ -691,10 +691,15 @@ def main_make_android(options, args):
     assert options.compiler not in ('goma', 'goma-clang')
     assert options.goma_dir is None
 
+  command = ['make']
   if goma_ready:
-    command = [os.path.join(options.goma_dir, 'goma-android-make')]
-  else:
-    command = ['make']
+    gomacc = os.path.join(options.goma_dir, 'gomacc')
+    command.extend(['CC_WRAPPER=' + gomacc,
+                    'CXX_WRAPPER=' + gomacc,
+                    'JAVAC_WRAPPER=' + gomacc,
+                    '-j150',
+                    '-l%d' % os.sysconf('SC_NPROCESSORS_ONLN'),
+                    ])
 
   working_dir = options.src_dir
 

@@ -30,9 +30,9 @@
 #include "config.h"
 #include "platform/fonts/FontCache.h"
 
-#include "FontFamilyNames.h"
+#include "platform/FontFamilyNames.h"
 
-#include "RuntimeEnabledFeatures.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/fonts/AlternateFontFamily.h"
 #include "platform/fonts/FontCacheClient.h"
 #include "platform/fonts/FontCacheKey.h"
@@ -159,7 +159,7 @@ PassRefPtr<SimpleFontData> FontCache::fontDataFromFontPlatformData(const FontPla
     if (!gFontDataCache)
         gFontDataCache = new FontDataCache;
 
-#if !ASSERT_DISABLED
+#if ASSERT_ENABLED
     if (shouldRetain == DoNotRetain)
         ASSERT(m_purgePreventCount);
 #endif
@@ -170,7 +170,7 @@ PassRefPtr<SimpleFontData> FontCache::fontDataFromFontPlatformData(const FontPla
 bool FontCache::isPlatformFontAvailable(const FontDescription& fontDescription, const AtomicString& family)
 {
     bool checkingAlternateName = true;
-    return getFontPlatformData(fontDescription, family, checkingAlternateName);
+    return getFontPlatformData(fontDescription, adjustFamilyNameToAvoidUnsupportedFonts(family), checkingAlternateName);
 }
 
 SimpleFontData* FontCache::getNonRetainedLastResortFallbackFont(const FontDescription& fontDescription)

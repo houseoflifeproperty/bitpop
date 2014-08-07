@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/clipboard/Clipboard.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/clipboard/DataObject.h"
 #include "core/clipboard/DataTransferItem.h"
 #include "core/clipboard/DataTransferItemList.h"
@@ -226,6 +226,16 @@ void Clipboard::setDragImage(Element* image, int x, int y, ExceptionState& excep
         setDragImageResource(toHTMLImageElement(*image).cachedImage(), location);
     else
         setDragImageElement(image, location);
+}
+
+void Clipboard::clearDragImage()
+{
+    if (!canSetDragImage())
+        return;
+
+    m_dragImage = 0;
+    m_dragLoc = IntPoint();
+    m_dragImageElement = nullptr;
 }
 
 void Clipboard::setDragImageResource(ImageResource* img, const IntPoint& loc)
@@ -527,6 +537,7 @@ String convertDragOperationToDropZoneOperation(DragOperation operation)
 void Clipboard::trace(Visitor* visitor)
 {
     visitor->trace(m_dataObject);
+    visitor->trace(m_dragImageElement);
 }
 
 } // namespace WebCore

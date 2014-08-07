@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HOST_VIEW_MAC_H_
 
 #import <Cocoa/Cocoa.h>
+#include <IOSurface/IOSurfaceAPI.h>
 #include <list>
 #include <map>
 #include <string>
@@ -16,6 +17,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "content/browser/compositor/browser_compositor_view_mac.h"
+#include "content/browser/compositor/delegated_frame_host.h"
+#include "content/browser/renderer_host/compositing_iosurface_layer_mac.h"
 #include "content/browser/renderer_host/display_link_mac.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/software_frame_manager.h"
@@ -27,6 +31,8 @@
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "ui/base/cocoa/base_view.h"
 
+struct ViewHostMsg_TextInputState_Params;
+
 namespace content {
 class CompositingIOSurfaceMac;
 class CompositingIOSurfaceContext;
@@ -35,9 +41,16 @@ class RenderWidgetHostViewMacEditCommandHelper;
 class WebContents;
 }
 
+namespace ui {
+class Compositor;
+class Layer;
+}
+
+@class BrowserCompositorViewMac;
 @class CompositingIOSurfaceLayer;
 @class FullscreenWindowManager;
 @protocol RenderWidgetHostViewMacDelegate;
+@class SoftwareLayer;
 @class ToolTip;
 
 @protocol RenderWidgetHostViewMacOwner
@@ -180,19 +193,6 @@ class WebContents;
                              actualRange:(NSRangePointer)actualRange;
 @end
 
-@interface SoftwareLayer : CALayer {
- @private
-  content::RenderWidgetHostViewMac* renderWidgetHostView_;
-}
-
-- (id)initWithRenderWidgetHostViewMac:(content::RenderWidgetHostViewMac*)r;
-
-// Invalidate the RenderWidgetHostViewMac because it may be going away. If
-// displayed again, it will draw white.
-- (void)disableRendering;
-
-@end
-
 namespace content {
 class RenderWidgetHostImpl;
 
@@ -214,8 +214,10 @@ class RenderWidgetHostImpl;
 // RenderWidgetHostView class hierarchy described in render_widget_host_view.h.
 class CONTENT_EXPORT RenderWidgetHostViewMac
     : public RenderWidgetHostViewBase,
+      public DelegatedFrameHostClient,
       public IPC::Sender,
-      public SoftwareFrameManagerClient {
+      public SoftwareFrameManagerClient,
+      public CompositingIOSurfaceLayerClient {
  public:
   // The view will associate itself with the given widget. The native view must
   // be hooked up immediately to the view hierarchy, or else when it is
@@ -257,7 +259,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual void SpeakSelection() OVERRIDE;
   virtual bool IsSpeaking() const OVERRIDE;
   virtual void StopSpeaking() OVERRIDE;
-  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
+  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
 
   // Implementation of RenderWidgetHostViewBase.
   virtual void InitAsPopup(RenderWidgetHostView* parent_host_view,
@@ -272,9 +274,8 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    ui::TextInputMode input_mode,
-                                    bool can_compose_inline) OVERRIDE;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const gfx::Range& range,
@@ -305,7 +306,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual void EndFrameSubscription() OVERRIDE;
   virtual void OnSwapCompositorFrame(
       uint32 output_surface_id, scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
-  virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
   virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
@@ -329,12 +329,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
 
-  virtual void SetScrollOffsetPinning(
-      bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
   virtual void UnlockMouse() OVERRIDE;
-  virtual void UnhandledWheelEvent(
-      const blink::WebMouseWheelEvent& event) OVERRIDE;
+  virtual void WheelEventAck(const blink::WebMouseWheelEvent& event,
+                             InputEventAckState ack_result) OVERRIDE;
 
   // IPC::Sender implementation.
   virtual bool Send(IPC::Message* message) OVERRIDE;
@@ -345,6 +343,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   virtual void ReleaseReferencesToSoftwareFrame() OVERRIDE;
 
   virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+
+  // CompositingIOSurfaceLayerClient implementation.
+  virtual void AcceleratedLayerDidDrawFrame(bool succeeded) OVERRIDE;
 
   // Forwards the mouse event to the renderer.
   void ForwardMouseEvent(const blink::WebMouseEvent& event);
@@ -360,13 +361,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   // Update the IOSurface to be drawn and call setNeedsDisplay on
   // |cocoa_view_|.
-  void CompositorSwapBuffers(uint64 surface_handle,
+  void CompositorSwapBuffers(IOSurfaceID surface_handle,
                              const gfx::Size& size,
                              float scale_factor,
                              const std::vector<ui::LatencyInfo>& latency_info);
-
-  // Draw the IOSurface by making its context current to this view.
-  void DrawIOSurfaceWithoutCoreAnimation();
 
   // Called when a GPU error is detected. Posts a task to destroy all
   // compositing state.
@@ -414,17 +412,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // someone (other than superview) has retained |cocoa_view_|.
   RenderWidgetHostImpl* render_widget_host_;
 
-  // Whether last rendered frame was accelerated.
-  bool last_frame_was_accelerated_;
-
-  // The time at which this view started displaying white pixels as a result of
-  // not having anything to paint (empty backing store from renderer). This
-  // value returns true for is_null() if we are not recording whiteout times.
-  base::TimeTicks whiteout_start_time_;
-
-  // The time it took after this view was selected for it to be fully painted.
-  base::TimeTicks web_contents_switch_paint_time_;
-
   // Current text input type.
   ui::TextInputType text_input_type_;
   bool can_compose_inline_;
@@ -440,22 +427,16 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Accelerated compositing structures. These may be dynamically created and
   // destroyed together in Create/DestroyCompositedIOSurfaceAndLayer.
   base::scoped_nsobject<CompositingIOSurfaceLayer> compositing_iosurface_layer_;
-  scoped_ptr<CompositingIOSurfaceMac> compositing_iosurface_;
+  scoped_refptr<CompositingIOSurfaceMac> compositing_iosurface_;
   scoped_refptr<CompositingIOSurfaceContext> compositing_iosurface_context_;
 
-  // Timer used to dynamically transition the compositing layer in and out of
-  // asynchronous mode.
-  base::DelayTimer<RenderWidgetHostViewMac>
-      compositing_iosurface_layer_async_timer_;
+  // Delegated frame management and compositior.
+  base::scoped_nsobject<BrowserCompositorViewMac> browser_compositor_view_;
+  scoped_ptr<DelegatedFrameHost> delegated_frame_host_;
+  scoped_ptr<ui::Layer> root_layer_;
 
   // This holds the current software compositing framebuffer, if any.
   scoped_ptr<SoftwareFrameManager> software_frame_manager_;
-
-  // Whether to allow overlapping views.
-  bool allow_overlapping_views_;
-
-  // Whether to use the CoreAnimation path to draw content.
-  bool use_core_animation_;
 
   // Latency info to send back when the next frame appears on the
   // screen.
@@ -512,7 +493,19 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // update the scale factor of the layers.
   void LayoutLayers();
 
-  bool HasPendingSwapAck() const { return pending_swap_ack_; }
+  // DelegatedFrameHostClient implementation.
+  virtual ui::Compositor* GetCompositor() const OVERRIDE;
+  virtual ui::Layer* GetLayer() OVERRIDE;
+  virtual RenderWidgetHostImpl* GetHost() OVERRIDE;
+  virtual void SchedulePaintInRect(
+      const gfx::Rect& damage_rect_in_dip) OVERRIDE;
+  virtual bool IsVisible() OVERRIDE;
+  virtual scoped_ptr<ResizeLock> CreateResizeLock(
+      bool defer_compositor_lock) OVERRIDE;
+  virtual gfx::Size DesiredFrameSize() OVERRIDE;
+  virtual float CurrentDeviceScaleFactor() OVERRIDE;
+  virtual gfx::Size ConvertViewSizeToPixel(const gfx::Size& size) OVERRIDE;
+  virtual DelegatedFrameHost* GetDelegatedFrameHost() const OVERRIDE;
 
  private:
   friend class RenderWidgetHostViewMacTest;
@@ -547,17 +540,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   };
   void DestroyCompositedIOSurfaceLayer(
       DestroyCompositedIOSurfaceLayerBehavior destroy_layer_behavior);
-  enum DestroyContextBehavior {
-    kLeaveContextBoundToView,
-    kDestroyContext,
-  };
-  void DestroyCompositedIOSurfaceAndLayer(
-      DestroyContextBehavior destroy_context_behavior);
+  void DestroyCompositedIOSurfaceAndLayer();
 
   void DestroyCompositingStateOnError();
-
-  // Unbind the GL context (if any) that is bound to |cocoa_view_|.
-  void ClearBoundContextDrawable();
 
   // Called when a GPU SwapBuffers is received.
   void GotAcceleratedFrame();
@@ -565,15 +550,9 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Called when a software DIB is received.
   void GotSoftwareFrame();
 
-  // Called if it has been a quarter-second since a GPU SwapBuffers has been
-  // received. In this case, switch from polling for frames to pushing them.
-  void TimerSinceGotAcceleratedFrameFired();
-
   // IPC message handlers.
   void OnPluginFocusChanged(bool focused, int plugin_id);
   void OnStartPluginIme();
-  void OnDidChangeScrollbarsForMainFrame(bool has_horizontal_scrollbar,
-                                         bool has_vertical_scrollbar);
 
   // Convert |rect| from the views coordinate (upper-left origin) into
   // the OpenGL coordinate (lower-left origin) and scale for HiDPI displays.
@@ -613,17 +592,10 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Overlay view has |underlay_view_| set to this view.
   base::WeakPtr<RenderWidgetHostViewMac> overlay_view_;
 
-  // Offset at which overlay view should be rendered.
-  gfx::Point overlay_view_offset_;
-
   // The underlay view which this view is rendered above in the same
   // accelerated IOSurface.
   // Underlay view has |overlay_view_| set to this view.
   base::WeakPtr<RenderWidgetHostViewMac> underlay_view_;
-
-  // Set to true when |underlay_view_| has drawn this view. After that point,
-  // this view should not draw again until |underlay_view_| is changed.
-  bool underlay_view_has_drawn_;
 
   // Factory used to safely reference overlay view set in SetOverlayView.
   base::WeakPtrFactory<RenderWidgetHostViewMac>

@@ -205,6 +205,11 @@ DebuggerScript.setPauseOnExceptionsState = function(newState)
         Debug.clearBreakOnUncaughtException();
 }
 
+DebuggerScript.frameCount = function(execState)
+{
+    return execState.frameCount();
+}
+
 DebuggerScript.currentCallFrame = function(execState, data)
 {
     var maximumLimit = data >> 2;
@@ -228,14 +233,12 @@ DebuggerScript.stepIntoStatement = function(execState)
 
 DebuggerScript.stepOverStatement = function(execState, callFrame)
 {
-    var frameMirror = callFrame ? callFrame.frameMirror : undefined;
-    execState.prepareStep(Debug.StepAction.StepNext, 1, frameMirror);
+    execState.prepareStep(Debug.StepAction.StepNext, 1);
 }
 
 DebuggerScript.stepOutOfFunction = function(execState, callFrame)
 {
-    var frameMirror = callFrame ? callFrame.frameMirror : undefined;
-    execState.prepareStep(Debug.StepAction.StepOut, 1, frameMirror);
+    execState.prepareStep(Debug.StepAction.StepOut, 1);
 }
 
 // Returns array in form:
@@ -461,8 +464,7 @@ DebuggerScript._frameMirrorToJSCallFrame = function(frameMirror, callerFrame, sc
         "setVariableValue": setVariableValue,
         "stepInPositions": stepInPositions,
         "isAtReturn": isAtReturn,
-        "returnValue": returnValue,
-        "frameMirror": frameMirror
+        "returnValue": returnValue
     };
 }
 
@@ -496,6 +498,9 @@ DebuggerScript._buildScopeObject = function(scopeType, scopeObject)
     }
     return result;
 }
+
+// We never resolve Mirror by its handle so to avoid memory leaks caused by Mirrors in the cache we disable it.
+ToggleMirrorCache(false);
 
 return DebuggerScript;
 })();

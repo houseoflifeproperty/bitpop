@@ -263,7 +263,7 @@ class TryJobBase(TryBase):
       patchsize = len(parsed_job['patch'])
       if patchsize > 20*1024*1024:  # 20MB
         raise BadJobfile('incoming Try job patch is %s bytes, '
-                        'must be less than 20MB' % (patchsize))
+                         'must be less than 20MB' % (patchsize))
 
     d = self.master.db.sourcestamps.addSourceStamp(
         branch=parsed_job['branch'],

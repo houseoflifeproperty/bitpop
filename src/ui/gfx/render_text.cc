@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <climits>
 
+#include "base/command_line.h"
 #include "base/i18n/break_iterator.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
@@ -17,7 +18,10 @@
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/insets.h"
+#include "ui/gfx/render_text_harfbuzz.h"
+#include "ui/gfx/scoped_canvas.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/gfx/switches.h"
 #include "ui/gfx/text_constants.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/gfx/text_utils.h"
@@ -74,11 +78,11 @@ int DetermineBaselineCenteringText(const Rect& display_rect,
   return baseline + std::max(min_shift, std::min(max_shift, baseline_shift));
 }
 
-// Converts |gfx::Font::FontStyle| flags to |SkTypeface::Style| flags.
+// Converts |Font::FontStyle| flags to |SkTypeface::Style| flags.
 SkTypeface::Style ConvertFontStyleToSkiaTypefaceStyle(int font_style) {
   int skia_style = SkTypeface::kNormal;
-  skia_style |= (font_style & gfx::Font::BOLD) ? SkTypeface::kBold : 0;
-  skia_style |= (font_style & gfx::Font::ITALIC) ? SkTypeface::kItalic : 0;
+  skia_style |= (font_style & Font::BOLD) ? SkTypeface::kBold : 0;
+  skia_style |= (font_style & Font::ITALIC) ? SkTypeface::kItalic : 0;
   return static_cast<SkTypeface::Style>(skia_style);
 }
 
@@ -218,17 +222,14 @@ void SkiaTextRenderer::SetFontFamilyWithStyle(const std::string& family,
                                               int style) {
   DCHECK(!family.empty());
 
-  SkTypeface::Style skia_style = ConvertFontStyleToSkiaTypefaceStyle(style);
-  skia::RefPtr<SkTypeface> typeface =
-      skia::AdoptRef(SkTypeface::CreateFromName(family.c_str(), skia_style));
+  skia::RefPtr<SkTypeface> typeface = CreateSkiaTypeface(family.c_str(), style);
   if (typeface) {
     // |paint_| adds its own ref. So don't |release()| it from the ref ptr here.
     SetTypeface(typeface.get());
 
     // Enable fake bold text if bold style is needed but new typeface does not
     // have it.
-    paint_.setFakeBoldText((skia_style & SkTypeface::kBold) &&
-                           !typeface->isBold());
+    paint_.setFakeBoldText((style & Font::BOLD) && !typeface->isBold());
   }
 }
 
@@ -319,6 +320,7 @@ SkiaTextRenderer::DiagonalStrike::DiagonalStrike(Canvas* canvas,
                                                  Point start,
                                                  const SkPaint& paint)
     : canvas_(canvas),
+      matrix_(canvas->sk_canvas()->getTotalMatrix()),
       start_(start),
       paint_(paint),
       total_length_(0) {
@@ -339,9 +341,15 @@ void SkiaTextRenderer::DiagonalStrike::Draw() {
       SkScalarCeilToInt(SkScalarMul(text_size, kLineThickness) * 2);
   const int height = SkScalarCeilToInt(text_size - offset);
   const Point end = start_ + Vector2d(total_length_, -height);
+  const int clip_height = height + 2 * thickness;
 
   paint_.setAntiAlias(true);
   paint_.setStrokeWidth(thickness);
+
+  ScopedCanvas scoped_canvas(canvas_);
+
+  SkCanvas* sk_canvas = canvas_->sk_canvas();
+  sk_canvas->setMatrix(matrix_);
 
   const bool clipped = pieces_.size() > 1;
   int x = start_.x();
@@ -349,14 +357,12 @@ void SkiaTextRenderer::DiagonalStrike::Draw() {
     paint_.setColor(pieces_[i].second);
 
     if (clipped) {
-      canvas_->Save();
-      canvas_->ClipRect(Rect(x, 0, pieces_[i].first, start_.y() + thickness));
+      sk_canvas->clipRect(RectToSkRect(
+          Rect(x, end.y() - thickness, pieces_[i].first, clip_height)),
+          SkRegion::kReplace_Op);
     }
 
     canvas_->DrawLine(start_, end, paint_);
-
-    if (clipped)
-      canvas_->Restore();
 
     x += pieces_[i].first;
   }
@@ -394,9 +400,28 @@ Line::Line() : preceding_heights(0), baseline(0) {}
 
 Line::~Line() {}
 
+skia::RefPtr<SkTypeface> CreateSkiaTypeface(const std::string& family,
+                                            int style) {
+  SkTypeface::Style skia_style = ConvertFontStyleToSkiaTypefaceStyle(style);
+  return skia::AdoptRef(SkTypeface::CreateFromName(family.c_str(), skia_style));
+}
+
 }  // namespace internal
 
 RenderText::~RenderText() {
+}
+
+RenderText* RenderText::CreateInstance() {
+#if defined(OS_MACOSX) && defined(TOOLKIT_VIEWS)
+  // Use the more complete HarfBuzz implementation for Views controls on Mac.
+  return new RenderTextHarfBuzz;
+#else
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableHarfBuzzRenderText)) {
+    return new RenderTextHarfBuzz;
+  }
+  return CreateNativeInstance();
+#endif
 }
 
 void RenderText::SetText(const base::string16& text) {
@@ -489,7 +514,7 @@ void RenderText::SetDisplayRect(const Rect& r) {
     baseline_ = kInvalidBaseline;
     cached_bounds_and_offset_valid_ = false;
     lines_.clear();
-    if (elide_behavior_ != gfx::NO_ELIDE)
+    if (elide_behavior_ != TRUNCATE)
       UpdateLayoutText();
   }
 }
@@ -737,7 +762,7 @@ void RenderText::Draw(Canvas* canvas) {
 
   if (clip_to_display_rect()) {
     Rect clip_rect(display_rect());
-    clip_rect.Inset(ShadowValue::GetMargin(text_shadows_));
+    clip_rect.Inset(ShadowValue::GetMargin(shadows_));
 
     canvas->Save();
     canvas->ClipRect(clip_rect);
@@ -848,10 +873,6 @@ SelectionModel RenderText::GetSelectionModelForSelectionStart() {
                         sel.is_reversed() ? CURSOR_BACKWARD : CURSOR_FORWARD);
 }
 
-void RenderText::SetTextShadows(const ShadowValues& shadows) {
-  text_shadows_ = shadows;
-}
-
 RenderText::RenderText()
     : horizontal_alignment_(base::i18n::IsRTL() ? ALIGN_RIGHT : ALIGN_LEFT),
       directionality_mode_(DIRECTIONALITY_FROM_TEXT),
@@ -870,10 +891,8 @@ RenderText::RenderText()
       obscured_(false),
       obscured_reveal_index_(-1),
       truncate_length_(0),
-      elide_behavior_(NO_ELIDE),
+      elide_behavior_(TRUNCATE),
       multiline_(false),
-      fade_head_(false),
-      fade_tail_(false),
       background_is_transparent_(false),
       clip_to_display_rect_(true),
       baseline_(kInvalidBaseline),
@@ -1054,37 +1073,23 @@ Vector2d RenderText::GetAlignmentOffset(size_t line_number) {
 }
 
 void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
-  if (multiline() || (!fade_head() && !fade_tail()))
+  const int width = display_rect().width();
+  if (multiline() || elide_behavior_ != FADE_TAIL || GetContentWidth() <= width)
     return;
 
-  const int display_width = display_rect().width();
-
-  // If the text fits as-is, no need to fade.
-  if (GetStringSize().width() <= display_width)
-    return;
-
-  int gradient_width = CalculateFadeGradientWidth(font_list(), display_width);
+  const int gradient_width = CalculateFadeGradientWidth(font_list(), width);
   if (gradient_width == 0)
     return;
-
-  bool fade_left = fade_head();
-  bool fade_right = fade_tail();
-  // Under RTL, |fade_right| == |fade_head|.
-  // TODO(asvitkine): This is currently not based on GetTextDirection() because
-  //                  RenderTextWin does not return a direction that's based on
-  //                  the text content.
-  if (horizontal_alignment_ == ALIGN_RIGHT)
-    std::swap(fade_left, fade_right);
 
   Rect solid_part = display_rect();
   Rect left_part;
   Rect right_part;
-  if (fade_left) {
+  if (horizontal_alignment_ != ALIGN_LEFT) {
     left_part = solid_part;
     left_part.Inset(0, 0, solid_part.width() - gradient_width, 0);
     solid_part.Inset(gradient_width, 0, 0, 0);
   }
-  if (fade_right) {
+  if (horizontal_alignment_ != ALIGN_RIGHT) {
     right_part = solid_part;
     right_part.Inset(solid_part.width() - gradient_width, 0, 0, 0);
     solid_part.Inset(0, 0, gradient_width, 0);
@@ -1101,7 +1106,7 @@ void RenderText::ApplyFadeEffects(internal::SkiaTextRenderer* renderer) {
 }
 
 void RenderText::ApplyTextShadows(internal::SkiaTextRenderer* renderer) {
-  skia::RefPtr<SkDrawLooper> looper = CreateShadowDrawLooper(text_shadows_);
+  skia::RefPtr<SkDrawLooper> looper = CreateShadowDrawLooper(shadows_);
   renderer->SetDrawLooper(looper.get());
 }
 
@@ -1129,7 +1134,7 @@ void RenderText::UpdateLayoutText() {
 
   if (obscured_) {
     size_t obscured_text_length =
-        static_cast<size_t>(gfx::UTF16IndexToOffset(text_, 0, text_.length()));
+        static_cast<size_t>(UTF16IndexToOffset(text_, 0, text_.length()));
     layout_text_.assign(obscured_text_length, kPasswordReplacementChar);
 
     if (obscured_reveal_index_ >= 0 &&
@@ -1143,7 +1148,7 @@ void RenderText::UpdateLayoutText() {
 
       // Gets the index in |layout_text_| to be replaced.
       const size_t cp_start =
-          static_cast<size_t>(gfx::UTF16IndexToOffset(text_, 0, start));
+          static_cast<size_t>(UTF16IndexToOffset(text_, 0, start));
       if (layout_text_.length() > cp_start)
         layout_text_.replace(cp_start, 1, text_.substr(start, end - start));
     }
@@ -1156,11 +1161,12 @@ void RenderText::UpdateLayoutText() {
     // Truncate the text at a valid character break and append an ellipsis.
     icu::StringCharacterIterator iter(text.c_str());
     iter.setIndex32(truncate_length_ - 1);
-    layout_text_.assign(text.substr(0, iter.getIndex()) + gfx::kEllipsisUTF16);
+    layout_text_.assign(text.substr(0, iter.getIndex()) + kEllipsisUTF16);
   }
 
-  if (elide_behavior_ != NO_ELIDE && display_rect_.width() > 0 &&
-      !layout_text_.empty() && GetContentWidth() > display_rect_.width()) {
+  if (elide_behavior_ != TRUNCATE && elide_behavior_ != FADE_TAIL &&
+      display_rect_.width() > 0 && !layout_text_.empty() &&
+      GetContentWidth() > display_rect_.width()) {
     // This doesn't trim styles so ellipsis may get rendered as a different
     // style than the preceding text. See crbug.com/327850.
     layout_text_.assign(ElideText(layout_text_));
@@ -1172,7 +1178,7 @@ void RenderText::UpdateLayoutText() {
 // TODO(skanuj): Fix code duplication with ElideText in ui/gfx/text_elider.cc
 // See crbug.com/327846
 base::string16 RenderText::ElideText(const base::string16& text) {
-  const bool insert_ellipsis = (elide_behavior_ != TRUNCATE_AT_END);
+  const bool insert_ellipsis = (elide_behavior_ != TRUNCATE);
   // Create a RenderText copy with attributes that affect the rendering width.
   scoped_ptr<RenderText> render_text(CreateInstance());
   render_text->SetFontList(font_list_);
@@ -1184,7 +1190,7 @@ base::string16 RenderText::ElideText(const base::string16& text) {
   render_text->SetText(text);
   const int current_text_pixel_width = render_text->GetContentWidth();
 
-  const base::string16 ellipsis = base::string16(gfx::kEllipsisUTF16);
+  const base::string16 ellipsis = base::string16(kEllipsisUTF16);
   const bool elide_in_middle = false;
   const bool elide_at_beginning = false;
   StringSlicer slicer(text, ellipsis, elide_in_middle, elide_at_beginning);

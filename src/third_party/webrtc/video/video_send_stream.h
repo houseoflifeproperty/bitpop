@@ -42,7 +42,10 @@ class VideoSendStream : public webrtc::VideoSendStream,
                   CpuOveruseObserver* overuse_observer,
                   webrtc::VideoEngine* video_engine,
                   const VideoSendStream::Config& config,
-                  int base_channel);
+                  const std::vector<VideoStream> video_streams,
+                  const void* encoder_settings,
+                  int base_channel,
+                  int start_bitrate);
 
   virtual ~VideoSendStream();
 
@@ -50,14 +53,13 @@ class VideoSendStream : public webrtc::VideoSendStream,
   virtual void Stop() OVERRIDE;
 
   virtual bool ReconfigureVideoEncoder(const std::vector<VideoStream>& streams,
-                                       void* encoder_settings) OVERRIDE;
+                                       const void* encoder_settings) OVERRIDE;
 
   virtual Stats GetStats() const OVERRIDE;
 
   bool DeliverRtcp(const uint8_t* packet, size_t length);
 
   // From VideoSendStreamInput.
-  virtual void PutFrame(const I420VideoFrame& frame) OVERRIDE;
   virtual void SwapFrame(I420VideoFrame* frame) OVERRIDE;
 
   // From webrtc::VideoSendStream.
@@ -69,11 +71,10 @@ class VideoSendStream : public webrtc::VideoSendStream,
   virtual std::string GetCName() OVERRIDE;
 
  private:
-  I420VideoFrame input_frame_;
   TransportAdapter transport_adapter_;
   EncodedFrameCallbackAdapter encoded_frame_proxy_;
-  scoped_ptr<CriticalSectionWrapper> codec_lock_;
-  VideoSendStream::Config config_;
+  const VideoSendStream::Config config_;
+  const int start_bitrate_bps_;
 
   ViEBase* video_engine_base_;
   ViECapture* capture_;

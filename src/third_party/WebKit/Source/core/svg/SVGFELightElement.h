@@ -22,18 +22,19 @@
 #ifndef SVGFELightElement_h
 #define SVGFELightElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGElement.h"
 #include "platform/graphics/filters/LightSource.h"
 
 namespace WebCore {
 
+class Filter;
+
 class SVGFELightElement : public SVGElement {
 public:
-    virtual PassRefPtr<LightSource> lightSource() const = 0;
+    virtual PassRefPtr<LightSource> lightSource(Filter*) const = 0;
     static SVGFELightElement* findLightElement(const SVGElement&);
-    static PassRefPtr<LightSource> findLightSource(const SVGElement&);
 
     SVGAnimatedNumber* azimuth() { return m_azimuth.get(); }
     const SVGAnimatedNumber* azimuth() const { return m_azimuth.get(); }

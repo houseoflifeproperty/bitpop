@@ -35,6 +35,7 @@
 
 using ::gfx::MockGLInterface;
 using ::testing::_;
+using ::testing::AtLeast;
 using ::testing::DoAll;
 using ::testing::InSequence;
 using ::testing::Invoke;
@@ -1067,7 +1068,6 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerTexImage2D) {
            GL_RGBA,
            4,
            4,
-           0,
            GL_RGBA,
            GL_UNSIGNED_BYTE,
            kSharedMemoryId,
@@ -1128,7 +1128,7 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerCopyTexImage2D) {
       .Times(1)
       .RetiresOnSaturation();
   CopyTexImage2D cmd;
-  cmd.Init(target, level, internal_format, 0, 0, width, height, border);
+  cmd.Init(target, level, internal_format, 0, 0, width, height);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(128u, memory_tracker->GetPoolSize(MemoryTracker::kUnmanaged));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
@@ -1208,6 +1208,80 @@ TEST_P(GLES2DecoderManualInitTest, MemoryTrackerBufferData) {
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_OUT_OF_MEMORY, GetGLError());
   EXPECT_EQ(128u, memory_tracker->GetPoolSize(MemoryTracker::kManaged));
+}
+
+TEST_P(GLES2DecoderManualInitTest, ImmutableCopyTexImage2D) {
+  const GLenum kTarget = GL_TEXTURE_2D;
+  const GLint kLevel = 0;
+  const GLenum kInternalFormat = GL_RGBA;
+  const GLenum kSizedInternalFormat = GL_RGBA8;
+  const GLsizei kWidth = 4;
+  const GLsizei kHeight = 8;
+  const GLint kBorder = 0;
+  InitState init;
+  init.extensions = "GL_EXT_texture_storage";
+  init.gl_version = "3.0";
+  init.has_alpha = true;
+  init.request_alpha = true;
+  init.bind_generates_resource = true;
+  InitDecoder(init);
+  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
+
+  // CopyTexImage2D will call arbitrary amount of GetErrors.
+  EXPECT_CALL(*gl_, GetError())
+      .Times(AtLeast(1));
+
+  EXPECT_CALL(*gl_,
+              CopyTexImage2D(
+                  kTarget, kLevel, kInternalFormat, 0, 0, kWidth, kHeight,
+                  kBorder))
+      .Times(1);
+
+  EXPECT_CALL(*gl_,
+              TexStorage2DEXT(
+                  kTarget, kLevel, kSizedInternalFormat, kWidth, kHeight))
+      .Times(1);
+  CopyTexImage2D copy_cmd;
+  copy_cmd.Init(kTarget, kLevel, kInternalFormat, 0, 0, kWidth, kHeight);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(copy_cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+
+  TexStorage2DEXT storage_cmd;
+  storage_cmd.Init(kTarget, kLevel, kSizedInternalFormat, kWidth, kHeight);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(storage_cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+
+  // This should not invoke CopyTexImage2D.
+  copy_cmd.Init(kTarget, kLevel, kInternalFormat, 0, 0, kWidth, kHeight);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(copy_cmd));
+  EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
+}
+
+TEST_P(GLES2DecoderTest, LoseContextCHROMIUMValidArgs) {
+  EXPECT_CALL(*mock_decoder_, LoseContext(GL_GUILTY_CONTEXT_RESET_ARB))
+      .Times(1);
+  cmds::LoseContextCHROMIUM cmd;
+  cmd.Init(GL_GUILTY_CONTEXT_RESET_ARB, GL_GUILTY_CONTEXT_RESET_ARB);
+  EXPECT_EQ(error::kLostContext, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+TEST_P(GLES2DecoderTest, LoseContextCHROMIUMInvalidArgs0_0) {
+  EXPECT_CALL(*mock_decoder_, LoseContext(_))
+      .Times(0);
+  cmds::LoseContextCHROMIUM cmd;
+  cmd.Init(GL_NONE, GL_GUILTY_CONTEXT_RESET_ARB);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
+}
+
+TEST_P(GLES2DecoderTest, LoseContextCHROMIUMInvalidArgs1_0) {
+  EXPECT_CALL(*mock_decoder_, LoseContext(_))
+      .Times(0);
+  cmds::LoseContextCHROMIUM cmd;
+  cmd.Init(GL_GUILTY_CONTEXT_RESET_ARB, GL_NONE);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_ENUM, GetGLError());
 }
 
 INSTANTIATE_TEST_CASE_P(Service, GLES2DecoderTest, ::testing::Bool());

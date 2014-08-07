@@ -238,13 +238,6 @@ bool SyncManagerImpl::VisiblePropertiesDiffer(
   return false;
 }
 
-void SyncManagerImpl::ThrowUnrecoverableError() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  ReadTransaction trans(FROM_HERE, GetUserShare());
-  trans.GetWrappedTrans()->OnUnrecoverableError(
-      FROM_HERE, "Simulating unrecoverable error for testing purposes.");
-}
-
 ModelTypeSet SyncManagerImpl::InitialSyncEndedTypes() {
   return directory()->InitialSyncEndedTypes();
 }
@@ -1042,7 +1035,7 @@ const std::string SyncManagerImpl::cache_guid() {
 bool SyncManagerImpl::ReceivedExperiment(Experiments* experiments) {
   ReadTransaction trans(FROM_HERE, GetUserShare());
   ReadNode nigori_node(&trans);
-  if (nigori_node.InitByTagLookup(kNigoriTag) != BaseNode::INIT_OK) {
+  if (nigori_node.InitTypeRoot(NIGORI) != BaseNode::INIT_OK) {
     DVLOG(1) << "Couldn't find Nigori node.";
     return false;
   }

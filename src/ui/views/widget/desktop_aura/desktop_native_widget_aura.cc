@@ -45,6 +45,7 @@
 #include "ui/views/widget/widget_aura_utils.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/window_reorderer.h"
+#include "ui/views/window/native_frame_view.h"
 #include "ui/wm/core/compound_event_filter.h"
 #include "ui/wm/core/cursor_manager.h"
 #include "ui/wm/core/focus_controller.h"
@@ -94,7 +95,9 @@ class DesktopNativeWidgetTopLevelHandler : public aura::WindowObserver {
     init_params.bounds = bounds;
     init_params.ownership = Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET;
     init_params.layer_type = aura::WINDOW_LAYER_NOT_DRAWN;
-    init_params.can_activate = full_screen;
+    init_params.activatable = full_screen ?
+        Widget::InitParams::ACTIVATABLE_YES :
+        Widget::InitParams::ACTIVATABLE_NO;
     init_params.keep_on_top = root_is_always_on_top;
 
     // This widget instance will get deleted when the window is
@@ -250,12 +253,12 @@ DesktopNativeWidgetAura::DesktopNativeWidgetAura(
     : desktop_window_tree_host_(NULL),
       ownership_(Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET),
       close_widget_factory_(this),
-      can_activate_(true),
       content_window_container_(NULL),
       content_window_(new aura::Window(this)),
       native_widget_delegate_(delegate),
       last_drop_operation_(ui::DragDropTypes::DRAG_NONE),
       restore_focus_on_activate_(false),
+      restore_focus_on_window_focus_(false),
       cursor_(gfx::kNullCursor),
       widget_type_(Widget::InitParams::TYPE_WINDOW) {
   aura::client::SetFocusChangeObserver(content_window_, this);
@@ -296,9 +299,11 @@ void DesktopNativeWidgetAura::OnHostClosed() {
   // references. Make sure we destroy ShadowController early on.
   shadow_controller_.reset();
   tooltip_manager_.reset();
-  host_->window()->RemovePreTargetHandler(tooltip_controller_.get());
-  aura::client::SetTooltipClient(host_->window(), NULL);
-  tooltip_controller_.reset();
+  if (tooltip_controller_.get()) {
+    host_->window()->RemovePreTargetHandler(tooltip_controller_.get());
+    aura::client::SetTooltipClient(host_->window(), NULL);
+    tooltip_controller_.reset();
+  }
 
   root_window_event_filter_->RemoveHandler(input_method_event_filter_.get());
 
@@ -436,7 +441,7 @@ void DesktopNativeWidgetAura::InitNativeWidget(
   // CEF sets focus to the window the user clicks down on.
   // TODO(beng): see if we can't do this some other way. CEF seems a heavy-
   //             handed way of accomplishing focus.
-  // No event filter for aura::Env. Create CompoundEvnetFilter per
+  // No event filter for aura::Env. Create CompoundEventFilter per
   // WindowEventDispatcher.
   root_window_event_filter_.reset(new wm::CompoundEventFilter);
   host_->window()->AddPreTargetHandler(root_window_event_filter_.get());
@@ -493,14 +498,15 @@ void DesktopNativeWidgetAura::InitNativeWidget(
   drop_helper_.reset(new DropHelper(GetWidget()->GetRootView()));
   aura::client::SetDragDropDelegate(content_window_, this);
 
-  tooltip_manager_.reset(new TooltipManagerAura(GetWidget()));
-
-  tooltip_controller_.reset(
-      new corewm::TooltipController(
-          desktop_window_tree_host_->CreateTooltip()));
-  aura::client::SetTooltipClient(host_->window(),
-                                 tooltip_controller_.get());
-  host_->window()->AddPreTargetHandler(tooltip_controller_.get());
+  if (params.type != Widget::InitParams::TYPE_TOOLTIP) {
+    tooltip_manager_.reset(new TooltipManagerAura(GetWidget()));
+    tooltip_controller_.reset(
+        new corewm::TooltipController(
+            desktop_window_tree_host_->CreateTooltip()));
+    aura::client::SetTooltipClient(host_->window(),
+                                   tooltip_controller_.get());
+    host_->window()->AddPreTargetHandler(tooltip_controller_.get());
+  }
 
   if (params.opacity == Widget::InitParams::TRANSLUCENT_WINDOW) {
     visibility_controller_.reset(new wm::VisibilityController);
@@ -536,7 +542,7 @@ void DesktopNativeWidgetAura::InitNativeWidget(
 }
 
 NonClientFrameView* DesktopNativeWidgetAura::CreateNonClientFrameView() {
-  return desktop_window_tree_host_->CreateNonClientFrameView();
+  return ShouldUseNativeFrame() ? new NativeFrameView(GetWidget()) : NULL;
 }
 
 bool DesktopNativeWidgetAura::ShouldUseNativeFrame() const {
@@ -926,6 +932,15 @@ void DesktopNativeWidgetAura::OnRootViewLayout() const {
     desktop_window_tree_host_->OnRootViewLayout();
 }
 
+bool DesktopNativeWidgetAura::IsTranslucentWindowOpacitySupported() const {
+  return content_window_ &&
+      desktop_window_tree_host_->IsTranslucentWindowOpacitySupported();
+}
+
+void DesktopNativeWidgetAura::RepostNativeEvent(gfx::NativeEvent native_event) {
+  OnEvent(native_event);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // DesktopNativeWidgetAura, aura::WindowDelegate implementation:
 
@@ -1049,7 +1064,7 @@ void DesktopNativeWidgetAura::OnGestureEvent(ui::GestureEvent* event) {
 // DesktopNativeWidgetAura, aura::client::ActivationDelegate implementation:
 
 bool DesktopNativeWidgetAura::ShouldActivate() const {
-  return can_activate_ && native_widget_delegate_->CanActivate();
+  return native_widget_delegate_->CanActivate();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1080,15 +1095,23 @@ void DesktopNativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
     native_widget_delegate_->OnNativeFocus(lost_focus);
 
     // If focus is moving from a descendant Window to |content_window_| then
-    // native activation hasn't changed. We still need to inform the InputMethod
-    // we've been focused though.
+    // native activation hasn't changed. Still, the InputMethod and FocusManager
+    // must be informed of the Window focus change.
     InputMethod* input_method = GetWidget()->GetInputMethod();
     if (input_method)
       input_method->OnFocus();
+
+    if (restore_focus_on_window_focus_) {
+      restore_focus_on_window_focus_ = false;
+      GetWidget()->GetFocusManager()->RestoreFocusedView();
+    }
   } else if (content_window_ == lost_focus) {
     desktop_window_tree_host_->OnNativeWidgetBlur();
-    native_widget_delegate_->OnNativeBlur(
-        aura::client::GetFocusClient(content_window_)->GetFocusedWindow());
+    native_widget_delegate_->OnNativeBlur(gained_focus);
+
+    DCHECK(!restore_focus_on_window_focus_);
+    restore_focus_on_window_focus_ = true;
+    GetWidget()->GetFocusManager()->StoreFocusedView(false);
   }
 }
 
@@ -1164,11 +1187,7 @@ void DesktopNativeWidgetAura::OnHostMoved(const aura::WindowTreeHost* host,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// DesktopNativeWidgetAura, NativeWidget implementation:
-
-ui::EventHandler* DesktopNativeWidgetAura::GetEventHandler() {
-  return this;
-}
+// DesktopNativeWidgetAura, private:
 
 void DesktopNativeWidgetAura::InstallInputMethodEventFilter() {
   DCHECK(!input_method_event_filter_.get());

@@ -45,10 +45,10 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/logging_chrome.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "components/onc/onc_constants.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -79,8 +79,8 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/net/onc_utils.h"
 #include "chrome/browser/chromeos/system/syslogs_provider.h"
 #include "chrome/browser/net/nss_context.h"
@@ -469,7 +469,6 @@ class NetInternalsMessageHandler::IOThreadImpl
 #if defined(OS_WIN)
   void OnGetServiceProviders(const base::ListValue* list);
 #endif
-  void OnGetHttpPipeliningStatus(const base::ListValue* list);
   void OnSetLogLevel(const base::ListValue* list);
 
   // ChromeNetLog::ThreadSafeObserver implementation:
@@ -681,10 +680,6 @@ void NetInternalsMessageHandler::RegisterMessages() {
                  &IOThreadImpl::OnGetServiceProviders, proxy_));
 #endif
 
-  web_ui()->RegisterMessageCallback(
-      "getHttpPipeliningStatus",
-      base::Bind(&IOThreadImpl::CallbackHelper,
-                 &IOThreadImpl::OnGetHttpPipeliningStatus, proxy_));
   web_ui()->RegisterMessageCallback(
       "setLogLevel",
       base::Bind(&IOThreadImpl::CallbackHelper,
@@ -1133,7 +1128,7 @@ void NetInternalsMessageHandler::IOThreadImpl::OnStartConnectionTests(
 
   // Try to fix-up the user provided URL into something valid.
   // For example, turn "www.google.com" into "http://www.google.com".
-  GURL url(URLFixerUpper::FixupURL(base::UTF16ToUTF8(url_str), std::string()));
+  GURL url(url_fixer::FixupURL(base::UTF16ToUTF8(url_str), std::string()));
 
   connection_tester_.reset(new ConnectionTester(
       this,
@@ -1362,24 +1357,25 @@ void NetInternalsMessageHandler::IOThreadImpl::OnGetSpdyStatus(
   DCHECK(!list);
   base::DictionaryValue* status_dict = new base::DictionaryValue();
 
+  net::HttpNetworkSession* http_network_session =
+      GetHttpNetworkSession(GetMainContext());
+
   status_dict->Set("spdy_enabled",
                    base::Value::CreateBooleanValue(
                        net::HttpStreamFactory::spdy_enabled()));
   status_dict->Set("use_alternate_protocols",
                    base::Value::CreateBooleanValue(
-                       net::HttpStreamFactory::use_alternate_protocols()));
+                       http_network_session->params().use_alternate_protocols));
   status_dict->Set("force_spdy_over_ssl",
                    base::Value::CreateBooleanValue(
-                       net::HttpStreamFactory::force_spdy_over_ssl()));
+                       http_network_session->params().force_spdy_over_ssl));
   status_dict->Set("force_spdy_always",
                    base::Value::CreateBooleanValue(
-                       net::HttpStreamFactory::force_spdy_always()));
+                       http_network_session->params().force_spdy_always));
 
-  // The next_protos may not be specified for certain configurations of SPDY.
-  std::string next_protos_string;
-  if (net::HttpStreamFactory::has_next_protos()) {
-    next_protos_string = JoinString(net::HttpStreamFactory::next_protos(), ',');
-  }
+  std::vector<std::string> next_protos;
+  http_network_session->GetNextProtos(&next_protos);
+  std::string next_protos_string = JoinString(next_protos, ',');
   status_dict->SetString("next_protos", next_protos_string);
 
   SendJavascriptCommand("receivedSpdyStatus", status_dict);
@@ -1580,63 +1576,6 @@ void NetInternalsMessageHandler::OnSetNetworkDebugModeCompleted(
                         new base::StringValue(status));
 }
 #endif  // defined(OS_CHROMEOS)
-
-void NetInternalsMessageHandler::IOThreadImpl::OnGetHttpPipeliningStatus(
-    const base::ListValue* list) {
-  DCHECK(!list);
-  base::DictionaryValue* status_dict = new base::DictionaryValue();
-
-  base::Value* pipelined_connection_info = NULL;
-  net::HttpNetworkSession* http_network_session =
-      GetHttpNetworkSession(GetMainContext());
-  if (http_network_session) {
-    status_dict->Set("pipelining_enabled", base::Value::CreateBooleanValue(
-        http_network_session->params().http_pipelining_enabled));
-
-    pipelined_connection_info =
-        http_network_session->http_stream_factory()->PipelineInfoToValue();
-  }
-  status_dict->Set("pipelined_connection_info", pipelined_connection_info);
-
-  const net::HttpServerProperties& http_server_properties =
-      *GetMainContext()->http_server_properties();
-
-  // TODO(simonjam): This call is slow.
-  const net::PipelineCapabilityMap pipeline_capability_map =
-      http_server_properties.GetPipelineCapabilityMap();
-
-  base::ListValue* known_hosts_list = new base::ListValue();
-  net::PipelineCapabilityMap::const_iterator it;
-  for (it = pipeline_capability_map.begin();
-       it != pipeline_capability_map.end(); ++it) {
-    base::DictionaryValue* host_dict = new base::DictionaryValue();
-    host_dict->SetString("host", it->first.ToString());
-    std::string capability;
-    switch (it->second) {
-      case net::PIPELINE_CAPABLE:
-        capability = "capable";
-        break;
-
-      case net::PIPELINE_PROBABLY_CAPABLE:
-        capability = "probably capable";
-        break;
-
-      case net::PIPELINE_INCAPABLE:
-        capability = "incapable";
-        break;
-
-      case net::PIPELINE_UNKNOWN:
-      default:
-        capability = "unknown";
-        break;
-    }
-    host_dict->SetString("capability", capability);
-    known_hosts_list->Append(host_dict);
-  }
-  status_dict->Set("pipelined_host_info", known_hosts_list);
-
-  SendJavascriptCommand("receivedHttpPipeliningStatus", status_dict);
-}
 
 void NetInternalsMessageHandler::IOThreadImpl::OnSetLogLevel(
     const base::ListValue* list) {

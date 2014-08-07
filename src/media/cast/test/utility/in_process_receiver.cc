@@ -24,8 +24,8 @@ InProcessReceiver::InProcessReceiver(
     const scoped_refptr<CastEnvironment>& cast_environment,
     const net::IPEndPoint& local_end_point,
     const net::IPEndPoint& remote_end_point,
-    const AudioReceiverConfig& audio_config,
-    const VideoReceiverConfig& video_config)
+    const FrameReceiverConfig& audio_config,
+    const FrameReceiverConfig& video_config)
     : cast_environment_(cast_environment),
       local_end_point_(local_end_point),
       remote_end_point_(remote_end_point),
@@ -114,14 +114,14 @@ void InProcessReceiver::GotVideoFrame(
 
 void InProcessReceiver::PullNextAudioFrame() {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  cast_receiver_->frame_receiver()->GetRawAudioFrame(
+  cast_receiver_->RequestDecodedAudioFrame(
       base::Bind(&InProcessReceiver::GotAudioFrame,
                  weak_factory_.GetWeakPtr()));
 }
 
 void InProcessReceiver::PullNextVideoFrame() {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  cast_receiver_->frame_receiver()->GetRawVideoFrame(base::Bind(
+  cast_receiver_->RequestDecodedVideoFrame(base::Bind(
       &InProcessReceiver::GotVideoFrame, weak_factory_.GetWeakPtr()));
 }
 

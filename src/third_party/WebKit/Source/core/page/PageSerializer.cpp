@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/page/PageSerializer.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/css/CSSFontFaceRule.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSImageValue.h"
@@ -75,16 +75,16 @@ static bool isCharsetSpecifyingNode(const Node& node)
         return false;
 
     const HTMLMetaElement& element = toHTMLMetaElement(node);
-    HTMLAttributeList attributes;
+    HTMLAttributeList attributeList;
     if (element.hasAttributes()) {
-        unsigned attributeCount = element.attributeCount();
-        for (unsigned i = 0; i < attributeCount; ++i) {
-            const Attribute& attribute = element.attributeItem(i);
+        AttributeCollection attributes = element.attributes();
+        AttributeCollection::const_iterator end = attributes.end();
+        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
             // FIXME: We should deal appropriately with the attribute if they have a namespace.
-            attributes.append(std::make_pair(attribute.name().localName(), attribute.value().string()));
+            attributeList.append(std::make_pair(it->name().localName(), it->value().string()));
         }
     }
-    WTF::TextEncoding textEncoding = encodingFromMetaAttributes(attributes);
+    WTF::TextEncoding textEncoding = encodingFromMetaAttributes(attributeList);
     return textEncoding.isValid();
 }
 
@@ -101,7 +101,7 @@ static const QualifiedName& frameOwnerURLAttributeName(const HTMLFrameOwnerEleme
 
 class SerializerMarkupAccumulator FINAL : public MarkupAccumulator {
 public:
-    SerializerMarkupAccumulator(PageSerializer*, const Document&, Vector<Node*>*);
+    SerializerMarkupAccumulator(PageSerializer*, const Document&, WillBeHeapVector<RawPtrWillBeMember<Node> >*);
     virtual ~SerializerMarkupAccumulator();
 
 protected:
@@ -115,8 +115,8 @@ private:
     const Document& m_document;
 };
 
-SerializerMarkupAccumulator::SerializerMarkupAccumulator(PageSerializer* serializer, const Document& document, Vector<Node*>* nodes)
-    : MarkupAccumulator(nodes, ResolveAllURLs)
+SerializerMarkupAccumulator::SerializerMarkupAccumulator(PageSerializer* serializer, const Document& document, WillBeHeapVector<RawPtrWillBeMember<Node> >* nodes)
+    : MarkupAccumulator(nodes, ResolveAllURLs, nullptr)
     , m_serializer(serializer)
     , m_document(document)
 {
@@ -181,7 +181,7 @@ PageSerializer::PageSerializer(Vector<SerializedResource>* resources)
 
 void PageSerializer::serialize(Page* page)
 {
-    serializeFrame(page->mainFrame());
+    serializeFrame(page->deprecatedLocalMainFrame());
 }
 
 void PageSerializer::serializeFrame(LocalFrame* frame)
@@ -208,14 +208,14 @@ void PageSerializer::serializeFrame(LocalFrame* frame)
         return;
     }
 
-    Vector<Node*> serializedNodes;
+    WillBeHeapVector<RawPtrWillBeMember<Node> > serializedNodes;
     SerializerMarkupAccumulator accumulator(this, document, &serializedNodes);
     String text = accumulator.serializeNodes(document, IncludeNode);
     CString frameHTML = textEncoding.normalizeAndEncode(text, WTF::EntitiesForUnencodables);
     m_resources->append(SerializedResource(url, document.suggestedMIMEType(), SharedBuffer::create(frameHTML.data(), frameHTML.length())));
     m_resourceURLs.add(url);
 
-    for (Vector<Node*>::iterator iter = serializedNodes.begin(); iter != serializedNodes.end(); ++iter) {
+    for (WillBeHeapVector<RawPtrWillBeMember<Node> >::iterator iter = serializedNodes.begin(); iter != serializedNodes.end(); ++iter) {
         ASSERT(*iter);
         Node& node = **iter;
         if (!node.isElementNode())
@@ -242,40 +242,43 @@ void PageSerializer::serializeFrame(LocalFrame* frame)
             HTMLLinkElement& linkElement = toHTMLLinkElement(element);
             if (CSSStyleSheet* sheet = linkElement.sheet()) {
                 KURL url = document.completeURL(linkElement.getAttribute(HTMLNames::hrefAttr));
-                serializeCSSStyleSheet(sheet, url);
+                serializeCSSStyleSheet(*sheet, url);
                 ASSERT(m_resourceURLs.contains(url));
             }
         } else if (isHTMLStyleElement(element)) {
             HTMLStyleElement& styleElement = toHTMLStyleElement(element);
             if (CSSStyleSheet* sheet = styleElement.sheet())
-                serializeCSSStyleSheet(sheet, KURL());
+                serializeCSSStyleSheet(*sheet, KURL());
         }
     }
 
-    for (LocalFrame* childFrame = frame->tree().firstChild(); childFrame; childFrame = childFrame->tree().nextSibling())
-        serializeFrame(childFrame);
+    for (Frame* childFrame = frame->tree().firstChild(); childFrame; childFrame = childFrame->tree().nextSibling()) {
+        if (childFrame->isLocalFrame())
+            serializeFrame(toLocalFrame(childFrame));
+    }
 }
 
-void PageSerializer::serializeCSSStyleSheet(CSSStyleSheet* styleSheet, const KURL& url)
+void PageSerializer::serializeCSSStyleSheet(CSSStyleSheet& styleSheet, const KURL& url)
 {
     StringBuilder cssText;
-    for (unsigned i = 0; i < styleSheet->length(); ++i) {
-        CSSRule* rule = styleSheet->item(i);
+    for (unsigned i = 0; i < styleSheet.length(); ++i) {
+        CSSRule* rule = styleSheet.item(i);
         String itemText = rule->cssText();
         if (!itemText.isEmpty()) {
             cssText.append(itemText);
-            if (i < styleSheet->length() - 1)
+            if (i < styleSheet.length() - 1)
                 cssText.append("\n\n");
         }
-        ASSERT(styleSheet->ownerDocument());
-        Document& document = *styleSheet->ownerDocument();
+        ASSERT(styleSheet.ownerDocument());
+        Document& document = *styleSheet.ownerDocument();
         // Some rules have resources associated with them that we need to retrieve.
         if (rule->type() == CSSRule::IMPORT_RULE) {
             CSSImportRule* importRule = toCSSImportRule(rule);
             KURL importURL = document.completeURL(importRule->href());
             if (m_resourceURLs.contains(importURL))
                 continue;
-            serializeCSSStyleSheet(importRule->styleSheet(), importURL);
+            if (importRule->styleSheet())
+                serializeCSSStyleSheet(*importRule->styleSheet(), importURL);
         } else if (rule->type() == CSSRule::FONT_FACE_RULE) {
             retrieveResourcesForProperties(&toCSSFontFaceRule(rule)->styleRule()->properties(), document);
         } else if (rule->type() == CSSRule::STYLE_RULE) {
@@ -285,7 +288,7 @@ void PageSerializer::serializeCSSStyleSheet(CSSStyleSheet* styleSheet, const KUR
 
     if (url.isValid() && !m_resourceURLs.contains(url)) {
         // FIXME: We should check whether a charset has been specified and if none was found add one.
-        WTF::TextEncoding textEncoding(styleSheet->contents()->charset());
+        WTF::TextEncoding textEncoding(styleSheet.contents()->charset());
         ASSERT(textEncoding.isValid());
         String textString = cssText.toString();
         CString text = textEncoding.normalizeAndEncode(textString, WTF::EntitiesForUnencodables);

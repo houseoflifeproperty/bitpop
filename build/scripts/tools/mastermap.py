@@ -34,8 +34,11 @@ from slave import bootstrap
 # These are ports likely to be running on a developer's machine, which may break
 # presubmit tests.
 PORT_BLACKLIST = set([
+    8000,  # SimpleHTTPServer, dev_appserver.py
     8080,  # dev_appserver.py
     8088,  # goma
+    8103,  # sshd
+    8224,  # google-specific
 ])
 
 def get_args():

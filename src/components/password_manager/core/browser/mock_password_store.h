@@ -35,7 +35,9 @@ class MockPasswordStore : public PasswordStore {
   MOCK_METHOD1(RemoveLoginImpl,
                PasswordStoreChangeList(const autofill::PasswordForm&));
   MOCK_METHOD2(RemoveLoginsCreatedBetweenImpl,
-               PasswordStoreChangeList(const base::Time&, const base::Time&));
+               PasswordStoreChangeList(base::Time, base::Time));
+  MOCK_METHOD2(RemoveLoginsSyncedBetweenImpl,
+               PasswordStoreChangeList(base::Time, base::Time));
   MOCK_METHOD3(GetLoginsImpl,
                void(const autofill::PasswordForm& form,
                     PasswordStore::AuthorizationPromptPolicy prompt_policy,

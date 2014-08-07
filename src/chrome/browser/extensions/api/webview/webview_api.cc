@@ -89,6 +89,15 @@ bool WebviewContextMenusCreateFunction::RunAsync() {
   return success;
 }
 
+bool WebviewNavigateFunction::RunAsyncSafe(WebViewGuest* guest) {
+  scoped_ptr<webview::Navigate::Params> params(
+      webview::Navigate::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+  std::string src = params->src;
+  guest->NavigateGuest(src);
+  return true;
+}
+
 bool WebviewContextMenusUpdateFunction::RunAsync() {
   scoped_ptr<webview::ContextMenusUpdate::Params> params(
       webview::ContextMenusUpdate::Params::Create(*args_));
@@ -349,10 +358,25 @@ void WebviewCaptureVisibleRegionFunction::OnCaptureFailure(
   SendResponse(false);
 }
 
+WebviewSetNameFunction::WebviewSetNameFunction() {
+}
+
+WebviewSetNameFunction::~WebviewSetNameFunction() {
+}
+
 WebviewSetZoomFunction::WebviewSetZoomFunction() {
 }
 
 WebviewSetZoomFunction::~WebviewSetZoomFunction() {
+}
+
+bool WebviewSetNameFunction::RunAsyncSafe(WebViewGuest* guest) {
+  scoped_ptr<webview::SetName::Params> params(
+      webview::SetName::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+  guest->SetName(params->frame_name);
+  SendResponse(true);
+  return true;
 }
 
 bool WebviewSetZoomFunction::RunAsyncSafe(WebViewGuest* guest) {

@@ -8,6 +8,7 @@ namespace extensions {
 
 namespace manifest_keys {
 
+const char kAboutPage[] = "about_page";
 const char kAllFrames[] = "all_frames";
 const char kAltKey[] = "altKey";
 const char kApp[] = "app";
@@ -43,7 +44,6 @@ const char kExternallyConnectable[] = "externally_connectable";
 const char kFileAccessList[] = "file_access";
 const char kFileFilters[] = "file_filters";
 const char kFileBrowserHandlers[] = "file_browser_handlers";
-const char kMediaGalleriesHandlers[] = "media_galleries_handlers";
 const char kFileHandlers[] = "file_handlers";
 const char kFileHandlerExtensions[] = "extensions";
 const char kFileHandlerTitle[] = "title";
@@ -75,6 +75,7 @@ const char kLaunchWebURL[] = "app.launch.web_url";
 const char kLaunchWidth[] = "app.launch.width";
 const char kLayouts[] = "layouts";
 const char kManifestVersion[] = "manifest_version";
+const char kMatchAboutBlank[] = "match_about_blank";
 const char kMatches[] = "matches";
 const char kMinimumChromeVersion[] = "minimum_chrome_version";
 const char kMinimumVersion[] = "minimum_version";
@@ -268,6 +269,9 @@ const char kExperimentalFlagRequired[] =
     "Loading extensions with 'experimental' permission is turned off by "
     "default. You can enable 'Experimental Extension APIs' "
     "by visiting chrome://flags.";
+const char kInvalidAboutPage[] = "Invalid value for 'about_page'.";
+const char kInvalidAboutPageExpectRelativePath[] =
+    "Invalid value for 'about_page'. Value must be a relative path.";
 const char kInvalidAllFrames[] =
     "Invalid value for 'content_scripts[*].all_frames'.";
 const char kInvalidBackground[] =
@@ -342,8 +346,6 @@ const char kInvalidFileAccessValue[] =
     "Invalid value for 'file_access[*]'.";
 const char kInvalidFileBrowserHandler[] =
     "Invalid value for 'file_browser_handlers'.";
-const char kInvalidMediaGalleriesHandler[] =
-    "Invalid value for 'media_galleries_handlers'.";
 const char kInvalidFileFiltersList[] =
     "Invalid value for 'file_filters'.";
 const char kInvalidFileFilterValue[] =
@@ -478,6 +480,8 @@ const char kInvalidManifestVersionOld[] =
     "See developer.chrome.com/*/manifestVersion.html for details.";
 const char kInvalidMatch[] =
     "Invalid value for 'content_scripts[*].matches[*]': *";
+const char kInvalidMatchAboutBlank[] =
+    "Invalid value for 'content_scripts[*].match_about_blank'.";
 const char kInvalidMatchCount[] =
     "Invalid value for 'content_scripts[*].matches'. There must be at least "
     "one match specified.";

@@ -13,6 +13,7 @@
 #include <sstream>
 
 #include "native_client/src/include/portability.h"
+#include "native_client/src/include/portability_io.h"
 
 #include "native_client/src/include/nacl_base.h"
 
@@ -438,8 +439,6 @@ static bool HandleHelp(NaClCommandLoop* ncl, const vector<string>& args) {
   printf("    print the table of variables and their values\n");
   printf("  set_variable <name> <value>\n");
   printf("    set variable to the given value\n");
-  printf("  sysv\n");
-  printf("    create a descriptor for an SysV shared memory (Linux only)\n");
   printf("  rpc method_name <in_args> * <out_args>\n");
   printf("    Invoke method_name.\n");
   printf("    Each in_arg is of form 'type(value)', e.g. i(42), s(\"foo\").\n");
@@ -582,9 +581,9 @@ NaClCommandLoop::NaClCommandLoop(NaClSrpcService* service,
   service_ = service;
   // populate descriptors
   AddDesc((NaClDesc*) NaClDescInvalidMake(), "invalid");
-  AddDesc(DescFromPlatformDesc(0, NACL_ABI_O_RDONLY), "stdin");
-  AddDesc(DescFromPlatformDesc(1, NACL_ABI_O_WRONLY), "stdout");
-  AddDesc(DescFromPlatformDesc(2, NACL_ABI_O_WRONLY), "stderr");
+  AddDesc(DescFromPlatformDesc(DUP(0), NACL_ABI_O_RDONLY), "stdin");
+  AddDesc(DescFromPlatformDesc(DUP(1), NACL_ABI_O_WRONLY), "stdout");
+  AddDesc(DescFromPlatformDesc(DUP(2), NACL_ABI_O_WRONLY), "stderr");
   if (kNaClSrpcInvalidImcDesc != default_socket_address) {
     AddDesc(default_socket_address, "module_socket_address");
   }
@@ -606,6 +605,11 @@ NaClCommandLoop::NaClCommandLoop(NaClSrpcService* service,
   AddHandler("service", HandleService);
 }
 
+NaClCommandLoop::~NaClCommandLoop() {
+  NaClDescUnref(descs_["stdin"]);
+  NaClDescUnref(descs_["stdout"]);
+  NaClDescUnref(descs_["stderr"]);
+}
 
 // return codes:
 // 0  - ok

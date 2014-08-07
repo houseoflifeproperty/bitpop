@@ -34,9 +34,9 @@ URLRequestFtpJob::URLRequestFtpJob(
       pac_request_(NULL),
       http_response_info_(NULL),
       read_in_progress_(false),
-      weak_factory_(this),
       ftp_transaction_factory_(ftp_transaction_factory),
-      ftp_auth_cache_(ftp_auth_cache) {
+      ftp_auth_cache_(ftp_auth_cache),
+      weak_factory_(this) {
   DCHECK(proxy_service_);
   DCHECK(ftp_transaction_factory);
   DCHECK(ftp_auth_cache);
@@ -218,6 +218,7 @@ void URLRequestFtpJob::OnStartCompleted(int result) {
   if (result == OK) {
     if (http_transaction_) {
       http_response_info_ = http_transaction_->GetResponseInfo();
+      SetProxyServer(http_response_info_->proxy_server);
 
       if (http_response_info_->headers->response_code() == 401 ||
           http_response_info_->headers->response_code() == 407) {

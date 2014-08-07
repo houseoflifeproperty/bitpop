@@ -31,12 +31,11 @@
 #include "config.h"
 #include "core/css/FontFace.h"
 
-#include "CSSValueKeywords.h"
-#include "FontFamilyNames.h"
 #include "bindings/v8/Dictionary.h"
 #include "bindings/v8/ExceptionState.h"
 #include "bindings/v8/ScriptPromiseResolverWithContext.h"
 #include "bindings/v8/ScriptState.h"
+#include "core/CSSValueKeywords.h"
 #include "core/css/BinaryDataFontFaceSource.h"
 #include "core/css/CSSFontFace.h"
 #include "core/css/CSSFontFaceSrcValue.h"
@@ -58,16 +57,16 @@
 #include "core/svg/SVGFontFaceElement.h"
 #include "core/svg/SVGFontFaceSource.h"
 #include "core/svg/SVGRemoteFontFaceSource.h"
+#include "platform/FontFamilyNames.h"
 #include "platform/SharedBuffer.h"
-#include "platform/fonts/FontDescription.h"
 
 namespace WebCore {
 
 class FontFaceReadyPromiseResolver {
 public:
-    static PassOwnPtr<FontFaceReadyPromiseResolver> create(ExecutionContext* context)
+    static PassOwnPtr<FontFaceReadyPromiseResolver> create(ScriptState* scriptState)
     {
-        return adoptPtr(new FontFaceReadyPromiseResolver(context));
+        return adoptPtr(new FontFaceReadyPromiseResolver(scriptState));
     }
 
     void resolve(PassRefPtrWillBeRawPtr<FontFace> fontFace)
@@ -87,8 +86,8 @@ public:
     ScriptPromise promise() { return m_resolver->promise(); }
 
 private:
-    FontFaceReadyPromiseResolver(ExecutionContext* context)
-        : m_resolver(ScriptPromiseResolverWithContext::create(ScriptState::current(toIsolate(context))))
+    FontFaceReadyPromiseResolver(ScriptState* scriptState)
+        : m_resolver(ScriptPromiseResolverWithContext::create(scriptState))
     {
     }
 
@@ -390,17 +389,24 @@ void FontFace::setLoadStatus(LoadStatus status)
     }
 }
 
-ScriptPromise FontFace::load(ExecutionContext* context)
+ScriptPromise FontFace::fontStatusPromise(ScriptState* scriptState)
 {
-    OwnPtr<FontFaceReadyPromiseResolver> resolver = FontFaceReadyPromiseResolver::create(context);
+    // Since we cannot hold a ScriptPromise as a member of FontFace (that will
+    // cause a circular reference), this creates new Promise every time.
+    OwnPtr<FontFaceReadyPromiseResolver> resolver = FontFaceReadyPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
     if (m_status == Loaded || m_status == Error)
         resolver->resolve(this);
     else
         m_readyResolvers.append(resolver.release());
 
-    loadInternal(context);
     return promise;
+}
+
+ScriptPromise FontFace::load(ScriptState* scriptState)
+{
+    loadInternal(scriptState->executionContext());
+    return fontStatusPromise(scriptState);
 }
 
 void FontFace::loadWithCallback(PassRefPtrWillBeRawPtr<LoadFontCallback> callback, ExecutionContext* context)
@@ -419,15 +425,8 @@ void FontFace::loadInternal(ExecutionContext* context)
     if (m_status != Unloaded)
         return;
 
-    FontDescription fontDescription;
-    FontFamily fontFamily;
-    fontFamily.setFamily(m_family);
-    fontDescription.setFamily(fontFamily);
-    fontDescription.setTraits(traits());
-
-    CSSFontSelector* fontSelector = toDocument(context)->styleEngine()->fontSelector();
-    m_cssFontFace->load(fontDescription, fontSelector);
-    fontSelector->loadPendingFonts();
+    m_cssFontFace->load();
+    toDocument(context)->styleEngine()->fontSelector()->fontLoader()->loadPendingFonts();
 }
 
 void FontFace::resolveReadyPromises()
@@ -559,7 +558,7 @@ void FontFace::initCSSFontFace(Document* document, PassRefPtrWillBeRawPtr<CSSVal
     for (int i = 0; i < srcLength; i++) {
         // An item in the list either specifies a string (local font name) or a URL (remote font to download).
         CSSFontFaceSrcValue* item = toCSSFontFaceSrcValue(srcList->itemWithoutBoundsCheck(i));
-        OwnPtr<CSSFontFaceSource> source;
+        OwnPtrWillBeRawPtr<CSSFontFaceSource> source = nullptr;
 
 #if ENABLE(SVG_FONTS)
         foundSVGFont = item->isSVGFontFaceSrc() || item->svgFontFaceElement();
@@ -570,29 +569,31 @@ void FontFace::initCSSFontFace(Document* document, PassRefPtrWillBeRawPtr<CSSVal
             if (allowDownloading && item->isSupportedFormat() && document) {
                 FontResource* fetched = item->fetch(document);
                 if (fetched) {
+                    FontLoader* fontLoader = document->styleEngine()->fontSelector()->fontLoader();
+
 #if ENABLE(SVG_FONTS)
                     if (foundSVGFont) {
-                        source = adoptPtr(new SVGRemoteFontFaceSource(item->resource(), fetched));
+                        source = adoptPtrWillBeNoop(new SVGRemoteFontFaceSource(item->resource(), fetched, fontLoader));
                     } else
 #endif
                     {
-                        source = adoptPtr(new RemoteFontFaceSource(fetched));
+                        source = adoptPtrWillBeNoop(new RemoteFontFaceSource(fetched, fontLoader));
                     }
                 }
             }
         } else {
 #if ENABLE(SVG_FONTS)
             if (item->svgFontFaceElement()) {
-                RefPtr<SVGFontFaceElement> fontfaceElement = item->svgFontFaceElement();
+                RefPtrWillBeRawPtr<SVGFontFaceElement> fontfaceElement = item->svgFontFaceElement();
                 // SVGFontFaceSource assumes that it is the case where <font-face> element resides in the same document.
                 // We put a RELEASE_ASSERT here as it will cause UAF if the assumption is false.
                 RELEASE_ASSERT(fontfaceElement->inDocument());
                 RELEASE_ASSERT(fontfaceElement->document() == document);
-                source = adoptPtr(new SVGFontFaceSource(fontfaceElement.get()));
+                source = adoptPtrWillBeNoop(new SVGFontFaceSource(fontfaceElement.get()));
             } else
 #endif
             {
-                source = adoptPtr(new LocalFontFaceSource(item->resource()));
+                source = adoptPtrWillBeNoop(new LocalFontFaceSource(item->resource()));
             }
         }
 
@@ -606,7 +607,7 @@ void FontFace::initCSSFontFace(const unsigned char* data, unsigned size)
     m_cssFontFace = createCSSFontFace(this, m_unicodeRange.get());
 
     RefPtr<SharedBuffer> buffer = SharedBuffer::create(data, size);
-    OwnPtr<BinaryDataFontFaceSource> source = adoptPtr(new BinaryDataFontFaceSource(buffer.get()));
+    OwnPtrWillBeRawPtr<BinaryDataFontFaceSource> source = adoptPtrWillBeNoop(new BinaryDataFontFaceSource(buffer.get()));
     if (source->isValid()) {
         m_status = Loaded;
     } else {

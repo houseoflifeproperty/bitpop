@@ -25,7 +25,7 @@
 #include "config.h"
 #include "core/html/HTMLLegendElement.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLFieldSetElement.h"
 #include "core/html/HTMLFormControlElement.h"
@@ -41,10 +41,7 @@ inline HTMLLegendElement::HTMLLegendElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<HTMLLegendElement> HTMLLegendElement::create(Document& document)
-{
-    return adoptRefWillBeRefCountedGarbageCollected(new HTMLLegendElement(document));
-}
+DEFINE_NODE_FACTORY(HTMLLegendElement)
 
 HTMLFormControlElement* HTMLLegendElement::associatedControl()
 {

@@ -10,7 +10,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/screen_locker.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #endif
 
@@ -60,7 +60,7 @@ BrailleDisplayPrivateAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
-void BrailleDisplayPrivateAPI::OnDisplayStateChanged(
+void BrailleDisplayPrivateAPI::OnBrailleDisplayStateChanged(
     const DisplayState& display_state) {
   scoped_ptr<Event> event(new Event(
       OnDisplayStateChanged::kEventName,
@@ -68,8 +68,7 @@ void BrailleDisplayPrivateAPI::OnDisplayStateChanged(
   event_delegate_->BroadcastEvent(event.Pass());
 }
 
-void BrailleDisplayPrivateAPI::OnKeyEvent(
-    const KeyEvent& key_event) {
+void BrailleDisplayPrivateAPI::OnBrailleKeyEvent(const KeyEvent& key_event) {
   // Key events only go to extensions of the active profile.
   if (!IsProfileActive())
     return;

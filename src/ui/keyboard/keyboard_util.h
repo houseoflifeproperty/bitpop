@@ -45,6 +45,13 @@ enum KeyboardOverscrolOverride {
   KEYBOARD_OVERSCROLL_OVERRIDE_NONE,
 };
 
+// An enumeration of keyboard policy settings.
+enum KeyboardShowOverride {
+  KEYBOARD_SHOW_OVERRIDE_DISABLED = 0,
+  KEYBOARD_SHOW_OVERRIDE_ENABLED,
+  KEYBOARD_SHOW_OVERRIDE_NONE,
+};
+
 // Gets the default keyboard bounds from |window_bounds|.
 KEYBOARD_EXPORT gfx::Rect DefaultKeyboardBoundsFromWindowBounds(
     const gfx::Rect& window_bounds);
@@ -82,9 +89,15 @@ KEYBOARD_EXPORT bool IsKeyboardOverscrollEnabled();
 KEYBOARD_EXPORT void SetKeyboardOverscrollOverride(
     KeyboardOverscrolOverride override);
 
+// Sets policy override on whether to show the keyboard.
+KEYBOARD_EXPORT void SetKeyboardShowOverride(KeyboardShowOverride override);
+
 // Returns true if an IME extension can specify a custom input view for the
 // virtual keyboard window.
 KEYBOARD_EXPORT bool IsInputViewEnabled();
+
+// Returns true if experimental features are enabled for IME input-views.
+KEYBOARD_EXPORT bool IsExperimentalInputViewEnabled();
 
 // Insert |text| into the active TextInputClient associated with |root_window|,
 // if there is one. Returns true if |text| was successfully inserted. Note

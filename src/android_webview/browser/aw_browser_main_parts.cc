@@ -62,9 +62,12 @@ int AwBrowserMainParts::PreCreateThreads() {
 }
 
 void AwBrowserMainParts::PreMainMessageLoopRun() {
+  // TODO(boliu): Can't support accelerated 2d canvas and WebGL with ubercomp
+  // yet: crbug.com/352424.
   if (!gpu::gles2::MailboxSynchronizer::Initialize()) {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kDisableAccelerated2dCanvas);
+    CommandLine* cl = CommandLine::ForCurrentProcess();
+    cl->AppendSwitch(switches::kDisableAccelerated2dCanvas);
+    cl->AppendSwitch(switches::kDisableExperimentalWebGL);
   }
 
   browser_context_->PreMainMessageLoopRun();

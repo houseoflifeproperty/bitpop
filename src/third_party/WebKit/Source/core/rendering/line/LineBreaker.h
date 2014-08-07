@@ -25,23 +25,13 @@
 
 #include "core/rendering/InlineIterator.h"
 #include "core/rendering/line/LineInfo.h"
-#include "platform/text/TextBreakIterator.h"
 #include "wtf/Vector.h"
 
 namespace WebCore {
 
 enum WhitespacePosition { LeadingWhitespace, TrailingWhitespace };
 
-class RenderText;
-
-struct RenderTextInfo {
-    RenderTextInfo();
-    ~RenderTextInfo();
-
-    RenderText* m_text;
-    LazyLineBreakIterator m_lineBreakIterator;
-    const Font* m_font;
-};
+struct RenderTextInfo;
 
 class LineBreaker {
 public:

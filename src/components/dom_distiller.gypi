@@ -36,8 +36,8 @@
             '../base/base.gyp:base',
             '../skia/skia.gyp:skia',
             '../sync/sync.gyp:sync',
-            '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
-            '../third_party/protobuf/protobuf.gyp:protobuf_lite',
+            '../third_party/dom_distiller_js/dom_distiller_js.gyp:dom_distiller_js_proto',
+            'components.gyp:leveldb_proto',
             'components_resources.gyp:components_resources',
             'components_strings.gyp:components_strings',
             'distilled_page_proto',
@@ -47,6 +47,7 @@
           ],
           'export_dependent_settings': [
             'distilled_page_proto',
+            '../third_party/dom_distiller_js/dom_distiller_js.gyp:dom_distiller_js_proto',
           ],
           'sources': [
             'dom_distiller/android/component_jni_registrar.cc',
@@ -65,8 +66,6 @@
             'dom_distiller/core/distiller_url_fetcher.h',
             'dom_distiller/core/dom_distiller_constants.cc',
             'dom_distiller/core/dom_distiller_constants.h',
-            'dom_distiller/core/dom_distiller_database.cc',
-            'dom_distiller/core/dom_distiller_database.h',
             'dom_distiller/core/dom_distiller_model.cc',
             'dom_distiller/core/dom_distiller_model.h',
             'dom_distiller/core/dom_distiller_observer.h',
@@ -100,6 +99,7 @@
           'type': 'static_library',
           'dependencies': [
             'dom_distiller_core',
+            'components.gyp:leveldb_proto_test_support',
             '../sync/sync.gyp:sync',
             '../testing/gmock.gyp:gmock',
           ],
@@ -109,8 +109,6 @@
           'sources': [
             'dom_distiller/core/dom_distiller_test_util.cc',
             'dom_distiller/core/dom_distiller_test_util.h',
-            'dom_distiller/core/fake_db.cc',
-            'dom_distiller/core/fake_db.h',
             'dom_distiller/core/fake_distiller.cc',
             'dom_distiller/core/fake_distiller.h',
             'dom_distiller/core/fake_distiller_page.cc',
@@ -154,6 +152,8 @@
                 'dom_distiller/content/distiller_page_web_contents.h',
                 'dom_distiller/content/dom_distiller_viewer_source.cc',
                 'dom_distiller/content/dom_distiller_viewer_source.h',
+                'dom_distiller/content/web_contents_main_frame_observer.cc',
+                'dom_distiller/content/web_contents_main_frame_observer.h',
               ],
             },
           ],

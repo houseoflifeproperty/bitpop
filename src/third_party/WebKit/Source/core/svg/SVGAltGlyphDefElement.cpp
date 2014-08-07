@@ -22,7 +22,7 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGAltGlyphDefElement.h"
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/svg/SVGAltGlyphItemElement.h"
 #include "core/svg/SVGGlyphRefElement.h"
@@ -35,10 +35,7 @@ inline SVGAltGlyphDefElement::SVGAltGlyphDefElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGAltGlyphDefElement> SVGAltGlyphDefElement::create(Document& document)
-{
-    return adoptRef(new SVGAltGlyphDefElement(document));
-}
+DEFINE_NODE_FACTORY(SVGAltGlyphDefElement)
 
 bool SVGAltGlyphDefElement::hasValidGlyphElements(Vector<AtomicString>& glyphNames) const
 {

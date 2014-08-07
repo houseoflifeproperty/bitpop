@@ -13,7 +13,6 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_error_notifier_factory_ash.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/ui/ash/test_views_delegate_with_parent.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
@@ -38,6 +37,7 @@ namespace test {
 namespace {
 
 static const char kTestAccountId[] = "testuser@test.com";
+static const char kTestUsername[] = "testuser@test.com";
 
 // Notification ID corresponding to kProfileSigninNotificationId +
 // kTestAccountId.
@@ -63,8 +63,6 @@ class ScreenTypeDelegateDesktop : public gfx::ScreenTypeDelegate {
 class SigninErrorNotifierTest : public AshTestBase {
  public:
   virtual void SetUp() OVERRIDE {
-    views::ViewsDelegate::views_delegate = &views_delegate_;
-
     // Create a signed-in profile.
     TestingProfile::Builder builder;
     builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
@@ -80,8 +78,8 @@ class SigninErrorNotifierTest : public AshTestBase {
     AshTestBase::SetUp();
 
     // Set up screen for Windows.
-#if !defined(OS_CHROMEOS)
-    aura::TestScreen* test_screen = aura::TestScreen::Create();
+#if defined(OS_WIN)
+    aura::TestScreen* test_screen = aura::TestScreen::Create(gfx::Size());
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen);
     gfx::Screen::SetScreenTypeDelegate(new ScreenTypeDelegateDesktop);
 #endif
@@ -111,7 +109,6 @@ class SigninErrorNotifierTest : public AshTestBase {
   scoped_ptr<TestingProfile> profile_;
   SigninErrorController* error_controller_;
   NotificationUIManager* notification_ui_manager_;
-  TestViewsDelegateWithParent views_delegate_;
 };
 
 TEST_F(SigninErrorNotifierTest, NoErrorAuthStatusProviders) {
@@ -124,14 +121,19 @@ TEST_F(SigninErrorNotifierTest, NoErrorAuthStatusProviders) {
   ASSERT_FALSE(notification_ui_manager_->FindById(kNotificationId));
 }
 
+#if !defined(OS_WIN)
+// Disabled on Win due to flake. http://crbug.com/372236
 TEST_F(SigninErrorNotifierTest, ErrorAuthStatusProvider) {
   {
     FakeAuthStatusProvider provider(error_controller_);
     ASSERT_FALSE(notification_ui_manager_->FindById(kNotificationId));
     {
       FakeAuthStatusProvider error_provider(error_controller_);
-      error_provider.SetAuthError(kTestAccountId, GoogleServiceAuthError(
-          GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
+      error_provider.SetAuthError(
+          kTestAccountId,
+          kTestUsername,
+          GoogleServiceAuthError(
+              GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
       ASSERT_TRUE(notification_ui_manager_->FindById(kNotificationId));
     }
     // error_provider is removed now that we've left that scope.
@@ -140,13 +142,23 @@ TEST_F(SigninErrorNotifierTest, ErrorAuthStatusProvider) {
   // All providers should be removed now.
   ASSERT_FALSE(notification_ui_manager_->FindById(kNotificationId));
 }
+#endif
 
-TEST_F(SigninErrorNotifierTest, AuthStatusProviderErrorTransition) {
+#if defined(OS_WIN)
+// Test started crashing on Win 7. http://crbug.com/372277
+#define MAYBE_AuthStatusProviderErrorTransition \
+  DISABLED_AuthStatusProviderErrorTransition
+#else
+#define MAYBE_AuthStatusProviderErrorTransition \
+  AuthStatusProviderErrorTransition
+#endif
+TEST_F(SigninErrorNotifierTest, MAYBE_AuthStatusProviderErrorTransition) {
   {
     FakeAuthStatusProvider provider0(error_controller_);
     FakeAuthStatusProvider provider1(error_controller_);
     provider0.SetAuthError(
         kTestAccountId,
+        kTestUsername,
         GoogleServiceAuthError(
             GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
     ASSERT_TRUE(notification_ui_manager_->FindById(kNotificationId));
@@ -158,10 +170,13 @@ TEST_F(SigninErrorNotifierTest, AuthStatusProviderErrorTransition) {
     // Now set another auth error and clear the original.
     provider1.SetAuthError(
         kTestAccountId,
+        kTestUsername,
         GoogleServiceAuthError(
             GoogleServiceAuthError::UNEXPECTED_SERVICE_RESPONSE));
     provider0.SetAuthError(
-        kTestAccountId, GoogleServiceAuthError::AuthErrorNone());
+        kTestAccountId,
+        kTestUsername,
+        GoogleServiceAuthError::AuthErrorNone());
 
     ASSERT_TRUE(notification_ui_manager_->FindById(kNotificationId));
 
@@ -172,11 +187,13 @@ TEST_F(SigninErrorNotifierTest, AuthStatusProviderErrorTransition) {
     ASSERT_NE(new_message, message);
 
     provider1.SetAuthError(
-        kTestAccountId, GoogleServiceAuthError::AuthErrorNone());
+        kTestAccountId, kTestUsername, GoogleServiceAuthError::AuthErrorNone());
     ASSERT_FALSE(notification_ui_manager_->FindById(kNotificationId));
   }
 }
 
+#if !defined(OS_WIN)
+// Disabled on Win due to flake. http://crbug.com/372236
 // Verify that SigninErrorNotifier ignores certain errors.
 TEST_F(SigninErrorNotifierTest, AuthStatusEnumerateAllErrors) {
   typedef struct {
@@ -205,6 +222,7 @@ TEST_F(SigninErrorNotifierTest, AuthStatusEnumerateAllErrors) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(table); ++i) {
     FakeAuthStatusProvider provider(error_controller_);
     provider.SetAuthError(kTestAccountId,
+                          kTestUsername,
                           GoogleServiceAuthError(table[i].error_state));
     const Notification* notification = notification_ui_manager_->
         FindById(kNotificationId);
@@ -216,6 +234,7 @@ TEST_F(SigninErrorNotifierTest, AuthStatusEnumerateAllErrors) {
     }
   }
 }
+#endif
 
 }  // namespace test
 }  // namespace ash

@@ -24,7 +24,6 @@
 
 #include "core/rendering/svg/RenderSVGEllipse.h"
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGLength.h"
 
 namespace WebCore {
@@ -42,10 +41,7 @@ inline SVGCircleElement::SVGCircleElement(Document& document)
     addToPropertyMap(m_r);
 }
 
-PassRefPtr<SVGCircleElement> SVGCircleElement::create(Document& document)
-{
-    return adoptRef(new SVGCircleElement(document));
-}
+DEFINE_NODE_FACTORY(SVGCircleElement)
 
 bool SVGCircleElement::isSupportedAttribute(const QualifiedName& attrName)
 {

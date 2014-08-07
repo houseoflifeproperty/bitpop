@@ -83,7 +83,7 @@ class ChromiumCommands(commands.FactoryCommands):
         p_dir, 'get_official_build.py')
 
     # These scripts should be move to the script dir.
-    self._check_deps_tool = J('src', 'tools', 'checkdeps', 'checkdeps.py')
+    self._check_deps_tool = J('src', 'buildtools', 'checkdeps', 'checkdeps.py')
     self._check_perms_tool = J('src', 'tools', 'checkperms', 'checkperms.py')
     self._check_licenses_tool = J('src', 'tools', 'checklicenses',
                                   'checklicenses.py')
@@ -477,10 +477,14 @@ class ChromiumCommands(commands.FactoryCommands):
     if self._target_os == 'android':
       args.extend(['--platform', 'android'])
 
-    self.AddAnnotatedPerfStep('sizes', None, 'graphing', step_name='sizes',
-                              cmd_name = self._sizes_tool, cmd_options=args,
-                              py_script=True,
-                              factory_properties=factory_properties)
+    tool_opts = [
+        '--revision', WithProperties('%(got_revision)s'),
+        '--webkit-revision', WithProperties('%(got_webkit_revision:-)s')]
+
+    self.AddAnnotatedPerfStep(
+        'sizes', None, 'graphing', step_name='sizes', tool_opts=tool_opts,
+        cmd_name=self._sizes_tool, cmd_options=args,
+        py_script=True, factory_properties=factory_properties)
 
   def AddBuildrunnerSizesTests(self, factory_properties=None):
     factory_properties = factory_properties or {}
@@ -493,8 +497,13 @@ class ChromiumCommands(commands.FactoryCommands):
     if self._target_os == 'android':
       args.extend(['--platform', 'android'])
 
-    self.AddBuildrunnerAnnotatedPerfStep('sizes', None, 'graphing',
-        step_name='sizes', cmd_name = self._sizes_tool, cmd_options=args,
+    tool_opts = [
+        '--revision', WithProperties('%(got_revision)s'),
+        '--webkit-revision', WithProperties('%(got_webkit_revision:-)s')]
+
+    self.AddBuildrunnerAnnotatedPerfStep(
+        'sizes', None, 'graphing', step_name='sizes', tool_opts=tool_opts,
+        cmd_name=self._sizes_tool, cmd_options=args,
         py_script=True, factory_properties=factory_properties)
 
   def AddTabCapturePerformanceTests(self, factory_properties=None):
@@ -617,21 +626,11 @@ class ChromiumCommands(commands.FactoryCommands):
     if self._target_platform == 'win32':
       self.AddGTestTestStep('installer_util_unittests',
                             factory_properties)
-      if (self._target == 'Release' and
-          not factory_properties.get('disable_mini_installer_test')):
-        self.AddGTestTestStep('mini_installer_test',
-                              factory_properties,
-                              arg_list=['-clean'])
 
   def AddBuildrunnerInstallerTests(self, factory_properties):
     if self._target_platform == 'win32':
       self.AddGTestTestStep('installer_util_unittests',
                             factory_properties)
-      if (self._target == 'Release' and
-          not factory_properties.get('disable_mini_installer_test')):
-        self.AddBuildrunnerGTest('mini_installer_test',
-                                 factory_properties,
-                                 arg_list=['-clean'])
 
   def AddChromeUnitTests(self, factory_properties):
     self.AddGTestTestStep('ipc_tests', factory_properties)
@@ -861,7 +860,7 @@ class ChromiumCommands(commands.FactoryCommands):
     cmd_args = ['-w', '.', '-p', self.PathJoin('..', '..', '..', 'goma')]
     cmd = self.GetPythonTestCommand(cmd_name, arg_list=cmd_args)
     self.AddTestStep(chromium_step.AnnotatedCommand, 'Running Bisection',
-        cmd, timeout=30*60, max_time=12*60*60)
+        cmd, timeout=60*60, max_time=24*60*60)
 
   def AddWebkitLint(self, factory_properties=None):
     """Adds a step to the factory to lint the test_expectations.txt file."""

@@ -92,15 +92,16 @@ class ChangeListLoaderTest : public testing::Test {
         temp_dir_.path(), base::MessageLoopProxy::current().get()));
     ASSERT_TRUE(metadata_storage_->Initialize());
 
-    metadata_.reset(new ResourceMetadata(
-        metadata_storage_.get(), base::MessageLoopProxy::current().get()));
-    ASSERT_EQ(FILE_ERROR_OK, metadata_->Initialize());
-
     cache_.reset(new FileCache(metadata_storage_.get(),
                                temp_dir_.path(),
                                base::MessageLoopProxy::current().get(),
                                NULL /* free_disk_space_getter */));
     ASSERT_TRUE(cache_->Initialize());
+
+    metadata_.reset(new ResourceMetadata(
+        metadata_storage_.get(), cache_.get(),
+        base::MessageLoopProxy::current().get()));
+    ASSERT_EQ(FILE_ERROR_OK, metadata_->Initialize());
 
     about_resource_loader_.reset(new AboutResourceLoader(scheduler_.get()));
     loader_controller_.reset(new LoaderController);
@@ -114,9 +115,9 @@ class ChangeListLoaderTest : public testing::Test {
   }
 
   // Adds a new file to the root directory of the service.
-  scoped_ptr<google_apis::ResourceEntry> AddNewFile(const std::string& title) {
+  scoped_ptr<google_apis::FileResource> AddNewFile(const std::string& title) {
     google_apis::GDataErrorCode error = google_apis::GDATA_FILE_ERROR;
-    scoped_ptr<google_apis::ResourceEntry> entry;
+    scoped_ptr<google_apis::FileResource> entry;
     drive_service_->AddNewFile(
         "text/plain",
         "content text",
@@ -137,8 +138,8 @@ class ChangeListLoaderTest : public testing::Test {
   scoped_ptr<JobScheduler> scheduler_;
   scoped_ptr<ResourceMetadataStorage,
              test_util::DestroyHelperForTests> metadata_storage_;
-  scoped_ptr<ResourceMetadata, test_util::DestroyHelperForTests> metadata_;
   scoped_ptr<FileCache, test_util::DestroyHelperForTests> cache_;
+  scoped_ptr<ResourceMetadata, test_util::DestroyHelperForTests> metadata_;
   scoped_ptr<AboutResourceLoader> about_resource_loader_;
   scoped_ptr<LoaderController> loader_controller_;
   scoped_ptr<ChangeListLoader> change_list_loader_;
@@ -160,8 +161,10 @@ TEST_F(ChangeListLoaderTest, Load) {
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   EXPECT_FALSE(change_list_loader_->IsRefreshing());
-  EXPECT_LT(0, metadata_->GetLargestChangestamp());
-  EXPECT_EQ(1, drive_service_->resource_list_load_count());
+  int64 changestamp = 0;
+  EXPECT_EQ(FILE_ERROR_OK, metadata_->GetLargestChangestamp(&changestamp));
+  EXPECT_LT(0, changestamp);
+  EXPECT_EQ(1, drive_service_->file_list_load_count());
   EXPECT_EQ(1, drive_service_->about_resource_load_count());
   EXPECT_EQ(1, observer.initial_load_complete_count());
   EXPECT_EQ(1, observer.load_from_server_complete_count());
@@ -192,13 +195,13 @@ TEST_F(ChangeListLoaderTest, Load_LocalMetadataAvailable) {
                            loader_controller_.get()));
 
   // Add a file to the service.
-  scoped_ptr<google_apis::ResourceEntry> gdata_entry = AddNewFile("New File");
+  scoped_ptr<google_apis::FileResource> gdata_entry = AddNewFile("New File");
   ASSERT_TRUE(gdata_entry);
 
   // Start loading. Because local metadata is available, the load results in
   // returning FILE_ERROR_OK without fetching full list of resources.
-  const int previous_resource_list_load_count =
-      drive_service_->resource_list_load_count();
+  const int previous_file_list_load_count =
+      drive_service_->file_list_load_count();
   TestChangeListLoaderObserver observer(change_list_loader_.get());
 
   change_list_loader_->LoadIfNeeded(
@@ -206,13 +209,14 @@ TEST_F(ChangeListLoaderTest, Load_LocalMetadataAvailable) {
   EXPECT_TRUE(change_list_loader_->IsRefreshing());
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(FILE_ERROR_OK, error);
-  EXPECT_EQ(previous_resource_list_load_count,
-            drive_service_->resource_list_load_count());
+  EXPECT_EQ(previous_file_list_load_count,
+            drive_service_->file_list_load_count());
   EXPECT_EQ(1, observer.initial_load_complete_count());
 
   // Update should be checked by Load().
-  EXPECT_EQ(drive_service_->about_resource().largest_change_id(),
-            metadata_->GetLargestChangestamp());
+  int64 changestamp = 0;
+  EXPECT_EQ(FILE_ERROR_OK, metadata_->GetLargestChangestamp(&changestamp));
+  EXPECT_EQ(drive_service_->about_resource().largest_change_id(), changestamp);
   EXPECT_EQ(1, drive_service_->change_list_load_count());
   EXPECT_EQ(1, observer.load_from_server_complete_count());
   EXPECT_EQ(1U, observer.changed_directories().count(
@@ -235,8 +239,10 @@ TEST_F(ChangeListLoaderTest, CheckForUpdates) {
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(FILE_ERROR_FAILED,
             check_for_updates_error);  // Callback was not run.
-  EXPECT_EQ(0, metadata_->GetLargestChangestamp());
-  EXPECT_EQ(0, drive_service_->resource_list_load_count());
+  int64 changestamp = 0;
+  EXPECT_EQ(FILE_ERROR_OK, metadata_->GetLargestChangestamp(&changestamp));
+  EXPECT_EQ(0, changestamp);
+  EXPECT_EQ(0, drive_service_->file_list_load_count());
   EXPECT_EQ(0, drive_service_->about_resource_load_count());
 
   // Start initial load.
@@ -254,10 +260,13 @@ TEST_F(ChangeListLoaderTest, CheckForUpdates) {
   EXPECT_FALSE(change_list_loader_->IsRefreshing());
   EXPECT_EQ(FILE_ERROR_OK, load_error);
   EXPECT_EQ(FILE_ERROR_OK, check_for_updates_error);
-  EXPECT_LT(0, metadata_->GetLargestChangestamp());
-  EXPECT_EQ(1, drive_service_->resource_list_load_count());
+  EXPECT_EQ(FILE_ERROR_OK, metadata_->GetLargestChangestamp(&changestamp));
+  EXPECT_LT(0, changestamp);
+  EXPECT_EQ(1, drive_service_->file_list_load_count());
 
-  int64 previous_changestamp = metadata_->GetLargestChangestamp();
+  int64 previous_changestamp = 0;
+  EXPECT_EQ(FILE_ERROR_OK,
+            metadata_->GetLargestChangestamp(&previous_changestamp));
   // CheckForUpdates() results in no update.
   change_list_loader_->CheckForUpdates(
       google_apis::test_util::CreateCopyResultCallback(
@@ -265,10 +274,11 @@ TEST_F(ChangeListLoaderTest, CheckForUpdates) {
   EXPECT_TRUE(change_list_loader_->IsRefreshing());
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(change_list_loader_->IsRefreshing());
-  EXPECT_EQ(previous_changestamp, metadata_->GetLargestChangestamp());
+  EXPECT_EQ(FILE_ERROR_OK, metadata_->GetLargestChangestamp(&changestamp));
+  EXPECT_EQ(previous_changestamp, changestamp);
 
   // Add a file to the service.
-  scoped_ptr<google_apis::ResourceEntry> gdata_entry = AddNewFile("New File");
+  scoped_ptr<google_apis::FileResource> gdata_entry = AddNewFile("New File");
   ASSERT_TRUE(gdata_entry);
 
   // CheckForUpdates() results in update.
@@ -279,7 +289,8 @@ TEST_F(ChangeListLoaderTest, CheckForUpdates) {
   EXPECT_TRUE(change_list_loader_->IsRefreshing());
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(change_list_loader_->IsRefreshing());
-  EXPECT_LT(previous_changestamp, metadata_->GetLargestChangestamp());
+  EXPECT_EQ(FILE_ERROR_OK, metadata_->GetLargestChangestamp(&changestamp));
+  EXPECT_LT(previous_changestamp, changestamp);
   EXPECT_EQ(1, observer.load_from_server_complete_count());
   EXPECT_EQ(1U, observer.changed_directories().count(
       util::GetDriveMyDriveRootPath()));
@@ -300,7 +311,7 @@ TEST_F(ChangeListLoaderTest, Lock) {
   EXPECT_EQ(FILE_ERROR_OK, error);
 
   // Add a new file.
-  scoped_ptr<google_apis::ResourceEntry> file = AddNewFile("New File");
+  scoped_ptr<google_apis::FileResource> file = AddNewFile("New File");
   ASSERT_TRUE(file);
 
   // Lock the loader.

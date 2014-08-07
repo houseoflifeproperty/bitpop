@@ -29,10 +29,11 @@ class DialogClientView;
 class VIEWS_EXPORT DialogDelegate : public ui::DialogModel,
                                     public WidgetDelegate {
  public:
+  DialogDelegate();
   virtual ~DialogDelegate();
 
-  // Create a |dialog| window Widget with the specified |context| or |parent|.
-  static Widget* CreateDialogWidget(DialogDelegate* dialog,
+  // Create a dialog widget with the specified |context| or |parent|.
+  static Widget* CreateDialogWidget(WidgetDelegate* delegate,
                                     gfx::NativeView context,
                                     gfx::NativeView parent);
 
@@ -106,6 +107,10 @@ class VIEWS_EXPORT DialogDelegate : public ui::DialogModel,
  protected:
   // Overridden from WidgetDelegate:
   virtual ui::AXRole GetAccessibleWindowRole() const OVERRIDE;
+
+ private:
+  // A flag indicating whether this dialog supports the new style.
+  bool supports_new_style_;
 };
 
 // A DialogDelegate implementation that is-a View. Used to override GetWidget()

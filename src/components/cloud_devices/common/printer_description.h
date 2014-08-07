@@ -287,9 +287,12 @@ enum MediaType {
 struct Media {
   Media();
 
+  explicit Media(MediaType type);
+
   Media(MediaType type, int32 width_um, int32 height_um);
 
   Media(const std::string& custom_display_name,
+        const std::string& vendor_id,
         int32 width_um,
         int32 height_um);
 
@@ -304,6 +307,7 @@ struct Media {
   int32 height_um;
   bool is_continuous_feed;
   std::string custom_display_name;
+  std::string vendor_id;
 };
 
 struct Interval {

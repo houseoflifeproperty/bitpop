@@ -16,7 +16,21 @@ from testing_support.super_mox import SuperMoxTestBase
 # pylint: disable=W0212
 
 
-class SheriffCalendarTest(unittest.TestCase):
+class RevisionLinkTest(SuperMoxTestBase):
+  def test_blink(self):
+    revlink_fn = auto_roll.PROJECT_CONFIGS['blink']['revision_link_fn']
+    expected = ('http://build.chromium.org/f/chromium/perf/dashboard/ui/'
+                'changelog_blink.html?url=/trunk&range=%s:%s&mode=html') % (
+                    1235, 1256)
+    self.assertEqual(revlink_fn(1234, 1256), expected)
+
+  def test_skia(self):
+    revlink_fn = auto_roll.PROJECT_CONFIGS['skia']['revision_link_fn']
+    expected = 'https://skia.googlesource.com/skia/+log/abc1234..def1256'
+    self.assertEqual(revlink_fn('abc1234', 'def1256'), expected)
+
+
+class SheriffCalendarTest(SuperMoxTestBase):
 
   def test_complete_email(self):
     expected_emails = ['foo@chromium.org', 'bar@google.com', 'baz@chromium.org']
@@ -57,6 +71,12 @@ class SheriffCalendarTest(unittest.TestCase):
     self.assertFalse(auto_roll._email_is_valid('some body@example.com'))
     self.assertFalse(auto_roll._email_is_valid('[some body]@example.com'))
 
+  def test_filter_emails(self):
+    input_emails = ['foo@bar.com', 'baz@baz.com', 'bogus email @ !!!']
+    expected_emails = ['foo@bar.com', 'baz@baz.com']
+    self.assertEquals(auto_roll._filter_emails(input_emails), expected_emails)
+    self.checkstdout('WARNING: Not including bogus email @ !!! '
+                     '(invalid email address)\n')
 
 class AutoRollTestBase(SuperMoxTestBase):
 
@@ -110,32 +130,44 @@ class AutoRollTestBase(SuperMoxTestBase):
         'author': self.TEST_AUTHOR,
         'commit': created_datetime or self.RECENT_ISSUE_CREATED_STR,
         'created': created_datetime or self.RECENT_ISSUE_CREATED_STR,
-        'description': 'Test_Project roll %s:%s' % (old_rev, new_rev),
+        'description': 'Test_Project roll %s:%s' % (self._display_rev(old_rev),
+                                                    self._display_rev(new_rev)),
         'issue': 1234567,
         'messages': [],
         'modified': created_datetime or self.RECENT_ISSUE_CREATED_STR,
         'subject': 'Test_Project roll %s:%s' % (old_rev, new_rev),
     }
 
-  def _upload_issue(self):
+  def _get_last_revision(self):
     auto_roll.subprocess2.check_call(
         ['git', '--git-dir', './.git', 'fetch'])
     auto_roll.subprocess2.check_output(
         ['git', '--git-dir', './.git', 'show', 'origin/master:DEPS']
         ).AndReturn(self.DEPS_CONTENT)
+
+  def _get_current_revision(self):
     auto_roll.subprocess2.check_call(
         ['git', '--git-dir', './third_party/test_project/.git', 'fetch'])
-    auto_roll.subprocess2.check_output(
-        ['git', '--git-dir', './third_party/test_project/.git', 'show', '-s',
-         'origin/master']).AndReturn(self.GIT_LOG_UPDATED)
+    if self._arb._git_mode:
+      self._parse_origin_master(returnval=self.NEW_REV)
+    else:
+      auto_roll.subprocess2.check_output(
+          ['git', '--git-dir', './third_party/test_project/.git', 'show', '-s',
+           'origin/master']).AndReturn(self.GIT_LOG_UPDATED)
 
-    self._parse_origin_master(returnval=self.NEW_REV)
+  def _upload_issue(self, custom_message=None):
+    self._get_last_revision()
+    self._get_current_revision()
     self._compare_revs(self.OLD_REV, self.NEW_REV)
+
+    from_rev = self._display_rev(self.OLD_REV)
+    to_rev = self._display_rev(self.NEW_REV)
+
+    message = custom_message or 'Test_Project roll %s:%s' % (from_rev, to_rev)
 
     auto_roll.subprocess2.check_call(
         ['./tools/safely-roll-deps.py', self.TEST_PROJECT, str(self.NEW_REV),
-         '--message', 'Test_Project roll %s:%s' % (self.OLD_REV, self.NEW_REV),
-         '--force'])
+         '--message', message, '--force'])
     issue = self._make_issue(created_datetime=self.CURRENT_DATETIME_STR)
     self._arb._rietveld.search(owner=self.TEST_AUTHOR,
                                closed=2).AndReturn([issue])
@@ -184,6 +216,8 @@ Please email (eseidel@chromium.org) if the Rollbot is causing trouble.
     auto_roll.subprocess2.check_output(
         ['git', '--git-dir', './.git', 'show', 'origin/master:DEPS']
         ).AndReturn(self.DEPS_CONTENT)
+    if self._arb._git_mode:
+      self._short_rev(self.OLD_REV)
     self.mox.ReplayAll()
     self.assertEquals(self._arb.main(), 0)
     self.checkstdout('https://codereview.chromium.org/%d/ started %s ago\n'
@@ -243,11 +277,14 @@ Please email (eseidel@chromium.org) if the Rollbot is causing trouble.
         ).AndReturn(self.DEPS_CONTENT)
     auto_roll.subprocess2.check_call(
         ['git', '--git-dir', './third_party/test_project/.git', 'fetch'])
-    auto_roll.subprocess2.check_output(
-        ['git', '--git-dir', './third_party/test_project/.git', 'show', '-s',
-         'origin/master']).AndReturn(self.GIT_LOG_TOO_OLD)
-
-    self._parse_origin_master(returnval=self.OLDER_REV)
+    if self._arb._git_mode:
+      auto_roll.subprocess2.check_output(
+          ['git', '--git-dir', './third_party/test_project/.git', 'rev-parse',
+           'origin/master']).AndReturn(self.OLDER_REV)
+    else:
+      auto_roll.subprocess2.check_output(
+          ['git', '--git-dir', './third_party/test_project/.git', 'show', '-s',
+           'origin/master']).AndReturn(self.GIT_LOG_TOO_OLD)
     self._compare_revs(self.OLD_REV, self.OLDER_REV)
 
     self.mox.ReplayAll()
@@ -257,12 +294,39 @@ Please email (eseidel@chromium.org) if the Rollbot is causing trouble.
       self.assertEquals(e.args[0], ('Already at %s refusing to roll backwards '
                                     'to %s.') % (self.OLD_REV, self.OLDER_REV))
 
-
   def test_upload_issue(self):
     if self.__class__.__name__ == 'AutoRollTestBase':
       return
     self._arb._rietveld.search(owner=self.TEST_AUTHOR, closed=2).AndReturn([])
     self._upload_issue()
+    self.mox.ReplayAll()
+    self.assertEquals(self._arb.main(), 0)
+
+  def test_last_revision(self):
+    # Verify that AutoRoll._last_roll_revision() returns a string.
+    if self.__class__.__name__ == 'AutoRollTestBase':
+      return
+    self._get_last_revision()
+    self.mox.ReplayAll()
+    self.assertEquals(type(self._arb._last_roll_revision()), str)
+
+  def test_current_revision(self):
+    # Verify that AutoRoll._current_revision() returns a string.
+    if self.__class__.__name__ == 'AutoRollTestBase':
+      return
+    self._get_current_revision()
+    self.mox.ReplayAll()
+    self.assertEquals(type(self._arb._current_revision()), str)
+
+  def test_extra_trybots(self):
+    if self.__class__.__name__ == 'AutoRollTestBase':
+      return
+    self._arb._cq_extra_trybots = ['sometrybot']
+    self._arb._rietveld.search(owner=self.TEST_AUTHOR, closed=2).AndReturn([])
+    commit_msg = ('Test_Project roll %s:%s\n\nCQ_EXTRA_TRYBOTS=sometrybot' %
+                  (self._display_rev(self.OLD_REV),
+                   self._display_rev(self.NEW_REV)))
+    self._upload_issue(custom_message=commit_msg)
     self.mox.ReplayAll()
     self.assertEquals(self._arb.main(), 0)
 
@@ -299,12 +363,13 @@ Date:   Wed Apr 2 14:00:14 2014 -0400
                                         created_datetime=created_datetime)
 
   # pylint: disable=R0201
+  def _display_rev(self, rev):
+    return str(rev)
+
+  # pylint: disable=R0201
   def _compare_revs(self, old_rev, new_rev):
-    auto_roll.scm.GIT.Capture(['rev-parse', str(old_rev)],
-                              cwd='./third_party/test_project/.git',
-                              ).AndRaise(
-                                  auto_roll.subprocess2.CalledProcessError(
-                                      1, '', '', '', ''))
+    # Just an integer compare for SVN.
+    pass
 
   # pylint: disable=R0201
   def _parse_origin_master(self, returnval):
@@ -314,9 +379,9 @@ Date:   Wed Apr 2 14:00:14 2014 -0400
 
 class AutoRollTestGit(AutoRollTestBase):
 
-  OLDER_REV = '4sdd23'
-  OLD_REV = 'def456'
-  NEW_REV = 'abc124'
+  OLDER_REV = 'cfcf604fbdcf6e2d9b982a2fab3fc9f1e3f8cd65'
+  OLD_REV =   'b9af6489f6f2004ad11b82c6057f7007e3c35372'
+  NEW_REV =   '79539998e04afab3ee9c3016881755ca52f60a73'
 
   DEPS_CONTENT = '''
 vars = {
@@ -340,25 +405,38 @@ Date:   Wed Apr 2 14:00:14 2014 -0400
     NEW_REV: '1399598876',
   }
 
+  def setUp(self):
+    AutoRollTestBase.setUp(self)
+    self._arb._git_mode = True
+
   def _make_issue(self, old_rev=None, new_rev=None, created_datetime=None):
     return AutoRollTestBase._make_issue(self,
                                         old_rev=old_rev or self.OLD_REV,
                                         new_rev=new_rev or self.NEW_REV,
                                         created_datetime=created_datetime)
 
+  # pylint: disable=R0201
+  def _display_rev(self, rev):
+    return rev[:7]
+
+  # pylint: disable=R0201
+  def _short_rev(self, rev):
+    auto_roll.subprocess2.check_output(['git', '--git-dir',
+                                        './third_party/test_project/.git',
+                                        'rev-parse', '--short', rev]
+                                       ).AndReturn(self._display_rev(rev))
+
   def _compare_revs(self, old_rev, new_rev):
-    auto_roll.scm.GIT.Capture(['rev-parse', str(old_rev)],
-                              cwd='./third_party/test_project/.git',
-                              ).AndReturn(old_rev)
-    auto_roll.scm.GIT.Capture(['rev-parse', str(new_rev)],
-                              cwd='./third_party/test_project/.git',
-                              ).AndReturn(new_rev)
-    merge_base_cmd = ['git', 'merge-base', '--is-ancestor', new_rev, old_rev]
+    merge_base_cmd = ['git', '--git-dir', './third_party/test_project/.git',
+                      'merge-base', '--is-ancestor', new_rev, old_rev]
     if self._commit_timestamps[old_rev] < self._commit_timestamps[new_rev]:
       err = auto_roll.subprocess2.CalledProcessError(1, '', '', '', '')
       auto_roll.subprocess2.check_call(merge_base_cmd).AndRaise(err)
     else:
       auto_roll.subprocess2.check_call(merge_base_cmd)
+      return
+    self._short_rev(old_rev)
+    self._short_rev(new_rev)
 
   # pylint: disable=R0201
   def _parse_origin_master(self, returnval):

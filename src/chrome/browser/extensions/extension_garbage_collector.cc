@@ -28,6 +28,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/file_util.h"
+#include "extensions/common/one_shot_event.h"
 
 namespace extensions {
 
@@ -95,34 +96,11 @@ void CheckExtensionDirectory(const base::FilePath& path,
   }
 }
 
-void GarbageCollectExtensionsOnFileThread(
-    const base::FilePath& install_directory,
-    const ExtensionPathsMultimap& extension_paths) {
-  DCHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-  // Nothing to clean up if it doesn't exist.
-  if (!base::DirectoryExists(install_directory))
-    return;
-
-  base::FileEnumerator enumerator(install_directory,
-                                  false,  // Not recursive.
-                                  base::FileEnumerator::DIRECTORIES);
-
-  for (base::FilePath extension_path = enumerator.Next();
-       !extension_path.empty();
-       extension_path = enumerator.Next()) {
-    CheckExtensionDirectory(extension_path, extension_paths);
-  }
-}
-
 }  // namespace
 
 ExtensionGarbageCollector::ExtensionGarbageCollector(
     content::BrowserContext* context)
     : context_(context), crx_installs_in_progress_(0), weak_factory_(this) {
-#if defined(OS_CHROMEOS)
-  disable_garbage_collection_ = false;
-#endif
 
   ExtensionSystem* extension_system = ExtensionSystem::Get(context_);
   DCHECK(extension_system);
@@ -158,13 +136,29 @@ void ExtensionGarbageCollector::GarbageCollectExtensionsForTest() {
   GarbageCollectExtensions();
 }
 
+// static
+void ExtensionGarbageCollector::GarbageCollectExtensionsOnFileThread(
+    const base::FilePath& install_directory,
+    const ExtensionPathsMultimap& extension_paths) {
+  DCHECK(!content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+  // Nothing to clean up if it doesn't exist.
+  if (!base::DirectoryExists(install_directory))
+    return;
+
+  base::FileEnumerator enumerator(install_directory,
+                                  false,  // Not recursive.
+                                  base::FileEnumerator::DIRECTORIES);
+
+  for (base::FilePath extension_path = enumerator.Next();
+       !extension_path.empty();
+       extension_path = enumerator.Next()) {
+    CheckExtensionDirectory(extension_path, extension_paths);
+  }
+}
+
 void ExtensionGarbageCollector::GarbageCollectExtensions() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-
-#if defined(OS_CHROMEOS)
-  if (disable_garbage_collection_)
-    return;
-#endif
 
   ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(context_);
   DCHECK(extension_prefs);
@@ -230,20 +224,6 @@ void ExtensionGarbageCollector::GarbageCollectIsolatedStorageIfNeeded() {
           content::BrowserContext::GetStoragePartitionForSite(
               context_, util::GetSiteForExtensionId((*iter)->id(), context_))
               ->GetPath());
-    }
-  }
-
-  // The data of ephemeral apps can outlive their cache lifetime. Ensure
-  // they are not garbage collected.
-  scoped_ptr<ExtensionPrefs::ExtensionsInfo> evicted_apps_info(
-      extension_prefs->GetEvictedEphemeralAppsInfo());
-  for (size_t i = 0; i < evicted_apps_info->size(); ++i) {
-    ExtensionInfo* info = evicted_apps_info->at(i).get();
-    if (util::HasIsolatedStorage(*info)) {
-      active_paths->insert(content::BrowserContext::GetStoragePartitionForSite(
-                               context_,
-                               util::GetSiteForExtensionId(
-                                   info->extension_id, context_))->GetPath());
     }
   }
 

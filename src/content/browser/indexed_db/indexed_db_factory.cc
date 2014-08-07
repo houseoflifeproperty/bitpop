@@ -4,6 +4,8 @@
 
 #include "content/browser/indexed_db/indexed_db_factory.h"
 
+#include <vector>
+
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -13,6 +15,7 @@
 #include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction_coordinator.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
+#include "third_party/leveldatabase/env_chromium.h"
 #include "webkit/common/database/database_identifier.h"
 
 using base::ASCIIToUTF16;
@@ -250,7 +253,7 @@ void IndexedDBFactory::DeleteDatabase(
             "Internal error creating database backend for "
             "indexedDB.deleteDatabase."));
     callbacks->OnError(error);
-    if (s.IsCorruption())
+    if (leveldb_env::IsCorruption(s))
       HandleBackingStoreCorruption(origin_url, error);
     return;
   }
@@ -301,7 +304,6 @@ void IndexedDBFactory::HandleBackingStoreCorruption(
 
 bool IndexedDBFactory::IsDatabaseOpen(const GURL& origin_url,
                                       const base::string16& name) const {
-
   return !!database_map_.count(IndexedDBDatabase::Identifier(origin_url, name));
 }
 
@@ -436,7 +438,7 @@ void IndexedDBFactory::Open(const base::string16& name,
                                        "database backend for "
                                        "indexedDB.open."));
       connection.callbacks->OnError(error);
-      if (s.IsCorruption()) {
+      if (leveldb_env::IsCorruption(s)) {
         backing_store = NULL;  // Closes the LevelDB so that it can be deleted
         HandleBackingStoreCorruption(origin_url, error);
       }

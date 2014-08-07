@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/location.h"
-#include "sync/internal_api/public/non_blocking_type_processor.h"
+#include "sync/engine/non_blocking_type_processor.h"
 
 namespace browser_sync {
 
@@ -84,11 +84,10 @@ void NonBlockingDataTypeController::SendEnableSignal() {
   DCHECK_EQ(ENABLED, GetDesiredState());
   DVLOG(1) << "Enabling non-blocking sync type " << ModelTypeToString(type_);
 
-  task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&syncer::NonBlockingTypeProcessor::Enable,
-                 processor_,
-                 base::Owned(proxy_->Clone().release())));
+  task_runner_->PostTask(FROM_HERE,
+                         base::Bind(&syncer::NonBlockingTypeProcessor::Enable,
+                                    processor_,
+                                    base::Passed(proxy_->Clone())));
   current_state_ = ENABLED;
 }
 

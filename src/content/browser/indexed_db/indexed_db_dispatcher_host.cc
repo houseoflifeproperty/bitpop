@@ -124,21 +124,19 @@ base::TaskRunner* IndexedDBDispatcherHost::OverrideTaskRunnerForMessage(
   return NULL;
 }
 
-bool IndexedDBDispatcherHost::OnMessageReceived(const IPC::Message& message,
-                                                bool* message_was_ok) {
+bool IndexedDBDispatcherHost::OnMessageReceived(const IPC::Message& message) {
   if (IPC_MESSAGE_CLASS(message) != IndexedDBMsgStart)
     return false;
 
   DCHECK(indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread() ||
          message.type() == IndexedDBHostMsg_DatabasePut::ID);
 
-  bool handled =
-      database_dispatcher_host_->OnMessageReceived(message, message_was_ok) ||
-      cursor_dispatcher_host_->OnMessageReceived(message, message_was_ok);
+  bool handled = database_dispatcher_host_->OnMessageReceived(message) ||
+                 cursor_dispatcher_host_->OnMessageReceived(message);
 
   if (!handled) {
     handled = true;
-    IPC_BEGIN_MESSAGE_MAP_EX(IndexedDBDispatcherHost, message, *message_was_ok)
+    IPC_BEGIN_MESSAGE_MAP(IndexedDBDispatcherHost, message)
       IPC_MESSAGE_HANDLER(IndexedDBHostMsg_FactoryGetDatabaseNames,
                           OnIDBFactoryGetDatabaseNames)
       IPC_MESSAGE_HANDLER(IndexedDBHostMsg_FactoryOpen, OnIDBFactoryOpen)
@@ -246,7 +244,6 @@ IndexedDBCursor* IndexedDBDispatcherHost::GetCursorFromId(int32 ipc_cursor_id) {
            web_metadata.object_stores.begin();
        iter != web_metadata.object_stores.end();
        ++iter) {
-
     const content::IndexedDBObjectStoreMetadata& web_store_metadata =
         iter->second;
     ::IndexedDBObjectStoreMetadata idb_store_metadata;
@@ -462,16 +459,15 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::CloseAll() {
 }
 
 bool IndexedDBDispatcherHost::DatabaseDispatcherHost::OnMessageReceived(
-    const IPC::Message& message,
-    bool* msg_is_ok) {
+    const IPC::Message& message) {
 
   DCHECK(
       (message.type() == IndexedDBHostMsg_DatabasePut::ID) ||
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
 
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(
-      IndexedDBDispatcherHost::DatabaseDispatcherHost, message, *msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(
+      IndexedDBDispatcherHost::DatabaseDispatcherHost, message)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseCreateObjectStore,
                         OnCreateObjectStore)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseDeleteObjectStore,
@@ -654,6 +650,11 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPut(
       }
       blob_info[i] =
           IndexedDBBlobInfo(info.uuid, path, info.file_name, info.mime_type);
+      if (info.size != static_cast<uint64_t>(-1)) {
+        blob_info[i].set_last_modified(
+            base::Time::FromDoubleT(info.last_modified));
+        blob_info[i].set_size(info.size);
+      }
     } else {
       blob_info[i] = IndexedDBBlobInfo(info.uuid, info.mime_type, info.size);
     }
@@ -882,11 +883,10 @@ IndexedDBDispatcherHost::CursorDispatcherHost::CursorDispatcherHost(
 IndexedDBDispatcherHost::CursorDispatcherHost::~CursorDispatcherHost() {}
 
 bool IndexedDBDispatcherHost::CursorDispatcherHost::OnMessageReceived(
-    const IPC::Message& message,
-    bool* msg_is_ok) {
+    const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(
-      IndexedDBDispatcherHost::CursorDispatcherHost, message, *msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(
+      IndexedDBDispatcherHost::CursorDispatcherHost, message)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorAdvance, OnAdvance)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorContinue, OnContinue)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_CursorPrefetch, OnPrefetch)
@@ -906,7 +906,7 @@ void IndexedDBDispatcherHost::CursorDispatcherHost::OnAdvance(
     int32 ipc_cursor_id,
     int32 ipc_thread_id,
     int32 ipc_callbacks_id,
-    unsigned long count) {
+    uint32 count) {
   DCHECK(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   IndexedDBCursor* idb_cursor =

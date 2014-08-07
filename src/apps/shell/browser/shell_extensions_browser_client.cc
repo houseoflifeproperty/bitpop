@@ -12,7 +12,7 @@
 #include "base/prefs/pref_service.h"
 #include "base/prefs/pref_service_factory.h"
 #include "base/prefs/testing_pref_store.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/user_prefs/user_prefs.h"
 #include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/app_sorting.h"
@@ -235,6 +235,11 @@ scoped_ptr<RuntimeAPIDelegate>
 ShellExtensionsBrowserClient::CreateRuntimeAPIDelegate(
     content::BrowserContext* context) const {
   return scoped_ptr<RuntimeAPIDelegate>(new apps::ShellRuntimeAPIDelegate());
+}
+
+ComponentExtensionResourceManager*
+ShellExtensionsBrowserClient::GetComponentExtensionResourceManager() {
+  return NULL;
 }
 
 }  // namespace extensions

@@ -95,9 +95,11 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   virtual void WidgetHidden() = 0;
   virtual int VisibleWidgetCount() const = 0;
 
-  // Indicates whether the current RenderProcessHost associated with a guest
-  // renderer process.
-  virtual bool IsGuest() const = 0;
+  // Indicates whether the current RenderProcessHost is associated with an
+  // isolated guest renderer process. Not all guest renderers are created equal.
+  // A guest, as indicated by BrowserPluginGuest::IsGuest, may coexist with
+  // other non-guest renderers in the same process if IsIsolatedGuest is false.
+  virtual bool IsIsolatedGuest() const = 0;
 
   // Returns the storage partition associated with this process.
   //
@@ -205,6 +207,21 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // process associated with this RenderProcessHost.
   virtual void SetWebRtcLogMessageCallback(
       base::Callback<void(const std::string&)> callback) = 0;
+
+  typedef base::Callback<void(scoped_ptr<uint8[]> packet_header,
+                              size_t header_length,
+                              size_t packet_length,
+                              bool incoming)> WebRtcRtpPacketCallback;
+
+  typedef base::Callback<void(bool incoming, bool outgoing)>
+      WebRtcStopRtpDumpCallback;
+
+  // Starts passing RTP packets to |packet_callback| and returns the callback
+  // used to stop dumping.
+  virtual WebRtcStopRtpDumpCallback StartRtpDump(
+      bool incoming,
+      bool outgoing,
+      const WebRtcRtpPacketCallback& packet_callback) = 0;
 #endif
 
   // Tells the ResourceDispatcherHost to resume a deferred navigation without

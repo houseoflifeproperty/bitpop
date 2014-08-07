@@ -44,10 +44,10 @@ SpdyProxyClientSocket::SpdyProxyClientSocket(
       write_buffer_len_(0),
       was_ever_used_(false),
       redirect_has_load_timing_info_(false),
-      weak_factory_(this),
-      write_callback_weak_factory_(this),
       net_log_(BoundNetLog::Make(spdy_stream->net_log().net_log(),
-                                 NetLog::SOURCE_PROXY_CLIENT_SOCKET)) {
+                                 NetLog::SOURCE_PROXY_CLIENT_SOCKET)),
+      weak_factory_(this),
+      write_callback_weak_factory_(this) {
   request_.method = "CONNECT";
   request_.url = url;
   if (!user_agent.empty())
@@ -416,6 +416,7 @@ int SpdyProxyClientSocket::DoReadReplyComplete(int result) {
       if (SanitizeProxyRedirect(&response_, request_.url)) {
         redirect_has_load_timing_info_ =
             spdy_stream_->GetLoadTimingInfo(&redirect_load_timing_info_);
+        // Note that this triggers a RST_STREAM_CANCEL.
         spdy_stream_->DetachDelegate();
         next_state_ = STATE_DISCONNECTED;
         return ERR_HTTPS_PROXY_TUNNEL_RESPONSE;

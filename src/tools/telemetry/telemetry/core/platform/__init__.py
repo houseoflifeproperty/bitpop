@@ -1,6 +1,13 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
+from telemetry.core.platform import factory
+
+
+def GetHostPlatform():
+  return Platform(factory.GetPlatformBackendForCurrentOS())
+
 
 class Platform(object):
   """The platform that the target browser is running on.
@@ -126,7 +133,7 @@ class Platform(object):
 
   def IsApplicationRunning(self, application):
     """Returns whether an application is currently running."""
-    return self._platform_backend.IsApplicationLaunchning(application)
+    return self._platform_backend.IsApplicationRunning(application)
 
   def CanLaunchApplication(self, application):
     """Returns whether the platform can launch the given application."""
@@ -158,14 +165,10 @@ class Platform(object):
   def StopVideoCapture(self):
     """Stops capturing video.
 
-    Yields:
-      (time_ms, bitmap) tuples representing each video keyframe. Only the first
-      frame in a run of sequential duplicate bitmaps is included.
-        time_ms is milliseconds relative to the first frame.
-        bitmap is a telemetry.core.Bitmap.
+    Returns:
+      A telemetry.core.video.Video object.
     """
-    for t in self._platform_backend.StopVideoCapture():
-      yield t
+    return self._platform_backend.StopVideoCapture()
 
   def CanMonitorPower(self):
     """Returns True iff power can be monitored asynchronously via

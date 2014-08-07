@@ -31,6 +31,8 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <float.h>
 #import <unicode/uchar.h>
+#import "platform/LayoutTestSupport.h"
+#import "platform/RuntimeEnabledFeatures.h"
 #import "platform/SharedBuffer.h"
 #import "platform/fonts/Font.h"
 #import "platform/fonts/FontCache.h"
@@ -106,6 +108,14 @@ static NSString *webFallbackFontFamily(void)
     return webFallbackFontFamily.get();
 }
 
+static bool useHinting()
+{
+    // Enable hinting when subpixel font scaling is disabled or
+    // when running the set of standard non-subpixel layout tests,
+    // otherwise use subpixel glyph positioning.
+    return (isRunningLayoutTest() && !isFontAntialiasingEnabledForTest()) || !RuntimeEnabledFeatures::subpixelFontScalingEnabled();
+}
+
 const SimpleFontData* SimpleFontData::getCompositeFontReferenceFontData(NSFont *key) const
 {
     if (key && !CFEqual(RetainPtr<CFStringRef>(AdoptCF, CTFontCopyPostScriptName(CTFontRef(key))).get(), CFSTR("LastResort"))) {
@@ -119,14 +129,13 @@ const SimpleFontData* SimpleFontData::getCompositeFontReferenceFontData(NSFont *
                 return found;
         }
         if (CFMutableDictionaryRef dictionary = m_derivedFontData->compositeFontReferences.get()) {
-            bool isUsingPrinterFont = platformData().isPrinterFont();
-            NSFont *substituteFont = isUsingPrinterFont ? [key printerFont] : [key screenFont];
+            NSFont *substituteFont = [key printerFont];
 
             CTFontSymbolicTraits traits = CTFontGetSymbolicTraits(toCTFontRef(substituteFont));
             bool syntheticBold = platformData().syntheticBold() && !(traits & kCTFontBoldTrait);
             bool syntheticOblique = platformData().syntheticOblique() && !(traits & kCTFontItalicTrait);
 
-            FontPlatformData substitutePlatform(substituteFont, platformData().size(), isUsingPrinterFont, syntheticBold, syntheticOblique, platformData().orientation(), platformData().widthVariant());
+            FontPlatformData substitutePlatform(substituteFont, platformData().size(), syntheticBold, syntheticOblique, platformData().orientation(), platformData().widthVariant());
             SimpleFontData* value = new SimpleFontData(substitutePlatform, isCustomFont() ? CustomFontData::create() : nullptr);
             if (value) {
                 CFDictionaryAddValue(dictionary, key, value);
@@ -314,11 +323,10 @@ PassRefPtr<SimpleFontData> SimpleFontData::platformCreateScaledFontData(const Fo
 
     BEGIN_BLOCK_OBJC_EXCEPTIONS;
     float size = m_platformData.size() * scaleFactor;
-    FontPlatformData scaledFontData([[NSFontManager sharedFontManager] convertFont:m_platformData.font() toSize:size], size, m_platformData.isPrinterFont(), false, false, m_platformData.orientation());
+    FontPlatformData scaledFontData([[NSFontManager sharedFontManager] convertFont:m_platformData.font() toSize:size], size, false, false, m_platformData.orientation());
 
-    // AppKit resets the type information (screen/printer) when you convert a font to a different size.
-    // We have to fix up the font that we're handed back.
-    scaledFontData.setFont(fontDescription.usePrinterFont() ? [scaledFontData.font() printerFont] : [scaledFontData.font() screenFont]);
+    // AppKit forgets about hinting property when scaling, so we have to remind it.
+    scaledFontData.setFont(useHinting() ? [scaledFontData.font() screenFont] : [scaledFontData.font() printerFont]);
 
     if (scaledFontData.font()) {
         NSFontManager *fontManager = [NSFontManager sharedFontManager];

@@ -39,7 +39,7 @@
         'resources',
       ],
       'include_dirs': [
-        '../../src',
+        '../..',
       ],
       'sources': [  ### gcmole(all) ###
         '<(generated_file)',
@@ -83,6 +83,7 @@
         'test-hashmap.cc',
         'test-heap.cc',
         'test-heap-profiler.cc',
+        'test-hydrogen-types.cc',
         'test-libplatform-task-queue.cc',
         'test-libplatform-worker-thread.cc',
         'test-list.cc',
@@ -105,7 +106,6 @@
         'test-representation.cc',
         'test-semaphore.cc',
         'test-serialize.cc',
-        'test-socket.cc',
         'test-spaces.cc',
         'test-strings.cc',
         'test-symbols.cc',
@@ -176,6 +176,17 @@
             'test-macro-assembler-mips.cc'
           ],
         }],
+        ['v8_target_arch=="x87"', {
+          'sources': [  ### gcmole(arch:x87) ###
+            'test-assembler-x87.cc',
+            'test-code-stubs.cc',
+            'test-code-stubs-x87.cc',
+            'test-cpu-x87.cc',
+            'test-disasm-x87.cc',
+            'test-macro-assembler-x87.cc',
+            'test-log-stack-tracer.cc'
+          ],
+        }],
         [ 'OS=="linux" or OS=="qnx"', {
           'sources': [
             'test-platform-linux.cc',
@@ -206,7 +217,7 @@
             },
             {
               'dependencies': [
-                '../../tools/gyp/v8.gyp:v8_nosnapshot.<(v8_target_arch)',
+                '../../tools/gyp/v8.gyp:v8_nosnapshot',
               ],
             }],
           ],

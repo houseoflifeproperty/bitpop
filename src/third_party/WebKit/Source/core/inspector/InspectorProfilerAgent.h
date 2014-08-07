@@ -30,7 +30,7 @@
 #ifndef InspectorProfilerAgent_h
 #define InspectorProfilerAgent_h
 
-#include "InspectorFrontend.h"
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
@@ -58,7 +58,7 @@ public:
     virtual ~InspectorProfilerAgent();
 
     void consoleProfile(const String& title, ScriptState*);
-    void consoleProfileEnd(const String& title);
+    void consoleProfileEnd(const String& title, ScriptState*);
 
     virtual void enable(ErrorString*) OVERRIDE;
     virtual void disable(ErrorString*) OVERRIDE;

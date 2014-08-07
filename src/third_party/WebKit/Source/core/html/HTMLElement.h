@@ -40,7 +40,7 @@ enum TranslateAttributeMode {
 
 class HTMLElement : public Element {
 public:
-    static PassRefPtrWillBeRawPtr<HTMLElement> create(const QualifiedName& tagName, Document&);
+    DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLElement);
 
     virtual String title() const OVERRIDE FINAL;
     virtual short tabIndex() const OVERRIDE;
@@ -91,6 +91,8 @@ public:
     virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
     virtual bool matchesReadWritePseudoClass() const OVERRIDE;
 
+    static const AtomicString& eventParameterName();
+
 protected:
     HTMLElement(const QualifiedName& tagName, Document&, ConstructionType);
 
@@ -113,7 +115,7 @@ private:
 
     void mapLanguageAttributeToLocale(const AtomicString&, MutableStylePropertySet*);
 
-    PassRefPtr<DocumentFragment> textToFragment(const String&, ExceptionState&);
+    PassRefPtrWillBeRawPtr<DocumentFragment> textToFragment(const String&, ExceptionState&);
 
     void dirAttributeChanged(const AtomicString&);
     void adjustDirectionalityIfNeededAfterChildAttributeChanged(Element* child);
@@ -154,6 +156,6 @@ inline HTMLElement::HTMLElement(const QualifiedName& tagName, Document& document
 
 } // namespace WebCore
 
-#include "HTMLElementTypeHelpers.h"
+#include "core/HTMLElementTypeHelpers.h"
 
 #endif // HTMLElement_h

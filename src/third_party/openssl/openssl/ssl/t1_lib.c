@@ -2684,6 +2684,17 @@ tls1_channel_id_hash(EVP_MD_CTX *md, SSL *s)
 
 	EVP_DigestUpdate(md, kClientIDMagic, sizeof(kClientIDMagic));
 
+	if (s->hit)
+		{
+		static const char kResumptionMagic[] = "Resumption";
+		EVP_DigestUpdate(md, kResumptionMagic,
+				 sizeof(kResumptionMagic));
+		if (s->session->original_handshake_hash_len == 0)
+			return 0;
+		EVP_DigestUpdate(md, s->session->original_handshake_hash,
+				 s->session->original_handshake_hash_len);
+		}
+
 	EVP_MD_CTX_init(&ctx);
 	for (i = 0; i < SSL_MAX_DIGEST; i++)
 		{
@@ -2698,3 +2709,29 @@ tls1_channel_id_hash(EVP_MD_CTX *md, SSL *s)
 	return 1;
 	}
 #endif
+
+/* tls1_record_handshake_hashes_for_channel_id records the current handshake
+ * hashes in |s->session| so that Channel ID resumptions can sign that data. */
+int tls1_record_handshake_hashes_for_channel_id(SSL *s)
+	{
+	int digest_len;
+	/* This function should never be called for a resumed session because
+	 * the handshake hashes that we wish to record are for the original,
+	 * full handshake. */
+	if (s->hit)
+		return -1;
+	/* It only makes sense to call this function if Channel IDs have been
+	 * negotiated. */
+	if (!s->s3->tlsext_channel_id_valid)
+		return -1;
+
+	digest_len = tls1_handshake_digest(
+		s, s->session->original_handshake_hash,
+		sizeof(s->session->original_handshake_hash));
+	if (digest_len < 0)
+		return -1;
+
+	s->session->original_handshake_hash_len = digest_len;
+
+	return 1;
+	}

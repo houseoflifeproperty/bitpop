@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "v8.h"
+#include "src/v8.h"
 
 #if V8_TARGET_ARCH_MIPS
 
-#include "codegen.h"
-#include "macro-assembler.h"
-#include "simulator-mips.h"
+#include "src/codegen.h"
+#include "src/macro-assembler.h"
+#include "src/mips/simulator-mips.h"
 
 namespace v8 {
 namespace internal {
@@ -71,8 +71,7 @@ UnaryMathFunction CreateExpFunction() {
 
 
 #if defined(V8_HOST_ARCH_MIPS)
-OS::MemCopyUint8Function CreateMemCopyUint8Function(
-    OS::MemCopyUint8Function stub) {
+MemCopyUint8Function CreateMemCopyUint8Function(MemCopyUint8Function stub) {
 #if defined(USE_SIMULATOR)
   return stub;
 #else
@@ -597,7 +596,7 @@ OS::MemCopyUint8Function CreateMemCopyUint8Function(
 
   CPU::FlushICache(buffer, actual_size);
   OS::ProtectCode(buffer, actual_size);
-  return FUNCTION_CAST<OS::MemCopyUint8Function>(buffer);
+  return FUNCTION_CAST<MemCopyUint8Function>(buffer);
 #endif
 }
 #endif
@@ -1006,7 +1005,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
         at, Operand(zero_reg));
   }
   // Rule out short external strings.
-  STATIC_CHECK(kShortExternalStringTag != 0);
+  STATIC_ASSERT(kShortExternalStringTag != 0);
   __ And(at, result, Operand(kShortExternalStringMask));
   __ Branch(call_runtime, ne, at, Operand(zero_reg));
   __ lw(string, FieldMemOperand(string, ExternalString::kResourceDataOffset));
@@ -1122,42 +1121,42 @@ void MathExpGenerator::EmitMathExp(MacroAssembler* masm,
 static const uint32_t kCodeAgePatchFirstInstruction = 0x00010180;
 #endif
 
-static byte* GetNoCodeAgeSequence(uint32_t* length) {
-  // The sequence of instructions that is patched out for aging code is the
-  // following boilerplate stack-building prologue that is found in FUNCTIONS
-  static bool initialized = false;
-  static uint32_t sequence[kNoCodeAgeSequenceLength];
-  byte* byte_sequence = reinterpret_cast<byte*>(sequence);
-  *length = kNoCodeAgeSequenceLength * Assembler::kInstrSize;
-  if (!initialized) {
-    // Since patcher is a large object, allocate it dynamically when needed,
-    // to avoid overloading the stack in stress conditions.
-    SmartPointer<CodePatcher>
-        patcher(new CodePatcher(byte_sequence, kNoCodeAgeSequenceLength));
-    PredictableCodeSizeScope scope(patcher->masm(), *length);
-    patcher->masm()->Push(ra, fp, cp, a1);
-    patcher->masm()->nop(Assembler::CODE_AGE_SEQUENCE_NOP);
-    patcher->masm()->Addu(
-        fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
-    initialized = true;
-  }
-  return byte_sequence;
+
+CodeAgingHelper::CodeAgingHelper() {
+  ASSERT(young_sequence_.length() == kNoCodeAgeSequenceLength);
+  // Since patcher is a large object, allocate it dynamically when needed,
+  // to avoid overloading the stack in stress conditions.
+  // DONT_FLUSH is used because the CodeAgingHelper is initialized early in
+  // the process, before MIPS simulator ICache is setup.
+  SmartPointer<CodePatcher> patcher(
+      new CodePatcher(young_sequence_.start(),
+                      young_sequence_.length() / Assembler::kInstrSize,
+                      CodePatcher::DONT_FLUSH));
+  PredictableCodeSizeScope scope(patcher->masm(), young_sequence_.length());
+  patcher->masm()->Push(ra, fp, cp, a1);
+  patcher->masm()->nop(Assembler::CODE_AGE_SEQUENCE_NOP);
+  patcher->masm()->Addu(
+      fp, sp, Operand(StandardFrameConstants::kFixedFrameSizeFromFp));
 }
 
 
-bool Code::IsYoungSequence(byte* sequence) {
-  uint32_t young_length;
-  byte* young_sequence = GetNoCodeAgeSequence(&young_length);
-  bool result = !memcmp(sequence, young_sequence, young_length);
-  ASSERT(result ||
-         Memory::uint32_at(sequence) == kCodeAgePatchFirstInstruction);
+#ifdef DEBUG
+bool CodeAgingHelper::IsOld(byte* candidate) const {
+  return Memory::uint32_at(candidate) == kCodeAgePatchFirstInstruction;
+}
+#endif
+
+
+bool Code::IsYoungSequence(Isolate* isolate, byte* sequence) {
+  bool result = isolate->code_aging_helper()->IsYoung(sequence);
+  ASSERT(result || isolate->code_aging_helper()->IsOld(sequence));
   return result;
 }
 
 
-void Code::GetCodeAgeAndParity(byte* sequence, Age* age,
+void Code::GetCodeAgeAndParity(Isolate* isolate, byte* sequence, Age* age,
                                MarkingParity* parity) {
-  if (IsYoungSequence(sequence)) {
+  if (IsYoungSequence(isolate, sequence)) {
     *age = kNoAgeCodeAge;
     *parity = NO_MARKING_PARITY;
   } else {
@@ -1173,10 +1172,9 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
                                 byte* sequence,
                                 Code::Age age,
                                 MarkingParity parity) {
-  uint32_t young_length;
-  byte* young_sequence = GetNoCodeAgeSequence(&young_length);
+  uint32_t young_length = isolate->code_aging_helper()->young_sequence_length();
   if (age == kNoAgeCodeAge) {
-    CopyBytes(sequence, young_sequence, young_length);
+    isolate->code_aging_helper()->CopyYoungSequenceTo(sequence);
     CPU::FlushICache(sequence, young_length);
   } else {
     Code* stub = GetCodeAgeStub(isolate, age, parity);

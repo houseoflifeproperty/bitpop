@@ -15,7 +15,9 @@
 #include "base/thread_task_runner_handle.h"
 #include "device/bluetooth/bluetooth_device_win.h"
 #include "device/bluetooth/bluetooth_socket_thread.h"
+#include "device/bluetooth/bluetooth_socket_win.h"
 #include "device/bluetooth/bluetooth_task_manager_win.h"
+#include "device/bluetooth/bluetooth_uuid.h"
 
 namespace device {
 
@@ -159,9 +161,28 @@ void BluetoothAdapterWin::DiscoveryStopped() {
   MaybePostStartDiscoveryTask();
 }
 
-void BluetoothAdapterWin::ReadLocalOutOfBandPairingData(
-    const BluetoothOutOfBandPairingDataCallback& callback,
-    const ErrorCallback& error_callback) {
+void BluetoothAdapterWin::CreateRfcommService(
+    const BluetoothUUID& uuid,
+    int channel,
+    const CreateServiceCallback& callback,
+    const CreateServiceErrorCallback& error_callback) {
+  scoped_refptr<BluetoothSocketWin> socket =
+      BluetoothSocketWin::CreateBluetoothSocket(
+          ui_task_runner_,
+          socket_thread_,
+          NULL,
+          net::NetLog::Source());
+  socket->Listen(this, uuid, channel,
+                 base::Bind(callback, socket),
+                 error_callback);
+}
+
+void BluetoothAdapterWin::CreateL2capService(
+    const BluetoothUUID& uuid,
+    int psm,
+    const CreateServiceCallback& callback,
+    const CreateServiceErrorCallback& error_callback) {
+  // TODO(keybuk): implement.
   NOTIMPLEMENTED();
 }
 
@@ -175,7 +196,7 @@ void BluetoothAdapterWin::AdapterStateChanged(
   name_ = state.name;
   bool was_present = IsPresent();
   bool is_present = !state.address.empty();
-  address_ = state.address;
+  address_ = BluetoothDevice::CanonicalizeAddress(state.address);
   if (was_present != is_present) {
     FOR_EACH_OBSERVER(BluetoothAdapter::Observer, observers_,
                       AdapterPresentChanged(this, is_present));

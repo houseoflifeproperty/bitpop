@@ -164,6 +164,7 @@ class GLES2DecoderTestBase : public ::testing::TestWithParam<bool> {
     bool request_stencil;
     bool bind_generates_resource;
     bool lose_context_when_out_of_memory;
+    bool use_native_vao;  // default is true.
   };
 
   void InitDecoder(const InitState& init);
@@ -338,6 +339,8 @@ class GLES2DecoderTestBase : public ::testing::TestWithParam<bool> {
                                      bool green,
                                      bool blue,
                                      bool alpha);
+  void SetupExpectationsForStencilMask(uint32 front_mask,
+                                       uint32 back_mask);
 
   void SetupExpectationsForApplyingDirtyState(
       bool framebuffer_is_rgb,
@@ -569,10 +572,47 @@ class GLES2DecoderTestBase : public ::testing::TestWithParam<bool> {
     scoped_refptr<gpu::Buffer> invalid_buffer_;
   };
 
+  // MockGLStates is used to track GL states and emulate driver
+  // behaviors on top of MockGLInterface.
+  class MockGLStates {
+   public:
+    MockGLStates()
+        : bound_array_buffer_object_(0),
+          bound_vertex_array_object_(0) {
+    }
+
+    ~MockGLStates() {
+    }
+
+    void OnBindArrayBuffer(GLuint id) {
+      bound_array_buffer_object_ = id;
+    }
+
+    void OnBindVertexArrayOES(GLuint id) {
+      bound_vertex_array_object_ = id;
+    }
+
+    void OnVertexAttribNullPointer() {
+      // When a vertex array object is bound, some drivers (AMD Linux,
+      // Qualcomm, etc.) have a bug where it incorrectly generates an
+      // GL_INVALID_OPERATION on glVertexAttribPointer() if pointer
+      // is NULL, no buffer is bound on GL_ARRAY_BUFFER.
+      // Make sure we don't trigger this bug.
+      if (bound_vertex_array_object_ != 0)
+        EXPECT_TRUE(bound_array_buffer_object_ != 0);
+    }
+
+   private:
+    GLuint bound_array_buffer_object_;
+    GLuint bound_vertex_array_object_;
+  };  // class MockGLStates
+
   void AddExpectationsForVertexAttribManager();
+  void SetupMockGLBehaviors();
 
   scoped_ptr< ::testing::StrictMock<MockCommandBufferEngine> > engine_;
   scoped_refptr<ContextGroup> group_;
+  MockGLStates gl_states_;
 };
 
 class GLES2DecoderWithShaderTestBase : public GLES2DecoderTestBase {
@@ -586,6 +626,10 @@ class GLES2DecoderWithShaderTestBase : public GLES2DecoderTestBase {
   virtual void TearDown() OVERRIDE;
 
 };
+
+// SpecializedSetup specializations that are needed in multiple unittest files.
+template <>
+void GLES2DecoderTestBase::SpecializedSetup<cmds::LinkProgram, 0>(bool valid);
 
 }  // namespace gles2
 }  // namespace gpu

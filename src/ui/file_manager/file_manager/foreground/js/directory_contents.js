@@ -453,8 +453,10 @@ function DirectoryContents(context,
 
   this.scannerFactory_ = scannerFactory;
   this.scanner_ = null;
-  this.prefetchMetadataQueue_ = new AsyncUtil.Queue();
+  this.processNewEntriesQueue_ = new AsyncUtil.Queue();
   this.scanCancelled_ = false;
+
+  this.lastSpaceInMetadataCache_ = 0;
 }
 
 /**
@@ -475,6 +477,24 @@ DirectoryContents.prototype.clone = function() {
 };
 
 /**
+ * Disposes the reserved metadata cache.
+ */
+DirectoryContents.prototype.dispose = function() {
+  this.context_.metadataCache.resizeBy(-this.lastSpaceInMetadataCache_);
+};
+
+/**
+ * Make a space for current directory size in the metadata cache.
+ *
+ * @param {number} size The cache size to be set.
+ * @private
+ */
+DirectoryContents.prototype.makeSpaceInMetadataCache_ = function(size) {
+  this.context_.metadataCache.resizeBy(size - this.lastSpaceInMetadataCache_);
+  this.lastSpaceInMetadataCache_ = size;
+};
+
+/**
  * Use a given fileList instead of the fileList from the context.
  * @param {Array|cr.ui.ArrayDataModel} fileList The new file list.
  */
@@ -483,7 +503,7 @@ DirectoryContents.prototype.setFileList = function(fileList) {
     this.fileList_ = fileList;
   else
     this.fileList_ = new cr.ui.ArrayDataModel(fileList);
-  this.context_.metadataCache.setCacheSize(this.fileList_.length);
+  this.makeSpaceInMetadataCache_(this.fileList_.length);
 };
 
 /**
@@ -497,7 +517,7 @@ DirectoryContents.prototype.replaceContextFileList = function() {
     spliceArgs.unshift(0, fileList.length);
     fileList.splice.apply(fileList, spliceArgs);
     this.fileList_ = fileList;
-    this.context_.metadataCache.setCacheSize(this.fileList_.length);
+    this.makeSpaceInMetadataCache_(this.fileList_.length);
   }
 };
 
@@ -505,7 +525,7 @@ DirectoryContents.prototype.replaceContextFileList = function() {
  * @return {boolean} If the scan is active.
  */
 DirectoryContents.prototype.isScanning = function() {
-  return this.scanner_ || this.prefetchMetadataQueue_.isRunning();
+  return this.scanner_ || this.processNewEntriesQueue_.isRunning();
 };
 
 /**
@@ -526,8 +546,11 @@ DirectoryContents.prototype.getDirectoryEntry = function() {
 /**
  * Start directory scan/search operation. Either 'scan-completed' or
  * 'scan-failed' event will be fired upon completion.
+ *
+ * @param {boolean} refresh True to refrech metadata, or false to use cached
+ *     one.
  */
-DirectoryContents.prototype.scan = function() {
+DirectoryContents.prototype.scan = function(refresh) {
   /**
    * Invoked when the scanning is completed successfully.
    * @this {DirectoryContents}
@@ -549,7 +572,7 @@ DirectoryContents.prototype.scan = function() {
   // TODO(hidehiko,mtomasz): this scan method must be called at most once.
   // Remove such a limitation.
   this.scanner_ = this.scannerFactory_();
-  this.scanner_.scan(this.onNewEntries_.bind(this),
+  this.scanner_.scan(this.onNewEntries_.bind(this, refresh),
                      completionCallback.bind(this),
                      errorCallback.bind(this));
 };
@@ -566,7 +589,7 @@ DirectoryContents.prototype.cancelScan = function() {
 
   this.onScanFinished_();
 
-  this.prefetchMetadataQueue_.cancel();
+  this.processNewEntriesQueue_.cancel();
   cr.dispatchSimpleEvent(this, 'scan-cancelled');
 };
 
@@ -579,7 +602,7 @@ DirectoryContents.prototype.cancelScan = function() {
 DirectoryContents.prototype.onScanFinished_ = function() {
   this.scanner_ = null;
 
-  this.prefetchMetadataQueue_.run(function(callback) {
+  this.processNewEntriesQueue_.run(function(callback) {
     // TODO(yoshiki): Here we should fire the update event of changed
     // items. Currently we have a method this.fileList_.updateIndex() to
     // fire an event, but this method takes only 1 argument and invokes sort
@@ -603,7 +626,7 @@ DirectoryContents.prototype.onScanCompleted_ = function() {
   if (this.scanCancelled_)
     return;
 
-  this.prefetchMetadataQueue_.run(function(callback) {
+  this.processNewEntriesQueue_.run(function(callback) {
     // Call callback first, so isScanning() returns false in the event handlers.
     callback();
 
@@ -619,7 +642,7 @@ DirectoryContents.prototype.onScanError_ = function() {
   if (this.scanCancelled_)
     return;
 
-  this.prefetchMetadataQueue_.run(function(callback) {
+  this.processNewEntriesQueue_.run(function(callback) {
     // Call callback first, so isScanning() returns false in the event handlers.
     callback();
     cr.dispatchSimpleEvent(this, 'scan-failed');
@@ -628,10 +651,13 @@ DirectoryContents.prototype.onScanError_ = function() {
 
 /**
  * Called when some chunk of entries are read by scanner.
+ *
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
+ *     one.
  * @param {Array.<Entry>} entries The list of the scanned entries.
  * @private
  */
-DirectoryContents.prototype.onNewEntries_ = function(entries) {
+DirectoryContents.prototype.onNewEntries_ = function(refresh, entries) {
   if (this.scanCancelled_)
     return;
 
@@ -643,39 +669,66 @@ DirectoryContents.prototype.onNewEntries_ = function(entries) {
   // See crbug.com/370908 for detail.
   entriesFiltered.forEach(function(entry) { entry.cachedUrl = entry.toURL(); });
 
-  // Update the filelist without waiting the metadata.
-  this.fileList_.push.apply(this.fileList_, entriesFiltered);
-  cr.dispatchSimpleEvent(this, 'scan-updated');
+  if (entriesFiltered.length === 0)
+    return;
 
-  this.context_.metadataCache.setCacheSize(this.fileList_.length);
+  // Enlarge the cache size into the new filelist size.
+  var newListSize = this.fileList_.length + entriesFiltered.length;
+  this.makeSpaceInMetadataCache_(newListSize);
 
-  // Because the prefetchMetadata can be slow, throttling by splitting entries
-  // into smaller chunks to reduce UI latency.
-  // TODO(hidehiko,mtomasz): This should be handled in MetadataCache.
-  var MAX_CHUNK_SIZE = 50;
-  for (var i = 0; i < entriesFiltered.length; i += MAX_CHUNK_SIZE) {
-    var chunk = entriesFiltered.slice(i, i + MAX_CHUNK_SIZE);
-    this.prefetchMetadataQueue_.run(function(chunk, callback) {
-      this.prefetchMetadata(chunk, function() {
-        if (this.scanCancelled_) {
-          // Do nothing if the scanning is cancelled.
-          callback();
-          return;
-        }
+  this.processNewEntriesQueue_.run(function(callbackOuter) {
+    var finish = function() {
+      // Update the filelist without waiting the metadata.
+      this.fileList_.push.apply(this.fileList_, entriesFiltered);
+      cr.dispatchSimpleEvent(this, 'scan-updated');
 
-        cr.dispatchSimpleEvent(this, 'scan-updated');
-        callback();
-      }.bind(this));
-    }.bind(this, chunk));
-  }
+      callbackOuter();
+    }.bind(this);
+    // Because the prefetchMetadata can be slow, throttling by splitting entries
+    // into smaller chunks to reduce UI latency.
+    // TODO(hidehiko,mtomasz): This should be handled in MetadataCache.
+    var MAX_CHUNK_SIZE = 25;
+    var prefetchMetadataQueue = new AsyncUtil.ConcurrentQueue(4);
+    for (var i = 0; i < entriesFiltered.length; i += MAX_CHUNK_SIZE) {
+      if (prefetchMetadataQueue.isCancelled())
+        break;
+
+      var chunk = entriesFiltered.slice(i, i + MAX_CHUNK_SIZE);
+      prefetchMetadataQueue.run(function(chunk, callbackInner) {
+        this.prefetchMetadata(chunk, refresh, function() {
+          if (!prefetchMetadataQueue.isCancelled()) {
+            if (this.scanCancelled_)
+              prefetchMetadataQueue.cancel();
+          }
+
+          // Checks if this is the last task.
+          if (prefetchMetadataQueue.getWaitingTasksCount() === 0 &&
+              prefetchMetadataQueue.getRunningTasksCount() === 1) {
+            // |callbackOuter| in |finish| must be called before
+            // |callbackInner|, to prevent double-calling.
+            finish();
+          }
+
+          callbackInner();
+        }.bind(this));
+      }.bind(this, chunk));
+    }
+  }.bind(this));
 };
 
 /**
  * @param {Array.<Entry>} entries Files.
+ * @param {boolean} refresh True to refresh metadata, or false to use cached
+ *     one.
  * @param {function(Object)} callback Callback on done.
  */
-DirectoryContents.prototype.prefetchMetadata = function(entries, callback) {
-  this.context_.metadataCache.get(entries, 'filesystem|drive', callback);
+DirectoryContents.prototype.prefetchMetadata =
+    function(entries, refresh, callback) {
+  var TYPES = 'filesystem|drive';
+  if (refresh)
+    this.context_.metadataCache.getLatest(entries, TYPES, callback);
+  else
+    this.context_.metadataCache.get(entries, TYPES, callback);
 };
 
 /**

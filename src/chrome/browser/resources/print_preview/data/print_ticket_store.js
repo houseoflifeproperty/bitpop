@@ -123,7 +123,11 @@ cr.define('print_preview', function() {
      * @private
      */
     this.mediaSize_ = new print_preview.ticket_items.MediaSize(
-        this.appState_, this.destinationStore_);
+        this.appState_,
+        this.destinationStore_,
+        this.documentInfo_,
+        this.marginsType_,
+        this.customMargins_);
 
     /**
      * Landscape ticket item.
@@ -131,8 +135,11 @@ cr.define('print_preview', function() {
      * @private
      */
     this.landscape_ = new print_preview.ticket_items.Landscape(
-        this.appState_, this.destinationStore_, this.documentInfo_,
-        this.marginsType_, this.customMargins_);
+        this.appState_,
+        this.destinationStore_,
+        this.documentInfo_,
+        this.marginsType_,
+        this.customMargins_);
 
     /**
      * Header-footer ticket item.
@@ -140,7 +147,9 @@ cr.define('print_preview', function() {
      * @private
      */
     this.headerFooter_ = new print_preview.ticket_items.HeaderFooter(
-        this.appState_, this.documentInfo_, this.marginsType_,
+        this.appState_,
+        this.documentInfo_,
+        this.marginsType_,
         this.customMargins_);
 
     /**
@@ -368,19 +377,13 @@ cr.define('print_preview', function() {
         cjt.print.collate = {collate: this.collate.getValue()};
       }
       if (this.color.isCapabilityAvailable() && this.color.isUserEdited()) {
-        var colorType = this.color.getValue() ?
-            'STANDARD_COLOR' : 'STANDARD_MONOCHROME';
-        // Find option with this colorType to read its vendor_id.
-        var selectedOptions = destination.capabilities.printer.color.option.
-            filter(function(option) {
-              return option.type == colorType;
-            });
-        if (selectedOptions.length == 0) {
+        var selectedOption = this.color.getSelectedOption();
+        if (!selectedOption) {
           console.error('Could not find correct color option');
         } else {
-          cjt.print.color = {type: colorType};
-          if (selectedOptions[0].hasOwnProperty('vendor_id')) {
-            cjt.print.color.vendor_id = selectedOptions[0].vendor_id;
+          cjt.print.color = {type: selectedOption.type};
+          if (selectedOption.hasOwnProperty('vendor_id')) {
+            cjt.print.color.vendor_id = selectedOption.vendor_id;
           }
         }
       }

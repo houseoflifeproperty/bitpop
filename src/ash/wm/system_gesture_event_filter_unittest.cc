@@ -4,8 +4,9 @@
 
 #include "ash/wm/system_gesture_event_filter.h"
 
+#include <vector>
+
 #include "ash/accelerators/accelerator_controller.h"
-#include "ash/ash_switches.h"
 #include "ash/display/display_manager.h"
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_model.h"
@@ -18,7 +19,6 @@
 #include "ash/wm/gestures/long_press_affordance_handler.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
-#include "base/command_line.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "ui/aura/env.h"
@@ -27,7 +27,6 @@
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
-#include "ui/base/ui_base_switches.h"
 #include "ui/events/event.h"
 #include "ui/events/event_handler.h"
 #include "ui/events/event_utils.h"
@@ -35,7 +34,10 @@
 #include "ui/events/test/test_event_handler.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
+#include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/views/window/non_client_view.h"
+#include "ui/views/window/window_button_order_provider.h"
 
 namespace ash {
 namespace test {
@@ -60,7 +62,7 @@ class MaxSizeNCFV : public views::NonClientFrameView {
  public:
   MaxSizeNCFV() {}
  private:
-  virtual gfx::Size GetMaximumSize() OVERRIDE {
+  virtual gfx::Size GetMaximumSize() const OVERRIDE {
     return gfx::Size(200, 200);
   }
   virtual gfx::Rect GetBoundsForClientView() const OVERRIDE {
@@ -107,11 +109,9 @@ class MaxSizeWidgetDelegate : public views::WidgetDelegateView {
 
 } // namespace
 
-class SystemGestureEventFilterTest
-    : public AshTestBase,
-      public testing::WithParamInterface<bool> {
+class SystemGestureEventFilterTest : public AshTestBase {
  public:
-  SystemGestureEventFilterTest() : AshTestBase(), docked_enabled_(GetParam()) {}
+  SystemGestureEventFilterTest() : AshTestBase() {}
   virtual ~SystemGestureEventFilterTest() {}
 
   LongPressAffordanceHandler* GetLongPressAffordance() {
@@ -136,10 +136,20 @@ class SystemGestureEventFilterTest
 
   // Overridden from AshTestBase:
   virtual void SetUp() OVERRIDE {
-    if (!docked_enabled_) {
-      CommandLine::ForCurrentProcess()->AppendSwitch(
-          ash::switches::kAshDisableDockedWindows);
-    }
+    // TODO(jonross): TwoFingerDragDelayed() and ThreeFingerGestureStopsDrag()
+    // both use hardcoded touch points, assuming that they target empty header
+    // space. Window control order now reflects configuration files and can
+    // change. The tests should be improved to dynamically decide touch points.
+    // To address this we specify the originally expected window control
+    // positions to be consistent across tests.
+    std::vector<views::FrameButton> leading;
+    std::vector<views::FrameButton> trailing;
+    trailing.push_back(views::FRAME_BUTTON_MINIMIZE);
+    trailing.push_back(views::FRAME_BUTTON_MAXIMIZE);
+    trailing.push_back(views::FRAME_BUTTON_CLOSE);
+    views::WindowButtonOrderProvider::GetInstance()->
+        SetWindowButtonOrder(leading, trailing);
+
     test::AshTestBase::SetUp();
     // Enable brightness key.
     test::DisplayManagerTestApi(Shell::GetInstance()->display_manager()).
@@ -147,9 +157,6 @@ class SystemGestureEventFilterTest
   }
 
  private:
-  // true if docked windows are enabled with a flag.
-  bool docked_enabled_;
-
   DISALLOW_COPY_AND_ASSIGN(SystemGestureEventFilterTest);
 };
 
@@ -164,7 +171,7 @@ ui::GestureEvent* CreateGesture(ui::EventType type,
       ui::GestureEventDetails(type, delta_x, delta_y), 1 << touch_id);
 }
 
-TEST_P(SystemGestureEventFilterTest, LongPressAffordanceStateOnCaptureLoss) {
+TEST_F(SystemGestureEventFilterTest, LongPressAffordanceStateOnCaptureLoss) {
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
 
   aura::test::TestWindowDelegate delegate;
@@ -225,7 +232,7 @@ TEST_P(SystemGestureEventFilterTest, LongPressAffordanceStateOnCaptureLoss) {
   EXPECT_EQ(NULL, GetLongPressAffordanceView());
 }
 
-TEST_P(SystemGestureEventFilterTest, TwoFingerDrag) {
+TEST_F(SystemGestureEventFilterTest, TwoFingerDrag) {
   gfx::Rect bounds(0, 0, 600, 600);
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
   views::Widget* toplevel = views::Widget::CreateWindowWithContextAndBounds(
@@ -283,7 +290,7 @@ TEST_P(SystemGestureEventFilterTest, TwoFingerDrag) {
   EXPECT_EQ(current_bounds.ToString(), right_tile_bounds.ToString());
 }
 
-TEST_P(SystemGestureEventFilterTest, TwoFingerDragTwoWindows) {
+TEST_F(SystemGestureEventFilterTest, TwoFingerDragTwoWindows) {
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
   ui::GestureConfiguration::set_max_separation_for_gesture_touches_in_pixels(0);
   views::Widget* first = views::Widget::CreateWindowWithContextAndBounds(
@@ -317,7 +324,7 @@ TEST_P(SystemGestureEventFilterTest, TwoFingerDragTwoWindows) {
             second->GetWindowBoundsInScreen().ToString());
 }
 
-TEST_P(SystemGestureEventFilterTest, WindowsWithMaxSizeDontSnap) {
+TEST_F(SystemGestureEventFilterTest, WindowsWithMaxSizeDontSnap) {
   gfx::Rect bounds(250, 150, 100, 100);
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
   views::Widget* toplevel = views::Widget::CreateWindowWithContextAndBounds(
@@ -376,8 +383,8 @@ TEST_P(SystemGestureEventFilterTest, WindowsWithMaxSizeDontSnap) {
       toplevel->GetWindowBoundsInScreen().ToString());
 }
 
-TEST_P(SystemGestureEventFilterTest, TwoFingerDragEdge) {
-  gfx::Rect bounds(0, 0, 100, 100);
+TEST_F(SystemGestureEventFilterTest, DISABLED_TwoFingerDragEdge) {
+  gfx::Rect bounds(0, 0, 200, 100);
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
   views::Widget* toplevel = views::Widget::CreateWindowWithContextAndBounds(
       new ResizableWidgetDelegate, root_window, bounds);
@@ -390,6 +397,8 @@ TEST_P(SystemGestureEventFilterTest, TwoFingerDragEdge) {
     gfx::Point(0, 40),   // Left edge
   };
 
+  EXPECT_EQ(HTCAPTION, toplevel->GetNativeWindow()->delegate()->
+                      GetNonClientComponent(points[0]));
   EXPECT_EQ(HTLEFT, toplevel->GetNativeWindow()->delegate()->
         GetNonClientComponent(points[1]));
 
@@ -406,7 +415,7 @@ TEST_P(SystemGestureEventFilterTest, TwoFingerDragEdge) {
 // We do not allow resizing a window via multiple edges simultaneously. Test
 // that the behavior is reasonable if a user attempts to resize a window via
 // several edges.
-TEST_P(SystemGestureEventFilterTest,
+TEST_F(SystemGestureEventFilterTest,
        TwoFingerAttemptResizeLeftAndRightEdgesSimultaneously) {
   gfx::Rect initial_bounds(0, 0, 400, 400);
   views::Widget* toplevel =
@@ -434,8 +443,8 @@ TEST_P(SystemGestureEventFilterTest,
             toplevel->GetNativeWindow()->bounds().ToString());
 }
 
-TEST_P(SystemGestureEventFilterTest, TwoFingerDragDelayed) {
-  gfx::Rect bounds(0, 0, 100, 100);
+TEST_F(SystemGestureEventFilterTest, TwoFingerDragDelayed) {
+  gfx::Rect bounds(0, 0, 200, 100);
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
   views::Widget* toplevel = views::Widget::CreateWindowWithContextAndBounds(
       new ResizableWidgetDelegate, root_window, bounds);
@@ -469,8 +478,8 @@ TEST_P(SystemGestureEventFilterTest, TwoFingerDragDelayed) {
             toplevel->GetNativeWindow()->bounds().ToString());
 }
 
-TEST_P(SystemGestureEventFilterTest, ThreeFingerGestureStopsDrag) {
-  gfx::Rect bounds(0, 0, 100, 100);
+TEST_F(SystemGestureEventFilterTest, ThreeFingerGestureStopsDrag) {
+  gfx::Rect bounds(0, 0, 200, 100);
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
   views::Widget* toplevel = views::Widget::CreateWindowWithContextAndBounds(
       new ResizableWidgetDelegate, root_window, bounds);
@@ -506,7 +515,7 @@ TEST_P(SystemGestureEventFilterTest, ThreeFingerGestureStopsDrag) {
             toplevel->GetNativeWindow()->bounds().ToString());
 }
 
-TEST_P(SystemGestureEventFilterTest, DragLeftNearEdgeSnaps) {
+TEST_F(SystemGestureEventFilterTest, DragLeftNearEdgeSnaps) {
   gfx::Rect bounds(200, 150, 400, 100);
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
   views::Widget* toplevel = views::Widget::CreateWindowWithContextAndBounds(
@@ -534,7 +543,7 @@ TEST_P(SystemGestureEventFilterTest, DragLeftNearEdgeSnaps) {
             toplevel_window->bounds().ToString());
 }
 
-TEST_P(SystemGestureEventFilterTest, DragRightNearEdgeSnaps) {
+TEST_F(SystemGestureEventFilterTest, DragRightNearEdgeSnaps) {
   gfx::Rect bounds(200, 150, 400, 100);
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
   views::Widget* toplevel = views::Widget::CreateWindowWithContextAndBounds(
@@ -561,10 +570,10 @@ TEST_P(SystemGestureEventFilterTest, DragRightNearEdgeSnaps) {
             toplevel_window->bounds().ToString());
 }
 
-// Tests that the window manager does not consume gesture events targetted to
+// Tests that the window manager does not consume gesture events targeted to
 // windows of type WINDOW_TYPE_CONTROL. This is important because the web
 // contents are often (but not always) of type WINDOW_TYPE_CONTROL.
-TEST_P(SystemGestureEventFilterTest,
+TEST_F(SystemGestureEventFilterTest,
        ControlWindowGetsMultiFingerGestureEvents) {
   scoped_ptr<aura::Window> parent(
       CreateTestWindowInShellWithBounds(gfx::Rect(100, 100)));
@@ -591,11 +600,6 @@ TEST_P(SystemGestureEventFilterTest,
 
   aura::Env::GetInstance()->RemovePreTargetHandler(&event_handler);
 }
-
-// Tests run twice - with docked windows disabled or enabled.
-INSTANTIATE_TEST_CASE_P(DockedWindowsDisabledOrEnabled,
-                        SystemGestureEventFilterTest,
-                        testing::Bool());
 
 }  // namespace test
 }  // namespace ash

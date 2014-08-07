@@ -7,15 +7,10 @@
 
 import errno
 import os
-import re
 import shutil
 import subprocess
 import sys
 import time
-
-# Used by Varify() to automatically convert variable names tagged with this
-# prefix into Var('<variable name>').
-VARIFY_MARKER_TAG_PREFIX = 'VARIFY_MARKER_TAG_'
 
 
 class VarImpl(object):
@@ -51,11 +46,10 @@ def GetDepsContent(deps_path):
   local_scope.setdefault('include_rules', [])
   local_scope.setdefault('skip_child_includes', [])
   local_scope.setdefault('hooks', [])
-  local_scope.setdefault('vars', {})
 
   return (local_scope['deps'], local_scope['deps_os'],
           local_scope['include_rules'], local_scope['skip_child_includes'],
-          local_scope['hooks'], local_scope['vars'])
+          local_scope['hooks'])
 
 
 def PrettyDeps(deps, indent=0):
@@ -107,11 +101,6 @@ def Varify(deps):
   deps = deps.replace('VAR_WEBKIT_REV\'', '\' + Var(\'webkit_rev\')')
   deps = deps.replace('VAR_ANGLE_REVISION\'',
                       '\' + \'@\' + Var(\'angle_revision\')')
-
-  # Try to replace all instances of form "marker_prefix_<name>'" with
-  # "' + Var('<name>')".  If there are no matches, nothing is done.
-  deps = re.sub(VARIFY_MARKER_TAG_PREFIX + '_(\w+)\'',
-                lambda match: '\' + Var(\'%s\')' % match.group(1), deps)
   return deps
 
 

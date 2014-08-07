@@ -7,9 +7,12 @@
 It is assumed that the file contains a toplevel dictionary, and this script
 will return that dictionary as a GN "scope" (see example below). This script
 does not know anything about GYP and it will not expand variables or execute
-conditions (it will check for the presence of a "conditions" value in the
-dictionary and will abort if it is present). It also does not support nested
-dictionaries.
+conditions.
+
+It will strip conditions blocks.
+
+A variables block at the top level will be flattened so that the variables
+appear in the root dictionary. This way they can be returned to the GN code.
 
 Say your_file.gypi looked like this:
   {
@@ -81,16 +84,22 @@ def LoadPythonDictionary(path):
     raise Exception("Unexpected error while reading %s: %s" % (path, str(e)))
 
   assert isinstance(file_data, dict), "%s does not eval to a dictionary" % path
-  assert 'conditions' not in file_data, \
-      "The file %s has conditions in it, these aren't supported." % path
 
-  # If the contents of the root is a dictionary with exactly one kee
-  # "variables", promote the contents of that to the top level. Some .gypi
-  # files contain this and some don't depending on how they expect to be
-  # embedded in a .gyp file. We don't actually care either way so collapse it
-  # away.
-  if len(file_data) == 1 and 'variables' in file_data:
-    return file_data['variables']
+  # Flatten any variables to the top level.
+  if 'variables' in file_data:
+    file_data.update(file_data['variables'])
+    del file_data['variables']
+
+  # Strip any conditions.
+  if 'conditions' in file_data:
+    del file_data['conditions']
+  if 'target_conditions' in file_data:
+    del file_data['target_conditions']
+
+  # Strip targets in the toplevel, since some files define these and we can't
+  # slurp them in.
+  if 'targets' in file_data:
+    del file_data['targets']
 
   return file_data
 
@@ -138,6 +147,15 @@ def main():
         split.append('')
       assert len(split) == 2, "Replacement must be of the form 'key=value'."
       data = ReplaceSubstrings(data, split[0], split[1])
+
+  # Sometimes .gypi files use the GYP syntax with percents at the end of the
+  # variable name (to indicate not to overwrite a previously-defined value):
+  #   'foo%': 'bar',
+  # Convert these to regular variables.
+  for key in data:
+    if len(key) > 1 and key[len(key) - 1] == '%':
+      data[key[:-1]] = data[key]
+      del data[key]
 
   print gn_helpers.ToGNString(data)
 

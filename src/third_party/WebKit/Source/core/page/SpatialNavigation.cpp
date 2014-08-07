@@ -29,11 +29,12 @@
 #include "config.h"
 #include "core/page/SpatialNavigation.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLAreaElement.h"
+#include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
@@ -430,8 +431,9 @@ Node* scrollableEnclosingBoxOrParentFrameForNodeInDirection(FocusType type, Node
     ASSERT(node);
     Node* parent = node;
     do {
+        // FIXME: Spatial navigation is broken for OOPI.
         if (parent->isDocumentNode())
-            parent = toDocument(parent)->frame()->ownerElement();
+            parent = toDocument(parent)->frame()->deprecatedLocalOwner();
         else
             parent = parent->parentOrShadowHostNode();
     } while (parent && !canScrollInDirection(parent, type) && !parent->isDocumentNode());
@@ -496,12 +498,15 @@ bool canScrollInDirection(const LocalFrame* frame, FocusType type)
 static LayoutRect rectToAbsoluteCoordinates(LocalFrame* initialFrame, const LayoutRect& initialRect)
 {
     LayoutRect rect = initialRect;
-    for (LocalFrame* frame = initialFrame; frame; frame = frame->tree().parent()) {
-        if (Element* element = frame->ownerElement()) {
+    for (Frame* frame = initialFrame; frame; frame = frame->tree().parent()) {
+        if (!frame->isLocalFrame())
+            continue;
+        // FIXME: Spatial navigation is broken for OOPI.
+        if (Element* element = frame->deprecatedLocalOwner()) {
             do {
                 rect.move(element->offsetLeft(), element->offsetTop());
             } while ((element = element->offsetParent()));
-            rect.move((-frame->view()->scrollOffset()));
+            rect.move((-toLocalFrame(frame)->view()->scrollOffset()));
         }
     }
     return rect;
@@ -686,7 +691,7 @@ void distanceDataForNode(FocusType type, const FocusCandidate& current, FocusCan
     // Distance calculation is based on http://www.w3.org/TR/WICD/#focus-handling
     candidate.distance = sqrt(euclidianDistancePow2) + navigationAxisDistance+ orthogonalAxisDistance * 2 - sqrt(overlap);
 
-    LayoutSize viewSize = candidate.visibleNode->document().page()->mainFrame()->view()->visibleContentRect().size();
+    LayoutSize viewSize = candidate.visibleNode->document().page()->deprecatedLocalMainFrame()->view()->visibleContentRect().size();
     candidate.alignment = alignmentForRects(type, currentRect, nodeRect, viewSize);
 }
 

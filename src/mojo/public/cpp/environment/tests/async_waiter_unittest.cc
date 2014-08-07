@@ -4,7 +4,7 @@
 
 #include <string>
 
-#include "mojo/public/cpp/environment/default_async_waiter.h"
+#include "mojo/public/c/environment/async_waiter.h"
 #include "mojo/public/cpp/environment/environment.h"
 #include "mojo/public/cpp/system/core.h"
 #include "mojo/public/cpp/system/macros.h"
@@ -40,20 +40,18 @@ class TestAsyncWaitCallback {
 };
 
 MojoAsyncWaitID CallAsyncWait(const Handle& handle,
-                              MojoWaitFlags flags,
+                              MojoHandleSignals signals,
                               TestAsyncWaitCallback* callback) {
-  MojoAsyncWaiter* waiter = GetDefaultAsyncWaiter();
-  return waiter->AsyncWait(waiter,
-                           handle.value(),
-                           flags,
-                           MOJO_DEADLINE_INDEFINITE,
-                           &TestAsyncWaitCallback::OnHandleReady,
-                           callback);
+  return Environment::GetDefaultAsyncWaiter()->AsyncWait(
+      handle.value(),
+      signals,
+      MOJO_DEADLINE_INDEFINITE,
+      &TestAsyncWaitCallback::OnHandleReady,
+      callback);
 }
 
 void CallCancelWait(MojoAsyncWaitID wait_id) {
-  MojoAsyncWaiter* waiter = GetDefaultAsyncWaiter();
-  waiter->CancelWait(waiter, wait_id);
+  Environment::GetDefaultAsyncWaiter()->CancelWait(wait_id);
 }
 
 class AsyncWaiterTest : public testing::Test {
@@ -74,7 +72,7 @@ TEST_F(AsyncWaiterTest, CallbackNotified) {
   EXPECT_TRUE(test::WriteTextMessage(test_pipe.handle1.get(), std::string()));
 
   CallAsyncWait(test_pipe.handle0.get(),
-                MOJO_WAIT_FLAG_READABLE,
+                MOJO_HANDLE_SIGNAL_READABLE,
                 &callback);
   RunLoop::current()->Run();
   EXPECT_EQ(1, callback.result_count());
@@ -90,8 +88,12 @@ TEST_F(AsyncWaiterTest, TwoCallbacksNotified) {
   EXPECT_TRUE(test::WriteTextMessage(test_pipe1.handle1.get(), std::string()));
   EXPECT_TRUE(test::WriteTextMessage(test_pipe2.handle1.get(), std::string()));
 
-  CallAsyncWait(test_pipe1.handle0.get(), MOJO_WAIT_FLAG_READABLE, &callback1);
-  CallAsyncWait(test_pipe2.handle0.get(), MOJO_WAIT_FLAG_READABLE, &callback2);
+  CallAsyncWait(test_pipe1.handle0.get(),
+                MOJO_HANDLE_SIGNAL_READABLE,
+                &callback1);
+  CallAsyncWait(test_pipe2.handle0.get(),
+                MOJO_HANDLE_SIGNAL_READABLE,
+                &callback2);
 
   RunLoop::current()->Run();
   EXPECT_EQ(1, callback1.result_count());
@@ -108,7 +110,7 @@ TEST_F(AsyncWaiterTest, CancelCallback) {
 
   CallCancelWait(
       CallAsyncWait(test_pipe.handle0.get(),
-                    MOJO_WAIT_FLAG_READABLE,
+                    MOJO_HANDLE_SIGNAL_READABLE,
                     &callback));
   RunLoop::current()->Run();
   EXPECT_EQ(0, callback.result_count());

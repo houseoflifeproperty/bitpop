@@ -14,12 +14,11 @@
 
 namespace WebCore {
 
-{{v8_class}}::{{v8_class}}(v8::Handle<v8::Function> callback, ExecutionContext* context)
-    : ActiveDOMCallback(context)
+{{v8_class}}::{{v8_class}}(v8::Handle<v8::Function> callback, ScriptState* scriptState)
+    : ActiveDOMCallback(scriptState->executionContext())
+    , m_scriptState(scriptState)
 {
-    v8::Isolate* isolate = toIsolate(context);
-    m_callback.set(isolate, callback);
-    m_scriptState = ScriptState::current(isolate);
+    m_callback.set(scriptState->isolate(), callback);
 }
 
 {{v8_class}}::~{{v8_class}}()
@@ -46,7 +45,6 @@ namespace WebCore {
             CRASH();
         {{return_default}};
     }
-    ASSERT(thisHandle->IsObject());
     {% endif %}
     {% for argument in method.arguments %}
     v8::Handle<v8::Value> {{argument.handle}} = {{argument.cpp_value_to_v8_value}};
@@ -62,11 +60,11 @@ namespace WebCore {
     v8::Handle<v8::Value> *argv = 0;
     {% endif %}
 
-    {% set this_handle_parameter = 'v8::Handle<v8::Object>::Cast(thisHandle), ' if method.call_with_this_handle else '' %}
+    {% set this_handle_parameter = 'thisHandle, ' if method.call_with_this_handle else '' %}
     {% if method.idl_type == 'boolean' %}
-    return invokeCallback(m_callback.newLocal(isolate), {{this_handle_parameter}}{{method.arguments | length}}, argv, executionContext(), isolate);
+    return invokeCallback(m_scriptState.get(), m_callback.newLocal(isolate), {{this_handle_parameter}}{{method.arguments | length}}, argv);
     {% else %}{# void #}
-    invokeCallback(m_callback.newLocal(isolate), {{this_handle_parameter}}{{method.arguments | length}}, argv, executionContext(), isolate);
+    invokeCallback(m_scriptState.get(), m_callback.newLocal(isolate), {{this_handle_parameter}}{{method.arguments | length}}, argv);
     {% endif %}
 }
 

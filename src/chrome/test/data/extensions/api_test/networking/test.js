@@ -56,12 +56,12 @@ var privateHelpers = {
       done();
     };
   },
-  watchForCaptivePortalState: function(expectedNetworkPath,
+  watchForCaptivePortalState: function(expectedGuid,
                                        expectedState,
                                        done) {
     var self = this;
-    this.onPortalDetectionCompleted = function(networkPath, state) {
-      assertEq(expectedNetworkPath, networkPath);
+    this.onPortalDetectionCompleted = function(guid, state) {
+      assertEq(expectedGuid, guid);
       assertEq(expectedState, state);
       chrome.networkingPrivate.onPortalDetectionCompleted.removeListener(
           self.onPortalDetectionCompleted);
@@ -74,29 +74,30 @@ var privateHelpers = {
 
 var availableTests = [
   function startConnect() {
-    chrome.networkingPrivate.startConnect("stub_wifi2", callbackPass());
+    chrome.networkingPrivate.startConnect("stub_wifi2_GUID", callbackPass());
   },
   function startDisconnect() {
     // Must connect to a network before we can disconnect from it.
-    chrome.networkingPrivate.startConnect("stub_wifi2", callbackPass(
+    chrome.networkingPrivate.startConnect("stub_wifi2_GUID", callbackPass(
       function() {
-        chrome.networkingPrivate.startDisconnect("stub_wifi2", callbackPass());
+        chrome.networkingPrivate.startDisconnect("stub_wifi2_GUID",
+                                                 callbackPass());
       }));
   },
   function startConnectNonexistent() {
     chrome.networkingPrivate.startConnect(
       "nonexistent_path",
-      callbackFail("configure-failed"));
+      callbackFail("Error.InvalidNetworkGuid"));
   },
   function startDisconnectNonexistent() {
     chrome.networkingPrivate.startDisconnect(
       "nonexistent_path",
-      callbackFail("not-found"));
+      callbackFail("Error.InvalidNetworkGuid"));
   },
   function startGetPropertiesNonexistent() {
     chrome.networkingPrivate.getProperties(
       "nonexistent_path",
-      callbackFail("Error.DBusFailed"));
+      callbackFail("Error.InvalidNetworkGuid"));
   },
   function createNetwork() {
     chrome.networkingPrivate.createNetwork(
@@ -121,6 +122,63 @@ var availableTests = [
           }));
       }));
   },
+  function getNetworks() {
+    // Test 'type' and 'configured'.
+    chrome.networkingPrivate.getNetworks(
+      { "networkType": "WiFi", "configured": true },
+      callbackPass(function(result) {
+        assertEq([{
+          "Connectable": true,
+          "ConnectionState": "Connected",
+          "GUID": "stub_wifi1_GUID",
+          "Name": "wifi1",
+          "Type": "WiFi",
+          "WiFi": {
+            "Security": "WEP-PSK",
+            "SignalStrength": 40
+          }
+        }, {
+          "GUID": "stub_wifi2_GUID",
+          "Name": "wifi2_PSK",
+          "Type": "WiFi",
+          "WiFi": {
+            "Security": "WPA-PSK",
+          }
+        }], result);
+
+        // Test 'visible' (and 'configured').
+        chrome.networkingPrivate.getNetworks(
+          { "networkType": "WiFi", "visible": true, "configured": true },
+          callbackPass(function(result) {
+            assertEq([{
+              "Connectable": true,
+              "ConnectionState": "Connected",
+              "GUID": "stub_wifi1_GUID",
+              "Name": "wifi1",
+              "Type": "WiFi",
+              "WiFi": {
+                "Security": "WEP-PSK",
+                "SignalStrength": 40
+              }
+            }], result);
+
+            // Test 'limit'.
+            chrome.networkingPrivate.getNetworks(
+              { "networkType": "All", "limit": 1 },
+              callbackPass(function(result) {
+                assertEq([{
+                  "ConnectionState": "Connected",
+                  "Ethernet": {
+                    "Authentication": "None"
+                  },
+                  "GUID": "stub_ethernet_GUID",
+                  "Name": "eth0",
+                  "Type": "Ethernet"
+                }], result);
+              }));
+          }));
+      }));
+  },
   function getVisibleNetworks() {
     chrome.networkingPrivate.getVisibleNetworks(
       "All",
@@ -130,14 +188,14 @@ var availableTests = [
                     "Ethernet": {
                       "Authentication": "None"
                     },
-                    "GUID": "stub_ethernet",
+                    "GUID": "stub_ethernet_GUID",
                     "Name": "eth0",
                     "Type": "Ethernet"
                   },
                   {
                     "Connectable": true,
                     "ConnectionState": "Connected",
-                    "GUID": "stub_wifi1",
+                    "GUID": "stub_wifi1_GUID",
                     "Name": "wifi1",
                     "Type": "WiFi",
                     "WiFi": {
@@ -147,14 +205,14 @@ var availableTests = [
                   },
                   {
                     "ConnectionState": "Connected",
-                    "GUID": "stub_vpn1",
+                    "GUID": "stub_vpn1_GUID",
                     "Name": "vpn1",
-                    "Type": "VPN",
+                    "Type": "VPN"
                   },
                   {
                     "Connectable": true,
                     "ConnectionState": "NotConnected",
-                    "GUID": "stub_wifi2",
+                    "GUID": "stub_wifi2_GUID",
                     "Name": "wifi2_PSK",
                     "Type": "WiFi",
                     "WiFi": {
@@ -171,7 +229,7 @@ var availableTests = [
         assertEq([{
                     "Connectable": true,
                     "ConnectionState": "Connected",
-                    "GUID": "stub_wifi1",
+                    "GUID": "stub_wifi1_GUID",
                     "Name": "wifi1",
                     "Type": "WiFi",
                     "WiFi": {
@@ -182,7 +240,7 @@ var availableTests = [
                   {
                     "Connectable": true,
                     "ConnectionState": "NotConnected",
-                    "GUID": "stub_wifi2",
+                    "GUID": "stub_wifi2_GUID",
                     "Name": "wifi2_PSK",
                     "Type": "WiFi",
                     "WiFi": {
@@ -195,10 +253,10 @@ var availableTests = [
   },
   function requestNetworkScan() {
     // Connected or Connecting networks should be listed first, sorted by type.
-    var expected = ["stub_ethernet",
-                    "stub_wifi1",
-                    "stub_vpn1",
-                    "stub_wifi2"];
+    var expected = ["stub_ethernet_GUID",
+                    "stub_wifi1_GUID",
+                    "stub_vpn1_GUID",
+                    "stub_wifi2_GUID"];
     var done = chrome.test.callbackAdded();
     var listener = new privateHelpers.listListener(expected, done);
     chrome.networkingPrivate.onNetworkListChanged.addListener(
@@ -207,11 +265,12 @@ var availableTests = [
   },
   function getProperties() {
     chrome.networkingPrivate.getProperties(
-      "stub_wifi1",
+      "stub_wifi1_GUID",
       callbackPass(function(result) {
         assertEq({ "Connectable": true,
                    "ConnectionState": "Connected",
-                   "GUID": "stub_wifi1",
+                   "GUID": "stub_wifi1_GUID",
+                   "MacAddress": "00:11:22:AA:BB:CC",
                    "IPConfigs": [{
                      "Gateway": "0.0.0.1",
                      "IPAddress": "0.0.0.0",
@@ -227,6 +286,28 @@ var availableTests = [
                      "Security": "WEP-PSK",
                      "SignalStrength": 40
                    }
+                 }, result);
+      }));
+  },
+  function getPropertiesCellular() {
+    chrome.networkingPrivate.getProperties(
+      "stub_cellular1_GUID",
+      callbackPass(function(result) {
+        assertEq({ "Cellular": {
+                     "ActivationState": "not-activated",
+                     "AllowRoaming": false,
+                     "Carrier": "Cellular1_Carrier",
+                     "HomeProvider": {
+                       "country": "us",
+                       "name": "Cellular1_Provider"
+                     },
+                     "NetworkTechnology": "GSM",
+                     "RoamingState": "home"
+                   },
+                   "ConnectionState": "NotConnected",
+                   "GUID": "stub_cellular1_GUID",
+                   "Name": "cellular1",
+                   "Type": "Cellular"
                  }, result);
       }));
   },
@@ -292,29 +373,36 @@ var availableTests = [
   },
   function setProperties() {
     var done = chrome.test.callbackAdded();
+    var network_guid = "stub_wifi2_GUID";
     chrome.networkingPrivate.getProperties(
-      "stub_wifi2",
-      callbackPass(function(result) {
-        result.WiFi.Security = "WEP-PSK";
-        chrome.networkingPrivate.setProperties("stub_wifi2", result,
-          callbackPass(function() {
-            chrome.networkingPrivate.getProperties(
-              "stub_wifi2",
-              callbackPass(function(result) {
-                assertEq("WEP-PSK", result.WiFi.Security);
-                done();
+        network_guid,
+        callbackPass(function(result) {
+          assertEq(network_guid, result.GUID);
+          result.WiFi.Security = "WEP-PSK";
+          chrome.networkingPrivate.setProperties(
+              network_guid,
+              result,
+              callbackPass(function() {
+                chrome.networkingPrivate.getProperties(
+                    network_guid,
+                    callbackPass(function(result) {
+                      // Ensure that the property was set.
+                      assertEq("WEP-PSK", result.WiFi.Security);
+                      // Ensure that the GUID doesn't change.
+                      assertEq(network_guid, result.GUID);
+                      done();
+                    }));
               }));
-          }));
-      }));
+        }));
   },
   function getState() {
     chrome.networkingPrivate.getState(
-      "stub_wifi2",
+      "stub_wifi2_GUID",
       callbackPass(function(result) {
         assertEq({
           "Connectable": true,
           "ConnectionState": "NotConnected",
-          "GUID": "stub_wifi2",
+          "GUID": "stub_wifi2_GUID",
           "Name": "wifi2_PSK",
           "Type": "WiFi",
           "WiFi": {
@@ -327,10 +415,10 @@ var availableTests = [
   function getStateNonExistent() {
     chrome.networkingPrivate.getState(
       'non_existent',
-      callbackFail('Error.InvalidParameter'));
+      callbackFail('Error.InvalidNetworkGuid'));
   },
   function onNetworksChangedEventConnect() {
-    var network = "stub_wifi2";
+    var network = "stub_wifi2_GUID";
     var done = chrome.test.callbackAdded();
     var expectedStates = ["Connected"];
     var listener =
@@ -338,7 +426,7 @@ var availableTests = [
     chrome.networkingPrivate.startConnect(network, callbackPass());
   },
   function onNetworksChangedEventDisconnect() {
-    var network = "stub_wifi1";
+    var network = "stub_wifi1_GUID";
     var done = chrome.test.callbackAdded();
     var expectedStates = ["NotConnected"];
     var listener =
@@ -348,15 +436,15 @@ var availableTests = [
   function onNetworkListChangedEvent() {
     // Connecting to wifi2 should set wifi1 to offline. Connected or Connecting
     // networks should be listed first, sorted by type.
-    var expected = ["stub_ethernet",
-                    "stub_wifi2",
-                    "stub_vpn1",
-                    "stub_wifi1"];
+    var expected = ["stub_ethernet_GUID",
+                    "stub_wifi2_GUID",
+                    "stub_vpn1_GUID",
+                    "stub_wifi1_GUID"];
     var done = chrome.test.callbackAdded();
     var listener = new privateHelpers.listListener(expected, done);
     chrome.networkingPrivate.onNetworkListChanged.addListener(
       listener.listenForChanges);
-    var network = "stub_wifi2";
+    var network = "stub_wifi2_GUID";
     chrome.networkingPrivate.startConnect(network, callbackPass());
   },
   function verifyDestination() {
@@ -367,9 +455,10 @@ var availableTests = [
       }));
   },
   function verifyAndEncryptCredentials() {
+    var network_guid = "stub_wifi2_GUID";
     chrome.networkingPrivate.verifyAndEncryptCredentials(
       verificationProperties,
-      "guid",
+      network_guid,
       callbackPass(function(result) {
         assertEq("encrypted_credentials", result);
       }));
@@ -398,11 +487,11 @@ var availableTests = [
       }));
   },
   function getCaptivePortalStatus() {
-    var networks = [['stub_ethernet', 'Online'],
-                    ['stub_wifi1', 'Offline'],
-                    ['stub_wifi2', 'Portal'],
-                    ['stub_cellular1', 'ProxyAuthRequired'],
-                    ['stub_vpn1', 'Unknown']];
+    var networks = [['stub_ethernet_GUID', 'Online'],
+                    ['stub_wifi1_GUID', 'Offline'],
+                    ['stub_wifi2_GUID', 'Portal'],
+                    ['stub_cellular1_GUID', 'ProxyAuthRequired'],
+                    ['stub_vpn1_GUID', 'Unknown']];
     networks.forEach(function(network) {
       var servicePath = network[0];
       var expectedStatus = network[1];
@@ -416,7 +505,8 @@ var availableTests = [
   function captivePortalNotification() {
     var done = chrome.test.callbackAdded();
     var listener =
-        new privateHelpers.watchForCaptivePortalState('wifi', 'Online', done);
+        new privateHelpers.watchForCaptivePortalState(
+            'wifi_GUID', 'Online', done);
     chrome.test.sendMessage('notifyPortalDetectorObservers');
   },
 ];

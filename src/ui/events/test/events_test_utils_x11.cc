@@ -11,6 +11,7 @@
 
 #include "base/logging.h"
 #include "ui/events/event_constants.h"
+#include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
 #include "ui/events/x/touch_factory_x11.h"
 
@@ -23,6 +24,10 @@ unsigned int XEventState(int flags) {
       ((flags & ui::EF_CONTROL_DOWN) ? ControlMask : 0) |
       ((flags & ui::EF_ALT_DOWN) ? Mod1Mask : 0) |
       ((flags & ui::EF_CAPS_LOCK_DOWN) ? LockMask : 0) |
+      ((flags & ui::EF_ALTGR_DOWN) ? Mod5Mask : 0) |
+      ((flags & ui::EF_COMMAND_DOWN) ? Mod4Mask : 0) |
+      ((flags & ui::EF_MOD3_DOWN) ? Mod3Mask : 0) |
+      ((flags & ui::EF_NUMPAD_KEY) ? Mod2Mask : 0) |
       ((flags & ui::EF_LEFT_MOUSE_BUTTON) ? Button1Mask: 0) |
       ((flags & ui::EF_MIDDLE_MOUSE_BUTTON) ? Button2Mask: 0) |
       ((flags & ui::EF_RIGHT_MOUSE_BUTTON) ? Button3Mask: 0);
@@ -58,12 +63,11 @@ int XIButtonEventType(ui::EventType type) {
 unsigned int XKeyEventKeyCode(ui::KeyboardCode key_code,
                               int flags,
                               XDisplay* display) {
-  const int keysym = XKeysymForWindowsKeyCode(key_code,
-                                              flags & ui::EF_SHIFT_DOWN);
-  // Tests assume the keycode for XK_less is equal to the one of XK_comma,
-  // but XKeysymToKeycode returns 94 for XK_less while it returns 59 for
-  // XK_comma. Here we convert the value for XK_less to the value for XK_comma.
-  return (keysym == XK_less) ? 59 : XKeysymToKeycode(display, keysym);
+  // XKeyEvent keycode is hardware keycode which doesn't consider SHIFT state.
+  // There are bugs in XKeysymToKeycode that it returns wrong keycode for keysym
+  // with SHIFT state. e.g. XK_less should return 59 but returns 94;
+  // XK_parenright should return 19 but returns 188; etc.
+  return XKeysymToKeycode(display, XKeysymForWindowsKeyCode(key_code, false));
 }
 
 // Converts Aura event type and flag to X button event.
@@ -234,7 +238,21 @@ void ScopedXI2Event::InitTouchEvent(int deviceid,
                                     const gfx::Point& location,
                                     const std::vector<Valuator>& valuators) {
   event_.reset(CreateXInput2Event(deviceid, evtype, tracking_id, location));
-  SetUpValuators(valuators);
+
+  // If a timestamp was specified, setup the event.
+  for (size_t i = 0; i < valuators.size(); ++i) {
+    if (valuators[i].data_type == DeviceDataManager::DT_TOUCH_RAW_TIMESTAMP) {
+      SetUpValuators(valuators);
+      return;
+    }
+  }
+
+  // No timestamp was specified. Use |ui::EventTimeForNow()|.
+  std::vector<Valuator> valuators_with_time = valuators;
+  valuators_with_time.push_back(
+      Valuator(DeviceDataManager::DT_TOUCH_RAW_TIMESTAMP,
+               (ui::EventTimeForNow()).InMicroseconds()));
+  SetUpValuators(valuators_with_time);
 }
 
 void ScopedXI2Event::SetUpValuators(const std::vector<Valuator>& valuators) {

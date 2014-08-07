@@ -29,10 +29,10 @@
  */
 
 #include "config.h"
-#include "V8HTMLAllCollection.h"
+#include "bindings/core/v8/V8HTMLAllCollection.h"
 
-#include "V8Element.h"
-#include "V8NodeList.h"
+#include "bindings/core/v8/V8Element.h"
+#include "bindings/core/v8/V8NodeList.h"
 #include "bindings/v8/V8Binding.h"
 #include "core/dom/NamedNodesCollection.h"
 #include "core/html/HTMLAllCollection.h"
@@ -43,7 +43,7 @@ namespace WebCore {
 template<class CallbackInfo>
 static v8::Handle<v8::Value> getNamedItems(HTMLAllCollection* collection, AtomicString name, const CallbackInfo& info)
 {
-    Vector<RefPtr<Element> > namedItems;
+    WillBeHeapVector<RefPtrWillBeMember<Element> > namedItems;
     collection->namedItems(name, namedItems);
 
     if (!namedItems.size())
@@ -71,7 +71,7 @@ static v8::Handle<v8::Value> getItem(HTMLAllCollection* collection, v8::Handle<v
         return result;
     }
 
-    RefPtr<Element> result = collection->item(index->Uint32Value());
+    RefPtrWillBeRawPtr<Element> result = collection->item(index->Uint32Value());
     return toV8(result.release(), info.Holder(), info.GetIsolate());
 }
 

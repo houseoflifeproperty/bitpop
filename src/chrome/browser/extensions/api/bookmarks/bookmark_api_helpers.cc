@@ -9,10 +9,11 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_constants.h"
 #include "chrome/common/extensions/api/bookmarks.h"
-#include "components/bookmarks/core/browser/bookmark_model.h"
-#include "components/bookmarks/core/browser/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 
 namespace extensions {
 
@@ -23,12 +24,14 @@ namespace bookmark_api_helpers {
 
 namespace {
 
-void AddNodeHelper(const BookmarkNode* node,
+void AddNodeHelper(ChromeBookmarkClient* client,
+                   const BookmarkNode* node,
                    std::vector<linked_ptr<BookmarkTreeNode> >* nodes,
                    bool recurse,
                    bool only_folders) {
   if (node->IsVisible()) {
-    linked_ptr<BookmarkTreeNode> new_node(GetBookmarkTreeNode(node,
+    linked_ptr<BookmarkTreeNode> new_node(GetBookmarkTreeNode(client,
+                                                              node,
                                                               recurse,
                                                               only_folders));
     nodes->push_back(new_node);
@@ -37,7 +40,8 @@ void AddNodeHelper(const BookmarkNode* node,
 
 }  // namespace
 
-BookmarkTreeNode* GetBookmarkTreeNode(const BookmarkNode* node,
+BookmarkTreeNode* GetBookmarkTreeNode(ChromeBookmarkClient* client,
+                                      const BookmarkNode* node,
                                       bool recurse,
                                       bool only_folders) {
   BookmarkTreeNode* bookmark_tree_node = new BookmarkTreeNode;
@@ -69,13 +73,16 @@ BookmarkTreeNode* GetBookmarkTreeNode(const BookmarkNode* node,
         new double(floor(node->date_added().ToDoubleT() * 1000)));
   }
 
+  if (client->IsDescendantOfManagedNode(node))
+    bookmark_tree_node->unmodifiable = BookmarkTreeNode::UNMODIFIABLE_MANAGED;
+
   if (recurse && node->is_folder()) {
     std::vector<linked_ptr<BookmarkTreeNode> > children;
     for (int i = 0; i < node->child_count(); ++i) {
       const BookmarkNode* child = node->GetChild(i);
       if (child->IsVisible() && (!only_folders || child->is_folder())) {
         linked_ptr<BookmarkTreeNode> child_node(
-            GetBookmarkTreeNode(child, true, only_folders));
+            GetBookmarkTreeNode(client, child, true, only_folders));
         children.push_back(child_node);
       }
     }
@@ -85,19 +92,22 @@ BookmarkTreeNode* GetBookmarkTreeNode(const BookmarkNode* node,
   return bookmark_tree_node;
 }
 
-void AddNode(const BookmarkNode* node,
+void AddNode(ChromeBookmarkClient* client,
+             const BookmarkNode* node,
              std::vector<linked_ptr<BookmarkTreeNode> >* nodes,
              bool recurse) {
-  return AddNodeHelper(node, nodes, recurse, false);
+  return AddNodeHelper(client, node, nodes, recurse, false);
 }
 
-void AddNodeFoldersOnly(const BookmarkNode* node,
+void AddNodeFoldersOnly(ChromeBookmarkClient* client,
+                        const BookmarkNode* node,
                         std::vector<linked_ptr<BookmarkTreeNode> >* nodes,
                         bool recurse) {
-  return AddNodeHelper(node, nodes, recurse, true);
+  return AddNodeHelper(client, node, nodes, recurse, true);
 }
 
 bool RemoveNode(BookmarkModel* model,
+                ChromeBookmarkClient* client,
                 int64 id,
                 bool recursive,
                 std::string* error) {
@@ -110,6 +120,10 @@ bool RemoveNode(BookmarkModel* model,
     *error = keys::kModifySpecialError;
     return false;
   }
+  if (client->IsDescendantOfManagedNode(node)) {
+    *error = keys::kModifyManagedError;
+    return false;
+  }
   if (node->is_folder() && !node->empty() && !recursive) {
     *error = keys::kFolderNotEmptyError;
     return false;
@@ -118,6 +132,28 @@ bool RemoveNode(BookmarkModel* model,
   const BookmarkNode* parent = node->parent();
   model->Remove(parent, parent->GetIndexOf(node));
   return true;
+}
+
+void GetMetaInfo(const BookmarkNode& node,
+                 base::DictionaryValue* id_to_meta_info_map) {
+  if (!node.IsVisible())
+    return;
+
+  const BookmarkNode::MetaInfoMap* meta_info = node.GetMetaInfoMap();
+  base::DictionaryValue* value = new base::DictionaryValue();
+  if (meta_info) {
+    BookmarkNode::MetaInfoMap::const_iterator itr;
+    for (itr = meta_info->begin(); itr != meta_info->end(); ++itr) {
+      value->SetStringWithoutPathExpansion(itr->first, itr->second);
+    }
+  }
+  id_to_meta_info_map->Set(base::Int64ToString(node.id()), value);
+
+  if (node.is_folder()) {
+    for (int i = 0; i < node.child_count(); ++i) {
+      GetMetaInfo(*(node.GetChild(i)), id_to_meta_info_map);
+    }
+  }
 }
 
 }  // namespace bookmark_api_helpers

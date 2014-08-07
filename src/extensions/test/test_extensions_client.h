@@ -17,10 +17,11 @@ class TestExtensionsClient : public ExtensionsClient {
 
  private:
   virtual void Initialize() OVERRIDE;
-  virtual const PermissionsProvider& GetPermissionsProvider() const OVERRIDE;
   virtual const PermissionMessageProvider& GetPermissionMessageProvider() const
       OVERRIDE;
   virtual scoped_ptr<FeatureProvider> CreateFeatureProvider(
+      const std::string& name) const OVERRIDE;
+  virtual scoped_ptr<JSONFeatureProviderSource> CreateFeatureProviderSource(
       const std::string& name) const OVERRIDE;
   virtual void FilterHostPermissions(
       const URLPatternSet& hosts,
@@ -37,6 +38,7 @@ class TestExtensionsClient : public ExtensionsClient {
   virtual bool IsAPISchemaGenerated(const std::string& name) const OVERRIDE;
   virtual base::StringPiece GetAPISchema(
       const std::string& name) const OVERRIDE;
+  virtual void RegisterAPISchemaResources(ExtensionAPI* api) const OVERRIDE;
   virtual bool ShouldSuppressFatalErrors() const OVERRIDE;
 
   // A whitelist of extensions that can script anywhere. Do not add to this

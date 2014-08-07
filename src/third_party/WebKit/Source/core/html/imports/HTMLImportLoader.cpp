@@ -33,7 +33,7 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/StyleEngine.h"
-#include "core/dom/custom/CustomElementMicrotaskQueue.h"
+#include "core/dom/custom/CustomElementSyncMicrotaskQueue.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/imports/HTMLImportChild.h"
 #include "core/html/imports/HTMLImportsController.h"
@@ -46,15 +46,18 @@ namespace WebCore {
 HTMLImportLoader::HTMLImportLoader(HTMLImportsController* controller)
     : m_controller(controller)
     , m_state(StateLoading)
-    , m_microtaskQueue(CustomElementMicrotaskQueue::create())
+    , m_microtaskQueue(CustomElementSyncMicrotaskQueue::create())
 {
 }
 
 HTMLImportLoader::~HTMLImportLoader()
 {
+#if !ENABLE(OILPAN)
     clear();
+#endif
 }
 
+#if !ENABLE(OILPAN)
 void HTMLImportLoader::importDestroyed()
 {
     clear();
@@ -62,13 +65,14 @@ void HTMLImportLoader::importDestroyed()
 
 void HTMLImportLoader::clear()
 {
-    m_controller = 0;
-    if (m_importedDocument) {
-        m_importedDocument->setImportsController(0);
-        m_importedDocument->cancelParsing();
-        m_importedDocument.clear();
+    m_controller = nullptr;
+    if (m_document) {
+        m_document->setImportsController(0);
+        m_document->cancelParsing();
+        m_document.clear();
     }
 }
+#endif
 
 void HTMLImportLoader::startLoading(const ResourcePtr<RawResource>& resource)
 {
@@ -88,7 +92,7 @@ void HTMLImportLoader::responseReceived(Resource* resource, const ResourceRespon
 
 void HTMLImportLoader::dataReceived(Resource*, const char* data, int length)
 {
-    RefPtr<DocumentWriter> protectingWriter(m_writer);
+    RefPtrWillBeRawPtr<DocumentWriter> protectingWriter(m_writer.get());
     m_writer->addData(data, length);
 }
 
@@ -109,8 +113,8 @@ HTMLImportLoader::State HTMLImportLoader::startWritingAndParsing(const ResourceR
     ASSERT(!m_imports.isEmpty());
     DocumentInit init = DocumentInit(response.url(), 0, m_controller->master()->contextDocument(), m_controller)
         .withRegistrationContext(m_controller->master()->registrationContext());
-    m_importedDocument = HTMLDocument::create(init);
-    m_writer = DocumentWriter::create(m_importedDocument.get(), response.mimeType(), "UTF-8");
+    m_document = HTMLDocument::create(init);
+    m_writer = DocumentWriter::create(m_document.get(), response.mimeType(), "UTF-8");
 
     return StateLoading;
 }
@@ -138,7 +142,7 @@ void HTMLImportLoader::setState(State state)
     m_state = state;
 
     if (m_state == StateParsed || m_state == StateError || m_state == StateWritten) {
-        if (RefPtr<DocumentWriter> writer = m_writer.release())
+        if (RefPtrWillBeRawPtr<DocumentWriter> writer = m_writer.release())
             writer->end();
     }
 
@@ -162,14 +166,7 @@ void HTMLImportLoader::didRemoveAllPendingStylesheet()
 
 bool HTMLImportLoader::hasPendingResources() const
 {
-    return m_importedDocument && m_importedDocument->styleEngine()->hasPendingSheets();
-}
-
-Document* HTMLImportLoader::importedDocument() const
-{
-    if (m_state == StateError)
-        return 0;
-    return m_importedDocument.get();
+    return m_document && m_document->styleEngine()->hasPendingSheets();
 }
 
 void HTMLImportLoader::didFinishLoading()
@@ -179,7 +176,7 @@ void HTMLImportLoader::didFinishLoading()
 
     clearResource();
 
-    ASSERT(!m_importedDocument || !m_importedDocument->parsing());
+    ASSERT(!m_document || !m_document->parsing());
 }
 
 void HTMLImportLoader::moveToFirst(HTMLImportChild* import)
@@ -200,20 +197,33 @@ void HTMLImportLoader::addImport(HTMLImportChild* import)
         import->didFinishLoading();
 }
 
+#if !ENABLE(OILPAN)
 void HTMLImportLoader::removeImport(HTMLImportChild* client)
 {
     ASSERT(kNotFound != m_imports.find(client));
     m_imports.remove(m_imports.find(client));
 }
+#endif
 
 bool HTMLImportLoader::shouldBlockScriptExecution() const
 {
     return firstImport()->state().shouldBlockScriptExecution();
 }
 
-PassRefPtr<CustomElementMicrotaskQueue> HTMLImportLoader::microtaskQueue() const
+PassRefPtrWillBeRawPtr<CustomElementSyncMicrotaskQueue> HTMLImportLoader::microtaskQueue() const
 {
     return m_microtaskQueue;
+}
+
+void HTMLImportLoader::trace(Visitor* visitor)
+{
+    visitor->trace(m_controller);
+#if ENABLE(OILPAN)
+    visitor->trace(m_imports);
+#endif
+    visitor->trace(m_document);
+    visitor->trace(m_writer);
+    visitor->trace(m_microtaskQueue);
 }
 
 } // namespace WebCore

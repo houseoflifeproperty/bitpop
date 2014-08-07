@@ -76,7 +76,7 @@ class ThemeService : public base::NonThreadSafe,
   virtual gfx::Image GetImageNamed(int id) const;
 
   // Overridden from ui::ThemeProvider:
-  virtual bool UsingNativeTheme() const OVERRIDE;
+  virtual bool UsingSystemTheme() const OVERRIDE;
   virtual gfx::ImageSkia* GetImageSkiaNamed(int id) const OVERRIDE;
   virtual SkColor GetColor(int id) const OVERRIDE;
   virtual int GetDisplayProperty(int id) const OVERRIDE;
@@ -106,9 +106,9 @@ class ThemeService : public base::NonThreadSafe,
   // Reset the theme to default.
   virtual void UseDefaultTheme();
 
-  // Set the current theme to the native theme. On some platforms, the native
+  // Set the current theme to the system theme. On some platforms, the system
   // theme is the default theme.
-  virtual void SetNativeTheme();
+  virtual void UseSystemTheme();
 
   // Whether we're using the chrome default theme. Virtual so linux can check
   // if we're using the GTK theme.
@@ -143,8 +143,8 @@ class ThemeService : public base::NonThreadSafe,
   virtual void SetCustomDefaultTheme(
       scoped_refptr<CustomThemeSupplier> theme_supplier);
 
-  // Returns true if the ThemeService should use the native theme on startup.
-  virtual bool ShouldInitWithNativeTheme() const;
+  // Returns true if the ThemeService should use the system theme on startup.
+  virtual bool ShouldInitWithSystemTheme() const;
 
   // Get the specified tint - |id| is one of the TINT_* enum values.
   color_utils::HSL GetTint(int id) const;
@@ -204,15 +204,12 @@ class ThemeService : public base::NonThreadSafe,
   // case we don't have a theme pack).
   void BuildFromExtension(const extensions::Extension* extension);
 
-  // Returns true if the profile belongs to a managed user.
-  bool IsManagedUser() const;
+  // Returns true if the profile belongs to a supervised user.
+  bool IsSupervisedUser() const;
 
-  // Sets the current theme to the managed user theme. Should only be used for
-  // managed user profiles.
-  void SetManagedUserTheme();
-
-  // Sets the managed user theme if the user has no custom theme yet.
-  void OnManagedUserInitialized();
+  // Sets the current theme to the supervised user theme. Should only be used
+  // for supervised user profiles.
+  void SetSupervisedUserTheme();
 
 #if defined(OS_MACOSX)
   // |nsimage_cache_| retains the images it has cached.

@@ -95,6 +95,94 @@ GOOD_GTEST_JSON_1 = {
 }
 
 
+# GOOD_GTEST_JSON_0 and GOOD_GTEST_JSON_1 merged.
+GOOD_GTEST_JSON_MERGED = {
+  'all_tests': [
+    'AlignedMemoryTest.DynamicAllocation',
+    'AlignedMemoryTest.ScopedDynamicAllocation',
+    'AlignedMemoryTest.StackAlignment',
+    'AlignedMemoryTest.StaticAlignment',
+  ],
+  'disabled_tests': [
+    'ConditionVariableTest.TimeoutAcrossSetTimeOfDay',
+    'FileTest.TouchGetInfo',
+    'MessageLoopTestTypeDefault.EnsureDeletion',
+  ],
+  'global_tags': ['CPU_64_BITS', 'MODE_DEBUG', 'OS_LINUX', 'OS_POSIX'],
+  'missing_shards': [],
+  'per_iteration_data': [{
+    'AlignedMemoryTest.DynamicAllocation': [{
+      'elapsed_time_ms': 0,
+      'losless_snippet': True,
+      'output_snippet': 'blah\\n',
+      'output_snippet_base64': 'YmxhaAo=',
+      'status': 'SUCCESS',
+    }],
+    'AlignedMemoryTest.ScopedDynamicAllocation': [{
+      'elapsed_time_ms': 0,
+      'losless_snippet': True,
+      'output_snippet': 'blah\\n',
+      'output_snippet_base64': 'YmxhaAo=',
+      'status': 'SUCCESS',
+    }],
+    'AlignedMemoryTest.StackAlignment': [{
+      'elapsed_time_ms': 0,
+      'losless_snippet': True,
+      'output_snippet': 'blah\\n',
+      'output_snippet_base64': 'YmxhaAo=',
+      'status': 'SUCCESS',
+    }],
+    'AlignedMemoryTest.StaticAlignment': [{
+      'elapsed_time_ms': 0,
+      'losless_snippet': True,
+      'output_snippet': 'blah\\n',
+      'output_snippet_base64': 'YmxhaAo=',
+      'status': 'SUCCESS',
+    }],
+  }],
+}
+
+
+# Only shard #1 finished. UNRELIABLE_RESULTS is set.
+BAD_GTEST_JSON_ONLY_1_SHARD = {
+  'all_tests': [
+    'AlignedMemoryTest.DynamicAllocation',
+    'AlignedMemoryTest.ScopedDynamicAllocation',
+    'AlignedMemoryTest.StackAlignment',
+    'AlignedMemoryTest.StaticAlignment',
+  ],
+  'disabled_tests': [
+    'ConditionVariableTest.TimeoutAcrossSetTimeOfDay',
+    'FileTest.TouchGetInfo',
+    'MessageLoopTestTypeDefault.EnsureDeletion',
+  ],
+  'global_tags': [
+    'CPU_64_BITS',
+    'MODE_DEBUG',
+    'OS_LINUX',
+    'OS_POSIX',
+    'UNRELIABLE_RESULTS',
+  ],
+  'missing_shards': [0],
+  'per_iteration_data': [{
+    'AlignedMemoryTest.StackAlignment': [{
+      'elapsed_time_ms': 0,
+      'losless_snippet': True,
+      'output_snippet': 'blah\\n',
+      'output_snippet_base64': 'YmxhaAo=',
+      'status': 'SUCCESS',
+    }],
+    'AlignedMemoryTest.StaticAlignment': [{
+      'elapsed_time_ms': 0,
+      'losless_snippet': True,
+      'output_snippet': 'blah\\n',
+      'output_snippet_base64': 'YmxhaAo=',
+      'status': 'SUCCESS',
+    }],
+  }],
+}
+
+
 class MainFuncTest(auto_stub.TestCase):
   """Tests for 'main' function."""
 
@@ -114,14 +202,9 @@ class MainFuncTest(auto_stub.TestCase):
         'call',
         mocked_subprocess_call)
 
-    # Collect number of calls to 'process_gtest_json_output'.
-    self.process_output_calls = 0
-    def mocked_process_gtest_json_output(_exit_code, _task_output_dir):
-      self.process_output_calls += 1
-    self.mock(
-        collect_gtest_task,
-        'process_gtest_json_output',
-        mocked_process_gtest_json_output)
+    # Mute other calls.
+    self.mock(collect_gtest_task, 'merge_shard_results', lambda *_: None)
+    self.mock(collect_gtest_task, 'emit_test_annotations', lambda *_: None)
 
     # Make tempfile.mkdtemp deterministic.
     self.mkdtemp_counter = 0
@@ -169,7 +252,6 @@ class MainFuncTest(auto_stub.TestCase):
           self.mkdtemp_result(1, suffix='_swarming', dir=self.temp_dir),
         ]],
         self.subprocess_calls)
-    self.assertEqual(1, self.process_output_calls)
 
   def test_main_calls_swarming_py_with_extra_args(self):
     exit_code = collect_gtest_task.main([
@@ -203,19 +285,18 @@ class MainFuncTest(auto_stub.TestCase):
           'extra_arg1',
         ]],
         self.subprocess_calls)
-    self.assertEqual(1, self.process_output_calls)
 
 
-class CollectGTestTaskTest(auto_stub.TestCase):
-  """Tests for process_gtest_json_output function."""
+class MergeShardResultsTest(auto_stub.TestCase):
+  """Tests for merge_shard_results function."""
 
   def setUp(self):
-    super(CollectGTestTaskTest, self).setUp()
+    super(MergeShardResultsTest, self).setUp()
     self.temp_dir = tempfile.mkdtemp()
 
   def tearDown(self):
     shutil.rmtree(self.temp_dir)
-    super(CollectGTestTaskTest, self).tearDown()
+    super(MergeShardResultsTest, self).tearDown()
 
   def stage(self, files):
     for path, content in files.iteritems():
@@ -232,8 +313,8 @@ class CollectGTestTaskTest(auto_stub.TestCase):
   def call(self, exit_code=0):
     stdout = cStringIO.StringIO()
     self.mock(sys, 'stdout', stdout)
-    collect_gtest_task.process_gtest_json_output(exit_code, self.temp_dir)
-    return stdout.getvalue().strip()
+    merged = collect_gtest_task.merge_shard_results(self.temp_dir)
+    return merged, stdout.getvalue().strip()
 
   def test_ok(self):
     # Two shards, both successfully finished.
@@ -242,15 +323,14 @@ class CollectGTestTaskTest(auto_stub.TestCase):
       '0/output.json': GOOD_GTEST_JSON_0,
       '1/output.json': GOOD_GTEST_JSON_1,
     })
-    self.assertEqual(
-        'exit code (as seen by runtest.py): 0\n'
-        '@@@STEP_TEXT@@@@\n'
-        '@@@STEP_TEXT@3 disabled@@@',
-        self.call())
+    merged, stdout = self.call()
+    self.assertEqual(GOOD_GTEST_JSON_MERGED, merged)
+    self.assertEqual('', stdout)
 
   def test_missing_summary_json(self):
-    # summary.json is missing, should emit warning.
-    output = self.call()
+    # summary.json is missing, should return None and emit warning.
+    merged, output = self.call()
+    self.assertEqual(None, merged)
     self.assertIn('@@@STEP_WARNINGS@@@', output)
     self.assertIn('summary.json is missing or can not be read', output)
 
@@ -260,18 +340,30 @@ class CollectGTestTaskTest(auto_stub.TestCase):
       'summary.json': {'shards': [None, {'dummy': 0}]},
       '1/output.json': GOOD_GTEST_JSON_1,
     })
+    merged, stdout = self.call(1)
+    self.assertEqual(BAD_GTEST_JSON_ONLY_1_SHARD, merged)
+    self.assertIn('@@@STEP_WARNINGS@@@\nsome shards did not complete\n', stdout)
+    self.assertIn(
+        '@@@STEP_LOG_LINE@some shards did not complete@'
+        'Missing results from the following shard(s): 0@@@\n', stdout)
+
+
+class EmitTestAnnotationsTest(auto_stub.TestCase):
+  """Test for emit_test_annotations function."""
+
+  def call(self, exit_code, json_data):
+    stdout = cStringIO.StringIO()
+    self.mock(sys, 'stdout', stdout)
+    collect_gtest_task.emit_test_annotations(exit_code, json_data)
+    return stdout.getvalue().strip()
+
+  def test_it(self):
+    stdout = self.call(0, GOOD_GTEST_JSON_MERGED)
     self.assertEqual(
-        '@@@STEP_WARNINGS@@@\n'
-        'missing results from some shards\n'
-        '@@@STEP_LOG_LINE@missing results from some shards@'
-        'Missing results from the following shard(s): 0@@@\n'
-        '@@@STEP_LOG_END@missing results from some shards@@@\n'
-        'exit code (as seen by runtest.py): 1\n'
-        '@@@STEP_FAILURE@@@\n'
+        'exit code (as seen by runtest.py): 0\n'
         '@@@STEP_TEXT@@@@\n'
-        '@@@STEP_TEXT@3 disabled@@@\n'
-        '@@@STEP_TEXT@crashed or hung@@@',
-        self.call(1))
+        '@@@STEP_TEXT@3 disabled@@@',
+        stdout)
 
 
 if __name__ == '__main__':

@@ -20,9 +20,9 @@
 #include "config.h"
 #include "core/svg/SVGViewSpec.h"
 
-#include "SVGNames.h"
 #include "bindings/v8/ExceptionMessages.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/SVGNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGAnimatedTransformList.h"
@@ -79,7 +79,7 @@ void SVGViewSpec::detachContextElement()
     m_transform = nullptr;
     clearViewBox();
     clearPreserveAspectRatio();
-    m_contextElement = 0;
+    m_contextElement = nullptr;
 }
 
 SVGElement* SVGViewSpec::viewTarget() const
@@ -149,7 +149,7 @@ bool SVGViewSpec::parseViewSpecInternal(const CharType* ptr, const CharType* end
                 float y = 0.0f;
                 float width = 0.0f;
                 float height = 0.0f;
-                if (!(parseNumber(ptr, end, x) && parseNumber(ptr, end, y) && parseNumber(ptr, end, width) && parseNumber(ptr, end, height, false)))
+                if (!(parseNumber(ptr, end, x) && parseNumber(ptr, end, y) && parseNumber(ptr, end, width) && parseNumber(ptr, end, height, DisallowWhitespace)))
                     return false;
                 updateViewBox(FloatRect(x, y, width, height));
                 if (ptr >= end || *ptr != ')')
@@ -210,6 +210,11 @@ bool SVGViewSpec::parseViewSpecInternal(const CharType* ptr, const CharType* end
         return false;
 
     return true;
+}
+
+void SVGViewSpec::trace(Visitor* visitor)
+{
+    visitor->trace(m_contextElement);
 }
 
 }

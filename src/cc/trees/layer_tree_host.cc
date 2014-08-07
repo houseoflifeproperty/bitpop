@@ -96,7 +96,6 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       client_(client),
       source_frame_number_(0),
       rendering_stats_instrumentation_(RenderingStatsInstrumentation::Create()),
-      output_surface_can_be_initialized_(true),
       output_surface_lost_(true),
       num_failed_recreate_attempts_(0),
       settings_(settings),
@@ -107,9 +106,9 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       page_scale_factor_(1.f),
       min_page_scale_factor_(1.f),
       max_page_scale_factor_(1.f),
-      trigger_idle_updates_(true),
       has_gpu_rasterization_trigger_(false),
       content_is_suitable_for_gpu_rasterization_(true),
+      gpu_rasterization_histogram_recorded_(false),
       background_color_(SK_ColorWHITE),
       has_transparent_background_(false),
       partial_texture_update_requests_(0),
@@ -272,28 +271,15 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
     contents_texture_manager_->UpdateBackingsState(
         host_impl->resource_provider());
-  }
-
-  // In impl-side painting, synchronize to the pending tree so that it has
-  // time to raster before being displayed.  If no pending tree is needed,
-  // synchronization can happen directly to the active tree and
-  // unlinked contents resources can be reclaimed immediately.
-  LayerTreeImpl* sync_tree;
-  if (settings_.impl_side_painting) {
-    // Commits should not occur while there is already a pending tree.
-    DCHECK(!host_impl->pending_tree());
-    host_impl->CreatePendingTree();
-    sync_tree = host_impl->pending_tree();
-    if (next_commit_forces_redraw_)
-      sync_tree->ForceRedrawNextActivation();
-  } else {
-    if (next_commit_forces_redraw_)
-      host_impl->SetFullRootLayerDamage();
     contents_texture_manager_->ReduceMemory(host_impl->resource_provider());
-    sync_tree = host_impl->active_tree();
   }
 
-  next_commit_forces_redraw_ = false;
+  LayerTreeImpl* sync_tree = host_impl->sync_tree();
+
+  if (next_commit_forces_redraw_) {
+    sync_tree->ForceRedrawNextActivation();
+    next_commit_forces_redraw_ = false;
+  }
 
   sync_tree->set_source_frame_number(source_frame_number());
 
@@ -329,28 +315,18 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     sync_tree->ClearViewportLayers();
   }
 
-  float page_scale_delta, sent_page_scale_delta;
-  if (settings_.impl_side_painting) {
-    // Update the delta from the active tree, which may have
-    // adjusted its delta prior to the pending tree being created.
-    // This code is equivalent to that in LayerTreeImpl::SetPageScaleDelta.
-    DCHECK_EQ(1.f, sync_tree->sent_page_scale_delta());
-    page_scale_delta = host_impl->active_tree()->page_scale_delta();
-    sent_page_scale_delta = host_impl->active_tree()->sent_page_scale_delta();
-  } else {
-    page_scale_delta = sync_tree->page_scale_delta();
-    sent_page_scale_delta = sync_tree->sent_page_scale_delta();
-    sync_tree->set_sent_page_scale_delta(1.f);
-  }
-
-  sync_tree->SetPageScaleFactorAndLimits(page_scale_factor_,
-                                         min_page_scale_factor_,
-                                         max_page_scale_factor_);
-  sync_tree->SetPageScaleDelta(page_scale_delta / sent_page_scale_delta);
-
-  sync_tree->SetUseGpuRasterization(UseGpuRasterization());
+  float page_scale_delta =
+      sync_tree->page_scale_delta() / sync_tree->sent_page_scale_delta();
+  sync_tree->SetPageScaleValues(page_scale_factor_,
+                                min_page_scale_factor_,
+                                max_page_scale_factor_,
+                                page_scale_delta);
+  sync_tree->set_sent_page_scale_delta(1.f);
 
   sync_tree->PassSwapPromises(&swap_promise_list_);
+
+  host_impl->SetUseGpuRasterization(UseGpuRasterization());
+  RecordGpuRasterizationHistogram();
 
   host_impl->SetViewportSize(device_viewport_size_);
   host_impl->SetOverdrawBottomHeight(overdraw_bottom_height_);
@@ -368,10 +344,6 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   if (!ui_resource_request_queue_.empty()) {
     sync_tree->set_ui_resource_request_queue(ui_resource_request_queue_);
     ui_resource_request_queue_.clear();
-    // Process any ui resource requests in the queue.  For impl-side-painting,
-    // the queue is processed in LayerTreeHostImpl::ActivatePendingTree.
-    if (!settings_.impl_side_painting)
-      sync_tree->ProcessUIResourceRequestQueue();
   }
   if (overhang_ui_resource_) {
     host_impl->SetOverhangUIResource(
@@ -386,17 +358,7 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
       sync_tree->ResetContentsTexturesPurged();
   }
 
-  if (!settings_.impl_side_painting) {
-    // If we're not in impl-side painting, the tree is immediately
-    // considered active.
-    sync_tree->DidBecomeActive();
-    host_impl->ActivateAnimations();
-    devtools_instrumentation::DidActivateLayerTree(id_, source_frame_number_);
-  }
-
   micro_benchmark_controller_.ScheduleImplBenchmarks(host_impl);
-
-  source_frame_number_++;
 }
 
 void LayerTreeHost::WillCommit() {
@@ -417,6 +379,7 @@ void LayerTreeHost::UpdateHudLayer() {
 }
 
 void LayerTreeHost::CommitComplete() {
+  source_frame_number_++;
   client_->DidCommit();
 }
 
@@ -434,6 +397,7 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
                                 rendering_stats_instrumentation_.get(),
                                 shared_bitmap_manager_,
                                 id_);
+  host_impl->SetUseGpuRasterization(UseGpuRasterization());
   shared_bitmap_manager_ = NULL;
   if (settings_.calculate_top_controls_position &&
       host_impl->top_controls_manager()) {
@@ -454,15 +418,6 @@ void LayerTreeHost::DidLoseOutputSurface() {
   num_failed_recreate_attempts_ = 0;
   output_surface_lost_ = true;
   SetNeedsCommit();
-}
-
-bool LayerTreeHost::CompositeAndReadback(
-    void* pixels,
-    const gfx::Rect& rect_in_device_viewport) {
-  trigger_idle_updates_ = false;
-  bool ret = proxy_->CompositeAndReadback(pixels, rect_in_device_viewport);
-  trigger_idle_updates_ = true;
-  return ret;
 }
 
 void LayerTreeHost::FinishAllRendering() {
@@ -595,6 +550,7 @@ void LayerTreeHost::SetRootLayer(scoped_refptr<Layer> root_layer) {
   // Reset gpu rasterization flag.
   // This flag is sticky until a new tree comes along.
   content_is_suitable_for_gpu_rasterization_ = true;
+  gpu_rasterization_histogram_recorded_ = false;
 
   SetNeedsFullTreeSync();
 }
@@ -624,6 +580,18 @@ bool LayerTreeHost::UseGpuRasterization() const {
   } else {
     return false;
   }
+}
+
+void LayerTreeHost::SetHasGpuRasterizationTrigger(bool has_trigger) {
+  if (has_trigger == has_gpu_rasterization_trigger_)
+    return;
+
+  has_gpu_rasterization_trigger_ = has_trigger;
+  TRACE_EVENT_INSTANT1("cc",
+                       "LayerTreeHost::SetHasGpuRasterizationTrigger",
+                       TRACE_EVENT_SCOPE_THREAD,
+                       "has_trigger",
+                       has_gpu_rasterization_trigger_);
 }
 
 void LayerTreeHost::SetViewportSize(const gfx::Size& device_viewport_size) {
@@ -706,20 +674,15 @@ void LayerTreeHost::NotifyInputThrottledUntilCommit() {
 }
 
 void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
-  if (!proxy_->HasImplThread())
-    static_cast<SingleThreadProxy*>(proxy_.get())->CompositeImmediately(
-        frame_begin_time);
-  else
-    SetNeedsCommit();
-}
-
-bool LayerTreeHost::InitializeOutputSurfaceIfNeeded() {
-  if (!output_surface_can_be_initialized_)
-    return false;
+  DCHECK(!proxy_->HasImplThread());
+  SingleThreadProxy* proxy = static_cast<SingleThreadProxy*>(proxy_.get());
 
   if (output_surface_lost_)
-    proxy_->CreateAndInitializeOutputSurface();
-  return !output_surface_lost_;
+    proxy->CreateAndInitializeOutputSurface();
+  if (output_surface_lost_)
+    return;
+
+  proxy->CompositeImmediately(frame_begin_time);
 }
 
 bool LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue) {
@@ -751,6 +714,31 @@ static Layer* FindFirstScrollableLayer(Layer* layer) {
   }
 
   return NULL;
+}
+
+void LayerTreeHost::RecordGpuRasterizationHistogram() {
+  // Gpu rasterization is only supported when impl-side painting is enabled.
+  if (gpu_rasterization_histogram_recorded_ || !settings_.impl_side_painting)
+    return;
+
+  // Record how widely gpu rasterization is enabled.
+  // This number takes device/gpu whitelisting/backlisting into account.
+  // Note that we do not consider the forced gpu rasterization mode, which is
+  // mostly used for debugging purposes.
+  UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationEnabled",
+                        settings_.gpu_rasterization_enabled);
+  if (settings_.gpu_rasterization_enabled) {
+    UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationTriggered",
+                          has_gpu_rasterization_trigger_);
+    UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationSuitableContent",
+                          content_is_suitable_for_gpu_rasterization_);
+    // Record how many pages actually get gpu rasterization when enabled.
+    UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationUsed",
+                          (has_gpu_rasterization_trigger_ &&
+                           content_is_suitable_for_gpu_rasterization_));
+  }
+
+  gpu_rasterization_histogram_recorded_ = true;
 }
 
 void LayerTreeHost::CalculateLCDTextMetricsCallback(Layer* layer) {
@@ -840,7 +828,7 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
   bool need_more_updates = false;
   PaintLayerContents(
       update_list, queue, &did_paint_content, &need_more_updates);
-  if (trigger_idle_updates_ && need_more_updates) {
+  if (need_more_updates) {
     TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers::posting prepaint task");
     prepaint_callback_.Reset(base::Bind(&LayerTreeHost::TriggerPrepaint,
                                         base::Unretained(this)));
@@ -1001,7 +989,7 @@ void LayerTreeHost::PaintLayerContents(
     if (it.represents_target_render_surface()) {
       PaintMasksForRenderSurface(
           *it, queue, did_paint_content, need_more_updates);
-    } else if (it.represents_itself() && it->DrawsContent()) {
+    } else if (it.represents_itself()) {
       DCHECK(!it->paint_properties().bounds.IsEmpty());
       *did_paint_content |= it->Update(queue, &occlusion_tracker);
       *need_more_updates |= it->NeedMoreUpdates();
@@ -1150,14 +1138,12 @@ scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
   return state.PassAs<base::Value>();
 }
 
-void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
+void LayerTreeHost::AnimateLayers(base::TimeTicks monotonic_time) {
   if (!settings_.accelerated_animation_enabled ||
       animation_registrar_->active_animation_controllers().empty())
     return;
 
   TRACE_EVENT0("cc", "LayerTreeHost::AnimateLayers");
-
-  double monotonic_time = (time - base::TimeTicks()).InSecondsF();
 
   AnimationRegistrar::AnimationControllerMap copy =
       animation_registrar_->active_animation_controllers();
@@ -1235,12 +1221,17 @@ void LayerTreeHost::RegisterViewportLayers(
   outer_viewport_scroll_layer_ = outer_viewport_scroll_layer;
 }
 
-bool LayerTreeHost::ScheduleMicroBenchmark(
+int LayerTreeHost::ScheduleMicroBenchmark(
     const std::string& benchmark_name,
     scoped_ptr<base::Value> value,
     const MicroBenchmark::DoneCallback& callback) {
   return micro_benchmark_controller_.ScheduleRun(
       benchmark_name, value.Pass(), callback);
+}
+
+bool LayerTreeHost::SendMessageToMicroBenchmark(int id,
+                                                scoped_ptr<base::Value> value) {
+  return micro_benchmark_controller_.SendMessage(id, value.Pass());
 }
 
 void LayerTreeHost::InsertSwapPromiseMonitor(SwapPromiseMonitor* monitor) {

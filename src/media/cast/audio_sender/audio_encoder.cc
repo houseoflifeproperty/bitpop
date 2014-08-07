@@ -9,14 +9,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/location.h"
-#include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/sys_byteorder.h"
 #include "base/time/time.h"
 #include "media/base/audio_bus.h"
 #include "media/cast/cast_defines.h"
 #include "media/cast/cast_environment.h"
-#include "media/cast/logging/logging_defines.h"
 #include "third_party/opus/src/include/opus.h"
 
 namespace media {
@@ -33,33 +31,12 @@ const int kFrameDurationMillis = 1000 / kFramesPerSecond;  // No remainder!
 // coming in too slow with respect to the capture timestamps.
 const int kUnderrunThresholdMillis = 3 * kFrameDurationMillis;
 
-void LogAudioFrameEncodedEvent(
-    const scoped_refptr<media::cast::CastEnvironment>& cast_environment,
-    base::TimeTicks event_time,
-    media::cast::RtpTimestamp rtp_timestamp,
-    uint32 frame_id,
-    size_t frame_size) {
-  if (!cast_environment->CurrentlyOn(CastEnvironment::MAIN)) {
-    cast_environment->PostTask(
-        CastEnvironment::MAIN,
-        FROM_HERE,
-        base::Bind(&LogAudioFrameEncodedEvent,
-                   cast_environment, event_time,
-                   rtp_timestamp, frame_id, frame_size));
-    return;
-  }
-  cast_environment->Logging()->InsertEncodedFrameEvent(
-      event_time, kAudioFrameEncoded, rtp_timestamp, frame_id,
-      static_cast<int>(frame_size), /* key_frame - unused */ false,
-      /*target_bitrate - unused*/ 0);
-}
-
 }  // namespace
 
 
 // Base class that handles the common problem of feeding one or more AudioBus'
 // data into a buffer and then, once the buffer is full, encoding the signal and
-// emitting an EncodedAudioFrame via the FrameEncodedCallback.
+// emitting an EncodedFrame via the FrameEncodedCallback.
 //
 // Subclasses complete the implementation by handling the actual encoding
 // details.
@@ -80,10 +57,11 @@ class AudioEncoder::ImplBase
         buffer_fill_end_(0),
         frame_id_(0),
         frame_rtp_timestamp_(0) {
+    // Support for max sampling rate of 48KHz, 2 channels, 100 ms duration.
+    const int kMaxSamplesTimesChannelsPerFrame = 48 * 2 * 100;
     if (num_channels_ <= 0 || samples_per_frame_ <= 0 ||
         sampling_rate % kFramesPerSecond != 0 ||
-        samples_per_frame_ * num_channels_ >
-            transport::EncodedAudioFrame::kMaxNumberOfSamples) {
+        samples_per_frame_ * num_channels_ > kMaxSamplesTimesChannelsPerFrame) {
       cast_initialization_status_ = STATUS_INVALID_AUDIO_CONFIGURATION;
     }
   }
@@ -139,24 +117,19 @@ class AudioEncoder::ImplBase
       if (buffer_fill_end_ < samples_per_frame_)
         break;
 
-      scoped_ptr<transport::EncodedAudioFrame> audio_frame(
-          new transport::EncodedAudioFrame());
-      audio_frame->codec = codec_;
+      scoped_ptr<transport::EncodedFrame> audio_frame(
+          new transport::EncodedFrame());
+      audio_frame->dependency = transport::EncodedFrame::KEY;
       audio_frame->frame_id = frame_id_;
+      audio_frame->referenced_frame_id = frame_id_;
       audio_frame->rtp_timestamp = frame_rtp_timestamp_;
+      audio_frame->reference_time = frame_capture_time_;
 
       if (EncodeFromFilledBuffer(&audio_frame->data)) {
-        LogAudioFrameEncodedEvent(cast_environment_,
-                                  cast_environment_->Clock()->NowTicks(),
-                                  audio_frame->rtp_timestamp,
-                                  audio_frame->frame_id,
-                                  audio_frame->data.size());
         cast_environment_->PostTask(
             CastEnvironment::MAIN,
             FROM_HERE,
-            base::Bind(callback_,
-                       base::Passed(&audio_frame),
-                       frame_capture_time_));
+            base::Bind(callback_, base::Passed(&audio_frame)));
       }
 
       // Reset the internal buffer, frame ID, and timestamps for the next frame.
@@ -192,7 +165,7 @@ class AudioEncoder::ImplBase
   // call.
   int buffer_fill_end_;
 
-  // A counter used to label EncodedAudioFrames.
+  // A counter used to label EncodedFrames.
   uint32 frame_id_;
 
   // The RTP timestamp for the next frame of encoded audio.  This is defined as

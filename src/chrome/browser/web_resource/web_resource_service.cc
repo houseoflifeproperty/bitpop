@@ -13,7 +13,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/google/google_util.h"
+#include "components/google/core/browser/google_util.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
@@ -119,9 +119,11 @@ void WebResourceService::StartFetch() {
   // Balanced in OnURLFetchComplete.
   AddRef();
 
-  GURL web_resource_server = apply_locale_to_url_ ?
-      google_util::AppendGoogleLocaleParam(web_resource_server_) :
-      web_resource_server_;
+  GURL web_resource_server =
+      apply_locale_to_url_
+          ? google_util::AppendGoogleLocaleParam(
+                web_resource_server_, g_browser_process->GetApplicationLocale())
+          : web_resource_server_;
 
   DVLOG(1) << "WebResourceService StartFetch " << web_resource_server;
   url_fetcher_.reset(net::URLFetcher::Create(

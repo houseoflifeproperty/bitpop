@@ -26,16 +26,17 @@
 #include "config.h"
 #include "core/html/HTMLVideoElement.h"
 
-#include "CSSPropertyNames.h"
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionState.h"
+#include "core/CSSPropertyNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/shadow/ShadowRoot.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/frame/Settings.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderVideo.h"
 #include "platform/UserGestureIndicator.h"
@@ -54,9 +55,16 @@ inline HTMLVideoElement::HTMLVideoElement(Document& document)
 
 PassRefPtrWillBeRawPtr<HTMLVideoElement> HTMLVideoElement::create(Document& document)
 {
-    RefPtrWillBeRawPtr<HTMLVideoElement> videoElement(adoptRefWillBeRefCountedGarbageCollected(new HTMLVideoElement(document)));
-    videoElement->suspendIfNeeded();
-    return videoElement.release();
+    RefPtrWillBeRawPtr<HTMLVideoElement> video = adoptRefWillBeNoop(new HTMLVideoElement(document));
+    video->ensureUserAgentShadowRoot();
+    video->suspendIfNeeded();
+    return video.release();
+}
+
+void HTMLVideoElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_imageLoader);
+    HTMLMediaElement::trace(visitor);
 }
 
 bool HTMLVideoElement::rendererIsNeeded(const RenderStyle& style)
@@ -76,7 +84,7 @@ void HTMLVideoElement::attach(const AttachContext& context)
     updateDisplayState();
     if (shouldDisplayPosterImage()) {
         if (!m_imageLoader)
-            m_imageLoader = adoptPtr(new HTMLImageLoader(this));
+            m_imageLoader = HTMLImageLoader::create(this);
         m_imageLoader->updateFromElement();
         if (renderer())
             toRenderImage(renderer())->imageResource()->setImageResource(m_imageLoader->image());
@@ -108,7 +116,7 @@ void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicStr
         updateDisplayState();
         if (shouldDisplayPosterImage()) {
             if (!m_imageLoader)
-                m_imageLoader = adoptPtr(new HTMLImageLoader(this));
+                m_imageLoader = HTMLImageLoader::create(this);
             m_imageLoader->updateFromElementIgnoringPreviousError();
         } else {
             if (renderer())
@@ -134,16 +142,16 @@ bool HTMLVideoElement::supportsFullscreen() const
 
 unsigned HTMLVideoElement::videoWidth() const
 {
-    if (!player())
+    if (!webMediaPlayer())
         return 0;
-    return player()->naturalSize().width();
+    return webMediaPlayer()->naturalSize().width;
 }
 
 unsigned HTMLVideoElement::videoHeight() const
 {
-    if (!player())
+    if (!webMediaPlayer())
         return 0;
-    return player()->naturalSize().height();
+    return webMediaPlayer()->naturalSize().height;
 }
 
 bool HTMLVideoElement::isURLAttribute(const Attribute& attribute) const
@@ -204,10 +212,10 @@ bool HTMLVideoElement::copyVideoTextureToPlatformTexture(blink::WebGraphicsConte
 
 bool HTMLVideoElement::hasAvailableVideoFrame() const
 {
-    if (!player())
+    if (!webMediaPlayer())
         return false;
 
-    return player()->hasVideo() && player()->readyState() >= MediaPlayer::HaveCurrentData;
+    return webMediaPlayer()->hasVideo() && webMediaPlayer()->readyState() >= blink::WebMediaPlayer::ReadyStateHaveCurrentData;
 }
 
 void HTMLVideoElement::webkitEnterFullscreen(ExceptionState& exceptionState)
@@ -248,18 +256,18 @@ void HTMLVideoElement::didMoveToNewDocument(Document& oldDocument)
 
 unsigned HTMLVideoElement::webkitDecodedFrameCount() const
 {
-    if (!player())
+    if (!webMediaPlayer())
         return 0;
 
-    return player()->decodedFrameCount();
+    return webMediaPlayer()->decodedFrameCount();
 }
 
 unsigned HTMLVideoElement::webkitDroppedFrameCount() const
 {
-    if (!player())
+    if (!webMediaPlayer())
         return 0;
 
-    return player()->droppedFrameCount();
+    return webMediaPlayer()->droppedFrameCount();
 }
 
 KURL HTMLVideoElement::posterImageURL() const
@@ -297,7 +305,7 @@ PassRefPtr<Image> HTMLVideoElement::getSourceImageForCanvas(SourceImageMode mode
 
 bool HTMLVideoElement::wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigin) const
 {
-    return !hasSingleSecurityOrigin() || (!(player() && player()->didPassCORSAccessCheck()) && destinationSecurityOrigin->taintsCanvas(currentSrc()));
+    return !hasSingleSecurityOrigin() || (!(webMediaPlayer() && webMediaPlayer()->didPassCORSAccessCheck()) && destinationSecurityOrigin->taintsCanvas(currentSrc()));
 }
 
 FloatSize HTMLVideoElement::sourceSize() const

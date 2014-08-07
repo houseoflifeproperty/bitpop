@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-[JavaPackage="org.chromium.mojo.bindings.test"]
+[JavaPackage="org.chromium.mojo.bindings.test.imported"]
 module imported {
 
 // This sample just defines some types that are imported into
@@ -17,6 +17,9 @@ enum Shape {
 struct Point {
   int32 x;
   int32 y;
+};
+
+interface ImportedInterface {
 };
 
 }  // module imported

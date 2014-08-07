@@ -11,6 +11,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "content/public/browser/browser_thread.h"
@@ -24,10 +25,12 @@ const int kMaximumDaysOfDisuse = 4 * 7;  // Should be integral number of weeks.
 struct ProfileCounts {
   size_t total;
   size_t signedin;
-  size_t managed;
+  size_t supervised;
   size_t unused;
+  size_t gaia_icon;
 
-  ProfileCounts() : total(0), signedin(0), managed(0), unused(0) {}
+  ProfileCounts()
+      : total(0), signedin(0), supervised(0), unused(0), gaia_icon(0) {}
 };
 
 ProfileMetrics::ProfileType GetProfileType(
@@ -69,13 +72,40 @@ bool CountProfileInformation(ProfileManager* manager, ProfileCounts* counts) {
     if (info_cache.GetProfileActiveTimeAtIndex(i) < oldest) {
       counts->unused++;
     } else {
-      if (info_cache.ProfileIsManagedAtIndex(i))
-        counts->managed++;
-      if (!info_cache.GetUserNameOfProfileAtIndex(i).empty())
+      if (info_cache.ProfileIsSupervisedAtIndex(i))
+        counts->supervised++;
+      if (!info_cache.GetUserNameOfProfileAtIndex(i).empty()) {
         counts->signedin++;
+        if (info_cache.IsUsingGAIAPictureOfProfileAtIndex(i))
+          counts->gaia_icon++;
+      }
     }
   }
   return true;
+}
+
+void LogLockedProfileInformation(ProfileManager* manager) {
+  const ProfileInfoCache& info_cache = manager->GetProfileInfoCache();
+  size_t number_of_profiles = info_cache.GetNumberOfProfiles();
+
+  base::Time now = base::Time::Now();
+  const int kMinutesInProfileValidDuration =
+      base::TimeDelta::FromDays(28).InMinutes();
+  for (size_t i = 0; i < number_of_profiles; ++i) {
+    // Find when locked profiles were locked
+    if (info_cache.ProfileIsSigninRequiredAtIndex(i)) {
+      base::TimeDelta time_since_lock = now -
+          info_cache.GetProfileActiveTimeAtIndex(i);
+      // Specifying 100 buckets for the histogram to get a higher level of
+      // granularity in the reported data, given the large number of possible
+      // values (kMinutesInProfileValidDuration > 40,000).
+      UMA_HISTOGRAM_CUSTOM_COUNTS("Profile.LockedProfilesDuration",
+                                  time_since_lock.InMinutes(),
+                                  1,
+                                  kMinutesInProfileValidDuration,
+                                  100);
+    }
+  }
 }
 
 }  // namespace
@@ -136,14 +166,17 @@ void ProfileMetrics::LogNumberOfProfiles(ProfileManager* manager) {
   // Ignore other metrics if we have no profiles, e.g. in Chrome Frame tests.
   if (success) {
     UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfManagedProfiles",
-                             counts.managed);
+                             counts.supervised);
     UMA_HISTOGRAM_COUNTS_100("Profile.PercentageOfManagedProfiles",
-                             100 * counts.managed / counts.total);
+                             100 * counts.supervised / counts.total);
     UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfSignedInProfiles",
                              counts.signedin);
     UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfUnusedProfiles",
                              counts.unused);
+    UMA_HISTOGRAM_COUNTS_100("Profile.NumberOfSignedInProfilesWithGAIAIcons",
+                             counts.gaia_icon);
 
+    LogLockedProfileInformation(manager);
     UpdateReportedOSProfileStatistics(counts.total, counts.signedin);
   }
 }
@@ -295,13 +328,99 @@ void ProfileMetrics::LogProfileUpgradeEnrollment(
                             NUM_PROFILE_ENROLLMENT_METRICS);
 }
 
+void ProfileMetrics::LogProfileDesktopMenu(
+    ProfileDesktopMenu metric,
+    signin::GAIAServiceType gaia_service) {
+  // The first parameter to the histogram needs to be literal, because of the
+  // optimized implementation of |UMA_HISTOGRAM_ENUMERATION|. Do not attempt
+  // to refactor.
+  switch (gaia_service) {
+    case signin::GAIA_SERVICE_TYPE_NONE:
+      UMA_HISTOGRAM_ENUMERATION("Profile.DesktopMenu.NonGAIA", metric,
+                                NUM_PROFILE_DESKTOP_MENU_METRICS);
+      break;
+    case signin::GAIA_SERVICE_TYPE_SIGNOUT:
+      UMA_HISTOGRAM_ENUMERATION("Profile.DesktopMenu.GAIASignout", metric,
+                                NUM_PROFILE_DESKTOP_MENU_METRICS);
+      break;
+    case signin::GAIA_SERVICE_TYPE_INCOGNITO:
+      UMA_HISTOGRAM_ENUMERATION("Profile.DesktopMenu.GAIAIncognito",
+                                metric, NUM_PROFILE_DESKTOP_MENU_METRICS);
+      break;
+    case signin::GAIA_SERVICE_TYPE_ADDSESSION:
+      UMA_HISTOGRAM_ENUMERATION("Profile.DesktopMenu.GAIAAddSession", metric,
+                                NUM_PROFILE_DESKTOP_MENU_METRICS);
+      break;
+    case signin::GAIA_SERVICE_TYPE_REAUTH:
+      UMA_HISTOGRAM_ENUMERATION("Profile.DesktopMenu.GAIAReAuth", metric,
+                                NUM_PROFILE_DESKTOP_MENU_METRICS);
+      break;
+    case signin::GAIA_SERVICE_TYPE_DEFAULT:
+      UMA_HISTOGRAM_ENUMERATION("Profile.DesktopMenu.GAIADefault", metric,
+                                NUM_PROFILE_DESKTOP_MENU_METRICS);
+      break;
+  }
+}
+
+void ProfileMetrics::LogProfileDelete(bool profile_was_signed_in) {
+  UMA_HISTOGRAM_BOOLEAN("Profile.Delete", profile_was_signed_in);
+}
+
+#if defined(OS_ANDROID)
+void ProfileMetrics::LogProfileAndroidAccountManagementMenu(
+    ProfileAndroidAccountManagementMenu metric,
+    signin::GAIAServiceType gaia_service) {
+  // The first parameter to the histogram needs to be literal, because of the
+  // optimized implementation of |UMA_HISTOGRAM_ENUMERATION|. Do not attempt
+  // to refactor.
+  switch (gaia_service) {
+    case signin::GAIA_SERVICE_TYPE_NONE:
+      UMA_HISTOGRAM_ENUMERATION(
+          "Profile.AndroidAccountManagementMenu.NonGAIA",
+          metric,
+          NUM_PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_METRICS);
+      break;
+    case signin::GAIA_SERVICE_TYPE_SIGNOUT:
+      UMA_HISTOGRAM_ENUMERATION(
+          "Profile.AndroidAccountManagementMenu.GAIASignout",
+          metric,
+          NUM_PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_METRICS);
+      break;
+    case signin::GAIA_SERVICE_TYPE_INCOGNITO:
+      UMA_HISTOGRAM_ENUMERATION(
+          "Profile.AndroidAccountManagementMenu.GAIASignoutIncognito",
+          metric,
+          NUM_PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_METRICS);
+      break;
+    case signin::GAIA_SERVICE_TYPE_ADDSESSION:
+      UMA_HISTOGRAM_ENUMERATION(
+          "Profile.AndroidAccountManagementMenu.GAIAAddSession",
+          metric,
+          NUM_PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_METRICS);
+      break;
+    case signin::GAIA_SERVICE_TYPE_REAUTH:
+      UMA_HISTOGRAM_ENUMERATION(
+          "Profile.AndroidAccountManagementMenu.GAIAReAuth",
+          metric,
+          NUM_PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_METRICS);
+      break;
+    case signin::GAIA_SERVICE_TYPE_DEFAULT:
+      UMA_HISTOGRAM_ENUMERATION(
+          "Profile.AndroidAccountManagementMenu.GAIADefault",
+          metric,
+          NUM_PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_METRICS);
+      break;
+  }
+}
+#endif  // defined(OS_ANDROID)
+
 void ProfileMetrics::LogProfileLaunch(Profile* profile) {
   base::FilePath profile_path = profile->GetPath();
   UMA_HISTOGRAM_ENUMERATION("Profile.LaunchBrowser",
                             GetProfileType(profile_path),
                             NUM_PROFILE_TYPE_METRICS);
 
-  if (profile->IsManaged()) {
+  if (profile->IsSupervised()) {
     content::RecordAction(
         base::UserMetricsAction("ManagedMode_NewManagedUserWindow"));
   }

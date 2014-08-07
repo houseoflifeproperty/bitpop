@@ -44,7 +44,8 @@
 namespace WebCore {
 
 class ContentData;
-class CSSAnimationDataList;
+class CSSAnimationData;
+class CSSTransitionData;
 class LengthSize;
 class ShadowList;
 class StyleDeprecatedFlexibleBoxData;
@@ -55,7 +56,6 @@ class StyleGridItemData;
 class StyleMarqueeData;
 class StyleMultiColData;
 class StyleReflection;
-class StyleResolver;
 class StyleTransformData;
 class StyleWillChangeData;
 
@@ -121,8 +121,8 @@ public:
 
     RefPtr<StyleReflection> m_boxReflect;
 
-    OwnPtrWillBePersistent<CSSAnimationDataList> m_animations;
-    OwnPtrWillBePersistent<CSSAnimationDataList> m_transitions;
+    OwnPtrWillBePersistent<CSSAnimationData> m_animations;
+    OwnPtrWillBePersistent<CSSTransitionData> m_transitions;
 
     FillLayer m_mask;
     NinePieceImage m_maskBoxImage;
@@ -196,6 +196,12 @@ public:
     // ScrollBehavior. 'scroll-behavior' has 2 accepted values, but ScrollBehavior has a third
     // value (that can only be specified using CSSOM scroll APIs) so 2 bits are needed.
     unsigned m_scrollBehavior: 2;
+
+    // Plugins require accelerated compositing for reasons external to blink.
+    // In which case, we need to update the RenderStyle on the RenderEmbeddedObject,
+    // so store this bit so that the style actually changes when the plugin
+    // becomes composited.
+    unsigned m_requiresAcceleratedCompositingForExternalReasons: 1;
 
 private:
     StyleRareNonInheritedData();

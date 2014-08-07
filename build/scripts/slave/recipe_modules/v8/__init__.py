@@ -1,9 +1,15 @@
 DEPS = [
+  'archive',
   'chromium',
   'gclient',
+  'json',
   'path',
+  'perf_dashboard',
   'platform',
   'properties',
   'python',
   'step',
+  'step_history',
+  'test_utils',
+  'tryserver',
 ]

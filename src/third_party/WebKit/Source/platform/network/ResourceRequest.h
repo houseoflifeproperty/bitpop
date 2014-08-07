@@ -42,7 +42,8 @@ enum ResourceRequestCachePolicy {
     UseProtocolCachePolicy, // normal load
     ReloadIgnoringCacheData, // reload
     ReturnCacheDataElseLoad, // back/forward or encoding change - allow stale data
-    ReturnCacheDataDontLoad  // results of a post - allow stale data and only use cache
+    ReturnCacheDataDontLoad, // results of a post - allow stale data and only use cache
+    ReloadBypassingCache, // end-to-end reload
 };
 
 struct CrossThreadResourceRequestData;
@@ -169,10 +170,6 @@ public:
     bool reportUploadProgress() const { return m_reportUploadProgress; }
     void setReportUploadProgress(bool reportUploadProgress) { m_reportUploadProgress = reportUploadProgress; }
 
-    // Whether the timing information should be collected for the request.
-    bool reportLoadTiming() const { return m_reportLoadTiming; }
-    void setReportLoadTiming(bool reportLoadTiming) { m_reportLoadTiming = reportLoadTiming; }
-
     // Whether actual headers being sent/received should be collected and reported for the request.
     bool reportRawHeaders() const { return m_reportRawHeaders; }
     void setReportRawHeaders(bool reportRawHeaders) { m_reportRawHeaders = reportRawHeaders; }
@@ -229,7 +226,6 @@ private:
     RefPtr<FormData> m_httpBody;
     bool m_allowStoredCredentials : 1;
     bool m_reportUploadProgress : 1;
-    bool m_reportLoadTiming : 1;
     bool m_reportRawHeaders : 1;
     bool m_hasUserGesture : 1;
     bool m_downloadToFile : 1;

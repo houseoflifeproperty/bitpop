@@ -47,19 +47,19 @@ void NamedNodeMap::deref()
 }
 #endif
 
-PassRefPtr<Node> NamedNodeMap::getNamedItem(const AtomicString& name) const
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::getNamedItem(const AtomicString& name) const
 {
     return m_element->getAttributeNode(name);
 }
 
-PassRefPtr<Node> NamedNodeMap::getNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName) const
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::getNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName) const
 {
     return m_element->getAttributeNodeNS(namespaceURI, localName);
 }
 
-PassRefPtr<Node> NamedNodeMap::removeNamedItem(const AtomicString& name, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::removeNamedItem(const AtomicString& name, ExceptionState& exceptionState)
 {
-    size_t index = m_element->hasAttributes() ? m_element->getAttributeItemIndex(name, m_element->shouldIgnoreAttributeCase()) : kNotFound;
+    size_t index = m_element->hasAttributes() ? m_element->findAttributeIndexByName(name, m_element->shouldIgnoreAttributeCase()) : kNotFound;
     if (index == kNotFound) {
         exceptionState.throwDOMException(NotFoundError, "No item with name '" + name + "' was found.");
         return nullptr;
@@ -67,9 +67,9 @@ PassRefPtr<Node> NamedNodeMap::removeNamedItem(const AtomicString& name, Excepti
     return m_element->detachAttribute(index);
 }
 
-PassRefPtr<Node> NamedNodeMap::removeNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::removeNamedItemNS(const AtomicString& namespaceURI, const AtomicString& localName, ExceptionState& exceptionState)
 {
-    size_t index = m_element->hasAttributes() ? m_element->getAttributeItemIndex(QualifiedName(nullAtom, localName, namespaceURI)) : kNotFound;
+    size_t index = m_element->hasAttributes() ? m_element->findAttributeIndexByName(QualifiedName(nullAtom, localName, namespaceURI)) : kNotFound;
     if (index == kNotFound) {
         exceptionState.throwDOMException(NotFoundError, "No item with name '" + namespaceURI + "::" + localName + "' was found.");
         return nullptr;
@@ -77,7 +77,7 @@ PassRefPtr<Node> NamedNodeMap::removeNamedItemNS(const AtomicString& namespaceUR
     return m_element->detachAttribute(index);
 }
 
-PassRefPtr<Node> NamedNodeMap::setNamedItem(Node* node, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::setNamedItem(Node* node, ExceptionState& exceptionState)
 {
     if (!node) {
         exceptionState.throwDOMException(NotFoundError, "The node provided was null.");
@@ -93,16 +93,16 @@ PassRefPtr<Node> NamedNodeMap::setNamedItem(Node* node, ExceptionState& exceptio
     return m_element->setAttributeNode(toAttr(node), exceptionState);
 }
 
-PassRefPtr<Node> NamedNodeMap::setNamedItemNS(Node* node, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::setNamedItemNS(Node* node, ExceptionState& exceptionState)
 {
     return setNamedItem(node, exceptionState);
 }
 
-PassRefPtr<Node> NamedNodeMap::item(unsigned index) const
+PassRefPtrWillBeRawPtr<Node> NamedNodeMap::item(unsigned index) const
 {
     if (index >= length())
         return nullptr;
-    return m_element->ensureAttr(m_element->attributeItem(index).name());
+    return m_element->ensureAttr(m_element->attributeAt(index).name());
 }
 
 size_t NamedNodeMap::length() const

@@ -4,7 +4,7 @@
 
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 
-#include "content/browser/frame_host/render_frame_host_impl.h"
+#include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/frame_host/render_widget_host_view_child_frame.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -15,11 +15,10 @@
 namespace content {
 
 CrossProcessFrameConnector::CrossProcessFrameConnector(
-    RenderFrameHostImpl* frame_proxy_in_parent_renderer)
+    RenderFrameProxyHost* frame_proxy_in_parent_renderer)
     : frame_proxy_in_parent_renderer_(frame_proxy_in_parent_renderer),
       view_(NULL),
       device_scale_factor_(1) {
-  frame_proxy_in_parent_renderer->set_cross_process_frame_connector(this);
 }
 
 CrossProcessFrameConnector::~CrossProcessFrameConnector() {
@@ -29,9 +28,8 @@ CrossProcessFrameConnector::~CrossProcessFrameConnector() {
 
 bool CrossProcessFrameConnector::OnMessageReceived(const IPC::Message& msg) {
   bool handled = true;
-  bool msg_is_ok = true;
 
-  IPC_BEGIN_MESSAGE_MAP_EX(CrossProcessFrameConnector, msg, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(CrossProcessFrameConnector, msg)
     IPC_MESSAGE_HANDLER(FrameHostMsg_BuffersSwappedACK, OnBuffersSwappedACK)
     IPC_MESSAGE_HANDLER(FrameHostMsg_CompositorFrameSwappedACK,
                         OnCompositorFrameSwappedACK)
@@ -41,7 +39,7 @@ bool CrossProcessFrameConnector::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_InitializeChildFrame,
                         OnInitializeChildFrame)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -54,14 +52,17 @@ void CrossProcessFrameConnector::set_view(
 
   view_ = view;
 
-  // Attach ourselves to the new view.
-  if (view_)
+  // Attach ourselves to the new view and size it appropriately.
+  if (view_) {
     view_->set_cross_process_frame_connector(this);
+    SetDeviceScaleFactor(device_scale_factor_);
+    SetSize(child_frame_rect_);
+  }
 }
 
 void CrossProcessFrameConnector::RenderProcessGone() {
   frame_proxy_in_parent_renderer_->Send(new FrameMsg_ChildFrameProcessGone(
-      frame_proxy_in_parent_renderer_->routing_id()));
+      frame_proxy_in_parent_renderer_->GetRoutingID()));
 }
 
 void CrossProcessFrameConnector::ChildFrameBuffersSwapped(
@@ -74,10 +75,8 @@ void CrossProcessFrameConnector::ChildFrameBuffersSwapped(
   params.gpu_route_id = gpu_params.route_id;
   params.gpu_host_id = gpu_host_id;
 
-  frame_proxy_in_parent_renderer_->Send(
-      new FrameMsg_BuffersSwapped(
-          frame_proxy_in_parent_renderer_->routing_id(),
-          params));
+  frame_proxy_in_parent_renderer_->Send(new FrameMsg_BuffersSwapped(
+      frame_proxy_in_parent_renderer_->GetRoutingID(), params));
 }
 
 void CrossProcessFrameConnector::ChildFrameCompositorFrameSwapped(
@@ -91,7 +90,7 @@ void CrossProcessFrameConnector::ChildFrameCompositorFrameSwapped(
   params.producing_route_id = route_id;
   params.producing_host_id = host_id;
   frame_proxy_in_parent_renderer_->Send(new FrameMsg_CompositorFrameSwapped(
-      frame_proxy_in_parent_renderer_->routing_id(), params));
+      frame_proxy_in_parent_renderer_->GetRoutingID(), params));
 }
 
 void CrossProcessFrameConnector::OnBuffersSwappedACK(
@@ -124,20 +123,11 @@ void CrossProcessFrameConnector::OnReclaimCompositorResources(
 
 void CrossProcessFrameConnector::OnInitializeChildFrame(gfx::Rect frame_rect,
                                                         float scale_factor) {
-  if (scale_factor != device_scale_factor_) {
-    device_scale_factor_ = scale_factor;
-    if (view_) {
-      RenderWidgetHostImpl* child_widget =
-          RenderWidgetHostImpl::From(view_->GetRenderWidgetHost());
-      child_widget->NotifyScreenInfoChanged();
-    }
-  }
+  if (scale_factor != device_scale_factor_)
+    SetDeviceScaleFactor(scale_factor);
 
-  if (!frame_rect.size().IsEmpty()) {
-    child_frame_rect_ = frame_rect;
-    if (view_)
-      view_->SetSize(frame_rect.size());
-  }
+  if (!frame_rect.size().IsEmpty())
+    SetSize(frame_rect);
 }
 
 gfx::Rect CrossProcessFrameConnector::ChildFrameRect() {
@@ -152,7 +142,7 @@ void CrossProcessFrameConnector::OnForwardInputEvent(
   RenderWidgetHostImpl* child_widget =
       RenderWidgetHostImpl::From(view_->GetRenderWidgetHost());
   RenderWidgetHostImpl* parent_widget =
-      frame_proxy_in_parent_renderer_->render_view_host();
+      frame_proxy_in_parent_renderer_->GetRenderViewHost();
 
   if (blink::WebInputEvent::isKeyboardEventType(event->type)) {
     if (!parent_widget->GetLastKeyboardEvent())
@@ -174,6 +164,21 @@ void CrossProcessFrameConnector::OnForwardInputEvent(
         *static_cast<const blink::WebMouseWheelEvent*>(event));
     return;
   }
+}
+
+void CrossProcessFrameConnector::SetDeviceScaleFactor(float scale_factor) {
+  device_scale_factor_ = scale_factor;
+  if (view_) {
+    RenderWidgetHostImpl* child_widget =
+        RenderWidgetHostImpl::From(view_->GetRenderWidgetHost());
+    child_widget->NotifyScreenInfoChanged();
+  }
+}
+
+void CrossProcessFrameConnector::SetSize(gfx::Rect frame_rect) {
+  child_frame_rect_ = frame_rect;
+  if (view_)
+    view_->SetSize(frame_rect.size());
 }
 
 }  // namespace content

@@ -27,7 +27,6 @@
 
 #include "core/rendering/svg/RenderSVGResourceLinearGradient.h"
 #include "core/svg/LinearGradientAttributes.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGLength.h"
 #include "core/svg/SVGTransformList.h"
 
@@ -51,10 +50,7 @@ inline SVGLinearGradientElement::SVGLinearGradientElement(Document& document)
     addToPropertyMap(m_y2);
 }
 
-PassRefPtr<SVGLinearGradientElement> SVGLinearGradientElement::create(Document& document)
-{
-    return adoptRef(new SVGLinearGradientElement(document));
-}
+DEFINE_NODE_FACTORY(SVGLinearGradientElement)
 
 bool SVGLinearGradientElement::isSupportedAttribute(const QualifiedName& attrName)
 {

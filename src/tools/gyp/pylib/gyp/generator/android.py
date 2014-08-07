@@ -317,12 +317,19 @@ class AndroidMkWriter(object):
       self.WriteLn('%s: export PATH := $(subst $(ANDROID_BUILD_PATHS),,$(PATH))'
                    % main_output)
 
+      # Don't allow spaces in input/output filenames, but make an exception for
+      # filenames which start with '$(' since it's okay for there to be spaces
+      # inside of make function/macro invocations.
       for input in inputs:
-        assert ' ' not in input, (
-            "Spaces in action input filenames not supported (%s)"  % input)
+        if not input.startswith('$(') and ' ' in input:
+          raise gyp.common.GypError(
+              'Action input filename "%s" in target %s contains a space' %
+              (input, self.target))
       for output in outputs:
-        assert ' ' not in output, (
-            "Spaces in action output filenames not supported (%s)"  % output)
+        if not output.startswith('$(') and ' ' in output:
+          raise gyp.common.GypError(
+              'Action output filename "%s" in target %s contains a space' %
+              (output, self.target))
 
       self.WriteLn('%s: %s $(GYP_TARGET_DEPENDENCIES)' %
                    (main_output, ' '.join(map(self.LocalPathify, inputs))))
@@ -681,7 +688,7 @@ class AndroidMkWriter(object):
     E.g., the loadable module 'foobar' in directory 'baz' will produce
       '$(obj)/baz/libfoobar.so'
     """
-    if self.type == 'executable' and self.toolset == 'host':
+    if self.type == 'executable':
       # We install host executables into shared_intermediate_dir so they can be
       # run by gyp rules that refer to PRODUCT_DIR.
       path = '$(gyp_shared_intermediate_dir)'
@@ -871,13 +878,9 @@ class AndroidMkWriter(object):
       self.WriteLn('LOCAL_PRELINK_MODULE := false')
       self.WriteLn('include $(BUILD_%sSHARED_LIBRARY)' % modifier)
     elif self.type == 'executable':
-      if self.toolset == 'host':
-        self.WriteLn('LOCAL_MODULE_PATH := $(gyp_shared_intermediate_dir)')
-      else:
-        # Don't install target executables for now, as it results in them being
-        # included in ROM. This can be revisited if there's a reason to install
-        # them later.
-        self.WriteLn('LOCAL_UNINSTALLABLE_MODULE := true')
+      # Executables are for build and test purposes only, so they're installed
+      # to a directory that doesn't get included in the system image.
+      self.WriteLn('LOCAL_MODULE_PATH := $(gyp_shared_intermediate_dir)')
       self.WriteLn('include $(BUILD_%sEXECUTABLE)' % modifier)
     else:
       self.WriteLn('LOCAL_MODULE_PATH := $(PRODUCT_OUT)/gyp_stamp')

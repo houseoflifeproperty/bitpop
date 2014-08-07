@@ -4,7 +4,9 @@
 
 #include "chrome/browser/ssl/ssl_blocking_page.h"
 
+#include "base/command_line.h"
 #include "base/i18n/rtl.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -16,8 +18,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/navigation_controller.h"
@@ -37,6 +38,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/jstemplate_builder.h"
+#include "ui/base/webui/web_ui_util.h"
 
 #if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
 #include "chrome/browser/captive_portal/captive_portal_service.h"
@@ -55,15 +57,7 @@ using content::NavigationEntry;
 
 namespace {
 
-// These represent the commands sent by ssl_roadblock.html.
-enum SSLBlockingPageCommands {
-  CMD_DONT_PROCEED,
-  CMD_PROCEED,
-  CMD_MORE,
-  CMD_RELOAD
-};
-
-// Events for UMA.
+// Events for UMA. Do not reorder or change!
 enum SSLBlockingPageEvent {
   SHOW_ALL,
   SHOW_OVERRIDABLE,
@@ -261,6 +255,15 @@ SSLBlockingPage::~SSLBlockingPage() {
 }
 
 std::string SSLBlockingPage::GetHTMLContents() {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSSLInterstitialVersionV1) ||
+      base::FieldTrialList::FindFullName("SSLInterstitialVersion") == "V1") {
+    return GetHTMLContentsV1();
+  }
+  return GetHTMLContentsV2();
+}
+
+std::string SSLBlockingPage::GetHTMLContentsV1() {
   base::DictionaryValue strings;
   int resource_id;
   if (overridable_ && !strict_enforcement_) {
@@ -403,6 +406,86 @@ std::string SSLBlockingPage::GetHTMLContents() {
   return webui::GetI18nTemplateHtml(html, &strings);
 }
 
+std::string SSLBlockingPage::GetHTMLContentsV2() {
+  base::DictionaryValue load_time_data;
+  base::string16 url(ASCIIToUTF16(request_url_.host()));
+  if (base::i18n::IsRTL())
+    base::i18n::WrapStringWithLTRFormatting(&url);
+  webui::SetFontAndTextDirection(&load_time_data);
+
+  // Shared values for both the overridable and non-overridable versions.
+  load_time_data.SetBoolean("ssl", true);
+  load_time_data.SetBoolean(
+      "overridable", overridable_ && !strict_enforcement_);
+  load_time_data.SetString(
+      "tabTitle", l10n_util::GetStringUTF16(IDS_SSL_V2_TITLE));
+  load_time_data.SetString(
+      "heading", l10n_util::GetStringUTF16(IDS_SSL_V2_HEADING));
+  load_time_data.SetString(
+      "primaryParagraph",
+      l10n_util::GetStringFUTF16(IDS_SSL_V2_PRIMARY_PARAGRAPH, url));
+  load_time_data.SetString(
+     "openDetails",
+     l10n_util::GetStringUTF16(IDS_SSL_V2_OPEN_DETAILS_BUTTON));
+  load_time_data.SetString(
+     "closeDetails",
+     l10n_util::GetStringUTF16(IDS_SSL_V2_CLOSE_DETAILS_BUTTON));
+
+  if (overridable_ && !strict_enforcement_) {  // Overridable.
+    SSLErrorInfo error_info =
+        SSLErrorInfo::CreateError(
+            SSLErrorInfo::NetErrorToErrorType(cert_error_),
+            ssl_info_.cert.get(),
+            request_url_);
+    load_time_data.SetString(
+        "explanationParagraph", error_info.details());
+    load_time_data.SetString(
+        "primaryButtonText",
+        l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_SAFETY_BUTTON));
+    load_time_data.SetString(
+        "finalParagraph",
+        l10n_util::GetStringFUTF16(IDS_SSL_OVERRIDABLE_PROCEED_PARAGRAPH, url));
+  } else {  // Non-overridable.
+    load_time_data.SetBoolean("overridable", false);
+    load_time_data.SetString(
+        "explanationParagraph",
+        l10n_util::GetStringFUTF16(IDS_SSL_NONOVERRIDABLE_MORE, url));
+    load_time_data.SetString(
+        "primaryButtonText",
+        l10n_util::GetStringUTF16(IDS_SSL_NONOVERRIDABLE_RELOAD_BUTTON));
+    // Customize the help link depending on the specific error type.
+    // Only mark as HSTS if none of the more specific error types apply, and use
+    // INVALID as a fallback if no other string is appropriate.
+    SSLErrorInfo::ErrorType type =
+        SSLErrorInfo::NetErrorToErrorType(cert_error_);
+    load_time_data.SetInteger("errorType", type);
+    int help_string = IDS_SSL_NONOVERRIDABLE_INVALID;
+    switch (type) {
+      case SSLErrorInfo::CERT_REVOKED:
+        help_string = IDS_SSL_NONOVERRIDABLE_REVOKED;
+        break;
+      case SSLErrorInfo::CERT_PINNED_KEY_MISSING:
+        help_string = IDS_SSL_NONOVERRIDABLE_PINNED;
+        break;
+      case SSLErrorInfo::CERT_INVALID:
+        help_string = IDS_SSL_NONOVERRIDABLE_INVALID;
+        break;
+      default:
+        if (strict_enforcement_)
+          help_string = IDS_SSL_NONOVERRIDABLE_HSTS;
+    }
+    load_time_data.SetString(
+        "finalParagraph", l10n_util::GetStringFUTF16(help_string, url));
+    load_time_data.SetString("errorCode", net::ErrorToString(cert_error_));
+  }
+
+  base::StringPiece html(
+     ResourceBundle::GetSharedInstance().GetRawDataResource(
+         IRD_SSL_INTERSTITIAL_V2_HTML));
+  webui::UseVersion2 version;
+  return webui::GetI18nTemplateHtml(html, &load_time_data);
+}
+
 void SSLBlockingPage::OverrideEntry(NavigationEntry* entry) {
   int cert_id = content::CertStore::GetInstance()->StoreCert(
       ssl_info_.cert.get(), web_contents_->GetRenderProcessHost()->GetID());
@@ -413,26 +496,44 @@ void SSLBlockingPage::OverrideEntry(NavigationEntry* entry) {
   entry->GetSSL().cert_id = cert_id;
   entry->GetSSL().cert_status = ssl_info_.cert_status;
   entry->GetSSL().security_bits = ssl_info_.security_bits;
-#if !defined(OS_ANDROID)
-  Browser* browser = chrome::FindBrowserWithWebContents(web_contents_);
-  if (browser)
-    browser->VisibleSSLStateChanged(web_contents_);
-#endif  // !defined(OS_ANDROID)
 }
 
-// Matches events defined in ssl_error.html and ssl_roadblock.html.
+// This handles the commands sent from the interstitial JavaScript. They are
+// defined in chrome/browser/resources/ssl/ssl_errors_common.js.
+// DO NOT reorder or change this logic without also changing the JavaScript!
 void SSLBlockingPage::CommandReceived(const std::string& command) {
-  int cmd = atoi(command.c_str());
-  if (cmd == CMD_DONT_PROCEED) {
-    interstitial_page_->DontProceed();
-  } else if (cmd == CMD_PROCEED) {
-    interstitial_page_->Proceed();
-  } else if (cmd == CMD_MORE) {
-    RecordSSLBlockingPageEventStats(MORE);
-  } else if (cmd == CMD_RELOAD) {
-    // The interstitial can't refresh itself.
-    content::NavigationController* controller = &web_contents_->GetController();
-    controller->Reload(true);
+  int cmd = 0;
+  bool retval = base::StringToInt(command, &cmd);
+  DCHECK(retval);
+  switch (cmd) {
+    case CMD_DONT_PROCEED: {
+      interstitial_page_->DontProceed();
+      break;
+    }
+    case CMD_PROCEED: {
+      interstitial_page_->Proceed();
+      break;
+    }
+    case CMD_MORE: {
+      RecordSSLBlockingPageEventStats(MORE);
+      break;
+    }
+    case CMD_RELOAD: {
+      // The interstitial can't refresh itself.
+      web_contents_->GetController().Reload(true);
+      break;
+    }
+    case CMD_HELP: {
+      // The interstitial can't open a popup or navigate itself.
+      // TODO(felt): We're going to need a new help page.
+      content::NavigationController::LoadURLParams help_page_params(GURL(
+          "https://support.google.com/chrome/answer/4454607"));
+      web_contents_->GetController().LoadURLWithParams(help_page_params);
+      break;
+    }
+    default: {
+      NOTREACHED();
+    }
   }
 }
 

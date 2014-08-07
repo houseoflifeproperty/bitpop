@@ -85,6 +85,10 @@ public:
     virtual void keyNeeded(const WebString& contentType, const unsigned char* initData, unsigned initDataLength) OVERRIDE;
 
     virtual void setWebLayer(WebLayer*) OVERRIDE;
+    virtual WebMediaPlayer::TrackId addAudioTrack(const WebString& id, AudioTrackKind, const WebString& label, const WebString& language, bool enabled) OVERRIDE;
+    virtual void removeAudioTrack(WebMediaPlayer::TrackId) OVERRIDE;
+    virtual WebMediaPlayer::TrackId addVideoTrack(const WebString& id, VideoTrackKind, const WebString& label, const WebString& language, bool selected) OVERRIDE;
+    virtual void removeVideoTrack(WebMediaPlayer::TrackId) OVERRIDE;
     virtual void addTextTrack(WebInbandTextTrack*) OVERRIDE;
     virtual void removeTextTrack(WebInbandTextTrack*) OVERRIDE;
     virtual void mediaSourceOpened(WebMediaSource*) OVERRIDE;
@@ -97,9 +101,6 @@ public:
     virtual void play() OVERRIDE;
     virtual void pause() OVERRIDE;
     virtual bool supportsSave() const OVERRIDE;
-    virtual WebCore::IntSize naturalSize() const OVERRIDE;
-    virtual bool hasVideo() const OVERRIDE;
-    virtual bool hasAudio() const OVERRIDE;
     virtual double duration() const OVERRIDE;
     virtual double currentTime() const OVERRIDE;
     virtual void seek(double time) OVERRIDE;
@@ -109,7 +110,6 @@ public:
     virtual bool paused() const OVERRIDE;
     virtual void setPoster(const WebCore::KURL&) OVERRIDE;
     virtual WebCore::MediaPlayer::NetworkState networkState() const OVERRIDE;
-    virtual WebCore::MediaPlayer::ReadyState readyState() const OVERRIDE;
     virtual double maxTimeSeekable() const OVERRIDE;
     virtual WTF::PassRefPtr<WebCore::TimeRanges> buffered() const OVERRIDE;
     virtual bool didLoadingProgress() const OVERRIDE;
@@ -117,16 +117,7 @@ public:
     virtual bool copyVideoTextureToPlatformTexture(WebGraphicsContext3D*, Platform3DObject texture, GLint level, GLenum type, GLenum internalFormat, bool premultiplyAlpha, bool flipY) OVERRIDE;
     virtual void setPreload(WebCore::MediaPlayer::Preload) OVERRIDE;
     virtual bool hasSingleSecurityOrigin() const OVERRIDE;
-    virtual bool didPassCORSAccessCheck() const OVERRIDE;
     virtual double mediaTimeForTimeValue(double timeValue) const OVERRIDE;
-    virtual unsigned decodedFrameCount() const OVERRIDE;
-    virtual unsigned droppedFrameCount() const OVERRIDE;
-    virtual unsigned corruptedFrameCount() const OVERRIDE;
-    virtual unsigned audioDecodedByteCount() const OVERRIDE;
-    virtual unsigned videoDecodedByteCount() const OVERRIDE;
-    virtual void showFullscreenOverlay() OVERRIDE;
-    virtual void hideFullscreenOverlay() OVERRIDE;
-    virtual bool canShowFullscreenOverlay() const OVERRIDE;
 
 #if ENABLE(WEB_AUDIO)
     virtual WebCore::AudioSourceProvider* audioSourceProvider() OVERRIDE;

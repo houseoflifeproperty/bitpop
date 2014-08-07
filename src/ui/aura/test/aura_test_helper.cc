@@ -52,10 +52,11 @@ AuraTestHelper::~AuraTestHelper() {
       << "AuraTestHelper::TearDown() never called.";
 }
 
-void AuraTestHelper::SetUp() {
+void AuraTestHelper::SetUp(ui::ContextFactory* context_factory) {
   setup_called_ = true;
 
   Env::CreateInstance(true);
+  Env::GetInstance()->set_context_factory(context_factory);
   // Unit tests generally don't want to query the system, rather use the state
   // from RootWindow.
   EnvTestHelper(Env::GetInstance()).SetInputStateLookup(
@@ -63,7 +64,8 @@ void AuraTestHelper::SetUp() {
 
   ui::InitializeInputMethodForTesting();
 
-  test_screen_.reset(TestScreen::Create());
+  gfx::Size host_size(800, 600);
+  test_screen_.reset(TestScreen::Create(host_size));
   gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen_.get());
   host_.reset(test_screen_->CreateHostForPrimaryDisplay());
 
@@ -78,7 +80,7 @@ void AuraTestHelper::SetUp() {
 
   root_window()->Show();
   // Ensure width != height so tests won't confuse them.
-  host()->SetBounds(gfx::Rect(800, 600));
+  host()->SetBounds(gfx::Rect(host_size));
 }
 
 void AuraTestHelper::TearDown() {

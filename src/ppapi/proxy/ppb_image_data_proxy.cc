@@ -620,6 +620,9 @@ void PPB_ImageData_Proxy::OnHostMsgCreatePlatform(
     HostResource* result,
     PP_ImageDataDesc* desc,
     ImageHandle* result_image_handle) {
+  // Clear |desc| so we don't send unitialized memory to the plugin.
+  // https://crbug.com/391023.
+  *desc = PP_ImageDataDesc();
   IPC::PlatformFileForTransit image_handle;
   uint32_t byte_count;
   PP_Resource resource =
@@ -645,6 +648,9 @@ void PPB_ImageData_Proxy::OnHostMsgCreateSimple(
     HostResource* result,
     PP_ImageDataDesc* desc,
     ppapi::proxy::SerializedHandle* result_image_handle) {
+  // Clear |desc| so we don't send unitialized memory to the plugin.
+  // https://crbug.com/391023.
+  *desc = PP_ImageDataDesc();
   IPC::PlatformFileForTransit image_handle;
   uint32_t byte_count;
   PP_Resource resource =

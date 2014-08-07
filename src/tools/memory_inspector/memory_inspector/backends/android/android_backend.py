@@ -11,6 +11,7 @@ import datetime
 import glob
 import hashlib
 import json
+import logging
 import os
 import posixpath
 
@@ -26,6 +27,7 @@ from memory_inspector.core import symbol
 # The memory_inspector/__init__ module will add the <CHROME_SRC>/build/android
 # deps to the PYTHONPATH for pylib.
 from pylib import android_commands
+from pylib.device import device_errors
 from pylib.device import device_utils
 from pylib.symbols import elf_symbolizer
 
@@ -79,14 +81,14 @@ class AndroidBackend(backends.Backend):
 
     Args:
       native_heaps: a collection of native_heap.NativeHeap instances.
-      sym_paths: either a list of or a string of comma-separated symbol paths.
+      sym_paths: either a list of or a string of semicolon-sep. symbol paths.
     """
     assert(all(isinstance(x, native_heap.NativeHeap) for x in native_heaps))
     symbols = symbol.Symbols()
 
     # Find addr2line in toolchain_path.
     if isinstance(sym_paths, basestring):
-      sym_paths = sym_paths.split(',')
+      sym_paths = sym_paths.split(';')
     matches = glob.glob(os.path.join(self.settings['toolchain_path'],
                                      '*addr2line'))
     if not matches:
@@ -156,7 +158,7 @@ class AndroidDevice(backends.Device):
   """Android-specific implementation of the core |Device| interface."""
 
   _SETTINGS_KEYS = {
-      'native_symbol_paths': 'Comma-separated list of native libs search path'}
+      'native_symbol_paths': 'Semicolon-sep. list of native libs search path'}
 
   def __init__(self, backend, underlying_device):
     super(AndroidDevice, self).__init__(
@@ -173,7 +175,13 @@ class AndroidDevice(backends.Device):
 
   def Initialize(self):
     """Starts adb root and deploys the prebuilt binaries on initialization."""
-    self.underlying_device.old_interface.EnableAdbRoot()
+    try:
+      self.underlying_device.EnableRoot()
+    except device_errors.CommandFailedError as e:
+      # Try to deploy memdump and ps_ext anyway.
+      # TODO(jbudorick) Handle this exception appropriately after interface
+      #                 conversions are finished.
+      logging.error(str(e))
 
     # Download (from GCS) and deploy prebuilt helper binaries on the device.
     self._DeployPrebuiltOnDeviceIfNeeded(_MEMDUMP_PREBUILT_PATH,
@@ -252,8 +260,7 @@ class AndroidDevice(backends.Device):
       return self._sys_stats
 
     dump_out = '\n'.join(
-        self.underlying_device.old_interface.RunShellCommand(
-            _PSEXT_PATH_ON_DEVICE))
+        self.underlying_device.RunShellCommand(_PSEXT_PATH_ON_DEVICE))
     stats = json.loads(dump_out)
     assert(all([x in stats for x in ['cpu', 'processes', 'time', 'mem']])), (
         'ps_ext returned a malformed JSON dictionary.')
@@ -280,13 +287,12 @@ class AndroidDevice(backends.Device):
     prebuilts_fetcher.GetIfChanged(local_path)
     with open(local_path, 'rb') as f:
       local_hash = hashlib.md5(f.read()).hexdigest()
-    device_md5_out = self.underlying_device.old_interface.RunShellCommand(
+    device_md5_out = self.underlying_device.RunShellCommand(
         'md5 "%s"' % path_on_device)
     if local_hash in device_md5_out:
       return
     self.underlying_device.old_interface.Adb().Push(local_path, path_on_device)
-    self.underlying_device.old_interface.RunShellCommand(
-        'chmod 755 "%s"' % path_on_device)
+    self.underlying_device.RunShellCommand('chmod 755 "%s"' % path_on_device)
 
   @property
   def name(self):
@@ -309,7 +315,7 @@ class AndroidProcess(backends.Process):
   def DumpMemoryMaps(self):
     """Grabs and parses memory maps through memdump."""
     cmd = '%s %d' % (_MEMDUMP_PATH_ON_DEVICE, self.pid)
-    dump_out = self.device.underlying_device.old_interface.RunShellCommand(cmd)
+    dump_out = self.device.underlying_device.RunShellCommand(cmd)
     return memdump_parser.Parse(dump_out)
 
   def DumpNativeHeap(self):
@@ -317,14 +323,13 @@ class AndroidProcess(backends.Process):
     # TODO(primiano): grab also mmap bt (depends on pending framework change).
     dump_file_path = _DUMPHEAP_OUT_FILE_PATH % self.pid
     cmd = 'am dumpheap -n %d %s' % (self.pid, dump_file_path)
-    self.device.underlying_device.old_interface.RunShellCommand(cmd)
+    self.device.underlying_device.RunShellCommand(cmd)
     # TODO(primiano): Some pre-KK versions of Android might need a sleep here
     # as, IIRC, 'am dumpheap' did not wait for the dump to be completed before
     # returning. Double check this and either add a sleep or remove this TODO.
     dump_out = self.device.underlying_device.old_interface.GetFileContents(
         dump_file_path)
-    self.device.underlying_device.old_interface.RunShellCommand(
-        'rm %s' % dump_file_path)
+    self.device.underlying_device.RunShellCommand('rm %s' % dump_file_path)
     return dumpheap_native_parser.Parse(dump_out)
 
   def GetStats(self):

@@ -28,6 +28,7 @@
 #ifndef HTMLCanvasElement_h
 #define HTMLCanvasElement_h
 
+#include "core/dom/Document.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/canvas/CanvasImageSource.h"
 #include "platform/geometry/FloatRect.h"
@@ -54,19 +55,22 @@ class ImageBuffer;
 class ImageBufferSurface;
 class IntSize;
 
-class CanvasObserver {
+class CanvasObserver : public WillBeGarbageCollectedMixin {
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(CanvasObserver);
 public:
-    virtual ~CanvasObserver() { }
-
     virtual void canvasChanged(HTMLCanvasElement*, const FloatRect& changedRect) = 0;
     virtual void canvasResized(HTMLCanvasElement*) = 0;
+#if !ENABLE(OILPAN)
     virtual void canvasDestroyed(HTMLCanvasElement*) = 0;
+#endif
+
+    virtual void trace(Visitor*) { }
 };
 
 class HTMLCanvasElement FINAL : public HTMLElement, public DocumentVisibilityObserver, public CanvasImageSource, public ImageBufferClient {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLCanvasElement);
 public:
-    static PassRefPtrWillBeRawPtr<HTMLCanvasElement> create(Document&);
+    DECLARE_NODE_FACTORY(HTMLCanvasElement);
     virtual ~HTMLCanvasElement();
 
     void addObserver(CanvasObserver*);
@@ -173,9 +177,9 @@ private:
 
     void updateExternallyAllocatedMemory() const;
 
-    String toDataURLInternal(const String& mimeType, const double* quality) const;
+    String toDataURLInternal(const String& mimeType, const double* quality, bool isSaving = false) const;
 
-    HashSet<CanvasObserver*> m_observers;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<CanvasObserver> > m_observers;
 
     IntSize m_size;
 

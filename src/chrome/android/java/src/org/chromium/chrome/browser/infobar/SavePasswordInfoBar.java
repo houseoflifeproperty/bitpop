@@ -20,8 +20,8 @@ public class SavePasswordInfoBar extends ConfirmInfoBar {
     public SavePasswordInfoBar(long nativeInfoBar, SavePasswordInfoBarDelegate delegate,
             int iconDrawableId, String message, String primaryButtonText,
             String secondaryButtonText) {
-        super(nativeInfoBar, null, InfoBar.BACKGROUND_TYPE_WARNING, iconDrawableId,
-                message, null, primaryButtonText, secondaryButtonText);
+        super(nativeInfoBar, null, iconDrawableId, message,
+                null, primaryButtonText, secondaryButtonText);
         mNativeInfoBar = nativeInfoBar;
         mDelegate = delegate;
     }
@@ -32,7 +32,7 @@ public class SavePasswordInfoBar extends ConfirmInfoBar {
             mUseAdditionalAuthenticationCheckbox = new CheckBox(getContext());
             mUseAdditionalAuthenticationCheckbox.setText(
                     PasswordAuthenticationManager.getPasswordProtectionString());
-            layout.addGroup(mUseAdditionalAuthenticationCheckbox);
+            layout.setCustomContent(mUseAdditionalAuthenticationCheckbox);
         }
 
         super.createContent(layout);

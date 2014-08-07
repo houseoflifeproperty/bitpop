@@ -10,6 +10,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_task_manager.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_task_token.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
@@ -59,8 +60,10 @@ class TaskManagerClient
         idle_task_scheduled_count_(0),
         last_operation_status_(SYNC_STATUS_OK) {
     task_manager_.reset(new SyncTaskManager(
-        AsWeakPtr(), maximum_background_task));
+        AsWeakPtr(), maximum_background_task,
+        base::MessageLoopProxy::current()));
     task_manager_->Initialize(SYNC_STATUS_OK);
+    base::MessageLoop::current()->RunUntilIdle();
     maybe_schedule_next_task_count_ = 0;
   }
   virtual ~TaskManagerClient() {}
@@ -74,6 +77,8 @@ class TaskManagerClient
       bool last_operation_used_network) OVERRIDE {
     last_operation_status_ = last_operation_status;
   }
+
+  virtual void RecordTaskLog(scoped_ptr<TaskLogger::TaskLog>) OVERRIDE {}
 
   void ScheduleTask(SyncStatusCode status_to_return,
                     const SyncStatusCallback& callback) {
@@ -390,8 +395,10 @@ TEST(SyncTaskManagerTest, ScheduleAndCancelSyncTask) {
 
   {
     SyncTaskManager task_manager(base::WeakPtr<SyncTaskManager::Client>(),
-                                 0 /* maximum_background_task */);
+                                 0 /* maximum_background_task */,
+                                 base::MessageLoopProxy::current());
     task_manager.Initialize(SYNC_STATUS_OK);
+    message_loop.RunUntilIdle();
     task_manager.ScheduleSyncTask(
         FROM_HERE,
         scoped_ptr<SyncTask>(new MultihopSyncTask(
@@ -399,8 +406,8 @@ TEST(SyncTaskManagerTest, ScheduleAndCancelSyncTask) {
         SyncTaskManager::PRIORITY_MED,
         base::Bind(&IncrementAndAssign, 0, &callback_count, &status));
   }
-
   message_loop.RunUntilIdle();
+
   EXPECT_EQ(0, callback_count);
   EXPECT_EQ(SYNC_STATUS_UNKNOWN, status);
   EXPECT_TRUE(task_started);
@@ -410,8 +417,10 @@ TEST(SyncTaskManagerTest, ScheduleAndCancelSyncTask) {
 TEST(SyncTaskManagerTest, ScheduleTaskAtPriority) {
   base::MessageLoop message_loop;
   SyncTaskManager task_manager(base::WeakPtr<SyncTaskManager::Client>(),
-                               0 /* maximum_background_task */);
+                               0 /* maximum_background_task */,
+                               base::MessageLoopProxy::current());
   task_manager.Initialize(SYNC_STATUS_OK);
+  message_loop.RunUntilIdle();
 
   int callback_count = 0;
   SyncStatusCode callback_status1 = SYNC_STATUS_OK;
@@ -469,7 +478,8 @@ TEST(SyncTaskManagerTest, ScheduleTaskAtPriority) {
 TEST(SyncTaskManagerTest, BackgroundTask_Sequential) {
   base::MessageLoop message_loop;
   SyncTaskManager task_manager(base::WeakPtr<SyncTaskManager::Client>(),
-                               10 /* maximum_background_task */);
+                               10 /* maximum_background_task */,
+                               base::MessageLoopProxy::current());
   task_manager.Initialize(SYNC_STATUS_OK);
 
   SyncStatusCode status = SYNC_STATUS_FAILED;
@@ -509,7 +519,8 @@ TEST(SyncTaskManagerTest, BackgroundTask_Sequential) {
 TEST(SyncTaskManagerTest, BackgroundTask_Parallel) {
   base::MessageLoop message_loop;
   SyncTaskManager task_manager(base::WeakPtr<SyncTaskManager::Client>(),
-                               10 /* maximum_background_task */);
+                               10 /* maximum_background_task */,
+                               base::MessageLoopProxy::current());
   task_manager.Initialize(SYNC_STATUS_OK);
 
   SyncStatusCode status = SYNC_STATUS_FAILED;
@@ -549,7 +560,8 @@ TEST(SyncTaskManagerTest, BackgroundTask_Parallel) {
 TEST(SyncTaskManagerTest, BackgroundTask_Throttled) {
   base::MessageLoop message_loop;
   SyncTaskManager task_manager(base::WeakPtr<SyncTaskManager::Client>(),
-                               2 /* maximum_background_task */);
+                               2 /* maximum_background_task */,
+                               base::MessageLoopProxy::current());
   task_manager.Initialize(SYNC_STATUS_OK);
 
   SyncStatusCode status = SYNC_STATUS_FAILED;
@@ -589,10 +601,12 @@ TEST(SyncTaskManagerTest, BackgroundTask_Throttled) {
 TEST(SyncTaskManagerTest, UpdateBlockingFactor) {
   base::MessageLoop message_loop;
   SyncTaskManager task_manager(base::WeakPtr<SyncTaskManager::Client>(),
-                               10 /* maximum_background_task */);
+                               10 /* maximum_background_task */,
+                               base::MessageLoopProxy::current());
   task_manager.Initialize(SYNC_STATUS_OK);
 
-  SyncStatusCode status = SYNC_STATUS_FAILED;
+  SyncStatusCode status1 = SYNC_STATUS_FAILED;
+  SyncStatusCode status2 = SYNC_STATUS_FAILED;
   BlockerUpdateTestHelper::Log log;
 
   {
@@ -605,7 +619,7 @@ TEST(SyncTaskManagerTest, UpdateBlockingFactor) {
         scoped_ptr<SyncTask>(new BlockerUpdateTestHelper(
             "task1", "app_id", paths, &log)),
         SyncTaskManager::PRIORITY_MED,
-        CreateResultReceiver(&status));
+        CreateResultReceiver(&status1));
   }
 
   {
@@ -618,22 +632,23 @@ TEST(SyncTaskManagerTest, UpdateBlockingFactor) {
         scoped_ptr<SyncTask>(new BlockerUpdateTestHelper(
             "task2", "app_id", paths, &log)),
         SyncTaskManager::PRIORITY_MED,
-        CreateResultReceiver(&status));
+        CreateResultReceiver(&status2));
   }
 
   message_loop.RunUntilIdle();
 
-  EXPECT_EQ(SYNC_STATUS_OK, status);
+  EXPECT_EQ(SYNC_STATUS_OK, status1);
+  EXPECT_EQ(SYNC_STATUS_OK, status2);
 
   ASSERT_EQ(14u, log.size());
   int i = 0;
 
   // task1 takes "/foo/bar" first.
   EXPECT_EQ("task1: updating to /foo/bar", log[i++]);
-  EXPECT_EQ("task1: updated to /foo/bar", log[i++]);
 
-  // task1 blocks task2. task2's update should be pending until task1 update.
+  // task1 blocks task2. task2's update should not complete until task1 update.
   EXPECT_EQ("task2: updating to /foo", log[i++]);
+  EXPECT_EQ("task1: updated to /foo/bar", log[i++]);
 
   // task1 releases "/foo/bar" and tries to take "/foo". Then, pending task2
   // takes "/foo" and blocks task1.

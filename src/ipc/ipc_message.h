@@ -121,6 +121,14 @@ class IPC_EXPORT Message : public Pickle {
     return (header()->flags & PUMPING_MSGS_BIT) != 0;
   }
 
+  void set_dispatch_error() const {
+    dispatch_error_ = true;
+  }
+
+  bool dispatch_error() const {
+    return dispatch_error_;
+  }
+
   uint32 type() const {
     return header()->type;
   }
@@ -141,31 +149,17 @@ class IPC_EXPORT Message : public Pickle {
   // call.
   void SetHeaderValues(int32 routing, uint32 type, uint32 flags);
 
-  template<class T, class S>
-  static bool Dispatch(const Message* msg, T* obj, S* sender,
+  template<class T, class S, class P>
+  static bool Dispatch(const Message* msg, T* obj, S* sender, P* parameter,
                        void (T::*func)()) {
     (obj->*func)();
     return true;
   }
 
-  template<class T, class S>
-  static bool Dispatch(const Message* msg, T* obj, S* sender,
-                       void (T::*func)() const) {
-    (obj->*func)();
-    return true;
-  }
-
-  template<class T, class S>
-  static bool Dispatch(const Message* msg, T* obj, S* sender,
-                       void (T::*func)(const Message&)) {
-    (obj->*func)(*msg);
-    return true;
-  }
-
-  template<class T, class S>
-  static bool Dispatch(const Message* msg, T* obj, S* sender,
-                       void (T::*func)(const Message&) const) {
-    (obj->*func)(*msg);
+  template<class T, class S, class P>
+  static bool Dispatch(const Message* msg, T* obj, S* sender, P* parameter,
+                       void (T::*func)(P*)) {
+    (obj->*func)(parameter);
     return true;
   }
 
@@ -228,6 +222,9 @@ class IPC_EXPORT Message : public Pickle {
 
  protected:
   friend class Channel;
+  friend class ChannelNacl;
+  friend class ChannelPosix;
+  friend class ChannelWin;
   friend class MessageReplyDeserializer;
   friend class SyncMessage;
 
@@ -250,7 +247,10 @@ class IPC_EXPORT Message : public Pickle {
     return headerT<Header>();
   }
 
-  void InitLoggingVariables();
+  void Init();
+
+  // Used internally to support IPC::Listener::OnBadMessageReceived.
+  mutable bool dispatch_error_;
 
 #if defined(OS_POSIX)
   // The set of file descriptors associated with this message.

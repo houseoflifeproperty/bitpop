@@ -101,6 +101,11 @@ private:
     SkDraw          fDraw;
     SkRasterClip    fRasterClip;
 
+    // Actually sends the texture data to the GPU. This is called from
+    // toTexture with the data filled in depending on the texture config.
+    void sendTextureData(GrTexture *texture, const GrTextureDesc& desc,
+                         const void *data, int rowbytes);
+
     typedef SkNoncopyable INHERITED;
 };
 

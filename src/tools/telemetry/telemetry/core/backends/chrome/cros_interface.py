@@ -196,7 +196,7 @@ class CrOSInterface(object):
       if "Connection timed out" in stderr:
         raise OSError('Machine wasn\'t responding to ssh: %s' %
                       stderr)
-      raise OSError('Unepected error: %s' % stderr)
+      raise OSError('Unexpected error: %s' % stderr)
     exists = stdout == '1\n'
     logging.debug("FileExistsOnDevice(<text>, %s)->%s" % (file_name, exists))
     return exists
@@ -297,7 +297,8 @@ class CrOSInterface(object):
     """Returns the pid of the session_manager process, given the list of
     processes."""
     for pid, process, _, _ in procs:
-      if process.startswith('/sbin/session_manager '):
+      argv = process.split()
+      if argv and os.path.basename(argv[0]) == 'session_manager':
         return pid
     return None
 
@@ -401,8 +402,11 @@ class CrOSInterface(object):
 
   def CryptohomePath(self, user):
     """Returns the cryptohome mount point for |user|."""
-    return self.RunCmdOnDevice(
-        ['cryptohome-path', 'user', "'%s'" % user])[0].strip()
+    stdout, stderr = self.RunCmdOnDevice(
+        ['cryptohome-path', 'user', "'%s'" % user])
+    if stderr != '':
+      raise OSError('cryptohome-path failed: %s' % stderr)
+    return stdout.rstrip()
 
   def IsCryptohomeMounted(self, username, is_guest):
     """Returns True iff |user|'s cryptohome is mounted."""

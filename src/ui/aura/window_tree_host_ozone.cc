@@ -5,26 +5,18 @@
 #include "ui/aura/window_tree_host_ozone.h"
 
 #include "ui/aura/window_event_dispatcher.h"
-#include "ui/base/cursor/ozone/cursor_factory_ozone.h"
-#include "ui/events/ozone/event_factory_ozone.h"
 #include "ui/events/platform/platform_event_source.h"
-#include "ui/gfx/ozone/surface_factory_ozone.h"
-#include "ui/ozone/ozone_platform.h"
+#include "ui/ozone/public/cursor_factory_ozone.h"
+#include "ui/ozone/public/event_factory_ozone.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace aura {
 
 WindowTreeHostOzone::WindowTreeHostOzone(const gfx::Rect& bounds)
     : widget_(0),
       bounds_(bounds) {
-  ui::OzonePlatform::Initialize();
-
-  // EventFactoryOzone creates converters that obtain input events from the
-  // underlying input system and dispatch them as |ui::Event| instances into
-  // Aura.
-  ui::EventFactoryOzone::GetInstance()->StartProcessingEvents();
-
-  gfx::SurfaceFactoryOzone* surface_factory =
-      gfx::SurfaceFactoryOzone::GetInstance();
+  ui::SurfaceFactoryOzone* surface_factory =
+      ui::SurfaceFactoryOzone::GetInstance();
   widget_ = surface_factory->GetAcceleratedWidget();
 
   ui::PlatformEventSource::GetInstance()->AddPlatformEventDispatcher(this);

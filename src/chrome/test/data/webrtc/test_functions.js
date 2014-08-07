@@ -14,14 +14,24 @@ function debug(txt) {
 }
 
 /**
- * Sends a value back to the test.
+ * Sends a value back to the test without logging it.
+ *
+ * @param {string} message The message to return.
+ */
+function silentReturnToTest(message) {
+  window.domAutomationController.send(message);
+}
+
+/**
+ * Sends a value back to the test and logs it.
  *
  * @param {string} message The message to return.
  */
 function returnToTest(message) {
   debug('Returning ' + message + ' to test.');
-  window.domAutomationController.send(message);
+  silentReturnToTest(message);
 }
+
 
 /**
  * Fails the test by generating an exception. If the test automation is calling
@@ -33,6 +43,7 @@ function returnToTest(message) {
  * @return {!Error}
  */
 function failTest(reason) {
-  returnToTest('Test failed: ' + reason);
-  return new Error(reason);
+  var error = new Error(reason);
+  returnToTest('Test failed: ' + error.stack);
+  return error;
 }

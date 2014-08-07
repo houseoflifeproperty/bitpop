@@ -14,7 +14,9 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/containers/hash_tables.h"
+#include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -343,12 +345,17 @@ WebSocketBasicHandshakeStream::WebSocketBasicHandshakeStream(
     WebSocketStream::ConnectDelegate* connect_delegate,
     bool using_proxy,
     std::vector<std::string> requested_sub_protocols,
-    std::vector<std::string> requested_extensions)
+    std::vector<std::string> requested_extensions,
+    std::string* failure_message)
     : state_(connection.release(), using_proxy),
       connect_delegate_(connect_delegate),
       http_response_info_(NULL),
       requested_sub_protocols_(requested_sub_protocols),
-      requested_extensions_(requested_extensions) {}
+      requested_extensions_(requested_extensions),
+      failure_message_(failure_message) {
+  DCHECK(connect_delegate);
+  DCHECK(failure_message);
+}
 
 WebSocketBasicHandshakeStream::~WebSocketBasicHandshakeStream() {}
 
@@ -423,10 +430,6 @@ int WebSocketBasicHandshakeStream::ReadResponseHeaders(
   if (rv == ERR_IO_PENDING)
     return rv;
   return ValidateResponse(rv);
-}
-
-const HttpResponseInfo* WebSocketBasicHandshakeStream::GetResponseInfo() const {
-  return parser()->GetResponseInfo();
 }
 
 int WebSocketBasicHandshakeStream::ReadResponseBody(
@@ -527,10 +530,6 @@ void WebSocketBasicHandshakeStream::SetWebSocketKeyForTesting(
   handshake_challenge_for_testing_.reset(new std::string(key));
 }
 
-std::string WebSocketBasicHandshakeStream::GetFailureMessage() const {
-  return failure_message_;
-}
-
 void WebSocketBasicHandshakeStream::ReadResponseHeadersCallback(
     const CompletionCallback& callback,
     int result) {
@@ -556,9 +555,14 @@ void WebSocketBasicHandshakeStream::OnFinishOpeningHandshake() {
 
 int WebSocketBasicHandshakeStream::ValidateResponse(int rv) {
   DCHECK(http_response_info_);
-  const HttpResponseHeaders* headers = http_response_info_->headers.get();
+  // Most net errors happen during connection, so they are not seen by this
+  // method. The histogram for error codes is created in
+  // Delegate::OnResponseStarted in websocket_stream.cc instead.
   if (rv >= 0) {
-    switch (headers->response_code()) {
+    const HttpResponseHeaders* headers = http_response_info_->headers.get();
+    const int response_code = headers->response_code();
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.WebSocket.ResponseCode", response_code);
+    switch (response_code) {
       case HTTP_SWITCHING_PROTOCOLS:
         OnFinishOpeningHandshake();
         return ValidateUpgradeResponse(headers);
@@ -576,24 +580,24 @@ int WebSocketBasicHandshakeStream::ValidateResponse(int rv) {
         // Reporting "Unexpected response code: 200" in this case is not
         // helpful, so use a different error message.
         if (headers->GetHttpVersion() == HttpVersion(0, 9)) {
-          failure_message_ =
-              "Error during WebSocket handshake: Invalid status line";
+          set_failure_message(
+              "Error during WebSocket handshake: Invalid status line");
         } else {
-          failure_message_ = base::StringPrintf(
+          set_failure_message(base::StringPrintf(
               "Error during WebSocket handshake: Unexpected response code: %d",
-              headers->response_code());
+              headers->response_code()));
         }
         OnFinishOpeningHandshake();
         return ERR_INVALID_RESPONSE;
     }
   } else {
     if (rv == ERR_EMPTY_RESPONSE) {
-      failure_message_ =
-          "Connection closed before receiving a handshake response";
+      set_failure_message(
+          "Connection closed before receiving a handshake response");
       return rv;
     }
-    failure_message_ =
-        std::string("Error during WebSocket handshake: ") + ErrorToString(rv);
+    set_failure_message(std::string("Error during WebSocket handshake: ") +
+                        ErrorToString(rv));
     OnFinishOpeningHandshake();
     return rv;
   }
@@ -602,24 +606,29 @@ int WebSocketBasicHandshakeStream::ValidateResponse(int rv) {
 int WebSocketBasicHandshakeStream::ValidateUpgradeResponse(
     const HttpResponseHeaders* headers) {
   extension_params_.reset(new WebSocketExtensionParams);
-  if (ValidateUpgrade(headers, &failure_message_) &&
-      ValidateSecWebSocketAccept(headers,
-                                 handshake_challenge_response_,
-                                 &failure_message_) &&
-      ValidateConnection(headers, &failure_message_) &&
+  std::string failure_message;
+  if (ValidateUpgrade(headers, &failure_message) &&
+      ValidateSecWebSocketAccept(
+          headers, handshake_challenge_response_, &failure_message) &&
+      ValidateConnection(headers, &failure_message) &&
       ValidateSubProtocol(headers,
                           requested_sub_protocols_,
                           &sub_protocol_,
-                          &failure_message_) &&
+                          &failure_message) &&
       ValidateExtensions(headers,
                          requested_extensions_,
                          &extensions_,
-                         &failure_message_,
+                         &failure_message,
                          extension_params_.get())) {
     return OK;
   }
-  failure_message_ = "Error during WebSocket handshake: " + failure_message_;
+  set_failure_message("Error during WebSocket handshake: " + failure_message);
   return ERR_INVALID_RESPONSE;
+}
+
+void WebSocketBasicHandshakeStream::set_failure_message(
+    const std::string& failure_message) {
+  *failure_message_ = failure_message;
 }
 
 }  // namespace net

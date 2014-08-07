@@ -22,8 +22,7 @@
 
 #include "core/svg/SVGFETurbulenceElement.h"
 
-#include "SVGNames.h"
-#include "core/svg/SVGElementInstance.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGParserUtilities.h"
 
 namespace WebCore {
@@ -65,10 +64,7 @@ inline SVGFETurbulenceElement::SVGFETurbulenceElement(Document& document)
     addToPropertyMap(m_numOctaves);
 }
 
-PassRefPtr<SVGFETurbulenceElement> SVGFETurbulenceElement::create(Document& document)
-{
-    return adoptRef(new SVGFETurbulenceElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFETurbulenceElement)
 
 bool SVGFETurbulenceElement::isSupportedAttribute(const QualifiedName& attrName)
 {

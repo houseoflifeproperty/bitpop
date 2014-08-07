@@ -105,6 +105,11 @@ class CC_EXPORT OutputSurface {
   // thread.
   virtual bool BindToClient(OutputSurfaceClient* client);
 
+  // This is called by the compositor on the compositor thread inside ReleaseGL
+  // in order to release the ContextProvider. Only used with
+  // deferred_gl_initialization capability.
+  void ReleaseContextProvider();
+
   // Enable or disable vsync.
   void SetThrottleFrameProduction(bool enable);
 
@@ -120,6 +125,7 @@ class CC_EXPORT OutputSurface {
   // passed in (though it will not take ownership of the CompositorFrame
   // itself).
   virtual void SwapBuffers(CompositorFrame* frame);
+  virtual void OnSwapBuffersComplete();
 
   // Notifies frame-rate smoothness preference. If true, all non-critical
   // processing should be stopped, or lowered in priority.
@@ -176,8 +182,6 @@ class CC_EXPORT OutputSurface {
   void ResetContext3d();
   void SetMemoryPolicy(const ManagedMemoryPolicy& policy);
   void UpdateAndMeasureGpuLatency();
-
-  void OnSwapBuffersComplete();
 
   bool external_stencil_test_enabled_;
 

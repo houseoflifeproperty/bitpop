@@ -5,7 +5,9 @@
 #include <errno.h>
 #include <pthread.h>
 #include <sched.h>
+#include <signal.h>
 #include <sys/prctl.h>
+#include <sys/ptrace.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -22,7 +24,9 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/posix/eintr_wrapper.h"
 #include "build/build_config.h"
 #include "sandbox/linux/seccomp-bpf/bpf_tests.h"
 #include "sandbox/linux/seccomp-bpf/syscall.h"
@@ -78,81 +82,95 @@ SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(CallSupportsTwice)) {
 // setting up the sandbox. But it wouldn't hurt to have at least one test
 // that explicitly walks through all these steps.
 
-intptr_t FakeGetPid(const struct arch_seccomp_data& args, void* aux) {
+intptr_t IncreaseCounter(const struct arch_seccomp_data& args, void* aux) {
   BPF_ASSERT(aux);
-  pid_t* pid_ptr = static_cast<pid_t*>(aux);
-  return (*pid_ptr)++;
+  int* counter = static_cast<int*>(aux);
+  return (*counter)++;
 }
 
-ErrorCode VerboseAPITestingPolicy(SandboxBPF* sandbox, int sysno, void* aux) {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    return ErrorCode(ENOSYS);
-  } else if (sysno == __NR_getpid) {
-    return sandbox->Trap(FakeGetPid, aux);
-  } else {
+class VerboseAPITestingPolicy : public SandboxBPFPolicy {
+ public:
+  VerboseAPITestingPolicy(int* counter_ptr) : counter_ptr_(counter_ptr) {}
+
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE {
+    DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
+    if (sysno == __NR_uname) {
+      return sandbox->Trap(IncreaseCounter, counter_ptr_);
+    }
     return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
-}
+
+ private:
+  int* counter_ptr_;
+  DISALLOW_COPY_AND_ASSIGN(VerboseAPITestingPolicy);
+};
 
 SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(VerboseAPITesting)) {
   if (SandboxBPF::SupportsSeccompSandbox(-1) ==
       sandbox::SandboxBPF::STATUS_AVAILABLE) {
-    pid_t test_var = 0;
+    static int counter = 0;
+
     SandboxBPF sandbox;
-    sandbox.SetSandboxPolicyDeprecated(VerboseAPITestingPolicy, &test_var);
+    sandbox.SetSandboxPolicy(new VerboseAPITestingPolicy(&counter));
     BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::PROCESS_SINGLE_THREADED));
 
-    BPF_ASSERT(test_var == 0);
-    BPF_ASSERT(syscall(__NR_getpid) == 0);
-    BPF_ASSERT(test_var == 1);
-    BPF_ASSERT(syscall(__NR_getpid) == 1);
-    BPF_ASSERT(test_var == 2);
-
-    // N.B.: Any future call to getpid() would corrupt the stack.
-    //       This is OK. The SANDBOX_TEST() macro is guaranteed to
-    //       only ever call _exit() after the test completes.
+    BPF_ASSERT_EQ(0, counter);
+    BPF_ASSERT_EQ(0, syscall(__NR_uname, 0));
+    BPF_ASSERT_EQ(1, counter);
+    BPF_ASSERT_EQ(1, syscall(__NR_uname, 0));
+    BPF_ASSERT_EQ(2, counter);
   }
 }
 
 // A simple blacklist test
 
-ErrorCode BlacklistNanosleepPolicy(SandboxBPF*, int sysno, void* aux) {
-  // Since no type was specified in BPF_TEST as a fourth argument,
-  // |aux| must be NULL here.
-  BPF_ASSERT(NULL == aux);
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy
-    return ErrorCode(ENOSYS);
+class BlacklistNanosleepPolicy : public SandboxBPFPolicy {
+ public:
+  BlacklistNanosleepPolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF*, int sysno) const OVERRIDE {
+    DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
+    switch (sysno) {
+      case __NR_nanosleep:
+        return ErrorCode(EACCES);
+      default:
+        return ErrorCode(ErrorCode::ERR_ALLOWED);
+    }
   }
 
-  switch (sysno) {
-    case __NR_nanosleep:
-      return ErrorCode(EACCES);
-    default:
-      return ErrorCode(ErrorCode::ERR_ALLOWED);
-  }
-}
+ private:
+  DISALLOW_COPY_AND_ASSIGN(BlacklistNanosleepPolicy);
+};
 
-BPF_TEST(SandboxBPF, ApplyBasicBlacklistPolicy, BlacklistNanosleepPolicy) {
+BPF_TEST_C(SandboxBPF, ApplyBasicBlacklistPolicy, BlacklistNanosleepPolicy) {
   // nanosleep() should be denied
   const struct timespec ts = {0, 0};
   errno = 0;
   BPF_ASSERT(syscall(__NR_nanosleep, &ts, NULL) == -1);
   BPF_ASSERT(errno == EACCES);
 }
+
 // Now do a simple whitelist test
 
-ErrorCode WhitelistGetpidPolicy(SandboxBPF*, int sysno, void*) {
-  switch (sysno) {
-    case __NR_getpid:
-    case __NR_exit_group:
-      return ErrorCode(ErrorCode::ERR_ALLOWED);
-    default:
-      return ErrorCode(ENOMEM);
+class WhitelistGetpidPolicy : public SandboxBPFPolicy {
+ public:
+  WhitelistGetpidPolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF*, int sysno) const OVERRIDE {
+    DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
+    switch (sysno) {
+      case __NR_getpid:
+      case __NR_exit_group:
+        return ErrorCode(ErrorCode::ERR_ALLOWED);
+      default:
+        return ErrorCode(ENOMEM);
+    }
   }
-}
 
-BPF_TEST(SandboxBPF, ApplyBasicWhitelistPolicy, WhitelistGetpidPolicy) {
+ private:
+  DISALLOW_COPY_AND_ASSIGN(WhitelistGetpidPolicy);
+};
+
+BPF_TEST_C(SandboxBPF, ApplyBasicWhitelistPolicy, WhitelistGetpidPolicy) {
   // getpid() should be allowed
   errno = 0;
   BPF_ASSERT(syscall(__NR_getpid) > 0);
@@ -174,11 +192,7 @@ intptr_t EnomemHandler(const struct arch_seccomp_data& args, void* aux) {
 ErrorCode BlacklistNanosleepPolicySigsys(SandboxBPF* sandbox,
                                          int sysno,
                                          int* aux) {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy
-    return ErrorCode(ENOSYS);
-  }
-
+  DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
   switch (sysno) {
     case __NR_nanosleep:
       return sandbox->Trap(EnomemHandler, aux);
@@ -208,12 +222,17 @@ BPF_TEST(SandboxBPF,
 
 // A simple test that verifies we can return arbitrary errno values.
 
-ErrorCode ErrnoTestPolicy(SandboxBPF*, int sysno, void*) {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy
-    return ErrorCode(ENOSYS);
-  }
+class ErrnoTestPolicy : public SandboxBPFPolicy {
+ public:
+  ErrnoTestPolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF*, int sysno) const OVERRIDE;
 
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ErrnoTestPolicy);
+};
+
+ErrorCode ErrnoTestPolicy::EvaluateSyscall(SandboxBPF*, int sysno) const {
+  DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
   switch (sysno) {
 #if defined(ANDROID)
     case __NR_dup3:    // dup2 is a wrapper of dup3 in android
@@ -242,7 +261,7 @@ ErrorCode ErrnoTestPolicy(SandboxBPF*, int sysno, void*) {
   }
 }
 
-BPF_TEST(SandboxBPF, ErrnoTest, ErrnoTestPolicy) {
+BPF_TEST_C(SandboxBPF, ErrnoTest, ErrnoTestPolicy) {
   // Verify that dup2() returns success, but doesn't actually run.
   int fds[4];
   BPF_ASSERT(pipe(fds) == 0);
@@ -284,43 +303,53 @@ BPF_TEST(SandboxBPF, ErrnoTest, ErrnoTestPolicy) {
 
 // Testing the stacking of two sandboxes
 
-ErrorCode StackingPolicyPartOne(SandboxBPF* sandbox, int sysno, void*) {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    return ErrorCode(ENOSYS);
+class StackingPolicyPartOne : public SandboxBPFPolicy {
+ public:
+  StackingPolicyPartOne() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE {
+    DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
+    switch (sysno) {
+      case __NR_getppid:
+        return sandbox->Cond(0,
+                             ErrorCode::TP_32BIT,
+                             ErrorCode::OP_EQUAL,
+                             0,
+                             ErrorCode(ErrorCode::ERR_ALLOWED),
+                             ErrorCode(EPERM));
+      default:
+        return ErrorCode(ErrorCode::ERR_ALLOWED);
+    }
   }
 
-  switch (sysno) {
-    case __NR_getppid:
-      return sandbox->Cond(0,
-                           ErrorCode::TP_32BIT,
-                           ErrorCode::OP_EQUAL,
-                           0,
-                           ErrorCode(ErrorCode::ERR_ALLOWED),
-                           ErrorCode(EPERM));
-    default:
-      return ErrorCode(ErrorCode::ERR_ALLOWED);
-  }
-}
+ private:
+  DISALLOW_COPY_AND_ASSIGN(StackingPolicyPartOne);
+};
 
-ErrorCode StackingPolicyPartTwo(SandboxBPF* sandbox, int sysno, void*) {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    return ErrorCode(ENOSYS);
+class StackingPolicyPartTwo : public SandboxBPFPolicy {
+ public:
+  StackingPolicyPartTwo() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE {
+    DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
+    switch (sysno) {
+      case __NR_getppid:
+        return sandbox->Cond(0,
+                             ErrorCode::TP_32BIT,
+                             ErrorCode::OP_EQUAL,
+                             0,
+                             ErrorCode(EINVAL),
+                             ErrorCode(ErrorCode::ERR_ALLOWED));
+      default:
+        return ErrorCode(ErrorCode::ERR_ALLOWED);
+    }
   }
 
-  switch (sysno) {
-    case __NR_getppid:
-      return sandbox->Cond(0,
-                           ErrorCode::TP_32BIT,
-                           ErrorCode::OP_EQUAL,
-                           0,
-                           ErrorCode(EINVAL),
-                           ErrorCode(ErrorCode::ERR_ALLOWED));
-    default:
-      return ErrorCode(ErrorCode::ERR_ALLOWED);
-  }
-}
+ private:
+  DISALLOW_COPY_AND_ASSIGN(StackingPolicyPartTwo);
+};
 
-BPF_TEST(SandboxBPF, StackingPolicy, StackingPolicyPartOne) {
+BPF_TEST_C(SandboxBPF, StackingPolicy, StackingPolicyPartOne) {
   errno = 0;
   BPF_ASSERT(syscall(__NR_getppid, 0) > 0);
   BPF_ASSERT(errno == 0);
@@ -331,7 +360,7 @@ BPF_TEST(SandboxBPF, StackingPolicy, StackingPolicyPartOne) {
   // Stack a second sandbox with its own policy. Verify that we can further
   // restrict filters, but we cannot relax existing filters.
   SandboxBPF sandbox;
-  sandbox.SetSandboxPolicyDeprecated(StackingPolicyPartTwo, NULL);
+  sandbox.SetSandboxPolicy(new StackingPolicyPartTwo());
   BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::PROCESS_SINGLE_THREADED));
 
   errno = 0;
@@ -357,22 +386,24 @@ int SysnoToRandomErrno(int sysno) {
   return ((sysno & ~3) >> 2) % 29 + 1;
 }
 
-ErrorCode SyntheticPolicy(SandboxBPF*, int sysno, void*) {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy
-    return ErrorCode(ENOSYS);
-  }
-
-  if (sysno == __NR_exit_group || sysno == __NR_write) {
-    // exit_group() is special, we really need it to work.
-    // write() is needed for BPF_ASSERT() to report a useful error message.
-    return ErrorCode(ErrorCode::ERR_ALLOWED);
-  } else {
+class SyntheticPolicy : public SandboxBPFPolicy {
+ public:
+  SyntheticPolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF*, int sysno) const OVERRIDE {
+    DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
+    if (sysno == __NR_exit_group || sysno == __NR_write) {
+      // exit_group() is special, we really need it to work.
+      // write() is needed for BPF_ASSERT() to report a useful error message.
+      return ErrorCode(ErrorCode::ERR_ALLOWED);
+    }
     return ErrorCode(SysnoToRandomErrno(sysno));
   }
-}
 
-BPF_TEST(SandboxBPF, SyntheticPolicy, SyntheticPolicy) {
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SyntheticPolicy);
+};
+
+BPF_TEST_C(SandboxBPF, SyntheticPolicy, SyntheticPolicy) {
   // Ensure that that kExpectedReturnValue + syscallnumber + 1 does not int
   // overflow.
   BPF_ASSERT(std::numeric_limits<int>::max() - kExpectedReturnValue - 1 >=
@@ -406,23 +437,25 @@ int ArmPrivateSysnoToErrno(int sysno) {
   }
 }
 
-ErrorCode ArmPrivatePolicy(SandboxBPF*, int sysno, void*) {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy.
-    return ErrorCode(ENOSYS);
-  }
-
-  // Start from |__ARM_NR_set_tls + 1| so as not to mess with actual
-  // ARM private system calls.
-  if (sysno >= static_cast<int>(__ARM_NR_set_tls + 1) &&
-      sysno <= static_cast<int>(MAX_PRIVATE_SYSCALL)) {
-    return ErrorCode(ArmPrivateSysnoToErrno(sysno));
-  } else {
+class ArmPrivatePolicy : public SandboxBPFPolicy {
+ public:
+  ArmPrivatePolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF*, int sysno) const OVERRIDE {
+    DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
+    // Start from |__ARM_NR_set_tls + 1| so as not to mess with actual
+    // ARM private system calls.
+    if (sysno >= static_cast<int>(__ARM_NR_set_tls + 1) &&
+        sysno <= static_cast<int>(MAX_PRIVATE_SYSCALL)) {
+      return ErrorCode(ArmPrivateSysnoToErrno(sysno));
+    }
     return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
-}
 
-BPF_TEST(SandboxBPF, ArmPrivatePolicy, ArmPrivatePolicy) {
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ArmPrivatePolicy);
+};
+
+BPF_TEST_C(SandboxBPF, ArmPrivatePolicy, ArmPrivatePolicy) {
   for (int syscall_number = static_cast<int>(__ARM_NR_set_tls + 1);
        syscall_number <= static_cast<int>(MAX_PRIVATE_SYSCALL);
        ++syscall_number) {
@@ -519,22 +552,29 @@ intptr_t PrctlHandler(const struct arch_seccomp_data& args, void*) {
   }
 }
 
-ErrorCode PrctlPolicy(SandboxBPF* sandbox, int sysno, void* aux) {
-  setenv(kSandboxDebuggingEnv, "t", 0);
-  Die::SuppressInfoMessages(true);
+class PrctlPolicy : public SandboxBPFPolicy {
+ public:
+  PrctlPolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE {
+    DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
+    setenv(kSandboxDebuggingEnv, "t", 0);
+    Die::SuppressInfoMessages(true);
 
-  if (sysno == __NR_prctl) {
-    // Handle prctl() inside an UnsafeTrap()
-    return sandbox->UnsafeTrap(PrctlHandler, NULL);
-  } else if (SandboxBPF::IsValidSyscallNumber(sysno)) {
+    if (sysno == __NR_prctl) {
+      // Handle prctl() inside an UnsafeTrap()
+      return sandbox->UnsafeTrap(PrctlHandler, NULL);
+    }
+
     // Allow all other system calls.
     return ErrorCode(ErrorCode::ERR_ALLOWED);
-  } else {
-    return ErrorCode(ENOSYS);
   }
-}
 
-BPF_TEST(SandboxBPF, ForwardSyscall, PrctlPolicy) {
+ private:
+  DISALLOW_COPY_AND_ASSIGN(PrctlPolicy);
+};
+
+BPF_TEST_C(SandboxBPF, ForwardSyscall, PrctlPolicy) {
   // This call should never be allowed. But our policy will intercept it and
   // let it pass successfully.
   BPF_ASSERT(
@@ -565,7 +605,19 @@ intptr_t AllowRedirectedSyscall(const struct arch_seccomp_data& args, void*) {
   return SandboxBPF::ForwardSyscall(args);
 }
 
-ErrorCode RedirectAllSyscallsPolicy(SandboxBPF* sandbox, int sysno, void* aux) {
+class RedirectAllSyscallsPolicy : public SandboxBPFPolicy {
+ public:
+  RedirectAllSyscallsPolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(RedirectAllSyscallsPolicy);
+};
+
+ErrorCode RedirectAllSyscallsPolicy::EvaluateSyscall(SandboxBPF* sandbox,
+                                                     int sysno) const {
+  DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
   setenv(kSandboxDebuggingEnv, "t", 0);
   Die::SuppressInfoMessages(true);
 
@@ -582,11 +634,8 @@ ErrorCode RedirectAllSyscallsPolicy(SandboxBPF* sandbox, int sysno, void* aux) {
 #endif
       ) {
     return ErrorCode(ErrorCode::ERR_ALLOWED);
-  } else if (SandboxBPF::IsValidSyscallNumber(sysno)) {
-    return sandbox->UnsafeTrap(AllowRedirectedSyscall, aux);
-  } else {
-    return ErrorCode(ENOSYS);
   }
+  return sandbox->UnsafeTrap(AllowRedirectedSyscall, NULL);
 }
 
 int bus_handler_fd_ = -1;
@@ -595,7 +644,7 @@ void SigBusHandler(int, siginfo_t* info, void* void_context) {
   BPF_ASSERT(write(bus_handler_fd_, "\x55", 1) == 1);
 }
 
-BPF_TEST(SandboxBPF, SigBus, RedirectAllSyscallsPolicy) {
+BPF_TEST_C(SandboxBPF, SigBus, RedirectAllSyscallsPolicy) {
   // We use the SIGBUS bit in the signal mask as a thread-local boolean
   // value in the implementation of UnsafeTrap(). This is obviously a bit
   // of a hack that could conceivably interfere with code that uses SIGBUS
@@ -618,7 +667,7 @@ BPF_TEST(SandboxBPF, SigBus, RedirectAllSyscallsPolicy) {
   BPF_ASSERT(c == 0x55);
 }
 
-BPF_TEST(SandboxBPF, SigMask, RedirectAllSyscallsPolicy) {
+BPF_TEST_C(SandboxBPF, SigMask, RedirectAllSyscallsPolicy) {
   // Signal masks are potentially tricky to handle. For instance, if we
   // ever tried to update them from inside a Trap() or UnsafeTrap() handler,
   // the call to sigreturn() at the end of the signal handler would undo
@@ -645,7 +694,7 @@ BPF_TEST(SandboxBPF, SigMask, RedirectAllSyscallsPolicy) {
   BPF_ASSERT(sigismember(&mask2, SIGUSR2));
 }
 
-BPF_TEST(SandboxBPF, UnsafeTrapWithErrno, RedirectAllSyscallsPolicy) {
+BPF_TEST_C(SandboxBPF, UnsafeTrapWithErrno, RedirectAllSyscallsPolicy) {
   // An UnsafeTrap() (or for that matter, a Trap()) has to report error
   // conditions by returning an exit code in the range -1..-4096. This
   // should happen automatically if using ForwardSyscall(). If the TrapFnc()
@@ -799,11 +848,19 @@ BPF_TEST(SandboxBPF,
 
 // Simple test demonstrating how to use SandboxBPF::Cond()
 
-ErrorCode SimpleCondTestPolicy(SandboxBPF* sandbox, int sysno, void*) {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy
-    return ErrorCode(ENOSYS);
-  }
+class SimpleCondTestPolicy : public SandboxBPFPolicy {
+ public:
+  SimpleCondTestPolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SimpleCondTestPolicy);
+};
+
+ErrorCode SimpleCondTestPolicy::EvaluateSyscall(SandboxBPF* sandbox,
+                                                int sysno) const {
+  DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
 
   // We deliberately return unusual errno values upon failure, so that we
   // can uniquely test for these values. In a "real" policy, you would want
@@ -849,7 +906,7 @@ ErrorCode SimpleCondTestPolicy(SandboxBPF* sandbox, int sysno, void*) {
   }
 }
 
-BPF_TEST(SandboxBPF, SimpleCondTest, SimpleCondTestPolicy) {
+BPF_TEST_C(SandboxBPF, SimpleCondTest, SimpleCondTestPolicy) {
   int fd;
   BPF_ASSERT((fd = open("/proc/self/comm", O_RDWR)) == -1);
   BPF_ASSERT(errno == EROFS);
@@ -1147,7 +1204,7 @@ class EqualityStressTest {
     // based on the system call number and the parameters that we decided
     // to pass in. Verify that this condition holds true.
     BPF_ASSERT(
-        SandboxSyscall(
+        Syscall::Call(
             sysno, args[0], args[1], args[2], args[3], args[4], args[5]) ==
         -err);
   }
@@ -1178,11 +1235,20 @@ BPF_TEST(SandboxBPF,
   BPF_AUX->VerifyFilter();
 }
 
-ErrorCode EqualityArgumentWidthPolicy(SandboxBPF* sandbox, int sysno, void*) {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy
-    return ErrorCode(ENOSYS);
-  } else if (sysno == __NR_uname) {
+class EqualityArgumentWidthPolicy : public SandboxBPFPolicy {
+ public:
+  EqualityArgumentWidthPolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(EqualityArgumentWidthPolicy);
+};
+
+ErrorCode EqualityArgumentWidthPolicy::EvaluateSyscall(SandboxBPF* sandbox,
+                                                       int sysno) const {
+  DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
+  if (sysno == __NR_uname) {
     return sandbox->Cond(
         0,
         ErrorCode::TP_32BIT,
@@ -1208,24 +1274,23 @@ ErrorCode EqualityArgumentWidthPolicy(SandboxBPF* sandbox, int sysno, void*) {
                       0x55555555AAAAAAAAULL,
                       ErrorCode(1),
                       ErrorCode(2)));
-  } else {
-    return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
+  return ErrorCode(ErrorCode::ERR_ALLOWED);
 }
 
-BPF_TEST(SandboxBPF, EqualityArgumentWidth, EqualityArgumentWidthPolicy) {
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 0, 0x55555555) == -1);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 0, 0xAAAAAAAA) == -2);
+BPF_TEST_C(SandboxBPF, EqualityArgumentWidth, EqualityArgumentWidthPolicy) {
+  BPF_ASSERT(Syscall::Call(__NR_uname, 0, 0x55555555) == -1);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 0, 0xAAAAAAAA) == -2);
 #if __SIZEOF_POINTER__ > 4
   // On 32bit machines, there is no way to pass a 64bit argument through the
   // syscall interface. So, we have to skip the part of the test that requires
   // 64bit arguments.
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 1, 0x55555555AAAAAAAAULL) == -1);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 1, 0x5555555500000000ULL) == -2);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 1, 0x5555555511111111ULL) == -2);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 1, 0x11111111AAAAAAAAULL) == -2);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 1, 0x55555555AAAAAAAAULL) == -1);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 1, 0x5555555500000000ULL) == -2);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 1, 0x5555555511111111ULL) == -2);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 1, 0x11111111AAAAAAAAULL) == -2);
 #else
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 1, 0x55555555) == -2);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 1, 0x55555555) == -2);
 #endif
 }
 
@@ -1233,62 +1298,74 @@ BPF_TEST(SandboxBPF, EqualityArgumentWidth, EqualityArgumentWidthPolicy) {
 // On 32bit machines, there is no way to pass a 64bit argument through the
 // syscall interface. So, we have to skip the part of the test that requires
 // 64bit arguments.
-BPF_DEATH_TEST(SandboxBPF,
-               EqualityArgumentUnallowed64bit,
-               DEATH_MESSAGE("Unexpected 64bit argument detected"),
-               EqualityArgumentWidthPolicy) {
-  SandboxSyscall(__NR_uname, 0, 0x5555555555555555ULL);
+BPF_DEATH_TEST_C(SandboxBPF,
+                 EqualityArgumentUnallowed64bit,
+                 DEATH_MESSAGE("Unexpected 64bit argument detected"),
+                 EqualityArgumentWidthPolicy) {
+  Syscall::Call(__NR_uname, 0, 0x5555555555555555ULL);
 }
 #endif
 
-ErrorCode EqualityWithNegativeArgumentsPolicy(SandboxBPF* sandbox,
-                                              int sysno,
-                                              void*) {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy
-    return ErrorCode(ENOSYS);
-  } else if (sysno == __NR_uname) {
-    return sandbox->Cond(0,
-                         ErrorCode::TP_32BIT,
-                         ErrorCode::OP_EQUAL,
-                         0xFFFFFFFF,
-                         ErrorCode(1),
-                         ErrorCode(2));
-  } else {
+class EqualityWithNegativeArgumentsPolicy : public SandboxBPFPolicy {
+ public:
+  EqualityWithNegativeArgumentsPolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE {
+    DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
+    if (sysno == __NR_uname) {
+      return sandbox->Cond(0,
+                           ErrorCode::TP_32BIT,
+                           ErrorCode::OP_EQUAL,
+                           0xFFFFFFFF,
+                           ErrorCode(1),
+                           ErrorCode(2));
+    }
     return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
-}
 
-BPF_TEST(SandboxBPF,
-         EqualityWithNegativeArguments,
-         EqualityWithNegativeArgumentsPolicy) {
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 0xFFFFFFFF) == -1);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, -1) == -1);
-  BPF_ASSERT(SandboxSyscall(__NR_uname, -1LL) == -1);
+ private:
+  DISALLOW_COPY_AND_ASSIGN(EqualityWithNegativeArgumentsPolicy);
+};
+
+BPF_TEST_C(SandboxBPF,
+           EqualityWithNegativeArguments,
+           EqualityWithNegativeArgumentsPolicy) {
+  BPF_ASSERT(Syscall::Call(__NR_uname, 0xFFFFFFFF) == -1);
+  BPF_ASSERT(Syscall::Call(__NR_uname, -1) == -1);
+  BPF_ASSERT(Syscall::Call(__NR_uname, -1LL) == -1);
 }
 
 #if __SIZEOF_POINTER__ > 4
-BPF_DEATH_TEST(SandboxBPF,
-               EqualityWithNegative64bitArguments,
-               DEATH_MESSAGE("Unexpected 64bit argument detected"),
-               EqualityWithNegativeArgumentsPolicy) {
+BPF_DEATH_TEST_C(SandboxBPF,
+                 EqualityWithNegative64bitArguments,
+                 DEATH_MESSAGE("Unexpected 64bit argument detected"),
+                 EqualityWithNegativeArgumentsPolicy) {
   // When expecting a 32bit system call argument, we look at the MSB of the
   // 64bit value and allow both "0" and "-1". But the latter is allowed only
   // iff the LSB was negative. So, this death test should error out.
-  BPF_ASSERT(SandboxSyscall(__NR_uname, 0xFFFFFFFF00000000LL) == -1);
+  BPF_ASSERT(Syscall::Call(__NR_uname, 0xFFFFFFFF00000000LL) == -1);
 }
 #endif
-ErrorCode AllBitTestPolicy(SandboxBPF* sandbox, int sysno, void *) {
+class AllBitTestPolicy : public SandboxBPFPolicy {
+ public:
+  AllBitTestPolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(AllBitTestPolicy);
+};
+
+ErrorCode AllBitTestPolicy::EvaluateSyscall(SandboxBPF* sandbox,
+                                            int sysno) const {
+  DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
   // Test the OP_HAS_ALL_BITS conditional test operator with a couple of
   // different bitmasks. We try to find bitmasks that could conceivably
   // touch corner cases.
   // For all of these tests, we override the uname(). We can make use with
   // a single system call number, as we use the first system call argument to
   // select the different bit masks that we want to test against.
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy
-    return ErrorCode(ENOSYS);
-  } else if (sysno == __NR_uname) {
+  if (sysno == __NR_uname) {
     return sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL, 0,
            sandbox->Cond(1, ErrorCode::TP_32BIT, ErrorCode::OP_HAS_ALL_BITS,
                          0x0,
@@ -1344,9 +1421,8 @@ ErrorCode AllBitTestPolicy(SandboxBPF* sandbox, int sysno, void *) {
                          ErrorCode(1), ErrorCode(0)),
 
                          sandbox->Kill("Invalid test case number"))))))))))));
-  } else {
-    return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
+  return ErrorCode(ErrorCode::ERR_ALLOWED);
 }
 
 // Define a macro that performs tests using our test policy.
@@ -1357,10 +1433,10 @@ ErrorCode AllBitTestPolicy(SandboxBPF* sandbox, int sysno, void *) {
 //       to make changes to these values, you will have to edit the
 //       test policy instead.
 #define BITMASK_TEST(testcase, arg, op, mask, expected_value) \
-  BPF_ASSERT(SandboxSyscall(__NR_uname, (testcase), (arg)) == (expected_value))
+  BPF_ASSERT(Syscall::Call(__NR_uname, (testcase), (arg)) == (expected_value))
 
 // Our uname() system call returns ErrorCode(1) for success and
-// ErrorCode(0) for failure. SandboxSyscall() turns this into an
+// ErrorCode(0) for failure. Syscall::Call() turns this into an
 // exit code of -1 or 0.
 #define EXPECT_FAILURE 0
 #define EXPECT_SUCCESS -1
@@ -1371,7 +1447,7 @@ ErrorCode AllBitTestPolicy(SandboxBPF* sandbox, int sysno, void *) {
 // We expect these tests to succeed on 64bit systems, but to tail on 32bit
 // systems.
 #define EXPT64_SUCCESS (sizeof(void*) > 4 ? EXPECT_SUCCESS : EXPECT_FAILURE)
-BPF_TEST(SandboxBPF, AllBitTests, AllBitTestPolicy) {
+BPF_TEST_C(SandboxBPF, AllBitTests, AllBitTestPolicy) {
   // 32bit test: all of 0x0 (should always be true)
   BITMASK_TEST( 0,                   0, ALLBITS32,          0, EXPECT_SUCCESS);
   BITMASK_TEST( 0,                   1, ALLBITS32,          0, EXPECT_SUCCESS);
@@ -1474,17 +1550,26 @@ BPF_TEST(SandboxBPF, AllBitTests, AllBitTestPolicy) {
   BITMASK_TEST(10,                 -1L, ALLBITS64,0x100000001, EXPT64_SUCCESS);
 }
 
-ErrorCode AnyBitTestPolicy(SandboxBPF* sandbox, int sysno, void*) {
+class AnyBitTestPolicy : public SandboxBPFPolicy {
+ public:
+  AnyBitTestPolicy() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(AnyBitTestPolicy);
+};
+
+ErrorCode AnyBitTestPolicy::EvaluateSyscall(SandboxBPF* sandbox,
+                                            int sysno) const {
+  DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
   // Test the OP_HAS_ANY_BITS conditional test operator with a couple of
   // different bitmasks. We try to find bitmasks that could conceivably
   // touch corner cases.
   // For all of these tests, we override the uname(). We can make use with
   // a single system call number, as we use the first system call argument to
   // select the different bit masks that we want to test against.
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy
-    return ErrorCode(ENOSYS);
-  } else if (sysno == __NR_uname) {
+  if (sysno == __NR_uname) {
     return sandbox->Cond(0, ErrorCode::TP_32BIT, ErrorCode::OP_EQUAL, 0,
            sandbox->Cond(1, ErrorCode::TP_32BIT, ErrorCode::OP_HAS_ANY_BITS,
                          0x0,
@@ -1543,12 +1628,11 @@ ErrorCode AnyBitTestPolicy(SandboxBPF* sandbox, int sysno, void*) {
                          ErrorCode(1), ErrorCode(0)),
 
                          sandbox->Kill("Invalid test case number"))))))))))));
-  } else {
-    return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
+  return ErrorCode(ErrorCode::ERR_ALLOWED);
 }
 
-BPF_TEST(SandboxBPF, AnyBitTests, AnyBitTestPolicy) {
+BPF_TEST_C(SandboxBPF, AnyBitTests, AnyBitTestPolicy) {
   // 32bit test: any of 0x0 (should always be false)
   BITMASK_TEST( 0,                   0, ANYBITS32,        0x0, EXPECT_FAILURE);
   BITMASK_TEST( 0,                   1, ANYBITS32,        0x0, EXPECT_FAILURE);
@@ -1678,15 +1762,25 @@ intptr_t PthreadTrapHandler(const struct arch_seccomp_data& args, void* aux) {
   }
   return -EPERM;
 }
-ErrorCode PthreadPolicyEquality(SandboxBPF* sandbox, int sysno, void* aux) {
+
+class PthreadPolicyEquality : public SandboxBPFPolicy {
+ public:
+  PthreadPolicyEquality() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(PthreadPolicyEquality);
+};
+
+ErrorCode PthreadPolicyEquality::EvaluateSyscall(SandboxBPF* sandbox,
+                                                 int sysno) const {
+  DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
   // This policy allows creating threads with pthread_create(). But it
   // doesn't allow any other uses of clone(). Most notably, it does not
   // allow callers to implement fork() or vfork() by passing suitable flags
   // to the clone() system call.
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy
-    return ErrorCode(ENOSYS);
-  } else if (sysno == __NR_clone) {
+  if (sysno == __NR_clone) {
     // We have seen two different valid combinations of flags. Glibc
     // uses the more modern flags, sets the TLS from the call to clone(), and
     // uses futexes to monitor threads. Android's C run-time library, doesn't
@@ -1713,20 +1807,28 @@ ErrorCode PthreadPolicyEquality(SandboxBPF* sandbox, int sysno, void* aux) {
                          kBaseAndroidCloneMask,
                          ErrorCode(ErrorCode::ERR_ALLOWED),
                          sandbox->Trap(PthreadTrapHandler, "Unknown mask"))));
-  } else {
-    return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
+  return ErrorCode(ErrorCode::ERR_ALLOWED);
 }
 
-ErrorCode PthreadPolicyBitMask(SandboxBPF* sandbox, int sysno, void* aux) {
+class PthreadPolicyBitMask : public SandboxBPFPolicy {
+ public:
+  PthreadPolicyBitMask() {}
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox,
+                                    int sysno) const OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(PthreadPolicyBitMask);
+};
+
+ErrorCode PthreadPolicyBitMask::EvaluateSyscall(SandboxBPF* sandbox,
+                                                int sysno) const {
+  DCHECK(SandboxBPF::IsValidSyscallNumber(sysno));
   // This policy allows creating threads with pthread_create(). But it
   // doesn't allow any other uses of clone(). Most notably, it does not
   // allow callers to implement fork() or vfork() by passing suitable flags
   // to the clone() system call.
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // FIXME: we should really not have to do that in a trivial policy
-    return ErrorCode(ENOSYS);
-  } else if (sysno == __NR_clone) {
+  if (sysno == __NR_clone) {
     // We have seen two different valid combinations of flags. Glibc
     // uses the more modern flags, sets the TLS from the call to clone(), and
     // uses futexes to monitor threads. Android's C run-time library, doesn't
@@ -1758,14 +1860,13 @@ ErrorCode PthreadPolicyBitMask(SandboxBPF* sandbox, int sysno, void* aux) {
                          sandbox->Trap(PthreadTrapHandler,
                                        "Missing mandatory CLONE_XXX flags "
                                        "when creating new thread")));
-  } else {
-    return ErrorCode(ErrorCode::ERR_ALLOWED);
   }
+  return ErrorCode(ErrorCode::ERR_ALLOWED);
 }
 
 static void* ThreadFnc(void* arg) {
   ++*reinterpret_cast<int*>(arg);
-  SandboxSyscall(__NR_futex, arg, FUTEX_WAKE, 1, 0, 0, 0);
+  Syscall::Call(__NR_futex, arg, FUTEX_WAKE, 1, 0, 0, 0);
   return NULL;
 }
 
@@ -1784,7 +1885,7 @@ static void PthreadTest() {
   BPF_ASSERT(!pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED));
   BPF_ASSERT(!pthread_create(&thread, &attr, ThreadFnc, &thread_ran));
   BPF_ASSERT(!pthread_attr_destroy(&attr));
-  while (SandboxSyscall(__NR_futex, &thread_ran, FUTEX_WAIT, 0, 0, 0, 0) ==
+  while (Syscall::Call(__NR_futex, &thread_ran, FUTEX_WAIT, 0, 0, 0, 0) ==
          -EINTR) {
   }
   BPF_ASSERT(thread_ran);
@@ -1795,16 +1896,168 @@ static void PthreadTest() {
   // run-time libraries other than glibc might call __NR_fork instead of
   // __NR_clone, and that would introduce a bogus test failure.
   int pid;
-  BPF_ASSERT(SandboxSyscall(__NR_clone,
-                            CLONE_CHILD_CLEARTID | CLONE_CHILD_SETTID | SIGCHLD,
-                            0,
-                            0,
-                            &pid) == -EPERM);
+  BPF_ASSERT(Syscall::Call(__NR_clone,
+                           CLONE_CHILD_CLEARTID | CLONE_CHILD_SETTID | SIGCHLD,
+                           0,
+                           0,
+                           &pid) == -EPERM);
 }
 
-BPF_TEST(SandboxBPF, PthreadEquality, PthreadPolicyEquality) { PthreadTest(); }
+BPF_TEST_C(SandboxBPF, PthreadEquality, PthreadPolicyEquality) {
+  PthreadTest();
+}
 
-BPF_TEST(SandboxBPF, PthreadBitMask, PthreadPolicyBitMask) { PthreadTest(); }
+BPF_TEST_C(SandboxBPF, PthreadBitMask, PthreadPolicyBitMask) {
+  PthreadTest();
+}
+
+// libc might not define these even though the kernel supports it.
+#ifndef PTRACE_O_TRACESECCOMP
+#define PTRACE_O_TRACESECCOMP 0x00000080
+#endif
+
+#ifdef PTRACE_EVENT_SECCOMP
+#define IS_SECCOMP_EVENT(status) ((status >> 16) == PTRACE_EVENT_SECCOMP)
+#else
+// When Debian/Ubuntu backported seccomp-bpf support into earlier kernels, they
+// changed the value of PTRACE_EVENT_SECCOMP from 7 to 8, since 7 was taken by
+// PTRACE_EVENT_STOP (upstream chose to renumber PTRACE_EVENT_STOP to 128).  If
+// PTRACE_EVENT_SECCOMP isn't defined, we have no choice but to consider both
+// values here.
+#define IS_SECCOMP_EVENT(status) ((status >> 16) == 7 || (status >> 16) == 8)
+#endif
+
+#if defined(__arm__)
+#ifndef PTRACE_SET_SYSCALL
+#define PTRACE_SET_SYSCALL 23
+#endif
+#endif
+
+// Changes the syscall to run for a child being sandboxed using seccomp-bpf with
+// PTRACE_O_TRACESECCOMP.  Should only be called when the child is stopped on
+// PTRACE_EVENT_SECCOMP.
+//
+// regs should contain the current set of registers of the child, obtained using
+// PTRACE_GETREGS.
+//
+// Depending on the architecture, this may modify regs, so the caller is
+// responsible for committing these changes using PTRACE_SETREGS.
+long SetSyscall(pid_t pid, regs_struct* regs, int syscall_number) {
+#if defined(__arm__)
+  // On ARM, the syscall is changed using PTRACE_SET_SYSCALL.  We cannot use the
+  // libc ptrace call as the request parameter is an enum, and
+  // PTRACE_SET_SYSCALL may not be in the enum.
+  return syscall(__NR_ptrace, PTRACE_SET_SYSCALL, pid, NULL, syscall_number);
+#endif
+
+  SECCOMP_PT_SYSCALL(*regs) = syscall_number;
+  return 0;
+}
+
+const uint16_t kTraceData = 0xcc;
+
+class TraceAllPolicy : public SandboxBPFPolicy {
+ public:
+  TraceAllPolicy() {}
+  virtual ~TraceAllPolicy() {}
+
+  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox_compiler,
+                                    int system_call_number) const OVERRIDE {
+    return ErrorCode(ErrorCode::ERR_TRACE + kTraceData);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TraceAllPolicy);
+};
+
+SANDBOX_TEST(SandboxBPF, DISABLE_ON_TSAN(SeccompRetTrace)) {
+  if (SandboxBPF::SupportsSeccompSandbox(-1) !=
+      sandbox::SandboxBPF::STATUS_AVAILABLE) {
+    return;
+  }
+
+#if defined(__arm__)
+  printf("This test is currently disabled on ARM due to a kernel bug.");
+  return;
+#endif
+
+  pid_t pid = fork();
+  BPF_ASSERT_NE(-1, pid);
+  if (pid == 0) {
+    pid_t my_pid = getpid();
+    BPF_ASSERT_NE(-1, ptrace(PTRACE_TRACEME, -1, NULL, NULL));
+    BPF_ASSERT_EQ(0, raise(SIGSTOP));
+    SandboxBPF sandbox;
+    sandbox.SetSandboxPolicy(new TraceAllPolicy);
+    BPF_ASSERT(sandbox.StartSandbox(SandboxBPF::PROCESS_SINGLE_THREADED));
+
+    // getpid is allowed.
+    BPF_ASSERT_EQ(my_pid, syscall(__NR_getpid));
+
+    // write to stdout is skipped and returns a fake value.
+    BPF_ASSERT_EQ(kExpectedReturnValue,
+                  syscall(__NR_write, STDOUT_FILENO, "A", 1));
+
+    // kill is rewritten to exit(kExpectedReturnValue).
+    syscall(__NR_kill, my_pid, SIGKILL);
+
+    // Should not be reached.
+    BPF_ASSERT(false);
+  }
+
+  int status;
+  BPF_ASSERT(HANDLE_EINTR(waitpid(pid, &status, WUNTRACED)) != -1);
+  BPF_ASSERT(WIFSTOPPED(status));
+
+  BPF_ASSERT_NE(-1, ptrace(PTRACE_SETOPTIONS, pid, NULL,
+                           reinterpret_cast<void*>(PTRACE_O_TRACESECCOMP)));
+  BPF_ASSERT_NE(-1, ptrace(PTRACE_CONT, pid, NULL, NULL));
+  while (true) {
+    BPF_ASSERT(HANDLE_EINTR(waitpid(pid, &status, 0)) != -1);
+    if (WIFEXITED(status) || WIFSIGNALED(status)) {
+      BPF_ASSERT(WIFEXITED(status));
+      BPF_ASSERT_EQ(kExpectedReturnValue, WEXITSTATUS(status));
+      break;
+    }
+
+    if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGTRAP ||
+        !IS_SECCOMP_EVENT(status)) {
+      BPF_ASSERT_NE(-1, ptrace(PTRACE_CONT, pid, NULL, NULL));
+      continue;
+    }
+
+    unsigned long data;
+    BPF_ASSERT_NE(-1, ptrace(PTRACE_GETEVENTMSG, pid, NULL, &data));
+    BPF_ASSERT_EQ(kTraceData, data);
+
+    regs_struct regs;
+    BPF_ASSERT_NE(-1, ptrace(PTRACE_GETREGS, pid, NULL, &regs));
+    switch (SECCOMP_PT_SYSCALL(regs)) {
+      case __NR_write:
+        // Skip writes to stdout, make it return kExpectedReturnValue.  Allow
+        // writes to stderr so that BPF_ASSERT messages show up.
+        if (SECCOMP_PT_PARM1(regs) == STDOUT_FILENO) {
+          BPF_ASSERT_NE(-1, SetSyscall(pid, &regs, -1));
+          SECCOMP_PT_RESULT(regs) = kExpectedReturnValue;
+          BPF_ASSERT_NE(-1, ptrace(PTRACE_SETREGS, pid, NULL, &regs));
+        }
+        break;
+
+      case __NR_kill:
+        // Rewrite to exit(kExpectedReturnValue).
+        BPF_ASSERT_NE(-1, SetSyscall(pid, &regs, __NR_exit));
+        SECCOMP_PT_PARM1(regs) = kExpectedReturnValue;
+        BPF_ASSERT_NE(-1, ptrace(PTRACE_SETREGS, pid, NULL, &regs));
+        break;
+
+      default:
+        // Allow all other syscalls.
+        break;
+    }
+
+    BPF_ASSERT_NE(-1, ptrace(PTRACE_CONT, pid, NULL, NULL));
+  }
+}
 
 }  // namespace
 

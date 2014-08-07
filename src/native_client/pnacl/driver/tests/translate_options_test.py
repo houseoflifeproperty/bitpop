@@ -38,9 +38,9 @@ define i32 @_start() {
 }
 ''')
         t.close()
-        driver_tools.RunDriver('as', [t.name, '-o', p.name])
+        driver_tools.RunDriver('pnacl-as', [t.name, '-o', p.name])
         if finalized:
-          driver_tools.RunDriver('finalize', [p.name])
+          driver_tools.RunDriver('pnacl-finalize', [p.name])
           self.assertTrue(filetype.IsPNaClBitcode(p.name))
         else:
           self.assertTrue(filetype.IsLLVMBitcode(p.name))
@@ -68,7 +68,7 @@ define i32 @_start() {
     sys.exit = driver_test_utils.FakeExit
     self.assertRaises(driver_test_utils.DriverExitException,
                       driver_tools.RunDriver,
-                      'translate',
+                      'pnacl-translate',
                       ['--pnacl-driver-verbose',
                        '--dry-run',
                        '-arch', arch,
@@ -91,9 +91,9 @@ define i32 @_start() {
       if self.platform == 'arm':
         expected_triple_cpu = ['-mtriple=arm.*', '-mcpu=cortex.*']
       elif self.platform == 'x86-32':
-        expected_triple_cpu = ['-mtriple=i686.*', '-mcpu=pentium.*']
+        expected_triple_cpu = ['-mtriple=i686.*', '-mcpu=pentium4m.*']
       elif self.platform == 'x86-64':
-        expected_triple_cpu = ['-mtriple=x86_64.*', '-mcpu=core.*']
+        expected_triple_cpu = ['-mtriple=x86_64.*', '-mcpu=x86-64.*']
       elif self.platform == 'mips':
         expected_triple_cpu = ['-mtriple=mips.*', '-mcpu=mips32.*']
       else:

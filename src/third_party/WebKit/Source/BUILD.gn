@@ -7,61 +7,21 @@ if (is_clang) {
   import("//build/config/clang/clang.gni")
 }
 
+visibility = "//third_party/WebKit/*"
+
 # features ---------------------------------------------------------------------
 
 config("features") {
+  defines = feature_defines_list
+}
+
+# inside_blink -----------------------------------------------------------------
+
+config("inside_blink") {
   defines = [
-    "ENABLE_CUSTOM_SCHEME_HANDLER=0",
-    "ENABLE_SVG_FONTS=1",
+    "BLINK_IMPLEMENTATION=1",
+    "INSIDE_BLINK",
   ]
-
-  if (is_debug) {
-    # TODO(GYP) this should also be set when release_valgrind_build is set,
-    # but we don't have that flag in the GN build yet.
-    defines += [ "WTF_USE_DYNAMIC_ANNOTATIONS=1" ]
-  }
-
-  if (use_concatenated_impulse_responses) {
-    defines += [ "WTF_USE_CONCATENATED_IMPULSE_RESPONSES=1" ]
-  }
-
-  if (is_android) {
-    defines += [
-      "ENABLE_FAST_MOBILE_SCROLLING=1",
-      "ENABLE_MEDIA_CAPTURE=1",
-    ]
-  } else {
-    defines += [
-      "ENABLE_INPUT_MULTIPLE_FIELDS_UI=1",
-      "ENABLE_MEDIA_CAPTURE=0",
-      "ENABLE_WEB_AUDIO=1",
-    ]
-  }
-
-  if (!is_mac && !is_android) {
-    defines += [ "WTF_USE_WEBAUDIO_FFMPEG=1" ]
-  }
-
-  if (is_android && use_openmax_dl_fft) {
-    defines += [
-      "WTF_USE_WEBAUDIO_OPENMAX_DL_FFT=1",
-      # Enabling the FFT is enough to enable WebAudio support to
-      # allow most WebAudio features to work on Android.
-      "ENABLE_WEB_AUDIO=1",
-    ]
-  }
-
-  if (!is_mac) {
-    # Mac OS X has not implemented support for ENABLE(OPENTYPE_VERTICAL) yet.
-    defines += [ "ENABLE_OPENTYPE_VERTICAL=1" ]
-  }
-
-  if (use_default_render_theme) {
-    defines += [ "WTF_USE_DEFAULT_RENDER_THEME=1" ]
-  }
-  if (enable_oilpan) {
-    defines += [ "ENABLE_OILPAN=1" ]
-  }
 }
 
 # config -----------------------------------------------------------------------
@@ -72,11 +32,14 @@ config("config") {
   cflags = []
   defines = []
 
+  configs = [ ":non_test_config" ]
+
   if (is_win) {
     cflags += [
       "/wd4305",  # Truncation from 'type1' to 'type2'.
       "/wd4324",  # Struct padded due to declspec(align).
       "/wd4714",  # Function marked forceinline not inlined.
+      "/wd4800",  # Value forced to bool.
       "/wd4996",  # Deprecated function call.
     ]
   }
@@ -101,10 +64,19 @@ config("config") {
   }
 
   if (is_clang) {
-    cflags += [ "-Wglobal-constructors" ]
     if (blink_gc_plugin && clang_use_chrome_plugins) {
       # TODO(GYP)
       #'cflags': ['<!@(../../../tools/clang/scripts/blink_gc_plugin_flags.sh enable-oilpan=<(enable_oilpan) dump-graph=<(blink_gc_plugin_dump_graph))'],
     }
+  }
+}
+
+# The follow configs apply to all targets except for unit tests, which rely on
+# static initializers.
+config("non_test_config") {
+  cflags = []
+
+  if (is_clang) {
+    cflags += [ "-Wglobal-constructors" ]
   }
 }

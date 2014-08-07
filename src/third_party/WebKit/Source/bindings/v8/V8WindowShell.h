@@ -46,7 +46,7 @@
 
 namespace WebCore {
 
-class DOMWindow;
+class LocalDOMWindow;
 class LocalFrame;
 class HTMLDocument;
 class SecurityOrigin;
@@ -58,6 +58,7 @@ public:
     static PassOwnPtr<V8WindowShell> create(LocalFrame*, DOMWrapperWorld&, v8::Isolate*);
 
     v8::Local<v8::Context> context() const { return m_scriptState ? m_scriptState->context() : v8::Local<v8::Context>(); }
+    ScriptState* scriptState() const { return m_scriptState.get(); }
 
     // Update document object of the frame.
     void updateDocument();
@@ -98,6 +99,9 @@ private:
     // deletes the document wrapper from the global object.
     void updateDocumentProperty();
     void clearDocumentProperty();
+
+    // Updates Activity Logger for the current context.
+    void updateActivityLogger();
 
     void createContext();
     bool installDOMWindow();

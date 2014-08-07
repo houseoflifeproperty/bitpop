@@ -28,21 +28,13 @@ public:
         fSize.set(width, height);
         fPRCont = prCont;
         SkSafeRef(fPRCont);
-        fEmptyBitmap.setConfig(SkImageInfo::Make(width, height,
-                                                 kUnknown_SkColorType,
-                                                 kIgnore_SkAlphaType));
+        fEmptyBitmap.setInfo(SkImageInfo::MakeUnknown(width, height));
     }
 
     virtual ~SkGatherPixelRefsAndRectsDevice() {
         SkSafeUnref(fPRCont);
     }
 
-    virtual int width() const SK_OVERRIDE { return fSize.width(); }
-    virtual int height() const SK_OVERRIDE { return fSize.height(); }
-    virtual bool isOpaque() const SK_OVERRIDE { return false; }
-    virtual SkBitmap::Config config() const SK_OVERRIDE {
-        return SkBitmap::kNo_Config;
-    }
     virtual SkImageInfo imageInfo() const SK_OVERRIDE {
         return fEmptyBitmap.info();
     }

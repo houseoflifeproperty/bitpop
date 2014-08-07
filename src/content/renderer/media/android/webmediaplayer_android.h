@@ -49,13 +49,11 @@ namespace media {
 class MediaLog;
 }
 
-namespace webkit {
-class WebLayerImpl;
-}
-
 namespace content {
+class RendererCdmManager;
 class RendererMediaPlayerManager;
 class WebContentDecryptionModuleImpl;
+class WebLayerImpl;
 class WebMediaPlayerDelegate;
 
 // This class implements blink::WebMediaPlayer by keeping the android
@@ -75,7 +73,8 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   WebMediaPlayerAndroid(blink::WebFrame* frame,
                         blink::WebMediaPlayerClient* client,
                         base::WeakPtr<WebMediaPlayerDelegate> delegate,
-                        RendererMediaPlayerManager* manager,
+                        RendererMediaPlayerManager* player_manager,
+                        RendererCdmManager* cdm_manager,
                         scoped_refptr<StreamTextureFactory> factory,
                         const scoped_refptr<base::MessageLoopProxy>& media_loop,
                         media::MediaLog* media_log);
@@ -98,7 +97,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   virtual bool supportsSave() const;
   virtual void setRate(double rate);
   virtual void setVolume(double volume);
-  virtual const blink::WebTimeRanges& buffered();
+  virtual blink::WebTimeRanges buffered() const;
   virtual double maxTimeSeekable() const;
 
   // Poster image, as defined in the <video> element.
@@ -132,7 +131,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   virtual double timelineOffset() const;
   virtual double currentTime() const;
 
-  virtual bool didLoadingProgress() const;
+  virtual bool didLoadingProgress();
 
   // Internal states of loading and network.
   virtual blink::WebMediaPlayer::NetworkState networkState() const;
@@ -191,9 +190,6 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // RenderFrameObserver implementation.
   virtual void OnDestruct() OVERRIDE;
 
-  // Detach the player from its manager.
-  void Detach();
-
 #if defined(VIDEO_HOLE)
   // Calculate the boundary rectangle of the media player (i.e. location and
   // size of the video frame).
@@ -226,7 +222,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
                   uint32 system_code);
   void OnKeyMessage(const std::string& session_id,
                     const std::vector<uint8>& message,
-                    const std::string& destination_url);
+                    const GURL& destination_url);
 
   void OnMediaSourceOpened(blink::WebMediaSource* web_media_source);
 
@@ -331,13 +327,18 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   base::TimeDelta seek_time_;
 
   // Whether loading has progressed since the last call to didLoadingProgress.
-  mutable bool did_loading_progress_;
+  bool did_loading_progress_;
 
-  // Manager for managing this object and for delegating method calls on
-  // Render Thread.
-  RendererMediaPlayerManager* manager_;
+  // Manages this object and delegates player calls to the browser process.
+  // Owned by RenderFrameImpl.
+  RendererMediaPlayerManager* player_manager_;
 
-  // Player ID assigned by the |manager_|.
+  // Delegates EME calls to the browser process. Owned by RenderFrameImpl.
+  // TODO(xhwang): Remove |cdm_manager_| when prefixed EME is deprecated. See
+  // http://crbug.com/249976
+  RendererCdmManager* cdm_manager_;
+
+  // Player ID assigned by the |player_manager_|.
   int player_id_;
 
   // Current player states.
@@ -388,7 +389,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // not NULL while the compositor is actively using this webmediaplayer.
   cc::VideoFrameProvider::Client* video_frame_provider_client_;
 
-  scoped_ptr<webkit::WebLayerImpl> video_weblayer_;
+  scoped_ptr<WebLayerImpl> video_weblayer_;
 
 #if defined(VIDEO_HOLE)
   // A rectangle represents the geometry of video frame, when computed last
@@ -439,7 +440,7 @@ class WebMediaPlayerAndroid : public blink::WebMediaPlayer,
   // This is only Used by Clear Key key system implementation, where a renderer
   // side CDM will be used. This is similar to WebMediaPlayerImpl. For other key
   // systems, a browser side CDM will be used and we set CDM by calling
-  // manager_->SetCdm() directly.
+  // player_manager_->SetCdm() directly.
   media::DecryptorReadyCB decryptor_ready_cb_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.

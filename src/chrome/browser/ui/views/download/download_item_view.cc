@@ -361,7 +361,7 @@ void DownloadItemView::Layout() {
   }
 }
 
-gfx::Size DownloadItemView::GetPreferredSize() {
+gfx::Size DownloadItemView::GetPreferredSize() const {
   int width, height;
 
   // First, we set the height to the height of two rows or text plus margins.
@@ -371,7 +371,7 @@ gfx::Size DownloadItemView::GetPreferredSize() {
   height = std::max<int>(height, DownloadShelf::kSmallProgressIconSize);
 
   if (IsShowingWarningDialog()) {
-    BodyImageSet* body_image_set =
+    const BodyImageSet* body_image_set =
         (mode_ == DANGEROUS_MODE) ? &dangerous_mode_body_image_set_ :
             &malicious_mode_body_image_set_;
     width = kLeftPadding + body_image_set->top_left->width();
@@ -556,18 +556,19 @@ void DownloadItemView::ButtonPressed(views::Button* sender,
   if (model_.ShouldAllowDownloadFeedback() &&
       !shelf_->browser()->profile()->IsOffTheRecord()) {
     if (!shelf_->browser()->profile()->GetPrefs()->HasPrefPath(
-        prefs::kSafeBrowsingDownloadFeedbackEnabled)) {
+        prefs::kSafeBrowsingExtendedReportingEnabled)) {
       // Show dialog, because the dialog hasn't been shown before.
       DownloadFeedbackDialogView::Show(
           shelf_->get_parent()->GetNativeWindow(),
           shelf_->browser()->profile(),
+          shelf_->GetNavigator(),
           base::Bind(
               &DownloadItemView::PossiblySubmitDownloadToFeedbackService,
               weak_ptr_factory_.GetWeakPtr()));
     } else {
       PossiblySubmitDownloadToFeedbackService(
           shelf_->browser()->profile()->GetPrefs()->GetBoolean(
-               prefs::kSafeBrowsingDownloadFeedbackEnabled));
+               prefs::kSafeBrowsingExtendedReportingEnabled));
     }
     return;
   }
@@ -1204,7 +1205,7 @@ void DownloadItemView::ShowWarningDialog() {
   TooltipTextChanged();
 }
 
-gfx::Size DownloadItemView::GetButtonSize() {
+gfx::Size DownloadItemView::GetButtonSize() const {
   DCHECK(discard_button_ && (mode_ == MALICIOUS_MODE || save_button_));
   gfx::Size size;
 

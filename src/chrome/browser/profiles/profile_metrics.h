@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 
 class Profile;
 class ProfileManager;
@@ -91,10 +92,57 @@ class ProfileMetrics {
     PROFILE_ENROLLMENT_ACCEPT_NEW_PROFILE_MGMT,
     // User closed the Upgrade card.
     PROFILE_ENROLLMENT_CLOSE_WELCOME_CARD,
-    // Used disabled New Profile Management.
+    // User disabled New Profile Management.
     PROFILE_ENROLLMENT_DISABLE_NEW_PROFILE_MGMT,
+    // User elected to send feedback.
+    PROFILE_ENROLLMENT_SEND_FEEDBACK,
     NUM_PROFILE_ENROLLMENT_METRICS,
   };
+
+  // Enum for tracking user interactions with the user menu and user manager.
+  // Interactions initiated from the content area are logged into a different
+  // histogram from those that were initiated from the avatar button.
+  // An example of the interaction beginning in the content area is
+  // clicking "Manage Accounts" within account selection on a Google property.
+  enum ProfileDesktopMenu {
+    // User opened the user menu, and clicked lock.
+    PROFILE_DESKTOP_MENU_LOCK = 0,
+    // User opened the user menu, and removed an account.
+    PROFILE_DESKTOP_MENU_REMOVE_ACCT,
+    // User opened the user menu, and started adding an account.
+    PROFILE_DESKTOP_MENU_ADD_ACCT,
+    // User opened the user menu, and changed the profile name.
+    PROFILE_DESKTOP_MENU_EDIT_NAME,
+    // User opened the user menu, and started selecting a new profile image.
+    PROFILE_DESKTOP_MENU_EDIT_IMAGE,
+    NUM_PROFILE_DESKTOP_MENU_METRICS,
+  };
+
+#if defined(OS_ANDROID)
+  // TODO(aruslan): http://crbug.com/379987 Move to a generator.
+  // Enum for tracking user interactions with the account management menu
+  // on Android.
+  // This should match its counterpart in AccountManagementScreenHelper.java.
+  enum ProfileAndroidAccountManagementMenu {
+    // User arrived at the Account management screen.
+    PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_VIEW = 0,
+    // User arrived at the Account management screen, and clicked Add account.
+    PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_ADD_ACCOUNT,
+    // User arrived at the Account management screen, and clicked Go incognito.
+    PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_GO_INCOGNITO,
+    // User arrived at the Account management screen, and clicked on primary.
+    PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_CLICK_PRIMARY_ACCOUNT,
+    // User arrived at the Account management screen, and clicked on secondary.
+    PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_CLICK_SECONDARY_ACCOUNT,
+    // User arrived at the Account management screen, toggled Chrome signout.
+    PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_TOGGLE_SIGNOUT,
+    // User toggled Chrome signout, and clicked Signout.
+    PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_SIGNOUT_SIGNOUT,
+    // User toggled Chrome signout, and clicked Cancel.
+    PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_SIGNOUT_CANCEL,
+    NUM_PROFILE_ANDROID_ACCOUNT_MANAGEMENT_MENU_METRICS,
+  };
+#endif  // defined(OS_ANDROID)
 
   static void UpdateReportedProfilesStatistics(ProfileManager* manager);
 
@@ -108,6 +156,15 @@ class ProfileMetrics {
   static void LogProfileSyncInfo(ProfileSync metric);
   static void LogProfileAuthResult(ProfileAuth metric);
   static void LogProfileUpgradeEnrollment(ProfileUpgradeEnrollment metric);
+  static void LogProfileDesktopMenu(ProfileDesktopMenu metric,
+                                    signin::GAIAServiceType gaia_service);
+  static void LogProfileDelete(bool profile_was_signed_in);
+
+#if defined(OS_ANDROID)
+  static void LogProfileAndroidAccountManagementMenu(
+      ProfileAndroidAccountManagementMenu metric,
+      signin::GAIAServiceType gaia_service);
+#endif  // defined(OS_ANDROID)
 
   // These functions should only be called on the UI thread because they hook
   // into g_browser_process through a helper function.

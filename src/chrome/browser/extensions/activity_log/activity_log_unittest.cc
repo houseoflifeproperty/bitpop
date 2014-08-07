@@ -19,13 +19,14 @@
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/dom_action_types.h"
 #include "extensions/common/extension_builder.h"
 #include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
@@ -244,6 +245,8 @@ TEST_F(ActivityLogTest, LogPrerender) {
       prerender::PrerenderManagerFactory::GetForProfile(
           Profile::FromBrowserContext(profile()));
 
+  prerender_manager->OnCookieStoreLoaded();
+
   const gfx::Size kSize(640, 480);
   scoped_ptr<prerender::PrerenderHandle> prerender_handle(
       prerender_manager->AddPrerenderFromLocalPredictor(
@@ -365,8 +368,7 @@ TEST_F(ActivityLogTest, UninstalledExtension) {
                       "document.write");
   action->set_page_url(GURL("http://www.google.com"));
 
-  activity_log->OnExtensionUninstalled(extension);
-
+  activity_log->OnExtensionUninstalled(NULL, extension);
   activity_log->GetFilteredActions(
       extension->id(),
       Action::ACTION_ANY,

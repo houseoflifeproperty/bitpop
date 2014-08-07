@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "execution.h"
+#include "src/execution.h"
 
-#include "bootstrapper.h"
-#include "codegen.h"
-#include "deoptimizer.h"
-#include "isolate-inl.h"
-#include "vm-state-inl.h"
+#include "src/bootstrapper.h"
+#include "src/codegen.h"
+#include "src/deoptimizer.h"
+#include "src/isolate-inl.h"
+#include "src/vm-state-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -104,7 +104,7 @@ MUST_USE_RESULT static MaybeHandle<Object> Invoke(
   if (has_exception) {
     isolate->ReportPendingMessages();
     // Reset stepping state when script exits with uncaught exception.
-    if (isolate->debugger()->IsDebuggerActive()) {
+    if (isolate->debug()->is_active()) {
       isolate->debug()->ClearStepping();
     }
     return MaybeHandle<Object>();
@@ -307,35 +307,6 @@ MaybeHandle<Object> Execution::TryGetConstructorDelegate(
 }
 
 
-void Execution::RunMicrotasks(Isolate* isolate) {
-  ASSERT(isolate->microtask_pending());
-  Execution::Call(
-      isolate,
-      isolate->run_microtasks(),
-      isolate->factory()->undefined_value(),
-      0,
-      NULL).Check();
-}
-
-
-void Execution::EnqueueMicrotask(Isolate* isolate, Handle<Object> microtask) {
-  Handle<Object> args[] = { microtask };
-  Execution::Call(
-      isolate,
-      isolate->enqueue_microtask(),
-      isolate->factory()->undefined_value(),
-      1,
-      args).Check();
-}
-
-
-bool StackGuard::IsStackOverflow() {
-  ExecutionAccess access(isolate_);
-  return (thread_local_.jslimit_ != kInterruptLimit &&
-          thread_local_.climit_ != kInterruptLimit);
-}
-
-
 void StackGuard::EnableInterrupts() {
   ExecutionAccess access(isolate_);
   if (has_pending_interrupts(access)) {
@@ -366,196 +337,43 @@ void StackGuard::DisableInterrupts() {
 }
 
 
-bool StackGuard::ShouldPostponeInterrupts() {
+bool StackGuard::CheckInterrupt(int flagbit) {
   ExecutionAccess access(isolate_);
-  return should_postpone_interrupts(access);
+  return thread_local_.interrupt_flags_ & flagbit;
 }
 
 
-bool StackGuard::IsInterrupted() {
+void StackGuard::RequestInterrupt(int flagbit) {
   ExecutionAccess access(isolate_);
-  return (thread_local_.interrupt_flags_ & INTERRUPT) != 0;
-}
-
-
-void StackGuard::Interrupt() {
-  ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ |= INTERRUPT;
+  thread_local_.interrupt_flags_ |= flagbit;
   set_interrupt_limits(access);
 }
 
 
-bool StackGuard::IsPreempted() {
+void StackGuard::ClearInterrupt(int flagbit) {
   ExecutionAccess access(isolate_);
-  return thread_local_.interrupt_flags_ & PREEMPT;
-}
-
-
-void StackGuard::Preempt() {
-  ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ |= PREEMPT;
-  set_interrupt_limits(access);
-}
-
-
-bool StackGuard::IsTerminateExecution() {
-  ExecutionAccess access(isolate_);
-  return (thread_local_.interrupt_flags_ & TERMINATE) != 0;
-}
-
-
-void StackGuard::CancelTerminateExecution() {
-  ExecutionAccess access(isolate_);
-  Continue(TERMINATE);
-  isolate_->CancelTerminateExecution();
-}
-
-
-void StackGuard::TerminateExecution() {
-  ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ |= TERMINATE;
-  set_interrupt_limits(access);
-}
-
-
-bool StackGuard::IsGCRequest() {
-  ExecutionAccess access(isolate_);
-  return (thread_local_.interrupt_flags_ & GC_REQUEST) != 0;
-}
-
-
-void StackGuard::RequestGC() {
-  ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ |= GC_REQUEST;
-  if (thread_local_.postpone_interrupts_nesting_ == 0) {
-    thread_local_.jslimit_ = thread_local_.climit_ = kInterruptLimit;
-    isolate_->heap()->SetStackLimits();
-  }
-}
-
-
-bool StackGuard::IsInstallCodeRequest() {
-  ExecutionAccess access(isolate_);
-  return (thread_local_.interrupt_flags_ & INSTALL_CODE) != 0;
-}
-
-
-void StackGuard::RequestInstallCode() {
-  ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ |= INSTALL_CODE;
-  if (thread_local_.postpone_interrupts_nesting_ == 0) {
-    thread_local_.jslimit_ = thread_local_.climit_ = kInterruptLimit;
-    isolate_->heap()->SetStackLimits();
-  }
-}
-
-
-bool StackGuard::IsFullDeopt() {
-  ExecutionAccess access(isolate_);
-  return (thread_local_.interrupt_flags_ & FULL_DEOPT) != 0;
-}
-
-
-void StackGuard::FullDeopt() {
-  ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ |= FULL_DEOPT;
-  set_interrupt_limits(access);
-}
-
-
-bool StackGuard::IsDeoptMarkedAllocationSites() {
-  ExecutionAccess access(isolate_);
-  return (thread_local_.interrupt_flags_ & DEOPT_MARKED_ALLOCATION_SITES) != 0;
-}
-
-
-void StackGuard::DeoptMarkedAllocationSites() {
-  ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ |= DEOPT_MARKED_ALLOCATION_SITES;
-  set_interrupt_limits(access);
-}
-
-
-bool StackGuard::IsDebugBreak() {
-  ExecutionAccess access(isolate_);
-  return thread_local_.interrupt_flags_ & DEBUGBREAK;
-}
-
-
-void StackGuard::DebugBreak() {
-  ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ |= DEBUGBREAK;
-  set_interrupt_limits(access);
-}
-
-
-bool StackGuard::IsDebugCommand() {
-  ExecutionAccess access(isolate_);
-  return thread_local_.interrupt_flags_ & DEBUGCOMMAND;
-}
-
-
-void StackGuard::DebugCommand() {
-  ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ |= DEBUGCOMMAND;
-  set_interrupt_limits(access);
-}
-
-
-void StackGuard::Continue(InterruptFlag after_what) {
-  ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ &= ~static_cast<int>(after_what);
+  thread_local_.interrupt_flags_ &= ~flagbit;
   if (!should_postpone_interrupts(access) && !has_pending_interrupts(access)) {
     reset_limits(access);
   }
 }
 
 
-void StackGuard::RequestInterrupt(InterruptCallback callback, void* data) {
+bool StackGuard::CheckAndClearInterrupt(InterruptFlag flag) {
   ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ |= API_INTERRUPT;
-  thread_local_.interrupt_callback_ = callback;
-  thread_local_.interrupt_callback_data_ = data;
-  set_interrupt_limits(access);
-}
-
-
-void StackGuard::ClearInterrupt() {
-  thread_local_.interrupt_callback_ = 0;
-  thread_local_.interrupt_callback_data_ = 0;
-  Continue(API_INTERRUPT);
-}
-
-
-bool StackGuard::IsAPIInterrupt() {
-  ExecutionAccess access(isolate_);
-  return thread_local_.interrupt_flags_ & API_INTERRUPT;
-}
-
-
-void StackGuard::InvokeInterruptCallback() {
-  InterruptCallback callback = 0;
-  void* data = 0;
-
-  {
-    ExecutionAccess access(isolate_);
-    callback = thread_local_.interrupt_callback_;
-    data = thread_local_.interrupt_callback_data_;
-    thread_local_.interrupt_callback_ = NULL;
-    thread_local_.interrupt_callback_data_ = NULL;
+  int flagbit = 1 << flag;
+  bool result = (thread_local_.interrupt_flags_ & flagbit);
+  thread_local_.interrupt_flags_ &= ~flagbit;
+  if (!should_postpone_interrupts(access) && !has_pending_interrupts(access)) {
+    reset_limits(access);
   }
-
-  if (callback != NULL) {
-    VMState<EXTERNAL> state(isolate_);
-    HandleScope handle_scope(isolate_);
-    callback(reinterpret_cast<v8::Isolate*>(isolate_), data);
-  }
+  return result;
 }
 
 
 char* StackGuard::ArchiveStackGuard(char* to) {
   ExecutionAccess access(isolate_);
-  OS::MemCopy(to, reinterpret_cast<char*>(&thread_local_), sizeof(ThreadLocal));
+  MemCopy(to, reinterpret_cast<char*>(&thread_local_), sizeof(ThreadLocal));
   ThreadLocal blank;
 
   // Set the stack limits using the old thread_local_.
@@ -572,8 +390,7 @@ char* StackGuard::ArchiveStackGuard(char* to) {
 
 char* StackGuard::RestoreStackGuard(char* from) {
   ExecutionAccess access(isolate_);
-  OS::MemCopy(
-      reinterpret_cast<char*>(&thread_local_), from, sizeof(ThreadLocal));
+  MemCopy(reinterpret_cast<char*>(&thread_local_), from, sizeof(ThreadLocal));
   isolate_->heap()->SetStackLimits();
   return from + sizeof(ThreadLocal);
 }
@@ -594,8 +411,6 @@ void StackGuard::ThreadLocal::Clear() {
   nesting_ = 0;
   postpone_interrupts_nesting_ = 0;
   interrupt_flags_ = 0;
-  interrupt_callback_ = NULL;
-  interrupt_callback_data_ = NULL;
 }
 
 
@@ -616,8 +431,6 @@ bool StackGuard::ThreadLocal::Initialize(Isolate* isolate) {
   nesting_ = 0;
   postpone_interrupts_nesting_ = 0;
   interrupt_flags_ = 0;
-  interrupt_callback_ = NULL;
-  interrupt_callback_data_ = NULL;
   return should_set_stack_limits;
 }
 
@@ -834,147 +647,45 @@ Handle<String> Execution::GetStackTraceLine(Handle<Object> recv,
 }
 
 
-static Object* RuntimePreempt(Isolate* isolate) {
-  // Clear the preempt request flag.
-  isolate->stack_guard()->Continue(PREEMPT);
-
-  if (isolate->debug()->InDebugger()) {
-    // If currently in the debugger don't do any actual preemption but record
-    // that preemption occoured while in the debugger.
-    isolate->debug()->PreemptionWhileInDebugger();
-  } else {
-    // Perform preemption.
-    v8::Unlocker unlocker(reinterpret_cast<v8::Isolate*>(isolate));
-    Thread::YieldCPU();
-  }
-
-  return isolate->heap()->undefined_value();
-}
-
-
-Object* Execution::DebugBreakHelper(Isolate* isolate) {
-  // Just continue if breaks are disabled.
-  if (isolate->debug()->disable_break()) {
-    return isolate->heap()->undefined_value();
-  }
-
-  // Ignore debug break during bootstrapping.
-  if (isolate->bootstrapper()->IsActive()) {
-    return isolate->heap()->undefined_value();
-  }
-
-  // Ignore debug break if debugger is not active.
-  if (!isolate->debugger()->IsDebuggerActive()) {
-    return isolate->heap()->undefined_value();
-  }
-
-  StackLimitCheck check(isolate);
-  if (check.HasOverflowed()) {
-    return isolate->heap()->undefined_value();
-  }
-
+Object* StackGuard::HandleInterrupts() {
   {
-    JavaScriptFrameIterator it(isolate);
-    ASSERT(!it.done());
-    Object* fun = it.frame()->function();
-    if (fun && fun->IsJSFunction()) {
-      // Don't stop in builtin functions.
-      if (JSFunction::cast(fun)->IsBuiltin()) {
-        return isolate->heap()->undefined_value();
-      }
-      GlobalObject* global = JSFunction::cast(fun)->context()->global_object();
-      // Don't stop in debugger functions.
-      if (isolate->debug()->IsDebugGlobal(global)) {
-        return isolate->heap()->undefined_value();
-      }
+    ExecutionAccess access(isolate_);
+    if (should_postpone_interrupts(access)) {
+      return isolate_->heap()->undefined_value();
     }
   }
 
-  // Collect the break state before clearing the flags.
-  bool debug_command_only =
-      isolate->stack_guard()->IsDebugCommand() &&
-      !isolate->stack_guard()->IsDebugBreak();
-
-  // Clear the debug break request flag.
-  isolate->stack_guard()->Continue(DEBUGBREAK);
-
-  ProcessDebugMessages(isolate, debug_command_only);
-
-  // Return to continue execution.
-  return isolate->heap()->undefined_value();
-}
-
-
-void Execution::ProcessDebugMessages(Isolate* isolate,
-                                     bool debug_command_only) {
-  // Clear the debug command request flag.
-  isolate->stack_guard()->Continue(DEBUGCOMMAND);
-
-  StackLimitCheck check(isolate);
-  if (check.HasOverflowed()) {
-    return;
+  if (CheckAndClearInterrupt(GC_REQUEST)) {
+    isolate_->heap()->CollectAllGarbage(Heap::kNoGCFlags, "GC interrupt");
   }
 
-  HandleScope scope(isolate);
-  // Enter the debugger. Just continue if we fail to enter the debugger.
-  EnterDebugger debugger(isolate);
-  if (debugger.FailedToEnter()) {
-    return;
+  if (CheckDebugBreak() || CheckDebugCommand()) {
+    isolate_->debug()->HandleDebugBreak();
   }
 
-  // Notify the debug event listeners. Indicate auto continue if the break was
-  // a debug command break.
-  isolate->debugger()->OnDebugBreak(isolate->factory()->undefined_value(),
-                                    debug_command_only);
-}
-
-
-Object* Execution::HandleStackGuardInterrupt(Isolate* isolate) {
-  StackGuard* stack_guard = isolate->stack_guard();
-  if (stack_guard->ShouldPostponeInterrupts()) {
-    return isolate->heap()->undefined_value();
+  if (CheckAndClearInterrupt(TERMINATE_EXECUTION)) {
+    return isolate_->TerminateExecution();
   }
 
-  if (stack_guard->IsAPIInterrupt()) {
-    stack_guard->InvokeInterruptCallback();
-    stack_guard->Continue(API_INTERRUPT);
+  if (CheckAndClearInterrupt(DEOPT_MARKED_ALLOCATION_SITES)) {
+    isolate_->heap()->DeoptMarkedAllocationSites();
   }
 
-  if (stack_guard->IsGCRequest()) {
-    isolate->heap()->CollectAllGarbage(Heap::kNoGCFlags,
-                                       "StackGuard GC request");
-    stack_guard->Continue(GC_REQUEST);
+  if (CheckAndClearInterrupt(INSTALL_CODE)) {
+    ASSERT(isolate_->concurrent_recompilation_enabled());
+    isolate_->optimizing_compiler_thread()->InstallOptimizedFunctions();
   }
 
-  isolate->counters()->stack_interrupts()->Increment();
-  isolate->counters()->runtime_profiler_ticks()->Increment();
-  if (stack_guard->IsDebugBreak() || stack_guard->IsDebugCommand()) {
-    DebugBreakHelper(isolate);
+  if (CheckAndClearInterrupt(API_INTERRUPT)) {
+    // Callback must be invoked outside of ExecusionAccess lock.
+    isolate_->InvokeApiInterruptCallback();
   }
-  if (stack_guard->IsPreempted()) RuntimePreempt(isolate);
-  if (stack_guard->IsTerminateExecution()) {
-    stack_guard->Continue(TERMINATE);
-    return isolate->TerminateExecution();
-  }
-  if (stack_guard->IsInterrupted()) {
-    stack_guard->Continue(INTERRUPT);
-    return isolate->StackOverflow();
-  }
-  if (stack_guard->IsFullDeopt()) {
-    stack_guard->Continue(FULL_DEOPT);
-    Deoptimizer::DeoptimizeAll(isolate);
-  }
-  if (stack_guard->IsDeoptMarkedAllocationSites()) {
-    stack_guard->Continue(DEOPT_MARKED_ALLOCATION_SITES);
-    isolate->heap()->DeoptMarkedAllocationSites();
-  }
-  if (stack_guard->IsInstallCodeRequest()) {
-    ASSERT(isolate->concurrent_recompilation_enabled());
-    stack_guard->Continue(INSTALL_CODE);
-    isolate->optimizing_compiler_thread()->InstallOptimizedFunctions();
-  }
-  isolate->runtime_profiler()->OptimizeNow();
-  return isolate->heap()->undefined_value();
+
+  isolate_->counters()->stack_interrupts()->Increment();
+  isolate_->counters()->runtime_profiler_ticks()->Increment();
+  isolate_->runtime_profiler()->OptimizeNow();
+
+  return isolate_->heap()->undefined_value();
 }
 
 } }  // namespace v8::internal

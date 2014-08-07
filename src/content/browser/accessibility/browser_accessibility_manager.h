@@ -58,6 +58,8 @@ class CONTENT_EXPORT BrowserAccessibilityDelegate {
   virtual gfx::Rect AccessibilityGetViewBounds() const = 0;
   virtual gfx::Point AccessibilityOriginInScreen(
       const gfx::Rect& bounds) const = 0;
+  virtual void AccessibilityHitTest(
+      const gfx::Point& point) = 0;
   virtual void AccessibilityFatalError() = 0;
 };
 
@@ -191,6 +193,9 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeDelegate {
       const ui::AXTreeUpdate& initial_tree,
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory);
+
+  // Called at the end of updating the tree.
+  virtual void OnTreeUpdateFinished() {}
 
  private:
   // The following states keep track of whether or not the

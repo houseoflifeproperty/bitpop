@@ -21,7 +21,7 @@
 #ifndef SVGPathElement_h
 #define SVGPathElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGAnimatedPath.h"
@@ -53,7 +53,7 @@ class SVGPathSegCurvetoQuadraticSmoothRel;
 
 class SVGPathElement FINAL : public SVGGeometryElement {
 public:
-    static PassRefPtr<SVGPathElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGPathElement);
 
     float getTotalLength();
     PassRefPtr<SVGPointTearOff> getPointAtLength(float distance);

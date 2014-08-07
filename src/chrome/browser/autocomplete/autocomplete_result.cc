@@ -8,6 +8,7 @@
 #include <iterator>
 
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
@@ -15,6 +16,10 @@
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/common/autocomplete_match_type.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
+
+using metrics::OmniboxEventProto;
 
 namespace {
 
@@ -23,7 +28,7 @@ namespace {
 class CompareWithDemoteByType {
  public:
   CompareWithDemoteByType(
-      AutocompleteInput::PageClassification current_page_classification);
+      OmniboxEventProto::PageClassification current_page_classification);
 
   // Returns the relevance score of |match| demoted appropriately by
   // |demotions_by_type_|.
@@ -38,7 +43,7 @@ class CompareWithDemoteByType {
 };
 
 CompareWithDemoteByType::CompareWithDemoteByType(
-    AutocompleteInput::PageClassification current_page_classification) {
+    OmniboxEventProto::PageClassification current_page_classification) {
   OmniboxFieldTrial::GetDemotionsByType(current_page_classification,
                                         &demotions_);
 }
@@ -67,7 +72,7 @@ bool CompareWithDemoteByType::operator()(const AutocompleteMatch& elem1,
 class DestinationSort {
  public:
   DestinationSort(
-      AutocompleteInput::PageClassification current_page_classification);
+      OmniboxEventProto::PageClassification current_page_classification);
   bool operator()(const AutocompleteMatch& elem1,
                   const AutocompleteMatch& elem2);
 
@@ -76,7 +81,7 @@ class DestinationSort {
 };
 
 DestinationSort::DestinationSort(
-    AutocompleteInput::PageClassification current_page_classification) :
+    OmniboxEventProto::PageClassification current_page_classification) :
     demote_by_type_(current_page_classification) {}
 
 bool DestinationSort::operator()(const AutocompleteMatch& elem1,
@@ -90,6 +95,18 @@ bool DestinationSort::operator()(const AutocompleteMatch& elem1,
     return demote_by_type_(elem1, elem2);
   }
   return elem1.stripped_destination_url < elem2.stripped_destination_url;
+}
+
+// Returns true if |match| is allowed to the default match taking into account
+// whether we're supposed to (and able to) demote all matches with inline
+// autocompletions.
+bool AllowedToBeDefaultMatchAccountingForDisableInliningExperiment(
+    const AutocompleteMatch& match,
+    const bool has_legal_default_match_without_completion) {
+  return match.allowed_to_be_default_match &&
+      (!OmniboxFieldTrial::DisableInlining() ||
+       !has_legal_default_match_without_completion ||
+       match.inline_autocompletion.empty());
 }
 
 };  // namespace
@@ -177,16 +194,37 @@ void AutocompleteResult::SortAndCull(const AutocompleteInput& input,
   DedupMatchesByDestination(input.current_page_classification(), true,
                             &matches_);
 
+  // If the result set has at least one legal default match without an inline
+  // autocompletion, then in the disable inlining experiment it will be okay
+  // to demote all matches with inline autocompletions.  On the other hand, if
+  // the experiment is active but there is no legal match without an inline
+  // autocompletion, then we'll pretend the experiment is not active and not
+  // demote the matches with an inline autocompletion.  In other words, an
+  // alternate name for this variable is
+  // allowed_to_demote_matches_with_inline_autocompletion.
+  bool has_legal_default_match_without_completion = false;
+  for (AutocompleteResult::iterator it = matches_.begin();
+       (it != matches_.end()) && !has_legal_default_match_without_completion;
+       ++it) {
+    if (it->allowed_to_be_default_match && it->inline_autocompletion.empty())
+      has_legal_default_match_without_completion = true;
+  }
+  UMA_HISTOGRAM_BOOLEAN("Omnibox.HasLegalDefaultMatchWithoutCompletion",
+                        has_legal_default_match_without_completion);
+
   // Sort and trim to the most relevant kMaxMatches matches.
   size_t max_num_matches = std::min(kMaxMatches, matches_.size());
   CompareWithDemoteByType comparing_object(input.current_page_classification());
   std::sort(matches_.begin(), matches_.end(), comparing_object);
-  if (!matches_.empty() && !matches_.begin()->allowed_to_be_default_match) {
+  if (!matches_.empty() &&
+      !AllowedToBeDefaultMatchAccountingForDisableInliningExperiment(
+          *matches_.begin(), has_legal_default_match_without_completion)) {
     // Top match is not allowed to be the default match.  Find the most
     // relevant legal match and shift it to the front.
     for (AutocompleteResult::iterator it = matches_.begin() + 1;
          it != matches_.end(); ++it) {
-      if (it->allowed_to_be_default_match) {
+      if (AllowedToBeDefaultMatchAccountingForDisableInliningExperiment(
+              *it, has_legal_default_match_without_completion)) {
         std::rotate(matches_.begin(), it, it + 1);
         break;
       }
@@ -220,9 +258,10 @@ void AutocompleteResult::SortAndCull(const AutocompleteInput& input,
       // We shouldn't get query matches for URL inputs, or non-query matches
       // for query inputs.
       if (AutocompleteMatch::IsSearchType(default_match_->type)) {
-        DCHECK_NE(AutocompleteInput::URL, input.type()) << debug_info;
+        DCHECK_NE(metrics::OmniboxInputType::URL, input.type()) << debug_info;
       } else {
-        DCHECK_NE(AutocompleteInput::FORCED_QUERY, input.type()) << debug_info;
+        DCHECK_NE(metrics::OmniboxInputType::FORCED_QUERY, input.type())
+            << debug_info;
       }
     }
   }
@@ -320,7 +359,7 @@ void AutocompleteResult::Validate() const {
 GURL AutocompleteResult::ComputeAlternateNavUrl(
     const AutocompleteInput& input,
     const AutocompleteMatch& match) {
-  return ((input.type() == AutocompleteInput::UNKNOWN) &&
+  return ((input.type() == metrics::OmniboxInputType::UNKNOWN) &&
           (AutocompleteMatch::IsSearchType(match.type)) &&
           (match.transition != content::PAGE_TRANSITION_KEYWORD) &&
           (input.canonicalized_url() != match.destination_url)) ?
@@ -328,7 +367,7 @@ GURL AutocompleteResult::ComputeAlternateNavUrl(
 }
 
 void AutocompleteResult::DedupMatchesByDestination(
-      AutocompleteInput::PageClassification page_classification,
+      OmniboxEventProto::PageClassification page_classification,
       bool set_duplicate_matches,
       ACMatches* matches) {
   DestinationSort destination_sort(page_classification);
@@ -370,23 +409,6 @@ void AutocompleteResult::CopyFrom(const AutocompleteResult& rhs) {
   alternate_nav_url_ = rhs.alternate_nav_url_;
 }
 
-void AutocompleteResult::AddMatch(
-    AutocompleteInput::PageClassification page_classification,
-    const AutocompleteMatch& match) {
-  DCHECK(default_match_ != end());
-  DCHECK_EQ(AutocompleteMatch::SanitizeString(match.contents), match.contents);
-  DCHECK_EQ(AutocompleteMatch::SanitizeString(match.description),
-            match.description);
-  CompareWithDemoteByType comparing_object(page_classification);
-  ACMatches::iterator insertion_point =
-      std::upper_bound(begin(), end(), match, comparing_object);
-  matches_difference_type default_offset = default_match_ - begin();
-  if ((insertion_point - begin()) <= default_offset)
-    ++default_offset;
-  matches_.insert(insertion_point, match);
-  default_match_ = begin() + default_offset;
-}
-
 void AutocompleteResult::BuildProviderToMatches(
     ProviderToMatches* provider_to_matches) const {
   for (ACMatches::const_iterator i(begin()); i != end(); ++i)
@@ -404,7 +426,7 @@ bool AutocompleteResult::HasMatchByDestination(const AutocompleteMatch& match,
 }
 
 void AutocompleteResult::MergeMatchesByProvider(
-    AutocompleteInput::PageClassification page_classification,
+    OmniboxEventProto::PageClassification page_classification,
     const ACMatches& old_matches,
     const ACMatches& new_matches) {
   if (new_matches.size() >= old_matches.size())
@@ -425,7 +447,7 @@ void AutocompleteResult::MergeMatchesByProvider(
       AutocompleteMatch match = *i;
       match.relevance = std::min(max_relevance, match.relevance);
       match.from_previous = true;
-      AddMatch(page_classification, match);
+      matches_.push_back(match);
       delta--;
     }
   }

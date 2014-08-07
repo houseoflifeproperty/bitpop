@@ -33,6 +33,7 @@
 
 #include "bindings/v8/ScriptPromise.h"
 #include "bindings/v8/ScriptPromiseResolverWithContext.h"
+#include "bindings/v8/ScriptState.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "platform/Supplementable.h"
@@ -53,7 +54,7 @@ class ImageBitmap;
 class ImageData;
 class ExecutionContext;
 
-class ImageBitmapFactories FINAL : public NoBaseWillBeGarbageCollectedFinalized<ImageBitmapFactories>, public WillBeHeapSupplement<DOMWindow>, public WillBeHeapSupplement<WorkerGlobalScope> {
+class ImageBitmapFactories FINAL : public NoBaseWillBeGarbageCollectedFinalized<ImageBitmapFactories>, public WillBeHeapSupplement<LocalDOMWindow>, public WillBeHeapSupplement<WorkerGlobalScope> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ImageBitmapFactories);
 
 public:
@@ -80,11 +81,11 @@ protected:
     static const char* supplementName();
 
 private:
-    class ImageBitmapLoader FINAL : public RefCountedWillBeGarbageCollectedFinalized<ImageBitmapLoader>, public FileReaderLoaderClient {
+    class ImageBitmapLoader FINAL : public GarbageCollectedFinalized<ImageBitmapLoader>, public FileReaderLoaderClient {
     public:
-        static PassRefPtrWillBeRawPtr<ImageBitmapLoader> create(ImageBitmapFactories& factory, ExecutionContext* context, const IntRect& cropRect)
+        static ImageBitmapLoader* create(ImageBitmapFactories& factory, const IntRect& cropRect, ScriptState* scriptState)
         {
-            return adoptRefWillBeNoop(new ImageBitmapLoader(factory, context, cropRect));
+            return new ImageBitmapLoader(factory, cropRect, scriptState);
         }
 
         void loadBlobAsync(ExecutionContext*, Blob*);
@@ -95,7 +96,7 @@ private:
         virtual ~ImageBitmapLoader() { }
 
     private:
-        ImageBitmapLoader(ImageBitmapFactories&, ExecutionContext*, const IntRect&);
+        ImageBitmapLoader(ImageBitmapFactories&, const IntRect&, ScriptState*);
 
         void rejectPromise();
 
@@ -116,10 +117,10 @@ private:
     template<class GlobalObject>
     static ImageBitmapFactories& fromInternal(GlobalObject&);
 
-    void addLoader(PassRefPtrWillBeRawPtr<ImageBitmapLoader>);
+    void addLoader(ImageBitmapLoader*);
     void didFinishLoading(ImageBitmapLoader*);
 
-    WillBeHeapHashSet<RefPtrWillBeMember<ImageBitmapLoader> > m_pendingLoaders;
+    PersistentHeapHashSetWillBeHeapHashSet<Member<ImageBitmapLoader> > m_pendingLoaders;
 };
 
 } // namespace WebCore

@@ -28,7 +28,7 @@ namespace WebCore {
 
 class SVGFEFloodElement FINAL : public SVGFilterPrimitiveStandardAttributes {
 public:
-    static PassRefPtr<SVGFEFloodElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFEFloodElement);
 
 private:
     explicit SVGFEFloodElement(Document&);

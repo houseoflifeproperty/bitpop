@@ -10,8 +10,8 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "google_apis/drive/drive_api_parser.h"
-#include "google_apis/drive/gdata_wapi_parser.h"
 
 namespace drive {
 namespace internal {
@@ -72,17 +72,37 @@ std::string DirectoryFetchInfo::ToString() const {
 
 ChangeList::ChangeList() {}
 
-ChangeList::ChangeList(const google_apis::ResourceList& resource_list)
-    : largest_changestamp_(resource_list.largest_changestamp()) {
-  resource_list.GetNextFeedURL(&next_url_);
-
-  entries_.resize(resource_list.entries().size());
-  parent_resource_ids_.resize(resource_list.entries().size());
+ChangeList::ChangeList(const google_apis::ChangeList& change_list)
+    : next_url_(change_list.next_link()),
+      largest_changestamp_(change_list.largest_change_id()) {
+  const ScopedVector<google_apis::ChangeResource>& items = change_list.items();
+  entries_.resize(items.size());
+  parent_resource_ids_.resize(items.size());
   size_t entries_index = 0;
-  for (size_t i = 0; i < resource_list.entries().size(); ++i) {
-    if (ConvertToResourceEntry(*resource_list.entries()[i],
-                               &entries_[entries_index],
-                               &parent_resource_ids_[entries_index])) {
+  for (size_t i = 0; i < items.size(); ++i) {
+    if (ConvertChangeResourceToResourceEntry(
+            *items[i],
+            &entries_[entries_index],
+            &parent_resource_ids_[entries_index])) {
+      ++entries_index;
+    }
+  }
+  entries_.resize(entries_index);
+  parent_resource_ids_.resize(entries_index);
+}
+
+ChangeList::ChangeList(const google_apis::FileList& file_list)
+    : next_url_(file_list.next_link()),
+      largest_changestamp_(0) {
+  const ScopedVector<google_apis::FileResource>& items = file_list.items();
+  entries_.resize(items.size());
+  parent_resource_ids_.resize(items.size());
+  size_t entries_index = 0;
+  for (size_t i = 0; i < items.size(); ++i) {
+    if (ConvertFileResourceToResourceEntry(
+            *items[i],
+            &entries_[entries_index],
+            &parent_resource_ids_[entries_index])) {
       ++entries_index;
     }
   }
@@ -354,8 +374,7 @@ FileError ChangeListProcessor::ApplyEntry(const ResourceEntry& entry) {
               new_entry.directory_specific_info().changestamp());
           error = resource_metadata_->RefreshEntry(new_entry);
         }
-        DVLOG(1) << "Change was discarded for: "
-                 << resource_metadata_->GetFilePath(local_id).value();
+        DVLOG(1) << "Change was discarded for: " << entry.resource_id();
       }
       break;
     case FILE_ERROR_NOT_FOUND: {  // Adding a new entry.
@@ -458,7 +477,7 @@ void ChangeListProcessor::UpdateChangedDirs(const ResourceEntry& entry) {
   base::FilePath file_path;
   if (resource_metadata_->GetIdByResourceId(
           entry.resource_id(), &local_id) == FILE_ERROR_OK)
-    file_path = resource_metadata_->GetFilePath(local_id);
+    resource_metadata_->GetFilePath(local_id, &file_path);
 
   if (!file_path.empty()) {
     // Notify parent.

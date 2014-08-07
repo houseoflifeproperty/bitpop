@@ -218,6 +218,7 @@ BASE_EXPORT bool GetTempDir(FilePath* path);
 //
 // You should not generally call this directly. Instead use DIR_HOME with the
 // path service which will use this function but cache the value.
+// Path service may also override DIR_HOME.
 BASE_EXPORT FilePath GetHomeDir();
 
 // Creates a temporary file. The full path is placed in |path|, and the
@@ -306,6 +307,10 @@ BASE_EXPORT FILE* OpenFile(const FilePath& filename, const char* mode);
 
 // Closes file opened by OpenFile. Returns true on success.
 BASE_EXPORT bool CloseFile(FILE* file);
+
+// Associates a standard FILE stream with an existing File. Note that this
+// functions take ownership of the existing File.
+BASE_EXPORT FILE* FileToFILE(File file, const char* mode);
 
 // Truncates an open file to end at the location of the current file pointer.
 // This is a cross-platform analog to Windows' SetEndOfFile() function.

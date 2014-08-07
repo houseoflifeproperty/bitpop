@@ -31,9 +31,9 @@
 
 #include "core/html/shadow/MediaControlElementTypes.h"
 
-#include "CSSValueKeywords.h"
-#include "HTMLNames.h"
 #include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/CSSValueKeywords.h"
+#include "core/HTMLNames.h"
 #include "core/css/StylePropertySet.h"
 #include "core/events/MouseEvent.h"
 #include "core/html/HTMLMediaElement.h"
@@ -96,7 +96,7 @@ void MediaControlElement::setDisplayType(MediaControlElementType displayType)
 
     m_displayType = displayType;
     if (RenderObject* object = m_element->renderer())
-        object->repaint();
+        object->paintInvalidationForWholeRenderer();
 }
 
 // ----------------------------

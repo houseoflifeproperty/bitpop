@@ -7,6 +7,8 @@
 
 #include <map>
 #include <set>
+#include <string>
+#include <utility>
 
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
@@ -143,6 +145,8 @@ class CONTENT_EXPORT IndexedDBFactory
   std::set<scoped_refptr<IndexedDBBackingStore> > session_only_backing_stores_;
   IndexedDBBackingStoreMap backing_stores_with_active_blobs_;
   std::set<GURL> backends_opened_since_boot_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBFactory);
 };
 
 }  // namespace content

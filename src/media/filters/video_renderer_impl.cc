@@ -57,18 +57,10 @@ void VideoRendererImpl::Play(const base::Closure& callback) {
   callback.Run();
 }
 
-void VideoRendererImpl::Pause(const base::Closure& callback) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-  base::AutoLock auto_lock(lock_);
-  DCHECK(state_ != kUninitialized || state_ == kError);
-  state_ = kPaused;
-  callback.Run();
-}
-
 void VideoRendererImpl::Flush(const base::Closure& callback) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   base::AutoLock auto_lock(lock_);
-  DCHECK_EQ(state_, kPaused);
+  DCHECK_NE(state_, kUninitialized);
   flush_cb_ = callback;
   state_ = kFlushing;
 
@@ -128,7 +120,7 @@ void VideoRendererImpl::Preroll(base::TimeDelta time,
   base::AutoLock auto_lock(lock_);
   DCHECK(!cb.is_null());
   DCHECK(preroll_cb_.is_null());
-  DCHECK(state_ == kFlushed || state_== kPaused) << "state_ " << state_;
+  DCHECK(state_ == kFlushed || state_ == kPlaying) << "state_ " << state_;
 
   if (state_ == kFlushed) {
     DCHECK(time != kNoTimestamp());
@@ -212,12 +204,7 @@ void VideoRendererImpl::OnVideoFrameStreamInitialized(bool success) {
   state_ = kFlushed;
 
   // Create our video thread.
-  if (!base::PlatformThread::Create(0, this, &thread_)) {
-    NOTREACHED() << "Video thread creation failed";
-    state_ = kError;
-    base::ResetAndReturn(&init_cb_).Run(PIPELINE_ERROR_INITIALIZATION_FAILED);
-    return;
-  }
+  CHECK(base::PlatformThread::Create(0, this, &thread_));
 
 #if defined(OS_WIN)
   // Bump up our priority so our sleeping is more accurate.
@@ -363,7 +350,7 @@ void VideoRendererImpl::FrameReady(VideoFrameStream::Status status,
 
   // Already-queued VideoFrameStream ReadCB's can fire after various state
   // transitions have happened; in that case just drop those frames immediately.
-  if (state_ == kStopped || state_ == kError || state_ == kFlushing)
+  if (state_ == kStopped || state_ == kFlushing)
     return;
 
   if (!frame.get()) {
@@ -454,7 +441,6 @@ void VideoRendererImpl::AttemptRead_Locked() {
   }
 
   switch (state_) {
-    case kPaused:
     case kPrerolling:
     case kPrerolled:
     case kPlaying:
@@ -468,7 +454,6 @@ void VideoRendererImpl::AttemptRead_Locked() {
     case kFlushing:
     case kFlushed:
     case kStopped:
-    case kError:
       return;
   }
 }

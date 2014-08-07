@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2002-2010 The ANGLE Project Authors. All rights reserved.
+// Copyright (c) 2002-2013 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -205,8 +205,7 @@ int ValidateLimitations::validateForLoopInit(TIntermLoop *node)
     }
     // The loop index has type int or float.
     TBasicType type = symbol->getBasicType();
-    if ((type != EbtInt) && (type != EbtFloat))
-    {
+    if ((type != EbtInt) && (type != EbtUInt) && (type != EbtFloat)) {
         error(symbol->getLine(),
               "Invalid type for loop index", getBasicString(type));
         return -1;
@@ -389,7 +388,7 @@ bool ValidateLimitations::validateFunctionCall(TIntermAggregate *node)
 
     bool valid = true;
     TSymbolTable& symbolTable = GetGlobalParseContext()->symbolTable;
-    TSymbol *symbol = symbolTable.find(node->getName());
+    TSymbol* symbol = symbolTable.find(node->getName(), GetGlobalParseContext()->shaderVersion);
     ASSERT(symbol && symbol->isFunction());
     TFunction *function = static_cast<TFunction *>(symbol);
     for (ParamIndex::const_iterator i = pIndex.begin();
@@ -449,8 +448,7 @@ bool ValidateLimitations::validateIndexing(TIntermBinary *node)
     bool valid = true;
     TIntermTyped *index = node->getRight();
     // The index expression must have integral type.
-    if (!index->isScalar() || (index->getBasicType() != EbtInt))
-    {
+    if (!index->isScalarInt()) {
         error(index->getLine(),
               "Index expression must have integral type",
               index->getCompleteString().c_str());

@@ -45,6 +45,42 @@
   ],
   'targets': [
     {
+      'target_name': 'net_derived_sources',
+      'type': 'none',
+      'sources': [
+        'base/registry_controlled_domains/effective_tld_names.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest1.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest2.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest3.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest4.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest5.gperf',
+        'base/registry_controlled_domains/effective_tld_names_unittest6.gperf',
+      ],
+      'rules': [
+        {
+          'rule_name': 'dafsa',
+          'extension': 'gperf',
+          'outputs': [
+            '<(SHARED_INTERMEDIATE_DIR)/net/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT)-inc.cc',
+          ],
+          'inputs': [
+            'tools/tld_cleanup/make_dafsa.py',
+          ],
+          'action': [
+            'python',
+            'tools/tld_cleanup/make_dafsa.py',
+            '<(RULE_INPUT_PATH)',
+            '<(SHARED_INTERMEDIATE_DIR)/net/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT)-inc.cc',
+          ],
+        },
+      ],
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '<(SHARED_INTERMEDIATE_DIR)'
+        ],
+      },
+    },
+    {
       'target_name': 'net',
       'type': '<(component)',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -58,6 +94,7 @@
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/zlib/zlib.gyp:zlib',
         '../url/url.gyp:url_lib',
+        'net_derived_sources',
         'net_resources',
       ],
       'sources': [
@@ -238,9 +275,12 @@
               'quic/crypto/p256_key_exchange_openssl.cc',
               'quic/crypto/scoped_evp_aead_ctx.cc',
               'quic/crypto/scoped_evp_aead_ctx.h',
+              'socket/openssl_ssl_util.cc',
+              'socket/openssl_ssl_util.h',
               'socket/ssl_client_socket_openssl.cc',
               'socket/ssl_client_socket_openssl.h',
               'socket/ssl_server_socket_openssl.cc',
+              'socket/ssl_server_socket_openssl.h',
               'socket/ssl_session_cache_openssl.cc',
               'socket/ssl_session_cache_openssl.h',
             ],
@@ -501,9 +541,11 @@
         '../testing/gtest.gyp:gtest',
         '../third_party/zlib/zlib.gyp:zlib',
         '../url/url.gyp:url_lib',
+        'balsa',
         'http_server',
         'net',
-        'net_test_support'
+        'net_derived_sources',
+        'net_test_support',
       ],
       'sources': [
         '<@(net_test_sources)',
@@ -511,7 +553,6 @@
       'conditions': [
         ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {
           'dependencies': [
-            'balsa',
             'epoll_server',
             'flip_in_mem_edsm_server_base',
             'quic_base',
@@ -758,7 +799,7 @@
             ],
           },
         ],
-        ['OS == "android" and gtest_target_type == "shared_library"', {
+        ['OS == "android"', {
           # TODO(mmenke):  This depends on test_support_base, which depends on
           #                icu.  Figure out a way to remove that dependency.
           'dependencies': [
@@ -880,6 +921,8 @@
         'dns/mock_host_resolver.h',
         'dns/mock_mdns_socket_factory.cc',
         'dns/mock_mdns_socket_factory.h',
+        'http/http_transaction_test_util.cc',
+        'http/http_transaction_test_util.h',
         'proxy/mock_proxy_resolver.cc',
         'proxy/mock_proxy_resolver.h',
         'proxy/mock_proxy_script_fetcher.cc',
@@ -1016,6 +1059,34 @@
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
+    },
+    {
+      'target_name': 'balsa',
+      'type': 'static_library',
+      'dependencies': [
+        '../base/base.gyp:base',
+        'net',
+      ],
+      'sources': [
+        'tools/balsa/balsa_enums.h',
+        'tools/balsa/balsa_frame.cc',
+        'tools/balsa/balsa_frame.h',
+        'tools/balsa/balsa_headers.cc',
+        'tools/balsa/balsa_headers.h',
+        'tools/balsa/balsa_headers_token_utils.cc',
+        'tools/balsa/balsa_headers_token_utils.h',
+        'tools/balsa/balsa_visitor_interface.h',
+        'tools/balsa/http_message_constants.cc',
+        'tools/balsa/http_message_constants.h',
+        'tools/balsa/noop_balsa_visitor.h',
+        'tools/balsa/simple_buffer.cc',
+        'tools/balsa/simple_buffer.h',
+        'tools/balsa/split.cc',
+        'tools/balsa/split.h',
+        'tools/balsa/string_piece_utils.h',
+        'tools/quic/spdy_utils.cc',
+        'tools/quic/spdy_utils.h',
+      ],
     },
     {
       'target_name': 'dump_cache',
@@ -1251,32 +1322,6 @@
     ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {
       'targets': [
         {
-          'target_name': 'balsa',
-          'type': 'static_library',
-          'dependencies': [
-            '../base/base.gyp:base',
-            'net',
-          ],
-          'sources': [
-            'tools/balsa/balsa_enums.h',
-            'tools/balsa/balsa_frame.cc',
-            'tools/balsa/balsa_frame.h',
-            'tools/balsa/balsa_headers.cc',
-            'tools/balsa/balsa_headers.h',
-            'tools/balsa/balsa_headers_token_utils.cc',
-            'tools/balsa/balsa_headers_token_utils.h',
-            'tools/balsa/balsa_visitor_interface.h',
-            'tools/balsa/http_message_constants.cc',
-            'tools/balsa/http_message_constants.h',
-            'tools/balsa/noop_balsa_visitor.h',
-            'tools/balsa/simple_buffer.cc',
-            'tools/balsa/simple_buffer.h',
-            'tools/balsa/split.cc',
-            'tools/balsa/split.h',
-            'tools/balsa/string_piece_utils.h',
-          ],
-        },
-        {
           'target_name': 'epoll_server',
           'type': 'static_library',
           'dependencies': [
@@ -1376,8 +1421,6 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-            '../crypto/crypto.gyp:crypto',
-            '../third_party/openssl/openssl.gyp:openssl',
             '../url/url.gyp:url_lib',
             'balsa',
             'epoll_server',
@@ -1412,8 +1455,6 @@
             'tools/quic/quic_spdy_server_stream.h',
             'tools/quic/quic_time_wait_list_manager.h',
             'tools/quic/quic_time_wait_list_manager.cc',
-            'tools/quic/spdy_utils.cc',
-            'tools/quic/spdy_utils.h',
           ],
         },
         {
@@ -1421,7 +1462,6 @@
           'type': 'executable',
           'dependencies': [
             '../base/base.gyp:base',
-            '../third_party/openssl/openssl.gyp:openssl',
             'net',
             'quic_base',
           ],
@@ -1434,7 +1474,6 @@
           'type': 'executable',
           'dependencies': [
             '../base/base.gyp:base',
-            '../third_party/openssl/openssl.gyp:openssl',
             'net',
             'quic_base',
           ],
@@ -1461,7 +1500,6 @@
           ],
           'variables': {
             'jni_gen_package': 'net',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
 
@@ -1481,7 +1519,6 @@
           ],
           'variables': {
             'jni_gen_package': 'net',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },
@@ -1586,10 +1623,7 @@
         },
       ],
     }],
-    # Special target to wrap a gtest_target_type==shared_library
-    # net_unittests into an android apk for execution.
-    # See base.gyp for TODO(jrg)s about this strategy.
-    ['OS == "android" and gtest_target_type == "shared_library"', {
+    ['OS == "android"', {
       'targets': [
         {
           'target_name': 'net_unittests_apk',

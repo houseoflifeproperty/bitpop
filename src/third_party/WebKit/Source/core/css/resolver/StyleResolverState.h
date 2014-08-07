@@ -22,7 +22,7 @@
 #ifndef StyleResolverState_h
 #define StyleResolverState_h
 
-#include "CSSPropertyNames.h"
+#include "core/CSSPropertyNames.h"
 
 #include "core/css/CSSSVGDocumentValue.h"
 #include "core/css/CSSToLengthConversionData.h"
@@ -100,9 +100,14 @@ public:
         // and constructing it is expensive so we avoid it if possible.
         if (!style()->hasAppearance())
             return;
-        m_cachedUAStyle = CachedUAStyle(style());
+
+        m_cachedUAStyle = CachedUAStyle::create(style());
     }
-    const CachedUAStyle& cachedUAStyle() const { return m_cachedUAStyle; }
+
+    const CachedUAStyle* cachedUAStyle() const
+    {
+        return m_cachedUAStyle.get();
+    }
 
     ElementStyleResources& elementStyleResources() { return m_elementStyleResources; }
     const CSSToStyleMap& styleMap() const { return m_styleMap; }
@@ -128,16 +133,6 @@ public:
     void setWritingMode(WritingMode writingMode) { m_fontBuilder.didChangeFontParameters(m_style->setWritingMode(writingMode)); }
     void setTextOrientation(TextOrientation textOrientation) { m_fontBuilder.didChangeFontParameters(m_style->setTextOrientation(textOrientation)); }
 
-    // SVG handles zooming in a different way compared to CSS. The whole document is scaled instead
-    // of each individual length value in the render style / tree. CSSPrimitiveValue::computeLength*()
-    // multiplies each resolved length with the zoom multiplier - so for SVG we need to disable that.
-    // Though all CSS values that can be applied to outermost <svg> elements (width/height/border/padding...)
-    // need to respect the scaling. RenderBox (the parent class of RenderSVGRoot) grabs values like
-    // width/height/border/padding/... from the RenderStyle -> for SVG these values would never scale,
-    // if we'd pass a 1.0 zoom factor everyhwere. So we only pass a zoom factor of 1.0 for specific
-    // properties that are NOT allowed to scale within a zoomed SVG document (letter/word-spacing/font-size).
-    bool useSVGZoomRules() const { return element() && element()->isSVGElement(); }
-
 private:
     ElementResolveContext m_elementContext;
     Document& m_document;
@@ -160,7 +155,7 @@ private:
 
     FontBuilder m_fontBuilder;
 
-    CachedUAStyle m_cachedUAStyle;
+    OwnPtr<CachedUAStyle> m_cachedUAStyle;
 
     ElementStyleResources m_elementStyleResources;
     // CSSToStyleMap is a pure-logic class and only contains

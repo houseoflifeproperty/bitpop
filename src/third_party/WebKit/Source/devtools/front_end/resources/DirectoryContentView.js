@@ -101,6 +101,7 @@ WebInspector.DirectoryContentView.Node = function(entry)
 /**
  * @param {string} column
  * @param {boolean} reverse
+ * @return {function(!WebInspector.DirectoryContentView.Node, !WebInspector.DirectoryContentView.Node):number|undefined}
  */
 WebInspector.DirectoryContentView.Node.comparator = function(column, reverse)
 {
@@ -176,7 +177,7 @@ WebInspector.DirectoryContentView.Node.prototype = {
             data[indexes.Size] = WebInspector.UIString("-");
         else
             data[indexes.Size] = Number.bytesToString(metadata.size);
-        data[indexes.ModificationTime] = new Date(metadata.modificationTime).toGMTString();
+        data[indexes.ModificationTime] = new Date(metadata.modificationTime).toISOString();
         this.data = data;
     },
 

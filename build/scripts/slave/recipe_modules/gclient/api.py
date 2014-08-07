@@ -86,26 +86,20 @@ class GclientApi(recipe_api.RecipeApi):
 
     revisions = []
     for i, s in enumerate(cfg.solutions):
+      if s.safesync_url:  # prefer safesync_url in gclient mode
+        continue
       if i == 0 and s.revision is None:
         s.revision = self.m.properties.get('orig_revision',
                                            self.m.properties.get('revision'))
 
-        # HACK(iannucci): This is because the webkit Poller on chromium.webkit
-        # alternately sets 'revision' to the chromium revision OR the webkit
-        # revision. This causes gclient to sync to ancient chromium versions
-        # occasionally, which is bad. Key off of the 'project' build_property
-        # which seems to be set uniquely on this master.
-        if self.m.properties.get('project') == 'webkit':
-          s.revision = 'HEAD'
-
       if s.revision is not None and s.revision != '':
         revisions.extend(['--revision', '%s@%s' % (s.name, s.revision)])
 
+    for name, revision in sorted(cfg.revisions.items()):
+      revisions.extend(['--revision', '%s@%s' % (name, revision)])
+
     def parse_got_revision(step_result):
       data = step_result.json.output
-      if not data:
-        step_result.presentation.status = 'WARNING'
-        return
       for path, info in data['solutions'].iteritems():
         # gclient json paths always end with a slash
         path = path.rstrip('/')
@@ -244,3 +238,24 @@ class GclientApi(recipe_api.RecipeApi):
       return True
 
     return False
+
+  def break_locks(self):
+    """Remove all index.lock files. If a previous run of git crashed, bot was
+    reset, etc... we might end up with leftover index.lock files.
+    """
+    yield self.m.python.inline(
+      'cleanup index.lock',
+      """
+        import os, sys
+
+        build_path = sys.argv[1]
+        if os.path.exists(build_path):
+          for (path, dir, files) in os.walk(build_path):
+            for cur_file in files:
+              if cur_file.endswith('index.lock'):
+                path_to_file = os.path.join(path, cur_file)
+                print 'deleting %s' % path_to_file
+                os.remove(path_to_file)
+      """,
+      args = [self.m.path['slave_build']]
+    )

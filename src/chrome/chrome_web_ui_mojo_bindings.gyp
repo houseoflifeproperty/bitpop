@@ -4,6 +4,7 @@
 {
   'targets': [
     {
+      # GN version: //chrome/browser/ui/webui/omnibox:mojo_bindings
       'target_name': 'web_ui_mojo_bindings',
       # The type of this target must be none. This is so that resources can
       # depend upon this target for generating the js bindings files. Any
@@ -13,9 +14,6 @@
         'browser/ui/webui/omnibox/omnibox.mojom',
       ],
       'includes': [ '../mojo/public/tools/bindings/mojom_bindings_generator.gypi' ],
-      'variables': {
-        'mojom_base_output_dir': 'chrome',
-      },
     },
   ],
 }

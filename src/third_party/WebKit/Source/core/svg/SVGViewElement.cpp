@@ -34,10 +34,7 @@ inline SVGViewElement::SVGViewElement(Document& document)
     addToPropertyMap(m_viewTarget);
 }
 
-PassRefPtr<SVGViewElement> SVGViewElement::create(Document& document)
-{
-    return adoptRef(new SVGViewElement(document));
-}
+DEFINE_NODE_FACTORY(SVGViewElement)
 
 bool SVGViewElement::isSupportedAttribute(const QualifiedName& attrName)
 {

@@ -6,19 +6,19 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/invalidation/ticl_invalidation_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/invalidation/fake_invalidation_state_tracker.h"
+#include "components/invalidation/ticl_invalidation_service.h"
 #include "components/invalidation/ticl_settings_provider.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/fake_identity_provider.h"
 #include "google_apis/gaia/fake_oauth2_token_service.h"
 #include "google_apis/gaia/identity_provider.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "sync/notifier/fake_invalidation_state_tracker.h"
 #include "sync/notifier/invalidation_state_tracker.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -53,17 +53,18 @@ TiclProfileSettingsProviderTest::~TiclProfileSettingsProviderTest() {
 
 void TiclProfileSettingsProviderTest::SetUp() {
   invalidation_service_.reset(new TiclInvalidationService(
+      "TestUserAgent",
       scoped_ptr<IdentityProvider>(new FakeIdentityProvider(&token_service_)),
       scoped_ptr<TiclSettingsProvider>(
           new TiclProfileSettingsProvider(&profile_)),
-      gcm::GCMProfileServiceFactory::GetForProfile(&profile_),
+      gcm::GCMProfileServiceFactory::GetForProfile(&profile_)->driver(),
       profile_.GetRequestContext()));
   invalidation_service_->Init(scoped_ptr<syncer::InvalidationStateTracker>(
       new syncer::FakeInvalidationStateTracker));
 }
 
 void TiclProfileSettingsProviderTest::TearDown() {
-  invalidation_service_->Shutdown();
+  invalidation_service_.reset();
 }
 
 TiclInvalidationService::InvalidationNetworkChannel

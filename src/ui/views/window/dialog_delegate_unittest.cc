@@ -37,8 +37,11 @@ class TestDialog : public DialogDelegateView, public ButtonListener {
   }
 
   // DialogDelegateView overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE { return gfx::Size(200, 200); }
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+    return gfx::Size(200, 200);
+  }
   virtual base::string16 GetWindowTitle() const OVERRIDE { return title_; }
+  virtual bool UseNewStyleForThisDialog() const OVERRIDE { return true; }
 
   // ButtonListener override:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE {

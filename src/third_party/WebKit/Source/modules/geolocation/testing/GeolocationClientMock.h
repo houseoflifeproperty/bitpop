@@ -36,8 +36,6 @@
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WebCore {
@@ -51,9 +49,7 @@ public:
     GeolocationClientMock();
     virtual ~GeolocationClientMock();
 
-    void setController(GeolocationController*);
-
-    void setPosition(PassRefPtrWillBeRawPtr<GeolocationPosition>);
+    void setPosition(GeolocationPosition*);
     void setPositionUnavailableError(const String& errorMessage);
     void setPermission(bool allowed);
     int numberOfPendingPermissionRequests() const;
@@ -66,6 +62,8 @@ public:
     virtual GeolocationPosition* lastPosition() OVERRIDE;
     virtual void requestPermission(Geolocation*) OVERRIDE;
     virtual void cancelPermissionRequest(Geolocation*) OVERRIDE;
+    void controllerForTestAdded(GeolocationController*) OVERRIDE;
+    void controllerForTestRemoved(GeolocationController*) OVERRIDE;
 
 private:
     void asyncUpdateController();
@@ -76,8 +74,9 @@ private:
 
     void clearError();
 
-    GeolocationController* m_controller;
-    RefPtrWillBePersistent<GeolocationPosition> m_lastPosition;
+    typedef WillBeHeapHashSet<RawPtrWillBeMember<GeolocationController> > GeolocationControllers;
+    WillBePersistentHeapHashSet<RawPtrWillBeMember<GeolocationController> > m_controllers;
+    Persistent<GeolocationPosition> m_lastPosition;
     bool m_hasError;
     String m_errorMessage;
     Timer<GeolocationClientMock> m_controllerTimer;
@@ -91,8 +90,8 @@ private:
     };
 
     PermissionState m_permissionState;
-    typedef WillBePersistentHeapHashSet<RefPtrWillBeMember<Geolocation> > GeolocationSet;
-    GeolocationSet m_pendingPermissions;
+    typedef HeapHashSet<Member<Geolocation> > GeolocationSet;
+    PersistentHeapHashSet<Member<Geolocation> > m_pendingPermissions;
 };
 
 }

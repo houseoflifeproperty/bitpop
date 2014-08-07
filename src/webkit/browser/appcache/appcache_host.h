@@ -11,7 +11,7 @@
 #include "base/observer_list.h"
 #include "url/gurl.h"
 #include "webkit/browser/appcache/appcache_group.h"
-#include "webkit/browser/appcache/appcache_service.h"
+#include "webkit/browser/appcache/appcache_service_impl.h"
 #include "webkit/browser/appcache/appcache_storage.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/appcache/appcache_interfaces.h"
@@ -48,7 +48,7 @@ class AppCache;
 class AppCacheFrontend;
 class AppCacheRequestHandler;
 
-typedef base::Callback<void(Status, void*)> GetStatusCallback;
+typedef base::Callback<void(AppCacheStatus, void*)> GetStatusCallback;
 typedef base::Callback<void(bool, void*)> StartUpdateCallback;
 typedef base::Callback<void(bool, void*)> SwapCacheCallback;
 
@@ -56,7 +56,7 @@ typedef base::Callback<void(bool, void*)> SwapCacheCallback;
 class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
     : public AppCacheStorage::Delegate,
       public AppCacheGroup::UpdateObserver,
-      public AppCacheService::Observer {
+      public AppCacheServiceImpl::Observer {
  public:
 
   class WEBKIT_STORAGE_BROWSER_EXPORT Observer {
@@ -71,7 +71,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   };
 
   AppCacheHost(int host_id, AppCacheFrontend* frontend,
-               AppCacheService* service);
+               AppCacheServiceImpl* service);
   virtual ~AppCacheHost();
 
   // Adds/removes an observer, the AppCacheHost does not take
@@ -161,13 +161,13 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   }
 
   int host_id() const { return host_id_; }
-  AppCacheService* service() const { return service_; }
+  AppCacheServiceImpl* service() const { return service_; }
   AppCacheStorage* storage() const { return storage_; }
   AppCacheFrontend* frontend() const { return frontend_; }
   AppCache* associated_cache() const { return associated_cache_.get(); }
 
   bool is_selection_pending() const {
-    return pending_selected_cache_id_ != kNoCacheId ||
+    return pending_selected_cache_id_ != kAppCacheNoCacheId ||
            !pending_selected_manifest_url_.is_empty();
   }
 
@@ -183,7 +183,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   friend class content::AppCacheRequestHandlerTest;
   friend class content::AppCacheUpdateJobTest;
 
-  Status GetStatus();
+  AppCacheStatus GetStatus();
   void LoadSelectedCache(int64 cache_id);
   void LoadOrCreateGroup(const GURL& manifest_url);
 
@@ -194,7 +194,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   virtual void OnCacheLoaded(AppCache* cache, int64 cache_id) OVERRIDE;
   virtual void OnGroupLoaded(AppCacheGroup* group,
                              const GURL& manifest_url) OVERRIDE;
-  // AppCacheService::Observer impl
+  // AppCacheServiceImpl::Observer impl
   virtual void OnServiceReinitialized(
       AppCacheStorageReference* old_storage_ref) OVERRIDE;
 
@@ -210,7 +210,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
 
   // Returns true if this host is for a dedicated worker context.
   bool is_for_dedicated_worker() const {
-    return parent_host_id_ != kNoHostId;
+    return parent_host_id_ != kAppCacheNoHostId;
   }
 
   // Returns the parent context's host instance. This is only valid
@@ -275,7 +275,7 @@ class WEBKIT_STORAGE_BROWSER_EXPORT AppCacheHost
   AppCacheFrontend* frontend_;
 
   // Our central service object.
-  AppCacheService* service_;
+  AppCacheServiceImpl* service_;
 
   // And the equally central storage object, with a twist. In some error
   // conditions the storage object gets recreated and reinitialized. The

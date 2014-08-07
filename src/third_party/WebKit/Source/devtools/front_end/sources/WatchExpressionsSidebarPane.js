@@ -52,17 +52,13 @@ WebInspector.WatchExpressionsSidebarPane = function()
     addButton.title = WebInspector.UIString("Add watch expression");
 
     this._requiresUpdate = true;
+    WebInspector.context.addFlavorChangeListener(WebInspector.ExecutionContext ,this.refreshExpressions, this);
 }
 
 WebInspector.WatchExpressionsSidebarPane.prototype = {
     wasShown: function()
     {
         this._refreshExpressionsIfNeeded();
-    },
-
-    reset: function()
-    {
-        this.refreshExpressions();
     },
 
     refreshExpressions: function()
@@ -344,6 +340,11 @@ WebInspector.WatchExpressionsSection.prototype = {
     __proto__: WebInspector.ObjectPropertiesSection.prototype
 }
 
+/**
+ * @param {!WebInspector.RemoteObjectProperty} propertyA
+ * @param {!WebInspector.RemoteObjectProperty} propertyB
+ * @return {number}
+ */
 WebInspector.WatchExpressionsSection.CompareProperties = function(propertyA, propertyB)
 {
     if (propertyA.watchIndex == propertyB.watchIndex)
@@ -449,14 +450,17 @@ WebInspector.WatchExpressionTreeElement.prototype = {
     },
 
     /**
-     * @param {!Event=} event
-     * @return {!Array.<!Element|string>}
+     * @override
+     * @return {{element: !Element, value: (string|undefined)}}
      */
-    elementAndValueToEdit: function(event)
+    elementAndValueToEdit: function()
     {
-        return [this.nameElement, this.property.name.trim()];
+        return { element: this.nameElement, value: this.property.name.trim() };
     },
 
+    /**
+     * @override
+     */
     editingCancelled: function(element, context)
     {
         if (!context.elementToEdit.textContent)
@@ -465,14 +469,14 @@ WebInspector.WatchExpressionTreeElement.prototype = {
         WebInspector.ObjectPropertyTreeElement.prototype.editingCancelled.call(this, element, context);
     },
 
-    applyExpression: function(expression, updateInterface)
+    /**
+     * @override
+     * @param {string} expression
+     */
+    applyExpression: function(expression)
     {
         expression = expression.trim();
-
-        if (!expression)
-            expression = null;
-
-        this.property.name = expression;
+        this.property.name = expression || null;
         this.treeOutline.section.updateExpression(this, expression);
     },
 

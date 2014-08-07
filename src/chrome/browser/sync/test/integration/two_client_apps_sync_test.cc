@@ -5,8 +5,10 @@
 #include "base/basictypes.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/app_sync_data.h"
 #include "chrome/browser/extensions/bookmark_app_helper.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_sync_service.h"
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/test/integration/apps_helper.h"
@@ -501,6 +503,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UnexpectedLaunchType) {
       *extension,
       original_data.extension_sync_data().enabled(),
       original_data.extension_sync_data().incognito_enabled(),
+      original_data.extension_sync_data().remote_install(),
       original_data.app_launch_ordinal(),
       original_data.page_ordinal(),
       extensions::NUM_LAUNCH_TYPES);

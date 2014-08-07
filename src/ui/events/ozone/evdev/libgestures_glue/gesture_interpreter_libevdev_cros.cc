@@ -209,6 +209,8 @@ void GestureInterpreterLibevdevCros::OnGestureMove(const Gesture* gesture,
 void GestureInterpreterLibevdevCros::OnGestureScroll(
     const Gesture* gesture,
     const GestureScroll* scroll) {
+  if (!cursor_)
+    return;  // No cursor!
   DVLOG(3) << base::StringPrintf("Gesture Scroll: (%f, %f) [%f, %f]",
                                  scroll->dx,
                                  scroll->dy,
@@ -255,12 +257,18 @@ void GestureInterpreterLibevdevCros::Dispatch(Event* event) {
 
 void GestureInterpreterLibevdevCros::DispatchMouseButton(unsigned int modifier,
                                                          bool down) {
+  if (!cursor_)
+    return;  // No cursor!
   const gfx::PointF& loc = cursor_->location();
   int flag = modifiers_->GetEventFlagFromModifier(modifier);
   EventType type = (down ? ET_MOUSE_PRESSED : ET_MOUSE_RELEASED);
   modifiers_->UpdateModifier(modifier, down);
   MouseEvent event(type, loc, loc, modifiers_->GetModifierFlags() | flag, flag);
-  Dispatch(&event);
+
+  // This hack is necessary to trigger setting the repeat count.
+  // TODO(spang): Fix it.
+  MouseEvent event2(&event);
+  Dispatch(&event2);
 }
 
 }  // namespace ui

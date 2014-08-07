@@ -36,10 +36,7 @@ inline SVGGlyphElement::SVGGlyphElement(Document& document)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGGlyphElement> SVGGlyphElement::create(Document& document)
-{
-    return adoptRef(new SVGGlyphElement(document));
-}
+DEFINE_NODE_FACTORY(SVGGlyphElement)
 
 void SVGGlyphElement::invalidateGlyphCache()
 {

@@ -11,7 +11,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
-#include "base/sequenced_task_runner.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
 #include "google_apis/drive/drive_common_callbacks.h"
@@ -23,8 +22,9 @@ class DriveServiceInterface;
 
 namespace google_apis {
 class AboutResource;
+class FileList;
+class FileResource;
 class ResourceEntry;
-class ResourceList;
 }
 
 namespace leveldb {
@@ -67,7 +67,6 @@ class SyncEngineContext;
 class SyncEngineInitializer : public SyncTask {
  public:
   SyncEngineInitializer(SyncEngineContext* sync_context,
-                        base::SequencedTaskRunner* task_runner,
                         const base::FilePath& database_path,
                         leveldb::Env* env_override);
   virtual ~SyncEngineInitializer();
@@ -90,11 +89,11 @@ class SyncEngineInitializer : public SyncTask {
   void FindSyncRoot(scoped_ptr<SyncTaskToken> token);
   void DidFindSyncRoot(scoped_ptr<SyncTaskToken> token,
                        google_apis::GDataErrorCode error,
-                       scoped_ptr<google_apis::ResourceList> resource_list);
+                       scoped_ptr<google_apis::FileList> file_list);
   void CreateSyncRoot(scoped_ptr<SyncTaskToken> token);
   void DidCreateSyncRoot(scoped_ptr<SyncTaskToken> token,
                          google_apis::GDataErrorCode error,
-                         scoped_ptr<google_apis::ResourceEntry> entry);
+                         scoped_ptr<google_apis::FileResource> entry);
   void DetachSyncRoot(scoped_ptr<SyncTaskToken> token);
   void DidDetachSyncRoot(scoped_ptr<SyncTaskToken> token,
                          google_apis::GDataErrorCode error);
@@ -102,7 +101,7 @@ class SyncEngineInitializer : public SyncTask {
   void DidListAppRootFolders(
       scoped_ptr<SyncTaskToken> token,
       google_apis::GDataErrorCode error,
-      scoped_ptr<google_apis::ResourceList> resource_list);
+      scoped_ptr<google_apis::FileList> file_list);
   void PopulateDatabase(scoped_ptr<SyncTaskToken> token);
   void DidPopulateDatabase(scoped_ptr<SyncTaskToken> token,
                            SyncStatusCode status);
@@ -110,19 +109,18 @@ class SyncEngineInitializer : public SyncTask {
   SyncEngineContext* sync_context_;  // Not owned.
   leveldb::Env* env_override_;
 
-  scoped_refptr<base::SequencedTaskRunner> task_runner_;
   google_apis::CancelCallback cancel_callback_;
   base::FilePath database_path_;
 
   int find_sync_root_retry_count_;
 
   scoped_ptr<MetadataDatabase> metadata_database_;
-  ScopedVector<google_apis::ResourceEntry> app_root_folders_;
+  ScopedVector<google_apis::FileResource> app_root_folders_;
 
   int64 largest_change_id_;
   std::string root_folder_id_;
 
-  scoped_ptr<google_apis::ResourceEntry> sync_root_folder_;
+  scoped_ptr<google_apis::FileResource> sync_root_folder_;
 
   base::WeakPtrFactory<SyncEngineInitializer> weak_ptr_factory_;
 

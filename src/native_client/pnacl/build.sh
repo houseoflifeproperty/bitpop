@@ -93,14 +93,14 @@ SPECULATIVE_REBUILD_SET=""
 readonly PNACL_SUPPORT="${PNACL_ROOT}/support"
 
 readonly THIRD_PARTY="${NACL_ROOT}"/../third_party
-readonly NACL_SRC_THIRD_PARTY_MOD="${NACL_ROOT}/src/third_party_mod"
+readonly NACL_SRC_THIRD_PARTY="${NACL_ROOT}/src/third_party"
 
 # Git sources
-readonly PNACL_GIT_ROOT="${PNACL_ROOT}/git"
+readonly PNACL_GIT_ROOT="${NACL_ROOT}/toolchain_build/src"
 readonly TC_SRC_BINUTILS="${PNACL_GIT_ROOT}/binutils"
 readonly TC_SRC_LLVM="${PNACL_GIT_ROOT}/llvm"
-readonly TC_SRC_GCC="${PNACL_GIT_ROOT}/gcc"
-readonly TC_SRC_NEWLIB="${PNACL_GIT_ROOT}/nacl-newlib"
+readonly TC_SRC_GCC="${PNACL_GIT_ROOT}/pnacl-gcc"
+readonly TC_SRC_NEWLIB="${PNACL_GIT_ROOT}/pnacl-newlib"
 readonly TC_SRC_LIBSTDCPP="${TC_SRC_GCC}/${LIB_STDCPP_NAME}-v3"
 readonly TC_SRC_COMPILER_RT="${PNACL_GIT_ROOT}/compiler-rt"
 readonly TC_SRC_CLANG="${PNACL_GIT_ROOT}/clang"
@@ -2434,10 +2434,18 @@ libs-support-native() {
   fi
   ${cc_cmd} -c setjmp_${setjmp_arch/-/_}.S -o "${tmpdir}"/setjmp.o
 
+  if [ "$arch" = "x86-32-nonsfi" ]; then
+    ${cc_cmd} -c entry_linux.c -o "${tmpdir}"/entry_linux.o
+    ${cc_cmd} -c entry_linux_x86_32.S -o "${tmpdir}"/entry_linux_asm.o
+  elif [ "$arch" = "arm-nonsfi" ]; then
+    ${cc_cmd} -c entry_linux.c -o "${tmpdir}"/entry_linux.o
+    ${cc_cmd} -c entry_linux_arm.S -o "${tmpdir}"/entry_linux_asm.o
+  fi
+
   # Some of the support code lives in third_party/ because it's based on code
   # from other open-source projects.
   ${cc_cmd} \
-    -c "${NACL_SRC_THIRD_PARTY_MOD}/pnacl_native_newlib_subset/string.c" \
+    -c "${NACL_SRC_THIRD_PARTY}/pnacl_native_newlib_subset/string.c" \
     -std=c99 -o "${tmpdir}"/string.o
   # Pull in the no-errno __ieee754_fmod from newlib and rename it to fmod.
   # This is to support the LLVM frem instruction.
@@ -2723,7 +2731,7 @@ driver-install-python() {
 
   # Copy python scripts
   cp $@ driver_log.py driver_env.py driver_temps.py \
-    *tools.py filetype.py loader.py "${pydir}"
+    *tools.py filetype.py loader.py nativeld.py "${pydir}"
 
   # Install redirector shell/batch scripts
   for name in $@; do
@@ -2740,15 +2748,16 @@ driver-install-python() {
 }
 
 feature-version-file-install() {
+  local install_root=$1
   # Scons tests can check this version number to decide whether to
   # enable tests for toolchain bug fixes or new features.  This allows
   # tests to be enabled on the toolchain buildbots/trybots before the
-  # new toolchain version is rolled into TOOL_REVISIONS (i.e. before
+  # new toolchain version is rolled into the pinned version (i.e. before
   # the tests would pass on the main NaCl buildbots/trybots).
   #
   # If you are adding a test that depends on a toolchain change, you
   # can increment this version number manually.
-  echo 5 > "${INSTALL_ROOT}/FEATURE_VERSION"
+  echo 5 > "${install_root}/FEATURE_VERSION"
 }
 
 # The driver is a simple python script which changes its behavior
@@ -2792,16 +2801,18 @@ HOST_ARCH=${HOST_ARCH}""" > "${destdir}"/driver.conf
   # of the drivers themselves.
   DumpAllRevisions > "${destdir}/REV"
 
-  feature-version-file-install
+  feature-version-file-install ${INSTALL_ROOT}
 }
 
 #@ driver-install-translator - Install driver scripts for translator component
 driver-install-translator() {
   local destdir="${INSTALL_TRANSLATOR}/bin"
 
-  driver-install-python "${destdir}" pnacl-translate.py pnacl-nativeld.py
+  driver-install-python "${destdir}" pnacl-translate.py
 
   echo """HAS_FRONTEND=0""" > "${destdir}"/driver.conf
+
+  feature-version-file-install ${INSTALL_TRANSLATOR}
 }
 
 ######################################################################
@@ -3231,6 +3242,9 @@ print-tagged-tool-sizes() {
   echo "RESULT ${tag}: data= ${sizes[1]} bytes"
   echo "RESULT ${tag}: bss= ${sizes[2]} bytes"
   echo "RESULT ${tag}: total= ${sizes[3]} bytes"
+
+  local file_size=($(du --bytes "${binary}"))
+  echo "RESULT ${tag}: file_size= ${file_size[0]} bytes"
 }
 
 ######################################################################

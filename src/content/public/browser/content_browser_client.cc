@@ -33,7 +33,7 @@ bool ContentBrowserClient::ShouldUseProcessPerSite(
 net::URLRequestContextGetter* ContentBrowserClient::CreateRequestContext(
     BrowserContext* browser_context,
     ProtocolHandlerMap* protocol_handlers,
-    ProtocolHandlerScopedVector protocol_interceptors) {
+    URLRequestInterceptorScopedVector request_interceptors) {
   return NULL;
 }
 
@@ -43,7 +43,7 @@ ContentBrowserClient::CreateRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory,
     ProtocolHandlerMap* protocol_handlers,
-    ProtocolHandlerScopedVector protocol_interceptors) {
+    URLRequestInterceptorScopedVector request_interceptors) {
   return NULL;
 }
 
@@ -63,6 +63,10 @@ bool ContentBrowserClient::ShouldAllowOpenURL(SiteInstance* site_instance,
 
 bool ContentBrowserClient::IsSuitableHost(RenderProcessHost* process_host,
                                           const GURL& site_url) {
+  return true;
+}
+
+bool ContentBrowserClient::MayReuseHost(RenderProcessHost* process_host) {
   return true;
 }
 
@@ -101,7 +105,7 @@ std::string ContentBrowserClient::GetAcceptLangs(BrowserContext* context) {
   return std::string();
 }
 
-gfx::ImageSkia* ContentBrowserClient::GetDefaultFavicon() {
+const gfx::ImageSkia* ContentBrowserClient::GetDefaultFavicon() {
   static gfx::ImageSkia* empty = new gfx::ImageSkia();
   return empty;
 }
@@ -207,20 +211,47 @@ blink::WebNotificationPresenter::Permission
   return blink::WebNotificationPresenter::PermissionAllowed;
 }
 
+void ContentBrowserClient::RequestGeolocationPermission(
+    WebContents* web_contents,
+    int bridge_id,
+    const GURL& requesting_frame,
+    bool user_gesture,
+    base::Callback<void(bool)> result_callback,
+    base::Closure* cancel_callback) {
+  result_callback.Run(true);
+}
+
+void ContentBrowserClient::RequestMidiSysExPermission(
+    WebContents* web_contents,
+    int bridge_id,
+    const GURL& requesting_frame,
+    bool user_gesture,
+    base::Callback<void(bool)> result_callback,
+    base::Closure* cancel_callback) {
+  result_callback.Run(true);
+}
+
+void ContentBrowserClient::RequestProtectedMediaIdentifierPermission(
+    WebContents* web_contents,
+    const GURL& origin,
+    base::Callback<void(bool)> result_callback,
+    base::Closure* cancel_callback) {
+  result_callback.Run(true);
+}
+
 bool ContentBrowserClient::CanCreateWindow(
     const GURL& opener_url,
     const GURL& opener_top_level_frame_url,
     const GURL& source_origin,
     WindowContainerType container_type,
     const GURL& target_url,
-    const content::Referrer& referrer,
+    const Referrer& referrer,
     WindowOpenDisposition disposition,
     const blink::WebWindowFeatures& features,
     bool user_gesture,
     bool opener_suppressed,
-    content::ResourceContext* context,
+    ResourceContext* context,
     int render_process_id,
-    bool is_guest,
     int opener_id,
     bool* no_javascript_access) {
   *no_javascript_access = false;
@@ -283,19 +314,19 @@ VibrationProvider* ContentBrowserClient::OverrideVibrationProvider() {
   return NULL;
 }
 
-#if defined(OS_WIN)
-const wchar_t* ContentBrowserClient::GetResourceDllName() {
+DevToolsManagerDelegate* ContentBrowserClient::GetDevToolsManagerDelegate() {
   return NULL;
 }
-#endif
 
 bool ContentBrowserClient::IsPluginAllowedToCallRequestOSFileHandle(
-    content::BrowserContext* browser_context,
+    BrowserContext* browser_context,
     const GURL& url) {
   return false;
 }
 
-bool ContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs() {
+bool ContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs(
+    BrowserContext* browser_context,
+    const GURL& url) {
   return false;
 }
 
@@ -303,6 +334,12 @@ net::CookieStore* ContentBrowserClient::OverrideCookieStoreForRenderProcess(
     int render_process_id) {
   return NULL;
 }
+
+#if defined(OS_WIN)
+const wchar_t* ContentBrowserClient::GetResourceDllName() {
+  return NULL;
+}
+#endif
 
 #if defined(VIDEO_HOLE)
 ExternalVideoSurfaceContainer*

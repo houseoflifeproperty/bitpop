@@ -77,14 +77,17 @@ public:
     WebDevToolsAgentImpl(WebViewImpl* webViewImpl, WebDevToolsAgentClient* client);
     virtual ~WebDevToolsAgentImpl();
 
+    WebDevToolsAgentClient* client() { return m_client; }
+
     // WebDevToolsAgentPrivate implementation.
     virtual void didCreateScriptContext(WebLocalFrameImpl*, int worldId) OVERRIDE;
-    virtual void webViewResized(const WebSize&) OVERRIDE;
     virtual bool handleInputEvent(WebCore::Page*, const WebInputEvent&) OVERRIDE;
 
     // WebDevToolsAgent implementation.
     virtual void attach() OVERRIDE;
     virtual void reattach(const WebString& savedState) OVERRIDE;
+    virtual void attach(const WebString& hostId) OVERRIDE;
+    virtual void reattach(const WebString& hostId, const WebString& savedState) OVERRIDE;
     virtual void detach() OVERRIDE;
     virtual void didNavigate() OVERRIDE;
     virtual void didBeginFrame(int frameId) OVERRIDE;
@@ -105,7 +108,8 @@ public:
     virtual void sendMessageToFrontend(PassRefPtr<WebCore::JSONObject> message) OVERRIDE;
     virtual void flush() OVERRIDE;
 
-    virtual void overrideDeviceMetrics(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow) OVERRIDE;
+    virtual void setDeviceMetricsOverride(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow) OVERRIDE;
+    virtual void clearDeviceMetricsOverride() OVERRIDE;
     virtual void setTouchEventEmulationEnabled(bool) OVERRIDE;
 
     virtual void getAllocatedObjects(HashSet<const void*>&) OVERRIDE;
@@ -133,11 +137,12 @@ private:
 
     void enableViewportEmulation();
     void disableViewportEmulation();
+    void updatePageScaleFactorLimits();
 
     WebCore::InspectorController* inspectorController();
     WebCore::LocalFrame* mainFrame();
 
-    int m_hostId;
+    int m_debuggerId;
     int m_layerTreeId;
     WebDevToolsAgentClient* m_client;
     WebViewImpl* m_webViewImpl;
@@ -148,6 +153,10 @@ private:
     bool m_emulateViewportEnabled;
     bool m_originalViewportEnabled;
     bool m_isOverlayScrollbarsEnabled;
+
+    float m_originalMinimumPageScaleFactor;
+    float m_originalMaximumPageScaleFactor;
+    bool m_pageScaleLimitsOverriden;
 
     bool m_touchEventEmulationEnabled;
     OwnPtr<WebCore::IntPoint> m_lastPinchAnchorCss;

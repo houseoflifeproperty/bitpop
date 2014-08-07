@@ -10,7 +10,10 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/sync/glue/non_ui_data_type_controller.h"
+#include "components/sync_driver/non_ui_data_type_controller.h"
+
+class Profile;
+class ProfileSyncComponentsFactory;
 
 namespace autofill {
 class AutofillWebDataService;
@@ -25,7 +28,7 @@ class AutofillDataTypeController
   AutofillDataTypeController(
       ProfileSyncComponentsFactory* profile_sync_factory,
       Profile* profile,
-      ProfileSyncService* sync_service);
+      const DisableTypeCallback& disable_callback);
 
   // NonUIDataTypeController implementation.
   virtual syncer::ModelType type() const OVERRIDE;
@@ -51,6 +54,8 @@ class AutofillDataTypeController
 
   // Callback once WebDatabase has loaded.
   void WebDatabaseLoaded();
+
+  Profile* const profile_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillDataTypeController);
 };

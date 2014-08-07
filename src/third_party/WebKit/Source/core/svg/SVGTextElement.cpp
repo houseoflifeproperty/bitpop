@@ -24,7 +24,6 @@
 
 #include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGText.h"
-#include "core/svg/SVGElementInstance.h"
 
 namespace WebCore {
 
@@ -34,10 +33,7 @@ inline SVGTextElement::SVGTextElement(Document& doc)
     ScriptWrappable::init(this);
 }
 
-PassRefPtr<SVGTextElement> SVGTextElement::create(Document& document)
-{
-    return adoptRef(new SVGTextElement(document));
-}
+DEFINE_NODE_FACTORY(SVGTextElement)
 
 // We override SVGGraphics::animatedLocalTransform() so that the transform-origin
 // is not taken into account.

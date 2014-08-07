@@ -20,13 +20,12 @@
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
+#include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_download.h"
 #include "components/autofill/core/browser/autofill_driver.h"
-#include "components/autofill/core/browser/autofill_manager_delegate.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/common/form_data.h"
-#include "components/autofill/core/common/forms_seen_state.h"
 
 class GURL;
 
@@ -50,7 +49,7 @@ class AutofillDataModel;
 class AutofillDownloadManager;
 class AutofillExternalDelegate;
 class AutofillField;
-class AutofillManagerDelegate;
+class AutofillClient;
 class AutofillManagerTestDelegate;
 class AutofillMetrics;
 class AutofillProfile;
@@ -74,8 +73,12 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   // Registers our Enable/Disable Autofill pref.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  static void MigrateUserPrefs(PrefService* prefs);
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
+
   AutofillManager(AutofillDriver* driver,
-                  autofill::AutofillManagerDelegate* delegate,
+                  AutofillClient* client,
                   const std::string& app_locale,
                   AutofillDownloadManagerState enable_download_manager);
   virtual ~AutofillManager();
@@ -84,6 +87,19 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   void SetExternalDelegate(AutofillExternalDelegate* delegate);
 
   void ShowAutofillSettings();
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  // Whether the field represented by |fieldData| should show an entry to prompt
+  // the user to give Chrome access to the user's address book.
+  bool ShouldShowAccessAddressBookSuggestion(const FormData& data,
+                                             const FormFieldData& field_data);
+
+  // If Chrome has not prompted for access to the user's address book, the
+  // method prompts the user for permission and blocks the process. Otherwise,
+  // this method has no effect. The return value reflects whether the user was
+  // prompted with a modal dialog.
+  bool AccessAddressBook();
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
   // Called from our external delegate so they cannot be private.
   virtual void FillOrPreviewForm(AutofillDriver::RendererFormDataAction action,
@@ -109,18 +125,15 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   // Happens when the autocomplete dialog runs its callback when being closed.
   void RequestAutocompleteDialogClosed();
 
-  autofill::AutofillManagerDelegate* delegate() const {
-    return manager_delegate_;
-  }
+  AutofillClient* client() const { return client_; }
 
   const std::string& app_locale() const { return app_locale_; }
 
   // Only for testing.
-  void SetTestDelegate(autofill::AutofillManagerTestDelegate* delegate);
+  void SetTestDelegate(AutofillManagerTestDelegate* delegate);
 
   void OnFormsSeen(const std::vector<FormData>& forms,
-                   const base::TimeTicks& timestamp,
-                   autofill::FormsSeenState state);
+                   const base::TimeTicks& timestamp);
 
   // Processes the submitted |form|, saving any new Autofill data and uploading
   // the possible field types for the submitted fields to the crowdsourcing
@@ -162,7 +175,7 @@ class AutofillManager : public AutofillDownloadManager::Observer {
  protected:
   // Test code should prefer to use this constructor.
   AutofillManager(AutofillDriver* driver,
-                  autofill::AutofillManagerDelegate* delegate,
+                  AutofillClient* client,
                   PersonalDataManager* personal_data);
 
   // Uploads the form data to the Autofill server.
@@ -278,7 +291,7 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   // outlive this object.
   AutofillDriver* driver_;
 
-  autofill::AutofillManagerDelegate* const manager_delegate_;
+  AutofillClient* const client_;
 
   std::string app_locale_;
 
@@ -312,8 +325,8 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   bool user_did_autofill_;
   // Has the user edited a field that was previously autofilled?
   bool user_did_edit_autofilled_field_;
-  // When the page finished loading.
-  base::TimeTicks forms_loaded_timestamp_;
+  // When the form finished loading.
+  std::map<FormData, base::TimeTicks> forms_loaded_timestamps_;
   // When the user first interacted with a potentially fillable form on this
   // page.
   base::TimeTicks initial_interaction_timestamp_;
@@ -330,12 +343,12 @@ class AutofillManager : public AutofillDownloadManager::Observer {
   AutofillExternalDelegate* external_delegate_;
 
   // Delegate used in test to get notifications on certain events.
-  autofill::AutofillManagerTestDelegate* test_delegate_;
+  AutofillManagerTestDelegate* test_delegate_;
 
   base::WeakPtrFactory<AutofillManager> weak_ptr_factory_;
 
   friend class AutofillManagerTest;
-  friend class autofill::FormStructureBrowserTest;
+  friend class FormStructureBrowserTest;
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
                            DeterminePossibleFieldTypesForUpload);
   FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,

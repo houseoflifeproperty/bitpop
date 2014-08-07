@@ -28,6 +28,7 @@
 #include "core/dom/NodeList.h"
 #include "core/html/CollectionIndexCache.h"
 #include "core/html/CollectionType.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 
 namespace WebCore {
@@ -35,14 +36,13 @@ namespace WebCore {
 class Element;
 
 class LiveNodeList : public NodeList, public LiveNodeListBase {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LiveNodeList);
 public:
     LiveNodeList(ContainerNode& ownerNode, CollectionType collectionType, NodeListInvalidationType invalidationType, NodeListRootType rootType = NodeListIsRootedAtNode)
-        : LiveNodeListBase(ownerNode, rootType, invalidationType,
-        collectionType)
-    { }
+        : LiveNodeListBase(ownerNode, rootType, invalidationType, collectionType) { }
 
     virtual unsigned length() const OVERRIDE FINAL { return m_collectionIndexCache.nodeCount(*this); }
-    virtual Node* item(unsigned offset) const OVERRIDE FINAL { return m_collectionIndexCache.nodeAt(*this, offset); }
+    virtual Element* item(unsigned offset) const OVERRIDE FINAL { return m_collectionIndexCache.nodeAt(*this, offset); }
     virtual bool elementMatches(const Element&) const = 0;
 
     virtual void invalidateCache(Document* oldDocument = 0) const OVERRIDE FINAL;
@@ -56,6 +56,8 @@ public:
     Element* traverseToLastElement() const;
     Element* traverseForwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const;
     Element* traverseBackwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const;
+
+    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     virtual Node* virtualOwnerNode() const OVERRIDE FINAL;

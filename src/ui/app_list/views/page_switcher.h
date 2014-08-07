@@ -34,7 +34,7 @@ class PageSwitcher : public views::View,
   void UpdateUIForDragPoint(const gfx::Point& point);
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
 
  private:
@@ -50,7 +50,7 @@ class PageSwitcher : public views::View,
   virtual void TransitionStarted() OVERRIDE;
   virtual void TransitionChanged() OVERRIDE;
 
-  PaginationModel* model_;  // Owned by AppListController.
+  PaginationModel* model_;  // Owned by AppsGridView.
   views::View* buttons_;  // Owned by views hierarchy.
 
   DISALLOW_COPY_AND_ASSIGN(PageSwitcher);

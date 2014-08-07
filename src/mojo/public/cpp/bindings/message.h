@@ -63,6 +63,10 @@ class Message {
   uint8_t* mutable_payload() {
     return reinterpret_cast<uint8_t*>(data_) + data_->header.num_bytes;
   }
+  uint32_t payload_num_bytes() const {
+    assert(data_num_bytes_ >= data_->header.num_bytes);
+    return data_num_bytes_ - data_->header.num_bytes;
+  }
 
   // Access the handles.
   const std::vector<Handle>* handles() const { return &handles_; }
@@ -84,6 +88,11 @@ class MessageReceiver {
   // was accepted and false otherwise, indicating that the message was invalid
   // or malformed.
   virtual bool Accept(Message* message) MOJO_WARN_UNUSED_RESULT = 0;
+};
+
+class MessageReceiverWithResponder : public MessageReceiver {
+ public:
+  virtual ~MessageReceiverWithResponder() {}
 
   // A variant on Accept that registers a MessageReceiver (known as the
   // responder) to handle the response message generated from the given
@@ -103,6 +112,8 @@ class MessageReceiver {
 // Returns MOJO_RESULT_SHOULD_WAIT if the caller should wait on the handle to
 // become readable. Returns MOJO_RESULT_OK if a message was dispatched and
 // otherwise returns an error code if something went wrong.
+//
+// NOTE: The message hasn't been validated and may be malformed!
 MojoResult ReadAndDispatchMessage(MessagePipeHandle handle,
                                   MessageReceiver* receiver,
                                   bool* receiver_result);

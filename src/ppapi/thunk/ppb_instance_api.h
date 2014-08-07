@@ -30,6 +30,7 @@
 
 struct PP_DecryptedBlockInfo;
 struct PP_DecryptedFrameInfo;
+struct PPP_MessageHandler_0_1;
 
 namespace ppapi {
 
@@ -109,8 +110,16 @@ class PPB_Instance_API {
   virtual void ClearInputEventRequest(PP_Instance instance,
                                       uint32_t event_classes) = 0;
 
+  // InputEventPrivate.
+  virtual void StartTrackingLatency(PP_Instance instance) = 0;
+
   // Messaging.
   virtual void PostMessage(PP_Instance instance, PP_Var message) = 0;
+  virtual int32_t RegisterMessageHandler(PP_Instance instance,
+                                         void* user_data,
+                                         const PPP_MessageHandler_0_1* handler,
+                                         PP_Resource message_loop) = 0;
+  virtual void UnregisterMessageHandler(PP_Instance instance) = 0;
 
   // Mouse cursor.
   virtual PP_Bool SetCursor(PP_Instance instance,
@@ -146,19 +155,28 @@ class PPB_Instance_API {
                                 PP_URLComponents_Dev* components) = 0;
 #if !defined(OS_NACL)
   // Content Decryptor.
-  virtual void SessionCreated(PP_Instance instance,
-                              uint32_t session_id,
-                              PP_Var web_session_id) = 0;
+  virtual void PromiseResolved(PP_Instance instance, uint32 promise_id) = 0;
+  virtual void PromiseResolvedWithSession(PP_Instance instance,
+                                          uint32 promise_id,
+                                          PP_Var web_session_id_var) = 0;
+  virtual void PromiseRejected(PP_Instance instance,
+                               uint32 promise_id,
+                               PP_CdmExceptionCode exception_code,
+                               uint32 system_code,
+                               PP_Var error_description_var) = 0;
   virtual void SessionMessage(PP_Instance instance,
-                              uint32_t session_id,
-                              PP_Var message,
-                              PP_Var destination_url) = 0;
-  virtual void SessionReady(PP_Instance instance, uint32_t session_id) = 0;
-  virtual void SessionClosed(PP_Instance instance, uint32_t session_id) = 0;
+                              PP_Var web_session_id_var,
+                              PP_Var message_var,
+                              PP_Var destination_url_var) = 0;
+  virtual void SessionReady(PP_Instance instance,
+                            PP_Var web_session_id_var) = 0;
+  virtual void SessionClosed(PP_Instance instance,
+                             PP_Var web_session_id_var) = 0;
   virtual void SessionError(PP_Instance instance,
-                            uint32_t session_id,
-                            int32_t media_error,
-                            uint32_t system_code) = 0;
+                            PP_Var web_session_id_var,
+                            PP_CdmExceptionCode exception_code,
+                            uint32 system_code,
+                            PP_Var error_description_var) = 0;
   virtual void DeliverBlock(PP_Instance instance,
                             PP_Resource decrypted_block,
                             const PP_DecryptedBlockInfo* block_info) = 0;

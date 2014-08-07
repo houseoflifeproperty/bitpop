@@ -23,7 +23,7 @@
 #ifndef SVGFilterElement_h
 #define SVGFilterElement_h
 
-#include "SVGNames.h"
+#include "core/SVGNames.h"
 #include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 #include "core/svg/SVGAnimatedInteger.h"
@@ -38,7 +38,8 @@ namespace WebCore {
 class SVGFilterElement FINAL : public SVGElement,
                                public SVGURIReference {
 public:
-    static PassRefPtr<SVGFilterElement> create(Document&);
+    DECLARE_NODE_FACTORY(SVGFilterElement);
+    virtual void trace(Visitor*) OVERRIDE;
 
     void setFilterRes(unsigned x, unsigned y);
     void addClient(Node*);
@@ -75,7 +76,7 @@ private:
     RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_primitiveUnits;
     RefPtr<SVGAnimatedIntegerOptionalInteger> m_filterRes;
 
-    HashSet<RefPtr<Node> > m_clientsToAdd;
+    WillBeHeapHashSet<RefPtrWillBeMember<Node> > m_clientsToAdd;
 };
 
 }

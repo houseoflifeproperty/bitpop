@@ -3,12 +3,77 @@
     "cmd": [
       "python",
       "-u",
+      "\nimport os, sys\n\nbuild_path = sys.argv[1]\nif os.path.exists(build_path):\n  for (path, dir, files) in os.walk(build_path):\n    for cur_file in files:\n      if cur_file.endswith('index.lock'):\n        path_to_file = os.path.join(path, cur_file)\n        print 'deleting %s' % path_to_file\n        os.remove(path_to_file)\n",
+      "[SLAVE_BUILD]"
+    ],
+    "name": "cleanup index.lock",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import os, sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@build_path = sys.argv[1]@@@",
+      "@@@STEP_LOG_LINE@python.inline@if os.path.exists(build_path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  for (path, dir, files) in os.walk(build_path):@@@",
+      "@@@STEP_LOG_LINE@python.inline@    for cur_file in files:@@@",
+      "@@@STEP_LOG_LINE@python.inline@      if cur_file.endswith('index.lock'):@@@",
+      "@@@STEP_LOG_LINE@python.inline@        path_to_file = os.path.join(path, cur_file)@@@",
+      "@@@STEP_LOG_LINE@python.inline@        print 'deleting %s' % path_to_file@@@",
+      "@@@STEP_LOG_LINE@python.inline@        os.remove(path_to_file)@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/bot_update.py",
+      "--master",
+      "chromium.testing.master",
+      "--builder",
+      "coverage_builder",
+      "--slave",
+      "tehslave",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'deps_file': '.DEPS.git', 'managed': True, 'name': 'src/repo', 'url': 'svn://svn.chromium.org/chrome/trunk/src'}]\ntarget_os = ['android']",
+      "--revision_mapping_file",
+      "{}",
+      "--patch_url",
+      "https://the.patch.url/the.patch",
+      "--output_json",
+      "/path/to/tmp/json",
+      "--revision",
+      "src/repo@4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00"
+    ],
+    "name": "bot_update",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
       "[DEPOT_TOOLS]/gclient.py",
       "config",
       "--spec",
       "cache_dir = None\nsolutions = [{'deps_file': '.DEPS.git', 'managed': True, 'name': 'src/repo', 'url': 'svn://svn.chromium.org/chrome/trunk/src'}]\ntarget_os = ['android']"
     ],
     "name": "gclient setup"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/gclient_safe_revert.py",
+      ".",
+      "[DEPOT_TOOLS]/gclient"
+    ],
+    "name": "gclient revert"
   },
   {
     "abort_on_failure": true,
@@ -30,57 +95,41 @@
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@json.output@{@@@",
       "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 170242@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/native_client/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 274981@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
       "@@@STEP_LOG_LINE@json.output@    \"src/repo/\": {@@@",
       "@@@STEP_LOG_LINE@json.output@      \"revision\": 126336@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/third_party/WebKit/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 124383@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/third_party/webrtc/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 120644@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarm_client/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 200767@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarming_client/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 276089@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/v8/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 43426@@@",
       "@@@STEP_LOG_LINE@json.output@    }@@@",
       "@@@STEP_LOG_LINE@json.output@  }@@@",
       "@@@STEP_LOG_LINE@json.output@}@@@",
-      "@@@STEP_LOG_END@json.output@@@"
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_nacl_revision@274981@@@",
+      "@@@SET_BUILD_PROPERTY@got_webkit_revision@124383@@@",
+      "@@@SET_BUILD_PROPERTY@got_src_revision@170242@@@",
+      "@@@SET_BUILD_PROPERTY@got_webrtc_revision@120644@@@",
+      "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@",
+      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@",
+      "@@@SET_BUILD_PROPERTY@got_swarm_client_revision@200767@@@"
     ]
-  },
-  {
-    "cmd": [
-      "[SLAVE_BUILD]/src/clank/build/dump_app_manifest_vars.py",
-      "-b",
-      "coverage_builder",
-      "-v",
-      "[SLAVE_BUILD]/src/chrome/VERSION",
-      "--output-json",
-      "/path/to/tmp/json"
-    ],
-    "name": "get app_manifest_vars",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@json.output@{@@@",
-      "@@@STEP_LOG_LINE@json.output@  \"build_id\": 3333, @@@",
-      "@@@STEP_LOG_LINE@json.output@  \"date_string\": 6001, @@@",
-      "@@@STEP_LOG_LINE@json.output@  \"version_code\": 10, @@@",
-      "@@@STEP_LOG_LINE@json.output@  \"version_name\": \"some_builder_1234\"@@@",
-      "@@@STEP_LOG_LINE@json.output@}@@@",
-      "@@@STEP_LOG_END@json.output@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "[SLAVE_BUILD]/src/clank/build/dump_internal_names.py",
-      "--output-json",
-      "/path/to/tmp/json"
-    ],
-    "name": "get_internal_names",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@json.output@{@@@",
-      "@@@STEP_LOG_LINE@json.output@  \"BUILD_BUCKET\": \"build-bucket\", @@@",
-      "@@@STEP_LOG_LINE@json.output@  \"FLAKINESS_DASHBOARD_SERVER\": \"test-results.appspot.com\", @@@",
-      "@@@STEP_LOG_LINE@json.output@  \"INSTRUMENTATION_TEST_DATA\": \"a:b/test/data/android/device_files\", @@@",
-      "@@@STEP_LOG_LINE@json.output@  \"SCREENSHOT_BUCKET\": \"screenshot-archive\"@@@",
-      "@@@STEP_LOG_LINE@json.output@}@@@",
-      "@@@STEP_LOG_END@json.output@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "true"
-    ],
-    "name": "Version: some_builder_1234"
   },
   {
     "cmd": [
@@ -90,11 +139,40 @@
       "runhooks"
     ],
     "env": {
-      "EXTRA_LANDMINES_SCRIPT": "[SLAVE_BUILD]/src/clank/build/get_internal_landmines.py",
-      "GYP_DEFINES": "OS=android app_manifest_version_code=10 app_manifest_version_name=some_builder_1234 chrome_build_id=3333 component=static_library fastbuild=1 target_arch=arm",
+      "GYP_DEFINES": "OS=android component=static_library fastbuild=1 target_arch=arm",
       "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
     },
     "name": "gclient runhooks"
+  },
+  {
+    "cmd": [
+      "[BUILD]/scripts/slave/apply_svn_patch.py",
+      "-p",
+      "https://the.patch.url/the.patch",
+      "-r",
+      "[SLAVE_BUILD]/src/clank"
+    ],
+    "name": "apply_patch"
+  },
+  {
+    "allow_subannotations": false,
+    "can_fail_build": false,
+    "cmd": [
+      "[SLAVE_BUILD]/src/build/tree_truth.sh",
+      "[SLAVE_BUILD]/src",
+      "src",
+      "src-internal",
+      "src/repo"
+    ],
+    "name": "tree truth steps"
+  },
+  {
+    "cmd": [
+      "cat",
+      "[SLAVE_BUILD]/src/chrome/VERSION"
+    ],
+    "name": "get version",
+    "stdout": "/path/to/tmp/version"
   },
   {
     "abort_on_failure": true,
@@ -114,6 +192,14 @@
       "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
     },
     "name": "compile"
+  },
+  {
+    "cmd": [
+      "[DEPOT_TOOLS]/git_number.py"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "git_number",
+    "stdout": "/path/to/tmp/"
   },
   {
     "cmd": [
@@ -174,6 +260,17 @@
     "name": "device_status_check"
   },
   {
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/build/android/provision_devices.py",
+      "-t",
+      "Release"
+    ],
+    "name": "provision_devices"
+  },
+  {
     "always_run": true,
     "cmd": [
       "python",
@@ -188,103 +285,6 @@
       "BUILDTYPE": "Release"
     },
     "name": "Monkey Test"
-  },
-  {
-    "cmd": [
-      "python",
-      "-u",
-      "[SLAVE_BUILD]/src/build/android/test_runner.py",
-      "perf",
-      "--release",
-      "--verbose",
-      "--steps",
-      "fake_config.json",
-      "--flaky-steps",
-      "flake_fakes.json"
-    ],
-    "cwd": "[SLAVE_BUILD]/src",
-    "name": "Sharded Perf Tests"
-  },
-  {
-    "cmd": [
-      "python",
-      "-u",
-      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
-      "fake_config.json",
-      "/path/to/tmp/json"
-    ],
-    "name": "Read test config fake_config.json",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@json.output@[@@@",
-      "@@@STEP_LOG_LINE@json.output@  [@@@",
-      "@@@STEP_LOG_LINE@json.output@    \"perf-test-1\", @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"tools/perf/run_benchmark -v perf-test-1\"@@@",
-      "@@@STEP_LOG_LINE@json.output@  ], @@@",
-      "@@@STEP_LOG_LINE@json.output@  [@@@",
-      "@@@STEP_LOG_LINE@json.output@    \"perf-test-2\", @@@",
-      "@@@STEP_LOG_LINE@json.output@    \"tools/perf/run_benchmark -v perf-test-2\"@@@",
-      "@@@STEP_LOG_LINE@json.output@  ]@@@",
-      "@@@STEP_LOG_LINE@json.output@]@@@",
-      "@@@STEP_LOG_END@json.output@@@"
-    ]
-  },
-  {
-    "allow_subannotations": true,
-    "always_run": true,
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]/scripts/slave/runtest.py",
-      "--target",
-      "Release",
-      "--no-xvfb",
-      "--factory-properties",
-      "{\"buildername\": \"coverage_builder\", \"internal\": true, \"recipe\": \"chromium_android:example\", \"repo_name\": \"src/repo\", \"repo_url\": \"svn://svn.chromium.org/chrome/trunk/src\", \"revision\": \"4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00\", \"slavename\": \"tehslave\"}",
-      "--build-properties",
-      "{\"buildername\": \"coverage_builder\", \"internal\": true, \"recipe\": \"chromium_android:example\", \"repo_name\": \"src/repo\", \"repo_url\": \"svn://svn.chromium.org/chrome/trunk/src\", \"revision\": \"4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00\", \"slavename\": \"tehslave\"}",
-      "--annotate=graphing",
-      "--results-url=https://chromeperf.appspot.com",
-      "--perf-dashboard-id=perf-test-1",
-      "--test-type=perf-test-1",
-      "--builder-name=coverage_builder",
-      "--slave-name=tehslave",
-      "--run-python-script",
-      "[SLAVE_BUILD]/src/build/android/test_runner.py",
-      "perf",
-      "--print-step",
-      "perf-test-1",
-      "--verbose"
-    ],
-    "name": "perf-test-1"
-  },
-  {
-    "allow_subannotations": true,
-    "always_run": true,
-    "cmd": [
-      "python",
-      "-u",
-      "[BUILD]/scripts/slave/runtest.py",
-      "--target",
-      "Release",
-      "--no-xvfb",
-      "--factory-properties",
-      "{\"buildername\": \"coverage_builder\", \"internal\": true, \"recipe\": \"chromium_android:example\", \"repo_name\": \"src/repo\", \"repo_url\": \"svn://svn.chromium.org/chrome/trunk/src\", \"revision\": \"4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00\", \"slavename\": \"tehslave\"}",
-      "--build-properties",
-      "{\"buildername\": \"coverage_builder\", \"internal\": true, \"recipe\": \"chromium_android:example\", \"repo_name\": \"src/repo\", \"repo_url\": \"svn://svn.chromium.org/chrome/trunk/src\", \"revision\": \"4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00\", \"slavename\": \"tehslave\"}",
-      "--annotate=graphing",
-      "--results-url=https://chromeperf.appspot.com",
-      "--perf-dashboard-id=perf-test-2",
-      "--test-type=perf-test-2",
-      "--builder-name=coverage_builder",
-      "--slave-name=tehslave",
-      "--run-python-script",
-      "[SLAVE_BUILD]/src/build/android/test_runner.py",
-      "perf",
-      "--print-step",
-      "perf-test-2",
-      "--verbose"
-    ],
-    "name": "perf-test-2"
   },
   {
     "always_run": true,
@@ -309,7 +309,7 @@
       "[SLAVE_BUILD]/src/out/Release/coverage",
       "--python-only",
       "--host-driven-root",
-      "[SLAVE_BUILD]/src/clank/test"
+      "[SLAVE_BUILD]/src/chrome/test"
     ],
     "name": "Instrumentation test SmallTest"
   },
@@ -321,7 +321,12 @@
       "[SLAVE_BUILD]/src/build/android/test_runner.py",
       "gtest",
       "-s",
-      "unittests"
+      "unittests",
+      "--verbose",
+      "--release",
+      "--isolate_file_path=[SLAVE_BUILD]/src/some_file.isolate",
+      "--gtest_filter=WebRtc*",
+      "--tool=asan"
     ],
     "env": {
       "BUILDTYPE": "Release"
@@ -387,6 +392,19 @@
     "name": "stack_tool_for_tombstones"
   },
   {
+    "always_run": true,
+    "cmd": [
+      "[SLAVE_BUILD]/src/build/android/asan_symbolize.py",
+      "-l",
+      "[SLAVE_BUILD]/src/out/Release/full_log"
+    ],
+    "env": {
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
+    "name": "stack_tool_for_asan"
+  },
+  {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
@@ -402,10 +420,12 @@
     "name": "Generate coverage report"
   },
   {
+    "always_run": true,
     "cmd": [
       "python",
       "-u",
       "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "--",
       "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
       "cp",
       "-R",

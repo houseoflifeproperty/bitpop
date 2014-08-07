@@ -62,7 +62,6 @@ AudioNode::AudioNode(AudioContext* context, float sampleRate)
     , m_channelInterpretation(AudioBus::Speakers)
 {
     ScriptWrappable::init(this);
-    context->lazyInitialize();
 #if DEBUG_AUDIONODE_REFERENCES
     if (!s_isNodeCountInitialized) {
         s_isNodeCountInitialized = true;
@@ -307,9 +306,7 @@ void AudioNode::setChannelCountMode(const String& mode, ExceptionState& exceptio
     } else if (mode == "explicit") {
         m_channelCountMode = Explicit;
     } else {
-        exceptionState.throwDOMException(
-            InvalidStateError,
-            "invalid mode '" + mode + "'; must be 'max', 'clamped-max', or 'explicit'.");
+        ASSERT_NOT_REACHED();
     }
 
     if (m_channelCountMode != oldMode)
@@ -338,9 +335,7 @@ void AudioNode::setChannelInterpretation(const String& interpretation, Exception
     } else if (interpretation == "discrete") {
         m_channelInterpretation = AudioBus::Discrete;
     } else {
-        exceptionState.throwDOMException(
-            InvalidStateError,
-            "invalid interpretation '" + interpretation + "'; must be 'speakers' or 'discrete'.");
+        ASSERT_NOT_REACHED();
     }
 }
 
@@ -532,7 +527,7 @@ void AudioNode::deref(RefType refType)
     // Once AudioContext::uninitialize() is called there's no more chances for deleteMarkedNodes() to get called, so we call here.
     // We can't call in AudioContext::~AudioContext() since it will never be called as long as any AudioNode is alive
     // because AudioNodes keep a reference to the context.
-    if (context()->isAudioThreadFinished())
+    if (!context()->isInitialized())
         context()->deleteMarkedNodes();
 }
 
@@ -596,6 +591,7 @@ void AudioNode::printNodeCounts()
 void AudioNode::trace(Visitor* visitor)
 {
     visitor->trace(m_context);
+    EventTargetWithInlineData::trace(visitor);
 }
 
 #if ENABLE(OILPAN)

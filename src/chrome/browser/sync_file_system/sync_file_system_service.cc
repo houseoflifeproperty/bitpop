@@ -74,7 +74,7 @@ void DidHandleOriginForExtensionUnloadedEvent(
     const GURL& origin,
     SyncStatusCode code) {
   DCHECK(chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED == type ||
-         chrome::NOTIFICATION_EXTENSION_UNINSTALLED == type);
+         chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED == type);
   if (code != SYNC_STATUS_OK &&
       code != SYNC_STATUS_UNKNOWN_ORIGIN) {
     switch (type) {
@@ -84,7 +84,7 @@ void DidHandleOriginForExtensionUnloadedEvent(
                   "Disabling origin for UNLOADED(DISABLE) failed: %s",
                   origin.spec().c_str());
         break;
-      case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
+      case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
         util::Log(logging::LOG_WARNING,
                   FROM_HERE,
                   "Uninstall origin for UNINSTALLED failed: %s",
@@ -132,7 +132,7 @@ void DidGetFileSyncStatusForDump(
   if (++*num_results < files->GetSize())
     return;
 
-  callback.Run(files);
+  callback.Run(*files);
 }
 
 // We need this indirection because WeakPtr can only be bound to methods
@@ -305,12 +305,10 @@ SyncServiceState SyncFileSystemService::GetSyncServiceState() {
 }
 
 void SyncFileSystemService::GetExtensionStatusMap(
-    std::map<GURL, std::string>* status_map) {
-  DCHECK(status_map);
-  status_map->clear();
-  remote_service_->GetOriginStatusMap(status_map);
-  if (v2_remote_service_)
-    v2_remote_service_->GetOriginStatusMap(status_map);
+    const ExtensionStatusMapCallback& callback) {
+  remote_service_->GetOriginStatusMap(
+      base::Bind(&SyncFileSystemService::DidGetExtensionStatusMap,
+                 AsWeakPtr(), callback));
 }
 
 void SyncFileSystemService::DumpFiles(const GURL& origin,
@@ -327,22 +325,10 @@ void SyncFileSystemService::DumpFiles(const GURL& origin,
                  AsWeakPtr(), origin, callback));
 }
 
-scoped_ptr<base::ListValue> SyncFileSystemService::DumpDatabase() {
-  scoped_ptr<base::ListValue> list = remote_service_->DumpDatabase();
-  if (!list)
-    list.reset(new base::ListValue);
-  if (v2_remote_service_) {
-    scoped_ptr<base::ListValue> v2list = v2_remote_service_->DumpDatabase();
-    if (!v2list)
-      return list.Pass();
-    for (base::ListValue::iterator itr = v2list->begin();
-         itr != v2list->end(); ) {
-      scoped_ptr<base::Value> item;
-      itr = v2list->Erase(itr, &item);
-      list->Append(item.release());
-    }
-  }
-  return list.Pass();
+void SyncFileSystemService::DumpDatabase(const DumpFilesCallback& callback) {
+  remote_service_->DumpDatabase(
+      base::Bind(&SyncFileSystemService::DidDumpDatabase,
+                 AsWeakPtr(), callback));
 }
 
 void SyncFileSystemService::GetFileSyncStatus(
@@ -360,15 +346,6 @@ void SyncFileSystemService::GetFileSyncStatus(
     return;
   }
 
-  if (GetRemoteService(url.origin())->IsConflicting(url)) {
-    base::MessageLoopProxy::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback,
-                   SYNC_STATUS_OK,
-                   SYNC_FILE_STATUS_CONFLICTING));
-    return;
-  }
-
   local_service_->HasPendingLocalChanges(
       url,
       base::Bind(&SyncFileSystemService::DidGetLocalChangeStatus,
@@ -382,19 +359,6 @@ void SyncFileSystemService::AddSyncEventObserver(SyncEventObserver* observer) {
 void SyncFileSystemService::RemoveSyncEventObserver(
     SyncEventObserver* observer) {
   observers_.RemoveObserver(observer);
-}
-
-ConflictResolutionPolicy SyncFileSystemService::GetConflictResolutionPolicy(
-    const GURL& origin) {
-  return GetRemoteService(origin)->GetConflictResolutionPolicy(origin);
-}
-
-SyncStatusCode SyncFileSystemService::SetConflictResolutionPolicy(
-    const GURL& origin,
-    ConflictResolutionPolicy policy) {
-  UMA_HISTOGRAM_ENUMERATION("SyncFileSystem.ConflictResolutionPolicy",
-                            policy, CONFLICT_RESOLUTION_POLICY_MAX);
-  return GetRemoteService(origin)->SetConflictResolutionPolicy(origin, policy);
 }
 
 LocalChangeProcessor* SyncFileSystemService::GetLocalChangeProcessor(
@@ -441,11 +405,13 @@ void SyncFileSystemService::Initialize(
     profile_sync_service->AddObserver(this);
   }
 
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  content::Source<Profile>(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_ENABLED,
                  content::Source<Profile>(profile_));
@@ -508,28 +474,36 @@ void SyncFileSystemService::DidInitializeFileSystemForDump(
   DCHECK(!origin.is_empty());
 
   if (status != SYNC_STATUS_OK) {
-    base::ListValue empty_result;
-    callback.Run(&empty_result);
+    callback.Run(base::ListValue());
     return;
   }
 
-  base::ListValue* files =
-      GetRemoteService(origin)->DumpFiles(origin).release();
-  if (!files) {
-    callback.Run(new base::ListValue);
+  GetRemoteService(origin)->DumpFiles(
+      origin,
+      base::Bind(
+          &SyncFileSystemService::DidDumpFiles,
+          AsWeakPtr(),
+          origin,
+          callback));
+}
+
+void SyncFileSystemService::DidDumpFiles(
+    const GURL& origin,
+    const DumpFilesCallback& callback,
+    scoped_ptr<base::ListValue> dump_files) {
+  if (!dump_files || !dump_files->GetSize()) {
+    callback.Run(base::ListValue());
     return;
   }
 
-  if (!files->GetSize()) {
-    callback.Run(files);
-    return;
-  }
-
-  base::Callback<void(base::DictionaryValue* file,
-                      SyncStatusCode sync_status,
-                      SyncFileStatus sync_file_status)> completion_callback =
-      base::Bind(&DidGetFileSyncStatusForDump, base::Owned(files),
-                 base::Owned(new size_t(0)), callback);
+  base::ListValue* files = dump_files.get();
+  base::Callback<void(base::DictionaryValue*,
+                      SyncStatusCode,
+                      SyncFileStatus)> completion_callback =
+      base::Bind(&DidGetFileSyncStatusForDump,
+                 base::Owned(dump_files.release()),
+                 base::Owned(new size_t(0)),
+                 callback);
 
   // After all metadata loaded, sync status can be added to each entry.
   for (size_t i = 0; i < files->GetSize(); ++i) {
@@ -547,6 +521,64 @@ void SyncFileSystemService::DidInitializeFileSystemForDump(
     FileSystemURL url = CreateSyncableFileSystemURL(origin, file_path);
     GetFileSyncStatus(url, base::Bind(completion_callback, file));
   }
+}
+
+void SyncFileSystemService::DidDumpDatabase(
+    const DumpFilesCallback& callback, scoped_ptr<base::ListValue> list) {
+  if (!list)
+    list = make_scoped_ptr(new base::ListValue);
+
+  if (!v2_remote_service_) {
+    callback.Run(*list);
+    return;
+  }
+
+  v2_remote_service_->DumpDatabase(
+      base::Bind(&SyncFileSystemService::DidDumpV2Database,
+                 AsWeakPtr(), callback, base::Passed(&list)));
+}
+
+void SyncFileSystemService::DidDumpV2Database(
+    const DumpFilesCallback& callback,
+    scoped_ptr<base::ListValue> v1list,
+    scoped_ptr<base::ListValue> v2list) {
+  DCHECK(v1list);
+
+  if (v2list) {
+    for (base::ListValue::iterator itr = v2list->begin();
+         itr != v2list->end();) {
+      scoped_ptr<base::Value> item;
+      itr = v2list->Erase(itr, &item);
+      v1list->Append(item.release());
+    }
+  }
+
+  callback.Run(*v1list);
+}
+
+void SyncFileSystemService::DidGetExtensionStatusMap(
+    const ExtensionStatusMapCallback& callback,
+    scoped_ptr<RemoteFileSyncService::OriginStatusMap> status_map) {
+  if (!v2_remote_service_) {
+    callback.Run(*status_map);
+    return;
+  }
+
+  v2_remote_service_->GetOriginStatusMap(
+      base::Bind(&SyncFileSystemService::DidGetV2ExtensionStatusMap,
+                 AsWeakPtr(),
+                 callback,
+                 base::Passed(&status_map)));
+}
+
+void SyncFileSystemService::DidGetV2ExtensionStatusMap(
+    const ExtensionStatusMapCallback& callback,
+    scoped_ptr<RemoteFileSyncService::OriginStatusMap> status_map_v1,
+    scoped_ptr<RemoteFileSyncService::OriginStatusMap> status_map_v2) {
+  // Merge |status_map_v2| into |status_map_v1|.
+  status_map_v1->insert(status_map_v2->begin(), status_map_v2->end());
+
+  callback.Run(*status_map_v1);
 }
 
 void SyncFileSystemService::SetSyncEnabledForTesting(bool enabled) {
@@ -616,13 +648,13 @@ void SyncFileSystemService::Observe(
   // Reload, Restart: UNLOADED(DISABLE) -> INSTALLED -> ENABLED.
   //
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED:
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED:
       HandleExtensionInstalled(details);
       break;
     case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
       HandleExtensionUnloaded(type, details);
       break;
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED:
       HandleExtensionUninstalled(type, details);
       break;
     case chrome::NOTIFICATION_EXTENSION_ENABLED:
@@ -767,7 +799,7 @@ RemoteFileSyncService* SyncFileSystemService::GetRemoteService(
 
   if (!v2_remote_service_) {
     v2_remote_service_ = RemoteFileSyncService::CreateForBrowserContext(
-        RemoteFileSyncService::V2, profile_);
+        RemoteFileSyncService::V2, profile_, &task_logger_);
     scoped_ptr<RemoteSyncRunner> v2_remote_syncer(
         new RemoteSyncRunner(kRemoteSyncNameV2, this,
                              v2_remote_service_.get()));
@@ -775,8 +807,6 @@ RemoteFileSyncService* SyncFileSystemService::GetRemoteService(
     v2_remote_service_->AddFileStatusObserver(this);
     v2_remote_service_->SetRemoteChangeProcessor(local_service_.get());
     v2_remote_service_->SetSyncEnabled(sync_enabled_);
-    v2_remote_service_->SetDefaultConflictResolutionPolicy(
-        remote_service_->GetDefaultConflictResolutionPolicy());
     remote_sync_runners_.push_back(v2_remote_syncer.release());
   }
   return v2_remote_service_.get();

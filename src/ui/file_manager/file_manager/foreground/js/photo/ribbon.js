@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -311,7 +311,7 @@ Ribbon.prototype.renderThumbnail_ = function(index) {
 
   util.createChild(thumbnail, 'image-wrapper');
 
-  this.metadataCache_.get(item.getEntry(), Gallery.METADATA_TYPE,
+  this.metadataCache_.getOne(item.getEntry(), Gallery.METADATA_TYPE,
       this.setThumbnailImage_.bind(this, thumbnail, item.getEntry()));
 
   // TODO: Implement LRU eviction.
@@ -344,7 +344,13 @@ Ribbon.prototype.setThumbnailImage_ = function(thumbnail, entry, metadata) {
  */
 Ribbon.prototype.onContentChange_ = function(event) {
   var url = event.item.getEntry().toURL();
-  this.remapCache_(event.oldEntry.toURL(), url);
+  if (event.oldEntry.toURL() !== url) {
+    this.remapCache_(event.oldEntry.toURL(), url);
+  } else {
+    delete this.renderCache_[url];
+    var index = this.dataModel_.indexOf(event.item);
+    this.renderThumbnail_(index);
+  }
 
   var thumbnail = this.renderCache_[url];
   if (thumbnail && event.metadata)

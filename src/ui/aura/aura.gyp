@@ -14,12 +14,12 @@
         '../../base/base.gyp:base',
         '../../base/base.gyp:base_i18n',
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../../gpu/gpu.gyp:gpu',
         '../../skia/skia.gyp:skia',
         '../base/ui_base.gyp:ui_base',
         '../compositor/compositor.gyp:compositor',
         '../events/events.gyp:events',
         '../events/events.gyp:events_base',
+        '../events/platform/events_platform.gyp:events_platform',
         '../gfx/gfx.gyp:gfx',
         '../gfx/gfx.gyp:gfx_geometry',
       ],
@@ -61,7 +61,7 @@
         'input_state_lookup_win.h',
         'layout_manager.cc',
         'layout_manager.h',
-        'remote_window_tree_host_win.cc',	
+        'remote_window_tree_host_win.cc',
         'remote_window_tree_host_win.h',
         'scoped_window_targeter.cc',
         'scoped_window_targeter.h',
@@ -71,6 +71,7 @@
         'window_event_dispatcher.h',
         'window_delegate.h',
         'window_layer_type.h',
+        'window_observer.cc',
         'window_observer.h',
         'window_targeter.cc',
         'window_targeter.h',
@@ -116,6 +117,7 @@
             '../../build/linux/system.gyp:x11',
             '../../build/linux/system.gyp:xrandr',
             '../../build/linux/system.gyp:xi',
+            '../events/platform/x11/x11_events_platform.gyp:x11_events_platform',
           ],
         }],
         ['OS=="win"', {
@@ -129,6 +131,7 @@
         }],
         ['use_ozone==1', {
           'dependencies': [
+            '../events/ozone/events_ozone.gyp:events_ozone',
             '../ozone/ozone.gyp:ozone',
           ],
         }],
@@ -211,7 +214,7 @@
       'conditions': [
         ['use_x11==1', {
           'dependencies': [
-            '../gfx/gfx.gyp:gfx_x11',
+            '../gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
       ]
@@ -223,6 +226,7 @@
         '../../base/base.gyp:base',
         '../../base/base.gyp:base_i18n',
         '../../cc/cc.gyp:cc',
+        '../../gpu/gpu.gyp:gles2_implementation',
         '../../skia/skia.gyp:skia',
         '../../third_party/icu/icu.gyp:icui18n',
         '../../third_party/icu/icu.gyp:icuuc',
@@ -244,7 +248,7 @@
       'conditions': [
         ['use_x11==1', {
           'dependencies': [
-            '../gfx/gfx.gyp:gfx_x11',
+            '../gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
       ]

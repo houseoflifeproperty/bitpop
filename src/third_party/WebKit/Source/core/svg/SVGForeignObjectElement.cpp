@@ -21,11 +21,10 @@
 #include "config.h"
 #include "core/svg/SVGForeignObjectElement.h"
 
-#include "XLinkNames.h"
+#include "core/XLinkNames.h"
 #include "core/frame/UseCounter.h"
 #include "core/rendering/svg/RenderSVGForeignObject.h"
 #include "core/rendering/svg/RenderSVGResource.h"
-#include "core/svg/SVGElementInstance.h"
 #include "core/svg/SVGLength.h"
 #include "wtf/Assertions.h"
 
@@ -48,10 +47,7 @@ inline SVGForeignObjectElement::SVGForeignObjectElement(Document& document)
     UseCounter::count(document, UseCounter::SVGForeignObjectElement);
 }
 
-PassRefPtr<SVGForeignObjectElement> SVGForeignObjectElement::create(Document& document)
-{
-    return adoptRef(new SVGForeignObjectElement(document));
-}
+DEFINE_NODE_FACTORY(SVGForeignObjectElement)
 
 bool SVGForeignObjectElement::isSupportedAttribute(const QualifiedName& attrName)
 {

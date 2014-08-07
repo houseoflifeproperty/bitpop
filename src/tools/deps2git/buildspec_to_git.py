@@ -19,8 +19,7 @@ DEPS_OVERRIDES = {
 
 
 # pylint: disable=W0613
-def CleanDeps(deps, deps_os, include_rules, skip_child_includes, hooks,
-              svn_deps_vars):
+def CleanDeps(deps, deps_os, include_rules, skip_child_includes, hooks):
   global webkit_git
   webkit_rev = None
   for os, deps_section in ([(None, deps)] +
@@ -129,7 +128,7 @@ def SvnUrlToGitUrl(path, svn_url):
     svn_url = match.group(2)
 
   # Handle the main 'src' repo which only appears in buildspecs.
-  match = re.match('/(branches/(?P<branch>[^/]+)|trunk)/src', svn_url)
+  match = re.match('/(branches/(?P<branch>[^/]+)|trunk)/src$', svn_url)
   if match:
     if match.groupdict().get('branch'):
       return (path, GIT_HOST + 'chromium/src.git', GIT_HOST,

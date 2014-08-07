@@ -94,6 +94,7 @@ class SkiaTextRenderer {
     typedef std::pair<int, SkColor> Piece;
 
     Canvas* canvas_;
+    SkMatrix matrix_;
     const Point start_;
     SkPaint paint_;
     int total_length_;
@@ -176,6 +177,10 @@ struct Line {
   int baseline;
 };
 
+// Creates an SkTypeface from a font |family| name and a |gfx::Font::FontStyle|.
+skia::RefPtr<SkTypeface> CreateSkiaTypeface(const std::string& family,
+                                            int style);
+
 }  // namespace internal
 
 // RenderText represents an abstract model of styled text and its corresponding
@@ -186,7 +191,7 @@ class GFX_EXPORT RenderText {
  public:
   virtual ~RenderText();
 
-  // Creates a platform-specific RenderText instance.
+  // Creates a platform-specific or cross-platform RenderText instance.
   static RenderText* CreateInstance();
 
   const base::string16& text() const { return text_; }
@@ -251,17 +256,12 @@ class GFX_EXPORT RenderText {
   void set_truncate_length(size_t length) { truncate_length_ = length; }
 
   // Elides the text to fit in |display_rect| according to the specified
-  // |elide_behavior|. |ELIDE_IN_MIDDLE| is not supported.  If both truncate
-  // and elide are specified, the shorter of the two will be applicable.
+  // |elide_behavior|. |ELIDE_MIDDLE| is not supported. If a truncate length and
+  // an elide mode are specified, the shorter of the two will be applicable.
   void SetElideBehavior(ElideBehavior elide_behavior);
 
   const Rect& display_rect() const { return display_rect_; }
   void SetDisplayRect(const Rect& r);
-
-  void set_fade_head(bool fade_head) { fade_head_ = fade_head; }
-  bool fade_head() const { return fade_head_; }
-  void set_fade_tail(bool fade_tail) { fade_tail_ = fade_tail; }
-  bool fade_tail() const { return fade_tail_; }
 
   bool background_is_transparent() const { return background_is_transparent_; }
   void set_background_is_transparent(bool transparent) {
@@ -343,9 +343,8 @@ class GFX_EXPORT RenderText {
   VisualCursorDirection GetVisualDirectionOfLogicalEnd();
 
   // Returns the size required to display the current string (which is the
-  // wrapped size in multiline mode). Note that this returns the raw size of the
-  // string, which does not include the cursor or the margin area of text
-  // shadows.
+  // wrapped size in multiline mode). The returned size does not include space
+  // reserved for the cursor or the offset text shadows.
   virtual Size GetStringSize() = 0;
 
   // This is same as GetStringSize except that fractional size is returned.
@@ -408,7 +407,7 @@ class GFX_EXPORT RenderText {
   SelectionModel GetSelectionModelForSelectionStart();
 
   // Sets shadows to drawn with text.
-  void SetTextShadows(const ShadowValues& shadows);
+  void set_shadows(const ShadowValues& shadows) { shadows_ = shadows; }
 
   typedef std::pair<Font, Range> FontSpan;
   // For testing purposes, returns which fonts were chosen for which parts of
@@ -529,12 +528,10 @@ class GFX_EXPORT RenderText {
   Point ToTextPoint(const Point& point);
   Point ToViewPoint(const Point& point);
 
-  // Convert a text space x-coordinate range to corresponding rects in view
-  // space.
+  // Convert a text space x-coordinate range to rects in view space.
   std::vector<Rect> TextBoundsToViewBounds(const Range& x);
 
-  // Returns the line offset from the origin, accounting for text alignment
-  // only.
+  // Returns the line offset from the origin, accounts for text alignment only.
   Vector2d GetAlignmentOffset(size_t line_number);
 
   // Applies fade effects to |renderer|.
@@ -568,6 +565,11 @@ class GFX_EXPORT RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_NormalWidth);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_SufficientWidth);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_Newline);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, GlyphBounds);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_GlyphBounds);
+
+  // Creates a platform-specific RenderText instance.
+  static RenderText* CreateNativeInstance();
 
   // Set the cursor to |position|, with the caret trailing the previous
   // grapheme, or if there is no previous grapheme, leading the cursor position.
@@ -655,7 +657,7 @@ class GFX_EXPORT RenderText {
   // The maximum length of text to display, 0 forgoes a hard limit.
   size_t truncate_length_;
 
-  // The behavior for eliding or truncating.
+  // The behavior for eliding, fading, or truncating.
   ElideBehavior elide_behavior_;
 
   // The obscured and/or truncated text that will be displayed.
@@ -664,10 +666,6 @@ class GFX_EXPORT RenderText {
   // Whether the text should be broken into multiple lines. Uses the width of
   // |display_rect_| as the width cap.
   bool multiline_;
-
-  // Fade text head and/or tail, if text doesn't fit into |display_rect_|.
-  bool fade_head_;
-  bool fade_tail_;
 
   // Is the background transparent (either partially or fully)?
   bool background_is_transparent_;
@@ -695,7 +693,7 @@ class GFX_EXPORT RenderText {
   bool cached_bounds_and_offset_valid_;
 
   // Text shadows to be drawn.
-  ShadowValues text_shadows_;
+  ShadowValues shadows_;
 
   // A list of valid layout text line break positions.
   BreakList<size_t> line_breaks_;

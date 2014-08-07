@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/editing/IndentOutdentCommand.h"
 
-#include "HTMLNames.h"
+#include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/editing/InsertListCommand.h"
@@ -53,26 +53,26 @@ IndentOutdentCommand::IndentOutdentCommand(Document& document, EIndentType typeO
 bool IndentOutdentCommand::tryIndentingAsListItem(const Position& start, const Position& end)
 {
     // If our selection is not inside a list, bail out.
-    RefPtr<Node> lastNodeInSelectedParagraph = start.deprecatedNode();
-    RefPtr<Element> listNode = enclosingList(lastNodeInSelectedParagraph.get());
+    RefPtrWillBeRawPtr<Node> lastNodeInSelectedParagraph = start.deprecatedNode();
+    RefPtrWillBeRawPtr<Element> listNode = enclosingList(lastNodeInSelectedParagraph.get());
     if (!listNode)
         return false;
 
     // Find the block that we want to indent.  If it's not a list item (e.g., a div inside a list item), we bail out.
-    RefPtr<Element> selectedListItem = enclosingBlock(lastNodeInSelectedParagraph.get());
+    RefPtrWillBeRawPtr<Element> selectedListItem = enclosingBlock(lastNodeInSelectedParagraph.get());
 
     // FIXME: we need to deal with the case where there is no li (malformed HTML)
-    if (!isHTMLLIElement(*selectedListItem))
+    if (!selectedListItem || !isHTMLLIElement(*selectedListItem))
         return false;
 
     // FIXME: previousElementSibling does not ignore non-rendered content like <span></span>.  Should we?
-    RefPtr<Element> previousList = ElementTraversal::previousSibling(*selectedListItem);
-    RefPtr<Element> nextList = ElementTraversal::nextSibling(*selectedListItem);
+    RefPtrWillBeRawPtr<Element> previousList = ElementTraversal::previousSibling(*selectedListItem);
+    RefPtrWillBeRawPtr<Element> nextList = ElementTraversal::nextSibling(*selectedListItem);
 
     // We should calculate visible range in list item because inserting new
     // list element will change visibility of list item, e.g. :first-child
     // CSS selector.
-    RefPtr<Element> newList = document().createElement(listNode->tagQName(), false);
+    RefPtrWillBeRawPtr<Element> newList = document().createElement(listNode->tagQName(), false);
     insertNodeBefore(newList, selectedListItem.get());
 
     // We should clone all the children of the list item for indenting purposes. However, in case the current
@@ -93,7 +93,7 @@ bool IndentOutdentCommand::tryIndentingAsListItem(const Position& start, const P
     return true;
 }
 
-void IndentOutdentCommand::indentIntoBlockquote(const Position& start, const Position& end, RefPtr<Element>& targetBlockquote)
+void IndentOutdentCommand::indentIntoBlockquote(const Position& start, const Position& end, RefPtrWillBeRawPtr<Element>& targetBlockquote)
 {
     Node* enclosingCell = enclosingNodeOfType(start, &isTableCell);
     Node* nodeToSplitTo;
@@ -107,7 +107,7 @@ void IndentOutdentCommand::indentIntoBlockquote(const Position& start, const Pos
     if (!nodeToSplitTo)
         return;
 
-    RefPtr<Node> outerBlock = (start.containerNode() == nodeToSplitTo) ? start.containerNode() : splitTreeToNode(start.containerNode(), nodeToSplitTo);
+    RefPtrWillBeRawPtr<Node> outerBlock = (start.containerNode() == nodeToSplitTo) ? start.containerNode() : splitTreeToNode(start.containerNode(), nodeToSplitTo).get();
 
     VisiblePosition startOfContents(start);
     if (!targetBlockquote) {
@@ -176,18 +176,23 @@ void IndentOutdentCommand::outdentParagraph()
 
         return;
     }
-    Node* enclosingBlockFlow = enclosingBlock(visibleStartOfParagraph.deepEquivalent().deprecatedNode());
-    RefPtr<Node> splitBlockquoteNode = enclosingNode;
-    if (enclosingBlockFlow != enclosingNode)
-        splitBlockquoteNode = splitTreeToNode(enclosingBlockFlow, enclosingNode, true);
-    else {
-        // We split the blockquote at where we start outdenting.
-        Node* highestInlineNode = highestEnclosingNodeOfType(visibleStartOfParagraph.deepEquivalent(), isInline, CannotCrossEditingBoundary, enclosingBlockFlow);
-        splitElement(toElement(enclosingNode), (highestInlineNode) ? highestInlineNode : visibleStartOfParagraph.deepEquivalent().deprecatedNode());
+    RefPtrWillBeRawPtr<Node> splitBlockquoteNode = enclosingNode;
+    if (Node* enclosingBlockFlow = enclosingBlock(visibleStartOfParagraph.deepEquivalent().deprecatedNode())) {
+        if (enclosingBlockFlow != enclosingNode) {
+            splitBlockquoteNode = splitTreeToNode(enclosingBlockFlow, enclosingNode, true);
+        } else {
+            // We split the blockquote at where we start outdenting.
+            Node* highestInlineNode = highestEnclosingNodeOfType(visibleStartOfParagraph.deepEquivalent(), isInline, CannotCrossEditingBoundary, enclosingBlockFlow);
+            splitElement(toElement(enclosingNode), (highestInlineNode) ? highestInlineNode : visibleStartOfParagraph.deepEquivalent().deprecatedNode());
+        }
     }
-    RefPtr<Node> placeholder = createBreakElement(document());
+    VisiblePosition startOfParagraphToMove(startOfParagraph(visibleStartOfParagraph));
+    VisiblePosition endOfParagraphToMove(endOfParagraph(visibleEndOfParagraph));
+    if (startOfParagraphToMove.isNull() || endOfParagraphToMove.isNull())
+        return;
+    RefPtrWillBeRawPtr<Node> placeholder = createBreakElement(document());
     insertNodeBefore(placeholder, splitBlockquoteNode);
-    moveParagraph(startOfParagraph(visibleStartOfParagraph), endOfParagraph(visibleEndOfParagraph), VisiblePosition(positionBeforeNode(placeholder.get())), true);
+    moveParagraph(startOfParagraphToMove, endOfParagraphToMove, VisiblePosition(positionBeforeNode(placeholder.get())), true);
 }
 
 // FIXME: We should merge this function with ApplyBlockElementCommand::formatSelection
@@ -235,7 +240,7 @@ void IndentOutdentCommand::formatSelection(const VisiblePosition& startOfSelecti
         outdentRegion(startOfSelection, endOfSelection);
 }
 
-void IndentOutdentCommand::formatRange(const Position& start, const Position& end, const Position&, RefPtr<Element>& blockquoteForNextIndent)
+void IndentOutdentCommand::formatRange(const Position& start, const Position& end, const Position&, RefPtrWillBeRawPtr<Element>& blockquoteForNextIndent)
 {
     if (tryIndentingAsListItem(start, end))
         blockquoteForNextIndent = nullptr;

@@ -263,7 +263,8 @@ int vp9_full_search_sadx8(const struct macroblock *x, const struct mv *ref_mv, i
 RTCD_EXTERN int (*vp9_full_search_sad)(const struct macroblock *x, const struct mv *ref_mv, int sad_per_bit, int distance, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv, struct mv *best_mv);
 
 void vp9_fwht4x4_c(const int16_t *input, int16_t *output, int stride);
-#define vp9_fwht4x4 vp9_fwht4x4_c
+void vp9_fwht4x4_mmx(const int16_t *input, int16_t *output, int stride);
+RTCD_EXTERN void (*vp9_fwht4x4)(const int16_t *input, int16_t *output, int stride);
 
 unsigned int vp9_get_mb_ss_c(const int16_t *);
 unsigned int vp9_get_mb_ss_mmx(const int16_t *);
@@ -318,9 +319,9 @@ void vp9_idct4x4_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
 void vp9_idct4x4_1_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
 RTCD_EXTERN void (*vp9_idct4x4_1_add)(const int16_t *input, uint8_t *dest, int dest_stride);
 
-void vp9_idct8x8_10_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
-void vp9_idct8x8_10_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
-RTCD_EXTERN void (*vp9_idct8x8_10_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct8x8_12_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct8x8_12_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct8x8_12_add)(const int16_t *input, uint8_t *dest, int dest_stride);
 
 void vp9_idct8x8_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
 void vp9_idct8x8_1_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
@@ -951,6 +952,8 @@ static void setup_rtcd_internal(void)
     vp9_full_search_sad = vp9_full_search_sad_c;
     if (flags & HAS_SSE3) vp9_full_search_sad = vp9_full_search_sadx3;
     if (flags & HAS_SSE4_1) vp9_full_search_sad = vp9_full_search_sadx8;
+    vp9_fwht4x4 = vp9_fwht4x4_c;
+    if (flags & HAS_MMX) vp9_fwht4x4 = vp9_fwht4x4_mmx;
     vp9_get_mb_ss = vp9_get_mb_ss_c;
     if (flags & HAS_MMX) vp9_get_mb_ss = vp9_get_mb_ss_mmx;
     if (flags & HAS_SSE2) vp9_get_mb_ss = vp9_get_mb_ss_sse2;
@@ -978,8 +981,8 @@ static void setup_rtcd_internal(void)
     if (flags & HAS_SSE2) vp9_idct4x4_16_add = vp9_idct4x4_16_add_sse2;
     vp9_idct4x4_1_add = vp9_idct4x4_1_add_c;
     if (flags & HAS_SSE2) vp9_idct4x4_1_add = vp9_idct4x4_1_add_sse2;
-    vp9_idct8x8_10_add = vp9_idct8x8_10_add_c;
-    if (flags & HAS_SSE2) vp9_idct8x8_10_add = vp9_idct8x8_10_add_sse2;
+    vp9_idct8x8_12_add = vp9_idct8x8_12_add_c;
+    if (flags & HAS_SSE2) vp9_idct8x8_12_add = vp9_idct8x8_12_add_sse2;
     vp9_idct8x8_1_add = vp9_idct8x8_1_add_c;
     if (flags & HAS_SSE2) vp9_idct8x8_1_add = vp9_idct8x8_1_add_sse2;
     vp9_idct8x8_64_add = vp9_idct8x8_64_add_c;

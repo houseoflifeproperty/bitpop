@@ -24,9 +24,8 @@
 #if ENABLE(SVG_FONTS)
 #include "core/svg/SVGFontFaceElement.h"
 
-#include <math.h>
-#include "CSSPropertyNames.h"
-#include "CSSValueKeywords.h"
+#include "core/CSSPropertyNames.h"
+#include "core/CSSValueKeywords.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSFontSelector.h"
 #include "core/css/CSSStyleSheet.h"
@@ -41,6 +40,7 @@
 #include "core/svg/SVGFontFaceSrcElement.h"
 #include "core/svg/SVGGlyphElement.h"
 #include "platform/fonts/Font.h"
+#include <math.h>
 
 namespace WebCore {
 
@@ -49,7 +49,7 @@ using namespace SVGNames;
 inline SVGFontFaceElement::SVGFontFaceElement(Document& document)
     : SVGElement(font_faceTag, document)
     , m_fontFaceRule(StyleRuleFontFace::create())
-    , m_fontElement(0)
+    , m_fontElement(nullptr)
     , m_weakFactory(this)
 {
     ScriptWrappable::init(this);
@@ -57,10 +57,7 @@ inline SVGFontFaceElement::SVGFontFaceElement(Document& document)
     m_fontFaceRule->setProperties(styleDeclaration.release());
 }
 
-PassRefPtr<SVGFontFaceElement> SVGFontFaceElement::create(Document& document)
-{
-    return adoptRef(new SVGFontFaceElement(document));
-}
+DEFINE_NODE_FACTORY(SVGFontFaceElement)
 
 static CSSPropertyID cssPropertyIdForFontFaceAttributeName(const QualifiedName& attrName)
 {
@@ -285,7 +282,7 @@ void SVGFontFaceElement::rebuildFontFace()
         list = CSSValueList::createCommaSeparated();
         list->append(CSSFontFaceSrcValue::createLocal(fontFamily()));
     } else {
-        m_fontElement = 0;
+        m_fontElement = nullptr;
         // we currently ignore all but the last src element, alternatively we could concat them
         if (SVGFontFaceSrcElement* element = Traversal<SVGFontFaceSrcElement>::lastChild(*this))
             list = element->srcValue();
@@ -309,7 +306,7 @@ void SVGFontFaceElement::rebuildFontFace()
         }
     }
 
-    document().styleResolverChanged(RecalcStyleDeferred);
+    document().styleResolverChanged();
 }
 
 Node::InsertionNotificationRequest SVGFontFaceElement::insertedInto(ContainerNode* rootParent)
@@ -330,7 +327,7 @@ void SVGFontFaceElement::removedFrom(ContainerNode* rootParent)
     SVGElement::removedFrom(rootParent);
 
     if (rootParent->inDocument()) {
-        m_fontElement = 0;
+        m_fontElement = nullptr;
         document().accessSVGExtensions().unregisterSVGFontFaceElement(this);
 
         // FIXME: HTMLTemplateElement's document or imported  document can be active?
@@ -341,7 +338,7 @@ void SVGFontFaceElement::removedFrom(ContainerNode* rootParent)
             document().accessSVGExtensions().registerPendingSVGFontFaceElementsForRemoval(this);
         }
         m_fontFaceRule->mutableProperties().clear();
-        document().styleResolverChanged(RecalcStyleDeferred);
+        document().styleResolverChanged();
     } else
         ASSERT(!m_fontElement);
 }
@@ -355,6 +352,7 @@ void SVGFontFaceElement::childrenChanged(bool changedByParser, Node* beforeChang
 void SVGFontFaceElement::trace(Visitor* visitor)
 {
     visitor->trace(m_fontFaceRule);
+    visitor->trace(m_fontElement);
     SVGElement::trace(visitor);
 }
 

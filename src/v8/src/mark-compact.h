@@ -5,8 +5,8 @@
 #ifndef V8_MARK_COMPACT_H_
 #define V8_MARK_COMPACT_H_
 
-#include "compiler-intrinsics.h"
-#include "spaces.h"
+#include "src/compiler-intrinsics.h"
+#include "src/spaces.h"
 
 namespace v8 {
 namespace internal {
@@ -649,13 +649,6 @@ class MarkCompactCollector {
 
   bool TryPromoteObject(HeapObject* object, int object_size);
 
-  inline Object* encountered_weak_collections() {
-    return encountered_weak_collections_;
-  }
-  inline void set_encountered_weak_collections(Object* weak_collection) {
-    encountered_weak_collections_ = weak_collection;
-  }
-
   void InvalidateCode(Code* code);
 
   void ClearMarkbits();
@@ -851,12 +844,6 @@ class MarkCompactCollector {
   int ClearNonLiveDependentCodeInGroup(DependentCode* dependent_code, int group,
                                        int start, int end, int new_start);
 
-  // Marking detaches initial maps from SharedFunctionInfo objects
-  // to make this reference weak. We need to reattach initial maps
-  // back after collection. This is either done during
-  // ClearNonLiveTransitions pass or by calling this function.
-  void ReattachInitialMaps();
-
   // Mark all values associated with reachable keys in weak collections
   // encountered so far.  This might push new object or even new weak maps onto
   // the marking stack.
@@ -919,7 +906,6 @@ class MarkCompactCollector {
   Heap* heap_;
   MarkingDeque marking_deque_;
   CodeFlusher* code_flusher_;
-  Object* encountered_weak_collections_;
   bool have_code_to_deoptimize_;
 
   List<Page*> evacuation_candidates_;

@@ -34,7 +34,7 @@ class AnimatedPage(page.Page):
       page_set=page_set, base_dir=page_set.base_dir)
 
   def RunSmoothness(self, action_runner):
-    action_runner.RunAction(WaitAction({'seconds': 1}))
+    action_runner.Wait(1)
 
 
 class FakeTab(object):
@@ -68,11 +68,16 @@ class SmoothnessUnitTest(
         'DELAY(cc.BeginMainFrame;0.012000;static)',
         'DELAY(cc.DrawAndSwap;0.012000;alternating)',
         'DELAY(gpu.PresentingFrame;0.012000;static)',
-        'benchmark',
-        'webkit.console'
+        'benchmark'
     ]
     actual_category_filter = tab.browser.category_filter.split(',')
     actual_category_filter.sort()
+
+    # FIXME: Put blink.console into the expected above and remove these two
+    # remove entries when the blink.console change has rolled into chromium.
+    actual_category_filter.remove('webkit.console')
+    actual_category_filter.remove('blink.console')
+
     if expected_category_filter != actual_category_filter:
       sys.stderr.write("Expected category filter: %s\n" %
                        repr(expected_category_filter))
@@ -106,19 +111,12 @@ class SmoothnessUnitTest(
     self.assertEquals(len(mostly_smooth), 1)
     self.assertGreaterEqual(mostly_smooth[0].GetRepresentativeNumber(), 0)
 
-    mean_mouse_wheel_latency = results.FindAllPageSpecificValuesNamed(
-        'mean_mouse_wheel_latency')
-    if mean_mouse_wheel_latency:
-      self.assertEquals(len(mean_mouse_wheel_latency), 1)
+    mean_input_event_latency = results.FindAllPageSpecificValuesNamed(
+        'mean_input_event_latency')
+    if mean_input_event_latency:
+      self.assertEquals(len(mean_input_event_latency), 1)
       self.assertGreater(
-          mean_mouse_wheel_latency[0].GetRepresentativeNumber(), 0)
-
-    mean_touch_scroll_latency = results.FindAllPageSpecificValuesNamed(
-        'mean_touch_scroll_latency')
-    if mean_touch_scroll_latency:
-      self.assertEquals(len(mean_touch_scroll_latency), 1)
-      self.assertGreater(
-          mean_touch_scroll_latency[0].GetRepresentativeNumber(), 0)
+          mean_input_event_latency[0].GetRepresentativeNumber(), 0)
 
   def testSmoothnessForPageWithNoGesture(self):
     ps = self.CreateEmptyPageSet()

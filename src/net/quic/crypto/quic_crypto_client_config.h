@@ -18,7 +18,8 @@
 
 namespace net {
 
-class ChannelIDSigner;
+class ChannelIDKey;
+class ChannelIDSource;
 class CryptoHandshakeMessage;
 class ProofVerifier;
 class ProofVerifyDetails;
@@ -160,21 +161,22 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   // the server's hostname in order to perform a handshake. This can be checked
   // with the |IsComplete| member of |CachedState|.
   //
-  // |initial_flow_control_window_bytes| is the size of the initial flow
-  // control window this client will use for new streams.
-  //
   // |now| and |rand| are used to generate the nonce and |out_params| is
   // filled with the results of the handshake that the server is expected to
   // accept. |preferred_version| is the version of the QUIC protocol that this
   // client chose to use initially. This allows the server to detect downgrade
   // attacks.
+  //
+  // If |channel_id_key| is not null, it is used to sign a secret value derived
+  // from the client and server's keys, and the Channel ID public key and the
+  // signature are placed in the CETV value of the CHLO.
   QuicErrorCode FillClientHello(const QuicServerId& server_id,
                                 QuicConnectionId connection_id,
                                 const QuicVersion preferred_version,
-                                uint32 initial_flow_control_window_bytes,
                                 const CachedState* cached,
                                 QuicWallTime now,
                                 QuicRandom* rand,
+                                const ChannelIDKey* channel_id_key,
                                 QuicCryptoNegotiatedParameters* out_params,
                                 CryptoHandshakeMessage* out,
                                 std::string* error_details) const;
@@ -214,12 +216,13 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   // the server.
   void SetProofVerifier(ProofVerifier* verifier);
 
-  ChannelIDSigner* channel_id_signer() const;
+  ChannelIDSource* channel_id_source() const;
 
-  // SetChannelIDSigner sets a ChannelIDSigner that will be called when the
-  // server supports channel IDs to sign a message proving possession of the
-  // given ChannelID. This object takes ownership of |signer|.
-  void SetChannelIDSigner(ChannelIDSigner* signer);
+  // SetChannelIDSource sets a ChannelIDSource that will be called, when the
+  // server supports channel IDs, to obtain a channel ID for signing a message
+  // proving possession of the channel ID. This object takes ownership of
+  // |source|.
+  void SetChannelIDSource(ChannelIDSource* source);
 
   // Initialize the CachedState from |canonical_crypto_config| for the
   // |canonical_server_id| as the initial CachedState for |server_id|. We will
@@ -243,6 +246,11 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   // Call this method on platforms that do not support ECDSA.
   // TODO(rch): remove this method when we drop support for Windows XP.
   void DisableEcdsa();
+
+  // Saves the |user_agent_id| that will be passed in QUIC's CHLO message.
+  void set_user_agent_id(const std::string& user_agent_id) {
+    user_agent_id_ = user_agent_id;
+  }
 
  private:
   typedef std::map<QuicServerId, CachedState*> CachedStateMap;
@@ -268,10 +276,13 @@ class NET_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   std::vector<std::string> canoncial_suffixes_;
 
   scoped_ptr<ProofVerifier> proof_verifier_;
-  scoped_ptr<ChannelIDSigner> channel_id_signer_;
+  scoped_ptr<ChannelIDSource> channel_id_source_;
 
   // True if ECDSA should be disabled.
   bool disable_ecdsa_;
+
+  // The |user_agent_id_| passed in QUIC's CHLO message.
+  std::string user_agent_id_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicCryptoClientConfig);
 };

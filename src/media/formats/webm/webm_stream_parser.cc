@@ -20,8 +20,7 @@ namespace media {
 
 WebMStreamParser::WebMStreamParser()
     : state_(kWaitingForInit),
-      unknown_segment_size_(false),
-      parsing_cluster_(false) {
+      unknown_segment_size_(false) {
 }
 
 WebMStreamParser::~WebMStreamParser() {
@@ -59,12 +58,12 @@ void WebMStreamParser::Flush() {
   DCHECK_NE(state_, kWaitingForInit);
 
   byte_queue_.Reset();
-  parsing_cluster_ = false;
-
-  if (state_ != kParsingClusters)
-    return;
-
-  cluster_parser_->Reset();
+  if (cluster_parser_)
+    cluster_parser_->Reset();
+  if (state_ == kParsingClusters) {
+    ChangeState(kParsingHeaders);
+    end_of_segment_cb_.Run();
+  }
 }
 
 bool WebMStreamParser::Parse(const uint8* buf, int size) {
@@ -143,12 +142,22 @@ int WebMStreamParser::ParseInfoAndTracks(const uint8* data, int size) {
     case kWebMIdCRC32:
     case kWebMIdCues:
     case kWebMIdChapters:
+      // TODO(matthewjheaney): Implement support for chapters.
       if (cur_size < (result + element_size)) {
         // We don't have the whole element yet. Signal we need more data.
         return 0;
       }
       // Skip the element.
       return result + element_size;
+      break;
+    case kWebMIdCluster:
+      if (!cluster_parser_) {
+        MEDIA_LOG(log_cb_) << "Found Cluster element before Info.";
+        return -1;
+      }
+      ChangeState(kParsingClusters);
+      new_segment_cb_.Run();
+      return 0;
       break;
     case kWebMIdSegment:
       // Segment of unknown size indicates live stream.
@@ -230,8 +239,6 @@ int WebMStreamParser::ParseInfoAndTracks(const uint8* data, int size) {
       tracks_parser.video_encryption_key_id(),
       log_cb_));
 
-  ChangeState(kParsingClusters);
-
   if (!init_cb_.is_null())
     base::ResetAndReturn(&init_cb_).Run(true, params);
 
@@ -242,43 +249,9 @@ int WebMStreamParser::ParseCluster(const uint8* data, int size) {
   if (!cluster_parser_)
     return -1;
 
-  int id;
-  int64 element_size;
-  int result = WebMParseElementHeader(data, size, &id, &element_size);
-
-  if (result <= 0)
-    return result;
-
-  // TODO(matthewjheaney): implement support for chapters
-  if (id == kWebMIdCues || id == kWebMIdChapters) {
-    // TODO(wolenetz): Handle unknown-sized cluster parse completion correctly.
-    // See http://crbug.com/335676.
-    if (size < (result + element_size)) {
-      // We don't have the whole element yet. Signal we need more data.
-      return 0;
-    }
-    // Skip the element.
-    return result + element_size;
-  }
-
-  if (id == kWebMIdEBMLHeader) {
-    // TODO(wolenetz): Handle unknown-sized cluster parse completion correctly.
-    // See http://crbug.com/335676.
-    ChangeState(kParsingHeaders);
-    return 0;
-  }
-
   int bytes_parsed = cluster_parser_->Parse(data, size);
-
-  if (bytes_parsed <= 0)
+  if (bytes_parsed < 0)
     return bytes_parsed;
-
-  // If cluster detected, immediately notify new segment if we have not already
-  // done this.
-  if (id == kWebMIdCluster && !parsing_cluster_) {
-    parsing_cluster_ = true;
-    new_segment_cb_.Run();
-  }
 
   const BufferQueue& audio_buffers = cluster_parser_->GetAudioBuffers();
   const BufferQueue& video_buffers = cluster_parser_->GetVideoBuffers();
@@ -286,13 +259,14 @@ int WebMStreamParser::ParseCluster(const uint8* data, int size) {
 
   bool cluster_ended = cluster_parser_->cluster_ended();
 
-  if ((!audio_buffers.empty() || !video_buffers.empty() || !text_map.empty()) &&
+  if ((!audio_buffers.empty() || !video_buffers.empty() ||
+       !text_map.empty()) &&
       !new_buffers_cb_.Run(audio_buffers, video_buffers, text_map)) {
     return -1;
   }
 
   if (cluster_ended) {
-    parsing_cluster_ = false;
+    ChangeState(kParsingHeaders);
     end_of_segment_cb_.Run();
   }
 

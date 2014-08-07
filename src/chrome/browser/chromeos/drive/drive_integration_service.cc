@@ -11,6 +11,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/drive/debug_info_collector.h"
 #include "chrome/browser/chromeos/drive/download_handler.h"
 #include "chrome/browser/chromeos/drive/file_cache.h"
@@ -30,6 +31,7 @@
 #include "chrome/browser/drive/drive_notification_manager.h"
 #include "chrome/browser/drive/drive_notification_manager_factory.h"
 #include "chrome/browser/drive/event_logger.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -40,6 +42,7 @@
 #include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/common/user_agent.h"
 #include "google_apis/drive/auth_service.h"
 #include "google_apis/drive/gdata_wapi_url_generator.h"
@@ -221,6 +224,7 @@ DriveIntegrationService::DriveIntegrationService(
                             test_cache_root : util::GetCacheRootPath(profile)),
       weak_ptr_factory_(this) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(profile && !profile->IsOffTheRecord());
 
   logger_.reset(new EventLogger);
   base::SequencedWorkerPool* blocking_pool = BrowserThread::GetBlockingPool();
@@ -258,7 +262,7 @@ DriveIntegrationService::DriveIntegrationService(
   drive_app_registry_.reset(new DriveAppRegistry(drive_service_.get()));
 
   resource_metadata_.reset(new internal::ResourceMetadata(
-      metadata_storage_.get(), blocking_task_runner_));
+      metadata_storage_.get(), cache_.get(), blocking_task_runner_));
 
   file_system_.reset(
       test_file_system ? test_file_system : new FileSystem(
@@ -272,8 +276,7 @@ DriveIntegrationService::DriveIntegrationService(
           cache_root_directory_.Append(kTemporaryFileDirectory)));
   download_handler_.reset(new DownloadHandler(file_system()));
   debug_info_collector_.reset(new DebugInfoCollector(
-      cache_.get(), resource_metadata_.get(), file_system(),
-      blocking_task_runner_.get()));
+      resource_metadata_.get(), file_system(), blocking_task_runner_.get()));
 
   if (preference_watcher) {
     preference_watcher_.reset(preference_watcher);
@@ -509,12 +512,27 @@ void DriveIntegrationService::InitializeAfterMetadataInitialized(
     return;
   }
 
+  // Initialize Download Handler for hooking downloads to the Drive folder.
   content::DownloadManager* download_manager =
       g_browser_process->download_status_updater() ?
       BrowserContext::GetDownloadManager(profile_) : NULL;
   download_handler_->Initialize(
       download_manager,
       cache_root_directory_.Append(kTemporaryFileDirectory));
+
+  // Install the handler also to incognito profile.
+  if (g_browser_process->download_status_updater()) {
+    if (profile_->HasOffTheRecordProfile()) {
+      download_handler_->ObserveIncognitoDownloadManager(
+          BrowserContext::GetDownloadManager(
+              profile_->GetOffTheRecordProfile()));
+    }
+    profile_notification_registrar_.reset(new content::NotificationRegistrar);
+    profile_notification_registrar_->Add(
+        this,
+        chrome::NOTIFICATION_PROFILE_CREATED,
+        content::NotificationService::AllSources());
+  }
 
   // Register for Google Drive invalidation notifications.
   DriveNotificationManager* drive_notification_manager =
@@ -546,6 +564,20 @@ void DriveIntegrationService::AvoidDriveAsDownloadDirecotryPreference() {
     pref_service->SetFilePath(
         prefs::kDownloadDefaultDirectory,
         file_manager::util::GetDownloadsFolderForProfile(profile_));
+  }
+}
+
+void DriveIntegrationService::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_PROFILE_CREATED) {
+    Profile* created_profile = content::Source<Profile>(source).ptr();
+    if (created_profile->IsOffTheRecord() &&
+        created_profile->IsSameProfile(profile_)) {
+      download_handler_->ObserveIncognitoDownloadManager(
+          BrowserContext::GetDownloadManager(created_profile));
+    }
   }
 }
 
@@ -606,6 +638,11 @@ DriveIntegrationServiceFactory::DriveIntegrationServiceFactory()
 }
 
 DriveIntegrationServiceFactory::~DriveIntegrationServiceFactory() {
+}
+
+content::BrowserContext* DriveIntegrationServiceFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
 KeyedService* DriveIntegrationServiceFactory::BuildServiceInstanceFor(

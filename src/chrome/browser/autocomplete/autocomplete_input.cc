@@ -8,7 +8,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/profiles/profile_io_data.h"
-#include "chrome/common/net/url_fixer_upper.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/net_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
@@ -31,8 +32,8 @@ void AdjustCursorPositionIfNecessary(size_t num_leading_chars_removed,
 
 AutocompleteInput::AutocompleteInput()
     : cursor_position_(base::string16::npos),
-      current_page_classification_(AutocompleteInput::INVALID_SPEC),
-      type_(INVALID),
+      current_page_classification_(metrics::OmniboxEventProto::INVALID_SPEC),
+      type_(metrics::OmniboxInputType::INVALID),
       prevent_inline_autocomplete_(false),
       prefer_keyword_(false),
       allow_exact_keyword_match_(true),
@@ -44,7 +45,7 @@ AutocompleteInput::AutocompleteInput(
     size_t cursor_position,
     const base::string16& desired_tld,
     const GURL& current_url,
-    AutocompleteInput::PageClassification current_page_classification,
+    metrics::OmniboxEventProto::PageClassification current_page_classification,
     bool prevent_inline_autocomplete,
     bool prefer_keyword,
     bool allow_exact_keyword_match,
@@ -69,10 +70,11 @@ AutocompleteInput::AutocompleteInput(
   GURL canonicalized_url;
   type_ = Parse(text_, desired_tld, &parts_, &scheme_, &canonicalized_url);
 
-  if (type_ == INVALID)
+  if (type_ == metrics::OmniboxInputType::INVALID)
     return;
 
-  if (((type_ == UNKNOWN) || (type_ == URL)) &&
+  if (((type_ == metrics::OmniboxInputType::UNKNOWN) ||
+       (type_ == metrics::OmniboxInputType::URL)) &&
       canonicalized_url.is_valid() &&
       (!canonicalized_url.IsStandard() || canonicalized_url.SchemeIsFile() ||
        canonicalized_url.SchemeIsFileSystem() ||
@@ -98,9 +100,10 @@ AutocompleteInput::~AutocompleteInput() {
 
 // static
 size_t AutocompleteInput::RemoveForcedQueryStringIfNecessary(
-    Type type,
+    metrics::OmniboxInputType::Type type,
     base::string16* text) {
-  if (type != FORCED_QUERY || text->empty() || (*text)[0] != L'?')
+  if ((type != metrics::OmniboxInputType::FORCED_QUERY) || text->empty() ||
+      (*text)[0] != L'?')
     return 0;
   // Drop the leading '?'.
   text->erase(0, 1);
@@ -108,22 +111,22 @@ size_t AutocompleteInput::RemoveForcedQueryStringIfNecessary(
 }
 
 // static
-std::string AutocompleteInput::TypeToString(Type type) {
+std::string AutocompleteInput::TypeToString(
+    metrics::OmniboxInputType::Type type) {
   switch (type) {
-    case INVALID:       return "invalid";
-    case UNKNOWN:       return "unknown";
-    case URL:           return "url";
-    case QUERY:         return "query";
-    case FORCED_QUERY:  return "forced-query";
-
-    default:
-      NOTREACHED();
-      return std::string();
+    case metrics::OmniboxInputType::INVALID:      return "invalid";
+    case metrics::OmniboxInputType::UNKNOWN:      return "unknown";
+    case metrics::OmniboxInputType::DEPRECATED_REQUESTED_URL:
+      return "deprecated-requested-url";
+    case metrics::OmniboxInputType::URL:          return "url";
+    case metrics::OmniboxInputType::QUERY:        return "query";
+    case metrics::OmniboxInputType::FORCED_QUERY: return "forced-query";
   }
+  return std::string();
 }
 
 // static
-AutocompleteInput::Type AutocompleteInput::Parse(
+metrics::OmniboxInputType::Type AutocompleteInput::Parse(
     const base::string16& text,
     const base::string16& desired_tld,
     url::Parsed* parts,
@@ -131,12 +134,12 @@ AutocompleteInput::Type AutocompleteInput::Parse(
     GURL* canonicalized_url) {
   size_t first_non_white = text.find_first_not_of(base::kWhitespaceUTF16, 0);
   if (first_non_white == base::string16::npos)
-    return INVALID;  // All whitespace.
+    return metrics::OmniboxInputType::INVALID;  // All whitespace.
 
-  if (text.at(first_non_white) == L'?') {
+  if (text[first_non_white] == L'?') {
     // If the first non-whitespace character is a '?', we magically treat this
     // as a query.
-    return FORCED_QUERY;
+    return metrics::OmniboxInputType::FORCED_QUERY;
   }
 
   // Ask our parsing back-end to help us understand what the user typed.  We
@@ -146,7 +149,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   url::Parsed local_parts;
   if (!parts)
     parts = &local_parts;
-  const base::string16 parsed_scheme(URLFixerUpper::SegmentURL(text, parts));
+  const base::string16 parsed_scheme(url_fixer::SegmentURL(text, parts));
   if (scheme)
     *scheme = parsed_scheme;
 
@@ -156,16 +159,16 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   GURL placeholder_canonicalized_url;
   if (!canonicalized_url)
     canonicalized_url = &placeholder_canonicalized_url;
-  *canonicalized_url = URLFixerUpper::FixupURL(base::UTF16ToUTF8(text),
-                                               base::UTF16ToUTF8(desired_tld));
+  *canonicalized_url = url_fixer::FixupURL(base::UTF16ToUTF8(text),
+                                           base::UTF16ToUTF8(desired_tld));
   if (!canonicalized_url->is_valid())
-    return QUERY;
+    return metrics::OmniboxInputType::QUERY;
 
-  if (LowerCaseEqualsASCII(parsed_scheme, content::kFileScheme)) {
+  if (LowerCaseEqualsASCII(parsed_scheme, url::kFileScheme)) {
     // A user might or might not type a scheme when entering a file URL.  In
     // either case, |parsed_scheme| will tell us that this is a file URL, but
     // |parts->scheme| might be empty, e.g. if the user typed "C:\foo".
-    return URL;
+    return metrics::OmniboxInputType::URL;
   }
 
   // If the user typed a scheme, and it's HTTP or HTTPS, we know how to parse it
@@ -184,9 +187,9 @@ AutocompleteInput::Type AutocompleteInput::Parse(
     // still claim to handle them.
     if (ProfileIOData::IsHandledProtocol(base::UTF16ToASCII(parsed_scheme)) ||
         LowerCaseEqualsASCII(parsed_scheme, content::kViewSourceScheme) ||
-        LowerCaseEqualsASCII(parsed_scheme, content::kJavaScriptScheme) ||
-        LowerCaseEqualsASCII(parsed_scheme, content::kDataScheme))
-      return URL;
+        LowerCaseEqualsASCII(parsed_scheme, url::kJavaScriptScheme) ||
+        LowerCaseEqualsASCII(parsed_scheme, url::kDataScheme))
+      return metrics::OmniboxInputType::URL;
 
     // Not an internal protocol.  Check and see if the user has explicitly
     // opened this scheme as a URL before, or if the "scheme" is actually a
@@ -202,29 +205,30 @@ AutocompleteInput::Type AutocompleteInput::Parse(
             base::UTF16ToUTF8(parsed_scheme), true);
     switch (block_state) {
       case ExternalProtocolHandler::DONT_BLOCK:
-        return URL;
+        return metrics::OmniboxInputType::URL;
 
       case ExternalProtocolHandler::BLOCK:
         // If we don't want the user to open the URL, don't let it be navigated
         // to at all.
-        return QUERY;
+        return metrics::OmniboxInputType::QUERY;
 
       default: {
         // We don't know about this scheme.  It might be that the user typed a
         // URL of the form "username:password@foo.com".
         const base::string16 http_scheme_prefix =
             base::ASCIIToUTF16(std::string(url::kHttpScheme) +
-                               content::kStandardSchemeSeparator);
+                               url::kStandardSchemeSeparator);
         url::Parsed http_parts;
         base::string16 http_scheme;
         GURL http_canonicalized_url;
-        Type http_type = Parse(http_scheme_prefix + text, desired_tld,
-                               &http_parts, &http_scheme,
-                               &http_canonicalized_url);
+        metrics::OmniboxInputType::Type http_type =
+            Parse(http_scheme_prefix + text, desired_tld, &http_parts,
+                  &http_scheme, &http_canonicalized_url);
         DCHECK_EQ(std::string(url::kHttpScheme),
                   base::UTF16ToUTF8(http_scheme));
 
-        if ((http_type == URL) && http_parts.username.is_nonempty() &&
+        if ((http_type == metrics::OmniboxInputType::URL) &&
+            http_parts.username.is_nonempty() &&
             http_parts.password.is_nonempty()) {
           // Manually re-jigger the parsed parts to match |text| (without the
           // http scheme added).
@@ -239,7 +243,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
             &http_parts.ref,
           };
           for (size_t i = 0; i < arraysize(components); ++i) {
-            URLFixerUpper::OffsetComponent(
+            url_fixer::OffsetComponent(
                 -static_cast<int>(http_scheme_prefix.length()), components[i]);
           }
 
@@ -248,7 +252,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
             scheme->clear();
           *canonicalized_url = http_canonicalized_url;
 
-          return URL;
+          return metrics::OmniboxInputType::URL;
         }
 
         // We don't know about this scheme and it doesn't look like the user
@@ -257,7 +261,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
         // the option of treating it as a URL if we're wrong.
         // Note that SegmentURL() is smart so we aren't tricked by "c:\foo" or
         // "www.example.com:81" in this case.
-        return UNKNOWN;
+        return metrics::OmniboxInputType::UNKNOWN;
       }
     }
   }
@@ -271,7 +275,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   // valid, non-standard URL; for standard URLs, an empty host would have
   // resulted in an invalid |canonicalized_url| above.)
   if (!parts->host.is_nonempty())
-    return QUERY;
+    return metrics::OmniboxInputType::QUERY;
 
   // Sanity-check: GURL should have failed to canonicalize this URL if it had an
   // invalid port.
@@ -297,11 +301,14 @@ AutocompleteInput::Type AutocompleteInput::Parse(
               base::UTF16ToUTF8(host_with_tld),
               net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
               net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
-      if (tld_length != std::string::npos)
-        return URL;  // Something like "99999999999" that looks like a bad IP
-                     // address, but becomes valid on attaching a TLD.
+      if (tld_length != std::string::npos) {
+        // Something like "99999999999" that looks like a bad IP
+        // address, but becomes valid on attaching a TLD.
+        return metrics::OmniboxInputType::URL;
+      }
     }
-    return QUERY;  // Could be a broken IP address, etc.
+    // Could be a broken IP address, etc.
+    return metrics::OmniboxInputType::QUERY;
   }
 
 
@@ -335,18 +342,19 @@ AutocompleteInput::Type AutocompleteInput::Parse(
     // These are rare, though probably possible in intranets.
     return (parts->scheme.is_nonempty() ||
            ((registry_length != 0) &&
-            (host.find(' ') == base::string16::npos))) ? UNKNOWN : QUERY;
+            (host.find(' ') == base::string16::npos))) ?
+        metrics::OmniboxInputType::UNKNOWN : metrics::OmniboxInputType::QUERY;
   }
 
   // Now that we've ruled out all schemes other than http or https and done a
   // little more sanity checking, the presence of a scheme means this is likely
   // a URL.
   if (parts->scheme.is_nonempty())
-    return URL;
+    return metrics::OmniboxInputType::URL;
 
   // See if the host is an IP address.
   if (host_info.family == url::CanonHostInfo::IPV6)
-    return URL;
+    return metrics::OmniboxInputType::URL;
   // If the user originally typed a host that looks like an IP address (a
   // dotted quad), they probably want to open it.  If the original input was
   // something else (like a single number), they probably wanted to search for
@@ -359,27 +367,27 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   // below.
   if ((host_info.family == url::CanonHostInfo::IPV4) &&
       (host_info.num_ipv4_components == 4))
-    return URL;
+    return metrics::OmniboxInputType::URL;
 
   // Presence of a password means this is likely a URL.  Note that unless the
   // user has typed an explicit "http://" or similar, we'll probably think that
   // the username is some unknown scheme, and bail out in the scheme-handling
   // code above.
   if (parts->password.is_nonempty())
-    return URL;
+    return metrics::OmniboxInputType::URL;
 
   // Trailing slashes force the input to be treated as a URL.
   if (parts->path.is_nonempty()) {
     char c = text[parts->path.end() - 1];
     if ((c == '\\') || (c == '/'))
-      return URL;
+      return metrics::OmniboxInputType::URL;
   }
 
   // If there is more than one recognized non-host component, this is likely to
   // be a URL, even if the TLD is unknown (in which case this is likely an
   // intranet URL).
   if (NumNonHostComponents(*parts) > 1)
-    return URL;
+    return metrics::OmniboxInputType::URL;
 
   // If the host has a known TLD or a port, it's probably a URL, with the
   // following exceptions:
@@ -392,14 +400,16 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   // Note that we special-case "localhost" as a known hostname.
   if ((host_info.family != url::CanonHostInfo::IPV4) &&
       ((registry_length != 0) || (host == base::ASCIIToUTF16("localhost") ||
-       parts->port.is_nonempty())))
-    return parts->username.is_nonempty() ? UNKNOWN : URL;
+       parts->port.is_nonempty()))) {
+    return parts->username.is_nonempty() ? metrics::OmniboxInputType::UNKNOWN :
+                                           metrics::OmniboxInputType::URL;
+  }
 
   // If we reach this point, we know there's no known TLD on the input, so if
   // the user wishes to add a desired_tld, the fixup code will oblige; thus this
   // is a URL.
   if (!desired_tld.empty())
-    return URL;
+    return metrics::OmniboxInputType::URL;
 
   // No scheme, password, port, path, and no known TLD on the host.
   // This could be:
@@ -418,7 +428,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   //   QUERY.  Since this is indistinguishable from the case above, and this
   //   case is much more likely, claim these are UNKNOWN, which should default
   //   to the right thing and let users correct us on a case-by-case basis.
-  return UNKNOWN;
+  return metrics::OmniboxInputType::UNKNOWN;
 }
 
 // static
@@ -456,7 +466,7 @@ void AutocompleteInput::ParseForEmphasizeComponents(const base::string16& text,
         host->reset();
       }
     }
-  } else if (LowerCaseEqualsASCII(scheme_str, content::kFileSystemScheme) &&
+  } else if (LowerCaseEqualsASCII(scheme_str, url::kFileSystemScheme) &&
              parts.inner_parsed() && parts.inner_parsed()->scheme.is_valid()) {
     *host = parts.inner_parsed()->host;
   }
@@ -522,8 +532,8 @@ void AutocompleteInput::Clear() {
   text_.clear();
   cursor_position_ = base::string16::npos;
   current_url_ = GURL();
-  current_page_classification_ = AutocompleteInput::INVALID_SPEC;
-  type_ = INVALID;
+  current_page_classification_ = metrics::OmniboxEventProto::INVALID_SPEC;
+  type_ = metrics::OmniboxInputType::INVALID;
   parts_ = url::Parsed();
   scheme_.clear();
   canonicalized_url_ = GURL();

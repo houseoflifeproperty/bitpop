@@ -259,10 +259,14 @@ def print_stats(similarity, find_copies, args):
   else:
     similarity_options = ['-M%s' % similarity]
 
+  try:
+    stdout = sys.stdout.fileno()
+  except AttributeError:
+    stdout = None
   return subprocess2.call(
       ['git',
        'diff', '--no-ext-diff', '--stat'] + similarity_options + args,
-      env=env)
+      stdout=stdout, env=env)
 
 
 class Settings(object):
@@ -277,6 +281,7 @@ class Settings(object):
     self.updated = False
     self.is_gerrit = None
     self.git_editor = None
+    self.project = None
 
   def LazyUpdateIfNeeded(self):
     """Updates the settings from a codereview.settings file, if available."""
@@ -437,6 +442,11 @@ class Settings(object):
   def GetLintIgnoreRegex(self):
     return (self._GetRietveldConfig('cpplint-ignore-regex', error_ok=True) or
             DEFAULT_LINT_IGNORE_REGEX)
+
+  def GetProject(self):
+    if not self.project:
+      self.project = self._GetRietveldConfig('project', error_ok=True)
+    return self.project
 
   def _GetRietveldConfig(self, param, **kwargs):
     return self._GetConfig('rietveld.' + param, **kwargs)
@@ -648,7 +658,14 @@ or verify this branch is set up to track another (via the --track argument to
     Returns None if there is no remote.
     """
     remote, _ = self.GetRemoteBranch()
-    return RunGit(['config', 'remote.%s.url' % remote], error_ok=True).strip()
+    url = RunGit(['config', 'remote.%s.url' % remote], error_ok=True).strip()
+
+    # If URL is pointing to a local directory, it is probably a git cache.
+    if os.path.isdir(url):
+      url = RunGit(['config', 'remote.%s.url' % remote],
+                   error_ok=True,
+                   cwd=url).strip()
+    return url
 
   def GetIssue(self):
     """Returns the issue number as a int or None if not set."""
@@ -1063,6 +1080,7 @@ def LoadCodereviewSettingsFromFile(fileobj):
   SetProperty('bug-prefix', 'BUG_PREFIX', unset_error_ok=True)
   SetProperty('cpplint-regex', 'LINT_REGEX', unset_error_ok=True)
   SetProperty('cpplint-ignore-regex', 'LINT_IGNORE_REGEX', unset_error_ok=True)
+  SetProperty('project', 'PROJECT', unset_error_ok=True)
 
   if 'GERRIT_HOST' in keyvals:
     RunGit(['config', 'gerrit.host', keyvals['GERRIT_HOST']])
@@ -1413,6 +1431,9 @@ def CMDlint(parser, args):
     cl = Changelist()
     change = cl.GetChange(cl.GetCommonAncestorWithUpstream(), None)
     files = [f.LocalPath() for f in change.AffectedFiles()]
+    if not files:
+      print "Cannot lint an empty CL"
+      return 1
 
     # Process cpplints arguments if any.
     command = args + files
@@ -1498,11 +1519,11 @@ def GerritUpload(options, args, cl):
   if CHANGE_ID not in change_desc.description:
     AddChangeIdToCommitMessage(options, args)
 
-  commits = RunGit(['rev-list', '%s/%s...' % (remote, branch)]).splitlines()
+  commits = RunGit(['rev-list', '%s/%s..' % (remote, branch)]).splitlines()
   if len(commits) > 1:
     print('WARNING: This will upload %d commits. Run the following command '
           'to see which commits will be uploaded: ' % len(commits))
-    print('git log %s/%s...' % (remote, branch))
+    print('git log %s/%s..' % (remote, branch))
     print('You can also use `git squash-branch` to squash these into a single'
           'commit.')
     ask_for_data('About to upload; enter to confirm.')
@@ -1611,6 +1632,10 @@ def RietveldUpload(options, args, cl):
                       + cl.GetUpstreamBranch().split('/')[-1])
   if remote_url:
     upload_args.extend(['--base_url', remote_url])
+
+  project = settings.GetProject()
+  if project:
+    upload_args.extend(['--project', project])
 
   try:
     upload_args = ['upload'] + upload_args + args

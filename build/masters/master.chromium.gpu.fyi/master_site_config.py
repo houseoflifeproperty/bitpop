@@ -11,3 +11,4 @@ class ChromiumGPUFYI(Master.Master1):
   master_port = 8017
   slave_port = 8117
   master_port_alt = 8217
+  buildbot_url = 'http://build.chromium.org/p/chromium.gpu.fyi/'

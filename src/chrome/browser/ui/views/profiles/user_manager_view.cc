@@ -21,10 +21,6 @@
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(USE_ASH)
-#include "ash/wm/window_util.h"
-#endif
-
 #if defined(OS_WIN)
 #include "chrome/browser/shell_integration.h"
 #include "ui/base/win/shell.h"
@@ -127,7 +123,7 @@ void UserManagerView::Init(Profile* guest_profile, const GURL& url) {
   web_view_->RequestFocus();
 }
 
-gfx::Size UserManagerView::GetPreferredSize() {
+gfx::Size UserManagerView::GetPreferredSize() const {
   return gfx::Size(kWindowWidth, kWindowHeight);
 }
 

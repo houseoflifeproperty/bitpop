@@ -58,9 +58,7 @@ using blink::WebURLLoaderClient;
 using blink::WebURLRequest;
 using blink::WebURLResponse;
 using webkit_glue::MultipartResponseDelegate;
-using webkit_glue::ResourceDevToolsInfo;
 using webkit_glue::ResourceLoaderBridge;
-using webkit_glue::ResourceResponseInfo;
 using webkit_glue::WebURLResponseExtraDataImpl;
 
 namespace content {
@@ -75,10 +73,7 @@ const char kThrottledErrorDescription[] =
 
 class HeaderFlattener : public WebHTTPHeaderVisitor {
  public:
-  explicit HeaderFlattener(int load_flags)
-      : load_flags_(load_flags),
-        has_accept_header_(false) {
-  }
+  explicit HeaderFlattener() : has_accept_header_(false) {}
 
   virtual void visitHeader(const WebString& name, const WebString& value) {
     // Headers are latin1.
@@ -88,16 +83,6 @@ class HeaderFlattener : public WebHTTPHeaderVisitor {
     // Skip over referrer headers found in the header map because we already
     // pulled it out as a separate parameter.
     if (LowerCaseEqualsASCII(name_latin1, "referer"))
-      return;
-
-    // Skip over "Cache-Control: max-age=0" header if the corresponding
-    // load flag is already specified. FrameLoader sets both the flag and
-    // the extra header -- the extra header is redundant since our network
-    // implementation will add the necessary headers based on load flags.
-    // See http://code.google.com/p/chromium/issues/detail?id=3434.
-    if ((load_flags_ & net::LOAD_VALIDATE_CACHE) &&
-        LowerCaseEqualsASCII(name_latin1, "cache-control") &&
-        LowerCaseEqualsASCII(value_latin1, "max-age=0"))
       return;
 
     if (LowerCaseEqualsASCII(name_latin1, "accept"))
@@ -121,7 +106,6 @@ class HeaderFlattener : public WebHTTPHeaderVisitor {
   }
 
  private:
-  int load_flags_;
   std::string buffer_;
   bool has_accept_header_;
 };
@@ -234,16 +218,16 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context>,
   void SetDefersLoading(bool value);
   void DidChangePriority(WebURLRequest::Priority new_priority,
                          int intra_priority_value);
+  bool AttachThreadedDataReceiver(
+      blink::WebThreadedDataReceiver* threaded_data_receiver);
   void Start(const WebURLRequest& request,
              SyncLoadResponse* sync_load_response);
 
   // RequestPeer methods:
   virtual void OnUploadProgress(uint64 position, uint64 size) OVERRIDE;
-  virtual bool OnReceivedRedirect(
-      const GURL& new_url,
-      const ResourceResponseInfo& info,
-      bool* has_new_first_party_for_cookies,
-      GURL* new_first_party_for_cookies) OVERRIDE;
+  virtual bool OnReceivedRedirect(const GURL& new_url,
+                                  const GURL& new_first_party_for_cookies,
+                                  const ResourceResponseInfo& info) OVERRIDE;
   virtual void OnReceivedResponse(const ResourceResponseInfo& info) OVERRIDE;
   virtual void OnDownloadedData(int len, int encoded_data_length) OVERRIDE;
   virtual void OnReceivedData(const char* data,
@@ -292,6 +276,9 @@ void WebURLLoaderImpl::Context::Cancel() {
   // its own pointer to the client.
   if (multipart_delegate_)
     multipart_delegate_->Cancel();
+  // Ditto for the ftp delegate.
+  if (ftp_listing_delegate_)
+    ftp_listing_delegate_->Cancel();
 
   // Do not make any further calls to the client.
   client_ = NULL;
@@ -308,6 +295,14 @@ void WebURLLoaderImpl::Context::DidChangePriority(
   if (bridge_)
     bridge_->DidChangePriority(
         ConvertWebKitPriorityToNetPriority(new_priority), intra_priority_value);
+}
+
+bool WebURLLoaderImpl::Context::AttachThreadedDataReceiver(
+    blink::WebThreadedDataReceiver* threaded_data_receiver) {
+  if (bridge_)
+    return bridge_->AttachThreadedDataReceiver(threaded_data_receiver);
+
+  return false;
 }
 
 void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
@@ -337,11 +332,14 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
       request.httpHeaderField(WebString::fromUTF8("Referer")).latin1());
   const std::string& method = request.httpMethod().latin1();
 
-  int load_flags = net::LOAD_NORMAL;
+  int load_flags = net::LOAD_NORMAL | net::LOAD_ENABLE_LOAD_TIMING;
   switch (request.cachePolicy()) {
     case WebURLRequest::ReloadIgnoringCacheData:
       // Required by LayoutTests/http/tests/misc/refresh-headers.php
       load_flags |= net::LOAD_VALIDATE_CACHE;
+      break;
+    case WebURLRequest::ReloadBypassingCache:
+      load_flags |= net::LOAD_BYPASS_CACHE;
       break;
     case WebURLRequest::ReturnCacheDataElseLoad:
       load_flags |= net::LOAD_PREFERRING_CACHE;
@@ -351,12 +349,12 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
       break;
     case WebURLRequest::UseProtocolCachePolicy:
       break;
+    default:
+      NOTREACHED();
   }
 
   if (request.reportUploadProgress())
     load_flags |= net::LOAD_ENABLE_UPLOAD_PROGRESS;
-  if (request.reportLoadTiming())
-    load_flags |= net::LOAD_ENABLE_LOAD_TIMING;
   if (request.reportRawHeaders())
     load_flags |= net::LOAD_REPORT_RAW_HEADERS;
 
@@ -373,7 +371,7 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
     load_flags |= net::LOAD_DO_NOT_PROMPT_FOR_LOGIN;
   }
 
-  HeaderFlattener flattener(load_flags);
+  HeaderFlattener flattener;
   request.visitHTTPHeaderFields(&flattener);
 
   // TODO(brettw) this should take parameter encoding into account when
@@ -474,9 +472,8 @@ void WebURLLoaderImpl::Context::OnUploadProgress(uint64 position, uint64 size) {
 
 bool WebURLLoaderImpl::Context::OnReceivedRedirect(
     const GURL& new_url,
-    const ResourceResponseInfo& info,
-    bool* has_new_first_party_for_cookies,
-    GURL* new_first_party_for_cookies) {
+    const GURL& new_first_party_for_cookies,
+    const ResourceResponseInfo& info) {
   if (!client_)
     return false;
 
@@ -487,7 +484,7 @@ bool WebURLLoaderImpl::Context::OnReceivedRedirect(
   // TODO(darin): We lack sufficient information to construct the actual
   // request that resulted from the redirect.
   WebURLRequest new_request(new_url);
-  new_request.setFirstPartyForCookies(request_.firstPartyForCookies());
+  new_request.setFirstPartyForCookies(new_first_party_for_cookies);
   new_request.setDownloadToFile(request_.downloadToFile());
 
   WebString referrer_string = WebString::fromUTF8("Referer");
@@ -507,12 +504,16 @@ bool WebURLLoaderImpl::Context::OnReceivedRedirect(
 
   client_->willSendRequest(loader_, new_request, response);
   request_ = new_request;
-  *has_new_first_party_for_cookies = true;
-  *new_first_party_for_cookies = request_.firstPartyForCookies();
 
   // Only follow the redirect if WebKit left the URL unmodified.
-  if (new_url == GURL(new_request.url()))
+  if (new_url == GURL(new_request.url())) {
+    // First-party cookie logic moved from DocumentLoader in Blink to
+    // CrossSiteResourceHandler in the browser. Assert that Blink didn't try to
+    // change it to something else.
+    DCHECK_EQ(new_first_party_for_cookies.spec(),
+              request_.firstPartyForCookies().string().utf8());
     return true;
+  }
 
   // We assume that WebKit only changes the URL to suppress a redirect, and we
   // assume that it does so by setting it to be invalid.
@@ -873,6 +874,11 @@ void WebURLLoaderImpl::setDefersLoading(bool value) {
 void WebURLLoaderImpl::didChangePriority(WebURLRequest::Priority new_priority,
                                          int intra_priority_value) {
   context_->DidChangePriority(new_priority, intra_priority_value);
+}
+
+bool WebURLLoaderImpl::attachThreadedDataReceiver(
+    blink::WebThreadedDataReceiver* threaded_data_receiver) {
+  return context_->AttachThreadedDataReceiver(threaded_data_receiver);
 }
 
 }  // namespace content

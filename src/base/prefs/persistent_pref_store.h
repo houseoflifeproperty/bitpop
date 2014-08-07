@@ -33,6 +33,9 @@ class BASE_PREFS_EXPORT PersistentPrefStore : public WriteablePrefStore {
     // Indicates that ReadPrefs() couldn't complete synchronously and is waiting
     // for an asynchronous task to complete first.
     PREF_READ_ERROR_ASYNCHRONOUS_TASK_INCOMPLETE = 10,
+    PREF_READ_ERROR_LEVELDB_IO = 11,
+    PREF_READ_ERROR_LEVELDB_CORRUPTION_READ_ONLY = 12,
+    PREF_READ_ERROR_LEVELDB_CORRUPTION = 13,
     PREF_READ_ERROR_MAX_ENUM
   };
 
@@ -42,16 +45,6 @@ class BASE_PREFS_EXPORT PersistentPrefStore : public WriteablePrefStore {
 
     virtual void OnError(PrefReadError error) = 0;
   };
-
-  // Equivalent to PrefStore::GetValue but returns a mutable value.
-  virtual bool GetMutableValue(const std::string& key,
-                               base::Value** result) = 0;
-
-  // Triggers a value changed notification. This function needs to be called
-  // if one retrieves a list or dictionary with GetMutableValue and change its
-  // value. SetValue takes care of notifications itself. Note that
-  // ReportValueChanged will trigger notifications even if nothing has changed.
-  virtual void ReportValueChanged(const std::string& key) = 0;
 
   // Same as SetValue, but doesn't generate notifications. This is used by
   // PrefService::GetMutableUserPref() in order to put empty entries

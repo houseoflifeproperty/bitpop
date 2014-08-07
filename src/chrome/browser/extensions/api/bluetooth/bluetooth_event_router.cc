@@ -27,35 +27,27 @@
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_discovery_session.h"
-#include "device/bluetooth/bluetooth_profile.h"
-#include "device/bluetooth/bluetooth_socket.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_registry.h"
 
 namespace extensions {
 
 namespace bluetooth = api::bluetooth;
 namespace bt_private = api::bluetooth_private;
 
-// A struct storing a Bluetooth profile and the extension that added it.
-struct BluetoothEventRouter::ExtensionBluetoothProfileRecord {
-  std::string extension_id;
-  device::BluetoothProfile* profile;
-};
-
 BluetoothEventRouter::BluetoothEventRouter(content::BrowserContext* context)
     : browser_context_(context),
       adapter_(NULL),
       num_event_listeners_(0),
+      extension_registry_observer_(this),
       weak_ptr_factory_(this) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   DCHECK(browser_context_);
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
-                 content::Source<content::BrowserContext>(browser_context_));
-  registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED,
                  content::Source<content::BrowserContext>(browser_context_));
+  extension_registry_observer_.Add(ExtensionRegistry::Get(browser_context_));
 }
 
 BluetoothEventRouter::~BluetoothEventRouter() {
@@ -80,31 +72,6 @@ void BluetoothEventRouter::GetAdapter(
   }
 
   device::BluetoothAdapterFactory::GetAdapter(callback);
-}
-
-void BluetoothEventRouter::AddProfile(
-    const device::BluetoothUUID& uuid,
-    const std::string& extension_id,
-    device::BluetoothProfile* bluetooth_profile) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  DCHECK(!HasProfile(uuid));
-  ExtensionBluetoothProfileRecord record = { extension_id, bluetooth_profile };
-  bluetooth_profile_map_[uuid] = record;
-}
-
-void BluetoothEventRouter::RemoveProfile(const device::BluetoothUUID& uuid) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  BluetoothProfileMap::iterator iter = bluetooth_profile_map_.find(uuid);
-  if (iter != bluetooth_profile_map_.end()) {
-    device::BluetoothProfile* bluetooth_profile = iter->second.profile;
-    bluetooth_profile_map_.erase(iter);
-    bluetooth_profile->Unregister();
-  }
-}
-
-bool BluetoothEventRouter::HasProfile(const device::BluetoothUUID& uuid) const {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  return bluetooth_profile_map_.find(uuid) != bluetooth_profile_map_.end();
 }
 
 void BluetoothEventRouter::StartDiscoverySession(
@@ -149,16 +116,6 @@ void BluetoothEventRouter::StopDiscoverySession(
   }
   device::BluetoothDiscoverySession* session = iter->second;
   session->Stop(callback, error_callback);
-}
-
-device::BluetoothProfile* BluetoothEventRouter::GetProfile(
-    const device::BluetoothUUID& uuid) const {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  BluetoothProfileMap::const_iterator iter = bluetooth_profile_map_.find(uuid);
-  if (iter != bluetooth_profile_map_.end())
-    return iter->second.profile;
-
-  return NULL;
 }
 
 BluetoothApiPairingDelegate* BluetoothEventRouter::GetPairingDelegate(
@@ -355,18 +312,6 @@ void BluetoothEventRouter::CleanUpForExtension(
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   RemovePairingDelegate(extension_id);
 
-  // Remove all profiles added by the extension.
-  BluetoothProfileMap::iterator profile_iter = bluetooth_profile_map_.begin();
-  while (profile_iter != bluetooth_profile_map_.end()) {
-    ExtensionBluetoothProfileRecord record = profile_iter->second;
-    if (record.extension_id == extension_id) {
-      bluetooth_profile_map_.erase(profile_iter++);
-      record.profile->Unregister();
-    } else {
-      profile_iter++;
-    }
-  }
-
   // Remove any discovery session initiated by the extension.
   DiscoverySessionMap::iterator session_iter =
       discovery_session_map_.find(extension_id);
@@ -377,13 +322,6 @@ void BluetoothEventRouter::CleanUpForExtension(
 }
 
 void BluetoothEventRouter::CleanUpAllExtensions() {
-  for (BluetoothProfileMap::iterator it = bluetooth_profile_map_.begin();
-       it != bluetooth_profile_map_.end();
-       ++it) {
-    it->second.profile->Unregister();
-  }
-  bluetooth_profile_map_.clear();
-
   for (DiscoverySessionMap::iterator it = discovery_session_map_.begin();
        it != discovery_session_map_.end();
        ++it) {
@@ -414,19 +352,16 @@ void BluetoothEventRouter::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
-      extensions::UnloadedExtensionInfo* info =
-          content::Details<extensions::UnloadedExtensionInfo>(details).ptr();
-      CleanUpForExtension(info->extension->id());
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED: {
-      ExtensionHost* host = content::Details<ExtensionHost>(details).ptr();
-      CleanUpForExtension(host->extension_id());
-      break;
-    }
-  }
+  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED, type);
+  ExtensionHost* host = content::Details<ExtensionHost>(details).ptr();
+  CleanUpForExtension(host->extension_id());
+}
+
+void BluetoothEventRouter::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  CleanUpForExtension(extension->id());
 }
 
 }  // namespace extensions

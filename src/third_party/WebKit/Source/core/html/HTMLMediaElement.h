@@ -34,6 +34,7 @@
 #include "core/html/track/vtt/VTTCue.h"
 #include "platform/PODIntervalTree.h"
 #include "platform/graphics/media/MediaPlayer.h"
+#include "public/platform/WebMediaPlayerClient.h"
 #include "public/platform/WebMimeRegistry.h"
 
 namespace blink {
@@ -48,6 +49,7 @@ namespace WebCore {
 class AudioSourceProvider;
 class AudioSourceProviderClient;
 #endif
+class AudioTrackList;
 class ContentType;
 class Event;
 class ExceptionState;
@@ -61,6 +63,7 @@ class HTMLMediaSource;
 class TextTrackList;
 class TimeRanges;
 class URLRegistry;
+class VideoTrackList;
 
 typedef PODIntervalTree<double, TextTrackCue*> CueIntervalTree;
 typedef CueIntervalTree::IntervalType CueInterval;
@@ -80,6 +83,9 @@ public:
     static bool isMediaStreamURL(const String& url);
 
     virtual void trace(Visitor*) OVERRIDE;
+#if ENABLE(WEB_AUDIO)
+    void clearWeakMembers(Visitor*);
+#endif
 
     // Do not use player().
     // FIXME: Replace all uses with webMediaPlayer() and remove this API.
@@ -103,7 +109,7 @@ public:
     bool isActive() const { return m_active; }
 
     // error state
-    PassRefPtr<MediaError> error() const;
+    PassRefPtrWillBeRawPtr<MediaError> error() const;
 
     // network state
     void setSrc(const AtomicString&);
@@ -149,7 +155,7 @@ public:
 
     // media source extensions
     void closeMediaSource();
-    void durationChanged(double duration);
+    void durationChanged(double duration, bool requestSeek);
 
     // controls
     bool controls() const;
@@ -163,6 +169,12 @@ public:
     // true if togglePlayState() will call play() or unpause() on the media element or controller.
     bool togglePlayStateWillPlay() const;
     void togglePlayState();
+
+    AudioTrackList& audioTracks();
+    void audioTrackChanged();
+
+    VideoTrackList& videoTracks();
+    void selectedVideoTrackChanged(blink::WebMediaPlayer::TrackId*);
 
     PassRefPtrWillBeRawPtr<TextTrack> addTextTrack(const AtomicString& kind, const AtomicString& label, const AtomicString& language, ExceptionState&);
     PassRefPtrWillBeRawPtr<TextTrack> addTextTrack(const AtomicString& kind, const AtomicString& label, ExceptionState& exceptionState) { return addTextTrack(kind, label, emptyAtom, exceptionState); }
@@ -181,6 +193,11 @@ public:
 
     void didAddTrackElement(HTMLTrackElement*);
     void didRemoveTrackElement(HTMLTrackElement*);
+
+    blink::WebMediaPlayer::TrackId addAudioTrack(const String& id, blink::WebMediaPlayerClient::AudioTrackKind, const AtomicString& label, const AtomicString& language, bool enabled);
+    void removeAudioTrack(blink::WebMediaPlayer::TrackId);
+    blink::WebMediaPlayer::TrackId addVideoTrack(const String& id, blink::WebMediaPlayerClient::VideoTrackKind, const AtomicString& label, const AtomicString& language, bool selected);
+    void removeVideoTrack(blink::WebMediaPlayer::TrackId);
 
     virtual void mediaPlayerDidAddTextTrack(blink::WebInbandTextTrack*) OVERRIDE FINAL;
     virtual void mediaPlayerDidRemoveTextTrack(blink::WebInbandTextTrack*) OVERRIDE FINAL;
@@ -232,7 +249,7 @@ public:
     // causes an ambiguity error at compile time. This class's constructor
     // ensures that both implementations return document, so return the result
     // of one of them here.
-    virtual ExecutionContext* executionContext() const OVERRIDE FINAL { return HTMLElement::executionContext(); }
+    using HTMLElement::executionContext;
 
     bool hasSingleSecurityOrigin() const { return !m_player || m_player->hasSingleSecurityOrigin(); }
 
@@ -266,13 +283,17 @@ public:
     bool isSafeToLoadURL(const KURL&, InvalidURLAction);
 
     MediaController* controller() const;
-    void setController(PassRefPtr<MediaController>); // Resets the MediaGroup and sets the MediaController.
+    void setController(PassRefPtrWillBeRawPtr<MediaController>); // Resets the MediaGroup and sets the MediaController.
 
     void scheduleEvent(PassRefPtrWillBeRawPtr<Event>);
 
     // Current volume that should be used by the webMediaPlayer(). This method takes muted state
     // and m_mediaController multipliers into account.
     double playerVolume() const;
+
+#if ENABLE(OILPAN)
+    bool isFinalizing() const { return m_isFinalizing; }
+#endif
 
 protected:
     HTMLMediaElement(const QualifiedName&, Document&);
@@ -289,7 +310,7 @@ protected:
     DisplayMode displayMode() const { return m_displayMode; }
     virtual void setDisplayMode(DisplayMode mode) { m_displayMode = mode; }
 
-    void setControllerInternal(PassRefPtr<MediaController>);
+    void setControllerInternal(PassRefPtrWillBeRawPtr<MediaController>);
 
     bool ignoreTrackDisplayUpdateRequests() const { return m_ignoreTrackDisplayUpdate > 0; }
     void beginIgnoringTrackDisplayUpdateRequests();
@@ -301,7 +322,6 @@ private:
     virtual bool alwaysCreateUserAgentShadowRoot() const OVERRIDE FINAL { return true; }
     virtual bool areAuthorShadowsAllowed() const OVERRIDE FINAL { return false; }
 
-    virtual bool hasCustomFocusLogic() const OVERRIDE FINAL;
     virtual bool supportsFocus() const OVERRIDE FINAL;
     virtual bool isMouseFocusable() const OVERRIDE FINAL;
     virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
@@ -314,13 +334,14 @@ private:
     virtual void didBecomeFullscreenElement() OVERRIDE FINAL;
     virtual void willStopBeingFullscreenElement() OVERRIDE FINAL;
     virtual bool isInteractiveContent() const OVERRIDE FINAL;
+    virtual void defaultEventHandler(Event*) OVERRIDE FINAL;
 
     // ActiveDOMObject functions.
     virtual void stop() OVERRIDE FINAL;
 
     virtual void updateDisplayState() { }
 
-    void setReadyState(MediaPlayer::ReadyState);
+    void setReadyState(ReadyState);
     void setNetworkState(MediaPlayer::NetworkState);
 
     virtual void mediaPlayerNetworkStateChanged() OVERRIDE FINAL;
@@ -355,17 +376,17 @@ private:
     void loadInternal();
     void selectMediaResource();
     void loadResource(const KURL&, ContentType&, const String& keySystem);
+    void startPlayerLoad();
     void setPlayerPreload();
-    void startDelayedLoad();
     blink::WebMediaPlayer::LoadType loadType() const;
     void scheduleNextSourceChild();
     void loadNextSourceChild();
     void userCancelledLoad();
     void clearMediaPlayer(int flags);
-    void clearMediaPlayerAndAudioSourceProviderClient();
+    void clearMediaPlayerAndAudioSourceProviderClientWithoutLocking();
     bool havePotentialSourceChild();
     void noneSupported();
-    void mediaEngineError(PassRefPtr<MediaError> err);
+    void mediaEngineError(PassRefPtrWillBeRawPtr<MediaError>);
     void cancelPendingEventsAndCallbacks();
     void waitForSourceChange();
     void prepareToPlay();
@@ -373,6 +394,14 @@ private:
     KURL selectNextSourceChild(ContentType*, String* keySystem, InvalidURLAction);
 
     void mediaLoadingFailed(MediaPlayer::NetworkState);
+
+    // deferred loading (preload=none)
+    bool loadIsDeferred() const;
+    void deferLoad();
+    void cancelDeferredLoad();
+    void startDeferredLoad();
+    void executeDeferredLoad();
+    void deferredLoadTimerFired(Timer<HTMLMediaElement>*);
 
     void updateActiveTextTrackCues(double);
     HTMLTrackElement* showingTrackWithSameKind(HTMLTrackElement*) const;
@@ -389,7 +418,6 @@ private:
     bool potentiallyPlaying() const;
     bool endedPlayback() const;
     bool stoppedDueToErrors() const;
-    bool pausedForUserInteraction() const;
     bool couldPlayIfEnoughData() const;
 
     // Pauses playback without changing any states or generating events
@@ -419,11 +447,31 @@ private:
 
     blink::WebMediaPlayer::CORSMode corsMode() const;
 
+    // Returns the "direction of playback" value as specified in the HTML5 spec.
+    enum DirectionOfPlayback { Backward, Forward };
+    DirectionOfPlayback directionOfPlayback() const;
+
+    // Returns the "effective playback rate" value as specified in the HTML5 spec.
+    double effectivePlaybackRate() const;
+
+    // Creates placeholder AudioTrack and/or VideoTrack objects when WebMemediaPlayer objects
+    // advertise they have audio and/or video, but don't explicitly signal them via
+    // addAudioTrack() and addVideoTrack().
+    // FIXME: Remove this once all WebMediaPlayer implementations properly report their track info.
+    void createPlaceholderTracksIfNecessary();
+
+    // Sets the selected/enabled tracks if they aren't set before we initially
+    // transition to HAVE_METADATA.
+    void selectInitialTracksIfNecessary();
+
+    void audioTracksTimerFired(Timer<HTMLMediaElement>*);
+
     Timer<HTMLMediaElement> m_loadTimer;
     Timer<HTMLMediaElement> m_progressEventTimer;
     Timer<HTMLMediaElement> m_playbackProgressTimer;
+    Timer<HTMLMediaElement> m_audioTracksTimer;
     RefPtr<TimeRanges> m_playedTimeRanges;
-    OwnPtr<GenericEventQueue> m_asyncEventQueue;
+    OwnPtrWillBeMember<GenericEventQueue> m_asyncEventQueue;
 
     double m_playbackRate;
     double m_defaultPlaybackRate;
@@ -432,7 +480,7 @@ private:
     ReadyState m_readyStateMaximum;
     KURL m_currentSrc;
 
-    RefPtr<MediaError> m_error;
+    RefPtrWillBeMember<MediaError> m_error;
 
     double m_volume;
     double m_lastSeekTime;
@@ -453,6 +501,22 @@ private:
     LoadState m_loadState;
     RefPtrWillBeMember<HTMLSourceElement> m_currentSourceNode;
     RefPtrWillBeMember<Node> m_nextChildNodeToConsider;
+
+    // "Deferred loading" state (for preload=none).
+    enum DeferredLoadState {
+        // The load is not deferred.
+        NotDeferred,
+        // The load is deferred, and waiting for the task to set the
+        // delaying-the-load-event flag (to false).
+        WaitingForStopDelayingLoadEventTask,
+        // The load is the deferred, and waiting for a triggering event.
+        WaitingForTrigger,
+        // The load is deferred, and waiting for the task to set the
+        // delaying-the-load-event flag, after which the load will be executed.
+        ExecuteOnStopDelayingLoadEventTask
+    };
+    DeferredLoadState m_deferredLoadState;
+    Timer<HTMLMediaElement> m_deferredLoadTimer;
 
     OwnPtr<MediaPlayer> m_player;
     blink::WebLayer* m_webLayer;
@@ -501,8 +565,13 @@ private:
     bool m_tracksAreReady : 1;
     bool m_haveVisibleTextTrack : 1;
     bool m_processingPreferenceChange : 1;
+#if ENABLE(OILPAN)
+    bool m_isFinalizing : 1;
+#endif
     double m_lastTextTrackUpdateTime;
 
+    RefPtrWillBeMember<AudioTrackList> m_audioTracks;
+    RefPtrWillBeMember<VideoTrackList> m_videoTracks;
     RefPtrWillBeMember<TextTrackList> m_textTracks;
     WillBeHeapVector<RefPtrWillBeMember<TextTrack> > m_textTracksWhenResourceSelectionBegan;
 
@@ -513,11 +582,12 @@ private:
 
 #if ENABLE(WEB_AUDIO)
     // This is a weak reference, since m_audioSourceNode holds a reference to us.
-    AudioSourceProviderClient* m_audioSourceNode;
+    // FIXME: Oilpan: Consider making this a strongly traced pointer with oilpan where strong cycles are not a problem.
+    RawPtrWillBeWeakMember<AudioSourceProviderClient> m_audioSourceNode;
 #endif
 
     friend class MediaController;
-    RefPtr<MediaController> m_mediaController;
+    RefPtrWillBeMember<MediaController> m_mediaController;
 
     friend class Internals;
     friend class TrackDisplayUpdateScope;

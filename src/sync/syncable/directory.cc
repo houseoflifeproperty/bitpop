@@ -167,6 +167,11 @@ DirOpenResult Directory::OpenImpl(
   // Temporary indices before kernel_ initialized in case Load fails. We 0(1)
   // swap these later.
   Directory::MetahandlesMap tmp_handles_map;
+
+  // Avoids mem leaks on failure.  Harmlessly deletes the empty hash map after
+  // the swap in the success case.
+  STLValueDeleter<Directory::MetahandlesMap> deleter(&tmp_handles_map);
+
   JournalIndex delete_journals;
 
   DirOpenResult result =
@@ -456,6 +461,22 @@ void Directory::UpdateAttachmentIndex(
   ScopedKernelLock lock(this);
   RemoveFromAttachmentIndex(metahandle, old_metadata, lock);
   AddToAttachmentIndex(metahandle, new_metadata, lock);
+}
+
+void Directory::GetMetahandlesByAttachmentId(
+    BaseTransaction* trans,
+    const sync_pb::AttachmentIdProto& attachment_id_proto,
+    Metahandles* result) {
+  DCHECK(result);
+  result->clear();
+  ScopedKernelLock lock(this);
+  IndexByAttachmentId::const_iterator index_iter =
+      kernel_->index_by_attachment_id.find(attachment_id_proto.unique_id());
+  if (index_iter == kernel_->index_by_attachment_id.end())
+    return;
+  const MetahandleSet& metahandle_set = index_iter->second;
+  std::copy(
+      metahandle_set.begin(), metahandle_set.end(), back_inserter(*result));
 }
 
 bool Directory::unrecoverable_error_set(const BaseTransaction* trans) const {
@@ -931,9 +952,7 @@ bool Directory::InitialSyncEndedForType(ModelType type) {
 bool Directory::InitialSyncEndedForType(
     BaseTransaction* trans, ModelType type) {
   // True iff the type's root node has been received and applied.
-  syncable::Entry entry(trans,
-                        syncable::GET_BY_SERVER_TAG,
-                        ModelTypeToRootTag(type));
+  syncable::Entry entry(trans, syncable::GET_TYPE_ROOT, type);
   return entry.good() && entry.GetBaseVersion() != CHANGES_VERSION;
 }
 
