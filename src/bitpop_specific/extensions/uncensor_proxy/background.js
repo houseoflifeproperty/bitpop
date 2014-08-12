@@ -129,6 +129,30 @@ function init() {
     },
     []
   );
+  chrome.webRequest.onBeforeSendHeaders.addListener(
+    function (details) {
+      var uri = parseUri(details.url);
+      var domains = settings.get('domains');
+      if (domains && domains.length != 0) {
+        for (var i = 0; i < domains.length; i++) {
+          var domainName = domains[i].description;
+          if (uri['host'].endsWith(domainName)) {
+            for (var i = 0; i < details.requestHeaders.length; ++i) {
+              if (details.requestHeaders[i].name === 'User-Agent') {
+                var re = /(^.*) (Chrome\/\d+\.\d+\.\d+\.\d+.*$)/
+                details.requestHeaders[i].value =
+                    details.requestHeaders[i].value.replace(re, '$1 BitPop/36.0.2.0 $2');
+                break;
+              }
+            }
+          }
+        }
+      }
+      return {requestHeaders: details.requestHeaders};
+    },
+    { urls: ["<all_urls>"] },
+    ["blocking", "requestHeaders"]
+  );
   chrome.bitpop.onProxyDomainsUpdate.addListener(updateProxifiedDomains);
 
   chrome.extension.onMessage.addListener(function(request, sender, sendResponse) {
@@ -197,7 +221,7 @@ function updateProxifiedDomains() {
           message: 'The list of domains to use proxy for, was updated successfully.' +
                    ' Country detected is ' + response.country_name + '.'
         }, function (notificationId) {
-          setTimeout(function () { chrome.notifications.clear(notificationId); },
+          setTimeout(function () { chrome.notifications.clear(notificationId, function(){}); },
                      UPDATED_NOTIFICATION_SHOW_TIME);
         });
       }
@@ -226,7 +250,7 @@ function getAutoEntries() {
 function getEntryForDomain(domain_name) {
   return "  if (host == '" + domain_name + "' || shExpMatch(host, '*." + domain_name + "'))\n" +
          "  {\n" +
-         "    return 'PROXY 54.235.173.247:8228';\n" +
+         "    return 'PROXY 31.192.228.61:8228';\n" +
          "  }\n";
 }
 
@@ -388,10 +412,10 @@ function onTabUpdated(tabId, changeInfo, tab) {
         proxyControl = domains[i].value;
       }
 
-      if (proxyControl == 'use_auto' && getTabDomainHadJippi(details.tabId, domainName))
+      if (proxyControl == 'use_auto' && getTabDomainHadJippi(tabId, domainName))
         return;
-      setTabDomainHadJippi(details.tabId, domainName);
-      
+      setTabDomainHadJippi(tabId, domainName);
+
       switch (proxyControl) {
         case 'use_auto':
           if (changeInfo.status == 'loading') {
