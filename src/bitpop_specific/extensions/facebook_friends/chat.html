@@ -1,0 +1,63 @@
+<!doctype html>
+<!--
+// BitPop browser. Facebook chat integration part.
+// Copyright (C) 2014 BitPop AS
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<html>
+<head>
+	<link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/new_chat.css">
+    <link rel="stylesheet" href="css/antiscroll.css">
+
+	<script src="js/libs/jquery-1.9.1.min.js"></script>
+	<script src="js/libs/jquery-migrate-1.2.1.js"></script>
+	<script src="js/libs/autolink-min.js"></script>
+	<script src="js/libs/jquery-mousewheel.js"></script>
+	<script src="js/libs/antiscroll.js"></script>
+	<script src="js/libs/jquery.parseparams.js"></script>
+	<script src="js/libs/jquery.textarea-autogrow.js"></script>
+	<script src="js/libs/handlebars-v1.1.2.js"></script>
+	<script src="js/libs/ember-1.2.0.min.js"></script>
+
+	<!-- Beginning of chat scripts -->
+	<script src="js/libs/strophe.min.js"></script>
+	<script src="js/libs/underscore-min.js"></script>
+	<script src="js/libs/jquery.ba-tinypubsub.js"></script>
+	<script src="js/libs/date-short-long.js"></script>
+	<script src="js/libs/ba-emotify.js"></script>
+
+	<script src="js/chat/app.js"></script>
+
+	<script src="js/chat/models/chat_tab.js"></script>
+	<script src="js/chat/models/message.js"></script>
+	<script src="js/chat/models/user.js"></script>
+
+	<script src="js/chat/controllers/local_storage.js"></script>
+	<script src="js/chat/controllers/application.js"></script>
+
+	<script src="js/chat/views/chat_tab/message.js"></script>
+	<script src="js/chat/views/chat_tab/message_collection.js"></script>
+	<script src="js/chat/views/chat_tab/text_area.js"></script>
+	<script src="js/chat/views/chat_tab/layout.js"></script>
+	<!-- End of chat scripts -->
+
+	<script src="js/chat/views/application.js"></script>
+	<script src="js/libs/ga-init.js"></script>
+</head>
+<body>
+	<script type="text/x-handlebars">{{view Chat.Views.Application}}</script>
+</body>
+</html>

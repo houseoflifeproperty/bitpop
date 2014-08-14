@@ -534,6 +534,18 @@ cr.define('options', function() {
         };
       }
 
+      if (cr.isMac) {
+        $('autoCheckCheckbox').onchange = function(event) {
+          chrome.send('toggleAutomaticUpdates');
+        };
+      }
+
+      $('useBitpopProxy').onclick = function(event) {
+        Preferences.setIntegerPref(
+          'bitpop.global_proxy_control',
+           this.checked ? 0 : 1, true);
+      };
+
       // System section.
       if (!cr.isChromeOS) {
         var updateGpuRestartButton = function() {
@@ -1727,6 +1739,10 @@ cr.define('options', function() {
       OptionsPage.navigateToPage('changePicture');
     },
 
+    initUseBitpopProxy_: function(valueForSetting) {
+      $('useBitpopProxy').checked = (valueForSetting == 1) ? false : true;
+    },
+
     /**
      * Shows (or not) the "User" section of the settings page based on whether
      * any of the sub-sections are present (or not).
@@ -1805,6 +1821,7 @@ cr.define('options', function() {
     'updateSearchEngines',
     'updateStartupPages',
     'updateSyncState',
+    'initUseBitpopProxy'
   ].forEach(function(name) {
     BrowserOptions[name] = function() {
       var instance = BrowserOptions.getInstance();

@@ -322,7 +322,7 @@ void GetBookmarksMatchingProperties(BookmarkModel* model,
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       prefs::kShowBookmarkBar,
-      false,
+      true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kEditBookmarksEnabled,

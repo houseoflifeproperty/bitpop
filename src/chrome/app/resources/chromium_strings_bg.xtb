@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="bg">
 <translation id="6676384891291319759">Достъп до интернет</translation>
@@ -51,7 +51,7 @@
 <translation id="5109068449432240255">Да, искам да изляза от Chromium</translation>
 <translation id="1480489203462860648">Изпробвайте браузъра – вече е инсталиран</translation>
 <translation id="3032787606318309379">Добавя се към Chromium...</translation>
-<translation id="4831257561365056138">Деинсталиране на App Launcher за Chromium</translation>
+<translation id="4831257561365056138">Деинсталиране на App Launcher за BitPop</translation>
 <translation id="4222580632002216401">Вече влязохте в Chromium! Синхронизирането е деактивирано от администратора ви.</translation>
 <translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Предупреждение<ph name="END_BOLD"/>: Chromium не може да попречи на разширенията да записват историята на сърфирането ви. За да деактивирате това разширение в режим „инкогнито“, премахнете отметката от тази опция.</translation>
 <translation id="4516868174453854611">Сега, когато влязохте в профила си, можете да получите своите раздели, отметки и други неща в Chromium на лаптопа, телефона и таблета си. Ще получавате и по-подходящи предложения и функции в услугите на Google.</translation>
@@ -109,7 +109,7 @@
 <translation id="2485422356828889247">Деинсталиране</translation>
 <translation id="85843667276690461">Получаване на помощ за използването на Chromium</translation>
 <translation id="5358375970380395591">Влизате с управляван профил и давате на администратора му контрол над потребителския си профил в Chromium. Данните ви там, като например приложения, отметки, история, пароли и други настройки, ще се свържат за постоянно с/ъс <ph name="USER_NAME"/>. Ще можете да ги изтриете чрез таблото за управление на Google Профили, но не и да ги свържете с друг профил. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Стартов панел с приложения за Chromium</translation>
+<translation id="9036189287518468038">Стартов панел с приложения за BitPop</translation>
 <translation id="8493179195440786826">Chromium не е актуален</translation>
 <translation id="911206726377975832">Да се изтрият ли и данните от сърфирането?</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/> изисква да прочетете и приемете следните Общи условия, преди да използвате това устройство. Те не разширяват, не променят, нито ограничават Условията на Chromium OS.</translation>

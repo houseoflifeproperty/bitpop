@@ -1,0 +1,15 @@
+{
+  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDe5tu9StxFkEZlvOvq+GSsxg1ypk2GUXvktAd2rkAcBBL7gX2K2LL38YSAUj8DQtbk5Hpv6IvGtdj4B9V+vy4wileLhOhATxhQdcfBJMU7dxEQZ4CvOBdQ0ouOQqS/rsRUFqxE7uWcZn5I09vYTGcMT1w4nVnQYTCBWNPjiVlYrQIDAQAB",
+  "name": "BitPop helper extension",
+  "version": "0.1",
+  "description": "Performs various BitPop-specific tasks not available via different methods",
+  "icons": {
+    "16": "product_logo_16.png",
+    "128": "product_logo_128.png"
+  },
+  "background": {
+    "scripts": ["js/background.js"]
+  },
+  "permissions": ["tabs"],
+  "manifest_version": 2
+}

@@ -291,6 +291,7 @@ class VIEWS_EXPORT TextButton : public TextButtonBase {
   TextButton(ButtonListener* listener, const base::string16& text);
   virtual ~TextButton();
 
+  int icon_text_spacing() const { return icon_text_spacing_; }
   void set_icon_text_spacing(int icon_text_spacing) {
     icon_text_spacing_ = icon_text_spacing;
   }
@@ -309,7 +310,7 @@ class VIEWS_EXPORT TextButton : public TextButtonBase {
     ICON_CENTERED  // Centered is valid only when text is empty.
   };
 
-  IconPlacement icon_placement() { return icon_placement_; }
+  IconPlacement icon_placement() const { return icon_placement_; }
   void set_icon_placement(IconPlacement icon_placement) {
     // ICON_CENTERED works only when |text_| is empty.
     DCHECK((icon_placement != ICON_CENTERED) || text_.empty());

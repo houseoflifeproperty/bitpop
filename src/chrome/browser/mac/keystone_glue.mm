@@ -1054,7 +1054,7 @@ std::string BrandCodeInternal() {
   NSString* brand_path = [keystone_glue brandFilePath];
 
   if (![brand_path length])
-    return std::string();
+    return std::string("");
 
   NSDictionary* dict =
       [NSDictionary dictionaryWithContentsOfFile:brand_path];
@@ -1063,7 +1063,7 @@ std::string BrandCodeInternal() {
   if (brand_code)
     return [brand_code UTF8String];
 
-  return std::string();
+  return std::string("");
 }
 
 }  // namespace

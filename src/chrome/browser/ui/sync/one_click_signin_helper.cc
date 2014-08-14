@@ -781,6 +781,10 @@ bool OneClickSigninHelper::CanOffer(content::WebContents* web_contents,
   if (error_message)
     error_message->clear();
 
+  // BitPop mod: disallow one click signin until we find a better way to
+  // associate with facebook
+  return false;
+
   if (!web_contents)
     return false;
 

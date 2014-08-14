@@ -118,6 +118,10 @@ class BrowserActionOverflowMenuController : public views::MenuDelegate {
   // Whether this controller is being used for drop.
   bool for_drop_;
 
+  int facebook_chat_item_id_;
+  int facebook_messages_item_id_;
+  int facebook_notifications_item_id_;
+
   // The vector keeps all icon updaters associated with menu item views in the
   // controller. The icon updater will update the menu item view's icon when
   // the browser action view's icon has been updated.

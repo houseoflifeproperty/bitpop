@@ -26,6 +26,19 @@ namespace badge_util {
 // rendering badge overlay text (correct font, typeface, etc).
 SkPaint* GetBadgeTextPaintSingleton();
 
+// Given an |icon|, renders the |text| centered on the |icon|. If |text| is
+// too large to fit within the bounds of the image, the |fallback| string is
+// rendered instead (or nothing, if |fallback| is empty).
+SkBitmap DrawBadgeIconOverlay(const SkBitmap& icon,
+                              float font_size_in_pixels,
+                              const base::string16& text,
+                              const base::string16& fallback);
+
+// Get badge rect
+gfx::Rect BadgeRect(const gfx::Rect& bounds,
+                    const std::string& text,
+                    int icon_width);
+
 // Paints badge with specified parameters to |canvas|.
 void PaintBadge(gfx::Canvas* canvas,
                 const gfx::Rect& bounds,

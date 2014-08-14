@@ -1,0 +1,14 @@
+.domain-description-column {
+	width: 35%;
+	overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#update-domains {
+	margin: 0.35em 0;
+	float: right;
+}
+
+.proxy-title-with-country {
+	margin-bottom: 0.35em;
+}

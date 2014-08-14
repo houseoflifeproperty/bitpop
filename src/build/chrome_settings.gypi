@@ -18,10 +18,10 @@
             # The policy .grd file also needs the bundle id.
             'grit_defines': ['-D', 'mac_bundle_id=com.google.Chrome'],
           }, {  # else: branding!="Chrome"
-            'mac_bundle_id': 'org.chromium.Chromium',
+            'mac_bundle_id': 'com.bitpop.BitPop',
             'mac_creator': 'Cr24',
             # The policy .grd file also needs the bundle id.
-            'grit_defines': ['-D', 'mac_bundle_id=org.chromium.Chromium'],
+            'grit_defines': ['-D', 'mac_bundle_id=com.bitpop.BitPop'],
           }],  # branding
         ],  # conditions
       }],  # OS=="mac"

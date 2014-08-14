@@ -172,6 +172,54 @@ void Profile::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 #endif
+
+  // ----------------------------------------------------------
+  // BitPop custom extensions preference registration:
+  //
+  // ----------------------------------------------------------
+  registry->RegisterBooleanPref(prefs::kFacebookShowChat,
+                            false,
+                            user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kFacebookShowJewels,
+                            true,
+                            user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kUncensorShouldRedirect,
+                             0,
+                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kUncensorShowMessage,
+                            true,
+                            user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kUncensorNotifyUpdates,
+                            true,
+                            user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kUncensorDomainFilter,
+                            "{}", // JSON
+                            user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kUncensorDomainExceptions,
+                            "{}", // JSON
+                            user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterIntegerPref(prefs::kGlobalProxyControl,
+                             0,
+                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(prefs::kShowMessageForActiveProxy,
+                            true,
+                            user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kIPRecognitionCountryName,
+                            std::string(),
+                            user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(prefs::kBlockedSitesList,
+                            "[]",
+                            user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  // ----------------------------------------------------------
+  // End of BitPop custom extensions preference registration
+  //
+  // ----------------------------------------------------------
+
+#if defined(OS_MACOSX)
+  registry->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled,
+                             true,
+                             user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+#endif
 }
 
 std::string Profile::GetDebugName() {
@@ -219,6 +267,13 @@ void Profile::MaybeSendDestroyedNotification() {
         content::Source<Profile>(this),
         content::NotificationService::NoDetails());
   }
+}
+
+bool Profile::should_show_additional_extensions() const {
+  return false;
+}
+
+void Profile::set_should_show_additional_extensions(bool flag) {
 }
 
 bool ProfileCompare::operator()(Profile* a, Profile* b) const {

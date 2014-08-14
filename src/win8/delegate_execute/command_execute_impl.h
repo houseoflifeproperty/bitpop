@@ -27,7 +27,7 @@ EXTERN_C const GUID CLSID_CommandExecuteImpl;
 // the class with a dynamic CLSID.  However, a static CLSID is necessary
 // so that we can force at least one entry into ATL's object map (it will
 // treat a 0-element object map as an initialization failure case).
-class ATL_NO_VTABLE DECLSPEC_UUID("071BB5F2-85A4-424F-BFE7-5F1609BE4C2C")
+class ATL_NO_VTABLE DECLSPEC_UUID("45F07275-4EEA-47AD-A356-755AED238AAD")
     CommandExecuteImpl
     : public CComObjectRootEx<CComSingleThreadModel>,
       public CComCoClass<CommandExecuteImpl, &CLSID_CommandExecuteImpl>,

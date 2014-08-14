@@ -101,7 +101,7 @@ base::string16 FileVersionInfoMac::last_change() {
 }
 
 bool FileVersionInfoMac::is_official_build() {
-#if defined (GOOGLE_CHROME_BUILD)
+#if 1
   return true;
 #else
   return false;

@@ -702,6 +702,9 @@ class Browser : public TabStripModelObserver,
   // Handle changes to kDevTools preference.
   void OnDevToolsDisabledChanged();
 
+  // Handle changes to the kFacebookShowFriendsList pref
+  void OnFacebookShowSidebarChanged();
+
   // UI update coalescing and handling ////////////////////////////////////////
 
   // Asks the toolbar (and as such the location bar) to update its state to

@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="ms">
 <translation id="6676384891291319759">Akses Internet</translation>
@@ -27,7 +27,7 @@
 <translation id="7419987137528340081">Jika anda memilih untuk menyimpan data Chromium yang sedia ada secara berasingan, anda boleh membuat pengguna Chromium baharu untuk <ph name="USER_NAME"/>.</translation>
 <translation id="5427571867875391349">Tetapkan Chromium sebagai penyemak imbas lalai anda</translation>
 <translation id="8030318113982266900">Mengemas kini peranti anda kepada saluran <ph name="CHANNEL_NAME"/>...</translation>
-<translation id="3549345495227188780">Bermula dengan OS Chromium</translation>
+<translation id="3549345495227188780">Bermula dengan OS BitPop</translation>
 <translation id="1668054258064581266">Selepas mengalih keluar akaun anda daripada Chromium, anda mungkin perlu memuatkan semula tab yang dibuka untuk memberi kesan.</translation>
 <translation id="6953661834318318668">Bar Alat Chromium</translation>
 <translation id="4285930937574705105">Pemasangan gagal disebabkan ralat yang tidak dinyatakan. Jika Chromium sedang dijalankan, sila tutup dan cuba semula.</translation>
@@ -40,7 +40,7 @@
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          dan pastikan konfigurasi anda ditetapkan kepada &quot;tiada proksi&quot; atau &quot;terus&quot;.</translation>
+          dan pastikan konfigurasi anda ditetapkan kepada "tiada proksi" atau "terus".</translation>
 <translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
 <translation id="7729447699958282447">Chromium tidak dapat menyegerakkan data anda kerana Segerak tidak tersedia untuk domain anda.</translation>
 <translation id="1989424089625731201">Anda cuba mencapai &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, tetapi sijil yang diberikan pelayan mengandungi ralat. Chromium tidak boleh menggunakan sijil yang mengandungi ralat dan tidak dapat mengesahkan identiti tapak yang anda cuba untuk bersambung.</translation>
@@ -51,7 +51,7 @@
 <translation id="5109068449432240255">Ya, keluar dari Chromium</translation>
 <translation id="1480489203462860648">Cubalah, ia sudah dipasang</translation>
 <translation id="3032787606318309379">Menambah ke Chromium...</translation>
-<translation id="4831257561365056138">Nyahpasang Pelancar Apl Chromium</translation>
+<translation id="4831257561365056138">Nyahpasang Pelancar Apl BitPop</translation>
 <translation id="4222580632002216401">Anda kini sedang log masuk ke Chromium! Penyegerakan dilumpuhkan oleh pentadbir anda.</translation>
 <translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Amaran:<ph name="END_BOLD"/> Chromium tidak dapat menghalang sambungan daripada merakamkan sejarah penyemakan imbas anda. Untuk melumpuhkan sambungan ini dalam mod inkognito, nyahpilih pilihan ini.</translation>
 <translation id="4516868174453854611">Memandangkan anda kini telah log masuk, anda boleh mendapatkan tab, penanda halaman dan barangan Chromium anda yang lain merentas komputer riba, telefon dan tablet anda. Anda turut akan menerima cadangan dan ciri yang lebih berkaitan tentang perkhidmatan Google.</translation>
@@ -76,7 +76,7 @@
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
-        dan nyahpilih &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>&quot;.
+        dan nyahpilih "<ph name="NO_PREFETCH_DESCRIPTION"/>".
         Jika tindakan ini tidak menyelesaikan isu ini, kami cadangkan agar memilih pilihan ini sekali lagi untuk prestasi yang dipertingkatkan.</translation>
 <translation id="7463979740390522693">Chromium - Pemberitahuan (<ph name="QUANTITY"/> belum dibaca)</translation>
 <translation id="225614027745146050">Selamat datang</translation>
@@ -102,7 +102,7 @@
 <translation id="4677944499843243528">Nampaknya profil digunakan oleh proses Chromium lain (<ph name="PROCESS_ID"/>) pada komputer lain (<ph name="HOST_NAME"/>). Chromium telah mengunci profil supaya profil tidak rosak. Jika anda pasti tiada proses lain yang menggunakan profil ini, anda boleh membuka profil dan melancarkan semula Chromium.</translation>
 <translation id="5405650547142096840">Alih keluar daripada Chromium</translation>
 <translation id="4994636714258228724">Tambahkan diri anda kepada Chromium</translation>
-<translation id="7066436765290594559">OS Chromium tidak dapat menyegerakkan data anda. Sila kemas kini frasa laluan Segerak anda.</translation>
+<translation id="7066436765290594559">OS BitPop tidak dapat menyegerakkan data anda. Sila kemas kini frasa laluan Segerak anda.</translation>
 <translation id="7747138024166251722">Pemasang tidak dapat mencipta direktori sementara. Sila semak ruang cakera kosong dan kebenaran untuk memasang perisian.</translation>
 <translation id="3258596308407688501">Chromium tidak dapat membaca atau menulis pada direktori datanya:
 
@@ -111,7 +111,7 @@
 <translation id="2485422356828889247">Nyahpasang</translation>
 <translation id="85843667276690461">Dapatkan bantuan untuk menggunakan Chromium</translation>
 <translation id="5358375970380395591">Anda log masuk menggunakan akaun yang terurus dan memberikan pentadbirnya kawalan ke atas profil Chromium anda. Data Chromium anda, seperti apl, penanda halaman, sejarah, kata laluan dan tetapan anda yang lain akan terikat kepada <ph name="USER_NAME"/> secara kekal. Anda akan dapat memadamkan data ini melalui Papan Pemuka Akaun Google, tetapi anda tidak akan dapat mengaitkan data ini dengan akaun lain. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Pelancar Apl Chromium</translation>
+<translation id="9036189287518468038">Pelancar Apl BitPop</translation>
 <translation id="8493179195440786826">Chromium sudah usang</translation>
 <translation id="911206726377975832">Padamkan juga data menyemak imbas anda?</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/> menghendaki anda membaca dan menerima Syarat Perkhidmatan berikut sebelum menggunakan peranti ini. Syarat ini tidak meluaskan, mengubah suai atau mengehadkan Syarat OS Chromium.</translation>
@@ -119,7 +119,7 @@
 <translation id="1699664235656412242">Sila tutup semua tetingkap Chromium (termasuk yang di dalam mod Windows 8) dan cuba lagi.</translation>
 <translation id="6734080038664603509">Kemas kini &amp;Chromium</translation>
 <translation id="8862326446509486874">Anda tidak mempunyai hak wajar untuk pemasangan peringkat sistem. Cuba jalankan pemasang semula sebagai Pentadbir.</translation>
-<translation id="2535480412977113886">OS Chromium tidak dapat menyegerakkan data anda kerana butiran log masuk akaun anda sudah lapuk.</translation>
+<translation id="2535480412977113886">OS BitPop tidak dapat menyegerakkan data anda kerana butiran log masuk akaun anda sudah lapuk.</translation>
 <translation id="8697124171261953979">Sambungan turut mengawal halaman yang ditunjukkan apabila anda memulakan Chromium atau membuat carian dari Kotak Omni.</translation>
 <translation id="894903460958736500">Perisian yang dijalankan pada komputer anda tidak serasi dengan Chromium.</translation>
 <translation id="1774152462503052664">Benarkan Chromium dijalankan dalam latar belakang</translation>
@@ -161,7 +161,7 @@
           <ph name="PROXIES_TITLE"/>
           &gt;
           Tetapan LAN
-          dan nyahpilih kotak pilihan &quot;Gunakan pelayan proksi untuk LAN anda&quot;.</translation>
+          dan nyahpilih kotak pilihan "Gunakan pelayan proksi untuk LAN anda".</translation>
 <translation id="8621669128220841554">Pemasangan gagal disebabkan ralat yang tidak dinyatakan. Sila muat turun semula Chromium.</translation>
 <translation id="6717134281241384636">Profil anda tidak boleh digunakan kerana profil anda dihasilkan dari versi Chromium yang lebih baharu.
 
@@ -172,7 +172,7 @@ Beberapa ciri mungkin tidak tersedia. Sila nyatakan direktori profil yang berbez
 <translation id="6212496753309875659">Komputer ini telah mempunyai versi Chromium yang lebih baharu. Jika perisian tidak berfungsi, sila nyahpasang Chromium dan cuba lagi.</translation>
 <translation id="1115445892567829615">Chromium tidak dapat menyegerakkan data anda. Sila kemas kini frasa laluan Segerak anda.</translation>
 <translation id="1298199220304005244">Dapatkan bantuan untuk menggunakan Chromium OS</translation>
-<translation id="331951419404882060">OS Chromium tidak dapat menyegerakkan data anda disebabkan oleh ralat melog masuk.</translation>
+<translation id="331951419404882060">OS BitPop tidak dapat menyegerakkan data anda disebabkan oleh ralat melog masuk.</translation>
 <translation id="8187289872471304532">Pergi ke
           Apikasi &gt; Pilihan Sistem &gt; Rangkaian &gt; Terperinci &gt; Proksi
           dan nyahpilih mana-mana proksi yang telah dipilih.</translation>
@@ -215,8 +215,8 @@ Beberapa ciri mungkin tidak tersedia. Sila nyatakan direktori profil yang berbez
 <translation id="8724049448828509830">Muat turun sedang dijalankan. Adakah anda ingin keluar dari Chromium dan membatalkan muat turun?</translation>
 <translation id="608189560609172163">Chromium tidak dapat menyegerakkan data anda disebabkan ralat melog masuk.</translation>
 <translation id="4888717733111232871">Peraturan masuk bagi Chromium untuk membolehkan trafik mDNS.</translation>
-<translation id="151962892725702025">OS Chromium tidak dapat menyegerakkan data anda kerana Segerak tidak tersedia untuk domain anda.</translation>
-<translation id="3360567213983886831">Perduaan Chromium</translation>
+<translation id="151962892725702025">OS BitPop tidak dapat menyegerakkan data anda kerana Segerak tidak tersedia untuk domain anda.</translation>
+<translation id="3360567213983886831">Perduaan BitPop</translation>
 <translation id="8985587603644336029">Seseorang telah log masuk ke Chromium pada komputer ini sebagai <ph name="ACCOUNT_EMAIL_LAST"/> sebelum ini. Jika itu bukan akaun anda, buat pengguna Chromium baharu untuk mengasingkan maklumat anda.
 
 Meneruskan juga log masuk akan menggabungkan maklumat Chromium seperti penanda halaman, sejarah dan tetapan lain ke <ph name="ACCOUNT_EMAIL_NEW"/>.</translation>

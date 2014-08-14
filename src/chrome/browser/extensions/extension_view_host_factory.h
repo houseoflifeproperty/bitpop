@@ -30,6 +30,7 @@ class ExtensionViewHostFactory {
   // hence only require a |profile|.
   static ExtensionViewHost* CreateDialogHost(const GURL& url, Profile* profile);
 
+  static ExtensionViewHost* CreateSidebarHost(const GURL& url, Browser* browser);
  private:
   DISALLOW_COPY_AND_ASSIGN(ExtensionViewHostFactory);
 };

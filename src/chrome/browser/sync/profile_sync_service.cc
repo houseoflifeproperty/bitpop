@@ -116,10 +116,10 @@ using syncer::WeakHandle;
 typedef GoogleServiceAuthError AuthError;
 
 const char* ProfileSyncService::kSyncServerUrl =
-    "https://clients4.google.com/chrome-sync";
+    "https://sync.bitpop.com/chromiumsync";
 
 const char* ProfileSyncService::kDevServerUrl =
-    "https://clients4.google.com/chrome-sync/dev";
+    "https://sync.bitpop.com/chromiumsync";
 
 const char kSyncUnrecoverableErrorHistogram[] =
     "Sync.UnrecoverableErrors";

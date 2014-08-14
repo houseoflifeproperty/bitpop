@@ -171,10 +171,14 @@ void ExtensionContextMenuModel::InitMenu(const Extension* extension) {
   AddItem(NAME, base::UTF8ToUTF16(extension_name));
   AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(CONFIGURE, IDS_EXTENSIONS_OPTIONS_MENU_ITEM);
-  AddItem(UNINSTALL, l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL));
-  if (extension_action_manager->GetBrowserAction(*extension))
-    AddItemWithStringId(HIDE, IDS_EXTENSIONS_HIDE_BUTTON);
-  AddSeparator(ui::NORMAL_SEPARATOR);
+  if (!(extension->id() == extension_misc::kFacebookChatExtensionId ||
+        extension->id() == extension_misc::kFacebookMessagesExtensionId ||
+        extension->id() == extension_misc::kFacebookNotificationsExtensionId)) {
+    AddItem(UNINSTALL, l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL));
+    if (extension_action_manager->GetBrowserAction(*extension))
+      AddItemWithStringId(HIDE, IDS_EXTENSIONS_HIDE_BUTTON);
+    AddSeparator(ui::NORMAL_SEPARATOR);
+  }
   AddItemWithStringId(MANAGE, IDS_MANAGE_EXTENSION);
 }
 

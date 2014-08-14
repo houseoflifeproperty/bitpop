@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="ko">
 <translation id="6676384891291319759">인터넷 연결</translation>
@@ -52,7 +52,7 @@
 <translation id="5109068449432240255">예, Chromium 종료</translation>
 <translation id="1480489203462860648">사용해 보세요. 이미 설치되었습니다.</translation>
 <translation id="3032787606318309379">Chromium에 추가하는 중...</translation>
-<translation id="4831257561365056138">Chromium 앱 실행기 제거</translation>
+<translation id="4831257561365056138">BitPop 앱 실행기 제거</translation>
 <translation id="4222580632002216401">Chromium에 로그인했습니다! 관리자가 동기화를 사용 중지했습니다.</translation>
 <translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>경고:<ph name="END_BOLD"/> Chromium은 확장 프로그램이 인터넷 사용기록을 저장하지 못하도록 할 수 없습니다. 시크릿 모드에서 이 확장 프로그램을 사용 중지하려면 옵션을 선택 취소하세요.</translation>
 <translation id="4516868174453854611">이제 로그인했으므로 노트북, 휴대전화 및 태블릿에서 탭과 북마크, 기타 Chromium 콘텐츠를 사용할 수 있습니다. 또한 Google 서비스에서 더 관련성 높은 추천검색어와 기능이 제공됩니다.</translation>
@@ -112,7 +112,7 @@
 <translation id="2485422356828889247">제거</translation>
 <translation id="85843667276690461">Chromium 사용에 대한 도움말</translation>
 <translation id="5358375970380395591">관리 계정으로 로그인하고 Chromium 프로필에 대한 관리자 제어권을 부여하려고 합니다. 앱, 북마크, 방문 기록, 비밀번호 및 기타 설정 등 Chromium 데이터가 <ph name="USER_NAME"/> 계정에 영구적으로 연결됩니다. 이후 이 데이터를 Google 계정 대시보드에서 삭제할 수는 있지만 다른 계정에 연결할 수는 없습니다. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Chromium 앱 실행기</translation>
+<translation id="9036189287518468038">BitPop 앱 실행기</translation>
 <translation id="8493179195440786826">Chromium이 이전 버전임</translation>
 <translation id="911206726377975832">인터넷 사용정보도 삭제하시겠습니까?</translation>
 <translation id="95514773681268843">이 기기를 사용하기 전에 <ph name="DOMAIN"/>에서 다음 서비스 약관을 읽고 동의해야 합니다. 이 약관은 Chromium OS 약관을 확장, 수정 또는 제한하지 않습니다.</translation>
@@ -215,7 +215,7 @@
 <translation id="608189560609172163">로그인 중 오류가 발생하여 Chromium에서 데이터를 동기화하지 못했습니다.</translation>
 <translation id="4888717733111232871">Chromium이 mDNS 트래픽을 허용하는 인바운드 규칙입니다.</translation>
 <translation id="151962892725702025">내 도메인에서 동기화를 사용할 수 없으므로 Chromium OS에서 데이터를 동기화하지 못했습니다.</translation>
-<translation id="3360567213983886831">Chromium 바이너리</translation>
+<translation id="3360567213983886831">BitPop 바이너리</translation>
 <translation id="8985587603644336029">다른 사용자가 이전에 이 컴퓨터에서 <ph name="ACCOUNT_EMAIL_LAST"/>(으)로 Chromium에 로그인했습니다. 본인의 계정이 아닌 경우 새로운 Chromium 사용자를 만들어 정보를 분리하세요.
 
 로그인하면 북마크, 방문 기록 및 기타 설정과 같은 Chromium 정보가 <ph name="ACCOUNT_EMAIL_NEW"/>에 병합됩니다.</translation>

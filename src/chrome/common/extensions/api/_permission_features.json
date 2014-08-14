@@ -166,6 +166,11 @@
       ]
     }
   ],
+  "bitpop": {
+    "channel": "stable",
+    "extension_types": ["extension"],
+    "location": "component"
+  },
   "bluetoothPrivate": {
     "channel": "stable",
     "extension_types": ["platform_app"],

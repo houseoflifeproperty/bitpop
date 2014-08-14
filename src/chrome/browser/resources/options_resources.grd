@@ -10,6 +10,8 @@
     <structures>
       <structure name="IDR_OPTIONS_BUNDLE_JS" file="options/options_bundle.js" flattenhtml="true" type="chrome_html" />
       <structure name="IDR_OPTIONS_HTML" file="options/options.html" flattenhtml="true" allowexternalscript="true" type="chrome_html" />
+      <structure name="IDR_OPTIONS_BITPOP_BUNDLE_JS" file="options/bitpop_options_bundle.js" flattenhtml="true" type="chrome_html" />
+      <structure name="IDR_OPTIONS_BITPOP_HTML" file="options/bitpop_options_container.html" flattenhtml="true" allowexternalscript="true" type="chrome_html" />
     </structures>
   </release>
 </grit>

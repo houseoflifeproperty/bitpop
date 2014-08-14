@@ -49,6 +49,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/models/button_menu_item_model.h"
@@ -617,11 +618,11 @@ void WrenchMenuModel::Build(bool is_new_menu) {
               GetNativeImageNamed(IDR_INPUT_ALERT_MENU));
 #endif
 
+  ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   if (!is_new_menu) {
     AddItemWithStringId(IDC_HELP_PAGE_VIA_MENU, IDS_HELP_PAGE);
 
     if (browser_defaults::kShowHelpMenuItemIcon) {
-      ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
       SetIcon(GetIndexOfCommandId(IDC_HELP_PAGE_VIA_MENU),
               rb.GetNativeImageNamed(IDR_HELP_MENU));
     }
@@ -650,6 +651,13 @@ void WrenchMenuModel::Build(bool is_new_menu) {
     AddSeparator(ui::NORMAL_SEPARATOR);
     AddItemWithStringId(IDC_EXIT, IDS_EXIT);
   }
+
+  SetIcon(GetIndexOfCommandId(IDC_BOOKMARKS_MENU),
+          rb.GetNativeImageNamed(IDR_BOOKMARKS_FAVICON));
+  SetIcon(GetIndexOfCommandId(IDC_SHOW_DOWNLOADS),
+          rb.GetNativeImageNamed(IDR_DOWNLOADS_FAVICON));
+  SetIcon(GetIndexOfCommandId(IDC_OPTIONS),
+          rb.GetNativeImageNamed(IDR_SETTINGS_FAVICON));
 }
 
 void WrenchMenuModel::AddGlobalErrorMenuItems() {

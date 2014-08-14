@@ -15,6 +15,13 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_shelf.h"
+#include "chrome/browser/facebook_chat/facebook_chatbar.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
+#include "chrome/browser/facebook_chat/facebook_chat_item.h"
+#include "chrome/browser/facebook_chat/received_message_info.h"
+#include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/fullscreen.h"
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
@@ -32,6 +39,8 @@
 #import "chrome/browser/ui/cocoa/browser_window_utils.h"
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
+#import "chrome/browser/ui/cocoa/extensions/browser_actions_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
 #include "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
@@ -44,16 +53,19 @@
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #import "chrome/browser/ui/cocoa/web_dialog_window_controller.h"
 #import "chrome/browser/ui/cocoa/website_settings/website_settings_bubble_controller.h"
+#include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
 #include "components/autofill/core/common/password_form.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -92,6 +104,15 @@ BrowserWindowCocoa::BrowserWindowCocoa(Browser* browser,
     controller_(controller),
     initial_show_state_(ui::SHOW_STATE_DEFAULT),
     attention_request_id_(0) {
+
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT,
+                 content::Source<Profile>(browser_->profile()));
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
+                 content::Source<Profile>(browser_->profile()));
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT,
+                 content::Source<Profile>(browser_->profile()));
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN,
+                 content::Source<Profile>(browser_->profile()));
 
   gfx::Rect bounds;
   chrome::GetSavedWindowBoundsAndShowState(browser_,
@@ -536,6 +557,23 @@ DownloadShelf* BrowserWindowCocoa::GetDownloadShelf() {
   return [shelfController bridge];
 }
 
+bool BrowserWindowCocoa::IsChatbarVisible() const {
+  return [controller_ isChatbarVisible] != NO;
+}
+
+FacebookChatbar* BrowserWindowCocoa::GetChatbar() {
+  FacebookChatbarController *chatbarController = [controller_ facebookChatbar];
+  return [chatbarController bridge];
+}
+
+bool BrowserWindowCocoa::IsFriendsSidebarVisible() const {
+  return [controller_ isFriendsSidebarVisible] != NO;
+}
+
+void BrowserWindowCocoa::SetFriendsSidebarVisible(bool visible) {
+  [controller_ setFriendsSidebarVisible:(visible ? YES : NO)];
+}
+
 // We allow closing the window here since the real quit decision on Mac is made
 // in [AppController quit:].
 void BrowserWindowCocoa::ConfirmBrowserCloseWithPendingDownloads(
@@ -663,6 +701,57 @@ FindBar* BrowserWindowCocoa::CreateFindBar() {
 web_modal::WebContentsModalDialogHost*
     BrowserWindowCocoa::GetWebContentsModalDialogHost() {
   return NULL;
+}
+
+void BrowserWindowCocoa::Observe(int type,
+                                 const content::NotificationSource& source,
+                                 const content::NotificationDetails& details) {
+  switch (type) {
+    case content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT: {
+        if (browser_->is_type_tabbed()) {
+          content::Details<FacebookChatCreateInfo> chat_info(details);
+          FacebookChatManager *mgr =
+              FacebookChatManagerServiceFactory::GetForProfile(
+                  browser_->profile());
+          // the next call returns the found element if jid's equal
+          FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
+          if (IsActive() && !browser_->fullscreen_controller()->IsFullscreenForTabOrPending(
+                              browser_->tab_strip_model()->GetActiveWebContents()))
+            newItem->set_needs_activation(true);
+          else
+            newItem->set_needs_activation(false);
+          GetChatbar()->AddChatItem(newItem);
+          //mgr->StartChat(newItem->jid());
+        }
+      }
+      break;
+    case content::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE: {
+        if (browser_->is_type_tabbed()) {
+          content::Details<ReceivedMessageInfo> msg_info(details);
+          FacebookChatManager *mgr =
+              FacebookChatManagerServiceFactory::GetForProfile(
+                  browser_->profile());
+          FacebookChatItem *item = mgr->GetItem(msg_info->chatCreateInfo->jid);
+          item->set_needs_activation(false);
+          GetChatbar()->AddChatItem(item);
+        }
+      }
+      break;
+    case content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT:
+      if (browser_->is_type_tabbed()) {
+        GetChatbar()->RemoveAll();
+        [[[controller_ toolbarController] browserActionsController] hideFacebookExtensions];
+      }
+      break;
+    case content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN:
+      if (browser_->is_type_tabbed()) {
+        [[[controller_ toolbarController] browserActionsController] showFacebookExtensions];
+      }
+      break;
+    default:
+      NOTREACHED();  // we don't ask for anything else!
+      break;
+  }
 }
 
 extensions::ActiveTabPermissionGranter*

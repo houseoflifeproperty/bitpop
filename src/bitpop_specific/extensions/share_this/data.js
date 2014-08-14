@@ -1,0 +1,1 @@
+$.colorbox({iframe:true, width:"520px", height:"450px", href:url, fixed:true});

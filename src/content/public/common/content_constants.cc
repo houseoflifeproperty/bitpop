@@ -30,7 +30,7 @@ const size_t kMaxURLDisplayChars = 32 * 1024;
 #if defined(GOOGLE_CHROME_BUILD)
 const char kStatsFilename[] = "ChromeStats2";
 #else
-const char kStatsFilename[] = "ChromiumStats2";
+const char kStatsFilename[] = "BitPopStats2";
 #endif
 
 const int kStatsMaxThreads = 32;

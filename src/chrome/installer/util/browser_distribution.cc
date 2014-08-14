@@ -24,6 +24,7 @@
 #include "chrome/installer/util/google_chrome_binaries_distribution.h"
 #include "chrome/installer/util/google_chrome_distribution.h"
 #include "chrome/installer/util/google_chrome_sxs_distribution.h"
+#include "chrome/installer/util/bitpop_distribution.h"
 #include "chrome/installer/util/install_util.h"
 #include "chrome/installer/util/l10n_string_util.h"
 #include "chrome/installer/util/master_preferences.h"
@@ -38,7 +39,7 @@ const wchar_t kChromiumActiveSetupGuid[] =
     L"{7D2B3E1D-D096-4594-9D8F-A6667F12E0AC}";
 
 const wchar_t kCommandExecuteImplUuid[] =
-    L"{A2DF06F9-A21A-44A8-8A99-8B9C84F29160}";
+    L"{45F07275-4EEA-47AD-A356-755AED238AAD}";
 
 // The BrowserDistribution objects are never freed.
 BrowserDistribution* g_browser_distribution = NULL;
@@ -96,7 +97,9 @@ BrowserDistribution* BrowserDistribution::GetSpecificDistribution(
             &g_browser_distribution);
       }
 #else
-      dist = GetOrCreateBrowserDistribution<BrowserDistribution>(
+      //dist = GetOrCreateBrowserDistribution<BrowserDistribution>(
+      //    &g_browser_distribution);
+      dist = GetOrCreateBrowserDistribution<BitpopDistribution>(
           &g_browser_distribution);
 #endif
       break;

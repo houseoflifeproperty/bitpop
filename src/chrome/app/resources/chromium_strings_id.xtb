@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="id">
 <translation id="6676384891291319759">Akses Internet</translation>
@@ -40,7 +40,7 @@
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          dan pastikan konfigurasi Anda disetel ke &quot;tanpa proxy&quot; atau &quot;langsung&quot;.</translation>
+          dan pastikan konfigurasi Anda disetel ke "tanpa proxy" atau "langsung".</translation>
 <translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
 <translation id="7729447699958282447">Chromium tidak dapat menyinkronkan data Anda karena Sinkronisasi tidak tersedia untuk domain Anda.</translation>
 <translation id="1989424089625731201">Anda mencoba membuka &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, namun sertifikat yang ditunjukkan server berisi kesalahan. Chromium tidak dapat menggunakan sertifikat berisi kesalahan dan tidak dapat memvalidasi identitas situs yang coba Anda sambungkan.</translation>
@@ -51,7 +51,7 @@
 <translation id="5109068449432240255">Ya, keluar dari Chromium</translation>
 <translation id="1480489203462860648">Cobalah, ini sudah dipasang</translation>
 <translation id="3032787606318309379">Menambahkan Chromium...</translation>
-<translation id="4831257561365056138">Copot pemasangan Peluncur Aplikasi Chromium</translation>
+<translation id="4831257561365056138">Copot pemasangan Peluncur Aplikasi BitPop</translation>
 <translation id="4222580632002216401">Sekarang Anda telah masuk ke Chromium! Sinkronisasi dinonaktifkan oleh administrator Anda.</translation>
 <translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Peringatan:<ph name="END_BOLD"/> Chromium tidak dapat mencegah ekstensi merekam riwayat penjelajahan Anda. Untuk menonaktifkan ekstensi ini dalam mode penyamaran, jangan pilih opsi ini.</translation>
 <translation id="4516868174453854611">Setelah masuk, Anda bisa mendapatkan tab, bookmark dan barang-barang Chromium lainnya di seluruh laptop, ponsel, dan tablet Anda. Anda juga akan menerima saran dan fitur yang lebih relevan di layanan Google.</translation>
@@ -76,7 +76,7 @@
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
-        dan batalkan pilihan &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>&quot;.
+        dan batalkan pilihan "<ph name="NO_PREFETCH_DESCRIPTION"/>".
         Jika hal ini tidak menyelesaikan masalah, sebaiknya pilih lagi opsi
         ini untuk meningkatkan kinerja.</translation>
 <translation id="7463979740390522693">Chromium - Pemberitahuan (<ph name="QUANTITY"/> belum dibaca)</translation>
@@ -112,7 +112,7 @@
 <translation id="2485422356828889247">Copot instalasi</translation>
 <translation id="85843667276690461">Dapatkan bantuan tentang penggunaan Chromium</translation>
 <translation id="5358375970380395591">Anda masuk dengan akun yang dikelola dan memberikan administratornya kontrol atas profil Chromium Anda. Data Chromium Anda, seperti aplikasi, bookmark, riwayat, sandi, dan setelan lain selamanya akan dikaitkan ke <ph name="USER_NAME"/>. Anda dapat menghapus data ini melalui Dasbor Akun Google, namun Anda tidak akan dapat mengaitkan data ini dengan akun yang lain. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Peluncur Aplikasi Chromium</translation>
+<translation id="9036189287518468038">Peluncur Aplikasi BitPop</translation>
 <translation id="8493179195440786826">Chromium Terlalu Lawas</translation>
 <translation id="911206726377975832">Hapus juga data rambanan Anda?</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/> mewajibkan Anda membaca dan menyetujui Persyaratan Layanan sebelum menggunakan perangkat ini. Persyaratan ini tidak memperluas, mengubah, atau membatasi Persyaratan Chromium OS.</translation>
@@ -162,7 +162,7 @@
           <ph name="PROXIES_TITLE"/>
           &gt;
           Setelan LAN
-          dan hapus pilihan pada kotak centang &quot;Gunakan server proxy untuk LAN&quot;.</translation>
+          dan hapus pilihan pada kotak centang "Gunakan server proxy untuk LAN".</translation>
 <translation id="8621669128220841554">Pemasangan gagal karena kesalahan yang tidak ditentukan. Unduh Chromium lagi.</translation>
 <translation id="6717134281241384636">Profil Anda tidak dapat digunakan karena berasal dari Chromium versi yang lebih baru.
 
@@ -217,7 +217,7 @@ Sebagian fitur mungkin tidak tersedia. Tentukan direktori profil yang berbeda at
 <translation id="608189560609172163">Chromium tidak dapat menyinkronkan data Anda karena kesalahan saat masuk.</translation>
 <translation id="4888717733111232871">Inbound rule untuk Chromium guna mengizinkan lalu lintas mDNS.</translation>
 <translation id="151962892725702025">Chromium OS tidak dapat menyinkronkan data Anda karena Sinkronisasi tidak tersedia untuk domain Anda.</translation>
-<translation id="3360567213983886831">Biner Chromium</translation>
+<translation id="3360567213983886831">Biner BitPop</translation>
 <translation id="8985587603644336029">Sebelumnya ada seseorang yang masuk ke Chromium di komputer ini sebagai <ph name="ACCOUNT_EMAIL_LAST"/>. Jika itu bukan akun Anda, buatlah pengguna Chromium baru untuk menjaga informasi Anda tetap terpisah.
 
 Tetap masuk akan menggabungkan informasi Chromium seperti bookmark, riwayat, dan setelan lain ke <ph name="ACCOUNT_EMAIL_NEW"/>.</translation>

@@ -1,0 +1,161 @@
+/*
+// BitPop browser. Facebook chat integration part.
+// Copyright (C) 2014 BitPop AS
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+body {
+  cursor: default;
+  font-size: 13px;
+  background-color: white;
+  color: black;
+  display: -webkit-box;
+  margin: 10px 0;
+}
+#mainview-content {
+  min-height: 100%;
+  position: relative;
+}
+#toplevel-page-container {
+  box-sizing: border-box;
+  max-width: 888px;
+  min-width: 600px;
+  padding: 0 24px;
+}
+
+#uncensorPage h1 {
+  -webkit-padding-end: 24px;
+  -webkit-user-select: none;
+  color: #333;
+  font-size: 200%;
+  font-weight: normal;
+  margin: 0;
+  padding-bottom: 4px;
+  padding-top: 13px;
+  text-shadow: white 0 1px 2px;
+  border: none;
+}
+
+#uncensorPage > h3 {
+  -webkit-padding-end: 24px;
+  border-bottom: 1px solid #EEE;
+  font-size: 100%;
+  color: #444;
+  font-weight: normal;
+  margin: 0;
+  padding-bottom: 4px;
+}
+
+#uncensorPage table {
+/*  max-width: 300px;*/
+  border-collapse: collapse;
+  border: 1px solid #ccc;
+  width: 500px;
+}
+
+#uncensorPage table thead {
+  background-color: #ccc;
+}
+
+#uncensorPage table th {
+  padding: 5px 10px;
+  text-align: left;
+}
+
+#uncensorPage table th + th {
+  padding: 5px;
+  width: 50%;
+}
+
+#uncensorPage table td {
+  padding: 3px 3px;
+  text-align: left;
+  color: #444;
+}
+
+#uncensorPage table thead tr {
+  display:block;
+  position:relative;
+}
+
+#uncensorPage table tbody {
+  display:block;
+  width:100%;
+  height:200px;
+  overflow:auto;
+}
+
+#uncensorPage table tbody tr:nth-child(even) {
+  background-color: #eee;
+}
+
+.highlight {
+  background-color: #ddf !important;
+}
+
+.delete-icon {
+  display: none;
+  float: right;
+}
+
+.highlight .delete-icon {
+  display: block;
+}
+
+.delete-icon img {
+  opacity: 0.7;
+}
+
+.delete-icon:hover img {
+  opacity: 1.0;
+}
+
+/***************/
+section {
+  -webkit-box-orient: horizontal;
+  border-bottom: 1px solid #eeeeee;
+  display: -webkit-box;
+  margin-top: 17px;
+  padding-bottom: 20px;
+}
+
+div.page section:last-child {
+  border-bottom: none;
+}
+
+h3 {
+  font-size: 105%;
+  font-weight: bold;
+  margin: 20px 0 10px 0;
+}
+
+section > h3 {
+  margin: 0;
+  vertical-align: middle;
+  width: 130px;
+  -webkit-padding-end: 10px;
+}
+
+section > div:only-of-type {
+  -webkit-box-flex: 1;
+}
+
+/* Don't allow edge margin on the first/last child of a section. */
+section > h3 + * > *:last-child {
+  margin-bottom: 0;
+}
+section > h3 + * > *:first-child {
+  margin-top: 0;
+}
+

@@ -539,6 +539,7 @@ extern const char kOptionsWindowLastTabIndex[];
 extern const char kContentSettingsWindowLastTabIndex[];
 extern const char kCertificateManagerWindowLastTabIndex[];
 extern const char kShowFirstRunBubbleOption[];
+extern const char kShowFirstRunFacebookBubbleOption[];
 
 extern const char kLastKnownGoogleURL[];
 extern const char kLastPromptedGoogleURL[];
@@ -880,6 +881,24 @@ extern const char kPartnerBookmarkMappings[];
 #endif
 
 extern const char kQuickCheckEnabled[];
+
+extern const char kAutomaticUpdatesEnabled[];
+extern const char kFacebookShowFriendsList[];
+extern const char kIsSurfPopupShown[];
+
+extern const char kFacebookShowChat[];
+extern const char kFacebookShowJewels[];
+extern const char kUncensorShouldRedirect[];
+extern const char kUncensorShowMessage[];
+extern const char kUncensorNotifyUpdates[];
+extern const char kUncensorDomainFilter[];
+extern const char kUncensorDomainExceptions[];
+extern const char kGlobalProxyControl[];
+extern const char kShowMessageForActiveProxy[];
+extern const char kIPRecognitionCountryName[];
+extern const char kBlockedSitesList[];
+
+extern const char kShouldNotEncrypt[];
 
 }  // namespace prefs
 

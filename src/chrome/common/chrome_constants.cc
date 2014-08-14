@@ -9,11 +9,11 @@
 #define FPL FILE_PATH_LITERAL
 
 #if defined(OS_MACOSX)
-#define CHROMIUM_PRODUCT_STRING "Chromium"
+#define CHROMIUM_PRODUCT_STRING "BitPop"
 #if defined(GOOGLE_CHROME_BUILD)
 #define PRODUCT_STRING "Google Chrome"
 #elif defined(CHROMIUM_BUILD)
-#define PRODUCT_STRING "Chromium"
+#define PRODUCT_STRING "BitPop"
 #else
 #error Unknown branding
 #endif
@@ -23,7 +23,7 @@
 #if defined(GOOGLE_CHROME_BUILD)
 #define PRODUCT_STRING_PATH L"Google\\Chrome"
 #elif defined(CHROMIUM_BUILD)
-#define PRODUCT_STRING_PATH L"Chromium"
+#define PRODUCT_STRING_PATH L"BitPop"
 #else
 #error Unknown branding
 #endif
@@ -31,7 +31,7 @@
 
 namespace chrome {
 
-const char kChromeVersionEnvVar[] = "CHROME_VERSION";
+const char kChromeVersionEnvVar[] = "BITPOP_VERSION";
 
 // The following should not be used for UI strings; they are meant
 // for system strings only. UI changes should be made in the GRD.
@@ -52,13 +52,13 @@ const char kChromeVersionEnvVar[] = "CHROME_VERSION";
 
 #if defined(OS_WIN)
 const base::FilePath::CharType kBrowserProcessExecutableNameChromium[] =
-    FPL("chrome.exe");
+    FPL("bitpop.exe");
 const base::FilePath::CharType kBrowserProcessExecutableName[] =
-    FPL("chrome.exe");
+    FPL("bitpop.exe");
 const base::FilePath::CharType kHelperProcessExecutableNameChromium[] =
-    FPL("chrome.exe");
+    FPL("bitpop.exe");
 const base::FilePath::CharType kHelperProcessExecutableName[] =
-    FPL("chrome.exe");
+    FPL("bitpop.exe");
 #elif defined(OS_MACOSX)
 const base::FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL(CHROMIUM_PRODUCT_STRING);
@@ -70,7 +70,7 @@ const base::FilePath::CharType kHelperProcessExecutableName[] =
     FPL(PRODUCT_STRING " Helper");
 #elif defined(OS_ANDROID)
 // NOTE: Keep it synced with the process names defined in AndroidManifest.xml.
-const base::FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome");
+const base::FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop");
 const base::FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL("");
 const base::FilePath::CharType kHelperProcessExecutableName[] =
@@ -79,7 +79,7 @@ const base::FilePath::CharType kHelperProcessExecutableNameChromium[] = FPL("");
 #elif defined(OS_POSIX)
 const base::FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL("chrome");
-const base::FilePath::CharType kBrowserProcessExecutableName[] = FPL("chrome");
+const base::FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop");
 // Helper processes end up with a name of "exe" due to execing via
 // /proc/self/exe.  See bug 22703.
 const base::FilePath::CharType kHelperProcessExecutableNameChromium[] =
@@ -89,13 +89,13 @@ const base::FilePath::CharType kHelperProcessExecutableName[] = FPL("exe");
 
 #if defined(OS_WIN)
 const base::FilePath::CharType kBrowserProcessExecutablePathChromium[] =
-    FPL("chrome.exe");
+    FPL("bitpop.exe");
 const base::FilePath::CharType kBrowserProcessExecutablePath[] =
-    FPL("chrome.exe");
+    FPL("bitpop.exe");
 const base::FilePath::CharType kHelperProcessExecutablePathChromium[] =
-    FPL("chrome.exe");
+    FPL("bitpop.exe");
 const base::FilePath::CharType kHelperProcessExecutablePath[] =
-    FPL("chrome.exe");
+    FPL("bitpop.exe");
 #elif defined(OS_MACOSX)
 const base::FilePath::CharType kBrowserProcessExecutablePathChromium[] =
     FPL(CHROMIUM_PRODUCT_STRING ".app/Contents/MacOS/" CHROMIUM_PRODUCT_STRING);
@@ -135,7 +135,7 @@ const char* const kHelperFlavorSuffixes[] = {
 
 #if defined(OS_WIN)
 const base::FilePath::CharType kMetroDriverDll[] = FPL("metro_driver.dll");
-const wchar_t kStatusTrayWindowClass[] = L"Chrome_StatusTrayWindow";
+const wchar_t kStatusTrayWindowClass[] = L"BitPop_StatusTrayWindow";
 #endif  // defined(OS_WIN)
 
 const wchar_t kCrashReportLog[] = L"Reported Crashes.txt";
@@ -264,9 +264,9 @@ const char kTestUserProfileDir[] = "test-user";
 
 // This GUID is associated with any 'don't ask me again' settings that the
 // user can select for different file types.
-// {2676A9A2-D919-4FEE-9187-152100393AB2}
+// {09DE0630-6CA2-430D-AC05-CC6B90CC17AB}
 const char kApplicationClientIDStringForAVScanning[] =
-    "2676A9A2-D919-4FEE-9187-152100393AB2";
+    "09DE0630-6CA2-430D-AC05-CC6B90CC17AB";
 
 #if defined(OS_ANDROID)
 const size_t kMaxMetaTagAttributeLength = 2000;

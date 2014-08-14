@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="hu">
 <translation id="6676384891291319759">Internetelérés</translation>
@@ -51,7 +51,7 @@
 <translation id="5109068449432240255">Igen, kilépek a Chromiumból.</translation>
 <translation id="1480489203462860648">Próbálja ki, már telepítve van</translation>
 <translation id="3032787606318309379">Hozzáadás a Chromiumhoz...</translation>
-<translation id="4831257561365056138">Chromium alkalmazásindító eltávolítása</translation>
+<translation id="4831257561365056138">BitPop alkalmazásindító eltávolítása</translation>
 <translation id="4222580632002216401">Bejelentkezett a Chromiumba! A szinkronizálást a rendszergazdája letiltotta.</translation>
 <translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Figyelmeztetés:<ph name="END_BOLD"/> A Chromium nem tudja megakadályozni, hogy a bővítmények rögzítsék a böngészési előzményeit. A bővítmény inkognitómódban való használatának letiltásához törölje e lehetőség bejelölését.</translation>
 <translation id="4516868174453854611">Most, hogy bejelentkezett, lapjait, könyvjelzőit és egyéb Chromiumos dolgait megtalálja laptopján, telefonján és táblagépén. Emellett a jövőben a Google-szolgáltatásokra vonatkozóan relevánsabb javaslatokat és funkciókat kap tőlünk.</translation>
@@ -59,7 +59,7 @@
 <translation id="8628626585870903697">A Chromium nem tartalmazza a PDF Viewer alkalmazást, amely a Nyomtatási előnézet működéséhez szükséges.</translation>
 <translation id="7138853919861947730">A Chromium internetes szolgáltatások használatával javíthatja a böngészési élményt.</translation>
 <translation id="934663725767849097">Próbálja ki a Chromium használatának új módját Google-fiókjával és megosztott számítógépeken.</translation>
-<translation id="3849925841547750267">Sajnos a Mozilla Firefox beállításai nem érhetők el, amikor a böngésző fut. Ahhoz, hogy importálhassa ezeket a beállításokat a Chromiumba, mentse, amin dolgozik, majd zárja be az összes Firefox-ablakot. Ezután kattintson a &quot;Folytatás&quot; gombra.</translation>
+<translation id="3849925841547750267">Sajnos a Mozilla Firefox beállításai nem érhetők el, amikor a böngésző fut. Ahhoz, hogy importálhassa ezeket a beállításokat a Chromiumba, mentse, amin dolgozik, majd zárja be az összes Firefox-ablakot. Ezután kattintson a "Folytatás" gombra.</translation>
 <translation id="7771626876550251690">Ezt a figyelmeztetést azért látja, mert a tanúsítvány nem arra a címre van kiállítva, amelyhez kapcsolódni szeretne. Lehetséges, hogy egy támadó eltérítette a kapcsolatát, és egy hasonló névre kiállított tanúsítvánnyal próbálja megtéveszteni. Egy másik lehetséges magyarázat, hogy a szerver több címet is kiszolgál, de egy hibás beállítás folytán ugyanazt a tanúsítványt mutatja minden címen, köztük az Ön által felkeresetten is, noha a tanúsítvány nem érvényes ezek mindegyikén. A Chromium annyit biztosan állíthat, hogy Ön elérte a(z) &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; webhelyet, de azt nem, hogy az megegyezik-e az elérni próbált &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; webhellyel. Ha folytatja, a Chromium a továbbiakban nem fogja ellenőrizni a nevek eltérését.</translation>
 <translation id="7027298027173928763">A Chromium nem tudott frissíteni a legújabb verzióra, ezért Ön nem rendelkezik a remek új funkciókkal és biztonsági javításokkal. A Chromium kézi újratelepítése szükséges.</translation>
 <translation id="8897323336392112261">Továbbá azt is szabályozza, hogy melyik oldal jelenik meg a Chromium indításakor vagy a Kezdőlap gombra történő kattintáskor.</translation>
@@ -111,7 +111,7 @@
 <translation id="2485422356828889247">Eltávolítás</translation>
 <translation id="85843667276690461">Segítséget kaphat a Chromium használatával kapcsolatban</translation>
 <translation id="5358375970380395591">Kezelt fiókkal jelentkezik be, és annak adminisztrátora számára hozzáférést biztosít Chromium-profiljához. Chromium-adatait – például alkalmazásait, könyvjelzőit, előzményeit, jelszavait és más beállításait – a rendszer véglegesen társítja a(z) <ph name="USER_NAME"/> fiókhoz. Ezen adatokat a Google-fiók Irányítópultján törölheti, de más fiókhoz nem társíthatja őket. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Chromium Alkalmazásindító</translation>
+<translation id="9036189287518468038">BitPop Alkalmazásindító</translation>
 <translation id="8493179195440786826">A Chromium elavult</translation>
 <translation id="911206726377975832">Törli a böngészési adatait is?</translation>
 <translation id="95514773681268843">A(z) <ph name="DOMAIN"/> megköveteli, hogy olvassa, majd fogadja el a következő Általános Szerződési Feltételeket, mielőtt használná ezt az eszközt. Ezek a feltételek nem bővítik, módosítják vagy korlátozzák a Chromium OS feltételeit.</translation>

@@ -6,7 +6,7 @@
 #
 # Chrome Application dir entries, sorted alphabetically.
 #
-chrome.exe: %(ChromeDir)s\
+bitpop.exe: %(ChromeDir)s\
 wow_helper.exe: %(ChromeDir)s\
 #
 # Chrome version dir aseembly manifest.

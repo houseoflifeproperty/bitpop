@@ -32,7 +32,7 @@ using base::win::RegKey;
 using installer::InstallationState;
 
 const wchar_t GoogleUpdateSettings::kPoliciesKey[] =
-    L"SOFTWARE\\Policies\\Google\\Update";
+    L"SOFTWARE\\Policies\\HouseOfLife\\BitPopUpdate";
 const wchar_t GoogleUpdateSettings::kUpdatePolicyValue[] = L"UpdateDefault";
 const wchar_t GoogleUpdateSettings::kUpdateOverrideValuePrefix[] = L"Update";
 const wchar_t GoogleUpdateSettings::kCheckPeriodOverrideMinutes[] =
@@ -44,11 +44,7 @@ const int GoogleUpdateSettings::kCheckPeriodOverrideMinutesMax =
 
 const GoogleUpdateSettings::UpdatePolicy
 GoogleUpdateSettings::kDefaultUpdatePolicy =
-#if defined(GOOGLE_CHROME_BUILD)
     GoogleUpdateSettings::AUTOMATIC_UPDATES;
-#else
-    GoogleUpdateSettings::UPDATES_DISABLED;
-#endif
 
 namespace {
 

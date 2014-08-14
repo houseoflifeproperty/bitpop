@@ -214,4 +214,13 @@ bool IsVisible(gfx::NativeView view) {
 }
 #endif
 
+void setUseAutomaticUpdates(bool useAutomaticUpdates)
+{
+}
+
+bool getUseAutomaticUpdates()
+{
+  return true;
+}
+
 }  // namespace platform_util

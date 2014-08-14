@@ -55,6 +55,9 @@ void FirstRunBubble::Init() {
   views::Label* subtext =
       new views::Label(l10n_util::GetStringUTF16(IDS_FR_BUBBLE_SUBTEXT),
                        original_font_list);
+  subtext->SetFont(original_font);
+  subtext->SetMultiLine(true);
+  subtext->SetHorizontalAlignment(gfx::ALIGN_LEFT);
 
   views::GridLayout* layout = views::GridLayout::CreatePanel(this);
   SetLayoutManager(layout);
@@ -73,7 +76,9 @@ void FirstRunBubble::Init() {
   layout->AddView(change);
   layout->StartRowWithPadding(0, 0, 0,
       views::kRelatedControlSmallVerticalSpacing);
-  layout->AddView(subtext, columns->num_columns(), 1);
+  layout->AddView(subtext, columns->num_columns(), 1,
+                  views::GridLayout::LEADING, views::GridLayout::LEADING,
+                  400, 0);
 }
 
 FirstRunBubble::FirstRunBubble(Browser* browser, views::View* anchor_view)
@@ -85,6 +90,11 @@ FirstRunBubble::FirstRunBubble(Browser* browser, views::View* anchor_view)
 }
 
 FirstRunBubble::~FirstRunBubble() {
+}
+
+void FirstRunBubble::OnWidgetActivationChanged(views::Widget* widget,
+                                               bool active) {
+  // do nothing here
 }
 
 void FirstRunBubble::LinkClicked(views::Link* source, int event_flags) {

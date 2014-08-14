@@ -1,0 +1,83 @@
+[
+  {
+    "namespace": "bitpop",
+    "description": "BitPop specific preferences and functions are contained here",
+    "dependencies": [ "types" ],
+    "nodoc": true,
+    "properties": {
+      "prefs": {
+        "type": "object",
+        "value": {},
+        "description": "bitpop.* namespace prefs access",
+        "properties": {
+          "facebookShowChat": {
+            "$ref": "types.ChromeSetting",
+            "value": ["facebookShowChat", {"type":"boolean"}],
+            "description": "facebookShowChat"
+          },
+          "facebookShowJewels": {
+            "$ref": "types.ChromeSetting",
+            "value": ["facebookShowJewels", {"type":"boolean"}],
+            "description": "facebookShowJewels"
+          },
+          "uncensorShouldRedirect": {
+            "$ref": "types.ChromeSetting",
+            "value": ["uncensorShouldRedirect", {"type":"number"}],
+            "description": "uncensorShouldRedirect"
+          },
+          "uncensorShowMessage": {
+            "$ref": "types.ChromeSetting",
+            "value": ["uncensorShowMessage", {"type":"boolean"}],
+            "description": "uncensorShowMessage"
+          },
+          "uncensorNotifyUpdates": {
+            "$ref": "types.ChromeSetting",
+            "value": ["uncensorNotifyUpdates", {"type":"boolean"}],
+            "description": "uncensorNotifyUpdates"
+          },
+          "uncensorDomainFilter": {
+            "$ref": "types.ChromeSetting",
+            "value": ["uncensorDomainFilter", {"type":"string"}],
+            "description": "uncensorDomainFilter"
+          },
+          "uncensorDomainExceptions": {
+            "$ref": "types.ChromeSetting",
+            "value": ["uncensorDomainExceptions", {"type":"string"}],
+            "description": "uncensorDomainExceptions"
+          },
+          "globalProxyControl": {
+            "$ref": "types.ChromeSetting",
+            "value": ["globalProxyControl", {"type":"number"}],
+            "description": "globalProxyControl"
+          },
+          "showMessageForActiveProxy": {
+            "$ref": "types.ChromeSetting",
+            "value": ["showMessageForActiveProxy", {"type":"boolean"}],
+            "description": "showMessageForActiveProxy"
+          },
+          "ipRecognitionCountryName": {
+            "$ref": "types.ChromeSetting",
+            "value": ["ipRecognitionCountryName", {"type":"string"}],
+            "description": "ipRecognitionCountryName"
+          },
+          "blockedSitesList": {
+            "$ref": "types.ChromeSetting",
+            "value": ["blockedSitesList", {"type":"string"}],
+            "description": "blockedSitesList"
+          }
+        }
+      }
+    },
+    "events": [
+      {
+        "name": "onProxyDomainsUpdate",
+        "type": "function",
+        "description": "Fired when the app is launched.",
+        "parameters": [
+        ]
+      }
+    ]
+  }
+]
+
+

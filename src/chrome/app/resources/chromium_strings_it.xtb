@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="it">
 <translation id="6676384891291319759">Accesso a Internet</translation>
@@ -40,7 +40,7 @@
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          e verifica che la configurazione sia impostata su &quot;nessun proxy&quot; o &quot;diretta&quot;.</translation>
+          e verifica che la configurazione sia impostata su "nessun proxy" o "diretta".</translation>
 <translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
 <translation id="7729447699958282447">Impossibile sincronizzare i dati in Chromium perché la sincronizzazione non è disponibile per il tuo dominio.</translation>
 <translation id="1989424089625731201">Hai tentato di visitare &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; ma il certificato presentato dal server contiene degli errori. Chromium non può utilizzare un certificato in cui sono presenti errori e non è in grado di convalidare l'identità del sito a cui hai tentato di accedere.</translation>
@@ -76,7 +76,7 @@
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
-        e deseleziona &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>.&quot;
+        e deseleziona "<ph name="NO_PREFETCH_DESCRIPTION"/>."
         Se il problema non si risolve, dovresti riselezionare questa opzione
         per ottenere prestazioni migliori.</translation>
 <translation id="7463979740390522693">Chromium - Notifiche (<ph name="QUANTITY"/> da leggere)</translation>
@@ -112,7 +112,7 @@
 <translation id="2485422356828889247">Disinstalla</translation>
 <translation id="85843667276690461">Ricevi assistenza per l'utilizzo di Chromium</translation>
 <translation id="5358375970380395591">Stai per accedere con un account gestito e per dare al relativo amministratore il controllo del tuo profilo Chromium. I tuoi dati di Chromium, come app, Preferiti, cronologia, password e altre impostazioni, verranno collegati definitivamente a <ph name="USER_NAME"/>. Potrai eliminare questi dati tramite la Dashboard di Google Account, ma non potrai associare questi dati a un altro account. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Avvio applicazioni di Chromium</translation>
+<translation id="9036189287518468038">Avvio applicazioni di BitPop</translation>
 <translation id="8493179195440786826">Chromium non è aggiornato</translation>
 <translation id="911206726377975832">Eliminare anche i tuoi dati di navigazione?</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/> richiede di leggere e accettare i seguenti Termini di servizio prima di utilizzare il dispositivo. Questi termini non ampliano, modificano o limitano i Termini di Chromium OS.</translation>
@@ -162,7 +162,7 @@
           <ph name="PROXIES_TITLE"/>
           &gt;
           Impostazioni LAN
-          e deseleziona la casella di controllo &quot;Utilizza un server proxy per le connessioni LAN&quot;.</translation>
+          e deseleziona la casella di controllo "Utilizza un server proxy per le connessioni LAN".</translation>
 <translation id="8621669128220841554">Installazione non riuscita a causa di un errore imprecisato. Scarica di nuovo Chromium.</translation>
 <translation id="6717134281241384636">Impossibile utilizzare il tuo profilo perché proviene da una versione più recente di Chromium.
 

@@ -45,6 +45,9 @@ class VersionInfo {
   // Version number, e.g. "6.0.490.1".
   std::string Version() const;
 
+  // Bitpop version number
+  std::string BitpopVersion() const;
+
   // The SVN revision of this release.  E.g. "55800".
   std::string LastChange() const;
 

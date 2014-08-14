@@ -401,6 +401,10 @@ Browser::Browser(const CreateParams& params)
       prefs::kShowBookmarkBar,
       base::Bind(&Browser::UpdateBookmarkBarState, base::Unretained(this),
                  BOOKMARK_BAR_STATE_CHANGE_PREF_CHANGE));
+  profile_pref_registrar_.Add(
+      prefs::kFacebookShowFriendsList,
+      base::Bind(&Browser::OnFacebookShowSidebarChanged,
+                 base::Unretained(this)));
 
   BrowserList::AddBrowser(this);
 
@@ -441,6 +445,13 @@ Browser::Browser(const CreateParams& params)
     ImportAutofillDataWin(
         autofill::PersonalDataManagerFactory::GetForProfile(profile_));
 #endif  // defined(OS_WIN)
+  }
+
+  if (is_type_tabbed() && !profile()->IsOffTheRecord()) {
+    bool visible = profile()->GetPrefs()->GetBoolean(
+                        prefs::kFacebookShowFriendsList);
+
+    window_->SetFriendsSidebarVisible(visible);
   }
 
   fullscreen_controller_.reset(new FullscreenController(this));
@@ -1961,6 +1972,14 @@ void Browser::Observe(int type,
         LocationBar* location_bar = window()->GetLocationBar();
         if (location_bar)
           location_bar->UpdateContentSettingsIcons();
+
+        GURL current_url = web_contents->GetLastCommittedURL();
+        if (current_url.host() == chrome::kChromeUIChromeSigninHost) {
+          SimpleAlertInfoBarDelegate::Create(
+            InfoBarService::FromWebContents(web_contents),
+            infobars::InfoBarDelegate::kNoIconID,
+            l10n_util::GetStringUTF16(IDS_SIGNIN_OPENED_PROMPT), true);
+        }
       }
       break;
     }
@@ -1976,6 +1995,14 @@ void Browser::Observe(int type,
 void Browser::OnDevToolsDisabledChanged() {
   if (profile_->GetPrefs()->GetBoolean(prefs::kDevToolsDisabled))
     content::DevToolsManager::GetInstance()->CloseAllClientHosts();
+}
+
+void Browser::OnFacebookShowSidebarChanged() {
+  if (is_type_tabbed()) {
+    bool visible = profile()->GetPrefs()->GetBoolean(
+        prefs::kFacebookShowFriendsList);
+    window_->SetFriendsSidebarVisible(visible);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

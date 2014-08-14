@@ -1664,6 +1664,9 @@ const char kCertificateManagerWindowLastTabIndex[] =
 // This preference is only registered by the first-run procedure.
 const char kShowFirstRunBubbleOption[] = "show-first-run-bubble-option";
 
+// Same as previous but for facebook chat extension popup.
+const char kShowFirstRunFacebookBubbleOption[] = "show-first-run-facebook-bubble-option";
+
 // String containing the last known Google URL.  We re-detect this on startup in
 // most cases, and use it to send traffic to the correct Google host or with the
 // correct Google domain/country code for whatever location the user is in.
@@ -2531,5 +2534,23 @@ const char kPartnerBookmarkMappings[] = "partnerbookmarks.mappings";
 
 // Whether DNS Quick Check is disabled in proxy resolution.
 const char kQuickCheckEnabled[] = "proxy.quick_check_enabled";
+
+const char kAutomaticUpdatesEnabled[] = "automatic_updates.enabled";
+const char kFacebookShowFriendsList[] = "facebook.showFriendsList";
+const char kIsSurfPopupShown[] = "bitpop.surfPopupShown";
+
+const char kFacebookShowChat[] = "bitpop.facebook_show_chat";
+const char kFacebookShowJewels[] = "bitpop.facebook_show_jewels";
+const char kUncensorShouldRedirect[] = "bitpop.uncensor_should_redirect";
+const char kUncensorShowMessage[] = "bitpop.uncensor_show_message";
+const char kUncensorNotifyUpdates[] = "bitpop.uncensor_notify_updates";
+const char kUncensorDomainFilter[] = "bitpop.uncensor_domain_filter";
+const char kUncensorDomainExceptions[] = "bitpop.uncensor_domain_exceptions";
+const char kGlobalProxyControl[] = "bitpop.global_proxy_control";
+const char kShowMessageForActiveProxy[] = "bitpop.show_message_for_active_proxy";
+const char kIPRecognitionCountryName[] = "bitpop.ip_recognition_country_name";
+const char kBlockedSitesList[] = "bitpop.blocked_sites_list";
+
+const char kShouldNotEncrypt[] = "bitpop.should_not_encrypt";
 
 }  // namespace prefs

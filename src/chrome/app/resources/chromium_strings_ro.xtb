@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="ro">
 <translation id="6676384891291319759">Accesați Internetul</translation>
@@ -20,14 +20,14 @@
 <translation id="4423735387467980091">Personalizați și controlați Chromium</translation>
 <translation id="1881322772814446296">Vă conectați cu un cont gestionat și îi permiteți administratorului acestuia controlul asupra profilului dvs. Chromium. Datele Chromium, cum ar fi aplicațiile, marcajele, istoricul, parolele și alte setări vor fi asociate definitiv cu <ph name="USER_NAME"/>. Veți putea să ștergeți aceste date prin intermediul Tabloului de bord pentru Conturi Google, însă nu veți putea să asociați aceste date cu alt cont. Aveți opțiunea de a crea un profil nou, pentru a păstra separat datele Chromium existente. <ph name="LEARN_MORE"/></translation>
 <translation id="455521026202544465">Vă mulțumim că ați încercat noul Chromium. Chromium trebuie să repornească. Asigurați-vă că ați salvat toate documentele deschise înainte să continuați.</translation>
-<translation id="731644333568559921">Actualizați sistemul de operare &amp;Chromium</translation>
+<translation id="731644333568559921">Actualizați sistemul de operare &amp;BitPop</translation>
 <translation id="7421823331379285070">Chromium necesită Windows XP sau o versiune ulterioară. Este posibil ca unele funcții să nu fie disponibile.</translation>
 <translation id="7023267510504981715">Pentru a utiliza Google Wallet, trebuie să faceți upgrade pentru Chromium [<ph name="ERROR_CODE"/>].</translation>
 <translation id="1444754455097148408">Licențe open source Chromium</translation>
 <translation id="7419987137528340081">Dacă preferați să păstrați separat datele Chromium existente, puteți crea un utilizator Chromium nou pentru <ph name="USER_NAME"/>.</translation>
 <translation id="5427571867875391349">Setați Chromium ca browser prestabilit</translation>
 <translation id="8030318113982266900">Se actualizează dispozitivul pentru canalul <ph name="CHANNEL_NAME"/>...</translation>
-<translation id="3549345495227188780">Noțiuni introductive despre sistemul de operare Chromium</translation>
+<translation id="3549345495227188780">Noțiuni introductive despre sistemul de operare BitPop</translation>
 <translation id="1668054258064581266">După ce eliminați contul din Chromium, poate fi necesar să reîncărcați filele deschise pentru ca schimbarea să se aplice.</translation>
 <translation id="6953661834318318668">Bara de instrumente Chromium</translation>
 <translation id="4285930937574705105">Instalarea a eșuat din cauza unei erori necunoscute. Dacă Chromium rulează în acest moment, închideți-l și încercați din nou.</translation>
@@ -51,7 +51,7 @@
 <translation id="5109068449432240255">Da, ieșiți din Chromium</translation>
 <translation id="1480489203462860648">Încercați-l, este deja instalat</translation>
 <translation id="3032787606318309379">Se adaugă la Chromium...</translation>
-<translation id="4831257561365056138">Dezinstalați Lansatorul de aplicații Chromium</translation>
+<translation id="4831257561365056138">Dezinstalați Lansatorul de aplicații BitPop</translation>
 <translation id="4222580632002216401">Acum sunteți conectat(ă) la Chromium! Sincronizarea este dezactivată de administrator.</translation>
 <translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Avertisment:<ph name="END_BOLD"/> Chromium nu poate împiedica extensiile să înregistreze istoricul navigării. Pentru a dezactiva această extensie în modul incognito, debifați această opțiune.</translation>
 <translation id="4516868174453854611">Acum că v-ați conectat, vă puteți accesa filele, marcajele și alte lucruri din Chromium pe laptop, telefon și tabletă. În plus, veți primi sugestii mai relevante și funcții în serviciile Google.</translation>
@@ -103,7 +103,7 @@
 <translation id="4677944499843243528">Profilul pare să fie utilizat de alt proces Chromium (<ph name="PROCESS_ID"/>), pe alt computer (<ph name="HOST_NAME"/>). Chromium a blocat profilul pentru a nu se deteriora. Dacă aveți certitudinea că profilul nu este utilizat de alte procese, puteți să îl deblocați și să relansați Chromium.</translation>
 <translation id="5405650547142096840">Eliminați din Chromium</translation>
 <translation id="4994636714258228724">Adăugați-vă la Chromium</translation>
-<translation id="7066436765290594559">Sistemul de operare Chromium nu a putut sincroniza datele. Actualizați parola de acces pentru sincronizare.</translation>
+<translation id="7066436765290594559">Sistemul de operare BitPop nu a putut sincroniza datele. Actualizați parola de acces pentru sincronizare.</translation>
 <translation id="7747138024166251722">Programul de instalare nu a putut crea un director temporar. Verificați dacă există suficient spațiu liber și dacă aveți drepturile necesare pentru a instala software-ul.</translation>
 <translation id="3258596308407688501">Chromium nu poate citi și scrie în directorul propriu de date:
 
@@ -112,7 +112,7 @@
 <translation id="2485422356828889247">Dezinstalați</translation>
 <translation id="85843667276690461">Obțineți ajutor în legătură cu utilizarea Chromium</translation>
 <translation id="5358375970380395591">Vă conectați cu un cont gestionat și îi permiteți administratorului acestuia controlul asupra profilului dvs. Chromium. Datele Chromium, cum ar fi aplicațiile, marcajele, istoricul, parolele și alte setări vor fi asociate definitiv cu <ph name="USER_NAME"/>. Veți putea să ștergeți aceste date prin intermediul Tabloului de bord pentru Conturi Google, însă nu veți putea să asociați aceste date cu alt cont. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Lansatorul de aplicații Chromium</translation>
+<translation id="9036189287518468038">Lansatorul de aplicații BitPop</translation>
 <translation id="8493179195440786826">Chromium nu este actualizat</translation>
 <translation id="911206726377975832">Ștergeți și datele de navigare?</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/> necesită să citiți și să acceptați Termenii și condițiile următoare înainte de a utiliza acest dispozitiv. Acești termeni nu extind, nu modifică și nu limitează Termenii pentru sistemul de operare Chromium.</translation>
@@ -120,7 +120,7 @@
 <translation id="1699664235656412242">Închideți toate ferestrele Chromium (inclusiv pe cele în modul Windows 8) și încercați din nou.</translation>
 <translation id="6734080038664603509">Actualizați &amp;Chromium</translation>
 <translation id="8862326446509486874">Nu aveți drepturile adecvate pentru instalarea la nivel de sistem. Încercați să rulați din nou programul de instalare ca Administrator.</translation>
-<translation id="2535480412977113886">Sistemul de operare Chromium nu a putut sincroniza datele, deoarece detaliile de conectare pentru contul dvs. nu sunt actualizate.</translation>
+<translation id="2535480412977113886">Sistemul de operare BitPop nu a putut sincroniza datele, deoarece detaliile de conectare pentru contul dvs. nu sunt actualizate.</translation>
 <translation id="8697124171261953979">Stabilește și ce pagină se afișează când porniți Chromium sau când căutați din caseta polivalentă.</translation>
 <translation id="894903460958736500">Software-ul care rulează pe computer este incompatibil cu Chromium.</translation>
 <translation id="1774152462503052664">Permiteți Chromium să ruleze în fundal</translation>
@@ -134,7 +134,7 @@
 <translation id="6248213926982192922">Setați Chromium ca browser prestabilit</translation>
 <translation id="6309712487085796862">Chromium utilizează camera foto.</translation>
 <translation id="7337881442233988129">Chromium</translation>
-<translation id="5820394555380036790">Sistemul de operare Chromium</translation>
+<translation id="5820394555380036790">Sistemul de operare BitPop</translation>
 <translation id="6757767188268205357">Doresc să nu mai fiu deranjat</translation>
 <translation id="1745962126679160932">Chromium va stoca în siguranță informațiile dvs., astfel încât să nu trebuiască să le introduceți din nou, dar va trebui în continuare să confirmați codul de securitate al cardului pentru viitoarele plăți.</translation>
 <translation id="275588974610408078">Raportarea blocărilor nu este disponibilă în Chromium.</translation>
@@ -172,8 +172,8 @@ Este posibil ca unele funcții să nu fie disponibile. Specificați un director 
 <translation id="6334986366598267305">Acum este mai ușor să folosiți Chromium cu Contul Google și pe computerele utilizate în comun.</translation>
 <translation id="6212496753309875659">Acest computer are deja o versiune mai recentă de Chromium. Dacă software-ul nu funcționează, dezinstalați Chromium și încercați din nou.</translation>
 <translation id="1115445892567829615">Chromium nu a putut sincroniza datele. Actualizați expresia de acces pentru sincronizare.</translation>
-<translation id="1298199220304005244">Obțineți ajutor în legătură cu utilizarea sistemului de operare Chromium</translation>
-<translation id="331951419404882060">Sistemul de operare Chromium nu a putut sincroniza datele din cauza unei erori la conectare.</translation>
+<translation id="1298199220304005244">Obțineți ajutor în legătură cu utilizarea sistemului de operare BitPop</translation>
+<translation id="331951419404882060">Sistemul de operare BitPop nu a putut sincroniza datele din cauza unei erori la conectare.</translation>
 <translation id="8187289872471304532">Accesați
           Applications (Aplicații) &gt; System Preferences (Preferințe de sistem) &gt; Network (Rețea) &gt; Advanced (Avansat) &gt; Proxies (Servere proxy)
           și debifați toate serverele proxy selectate.</translation>
@@ -185,7 +185,7 @@ Este posibil ca unele funcții să nu fie disponibile. Specificați un director 
 <translation id="9214519575840037443">Sugerate de Chromium</translation>
 <translation id="1929939181775079593">Chromium nu mai răspunde. Îl reporniți acum?</translation>
 <translation id="1414495520565016063">V-ați conectat la Chromium!</translation>
-<translation id="2158734852934720349">Licențe open source pentru sistemul de operare Chromium</translation>
+<translation id="2158734852934720349">Licențe open source pentru sistemul de operare BitPop</translation>
 <translation id="2966088006374919794">Chromium necesită lansarea unei aplicații externe pentru a gestiona linkuri <ph name="SCHEME"/>. Linkul solicitat este <ph name="PROTOLINK"/>.</translation>
 <translation id="2558235863893655150">Doriți salvarea parolei în Chromium?</translation>
 <translation id="1231416733874080281">Afișați meniul Chromium</translation>
@@ -210,13 +210,13 @@ Este posibil ca unele funcții să nu fie disponibile. Specificați un director 
 <translation id="4458285410772214805">Pentru ca modificarea să fie aplicată, deconectați-vă și conectați-vă din nou.</translation>
 <translation id="761356813943268536">Chromium utilizează camera foto și microfonul.</translation>
 <translation id="805745970029938373">Aici puteți vedea toate notificările de la aplicațiile, extensiile și site-urile web Chromium.</translation>
-<translation id="2119636228670142020">Despre sistemul de operare &amp;Chromium</translation>
+<translation id="2119636228670142020">Despre sistemul de operare &amp;BitPop</translation>
 <translation id="1708666629004767631">Chromium este disponibil într-o versiune nouă și mai sigură.</translation>
 <translation id="378917192836375108">Chromium vă permite să faceți clic pe un număr de telefon de pe web pentru a-l apela cu Skype!</translation>
 <translation id="8724049448828509830">O descărcare este în desfășurare. Doriți să ieșiți din Chromium și să anulați descărcarea?</translation>
 <translation id="608189560609172163">Chromium nu a putut sincroniza datele din cauza unei erori la conectare.</translation>
 <translation id="4888717733111232871">Regula de intrare pentru Chromium pentru a permite traficul mDNS.</translation>
-<translation id="151962892725702025">Sistemul de operare Chromium nu a putut sincroniza datele, deoarece sincronizarea nu este disponibilă pentru domeniul dvs.</translation>
+<translation id="151962892725702025">Sistemul de operare BitPop nu a putut sincroniza datele, deoarece sincronizarea nu este disponibilă pentru domeniul dvs.</translation>
 <translation id="3360567213983886831">Chromium Binaries</translation>
 <translation id="8985587603644336029">Un alt utilizator s-a conectat anterior la Chromium de pe acest computer ca <ph name="ACCOUNT_EMAIL_LAST"/>. Dacă acesta nu este contul dvs., creați un nou utilizator Chromium, pentru a vă păstra separat datele.
 

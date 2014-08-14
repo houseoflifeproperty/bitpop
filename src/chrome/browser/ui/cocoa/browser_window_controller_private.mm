@@ -18,6 +18,8 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window_state.h"
 #import "chrome/browser/ui/cocoa/dev_tools_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_sidebar_controller.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/floating_bar_backing_view.h"
@@ -262,12 +264,19 @@ willPositionSheet:(NSWindow*)sheet
   // presentation mode in which case it's at the top of the visual content area.
   maxY = [self layoutInfoBarAtMinX:minX maxY:maxY width:width];
 
-  // If the bookmark bar is detached, place it next in the visual content area.
-  if (placeBookmarkBarBelowInfoBar)
-    maxY = [self layoutBookmarkBarAtMinX:minX maxY:maxY width:width];
+  CGFloat maxX = minX + width;
+  maxX = [self layoutFriendsSidebarAtMaxX:maxX minY:minY maxY:maxY];
+  width = maxX - minX;
 
   // Place the download shelf, if any, at the bottom of the view.
   minY = [self layoutDownloadShelfAtMinX:minX minY:minY width:width];
+
+  // Place the chatbar on top of download shelf
+  minY = [self layoutChatbarAtMinX:minX minY:minY width:width];
+
+  // If the bookmark bar is detached, place it next in the visual content area.
+  if (placeBookmarkBarBelowInfoBar)
+    maxY = [self layoutBookmarkBarAtMinX:minX maxY:maxY width:width];
 
   // Finally, the content area takes up all of the remaining space.
   NSRect contentAreaRect = NSMakeRect(minX, minY, width, maxY - minY);
@@ -495,6 +504,38 @@ willPositionSheet:(NSWindow*)sheet
     downloadFrame.size.width = width;
     [downloadView setFrame:downloadFrame];
     minY += NSHeight(downloadFrame);
+  }
+  return minY;
+}
+
+- (CGFloat)layoutFriendsSidebarAtMaxX:(CGFloat)maxX
+                                 minY:(CGFloat)minY
+                                 maxY:(CGFloat)maxY {
+  if (facebookSidebarController_.get()) {
+    NSView *sidebarView = [facebookSidebarController_ view];
+    NSRect sidebarFrame = [sidebarView frame];
+    sidebarFrame.origin.x = maxX -
+        ([facebookSidebarController_ visible] ? sidebarFrame.size.width : 0);
+    sidebarFrame.origin.y = minY;
+    sidebarFrame.size.height = maxY - minY;
+    [sidebarView setFrame:sidebarFrame];
+
+    maxX -= ([facebookSidebarController_ visible] ? sidebarFrame.size.width : 0);
+  }
+  return maxX;
+}
+
+- (CGFloat)layoutChatbarAtMinX:(CGFloat)minX
+                          minY:(CGFloat)minY
+                         width:(CGFloat)width {
+  if (facebookChatbarController_.get()) {
+    NSView *chatbarView = [facebookChatbarController_ view];
+    NSRect chatbarFrame = [chatbarView frame];
+    chatbarFrame.origin.x = minX;
+    chatbarFrame.origin.y = minY;
+    chatbarFrame.size.width = width;
+    [chatbarView setFrame:chatbarFrame];
+    minY += NSHeight(chatbarFrame);
   }
   return minY;
 }

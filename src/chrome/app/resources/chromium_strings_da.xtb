@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="da">
 <translation id="6676384891291319759">Få adgang til internettet</translation>
@@ -40,7 +40,7 @@
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>,
-          og kontrollér, at din konfiguration er indstillet til &quot;ingen proxy&quot; eller &quot;direkte&quot;.</translation>
+          og kontrollér, at din konfiguration er indstillet til "ingen proxy" eller "direkte".</translation>
 <translation id="3848258323044014972"><ph name="PAGE_TITLE"/> – Chromium</translation>
 <translation id="7729447699958282447">Chromium kunne ikke synkronisere dine data, fordi synkronisering ikke er tilgængelig for dit domæne.</translation>
 <translation id="1989424089625731201">Du forsøgte at besøge &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, men det certifikat, som serveren fremviste, indeholder fejl. Chromium kan ikke bruge et certifikat med fejl og kan ikke bekræfte identiteten for det website, som du forsøgte at oprette forbindelse til.</translation>
@@ -51,7 +51,7 @@
 <translation id="5109068449432240255">Ja, afslut Chromium</translation>
 <translation id="1480489203462860648">Prøv det, det er allerede installeret</translation>
 <translation id="3032787606318309379">Føjer til Chromium...</translation>
-<translation id="4831257561365056138">Afinstaller Chromium-appliste</translation>
+<translation id="4831257561365056138">Afinstaller BitPop-appliste</translation>
 <translation id="4222580632002216401">Du er nu logget ind på Chromium. Synkronisering er deaktiveret af din administrator.</translation>
 <translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Advarsel!<ph name="END_BOLD"/> Chromium kan ikke forhindre udvidelser i at registrere din browserhistorik. Fjern markeringen for at deaktivere denne udvidelse i inkognitotilstand.</translation>
 <translation id="4516868174453854611">Nu, hvor du er logget ind, kan du få dine faner, bogmærker og andre Chromium-ting på din bærbare computer, telefon og tablet. Du vil også modtage flere relevante forslag og funktioner på Google-tjenester.</translation>
@@ -76,7 +76,7 @@
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>,
-        og fjern markeringen af &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>.&quot;
+        og fjern markeringen af "<ph name="NO_PREFETCH_DESCRIPTION"/>."
         Hvis det ikke løser problemet, bør du markere dette afkrydsningsfelt
         igen for at forbedre effektiviteten.</translation>
 <translation id="7463979740390522693">Chromium – Underretninger (<ph name="QUANTITY"/> ulæste)</translation>
@@ -112,7 +112,7 @@
 <translation id="2485422356828889247">Afinstaller</translation>
 <translation id="85843667276690461">Få hjælp til at bruge Chromium</translation>
 <translation id="5358375970380395591">Du er ved at logge ind med en administreret konto og giver dens administrator kontrol over din profil i Chromium. Dine Chromium-data, f.eks. dine apps, bogmærker, historikdata, adgangskoder og andre indstillinger, knyttes permanent til <ph name="USER_NAME"/>. Du kan slette disse data via betjeningspanelet for Google Konti, men du kan ikke knytte disse data til en anden konto. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Chromium-applisten</translation>
+<translation id="9036189287518468038">BitPop-applisten</translation>
 <translation id="8493179195440786826">Chromium er forældet</translation>
 <translation id="911206726377975832">Slet også dine browserdata?</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/> kræver, at du læser og accepterer følgende servicevilkår, inden du bruger denne enhed. Disse vilkår udvider, ændrer eller begrænser på ingen måde vilkårene for Chromium OS.</translation>
@@ -162,7 +162,7 @@
           <ph name="PROXIES_TITLE"/>
           &gt;
           LAN-indstillinger,
-          og fjern markeringen i afkrydsningsfeltet &quot;Brug en proxyserver til LAN&quot;.</translation>
+          og fjern markeringen i afkrydsningsfeltet "Brug en proxyserver til LAN".</translation>
 <translation id="8621669128220841554">Installationen mislykkedes på grund af en uspecificeret fejl. Download Chromium igen.</translation>
 <translation id="6717134281241384636">Din profil kan ikke bruges, da den stammer fra en nyere version af Chromium.
 

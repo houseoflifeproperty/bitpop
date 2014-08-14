@@ -34,6 +34,8 @@ class BrowserWindowCocoa;
 @class DevToolsController;
 @class DownloadShelfController;
 class ExtensionKeybindingRegistryCocoa;
+@class FacebookChatbarController;
+@class FacebookSidebarController;
 @class FindBarCocoaController;
 @class FullscreenModeController;
 @class FullscreenWindow;
@@ -75,7 +77,9 @@ class Command;
   base::scoped_nsobject<FindBarCocoaController> findBarCocoaController_;
   base::scoped_nsobject<InfoBarContainerController> infoBarContainerController_;
   base::scoped_nsobject<DownloadShelfController> downloadShelfController_;
+  base::scoped_nsobject<FacebookChatbarController> facebookChatbarController_;
   base::scoped_nsobject<BookmarkBarController> bookmarkBarController_;
+  base::scoped_nsobject<FacebookSidebarController> facebookSidebarController_;
   base::scoped_nsobject<DevToolsController> devToolsController_;
   base::scoped_nsobject<OverlayableContentsController>
       overlayableContentsController_;
@@ -102,11 +106,15 @@ class Command;
   CGFloat windowTopGrowth_;
   CGFloat windowBottomGrowth_;
 
+  CGFloat windowLeftGrowth_;
+  CGFloat windowRightGrowth_;
+
   // YES only if we're shrinking the window from an apparent zoomed state (which
   // we'll only do if we grew it to the zoomed state); needed since we'll then
   // restrict the amount of shrinking by the amounts specified above. Reset to
   // NO on growth.
   BOOL isShrinkingFromZoomed_;
+  BOOL isShrinkingWFromZoomed_;
 
   // The view controller that manages the incognito badge or the multi-profile
   // avatar button. Depending on whether the --new-profile-management flag is
@@ -292,6 +300,16 @@ class Command;
 
 // Lazily creates the download shelf in visible state if it doesn't exist yet.
 - (DownloadShelfController*)downloadShelf;
+
+- (BOOL)isChatbarVisible;
+
+- (FacebookChatbarController*)facebookChatbar;
+
+- (BOOL)isFriendsSidebarVisible;
+
+- (void)setFriendsSidebarVisible:(BOOL)visible;
+
+- (FacebookSidebarController*)friendsSidebar;
 
 // Retains the given FindBarCocoaController and adds its view to this
 // browser window.  Must only be called once per
@@ -512,6 +530,8 @@ class Command;
 // function should be followed by a call to |layoutSubviews|.
 // Returns if the window height was changed.
 - (BOOL)adjustWindowHeightBy:(CGFloat)deltaH;
+
+- (void)adjustWindowWidthBy:(CGFloat)deltaW;
 
 // Return an autoreleased NSWindow suitable for fullscreen use.
 - (NSWindow*)createFullscreenWindow;

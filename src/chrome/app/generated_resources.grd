@@ -14400,6 +14400,152 @@ Do you accept?
     <message name="IDS_FLAGS_EXTENSION_CONTENT_VERIFICATION_ENFORCE_STRICT" desc="Description of the 'Extension Content Verification' enforce strict mode">
       Enforce strict (hard fail if we can't get hashes)
     </message>
+
+    <!-- Strings for bitpop settings page -->
+    <message name="IDS_BITPOP_SETTINGS_TITLE"
+          desc="Title for main bitpop settings page">
+      BitPop Settings
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_SIDEBAR_SECTION_TITLE"
+          desc="Title for facebook chat settings section">
+      Facebook Chat
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_SHOW_CHAT_LABEL"
+          desc="Label for checkbox toggling the chat state on facebook.com">
+      Always show chat on facebook.com
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_SHOW_JEWELS_LABEL"
+          desc="Label for checkbox toggling the jewels state on facebook.com">
+      Always show Requests, Messages and Notifications on facebook.com
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_NOTIFICATIONS_SECTION_TITLE"
+          desc="Title for facebook notifications settings section">
+      Facebook Notifications
+    </message>
+    <message name="IDS_BITPOP_FACEBOOK_OPEN_NOTIFICATION_SETTINGS"
+          desc="Title for a button opening a facebook.com link with settings for notifications">
+      Open Notification Settings
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_FILTER_CONTROL"
+          desc="Title for first section of Uncensor Domains settings">
+      Filter Control
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_ALWAYS_REDIRECT"
+          desc="Label for user selection of redirecting every time domain matches">
+      Always redirect / ON
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NEVER_REDIRECT"
+          desc="Label for user selection of not redirecting even if the domain matches">
+      Never redirect / OFF
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NOTICES_TITLE"
+          desc="Title for notices setting for uncensor domains extensions">
+      Notices
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_SHOW_MESSAGE"
+          desc="Label for checkbox enabling webkit notifications when redirects happen">
+      Show message when redirected
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NOTIFY_UPDATES"
+          desc="Label for checkbox enabling webkit notifications on redirect domains list update">
+      Be notified when domain list updates
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_OPEN_LIST_BUTTON_TITLE"
+          desc="Title for button activating settings overlay with domain filter and exceptions">
+      Domain list settings...
+    </message>
+    <message name="IDS_BITPOP_GLOBAL_PROXY_CONTROL_TITLE"
+          desc="Title for first section of uncensor proxy settings">
+      Global Proxy Control
+    </message>
+    <message name="IDS_BITPOP_WHEN_TO_USE_PROXY"
+          desc="Label for combo group of choosing the proxy usage scenario">
+      When to use proxy
+    </message>
+    <message name="IDS_BITPOP_USE_AUTO_PROXY"
+          desc="Label for combo choice of using proxy automatically">
+      Use auto proxy on blocked sites / ON
+    </message>
+    <message name="IDS_BITPOP_NEVER_USE_PROXY"
+          desc="Label for combo choice of never using proxy">
+      Never use proxy / OFF
+    </message>
+    <message name="IDS_BITPOP_ASK_BEFORE_USING_PROXY"
+          desc="Label for combo choice of asking before using proxy">
+      Ask me before using proxy / CUSTOM
+    </message>
+    <message name="IDS_BITPOP_OPEN_PROXY_DOMAIN_SETTINGS_BUTTON_TITLE"
+          desc="Title for button opening domain proxy settings">
+      Open proxy domains preferences...
+    </message>
+    <message name="IDS_BITPOP_SHOW_MESSAGE_FOR_ACTIVE_PROXY"
+          desc="Label for checkbox enabling messages about successful redirects in info bar">
+      Show message when proxy is active
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_FILTER_OVERLAY_TITLE"
+          desc="Title for settings overlay of the Uncensor Filter extension, containing two lists: domains which will be redirected and a list of exceptions (domains which won't be redirected)">
+      Customize Uncensor Filter Domain List Settings
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_THE_FILTER"
+          desc="Title for main redirections table of uncensor filter options overlay">
+      The Filter
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_EXCEPTION"
+          desc="Title for exceptions table of uncensor filter options overlay">
+      Exceptions
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_ORIGINAL_DOMAIN"
+          desc="Uncensor overlay table column header title for the column containing source domain string">
+      Original Domain
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_NEW_LOCATION"
+          desc="Uncensor overlay table column header title for the column containing destination domain string">
+      New Location
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_BLOCKED_SITES"
+          desc="Title of the Uncensor Proxy overlay for customizing settings for blocked sites">
+      Customize Blocked Sites Proxying Settings
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_LIST_BLOCKED_SITES_START"
+          desc="First part of string describing the following blocked sites table. This string will include the country name after the first part and before the last part">
+      A list of sites blocked in
+    </message>
+    <message name="IDS_BITPOP_UNCENSOR_LIST_BLOCKED_SITES_END"
+          desc="Last part of string describing the following blocked sites table. This string will include the country name after the first part and before the last part">
+      collected through IP recognition:
+    </message>
+    <message name="IDS_BITPOP_UPDATE_DOMAINS_BUTTON_LABEL"
+          desc="Title for button which starts the domain list update">
+      Update Domain List
+    </message>
+    <message name="IDS_BITPOP_USE_GLOBAL_SETTING"
+          desc="Contents of the default combo entry for choosing the global setting for domain proxy redirection">
+      Use Global setting
+    </message>
+    <message name="IDS_USE_BITPOP_PROXY">
+      Use BitPop proxy for blocked sites
+    </message>
+    <message name="IDS_SYNC_PROMO_NTP_BUBBLE_ENCRYPTION_DISABLED" desc="">
+      &lt;strong&gt;Encryption and passwords sync may be disabled, if you have not enabled it intentionally.&lt;/strong&gt; Go to <ph name="BEGIN_LINK">&lt;a href="#" id=&quot;login-status-advanced&quot;&gt;<ex>&lt;a href=&quot;#&quot; id=&quot;login-status-advanced&quot;&gt;</ex></ph><ph name="SYNC_CUSTOMIZE">$1<ex>Advanced...</ex></ph><ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> to enable encryption and configure synced data.
+    </message>
+    <message name="IDS_FBB_BUBBLE_TITLE" desc="Title of the 'f' button bubble shown on first launch">
+      Open Facebook chat sidebar from here
+    </message>
+    <message name="IDS_FBB_BUBBLE_SUBTEXT" desc="Text below the title for the 'f' button bubble">
+      Click the button and login to Facebook to stay online with your friends. You will be able to use 'Messages' and 'Notifications' popups right near this button after a successful login.
+    </message>
+    <message name="IDS_CHECK_FOR_UPDATES" desc="Title of menu item starting update check.">
+      Check For Updates...
+    </message>
+    <message name="IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME" desc="In Title Case: The title of the check for update group">
+      Check For Update
+    </message>
+    <message name="IDS_OPTIONS_UPDATES_AUTOCHECK_LABEL" desc="The label for automatic updates checkbox">
+      Automatically check daily
+    </message>
+    <message name="IDS_SIGNIN_OPENED_PROMPT" desc="The label for infobar opening when the signin page with Chrome branding is opened">
+      BitPop allows you to store browser bookmarks, history etc. through Google Chrome's service
+    </message>
   </messages>
   </release>
 </grit>

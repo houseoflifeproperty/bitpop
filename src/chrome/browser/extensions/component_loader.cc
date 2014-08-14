@@ -594,6 +594,9 @@ void ComponentLoader::AddDefaultComponentExtensionsWithBackgroundPages(
 
   Add(IDR_CRYPTOTOKEN_MANIFEST,
       base::FilePath(FILE_PATH_LITERAL("cryptotoken")));
+
+  Add(IDR_BITPOP_HELPER_MANIFEST,
+      base::FilePath(FILE_PATH_LITERAL("bitpop_helper")));
 }
 
 void ComponentLoader::UnloadComponent(ComponentExtensionInfo* component) {

@@ -112,6 +112,39 @@ PrefMappingEntry kPrefMapping[] = {
      APIPermission::kAccessibilityFeaturesRead,
      APIPermission::kAccessibilityFeaturesModify},
 #endif
+    {"facebookShowChat", prefs::kFacebookShowChat,
+     APIPermission::kBitpopFacebookChat, APIPermission::kBitpopFacebookChat
+    },
+    {"facebookShowJewels",prefs::kFacebookShowJewels,
+     APIPermission::kBitpopFacebookChat, APIPermission::kBitpopFacebookChat
+    },
+    {"uncensorShouldRedirect", prefs::kUncensorShouldRedirect,
+     APIPermission::kBitpopFacebookChat, APIPermission::kBitpopFacebookChat
+    },
+    {"uncensorShowMessage", prefs::kUncensorShowMessage,
+     APIPermission::kBitpopFacebookChat, APIPermission::kBitpopFacebookChat
+    },
+    {"uncensorNotifyUpdates", prefs::kUncensorNotifyUpdates,
+     APIPermission::kBitpopFacebookChat, APIPermission::kBitpopFacebookChat
+    },
+    {"uncensorDomainFilter", prefs::kUncensorDomainFilter,
+     APIPermission::kBitpopFacebookChat, APIPermission::kBitpopFacebookChat
+    },
+    {"uncensorDomainExceptions", prefs::kUncensorDomainExceptions,
+     APIPermission::kBitpopFacebookChat, APIPermission::kBitpopFacebookChat
+    },
+    {"globalProxyControl", prefs::kGlobalProxyControl,
+     APIPermission::kBitpopFacebookChat, APIPermission::kBitpopFacebookChat
+    },
+    {"showMessageForActiveProxy", prefs::kShowMessageForActiveProxy,
+     APIPermission::kBitpopFacebookChat, APIPermission::kBitpopFacebookChat
+    },
+    {"ipRecognitionCountryName", prefs::kIPRecognitionCountryName,
+     APIPermission::kBitpopFacebookChat, APIPermission::kBitpopFacebookChat
+    },
+    {"blockedSitesList", prefs::kBlockedSitesList,
+     APIPermission::kBitpopFacebookChat, APIPermission::kBitpopFacebookChat
+    },
 };
 
 class IdentityPrefTransformer : public PrefTransformerInterface {

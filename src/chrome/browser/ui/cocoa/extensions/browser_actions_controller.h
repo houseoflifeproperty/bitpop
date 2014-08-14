@@ -104,6 +104,9 @@ extern NSString* const kBrowserActionVisibilityChangedNotification;
 // process of fading in.
 - (BOOL)chevronIsHidden;
 
+- (void)showFacebookExtensions;
+- (void)hideFacebookExtensions;
+
 // Activates the browser action for the extension that has the given id.
 - (void)activateBrowserAction:(const std::string&)extension_id;
 

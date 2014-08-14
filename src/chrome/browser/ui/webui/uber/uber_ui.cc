@@ -63,6 +63,10 @@ content::WebUIDataSource* CreateUberHTMLSource() {
                     ASCIIToUTF16(chrome::kChromeUISettingsFrameURL));
   source->AddString("settingsHost",
                     ASCIIToUTF16(chrome::kChromeUISettingsHost));
+  source->AddString("bitpopSettingsHost",
+                    ASCIIToUTF16(chrome::kChromeUIBitpopSettingsHost));
+  source->AddString("bitpopSettingsFrameURL",
+                    ASCIIToUTF16(chrome::kChromeUIBitpopSettingsFrameURL));
 
   return source;
 }
@@ -119,6 +123,10 @@ content::WebUIDataSource* CreateUberFrameHTMLSource(Profile* profile) {
       chrome::kChromeUIHistoryHost);
   source->AddString("overridesHistory",
                     ASCIIToUTF16(overridesHistory ? "yes" : "no"));
+  source->AddString("bitpopSettingsHost",
+                    ASCIIToUTF16(chrome::kChromeUIBitpopSettingsHost));
+  source->AddLocalizedString("bitpopSettingsDisplayName",
+                             IDS_BITPOP_SETTINGS_TITLE);
   source->DisableDenyXFrameOptions();
   source->OverrideContentSecurityPolicyFrameSrc("frame-src chrome:;");
 
@@ -139,6 +147,8 @@ UberUI::UberUI(content::WebUI* web_ui) : WebUIController(web_ui) {
                   chrome::kChromeUIHistoryHost);
   RegisterSubpage(chrome::kChromeUISettingsFrameURL,
                   chrome::kChromeUISettingsHost);
+  RegisterSubpage(chrome::kChromeUIBitpopSettingsFrameURL,
+                  chrome::kChromeUIBitpopSettingsHost);
   RegisterSubpage(chrome::kChromeUIUberFrameURL,
                   chrome::kChromeUIUberHost);
 }

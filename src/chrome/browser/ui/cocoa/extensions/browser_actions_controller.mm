@@ -9,23 +9,28 @@
 
 #include "base/prefs/pref_service.h"
 #include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/extensions/browser_action_button.h"
 #import "chrome/browser/ui/cocoa/extensions/browser_actions_container_view.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_popup_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_button_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/image_button_cell.h"
 #import "chrome/browser/ui/cocoa/menu_button.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/api/extension_action/action_info.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
@@ -74,6 +79,11 @@ const CGFloat kBrowserActionBubbleYOffset = 3.0;
 // stored toolbar model.
 - (void)createButtons;
 
+- (void)addButtons;
+- (void)removeButtons;
+
+- (void)positionCustomExtensionActions;
+
 // Creates and then adds the given extension's action button to the container
 // at the given index within the container. It does not affect the toolbar model
 // object since it is called when the toolbar model changes.
@@ -98,6 +108,8 @@ const CGFloat kBrowserActionBubbleYOffset = 3.0;
 // Returns the existing button with the given extension backing it; nil if it
 // cannot be found or the extension's ID is invalid.
 - (BrowserActionButton*)buttonForExtension:(const Extension*)extension;
+
+- (BrowserActionButton*)buttonForExtensionId:(const char*)extensionId;
 
 // Returns the preferred width of the container given the number of visible
 // buttons |buttonCount|.
@@ -227,6 +239,39 @@ class ExtensionServiceObserverBridge
       int index) OVERRIDE {
     [owner_ createActionButtonForExtension:extension withIndex:index];
     [owner_ resizeContainerAndAnimate:NO];
+
+    if (extension->id() == extension_misc::kFacebookChatExtensionId) {
+      // Check the preference to determine if the bubble should be shown.
+      PrefService* prefs = g_browser_process->local_state();
+      if (!prefs || prefs->GetInteger(prefs::kShowFirstRunFacebookBubbleOption) !=
+          first_run::FIRST_RUN_BUBBLE_SHOW)
+        return;
+
+      BrowserWindowCocoa *win =
+          static_cast<BrowserWindowCocoa*>(browser_->window());
+      BrowserActionsController *ba_controller = owner_;
+
+      const extensions::Extension *ext = extension;
+      if (ext) {
+        NSView *anchorView = [ba_controller browserActionViewForExtension:ext];
+        if (anchorView) {
+          NSRect anchorBounds = [anchorView convertRect:[anchorView bounds]
+                                                 toView:nil];
+          NSPoint anchorPoint = NSMakePoint(NSMidX(anchorBounds),
+                                            NSMinY(anchorBounds));
+          NSWindow *window = win->GetNativeWindow();
+          anchorPoint = [window convertBaseToScreen:anchorPoint];
+
+          [FacebookButtonBubbleController showForParentWindow:window
+                                                  anchorPoint:anchorPoint
+                                                      browser:browser_
+                                                      profile:browser_->profile()
+                                                        other:NULL];
+          prefs->SetInteger(prefs::kShowFirstRunFacebookBubbleOption,
+                         first_run::FIRST_RUN_BUBBLE_DONT_SHOW);
+        }
+      }
+    }
   }
 
   virtual void BrowserActionRemoved(const Extension* extension) OVERRIDE {
@@ -443,6 +488,18 @@ class ExtensionServiceObserverBridge
   return YES;
 }
 
+- (void)showFacebookExtensions {
+  [self removeButtons];
+  profile_->set_should_show_additional_extensions(true);
+  [self addButtons];
+}
+
+- (void)hideFacebookExtensions {
+  [self removeButtons];
+  profile_->set_should_show_additional_extensions(false);
+  [self addButtons];
+}
+
 - (void)activateBrowserAction:(const std::string&)extension_id {
   ExtensionService* service = browser_->profile()->GetExtensionService();
   if (!service)
@@ -487,6 +544,8 @@ class ExtensionServiceObserverBridge
   if (!toolbarModel_)
     return;
 
+  [self positionCustomExtensionActions];
+
   NSUInteger i = 0;
   for (ExtensionList::const_iterator iter =
            toolbarModel_->toolbar_items().begin();
@@ -501,6 +560,62 @@ class ExtensionServiceObserverBridge
   [containerView_ resizeToWidth:width animate:NO];
 }
 
+- (void)positionCustomExtensionActions {
+  const Extension *chatExtension = NULL;
+  const Extension *messagesExtension = NULL;
+  const Extension *notificationsExtension = NULL;
+  for (ExtensionList::const_iterator iter = toolbarModel_->toolbar_items().begin();
+       iter != toolbarModel_->toolbar_items().end(); ++iter) {
+    if ((*iter)->id() == extension_misc::kFacebookChatExtensionId)
+      chatExtension = *iter;
+    if ((*iter)->id() == extension_misc::kFacebookMessagesExtensionId)
+      messagesExtension = *iter;
+    if ((*iter)->id() == extension_misc::kFacebookNotificationsExtensionId)
+      notificationsExtension = *iter;
+  }
+
+  if (chatExtension)
+    toolbarModel_->MoveBrowserAction(chatExtension, 0);
+  if (messagesExtension)
+    toolbarModel_->MoveBrowserAction(messagesExtension, 1);
+  if (notificationsExtension)
+    toolbarModel_->MoveBrowserAction(notificationsExtension, 2);
+}
+
+- (void)addButtons {
+  if (!toolbarModel_)
+    return;
+
+  [self positionCustomExtensionActions];
+
+  NSUInteger i = 0;
+  for (ExtensionList::const_iterator iter = toolbarModel_->toolbar_items().begin();
+       iter != toolbarModel_->toolbar_items().end(); ++iter) {
+    if (![self shouldDisplayBrowserAction:*iter])
+      continue;
+
+    [self createActionButtonForExtension:*iter withIndex:i++];
+  }
+
+  [self resizeContainerAndAnimate:NO];
+}
+
+- (void)removeButtons {
+  if (!toolbarModel_)
+    return;
+
+  //NSUInteger i = 0;
+  for (ExtensionList::const_iterator iter = toolbarModel_->toolbar_items().begin();
+       iter != toolbarModel_->toolbar_items().end(); ++iter) {
+    if (![self shouldDisplayBrowserAction:*iter])
+      continue;
+
+    [self removeActionButtonForExtension:*iter];
+  }
+
+  [self resizeContainerAndAnimate:NO];
+}
+
 - (void)createActionButtonForExtension:(const Extension*)extension
                              withIndex:(NSUInteger)index {
   if (!extensions::ExtensionActionManager::Get(profile_)->
@@ -511,7 +626,9 @@ class ExtensionServiceObserverBridge
     return;
 
   if (profile_->IsOffTheRecord())
-    index = toolbarModel_->OriginalIndexToIncognito(index);
+    index = toolbarModel_->OriginalIndexToIncognito(index) - 3;
+  else if (!profile_->should_show_additional_extensions())
+    index -= 2;
 
   // Show the container if it's the first button. Otherwise it will be shown
   // already.
@@ -620,6 +737,14 @@ class ExtensionServiceObserverBridge
   return [buttons_ objectForKey:extensionId];
 }
 
+- (BrowserActionButton*)buttonForExtensionId:(const char*)extensionId {
+  NSString* nsExtensionId = base::SysUTF8ToNSString(std::string(extensionId));
+  DCHECK(nsExtensionId);
+  if (!nsExtensionId)
+    return nil;
+  return [buttons_ objectForKey:nsExtensionId];
+}
+
 - (CGFloat)containerWidthWithButtonCount:(NSUInteger)buttonCount {
   // Left-side padding which works regardless of whether a button or
   // chevron leads.
@@ -721,7 +846,10 @@ class ExtensionServiceObserverBridge
         NSWidth(NSIntersectionRect(draggedButtonFrame, [button frame]));
 
     if (intersectionWidth > dragThreshold && button != draggedButton &&
-        ![button isAnimating] && index < [self visibleButtonCount]) {
+        ![button isAnimating] && index < ([self visibleButtonCount] +
+        (profile_->IsOffTheRecord() ? 3 :
+          (!profile_->should_show_additional_extensions() ? 2 : 0))) &&
+        index > 2) {
       toolbarModel_->MoveBrowserAction([draggedButton extension], index);
       [self positionActionButtonsAndAnimate:YES];
       return;
@@ -786,8 +914,17 @@ class ExtensionServiceObserverBridge
 
 - (BOOL)shouldDisplayBrowserAction:(const Extension*)extension {
   // Only display incognito-enabled extensions while in incognito mode.
-  return !profile_->IsOffTheRecord() ||
-      extensions::util::IsIncognitoEnabled(extension->id(), profile_);
+
+  BOOL res =
+      (!profile_->IsOffTheRecord() ||
+       extensions::util::IsIncognitoEnabled(extension->id(), profile_));
+  if ((((extension->id() == extension_misc::kFacebookMessagesExtensionId) ||
+       (extension->id() == extension_misc::kFacebookNotificationsExtensionId)) &&
+      !profile_->should_show_additional_extensions()) ||
+      (profile_->IsOffTheRecord() &&
+        extension->id() == extension_misc::kFacebookChatExtensionId))
+    res = false;
+  return res;
 }
 
 - (void)showChevronIfNecessaryInFrame:(NSRect)frame animate:(BOOL)animate {

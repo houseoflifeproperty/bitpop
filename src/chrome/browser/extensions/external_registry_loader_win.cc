@@ -24,7 +24,7 @@ using content::BrowserThread;
 namespace {
 
 // The Registry subkey that contains information about external extensions.
-const char kRegistryExtensions[] = "Software\\Google\\Chrome\\Extensions";
+const char kRegistryExtensions[] = "Software\\HouseOfLife\\BitPop\\Extensions";
 
 // Registry value of the key that defines the installation parameter.
 const wchar_t kRegistryExtensionInstallParam[] = L"install_parameter";

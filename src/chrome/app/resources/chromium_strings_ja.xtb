@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="ja">
 <translation id="6676384891291319759">インターネットにアクセス</translation>
@@ -51,7 +51,7 @@
 <translation id="5109068449432240255">はい、Chromium を終了します</translation>
 <translation id="1480489203462860648">使ってみる（既にインストール済み）</translation>
 <translation id="3032787606318309379">Chromium に追加...</translation>
-<translation id="4831257561365056138">Chromium アプリ ランチャーをアンインストール</translation>
+<translation id="4831257561365056138">BitPop アプリ ランチャーをアンインストール</translation>
 <translation id="4222580632002216401">Chromium にログインしています。同期は管理者によって無効にされています。</translation>
 <translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>警告:<ph name="END_BOLD"/> 拡張機能による閲覧履歴の記録を Chromium で停止することはできません。シークレット モードでこの拡張機能を無効にするには、このオプションの選択を解除してください。</translation>
 <translation id="4516868174453854611">ログインしました。ノートパソコン、スマートフォン、タブレットで同じタブ、ブックマーク、その他の Chromium 設定をご利用いただけます。また、Google のサービスをご利用になる際に、より関連性の高いヒントや機能が表示されるようになります。</translation>
@@ -112,7 +112,7 @@
 <translation id="2485422356828889247">アンインストール</translation>
 <translation id="85843667276690461">Chromium の使用に関するアドバイス</translation>
 <translation id="5358375970380395591">現在、管理対象アカウントでログインしており、あなたの Chromium プロフィールを管理者が制御できる状態になっています。あなたの Chromium データ（アプリ、ブックマーク、履歴、パスワードなどの設定）は永続的に <ph name="USER_NAME"/> に関連付けられます。このデータは Google アカウントのダッシュボードを介して削除できますが、このデータを別のアカウントに関連付けることはできなくなります。<ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Chromium アプリ ランチャー</translation>
+<translation id="9036189287518468038">BitPop アプリ ランチャー</translation>
 <translation id="8493179195440786826">Chromium は古いバージョンです</translation>
 <translation id="911206726377975832">閲覧データも削除しますか？</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/> では、このデバイスを使用する前に下記の利用規約を確認しこれに同意していただく必要があります。これらの規約は Chromium OS 利用規約を拡張、変更、制限するものではありません。</translation>

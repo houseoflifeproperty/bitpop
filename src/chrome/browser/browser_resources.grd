@@ -411,6 +411,8 @@
         <include name="IDR_SET_TIME_CSS" file="resources\chromeos\set_time.css" type="BINDATA" />
         <include name="IDR_SET_TIME_JS" file="resources\chromeos\set_time.js" type="BINDATA" />
       </if>
+      <!-- BitPop include -->
+      <include name="IDR_BITPOP_HELPER_MANIFEST" file="resources\bitpop_helper\manifest.json" type="BINDATA" />
     </includes>
   </release>
 </grit>

@@ -28,6 +28,8 @@
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
@@ -96,6 +98,8 @@ using base::UserMetricsAction;
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadManager;
+
+#import "SUUpdater.h"
 
 namespace {
 
@@ -724,6 +728,14 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
   }
 }
 
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
+{
+  if (object == [NSUserDefaults standardUserDefaults] && [keyPath isEqualToString:@"SUAutomaticallyUpdate"]) {
+    PrefService* prefService = self.lastProfile->GetPrefs();
+    prefService->SetBoolean(prefs::kAutomaticUpdatesEnabled, [[change objectForKey:NSKeyValueChangeNewKey] boolValue]);
+  }
+}
+
 // This is called after profiles have been loaded and preferences registered.
 // It is safe to access the default profile here.
 - (void)applicationDidFinishLaunching:(NSNotification*)notify {
@@ -782,11 +794,18 @@ class AppControllerProfileObserver : public ProfileInfoCacheObserver {
         base::Bind(&chrome::BrowserCommandController::UpdateOpenFileState,
                    menuState_.get()));
   }
+
+  [[NSUserDefaults standardUserDefaults] addObserver:self forKeyPath:@"SUAutomaticallyUpdate" options:NSKeyValueObservingOptionNew context:NULL];
 }
 
 // This is called after profiles have been loaded and preferences registered.
 // It is safe to access the default profile here.
 - (void)applicationDidBecomeActive:(NSNotification*)notify {
+  FacebookBitpopNotification *notif =
+      FacebookBitpopNotificationServiceFactory::GetForProfile(
+          [self lastProfile]);
+  if (notif)
+    notif->ClearNotification();
   content::PluginService::GetInstance()->AppActivated();
 }
 

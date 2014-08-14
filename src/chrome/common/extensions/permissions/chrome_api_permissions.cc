@@ -35,6 +35,7 @@ std::vector<APIPermissionInfo*> ChromeAPIPermissions::GetAllPermissions()
   APIPermissionInfo::InitInfo permissions_to_register[] = {
       // Register permissions for all extension types.
       {APIPermission::kBackground, "background"},
+      {APIPermission::kBitpopFacebookChat, "bitpop"},
       {APIPermission::kClipboardRead, "clipboardRead",
        APIPermissionInfo::kFlagNone, IDS_EXTENSION_PROMPT_WARNING_CLIPBOARD,
        PermissionMessage::kClipboard},

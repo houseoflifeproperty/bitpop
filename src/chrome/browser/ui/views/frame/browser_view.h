@@ -25,6 +25,7 @@
 #include "chrome/browser/ui/views/frame/web_contents_close_handler.h"
 #include "chrome/browser/ui/views/load_complete_listener.h"
 #include "components/infobars/core/infobar_container.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/gfx/native_widget_types.h"
@@ -45,8 +46,11 @@
 class BookmarkBarView;
 class Browser;
 class BrowserViewLayout;
+class ChatbarView;
 class ContentsLayoutManager;
 class DownloadShelfView;
+class FacebookChatbar;
+class FriendsSidebarView;
 class FullscreenExitBubbleViews;
 class InfoBarContainerView;
 class LocationBarView;
@@ -89,6 +93,7 @@ class WebView;
 //
 class BrowserView : public BrowserWindow,
                     public BrowserWindowTesting,
+                    public content::NotificationObserver,
                     public TabStripModelObserver,
                     public ui::AcceleratorProvider,
                     public views::WidgetDelegate,
@@ -333,6 +338,13 @@ class BrowserView : public BrowserWindow,
   void SetDownloadShelfVisible(bool visible);
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
+
+  void SetChatbarVisible(bool visible);
+  virtual bool IsChatbarVisible() const OVERRIDE;
+  virtual FacebookChatbar* GetChatbar() OVERRIDE;
+  virtual void SetFriendsSidebarVisible(bool visible) OVERRIDE;
+  virtual bool IsFriendsSidebarVisible() const OVERRIDE;
+
   virtual void ConfirmBrowserCloseWithPendingDownloads(
       int download_count,
       Browser::DownloadClosePreventionType dialog_type,
@@ -458,6 +470,14 @@ class BrowserView : public BrowserWindow,
   views::View* GetContentsContainerForTest() { return contents_container_; }
   views::WebView* GetContentsWebViewForTest() { return contents_web_view_; }
   views::WebView* GetDevToolsWebViewForTest() { return devtools_web_view_; }
+
+ protected:
+   // content::NotificationObserver override
+  virtual void Observe(int type,
+                const content::NotificationSource& source,
+                const content::NotificationDetails& details) OVERRIDE;
+
+  content::NotificationRegistrar registrar_;
 
  private:
   // Do not friend BrowserViewLayout. Use the BrowserViewLayoutDelegate
@@ -652,6 +672,15 @@ class BrowserView : public BrowserWindow,
   // The view managing the devtools and contents positions.
   // Handled by ContentsLayoutManager.
   views::View* contents_container_;
+
+  // Split view containing the contents container and devtools container.
+  views::SingleSplitView* contents_split_;
+
+  // The view that contains facebook friends list with names, photo and status
+  scoped_ptr<FriendsSidebarView> fb_friend_list_sidebar_;
+
+  // The view containing different chat buddies' buttons, laid out on bottom of browser view
+  scoped_ptr<ChatbarView> fb_chatbar_;
 
   // Docked devtools window instance. NULL when current tab is not inspected
   // or is inspected with undocked version of DevToolsWindow.

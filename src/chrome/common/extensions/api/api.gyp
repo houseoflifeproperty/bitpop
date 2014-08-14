@@ -45,6 +45,8 @@
               'automation_internal.idl',
               'automation.idl',
               'autotest_private.idl',
+              'bitpop.json',
+              'bitpop_facebook_chat.json',
               'bluetooth.idl',
               'bluetooth_low_energy.idl',
               'bluetooth_private.json',

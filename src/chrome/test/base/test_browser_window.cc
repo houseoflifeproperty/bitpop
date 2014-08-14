@@ -4,6 +4,7 @@
 
 #include "chrome/test/base/test_browser_window.h"
 
+#include "base/logging.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "ui/gfx/rect.h"
@@ -208,6 +209,15 @@ FindBar* TestBrowserWindow::CreateFindBar() {
 web_modal::WebContentsModalDialogHost*
     TestBrowserWindow::GetWebContentsModalDialogHost() {
   return NULL;
+}
+
+// Whether or not the facebook friends sidebar is visible
+bool TestBrowserWindow::IsFriendsSidebarVisible() const {
+  return false;
+}
+
+void TestBrowserWindow::SetFriendsSidebarVisible(bool visible) {
+  NOTIMPLEMENTED();
 }
 
 int

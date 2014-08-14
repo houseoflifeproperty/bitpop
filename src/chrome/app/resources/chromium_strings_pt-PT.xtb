@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="pt-PT">
 <translation id="6676384891291319759">Aceder à Internet</translation>
@@ -20,14 +20,14 @@
 <translation id="4423735387467980091">Personalizar e controlar o Chromium</translation>
 <translation id="1881322772814446296">Está a iniciar sessão com uma conta gerida e a permitir que o administrador controle o seu perfil do Chromium. Os seus dados do Chromium, como aplicações, marcadores, histórico, palavras-passe e outras definições, ficarão associados definitivamente a <ph name="USER_NAME"/>. Poderá eliminar estes dados através do Painel de Controlo das Contas Google, mas não poderá associá-los a outra conta. Opcionalmente, pode criar um perfil novo para manter os seus dados atuais do Chromium em separado. <ph name="LEARN_MORE"/></translation>
 <translation id="455521026202544465">Obrigado por experimentar o novo Chromium. É necessário reiniciar o Chromium para ter a certeza de que guardou todos os trabalhos abertos antes de continuar.</translation>
-<translation id="731644333568559921">Atualizar o SO &amp;Chromium</translation>
+<translation id="731644333568559921">Atualizar o SO &amp;BitPop</translation>
 <translation id="7421823331379285070">O Chromium necessita do Windows XP ou posterior. Algumas funcionalidades podem não funcionar.</translation>
 <translation id="7023267510504981715">Tem de atualizar o Chromium para poder utilizar o Google Wallet [<ph name="ERROR_CODE"/>].</translation>
 <translation id="1444754455097148408">Licenças de código aberto do Chromium</translation>
 <translation id="7419987137528340081">Se preferir manter os dados do Chromium existentes em separado, pode criar um novo utilizador do Chromium para <ph name="USER_NAME"/>.</translation>
 <translation id="5427571867875391349">Definir o Chromium como o seu navegador predefinido</translation>
 <translation id="8030318113982266900">A atualizar o dispositivo para o canal <ph name="CHANNEL_NAME"/>...</translation>
-<translation id="3549345495227188780">Introdução ao SO Chromium</translation>
+<translation id="3549345495227188780">Introdução ao SO BitPop</translation>
 <translation id="1668054258064581266">Depois de remover a sua conta do Chromium, poderá ter de recarregar os separadores abertos para que as alterações tenham efeito.</translation>
 <translation id="6953661834318318668">Barra de Ferramentas do Chromium</translation>
 <translation id="4285930937574705105">A instalação falhou devido a um erro não especificado. Se o Chromium estiver em execução, feche-o e tente de novo.</translation>
@@ -40,7 +40,7 @@
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          e certifique-se de que a sua configuração está definida como &quot;sem proxy&quot; ou &quot;direta&quot;.</translation>
+          e certifique-se de que a sua configuração está definida como "sem proxy" ou "direta".</translation>
 <translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
 <translation id="7729447699958282447">O Chromium não conseguiu sincronizar os dados porque a Sincronização não está disponível para o seu domínio.</translation>
 <translation id="1989424089625731201">Tentou aceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o certificado apresentado pelo servidor contém erros. O Chromium não pode utilizar um certificado com erros e não pode validar a identidade do Web site ao qual tentou estabelecer ligação.</translation>
@@ -76,7 +76,7 @@
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
-        e desmarque &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>&quot;.
+        e desmarque "<ph name="NO_PREFETCH_DESCRIPTION"/>".
         Se isso não resolver o problema, recomendamos que selecione esta opção
         novamente para um desempenho melhorado.</translation>
 <translation id="7463979740390522693">Chromium – Notificações (<ph name="QUANTITY"/> não lidas)</translation>
@@ -103,7 +103,7 @@
 <translation id="4677944499843243528">O perfil parece estar a ser utilizado por outro processo do Chromium (<ph name="PROCESS_ID"/>) noutro computador (<ph name="HOST_NAME"/>). O Chromium bloqueou o perfil para que não seja danificado. Se tiver a certeza de que não existem outros processos a utilizar este perfil, pode desbloqueá-lo e reiniciar o Chromium.</translation>
 <translation id="5405650547142096840">Remover do Chromium</translation>
 <translation id="4994636714258228724">Adicionar-se ao Chromium</translation>
-<translation id="7066436765290594559">O SO Chromium não conseguiu sincronizar os dados. Atualize a frase de acesso de sincronização.</translation>
+<translation id="7066436765290594559">O SO BitPop não conseguiu sincronizar os dados. Atualize a frase de acesso de sincronização.</translation>
 <translation id="7747138024166251722">O programa de instalação não conseguiu criar um directório temporário. Verifique se há espaço livre no disco e permissão para a instalação do software.</translation>
 <translation id="3258596308407688501">O Chromium não consegue ler e escrever no respetivo diretório de dados:
 
@@ -112,7 +112,7 @@
 <translation id="2485422356828889247">Desinstalar</translation>
 <translation id="85843667276690461">Obter ajuda para utilizar o Chromium</translation>
 <translation id="5358375970380395591">Está a iniciar sessão com uma conta gerida e a permitir que o administrador controle o seu perfil do Chromium. Os seus dados do Chromium, como aplicações, marcadores, histórico, palavras-passe e outras definições, ficarão associados definitivamente a <ph name="USER_NAME"/>. Poderá eliminar estes dados através do Painel de Controlo das Contas Google, mas não poderá associá-los a outra conta. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Iniciador de Aplicações do Chromium</translation>
+<translation id="9036189287518468038">Iniciador de Aplicações do BitPop</translation>
 <translation id="8493179195440786826">O Chromium Está Desatualizado</translation>
 <translation id="911206726377975832">Eliminar também os seus dados de navegação?</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/> obriga-o a ler e aceitar os seguintes Termos de Utilização antes de utilizar este dispositivo. Estes termos não ampliam, modificam nem limitam os Termos do SO Chromium.</translation>
@@ -120,7 +120,7 @@
 <translation id="1699664235656412242">Feche todas as janelas do Chromium (incluindo as que estiverem no modo Windows 8) e tente novamente.</translation>
 <translation id="6734080038664603509">Atualizar o &amp;Chromium</translation>
 <translation id="8862326446509486874">Não tem os direitos adequados para uma instalação ao nível do sistema. Tente executar o programa de instalação novamente como Administrador.</translation>
-<translation id="2535480412977113886">O SO Chromium não conseguiu sincronizar os dados porque os detalhes de início de sessão da sua conta estão desatualizados.</translation>
+<translation id="2535480412977113886">O SO BitPop não conseguiu sincronizar os dados porque os detalhes de início de sessão da sua conta estão desatualizados.</translation>
 <translation id="8697124171261953979">Também controla a página apresentada quando inicia o Chromium ou pesquisa a partir da Caixa geral.</translation>
 <translation id="894903460958736500">O software em execução no seu computador é incompatível com o Chromium.</translation>
 <translation id="1774152462503052664">Permitir que o Chromium seja executado em segundo plano</translation>
@@ -134,7 +134,7 @@
 <translation id="6248213926982192922">Definir o Chromium como navegador predefinido</translation>
 <translation id="6309712487085796862">O Chromium está a utilizar a câmara.</translation>
 <translation id="7337881442233988129">Chromium</translation>
-<translation id="5820394555380036790">SO Chromium</translation>
+<translation id="5820394555380036790">SO BitPop</translation>
 <translation id="6757767188268205357">Não incomodar</translation>
 <translation id="1745962126679160932">O Chromium armazenará as suas informações em segurança para que não necessite de as introduzir novamente, mas continuará a ser necessário confirmar o código de segurança do seu cartão para futuros pagamentos.</translation>
 <translation id="275588974610408078">O relatório de falha não está disponível no Chromium.</translation>
@@ -162,7 +162,7 @@
           <ph name="PROXIES_TITLE"/>
           &gt;
           Definições de LAN
-          e desmarque a caixa de verificação &quot;Utilizar um servidor proxy para a rede local&quot;.</translation>
+          e desmarque a caixa de verificação "Utilizar um servidor proxy para a rede local".</translation>
 <translation id="8621669128220841554">A instalação falhou devido a um erro não especificado. Transfira novamente o Chromium .</translation>
 <translation id="6717134281241384636">O seu perfil não pode ser utilizado porque pertence a uma versão mais recente do Chromium.
 
@@ -172,8 +172,8 @@ Algumas funcionalidades podem não estar disponíveis. Especifique um diretório
 <translation id="6334986366598267305">Agora é mais fácil utilizar o Chromium com a sua Conta Google e em computadores partilhados.</translation>
 <translation id="6212496753309875659">Este computador já tem uma versão mais recente do Chromium. Se o software não estiver a funcionar, desinstale o Chromium e tente novamente.</translation>
 <translation id="1115445892567829615">O Chromium não conseguiu sincronizar os dados. Atualize a frase de acesso da Sincronização.</translation>
-<translation id="1298199220304005244">Obter ajuda para utilizar o SO Chromium</translation>
-<translation id="331951419404882060">O Chromium não conseguiu sincronizar os dados devido a um erro no início de sessão.</translation>
+<translation id="1298199220304005244">Obter ajuda para utilizar o SO BitPop</translation>
+<translation id="331951419404882060">O BitPop não conseguiu sincronizar os dados devido a um erro no início de sessão.</translation>
 <translation id="8187289872471304532">Aceda a Aplicações &gt; Preferências do Sistema &gt; Rede &gt; Avançadas &gt; Proxies e desmarque todos os proxies selecionados.</translation>
 <translation id="2801146392936645542">O ficheiro <ph name="FILE_NAME"/> é malicioso e o Chromium bloqueou-o.</translation>
 <translation id="4488676065623537541">Os seus detalhes de faturação foram guardados no Chromium.</translation>
@@ -183,7 +183,7 @@ Algumas funcionalidades podem não estar disponíveis. Especifique um diretório
 <translation id="9214519575840037443">Sugerida pelo Chromium</translation>
 <translation id="1929939181775079593">O Chromium não responde. Reiniciar agora?</translation>
 <translation id="1414495520565016063">Tem sessão iniciada no Chromium!</translation>
-<translation id="2158734852934720349">Licenças de código aberto do SO Chromium</translation>
+<translation id="2158734852934720349">Licenças de código aberto do SO BitPop</translation>
 <translation id="2966088006374919794">O Chromium precisa de iniciar uma aplicação externa para processar links de <ph name="SCHEME"/>. O link solicitado é <ph name="PROTOLINK"/>.</translation>
 <translation id="2558235863893655150">Pretende que o Chromium guarde a sua palavra-passe?</translation>
 <translation id="1231416733874080281">Mostrar o menu Chromium</translation>
@@ -207,14 +207,14 @@ Algumas funcionalidades podem não estar disponíveis. Especifique um diretório
 <translation id="4458285410772214805">Termine sessão e volte a iniciar sessão para que esta alteração tenha efeito.</translation>
 <translation id="761356813943268536">O Chromium está a utilizar a câmara e o microfone.</translation>
 <translation id="805745970029938373">Pode ver aqui todas as suas notificações de aplicações, extensões e Websites do Chromium.</translation>
-<translation id="2119636228670142020">Acerca do SO &amp;Chromium</translation>
+<translation id="2119636228670142020">Acerca do SO &amp;BitPop</translation>
 <translation id="1708666629004767631">Está disponível uma versão nova e mais segura do Chromium.</translation>
 <translation id="378917192836375108">O Chromium permite-lhe clicar num número de telefone na Web e fazer a chamada com o Skype!</translation>
 <translation id="8724049448828509830">A transferência está atualmente em curso. Pretende sair do Chromium e cancelar a transferência?</translation>
 <translation id="608189560609172163">O Chromium não conseguiu sincronizar os dados devido a um erro de início de sessão.</translation>
 <translation id="4888717733111232871">Regra de importação para o Chromium permitir o tráfego mDNS.</translation>
-<translation id="151962892725702025">O SO Chromium não conseguiu sincronizar os dados porque a sincronização não está disponível para o seu domínio.</translation>
-<translation id="3360567213983886831">Binários do Chromium</translation>
+<translation id="151962892725702025">O SO BitPop não conseguiu sincronizar os dados porque a sincronização não está disponível para o seu domínio.</translation>
+<translation id="3360567213983886831">Binários do BitPop</translation>
 <translation id="8985587603644336029">Anteriormente, alguém iniciou sessão no Chromium neste computador com a conta <ph name="ACCOUNT_EMAIL_LAST"/>. Se esta conta não for sua, crie um novo utilizador do Chromium para manter as informações em separado.
 
 Se continuar com este início de sessão, as informações do Chromium, como marcadores, histórico e outras definições, fundir-se-ão com <ph name="ACCOUNT_EMAIL_NEW"/>.</translation>

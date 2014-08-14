@@ -158,6 +158,9 @@ class ProfileImpl : public Profile {
 
   virtual PrefProxyConfigTracker* GetProxyConfigTracker() OVERRIDE;
 
+  virtual bool should_show_additional_extensions() const OVERRIDE;
+  virtual void set_should_show_additional_extensions(bool flag) OVERRIDE;
+
  private:
 #if defined(OS_CHROMEOS)
   friend class chromeos::KioskTest;
@@ -295,6 +298,8 @@ class ProfileImpl : public Profile {
   Profile::Delegate* delegate_;
 
   chrome_browser_net::Predictor* predictor_;
+
+  bool should_show_additional_extensions_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileImpl);
 };

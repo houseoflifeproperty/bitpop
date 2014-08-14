@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="vi">
 <translation id="6676384891291319759">Truy cập Internet</translation>
@@ -40,7 +40,7 @@
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          và đảm bảo cấu hình của bạn được đặt thành &quot;không có proxy&quot; hoặc &quot;trực tiếp&quot;.</translation>
+          và đảm bảo cấu hình của bạn được đặt thành "không có proxy" hoặc "trực tiếp".</translation>
 <translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
 <translation id="7729447699958282447">Chromium không thể đồng bộ hóa dữ liệu của bạn vì Đồng bộ hóa không khả dụng cho miền của bạn.</translation>
 <translation id="1989424089625731201">Bạn đã cố truy cập vào &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; nhưng chứng chỉ mà máy chủ đưa ra chứa lỗi. Chromium không thể sử dụng chứng chỉ chứa lỗi và không thể xác thực thông tin nhận dạng của trang web mà bạn đã cố kết nối.</translation>
@@ -51,7 +51,7 @@
 <translation id="5109068449432240255">Có, thoát Chromium</translation>
 <translation id="1480489203462860648">Hãy dùng thử, ứng dụng đã được cài đặt</translation>
 <translation id="3032787606318309379">Đang thêm vào Chromium...</translation>
-<translation id="4831257561365056138">Gỡ cài đặt Trình chạy ứng dụng Chromium</translation>
+<translation id="4831257561365056138">Gỡ cài đặt Trình chạy ứng dụng BitPop</translation>
 <translation id="4222580632002216401">Bạn hiện đã đăng nhập vào Chromium! Quản trị viên của bạn đã tắt tính năng Đồng bộ hóa.</translation>
 <translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Cảnh báo:<ph name="END_BOLD"/> Chromium không thể ngăn các tiện ích mở rộng ghi lại lịch sử duyệt web của bạn. Để tắt tiện ích mở rộng này trong chế độ ẩn danh, hãy bỏ chọn tùy chọn này.</translation>
 <translation id="4516868174453854611">Bạn hiện đã đăng nhập, bạn có thể nhận tab, dấu trang và các nội dung khác của Chromium trên máy tính xách tay, điện thoại và máy tính bảng của bạn. Bạn cũng sẽ nhận được các tính năng và đề xuất có liên quan hơn cũng trên các dịch vụ của Google.</translation>
@@ -76,7 +76,7 @@
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
-        và bỏ chọn &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>.&quot;
+        và bỏ chọn "<ph name="NO_PREFETCH_DESCRIPTION"/>."
         Nếu thao tác này không giải quyết được sự cố, chúng tôi khuyên bạn chọn lại tùy chọn này
         để cải thiện hiệu suất.</translation>
 <translation id="7463979740390522693">Chromium - Thông báo (<ph name="QUANTITY"/> thông báo chưa đọc)</translation>
@@ -112,7 +112,7 @@
 <translation id="2485422356828889247">Gỡ cài đặt</translation>
 <translation id="85843667276690461">Nhận trợ giúp về cách sử dụng Chromium</translation>
 <translation id="5358375970380395591">Bạn đang đăng nhập bằng tài khoản được quản lý và cấp cho quản trị viên của tài khoản quyền kiểm soát cấu hình Chromium của bạn. Dữ liệu Chromium của bạn, chẳng hạn như ứng dụng, dấu trang, lịch sử, mật khẩu và các cài đặt khác sẽ vĩnh viễn được liên kết với <ph name="USER_NAME"/>. Bạn có thể xóa dữ liệu này thông qua Trang tổng quan của tài khoản Google nhưng không thể liên kết dữ liệu này với tài khoản khác. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Trình chạy ứng dụng Chromium</translation>
+<translation id="9036189287518468038">Trình chạy ứng dụng BitPop</translation>
 <translation id="8493179195440786826">Chromium đã lỗi thời</translation>
 <translation id="911206726377975832">Bạn cũng muốn xóa dữ liệu duyệt web của mình?</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/> yêu cầu bạn đọc và chấp nhận Điều khoản dịch vụ sau đây trước khi sử dụng thiết bị này. Những điều khoản này không mở rộng, sửa đổi hoặc giới hạn Điều khoản Chromium OS.</translation>
@@ -134,7 +134,7 @@
 <translation id="6248213926982192922">Đặt Chromium làm trình duyệt mặc định</translation>
 <translation id="6309712487085796862">Chromium đang sử dụng máy ảnh của bạn.</translation>
 <translation id="7337881442233988129">Chromium</translation>
-<translation id="5820394555380036790">Hệ điều hành Chromium</translation>
+<translation id="5820394555380036790">Hệ điều hành BitPop</translation>
 <translation id="6757767188268205357">Đừng hỏi lại</translation>
 <translation id="1745962126679160932">Chromium sẽ lưu trữ an toàn thông tin của bạn nên bạn không cần phải nhập lại thông tin nhưng sẽ vẫn phải xác minh mã bảo mật cho thẻ của bạn để thanh toán trong tương lai.</translation>
 <translation id="275588974610408078">Báo cáo sự cố hiện không khả dụng trong Chromium.</translation>
@@ -162,7 +162,7 @@
           <ph name="PROXIES_TITLE"/>
           &gt;
           Cài đặt mạng LAN
-          và bỏ chọn hộp kiểm &quot;Sử dụng máy chủ proxy cho mạng LAN của bạn&quot;.</translation>
+          và bỏ chọn hộp kiểm "Sử dụng máy chủ proxy cho mạng LAN của bạn".</translation>
 <translation id="8621669128220841554">Không thể cài đặt do xảy ra lỗi không xác định. Hãy tải xuống Chromium lại lần nữa.</translation>
 <translation id="6717134281241384636">Không thể sử dụng cấu hình của bạn do cấu hình này đến từ một phiên bản Chromium mới hơn.
 

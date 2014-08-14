@@ -12,6 +12,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/extensions/sync_helper.h"
 #include "content/public/browser/site_instance.h"
@@ -34,6 +35,11 @@ bool IsIncognitoEnabled(const std::string& extension_id,
       GetExtensionById(extension_id, ExtensionRegistry::ENABLED);
   if (extension) {
     if (!extension->can_be_incognito_enabled())
+      return false;
+    if (extension && (
+        extension->id() == extension_misc::kFacebookChatExtensionId ||
+        extension->id() == extension_misc::kFacebookMessagesExtensionId ||
+        extension->id() == extension_misc::kFacebookNotificationsExtensionId))
       return false;
     // If this is an existing component extension we always allow it to
     // work in incognito mode.

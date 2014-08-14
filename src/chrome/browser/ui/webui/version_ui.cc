@@ -45,7 +45,7 @@ content::WebUIDataSource* CreateVersionUIDataSource(Profile* profile) {
   // Localized and data strings.
   html_source->AddLocalizedString("title", IDS_ABOUT_VERSION_TITLE);
   chrome::VersionInfo version_info;
-  html_source->AddString("version", version_info.Version());
+  html_source->AddString("version", version_info.BitpopVersion());
   html_source->AddString("version_modifier",
                          chrome::VersionInfo::GetVersionStringModifier());
   html_source->AddLocalizedString("os_name", IDS_ABOUT_VERSION_OS);

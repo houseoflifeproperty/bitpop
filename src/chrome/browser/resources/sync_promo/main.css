@@ -1,0 +1,205 @@
+/*
+// BitPop browser with features like Facebook chat and uncensored browsing. 
+// Copyright (C) 2014 BitPop AS
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+/* Reset */
+
+body, html {
+	min-width:800px;
+	min-height: 100%;
+	padding: 0;
+	margin: 0;
+	font-family: 'Helvetica Neue', Arial, 'Liberation Sans', FreeSans, sans-serif;
+}
+
+/* Defaults */
+
+body {
+	text-align: center;
+}
+
+body,
+#wrapper .container {
+	background: url(chrome://resources/images/body2.png) 50% 0 repeat-y;
+}
+
+body.var2,
+body.var2 #wrapper .container {
+	background: url(chrome://resources/images/body.jpg) 50% -50px no-repeat;
+}
+
+/* Layout */
+
+#wrapper {
+	min-height: 100%;
+}
+
+.container {
+	position: absolute;
+	min-width: 800px;
+	height: 100%;
+	width: 100%;
+}
+
+.contentwrap {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	margin-left: -430px;
+	height: 50%;
+	min-height: 336px;
+}
+
+.contentwrap2 {
+	height: 672px;
+	margin-top: -336px;
+}
+
+.clearfix:after
+{ clear: both; content: "\200B"; display: block; height: 0; }
+
+/* Typography */
+
+.title {
+	height: 303px;
+	margin: 0;
+	font-size: 60px;
+	line-height: 303px;
+	font-weight: normal;
+	color: #fff;
+	text-shadow: 2px 2px 2px rgba(0,0,0,0.5);
+}
+
+.title .msg1 {
+	float: left;
+	padding-left: 12px;
+	width: 277px;
+}
+
+.title .msg2 {
+	float: left;
+	padding-left: 14px;
+}
+
+.logo {
+	float: left;
+	width: 297px;
+	height: 303px;
+	background: url(chrome://resources/images/logo.png) 50% 50% no-repeat;
+}
+
+/* Circle */
+
+#wrapper h2, #wrapper p {
+	color: #fff;
+	text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
+}
+
+#wrapper h2 {
+	margin: 0;
+	font-weight: normal;
+	font-size: 35px;
+	line-height: 52px;
+}
+
+#wrapper p {
+	margin: 0 0 4px;
+	font-size: 24px;
+	line-height: 36px;
+}
+
+.bubbles {
+	height: 368px;
+}
+
+.bubble {
+	float: left;
+	text-align: center;
+	height: 316px;
+	width: 284px;
+	padding: 52px 44px 0px 40px;
+	background: url(chrome://resources/images/bg_bubble.png) 0 0 no-repeat;
+}
+
+.bubble-description {
+	margin-left: 60px;
+	margin-right: 10px;
+}
+
+body.var2 .bubble-description {
+	margin-left: 69px;
+}
+
+.bubble-login {
+	padding-top: 78px;
+	height: 290px;
+}
+
+a.button {
+	display: inline-block;
+	padding: 5px 15px;
+	line-height: 17px;
+	color: #fff;
+	text-decoration: none;
+	border-width: 1px;
+	border-style: solid;
+	        border-radius: 4px;
+	   -moz-border-radius: 4px;
+	-webkit-border-radius: 4px;
+	        box-shadow: 0px -1px 0px #901e87;
+	   -moz-box-shadow: 0px -1px 0px #901e87;
+	-webkit-box-shadow: 0px -1px 0px #901e87;
+	border-color: #d866cf #ab39a2 #84127b #a6349d;
+	background: #c04eb7;
+	background:         linear-gradient(#c04eb7, #992790);
+	background:      -o-linear-gradient(#c04eb7, #992790);
+	background:     -ms-linear-gradient(#c04eb7, #992790);
+	background:    -moz-linear-gradient(#c04eb7, #992790);
+	background: -webkit-linear-gradient(#c04eb7, #992790);
+	background: -webkit-gradient(linear, 0 0, 0 100%, from(#c04eb7), to(#992790));
+	-webkit-transition: all 0.5s ease-out;  /* Safari 3.2+, Chrome */
+     -moz-transition: all 0.5s ease-out;  /* Firefox 4-15 */
+       -o-transition: all 0.5s ease-out;  /* Opera 10.5–12.00 */
+          transition: all 0.5s ease-out;  /* Firefox 16+, Opera 12.50+ */
+}
+
+a.button:hover {
+	background: #dd6ad4;
+	background:         linear-gradient(#dd6ad4, #b747ac);
+	background:      -o-linear-gradient(#dd6ad4, #b747ac);
+	background:     -ms-linear-gradient(#dd6ad4, #b747ac);
+	background:    -moz-linear-gradient(#dd6ad4, #b747ac);
+	background: -webkit-linear-gradient(#dd6ad4, #b747ac);
+	background: -webkit-gradient(linear, 0 0, 0 100%, from(#dd6ad4), to(#b747ac));
+	-pie-background: linear-gradient(#dd6ad4, #b747ac);
+}
+
+#facebooklogin {
+	display: block;
+	margin: 0 auto 37px;
+	width: 197px;
+	height: 32px;
+	text-align: left;
+	text-indent: -999em;
+	background: url(chrome://resources/images/btn_fblogin.png) 0 0 no-repeat;
+}
+
+.sync_setup_wrap {
+	left: 0;
+	top: 0;
+	z-index: 10;
+}

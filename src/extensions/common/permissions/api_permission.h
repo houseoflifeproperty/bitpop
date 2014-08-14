@@ -48,6 +48,7 @@ class APIPermission {
     kAutomation,
     kAutoTestPrivate,
     kBackground,
+    kBitpopFacebookChat,
     kBluetoothPrivate,
     kBookmark,
     kBookmarkManagerPrivate,

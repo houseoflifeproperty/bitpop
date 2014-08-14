@@ -88,6 +88,12 @@ enum ViewID {
   VIEW_ID_ZOOM_BUTTON,
 #endif
 
+  // The facebook friends sidebar
+  VIEW_ID_FACEBOOK_FRIENDS_SIDE_BAR_CONTAINER,
+
+  // The facebook chatbar view
+  VIEW_ID_FACEBOOK_CHATBAR,
+
 // TODO(npentrel): change the passwords decoration to an NSImageView.
 #if !defined(OS_MACOSX)
   // The manage passwords icon in the location bar.

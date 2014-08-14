@@ -9,11 +9,16 @@
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkTypeface.h"
+#include "third_party/skia/include/effects/SkBlurDrawLooper.h"
+#include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/skia_util.h"
+
+using base::string16;
 
 namespace {
 
@@ -41,11 +46,11 @@ const int kTopTextPadding = 1;
 const float kTextSize = 9.0;
 const int kBottomMarginBrowserAction = 0;
 const int kBottomMarginPageAction = 2;
-const int kPadding = 2;
+const int kPadding = 4;
 const int kTopTextPadding = 0;
 #endif
 
-const int kBadgeHeight = 11;
+const int kBadgeHeight = 15;
 const int kMaxTextWidth = 23;
 
 // The minimum width for center-aligning the badge.
@@ -92,6 +97,90 @@ SkPaint* GetBadgeTextPaintSingleton() {
   return text_paint;
 }
 
+SkBitmap DrawBadgeIconOverlay(const SkBitmap& icon,
+                              float font_size,
+                              const string16& text,
+                              const string16& fallback) {
+  const int kMinPadding = 1;
+
+  // Calculate the proper style/text overlay to render on the badge.
+  SkPaint* paint = badge_util::GetBadgeTextPaintSingleton();
+  paint->setTextSize(SkFloatToScalar(font_size));
+  paint->setColor(SK_ColorWHITE);
+
+  std::string badge_text = UTF16ToUTF8(text);
+
+  // See if the text will fit - otherwise use a default.
+  SkScalar text_width = paint->measureText(badge_text.c_str(),
+                                           badge_text.size());
+
+  if (SkScalarRoundToInt(text_width) > (icon.width() - kMinPadding * 2)) {
+    // String is too large - use the alternate text.
+    badge_text = UTF16ToUTF8(fallback);
+    text_width = paint->measureText(badge_text.c_str(), badge_text.size());
+  }
+
+  // When centering the text, we need to make sure there are an equal number
+  // of pixels on each side as otherwise the text looks off-center. So if the
+  // padding would be uneven, clip one pixel off the right side.
+  int badge_width = icon.width();
+  if ((SkScalarRoundToInt(text_width) % 1) != (badge_width % 1))
+    badge_width--;
+
+  // Render the badge bitmap and overlay into a canvas.
+  scoped_ptr<gfx::Canvas> canvas(new gfx::Canvas(
+      gfx::Size(badge_width, icon.height()), ui::SCALE_FACTOR_100P, false));
+  canvas->DrawImageInt(gfx::ImageSkia::CreateFrom1xBitmap(icon), 0, 0);
+
+  // Draw the text overlay centered horizontally and vertically. Skia expects
+  // us to specify the lower left coordinate of the text box, which is why we
+  // add 'font_size - 1' to the height.
+  SkScalar x = (badge_width - text_width)/2;
+  SkScalar y = (icon.height() - font_size)/2 + font_size - 1;
+  canvas->sk_canvas()->drawText(
+      badge_text.c_str(), badge_text.size(), x, y, *paint);
+
+  // Return the generated image.
+  return canvas->ExtractImageRep().sk_bitmap();
+}
+
+// Get badge rect
+// Code repetition
+gfx::Rect BadgeRect(const gfx::Rect& bounds,
+                    const std::string& text,
+                    int icon_width) {
+  if (text.empty())
+   return gfx::Rect(0, 0);
+
+  SkPaint* text_paint = badge_util::GetBadgeTextPaintSingleton();
+  text_paint->setTextSize(SkFloatToScalar(kTextSize));
+
+  // Calculate text width. We clamp it to a max size.
+  SkScalar sk_text_width = text_paint->measureText(text.c_str(), text.size());
+  int text_width = std::min(kMaxTextWidth, SkScalarFloorToInt(sk_text_width));
+
+  // Calculate badge size. It is clamped to a min width just because it looks
+  // silly if it is too skinny.
+  int badge_width = text_width + kPadding * 2;
+  // Force the pixel width of badge to be either odd (if the icon width is odd)
+  // or even otherwise. If there is a mismatch you get http://crbug.com/26400.
+  if (icon_width != 0 && (badge_width % 2 != icon_width % 2))
+    badge_width += 1;
+  badge_width = std::max(kBadgeHeight, badge_width);
+
+  // Paint the badge background color in the right location. It is usually
+  // right-aligned, but it can also be center-aligned if it is large.
+  int rect_height = kBadgeHeight;
+  int bottom_margin = kBottomMarginPageAction;
+  int rect_y = bounds.bottom() - bottom_margin - kBadgeHeight;
+  int rect_width = badge_width;
+  int rect_x = (badge_width >= kCenterAlignThreshold) ?
+      bounds.x() + (bounds.width() - badge_width) / 2 :
+      bounds.right() - badge_width;
+
+  return gfx::Rect(rect_x-1, rect_y-1, rect_width, rect_height);
+}
+
 void PaintBadge(gfx::Canvas* canvas,
                 const gfx::Rect& bounds,
                 const std::string& text,
@@ -100,15 +189,12 @@ void PaintBadge(gfx::Canvas* canvas,
                 int icon_width,
                 extensions::ActionInfo::Type action_type) {
   if (text.empty())
-    return;
+   return;
 
-  SkColor text_color = text_color_in;
-  if (SkColorGetA(text_color_in) == 0x00)
-    text_color = SK_ColorWHITE;
+  SkColor text_color = SK_ColorWHITE;
 
-  SkColor background_color = background_color_in;
-  if (SkColorGetA(background_color_in) == 0x00)
-      background_color = SkColorSetARGB(255, 218, 0, 24);
+  SkColor background_color_bottom = SkColorSetARGB(0xff, 0x9d, 0x00, 0x00);
+  SkColor background_color_top    = SkColorSetARGB(0xff, 0xfb, 0x00, 0x00);
 
   canvas->Save();
 
@@ -140,41 +226,58 @@ void PaintBadge(gfx::Canvas* canvas,
   int rect_x = (badge_width >= kCenterAlignThreshold) ?
       bounds.x() + (bounds.width() - badge_width) / 2 :
       bounds.right() - badge_width;
-  gfx::Rect rect(rect_x, rect_y, rect_width, rect_height);
+  gfx::Rect rect(rect_x, rect_y, rect_width-2, rect_height-2);
 
+  // Draw background
+  SkPoint pts[2] = { { 0, rect_y + rect_height }, { 0, rect_y } };
+  SkColor colors[2] = { background_color_bottom, background_color_top };
+  skia::RefPtr<SkShader> gradient_shader = skia::AdoptRef(
+      SkGradientShader::CreateLinear(pts, colors, NULL, 2,
+                                     SkShader::kClamp_TileMode));
   SkPaint rect_paint;
   rect_paint.setStyle(SkPaint::kFill_Style);
   rect_paint.setAntiAlias(true);
-  rect_paint.setColor(background_color);
-  canvas->DrawRoundRect(rect, 2, rect_paint);
+  rect_paint.setShader(gradient_shader.get());
+  canvas->DrawRoundRect(rect, 8, rect_paint);
 
-  // Overlay the gradient. It is stretchy, so we do this in three parts.
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  gfx::ImageSkia* gradient_left = rb.GetImageSkiaNamed(
-      IDR_BROWSER_ACTION_BADGE_LEFT);
-  gfx::ImageSkia* gradient_right = rb.GetImageSkiaNamed(
-      IDR_BROWSER_ACTION_BADGE_RIGHT);
-  gfx::ImageSkia* gradient_center = rb.GetImageSkiaNamed(
-      IDR_BROWSER_ACTION_BADGE_CENTER);
+  // Add highlight
+  canvas->Save();
+  // Add clip
+  SkPath path;
+  path.addRoundRect(gfx::RectToSkRect(rect),
+                    SkIntToScalar(8), SkIntToScalar(8));
+  canvas->ClipPath(path);
+  rect.set_y(rect.y()-rect.height()/2);
+  rect_paint.setShader(NULL);
+  rect_paint.setColor(SkColorSetARGB(0x4c, 0xff, 0xff, 0xff));
+  canvas->DrawRoundRect(rect, 8, rect_paint);
+  rect.set_y(rect.y()+rect.height()/2);
+  canvas->Restore();
 
-  canvas->DrawImageInt(*gradient_left, rect.x(), rect.y());
-  canvas->TileImageInt(*gradient_center,
-      rect.x() + gradient_left->width(),
-      rect.y(),
-      rect.width() - gradient_left->width() - gradient_right->width(),
-      rect.height());
-  canvas->DrawImageInt(*gradient_right,
-      rect.right() - gradient_right->width(), rect.y());
+  // Draw outline with shadow
+  skia::RefPtr<SkBlurDrawLooper> blur_looper = skia::AdoptRef(
+      SkBlurDrawLooper::Create(SkIntToScalar(1), SkIntToScalar(0), SkIntToScalar(1),
+            SkColorSetARGB(0x66, 0x00, 0x00, 0x00), // 40% transparent black
+            SkBlurDrawLooper::kIgnoreTransform_BlurFlag |
+              SkBlurDrawLooper::kOverrideColor_BlurFlag |
+              SkBlurDrawLooper::kHighQuality_BlurFlag));
+  rect_paint.setShader(NULL);
+  rect_paint.setLooper(blur_looper.get());
+  rect_paint.setStyle(SkPaint::kStroke_Style);
+  rect_paint.setStrokeWidth(2);
+  rect_paint.setColor(SK_ColorWHITE);
+  canvas->DrawRoundRect(rect, 8, rect_paint);
 
   // Finally, draw the text centered within the badge. We set a clip in case the
   // text was too large.
+  gfx::Rect rect2(rect_x-1, rect_y+1, rect_width, rect_height);
   rect.Inset(kPadding, 0);
   canvas->ClipRect(rect);
   canvas->sk_canvas()->drawText(
       text.c_str(), text.size(),
-      SkFloatToScalar(rect.x() +
-                      static_cast<float>(rect.width() - text_width) / 2),
-      SkFloatToScalar(rect.y() + kTextSize + kTopTextPadding),
+      SkFloatToScalar(rect2.x() +
+                      static_cast<float>(rect2.width() - text_width) / 2),
+      SkFloatToScalar(rect2.y() + kTextSize + kTopTextPadding),
       *text_paint);
   canvas->Restore();
 }

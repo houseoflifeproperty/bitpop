@@ -110,7 +110,7 @@ CrxInstaller::CrxInstaller(
     scoped_ptr<ExtensionInstallPrompt> client,
     const WebstoreInstaller::Approval* approval)
     : install_directory_(service_weak->install_directory()),
-      install_source_(Manifest::INTERNAL),
+      install_source_(Manifest::COMPONENT),
       approved_(false),
       expected_manifest_check_level_(
           WebstoreInstaller::MANIFEST_CHECK_LEVEL_STRICT),

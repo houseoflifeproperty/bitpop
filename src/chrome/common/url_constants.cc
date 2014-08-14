@@ -342,7 +342,7 @@ const char kExtensionResourceInvalidRequestURL[] =
     "chrome-extension-resource://invalid/";
 
 const char kSyncGoogleDashboardURL[] =
-    "https://www.google.com/settings/chrome/sync/";
+    "https://sync.bitpop.com/reset_sync_data/";
 
 const char kAutoPasswordGenerationLearnMoreURL[] =
     "https://support.google.com/chrome/?p=ui_generate_password";
@@ -605,6 +605,7 @@ const char* const kChromeHostURLs[] = {
   kChromeUIInspectHost,
   kChromeUIPluginsHost,
   kChromeUISettingsHost,
+  kChromeUIBitpopSettingsHost,
 #endif
 #if defined(OS_WIN)
   kChromeUIConflictsHost,
@@ -715,5 +716,20 @@ const char kMac32BitDeprecationURL[] =
 const char kEasyUnlockLearnMoreUrl[] =
     "https://support.google.com/chromebook/?p=easy_unlock";
 const char kEasyUnlockManagementUrl[] = "https://chrome.com";
+
+// BitPop mod constants
+const char kFacebookChatExtensionPrefixURL[] =
+    //"chrome-extension://gbldbegolgpdenofnibkpmffbpnmgppc/";
+    "chrome-extension://engefnlnhcgeegefndkhijjfdfbpbeah/";
+
+const char kFacebookChatExtensionSidebarPage[] = "friends_sidebar.html";
+
+const char kFacebookChatExtensionChatPage[] = "chat.html";
+
+const char kChromeUIBitpopSettingsFrameURL[] = "chrome://bitpop-settings-frame/";
+const char kChromeUIBitpopSettingsFrameHost[] = "bitpop-settings-frame";
+
+const char kChromeUIBitpopSettingsURL[] = "chrome://bitpop-settings";
+const char kChromeUIBitpopSettingsHost[] = "bitpop-settings";
 
 }  // namespace chrome

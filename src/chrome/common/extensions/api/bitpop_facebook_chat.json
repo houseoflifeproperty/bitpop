@@ -1,0 +1,130 @@
+[
+  {
+    "namespace": "bitpopFacebookChat",
+    "compiler_options": {
+      "implemented_in": "chrome/browser/extensions/api/bitpop_facebook_chat/bitpop_facebook_chat_api.h"
+    },
+    "nodoc": true,
+    "description": "Apis related to facebook chat integration in BitPop browser",
+    "functions": [
+      {
+        "name": "setFriendsSidebarVisible",
+        "type": "function",
+        "description": "Can show and hide the friends sidebar in browser",
+        "parameters": [
+          {
+            "name": "is_visible",
+            "type": "boolean",
+            "optional": false,
+            "description": "Visibility flag"
+          }
+        ]
+      },
+      {
+        "name": "getFriendsSidebarVisible",
+        "type": "function",
+        "description": "Gets the visibility state of the friends sidebar",
+        "parameters": [
+        {
+          "type": "function", "name": "callback", "parameters": [
+            {
+              "name": "is_visible",
+              "type": "boolean",
+              "optional": false,
+              "description": "Visibility flag"
+            }
+          ]
+        }]
+      },
+      {
+        "name": "addChat",
+        "type": "function",
+        "description": "Adds a new chat button and popup to the chatbar.",
+        "parameters": [
+          {
+            "name": "jid",
+            "type": "string",
+            "optional": false,
+            "description": "New chat JID"
+          },
+          {
+            "name": "username",
+            "type": "string",
+            "optional": false,
+            "description": "New chat username"
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "optional": false,
+            "description": "New chat user status string"
+          }
+        ]
+      },
+      {
+        "name": "newIncomingMessage",
+        "type": "function",
+        "description": "Notifies BitPop internals new facebook chat message has arrived",
+        "parameters": [
+          {
+            "name": "id",
+            "type": "string",
+            "optional": false,
+            "description": "Message ID"
+          },
+          {
+            "name": "jid",
+            "type": "string",
+            "optional": false,
+            "description": "Incoming message 'from' JID"
+          },
+          {
+            "name": "username",
+            "type": "string",
+            "optional": false,
+            "description": "Incoming message 'from' username"
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "optional": false,
+            "description": "Incoming message user status string"
+          },
+          {
+            "name": "message",
+            "type": "string",
+            "optional": false,
+            "description": "Incoming message text"
+          }
+        ]
+      },
+      {
+        "name": "loggedOutFacebookSession",
+        "type": "function",
+        "description": "Notifies BitPop user logged out of current chat session",
+        "type": "function",
+        "parameters": []
+      },
+      {
+        "name": "loggedInFacebookSession",
+        "type": "function",
+        "description": "Notifies BitPop user logged in to chat session",
+        "type": "function",
+        "parameters": []
+      },
+      {
+        "name": "setGlobalMyUidForProfile",
+        "type": "function",
+        "description": "Sets _me_ user id for facebook globally",
+        "parameters": [
+          {
+            "name": "uid",
+            "type": "string",
+            "optional": false,
+            "description": "Actual uid"
+          }
+        ]
+      }
+    ]
+  }
+]

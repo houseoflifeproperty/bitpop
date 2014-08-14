@@ -1,0 +1,100 @@
+<!--
+// BitPop browser. Facebook chat integration part.
+// Copyright (C) 2014 BitPop AS
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<html>
+<head>
+  <link rel="stylesheet" href="css/jewel-style.css" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="css/antiscroll.css" type="text/css" media="screen" charset="utf-8">
+  <style type="text/css">
+    /*html, body {
+      width: 350px;
+      height: 300px;
+    }
+    */
+    .snippet img {
+      padding-right: 3px;
+      vertical-align: middle;
+    }
+    .loading {
+      position: relative;
+      width: 350px;
+      height: 200px;
+      background-image: url('images/indicator_white_large.gif');
+      background-attachment:fixed;
+      background-repeat:no-repeat;
+      background-position: center center;
+    }
+
+    #slide-wrap {
+      float: left;
+      width: 350px;
+      overflow:hidden
+    }
+    #inner-wrap {
+      float: left;
+      margin-right: -30000px;
+    }
+    .content-item {
+      float:left;
+      width: 350px;
+    }
+    .antiscroll-inner {
+      width: 350px;
+      height: 240px;
+    }
+  </style>
+  <script src="js/jquery.min.js"></script>
+  <script src="js/options.js"></script>
+  <script src="js/local-cache.js"></script>
+  <script src="js/humane.js"></script>
+  <script src="js/antiscroll.js"></script>
+  <script src="js/popup.js"></script>
+
+</head>
+<body>
+  <div id="header">
+    <div class='title'>Messages</div>
+    <div id="send-new" class='action'>Send a New Message</div>
+  </div>
+
+  <div id="slide-wrap">
+    <div id="inner-wrap">
+      <div class="content-item loading">
+        <div id="feed" class="feed"></div>
+      </div>
+      <div id="thread" class="content-item">
+        <div class="thread-header">
+          <a id="back-to-summary" href="#">Back To Summary</a>
+        </div>
+        <div class="loading">
+          <div class="box-wrap antiscroll-wrap">
+            <div class="box">
+              <div class="antiscroll-inner">
+                <div class="box-inner" id="scrollable-area">
+                  <div id="thread-feed" class="feed"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="footer"></div>
+</body>
+</html>

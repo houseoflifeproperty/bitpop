@@ -22,7 +22,7 @@
 
 namespace {
 
-const wchar_t kChromeAppHostGuid[] = L"{FDA71E6F-AC4C-4a00-8B70-9958A68906BF}";
+const wchar_t kChromeAppHostGuid[] = L"{030FD373-FCBE-412C-AE78-5FD34788F153}";
 
 }  // namespace
 

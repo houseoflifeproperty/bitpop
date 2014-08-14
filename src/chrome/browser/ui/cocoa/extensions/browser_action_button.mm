@@ -13,12 +13,19 @@
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_action_context_menu_controller.h"
+#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/pref_names.h"
+#include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/common/extension.h"
+#include "grit/theme_resources.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
@@ -55,6 +62,9 @@ class ExtensionActionIconFactoryBridge
     registrar_.Add(
         this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
         content::Source<ExtensionAction>(browser_action_));
+    registrar_.Add(
+        this, content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
+        content::Source<Profile>(profile));
   }
 
   virtual ~ExtensionActionIconFactoryBridge() {}
@@ -71,7 +81,12 @@ class ExtensionActionIconFactoryBridge
       const content::NotificationDetails& details) OVERRIDE {
     if (type == chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED)
       [owner_ updateState];
-    else
+    else if (type == content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED) {
+      if (owner_.isCustomExtension) {
+        content::Details<bool> detailsBool(details);
+        owner_.shouldDrawAsPushed = (*detailsBool.ptr()) ? YES : NO;
+      }
+    } else
       NOTREACHED();
   }
 
@@ -111,6 +126,8 @@ class ExtensionActionIconFactoryBridge
 @synthesize isBeingDragged = isBeingDragged_;
 @synthesize extension = extension_;
 @synthesize tabId = tabId_;
+@synthesize shouldDrawAsPushed = shouldDrawAsPushed_;
+@synthesize isCustomExtension = isCustomExtension_;
 
 + (Class)cellClass {
   return [BrowserActionCell class];
@@ -121,6 +138,8 @@ class ExtensionActionIconFactoryBridge
             browser:(Browser*)browser
               tabId:(int)tabId {
   if ((self = [super initWithFrame:frame])) {
+    isCustomExtension_ =
+        extension->id() == extension_misc::kFacebookChatExtensionId;
     BrowserActionCell* cell = [[[BrowserActionCell alloc] init] autorelease];
     // [NSButton setCell:] warns to NOT use setCell: other than in the
     // initializer of a control.  However, we are using a basic
@@ -160,6 +179,12 @@ class ExtensionActionIconFactoryBridge
     [contextMenu setDelegate:self];
     [self setMenu:contextMenu];
 
+    if (isCustomExtension_) {
+      PrefService *prefService = browser->profile()->GetPrefs();
+      [self setShouldDrawAsPushed:
+          prefService->GetBoolean(prefs::kFacebookShowFriendsList)];
+    }
+
     tabId_ = tabId;
     extension_ = extension;
     iconFactoryBridge_.reset(new ExtensionActionIconFactoryBridge(
@@ -181,9 +206,16 @@ class ExtensionActionIconFactoryBridge
 }
 
 - (void)mouseDown:(NSEvent*)theEvent {
-  [[self cell] setHighlighted:YES];
-  dragCouldStart_ = YES;
-  dragStartPoint_ = [theEvent locationInWindow];
+  if (extension_->id() != extension_misc::kFacebookChatExtensionId &&
+      extension_->id() != extension_misc::kFacebookMessagesExtensionId &&
+      extension_->id() != extension_misc::kFacebookNotificationsExtensionId) {
+    [[self cell] setHighlighted:YES];
+    dragCouldStart_ = YES;
+    dragStartPoint_ = [theEvent locationInWindow];
+  }
+
+  if (extension_->id() == extension_misc::kFacebookChatExtensionId)
+    [[self cell] setHighlighted:YES];
 }
 
 - (void)mouseDragged:(NSEvent*)theEvent {
@@ -223,6 +255,10 @@ class ExtensionActionIconFactoryBridge
   if (NSPointInRect(location, [self bounds]) && !isBeingDragged_) {
     // Only perform the click if we didn't drag the button.
     [self performClick:self];
+    if (isCustomExtension_) {
+      ImageButtonCell *imageCell = (ImageButtonCell*)[self cell];
+      [imageCell setIsMouseInside:NO];
+    }
   } else {
     // Make sure an ESC to end a drag doesn't trigger 2 endDrags.
     if (isBeingDragged_) {
@@ -237,7 +273,8 @@ class ExtensionActionIconFactoryBridge
   isBeingDragged_ = NO;
   [[NSNotificationCenter defaultCenter]
       postNotificationName:kBrowserActionButtonDragEndNotification object:self];
-  [[self cell] setHighlighted:NO];
+  if (!shouldDrawAsPushed_)
+    [[self cell] setHighlighted:NO];
 }
 
 - (void)setFrame:(NSRect)frameRect animate:(BOOL)animate {
@@ -313,6 +350,11 @@ class ExtensionActionIconFactoryBridge
 
   [image unlockFocus];
   return image;
+}
+
+- (void)setShouldDrawAsPushed:(BOOL)pushed {
+  [[self cell] setHighlighted:pushed];
+  shouldDrawAsPushed_ = pushed;
 }
 
 - (void)menuNeedsUpdate:(NSMenu*)menu {

@@ -19,6 +19,7 @@ class FirstRunBubble : public views::BubbleDelegateView,
  protected:
   // views::BubbleDelegateView overrides:
   virtual void Init() OVERRIDE;
+  virtual void OnWidgetActivationChanged(views::Widget* widget, bool active) OVERRIDE;
 
  private:
   FirstRunBubble(Browser* browser, views::View* anchor_view);

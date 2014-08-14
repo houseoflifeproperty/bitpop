@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<!--
+// BitPop browser. Facebook chat integration part.
+// Copyright (C) 2014 BitPop AS
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<html>
+<head>
+  <title>Uncensor Filter Options</title>
+  <meta name="Content-type" http-equiv="text/html; charset=utf-8" />
+  <script type="text/javascript" src="js/options.js"></script>
+  <link rel="stylesheet" media="all" href="css/checkbox.css" />
+  <link rel="stylesheet" media="all" href="css/chrome_shared.css" />
+  <link rel="stylesheet" media="all" href="css/options.css" />
+
+</head>
+<body style="font-family: Arial, sans-serif; ">
+  <div id="navbar-container" style="left: 0px; ">
+    <h1 id="navbar-content-title">Settings</h1>
+    <ul id="navbar">
+      <li class="navbar-item navbar-item-selected">General</li>
+      <li id="navToSettings" class="navbar-item" style="padding-top: 50px">Back to main settings</li>
+    </ul>
+  </div>
+  <div id="mainview">
+    <div id="mainview-content"><div id="toplevel-page-container">
+      <div id="uncensorPage" class="page">
+        <h1 id="uncensorPageHeader">Uncensor Options</h1>
+        <h3 id="uncensorPageDescription">Uncensor Filter will redirect you to new locations of unlawfully censored sites.</h3>
+        <section>
+          <h3 id="uncensorFilterControl">Filter control</h3>
+          <div>
+            <div class="radio">
+              <label><input type="radio" id="uncensor_always_redirect" name="shouldRedirect" value="1">
+                <span id="uncensorAlwaysRedirectOn">Always redirect / ON</span></label>
+            </div>
+            <div class="radio">
+              <label><input type="radio" id="uncensor_never_redirect" name="shouldRedirect" value="0">
+                <span id="uncensorNeverRedirectOff">Never redirect / OFF</span></label>
+            </div>
+          </div>
+        </section>
+        <section>
+          <h3 id="uncensorNotices">Notices</h3>
+          <div>
+            <div class="checkbox">
+              <label><input type="checkbox" id="uncensor_show_message" name="showMessage">
+                <span id="uncensorShowMessage">Show message when redirected</span></label>
+            </div>
+            <div class="checkbox">
+              <label><input type="checkbox" id="uncensor_notify_update" name="notifyUpdate">
+                <span id="uncensorNotifyUpdates">Be notified when list updates</span></label>
+            </div>
+          </div>
+        </section>
+        <section>
+          <h3 id="uncensorTheFilter">The filter</h3>
+          <div>
+            <table id="domain_filter_table">
+              <thead><tr>
+                <th>&nbsp;</th>
+                <th id="uncensorOriginalDomain">Original domain</th>
+                <th id="uncensorNewLocation">New location</th>
+              </tr></thead>
+            </table>
+          </div>
+        </section>
+        <section>
+          <h3 id="uncensorExceptions">Exceptions</h3>
+          <div>
+            <table id="domain_exceptions_table">
+              <thead><tr>
+                <th>&nbsp;</th>
+                <th id="uncensorOriginalDomainExceptions">Original domain</th>
+                <th id="uncensorNewLocationExceptions">New location</th>
+              </tr></thead>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div></div>
+  </div>
+</body>
+</html>

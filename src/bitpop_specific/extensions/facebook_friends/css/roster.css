@@ -1,0 +1,221 @@
+/*
+  BitPop browser. Facebook chat integration part.
+  Copyright (C) 2014 BitPop AS
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+html {
+  -webkit-user-select: none;
+  -webkit-border-start: 1px solid #c6c9ce;
+  background: -webkit-linear-gradient(rgba(234, 238, 243, 0.2), #eaeef3), 
+              -webkit-linear-gradient(right, #eaeef3, #eaeef3 97%, #d3d7db) repeat-y;
+}
+
+html, body {
+  font-family: Helvetica,Arial,sans-serif;
+  font-size: 12px;
+  height: 100%;
+  width: 185px;
+  overflow: hidden;
+}
+
+.root-ember-container,
+.chat-dock-wrapper,
+.roster {
+  height: 100%;
+}
+
+ul.smart-list {
+  list-style-type: none;
+  -webkit-user-select: none;
+  user-select: none;
+  margin: 0;
+  padding: 0;
+}
+
+ul.smart-list li {
+  display: block;
+  margin: 0;
+  width: 100%;
+  cursor: pointer;
+  position: relative;
+  float:left;
+  clear: both;
+}
+
+ul.smart-list li .wrap-item {
+  padding: 3px;
+  border-bottom: 1px solid #ccc;
+  width: 177px;
+  float: left;
+}
+
+.smart-list li.friend {
+  position: relative;
+  overflow-y: hidden;
+}
+
+.smart-list li.friend:hover {
+  background-color: lightblue;
+}
+
+.smart-list li.friend a {
+  color: inherit;
+  display: block;
+  float:left;
+  clear:left;
+}
+
+.smart-list li.friend a img {
+  width: 25px;
+  height: 25px;
+  padding-right: 5px;
+  vertical-align: middle;
+  display:inline-block;
+  float: left;
+}
+
+.smart-list li.friend a span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 117px;
+  line-height: 25px;
+  display: inline-block;
+  float: left;
+  clear: right;
+}
+
+.smart-list li.online-fav-divider {
+  background: url(../images/chat/more_online_bgr.png) left center no-repeat;
+  text-align: center;
+  color: #888;
+  font-weight: bold;
+  font-size: 10px;
+}
+
+.smart-list li.online-fav-divider:hover {
+  background-color: none;
+}
+
+.smart-list li.friend .status-indicator {
+  width: 12px;
+  height: 12px;
+  margin-left: 3px;
+  position: absolute;
+  right: 4px;
+  top: 8px;
+}
+
+.smart-list li.friend.friend-online .status-indicator {
+  background-image: url(../images/chat/active.png);
+}
+
+.smart-list li.friend.friend-idle .status-indicator {
+  background-image: url(../images/chat/idle.png);
+}
+
+.smart-list .head {
+  background: -webkit-linear-gradient(top, #f6f8f9 0%,#e5ebee 50%,#d7dee3 51%,#f5f7f9 100%);
+  color: black;
+}
+
+.smart-list .head .wrap-item {
+  padding: 3px 4px;
+  border-bottom: solid 1px white;
+}
+
+.smart-list .head .toggle-button {
+  -webkit-transition: -webkit-transform 0.2s ease-in;
+  font-size: small;
+  cursor: pointer;
+  display: inline-block;
+  width: 15px;
+}
+
+.smart-list .head.head-off .toggle-button {
+  -webkit-transform: rotate(-90deg) translateX(2px);
+}
+
+.smart-list .head span {
+  font-weight: bold;
+}
+
+.smart-list li.head.head-online.head-off ~ .friend-online,
+.smart-list li.head.head-online.head-off ~ .online-fav-divider,
+.smart-list li.head.head-idle.head-off ~ .friend-idle,
+.smart-list li.head.head-offline.head-off ~ .friend-offline {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border: none;
+}
+
+.fav-toggle-button {
+  display: none;
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  top: 8px;
+  right: 20px;
+}
+
+.friend.friend-fav:hover .fav-toggle-button {
+  display: block;
+  background: url(../images/chat/fav12.png) left top no-repeat;
+}
+
+.friend:hover .fav-toggle-button {
+  display: block;
+  background: url(../images/chat/fav12-unsel.png) left top no-repeat;
+}
+/*
+.smart-list li.friend {
+  -webkit-perspective: 1000;
+}
+
+@-webkit-keyframes itemCreated {
+    from { -webkit-transform: rotateX(180deg); }
+    to { -webkit-transform: rotateX(0deg); }
+}
+
+.smart-list li.friend .wrap-entry {
+  position: relative;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  -webkit-animation: itemCreated 1800ms;
+  -webkit-transform-style: preserve-3d;
+  -webkit-backface-visibility: hidden;
+  float: left;
+  width: 100%;
+  overflow: visible;
+}
+
+.smart-list li.friend .wrap-entry:after {
+    content: '';
+    right: 0px;
+    bottom: 0px;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    background: -webkit-linear-gradient(top, #f6f8f9 0%,#e5ebee 50%,#d7dee3 51%,#f5f7f9 100%);
+    -webkit-transform: rotateX( 180deg );
+    -webkit-transform-style: preserve-3d;
+    -webkit-backface-visibility: hidden;
+    margin: -3px;
+}
+*/

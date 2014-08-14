@@ -12,10 +12,28 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/external_provider_impl.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/pref_names.h"
+
+namespace {
+
+void AddAllBitpopExtensions(extensions::ExternalPolicyLoader* loader,
+                            base::DictionaryValue* dict) {
+  // Google Docs
+  loader->AddExtension(dict, extension_misc::kGoogleDocsExtensionId,
+               "http://clients2.google.com/service/update2/crx");
+  // Share button
+  loader->AddExtension(dict, extension_misc::kFacebookShareExtensionId,
+               "http://tools.bitpop.com/ext/updates.xml");
+  // Dropdown list
+  loader->AddExtension(dict, extension_misc::kDropdownListExtensionId,
+               "http://tools.bitpop.com/ext/updates.xml");
+}
+
+}
 
 namespace extensions {
 
@@ -59,7 +77,15 @@ void ExternalPolicyLoader::Observe(
 void ExternalPolicyLoader::StartLoading() {
   const base::DictionaryValue* forcelist =
       profile_->GetPrefs()->GetDictionary(pref_names::kInstallForceList);
-  prefs_.reset(forcelist ? forcelist->DeepCopy() : NULL);
+  if (!forcelist) {
+    scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue());
+    AddAllBitpopExtensions(this, dict.get());
+    prefs_.reset(dict.release());
+  } else {
+    base::DictionaryValue* val = forcelist->DeepCopy();
+    AddAllBitpopExtensions(this, val);
+    prefs_.reset(val);
+  }
   LoadFinished();
 }
 

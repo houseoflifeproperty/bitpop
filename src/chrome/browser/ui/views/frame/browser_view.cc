@@ -19,7 +19,19 @@
 #include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/extension_action.h"
+#include "chrome/browser/extensions/extension_action_manager.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/tab_helper.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
+#include "chrome/browser/facebook_chat/facebook_chatbar.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
+#include "chrome/browser/facebook_chat/facebook_chat_item.h"
+#include "chrome/browser/facebook_chat/received_message_info.h"
+#include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/native_window_notification_source.h"
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
@@ -48,6 +60,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window_state.h"
+#include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/browser/ui/ntp_background_util.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_popup_view.h"
@@ -66,6 +79,9 @@
 #include "chrome/browser/ui/views/download/download_in_progress_dialog_view.h"
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
 #include "chrome/browser/ui/views/extensions/bookmark_app_bubble_view.h"
+#include "chrome/browser/ui/views/facebook_chat/chatbar_view.h"
+#include "chrome/browser/ui/views/facebook_chat/facebook_bitpop_notification_win.h"
+#include "chrome/browser/ui/views/facebook_chat/friends_sidebar_view.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout_delegate.h"
 #include "chrome/browser/ui/views/frame/contents_layout_manager.h"
@@ -95,6 +111,7 @@
 #include "chrome/browser/ui/views/website_settings/website_settings_popup_view.h"
 #include "chrome/browser/ui/website_settings/permission_bubble_manager.h"
 #include "chrome/browser/ui/window_sizer/window_sizer.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -395,6 +412,7 @@ BrowserView::BrowserView()
       contents_web_view_(NULL),
       contents_container_(NULL),
       devtools_window_(NULL),
+      fb_friend_list_sidebar_(NULL),
       initialized_(false),
       in_process_fullscreen_(false),
 #if defined(OS_WIN)
@@ -406,6 +424,14 @@ BrowserView::BrowserView()
       scroll_end_effect_controller_(ScrollEndEffectController::Create()),
 #endif
       activate_modal_dialog_factory_(this) {
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT,
+                 content::Source<Profile>(browser_->profile()));
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
+                 content::Source<Profile>(browser_->profile()));
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT,
+                 content::Source<Profile>(browser_->profile()));
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN,
+                 content::Source<Profile>(browser_->profile()));
 }
 
 BrowserView::~BrowserView() {
@@ -438,6 +464,11 @@ BrowserView::~BrowserView() {
   if (browser_view_layout)
     browser_view_layout->set_download_shelf(NULL);
   download_shelf_.reset();
+
+  // or else we will have two scoped_ptr destructors deleting our fb_chatbar_
+  fb_chatbar_.reset();
+  // ... and fb_friend_list_sidebar_
+  fb_friend_list_sidebar_.reset();
 
   // The TabStrip attaches a listener to the model. Make sure we shut down the
   // TabStrip first so that it can cleanly remove the listener.
@@ -1406,6 +1437,136 @@ views::View* BrowserView::GetTabContentsContainerView() const {
 ToolbarView* BrowserView::GetToolbarView() const {
   return toolbar_;
 }
+<<<<<<< HEAD
+
+///////////////////////////////////////////////////////////////////////////////
+// BrowserView, NotificationObserver implementation:
+
+void BrowserView::Observe(int type,
+                          const content::NotificationSource& source,
+                          const content::NotificationDetails& details) {
+  switch (type) {
+    // TODO: remove code duplication (here and in cocoa/browser_window_cocoa.mm)
+    case content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT: {
+      if (browser_->is_type_tabbed() && !browser_->profile()->IsOffTheRecord()) {
+          content::Details<FacebookChatCreateInfo> chat_info(details);
+          FacebookChatManager *mgr = FacebookChatManagerServiceFactory::GetForProfile(browser_->profile());
+          if (mgr) {
+            // the next call returns the found element if jid's equal
+            FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
+            if (IsActive() && !browser_->fullscreen_controller()->IsFullscreenForTabOrPending())
+              newItem->set_needs_activation(true);
+            else
+              newItem->set_needs_activation(false);
+            GetChatbar()->AddChatItem(newItem);
+            //mgr->StartChat(newItem->jid());
+          }
+        }
+      }
+      break;
+
+    case content::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE: {
+        if (browser_->is_type_tabbed() && !browser_->profile()->IsOffTheRecord()) {
+          content::Details<ReceivedMessageInfo> msg_info(details);
+          FacebookChatManager *mgr =
+              FacebookChatManagerServiceFactory::GetForProfile(browser_->profile());
+          if (mgr) {
+            FacebookChatItem *item = mgr->GetItem(msg_info->chatCreateInfo->jid);
+            item->set_needs_activation(false);
+            GetChatbar()->AddChatItem(item);
+          }
+        }
+      }
+      break;
+
+    case content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT:
+      if (browser_->is_type_tabbed() && !browser_->profile()->IsOffTheRecord()) {
+        GetChatbar()->RemoveAll();
+      }
+      if (toolbar_ && toolbar_->browser_actions()) {
+        toolbar_->browser_actions()->HideFacebookExtensions();
+      }
+      break;
+
+    case content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN:
+      if (toolbar_ && toolbar_->browser_actions() && !browser_->profile()->IsOffTheRecord()) {
+        toolbar_->browser_actions()->ShowFacebookExtensions();
+      }
+      break;
+
+    default:
+      NOTREACHED() << "Got a notification we didn't register for!";
+      break;
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// BrowserView, TabStripModelObserver implementation:
+
+void BrowserView::TabDetachedAt(WebContents* contents, int index) {
+  // We use index here rather than comparing |contents| because by this time
+  // the model has already removed |contents| from its list, so
+  // browser_->GetActiveWebContents() will return NULL or something else.
+  if (index == browser_->active_index()) {
+    // We need to reset the current tab contents to NULL before it gets
+    // freed. This is because the focus manager performs some operations
+    // on the selected WebContents when it is removed.
+    contents_container_->SetWebContents(NULL);
+    infobar_container_->ChangeTabContents(NULL);
+    UpdateDevToolsForContents(NULL);
+  }
+}
+
+void BrowserView::TabDeactivated(WebContents* contents) {
+  // We do not store the focus when closing the tab to work-around bug 4633.
+  // Some reports seem to show that the focus manager and/or focused view can
+  // be garbage at that point, it is not clear why.
+  if (!contents->IsBeingDestroyed())
+    contents->GetView()->StoreFocus();
+}
+
+void BrowserView::ActiveTabChanged(content::WebContents* old_contents,
+                                   content::WebContents* new_contents,
+                                   int index,
+                                   bool user_gesture) {
+  DCHECK(new_contents);
+
+  // See if the Instant preview is being activated (committed).
+  if (contents_->preview_web_contents() == new_contents) {
+    contents_->MakePreviewContentsActiveContents();
+    views::WebView* old_container = contents_container_;
+    contents_container_ = preview_controller_->release_preview();
+    old_container->SetWebContents(NULL);
+    delete old_container;
+  }
+
+  // If |contents_container_| already has the correct WebContents, we can save
+  // some work.  This also prevents extra events from being reported by the
+  // Visibility API under Windows, as ChangeWebContents will briefly hide
+  // the WebContents window.
+  bool change_tab_contents =
+      contents_container_->web_contents() != new_contents;
+
+  // Update various elements that are interested in knowing the current
+  // WebContents.
+
+  // When we toggle the NTP floating bookmarks bar and/or the info bar,
+  // we don't want any WebContents to be attached, so that we
+  // avoid an unnecessary resize and re-layout of a WebContents.
+  if (change_tab_contents)
+    contents_container_->SetWebContents(NULL);
+  InfoBarTabHelper* new_infobar_tab_helper =
+      InfoBarTabHelper::FromWebContents(new_contents);
+  infobar_container_->ChangeTabContents(new_infobar_tab_helper);
+  if (bookmark_bar_view_.get()) {
+    bookmark_bar_view_->SetBookmarkBarState(
+        browser_->bookmark_bar_state(),
+        BookmarkBar::DONT_ANIMATE_STATE_CHANGE,
+        browser_->search_model()->mode());
+  }
+  UpdateUIForContents(new_contents);
+=======
+>>>>>>> chromium_beta
 
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserView, TabStripModelObserver implementation:
@@ -1663,8 +1824,13 @@ views::ClientView* BrowserView::CreateClientView(views::Widget* widget) {
 
 void BrowserView::OnWidgetActivationChanged(views::Widget* widget,
                                             bool active) {
-  if (active)
+  if (active) {
+    FacebookBitpopNotification *notif = FacebookBitpopNotificationServiceFactory::GetForProfile(browser_->profile());
+    if (notif)
+      notif->ClearNotification();
+    
     BrowserList::SetLastActive(browser_.get());
+  }
 }
 
 void BrowserView::OnWindowBeginUserBoundsChange() {
@@ -1689,6 +1855,9 @@ void BrowserView::OnWidgetMove() {
   // status_bubble_ may be NULL if this is invoked during construction.
   if (status_bubble_.get())
     status_bubble_->Reposition();
+
+  if (fb_chatbar_.get())
+    fb_chatbar_->Layout();
 
   BookmarkBubbleView::Hide();
 
@@ -2532,4 +2701,50 @@ int BrowserView::GetMaxTopInfoBarArrowHeight() {
     top_arrow_height = infobar_top.y() - icon_bottom.y();
   }
   return top_arrow_height;
+}
+
+void BrowserView::SetFriendsSidebarVisible(bool visible) {
+  if (browser_ == NULL || browser_->profile()->IsOffTheRecord())
+    return;
+
+  if (visible && !IsFriendsSidebarVisible()) {
+    if (!fb_friend_list_sidebar_.get())
+      fb_friend_list_sidebar_.reset(new FriendsSidebarView(browser_.get(), this));
+    fb_friend_list_sidebar_->SetVisible(true);
+  }
+  if (!visible && IsFriendsSidebarVisible())
+    fb_friend_list_sidebar_->SetVisible(false);
+
+  contents_split_->InvalidateLayout();
+  Layout();
+
+  ToolbarSizeChanged(false);
+}
+
+bool BrowserView::IsFriendsSidebarVisible() const {
+  return fb_friend_list_sidebar_.get() && fb_friend_list_sidebar_->visible();
+}
+
+void BrowserView::SetChatbarVisible(bool visible) {
+  if (browser_ == NULL)
+    return;
+
+  (void) GetChatbar();
+  if (IsChatbarVisible() != visible) {
+    fb_chatbar_->SetVisible(visible);
+  }
+
+  ToolbarSizeChanged(false);
+}
+
+bool BrowserView::IsChatbarVisible() const {
+  return fb_chatbar_.get() && fb_chatbar_->visible();
+}
+
+FacebookChatbar* BrowserView::GetChatbar() {
+  if (!fb_chatbar_.get()) {
+    fb_chatbar_.reset(new ChatbarView(browser_.get(), this));
+  }
+
+  return fb_chatbar_.get();
 }

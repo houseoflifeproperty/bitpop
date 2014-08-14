@@ -743,6 +743,8 @@ bool IsURLAllowedInIncognito(const GURL& url,
        url.host() == chrome::kChromeUIChromeSigninHost ||
 #endif
        url.host() == chrome::kChromeUIUberHost ||
+       url.host() == chrome::kChromeUIBitpopSettingsHost ||
+       url.host() == chrome::kChromeUIBitpopSettingsFrameHost ||
        url.host() == chrome::kChromeUIThumbnailHost ||
        url.host() == chrome::kChromeUIThumbnailHost2 ||
        url.host() == chrome::kChromeUIThumbnailListHost ||

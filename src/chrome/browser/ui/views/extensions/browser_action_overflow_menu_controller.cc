@@ -14,6 +14,7 @@
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
 #include "chrome/browser/ui/views/toolbar/browser_action_view.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "extensions/common/extension.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/controls/menu/menu_item_view.h"
@@ -91,6 +92,13 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
         GetTitle(owner_->GetCurrentTabId()));
     menu_->SetTooltip(tooltip, command_id);
 
+    if (view->button()->extension()->id() == extension_misc::kFacebookChatExtensionId)
+      facebook_chat_item_id_ = command_id;
+    else if (view->button()->extension()->id() == extension_misc::kFacebookMessagesExtensionId)
+      facebook_messages_item_id_ = command_id;
+    else if (view->button()->extension()->id() == extension_misc::kFacebookNotificationsExtensionId)
+      facebook_notifications_item_id_ = command_id;
+
     icon_updaters_.push_back(new IconUpdater(menu_item, view->button()));
 
     ++command_id;
@@ -104,6 +112,16 @@ BrowserActionOverflowMenuController::~BrowserActionOverflowMenuController() {
 
 bool BrowserActionOverflowMenuController::RunMenu(views::Widget* window,
                                                   bool for_drop) {
+  if (!owner_->profile()->should_show_additional_extensions() &&
+      menu_->GetMenuItemByID(facebook_messages_item_id_) &&
+      menu_->GetMenuItemByID(facebook_notifications_item_id_)) {
+    menu_->GetMenuItemByID(facebook_messages_item_id_)->SetVisible(false);
+    menu_->GetMenuItemByID(facebook_notifications_item_id_)->SetVisible(false);
+  }
+
+  if (owner_->profile()->IsOffTheRecord() && menu_->GetMenuItemByID(facebook_chat_item_id_))
+    menu_->GetMenuItemByID(facebook_chat_item_id_)->SetVisible(false);
+
   for_drop_ = for_drop;
 
   gfx::Rect bounds = menu_button_->bounds();

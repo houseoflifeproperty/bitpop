@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="tr">
 <translation id="6676384891291319759">İnternet'e erişin</translation>
@@ -39,7 +39,7 @@
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-           öğesine gidin ve yapılandırmanızın &quot;proxy yok&quot; veya &quot;doğrudan&quot; olarak ayarlandığından emin olun.</translation>
+           öğesine gidin ve yapılandırmanızın "proxy yok" veya "doğrudan" olarak ayarlandığından emin olun.</translation>
 <translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
 <translation id="7729447699958282447">Senkronizasyon alan adınızda kullanılamadığından Chromium, verilerinizi senkronize edemedi.</translation>
 <translation id="1989424089625731201">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; alanına ulaşmayı denediniz, ancak sunucunun sunduğu sertifikada hatalar var. Chromium hata içeren bir sertifikayı kullanamaz ve bağlanmak istediğiniz sitenin kimliğini doğrulayamaz.</translation>
@@ -50,7 +50,7 @@
 <translation id="5109068449432240255">Evet, Chromium'dan çık</translation>
 <translation id="1480489203462860648">Deneyin, zaten yüklü!</translation>
 <translation id="3032787606318309379">Chromium'a ekleniyor ...</translation>
-<translation id="4831257561365056138">Chromium Uygulama Başlatıcı'nın yüklemesini kaldır</translation>
+<translation id="4831257561365056138">BitPop Uygulama Başlatıcı'nın yüklemesini kaldır</translation>
 <translation id="4222580632002216401">Chromium'da oturum açtınız! Senkronizasyon, yöneticiniz tarafından devre dışı bırakıldı.</translation>
 <translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Uyarı:<ph name="END_BOLD"/>, Chromium uzantıların göz atma geçmişinizi kaydetmesini engelleyemez. Gizli modda bu uzantıyı devre dışı bırakmak için, bu seçeneğin onay işaretini kaldırın.</translation>
 <translation id="4516868174453854611">Artık oturum açtığınıza göre dizüstü bilgisayarınıza, telefonunuza ve tabletinize sekmeleri, yer işaretlerini ve diğer Chromium öğelerini alabilirsiniz. Google hizmetlerinde daha alakalı öneriler ve özellikler de alırsınız.</translation>
@@ -74,7 +74,7 @@
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
-        öğesine giderek &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>&quot; seçeneğinin işaretini kaldırın.
+        öğesine giderek "<ph name="NO_PREFETCH_DESCRIPTION"/>" seçeneğinin işaretini kaldırın.
         Bu işlem sorunu çözmüyorsa, performansın iyileşmesi için bu seçeneği
         tekrar işaretlemenizi öneririz.</translation>
 <translation id="7463979740390522693">Chromium - Bildirimler (<ph name="QUANTITY"/> okunmamış)</translation>
@@ -108,7 +108,7 @@
 <translation id="2485422356828889247">Yüklemeyi Kaldır</translation>
 <translation id="85843667276690461">Chromium'u kullanma konusunda yardım alın</translation>
 <translation id="5358375970380395591">Yönetilen bir hesapla oturum açıyor ve hesabın yöneticisine Chromium profilinizi denetleme izni veriyorsunuz. Uygulamalarınız, yer işaretleriniz, geçmişiniz, şifreleriniz ve diğer ayarlarınız gibi Chromium verileriniz kalıcı olarak <ph name="USER_NAME"/> ile bağlantılandırılacaktır. Google Hesapları Hesap Özeti'ni kullanarak bu verileri silebilecek, ancak bu verileri başka bir hesapla ilişkilendiremeyeceksiniz. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Chromium Uygulama Başlatıcı</translation>
+<translation id="9036189287518468038">BitPop Uygulama Başlatıcı</translation>
 <translation id="8493179195440786826">Chromium Sürümü Eski</translation>
 <translation id="911206726377975832">Tarama verileriniz de silinsin mi?</translation>
 <translation id="95514773681268843"><ph name="DOMAIN"/>, bu cihazı kullanmadan önce aşağıdaki Hizmet Şartları'nı okuyup kabul etmenizi gerektirmektedir. Bu şartlar, Chromium OS Şartları'nın kapsamını genişletmez, değiştirmez veya sınırlamaz.</translation>
@@ -157,7 +157,7 @@
           <ph name="PROXIES_TITLE"/>
           &gt;
           LAN Ayarları
-          öğesine gidin ve &quot;LAN için proxy sunucusu kullan&quot; onay kutusunun seçimini kaldırın.</translation>
+          öğesine gidin ve "LAN için proxy sunucusu kullan" onay kutusunun seçimini kaldırın.</translation>
 <translation id="8621669128220841554">Yükleme belirtilmeyen bir hata nedeniyle başarısız oldu. Lütfen Chromium'u tekrar indirin.</translation>
 <translation id="6717134281241384636">Profiliniz daha yeni bir Chromium sürümünden olduğundan kullanılamıyor.
 

@@ -293,6 +293,8 @@
         'browser/extensions/api/execute_code_function.h',
         'browser/extensions/api/extension_action/extension_page_actions_api_constants.cc',
         'browser/extensions/api/extension_action/extension_page_actions_api_constants.h',
+        'browser/extensions/api/bitpop_facebook_chat/bitpop_facebook_chat_api.cc',
+        'browser/extensions/api/bitpop_facebook_chat/bitpop_facebook_chat_api.h',
         'browser/extensions/api/feedback_private/feedback_private_api.cc',
         'browser/extensions/api/feedback_private/feedback_private_api.h',
         'browser/extensions/api/feedback_private/feedback_service.cc',

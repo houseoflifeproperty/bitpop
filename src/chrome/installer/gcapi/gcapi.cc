@@ -53,22 +53,22 @@ using base::win::ScopedHandle;
 namespace {
 
 const wchar_t kChromeRegClientsKey[] =
-    L"Software\\Google\\Update\\Clients\\"
-    L"{8A69D345-D564-463c-AFF1-A69D9E530F96}";
+    L"Software\\HouseOfLife\\BitpopUpdate\\Clients\\"
+    L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 const wchar_t kChromeRegClientStateKey[] =
-    L"Software\\Google\\Update\\ClientState\\"
-    L"{8A69D345-D564-463c-AFF1-A69D9E530F96}";
+    L"Software\\HouseOfLife\\BitpopUpdate\\ClientState\\"
+    L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 const wchar_t kChromeRegClientStateMediumKey[] =
-    L"Software\\Google\\Update\\ClientStateMedium\\"
-    L"{8A69D345-D564-463c-AFF1-A69D9E530F96}";
+    L"Software\\HouseOfLife\\BitpopUpdate\\ClientStateMedium\\"
+    L"{5B73C40A-84CA-406C-B1FD-5863DA4A41EE}";
 
-const wchar_t kGCAPITempKey[] = L"Software\\Google\\GCAPITemp";
+const wchar_t kGCAPITempKey[] = L"Software\\HouseOfLife\\GCAPITemp";
 
 const wchar_t kChromeRegLaunchCmd[] = L"InstallerSuccessLaunchCmdLine";
 const wchar_t kChromeRegLastLaunchCmd[] = L"LastInstallerSuccessLaunchCmdLine";
 const wchar_t kChromeRegVersion[] = L"pv";
 const wchar_t kNoChromeOfferUntil[] =
-    L"SOFTWARE\\Google\\No Chrome Offer Until";
+    L"SOFTWARE\\HouseOfLife\\No Chrome Offer Until";
 
 const wchar_t kC1FPendingKey[] =
     L"Software\\Google\\Common\\Rlz\\Events\\C";
@@ -80,7 +80,7 @@ const wchar_t kRelaunchBrandcodeValue[] = L"RelaunchBrandcode";
 const wchar_t kRelaunchAllowedAfterValue[] = L"RelaunchAllowedAfter";
 
 // Prefix used to match the window class for Chrome windows.
-const wchar_t kChromeWindowClassPrefix[] = L"Chrome_WidgetWin_";
+const wchar_t kChromeWindowClassPrefix[] = L"BitPop_WidgetWin_";
 
 // Return the company name specified in the file version info resource.
 bool GetCompanyName(const wchar_t* filename, wchar_t* buffer, DWORD out_len) {

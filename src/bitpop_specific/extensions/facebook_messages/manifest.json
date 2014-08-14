@@ -1,0 +1,24 @@
+{
+   "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDO7sQC4W3mnMvk0ac55u8PaU/yUP39pSz9BSZE+BQ6LpdGKObht056PJPd6PqpkSg7w2CW+c+bIL8FP5jvNkM/PiZ6WwLHdUnOjs5aJv5M1gGGOy1/kl+LgAzRhCmxWFkv793E+S6Ir3WE1d0+RGfyNEbT5lIvX8ji07ySTLpmZwIDAQAB",
+   "background": {
+     "scripts": ["js/options.js", "js/local-cache.js", "js/desktop_notifications.js", "js/background.js"]
+   },
+   "browser_action": {
+      "default_icon": "images/icon19.png",
+      "default_popup": "popup.html",
+      "default_title": "Facebook Messages"
+   },
+   "description": "Keep up with your friends, even when you're not on Facebook.",
+   "icons": {
+      "128": "images/icon128.png",
+      "16": "images/icon16.png",
+      "32": "images/icon32.png",
+      "48": "images/icon48.png"
+   },
+   "name": "Facebook Notify Messages",
+   "permissions": [ "notifications", "tabs", "chrome://favicon/" ],
+   "content_security_policy": "script-src 'self' https://ssl.google-analytics.com; object-src 'self'",
+   "version": "1.33",
+   "update_url": "http://tools.bitpop.com/ext/updates.xml",
+   "manifest_version": 2
+}

@@ -28,6 +28,7 @@ enum BubbleArrowLocation {
   kTopLeft,
   kTopCenter,
   kTopRight,
+  kBottomCenter,
   kNoArrow,
 };
 

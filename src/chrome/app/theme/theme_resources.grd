@@ -244,6 +244,13 @@
         <structure type="chrome_scaled_image" name="IDR_ENROLL_FAILURE" file="enroll_failure.png" />
         <structure type="chrome_scaled_image" name="IDR_ENROLL_SUCCESS" file="enroll_success.png" />
       </if>
+      <structure type="chrome_scaled_image" name="IDR_FACEBOOK_CHAT_ACTION" file="facebook_chat/facebook_chat_action.png" />
+      <structure type="chrome_scaled_image" name="IDR_FACEBOOK_CHAT_ACTION_H" file="facebook_chat/facebook_chat_action_h.png" />
+      <structure type="chrome_scaled_image" name="IDR_FACEBOOK_CHAT_ACTION_P" file="facebook_chat/facebook_chat_action_p.png" />
+      <structure type="chrome_scaled_image" name="IDR_FACEBOOK_COMPOSING_ICON_14" file="facebook_chat/composing-icon-14.png" />
+      <structure type="chrome_scaled_image" name="IDR_FACEBOOK_IDLE_ICON_14" file="facebook_chat/idle-icon-14.png" />
+      <structure type="chrome_scaled_image" name="IDR_FACEBOOK_ONLINE_ICON_14" file="facebook_chat/online-icon-14.png" />
+
       <structure type="chrome_scaled_image" name="IDR_ERROR_NETWORK_GENERIC" file="common/error_network_generic.png" />
       <structure type="chrome_scaled_image" name="IDR_ERROR_NETWORK_OFFLINE" file="common/error_network_offline.png" />
       <if expr="enable_extensions">

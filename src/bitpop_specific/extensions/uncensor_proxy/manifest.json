@@ -1,0 +1,28 @@
+{
+  "name": "Uncensor ISP",
+  "key": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCw50MKvzSqEHHP+SUbMlsLwQ2lwITdtOo/1EqUd7fyyMVGvJAFMQEeRFLP3LUfDWiHdAJmzfNdQdpvgsYi3eZGr9piOCKv2vkWgFCYaIpjy5hf8Sl3OJ70sASgcNLpTVrFl94/ZHYbqnM46ygxuiwZ/eg4XhxFe8cGElGcoQcj3QIDAQAB",
+  "version": "1.16",
+  "description": "Your internet provider might try to block your access to some sites without proper proceedure. We give you access automatically through a proxy.",
+  "background": {
+    "scripts": ["parseuri.js", "store.js", "background.js"]
+  },
+  "permissions" : [
+    "bitpop",
+    "webRequest",
+    "webRequestBlocking",
+    "tabs",
+    "notifications",
+    "proxy",
+    "http://tools.bitpop.com/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "icons" : {
+    "16": "16uncensorp.png",
+    "48" : "48uncensorp.png",
+    "128" : "128uncensorp.png"
+  },
+  "update_url": "http://tools.bitpop.com/ext/updates.xml",
+  "web_accessible_resources": ["32uncensorp.png", "48uncensorp.png", "close_bar_h.png"],
+  "manifest_version": 2
+}

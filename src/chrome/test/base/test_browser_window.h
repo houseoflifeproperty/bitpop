@@ -160,6 +160,13 @@ class TestBrowserWindow : public BrowserWindow {
   virtual void ShowBrowserActionPopup(
       const extensions::Extension* extension) OVERRIDE;
 
+  virtual bool IsChatbarVisible() const OVERRIDE;
+  virtual FacebookChatbar* GetChatbar() OVERRIDE;
+
+  // Whether or not the facebook friends sidebar is visible
+  virtual bool IsFriendsSidebarVisible() const OVERRIDE;
+  virtual void SetFriendsSidebarVisible(bool visible) OVERRIDE;
+
  protected:
   virtual void DestroyBrowser() OVERRIDE {}
 

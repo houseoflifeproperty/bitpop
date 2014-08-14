@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="et">
 <translation id="6676384891291319759">Pääs Internetti</translation>
@@ -51,7 +51,7 @@
 <translation id="5109068449432240255">Jah, välju Chromiumist</translation>
 <translation id="1480489203462860648">Proovige järele, see on juba installitud</translation>
 <translation id="3032787606318309379">Chromiumi lisamine ...</translation>
-<translation id="4831257561365056138">Desinstalli Chromiumi rakenduste käiviti</translation>
+<translation id="4831257561365056138">Desinstalli BitPopi rakenduste käiviti</translation>
 <translation id="4222580632002216401">Olete nüüd Chromiumi sisse logitud. Administraator on sünkroonimise keelanud.</translation>
 <translation id="4207043877577553402"><ph name="BEGIN_BOLD"/>Hoiatus:<ph name="END_BOLD"/> Chromium ei saa takistada rakendusi teie sirvimisajalugu talletamast. Kui soovite laienduse inkognitorežiimis keelata, siis tühistage see valik.</translation>
 <translation id="4516868174453854611">Kui olete sisse logitud, näete oma vahelehti, järjehoidjaid ja muud Chromiumi kraami kõikjal oma sülearvutis, telefonis ja tahvelarvutis. Google'i teenused pakuvad teile ka asjakohasemaid soovitusi ja funktsioone.</translation>
@@ -112,7 +112,7 @@
 <translation id="2485422356828889247">Desinstalli</translation>
 <translation id="85843667276690461">Hangi abi Chromiumi kasutamise kohta</translation>
 <translation id="5358375970380395591">Logite sisse hallatud kontoga ja annate selle administraatorile üle Chromiumi profiili juhtimise. Teie Chromiumi andmed, näiteks rakendused, järjehoidjad, ajalugu, paroolid ja muud seaded seotakse jäädavalt kasutajaga <ph name="USER_NAME"/>. Saate need andmed kustutada Google'i kontode juhtpaneeli kaudu, kuid te ei saa neid seostada teise kontoga. <ph name="LEARN_MORE"/></translation>
-<translation id="9036189287518468038">Chromiumi rakenduste käiviti</translation>
+<translation id="9036189287518468038">BitPopi rakenduste käiviti</translation>
 <translation id="8493179195440786826">Chromium on aegunud</translation>
 <translation id="911206726377975832">Kas kustutada ka teie sirvimisandmed?</translation>
 <translation id="95514773681268843">Domeen <ph name="DOMAIN"/> nõuab, et loete enne selle seadme kasutamist läbi järgmised teenusetingimused ja nõustute nendega. Need tingimused ei laienda, muuda ega piira Chromium OS-i tingimusi.</translation>

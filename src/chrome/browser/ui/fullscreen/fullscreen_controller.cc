@@ -12,6 +12,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/download/download_shelf.h"
+#include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/fullscreen.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -51,6 +52,8 @@ FullscreenController::FullscreenController(Browser* browser)
       mouse_lock_tab_(NULL),
       mouse_lock_state_(MOUSELOCK_NOT_REQUESTED),
       reentrant_window_state_change_call_check_(false),
+      chatbar_temporarily_hidden_(false),
+      friends_sidebar_temporarily_hidden_(false),
       is_privileged_fullscreen_for_testing_(false),
       ptr_factory_(this) {
   DCHECK(window_);
@@ -281,7 +284,7 @@ void FullscreenController::RequestToLockMouse(WebContents* web_contents,
 void FullscreenController::OnTabDeactivated(WebContents* web_contents) {
   if (web_contents == fullscreened_tab_ || web_contents == mouse_lock_tab_)
     ExitTabFullscreenOrMouseLockIfNecessary();
-}
+  }
 
 void FullscreenController::OnTabDetachedFromView(WebContents* old_contents) {
   if (!IsFullscreenForCapturedTab(old_contents))
@@ -345,10 +348,32 @@ void FullscreenController::WindowFullscreenStateChanged() {
   }
   if (exiting_fullscreen) {
     window_->GetDownloadShelf()->Unhide();
+    
+    if (friends_sidebar_temporarily_hidden_ &&
+        !window_->IsFriendsSidebarVisible()) {
+      window_->SetFriendsSidebarVisible(true);
+      friends_sidebar_temporarily_hidden_ = false;
+    }
+
+    if (chatbar_temporarily_hidden_ && !window_->IsChatbarVisible()) {
+      window_->GetChatbar()->Show();
+      chatbar_temporarily_hidden_ = false;
+    }
   } else {
     window_->GetDownloadShelf()->Hide();
+
     if (window_->GetStatusBubble())
       window_->GetStatusBubble()->Hide();
+
+    if (window_->IsFriendsSidebarVisible()) {
+        window_->SetFriendsSidebarVisible(false);
+        friends_sidebar_temporarily_hidden_ = true;
+    }
+
+    if (window_->IsChatbarVisible()) {
+      window_->GetChatbar()->Hide();
+      chatbar_temporarily_hidden_ = true;
+    }
   }
 }
 
@@ -706,6 +731,10 @@ FullscreenController::GetMouseLockSetting(const GURL& url) const {
   HostContentSettingsMap* settings_map = profile_->GetHostContentSettingsMap();
   return settings_map->GetContentSetting(url, url,
       CONTENT_SETTINGS_TYPE_MOUSELOCK, std::string());
+}
+
+void FullscreenController::SetOpenChatbarOnNextFullscreenEvent() {
+  chatbar_temporarily_hidden_ = true;
 }
 
 bool FullscreenController::IsPrivilegedFullscreenForTab() const {

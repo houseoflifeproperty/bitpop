@@ -8,9 +8,11 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/search/search_model_observer.h"
 #include "components/bookmarks/core/browser/bookmark_model.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/ui_base_types.h"
 
 class Browser;
@@ -32,6 +34,7 @@ class Extension;
 
 class BrowserWindowCocoa :
     public BrowserWindow,
+    public content::NotificationObserver,
     public extensions::ExtensionKeybindingRegistry::Delegate,
     public SearchModelObserver {
  public:
@@ -117,6 +120,10 @@ class BrowserWindowCocoa :
 #endif
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
+  virtual bool IsChatbarVisible() const OVERRIDE;
+  virtual FacebookChatbar* GetChatbar() OVERRIDE;
+  virtual bool IsFriendsSidebarVisible() const OVERRIDE;
+  virtual void SetFriendsSidebarVisible(bool visible) OVERRIDE;
   virtual void ConfirmBrowserCloseWithPendingDownloads(
       int download_count,
       Browser::DownloadClosePreventionType dialog_type,
@@ -162,6 +169,11 @@ class BrowserWindowCocoa :
   virtual void ShowBrowserActionPopup(
       const extensions::Extension* extension) OVERRIDE;
 
+  // Overridden from NotificationObserver
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
   // Overridden from ExtensionKeybindingRegistry::Delegate:
   virtual extensions::ActiveTabPermissionGranter*
       GetActiveTabPermissionGranter() OVERRIDE;
@@ -182,6 +194,7 @@ class BrowserWindowCocoa :
  private:
   NSWindow* window() const;  // Accessor for the (current) |NSWindow|.
 
+  content::NotificationRegistrar registrar_;
   Browser* browser_;  // weak, owned by controller
   BrowserWindowController* controller_;  // weak, owns us
   base::scoped_nsobject<NSString> pending_window_title_;

@@ -24,13 +24,11 @@
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "url/gurl.h"
 
-#if defined(GOOGLE_CHROME_BUILD)
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/google_update_settings.h"
 #import "components/breakpad/app/breakpad_mac.h"
-#endif
 
 @interface FirstRunDialogController (PrivateMethods)
 // Show the dialog.
@@ -81,7 +79,6 @@ FirstRunShowBridge::~FirstRunShowBridge() {}
 // Returns true if the first run dialog was shown.
 bool ShowFirstRun(Profile* profile) {
   bool dialog_shown = false;
-#if defined(GOOGLE_CHROME_BUILD)
   // The purpose of the dialog is to ask the user to enable stats and crash
   // reporting. This setting may be controlled through configuration management
   // in enterprise scenarios. If that is the case, skip the dialog entirely, as
@@ -117,9 +114,6 @@ bool ShowFirstRun(Profile* profile) {
       DCHECK(success);
     }
   }
-#else  // GOOGLE_CHROME_BUILD
-  // We don't show the dialog in Chromium.
-#endif  // GOOGLE_CHROME_BUILD
 
   // Set preference to show first run bubble and welcome page.
   // Only display the bubble if there is a default search provider.

@@ -378,6 +378,11 @@ void ProfileImpl::RegisterProfilePrefs(
       0,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
+  registry->RegisterBooleanPref(
+      prefs::kFacebookShowFriendsList,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+
   // Deprecated. Kept around for migration.
   registry->RegisterBooleanPref(
       prefs::kClearSiteDataOnExit,
@@ -397,7 +402,8 @@ ProfileImpl::ProfileImpl(
       last_session_exit_type_(EXIT_NORMAL),
       start_time_(Time::Now()),
       delegate_(delegate),
-      predictor_(NULL) {
+      predictor_(NULL),
+      should_show_additional_extensions_(false) {
   TRACE_EVENT0("browser", "ProfileImpl::ctor")
   DCHECK(!path.empty()) << "Using an empty path will attempt to write " <<
                             "profile files to the root directory!";
@@ -1358,3 +1364,12 @@ PrefProxyConfigTracker* ProfileImpl::CreateProxyConfigTracker() {
   return ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(
       GetPrefs(), g_browser_process->local_state());
 }
+
+bool ProfileImpl::should_show_additional_extensions() const {
+  return should_show_additional_extensions_;
+}
+
+void ProfileImpl::set_should_show_additional_extensions(bool flag) {
+  should_show_additional_extensions_ = flag;
+}
+

@@ -369,7 +369,7 @@ SessionStartupPref StartupBrowserCreator::GetSessionStartupPref(
   // behavior (sync promo, welcome page) is consistently invoked.
   // This applies only if the pref is still at its default and has not been
   // set by the user, managed prefs or policy.
-  if (is_first_run && SessionStartupPref::TypeIsDefault(prefs))
+  if (is_first_run)
     pref.type = SessionStartupPref::DEFAULT;
 
   // The switches::kRestoreLastSession command line switch is used to restore

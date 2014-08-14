@@ -290,6 +290,7 @@
           origin.x -= offsets.width;
           break;
         case info_bubble::kTopCenter:
+        case info_bubble::kBottomCenter:
           origin.x -= NSWidth([window frame]) / 2.0;
           break;
         case info_bubble::kNoArrow:
@@ -321,7 +322,10 @@
       NOTREACHED();
   }
 
-  origin.y -= NSHeight([window frame]);
+  if ([bubble_ arrowLocation] != info_bubble::kBottomCenter) {
+    origin.y -= NSHeight([window frame]);
+  }
+
   [window setFrameOrigin:origin];
 }
 

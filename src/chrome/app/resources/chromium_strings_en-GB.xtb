@@ -1,4 +1,4 @@
-<?xml version="1.0" ?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="en-GB">
 <translation id="6676384891291319759">Access the Internet</translation>
@@ -42,7 +42,7 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          and make sure your configuration is set to &quot;no proxy&quot; or &quot;direct.&quot;</translation>
+          and make sure your configuration is set to "no proxy" or "direct."</translation>
 <translation id="3848258323044014972"><ph name="PAGE_TITLE"/> - Chromium</translation>
 <translation id="7729447699958282447">Chromium could not sync your data because Sync is not available for your domain.</translation>
 <translation id="1989424089625731201">You attempted to reach &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, but the certificate that the server presented contains errors. Chromium cannot use a certificate with errors and cannot validate the identity of the site that you have attempted to connect to.</translation>
@@ -78,7 +78,7 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
-        and deselect &quot;<ph name="NO_PREFETCH_DESCRIPTION"/>.&quot;
+        and deselect "<ph name="NO_PREFETCH_DESCRIPTION"/>."
         If this does not resolve the issue, we recommend selecting this option
         again for improved performance.</translation>
 <translation id="7463979740390522693">Chromium - Notifications (<ph name="QUANTITY"/> unread)</translation>
@@ -164,7 +164,7 @@ Some features may be unavailable and changes to preferences won't be saved.</tra
           <ph name="PROXIES_TITLE"/>
           &gt;
           LAN Settings
-          and deselect the &quot;Use a proxy server for your LAN&quot; checkbox.</translation>
+          and deselect the "Use a proxy server for your LAN" checkbox.</translation>
 <translation id="8621669128220841554">Installation failed due to unspecified error. Please download Chromium again.</translation>
 <translation id="6717134281241384636">Your profile can not be used because it is from a newer version of Chromium.
 

@@ -43,7 +43,9 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/origin_chip_info.h"
 #include "chrome/browser/ui/view_ids.h"
+#include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
+#include "chrome/browser/ui/views/fb_button_bubble.h"
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
 #include "chrome/browser/ui/views/location_bar/ev_bubble_view.h"
 #include "chrome/browser/ui/views/location_bar/generated_credit_card_view.h"
@@ -1198,8 +1200,16 @@ void LocationBarView::ShowFirstRunBubbleInternal() {
   if (!browser)
     return; // Possible when browser is shutting down.
 
-  FirstRunBubble::ShowBubble(browser, GetLocationBarAnchor());
+  views::BubbleDelegateView* other_bubble = 
+		FirstRunBubble::ShowBubble(browser, GetLocationBarAnchor());
+
+  BrowserView* browser_view = static_cast<BrowserView*>(browser->window());
+  FbButtonBubble::ShowBubble(browser,
+      browser_view->toolbar()->browser_actions()->GetBrowserActionViewAt(0),
+	  other_bubble
+	  );
 #endif
+
 }
 
 void LocationBarView::AccessibilitySetValue(const base::string16& new_value) {

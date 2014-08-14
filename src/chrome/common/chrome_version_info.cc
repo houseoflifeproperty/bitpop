@@ -14,6 +14,9 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+// Generated header
+#include "chrome/common/chrome_release_version_info.h"
+
 namespace chrome {
 
 std::string VersionInfo::ProductNameAndVersionForUserAgent() const {
@@ -46,9 +49,7 @@ std::string VersionInfo::Name() const {
 }
 
 std::string VersionInfo::Version() const {
-  if (!is_valid())
-    return std::string();
-  return base::UTF16ToUTF8(version_info_->product_version());
+  return CHROMIUM_RELEASE_VERSION;
 }
 
 std::string VersionInfo::LastChange() const {
@@ -61,6 +62,12 @@ bool VersionInfo::IsOfficialBuild() const {
   if (!is_valid())
     return false;
   return version_info_->is_official_build();
+}
+
+std::string VersionInfo::BitpopVersion() const {
+  if (!is_valid())
+    return std::string();
+  return base::UTF16ToUTF8(version_info_->product_version());
 }
 
 #elif defined(OS_POSIX)
@@ -84,7 +91,7 @@ std::string VersionInfo::Name() const {
 }
 
 std::string VersionInfo::Version() const {
-  return PRODUCT_VERSION;
+  return CHROMIUM_RELEASE_VERSION;
 }
 
 std::string VersionInfo::LastChange() const {
@@ -95,13 +102,17 @@ bool VersionInfo::IsOfficialBuild() const {
   return IS_OFFICIAL_BUILD;
 }
 
+std::string VersionInfo::BitpopVersion() const {
+  return PRODUCT_VERSION;
+}
+
 #endif
 
 std::string VersionInfo::CreateVersionString() const {
   std::string current_version;
   if (is_valid()) {
     current_version += Version();
-#if !defined(GOOGLE_CHROME_BUILD)
+#if 0
     current_version += " (";
     current_version += l10n_util::GetStringUTF8(IDS_ABOUT_VERSION_UNOFFICIAL);
     current_version += " ";
